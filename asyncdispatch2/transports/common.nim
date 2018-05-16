@@ -113,5 +113,6 @@ when defined(windows):
   import winlean
 
   const ERROR_OPERATION_ABORTED* = 995
+  const ERROR_SUCCESS* = 0
   proc cancelIo*(hFile: HANDLE): WINBOOL
        {.stdcall, dynlib: "kernel32", importc: "CancelIo".}

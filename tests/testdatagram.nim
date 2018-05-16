@@ -3,8 +3,11 @@ import ../asyncdispatch2
 
 const
   TestsCount = 5000
-  ClientsCount = 10
-  MessagesCount = 50
+  ClientsCount = 2
+  MessagesCount = 350
+
+when defined(vcc):
+  {.passC: "/Zi /FS".}
 
 proc client1(transp: DatagramTransport, pbytes: pointer, nbytes: int,
              raddr: TransportAddress, udata: pointer): Future[void] {.async.} =
@@ -92,6 +95,7 @@ proc client4(transp: DatagramTransport, pbytes: pointer, nbytes: int,
         transp.close()
       else:
         var req = "REQUEST" & $counterPtr[]
+        echo $counterPtr[] & "-SEND"
         await transp.send(addr req[0], len(req))
     else:
       echo "ERROR"
@@ -153,8 +157,9 @@ proc test3(): Future[int] {.async.} =
   for i in 0..<ClientsCount:
     var dgram = newDatagramTransport(client4, udata = addr counters[i],
                                      remote = ta)
+    echo "FIRST SEND at " & toHex(cast[uint](dgram))
     var data = "REQUEST0"
-    await dgram.send(addr data[0], len(data))
+    await dgram.sendTo(addr data[0], len(data), ta)
     clients[i] = dgram.join()
 
   await waitAll(clients)
