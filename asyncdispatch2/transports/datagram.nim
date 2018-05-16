@@ -47,7 +47,7 @@ type
     ## ``nbytes`` - number of bytes received
     ## ``remote`` - remote peer address
     ## ``udata`` - user-defined pointer, specified at Transport creation.
-    ## 
+    ##
     ## ``pbytes`` will be `nil` and ``nbytes`` will be ``0``, if there an error
     ## happens.
 
@@ -219,6 +219,14 @@ when defined(windows):
         raiseOsError(osLastError())
       localSock = sock
       register(localSock)
+
+    ## Apply ServerFlags here
+    if ServerFlags.ReuseAddr in flags:
+      if not setSockOpt(localSock, SOL_SOCKET, SO_REUSEADDR, 1):
+        let err = osLastError()
+        if sock == asyncInvalidSocket:
+          closeAsyncSocket(localSock)
+        raiseOsError(err)
 
     if local.port != Port(0):
       var saddr: Sockaddr_storage
