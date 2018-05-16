@@ -156,12 +156,12 @@ when defined(windows):
             transp.state.incl(ReadEof)
             transp.state.incl(ReadPaused)
           fromSockAddr(transp.raddr, transp.ralen, raddr.address, raddr.port)
-          discard transp.function(transp, addr transp.buffer[0], bytesCount,
+          spawn transp.function(transp, addr transp.buffer[0], bytesCount,
                                   raddr, transp.udata)
         else:
           transp.setReadError(err)
           transp.state.incl(ReadPaused)
-          discard transp.function(transp, nil, 0, raddr, transp.udata)
+          spawn transp.function(transp, nil, 0, raddr, transp.udata)
       else:
         ## Initiation
         if (ReadEof notin transp.state) and (ReadClosed notin transp.state):
@@ -184,7 +184,7 @@ when defined(windows):
             elif int(err) != ERROR_IO_PENDING:
               transp.state.excl(ReadPending)
               transp.setReadError(err)
-              discard transp.function(transp, nil, 0, raddr, transp.udata)
+              spawn transp.function(transp, nil, 0, raddr, transp.udata)
         break
 
   proc resumeRead(transp: DatagramTransport) {.inline.} =
@@ -307,7 +307,7 @@ else:
                                  addr slen)
         if res >= 0:
           fromSockAddr(saddr, slen, raddr.address, raddr.port)
-          discard transp.function(transp, addr transp.buffer[0], res,
+          spawn transp.function(transp, addr transp.buffer[0], res,
                                   raddr, transp.udata)
         else:
           let err = osLastError()
@@ -315,7 +315,7 @@ else:
             continue
           else:
             transp.setReadError(err)
-            discard transp.function(transp, nil, 0, raddr, transp.udata)
+            spawn transp.function(transp, nil, 0, raddr, transp.udata)
         break
 
   proc writeDatagramLoop(udata: pointer) =
@@ -461,7 +461,7 @@ proc join*(transp: DatagramTransport) {.async.} =
   await transp.future
 
 proc send*(transp: DatagramTransport, pbytes: pointer,
-           nbytes: int): Future[void] {.async.} =
+           nbytes: int) {.async.} =
   checkClosed(transp)
   if transp.remote.port == Port(0):
     raise newException(TransportError, "Remote peer is not set!")
@@ -481,7 +481,7 @@ proc send*(transp: DatagramTransport, pbytes: pointer,
     raise transp.getError()
 
 proc sendTo*(transp: DatagramTransport, pbytes: pointer, nbytes: int,
-             remote: TransportAddress): Future[void] {.async.} =
+             remote: TransportAddress) {.async.} =
   checkClosed(transp)
   var saddr: Sockaddr_storage
   var slen: SockLen

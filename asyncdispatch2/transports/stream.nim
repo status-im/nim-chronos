@@ -21,7 +21,7 @@ when defined(windows):
   type
     StreamVector = object
       kind: VectorKind            # Writer vector source kind
-      dataBuf: TWSABuf            # Writer vector buffer
+      dataBuf: ptr TWSABuf        # Writer vector buffer
       offset: uint                # Writer vector offset
       writer: Future[void]        # Writer vector completion Future
 
@@ -121,7 +121,6 @@ template checkPending(t: untyped) =
 
 template shiftBuffer(t, c: untyped) =
   if (t).offset > c:
-    echo "moveMem(" & $int((t).offset) & ", " & $int(c) & ")"
     moveMem(addr((t).buffer[0]), addr((t).buffer[(c)]), (t).offset - (c))
     (t).offset = (t).offset - (c)
   else:
@@ -176,18 +175,12 @@ when defined(windows):
       cast[uint](addr t.buffer[0]) + uint((t).roffset))
     (t).wsabuf.len = int32(len((t).buffer) - (t).roffset)
 
-  template initBufferStreamVector(v, p, n, t: untyped) =
-    (v).kind = DataBuffer
-    (v).dataBuf.buf = cast[cstring]((p))
-    (v).dataBuf.len = cast[int32](n)
-    (v).writer = (t)
-
-  template initTransmitStreamVector(v, h, o, n, t: untyped) =
-    (v).kind = DataFile
-    (v).dataBuf.buf = cast[cstring]((n))
-    (v).dataBuf.len = cast[int32]((h))
-    (v).offset = cast[uint]((o))
-    (v).writer = (t)
+  # template initTransmitStreamVector(v, h, o, n, t: untyped) =
+  #   (v).kind = DataFile
+  #   (v).dataBuf.buf = cast[cstring]((n))
+  #   (v).dataBuf.len = cast[int32]((h))
+  #   (v).offset = cast[uint]((o))
+  #   (v).writer = (t)
 
   proc writeStreamLoop(udata: pointer) {.gcsafe.} =
     var bytesCount: int32
@@ -220,12 +213,6 @@ when defined(windows):
                   transp.queue.addFirst(vector)
                 else:
                   vector.writer.complete()
-            elif transp.kind in {TransportKind.Pipe, TransportKind.File}:
-              if bytesCount < vector.dataBuf.len:
-                vector.slideBuffer(bytesCount)
-                transp.queue.addFirst(vector)
-              else:
-                vector.writer.complete()
         else:
           transp.setWriteError(err)
           transp.finishWriter()
@@ -234,20 +221,26 @@ when defined(windows):
         transp.state.incl(WritePending)
         if transp.kind == TransportKind.Socket:
           let sock = SocketHandle(transp.wovl.data.fd)
-          if transp.queue[0].kind == VectorKind.DataBuffer:
+          var vector = transp.queue.popFirst()
+          if vector.kind == VectorKind.DataBuffer:
             transp.wovl.zeroOvelappedOffset()
-            let ret = WSASend(sock, addr transp.queue[0].dataBuf, 1,
+            let ret = WSASend(sock, vector.dataBuf, 1,
                               addr bytesCount, DWORD(0),
                               cast[POVERLAPPED](addr transp.wovl), nil)
             if ret != 0:
               let err = osLastError()
-              if int32(err) != ERROR_IO_PENDING:
+              if int(err) == ERROR_OPERATION_ABORTED:
+                transp.state.incl(WritePaused)
+              elif int(err) == ERROR_IO_PENDING:
+                transp.queue.addFirst(vector)
+              else:
                 transp.state.excl(WritePending)
                 transp.setWriteError(err)
                 transp.finishWriter()
+            else:
+              transp.queue.addFirst(vector)
           else:
             let loop = getGlobalDispatcher()
-            var vector = transp.queue[0]
             var size: int32
             var flags: int32
 
@@ -257,33 +250,21 @@ when defined(windows):
               size = int32(getFileSize(vector))
 
             transp.wovl.setOverlappedOffset(vector.offset)
-
             var ret = loop.transmitFile(sock, getFileHandle(vector), size, 0,
                                         cast[POVERLAPPED](addr transp.wovl),
                                         nil, flags)
             if ret == 0:
               let err = osLastError()
-              if int32(err) != ERROR_IO_PENDING:
+              if int(err) == ERROR_OPERATION_ABORTED:
+                transp.state.incl(WritePaused)
+              elif int(err) == ERROR_IO_PENDING:
+                transp.queue.addFirst(vector)
+              else:
                 transp.state.excl(WritePending)
                 transp.setWriteError(err)
                 transp.finishWriter()
-        elif transp.kind in {TransportKind.Pipe, TransportKind.File}:
-          let fd = Handle(transp.wovl.data.fd)
-          var vector = transp.queue[0]
-
-          if transp.kind == TransportKind.File:
-            transp.wovl.setOverlappedOffset(vector.offset)
-          else:
-            transp.wovl.zeroOvelappedOffset()
-
-          var ret = writeFile(fd, vector.dataBuf.buf, vector.dataBuf.len, nil,
-                              cast[POVERLAPPED](addr transp.wovl))
-          if ret == 0:
-            let err = osLastError()
-            if int32(err) != ERROR_IO_PENDING:
-              transp.state.excl(WritePending)
-              transp.setWriteError(err)
-              transp.finishWriter()
+            else:
+              transp.queue.addFirst(vector)
         break
 
     if len(transp.queue) == 0:
@@ -501,7 +482,7 @@ when defined(windows):
           if not acceptFut.failed:
             var sock = acceptFut.read()
             if sock != asyncInvalidSocket:
-              discard server.function(
+              spawn server.function(
                 newStreamSocketTransport(sock, server.bufferSize),
                 server.udata)
 
@@ -668,7 +649,7 @@ else:
       if int(res) > 0:
         let sock = wrapAsyncSocket(res)
         if sock != asyncInvalidSocket:
-          discard server.function(
+          spawn server.function(
             newStreamSocketTransport(sock, server.bufferSize),
             server.udata)
           break
@@ -784,8 +765,13 @@ proc write*(transp: StreamTransport, pbytes: pointer,
             nbytes: int): Future[int] {.async.} =
   checkClosed(transp)
   var waitFuture = newFuture[void]("transport.write")
-  var vector: StreamVector
-  vector.initBufferStreamVector(pbytes, nbytes, waitFuture)
+  var vector = StreamVector(kind: DataBuffer, writer: waitFuture)
+  when defined(windows):
+    var wsabuf = TWSABuf(buf: cast[cstring](pbytes), len: cast[int32](nbytes))
+    vector.dataBuf = addr wsabuf
+  else:
+    vector.buf = pbytes
+    vector.buflen = nbytes
   transp.queue.addLast(vector)
   if WritePaused in transp.state:
     transp.resumeWrite()

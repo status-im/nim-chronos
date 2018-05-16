@@ -258,7 +258,7 @@ proc `$`*(entries: seq[StackTraceEntry]): string =
         indent.inc(2)
       else:
         indent.dec(2)
-        result.add(spaces(indent)& "]#\n")
+        result.add(spaces(indent) & "]#\n")
       continue
 
     let left = "$#($#)" % [$entry.filename, $entry.line]
@@ -349,6 +349,9 @@ proc asyncCheckProxy[T](udata: pointer) =
     injectStacktrace(future)
     raise future.error
 
+proc spawnProxy[T](udata: pointer) =
+  discard
+
 proc asyncCheck*[T](future: Future[T]) =
   ## Sets a callback on ``future`` which raises an exception if the future
   ## finished with an error.
@@ -360,6 +363,10 @@ proc asyncCheck*[T](future: Future[T]) =
     #   if future.failed:
     #     injectStacktrace(future)
     #     raise future.error
+
+proc spawn*[T](future: Future[T]) =
+  assert(not future.isNil, "Future is nil")
+  future.callback = spawnProxy[T]
 
 proc `and`*[T, Y](fut1: Future[T], fut2: Future[Y]): Future[void] =
   ## Returns a future which will complete once both ``fut1`` and ``fut2``

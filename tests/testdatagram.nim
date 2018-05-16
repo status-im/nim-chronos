@@ -3,7 +3,7 @@ import ../asyncdispatch2
 
 const
   TestsCount = 5000
-  ClientsCount = 2
+  ClientsCount = 50
   MessagesCount = 350
 
 when defined(vcc):
