@@ -30,7 +30,7 @@ elif defined(macosx):
   proc fastEpochTime*(): uint64 {.inline.} =
     var t: Timeval
     posix_gettimeofday(t)
-    result = (t.tv_sec * 1_000 + t.tv_usec div 1_000)
+    result = (uint64(t.tv_sec) * 1_000 + uint64(t.tv_usec) div 1_000)
 
 elif defined(posix):
 
