@@ -87,8 +87,6 @@ when defined(windows):
 
   proc writeDatagramLoop(udata: pointer) =
     var bytesCount: int32
-    if isNil(udata):
-      return
     var ovl = cast[PCustomOverlapped](udata)
     var transp = cast[WindowsDatagramTransport](ovl.data.udata)
     while len(transp.queue) > 0:
@@ -97,8 +95,7 @@ when defined(windows):
         transp.state.excl(WritePending)
         let err = transp.wovl.data.errCode
         if err == OSErrorCode(-1):
-          var vector = transp.queue.popFirst()
-          vector.writer.complete()
+          transp.finishWriter()
         else:
           transp.setWriteError(err)
           transp.finishWriter()
@@ -126,7 +123,7 @@ when defined(windows):
           else:
             transp.state.excl(WritePending)
             transp.setWriteError(err)
-            transp.finishWriter()
+            vector.writer.complete()
         else:
           transp.queue.addFirst(vector)
         break
@@ -138,8 +135,6 @@ when defined(windows):
     var
       bytesCount: int32
       raddr: TransportAddress
-    if isNil(udata):
-      return
     var ovl = cast[PCustomOverlapped](udata)
     var transp = cast[WindowsDatagramTransport](ovl.data.udata)
     while true:
@@ -156,7 +151,7 @@ when defined(windows):
             transp.state.incl(ReadPaused)
           fromSockAddr(transp.raddr, transp.ralen, raddr.address, raddr.port)
           discard transp.function(transp, addr transp.buffer[0], bytesCount,
-                                     raddr, transp.udata)
+                                  raddr, transp.udata)
         else:
           transp.setReadError(err)
           transp.state.incl(ReadPaused)
@@ -280,6 +275,7 @@ when defined(windows):
                                        udata: cast[pointer](wresult))
     wresult.wsabuf = TWSABuf(buf: cast[cstring](addr wresult.buffer[0]),
                              len: int32(len(wresult.buffer)))
+    GC_ref(wresult)
     result = cast[DatagramTransport](wresult)
     result.resumeRead()
 
@@ -291,6 +287,8 @@ when defined(windows):
       transp.state.incl(WriteClosed)
       transp.state.incl(ReadClosed)
       transp.future.complete()
+      var wresult = cast[WindowsDatagramTransport](transp)
+      GC_unref(wresult)
 
 else:
 
@@ -430,6 +428,7 @@ else:
     result.udata = udata
     result.state = {WritePaused}
     result.future = newFuture[void]("datagram.transport")
+    GC_ref(result)
     result.resumeRead()
 
   proc close*(transp: DatagramTransport) =
@@ -439,6 +438,7 @@ else:
       transp.state.incl(WriteClosed)
       transp.state.incl(ReadClosed)
       transp.future.complete()
+      GC_unref(transp)
 
 proc newDatagramTransport*(cbproc: DatagramCallback,
                            remote: TransportAddress = AnyAddress,
@@ -463,7 +463,8 @@ proc newDatagramTransport6*(cbproc: DatagramCallback,
                                       flags, udata, bufSize)
 
 proc join*(transp: DatagramTransport) {.async.} =
-  await transp.future
+  if not transp.future.finished:
+    await transp.future
 
 proc send*(transp: DatagramTransport, pbytes: pointer,
            nbytes: int) {.async.} =
