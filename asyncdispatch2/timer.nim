@@ -22,8 +22,11 @@ when defined(windows):
 
 elif defined(macosx):
 
-  from posix import posix_gettimeofday, Timeval
+  from posix import Timeval
 
+  proc posix_gettimeofday(tp: var Timeval, unused: pointer = nil) {.
+    importc: "gettimeofday", header: "<sys/time.h>".}
+  
   proc fastEpochTime*(): uint64 {.inline.} =
     var t: Timeval
     posix_gettimeofday(t)
