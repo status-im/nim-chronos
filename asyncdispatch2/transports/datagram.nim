@@ -8,7 +8,7 @@
 #              MIT license (LICENSE-MIT)
 
 import net, nativesockets, os, deques, strutils
-import ../asyncloop, ../handles
+import ../asyncloop, ../handles, ../hexdump
 import common
 
 type
@@ -91,7 +91,6 @@ when defined(windows):
       return
     var ovl = cast[PCustomOverlapped](udata)
     var transp = cast[WindowsDatagramTransport](ovl.data.udata)
-    echo "writeDatagramLoop(" & toHex(cast[uint](transp)) & ")"
     while len(transp.queue) > 0:
       if WritePending in transp.state:
         ## Continuation
@@ -156,12 +155,12 @@ when defined(windows):
             transp.state.incl(ReadEof)
             transp.state.incl(ReadPaused)
           fromSockAddr(transp.raddr, transp.ralen, raddr.address, raddr.port)
-          spawn transp.function(transp, addr transp.buffer[0], bytesCount,
-                                  raddr, transp.udata)
+          discard transp.function(transp, addr transp.buffer[0], bytesCount,
+                                     raddr, transp.udata)
         else:
           transp.setReadError(err)
           transp.state.incl(ReadPaused)
-          spawn transp.function(transp, nil, 0, raddr, transp.udata)
+          discard transp.function(transp, nil, 0, raddr, transp.udata)
       else:
         ## Initiation
         if (ReadEof notin transp.state) and (ReadClosed notin transp.state):
@@ -180,11 +179,17 @@ when defined(windows):
           if ret != 0:
             let err = osLastError()
             if int(err) == ERROR_OPERATION_ABORTED:
+              transp.state.excl(ReadPending)
               transp.state.incl(ReadPaused)
-            elif int(err) != ERROR_IO_PENDING:
+            elif int(err) == WSAECONNRESET:
+              transp.state.excl(ReadPending)
+              continue
+            elif int(err) == ERROR_IO_PENDING:
+              discard
+            else:
               transp.state.excl(ReadPending)
               transp.setReadError(err)
-              spawn transp.function(transp, nil, 0, raddr, transp.udata)
+              discard transp.function(transp, nil, 0, raddr, transp.udata)
         break
 
   proc resumeRead(transp: DatagramTransport) {.inline.} =
@@ -307,15 +312,15 @@ else:
                                  addr slen)
         if res >= 0:
           fromSockAddr(saddr, slen, raddr.address, raddr.port)
-          spawn transp.function(transp, addr transp.buffer[0], res,
-                                  raddr, transp.udata)
+          discard transp.function(transp, addr transp.buffer[0], res,
+                                     raddr, transp.udata)
         else:
           let err = osLastError()
           if int(err) == EINTR:
             continue
           else:
             transp.setReadError(err)
-            spawn transp.function(transp, nil, 0, raddr, transp.udata)
+            discard transp.function(transp, nil, 0, raddr, transp.udata)
         break
 
   proc writeDatagramLoop(udata: pointer) =

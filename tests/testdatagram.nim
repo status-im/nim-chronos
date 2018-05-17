@@ -3,11 +3,8 @@ import ../asyncdispatch2
 
 const
   TestsCount = 5000
-  ClientsCount = 50
-  MessagesCount = 350
-
-when defined(vcc):
-  {.passC: "/Zi /FS".}
+  ClientsCount = 2
+  MessagesCount = 1000
 
 proc client1(transp: DatagramTransport, pbytes: pointer, nbytes: int,
              raddr: TransportAddress, udata: pointer): Future[void] {.async.} =
@@ -25,6 +22,7 @@ proc client1(transp: DatagramTransport, pbytes: pointer, nbytes: int,
       await transp.sendTo(addr err[0], len(err), raddr)
   else:
     ## Read operation failed with error
+    echo "SERVER ERROR HAPPENS QUITING"
     var counterPtr = cast[ptr int](udata)
     counterPtr[] = -1
     transp.close()
@@ -71,13 +69,11 @@ proc client3(transp: DatagramTransport, pbytes: pointer, nbytes: int,
         var req = "REQUEST" & $counterPtr[]
         await transp.send(addr req[0], len(req))
     else:
-      echo "ERROR"
       var counterPtr = cast[ptr int](udata)
       counterPtr[] = -1
       transp.close()
   else:
     ## Read operation failed with error
-    echo "ERROR"
     var counterPtr = cast[ptr int](udata)
     counterPtr[] = -1
     transp.close()
@@ -98,13 +94,13 @@ proc client4(transp: DatagramTransport, pbytes: pointer, nbytes: int,
         echo $counterPtr[] & "-SEND"
         await transp.send(addr req[0], len(req))
     else:
-      echo "ERROR"
+      echo "ERROR1 [" & $data & "]"
       var counterPtr = cast[ptr int](udata)
       counterPtr[] = -1
       transp.close()
   else:
     ## Read operation failed with error
-    echo "ERROR"
+    echo "ERROR2"
     var counterPtr = cast[ptr int](udata)
     counterPtr[] = -1
     transp.close()    
@@ -161,7 +157,7 @@ proc test3(): Future[int] {.async.} =
     var data = "REQUEST0"
     await dgram.sendTo(addr data[0], len(data), ta)
     clients[i] = dgram.join()
-
+  # await dgram1.join()
   await waitAll(clients)
   dgram1.close()
   result = 0
@@ -174,5 +170,5 @@ when isMainModule:
     #   check waitFor(test1()) == TestsCount
     # test "Bound test (5000 times)":
     #   check waitFor(test2()) == TestsCount
-    test "Multiple clients with messages (100 clients x 50 messages each)":
+    test "Multiple clients with messages":
       echo waitFor(test3())

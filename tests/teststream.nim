@@ -2,8 +2,8 @@ import strutils, net, unittest
 import ../asyncdispatch2
 
 const
-  ClientsCount = 2
-  MessagesCount = 1000
+  ClientsCount = 1
+  MessagesCount = 100000
 
 proc serveClient1(transp: StreamTransport, udata: pointer) {.async.} =
   echo "SERVER STARTING (0x" & toHex[uint](cast[uint](transp)) & ")"

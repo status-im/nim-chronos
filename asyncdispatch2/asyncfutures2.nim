@@ -196,7 +196,7 @@ proc addCallback*[T](future: Future[T], cb: CallbackFunc) =
   ## Adds the callbacks proc to be called when the future completes.
   ##
   ## If future has already completed then ``cb`` will be called immediately.
-  future.addCallback(cb, cast[pointer](unsafeAddr future))
+  future.addCallback(cb, cast[pointer](future))
 
 proc removeCallback*(future: FutureBase, cb: CallbackFunc,
                      udata: pointer = nil) =
@@ -205,7 +205,7 @@ proc removeCallback*(future: FutureBase, cb: CallbackFunc,
   future.callbacks.remove acb
 
 proc removeCallback*[T](future: Future[T], cb: CallbackFunc) =
-  future.removeCallback(cb, cast[pointer](unsafeAddr future))
+  future.removeCallback(cb, cast[pointer](future))
 
 proc `callback=`*(future: FutureBase, cb: CallbackFunc, udata: pointer = nil) =
   ## Clears the list of callbacks and sets the callback proc to be called when
