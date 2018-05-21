@@ -19,7 +19,7 @@ const
   MessagesCount = 50
   MessageSize = 20
   FilesCount = 50
-  FilesTestName = "teststream.nim"
+  FilesTestName = "tests/teststream.nim"
 
 proc serveClient1(transp: StreamTransport, udata: pointer) {.async.} =
   while not transp.atEof():
