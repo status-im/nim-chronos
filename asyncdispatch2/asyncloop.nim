@@ -202,9 +202,6 @@ when defined(windows) or defined(nimdoc):
       errCode*: OSErrorCode
       bytesCount*: int32
       udata*: pointer
-      cell*: ForeignCell # we need this `cell` to protect our `cb` environment,
-                         # when using RegisterWaitForSingleObject, because
-                         # waiting is done in different thread.
 
     PDispatcher* = ref object of PDispatcherBase
       ioPort: Handle
@@ -217,18 +214,11 @@ when defined(windows) or defined(nimdoc):
     CustomOverlapped* = object of OVERLAPPED
       data*: CompletionData
 
-    PCustomOverlapped* = ptr CustomOverlapped
+    PtrCustomOverlapped* = ptr CustomOverlapped
 
     RefCustomOverlapped* = ref CustomOverlapped
 
     AsyncFD* = distinct int
-
-    # PostCallbackData = object
-    #   ioPort: Handle
-    #   handleFd: AsyncFD
-    #   waitFd: Handle
-    #   ovl: PCustomOverlapped
-    # PostCallbackDataPtr = ptr PostCallbackData
 
   proc hash(x: AsyncFD): Hash {.borrow.}
   proc `==`*(x: AsyncFD, y: AsyncFD): bool {.borrow.}
@@ -292,7 +282,7 @@ when defined(windows) or defined(nimdoc):
     # Processing handles
     var lpNumberOfBytesTransferred: Dword
     var lpCompletionKey: ULONG_PTR
-    var customOverlapped: PCustomOverlapped
+    var customOverlapped: PtrCustomOverlapped
     let res = getQueuedCompletionStatus(
       loop.ioPort, addr lpNumberOfBytesTransferred, addr lpCompletionKey,
       cast[ptr POVERLAPPED](addr customOverlapped), curTimeout).bool

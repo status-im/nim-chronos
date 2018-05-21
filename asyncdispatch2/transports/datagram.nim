@@ -87,7 +87,7 @@ when defined(windows):
 
   proc writeDatagramLoop(udata: pointer) =
     var bytesCount: int32
-    var ovl = cast[PCustomOverlapped](udata)
+    var ovl = cast[PtrCustomOverlapped](udata)
     var transp = cast[WindowsDatagramTransport](ovl.data.udata)
     while len(transp.queue) > 0:
       if WritePending in transp.state:
@@ -135,7 +135,7 @@ when defined(windows):
     var
       bytesCount: int32
       raddr: TransportAddress
-    var ovl = cast[PCustomOverlapped](udata)
+    var ovl = cast[PtrCustomOverlapped](udata)
     var transp = cast[WindowsDatagramTransport](ovl.data.udata)
     while true:
       if ReadPending in transp.state:

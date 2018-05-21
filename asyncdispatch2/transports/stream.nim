@@ -7,35 +7,28 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 
-import ../asyncloop, ../asyncsync, ../handles
+import ../asyncloop, ../asyncsync, ../handles, ../sendfile
 import common
 import net, nativesockets, os, deques, strutils
+
+when defined(windows):
+  import winlean
+else:
+  import posix
 
 type
   VectorKind = enum
     DataBuffer,                   # Simple buffer pointer/length
     DataFile                      # File handle for sendfile/TransmitFile
 
-when defined(windows):
-  import winlean
-  type
-    StreamVector = object
-      kind: VectorKind            # Writer vector source kind
-      dataBuf: ptr TWSABuf        # Writer vector buffer
-      offset: uint                # Writer vector offset
-      writer: Future[void]        # Writer vector completion Future
-
-else:
-  import posix
-  type
-    StreamVector = object
-      kind: VectorKind            # Writer vector source kind
-      buf: pointer                # Writer buffer pointer
-      buflen: int                 # Writer buffer size
-      offset: uint                # Writer vector offset
-      writer: Future[void]        # Writer vector completion Future
-
 type
+  StreamVector = object
+    kind: VectorKind            # Writer vector source kind
+    buf: pointer                # Writer buffer pointer
+    buflen: int                 # Writer buffer size
+    offset: uint                # Writer vector offset
+    writer: Future[void]        # Writer vector completion Future
+
   TransportKind* {.pure.} = enum
     Socket,                       # Socket transport
     Pipe,                         # Pipe transport
@@ -51,19 +44,20 @@ type
     error: ref Exception            # Current error
     queue: Deque[StreamVector]      # Writer queue
     future: Future[void]            # Stream life future
+    transferred: int
     case kind*: TransportKind
     of TransportKind.Socket:
       domain: Domain                # Socket transport domain (IPv4/IPv6)
       local: TransportAddress       # Local address
       remote: TransportAddress      # Remote address
     of TransportKind.Pipe:
-      fd0: AsyncFD
-      fd1: AsyncFD
+      todo1: int
     of TransportKind.File:
-      length: int
+      todo2: int
 
   StreamCallback* = proc(t: StreamTransport,
                          udata: pointer): Future[void] {.gcsafe.}
+    ## New connection callback
 
   StreamServer* = ref object of SocketServer
     function*: StreamCallback
@@ -111,14 +105,6 @@ template checkPending(t: untyped) =
   if not isNil((t).reader):
     raise newException(TransportError, "Read operation already pending!")
 
-# template shiftBuffer(t, c: untyped) =
-#   let length = len((t).buffer)
-#   if length > c:
-#     moveMem(addr((t).buffer[0]), addr((t).buffer[(c)]), length - (c))
-#     (t).offset = (t).offset - (c)
-#   else:
-#     (t).offset = 0
-
 template shiftBuffer(t, c: untyped) =
   if (t).offset > c:
     moveMem(addr((t).buffer[0]), addr((t).buffer[(c)]), (t).offset - (c))
@@ -126,20 +112,29 @@ template shiftBuffer(t, c: untyped) =
   else:
     (t).offset = 0
 
+template shiftVectorBuffer(v, o: untyped) =
+  (v).buf = cast[pointer](cast[uint]((v).buf) + uint(o))
+  (v).buflen -= int(o)
+
+template shiftVectorFile(v, o: untyped) =
+  (v).buf = cast[pointer](cast[uint]((v).buf) - cast[uint](o))
+  (v).offset += cast[uint]((o))
+
 when defined(windows):
   import winlean
   type
     WindowsStreamTransport = ref object of StreamTransport
-      wsabuf: TWSABuf             # Reader WSABUF
+      rwsabuf: TWSABuf            # Reader WSABUF
+      wwsabuf: TWSABuf            # Writer WSABUF
       rovl: CustomOverlapped      # Reader OVERLAPPED structure
       wovl: CustomOverlapped      # Writer OVERLAPPED structure
       roffset: int                # Pending reading offset
 
     WindowsStreamServer* = ref object of RootRef
       server: SocketServer        # Server object
-      domain: Domain
-      abuffer: array[128, byte]
-      aovl: CustomOverlapped
+      domain: Domain              # Current server domain (IPv4 or IPv6)
+      abuffer: array[128, byte]   # Windows AcceptEx buffer
+      aovl: CustomOverlapped      # AcceptEx OVERLAPPED structure
 
   const SO_UPDATE_CONNECT_CONTEXT = 0x7010
 
@@ -155,38 +150,30 @@ when defined(windows):
     (t).offset = cast[int32](cast[uint64](o) and 0xFFFFFFFF'u64)
     (t).offsetHigh = cast[int32](cast[uint64](o) shr 32)
 
-  template getFileSize(t: untyped): uint =
-    cast[uint]((t).dataBuf.buf)
+  template getFileSize(v: untyped): uint =
+    cast[uint]((v).buf)
 
-  template getFileHandle(t: untyped): Handle =
-    cast[Handle]((t).dataBuf.len)
-
-  template slideOffset(v, o: untyped) =
-    let s = cast[uint]((v).dataBuf.buf) - cast[uint]((o))
-    (v).dataBuf.buf = cast[cstring](s)
-    (v).offset = (v).offset + cast[uint]((o))
+  template getFileHandle(v: untyped): Handle =
+    cast[Handle]((v).buflen)
 
   template slideBuffer(t, o: untyped) =
-    (t).dataBuf.buf = cast[cstring](cast[uint]((t).dataBuf.buf) + uint(o))
-    (t).dataBuf.len -= int32(o)
+    (t).wwsabuf.buf = cast[cstring](cast[uint]((t).wwsabuf.buf) + uint(o))
+    (t).wwsabuf.len -= int32(o)
 
-  template setWSABuffer(t: untyped) =
-    (t).wsabuf.buf = cast[cstring](
+  template setReaderWSABuffer(t: untyped) =
+    (t).rwsabuf.buf = cast[cstring](
       cast[uint](addr t.buffer[0]) + uint((t).roffset))
-    (t).wsabuf.len = int32(len((t).buffer) - (t).roffset)
+    (t).rwsabuf.len = int32(len((t).buffer) - (t).roffset)
 
-  # template initTransmitStreamVector(v, h, o, n, t: untyped) =
-  #   (v).kind = DataFile
-  #   (v).dataBuf.buf = cast[cstring]((n))
-  #   (v).dataBuf.len = cast[int32]((h))
-  #   (v).offset = cast[uint]((o))
-  #   (v).writer = (t)
+  template setWriterWSABuffer(t, v: untyped) =
+    (t).wwsabuf.buf = cast[cstring](v.buf)
+    (t).wwsabuf.len = cast[int32](v.buflen)
 
   proc writeStreamLoop(udata: pointer) {.gcsafe.} =
     var bytesCount: int32
     if isNil(udata):
       return
-    var ovl = cast[PCustomOverlapped](udata)
+    var ovl = cast[PtrCustomOverlapped](udata)
     var transp = cast[WindowsStreamTransport](ovl.data.udata)
 
     while len(transp.queue) > 0:
@@ -202,14 +189,14 @@ when defined(windows):
           else:
             if transp.kind == TransportKind.Socket:
               if vector.kind == VectorKind.DataBuffer:
-                if bytesCount < vector.dataBuf.len:
-                  vector.slideBuffer(bytesCount)
+                if bytesCount < transp.wwsabuf.len:
+                  vector.shiftVectorBuffer(bytesCount)
                   transp.queue.addFirst(vector)
                 else:
                   vector.writer.complete()
               else:
                 if uint(bytesCount) < getFileSize(vector):
-                  vector.slideOffset(bytesCount)
+                  vector.shiftVectorFile(bytesCount)
                   transp.queue.addFirst(vector)
                 else:
                   vector.writer.complete()
@@ -224,19 +211,21 @@ when defined(windows):
           var vector = transp.queue.popFirst()
           if vector.kind == VectorKind.DataBuffer:
             transp.wovl.zeroOvelappedOffset()
-            let ret = WSASend(sock, vector.dataBuf, 1,
+            transp.setWriterWSABuffer(vector)
+            let ret = WSASend(sock, addr transp.wwsabuf, 1,
                               addr bytesCount, DWORD(0),
                               cast[POVERLAPPED](addr transp.wovl), nil)
             if ret != 0:
               let err = osLastError()
               if int(err) == ERROR_OPERATION_ABORTED:
+                transp.state.excl(WritePending)
                 transp.state.incl(WritePaused)
               elif int(err) == ERROR_IO_PENDING:
                 transp.queue.addFirst(vector)
               else:
                 transp.state.excl(WritePending)
                 transp.setWriteError(err)
-                transp.finishWriter()
+                vector.writer.complete()
             else:
               transp.queue.addFirst(vector)
           else:
@@ -256,13 +245,14 @@ when defined(windows):
             if ret == 0:
               let err = osLastError()
               if int(err) == ERROR_OPERATION_ABORTED:
+                transp.state.excl(WritePending)
                 transp.state.incl(WritePaused)
               elif int(err) == ERROR_IO_PENDING:
                 transp.queue.addFirst(vector)
               else:
                 transp.state.excl(WritePending)
                 transp.setWriteError(err)
-                transp.finishWriter()
+                vector.writer.complete()
             else:
               transp.queue.addFirst(vector)
         break
@@ -273,18 +263,19 @@ when defined(windows):
   proc readStreamLoop(udata: pointer) {.gcsafe.} =
     if isNil(udata):
       return
-    var ovl = cast[PCustomOverlapped](udata)
+    var ovl = cast[PtrCustomOverlapped](udata)
     var transp = cast[WindowsStreamTransport](ovl.data.udata)
 
     while true:
       if ReadPending in transp.state:
         ## Continuation
+        transp.state.excl(ReadPending)
         if ReadClosed in transp.state:
           break
-        transp.state.excl(ReadPending)
         let err = transp.rovl.data.errCode
         if err == OSErrorCode(-1):
           let bytesCount = transp.rovl.data.bytesCount
+          transp.transferred += bytesCount
           if bytesCount == 0:
             transp.state.incl(ReadEof)
             transp.state.incl(ReadPaused)
@@ -301,22 +292,27 @@ when defined(windows):
           transp.setReadError(err)
         if not isNil(transp.reader):
           transp.finishReader()
+        if ReadPaused in transp.state:
+          # Transport buffer is full, so we will not continue on reading.
+          break
       else:
         ## Initiation
-        if (ReadEof notin transp.state) and (ReadClosed notin transp.state):
+        if transp.state * {ReadEof, ReadClosed, ReadError} == {}:
           var flags = DWORD(0)
           var bytesCount: int32 = 0
           transp.state.excl(ReadPaused)
           transp.state.incl(ReadPending)
           if transp.kind == TransportKind.Socket:
             let sock = SocketHandle(transp.rovl.data.fd)
-            transp.setWSABuffer()
-            let ret = WSARecv(sock, addr transp.wsabuf, 1,
+            transp.roffset = transp.offset
+            transp.setReaderWSABuffer()
+            let ret = WSARecv(sock, addr transp.rwsabuf, 1,
                               addr bytesCount, addr flags,
                               cast[POVERLAPPED](addr transp.rovl), nil)
             if ret != 0:
               let err = osLastError()
               if int(err) == ERROR_OPERATION_ABORTED:
+                transp.state.excl(ReadPending)
                 transp.state.incl(ReadPaused)
               elif int32(err) != ERROR_IO_PENDING:
                 transp.setReadError(err)
@@ -326,17 +322,18 @@ when defined(windows):
         break
 
   proc newStreamSocketTransport(sock: AsyncFD, bufsize: int): StreamTransport =
-    var t = WindowsStreamTransport(kind: TransportKind.Socket)
-    t.fd = sock
-    t.rovl.data = CompletionData(fd: sock, cb: readStreamLoop,
-                                 udata: cast[pointer](t))
-    t.wovl.data = CompletionData(fd: sock, cb: writeStreamLoop,
-                                 udata: cast[pointer](t))
-    t.buffer = newSeq[byte](bufsize)
-    t.state = {ReadPaused, WritePaused}
-    t.queue = initDeque[StreamVector]()
-    t.future = newFuture[void]("stream.socket.transport")
-    result = cast[StreamTransport](t)
+    var transp = WindowsStreamTransport(kind: TransportKind.Socket)
+    transp.fd = sock
+    transp.rovl.data = CompletionData(fd: sock, cb: readStreamLoop,
+                                      udata: cast[pointer](transp))
+    transp.wovl.data = CompletionData(fd: sock, cb: writeStreamLoop,
+                                      udata: cast[pointer](transp))
+    transp.buffer = newSeq[byte](bufsize)
+    transp.state = {ReadPaused, WritePaused}
+    transp.queue = initDeque[StreamVector]()
+    transp.future = newFuture[void]("stream.socket.transport")
+    GC_ref(transp)
+    result = cast[StreamTransport](transp)
 
   proc bindToDomain(handle: AsyncFD, domain: Domain): bool =
     result = true
@@ -374,7 +371,7 @@ when defined(windows):
       result.fail(newException(OSError, osErrorMsg(osLastError())))
 
     proc continuation(udata: pointer) =
-      var ovl = cast[PCustomOverlapped](udata)
+      var ovl = cast[PtrCustomOverlapped](udata)
       if not retFuture.finished:
         if ovl.data.errCode == OSErrorCode(-1):
           if setsockopt(SocketHandle(sock), cint(SOL_SOCKET),
@@ -417,7 +414,7 @@ when defined(windows):
     let dwRemoteAddressLength = DWORD(sizeof(Sockaddr_in6) + 16)
 
     proc continuation(udata: pointer) =
-      var ovl = cast[PCustomOverlapped](udata)
+      var ovl = cast[PtrCustomOverlapped](udata)
       if not retFuture.finished:
         if server.server.status in {Stopped, Paused}:
           sock.closeAsyncSocket()
@@ -482,7 +479,7 @@ when defined(windows):
           if not acceptFut.failed:
             var sock = acceptFut.read()
             if sock != asyncInvalidSocket:
-              spawn server.function(
+              discard server.function(
                 newStreamSocketTransport(sock, server.bufferSize),
                 server.udata)
 
@@ -508,10 +505,6 @@ else:
   template getVectorLength(v: untyped): int =
     cast[int]((v).buflen - int((v).boffset))
 
-  template shiftVectorBuffer(t, o: untyped) =
-    (t).buf = cast[pointer](cast[uint]((t).buf) + uint(o))
-    (t).buflen -= int(o)
-
   template initBufferStreamVector(v, p, n, t: untyped) =
     (v).kind = DataBuffer
     (v).buf = cast[pointer]((p))
@@ -524,7 +517,6 @@ else:
     let fd = SocketHandle(cdata.fd)
     if not isNil(transp):
       if len(transp.queue) > 0:
-        echo "len(transp.queue) = ", len(transp.queue)
         var vector = transp.queue.popFirst()
         while true:
           if transp.kind == TransportKind.Socket:
@@ -543,9 +535,24 @@ else:
                 else:
                   transp.setWriteError(err)
                   vector.writer.complete()
-              break
             else:
-              discard
+              let res = sendfile(int(fd), cast[int](vector.buflen),
+                                 int(vector.offset),
+                                 cast[int](vector.buf))
+              if res >= 0:
+                if cast[int](vector.buf) - res == 0:
+                  vector.writer.complete()
+                else:
+                  vector.shiftVectorFile(res)
+                  transp.queue.addFirst(vector)
+              else:
+                let err = osLastError()
+                if int(err) == EINTR:
+                  continue
+                else:
+                  transp.setWriteError(err)
+                  vector.writer.complete()
+            break
       else:
         transp.state.incl(WritePaused)
         transp.fd.removeWriter()
@@ -583,13 +590,14 @@ else:
         break
 
   proc newStreamSocketTransport(sock: AsyncFD, bufsize: int): StreamTransport =
-    var t = UnixStreamTransport(kind: TransportKind.Socket)
-    t.fd = sock
-    t.buffer = newSeq[byte](bufsize)
-    t.state = {ReadPaused, WritePaused}
-    t.queue = initDeque[StreamVector]()
-    t.future = newFuture[void]("socket.stream.transport")
-    result = cast[StreamTransport](t)
+    var transp = UnixStreamTransport(kind: TransportKind.Socket)
+    transp.fd = sock
+    transp.buffer = newSeq[byte](bufsize)
+    transp.state = {ReadPaused, WritePaused}
+    transp.queue = initDeque[StreamVector]()
+    transp.future = newFuture[void]("socket.stream.transport")
+    GC_ref(transp)
+    result = cast[StreamTransport](transp)
 
   proc connect*(address: TransportAddress,
                 bufferSize = DefaultStreamBufferSize): Future[StreamTransport] =
@@ -641,7 +649,6 @@ else:
     var
       saddr: Sockaddr_storage
       slen: SockLen
-
     var server = cast[StreamServer](cast[ptr CompletionData](udata).udata)
     while true:
       let res = posix.accept(SocketHandle(server.sock),
@@ -649,7 +656,7 @@ else:
       if int(res) > 0:
         let sock = wrapAsyncSocket(res)
         if sock != asyncInvalidSocket:
-          spawn server.function(
+          discard server.function(
             newStreamSocketTransport(sock, server.bufferSize),
             server.udata)
           break
@@ -692,19 +699,28 @@ else:
     addWriter(transp.fd, writeStreamLoop, cast[pointer](transp))
 
 proc start*(server: SocketServer) =
+  ## Starts ``server``.
   server.action = Start
   server.actEvent.fire()
 
 proc stop*(server: SocketServer) =
+  ## Stops ``server``
   server.action = Stop
   server.actEvent.fire()
 
 proc pause*(server: SocketServer) =
+  ## Pause ``server``
   server.action = Pause
   server.actEvent.fire()
 
 proc join*(server: SocketServer) {.async.} =
-  await server.loopFuture
+  ## Waits until ``server`` is not stopped.
+  if not server.loopFuture.finished:
+    await server.loopFuture
+
+proc close*(server: SocketServer) =
+  ## Release ``server`` resources.
+  GC_unref(server)
 
 proc createStreamServer*(host: TransportAddress,
                          flags: set[ServerFlags],
@@ -729,7 +745,6 @@ proc createStreamServer*(host: TransportAddress,
     register(sock)
     serverSocket = sock
 
-  ## TODO: Set socket options here
   if ServerFlags.ReuseAddr in flags:
     if not setSockOpt(serverSocket, SOL_SOCKET, SO_REUSEADDR, 1):
       let err = osLastError()
@@ -744,7 +759,7 @@ proc createStreamServer*(host: TransportAddress,
     if sock == asyncInvalidSocket:
       closeAsyncSocket(serverSocket)
     raiseOsError(err)
-  
+
   if nativesockets.listen(SocketHandle(serverSocket), cint(backlog)) != 0:
     let err = osLastError()
     if sock == asyncInvalidSocket:
@@ -759,19 +774,15 @@ proc createStreamServer*(host: TransportAddress,
   result.actEvent = newAsyncEvent()
   result.udata = udata
   result.local = host
+  GC_ref(result)
   result.loopFuture = serverLoop(result)
 
 proc write*(transp: StreamTransport, pbytes: pointer,
             nbytes: int): Future[int] {.async.} =
   checkClosed(transp)
   var waitFuture = newFuture[void]("transport.write")
-  var vector = StreamVector(kind: DataBuffer, writer: waitFuture)
-  when defined(windows):
-    var wsabuf = TWSABuf(buf: cast[cstring](pbytes), len: cast[int32](nbytes))
-    vector.dataBuf = addr wsabuf
-  else:
-    vector.buf = pbytes
-    vector.buflen = nbytes
+  var vector = StreamVector(kind: DataBuffer, writer: waitFuture,
+                            buf: pbytes, buflen: nbytes)
   transp.queue.addLast(vector)
   if WritePaused in transp.state:
     transp.resumeWrite()
@@ -780,25 +791,25 @@ proc write*(transp: StreamTransport, pbytes: pointer,
     raise transp.getError()
   result = nbytes
 
-# proc writeFile*(transp: StreamTransport, handle: int,
-#                 offset: uint = 0,
-#                 size: uint = 0): Future[void] {.async.} =
-#   if transp.kind != TransportKind.Socket:
-#     raise newException(TransportError, "You can transmit files only to sockets")
-#   checkClosed(transp)
-#   var waitFuture = newFuture[void]("transport.writeFile")
-#   var vector: StreamVector
-#   vector.initTransmitStreamVector(handle, offset, size, waitFuture)
-#   transp.queue.addLast(vector)
-
-#   if WritePaused in transp.state:
-#     transp.resumeWrite()
-#   await vector.writer
-#   if WriteError in transp.state:
-#     raise transp.getError()
+proc writeFile*(transp: StreamTransport, handle: int,
+                offset: uint = 0,
+                size: int = 0): Future[void] {.async.} =
+  if transp.kind != TransportKind.Socket:
+    raise newException(TransportError, "You can transmit files only to sockets")
+  checkClosed(transp)
+  var waitFuture = newFuture[void]("transport.writeFile")
+  var vector = StreamVector(kind: DataFile, writer: waitFuture,
+                            buf: cast[pointer](size), offset: offset,
+                            buflen: handle)
+  transp.queue.addLast(vector)
+  if WritePaused in transp.state:
+    transp.resumeWrite()
+  await vector.writer
+  if WriteError in transp.state:
+    raise transp.getError()
 
 proc readExactly*(transp: StreamTransport, pbytes: pointer,
-                  nbytes: int): Future[int] {.async.} =
+                  nbytes: int) {.async.} =
   ## Read exactly ``nbytes`` bytes from transport ``transp``.
   checkClosed(transp)
   checkPending(transp)
@@ -814,17 +825,19 @@ proc readExactly*(transp: StreamTransport, pbytes: pointer,
       copyMem(cast[pointer](cast[uint](pbytes) + uint(index)),
               addr(transp.buffer[0]), nbytes - index)
       transp.shiftBuffer(nbytes - index)
-      result = nbytes
       break
     else:
-      copyMem(cast[pointer](cast[uint](pbytes) + uint(index)),
-              addr(transp.buffer[0]), transp.offset)
-      index += transp.offset
-      transp.reader = newFuture[void]("transport.readExactly")
+      if transp.offset != 0:
+        copyMem(cast[pointer](cast[uint](pbytes) + uint(index)),
+                addr(transp.buffer[0]), transp.offset)
+        index += transp.offset
+
+      transp.reader = newFuture[void]("stream.transport.readExactly")
       transp.offset = 0
       if ReadPaused in transp.state:
         transp.resumeRead()
       await transp.reader
+
   # we are no longer need data
   transp.reader = nil
 
@@ -840,7 +853,7 @@ proc readOnce*(transp: StreamTransport, pbytes: pointer,
       if (ReadEof in transp.state) or (ReadClosed in transp.state):
         result = 0
         break
-      transp.reader = newFuture[void]("transport.readOnce")
+      transp.reader = newFuture[void]("stream.transport.readOnce")
       if ReadPaused in transp.state:
         transp.resumeRead()
       await transp.reader
@@ -898,7 +911,7 @@ proc readUntil*(transp: StreamTransport, pbytes: pointer, nbytes: int,
       break
     else:
       if (transp.offset - index) == 0:
-        transp.reader = newFuture[void]("transport.readUntil")
+        transp.reader = newFuture[void]("stream.transport.readUntil")
         if ReadPaused in transp.state:
           transp.resumeRead()
         await transp.reader
@@ -945,7 +958,7 @@ proc readLine*(transp: StreamTransport, limit = 0,
       break
     else:
       if (transp.offset - index) == 0:
-        transp.reader = newFuture[void]("transport.readLine")
+        transp.reader = newFuture[void]("stream.transport.readLine")
         if ReadPaused in transp.state:
           transp.resumeRead()
         await transp.reader
@@ -990,7 +1003,7 @@ proc read*(transp: StreamTransport, n = -1): Future[seq[byte]] {.async.} =
                   transp.offset)
           transp.offset = 0
 
-    transp.reader = newFuture[void]("transport.read")
+    transp.reader = newFuture[void]("stream.transport.read")
     if ReadPaused in transp.state:
       transp.resumeRead()
     await transp.reader
@@ -1005,7 +1018,8 @@ proc atEof*(transp: StreamTransport): bool {.inline.} =
 
 proc join*(transp: StreamTransport) {.async.} =
   ## Wait until ``transp`` will not be closed.
-  await transp.future
+  if not transp.future.finished:
+    await transp.future
 
 proc close*(transp: StreamTransport) =
   ## Closes and frees resources of transport ``transp``.
@@ -1016,3 +1030,4 @@ proc close*(transp: StreamTransport) =
     transp.state.incl(WriteClosed)
     transp.state.incl(ReadClosed)
     transp.future.complete()
+    GC_unref(transp)

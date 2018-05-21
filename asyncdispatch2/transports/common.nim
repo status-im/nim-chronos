@@ -7,7 +7,7 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 
-import net
+import net, strutils
 import ../asyncloop, ../asyncsync
 
 const
@@ -98,7 +98,20 @@ proc `$`*(address: TransportAddress): string =
     result.add(":")
   result.add($int(address.port))
 
-## TODO: string -> TransportAddress conversion
+proc strAddress*(address: string): TransportAddress =
+  ## Parses string representation of ``address``.
+  ## 
+  ## IPv4 transport address format is ``a.b.c.d:port``.
+  ## IPv6 transport address format is ``[::]:port``.
+  var parts = address.rsplit(":", maxsplit = 1)
+  doAssert(len(parts) == 2, "Format is <address>:<port>!")
+  let port = parseInt(parts[1])
+  doAssert(port > 0 and port < 65536, "Illegal port number!")
+  result.port = Port(port)
+  if parts[0][0] == '[' and parts[0][^1] == ']':
+    result.address = parseIpAddress(parts[0][1..^2])
+  else:
+    result.address = parseIpAddress(parts[0])
 
 template checkClosed*(t: untyped) =
   if (ReadClosed in (t).state) or (WriteClosed in (t).state):

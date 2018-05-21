@@ -1,4 +1,4 @@
-#                   Asyncdispatch2
+#              Asyncdispatch2 Test Suite
 #                 (c) Copyright 2018
 #         Status Research & Development GmbH
 #

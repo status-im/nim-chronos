@@ -12,7 +12,7 @@ import net, nativesockets, asyncloop
 when defined(windows):
   import winlean
   const
-    asyncInvalidSocket* = AsyncFD(SocketHandle(-1))
+    asyncInvalidSocket* = AsyncFD(-1)
 else:
   import posix
   const
@@ -35,8 +35,7 @@ proc setSocketBlocking*(s: SocketHandle, blocking: bool): bool =
       if fcntl(s, F_SETFL, mode) == -1:
         result = false
 
-proc setSockOpt*(socket: SocketHandle | AsyncFD, level, optname,
-                 optval: int): bool =
+proc setSockOpt*(socket: AsyncFD, level, optname, optval: int): bool =
   ## `setsockopt()` for integer options.
   ## Returns ``true`` on success, ``false`` on error.
   result = true
@@ -44,9 +43,8 @@ proc setSockOpt*(socket: SocketHandle | AsyncFD, level, optname,
   if setsockopt(SocketHandle(socket), cint(level), cint(optname), addr(value),
                 sizeof(value).SockLen) < 0'i32:
     result = false
-
-proc getSockOpt*(socket: SocketHandle | AsyncFD, level, optname: int, 
-                 value: var int): bool =
+    
+proc getSockOpt*(socket: AsyncFD, level, optname: int, value: var int): bool =
   ## `getsockopt()` for integer options.
   var res: cint
   var size = sizeof(res).SockLen
@@ -56,8 +54,8 @@ proc getSockOpt*(socket: SocketHandle | AsyncFD, level, optname: int,
     return false
   value = int(res)
 
-proc getSocketError*(socket: SocketHandle | AsyncFD,
-                     err: var int): bool =
+proc getSocketError*(socket: AsyncFD, err: var int): bool =
+  ## Recover error code associated with socket handle ``socket``.
   if not getSockOpt(socket, cint(SOL_SOCKET), cint(SO_ERROR), err):
     result = false
   else:
@@ -74,25 +72,26 @@ proc createAsyncSocket*(domain: Domain, sockType: SockType,
     close(handle)
     return asyncInvalidSocket
   when defined(macosx) and not defined(nimdoc):
-    if not handle.setSockOpt(SOL_SOCKET, SO_NOSIGPIPE, 1):
+    if not setSockOpt(AsyncFD(handle), SOL_SOCKET, SO_NOSIGPIPE, 1):
       close(handle)
       return asyncInvalidSocket
   result = AsyncFD(handle)
   register(result)
 
 proc wrapAsyncSocket*(sock: SocketHandle): AsyncFD =
-  ## Wraps normal socket to asynchronous socket.
+  ## Wraps socket to asynchronous socket handle.
   ## Return ``asyncInvalidSocket`` on error.
   if not setSocketBlocking(sock, false):
     close(sock)
     return asyncInvalidSocket
   when defined(macosx) and not defined(nimdoc):
-    if not sock.setSockOpt(SOL_SOCKET, SO_NOSIGPIPE, 1):
+    if not setSockOpt(AsyncFD(sock), SOL_SOCKET, SO_NOSIGPIPE, 1):
       close(sock)
       return asyncInvalidSocket
   result = AsyncFD(sock)
   register(result)  
 
 proc closeAsyncSocket*(s: AsyncFD) {.inline.} =
+  ## Closes asynchronous socket handle ``s``.
   unregister(s)
   close(SocketHandle(s))

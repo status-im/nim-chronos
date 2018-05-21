@@ -41,46 +41,52 @@ when defined(linux) or defined(android):
 
   proc sendfile*(outfd, infd: int, offset: int, count: int): int =
     var o = offset
-    result = osSendFile(cint(outfd), cint(infd), addr offset, count)
+    result = osSendFile(cint(outfd), cint(infd), addr o, count)
 
 elif defined(freebsd) or defined(openbsd) or defined(netbsd) or
      defined(dragonflybsd):
 
   type
-    sendfileHeader* = object {.importc: "sf_hdtr",
+    SendfileHeader* = object {.importc: "sf_hdtr",
                                header: """#include <sys/types.h>
                                           #include <sys/socket.h>
                                           #include <sys/uio.h>""",
                                pure, final.}
 
-  proc osSendFile*(outfd, infd: cint, offset: int, size: int,
-                   hdtr: ptr sendfileHeader, sbytes: ptr int,
+  proc osSendFile*(outfd, infd: cint, offset: uint, size: uint,
+                   hdtr: ptr SendfileHeader, sbytes: ptr uint,
                    flags: int): int {.importc: "sendfile",
                                       header: """#include <sys/types.h>
                                                  #include <sys/socket.h>
                                                  #include <sys/uio.h>""".}
 
   proc sendfile*(outfd, infd: int, offset: int, count: int): int =
-    var o = 0
-    result = osSendFile(cint(outfd), cint(infd), offset, count, nil,
-                        addr o, 0)
+    var o = 0'u
+    if osSendFile(cint(infd), cint(outfd), uint(offset), uint(count), nil,
+                  addr o, 0) == 0:
+      result = int(o)
+    else:
+      result = -1
 
 elif defined(macosx):
-
+  import posix
   type
-    sendfileHeader* = object {.importc: "sf_hdtr",
+    SendfileHeader* = object {.importc: "sf_hdtr",
                                header: """#include <sys/types.h>
                                           #include <sys/socket.h>
                                           #include <sys/uio.h>""",
                                pure, final.}
 
   proc osSendFile*(fd, s: cint, offset: int, size: ptr int,
-                   hdtr: ptr sendfileHeader,
+                   hdtr: ptr SendfileHeader,
                    flags: int): int {.importc: "sendfile",
                                       header: """#include <sys/types.h>
                                                  #include <sys/socket.h>
                                                  #include <sys/uio.h>""".}
 
   proc sendfile*(outfd, infd: int, offset: int, count: int): int =
-    var o = 0
-    result = osSendFile(cint(fd), cint(s), offset, addr o, nil, 0)
+    var o = count
+    if osSendFile(cint(infd), cint(outfd), offset, addr o, nil, 0) == 0:
+      result = o
+    else:
+      result = -1
