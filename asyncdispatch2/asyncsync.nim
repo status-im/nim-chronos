@@ -8,9 +8,7 @@
 #    Apache License, version 2.0, (LICENSE-APACHEv2)
 #                MIT license (LICENSE-MIT)
 
-
-## This module implements some core synchronization primitives, which
-## `asyncdispatch` is really lacking.
+## This module implements some core synchronization primitives
 import asyncloop, deques
 
 type
@@ -110,8 +108,6 @@ proc release*(lock: AsyncLock) =
   ## other coroutines are blocked waiting for the lock to become unlocked,
   ## allow exactly one of them to proceed.
   var w: Future[void]
-  # proc wakeup(udata: pointer) {.gcsafe.} = w.complete()
-
   if lock.locked:
     lock.locked = false
     while len(lock.waiters) > 0:
@@ -215,7 +211,6 @@ proc getNoWait*[T](aq: AsyncQueue[T]): T =
   ##
   ## If queue ``aq`` is empty, then ``AsyncQueueEmptyError`` exception raised.
   var w: Future[void]
-
   if aq.empty():
     raise newException(AsyncQueueEmptyError, "AsyncQueue is empty!")
   result = aq.queue.popFirst()

@@ -6,7 +6,7 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 
-import strutils, net, unittest, os
+import unittest
 import ../asyncdispatch2
 
 var testLockResult = ""
