@@ -10,29 +10,30 @@ import unittest
 import ../asyncdispatch2
 
 const CallSoonTests = 10
-var soonTest1 = 0
+var soonTest1 = 0'u
 var timeoutsTest1 = 0
 var timeoutsTest2 = 0
 
 proc callback1(udata: pointer) {.gcsafe.} =
-  soonTest1 += int(cast[uint](udata))
+  soonTest1 = soonTest1 xor cast[uint](udata)
 
-proc test1(): int =
-  callSoon(callback1, cast[pointer](0x01234567))
-  callSoon(callback1, cast[pointer](0x02345678))
-  callSoon(callback1, cast[pointer](0x03456789))
-  callSoon(callback1, cast[pointer](0x0456789A))
-  callSoon(callback1, cast[pointer](0x056789AB))
-  callSoon(callback1, cast[pointer](0x06789ABC))
-  callSoon(callback1, cast[pointer](0x0789ABCD))
-  callSoon(callback1, cast[pointer](0x089ABCDE))
-  callSoon(callback1, cast[pointer](0x09ABCDEF))
-  callSoon(callback1, cast[pointer](0x0ABCDEF1))
-  callSoon(callback1, cast[pointer](0x0BCDEF12))
-  callSoon(callback1, cast[pointer](0x0CDEF123))
-  callSoon(callback1, cast[pointer](0x0DEF1234))
-  callSoon(callback1, cast[pointer](0x0EF12345))
-  callSoon(callback1, cast[pointer](0x0F123456))
+proc test1(): uint =
+  callSoon(callback1, cast[pointer](0x12345678'u))
+  callSoon(callback1, cast[pointer](0x23456789'u))
+  callSoon(callback1, cast[pointer](0x3456789A'u))
+  callSoon(callback1, cast[pointer](0x456789AB'u))
+  callSoon(callback1, cast[pointer](0x56789ABC'u))
+  callSoon(callback1, cast[pointer](0x6789ABCD'u))
+  callSoon(callback1, cast[pointer](0x789ABCDE'u))
+  callSoon(callback1, cast[pointer](0x89ABCDEF'u))
+  callSoon(callback1, cast[pointer](0x9ABCDEF1'u))
+  callSoon(callback1, cast[pointer](0xABCDEF12'u))
+  callSoon(callback1, cast[pointer](0xBCDEF123'u))
+  callSoon(callback1, cast[pointer](0xCDEF1234'u))
+  callSoon(callback1, cast[pointer](0xDEF12345'u))
+  callSoon(callback1, cast[pointer](0xEF123456'u))
+  callSoon(callback1, cast[pointer](0xF1234567'u))
+  callSoon(callback1, cast[pointer](0x12345678'u))
   ## All callbacks must be processed exactly with 1 poll() call.
   poll()
   result = soonTest1
@@ -57,10 +58,13 @@ proc test2(): int =
 when isMainModule:
   suite "callSoon() tests suite":
     test "User-defined callback argument test":
-      var expect = 0x01234567 + 0x02345678 + 0x03456789 + 0x0456789A +
-                   0x056789AB + 0x06789ABC + 0x0789ABCD + 0x089ABCDE +
-                   0x09ABCDEF + 0x0ABCDEF1 + 0x0BCDEF12 + 0x0CDEF123 +
-                   0x0DEF1234 + 0x0EF12345 + 0x0F123456
+      var values = [0x12345678'u, 0x23456789'u, 0x3456789A'u, 0x456789AB'u,
+                    0x56789ABC'u, 0x6789ABCD'u, 0x789ABCDE'u, 0x89ABCDEF'u,
+                    0x9ABCDEF1'u, 0xABCDEF12'u, 0xBCDEF123'u, 0xCDEF1234'u,
+                    0xDEF12345'u, 0xEF123456'u, 0xF1234567'u, 0x12345678'u]
+      var expect = 0'u
+      for item in values:
+        expect = expect xor item
       check test1() == expect
     test "callSoon() behavior test":
       check test2() == CallSoonTests
