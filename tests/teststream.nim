@@ -15,8 +15,8 @@ else:
   import posix
 
 const
-  ClientsCount = 50
-  MessagesCount = 50
+  ClientsCount = 100
+  MessagesCount = 100
   MessageSize = 20
   FilesCount = 50
   FilesTestName = "tests/teststream.nim"

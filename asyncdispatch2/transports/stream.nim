@@ -456,12 +456,18 @@ when defined(windows):
     wserver.domain = server.local.address.getDomain()
     await server.actEvent.wait()
     server.actEvent.clear()
+    var acceptFut: Future[AsyncFD]
     if server.action == ServerCommand.Start:
       var eventFut = server.actEvent.wait()
       while true:
-        var acceptFut = acceptAddr(wserver)
-        await eventFut or acceptFut
+        if server.status in {Paused}:
+          await eventFut
+        else:
+          acceptFut = acceptAddr(wserver)
+          await eventFut or acceptFut
         if eventFut.finished:
+          server.actEvent.clear()
+          eventFut = server.actEvent.wait()
           if server.action == ServerCommand.Start:
             if server.status in {Stopped, Paused}:
               server.status = Running
@@ -475,6 +481,7 @@ when defined(windows):
           elif server.action == ServerCommand.Pause:
             if server.status in {Running}:
               server.status = Paused
+
         if acceptFut.finished:
           if not acceptFut.failed:
             var sock = acceptFut.read()
