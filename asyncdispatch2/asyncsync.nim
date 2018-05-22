@@ -110,14 +110,14 @@ proc release*(lock: AsyncLock) =
   ## other coroutines are blocked waiting for the lock to become unlocked,
   ## allow exactly one of them to proceed.
   var w: Future[void]
-  proc wakeup(udata: pointer) {.gcsafe.} = w.complete()
+  # proc wakeup(udata: pointer) {.gcsafe.} = w.complete()
 
   if lock.locked:
     lock.locked = false
     while len(lock.waiters) > 0:
       w = lock.waiters.popFirst()
       if not w.finished:
-        callSoon(wakeup)
+        w.complete()
         break
   else:
     raise newException(AsyncLockError, "AsyncLock is not acquired!")
@@ -153,16 +153,13 @@ proc fire*(event: AsyncEvent) =
   ## Set the internal flag of ``event`` to `true`. All tasks waiting for it
   ## to become `true` are awakened. Task that call `wait()` once the flag is
   ## `true` will not block at all.
-  proc wakeupAll(udata: pointer) {.gcsafe.} =
-    if len(event.waiters) > 0:
-      var w = event.waiters.popFirst()
-      if not w.finished:
-        w.complete()
-      callSoon(wakeupAll)
-
+  var w: Future[void]
   if not event.flag:
     event.flag = true
-    callSoon(wakeupAll)
+    while len(event.waiters) > 0:
+      w = event.waiters.popFirst()
+      if not w.finished:
+        w.complete()
 
 proc clear*(event: AsyncEvent) =
   ## Reset the internal flag of ``event`` to `false`. Subsequently, tasks
@@ -205,23 +202,19 @@ proc putNoWait*[T](aq: AsyncQueue[T], item: T) =
   ##
   ## If queue ``aq`` is full, then ``AsyncQueueFullError`` exception raised
   var w: Future[void]
-  proc wakeup(udata: pointer) {.gcsafe.} = w.complete()
-
   if aq.full():
     raise newException(AsyncQueueFullError, "AsyncQueue is full!")
   aq.queue.addLast(item)
-
   while len(aq.getters) > 0:
     w = aq.getters.popFirst()
     if not w.finished:
-      callSoon(wakeup)
+      w.complete()
 
 proc getNoWait*[T](aq: AsyncQueue[T]): T =
   ## Remove and return ``item`` from the queue immediately.
   ##
   ## If queue ``aq`` is empty, then ``AsyncQueueEmptyError`` exception raised.
   var w: Future[void]
-  proc wakeup(udata: pointer) {.gcsafe.} = w.complete()
 
   if aq.empty():
     raise newException(AsyncQueueEmptyError, "AsyncQueue is empty!")
@@ -229,7 +222,7 @@ proc getNoWait*[T](aq: AsyncQueue[T]): T =
   while len(aq.putters) > 0:
     w = aq.putters.popFirst()
     if not w.finished:
-      callSoon(wakeup)
+      w.complete()
 
 proc put*[T](aq: AsyncQueue[T], item: T) {.async.} =
   ## Put an ``item`` into the queue ``aq``. If the queue is full, wait until
@@ -257,74 +250,3 @@ proc len*[T](aq: AsyncQueue[T]): int {.inline.} =
 proc size*[T](aq: AsyncQueue[T]): int {.inline.} =
   ## Return the maximum number of elements in ``aq``.
   result = len(aq.maxsize)
-
-when isMainModule:
-  # Locks test
-  block:
-    var test = ""
-    var lock = newAsyncLock()
-
-    proc testLock(n: int, lock: AsyncLock) {.async.} =
-      await lock.acquire()
-      test = test & $n
-      lock.release()
-
-    lock.own()
-    asyncCheck testLock(0, lock)
-    asyncCheck testLock(1, lock)
-    asyncCheck testLock(2, lock)
-    asyncCheck testLock(3, lock)
-    asyncCheck testLock(4, lock)
-    asyncCheck testLock(5, lock)
-    asyncCheck testLock(6, lock)
-    asyncCheck testLock(7, lock)
-    asyncCheck testLock(8, lock)
-    asyncCheck testLock(9, lock)
-    lock.release()
-    poll()
-    doAssert(test == "0123456789")
-
-  # Events test
-  block:
-    var test = ""
-    var event = newAsyncEvent()
-
-    proc testEvent(n: int, ev: AsyncEvent) {.async.} =
-      await ev.wait()
-      test = test & $n
-
-    event.clear()
-    asyncCheck testEvent(0, event)
-    asyncCheck testEvent(1, event)
-    asyncCheck testEvent(2, event)
-    asyncCheck testEvent(3, event)
-    asyncCheck testEvent(4, event)
-    asyncCheck testEvent(5, event)
-    asyncCheck testEvent(6, event)
-    asyncCheck testEvent(7, event)
-    asyncCheck testEvent(8, event)
-    asyncCheck testEvent(9, event)
-    event.fire()
-    poll()
-    doAssert(test == "0123456789")
-
-  # Queues test
-  block:
-    const queueSize = 10
-    const testsCount = 1000
-    var test = 0
-
-    proc task1(aq: AsyncQueue[int]) {.async.} =
-      for i in 1..(testsCount - 1):
-        var item = await aq.get()
-        test -= item
-
-    proc task2(aq: AsyncQueue[int]) {.async.} =
-      for i in 1..testsCount:
-        await aq.put(i)
-        test += i
-
-    var queue = newAsyncQueue[int](queueSize)
-    discard task1(queue) or task2(queue)
-    poll()
-    doAssert(test == testsCount)
