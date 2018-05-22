@@ -179,7 +179,7 @@ proc `<`(a, b: TimerCallback): bool =
 
 proc callSoon(cbproc: CallbackFunc, data: pointer = nil) {.gcsafe.}
 
-proc initCallSoonProc =
+proc initCallSoonProc() =
   if asyncfutures2.getCallSoonProc().isNil:
     asyncfutures2.setCallSoonProc(callSoon)
 
@@ -382,7 +382,6 @@ when defined(windows) or defined(nimdoc):
   proc contains*(disp: PDispatcher, fd: AsyncFD): bool =
     return fd in disp.handles
 
-  initAPI()
 else:
   import selectors
   from posix import EINTR, EAGAIN, EINPROGRESS, EWOULDBLOCK, MSG_PEEK,
@@ -560,6 +559,9 @@ else:
       var callable = loop.callbacks.popFirst()
       callable.function(callable.udata)
 
+  proc initAPI() =
+    discard getGlobalDispatcher()
+
 proc addTimer*(at: uint64, cb: CallbackFunc, udata: pointer = nil) =
   let loop = getGlobalDispatcher()
   var tcb = TimerCallback(finishAt: at,
@@ -629,3 +631,6 @@ proc waitFor*[T](fut: Future[T]): T =
     poll()
 
   fut.read
+
+# Global API and callSoon initialization.
+initAPI()
