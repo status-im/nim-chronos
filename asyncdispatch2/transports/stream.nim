@@ -55,7 +55,8 @@ type
     of TransportKind.File:
       todo2: int
 
-  StreamCallback* = proc(t: StreamTransport,
+  StreamCallback* = proc(server: StreamServer,
+                         client: StreamTransport,
                          udata: pointer): Future[void] {.gcsafe.}
     ## New connection callback
 
@@ -489,7 +490,7 @@ when defined(windows):
           if not acceptFut.failed:
             var sock = acceptFut.read()
             if sock != asyncInvalidSocket:
-              discard server.function(
+              discard server.function(server,
                 newStreamSocketTransport(sock, server.bufferSize),
                 server.udata)
 
@@ -667,7 +668,7 @@ else:
       if int(res) > 0:
         let sock = wrapAsyncSocket(res)
         if sock != asyncInvalidSocket:
-          discard server.function(
+          discard server.function(server,
             newStreamSocketTransport(sock, server.bufferSize),
             server.udata)
           break

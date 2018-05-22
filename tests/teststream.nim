@@ -6,7 +6,7 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 
-import strutils, net, unittest, os
+import strutils, unittest, os
 import ../asyncdispatch2
 
 when defined(windows):
@@ -21,7 +21,8 @@ const
   FilesCount = 50
   FilesTestName = "tests/teststream.nim"
 
-proc serveClient1(transp: StreamTransport, udata: pointer) {.async.} =
+proc serveClient1(server: StreamServer,
+                  transp: StreamTransport, udata: pointer) {.async.} =
   while not transp.atEof():
     var data = await transp.readLine()
     if len(data) == 0:
@@ -35,7 +36,8 @@ proc serveClient1(transp: StreamTransport, udata: pointer) {.async.} =
     doAssert(res == len(ans))
   transp.close()
 
-proc serveClient2(transp: StreamTransport, udata: pointer) {.async.} =
+proc serveClient2(server: StreamServer,
+                  transp: StreamTransport, udata: pointer) {.async.} =
   var buffer: array[20, char]
   var check = "REQUEST"
   while not transp.atEof():
@@ -58,7 +60,8 @@ proc serveClient2(transp: StreamTransport, udata: pointer) {.async.} =
     doAssert(res == MessageSize)
   transp.close()
 
-proc serveClient3(transp: StreamTransport, udata: pointer) {.async.} =
+proc serveClient3(server: StreamServer,
+                  transp: StreamTransport, udata: pointer) {.async.} =
   var buffer: array[20, char]
   var check = "REQUEST"
   var suffixStr = "SUFFIX"
@@ -82,7 +85,8 @@ proc serveClient3(transp: StreamTransport, udata: pointer) {.async.} =
     doAssert(res == len(ans))
   transp.close()
 
-proc serveClient4(transp: StreamTransport, udata: pointer) {.async.} =
+proc serveClient4(server: StreamServer,
+                  transp: StreamTransport, udata: pointer) {.async.} =
   var pathname = await transp.readLine()
   var size = await transp.readLine()
   var sizeNum = parseInt(size)
