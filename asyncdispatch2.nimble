@@ -19,5 +19,5 @@ task test, "Run all tests":
   exec "nim c -r -d:release tests/testsoon"
 
   exec "nim c -r -d:useSysAssert -d:useGcAssert tests/testdatagram"
-  exec "nim c -r tests/teststream"
+  exec "nim c -r tests/testdatagram"
   exec "nim c -r -d:release tests/testdatagram"
