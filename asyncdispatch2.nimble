@@ -14,8 +14,10 @@ task test, "Run all tests":
   exec "nim c -r tests/testsync"
   exec "nim c -r -d:release tests/testsync"
 
-  exec "nim c -r -d:useSysAssert -d:useGcAssert tests/testdatagram"
-  exec "nim c -r -d:useSysAssert -d:useGcAssert tests/teststream"
+  exec "nim c -r -d:useSysAssert -d:useGcAssert tests/testsoon"
+  exec "nim c -r tests/testsoon"
+  exec "nim c -r -d:release tests/testsoon"
 
+  exec "nim c -r -d:useSysAssert -d:useGcAssert tests/testdatagram"
+  exec "nim c -r tests/teststream"
   exec "nim c -r -d:release tests/testdatagram"
-  exec "nim c -r -d:release tests/teststream"
