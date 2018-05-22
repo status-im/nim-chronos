@@ -18,21 +18,21 @@ else:
 
 type
   VectorKind = enum
-    DataBuffer,                   # Simple buffer pointer/length
-    DataFile                      # File handle for sendfile/TransmitFile
+    DataBuffer,                     # Simple buffer pointer/length
+    DataFile                        # File handle for sendfile/TransmitFile
 
 type
   StreamVector = object
-    kind: VectorKind            # Writer vector source kind
-    buf: pointer                # Writer buffer pointer
-    buflen: int                 # Writer buffer size
-    offset: uint                # Writer vector offset
-    writer: Future[void]        # Writer vector completion Future
+    kind: VectorKind                # Writer vector source kind
+    buf: pointer                    # Writer buffer pointer
+    buflen: int                     # Writer buffer size
+    offset: uint                    # Writer vector offset
+    writer: Future[void]            # Writer vector completion Future
 
   TransportKind* {.pure.} = enum
-    Socket,                       # Socket transport
-    Pipe,                         # Pipe transport
-    File                          # File transport
+    Socket,                         # Socket transport
+    Pipe,                           # Pipe transport
+    File                            # File transport
 
 type
   StreamTransport* = ref object of RootRef
@@ -611,6 +611,7 @@ else:
 
   proc connect*(address: TransportAddress,
                 bufferSize = DefaultStreamBufferSize): Future[StreamTransport] =
+    ## Connect to ``address`` and create new transport for this connection.
     var
       saddr: Sockaddr_storage
       slen: SockLen
@@ -714,12 +715,12 @@ proc start*(server: SocketServer) =
   server.actEvent.fire()
 
 proc stop*(server: SocketServer) =
-  ## Stops ``server``
+  ## Stops ``server``.
   server.action = Stop
   server.actEvent.fire()
 
 proc pause*(server: SocketServer) =
-  ## Pause ``server``
+  ## Pause ``server``.
   server.action = Pause
   server.actEvent.fire()
 
@@ -739,6 +740,7 @@ proc createStreamServer*(host: TransportAddress,
                          backlog: int = 100,
                          bufferSize: int = DefaultStreamBufferSize,
                          udata: pointer = nil): StreamServer =
+  ## Create new TCP server
   var
     saddr: Sockaddr_storage
     slen: SockLen
@@ -789,6 +791,8 @@ proc createStreamServer*(host: TransportAddress,
 
 proc write*(transp: StreamTransport, pbytes: pointer,
             nbytes: int): Future[int] {.async.} =
+  ## Write data from buffer ``pbytes`` with size ``nbytes`` to transport
+  ## ``transp``.
   checkClosed(transp)
   var waitFuture = newFuture[void]("transport.write")
   var vector = StreamVector(kind: DataBuffer, writer: waitFuture,
@@ -804,6 +808,10 @@ proc write*(transp: StreamTransport, pbytes: pointer,
 proc writeFile*(transp: StreamTransport, handle: int,
                 offset: uint = 0,
                 size: int = 0): Future[void] {.async.} =
+  ## Write data from file descriptor ``handle`` to transport ``transp``.
+  ## 
+  ## You can specify starting ``offset`` in opened file and number of bytes
+  ## to transfer from file to transport via ``size``.
   if transp.kind != TransportKind.Socket:
     raise newException(TransportError, "You can transmit files only to sockets")
   checkClosed(transp)
@@ -820,7 +828,11 @@ proc writeFile*(transp: StreamTransport, handle: int,
 
 proc readExactly*(transp: StreamTransport, pbytes: pointer,
                   nbytes: int) {.async.} =
-  ## Read exactly ``nbytes`` bytes from transport ``transp``.
+  ## Read exactly ``nbytes`` bytes from transport ``transp`` and store it to
+  ## ``pbytes``.
+  ## 
+  ## If EOF is received and ``nbytes`` is not yet readed, the procedure
+  ## will raise ``TransportIncompleteError``.
   checkClosed(transp)
   checkPending(transp)
   var index = 0
@@ -880,6 +892,10 @@ proc readOnce*(transp: StreamTransport, pbytes: pointer,
 
 proc readUntil*(transp: StreamTransport, pbytes: pointer, nbytes: int,
                 sep: seq[byte]): Future[int] {.async.} =
+  ## Read data from the transport ``transp`` until separator ``sep`` is found.
+  ## 
+  ## On success, the data and separator will be removed from the internal
+  ## buffer (consumed). Returned data will NOT include the separator at the end.
   checkClosed(transp)
   checkPending(transp)
 
@@ -931,6 +947,16 @@ proc readUntil*(transp: StreamTransport, pbytes: pointer, nbytes: int,
 
 proc readLine*(transp: StreamTransport, limit = 0,
                sep = "\r\n"): Future[string] {.async.} =
+  ## Read one line from transport ``transp``, where "line" is a sequence of
+  ## bytes ending with ``sep`` (default is "\r\n").
+  ## 
+  ## If EOF is received, and ``sep`` was not found, the method will return the
+  ## partial read bytes.
+  ## 
+  ## If the EOF was received and the internal buffer is empty, return an
+  ## empty string.
+  ## 
+  ## If ``limit`` more then 0, then read is limited to ``limit`` bytes.
   checkClosed(transp)
   checkPending(transp)
 
