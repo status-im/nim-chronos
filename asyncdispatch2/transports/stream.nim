@@ -169,7 +169,7 @@ when defined(windows):
     (t).wwsabuf.buf = cast[cstring](v.buf)
     (t).wwsabuf.len = cast[int32](v.buflen)
 
-  proc writeStreamLoop(udata: pointer) {.gcsafe.} =
+  proc writeStreamLoop(udata: pointer) {.gcsafe, nimcall.} =
     var bytesCount: int32
     if isNil(udata):
       return
@@ -260,7 +260,7 @@ when defined(windows):
     if len(transp.queue) == 0:
       transp.state.incl(WritePaused)
 
-  proc readStreamLoop(udata: pointer) {.gcsafe.} =
+  proc readStreamLoop(udata: pointer) {.gcsafe, nimcall.} =
     if isNil(udata):
       return
     var ovl = cast[PtrCustomOverlapped](udata)
@@ -371,7 +371,7 @@ when defined(windows):
       result.fail(newException(OSError, osErrorMsg(osLastError())))
 
     proc continuation(udata: pointer) =
-      var ovl = cast[PtrCustomOverlapped](udata)
+      var ovl = cast[RefCustomOverlapped](udata)
       if not retFuture.finished:
         if ovl.data.errCode == OSErrorCode(-1):
           if setsockopt(SocketHandle(sock), cint(SOL_SOCKET),
@@ -385,8 +385,10 @@ when defined(windows):
         else:
           sock.closeAsyncSocket()
           retFuture.fail(newException(OSError, osErrorMsg(ovl.data.errCode)))
+      GC_unref(ovl)
 
     povl = RefCustomOverlapped()
+    GC_ref(povl)
     povl.data = CompletionData(fd: sock, cb: continuation)
     var res = loop.connectEx(SocketHandle(sock),
                              cast[ptr SockAddr](addr saddr),
@@ -396,6 +398,7 @@ when defined(windows):
     if not res:
       let err = osLastError()
       if int32(err) != ERROR_IO_PENDING:
+        GC_unref(povl)
         sock.closeAsyncSocket()
         retFuture.fail(newException(OSError, osErrorMsg(err)))
     return retFuture
