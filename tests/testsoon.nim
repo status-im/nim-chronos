@@ -47,13 +47,11 @@ proc callbackProc(udata: pointer) {.gcsafe.} =
   timeoutsTest2 += 1
   callSoon(callbackProc)
 
-proc test2(): int =
-  discard testProc()
+proc test2(timers, callbacks: var int) =
   callSoon(callbackProc)
-  ## Test must be completed exactly with (CallSoonTests * 2) poll() calls.
-  for i in 1..(CallSoonTests * 2):
-    poll()
-  result = timeoutsTest2 - timeoutsTest1
+  waitFor(testProc())
+  timers = timeoutsTest1
+  callbacks = timeoutsTest2
 
 when isMainModule:
   suite "callSoon() tests suite":
@@ -67,4 +65,8 @@ when isMainModule:
         expect = expect xor item
       check test1() == expect
     test "callSoon() behavior test":
-      check test2() == CallSoonTests
+      var timers, callbacks: int
+      test2(timers, callbacks)
+      check:
+        timers == CallSoonTests
+        callbacks > CallSoonTests * 2
