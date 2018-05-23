@@ -36,7 +36,7 @@ type
 
 type
   StreamTransport* = ref object of RootRef
-    fd: AsyncFD                     # File descriptor
+    fd*: AsyncFD                    # File descriptor
     state: set[TransportState]      # Current Transport state
     reader: Future[void]            # Current reader Future
     buffer: seq[byte]               # Reading buffer
@@ -433,6 +433,9 @@ when defined(windows):
               retFuture.fail(newException(OSError, osErrorMsg(osLastError())))
             else:
               retFuture.complete(sock)
+          elif int32(ovl.data.errCode) == ERROR_OPERATION_ABORTED:
+            sock.closeAsyncSocket()
+            retFuture.complete(asyncInvalidSocket)
           else:
             sock.closeAsyncSocket()
             retFuture.fail(newException(OSError, osErrorMsg(ovl.data.errCode)))
@@ -462,6 +465,7 @@ when defined(windows):
     server.actEvent.clear()
     var acceptFut: Future[AsyncFD]
     if server.action == ServerCommand.Start:
+      server.status = Running
       var eventFut = server.actEvent.wait()
       while true:
         if server.status in {Paused}:
@@ -485,7 +489,6 @@ when defined(windows):
           elif server.action == ServerCommand.Pause:
             if server.status in {Running}:
               server.status = Paused
-
         if acceptFut.finished:
           if not acceptFut.failed:
             var sock = acceptFut.read()
@@ -493,6 +496,7 @@ when defined(windows):
               discard server.function(server,
                 newStreamSocketTransport(sock, server.bufferSize),
                 server.udata)
+
 
   proc resumeRead(transp: StreamTransport) {.inline.} =
     var wtransp = cast[WindowsStreamTransport](transp)
@@ -627,16 +631,17 @@ else:
     proc continuation(udata: pointer) =
       var data = cast[ptr CompletionData](udata)
       var err = 0
-      if not data.fd.getSocketError(err):
-        sock.closeAsyncSocket()
+      let fd = data.fd
+      if not fd.getSocketError(err):
+        fd.closeAsyncSocket()
         retFuture.fail(newException(OSError, osErrorMsg(osLastError())))
         return
       if err != 0:
-        sock.closeAsyncSocket()
+        fd.closeAsyncSocket()
         retFuture.fail(newException(OSError, osErrorMsg(OSErrorCode(err))))
         return
-      data.fd.removeWriter()
-      retFuture.complete(newStreamSocketTransport(data.fd, bufferSize))
+      fd.removeWriter()
+      retFuture.complete(newStreamSocketTransport(fd, bufferSize))
 
     while true:
       var res = posix.connect(SocketHandle(sock),
@@ -722,6 +727,8 @@ proc stop*(server: SocketServer) =
 
 proc pause*(server: SocketServer) =
   ## Pause ``server``.
+  when defined(windows):
+    discard cancelIo(Handle(server.sock))
   server.action = Pause
   server.actEvent.fire()
 

@@ -278,6 +278,9 @@ when defined(windows) or defined(nimdoc):
     if curTimeout == 0:
       if len(loop.callbacks) == 0:
         curTimeout = INFINITE
+    else:
+      if len(loop.callbacks) != 0:
+        curTimeout = 0
 
     # Processing handles
     var lpNumberOfBytesTransferred: Dword
@@ -519,6 +522,9 @@ else:
     if curTimeout == 0:
       if len(loop.callbacks) == 0:
         curTimeout = -1
+    else:
+      if len(loop.callbacks) != 0:
+        curTimeout = 0
 
     count = loop.selector.selectInto(curTimeout, loop.keys)
     for i in 0..<count:
