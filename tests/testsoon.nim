@@ -13,6 +13,7 @@ const CallSoonTests = 10
 var soonTest1 = 0'u
 var timeoutsTest1 = 0
 var timeoutsTest2 = 0
+var soonTest2 = 0
 
 proc callback1(udata: pointer) {.gcsafe.} =
   soonTest1 = soonTest1 xor cast[uint](udata)
@@ -53,6 +54,14 @@ proc test2(timers, callbacks: var int) =
   timers = timeoutsTest1
   callbacks = timeoutsTest2
 
+proc testCallback(udata: pointer) =
+  soonTest2 = 987654321
+
+proc test3(): bool =
+  callSoon(testCallback)
+  poll()
+  result = soonTest2 == 987654321
+
 when isMainModule:
   suite "callSoon() tests suite":
     test "User-defined callback argument test":
@@ -64,9 +73,11 @@ when isMainModule:
       for item in values:
         expect = expect xor item
       check test1() == expect
-    test "callSoon() behavior test":
+    test "`Asynchronous dead end` #7193 test":
       var timers, callbacks: int
       test2(timers, callbacks)
       check:
         timers == CallSoonTests
         callbacks > CallSoonTests * 2
+    test "`callSoon() is not working prior getGlobalDispatcher()` #7192 test":
+      check test3() == true

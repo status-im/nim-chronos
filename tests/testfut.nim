@@ -33,7 +33,7 @@ proc test2(): bool =
 
 when isMainModule:
   suite "Future[T] behavior test suite":
-    test "sleepAsync() test":
+    test "`Async undefined behavior (#7758)` test":
       check test1() == true
     test "Immediately completed asynchronous procedure test":
       check test2() == true

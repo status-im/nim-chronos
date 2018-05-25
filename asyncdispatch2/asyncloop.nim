@@ -522,7 +522,7 @@ else:
       let customSet = {Event.Timer, Event.Signal, Event.Process,
                        Event.Vnode}
 
-    # Moving expired timers to `loop.callbacks` and calculate timeout
+    # Moving expired timers to `loop.callbacks` and calculate timeout.
     var count = len(loop.timers)
     if count > 0:
       var lastFinish = curTime
@@ -542,6 +542,7 @@ else:
       if len(loop.callbacks) != 0:
         curTimeout = 0
 
+    # Processing IO descriptors and all hardware events.
     count = loop.selector.selectInto(curTimeout, loop.keys)
     for i in 0..<count:
       let fd = loop.keys[i].fd
@@ -574,7 +575,8 @@ else:
         loop.callbacks.addLast(loop.timers.pop().function)
         dec(count)
 
-    # All callbacks which will be added in process will be processed on next
+    # Scheduling callbacks.
+    # all callbacks which will be added in process will be processed on next
     # poll() call.
     count = len(loop.callbacks)
     for i in 0..<count:
