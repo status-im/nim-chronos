@@ -185,6 +185,7 @@ proc initCallSoonProc() =
 
 when defined(windows) or defined(nimdoc):
   import winlean, sets, hashes
+
   type
     WSAPROC_TRANSMITFILE = proc(hSocket: SocketHandle, hFile: Handle,
                                 nNumberOfBytesToWrite: DWORD,
@@ -203,6 +204,9 @@ when defined(windows) or defined(nimdoc):
       bytesCount*: int32
       udata*: pointer
 
+    CustomOverlapped* = object of OVERLAPPED
+      data*: CompletionData
+
     PDispatcher* = ref object of PDispatcherBase
       ioPort: Handle
       handles: HashSet[AsyncFD]
@@ -210,9 +214,6 @@ when defined(windows) or defined(nimdoc):
       acceptEx*: WSAPROC_ACCEPTEX
       getAcceptExSockAddrs*: WSAPROC_GETACCEPTEXSOCKADDRS
       transmitFile*: WSAPROC_TRANSMITFILE
-
-    CustomOverlapped* = object of OVERLAPPED
-      data*: CompletionData
 
     PtrCustomOverlapped* = ptr CustomOverlapped
 
@@ -323,12 +324,6 @@ when defined(windows) or defined(nimdoc):
     for i in 0..<count:
       var callable = loop.callbacks.popFirst()
       callable.function(callable.udata)
-
-  template getUdata*(u: untyped) =
-    if isNil(u):
-      nil
-    else:
-      cast[ptr CustomOverlapped](u).data.udata
 
   proc getFunc(s: SocketHandle, fun: var pointer, guid: var GUID): bool =
     var bytesRet: Dword
@@ -496,6 +491,27 @@ else:
     do:
       raise newException(ValueError, "File descriptor not registered.")
     p.selector.updateHandle(int(fd), newEvents)
+
+  when ioselSupportedPlatform:
+    proc addSignal*(signal: int, cb: CallbackFunc,
+                    udata: pointer = nil): int =
+      ## Start watching signal ``signal``, and when signal appears, call the
+      ## callback ``cb``. Returns signal identifier code, which can be used
+      ## to remove signal callback via ``removeSignal``.
+      let p = getGlobalDispatcher()
+      var data: SelectorData
+      result = p.selector.registerSignal(signal, data)
+      withData(p.selector, result, adata) do:
+        adata.reader = AsyncCallback(function: cb, udata: addr adata.rdata)
+        adata.rdata.fd = AsyncFD(result)
+        adata.rdata.udata = udata
+      do:
+        raise newException(ValueError, "File descriptor not registered.")
+
+    proc removeSignal*(sigfd: int) =
+      ## Remove watching signal ``signal``.
+      let p = getGlobalDispatcher()
+      p.selector.unregister(sigfd)
 
   proc poll*() =
     let loop = getGlobalDispatcher()
