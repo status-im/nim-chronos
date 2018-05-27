@@ -353,6 +353,9 @@ when defined(windows):
 
   proc connect*(address: TransportAddress,
                 bufferSize = DefaultStreamBufferSize): Future[StreamTransport] =
+    ## Open new connection to remote peer with address ``address`` and create
+    ## new transport object ``StreamTransport`` for established connection.
+    ## ``bufferSize`` - size of internal buffer for transport.
     let loop = getGlobalDispatcher()
     var
       saddr: Sockaddr_storage
@@ -616,7 +619,9 @@ else:
 
   proc connect*(address: TransportAddress,
                 bufferSize = DefaultStreamBufferSize): Future[StreamTransport] =
-    ## Connect to ``address`` and create new transport for this connection.
+    ## Open new connection to remote peer with address ``address`` and create
+    ## new transport object ``StreamTransport`` for established connection.
+    ## ``bufferSize`` - size of internal buffer for transport.
     var
       saddr: Sockaddr_storage
       slen: SockLen
@@ -748,7 +753,14 @@ proc createStreamServer*(host: TransportAddress,
                          backlog: int = 100,
                          bufferSize: int = DefaultStreamBufferSize,
                          udata: pointer = nil): StreamServer =
-  ## Create new TCP server
+  ## Create new TCP server.
+  ## 
+  ## ``host`` - address to which server will be bound.
+  ## ``flags`` - flags to apply to server socket.
+  ## ``cbproc`` - callback function which will be called, when new client
+  ## connection will be established.
+  ## ``sock`` - application-driven socket to use.
+  ## ``backlog`` - number of 
   var
     saddr: Sockaddr_storage
     slen: SockLen
@@ -799,7 +811,7 @@ proc createStreamServer*(host: TransportAddress,
 
 proc write*(transp: StreamTransport, pbytes: pointer,
             nbytes: int): Future[int] {.async.} =
-  ## Write data from buffer ``pbytes`` with size ``nbytes`` to transport
+  ## Write data from buffer ``pbytes`` with size ``nbytes`` using transport
   ## ``transp``.
   checkClosed(transp)
   var waitFuture = newFuture[void]("transport.write")
@@ -874,6 +886,9 @@ proc readExactly*(transp: StreamTransport, pbytes: pointer,
 proc readOnce*(transp: StreamTransport, pbytes: pointer,
                nbytes: int): Future[int] {.async.} =
   ## Perform one read operation on transport ``transp``.
+  ## 
+  ## If internal buffer is not empty, ``nbytes`` bytes will be transferred from
+  ## internal buffer, otherwise it will wait until some bytes will be received.
   checkClosed(transp)
   checkPending(transp)
   while true:

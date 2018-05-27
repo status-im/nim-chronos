@@ -8,7 +8,7 @@
 #              MIT license (LICENSE-MIT)
 
 import net, nativesockets, os, deques, strutils
-import ../asyncloop, ../handles, ../hexdump
+import ../asyncloop, ../handles
 import common
 
 type
@@ -448,6 +448,16 @@ proc newDatagramTransport*(cbproc: DatagramCallback,
                            udata: pointer = nil,
                            bufSize: int = DefaultDatagramBufferSize
                            ): DatagramTransport =
+  ## Create new UDP datagram transport (IPv4).
+  ## 
+  ## ``cbproc`` - callback which will be called, when new datagram received.
+  ## ``remote`` - bind transport to remote address (optional).
+  ## ``local`` - bind transport to local address (to serving incoming
+  ## datagrams, optional)
+  ## ``sock`` - application-driven socket to use.
+  ## ``flags`` - flags that will be applied to socket.
+  ## ``udata`` - custom argument which will be passed to ``cbproc``.
+  ## ``bufSize`` - size of internal buffer
   result = newDatagramTransportCommon(cbproc, remote, local, sock,
                                       flags, udata, bufSize)
 
@@ -459,15 +469,28 @@ proc newDatagramTransport6*(cbproc: DatagramCallback,
                             udata: pointer = nil,
                             bufSize: int = DefaultDatagramBufferSize
                             ): DatagramTransport =
+  ## Create new UDP datagram transport (IPv6).
+  ## 
+  ## ``cbproc`` - callback which will be called, when new datagram received.
+  ## ``remote`` - bind transport to remote address (optional).
+  ## ``local`` - bind transport to local address (to serving incoming
+  ## datagrams, optional)
+  ## ``sock`` - application-driven socket to use.
+  ## ``flags`` - flags that will be applied to socket.
+  ## ``udata`` - custom argument which will be passed to ``cbproc``.
+  ## ``bufSize`` - size of internal buffer
   result = newDatagramTransportCommon(cbproc, remote, local, sock,
                                       flags, udata, bufSize)
 
 proc join*(transp: DatagramTransport) {.async.} =
+  ## Wait until the transport ``transp`` will be closed.
   if not transp.future.finished:
     await transp.future
 
 proc send*(transp: DatagramTransport, pbytes: pointer,
            nbytes: int) {.async.} =
+  ## Send buffer with pointer ``pbytes`` and size ``nbytes`` using transport
+  ## ``transp`` to remote destination address which was bounded on transport.
   checkClosed(transp)
   if transp.remote.port == Port(0):
     raise newException(TransportError, "Remote peer is not set!")
@@ -488,6 +511,8 @@ proc send*(transp: DatagramTransport, pbytes: pointer,
 
 proc sendTo*(transp: DatagramTransport, pbytes: pointer, nbytes: int,
              remote: TransportAddress) {.async.} =
+  ## Send buffer with pointer ``pbytes`` and size ``nbytes`` using transport
+  ## ``transp`` to remote destination address ``remote``.
   checkClosed(transp)
   var saddr: Sockaddr_storage
   var slen: SockLen

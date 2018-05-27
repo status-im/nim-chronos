@@ -429,24 +429,23 @@ else:
     return disp.selector
 
   proc register*(fd: AsyncFD) =
+    ## Register file descriptor ``fd`` in selector.
     var data: SelectorData
     data.rdata.fd = fd
     data.wdata.fd = fd
     let loop = getGlobalDispatcher()
     loop.selector.registerHandle(int(fd), {}, data)
 
-  proc closeSocket*(sock: AsyncFD) =
-    let loop = getGlobalDispatcher()
-    loop.selector.unregister(sock.SocketHandle)
-    sock.SocketHandle.close()
-
   proc unregister*(fd: AsyncFD) =
+    ## Unregister file descriptor ``fd`` from selector.
     getGlobalDispatcher().selector.unregister(int(fd))
 
   proc contains*(disp: PDispatcher, fd: AsyncFd): bool {.inline.} =
     result = int(fd) in disp.selector
 
   proc addReader*(fd: AsyncFD, cb: CallbackFunc, udata: pointer = nil) =
+    ## Start watching the file descriptor ``fd`` for read availability and then
+    ## call the callback ``cb`` with specified argument ``udata``.
     let p = getGlobalDispatcher()
     var newEvents = {Event.Read}
     withData(p.selector, int(fd), adata) do:
@@ -461,6 +460,7 @@ else:
     p.selector.updateHandle(int(fd), newEvents)
 
   proc removeReader*(fd: AsyncFD) =
+    ## Stop watching the file descriptor ``fd`` for read availability.
     let p = getGlobalDispatcher()
     var newEvents: set[Event]
     withData(p.selector, int(fd), adata) do:
@@ -470,6 +470,8 @@ else:
     p.selector.updateHandle(int(fd), newEvents)
 
   proc addWriter*(fd: AsyncFD, cb: CallbackFunc, udata: pointer = nil) =
+    ## Start watching the file descriptor ``fd`` for write availability and then
+    ## call the callback ``cb`` with specified argument ``udata``.
     let p = getGlobalDispatcher()
     var newEvents = {Event.Write}
     withData(p.selector, int(fd), adata) do:
@@ -484,6 +486,7 @@ else:
     p.selector.updateHandle(int(fd), newEvents)
 
   proc removeWriter*(fd: AsyncFD) =
+    ## Stop watching the file descriptor ``fd`` for write availability.
     let p = getGlobalDispatcher()
     var newEvents: set[Event]
     withData(p.selector, int(fd), adata) do:
@@ -496,8 +499,9 @@ else:
     proc addSignal*(signal: int, cb: CallbackFunc,
                     udata: pointer = nil): int =
       ## Start watching signal ``signal``, and when signal appears, call the
-      ## callback ``cb``. Returns signal identifier code, which can be used
-      ## to remove signal callback via ``removeSignal``.
+      ## callback ``cb`` with specified argument ``udata``. Returns signal
+      ## identifier code, which can be used to remove signal callback
+      ## via ``removeSignal``.
       let p = getGlobalDispatcher()
       var data: SelectorData
       result = p.selector.registerSignal(signal, data)
@@ -514,6 +518,7 @@ else:
       p.selector.unregister(sigfd)
 
   proc poll*() =
+    ## Perform single asynchronous step.
     let loop = getGlobalDispatcher()
     var curTime = fastEpochTime()
     var curTimeout = 0
@@ -587,12 +592,16 @@ else:
     discard getGlobalDispatcher()
 
 proc addTimer*(at: uint64, cb: CallbackFunc, udata: pointer = nil) =
+  ## Arrange for the callback ``cb`` to be called at the given absolute
+  ## timestamp ``at``. You can also pass ``udata`` to callback.
   let loop = getGlobalDispatcher()
   var tcb = TimerCallback(finishAt: at,
                           function: AsyncCallback(function: cb, udata: udata))
   loop.timers.push(tcb)
 
 proc removeTimer*(at: uint64, cb: CallbackFunc, udata: pointer = nil) =
+  ## Remove timer callback ``cb`` with absolute timestamp ``at`` from waiting
+  ## queue.
   let loop = getGlobalDispatcher()
   var list = cast[seq[TimerCallback]](loop.timers)
   var index = -1
@@ -656,5 +665,5 @@ proc waitFor*[T](fut: Future[T]): T =
 
   fut.read
 
-# Global API and callSoon initialization.
+# Global API and callSoon() initialization.
 initAPI()

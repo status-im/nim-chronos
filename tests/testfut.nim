@@ -9,16 +9,13 @@
 import unittest
 import ../asyncdispatch2
 
-when defined(vcc):
-  {.passC: "/Zi /FS".}
-
 proc testFuture1(): Future[int] {.async.} =
   await sleepAsync(100)
 
 proc testFuture2(): Future[int] {.async.} =
   return 1
 
-proc testFuture3(): Future[int] {.async.} = 
+proc testFuture3(): Future[int] {.async.} =
   result = await testFuture2()
 
 proc test1(): bool =
@@ -31,9 +28,29 @@ proc test2(): bool =
   var fut = testFuture3()
   result = fut.finished
 
+proc test3(): string =
+  var testResult = ""
+  var fut = testFuture1()
+  fut.addCallback proc(udata: pointer) =
+    testResult &= "1"
+  fut.addCallback proc(udata: pointer) =
+    testResult &= "2"
+  fut.addCallback proc(udata: pointer) =
+    testResult &= "3"
+  fut.addCallback proc(udata: pointer) =
+    testResult &= "4"
+  fut.addCallback proc(udata: pointer) =
+    testResult &= "5"
+  discard waitFor(fut)
+  poll()
+  if fut.finished:
+    result = testResult
+
 when isMainModule:
   suite "Future[T] behavior test suite":
-    test "`Async undefined behavior (#7758)` test":
+    test "Async undefined behavior (#7758) test":
       check test1() == true
     test "Immediately completed asynchronous procedure test":
       check test2() == true
+    test "Future[T] callbacks are invoked in reverse order (#7197) test":
+      check test3() == "12345"
