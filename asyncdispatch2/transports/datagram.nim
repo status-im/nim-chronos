@@ -95,10 +95,15 @@ when defined(windows):
         transp.state.excl(WritePending)
         let err = transp.wovl.data.errCode
         if err == OSErrorCode(-1):
+          discard
+        elif int(err) == ERROR_OPERATION_ABORTED:
+          # CancelIO() interrupt
+          transp.state.incl(WritePaused)
           transp.finishWriter()
+          break
         else:
           transp.setWriteError(err)
-          transp.finishWriter()
+        transp.finishWriter()
       else:
         ## Initiation
         var saddr: Sockaddr_storage
@@ -117,6 +122,7 @@ when defined(windows):
         if ret != 0:
           let err = osLastError()
           if int(err) == ERROR_OPERATION_ABORTED:
+            # CancelIO() interrupt
             transp.state.incl(WritePaused)
           elif int(err) == ERROR_IO_PENDING:
             transp.queue.addFirst(vector)
@@ -152,6 +158,10 @@ when defined(windows):
           fromSockAddr(transp.raddr, transp.ralen, raddr.address, raddr.port)
           discard transp.function(transp, addr transp.buffer[0], bytesCount,
                                   raddr, transp.udata)
+        elif int(err) == ERROR_OPERATION_ABORTED:
+          # CancelIO() interrupt
+          transp.state.incl(ReadPaused)
+          break
         else:
           transp.setReadError(err)
           transp.state.incl(ReadPaused)
@@ -174,6 +184,7 @@ when defined(windows):
           if ret != 0:
             let err = osLastError()
             if int(err) == ERROR_OPERATION_ABORTED:
+              # CancelIO() interrupt
               transp.state.excl(ReadPending)
               transp.state.incl(ReadPaused)
             elif int(err) == WSAECONNRESET:
@@ -478,7 +489,7 @@ proc newDatagramTransport6*(cbproc: DatagramCallback,
   ## ``sock`` - application-driven socket to use.
   ## ``flags`` - flags that will be applied to socket.
   ## ``udata`` - custom argument which will be passed to ``cbproc``.
-  ## ``bufSize`` - size of internal buffer
+  ## ``bufSize`` - size of internal buffer.
   result = newDatagramTransportCommon(cbproc, remote, local, sock,
                                       flags, udata, bufSize)
 

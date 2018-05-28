@@ -47,7 +47,7 @@ type
     status*: ServerStatus         # Current server status
     udata*: pointer               # User-defined pointer
     flags*: set[ServerFlags]      # Flags
-    bufferSize*: int              # Buffer Size for transports
+    bufferSize*: int              # Size of internal transports' buffer
     loopFuture*: Future[void]     # Server's main Future
 
   TransportError* = object of Exception
@@ -86,6 +86,10 @@ proc getDomain*(address: IpAddress): Domain =
     result = Domain.AF_INET
   of IpAddressFamily.IPv6:
     result = Domain.AF_INET6
+
+proc getDomain*(address: TransportAddress): Domain =
+  ## Returns OS specific Domain from TransportAddress.
+  result = address.address.getDomain()
 
 proc `$`*(address: TransportAddress): string =
   ## Returns string representation of ``address``.
