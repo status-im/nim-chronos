@@ -8,10 +8,10 @@ Asyncdispatch hard fork.
 1. Unified callback type `CallbackFunc`.
    Current version of asyncdispatch uses many types of callbacks.
 
-   `proc ()` used in callSoon() callbacks and Future[T] completion callbacks.
-   `proc (fut: Future[T])` used in Future[T] completion callbacks.
-   `proc (fd: AsyncFD, bytesTransferred: Dword, errcode: OSErrorCode)` used in  Windows IO completion callbacks.
-   `proc (fd: AsyncFD): bool` used in Unix IO events callbacks.
+   - `proc ()` used in callSoon() callbacks and Future[T] completion callbacks.
+   - `proc (fut: Future[T])` used in Future[T] completion callbacks.
+   - `proc (fd: AsyncFD, bytesTransferred: Dword, errcode: OSErrorCode)` used  in  Windows IO completion callbacks.
+   - `proc (fd: AsyncFD): bool` used in Unix IO events callbacks.
 
    Such a number of different types creates big problems in the storage, processing and interaction between callbacks. Lack of ability to pass custom user data to
    callback also creates difficulties and inefficiency, to pass custom user-defined data you need to use closures (one more allocation).
