@@ -16,10 +16,14 @@ Asyncdispatch hard fork.
    Such a number of different types creates big problems in the storage, processing and interaction between callbacks. Lack of ability to pass custom user data to
    callback also creates difficulties and inefficiency, to pass custom user-defined data you need to use closures (one more allocation).
 
-   To resolve this issue introduced unified callback type `CallbackFunc`, which is
-   looks like `CallbackFunc* = proc (arg: pointer = nil) {.gcsafe.}`. Also one more type is introduced for callback storage is `AsyncCallback`.
-
+   To resolve this issue introduced unified callback type `CallbackFunc`, which is looks like 
+   ```nim
+   type
+     CallbackFunc* = proc (arg: pointer = nil) {.gcsafe.}
    ```
+   Also one more type is introduced for callback storage is `AsyncCallback`.
+
+   ```nim
    type
        AsyncCallback* = object
          function*: CallbackFunc
