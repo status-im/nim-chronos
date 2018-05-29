@@ -539,7 +539,7 @@ else:
 
   proc writeStreamLoop(udata: pointer) {.gcsafe.} =
     var cdata = cast[ptr CompletionData](udata)
-    if not isNil(cdata) and cdata.fd == 0:
+    if not isNil(cdata) and int(cdata.fd) == 0:
       # Transport was closed earlier, exiting
       return
     var transp = cast[UnixStreamTransport](cdata.udata)
@@ -587,7 +587,7 @@ else:
 
   proc readStreamLoop(udata: pointer) {.gcsafe.} =
     var cdata = cast[ptr CompletionData](udata)
-    if not isNil(cdata) and cdata.fd == 0:
+    if not isNil(cdata) and int(cdata.fd) == 0:
       # Transport was closed earlier, exiting
       return
     var transp = cast[UnixStreamTransport](cdata.udata)
