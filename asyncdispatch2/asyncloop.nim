@@ -250,6 +250,8 @@ when defined(windows) or defined(nimdoc):
     ## (Unix) for the specified dispatcher.
     return disp.ioPort
 
+  # ZAH: Shouldn't all of these procs be defined over the Dispatcher type?
+  # The "global" variants can be defined as templates passing the global dispatcher
   proc register*(fd: AsyncFD) =
     ## Registers ``fd`` with the dispatcher.
     let p = getGlobalDispatcher()
@@ -263,6 +265,7 @@ when defined(windows) or defined(nimdoc):
     var curTime = fastEpochTime()
     var curTimeout = DWORD(0)
 
+    # ZAH: Please extract this code in a template
     # Moving expired timers to `loop.callbacks` and calculate timeout
     var count = len(loop.timers)
     if count > 0:
@@ -308,6 +311,8 @@ when defined(windows) or defined(nimdoc):
         if int32(errCode) != WAIT_TIMEOUT:
           raiseOSError(errCode)
 
+    # ZAH: Please extract the code below in a template
+
     # Moving expired timers to `loop.callbacks`.
     curTime = fastEpochTime()
     count = len(loop.timers)
@@ -322,6 +327,8 @@ when defined(windows) or defined(nimdoc):
     # poll() call.
     count = len(loop.callbacks)
     for i in 0..<count:
+      # ZAH: instead of calling `popFirst` here in a loop, why don't we
+      # call `setLen(0)` at the end after iterating over all callbacks?
       var callable = loop.callbacks.popFirst()
       callable.function(callable.udata)
 
@@ -527,6 +534,7 @@ else:
       let customSet = {Event.Timer, Event.Signal, Event.Process,
                        Event.Vnode}
 
+    # ZAH: Please extract this code in a template
     # Moving expired timers to `loop.callbacks` and calculate timeout.
     var count = len(loop.timers)
     if count > 0:
@@ -570,6 +578,8 @@ else:
           withData(loop.selector, fd, adata) do:
             loop.callbacks.addLast(adata.reader)
 
+    # ZAH: Please extract the code below in a template
+
     # Moving expired timers to `loop.callbacks`.
     curTime = fastEpochTime()
     count = len(loop.timers)
@@ -585,6 +595,8 @@ else:
     # poll() call.
     count = len(loop.callbacks)
     for i in 0..<count:
+      # ZAH: instead of calling `popFirst` here in a loop, why don't we
+      # call `setLen(0)` at the end after iterating over all callbacks?
       var callable = loop.callbacks.popFirst()
       callable.function(callable.udata)
 
@@ -597,6 +609,7 @@ proc addTimer*(at: uint64, cb: CallbackFunc, udata: pointer = nil) =
   let loop = getGlobalDispatcher()
   var tcb = TimerCallback(finishAt: at,
                           function: AsyncCallback(function: cb, udata: udata))
+  # ZAH: This should use a priority queue (e.g. a binary heap)
   loop.timers.push(tcb)
 
 proc removeTimer*(at: uint64, cb: CallbackFunc, udata: pointer = nil) =

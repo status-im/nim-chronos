@@ -39,6 +39,12 @@ type
     fd*: AsyncFD                    # File descriptor
     state: set[TransportState]      # Current Transport state
     reader: Future[void]            # Current reader Future
+    # ZAH: I'm not quite certain, but it seems to me that the intermediate
+    # buffer is not necessary. The receiving code needs to know how to grow
+    # the output buffer of the future attached to the read operation. If this
+    # is the case, the buffering can be replaced with direct writing to this
+    # output buffer. Furthermore, we'll be able to signal additional 'progress'
+    # events for the future to make the API more complete.
     buffer: seq[byte]               # Reading buffer
     offset: int                     # Reading buffer offset
     error: ref Exception            # Current error
@@ -110,6 +116,7 @@ template checkPending(t: untyped) =
     raise newException(TransportError, "Read operation already pending!")
 
 template shiftBuffer(t, c: untyped) =
+  # ZAH: Nim is not C, you don't need to put () around template parameters
   if (t).offset > c:
     moveMem(addr((t).buffer[0]), addr((t).buffer[(c)]), (t).offset - (c))
     (t).offset = (t).offset - (c)
@@ -341,6 +348,10 @@ when defined(windows):
     transp.state = {ReadPaused, WritePaused}
     transp.queue = initDeque[StreamVector]()
     transp.future = newFuture[void]("stream.socket.transport")
+    # ZAH: If these objects are going to be manually managed, why do we bother
+    # with using the GC at all? It's better to rely on a destructor. If someone
+    # wants to share a Transport reference, they can still create a GC-managed
+    # wrapping object.
     GC_ref(transp)
     result = cast[StreamTransport](transp)
 
@@ -1060,6 +1071,7 @@ proc read*(transp: StreamTransport, n = -1): Future[seq[byte]] {.async.} =
   while true:
     if (ReadError in transp.state):
       raise transp.getError()
+    # ZAH: Shouldn't this be {ReadEof, ReadClosed} * transp.state != {}
     if (ReadEof in transp.state) or (ReadClosed in transp.state):
       break
 

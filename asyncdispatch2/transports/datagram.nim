@@ -443,6 +443,7 @@ else:
     result.resumeRead()
 
   proc close*(transp: DatagramTransport) =
+    ## ZAH: This could use a destructor as well
     ## Closes and frees resources of transport ``transp``.
     if ReadClosed notin transp.state and WriteClosed notin transp.state:
       closeAsyncSocket(transp.fd)
