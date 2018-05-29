@@ -104,7 +104,7 @@ proc `$`*(address: TransportAddress): string =
 
 proc strAddress*(address: string): TransportAddress =
   ## Parses string representation of ``address``.
-  ## 
+  ##
   ## IPv4 transport address format is ``a.b.c.d:port``.
   ## IPv6 transport address format is ``[::]:port``.
   var parts = address.rsplit(":", maxsplit = 1)

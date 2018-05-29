@@ -460,7 +460,7 @@ proc newDatagramTransport*(cbproc: DatagramCallback,
                            bufSize: int = DefaultDatagramBufferSize
                            ): DatagramTransport =
   ## Create new UDP datagram transport (IPv4).
-  ## 
+  ##
   ## ``cbproc`` - callback which will be called, when new datagram received.
   ## ``remote`` - bind transport to remote address (optional).
   ## ``local`` - bind transport to local address (to serving incoming
@@ -481,7 +481,7 @@ proc newDatagramTransport6*(cbproc: DatagramCallback,
                             bufSize: int = DefaultDatagramBufferSize
                             ): DatagramTransport =
   ## Create new UDP datagram transport (IPv6).
-  ## 
+  ##
   ## ``cbproc`` - callback which will be called, when new datagram received.
   ## ``remote`` - bind transport to remote address (optional).
   ## ``local`` - bind transport to local address (to serving incoming

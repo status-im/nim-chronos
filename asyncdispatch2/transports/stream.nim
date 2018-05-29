@@ -539,6 +539,9 @@ else:
 
   proc writeStreamLoop(udata: pointer) {.gcsafe.} =
     var cdata = cast[ptr CompletionData](udata)
+    if not isNil(cdata) and cdata.fd == 0:
+      # Transport was closed earlier, exiting
+      return
     var transp = cast[UnixStreamTransport](cdata.udata)
     let fd = SocketHandle(cdata.fd)
     if len(transp.queue) > 0:
@@ -584,6 +587,9 @@ else:
 
   proc readStreamLoop(udata: pointer) {.gcsafe.} =
     var cdata = cast[ptr CompletionData](udata)
+    if not isNil(cdata) and cdata.fd == 0:
+      # Transport was closed earlier, exiting
+      return
     var transp = cast[UnixStreamTransport](cdata.udata)
     let fd = SocketHandle(cdata.fd)
     while true:

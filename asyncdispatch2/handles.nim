@@ -43,7 +43,7 @@ proc setSockOpt*(socket: AsyncFD, level, optname, optval: int): bool =
   if setsockopt(SocketHandle(socket), cint(level), cint(optname), addr(value),
                 sizeof(value).SockLen) < 0'i32:
     result = false
-    
+
 proc getSockOpt*(socket: AsyncFD, level, optname: int, value: var int): bool =
   ## `getsockopt()` for integer options.
   var res: cint
@@ -89,7 +89,7 @@ proc wrapAsyncSocket*(sock: SocketHandle): AsyncFD =
       close(sock)
       return asyncInvalidSocket
   result = AsyncFD(sock)
-  register(result)  
+  register(result)
 
 proc closeAsyncSocket*(s: AsyncFD) {.inline.} =
   ## Closes asynchronous socket handle ``s``.
