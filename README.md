@@ -34,11 +34,11 @@
 
 2. The order of Future[T] completion callbacks:
 
-  Current version of asyncdispatch processes Future[T] completion callbacks in reverse order, but asyncdispatch2 schedules callbacks in forward order: https://github.com/nim-lang/Nim/issues/7197
+    Current version of asyncdispatch processes Future[T] completion callbacks in reverse order, but asyncdispatch2 schedules callbacks in forward order: https://github.com/nim-lang/Nim/issues/7197
 
 3. Changed the behavior of OS descriptor event callbacks:
 
-  For some unknown reason, the current version of asyncdispatch uses seq[T] to hold a list of descriptor event listeners. However, in the asynchronous environment, there is no need for a list of event listeners. In asyncdispatch2, there is only one place for one READ listener and one place for one WRITE listener.
+    For some unknown reason, the current version of asyncdispatch uses seq[T] to hold a list of descriptor event listeners. However, in the asynchronous environment, there is no need for a list of event listeners. In asyncdispatch2, there is only one place for one READ listener and one place for one WRITE listener.
 
 4. Removed the default timeout value for the poll() procedure, which allows incorrect usage of asyncdispatch and produces 500-ms timeouts in correct usage.
 
