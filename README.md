@@ -65,6 +65,9 @@
 
 13. Added cheap synchronization primitives: `AsyncLock`, `AsyncEvent`, and `AsyncQueue[T]`.
 
+## Documentation
+You can find more documentation, notes and examples in [Wiki].
+
 ## Installation
 You can use Nim official package manager `nimble` to install `asyncdispatch2`. The most recent version of the library can be installed via:
 
