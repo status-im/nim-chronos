@@ -1,9 +1,7 @@
-**nim-asyncdispatch2**
+# Asyncdispatch hard fork
 [![Build Status](https://travis-ci.org/status-im/nim-asyncdispatch2.svg?branch=master)](https://travis-ci.org/status-im/nim-asyncdispatch2) [![Build status](https://ci.appveyor.com/api/projects/status/ihrxhooltyrmo0mc?svg=true)](https://ci.appveyor.com/project/cheatfate/nim-asyncdispatch2)
 
-**Asyncdispatch hard fork**
-
-# Core differences between asyncdispatch and asyncdispatch2
+## Core differences between asyncdispatch and asyncdispatch2
 
 1. Unified callback type `CallbackFunc`:
 
@@ -67,17 +65,21 @@
 
 13. Added cheap synchronization primitives: `AsyncLock`, `AsyncEvent`, and `AsyncQueue[T]`.
 
-# Transport Concept
+## Installation
+You can use Nim official package manager `nimble` to install `asyncdispatch2`. The most recent version of the library can be installed via:
 
-Transports are high-level interfaces for interaction with the OS IO system. The main task that the Transport concept is designed to solve is to reduce the number of syscalls and of memory allocations for performing a single IO operation. Current version of asyncdispatch uses at least four (4) syscalls for every single IO operation.
+```
+$ nimble install https://github.com/status-im/nim-asyncdispatch2
+```
 
-For Posix-compliant systems, current version of asyncdispatch performs such operations for every single IO operation:
+## License
+Licensed under one of the following:
 
-- Register for a read/write event in the system queue
-- Wait for an event in the system queue
-- Perform an IO operation
-- Unregister a read/write event from the system queue
+  * Apache License, Version 2.0, ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
+  * MIT license: [LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT
 
-For Windows system, the current version of asyncdispatch performs  allocations of OVERLAPPED structure for every single IO operation.
+## TODO
+  * Pipe/Subprocess Transports.
+  * Multithreading Stream/Datagram servers
+  * Future[T] cancelation
 
-To successfully cope with the task, Transport also needs to incorporate some `asyncnet.nim` functionality (e.g. buffering) for stream transports. For this reason, asyncdispatch2 has buffering IO by default.
