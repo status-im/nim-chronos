@@ -188,12 +188,11 @@ proc fail*[T](future: Future[T], error: ref Exception) =
   future.callbacks.call()
 
 proc clearCallbacks(future: FutureBase) =
-  if len(future.callbacks) > 0:
-    # ZAH: This could have been a single call to `setLen`
-    var count = len(future.callbacks)
-    while count > 0:
-      discard future.callbacks.popFirst()
-      dec(count)
+  # ZAH: This could have been a single call to `setLen`
+  var count = len(future.callbacks)
+  while count > 0:
+    discard future.callbacks.popFirst()
+    dec(count)
 
 proc addCallback*(future: FutureBase, cb: CallbackFunc, udata: pointer = nil) =
   ## Adds the callbacks proc to be called when the future completes.
