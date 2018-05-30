@@ -17,6 +17,7 @@ type
   AsyncCallback* = object
     function*: CallbackFunc
     udata*: pointer
+    deleted*: bool
 
   # ZAH: This can probably be stored with a cheaper representation
   # until the moment it needs to be printed to the screen (e.g. seq[StackTraceEntry])
@@ -121,14 +122,13 @@ proc checkFinished[T](future: Future[T]) =
       err.cause = future
       raise err
 
-# ZAH: I've seen this code in asyncloop
 proc call(callbacks: var Deque[AsyncCallback]) =
   var count = len(callbacks)
-  if count > 0:
-    while count > 0:
-      var item = callbacks.popFirst()
+  while count > 0:
+    var item = callbacks.popFirst()
+    if not item.deleted:
       callSoon(item.function, item.udata)
-      dec(count)
+    dec(count)
 
 proc add(callbacks: var Deque[AsyncCallback], item: AsyncCallback) =
   # ZAH: perhaps this is the default behavior with latest Nim (no need for the `len` check)
@@ -137,23 +137,9 @@ proc add(callbacks: var Deque[AsyncCallback], item: AsyncCallback) =
   callbacks.addLast(item)
 
 proc remove(callbacks: var Deque[AsyncCallback], item: AsyncCallback) =
-  if len(callbacks) > 0:
-    var count = len(callbacks)
-    # ZAH: This is not the most efficient way to implement this.
-    # When you discover an element suitalbe for removal, you can put the last
-    # element in its place and reduce the length. The problem is that the
-    # order of callbacks will be changed, which is unfortunate.
-    #
-    # Shifting the elements in-place will still be more efficient than the
-    # current copying due to the CPU cache (because otherwise we may end up
-    # touching memory that's residing on a different cache line).
-    #
-    # I recommend implementing this proper remove logic in the Deque type.
-    while count > 0:
-      var p = callbacks.popFirst()
-      if p.function != item.function or p.udata != item.udata:
-        callbacks.addLast(p)
-      dec(count)
+  for p in callbacks.mitems():
+    if p.function == item.function and p.udata == item.udata:
+      p.deleted = true
 
 proc complete*[T](future: Future[T], val: T) =
   ## Completes ``future`` with value ``val``.
@@ -379,9 +365,6 @@ proc asyncCheckProxy[T](udata: pointer) =
     injectStacktrace(future)
     raise future.error
 
-proc spawnProxy[T](udata: pointer) =
-  discard
-
 proc asyncCheck*[T](future: Future[T]) =
   ## Sets a callback on ``future`` which raises an exception if the future
   ## finished with an error.
@@ -395,11 +378,6 @@ proc asyncCheck*[T](future: Future[T]) =
     #   if future.failed:
     #     injectStacktrace(future)
     #     raise future.error
-
-proc spawn*[T](future: Future[T]) =
-  # ZAH: What is the purpose of this?
-  assert(not future.isNil, "Future is nil")
-  future.callback = spawnProxy[T]
 
 # ZAH: The return type here could be a Future[(T, Y)]
 proc `and`*[T, Y](fut1: Future[T], fut2: Future[Y]): Future[void] =
