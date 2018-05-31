@@ -189,13 +189,100 @@ proc test3(bounded: bool): Future[int] {.async.} =
   for i in 0..<ClientsCount:
     result += counters[i]
 
+proc swarmWorker(address: TransportAddress): Future[int] {.async.} =
+  var counter = 0
+  var results = newSeq[int](MessagesCount)
+  var future = newFuture[void]("testdatagram.client.wait")
+
+  proc receiver(transp: DatagramTransport,
+                pbytes: pointer, nbytes: int,
+                raddr: TransportAddress,
+                udata: pointer): Future[void] {.async.} =
+    if not isNil(pbytes) and nbytes > 0:
+      var answer = newString(nbytes + 1)
+      copyMem(addr answer[0], pbytes, nbytes)
+      answer.setLen(nbytes)
+      doAssert(answer.startsWith("ANSWER"))
+      var numstr = answer[6..^1]
+      var num = parseInt(numstr)
+      doAssert(num < MessagesCount)
+      results[num] = 1
+      inc(counter)
+      if not future.finished:
+        future.complete()
+
+  var transp = newDatagramTransport(receiver,
+                                    udata = addr counter,
+                                    remote = address)
+  for i in 0..<MessagesCount:
+    var data = "REQUEST" & $i
+    await transp.send(addr data[0], len(data))
+    # We need to wait answer here, or we can overflow OS network
+    # buffer and some datagrams will be dropped.
+    await future
+    future = newFuture[void]("testdatagram.client.wait")
+
+  transp.close()
+  result = 0
+  for i in 0..<MessagesCount:
+    if results[i] == 1:
+      inc(result)
+
+proc waitAll[T](futs: seq[Future[T]]): Future[void] =
+  var counter = len(futs)
+  var retFuture = newFuture[void]("waitAll")
+  proc cb(udata: pointer) =
+    dec(counter)
+    if counter == 0:
+      retFuture.complete()
+  for fut in futs:
+    fut.addCallback(cb)
+  return retFuture
+
+proc swarmManager(address: TransportAddress): Future[int] {.async.} =
+  var retFuture = newFuture[void]("swarm.manager.datagram")
+  var workers = newSeq[Future[int]](ClientsCount)
+  var count = ClientsCount
+  for i in 0..<ClientsCount:
+    workers[i] = swarmWorker(address)
+  await waitAll(workers)
+  for i in 0..<ClientsCount:
+    var res = workers[i].read()
+    result += res
+
+proc serveDatagramClient(transp: DatagramTransport,
+                         pbytes: pointer, nbytes: int,
+                         raddr: TransportAddress,
+                         udata: pointer): Future[void] {.async.} =
+  doAssert(not isNil(pbytes) and nbytes > 0)
+  var request = newString(nbytes + 1)
+  copyMem(addr request[0], pbytes, nbytes)
+  request.setLen(nbytes)
+  doAssert(request.startsWith("REQUEST"))
+  var numstr = request[7..^1]
+  var num = parseInt(numstr)
+  var answer = "ANSWER" & $num
+  await transp.sendTo(addr answer[0], len(answer), raddr)
+
+proc test4(): Future[int] {.async.} =
+  var ta = strAddress("127.0.0.1:31346")
+  var counter = 0
+  var server = createDatagramServer(ta, serveDatagramClient, {ReuseAddr})
+  server.start()
+  result = await swarmManager(ta)
+  server.stop()
+  server.close()
+
 when isMainModule:
+  echo waitFor(test4())
   const
     m1 = "Unbounded test (" & $TestsCount & " messages)"
     m2 = "Bounded test (" & $TestsCount & " messages)"
     m3 = "Unbounded multiple clients with messages (" & $ClientsCount &
          " clients x " & $MessagesCount & " messages)"
     m4 = "Bounded multiple clients with messages (" & $ClientsCount &
+         " clients x " & $MessagesCount & " messages)"
+    m5 = "DatagramServer multiple clients with messages (" & $ClientsCount &
          " clients x " & $MessagesCount & " messages)"
   suite "Datagram Transport test suite":
     test m1:
@@ -206,3 +293,5 @@ when isMainModule:
       check waitFor(test3(false)) == ClientsCount * MessagesCount
     test m4:
       check waitFor(test3(true)) == ClientsCount * MessagesCount
+    test m5:
+      check waitFor(test4()) == ClientsCount * MessagesCount

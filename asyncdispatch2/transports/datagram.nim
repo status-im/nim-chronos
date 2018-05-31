@@ -288,7 +288,10 @@ when defined(windows):
                              len: int32(len(wresult.buffer)))
     GC_ref(wresult)
     result = cast[DatagramTransport](wresult)
-    result.resumeRead()
+    if NoAutoRead notin flags:
+      result.resumeRead()
+    else:
+      wresult.state.incl(ReadPaused)
 
   proc close*(transp: DatagramTransport) =
     ## Closes and frees resources of transport ``transp``.
@@ -310,6 +313,9 @@ else:
       raddr: TransportAddress
 
     var cdata = cast[ptr CompletionData](udata)
+    if not isNil(cdata) and int(cdata.fd) == 0:
+      # Transport was closed earlier, exiting
+      return
     var transp = cast[DatagramTransport](cdata.udata)
     let fd = SocketHandle(cdata.fd)
     if not isNil(transp):
@@ -333,11 +339,16 @@ else:
         break
 
   proc writeDatagramLoop(udata: pointer) =
-    var res: int = 0
+    var
+      res: int
+      saddr: Sockaddr_storage
+      slen: SockLen
+
     var cdata = cast[ptr CompletionData](udata)
+    if not isNil(cdata) and int(cdata.fd) == 0:
+      # Transport was closed earlier, exiting
+      return
     var transp = cast[DatagramTransport](cdata.udata)
-    var saddr: Sockaddr_storage
-    var slen: SockLen
     let fd = SocketHandle(cdata.fd)
     if not isNil(transp):
       if len(transp.queue) > 0:
@@ -440,10 +451,12 @@ else:
     result.state = {WritePaused}
     result.future = newFuture[void]("datagram.transport")
     GC_ref(result)
-    result.resumeRead()
+    if NoAutoRead notin flags:
+      result.resumeRead()
+    else:
+      result.state.incl(ReadPaused)
 
   proc close*(transp: DatagramTransport) =
-    ## ZAH: This could use a destructor as well
     ## Closes and frees resources of transport ``transp``.
     if ReadClosed notin transp.state and WriteClosed notin transp.state:
       closeAsyncSocket(transp.fd)
@@ -544,3 +557,73 @@ proc sendTo*(transp: DatagramTransport, pbytes: pointer, nbytes: int,
   await vector.writer
   if WriteError in transp.state:
     raise transp.getError()
+
+type
+  DatagramServer* = ref object of RootRef
+    transport*: DatagramTransport
+    status*: ServerStatus
+
+proc createDatagramServer*(host: TransportAddress,
+                           cbproc: DatagramCallback,
+                           flags: set[ServerFlags] = {},
+                           sock: AsyncFD = asyncInvalidSocket,
+                           bufferSize: int = DefaultDatagramBufferSize,
+                           udata: pointer = nil): DatagramServer =
+  var transp: DatagramTransport
+  var fflags = flags + {NoAutoRead}
+  if host.address.family == IpAddressFamily.IPv4:
+    transp = newDatagramTransport(cbproc, AnyAddress, host, sock,
+                                  fflags, udata, bufferSize)
+  else:
+    transp = newDatagramTransport6(cbproc, AnyAddress6, host, sock,
+                                   fflags, udata, bufferSize)
+  result = DatagramServer()
+  result.transport = transp
+  result.status = ServerStatus.Starting
+  GC_ref(result)
+
+proc start*(server: DatagramServer) =
+  ## Starts ``server``.
+  if server.status in {ServerStatus.Starting, ServerStatus.Paused}:
+    server.transport.resumeRead()
+
+proc stop*(server: DatagramServer) =
+  ## Stops ``server``.
+  if server.status in {ServerStatus.Paused, ServerStatus.Running}:
+    when defined(windows):
+      if server.status == ServerStatus.Running:
+        if {WritePending, ReadPending} * server.transport.state != {}:
+          ## CancelIO will stop both reading and writing.
+          discard cancelIo(Handle(server.transport.fd))
+    else:
+      if server.status == ServerStatus.Running:
+        if WritePaused notin server.transport.state:
+          server.transport.fd.removeWriter()
+        if ReadPaused notin server.transport.state:
+          server.transport.fd.removeReader()
+    server.status = ServerStatus.Stopped
+
+proc pause*(server: DatagramServer) =
+  ## Pause ``server``.
+  if server.status == ServerStatus.Running:
+    when defined(windows):
+      if {WritePending, ReadPending} * server.transport.state != {}:
+        ## CancelIO will stop both reading and writing.
+        discard cancelIo(Handle(server.transport.fd))
+    else:
+      if WritePaused notin server.transport.state:
+        server.transport.fd.removeWriter()
+      if ReadPaused notin server.transport.state:
+        server.transport.fd.removeReader()
+    server.status = ServerStatus.Paused
+
+proc join*(server: DatagramServer) {.async.} =
+  ## Waits until ``server`` is not stopped.
+  if not server.transport.future.finished:
+    await server.transport.future
+
+proc close*(server: DatagramServer) =
+  ## Release ``server`` resources.
+  if server.status == ServerStatus.Stopped:
+    server.transport.close()
+    GC_unref(server)

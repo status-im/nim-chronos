@@ -770,8 +770,8 @@ proc close*(server: SocketServer) =
   GC_unref(server)
 
 proc createStreamServer*(host: TransportAddress,
-                         flags: set[ServerFlags],
                          cbproc: StreamCallback,
+                         flags: set[ServerFlags] = {},
                          sock: AsyncFD = asyncInvalidSocket,
                          backlog: int = 100,
                          bufferSize: int = DefaultStreamBufferSize,
