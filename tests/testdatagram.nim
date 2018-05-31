@@ -274,7 +274,6 @@ proc test4(): Future[int] {.async.} =
   server.close()
 
 when isMainModule:
-  echo waitFor(test4())
   const
     m1 = "Unbounded test (" & $TestsCount & " messages)"
     m2 = "Bounded test (" & $TestsCount & " messages)"

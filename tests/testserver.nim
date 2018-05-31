@@ -48,7 +48,7 @@ proc swarmWorker1(address: TransportAddress): Future[int] {.async.} =
 
 proc test1(): Future[int] {.async.} =
   var ta = strAddress("127.0.0.1:31354")
-  var server = createStreamServer(ta, {ReuseAddr}, serveClient1)
+  var server = createStreamServer(ta, serveClient1, {ReuseAddr})
   server.start()
   result = await swarmWorker1(ta)
   server.stop()
