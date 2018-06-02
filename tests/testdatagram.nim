@@ -46,7 +46,7 @@ proc client2(transp: DatagramTransport, pbytes: pointer, nbytes: int,
       if counterPtr[] == TestsCount:
         transp.close()
       else:
-        var ta = strAddress("127.0.0.1:33336")
+        var ta = initTAddress("127.0.0.1:33336")
         var req = "REQUEST" & $counterPtr[]
         await transp.sendTo(addr req[0], len(req), ta)
     else:
@@ -119,7 +119,7 @@ proc client5(transp: DatagramTransport, pbytes: pointer, nbytes: int,
       if counterPtr[] == MessagesCount:
         transp.close()
       else:
-        var ta = strAddress("127.0.0.1:33337")
+        var ta = initTAddress("127.0.0.1:33337")
         var req = "REQUEST" & $counterPtr[]
         await transp.sendTo(addr req[0], len(req), ta)
     else:
@@ -133,7 +133,7 @@ proc client5(transp: DatagramTransport, pbytes: pointer, nbytes: int,
     transp.close()
 
 proc test1(): Future[int] {.async.} =
-  var ta = strAddress("127.0.0.1:33336")
+  var ta = initTAddress("127.0.0.1:33336")
   var counter = 0
   var dgram1 = newDatagramTransport(client1, udata = addr counter, local = ta)
   var dgram2 = newDatagramTransport(client2, udata = addr counter)
@@ -144,7 +144,7 @@ proc test1(): Future[int] {.async.} =
   result = counter
 
 proc test2(): Future[int] {.async.} =
-  var ta = strAddress("127.0.0.1:33337")
+  var ta = initTAddress("127.0.0.1:33337")
   var counter = 0
   var dgram1 = newDatagramTransport(client1, udata = addr counter, local = ta)
   var dgram2 = newDatagramTransport(client3, udata = addr counter, remote = ta)
@@ -166,7 +166,7 @@ proc waitAll(futs: seq[Future[void]]): Future[void] =
   return retFuture
 
 proc test3(bounded: bool): Future[int] {.async.} =
-  var ta = strAddress("127.0.0.1:33337")
+  var ta = initTAddress("127.0.0.1:33337")
   var counter = 0
   var dgram1 = newDatagramTransport(client1, udata = addr counter, local = ta)
   var clients = newSeq[Future[void]](ClientsCount)
@@ -265,7 +265,7 @@ proc serveDatagramClient(transp: DatagramTransport,
   await transp.sendTo(addr answer[0], len(answer), raddr)
 
 proc test4(): Future[int] {.async.} =
-  var ta = strAddress("127.0.0.1:31346")
+  var ta = initTAddress("127.0.0.1:31346")
   var counter = 0
   var server = createDatagramServer(ta, serveDatagramClient, {ReuseAddr})
   server.start()

@@ -244,7 +244,7 @@ proc swarmManager4(address: TransportAddress): Future[int] {.async.} =
     result += res
 
 proc test1(): Future[int] {.async.} =
-  var ta = strAddress("127.0.0.1:31344")
+  var ta = initTAddress("127.0.0.1:31344")
   var server = createStreamServer(ta, serveClient1, {ReuseAddr})
   server.start()
   result = await swarmManager1(ta)
@@ -252,7 +252,7 @@ proc test1(): Future[int] {.async.} =
   server.close()
 
 proc test2(): Future[int] {.async.} =
-  var ta = strAddress("127.0.0.1:31345")
+  var ta = initTAddress("127.0.0.1:31345")
   var counter = 0
   var server = createStreamServer(ta, serveClient2, {ReuseAddr})
   server.start()
@@ -261,7 +261,7 @@ proc test2(): Future[int] {.async.} =
   server.close()
 
 proc test3(): Future[int] {.async.} =
-  var ta = strAddress("127.0.0.1:31346")
+  var ta = initTAddress("127.0.0.1:31346")
   var counter = 0
   var server = createStreamServer(ta, serveClient3, {ReuseAddr})
   server.start()
@@ -270,7 +270,7 @@ proc test3(): Future[int] {.async.} =
   server.close()
 
 proc test4(): Future[int] {.async.} =
-  var ta = strAddress("127.0.0.1:31347")
+  var ta = initTAddress("127.0.0.1:31347")
   var counter = 0
   var server = createStreamServer(ta, serveClient4, {ReuseAddr})
   server.start()

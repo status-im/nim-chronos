@@ -7,7 +7,7 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 
-import net, strutils
+import net, nativesockets, strutils
 import ../asyncloop, ../asyncsync
 
 const
@@ -102,7 +102,7 @@ proc `$`*(address: TransportAddress): string =
     result.add(":")
   result.add($int(address.port))
 
-proc strAddress*(address: string): TransportAddress =
+proc initTAddress*(address: string): TransportAddress =
   ## Parses string representation of ``address``.
   ##
   ## IPv4 transport address format is ``a.b.c.d:port``.
@@ -110,12 +110,64 @@ proc strAddress*(address: string): TransportAddress =
   var parts = address.rsplit(":", maxsplit = 1)
   doAssert(len(parts) == 2, "Format is <address>:<port>!")
   let port = parseInt(parts[1])
-  doAssert(port > 0 and port < 65536, "Illegal port number!")
+  doAssert(port >= 0 and port < 65536, "Illegal port number!")
   result.port = Port(port)
   if parts[0][0] == '[' and parts[0][^1] == ']':
     result.address = parseIpAddress(parts[0][1..^2])
   else:
     result.address = parseIpAddress(parts[0])
+
+proc initTAddress*(address: string, port: Port): TransportAddress =
+  ## Initialize ``TransportAddress`` with IP address ``address`` and
+  ## port number ``port``.
+  result.address = parseIpAddress(address)
+  result.port = port
+
+proc initTAddress*(address: string, port: int): TransportAddress =
+  ## Initialize ``TransportAddress`` with IP address ``address`` and
+  ## port number ``port``.
+  result.address = parseIpAddress(address)
+  result.port = Port(Port(port and 0xFFFF))
+
+proc resolveTAddress*(address: string,
+                      family = IpAddressFamily.IPv4): seq[TransportAddress] =
+  ## Resolve string representation of ``address``.
+  ## 
+  ## Supported formats are:
+  ## IPv4 numeric address ``a.b.c.d:port``
+  ## IPv6 numeric address ``[::]:port``
+  ## Hostname address ``hostname:port``
+  ## 
+  ## If hostname address is detected, then network address translation via DNS
+  ## will be performed.
+  var
+    ta: TransportAddress
+    ap: Port
+  result = newSeq[TransportAddress]()
+  var parts = address.rsplit(":", maxsplit = 1)
+  doAssert(len(parts) == 2, "Format is <address>:<port>!")
+  let port = parseInt(parts[1])
+  doAssert(port >= 0 and port < 65536, "Illegal port number!")
+  if parts[0][0] == '[' and parts[0][^1] == ']':
+    ta = TransportAddress(address: parseIpAddress(parts[0][1..^2]),
+                          port: Port(port))
+    result.add(ta)
+  else:
+    if isIpAddress(parts[0]):
+      ta = TransportAddress(address: parseIpAddress(parts[0]),
+                            port: Port(port))
+      result.add(ta)
+    else:
+      var domain = if family == IpAddressFamily.IPv4: Domain(AF_INET) else:
+                   Domain(AF_INET6)
+      var aiList = getAddrInfo(parts[0], Port(port), domain)
+      var it = aiList
+      while it != nil:
+        fromSockAddr(cast[ptr Sockaddr_storage](it.ai_addr)[],
+                     SockLen(it.ai_addrlen), ta.address, ta.port)
+        result.add(ta)
+        it = it.ai_next
+      freeAddrInfo(aiList)
 
 template checkClosed*(t: untyped) =
   if (ReadClosed in (t).state) or (WriteClosed in (t).state):
@@ -133,3 +185,6 @@ when defined(windows):
   const ERROR_SUCCESS* = 0
   proc cancelIo*(hFile: HANDLE): WINBOOL
        {.stdcall, dynlib: "kernel32", importc: "CancelIo".}
+
+when isMainModule:
+  echo $resolveTAddress("localhost:443", IpAddressFamily.IPv6)

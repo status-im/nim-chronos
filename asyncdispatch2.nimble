@@ -30,6 +30,10 @@ task test, "Run all tests":
   exec "nim c -r tests/testsignal"
   exec "nim c -r -d:release tests/testsignal"
 
+  exec "nim c -r -d:useSysAssert -d:useGcAssert tests/testaddress"
+  exec "nim c -r tests/testaddress"
+  exec "nim c -r -d:release tests/testaddress"
+
   exec "nim c -r -d:useSysAssert -d:useGcAssert tests/testdatagram"
   exec "nim c -r tests/testdatagram"
   exec "nim c -r -d:release tests/testdatagram"

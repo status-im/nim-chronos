@@ -36,6 +36,11 @@ else:
       writer: Future[void]        # Writer vector completion Future
 
 type
+  DatagramServer* = ref object of RootRef
+    ## Datagram server object
+    transport*: DatagramTransport ## Datagram transport
+    status*: ServerStatus         ## Current server status
+
   DatagramCallback* = proc(transp: DatagramTransport,
                            pbytes: pointer,
                            nbytes: int,
@@ -557,11 +562,6 @@ proc sendTo*(transp: DatagramTransport, pbytes: pointer, nbytes: int,
   await vector.writer
   if WriteError in transp.state:
     raise transp.getError()
-
-type
-  DatagramServer* = ref object of RootRef
-    transport*: DatagramTransport
-    status*: ServerStatus
 
 proc createDatagramServer*(host: TransportAddress,
                            cbproc: DatagramCallback,
