@@ -127,7 +127,7 @@ proc initTAddress*(address: string, port: int): TransportAddress =
   ## Initialize ``TransportAddress`` with IP address ``address`` and
   ## port number ``port``.
   result.address = parseIpAddress(address)
-  result.port = Port(Port(port and 0xFFFF))
+  result.port = Port(port and 0xFFFF)
 
 proc resolveTAddress*(address: string,
                       family = IpAddressFamily.IPv4): seq[TransportAddress] =

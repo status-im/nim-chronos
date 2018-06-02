@@ -183,6 +183,48 @@ proc initCallSoonProc() =
   if asyncfutures2.getCallSoonProc().isNil:
     asyncfutures2.setCallSoonProc(callSoon)
 
+template processTimersGetTimeout(loop, timeout: untyped) =
+  var count = len(loop.timers)
+  if count > 0:
+    var lastFinish = curTime
+    while count > 0:
+      lastFinish = loop.timers[0].finishAt
+      if curTime < lastFinish:
+        break
+      loop.callbacks.addLast(loop.timers.pop().function)
+      dec(count)
+    if count > 0:
+      when defined(windows):
+        timeout = DWORD(lastFinish - curTime)
+      else:
+        timeout = lastFinish - curTime
+
+  if timeout == 0:
+    if len(loop.callbacks) == 0:
+      when defined(windows):
+        timeout = INFINITE
+      else:
+        timeout = -1
+  else:
+    if len(loop.callbacks) != 0:
+      timeout = 0
+
+template processTimers(loop: untyped) =
+  var curTime = fastEpochTime()
+  var count = len(loop.timers)
+  if count > 0:
+    while count > 0:
+      if curTime < loop.timers[0].finishAt:
+        break
+      loop.callbacks.addLast(loop.timers.pop().function)
+      dec(count)
+
+template processCallbacks(loop: untyped) =
+  var count = len(loop.callbacks)
+  for i in 0..<count:
+    let callable = loop.callbacks.popFirst()
+    callable.function(callable.udata)
+
 when defined(windows) or defined(nimdoc):
   import winlean, sets, hashes
 
@@ -265,8 +307,9 @@ when defined(windows) or defined(nimdoc):
     var curTime = fastEpochTime()
     var curTimeout = DWORD(0)
 
-    # ZAH: Please extract this code in a template
     # Moving expired timers to `loop.callbacks` and calculate timeout
+    loop.processTimersGetTimeout(curTimeout)
+
     var count = len(loop.timers)
     if count > 0:
       var lastFinish = curTime
@@ -302,7 +345,6 @@ when defined(windows) or defined(nimdoc):
     else:
       let errCode = osLastError()
       if customOverlapped != nil:
-        assert customOverlapped.data.fd == lpCompletionKey.AsyncFD
         customOverlapped.data.errCode = errCode
         let acb = AsyncCallback(function: customOverlapped.data.cb,
                                 udata: cast[pointer](customOverlapped))
@@ -311,26 +353,12 @@ when defined(windows) or defined(nimdoc):
         if int32(errCode) != WAIT_TIMEOUT:
           raiseOSError(errCode)
 
-    # ZAH: Please extract the code below in a template
-
     # Moving expired timers to `loop.callbacks`.
-    curTime = fastEpochTime()
-    count = len(loop.timers)
-    if count > 0:
-      while count > 0:
-        if curTime < loop.timers[0].finishAt:
-          break
-        loop.callbacks.addLast(loop.timers.pop().function)
-        dec(count)
+    loop.processTimers()
 
     # All callbacks which will be added in process will be processed on next
     # poll() call.
-    count = len(loop.callbacks)
-    for i in 0..<count:
-      # ZAH: instead of calling `popFirst` here in a loop, why don't we
-      # call `setLen(0)` at the end after iterating over all callbacks?
-      var callable = loop.callbacks.popFirst()
-      callable.function(callable.udata)
+    loop.processCallbacks()
 
   proc getFunc(s: SocketHandle, fun: var pointer, guid: var GUID): bool =
     var bytesRet: Dword
@@ -534,26 +562,8 @@ else:
       let customSet = {Event.Timer, Event.Signal, Event.Process,
                        Event.Vnode}
 
-    # ZAH: Please extract this code in a template
     # Moving expired timers to `loop.callbacks` and calculate timeout.
-    var count = len(loop.timers)
-    if count > 0:
-      var lastFinish = curTime
-      while count > 0:
-        lastFinish = loop.timers[0].finishAt
-        if curTime < lastFinish:
-          break
-        loop.callbacks.addLast(loop.timers.pop().function)
-        dec(count)
-      if count > 0:
-        curTimeout = int(lastFinish - curTime)
-
-    if curTimeout == 0:
-      if len(loop.callbacks) == 0:
-        curTimeout = -1
-    else:
-      if len(loop.callbacks) != 0:
-        curTimeout = 0
+    loop.processTimersGetTimeout(curTimeout)
 
     # Processing IO descriptors and all hardware events.
     count = loop.selector.selectInto(curTimeout, loop.keys)
@@ -578,27 +588,12 @@ else:
           withData(loop.selector, fd, adata) do:
             loop.callbacks.addLast(adata.reader)
 
-    # ZAH: Please extract the code below in a template
-
     # Moving expired timers to `loop.callbacks`.
-    curTime = fastEpochTime()
-    count = len(loop.timers)
-    if count > 0:
-      while count > 0:
-        if curTime < loop.timers[0].finishAt:
-          break
-        loop.callbacks.addLast(loop.timers.pop().function)
-        dec(count)
+    loop.processTimers()
 
-    # Scheduling callbacks.
-    # all callbacks which will be added in process will be processed on next
+    # All callbacks which will be added in process, will be processed on next
     # poll() call.
-    count = len(loop.callbacks)
-    for i in 0..<count:
-      # ZAH: instead of calling `popFirst` here in a loop, why don't we
-      # call `setLen(0)` at the end after iterating over all callbacks?
-      var callable = loop.callbacks.popFirst()
-      callable.function(callable.udata)
+    loop.processCallbacks()
 
   proc initAPI() =
     discard getGlobalDispatcher()
