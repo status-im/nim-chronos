@@ -47,7 +47,7 @@ proc swarmWorker1(address: TransportAddress): Future[int] {.async.} =
   result = int(et - st)
 
 proc test1(): Future[int] {.async.} =
-  var ta = strAddress("127.0.0.1:31354")
+  var ta = initTAddress("127.0.0.1:31354")
   var server = createStreamServer(ta, serveClient1, {ReuseAddr})
   server.start()
   result = await swarmWorker1(ta)
@@ -55,6 +55,6 @@ proc test1(): Future[int] {.async.} =
   server.close()
 
 when isMainModule:
-  suite "Additional Stream Transport test suite":
+  suite "Server's test suite":
     test "Server pause/resume test":
       check waitFor(test1()) >= TimeoutPeriod
