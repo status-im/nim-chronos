@@ -197,7 +197,7 @@ template processTimersGetTimeout(loop, timeout: untyped) =
       when defined(windows):
         timeout = DWORD(lastFinish - curTime)
       else:
-        timeout = lastFinish - curTime
+        timeout = int(lastFinish - curTime)
 
   if timeout == 0:
     if len(loop.callbacks) == 0:
@@ -566,7 +566,7 @@ else:
     loop.processTimersGetTimeout(curTimeout)
 
     # Processing IO descriptors and all hardware events.
-    count = loop.selector.selectInto(curTimeout, loop.keys)
+    var count = loop.selector.selectInto(curTimeout, loop.keys)
     for i in 0..<count:
       let fd = loop.keys[i].fd
       let events = loop.keys[i].events
