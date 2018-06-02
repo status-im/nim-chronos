@@ -310,29 +310,11 @@ when defined(windows) or defined(nimdoc):
     # Moving expired timers to `loop.callbacks` and calculate timeout
     loop.processTimersGetTimeout(curTimeout)
 
-    var count = len(loop.timers)
-    if count > 0:
-      var lastFinish = curTime
-      while count > 0:
-        lastFinish = loop.timers[0].finishAt
-        if curTime < lastFinish:
-          break
-        loop.callbacks.addLast(loop.timers.pop().function)
-        dec(count)
-      if count > 0:
-        curTimeout = DWORD(lastFinish - curTime)
-
-    if curTimeout == 0:
-      if len(loop.callbacks) == 0:
-        curTimeout = INFINITE
-    else:
-      if len(loop.callbacks) != 0:
-        curTimeout = 0
-
     # Processing handles
     var lpNumberOfBytesTransferred: Dword
     var lpCompletionKey: ULONG_PTR
     var customOverlapped: PtrCustomOverlapped
+
     let res = getQueuedCompletionStatus(
       loop.ioPort, addr lpNumberOfBytesTransferred, addr lpCompletionKey,
       cast[ptr POVERLAPPED](addr customOverlapped), curTimeout).bool
@@ -604,7 +586,6 @@ proc addTimer*(at: uint64, cb: CallbackFunc, udata: pointer = nil) =
   let loop = getGlobalDispatcher()
   var tcb = TimerCallback(finishAt: at,
                           function: AsyncCallback(function: cb, udata: udata))
-  # ZAH: This should use a priority queue (e.g. a binary heap)
   loop.timers.push(tcb)
 
 proc removeTimer*(at: uint64, cb: CallbackFunc, udata: pointer = nil) =
