@@ -15,6 +15,7 @@ else:
   import posix
 
 const
+  ConstantMessage = "SOMEDATA"
   ClientsCount = 100
   MessagesCount = 100
   MessageSize = 20
@@ -99,6 +100,36 @@ proc serveClient4(server: StreamServer,
   var answer = "OK\r\n"
   var res = await transp.write(cast[pointer](addr answer[0]), len(answer))
   doAssert(res == len(answer))
+
+proc serveClient5(server: StreamServer,
+                  transp: StreamTransport, udata: pointer) {.async.} =
+  var data = await transp.read()
+  doAssert(len(data) == len(ConstantMessage) * MessagesCount)
+  transp.close()
+  var expect = ""
+  for i in 0..<MessagesCount:
+    expect.add(ConstantMessage)
+  doAssert(equalMem(addr expect[0], addr data[0], len(data)))
+  var counter = cast[ptr int](udata)
+  dec(counter[])
+  if counter[] == 0:
+    server.stop()
+    server.close()
+
+proc serveClient6(server: StreamServer,
+                  transp: StreamTransport, udata: pointer) {.async.} =
+  var expect = ConstantMessage
+  var skip = await transp.consume(len(ConstantMessage) * (MessagesCount - 1))
+  doAssert(skip == len(ConstantMessage) * (MessagesCount - 1))
+  var data = await transp.read()
+  doAssert(len(data) == len(ConstantMessage))
+  transp.close()
+  doAssert(equalMem(addr data[0], addr expect[0], len(expect)))
+  var counter = cast[ptr int](udata)
+  dec(counter[])
+  if counter[] == 0:
+    server.stop()
+    server.close()
 
 proc swarmWorker1(address: TransportAddress): Future[int] {.async.} =
   var transp = await connect(address)
@@ -188,6 +219,24 @@ proc swarmWorker4(address: TransportAddress): Future[int] {.async.} =
   result = 1
   transp.close()
 
+proc swarmWorker5(address: TransportAddress): Future[int] {.async.} =
+  var transp = await connect(address)
+  var data = ConstantMessage
+  for i in 0..<MessagesCount:
+    var res = await transp.write(data)
+  result = MessagesCount
+  transp.close()
+
+proc swarmWorker6(address: TransportAddress): Future[int] {.async.} =
+  var transp = await connect(address)
+  var data = ConstantMessage
+  var seqdata = newSeq[byte](len(data))
+  copyMem(addr seqdata[0], addr data[0], len(data))
+  for i in 0..<MessagesCount:
+    var res = await transp.write(seqdata)
+  result = MessagesCount
+  transp.close()
+
 proc waitAll[T](futs: seq[Future[T]]): Future[void] =
   var counter = len(futs)
   var retFuture = newFuture[void]("waitAll")
@@ -243,6 +292,28 @@ proc swarmManager4(address: TransportAddress): Future[int] {.async.} =
     var res = workers[i].read()
     result += res
 
+proc swarmManager5(address: TransportAddress): Future[int] {.async.} =
+  var retFuture = newFuture[void]("swarm.manager.read")
+  var workers = newSeq[Future[int]](ClientsCount)
+  var count = ClientsCount
+  for i in 0..<ClientsCount:
+    workers[i] = swarmWorker5(address)
+  await waitAll(workers)
+  for i in 0..<ClientsCount:
+    var res = workers[i].read()
+    result += res
+
+proc swarmManager6(address: TransportAddress): Future[int] {.async.} =
+  var retFuture = newFuture[void]("swarm.manager.consume")
+  var workers = newSeq[Future[int]](ClientsCount)
+  var count = ClientsCount
+  for i in 0..<ClientsCount:
+    workers[i] = swarmWorker6(address)
+  await waitAll(workers)
+  for i in 0..<ClientsCount:
+    var res = workers[i].read()
+    result += res
+
 proc test1(): Future[int] {.async.} =
   var ta = initTAddress("127.0.0.1:31344")
   var server = createStreamServer(ta, serveClient1, {ReuseAddr})
@@ -271,12 +342,29 @@ proc test3(): Future[int] {.async.} =
 
 proc test4(): Future[int] {.async.} =
   var ta = initTAddress("127.0.0.1:31347")
-  var counter = 0
   var server = createStreamServer(ta, serveClient4, {ReuseAddr})
   server.start()
   result = await swarmManager4(ta)
   server.stop()
   server.close()
+
+proc test5(): Future[int] {.async.} =
+  var ta = initTAddress("127.0.0.1:31347")
+  var counter = ClientsCount
+  var server = createStreamServer(ta, serveClient5, {ReuseAddr},
+                                  udata = cast[pointer](addr counter))
+  server.start()
+  result = await swarmManager5(ta)
+  await server.join()
+
+proc test6(): Future[int] {.async.} =
+  var ta = initTAddress("127.0.0.1:31347")
+  var counter = ClientsCount
+  var server = createStreamServer(ta, serveClient6, {ReuseAddr},
+                                  udata = cast[pointer](addr counter))
+  server.start()
+  result = await swarmManager6(ta)
+  await server.join()
 
 when isMainModule:
   const
@@ -287,6 +375,10 @@ when isMainModule:
     m3 = "readUntil() multiple clients with messages (" & $ClientsCount &
          " clients x " & $MessagesCount & " messages)"
     m4 = "writeFile() multiple clients (" & $FilesCount & " files)"
+    m5 = "write(string)/read(int) multiple clients (" & $ClientsCount &
+         " clients x " & $MessagesCount & " messages)"
+    m6 = "write(seq[byte])/consume(int)/read(int) multiple clients (" &
+         $ClientsCount & " clients x " & $MessagesCount & " messages)"
 
   suite "Stream Transport test suite":
     test m1:
@@ -297,3 +389,7 @@ when isMainModule:
       check waitFor(test3()) == ClientsCount * MessagesCount
     test m4:
       check waitFor(test4()) == FilesCount
+    test m5:
+      check waitFor(test5()) == ClientsCount * MessagesCount
+    test m6:
+      check waitFor(test6()) == ClientsCount * MessagesCount
