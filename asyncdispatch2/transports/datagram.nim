@@ -190,8 +190,8 @@ when defined(windows):
               transp.state.excl(ReadPending)
               transp.state.incl(ReadPaused)
             elif int(err) == WSAECONNRESET:
-              transp.state.excl(ReadPending)
-              continue
+              transp.state = {ReadPaused, ReadEof}
+              break
             elif int(err) == ERROR_IO_PENDING:
               discard
             else:
@@ -580,27 +580,12 @@ proc createDatagramServer*(host: TransportAddress,
 
 proc start*(server: DatagramServer) =
   ## Starts ``server``.
-  if server.status in {ServerStatus.Starting, ServerStatus.Paused}:
+  if server.status == ServerStatus.Starting:
     server.transport.resumeRead()
+    server.status = ServerStatus.Running
 
 proc stop*(server: DatagramServer) =
   ## Stops ``server``.
-  if server.status in {ServerStatus.Paused, ServerStatus.Running}:
-    when defined(windows):
-      if server.status == ServerStatus.Running:
-        if {WritePending, ReadPending} * server.transport.state != {}:
-          ## CancelIO will stop both reading and writing.
-          discard cancelIo(Handle(server.transport.fd))
-    else:
-      if server.status == ServerStatus.Running:
-        if WritePaused notin server.transport.state:
-          server.transport.fd.removeWriter()
-        if ReadPaused notin server.transport.state:
-          server.transport.fd.removeReader()
-    server.status = ServerStatus.Stopped
-
-proc pause*(server: DatagramServer) =
-  ## Pause ``server``.
   if server.status == ServerStatus.Running:
     when defined(windows):
       if {WritePending, ReadPending} * server.transport.state != {}:
@@ -611,7 +596,7 @@ proc pause*(server: DatagramServer) =
         server.transport.fd.removeWriter()
       if ReadPaused notin server.transport.state:
         server.transport.fd.removeReader()
-    server.status = ServerStatus.Paused
+    server.status = ServerStatus.Stopped
 
 proc join*(server: DatagramServer) {.async.} =
   ## Waits until ``server`` is not stopped.
@@ -621,5 +606,6 @@ proc join*(server: DatagramServer) {.async.} =
 proc close*(server: DatagramServer) =
   ## Release ``server`` resources.
   if server.status == ServerStatus.Stopped:
+    server.status = ServerStatus.Closed
     server.transport.close()
     GC_unref(server)

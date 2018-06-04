@@ -7,54 +7,45 @@
 #              MIT license (LICENSE-MIT)
 
 import strutils, unittest
-import ../asyncdispatch2, ../asyncdispatch2/timer
+import ../asyncdispatch2
 
-const TimeoutPeriod = 2000
+proc serveStreamClient(server: StreamServer,
+                       transp: StreamTransport, udata: pointer) {.async.} =
+  discard
 
-proc serveClient1(server: StreamServer,
-                  transp: StreamTransport, udata: pointer) {.async.} =
-  var data = await transp.readLine()
-  if len(data) == 0:
-    doAssert(transp.atEof())
-  if data == "PAUSE":
-    server.pause()
-    data = "DONE\r\n"
-    var res = await transp.write(cast[pointer](addr data[0]), len(data))
-    doAssert(res == len(data))
-    await sleepAsync(TimeoutPeriod)
-    server.start()
-  elif data == "CHECK":
-    data = "CONFIRM\r\n"
-    var res = await transp.write(cast[pointer](addr data[0]), len(data))
-    doAssert(res == len(data))
-    transp.close()
+proc serveDatagramClient(transp: DatagramTransport,
+                         pbytes: pointer, nbytes: int,
+                         raddr: TransportAddress,
+                         udata: pointer): Future[void] {.async.} =
+  discard
 
-proc swarmWorker1(address: TransportAddress): Future[int] {.async.} =
-  var transp1 = await connect(address)
-  var data = "PAUSE\r\n"
-  var res = await transp1.write(cast[pointer](addr data[0]), len(data))
-  doAssert(res == len(data))
-  var answer = await transp1.readLine()
-  doAssert(answer == "DONE")
-  var st = fastEpochTime()
-  var transp2 = await connect(address)
-  data = "CHECK\r\n"
-  res = await transp2.write(cast[pointer](addr data[0]), len(data))
-  doAssert(res == len(data))
-  var confirm = await transp2.readLine()
-  doAssert(confirm == "CONFIRM")
-  var et = fastEpochTime()
-  result = int(et - st)
-
-proc test1(): Future[int] {.async.} =
+proc test1(): bool =
   var ta = initTAddress("127.0.0.1:31354")
-  var server = createStreamServer(ta, serveClient1, {ReuseAddr})
-  server.start()
-  result = await swarmWorker1(ta)
-  server.stop()
-  server.close()
+  var server1 = createStreamServer(ta, serveStreamClient, {ReuseAddr})
+  server1.start()
+  server1.stop()
+  server1.close()
+  var server2 = createStreamServer(ta, serveStreamClient, {ReuseAddr})
+  server2.start()
+  server2.stop()
+  server2.close()
+  result = true
+
+proc test2(): bool =
+  var ta = initTAddress("127.0.0.1:31354")
+  var server1 = createDatagramServer(ta, serveDatagramClient, {ReuseAddr})
+  server1.start()
+  server1.stop()
+  server1.close()
+  var server2 = createDatagramServer(ta, serveDatagramClient, {ReuseAddr})
+  server2.start()
+  server2.stop()
+  server2.close()
+  result = true
 
 when isMainModule:
   suite "Server's test suite":
-    test "Server pause/resume test":
-      check waitFor(test1()) >= TimeoutPeriod
+    test "Stream Server start/stop test":
+      check test1() == true
+    test "Datagram Server start/stop test":
+      check test2() == true

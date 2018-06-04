@@ -36,20 +36,41 @@ type
     Starting,                     # Server created
     Stopped,                      # Server stopped
     Running,                      # Server running
-    Paused                        # Server paused
+    Closed                        # Server closed
 
-  SocketServer* = ref object of RootRef
-    ## Socket server object
-    sock*: AsyncFD                # Socket
-    local*: TransportAddress      # Address
-    actEvent*: AsyncEvent         # Activation event
-    action*: ServerCommand        # Activation command
-    status*: ServerStatus         # Current server status
-    udata*: pointer               # User-defined pointer
-    flags*: set[ServerFlags]      # Flags
-    bufferSize*: int              # Size of internal transports' buffer
-    loopFuture*: Future[void]     # Server's main Future
+when defined(windows):
+  type
+    SocketServer* = ref object of RootRef
+      ## Socket server object
+      sock*: AsyncFD                # Socket
+      local*: TransportAddress      # Address
+      # actEvent*: AsyncEvent       # Activation event
+      # action*: ServerCommand      # Activation command
+      status*: ServerStatus         # Current server status
+      udata*: pointer               # User-defined pointer
+      flags*: set[ServerFlags]      # Flags
+      bufferSize*: int              # Size of internal transports' buffer
+      loopFuture*: Future[void]     # Server's main Future
+      domain*: Domain               # Current server domain (IPv4 or IPv6)
+      apending*: bool
+      asock*: AsyncFD               # Current AcceptEx() socket
+      abuffer*: array[128, byte]    # Windows AcceptEx() buffer
+      aovl*: CustomOverlapped       # AcceptEx OVERLAPPED structure
+else:
+  type
+    SocketServer* = ref object of RootRef
+      ## Socket server object
+      sock*: AsyncFD                # Socket
+      local*: TransportAddress      # Address
+      # actEvent*: AsyncEvent         # Activation event
+      # action*: ServerCommand        # Activation command
+      status*: ServerStatus         # Current server status
+      udata*: pointer               # User-defined pointer
+      flags*: set[ServerFlags]      # Flags
+      bufferSize*: int              # Size of internal transports' buffer
+      loopFuture*: Future[void]     # Server's main Future
 
+type
   TransportError* = object of Exception
     ## Transport's specific exception
   TransportOsError* = object of TransportError
