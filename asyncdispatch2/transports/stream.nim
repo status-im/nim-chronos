@@ -866,9 +866,9 @@ proc readExactly*(transp: StreamTransport, pbytes: pointer,
       if ReadPaused in transp.state:
         transp.resumeRead()
       await transp.reader
-
-  # we are no longer need data
-  transp.reader = nil
+      # we need to clear transp.reader to avoid double completion of this
+      # Future[T], because readLoop continues working.
+      transp.reader = nil
 
 proc readOnce*(transp: StreamTransport, pbytes: pointer,
                nbytes: int): Future[int] {.async.} =
@@ -889,8 +889,8 @@ proc readOnce*(transp: StreamTransport, pbytes: pointer,
       if ReadPaused in transp.state:
         transp.resumeRead()
       await transp.reader
-
-      # we are no longer need data
+      # we need to clear transp.reader to avoid double completion of this
+      # Future[T], because readLoop continues working.
       transp.reader = nil
     else:
       if transp.offset > nbytes:
@@ -961,9 +961,9 @@ proc readUntil*(transp: StreamTransport, pbytes: pointer, nbytes: int,
         if ReadPaused in transp.state:
           transp.resumeRead()
         await transp.reader
-
-  # we are no longer need data
-  transp.reader = nil
+        # we need to clear transp.reader to avoid double completion of this
+        # Future[T], because readLoop continues working.
+        transp.reader = nil
 
 proc readLine*(transp: StreamTransport, limit = 0,
                sep = "\r\n"): Future[string] {.async.} =
@@ -1018,9 +1018,9 @@ proc readLine*(transp: StreamTransport, limit = 0,
         if ReadPaused in transp.state:
           transp.resumeRead()
         await transp.reader
-
-  # we are no longer need data
-  transp.reader = nil
+        # we need to clear transp.reader to avoid double completion of this
+        # Future[T], because readLoop continues working.
+        transp.reader = nil
 
 proc read*(transp: StreamTransport, n = -1): Future[seq[byte]] {.async.} =
   ## Read all bytes (n == -1) or `n` bytes from transport ``transp``.
@@ -1066,9 +1066,9 @@ proc read*(transp: StreamTransport, n = -1): Future[seq[byte]] {.async.} =
     if ReadPaused in transp.state:
       transp.resumeRead()
     await transp.reader
-
-  # we are no longer need data
-  transp.reader = nil
+    # we need to clear transp.reader to avoid double completion of this
+    # Future[T], because readLoop continues working.
+    transp.reader = nil
 
 proc atEof*(transp: StreamTransport): bool {.inline.} =
   ## Returns ``true`` if ``transp`` is at EOF.
