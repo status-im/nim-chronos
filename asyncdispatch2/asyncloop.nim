@@ -292,8 +292,6 @@ when defined(windows) or defined(nimdoc):
     ## (Unix) for the specified dispatcher.
     return disp.ioPort
 
-  # ZAH: Shouldn't all of these procs be defined over the Dispatcher type?
-  # The "global" variants can be defined as templates passing the global dispatcher
   proc register*(fd: AsyncFD) =
     ## Registers ``fd`` with the dispatcher.
     let p = getGlobalDispatcher()
