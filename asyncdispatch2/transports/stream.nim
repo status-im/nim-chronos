@@ -21,13 +21,12 @@ type
     DataBuffer,                     # Simple buffer pointer/length
     DataFile                        # File handle for sendfile/TransmitFile
 
-type
   StreamVector = object
     kind: VectorKind                # Writer vector source kind
     buf: pointer                    # Writer buffer pointer
     buflen: int                     # Writer buffer size
     offset: uint                    # Writer vector offset
-    writer: Future[void]            # Writer vector completion Future
+    writer: Future[int]             # Writer vector completion Future
 
   TransportKind* {.pure.} = enum
     Socket,                         # Socket transport
@@ -102,9 +101,9 @@ template setReadError(t, e: untyped) =
   (t).state.incl(ReadError)
   (t).error = newException(TransportOsError, osErrorMsg((e)))
 
-template setWriteError(t, e: untyped) =
-  (t).state.incl(WriteError)
-  (t).error = newException(TransportOsError, osErrorMsg((e)))
+# template setWriteError(t, e: untyped) =
+#   (t).state.incl(WriteError)
+#   (t).error = newException(TransportOsError, osErrorMsg((e)))
 
 template finishReader(t: untyped) =
   var reader = (t).reader
@@ -140,10 +139,6 @@ when defined(windows):
       roffset: int                # Pending reading offset
 
   const SO_UPDATE_CONNECT_CONTEXT = 0x7010
-
-  template finishWriter(t: untyped) =
-    var vv = (t).queue.popFirst()
-    vv.writer.complete()
 
   template zeroOvelappedOffset(t: untyped) =
     (t).offset = 0
@@ -186,7 +181,7 @@ when defined(windows):
           bytesCount = transp.wovl.data.bytesCount
           var vector = transp.queue.popFirst()
           if bytesCount == 0:
-            vector.writer.complete()
+            vector.writer.complete(0)
           else:
             if transp.kind == TransportKind.Socket:
               if vector.kind == VectorKind.DataBuffer:
@@ -194,19 +189,23 @@ when defined(windows):
                   vector.shiftVectorBuffer(bytesCount)
                   transp.queue.addFirst(vector)
                 else:
-                  vector.writer.complete()
+                  vector.writer.complete(transp.wwsabuf.len)
               else:
                 if uint(bytesCount) < getFileSize(vector):
                   vector.shiftVectorFile(bytesCount)
                   transp.queue.addFirst(vector)
                 else:
-                  vector.writer.complete()
+                  vector.writer.complete(int(getFileSize(vector)))
         elif int(err) == ERROR_OPERATION_ABORTED:
           # CancelIO() interrupt
-          transp.finishWriter()
+          transp.state.incl(WritePaused)
+          let v = transp.queue.popFirst()
+          v.writer.complete(0)
+          break
         else:
-          transp.setWriteError(err)
-          transp.finishWriter()
+          let v = transp.queue.popFirst()
+          transp.state.incl(WriteError)
+          v.writer.fail(newException(TransportOsError, osErrorMsg(err)))
       else:
         ## Initiation
         transp.state.incl(WritePending)
@@ -225,12 +224,14 @@ when defined(windows):
                 # CancelIO() interrupt
                 transp.state.excl(WritePending)
                 transp.state.incl(WritePaused)
+                vector.writer.complete(0)
               elif int(err) == ERROR_IO_PENDING:
                 transp.queue.addFirst(vector)
               else:
                 transp.state.excl(WritePending)
-                transp.setWriteError(err)
-                vector.writer.complete()
+                transp.state = transp.state + {WritePaused, WriteError}
+                vector.writer.fail(newException(TransportOsError,
+                                                osErrorMsg(err)))
             else:
               transp.queue.addFirst(vector)
           else:
@@ -253,12 +254,14 @@ when defined(windows):
                 # CancelIO() interrupt
                 transp.state.excl(WritePending)
                 transp.state.incl(WritePaused)
+                vector.writer.complete(0)
               elif int(err) == ERROR_IO_PENDING:
                 transp.queue.addFirst(vector)
               else:
                 transp.state.excl(WritePending)
-                transp.setWriteError(err)
-                vector.writer.complete()
+                transp.state = transp.state + {WritePaused, WriteError}
+                vector.writer.fail(newException(TransportOsError,
+                                                osErrorMsg(err)))
             else:
               transp.queue.addFirst(vector)
         break
@@ -385,11 +388,11 @@ when defined(windows):
     sock = createAsyncSocket(address.address.getDomain(), SockType.SOCK_STREAM,
                              Protocol.IPPROTO_TCP)
     if sock == asyncInvalidSocket:
-      result.fail(newException(OSError, osErrorMsg(osLastError())))
+      result.fail(newException(TransportOsError, osErrorMsg(osLastError())))
 
     if not bindToDomain(sock, address.address.getDomain()):
       sock.closeAsyncSocket()
-      result.fail(newException(OSError, osErrorMsg(osLastError())))
+      result.fail(newException(TransportOsError, osErrorMsg(osLastError())))
 
     proc continuation(udata: pointer) =
       var ovl = cast[RefCustomOverlapped](udata)
@@ -399,13 +402,15 @@ when defined(windows):
                         cint(SO_UPDATE_CONNECT_CONTEXT), nil,
                         SockLen(0)) != 0'i32:
             sock.closeAsyncSocket()
-            retFuture.fail(newException(OSError, osErrorMsg(osLastError())))
+            retFuture.fail(newException(TransportOsError,
+                                        osErrorMsg(osLastError())))
           else:
             retFuture.complete(newStreamSocketTransport(povl.data.fd,
                                                         bufferSize))
         else:
           sock.closeAsyncSocket()
-          retFuture.fail(newException(OSError, osErrorMsg(ovl.data.errCode)))
+          retFuture.fail(newException(TransportOsError,
+                                      osErrorMsg(ovl.data.errCode)))
       GC_unref(ovl)
 
     povl = RefCustomOverlapped()
@@ -421,7 +426,7 @@ when defined(windows):
       if int32(err) != ERROR_IO_PENDING:
         GC_unref(povl)
         sock.closeAsyncSocket()
-        retFuture.fail(newException(OSError, osErrorMsg(err)))
+        retFuture.fail(newException(TransportOsError, osErrorMsg(err)))
     return retFuture
 
   proc acceptLoop(udata: pointer) {.gcsafe, nimcall.} =
@@ -442,7 +447,7 @@ when defined(windows):
                           addr server.sock,
                           SockLen(sizeof(SocketHandle))) != 0'i32:
               server.asock.closeAsyncSocket()
-              raiseOsError(osLastError())
+              raise newException(TransportOsError, osErrorMsg(osLastError()))
             else:
               discard server.function(server,
                 newStreamSocketTransport(server.asock, server.bufferSize),
@@ -521,7 +526,7 @@ else:
 
   proc writeStreamLoop(udata: pointer) {.gcsafe.} =
     var cdata = cast[ptr CompletionData](udata)
-    if not isNil(cdata) and int(cdata.fd) == 0:
+    if not isNil(cdata) and (int(cdata.fd) == 0 or isNil(cdata.udata)):
       # Transport was closed earlier, exiting
       return
     var transp = cast[UnixStreamTransport](cdata.udata)
@@ -534,7 +539,7 @@ else:
             let res = posix.send(fd, vector.buf, vector.buflen, MSG_NOSIGNAL)
             if res >= 0:
               if vector.buflen - res == 0:
-                vector.writer.complete()
+                vector.writer.complete(vector.buflen)
               else:
                 vector.shiftVectorBuffer(res)
                 transp.queue.addFirst(vector)
@@ -543,15 +548,15 @@ else:
               if int(err) == EINTR:
                 continue
               else:
-                transp.setWriteError(err)
-                vector.writer.complete()
+                vector.writer.fail(newException(TransportOsError,
+                                                osErrorMsg(err)))
           else:
             let res = sendfile(int(fd), cast[int](vector.buflen),
                                int(vector.offset),
                                cast[int](vector.buf))
             if res >= 0:
               if cast[int](vector.buf) - res == 0:
-                vector.writer.complete()
+                vector.writer.complete(cast[int](vector.buf))
               else:
                 vector.shiftVectorFile(res)
                 transp.queue.addFirst(vector)
@@ -560,16 +565,16 @@ else:
               if int(err) == EINTR:
                 continue
               else:
-                transp.setWriteError(err)
-                vector.writer.complete()
-          break
+                vector.writer.fail(newException(TransportOsError,
+                                                osErrorMsg(err)))
+        break
     else:
       transp.state.incl(WritePaused)
       transp.fd.removeWriter()
 
   proc readStreamLoop(udata: pointer) {.gcsafe.} =
     var cdata = cast[ptr CompletionData](udata)
-    if not isNil(cdata) and int(cdata.fd) == 0:
+    if not isNil(cdata) and (int(cdata.fd) == 0 or isNil(cdata.udata)):
       # Transport was closed earlier, exiting
       return
     var transp = cast[UnixStreamTransport](cdata.udata)
@@ -582,15 +587,13 @@ else:
         if int(err) == EINTR:
           continue
         elif int(err) in {ECONNRESET}:
-          transp.state.incl(ReadEof)
-          transp.state.incl(ReadPaused)
+          transp.state = transp.state + {ReadEof, ReadPaused}
           cdata.fd.removeReader()
         else:
           transp.setReadError(err)
           cdata.fd.removeReader()
       elif res == 0:
-        transp.state.incl(ReadEof)
-        transp.state.incl(ReadPaused)
+        transp.state = transp.state + {ReadEof, ReadPaused}
         cdata.fd.removeReader()
       else:
         transp.offset += res
@@ -796,49 +799,62 @@ proc createStreamServer*(host: TransportAddress,
   result.resumeAccept()
 
 proc write*(transp: StreamTransport, pbytes: pointer,
-            nbytes: int): Future[int] {.async.} =
+            nbytes: int): Future[int] =
   ## Write data from buffer ``pbytes`` with size ``nbytes`` using transport
   ## ``transp``.
-  checkClosed(transp)
-  var waitFuture = newFuture[void]("transport.write")
-  var vector = StreamVector(kind: DataBuffer, writer: waitFuture,
+  var retFuture = newFuture[int]()
+  transp.checkClosed(retFuture)
+  var vector = StreamVector(kind: DataBuffer, writer: retFuture,
                             buf: pbytes, buflen: nbytes)
   transp.queue.addLast(vector)
   if WritePaused in transp.state:
     transp.resumeWrite()
-  await vector.writer
-  if WriteError in transp.state:
-    raise transp.getError()
-  result = nbytes
+  return retFuture
 
-template write*(transp: StreamTransport, msg: var string): untyped =
-  ## Write string ``msg`` using transport ``transp``.
-  write(transp, addr msg[0], len(msg))
+proc write*(transp: StreamTransport, msg: string): Future[int] =
+  ## Write data from string ``msg`` using transport ``transp``.
+  var retFuture = FutureGCString[int]()
+  transp.checkClosed(retFuture)
+  shallowCopy(retFuture.gcholder, msg)
+  var vector = StreamVector(kind: DataBuffer,
+                            writer: cast[Future[int]](retFuture),
+                            buf: unsafeAddr msg[0], buflen: len(msg))
+  transp.queue.addLast(vector)
+  if WritePaused in transp.state:
+    transp.resumeWrite()
+  return retFuture
 
-template write*(transp: StreamTransport, msg: var seq[byte]): untyped =
-  ## Write seq[byte] ``msg`` using transport ``transp``.
-  write(transp, addr msg[0], len(msg))
+proc write*[T](transp: StreamTransport, msg: seq[T]): Future[int] =
+  ## Write sequence ``msg`` using transport ``transp``.
+  var retFuture = FutureGCSeq[int, T]()
+  transp.checkClosed(retFuture)
+  shallowCopy(retFuture.gcholder, msg)
+  var vector = StreamVector(kind: DataBuffer,
+                            writer: cast[Future[int]](retFuture),
+                            buf: unsafeAddr msg[0],
+                            buflen: len(msg) * sizeof(T))
+  transp.queue.addLast(vector)
+  if WritePaused in transp.state:
+    transp.resumeWrite()
+  return retFuture
 
 proc writeFile*(transp: StreamTransport, handle: int,
                 offset: uint = 0,
-                size: int = 0): Future[void] {.async.} =
+                size: int = 0): Future[int] =
   ## Write data from file descriptor ``handle`` to transport ``transp``.
   ##
   ## You can specify starting ``offset`` in opened file and number of bytes
   ## to transfer from file to transport via ``size``.
-  if transp.kind != TransportKind.Socket:
-    raise newException(TransportError, "You can transmit files only to sockets")
+  var retFuture = newFuture[int]("transport.writeFile")
   checkClosed(transp)
-  var waitFuture = newFuture[void]("transport.writeFile")
-  var vector = StreamVector(kind: DataFile, writer: waitFuture,
+  
+  var vector = StreamVector(kind: DataFile, writer: retFuture,
                             buf: cast[pointer](size), offset: offset,
                             buflen: handle)
   transp.queue.addLast(vector)
   if WritePaused in transp.state:
     transp.resumeWrite()
-  await vector.writer
-  if WriteError in transp.state:
-    raise transp.getError()
+  return retFuture
 
 proc atEof*(transp: StreamTransport): bool {.inline.} =
   ## Returns ``true`` if ``transp`` is at EOF.

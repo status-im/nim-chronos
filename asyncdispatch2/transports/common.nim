@@ -8,7 +8,7 @@
 #              MIT license (LICENSE-MIT)
 
 import net, nativesockets, strutils
-import ../asyncloop, ../asyncsync
+import ../asyncloop
 
 const
   DefaultStreamBufferSize* = 4096    ## Default buffer size for stream
@@ -38,14 +38,20 @@ type
     Running,                      # Server running
     Closed                        # Server closed
 
+  FutureGCString*[T] = ref object of Future[T]
+    ## Future to hold GC strings
+    gcholder*: string
+
+  FutureGCSeq*[A, B] = ref object of Future[A]
+    ## Future to hold GC seqs
+    gcholder*: seq[B]
+
 when defined(windows):
   type
     SocketServer* = ref object of RootRef
       ## Socket server object
       sock*: AsyncFD                # Socket
       local*: TransportAddress      # Address
-      # actEvent*: AsyncEvent       # Activation event
-      # action*: ServerCommand      # Activation command
       status*: ServerStatus         # Current server status
       udata*: pointer               # User-defined pointer
       flags*: set[ServerFlags]      # Flags
@@ -62,8 +68,6 @@ else:
       ## Socket server object
       sock*: AsyncFD                # Socket
       local*: TransportAddress      # Address
-      # actEvent*: AsyncEvent         # Activation event
-      # action*: ServerCommand        # Activation command
       status*: ServerStatus         # Current server status
       udata*: pointer               # User-defined pointer
       flags*: set[ServerFlags]      # Flags
@@ -193,6 +197,11 @@ proc resolveTAddress*(address: string,
 template checkClosed*(t: untyped) =
   if (ReadClosed in (t).state) or (WriteClosed in (t).state):
     raise newException(TransportError, "Transport is already closed!")
+
+template checkClosed*(t: untyped, future: untyped) =
+  if (ReadClosed in (t).state) or (WriteClosed in (t).state):
+    future.fail(newException(TransportError, "Transport is already closed!"))
+    return future
 
 template getError*(t: untyped): ref Exception =
   var err = (t).error

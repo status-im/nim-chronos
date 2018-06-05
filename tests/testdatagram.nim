@@ -132,7 +132,154 @@ proc client5(transp: DatagramTransport, pbytes: pointer, nbytes: int,
     counterPtr[] = -1
     transp.close()
 
-proc test1(): Future[int] {.async.} =
+proc client6(transp: DatagramTransport, pbytes: pointer, nbytes: int,
+             raddr: TransportAddress, udata: pointer): Future[void] {.async.} =
+  if not isNil(pbytes):
+    var data = newString(nbytes + 1)
+    copyMem(addr data[0], pbytes, nbytes)
+    data.setLen(nbytes)
+    if data.startsWith("REQUEST"):
+      var numstr = data[7..^1]
+      var num = parseInt(numstr)
+      var ans = "ANSWER" & $num
+      await transp.sendTo(ans, raddr)
+    else:
+      var err = "ERROR"
+      await transp.sendTo(err, raddr)
+  else:
+    ## Read operation failed with error
+    var counterPtr = cast[ptr int](udata)
+    counterPtr[] = -1
+    transp.close()
+
+proc client7(transp: DatagramTransport, pbytes: pointer, nbytes: int,
+             raddr: TransportAddress, udata: pointer): Future[void] {.async.} =
+  if not isNil(pbytes):
+    var data = newString(nbytes + 1)
+    copyMem(addr data[0], pbytes, nbytes)
+    data.setLen(nbytes)
+    if data.startsWith("ANSWER"):
+      var counterPtr = cast[ptr int](udata)
+      counterPtr[] = counterPtr[] + 1
+      if counterPtr[] == TestsCount:
+        transp.close()
+      else:
+        var ta = initTAddress("127.0.0.1:33336")
+        var req = "REQUEST" & $counterPtr[]
+        await transp.sendTo(req, ta)
+    else:
+      var counterPtr = cast[ptr int](udata)
+      counterPtr[] = -1
+      transp.close()
+  else:
+    ## Read operation failed with error
+    var counterPtr = cast[ptr int](udata)
+    counterPtr[] = -1
+    transp.close()
+
+proc client8(transp: DatagramTransport, pbytes: pointer, nbytes: int,
+             raddr: TransportAddress, udata: pointer): Future[void] {.async.} =
+  if not isNil(pbytes):
+    var data = newString(nbytes + 1)
+    copyMem(addr data[0], pbytes, nbytes)
+    data.setLen(nbytes)
+    if data.startsWith("ANSWER"):
+      var counterPtr = cast[ptr int](udata)
+      counterPtr[] = counterPtr[] + 1
+      if counterPtr[] == TestsCount:
+        transp.close()
+      else:
+        var req = "REQUEST" & $counterPtr[]
+        await transp.send(req)
+    else:
+      var counterPtr = cast[ptr int](udata)
+      counterPtr[] = -1
+      transp.close()
+  else:
+    ## Read operation failed with error
+    var counterPtr = cast[ptr int](udata)
+    counterPtr[] = -1
+    transp.close()
+
+proc client9(transp: DatagramTransport, pbytes: pointer, nbytes: int,
+             raddr: TransportAddress, udata: pointer): Future[void] {.async.} =
+  if not isNil(pbytes):
+    var data = newString(nbytes + 1)
+    copyMem(addr data[0], pbytes, nbytes)
+    data.setLen(nbytes)
+    if data.startsWith("REQUEST"):
+      var numstr = data[7..^1]
+      var num = parseInt(numstr)
+      var ans = "ANSWER" & $num
+      var ansseq = newSeq[byte](len(ans))
+      copyMem(addr ansseq[0], addr ans[0], len(ans))
+      await transp.sendTo(ansseq, raddr)
+    else:
+      var err = "ERROR"
+      var errseq = newSeq[byte](len(err))
+      copyMem(addr errseq[0], addr err[0], len(err))
+      await transp.sendTo(errseq, raddr)
+  else:
+    ## Read operation failed with error
+    var counterPtr = cast[ptr int](udata)
+    counterPtr[] = -1
+    transp.close()
+
+proc client10(transp: DatagramTransport, pbytes: pointer, nbytes: int,
+              raddr: TransportAddress, udata: pointer): Future[void] {.async.} =
+  if not isNil(pbytes):
+    var data = newString(nbytes + 1)
+    copyMem(addr data[0], pbytes, nbytes)
+    data.setLen(nbytes)
+    if data.startsWith("ANSWER"):
+      var counterPtr = cast[ptr int](udata)
+      counterPtr[] = counterPtr[] + 1
+      if counterPtr[] == TestsCount:
+        transp.close()
+      else:
+        var ta = initTAddress("127.0.0.1:33336")
+        var req = "REQUEST" & $counterPtr[]
+        var reqseq = newSeq[byte](len(req))
+        copyMem(addr reqseq[0], addr req[0], len(req))
+        await transp.sendTo(reqseq, ta)
+    else:
+      var counterPtr = cast[ptr int](udata)
+      counterPtr[] = -1
+      transp.close()
+  else:
+    ## Read operation failed with error
+    var counterPtr = cast[ptr int](udata)
+    counterPtr[] = -1
+    transp.close()
+
+proc client11(transp: DatagramTransport, pbytes: pointer, nbytes: int,
+              raddr: TransportAddress, udata: pointer): Future[void] {.async.} =
+  if not isNil(pbytes):
+    var data = newString(nbytes + 1)
+    copyMem(addr data[0], pbytes, nbytes)
+    data.setLen(nbytes)
+    if data.startsWith("ANSWER"):
+      var counterPtr = cast[ptr int](udata)
+      counterPtr[] = counterPtr[] + 1
+      if counterPtr[] == TestsCount:
+        transp.close()
+      else:
+        var req = "REQUEST" & $counterPtr[]
+        var reqseq = newSeq[byte](len(req))
+        copyMem(addr reqseq[0], addr req[0], len(req))
+        await transp.send(reqseq)
+    else:
+      var counterPtr = cast[ptr int](udata)
+      counterPtr[] = -1
+      transp.close()
+  else:
+    ## Read operation failed with error
+    var counterPtr = cast[ptr int](udata)
+    counterPtr[] = -1
+    transp.close()
+
+proc testPointerSendTo(): Future[int] {.async.} =
+  ## sendTo(pointer) test
   var ta = initTAddress("127.0.0.1:33336")
   var counter = 0
   var dgram1 = newDatagramTransport(client1, udata = addr counter, local = ta)
@@ -144,7 +291,8 @@ proc test1(): Future[int] {.async.} =
   dgram2.close()
   result = counter
 
-proc test2(): Future[int] {.async.} =
+proc testPointerSend(): Future[int] {.async.} =
+  ## send(pointer) test
   var ta = initTAddress("127.0.0.1:33337")
   var counter = 0
   var dgram1 = newDatagramTransport(client1, udata = addr counter, local = ta)
@@ -155,6 +303,64 @@ proc test2(): Future[int] {.async.} =
   dgram1.close()
   dgram2.close()
   result = counter
+
+proc testStringSendTo(): Future[int] {.async.} =
+  ## sendTo(string) test
+  var ta = initTAddress("127.0.0.1:33336")
+  var counter = 0
+  var dgram1 = newDatagramTransport(client6, udata = addr counter, local = ta)
+  var dgram2 = newDatagramTransport(client7, udata = addr counter)
+  var data = "REQUEST0"
+  await dgram2.sendTo(data, ta)
+  await dgram2.join()
+  dgram1.close()
+  dgram2.close()
+  result = counter
+
+proc testStringSend(): Future[int] {.async.} =
+  ## send(string) test
+  var ta = initTAddress("127.0.0.1:33337")
+  var counter = 0
+  var dgram1 = newDatagramTransport(client6, udata = addr counter, local = ta)
+  var dgram2 = newDatagramTransport(client8, udata = addr counter, remote = ta)
+  var data = "REQUEST0"
+  await dgram2.send(data)
+  await dgram2.join()
+  dgram1.close()
+  dgram2.close()
+  result = counter
+
+proc testSeqSendTo(): Future[int] {.async.} =
+  ## sendTo(string) test
+  var ta = initTAddress("127.0.0.1:33336")
+  var counter = 0
+  var dgram1 = newDatagramTransport(client9, udata = addr counter, local = ta)
+  var dgram2 = newDatagramTransport(client10, udata = addr counter)
+  var data = "REQUEST0"
+  var dataseq = newSeq[byte](len(data))
+  copyMem(addr dataseq[0], addr data[0], len(data))
+  await dgram2.sendTo(dataseq, ta)
+  await dgram2.join()
+  dgram1.close()
+  dgram2.close()
+  result = counter
+
+proc testSeqSend(): Future[int] {.async.} =
+  ## send(string) test
+  var ta = initTAddress("127.0.0.1:33337")
+  var counter = 0
+  var dgram1 = newDatagramTransport(client9, udata = addr counter, local = ta)
+  var dgram2 = newDatagramTransport(client11, udata = addr counter, remote = ta)
+  var data = "REQUEST0"
+  var dataseq = newSeq[byte](len(data))
+  copyMem(addr dataseq[0], addr data[0], len(data))
+  await dgram2.send(data)
+  await dgram2.join()
+  dgram1.close()
+  dgram2.close()
+  result = counter
+
+#
 
 proc waitAll(futs: seq[Future[void]]): Future[void] =
   var counter = len(futs)
@@ -277,22 +483,34 @@ proc test4(): Future[int] {.async.} =
 
 when isMainModule:
   const
-    m1 = "Unbounded test (" & $TestsCount & " messages)"
-    m2 = "Bounded test (" & $TestsCount & " messages)"
-    m3 = "Unbounded multiple clients with messages (" & $ClientsCount &
+    m1 = "sendTo(pointer) test (" & $TestsCount & " messages)"
+    m2 = "send(pointer) test (" & $TestsCount & " messages)"
+    m3 = "sendTo(string) test (" & $TestsCount & " messages)"
+    m4 = "send(string) test (" & $TestsCount & " messages)"
+    m5 = "sendTo(seq[byte]) test (" & $TestsCount & " messages)"
+    m6 = "send(seq[byte]) test (" & $TestsCount & " messages)"
+    m7 = "Unbounded multiple clients with messages (" & $ClientsCount &
          " clients x " & $MessagesCount & " messages)"
-    m4 = "Bounded multiple clients with messages (" & $ClientsCount &
+    m8 = "Bounded multiple clients with messages (" & $ClientsCount &
          " clients x " & $MessagesCount & " messages)"
-    m5 = "DatagramServer multiple clients with messages (" & $ClientsCount &
+    m9 = "DatagramServer multiple clients with messages (" & $ClientsCount &
          " clients x " & $MessagesCount & " messages)"
   suite "Datagram Transport test suite":
     test m1:
-      check waitFor(test1()) == TestsCount
+      check waitFor(testPointerSendTo()) == TestsCount
     test m2:
-      check waitFor(test2()) == TestsCount
+      check waitFor(testPointerSend()) == TestsCount
     test m3:
-      check waitFor(test3(false)) == ClientsCount * MessagesCount
+      check waitFor(testStringSendTo()) == TestsCount
     test m4:
+      check waitFor(testStringSend()) == TestsCount
+    test m5:
+      check waitFor(testSeqSendTo()) == TestsCount
+    test m6:
+      check waitFor(testSeqSend()) == TestsCount
+    test m7:
+      check waitFor(test3(false)) == ClientsCount * MessagesCount
+    test m8:
       check waitFor(test3(true)) == ClientsCount * MessagesCount
-    # test m5:
-    #   check waitFor(test4()) == ClientsCount * MessagesCount
+    test m9:
+      check waitFor(test4()) == ClientsCount * MessagesCount
