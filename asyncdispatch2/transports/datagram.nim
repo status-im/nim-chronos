@@ -524,10 +524,7 @@ proc join*(transp: DatagramTransport) {.async.} =
   if not transp.future.finished:
     await transp.future
 
-proc send*(transp: DatagramTransport, pbytes: pointer,
-           nbytes: int) {.async.} =
-  ## Send buffer with pointer ``pbytes`` and size ``nbytes`` using transport
-  ## ``transp`` to remote destination address which was bounded on transport.
+proc sendVector(transp: DatagramTransport, v: GramVector) {.async.} =
   checkClosed(transp)
   if transp.remote.port == Port(0):
     raise newException(TransportError, "Remote peer is not set!")
@@ -541,33 +538,45 @@ proc send*(transp: DatagramTransport, pbytes: pointer,
   if WriteError in transp.state:
     raise transp.getError()
 
+proc send*(transp: DatagramTransport, pbytes: pointer,
+           nbytes: int): Future[void] =
+  ## Send buffer with pointer ``pbytes`` and size ``nbytes`` using transport
+  ## ``transp`` to remote destination address which was bounded on transport.
+  var waitFuture = newFuture[void]("datagram.transport.send")
+  sendVector(transp, GramVector(kind: WithoutAddress, buf: pbytes, buflen: nbytes,
+              writer: waitFuture))
+
 proc sendTo*(transp: DatagramTransport, pbytes: pointer, nbytes: int,
-             remote: TransportAddress) {.async.} =
+             remote: TransportAddress): Future[void] =
   ## Send buffer with pointer ``pbytes`` and size ``nbytes`` using transport
   ## ``transp`` to remote destination address ``remote``.
-  checkClosed(transp)
-  var saddr: Sockaddr_storage
-  var slen: SockLen
-  toSockAddr(remote.address, remote.port, saddr, slen)
   var waitFuture = newFuture[void]("datagram.transport.sendto")
-  var vector = GramVector(kind: WithAddress, buf: pbytes, buflen: nbytes,
-                          writer: waitFuture, address: remote)
-  transp.queue.addLast(vector)
-  if WritePaused in transp.state:
-    transp.resumeWrite()
-  await vector.writer
-  if WriteError in transp.state:
-    raise transp.getError()
+  sendVector(transp, GramVector(kind: WithAddress, buf: pbytes, buflen: nbytes,
+              writer: waitFuture, address: remote))
 
-template send*(transp: DatagramTransport, msg: var string): untyped =
-  ## Send message ``msg`` using transport ``transp`` to remote destination
-  ## address which was bounded on transport.
-  send(transp, addr msg[0], len(msg))
+proc send*(transp: DatagramTransport, msg: string): Future[void] =
+  type FutWithHoldString = ref object of Future[void]
+    gcHold: string
 
-template send*(transp: DatagramTransport, msg: var seq[byte]): untyped =
-  ## Send message ``msg`` using transport ``transp`` to remote destination
-  ## address which was bounded on transport.
-  send(transp, addr msg[0], len(msg))
+  var waitFuture: FutWithHoldString
+  waitFuture.new()
+  # TODO: For consistency the future initialization routines should be adjusted to allow
+  # initialization of this future. This works for demo purposes.
+  shallowCopy(waitFuture.gcHold, msg)
+  sendVector(transp, GramVector(kind: WithoutAddress, buf: unsafeAddr msg[0], buflen: msg.len,
+              writer: waitFuture))
+
+proc send*(transp: DatagramTransport, msg: seq[byte]): Future[void] =
+  type FutWithHoldSeqByte = ref object of Future[void]
+    gcHold: seq[byte]
+
+  var waitFuture: FutWithHoldSeqByte
+  waitFuture.new()
+  # TODO: For consistency the future initialization routines should be adjusted to allow
+  # initialization of this future. This works for demo purposes.
+  shallowCopy(waitFuture.gcHold, msg)
+  sendVector(transp, GramVector(kind: WithoutAddress, buf: unsafeAddr msg[0], buflen: msg.len,
+              writer: waitFuture))
 
 template sendTo*(transp: DatagramTransport, msg: var string,
                  remote: TransportAddress): untyped =
