@@ -559,6 +559,28 @@ proc sendTo*(transp: DatagramTransport, pbytes: pointer, nbytes: int,
   if WriteError in transp.state:
     raise transp.getError()
 
+template send*(transp: DatagramTransport, msg: var string): untyped =
+  ## Send message ``msg`` using transport ``transp`` to remote destination
+  ## address which was bounded on transport.
+  send(transp, addr msg[0], len(msg))
+
+template send*(transp: DatagramTransport, msg: var seq[byte]): untyped =
+  ## Send message ``msg`` using transport ``transp`` to remote destination
+  ## address which was bounded on transport.
+  send(transp, addr msg[0], len(msg))
+
+template sendTo*(transp: DatagramTransport, msg: var string,
+                 remote: TransportAddress): untyped =
+  ## Send message ``msg`` using transport ``transp`` to remote
+  ## destination address ``remote``.
+  sendTo(transp, addr msg[0], len(msg), remote)
+
+template sendTo*(transp: DatagramTransport, msg: var seq[byte],
+                 remote: TransportAddress): untyped =
+  ## Send message ``msg`` using transport ``transp`` to remote
+  ## destination address ``remote``.
+  sendTo(transp, addr msg[0], len(msg), remote)
+
 proc createDatagramServer*(host: TransportAddress,
                            cbproc: DatagramCallback,
                            flags: set[ServerFlags] = {},

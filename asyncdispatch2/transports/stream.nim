@@ -680,7 +680,7 @@ else:
         let err = osLastError()
         if int(err) == EINTR:
           continue
-        elif int(err) in {EBADF, EINVAL, ENOTSOCK, EOPNOTSUPP, EPROTO}:
+        else:
           ## Critical unrecoverable error
           raiseOsError(err)
 
@@ -859,7 +859,7 @@ proc readExactly*(transp: StreamTransport, pbytes: pointer,
     if transp.offset == 0:
       if (ReadError in transp.state):
         raise transp.getError()
-      if ReadClosed in transp.state or transp.atEof():
+      if (ReadClosed in transp.state) or transp.atEof():
         raise newException(TransportIncompleteError, "Data incomplete!")
 
     if transp.offset >= (nbytes - index):
@@ -894,7 +894,7 @@ proc readOnce*(transp: StreamTransport, pbytes: pointer,
     if transp.offset == 0:
       if (ReadError in transp.state):
         raise transp.getError()
-      if (ReadEof in transp.state) or (ReadClosed in transp.state):
+      if (ReadClosed in transp.state) or transp.atEof():
         result = 0
         break
       transp.reader = newFuture[void]("stream.transport.readOnce")
@@ -937,13 +937,10 @@ proc readUntil*(transp: StreamTransport, pbytes: pointer, nbytes: int,
   var index = 0
 
   while true:
-    if (transp.offset - index) == 0:
-      if ReadError in transp.state:
-        transp.shiftBuffer(index)
-        raise transp.getError()
-      if (ReadEof in transp.state) or (ReadClosed in transp.state):
-        transp.shiftBuffer(index)
-        raise newException(TransportIncompleteError, "Data incomplete!")
+    if ReadError in transp.state:
+      raise transp.getError()
+    if (ReadClosed in transp.state) or transp.atEof():
+      raise newException(TransportIncompleteError, "Data incomplete!")
 
     index = 0
     while index < transp.offset:
@@ -957,25 +954,23 @@ proc readUntil*(transp: StreamTransport, pbytes: pointer, nbytes: int,
         inc(k)
       else:
         raise newException(TransportLimitError, "Limit reached!")
-
       if state == len(sep):
-        transp.shiftBuffer(index + 1)
         break
-
       inc(index)
 
     if state == len(sep):
+      transp.shiftBuffer(index + 1)
       result = k
       break
     else:
-      if (transp.offset - index) == 0:
-        transp.reader = newFuture[void]("stream.transport.readUntil")
-        if ReadPaused in transp.state:
-          transp.resumeRead()
-        await transp.reader
-        # we need to clear transp.reader to avoid double completion of this
-        # Future[T], because readLoop continues working.
-        transp.reader = nil
+      transp.shiftBuffer(transp.offset)
+      transp.reader = newFuture[void]("stream.transport.readUntil")
+      if ReadPaused in transp.state:
+        transp.resumeRead()
+      await transp.reader
+      # we need to clear transp.reader to avoid double completion of this
+      # Future[T], because readLoop continues working.
+      transp.reader = nil
 
 proc readLine*(transp: StreamTransport, limit = 0,
                sep = "\r\n"): Future[string] {.async.} =
@@ -998,13 +993,10 @@ proc readLine*(transp: StreamTransport, limit = 0,
   var index = 0
 
   while true:
-    if (transp.offset - index) == 0:
-      if (ReadError in transp.state):
-        transp.shiftBuffer(index)
-        raise transp.getError()
-      if (ReadEof in transp.state) or (ReadClosed in transp.state):
-        transp.shiftBuffer(index)
-        break
+    if (ReadError in transp.state):
+      raise transp.getError()
+    if (ReadClosed in transp.state) or transp.atEof():
+      break
 
     index = 0
     while index < transp.offset:
@@ -1025,17 +1017,17 @@ proc readLine*(transp: StreamTransport, limit = 0,
     if (state == len(sep)) or (lim == len(result)):
       break
     else:
-      if (transp.offset - index) == 0:
-        transp.reader = newFuture[void]("stream.transport.readLine")
-        if ReadPaused in transp.state:
-          transp.resumeRead()
-        await transp.reader
-        # we need to clear transp.reader to avoid double completion of this
-        # Future[T], because readLoop continues working.
-        transp.reader = nil
+      transp.shiftBuffer(transp.offset)
+      transp.reader = newFuture[void]("stream.transport.readLine")
+      if ReadPaused in transp.state:
+        transp.resumeRead()
+      await transp.reader
+      # we need to clear transp.reader to avoid double completion of this
+      # Future[T], because readLoop continues working.
+      transp.reader = nil
 
 proc read*(transp: StreamTransport, n = -1): Future[seq[byte]] {.async.} =
-  ## Read all bytes (n == -1) or `n` bytes from transport ``transp``.
+  ## Read all bytes (n == -1) or exactly `n` bytes from transport ``transp``.
   ##
   ## This procedure allocates buffer seq[byte] and return it as result.
   checkClosed(transp)
@@ -1044,9 +1036,9 @@ proc read*(transp: StreamTransport, n = -1): Future[seq[byte]] {.async.} =
   while true:
     if (ReadError in transp.state):
       raise transp.getError()
-    if ReadClosed in transp.state or transp.atEof():
+    if (ReadClosed in transp.state) or transp.atEof():
       break
-
+    
     if transp.offset > 0:
       let s = len(result)
       let o = s + transp.offset
@@ -1057,12 +1049,13 @@ proc read*(transp: StreamTransport, n = -1): Future[seq[byte]] {.async.} =
                 transp.offset)
         transp.offset = 0
       else:
-        if transp.offset >= (n - s):
+        let left = n - s
+        if transp.offset >= left:
           # size of buffer data is more then we need, grabbing only part
           result.setLen(n)
           copyMem(cast[pointer](addr result[s]), addr(transp.buffer[0]),
-                  n - s)
-          transp.shiftBuffer(n - s)
+                  left)
+          transp.shiftBuffer(left)
           break
         else:
           # there not enough data in buffer, grabbing all
@@ -1091,6 +1084,7 @@ proc consume*(transp: StreamTransport, n = -1): Future[int] {.async.} =
       raise transp.getError()
     if ReadClosed in transp.state or transp.atEof():
       break
+
     if transp.offset > 0:
       if n == -1:
         # consume all incoming data, until EOF

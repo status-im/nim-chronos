@@ -16,6 +16,8 @@ else:
 
 const
   ConstantMessage = "SOMEDATA"
+  BigMessagePattern = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+  BigMessageCount = 1000
   ClientsCount = 100
   MessagesCount = 100
   MessageSize = 20
@@ -68,7 +70,8 @@ proc serveClient3(server: StreamServer,
   var suffixStr = "SUFFIX"
   var suffix = newSeq[byte](6)
   copyMem(addr suffix[0], addr suffixStr[0], len(suffixStr))
-  while not transp.atEof():
+  var counter = MessagesCount
+  while counter > 0:
     zeroMem(addr buffer[0], MessageSize)
     var res = await transp.readUntil(addr buffer[0], MessageSize, suffix)
     doAssert(equalMem(addr buffer[0], addr check[0], len(check)))
@@ -84,6 +87,7 @@ proc serveClient3(server: StreamServer,
     copyMem(addr buffer[0], addr ans[0], len(ans))
     res = await transp.write(cast[pointer](addr buffer[0]), len(ans))
     doAssert(res == len(ans))
+    dec(counter)
   transp.close()
 
 proc serveClient4(server: StreamServer,
@@ -100,6 +104,7 @@ proc serveClient4(server: StreamServer,
   var answer = "OK\r\n"
   var res = await transp.write(cast[pointer](addr answer[0]), len(answer))
   doAssert(res == len(answer))
+  transp.close()
 
 proc serveClient5(server: StreamServer,
                   transp: StreamTransport, udata: pointer) {.async.} =
@@ -130,6 +135,41 @@ proc serveClient6(server: StreamServer,
   if counter[] == 0:
     server.stop()
     server.close()
+
+proc serveClient7(server: StreamServer,
+                  transp: StreamTransport, udata: pointer) {.async.} =
+  var answer = "DONE\r\n"
+  var expect = ""
+  var line = await transp.readLine()
+  doAssert(len(line) == BigMessageCount * len(BigMessagePattern))
+  for i in 0..<BigMessageCount:
+    expect.add(BigMessagePattern)
+  doAssert(line == expect)
+  var res = await transp.write(answer)
+  doAssert(res == len(answer))
+  transp.close()
+
+proc serveClient8(server: StreamServer,
+                  transp: StreamTransport, udata: pointer) {.async.} =
+  var answer = "DONE\r\n"
+  var strpattern = BigMessagePattern
+  var pattern = newSeq[byte](len(BigMessagePattern))
+  var expect = newSeq[byte]()
+  var data = newSeq[byte]((BigMessageCount + 1) * len(BigMessagePattern))
+  var sep = @[0x0D'u8, 0x0A'u8]
+  copyMem(addr pattern[0], addr strpattern[0], len(BigMessagePattern))
+  var count = await transp.readUntil(addr data[0], len(data), sep = sep)
+  doAssert(count == BigMessageCount * len(BigMessagePattern) + 2)
+  for i in 0..<BigMessageCount:
+    expect.add(pattern)
+  expect.add(sep)
+  data.setLen(count)
+  doAssert(expect == data)
+  var res = await transp.write(answer)
+  doAssert(res == len(answer))
+  transp.close()
+  server.stop()
+  server.close()
 
 proc swarmWorker1(address: TransportAddress): Future[int] {.async.} =
   var transp = await connect(address)
@@ -214,6 +254,7 @@ proc swarmWorker4(address: TransportAddress): Future[int] {.async.} =
   res = await transp.write(cast[pointer](addr ssize[0]), len(ssize))
   doAssert(res == len(ssize))
   await transp.writeFile(handle, 0'u, size)
+  close(fhandle)
   var ans = await transp.readLine()
   doAssert(ans == "OK")
   result = 1
@@ -235,6 +276,32 @@ proc swarmWorker6(address: TransportAddress): Future[int] {.async.} =
   for i in 0..<MessagesCount:
     var res = await transp.write(seqdata)
   result = MessagesCount
+  transp.close()
+
+proc swarmWorker7(address: TransportAddress): Future[int] {.async.} =
+  var transp = await connect(address)
+  var data = BigMessagePattern
+  var crlf = "\r\n"
+  for i in 0..<BigMessageCount:
+    var res = await transp.write(data)
+    doAssert(res == len(data))
+  var res = await transp.write(crlf)
+  var line = await transp.readLine()
+  doAssert(line == "DONE")
+  result = 1
+  transp.close()
+
+proc swarmWorker8(address: TransportAddress): Future[int] {.async.} =
+  var transp = await connect(address)
+  var data = BigMessagePattern
+  var crlf = "\r\n"
+  for i in 0..<BigMessageCount:
+    var res = await transp.write(data)
+    doAssert(res == len(data))
+  var res = await transp.write(crlf)
+  var line = await transp.readLine()
+  doAssert(line == "DONE")
+  result = 1
   transp.close()
 
 proc waitAll[T](futs: seq[Future[T]]): Future[void] =
@@ -349,7 +416,7 @@ proc test4(): Future[int] {.async.} =
   server.close()
 
 proc test5(): Future[int] {.async.} =
-  var ta = initTAddress("127.0.0.1:31347")
+  var ta = initTAddress("127.0.0.1:31348")
   var counter = ClientsCount
   var server = createStreamServer(ta, serveClient5, {ReuseAddr},
                                   udata = cast[pointer](addr counter))
@@ -358,13 +425,29 @@ proc test5(): Future[int] {.async.} =
   await server.join()
 
 proc test6(): Future[int] {.async.} =
-  var ta = initTAddress("127.0.0.1:31347")
+  var ta = initTAddress("127.0.0.1:31349")
   var counter = ClientsCount
   var server = createStreamServer(ta, serveClient6, {ReuseAddr},
                                   udata = cast[pointer](addr counter))
   server.start()
   result = await swarmManager6(ta)
   await server.join()
+
+proc test7(): Future[int] {.async.} =
+  var ta = initTAddress("127.0.0.1:31350")
+  var server = createStreamServer(ta, serveClient7, {ReuseAddr})
+  server.start()
+  result = await swarmWorker7(ta)
+  server.stop()
+  server.close()
+
+proc test8(): Future[int] {.async.} =
+  var ta = initTAddress("127.0.0.1:31350")
+  var server = createStreamServer(ta, serveClient8, {ReuseAddr})
+  server.start()
+  result = await swarmWorker8(ta)
+  server.stop()
+  server.close()
 
 when isMainModule:
   const
@@ -379,17 +462,23 @@ when isMainModule:
          " clients x " & $MessagesCount & " messages)"
     m6 = "write(seq[byte])/consume(int)/read(int) multiple clients (" &
          $ClientsCount & " clients x " & $MessagesCount & " messages)"
+    m7 = "readLine() buffer overflow test"
+    m8 = "readUntil() buffer overflow test"
 
   suite "Stream Transport test suite":
+    test m8:
+      check waitFor(test8()) == 1
+    test m7:
+      check waitFor(test7()) == 1
     test m1:
       check waitFor(test1()) == ClientsCount * MessagesCount
     test m2:
       check waitFor(test2()) == ClientsCount * MessagesCount
     test m3:
       check waitFor(test3()) == ClientsCount * MessagesCount
-    test m4:
-      check waitFor(test4()) == FilesCount
     test m5:
       check waitFor(test5()) == ClientsCount * MessagesCount
     test m6:
       check waitFor(test6()) == ClientsCount * MessagesCount
+    test m4:
+      check waitFor(test4()) == FilesCount
