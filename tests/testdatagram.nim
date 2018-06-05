@@ -141,6 +141,7 @@ proc test1(): Future[int] {.async.} =
   await dgram2.sendTo(addr data[0], len(data), ta)
   await dgram2.join()
   dgram1.close()
+  dgram2.close()
   result = counter
 
 proc test2(): Future[int] {.async.} =
@@ -152,6 +153,7 @@ proc test2(): Future[int] {.async.} =
   await dgram2.send(addr data[0], len(data))
   await dgram2.join()
   dgram1.close()
+  dgram2.close()
   result = counter
 
 proc waitAll(futs: seq[Future[void]]): Future[void] =
@@ -170,18 +172,18 @@ proc test3(bounded: bool): Future[int] {.async.} =
   var counter = 0
   var dgram1 = newDatagramTransport(client1, udata = addr counter, local = ta)
   var clients = newSeq[Future[void]](ClientsCount)
+  var grams = newSeq[DatagramTransport](ClientsCount)
   var counters = newSeq[int](ClientsCount)
-  var dgram: DatagramTransport
   for i in 0..<ClientsCount:
     var data = "REQUEST0"
     if bounded:
-      dgram = newDatagramTransport(client4, udata = addr counters[i],
-                                   remote = ta)
-      await dgram.send(addr data[0], len(data))
+      grams[i] = newDatagramTransport(client4, udata = addr counters[i],
+                                      remote = ta)
+      await grams[i].send(addr data[0], len(data))
     else:
-      dgram = newDatagramTransport(client5, udata = addr counters[i])
-      await dgram.sendTo(addr data[0], len(data), ta)
-    clients[i] = dgram.join()
+      grams[i] = newDatagramTransport(client5, udata = addr counters[i])
+      await grams[i].sendTo(addr data[0], len(data), ta)
+    clients[i] = grams[i].join()
 
   await waitAll(clients)
   dgram1.close()
