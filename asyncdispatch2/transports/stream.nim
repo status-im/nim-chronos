@@ -7,8 +7,8 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 
-import net, nativesockets, os, deques, strutils
-import ../asyncloop, ../asyncsync, ../handles, ../sendfile
+import net, nativesockets, os, deques
+import ../asyncloop, ../handles, ../sendfile
 import common
 
 when defined(windows):
@@ -38,12 +38,6 @@ type
     fd*: AsyncFD                    # File descriptor
     state: set[TransportState]      # Current Transport state
     reader: Future[void]            # Current reader Future
-    # ZAH: I'm not quite certain, but it seems to me that the intermediate
-    # buffer is not necessary. The receiving code needs to know how to grow
-    # the output buffer of the future attached to the read operation. If this
-    # is the case, the buffering can be replaced with direct writing to this
-    # output buffer. Furthermore, we'll be able to signal additional 'progress'
-    # events for the future to make the API more complete.
     buffer: seq[byte]               # Reading buffer
     offset: int                     # Reading buffer offset
     error: ref Exception            # Current error
@@ -100,10 +94,6 @@ proc localAddress*(transp: StreamTransport): TransportAddress =
 template setReadError(t, e: untyped) =
   (t).state.incl(ReadError)
   (t).error = newException(TransportOsError, osErrorMsg((e)))
-
-# template setWriteError(t, e: untyped) =
-#   (t).state.incl(WriteError)
-#   (t).error = newException(TransportOsError, osErrorMsg((e)))
 
 template finishReader(t: untyped) =
   var reader = (t).reader
@@ -839,15 +829,13 @@ proc write*[T](transp: StreamTransport, msg: seq[T]): Future[int] =
   return retFuture
 
 proc writeFile*(transp: StreamTransport, handle: int,
-                offset: uint = 0,
-                size: int = 0): Future[int] =
+                offset: uint = 0, size: int = 0): Future[int] =
   ## Write data from file descriptor ``handle`` to transport ``transp``.
   ##
   ## You can specify starting ``offset`` in opened file and number of bytes
   ## to transfer from file to transport via ``size``.
   var retFuture = newFuture[int]("transport.writeFile")
-  checkClosed(transp)
-  
+  transp.checkClosed(retFuture)
   var vector = StreamVector(kind: DataFile, writer: retFuture,
                             buf: cast[pointer](size), offset: offset,
                             buflen: handle)
@@ -1054,7 +1042,7 @@ proc read*(transp: StreamTransport, n = -1): Future[seq[byte]] {.async.} =
       raise transp.getError()
     if (ReadClosed in transp.state) or transp.atEof():
       break
-    
+
     if transp.offset > 0:
       let s = len(result)
       let o = s + transp.offset

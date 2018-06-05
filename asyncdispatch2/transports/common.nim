@@ -157,12 +157,12 @@ proc initTAddress*(address: string, port: int): TransportAddress =
 proc resolveTAddress*(address: string,
                       family = IpAddressFamily.IPv4): seq[TransportAddress] =
   ## Resolve string representation of ``address``.
-  ## 
+  ##
   ## Supported formats are:
   ## IPv4 numeric address ``a.b.c.d:port``
   ## IPv6 numeric address ``[::]:port``
   ## Hostname address ``hostname:port``
-  ## 
+  ##
   ## If hostname address is detected, then network address translation via DNS
   ## will be performed.
   var
@@ -215,6 +215,3 @@ when defined(windows):
   const ERROR_SUCCESS* = 0
   proc cancelIo*(hFile: HANDLE): WINBOOL
        {.stdcall, dynlib: "kernel32", importc: "CancelIo".}
-
-when isMainModule:
-  echo $resolveTAddress("localhost:443", IpAddressFamily.IPv6)

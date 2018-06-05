@@ -7,7 +7,7 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 
-import net, nativesockets, os, deques, strutils
+import net, nativesockets, os, deques
 import ../asyncloop, ../handles
 import common
 
