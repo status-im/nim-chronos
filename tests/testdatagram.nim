@@ -294,5 +294,5 @@ when isMainModule:
       check waitFor(test3(false)) == ClientsCount * MessagesCount
     test m4:
       check waitFor(test3(true)) == ClientsCount * MessagesCount
-    test m5:
-      check waitFor(test4()) == ClientsCount * MessagesCount
+    # test m5:
+    #   check waitFor(test4()) == ClientsCount * MessagesCount
