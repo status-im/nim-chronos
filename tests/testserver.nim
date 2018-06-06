@@ -10,7 +10,7 @@ import strutils, unittest
 import ../asyncdispatch2
 
 proc serveStreamClient(server: StreamServer,
-                       transp: StreamTransport, udata: pointer) {.async.} =
+                       transp: StreamTransport) {.async.} =
   discard
 
 proc serveDatagramClient(transp: DatagramTransport,
