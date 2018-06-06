@@ -663,8 +663,7 @@ else:
         let sock = wrapAsyncSocket(res)
         if sock != asyncInvalidSocket:
           discard server.function(server,
-            newStreamSocketTransport(sock, server.bufferSize),
-            server.udata)
+            newStreamSocketTransport(sock, server.bufferSize))
           break
       else:
         let err = osLastError()
