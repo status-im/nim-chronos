@@ -57,3 +57,36 @@ when isMainModule:
       for item in hostnames:
         var taseq = resolveTAddress(item)
         check len(taseq) >= 1
+    test "resolveTAddress(string, Port)":
+      var numeric4 = [
+        "0.0.0.0",
+        "255.0.0.255",
+        "128.128.128.128",
+        "255.255.255.255"
+      ]
+
+      var numeric6 = [
+        "::",
+        "ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff",
+        "aaaa:bbbb:cccc:dddd:eeee:ffff::1111",
+        "aaaa:bbbb:cccc:dddd:eeee:ffff::",
+        "a:b:c:d:e:f::",
+        "2222:3333:4444:5555:6666:7777:8888:9999"
+      ]
+      var hostnames = [
+        "www.google.com",
+        "www.github.com"
+      ]
+      for item in numeric4:
+        var taseq = resolveTAddress(item, Port(443))
+        check len(taseq) == 1
+        check $taseq[0] == item & ":443"
+
+      for item in numeric6:
+        var taseq = resolveTAddress(item, Port(443))
+        check len(taseq) == 1
+        check $taseq[0] == "[" & item & "]" & ":443"
+
+      for item in hostnames:
+        var taseq = resolveTAddress(item, Port(443))
+        check len(taseq) >= 1

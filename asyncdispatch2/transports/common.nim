@@ -194,6 +194,31 @@ proc resolveTAddress*(address: string,
         it = it.ai_next
       freeAddrInfo(aiList)
 
+proc resolveTAddress*(address: string, port: Port,
+                      family = IpAddressFamily.IPv4): seq[TransportAddress] =
+  ## Resolve string representation of ``address``.
+  ## 
+  ## ``address`` could be dot IPv4/IPv6 address or hostname.
+  ## 
+  ## If hostname address is detected, then network address translation via DNS
+  ## will be performed.
+  var ta: TransportAddress
+  result = newSeq[TransportAddress]()
+  if isIpAddress(address):
+    ta = TransportAddress(address: parseIpAddress(address), port: port)
+    result.add(ta)
+  else:
+    var domain = if family == IpAddressFamily.IPv4: Domain(AF_INET) else:
+                   Domain(AF_INET6)
+    var aiList = getAddrInfo(address, port, domain)
+    var it = aiList
+    while it != nil:
+      fromSockAddr(cast[ptr Sockaddr_storage](it.ai_addr)[],
+                   SockLen(it.ai_addrlen), ta.address, ta.port)
+      result.add(ta)
+      it = it.ai_next
+    freeAddrInfo(aiList)
+
 template checkClosed*(t: untyped) =
   if (ReadClosed in (t).state) or (WriteClosed in (t).state):
     raise newException(TransportError, "Transport is already closed!")
