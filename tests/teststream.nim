@@ -24,8 +24,7 @@ const
   FilesCount = 50
   FilesTestName = "tests/teststream.nim"
 
-proc serveClient1(server: StreamServer,
-                  transp: StreamTransport, udata: pointer) {.async.} =
+proc serveClient1(server: StreamServer, transp: StreamTransport) {.async.} =
   while not transp.atEof():
     var data = await transp.readLine()
     if len(data) == 0:
@@ -39,8 +38,7 @@ proc serveClient1(server: StreamServer,
     doAssert(res == len(ans))
   transp.close()
 
-proc serveClient2(server: StreamServer,
-                  transp: StreamTransport, udata: pointer) {.async.} =
+proc serveClient2(server: StreamServer, transp: StreamTransport) {.async.} =
   var buffer: array[20, char]
   var check = "REQUEST"
   while not transp.atEof():
@@ -63,8 +61,7 @@ proc serveClient2(server: StreamServer,
     doAssert(res == MessageSize)
   transp.close()
 
-proc serveClient3(server: StreamServer,
-                  transp: StreamTransport, udata: pointer) {.async.} =
+proc serveClient3(server: StreamServer, transp: StreamTransport) {.async.} =
   var buffer: array[20, char]
   var check = "REQUEST"
   var suffixStr = "SUFFIX"
@@ -90,8 +87,7 @@ proc serveClient3(server: StreamServer,
     dec(counter)
   transp.close()
 
-proc serveClient4(server: StreamServer,
-                  transp: StreamTransport, udata: pointer) {.async.} =
+proc serveClient4(server: StreamServer, transp: StreamTransport) {.async.} =
   var pathname = await transp.readLine()
   var size = await transp.readLine()
   var sizeNum = parseInt(size)
@@ -106,8 +102,7 @@ proc serveClient4(server: StreamServer,
   doAssert(res == len(answer))
   transp.close()
 
-proc serveClient5(server: StreamServer,
-                  transp: StreamTransport, udata: pointer) {.async.} =
+proc serveClient5(server: StreamServer, transp: StreamTransport) {.async.} =
   var data = await transp.read()
   doAssert(len(data) == len(ConstantMessage) * MessagesCount)
   transp.close()
@@ -115,14 +110,13 @@ proc serveClient5(server: StreamServer,
   for i in 0..<MessagesCount:
     expect.add(ConstantMessage)
   doAssert(equalMem(addr expect[0], addr data[0], len(data)))
-  var counter = cast[ptr int](udata)
+  var counter = cast[ptr int](server.udata)
   dec(counter[])
   if counter[] == 0:
     server.stop()
     server.close()
 
-proc serveClient6(server: StreamServer,
-                  transp: StreamTransport, udata: pointer) {.async.} =
+proc serveClient6(server: StreamServer, transp: StreamTransport) {.async.} =
   var expect = ConstantMessage
   var skip = await transp.consume(len(ConstantMessage) * (MessagesCount - 1))
   doAssert(skip == len(ConstantMessage) * (MessagesCount - 1))
@@ -130,14 +124,13 @@ proc serveClient6(server: StreamServer,
   doAssert(len(data) == len(ConstantMessage))
   transp.close()
   doAssert(equalMem(addr data[0], addr expect[0], len(expect)))
-  var counter = cast[ptr int](udata)
+  var counter = cast[ptr int](server.udata)
   dec(counter[])
   if counter[] == 0:
     server.stop()
     server.close()
 
-proc serveClient7(server: StreamServer,
-                  transp: StreamTransport, udata: pointer) {.async.} =
+proc serveClient7(server: StreamServer, transp: StreamTransport) {.async.} =
   var answer = "DONE\r\n"
   var expect = ""
   var line = await transp.readLine()
@@ -149,8 +142,7 @@ proc serveClient7(server: StreamServer,
   doAssert(res == len(answer))
   transp.close()
 
-proc serveClient8(server: StreamServer,
-                  transp: StreamTransport, udata: pointer) {.async.} =
+proc serveClient8(server: StreamServer, transp: StreamTransport) {.async.} =
   var answer = "DONE\r\n"
   var strpattern = BigMessagePattern
   var pattern = newSeq[byte](len(BigMessagePattern))

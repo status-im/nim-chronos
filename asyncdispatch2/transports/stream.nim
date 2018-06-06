@@ -55,12 +55,10 @@ type
       todo2: int
 
   StreamCallback* = proc(server: StreamServer,
-                         client: StreamTransport,
-                         udata: pointer): Future[void] {.gcsafe.}
+                         client: StreamTransport): Future[void] {.gcsafe.}
     ## New remote client connection callback
     ## ``server`` - StreamServer object.
     ## ``client`` - accepted client transport.
-    ## ``udata`` - user-defined pointer passed at ``createStreamServer()`` call.
 
   StreamServer* = ref object of SocketServer
     function*: StreamCallback
@@ -440,8 +438,7 @@ when defined(windows):
               raise newException(TransportOsError, osErrorMsg(osLastError()))
             else:
               discard server.function(server,
-                newStreamSocketTransport(server.asock, server.bufferSize),
-                server.udata)
+                newStreamSocketTransport(server.asock, server.bufferSize))
           elif int32(ovl.data.errCode) == ERROR_OPERATION_ABORTED:
             # CancelIO() interrupt
             server.asock.closeAsyncSocket()
@@ -714,6 +711,8 @@ proc close*(server: SocketServer) =
     closeAsyncSocket(server.sock)
     server.status = Closed
     server.loopFuture.complete()
+    if not isNil(server.udata) and GCUserData in server.flags:
+      GC_unref(cast[ref int](server.udata))
     GC_unref(server)
 
 proc createStreamServer*(host: TransportAddress,
@@ -787,6 +786,21 @@ proc createStreamServer*(host: TransportAddress,
     result.apending = false
   GC_ref(result)
   result.resumeAccept()
+
+proc createStreamServer*[T](host: TransportAddress,
+                            cbproc: StreamCallback,
+                            flags: set[ServerFlags] = {},
+                            sock: AsyncFD = asyncInvalidSocket,
+                            backlog: int = 100,
+                            bufferSize: int = DefaultStreamBufferSize,
+                            udata: ref T): StreamServer =
+  var fflags = flags + {GCUserData}
+  GC_ref(udata)
+  result = createStreamServer(host, cbproc, flags, sock, backlog, bufferSize,
+                              cast[pointer](udata))
+
+proc getUserData*[T](server: StreamServer): ref T {.inline.} =
+  result = cast[ref T](server.udata)
 
 proc write*(transp: StreamTransport, pbytes: pointer,
             nbytes: int): Future[int] =
