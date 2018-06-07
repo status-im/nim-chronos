@@ -442,11 +442,12 @@ proc all*[T](futs: varargs[Future[T]]): auto =
     let totalFutures = len(futs)
 
     for fut in futs:
-      fut.addCallback proc (f: Future[T]) =
+      fut.addCallback proc (data: pointer) =
+        var fut = cast[FutureBase](data)
         inc(completedFutures)
         if not retFuture.finished:
-          if f.failed:
-            retFuture.fail(f.error)
+          if fut.failed:
+            retFuture.fail(fut.error)
           else:
             if completedFutures == totalFutures:
               retFuture.complete()
@@ -464,14 +465,14 @@ proc all*[T](futs: varargs[Future[T]]): auto =
 
     for i, fut in futs:
       proc setCallback(i: int) =
-        fut.addCallback proc (f: Future[T]) =
+        fut.addCallback proc (data: pointer) =
+          var fut = cast[Future[T]](data)
           inc(completedFutures)
           if not retFuture.finished:
-            if f.failed:
-              retFuture.fail(f.error)
+            if fut.failed:
+              retFuture.fail(fut.error)
             else:
-              retValues[i] = f.read()
-
+              retValues[i] = fut.read()
               if completedFutures == len(retValues):
                 retFuture.complete(retValues)
 

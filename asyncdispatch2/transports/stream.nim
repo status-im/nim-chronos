@@ -798,8 +798,9 @@ proc createStreamServer*[T](host: TransportAddress,
   result = createStreamServer(host, cbproc, flags, sock, backlog, bufferSize,
                               cast[pointer](udata))
 
-proc getUserData*[T](server: StreamServer): ref T {.inline.} =
-  result = cast[ref T](server.udata)
+proc getUserData*[T](server: StreamServer): T {.inline.} =
+  ## Obtain user data stored in ``server`` object.
+  result = cast[T](server.udata)
 
 proc write*(transp: StreamTransport, pbytes: pointer,
             nbytes: int): Future[int] =

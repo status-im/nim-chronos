@@ -10,6 +10,8 @@
 import net, nativesockets, strutils
 import ../asyncloop
 
+export net
+
 const
   DefaultStreamBufferSize* = 4096    ## Default buffer size for stream
                                      ## transports
