@@ -43,7 +43,6 @@ type
     error: ref Exception            # Current error
     queue: Deque[StreamVector]      # Writer queue
     future: Future[void]            # Stream life future
-    transferred: int
     case kind*: TransportKind
     of TransportKind.Socket:
       domain: Domain                # Socket transport domain (IPv4/IPv6)
@@ -270,7 +269,6 @@ when defined(windows):
         let err = transp.rovl.data.errCode
         if err == OSErrorCode(-1):
           let bytesCount = transp.rovl.data.bytesCount
-          transp.transferred += bytesCount
           if bytesCount == 0:
             transp.state.incl(ReadEof)
             transp.state.incl(ReadPaused)
@@ -486,11 +484,11 @@ when defined(windows):
     wtransp.state.excl(WritePaused)
     writeStreamLoop(cast[pointer](addr wtransp.wovl))
 
-  proc pauseAccept(server: SocketServer) {.inline.} =
+  proc pauseAccept(server: StreamServer) {.inline.} =
     if server.apending:
       discard cancelIO(Handle(server.sock))
 
-  proc resumeAccept(server: SocketServer) {.inline.} =
+  proc resumeAccept(server: StreamServer) {.inline.} =
     if not server.apending:
       acceptLoop(cast[pointer](addr server.aovl))
 else:
@@ -673,10 +671,10 @@ else:
           ## Critical unrecoverable error
           raiseOsError(err)
 
-  proc resumeAccept(server: SocketServer) =
+  proc resumeAccept(server: StreamServer) =
     addReader(server.sock, serverCallback, cast[pointer](server))
 
-  proc pauseAccept(server: SocketServer) =
+  proc pauseAccept(server: StreamServer) =
     removeReader(server.sock)
 
   proc resumeRead(transp: StreamTransport) {.inline.} =
@@ -687,24 +685,26 @@ else:
     transp.state.excl(WritePaused)
     addWriter(transp.fd, writeStreamLoop, cast[pointer](transp))
 
-proc start*(server: SocketServer) =
+proc start*(server: StreamServer) =
   ## Starts ``server``.
   if server.status == ServerStatus.Starting:
     server.resumeAccept()
     server.status = ServerStatus.Running
 
-proc stop*(server: SocketServer) =
+proc stop*(server: StreamServer) =
   ## Stops ``server``.
   if server.status == ServerStatus.Running:
     server.pauseAccept()
     server.status = ServerStatus.Stopped
+  elif server.status == ServerStatus.Starting:
+    server.status = ServerStatus.Stopped
 
-proc join*(server: SocketServer) {.async.} =
+proc join*(server: StreamServer) {.async.} =
   ## Waits until ``server`` is not closed.
   if not server.loopFuture.finished:
     await server.loopFuture
 
-proc close*(server: SocketServer) =
+proc close*(server: StreamServer) =
   ## Release ``server`` resources.
   if server.status == ServerStatus.Stopped:
     closeAsyncSocket(server.sock)
