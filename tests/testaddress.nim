@@ -94,21 +94,13 @@ when isMainModule:
         check len(taseq) >= 1
 
     test "resolveTAddress(string) (IPv6 only)":
-      var hostnames = [
-        "www.google.com:443",
-        "www.github.com:443",
-        "localhost:443"
-      ]
+      var hostnames = ["localhost:443"]
       for item in hostnames:
         var taseq = resolveTAddress(item, IpAddressFamily.IPv6)
         check len(taseq) >= 1
 
     test "resolveTAddress(string, Port) (IPv6 only)":
-      var hostnames = [
-        "www.google.com",
-        "www.github.com",
-        "localhost"
-      ]
+      var hostnames = ["localhost"]
       for item in hostnames:
         var taseq = resolveTAddress(item, Port(443), IpAddressFamily.IPv6)
         check len(taseq) >= 1
