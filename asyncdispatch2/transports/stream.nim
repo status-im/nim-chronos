@@ -613,7 +613,8 @@ else:
     sock = createAsyncSocket(address.address.getDomain(), SockType.SOCK_STREAM,
                              Protocol.IPPROTO_TCP)
     if sock == asyncInvalidSocket:
-      result.fail(newException(OSError, osErrorMsg(osLastError())))
+      retFuture.fail(newException(OSError, osErrorMsg(osLastError())))
+      return retFuture
 
     proc continuation(udata: pointer) =
       var data = cast[ptr CompletionData](udata)
