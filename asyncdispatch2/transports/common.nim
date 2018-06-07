@@ -167,22 +167,19 @@ proc resolveTAddress*(address: string,
   ##
   ## If hostname address is detected, then network address translation via DNS
   ## will be performed.
-  var
-    ta: TransportAddress
-    ap: Port
   result = newSeq[TransportAddress]()
   var parts = address.rsplit(":", maxsplit = 1)
   doAssert(len(parts) == 2, "Format is <address>:<port>!")
   let port = parseInt(parts[1])
   doAssert(port >= 0 and port < 65536, "Illegal port number!")
   if parts[0][0] == '[' and parts[0][^1] == ']':
-    ta = TransportAddress(address: parseIpAddress(parts[0][1..^2]),
-                          port: Port(port))
+    let ta = TransportAddress(address: parseIpAddress(parts[0][1..^2]),
+                              port: Port(port))
     result.add(ta)
   else:
     if isIpAddress(parts[0]):
-      ta = TransportAddress(address: parseIpAddress(parts[0]),
-                            port: Port(port))
+      let ta = TransportAddress(address: parseIpAddress(parts[0]),
+                                port: Port(port))
       result.add(ta)
     else:
       var domain = if family == IpAddressFamily.IPv4: Domain(AF_INET) else:
@@ -190,9 +187,13 @@ proc resolveTAddress*(address: string,
       var aiList = getAddrInfo(parts[0], Port(port), domain)
       var it = aiList
       while it != nil:
+        var ta: TransportAddress
         fromSockAddr(cast[ptr Sockaddr_storage](it.ai_addr)[],
                      SockLen(it.ai_addrlen), ta.address, ta.port)
-        result.add(ta)
+        # For some reason getAddrInfo() sometimes returns duplicate addresses,
+        # for example getAddrInfo(`localhost`) returns `127.0.0.1` twice.
+        if ta notin result:
+          result.add(ta)
         it = it.ai_next
       freeAddrInfo(aiList)
 
@@ -204,10 +205,9 @@ proc resolveTAddress*(address: string, port: Port,
   ## 
   ## If hostname address is detected, then network address translation via DNS
   ## will be performed.
-  var ta: TransportAddress
   result = newSeq[TransportAddress]()
   if isIpAddress(address):
-    ta = TransportAddress(address: parseIpAddress(address), port: port)
+    let ta = TransportAddress(address: parseIpAddress(address), port: port)
     result.add(ta)
   else:
     var domain = if family == IpAddressFamily.IPv4: Domain(AF_INET) else:
@@ -215,9 +215,13 @@ proc resolveTAddress*(address: string, port: Port,
     var aiList = getAddrInfo(address, port, domain)
     var it = aiList
     while it != nil:
+      var ta: TransportAddress
       fromSockAddr(cast[ptr Sockaddr_storage](it.ai_addr)[],
                    SockLen(it.ai_addrlen), ta.address, ta.port)
-      result.add(ta)
+      # For some reason getAddrInfo() sometimes returns duplicate addresses,
+      # for example getAddrInfo(`localhost`) returns `127.0.0.1` twice.
+      if ta notin result:
+        result.add(ta)
       it = it.ai_next
     freeAddrInfo(aiList)
 
