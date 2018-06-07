@@ -47,7 +47,8 @@ when isMainModule:
       ]
       var hostnames = [
         "www.google.com:443",
-        "www.github.com:443"
+        "www.github.com:443",
+        "localhost:443"
       ]
       for item in numeric:
         var taseq = resolveTAddress(item)
@@ -75,7 +76,8 @@ when isMainModule:
       ]
       var hostnames = [
         "www.google.com",
-        "www.github.com"
+        "www.github.com",
+        "localhost"
       ]
       for item in numeric4:
         var taseq = resolveTAddress(item, Port(443))
@@ -89,4 +91,24 @@ when isMainModule:
 
       for item in hostnames:
         var taseq = resolveTAddress(item, Port(443))
+        check len(taseq) >= 1
+
+    test "resolveTAddress(string) (IPv6 only)":
+      var hostnames = [
+        "www.google.com:443",
+        "www.github.com:443",
+        "localhost:443"
+      ]
+      for item in hostnames:
+        var taseq = resolveTAddress(item, IpAddressFamily.IPv6)
+        check len(taseq) >= 1
+
+    test "resolveTAddress(string, Port) (IPv6 only)":
+      var hostnames = [
+        "www.google.com",
+        "www.github.com",
+        "localhost"
+      ]
+      for item in hostnames:
+        var taseq = resolveTAddress(item, Port(443), IpAddressFamily.IPv6)
         check len(taseq) >= 1
