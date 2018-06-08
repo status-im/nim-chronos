@@ -466,8 +466,7 @@ else:
     withData(p.selector, int(fd), adata) do:
       let acb = AsyncCallback(function: cb, udata: addr adata.rdata)
       adata.reader = acb
-      adata.rdata.fd = fd
-      adata.rdata.udata = udata
+      adata.rdata = CompletionData(fd: fd, udata: udata)
       newEvents.incl(Event.Read)
       if not isNil(adata.writer.function): newEvents.incl(Event.Write)
     do:
@@ -479,6 +478,9 @@ else:
     let p = getGlobalDispatcher()
     var newEvents: set[Event]
     withData(p.selector, int(fd), adata) do:
+      # We need to clear `reader` data, because `selectors` don't do it
+      adata.reader = AsyncCallback()
+      adata.rdata = CompletionData()
       if not isNil(adata.writer.function): newEvents.incl(Event.Write)
     do:
       raise newException(ValueError, "File descriptor not registered.")
@@ -492,8 +494,7 @@ else:
     withData(p.selector, int(fd), adata) do:
       let acb = AsyncCallback(function: cb, udata: addr adata.wdata)
       adata.writer = acb
-      adata.wdata.fd = fd
-      adata.wdata.udata = udata
+      adata.wdata = CompletionData(fd: fd, udata: udata)
       newEvents.incl(Event.Write)
       if not isNil(adata.reader.function): newEvents.incl(Event.Read)
     do:
@@ -505,6 +506,9 @@ else:
     let p = getGlobalDispatcher()
     var newEvents: set[Event]
     withData(p.selector, int(fd), adata) do:
+      # We need to clear `writer` data, because `selectors` don't do it
+      adata.writer = AsyncCallback()
+      adata.wdata = CompletionData()
       if not isNil(adata.reader.function): newEvents.incl(Event.Read)
     do:
       raise newException(ValueError, "File descriptor not registered.")
