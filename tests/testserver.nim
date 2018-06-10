@@ -45,11 +45,11 @@ proc serveDatagramClient(transp: DatagramTransport,
 
 proc test1(): bool =
   var ta = initTAddress("127.0.0.1:31354")
-  var server1 = createStreamServer(ta, serveStreamClient, {})
+  var server1 = createStreamServer(ta, serveStreamClient, {ReuseAddr})
   server1.start()
   server1.stop()
   server1.close()
-  var server2 = createStreamServer(ta, serveStreamClient, {})
+  var server2 = createStreamServer(ta, serveStreamClient, {ReuseAddr})
   server2.start()
   server2.stop()
   server2.close()
@@ -57,11 +57,11 @@ proc test1(): bool =
 
 proc test2(): bool =
   var ta = initTAddress("127.0.0.1:31354")
-  var server1 = createDatagramServer(ta, serveDatagramClient, {})
+  var server1 = createDatagramServer(ta, serveDatagramClient, {ReuseAddr})
   server1.start()
   server1.stop()
   server1.close()
-  var server2 = createDatagramServer(ta, serveDatagramClient, {})
+  var server2 = createDatagramServer(ta, serveDatagramClient, {ReuseAddr})
   server2.start()
   server2.stop()
   server2.close()
@@ -81,7 +81,7 @@ proc test3(): bool =
   var server = CustomServer()
   server.test1 = "TEST"
   var ta = initTAddress("127.0.0.1:31354")
-  var pserver = createStreamServer(ta, serveCustomStreamClient, {},
+  var pserver = createStreamServer(ta, serveCustomStreamClient, {ReuseAddr},
                                    child = cast[StreamServer](server),
                                    init = customServerTransport)
   waitFor client(server, ta)
