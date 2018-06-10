@@ -281,6 +281,11 @@ template getError*(t: untyped): ref Exception =
   (t).error = nil
   err
 
+proc raiseTransportOsError*(err: OSErrorCode) =
+  ## Raises transport specific OS error.
+  var msg = "(" & $int(err) & ") " & osErrorMsg(err)
+  raise newException(TransportOsError, msg)
+
 when defined(windows):
   import winlean
 
