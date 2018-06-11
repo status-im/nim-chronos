@@ -536,6 +536,7 @@ when defined(windows):
   proc resumeAccept(server: StreamServer) {.inline.} =
     if not server.apending:
       acceptLoop(cast[pointer](addr server.aovl))
+
 else:
 
   template getVectorBuffer(v: untyped): pointer =
@@ -849,7 +850,6 @@ proc createStreamServer*(host: TransportAddress,
     result.domain = host.address.getDomain()
     result.apending = false
   GC_ref(result)
-  result.resumeAccept()
 
 proc createStreamServer*[T](host: TransportAddress,
                             cbproc: StreamCallback,
