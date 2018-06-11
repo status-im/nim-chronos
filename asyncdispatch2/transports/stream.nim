@@ -882,7 +882,7 @@ proc write*(transp: StreamTransport, pbytes: pointer,
     transp.resumeWrite()
   return retFuture
 
-proc write*(transp: StreamTransport, msg: string): Future[int] =
+proc write*(transp: StreamTransport, msg: var string): Future[int] =
   ## Write data from string ``msg`` using transport ``transp``.
   var retFuture = FutureGCString[int]()
   transp.checkClosed(retFuture)
@@ -895,7 +895,7 @@ proc write*(transp: StreamTransport, msg: string): Future[int] =
     transp.resumeWrite()
   return retFuture
 
-proc write*[T](transp: StreamTransport, msg: seq[T]): Future[int] =
+proc write*[T](transp: StreamTransport, msg: var seq[T]): Future[int] =
   ## Write sequence ``msg`` using transport ``transp``.
   var retFuture = FutureGCSeq[int, T]()
   transp.checkClosed(retFuture)

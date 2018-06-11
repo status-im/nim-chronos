@@ -535,7 +535,7 @@ proc send*(transp: DatagramTransport, pbytes: pointer,
     transp.resumeWrite()
   return retFuture
 
-proc send*(transp: DatagramTransport, msg: string): Future[void] =
+proc send*(transp: DatagramTransport, msg: var string): Future[void] =
   ## Send string ``msg`` using transport ``transp`` to remote destination
   ## address which was bounded on transport.
   var retFuture = FutureGCString[void]()
@@ -549,7 +549,7 @@ proc send*(transp: DatagramTransport, msg: string): Future[void] =
     transp.resumeWrite()
   return retFuture
 
-proc send*[T](transp: DatagramTransport, msg: seq[T]): Future[void] =
+proc send*[T](transp: DatagramTransport, msg: var seq[T]): Future[void] =
   ## Send string ``msg`` using transport ``transp`` to remote destination
   ## address which was bounded on transport.
   var retFuture = FutureGCSeq[void, T]()
@@ -576,7 +576,7 @@ proc sendTo*(transp: DatagramTransport, pbytes: pointer, nbytes: int,
     transp.resumeWrite()
   return retFuture
 
-proc sendTo*(transp: DatagramTransport, msg: string,
+proc sendTo*(transp: DatagramTransport, msg: var string,
              remote: TransportAddress): Future[void] =
   ## Send string ``msg`` using transport ``transp`` to remote destination
   ## address ``remote``.
@@ -592,7 +592,7 @@ proc sendTo*(transp: DatagramTransport, msg: string,
     transp.resumeWrite()
   return retFuture
 
-proc sendTo*[T](transp: DatagramTransport, msg: seq[T],
+proc sendTo*[T](transp: DatagramTransport, msg: var seq[T],
                 remote: TransportAddress): Future[void] =
   ## Send sequence ``msg`` using transport ``transp`` to remote destination
   ## address ``remote``.

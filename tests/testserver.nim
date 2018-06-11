@@ -40,7 +40,8 @@ proc serveUdataStreamClient(server: StreamServer,
                             transp: StreamTransport) {.async.} =
   var udata = getUserData[CustomData](server)
   var line = await transp.readLine()
-  discard await transp.write(line & udata.test & "\r\n")
+  var msg = line & udata.test & "\r\n"
+  discard await transp.write(msg)
   transp.close()
 
 proc customServerTransport(server: StreamServer,
