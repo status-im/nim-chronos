@@ -858,11 +858,12 @@ proc createStreamServer*[T](host: TransportAddress,
                             sock: AsyncFD = asyncInvalidSocket,
                             backlog: int = 100,
                             bufferSize: int = DefaultStreamBufferSize,
-                            child: StreamServer = nil): StreamServer =
+                            child: StreamServer = nil,
+                            init: TransportInitCallback = nil): StreamServer =
   var fflags = flags + {GCUserData}
   GC_ref(udata)
   result = createStreamServer(host, cbproc, flags, sock, backlog, bufferSize,
-                              cast[pointer](udata))
+                              child, init, cast[pointer](udata))
 
 proc getUserData*[T](server: StreamServer): T {.inline.} =
   ## Obtain user data stored in ``server`` object.

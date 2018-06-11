@@ -13,8 +13,12 @@ type
   CustomServer = ref object of StreamServer
     test1: string
     test2: string
+    test3: string
 
   CustomTransport = ref object of StreamTransport
+    test: string
+
+  CustomData = ref object
     test: string
 
 proc serveStreamClient(server: StreamServer,
@@ -27,9 +31,17 @@ proc serveCustomStreamClient(server: StreamServer,
   var ctransp = cast[CustomTransport](transp)
   cserver.test1 = "CONNECTION"
   cserver.test2 = ctransp.test
+  cserver.test3 = await transp.readLine()
+  var answer = "ANSWER\r\n"
+  discard await transp.write(answer)
   transp.close()
-  server.stop()
-  server.close()
+
+proc serveUdataStreamClient(server: StreamServer,
+                            transp: StreamTransport) {.async.} =
+  var udata = getUserData[CustomData](server)
+  var line = await transp.readLine()
+  discard await transp.write(line & udata.test & "\r\n")
+  transp.close()
 
 proc customServerTransport(server: StreamServer,
                            fd: AsyncFD): StreamTransport =
@@ -67,15 +79,31 @@ proc test2(): bool =
   server2.close()
   result = true
 
-proc client(server: CustomServer, ta: TransportAddress) {.async.} =
+proc client1(server: CustomServer, ta: TransportAddress) {.async.} =
   var transp = CustomTransport()
   transp.test = "CLIENT"
   server.start()
   var ptransp = await connect(ta, child = transp)
   var etransp = cast[CustomTransport](ptransp)
   doAssert(etransp.test == "CLIENT")
+  var msg = "TEST\r\n"
+  discard await transp.write(msg)
+  var line = await transp.readLine()
   transp.close()
-  await server.join()
+  server.stop()
+  server.close()
+
+proc client2(server: StreamServer,
+             ta: TransportAddress): Future[bool] {.async.} =
+  server.start()
+  var transp = await connect(ta)
+  var msg = "TEST\r\n"
+  discard await transp.write(msg)
+  var line = await transp.readLine()
+  result = (line == "TESTCUSTOMDATA")
+  transp.close()
+  server.stop()
+  server.close()
 
 proc test3(): bool =
   var server = CustomServer()
@@ -84,8 +112,16 @@ proc test3(): bool =
   var pserver = createStreamServer(ta, serveCustomStreamClient, {ReuseAddr},
                                    child = cast[StreamServer](server),
                                    init = customServerTransport)
-  waitFor client(server, ta)
+  waitFor client1(server, ta)
   result = (server.test1 == "CONNECTION") and (server.test2 == "CUSTOM")
+
+proc test4(): bool =
+  var co = CustomData()
+  co.test = "CUSTOMDATA"
+  var ta = initTAddress("127.0.0.1:31354")
+  var server = createStreamServer(ta, serveUdataStreamClient, {ReuseAddr},
+                                  udata = co)
+  result = waitFor client2(server, ta)
 
 when isMainModule:
   suite "Server's test suite":
@@ -95,3 +131,5 @@ when isMainModule:
       check test3() == true
     test "Datagram Server start/stop test":
       check test2() == true
+    test "StreamServer[T] test":
+      check test4() == true
