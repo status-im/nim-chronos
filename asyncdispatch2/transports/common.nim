@@ -179,6 +179,12 @@ proc initTAddress*(address: string, port: int): TransportAddress =
   except:
     raise newException(TransportAddressError, getCurrentException().msg)
 
+proc initTAddress*(address: IpAddress, port: Port): TransportAddress =
+  ## Initialize ``TransportAddress`` with net.nim ``IpAddress`` and
+  ## port number ``port``.
+  result.address = address
+  result.port = port
+
 proc getAddrInfo(address: string, port: Port, domain: Domain,
                  sockType: SockType = SockType.SOCK_STREAM,
                  protocol: Protocol = Protocol.IPPROTO_TCP): ptr AddrInfo =
