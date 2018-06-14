@@ -50,12 +50,6 @@ proc customServerTransport(server: StreamServer,
   transp.test = "CUSTOM"
   result = cast[StreamTransport](transp)
 
-proc serveDatagramClient(transp: DatagramTransport,
-                         pbytes: pointer, nbytes: int,
-                         raddr: TransportAddress,
-                         udata: pointer): Future[void] {.async.} =
-  discard
-
 proc test1(): bool =
   var ta = initTAddress("127.0.0.1:31354")
   var server1 = createStreamServer(ta, serveStreamClient, {ReuseAddr})
@@ -63,18 +57,6 @@ proc test1(): bool =
   server1.stop()
   server1.close()
   var server2 = createStreamServer(ta, serveStreamClient, {ReuseAddr})
-  server2.start()
-  server2.stop()
-  server2.close()
-  result = true
-
-proc test2(): bool =
-  var ta = initTAddress("127.0.0.1:31354")
-  var server1 = createDatagramServer(ta, serveDatagramClient, {ReuseAddr})
-  server1.start()
-  server1.stop()
-  server1.close()
-  var server2 = createDatagramServer(ta, serveDatagramClient, {ReuseAddr})
   server2.start()
   server2.stop()
   server2.close()
@@ -130,7 +112,5 @@ when isMainModule:
       check test1() == true
     test "Stream Server inherited object test":
       check test3() == true
-    test "Datagram Server start/stop test":
-      check test2() == true
     test "StreamServer[T] test":
       check test4() == true

@@ -19,10 +19,10 @@ proc skipUntilStmtList(node: NimNode): NimNode {.compileTime.} =
   if node[0].kind == nnkStmtList:
     result = skipUntilStmtList(node[0])
 
-proc skipStmtList(node: NimNode): NimNode {.compileTime.} =
-  result = node
-  if node[0].kind == nnkStmtList:
-    result = node[0]
+# proc skipStmtList(node: NimNode): NimNode {.compileTime.} =
+#   result = node
+#   if node[0].kind == nnkStmtList:
+#     result = node[0]
 
 template createCb(retFutureSym, iteratorNameSym,
                   strName, identName, futureVarCompletions: untyped) =

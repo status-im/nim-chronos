@@ -300,8 +300,7 @@ when defined(windows):
         if err == OSErrorCode(-1):
           let bytesCount = transp.rovl.data.bytesCount
           if bytesCount == 0:
-            transp.state.incl(ReadEof)
-            transp.state.incl(ReadPaused)
+            transp.state.incl({ReadEof, ReadPaused})
           else:
             if transp.offset != transp.roffset:
               moveMem(addr transp.buffer[transp.offset],
@@ -1206,7 +1205,6 @@ proc close*(transp: StreamTransport) =
     when defined(windows):
       discard cancelIo(Handle(transp.fd))
     closeAsyncSocket(transp.fd)
-    transp.state.incl(WriteClosed)
-    transp.state.incl(ReadClosed)
+    transp.state.incl({WriteClosed, ReadClosed})
     transp.future.complete()
     GC_unref(transp)
