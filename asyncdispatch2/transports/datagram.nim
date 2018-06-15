@@ -572,7 +572,7 @@ proc send*(transp: DatagramTransport, msg: string, msglen = -1): Future[void] =
   if not isLiteral(msg):
     shallowCopy(retFuture.gcholder, msg)
   let length = if msglen <= 0: len(msg) else: msglen
-  let vector = GramVector(kind: WithoutAddress, buf: unsafeAddr msg[0],
+  let vector = GramVector(kind: WithoutAddress, buf: addr retFuture.gcholder[0],
                           buflen: len(msg),
                           writer: cast[Future[void]](retFuture))
   transp.queue.addLast(vector)
@@ -589,7 +589,7 @@ proc send*[T](transp: DatagramTransport, msg: seq[T],
   if not isLiteral(msg):
     shallowCopy(retFuture.gcholder, msg)
   let length = if msglen <= 0: (len(msg) * sizeof(T)) else: (msglen * sizeof(T))
-  let vector = GramVector(kind: WithoutAddress, buf: unsafeAddr msg[0],
+  let vector = GramVector(kind: WithoutAddress, buf: addr retFuture.gcholder[0],
                           buflen: length,
                           writer: cast[Future[void]](retFuture))
   transp.queue.addLast(vector)
@@ -619,7 +619,7 @@ proc sendTo*(transp: DatagramTransport, remote: TransportAddress,
   if not isLiteral(msg):
     shallowCopy(retFuture.gcholder, msg)
   let length = if msglen <= 0: len(msg) else: msglen
-  let vector = GramVector(kind: WithAddress, buf: unsafeAddr msg[0],
+  let vector = GramVector(kind: WithAddress, buf: addr retFuture.gcholder[0],
                           buflen: length,
                           writer: cast[Future[void]](retFuture),
                           address: remote)
@@ -637,7 +637,7 @@ proc sendTo*[T](transp: DatagramTransport, remote: TransportAddress,
   if not isLiteral(msg):
     shallowCopy(retFuture.gcholder, msg)
   let length = if msglen <= 0: (len(msg) * sizeof(T)) else: (msglen * sizeof(T))
-  let vector = GramVector(kind: WithAddress, buf: unsafeAddr msg[0],
+  let vector = GramVector(kind: WithAddress, buf: addr retFuture.gcholder[0],
                           buflen: length,
                           writer: cast[Future[void]](retFuture),
                           address: remote)

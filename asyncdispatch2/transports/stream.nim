@@ -881,28 +881,32 @@ proc write*(transp: StreamTransport, pbytes: pointer,
     transp.resumeWrite()
   return retFuture
 
-proc write*(transp: StreamTransport, msg: var string): Future[int] =
+proc write*(transp: StreamTransport, msg: string, msglen = -1): Future[int] =
   ## Write data from string ``msg`` using transport ``transp``.
   var retFuture = FutureGCString[int]()
   transp.checkClosed(retFuture)
-  shallowCopy(retFuture.gcholder, msg)
+  if not isLiteral(msg):
+    shallowCopy(retFuture.gcholder, msg)
+  let length = if msglen <= 0: len(msg) else: msglen
   var vector = StreamVector(kind: DataBuffer,
                             writer: cast[Future[int]](retFuture),
-                            buf: unsafeAddr msg[0], buflen: len(msg))
+                            buf: addr retFuture.gcholder[0], buflen: length)
   transp.queue.addLast(vector)
   if WritePaused in transp.state:
     transp.resumeWrite()
   return retFuture
 
-proc write*[T](transp: StreamTransport, msg: var seq[T]): Future[int] =
+proc write*[T](transp: StreamTransport, msg: seq[T], msglen = -1): Future[int] =
   ## Write sequence ``msg`` using transport ``transp``.
   var retFuture = FutureGCSeq[int, T]()
   transp.checkClosed(retFuture)
-  shallowCopy(retFuture.gcholder, msg)
+  if not isLiteral(msg):
+    shallowCopy(retFuture.gcholder, msg)
+  let length = if msglen <= 0: (len(msg) * sizeof(T)) else: (msglen * sizeof(T))
   var vector = StreamVector(kind: DataBuffer,
                             writer: cast[Future[int]](retFuture),
-                            buf: unsafeAddr msg[0],
-                            buflen: len(msg) * sizeof(T))
+                            buf: addr retFuture.gcholder[0],
+                            buflen: length)
   transp.queue.addLast(vector)
   if WritePaused in transp.state:
     transp.resumeWrite()
