@@ -43,15 +43,15 @@ type
     udata*: pointer                 # User-driven pointer
     function: DatagramCallback      # Receive data callback
     future: Future[void]            # Transport's life future
+    raddr: Sockaddr_storage         # Reader address storage
+    ralen: SockLen                  # Reader address length
+    waddr: Sockaddr_storage         # Writer address storage
+    walen: SockLen                  # Writer address length
     when defined(windows):
       rovl: CustomOverlapped          # Reader OVERLAPPED structure
       wovl: CustomOverlapped          # Writer OVERLAPPED structure
-      raddr: Sockaddr_storage         # Reader address storage
-      ralen: SockLen                  # Reader address length
       rflag: int32                    # Reader flags storage
       rwsabuf: TWSABuf                # Reader WSABUF structure
-      waddr: Sockaddr_storage         # Writer address storage
-      wlen: SockLen                   # Writer address length
       wwsabuf: TWSABuf                # Writer WSABUF structure
 
 template setReadError(t, e: untyped) =
@@ -95,10 +95,10 @@ when defined(windows):
         var ret: cint
         if vector.kind == WithAddress:
           toSockAddr(vector.address.address, vector.address.port,
-                     transp.waddr, transp.wlen)
+                     transp.waddr, transp.walen)
           ret = WSASendTo(fd, addr transp.wwsabuf, DWORD(1), addr bytesCount,
                           DWORD(0), cast[ptr SockAddr](addr transp.waddr),
-                          cint(transp.wlen),
+                          cint(transp.walen),
                           cast[POVERLAPPED](addr transp.wovl), nil)
         else:
           ret = WSASend(fd, addr transp.wwsabuf, DWORD(1), addr bytesCount,
@@ -313,11 +313,7 @@ else:
   # Linux/BSD/MacOS part
 
   proc readDatagramLoop(udata: pointer) =
-    var
-      saddr: Sockaddr_storage
-      slen: SockLen
-      raddr: TransportAddress
-
+    var raddr: TransportAddress
     var cdata = cast[ptr CompletionData](udata)
     if not isNil(cdata) and (int(cdata.fd) == 0 or isNil(cdata.udata)):
       # Transport was closed earlier, exiting
@@ -326,13 +322,13 @@ else:
     let fd = SocketHandle(cdata.fd)
     if not isNil(transp):
       while true:
-        slen = SockLen(sizeof(Sockaddr_storage))
+        transp.ralen = SockLen(sizeof(Sockaddr_storage))
         var res = posix.recvfrom(fd, addr transp.buffer[0],
                                  cint(len(transp.buffer)), cint(0),
-                                 cast[ptr SockAddr](addr saddr),
-                                 addr slen)
+                                 cast[ptr SockAddr](addr transp.raddr),
+                                 addr transp.ralen)
         if res >= 0:
-          fromSockAddr(saddr, slen, raddr.address, raddr.port)
+          fromSockAddr(transp.raddr, transp.ralen, raddr.address, raddr.port)
           transp.buflen = res
           discard transp.function(transp, raddr)
         else:
@@ -346,11 +342,7 @@ else:
         break
 
   proc writeDatagramLoop(udata: pointer) =
-    var
-      res: int
-      saddr: Sockaddr_storage
-      slen: SockLen
-
+    var res: int
     var cdata = cast[ptr CompletionData](udata)
     if not isNil(cdata) and (int(cdata.fd) == 0 or isNil(cdata.udata)):
       # Transport was closed earlier, exiting
@@ -362,10 +354,11 @@ else:
         var vector = transp.queue.popFirst()
         while true:
           if vector.kind == WithAddress:
-            toSockAddr(vector.address.address, vector.address.port, saddr, slen)
+            toSockAddr(vector.address.address, vector.address.port,
+                       transp.waddr, transp.walen)
             res = posix.sendto(fd, vector.buf, vector.buflen, MSG_NOSIGNAL,
-                               cast[ptr SockAddr](addr saddr),
-                               slen)
+                               cast[ptr SockAddr](addr transp.waddr),
+                               transp.walen)
           elif vector.kind == WithoutAddress:
             res = posix.send(fd, vector.buf, vector.buflen, MSG_NOSIGNAL)
           if res >= 0:
