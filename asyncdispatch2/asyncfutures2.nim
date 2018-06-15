@@ -358,25 +358,17 @@ proc failed*(future: FutureBase): bool =
   ## Determines whether ``future`` completed with an error.
   return future.error != nil
 
-proc asyncCheckProxy[T](udata: pointer) =
-  var future = cast[Future[T]](udata)
-  if future.failed:
-    injectStacktrace(future)
-    raise future.error
-
 proc asyncCheck*[T](future: Future[T]) =
   ## Sets a callback on ``future`` which raises an exception if the future
   ## finished with an error.
   ##
   ## This should be used instead of ``discard`` to discard void futures.
   assert(not future.isNil, "Future is nil")
-  # ZAH: This should probably add a callback instead of replacing all call-backs.
-  # Perhaps a new API can be introduced to avoid the breaking change.
-  future.callback = asyncCheckProxy[T]
-    # proc (udata: pointer) =
-    #   if future.failed:
-    #     injectStacktrace(future)
-    #     raise future.error
+  proc cb(data: pointer) =
+    if future.failed:
+      injectStacktrace(future)
+      raise future.error
+  future.callback = cb
 
 # ZAH: The return type here could be a Future[(T, Y)]
 proc `and`*[T, Y](fut1: Future[T], fut2: Future[Y]): Future[void] =
