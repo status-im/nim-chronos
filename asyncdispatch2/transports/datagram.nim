@@ -510,7 +510,8 @@ proc newDatagramTransport*[T](cbproc: DatagramCallback,
   var fflags = flags + {GCUserData}
   GC_ref(udata)
   result = newDatagramTransportCommon(cbproc, remote, local, sock,
-                                      fflags, udata, child, bufSize)
+                                      fflags, cast[pointer](udata),
+                                      child, bufSize)
 
 proc newDatagramTransport6*(cbproc: DatagramCallback,
                             remote: TransportAddress = AnyAddress6,
@@ -546,7 +547,8 @@ proc newDatagramTransport6*[T](cbproc: DatagramCallback,
   var fflags = flags + {GCUserData}
   GC_ref(udata)
   result = newDatagramTransportCommon(cbproc, remote, local, sock,
-                                      fflags, udata, child, bufSize)
+                                      fflags, cast[pointer](udata),
+                                      child, bufSize)
 
 proc join*(transp: DatagramTransport) {.async.} =
   ## Wait until the transport ``transp`` will be closed.
