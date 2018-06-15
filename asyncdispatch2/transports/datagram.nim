@@ -63,6 +63,9 @@ template setWriterWSABuffer(t, v: untyped) =
   (t).wwsabuf.len = cast[int32](v.buflen)
 
 when defined(windows):
+  const
+    IOC_VENDOR = DWORD(0x18000000)
+    SIO_UDP_CONNRESET = DWORD(winlean.IOC_IN) or IOC_VENDOR or DWORD(12)
 
   proc writeDatagramLoop(udata: pointer) =
     var bytesCount: int32
@@ -213,10 +216,10 @@ when defined(windows):
         localSock = createAsyncSocket(Domain.AF_INET6, SockType.SOCK_DGRAM,
                                       Protocol.IPPROTO_UDP)
       if localSock == asyncInvalidSocket:
-        raiseOsError(osLastError())
+        raiseTransportOsError(osLastError())
     else:
       if not setSocketBlocking(SocketHandle(sock), false):
-        raiseOsError(osLastError())
+        raiseTransportOsError(osLastError())
       localSock = sock
       register(localSock)
 
@@ -226,7 +229,15 @@ when defined(windows):
         let err = osLastError()
         if sock == asyncInvalidSocket:
           closeAsyncSocket(localSock)
-        raiseOsError(err)
+        raiseTransportOsError(err)
+
+    ## Fix for Q263823.
+    var bytesRet: DWORD
+    var bval = WINBOOL(0)
+    if WSAIoctl(SocketHandle(localSock), SIO_UDP_CONNRESET, addr bval,
+                sizeof(WINBOOL).DWORD, nil, DWORD(0),
+                addr bytesRet, nil, nil) != 0:
+      raiseTransportOsError(osLastError())
 
     if local.port != Port(0):
       var saddr: Sockaddr_storage
@@ -237,7 +248,7 @@ when defined(windows):
         let err = osLastError()
         if sock == asyncInvalidSocket:
           closeAsyncSocket(localSock)
-        raiseOsError(err)
+        raiseTransportOsError(err)
       result.local = local
     else:
       var saddr: Sockaddr_storage
@@ -253,7 +264,7 @@ when defined(windows):
         let err = osLastError()
         if sock == asyncInvalidSocket:
           closeAsyncSocket(localSock)
-        raiseOsError(err)
+        raiseTransportOsError(err)
 
     if remote.port != Port(0):
       var saddr: Sockaddr_storage
@@ -264,7 +275,7 @@ when defined(windows):
         let err = osLastError()
         if sock == asyncInvalidSocket:
           closeAsyncSocket(localSock)
-        raiseOsError(err)
+        raiseTransportOsError(err)
       result.remote = remote
 
     result.fd = localSock
@@ -299,6 +310,7 @@ when defined(windows):
       GC_unref(transp)
 
 else:
+  # Linux/BSD/MacOS part
 
   proc readDatagramLoop(udata: pointer) =
     var
@@ -403,10 +415,10 @@ else:
         localSock = createAsyncSocket(Domain.AF_INET6, SockType.SOCK_DGRAM,
                                       Protocol.IPPROTO_UDP)
       if localSock == asyncInvalidSocket:
-        raiseOsError(osLastError())
+        raiseTransportOsError(osLastError())
     else:
       if not setSocketBlocking(SocketHandle(sock), false):
-        raiseOsError(osLastError())
+        raiseTransportOsError(osLastError())
       localSock = sock
       register(localSock)
 
@@ -416,7 +428,7 @@ else:
         let err = osLastError()
         if sock == asyncInvalidSocket:
           closeAsyncSocket(localSock)
-        raiseOsError(err)
+        raiseTransportOsError(err)
 
     if local.port != Port(0):
       var saddr: Sockaddr_storage
@@ -427,7 +439,7 @@ else:
         let err = osLastError()
         if sock == asyncInvalidSocket:
           closeAsyncSocket(localSock)
-        raiseOsError(err)
+        raiseTransportOsError(err)
       result.local = local
 
     if remote.port != Port(0):
@@ -439,7 +451,7 @@ else:
         let err = osLastError()
         if sock == asyncInvalidSocket:
           closeAsyncSocket(localSock)
-        raiseOsError(err)
+        raiseTransportOsError(err)
       result.remote = remote
 
     result.fd = localSock

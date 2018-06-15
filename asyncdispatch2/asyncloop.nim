@@ -227,7 +227,6 @@ template processCallbacks(loop: untyped) =
 
 when defined(windows) or defined(nimdoc):
   import winlean, sets, hashes
-
   type
     WSAPROC_TRANSMITFILE = proc(hSocket: SocketHandle, hFile: Handle,
                                 nNumberOfBytesToWrite: DWORD,
@@ -341,10 +340,10 @@ when defined(windows) or defined(nimdoc):
     loop.processCallbacks()
 
   proc getFunc(s: SocketHandle, fun: var pointer, guid: var GUID): bool =
-    var bytesRet: Dword
+    var bytesRet: DWORD
     fun = nil
     result = WSAIoctl(s, SIO_GET_EXTENSION_FUNCTION_POINTER, addr guid,
-                      sizeof(GUID).Dword, addr fun, sizeof(pointer).Dword,
+                      sizeof(GUID).DWORD, addr fun, sizeof(pointer).DWORD,
                       addr bytesRet, nil, nil) == 0
 
   proc initAPI() =
@@ -360,26 +359,30 @@ when defined(windows) or defined(nimdoc):
     if wsaStartup(0x0202'i16, addr wsa) != 0:
       raiseOSError(osLastError())
 
-    let sock = winlean.socket(winlean.AF_INET, 1 , 6)
+    let sock = winlean.socket(winlean.AF_INET, 1, 6)
     if sock == INVALID_SOCKET:
       raiseOSError(osLastError())
 
     var funcPointer: pointer = nil
     if not getFunc(sock, funcPointer, WSAID_CONNECTEX):
+      let err = osLastError()
       close(sock)
-      raiseOSError(osLastError())
+      raiseOSError(err)
     loop.connectEx = cast[WSAPROC_CONNECTEX](funcPointer)
     if not getFunc(sock, funcPointer, WSAID_ACCEPTEX):
+      let err = osLastError()
       close(sock)
-      raiseOSError(osLastError())
+      raiseOSError(err)
     loop.acceptEx = cast[WSAPROC_ACCEPTEX](funcPointer)
     if not getFunc(sock, funcPointer, WSAID_GETACCEPTEXSOCKADDRS):
+      let err = osLastError()
       close(sock)
-      raiseOSError(osLastError())
+      raiseOSError(err)
     loop.getAcceptExSockAddrs = cast[WSAPROC_GETACCEPTEXSOCKADDRS](funcPointer)
     if not getFunc(sock, funcPointer, WSAID_TRANSMITFILE):
+      let err = osLastError()
       close(sock)
-      raiseOSError(osLastError())
+      raiseOSError(err)
     loop.transmitFile = cast[WSAPROC_TRANSMITFILE](funcPointer)
     close(sock)
 

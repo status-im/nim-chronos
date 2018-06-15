@@ -111,7 +111,7 @@ proc remoteAddress*(transp: StreamTransport): TransportAddress =
     var slen = SockLen(sizeof(saddr))
     if getpeername(SocketHandle(transp.fd), cast[ptr SockAddr](addr saddr),
                    addr slen) != 0:
-      raiseOsError(osLastError())
+      raiseTransportOsError(osLastError())
     fromSockAddr(saddr, slen, transp.remote.address, transp.remote.port)
   result = transp.remote
 
@@ -124,7 +124,7 @@ proc localAddress*(transp: StreamTransport): TransportAddress =
     var slen = SockLen(sizeof(saddr))
     if getsockname(SocketHandle(transp.fd), cast[ptr SockAddr](addr saddr),
                    addr slen) != 0:
-      raiseOsError(osLastError())
+      raiseTransportOsError(osLastError())
     fromSockAddr(saddr, slen, transp.local.address, transp.local.port)
   result = transp.local
 
