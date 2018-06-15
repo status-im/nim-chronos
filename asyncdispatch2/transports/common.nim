@@ -292,6 +292,16 @@ proc raiseTransportOsError*(err: OSErrorCode) =
   var msg = "(" & $int(err) & ") " & osErrorMsg(err)
   raise newException(TransportOsError, msg)
 
+type
+  SeqHeader = object
+    length, reserved: int
+
+proc isLiteral*(s: string): bool {.inline.} =
+  (cast[ptr SeqHeader](s).reserved and (1 shl (sizeof(int) * 8 - 2))) != 0
+
+proc isLiteral*[T](s: seq[T]): bool {.inline.} =
+  (cast[ptr SeqHeader](s).reserved and (1 shl (sizeof(int) * 8 - 2))) != 0
+
 when defined(windows):
   import winlean
 

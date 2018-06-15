@@ -564,12 +564,14 @@ proc send*(transp: DatagramTransport, pbytes: pointer,
     transp.resumeWrite()
   return retFuture
 
-proc send*(transp: DatagramTransport, msg: var string): Future[void] =
+proc send*(transp: DatagramTransport, msg: string, msglen = -1): Future[void] =
   ## Send string ``msg`` using transport ``transp`` to remote destination
   ## address which was bounded on transport.
   var retFuture = FutureGCString[void]()
   transp.checkClosed(retFuture)
-  shallowCopy(retFuture.gcholder, msg)
+  if not isLiteral(msg):
+    shallowCopy(retFuture.gcholder, msg)
+  let length = if msglen <= 0: len(msg) else: msglen
   let vector = GramVector(kind: WithoutAddress, buf: unsafeAddr msg[0],
                           buflen: len(msg),
                           writer: cast[Future[void]](retFuture))
@@ -578,22 +580,25 @@ proc send*(transp: DatagramTransport, msg: var string): Future[void] =
     transp.resumeWrite()
   return retFuture
 
-proc send*[T](transp: DatagramTransport, msg: var seq[T]): Future[void] =
+proc send*[T](transp: DatagramTransport, msg: seq[T],
+              msglen = -1): Future[void] =
   ## Send string ``msg`` using transport ``transp`` to remote destination
   ## address which was bounded on transport.
   var retFuture = FutureGCSeq[void, T]()
   transp.checkClosed(retFuture)
-  shallowCopy(retFuture.gcholder, msg)
+  if not isLiteral(msg):
+    shallowCopy(retFuture.gcholder, msg)
+  let length = if msglen <= 0: (len(msg) * sizeof(T)) else: (msglen * sizeof(T))
   let vector = GramVector(kind: WithoutAddress, buf: unsafeAddr msg[0],
-                          buflen: (len(msg) * sizeof(T)),
+                          buflen: length,
                           writer: cast[Future[void]](retFuture))
   transp.queue.addLast(vector)
   if WritePaused in transp.state:
     transp.resumeWrite()
   return retFuture
 
-proc sendTo*(transp: DatagramTransport, pbytes: pointer, nbytes: int,
-             remote: TransportAddress): Future[void] =
+proc sendTo*(transp: DatagramTransport, remote: TransportAddress,
+             pbytes: pointer, nbytes: int): Future[void] =
   ## Send buffer with pointer ``pbytes`` and size ``nbytes`` using transport
   ## ``transp`` to remote destination address ``remote``.
   var retFuture = newFuture[void]()
@@ -605,15 +610,17 @@ proc sendTo*(transp: DatagramTransport, pbytes: pointer, nbytes: int,
     transp.resumeWrite()
   return retFuture
 
-proc sendTo*(transp: DatagramTransport, msg: var string,
-             remote: TransportAddress): Future[void] =
+proc sendTo*(transp: DatagramTransport, remote: TransportAddress,
+             msg: string, msglen = -1): Future[void] =
   ## Send string ``msg`` using transport ``transp`` to remote destination
   ## address ``remote``.
   var retFuture = FutureGCString[void]()
   transp.checkClosed(retFuture)
-  shallowCopy(retFuture.gcholder, msg)
+  if not isLiteral(msg):
+    shallowCopy(retFuture.gcholder, msg)
+  let length = if msglen <= 0: len(msg) else: msglen
   let vector = GramVector(kind: WithAddress, buf: unsafeAddr msg[0],
-                          buflen: len(msg),
+                          buflen: length,
                           writer: cast[Future[void]](retFuture),
                           address: remote)
   transp.queue.addLast(vector)
@@ -621,15 +628,17 @@ proc sendTo*(transp: DatagramTransport, msg: var string,
     transp.resumeWrite()
   return retFuture
 
-proc sendTo*[T](transp: DatagramTransport, msg: var seq[T],
-                remote: TransportAddress): Future[void] =
+proc sendTo*[T](transp: DatagramTransport, remote: TransportAddress,
+                msg: seq[T], msglen = -1): Future[void] =
   ## Send sequence ``msg`` using transport ``transp`` to remote destination
   ## address ``remote``.
   var retFuture = FutureGCSeq[void, T]()
   transp.checkClosed(retFuture)
-  shallowCopy(retFuture.gcholder, msg)
+  if not isLiteral(msg):
+    shallowCopy(retFuture.gcholder, msg)
+  let length = if msglen <= 0: (len(msg) * sizeof(T)) else: (msglen * sizeof(T))
   let vector = GramVector(kind: WithAddress, buf: unsafeAddr msg[0],
-                          buflen: (len(msg) * sizeof(T)),
+                          buflen: length,
                           writer: cast[Future[void]](retFuture),
                           address: remote)
   transp.queue.addLast(vector)
@@ -656,55 +665,3 @@ proc getMessage*(transp: DatagramTransport): seq[byte] =
 proc getUserData*[T](transp: DatagramTransport): T {.inline.} =
   ## Obtain user data stored in ``transp`` object.
   result = cast[T](transp.udata)
-
-
-# proc createDatagramServer*(host: TransportAddress,
-#                            cbproc: DatagramCallback,
-#                            flags: set[ServerFlags] = {},
-#                            sock: AsyncFD = asyncInvalidSocket,
-#                            bufferSize: int = DefaultDatagramBufferSize,
-#                            udata: pointer = nil): DatagramServer =
-#   var transp: DatagramTransport
-#   var fflags = flags + {NoAutoRead}
-#   if host.address.family == IpAddressFamily.IPv4:
-#     transp = newDatagramTransport(cbproc, AnyAddress, host, sock,
-#                                   fflags, udata, bufferSize)
-#   else:
-#     transp = newDatagramTransport6(cbproc, AnyAddress6, host, sock,
-#                                    fflags, udata, bufferSize)
-#   result = DatagramServer()
-#   result.transport = transp
-#   result.status = ServerStatus.Starting
-#   GC_ref(result)
-
-# proc start*(server: DatagramServer) =
-#   ## Starts ``server``.
-#   if server.status == ServerStatus.Starting:
-#     server.transport.resumeRead()
-#     server.status = ServerStatus.Running
-
-# proc stop*(server: DatagramServer) =
-#   ## Stops ``server``.
-#   if server.status == ServerStatus.Running:
-#     when defined(windows):
-#       if {WritePending, ReadPending} * server.transport.state != {}:
-#         ## CancelIO will stop both reading and writing.
-#         discard cancelIo(Handle(server.transport.fd))
-#     else:
-#       if WritePaused notin server.transport.state:
-#         server.transport.fd.removeWriter()
-#       if ReadPaused notin server.transport.state:
-#         server.transport.fd.removeReader()
-#     server.status = ServerStatus.Stopped
-
-# proc join*(server: DatagramServer) {.async.} =
-#   ## Waits until ``server`` is not stopped.
-#   if not server.transport.future.finished:
-#     await server.transport.future
-
-# proc close*(server: DatagramServer) =
-#   ## Release ``server`` resources.
-#   if server.status == ServerStatus.Stopped:
-#     server.status = ServerStatus.Closed
-#     server.transport.close()
-#     GC_unref(server)

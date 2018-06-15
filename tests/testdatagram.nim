@@ -27,10 +27,10 @@ proc client1(transp: DatagramTransport,
       var numstr = data[7..^1]
       var num = parseInt(numstr)
       var ans = "ANSWER" & $num
-      await transp.sendTo(addr ans[0], len(ans), raddr)
+      await transp.sendTo(raddr, addr ans[0], len(ans))
     else:
       var err = "ERROR"
-      await transp.sendTo(addr err[0], len(err), raddr)
+      await transp.sendTo(raddr, addr err[0], len(err))
   else:
     var counterPtr = cast[ptr int](transp.udata)
     counterPtr[] = -1
@@ -53,7 +53,7 @@ proc client2(transp: DatagramTransport,
       else:
         var ta = initTAddress("127.0.0.1:33336")
         var req = "REQUEST" & $counterPtr[]
-        await transp.sendTo(addr req[0], len(req), ta)
+        await transp.sendTo(ta, addr req[0], len(req))
     else:
       var counterPtr = cast[ptr int](transp.udata)
       counterPtr[] = -1
@@ -135,7 +135,7 @@ proc client5(transp: DatagramTransport,
       else:
         var ta = initTAddress("127.0.0.1:33337")
         var req = "REQUEST" & $counterPtr[]
-        await transp.sendTo(addr req[0], len(req), ta)
+        await transp.sendTo(ta, addr req[0], len(req))
     else:
       var counterPtr = cast[ptr int](transp.udata)
       counterPtr[] = -1
@@ -159,10 +159,10 @@ proc client6(transp: DatagramTransport,
       var numstr = data[7..^1]
       var num = parseInt(numstr)
       var ans = "ANSWER" & $num
-      await transp.sendTo(ans, raddr)
+      await transp.sendTo(raddr, ans)
     else:
       var err = "ERROR"
-      await transp.sendTo(err, raddr)
+      await transp.sendTo(raddr, err)
   else:
     ## Read operation failed with error
     var counterPtr = cast[ptr int](transp.udata)
@@ -186,7 +186,7 @@ proc client7(transp: DatagramTransport,
       else:
         var ta = initTAddress("127.0.0.1:33336")
         var req = "REQUEST" & $counterPtr[]
-        await transp.sendTo(req, ta)
+        await transp.sendTo(ta, req)
     else:
       var counterPtr = cast[ptr int](transp.udata)
       counterPtr[] = -1
@@ -239,12 +239,12 @@ proc client9(transp: DatagramTransport,
       var ans = "ANSWER" & $num
       var ansseq = newSeq[byte](len(ans))
       copyMem(addr ansseq[0], addr ans[0], len(ans))
-      await transp.sendTo(ansseq, raddr)
+      await transp.sendTo(raddr, ansseq)
     else:
       var err = "ERROR"
       var errseq = newSeq[byte](len(err))
       copyMem(addr errseq[0], addr err[0], len(err))
-      await transp.sendTo(errseq, raddr)
+      await transp.sendTo(raddr, errseq)
   else:
     ## Read operation failed with error
     var counterPtr = cast[ptr int](transp.udata)
@@ -270,7 +270,7 @@ proc client10(transp: DatagramTransport,
         var req = "REQUEST" & $counterPtr[]
         var reqseq = newSeq[byte](len(req))
         copyMem(addr reqseq[0], addr req[0], len(req))
-        await transp.sendTo(reqseq, ta)
+        await transp.sendTo(ta, reqseq)
     else:
       var counterPtr = cast[ptr int](transp.udata)
       counterPtr[] = -1
@@ -317,7 +317,7 @@ proc testPointerSendTo(): Future[int] {.async.} =
   var dgram1 = newDatagramTransport(client1, udata = addr counter, local = ta)
   var dgram2 = newDatagramTransport(client2, udata = addr counter)
   var data = "REQUEST0"
-  await dgram2.sendTo(addr data[0], len(data), ta)
+  await dgram2.sendTo(ta, addr data[0], len(data))
   await dgram2.join()
   dgram1.close()
   dgram2.close()
@@ -343,7 +343,7 @@ proc testStringSendTo(): Future[int] {.async.} =
   var dgram1 = newDatagramTransport(client6, udata = addr counter, local = ta)
   var dgram2 = newDatagramTransport(client7, udata = addr counter)
   var data = "REQUEST0"
-  await dgram2.sendTo(data, ta)
+  await dgram2.sendTo(ta, data)
   await dgram2.join()
   dgram1.close()
   dgram2.close()
@@ -371,7 +371,7 @@ proc testSeqSendTo(): Future[int] {.async.} =
   var data = "REQUEST0"
   var dataseq = newSeq[byte](len(data))
   copyMem(addr dataseq[0], addr data[0], len(data))
-  await dgram2.sendTo(dataseq, ta)
+  await dgram2.sendTo(ta, dataseq)
   await dgram2.join()
   dgram1.close()
   dgram2.close()
@@ -420,7 +420,7 @@ proc test3(bounded: bool): Future[int] {.async.} =
       await grams[i].send(addr data[0], len(data))
     else:
       grams[i] = newDatagramTransport(client5, udata = addr counters[i])
-      await grams[i].sendTo(addr data[0], len(data), ta)
+      await grams[i].sendTo(ta, addr data[0], len(data))
     clients[i] = grams[i].join()
 
   await waitAll(clients)
@@ -442,7 +442,7 @@ proc testConnReset(): Future[bool] {.async.} =
   dgram1.close()
   var dgram2 = newDatagramTransport(client20, udata = addr counter)
   var data = "MESSAGE"
-  discard dgram2.sendTo(data, ta)
+  discard dgram2.sendTo(ta, data)
   await sleepAsync(1000)
   result = (counter == 0)
 
