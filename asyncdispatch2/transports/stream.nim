@@ -469,16 +469,14 @@ when defined(windows):
             else:
               if not isNil(server.init):
                 var transp = server.init(server, server.asock)
-                discard server.function(
-                  server,
-                  newStreamSocketTransport(server.asock, server.bufferSize,
-                                           transp)
-                )
+                let ntransp = newStreamSocketTransport(server.asock,
+                                                       server.bufferSize,
+                                                       transp)
+                asyncCheck server.function(server, ntransp)
               else:
-                discard server.function(
-                  server,
-                  newStreamSocketTransport(server.asock, server.bufferSize, nil)
-                )
+                let ntransp = newStreamSocketTransport(server.asock,
+                                                       server.bufferSize, nil)
+                asyncCheck server.function(server, ntransp)
           elif int32(ovl.data.errCode) == ERROR_OPERATION_ABORTED:
             # CancelIO() interrupt
             server.asock.closeAsyncSocket()
@@ -713,10 +711,10 @@ else:
         if sock != asyncInvalidSocket:
           if not isNil(server.init):
             var transp = server.init(server, sock)
-            discard server.function(server,
+            asyncCheck server.function(server,
               newStreamSocketTransport(sock, server.bufferSize, transp))
           else:
-            discard server.function(server,
+            asyncCheck server.function(server,
               newStreamSocketTransport(sock, server.bufferSize, nil))
           break
       else:

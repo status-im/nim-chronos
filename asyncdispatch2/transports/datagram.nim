@@ -141,7 +141,7 @@ when defined(windows):
             transp.state.incl({ReadEof, ReadPaused})
           fromSockAddr(transp.raddr, transp.ralen, raddr.address, raddr.port)
           transp.buflen = bytesCount
-          discard transp.function(transp, raddr)
+          asyncCheck transp.function(transp, raddr)
         elif int(err) == ERROR_OPERATION_ABORTED:
           # CancelIO() interrupt
           transp.state.incl(ReadPaused)
@@ -150,7 +150,7 @@ when defined(windows):
           transp.setReadError(err)
           transp.state.incl(ReadPaused)
           transp.buflen = 0
-          discard transp.function(transp, raddr)
+          asyncCheck transp.function(transp, raddr)
       else:
         ## Initiation
         if transp.state * {ReadEof, ReadClosed, ReadError} == {}:
@@ -180,7 +180,7 @@ when defined(windows):
               transp.state.incl(ReadPaused)
               transp.setReadError(err)
               transp.buflen = 0
-              discard transp.function(transp, raddr)
+              asyncCheck transp.function(transp, raddr)
         break
 
   proc resumeRead(transp: DatagramTransport) {.inline.} =
@@ -330,7 +330,7 @@ else:
         if res >= 0:
           fromSockAddr(transp.raddr, transp.ralen, raddr.address, raddr.port)
           transp.buflen = res
-          discard transp.function(transp, raddr)
+          asyncCheck transp.function(transp, raddr)
         else:
           let err = osLastError()
           if int(err) == EINTR:
@@ -338,7 +338,7 @@ else:
           else:
             transp.buflen = 0
             transp.setReadError(err)
-            discard transp.function(transp, raddr)
+            asyncCheck transp.function(transp, raddr)
         break
 
   proc writeDatagramLoop(udata: pointer) =
