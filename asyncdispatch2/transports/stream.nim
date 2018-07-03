@@ -312,11 +312,14 @@ when defined(windows):
               transp.state.incl(ReadPaused)
         elif int(err) == ERROR_OPERATION_ABORTED:
           # CancelIO() interrupt
-          discard
+          transp.state.incl(ReadPaused)
+        elif int(err) == ERROR_NETNAME_DELETED:
+          transp.state.incl({ReadEof, ReadPaused})
         else:
           transp.setReadError(err)
         if not isNil(transp.reader):
-          transp.finishReader()
+          if not transp.reader.finished:
+            transp.finishReader()
         if ReadPaused in transp.state:
           # Transport buffer is full, so we will not continue on reading.
           break
