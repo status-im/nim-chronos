@@ -1213,3 +1213,7 @@ proc close*(transp: StreamTransport) =
     transp.state.incl({WriteClosed, ReadClosed})
     transp.future.complete()
     GC_unref(transp)
+
+proc closed*(transp: StreamTransport): bool {.inline.} =
+  ## Returns ``true`` if transport in closed state.
+  result = ({ReadClosed, WriteClosed} * transp.state != {})

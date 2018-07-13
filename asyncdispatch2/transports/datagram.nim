@@ -665,3 +665,7 @@ proc getMessage*(transp: DatagramTransport): seq[byte] =
 proc getUserData*[T](transp: DatagramTransport): T {.inline.} =
   ## Obtain user data stored in ``transp`` object.
   result = cast[T](transp.udata)
+
+proc closed*(transp: DatagramTransport): bool {.inline.} =
+  ## Returns ``true`` if transport in closed state.
+  result = ({ReadClosed, WriteClosed} * transp.state != {})
