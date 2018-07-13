@@ -185,6 +185,8 @@ proc processBody(node, retFutureSym: NimNode,
 
 proc getName(node: NimNode): string {.compileTime.} =
   case node.kind
+  of nnkSym:
+    return $node
   of nnkPostfix:
     return node[1].strVal
   of nnkIdent:
