@@ -648,8 +648,8 @@ proc wait*[T](fut: Future[T], timeout = -1): Future[T] =
   ## Returns a future which will complete once future ``fut`` completes
   ## or if timeout of ``timeout`` milliseconds has been expired.
   ## 
-  ## If ``timeout`` is ``-1``, then result future will be completed only
-  ## when ``fut`` become completed.
+  ## If ``timeout`` is ``-1``, then statement ``await wait(fut)`` is
+  ## equal to ``await fut``.
   var retFuture = newFuture[T]("asyncdispatch.wait")
   proc continuation(udata: pointer) {.gcsafe.} =
     if not retFuture.finished:
