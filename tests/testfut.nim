@@ -18,6 +18,67 @@ proc testFuture2(): Future[int] {.async.} =
 proc testFuture3(): Future[int] {.async.} =
   result = await testFuture2()
 
+proc testFuture4(): Future[int] {.async.} =
+  ## Test for not immediately completed future and timeout = -1
+  result = 0
+  try:
+    var res = await wait(testFuture1(), -1)
+    result = 1
+  except:
+    result = 0
+
+  if result == 0:
+    return
+
+  ## Test for immediately completed future and timeout = -1
+  result = 0
+  try:
+    var res = await wait(testFuture2(), -1)
+    result = 1
+  except:
+    result = 0
+
+  if result == 0:
+    return
+
+  ## Test for not immediately completed future and timeout = 0
+  result = 0
+  try:
+    var res = await wait(testFuture1(), 0)
+  except AsyncTimeoutError:
+    result = 1
+
+  if result == 0:
+    return
+
+  ## Test for immediately completed future and timeout = 0
+  result = 0
+  try:
+    var res = await wait(testFuture2(), 0)
+    result = 1
+  except:
+    result = 0
+
+  if result == 0:
+    return
+
+  ## Test for future which cannot be completed in timeout period
+  result = 0
+  try:
+    var res = await wait(testFuture1(), 50)
+  except AsyncTimeoutError:
+    result = 1
+
+  if result == 0:
+    return
+
+  ## Test for future which will be completed before timeout exceeded.
+  try:
+    var res = await wait(testFuture1(), 150)
+    result = 1
+  except:
+    result = 0
+
 proc test1(): bool =
   var fut = testFuture1()
   poll()
@@ -70,6 +131,11 @@ proc test4(): string =
   if fut.finished:
     result = testResult
 
+proc test5(): bool =
+  var res = waitFor(testFuture4())
+  if res == 1:
+    result = true
+
 when isMainModule:
   suite "Future[T] behavior test suite":
     test "Async undefined behavior (#7758) test":
@@ -80,3 +146,5 @@ when isMainModule:
       check test3() == "12345"
     test "Future[T] callbacks not changing order after removeCallback()":
       check test4() == "1245"
+    test "wait[T]() test":
+      check test5() == true

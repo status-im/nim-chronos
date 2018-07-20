@@ -82,7 +82,7 @@ else:
       loopFuture*: Future[void]     # Server's main Future
 
 type
-  TransportError* = object of Exception
+  TransportError* = object of AsyncError
     ## Transport's specific exception
   TransportOsError* = object of TransportError
     ## Transport's OS specific exception

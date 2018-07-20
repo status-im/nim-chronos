@@ -166,6 +166,11 @@ export asyncfutures2
 # TODO: Check if yielded future is nil and throw a more meaningful exception
 
 type
+  AsyncError* = object of Exception
+    ## Generic async exception
+  AsyncTimeoutError* = object of AsyncError
+    ## Timeout exception
+
   TimerCallback* = object
     finishAt*: uint64
     function*: AsyncCallback
@@ -637,6 +642,39 @@ proc withTimeout*[T](fut: Future[T], timeout: int): Future[bool] =
           retFuture.complete(true)
   addTimer(fastEpochTime() + uint64(timeout), continuation, nil)
   fut.addCallback(continuation)
+  return retFuture
+
+proc wait*[T](fut: Future[T], timeout = -1): Future[T] =
+  ## Returns a future which will complete once future ``fut`` completes
+  ## or if timeout of ``timeout`` milliseconds has been expired.
+  ## 
+  ## If ``timeout`` is ``-1``, then result future will be completed only
+  ## when ``fut`` become completed.
+  var retFuture = newFuture[T]("asyncdispatch.wait")
+  proc continuation(udata: pointer) {.gcsafe.} =
+    if not retFuture.finished:
+      if isNil(udata):
+        fut.removeCallback(continuation)
+        retFuture.fail(newException(AsyncTimeoutError, ""))
+      else:
+        if not retFuture.finished:
+          if fut.failed:
+            retFuture.fail(fut.error)
+          else:
+            retFuture.complete(fut.read())
+  if timeout == -1:
+    retFuture = fut
+  elif timeout == 0:
+    if fut.finished:
+      if fut.failed:
+        retFuture.fail(fut.error)
+      else:
+        retFuture.complete(fut.read())
+    else:
+      retFuture.fail(newException(AsyncTimeoutError, ""))
+  else:
+    addTimer(fastEpochTime() + uint64(timeout), continuation, nil)
+    fut.addCallback(continuation)
   return retFuture
 
 include asyncmacro2
