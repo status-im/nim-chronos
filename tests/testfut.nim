@@ -74,7 +74,7 @@ proc testFuture4(): Future[int] {.async.} =
 
   ## Test for future which will be completed before timeout exceeded.
   try:
-    var res = await wait(testFuture1(), 150)
+    var res = await wait(testFuture1(), 300)
     result = 6
   except:
     result = -6
