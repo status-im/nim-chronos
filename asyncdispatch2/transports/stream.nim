@@ -309,7 +309,7 @@ when defined(windows):
         elif int(err) == ERROR_OPERATION_ABORTED:
           # CancelIO() interrupt
           transp.state.incl(ReadPaused)
-        elif int(err) == ERROR_NETNAME_DELETED:
+        elif int(err) in {ERROR_NETNAME_DELETED, WSAECONNABORTED}:
           transp.state.incl({ReadEof, ReadPaused})
         else:
           transp.setReadError(err)
@@ -340,9 +340,10 @@ when defined(windows):
                 # CancelIO() interrupt
                 transp.state.excl(ReadPending)
                 transp.state.incl(ReadPaused)
-              elif int32(err) in {WSAECONNRESET, WSAENETRESET}:
+              elif int32(err) in {WSAECONNRESET, WSAENETRESET, WSAECONNABORTED}:
+                transp.state.excl(ReadPending)
+                transp.state.incl({ReadEof, ReadPaused})
                 if not isNil(transp.reader):
-                  transp.state = {ReadEof, ReadPaused}
                   transp.reader.complete()
                   transp.reader = nil
               elif int32(err) != ERROR_IO_PENDING:
@@ -613,13 +614,13 @@ else:
         if int(err) == EINTR:
           continue
         elif int(err) in {ECONNRESET}:
-          transp.state = transp.state + {ReadEof, ReadPaused}
+          transp.state.incl({ReadEof, ReadPaused})
           cdata.fd.removeReader()
         else:
           transp.setReadError(err)
           cdata.fd.removeReader()
       elif res == 0:
-        transp.state = transp.state + {ReadEof, ReadPaused}
+        transp.state.incl({ReadEof, ReadPaused})
         cdata.fd.removeReader()
       else:
         transp.offset += res
@@ -943,6 +944,7 @@ proc readExactly*(transp: StreamTransport, pbytes: pointer,
   ## will raise ``TransportIncompleteError``.
   checkClosed(transp)
   checkPending(transp)
+
   var index = 0
   while true:
     if transp.offset == 0:
