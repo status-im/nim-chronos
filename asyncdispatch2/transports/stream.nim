@@ -627,7 +627,8 @@ else:
           transp.state.incl(ReadPaused)
           cdata.fd.removeReader()
       if not isNil(transp.reader):
-        transp.finishReader()
+        transp.reader.complete()
+        transp.reader = nil
       break
 
   proc newStreamSocketTransport(sock: AsyncFD, bufsize: int,
