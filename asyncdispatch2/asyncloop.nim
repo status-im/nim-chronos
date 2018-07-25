@@ -612,16 +612,19 @@ proc removeTimer*(at: uint64, cb: CallbackFunc, udata: pointer = nil) =
   if index != -1:
     loop.timers.del(index)
 
-proc completeProxy*[T](data: pointer) =
-  var future = cast[Future[T]](data)
-  future.complete()
+# proc completeProxy*[T](data: pointer) =
+#   var future = cast[Future[T]](data)
+#   future.complete()
 
 proc sleepAsync*(ms: int): Future[void] =
   ## Suspends the execution of the current async procedure for the next
   ## ``ms`` milliseconds.
   var retFuture = newFuture[void]("sleepAsync")
+  proc completion(data: pointer) =
+    if not retFuture.finished:
+      retFuture.complete()
   addTimer(fastEpochTime() + uint64(ms),
-           completeProxy[void], cast[pointer](retFuture))
+           completion, cast[pointer](retFuture))
   return retFuture
 
 proc withTimeout*[T](fut: Future[T], timeout: int): Future[bool] =
