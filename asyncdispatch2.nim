@@ -6,5 +6,6 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 
-import asyncdispatch2/[asyncloop, asyncfutures2, asyncsync, handles, transport]
-export asyncloop, asyncfutures2, asyncsync, handles, transport
+import asyncdispatch2/[asyncloop, asyncfutures2, asyncsync, handles, transport,
+                       timer]
+export asyncloop, asyncfutures2, asyncsync, handles, transport, timer
