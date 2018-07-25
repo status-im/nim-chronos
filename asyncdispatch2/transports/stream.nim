@@ -964,11 +964,12 @@ proc readExactly*(transp: StreamTransport, pbytes: pointer,
                 addr(transp.buffer[0]), transp.offset)
         index += transp.offset
 
-      transp.reader = newFuture[void]("stream.transport.readExactly")
+      var fut = newFuture[void]("stream.transport.readExactly")
+      transp.reader = fut
       transp.offset = 0
       if ReadPaused in transp.state:
         transp.resumeRead()
-      await transp.reader
+      await fut
 
 proc readOnce*(transp: StreamTransport, pbytes: pointer,
                nbytes: int): Future[int] {.async.} =
@@ -985,13 +986,11 @@ proc readOnce*(transp: StreamTransport, pbytes: pointer,
       if (ReadClosed in transp.state) or transp.atEof():
         result = 0
         break
-      transp.reader = newFuture[void]("stream.transport.readOnce")
+      var fut = newFuture[void]("stream.transport.readOnce")
+      transp.reader = fut
       if ReadPaused in transp.state:
         transp.resumeRead()
-      await transp.reader
-      # we need to clear transp.reader to avoid double completion of this
-      # Future[T], because readLoop continues working.
-      transp.reader = nil
+      await fut
     else:
       if transp.offset > nbytes:
         copyMem(pbytes, addr(transp.buffer[0]), nbytes)
@@ -1052,10 +1051,11 @@ proc readUntil*(transp: StreamTransport, pbytes: pointer, nbytes: int,
       break
     else:
       transp.shiftBuffer(transp.offset)
-      transp.reader = newFuture[void]("stream.transport.readUntil")
+      var fut = newFuture[void]("stream.transport.readUntil")
+      transp.reader = fut
       if ReadPaused in transp.state:
         transp.resumeRead()
-      await transp.reader
+      await fut
 
 proc readLine*(transp: StreamTransport, limit = 0,
                sep = "\r\n"): Future[string] {.async.} =
@@ -1103,10 +1103,11 @@ proc readLine*(transp: StreamTransport, limit = 0,
       break
     else:
       transp.shiftBuffer(transp.offset)
-      transp.reader = newFuture[void]("stream.transport.readLine")
+      var fut = newFuture[void]("stream.transport.readLine")
+      transp.reader = fut
       if ReadPaused in transp.state:
         transp.resumeRead()
-      await transp.reader
+      await fut
 
 proc read*(transp: StreamTransport, n = -1): Future[seq[byte]] {.async.} =
   ## Read all bytes (n == -1) or exactly `n` bytes from transport ``transp``.
@@ -1146,10 +1147,11 @@ proc read*(transp: StreamTransport, n = -1): Future[seq[byte]] {.async.} =
                   transp.offset)
           transp.offset = 0
 
-    transp.reader = newFuture[void]("stream.transport.read")
+    var fut = newFuture[void]("stream.transport.read")
+    transp.reader = fut
     if ReadPaused in transp.state:
       transp.resumeRead()
-    await transp.reader
+    await fut
 
 proc consume*(transp: StreamTransport, n = -1): Future[int] {.async.} =
   ## Consume all bytes (n == -1) or ``n`` bytes from transport ``transp``.
@@ -1181,10 +1183,11 @@ proc consume*(transp: StreamTransport, n = -1): Future[int] {.async.} =
           result += transp.offset
           transp.offset = 0
 
-    transp.reader = newFuture[void]("stream.transport.consume")
+    var fut = newFuture[void]("stream.transport.consume")
+    transp.reader = fut
     if ReadPaused in transp.state:
       transp.resumeRead()
-    await transp.reader
+    await fut
 
 proc join*(transp: StreamTransport) {.async.} =
   ## Wait until ``transp`` will not be closed.
