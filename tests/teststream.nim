@@ -17,12 +17,21 @@ else:
 const
   ConstantMessage = "SOMEDATA"
   BigMessagePattern = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-  BigMessageCount = 1000
-  ClientsCount = 100
-  MessagesCount = 100
-  MessageSize = 20
-  FilesCount = 50
   FilesTestName = "tests/teststream.nim"
+when sizeof(int) == 8:
+  const
+    BigMessageCount = 1000
+    ClientsCount = 100
+    MessagesCount = 100
+    MessageSize = 20
+    FilesCount = 50
+elif sizeof(int) == 4:
+  const
+    BigMessageCount = 200
+    ClientsCount = 20
+    MessagesCount = 20
+    MessageSize = 20
+    FilesCount = 10
 
 proc serveClient1(server: StreamServer, transp: StreamTransport) {.async.} =
   while not transp.atEof():
