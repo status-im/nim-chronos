@@ -187,28 +187,39 @@ proc full*[T](aq: AsyncQueue[T]): bool {.inline.} =
   if aq.maxsize <= 0:
     result = false
   else:
-    result = len(aq.queue) >= aq.maxsize
+    result = (len(aq.queue) >= aq.maxsize)
 
 proc empty*[T](aq: AsyncQueue[T]): bool {.inline.} =
   ## Return ``true`` if the queue is empty, ``false`` otherwise.
   result = (len(aq.queue) == 0)
 
-proc putNoWait*[T](aq: AsyncQueue[T], item: T) =
-  ## Put an item into the queue ``aq`` immediately.
+proc addFirstNoWait*[T](aq: AsyncQueue[T], item: T) =
+  ## Put an item ``item`` to the beginning of the queue ``aq`` immediately.
   ##
-  ## If queue ``aq`` is full, then ``AsyncQueueFullError`` exception raised
+  ## If queue ``aq`` is full, then ``AsyncQueueFullError`` exception raised.
+  var w: Future[void]
+  if aq.full():
+    raise newException(AsyncQueueFullError, "AsyncQueue is full!")
+  aq.queue.addFirst(item)
+  while len(aq.getters) > 0:
+    w = aq.getters.popFirst()
+    if not w.finished: w.complete()
+
+proc addLastNoWait*[T](aq: AsyncQueue[T], item: T) =
+  ## Put an item ``item`` at the end of the queue ``aq`` immediately.
+  ##
+  ## If queue ``aq`` is full, then ``AsyncQueueFullError`` exception raised.
   var w: Future[void]
   if aq.full():
     raise newException(AsyncQueueFullError, "AsyncQueue is full!")
   aq.queue.addLast(item)
   while len(aq.getters) > 0:
     w = aq.getters.popFirst()
-    if not w.finished:
-      w.complete()
+    if not w.finished: w.complete()
 
-proc getNoWait*[T](aq: AsyncQueue[T]): T =
-  ## Remove and return ``item`` from the queue immediately.
-  ##
+proc popFirstNoWait*[T](aq: AsyncQueue[T]): T =
+  ## Get an item from the beginning of the queue ``aq`` immediately.
+  ## 
   ## If queue ``aq`` is empty, then ``AsyncQueueEmptyError`` exception raised.
   var w: Future[void]
   if aq.empty():
@@ -216,27 +227,75 @@ proc getNoWait*[T](aq: AsyncQueue[T]): T =
   result = aq.queue.popFirst()
   while len(aq.putters) > 0:
     w = aq.putters.popFirst()
-    if not w.finished:
-      w.complete()
+    if not w.finished: w.complete()
 
-proc put*[T](aq: AsyncQueue[T], item: T) {.async.} =
-  ## Put an ``item`` into the queue ``aq``. If the queue is full, wait until
-  ## a free slot is available before adding item.
+proc popLastNoWait*[T](aq: AsyncQueue[T]): T =
+  ## Get an item from the end of the queue ``aq`` immediately.
+  ## 
+  ## If queue ``aq`` is empty, then ``AsyncQueueEmptyError`` exception raised.
+  var w: Future[void]
+  if aq.empty():
+    raise newException(AsyncQueueEmptyError, "AsyncQueue is empty!")
+  result = aq.queue.popLast()
+  while len(aq.putters) > 0:
+    w = aq.putters.popFirst()
+    if not w.finished: w.complete()
+
+proc addFirst*[T](aq: AsyncQueue[T], item: T) {.async.} =
+  ## Put an ``item`` to the beginning of the queue ``aq``. If the queue is full,
+  ## wait until a free slot is available before adding item.
   while aq.full():
-    var putter = newFuture[void]("asyncqueue.putter")
+    var putter = newFuture[void]("AsyncQueue.addFirst")
     aq.putters.addLast(putter)
     yield putter
-  aq.putNoWait(item)
+  aq.addFirstNoWait(item)
 
-proc get*[T](aq: AsyncQueue[T]): Future[T] {.async.} =
-  ## Remove and return an item from the queue ``aq``.
-  ##
-  ## If queue is empty, wait until an item is available.
+proc addLast*[T](aq: AsyncQueue[T], item: T) {.async.} =
+  ## Put an ``item`` to the end of the queue ``aq``. If the queue is full,
+  ## wait until a free slot is available before adding item.
+  while aq.full():
+    var putter = newFuture[void]("AsyncQueue.addLast")
+    aq.putters.addLast(putter)
+    yield putter
+  aq.addLastNoWait(item)
+
+proc popFirst*[T](aq: AsyncQueue[T]): Future[T] {.async.} =
+  ## Remove and return an ``item`` from the beginning of the queue ``aq``.
+  ## If the queue is empty, wait until an item is available.
   while aq.empty():
-    var getter = newFuture[void]("asyncqueue.getter")
+    var getter = newFuture[void]("AsyncQueue.popFirst")
     aq.getters.addLast(getter)
     yield getter
-  result = aq.getNoWait()
+  result = aq.popFirstNoWait()
+
+proc popLast*[T](aq: AsyncQueue[T]): Future[T] {.async.} =
+  ## Remove and return an ``item`` from the end of the queue ``aq``.
+  ## If the queue is empty, wait until an item is available.
+  while aq.empty():
+    var getter = newFuture[void]("AsyncQueue.popLast")
+    aq.getters.addLast(getter)
+    yield getter
+  result = aq.popLastNoWait()
+
+proc putNoWait*[T](aq: AsyncQueue[T], item: T) {.inline.} =
+  ## Alias of ``addLastNoWait()``.
+  aq.addLastNoWait(item)
+
+proc getNoWait*[T](aq: AsyncQueue[T]): T {.inline.} =
+  ## Alias of ``popFirstNoWait()``.
+  result = aq.popFirstNoWait()
+
+proc put*[T](aq: AsyncQueue[T], item: T): Future[void] {.inline.} =
+  ## Alias of ``addLast()``.
+  result = aq.addLast(item)
+
+proc get*[T](aq: AsyncQueue[T]): Future[T] {.inline.} =
+  ## Alias of ``popFirst()``.
+  result = aq.popFirst()
+
+proc clear*[T](aq: AsyncQueue[T]) {.inline.} =
+  ## Clears all elements of queue ``aq``.
+  aq.queue.clear()
 
 proc len*[T](aq: AsyncQueue[T]): int {.inline.} =
   ## Return the number of elements in ``aq``.
@@ -245,3 +304,51 @@ proc len*[T](aq: AsyncQueue[T]): int {.inline.} =
 proc size*[T](aq: AsyncQueue[T]): int {.inline.} =
   ## Return the maximum number of elements in ``aq``.
   result = len(aq.maxsize)
+
+proc `[]`*[T](aq: AsyncQueue[T], i: Natural) : T {.inline.} =
+  ## Access the i-th element of ``aq`` by order from first to last.
+  ## ``aq[0]`` is the first element, ``aq[^1]`` is the last element.
+  result = aq.queue[i]
+
+proc `[]`*[T](aq: AsyncQueue[T], i: BackwardsIndex) : T {.inline.} =
+  ## Access the i-th element of ``aq`` by order from first to last.
+  ## ``aq[0]`` is the first element, ``aq[^1]`` is the last element.
+  result = aq.queue[len(aq.queue) - int(i)]
+
+proc `[]=`* [T](aq: AsyncQueue[T], i: Natural, item: T) {.inline.} =
+  ## Change the i-th element of ``aq``.
+  aq.queue[i] = item
+
+proc `[]=`* [T](aq: AsyncQueue[T], i: BackwardsIndex, item: T) {.inline.} =
+  ## Change the i-th element of ``aq``.
+  aq.queue[len(aq.queue) - int(i)] = item
+
+iterator items*[T](aq: AsyncQueue[T]): T {.inline.} =
+  ## Yield every element of ``aq``.
+  for item in aq.queue.items():
+    yield item
+
+iterator mitems*[T](aq: AsyncQueue[T]): var T {.inline.} =
+  ## Yield every element of ``aq``.
+  for mitem in aq.queue.mitems():
+    yield mitem
+
+iterator pairs*[T](aq: AsyncQueue[T]): tuple[key: int, val: T] {.inline.} =
+  ## Yield every (position, value) of ``aq``.
+  for pair in aq.queue.pairs():
+    yield pair
+
+proc contains*[T](aq: AsyncQueue[T], item: T): bool {.inline.} =
+  ## Return true if ``item`` is in ``aq`` or false if not found. Usually used
+  ## via the ``in`` operator.
+  for e in aq.queue.items():
+    if e == item: return true
+  return false
+
+proc `$`*[T](aq: AsyncQueue[T]): string =
+  ## Turn an async queue ``aq`` into its string representation.
+  result = "["
+  for item in aq.queue.items():
+    if result.len > 1: result.add(", ")
+    result.addQuoted(item)
+  result.add("]")
