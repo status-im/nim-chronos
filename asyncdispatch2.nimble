@@ -1,5 +1,5 @@
 packageName   = "asyncdispatch2"
-version       = "2.0.7"
+version       = "2.0.8"
 author        = "Status Research & Development GmbH"
 description   = "Asyncdispatch2"
 license       = "Apache License 2.0 or MIT"
@@ -55,3 +55,8 @@ task test, "Run all tests":
   exec "nim c -r tests/testserver"
   exec "nim c -r --gc:markAndSweep tests/testserver"
   exec "nim c -r -d:release tests/testserver"
+
+  exec "nim c -r -d:useSysAssert -d:useGcAssert tests/testbugs"
+  exec "nim c -r tests/testbugs"
+  exec "nim c -r --gc:markAndSweep tests/testbugs"
+  exec "nim c -r -d:release tests/testbugs"

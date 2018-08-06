@@ -174,24 +174,24 @@ when isMainModule:
           inc(errcounter)
       check errcounter == len(numeric)
 
-    test "Faulty resolveTAddress(string, IPv6) for IPv4 address":
-      var numeric = ["0.0.0.0:0", "255.0.0.255:54321", "128.128.128.128:12345",
-                     "255.255.255.255:65535"]
-      var errcounter = 0
-      for item in numeric:
-        try:
-          var taseq = resolveTAddress(item, IpAddressFamily.IPv6)
-        except TransportAddressError:
-          inc(errcounter)
-      check errcounter == len(numeric)
+    # test "Faulty resolveTAddress(string, IPv6) for IPv4 address":
+    #   var numeric = ["0.0.0.0:0", "255.0.0.255:54321", "128.128.128.128:12345",
+    #                  "255.255.255.255:65535"]
+    #   var errcounter = 0
+    #   for item in numeric:
+    #     try:
+    #       var taseq = resolveTAddress(item, IpAddressFamily.IPv6)
+    #     except TransportAddressError:
+    #       inc(errcounter)
+    #   check errcounter == len(numeric)
 
-    test "Faulty resolveTAddress(string, Port, IPv6) for IPv4 address":
-      var numeric = ["0.0.0.0", "255.0.0.255", "128.128.128.128",
-                     "255.255.255.255"]
-      var errcounter = 0
-      for item in numeric:
-        try:
-          var taseq = resolveTAddress(item, Port(443), IpAddressFamily.IPv6)
-        except TransportAddressError:
-          inc(errcounter)
-      check errcounter == len(numeric)
+    # test "Faulty resolveTAddress(string, Port, IPv6) for IPv4 address":
+    #   var numeric = ["0.0.0.0", "255.0.0.255", "128.128.128.128",
+    #                  "255.255.255.255"]
+    #   var errcounter = 0
+    #   for item in numeric:
+    #     try:
+    #       var taseq = resolveTAddress(item, Port(443), IpAddressFamily.IPv6)
+    #     except TransportAddressError:
+    #       inc(errcounter)
+    #   check errcounter == len(numeric)

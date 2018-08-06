@@ -571,6 +571,8 @@ proc send*(transp: DatagramTransport, msg: string, msglen = -1): Future[void] =
   transp.checkClosed(retFuture)
   if not isLiteral(msg):
     shallowCopy(retFuture.gcholder, msg)
+  else:
+    retFuture.gcholder = msg
   let length = if msglen <= 0: len(msg) else: msglen
   let vector = GramVector(kind: WithoutAddress, buf: addr retFuture.gcholder[0],
                           buflen: len(msg),
@@ -588,6 +590,8 @@ proc send*[T](transp: DatagramTransport, msg: seq[T],
   transp.checkClosed(retFuture)
   if not isLiteral(msg):
     shallowCopy(retFuture.gcholder, msg)
+  else:
+    retFuture.gcholder = msg
   let length = if msglen <= 0: (len(msg) * sizeof(T)) else: (msglen * sizeof(T))
   let vector = GramVector(kind: WithoutAddress, buf: addr retFuture.gcholder[0],
                           buflen: length,
@@ -618,6 +622,8 @@ proc sendTo*(transp: DatagramTransport, remote: TransportAddress,
   transp.checkClosed(retFuture)
   if not isLiteral(msg):
     shallowCopy(retFuture.gcholder, msg)
+  else:
+    retFuture.gcholder = msg
   let length = if msglen <= 0: len(msg) else: msglen
   let vector = GramVector(kind: WithAddress, buf: addr retFuture.gcholder[0],
                           buflen: length,
@@ -636,6 +642,8 @@ proc sendTo*[T](transp: DatagramTransport, remote: TransportAddress,
   transp.checkClosed(retFuture)
   if not isLiteral(msg):
     shallowCopy(retFuture.gcholder, msg)
+  else:
+    retFuture.gcholder = msg
   let length = if msglen <= 0: (len(msg) * sizeof(T)) else: (msglen * sizeof(T))
   let vector = GramVector(kind: WithAddress, buf: addr retFuture.gcholder[0],
                           buflen: length,

@@ -889,6 +889,8 @@ proc write*(transp: StreamTransport, msg: string, msglen = -1): Future[int] =
   transp.checkClosed(retFuture)
   if not isLiteral(msg):
     shallowCopy(retFuture.gcholder, msg)
+  else:
+    retFuture.gcholder = msg
   let length = if msglen <= 0: len(msg) else: msglen
   var vector = StreamVector(kind: DataBuffer,
                             writer: cast[Future[int]](retFuture),
@@ -904,6 +906,8 @@ proc write*[T](transp: StreamTransport, msg: seq[T], msglen = -1): Future[int] =
   transp.checkClosed(retFuture)
   if not isLiteral(msg):
     shallowCopy(retFuture.gcholder, msg)
+  else:
+    retFuture.gcholder = msg
   let length = if msglen <= 0: (len(msg) * sizeof(T)) else: (msglen * sizeof(T))
   var vector = StreamVector(kind: DataBuffer,
                             writer: cast[Future[int]](retFuture),
