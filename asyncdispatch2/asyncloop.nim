@@ -227,6 +227,12 @@ template processTimers(loop: untyped) =
 template processCallbacks(loop: untyped) =
   var count = len(loop.callbacks)
   for i in 0..<count:
+    # This is mostly workaround for people which are using `waitFor` where
+    # it must be used `await`. While using `waitFor` inside of callbacks
+    # dispatcher's callback list is got decreased and length of
+    # `loop.callbacks` become not equal to `count`, its why `IndexError`
+    # can be generated.
+    if len(loop.callbacks) == 0: break
     let callable = loop.callbacks.popFirst()
     callable.function(callable.udata)
 
