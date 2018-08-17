@@ -72,7 +72,7 @@ You can find more documentation, notes and examples in [Wiki](https://github.com
 You can use Nim official package manager `nimble` to install `asyncdispatch2`. The most recent version of the library can be installed via:
 
 ```
-$ nimble install asyncdispatch2
+$ nimble install https://github.com/status-im/nim-asyncdispatch2.git
 ```
 
 ## License
