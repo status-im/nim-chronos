@@ -38,8 +38,7 @@ when isMainModule:
     test "resolveTAddress(string, IPv4)":
       var numeric = ["0.0.0.0:1", "255.0.0.255:54321", "128.128.128.128:12345",
                      "255.255.255.255:65535"]
-      var hostnames = ["www.google.com:443", "www.github.com:443",
-                       "localhost:443"]
+      var hostnames = ["www.google.com:443", "www.github.com:443"]
 
       for item in numeric:
         var taseq = resolveTAddress(item)
