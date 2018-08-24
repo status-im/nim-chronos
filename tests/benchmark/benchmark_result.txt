@@ -1,0 +1,15 @@
+mofuw
+  concurrency: 128, request/sec: 95682.82, transfer/sec: 12.045MiB
+  concurrency: 256, request/sec: 90446.30, transfer/sec: 11.386MiB
+  concurrency: 512, request/sec: 92075.01, transfer/sec: 11.591MiB
+  concurrency: 1024, failed
+asyncnet
+  concurrency: 128, request/sec: 44196.54, transfer/sec: 2.276MiB
+  concurrency: 256, request/sec: 29674.21, transfer/sec: 1.528MiB
+  concurrency: 512, request/sec: 24244.77, transfer/sec: 1.249MiB
+  concurrency: 1024, failed
+asyncdispatch2
+  concurrency: 128, request/sec: 46276.68, transfer/sec: 2.383MiB
+  concurrency: 256, request/sec: 72831.57, transfer/sec: 3.751MiB
+  concurrency: 512, request/sec: 51450.58, transfer/sec: 2.65MiB
+  concurrency: 1024, failed

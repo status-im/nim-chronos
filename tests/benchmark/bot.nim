@@ -3,7 +3,7 @@ import osproc, json, streams, strutils, os
 const
   participants = ["mofuw", "asyncnet", "asyncdispatch2"]
 
-proc execDocker(command: string): JsonNode =
+proc execAndGetJson(command: string): JsonNode =
   const
     options = {poStdErrToStdOut, poUsePath, poEvalCommand}
   var p = startProcess(command, args=[], env=nil, options=options)
@@ -13,28 +13,55 @@ proc execDocker(command: string): JsonNode =
   while true:
     # FIXME: converts CR-LF to LF.
     if outp.readLine(line):
-      let node = parseJson(line)
-      result.add node
+      if line[0] == '{':
+        let node = parseJson(line)
+        result.add node
     elif not running(p): break
+  close(p)
+
+proc execSilent(command: string): int =
+  const
+    options = {poStdErrToStdOut, poUsePath, poEvalCommand}
+  var p = startProcess(command, args=[], env=nil, options=options)
+  var outp = outputStream(p)
+  var line = newStringOfCap(120)
+  while true:
+    if outp.readLine(line): discard
+    elif not running(p): break
+  result = peekExitCode(p)
   close(p)
 
 proc buildImages() =
   for c in participants:
     let cmd = "docker image build -q -t \"bench-$1:latest\" -f $1/plaintext.dockerfile $1/" % [c]
-    let ret = execCmd(cmd)
+    let ret = execSilent(cmd)
     if ret != 0:
       raise newException(Exception, "cannot build image: " & c)
 
-proc killAndRemove(id: string) =
-  var ret = execCmd("docker kill " & id)
+proc killContainer(id: string) =
+  var ret = execSilent("docker kill " & id)
   if ret != 0:
     raise newException(Exception, "cannot kill container: " & id)
-  ret = execCmd("docker rm " & id)
+
+proc removeContainer(id: string) =
+  var ret = execSilent("docker rm " & id)
   if ret != 0:
     raise newException(Exception, "cannot remove container: " & id)
 
+proc killContainers() =
+  let m = execAndGetJson("docker ps --format '{{json .}}'")
+  for x in m:
+    let ID = x["ID"]
+    killContainer(ID.getStr())
+
+proc removeContainers() =
+  let m = execAndGetJson("docker ps -a --format '{{json .}}'")
+  for x in m:
+    let ID = x["ID"]
+    removeContainer(ID.getStr())
+
 const
-  levels = [256, 1024, 4096, 16384]
+  levels = [128, 256, 512, 1024]
   maxConcurrency = levels[^1]
   duration = 15
   serverHost = "bench-bot"
@@ -42,59 +69,87 @@ const
   pipeline = 16
   accept = "text/plain,text/html;q=0.9,application/xhtml+xml;q=0.9,application/xml;q=0.8,*/*;q=0.7"
 
-proc runTest(name: string): seq[string] =
+proc runTest(name: string): JsonNode =
   let maxThreads = countProcessors()
 
+  echo "** ", name, " **"
   var cmd = "docker run -d -p 8080:8080 bench-$1" % [name]
-  var ret = execCmd(cmd)
+  var ret = execSilent(cmd)
   if ret != 0:
     raise newException(Exception, "cannot run image: " & name)
 
-  cmd = "wrk -H \"Host: $1\" -H \"Accept: $2\" -H \"Connection: keep-alive\" --latency -d 5 -c 8 --timeout 8 -t 8 $3" %
+  cmd = "./wrk -H \"Host: $1\" -H \"Accept: $2\" -H \"Connection: keep-alive\" --latency -d 5 -c 8 --timeout 8 -t 8 $3" %
     [serverHost, accept, url]
-  echo "Running Primer " & name
-  echo cmd
-  ret = execCmd(cmd)
+  echo "  Running Primer"
+  ret = execSilent(cmd)
   if ret != 0:
     raise newException(Exception, "cannot run primer: " & name)
-  sleep(5000)
+  sleep(2000)
 
-  cmd = "wrk -H \"Host: $1\" -H \"Accept: $2\" -H \"Connection: keep-alive\" --latency -d $3 -c $4 --timeout 8 -t $5 $6" %
-    [serverHost, accept, $duration, $maxConcurrency, $maxThreads, url]
-  echo "Running Warmup " & name
-  echo cmd
-  ret = execCmd(cmd)
+  cmd = "./wrk -H \"Host: $1\" -H \"Accept: $2\" -H \"Connection: keep-alive\" --latency -d $3 -c $4 --timeout 8 -t $5 $6" %
+    [serverHost, accept, $duration, $(256), $maxThreads, url]
+  echo "  Running Warmup"
+  ret = execSilent(cmd)
   if ret != 0:
     raise newException(Exception, "cannot run warmup: " & name)
-  sleep(5000)
+  sleep(2000)
 
-  let m = execDocker("docker ps -a --format '{{json .}}'")
-  for x in m:
-    let ID = x["ID"]
-    killAndRemove(ID.getStr())
-
-  result = newSeqOfCap[string](levels.len)
+  var jar = newJArray()
   for c in levels:
-    echo "Running Concurrency $1 for $2" % [$c, name]
+    echo "  Running Concurrency $1" % [$c]
     let t = max(c, maxThreads)
-    cmd = "wrk -H \"Host: $1\" -H \"Accept: $2\" -H \"Connection: keep-alive\" --latency -d $3 -c $4 --timeout 8 -t $5 $6 -s pipeline.lua -- $7" %
+    let cmd = "./wrk -H \"Host: $1\" -H \"Accept: $2\" -H \"Connection: keep-alive\" --latency -d $3 -c $4 --timeout 8 -t $5 $6 -s pipeline.lua -- $7" %
       [serverHost, accept, $duration, $c, $t, url, $pipeline]
-    result.add execProcess(cmd)
+    let res = execAndGetJson(cmd)
+    if res.len == 1:
+      var json = res[0]
+      json.add("level", newJInt(c))
+      json.add("success", newJBool(true))
+      jar.add json
+    else:
+      var json = newJObject()
+      json.add("level", newJInt(c))
+      json.add("success", newJBool(false))
+      jar.add json
+  sleep(2000)
+  killContainers()
+  removeContainers()
+
+  result = newJObject()
+  result.add("result", jar)
+  result.add("name", newJString(name))
+
+proc renderResult(json: JsonNode, s: Stream) =
+  s.writeLine(json["name"].getStr())
+  let bench = json["result"]
+  for c in bench:
+    if c["success"].getBool():
+      let concurrency = c["level"].getInt()
+      let duration = c["duration"].getInt()
+      let requests = c["requests"].getInt()
+      let bytes  = c["bytes"].getInt()
+
+      let sec = duration.float / 1_000_000.0
+      let rps = formatFloat(requests.float / sec, ffDecimal, 2)
+      let size = bytes.float / sec
+      let tps = formatSize(size.int)
+
+      s.writeLine("  concurrency: $1, request/sec: $2, transfer/sec: $3" % [$concurrency, rps, tps])
+    else:
+      let concurrency = c["level"].getInt()
+      s.writeLine("  concurrency: $1, failed" % [$concurrency])
 
 proc main() =
   buildImages()
-  
+
+  var resList = newSeq[JsonNode]()
   for p in participants:
     let res = runTest(p)
-    
-  #let cmd = "docker image ls --format '{{json .}}'"
-  #let res = execDocker(cmd)
-  #for x in res:
-  #  echo x["Repository"], "/", x["Tag"]
+    resList.add res
 
-  # docker kill $(docker ps -q) # kill all running containers
-  # docker rm $(docker ps -a -q) # remove all stopped containers
-  #var k = execProcess("./wrk -c 8 -t 3 -s pipeline.lua http://127.0.0.1:8080/ -- 16")
-  #echo k
+  var s = newFileStream("benchmark_result.txt", fmWrite)
+  for res in resList:
+    res.renderResult(s)
+  s.close()
 
 main()

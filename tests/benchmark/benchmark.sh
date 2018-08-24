@@ -10,3 +10,4 @@ fi
 
 cd ..
 nim c -d:release -r bot
+echo "$(cat benchmark_result.txt)"

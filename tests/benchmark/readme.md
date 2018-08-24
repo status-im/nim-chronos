@@ -21,12 +21,12 @@ The rank of TFB round 16th is based on plaintext category, running on a physical
 
 ## Benchmark Setup
 
-* Each of the participants will be put into docker container. Each of them will play the role of a server
-* The benchmarking tool __wrk__ will also have its own container, it will play the role of a client connecting to server(participant)
+* Each of the participants will be put into docker container. Each of them will play the role of a server.
+* The benchmarking tool __wrk__ will play the role of a client connecting to server(participant).
 * There will be a __bench-bot__ coordinating the benchmark process.
 
 When the bench-bot started, it will build images of participants and executing them one by one.
-After starting a participant container, bench-bot will run wrk,
+After starting a participant container, bench-bot will run wrk, grab the result,
 then move to next participant, run wrk again for the next participant and doing it again until the last participant.
 After the last participant benchmarked, bench-bot will write the benchmark result into a file: `benchmark_result.txt`.
 Last thing performed by bench-bot is doing some cleanup and remove container images and instances.
@@ -38,7 +38,7 @@ Each test is executed as follows:
 * Run a 5-second __primer__ at 8 client-concurrency to verify that the server is in fact running. These results are not captured.
 * Run a 15-second __warmup__ at 256 client-concurrency to allow lazy-initialization to execute and just-in-time compilation to run. These results are not captured.
 * Run a 15-second __captured test__ for each of the concurrency levels (or iteration counts) exercised by the test type.
-  The high-concurrency plaintext test type is tested at 256, 1,024, 4,096, and 16,384 client-side concurrency.
+  The high-concurrency plaintext test type is tested at 128, 256, 512, and 1024 client-side concurrency.
 * Stop the platform and framework.
 
 ## How to replicate this test locally?
