@@ -1,7 +1,7 @@
 import osproc, json, streams, strutils, os
 
 const
-  participants = ["mofuw", "asyncnet", "asyncdispatch2"]
+  participants = ["mofuw", "asyncnet", "asyncdispatch2", "fasthttp"]
 
 proc execAndGetJson(command: string): JsonNode =
   const
@@ -31,12 +31,15 @@ proc execSilent(command: string): int =
   result = peekExitCode(p)
   close(p)
 
+proc buildImage(name: string) =
+  let cmd = "docker image build -t \"bench-$1:latest\" -f $1/plaintext.dockerfile $1/" % [name]
+  let ret = execCmd(cmd)
+  if ret != 0:
+    raise newException(Exception, "cannot build image: " & name)
+
 proc buildImages() =
   for c in participants:
-    let cmd = "docker image build -q -t \"bench-$1:latest\" -f $1/plaintext.dockerfile $1/" % [c]
-    let ret = execSilent(cmd)
-    if ret != 0:
-      raise newException(Exception, "cannot build image: " & c)
+    buildImage(c)
 
 proc killContainer(id: string) =
   var ret = execSilent("docker kill " & id)
@@ -139,7 +142,7 @@ proc renderResult(json: JsonNode, s: Stream) =
       let concurrency = c["level"].getInt()
       s.writeLine("  concurrency: $1, failed" % [$concurrency])
 
-proc main() =
+proc runAllTest() =
   buildImages()
 
   var resList = newSeq[JsonNode]()
@@ -151,5 +154,19 @@ proc main() =
   for res in resList:
     res.renderResult(s)
   s.close()
+
+proc main() =
+  if paramCount() > 0:
+    let name = paramStr(1)
+    if name notin participants:
+      echo name & " is not a registered participant"
+      return
+    buildImage(name)
+    let res = runTest(name)
+    var s = newStringStream()
+    res.renderResult(s)
+    echo s.data
+  else:
+    runAllTest()
 
 main()

@@ -13,3 +13,8 @@ asyncdispatch2
   concurrency: 256, request/sec: 72831.57, transfer/sec: 3.751MiB
   concurrency: 512, request/sec: 51450.58, transfer/sec: 2.65MiB
   concurrency: 1024, failed
+fasthttp
+  concurrency: 128, request/sec: 119381.15, transfer/sec: 17.419MiB
+  concurrency: 256, request/sec: 125082.98, transfer/sec: 18.251MiB
+  concurrency: 512, request/sec: 157172.24, transfer/sec: 22.933MiB
+  concurrency: 1024, failed
