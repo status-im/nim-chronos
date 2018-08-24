@@ -291,6 +291,11 @@ when defined(windows):
         ## Continuation
         transp.state.excl(ReadPending)
         if ReadClosed in transp.state:
+          transp.state.incl({ReadPaused})
+          if not isNil(transp.reader):
+            if not transp.reader.finished:
+              transp.reader.complete()
+              transp.reader = nil
           break
         let err = transp.rovl.data.errCode
         if err == OSErrorCode(-1):
@@ -353,6 +358,11 @@ when defined(windows):
                 if not isNil(transp.reader):
                   transp.reader.complete()
                   transp.reader = nil
+        else:
+          transp.state.incl(ReadPaused)
+          if not isNil(transp.reader):
+            transp.reader.complete()
+            transp.reader = nil
         ## Finish Loop
         break
 
@@ -411,7 +421,7 @@ when defined(windows):
       result.fail(newException(TransportOsError, osErrorMsg(osLastError())))
 
     if not bindToDomain(sock, address.address.getDomain()):
-      sock.closeAsyncSocket()
+      sock.closeSocket()
       result.fail(newException(TransportOsError, osErrorMsg(osLastError())))
 
     proc continuation(udata: pointer) =
@@ -421,7 +431,7 @@ when defined(windows):
           if setsockopt(SocketHandle(sock), cint(SOL_SOCKET),
                         cint(SO_UPDATE_CONNECT_CONTEXT), nil,
                         SockLen(0)) != 0'i32:
-            sock.closeAsyncSocket()
+            sock.closeSocket()
             retFuture.fail(newException(TransportOsError,
                                         osErrorMsg(osLastError())))
           else:
@@ -429,7 +439,7 @@ when defined(windows):
                                                         bufferSize,
                                                         child))
         else:
-          sock.closeAsyncSocket()
+          sock.closeSocket()
           retFuture.fail(newException(TransportOsError,
                                       osErrorMsg(ovl.data.errCode)))
       GC_unref(ovl)
@@ -446,7 +456,7 @@ when defined(windows):
       let err = osLastError()
       if int32(err) != ERROR_IO_PENDING:
         GC_unref(povl)
-        sock.closeAsyncSocket()
+        sock.closeSocket()
         retFuture.fail(newException(TransportOsError, osErrorMsg(err)))
     return retFuture
 
@@ -460,14 +470,14 @@ when defined(windows):
         ## Continuation
         server.apending = false
         if server.status == ServerStatus.Stopped:
-          server.asock.closeAsyncSocket()
+          server.asock.closeSocket()
         else:
           if ovl.data.errCode == OSErrorCode(-1):
             if setsockopt(SocketHandle(server.asock), cint(SOL_SOCKET),
                           cint(SO_UPDATE_ACCEPT_CONTEXT),
                           addr server.sock,
                           SockLen(sizeof(SocketHandle))) != 0'i32:
-              server.asock.closeAsyncSocket()
+              server.asock.closeSocket()
               raiseTransportOsError(osLastError())
             else:
               if not isNil(server.init):
@@ -482,10 +492,10 @@ when defined(windows):
                 asyncCheck server.function(server, ntransp)
           elif int32(ovl.data.errCode) == ERROR_OPERATION_ABORTED:
             # CancelIO() interrupt
-            server.asock.closeAsyncSocket()
+            server.asock.closeSocket()
             break
           else:
-            server.asock.closeAsyncSocket()
+            server.asock.closeSocket()
             raiseTransportOsError(osLastError())
       else:
         ## Initiation
@@ -553,11 +563,14 @@ else:
 
   proc writeStreamLoop(udata: pointer) {.gcsafe.} =
     var cdata = cast[ptr CompletionData](udata)
-    if not isNil(cdata) and (int(cdata.fd) == 0 or isNil(cdata.udata)):
-      # Transport was closed earlier, exiting
-      return
     var transp = cast[StreamTransport](cdata.udata)
     let fd = SocketHandle(cdata.fd)
+
+    if int(fd) == 0:
+      ## This situation can be happen, when there events present
+      ## after transport was closed.
+      return
+
     if len(transp.queue) > 0:
       var vector = transp.queue.popFirst()
       while true:
@@ -601,36 +614,46 @@ else:
 
   proc readStreamLoop(udata: pointer) {.gcsafe.} =
     var cdata = cast[ptr CompletionData](udata)
-    if not isNil(cdata) and (int(cdata.fd) == 0 or isNil(cdata.udata)):
-      # Transport was closed earlier, exiting
-      return
     var transp = cast[StreamTransport](cdata.udata)
     let fd = SocketHandle(cdata.fd)
-    while true:
-      var res = posix.recv(fd, addr transp.buffer[transp.offset],
-                           len(transp.buffer) - transp.offset, cint(0))
-      if res < 0:
-        let err = osLastError()
-        if int(err) == EINTR:
-          continue
-        elif int(err) in {ECONNRESET}:
+    if int(fd) == 0:
+      ## This situation can be happen, when there events present
+      ## after transport was closed.
+      return
+
+    if ReadClosed in transp.state:
+      transp.state.incl({ReadPaused})
+      if not isNil(transp.reader):
+        if not transp.reader.finished:
+          transp.reader.complete()
+          transp.reader = nil
+    else:
+      while true:
+        var res = posix.recv(fd, addr transp.buffer[transp.offset],
+                             len(transp.buffer) - transp.offset, cint(0))
+        if res < 0:
+          let err = osLastError()
+          if int(err) == EINTR:
+            continue
+          elif int(err) in {ECONNRESET}:
+            transp.state.incl({ReadEof, ReadPaused})
+            cdata.fd.removeReader()
+          else:
+            transp.state.incl(ReadPaused)
+            transp.setReadError(err)
+            cdata.fd.removeReader()
+        elif res == 0:
           transp.state.incl({ReadEof, ReadPaused})
           cdata.fd.removeReader()
         else:
-          transp.setReadError(err)
-          cdata.fd.removeReader()
-      elif res == 0:
-        transp.state.incl({ReadEof, ReadPaused})
-        cdata.fd.removeReader()
-      else:
-        transp.offset += res
-        if transp.offset == len(transp.buffer):
-          transp.state.incl(ReadPaused)
-          cdata.fd.removeReader()
-      if not isNil(transp.reader):
-        transp.reader.complete()
-        transp.reader = nil
-      break
+          transp.offset += res
+          if transp.offset == len(transp.buffer):
+            transp.state.incl(ReadPaused)
+            cdata.fd.removeReader()
+        if not isNil(transp.reader):
+          transp.reader.complete()
+          transp.reader = nil
+        break
 
   proc newStreamSocketTransport(sock: AsyncFD, bufsize: int,
                                 child: StreamTransport): StreamTransport =
@@ -670,17 +693,17 @@ else:
       var data = cast[ptr CompletionData](udata)
       var err = 0
       let fd = data.fd
+      fd.removeWriter()
       if not fd.getSocketError(err):
-        fd.closeAsyncSocket()
+        closeSocket(fd)
         retFuture.fail(newException(TransportOsError,
                                     osErrorMsg(osLastError())))
         return
       if err != 0:
-        fd.closeAsyncSocket()
+        closeSocket(fd)
         retFuture.fail(newException(TransportOsError,
                                     osErrorMsg(OSErrorCode(err))))
         return
-      fd.removeWriter()
       retFuture.complete(newStreamSocketTransport(fd, bufferSize, child))
 
     while true:
@@ -697,7 +720,7 @@ else:
           sock.addWriter(continuation)
           break
         else:
-          sock.closeAsyncSocket()
+          sock.closeSocket()
           retFuture.fail(newException(TransportOsError, osErrorMsg(err)))
           break
     return retFuture
@@ -757,20 +780,33 @@ proc stop*(server: StreamServer) =
   elif server.status == ServerStatus.Starting:
     server.status = ServerStatus.Stopped
 
-proc join*(server: StreamServer) {.async.} =
+proc join*(server: StreamServer): Future[void] =
   ## Waits until ``server`` is not closed.
+  var retFuture = newFuture[void]("streamserver.join")
+  proc continuation(udata: pointer) = retFuture.complete()
   if not server.loopFuture.finished:
-    await server.loopFuture
+    server.loopFuture.addCallback(continuation)
+  else:
+    retFuture.complete()
+  return retFuture
 
 proc close*(server: StreamServer) =
   ## Release ``server`` resources.
-  if server.status == ServerStatus.Stopped:
-    closeAsyncSocket(server.sock)
-    server.status = ServerStatus.Closed
+  ##
+  ## Please note that release of resources is not completed immediately, to be
+  ## sure all resources got released please use ``await server.join()``.
+  proc continuation(udata: pointer) =
     server.loopFuture.complete()
     if not isNil(server.udata) and GCUserData in server.flags:
       GC_unref(cast[ref int](server.udata))
     GC_unref(server)
+  if server.status == ServerStatus.Stopped:
+    server.status = ServerStatus.Closed
+    server.sock.closeSocket(continuation)
+
+proc closeWait*(server: StreamServer): Future[void] =
+  ## Close server ``server`` and release all resources.
+  result = server.join()
 
 proc createStreamServer*(host: TransportAddress,
                          cbproc: StreamCallback,
@@ -814,7 +850,7 @@ proc createStreamServer*(host: TransportAddress,
     if not setSockOpt(serverSocket, SOL_SOCKET, SO_REUSEADDR, 1):
       let err = osLastError()
       if sock == asyncInvalidSocket:
-        closeAsyncSocket(serverSocket)
+        serverSocket.closeSocket()
       raiseTransportOsError(err)
 
   toSockAddr(host.address, host.port, saddr, slen)
@@ -822,13 +858,13 @@ proc createStreamServer*(host: TransportAddress,
               slen) != 0:
     let err = osLastError()
     if sock == asyncInvalidSocket:
-      closeAsyncSocket(serverSocket)
+      serverSocket.closeSocket()
     raiseTransportOsError(err)
 
   if nativesockets.listen(SocketHandle(serverSocket), cint(backlog)) != 0:
     let err = osLastError()
     if sock == asyncInvalidSocket:
-      closeAsyncSocket(serverSocket)
+      serverSocket.closeSocket()
     raiseTransportOsError(err)
 
   if not isNil(child):
@@ -1193,20 +1229,34 @@ proc consume*(transp: StreamTransport, n = -1): Future[int] {.async.} =
       transp.resumeRead()
     await fut
 
-proc join*(transp: StreamTransport) {.async.} =
+proc join*(transp: StreamTransport): Future[void] =
   ## Wait until ``transp`` will not be closed.
+  var retFuture = newFuture[void]("streamtransport.join")
+  proc continuation(udata: pointer) = retFuture.complete()
   if not transp.future.finished:
-    await transp.future
+    transp.future.addCallback(continuation)
+  else:
+    retFuture.complete()
+  return retFuture
 
 proc close*(transp: StreamTransport) =
   ## Closes and frees resources of transport ``transp``.
-  if {ReadClosed, WriteClosed} * transp.state == {}:
-    when defined(windows):
-      discard cancelIo(Handle(transp.fd))
-    closeAsyncSocket(transp.fd)
-    transp.state.incl({WriteClosed, ReadClosed})
+  ##
+  ## Please note that release of resources is not completed immediately, to be
+  ## sure all resources got released please use ``await transp.join()``.
+  proc continuation(udata: pointer) =
     transp.future.complete()
     GC_unref(transp)
+
+  if {ReadClosed, WriteClosed} * transp.state == {}:
+    transp.state.incl({WriteClosed, ReadClosed})
+    when defined(windows):
+      discard cancelIo(Handle(transp.fd))
+    closeSocket(transp.fd, continuation)
+
+proc closeWait*(transp: StreamTransport): Future[void] =
+  ## Close and frees resources of transport ``transp``.
+  result = transp.join()
 
 proc closed*(transp: StreamTransport): bool {.inline.} =
   ## Returns ``true`` if transport in closed state.

@@ -90,8 +90,3 @@ proc wrapAsyncSocket*(sock: SocketHandle): AsyncFD =
       return asyncInvalidSocket
   result = AsyncFD(sock)
   register(result)
-
-proc closeAsyncSocket*(s: AsyncFD) {.inline.} =
-  ## Closes asynchronous socket handle ``s``.
-  unregister(s)
-  close(SocketHandle(s))

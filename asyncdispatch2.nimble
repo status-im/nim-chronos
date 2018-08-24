@@ -1,5 +1,5 @@
 packageName   = "asyncdispatch2"
-version       = "2.0.8"
+version       = "2.0.9"
 author        = "Status Research & Development GmbH"
 description   = "Asyncdispatch2"
 license       = "Apache License 2.0 or MIT"
