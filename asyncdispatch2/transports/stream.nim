@@ -853,6 +853,14 @@ proc createStreamServer*(host: TransportAddress,
         serverSocket.closeSocket()
       raiseTransportOsError(err)
 
+  if ServerFlags.TcpNoDelay in flags:
+    if not setSockOpt(serverSocket, handles.IPPROTO_TCP,
+                      handles.TCP_NODELAY, 1):
+      let err = osLastError()
+      if sock == asyncInvalidSocket:
+        serverSocket.closeSocket()
+      raiseTransportOsError(err)
+
   toSockAddr(host.address, host.port, saddr, slen)
   if bindAddr(SocketHandle(serverSocket), cast[ptr SockAddr](addr saddr),
               slen) != 0:

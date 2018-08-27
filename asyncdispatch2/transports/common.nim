@@ -25,7 +25,7 @@ const
 type
   ServerFlags* = enum
     ## Server's flags
-    ReuseAddr, ReusePort, NoAutoRead, GCUserData
+    ReuseAddr, ReusePort, TcpNoDelay, NoAutoRead, GCUserData
 
   TransportAddress* = object
     ## Transport network address
