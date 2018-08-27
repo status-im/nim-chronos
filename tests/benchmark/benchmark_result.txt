@@ -18,3 +18,8 @@ fasthttp
   concurrency: 256, request/sec: 125082.98, transfer/sec: 18.251MiB
   concurrency: 512, request/sec: 157172.24, transfer/sec: 22.933MiB
   concurrency: 1024, failed
+actix-raw
+  concurrency: 128, request/sec: 147586.97, transfer/sec: 10.275MiB
+  concurrency: 256, request/sec: 137716.71, transfer/sec: 9.588MiB
+  concurrency: 512, request/sec: 162553.94, transfer/sec: 11.317MiB
+  concurrency: 1024, failed
