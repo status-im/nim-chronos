@@ -43,7 +43,7 @@ Each test is executed as follows:
 
 ## How to replicate this test locally?
 * First, you need to have docker installed, [see here how](https://www.digitalocean.com/community/tutorials/how-to-install-and-use-docker-on-ubuntu-18-04).
-* Run the benchmark script `sh tests/benchmark/benchmark.sh`
+* Compile and run the benchmark bot `nim c -r bot all`
 * Wait until it finished, and get the result in `tests/benchmark/benchmark_result.txt`
 
 ## How to add more participants?
@@ -51,3 +51,6 @@ Each test is executed as follows:
 * Prepare a directory inside `tests/benchmark/`
 * inside that directory prepare a `plaintext.dockerfile` and all necessary source code.
 * add a entry in `bot.nim` participants constant list with the directory name.
+
+## How to switch to multi thread mode?
+You can find a commented line in the source code of each framework to enable/disable multithread

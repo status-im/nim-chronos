@@ -1,25 +1,33 @@
 mofuw
-  concurrency: 128, request/sec: 95682.82, transfer/sec: 12.045MiB
-  concurrency: 256, request/sec: 90446.30, transfer/sec: 11.386MiB
-  concurrency: 512, request/sec: 92075.01, transfer/sec: 11.591MiB
-  concurrency: 1024, failed
+  concurrency: 128, request/sec: 9835.15, transfer/sec: 1.219MiB
+  concurrency: 256, request/sec: 9824.21, transfer/sec: 1.218MiB
+  concurrency: 512, request/sec: 9775.89, transfer/sec: 1.212MiB
+  concurrency: 128, request/sec: 93255.38, transfer/sec: 11.562MiB, pipeline: 16
+  concurrency: 256, request/sec: 88519.62, transfer/sec: 10.974MiB, pipeline: 16
+  concurrency: 512, request/sec: 87012.02, transfer/sec: 10.788MiB, pipeline: 16
 asyncnet
-  concurrency: 128, request/sec: 44196.54, transfer/sec: 2.276MiB
-  concurrency: 256, request/sec: 29674.21, transfer/sec: 1.528MiB
-  concurrency: 512, request/sec: 24244.77, transfer/sec: 1.249MiB
-  concurrency: 1024, failed
+  concurrency: 128, request/sec: 9544.33, transfer/sec: 503.314KiB
+  concurrency: 256, request/sec: 9001.25, transfer/sec: 474.675KiB
+  concurrency: 512, request/sec: 8140.63, transfer/sec: 429.291KiB
+  concurrency: 128, request/sec: 42758.94, transfer/sec: 2.202MiB, pipeline: 16
+  concurrency: 256, request/sec: 27705.72, transfer/sec: 1.427MiB, pipeline: 16
+  concurrency: 512, request/sec: 22977.16, transfer/sec: 1.183MiB, pipeline: 16
 asyncdispatch2
-  concurrency: 128, request/sec: 46276.68, transfer/sec: 2.383MiB
-  concurrency: 256, request/sec: 72831.57, transfer/sec: 3.751MiB
-  concurrency: 512, request/sec: 51450.58, transfer/sec: 2.65MiB
-  concurrency: 1024, failed
+  concurrency: 128, request/sec: 9771.45, transfer/sec: 515.291KiB
+  concurrency: 256, request/sec: 9246.41, transfer/sec: 487.604KiB
+  concurrency: 512, request/sec: 8611.69, transfer/sec: 454.132KiB
+  concurrency: 128, request/sec: 46380.65, transfer/sec: 2.389MiB, pipeline: 16
+  concurrency: 256, request/sec: 66283.44, transfer/sec: 3.413MiB, pipeline: 16
+  concurrency: 512, request/sec: 51394.27, transfer/sec: 2.647MiB, pipeline: 16
 fasthttp
   concurrency: 128, request/sec: 119381.15, transfer/sec: 17.419MiB
   concurrency: 256, request/sec: 125082.98, transfer/sec: 18.251MiB
   concurrency: 512, request/sec: 157172.24, transfer/sec: 22.933MiB
   concurrency: 1024, failed
 actix-raw
-  concurrency: 128, request/sec: 147586.97, transfer/sec: 10.275MiB
-  concurrency: 256, request/sec: 137716.71, transfer/sec: 9.588MiB
-  concurrency: 512, request/sec: 162553.94, transfer/sec: 11.317MiB
-  concurrency: 1024, failed
+  concurrency: 128, request/sec: 9314.79, transfer/sec: 1.155MiB
+  concurrency: 256, request/sec: 8779.18, transfer/sec: 1.088MiB
+  concurrency: 512, request/sec: 8259.81, transfer/sec: 1.024MiB
+  concurrency: 128, request/sec: 117186.98, transfer/sec: 14.529MiB, pipeline: 16
+  concurrency: 256, request/sec: 121966.19, transfer/sec: 15.121MiB, pipeline: 16
+  concurrency: 512, failed
