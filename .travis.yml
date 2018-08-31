@@ -1,33 +1,20 @@
-matrix:
-  include:
-    - os: linux
-      sudo: required
-      services:
-        - docker
-      before_install:
-        - docker pull statusteam/nim-base
-      script:
-        - docker run statusteam/nim-base nim --version
-        - docker run -v "$(pwd):/project" -w /project statusteam/nim-base sh -c "nimble install -dy && nimble test"
+language: c # or other C/C++ variants
 
-    - os: osx
-      before_install:
-        - git clone https://github.com/nim-lang/nim.git
-        - cd nim
-        - git remote add statusim https://github.com/status-im/nim.git
-        - git fetch statusim
-        - git config --global user.email "you@example.com"
-        - git config --global user.name "Your Name"
-        - for b in $(git branch -a --list 'statusim/status-autopatch-*'); do git merge $b; done
-        - git clone --depth 1 https://github.com/nim-lang/csources.git
-        - cd csources
-        - sh build.sh
-        - cd ..
-        - export PATH=$PWD/bin:$PATH
-        - nim c koch
-        - ./koch boot -d:release
-        - ./koch nimble
-        - cd ..
+# https://docs.travis-ci.com/user/caching/
+cache:
+  directories:
+    - nim
 
-      script:
-        - nimble install -dy && nimble test
+os:
+  - linux
+  - osx
+
+install:
+  # build nim from our own branch, to avoid downtime due to nim regressions
+  - "export NIMVER=$(git ls-remote https://github.com/status-im/nim.git HEAD | cut -f 1)"
+  - "{ [ -f nim/$NIMVER/bin/nim ] && [ -f nim/$NIMVER/bin/nimble ] ; } || { rm -rf nim ; mkdir -p nim; git clone https://github.com/status-im/nim.git nim/$NIMVER; cd nim/$NIMVER; sh build_all.sh; cd ../.. ; }"
+  - "export PATH=$PWD/nim/$NIMVER/bin:$PATH"
+
+script:
+  - nimble install -dy && nimble test
+
