@@ -1,5 +1,7 @@
 language: c # or other C/C++ variants
 
+sudo: false
+
 # https://docs.travis-ci.com/user/caching/
 cache:
   directories:
@@ -17,4 +19,3 @@ install:
 
 script:
   - nimble install -dy && nimble test
-
