@@ -10,7 +10,7 @@ ENV PATH ${GOPATH}/bin:${PATH}
 RUN rm -rf ./pkg/*
 RUN go get -d -u github.com/valyala/fasthttp/...
 
-RUN rm -f ./server-mysql
+RUN rm -f ./server
 RUN go build -gcflags='-l=4' server
 
-CMD ./server
+CMD GOMAXPROCS=1 ./server

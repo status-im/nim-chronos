@@ -5,9 +5,11 @@ import (
 	"log"
 	"github.com/valyala/fasthttp"
 	"common"
+  "runtime"
 )
 
 func main() {
+  runtime.GOMAXPROCS(1)
 	flag.Parse()
 
 	var err error

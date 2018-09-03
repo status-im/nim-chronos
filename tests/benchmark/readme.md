@@ -45,7 +45,7 @@ Each test is executed as follows:
 * First, you need to have docker installed, [see here how](https://www.digitalocean.com/community/tutorials/how-to-install-and-use-docker-on-ubuntu-18-04).
 * Compile and run the benchmark bot `nim c -r bot all`
 * Wait until it finished, and get the result in `tests/benchmark/benchmark_result.txt`
-
+* You can
 ## How to add more participants?
 
 * Prepare a directory inside `tests/benchmark/`
