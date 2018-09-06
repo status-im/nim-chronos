@@ -82,26 +82,29 @@ proc makeResp(serverTime: string): string =
                "Hello, World!")
 
 proc handleIncoming(srv: ServerCtx, ctx: IncomingCtx, st: StreamTransport) {.async.} =
+  try:
+    while true:
+      let rcv = await ctx.readMessage(st)
+      if rcv == 0:
+        st.close()
+        srv.freeCtx(ctx)
+        return
 
-  while true:
-    let rcv = await ctx.readMessage(st)
-    if rcv == 0:
-      st.close()
-      srv.freeCtx(ctx)
-      return
+      var pos = 0
+      while (ctx.bufLen - pos) > 3:
+        if ctx.buf[pos] == '\r':
+          if ctx.buf[pos+1] == '\L' and
+            ctx.buf[pos+2] == '\r' and
+            ctx.buf[pos+3] == '\L':
+            ctx.sendMessage(makeResp(srv.serverTime))
+        inc pos
 
-    var pos = 0
-    while (ctx.bufLen - pos) > 3:
-      if ctx.buf[pos] == '\r':
-        if ctx.buf[pos+1] == '\L' and
-           ctx.buf[pos+2] == '\r' and
-           ctx.buf[pos+3] == '\L':
-          ctx.sendMessage(makeResp(srv.serverTime))
-      inc pos
-
-    let wr = await st.write(ctx.resp[0].addr, ctx.respLen)
-    assert wr == ctx.respLen
-    ctx.resetBuffer()
+      let wr = await st.write(ctx.resp[0].addr, ctx.respLen)
+      assert wr == ctx.respLen
+      ctx.resetBuffer()
+  except:
+    st.close()
+    srv.freeCtx(ctx)
 
 proc handleConnection(ss: StreamServer, st: StreamTransport) {.async.} =
   var srv = getUserData[ServerCtx](ss)
@@ -131,16 +134,9 @@ proc serve(onAddress: string) =
   ctx.updateServerTime()
   addTimer(1000, updateTime, udata = cast[pointer](ctx))
 
-  var cantAccept = false
-  while true:
-    svr.start()
-    if not cantAccept:
-      echo "Server started at ", ta
-
-    try:
-      waitFor svr.join()
-    except:
-      cantAccept = true
+  svr.start()
+  echo "Server started at ", ta
+  waitFor svr.join()
 
 when isMainModule:
   serve("0.0.0.0:8080")

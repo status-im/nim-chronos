@@ -38,14 +38,15 @@ Each test is executed as follows:
 * Run a 5-second __primer__ at 8 client-concurrency to verify that the server is in fact running. These results are not captured.
 * Run a 15-second __warmup__ at 256 client-concurrency to allow lazy-initialization to execute and just-in-time compilation to run. These results are not captured.
 * Run a 15-second __captured test__ for each of the concurrency levels (or iteration counts) exercised by the test type.
-  The high-concurrency plaintext test type is tested at 128, 256, 512, and 1024 client-side concurrency.
+  The high-concurrency plaintext test type is tested at 128, 256, and 512 client-side concurrency.
 * Stop the platform and framework.
 
 ## How to replicate this test locally?
 * First, you need to have docker installed, [see here how](https://www.digitalocean.com/community/tutorials/how-to-install-and-use-docker-on-ubuntu-18-04).
 * Compile and run the benchmark bot `nim c -r bot all`
 * Wait until it finished, and get the result in `tests/benchmark/benchmark_result.txt`
-* You can
+* You can see all bench-bot command line options with `./bot` or `./bot help`
+
 ## How to add more participants?
 
 * Prepare a directory inside `tests/benchmark/`

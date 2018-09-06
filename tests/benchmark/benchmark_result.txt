@@ -1,33 +1,35 @@
 mofuw
-  concurrency: 128, request/sec: 9835.15, transfer/sec: 1.219MiB
-  concurrency: 256, request/sec: 9824.21, transfer/sec: 1.218MiB
-  concurrency: 512, request/sec: 9775.89, transfer/sec: 1.212MiB
-  concurrency: 128, request/sec: 93255.38, transfer/sec: 11.562MiB, pipeline: 16
-  concurrency: 256, request/sec: 88519.62, transfer/sec: 10.974MiB, pipeline: 16
-  concurrency: 512, request/sec: 87012.02, transfer/sec: 10.788MiB, pipeline: 16
+  concurrency: 128, request/sec: 27667.79, transfer/sec: 3.43MiB
+  concurrency: 256, request/sec: 23469.25, transfer/sec: 2.91MiB
+  concurrency: 480, request/sec: 19072.19, transfer/sec: 2.365MiB
+  concurrency: 128, request/sec: 161094.58, transfer/sec: 19.972MiB, pipeline: 16
+  concurrency: 256, request/sec: 164338.21, transfer/sec: 20.374MiB, pipeline: 16
+  concurrency: 480, request/sec: 159308.03, transfer/sec: 19.751MiB, pipeline: 16
 asyncnet
-  concurrency: 128, request/sec: 10342.86, transfer/sec: 1.312MiB
-  concurrency: 256, request/sec: 9355.33, transfer/sec: 1.187MiB
-  concurrency: 512, failed
-  concurrency: 128, request/sec: 80298.61, transfer/sec: 10.185MiB, pipeline: 16
-  concurrency: 256, request/sec: 74327.86, transfer/sec: 9.428MiB, pipeline: 16
-  concurrency: 512, request/sec: 65689.96, transfer/sec: 8.332MiB, pipeline: 16
+  concurrency: 128, request/sec: 33162.16, transfer/sec: 4.206MiB
+  concurrency: 256, request/sec: 28858.21, transfer/sec: 3.66MiB
+  concurrency: 480, request/sec: 24846.94, transfer/sec: 3.152MiB
+  concurrency: 128, request/sec: 176565.07, transfer/sec: 22.395MiB, pipeline: 16
+  concurrency: 256, request/sec: 176510.82, transfer/sec: 22.388MiB, pipeline: 16
+  concurrency: 480, request/sec: 166837.28, transfer/sec: 21.161MiB, pipeline: 16
 asyncdispatch2
-  concurrency: 128, request/sec: 165609.73, transfer/sec: 21.953MiB
-  concurrency: 256, request/sec: 135977.47, transfer/sec: 18.025MiB
-  concurrency: 512, request/sec: 124412.73, transfer/sec: 16.492MiB
-  concurrency: 128, request/sec: 90894.05, transfer/sec: 12.049MiB, pipeline: 16
-  concurrency: 256, request/sec: 44309.85, transfer/sec: 5.874MiB, pipeline: 16
-  concurrency: 512, request/sec: 297.15, transfer/sec: 40.336KiB, pipeline: 16
+  concurrency: 128, request/sec: 328212.10, transfer/sec: 43.508MiB
+  concurrency: 256, request/sec: 254634.24, transfer/sec: 33.755MiB
+  concurrency: 480, request/sec: 220645.90, transfer/sec: 29.249MiB
+  concurrency: 128, request/sec: 358799.70, transfer/sec: 47.563MiB, pipeline: 16
+  concurrency: 256, request/sec: 298887.75, transfer/sec: 39.622MiB, pipeline: 16
+  concurrency: 480, request/sec: 135642.25, transfer/sec: 17.981MiB, pipeline: 16
 fasthttp
-  concurrency: 128, request/sec: 119381.15, transfer/sec: 17.419MiB
-  concurrency: 256, request/sec: 125082.98, transfer/sec: 18.251MiB
-  concurrency: 512, request/sec: 157172.24, transfer/sec: 22.933MiB
-  concurrency: 1024, failed
+  concurrency: 128, request/sec: 30920.02, transfer/sec: 3.745MiB
+  concurrency: 256, request/sec: 27362.95, transfer/sec: 3.314MiB
+  concurrency: 480, request/sec: 26008.47, transfer/sec: 3.15MiB
+  concurrency: 128, request/sec: 194787.96, transfer/sec: 23.592MiB, pipeline: 16
+  concurrency: 256, request/sec: 191044.91, transfer/sec: 23.139MiB, pipeline: 16
+  concurrency: 480, request/sec: 196284.84, transfer/sec: 23.773MiB, pipeline: 16
 actix-raw
-  concurrency: 128, request/sec: 9314.79, transfer/sec: 1.155MiB
-  concurrency: 256, request/sec: 8779.18, transfer/sec: 1.088MiB
-  concurrency: 512, request/sec: 8259.81, transfer/sec: 1.024MiB
-  concurrency: 128, request/sec: 117186.98, transfer/sec: 14.529MiB, pipeline: 16
-  concurrency: 256, request/sec: 121966.19, transfer/sec: 15.121MiB, pipeline: 16
-  concurrency: 512, failed
+  concurrency: 128, request/sec: 40068.61, transfer/sec: 4.968MiB
+  concurrency: 256, request/sec: 33321.05, transfer/sec: 4.131MiB
+  concurrency: 480, request/sec: 29414.25, transfer/sec: 3.647MiB
+  concurrency: 128, request/sec: 245921.39, transfer/sec: 30.489MiB, pipeline: 16
+  concurrency: 256, request/sec: 237474.19, transfer/sec: 29.441MiB, pipeline: 16
+  concurrency: 480, request/sec: 244928.92, transfer/sec: 30.366MiB, pipeline: 16

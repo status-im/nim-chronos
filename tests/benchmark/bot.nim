@@ -1,7 +1,7 @@
 import osproc, json, streams, strutils, os
 
 const
-  participants = ["mofuw", "asyncnet", "asyncdispatch2", "fasthttp", "actix-raw", "ulib"]
+  participants = ["mofuw", "asyncnet", "asyncdispatch2", "fasthttp", "actix-raw"]
 
 proc execAndGetJson(command: string): JsonNode =
   const
@@ -64,7 +64,7 @@ proc removeContainers() =
     removeContainer(ID.getStr())
 
 const
-  levels = [128, 256, 512]
+  levels = [128, 256, 480]
   maxConcurrency = levels[^1]
   duration = 15
   serverHost = "bench-bot"
