@@ -1,5 +1,5 @@
 packageName   = "asyncdispatch2"
-version       = "2.0.8"
+version       = "2.1.0"
 author        = "Status Research & Development GmbH"
 description   = "Asyncdispatch2"
 license       = "Apache License 2.0 or MIT"
@@ -62,3 +62,4 @@ task test, "Run all tests":
 
 task test, "compile bench-bot":
   exec "nim c -d:release benchmark/bot"
+  exec "benchmark/bot all"

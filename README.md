@@ -1,5 +1,9 @@
 # Asyncdispatch hard fork
-[![Build Status](https://travis-ci.org/status-im/nim-asyncdispatch2.svg?branch=master)](https://travis-ci.org/status-im/nim-asyncdispatch2) [![Build status](https://ci.appveyor.com/api/projects/status/ihrxhooltyrmo0mc?svg=true)](https://ci.appveyor.com/project/cheatfate/nim-asyncdispatch2) [![License: Apache](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0) [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![Build Status (Travis)](https://img.shields.io/travis/status-im/nim-asyncdispatch2/master.svg?label=Linux%20/%20macOS "Linux/macOS build status (Travis)")](https://travis-ci.org/status-im/nim-asyncdispatch2)
+[![Windows build status (Appveyor)](https://img.shields.io/appveyor/ci/nimbus/nim-asyncdispatch2/master.svg?label=Windows "Windows build status (Appveyor)")](https://ci.appveyor.com/project/nimbus/nim-asyncdispatch2)
+[![License: Apache](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+![Stability: experimental](https://img.shields.io/badge/stability-experimental-orange.svg)
 
 ## Core differences between asyncdispatch and asyncdispatch2
 
@@ -72,17 +76,20 @@ You can find more documentation, notes and examples in [Wiki](https://github.com
 You can use Nim official package manager `nimble` to install `asyncdispatch2`. The most recent version of the library can be installed via:
 
 ```
-$ nimble install asyncdispatch2
+$ nimble install https://github.com/status-im/nim-asyncdispatch2.git
 ```
-
-## License
-Licensed under one of the following:
-
-  * Apache License, Version 2.0, ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
-  * MIT license: [LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT
 
 ## TODO
   * Pipe/Subprocess Transports.
   * Multithreading Stream/Datagram servers
   * Future[T] cancelation
+
+## License
+
+Licensed and distributed under either of
+
+* MIT license: [LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT
+* Apache License, Version 2.0, ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
+
+at your option. This file may not be copied, modified, or distributed except according to those terms.
 

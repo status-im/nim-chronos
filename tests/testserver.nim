@@ -35,6 +35,7 @@ proc serveCustomStreamClient(server: StreamServer,
   var answer = "ANSWER\r\n"
   discard await transp.write(answer)
   transp.close()
+  await transp.join()
 
 proc serveUdataStreamClient(server: StreamServer,
                             transp: StreamTransport) {.async.} =
@@ -43,6 +44,7 @@ proc serveUdataStreamClient(server: StreamServer,
   var msg = line & udata.test & "\r\n"
   discard await transp.write(msg)
   transp.close()
+  await transp.join()
 
 proc customServerTransport(server: StreamServer,
                            fd: AsyncFD): StreamTransport =
@@ -56,10 +58,12 @@ proc test1(): bool =
   server1.start()
   server1.stop()
   server1.close()
+  waitFor server1.join()
   var server2 = createStreamServer(ta, serveStreamClient, {ReuseAddr})
   server2.start()
   server2.stop()
   server2.close()
+  waitFor server2.join()
   result = true
 
 proc client1(server: CustomServer, ta: TransportAddress) {.async.} =
@@ -75,6 +79,7 @@ proc client1(server: CustomServer, ta: TransportAddress) {.async.} =
   transp.close()
   server.stop()
   server.close()
+  await server.join()
 
 proc client2(server: StreamServer,
              ta: TransportAddress): Future[bool] {.async.} =
@@ -87,6 +92,7 @@ proc client2(server: StreamServer,
   transp.close()
   server.stop()
   server.close()
+  await server.join()
 
 proc test3(): bool =
   var server = CustomServer()

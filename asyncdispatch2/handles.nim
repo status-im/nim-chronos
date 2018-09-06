@@ -13,10 +13,14 @@ when defined(windows):
   import winlean
   const
     asyncInvalidSocket* = AsyncFD(-1)
+    TCP_NODELAY* = 1
+    IPPROTO_TCP* = 6
 else:
   import posix
   const
     asyncInvalidSocket* = AsyncFD(posix.INVALID_SOCKET)
+    TCP_NODELAY* = 1
+    IPPROTO_TCP* = 6
 
 proc setSocketBlocking*(s: SocketHandle, blocking: bool): bool =
   ## Sets blocking mode on socket.
@@ -90,8 +94,3 @@ proc wrapAsyncSocket*(sock: SocketHandle): AsyncFD =
       return asyncInvalidSocket
   result = AsyncFD(sock)
   register(result)
-
-proc closeAsyncSocket*(s: AsyncFD) {.inline.} =
-  ## Closes asynchronous socket handle ``s``.
-  unregister(s)
-  close(SocketHandle(s))

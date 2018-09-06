@@ -228,7 +228,7 @@ when defined(windows):
       if not setSockOpt(localSock, SOL_SOCKET, SO_REUSEADDR, 1):
         let err = osLastError()
         if sock == asyncInvalidSocket:
-          closeAsyncSocket(localSock)
+          closeSocket(localSock)
         raiseTransportOsError(err)
 
     ## Fix for Q263823.
@@ -247,7 +247,7 @@ when defined(windows):
                   slen) != 0:
         let err = osLastError()
         if sock == asyncInvalidSocket:
-          closeAsyncSocket(localSock)
+          closeSocket(localSock)
         raiseTransportOsError(err)
       result.local = local
     else:
@@ -263,7 +263,7 @@ when defined(windows):
                   slen) != 0:
         let err = osLastError()
         if sock == asyncInvalidSocket:
-          closeAsyncSocket(localSock)
+          closeSocket(localSock)
         raiseTransportOsError(err)
 
     if remote.port != Port(0):
@@ -274,7 +274,7 @@ when defined(windows):
                  slen) != 0:
         let err = osLastError()
         if sock == asyncInvalidSocket:
-          closeAsyncSocket(localSock)
+          closeSocket(localSock)
         raiseTransportOsError(err)
       result.remote = remote
 
@@ -297,30 +297,34 @@ when defined(windows):
     else:
       result.state.incl(ReadPaused)
 
-  proc close*(transp: DatagramTransport) =
-    ## Closes and frees resources of transport ``transp``.
-    if ReadClosed notin transp.state and WriteClosed notin transp.state:
-      # discard cancelIo(Handle(transp.fd))
-      closeAsyncSocket(transp.fd)
-      transp.state.incl(WriteClosed)
-      transp.state.incl(ReadClosed)
-      transp.future.complete()
-      if not isNil(transp.udata) and GCUserData in transp.flags:
-        GC_unref(cast[ref int](transp.udata))
-      GC_unref(transp)
+  # proc close*(transp: DatagramTransport) =
+  #   ## Closes and frees resources of transport ``transp``.
+  #   if ReadClosed notin transp.state and WriteClosed notin transp.state:
+  #     # discard cancelIo(Handle(transp.fd))
+  #     closeSocket(transp.fd)
+  #     transp.state.incl(WriteClosed)
+  #     transp.state.incl(ReadClosed)
+  #     transp.future.complete()
+  #     if not isNil(transp.udata) and GCUserData in transp.flags:
+  #       GC_unref(cast[ref int](transp.udata))
+  #     GC_unref(transp)
 
 else:
   # Linux/BSD/MacOS part
 
   proc readDatagramLoop(udata: pointer) =
     var raddr: TransportAddress
+    doAssert(not isNil(udata))
     var cdata = cast[ptr CompletionData](udata)
-    if not isNil(cdata) and (int(cdata.fd) == 0 or isNil(cdata.udata)):
-      # Transport was closed earlier, exiting
-      return
     var transp = cast[DatagramTransport](cdata.udata)
     let fd = SocketHandle(cdata.fd)
-    if not isNil(transp):
+    if int(fd) == 0:
+      ## This situation can be happen, when there events present
+      ## after transport was closed.
+      return
+    if ReadClosed in transp.state:
+      transp.state.incl({ReadPaused})
+    else:
       while true:
         transp.ralen = SockLen(sizeof(Sockaddr_storage))
         var res = posix.recvfrom(fd, addr transp.buffer[0],
@@ -343,13 +347,17 @@ else:
 
   proc writeDatagramLoop(udata: pointer) =
     var res: int
+    doAssert(not isNil(udata))
     var cdata = cast[ptr CompletionData](udata)
-    if not isNil(cdata) and (int(cdata.fd) == 0 or isNil(cdata.udata)):
-      # Transport was closed earlier, exiting
-      return
     var transp = cast[DatagramTransport](cdata.udata)
     let fd = SocketHandle(cdata.fd)
-    if not isNil(transp):
+    if int(fd) == 0:
+      ## This situation can be happen, when there events present
+      ## after transport was closed.
+      return
+    if WriteClosed in transp.state:
+      transp.state.incl({WritePaused})
+    else:
       if len(transp.queue) > 0:
         var vector = transp.queue.popFirst()
         while true:
@@ -420,7 +428,7 @@ else:
       if not setSockOpt(localSock, SOL_SOCKET, SO_REUSEADDR, 1):
         let err = osLastError()
         if sock == asyncInvalidSocket:
-          closeAsyncSocket(localSock)
+          closeSocket(localSock)
         raiseTransportOsError(err)
 
     if local.port != Port(0):
@@ -431,7 +439,7 @@ else:
                   slen) != 0:
         let err = osLastError()
         if sock == asyncInvalidSocket:
-          closeAsyncSocket(localSock)
+          closeSocket(localSock)
         raiseTransportOsError(err)
       result.local = local
 
@@ -443,7 +451,7 @@ else:
                  slen) != 0:
         let err = osLastError()
         if sock == asyncInvalidSocket:
-          closeAsyncSocket(localSock)
+          closeSocket(localSock)
         raiseTransportOsError(err)
       result.remote = remote
 
@@ -461,13 +469,22 @@ else:
     else:
       result.state.incl(ReadPaused)
 
-  proc close*(transp: DatagramTransport) =
-    ## Closes and frees resources of transport ``transp``.
+proc close*(transp: DatagramTransport) =
+  ## Closes and frees resources of transport ``transp``.
+  when defined(windows):
     if {ReadClosed, WriteClosed} * transp.state == {}:
-      closeAsyncSocket(transp.fd)
+      discard cancelIo(Handle(transp.fd))
+      closeSocket(transp.fd)
       transp.state.incl({WriteClosed, ReadClosed})
       transp.future.complete()
       GC_unref(transp)
+  else:
+    proc continuation(udata: pointer) =
+      transp.future.complete()
+      GC_unref(transp)
+    if {ReadClosed, WriteClosed} * transp.state == {}:
+      transp.state.incl({WriteClosed, ReadClosed})
+      closeSocket(transp.fd, continuation)
 
 proc newDatagramTransport*(cbproc: DatagramCallback,
                            remote: TransportAddress = AnyAddress,
@@ -543,10 +560,19 @@ proc newDatagramTransport6*[T](cbproc: DatagramCallback,
                                       fflags, cast[pointer](udata),
                                       child, bufSize)
 
-proc join*(transp: DatagramTransport) {.async.} =
+proc join*(transp: DatagramTransport): Future[void] =
   ## Wait until the transport ``transp`` will be closed.
+  var retFuture = newFuture[void]("datagramtransport.join")
+  proc continuation(udata: pointer) = retFuture.complete()
   if not transp.future.finished:
-    await transp.future
+    transp.future.addCallback(continuation)
+  else:
+    retFuture.complete()
+  return retFuture
+
+proc closeWait*(transp: DatagramTransport): Future[void] =
+  ## Close transport ``transp`` and release all resources.
+  result = transp.join()
 
 proc send*(transp: DatagramTransport, pbytes: pointer,
            nbytes: int): Future[void] =
