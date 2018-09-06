@@ -60,6 +60,6 @@ task test, "Run all tests":
   exec "nim c -r --gc:markAndSweep tests/testbugs"
   exec "nim c -r -d:release tests/testbugs"
 
-task test, "compile bench-bot":
-  exec "nim c -d:release benchmark/bot"
-  exec "benchmark/bot all"
+task benchmark, "compile bench-bot":
+  exec "nim c -d:release tests/benchmark/bot"
+  exec "tests/benchmark/bot all"

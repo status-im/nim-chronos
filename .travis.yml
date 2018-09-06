@@ -1,4 +1,4 @@
-anguage: c # or other C/C++ variants
+language: c # or other C/C++ variants
 
 sudo: false
 
@@ -37,3 +37,5 @@ install:
 script:
   - nimble install -y
   - nimble test
+  - nimble benchmark
+
