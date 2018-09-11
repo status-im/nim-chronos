@@ -1,7 +1,7 @@
 import osproc, json, streams, strutils, os
 
 const
-  participants = ["mofuw", "asyncnet", "asyncdispatch2", "fasthttp", "actix-raw"]
+  participants = ["fasthttp", "mofuw", "asyncnet", "asyncdispatch2", "libreactor", "actix-raw"]
 
 proc execAndGetJson(command: string): JsonNode =
   const
@@ -63,47 +63,84 @@ proc removeContainers() =
     let ID = x["ID"]
     removeContainer(ID.getStr())
 
+proc buildExe(name: string) =
+  let parentDir = getAppDir()
+  let curDir = parentDir & DirSep & name
+  setCurrentDir(curDir)
+  if execCmd("sh build.sh") != 0:
+    raise newException(Exception, "cannot build executable: " & name)
+  setCurrentDir(parentDir)
+
+proc buildExes() =
+  for c in participants:
+    buildExe(c)
+
+proc runServer(id: string): Process =
+  const options = {poParentStreams}
+  let parentDir = getAppDir()
+  let name = parentDir & DirSep & id & DirSep & "server"
+  result = startProcess(name, args=[], env=nil, options=options)
+  if not result.running():
+    raise newException(Exception, "cannot run server: " & id)
+
+proc stopServer(p: Process) =
+  p.terminate()
+  p.kill()
+  discard p.waitForExit(1000)
+  p.close()
+
 const
   levels = [128, 256, 480]
   maxConcurrency = levels[^1]
-  duration = 15
+  primer_duration = 5
+  warmup_duration = 10
+  concurrency_duration = 15
+  pipeline_duration = 15
+  sleep_duration = 1000
   serverHost = "bench-bot"
   url = "http://127.0.0.1:8080/plaintext"
   pipeline = 16
   accept = "text/plain,text/html;q=0.9,application/xhtml+xml;q=0.9,application/xml;q=0.8,*/*;q=0.7"
 
-proc runTest(name: string): JsonNode =
+proc runTest(name: string, noDocker: bool): JsonNode =
   let maxThreads = countProcessors()
+  var cmd: string
+  var ret: int
+  var server: Process
 
   echo "** ", name, " **"
-  var cmd = "docker run -d -p 8080:8080 bench-$1" % [name]
-  var ret = execSilent(cmd)
-  if ret != 0:
-    raise newException(Exception, "cannot run image: " & name)
 
-  cmd = "./wrk -H \"Host: $1\" -H \"Accept: $2\" -H \"Connection: keep-alive\" --latency -d 5 -c 8 --timeout 8 -t 8 $3" %
-    [serverHost, accept, url]
+  if noDocker:
+    server = runServer(name)
+  else:
+    cmd = "docker run -d -p 8080:8080 bench-$1" % [name]
+    ret = execSilent(cmd)
+    if ret != 0:
+      raise newException(Exception, "cannot run image: " & name & " " & $ret)
+
+  cmd = "./wrk -H \"Host: $1\" -H \"Accept: $2\" -H \"Connection: keep-alive\" --latency -d $3 -c 8 --timeout 8 -t 8 $4" %
+    [serverHost, accept, $primer_duration, url]
   echo "  Running Primer"
 
   ret = execSilent(cmd)
   if ret != 0:
     raise newException(Exception, "cannot run primer: " & name)
-  sleep(2000)
+  sleep(sleep_duration)
 
   cmd = "./wrk -H \"Host: $1\" -H \"Accept: $2\" -H \"Connection: keep-alive\" --latency -d $3 -c $4 --timeout 8 -t $5 $6" %
-    [serverHost, accept, $duration, $(256), $maxThreads, url]
+    [serverHost, accept, $warmup_duration, $(256), $maxThreads, url]
   echo "  Running Warmup"
   ret = execSilent(cmd)
   if ret != 0:
     raise newException(Exception, "cannot run warmup: " & name)
-  sleep(2000)
+  sleep(sleep_duration)
 
   var jar = newJArray()
   for c in levels:
     echo "  Running Concurrency $1" % [$c]
     let t = max(c, maxThreads)
     let cmd = "./wrk -H \"Host: $1\" -H \"Accept: $2\" -H \"Connection: keep-alive\" --latency -d $3 -c $4 --timeout 8 -t $5 $6 -s jsonfmt.lua" %
-      [serverHost, accept, $duration, $c, $t, url]
+      [serverHost, accept, $concurrency_duration, $c, $t, url]
     let res = execAndGetJson(cmd)
     if res.len == 1:
       var json = res[0]
@@ -117,12 +154,14 @@ proc runTest(name: string): JsonNode =
       json.add("success", newJBool(false))
       json.add("pipeline", newJInt(0))
       jar.add json
-  sleep(2000)
+
+  sleep(sleep_duration)
   for c in levels:
+    let c = 128
     echo "  Running Concurrency $1 with pipeline $2" % [$c, $pipeline]
     let t = max(c, maxThreads)
     let cmd = "./wrk -H \"Host: $1\" -H \"Accept: $2\" -H \"Connection: keep-alive\" --latency -d $3 -c $4 --timeout 8 -t $5 $6 -s pipeline.lua -- $7" %
-      [serverHost, accept, $duration, $c, $t, url, $pipeline]
+      [serverHost, accept, $pipeline_duration, $c, $t, url, $pipeline]
     let res = execAndGetJson(cmd)
     if res.len == 1:
       var json = res[0]
@@ -136,9 +175,13 @@ proc runTest(name: string): JsonNode =
       json.add("success", newJBool(false))
       json.add("pipeline", newJInt(pipeline))
       jar.add json
-  sleep(2000)
-  killContainers()
-  removeContainers()
+
+  if noDocker:
+    stopServer(server)
+  else:
+    sleep(sleep_duration)
+    killContainers()
+    removeContainers()
 
   result = newJObject()
   result.add("result", jar)
@@ -169,13 +212,16 @@ proc renderResult(json: JsonNode, s: Stream) =
       let concurrency = c["level"].getInt()
       s.writeLine("  concurrency: $1, failed" % [$concurrency])
 
-proc runAllTest() =
-  buildImages()
+proc runAllTest(noDocker: bool) =
+  if noDocker:
+    buildExes()
+  else:
+    buildImages()
 
   var resList = newSeq[JsonNode]()
   for p in participants:
     try:
-      let res = runTest(p)
+      let res = runTest(p, noDocker)
       resList.add res
     except Exception as e:
       echo e.msg
@@ -190,9 +236,13 @@ proc runAllTest() =
     res.renderResult(ss)
   echo ss.data
 
-proc runSingleTest(name: string) =
-  buildImage(name)
-  let res = runTest(name)
+proc runSingleTest(name: string, noDocker: bool) =
+  if noDocker:
+    buildExe(name)
+  else:
+    buildImage(name)
+
+  let res = runTest(name, noDocker)
   var s = newStringStream()
   res.renderResult(s)
   echo s.data
@@ -216,8 +266,9 @@ proc installWrk(forceInstall: bool = false): bool =
   let curDir = parentDir & DirSep & "wrksrc"
   discard existsOrCreateDir(curDir)
   setCurrentDir(curDir)
+  echo "build wrk..."
   if not fileExists(curDir & DirSep & "4.1.0.tar.gz") or forceInstall:
-    result = execCmd("wget https://github.com/wg/wrk/archive/4.1.0.tar.gz") == 0
+    result = execCmd("wget -q https://github.com/wg/wrk/archive/4.1.0.tar.gz") == 0
   if result or forceInstall:
     result = execCmd("tar xzf 4.1.0.tar.gz --strip-components=1 --skip-old-files") == 0
   if result or forceInstall:
@@ -237,7 +288,8 @@ proc printHelp() =
   for c in participants:
     echo "  ", c
 
-proc runCommand(cmd: string) =
+proc runCommand(cmd, options: string) =
+  var noDocker = options == "nodocker"
   case cmd
   of "clean":
     killContainers()
@@ -247,7 +299,7 @@ proc runCommand(cmd: string) =
     discard installWrk(true)
   of "all":
     discard installWrk()
-    runAllTest()
+    runAllTest(noDocker)
   of "help":
     printHelp()
   else:
@@ -255,12 +307,14 @@ proc runCommand(cmd: string) =
       echo cmd & " is not a registered participant"
       return
     discard installWrk()
-    runSingleTest(cmd)
+    runSingleTest(cmd, noDocker)
 
 proc main() =
   if paramCount() > 0:
     let cmd = paramStr(1)
-    runCommand(cmd)
+    let options = if paramCount() > 1:
+      paramStr(2) else: ""
+    runCommand(cmd, options)
   else:
     printHelp()
 

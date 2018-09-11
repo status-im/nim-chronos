@@ -14,7 +14,7 @@ Participants in this benchmark are:
 * __asyncdispatch__, lang: Nim, from Nim stdlib
 * __actix-raw__, lang: Rust, TFB round 16th rank 1
 * __fasthttp__, lang: Go, TFB round 16th rank 2
-* __ulib-plaintext_fit__, lang: C++, TFB round 16th rank 3
+* __libreactor__, lang: C, TFB round 16th rank 5
 
 Participants from TFB round 16th are impressive, how asyncdispatch2 compared to them? This is the goals of this benchmark.
 The rank of TFB round 16th is based on plaintext category, running on a physical server.
@@ -38,7 +38,7 @@ Each test is executed as follows:
 * Run a 5-second __primer__ at 8 client-concurrency to verify that the server is in fact running. These results are not captured.
 * Run a 15-second __warmup__ at 256 client-concurrency to allow lazy-initialization to execute and just-in-time compilation to run. These results are not captured.
 * Run a 15-second __captured test__ for each of the concurrency levels (or iteration counts) exercised by the test type.
-  The high-concurrency plaintext test type is tested at 128, 256, and 512 client-side concurrency.
+  The high-concurrency plaintext test type is tested at 128, 256, 512, and 1024 client-side concurrency.
 * Stop the platform and framework.
 
 ## How to replicate this test locally?
@@ -53,5 +53,16 @@ Each test is executed as follows:
 * inside that directory prepare a `plaintext.dockerfile` and all necessary source code.
 * add a entry in `bot.nim` participants constant list with the directory name.
 
-## How to switch to multi thread mode?
-You can find a commented line in the source code of each framework to enable/disable multithread
+## Summary
+* __mofuw__, mofuw use asyncdispatch, expected performance should not more than asynchdispatch itself.
+* __asyncdispatch__, although it is slower than asyncdispatch2, it can handle high concurrency quite well.
+* __asyncdispatch2__, at high concurrency it has tendency become slower significantly,
+  but surpringsingly it is the only framework in this test that can handle non pipeline request faster than other
+  frameworks although using almost identical code with asyncdispatch when handle request/response.
+* __actix-raw__, very fast when multi threaded, not so when single threaded.
+* __fasthttp__, very fast when multi threaded, not so when single threaded.
+* __libreactor__, still very fast although in single thread mode.
+
+## Conclusion
+* asyncdispatch2 could be a good candidate to replace asycndispatch
+* it still has room for improvement especially when handle high count connections.
