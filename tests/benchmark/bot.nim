@@ -157,7 +157,6 @@ proc runTest(name: string, noDocker: bool): JsonNode =
 
   sleep(sleep_duration)
   for c in levels:
-    let c = 128
     echo "  Running Concurrency $1 with pipeline $2" % [$c, $pipeline]
     let t = max(c, maxThreads)
     let cmd = "./wrk -H \"Host: $1\" -H \"Accept: $2\" -H \"Connection: keep-alive\" --latency -d $3 -c $4 --timeout 8 -t $5 $6 -s pipeline.lua -- $7" %
