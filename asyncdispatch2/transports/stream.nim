@@ -806,6 +806,7 @@ proc close*(server: StreamServer) =
 
 proc closeWait*(server: StreamServer): Future[void] =
   ## Close server ``server`` and release all resources.
+  server.close()
   result = server.join()
 
 proc createStreamServer*(host: TransportAddress,
@@ -1264,6 +1265,7 @@ proc close*(transp: StreamTransport) =
 
 proc closeWait*(transp: StreamTransport): Future[void] =
   ## Close and frees resources of transport ``transp``.
+  transp.close()
   result = transp.join()
 
 proc closed*(transp: StreamTransport): bool {.inline.} =

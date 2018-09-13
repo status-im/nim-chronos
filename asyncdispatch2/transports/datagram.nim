@@ -572,6 +572,7 @@ proc join*(transp: DatagramTransport): Future[void] =
 
 proc closeWait*(transp: DatagramTransport): Future[void] =
   ## Close transport ``transp`` and release all resources.
+  transp.close()
   result = transp.join()
 
 proc send*(transp: DatagramTransport, pbytes: pointer,
