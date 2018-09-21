@@ -1,7 +1,8 @@
 package main
 
 import (
-	"flag"
+	"os"
+  "flag"
 	"log"
 	"github.com/valyala/fasthttp"
   "runtime"
@@ -9,7 +10,10 @@ import (
 )
 
 func main() {
-  runtime.GOMAXPROCS(1)
+  if os.Getenv("USE_THREADS") == "" {
+    runtime.GOMAXPROCS(1)
+  }
+
 	flag.Parse()
 
 	var err error

@@ -56,9 +56,9 @@ proc resetBuffer(ctx: IncomingCtx) =
   ctx.bufLen = 0
 
 proc sendMessage(ctx: IncomingCtx, body: string) =
+  let ol = ctx.respLen
   while unlikely ctx.respLen + body.len > ctx.resp.len:
     ctx.resp.setLen(ctx.resp.len + ctx.resp.len)
-  let ol = ctx.respLen
   copyMem(addr ctx.resp[ol], unsafeAddr body[0], body.len)
   ctx.respLen += body.len
 

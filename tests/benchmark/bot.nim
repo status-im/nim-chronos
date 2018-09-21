@@ -1,5 +1,12 @@
 import osproc, json, streams, strutils, os
 
+type
+  Option = enum
+    optNoDocker
+    optNoThreads
+
+  Options = set[Option]
+
 const
   participants = ["fasthttp", "mofuw", "asyncnet", "asyncdispatch2", "libreactor", "actix-raw"]
 
@@ -102,7 +109,7 @@ const
   pipeline = 16
   accept = "text/plain,text/html;q=0.9,application/xhtml+xml;q=0.9,application/xml;q=0.8,*/*;q=0.7"
 
-proc runTest(name: string, noDocker: bool): JsonNode =
+proc runTest(name: string, options: Options): JsonNode =
   let maxThreads = countProcessors()
   var cmd: string
   var ret: int
@@ -110,10 +117,12 @@ proc runTest(name: string, noDocker: bool): JsonNode =
 
   echo "** ", name, " **"
 
-  if noDocker:
+  if optNoDocker in options:
     server = runServer(name)
   else:
-    cmd = "docker run -d -p 8080:8080 bench-$1" % [name]
+    let useTheadsFlag = if optNoThreads in options: ""
+                        else: "-e USE_THREADS=1"
+    cmd = "docker run -d -p 8080:8080 $1 bench-$2" % [useTheadsFlag, name]
     ret = execSilent(cmd)
     if ret != 0:
       raise newException(Exception, "cannot run image: " & name & " " & $ret)
@@ -175,7 +184,7 @@ proc runTest(name: string, noDocker: bool): JsonNode =
       json.add("pipeline", newJInt(pipeline))
       jar.add json
 
-  if noDocker:
+  if optNoDocker in options:
     stopServer(server)
   else:
     sleep(sleep_duration)
@@ -211,8 +220,8 @@ proc renderResult(json: JsonNode, s: Stream) =
       let concurrency = c["level"].getInt()
       s.writeLine("  concurrency: $1, failed" % [$concurrency])
 
-proc runAllTest(noDocker: bool) =
-  if noDocker:
+proc runAllTest(options: Options) =
+  if optNoDocker in options:
     buildExes()
   else:
     buildImages()
@@ -220,7 +229,7 @@ proc runAllTest(noDocker: bool) =
   var resList = newSeq[JsonNode]()
   for p in participants:
     try:
-      let res = runTest(p, noDocker)
+      let res = runTest(p, options)
       resList.add res
     except Exception as e:
       echo e.msg
@@ -235,13 +244,13 @@ proc runAllTest(noDocker: bool) =
     res.renderResult(ss)
   echo ss.data
 
-proc runSingleTest(name: string, noDocker: bool) =
-  if noDocker:
+proc runSingleTest(name: string, options: Options) =
+  if optNoDocker in options:
     buildExe(name)
   else:
     buildImage(name)
 
-  let res = runTest(name, noDocker)
+  let res = runTest(name, options)
   var s = newStringStream()
   res.renderResult(s)
   echo s.data
@@ -287,8 +296,7 @@ proc printHelp() =
   for c in participants:
     echo "  ", c
 
-proc runCommand(cmd, options: string) =
-  var noDocker = options == "nodocker"
+proc runCommand(cmd: string, options: Options) =
   case cmd
   of "clean":
     killContainers()
@@ -298,7 +306,7 @@ proc runCommand(cmd, options: string) =
     discard installWrk(true)
   of "all":
     discard installWrk()
-    runAllTest(noDocker)
+    runAllTest(options)
   of "help":
     printHelp()
   else:
@@ -306,13 +314,23 @@ proc runCommand(cmd, options: string) =
       echo cmd & " is not a registered participant"
       return
     discard installWrk()
-    runSingleTest(cmd, noDocker)
+    runSingleTest(cmd, options)
 
 proc main() =
   if paramCount() > 0:
     let cmd = paramStr(1)
-    let options = if paramCount() > 1:
-      paramStr(2) else: ""
+    var options: Options = {}
+
+    for i in 2 .. paramCount():
+      case paramStr(i)
+      of "nodocker":
+        options.incl optNoDocker
+      of "nothreads":
+        options.incl optNoThreads
+      else:
+        echo "Invalid option: ", paramStr(i)
+        quit 1
+
     runCommand(cmd, options)
   else:
     printHelp()
