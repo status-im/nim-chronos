@@ -389,13 +389,13 @@ when defined(windows):
     result = true
     if domain == Domain.AF_INET6:
       var saddr: Sockaddr_in6
-      saddr.sin6_family = int16(toInt(domain))
+      saddr.sin6_family = type(saddr.sin6_family)(toInt(domain))
       if bindAddr(SocketHandle(handle), cast[ptr SockAddr](addr(saddr)),
                   sizeof(saddr).SockLen) != 0'i32:
         result = false
     else:
       var saddr: Sockaddr_in
-      saddr.sin_family = int16(toInt(domain))
+      saddr.sin_family = type(saddr.sin_family)(toInt(domain))
       if bindAddr(SocketHandle(handle), cast[ptr SockAddr](addr(saddr)),
                   sizeof(saddr).SockLen) != 0'i32:
         result = false
