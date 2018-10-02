@@ -400,11 +400,11 @@ when defined(windows) or defined(nimdoc):
     loop.transmitFile = cast[WSAPROC_TRANSMITFILE](funcPointer)
     close(sock)
 
-  proc closeSocket*(socket: AsyncFD, aftercb: CallbackFunc = nil) =
+  proc closeSocket*(fd: AsyncFD, aftercb: CallbackFunc = nil) =
     ## Closes a socket and ensures that it is unregistered.
     let loop = getGlobalDispatcher()
-    socket.SocketHandle.close()
-    loop.handles.excl(socket)
+    loop.handles.excl(fd)
+    close(SocketHandle(fd))
     if not isNil(aftercb):
       var acb = AsyncCallback(function: aftercb)
       loop.callbacks.addLast(acb)
@@ -551,19 +551,30 @@ else:
     let loop = getGlobalDispatcher()
 
     proc continuation(udata: pointer) =
-      aftercb(nil)
       unregister(fd)
       close(SocketHandle(fd))
+      if not isNil(aftercb):
+        aftercb(nil)
 
     withData(loop.selector, int(fd), adata) do:
+      # We are scheduling reader and writer callbacks to be called
+      # explicitly, so they can get an error and continue work.
       if not isNil(adata.reader.function):
-        loop.callbacks.addLast(adata.reader)
+        if not adata.reader.deleted:
+          loop.callbacks.addLast(adata.reader)
       if not isNil(adata.writer.function):
-        loop.callbacks.addLast(adata.writer)
+        if not adata.writer.deleted:
+          loop.callbacks.addLast(adata.writer)
+      # Mark callbacks as deleted, we don't need to get REAL notifications
+      # from system queue for this reader and writer.
+      adata.reader.deleted = true
+      adata.writer.deleted = true
 
-    if not isNil(aftercb):
-      var acb = AsyncCallback(function: continuation)
-      loop.callbacks.addLast(acb)
+    # We can't unregister file descriptor from system queue here, because
+    # in such case processing queue will stuck on poll() call, because there
+    # can be no file descriptors registered in system queue.
+    var acb = AsyncCallback(function: continuation)
+    loop.callbacks.addLast(acb)
 
   when ioselSupportedPlatform:
     proc addSignal*(signal: int, cb: CallbackFunc,
@@ -608,17 +619,21 @@ else:
 
       withData(loop.selector, fd, adata) do:
         if Event.Read in events or events == {Event.Error}:
-          loop.callbacks.addLast(adata.reader)
+          if not adata.reader.deleted:
+            loop.callbacks.addLast(adata.reader)
 
         if Event.Write in events or events == {Event.Error}:
-          loop.callbacks.addLast(adata.writer)
+          if not adata.writer.deleted:
+            loop.callbacks.addLast(adata.writer)
 
         if Event.User in events:
-          loop.callbacks.addLast(adata.reader)
+          if not adata.reader.deleted:
+            loop.callbacks.addLast(adata.reader)
 
         when ioselSupportedPlatform:
           if customSet * events != {}:
-            loop.callbacks.addLast(adata.reader)
+            if not adata.reader.deleted:
+              loop.callbacks.addLast(adata.reader)
 
     # Moving expired timers to `loop.callbacks`.
     loop.processTimers()
