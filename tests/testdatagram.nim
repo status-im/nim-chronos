@@ -439,20 +439,18 @@ proc test3(bounded: bool): Future[int] {.async.} =
   for i in 0..<ClientsCount:
     result += counters[i]
 
-proc client20(transp: DatagramTransport,
-              raddr: TransportAddress): Future[void] {.async.} =
-  var counterPtr = cast[ptr int](transp.udata)
-  counterPtr[] = 1
-  transp.close()
-
 proc testConnReset(): Future[bool] {.async.} =
   var ta = initTAddress("127.0.0.1:65000")
   var counter = 0
+  proc clientMark(transp: DatagramTransport,
+                  raddr: TransportAddress): Future[void] {.async.} =
+    counter = 1
+    transp.close()
   var dgram1 = newDatagramTransport(client1, local = ta)
   dgram1.close()
-  var dgram2 = newDatagramTransport(client20, udata = addr counter)
+  var dgram2 = newDatagramTransport(clientMark)
   var data = "MESSAGE"
-  discard dgram2.sendTo(ta, data)
+  asyncCheck dgram2.sendTo(ta, data)
   await sleepAsync(1000)
   result = (counter == 0)
 
