@@ -86,11 +86,14 @@ type
     ## Transport's specific exception
   TransportOsError* = object of TransportError
     ## Transport's OS specific exception
+    code*: OSErrorCode
   TransportIncompleteError* = object of TransportError
     ## Transport's `incomplete data received` exception
   TransportLimitError* = object of TransportError
     ## Transport's `data limit reached` exception
   TransportAddressError* = object of TransportError
+    ## Transport's address specific exception
+    code*: OSErrorCode
 
   TransportState* = enum
     ## Transport's state
@@ -290,7 +293,18 @@ template getError*(t: untyped): ref Exception =
 proc raiseTransportOsError*(err: OSErrorCode) =
   ## Raises transport specific OS error.
   var msg = "(" & $int(err) & ") " & osErrorMsg(err)
-  raise newException(TransportOsError, msg)
+  var tre = newException(TransportOsError, msg)
+  tre.code = err
+  raise tre
+
+template getTransportOsError*(err: OSErrorCode): ref TransportOsError =
+  var msg = "(" & $int(err) & ") " & osErrorMsg(err)
+  var tre = newException(TransportOsError, msg)
+  tre.code = err
+  tre
+
+template getTransportOsError*(err: cint): ref TransportOsError =
+  getTransportOsError(OSErrorCode(err))
 
 type
   SeqHeader = object
@@ -305,7 +319,10 @@ proc isLiteral*[T](s: seq[T]): bool {.inline.} =
 when defined(windows):
   import winlean
 
-  const ERROR_OPERATION_ABORTED* = 995
-  const ERROR_SUCCESS* = 0
+  const
+    ERROR_OPERATION_ABORTED* = 995
+    ERROR_SUCCESS* = 0
+    ERROR_CONNECTION_REFUSED* = 1225
+
   proc cancelIo*(hFile: HANDLE): WINBOOL
        {.stdcall, dynlib: "kernel32", importc: "CancelIo".}

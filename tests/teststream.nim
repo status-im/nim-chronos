@@ -632,6 +632,15 @@ proc test14(): Future[int] {.async.} =
   await server.join()
   result = subres
 
+proc testConnectionRefused(): Future[bool] {.async.} =
+  try:
+    var transp = await connect(initTAddress("127.0.0.1:1"))
+  except TransportOsError as e:
+    when defined(windows):
+      result = (int(e.code) == ERROR_CONNECTION_REFUSED)
+    else:
+      result = (int(e.code) == ECONNREFUSED)
+
 when isMainModule:
   const
     m1 = "readLine() multiple clients with messages (" & $ClientsCount &
@@ -653,6 +662,7 @@ when isMainModule:
     m12 = "readUntil() unexpected disconnect test"
     m13 = "readLine() unexpected disconnect empty string test"
     m14 = "Closing socket while operation pending test (issue #8)"
+    m15 = "Connection refused test"
   suite "Stream Transport test suite":
     test m8:
       check waitFor(test8()) == 1
@@ -682,3 +692,5 @@ when isMainModule:
       check waitFor(test6()) == ClientsCount * MessagesCount
     test m4:
       check waitFor(test4()) == FilesCount
+    test m15:
+      check waitFor(testConnectionRefused()) == true

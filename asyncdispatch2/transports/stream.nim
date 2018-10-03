@@ -130,7 +130,7 @@ proc localAddress*(transp: StreamTransport): TransportAddress =
 
 template setReadError(t, e: untyped) =
   (t).state.incl(ReadError)
-  (t).error = newException(TransportOsError, osErrorMsg((e)))
+  (t).error = getTransportOsError(e)
 
 template checkPending(t: untyped) =
   if not isNil((t).reader):
@@ -218,7 +218,7 @@ when defined(windows):
         else:
           let v = transp.queue.popFirst()
           transp.state.incl(WriteError)
-          v.writer.fail(newException(TransportOsError, osErrorMsg(err)))
+          v.writer.fail(getTransportOsError(err))
       else:
         ## Initiation
         transp.state.incl(WritePending)
@@ -243,8 +243,7 @@ when defined(windows):
               else:
                 transp.state.excl(WritePending)
                 transp.state = transp.state + {WritePaused, WriteError}
-                vector.writer.fail(newException(TransportOsError,
-                                                osErrorMsg(err)))
+                vector.writer.fail(getTransportOsError(err))
             else:
               transp.queue.addFirst(vector)
           else:
@@ -273,8 +272,7 @@ when defined(windows):
               else:
                 transp.state.excl(WritePending)
                 transp.state = transp.state + {WritePaused, WriteError}
-                vector.writer.fail(newException(TransportOsError,
-                                                osErrorMsg(err)))
+                vector.writer.fail(getTransportOsError(err))
             else:
               transp.queue.addFirst(vector)
         break
@@ -417,12 +415,16 @@ when defined(windows):
     toSockAddr(address.address, address.port, saddr, slen)
     sock = createAsyncSocket(address.address.getDomain(), SockType.SOCK_STREAM,
                              Protocol.IPPROTO_TCP)
+
     if sock == asyncInvalidSocket:
-      result.fail(newException(TransportOsError, osErrorMsg(osLastError())))
+      retFuture.fail(getTransportOsError(OSErrorCode(wsaGetLastError())))
+      return retFuture
 
     if not bindToDomain(sock, address.address.getDomain()):
+      let err = wsaGetLastError()
       sock.closeSocket()
-      result.fail(newException(TransportOsError, osErrorMsg(osLastError())))
+      retFuture.fail(getTransportOsError(err))
+      return retFuture
 
     proc continuation(udata: pointer) =
       var ovl = cast[RefCustomOverlapped](udata)
@@ -432,16 +434,14 @@ when defined(windows):
                         cint(SO_UPDATE_CONNECT_CONTEXT), nil,
                         SockLen(0)) != 0'i32:
             sock.closeSocket()
-            retFuture.fail(newException(TransportOsError,
-                                        osErrorMsg(osLastError())))
+            retFuture.fail(getTransportOsError(wsaGetLastError()))
           else:
             retFuture.complete(newStreamSocketTransport(povl.data.fd,
                                                         bufferSize,
                                                         child))
         else:
           sock.closeSocket()
-          retFuture.fail(newException(TransportOsError,
-                                      osErrorMsg(ovl.data.errCode)))
+          retFuture.fail(getTransportOsError(ovl.data.errCode))
       GC_unref(ovl)
 
     povl = RefCustomOverlapped()
@@ -457,7 +457,7 @@ when defined(windows):
       if int32(err) != ERROR_IO_PENDING:
         GC_unref(povl)
         sock.closeSocket()
-        retFuture.fail(newException(TransportOsError, osErrorMsg(err)))
+        retFuture.fail(getTransportOsError(err))
     return retFuture
 
   proc acceptLoop(udata: pointer) {.gcsafe, nimcall.} =
@@ -477,8 +477,9 @@ when defined(windows):
                           cint(SO_UPDATE_ACCEPT_CONTEXT),
                           addr server.sock,
                           SockLen(sizeof(SocketHandle))) != 0'i32:
+              let err = OSErrorCode(wsaGetLastError())
               server.asock.closeSocket()
-              raiseTransportOsError(osLastError())
+              raiseTransportOsError(err)
             else:
               if not isNil(server.init):
                 var transp = server.init(server, server.asock)
@@ -495,8 +496,9 @@ when defined(windows):
             server.asock.closeSocket()
             break
           else:
+            let err = OSErrorCode(wsaGetLastError())
             server.asock.closeSocket()
-            raiseTransportOsError(osLastError())
+            raiseTransportOsError(err)
       else:
         ## Initiation
         if server.status in {ServerStatus.Stopped, ServerStatus.Closed}:
@@ -507,7 +509,7 @@ when defined(windows):
         server.asock = createAsyncSocket(server.domain, SockType.SOCK_STREAM,
                                          Protocol.IPPROTO_TCP)
         if server.asock == asyncInvalidSocket:
-          raiseTransportOsError(osLastError())
+          raiseTransportOsError(OSErrorCode(wsaGetLastError()))
 
         var dwBytesReceived = DWORD(0)
         let dwReceiveDataLength = DWORD(0)
@@ -588,8 +590,7 @@ else:
               if int(err) == EINTR:
                 continue
               else:
-                vector.writer.fail(newException(TransportOsError,
-                                                osErrorMsg(err)))
+                vector.writer.fail(getTransportOsError(err))
           else:
             let res = sendfile(int(fd), cast[int](vector.buflen),
                                int(vector.offset),
@@ -605,8 +606,7 @@ else:
               if int(err) == EINTR:
                 continue
               else:
-                vector.writer.fail(newException(TransportOsError,
-                                                osErrorMsg(err)))
+                vector.writer.fail(getTransportOsError(err))
         break
     else:
       transp.state.incl(WritePaused)
@@ -686,7 +686,7 @@ else:
     sock = createAsyncSocket(address.address.getDomain(), SockType.SOCK_STREAM,
                              Protocol.IPPROTO_TCP)
     if sock == asyncInvalidSocket:
-      retFuture.fail(newException(TransportOsError, osErrorMsg(osLastError())))
+      retFuture.fail(getTransportOsError(osLastError()))
       return retFuture
 
     proc continuation(udata: pointer) =
@@ -696,13 +696,11 @@ else:
       fd.removeWriter()
       if not fd.getSocketError(err):
         closeSocket(fd)
-        retFuture.fail(newException(TransportOsError,
-                                    osErrorMsg(osLastError())))
+        retFuture.fail(getTransportOsError(osLastError()))
         return
       if err != 0:
         closeSocket(fd)
-        retFuture.fail(newException(TransportOsError,
-                                    osErrorMsg(OSErrorCode(err))))
+        retFuture.fail(getTransportOsError(OSErrorCode(err)))
         return
       retFuture.complete(newStreamSocketTransport(fd, bufferSize, child))
 
@@ -721,7 +719,7 @@ else:
           break
         else:
           sock.closeSocket()
-          retFuture.fail(newException(TransportOsError, osErrorMsg(err)))
+          retFuture.fail(getTransportOsError(err))
           break
     return retFuture
 
@@ -782,7 +780,7 @@ proc stop*(server: StreamServer) =
 
 proc join*(server: StreamServer): Future[void] =
   ## Waits until ``server`` is not closed.
-  var retFuture = newFuture[void]("streamserver.join")
+  var retFuture = newFuture[void]("stream.server.join")
   proc continuation(udata: pointer) = retFuture.complete()
   if not server.loopFuture.finished:
     server.loopFuture.addCallback(continuation)

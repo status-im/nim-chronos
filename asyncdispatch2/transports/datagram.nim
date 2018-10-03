@@ -56,7 +56,7 @@ type
 
 template setReadError(t, e: untyped) =
   (t).state.incl(ReadError)
-  (t).error = newException(TransportOsError, osErrorMsg((e)))
+  (t).error = getTransportOsError(e)
 
 template setWriterWSABuffer(t, v: untyped) =
   (t).wwsabuf.buf = cast[cstring](v.buf)
@@ -85,7 +85,7 @@ when defined(windows):
           vector.writer.complete()
         else:
           transp.state = transp.state + {WritePaused, WriteError}
-          vector.writer.fail(newException(TransportOsError, osErrorMsg(err)))
+          vector.writer.fail(getTransportOsError(err))
       else:
         ## Initiation
         transp.state.incl(WritePending)
@@ -114,7 +114,7 @@ when defined(windows):
           else:
             transp.state.excl(WritePending)
             transp.state = transp.state + {WritePaused, WriteError}
-            vector.writer.fail(newException(TransportOsError, osErrorMsg(err)))
+            vector.writer.fail(getTransportOsError(err))
         else:
           transp.queue.addFirst(vector)
         break
@@ -297,18 +297,6 @@ when defined(windows):
     else:
       result.state.incl(ReadPaused)
 
-  # proc close*(transp: DatagramTransport) =
-  #   ## Closes and frees resources of transport ``transp``.
-  #   if ReadClosed notin transp.state and WriteClosed notin transp.state:
-  #     # discard cancelIo(Handle(transp.fd))
-  #     closeSocket(transp.fd)
-  #     transp.state.incl(WriteClosed)
-  #     transp.state.incl(ReadClosed)
-  #     transp.future.complete()
-  #     if not isNil(transp.udata) and GCUserData in transp.flags:
-  #       GC_unref(cast[ref int](transp.udata))
-  #     GC_unref(transp)
-
 else:
   # Linux/BSD/MacOS part
 
@@ -376,8 +364,7 @@ else:
             if int(err) == EINTR:
               continue
             else:
-              vector.writer.fail(newException(TransportOsError,
-                                              osErrorMsg(err)))
+              vector.writer.fail(getTransportOsError(err))
           break
       else:
         transp.state.incl(WritePaused)
