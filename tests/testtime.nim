@@ -28,16 +28,16 @@ proc waitAll[T](futs: seq[Future[T]]): Future[void] =
     fut.addCallback(cb)
   return retFuture
 
-proc test(timeout: int): Future[int] {.async.} =
+proc test(timeout: int): Future[int64] {.async.} =
   var workers = newSeq[Future[int]](TimersCount)
   for i in 0..<TimersCount:
     workers[i] = timeWorker(timeout)
   await waitAll(workers)
-  var sum = 0
+  var sum = 0'i64
   for i in 0..<TimersCount:
     var time = workers[i].read()
     sum = sum + time
-  result = sum div 10
+  result = sum div 10'i64
 
 when isMainModule:
   suite "Asynchronous timers test suite":
