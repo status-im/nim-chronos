@@ -17,7 +17,7 @@ import asyncfutures2 except callSoon
 import nativesockets, net, deques
 
 export Port, SocketFlag
-export asyncfutures2
+export asyncfutures2, timer
 
 #{.injectStmt: newGcInvariant().}
 
@@ -405,6 +405,15 @@ when defined(windows) or defined(nimdoc):
     let loop = getGlobalDispatcher()
     loop.handles.excl(fd)
     close(SocketHandle(fd))
+    if not isNil(aftercb):
+      var acb = AsyncCallback(function: aftercb)
+      loop.callbacks.addLast(acb)
+
+  proc closeHandle*(fd: AsyncFD, aftercb: CallbackFunc = nil) =
+    ## Closes a (pipe/file) handle and ensures that it is unregistered.
+    let loop = getGlobalDispatcher()
+    loop.handles.excl(fd)
+    doAssert closeHandle(Handle(fd)) == 1
     if not isNil(aftercb):
       var acb = AsyncCallback(function: aftercb)
       loop.callbacks.addLast(acb)
