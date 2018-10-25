@@ -28,6 +28,7 @@ type
     buf: pointer                    # Writer buffer pointer
     buflen: int                     # Writer buffer size
     offset: uint                    # Writer vector offset
+    size: int                       # Original size
     writer: Future[int]             # Writer vector completion Future
 
   TransportKind* {.pure.} = enum
@@ -752,12 +753,6 @@ when defined(windows):
 
 else:
 
-  template getVectorBuffer(v: untyped): pointer =
-    cast[pointer](cast[uint]((v).buf) + uint((v).boffset))
-
-  template getVectorLength(v: untyped): int =
-    cast[int]((v).buflen - int((v).boffset))
-
   template initBufferStreamVector(v, p, n, t: untyped) =
     (v).kind = DataBuffer
     (v).buf = cast[pointer]((p))
@@ -793,14 +788,17 @@ else:
               else:
                 vector.writer.fail(getTransportOsError(err))
           else:
+            var nbytes = cast[int](vector.buf)
             let res = sendfile(int(fd), cast[int](vector.buflen),
                                int(vector.offset),
-                               cast[int](vector.buf))
+                               nbytes)
             if res >= 0:
-              if cast[int](vector.buf) - res == 0:
-                vector.writer.complete(cast[int](vector.buf))
+              if cast[int](vector.buf) - nbytes == 0:
+                vector.size += nbytes
+                vector.writer.complete(vector.size)
               else:
-                vector.shiftVectorFile(res)
+                vector.size += nbytes
+                vector.shiftVectorFile(nbytes)
                 transp.queue.addFirst(vector)
             else:
               let err = osLastError()
@@ -948,7 +946,7 @@ else:
           else:
             asyncCheck server.function(server,
               newStreamSocketTransport(sock, server.bufferSize, nil))
-          break
+        break
       else:
         let err = osLastError()
         if int(err) == EINTR:

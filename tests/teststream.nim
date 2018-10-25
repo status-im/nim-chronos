@@ -684,8 +684,7 @@ when isMainModule:
           else:
             discard
         else:
-          test prefixes[i] & m4:
-            check waitFor(testSendFile(addresses[i])) == FilesCount
+          check waitFor(testSendFile(addresses[i])) == FilesCount
       test prefixes[i] & m15:
         var address: TransportAddress
         if addresses[i].family == AddressFamily.Unix:
