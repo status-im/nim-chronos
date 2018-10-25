@@ -326,7 +326,6 @@ proc testPointerSendTo(): Future[int] {.async.} =
   await dgram2.sendTo(ta, addr data[0], len(data))
   await dgram2.join()
   dgram1.close()
-  dgram2.close()
   result = counter
 
 proc testPointerSend(): Future[int] {.async.} =
@@ -339,7 +338,6 @@ proc testPointerSend(): Future[int] {.async.} =
   await dgram2.send(addr data[0], len(data))
   await dgram2.join()
   dgram1.close()
-  dgram2.close()
   result = counter
 
 proc testStringSendTo(): Future[int] {.async.} =
@@ -352,7 +350,6 @@ proc testStringSendTo(): Future[int] {.async.} =
   await dgram2.sendTo(ta, data)
   await dgram2.join()
   dgram1.close()
-  dgram2.close()
   result = counter
 
 proc testStringSend(): Future[int] {.async.} =
@@ -365,7 +362,6 @@ proc testStringSend(): Future[int] {.async.} =
   await dgram2.send(data)
   await dgram2.join()
   dgram1.close()
-  dgram2.close()
   result = counter
 
 proc testSeqSendTo(): Future[int] {.async.} =
@@ -380,7 +376,6 @@ proc testSeqSendTo(): Future[int] {.async.} =
   await dgram2.sendTo(ta, dataseq)
   await dgram2.join()
   dgram1.close()
-  dgram2.close()
   result = counter
 
 proc testSeqSend(): Future[int] {.async.} =
@@ -395,7 +390,6 @@ proc testSeqSend(): Future[int] {.async.} =
   await dgram2.send(data)
   await dgram2.join()
   dgram1.close()
-  dgram2.close()
   result = counter
 
 #
@@ -435,6 +429,7 @@ proc test3(bounded: bool): Future[int] {.async.} =
 
   await waitAll(clients)
   dgram1.close()
+  await dgram1.join()
   result = 0
   for i in 0..<ClientsCount:
     result += counters[i]
@@ -448,6 +443,7 @@ proc testConnReset(): Future[bool] {.async.} =
     transp.close()
   var dgram1 = newDatagramTransport(client1, local = ta)
   dgram1.close()
+  await dgram1.join()
   var dgram2 = newDatagramTransport(clientMark)
   var data = "MESSAGE"
   asyncCheck dgram2.sendTo(ta, data)

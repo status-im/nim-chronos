@@ -408,7 +408,7 @@ else:
           closeSocket(localSock)
         raiseTransportOsError(err)
 
-    if local.family != AddressFamily.None:
+    if local.port != Port(0):
       var saddr: Sockaddr_storage
       var slen: SockLen
       toSAddr(local, saddr, slen)
@@ -420,7 +420,7 @@ else:
         raiseTransportOsError(err)
       result.local = local
 
-    if remote.family != AddressFamily.None:
+    if remote.port != Port(0):
       var saddr: Sockaddr_storage
       var slen: SockLen
       toSAddr(remote, saddr, slen)
