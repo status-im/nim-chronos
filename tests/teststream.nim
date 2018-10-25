@@ -614,13 +614,12 @@ proc testConnectionRefused(address: TransportAddress): Future[bool] {.async.} =
   try:
     var transp = await connect(address)
   except TransportOsError as e:
+    let ecode = int(e.code)
     when defined(windows):
-      if address.family == AddressFamily.Unix:
-        result = (int(e.code) == ERROR_FILE_NOT_FOUND)
-      else:
-        result = (int(e.code) == ERROR_CONNECTION_REFUSED)
+      result = (ecode == ERROR_FILE_NOT_FOUND) or
+               (ecode == ERROR_CONNECTION_REFUSED)
     else:
-      result = (int(e.code) == ECONNREFUSED)
+      result = (ecode == ECONNREFUSED) or (ecode == ENOENT)
 
 when isMainModule:
   const
