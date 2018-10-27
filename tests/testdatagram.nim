@@ -165,7 +165,9 @@ proc client6(transp: DatagramTransport,
       var numstr = data[7..^1]
       var num = parseInt(numstr)
       var ans = "ANSWER" & $num
+      echo "Sending answer"
       await transp.sendTo(raddr, ans)
+      echo "Answer sent"
     else:
       var err = "ERROR"
       await transp.sendTo(raddr, err)
@@ -192,7 +194,9 @@ proc client7(transp: DatagramTransport,
       else:
         var ta = initTAddress("127.0.0.1:33336")
         var req = "REQUEST" & $counterPtr[]
+        echo "Sending request"
         await transp.sendTo(ta, req)
+        echo "Request sent"
     else:
       var counterPtr = cast[ptr int](transp.udata)
       counterPtr[] = -1
