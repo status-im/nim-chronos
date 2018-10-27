@@ -9,6 +9,7 @@
 from net import IpAddressFamily, IpAddress, `$`, parseIpAddress
 import os, strutils, nativesockets
 import ../asyncloop
+export IpAddressFamily
 
 when defined(windows):
   import winlean
@@ -424,6 +425,22 @@ proc resolveTAddress*(address: string, port: Port,
       result.add(ta)
     it = it.ai_next
   freeAddrInfo(aiList)
+
+proc resolveTAddress*(address: string,
+                      family: IpAddressFamily): seq[TransportAddress] {.
+     deprecated.} =
+  if family == IpAddressFamily.IPv4:
+    result = resolveTAddress(address, AddressFamily.IPv4)
+  elif family == IpAddressFamily.IPv6:
+    result = resolveTAddress(address, AddressFamily.IPv6)
+
+proc resolveTAddress*(address: string, port: Port,
+                      family: IpAddressFamily): seq[TransportAddress] {.
+     deprecated.} =
+  if family == IpAddressFamily.IPv4:
+    result = resolveTAddress(address, port, AddressFamily.IPv4)
+  elif family == IpAddressFamily.IPv6:
+    result = resolveTAddress(address, port, AddressFamily.IPv6) 
 
 template checkClosed*(t: untyped) =
   if (ReadClosed in (t).state) or (WriteClosed in (t).state):
