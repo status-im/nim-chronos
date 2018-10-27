@@ -745,6 +745,7 @@ include asyncmacro2
 proc callSoon(cbproc: CallbackFunc, data: pointer = nil) =
   ## Schedule `cbproc` to be called as soon as possible.
   ## The callback is called when control returns to the event loop.
+  assert cbproc != nil
   let acb = AsyncCallback(function: cbproc, udata: data)
   getGlobalDispatcher().callbacks.addLast(acb)
 
