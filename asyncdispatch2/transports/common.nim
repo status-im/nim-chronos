@@ -6,10 +6,9 @@
 #              Licensed under either of
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
-from net import IpAddressFamily, IpAddress, `$`, parseIpAddress
-import os, strutils, nativesockets
+import os, strutils, nativesockets, net
 import ../asyncloop
-export IpAddressFamily
+export net
 
 when defined(windows):
   import winlean
@@ -350,6 +349,20 @@ proc toSAddr*(address: TransportAddress, sa: var Sockaddr_storage,
                 len(name) + 1)
   else:
     discard
+
+proc address*(ta: TransportAddress): IpAddress =
+  ## Converts ``TransportAddress`` to ``net.IpAddress`` object.
+  ## 
+  ## Note its impossible to convert ``TransportAddress`` of ``Unix`` family,
+  ## because ``IpAddress`` supports only IPv4, IPv6 addresses.
+  if ta.family == AddressFamily.IPv4:
+    result = IpAddress(family: IpAddressFamily.IPv4)
+    result.address_v4 = ta.address_v4
+  elif ta.family == AddressFamily.IPv6:
+    result = IpAddress(family: IpAddressFamily.IPv6)
+    result.address_v6 = ta.address_v6
+  else:
+    raise newException(ValueError, "IpAddress supports only IPv4/IPv6!")
 
 proc resolveTAddress*(address: string,
                       family = AddressFamily.IPv4): seq[TransportAddress] =
