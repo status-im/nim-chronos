@@ -325,6 +325,7 @@ proc testPointerSendTo(): Future[int] {.async.} =
   await dgram2.sendTo(ta, addr data[0], len(data))
   await dgram2.join()
   dgram1.close()
+  await dgram1.join()
   result = counter
 
 proc testPointerSend(): Future[int] {.async.} =
@@ -337,6 +338,7 @@ proc testPointerSend(): Future[int] {.async.} =
   await dgram2.send(addr data[0], len(data))
   await dgram2.join()
   dgram1.close()
+  await dgram1.join()
   result = counter
 
 proc testStringSendTo(): Future[int] {.async.} =
@@ -349,6 +351,7 @@ proc testStringSendTo(): Future[int] {.async.} =
   await dgram2.sendTo(ta, data)
   await dgram2.join()
   dgram1.close()
+  await dgram1.join()
   result = counter
 
 proc testStringSend(): Future[int] {.async.} =
@@ -361,6 +364,7 @@ proc testStringSend(): Future[int] {.async.} =
   await dgram2.send(data)
   await dgram2.join()
   dgram1.close()
+  await dgram1.join()
   result = counter
 
 proc testSeqSendTo(): Future[int] {.async.} =
@@ -375,6 +379,7 @@ proc testSeqSendTo(): Future[int] {.async.} =
   await dgram2.sendTo(ta, dataseq)
   await dgram2.join()
   dgram1.close()
+  await dgram1.join()
   result = counter
 
 proc testSeqSend(): Future[int] {.async.} =
@@ -389,6 +394,7 @@ proc testSeqSend(): Future[int] {.async.} =
   await dgram2.send(data)
   await dgram2.join()
   dgram1.close()
+  await dgram1.join()
   result = counter
 
 #
@@ -448,6 +454,8 @@ proc testConnReset(): Future[bool] {.async.} =
   asyncCheck dgram2.sendTo(ta, data)
   await sleepAsync(1000)
   result = (counter == 0)
+  dgram2.close()
+  await dgram2.join()
 
 when isMainModule:
   const
