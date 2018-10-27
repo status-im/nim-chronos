@@ -11,8 +11,8 @@ import ../asyncdispatch2
 
 when sizeof(int) == 8:
   const
-    TestsCount = 10000
-    ClientsCount = 100
+    TestsCount = 5000
+    ClientsCount = 50
     MessagesCount = 100
 elif sizeof(int) == 4:
   const
