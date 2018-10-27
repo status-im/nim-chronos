@@ -20,11 +20,11 @@ const
   FilesTestName = "tests/teststream.nim"
 when sizeof(int) == 8:
   const
-    BigMessageCount = 1000
-    ClientsCount = 100
+    BigMessageCount = 500
+    ClientsCount = 50
     MessagesCount = 100
     MessageSize = 20
-    FilesCount = 100
+    FilesCount = 50
 elif sizeof(int) == 4:
   const
     BigMessageCount = 200
