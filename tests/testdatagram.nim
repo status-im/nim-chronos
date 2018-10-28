@@ -189,7 +189,6 @@ proc client7(transp: DatagramTransport,
       if counterPtr[] == TestsCount:
         transp.close()
       else:
-        # var ta = initTAddress("127.0.0.1:33336")
         var req = "REQUEST" & $counterPtr[]
         await transp.sendTo(raddr, req)
     else:
@@ -271,7 +270,6 @@ proc client10(transp: DatagramTransport,
       if counterPtr[] == TestsCount:
         transp.close()
       else:
-        # var ta = initTAddress("127.0.0.1:33338")
         var req = "REQUEST" & $counterPtr[]
         var reqseq = newSeq[byte](len(req))
         copyMem(addr reqseq[0], addr req[0], len(req))
