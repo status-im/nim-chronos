@@ -1,5 +1,5 @@
 import strutils, posix, deques, times, strformat
-import asyncdispatch2
+import asyncdispatch2, threadpool, os, osproc
 
 proc getFormattedTime*(): string =
   result = format(getTime().inZone(utc()), "ddd, dd MMM yyyy hh:mm:ss 'GMT'")
@@ -123,11 +123,11 @@ proc updateTime(arg: pointer = nil) {.gcsafe.} =
   var svr = cast[ServerCtx](arg)
   svr.updateServerTime()
 
-proc serve(onAddress: string) =
+proc incomingConnection(onAddress: string) =
   let
     ta = initTAddress(onAddress)
     ctx = newServerCtx(1024, 1024, 128)
-    svr = createStreamServer(ta, handleConnection, {ReuseAddr}, backlog = 128, udata = cast[pointer](ctx))
+    svr = createStreamServer(ta, handleConnection, {ReuseAddr, ReusePort}, backlog = 128, udata = cast[pointer](ctx))
   when not defined(windows):
     discard addSignal(SIGINT, handleBreak, udata = cast[pointer](svr))
 
@@ -138,5 +138,24 @@ proc serve(onAddress: string) =
   echo "Server started at ", ta
   waitFor svr.join()
 
-when isMainModule:
-  serve("0.0.0.0:8080")
+proc runServer() {.thread.} =
+  incomingConnection("0.0.0.0:8080")
+
+proc runSingleThread() =
+  spawn runServer()
+  threadpool.sync()
+
+proc runMultipleThreads() =
+  for _ in 0 ..< countProcessors():
+    spawn runServer()
+  threadpool.sync()
+
+proc main() =
+  if os.getEnv("USE_THREADS") == "1":
+    echo "use threads"
+    runMultipleThreads()
+  else:
+    echo "no threads"
+    runSingleThread()
+
+main()

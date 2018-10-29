@@ -1,4 +1,4 @@
-import mofuw, packedjson, threadpool
+import mofuw, packedjson, threadpool, os
 
 proc h(ctx: MofuwCtx) {.async.} =
   case ctx.getPath
@@ -19,11 +19,13 @@ proc serveSingleThread*(ctx: ServeCtx) =
   when not defined noSync:
     sync()
 
-newServeCtx(
-  port = 8080,
-  handler = h
-).serveSingleThread()
+proc main() =
+  var srv = newServeCtx(port = 8080, handler = h)
+  if os.getEnv("USE_THREADS") == "1":
+    echo "use threads"
+    srv.serve()
+  else:
+    echo "no threads"
+    srv.serveSingleThread()
 
-# use this if you want multithread mode
-#).serve()
-
+main()

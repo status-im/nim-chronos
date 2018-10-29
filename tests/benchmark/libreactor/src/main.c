@@ -61,7 +61,7 @@ static int json(reactor_http *http)
 {
   char body[4096], content_length[11];
   size_t size;
-  
+
   (void) clo_encode((clo[]) {clo_object({"message", clo_string("Hello, World!")})}, body, sizeof(body));
   size = strlen(body);
   reactor_util_u32toa(size, content_length);
@@ -91,7 +91,7 @@ int http_event(void *state, int type, void *data)
       return REACTOR_ABORT;
     }
   request = data;
-  
+
   if (reactor_http_header_value(&request->path, "/plaintext"))
     return plaintext(http);
   else if (reactor_http_header_value(&request->path, "/json"))
@@ -126,13 +126,19 @@ static int tcp_event(void *state, int type, void *data)
   return REACTOR_OK;
 }
 
+int reactor_core_construct2(int num_threads);
+
 int main()
 {
   reactor_timer timer;
   reactor_tcp tcp;
 
-  setup(1, 0);  
-  (void) reactor_core_construct();
+  setup(1, 0);
+  if(getenv("USE_THREADS") != NULL) {
+    (void) reactor_core_construct();
+  } else {
+    (void) reactor_core_construct2(1);
+  }
   (void) reactor_timer_open(&timer, timer_event, &timer, 1, 1000000000);
   (void) reactor_tcp_open(&tcp, tcp_event, &tcp, "0.0.0.0", "8080", REACTOR_TCP_FLAG_SERVER);
   (void) reactor_core_run();

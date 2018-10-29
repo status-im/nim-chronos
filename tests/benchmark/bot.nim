@@ -1,4 +1,4 @@
-import osproc, json, streams, strutils, os
+import osproc, json, streams, strutils, os, strtabs
 
 type
   Option = enum
@@ -82,11 +82,15 @@ proc buildExes() =
   for c in participants:
     buildExe(c)
 
-proc runServer(id: string): Process =
+proc runServer(id: string, opts: Options): Process =
   const options = {poParentStreams}
   let parentDir = getAppDir()
   let name = parentDir & DirSep & id & DirSep & "server"
-  result = startProcess(name, args=[], env=nil, options=options)
+  var env: StringTableRef
+  if optNoThreads notin opts:
+     env = newStringTable(modeCaseSensitive)
+     env["USE_THREADS"] = "1"
+  result = startProcess(name, args=[], env=env, options=options)
   if not result.running():
     raise newException(Exception, "cannot run server: " & id)
 
@@ -118,7 +122,7 @@ proc runTest(name: string, options: Options): JsonNode =
   echo "** ", name, " **"
 
   if optNoDocker in options:
-    server = runServer(name)
+    server = runServer(name, options)
   else:
     let useTheadsFlag = if optNoThreads in options: ""
                         else: "-e USE_THREADS=1"

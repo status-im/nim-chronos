@@ -7,7 +7,7 @@
 #              MIT license (LICENSE-MIT)
 
 import asyncnet, asyncdispatch, nativesockets, net, strformat, times
-import deques
+import deques, threadpool, os, osproc
 
 when defined(windows):
   from winlean import TCP_NODELAY
@@ -84,16 +84,12 @@ proc sendMessage(ctx: IncomingCtx, body: string) =
 const timeOut = 30 * 1000
 
 proc readMessage*(ctx: IncomingCtx, client: AsyncSocket): Future[int] {.async.} =
-#proc readMessage*(ctx: IncomingCtx, client: AsyncFD): Future[int] {.async.} =
   let rcvLimit =
     block:
       if unlikely(ctx.buf.len - ctx.bufLen == 0):
         ctx.buf.setLen(ctx.buf.len + ctx.buf.len)
       ctx.buf.len - ctx.bufLen
 
-  #let fut = client.recvInto(addr ctx.buf[ctx.bufLen], rcvLimit)
-  #let isSuccess = await withTimeout(fut, timeOut)
-  #let rcv = if isSuccess: fut.read else: 0
   let rcv = await client.recvInto(addr ctx.buf[ctx.bufLen], rcvLimit)
   ctx.bufLen += rcv
   return rcv
@@ -106,12 +102,10 @@ proc makeResp(serverTime: string): string =
                "Content-Length: 13\r\L\r\L" &
                "Hello, World!")
 
-#proc handleIncoming(srv: ServerCtx, ctx: IncomingCtx, client: AsyncFD) {.async.} =
 proc handleIncoming(srv: ServerCtx, ctx: IncomingCtx, client: AsyncSocket) {.async.} =
   while true:
     let rcv = await ctx.readMessage(client)
     if rcv == 0:
-      #closeSocket(client)
       client.close()
       srv.freeCtx(ctx)
       return
@@ -128,27 +122,15 @@ proc handleIncoming(srv: ServerCtx, ctx: IncomingCtx, client: AsyncSocket) {.asy
     let fut = client.send(ctx.resp[0].addr, ctx.respLen)
     yield fut
     if fut.failed:
-      #closeSocket(client)
       client.close()
       srv.freeCtx(ctx)
       return
     ctx.resetBuffer()
 
-#proc handleConnection(srv: ServerCtx, client: AsyncFD) {.async.} =
 proc handleConnection(srv: ServerCtx, client: AsyncSocket) {.async.} =
   var ctx = srv.getIncomingCtx(1024, 1024)
   ctx.resetBuffer()
   asyncCheck handleIncoming(srv, ctx, client)
-
-#proc newServerSocket*(port: int): SocketHandle =
-#  let server = newSocket()
-#  server.setSockOpt(OptReuseAddr, true)
-#  server.setSockOpt(OptReusePort, true)
-#  server.getFd().setSockOptInt(cint(IPPROTO_TCP), TCP_NODELAY, 1)
-#  server.getFd.setBlocking(false)
-#  server.bindAddr(Port(port))
-#  server.listen()
-#  return server.getFd()
 
 proc newServerSocket(port: int): AsyncSocket =
   var server = newAsyncSocket(buffered=false)
@@ -160,13 +142,11 @@ proc newServerSocket(port: int): AsyncSocket =
   server.listen()
   result = server
 
-proc serve() {.async.} =
+proc incomingConnection() {.async.} =
   let
-    #server = newServerSocket(8080).AsyncFD
     server = newServerSocket(8080)
     ctx = newServerCtx(1024, 1024, 128)
 
-  #register(server)
   proc updateTime(fd: AsyncFD): bool =
     ctx.updateServerTime()
 
@@ -179,13 +159,30 @@ proc serve() {.async.} =
       cantAccept = true
 
     try:
-      #let data = await acceptAddr(server)
-      #asyncCheck handleConnection(ctx, data.client)
       let client = await server.accept()
       asyncCheck handleConnection(ctx, client)
     except:
       cantAccept = true
 
-when isMainModule:
+proc runServer() {.thread.} =
+  waitFor incomingConnection()
+
+proc runSingleThread() =
+  spawn runServer()
+  sync()
+
+proc runMultipleThreads() =
+  for _ in 0 ..< countProcessors():
+    spawn runServer()
+  sync()
+
+proc main() =
   setControlCHook(handleCtrlC)
-  waitFor serve()
+  if os.getEnv("USE_THREADS") == "1":
+    echo "use threads"
+    runMultipleThreads()
+  else:
+    echo "no threads"
+    runSingleThread()
+
+main()
