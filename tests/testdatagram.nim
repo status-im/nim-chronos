@@ -9,16 +9,10 @@
 import strutils, net, unittest
 import ../asyncdispatch2
 
-when sizeof(int) == 8:
-  const
-    TestsCount = 5000
-    ClientsCount = 50
-    MessagesCount = 100
-elif sizeof(int) == 4:
-  const
-    TestsCount = 2000
-    ClientsCount = 20
-    MessagesCount = 20
+const
+  TestsCount = 2000
+  ClientsCount = 20
+  MessagesCount = 20
 
 proc client1(transp: DatagramTransport,
              raddr: TransportAddress): Future[void] {.async.} =
