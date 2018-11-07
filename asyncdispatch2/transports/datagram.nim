@@ -74,8 +74,6 @@ when defined(windows):
     while len(transp.queue) > 0:
       if WritePending in transp.state:
         ## Continuation
-        if WriteClosed in transp.state:
-          break
         transp.state.excl(WritePending)
         let err = transp.wovl.data.errCode
         let vector = transp.queue.popFirst()
@@ -133,8 +131,6 @@ when defined(windows):
     while true:
       if ReadPending in transp.state:
         ## Continuation
-        if ReadClosed in transp.state:
-          break
         transp.state.excl(ReadPending)
         let err = transp.rovl.data.errCode
         if err == OSErrorCode(-1):
