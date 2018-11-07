@@ -74,6 +74,8 @@ when defined(windows):
     while len(transp.queue) > 0:
       if WritePending in transp.state:
         ## Continuation
+        if WriteClosed in transp.state:
+          break
         transp.state.excl(WritePending)
         let err = transp.wovl.data.errCode
         let vector = transp.queue.popFirst()
@@ -84,7 +86,7 @@ when defined(windows):
           transp.state.incl(WritePaused)
           vector.writer.complete()
         else:
-          transp.state = transp.state + {WritePaused, WriteError}
+          transp.state.incl({WritePaused, WriteError})
           vector.writer.fail(getTransportOsError(err))
       else:
         ## Initiation
@@ -106,13 +108,14 @@ when defined(windows):
           let err = osLastError()
           if int(err) == ERROR_OPERATION_ABORTED:
             # CancelIO() interrupt
+            transp.state.excl(WritePending)
             transp.state.incl(WritePaused)
             vector.writer.complete()
           elif int(err) == ERROR_IO_PENDING:
             transp.queue.addFirst(vector)
           else:
             transp.state.excl(WritePending)
-            transp.state = transp.state + {WritePaused, WriteError}
+            transp.state.incl({WritePaused, WriteError})
             vector.writer.fail(getTransportOsError(err))
         else:
           transp.queue.addFirst(vector)
@@ -201,6 +204,7 @@ when defined(windows):
     var localSock: AsyncFD
     assert(remote.family == local.family)
     assert(not isNil(cbproc))
+    assert(remote.family in {AddressFamily.IPv4, AddressFamily.IPv6})
 
     if isNil(child):
       result = DatagramTransport()
