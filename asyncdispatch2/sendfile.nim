@@ -10,7 +10,7 @@
 ## This module provides cross-platform wrapper for ``sendfile()`` syscall.
 
 when defined(nimdoc):
-  proc sendfile*(outfd, infd: int, offset: int, count: int): int =
+  proc sendfile*(outfd, infd: int, offset: int, count: var int): int =
     ## Copies data between file descriptor ``infd`` and ``outfd``. Because this
     ## copying is done within the kernel, ``sendfile()`` is more efficient than
     ## the combination of ``read(2)`` and ``write(2)``, which would require
@@ -26,11 +26,13 @@ when defined(nimdoc):
     ## data from ``infd``.
     ##
     ## ``count`` is the number of bytes to copy between the file descriptors.
+    ## On exit ``count`` will hold number of bytes actually transferred between
+    ## file descriptors.
     ##
     ## If the transfer was successful, the number of bytes written to ``outfd``
-    ## is returned.  Note that a successful call to ``sendfile()`` may write
-    ## fewer bytes than requested; the caller should be prepared to retry the
-    ## call if there were unsent bytes.
+    ## is stored in ``count``, and ``0`` returned. Note that a successful call to
+    ## ``sendfile()`` may write fewer bytes than requested; the caller should
+    ## be prepared to retry the call if there were unsent bytes.
     ##
     ## On error, ``-1`` is returned.
 
@@ -39,13 +41,16 @@ when defined(linux) or defined(android):
   proc osSendFile*(outfd, infd: cint, offset: ptr int, count: int): int
       {.importc: "sendfile", header: "<sys/sendfile.h>".}
 
-  proc sendfile*(outfd, infd: int, offset: int, count: int): int =
+  proc sendfile*(outfd, infd: int, offset: int, count: var int): int =
     var o = offset
     result = osSendFile(cint(outfd), cint(infd), addr o, count)
+    if result >= 0:
+      count = result
+      result = 0
 
 elif defined(freebsd) or defined(openbsd) or defined(netbsd) or
      defined(dragonflybsd):
-
+  import posix, os
   type
     SendfileHeader* = object {.importc: "sf_hdtr",
                                header: """#include <sys/types.h>
@@ -60,16 +65,23 @@ elif defined(freebsd) or defined(openbsd) or defined(netbsd) or
                                                  #include <sys/socket.h>
                                                  #include <sys/uio.h>""".}
 
-  proc sendfile*(outfd, infd: int, offset: int, count: int): int =
+  proc sendfile*(outfd, infd: int, offset: int, count: var int): int =
     var o = 0'u
-    if osSendFile(cint(infd), cint(outfd), uint(offset), uint(count), nil,
-                  addr o, 0) == 0:
-      result = int(o)
+    result = osSendFile(cint(infd), cint(outfd), uint(offset), uint(count), nil,
+                        addr o, 0)
+    if result >= 0:
+      count = int(o)
+      result = 0
     else:
-      result = -1
+      let err = osLastError()
+      if int(err) == EAGAIN:
+        count = int(o)
+        result = 0
+      else:
+        result = -1
 
 elif defined(macosx):
-  import posix
+  import posix, os
   type
     SendfileHeader* = object {.importc: "sf_hdtr",
                                header: """#include <sys/types.h>
@@ -84,9 +96,16 @@ elif defined(macosx):
                                                  #include <sys/socket.h>
                                                  #include <sys/uio.h>""".}
 
-  proc sendfile*(outfd, infd: int, offset: int, count: int): int =
+  proc sendfile*(outfd, infd: int, offset: int, count: var int): int =
     var o = count
-    if osSendFile(cint(infd), cint(outfd), offset, addr o, nil, 0) == 0:
-      result = o
+    result = osSendFile(cint(infd), cint(outfd), offset, addr o, nil, 0)
+    if result >= 0:
+      count = int(o)
+      result = 0
     else:
-      result = -1
+      let err = osLastError()
+      if int(err) == EAGAIN:
+        count = int(o)
+        result = 0
+      else:
+        result = -1

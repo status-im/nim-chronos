@@ -17,7 +17,7 @@ import asyncfutures2 except callSoon
 import nativesockets, net, deques
 
 export Port, SocketFlag
-export asyncfutures2
+export asyncfutures2, timer
 
 #{.injectStmt: newGcInvariant().}
 
@@ -409,6 +409,15 @@ when defined(windows) or defined(nimdoc):
       var acb = AsyncCallback(function: aftercb)
       loop.callbacks.addLast(acb)
 
+  proc closeHandle*(fd: AsyncFD, aftercb: CallbackFunc = nil) =
+    ## Closes a (pipe/file) handle and ensures that it is unregistered.
+    let loop = getGlobalDispatcher()
+    loop.handles.excl(fd)
+    doAssert closeHandle(Handle(fd)) == 1
+    if not isNil(aftercb):
+      var acb = AsyncCallback(function: aftercb)
+      loop.callbacks.addLast(acb)
+
   proc unregister*(fd: AsyncFD) =
     ## Unregisters ``fd``.
     getGlobalDispatcher().handles.excl(fd)
@@ -736,6 +745,7 @@ include asyncmacro2
 proc callSoon(cbproc: CallbackFunc, data: pointer = nil) =
   ## Schedule `cbproc` to be called as soon as possible.
   ## The callback is called when control returns to the event loop.
+  assert cbproc != nil
   let acb = AsyncCallback(function: cbproc, udata: data)
   getGlobalDispatcher().callbacks.addLast(acb)
 

@@ -9,16 +9,10 @@
 import strutils, net, unittest
 import ../asyncdispatch2
 
-when sizeof(int) == 8:
-  const
-    TestsCount = 10000
-    ClientsCount = 100
-    MessagesCount = 100
-elif sizeof(int) == 4:
-  const
-    TestsCount = 2000
-    ClientsCount = 20
-    MessagesCount = 20
+const
+  TestsCount = 2000
+  ClientsCount = 20
+  MessagesCount = 20
 
 proc client1(transp: DatagramTransport,
              raddr: TransportAddress): Future[void] {.async.} =
@@ -139,9 +133,8 @@ proc client5(transp: DatagramTransport,
       if counterPtr[] == MessagesCount:
         transp.close()
       else:
-        var ta = initTAddress("127.0.0.1:33341")
         var req = "REQUEST" & $counterPtr[]
-        await transp.sendTo(ta, addr req[0], len(req))
+        await transp.sendTo(raddr, addr req[0], len(req))
     else:
       var counterPtr = cast[ptr int](transp.udata)
       counterPtr[] = -1
@@ -190,9 +183,8 @@ proc client7(transp: DatagramTransport,
       if counterPtr[] == TestsCount:
         transp.close()
       else:
-        var ta = initTAddress("127.0.0.1:33336")
         var req = "REQUEST" & $counterPtr[]
-        await transp.sendTo(ta, req)
+        await transp.sendTo(raddr, req)
     else:
       var counterPtr = cast[ptr int](transp.udata)
       counterPtr[] = -1
@@ -272,11 +264,10 @@ proc client10(transp: DatagramTransport,
       if counterPtr[] == TestsCount:
         transp.close()
       else:
-        var ta = initTAddress("127.0.0.1:33338")
         var req = "REQUEST" & $counterPtr[]
         var reqseq = newSeq[byte](len(req))
         copyMem(addr reqseq[0], addr req[0], len(req))
-        await transp.sendTo(ta, reqseq)
+        await transp.sendTo(raddr, reqseq)
     else:
       var counterPtr = cast[ptr int](transp.udata)
       counterPtr[] = -1
@@ -326,7 +317,7 @@ proc testPointerSendTo(): Future[int] {.async.} =
   await dgram2.sendTo(ta, addr data[0], len(data))
   await dgram2.join()
   dgram1.close()
-  dgram2.close()
+  await dgram1.join()
   result = counter
 
 proc testPointerSend(): Future[int] {.async.} =
@@ -339,12 +330,12 @@ proc testPointerSend(): Future[int] {.async.} =
   await dgram2.send(addr data[0], len(data))
   await dgram2.join()
   dgram1.close()
-  dgram2.close()
+  await dgram1.join()
   result = counter
 
 proc testStringSendTo(): Future[int] {.async.} =
   ## sendTo(string) test
-  var ta = initTAddress("127.0.0.1:33336")
+  var ta = initTAddress("127.0.0.1:33338")
   var counter = 0
   var dgram1 = newDatagramTransport(client6, udata = addr counter, local = ta)
   var dgram2 = newDatagramTransport(client7, udata = addr counter)
@@ -352,12 +343,12 @@ proc testStringSendTo(): Future[int] {.async.} =
   await dgram2.sendTo(ta, data)
   await dgram2.join()
   dgram1.close()
-  dgram2.close()
+  await dgram1.join()
   result = counter
 
 proc testStringSend(): Future[int] {.async.} =
   ## send(string) test
-  var ta = initTAddress("127.0.0.1:33337")
+  var ta = initTAddress("127.0.0.1:33339")
   var counter = 0
   var dgram1 = newDatagramTransport(client6, udata = addr counter, local = ta)
   var dgram2 = newDatagramTransport(client8, udata = addr counter, remote = ta)
@@ -365,12 +356,12 @@ proc testStringSend(): Future[int] {.async.} =
   await dgram2.send(data)
   await dgram2.join()
   dgram1.close()
-  dgram2.close()
+  await dgram1.join()
   result = counter
 
 proc testSeqSendTo(): Future[int] {.async.} =
   ## sendTo(string) test
-  var ta = initTAddress("127.0.0.1:33338")
+  var ta = initTAddress("127.0.0.1:33340")
   var counter = 0
   var dgram1 = newDatagramTransport(client9, udata = addr counter, local = ta)
   var dgram2 = newDatagramTransport(client10, udata = addr counter)
@@ -380,12 +371,12 @@ proc testSeqSendTo(): Future[int] {.async.} =
   await dgram2.sendTo(ta, dataseq)
   await dgram2.join()
   dgram1.close()
-  dgram2.close()
+  await dgram1.join()
   result = counter
 
 proc testSeqSend(): Future[int] {.async.} =
   ## send(string) test
-  var ta = initTAddress("127.0.0.1:33339")
+  var ta = initTAddress("127.0.0.1:33341")
   var counter = 0
   var dgram1 = newDatagramTransport(client9, udata = addr counter, local = ta)
   var dgram2 = newDatagramTransport(client11, udata = addr counter, remote = ta)
@@ -395,7 +386,7 @@ proc testSeqSend(): Future[int] {.async.} =
   await dgram2.send(data)
   await dgram2.join()
   dgram1.close()
-  dgram2.close()
+  await dgram1.join()
   result = counter
 
 #
@@ -414,9 +405,9 @@ proc waitAll(futs: seq[Future[void]]): Future[void] =
 proc test3(bounded: bool): Future[int] {.async.} =
   var ta: TransportAddress
   if bounded:
-    ta = initTAddress("127.0.0.1:33340")
+    ta = initTAddress("127.0.0.1:33240")
   else:
-    ta = initTAddress("127.0.0.1:33341")
+    ta = initTAddress("127.0.0.1:33241")
   var counter = 0
   var dgram1 = newDatagramTransport(client1, udata = addr counter, local = ta)
   var clients = newSeq[Future[void]](ClientsCount)
@@ -435,6 +426,7 @@ proc test3(bounded: bool): Future[int] {.async.} =
 
   await waitAll(clients)
   dgram1.close()
+  await dgram1.join()
   result = 0
   for i in 0..<ClientsCount:
     result += counters[i]
@@ -448,11 +440,14 @@ proc testConnReset(): Future[bool] {.async.} =
     transp.close()
   var dgram1 = newDatagramTransport(client1, local = ta)
   dgram1.close()
+  await dgram1.join()
   var dgram2 = newDatagramTransport(clientMark)
   var data = "MESSAGE"
   asyncCheck dgram2.sendTo(ta, data)
   await sleepAsync(1000)
   result = (counter == 0)
+  dgram2.close()
+  await dgram2.join()
 
 when isMainModule:
   const

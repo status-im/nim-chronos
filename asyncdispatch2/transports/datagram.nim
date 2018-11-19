@@ -84,7 +84,7 @@ when defined(windows):
           transp.state.incl(WritePaused)
           vector.writer.complete()
         else:
-          transp.state = transp.state + {WritePaused, WriteError}
+          transp.state.incl({WritePaused, WriteError})
           vector.writer.fail(getTransportOsError(err))
       else:
         ## Initiation
@@ -94,8 +94,7 @@ when defined(windows):
         transp.setWriterWSABuffer(vector)
         var ret: cint
         if vector.kind == WithAddress:
-          toSockAddr(vector.address.address, vector.address.port,
-                     transp.waddr, transp.walen)
+          toSAddr(vector.address, transp.waddr, transp.walen)
           ret = WSASendTo(fd, addr transp.wwsabuf, DWORD(1), addr bytesCount,
                           DWORD(0), cast[ptr SockAddr](addr transp.waddr),
                           cint(transp.walen),
@@ -107,13 +106,14 @@ when defined(windows):
           let err = osLastError()
           if int(err) == ERROR_OPERATION_ABORTED:
             # CancelIO() interrupt
+            transp.state.excl(WritePending)
             transp.state.incl(WritePaused)
             vector.writer.complete()
           elif int(err) == ERROR_IO_PENDING:
             transp.queue.addFirst(vector)
           else:
             transp.state.excl(WritePending)
-            transp.state = transp.state + {WritePaused, WriteError}
+            transp.state.incl({WritePaused, WriteError})
             vector.writer.fail(getTransportOsError(err))
         else:
           transp.queue.addFirst(vector)
@@ -131,15 +131,13 @@ when defined(windows):
     while true:
       if ReadPending in transp.state:
         ## Continuation
-        if ReadClosed in transp.state:
-          break
         transp.state.excl(ReadPending)
         let err = transp.rovl.data.errCode
         if err == OSErrorCode(-1):
           let bytesCount = transp.rovl.data.bytesCount
           if bytesCount == 0:
             transp.state.incl({ReadEof, ReadPaused})
-          fromSockAddr(transp.raddr, transp.ralen, raddr.address, raddr.port)
+          fromSAddr(addr transp.raddr, transp.ralen, raddr)
           transp.buflen = bytesCount
           asyncCheck transp.function(transp, raddr)
         elif int(err) == ERROR_OPERATION_ABORTED:
@@ -200,8 +198,9 @@ when defined(windows):
                                   child: DatagramTransport,
                                   bufferSize: int): DatagramTransport =
     var localSock: AsyncFD
-    assert(remote.address.family == local.address.family)
+    assert(remote.family == local.family)
     assert(not isNil(cbproc))
+    assert(remote.family in {AddressFamily.IPv4, AddressFamily.IPv6})
 
     if isNil(child):
       result = DatagramTransport()
@@ -209,12 +208,8 @@ when defined(windows):
       result = child
 
     if sock == asyncInvalidSocket:
-      if local.address.family == IpAddressFamily.IPv4:
-        localSock = createAsyncSocket(Domain.AF_INET, SockType.SOCK_DGRAM,
-                                      Protocol.IPPROTO_UDP)
-      else:
-        localSock = createAsyncSocket(Domain.AF_INET6, SockType.SOCK_DGRAM,
-                                      Protocol.IPPROTO_UDP)
+      localSock = createAsyncSocket(local.getDomain(), SockType.SOCK_DGRAM,
+                                    Protocol.IPPROTO_UDP)
       if localSock == asyncInvalidSocket:
         raiseTransportOsError(osLastError())
     else:
@@ -239,10 +234,10 @@ when defined(windows):
                 addr bytesRet, nil, nil) != 0:
       raiseTransportOsError(osLastError())
 
-    if local.port != Port(0):
+    if local.family != AddressFamily.None:
       var saddr: Sockaddr_storage
       var slen: SockLen
-      toSockAddr(local.address, local.port, saddr, slen)
+      toSAddr(local, saddr, slen)
       if bindAddr(SocketHandle(localSock), cast[ptr SockAddr](addr saddr),
                   slen) != 0:
         let err = osLastError()
@@ -253,12 +248,7 @@ when defined(windows):
     else:
       var saddr: Sockaddr_storage
       var slen: SockLen
-      if local.address.family == IpAddressFamily.IPv4:
-        saddr.ss_family = winlean.AF_INET
-        slen = SockLen(sizeof(SockAddr_in))
-      else:
-        saddr.ss_family = winlean.AF_INET6
-        slen = SockLen(sizeof(SockAddr_in6))
+      saddr.ss_family = type(saddr.ss_family)(local.getDomain())
       if bindAddr(SocketHandle(localSock), cast[ptr SockAddr](addr saddr),
                   slen) != 0:
         let err = osLastError()
@@ -269,7 +259,7 @@ when defined(windows):
     if remote.port != Port(0):
       var saddr: Sockaddr_storage
       var slen: SockLen
-      toSockAddr(remote.address, remote.port, saddr, slen)
+      toSAddr(remote, saddr, slen)
       if connect(SocketHandle(localSock), cast[ptr SockAddr](addr saddr),
                  slen) != 0:
         let err = osLastError()
@@ -320,7 +310,7 @@ else:
                                  cast[ptr SockAddr](addr transp.raddr),
                                  addr transp.ralen)
         if res >= 0:
-          fromSockAddr(transp.raddr, transp.ralen, raddr.address, raddr.port)
+          fromSAddr(addr transp.raddr, transp.ralen, raddr)
           transp.buflen = res
           asyncCheck transp.function(transp, raddr)
         else:
@@ -350,8 +340,7 @@ else:
         var vector = transp.queue.popFirst()
         while true:
           if vector.kind == WithAddress:
-            toSockAddr(vector.address.address, vector.address.port,
-                       transp.waddr, transp.walen)
+            toSAddr(vector.address, transp.waddr, transp.walen)
             res = posix.sendto(fd, vector.buf, vector.buflen, MSG_NOSIGNAL,
                                cast[ptr SockAddr](addr transp.waddr),
                                transp.walen)
@@ -387,7 +376,7 @@ else:
                                   child: DatagramTransport = nil,
                                   bufferSize: int): DatagramTransport =
     var localSock: AsyncFD
-    assert(remote.address.family == local.address.family)
+    assert(remote.family == local.family)
     assert(not isNil(cbproc))
 
     if isNil(child):
@@ -396,12 +385,13 @@ else:
       result = child
 
     if sock == asyncInvalidSocket:
-      if local.address.family == IpAddressFamily.IPv4:
-        localSock = createAsyncSocket(Domain.AF_INET, SockType.SOCK_DGRAM,
-                                      Protocol.IPPROTO_UDP)
-      else:
-        localSock = createAsyncSocket(Domain.AF_INET6, SockType.SOCK_DGRAM,
-                                      Protocol.IPPROTO_UDP)
+      var proto = Protocol.IPPROTO_UDP
+      if local.family == AddressFamily.Unix:
+        # `Protocol` enum is missing `0` value, so we making here cast, until
+        # `Protocol` enum will not support IPPROTO_IP == 0.
+        proto = cast[Protocol](0)
+      localSock = createAsyncSocket(local.getDomain(), SockType.SOCK_DGRAM,
+                                    proto)
       if localSock == asyncInvalidSocket:
         raiseTransportOsError(osLastError())
     else:
@@ -421,7 +411,7 @@ else:
     if local.port != Port(0):
       var saddr: Sockaddr_storage
       var slen: SockLen
-      toSockAddr(local.address, local.port, saddr, slen)
+      toSAddr(local, saddr, slen)
       if bindAddr(SocketHandle(localSock), cast[ptr SockAddr](addr saddr),
                   slen) != 0:
         let err = osLastError()
@@ -433,7 +423,7 @@ else:
     if remote.port != Port(0):
       var saddr: Sockaddr_storage
       var slen: SockLen
-      toSockAddr(remote.address, remote.port, saddr, slen)
+      toSAddr(remote, saddr, slen)
       if connect(SocketHandle(localSock), cast[ptr SockAddr](addr saddr),
                  slen) != 0:
         let err = osLastError()
