@@ -693,7 +693,7 @@ when defined(windows):
                 ntransp = newStreamSocketTransport(server.asock,
                                                    server.bufferSize, nil)
               asyncCheck server.function(server, ntransp)
-              
+
           elif int32(ovl.data.errCode) == ERROR_OPERATION_ABORTED:
             # CancelIO() interrupt
             server.asock.closeSocket()
@@ -1329,6 +1329,7 @@ proc readOnce*(transp: StreamTransport, pbytes: pointer,
       else:
         copyMem(pbytes, addr(transp.buffer[0]), transp.offset)
         result = transp.offset
+        transp.offset = 0
       break
 
 proc readUntil*(transp: StreamTransport, pbytes: pointer, nbytes: int,
