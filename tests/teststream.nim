@@ -621,6 +621,40 @@ proc testConnectionRefused(address: TransportAddress): Future[bool] {.async.} =
     else:
       result = (ecode == ECONNREFUSED) or (ecode == ENOENT)
 
+proc serveClient16(server: StreamServer, transp: StreamTransport) {.async.} =
+  var res = await transp.write(BigMessagePattern)
+  doAssert(res == len(BigMessagePattern))
+  transp.close()
+  await transp.join()
+
+proc swarmWorker16(address: TransportAddress): Future[int] {.async.} =
+  var buffer = newString(5)
+  var transp = await connect(address)
+  const readLength = 3
+
+  var prevLen = 0
+  while not transp.atEof():
+    if prevLen + readLength > buffer.len:
+      buffer.setLen(prevLen + readLength)
+
+    let bytesRead = await transp.readOnce(addr buffer[prevLen], readLength)
+    inc(prevLen, bytesRead)
+
+  buffer.setLen(prevLen)
+  doAssert(buffer == BigMessagePattern)
+
+  result = 1
+  transp.close()
+  await transp.join()
+
+proc test16(address: TransportAddress): Future[int] {.async.} =
+  var server = createStreamServer(address, serveClient16, {ReuseAddr})
+  server.start()
+  result = await swarmWorker16(address)
+  server.stop()
+  server.close()
+  await server.join()
+
 when isMainModule:
   const
     m1 = "readLine() multiple clients with messages (" & $ClientsCount &
@@ -641,6 +675,7 @@ when isMainModule:
     m13 = "readLine() unexpected disconnect empty string test"
     m14 = "Closing socket while operation pending test (issue #8)"
     m15 = "Connection refused test"
+    m16 = "readOnce() read until atEof() test"
 
   when defined(windows):
     var addresses = [
@@ -692,3 +727,5 @@ when isMainModule:
         else:
           address = initTAddress("127.0.0.1:43335")
         check waitFor(testConnectionRefused(address)) == true
+      test prefixes[i] & m16:
+        check waitFor(test16(addresses[i])) == 1
