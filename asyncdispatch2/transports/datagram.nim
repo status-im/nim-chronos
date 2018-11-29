@@ -662,14 +662,14 @@ proc peekMessage*(transp: DatagramTransport, msg: var seq[byte],
                   msglen: var int) =
   ## Get access to internal message buffer and length of incoming datagram.
   if ReadError in transp.state:
-    raise transp.getError()
+    raise transp.getReadError()
   shallowCopy(msg, transp.buffer)
   msglen = transp.buflen
 
 proc getMessage*(transp: DatagramTransport): seq[byte] =
   ## Copy data from internal message buffer and return result.
   if ReadError in transp.state:
-    raise transp.getError()
+    raise transp.getReadError()
   if transp.buflen > 0:
     result = newSeq[byte](transp.buflen)
     copyMem(addr result[0], addr transp.buffer[0], transp.buflen)

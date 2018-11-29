@@ -469,6 +469,12 @@ template getError*(t: untyped): ref Exception =
   (t).error = nil
   err
 
+template getReadError*(t: untyped): ref Exception =
+  var err = (t).error
+  (t).error = nil
+  (t).state.excl(ReadError)
+  err
+
 template getTransportOsError*(err: OSErrorCode): ref TransportOsError =
   var msg = "(" & $int(err) & ") " & osErrorMsg(err)
   var tre = newException(TransportOsError, msg)

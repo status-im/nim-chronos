@@ -1279,7 +1279,7 @@ proc readExactly*(transp: StreamTransport, pbytes: pointer,
   while true:
     if transp.offset == 0:
       if (ReadError in transp.state):
-        raise transp.getError()
+        raise transp.getReadError()
       if (ReadClosed in transp.state) or transp.atEof():
         raise newException(TransportIncompleteError, "Data incomplete!")
 
@@ -1312,7 +1312,7 @@ proc readOnce*(transp: StreamTransport, pbytes: pointer,
   while true:
     if transp.offset == 0:
       if (ReadError in transp.state):
-        raise transp.getError()
+        raise transp.getReadError()
       if (ReadClosed in transp.state) or transp.atEof():
         result = 0
         break
@@ -1356,7 +1356,7 @@ proc readUntil*(transp: StreamTransport, pbytes: pointer, nbytes: int,
 
   while true:
     if ReadError in transp.state:
-      raise transp.getError()
+      raise transp.getReadError()
     if (ReadClosed in transp.state) or transp.atEof():
       raise newException(TransportIncompleteError, "Data incomplete!")
 
@@ -1410,7 +1410,7 @@ proc readLine*(transp: StreamTransport, limit = 0,
 
   while true:
     if (ReadError in transp.state):
-      raise transp.getError()
+      raise transp.getReadError()
     if (ReadClosed in transp.state) or transp.atEof():
       break
 
@@ -1449,7 +1449,7 @@ proc read*(transp: StreamTransport, n = -1): Future[seq[byte]] {.async.} =
   result = newSeq[byte]()
   while true:
     if (ReadError in transp.state):
-      raise transp.getError()
+      raise transp.getReadError()
     if (ReadClosed in transp.state) or transp.atEof():
       break
 
@@ -1493,7 +1493,7 @@ proc consume*(transp: StreamTransport, n = -1): Future[int] {.async.} =
   result = 0
   while true:
     if (ReadError in transp.state):
-      raise transp.getError()
+      raise transp.getReadError()
     if ReadClosed in transp.state or transp.atEof():
       break
 
