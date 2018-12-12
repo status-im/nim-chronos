@@ -234,7 +234,8 @@ template processCallbacks(loop: untyped) =
     # can be generated.
     if len(loop.callbacks) == 0: break
     let callable = loop.callbacks.popFirst()
-    callable.function(callable.udata)
+    if not isNil(callable.function):
+      callable.function(callable.udata)
 
 when defined(windows) or defined(nimdoc):
   import winlean, sets, hashes
