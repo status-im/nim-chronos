@@ -15,7 +15,6 @@ task test, "Run all tests":
   exec "nim c -r --gc:markAndSweep tests/testsync"
   exec "nim c -r -d:release tests/testsync"
 
-
   exec "nim c -r -d:useSysAssert -d:useGcAssert tests/testsoon"
   exec "nim c -r tests/testsoon"
   exec "nim c -r --gc:markAndSweep tests/testsoon"
@@ -60,3 +59,7 @@ task test, "Run all tests":
   exec "nim c -r tests/testbugs"
   exec "nim c -r --gc:markAndSweep tests/testbugs"
   exec "nim c -r -d:release tests/testbugs"
+
+task benchmark, "compile bench-bot":
+  exec "nim c -d:release tests/benchmark/bot"
+  exec "tests/benchmark/bot all"

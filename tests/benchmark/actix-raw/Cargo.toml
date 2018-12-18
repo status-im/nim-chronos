@@ -1,0 +1,13 @@
+[package]
+name = "actix"
+version = "0.7.1"
+
+[dependencies]
+futures = "0.1"
+actix = "0.7"
+actix-web = { version="0.7", default-features = false }
+
+[profile.release]
+lto = true
+opt-level = 3
+codegen-units = 1
