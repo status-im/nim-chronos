@@ -30,5 +30,5 @@ task test, "Run all tests":
       ]:
       echo "\n" & cmd
       exec cmd
-      rmFile("tests/" & tfile)
+      rmFile("tests/" & tfile.toExe())
 
