@@ -1,9 +1,11 @@
-packageName   = "asyncdispatch2"
-version       = "2.1.6"
+packageName   = "chronos"
+version       = "2.2.0"
 author        = "Status Research & Development GmbH"
-description   = "Asyncdispatch2"
+description   = "Chronos"
 license       = "Apache License 2.0 or MIT"
-skipDirs      = @["tests", "Nim", "nim", "benchmarks"]
+# workaround while chronos is still named asyncdispatch2 in Nimble
+srcDir        = "chronos"
+# skipDirs      = @["tests"]
 
 ### Dependencies
 
