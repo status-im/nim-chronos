@@ -1,6 +1,6 @@
 #
-#             Asyncdispatch2 Stream Transport
-#                 (c) Copyright 2018
+#             Chronos Stream Transport
+#            (c) Copyright 2018-Present
 #         Status Research & Development GmbH
 #
 #              Licensed under either of

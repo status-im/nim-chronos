@@ -1,8 +1,8 @@
 #
-#                 Asyncdispatch2 Timer
+#                 Chronos Timer
 #
-#           (c) Coprygith 2017 Eugene Kabanov
-#  (c) Copyright 2018 Status Research & Development GmbH
+#           (c) Copyright 2017 Eugene Kabanov
+#  (c) Copyright 2018-Present Status Research & Development GmbH
 #
 #                Licensed under either of
 #    Apache License, version 2.0, (LICENSE-APACHEv2)

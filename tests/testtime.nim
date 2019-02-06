@@ -1,5 +1,5 @@
-#              Asyncdispatch2 Test Suite
-#                 (c) Copyright 2018
+#                Chronos Test Suite
+#            (c) Copyright 2018-Present
 #         Status Research & Development GmbH
 #
 #              Licensed under either of
@@ -7,7 +7,7 @@
 #              MIT license (LICENSE-MIT)
 
 import unittest
-import ../asyncdispatch2, ../asyncdispatch2/timer
+import ../chronos, ../chronos/timer
 
 const TimersCount = 10
 

@@ -1,5 +1,5 @@
-#              Asyncdispatch2 Test Suite
-#                 (c) Copyright 2018
+#                Chronos Test Suite
+#            (c) Copyright 2018-Present
 #         Status Research & Development GmbH
 #
 #              Licensed under either of
@@ -7,7 +7,7 @@
 #              MIT license (LICENSE-MIT)
 
 import unittest, strutils
-import ../asyncdispatch2
+import ../chronos
 
 when not defined(windows):
   import posix
