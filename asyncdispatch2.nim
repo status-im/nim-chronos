@@ -1,5 +1,5 @@
-#                   Asyncdispatch2
-#                 (c) Copyright 2018
+#                   Chronos
+#            (c) Copyright 2018-Present
 #         Status Research & Development GmbH
 #
 #              Licensed under either of

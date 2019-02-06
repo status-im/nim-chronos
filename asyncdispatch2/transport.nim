@@ -1,6 +1,6 @@
 #
-#              Asyncdispatch2 Transport
-#                 (c) Copyright 2018
+#                  Chronos Transport
+#             (c) Copyright 2018-Present
 #         Status Research & Development GmbH
 #
 #              Licensed under either of

@@ -1,8 +1,8 @@
 #
-#        Asyncdispatch2 synchronization primitives
+#            Chronos synchronization primitives
 #
-#           (c) Coprygith 2018 Eugene Kabanov
-#  (c) Copyright 2018 Status Research & Development GmbH
+#           (c) Copyright 2018-Present Eugene Kabanov
+#  (c) Copyright 2018-Present Status Research & Development GmbH
 #
 #                Licensed under either of
 #    Apache License, version 2.0, (LICENSE-APACHEv2)
@@ -219,7 +219,7 @@ proc addLastNoWait*[T](aq: AsyncQueue[T], item: T) =
 
 proc popFirstNoWait*[T](aq: AsyncQueue[T]): T =
   ## Get an item from the beginning of the queue ``aq`` immediately.
-  ## 
+  ##
   ## If queue ``aq`` is empty, then ``AsyncQueueEmptyError`` exception raised.
   var w: Future[void]
   if aq.empty():
@@ -231,7 +231,7 @@ proc popFirstNoWait*[T](aq: AsyncQueue[T]): T =
 
 proc popLastNoWait*[T](aq: AsyncQueue[T]): T =
   ## Get an item from the end of the queue ``aq`` immediately.
-  ## 
+  ##
   ## If queue ``aq`` is empty, then ``AsyncQueueEmptyError`` exception raised.
   var w: Future[void]
   if aq.empty():

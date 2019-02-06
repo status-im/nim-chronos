@@ -1,11 +1,11 @@
-# Asyncdispatch hard fork
+# Chronos
 [![Build Status (Travis)](https://img.shields.io/travis/status-im/nim-asyncdispatch2/master.svg?label=Linux%20/%20macOS "Linux/macOS build status (Travis)")](https://travis-ci.org/status-im/nim-asyncdispatch2)
 [![Windows build status (Appveyor)](https://img.shields.io/appveyor/ci/nimbus/nim-asyncdispatch2/master.svg?label=Windows "Windows build status (Appveyor)")](https://ci.appveyor.com/project/nimbus/nim-asyncdispatch2)
 [![License: Apache](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 ![Stability: experimental](https://img.shields.io/badge/stability-experimental-orange.svg)
 
-## Core differences between asyncdispatch and asyncdispatch2
+## Core differences between asyncdispatch and Chronos
 
 1. Unified callback type `CallbackFunc`:
 
@@ -53,7 +53,7 @@
    * https://github.com/nim-lang/Nim/issues/6929
 
 
-6. Asyncdispatch2 no longer uses `epochTime()`; instead, it uses the fastest time primitives for a specific OS, `fastEpochTime()`. Also, because MacOS supports only a millisecond resolution in `kqueue`, sub-millisecond resolution is not needed. For details, see https://github.com/nim-lang/Nim/issues/3909.
+6. Chronos no longer uses `epochTime()`; instead, it uses the fastest time primitives for a specific OS, `fastEpochTime()`. Also, because MacOS supports only a millisecond resolution in `kqueue`, sub-millisecond resolution is not needed. For details, see https://github.com/nim-lang/Nim/issues/3909.
 
 7. Removed all IO primitives (`recv()`, `recvFrom()`, `connect()`, `accept()`, `send()`, and `sendTo()`) from the public API, and moved all their functionality into Transports.
 

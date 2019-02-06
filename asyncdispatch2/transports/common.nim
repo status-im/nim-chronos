@@ -1,6 +1,6 @@
 #
-#        Asyncdispatch2 Transport Common Types
-#                 (c) Copyright 2018
+#            Chronos Transport Common Types
+#             (c) Copyright 2018-Present
 #         Status Research & Development GmbH
 #
 #              Licensed under either of
@@ -352,7 +352,7 @@ proc toSAddr*(address: TransportAddress, sa: var Sockaddr_storage,
 
 proc address*(ta: TransportAddress): IpAddress =
   ## Converts ``TransportAddress`` to ``net.IpAddress`` object.
-  ## 
+  ##
   ## Note its impossible to convert ``TransportAddress`` of ``Unix`` family,
   ## because ``IpAddress`` supports only IPv4, IPv6 addresses.
   if ta.family == AddressFamily.IPv4:
@@ -453,7 +453,7 @@ proc resolveTAddress*(address: string, port: Port,
   if family == IpAddressFamily.IPv4:
     result = resolveTAddress(address, port, AddressFamily.IPv4)
   elif family == IpAddressFamily.IPv6:
-    result = resolveTAddress(address, port, AddressFamily.IPv6) 
+    result = resolveTAddress(address, port, AddressFamily.IPv6)
 
 template checkClosed*(t: untyped) =
   if (ReadClosed in (t).state) or (WriteClosed in (t).state):

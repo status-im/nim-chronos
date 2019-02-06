@@ -1,8 +1,8 @@
 #
-#                     Asyncdispatch2
+#                     Chronos
 #
-#           (c) Coprygith 2015 Dominik Picheta
-#  (c) Copyright 2018 Status Research & Development GmbH
+#           (c) Copyright 2015 Dominik Picheta
+#  (c) Copyright 2018-Present Status Research & Development GmbH
 #
 #                Licensed under either of
 #    Apache License, version 2.0, (LICENSE-APACHEv2)
