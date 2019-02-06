@@ -3,9 +3,7 @@ version       = "2.2.0"
 author        = "Status Research & Development GmbH"
 description   = "Chronos"
 license       = "Apache License 2.0 or MIT"
-# workaround while chronos is still named asyncdispatch2 in Nimble
-srcDir        = "chronos"
-# skipDirs      = @["tests"]
+skipDirs      = @["tests"]
 
 ### Dependencies
 
