@@ -7,7 +7,7 @@
 #              MIT license (LICENSE-MIT)
 
 import strutils, unittest
-import ../asyncdispatch2
+import ../chronos
 
 type
   CustomServer = ref object of StreamServer

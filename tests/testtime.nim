@@ -7,7 +7,7 @@
 #              MIT license (LICENSE-MIT)
 
 import unittest
-import ../asyncdispatch2, ../asyncdispatch2/timer
+import ../chronos, ../chronos/timer
 
 const TimersCount = 10
 

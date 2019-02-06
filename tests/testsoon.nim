@@ -7,7 +7,7 @@
 #              MIT license (LICENSE-MIT)
 
 import unittest
-import ../asyncdispatch2
+import ../chronos
 
 const CallSoonTests = 10
 var soonTest1 = 0'u

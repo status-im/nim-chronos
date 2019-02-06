@@ -7,7 +7,7 @@
 #              MIT license (LICENSE-MIT)
 
 import unittest
-import ../asyncdispatch2
+import ../chronos
 
 const HELLO_PORT = 45679
 const TEST_MSG = "testmsg"

@@ -7,7 +7,7 @@
 #              MIT license (LICENSE-MIT)
 
 import strutils, unittest
-import ../asyncdispatch2
+import ../chronos
 
 when isMainModule:
   suite "TransportAddress test suite":

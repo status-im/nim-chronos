@@ -7,7 +7,7 @@
 #              MIT license (LICENSE-MIT)
 
 import unittest
-import ../asyncdispatch2
+import ../chronos
 
 var testLockResult = ""
 var testEventResult = ""

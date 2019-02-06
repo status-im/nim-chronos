@@ -7,7 +7,7 @@
 #              MIT license (LICENSE-MIT)
 
 import unittest, strutils
-import ../asyncdispatch2
+import ../chronos
 
 when not defined(windows):
   import posix

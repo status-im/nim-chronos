@@ -7,7 +7,7 @@
 #              MIT license (LICENSE-MIT)
 
 import strutils, net, unittest
-import ../asyncdispatch2
+import ../chronos
 
 const
   TestsCount = 2000

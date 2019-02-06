@@ -7,7 +7,7 @@
 #              MIT license (LICENSE-MIT)
 
 import strutils, unittest, os
-import ../asyncdispatch2
+import ../chronos
 
 when defined(windows):
   import winlean
