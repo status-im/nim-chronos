@@ -1,11 +1,11 @@
-# Chronos
+# Chronos - The Efficient Asynchronous library
 [![Build Status (Travis)](https://img.shields.io/travis/status-im/nim-asyncdispatch2/master.svg?label=Linux%20/%20macOS "Linux/macOS build status (Travis)")](https://travis-ci.org/status-im/nim-asyncdispatch2)
 [![Windows build status (Appveyor)](https://img.shields.io/appveyor/ci/nimbus/nim-asyncdispatch2/master.svg?label=Windows "Windows build status (Appveyor)")](https://ci.appveyor.com/project/nimbus/nim-asyncdispatch2)
 [![License: Apache](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 ![Stability: experimental](https://img.shields.io/badge/stability-experimental-orange.svg)
 
-## Core differences between asyncdispatch and Chronos
+## Core differences between the standard library asyncdispatch and Chronos
 
 1. Unified callback type `CallbackFunc`:
 
@@ -40,7 +40,7 @@
 
 3. Changed the behavior of OS descriptor event callbacks:
 
-    For some unknown reason, the current version of asyncdispatch uses seq[T] to hold a list of descriptor event listeners. However, in the asynchronous environment, there is no need for a list of event listeners. In asyncdispatch2, there is only one place for one READ listener and one place for one WRITE listener.
+    For some unknown reason, the current version of asyncdispatch uses seq[T] to hold a list of descriptor event listeners. However, in the asynchronous environment, there is no need for a list of event listeners. In Chronos, there is only one place for one READ listener and one place for one WRITE listener.
 
 4. Removed the default timeout value for the poll() procedure, which allows incorrect usage of asyncdispatch and produces 500-ms timeouts in correct usage.
 
@@ -70,13 +70,13 @@
 13. Added cheap synchronization primitives: `AsyncLock`, `AsyncEvent`, and `AsyncQueue[T]`.
 
 ## Documentation
-You can find more documentation, notes and examples in [Wiki](https://github.com/status-im/nim-asyncdispatch2/wiki).
+You can find more documentation, notes and examples in [Wiki](https://github.com/status-im/nim-chronos/wiki).
 
 ## Installation
-You can use Nim official package manager `nimble` to install `asyncdispatch2`. The most recent version of the library can be installed via:
+You can use Nim official package manager `nimble` to install `chronos`. The most recent version of the library can be installed via:
 
 ```
-$ nimble install https://github.com/status-im/nim-asyncdispatch2.git
+$ nimble install https://github.com/status-im/nim-chronos.git
 ```
 
 ## TODO
