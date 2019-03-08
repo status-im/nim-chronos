@@ -262,7 +262,7 @@ proc testAllSeq(): int =
   waitFor(all(futures))
   result = completedFutures
 
-proc testAsyncIgnore(): int =
+proc testAsyncDiscard(): int =
   var completedFutures = 0
 
   proc client1() {.async.} =
@@ -316,16 +316,16 @@ proc testAsyncIgnore(): int =
       raise newException(ValueError, "")
 
   for i in 0..<1000:
-    asyncIgnore client1()
-    asyncIgnore client1f()
-    asyncIgnore client2()
-    asyncIgnore client2f()
-    asyncIgnore client3()
-    asyncIgnore client3f()
-    asyncIgnore client4()
-    asyncIgnore client4f()
-    asyncIgnore client5()
-    asyncIgnore client5f()
+    asyncDiscard client1()
+    asyncDiscard client1f()
+    asyncDiscard client2()
+    asyncDiscard client2f()
+    asyncDiscard client3()
+    asyncDiscard client3f()
+    asyncDiscard client4()
+    asyncDiscard client4f()
+    asyncDiscard client5()
+    asyncDiscard client5f()
 
   waitFor(sleepAsync(2000))
   result = completedFutures
@@ -346,5 +346,5 @@ when isMainModule:
       check testAllVarargs() == 10
     test "all[T](seq) test":
       check testAllSeq() == 1000
-    test "asyncIgnore() test":
-      check testAsyncIgnore() == 10000
+    test "asyncDiscard() test":
+      check testAsyncDiscard() == 10000
