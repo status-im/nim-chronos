@@ -369,16 +369,8 @@ proc asyncCheck*[T](future: Future[T]) =
       raise future.error
   future.callback = cb
 
-proc asyncIgnore*[T](future: Future[T]) =
-  ## Sets a callback on ``future`` which ignores an exception if the future
-  ## finished with an error.
-  ##
-  ## This can be used instead of ``asyncCheck``, if you do not want to get
-  ## elusive exception.
-  assert(not future.isNil, "Future is nil")
-  proc cb(data: pointer) =
-    var c = cast[uint](data) + 1
-  future.callback = cb
+proc asyncDiscard*[T](future: Future[T]) = discard
+  ## This is async workaround for discard ``Future[T]``.
 
 # ZAH: The return type here could be a Future[(T, Y)]
 proc `and`*[T, Y](fut1: Future[T], fut2: Future[Y]): Future[void] =
@@ -421,22 +413,6 @@ proc `or`*[T, Y](fut1: Future[T], fut2: Future[Y]): Future[void] =
       else: retFuture.complete()
   fut1.callback = cb
   fut2.callback = cb
-  return retFuture
-
-proc all*[T](futs: seq[Future[T]]): Future[void] =
-  ## Returns a ``Future[void]`` which completes only when all Future[T]
-  ## in sequence ``futs`` will be completed or failed.
-  var completedFutures = 0
-  let totalFutures = len(futs)
-  var retFuture = newFuture[void]("asyncdispatch.all([])")
-  for fut in futs:
-    fut.addCallback proc (data: pointer) =
-      inc(completedFutures)
-      if not retFuture.finished:
-        if completedFutures == totalFutures:
-          retFuture.complete()
-  if totalFutures == 0:
-    retFuture.complete()
   return retFuture
 
 proc all*[T](futs: varargs[Future[T]]): Future[void] =
