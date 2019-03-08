@@ -10,9 +10,9 @@ import strutils, net, unittest
 import ../chronos
 
 const
-  TestsCount = 2000
+  TestsCount = 500
   ClientsCount = 20
-  MessagesCount = 20
+  MessagesCount = 5
 
 proc client1(transp: DatagramTransport,
              raddr: TransportAddress): Future[void] {.async.} =
