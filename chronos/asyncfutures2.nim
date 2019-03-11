@@ -415,84 +415,68 @@ proc `or`*[T, Y](fut1: Future[T], fut2: Future[Y]): Future[void] =
   fut2.callback = cb
   return retFuture
 
-proc all*[T](futs: varargs[Future[T]]): Future[void] =
-  ## Returns a ``Future[void]`` which completes only when all Future[T] passed
-  ## as arguments will be completed or failed.
-  var completedFutures = 0
+# proc all*[T](futs: varargs[Future[T]]): Future[void] =
+#   ## Returns a ``Future[void]`` which completes only when all Future[T] passed
+#   ## as arguments will be completed or failed.
+#   var completedFutures = 0
+#   let totalFutures = len(futs)
+#   var retFuture = newFuture[void]("asyncdispatch.all()")
+#   for fut in futs:
+#     fut.addCallback proc (data: pointer) =
+#       inc(completedFutures)
+#       if not retFuture.finished:
+#         if completedFutures == totalFutures:
+#           retFuture.complete()
+#   if totalFutures == 0:
+#     retFuture.complete()
+#   return retFuture
+
+proc all*[T](futs: varargs[Future[T]]): auto =
+  ## Returns a future which will complete once all futures in ``futs`` complete.
+  ## If the argument is empty, the returned future completes immediately.
+  ##
+  ## If the awaited futures are not ``Future[void]``, the returned future
+  ## will hold the values of all awaited futures in a sequence.
+  ##
+  ## If the awaited futures *are* ``Future[void]``, this proc returns
+  ## ``Future[void]``.
+  ##
+  ## Note, that if one of the futures in ``futs`` will fail, result of ``all()``
+  ## will also be failed with error from failed future.
   let totalFutures = len(futs)
-  var retFuture = newFuture[void]("asyncdispatch.all()")
-  for fut in futs:
-    fut.addCallback proc (data: pointer) =
-      inc(completedFutures)
-      if not retFuture.finished:
-        if completedFutures == totalFutures:
-          retFuture.complete()
-  if totalFutures == 0:
-    retFuture.complete()
-  return retFuture
+  var completedFutures = 0
 
-# # ZAH: The return type here could be a tuple
-# # This will enable waiting a heterogenous collection of futures.
-# proc all*[T](futs: varargs[Future[T]]): auto =
-#   ## Returns a future which will complete once
-#   ## all futures in ``futs`` complete.
-#   ## If the argument is empty, the returned future completes immediately.
-#   ##
-#   ## If the awaited futures are not ``Future[void]``, the returned future
-#   ## will hold the values of all awaited futures in a sequence.
-#   ##
-#   ## If the awaited futures *are* ``Future[void]``,
-#   ## this proc returns ``Future[void]``.
+  # Because we can't capture varargs[T] in closures we need to create copy.
+  var nfuts = @futs
 
-#   when T is void:
-#     var
-#       retFuture = newFuture[void]("asyncdispatch.all")
-#       completedFutures = 0
-
-#     let totalFutures = len(futs)
-
-#     for fut in futs:
-#       GC_ref(fut)
-#       fut.addCallback proc (data: pointer) =
-#         var fut = cast[FutureBase](data)
-#         inc(completedFutures)
-#         if not retFuture.finished:
-#           if fut.failed:
-#             retFuture.fail(fut.error)
-#           else:
-#             if completedFutures == totalFutures:
-#               retFuture.complete()
-
-#     if totalFutures == 0:
-#       retFuture.complete()
-
-#     return retFuture
-
-#   else:
-#     var
-#       retFuture = newFuture[seq[T]]("asyncdispatch.all")
-#       retValues = newSeq[T](len(futs))
-#       completedFutures = 0
-
-#     for i, fut in futs:
-#       proc setCallback(i: int) =
-#         GC_ref(fut)
-#         fut.addCallback proc (data: pointer) =
-#           var fut = cast[Future[T]](data)
-#           inc(completedFutures)
-#           if not retFuture.finished:
-#             if fut.failed:
-#               retFuture.fail(fut.error)
-#               GC_unref(fut)
-#             else:
-#               retValues[i] = fut.read()
-#               GC_unref(fut)
-#               if completedFutures == len(retValues):
-#                 retFuture.complete(retValues)
-
-#       setCallback(i)
-
-#     if retValues.len == 0:
-#       retFuture.complete(retValues)
-
-#     return retFuture
+  when T is void:
+    var retFuture = newFuture[void]("asyncdispatch.all(void)")
+    for fut in nfuts:
+      fut.addCallback proc (data: pointer) =
+        inc(completedFutures)
+        if not retFuture.finished:
+          if completedFutures == totalFutures:
+            for nfut in nfuts:
+              if nfut.failed:
+                retFuture.fail(nfut.error)
+                break
+            if not retFuture.failed:
+              retFuture.complete()
+    return retFuture
+  else:
+    var retFuture = newFuture[seq[T]]("asyncdispatch.all(T)")
+    var retValues = newSeq[T](totalFutures)
+    for fut in nfuts:
+      fut.addCallback proc (data: pointer) =
+        inc(completedFutures)
+        if not retFuture.finished:
+          if completedFutures == totalFutures:
+            for k, nfut in nfuts:
+              if nfut.failed:
+                retFuture.fail(nfut.error)
+                break
+              else:
+                retValues[k] = nfut.read()
+            if not retFuture.failed:
+              retFuture.complete(retValues)
+    return retFuture

@@ -137,130 +137,328 @@ proc test5(): int =
 proc testAllVarargs(): int =
   var completedFutures = 0
 
-  proc client1() {.async.} =
+  proc vlient1() {.async.} =
     await sleepAsync(100)
     inc(completedFutures)
 
-  proc client2() {.async.} =
+  proc vlient2() {.async.} =
     await sleepAsync(200)
     inc(completedFutures)
 
-  proc client3() {.async.} =
+  proc vlient3() {.async.} =
     await sleepAsync(300)
     inc(completedFutures)
 
-  proc client4() {.async.} =
+  proc vlient4() {.async.} =
     await sleepAsync(400)
     inc(completedFutures)
 
-  proc client5() {.async.} =
+  proc vlient5() {.async.} =
     await sleepAsync(500)
     inc(completedFutures)
 
-  proc client1f() {.async.} =
+  proc vlient1f() {.async.} =
     await sleepAsync(100)
     inc(completedFutures)
     if true:
       raise newException(ValueError, "")
 
-  proc client2f() {.async.} =
+  proc vlient2f() {.async.} =
+    await sleepAsync(100)
+    inc(completedFutures)
+    if true:
+      raise newException(ValueError, "")
+
+  proc vlient3f() {.async.} =
+    await sleepAsync(100)
+    inc(completedFutures)
+    if true:
+      raise newException(ValueError, "")
+
+  proc vlient4f() {.async.} =
+    await sleepAsync(100)
+    inc(completedFutures)
+    if true:
+      raise newException(ValueError, "")
+
+  proc vlient5f() {.async.} =
+    await sleepAsync(100)
+    inc(completedFutures)
+    if true:
+      raise newException(ValueError, "")
+
+  proc client1(): Future[int] {.async.} =
+    await sleepAsync(100)
+    inc(completedFutures)
+    result = 1
+
+  proc client2(): Future[int] {.async.} =
+    await sleepAsync(200)
+    inc(completedFutures)
+    result = 1
+
+  proc client3(): Future[int] {.async.} =
+    await sleepAsync(300)
+    inc(completedFutures)
+    result = 1
+
+  proc client4(): Future[int] {.async.} =
+    await sleepAsync(400)
+    inc(completedFutures)
+    result = 1
+
+  proc client5(): Future[int] {.async.} =
+    await sleepAsync(500)
+    inc(completedFutures)
+    result = 1
+
+  proc client1f(): Future[int] {.async.} =
+    await sleepAsync(100)
+    inc(completedFutures)
+    if true:
+      raise newException(ValueError, "")
+
+  proc client2f(): Future[int] {.async.} =
     await sleepAsync(200)
     inc(completedFutures)
     if true:
       raise newException(ValueError, "")
 
-  proc client3f() {.async.} =
+  proc client3f(): Future[int] {.async.} =
     await sleepAsync(300)
     inc(completedFutures)
     if true:
       raise newException(ValueError, "")
 
-  proc client4f() {.async.} =
+  proc client4f(): Future[int] {.async.} =
     await sleepAsync(400)
     inc(completedFutures)
     if true:
       raise newException(ValueError, "")
 
-  proc client5f() {.async.} =
+  proc client5f(): Future[int] {.async.} =
     await sleepAsync(500)
     inc(completedFutures)
     if true:
       raise newException(ValueError, "")
 
-  waitFor(all(client1(), client1f(),
-              client2(), client2f(),
-              client3(), client3f(),
-              client4(), client4f(),
-              client5(), client5f()))
-  result = completedFutures
+  waitFor(all(vlient1(), vlient2(), vlient3(), vlient4(), vlient5()))
+  # 5 completed futures = 5
+  result += completedFutures
+  completedFutures = 0
+  try:
+    waitFor(all(vlient1(), vlient1f(),
+                vlient2(), vlient2f(),
+                vlient3(), vlient3f(),
+                vlient4(), vlient4f(),
+                vlient5(), vlient5f()))
+    result -= 10000
+  except:
+    discard
+  # 10 completed futures = 10
+  result += completedFutures
+
+  completedFutures = 0
+  var res = waitFor(all(client1(), client2(), client3(), client4(), client5()))
+  for item in res:
+    result += item
+  # 5 completed futures + 5 values = 10
+  result += completedFutures
+
+  completedFutures = 0
+  try:
+    var res = waitFor(all(client1(), client1f(),
+                          client2(), client2f(),
+                          client3(), client3f(),
+                          client4(), client4f(),
+                          client5(), client5f()))
+    result -= 10000
+  except:
+    discard
+  # 10 completed futures = 10
+  result += completedFutures
 
 proc testAllSeq(): int =
   var completedFutures = 0
+  var vfutures = newSeq[Future[void]]()
+  var nfutures = newSeq[Future[int]]()
 
-  proc client1() {.async.} =
+  proc vlient1() {.async.} =
     await sleepAsync(100)
     inc(completedFutures)
 
-  proc client2() {.async.} =
+  proc vlient2() {.async.} =
     await sleepAsync(200)
     inc(completedFutures)
 
-  proc client3() {.async.} =
+  proc vlient3() {.async.} =
     await sleepAsync(300)
     inc(completedFutures)
 
-  proc client4() {.async.} =
+  proc vlient4() {.async.} =
     await sleepAsync(400)
     inc(completedFutures)
 
-  proc client5() {.async.} =
+  proc vlient5() {.async.} =
     await sleepAsync(500)
     inc(completedFutures)
 
-  proc client1f() {.async.} =
+  proc vlient1f() {.async.} =
     await sleepAsync(100)
     inc(completedFutures)
     if true:
       raise newException(ValueError, "")
 
-  proc client2f() {.async.} =
+  proc vlient2f() {.async.} =
+    await sleepAsync(100)
+    inc(completedFutures)
+    if true:
+      raise newException(ValueError, "")
+
+  proc vlient3f() {.async.} =
+    await sleepAsync(100)
+    inc(completedFutures)
+    if true:
+      raise newException(ValueError, "")
+
+  proc vlient4f() {.async.} =
+    await sleepAsync(100)
+    inc(completedFutures)
+    if true:
+      raise newException(ValueError, "")
+
+  proc vlient5f() {.async.} =
+    await sleepAsync(100)
+    inc(completedFutures)
+    if true:
+      raise newException(ValueError, "")
+
+  proc client1(): Future[int] {.async.} =
+    await sleepAsync(100)
+    inc(completedFutures)
+    result = 1
+
+  proc client2(): Future[int] {.async.} =
+    await sleepAsync(200)
+    inc(completedFutures)
+    result = 1
+
+  proc client3(): Future[int] {.async.} =
+    await sleepAsync(300)
+    inc(completedFutures)
+    result = 1
+
+  proc client4(): Future[int] {.async.} =
+    await sleepAsync(400)
+    inc(completedFutures)
+    result = 1
+
+  proc client5(): Future[int] {.async.} =
+    await sleepAsync(500)
+    inc(completedFutures)
+    result = 1
+
+  proc client1f(): Future[int] {.async.} =
+    await sleepAsync(100)
+    inc(completedFutures)
+    if true:
+      raise newException(ValueError, "")
+
+  proc client2f(): Future[int] {.async.} =
     await sleepAsync(200)
     inc(completedFutures)
     if true:
       raise newException(ValueError, "")
 
-  proc client3f() {.async.} =
+  proc client3f(): Future[int] {.async.} =
     await sleepAsync(300)
     inc(completedFutures)
     if true:
       raise newException(ValueError, "")
 
-  proc client4f() {.async.} =
+  proc client4f(): Future[int] {.async.} =
     await sleepAsync(400)
     inc(completedFutures)
     if true:
       raise newException(ValueError, "")
 
-  proc client5f() {.async.} =
+  proc client5f(): Future[int] {.async.} =
     await sleepAsync(500)
     inc(completedFutures)
     if true:
       raise newException(ValueError, "")
 
-  var futures = newSeq[Future[void]]()
+  vfutures.setLen(0)
   for i in 0..<100:
-    futures.add(client1())
-    futures.add(client1f())
-    futures.add(client2())
-    futures.add(client2f())
-    futures.add(client3())
-    futures.add(client3f())
-    futures.add(client4())
-    futures.add(client4f())
-    futures.add(client5())
-    futures.add(client5f())
-  waitFor(all(futures))
-  result = completedFutures
+    vfutures.add(vlient1())
+    vfutures.add(vlient2())
+    vfutures.add(vlient3())
+    vfutures.add(vlient4())
+    vfutures.add(vlient5())
+
+  waitFor(all(vfutures))
+  # 5 * 100 completed futures = 500
+  result += completedFutures
+
+  completedFutures = 0
+  vfutures.setLen(0)
+  for i in 0..<100:
+    vfutures.add(vlient1())
+    vfutures.add(vlient1f())
+    vfutures.add(vlient2())
+    vfutures.add(vlient2f())
+    vfutures.add(vlient3())
+    vfutures.add(vlient3f())
+    vfutures.add(vlient4())
+    vfutures.add(vlient4f())
+    vfutures.add(vlient5())
+    vfutures.add(vlient5f())
+
+  try:
+    waitFor(all(vfutures))
+    result -= 10000
+  except:
+    discard
+  # 10 * 100 completed futures = 1,000
+  result += completedFutures
+
+  completedFutures = 0
+  nfutures.setLen(0)
+  for i in 0..<100:
+    nfutures.add(client1())
+    nfutures.add(client2())
+    nfutures.add(client3())
+    nfutures.add(client4())
+    nfutures.add(client5())
+
+  var res = waitFor(all(nfutures))
+  for i in 0..<len(nfutures):
+    result += res[i]
+  # 5 * 100 completed futures + 5 * 100 results = 1,000
+  result += completedFutures
+
+  completedFutures = 0
+  nfutures.setLen(0)
+  for i in 0..<100:
+    nfutures.add(client1())
+    nfutures.add(client1f())
+    nfutures.add(client2())
+    nfutures.add(client2f())
+    nfutures.add(client3())
+    nfutures.add(client3f())
+    nfutures.add(client4())
+    nfutures.add(client4f())
+    nfutures.add(client5())
+    nfutures.add(client5f())
+
+  try:
+    var results = waitFor(all(nfutures))
+    result -= 10000
+  except:
+    discard
+
+  # 10 * 100 completed futures + 0 * 100 results = 1,000
+  result += completedFutures
 
 proc testAsyncDiscard(): int =
   var completedFutures = 0
@@ -343,8 +541,8 @@ when isMainModule:
     test "wait[T]() test":
       check test5() == 6
     test "all[T](varargs) test":
-      check testAllVarargs() == 10
+      check testAllVarargs() == 35
     test "all[T](seq) test":
-      check testAllSeq() == 1000
+      check testAllSeq() == 3500
     test "asyncDiscard() test":
       check testAsyncDiscard() == 10000
