@@ -513,17 +513,16 @@ proc testAsyncDiscard(): int =
     if true:
       raise newException(ValueError, "")
 
-  for i in 0..<10:
-    asyncDiscard client1()
-    asyncDiscard client1f()
-    asyncDiscard client2()
-    asyncDiscard client2f()
-    asyncDiscard client3()
-    asyncDiscard client3f()
-    asyncDiscard client4()
-    asyncDiscard client4f()
-    asyncDiscard client5()
-    asyncDiscard client5f()
+  asyncDiscard client1()
+  asyncDiscard client1f()
+  asyncDiscard client2()
+  asyncDiscard client2f()
+  asyncDiscard client3()
+  asyncDiscard client3f()
+  asyncDiscard client4()
+  asyncDiscard client4f()
+  asyncDiscard client5()
+  asyncDiscard client5f()
 
   waitFor(sleepAsync(2000))
   result = completedFutures
@@ -545,4 +544,4 @@ when isMainModule:
     test "all[T](seq) test":
       check testAllSeq() == 350
     test "asyncDiscard() test":
-      check testAsyncDiscard() == 100
+      check testAsyncDiscard() == 10
