@@ -389,7 +389,7 @@ proc testAllSeq(): int =
       raise newException(ValueError, "")
 
   vfutures.setLen(0)
-  for i in 0..<100:
+  for i in 0..<10:
     vfutures.add(vlient1())
     vfutures.add(vlient2())
     vfutures.add(vlient3())
@@ -397,12 +397,12 @@ proc testAllSeq(): int =
     vfutures.add(vlient5())
 
   waitFor(all(vfutures))
-  # 5 * 100 completed futures = 500
+  # 5 * 10 completed futures = 50
   result += completedFutures
 
   completedFutures = 0
   vfutures.setLen(0)
-  for i in 0..<100:
+  for i in 0..<10:
     vfutures.add(vlient1())
     vfutures.add(vlient1f())
     vfutures.add(vlient2())
@@ -419,12 +419,12 @@ proc testAllSeq(): int =
     result -= 10000
   except:
     discard
-  # 10 * 100 completed futures = 1,000
+  # 10 * 10 completed futures = 100
   result += completedFutures
 
   completedFutures = 0
   nfutures.setLen(0)
-  for i in 0..<100:
+  for i in 0..<10:
     nfutures.add(client1())
     nfutures.add(client2())
     nfutures.add(client3())
@@ -434,12 +434,12 @@ proc testAllSeq(): int =
   var res = waitFor(all(nfutures))
   for i in 0..<len(nfutures):
     result += res[i]
-  # 5 * 100 completed futures + 5 * 100 results = 1,000
+  # 5 * 10 completed futures + 5 * 10 results = 100
   result += completedFutures
 
   completedFutures = 0
   nfutures.setLen(0)
-  for i in 0..<100:
+  for i in 0..<10:
     nfutures.add(client1())
     nfutures.add(client1f())
     nfutures.add(client2())
@@ -457,7 +457,7 @@ proc testAllSeq(): int =
   except:
     discard
 
-  # 10 * 100 completed futures + 0 * 100 results = 1,000
+  # 10 * 10 completed futures + 0 * 10 results = 100
   result += completedFutures
 
 proc testAsyncDiscard(): int =
@@ -513,7 +513,7 @@ proc testAsyncDiscard(): int =
     if true:
       raise newException(ValueError, "")
 
-  for i in 0..<1000:
+  for i in 0..<10:
     asyncDiscard client1()
     asyncDiscard client1f()
     asyncDiscard client2()
@@ -543,6 +543,6 @@ when isMainModule:
     test "all[T](varargs) test":
       check testAllVarargs() == 35
     test "all[T](seq) test":
-      check testAllSeq() == 3500
+      check testAllSeq() == 350
     test "asyncDiscard() test":
-      check testAsyncDiscard() == 10000
+      check testAsyncDiscard() == 100
