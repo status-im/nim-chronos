@@ -462,6 +462,10 @@ proc all*[T](futs: varargs[Future[T]]): auto =
                 break
             if not retFuture.failed:
               retFuture.complete()
+
+    if len(nfuts) == 0:
+      retFuture.complete()
+
     return retFuture
   else:
     var retFuture = newFuture[seq[T]]("asyncdispatch.all(T)")
@@ -479,4 +483,8 @@ proc all*[T](futs: varargs[Future[T]]): auto =
                 retValues[k] = nfut.read()
             if not retFuture.failed:
               retFuture.complete(retValues)
+
+    if len(nfuts) == 0:
+      retFuture.complete(retValues)
+
     return retFuture
