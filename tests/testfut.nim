@@ -527,6 +527,11 @@ proc testAsyncDiscard(): int =
   waitFor(sleepAsync(2000))
   result = completedFutures
 
+proc testAllZero(): bool =
+  var tseq = newSeq[Future[int]]()
+  var fut = all(tseq)
+  result = fut.finished
+
 when isMainModule:
   suite "Future[T] behavior test suite":
     test "Async undefined behavior (#7758) test":
@@ -543,5 +548,7 @@ when isMainModule:
       check testAllVarargs() == 35
     test "all[T](seq) test":
       check testAllSeq() == 350
+    test "all[T](zero) test":
+      check testAllZero() == true
     test "asyncDiscard() test":
       check testAsyncDiscard() == 10
