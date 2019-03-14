@@ -144,7 +144,7 @@ proc complete*[T](future: Future[T], val: T) =
   ## Completes ``future`` with value ``val``.
   #doAssert(not future.finished, "Future already finished, cannot finish twice.")
   checkFinished(future)
-  doAssert(future.error == nil)
+  doAssert(isNil(future.error))
   future.value = val
   future.finished = true
   future.callbacks.call()
@@ -153,7 +153,7 @@ proc complete*(future: Future[void]) =
   ## Completes a void ``future``.
   #doAssert(not future.finished, "Future already finished, cannot finish twice.")
   checkFinished(future)
-  doAssert(future.error == nil)
+  doAssert(isNil(future.error))
   future.finished = true
   future.callbacks.call()
 
@@ -161,7 +161,7 @@ proc complete*[T](future: FutureVar[T]) =
   ## Completes a ``FutureVar``.
   template fut: untyped = Future[T](future)
   checkFinished(fut)
-  doAssert(fut.error == nil)
+  doAssert(isNil(fut.error))
   fut.finished = true
   fut.callbacks.call()
 
@@ -171,7 +171,7 @@ proc complete*[T](future: FutureVar[T], val: T) =
   ## Any previously stored value will be overwritten.
   template fut: untyped = Future[T](future)
   checkFinished(fut)
-  doAssert(fut.error.isNil())
+  doAssert(isNil(fut.error))
   fut.finished = true
   fut.value = val
   fut.callbacks.call()
@@ -197,7 +197,7 @@ proc addCallback*(future: FutureBase, cb: CallbackFunc, udata: pointer = nil) =
   ## Adds the callbacks proc to be called when the future completes.
   ##
   ## If future has already completed then ``cb`` will be called immediately.
-  doAssert cb != nil
+  doAssert(not isNil(cb))
   if future.finished:
     # ZAH: it seems that the Future needs to know its associated Dispatcher
     callSoon(cb, udata)
@@ -213,7 +213,7 @@ proc addCallback*[T](future: Future[T], cb: CallbackFunc) =
 
 proc removeCallback*(future: FutureBase, cb: CallbackFunc,
                      udata: pointer = nil) =
-  doAssert cb != nil
+  doAssert(not isNil(cb))
   let acb = AsyncCallback(function: cb, udata: udata)
   future.callbacks.remove acb
 
@@ -257,7 +257,7 @@ proc `$`*(entries: seq[StackTraceEntry]): string =
   # Find longest filename & line number combo for alignment purposes.
   var longestLeft = 0
   for entry in entries:
-    if entry.procName.isNil: continue
+    if isNil(entry.procName): continue
 
     let left = $entry.filename & $entry.line
     if left.len > longestLeft:
@@ -266,7 +266,7 @@ proc `$`*(entries: seq[StackTraceEntry]): string =
   var indent = 2
   # Format the entries.
   for entry in entries:
-    if entry.procName.isNil:
+    if isNil(entry.procName):
       if entry.line == -10:
         result.add(spaces(indent) & "#[\n")
         indent.inc(2)
@@ -319,7 +319,7 @@ proc read*[T](future: Future[T] | FutureVar[T]): T =
   let fut = Future[T](future)
   {.pop.}
   if fut.finished:
-    if fut.error != nil:
+    if not isNil(fut.error):
       injectStacktrace(fut)
       raise fut.error
     when T isnot void:
@@ -333,7 +333,7 @@ proc readError*[T](future: Future[T]): ref Exception =
   ##
   ## An ``ValueError`` exception will be thrown if no exception exists
   ## in the specified Future.
-  if future.error != nil: return future.error
+  if not isNil(future.error): return future.error
   else:
     raise newException(ValueError, "No error in future.")
 
@@ -355,14 +355,14 @@ proc finished*(future: FutureBase | FutureVar): bool =
 
 proc failed*(future: FutureBase): bool =
   ## Determines whether ``future`` completed with an error.
-  return future.error != nil
+  return (not isNil(future.error))
 
 proc asyncCheck*[T](future: Future[T]) =
   ## Sets a callback on ``future`` which raises an exception if the future
   ## finished with an error.
   ##
   ## This should be used instead of ``discard`` to discard void futures.
-  doAssert(not future.isNil, "Future is nil")
+  doAssert(not isNil(future), "Future is nil")
   proc cb(data: pointer) =
     if future.failed:
       injectStacktrace(future)
