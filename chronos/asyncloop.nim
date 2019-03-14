@@ -290,7 +290,7 @@ when defined(windows) or defined(nimdoc):
   proc setGlobalDispatcher*(disp: PDispatcher) =
     ## Set current thread's dispatcher instance to ``disp``.
     if not gDisp.isNil:
-      assert gDisp.callbacks.len == 0
+      doAssert gDisp.callbacks.len == 0
     gDisp = disp
     initCallSoonProc()
 
@@ -465,7 +465,7 @@ else:
   proc setGlobalDispatcher*(disp: PDispatcher) =
     ## Set current thread's dispatcher instance to ``disp``.
     if not gDisp.isNil:
-      assert gDisp.callbacks.len == 0
+      doAssert gDisp.callbacks.len == 0
     gDisp = disp
     initCallSoonProc()
 
@@ -746,7 +746,7 @@ include asyncmacro2
 proc callSoon(cbproc: CallbackFunc, data: pointer = nil) =
   ## Schedule `cbproc` to be called as soon as possible.
   ## The callback is called when control returns to the event loop.
-  assert cbproc != nil
+  doAssert cbproc != nil
   let acb = AsyncCallback(function: cbproc, udata: data)
   getGlobalDispatcher().callbacks.addLast(acb)
 

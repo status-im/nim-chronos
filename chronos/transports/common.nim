@@ -421,7 +421,7 @@ proc resolveTAddress*(address: string, port: Port,
   ##
   ## If hostname address is detected, then network address translation via DNS
   ## will be performed.
-  assert(family in {AddressFamily.IPv4, AddressFamily.IPv6})
+  doAssert(family in {AddressFamily.IPv4, AddressFamily.IPv6})
 
   result = newSeq[TransportAddress]()
   var domain = if family == AddressFamily.IPv4: Domain.AF_INET else:

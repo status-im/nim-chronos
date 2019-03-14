@@ -198,9 +198,9 @@ when defined(windows):
                                   child: DatagramTransport,
                                   bufferSize: int): DatagramTransport =
     var localSock: AsyncFD
-    assert(remote.family == local.family)
-    assert(not isNil(cbproc))
-    assert(remote.family in {AddressFamily.IPv4, AddressFamily.IPv6})
+    doAssert(remote.family == local.family)
+    doAssert(not isNil(cbproc))
+    doAssert(remote.family in {AddressFamily.IPv4, AddressFamily.IPv6})
 
     if isNil(child):
       result = DatagramTransport()
@@ -376,8 +376,8 @@ else:
                                   child: DatagramTransport = nil,
                                   bufferSize: int): DatagramTransport =
     var localSock: AsyncFD
-    assert(remote.family == local.family)
-    assert(not isNil(cbproc))
+    doAssert(remote.family == local.family)
+    doAssert(not isNil(cbproc))
 
     if isNil(child):
       result = DatagramTransport()

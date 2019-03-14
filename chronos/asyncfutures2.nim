@@ -143,18 +143,18 @@ proc remove(callbacks: var Deque[AsyncCallback], item: AsyncCallback) =
 
 proc complete*[T](future: Future[T], val: T) =
   ## Completes ``future`` with value ``val``.
-  #assert(not future.finished, "Future already finished, cannot finish twice.")
+  #doAssert(not future.finished, "Future already finished, cannot finish twice.")
   checkFinished(future)
-  assert(future.error == nil)
+  doAssert(future.error == nil)
   future.value = val
   future.finished = true
   future.callbacks.call()
 
 proc complete*(future: Future[void]) =
   ## Completes a void ``future``.
-  #assert(not future.finished, "Future already finished, cannot finish twice.")
+  #doAssert(not future.finished, "Future already finished, cannot finish twice.")
   checkFinished(future)
-  assert(future.error == nil)
+  doAssert(future.error == nil)
   future.finished = true
   future.callbacks.call()
 
@@ -162,7 +162,7 @@ proc complete*[T](future: FutureVar[T]) =
   ## Completes a ``FutureVar``.
   template fut: untyped = Future[T](future)
   checkFinished(fut)
-  assert(fut.error == nil)
+  doAssert(fut.error == nil)
   fut.finished = true
   fut.callbacks.call()
 
@@ -172,14 +172,14 @@ proc complete*[T](future: FutureVar[T], val: T) =
   ## Any previously stored value will be overwritten.
   template fut: untyped = Future[T](future)
   checkFinished(fut)
-  assert(fut.error.isNil())
+  doAssert(fut.error.isNil())
   fut.finished = true
   fut.value = val
   fut.callbacks.call()
 
 proc fail*[T](future: Future[T], error: ref Exception) =
   ## Completes ``future`` with ``error``.
-  #assert(not future.finished, "Future already finished, cannot finish twice.")
+  #doAssert(not future.finished, "Future already finished, cannot finish twice.")
   checkFinished(future)
   future.finished = true
   future.error = error
@@ -198,7 +198,7 @@ proc addCallback*(future: FutureBase, cb: CallbackFunc, udata: pointer = nil) =
   ## Adds the callbacks proc to be called when the future completes.
   ##
   ## If future has already completed then ``cb`` will be called immediately.
-  assert cb != nil
+  doAssert cb != nil
   if future.finished:
     # ZAH: it seems that the Future needs to know its associated Dispatcher
     callSoon(cb, udata)
@@ -214,7 +214,7 @@ proc addCallback*[T](future: Future[T], cb: CallbackFunc) =
 
 proc removeCallback*(future: FutureBase, cb: CallbackFunc,
                      udata: pointer = nil) =
-  assert cb != nil
+  doAssert cb != nil
   let acb = AsyncCallback(function: cb, udata: udata)
   future.callbacks.remove acb
 
@@ -363,7 +363,7 @@ proc asyncCheck*[T](future: Future[T]) =
   ## finished with an error.
   ##
   ## This should be used instead of ``discard`` to discard void futures.
-  assert(not future.isNil, "Future is nil")
+  doAssert(not future.isNil, "Future is nil")
   proc cb(data: pointer) =
     if future.failed:
       injectStacktrace(future)

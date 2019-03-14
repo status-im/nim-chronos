@@ -148,7 +148,7 @@ proc swarmWorker1(address: TransportAddress): Future[int] {.async.} =
   for i in 0..<MessagesCount:
     var data = "REQUEST" & $i & "\r\n"
     var res = await transp.write(cast[pointer](addr data[0]), len(data))
-    assert(res == len(data))
+    doAssert(res == len(data))
     var ans = await transp.readLine()
     doAssert(ans.startsWith("ANSWER"))
     var numstr = ans[6..^1]
