@@ -415,22 +415,6 @@ proc `or`*[T, Y](fut1: Future[T], fut2: Future[Y]): Future[void] =
   fut2.callback = cb
   return retFuture
 
-# proc all*[T](futs: varargs[Future[T]]): Future[void] =
-#   ## Returns a ``Future[void]`` which completes only when all Future[T] passed
-#   ## as arguments will be completed or failed.
-#   var completedFutures = 0
-#   let totalFutures = len(futs)
-#   var retFuture = newFuture[void]("asyncdispatch.all()")
-#   for fut in futs:
-#     fut.addCallback proc (data: pointer) =
-#       inc(completedFutures)
-#       if not retFuture.finished:
-#         if completedFutures == totalFutures:
-#           retFuture.complete()
-#   if totalFutures == 0:
-#     retFuture.complete()
-#   return retFuture
-
 proc all*[T](futs: varargs[Future[T]]): auto =
   ## Returns a future which will complete once all futures in ``futs`` complete.
   ## If the argument is empty, the returned future completes immediately.
