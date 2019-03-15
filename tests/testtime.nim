@@ -49,4 +49,4 @@ when isMainModule:
       check (res >= 100) and (res <= 1000)
     test $TimersCount & " timers with 1000ms timeout":
       var res = waitFor(test(1000))
-      check (res >= 1000) and (res <= 2000)
+      check (res >= 1000) and (res <= 5000)
