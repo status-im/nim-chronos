@@ -61,15 +61,15 @@ when defined(windows):
       ## Procedure's resolution is millisecond.
       var res: uint64
       QueryPerformanceCounter(res)
-      when sizeof(int) == 4:
-        result = (res div queryFrequencyN) * 1_000
-      else:
-        result = (res * 1_000) div queryFrequencyM
+      result = res div queryFrequencyM
 
     proc setupQueryFrequence() =
       var freq: uint64
       QueryPerformanceFrequency(freq)
-      queryFrequencyM = freq
+      if freq < 1000:
+        queryFrequencyM = freq
+      else:
+        queryFrequencyM = freq div 1_000
       queryFrequencyN = 1_000_000_000'u64 div freq
 
     setupQueryFrequence()

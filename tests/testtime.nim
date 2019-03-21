@@ -42,7 +42,7 @@ proc test(timeout: int): Future[int64] {.async.} =
 proc testTimer(): bool =
   var a1 = fastEpochTime()
   var a2 = fastEpochTimeNano()
-  os.sleep(1000)
+  waitFor(sleepAsync(1000))
   var b1 = fastEpochTime()
   var b2 = fastEpochTimeNano()
   var r1 = (b1 - a1) >= uint64(1 * 1_000)
