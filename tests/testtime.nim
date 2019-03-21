@@ -47,9 +47,13 @@ proc testTimer(): bool =
   let b2 = fastEpochTimeNano()
   let d1 = b1 - a1
   let d2 = b2 - a2
-  var r1 = (d1 >= uint64(1 * 1_000)) and (d1 <= uint64(2 * 1_000))
+  var r1 = (d1 >= uint64(1 * 1_000)) and (d1 <= uint64(3 * 1_000))
   var r2 = (d2 >= uint64(1 * 1_000_000_000)) and
-           (d2 <= uint64(2 * 1_000_000_000))
+           (d2 <= uint64(3 * 1_000_000_000))
+  if not r1:
+    echo "d1 = ", d1
+  if not r2:
+    echo "d2 = ", d2
   result = r1 and r2
 
 when isMainModule:
