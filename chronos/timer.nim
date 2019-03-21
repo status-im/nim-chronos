@@ -12,14 +12,20 @@
 ## milliseconds resolution.
 ##
 ## Timer supports two types of clocks:
-## ``fast`` uses the most fast OS primitive to obtain wall clock time.
-## ``mono`` uses monotonic wall clack time (default)
+## ``system`` uses the most fast OS primitive to obtain wall clock time.
+## ``mono`` uses monotonic clock time (default).
 ##
-## You can specify which timer you want to use ``-d:asyncTimer=<fast/mono>``.
+## ``system`` clock is affected by discontinuous jumps in the system time. This
+## clock is significantly faster then ``mono`` clock in most of the cases.
+##
+## ``mono`` clock is not affected by discontinuous jumps in the system time.
+## This clock is slower then ``system`` clock.
+##
+## You can specify which timer you want to use ``-d:asyncTimer=<system/mono>``.
 const asyncTimer* {.strdefine.} = "mono"
 
 when defined(windows):
-  when asyncTimer == "fast":
+  when asyncTimer == "system":
     from winlean import DWORD, getSystemTimeAsFileTime, FILETIME
 
     proc fastEpochTime*(): uint64 {.inline.} =
@@ -55,7 +61,10 @@ when defined(windows):
       ## Procedure's resolution is millisecond.
       var res: uint64
       QueryPerformanceCounter(res)
-      result = (res * 1_000) div queryFrequencyM
+      when sizeof(int) == 4:
+        result = (res div queryFrequencyN) * 1_000
+      else:
+        result = (res * 1_000) div queryFrequencyM
 
     proc setupQueryFrequence() =
       var freq: uint64
@@ -67,7 +76,7 @@ when defined(windows):
 
 elif defined(macosx):
 
-  when asyncTimer == "fast":
+  when asyncTimer == "system":
     from posix import Timeval
 
     proc posix_gettimeofday(tp: var Timeval, unused: pointer = nil) {.
@@ -106,7 +115,7 @@ elif defined(macosx):
 elif defined(posix):
   from posix import clock_gettime, Timespec, CLOCK_REALTIME, CLOCK_MONOTONIC
 
-  when asyncTimer == "fast":
+  when asyncTimer == "system":
     proc fastEpochTime*(): uint64 {.inline.} =
       ## Procedure's resolution is millisecond.
       var t: Timespec

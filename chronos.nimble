@@ -33,7 +33,7 @@ task test, "Run all tests":
   ]
 
   var timerCommands = @[
-    " -d:asyncTimer=fast",
+    " -d:asyncTimer=system",
     " -d:asyncTimer=mono"
   ]
 
