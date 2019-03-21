@@ -10,7 +10,7 @@ import unittest
 import ../chronos
 
 proc testFuture1(): Future[int] {.async.} =
-  await sleepAsync(100)
+  await sleepAsync(1)
 
 proc testFuture2(): Future[int] {.async.} =
   return 1

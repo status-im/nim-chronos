@@ -40,13 +40,16 @@ proc test(timeout: int): Future[int64] {.async.} =
   result = sum div 10'i64
 
 proc testTimer(): bool =
-  var a1 = fastEpochTime()
-  var a2 = fastEpochTimeNano()
+  let a1 = fastEpochTime()
+  let a2 = fastEpochTimeNano()
   waitFor(sleepAsync(1000))
-  var b1 = fastEpochTime()
-  var b2 = fastEpochTimeNano()
-  var r1 = (b1 - a1) >= uint64(1 * 1_000)
-  var r2 = (b2 - a2) >= uint64(1 * 1_000_000_000)
+  let b1 = fastEpochTime()
+  let b2 = fastEpochTimeNano()
+  let d1 = b1 - a1
+  let d2 = b2 - a2
+  var r1 = (d1 >= uint64(1 * 1_000)) and (d1 <= uint64(2 * 1_000))
+  var r2 = (d2 >= uint64(1 * 1_000_000_000)) and
+           (d2 <= uint64(2 * 1_000_000_000))
   result = r1 and r2
 
 when isMainModule:
