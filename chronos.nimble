@@ -9,26 +9,45 @@ skipDirs      = @["tests"]
 
 requires "nim > 0.18.0"
 
-task test, "Run all tests":
-  for tfile in @[
-      "testsync",
-      "testsoon",
-      "testtime",
-      "testfut",
-      "testsignal",
-      "testaddress",
-      "testdatagram",
-      "teststream",
-      "testserver",
-      "testbugs",
-    ]:
-    for cmd in @[
-        "nim c -r -d:useSysAssert -d:useGcAssert tests/" & tfile,
-        "nim c -r tests/" & tfile,
-        #"nim c -r --gc:markAndSweep tests/" & tfile,
-        "nim c -r -d:release tests/" & tfile
-      ]:
-      echo "\n" & cmd
-      exec cmd
-      rmFile("tests/" & tfile.toExe())
+import ospaths
 
+task test, "Run all tests":
+
+  var testFiles = @[
+    "testsync",
+    "testsoon",
+    "testtime",
+    "testfut",
+    "testsignal",
+    "testaddress",
+    "testdatagram",
+    "teststream",
+    "testserver",
+    "testbugs",
+  ]
+
+  var testCommands = @[
+    "nim c -r -d:useSysAssert -d:useGcAssert",
+    "nim c -r",
+    "nim c -r -d:release"
+  ]
+
+  var timerCommands = @[
+    " -d:asyncTimer=fast",
+    " -d:asyncTimer=mono"
+  ]
+
+  for tfile in testFiles:
+    if tfile == "testtime":
+      for cmd in testCommands:
+        for def in timerCommands:
+          var commandLine = (cmd & def & " tests") / tfile
+          echo "\n" & commandLine
+          exec commandLine
+          rmFile("tests" / tfile.toExe())
+    else:
+      for cmd in testCommands:
+        var commandLine = (cmd & " tests") / tfile
+        echo "\n" & commandLine
+        exec commandLine
+        rmFile("tests" / tfile.toExe())

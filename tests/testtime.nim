@@ -6,7 +6,7 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 
-import unittest
+import os, unittest
 import ../chronos, ../chronos/timer
 
 const TimersCount = 10
@@ -39,8 +39,20 @@ proc test(timeout: int): Future[int64] {.async.} =
     sum = sum + time
   result = sum div 10'i64
 
+proc testTimer(): bool =
+  var a1 = fastEpochTime()
+  var a2 = fastEpochTimeNano()
+  os.sleep(1000)
+  var b1 = fastEpochTime()
+  var b2 = fastEpochTimeNano()
+  var r1 = (b1 - a1) >= uint64(1 * 1_000)
+  var r2 = (b2 - a2) >= uint64(1 * 1_000_000_000)
+  result = r1 and r2
+
 when isMainModule:
   suite "Asynchronous timers test suite":
+    test "Timer reliability test [" & asyncTimer & "]":
+      check testTimer() == true
     test $TimersCount & " timers with 10ms timeout":
       var res = waitFor(test(10))
       check (res >= 10) and (res <= 100)
