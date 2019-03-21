@@ -40,21 +40,11 @@ proc test(timeout: int): Future[int64] {.async.} =
   result = sum div 10'i64
 
 proc testTimer(): bool =
-  let a1 = fastEpochTime()
-  let a2 = fastEpochTimeNano()
+  let a = fastEpochTime()
   waitFor(sleepAsync(1000))
-  let b1 = fastEpochTime()
-  let b2 = fastEpochTimeNano()
-  let d1 = b1 - a1
-  let d2 = b2 - a2
-  var r1 = (d1 >= uint64(1 * 1_000)) and (d1 <= uint64(3 * 1_000))
-  var r2 = (d2 >= uint64(1 * 1_000_000_000)) and
-           (d2 <= uint64(3 * 1_000_000_000))
-  if not r1:
-    echo "d1 = ", d1
-  if not r2:
-    echo "d2 = ", d2
-  result = r1 and r2
+  let b = fastEpochTime()
+  let d = b - a
+  result = (d >= 1_000'u64) and (d <= 2_000'u64)
 
 when isMainModule:
   suite "Asynchronous timers test suite":

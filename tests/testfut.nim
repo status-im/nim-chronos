@@ -18,7 +18,7 @@ proc testFuture2(): Future[int] {.async.} =
 proc testFuture3(): Future[int] {.async.} =
   result = await testFuture2()
 
-proc testFuture4(): Future[int] {.async.} =
+proc testFuture100(): Future[int] {.async.} =
   await sleepAsync(100)
 
 proc testFuture4(): Future[int] {.async.} =
@@ -68,7 +68,7 @@ proc testFuture4(): Future[int] {.async.} =
   ## Test for future which cannot be completed in timeout period
   result = 0
   try:
-    var res = await wait(testFuture4(), 50)
+    var res = await wait(testFuture100(), 50)
   except AsyncTimeoutError:
     result = 5
 
@@ -77,7 +77,7 @@ proc testFuture4(): Future[int] {.async.} =
 
   ## Test for future which will be completed before timeout exceeded.
   try:
-    var res = await wait(testFuture4(), 500)
+    var res = await wait(testFuture100(), 500)
     result = 6
   except:
     result = -6
