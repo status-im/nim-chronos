@@ -86,6 +86,8 @@ proc test1(): bool =
   var fut = testFuture1()
   poll()
   poll()
+  if not fut.finished:
+    poll()
   result = fut.finished
 
 proc test2(): bool =
