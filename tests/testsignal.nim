@@ -20,7 +20,7 @@ when not defined(windows):
     removeSignal(int(cdata.fd))
 
   proc asyncProc() {.async.} =
-    await sleepAsync(500)
+    await sleepAsync(500.milliseconds)
 
   proc test(signal, value: int): bool =
     discard addSignal(signal, signalProc, cast[pointer](value))
