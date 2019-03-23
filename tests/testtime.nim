@@ -37,7 +37,7 @@ proc test(timeout: Duration): Future[Duration] {.async.} =
   for i in 0..<TimersCount:
     var time = workers[i].read()
     sum = sum + time
-  result = sum div 10.nanoseconds
+  result = sum div 10'i64
 
 proc testTimer(): bool =
   let a = Moment.now()

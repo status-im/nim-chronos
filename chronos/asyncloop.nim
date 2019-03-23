@@ -199,10 +199,7 @@ template processTimersGetTimeout(loop, timeout: untyped) =
       loop.callbacks.addLast(loop.timers.pop().function)
       dec(count)
     if count > 0:
-      when defined(windows):
-        timeout = cast[DWORD]((lastFinish - curTime).getTimestamp())
-      else:
-        timeout = (lastFinish - curTime).getTimestamp()
+      timeout = (lastFinish - curTime).getAsyncTimestamp()
 
   if timeout == 0:
     if len(loop.callbacks) == 0:
@@ -694,7 +691,7 @@ proc sleepAsync*(ms: Duration): Future[void] =
   proc completion(data: pointer) =
     if not retFuture.finished:
       retFuture.complete()
-  addTimer(Duration.fromNow(ms), completion, cast[pointer](retFuture))
+  addTimer(Moment.fromNow(ms), completion, cast[pointer](retFuture))
   return retFuture
 
 proc sleepAsync*(ms: int): Future[void] {.
@@ -717,7 +714,7 @@ proc withTimeout*[T](fut: Future[T], timeout: Duration): Future[bool] =
       else:
         if not retFuture.finished:
           retFuture.complete(true)
-  addTimer(Duration.fromNow(timeout), continuation, nil)
+  addTimer(Moment.fromNow(timeout), continuation, nil)
   fut.addCallback(continuation)
   return retFuture
 
@@ -745,7 +742,7 @@ proc wait*[T](fut: Future[T], timeout = InfiniteDuration): Future[T] =
             retFuture.complete(fut.read())
   if timeout.isInfinite():
     retFuture = fut
-  elif timeout.isOver():
+  elif timeout.isZero():
     if fut.finished:
       if fut.failed:
         retFuture.fail(fut.error)
@@ -754,7 +751,7 @@ proc wait*[T](fut: Future[T], timeout = InfiniteDuration): Future[T] =
     else:
       retFuture.fail(newException(AsyncTimeoutError, ""))
   else:
-    addTimer(Duration.fromNow(timeout), continuation, nil)
+    addTimer(Moment.fromNow(timeout), continuation, nil)
     fut.addCallback(continuation)
   return retFuture
 

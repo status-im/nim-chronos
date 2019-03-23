@@ -25,8 +25,10 @@
 const asyncTimer* {.strdefine.} = "mono"
 
 when defined(windows):
+  from winlean import DWORD
+
   when asyncTimer == "system":
-    from winlean import DWORD, getSystemTimeAsFileTime, FILETIME
+    from winlean import getSystemTimeAsFileTime, FILETIME
 
     proc fastEpochTime*(): uint64 {.
          inline, deprecated: "Use Moment.now()".} =
@@ -161,12 +163,19 @@ else:
 
 type
   Moment* = object
+    ## A Moment in time. Its value has no direct meaning, but can be compared
+    ## with other Moments. Moments are captured using a monotonically
+    ## non-decreasing clock (by default).
     value: int64
 
   Duration* = object
+    ## A Duration is the interval between to points in time.
     value: int64
 
-  DurationOrMoment* = Duration | Moment
+when sizeof(int) == 4:
+  type SomeIntegerI64* = SomeSignedInt|uint|uint8|uint16|uint32
+else:
+  type SomeIntegerI64* = SomeSignedInt|uint8|uint16|uint32
 
 func `+`*(a: Duration, b: Duration): Duration {.inline.} =
   ## Duration + Duration = Duration
@@ -254,54 +263,60 @@ func `>=`*(a, b: Moment): bool {.inline.} =
   ## Returns ``true`` if ``a`` bigger or equal ``b``.
   result = (a.value >= b.value)
 
-func `*`*(a, b: Duration): Duration {.inline.} =
-  result.value = a.value * b.value
+func `*`*(a: Duration, b: SomeIntegerI64): Duration {.inline.} =
+  ## Returns Duration multiplied by scalar integer.
+  result.value = a.value * cast[int64](b)
 
-func `div`*(a, b: Duration): Duration {.inline.} =
-  result.value = a.value div b.value
+func `*`*(a: SomeIntegerI64, b: Duration): Duration {.inline.} =
+  ## Returns Duration multiplied by scalar integer.
+  result.value = cast[int64](a) * b.value
+
+func `div`*(a: Duration, b: SomeIntegerI64): Duration {.inline.} =
+  ## Return Duration which is result of Duration and scalar integer.
+  result.value = a.value div cast[int64](b)
 
 const
   Nanosecond* = Duration(value: 1'i64)
-  Microsecond* = Duration(value: 1_000'i64) * Nanosecond
-  Millisecond* = Duration(value: 1_000'i64) * Microsecond
-  Second* = Duration(value: 1_000'i64) * Millisecond
-  Minute* = Duration(value: 60'i64) * Second
-  Hour* = Duration(value: 60'i64) * Minute
-  Day* = Duration(value: 24'i64) * Hour
-  Week* = Duration(value: 7'i64) * Day
+  Microsecond* = Nanosecond * 1_000'i64
+  Millisecond* = Microsecond * 1_000'i64
+  Second* = Millisecond * 1_000'i64
+  Minute* = Second * 60'i64
+  Hour* = Minute * 60'i64
+  Day* = Hour * 24'i64
+  Week* = Day * 7'i64
 
   ZeroDuration* = Duration(value: 0'i64)
-  InfiniteDuration* = Duration(value: -1'i64)
+  InfiniteDuration* = Duration(value: high(int64))
 
-func nanoseconds*(v: SomeInteger): Duration {.inline.} =
+func nanoseconds*(v: SomeIntegerI64): Duration {.inline.} =
   ## Initialize Duration with nanoseconds value ``v``.
   result.value = cast[int64](v)
 
-func microseconds*(v: SomeInteger): Duration {.inline.} =
+func microseconds*(v: SomeIntegerI64): Duration {.inline.} =
   ## Initialize Duration with microseconds value ``v``.
   result.value = cast[int64](v) * Microsecond.value
 
-func milliseconds*(v: SomeInteger): Duration {.inline.} =
+func milliseconds*(v: SomeIntegerI64): Duration {.inline.} =
   ## Initialize Duration with milliseconds value ``v``.
   result.value = cast[int64](v) * Millisecond.value
 
-func seconds*(v: SomeInteger): Duration {.inline.} =
+func seconds*(v: SomeIntegerI64): Duration {.inline.} =
   ## Initialize Duration with seconds value ``v``.
   result.value = cast[int64](v) * Second.value
 
-func minutes*(v: SomeInteger): Duration {.inline.} =
+func minutes*(v: SomeIntegerI64): Duration {.inline.} =
   ## Initialize Duration with minutes value ``v``.
-  result.value = cast[int64](v) * Minute.value
+  result.value = Minute.value * cast[int64](v)
 
-func hours*(v: SomeInteger): Duration {.inline.} =
+func hours*(v: SomeIntegerI64): Duration {.inline.} =
   ## Initialize Duration with hours value ``v``.
   result.value = cast[int64](v) * Hour.value
 
-func days*(v: SomeInteger): Duration {.inline.} =
+func days*(v: SomeIntegerI64): Duration {.inline.} =
   ## Initialize Duration with days value ``v``.
   result.value = cast[int64](v) * Day.value
 
-func weeks*(v: SomeInteger): Duration {.inline.} =
+func weeks*(v: SomeIntegerI64): Duration {.inline.} =
   ## Initialize Duration with weeks value ``v``.
   result.value = cast[int64](v) * Week.value
 
@@ -311,64 +326,88 @@ func nanoseconds*(v: Duration): Duration {.inline.} =
 
 func microseconds*(v: Duration): Duration {.inline.} =
   ## Round Duration ``v`` to microseconds.
-  result = (v div Microsecond) * Microsecond
+  result = (v div Microsecond.value) * Microsecond.value
 
 func milliseconds*(v: Duration): Duration {.inline.} =
   ## Round Duration ``v`` to milliseconds.
-  result = (v div Millisecond) * Millisecond
+  result = (v div Millisecond.value) * Millisecond.value
 
 func seconds*(v: Duration): Duration {.inline.} =
   ## Round Duration ``v`` to seconds.
-  result = (v div Second) * Second
+  result = (v div Second.value) * Second.value
 
 func minutes*(v: Duration): Duration {.inline.} =
   ## Round Duration ``v`` to minutes.
-  result = (v div Minute) * Minute
+  result = (v div Minute.value) * Minute.value
 
 func hours*(v: Duration): Duration {.inline.} =
   ## Round Duration ``v`` to hours.
-  result = (v div Hour) * Hour
+  result = (v div Hour.value) * Hour.value
 
 func days*(v: Duration): Duration {.inline.} =
   ## Round Duration ``v`` to days.
-  result = (v div Day) * Day
+  result = (v div Day.value) * Day.value
 
 func weeks*(v: Duration): Duration {.inline.} =
   ## Round Duration ``v`` to weeks.
-  result = (v div Week) * Week
+  result = (v div Week.value) * Week.value
 
-func nanos*[T: SomeInteger|Duration](v: T): Duration {.inline.} =
+func nanos*[T: SomeIntegerI64|Duration](v: T): Duration {.inline.} =
   nanoseconds(v)
 
-func micros*[T: SomeInteger|Duration](v: T): Duration {.inline.} =
+func micros*[T: SomeIntegerI64|Duration](v: T): Duration {.inline.} =
   microseconds(v)
 
-func millis*[T: SomeInteger|Duration](v: T): Duration {.inline.} =
+func millis*[T: SomeIntegerI64|Duration](v: T): Duration {.inline.} =
   milliseconds(v)
 
-func secs*[T: SomeInteger|Duration](v: T): Duration {.inline.} =
+func secs*[T: SomeIntegerI64|Duration](v: T): Duration {.inline.} =
   seconds(v)
 
 func toInt*(a: Duration, unit: Duration): int64 {.inline.} =
   ## Round Duration ``a`` to specific Duration ``unit`` and returns value
   ## as integer.
-  result = (a div unit).value
+  result = a.value div unit.value
 
 func `$`*(a: Duration): string {.inline.} =
   ## Returns string representation of Duration ``a`` as nanoseconds value.
-  result = $(a.value)
+  var v = a.value
+  if v >= Week.value:
+    result = $(v div Week.value) & "w"
+    v = v mod Week.value
+  if v >= Day.value:
+    result &= $(v div Day.value) & "d"
+    v = v mod Day.value
+  if v >= Hour.value:
+    result &= $(v div Hour.value) & "h"
+    v = v mod Hour.value
+  if v >= Minute.value:
+    result &= $(v div Minute.value) & "m"
+    v = v mod Minute.value
+  if v >= Second.value:
+    result &= $(v div Second.value) & "s"
+    v = v mod Second.value
+  if v >= Millisecond.value:
+    result &= $(v div Millisecond.value) & "ms"
+    v = v mod Millisecond.value
+  if v >= Microsecond.value:
+    result &= $(v div Microsecond.value) & "us"
+    v = v mod Microsecond.value
+  if v >= Nanosecond.value:
+    result &= $(v div Nanosecond.value) & "ns"
 
 func `$`*(a: Moment): string {.inline.} =
   ## Returns string representation of Moment ``a`` as nanoseconds value.
   result = $(a.value)
+  result.add("ns")
 
-func isOver*(a: Duration): bool {.inline.} =
+func isZero*(a: Duration): bool {.inline.} =
   ## Returns ``true`` if Duration ``a`` is ``0``.
   result = (a.value == 0)
 
 func isInfinite*(a: Duration): bool {.inline.} =
   ## Returns ``true`` if Duration ``a`` is infinite.
-  result = (a.value == -1)
+  result = (a.value == InfiniteDuration.value)
 
 proc now*(t: typedesc[Moment]): Moment {.inline.} =
   ## Returns current moment in time as Moment.
@@ -379,15 +418,26 @@ proc init*(t: typedesc[Moment], value: int64, precision: Duration): Moment =
   ## ``precision``.
   result.value = value * precision.value
 
-proc fromNow*(t: typedesc[Duration], a: Duration): Moment {.inline.} =
+proc fromNow*(t: typedesc[Moment], a: Duration): Moment {.inline.} =
+  ## Returns moment in time which is equal to current moment + Duration.
   result = Moment.now() + a
 
-func getTimestamp*(a: Duration): int {.inline.} =
+func getAsyncTimestamp*(a: Duration): auto {.inline.} =
   ## Return rounded up value of duration with milliseconds resolution.
-  result = cast[int](a.value div 1_000_000'i64)
+  ##
+  ## This procedure used internally in `asyncloop.nim`.
+  let res = a.value div 1_000_000'i64
   let mid = a.value mod 1_000_000'i64
-  if mid > 0'i64:
-    result += 1
+  when defined(windows):
+    if res > int64(high(int32)):
+      raise newException(OverflowError, "Timestamp value is too big!")
+    result = cast[DWORD](res)
+    result += DWORD(min(1'i32, cast[int32](mid)))
+  else:
+    if res > int64(high(int)):
+      raise newException(OverflowError, "Timestamp value is too big!")
+    result = cast[int](res)
+    result += min(1, cast[int](mid))
 
 when defined(posix):
   from posix import Time, Suseconds, Timeval, Timespec
