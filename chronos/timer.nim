@@ -320,54 +320,61 @@ func weeks*(v: SomeIntegerI64): Duration {.inline.} =
   ## Initialize Duration with weeks value ``v``.
   result.value = cast[int64](v) * Week.value
 
-func nanoseconds*(v: Duration): Duration {.inline.} =
+func nanoseconds*(v: Duration): int64 {.inline.} =
   ## Round Duration ``v`` to nanoseconds.
-  result = v
+  result = v.value
 
-func microseconds*(v: Duration): Duration {.inline.} =
+func microseconds*(v: Duration): int64 {.inline.} =
   ## Round Duration ``v`` to microseconds.
-  result = (v div Microsecond.value) * Microsecond.value
+  result = v.value div Microsecond.value
 
-func milliseconds*(v: Duration): Duration {.inline.} =
+func milliseconds*(v: Duration): int64 {.inline.} =
   ## Round Duration ``v`` to milliseconds.
-  result = (v div Millisecond.value) * Millisecond.value
+  result = v.value div Millisecond.value
 
-func seconds*(v: Duration): Duration {.inline.} =
+func seconds*(v: Duration): int64 {.inline.} =
   ## Round Duration ``v`` to seconds.
-  result = (v div Second.value) * Second.value
+  result = v.value div Second.value
 
-func minutes*(v: Duration): Duration {.inline.} =
+func minutes*(v: Duration): int64 {.inline.} =
   ## Round Duration ``v`` to minutes.
-  result = (v div Minute.value) * Minute.value
+  result = v.value div Minute.value
 
-func hours*(v: Duration): Duration {.inline.} =
+func hours*(v: Duration): int64 {.inline.} =
   ## Round Duration ``v`` to hours.
-  result = (v div Hour.value) * Hour.value
+  result = v.value div Hour.value
 
-func days*(v: Duration): Duration {.inline.} =
+func days*(v: Duration): int64 {.inline.} =
   ## Round Duration ``v`` to days.
-  result = (v div Day.value) * Day.value
+  result = v.value div Day.value
 
-func weeks*(v: Duration): Duration {.inline.} =
+func weeks*(v: Duration): int64 {.inline.} =
   ## Round Duration ``v`` to weeks.
-  result = (v div Week.value) * Week.value
+  result = v.value div Week.value
 
-func nanos*[T: SomeIntegerI64|Duration](v: T): Duration {.inline.} =
-  nanoseconds(v)
+proc nanos*(v: SomeIntegerI64): Duration {.inline.} =
+  result = nanoseconds(v)
 
-func micros*[T: SomeIntegerI64|Duration](v: T): Duration {.inline.} =
-  microseconds(v)
+proc micros*(v: SomeIntegerI64): Duration {.inline.} =
+  result = microseconds(v)
 
-func millis*[T: SomeIntegerI64|Duration](v: T): Duration {.inline.} =
-  milliseconds(v)
+proc millis*(v: SomeIntegerI64): Duration {.inline.} =
+  result = milliseconds(v)
 
-func secs*[T: SomeIntegerI64|Duration](v: T): Duration {.inline.} =
-  seconds(v)
+proc secs*(v: SomeIntegerI64): Duration {.inline.} =
+  result = seconds(v)
 
-func toInt*(a: Duration, unit: Duration): int64 {.inline.} =
-  ## Round Duration ``a`` to specific Duration ``unit`` and returns value
-  ## as integer.
-  result = a.value div unit.value
+proc nanos*(v: Duration): int64 {.inline.} =
+  result = nanoseconds(v)
+
+proc micros*(v: Duration): int64 {.inline.} =
+  result = microseconds(v)
+
+proc millis*(v: Duration): int64 {.inline.} =
+  result = milliseconds(v)
+
+proc secs*(v: Duration): int64 {.inline.} =
+  result = seconds(v)
 
 func `$`*(a: Duration): string {.inline.} =
   ## Returns string representation of Duration ``a`` as nanoseconds value.
@@ -430,12 +437,12 @@ func getAsyncTimestamp*(a: Duration): auto {.inline.} =
   let mid = a.value mod 1_000_000'i64
   when defined(windows):
     if res > int64(high(int32)):
-      raise newException(OverflowError, "Timestamp value is too big!")
+      raise newException(OverflowError, "Timestamp value is too big " & $res)
     result = cast[DWORD](res)
     result += DWORD(min(1'i32, cast[int32](mid)))
   else:
     if res > int64(high(int)):
-      raise newException(OverflowError, "Timestamp value is too big!")
+      raise newException(OverflowError, "Timestamp value is too big " & $res)
     result = cast[int](res)
     result += min(1, cast[int](mid))
 
