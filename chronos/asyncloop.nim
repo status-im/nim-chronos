@@ -165,6 +165,13 @@ export asyncfutures2, timer
 
 # TODO: Check if yielded future is nil and throw a more meaningful exception
 
+when defined(windows):
+  import winlean, sets, hashes
+else:
+  import selectors
+  from posix import EINTR, EAGAIN, EINPROGRESS, EWOULDBLOCK, MSG_PEEK,
+                    MSG_NOSIGNAL
+
 type
   AsyncError* = object of Exception
     ## Generic async exception
@@ -172,7 +179,7 @@ type
     ## Timeout exception
 
   TimerCallback* = object
-    finishAt*: uint64
+    finishAt*: Moment
     function*: AsyncCallback
 
   PDispatcherBase = ref object of RootRef
@@ -188,6 +195,24 @@ proc initCallSoonProc() =
   if asyncfutures2.getCallSoonProc().isNil:
     asyncfutures2.setCallSoonProc(callSoon)
 
+func getAsyncTimestamp*(a: Duration): auto {.inline.} =
+  ## Return rounded up value of duration with milliseconds resolution.
+  ##
+  ## This function also take care on int32 overflow, because Linux and Windows
+  ## accepts signed 32bit integer as timeout.
+  let milsec = Millisecond.nanoseconds()
+  let nansec = a.nanoseconds()
+  var res = nansec div milsec
+  let mid = nansec mod milsec
+  when defined(windows):
+    res = min(cast[int64](high(int32) - 1), res)
+    result = cast[DWORD](res)
+    result += DWORD(min(1'i32, cast[int32](mid)))
+  else:
+    res = min(cast[int64](high(int32) - 1), res)
+    result = cast[int32](res)
+    result += min(1, cast[int32](mid))
+
 template processTimersGetTimeout(loop, timeout: untyped) =
   var count = len(loop.timers)
   if count > 0:
@@ -199,10 +224,7 @@ template processTimersGetTimeout(loop, timeout: untyped) =
       loop.callbacks.addLast(loop.timers.pop().function)
       dec(count)
     if count > 0:
-      when defined(windows):
-        timeout = DWORD(lastFinish - curTime)
-      else:
-        timeout = int(lastFinish - curTime)
+      timeout = (lastFinish - curTime).getAsyncTimestamp()
 
   if timeout == 0:
     if len(loop.callbacks) == 0:
@@ -215,7 +237,7 @@ template processTimersGetTimeout(loop, timeout: untyped) =
       timeout = 0
 
 template processTimers(loop: untyped) =
-  var curTime = fastEpochTime()
+  var curTime = Moment.now()
   var count = len(loop.timers)
   if count > 0:
     while count > 0:
@@ -238,7 +260,6 @@ template processCallbacks(loop: untyped) =
       callable.function(callable.udata)
 
 when defined(windows) or defined(nimdoc):
-  import winlean, sets, hashes
   type
     WSAPROC_TRANSMITFILE = proc(hSocket: SocketHandle, hFile: Handle,
                                 nNumberOfBytesToWrite: DWORD,
@@ -316,7 +337,7 @@ when defined(windows) or defined(nimdoc):
   proc poll*() =
     ## Perform single asynchronous step.
     let loop = getGlobalDispatcher()
-    var curTime = fastEpochTime()
+    var curTime = Moment.now()
     var curTimeout = DWORD(0)
 
     # Moving expired timers to `loop.callbacks` and calculate timeout
@@ -328,8 +349,10 @@ when defined(windows) or defined(nimdoc):
     var customOverlapped: PtrCustomOverlapped
 
     let res = getQueuedCompletionStatus(
-      loop.ioPort, addr lpNumberOfBytesTransferred, addr lpCompletionKey,
-      cast[ptr POVERLAPPED](addr customOverlapped), curTimeout).bool
+      loop.ioPort, addr lpNumberOfBytesTransferred,
+      addr lpCompletionKey, cast[ptr POVERLAPPED](addr customOverlapped),
+      curTimeout).bool
+
     if res:
       customOverlapped.data.bytesCount = lpNumberOfBytesTransferred
       customOverlapped.data.errCode = OSErrorCode(-1)
@@ -428,9 +451,6 @@ when defined(windows) or defined(nimdoc):
     return fd in disp.handles
 
 else:
-  import selectors
-  from posix import EINTR, EAGAIN, EINPROGRESS, EWOULDBLOCK, MSG_PEEK,
-                    MSG_NOSIGNAL
   type
     AsyncFD* = distinct cint
 
@@ -611,7 +631,7 @@ else:
   proc poll*() =
     ## Perform single asynchronous step.
     let loop = getGlobalDispatcher()
-    var curTime = fastEpochTime()
+    var curTime = Moment.now()
     var curTimeout = 0
 
     when ioselSupportedPlatform:
@@ -655,7 +675,7 @@ else:
   proc initAPI() =
     discard getGlobalDispatcher()
 
-proc addTimer*(at: uint64, cb: CallbackFunc, udata: pointer = nil) =
+proc addTimer*(at: Moment, cb: CallbackFunc, udata: pointer = nil) =
   ## Arrange for the callback ``cb`` to be called at the given absolute
   ## timestamp ``at``. You can also pass ``udata`` to callback.
   let loop = getGlobalDispatcher()
@@ -663,7 +683,11 @@ proc addTimer*(at: uint64, cb: CallbackFunc, udata: pointer = nil) =
                           function: AsyncCallback(function: cb, udata: udata))
   loop.timers.push(tcb)
 
-proc removeTimer*(at: uint64, cb: CallbackFunc, udata: pointer = nil) =
+proc addTimer*(at: int64, cb: CallbackFunc, udata: pointer = nil) {.
+     inline, deprecated: "Use addTimer(Duration, cb, udata)".} =
+  addTimer(Moment.init(at, Millisecond), cb, udata)
+
+proc removeTimer*(at: Moment, cb: CallbackFunc, udata: pointer = nil) =
   ## Remove timer callback ``cb`` with absolute timestamp ``at`` from waiting
   ## queue.
   let loop = getGlobalDispatcher()
@@ -677,18 +701,25 @@ proc removeTimer*(at: uint64, cb: CallbackFunc, udata: pointer = nil) =
   if index != -1:
     loop.timers.del(index)
 
-proc sleepAsync*(ms: int): Future[void] =
+proc removeTimer*(at: int64, cb: CallbackFunc, udata: pointer = nil) {.
+     inline, deprecated: "Use removeTimer(Duration, cb, udata)".} =
+  removeTimer(Moment.init(at, Millisecond), cb, udata)
+
+proc sleepAsync*(ms: Duration): Future[void] =
   ## Suspends the execution of the current async procedure for the next
   ## ``ms`` milliseconds.
   var retFuture = newFuture[void]("sleepAsync")
   proc completion(data: pointer) =
     if not retFuture.finished:
       retFuture.complete()
-  addTimer(fastEpochTime() + uint64(ms),
-           completion, cast[pointer](retFuture))
+  addTimer(Moment.fromNow(ms), completion, cast[pointer](retFuture))
   return retFuture
 
-proc withTimeout*[T](fut: Future[T], timeout: int): Future[bool] =
+proc sleepAsync*(ms: int): Future[void] {.
+     inline, deprecated: "Use sleepAsync(Duration)".} =
+  result = sleepAsync(ms.milliseconds())
+
+proc withTimeout*[T](fut: Future[T], timeout: Duration): Future[bool] =
   ## Returns a future which will complete once ``fut`` completes or after
   ## ``timeout`` milliseconds has elapsed.
   ##
@@ -704,11 +735,15 @@ proc withTimeout*[T](fut: Future[T], timeout: int): Future[bool] =
       else:
         if not retFuture.finished:
           retFuture.complete(true)
-  addTimer(fastEpochTime() + uint64(timeout), continuation, nil)
+  addTimer(Moment.fromNow(timeout), continuation, nil)
   fut.addCallback(continuation)
   return retFuture
 
-proc wait*[T](fut: Future[T], timeout = -1): Future[T] =
+proc withTimeout*[T](fut: Future[T], timeout: int): Future[bool] {.
+     inline, deprecated: "Use withTimeout(Future[T], Duration)".} =
+  result = withTimeout(fut, timeout.milliseconds())
+
+proc wait*[T](fut: Future[T], timeout = InfiniteDuration): Future[T] =
   ## Returns a future which will complete once future ``fut`` completes
   ## or if timeout of ``timeout`` milliseconds has been expired.
   ##
@@ -726,9 +761,9 @@ proc wait*[T](fut: Future[T], timeout = -1): Future[T] =
             retFuture.fail(fut.error)
           else:
             retFuture.complete(fut.read())
-  if timeout == -1:
+  if timeout.isInfinite():
     retFuture = fut
-  elif timeout == 0:
+  elif timeout.isZero():
     if fut.finished:
       if fut.failed:
         retFuture.fail(fut.error)
@@ -737,9 +772,18 @@ proc wait*[T](fut: Future[T], timeout = -1): Future[T] =
     else:
       retFuture.fail(newException(AsyncTimeoutError, ""))
   else:
-    addTimer(fastEpochTime() + uint64(timeout), continuation, nil)
+    addTimer(Moment.fromNow(timeout), continuation, nil)
     fut.addCallback(continuation)
   return retFuture
+
+proc wait*[T](fut: Future[T], timeout = -1): Future[T] {.
+     inline, deprecated: "Use wait(Future[T], Duration)".} =
+  if timeout == -1:
+    wait(fut, InfiniteDuration)
+  elif timeout == 0:
+    wait(fut, ZeroDuration)
+  else:
+    wait(fut, timeout.milliseconds())
 
 include asyncmacro2
 

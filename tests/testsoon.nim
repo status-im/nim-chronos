@@ -41,7 +41,7 @@ proc test1(): uint =
 
 proc testProc() {.async.} =
   for i in 1..CallSoonTests:
-    await sleepAsync(100)
+    await sleepAsync(100.milliseconds)
     timeoutsTest1 += 1
 
 proc callbackProc(udata: pointer) {.gcsafe.} =

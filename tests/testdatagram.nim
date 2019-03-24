@@ -444,7 +444,7 @@ proc testConnReset(): Future[bool] {.async.} =
   var dgram2 = newDatagramTransport(clientMark)
   var data = "MESSAGE"
   asyncCheck dgram2.sendTo(ta, data)
-  await sleepAsync(1000)
+  await sleepAsync(2000.milliseconds)
   result = (counter == 0)
   dgram2.close()
   await dgram2.join()
