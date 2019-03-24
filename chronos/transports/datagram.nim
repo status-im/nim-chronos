@@ -11,6 +11,8 @@ import net, nativesockets, os, deques
 import ../asyncloop, ../handles
 import common
 
+export OSErrorCode
+
 when defined(windows):
   import winlean
 else:
@@ -28,7 +30,9 @@ type
     writer: Future[void]        # Writer vector completion Future
 
   DatagramCallback* = proc(transp: DatagramTransport,
-                           remote: TransportAddress): Future[void] {.gcsafe.}
+                           message: seq[byte],
+                           remote: TransportAddress,
+                           error: OSErrorCode): Future[void] {.gcsafe.}
 
   DatagramTransport* = ref object of RootRef
     fd*: AsyncFD                    # File descriptor
@@ -138,8 +142,9 @@ when defined(windows):
           if bytesCount == 0:
             transp.state.incl({ReadEof, ReadPaused})
           fromSAddr(addr transp.raddr, transp.ralen, raddr)
-          transp.buflen = bytesCount
-          asyncCheck transp.function(transp, raddr)
+          var msg = transp.buffer
+          msg.setLen(bytesCount)
+          asyncCheck transp.function(transp, msg, raddr, OSErrorCode(0))
         elif int(err) == ERROR_OPERATION_ABORTED:
           # CancelIO() interrupt
           transp.state.incl(ReadPaused)
@@ -147,8 +152,8 @@ when defined(windows):
         else:
           transp.setReadError(err)
           transp.state.incl(ReadPaused)
-          transp.buflen = 0
-          asyncCheck transp.function(transp, raddr)
+          var msg = newSeq[byte]()
+          asyncCheck transp.function(transp, msg, raddr, err)
       else:
         ## Initiation
         if transp.state * {ReadEof, ReadClosed, ReadError} == {}:
@@ -177,8 +182,8 @@ when defined(windows):
               transp.state.excl(ReadPending)
               transp.state.incl(ReadPaused)
               transp.setReadError(err)
-              transp.buflen = 0
-              asyncCheck transp.function(transp, raddr)
+              var msg = newSeq[byte]()
+              asyncCheck transp.function(transp, msg, raddr, err)
         break
 
   proc resumeRead(transp: DatagramTransport) {.inline.} =
@@ -311,16 +316,17 @@ else:
                                  addr transp.ralen)
         if res >= 0:
           fromSAddr(addr transp.raddr, transp.ralen, raddr)
-          transp.buflen = res
-          asyncCheck transp.function(transp, raddr)
+          var msg = transp.buffer
+          msg.setLen(res)
+          asyncCheck transp.function(transp, msg, raddr, OSErrorCode(0))
         else:
           let err = osLastError()
           if int(err) == EINTR:
             continue
           else:
-            transp.buflen = 0
             transp.setReadError(err)
-            asyncCheck transp.function(transp, raddr)
+            var msg = newSeq[byte]()
+            asyncCheck transp.function(transp, msg, raddr, err)
         break
 
   proc writeDatagramLoop(udata: pointer) =
@@ -657,22 +663,6 @@ proc sendTo*[T](transp: DatagramTransport, remote: TransportAddress,
   if WritePaused in transp.state:
     transp.resumeWrite()
   return retFuture
-
-proc peekMessage*(transp: DatagramTransport, msg: var seq[byte],
-                  msglen: var int) =
-  ## Get access to internal message buffer and length of incoming datagram.
-  if ReadError in transp.state:
-    raise transp.getError()
-  shallowCopy(msg, transp.buffer)
-  msglen = transp.buflen
-
-proc getMessage*(transp: DatagramTransport): seq[byte] =
-  ## Copy data from internal message buffer and return result.
-  if ReadError in transp.state:
-    raise transp.getError()
-  if transp.buflen > 0:
-    result = newSeq[byte](transp.buflen)
-    copyMem(addr result[0], addr transp.buffer[0], transp.buflen)
 
 proc getUserData*[T](transp: DatagramTransport): T {.inline.} =
   ## Obtain user data stored in ``transp`` object.
