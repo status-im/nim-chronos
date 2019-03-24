@@ -272,7 +272,7 @@ func `*`*(a: SomeIntegerI64, b: Duration): Duration {.inline.} =
   result.value = cast[int64](a) * b.value
 
 func `div`*(a: Duration, b: SomeIntegerI64): Duration {.inline.} =
-  ## Return Duration which is result of Duration and scalar integer.
+  ## Returns Duration which is result of dividing a Duration by scalar integer.
   result.value = a.value div cast[int64](b)
 
 const
