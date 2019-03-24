@@ -352,28 +352,28 @@ func weeks*(v: Duration): int64 {.inline.} =
   ## Round Duration ``v`` to weeks.
   result = v.value div Week.value
 
-proc nanos*(v: SomeIntegerI64): Duration {.inline.} =
+func nanos*(v: SomeIntegerI64): Duration {.inline.} =
   result = nanoseconds(v)
 
-proc micros*(v: SomeIntegerI64): Duration {.inline.} =
+func micros*(v: SomeIntegerI64): Duration {.inline.} =
   result = microseconds(v)
 
-proc millis*(v: SomeIntegerI64): Duration {.inline.} =
+func millis*(v: SomeIntegerI64): Duration {.inline.} =
   result = milliseconds(v)
 
-proc secs*(v: SomeIntegerI64): Duration {.inline.} =
+func secs*(v: SomeIntegerI64): Duration {.inline.} =
   result = seconds(v)
 
-proc nanos*(v: Duration): int64 {.inline.} =
+func nanos*(v: Duration): int64 {.inline.} =
   result = nanoseconds(v)
 
-proc micros*(v: Duration): int64 {.inline.} =
+func micros*(v: Duration): int64 {.inline.} =
   result = microseconds(v)
 
-proc millis*(v: Duration): int64 {.inline.} =
+func millis*(v: Duration): int64 {.inline.} =
   result = milliseconds(v)
 
-proc secs*(v: Duration): int64 {.inline.} =
+func secs*(v: Duration): int64 {.inline.} =
   result = seconds(v)
 
 func `$`*(a: Duration): string {.inline.} =
@@ -420,7 +420,7 @@ proc now*(t: typedesc[Moment]): Moment {.inline.} =
   ## Returns current moment in time as Moment.
   result.value = cast[int64](fastEpochTimeNano())
 
-proc init*(t: typedesc[Moment], value: int64, precision: Duration): Moment =
+func init*(t: typedesc[Moment], value: int64, precision: Duration): Moment =
   ## Initialize Moment with absolute time value ``value`` with precision
   ## ``precision``.
   result.value = value * precision.value
