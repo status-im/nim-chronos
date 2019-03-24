@@ -687,6 +687,10 @@ proc addTimer*(at: int64, cb: CallbackFunc, udata: pointer = nil) {.
      inline, deprecated: "Use addTimer(Duration, cb, udata)".} =
   addTimer(Moment.init(at, Millisecond), cb, udata)
 
+proc addTimer*(at: uint64, cb: CallbackFunc, udata: pointer = nil) {.
+     inline, deprecated: "Use addTimer(Duration, cb, udata)".} =
+  addTimer(Moment.init(int64(at), Millisecond), cb, udata)
+
 proc removeTimer*(at: Moment, cb: CallbackFunc, udata: pointer = nil) =
   ## Remove timer callback ``cb`` with absolute timestamp ``at`` from waiting
   ## queue.
@@ -704,6 +708,10 @@ proc removeTimer*(at: Moment, cb: CallbackFunc, udata: pointer = nil) =
 proc removeTimer*(at: int64, cb: CallbackFunc, udata: pointer = nil) {.
      inline, deprecated: "Use removeTimer(Duration, cb, udata)".} =
   removeTimer(Moment.init(at, Millisecond), cb, udata)
+
+proc removeTimer*(at: uint64, cb: CallbackFunc, udata: pointer = nil) {.
+     inline, deprecated: "Use removeTimer(Duration, cb, udata)".} =
+  removeTimer(Moment.init(int64(at), Millisecond), cb, udata)
 
 proc sleepAsync*(ms: Duration): Future[void] =
   ## Suspends the execution of the current async procedure for the next
