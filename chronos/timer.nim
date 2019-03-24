@@ -429,23 +429,6 @@ proc fromNow*(t: typedesc[Moment], a: Duration): Moment {.inline.} =
   ## Returns moment in time which is equal to current moment + Duration.
   result = Moment.now() + a
 
-func getAsyncTimestamp*(a: Duration): auto {.inline.} =
-  ## Return rounded up value of duration with milliseconds resolution.
-  ##
-  ## This procedure used internally in `asyncloop.nim`.
-  let res = a.value div 1_000_000'i64
-  let mid = a.value mod 1_000_000'i64
-  when defined(windows):
-    if res > int64(high(int32)):
-      raise newException(OverflowError, "Timestamp value is too big " & $res)
-    result = cast[DWORD](res)
-    result += DWORD(min(1'i32, cast[int32](mid)))
-  else:
-    if res > int64(high(int)):
-      raise newException(OverflowError, "Timestamp value is too big " & $res)
-    result = cast[int](res)
-    result += min(1, cast[int](mid))
-
 when defined(posix):
   from posix import Time, Suseconds, Timeval, Timespec
 

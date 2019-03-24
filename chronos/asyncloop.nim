@@ -165,6 +165,13 @@ export asyncfutures2, timer
 
 # TODO: Check if yielded future is nil and throw a more meaningful exception
 
+when defined(windows):
+  import winlean, sets, hashes
+else:
+  import selectors
+  from posix import EINTR, EAGAIN, EINPROGRESS, EWOULDBLOCK, MSG_PEEK,
+                    MSG_NOSIGNAL
+
 type
   AsyncError* = object of Exception
     ## Generic async exception
@@ -187,6 +194,24 @@ proc callSoon(cbproc: CallbackFunc, data: pointer = nil) {.gcsafe.}
 proc initCallSoonProc() =
   if asyncfutures2.getCallSoonProc().isNil:
     asyncfutures2.setCallSoonProc(callSoon)
+
+func getAsyncTimestamp*(a: Duration): auto {.inline.} =
+  ## Return rounded up value of duration with milliseconds resolution.
+  ##
+  ## This function also take care on int32 overflow, because Linux and Windows
+  ## accepts signed 32bit integer as timeout.
+  let milsec = Millisecond.nanoseconds()
+  let nansec = a.nanoseconds()
+  var res = nansec div milsec
+  let mid = nansec mod milsec
+  when defined(windows):
+    res = min(cast[int64](high(int32) - 1), res)
+    result = cast[DWORD](res)
+    result += DWORD(min(1'i32, cast[int32](mid)))
+  else:
+    res = min(cast[int64](high(int32) - 1), res)
+    result = cast[int32](res)
+    result += min(1, cast[int32](mid))
 
 template processTimersGetTimeout(loop, timeout: untyped) =
   var count = len(loop.timers)
@@ -235,7 +260,6 @@ template processCallbacks(loop: untyped) =
       callable.function(callable.udata)
 
 when defined(windows) or defined(nimdoc):
-  import winlean, sets, hashes
   type
     WSAPROC_TRANSMITFILE = proc(hSocket: SocketHandle, hFile: Handle,
                                 nNumberOfBytesToWrite: DWORD,
@@ -427,9 +451,6 @@ when defined(windows) or defined(nimdoc):
     return fd in disp.handles
 
 else:
-  import selectors
-  from posix import EINTR, EAGAIN, EINPROGRESS, EWOULDBLOCK, MSG_PEEK,
-                    MSG_NOSIGNAL
   type
     AsyncFD* = distinct cint
 
