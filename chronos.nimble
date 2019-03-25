@@ -9,8 +9,6 @@ skipDirs      = @["tests"]
 
 requires "nim > 0.18.0"
 
-import ospaths
-
 task test, "Run all tests":
 
   var testFiles = @[
@@ -41,13 +39,14 @@ task test, "Run all tests":
     if tfile == "testtime":
       for cmd in testCommands:
         for def in timerCommands:
-          var commandLine = (cmd & def & " tests") / tfile
+          var commandLine = cmd & def & " tests/" & tfile
           echo "\n" & commandLine
           exec commandLine
-          rmFile("tests" / tfile.toExe())
+          rmFile("tests/" & tfile.toExe())
     else:
       for cmd in testCommands:
-        var commandLine = (cmd & " tests") / tfile
+        var commandLine = cmd & " tests/" & tfile
         echo "\n" & commandLine
         exec commandLine
-        rmFile("tests" / tfile.toExe())
+        rmFile("tests/" & tfile.toExe())
+
