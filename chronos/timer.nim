@@ -265,15 +265,15 @@ func `>=`*(a, b: Moment): bool {.inline.} =
 
 func `*`*(a: Duration, b: SomeIntegerI64): Duration {.inline.} =
   ## Returns Duration multiplied by scalar integer.
-  result.value = a.value * cast[int64](b)
+  result.value = a.value * int64(b)
 
 func `*`*(a: SomeIntegerI64, b: Duration): Duration {.inline.} =
   ## Returns Duration multiplied by scalar integer.
-  result.value = cast[int64](a) * b.value
+  result.value = int64(a) * b.value
 
 func `div`*(a: Duration, b: SomeIntegerI64): Duration {.inline.} =
   ## Returns Duration which is result of dividing a Duration by scalar integer.
-  result.value = a.value div cast[int64](b)
+  result.value = a.value div int64(b)
 
 const
   Nanosecond* = Duration(value: 1'i64)
@@ -290,35 +290,35 @@ const
 
 func nanoseconds*(v: SomeIntegerI64): Duration {.inline.} =
   ## Initialize Duration with nanoseconds value ``v``.
-  result.value = cast[int64](v)
+  result.value = int64(v)
 
 func microseconds*(v: SomeIntegerI64): Duration {.inline.} =
   ## Initialize Duration with microseconds value ``v``.
-  result.value = cast[int64](v) * Microsecond.value
+  result.value = int64(v) * Microsecond.value
 
 func milliseconds*(v: SomeIntegerI64): Duration {.inline.} =
   ## Initialize Duration with milliseconds value ``v``.
-  result.value = cast[int64](v) * Millisecond.value
+  result.value = int64(v) * Millisecond.value
 
 func seconds*(v: SomeIntegerI64): Duration {.inline.} =
   ## Initialize Duration with seconds value ``v``.
-  result.value = cast[int64](v) * Second.value
+  result.value = int64(v) * Second.value
 
 func minutes*(v: SomeIntegerI64): Duration {.inline.} =
   ## Initialize Duration with minutes value ``v``.
-  result.value = Minute.value * cast[int64](v)
+  result.value = int64(v) * Minute.value
 
 func hours*(v: SomeIntegerI64): Duration {.inline.} =
   ## Initialize Duration with hours value ``v``.
-  result.value = cast[int64](v) * Hour.value
+  result.value = int64(v) * Hour.value
 
 func days*(v: SomeIntegerI64): Duration {.inline.} =
   ## Initialize Duration with days value ``v``.
-  result.value = cast[int64](v) * Day.value
+  result.value = int64(v) * Day.value
 
 func weeks*(v: SomeIntegerI64): Duration {.inline.} =
   ## Initialize Duration with weeks value ``v``.
-  result.value = cast[int64](v) * Week.value
+  result.value = int64(v) * Week.value
 
 func nanoseconds*(v: Duration): int64 {.inline.} =
   ## Round Duration ``v`` to nanoseconds.
@@ -418,7 +418,7 @@ func isInfinite*(a: Duration): bool {.inline.} =
 
 proc now*(t: typedesc[Moment]): Moment {.inline.} =
   ## Returns current moment in time as Moment.
-  result.value = cast[int64](fastEpochTimeNano())
+  result.value = int64(fastEpochTimeNano())
 
 func init*(t: typedesc[Moment], value: int64, precision: Duration): Moment =
   ## Initialize Moment with absolute time value ``value`` with precision
@@ -435,10 +435,10 @@ when defined(posix):
   func toTimeval*(a: Duration): Timeval =
     ## Convert Duration ``a`` to ``Timeval`` object.
     let m = a.value mod Second.value
-    result.tv_sec = cast[Time](a.value div Second.value)
-    result.tv_usec = cast[Suseconds](m div Microsecond.value)
+    result.tv_sec = Time(a.value div Second.value)
+    result.tv_usec = Suseconds(m div Microsecond.value)
 
   func toTimespec*(a: Duration): Timespec =
     ## Convert Duration ``a`` to ``Timespec`` object.
-    result.tv_sec = cast[Time](a.value div Second.value)
-    result.tv_nsec = cast[int](a.value mod Second.value)
+    result.tv_sec = Time(a.value div Second.value)
+    result.tv_nsec = int(a.value mod Second.value)
