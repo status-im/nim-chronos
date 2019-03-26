@@ -173,7 +173,7 @@ else:
                     MSG_NOSIGNAL
 
 type
-  AsyncError* = object of Exception
+  AsyncError* = object of CatchableError
     ## Generic async exception
   AsyncTimeoutError* = object of AsyncError
     ## Timeout exception
