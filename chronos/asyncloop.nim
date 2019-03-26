@@ -267,7 +267,7 @@ when defined(windows) or defined(nimdoc):
                                 lpOverlapped: POVERLAPPED,
                                 lpTransmitBuffers: pointer,
                                 dwReserved: DWORD): cint {.
-                                stdcall.}
+                                gcsafe, stdcall.}
 
     CompletionKey = ULONG_PTR
 
