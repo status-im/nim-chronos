@@ -200,19 +200,17 @@ proc initTAddress*(address: string): TransportAddress =
                    else: (sizeof(result.address_un) - 1)
       copyMem(addr result.address_un[0], unsafeAddr address[0], size)
     else:
-      var port: Port
+      var port: int
       var parts = address.rsplit(":", maxsplit = 1)
       if len(parts) != 2:
         raise newException(TransportAddressError,
                            "Format is <address>:<port> or </address>!")
-
       try:
-        let portint = parseInt(parts[1])
-        doAssert(portint > 0 and portint < 65536)
-        port = Port(portint)
+        port = parseInt(parts[1])
       except:
         raise newException(TransportAddressError, "Illegal port number!")
-
+      if port < 0 or port >= 65536:
+        raise newException(TransportAddressError, "Illegal port number!")
       try:
         var ipaddr: IpAddress
         if parts[0][0] == '[' and parts[0][^1] == ']':
@@ -227,7 +225,7 @@ proc initTAddress*(address: string): TransportAddress =
           result.address_v6 = ipaddr.address_v6
         else:
           raise newException(TransportAddressError, "Incorrect address family!")
-        result.port = port
+        result.port = Port(port)
       except:
         raise newException(TransportAddressError, getCurrentException().msg)
   else:
@@ -388,8 +386,10 @@ proc resolveTAddress*(address: string,
 
   try:
     port = parseInt(parts[1])
-    doAssert(port > 0 and port < 65536)
   except:
+    raise newException(TransportAddressError, "Illegal port number!")
+
+  if port < 0 or port >= 65536:
     raise newException(TransportAddressError, "Illegal port number!")
 
   if parts[0][0] == '[' and parts[0][^1] == ']':
