@@ -400,8 +400,7 @@ func `$`*(a: Duration): string {.inline.} =
   if v >= Microsecond.value:
     result &= $(v div Microsecond.value) & "us"
     v = v mod Microsecond.value
-  if v >= Nanosecond.value:
-    result &= $(v div Nanosecond.value) & "ns"
+  result &= $(v div Nanosecond.value) & "ns"
 
 func `$`*(a: Moment): string {.inline.} =
   ## Returns string representation of Moment ``a`` as nanoseconds value.
