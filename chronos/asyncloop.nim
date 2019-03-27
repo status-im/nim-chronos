@@ -768,7 +768,10 @@ proc wait*[T](fut: Future[T], timeout = InfiniteDuration): Future[T] =
           if fut.failed:
             retFuture.fail(fut.error)
           else:
-            retFuture.complete(fut.read())
+            when T is void:
+              retFuture.complete()
+            else:
+              retFuture.complete(fut.read())
   if timeout.isInfinite():
     retFuture = fut
   elif timeout.isZero():
@@ -776,7 +779,10 @@ proc wait*[T](fut: Future[T], timeout = InfiniteDuration): Future[T] =
       if fut.failed:
         retFuture.fail(fut.error)
       else:
-        retFuture.complete(fut.read())
+        when T is void:
+          retFuture.complete()
+        else:
+          retFuture.complete(fut.read())
     else:
       retFuture.fail(newException(AsyncTimeoutError, ""))
   else:
