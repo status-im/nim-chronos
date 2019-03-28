@@ -14,15 +14,11 @@ const
   ClientsCount = 20
   MessagesCount = 20
 
-proc client1(transp: DatagramTransport,
-             raddr: TransportAddress): Future[void] {.async.} =
-  var pbytes: seq[byte]
-  var nbytes: int
-  transp.peekMessage(pbytes, nbytes)
-  if nbytes > 0:
-    var data = newString(nbytes + 1)
-    copyMem(addr data[0], addr pbytes[0], nbytes)
-    data.setLen(nbytes)
+proc client1(transp: DatagramTransport, pbytes: seq[byte],
+             raddr: TransportAddress,
+             error: OSErrorCode): Future[void] {.async.} =
+  if len(pbytes) > 0:
+    var data = cast[string](pbytes)
     if data.startsWith("REQUEST"):
       var numstr = data[7..^1]
       var num = parseInt(numstr)
@@ -36,15 +32,11 @@ proc client1(transp: DatagramTransport,
     counterPtr[] = -1
     transp.close()
 
-proc client2(transp: DatagramTransport,
-             raddr: TransportAddress): Future[void] {.async.} =
-  var pbytes: seq[byte]
-  var nbytes: int
-  transp.peekMessage(pbytes, nbytes)
-  if nbytes > 0:
-    var data = newString(nbytes + 1)
-    copyMem(addr data[0], addr pbytes[0], nbytes)
-    data.setLen(nbytes)
+proc client2(transp: DatagramTransport, pbytes: seq[byte],
+             raddr: TransportAddress,
+             error: OSErrorCode): Future[void] {.async.} =
+  if len(pbytes) > 0:
+    var data = cast[string](pbytes)
     if data.startsWith("ANSWER"):
       var counterPtr = cast[ptr int](transp.udata)
       counterPtr[] = counterPtr[] + 1
@@ -64,15 +56,11 @@ proc client2(transp: DatagramTransport,
     counterPtr[] = -1
     transp.close()
 
-proc client3(transp: DatagramTransport,
-             raddr: TransportAddress): Future[void] {.async.} =
-  var pbytes: seq[byte]
-  var nbytes: int
-  transp.peekMessage(pbytes, nbytes)
-  if nbytes > 0:
-    var data = newString(nbytes + 1)
-    copyMem(addr data[0], addr pbytes[0], nbytes)
-    data.setLen(nbytes)
+proc client3(transp: DatagramTransport, pbytes: seq[byte],
+             raddr: TransportAddress,
+             error: OSErrorCode): Future[void] {.async.} =
+  if len(pbytes) > 0:
+    var data = cast[string](pbytes)
     if data.startsWith("ANSWER"):
       var counterPtr = cast[ptr int](transp.udata)
       counterPtr[] = counterPtr[] + 1
@@ -91,15 +79,11 @@ proc client3(transp: DatagramTransport,
     counterPtr[] = -1
     transp.close()
 
-proc client4(transp: DatagramTransport,
-             raddr: TransportAddress): Future[void] {.async.} =
-  var pbytes: seq[byte]
-  var nbytes: int
-  transp.peekMessage(pbytes, nbytes)
-  if nbytes > 0:
-    var data = newString(nbytes + 1)
-    copyMem(addr data[0], addr pbytes[0], nbytes)
-    data.setLen(nbytes)
+proc client4(transp: DatagramTransport, pbytes: seq[byte],
+             raddr: TransportAddress,
+             error: OSErrorCode): Future[void] {.async.} =
+  if len(pbytes) > 0:
+    var data = cast[string](pbytes)
     if data.startsWith("ANSWER"):
       var counterPtr = cast[ptr int](transp.udata)
       counterPtr[] = counterPtr[] + 1
@@ -118,15 +102,11 @@ proc client4(transp: DatagramTransport,
     counterPtr[] = -1
     transp.close()
 
-proc client5(transp: DatagramTransport,
-             raddr: TransportAddress): Future[void] {.async.} =
-  var pbytes: seq[byte]
-  var nbytes: int
-  transp.peekMessage(pbytes, nbytes)
-  if nbytes > 0:
-    var data = newString(nbytes + 1)
-    copyMem(addr data[0], addr pbytes[0], nbytes)
-    data.setLen(nbytes)
+proc client5(transp: DatagramTransport, pbytes: seq[byte],
+             raddr: TransportAddress,
+             error: OSErrorCode): Future[void] {.async.} =
+  if len(pbytes) > 0:
+    var data = cast[string](pbytes)
     if data.startsWith("ANSWER"):
       var counterPtr = cast[ptr int](transp.udata)
       counterPtr[] = counterPtr[] + 1
@@ -145,15 +125,11 @@ proc client5(transp: DatagramTransport,
     counterPtr[] = -1
     transp.close()
 
-proc client6(transp: DatagramTransport,
-             raddr: TransportAddress): Future[void] {.async.} =
-  var pbytes: seq[byte]
-  var nbytes: int
-  transp.peekMessage(pbytes, nbytes)
-  if nbytes > 0:
-    var data = newString(nbytes + 1)
-    copyMem(addr data[0], addr pbytes[0], nbytes)
-    data.setLen(nbytes)
+proc client6(transp: DatagramTransport, pbytes: seq[byte],
+             raddr: TransportAddress,
+             error: OSErrorCode): Future[void] {.async.} =
+  if len(pbytes) > 0:
+    var data = cast[string](pbytes)
     if data.startsWith("REQUEST"):
       var numstr = data[7..^1]
       var num = parseInt(numstr)
@@ -168,15 +144,11 @@ proc client6(transp: DatagramTransport,
     counterPtr[] = -1
     transp.close()
 
-proc client7(transp: DatagramTransport,
-             raddr: TransportAddress): Future[void] {.async.} =
-  var pbytes: seq[byte]
-  var nbytes: int
-  transp.peekMessage(pbytes, nbytes)
-  if nbytes > 0:
-    var data = newString(nbytes + 1)
-    copyMem(addr data[0], addr pbytes[0], nbytes)
-    data.setLen(nbytes)
+proc client7(transp: DatagramTransport, pbytes: seq[byte],
+             raddr: TransportAddress,
+             error: OSErrorCode): Future[void] {.async.} =
+  if len(pbytes) > 0:
+    var data = cast[string](pbytes)
     if data.startsWith("ANSWER"):
       var counterPtr = cast[ptr int](transp.udata)
       counterPtr[] = counterPtr[] + 1
@@ -195,15 +167,11 @@ proc client7(transp: DatagramTransport,
     counterPtr[] = -1
     transp.close()
 
-proc client8(transp: DatagramTransport,
-             raddr: TransportAddress): Future[void] {.async.} =
-  var pbytes: seq[byte]
-  var nbytes: int
-  transp.peekMessage(pbytes, nbytes)
-  if nbytes > 0:
-    var data = newString(nbytes + 1)
-    copyMem(addr data[0], addr pbytes[0], nbytes)
-    data.setLen(nbytes)
+proc client8(transp: DatagramTransport, pbytes: seq[byte],
+             raddr: TransportAddress,
+             error: OSErrorCode): Future[void] {.async.} =
+  if len(pbytes) > 0:
+    var data = cast[string](pbytes)
     if data.startsWith("ANSWER"):
       var counterPtr = cast[ptr int](transp.udata)
       counterPtr[] = counterPtr[] + 1
@@ -222,15 +190,11 @@ proc client8(transp: DatagramTransport,
     counterPtr[] = -1
     transp.close()
 
-proc client9(transp: DatagramTransport,
-             raddr: TransportAddress): Future[void] {.async.} =
-  var pbytes: seq[byte]
-  var nbytes: int
-  transp.peekMessage(pbytes, nbytes)
-  if nbytes > 0:
-    var data = newString(nbytes + 1)
-    copyMem(addr data[0], addr pbytes[0], nbytes)
-    data.setLen(nbytes)
+proc client9(transp: DatagramTransport, pbytes: seq[byte],
+             raddr: TransportAddress,
+             error: OSErrorCode): Future[void] {.async.} =
+  if len(pbytes) > 0:
+    var data = cast[string](pbytes)
     if data.startsWith("REQUEST"):
       var numstr = data[7..^1]
       var num = parseInt(numstr)
@@ -249,15 +213,11 @@ proc client9(transp: DatagramTransport,
     counterPtr[] = -1
     transp.close()
 
-proc client10(transp: DatagramTransport,
-              raddr: TransportAddress): Future[void] {.async.} =
-  var pbytes: seq[byte]
-  var nbytes: int
-  transp.peekMessage(pbytes, nbytes)
-  if nbytes > 0:
-    var data = newString(nbytes + 1)
-    copyMem(addr data[0], addr pbytes[0], nbytes)
-    data.setLen(nbytes)
+proc client10(transp: DatagramTransport, pbytes: seq[byte],
+              raddr: TransportAddress,
+              error: OSErrorCode): Future[void] {.async.} =
+  if len(pbytes) > 0:
+    var data = cast[string](pbytes)
     if data.startsWith("ANSWER"):
       var counterPtr = cast[ptr int](transp.udata)
       counterPtr[] = counterPtr[] + 1
@@ -278,15 +238,11 @@ proc client10(transp: DatagramTransport,
     counterPtr[] = -1
     transp.close()
 
-proc client11(transp: DatagramTransport,
-              raddr: TransportAddress): Future[void] {.async.} =
-  var pbytes: seq[byte]
-  var nbytes: int
-  transp.peekMessage(pbytes, nbytes)
-  if nbytes > 0:
-    var data = newString(nbytes + 1)
-    copyMem(addr data[0], addr pbytes[0], nbytes)
-    data.setLen(nbytes)
+proc client11(transp: DatagramTransport, pbytes: seq[byte],
+              raddr: TransportAddress,
+              error: OSErrorCode): Future[void] {.async.} =
+  if len(pbytes) > 0:
+    var data = cast[string](pbytes)
     if data.startsWith("ANSWER"):
       var counterPtr = cast[ptr int](transp.udata)
       counterPtr[] = counterPtr[] + 1
@@ -434,8 +390,9 @@ proc test3(bounded: bool): Future[int] {.async.} =
 proc testConnReset(): Future[bool] {.async.} =
   var ta = initTAddress("127.0.0.1:65000")
   var counter = 0
-  proc clientMark(transp: DatagramTransport,
-                  raddr: TransportAddress): Future[void] {.async.} =
+  proc clientMark(transp: DatagramTransport, pbytes: seq[byte],
+                  raddr: TransportAddress,
+                  error: OSErrorCode): Future[void] {.async.} =
     counter = 1
     transp.close()
   var dgram1 = newDatagramTransport(client1, local = ta)
