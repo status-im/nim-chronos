@@ -29,10 +29,9 @@ type
     finished: bool
     error*: ref Exception ## Stored exception
     errorStackTrace*: StackTrace
-    when not defined(release):
-      stackTrace: StackTrace ## For debugging purposes only.
-      id: int
-      fromProc: string
+    stackTrace: StackTrace ## For debugging purposes only.
+    id: int
+    fromProc: string
 
   # ZAH: we have discussed some possible optimizations where
   # the future can be stored within the caller's stack frame.
@@ -46,9 +45,8 @@ type
   FutureError* = object of Exception
     cause*: FutureBase
 
-when not defined(release):
-  var currentID* {.threadvar.}: int
-  currentID = 0
+var currentID* {.threadvar.}: int
+currentID = 0
 
 # ZAH: This seems unnecessary. Isn't it easy to introduce a seperate
 # module for the dispatcher type, so it can be directly referenced here?
@@ -69,11 +67,10 @@ proc callSoon*(c: CallbackFunc, u: pointer = nil) =
 template setupFutureBase(fromProc: string) =
   new(result)
   result.finished = false
-  when not defined(release):
-    result.stackTrace = getStackTrace()
-    result.id = currentID
-    result.fromProc = fromProc
-    currentID.inc()
+  result.stackTrace = getStackTrace()
+  result.id = currentID
+  result.fromProc = fromProc
+  currentID.inc()
 
 ## ZAH: As far as I undestand `fromProc` is just a debugging helper.
 ## It would be more efficient if it's represented as a simple statically
@@ -103,23 +100,22 @@ proc clean*[T](future: FutureVar[T]) =
 proc checkFinished[T](future: Future[T]) =
   ## Checks whether `future` is finished. If it is then raises a
   ## ``FutureError``.
-  when not defined(release):
-    if future.finished:
-      var msg = ""
-      msg.add("An attempt was made to complete a Future more than once. ")
-      msg.add("Details:")
-      msg.add("\n  Future ID: " & $future.id)
-      msg.add("\n  Created in proc: " & future.fromProc)
-      msg.add("\n  Stack trace to moment of creation:")
-      msg.add("\n" & indent(future.stackTrace.strip(), 4))
-      when T is string:
-        msg.add("\n  Contents (string): ")
-        msg.add("\n" & indent(future.value.repr, 4))
-      msg.add("\n  Stack trace to moment of secondary completion:")
-      msg.add("\n" & indent(getStackTrace().strip(), 4))
-      var err = newException(FutureError, msg)
-      err.cause = future
-      raise err
+  if future.finished:
+    var msg = ""
+    msg.add("An attempt was made to complete a Future more than once. ")
+    msg.add("Details:")
+    msg.add("\n  Future ID: " & $future.id)
+    msg.add("\n  Created in proc: " & future.fromProc)
+    msg.add("\n  Stack trace to moment of creation:")
+    msg.add("\n" & indent(future.stackTrace.strip(), 4))
+    when T is string:
+      msg.add("\n  Contents (string): ")
+      msg.add("\n" & indent(future.value.repr, 4))
+    msg.add("\n  Stack trace to moment of secondary completion:")
+    msg.add("\n" & indent(getStackTrace().strip(), 4))
+    var err = newException(FutureError, msg)
+    err.cause = future
+    raise err
 
 proc call(callbacks: var Deque[AsyncCallback]) =
   var count = len(callbacks)
@@ -286,29 +282,28 @@ proc `$`*(entries: seq[StackTraceEntry]): string =
       result.add(spaces(indent+2) & "## " & hint & "\n")
 
 proc injectStacktrace[T](future: Future[T]) =
-  when not defined(release):
-    const header = "\nAsync traceback:\n"
+  const header = "\nAsync traceback:\n"
 
-    var exceptionMsg = future.error.msg
-    if header in exceptionMsg:
-      # This is messy: extract the original exception message from the msg
-      # containing the async traceback.
-      let start = exceptionMsg.find(header)
-      exceptionMsg = exceptionMsg[0..<start]
+  var exceptionMsg = future.error.msg
+  if header in exceptionMsg:
+    # This is messy: extract the original exception message from the msg
+    # containing the async traceback.
+    let start = exceptionMsg.find(header)
+    exceptionMsg = exceptionMsg[0..<start]
 
 
-    var newMsg = exceptionMsg & header
+  var newMsg = exceptionMsg & header
 
-    let entries = getStackTraceEntries(future.error)
-    newMsg.add($entries)
+  let entries = getStackTraceEntries(future.error)
+  newMsg.add($entries)
 
-    newMsg.add("Exception message: " & exceptionMsg & "\n")
-    newMsg.add("Exception type:")
+  newMsg.add("Exception message: " & exceptionMsg & "\n")
+  newMsg.add("Exception type:")
 
-    # # For debugging purposes
-    # for entry in getStackTraceEntries(future.error):
-    #   newMsg.add "\n" & $entry
-    future.error.msg = newMsg
+  # # For debugging purposes
+  # for entry in getStackTraceEntries(future.error):
+  #   newMsg.add "\n" & $entry
+  future.error.msg = newMsg
 
 proc read*[T](future: Future[T] | FutureVar[T]): T =
   ## Retrieves the value of ``future``. Future must be finished otherwise
