@@ -24,7 +24,7 @@ type
   ServerFlags* = enum
     ## Server's flags
     ReuseAddr, ReusePort, TcpNoDelay, NoAutoRead, GCUserData, FirstPipe,
-    NoPipeFlash
+    NoPipeFlash, Broadcast
 
   AddressFamily* {.pure.} = enum
     None, IPv4, IPv6, Unix
@@ -54,14 +54,6 @@ type
     Stopped,                      # Server stopped
     Running,                      # Server running
     Closed                        # Server closed
-
-  FutureGCString*[T] = ref object of Future[T]
-    ## Future to hold GC strings
-    gcholder*: string
-
-  FutureGCSeq*[A, B] = ref object of Future[A]
-    ## Future to hold GC seqs
-    gcholder*: seq[B]
 
 when defined(windows):
   type
@@ -510,6 +502,7 @@ when defined(windows):
     ERROR_BROKEN_PIPE* = 109
     ERROR_PIPE_NOT_CONNECTED* = 233
     ERROR_NO_DATA* = 232
+    ERROR_CONNECTION_ABORTED* = 1236
 
   proc cancelIo*(hFile: HANDLE): WINBOOL
        {.stdcall, dynlib: "kernel32", importc: "CancelIo".}
