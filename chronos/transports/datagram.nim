@@ -141,8 +141,12 @@ when defined(windows):
           transp.buflen = bytesCount
           asyncCheck transp.function(transp, raddr)
         elif int(err) == ERROR_OPERATION_ABORTED:
-          # CancelIO() interrupt
+          # CancelIO() interrupt or closeSocket() call.
           transp.state.incl(ReadPaused)
+          if ReadClosed in transp.state:
+            # If `ReadClosed` present, then close(transport) was called.
+            transp.future.complete()
+            GC_unref(transp)
           break
         else:
           transp.setReadError(err)
@@ -179,6 +183,12 @@ when defined(windows):
               transp.setReadError(err)
               transp.buflen = 0
               asyncCheck transp.function(transp, raddr)
+        else:
+          # Transport closure happens in callback, and we not started new
+          # WSARecvFrom session.
+          if ReadClosed in transp.state:
+            if not transp.future.finished:
+              transp.future.complete()
         break
 
   proc resumeRead(transp: DatagramTransport) {.inline.} =
@@ -450,11 +460,8 @@ proc close*(transp: DatagramTransport) =
   ## Closes and frees resources of transport ``transp``.
   when defined(windows):
     if {ReadClosed, WriteClosed} * transp.state == {}:
-      discard cancelIo(Handle(transp.fd))
-      closeSocket(transp.fd)
       transp.state.incl({WriteClosed, ReadClosed})
-      transp.future.complete()
-      GC_unref(transp)
+      closeSocket(transp.fd)
   else:
     proc continuation(udata: pointer) =
       transp.future.complete()
@@ -539,7 +546,7 @@ proc newDatagramTransport6*[T](cbproc: DatagramCallback,
 
 proc join*(transp: DatagramTransport): Future[void] =
   ## Wait until the transport ``transp`` will be closed.
-  var retFuture = newFuture[void]("datagramtransport.join")
+  var retFuture = newFuture[void]("datagram.transport.join")
   proc continuation(udata: pointer) = retFuture.complete()
   if not transp.future.finished:
     transp.future.addCallback(continuation)
@@ -556,7 +563,7 @@ proc send*(transp: DatagramTransport, pbytes: pointer,
            nbytes: int): Future[void] =
   ## Send buffer with pointer ``pbytes`` and size ``nbytes`` using transport
   ## ``transp`` to remote destination address which was bounded on transport.
-  var retFuture = newFuture[void]()
+  var retFuture = newFuture[void]("datagram.transport.send(pointer)")
   transp.checkClosed(retFuture)
   if transp.remote.port == Port(0):
     retFuture.fail(newException(TransportError, "Remote peer not set!"))
@@ -571,7 +578,7 @@ proc send*(transp: DatagramTransport, pbytes: pointer,
 proc send*(transp: DatagramTransport, msg: string, msglen = -1): Future[void] =
   ## Send string ``msg`` using transport ``transp`` to remote destination
   ## address which was bounded on transport.
-  var retFuture = FutureGCString[void]()
+  var retFuture = newFutureStr[void]("datagram.transport.send(string)")
   transp.checkClosed(retFuture)
   if not isLiteral(msg):
     shallowCopy(retFuture.gcholder, msg)
@@ -590,7 +597,7 @@ proc send*[T](transp: DatagramTransport, msg: seq[T],
               msglen = -1): Future[void] =
   ## Send string ``msg`` using transport ``transp`` to remote destination
   ## address which was bounded on transport.
-  var retFuture = FutureGCSeq[void, T]()
+  var retFuture = newFutureSeq[void, T]("datagram.transport.send(seq)")
   transp.checkClosed(retFuture)
   if not isLiteral(msg):
     shallowCopy(retFuture.gcholder, msg)
@@ -609,7 +616,7 @@ proc sendTo*(transp: DatagramTransport, remote: TransportAddress,
              pbytes: pointer, nbytes: int): Future[void] =
   ## Send buffer with pointer ``pbytes`` and size ``nbytes`` using transport
   ## ``transp`` to remote destination address ``remote``.
-  var retFuture = newFuture[void]()
+  var retFuture = newFuture[void]("datagram.transport.sendTo(pointer)")
   transp.checkClosed(retFuture)
   let vector = GramVector(kind: WithAddress, buf: pbytes, buflen: nbytes,
                           writer: retFuture, address: remote)
@@ -622,7 +629,7 @@ proc sendTo*(transp: DatagramTransport, remote: TransportAddress,
              msg: string, msglen = -1): Future[void] =
   ## Send string ``msg`` using transport ``transp`` to remote destination
   ## address ``remote``.
-  var retFuture = FutureGCString[void]()
+  var retFuture = newFutureStr[void]("datagram.transport.sendTo(string)")
   transp.checkClosed(retFuture)
   if not isLiteral(msg):
     shallowCopy(retFuture.gcholder, msg)
@@ -642,7 +649,7 @@ proc sendTo*[T](transp: DatagramTransport, remote: TransportAddress,
                 msg: seq[T], msglen = -1): Future[void] =
   ## Send sequence ``msg`` using transport ``transp`` to remote destination
   ## address ``remote``.
-  var retFuture = FutureGCSeq[void, T]()
+  var retFuture = newFutureSeq[void, T]("datagram.transport.sendTo(seq)")
   transp.checkClosed(retFuture)
   if not isLiteral(msg):
     shallowCopy(retFuture.gcholder, msg)

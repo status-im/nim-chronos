@@ -40,6 +40,14 @@ type
   Future*[T] = ref object of FutureBase ## Typed future.
     value: T ## Stored value
 
+  FutureStr*[T] = ref object of Future[T]
+    ## Future to hold GC strings
+    gcholder*: string
+
+  FutureSeq*[A, B] = ref object of Future[A]
+    ## Future to hold GC seqs
+    gcholder*: seq[B]
+
   FutureVar*[T] = distinct Future[T]
 
   FutureError* = object of Exception
@@ -91,6 +99,22 @@ proc newFutureVar*[T](fromProc = "unspecified"): FutureVar[T] =
   ## Specifying ``fromProc``, which is a string specifying the name of the proc
   ## that this future belongs to, is a good habit as it helps with debugging.
   result = FutureVar[T](newFuture[T](fromProc))
+
+proc newFutureSeq*[A, B](fromProc = "unspecified"): FutureSeq[A, B] =
+  ## Create a new future which can hold/preserve GC string until future will
+  ## not be completed.
+  ##
+  ## Specifying ``fromProc``, which is a string specifying the name of the proc
+  ## that this future belongs to, is a good habit as it helps with debugging.
+  setupFutureBase(fromProc)
+
+proc newFutureStr*[A](fromProc = "unspecified"): FutureStr[A] =
+  ## Create a new future which can hold/preserve GC seq[T] until future will
+  ## not be completed.
+  ##
+  ## Specifying ``fromProc``, which is a string specifying the name of the proc
+  ## that this future belongs to, is a good habit as it helps with debugging.
+  setupFutureBase(fromProc)
 
 proc clean*[T](future: FutureVar[T]) =
   ## Resets the ``finished`` status of ``future``.
