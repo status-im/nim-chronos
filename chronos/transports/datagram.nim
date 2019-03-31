@@ -236,6 +236,13 @@ when defined(windows):
           closeSocket(localSock)
         raiseTransportOsError(err)
 
+    if ServerFlags.Broadcast in flags:
+      if not setSockOpt(localSock, SOL_SOCKET, SO_BROADCAST, 1):
+        let err = osLastError()
+        if sock == asyncInvalidSocket:
+          closeSocket(localSock)
+        raiseTransportOsError(err)
+
     ## Fix for Q263823.
     var bytesRet: DWORD
     var bval = WINBOOL(0)
@@ -413,6 +420,13 @@ else:
     ## Apply ServerFlags here
     if ServerFlags.ReuseAddr in flags:
       if not setSockOpt(localSock, SOL_SOCKET, SO_REUSEADDR, 1):
+        let err = osLastError()
+        if sock == asyncInvalidSocket:
+          closeSocket(localSock)
+        raiseTransportOsError(err)
+
+    if ServerFlags.Broadcast in flags:
+      if not setSockOpt(localSock, SOL_SOCKET, SO_BROADCAST, 1):
         let err = osLastError()
         if sock == asyncInvalidSocket:
           closeSocket(localSock)
