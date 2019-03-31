@@ -463,6 +463,24 @@ suite "Datagram Transport test suite":
     except:
       discard
 
+  proc testBroadcast(): Future[int] {.async.} =
+    const expectMessage = "BROADCAST MESSAGE"
+    var ta1 = initTAddress("0.0.0.0:45010")
+    var bta = initTAddress("255.255.255.255:45010")
+    var res = 0
+    proc clientMark(transp: DatagramTransport,
+                     raddr: TransportAddress): Future[void] {.async.} =
+      var bmsg = transp.getMessage()
+      var smsg = cast[string](bmsg)
+      if smsg == expectMessage:
+        inc(res)
+      transp.close()
+    var dgram1 = newDatagramTransport(clientMark, local = ta1,
+                                      flags = {Broadcast})
+    await dgram1.sendTo(bta, expectMessage)
+    await wait(dgram1.join(), 5.seconds)
+    result = res
+
   test "close(transport) test":
     check waitFor(testTransportClose()) == true
   test m1:
@@ -483,3 +501,5 @@ suite "Datagram Transport test suite":
     check waitFor(test3(true)) == ClientsCount * MessagesCount
   test "Datagram connection reset test":
     check waitFor(testConnReset()) == true
+  test "Broadcast test":
+    check waitFor(testBroadcast()) == 1
