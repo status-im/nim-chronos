@@ -83,7 +83,7 @@ proc acquire*(lock: AsyncLock) {.async.} =
   if not lock.locked:
     lock.locked = true
   else:
-    var w = newFuture[void]("asynclock.acquire")
+    var w = newFuture[void]("AsyncLock.acquire")
     lock.waiters.addLast(w)
     yield w
     lock.locked = true
@@ -141,7 +141,7 @@ proc wait*(event: AsyncEvent) {.async.} =
   if event.flag:
     discard
   else:
-    var w = newFuture[void]("asyncevent.wait")
+    var w = newFuture[void]("AsyncEvent.wait")
     event.waiters.addLast(w)
     yield w
 
