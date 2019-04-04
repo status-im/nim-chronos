@@ -182,9 +182,15 @@ type
     finishAt*: Moment
     function*: AsyncCallback
 
+  TrackerBase* = ref object of RootRef
+    id*: string
+    dump*: proc(): string {.gcsafe.}
+    isLeaked*: proc(): bool {.gcsafe.}
+
   PDispatcherBase = ref object of RootRef
     timers*: HeapQueue[TimerCallback]
     callbacks*: Deque[AsyncCallback]
+    trackers*: Table[string, TrackerBase]
 
 proc `<`(a, b: TimerCallback): bool =
   result = a.finishAt < b.finishAt
@@ -305,6 +311,7 @@ when defined(windows) or defined(nimdoc):
     result.handles = initSet[AsyncFD]()
     result.timers.newHeapQueue()
     result.callbacks = initDeque[AsyncCallback](64)
+    result.trackers = initTable[string, TrackerBase]()
 
   var gDisp{.threadvar.}: PDispatcher ## Global dispatcher
 
@@ -479,6 +486,7 @@ else:
     result.timers.newHeapQueue()
     result.callbacks = initDeque[AsyncCallback](64)
     result.keys = newSeq[ReadyKey](64)
+    result.trackers = initTable[string, TrackerBase]()
 
   var gDisp{.threadvar.}: PDispatcher ## Global dispatcher
 
@@ -804,7 +812,7 @@ include asyncmacro2
 proc callSoon(cbproc: CallbackFunc, data: pointer = nil) =
   ## Schedule `cbproc` to be called as soon as possible.
   ## The callback is called when control returns to the event loop.
-  doAssert cbproc != nil
+  doAssert(not isNil(cbproc))
   let acb = AsyncCallback(function: cbproc, udata: data)
   getGlobalDispatcher().callbacks.addLast(acb)
 
@@ -819,6 +827,17 @@ proc waitFor*[T](fut: Future[T]): T =
     poll()
 
   fut.read
+
+proc addTracker*[T](id: string, tracker: T) =
+  ## Add new ``tracker`` object to current thread dispatcher with identifier
+  ## ``id``.
+  let loop = getGlobalDispatcher()
+  loop.trackers[id] = tracker
+
+proc getTracker*(id: string): TrackerBase =
+  ## Get ``tracker`` from current thread dispatcher using identifier ``id``.
+  let loop = getGlobalDispatcher()
+  result = loop.trackers.getOrDefault(id, nil)
 
 # Global API and callSoon() initialization.
 initAPI()

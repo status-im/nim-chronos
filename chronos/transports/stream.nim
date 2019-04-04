@@ -53,6 +53,18 @@ type
     # Please use this flag only if you are making both client and server in
     # the same thread.
 
+  StreamTransportTracker* = ref object of TrackerBase
+    opened*: int64
+    closed*: int64
+
+  StreamServerTracker* = ref object of TrackerBase
+    opened*: int64
+    closed*: int64
+
+const
+  StreamTransportTrackerName = "stream.transport"
+  StreamServerTrackerName = "stream.server"
+
 when defined(windows):
   const SO_UPDATE_CONNECT_CONTEXT = 0x7010
 
@@ -170,6 +182,69 @@ template shiftVectorBuffer(v, o: untyped) =
 template shiftVectorFile(v, o: untyped) =
   (v).buf = cast[pointer](cast[uint]((v).buf) - cast[uint](o))
   (v).offset += cast[uint]((o))
+
+proc setupStreamTransportTracker(): StreamTransportTracker {.gcsafe.}
+proc setupStreamServerTracker(): StreamServerTracker {.gcsafe.}
+
+proc getStreamTransportTracker(): StreamTransportTracker {.inline.} =
+  result = cast[StreamTransportTracker](getTracker(StreamTransportTrackerName))
+  if isNil(result):
+    result = setupStreamTransportTracker()
+
+proc getStreamServerTracker(): StreamServerTracker {.inline.} =
+  result = cast[StreamServerTracker](getTracker(StreamServerTrackerName))
+  if isNil(result):
+    result = setupStreamServerTracker()
+
+proc dumpTransportTracking(): string {.gcsafe.} =
+  var tracker = getStreamTransportTracker()
+  result = "Opened transports: " & $tracker.opened & "\n" &
+           "Closed transports: " & $tracker.closed
+
+proc dumpServerTracking(): string {.gcsafe.} =
+  var tracker = getStreamServerTracker()
+  result = "Opened servers: " & $tracker.opened & "\n" &
+           "Closed servers: " & $tracker.closed
+
+proc leakTransport(): bool {.gcsafe.} =
+  var tracker = getStreamTransportTracker()
+  result = tracker.opened != tracker.closed
+
+proc leakServer(): bool {.gcsafe.} =
+  var tracker = getStreamServerTracker()
+  result = tracker.opened != tracker.closed
+
+proc trackStream(t: StreamTransport) {.inline.} =
+  var tracker = getStreamTransportTracker()
+  inc(tracker.opened)
+
+proc untrackStream(t: StreamTransport) {.inline.}  =
+  var tracker = getStreamTransportTracker()
+  inc(tracker.closed)
+
+proc trackServer(s: StreamServer) {.inline.} =
+  var tracker = getStreamServerTracker()
+  inc(tracker.opened)
+
+proc untrackServer(s: StreamServer) {.inline.}  =
+  var tracker = getStreamServerTracker()
+  inc(tracker.closed)
+
+proc setupStreamTransportTracker(): StreamTransportTracker {.gcsafe.} =
+  result = new StreamTransportTracker
+  result.opened = 0
+  result.closed = 0
+  result.dump = dumpTransportTracking
+  result.isLeaked = leakTransport
+  addTracker(StreamTransportTrackerName, result)
+
+proc setupStreamServerTracker(): StreamServerTracker {.gcsafe.} =
+  result = new StreamServerTracker
+  result.opened = 0
+  result.closed = 0
+  result.dump = dumpServerTracking
+  result.isLeaked = leakServer
+  addTracker(StreamServerTrackerName, result)
 
 when defined(windows):
 
@@ -361,14 +436,6 @@ when defined(windows):
                           ERROR_BROKEN_PIPE, ERROR_NETNAME_DELETED}:
           # CancelIO() interrupt or closeSocket() call.
           transp.state.incl(ReadPaused)
-          if ReadClosed in transp.state:
-            if not isNil(transp.reader):
-              if not transp.reader.finished:
-                transp.reader.complete()
-                transp.reader = nil
-            # If `ReadClosed` present, then close(transport) was called.
-            transp.future.complete()
-            GC_unref(transp)
         elif transp.kind == TransportKind.Socket and
              (int(err) in {ERROR_NETNAME_DELETED, WSAECONNABORTED}):
           transp.state.incl({ReadEof, ReadPaused})
@@ -377,10 +444,19 @@ when defined(windows):
           transp.state.incl({ReadEof, ReadPaused})
         else:
           transp.setReadError(err)
+
         if not isNil(transp.reader):
           if not transp.reader.finished:
             transp.reader.complete()
             transp.reader = nil
+
+        if ReadClosed in transp.state:
+          # Stop tracking transport
+          untrackStream(transp)
+          # If `ReadClosed` present, then close(transport) was called.
+          transp.future.complete()
+          GC_unref(transp)
+
         if ReadPaused in transp.state:
           # Transport buffer is full, so we will not continue on reading.
           break
@@ -553,9 +629,11 @@ when defined(windows):
               sock.closeSocket()
               retFuture.fail(getTransportOsError(err))
             else:
-              retFuture.complete(newStreamSocketTransport(povl.data.fd,
-                                                          bufferSize,
-                                                          child))
+              let transp = newStreamSocketTransport(povl.data.fd, bufferSize,
+                                                    child)
+              # Start tracking transport
+              trackStream(transp)
+              retFuture.complete(transp)
           else:
             sock.closeSocket()
             retFuture.fail(getTransportOsError(ovl.data.errCode))
@@ -594,8 +672,11 @@ when defined(windows):
             retFuture.fail(getTransportOsError(err))
         else:
           register(AsyncFD(pipeHandle))
-          retFuture.complete(newStreamPipeTransport(AsyncFD(pipeHandle),
-                                                    bufferSize, child))
+          let transp = newStreamPipeTransport(AsyncFD(pipeHandle),
+                                              bufferSize, child)
+          # Start tracking transport
+          trackStream(transp)
+          retFuture.complete(transp)
       pipeContinuation(nil)
 
     return retFuture
@@ -621,10 +702,15 @@ when defined(windows):
           else:
             ntransp = newStreamPipeTransport(server.sock, server.bufferSize,
                                              nil, flags)
+          # Start tracking transport
+          trackStream(ntransp)
           asyncCheck server.function(server, ntransp)
         elif int32(ovl.data.errCode) == ERROR_OPERATION_ABORTED:
           # CancelIO() interrupt or close call.
           if server.status == ServerStatus.Closed:
+            # Stop tracking server
+            untrackServer(server)
+            # Completing server's Future
             server.loopFuture.complete()
             if not isNil(server.udata) and GCUserData in server.flags:
               GC_unref(cast[ref int](server.udata))
@@ -674,9 +760,12 @@ when defined(windows):
           # connectNamedPipe session.
           if server.status == ServerStatus.Closed:
             if not server.loopFuture.finished:
+              # Stop tracking server
+              untrackServer(server)
               server.loopFuture.complete()
               if not isNil(server.udata) and GCUserData in server.flags:
                 GC_unref(cast[ref int](server.udata))
+
               GC_unref(server)
 
   proc acceptLoop(udata: pointer) {.gcsafe, nimcall.} =
@@ -705,11 +794,15 @@ when defined(windows):
             else:
               ntransp = newStreamSocketTransport(server.asock,
                                                  server.bufferSize, nil)
+            # Start tracking transport
+            trackStream(ntransp)
             asyncCheck server.function(server, ntransp)
 
         elif int32(ovl.data.errCode) == ERROR_OPERATION_ABORTED:
           # CancelIO() interrupt or close.
           if server.status == ServerStatus.Closed:
+            # Stop tracking server
+            untrackServer(server)
             server.loopFuture.complete()
             if not isNil(server.udata) and GCUserData in server.flags:
               GC_unref(cast[ref int](server.udata))
@@ -753,6 +846,8 @@ when defined(windows):
           # AcceptEx session.
           if server.status == ServerStatus.Closed:
             if not server.loopFuture.finished:
+              # Stop tracking server
+              untrackServer(server)
               server.loopFuture.complete()
               if not isNil(server.udata) and GCUserData in server.flags:
                 GC_unref(cast[ref int](server.udata))
@@ -930,13 +1025,19 @@ else:
         closeSocket(fd)
         retFuture.fail(getTransportOsError(OSErrorCode(err)))
         return
-      retFuture.complete(newStreamSocketTransport(fd, bufferSize, child))
+      let transp = newStreamSocketTransport(fd, bufferSize, child)
+      # Start tracking transport
+      trackStream(transp)
+      retFuture.complete(transp)
 
     while true:
       var res = posix.connect(SocketHandle(sock),
                               cast[ptr SockAddr](addr saddr), slen)
       if res == 0:
-        retFuture.complete(newStreamSocketTransport(sock, bufferSize, child))
+        let transp = newStreamSocketTransport(sock, bufferSize, child)
+        # Start tracking transport
+        trackStream(transp)
+        retFuture.complete(transp)
         break
       else:
         let err = osLastError()
@@ -962,13 +1063,15 @@ else:
       if int(res) > 0:
         let sock = wrapAsyncSocket(res)
         if sock != asyncInvalidSocket:
+          var ntransp: StreamTransport
           if not isNil(server.init):
-            var transp = server.init(server, sock)
-            asyncCheck server.function(server,
-              newStreamSocketTransport(sock, server.bufferSize, transp))
+            let transp = server.init(server, sock)
+            ntransp = newStreamSocketTransport(sock, server.bufferSize, transp)
           else:
-            asyncCheck server.function(server,
-              newStreamSocketTransport(sock, server.bufferSize, nil))
+            ntransp = newStreamSocketTransport(sock, server.bufferSize, nil)
+          # Start tracking transport
+          trackStream(ntransp)
+          asyncCheck server.function(server, ntransp)
         break
       else:
         let err = osLastError()
@@ -1023,6 +1126,8 @@ proc close*(server: StreamServer) =
   ## sure all resources got released please use ``await server.join()``.
   when not defined(windows):
     proc continuation(udata: pointer) =
+      # Stop tracking server
+      untrackServer(server)
       server.loopFuture.complete()
       if not isNil(server.udata) and GCUserData in server.flags:
         GC_unref(cast[ref int](server.udata))
@@ -1197,6 +1302,8 @@ proc createStreamServer*(host: TransportAddress,
     result.domain = host.getDomain()
     result.apending = false
 
+  # Start tracking server
+  trackServer(result)
   GC_ref(result)
 
 proc createStreamServer*[T](host: TransportAddress,
@@ -1562,8 +1669,11 @@ proc close*(transp: StreamTransport) =
   ## Please note that release of resources is not completed immediately, to be
   ## sure all resources got released please use ``await transp.join()``.
   proc continuation(udata: pointer) =
-    transp.future.complete()
-    GC_unref(transp)
+    if not transp.future.finished:
+      transp.future.complete()
+      # Stop tracking stream
+      untrackStream(transp)
+      GC_unref(transp)
 
   if {ReadClosed, WriteClosed} * transp.state == {}:
     transp.state.incl({WriteClosed, ReadClosed})
