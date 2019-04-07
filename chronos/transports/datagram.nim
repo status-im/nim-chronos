@@ -54,6 +54,13 @@ type
       rwsabuf: TWSABuf                # Reader WSABUF structure
       wwsabuf: TWSABuf                # Writer WSABUF structure
 
+  DgramTransportTracker* = ref object of TrackerBase
+    opened*: int64
+    closed*: int64
+
+const
+  DgramTransportTrackerName = "datagram.transport"
+
 template setReadError(t, e: untyped) =
   (t).state.incl(ReadError)
   (t).error = getTransportOsError(e)
@@ -61,6 +68,38 @@ template setReadError(t, e: untyped) =
 template setWriterWSABuffer(t, v: untyped) =
   (t).wwsabuf.buf = cast[cstring](v.buf)
   (t).wwsabuf.len = cast[int32](v.buflen)
+
+proc setupDgramTransportTracker(): DgramTransportTracker {.gcsafe.}
+
+proc getDgramTransportTracker(): DgramTransportTracker {.inline.} =
+  result = cast[DgramTransportTracker](getTracker(DgramTransportTrackerName))
+  if isNil(result):
+    result = setupDgramTransportTracker()
+
+proc dumpTransportTracking(): string {.gcsafe.} =
+  var tracker = getDgramTransportTracker()
+  result = "Opened transports: " & $tracker.opened & "\n" &
+           "Closed transports: " & $tracker.closed
+
+proc leakTransport(): bool {.gcsafe.} =
+  var tracker = getDgramTransportTracker()
+  result = tracker.opened != tracker.closed
+
+proc trackDgram(t: DatagramTransport) {.inline.} =
+  var tracker = getDgramTransportTracker()
+  inc(tracker.opened)
+
+proc untrackDgram(t: DatagramTransport) {.inline.}  =
+  var tracker = getDgramTransportTracker()
+  inc(tracker.closed)
+
+proc setupDgramTransportTracker(): DgramTransportTracker {.gcsafe.} =
+  result = new DgramTransportTracker
+  result.opened = 0
+  result.closed = 0
+  result.dump = dumpTransportTracking
+  result.isLeaked = leakTransport
+  addTracker(DgramTransportTrackerName, result)
 
 when defined(windows):
   const
@@ -144,6 +183,8 @@ when defined(windows):
           # CancelIO() interrupt or closeSocket() call.
           transp.state.incl(ReadPaused)
           if ReadClosed in transp.state:
+            # Stop tracking transport
+            untrackDgram(transp)
             # If `ReadClosed` present, then close(transport) was called.
             transp.future.complete()
             GC_unref(transp)
@@ -188,7 +229,10 @@ when defined(windows):
           # WSARecvFrom session.
           if ReadClosed in transp.state:
             if not transp.future.finished:
+              # Stop tracking transport
+              untrackDgram(transp)
               transp.future.complete()
+              GC_unref(transp)
         break
 
   proc resumeRead(transp: DatagramTransport) {.inline.} =
@@ -299,6 +343,8 @@ when defined(windows):
     result.rwsabuf = TWSABuf(buf: cast[cstring](addr result.buffer[0]),
                              len: int32(len(result.buffer)))
     GC_ref(result)
+    # Start tracking transport
+    trackDgram(result)
     if NoAutoRead notin flags:
       result.resumeRead()
     else:
@@ -465,6 +511,8 @@ else:
     result.state = {WritePaused}
     result.future = newFuture[void]("datagram.transport")
     GC_ref(result)
+    # Start tracking transport
+    trackDgram(result)
     if NoAutoRead notin flags:
       result.resumeRead()
     else:
@@ -472,14 +520,25 @@ else:
 
 proc close*(transp: DatagramTransport) =
   ## Closes and frees resources of transport ``transp``.
+  proc continuation(udata: pointer) =
+    if not transp.future.finished:
+      # Stop tracking transport
+      untrackDgram(transp)
+      transp.future.complete()
+      GC_unref(transp)
+
   when defined(windows):
     if {ReadClosed, WriteClosed} * transp.state == {}:
       transp.state.incl({WriteClosed, ReadClosed})
-      closeSocket(transp.fd)
+      if ReadPaused in transp.state:
+        # If readDatagramLoop() is not running we need to finish in
+        # continuation step.
+        closeSocket(transp.fd, continuation)
+      else:
+        # If readDatagramLoop() is running, it will be properly finished inside
+        # of readDatagramLoop().
+        closeSocket(transp.fd)
   else:
-    proc continuation(udata: pointer) =
-      transp.future.complete()
-      GC_unref(transp)
     if {ReadClosed, WriteClosed} * transp.state == {}:
       transp.state.incl({WriteClosed, ReadClosed})
       closeSocket(transp.fd, continuation)

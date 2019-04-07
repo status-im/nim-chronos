@@ -503,3 +503,5 @@ suite "Datagram Transport test suite":
     check waitFor(testConnReset()) == true
   test "Broadcast test":
     check waitFor(testBroadcast()) == 1
+  test "Transports leak test":
+    check getTracker("datagram.transport").isLeaked() == false

@@ -631,6 +631,7 @@ suite "Stream Transport test suite":
     server.stop()
     server.close()
     await server.join()
+    await transp.join()
     result = subres
 
   proc testConnectionRefused(address: TransportAddress): Future[bool] {.async.} =
@@ -733,3 +734,8 @@ suite "Stream Transport test suite":
       check waitFor(testConnectionRefused(address)) == true
     test prefixes[i] & m16:
       check waitFor(test16(addresses[i])) == 1
+
+  test "Servers leak test":
+    check getTracker("stream.server").isLeaked() == false
+  test "Transports leak test":
+    check getTracker("stream.transport").isLeaked() == false
