@@ -37,7 +37,6 @@ type
     errorStackTrace*: StackTrace
     stackTrace: StackTrace ## For debugging purposes only.
     id: int
-    fromProc: cstring
 
   # ZAH: we have discussed some possible optimizations where
   # the future can be stored within the caller's stack frame.
@@ -78,12 +77,11 @@ proc callSoon*(c: CallbackFunc, u: pointer = nil) =
   ## Call ``cbproc`` "soon".
   callSoonHolder(c, u)
 
-template setupFutureBase(fromProc: cstring, loc: ptr SrcLoc) =
+template setupFutureBase(loc: ptr SrcLoc) =
   new(result)
   result.finished = false
   result.stackTrace = getStackTrace()
   result.id = currentID
-  result.fromProc = fromProc
   result.location[LocCreateIndex] = loc
   currentID.inc()
 
@@ -92,45 +90,48 @@ template setupFutureBase(fromProc: cstring, loc: ptr SrcLoc) =
 ## known `char *` in the final program (so it needs to be a `cstring` in Nim).
 ## The public API can be defined as a template expecting a `static[string]`
 ## and converting this immediately to a `cstring`.
-proc newFuture[T](fromProc: cstring, loc: ptr SrcLoc): Future[T] =
-  setupFutureBase(fromProc, loc)
+proc newFuture[T](loc: ptr SrcLoc): Future[T] =
+  setupFutureBase(loc)
 
-proc newFutureSeq[A, B](fromProc: cstring, loc: ptr SrcLoc): FutureSeq[A, B] =
-  setupFutureBase(fromProc, loc)
+proc newFutureSeq[A, B](loc: ptr SrcLoc): FutureSeq[A, B] =
+  setupFutureBase(loc)
 
-proc newFutureStr[T](fromProc: cstring, loc: ptr SrcLoc): FutureStr[T] =
-  setupFutureBase(fromProc, loc)
+proc newFutureStr[T](loc: ptr SrcLoc): FutureStr[T] =
+  setupFutureBase(loc)
 
-template newFuture*[T](fromProc: static[string] = "unspecified"): auto =
+proc newFutureVar[T](loc: ptr SrcLoc): FutureVar[T] =
+  FutureVar[T](newFuture[T](loc))
+
+template newFuture*[T](fromProc: static[string] = ""): auto =
   ## Creates a new future.
   ##
   ## Specifying ``fromProc``, which is a string specifying the name of the proc
   ## that this future belongs to, is a good habit as it helps with debugging.
-  newFuture[T](fromProc, getSrcLocation())
+  newFuture[T](getSrcLocation(fromProc))
 
-template newFutureSeq*[A, B](fromProc: static[string] = "unspecified"): auto =
+template newFutureSeq*[A, B](fromProc: static[string] = ""): auto =
   ## Create a new future which can hold/preserve GC sequence until future will
   ## not be completed.
   ##
   ## Specifying ``fromProc``, which is a string specifying the name of the proc
   ## that this future belongs to, is a good habit as it helps with debugging.
-  newFutureSeq[A, B](fromProc, getSrcLocation())
+  newFutureSeq[A, B](getSrcLocation(fromProc))
 
-template newFutureStr*[T](fromProc: static[string] = "unspecified"): auto =
+template newFutureStr*[T](fromProc: static[string] = ""): auto =
   ## Create a new future which can hold/preserve GC string until future will
   ## not be completed.
   ##
   ## Specifying ``fromProc``, which is a string specifying the name of the proc
   ## that this future belongs to, is a good habit as it helps with debugging.
-  newFutureStr[T](fromProc, getSrcLocation())
+  newFutureStr[T](getSrcLocation(fromProc))
 
-proc newFutureVar*[T](fromProc: static[string] = "unspecified"): FutureVar[T] =
+template newFutureVar*[T](fromProc: static[string] = ""): auto =
   ## Create a new ``FutureVar``. This Future type is ideally suited for
   ## situations where you want to avoid unnecessary allocations of Futures.
   ##
   ## Specifying ``fromProc``, which is a string specifying the name of the proc
   ## that this future belongs to, is a good habit as it helps with debugging.
-  result = FutureVar[T](newFuture[T](fromProc))
+  newFutureVar[T](getSrcLocation(fromProc))
 
 proc clean*[T](future: FutureVar[T]) =
   ## Resets the ``finished`` status of ``future``.
@@ -145,7 +146,6 @@ proc checkFinished[T](future: Future[T], loc: ptr SrcLoc) =
     msg.add("An attempt was made to complete a Future more than once. ")
     msg.add("Details:")
     msg.add("\n  Future ID: " & $future.id)
-    msg.add("\n  Future proc: " & $future.fromProc)
     msg.add("\n  Creation location:")
     msg.add("\n    " & $future.location[LocCreateIndex])
     msg.add("\n  First completion location:")
@@ -243,7 +243,6 @@ template fail*[T](future: Future[T], error: ref Exception) =
   fail(future, error, getSrcLocation())
 
 proc clearCallbacks(future: FutureBase) =
-  # ZAH: This could have been a single call to `setLen`
   var count = len(future.callbacks)
   while count > 0:
     discard future.callbacks.popFirst()
