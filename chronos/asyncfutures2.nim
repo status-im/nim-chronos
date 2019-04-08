@@ -9,6 +9,12 @@
 #                MIT license (LICENSE-MIT)
 
 import os, tables, strutils, times, heapqueue, options, deques, cstrutils
+import srcloc
+export srcloc
+
+const
+  LocCreateIndex = 0
+  LocCompleteIndex = 1
 
 type
   CallbackFunc* = proc (arg: pointer = nil) {.gcsafe.}
@@ -24,14 +30,14 @@ type
   StackTrace = string
 
   FutureBase* = ref object of RootObj ## Untyped future.
+    location: array[2, ptr SrcLoc]
     callbacks: Deque[AsyncCallback]
-
     finished: bool
     error*: ref Exception ## Stored exception
     errorStackTrace*: StackTrace
     stackTrace: StackTrace ## For debugging purposes only.
     id: int
-    fromProc: string
+    fromProc: cstring
 
   # ZAH: we have discussed some possible optimizations where
   # the future can be stored within the caller's stack frame.
@@ -72,12 +78,13 @@ proc callSoon*(c: CallbackFunc, u: pointer = nil) =
   ## Call ``cbproc`` "soon".
   callSoonHolder(c, u)
 
-template setupFutureBase(fromProc: string) =
+template setupFutureBase(fromProc: cstring, loc: ptr SrcLoc) =
   new(result)
   result.finished = false
   result.stackTrace = getStackTrace()
   result.id = currentID
   result.fromProc = fromProc
+  result.location[LocCreateIndex] = loc
   currentID.inc()
 
 ## ZAH: As far as I undestand `fromProc` is just a debugging helper.
@@ -85,14 +92,39 @@ template setupFutureBase(fromProc: string) =
 ## known `char *` in the final program (so it needs to be a `cstring` in Nim).
 ## The public API can be defined as a template expecting a `static[string]`
 ## and converting this immediately to a `cstring`.
-proc newFuture*[T](fromProc: string = "unspecified"): Future[T] =
+proc newFuture[T](fromProc: cstring, loc: ptr SrcLoc): Future[T] =
+  setupFutureBase(fromProc, loc)
+
+proc newFutureSeq[A, B](fromProc: cstring, loc: ptr SrcLoc): FutureSeq[A, B] =
+  setupFutureBase(fromProc, loc)
+
+proc newFutureStr[T](fromProc: cstring, loc: ptr SrcLoc): FutureStr[T] =
+  setupFutureBase(fromProc, loc)
+
+template newFuture*[T](fromProc: static[string] = "unspecified"): auto =
   ## Creates a new future.
   ##
   ## Specifying ``fromProc``, which is a string specifying the name of the proc
   ## that this future belongs to, is a good habit as it helps with debugging.
-  setupFutureBase(fromProc)
+  newFuture[T](fromProc, getSrcLocation())
 
-proc newFutureVar*[T](fromProc = "unspecified"): FutureVar[T] =
+template newFutureSeq*[A, B](fromProc: static[string] = "unspecified"): auto =
+  ## Create a new future which can hold/preserve GC sequence until future will
+  ## not be completed.
+  ##
+  ## Specifying ``fromProc``, which is a string specifying the name of the proc
+  ## that this future belongs to, is a good habit as it helps with debugging.
+  newFutureSeq[A, B](fromProc, getSrcLocation())
+
+template newFutureStr*[T](fromProc: static[string] = "unspecified"): auto =
+  ## Create a new future which can hold/preserve GC string until future will
+  ## not be completed.
+  ##
+  ## Specifying ``fromProc``, which is a string specifying the name of the proc
+  ## that this future belongs to, is a good habit as it helps with debugging.
+  newFutureStr[T](fromProc, getSrcLocation())
+
+proc newFutureVar*[T](fromProc: static[string] = "unspecified"): FutureVar[T] =
   ## Create a new ``FutureVar``. This Future type is ideally suited for
   ## situations where you want to avoid unnecessary allocations of Futures.
   ##
@@ -100,28 +132,12 @@ proc newFutureVar*[T](fromProc = "unspecified"): FutureVar[T] =
   ## that this future belongs to, is a good habit as it helps with debugging.
   result = FutureVar[T](newFuture[T](fromProc))
 
-proc newFutureSeq*[A, B](fromProc = "unspecified"): FutureSeq[A, B] =
-  ## Create a new future which can hold/preserve GC string until future will
-  ## not be completed.
-  ##
-  ## Specifying ``fromProc``, which is a string specifying the name of the proc
-  ## that this future belongs to, is a good habit as it helps with debugging.
-  setupFutureBase(fromProc)
-
-proc newFutureStr*[A](fromProc = "unspecified"): FutureStr[A] =
-  ## Create a new future which can hold/preserve GC seq[T] until future will
-  ## not be completed.
-  ##
-  ## Specifying ``fromProc``, which is a string specifying the name of the proc
-  ## that this future belongs to, is a good habit as it helps with debugging.
-  setupFutureBase(fromProc)
-
 proc clean*[T](future: FutureVar[T]) =
   ## Resets the ``finished`` status of ``future``.
   Future[T](future).finished = false
   Future[T](future).error = nil
 
-proc checkFinished[T](future: Future[T]) =
+proc checkFinished[T](future: Future[T], loc: ptr SrcLoc) =
   ## Checks whether `future` is finished. If it is then raises a
   ## ``FutureError``.
   if future.finished:
@@ -129,7 +145,13 @@ proc checkFinished[T](future: Future[T]) =
     msg.add("An attempt was made to complete a Future more than once. ")
     msg.add("Details:")
     msg.add("\n  Future ID: " & $future.id)
-    msg.add("\n  Created in proc: " & future.fromProc)
+    msg.add("\n  Future proc: " & $future.fromProc)
+    msg.add("\n  Creation location:")
+    msg.add("\n    " & $future.location[LocCreateIndex])
+    msg.add("\n  First completion location:")
+    msg.add("\n    " & $future.location[LocCompleteIndex])
+    msg.add("\n  Second completion location:")
+    msg.add("\n    " & $loc)
     msg.add("\n  Stack trace to moment of creation:")
     msg.add("\n" & indent(future.stackTrace.strip(), 4))
     when T is string:
@@ -137,9 +159,12 @@ proc checkFinished[T](future: Future[T]) =
       msg.add("\n" & indent(future.value.repr, 4))
     msg.add("\n  Stack trace to moment of secondary completion:")
     msg.add("\n" & indent(getStackTrace().strip(), 4))
+    msg.add("\n\n")
     var err = newException(FutureError, msg)
     err.cause = future
     raise err
+  else:
+    future.location[LocCompleteIndex] = loc
 
 proc call(callbacks: var Deque[AsyncCallback]) =
   var count = len(callbacks)
@@ -150,7 +175,6 @@ proc call(callbacks: var Deque[AsyncCallback]) =
     dec(count)
 
 proc add(callbacks: var Deque[AsyncCallback], item: AsyncCallback) =
-  # ZAH: perhaps this is the default behavior with latest Nim (no need for the `len` check)
   if len(callbacks) == 0:
     callbacks = initDeque[AsyncCallback]()
   callbacks.addLast(item)
@@ -160,51 +184,63 @@ proc remove(callbacks: var Deque[AsyncCallback], item: AsyncCallback) =
     if p.function == item.function and p.udata == item.udata:
       p.deleted = true
 
-proc complete*[T](future: Future[T], val: T) =
-  ## Completes ``future`` with value ``val``.
-  #doAssert(not future.finished, "Future already finished, cannot finish twice.")
-  checkFinished(future)
+proc complete[T](future: Future[T], val: T, loc: ptr SrcLoc) =
+  checkFinished(future, loc)
   doAssert(isNil(future.error))
   future.value = val
   future.finished = true
   future.callbacks.call()
 
-proc complete*(future: Future[void]) =
+template complete*[T](future: Future[T], val: T) =
+  ## Completes ``future`` with value ``val``.
+  complete(future, val, getSrcLocation())
+
+proc complete(future: Future[void], loc: ptr SrcLoc) =
   ## Completes a void ``future``.
-  #doAssert(not future.finished, "Future already finished, cannot finish twice.")
-  checkFinished(future)
+  checkFinished(future, loc)
   doAssert(isNil(future.error))
   future.finished = true
   future.callbacks.call()
 
-proc complete*[T](future: FutureVar[T]) =
-  ## Completes a ``FutureVar``.
+template complete*(future: Future[void]) =
+  complete(future, getSrcLocation())
+
+proc complete[T](future: FutureVar[T], loc: ptr SrcLoc) =
   template fut: untyped = Future[T](future)
-  checkFinished(fut)
+  checkFinished(fut, loc)
   doAssert(isNil(fut.error))
   fut.finished = true
   fut.callbacks.call()
 
-proc complete*[T](future: FutureVar[T], val: T) =
-  ## Completes a ``FutureVar`` with value ``val``.
-  ##
-  ## Any previously stored value will be overwritten.
-  template fut: untyped = Future[T](future)
-  checkFinished(fut)
+template complete*[T](futvar: FutureVar[T]) =
+  ## Completes a ``FutureVar``.
+  complete(futvar, getSrcLocation())
+
+proc complete[T](futvar: FutureVar[T], val: T, loc: ptr SrcLoc) =
+  template fut: untyped = Future[T](futvar)
+  checkFinished(fut, loc)
   doAssert(isNil(fut.error))
   fut.finished = true
   fut.value = val
   fut.callbacks.call()
 
-proc fail*[T](future: Future[T], error: ref Exception) =
-  ## Completes ``future`` with ``error``.
-  #doAssert(not future.finished, "Future already finished, cannot finish twice.")
-  checkFinished(future)
+template complete*[T](futvar: FutureVar[T], val: T) =
+  ## Completes a ``FutureVar`` with value ``val``.
+  ##
+  ## Any previously stored value will be overwritten.
+  complete(futvar, val, getSrcLocation())
+
+proc fail[T](future: Future[T], error: ref Exception, loc: ptr SrcLoc) =
+  checkFinished(future, loc)
   future.finished = true
   future.error = error
   future.errorStackTrace =
     if getStackTrace(error) == "": getStackTrace() else: getStackTrace(error)
   future.callbacks.call()
+
+template fail*[T](future: Future[T], error: ref Exception) =
+  ## Completes ``future`` with ``error``.
+  fail(future, error, getSrcLocation())
 
 proc clearCallbacks(future: FutureBase) =
   # ZAH: This could have been a single call to `setLen`
@@ -314,7 +350,6 @@ proc injectStacktrace[T](future: Future[T]) =
     # containing the async traceback.
     let start = exceptionMsg.find(header)
     exceptionMsg = exceptionMsg[0..<start]
-
 
   var newMsg = exceptionMsg & header
 
