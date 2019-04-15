@@ -408,7 +408,6 @@ suite "Network utilities test suite":
 
   test "IpNet test vectors":
     for item in NetworkVectors:
-      echo "ITEM ", item
       var res: bool
       var inet: IpNet
       try:
