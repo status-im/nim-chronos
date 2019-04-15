@@ -410,7 +410,8 @@ proc init*(t: typedesc[IpNet], network: string): IpNet =
         if (ipaddr.family == IpAddressFamily.IPv4 and
            (prefix < 0 or prefix > 32)) or
            (ipaddr.family == IpAddressFamily.IPv6 and
-           (prefix < 0 or prefix > 128)):
+           (prefix < 0 or prefix > 128)) or
+           (prefix == 0 and parts[1][0] notin {'0'..'9'}): # /-0 case
           raise newException(TransportAddressError,
                              "Incorrect network address!")
     if prefix == -1:
