@@ -721,14 +721,14 @@ proc removeTimer*(at: uint64, cb: CallbackFunc, udata: pointer = nil) {.
      inline, deprecated: "Use removeTimer(Duration, cb, udata)".} =
   removeTimer(Moment.init(int64(at), Millisecond), cb, udata)
 
-proc sleepAsync*(ms: Duration): Future[void] =
+proc sleepAsync*(duration: Duration): Future[void] =
   ## Suspends the execution of the current async procedure for the next
-  ## ``ms`` milliseconds.
+  ## ``duration`` time.
   var retFuture = newFuture[void]("sleepAsync")
   proc completion(data: pointer) =
     if not retFuture.finished:
       retFuture.complete()
-  addTimer(Moment.fromNow(ms), completion, cast[pointer](retFuture))
+  addTimer(Moment.fromNow(duration), completion, cast[pointer](retFuture))
   return retFuture
 
 proc sleepAsync*(ms: int): Future[void] {.

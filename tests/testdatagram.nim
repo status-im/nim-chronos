@@ -476,7 +476,7 @@ suite "Datagram Transport test suite":
         inc(res)
       transp.close()
     var dgram1 = newDatagramTransport(clientMark, local = ta1,
-                                      flags = {Broadcast})
+                                      flags = {Broadcast}, ttl = 2)
     await dgram1.sendTo(bta, expectMessage)
     await wait(dgram1.join(), 5.seconds)
     result = res

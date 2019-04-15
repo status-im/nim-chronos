@@ -1,0 +1,264 @@
+#                Chronos Test Suite
+#            (c) Copyright 2018-Present
+#         Status Research & Development GmbH
+#
+#              Licensed under either of
+#  Apache License, version 2.0, (LICENSE-APACHEv2)
+#              MIT license (LICENSE-MIT)
+import unittest
+import ../chronos
+
+suite "Network utilities test suite":
+  test "IPv4 networks test":
+    var a: TransportAddress
+    check:
+      a.isUnspecified() == true
+      initTAddress("0.0.0.0:0").isUnspecified() == false
+
+      initTAddress("0.0.0.0:0").isZero() == true
+      initTAddress("1.0.0.0:0").isZero() == false
+
+      initTAddress("127.0.0.0:0").isLoopback() == true
+      initTAddress("127.255.255.255:0").isLoopback() == true
+      initTAddress("128.0.0.0:0").isLoopback() == false
+      initTAddress("126.0.0.0:0").isLoopback() == false
+
+      initTAddress("224.0.0.0:0").isMulticast() == true
+      initTAddress("230.0.0.0:0").isMulticast() == true
+      initTAddress("239.255.255.255:0").isMulticast() == true
+      initTAddress("240.0.0.0:0").isMulticast() == false
+      initTAddress("223.0.0.0:0").isMulticast() == false
+
+      initTAddress("224.0.0.0:0").isLinkLocalMulticast() == true
+      initTAddress("224.0.0.255:0").isLinkLocalMulticast() == true
+      initTAddress("225.0.0.0:0").isLinkLocalMulticast() == false
+      initTAddress("224.0.1.0:0").isLinkLocalMulticast() == false
+
+      initTAddress("0.0.0.0:0").isAnyLocal() == true
+      initTAddress("1.0.0.0:0").isAnyLocal() == false
+
+      initTAddress("169.254.0.0:0").isLinkLocal() == true
+      initTAddress("169.254.255.255:0").isLinkLocal() == true
+      initTAddress("169.255.0.0:0").isLinkLocal() == false
+      initTAddress("169.253.0.0:0").isLinkLocal() == false
+
+      initTAddress("10.0.0.0:0").isSiteLocal() == true
+      initTAddress("10.255.255.255:0").isSiteLocal() == true
+      initTAddress("11.0.0.0:0").isSiteLocal() == false
+      initTAddress("9.0.0.0:0").isSiteLocal() == false
+      initTAddress("172.16.0.0:0").isSiteLocal() == true
+      initTAddress("172.31.255.255:0").isSiteLocal() == true
+      initTAddress("172.15.0.0:0").isSiteLocal() == false
+      initTAddress("172.32.0.0:0").isSiteLocal() == false
+      initTAddress("192.168.0.0:0").isSiteLocal() == true
+      initTAddress("192.168.255.255:0").isSiteLocal() == true
+      initTAddress("192.167.0.0:0").isSiteLocal() == false
+      initTAddress("192.169.0.0:0").isSiteLocal() == false
+
+      initTAddress("224.0.1.0:0").isGlobalMulticast() == true
+      initTAddress("238.255.255.255:0").isGlobalMulticast() == true
+      initTAddress("224.0.0.0:0").isGlobalMulticast() == false
+      initTAddress("239.0.0.0:0").isGlobalMulticast() == false
+
+  test "IPv6 networks test":
+    check:
+      initTAddress("[::]:0").isUnspecified() == false
+
+      initTAddress("[::]:0").isZero() == true
+      initTAddress("[::1]:0").isZero() == false
+
+      initTAddress("[::1]:0").isLoopback() == true
+      initTAddress("[::2]:0").isLoopback() == false
+
+      initTAddress("[FF00::]:0").isMulticast() == true
+      initTAddress("[FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]:0").isMulticast() == true
+      initTAddress("[F000::]:0").isMulticast() == false
+
+      initTAddress("[::]:0").isAnyLocal() == true
+      initTAddress("[::1]:0").isAnyLocal() == false
+
+      initTAddress("[FE80::]:0").isLinkLocal() == true
+      initTAddress("[FEBF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]:0").isLinkLocal() == true
+      initTAddress("[FE7F::]:0").isLinkLocal() == false
+      initTAddress("[FEC0::]:0").isLinkLocal() == false
+
+      initTAddress("[FEC0::]:0").isSiteLocal() == true
+      initTAddress("[FEFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]:0").isSiteLocal() == true
+      initTAddress("[FEBF::]:0").isSiteLocal() == false
+      initTAddress("[FF00::]:0").isSiteLocal() == false
+
+      initTAddress("[FF0E::]:0").isGlobalMulticast() == true
+      initTAddress("[FFFE:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]:0").isGlobalMulticast() == true
+      initTAddress("[FF0D::]:0").isGlobalMulticast() == false
+      initTAddress("[FFFF::]:0").isGlobalMulticast() == false
+
+  test "IP masks test":
+    check:
+      $IpMask.init(AddressFamily.IPv4, -1) == "00000000"
+      $IpMask.init(AddressFamily.IPv4, 0) == "00000000"
+      $IpMask.init(AddressFamily.IPv4, 4) == "F0000000"
+      $IpMask.init(AddressFamily.IPv4, 8) == "FF000000"
+      $IpMask.init(AddressFamily.IPv4, 12) == "FFF00000"
+      $IpMask.init(AddressFamily.IPv4, 16) == "FFFF0000"
+      $IpMask.init(AddressFamily.IPv4, 20) == "FFFFF000"
+      $IpMask.init(AddressFamily.IPv4, 24) == "FFFFFF00"
+      $IpMask.init(AddressFamily.IPv4, 28) == "FFFFFFF0"
+      $IpMask.init(AddressFamily.IPv4, 32) == "FFFFFFFF"
+      $IpMask.init(AddressFamily.IPv4, 33) == "FFFFFFFF"
+
+      IpMask.init(AddressFamily.IPv4, -1) == IpMask.init("00000000")
+      IpMask.init(AddressFamily.IPv4, 0) == IpMask.init("00000000")
+      IpMask.init(AddressFamily.IPv4, 4) == IpMask.init("F0000000")
+      IpMask.init(AddressFamily.IPv4, 8) == IpMask.init("FF000000")
+      IpMask.init(AddressFamily.IPv4, 12) == IpMask.init("FFF00000")
+      IpMask.init(AddressFamily.IPv4, 16) == IpMask.init("FFFF0000")
+      IpMask.init(AddressFamily.IPv4, 20) == IpMask.init("FFFFF000")
+      IpMask.init(AddressFamily.IPv4, 24) == IpMask.init("FFFFFF00")
+      IpMask.init(AddressFamily.IPv4, 28) == IpMask.init("FFFFFFF0")
+      IpMask.init(AddressFamily.IPv4, 32) == IpMask.init("FFFFFFFF")
+      IpMask.init(AddressFamily.IPv4, 33) == IpMask.init("FFFFFFFF")
+
+      IpMask.init(initTAddress("255.0.0.0:0")) == IpMask.initIp("255.0.0.0")
+      IpMask.init(initTAddress("255.255.0.0:0")) == IpMask.initIp("255.255.0.0")
+      IpMask.init(initTAddress("255.255.255.0:0")) ==
+        IpMask.initIp("255.255.255.0")
+      IpMask.init(initTAddress("255.255.255.255:0")) ==
+        IpMask.initIp("255.255.255.255")
+
+      IpMask.init("00000000").prefix() == 0
+      IpMask.init("F0000000").prefix() == 4
+      IpMask.init("FF000000").prefix() == 8
+      IpMask.init("FFF00000").prefix() == 12
+      IpMask.init("FFFF0000").prefix() == 16
+      IpMask.init("FFFFF000").prefix() == 20
+      IpMask.init("FFFFFF00").prefix() == 24
+      IpMask.init("FFFFFFF0").prefix() == 28
+      IpMask.init("FFFFFFFF").prefix() == 32
+
+      IpMask.init("00000000").subnetMask() == initTAddress("0.0.0.0:0")
+      IpMask.init("F0000000").subnetMask() == initTAddress("240.0.0.0:0")
+      IpMask.init("FF000000").subnetMask() == initTAddress("255.0.0.0:0")
+      IpMask.init("FFF00000").subnetMask() == initTAddress("255.240.0.0:0")
+      IpMask.init("FFFF0000").subnetMask() == initTAddress("255.255.0.0:0")
+      IpMask.init("FFFFF000").subnetMask() == initTAddress("255.255.240.0:0")
+      IpMask.init("FFFFFF00").subnetMask() == initTAddress("255.255.255.0:0")
+      IpMask.init("FFFFFFF0").subnetMask() == initTAddress("255.255.255.240:0")
+      IpMask.init("FFFFFFFF").subnetMask() == initTAddress("255.255.255.255:0")
+
+      IpMask.init("00000000").ip() == "0.0.0.0"
+      IpMask.init("F0000000").ip() == "240.0.0.0"
+      IpMask.init("FF000000").ip() == "255.0.0.0"
+      IpMask.init("FFF00000").ip() == "255.240.0.0"
+      IpMask.init("FFFF0000").ip() == "255.255.0.0"
+      IpMask.init("FFFFF000").ip() == "255.255.240.0"
+      IpMask.init("FFFFFF00").ip() == "255.255.255.0"
+      IpMask.init("FFFFFFF0").ip() == "255.255.255.240"
+      IpMask.init("FFFFFFFF").ip() == "255.255.255.255"
+
+      initTAddress("241.241.241.241:0").mask(IpMask.init("00000000")) ==
+        initTAddress("0.0.0.0:0")
+      initTAddress("241.241.241.241:0").mask(IpMask.init("F0000000")) ==
+        initTAddress("240.0.0.0:0")
+      initTAddress("241.241.241.241:0").mask(IpMask.init("FF000000")) ==
+        initTAddress("241.0.0.0:0")
+      initTAddress("241.241.241.241:0").mask(IpMask.init("FFF00000")) ==
+        initTAddress("241.240.0.0:0")
+      initTAddress("241.241.241.241:0").mask(IpMask.init("FFFF0000")) ==
+        initTAddress("241.241.0.0:0")
+      initTAddress("241.241.241.241:0").mask(IpMask.init("FFFFF000")) ==
+        initTAddress("241.241.240.0:0")
+      initTAddress("241.241.241.241:0").mask(IpMask.init("FFFFFF00")) ==
+        initTAddress("241.241.241.0:0")
+      initTAddress("241.241.241.241:0").mask(IpMask.init("FFFFFFF0")) ==
+        initTAddress("241.241.241.240:0")
+      initTAddress("241.241.241.241:0").mask(IpMask.init("FFFFFFFF")) ==
+        initTAddress("241.241.241.241:0")
+
+  test "IP networks test":
+    check:
+      IpNet.init(initTAddress("192.168.0.1:0"), 0) ==
+        IpNet.init("192.168.0.1/0.0.0.0")
+      IpNet.init(initTAddress("192.168.0.1:0"), 4) ==
+        IpNet.init("192.168.0.1/240.0.0.0")
+      IpNet.init(initTAddress("192.168.0.1:0"), 8) ==
+        IpNet.init("192.168.0.1/255.0.0.0")
+      IpNet.init(initTAddress("192.168.0.1:0"), 12) ==
+        IpNet.init("192.168.0.1/255.240.0.0")
+      IpNet.init(initTAddress("192.168.0.1:0"), 16) ==
+        IpNet.init("192.168.0.1/255.255.0.0")
+      IpNet.init(initTAddress("192.168.0.1:0"), 20) ==
+        IpNet.init("192.168.0.1/255.255.240.0")
+      IpNet.init(initTAddress("192.168.0.1:0"), 24) ==
+        IpNet.init("192.168.0.1/255.255.255.0")
+      IpNet.init(initTAddress("192.168.0.1:0"), 28) ==
+        IpNet.init("192.168.0.1/255.255.255.240")
+      IpNet.init(initTAddress("192.168.0.1:0"), 32) ==
+        IpNet.init("192.168.0.1/255.255.255.255")
+
+      IpNet.init(initTAddress("192.168.0.1:0"), 0) ==
+        IpNet.init("192.168.0.1/0")
+      IpNet.init(initTAddress("192.168.0.1:0"), 4) ==
+        IpNet.init("192.168.0.1/4")
+      IpNet.init(initTAddress("192.168.0.1:0"), 8) ==
+        IpNet.init("192.168.0.1/8")
+      IpNet.init(initTAddress("192.168.0.1:0"), 12) ==
+        IpNet.init("192.168.0.1/12")
+      IpNet.init(initTAddress("192.168.0.1:0"), 16) ==
+        IpNet.init("192.168.0.1/16")
+      IpNet.init(initTAddress("192.168.0.1:0"), 20) ==
+        IpNet.init("192.168.0.1/20")
+      IpNet.init(initTAddress("192.168.0.1:0"), 24) ==
+        IpNet.init("192.168.0.1/24")
+      IpNet.init(initTAddress("192.168.0.1:0"), 28) ==
+        IpNet.init("192.168.0.1/28")
+      IpNet.init(initTAddress("192.168.0.1:0"), 32) ==
+        IpNet.init("192.168.0.1/32")
+
+      IpNet.init("192.168.0.1/24").contains(initTAddress("192.168.0.1:0")) ==
+        true
+      IpNet.init("192.168.0.1/24").contains(initTAddress("192.168.0.128:0")) ==
+        true
+      IpNet.init("192.168.0.1/24").contains(initTAddress("192.168.0.255:0")) ==
+        true
+      IpNet.init("192.168.0.1/24").contains(initTAddress("192.168.1.0:0")) ==
+        false
+      IpNet.init("192.168.0.1/0").contains(initTAddress("1.1.1.1:0")) ==
+        true
+      IpNet.init("192.168.0.1/32").contains(initTAddress("192.168.0.1:0")) ==
+        true
+      IpNet.init("192.168.0.1/32").contains(initTAddress("192.168.0.2:0")) ==
+        false
+
+  test "IPv4 <-> IPv6 mapping test":
+    check:
+      initTAddress("255.255.255.255:0").toIPv6() ==
+        initTAddress("[::FFFF:FFFF:FFFF]:0")
+      initTAddress("128.128.128.128:0").toIPv6() ==
+        initTAddress("[::FFFF:8080:8080]:0")
+      initTAddress("1.1.1.1:0").toIPv6() == initTAddress("[::FFFF:0101:0101]:0")
+      initTAddress("0.0.0.0:0").toIPv6() == initTAddress("[::FFFF:0000:0000]:0")
+      initTAddress("[::FFFF:FFFF:FFFF]:0").isV4Mapped() == true
+      initTAddress("[::FFFF:8080:8080]:0").isV4Mapped() == true
+      initTAddress("[::FFFF:0101:0101]:0").isV4Mapped() == true
+      initTAddress("[::FFFF:0000:0000]:0").isV4Mapped() == true
+      initTAddress("[::FFFF:FFFF:FFFF]:0").toIPv4() ==
+        initTAddress("255.255.255.255:0")
+      initTAddress("[::FFFF:8080:8080]:0").toIPv4() ==
+        initTAddress("128.128.128.128:0")
+      initTAddress("[::FFFF:0101:0101]:0").toIPv4() == initTAddress("1.1.1.1:0")
+      initTAddress("[::FFFF:0000:0000]:0").toIPv4() == initTAddress("0.0.0.0:0")
+
+  test "getInterfaces() test":
+    var ifaces = getInterfaces()
+    check:
+      len(ifaces) > 0
+    for item in ifaces:
+      echo item
+
+  test "getBestRoute() test":
+    var route = getBestRoute(initTAddress("8.8.8.8:0"))
+    check:
+      route.source.isUnspecified() == false
+      route.dest.isUnspecified() == false
+      route.ifIndex != 0
+    echo route

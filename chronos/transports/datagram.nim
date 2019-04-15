@@ -15,6 +15,10 @@ when defined(windows):
   import winlean
 else:
   import posix
+  var IP_MULTICAST_TTL* {.importc: "IP_MULTICAST_TTL",
+                          header: "<netinet/in.h>".}: cint
+  var IPV6_MULTICAST_HOPS* {.importc: "IPV6_MULTICAST_HOPS",
+                             header: "<netinet/in.h>".}: cint
 
 type
   VectorKind = enum
@@ -105,6 +109,8 @@ when defined(windows):
   const
     IOC_VENDOR = DWORD(0x18000000)
     SIO_UDP_CONNRESET = DWORD(winlean.IOC_IN) or IOC_VENDOR or DWORD(12)
+    IPPROTO_IP = DWORD(0)
+    IP_TTL = DWORD(4)
 
   proc writeDatagramLoop(udata: pointer) =
     var bytesCount: int32
@@ -250,7 +256,8 @@ when defined(windows):
                                   flags: set[ServerFlags],
                                   udata: pointer,
                                   child: DatagramTransport,
-                                  bufferSize: int): DatagramTransport =
+                                  bufferSize: int,
+                                  ttl: int): DatagramTransport =
     var localSock: AsyncFD
     doAssert(remote.family == local.family)
     doAssert(not isNil(cbproc))
@@ -286,6 +293,13 @@ when defined(windows):
         if sock == asyncInvalidSocket:
           closeSocket(localSock)
         raiseTransportOsError(err)
+
+      if ttl > 0:
+        if not setSockOpt(localSock, IPPROTO_IP, IP_TTL, DWORD(ttl)):
+          let err = osLastError()
+          if sock == asyncInvalidSocket:
+            closeSocket(localSock)
+          raiseTransportOsError(err)
 
     ## Fix for Q263823.
     var bytesRet: DWORD
@@ -437,7 +451,8 @@ else:
                                   flags: set[ServerFlags],
                                   udata: pointer,
                                   child: DatagramTransport = nil,
-                                  bufferSize: int): DatagramTransport =
+                                  bufferSize: int,
+                                  ttl: int): DatagramTransport =
     var localSock: AsyncFD
     doAssert(remote.family == local.family)
     doAssert(not isNil(cbproc))
@@ -477,6 +492,20 @@ else:
         if sock == asyncInvalidSocket:
           closeSocket(localSock)
         raiseTransportOsError(err)
+
+      if ttl > 0:
+        var res: bool
+        if local.family == AddressFamily.IPv4:
+          res = setSockOpt(localSock, posix.IPPROTO_IP, IP_MULTICAST_TTL,
+                           cint(ttl))
+        elif local.family == AddressFamily.IPv6:
+           res = setSockOpt(localSock, posix.IPPROTO_IP, IPV6_MULTICAST_HOPS,
+                            cint(ttl))
+        if not res:
+          let err = osLastError()
+          if sock == asyncInvalidSocket:
+            closeSocket(localSock)
+          raiseTransportOsError(err)
 
     if local.port != Port(0):
       var saddr: Sockaddr_storage
@@ -550,7 +579,8 @@ proc newDatagramTransport*(cbproc: DatagramCallback,
                            flags: set[ServerFlags] = {},
                            udata: pointer = nil,
                            child: DatagramTransport = nil,
-                           bufSize: int = DefaultDatagramBufferSize
+                           bufSize: int = DefaultDatagramBufferSize,
+                           ttl: int = 0
                            ): DatagramTransport =
   ## Create new UDP datagram transport (IPv4).
   ##
@@ -561,9 +591,11 @@ proc newDatagramTransport*(cbproc: DatagramCallback,
   ## ``sock`` - application-driven socket to use.
   ## ``flags`` - flags that will be applied to socket.
   ## ``udata`` - custom argument which will be passed to ``cbproc``.
-  ## ``bufSize`` - size of internal buffer
+  ## ``bufSize`` - size of internal buffer.
+  ## ``ttl`` - TTL for UDP datagram packet (only usable when flags has
+  ## ``Broadcast`` option).
   result = newDatagramTransportCommon(cbproc, remote, local, sock,
-                                      flags, udata, child, bufSize)
+                                      flags, udata, child, bufSize, ttl)
 
 proc newDatagramTransport*[T](cbproc: DatagramCallback,
                               udata: ref T,
@@ -572,13 +604,14 @@ proc newDatagramTransport*[T](cbproc: DatagramCallback,
                               sock: AsyncFD = asyncInvalidSocket,
                               flags: set[ServerFlags] = {},
                               child: DatagramTransport = nil,
-                              bufSize: int = DefaultDatagramBufferSize
+                              bufSize: int = DefaultDatagramBufferSize,
+                              ttl: int = 0
                               ): DatagramTransport =
   var fflags = flags + {GCUserData}
   GC_ref(udata)
   result = newDatagramTransportCommon(cbproc, remote, local, sock,
                                       fflags, cast[pointer](udata),
-                                      child, bufSize)
+                                      child, bufSize, ttl)
 
 proc newDatagramTransport6*(cbproc: DatagramCallback,
                             remote: TransportAddress = AnyAddress6,
@@ -587,7 +620,8 @@ proc newDatagramTransport6*(cbproc: DatagramCallback,
                             flags: set[ServerFlags] = {},
                             udata: pointer = nil,
                             child: DatagramTransport = nil,
-                            bufSize: int = DefaultDatagramBufferSize
+                            bufSize: int = DefaultDatagramBufferSize,
+                            ttl: int = 0
                             ): DatagramTransport =
   ## Create new UDP datagram transport (IPv6).
   ##
@@ -599,8 +633,10 @@ proc newDatagramTransport6*(cbproc: DatagramCallback,
   ## ``flags`` - flags that will be applied to socket.
   ## ``udata`` - custom argument which will be passed to ``cbproc``.
   ## ``bufSize`` - size of internal buffer.
+  ## ``ttl`` - TTL for UDP datagram packet (only usable when flags has
+  ## ``Broadcast`` option).
   result = newDatagramTransportCommon(cbproc, remote, local, sock,
-                                      flags, udata, child, bufSize)
+                                      flags, udata, child, bufSize, ttl)
 
 proc newDatagramTransport6*[T](cbproc: DatagramCallback,
                                udata: ref T,
@@ -609,13 +645,14 @@ proc newDatagramTransport6*[T](cbproc: DatagramCallback,
                                sock: AsyncFD = asyncInvalidSocket,
                                flags: set[ServerFlags] = {},
                                child: DatagramTransport = nil,
-                               bufSize: int = DefaultDatagramBufferSize
+                               bufSize: int = DefaultDatagramBufferSize,
+                               ttl: int = 0
                                ): DatagramTransport =
   var fflags = flags + {GCUserData}
   GC_ref(udata)
   result = newDatagramTransportCommon(cbproc, remote, local, sock,
                                       fflags, cast[pointer](udata),
-                                      child, bufSize)
+                                      child, bufSize, ttl)
 
 proc join*(transp: DatagramTransport): Future[void] =
   ## Wait until the transport ``transp`` will be closed.
