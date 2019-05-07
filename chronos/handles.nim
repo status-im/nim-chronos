@@ -48,8 +48,18 @@ proc setSockOpt*(socket: AsyncFD, level, optname, optval: int): bool =
                 sizeof(value).SockLen) < 0'i32:
     result = false
 
+proc setSockOpt*(socket: AsyncFD, level, optname: int, value: pointer,
+                 valuelen: int): bool =
+  ## `setsockopt()` for custom options (pointer and length).
+  ## Returns ``true`` on success, ``false`` on error.
+  result = true
+  if setsockopt(SocketHandle(socket), cint(level), cint(optname), value,
+                Socklen(valuelen)) < 0'i32:
+    result = false
+
 proc getSockOpt*(socket: AsyncFD, level, optname: int, value: var int): bool =
   ## `getsockopt()` for integer options.
+  ## Returns ``true`` on success, ``false`` on error.
   var res: cint
   var size = sizeof(res).SockLen
   result = true
@@ -57,6 +67,16 @@ proc getSockOpt*(socket: AsyncFD, level, optname: int, value: var int): bool =
                 addr(res), addr(size)) < 0'i32:
     return false
   value = int(res)
+
+proc getSockOpt*(socket: AsyncFD, level, optname: int, value: pointer,
+                 valuelen: var int): bool =
+  ## `getsockopt()` for custom options (pointer and length).
+  ## Returns ``true`` on success, ``false`` on error.
+  var res: cint
+  result = true
+  if getsockopt(SocketHandle(socket), cint(level), cint(optname),
+                value, cast[ptr Socklen](addr valuelen)) < 0'i32:
+    result = false
 
 proc getSocketError*(socket: AsyncFD, err: var int): bool =
   ## Recover error code associated with socket handle ``socket``.

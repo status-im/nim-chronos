@@ -1469,7 +1469,7 @@ proc readUntil*(transp: StreamTransport, pbytes: pointer, nbytes: int,
   ## Read data from the transport ``transp`` until separator ``sep`` is found.
   ##
   ## On success, the data and separator will be removed from the internal
-  ## buffer (consumed). Returned data will NOT include the separator at the end.
+  ## buffer (consumed). Returned data will include the separator at the end.
   ##
   ## If EOF is received, and `sep` was not found, procedure will raise
   ## ``TransportIncompleteError``.
@@ -1578,35 +1578,37 @@ proc read*(transp: StreamTransport, n = -1): Future[seq[byte]] {.async.} =
   ## This procedure allocates buffer seq[byte] and return it as result.
   checkClosed(transp)
   checkPending(transp)
-  result = newSeq[byte]()
+  var res = newSeq[byte]()
   while true:
     if (ReadError in transp.state):
       raise transp.getError()
     if (ReadClosed in transp.state) or transp.atEof():
+      result = res
       break
 
     if transp.offset > 0:
-      let s = len(result)
+      let s = len(res)
       let o = s + transp.offset
-      if n < 0:
+      if n <= 0:
         # grabbing all incoming data, until EOF
-        result.setLen(o)
-        copyMem(cast[pointer](addr result[s]), addr(transp.buffer[0]),
+        res.setLen(o)
+        copyMem(cast[pointer](addr res[s]), addr(transp.buffer[0]),
                 transp.offset)
         transp.offset = 0
       else:
         let left = n - s
         if transp.offset >= left:
           # size of buffer data is more then we need, grabbing only part
-          result.setLen(n)
-          copyMem(cast[pointer](addr result[s]), addr(transp.buffer[0]),
+          res.setLen(n)
+          copyMem(cast[pointer](addr res[s]), addr(transp.buffer[0]),
                   left)
           transp.shiftBuffer(left)
+          result = res
           break
         else:
           # there not enough data in buffer, grabbing all
-          result.setLen(o)
-          copyMem(cast[pointer](addr result[s]), addr(transp.buffer[0]),
+          res.setLen(o)
+          copyMem(cast[pointer](addr res[s]), addr(transp.buffer[0]),
                   transp.offset)
           transp.offset = 0
 
@@ -1631,7 +1633,7 @@ proc consume*(transp: StreamTransport, n = -1): Future[int] {.async.} =
       break
 
     if transp.offset > 0:
-      if n == -1:
+      if n <= 0:
         # consume all incoming data, until EOF
         result += transp.offset
         transp.offset = 0
