@@ -6,7 +6,6 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 import strutils, unittest, os
-import hexdump
 import ../chronos
 
 suite "AsyncStream test suite":
