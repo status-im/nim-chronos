@@ -153,11 +153,13 @@ template toBufferOpenArray*(sb: AsyncBuffer): auto =
 
 proc newAsyncStreamReadError(p: ref Exception): ref Exception {.inline.} =
   var w = newException(AsyncStreamReadError, "Read stream failed")
+  w.msg = w.msg & ", originated from [" & $p.name & "] " & p.msg
   w.par = p
   result = w
 
 proc newAsyncStreamWriteError(p: ref Exception): ref Exception {.inline.} =
   var w = newException(AsyncStreamWriteError, "Write stream failed")
+  w.msg = w.msg & ", originated from [" & $p.name & "] " & p.msg
   w.par = p
   result = w
 

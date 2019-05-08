@@ -199,6 +199,14 @@ suite "AsyncStream test suite":
       check cast[string](buffer) == "1111111111"
       await rstream2.readExactly(addr buffer[0], 10)
       check cast[string](buffer) == "2222222222"
+
+      # We need to consume all the stream with finish markers, but there will
+      # be no actual data.
+      let left = await rstream2.consume()
+      check:
+        left == 0
+        rstream2.atEof() == true
+
       await rstream2.closeWait()
       await rstream.closeWait()
       await transp.closeWait()
@@ -248,6 +256,14 @@ suite "AsyncStream test suite":
       check:
         r3 == 13
         cast[string](buffer) == "2222222222NNz"
+
+      # We need to consume all the stream with finish markers, but there will
+      # be no actual data.
+      let left = await rstream2.consume()
+      check:
+        left == 0
+        rstream2.atEof() == true
+
       await rstream2.closeWait()
       await rstream.closeWait()
       await transp.closeWait()
@@ -285,6 +301,14 @@ suite "AsyncStream test suite":
       check r2 == "1111111111"
       var r3 = await rstream2.readLine()
       check r3 == "2222222222"
+
+      # We need to consume all the stream with finish markers, but there will
+      # be no actual data.
+      let left = await rstream2.consume()
+      check:
+        left == 0
+        rstream2.atEof() == true
+
       await rstream2.closeWait()
       await rstream.closeWait()
       await transp.closeWait()
@@ -319,6 +343,11 @@ suite "AsyncStream test suite":
       check cast[string](buf1) == "0000000000"
       var buf2 = await rstream2.read()
       check cast[string](buf2) == "11111111112222222222"
+
+      # read() call will consume all the bytes and finish markers too, so
+      # we just check stream for EOF.
+      check rstream2.atEof() == true
+
       await rstream2.closeWait()
       await rstream.closeWait()
       await transp.closeWait()
@@ -370,6 +399,14 @@ suite "AsyncStream test suite":
         res2 == 10
       var buf2 = await rstream2.read(10)
       check cast[string](buf2) == "3333333333"
+
+      # We need to consume all the stream with finish markers, but there will
+      # be no actual data.
+      let left = await rstream2.consume()
+      check:
+        left == 0
+        rstream2.atEof() == true
+
       await rstream2.closeWait()
       await rstream.closeWait()
       await transp.closeWait()
