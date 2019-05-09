@@ -66,6 +66,18 @@ suite "Server's test suite":
     waitFor server2.join()
     result = true
 
+  proc test5(): bool =
+    var ta = initTAddress("127.0.0.1:31354")
+    var server1 = createStreamServer(ta, serveStreamClient, {ReuseAddr})
+    server1.stop()
+    server1.close()
+    waitFor server1.join()
+    var server2 = createStreamServer(ta, serveStreamClient, {ReuseAddr})
+    server2.stop()
+    server2.close()
+    waitFor server2.join()
+    result = true
+
   proc client1(server: CustomServer, ta: TransportAddress) {.async.} =
     var transp = CustomTransport()
     transp.test = "CLIENT"
@@ -115,6 +127,8 @@ suite "Server's test suite":
 
   test "Stream Server start/stop test":
     check test1() == true
+  test "Stream Server stop without start test":
+    check test5() == true
   test "Stream Server inherited object test":
     check test3() == true
   test "StreamServer[T] test":

@@ -6,7 +6,6 @@
 #              Licensed under either of
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
-
 import net, nativesockets, os, deques
 import ../asyncloop, ../handles, ../sendfile
 import common
@@ -707,7 +706,7 @@ when defined(windows):
           asyncCheck server.function(server, ntransp)
         elif int32(ovl.data.errCode) == ERROR_OPERATION_ABORTED:
           # CancelIO() interrupt or close call.
-          if server.status == ServerStatus.Closed:
+          if server.status in {ServerStatus.Closed, ServerStatus.Stopped}:
             # Stop tracking server
             untrackServer(server)
             # Completing server's Future
@@ -758,7 +757,7 @@ when defined(windows):
         else:
           # Server close happens in callback, and we are not started new
           # connectNamedPipe session.
-          if server.status == ServerStatus.Closed:
+          if server.status in {ServerStatus.Closed, ServerStatus.Stopped}:
             if not server.loopFuture.finished:
               # Stop tracking server
               untrackServer(server)
@@ -800,13 +799,14 @@ when defined(windows):
 
         elif int32(ovl.data.errCode) == ERROR_OPERATION_ABORTED:
           # CancelIO() interrupt or close.
-          if server.status == ServerStatus.Closed:
+          if server.status in {ServerStatus.Closed, ServerStatus.Stopped}:
             # Stop tracking server
-            untrackServer(server)
-            server.loopFuture.complete()
-            if not isNil(server.udata) and GCUserData in server.flags:
-              GC_unref(cast[ref int](server.udata))
-            GC_unref(server)
+            if not server.loopFuture.finished:
+              untrackServer(server)
+              server.loopFuture.complete()
+              if not isNil(server.udata) and GCUserData in server.flags:
+                GC_unref(cast[ref int](server.udata))
+              GC_unref(server)
           break
         else:
           server.asock.closeSocket()
@@ -844,7 +844,7 @@ when defined(windows):
         else:
           # Server close happens in callback, and we are not started new
           # AcceptEx session.
-          if server.status == ServerStatus.Closed:
+          if server.status in {ServerStatus.Closed, ServerStatus.Stopped}:
             if not server.loopFuture.finished:
               # Stop tracking server
               untrackServer(server)
@@ -1124,9 +1124,9 @@ proc close*(server: StreamServer) =
   ##
   ## Please note that release of resources is not completed immediately, to be
   ## sure all resources got released please use ``await server.join()``.
-  when not defined(windows):
-    proc continuation(udata: pointer) =
-      # Stop tracking server
+  proc continuation(udata: pointer) =
+    # Stop tracking server
+    if not server.loopFuture.finished:
       untrackServer(server)
       server.loopFuture.complete()
       if not isNil(server.udata) and GCUserData in server.flags:
@@ -1136,12 +1136,18 @@ proc close*(server: StreamServer) =
     server.status = ServerStatus.Closed
     when defined(windows):
       if server.local.family in {AddressFamily.IPv4, AddressFamily.IPv6}:
-        server.sock.closeSocket()
+        if not server.apending:
+          server.sock.closeSocket(continuation)
+        else:
+          server.sock.closeSocket()
       elif server.local.family in {AddressFamily.Unix}:
         if NoPipeFlash notin server.flags:
           discard flushFileBuffers(Handle(server.sock))
         doAssert disconnectNamedPipe(Handle(server.sock)) == 1
-        closeHandle(server.sock)
+        if not server.apending:
+          server.sock.closeHandle(continuation)
+        else:
+          server.sock.closeHandle()
     else:
       server.sock.closeSocket(continuation)
 
