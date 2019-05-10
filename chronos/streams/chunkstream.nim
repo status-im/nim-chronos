@@ -22,7 +22,7 @@ type
 
   ChunkedStreamWriter* = ref object of AsyncStreamWriter
 
-  ChunkedStreamError* = object of Exception
+  ChunkedStreamError* = object of CatchableError
   ChunkedStreamTimeoutError* = object of ChunkedStreamError
   ChunkedStreamProtocolError* = object of ChunkedStreamError
 
