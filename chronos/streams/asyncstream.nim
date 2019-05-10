@@ -83,9 +83,9 @@ type
 
   AsyncStreamRW* = AsyncStreamReader | AsyncStreamWriter
 
-  AsyncStreamError* = object of Exception
+  AsyncStreamError* = object of CatchableError
   AsyncStreamIncompleteError* = object of AsyncStreamError
-  AsyncStreamIncorrectError* = object of AsyncStreamError
+  AsyncStreamIncorrectError* = object of Defect
   AsyncStreamLimitError* = object of AsyncStreamError
   AsyncStreamReadError* = object of AsyncStreamError
     par*: ref Exception

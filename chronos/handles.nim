@@ -42,48 +42,37 @@ proc setSocketBlocking*(s: SocketHandle, blocking: bool): bool =
 proc setSockOpt*(socket: AsyncFD, level, optname, optval: int): bool =
   ## `setsockopt()` for integer options.
   ## Returns ``true`` on success, ``false`` on error.
-  result = true
   var value = cint(optval)
-  if setsockopt(SocketHandle(socket), cint(level), cint(optname), addr(value),
-                sizeof(value).SockLen) < 0'i32:
-    result = false
+  result = setsockopt(SocketHandle(socket), cint(level), cint(optname),
+                      addr(value), SockLen(sizeof(value))) >= cint(0)
 
 proc setSockOpt*(socket: AsyncFD, level, optname: int, value: pointer,
                  valuelen: int): bool =
   ## `setsockopt()` for custom options (pointer and length).
   ## Returns ``true`` on success, ``false`` on error.
-  result = true
-  if setsockopt(SocketHandle(socket), cint(level), cint(optname), value,
-                Socklen(valuelen)) < 0'i32:
-    result = false
+  result = setsockopt(SocketHandle(socket), cint(level), cint(optname), value,
+                      SockLen(valuelen)) >= cint(0)
 
 proc getSockOpt*(socket: AsyncFD, level, optname: int, value: var int): bool =
   ## `getsockopt()` for integer options.
   ## Returns ``true`` on success, ``false`` on error.
   var res: cint
-  var size = sizeof(res).SockLen
-  result = true
+  var size = SockLen(sizeof(res))
   if getsockopt(SocketHandle(socket), cint(level), cint(optname),
-                addr(res), addr(size)) < 0'i32:
-    return false
-  value = int(res)
+                addr(res), addr(size)) >= cint(0):
+    value = int(res)
+    result = true
 
 proc getSockOpt*(socket: AsyncFD, level, optname: int, value: pointer,
                  valuelen: var int): bool =
   ## `getsockopt()` for custom options (pointer and length).
   ## Returns ``true`` on success, ``false`` on error.
-  var res: cint
-  result = true
-  if getsockopt(SocketHandle(socket), cint(level), cint(optname),
-                value, cast[ptr Socklen](addr valuelen)) < 0'i32:
-    result = false
+  result = getsockopt(SocketHandle(socket), cint(level), cint(optname),
+                      value, cast[ptr Socklen](addr valuelen)) >= cint(0)
 
 proc getSocketError*(socket: AsyncFD, err: var int): bool =
   ## Recover error code associated with socket handle ``socket``.
-  if not getSockOpt(socket, cint(SOL_SOCKET), cint(SO_ERROR), err):
-    result = false
-  else:
-    result = true
+  result = getSockOpt(socket, cint(SOL_SOCKET), cint(SO_ERROR), err)
 
 proc createAsyncSocket*(domain: Domain, sockType: SockType,
                         protocol: Protocol): AsyncFD =
