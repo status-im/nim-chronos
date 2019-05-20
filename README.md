@@ -6,6 +6,10 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 ![Stability: experimental](https://img.shields.io/badge/stability-experimental-orange.svg)
 
+## Introduction
+
+Chronos is an efficient library for asynchronous programming and an alternative to Nim's asyncdispatch.
+
 ## Core differences between the standard library asyncdispatch and Chronos
 
 1. Unified callback type `CallbackFunc`:
@@ -84,6 +88,10 @@ $ nimble install https://github.com/status-im/nim-chronos.git
   * Pipe/Subprocess Transports.
   * Multithreading Stream/Datagram servers
   * Future[T] cancelation
+  
+## Contributing
+
+When submitting pull requests, please add test cases for any new features or fixes and make sure `nimble test` is still able to execute the entire test suite successfully.
 
 ## License
 
