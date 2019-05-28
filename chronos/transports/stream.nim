@@ -1642,7 +1642,7 @@ proc readLine*(transp: StreamTransport, limit = 0,
       await fut
 
 proc read*(transp: StreamTransport, n = -1): Future[seq[byte]] {.async.} =
-  ## Read all bytes (n == -1) or exactly `n` bytes from transport ``transp``.
+  ## Read all bytes (n <= 0) or exactly `n` bytes from transport ``transp``.
   ##
   ## This procedure allocates buffer seq[byte] and return it as result.
   checkClosed(transp)
