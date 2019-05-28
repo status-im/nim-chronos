@@ -692,6 +692,28 @@ suite "Stream Transport test suite":
     except:
       discard
 
+  proc testWriteConnReset(address: TransportAddress): Future[int] {.async.} =
+    proc client(server: StreamServer, transp: StreamTransport) {.async.} =
+      await transp.closeWait()
+    var n = 10
+    var server = createStreamServer(address, client, {ReuseAddr})
+    server.start()
+    var msg = "HELLO"
+    var ntransp = await connect(address)
+    while true:
+      var res = await ntransp.write(msg)
+      if res == 0:
+        result = 1
+        break
+      else:
+        dec(n)
+      if n == 0:
+        break
+
+    server.stop()
+    await ntransp.closeWait()
+    await server.closeWait()
+
   for i in 0..<len(addresses):
     test prefixes[i] & "close(transport) test":
       check waitFor(testCloseTransport(addresses[i])) == 1
@@ -734,6 +756,8 @@ suite "Stream Transport test suite":
       check waitFor(testConnectionRefused(address)) == true
     test prefixes[i] & m16:
       check waitFor(test16(addresses[i])) == 1
+    test prefixes[i] & "Connection reset test on send() only":
+      check waitFor(testWriteConnReset(addresses[i])) == 1
 
   test "Servers leak test":
     check getTracker("stream.server").isLeaked() == false
