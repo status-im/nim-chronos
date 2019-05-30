@@ -109,6 +109,7 @@ type
     WritePending,                 # Writer operation pending (Windows)
     WritePaused,                  # Writer operations paused
     WriteClosed,                  # Writer operations closed
+    WriteEof,                     # Remote peer disconnected
     WriteError                    # Write error
 
 var
