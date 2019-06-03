@@ -98,10 +98,10 @@ proc init*(t: typedesc[IpMask], family: AddressFamily, prefix: int): IpMask =
 proc init*(t: typedesc[IpMask], netmask: TransportAddress): IpMask =
   ## Initialize network mask using address ``netmask``.
   if netmask.family == AddressFamily.IPv4:
-    result.family = netmask.family
+    result = IpMask(family: netmask.family)
     result.mask4 = cast[ptr uint32](unsafeAddr netmask.address_v4[0])[]
   elif netmask.family == AddressFamily.IPv6:
-    result.family = netmask.family
+    result = IpMask(family: netmask.family)
     result.mask6[0] = cast[ptr uint64](unsafeAddr netmask.address_v6[0])[]
     result.mask6[1] = cast[ptr uint64](unsafeAddr netmask.address_v6[8])[]
 
