@@ -437,7 +437,7 @@ proc `and`*[T, Y](fut1: Future[T], fut2: Future[Y]): Future[void] =
   #
   # We should investigate this further, before settling on the final design.
   # The same reasoning applies to `or` and `all`.
-  var retFuture = newFuture[void]("asyncdispatch.`and`")
+  var retFuture = newFuture[void]("chronos.`and`")
   proc cb(data: pointer) =
     if not retFuture.finished:
       if (fut1.failed or fut1.finished) and (fut2.failed or fut2.finished):
@@ -454,7 +454,7 @@ proc `and`*[T, Y](fut1: Future[T], fut2: Future[Y]): Future[void] =
 proc `or`*[T, Y](fut1: Future[T], fut2: Future[Y]): Future[void] =
   ## Returns a future which will complete once either ``fut1`` or ``fut2``
   ## complete.
-  var retFuture = newFuture[void]("asyncdispatch.`or`")
+  var retFuture = newFuture[void]("chronos.`or`")
   proc cb(data: pointer) {.gcsafe.} =
     if not retFuture.finished:
       var fut = cast[FutureBase](data)
@@ -487,7 +487,7 @@ proc all*[T](futs: varargs[Future[T]]): auto =
   var nfuts = @futs
 
   when T is void:
-    var retFuture = newFuture[void]("asyncdispatch.all(void)")
+    var retFuture = newFuture[void]("chronos.all(void)")
     for fut in nfuts:
       fut.addCallback proc (data: pointer) =
         inc(completedFutures)
@@ -505,7 +505,7 @@ proc all*[T](futs: varargs[Future[T]]): auto =
 
     return retFuture
   else:
-    var retFuture = newFuture[seq[T]]("asyncdispatch.all(T)")
+    var retFuture = newFuture[seq[T]]("chronos.all(T)")
     var retValues = newSeq[T](totalFutures)
     for fut in nfuts:
       fut.addCallback proc (data: pointer) =
@@ -525,3 +525,69 @@ proc all*[T](futs: varargs[Future[T]]): auto =
       retFuture.complete(retValues)
 
     return retFuture
+
+proc oneIndex*[T](futs: varargs[Future[T]]): Future[int] =
+  ## Returns a future which will complete once one of the futures in ``futs``
+  ## complete.
+  ##
+  ## If the argument is empty, the returned future FAILS immediately.
+  ##
+  ## Returned future will hold index of completed/failed future in ``futs``
+  ## argument.
+  var nfuts = @futs
+  var retFuture = newFuture[int]("chronos.oneIndex(T)")
+
+  proc cb(data: pointer) {.gcsafe.} =
+    var res = -1
+    if not retFuture.finished:
+      var rfut = cast[FutureBase](data)
+      for i in 0..<len(nfuts):
+        if cast[FutureBase](nfuts[i]) != rfut:
+          nfuts[i].removeCallback(cb)
+        else:
+          res = i
+      retFuture.complete(res)
+
+  for fut in nfuts:
+    fut.addCallback(cb)
+
+  if len(nfuts) == 0:
+    retFuture.fail(newException(ValueError, "Empty Future[T] list"))
+
+  return retFuture
+
+proc oneValue*[T](futs: varargs[Future[T]]): Future[T] =
+  ## Returns a future which will complete once one of the futures in ``futs``
+  ## complete.
+  ##
+  ## If the argument is empty, returned future FAILS immediately.
+  ##
+  ## Returned future will hold value of completed ``futs`` future, or error
+  ## if future was failed.
+  var nfuts = @futs
+  var retFuture = newFuture[T]("chronos.oneValue(T)")
+
+  proc cb(data: pointer) {.gcsafe.} =
+    var resFut: Future[T]
+    if not retFuture.finished:
+      var rfut = cast[FutureBase](data)
+      for i in 0..<len(nfuts):
+        if cast[FutureBase](nfuts[i]) != rfut:
+          nfuts[i].removeCallback(cb)
+        else:
+          resFut = nfuts[i]
+      if resFut.failed:
+        retFuture.fail(resFut.error)
+      else:
+        when T is void:
+          retFuture.complete()
+        else:
+          retFuture.complete(resFut.read())
+
+  for fut in nfuts:
+    fut.addCallback(cb)
+
+  if len(nfuts) == 0:
+    retFuture.fail(newException(ValueError, "Empty Future[T] list"))
+
+  return retFuture

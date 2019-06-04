@@ -308,8 +308,18 @@ when defined(windows) or defined(nimdoc):
     ## Creates a new Dispatcher instance.
     new result
     result.ioPort = createIoCompletionPort(INVALID_HANDLE_VALUE, 0, 0, 1)
-    result.handles = initSet[AsyncFD]()
-    result.timers.newHeapQueue()
+    when compiles(initHashSet):
+      # After 0.20.0 Nim's stdlib version
+      result.handles = initHashSet[AsyncFD]()
+    else:
+      # Pre 0.20.0 Nim's stdlib version
+      result.handles = initSet[AsyncFD]()
+    when compiles(initHeapQueue):
+      # After 0.20.0 Nim's stdlib version
+      result.timers = initHeapQueue[TimerCallback]()
+    else:
+      # Pre 0.20.0 Nim's stdlib version
+      result.timers = newHeapQueue[TimerCallback]()
     result.callbacks = initDeque[AsyncCallback](64)
     result.trackers = initTable[string, TrackerBase]()
 

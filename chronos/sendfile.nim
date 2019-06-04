@@ -52,11 +52,11 @@ elif defined(freebsd) or defined(openbsd) or defined(netbsd) or
      defined(dragonflybsd):
   import posix, os
   type
-    SendfileHeader* = object {.importc: "sf_hdtr",
-                               header: """#include <sys/types.h>
-                                          #include <sys/socket.h>
-                                          #include <sys/uio.h>""",
-                               pure, final.}
+    SendfileHeader* {.importc: "sf_hdtr",
+                      header: """#include <sys/types.h>
+                                 #include <sys/socket.h>
+                                 #include <sys/uio.h>""",
+                      pure, final.} = object
 
   proc osSendFile*(outfd, infd: cint, offset: uint, size: uint,
                    hdtr: ptr SendfileHeader, sbytes: ptr uint,
@@ -83,11 +83,11 @@ elif defined(freebsd) or defined(openbsd) or defined(netbsd) or
 elif defined(macosx):
   import posix, os
   type
-    SendfileHeader* = object {.importc: "sf_hdtr",
-                               header: """#include <sys/types.h>
-                                          #include <sys/socket.h>
-                                          #include <sys/uio.h>""",
-                               pure, final.}
+    SendfileHeader* {.importc: "sf_hdtr",
+                      header: """#include <sys/types.h>
+                                 #include <sys/socket.h>
+                                 #include <sys/uio.h>""",
+                      pure, final.} = object
 
   proc osSendFile*(fd, s: cint, offset: int, size: ptr int,
                    hdtr: ptr SendfileHeader,
