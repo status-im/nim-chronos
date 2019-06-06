@@ -91,7 +91,6 @@ type
     par*: ref Exception
   AsyncStreamWriteError* = object of AsyncStreamError
     par*: ref Exception
-  AsyncStreamTimeoutError* = object of AsyncStreamError
 
 proc init*(t: typedesc[AsyncBuffer], size: int): AsyncBuffer =
   result.buffer = newSeq[byte](size)
