@@ -780,7 +780,7 @@ proc wait*[T](fut: Future[T], timeout = InfiniteDuration): Future[T] =
     if not retFuture.finished:
       if isNil(udata):
         fut.removeCallback(continuation)
-        retFuture.fail(newException(AsyncTimeoutError, ""))
+        retFuture.fail(newException(AsyncTimeoutError, "Timeout exceeded!"))
       else:
         if not retFuture.finished:
           if fut.failed:
@@ -802,7 +802,7 @@ proc wait*[T](fut: Future[T], timeout = InfiniteDuration): Future[T] =
         else:
           retFuture.complete(fut.read())
     else:
-      retFuture.fail(newException(AsyncTimeoutError, ""))
+      retFuture.fail(newException(AsyncTimeoutError, "Timeout exceeded!"))
   else:
     addTimer(Moment.fromNow(timeout), continuation, nil)
     fut.addCallback(continuation)
