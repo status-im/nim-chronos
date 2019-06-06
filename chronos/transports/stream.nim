@@ -1076,22 +1076,23 @@ else:
       return retFuture
 
     proc continuation(udata: pointer) =
-      var data = cast[ptr CompletionData](udata)
-      var err = 0
-      let fd = data.fd
-      fd.removeWriter()
-      if not fd.getSocketError(err):
-        closeSocket(fd)
-        retFuture.fail(getTransportOsError(osLastError()))
-        return
-      if err != 0:
-        closeSocket(fd)
-        retFuture.fail(getTransportOsError(OSErrorCode(err)))
-        return
-      let transp = newStreamSocketTransport(fd, bufferSize, child)
-      # Start tracking transport
-      trackStream(transp)
-      retFuture.complete(transp)
+      if not retFuture.finished:
+        var data = cast[ptr CompletionData](udata)
+        var err = 0
+        let fd = data.fd
+        fd.removeWriter()
+        if not fd.getSocketError(err):
+          closeSocket(fd)
+          retFuture.fail(getTransportOsError(osLastError()))
+          return
+        if err != 0:
+          closeSocket(fd)
+          retFuture.fail(getTransportOsError(OSErrorCode(err)))
+          return
+        let transp = newStreamSocketTransport(fd, bufferSize, child)
+        # Start tracking transport
+        trackStream(transp)
+        retFuture.complete(transp)
 
     while true:
       var res = posix.connect(SocketHandle(sock),
