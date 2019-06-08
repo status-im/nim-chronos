@@ -267,10 +267,6 @@ when defined(windows):
   template getFileHandle(v: untyped): Handle =
     cast[Handle]((v).buflen)
 
-  template slideBuffer(t, o: untyped) =
-    (t).wwsabuf.buf = cast[cstring](cast[uint]((t).wwsabuf.buf) + uint(o))
-    (t).wwsabuf.len -= int32(o)
-
   template setReaderWSABuffer(t: untyped) =
     (t).rwsabuf.buf = cast[cstring](
       cast[uint](addr t.buffer[0]) + uint((t).roffset))
@@ -726,7 +722,6 @@ when defined(windows):
   proc acceptPipeLoop(udata: pointer) {.gcsafe, nimcall.} =
     var ovl = cast[PtrCustomOverlapped](udata)
     var server = cast[StreamServer](ovl.data.udata)
-    var loop = getGlobalDispatcher()
 
     while true:
       if server.apending:

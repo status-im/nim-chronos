@@ -30,9 +30,7 @@ proc oneOf*[A, B](fut1: Future[A], fut2: Future[B]): Future[void] =
   ## error, so you need to check `fut1` and `fut2` for error.
   var retFuture = newFuture[void]("chunked.oneOf()")
   proc cb(data: pointer) {.gcsafe.} =
-    var index: int
     if not retFuture.finished:
-      var fut = cast[FutureBase](data)
       if cast[pointer](fut1) == data:
         fut2.removeCallback(cb)
       elif cast[pointer](fut2) == data:
@@ -185,8 +183,7 @@ proc chunkedWriteLoop(stream: AsyncStreamWriter) {.async.} =
   var wstream = cast[ChunkedStreamWriter](stream)
   var exitFut = wstream.exevent.wait()
   var buffer: array[16, byte]
-  var error: ref Exception
-  var wFut1, wFut2, wFut3: Future[void]
+  var wFut1, wFut2: Future[void]
 
   wstream.state = AsyncStreamState.Running
   while true:
