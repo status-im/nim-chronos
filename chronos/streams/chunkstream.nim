@@ -6,6 +6,8 @@
 #              Licensed under either of
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
+
+## This module implements HTTP/1.1 chunked-encoded stream reading and writing.
 import ../asyncloop, ../timer
 import asyncstream, ../transports/stream, ../transports/common
 export asyncstream, stream, timer, common

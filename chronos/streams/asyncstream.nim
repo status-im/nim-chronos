@@ -73,7 +73,7 @@ type
     udata: pointer
     future: Future[void]
 
-  AsyncStream* = ref object of RootRef
+  AsyncStream* = object of RootObj
     reader*: AsyncStreamReader
     writer*: AsyncStreamWriter
 
@@ -115,7 +115,6 @@ proc `[]`*(sb: AsyncBuffer, index: int): byte {.inline.} =
   result = sb.buffer[index]
 
 proc update*(sb: var AsyncBuffer, size: int) {.inline.} =
-  doAssert(sb.offset + size < len(sb.buffer))
   sb.offset += size
 
 proc wait*(sb: var AsyncBuffer): Future[void] =
@@ -140,7 +139,6 @@ proc shift*(sb: var AsyncBuffer, size: int) {.inline.} =
     sb.offset = 0
 
 proc copyData*(sb: AsyncBuffer, dest: pointer, offset, length: int) {.inline.} =
-  doAssert(length <= sb.dataLen())
   copyMem(cast[pointer](cast[uint](dest) + cast[uint](offset)),
           unsafeAddr sb.buffer[0], length)
 
