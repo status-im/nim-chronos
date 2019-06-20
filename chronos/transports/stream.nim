@@ -249,7 +249,8 @@ proc completePendingWriteQueue(queue: var Deque[StreamVector],
                                v: int) {.inline.} =
   while len(queue) > 0:
     var vector = queue.popFirst()
-    vector.writer.complete(v)
+    if not(vector.writer.finished()):
+      vector.writer.complete(v)
 
 when defined(windows):
 
@@ -295,7 +296,8 @@ when defined(windows):
           bytesCount = transp.wovl.data.bytesCount
           var vector = transp.queue.popFirst()
           if bytesCount == 0:
-            vector.writer.complete(0)
+            if not(vector.writer.finished()):
+              vector.writer.complete(0)
           else:
             if transp.kind == TransportKind.Socket:
               if vector.kind == VectorKind.DataBuffer:
@@ -303,25 +305,29 @@ when defined(windows):
                   vector.shiftVectorBuffer(bytesCount)
                   transp.queue.addFirst(vector)
                 else:
-                  vector.writer.complete(transp.wwsabuf.len)
+                  if not(vector.writer.finished()):
+                    vector.writer.complete(transp.wwsabuf.len)
               else:
                 if uint(bytesCount) < getFileSize(vector):
                   vector.shiftVectorFile(bytesCount)
                   transp.queue.addFirst(vector)
                 else:
-                  vector.writer.complete(int(getFileSize(vector)))
+                  if not(vector.writer.finished()):
+                    vector.writer.complete(int(getFileSize(vector)))
             elif transp.kind == TransportKind.Pipe:
               if vector.kind == VectorKind.DataBuffer:
                 if bytesCount < transp.wwsabuf.len:
                   vector.shiftVectorBuffer(bytesCount)
                   transp.queue.addFirst(vector)
                 else:
-                  vector.writer.complete(transp.wwsabuf.len)
+                  if not(vector.writer.finished()):
+                    vector.writer.complete(transp.wwsabuf.len)
         elif int(err) == ERROR_OPERATION_ABORTED:
           # CancelIO() interrupt
           transp.state.incl(WritePaused)
           let v = transp.queue.popFirst()
-          v.writer.complete(0)
+          if not(v.writer.finished()):
+            v.writer.complete(0)
           break
         else:
           let v = transp.queue.popFirst()
@@ -329,12 +335,14 @@ when defined(windows):
             # Soft error happens which indicates that remote peer got
             # disconnected, complete all pending writes in queue with 0.
             transp.state.incl(WriteEof)
-            v.writer.complete(0)
+            if not(v.writer.finished()):
+              v.writer.complete(0)
             completePendingWriteQueue(transp.queue, 0)
             break
           else:
             transp.state.incl(WriteError)
-            v.writer.fail(getTransportOsError(err))
+            if not(v.writer.finished()):
+              v.writer.fail(getTransportOsError(err))
       else:
         ## Initiation
         transp.state.incl(WritePending)
@@ -353,7 +361,8 @@ when defined(windows):
                 # CancelIO() interrupt
                 transp.state.excl(WritePending)
                 transp.state.incl(WritePaused)
-                vector.writer.complete(0)
+                if not(vector.writer.finished()):
+                  vector.writer.complete(0)
               elif int(err) == ERROR_IO_PENDING:
                 transp.queue.addFirst(vector)
               else:
@@ -362,12 +371,14 @@ when defined(windows):
                   # Soft error happens which indicates that remote peer got
                   # disconnected, complete all pending writes in queue with 0.
                   transp.state.incl({WritePaused, WriteEof})
-                  vector.writer.complete(0)
+                  if not(vector.writer.finished()):
+                    vector.writer.complete(0)
                   completePendingWriteQueue(transp.queue, 0)
                   break
                 else:
                   transp.state.incl({WritePaused, WriteError})
-                  vector.writer.fail(getTransportOsError(err))
+                  if not(vector.writer.finished()):
+                    vector.writer.fail(getTransportOsError(err))
             else:
               transp.queue.addFirst(vector)
           else:
@@ -390,7 +401,8 @@ when defined(windows):
                 # CancelIO() interrupt
                 transp.state.excl(WritePending)
                 transp.state.incl(WritePaused)
-                vector.writer.complete(0)
+                if not(vector.writer.finished()):
+                  vector.writer.complete(0)
               elif int(err) == ERROR_IO_PENDING:
                 transp.queue.addFirst(vector)
               else:
@@ -399,12 +411,14 @@ when defined(windows):
                   # Soft error happens which indicates that remote peer got
                   # disconnected, complete all pending writes in queue with 0.
                   transp.state.incl({WritePaused, WriteEof})
-                  vector.writer.complete(0)
+                  if not(vector.writer.finished()):
+                    vector.writer.complete(0)
                   completePendingWriteQueue(transp.queue, 0)
                   break
                 else:
                   transp.state.incl({WritePaused, WriteError})
-                  vector.writer.fail(getTransportOsError(err))
+                  if not(vector.writer.finished()):
+                    vector.writer.fail(getTransportOsError(err))
             else:
               transp.queue.addFirst(vector)
         elif transp.kind == TransportKind.Pipe:
@@ -422,26 +436,30 @@ when defined(windows):
                 # CancelIO() interrupt
                 transp.state.excl(WritePending)
                 transp.state.incl(WritePaused)
-                vector.writer.complete(0)
+                if not(vector.writer.finished()):
+                  vector.writer.complete(0)
               elif int(err) == ERROR_IO_PENDING:
                 transp.queue.addFirst(vector)
               elif int(err) == ERROR_NO_DATA:
                 # The pipe is being closed.
                 transp.state.excl(WritePending)
                 transp.state.incl(WritePaused)
-                vector.writer.complete(0)
+                if not(vector.writer.finished()):
+                  vector.writer.complete(0)
               else:
                 transp.state.excl(WritePending)
                 if isConnResetError(err):
                   # Soft error happens which indicates that remote peer got
                   # disconnected, complete all pending writes in queue with 0.
                   transp.state.incl({WritePaused, WriteEof})
-                  vector.writer.complete(0)
+                  if not(vector.writer.finished()):
+                    vector.writer.complete(0)
                   completePendingWriteQueue(transp.queue, 0)
                   break
                 else:
                   transp.state.incl({WritePaused, WriteError})
-                  vector.writer.fail(getTransportOsError(err))
+                  if not(vector.writer.finished()):
+                    vector.writer.fail(getTransportOsError(err))
             else:
               transp.queue.addFirst(vector)
         break
@@ -483,16 +501,16 @@ when defined(windows):
         else:
           transp.setReadError(err)
 
-        if not isNil(transp.reader):
-          if not transp.reader.finished:
-            transp.reader.complete()
-            transp.reader = nil
+        if not(isNil(transp.reader)) and not(transp.reader.finished()):
+          transp.reader.complete()
+          transp.reader = nil
 
         if ReadClosed in transp.state:
           # Stop tracking transport
           untrackStream(transp)
           # If `ReadClosed` present, then close(transport) was called.
-          transp.future.complete()
+          if not(transp.future.finished()):
+            transp.future.complete()
           GC_unref(transp)
 
         if ReadPaused in transp.state:
@@ -521,14 +539,14 @@ when defined(windows):
               elif int32(err) in {WSAECONNRESET, WSAENETRESET, WSAECONNABORTED}:
                 transp.state.excl(ReadPending)
                 transp.state.incl({ReadEof, ReadPaused})
-                if not isNil(transp.reader):
+                if not(isNil(transp.reader)) and not(transp.reader.finished()):
                   transp.reader.complete()
                   transp.reader = nil
               elif int32(err) != ERROR_IO_PENDING:
                 transp.state.excl(ReadPending)
                 transp.state.incl(ReadPaused)
                 transp.setReadError(err)
-                if not isNil(transp.reader):
+                if not(isNil(transp.reader)) and not(transp.reader.finished()):
                   transp.reader.complete()
                   transp.reader = nil
           elif transp.kind == TransportKind.Pipe:
@@ -547,25 +565,25 @@ when defined(windows):
               elif int32(err) in {ERROR_BROKEN_PIPE, ERROR_PIPE_NOT_CONNECTED}:
                 transp.state.excl(ReadPending)
                 transp.state.incl({ReadEof, ReadPaused})
-                if not isNil(transp.reader):
+                if not(isNil(transp.reader)) and not(transp.reader.finished()):
                   transp.reader.complete()
                   transp.reader = nil
               elif int32(err) != ERROR_IO_PENDING:
                 transp.state.excl(ReadPending)
                 transp.state.incl(ReadPaused)
                 transp.setReadError(err)
-                if not isNil(transp.reader):
+                if not(isNil(transp.reader)) and not(transp.reader.finished()):
                   transp.reader.complete()
                   transp.reader = nil
         else:
           transp.state.incl(ReadPaused)
-          if not isNil(transp.reader):
+          if not(isNil(transp.reader)) and not(transp.reader.finished()):
             transp.reader.complete()
             transp.reader = nil
           # Transport close happens in callback, and we not started new
           # WSARecvFrom session.
           if ReadClosed in transp.state:
-            if not transp.future.finished:
+            if not(transp.future.finished()):
               transp.future.complete()
         ## Finish Loop
         break
@@ -648,7 +666,8 @@ when defined(windows):
       proto = Protocol.IPPROTO_TCP
       sock = createAsyncSocket(address.getDomain(), SockType.SOCK_STREAM, proto)
       if sock == asyncInvalidSocket:
-        result.fail(getTransportOsError(osLastError()))
+        retFuture.fail(getTransportOsError(osLastError()))
+        return retFuture
 
       if not bindToDomain(sock, address.getDomain()):
         let err = wsaGetLastError()
@@ -656,9 +675,9 @@ when defined(windows):
         retFuture.fail(getTransportOsError(err))
         return retFuture
 
-      proc socketContinuation(udata: pointer) =
+      proc socketContinuation(udata: pointer) {.gcsafe.} =
         var ovl = cast[RefCustomOverlapped](udata)
-        if not retFuture.finished:
+        if not(retFuture.finished()):
           if ovl.data.errCode == OSErrorCode(-1):
             if setsockopt(SocketHandle(sock), cint(SOL_SOCKET),
                           cint(SO_UPDATE_CONNECT_CONTEXT), nil,
@@ -676,6 +695,11 @@ when defined(windows):
             sock.closeSocket()
             retFuture.fail(getTransportOsError(ovl.data.errCode))
         GC_unref(ovl)
+
+      proc cancel(udata: pointer) {.gcsafe.} =
+        sock.closeSocket()
+
+      retFuture.cancelCallback = cancel
 
       povl = RefCustomOverlapped()
       GC_ref(povl)
@@ -695,26 +719,29 @@ when defined(windows):
 
     elif address.family == AddressFamily.Unix:
       ## Unix domain socket emulation with Windows Named Pipes.
+      var pipeHandle = INVALID_HANDLE_VALUE
       proc pipeContinuation(udata: pointer) {.gcsafe.} =
-        var pipeSuffix = $cast[cstring](unsafeAddr address.address_un[0])
-        var pipeName = newWideCString(r"\\.\pipe\" & pipeSuffix[1 .. ^1])
-        var pipeHandle = createFileW(pipeName, GENERIC_READ or GENERIC_WRITE,
-                                     FILE_SHARE_READ or FILE_SHARE_WRITE,
-                                     nil, OPEN_EXISTING,
-                                     FILE_FLAG_OVERLAPPED, Handle(0))
-        if pipeHandle == INVALID_HANDLE_VALUE:
-          let err = osLastError()
-          if int32(err) == ERROR_PIPE_BUSY:
-            addTimer(Moment.fromNow(50.milliseconds), pipeContinuation, nil)
+        # Continue only if `retFuture` is not cancelled.
+        if not(retFuture.finished()):
+          var pipeSuffix = $cast[cstring](unsafeAddr address.address_un[0])
+          var pipeName = newWideCString(r"\\.\pipe\" & pipeSuffix[1 .. ^1])
+          pipeHandle = createFileW(pipeName, GENERIC_READ or GENERIC_WRITE,
+                                   FILE_SHARE_READ or FILE_SHARE_WRITE,
+                                   nil, OPEN_EXISTING,
+                                   FILE_FLAG_OVERLAPPED, Handle(0))
+          if pipeHandle == INVALID_HANDLE_VALUE:
+            let err = osLastError()
+            if int32(err) == ERROR_PIPE_BUSY:
+              addTimer(Moment.fromNow(50.milliseconds), pipeContinuation, nil)
+            else:
+              retFuture.fail(getTransportOsError(err))
           else:
-            retFuture.fail(getTransportOsError(err))
-        else:
-          register(AsyncFD(pipeHandle))
-          let transp = newStreamPipeTransport(AsyncFD(pipeHandle),
-                                              bufferSize, child)
-          # Start tracking transport
-          trackStream(transp)
-          retFuture.complete(transp)
+            register(AsyncFD(pipeHandle))
+            let transp = newStreamPipeTransport(AsyncFD(pipeHandle),
+                                                bufferSize, child)
+            # Start tracking transport
+            trackStream(transp)
+            retFuture.complete(transp)
       pipeContinuation(nil)
 
     return retFuture
@@ -748,7 +775,8 @@ when defined(windows):
             # Stop tracking server
             untrackServer(server)
             # Completing server's Future
-            server.loopFuture.complete()
+            if not(server.loopFuture.finished()):
+              server.loopFuture.complete()
             if not isNil(server.udata) and GCUserData in server.flags:
               GC_unref(cast[ref int](server.udata))
             GC_unref(server)
@@ -796,7 +824,7 @@ when defined(windows):
           # Server close happens in callback, and we are not started new
           # connectNamedPipe session.
           if server.status in {ServerStatus.Closed, ServerStatus.Stopped}:
-            if not server.loopFuture.finished:
+            if not(server.loopFuture.finished()):
               # Stop tracking server
               untrackServer(server)
               server.loopFuture.complete()
@@ -839,7 +867,7 @@ when defined(windows):
           # CancelIO() interrupt or close.
           if server.status in {ServerStatus.Closed, ServerStatus.Stopped}:
             # Stop tracking server
-            if not server.loopFuture.finished:
+            if not(server.loopFuture.finished()):
               untrackServer(server)
               server.loopFuture.complete()
               if not isNil(server.udata) and GCUserData in server.flags:
@@ -883,7 +911,7 @@ when defined(windows):
           # Server close happens in callback, and we are not started new
           # AcceptEx session.
           if server.status in {ServerStatus.Closed, ServerStatus.Stopped}:
-            if not server.loopFuture.finished:
+            if not(server.loopFuture.finished()):
               # Stop tracking server
               untrackServer(server)
               server.loopFuture.complete()
@@ -937,7 +965,8 @@ else:
             let res = posix.send(fd, vector.buf, vector.buflen, MSG_NOSIGNAL)
             if res >= 0:
               if vector.buflen - res == 0:
-                vector.writer.complete(vector.buflen)
+                if not(vector.writer.finished()):
+                  vector.writer.complete(vector.buflen)
               else:
                 vector.shiftVectorBuffer(res)
                 transp.queue.addFirst(vector)
@@ -950,11 +979,13 @@ else:
                   # Soft error happens which indicates that remote peer got
                   # disconnected, complete all pending writes in queue with 0.
                   transp.state.incl({WriteEof, WritePaused})
-                  vector.writer.complete(0)
+                  if not(vector.writer.finished()):
+                    vector.writer.complete(0)
                   completePendingWriteQueue(transp.queue, 0)
                   transp.fd.removeWriter()
                 else:
-                  vector.writer.fail(getTransportOsError(err))
+                  if not(vector.writer.finished()):
+                    vector.writer.fail(getTransportOsError(err))
           else:
             var nbytes = cast[int](vector.buf)
             let res = sendfile(int(fd), cast[int](vector.buflen),
@@ -963,7 +994,8 @@ else:
             if res >= 0:
               if cast[int](vector.buf) - nbytes == 0:
                 vector.size += nbytes
-                vector.writer.complete(vector.size)
+                if not(vector.writer.finished()):
+                  vector.writer.complete(vector.size)
               else:
                 vector.size += nbytes
                 vector.shiftVectorFile(nbytes)
@@ -977,11 +1009,13 @@ else:
                   # Soft error happens which indicates that remote peer got
                   # disconnected, complete all pending writes in queue with 0.
                   transp.state.incl({WriteEof, WritePaused})
-                  vector.writer.complete(0)
+                  if not(vector.writer.finished()):
+                    vector.writer.complete(0)
                   completePendingWriteQueue(transp.queue, 0)
                   transp.fd.removeWriter()
                 else:
-                  vector.writer.fail(getTransportOsError(err))
+                  if not(vector.writer.finished()):
+                    vector.writer.fail(getTransportOsError(err))
         break
     else:
       transp.state.incl(WritePaused)
@@ -998,10 +1032,9 @@ else:
 
     if ReadClosed in transp.state:
       transp.state.incl({ReadPaused})
-      if not isNil(transp.reader):
-        if not transp.reader.finished:
-          transp.reader.complete()
-          transp.reader = nil
+      if not(isNil(transp.reader)) and not(transp.reader.finished()):
+        transp.reader.complete()
+        transp.reader = nil
     else:
       while true:
         var res = posix.recv(fd, addr transp.buffer[transp.offset],
@@ -1025,7 +1058,7 @@ else:
           if transp.offset == len(transp.buffer):
             transp.state.incl(ReadPaused)
             cdata.fd.removeReader()
-        if not isNil(transp.reader):
+        if not(isNil(transp.reader)) and not(transp.reader.finished()):
           transp.reader.complete()
           transp.reader = nil
         break
@@ -1070,8 +1103,8 @@ else:
       retFuture.fail(getTransportOsError(osLastError()))
       return retFuture
 
-    proc continuation(udata: pointer) =
-      if not retFuture.finished:
+    proc continuation(udata: pointer) {.gcsafe.} =
+      if not(retFuture.finished()):
         var data = cast[ptr CompletionData](udata)
         var err = 0
         let fd = data.fd
@@ -1089,6 +1122,9 @@ else:
         trackStream(transp)
         retFuture.complete(transp)
 
+    proc cancel(udata: pointer) {.gcsafe.} =
+      closeSocket(sock)
+
     while true:
       var res = posix.connect(SocketHandle(sock),
                               cast[ptr SockAddr](addr saddr), slen)
@@ -1100,10 +1136,15 @@ else:
         break
       else:
         let err = osLastError()
-        if int(err) == EINTR:
-          continue
-        elif int(err) == EINPROGRESS:
+        # If connect() is interrupted by a signal that is caught while blocked
+        # waiting to establish a connection, connect() shall fail and set
+        # connect() to [EINTR], but the connection request shall not be aborted,
+        # and the connection shall be established asynchronously.
+        #
+        # http://www.madore.org/~david/computers/connect-intr.html
+        if int(err) == EINPROGRESS or int(err) == EINTR:
           sock.addWriter(continuation)
+          retFuture.cancelCallback = cancel
           break
         else:
           sock.closeSocket()
@@ -1171,9 +1212,16 @@ proc stop*(server: StreamServer) =
 proc join*(server: StreamServer): Future[void] =
   ## Waits until ``server`` is not closed.
   var retFuture = newFuture[void]("stream.transport.server.join")
-  proc continuation(udata: pointer) = retFuture.complete()
-  if not server.loopFuture.finished:
-    server.loopFuture.addCallback(continuation)
+
+  proc continuation(udata: pointer) {.gcsafe.} =
+    retFuture.complete()
+
+  proc cancel(udata: pointer) {.gcsafe.} =
+    server.loopFuture.removeCallback(continuation, cast[pointer](retFuture))
+
+  if not(server.loopFuture.finished()):
+    server.loopFuture.addCallback(continuation, cast[pointer](retFuture))
+    retFuture.cancelCallback = cancel
   else:
     retFuture.complete()
   return retFuture
@@ -1183,14 +1231,15 @@ proc close*(server: StreamServer) =
   ##
   ## Please note that release of resources is not completed immediately, to be
   ## sure all resources got released please use ``await server.join()``.
-  proc continuation(udata: pointer) =
+  proc continuation(udata: pointer) {.gcsafe.} =
     # Stop tracking server
-    if not server.loopFuture.finished:
+    if not(server.loopFuture.finished()):
       untrackServer(server)
       server.loopFuture.complete()
       if not isNil(server.udata) and GCUserData in server.flags:
         GC_unref(cast[ref int](server.udata))
       GC_unref(server)
+
   if server.status == ServerStatus.Stopped:
     server.status = ServerStatus.Closed
     when defined(windows):
@@ -1723,9 +1772,16 @@ proc consume*(transp: StreamTransport, n = -1): Future[int] {.async.} =
 proc join*(transp: StreamTransport): Future[void] =
   ## Wait until ``transp`` will not be closed.
   var retFuture = newFuture[void]("stream.transport.join")
-  proc continuation(udata: pointer) = retFuture.complete()
-  if not transp.future.finished:
-    transp.future.addCallback(continuation)
+
+  proc continuation(udata: pointer) {.gcsafe.} =
+    retFuture.complete()
+
+  proc cancel(udata: pointer) {.gcsafe.} =
+    transp.future.removeCallback(continuation, cast[pointer](retFuture))
+
+  if not(transp.future.finished()):
+    transp.future.addCallback(continuation, cast[pointer](retFuture))
+    retFuture.cancelCallback = cancel
   else:
     retFuture.complete()
   return retFuture
@@ -1735,8 +1791,8 @@ proc close*(transp: StreamTransport) =
   ##
   ## Please note that release of resources is not completed immediately, to be
   ## sure all resources got released please use ``await transp.join()``.
-  proc continuation(udata: pointer) =
-    if not transp.future.finished:
+  proc continuation(udata: pointer) {.gcsafe.} =
+    if not(transp.future.finished()):
       transp.future.complete()
       # Stop tracking stream
       untrackStream(transp)

@@ -87,7 +87,7 @@ proc dumpTransportTracking(): string {.gcsafe.} =
 
 proc leakTransport(): bool {.gcsafe.} =
   var tracker = getDgramTransportTracker()
-  result = tracker.opened != tracker.closed
+  result = (tracker.opened != tracker.closed)
 
 proc trackDgram(t: DatagramTransport) {.inline.} =
   var tracker = getDgramTransportTracker()
@@ -123,14 +123,17 @@ when defined(windows):
         let err = transp.wovl.data.errCode
         let vector = transp.queue.popFirst()
         if err == OSErrorCode(-1):
-          vector.writer.complete()
+          if not(vector.writer.finished()):
+            vector.writer.complete()
         elif int(err) == ERROR_OPERATION_ABORTED:
           # CancelIO() interrupt
           transp.state.incl(WritePaused)
-          vector.writer.complete()
+          if not(vector.writer.finished()):
+            vector.writer.complete()
         else:
           transp.state.incl({WritePaused, WriteError})
-          vector.writer.fail(getTransportOsError(err))
+          if not(vector.writer.finished()):
+            vector.writer.fail(getTransportOsError(err))
       else:
         ## Initiation
         transp.state.incl(WritePending)
@@ -153,13 +156,15 @@ when defined(windows):
             # CancelIO() interrupt
             transp.state.excl(WritePending)
             transp.state.incl(WritePaused)
-            vector.writer.complete()
+            if not(vector.writer.finished()):
+              vector.writer.complete()
           elif int(err) == ERROR_IO_PENDING:
             transp.queue.addFirst(vector)
           else:
             transp.state.excl(WritePending)
             transp.state.incl({WritePaused, WriteError})
-            vector.writer.fail(getTransportOsError(err))
+            if not(vector.writer.finished()):
+              vector.writer.fail(getTransportOsError(err))
         else:
           transp.queue.addFirst(vector)
         break
@@ -188,7 +193,7 @@ when defined(windows):
         elif int(err) == ERROR_OPERATION_ABORTED:
           # CancelIO() interrupt or closeSocket() call.
           transp.state.incl(ReadPaused)
-          if ReadClosed in transp.state:
+          if ReadClosed in transp.state and not(transp.future.finished()):
             # Stop tracking transport
             untrackDgram(transp)
             # If `ReadClosed` present, then close(transport) was called.
@@ -233,12 +238,11 @@ when defined(windows):
         else:
           # Transport closure happens in callback, and we not started new
           # WSARecvFrom session.
-          if ReadClosed in transp.state:
-            if not transp.future.finished:
-              # Stop tracking transport
-              untrackDgram(transp)
-              transp.future.complete()
-              GC_unref(transp)
+          if ReadClosed in transp.state and not(transp.future.finished()):
+            # Stop tracking transport
+            untrackDgram(transp)
+            transp.future.complete()
+            GC_unref(transp)
         break
 
   proc resumeRead(transp: DatagramTransport) {.inline.} =
@@ -424,13 +428,15 @@ else:
           elif vector.kind == WithoutAddress:
             res = posix.send(fd, vector.buf, vector.buflen, MSG_NOSIGNAL)
           if res >= 0:
-            vector.writer.complete()
+            if not(vector.writer.finished()):
+              vector.writer.complete()
           else:
             let err = osLastError()
             if int(err) == EINTR:
               continue
             else:
-              vector.writer.fail(getTransportOsError(err))
+              if not(vector.writer.finished()):
+                vector.writer.fail(getTransportOsError(err))
           break
       else:
         transp.state.incl(WritePaused)
@@ -550,7 +556,7 @@ else:
 proc close*(transp: DatagramTransport) =
   ## Closes and frees resources of transport ``transp``.
   proc continuation(udata: pointer) =
-    if not transp.future.finished:
+    if not(transp.future.finished()):
       # Stop tracking transport
       untrackDgram(transp)
       transp.future.complete()
@@ -657,11 +663,19 @@ proc newDatagramTransport6*[T](cbproc: DatagramCallback,
 proc join*(transp: DatagramTransport): Future[void] =
   ## Wait until the transport ``transp`` will be closed.
   var retFuture = newFuture[void]("datagram.transport.join")
-  proc continuation(udata: pointer) = retFuture.complete()
-  if not transp.future.finished:
-    transp.future.addCallback(continuation)
+
+  proc continuation(udata: pointer) {.gcsafe.} =
+    retFuture.complete()
+
+  proc cancel(udata: pointer) {.gcsafe.} =
+    transp.future.removeCallback(continuation, cast[pointer](retFuture))
+
+  if not(transp.future.finished()):
+    transp.future.addCallback(continuation, cast[pointer](retFuture))
+    retFuture.cancelCallback = cancel
   else:
     retFuture.complete()
+
   return retFuture
 
 proc closeWait*(transp: DatagramTransport): Future[void] =
@@ -696,7 +710,7 @@ proc send*(transp: DatagramTransport, msg: string, msglen = -1): Future[void] =
     retFuture.gcholder = msg
   let length = if msglen <= 0: len(msg) else: msglen
   let vector = GramVector(kind: WithoutAddress, buf: addr retFuture.gcholder[0],
-                          buflen: len(msg),
+                          buflen: length,
                           writer: cast[Future[void]](retFuture))
   transp.queue.addLast(vector)
   if WritePaused in transp.state:

@@ -26,13 +26,19 @@ type
     deleted*: bool
 
   # ZAH: This can probably be stored with a cheaper representation
-  # until the moment it needs to be printed to the screen (e.g. seq[StackTraceEntry])
+  # until the moment it needs to be printed to the screen
+  # (e.g. seq[StackTraceEntry])
   StackTrace = string
+
+  FutureState* {.pure.} = enum
+    Pending, Finished, Cancelled, Failed
 
   FutureBase* = ref object of RootObj ## Untyped future.
     location: array[2, ptr SrcLoc]
     callbacks: Deque[AsyncCallback]
-    finished: bool
+    cancelcb*: CallbackFunc
+    child*: FutureBase
+    state*: FutureState
     error*: ref Exception ## Stored exception
     errorStackTrace*: StackTrace
     stackTrace: StackTrace ## For debugging purposes only.
@@ -58,6 +64,8 @@ type
   FutureError* = object of Exception
     cause*: FutureBase
 
+  CancelledError* = object of FutureError
+
 var currentID* {.threadvar.}: int
 currentID = 0
 
@@ -79,7 +87,7 @@ proc callSoon*(c: CallbackFunc, u: pointer = nil) =
 
 template setupFutureBase(loc: ptr SrcLoc) =
   new(result)
-  result.finished = false
+  result.state = FutureState.Pending
   result.stackTrace = getStackTrace()
   result.id = currentID
   result.location[LocCreateIndex] = loc
@@ -135,13 +143,30 @@ template newFutureVar*[T](fromProc: static[string] = ""): auto =
 
 proc clean*[T](future: FutureVar[T]) =
   ## Resets the ``finished`` status of ``future``.
-  Future[T](future).finished = false
+  Future[T](future).state = FutureState.Pending
   Future[T](future).error = nil
+
+proc finished*(future: FutureBase | FutureVar): bool {.inline.} =
+  ## Determines whether ``future`` has completed.
+  ##
+  ## ``True`` may indicate an error or a value. Use ``failed`` to distinguish.
+  when future is FutureVar:
+    result = (FutureBase(future).state != FutureState.Pending)
+  else:
+    result = (future.state != FutureState.Pending)
+
+proc cancelled*(future: FutureBase): bool {.inline.} =
+  ## Determines whether ``future`` has cancelled.
+  result = (future.state == FutureState.Cancelled)
+
+proc failed*(future: FutureBase): bool {.inline.} =
+  ## Determines whether ``future`` completed with an error.
+  result = (future.state == FutureState.Failed)
 
 proc checkFinished[T](future: Future[T], loc: ptr SrcLoc) =
   ## Checks whether `future` is finished. If it is then raises a
   ## ``FutureError``.
-  if future.finished:
+  if future.finished():
     var msg = ""
     msg.add("An attempt was made to complete a Future more than once. ")
     msg.add("Details:")
@@ -170,7 +195,7 @@ proc call(callbacks: var Deque[AsyncCallback]) =
   var count = len(callbacks)
   while count > 0:
     var item = callbacks.popFirst()
-    if not item.deleted:
+    if not(item.deleted):
       callSoon(item.function, item.udata)
     dec(count)
 
@@ -188,7 +213,7 @@ proc complete[T](future: Future[T], val: T, loc: ptr SrcLoc) =
   checkFinished(future, loc)
   doAssert(isNil(future.error))
   future.value = val
-  future.finished = true
+  future.state = FutureState.Finished
   future.callbacks.call()
 
 template complete*[T](future: Future[T], val: T) =
@@ -199,7 +224,7 @@ proc complete(future: Future[void], loc: ptr SrcLoc) =
   ## Completes a void ``future``.
   checkFinished(future, loc)
   doAssert(isNil(future.error))
-  future.finished = true
+  future.state = FutureState.Finished
   future.callbacks.call()
 
 template complete*(future: Future[void]) =
@@ -209,7 +234,7 @@ proc complete[T](future: FutureVar[T], loc: ptr SrcLoc) =
   template fut: untyped = Future[T](future)
   checkFinished(fut, loc)
   doAssert(isNil(fut.error))
-  fut.finished = true
+  fut.state = FutureState.Finished
   fut.callbacks.call()
 
 template complete*[T](futvar: FutureVar[T]) =
@@ -220,7 +245,7 @@ proc complete[T](futvar: FutureVar[T], val: T, loc: ptr SrcLoc) =
   template fut: untyped = Future[T](futvar)
   checkFinished(fut, loc)
   doAssert(isNil(fut.error))
-  fut.finished = true
+  fut.state = FutureState.Finished
   fut.value = val
   fut.callbacks.call()
 
@@ -232,7 +257,7 @@ template complete*[T](futvar: FutureVar[T], val: T) =
 
 proc fail[T](future: Future[T], error: ref Exception, loc: ptr SrcLoc) =
   checkFinished(future, loc)
-  future.finished = true
+  future.state = FutureState.Failed
   future.error = error
   future.errorStackTrace =
     if getStackTrace(error) == "": getStackTrace() else: getStackTrace(error)
@@ -241,6 +266,26 @@ proc fail[T](future: Future[T], error: ref Exception, loc: ptr SrcLoc) =
 template fail*[T](future: Future[T], error: ref Exception) =
   ## Completes ``future`` with ``error``.
   fail(future, error, getSrcLocation())
+
+proc cancel[T](future: Future[T], loc: ptr SrcLoc) =
+  if future.finished():
+    checkFinished(future, loc)
+  else:
+    var first = FutureBase(future)
+    var last = first
+    while (not isNil(last.child)) and (not(last.child.finished())):
+      last = last.child
+    if last == first:
+      checkFinished(future, loc)
+    last.state = FutureState.Cancelled
+    last.error = newException(CancelledError, "")
+    if not(isNil(last.cancelcb)):
+      last.cancelcb(cast[pointer](last))
+    last.callbacks.call()
+
+template cancel*[T](future: Future[T]) =
+  ## Cancel ``future``.
+  cancel(future, getSrcLocation())
 
 proc clearCallbacks(future: FutureBase) =
   var count = len(future.callbacks)
@@ -253,8 +298,7 @@ proc addCallback*(future: FutureBase, cb: CallbackFunc, udata: pointer = nil) =
   ##
   ## If future has already completed then ``cb`` will be called immediately.
   doAssert(not isNil(cb))
-  if future.finished:
-    # ZAH: it seems that the Future needs to know its associated Dispatcher
+  if future.finished():
     callSoon(cb, udata)
   else:
     let acb = AsyncCallback(function: cb, udata: udata)
@@ -291,6 +335,12 @@ proc `callback=`*[T](future: Future[T], cb: CallbackFunc) =
   ##
   ## If future has already completed then ``cb`` will be called immediately.
   `callback=`(future, cb, cast[pointer](future))
+
+proc `cancelCallback=`*[T](future: Future[T], cb: CallbackFunc) =
+  ## Sets the callback procedure to be called when the future is cancelled.
+  ##
+  ## This callback will be called immediately as ``future.cancel()`` invoked.
+  future.cancelcb = cb
 
 proc getHint(entry: StackTraceEntry): string =
   ## We try to provide some hints about stack trace entries that the user
@@ -365,30 +415,31 @@ proc injectStacktrace[T](future: Future[T]) =
 
 proc read*[T](future: Future[T] | FutureVar[T]): T =
   ## Retrieves the value of ``future``. Future must be finished otherwise
-  ## this function will fail with a ``ValueError`` exception.
+  ## this function will fail with a ``FutureError`` exception.
   ##
   ## If the result of the future is an error then that error will be raised.
   {.push hint[ConvFromXtoItselfNotNeeded]: off.}
   let fut = Future[T](future)
   {.pop.}
-  if fut.finished:
-    if not isNil(fut.error):
+  if fut.finished():
+    if not(isNil(fut.error)):
       injectStacktrace(fut)
       raise fut.error
     when T isnot void:
       return fut.value
   else:
     # TODO: Make a custom exception type for this?
-    raise newException(ValueError, "Future still in progress.")
+    raise newException(FutureError, "Future still in progress.")
 
 proc readError*[T](future: Future[T]): ref Exception =
   ## Retrieves the exception stored in ``future``.
   ##
-  ## An ``ValueError`` exception will be thrown if no exception exists
+  ## An ``FutureError`` exception will be thrown if no exception exists
   ## in the specified Future.
-  if not isNil(future.error): return future.error
+  if not(isNil(future.error)):
+    return future.error
   else:
-    raise newException(ValueError, "No error in future.")
+    raise newException(FutureError, "No error in future.")
 
 proc mget*[T](future: FutureVar[T]): var T =
   ## Returns a mutable value stored in ``future``.
@@ -397,19 +448,6 @@ proc mget*[T](future: FutureVar[T]): var T =
   ## Future has not been finished.
   result = Future[T](future).value
 
-proc finished*(future: FutureBase | FutureVar): bool =
-  ## Determines whether ``future`` has completed.
-  ##
-  ## ``True`` may indicate an error or a value. Use ``failed`` to distinguish.
-  when future is FutureVar:
-    result = (FutureBase(future)).finished
-  else:
-    result = future.finished
-
-proc failed*(future: FutureBase): bool =
-  ## Determines whether ``future`` completed with an error.
-  return (not isNil(future.error))
-
 proc asyncCheck*[T](future: Future[T]) =
   ## Sets a callback on ``future`` which raises an exception if the future
   ## finished with an error.
@@ -417,7 +455,7 @@ proc asyncCheck*[T](future: Future[T]) =
   ## This should be used instead of ``discard`` to discard void futures.
   doAssert(not isNil(future), "Future is nil")
   proc cb(data: pointer) =
-    if future.failed:
+    if future.failed() or future.cancelled():
       injectStacktrace(future)
       raise future.error
   future.callback = cb
@@ -425,47 +463,67 @@ proc asyncCheck*[T](future: Future[T]) =
 proc asyncDiscard*[T](future: Future[T]) = discard
   ## This is async workaround for discard ``Future[T]``.
 
-# ZAH: The return type here could be a Future[(T, Y)]
 proc `and`*[T, Y](fut1: Future[T], fut2: Future[Y]): Future[void] =
   ## Returns a future which will complete once both ``fut1`` and ``fut2``
   ## complete.
-  # ZAH: The Rust implementation of futures is making the case that the
-  # `and` combinator can be implemented in a more efficient way without
-  # resorting to closures and callbacks. I haven't thought this through
-  # completely yet, but here is their write-up:
-  # http://aturon.github.io/2016/09/07/futures-design/
-  #
-  # We should investigate this further, before settling on the final design.
-  # The same reasoning applies to `or` and `all`.
+  ##
+  ## TODO: In case when `fut1` or `fut2` got cancelled, what result Future[void]
+  ## should return?
   var retFuture = newFuture[void]("chronos.`and`")
   proc cb(data: pointer) =
-    if not retFuture.finished:
-      if (fut1.failed or fut1.finished) and (fut2.failed or fut2.finished):
+    if not(retFuture.finished()):
+      if fut1.finished() and fut2.finished():
         if cast[pointer](fut1) == data:
-          if fut1.failed: retFuture.fail(fut1.error)
-          elif fut2.finished: retFuture.complete()
+          if fut1.failed():
+            retFuture.fail(fut1.error)
+          else:
+            retFuture.complete()
         else:
-          if fut2.failed: retFuture.fail(fut2.error)
-          elif fut1.finished: retFuture.complete()
+          if fut2.failed():
+            retFuture.fail(fut2.error)
+          else:
+            retFuture.complete()
   fut1.callback = cb
   fut2.callback = cb
+
+  proc cancel(udata: pointer) {.gcsafe.} =
+    if not(retFuture.finished()):
+      fut1.removeCallback(cb)
+      fut2.removeCallback(cb)
+      if not(fut1.finished()):
+        fut1.cancel()
+      if not(fut2.finished()):
+        fut2.cancel()
+
+  retFuture.cancelCallback = cancel
   return retFuture
 
 proc `or`*[T, Y](fut1: Future[T], fut2: Future[Y]): Future[void] =
   ## Returns a future which will complete once either ``fut1`` or ``fut2``
   ## complete.
   var retFuture = newFuture[void]("chronos.`or`")
-  proc cb(data: pointer) {.gcsafe.} =
-    if not retFuture.finished:
-      var fut = cast[FutureBase](data)
-      if cast[pointer](fut1) == data:
+  proc cb(udata: pointer) {.gcsafe.} =
+    if not(retFuture.finished()):
+      var fut = cast[FutureBase](udata)
+      if cast[pointer](fut1) == udata:
         fut2.removeCallback(cb)
       else:
         fut1.removeCallback(cb)
-      if fut.failed: retFuture.fail(fut.error)
+      if fut.failed(): retFuture.fail(fut.error)
       else: retFuture.complete()
   fut1.callback = cb
   fut2.callback = cb
+
+  proc cancel(udata: pointer) {.gcsafe.} =
+    if not(retFuture.finished()):
+      fut1.removeCallback(cb)
+      fut2.removeCallback(cb)
+      if not(fut1.finished()):
+        fut1.cancel()
+      if not(fut2.finished()):
+        fut2.cancel()
+
+  retFuture.cancelCallback = cancel
   return retFuture
 
 proc all*[T](futs: varargs[Future[T]]): auto =
@@ -480,6 +538,11 @@ proc all*[T](futs: varargs[Future[T]]): auto =
   ##
   ## Note, that if one of the futures in ``futs`` will fail, result of ``all()``
   ## will also be failed with error from failed future.
+  ##
+  ## TODO: This procedure has bug on handling cancelled futures from ``futs``.
+  ## So if future from ``futs`` list become cancelled, what must be returned?
+  ## You can't cancel result ``retFuture`` because in such way infinite
+  ## recursion will happen.
   let totalFutures = len(futs)
   var completedFutures = 0
 
@@ -488,42 +551,63 @@ proc all*[T](futs: varargs[Future[T]]): auto =
 
   when T is void:
     var retFuture = newFuture[void]("chronos.all(void)")
-    for fut in nfuts:
-      fut.addCallback proc (data: pointer) =
+    proc cb(udata: pointer) {.gcsafe.} =
+      if not(retFuture.finished()):
         inc(completedFutures)
-        if not retFuture.finished:
-          if completedFutures == totalFutures:
-            for nfut in nfuts:
-              if nfut.failed:
-                retFuture.fail(nfut.error)
-                break
-            if not retFuture.failed:
-              retFuture.complete()
+        if completedFutures == totalFutures:
+          for nfut in nfuts:
+            if nfut.failed():
+              retFuture.fail(nfut.error)
+              break
+          if not(retFuture.failed()):
+            retFuture.complete()
+
+    proc cancel(udata: pointer) {.gcsafe.} =
+      if not(retFuture.finished()):
+        for i in 0..<len(nfuts):
+          if not(nfuts[i].finished()):
+            nfuts[i].removeCallback(cb)
+            nfuts[i].cancel()
+
+    for fut in nfuts:
+      fut.addCallback(cb)
 
     if len(nfuts) == 0:
       retFuture.complete()
 
+    retFuture.cancelCallback = cancel
     return retFuture
   else:
     var retFuture = newFuture[seq[T]]("chronos.all(T)")
     var retValues = newSeq[T](totalFutures)
-    for fut in nfuts:
-      fut.addCallback proc (data: pointer) =
+
+    proc cb(udata: pointer) {.gcsafe.} =
+      if not(retFuture.finished()):
         inc(completedFutures)
-        if not retFuture.finished:
-          if completedFutures == totalFutures:
-            for k, nfut in nfuts:
-              if nfut.failed:
-                retFuture.fail(nfut.error)
-                break
-              else:
-                retValues[k] = nfut.read()
-            if not retFuture.failed:
-              retFuture.complete(retValues)
+        if completedFutures == totalFutures:
+          for k, nfut in nfuts:
+            if nfut.failed():
+              retFuture.fail(nfut.error)
+              break
+            else:
+              retValues[k] = nfut.read()
+          if not(retFuture.failed()):
+            retFuture.complete(retValues)
+
+    proc cancel(udata: pointer) {.gcsafe.} =
+      if not(retFuture.finished()):
+        for i in 0..<len(nfuts):
+          if not(nfuts[i].finished()):
+            nfuts[i].removeCallback(cb)
+            nfuts[i].cancel()
+
+    for fut in nfuts:
+      fut.addCallback(cb)
 
     if len(nfuts) == 0:
       retFuture.complete(retValues)
 
+    retFuture.cancelCallback = cancel
     return retFuture
 
 proc oneIndex*[T](futs: varargs[Future[T]]): Future[int] =
@@ -537,10 +621,10 @@ proc oneIndex*[T](futs: varargs[Future[T]]): Future[int] =
   var nfuts = @futs
   var retFuture = newFuture[int]("chronos.oneIndex(T)")
 
-  proc cb(data: pointer) {.gcsafe.} =
+  proc cb(udata: pointer) {.gcsafe.} =
     var res = -1
-    if not retFuture.finished:
-      var rfut = cast[FutureBase](data)
+    if not(retFuture.finished()):
+      var rfut = cast[FutureBase](udata)
       for i in 0..<len(nfuts):
         if cast[FutureBase](nfuts[i]) != rfut:
           nfuts[i].removeCallback(cb)
@@ -548,12 +632,20 @@ proc oneIndex*[T](futs: varargs[Future[T]]): Future[int] =
           res = i
       retFuture.complete(res)
 
+  proc cancel(udata: pointer) {.gcsafe.} =
+    if not(retFuture.finished()):
+      for i in 0..<len(nfuts):
+        if not(nfuts[i].finished()):
+          nfuts[i].removeCallback(cb)
+          nfuts[i].cancel()
+
   for fut in nfuts:
     fut.addCallback(cb)
 
   if len(nfuts) == 0:
-    retFuture.fail(newException(ValueError, "Empty Future[T] list"))
+    retFuture.fail(newException(FutureError, "Empty Future[T] list"))
 
+  retFuture.cancelCallback = cancel
   return retFuture
 
 proc oneValue*[T](futs: varargs[Future[T]]): Future[T] =
@@ -564,19 +656,24 @@ proc oneValue*[T](futs: varargs[Future[T]]): Future[T] =
   ##
   ## Returned future will hold value of completed ``futs`` future, or error
   ## if future was failed.
+  ##
+  ## TODO: This procedure has bug on handling cancelled futures from ``futs``.
+  ## So if future from ``futs`` list become cancelled, what must be returned?
+  ## You can't cancel result ``retFuture`` because in such way infinite
+  ## recursion will happen.
   var nfuts = @futs
   var retFuture = newFuture[T]("chronos.oneValue(T)")
 
-  proc cb(data: pointer) {.gcsafe.} =
+  proc cb(udata: pointer) {.gcsafe.} =
     var resFut: Future[T]
-    if not retFuture.finished:
-      var rfut = cast[FutureBase](data)
+    if not(retFuture.finished()):
+      var rfut = cast[FutureBase](udata)
       for i in 0..<len(nfuts):
         if cast[FutureBase](nfuts[i]) != rfut:
           nfuts[i].removeCallback(cb)
         else:
           resFut = nfuts[i]
-      if resFut.failed:
+      if resFut.failed():
         retFuture.fail(resFut.error)
       else:
         when T is void:
@@ -584,10 +681,30 @@ proc oneValue*[T](futs: varargs[Future[T]]): Future[T] =
         else:
           retFuture.complete(resFut.read())
 
+  proc cancel(udata: pointer) {.gcsafe.} =
+    if not(retFuture.finished()):
+      for i in 0..<len(nfuts):
+        if not(nfuts[i].finished()):
+          nfuts[i].removeCallback(cb)
+          nfuts[i].cancel()
+
   for fut in nfuts:
     fut.addCallback(cb)
 
   if len(nfuts) == 0:
-    retFuture.fail(newException(ValueError, "Empty Future[T] list"))
+    retFuture.fail(newException(FutureError, "Empty Future[T] list"))
 
+  retFuture.cancelCallback = cancel
+  return retFuture
+
+proc cancelAndWait*[T](future: Future[T]): Future[void] =
+  ## Cancel future ``future`` and wait until it completes.
+  var retFuture = newFuture[void]("chronos.cancelAndWait(T)")
+
+  proc continuation(udata: pointer) {.gcsafe.} =
+    if not(retFuture.finished()):
+      retFuture.complete()
+
+  future.addCallback(continuation)
+  future.cancel()
   return retFuture

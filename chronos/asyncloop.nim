@@ -734,11 +734,19 @@ proc removeTimer*(at: uint64, cb: CallbackFunc, udata: pointer = nil) {.
 proc sleepAsync*(duration: Duration): Future[void] =
   ## Suspends the execution of the current async procedure for the next
   ## ``duration`` time.
-  var retFuture = newFuture[void]("sleepAsync")
-  proc completion(data: pointer) =
-    if not retFuture.finished:
+  var retFuture = newFuture[void]("chronos.sleepAsync(Duration)")
+  let moment = Moment.fromNow(duration)
+
+  proc completion(data: pointer) {.gcsafe.} =
+    if not(retFuture.finished()):
       retFuture.complete()
-  addTimer(Moment.fromNow(duration), completion, cast[pointer](retFuture))
+
+  proc cancel(udata: pointer) {.gcsafe.} =
+    if not(retFuture.finished()):
+      removeTimer(moment, completion, cast[pointer](retFuture))
+
+  retFuture.cancelCallback = cancel
+  addTimer(moment, completion, cast[pointer](retFuture))
   return retFuture
 
 proc sleepAsync*(ms: int): Future[void] {.
@@ -752,17 +760,46 @@ proc withTimeout*[T](fut: Future[T], timeout: Duration): Future[bool] =
   ## If ``fut`` completes first the returned future will hold true,
   ## otherwise, if ``timeout`` milliseconds has elapsed first, the returned
   ## future will hold false.
-  var retFuture = newFuture[bool]("asyncdispatch.`withTimeout`")
+  var retFuture = newFuture[bool]("chronos.`withTimeout`")
+  var moment: Moment
+  var timerPresent = false
+
   proc continuation(udata: pointer) {.gcsafe.} =
-    if not retFuture.finished:
+    if not(retFuture.finished()):
       if isNil(udata):
+        # Timer exceeded first.
         fut.removeCallback(continuation)
+        fut.cancel()
         retFuture.complete(false)
       else:
-        if not retFuture.finished:
-          retFuture.complete(true)
-  addTimer(Moment.fromNow(timeout), continuation, nil)
-  fut.addCallback(continuation)
+        # Future `fut` completed/failed/cancelled first.
+        if timerPresent:
+          removeTimer(moment, continuation, nil)
+        retFuture.complete(true)
+
+  proc cancel(udata: pointer) {.gcsafe.} =
+    if not(retFuture.finished()):
+      if timerPresent:
+        removeTimer(moment, continuation, nil)
+      if not(fut.finished()):
+        fut.removeCallback(continuation)
+        fut.cancel()
+
+  if fut.finished():
+    retFuture.complete(true)
+  else:
+    if timeout.isZero():
+      retFuture.complete(false)
+    elif timeout.isInfinite():
+      retFuture.cancelCallback = cancel
+      fut.addCallback(continuation)
+    else:
+      timerPresent = true
+      moment = Moment.fromNow(timeout)
+      retFuture.cancelCallback = cancel
+      addTimer(moment, continuation, nil)
+      fut.addCallback(continuation)
+
   return retFuture
 
 proc withTimeout*[T](fut: Future[T], timeout: int): Future[bool] {.
@@ -775,37 +812,62 @@ proc wait*[T](fut: Future[T], timeout = InfiniteDuration): Future[T] =
   ##
   ## If ``timeout`` is ``-1``, then statement ``await wait(fut)`` is
   ## equal to ``await fut``.
-  var retFuture = newFuture[T]("asyncdispatch.wait")
+  ##
+  ## TODO: In case when ``fut`` got cancelled, what result Future[T]
+  ## should return, because it can't be cancelled too.
+  var retFuture = newFuture[T]("chronos.wait()")
+  var moment: Moment
+  var timerPresent = false
+
   proc continuation(udata: pointer) {.gcsafe.} =
-    if not retFuture.finished:
+    if not(retFuture.finished()):
       if isNil(udata):
+        # Timer exceeded first.
         fut.removeCallback(continuation)
+        fut.cancel()
         retFuture.fail(newException(AsyncTimeoutError, "Timeout exceeded!"))
       else:
-        if not retFuture.finished:
-          if fut.failed:
-            retFuture.fail(fut.error)
-          else:
-            when T is void:
-              retFuture.complete()
-            else:
-              retFuture.complete(fut.read())
-  if timeout.isInfinite():
-    retFuture = fut
-  elif timeout.isZero():
-    if fut.finished:
-      if fut.failed:
-        retFuture.fail(fut.error)
-      else:
-        when T is void:
-          retFuture.complete()
+        # Future `fut` completed/failed/cancelled first.
+        if timerPresent:
+          removeTimer(moment, continuation, nil)
+
+        if fut.failed():
+          retFuture.fail(fut.error)
         else:
-          retFuture.complete(fut.read())
+          when T is void:
+            retFuture.complete()
+          else:
+            retFuture.complete(fut.read())
+
+  proc cancel(udata: pointer) {.gcsafe.} =
+    if not(retFuture.finished()):
+      if timerPresent:
+        removeTimer(moment, continuation, nil)
+      if not(fut.finished()):
+        fut.removeCallback(continuation)
+        fut.cancel()
+
+  if fut.finished():
+    if fut.failed():
+      retFuture.fail(fut.error)
     else:
-      retFuture.fail(newException(AsyncTimeoutError, "Timeout exceeded!"))
+      when T is void:
+        retFuture.complete()
+      else:
+        retFuture.complete(fut.read())
   else:
-    addTimer(Moment.fromNow(timeout), continuation, nil)
-    fut.addCallback(continuation)
+    if timeout.isZero():
+      retFuture.fail(newException(AsyncTimeoutError, "Timeout exceeded!"))
+    elif timeout.isInfinite():
+      retFuture.cancelCallback = cancel
+      fut.addCallback(continuation)
+    else:
+      timerPresent = true
+      moment = Moment.fromNow(timeout)
+      retFuture.cancelCallback = cancel
+      addTimer(moment, continuation, nil)
+      fut.addCallback(continuation)
+
   return retFuture
 
 proc wait*[T](fut: Future[T], timeout = -1): Future[T] {.
@@ -833,10 +895,10 @@ proc runForever*() =
 
 proc waitFor*[T](fut: Future[T]): T =
   ## **Blocks** the current thread until the specified future completes.
-  while not fut.finished:
+  while not(fut.finished()):
     poll()
 
-  fut.read
+  fut.read()
 
 proc addTracker*[T](id: string, tracker: T) =
   ## Add new ``tracker`` object to current thread dispatcher with identifier

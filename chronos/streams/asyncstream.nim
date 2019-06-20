@@ -569,7 +569,7 @@ proc write*(wstream: AsyncStreamWriter, pbytes: pointer,
   if isNil(wstream.wsource):
     var resFut = write(wstream.tsource, pbytes, nbytes)
     yield resFut
-    if resFut.failed:
+    if resFut.failed():
       raise newAsyncStreamWriteError(resFut.error)
     if resFut.read() != nbytes:
       raise newAsyncStreamIncompleteError()
@@ -583,7 +583,7 @@ proc write*(wstream: AsyncStreamWriter, pbytes: pointer,
       item.future = newFuture[void]("async.stream.write(pointer)")
       await wstream.queue.put(item)
       yield item.future
-      if item.future.failed:
+      if item.future.failed():
         raise newAsyncStreamWriteError(item.future.error)
 
 proc write*(wstream: AsyncStreamWriter, sbytes: seq[byte],
@@ -606,7 +606,7 @@ proc write*(wstream: AsyncStreamWriter, sbytes: seq[byte],
   if isNil(wstream.wsource):
     var resFut = write(wstream.tsource, sbytes, msglen)
     yield resFut
-    if resFut.failed:
+    if resFut.failed():
       raise newAsyncStreamWriteError(resFut.error)
     if resFut.read() != length:
       raise newAsyncStreamIncompleteError()
@@ -623,7 +623,7 @@ proc write*(wstream: AsyncStreamWriter, sbytes: seq[byte],
       item.future = newFuture[void]("async.stream.write(seq)")
       await wstream.queue.put(item)
       yield item.future
-      if item.future.failed:
+      if item.future.failed():
         raise newAsyncStreamWriteError(item.future.error)
 
 proc write*(wstream: AsyncStreamWriter, sbytes: string,
@@ -645,7 +645,7 @@ proc write*(wstream: AsyncStreamWriter, sbytes: string,
   if isNil(wstream.wsource):
     var resFut = write(wstream.tsource, sbytes, msglen)
     yield resFut
-    if resFut.failed:
+    if resFut.failed():
       raise newAsyncStreamWriteError(resFut.error)
     if resFut.read() != length:
       raise newAsyncStreamIncompleteError()
@@ -662,7 +662,7 @@ proc write*(wstream: AsyncStreamWriter, sbytes: string,
       item.future = newFuture[void]("async.stream.write(string)")
       await wstream.queue.put(item)
       yield item.future
-      if item.future.failed:
+      if item.future.failed():
         raise newAsyncStreamWriteError(item.future.error)
 
 proc finish*(wstream: AsyncStreamWriter) {.async.} =
@@ -679,7 +679,7 @@ proc finish*(wstream: AsyncStreamWriter) {.async.} =
       item.future = newFuture[void]("async.stream.finish")
       await wstream.queue.put(item)
       yield item.future
-      if item.future.failed:
+      if item.future.failed():
         raise newAsyncStreamWriteError(item.future.error)
 
 proc join*(rw: AsyncStreamRW): Future[void] =
@@ -689,11 +689,19 @@ proc join*(rw: AsyncStreamRW): Future[void] =
     var retFuture = newFuture[void]("async.stream.reader.join")
   else:
     var retFuture = newFuture[void]("async.stream.writer.join")
-  proc continuation(udata: pointer) = retFuture.complete()
-  if not rw.future.finished:
-    rw.future.addCallback(continuation)
+
+  proc continuation(udata: pointer) {.gcsafe.} =
+    retFuture.complete()
+
+  proc cancel(udata: pointer) {.gcsafe.} =
+    rw.future.removeCallback(continuation, cast[pointer](retFuture))
+
+  if not(rw.future.finished()):
+    rw.future.addCallback(continuation, cast[pointer](retFuture))
+    rw.future.cancelCallback = cancel
   else:
     retFuture.complete()
+
   return retFuture
 
 proc close*(rw: AsyncStreamRW) =
@@ -707,7 +715,8 @@ proc close*(rw: AsyncStreamRW) =
     if not isNil(rw.udata):
       GC_unref(cast[ref int](rw.udata))
     rw.state = AsyncStreamState.Closed
-    rw.future.complete()
+    if not(rw.future.finished()):
+      rw.future.complete()
     when rw is AsyncStreamReader:
       untrackAsyncStreamReader(rw)
     elif rw is AsyncStreamWriter:
