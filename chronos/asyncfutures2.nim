@@ -420,7 +420,7 @@ proc injectStacktrace[T](future: Future[T]) =
 
 proc read*[T](future: Future[T] | FutureVar[T]): T =
   ## Retrieves the value of ``future``. Future must be finished otherwise
-  ## this function will fail with a ``FutureError`` exception.
+  ## this function will fail with a ``ValueError`` exception.
   ##
   ## If the result of the future is an error then that error will be raised.
   {.push hint[ConvFromXtoItselfNotNeeded]: off.}
@@ -434,17 +434,18 @@ proc read*[T](future: Future[T] | FutureVar[T]): T =
       return fut.value
   else:
     # TODO: Make a custom exception type for this?
-    raise newException(FutureError, "Future still in progress.")
+    raise newException(ValueError, "Future still in progress.")
 
 proc readError*[T](future: Future[T]): ref Exception =
   ## Retrieves the exception stored in ``future``.
   ##
-  ## An ``FutureError`` exception will be thrown if no exception exists
+  ## An ``ValueError`` exception will be thrown if no exception exists
   ## in the specified Future.
   if not(isNil(future.error)):
     return future.error
   else:
-    raise newException(FutureError, "No error in future.")
+    # TODO: Make a custom exception type for this?
+    raise newException(ValueError, "No error in future.")
 
 proc mget*[T](future: FutureVar[T]): var T =
   ## Returns a mutable value stored in ``future``.
@@ -648,7 +649,7 @@ proc oneIndex*[T](futs: varargs[Future[T]]): Future[int] =
     fut.addCallback(cb)
 
   if len(nfuts) == 0:
-    retFuture.fail(newException(FutureError, "Empty Future[T] list"))
+    retFuture.fail(newException(ValueError, "Empty Future[T] list"))
 
   retFuture.cancelCallback = cancel
   return retFuture
@@ -697,7 +698,7 @@ proc oneValue*[T](futs: varargs[Future[T]]): Future[T] =
     fut.addCallback(cb)
 
   if len(nfuts) == 0:
-    retFuture.fail(newException(FutureError, "Empty Future[T] list"))
+    retFuture.fail(newException(ValueError, "Empty Future[T] list"))
 
   retFuture.cancelCallback = cancel
   return retFuture
