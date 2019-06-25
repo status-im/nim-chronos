@@ -210,44 +210,48 @@ proc remove(callbacks: var Deque[AsyncCallback], item: AsyncCallback) =
       p.deleted = true
 
 proc complete[T](future: Future[T], val: T, loc: ptr SrcLoc) =
-  checkFinished(future, loc)
-  doAssert(isNil(future.error))
-  future.value = val
-  future.state = FutureState.Finished
-  future.callbacks.call()
+  if not(future.cancelled()):
+    checkFinished(future, loc)
+    doAssert(isNil(future.error))
+    future.value = val
+    future.state = FutureState.Finished
+    future.callbacks.call()
 
 template complete*[T](future: Future[T], val: T) =
   ## Completes ``future`` with value ``val``.
   complete(future, val, getSrcLocation())
 
 proc complete(future: Future[void], loc: ptr SrcLoc) =
-  ## Completes a void ``future``.
-  checkFinished(future, loc)
-  doAssert(isNil(future.error))
-  future.state = FutureState.Finished
-  future.callbacks.call()
+  if not(future.cancelled()):
+    checkFinished(future, loc)
+    doAssert(isNil(future.error))
+    future.state = FutureState.Finished
+    future.callbacks.call()
 
 template complete*(future: Future[void]) =
+  ## Completes a void ``future``.
   complete(future, getSrcLocation())
 
 proc complete[T](future: FutureVar[T], loc: ptr SrcLoc) =
-  template fut: untyped = Future[T](future)
-  checkFinished(fut, loc)
-  doAssert(isNil(fut.error))
-  fut.state = FutureState.Finished
-  fut.callbacks.call()
+  if not(future.cancelled()):
+    template fut: untyped = Future[T](future)
+    checkFinished(fut, loc)
+    doAssert(isNil(fut.error))
+    fut.state = FutureState.Finished
+    fut.callbacks.call()
 
 template complete*[T](futvar: FutureVar[T]) =
   ## Completes a ``FutureVar``.
   complete(futvar, getSrcLocation())
 
 proc complete[T](futvar: FutureVar[T], val: T, loc: ptr SrcLoc) =
-  template fut: untyped = Future[T](futvar)
-  checkFinished(fut, loc)
-  doAssert(isNil(fut.error))
-  fut.state = FutureState.Finished
-  fut.value = val
-  fut.callbacks.call()
+  if not(futvar.cancelled()):
+    template fut: untyped = Future[T](futvar)
+    checkFinished(fut, loc)
+    doAssert(isNil(fut.error))
+    fut.state = FutureState.Finished
+    fut.value = val
+    fut.callbacks.call()
 
 template complete*[T](futvar: FutureVar[T], val: T) =
   ## Completes a ``FutureVar`` with value ``val``.
@@ -256,12 +260,13 @@ template complete*[T](futvar: FutureVar[T], val: T) =
   complete(futvar, val, getSrcLocation())
 
 proc fail[T](future: Future[T], error: ref Exception, loc: ptr SrcLoc) =
-  checkFinished(future, loc)
-  future.state = FutureState.Failed
-  future.error = error
-  future.errorStackTrace =
-    if getStackTrace(error) == "": getStackTrace() else: getStackTrace(error)
-  future.callbacks.call()
+  if not(future.cancelled()):
+    checkFinished(future, loc)
+    future.state = FutureState.Failed
+    future.error = error
+    future.errorStackTrace =
+      if getStackTrace(error) == "": getStackTrace() else: getStackTrace(error)
+    future.callbacks.call()
 
 template fail*[T](future: Future[T], error: ref Exception) =
   ## Completes ``future`` with ``error``.
