@@ -713,6 +713,131 @@ suite "Future[T] behavior test suite":
 
     result = true
 
+  proc testCancelIter(): bool =
+    var completed = 0
+
+    proc client1() {.async.} =
+      await sleepAsync(1.seconds)
+      inc(completed)
+
+    proc client2() {.async.} =
+      await client1()
+      inc(completed)
+
+    proc client3() {.async.} =
+      await client2()
+      inc(completed)
+
+    proc client4() {.async.} =
+      await client3()
+      inc(completed)
+
+    var fut = client4()
+    fut.cancel()
+
+    # Future must not be cancelled immediately, because it has many nested
+    # futures.
+    if fut.cancelled():
+      return false
+
+    try:
+      waitFor fut
+      result = false
+    except CancelledError:
+      if completed == 0:
+        result = true
+      else:
+        result = false
+
+  proc testCancelAndWait(): bool =
+    var completed = 0
+
+    proc client1() {.async.} =
+      await sleepAsync(1.seconds)
+      inc(completed)
+
+    proc client2() {.async.} =
+      await client1()
+      inc(completed)
+
+    proc client3() {.async.} =
+      await client2()
+      inc(completed)
+
+    proc client4() {.async.} =
+      await client3()
+      inc(completed)
+
+    var fut = client4()
+    waitFor cancelAndWait(fut)
+    if not(fut.cancelled()):
+      return false
+    return true
+
+  proc testBreakCancellation(): bool =
+    var completed = 0
+
+    proc client1() {.async.} =
+      await sleepAsync(1.seconds)
+      inc(completed)
+
+    proc client2() {.async.} =
+      try:
+        await client1()
+      except CancelledError:
+        discard
+      inc(completed)
+
+    var fut1 = client2()
+    var fut2 = client2()
+    fut1.cancel()
+    waitFor fut1
+    waitFor cancelAndWait(fut2)
+
+    if fut1.cancelled():
+      return false
+    if fut2.cancelled():
+      return false
+
+    if completed != 2:
+      return false
+
+    return true
+
+  proc testCancelCallback(): bool =
+    var completed = 0
+    var cancelled = 0
+
+    proc client1(duration: Duration): Future[void] =
+      ## Suspends the execution of the current async procedure for the next
+      ## ``duration`` time.
+      var retFuture = newFuture[void]()
+      let moment = Moment.fromNow(duration)
+
+      proc completion(data: pointer) {.gcsafe.} =
+        inc(completed)
+        if not(retFuture.finished()):
+          retFuture.complete()
+
+      proc cancel(udata: pointer) {.gcsafe.} =
+        inc(cancelled)
+        if not(retFuture.finished()):
+          removeTimer(moment, completion, cast[pointer](retFuture))
+
+      retFuture.cancelCallback = cancel
+      addTimer(moment, completion, cast[pointer](retFuture))
+      return retFuture
+
+    var fut = client1(100.milliseconds)
+    fut.cancel()
+    waitFor(sleepAsync(500.seconds))
+
+    if not(fut.cancelled()):
+      return false
+    if (completed != 0) and (cancelled != 1):
+      return false
+    return true
+
   test "Async undefined behavior (#7758) test":
     check test1() == true
   test "Immediately completed asynchronous procedure test":
@@ -743,3 +868,12 @@ suite "Future[T] behavior test suite":
     check testOneIndexSeq() == true
   test "oneValue[T](seq) test":
     check testOneValueSeq() == true
+
+  test "cancel() async procedure test":
+    check testCancelIter() == true
+  test "cancelAndWait() test":
+    check testCancelAndWait() == true
+  test "Break cancellation propagation test":
+    check testBreakCancellation() == true
+  test "Cancellation callback test":
+    check testCancelCallback() == true
