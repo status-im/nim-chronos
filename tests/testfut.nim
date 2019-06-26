@@ -830,7 +830,7 @@ suite "Future[T] behavior test suite":
 
     var fut = client1(100.milliseconds)
     fut.cancel()
-    waitFor(sleepAsync(500.seconds))
+    waitFor(sleepAsync(500.milliseconds))
 
     if not(fut.cancelled()):
       return false
