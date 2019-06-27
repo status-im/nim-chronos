@@ -44,7 +44,9 @@ suite "Asynchronous timers test suite":
     waitFor(sleepAsync(1000.milliseconds))
     let b = Moment.now()
     let d = b - a
-    result = (d >= 1000.milliseconds) and (d <= 2_000.milliseconds)
+    result = (d >= 1000.milliseconds) and (d <= 3000.milliseconds)
+    if not result:
+      echo d
 
   test "Timer reliability test [" & asyncTimer & "]":
     check testTimer() == true
