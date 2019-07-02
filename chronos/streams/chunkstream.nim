@@ -179,8 +179,6 @@ proc chunkedReadLoop(stream: AsyncStreamReader) {.async.} =
     # incoming data anymore.
     rstream.buffer.forget()
 
-  untrackAsyncStreamReader(rstream)
-
 proc chunkedWriteLoop(stream: AsyncStreamWriter) {.async.} =
   var wstream = cast[ChunkedStreamWriter](stream)
   var exitFut = wstream.exevent.wait()
@@ -276,8 +274,6 @@ proc chunkedWriteLoop(stream: AsyncStreamWriter) {.async.} =
       # Set stream state to Finished.
       wstream.state = AsyncStreamState.Finished
       break
-
-  untrackAsyncStreamWriter(wstream)
 
 proc init*[T](child: ChunkedStreamReader, rsource: AsyncStreamReader,
               bufferSize = ChunkBufferSize, udata: ref T) =

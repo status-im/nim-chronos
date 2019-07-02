@@ -707,7 +707,8 @@ proc close*(rw: AsyncStreamRW) =
     if not isNil(rw.udata):
       GC_unref(cast[ref int](rw.udata))
     rw.state = AsyncStreamState.Closed
-    rw.future.complete()
+    if not(rw.future.finished()):
+      rw.future.complete()
     when rw is AsyncStreamReader:
       untrackAsyncStreamReader(rw)
     elif rw is AsyncStreamWriter:
@@ -718,11 +719,13 @@ proc close*(rw: AsyncStreamRW) =
       callSoon(continuation)
     else:
       rw.exevent.fire()
+      rw.future.addCallback(continuation)
   elif rw is AsyncStreamWriter:
     if isNil(rw.wsource) or isNil(rw.writerLoop):
       callSoon(continuation)
     else:
       rw.exevent.fire()
+      rw.future.addCallback(continuation)
 
 proc closeWait*(rw: AsyncStreamRW): Future[void] =
   ## Close and frees resources of stream ``rw``.
