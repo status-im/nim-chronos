@@ -128,7 +128,9 @@ proc chunkedReadLoop(stream: AsyncStreamReader) {.async.} =
           break
 
         rstream.buffer.update(toRead)
-        await rstream.buffer.transfer() or exitFut
+
+        await oneOf(rstream.buffer.transfer(), exitFut)
+
         if exitFut.finished():
           rstream.state = AsyncStreamState.Stopped
           break
@@ -169,7 +171,9 @@ proc chunkedReadLoop(stream: AsyncStreamReader) {.async.} =
         break
 
       rstream.state = AsyncStreamState.Finished
-      await rstream.buffer.transfer() or exitFut
+
+      await oneOf(rstream.buffer.transfer(), exitFut)
+
       if exitFut.finished():
         rstream.state = AsyncStreamState.Stopped
       break

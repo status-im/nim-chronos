@@ -469,12 +469,12 @@ proc asyncCheck*[T](future: Future[T]) =
 proc asyncDiscard*[T](future: Future[T]) = discard
   ## This is async workaround for discard ``Future[T]``.
 
-proc `and`*[T, Y](fut1: Future[T], fut2: Future[Y]): Future[void] =
+proc `and`*[T, Y](fut1: Future[T], fut2: Future[Y]): Future[void] {.
+  deprecated: "Use allFutures[T](varargs[Future[T]])".} =
   ## Returns a future which will complete once both ``fut1`` and ``fut2``
   ## complete.
   ##
-  ## TODO: In case when `fut1` or `fut2` got cancelled, what result Future[void]
-  ## should return?
+  ## If cancelled, ``fut1`` and ``fut2`` futures WILL NOT BE cancelled.
   var retFuture = newFuture[void]("chronos.`and`")
   proc cb(data: pointer) =
     if not(retFuture.finished()):
@@ -493,20 +493,20 @@ proc `and`*[T, Y](fut1: Future[T], fut2: Future[Y]): Future[void] =
   fut2.callback = cb
 
   proc cancel(udata: pointer) {.gcsafe.} =
+    # On cancel we remove all our callbacks only.
     if not(retFuture.finished()):
       fut1.removeCallback(cb)
       fut2.removeCallback(cb)
-      if not(fut1.finished()):
-        fut1.cancel()
-      if not(fut2.finished()):
-        fut2.cancel()
 
   retFuture.cancelCallback = cancel
   return retFuture
 
-proc `or`*[T, Y](fut1: Future[T], fut2: Future[Y]): Future[void] =
+proc `or`*[T, Y](fut1: Future[T], fut2: Future[Y]): Future[void] {.
+  deprecated: "Use one[T](varargs[Future[T]])".} =
   ## Returns a future which will complete once either ``fut1`` or ``fut2``
   ## complete.
+  ##
+  ## If cancelled, ``fut1`` and ``fut2`` futures WILL NOT BE cancelled.
   var retFuture = newFuture[void]("chronos.`or`")
   proc cb(udata: pointer) {.gcsafe.} =
     if not(retFuture.finished()):
@@ -521,18 +521,16 @@ proc `or`*[T, Y](fut1: Future[T], fut2: Future[Y]): Future[void] =
   fut2.callback = cb
 
   proc cancel(udata: pointer) {.gcsafe.} =
+    # On cancel we remove all our callbacks only.
     if not(retFuture.finished()):
       fut1.removeCallback(cb)
       fut2.removeCallback(cb)
-      if not(fut1.finished()):
-        fut1.cancel()
-      if not(fut2.finished()):
-        fut2.cancel()
 
   retFuture.cancelCallback = cancel
   return retFuture
 
-proc all*[T](futs: varargs[Future[T]]): auto =
+proc all*[T](futs: varargs[Future[T]]): auto {.
+  deprecated: "Use allFutures(varargs[Future[T]])".} =
   ## Returns a future which will complete once all futures in ``futs`` complete.
   ## If the argument is empty, the returned future completes immediately.
   ##
@@ -568,20 +566,12 @@ proc all*[T](futs: varargs[Future[T]]): auto =
           if not(retFuture.failed()):
             retFuture.complete()
 
-    proc cancel(udata: pointer) {.gcsafe.} =
-      if not(retFuture.finished()):
-        for i in 0..<len(nfuts):
-          if not(nfuts[i].finished()):
-            nfuts[i].removeCallback(cb)
-            nfuts[i].cancel()
-
     for fut in nfuts:
       fut.addCallback(cb)
 
     if len(nfuts) == 0:
       retFuture.complete()
 
-    retFuture.cancelCallback = cancel
     return retFuture
   else:
     var retFuture = newFuture[seq[T]]("chronos.all(T)")
@@ -600,23 +590,16 @@ proc all*[T](futs: varargs[Future[T]]): auto =
           if not(retFuture.failed()):
             retFuture.complete(retValues)
 
-    proc cancel(udata: pointer) {.gcsafe.} =
-      if not(retFuture.finished()):
-        for i in 0..<len(nfuts):
-          if not(nfuts[i].finished()):
-            nfuts[i].removeCallback(cb)
-            nfuts[i].cancel()
-
     for fut in nfuts:
       fut.addCallback(cb)
 
     if len(nfuts) == 0:
       retFuture.complete(retValues)
 
-    retFuture.cancelCallback = cancel
     return retFuture
 
-proc oneIndex*[T](futs: varargs[Future[T]]): Future[int] =
+proc oneIndex*[T](futs: varargs[Future[T]]): Future[int] {.
+  deprecated: "Use one[T](varargs[Future[T]])".} =
   ## Returns a future which will complete once one of the futures in ``futs``
   ## complete.
   ##
@@ -638,23 +621,16 @@ proc oneIndex*[T](futs: varargs[Future[T]]): Future[int] =
           res = i
       retFuture.complete(res)
 
-  proc cancel(udata: pointer) {.gcsafe.} =
-    if not(retFuture.finished()):
-      for i in 0..<len(nfuts):
-        if not(nfuts[i].finished()):
-          nfuts[i].removeCallback(cb)
-          nfuts[i].cancel()
-
   for fut in nfuts:
     fut.addCallback(cb)
 
   if len(nfuts) == 0:
     retFuture.fail(newException(ValueError, "Empty Future[T] list"))
 
-  retFuture.cancelCallback = cancel
   return retFuture
 
-proc oneValue*[T](futs: varargs[Future[T]]): Future[T] =
+proc oneValue*[T](futs: varargs[Future[T]]): Future[T] {.
+  deprecated: "Use one[T](varargs[Future[T]])".} =
   ## Returns a future which will complete once one of the futures in ``futs``
   ## complete.
   ##
@@ -662,11 +638,6 @@ proc oneValue*[T](futs: varargs[Future[T]]): Future[T] =
   ##
   ## Returned future will hold value of completed ``futs`` future, or error
   ## if future was failed.
-  ##
-  ## TODO: This procedure has bug on handling cancelled futures from ``futs``.
-  ## So if future from ``futs`` list become cancelled, what must be returned?
-  ## You can't cancel result ``retFuture`` because in such way infinite
-  ## recursion will happen.
   var nfuts = @futs
   var retFuture = newFuture[T]("chronos.oneValue(T)")
 
@@ -687,20 +658,12 @@ proc oneValue*[T](futs: varargs[Future[T]]): Future[T] =
         else:
           retFuture.complete(resFut.read())
 
-  proc cancel(udata: pointer) {.gcsafe.} =
-    if not(retFuture.finished()):
-      for i in 0..<len(nfuts):
-        if not(nfuts[i].finished()):
-          nfuts[i].removeCallback(cb)
-          nfuts[i].cancel()
-
   for fut in nfuts:
     fut.addCallback(cb)
 
   if len(nfuts) == 0:
     retFuture.fail(newException(ValueError, "Empty Future[T] list"))
 
-  retFuture.cancelCallback = cancel
   return retFuture
 
 proc cancelAndWait*[T](future: Future[T]): Future[void] =
@@ -713,4 +676,81 @@ proc cancelAndWait*[T](future: Future[T]): Future[void] =
 
   future.addCallback(continuation)
   future.cancel()
+  return retFuture
+
+proc allFutures*[T](futs: varargs[Future[T]]): Future[void] =
+  ## Returns a future which will complete only when all futures in ``futs``
+  ## will be completed, failed or canceled.
+  ##
+  ## If the argument is empty, the returned future COMPLETES immediately.
+  ##
+  ## On cancel all the awaited futures ``futs`` WILL NOT BE cancelled.
+  var retFuture = newFuture[void]("chronos.allFutures()")
+  let totalFutures = len(futs)
+  var completedFutures = 0
+
+  # Because we can't capture varargs[T] in closures we need to create copy.
+  var nfuts = @futs
+
+  proc cb(udata: pointer) {.gcsafe.} =
+    if not(retFuture.finished()):
+      inc(completedFutures)
+      if completedFutures == totalFutures:
+        retFuture.complete()
+
+  proc cancel(udata: pointer) {.gcsafe.} =
+    # On cancel we remove all our callbacks only.
+    if not(retFuture.finished()):
+      for i in 0..<len(nfuts):
+        if not(nfuts[i].finished()):
+          nfuts[i].removeCallback(cb)
+
+  for fut in nfuts:
+    fut.addCallback(cb)
+
+  retFuture.cancelCallback = cancel
+  if len(nfuts) == 0:
+    retFuture.complete()
+
+  return retFuture
+
+proc one*[T](futs: varargs[Future[T]]): Future[Future[T]] =
+  ## Returns a future which will complete and return completed Future[T] inside,
+  ## when one of the futures in ``futs`` will be completed, failed or canceled.
+  ##
+  ## If the argument is empty, the returned future FAILS immediately.
+  ##
+  ## On success returned Future will hold index in ``futs`` array.
+  ##
+  ## On cancel futures in ``futs`` WILL NOT BE cancelled.
+  var retFuture = newFuture[Future[T]]("chronos.one()")
+
+  # Because we can't capture varargs[T] in closures we need to create copy.
+  var nfuts = @futs
+
+  proc cb(udata: pointer) {.gcsafe.} =
+    if not(retFuture.finished()):
+      var res: Future[T]
+      var rfut = cast[FutureBase](udata)
+      for i in 0..<len(nfuts):
+        if cast[FutureBase](nfuts[i]) != rfut:
+          nfuts[i].removeCallback(cb)
+        else:
+          res = nfuts[i]
+      retFuture.complete(res)
+
+  proc cancel(udata: pointer) {.gcsafe.} =
+    # On cancel we remove all our callbacks only.
+    if not(retFuture.finished()):
+      for i in 0..<len(nfuts):
+        if not(nfuts[i].finished()):
+          nfuts[i].removeCallback(cb)
+
+  for fut in nfuts:
+    fut.addCallback(cb)
+
+  if len(nfuts) == 0:
+    retFuture.fail(newException(ValueError, "Empty Future[T] list"))
+
+  retFuture.cancelCallback = cancel
   return retFuture
