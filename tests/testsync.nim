@@ -95,7 +95,7 @@ suite "Asynchronous sync primitives test suite":
 
   proc test4(): int =
     var queue = newAsyncQueue[int](queueSize)
-    waitFor(task3(queue) and task4(queue))
+    waitFor(allFutures(task3(queue), task4(queue)))
     result = testQueue2Result
 
   proc task51(aq: AsyncQueue[int]) {.async.} =
