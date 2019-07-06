@@ -18,7 +18,7 @@ const
   ChronosMinor* {.intdefine.}: int = 2
     ## Minor number of Chronos' version.
 
-  ChronosPatch* {.intdefine.}: int = 7
+  ChronosPatch* {.intdefine.}: int = 8
     ## Patch number of Chronos' version.
 
   ChronosVersion* = $ChronosMajor & "." & $ChronosMinor & "." & $ChronosPatch
