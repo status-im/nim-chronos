@@ -80,12 +80,12 @@ proc acquire*(lock: AsyncLock) {.async.} =
   ##
   ## This procedure blocks until the lock ``lock`` is unlocked, then sets it
   ## to locked and returns.
-  if not lock.locked:
+  if not(lock.locked):
     lock.locked = true
   else:
     var w = newFuture[void]("AsyncLock.acquire")
     lock.waiters.addLast(w)
-    yield w
+    await w
     lock.locked = true
 
 proc own*(lock: AsyncLock) =
@@ -112,7 +112,7 @@ proc release*(lock: AsyncLock) =
     lock.locked = false
     while len(lock.waiters) > 0:
       w = lock.waiters.popFirst()
-      if not w.finished:
+      if not(w.finished()):
         w.complete()
         break
   else:
@@ -143,18 +143,18 @@ proc wait*(event: AsyncEvent) {.async.} =
   else:
     var w = newFuture[void]("AsyncEvent.wait")
     event.waiters.addLast(w)
-    yield w
+    await w
 
 proc fire*(event: AsyncEvent) =
   ## Set the internal flag of ``event`` to `true`. All tasks waiting for it
   ## to become `true` are awakened. Task that call `wait()` once the flag is
   ## `true` will not block at all.
   var w: Future[void]
-  if not event.flag:
+  if not(event.flag):
     event.flag = true
     while len(event.waiters) > 0:
       w = event.waiters.popFirst()
-      if not w.finished:
+      if not(w.finished()):
         w.complete()
 
 proc clear*(event: AsyncEvent) =
@@ -203,7 +203,8 @@ proc addFirstNoWait*[T](aq: AsyncQueue[T], item: T) =
   aq.queue.addFirst(item)
   while len(aq.getters) > 0:
     w = aq.getters.popFirst()
-    if not w.finished: w.complete()
+    if not(w.finished()):
+      w.complete()
 
 proc addLastNoWait*[T](aq: AsyncQueue[T], item: T) =
   ## Put an item ``item`` at the end of the queue ``aq`` immediately.
@@ -215,7 +216,8 @@ proc addLastNoWait*[T](aq: AsyncQueue[T], item: T) =
   aq.queue.addLast(item)
   while len(aq.getters) > 0:
     w = aq.getters.popFirst()
-    if not w.finished: w.complete()
+    if not(w.finished()):
+      w.complete()
 
 proc popFirstNoWait*[T](aq: AsyncQueue[T]): T =
   ## Get an item from the beginning of the queue ``aq`` immediately.
@@ -227,7 +229,8 @@ proc popFirstNoWait*[T](aq: AsyncQueue[T]): T =
   result = aq.queue.popFirst()
   while len(aq.putters) > 0:
     w = aq.putters.popFirst()
-    if not w.finished: w.complete()
+    if not(w.finished()):
+      w.complete()
 
 proc popLastNoWait*[T](aq: AsyncQueue[T]): T =
   ## Get an item from the end of the queue ``aq`` immediately.
@@ -239,7 +242,8 @@ proc popLastNoWait*[T](aq: AsyncQueue[T]): T =
   result = aq.queue.popLast()
   while len(aq.putters) > 0:
     w = aq.putters.popFirst()
-    if not w.finished: w.complete()
+    if not(w.finished()):
+      w.complete()
 
 proc addFirst*[T](aq: AsyncQueue[T], item: T) {.async.} =
   ## Put an ``item`` to the beginning of the queue ``aq``. If the queue is full,
@@ -247,7 +251,7 @@ proc addFirst*[T](aq: AsyncQueue[T], item: T) {.async.} =
   while aq.full():
     var putter = newFuture[void]("AsyncQueue.addFirst")
     aq.putters.addLast(putter)
-    yield putter
+    await putter
   aq.addFirstNoWait(item)
 
 proc addLast*[T](aq: AsyncQueue[T], item: T) {.async.} =
@@ -256,7 +260,7 @@ proc addLast*[T](aq: AsyncQueue[T], item: T) {.async.} =
   while aq.full():
     var putter = newFuture[void]("AsyncQueue.addLast")
     aq.putters.addLast(putter)
-    yield putter
+    await putter
   aq.addLastNoWait(item)
 
 proc popFirst*[T](aq: AsyncQueue[T]): Future[T] {.async.} =
@@ -265,7 +269,7 @@ proc popFirst*[T](aq: AsyncQueue[T]): Future[T] {.async.} =
   while aq.empty():
     var getter = newFuture[void]("AsyncQueue.popFirst")
     aq.getters.addLast(getter)
-    yield getter
+    await getter
   result = aq.popFirstNoWait()
 
 proc popLast*[T](aq: AsyncQueue[T]): Future[T] {.async.} =
@@ -274,7 +278,7 @@ proc popLast*[T](aq: AsyncQueue[T]): Future[T] {.async.} =
   while aq.empty():
     var getter = newFuture[void]("AsyncQueue.popLast")
     aq.getters.addLast(getter)
-    yield getter
+    await getter
   result = aq.popLastNoWait()
 
 proc putNoWait*[T](aq: AsyncQueue[T], item: T) {.inline.} =

@@ -32,7 +32,7 @@ proc oneOf*[A, B](fut1: Future[A], fut2: Future[B]): Future[void] =
   ## error, so you need to check `fut1` and `fut2` for error.
   var retFuture = newFuture[void]("chunked.oneOf()")
   proc cb(data: pointer) {.gcsafe.} =
-    if not retFuture.finished:
+    if not(retFuture.finished()):
       if cast[pointer](fut1) == data:
         fut2.removeCallback(cb)
       elif cast[pointer](fut2) == data:
@@ -95,11 +95,11 @@ proc chunkedReadLoop(stream: AsyncStreamReader) {.async.} =
     var ruFut1 = rstream.rsource.readUntil(addr buffer[0], 1024, CRLF)
     await oneOf(ruFut1, exitFut)
 
-    if exitFut.finished:
+    if exitFut.finished():
       rstream.state = AsyncStreamState.Stopped
       break
 
-    if ruFut1.failed:
+    if ruFut1.failed():
       rstream.error = ruFut1.error
       rstream.state = AsyncStreamState.Error
       break
@@ -118,18 +118,20 @@ proc chunkedReadLoop(stream: AsyncStreamReader) {.async.} =
                                                  toRead)
         await oneOf(reFut2, exitFut)
 
-        if exitFut.finished:
+        if exitFut.finished():
           rstream.state = AsyncStreamState.Stopped
           break
 
-        if reFut2.failed:
+        if reFut2.failed():
           rstream.error = reFut2.error
           rstream.state = AsyncStreamState.Error
           break
 
         rstream.buffer.update(toRead)
-        await rstream.buffer.transfer() or exitFut
-        if exitFut.finished:
+
+        await oneOf(rstream.buffer.transfer(), exitFut)
+
+        if exitFut.finished():
           rstream.state = AsyncStreamState.Stopped
           break
 
@@ -141,11 +143,11 @@ proc chunkedReadLoop(stream: AsyncStreamReader) {.async.} =
       # Reading chunk trailing CRLF
       var reFut3 = rstream.rsource.readExactly(addr buffer[0], 2)
       await oneOf(reFut3, exitFut)
-      if exitFut.finished:
+      if exitFut.finished():
         rstream.state = AsyncStreamState.Stopped
         break
 
-      if reFut3.failed:
+      if reFut3.failed():
         rstream.error = reFut3.error
         rstream.state = AsyncStreamState.Error
         break
@@ -159,18 +161,20 @@ proc chunkedReadLoop(stream: AsyncStreamReader) {.async.} =
       var ruFut4 = rstream.rsource.readUntil(addr buffer[0], len(buffer), CRLF)
       await oneOf(ruFut4, exitFut)
 
-      if exitFut.finished:
+      if exitFut.finished():
         rstream.state = AsyncStreamState.Stopped
         break
 
-      if ruFut4.failed:
+      if ruFut4.failed():
         rstream.error = ruFut4.error
         rstream.state = AsyncStreamState.Error
         break
 
       rstream.state = AsyncStreamState.Finished
-      await rstream.buffer.transfer() or exitFut
-      if exitFut.finished:
+
+      await oneOf(rstream.buffer.transfer(), exitFut)
+
+      if exitFut.finished():
         rstream.state = AsyncStreamState.Stopped
       break
 
@@ -190,7 +194,7 @@ proc chunkedWriteLoop(stream: AsyncStreamWriter) {.async.} =
     # Getting new item from stream's queue.
     var getFut = wstream.queue.get()
     await oneOf(getFut, exitFut)
-    if exitFut.finished:
+    if exitFut.finished():
       wstream.state = AsyncStreamState.Stopped
       break
     var item = getFut.read()
@@ -202,11 +206,11 @@ proc chunkedWriteLoop(stream: AsyncStreamWriter) {.async.} =
       wFut1 = wstream.wsource.write(addr buffer[0], length)
       await oneOf(wFut1, exitFut)
 
-      if exitFut.finished:
+      if exitFut.finished():
         wstream.state = AsyncStreamState.Stopped
         break
 
-      if wFut1.failed:
+      if wFut1.failed():
         item.future.fail(wFut1.error)
         continue
 
@@ -219,22 +223,22 @@ proc chunkedWriteLoop(stream: AsyncStreamWriter) {.async.} =
         wFut2 = wstream.wsource.write(addr item.data3[0], item.size)
 
       await oneOf(wFut2, exitFut)
-      if exitFut.finished:
+      if exitFut.finished():
         wstream.state = AsyncStreamState.Stopped
         break
 
-      if wFut2.failed:
+      if wFut2.failed():
         item.future.fail(wFut2.error)
         continue
 
       # Writing chunk footer CRLF.
       var wFut3 = wstream.wsource.write(CRLF)
       await oneOf(wFut3, exitFut)
-      if exitFut.finished:
+      if exitFut.finished():
         wstream.state = AsyncStreamState.Stopped
         break
 
-      if wFut3.failed:
+      if wFut3.failed():
         item.future.fail(wFut3.error)
         continue
 
@@ -246,11 +250,11 @@ proc chunkedWriteLoop(stream: AsyncStreamWriter) {.async.} =
       # Write finish chunk `0`.
       wFut1 = wstream.wsource.write(addr buffer[0], length)
       await oneOf(wFut1, exitFut)
-      if exitFut.finished:
+      if exitFut.finished():
         wstream.state = AsyncStreamState.Stopped
         break
 
-      if wFut1.failed:
+      if wFut1.failed():
         item.future.fail(wFut1.error)
         # We break here, because this is last chunk
         break
@@ -259,11 +263,11 @@ proc chunkedWriteLoop(stream: AsyncStreamWriter) {.async.} =
       wFut2 = wstream.wsource.write(CRLF)
       await oneOf(wFut2, exitFut)
 
-      if exitFut.finished:
+      if exitFut.finished():
         wstream.state = AsyncStreamState.Stopped
         break
 
-      if wFut2.failed:
+      if wFut2.failed():
         item.future.fail(wFut2.error)
         # We break here, because this is last chunk
         break

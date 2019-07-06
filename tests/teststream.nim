@@ -687,7 +687,7 @@ suite "Stream Transport test suite":
     server.stop
     server.close()
     try:
-      await wait(server.join(), 1.seconds)
+      await wait(server.join(), 10.seconds)
       result = 1
     except:
       discard
