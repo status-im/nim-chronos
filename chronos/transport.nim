@@ -8,6 +8,8 @@
 #              MIT license (LICENSE-MIT)
 import transports/[datagram, stream, common, ipnet, osnet]
 import streams/[asyncstream, chunkstream]
+import apps/[http]
 
 export datagram, common, stream, ipnet, osnet
 export asyncstream, chunkstream
+export http
