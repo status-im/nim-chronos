@@ -7,4 +7,4 @@
 #              MIT license (LICENSE-MIT)
 import chronos/[asyncloop, asyncfutures2, asyncsync, handles, transport,
                 timer]
-export asyncloop, asyncfutures2, asyncsync, handles, transport, timer, version
+export asyncloop, asyncfutures2, asyncsync, handles, transport, timers
