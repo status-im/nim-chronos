@@ -1173,35 +1173,6 @@ elif defined(windows):
   import winlean, dynlib
 
   const
-    IfOperStatusUp = cint(1)
-    IfOperStatusDown = cint(2)
-    IfOperStatusTesting = cint(3)
-    IfOperStatusUnknown = cint(4)
-    IfOperStatusDormant = cint(5)
-    IfOperStatusNotPresent = cint(6)
-    IfOperStatusLowerLayerDown = cint(7)
-
-    IpPrefixOriginOther = cint(0)
-    IpPrefixOriginManual = cint(1)
-    IpPrefixOriginWellKnown = cint(2)
-    IpPrefixOriginDhcp = cint(3)
-    IpPrefixOriginRouterAdvertisement = cint(4)
-    IpPrefixOriginUnchanged = cint(1) shl 4
-
-    IpSuffixOriginOther = cint(0)
-    IpSuffixOriginManual = cint(1)
-    IpSuffixOriginWellKnown = cint(2)
-    IpSuffixOriginDhcp = cint(3)
-    IpSuffixOriginLinkLayerAddress = cint(4)
-    IpSuffixOriginRandom = cint(5)
-    IpSuffixOriginUnchanged = cint(1) shl 4
-
-    IpDadStateInvalid = cint(0)
-    IpDadStateTentative = cint(1)
-    IpDadStateDuplicate = cint(2)
-    IpDadStateDeprecated = cint(3)
-    IpDadStatePreferred = cint(4)
-
     WorkBufferSize = 16384'u32
     MaxTries = 3
 
@@ -1296,10 +1267,6 @@ elif defined(windows):
       dwForwardMetric3: uint32
       dwForwardMetric4: uint32
       dwForwardMetric5: uint32
-
-    NET_LUID = object
-      value: uint64
-      info: uint64
 
     SOCKADDR_INET {.union.} = object
       ipv4: Sockaddr_in

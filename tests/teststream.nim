@@ -693,13 +693,16 @@ suite "Stream Transport test suite":
       discard
 
   proc testWriteConnReset(address: TransportAddress): Future[int] {.async.} =
+    var syncFut = newFuture[void]()
     proc client(server: StreamServer, transp: StreamTransport) {.async.} =
       await transp.closeWait()
+      syncFut.complete()
     var n = 10
     var server = createStreamServer(address, client, {ReuseAddr})
     server.start()
     var msg = "HELLO"
     var ntransp = await connect(address)
+    await syncFut
     while true:
       var res = await ntransp.write(msg)
       if res == 0:
