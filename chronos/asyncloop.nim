@@ -170,7 +170,7 @@ when defined(windows):
 else:
   import selectors
   from posix import EINTR, EAGAIN, EINPROGRESS, EWOULDBLOCK, MSG_PEEK,
-                    MSG_NOSIGNAL
+                    MSG_NOSIGNAL, SIGPIPE
 
 type
   AsyncError* = object of CatchableError
@@ -624,6 +624,15 @@ else:
     var acb = AsyncCallback(function: continuation)
     loop.callbacks.addLast(acb)
 
+  proc closeHandle*(fd: AsyncFD, aftercb: CallbackFunc = nil) {.inline.} =
+    ## Close asynchronous file/pipe handle.
+    ##
+    ## Please note, that socket is not closed immediately. To avoid bugs with
+    ## closing socket, while operation pending, socket will be closed as
+    ## soon as all pending operations will be notified.
+    ## You can execute ``aftercb`` before actual socket close operation.
+    closeSocket(fd, aftercb)
+
   when ioselSupportedPlatform:
     proc addSignal*(signal: int, cb: CallbackFunc,
                     udata: pointer = nil): int =
@@ -690,7 +699,12 @@ else:
     # poll() call.
     loop.processCallbacks()
 
+  const
+    SIG_IGN = cast[proc(x: cint) {.noconv,gcsafe.}](1)
+
   proc initAPI() =
+    # We are ignoring SIGPIPE signal, because we are working with EPIPE.
+    posix.signal(cint(SIGPIPE), SIG_IGN)
     discard getGlobalDispatcher()
 
 proc addTimer*(at: Moment, cb: CallbackFunc, udata: pointer = nil) =

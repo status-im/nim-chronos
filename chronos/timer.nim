@@ -46,7 +46,7 @@ when defined(windows):
                  cast[uint64](t.dwLowDateTime)) * 100
 
   else:
-    proc QueryPerformanceCounter(res: var uint64) {.
+    proc QueryPerformanceCounter*(res: var uint64) {.
       importc: "QueryPerformanceCounter", stdcall, dynlib: "kernel32".}
     proc QueryPerformanceFrequency(res: var uint64) {.
       importc: "QueryPerformanceFrequency", stdcall, dynlib: "kernel32".}

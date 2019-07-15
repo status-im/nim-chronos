@@ -7,7 +7,7 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 
-import net, nativesockets, asyncloop
+import net, nativesockets, os, asyncloop
 
 when defined(windows):
   import winlean
@@ -15,12 +15,25 @@ when defined(windows):
     asyncInvalidSocket* = AsyncFD(-1)
     TCP_NODELAY* = 1
     IPPROTO_TCP* = 6
+    PIPE_TYPE_BYTE = 0x00000000'i32
+    PIPE_READMODE_BYTE = 0x00000000'i32
+    PIPE_WAIT = 0x00000000'i32
+    DEFAULT_PIPE_SIZE = 65536'i32
+    ERROR_PIPE_CONNECTED = 535
+    ERROR_PIPE_BUSY = 231
+    pipeHeaderName = r"\\.\pipe\chronos\"
+
+  proc connectNamedPipe(hNamedPipe: Handle, lpOverlapped: pointer): WINBOOL
+       {.importc: "ConnectNamedPipe", stdcall, dynlib: "kernel32".}
 else:
   import posix
   const
     asyncInvalidSocket* = AsyncFD(posix.INVALID_SOCKET)
     TCP_NODELAY* = 1
     IPPROTO_TCP* = 6
+
+const
+  asyncInvalidPipe* = asyncInvalidSocket
 
 proc setSocketBlocking*(s: SocketHandle, blocking: bool): bool =
   ## Sets blocking mode on socket.
@@ -103,3 +116,74 @@ proc wrapAsyncSocket*(sock: SocketHandle): AsyncFD =
       return asyncInvalidSocket
   result = AsyncFD(sock)
   register(result)
+
+proc createAsyncPipe*(): tuple[read: AsyncFD, write: AsyncFD] =
+  ## Create new asynchronouse pipe.
+  ## Returns tuple of read pipe handle and write pipe handle``asyncInvalidPipe`` on error.
+  when defined(windows):
+    var pipeIn, pipeOut: Handle
+    var pipeName: WideCString
+    var uniq = 0'u64
+    var sa = SECURITY_ATTRIBUTES(nLength: sizeof(SECURITY_ATTRIBUTES).cint,
+                                 lpSecurityDescriptor: nil, bInheritHandle: 0)
+    while true:
+      QueryPerformanceCounter(uniq)
+      pipeName = newWideCString(pipeHeaderName & $uniq)
+      var openMode = FILE_FLAG_FIRST_PIPE_INSTANCE or FILE_FLAG_OVERLAPPED or
+                     PIPE_ACCESS_INBOUND
+      var pipeMode = PIPE_TYPE_BYTE or PIPE_READMODE_BYTE or PIPE_WAIT
+      pipeIn = createNamedPipe(pipeName, openMode, pipeMode, 1'i32,
+                               DEFAULT_PIPE_SIZE, DEFAULT_PIPE_SIZE,
+                               0'i32, addr sa)
+      if pipeIn == INVALID_HANDLE_VALUE:
+        let err = osLastError()
+        # If error in {ERROR_ACCESS_DENIED, ERROR_PIPE_BUSY}, then named pipe
+        # with such name already exists.
+        if int32(err) != ERROR_ACCESS_DENIED and int32(err) != ERROR_PIPE_BUSY:
+          result = (read: asyncInvalidPipe, write: asyncInvalidPipe)
+          return
+        continue
+      else:
+        break
+
+    var openMode = (GENERIC_WRITE or FILE_WRITE_DATA or SYNCHRONIZE)
+    pipeOut = createFileW(pipeName, openMode, 0, addr(sa), OPEN_EXISTING,
+                          FILE_FLAG_OVERLAPPED, 0)
+    if pipeOut == INVALID_HANDLE_VALUE:
+      discard closeHandle(pipeIn)
+      result = (read: asyncInvalidPipe, write: asyncInvalidPipe)
+      return
+
+    var ovl = OVERLAPPED()
+    let res = connectNamedPipe(pipeIn, cast[pointer](addr ovl))
+    if res == 0:
+      let err = osLastError()
+      if int32(err) == ERROR_PIPE_CONNECTED:
+        discard
+      elif int32(err) == ERROR_IO_PENDING:
+        var bytesRead = 0.Dword
+        if getOverlappedResult(pipeIn, addr ovl, bytesRead, 1) == 0:
+          discard closeHandle(pipeIn)
+          discard closeHandle(pipeOut)
+          result = (read: asyncInvalidPipe, write: asyncInvalidPipe)
+          return
+      else:
+        discard closeHandle(pipeIn)
+        discard closeHandle(pipeOut)
+        result = (read: asyncInvalidPipe, write: asyncInvalidPipe)
+        return
+
+    result = (read: AsyncFD(pipeIn), write: AsyncFD(pipeOut))
+  else:
+    var fds: array[2, cint]
+
+    if posix.pipe(fds) == -1:
+      result = (read: asyncInvalidPipe, write: asyncInvalidPipe)
+      return
+
+    if not(setSocketBlocking(SocketHandle(fds[0]), false)) or
+       not(setSocketBlocking(SocketHandle(fds[1]), false)):
+      result = (read: asyncInvalidPipe, write: asyncInvalidPipe)
+      return
+
+    result = (read: AsyncFD(fds[0]), write: AsyncFD(fds[1]))

@@ -699,23 +699,22 @@ when defined(windows):
       proc cancel(udata: pointer) {.gcsafe.} =
         sock.closeSocket()
 
-      retFuture.cancelCallback = cancel
-
       povl = RefCustomOverlapped()
       GC_ref(povl)
       povl.data = CompletionData(fd: sock, cb: socketContinuation)
-      if address.family in {AddressFamily.IPv4, AddressFamily.IPv6}:
-        var res = loop.connectEx(SocketHandle(sock),
-                                 cast[ptr SockAddr](addr saddr),
-                                 DWORD(slen), nil, 0, nil,
-                                 cast[POVERLAPPED](povl))
-        # We will not process immediate completion, to avoid undefined behavior.
-        if not res:
-          let err = osLastError()
-          if int32(err) != ERROR_IO_PENDING:
-            GC_unref(povl)
-            sock.closeSocket()
-            retFuture.fail(getTransportOsError(err))
+      var res = loop.connectEx(SocketHandle(sock),
+                               cast[ptr SockAddr](addr saddr),
+                               DWORD(slen), nil, 0, nil,
+                               cast[POVERLAPPED](povl))
+      # We will not process immediate completion, to avoid undefined behavior.
+      if not res:
+        let err = osLastError()
+        if int32(err) != ERROR_IO_PENDING:
+          GC_unref(povl)
+          sock.closeSocket()
+          retFuture.fail(getTransportOsError(err))
+
+      retFuture.cancelCallback = cancel
 
     elif address.family == AddressFamily.Unix:
       ## Unix domain socket emulation with Windows Named Pipes.
@@ -1016,7 +1015,65 @@ else:
                 else:
                   if not(vector.writer.finished()):
                     vector.writer.fail(getTransportOsError(err))
-        break
+          break
+
+        elif transp.kind == TransportKind.Pipe:
+          if vector.kind == VectorKind.DataBuffer:
+            let res = posix.write(cint(fd), vector.buf, vector.buflen)
+            if res >= 0:
+              if vector.buflen - res == 0:
+                if not(vector.writer.finished()):
+                  vector.writer.complete(vector.buflen)
+              else:
+                vector.shiftVectorBuffer(res)
+                transp.queue.addFirst(vector)
+            else:
+              let err = osLastError()
+              if int(err) == EINTR:
+                continue
+              else:
+                if isConnResetError(err):
+                  # Soft error happens which indicates that remote peer got
+                  # disconnected, complete all pending writes in queue with 0.
+                  transp.state.incl({WriteEof, WritePaused})
+                  if not(vector.writer.finished()):
+                    vector.writer.complete(0)
+                  completePendingWriteQueue(transp.queue, 0)
+                  transp.fd.removeWriter()
+                else:
+                  if not(vector.writer.finished()):
+                    vector.writer.fail(getTransportOsError(err))
+          else:
+            var nbytes = cast[int](vector.buf)
+            let res = sendfile(int(fd), cast[int](vector.buflen),
+                               int(vector.offset),
+                               nbytes)
+            if res >= 0:
+              if cast[int](vector.buf) - nbytes == 0:
+                vector.size += nbytes
+                if not(vector.writer.finished()):
+                  vector.writer.complete(vector.size)
+              else:
+                vector.size += nbytes
+                vector.shiftVectorFile(nbytes)
+                transp.queue.addFirst(vector)
+            else:
+              let err = osLastError()
+              if int(err) == EINTR:
+                continue
+              else:
+                if isConnResetError(err):
+                  # Soft error happens which indicates that remote peer got
+                  # disconnected, complete all pending writes in queue with 0.
+                  transp.state.incl({WriteEof, WritePaused})
+                  if not(vector.writer.finished()):
+                    vector.writer.complete(0)
+                  completePendingWriteQueue(transp.queue, 0)
+                  transp.fd.removeWriter()
+                else:
+                  if not(vector.writer.finished()):
+                    vector.writer.fail(getTransportOsError(err))
+          break
     else:
       transp.state.incl(WritePaused)
       transp.fd.removeWriter()
@@ -1036,32 +1093,57 @@ else:
         transp.reader.complete()
         transp.reader = nil
     else:
-      while true:
-        var res = posix.recv(fd, addr transp.buffer[transp.offset],
-                             len(transp.buffer) - transp.offset, cint(0))
-        if res < 0:
-          let err = osLastError()
-          if int(err) == EINTR:
-            continue
-          elif int(err) in {ECONNRESET}:
+      if transp.kind == TransportKind.Socket:
+        while true:
+          var res = posix.recv(fd, addr transp.buffer[transp.offset],
+                               len(transp.buffer) - transp.offset, cint(0))
+          if res < 0:
+            let err = osLastError()
+            if int(err) == EINTR:
+              continue
+            elif int(err) in {ECONNRESET}:
+              transp.state.incl({ReadEof, ReadPaused})
+              cdata.fd.removeReader()
+            else:
+              transp.state.incl(ReadPaused)
+              transp.setReadError(err)
+              cdata.fd.removeReader()
+          elif res == 0:
             transp.state.incl({ReadEof, ReadPaused})
             cdata.fd.removeReader()
           else:
-            transp.state.incl(ReadPaused)
-            transp.setReadError(err)
+            transp.offset += res
+            if transp.offset == len(transp.buffer):
+              transp.state.incl(ReadPaused)
+              cdata.fd.removeReader()
+          if not(isNil(transp.reader)) and not(transp.reader.finished()):
+            transp.reader.complete()
+            transp.reader = nil
+          break
+      elif transp.kind == TransportKind.Pipe:
+        while true:
+          var res = posix.read(cint(fd), addr transp.buffer[transp.offset],
+                               len(transp.buffer) - transp.offset)
+          if res < 0:
+            let err = osLastError()
+            if int(err) == EINTR:
+              continue
+            else:
+              transp.state.incl(ReadPaused)
+              transp.setReadError(err)
+              cdata.fd.removeReader()
+          elif res == 0:
+            transp.state.incl({ReadEof, ReadPaused})
             cdata.fd.removeReader()
-        elif res == 0:
-          transp.state.incl({ReadEof, ReadPaused})
-          cdata.fd.removeReader()
-        else:
-          transp.offset += res
-          if transp.offset == len(transp.buffer):
-            transp.state.incl(ReadPaused)
-            cdata.fd.removeReader()
-        if not(isNil(transp.reader)) and not(transp.reader.finished()):
-          transp.reader.complete()
-          transp.reader = nil
-        break
+          else:
+            transp.offset += res
+            if transp.offset == len(transp.buffer):
+              transp.state.incl(ReadPaused)
+              cdata.fd.removeReader()
+          if not(isNil(transp.reader)) and not(transp.reader.finished()):
+            transp.reader.complete()
+            transp.reader = nil
+          break
 
   proc newStreamSocketTransport(sock: AsyncFD, bufsize: int,
                                 child: StreamTransport): StreamTransport =
@@ -1076,6 +1158,22 @@ else:
     transp.state = {ReadPaused, WritePaused}
     transp.queue = initDeque[StreamVector]()
     transp.future = newFuture[void]("socket.stream.transport")
+    GC_ref(transp)
+    result = transp
+
+  proc newStreamPipeTransport(fd: AsyncFD, bufsize: int,
+                              child: StreamTransport): StreamTransport =
+    var transp: StreamTransport
+    if not isNil(child):
+      transp = child
+    else:
+      transp = StreamTransport(kind: TransportKind.Pipe)
+
+    transp.fd = fd
+    transp.buffer = newSeq[byte](bufsize)
+    transp.state = {ReadPaused, WritePaused}
+    transp.queue = initDeque[StreamVector]()
+    transp.future = newFuture[void]("pipe.stream.transport")
     GC_ref(transp)
     result = transp
 
@@ -1827,7 +1925,10 @@ proc close*(transp: StreamTransport) =
           # of readStreamLoop().
           closeSocket(transp.fd)
     else:
-      closeSocket(transp.fd, continuation)
+      if transp.kind == TransportKind.Pipe:
+        closeHandle(transp.fd, continuation)
+      elif transp.kind == TransportKind.Socket:
+        closeSocket(transp.fd, continuation)
 
 proc closeWait*(transp: StreamTransport): Future[void] =
   ## Close and frees resources of transport ``transp``.
@@ -1837,3 +1938,13 @@ proc closeWait*(transp: StreamTransport): Future[void] =
 proc closed*(transp: StreamTransport): bool {.inline.} =
   ## Returns ``true`` if transport in closed state.
   result = ({ReadClosed, WriteClosed} * transp.state != {})
+
+proc fromPipe*(fd: AsyncFD, child: StreamTransport = nil,
+               bufferSize = DefaultStreamBufferSize): StreamTransport =
+  ## Create new transport object using pipe's file descriptor.
+  ##
+  ## ``bufferSize`` is size of internal buffer for transport.
+  register(fd)
+  result = newStreamPipeTransport(fd, bufferSize, child)
+  # Start tracking transport
+  trackStream(result)
