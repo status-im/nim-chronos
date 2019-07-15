@@ -86,7 +86,6 @@ proc acquire*(lock: AsyncLock) {.async.} =
     var w = newFuture[void]("AsyncLock.acquire")
     lock.waiters.addLast(w)
     await w
-    lock.locked = true
 
 proc own*(lock: AsyncLock) =
   ## Acquire a lock ``lock``.
@@ -109,12 +108,15 @@ proc release*(lock: AsyncLock) =
   ## allow exactly one of them to proceed.
   var w: Future[void]
   if lock.locked:
-    lock.locked = false
+    var unlock = true
     while len(lock.waiters) > 0:
       w = lock.waiters.popFirst()
       if not(w.finished()):
+        unlock = false
         w.complete()
         break
+    if unlock:
+      lock.locked = false
   else:
     raise newException(AsyncLockError, "AsyncLock is not acquired!")
 
