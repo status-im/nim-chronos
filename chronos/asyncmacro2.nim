@@ -205,6 +205,11 @@ proc processBody(node, retFutureSym: NimNode,
   else: discard
 
   for i in 0 ..< result.len:
+    # We must not transform nested procedures of any form, otherwise
+    # `retFutureSym` will be used for all nested procedures as their own
+    # `retFuture`.
+    if result[i].kind in {nnkProcDef, nnkMethodDef, nnkDo, nnkLambda}:
+      continue
     result[i] = processBody(result[i], retFutureSym, subTypeIsVoid,
                             futureVarIdents)
 

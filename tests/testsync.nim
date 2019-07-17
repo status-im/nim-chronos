@@ -22,7 +22,7 @@ suite "Asynchronous sync primitives test suite":
 
   proc test1(): string =
     var lock = newAsyncLock()
-    lock.own()
+    waitFor lock.acquire()
     discard testLock(0, lock)
     discard testLock(1, lock)
     discard testLock(2, lock)
@@ -38,6 +38,52 @@ suite "Asynchronous sync primitives test suite":
     for i in 0..<20:
       poll()
     result = testLockResult
+
+  proc testBehaviorLock(n1, n2, n3: Duration): Future[seq[int]] {.async.} =
+    var stripe: seq[int]
+
+    proc task(lock: AsyncLock, n: int, timeout: Duration) {.async.} =
+      await lock.acquire()
+      stripe.add(n * 10)
+      await sleepAsync(timeout)
+      lock.release()
+      await lock.acquire()
+      stripe.add(n * 10 + 1)
+      await sleepAsync(timeout)
+      lock.release()
+
+    var lock = newAsyncLock()
+    var fut1 = task(lock, 1, n1)
+    var fut2 = task(lock, 2, n2)
+    var fut3 = task(lock, 3, n3)
+    await allFutures(fut1, fut2, fut3)
+    result = stripe
+
+  proc testCancelLock(n1, n2, n3: Duration,
+                      cancelIndex: int): Future[seq[int]] {.async.} =
+    var stripe: seq[int]
+
+    proc task(lock: AsyncLock, n: int, timeout: Duration) {.async.} =
+      await lock.acquire()
+      stripe.add(n * 10)
+      await sleepAsync(timeout)
+      lock.release()
+      await lock.acquire()
+      stripe.add(n * 10 + 1)
+      await sleepAsync(timeout)
+      lock.release()
+
+    var lock = newAsyncLock()
+    var fut1 = task(lock, 1, n1)
+    var fut2 = task(lock, 2, n2)
+    var fut3 = task(lock, 3, n3)
+    if cancelIndex == 2:
+      fut2.cancel()
+    else:
+      fut3.cancel()
+    await allFutures(fut1, fut2, fut3)
+    result = stripe
+
 
   proc testEvent(n: int, ev: AsyncEvent) {.async.} =
     await ev.wait()
@@ -197,7 +243,21 @@ suite "Asynchronous sync primitives test suite":
     result = (5 in q and not(6 in q))
 
   test "AsyncLock() behavior test":
-    check test1() == "0123456789"
+    check:
+      test1() == "0123456789"
+      waitFor(testBehaviorLock(10.milliseconds,
+                               20.milliseconds,
+                               50.milliseconds)) == @[10, 20, 30, 11, 21, 31]
+      waitFor(testBehaviorLock(50.milliseconds,
+                               20.milliseconds,
+                               10.milliseconds)) == @[10, 20, 30, 11, 21, 31]
+      waitFor(testCancelLock(10.milliseconds,
+                             20.milliseconds,
+                             50.milliseconds, 2)) == @[10, 30, 11, 31]
+      waitFor(testCancelLock(50.milliseconds,
+                             20.milliseconds,
+                             10.milliseconds, 3)) == @[10, 20, 11, 21]
+
   test "AsyncEvent() behavior test":
     check test2() == "0123456789"
   test "AsyncQueue() behavior test":
