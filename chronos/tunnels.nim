@@ -171,20 +171,38 @@ proc rawSend(rtun: RawTunnel, pbytes: pointer, nbytes: int) =
   rtun.wr = (rtun.wr + 1) and rtun.mask
 
 proc send*[Msg](tun: Tunnel[Msg], msg: Msg) {.async.} =
-  ## Send message ``msg`` over tunnel ``tun``.
+  ## Send message ``msg`` over tunnel ``tun``. This procedure will wait if
+  ## internal tunnel queue is full.
   tun.acquireLock()
-  if tun.refCount == 0:
-    raise newException(TunnelError, "Tunnel closed or not opened")
-  if tun.maxItems > 0:
-    # Wait until count is less then `maxItems`.
-    while tun.count >= tun.maxItems:
-      tun.releaseLock()
-      let res = await tun.waitForEvent()
-      tun.acquireLock()
+  try:
+    if tun.refCount == 0:
+      raise newException(TunnelError, "Tunnel closed or not opened")
+    if tun.maxItems > 0:
+      # Wait until count is less then `maxItems`.
+      while tun.count >= tun.maxItems:
+        tun.releaseLock()
+        let res = await tun.waitForEvent()
+        tun.acquireLock()
 
-  rawSend(tun, unsafeAddr msg, sizeof(Msg))
-  tun.fireEvent()
-  tun.releaseLock()
+    rawSend(tun, unsafeAddr msg, sizeof(Msg))
+    tun.fireEvent()
+  finally:
+    tun.releaseLock()
+
+proc sendNoWait*[Msg](tun: Tunnel[Msg], msg: Msg) =
+  ## Immediately send message ``msg`` over tunnel ``tun``. This can be done
+  ## safely only when tunnel's ``maxItems`` set to `-1`, so internal queue is
+  ## infinite.
+  tun.acquireLock()
+  try:
+    if tun.refCount == 0:
+      raise newException(TunnelError, "Tunnel closed or not opened")
+    if tun.maxItems != -1:
+      raise newException(TunnelError, "Tunnel's internal queue is not infinite")
+    rawSend(tun, unsafeAddr msg, sizeof(Msg))
+    tun.fireEvent()
+  finally:
+    tun.releaseLock()
 
 proc rawRecv(rtun: RawTunnel, pbytes: pointer, nbytes: int) {.inline.} =
   doAssert(rtun.count > 0)
