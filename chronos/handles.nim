@@ -7,30 +7,16 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 
-import net, nativesockets, os, asyncloop
+import net, nativesockets, os, asyncloop, osapi
 
 when defined(windows):
   import winlean
   const
     asyncInvalidSocket* = AsyncFD(-1)
-    TCP_NODELAY* = 1
-    IPPROTO_TCP* = 6
-    PIPE_TYPE_BYTE = 0x00000000'i32
-    PIPE_READMODE_BYTE = 0x00000000'i32
-    PIPE_WAIT = 0x00000000'i32
-    DEFAULT_PIPE_SIZE = 65536'i32
-    ERROR_PIPE_CONNECTED = 535
-    ERROR_PIPE_BUSY = 231
     pipeHeaderName = r"\\.\pipe\chronos\"
-
-  proc connectNamedPipe(hNamedPipe: Handle, lpOverlapped: pointer): WINBOOL
-       {.importc: "ConnectNamedPipe", stdcall, dynlib: "kernel32".}
 else:
   import posix
-  const
-    asyncInvalidSocket* = AsyncFD(posix.INVALID_SOCKET)
-    TCP_NODELAY* = 1
-    IPPROTO_TCP* = 6
+  const asyncInvalidSocket* = AsyncFD(posix.INVALID_SOCKET)
 
 const
   asyncInvalidPipe* = asyncInvalidSocket

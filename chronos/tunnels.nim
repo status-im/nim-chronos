@@ -7,20 +7,12 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 import selectors, strutils
-import asyncloop, handles, transport
+import asyncloop, handles, transport, osapi
 
 const hasThreadSupport* = compileOption("threads")
 
 when hasThreadSupport:
   import locks
-
-when defined(windows):
-  import winlean
-
-  proc createEvent(lpEventAttributes: ptr SECURITY_ATTRIBUTES,
-                   bManualReset: DWORD, bInitialState: DWORD,
-                   lpName: ptr Utf16Char): Handle
-       {.stdcall, dynlib: "kernel32", importc: "CreateEventW".}
 
 type
   RawTunnelImpl {.pure, final.} = object
@@ -47,7 +39,7 @@ proc initLocks(rtun: RawTunnel) {.inline.} =
     discard
 
   when defined(windows):
-    rtun.event = createEvent(nil, DWORD(0), DWORD(0), nil)
+    rtun.event = osapi.createEvent(nil, DWORD(0), DWORD(0), nil)
   else:
     rtun.event = newSelectEvent()
 
@@ -226,3 +218,5 @@ proc recv*[Msg](tun: Tunnel[Msg]): Future[Msg] {.async.} =
   if tun.maxItems > 0 and (tun.count == (tun.maxItems - 1)):
     tun.fireEvent()
   tun.releaseLock()
+
+proc recvNoWait*[Msg](tun: Tunnel[Msg]): Future[Msg] {.async.} =
