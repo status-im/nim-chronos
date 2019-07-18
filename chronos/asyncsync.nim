@@ -490,12 +490,14 @@ proc newAsyncThreadEvent*(): AsyncThreadEvent =
 proc close*(event: AsyncThreadEvent) =
   ## Close AsyncThreadEvent ``event`` and free all the resources.
   when defined(linux):
+    let loop = getGlobalDispatcher()
     if event.efd in loop:
       unregister(event.efd)
     discard posix.close(cint(event.efd))
   elif defined(windows):
     discard winlean.closeHandle(event.event)
   else:
+    let loop = getGlobalDispatcher()
     when hasThreadSupport:
       acquire(event.lock)
     if event.rfd in loop:
