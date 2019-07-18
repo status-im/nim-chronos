@@ -272,7 +272,7 @@ suite "Asynchronous sync primitives test suite":
 
     proc ateSyncThread(arg: ThreadArg) {.thread.} =
       var res = true
-      for i in 1..500:
+      for i in 1..100:
         arg.event1.fire()
         let r = waitSync(arg.event2)
         if r != WaitSuccess:
@@ -282,13 +282,15 @@ suite "Asynchronous sync primitives test suite":
         arg.event4.fire()
 
     proc ateAsyncLoop(arg: ThreadArg): Future[bool] {.async.} =
-      for i in 1..500:
-        let res = await wait(arg.event1)
-        if res == WaitSuccess:
+      var res = true
+      for i in 1..100:
+        let r = await wait(arg.event1)
+        if r == WaitSuccess:
           arg.event2.fire()
         else:
-          return false
-      return true
+          res = false
+          break
+      return res
 
     proc ateAsyncThread(arg: ThreadArg) {.thread.} =
       let res = waitFor ateAsyncLoop(arg)
@@ -306,8 +308,8 @@ suite "Asynchronous sync primitives test suite":
       var thr2: Thread[ThreadArg]
       createThread(thr1, ateSyncThread, arg)
       createThread(thr2, ateAsyncThread, arg)
-      let r1 = waitSync(arg.event3, 5.seconds)
-      let r2 = waitSync(arg.event4, 5.seconds)
+      let r1 = waitSync(arg.event3, 10.seconds)
+      let r2 = waitSync(arg.event4, 10.seconds)
       result = (r1 == WaitSuccess) and (r2 == WaitSuccess)
       close(arg.event1)
       close(arg.event2)
