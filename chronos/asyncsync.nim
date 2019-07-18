@@ -490,10 +490,16 @@ proc newAsyncThreadEvent*(): AsyncThreadEvent =
 proc close*(event: AsyncThreadEvent) =
   ## Close AsyncThreadEvent ``event`` and free all the resources.
   when defined(linux):
+    if event.efd in loop:
+      unregister(event.efd)
     discard posix.close(cint(event.efd))
   elif defined(windows):
-    discard winlean.closeHAndle(event.event)
+    discard winlean.closeHandle(event.event)
   else:
+    when hasThreadSupport:
+      acquire(event.lock)
+    if event.rfd in loop:
+      unregister(event.rfd)
     discard posix.close(cint(event.rfd))
     discard posix.close(cint(event.wfd))
     when hasThreadSupport:
@@ -504,8 +510,13 @@ proc fire*(event: AsyncThreadEvent) =
   ## Set state of AsyncThreadEvent ``event`` to signalled.
   when defined(linux):
     var data = 1'u64
-    if posix.write(cint(event.efd), addr data, sizeof(uint64)) == -1:
-      raiseOSError(osLastError())
+    while true:
+      if posix.write(cint(event.efd), addr data, sizeof(uint64)) == -1:
+        let err = osLastError()
+        if cint(err) == posix.EINTR:
+          continue
+        raiseOSError(osLastError())
+      break
   elif defined(windows):
     if setEvent(event.event) == 0:
       raiseOSError(osLastError())
@@ -515,15 +526,25 @@ proc fire*(event: AsyncThreadEvent) =
       acquire(event.lock)
       try:
         if not(event.flag):
-          if posix.write(cint(event.wfd), addr data, sizeof(uint64)) == -1:
-            raiseOSError(osLastError())
+          while true:
+            if posix.write(cint(event.wfd), addr data, sizeof(uint64)) == -1:
+              let err = osLastError()
+              if cint(err) == posix.EINTR:
+                continue
+              raiseOSError(osLastError())
+            break
           event.flag = true
       finally:
         release(event.lock)
     else:
       if not(event.flag):
-        if posix.write(cint(event.wfd), addr data, sizeof(uint64)) == -1:
-          raiseOSError(osLastError())
+        while true:
+          if posix.write(cint(event.wfd), addr data, sizeof(uint64)) == -1:
+            let err = osLastError()
+            if cint(err) == posix.EINTR:
+              continue
+            raiseOSError(osLastError())
+          break
         event.flag = true
 
 when defined(windows):
@@ -594,17 +615,22 @@ else:
         if isNil(udata):
           retFuture.complete(WaitTimeout)
         else:
-          if posix.read(cint(fd), addr data,
-                        sizeof(uint64)) != sizeof(uint64):
-            retFuture.complete(WaitFailed)
-          else:
-            when not(defined(linux)):
-              when hasThreadSupport:
-                acquire(event.lock)
-              event.flag = false
-              when hasThreadSupport:
-                release(event.lock)
-            retFuture.complete(WaitSuccess)
+          while true:
+            if posix.read(cint(fd), addr data,
+                          sizeof(uint64)) != sizeof(uint64):
+              let err = osLastError()
+              if cint(err) == posix.EINTR:
+                continue
+              retFuture.complete(WaitFailed)
+            else:
+              when not(defined(linux)):
+                when hasThreadSupport:
+                  acquire(event.lock)
+                event.flag = false
+                when hasThreadSupport:
+                  release(event.lock)
+              retFuture.complete(WaitSuccess)
+            break
 
     proc cancel(udata: pointer) {.gcsafe.} =
       if not(retFuture.finished()):
@@ -650,18 +676,28 @@ else:
     let count = selector.selectInto(timeoutNix, events)
     if count == 1:
       when defined(linux):
-        if posix.read(cint(fd), addr data, sizeof(uint64)) != sizeof(uint64):
-          result = WaitFailed
-        else:
-          result = WaitSuccess
+        while true:
+          if posix.read(cint(fd), addr data, sizeof(uint64)) != sizeof(uint64):
+            let err = osLastError()
+            if cint(err) == posix.EINTR:
+              continue
+            result = WaitFailed
+          else:
+            result = WaitSuccess
+          break
       else:
         when hasThreadSupport:
           acquire(event.lock)
 
-        if posix.read(cint(fd), addr data, sizeof(uint64)) != sizeof(uint64):
-          result = WaitFailed
-        else:
-          result = WaitSuccess
+        while true:
+          if posix.read(cint(fd), addr data, sizeof(uint64)) != sizeof(uint64):
+            let err = osLastError()
+            if cint(err) == posix.EINTR:
+              continue
+            result = WaitFailed
+          else:
+            result = WaitSuccess
+          break
 
         event.flag = false
 

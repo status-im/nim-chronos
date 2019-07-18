@@ -34,11 +34,9 @@ suite "Signal handling test suite":
     when defined(windows):
       skip()
     else:
-      echo SIGINT
       check test(SIGINT, 31337) == true
   test "SIGTERM test":
     when defined(windows):
       skip()
     else:
-      echo SIGTERM
       check test(SIGTERM, 65537) == true
