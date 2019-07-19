@@ -150,8 +150,7 @@ proc processBody(node, retFutureSym: NimNode,
     result.add newNimNode(nnkReturnStmt, node).add(newNilLit())
     return # Don't process the children of this return stmt
   of nnkCommand, nnkCall:
-    if node[0].kind == nnkIdent and
-       (node[0].eqIdent("await") or node[0].eqIdent("awaitne")):
+    if (node[0].eqIdent("await") or node[0].eqIdent("awaitne")):
       case node[1].kind
       of nnkIdent, nnkInfix, nnkDotExpr, nnkCall, nnkCommand:
         # await x
@@ -165,7 +164,6 @@ proc processBody(node, retFutureSym: NimNode,
       else:
         error("Invalid node kind in 'await', got: " & $node[1].kind)
     elif node.len > 1 and node[1].kind == nnkCommand and
-         node[1][0].kind == nnkIdent and
          (node[1][0].eqIdent("await") or node[1][0].eqIdent("awaitne")):
       # foo await x
       var newCommand = node
@@ -176,8 +174,7 @@ proc processBody(node, retFutureSym: NimNode,
   of nnkVarSection, nnkLetSection:
     case node[0][2].kind
     of nnkCommand:
-      if node[0][2][0].kind == nnkIdent and
-         (node[0][2][0].eqIdent("await") or node[0][2][0].eqIdent("awaitne")):
+      if (node[0][2][0].eqIdent("await") or node[0][2][0].eqIdent("awaitne")):
         # var x = await y
         var newVarSection = node # TODO: Should this use copyNimNode?
         result.createVar("future" & node[0][0].strVal, node[0][2][1],
@@ -196,20 +193,21 @@ proc processBody(node, retFutureSym: NimNode,
     else: discard
   of nnkDiscardStmt:
     # discard await x
-    if node[0].kind == nnkCommand and node[0][0].kind == nnkIdent and
+    if node[0].kind == nnkCommand and
        (node[0][0].eqIdent("await") or node[0][0].eqIdent("awaitne")):
       var newDiscard = node
       result.createVar("futureDiscard_" & $toStrLit(node[0][1]), node[0][1],
                        newDiscard[0], newDiscard, retFutureSym, node,
                        node[0][0].eqIdent("await"))
+  of RoutineNodes-{nnkTemplateDef}:
+    # skip all the nested procedure definitions
+    return node
   else: discard
 
   for i in 0 ..< result.len:
     # We must not transform nested procedures of any form, otherwise
     # `retFutureSym` will be used for all nested procedures as their own
     # `retFuture`.
-    if result[i].kind in {nnkProcDef, nnkMethodDef, nnkDo, nnkLambda}:
-      continue
     result[i] = processBody(result[i], retFutureSym, subTypeIsVoid,
                             futureVarIdents)
 
@@ -354,6 +352,9 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
   #echo(treeRepr(result))
   #if prcName == "recvLineInto":
   #  echo(toStrLit(result))
+
+proc await*[T](x: T) =
+  {.error: "Await only available within {.async.}".}
 
 macro async*(prc: untyped): untyped =
   ## Macro which processes async procedures into the appropriate
