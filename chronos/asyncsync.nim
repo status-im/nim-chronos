@@ -688,12 +688,22 @@ else:
     else:
       timeoutNix = int(timeout.milliseconds)
 
-    selector.registerHandle(SocketHandle(fd), {Event.Read}, 0)
+    try:
+      selector.registerHandle(SocketHandle(fd), {Event.Read}, 0)
+    except:
+      selector.close()
+      return WaitFailed
 
     while true:
       var repeat = false
       var smoment = Moment.now()
-      let count = selector.selectInto(timeoutNix, events)
+
+      try:
+        let count = selector.selectInto(timeoutNix, events)
+      except:
+        selector.close()
+        return WaitFailed
+
       var emoment = Moment.now()
       if count == 1:
         # Updating timeout value for next iteration.
