@@ -613,8 +613,8 @@ else:
     proc contiunuation(udata: pointer) {.gcsafe.} =
       if not(retFuture.finished()):
         var data: uint64 = 0
-        removeReader(fd)
         if isNil(udata):
+          removeReader(fd)
           retFuture.complete(WaitTimeout)
         else:
           while true:
@@ -622,9 +622,22 @@ else:
                           sizeof(uint64)) != sizeof(uint64):
               let err = osLastError()
               if cint(err) == posix.EINTR:
+                # This error happens when interrupt signal was received by
+                # process so we need to repeat `read` syscall.
                 continue
+              elif cint(err) == posix.EAGAIN or
+                   cint(err) == posix.EWOULDBLOCK:
+                # This error happens when there already pending `read` syscall
+                # in different thread for this descriptor. This is race
+                # condition, so to avoid it we will wait for another `read`
+                # event from system queue.
+                break
+              else:
+                # All other errors
+                removeReader(fd)
               retFuture.complete(WaitFailed)
             else:
+              removeReader(fd)
               when not(defined(linux)):
                 when hasThreadSupport:
                   acquire(event.lock)
@@ -663,6 +676,7 @@ else:
     var events: array[1, ReadyKey]
     # TODO: Protect from selector exceptions
     var selector = newSelector[int]()
+
     when defined(linux):
       var fd = int(event.efd)
     else:
@@ -675,37 +689,69 @@ else:
       timeoutNix = int(timeout.milliseconds)
 
     selector.registerHandle(SocketHandle(fd), {Event.Read}, 0)
-    let count = selector.selectInto(timeoutNix, events)
-    if count == 1:
-      when defined(linux):
-        while true:
-          if posix.read(cint(fd), addr data, sizeof(uint64)) != sizeof(uint64):
-            let err = osLastError()
-            if cint(err) == posix.EINTR:
-              continue
-            result = WaitFailed
+
+    while true:
+      var repeat = false
+      var smoment = Moment.now()
+      let count = selector.selectInto(timeoutNix, events)
+      var emoment = Moment.now()
+      if count == 1:
+        # Updating timeout value for next iteration.
+        if not(timeout.isInfinite()):
+          timeoutNix = int(timeoutNix - (emoment - smoment).milliseconds)
+          if timeoutNix < 0: timeoutNix = 0
+        when defined(linux):
+          while true:
+            if posix.read(cint(fd), addr data,
+                          sizeof(uint64)) != sizeof(uint64):
+              let err = osLastError()
+              if cint(err) == posix.EINTR:
+                continue
+              elif cint(err) == posix.EAGAIN or
+                   cint(err) == posix.EWOULDBLOCK:
+                # This error happens when there already pending `read` syscall
+                # in different thread for this descriptor.
+                repeat = true
+                break
+              result = WaitFailed
+            else:
+              result = WaitSuccess
+            break
+        else:
+          when hasThreadSupport:
+            acquire(event.lock)
+
+          while true:
+            if posix.read(cint(fd), addr data,
+                          sizeof(uint64)) != sizeof(uint64):
+              let err = osLastError()
+              if cint(err) == posix.EINTR:
+                continue
+              elif cint(err) == posix.EAGAIN or
+                   cint(err) == posix.EWOULDBLOCK:
+                # This error happens when there already pending `read` syscall
+                # in different thread for this descriptor.
+                repeat = true
+                break
+              else:
+                result = WaitFailed
+            else:
+              result = WaitSuccess
+            break
+
+          if repeat:
+            when hasThreadSupport:
+              release(event.lock)
+            discard
           else:
-            result = WaitSuccess
-          break
+            event.flag = false
+            when hasThreadSupport:
+              release(event.lock)
       else:
-        when hasThreadSupport:
-          acquire(event.lock)
+        result = WaitTimeout
 
-        while true:
-          if posix.read(cint(fd), addr data, sizeof(uint64)) != sizeof(uint64):
-            let err = osLastError()
-            if cint(err) == posix.EINTR:
-              continue
-            result = WaitFailed
-          else:
-            result = WaitSuccess
-          break
+      if not(repeat):
+        break
 
-        event.flag = false
-
-        when hasThreadSupport:
-          release(event.lock)
-    else:
-      result = WaitTimeout
     selector.unregister(fd) # Maybe this step is not needed
     selector.close()
