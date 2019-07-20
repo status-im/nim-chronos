@@ -674,7 +674,6 @@ else:
     ## while waiting.
     var data = 0'u64
     var events: array[1, ReadyKey]
-    # TODO: Protect from selector exceptions
     var selector = newSelector[int]()
 
     when defined(linux):
@@ -697,10 +696,12 @@ else:
     while true:
       var repeat = false
       var smoment = Moment.now()
+      var count = 0
 
       try:
-        let count = selector.selectInto(timeoutNix, events)
+        count = selector.selectInto(timeoutNix, events)
       except:
+        selector.unregister(fd)
         selector.close()
         return WaitFailed
 
