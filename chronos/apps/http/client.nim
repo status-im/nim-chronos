@@ -305,7 +305,7 @@ proc validate(header: HttpResponseHeader, request: HttpRequest): bool =
   # [RFC7231]).
   if ((request.meth == MethodConnect and
       (header.code >= 200 and header.code < 300))) or
-     ((header.code >= 100 and header.code < 200) or header.code == 204)
+     ((header.code >= 100 and header.code < 200) or header.code == 204):
     if "Content-Length" in header:
       return false
   return true
