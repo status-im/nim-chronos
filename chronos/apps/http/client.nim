@@ -296,8 +296,16 @@ proc validate(header: HttpResponseHeader, request: HttpRequest): bool =
       if header["Connection"].toLowerAscii() != "close":
         if "chunked" notin header["Transfer-Encoding"].toLowerAscii():
           return false
-  if request.meth == MethodHead and
-     (header.code >= 100 or header.code == 204 or header.code == 304):
+  # RFC 7230
+  # 3.3.2. Content-Length
+  # A server MUST NOT send a Content-Length header field in any response
+  # with a status code of 1xx (Informational) or 204 (No Content).  A
+  # server MUST NOT send a Content-Length header field in any 2xx
+  # (Successful) response to a CONNECT request (Section 4.3.6 of
+  # [RFC7231]).
+  if ((request.meth == MethodConnect and
+      (header.code >= 200 and header.code < 300))) or
+     ((header.code >= 100 and header.code < 200) or header.code == 204)
     if "Content-Length" in header:
       return false
   return true
