@@ -165,9 +165,15 @@ export asyncfutures2, timer
 
 # TODO: Check if yielded future is nil and throw a more meaningful exception
 
+const unixPlatform = defined(macosx) or defined(freebsd) or
+                     defined(netbsd) or defined(openbsd) or
+                     defined(dragonfly) or defined(macos) or
+                     defined(linux) or defined(android) or
+                     defined(solaris)
+
 when defined(windows):
   import winlean, sets, hashes
-else:
+elif unixPlatform:
   import selectors
   from posix import EINTR, EAGAIN, EINPROGRESS, EWOULDBLOCK, MSG_PEEK,
                     MSG_NOSIGNAL, SIGPIPE
@@ -467,7 +473,7 @@ when defined(windows) or defined(nimdoc):
     ## Returns ``true`` if ``fd`` is registered in thread's dispatcher.
     return fd in disp.handles
 
-else:
+elif unixPlatform:
   type
     AsyncFD* = distinct cint
 
@@ -706,6 +712,9 @@ else:
     # We are ignoring SIGPIPE signal, because we are working with EPIPE.
     posix.signal(cint(SIGPIPE), SIG_IGN)
     discard getGlobalDispatcher()
+
+else:
+  proc initAPI() = discard
 
 proc addTimer*(at: Moment, cb: CallbackFunc, udata: pointer = nil) =
   ## Arrange for the callback ``cb`` to be called at the given absolute
