@@ -310,6 +310,51 @@ when defined(windows) or defined(nimdoc):
   proc hash(x: AsyncFD): Hash {.borrow.}
   proc `==`*(x: AsyncFD, y: AsyncFD): bool {.borrow.}
 
+  proc getFunc(s: SocketHandle, fun: var pointer, guid: var GUID): bool =
+    var bytesRet: DWORD
+    fun = nil
+    result = WSAIoctl(s, SIO_GET_EXTENSION_FUNCTION_POINTER, addr guid,
+                      sizeof(GUID).DWORD, addr fun, sizeof(pointer).DWORD,
+                      addr bytesRet, nil, nil) == 0
+
+  proc initAPI(loop: PDispatcher) =
+    var
+      WSAID_TRANSMITFILE = GUID(
+        D1: 0xb5367df0'i32, D2: 0xcbac'i16, D3: 0x11cf'i16,
+        D4: [0x95'i8, 0xca'i8, 0x00'i8, 0x80'i8,
+             0x5f'i8, 0x48'i8, 0xa1'i8, 0x92'i8])
+
+    var wsa: WSAData
+    if wsaStartup(0x0202'i16, addr wsa) != 0:
+      raiseOSError(osLastError())
+
+    let sock = winlean.socket(winlean.AF_INET, 1, 6)
+    if sock == INVALID_SOCKET:
+      raiseOSError(osLastError())
+
+    var funcPointer: pointer = nil
+    if not getFunc(sock, funcPointer, WSAID_CONNECTEX):
+      let err = osLastError()
+      close(sock)
+      raiseOSError(err)
+    loop.connectEx = cast[WSAPROC_CONNECTEX](funcPointer)
+    if not getFunc(sock, funcPointer, WSAID_ACCEPTEX):
+      let err = osLastError()
+      close(sock)
+      raiseOSError(err)
+    loop.acceptEx = cast[WSAPROC_ACCEPTEX](funcPointer)
+    if not getFunc(sock, funcPointer, WSAID_GETACCEPTEXSOCKADDRS):
+      let err = osLastError()
+      close(sock)
+      raiseOSError(err)
+    loop.getAcceptExSockAddrs = cast[WSAPROC_GETACCEPTEXSOCKADDRS](funcPointer)
+    if not getFunc(sock, funcPointer, WSAID_TRANSMITFILE):
+      let err = osLastError()
+      close(sock)
+      raiseOSError(err)
+    loop.transmitFile = cast[WSAPROC_TRANSMITFILE](funcPointer)
+    close(sock)
+
   proc newDispatcher*(): PDispatcher =
     ## Creates a new Dispatcher instance.
     new result
@@ -328,6 +373,8 @@ when defined(windows) or defined(nimdoc):
       result.timers = newHeapQueue[TimerCallback]()
     result.callbacks = initDeque[AsyncCallback](64)
     result.trackers = initTable[string, TrackerBase]()
+    initAPI(result)
+    initCallSoonProc()
 
   var gDisp{.threadvar.}: PDispatcher ## Global dispatcher
 
@@ -336,7 +383,6 @@ when defined(windows) or defined(nimdoc):
     if not gDisp.isNil:
       doAssert gDisp.callbacks.len == 0
     gDisp = disp
-    initCallSoonProc()
 
   proc getGlobalDispatcher*(): PDispatcher =
     ## Returns current thread's dispatcher instance.
@@ -400,53 +446,6 @@ when defined(windows) or defined(nimdoc):
     # poll() call.
     loop.processCallbacks()
 
-  proc getFunc(s: SocketHandle, fun: var pointer, guid: var GUID): bool =
-    var bytesRet: DWORD
-    fun = nil
-    result = WSAIoctl(s, SIO_GET_EXTENSION_FUNCTION_POINTER, addr guid,
-                      sizeof(GUID).DWORD, addr fun, sizeof(pointer).DWORD,
-                      addr bytesRet, nil, nil) == 0
-
-  proc initAPI() =
-    var
-      WSAID_TRANSMITFILE = GUID(
-        D1: 0xb5367df0'i32, D2: 0xcbac'i16, D3: 0x11cf'i16,
-        D4: [0x95'i8, 0xca'i8, 0x00'i8, 0x80'i8,
-             0x5f'i8, 0x48'i8, 0xa1'i8, 0x92'i8])
-
-    let loop = getGlobalDispatcher()
-
-    var wsa: WSAData
-    if wsaStartup(0x0202'i16, addr wsa) != 0:
-      raiseOSError(osLastError())
-
-    let sock = winlean.socket(winlean.AF_INET, 1, 6)
-    if sock == INVALID_SOCKET:
-      raiseOSError(osLastError())
-
-    var funcPointer: pointer = nil
-    if not getFunc(sock, funcPointer, WSAID_CONNECTEX):
-      let err = osLastError()
-      close(sock)
-      raiseOSError(err)
-    loop.connectEx = cast[WSAPROC_CONNECTEX](funcPointer)
-    if not getFunc(sock, funcPointer, WSAID_ACCEPTEX):
-      let err = osLastError()
-      close(sock)
-      raiseOSError(err)
-    loop.acceptEx = cast[WSAPROC_ACCEPTEX](funcPointer)
-    if not getFunc(sock, funcPointer, WSAID_GETACCEPTEXSOCKADDRS):
-      let err = osLastError()
-      close(sock)
-      raiseOSError(err)
-    loop.getAcceptExSockAddrs = cast[WSAPROC_GETACCEPTEXSOCKADDRS](funcPointer)
-    if not getFunc(sock, funcPointer, WSAID_TRANSMITFILE):
-      let err = osLastError()
-      close(sock)
-      raiseOSError(err)
-    loop.transmitFile = cast[WSAPROC_TRANSMITFILE](funcPointer)
-    close(sock)
-
   proc closeSocket*(fd: AsyncFD, aftercb: CallbackFunc = nil) =
     ## Closes a socket and ensures that it is unregistered.
     let loop = getGlobalDispatcher()
@@ -474,6 +473,9 @@ when defined(windows) or defined(nimdoc):
     return fd in disp.handles
 
 elif unixPlatform:
+  const
+    SIG_IGN = cast[proc(x: cint) {.noconv,gcsafe.}](1)
+
   type
     AsyncFD* = distinct cint
 
@@ -495,6 +497,10 @@ elif unixPlatform:
 
   proc `==`*(x, y: AsyncFD): bool {.borrow.}
 
+  proc initAPI(disp: PDispatcher) =
+    # We are ignoring SIGPIPE signal, because we are working with EPIPE.
+    posix.signal(cint(SIGPIPE), SIG_IGN)
+
   proc newDispatcher*(): PDispatcher =
     ## Create new dispatcher.
     new result
@@ -503,6 +509,8 @@ elif unixPlatform:
     result.callbacks = initDeque[AsyncCallback](64)
     result.keys = newSeq[ReadyKey](64)
     result.trackers = initTable[string, TrackerBase]()
+    initCallSoonProc()
+    initAPI(result)
 
   var gDisp{.threadvar.}: PDispatcher ## Global dispatcher
 
@@ -511,7 +519,6 @@ elif unixPlatform:
     if not gDisp.isNil:
       doAssert gDisp.callbacks.len == 0
     gDisp = disp
-    initCallSoonProc()
 
   proc getGlobalDispatcher*(): PDispatcher =
     ## Returns current thread's dispatcher instance.
@@ -704,14 +711,6 @@ elif unixPlatform:
     # All callbacks which will be added in process, will be processed on next
     # poll() call.
     loop.processCallbacks()
-
-  const
-    SIG_IGN = cast[proc(x: cint) {.noconv,gcsafe.}](1)
-
-  proc initAPI() =
-    # We are ignoring SIGPIPE signal, because we are working with EPIPE.
-    posix.signal(cint(SIGPIPE), SIG_IGN)
-    discard getGlobalDispatcher()
 
 else:
   proc initAPI() = discard
@@ -933,6 +932,3 @@ proc getTracker*(id: string): TrackerBase =
   ## Get ``tracker`` from current thread dispatcher using identifier ``id``.
   let loop = getGlobalDispatcher()
   result = loop.trackers.getOrDefault(id, nil)
-
-# Global API and callSoon() initialization.
-initAPI()
