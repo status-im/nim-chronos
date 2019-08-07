@@ -10,14 +10,12 @@
 
 include "system/inclrtl"
 
-import os, tables, strutils, heapqueue, lists, options
+import os, tables, strutils, heapqueue, lists, options, nativesockets, net,
+       deques
 import timer
-import asyncfutures2 except callSoon
-
-import nativesockets, net, deques
 
 export Port, SocketFlag
-export asyncfutures2, timer
+export timer
 
 #{.injectStmt: newGcInvariant().}
 
@@ -179,6 +177,14 @@ elif unixPlatform:
                     MSG_NOSIGNAL, SIGPIPE
 
 type
+  CallbackFunc* = proc (arg: pointer = nil) {.gcsafe.}
+  CallSoonProc* = proc (c: CallbackFunc, u: pointer = nil) {.gcsafe.}
+
+  AsyncCallback* = object
+    function*: CallbackFunc
+    udata*: pointer
+    deleted*: bool
+
   AsyncError* = object of CatchableError
     ## Generic async exception
   AsyncTimeoutError* = object of AsyncError
@@ -201,11 +207,7 @@ type
 proc `<`(a, b: TimerCallback): bool =
   result = a.finishAt < b.finishAt
 
-proc callSoon(cbproc: CallbackFunc, data: pointer = nil) {.gcsafe.}
-
-proc initCallSoonProc() =
-  if asyncfutures2.getCallSoonProc().isNil:
-    asyncfutures2.setCallSoonProc(callSoon)
+proc callSoon*(cbproc: CallbackFunc, data: pointer = nil) {.gcsafe.}
 
 func getAsyncTimestamp*(a: Duration): auto {.inline.} =
   ## Return rounded up value of duration with milliseconds resolution.
@@ -374,7 +376,6 @@ when defined(windows) or defined(nimdoc):
     result.callbacks = initDeque[AsyncCallback](64)
     result.trackers = initTable[string, TrackerBase]()
     initAPI(result)
-    initCallSoonProc()
 
   var gDisp{.threadvar.}: PDispatcher ## Global dispatcher
 
@@ -509,7 +510,6 @@ elif unixPlatform:
     result.callbacks = initDeque[AsyncCallback](64)
     result.keys = newSeq[ReadyKey](64)
     result.trackers = initTable[string, TrackerBase]()
-    initCallSoonProc()
     initAPI(result)
 
   var gDisp{.threadvar.}: PDispatcher ## Global dispatcher
@@ -753,6 +753,8 @@ proc removeTimer*(at: uint64, cb: CallbackFunc, udata: pointer = nil) {.
      inline, deprecated: "Use removeTimer(Duration, cb, udata)".} =
   removeTimer(Moment.init(int64(at), Millisecond), cb, udata)
 
+include asyncfutures2
+
 proc sleepAsync*(duration: Duration): Future[void] =
   ## Suspends the execution of the current async procedure for the next
   ## ``duration`` time.
@@ -903,7 +905,7 @@ proc wait*[T](fut: Future[T], timeout = -1): Future[T] {.
 
 include asyncmacro2
 
-proc callSoon(cbproc: CallbackFunc, data: pointer = nil) =
+proc callSoon*(cbproc: CallbackFunc, data: pointer = nil) =
   ## Schedule `cbproc` to be called as soon as possible.
   ## The callback is called when control returns to the event loop.
   doAssert(not isNil(cbproc))

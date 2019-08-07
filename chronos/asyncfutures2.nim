@@ -8,7 +8,7 @@
 #    Apache License, version 2.0, (LICENSE-APACHEv2)
 #                MIT license (LICENSE-MIT)
 
-import os, tables, strutils, times, heapqueue, options, deques, cstrutils
+import os, tables, strutils, heapqueue, options, deques, cstrutils
 import srcloc
 export srcloc
 
@@ -17,14 +17,6 @@ const
   LocCompleteIndex = 1
 
 type
-  CallbackFunc* = proc (arg: pointer = nil) {.gcsafe.}
-  CallSoonProc* = proc (c: CallbackFunc, u: pointer = nil) {.gcsafe.}
-
-  AsyncCallback* = object
-    function*: CallbackFunc
-    udata*: pointer
-    deleted*: bool
-
   # ZAH: This can probably be stored with a cheaper representation
   # until the moment it needs to be printed to the screen
   # (e.g. seq[StackTraceEntry])
@@ -68,22 +60,6 @@ type
 
 var currentID* {.threadvar.}: int
 currentID = 0
-
-# ZAH: This seems unnecessary. Isn't it easy to introduce a seperate
-# module for the dispatcher type, so it can be directly referenced here?
-var callSoonHolder {.threadvar.}: CallSoonProc
-
-proc getCallSoonProc*(): CallSoonProc {.gcsafe.} =
-  ## Get current implementation of ``callSoon``.
-  return callSoonHolder
-
-proc setCallSoonProc*(p: CallSoonProc) =
-  ## Change current implementation of ``callSoon``.
-  callSoonHolder = p
-
-proc callSoon*(c: CallbackFunc, u: pointer = nil) =
-  ## Call ``cbproc`` "soon".
-  callSoonHolder(c, u)
 
 template setupFutureBase(loc: ptr SrcLoc) =
   new(result)
