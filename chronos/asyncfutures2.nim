@@ -395,7 +395,7 @@ proc `$`*(entries: seq[StackTraceEntry]): string =
     if hint.len > 0:
       result.add(spaces(indent+2) & "## " & hint & "\n")
 
-proc injectStacktrace[T](future: Future[T]) =
+proc injectStacktrace(future: FutureBase) =
   const header = "\nAsync traceback:\n"
 
   var exceptionMsg = future.error.msg
@@ -418,6 +418,17 @@ proc injectStacktrace[T](future: Future[T]) =
   #   newMsg.add "\n" & $entry
   future.error.msg = newMsg
 
+proc internalCheckComplete*(fut: FutureBase) =
+  # For internal use only. Used in asyncmacro
+  if not(isNil(fut.error)):
+    injectStacktrace(fut)
+    raise fut.error
+
+proc internalRead*[T](fut: Future[T] | FutureVar[T]): T {.inline.} =
+  # For internal use only. Used in asyncmacro
+  when T isnot void:
+    return fut.value
+
 proc read*[T](future: Future[T] | FutureVar[T]): T =
   ## Retrieves the value of ``future``. Future must be finished otherwise
   ## this function will fail with a ``ValueError`` exception.
@@ -427,11 +438,8 @@ proc read*[T](future: Future[T] | FutureVar[T]): T =
   let fut = Future[T](future)
   {.pop.}
   if fut.finished():
-    if not(isNil(fut.error)):
-      injectStacktrace(fut)
-      raise fut.error
-    when T isnot void:
-      return fut.value
+    internalCheckComplete(future)
+    internalRead(future)
   else:
     # TODO: Make a custom exception type for this?
     raise newException(ValueError, "Future still in progress.")

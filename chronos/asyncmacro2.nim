@@ -65,45 +65,6 @@ template createCb(retFutureSym, iteratorNameSym,
   identName()
   #{.pop.}
 
-template useVar(result: var NimNode, futureVarNode: NimNode, valueReceiver,
-                rootReceiver: untyped, fromNode: NimNode, isawait: bool) =
-  ## Params:
-  ##    futureVarNode: The NimNode which is a symbol identifying the Future[T]
-  ##                   variable to yield.
-  ##    fromNode: Used for better debug information (to give context).
-  ##    valueReceiver: The node which defines an expression that retrieves the
-  ##                   future's value.
-  ##
-  ##    rootReceiver: ??? TODO
-  if isawait:
-    # -> yield future<x>
-    result.add newNimNode(nnkYieldStmt, fromNode).add(futureVarNode)
-    # -> future<x>.read
-    valueReceiver = newDotExpr(futureVarNode, newIdentNode("read"))
-    result.add rootReceiver
-  else:
-    # -> yield future<x>
-    result.add newNimNode(nnkYieldStmt, fromNode).add(futureVarNode)
-    valueReceiver = futureVarNode
-    result.add rootReceiver
-
-template createVar(result: var NimNode, futSymName: string,
-                   asyncProc: NimNode,
-                   valueReceiver, rootReceiver, retFutSym: untyped,
-                   fromNode: NimNode, isawait: bool) =
-  result = newNimNode(nnkStmtList, fromNode)
-  var futSym = genSym(nskVar, "future")
-  result.add newVarStmt(futSym, asyncProc) # -> var future<x> = y
-  # retFuture.child = future<x>
-  result.add newAssignment(
-    newDotExpr(
-      newCall(newIdentNode("FutureBase"), copyNimNode(retFutSym)),
-      newIdentNode("child")
-    ),
-    newCall(newIdentNode("FutureBase"), copyNimNode(futSym))
-  )
-  useVar(result, futSym, valueReceiver, rootReceiver, fromNode, isawait)
-
 proc createFutureVarCompletions(futureVarIdents: seq[NimNode],
     fromNode: NimNode): NimNode {.compileTime.} =
   result = newNimNode(nnkStmtList, fromNode)
@@ -149,56 +110,6 @@ proc processBody(node, retFutureSym: NimNode,
 
     result.add newNimNode(nnkReturnStmt, node).add(newNilLit())
     return # Don't process the children of this return stmt
-  of nnkCommand, nnkCall:
-    if (node[0].eqIdent("await") or node[0].eqIdent("awaitne")):
-      case node[1].kind
-      of nnkIdent, nnkInfix, nnkDotExpr, nnkCall, nnkCommand:
-        # await x
-        # await x or y
-        # await foo(p, x)
-        # await foo p, x
-        var futureValue: NimNode
-        result.createVar("future" & $node[1][0].toStrLit, node[1], futureValue,
-                         futureValue, retFutureSym, node,
-                         node[0].eqIdent("await"))
-      else:
-        error("Invalid node kind in 'await', got: " & $node[1].kind)
-    elif node.len > 1 and node[1].kind == nnkCommand and
-         (node[1][0].eqIdent("await") or node[1][0].eqIdent("awaitne")):
-      # foo await x
-      var newCommand = node
-      result.createVar("future" & $node[0].toStrLit, node[1][1], newCommand[1],
-                       newCommand, retFutureSym, node,
-                       node[1][0].eqIdent("await"))
-
-  of nnkVarSection, nnkLetSection:
-    case node[0][2].kind
-    of nnkCommand:
-      if (node[0][2][0].eqIdent("await") or node[0][2][0].eqIdent("awaitne")):
-        # var x = await y
-        var newVarSection = node # TODO: Should this use copyNimNode?
-        result.createVar("future" & node[0][0].strVal, node[0][2][1],
-                         newVarSection[0][2], newVarSection, retFutureSym, node,
-                         node[0][2][0].eqIdent("await"))
-    else: discard
-  of nnkAsgn:
-    case node[1].kind
-    of nnkCommand:
-      if node[1][0].eqIdent("await") or node[1][0].eqIdent("awaitne"):
-        # x = await y
-        var newAsgn = node
-        result.createVar("future" & $node[0].toStrLit, node[1][1], newAsgn[1],
-                         newAsgn, retFutureSym, node,
-                         node[1][0].eqIdent("await"))
-    else: discard
-  of nnkDiscardStmt:
-    # discard await x
-    if node[0].kind == nnkCommand and
-       (node[0][0].eqIdent("await") or node[0][0].eqIdent("awaitne")):
-      var newDiscard = node
-      result.createVar("futureDiscard_" & $toStrLit(node[0][1]), node[0][1],
-                       newDiscard[0], newDiscard, retFutureSym, node,
-                       node[0][0].eqIdent("await"))
   of RoutineNodes-{nnkTemplateDef}:
     # skip all the nested procedure definitions
     return node
@@ -273,7 +184,7 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
   var outerProcBody = newNimNode(nnkStmtList, prc.body)
 
   # -> var retFuture = newFuture[T]()
-  var retFutureSym = genSym(nskVar, "retFuture")
+  var retFutureSym = ident "chronosInternalRetFuture"
   var subRetType =
     if returnType.kind == nnkEmpty: newIdentNode("void")
     else: baseType
@@ -353,8 +264,32 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
   #if prcName == "recvLineInto":
   #  echo(toStrLit(result))
 
-proc await*[T](x: T) =
-  {.error: "Await only available within {.async.}".}
+template await*[T](f: Future[T]): auto =
+  when declared(chronosInternalRetFuture):
+    when not declared(chronosInternalTmpFuture):
+      var chronosInternalTmpFuture: FutureBase
+    chronosInternalTmpFuture = f
+    chronosInternalRetFuture.child = chronosInternalTmpFuture
+    yield chronosInternalTmpFuture
+    chronosInternalTmpFuture.internalCheckComplete()
+    chronosInternalRetFuture.child = nil
+    cast[type(f)](chronosInternalTmpFuture).internalRead()
+  else:
+    static:
+      assert(false, "Await only available within {.async.}")
+
+template awaitne*[T](f: Future[T]): Future[T] =
+  when declared(chronosInternalRetFuture):
+    when not declared(chronosInternalTmpFuture):
+      var chronosInternalTmpFuture: FutureBase
+    chronosInternalTmpFuture = f
+    chronosInternalRetFuture.child = chronosInternalTmpFuture
+    yield chronosInternalTmpFuture
+    chronosInternalRetFuture.child = nil
+    cast[type(f)](chronosInternalTmpFuture)
+  else:
+    static:
+      assert(false, "Await only available within {.async.}")
 
 macro async*(prc: untyped): untyped =
   ## Macro which processes async procedures into the appropriate
