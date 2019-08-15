@@ -202,7 +202,7 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
   # ->   {.pop.}
   # ->   <proc_body>
   # ->   complete(retFuture, result)
-  var iteratorNameSym = genSym(nskIterator, $prcName & "Iter")
+  var iteratorNameSym = genSym(nskIterator, $prcName)
   var procBody = prc.body.processBody(retFutureSym, subtypeIsVoid,
                                     futureVarIdents)
   # don't do anything with forward bodies (empty)
