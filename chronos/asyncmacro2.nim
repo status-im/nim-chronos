@@ -188,13 +188,11 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
   var subRetType =
     if returnType.kind == nnkEmpty: newIdentNode("void")
     else: baseType
-  outerProcBody.add(
-    newVarStmt(retFutureSym,
-      newCall(
-        newNimNode(nnkBracketExpr, prc.body).add(
-          newIdentNode("newFuture"),
-          subRetType),
-      newLit(prcName)))) # Get type from return type of this proc
+  outerProcBody.add quote do:
+    var `retFutureSym` = newFuture[`subRetType`](`prcName`)
+    template waitFor[T](f: Future[T]): T =
+      static:
+        assert(false, "waitFor can not be used within {.async.}")
 
   # -> iterator nameIter(): FutureBase {.closure.} =
   # ->   {.push warning[resultshadowed]: off.}
