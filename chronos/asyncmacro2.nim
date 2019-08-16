@@ -29,7 +29,7 @@ template createCb(retFutureSym, iteratorNameSym,
   bind finished
 
   var nameIterVar = iteratorNameSym
-  #{.push stackTrace: off.}
+  {.push stackTrace: off.}
   proc identName(udata: pointer = nil) {.closure.} =
     try:
       if not(nameIterVar.finished()):
@@ -63,7 +63,7 @@ template createCb(retFutureSym, iteratorNameSym,
         retFutureSym.fail(getCurrentException())
 
   identName()
-  #{.pop.}
+  {.pop.}
 
 proc createFutureVarCompletions(futureVarIdents: seq[NimNode],
     fromNode: NimNode): NimNode {.compileTime.} =
@@ -151,6 +151,9 @@ proc verifyReturnType(typeName: string) {.compileTime.} =
     error("Expected return type of 'Future' got '$1'" %
           typeName)
 
+macro unsupported(s: static[string]): untyped =
+  error s
+
 proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
   ## This macro transforms a single procedure into a closure iterator.
   ## The ``async`` macro supports a stmtList holding multiple async procedures.
@@ -188,13 +191,8 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
   var subRetType =
     if returnType.kind == nnkEmpty: newIdentNode("void")
     else: baseType
-  outerProcBody.add(
-    newVarStmt(retFutureSym,
-      newCall(
-        newNimNode(nnkBracketExpr, prc.body).add(
-          newIdentNode("newFuture"),
-          subRetType),
-      newLit(prcName)))) # Get type from return type of this proc
+  outerProcBody.add quote do:
+    var `retFutureSym` = newFuture[`subRetType`](`prcName`)
 
   # -> iterator nameIter(): FutureBase {.closure.} =
   # ->   {.push warning[resultshadowed]: off.}
@@ -202,7 +200,7 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
   # ->   {.pop.}
   # ->   <proc_body>
   # ->   complete(retFuture, result)
-  var iteratorNameSym = genSym(nskIterator, $prcName & "Iter")
+  var iteratorNameSym = genSym(nskIterator, $prcName)
   var procBody = prc.body.processBody(retFutureSym, subtypeIsVoid,
                                     futureVarIdents)
   # don't do anything with forward bodies (empty)
@@ -251,6 +249,8 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
     # -> return retFuture
     outerProcBody.add newNimNode(nnkReturnStmt, prc.body[^1]).add(retFutureSym)
 
+  prc.addPragma(newColonExpr(ident "stackTrace", ident "off"))
+
   result = prc
 
   if subtypeIsVoid:
@@ -266,8 +266,8 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
 
 template await*[T](f: Future[T]): auto =
   when declared(chronosInternalRetFuture):
-    when not declared(chronosInternalTmpFuture):
-      var chronosInternalTmpFuture: FutureBase
+    when not declaredInScope(chronosInternalTmpFuture):
+      var chronosInternalTmpFuture {.inject.}: FutureBase
     chronosInternalTmpFuture = f
     chronosInternalRetFuture.child = chronosInternalTmpFuture
     yield chronosInternalTmpFuture
@@ -275,21 +275,19 @@ template await*[T](f: Future[T]): auto =
     chronosInternalRetFuture.child = nil
     cast[type(f)](chronosInternalTmpFuture).internalRead()
   else:
-    static:
-      assert(false, "Await only available within {.async.}")
+    unsupported "await is only available within {.async.}"
 
 template awaitne*[T](f: Future[T]): Future[T] =
   when declared(chronosInternalRetFuture):
-    when not declared(chronosInternalTmpFuture):
-      var chronosInternalTmpFuture: FutureBase
+    when not declaredInScope(chronosInternalTmpFuture):
+      var chronosInternalTmpFuture {.inject.}: FutureBase
     chronosInternalTmpFuture = f
     chronosInternalRetFuture.child = chronosInternalTmpFuture
     yield chronosInternalTmpFuture
     chronosInternalRetFuture.child = nil
     cast[type(f)](chronosInternalTmpFuture)
   else:
-    static:
-      assert(false, "Await only available within {.async.}")
+    unsupported "awaitne is only available within {.async.}"
 
 macro async*(prc: untyped): untyped =
   ## Macro which processes async procedures into the appropriate
