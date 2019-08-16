@@ -620,7 +620,7 @@ proc isInterfaceLocalMulticast*(address: TransportAddress): bool =
              ((address.address_v6[1] and 0x0F'u8) == 0x01'u8)
 
 proc isLinkLocalMulticast*(address: TransportAddress): bool =
-  ## Returns ``true`` if ``address` is link local multicast address.
+  ## Returns ``true`` if ``address`` is link local multicast address.
   ##
   ## ``IPv4``: 224.0.0.0 - 224.0.0.255
   if address.family == AddressFamily.IPv4:
