@@ -16,6 +16,8 @@ const
   LocCreateIndex = 0
   LocCompleteIndex = 1
 
+  stackTraces = compileOption("stackTrace")
+
 type
   CallbackFunc* = proc (arg: pointer = nil) {.gcsafe.}
   CallSoonProc* = proc (c: CallbackFunc, u: pointer = nil) {.gcsafe.}
@@ -35,6 +37,8 @@ type
 
   FutureBase* = ref object of RootObj ## Untyped future.
     location: array[2, ptr SrcLoc]
+    when stackTraces:
+      creationLocation: SrcLoc
     callbacks: Deque[AsyncCallback]
     cancelcb*: CallbackFunc
     child*: FutureBase
@@ -69,6 +73,16 @@ type
 var currentID* {.threadvar.}: int
 currentID = 0
 
+{.push stackTrace: off.}
+proc callerLocation(): SrcLoc =
+  when stackTraces:
+    var f = getFrame()
+    if not f.isNil:
+      result.file = f.filename
+      result.line = f.line
+      result.procedure = f.procname
+{.pop.}
+
 # ZAH: This seems unnecessary. Isn't it easy to introduce a seperate
 # module for the dispatcher type, so it can be directly referenced here?
 var callSoonHolder {.threadvar.}: CallSoonProc
@@ -85,12 +99,14 @@ proc callSoon*(c: CallbackFunc, u: pointer = nil) =
   ## Call ``cbproc`` "soon".
   callSoonHolder(c, u)
 
-template setupFutureBase(loc: ptr SrcLoc) =
+template setupFutureBase(loc: ptr SrcLoc, caller: SrcLoc) =
   new(result)
   result.state = FutureState.Pending
   result.stackTrace = getStackTrace()
   result.id = currentID
   result.location[LocCreateIndex] = loc
+  when stackTraces:
+    result.creationLocation = caller
   currentID.inc()
 
 ## ZAH: As far as I undestand `fromProc` is just a debugging helper.
@@ -98,24 +114,24 @@ template setupFutureBase(loc: ptr SrcLoc) =
 ## known `char *` in the final program (so it needs to be a `cstring` in Nim).
 ## The public API can be defined as a template expecting a `static[string]`
 ## and converting this immediately to a `cstring`.
-proc newFuture[T](loc: ptr SrcLoc): Future[T] =
-  setupFutureBase(loc)
+proc newFuture[T](loc: ptr SrcLoc, srcLoc: SrcLoc): Future[T] =
+  setupFutureBase(loc, srcLoc)
 
-proc newFutureSeq[A, B](loc: ptr SrcLoc): FutureSeq[A, B] =
-  setupFutureBase(loc)
+proc newFutureSeq[A, B](loc: ptr SrcLoc, srcLoc: SrcLoc): FutureSeq[A, B] =
+  setupFutureBase(loc, srcLoc)
 
-proc newFutureStr[T](loc: ptr SrcLoc): FutureStr[T] =
-  setupFutureBase(loc)
+proc newFutureStr[T](loc: ptr SrcLoc, srcLoc: SrcLoc): FutureStr[T] =
+  setupFutureBase(loc, srcLoc)
 
-proc newFutureVar[T](loc: ptr SrcLoc): FutureVar[T] =
-  FutureVar[T](newFuture[T](loc))
+proc newFutureVar[T](loc: ptr SrcLoc, srcLoc: SrcLoc): FutureVar[T] =
+  FutureVar[T](newFuture[T](loc, srcLoc))
 
 template newFuture*[T](fromProc: static[string] = ""): auto =
   ## Creates a new future.
   ##
   ## Specifying ``fromProc``, which is a string specifying the name of the proc
   ## that this future belongs to, is a good habit as it helps with debugging.
-  newFuture[T](getSrcLocation(fromProc))
+  newFuture[T](getSrcLocation(fromProc), callerLocation())
 
 template newFutureSeq*[A, B](fromProc: static[string] = ""): auto =
   ## Create a new future which can hold/preserve GC sequence until future will
@@ -123,7 +139,7 @@ template newFutureSeq*[A, B](fromProc: static[string] = ""): auto =
   ##
   ## Specifying ``fromProc``, which is a string specifying the name of the proc
   ## that this future belongs to, is a good habit as it helps with debugging.
-  newFutureSeq[A, B](getSrcLocation(fromProc))
+  newFutureSeq[A, B](getSrcLocation(fromProc), callerLocation())
 
 template newFutureStr*[T](fromProc: static[string] = ""): auto =
   ## Create a new future which can hold/preserve GC string until future will
@@ -131,7 +147,7 @@ template newFutureStr*[T](fromProc: static[string] = ""): auto =
   ##
   ## Specifying ``fromProc``, which is a string specifying the name of the proc
   ## that this future belongs to, is a good habit as it helps with debugging.
-  newFutureStr[T](getSrcLocation(fromProc))
+  newFutureStr[T](getSrcLocation(fromProc), callerLocation())
 
 template newFutureVar*[T](fromProc: static[string] = ""): auto =
   ## Create a new ``FutureVar``. This Future type is ideally suited for
@@ -139,7 +155,7 @@ template newFutureVar*[T](fromProc: static[string] = ""): auto =
   ##
   ## Specifying ``fromProc``, which is a string specifying the name of the proc
   ## that this future belongs to, is a good habit as it helps with debugging.
-  newFutureVar[T](getSrcLocation(fromProc))
+  newFutureVar[T](getSrcLocation(fromProc), callerLocation())
 
 proc clean*[T](future: FutureVar[T]) =
   ## Resets the ``finished`` status of ``future``.
@@ -395,6 +411,41 @@ proc `$`*(entries: seq[StackTraceEntry]): string =
     if hint.len > 0:
       result.add(spaces(indent+2) & "## " & hint & "\n")
 
+proc getStackTraceEntries(fut: FutureBase): string =
+  when stackTraces:
+    var f = fut
+
+    result = "---- Nice stacktrace ------\n"
+
+    var topFut = fut
+
+    while not f.isNil:
+      topFut = f
+      result &= $f.creationLocation.file & " (" & $f.creationLocation.line & ") " & $f.creationLocation.procedure & "    ---\n"
+      f = f.child
+
+    var stStart = 0
+
+    let s = fut.error.getStackTraceEntries()
+    var i = 1
+    for e in s:
+      if e.line == -10: break
+      if e.procName == "poll":
+        stStart = i
+      elif e.filename == topFut.creationLocation.file and e.line == topFut.creationLocation.line:
+        stStart = i
+        break
+      inc i
+
+    for i in stStart ..< s.len:
+      if s[i].line == -10: break
+      result &= $s[i].filename & " (" & $s[i].line & ") " & $s[i].procname & "\n"
+
+    result &= "---- End of nice stacktrace ------\n"
+    result &= "---- Raw upper exception stacktrace ------\n"
+    result &= $fut.error.getStackTraceEntries()
+    result &= "stStart: " & $stStart & "\n"
+
 proc injectStacktrace(future: FutureBase) =
   const header = "\nAsync traceback:\n"
 
@@ -407,7 +458,7 @@ proc injectStacktrace(future: FutureBase) =
 
   var newMsg = exceptionMsg & header
 
-  let entries = getStackTraceEntries(future.error)
+  let entries = getStackTraceEntries(future)
   newMsg.add($entries)
 
   newMsg.add("Exception message: " & exceptionMsg & "\n")
