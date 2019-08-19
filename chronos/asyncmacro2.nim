@@ -249,7 +249,8 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
     # -> return retFuture
     outerProcBody.add newNimNode(nnkReturnStmt, prc.body[^1]).add(retFutureSym)
 
-  prc.addPragma(newColonExpr(ident "stackTrace", ident "off"))
+  if prc.kind != nnkLambda: # TODO: Nim bug?
+    prc.addPragma(newColonExpr(ident "stackTrace", ident "off"))
 
   result = prc
 
