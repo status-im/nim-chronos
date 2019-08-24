@@ -24,7 +24,7 @@ install:
   # build nim from our own branch - this to avoid the day-to-day churn and
   # regressions of the fast-paced Nim development while maintaining the
   # flexibility to apply patches
-  - curl -O -L -s -S https://raw.githubusercontent.com/status-im/nimbus/devel/build_nim.sh
+  - curl -O -L -s -S https://raw.githubusercontent.com/status-im/nimbus-build-system/master/scripts/build_nim.sh
   - env MAKE="mingw32-make -j2" ARCH_OVERRIDE=%PLATFORM% bash build_nim.sh Nim csources dist/nimble NimBinaries
   - SET PATH=%CD%\Nim\bin;%PATH%
 
@@ -36,3 +36,4 @@ test_script:
   - nimble test
 
 deploy: off
+
