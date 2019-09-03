@@ -101,22 +101,36 @@ elif defined(macosx):
       result = (cast[uint64](t.tv_sec) * 1_000_000_000 +
                 cast[uint64](t.tv_usec) * 1_000)
   else:
-    from posix import clock_gettime, Timespec, CLOCK_MONOTONIC
+    type
+      MachTimebaseInfo {.importc: "struct mach_timebase_info",
+                          header: "<mach/mach_time.h>", pure, final.} = object
+        numer: uint32
+        denom: uint32
+
+    proc mach_timebase_info(info: var MachTimebaseInfo) {.importc,
+         header: "<mach/mach_time.h>".}
+    proc mach_absolute_time(): uint64 {.importc, header: "<mach/mach_time.h>".}
+
+    var queryFrequencyN: uint64
+    var queryFrequencyD: uint64
+
+    proc setupQueryFrequence() =
+      var info: MachTimebaseInfo
+      mach_timebase_info(info)
+      queryFrequencyN = info.numer
+      queryFrequencyD = info.denom
 
     proc fastEpochTime*(): uint64 {.
          inline, deprecated: "Use Moment.now()".} =
       ## Procedure's resolution is millisecond.
-      var t: Timespec
-      discard clock_gettime(CLOCK_MONOTONIC, t)
-      result = ((cast[uint64](t.tv_sec) * 1_000) +
-                (cast[uint64](t.tv_nsec) div 1_000_000))
+      result = (mach_absolute_time() * queryFrequencyN) div queryFrequencyD
+      result = result div 1_000_000
 
     proc fastEpochTimeNano(): uint64 {.inline.} =
       ## Procedure's resolution is nanosecond.
-      var t: Timespec
-      discard clock_gettime(CLOCK_MONOTONIC, t)
-      result = cast[uint64](t.tv_sec) * 1_000_000_000'u64 +
-               cast[uint64](t.tv_nsec)
+      result = (mach_absolute_time() * queryFrequencyN) div queryFrequencyD
+
+    setupQueryFrequence()
 
 elif defined(posix):
   from posix import clock_gettime, Timespec, CLOCK_REALTIME, CLOCK_MONOTONIC
