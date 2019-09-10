@@ -11,7 +11,7 @@
 ## *************
 ## `asyncdispatch` module depends on the `asyncmacro` module to work properly.
 
-import macros, strutils, asyncfutures2
+import macros, strutils
 
 proc skipUntilStmtList(node: NimNode): NimNode {.compileTime.} =
   # Skips a nest of StmtList's.
