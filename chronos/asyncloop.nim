@@ -319,16 +319,17 @@ when defined(windows) or defined(nimdoc):
                       sizeof(GUID).DWORD, addr fun, sizeof(pointer).DWORD,
                       addr bytesRet, nil, nil) == 0
 
+  proc globalInit() =
+    var wsa: WSAData
+    if wsaStartup(0x0202'i16, addr wsa) != 0:
+      raiseOSError(osLastError())
+
   proc initAPI(loop: PDispatcher) =
     var
       WSAID_TRANSMITFILE = GUID(
         D1: 0xb5367df0'i32, D2: 0xcbac'i16, D3: 0x11cf'i16,
         D4: [0x95'i8, 0xca'i8, 0x00'i8, 0x80'i8,
              0x5f'i8, 0x48'i8, 0xa1'i8, 0x92'i8])
-
-    var wsa: WSAData
-    if wsaStartup(0x0202'i16, addr wsa) != 0:
-      raiseOSError(osLastError())
 
     let sock = winlean.socket(winlean.AF_INET, 1, 6)
     if sock == INVALID_SOCKET:
@@ -498,9 +499,12 @@ elif unixPlatform:
 
   proc `==`*(x, y: AsyncFD): bool {.borrow.}
 
-  proc initAPI(disp: PDispatcher) =
+  proc globalInit() =
     # We are ignoring SIGPIPE signal, because we are working with EPIPE.
     posix.signal(cint(SIGPIPE), SIG_IGN)
+
+  proc initAPI(disp: PDispatcher) =
+    discard
 
   proc newDispatcher*(): PDispatcher =
     ## Create new dispatcher.
@@ -714,6 +718,7 @@ elif unixPlatform:
 
 else:
   proc initAPI() = discard
+  proc globalInit() = discard
 
 proc addTimer*(at: Moment, cb: CallbackFunc, udata: pointer = nil) =
   ## Arrange for the callback ``cb`` to be called at the given absolute
@@ -934,3 +939,6 @@ proc getTracker*(id: string): TrackerBase =
   ## Get ``tracker`` from current thread dispatcher using identifier ``id``.
   let loop = getGlobalDispatcher()
   result = loop.trackers.getOrDefault(id, nil)
+
+# Perform global per-module initialization.
+globalInit()
