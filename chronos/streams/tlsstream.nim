@@ -11,6 +11,7 @@
 import bearssl, bearssl/cacert
 import ../asyncloop, ../timer, ../asyncsync
 import asyncstream, ../transports/stream, ../transports/common
+import strutils
 
 type
   TLSStreamKind {.pure.} = enum
@@ -28,6 +29,7 @@ type
 
 type
   TlsStreamWriter* = ref object of AsyncStreamWriter
+    stream*: TlsAsyncStream
 
   TlsStreamReader* = ref object of AsyncStreamReader
     case kind: TlsStreamKind
@@ -35,7 +37,7 @@ type
       ccontext: ptr SslClientContext
     of TlsStreamKind.Server:
       scontext: ptr SslServerContext
-    writer*: TlsStreamWriter
+    stream*: TlsAsyncStream
 
   TlsAsyncStream* = ref object of RootRef
     xwc*: X509NoAnchorContext
@@ -96,7 +98,7 @@ proc tlsWriteLoop(stream: AsyncStreamWriter) {.async.} =
 
 proc tlsReadLoop(stream: AsyncStreamReader) {.async.} =
   var rstream = cast[TlsStreamReader](stream)
-  var wstream = rstream.writer
+  var wstream = rstream.stream.writer
   var engine: ptr SslEngineContext
   if rstream.kind == TlsStreamKind.Server:
     engine = addr rstream.scontext.eng
@@ -238,9 +240,10 @@ proc newTlsClientAsyncStream*(rsource: AsyncStreamReader,
   var reader = new TlsStreamReader
   reader.kind = TlsStreamKind.Client
   var writer = new TlsStreamWriter
+  reader.stream = result
+  writer.stream = result
   result.reader = reader
   result.writer = writer
-  result.reader.writer = writer
   reader.ccontext = addr result.context
 
   if TLSFlags.NoVerifyHost in flags:
