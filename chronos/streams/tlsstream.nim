@@ -95,6 +95,8 @@ proc tlsWriteLoop(stream: AsyncStreamWriter) {.async.} =
     await future
   except CancelledError:
     discard
+  finally:
+    wstream.stream = nil
 
 proc tlsReadLoop(stream: AsyncStreamReader) {.async.} =
   var rstream = cast[TlsStreamReader](stream)
@@ -212,6 +214,7 @@ proc tlsReadLoop(stream: AsyncStreamReader) {.async.} =
         let item = wstream.queue.popFirstNoWait()
         if not(item.future.finished()):
           item.future.fail(rstream.error)
+    rstream.stream = nil
 
 proc newTlsClientAsyncStream*(rsource: AsyncStreamReader,
                               wsource: AsyncStreamWriter,
