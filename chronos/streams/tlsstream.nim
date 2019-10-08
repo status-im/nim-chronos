@@ -11,8 +11,6 @@
 import bearssl, bearssl/cacert
 import ../asyncloop, ../timer, ../asyncsync
 import asyncstream, ../transports/stream, ../transports/common
-import strutils
-import hexdump
 
 type
   TLSStreamKind {.pure.} = enum
