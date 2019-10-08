@@ -38,6 +38,7 @@ type
     of String:
       data3*: string
     size*: int
+    offset*: int
     future*: Future[void]
 
   AsyncStreamState* = enum
@@ -57,7 +58,6 @@ type
     tsource*: StreamTransport
     readerLoop*: StreamReaderLoop
     state*: AsyncStreamState
-    exevent*: AsyncEvent
     buffer*: AsyncBuffer
     udata: pointer
     error*: ref Exception
@@ -68,7 +68,6 @@ type
     tsource*: StreamTransport
     writerLoop*: StreamWriterLoop
     state*: AsyncStreamState
-    exevent*: AsyncEvent
     queue*: AsyncQueue[WriteItem]
     udata: pointer
     future: Future[void]
@@ -730,17 +729,23 @@ proc close*(rw: AsyncStreamRW) =
       untrackAsyncStreamWriter(rw)
 
   when rw is AsyncStreamReader:
-    if isNil(rw.rsource) or isNil(rw.readerLoop):
+    if isNil(rw.rsource) or isNil(rw.readerLoop) or isNil(rw.future):
       callSoon(continuation)
     else:
-      rw.exevent.fire()
-      rw.future.addCallback(continuation)
+      if rw.future.finished():
+        callSoon(continuation)
+      else:
+        rw.future.cancel()
+        rw.future.addCallback(continuation)
   elif rw is AsyncStreamWriter:
-    if isNil(rw.wsource) or isNil(rw.writerLoop):
+    if isNil(rw.wsource) or isNil(rw.writerLoop) or isNil(rw.future):
       callSoon(continuation)
     else:
-      rw.exevent.fire()
-      rw.future.addCallback(continuation)
+      if rw.future.finished():
+        callSoon(continuation)
+      else:
+        rw.future.cancel()
+        rw.future.addCallback(continuation)
 
 proc closeWait*(rw: AsyncStreamRW): Future[void] =
   ## Close and frees resources of stream ``rw``.
@@ -768,7 +773,6 @@ proc init*(child, wsource: AsyncStreamWriter, loop: StreamWriterLoop,
   child.writerLoop = loop
   child.wsource = wsource
   child.tsource = wsource.tsource
-  child.exevent = newAsyncEvent()
   child.queue = newAsyncQueue[WriteItem](queueSize)
   trackAsyncStreamWriter(child)
   child.startWriter()
@@ -780,7 +784,6 @@ proc init*[T](child, wsource: AsyncStreamWriter, loop: StreamWriterLoop,
   child.writerLoop = loop
   child.wsource = wsource
   child.tsource = wsource.tsource
-  child.exevent = newAsyncEvent()
   child.queue = newAsyncQueue[WriteItem](queueSize)
   if not isNil(udata):
     GC_ref(udata)
@@ -795,7 +798,6 @@ proc init*(child, rsource: AsyncStreamReader, loop: StreamReaderLoop,
   child.readerLoop = loop
   child.rsource = rsource
   child.tsource = rsource.tsource
-  child.exevent = newAsyncEvent()
   child.buffer = AsyncBuffer.init(bufferSize)
   trackAsyncStreamReader(child)
   child.startReader()
@@ -808,7 +810,6 @@ proc init*[T](child, rsource: AsyncStreamReader, loop: StreamReaderLoop,
   child.readerLoop = loop
   child.rsource = rsource
   child.tsource = rsource.tsource
-  child.exevent = newAsyncEvent()
   child.buffer = AsyncBuffer.init(bufferSize)
   if not isNil(udata):
     GC_ref(udata)
