@@ -43,6 +43,7 @@ suite "Stream Transport test suite":
     m14 = "Closing socket while operation pending test (issue #8)"
     m15 = "Connection refused test"
     m16 = "readOnce() read until atEof() test"
+    m17 = "0.0.0.0/::0 (INADDR_ANY) test"
 
   when defined(windows):
     var addresses = [
@@ -717,6 +718,33 @@ suite "Stream Transport test suite":
     await ntransp.closeWait()
     await server.closeWait()
 
+  proc testAnyAddress(): Future[bool] {.async.} =
+    var serverRemote, serverLocal: TransportAddress
+    var connRemote, connLocal: TransportAddress
+
+    proc serveClient(server: StreamServer, transp: StreamTransport) {.async.} =
+      serverRemote = transp.remoteAddress()
+      serverLocal = transp.localAddress()
+      await transp.closeWait()
+      server.stop()
+      server.close()
+
+    var ta = initTAddress("0.0.0.0:0")
+    var server = createStreamServer(ta, serveClient, {ReuseAddr})
+    var la = server.localAddress()
+    server.start()
+    var connFut = connect(la)
+    if await withTimeout(connFut, 5.seconds):
+      var conn = connFut.read()
+      connRemote = conn.remoteAddress()
+      connLocal = conn.localAddress()
+      await server.join()
+      await conn.closeWait()
+      result = (connRemote == serverLocal) and (connLocal == serverRemote)
+    else:
+      server.stop()
+      server.close()
+
   for i in 0..<len(addresses):
     test prefixes[i] & "close(transport) test":
       check waitFor(testCloseTransport(addresses[i])) == 1
@@ -747,7 +775,7 @@ suite "Stream Transport test suite":
         if addresses[i].family == AddressFamily.IPv4:
           check waitFor(testSendFile(addresses[i])) == FilesCount
         else:
-          discard
+          skip()
       else:
         check waitFor(testSendFile(addresses[i])) == FilesCount
     test prefixes[i] & m15:
@@ -761,6 +789,11 @@ suite "Stream Transport test suite":
       check waitFor(test16(addresses[i])) == 1
     test prefixes[i] & "Connection reset test on send() only":
       check waitFor(testWriteConnReset(addresses[i])) == 1
+    test prefixes[i] & m17:
+      if addresses[i].family == AddressFamily.IPv4:
+        check waitFor(testAnyAddress()) == true
+      else:
+        skip()
 
   test "Servers leak test":
     check getTracker("stream.server").isLeaked() == false
