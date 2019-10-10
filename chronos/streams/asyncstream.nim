@@ -141,6 +141,24 @@ proc copyData*(sb: AsyncBuffer, dest: pointer, offset, length: int) {.inline.} =
   copyMem(cast[pointer](cast[uint](dest) + cast[uint](offset)),
           unsafeAddr sb.buffer[0], length)
 
+proc upload*(sb: ptr AsyncBuffer, pbytes: ptr byte,
+             nbytes: int): Future[void] {.async.} =
+  var length = nbytes
+  while length > 0:
+    let size = min(length, sb[].bufferLen())
+    if size == 0:
+      # Internal buffer is full, we need to transfer data to consumer.
+      await sb[].transfer()
+      continue
+    else:
+      copyMem(addr sb[].buffer[sb.offset], pbytes, size)
+      sb[].offset = sb[].offset + size
+      length = length - size
+
+    if length == 0:
+      # We notify consumers that new data is available.
+      sb[].forget()
+
 template toDataOpenArray*(sb: AsyncBuffer): auto =
   toOpenArray(sb.buffer, 0, sb.offset - 1)
 
