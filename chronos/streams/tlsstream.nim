@@ -11,7 +11,7 @@
 import bearssl, bearssl/cacert
 import ../asyncloop, ../timer, ../asyncsync
 import asyncstream, ../transports/stream, ../transports/common
-import strutils, hexdump
+import strutils
 
 type
   TLSStreamKind {.pure.} = enum
@@ -110,18 +110,16 @@ proc tlsWriteLoop(stream: AsyncStreamWriter) {.async.} =
     var length: uint
     while true:
       var state = engine.sslEngineCurrentState()
-      echo "tlsWriteLoop() state = ", getStringState(state)
 
       if (state and SSL_CLOSED) == SSL_CLOSED:
         wstream.state = AsyncStreamState.Finished
         break
 
       if (state and (SSL_RECVREC or SSL_RECVAPP)) != 0:
-        echo "tlsWriteLoop() signal to tlsReadLoop()"
-        wstream.switchToReader.fire()
+        if not(wstream.switchToReader.isSet()):
+          wstream.switchToReader.fire()
 
       if (state and (SSL_SENDREC or SSL_SENDAPP)) == 0:
-        echo "tlsWriteLoop() waiting"
         await wstream.switchToWriter.wait()
         wstream.switchToWriter.clear()
         # We need to refresh `state` because we just returned from readerLoop.
@@ -141,9 +139,7 @@ proc tlsWriteLoop(stream: AsyncStreamWriter) {.async.} =
 
       if (state and SSL_SENDAPP) == SSL_SENDAPP:
         # Application data can be sent over stream.
-        echo "tlsWriteLoop() waiting for an item"
         var item = await wstream.queue.get()
-        echo "tlsWriteLoop() obtained an item"
         if item.size > 0:
           length = 0'u
           var buf = sslEngineSendappBuf(engine, length)
@@ -209,7 +205,6 @@ proc tlsReadLoop(stream: AsyncStreamReader) {.async.} =
     var length: uint
     while true:
       var state = engine.sslEngineCurrentState()
-      echo "tlsReadLoop() state = ", getStringState(state)
 
       if (state and SSL_CLOSED) == SSL_CLOSED:
         let err = engine.sslEngineLastError()
@@ -222,11 +217,10 @@ proc tlsReadLoop(stream: AsyncStreamReader) {.async.} =
           break
 
       if (state and (SSL_SENDREC or SSL_SENDAPP)) != 0:
-        echo "tlsReadLoop() signal to tlsWriteLoop()"
-        rstream.switchToWriter.fire()
+        if not(rstream.switchToWriter.isSet()):
+          rstream.switchToWriter.fire()
 
       if (state and (SSL_RECVREC or SSL_RECVAPP)) == 0:
-        echo "tlsReadLoop() waiting"
         await rstream.switchToReader.wait()
         rstream.switchToReader.clear()
         # We need to refresh `state` because we just returned from writerLoop.
@@ -236,9 +230,7 @@ proc tlsReadLoop(stream: AsyncStreamReader) {.async.} =
         # TLS records required for further processing
         length = 0'u
         var buf = sslEngineRecvrecBuf(engine, length)
-        echo "tlsReadLoop() reading"
         var resFut = awaitne rstream.rsource.readOnce(buf, int(length))
-        echo "tlsReadLoop() read completed"
         if resFut.failed():
           rstream.error = resFut.error
           rstream.state = AsyncStreamState.Error
@@ -255,10 +247,7 @@ proc tlsReadLoop(stream: AsyncStreamReader) {.async.} =
         # Application data can be recovered.
         length = 0'u
         var buf = sslEngineRecvappBuf(engine, length)
-        echo "tlsReadLoop(SSL_RECVAPP) received ", length, " bytes"
         await upload(addr rstream.buffer, buf, int(length))
-        echo dumpHex(buf, int(length))
-        echo "tlsReadLoop(SSL_RECVAPP) uploaded ", length, " bytes to buffer"
         sslEngineRecvappAck(engine, length)
         continue
 
