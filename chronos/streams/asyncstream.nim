@@ -154,16 +154,23 @@ proc upload*(sb: ptr AsyncBuffer, pbytes: ptr byte,
       copyMem(addr sb[].buffer[sb.offset], pbytes, size)
       sb[].offset = sb[].offset + size
       length = length - size
-
-    if length == 0:
-      # We notify consumers that new data is available.
-      sb[].forget()
+  # We notify consumers that new data is available.
+  sb[].forget()
 
 template toDataOpenArray*(sb: AsyncBuffer): auto =
   toOpenArray(sb.buffer, 0, sb.offset - 1)
 
 template toBufferOpenArray*(sb: AsyncBuffer): auto =
   toOpenArray(sb.buffer, sb.offset, len(sb.buffer) - 1)
+
+template harvestItem*(dest: pointer, item: WriteItem, length: int) =
+  if item.kind == Pointer:
+    let p = cast[pointer](cast[uint](item.data1) + uint(item.offset))
+    copyMem(dest, p, length)
+  elif item.kind == Sequence:
+    copyMem(dest, unsafeAddr item.data2[item.offset], length)
+  elif item.kind == String:
+    copyMem(dest, unsafeAddr item.data3[item.offset], length)
 
 proc newAsyncStreamReadError(p: ref Exception): ref Exception {.inline.} =
   var w = newException(AsyncStreamReadError, "Read stream failed")
