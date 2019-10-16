@@ -634,8 +634,8 @@ suite "TLSStream test suite":
     var creader = newAsyncStreamReader(conn)
     var cwriter = newAsyncStreamWriter(conn)
     # We are using self-signed certificate
-    var cstream = newTLSClientAsyncStream(creader, cwriter,
-                                          flags = {NoVerifyHost})
+    let flags = {NoVerifyHost, NoVerifyServerName}
+    var cstream = newTLSClientAsyncStream(creader, cwriter, "", flags = flags)
     let res = await cstream.reader.readLine()
     await cstream.reader.closeWait()
     await cstream.writer.closeWait()

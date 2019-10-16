@@ -113,20 +113,6 @@ template newTLSStreamProtocolError[T](message: T): ref Exception =
 proc raiseTLSStreamProtoError*[T](message: T) =
   raise newTLSStreamProtocolError(message)
 
-# proc getStringState*(state: cuint): string =
-#   var n = newSeq[string]()
-#   if (state and SSL_CLOSED) == SSL_CLOSED:
-#     n.add("Closed")
-#   if (state and SSL_SENDREC) == SSL_SENDREC:
-#     n.add("SendRec")
-#   if (state and SSL_RECVREC) == SSL_RECVREC:
-#     n.add("RecvRec")
-#   if (state and SSL_SENDAPP) == SSL_SENDAPP:
-#     n.add("SendApp")
-#   if (state and SSL_RECVAPP) == SSL_RECVAPP:
-#     n.add("RecvApp")
-#   result = "{" & n.join(", ") & "} number (" & $state & ")"
-
 proc tlsWriteLoop(stream: AsyncStreamWriter) {.async.} =
   var wstream = cast[TLSStreamWriter](stream)
   var engine: ptr SslEngineContext
@@ -314,7 +300,7 @@ proc getSignerAlgo(xc: X509Certificate): int =
 
 proc newTLSClientAsyncStream*(rsource: AsyncStreamReader,
                               wsource: AsyncStreamWriter,
-                              serverName: string = "",
+                              serverName: string,
                               bufferSize = SSL_BUFSIZE_BIDI,
                               minVersion = TLSVersion.TLS11,
                               maxVersion = TLSVersion.TLS12,
@@ -374,6 +360,9 @@ proc newTLSClientAsyncStream*(rsource: AsyncStreamReader,
     if err == 0:
       raise newException(TLSStreamError, "Could not initialize TLS layer")
   else:
+    if len(serverName) == 0:
+      raise newException(TLSStreamError, "serverName must not be empty string")
+
     let err = sslClientReset(addr result.ccontext, serverName, 0)
     if err == 0:
       raise newException(TLSStreamError, "Could not initialize TLS layer")
