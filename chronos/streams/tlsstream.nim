@@ -150,7 +150,9 @@ proc tlsWriteLoop(stream: AsyncStreamWriter) {.async.} =
         var buf = sslEngineSendrecBuf(engine, length)
         doAssert(length != 0 and not isNil(buf))
         var fut = awaitne wstream.wsource.write(buf, int(length))
-        if fut.failed():
+        if fut.cancelled():
+          raise fut.error
+        elif fut.failed():
           error = fut.error
           break
         sslEngineSendrecAck(engine, length)
@@ -202,7 +204,6 @@ proc tlsWriteLoop(stream: AsyncStreamWriter) {.async.} =
         let item = wstream.queue.popFirstNoWait()
         if not(item.future.finished()):
           item.future.fail(error)
-    wstream.switchToReader.fire()
     wstream.stream = nil
 
 proc tlsReadLoop(stream: AsyncStreamReader) {.async.} =
@@ -223,18 +224,9 @@ proc tlsReadLoop(stream: AsyncStreamReader) {.async.} =
       if (state and SSL_CLOSED) == SSL_CLOSED:
         let err = engine.sslEngineLastError()
         if err != 0:
-          rstream.error = newTLSStreamProtocolError(err)
-          rstream.state = AsyncStreamState.Error
-          if not(rstream.handshaked):
-            rstream.handshaked = true
-            rstream.stream.writer.handshaked = true
-            if not(isNil(rstream.handshakeFut)):
-              rstream.handshakeFut.fail(rstream.error)
-            rstream.switchToWriter.fire()
-          break
-        else:
-          rstream.state = AsyncStreamState.Stopped
-          break
+          raise newTLSStreamProtocolError(err)
+        rstream.state = AsyncStreamState.Stopped
+        break
 
       if (state and (SSL_SENDREC or SSL_SENDAPP)) != 0:
         if not(rstream.switchToWriter.isSet()):
@@ -250,18 +242,7 @@ proc tlsReadLoop(stream: AsyncStreamReader) {.async.} =
         # TLS records required for further processing
         length = 0'u
         var buf = sslEngineRecvrecBuf(engine, length)
-        var resFut = awaitne rstream.rsource.readOnce(buf, int(length))
-        if resFut.failed():
-          rstream.error = resFut.error
-          rstream.state = AsyncStreamState.Error
-          if not(rstream.handshaked):
-            rstream.handshaked = true
-            rstream.stream.writer.handshaked = true
-            if not(isNil(rstream.handshakeFut)):
-              rstream.handshakeFut.fail(rstream.error)
-            rstream.switchToWriter.fire()
-          break
-        let res = resFut.read()
+        let res = await rstream.rsource.readOnce(buf, int(length))
         if res > 0:
           sslEngineRecvrecAck(engine, uint(res))
           continue
@@ -279,12 +260,19 @@ proc tlsReadLoop(stream: AsyncStreamReader) {.async.} =
 
   except CancelledError:
     rstream.state = AsyncStreamState.Stopped
-
+  except AsyncStreamReadError:
+    rstream.error = getCurrentException()
+    rstream.state = AsyncStreamState.Error
+    if not(rstream.handshaked):
+      rstream.handshaked = true
+      rstream.stream.writer.handshaked = true
+      if not(isNil(rstream.handshakeFut)):
+        rstream.handshakeFut.fail(rstream.error)
+      rstream.switchToWriter.fire()
   finally:
     # Perform TLS cleanup procedure
     sslEngineClose(engine)
     rstream.buffer.forget()
-    rstream.switchToWriter.fire()
     rstream.stream = nil
 
 proc getSignerAlgo(xc: X509Certificate): int =
