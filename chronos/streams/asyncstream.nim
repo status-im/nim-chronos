@@ -163,7 +163,7 @@ template toDataOpenArray*(sb: AsyncBuffer): auto =
 template toBufferOpenArray*(sb: AsyncBuffer): auto =
   toOpenArray(sb.buffer, sb.offset, len(sb.buffer) - 1)
 
-template harvestItem*(dest: pointer, item: WriteItem, length: int) =
+template copyOut*(dest: pointer, item: WriteItem, length: int) =
   if item.kind == Pointer:
     let p = cast[pointer](cast[uint](item.data1) + uint(item.offset))
     copyMem(dest, p, length)

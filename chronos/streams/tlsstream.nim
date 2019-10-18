@@ -171,7 +171,7 @@ proc tlsWriteLoop(stream: AsyncStreamWriter) {.async.} =
           length = 0'u
           var buf = sslEngineSendappBuf(engine, length)
           let toWrite = min(int(length), item.size)
-          harvestItem(buf, item, toWrite)
+          copyOut(buf, item, toWrite)
           if int(length) >= item.size:
             # BearSSL is ready to accept whole item size.
             sslEngineSendappAck(engine, uint(item.size))
