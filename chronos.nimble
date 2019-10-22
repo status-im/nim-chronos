@@ -1,5 +1,5 @@
 packageName   = "chronos"
-version       = "2.3.0"
+version       = "2.3.1"
 author        = "Status Research & Development GmbH"
 description   = "Chronos"
 license       = "Apache License 2.0 or MIT"
@@ -7,7 +7,8 @@ skipDirs      = @["tests"]
 
 ### Dependencies
 
-requires "nim > 0.18.0"
+requires "nim > 0.19.4",
+         "bearssl"
 
 task test, "Run all tests":
   var commands = [

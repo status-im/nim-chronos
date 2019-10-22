@@ -141,11 +141,36 @@ proc copyData*(sb: AsyncBuffer, dest: pointer, offset, length: int) {.inline.} =
   copyMem(cast[pointer](cast[uint](dest) + cast[uint](offset)),
           unsafeAddr sb.buffer[0], length)
 
+proc upload*(sb: ptr AsyncBuffer, pbytes: ptr byte,
+             nbytes: int): Future[void] {.async.} =
+  var length = nbytes
+  while length > 0:
+    let size = min(length, sb[].bufferLen())
+    if size == 0:
+      # Internal buffer is full, we need to transfer data to consumer.
+      await sb[].transfer()
+      continue
+    else:
+      copyMem(addr sb[].buffer[sb.offset], pbytes, size)
+      sb[].offset = sb[].offset + size
+      length = length - size
+  # We notify consumers that new data is available.
+  sb[].forget()
+
 template toDataOpenArray*(sb: AsyncBuffer): auto =
   toOpenArray(sb.buffer, 0, sb.offset - 1)
 
 template toBufferOpenArray*(sb: AsyncBuffer): auto =
   toOpenArray(sb.buffer, sb.offset, len(sb.buffer) - 1)
+
+template copyOut*(dest: pointer, item: WriteItem, length: int) =
+  if item.kind == Pointer:
+    let p = cast[pointer](cast[uint](item.data1) + uint(item.offset))
+    copyMem(dest, p, length)
+  elif item.kind == Sequence:
+    copyMem(dest, unsafeAddr item.data2[item.offset], length)
+  elif item.kind == String:
+    copyMem(dest, unsafeAddr item.data3[item.offset], length)
 
 proc newAsyncStreamReadError(p: ref Exception): ref Exception {.inline.} =
   var w = newException(AsyncStreamReadError, "Read stream failed")
@@ -270,6 +295,8 @@ proc readExactly*(rstream: AsyncStreamReader, pbytes: pointer,
   if isNil(rstream.rsource):
     try:
       await readExactly(rstream.tsource, pbytes, nbytes)
+    except CancelledError:
+      raise
     except TransportIncompleteError:
       raise newAsyncStreamIncompleteError()
     except:
@@ -308,10 +335,12 @@ proc readOnce*(rstream: AsyncStreamReader, pbytes: pointer,
   if isNil(rstream.rsource):
     try:
       result = await readOnce(rstream.tsource, pbytes, nbytes)
+    except CancelledError:
+      raise
     except:
       raise newAsyncStreamReadError(getCurrentException())
   else:
-    if isNil(rstream.rsource):
+    if isNil(rstream.readerLoop):
       result = await readOnce(rstream.rsource, pbytes, nbytes)
     else:
       while true:
@@ -351,6 +380,8 @@ proc readUntil*(rstream: AsyncStreamReader, pbytes: pointer, nbytes: int,
   if isNil(rstream.rsource):
     try:
       result = await readUntil(rstream.tsource, pbytes, nbytes, sep)
+    except CancelledError:
+      raise
     except TransportIncompleteError:
       raise newAsyncStreamIncompleteError()
     except TransportLimitError:
@@ -416,6 +447,8 @@ proc readLine*(rstream: AsyncStreamReader, limit = 0,
   if isNil(rstream.rsource):
     try:
       result = await readLine(rstream.tsource, limit, sep)
+    except CancelledError:
+      raise
     except:
       raise newAsyncStreamReadError(getCurrentException())
   else:
@@ -469,6 +502,8 @@ proc read*(rstream: AsyncStreamReader, n = 0): Future[seq[byte]] {.async.} =
   if isNil(rstream.rsource):
     try:
       result = await read(rstream.tsource, n)
+    except CancelledError:
+      raise
     except:
       raise newAsyncStreamReadError(getCurrentException())
   else:
@@ -517,6 +552,8 @@ proc consume*(rstream: AsyncStreamReader, n = -1): Future[int] {.async.} =
   if isNil(rstream.rsource):
     try:
       result = await consume(rstream.tsource, n)
+    except CancelledError:
+      raise
     except TransportLimitError:
       raise newAsyncStreamLimitError()
     except:
@@ -569,6 +606,8 @@ proc write*(wstream: AsyncStreamWriter, pbytes: pointer,
     var res: int
     try:
       res = await write(wstream.tsource, pbytes, nbytes)
+    except CancelledError:
+      raise
     except:
       raise newAsyncStreamWriteError(getCurrentException())
     if res != nbytes:
@@ -584,6 +623,8 @@ proc write*(wstream: AsyncStreamWriter, pbytes: pointer,
       await wstream.queue.put(item)
       try:
         await item.future
+      except CancelledError:
+        raise
       except:
         raise newAsyncStreamWriteError(item.future.error)
 
@@ -608,6 +649,8 @@ proc write*(wstream: AsyncStreamWriter, sbytes: seq[byte],
     var res: int
     try:
       res = await write(wstream.tsource, sbytes, msglen)
+    except CancelledError:
+      raise
     except:
       raise newAsyncStreamWriteError(getCurrentException())
     if res != length:
@@ -626,6 +669,8 @@ proc write*(wstream: AsyncStreamWriter, sbytes: seq[byte],
       await wstream.queue.put(item)
       try:
         await item.future
+      except CancelledError:
+        raise
       except:
         raise newAsyncStreamWriteError(item.future.error)
 
@@ -649,6 +694,8 @@ proc write*(wstream: AsyncStreamWriter, sbytes: string,
     var res: int
     try:
       res = await write(wstream.tsource, sbytes, msglen)
+    except CancelledError:
+      raise
     except:
       raise newAsyncStreamWriteError(getCurrentException())
     if res != length:
@@ -667,6 +714,8 @@ proc write*(wstream: AsyncStreamWriter, sbytes: string,
       await wstream.queue.put(item)
       try:
         await item.future
+      except CancelledError:
+        raise
       except:
         raise newAsyncStreamWriteError(item.future.error)
 
@@ -685,6 +734,8 @@ proc finish*(wstream: AsyncStreamWriter) {.async.} =
       await wstream.queue.put(item)
       try:
         await item.future
+      except CancelledError:
+        raise
       except:
         raise newAsyncStreamWriteError(item.future.error)
 
@@ -735,8 +786,8 @@ proc close*(rw: AsyncStreamRW) =
       if rw.future.finished():
         callSoon(continuation)
       else:
-        rw.future.cancel()
         rw.future.addCallback(continuation)
+        rw.future.cancel()
   elif rw is AsyncStreamWriter:
     if isNil(rw.wsource) or isNil(rw.writerLoop) or isNil(rw.future):
       callSoon(continuation)
@@ -744,8 +795,8 @@ proc close*(rw: AsyncStreamRW) =
       if rw.future.finished():
         callSoon(continuation)
       else:
-        rw.future.cancel()
         rw.future.addCallback(continuation)
+        rw.future.cancel()
 
 proc closeWait*(rw: AsyncStreamRW): Future[void] =
   ## Close and frees resources of stream ``rw``.

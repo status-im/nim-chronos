@@ -6,7 +6,63 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 import strutils, unittest, os
-import ../chronos
+import ../chronos, ../chronos/streams/tlsstream
+
+const SelfSignedRsaKey = """
+-----BEGIN PRIVATE KEY-----
+MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDSXcKMR6zIIHSy
++UUjgyIlJWzEu3JFCEN+qBpjmwbuae3GNed0YgPels6AKe0AlWQNgpqoWfMQrWco
+qNf9dcm9OIdUK5FGMWYC8mJu6OjwnexSXt0R/k07lc5ePPDUbGvkbvgDyHzl1Ynj
+jYhe/2ujL0E99/KAuA7cvRILEl4rLpnngE+MMYNrFWmsSDzC+w0Hv5Fuyc8wZoSy
+nzODvojvFXTva9Nx4LxPF1W79WidwJHwrJghVlGUUhSeRGLHQWRY+954rj6TavoJ
+6gLYSHx6ELnRkFMbqxRrCJ0wAbrV8SwcPHjKSc6LQGRMzBRqxT45DoKmzH9Pwdnw
+6P0PGJyPAgMBAAECggEAd5Ck39hpIwIXchXtrwZ8ZMKFtLeZdhUBT7656P0XDnEU
+nQDMQcDn1B7A1eV+eENwr6EYyDD/zu3P4TM+OCg3dp3nhPaSRmQTR/995O3qX8BS
+rmqOmgiA2yoFNljKxOGu3RIZUwUjv/oDulsaNGxWQFS+bzs7EOAMSngIBlT1QvLc
+1etvGOW6hc4nzacrXpzhzWem6EzOabPZBmIy0DDz2ARlND1YSd2P5IMpOv0terNF
+ZwYl5SZ6Rnbv6GJWKl5IIpJOOtRtwyIhKNU/bd835vOfW07aaHVAT6GNYlyEoGWT
+36UjOyl3YxSLNvQOeIz4Y0n+vupBu/YL+mFtQdxJgQKBgQDtjEi0cNlt+Vz5sp4q
+wAVBJ/6h7hu3KJkY+xDpdrLyFTcxttKM9q/dR8V2bEaqMYT/mTvADfmW2BBcfi2J
+3VdR1lQ5pXeKAuxt1/Vc+Q4UCnX5OX7UXpP9aSetDdo5FXUC9X2H0hO0BqOcc+h2
+khVyXjKt6TdBwV94dP9bmQp9QQKBgQDitPVqRHGepYBYasScyTUXPp7vL9T7PMSu
+PGjqEkwvauhICpUbWpE/j8M0UXk64zwSmOYwQ37uiPpws88GL57oy1ZQZnhF/Hi3
+tM00Mn4x0xbyONbWu/AcFIZwSeSL6QhHYfeyVj7Jb/lqUg8sMiGmO25JjlAQBfTb
+vvBgEpcVzwKBgQCwgz87JWfLejIGMR2qcoj1A30IYmAh1377uwO0F0mc7PrYbBtE
+N8IyUTR/bLGNocJME1b8vOWrmt19fRzlhp1t6C8prrSGzulULdbawQ4fAi7rhDek
+Iqsg8FRVGSgAptsN2dDvbcDKUuycQtyHzsE0/J338IXozIHehkGBlNTggQKBgQCF
+RDTj5BoaVVWuJA0x0UGJSYFqP2bmzWEcv1w5BMqOMT0cZEQkkUfC4oKwdZhbGosM
+r57ZDkRGenUl3T08eK/kTuuNVb8r/O8Fpp3eKjRum5TojKsWDeJmz1X8GiPkbvcz
+5w4RYouEJHOsoVJT+6A2NMdvK946nRXEO2jYQPVZlwKBgBro8qGm0+T0T2xNP21q
+IzjP/EHT7iIkM5kiUCc2bPIrfzAGxXImakDzd6AgpgxhhficJOpp792Upe/b/Hwy
+bwfmbdWlT7/hPCnlVVH2dgO/ysDyEfxPigBMd+MmucRm6fzGIU7XSQw4KJqH4vQN
+9IASWlgzyQ1RytAduzRuepzB
+-----END PRIVATE KEY-----
+"""
+
+const SelfSignedRsaCert = """
+-----BEGIN CERTIFICATE-----
+MIIDkzCCAnugAwIBAgIUEFovLJkPSn4T8BBZMYBrXPDajF0wDQYJKoZIhvcNAQEL
+BQAwWTELMAkGA1UEBhMCQVUxEzARBgNVBAgMClNvbWUtU3RhdGUxITAfBgNVBAoM
+GEludGVybmV0IFdpZGdpdHMgUHR5IEx0ZDESMBAGA1UEAwwJbG9jYWxob3N0MB4X
+DTE5MTAxMjA1NDQ0N1oXDTIwMTAxMTA1NDQ0OFowWTELMAkGA1UEBhMCQVUxEzAR
+BgNVBAgMClNvbWUtU3RhdGUxITAfBgNVBAoMGEludGVybmV0IFdpZGdpdHMgUHR5
+IEx0ZDESMBAGA1UEAwwJbG9jYWxob3N0MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8A
+MIIBCgKCAQEA0l3CjEesyCB0svlFI4MiJSVsxLtyRQhDfqgaY5sG7mntxjXndGID
+3pbOgCntAJVkDYKaqFnzEK1nKKjX/XXJvTiHVCuRRjFmAvJibujo8J3sUl7dEf5N
+O5XOXjzw1Gxr5G74A8h85dWJ442IXv9roy9BPffygLgO3L0SCxJeKy6Z54BPjDGD
+axVprEg8wvsNB7+RbsnPMGaEsp8zg76I7xV072vTceC8TxdVu/VoncCR8KyYIVZR
+lFIUnkRix0FkWPveeK4+k2r6CeoC2Eh8ehC50ZBTG6sUawidMAG61fEsHDx4yknO
+i0BkTMwUasU+OQ6Cpsx/T8HZ8Oj9DxicjwIDAQABo1MwUTAdBgNVHQ4EFgQUMM+1
+FZ6KmN2eCJfDxY+8xa1JKnYwHwYDVR0jBBgwFoAUMM+1FZ6KmN2eCJfDxY+8xa1J
+KnYwDwYDVR0TAQH/BAUwAwEB/zANBgkqhkiG9w0BAQsFAAOCAQEASglh98fXvPwA
+KMaEezCUqTeE7DehLlhZ8n6ETKaBDcP3JR4+KTEh9y7gRGJ7DXGFAYfU3itgjyZo
+kbgpZIhrTKyYCAsF96Q1mHf/cBQ96UXr0U0SbYXSSJFeeMthMvki556dJZajtxcA
+9xR/U0PxPjhC9NIfpVSAv/7ocnXh73qOiFHoN9Cr2smzcGPxsifys2iv1qm5LwDr
+Dx5h/RfyfuAjS8e1ZCAhS++PYjb8BX54NilW2lTYF3pwpXL8znc4eBmklBkw5L60
+99jrK7LSQT9Nk8Mf9t4P/77N4hXCqsHIxZIqJlbdgdKfvBF3vRomxm3/aWtGlTVD
+vvzZPnlYfQ==
+-----END CERTIFICATE-----
+"""
 
 suite "AsyncStream test suite":
   test "AsyncStream(StreamTransport) readExactly() test":
@@ -506,3 +562,96 @@ suite "ChunkedStream test suite":
           break
       result = res
     check waitFor(testVectors2(initTAddress("127.0.0.1:46001"))) == true
+
+  test "ChunkedStream leaks test":
+    check:
+      getTracker("async.stream.reader").isLeaked() == false
+      getTracker("async.stream.writer").isLeaked() == false
+      getTracker("stream.server").isLeaked() == false
+      getTracker("stream.transport").isLeaked() == false
+
+suite "TLSStream test suite":
+  const HttpHeadersMark = @[byte(0x0D), byte(0x0A), byte(0x0D), byte(0x0A)]
+  test "Simple HTTPS connection":
+    proc headerClient(address: TransportAddress,
+                      name: string): Future[bool] {.async.} =
+      var mark = "HTTP/1.1 "
+      var buffer = newSeq[byte](8192)
+      var transp = await connect(address)
+      var reader = newAsyncStreamReader(transp)
+      var writer = newAsyncStreamWriter(transp)
+      var tlsstream = newTLSClientAsyncStream(reader, writer, name)
+
+      await tlsstream.writer.write("GET / HTTP/1.1\r\nHost: " & name &
+                                   "\r\nConnection: close\r\n\r\n")
+      var readFut = tlsstream.reader.readUntil(addr buffer[0], len(buffer),
+                                               HttpHeadersMark)
+      let res = await withTimeout(readFut, 5.seconds)
+      if res:
+        var length = readFut.read()
+        buffer.setLen(length)
+        if len(buffer) > len(mark):
+          if equalMem(addr buffer[0], addr mark[0], len(mark)):
+            result = true
+
+      await tlsstream.reader.closeWait()
+      await tlsstream.writer.closeWait()
+      await reader.closeWait()
+      await writer.closeWait()
+      await transp.closeWait()
+
+    let res = waitFor(headerClient(resolveTAddress("www.google.com:443")[0],
+                      "www.google.com"))
+    check res == true
+
+  proc checkSSLServer(address: TransportAddress,
+                        pemkey, pemcert: string): Future[bool] {.async.} =
+    var key: TLSPrivateKey
+    var cert: TLSCertificate
+    let testMessage = "TEST MESSAGE"
+
+    proc serveClient(server: StreamServer,
+                     transp: StreamTransport) {.async.} =
+      var reader = newAsyncStreamReader(transp)
+      var writer = newAsyncStreamWriter(transp)
+      var sstream = newTLSServerAsyncStream(reader, writer, key, cert)
+      await handshake(sstream)
+      await sstream.writer.write(testMessage & "\r\n")
+      await sstream.writer.closeWait()
+      await sstream.reader.closeWait()
+      await reader.closeWait()
+      await writer.closeWait()
+      await transp.closeWait()
+      server.stop()
+      server.close()
+
+    key = TLSPrivateKey.init(pemkey)
+    cert = TLSCertificate.init(pemcert)
+
+    var server = createStreamServer(address, serveClient, {ReuseAddr})
+    server.start()
+    var conn = await connect(address)
+    var creader = newAsyncStreamReader(conn)
+    var cwriter = newAsyncStreamWriter(conn)
+    # We are using self-signed certificate
+    let flags = {NoVerifyHost, NoVerifyServerName}
+    var cstream = newTLSClientAsyncStream(creader, cwriter, "", flags = flags)
+    let res = await cstream.reader.readLine()
+    await cstream.reader.closeWait()
+    await cstream.writer.closeWait()
+    await creader.closeWait()
+    await cwriter.closeWait()
+    await conn.closeWait()
+    await server.join()
+    result = res == testMessage
+
+  test "Simple server with RSA self-signed certificate":
+    let res = waitFor(checkSSLServer(initTAddress("127.0.0.1:43808"),
+                                     SelfSignedRsaKey, SelfSignedRsaCert))
+    check res == true
+  test "TLSStream leaks test":
+    check:
+      getTracker("async.stream.reader").isLeaked() == false
+      getTracker("async.stream.writer").isLeaked() == false
+      getTracker("stream.server").isLeaked() == false
+      getTracker("stream.transport").isLeaked() == false

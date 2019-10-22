@@ -254,15 +254,19 @@ proc cancel[T](future: Future[T], loc: ptr SrcLoc) =
   else:
     var first = FutureBase(future)
     var last = first
-    while (not isNil(last.child)) and (not(last.child.finished())):
+    while not(isNil(last.child)) and not(last.child.cancelled()):
       last = last.child
     if last == first:
       checkFinished(future, loc)
+    let isPending = (last.state == FutureState.Pending)
     last.state = FutureState.Cancelled
     last.error = newException(CancelledError, "")
     if not(isNil(last.cancelcb)):
       last.cancelcb(cast[pointer](last))
-    last.callbacks.call()
+    if isPending:
+      # If Future's state was `Finished` or `Failed` callbacks are already
+      # scheduled.
+      last.callbacks.call()
 
 template cancel*[T](future: Future[T]) =
   ## Cancel ``future``.
