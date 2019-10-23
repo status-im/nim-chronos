@@ -1614,6 +1614,7 @@ proc write*(transp: StreamTransport, pbytes: pointer,
   ## ``transp``.
   var retFuture = newFuture[int]("stream.transport.write(pointer)")
   transp.checkClosed(retFuture)
+  transp.checkWriteEof(retFuture)
   var vector = StreamVector(kind: DataBuffer, writer: retFuture,
                             buf: pbytes, buflen: nbytes)
   transp.queue.addLast(vector)
@@ -1625,6 +1626,7 @@ proc write*(transp: StreamTransport, msg: string, msglen = -1): Future[int] =
   ## Write data from string ``msg`` using transport ``transp``.
   var retFuture = newFutureStr[int]("stream.transport.write(string)")
   transp.checkClosed(retFuture)
+  transp.checkWriteEof(retFuture)
   if not isLiteral(msg):
     shallowCopy(retFuture.gcholder, msg)
   else:
@@ -1642,6 +1644,7 @@ proc write*[T](transp: StreamTransport, msg: seq[T], msglen = -1): Future[int] =
   ## Write sequence ``msg`` using transport ``transp``.
   var retFuture = newFutureSeq[int, T]("stream.transport.write(seq)")
   transp.checkClosed(retFuture)
+  transp.checkWriteEof(retFuture)
   if not isLiteral(msg):
     shallowCopy(retFuture.gcholder, msg)
   else:
@@ -1667,6 +1670,7 @@ proc writeFile*(transp: StreamTransport, handle: int,
       raise newException(TransportNoSupport, "writeFile() is not supported!")
   var retFuture = newFuture[int]("stream.transport.writeFile")
   transp.checkClosed(retFuture)
+  transp.checkWriteEof(retFuture)
   var vector = StreamVector(kind: DataFile, writer: retFuture,
                             buf: cast[pointer](size), offset: offset,
                             buflen: handle)

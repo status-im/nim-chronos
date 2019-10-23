@@ -457,6 +457,12 @@ template checkClosed*(t: untyped, future: untyped) =
     future.fail(newException(TransportError, "Transport is already closed!"))
     return future
 
+template checkWriteEof*(t: untyped, future: untyped) =
+  if (WriteEof in (t).state):
+    future.fail(newException(TransportError,
+                             "Transport connection is already dropped!"))
+    return future
+
 template getError*(t: untyped): ref Exception =
   var err = (t).error
   (t).error = nil
