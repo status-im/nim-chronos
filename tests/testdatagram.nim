@@ -8,6 +8,8 @@
 import strutils, net, unittest
 import ../chronos
 
+when defined(nimHasUsed): {.used.}
+
 suite "Datagram Transport test suite":
   const
     TestsCount = 2000

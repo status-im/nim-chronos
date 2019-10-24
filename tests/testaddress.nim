@@ -8,6 +8,8 @@
 import strutils, unittest
 import ../chronos
 
+when defined(nimHasUsed): {.used.}
+
 suite "TransportAddress test suite":
   test "initTAddress(string)":
     check $initTAddress("0.0.0.0:1") == "0.0.0.0:1"

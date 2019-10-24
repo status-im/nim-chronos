@@ -362,13 +362,13 @@ when defined(windows) or defined(nimdoc):
     ## Creates a new Dispatcher instance.
     new result
     result.ioPort = createIoCompletionPort(INVALID_HANDLE_VALUE, 0, 0, 1)
-    when compiles(initHashSet):
+    when declared(initHashSet):
       # After 0.20.0 Nim's stdlib version
       result.handles = initHashSet[AsyncFD]()
     else:
       # Pre 0.20.0 Nim's stdlib version
       result.handles = initSet[AsyncFD]()
-    when compiles(initHeapQueue):
+    when declared(initHeapQueue):
       # After 0.20.0 Nim's stdlib version
       result.timers = initHeapQueue[TimerCallback]()
     else:
@@ -510,7 +510,12 @@ elif unixPlatform:
     ## Create new dispatcher.
     new result
     result.selector = newSelector[SelectorData]()
-    result.timers.newHeapQueue()
+    when declared(initHeapQueue):
+      # After 0.20.0 Nim's stdlib version
+      result.timers = initHeapQueue()
+    else:
+      # Before 0.20.0 Nim's stdlib version
+      result.timers.newHeapQueue()
     result.callbacks = initDeque[AsyncCallback](64)
     result.keys = newSeq[ReadyKey](64)
     result.trackers = initTable[string, TrackerBase]()

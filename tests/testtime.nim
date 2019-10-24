@@ -8,6 +8,8 @@
 import os, unittest
 import ../chronos, ../chronos/timer
 
+when defined(nimHasUsed): {.used.}
+
 suite "Asynchronous timers test suite":
   const TimersCount = 10
 

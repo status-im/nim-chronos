@@ -8,6 +8,8 @@
 import unittest
 import ../chronos
 
+when defined(nimHasUsed): {.used.}
+
 suite "Network utilities test suite":
 
   const MaskVectors = [

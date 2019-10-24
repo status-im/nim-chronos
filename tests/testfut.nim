@@ -8,6 +8,8 @@
 import unittest
 import ../chronos
 
+when defined(nimHasUsed): {.used.}
+
 suite "Future[T] behavior test suite":
   proc testFuture1(): Future[int] {.async.} =
     await sleepAsync(0.milliseconds)

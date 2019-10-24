@@ -8,6 +8,8 @@
 import strutils, unittest
 import ../chronos
 
+when defined(nimHasUsed): {.used.}
+
 suite "Server's test suite":
   type
     CustomServer = ref object of StreamServer

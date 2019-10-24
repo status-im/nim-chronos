@@ -8,6 +8,8 @@
 import unittest, strutils
 import ../chronos
 
+when defined(nimHasUsed): {.used.}
+
 when not defined(windows):
   import posix
 

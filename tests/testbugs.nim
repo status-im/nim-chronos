@@ -8,6 +8,8 @@
 import unittest
 import ../chronos
 
+when defined(nimHasUsed): {.used.}
+
 suite "Asynchronous issues test suite":
   const HELLO_PORT = 45679
   const TEST_MSG = "testmsg"

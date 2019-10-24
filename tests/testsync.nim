@@ -8,6 +8,8 @@
 import unittest
 import ../chronos
 
+when defined(nimHasUsed): {.used.}
+
 suite "Asynchronous sync primitives test suite":
   var testLockResult = ""
   var testEventResult = ""

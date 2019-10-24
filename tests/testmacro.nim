@@ -8,6 +8,8 @@
 import unittest
 import ../chronos
 
+when defined(nimHasUsed): {.used.}
+
 proc asyncRetValue(n: int): Future[int] {.async.} =
   await sleepAsync(n.milliseconds)
   result = n * 10

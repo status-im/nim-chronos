@@ -8,6 +8,8 @@
 import strutils, unittest, os
 import ../chronos
 
+when defined(nimHasUsed): {.used.}
+
 when defined(windows):
   import winlean
 else:

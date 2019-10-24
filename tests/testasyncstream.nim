@@ -8,6 +8,8 @@
 import strutils, unittest, os
 import ../chronos, ../chronos/streams/tlsstream
 
+when defined(nimHasUsed): {.used.}
+
 const SelfSignedRsaKey = """
 -----BEGIN PRIVATE KEY-----
 MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDSXcKMR6zIIHSy

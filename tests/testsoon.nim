@@ -8,6 +8,8 @@
 import unittest
 import ../chronos
 
+when defined(nimHasUsed): {.used.}
+
 suite "callSoon() tests suite":
   const CallSoonTests = 10
   var soonTest1 = 0'u
