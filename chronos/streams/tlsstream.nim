@@ -310,10 +310,8 @@ proc newTLSClientAsyncStream*(rsource: AsyncStreamReader,
   ##
   ## ``flags`` - custom TLS connection flags.
   result = new TLSAsyncStream
-  var reader = new TLSStreamReader
-  reader.kind = TLSStreamKind.Client
-  var writer = new TLSStreamWriter
-  writer.kind = TLSStreamKind.Client
+  var reader = TLSStreamReader(kind: TLSStreamKind.Client)
+  var writer = TLSStreamWriter(kind: TLSStreamKind.Client)
   var switchToWriter = newAsyncEvent()
   var switchToReader = newAsyncEvent()
   reader.stream = result
@@ -389,10 +387,8 @@ proc newTLSServerAsyncStream*(rsource: AsyncStreamReader,
     raiseTLSStreamProtoError("Incorrect certificate")
 
   result = new TLSAsyncStream
-  var reader = new TLSStreamReader
-  reader.kind = TLSStreamKind.Server
-  var writer = new TLSStreamWriter
-  writer.kind = TLSStreamKind.Server
+  var reader = TLSStreamReader(kind: TLSStreamKind.Server)
+  var writer = TLSStreamWriter(kind: TLSStreamKind.Server)
   var switchToWriter = newAsyncEvent()
   var switchToReader = newAsyncEvent()
   reader.stream = result
