@@ -5,7 +5,7 @@
 #              Licensed under either of
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
-import strutils, unittest, os
+import strutils, unittest
 import ../chronos, ../chronos/streams/tlsstream
 
 when defined(nimHasUsed): {.used.}

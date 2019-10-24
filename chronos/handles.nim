@@ -7,10 +7,10 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 
-import net, nativesockets, os, asyncloop
+import net, nativesockets, asyncloop
 
 when defined(windows):
-  import winlean
+  import os, winlean
   const
     asyncInvalidSocket* = AsyncFD(-1)
     TCP_NODELAY* = 1
