@@ -512,7 +512,7 @@ elif unixPlatform:
     result.selector = newSelector[SelectorData]()
     when declared(initHeapQueue):
       # After 0.20.0 Nim's stdlib version
-      result.timers = initHeapQueue()
+      result.timers = initHeapQueue[TimerCallback]()
     else:
       # Before 0.20.0 Nim's stdlib version
       result.timers.newHeapQueue()
