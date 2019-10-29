@@ -69,10 +69,6 @@ template setReadError(t, e: untyped) =
   (t).state.incl(ReadError)
   (t).error = getTransportOsError(e)
 
-template setWriterWSABuffer(t, v: untyped) =
-  (t).wwsabuf.buf = cast[cstring](v.buf)
-  (t).wwsabuf.len = cast[int32](v.buflen)
-
 proc setupDgramTransportTracker(): DgramTransportTracker {.gcsafe.}
 
 proc getDgramTransportTracker(): DgramTransportTracker {.inline.} =
@@ -106,6 +102,11 @@ proc setupDgramTransportTracker(): DgramTransportTracker {.gcsafe.} =
   addTracker(DgramTransportTrackerName, result)
 
 when defined(windows):
+
+  template setWriterWSABuffer(t, v: untyped) =
+    (t).wwsabuf.buf = cast[cstring](v.buf)
+    (t).wwsabuf.len = cast[int32](v.buflen)
+
   const
     IOC_VENDOR = DWORD(0x18000000)
     SIO_UDP_CONNRESET = DWORD(winlean.IOC_IN) or IOC_VENDOR or DWORD(12)

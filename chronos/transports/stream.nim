@@ -974,12 +974,6 @@ when defined(windows):
 else:
   import ../sendfile
 
-  template initBufferStreamVector(v, p, n, t: untyped) =
-    (v).kind = DataBuffer
-    (v).buf = cast[pointer]((p))
-    (v).buflen = int(n)
-    (v).writer = (t)
-
   proc isConnResetError(err: OSErrorCode): bool {.inline.} =
     result = (err == OSErrorCode(ECONNRESET)) or
              (err == OSErrorCode(EPIPE))
