@@ -90,6 +90,7 @@ suite "Server's test suite":
     var msg = "TEST\r\n"
     discard await transp.write(msg)
     var line = await transp.readLine()
+    doAssert(len(line) > 0)
     transp.close()
     server.stop()
     server.close()
@@ -115,6 +116,7 @@ suite "Server's test suite":
     var pserver = createStreamServer(ta, serveCustomStreamClient, {ReuseAddr},
                                      child = cast[StreamServer](server),
                                      init = customServerTransport)
+    doAssert(not isNil(pserver))
     waitFor client1(server, ta)
     result = (server.test1 == "CONNECTION") and (server.test2 == "CUSTOM")
 

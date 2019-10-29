@@ -25,8 +25,6 @@
 const asyncTimer* {.strdefine.} = "mono"
 
 when defined(windows):
-  from winlean import DWORD
-
   when asyncTimer == "system":
     from winlean import getSystemTimeAsFileTime, FILETIME
 

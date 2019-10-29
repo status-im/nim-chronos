@@ -453,7 +453,6 @@ suite "Datagram Transport test suite":
 
   proc testTransportClose(): Future[bool] {.async.} =
     var ta = initTAddress("127.0.0.1:45000")
-    var counter = 0
     proc clientMark(transp: DatagramTransport,
                     raddr: TransportAddress): Future[void] {.async.} =
       discard

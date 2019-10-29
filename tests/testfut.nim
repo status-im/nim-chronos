@@ -27,7 +27,7 @@ suite "Future[T] behavior test suite":
     ## Test for not immediately completed future and timeout = -1
     result = 0
     try:
-      var res = await wait(testFuture1(), InfiniteDuration)
+      discard await wait(testFuture1(), InfiniteDuration)
       result = 1
     except:
       result = 0
@@ -38,7 +38,7 @@ suite "Future[T] behavior test suite":
     ## Test for immediately completed future and timeout = -1
     result = 0
     try:
-      var res = await wait(testFuture2(), InfiniteDuration)
+      discard await wait(testFuture2(), InfiniteDuration)
       result = 2
     except:
       result = 0
@@ -49,7 +49,7 @@ suite "Future[T] behavior test suite":
     ## Test for not immediately completed future and timeout = 0
     result = 0
     try:
-      var res = await wait(testFuture1(), 0.milliseconds)
+      discard await wait(testFuture1(), 0.milliseconds)
     except AsyncTimeoutError:
       result = 3
 
@@ -59,7 +59,7 @@ suite "Future[T] behavior test suite":
     ## Test for immediately completed future and timeout = 0
     result = 0
     try:
-      var res = await wait(testFuture2(), 0.milliseconds)
+      discard await wait(testFuture2(), 0.milliseconds)
       result = 4
     except:
       result = 0
@@ -70,7 +70,7 @@ suite "Future[T] behavior test suite":
     ## Test for future which cannot be completed in timeout period
     result = 0
     try:
-      var res = await wait(testFuture100(), 50.milliseconds)
+      discard await wait(testFuture100(), 50.milliseconds)
     except AsyncTimeoutError:
       result = 5
 
@@ -79,7 +79,7 @@ suite "Future[T] behavior test suite":
 
     ## Test for future which will be completed before timeout exceeded.
     try:
-      var res = await wait(testFuture100(), 500.milliseconds)
+      discard await wait(testFuture100(), 500.milliseconds)
       result = 6
     except:
       result = -6

@@ -43,7 +43,7 @@ proc testAwait(): Future[bool] {.async.} =
     discard
   res = 0
   try:
-    var res = await asyncRetExceptionValue(100)
+    discard await asyncRetExceptionValue(100)
     return false
   except ValueError:
     discard
@@ -68,7 +68,7 @@ proc testAwaitne(): Future[bool] {.async.} =
 
   res2 = awaitne asyncRetExceptionValue(100)
   try:
-    var res = res2.read()
+    discard res2.read()
     return false
   except ValueError:
     discard
