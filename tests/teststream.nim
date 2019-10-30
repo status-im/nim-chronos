@@ -280,6 +280,7 @@ suite "Stream Transport test suite":
       var res = await transp.write(data)
       doAssert(res == len(data))
     var res = await transp.write(crlf)
+    doAssert(res == len(crlf))
     var line = await transp.readLine()
     doAssert(line == "DONE")
     result = 1
@@ -294,6 +295,7 @@ suite "Stream Transport test suite":
       var res = await transp.write(data)
       doAssert(res == len(data))
     var res = await transp.write(crlf)
+    doAssert(res == len(crlf))
     var line = await transp.readLine()
     doAssert(line == "DONE")
     result = 1
@@ -313,7 +315,6 @@ suite "Stream Transport test suite":
 
   proc swarmManager1(address: TransportAddress): Future[int] {.async.} =
     var workers = newSeq[Future[int]](ClientsCount)
-    var count = ClientsCount
     for i in 0..<ClientsCount:
       workers[i] = swarmWorker1(address)
     await waitAll(workers)
@@ -323,7 +324,6 @@ suite "Stream Transport test suite":
 
   proc swarmManager2(address: TransportAddress): Future[int] {.async.} =
     var workers = newSeq[Future[int]](ClientsCount)
-    var count = ClientsCount
     for i in 0..<ClientsCount:
       workers[i] = swarmWorker2(address)
     await waitAll(workers)
@@ -333,7 +333,6 @@ suite "Stream Transport test suite":
 
   proc swarmManager3(address: TransportAddress): Future[int] {.async.} =
     var workers = newSeq[Future[int]](ClientsCount)
-    var count = ClientsCount
     for i in 0..<ClientsCount:
       workers[i] = swarmWorker3(address)
     await waitAll(workers)
@@ -343,7 +342,6 @@ suite "Stream Transport test suite":
 
   proc swarmManager4(address: TransportAddress): Future[int] {.async.} =
     var workers = newSeq[Future[int]](FilesCount)
-    var count = FilesCount
     for i in 0..<FilesCount:
       workers[i] = swarmWorker4(address)
     await waitAll(workers)
@@ -360,7 +358,6 @@ suite "Stream Transport test suite":
     await server.join()
 
   proc test2(address: TransportAddress): Future[int] {.async.} =
-    var counter = 0
     var server = createStreamServer(address, serveClient2, {ReuseAddr})
     server.start()
     result = await swarmManager2(address)
@@ -369,7 +366,6 @@ suite "Stream Transport test suite":
     await server.join()
 
   proc test3(address: TransportAddress): Future[int] {.async.} =
-    var counter = 0
     var server = createStreamServer(address, serveClient3, {ReuseAddr})
     server.start()
     result = await swarmManager3(address)
@@ -393,13 +389,13 @@ suite "Stream Transport test suite":
       var data = ConstantMessage
       for i in 0..<MessagesCount:
         var res = await transp.write(data)
+        doAssert(res == len(data))
       result = MessagesCount
       transp.close()
       await transp.join()
 
     proc swarmManager(address: TransportAddress): Future[int] {.async.} =
       var workers = newSeq[Future[int]](ClientsCount)
-      var count = ClientsCount
       for i in 0..<ClientsCount:
         workers[i] = swarmWorker(address)
       await waitAll(workers)
@@ -448,6 +444,7 @@ suite "Stream Transport test suite":
       copyMem(addr seqdata[0], addr data[0], len(data))
       for i in 0..<MessagesCount:
         var res = await transp.write(seqdata)
+        doAssert(res == len(seqdata))
       result = MessagesCount
       transp.close()
       await transp.join()
@@ -577,6 +574,7 @@ suite "Stream Transport test suite":
     var transp = await connect(address)
     try:
       var res = await transp.readUntil(addr buffer[0], len(buffer), sep)
+      doAssert(res == 0)
     except TransportIncompleteError:
       result = 1
     transp.close()
@@ -640,6 +638,7 @@ suite "Stream Transport test suite":
   proc testConnectionRefused(address: TransportAddress): Future[bool] {.async.} =
     try:
       var transp = await connect(address)
+      doAssert(isNil(transp))
     except TransportOsError as e:
       let ecode = int(e.code)
       when defined(windows):

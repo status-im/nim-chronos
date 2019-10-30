@@ -342,15 +342,15 @@ when defined(linux):
     NETLINK_ROUTE = cint(0)
     NLMSG_ALIGNTO = 4'u
     RTA_ALIGNTO = 4'u
-    RTA_UNSPEC = 0'u16
+    # RTA_UNSPEC = 0'u16
     RTA_DST = 1'u16
-    RTA_SRC = 2'u16
-    RTA_IIF = 3'u16
+    # RTA_SRC = 2'u16
+    # RTA_IIF = 3'u16
     RTA_OIF = 4'u16
     RTA_GATEWAY = 5'u16
-    RTA_PRIORITY = 6'u16
+    # RTA_PRIORITY = 6'u16
     RTA_PREFSRC = 7'u16
-    RTA_METRICS = 8'u16
+    # RTA_METRICS = 8'u16
 
     RTM_F_LOOKUP_TABLE = 0x1000
 
@@ -364,9 +364,9 @@ when defined(linux):
     IFLIST_REPLY_BUFFER = 8192
     InvalidSocketHandle = SocketHandle(-1)
     NLMSG_DONE = 0x03
-    NLMSG_MIN_TYPE = 0x10
+    # NLMSG_MIN_TYPE = 0x10
     NLMSG_ERROR = 0x02
-    MSG_TRUNC = 0x20
+    # MSG_TRUNC = 0x20
 
     IFLA_ADDRESS = 1
     IFLA_IFNAME = 3
@@ -375,7 +375,7 @@ when defined(linux):
 
     IFA_ADDRESS = 1
     IFA_LOCAL = 2
-    IFA_BROADCAST = 4
+    # IFA_BROADCAST = 4
 
     # ARPHRD_NETROM = 0
     ARPHRD_ETHER = 1

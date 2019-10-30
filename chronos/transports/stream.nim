@@ -7,7 +7,7 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 import net, nativesockets, os, deques
-import ../asyncloop, ../handles, ../sendfile
+import ../asyncloop, ../handles
 import common
 
 {.deadCodeElim: on.}
@@ -972,12 +972,7 @@ when defined(windows):
       server.aovl.data.cb(addr server.aovl)
 
 else:
-
-  template initBufferStreamVector(v, p, n, t: untyped) =
-    (v).kind = DataBuffer
-    (v).buf = cast[pointer]((p))
-    (v).buflen = int(n)
-    (v).writer = (t)
+  import ../sendfile
 
   proc isConnResetError(err: OSErrorCode): bool {.inline.} =
     result = (err == OSErrorCode(ECONNRESET)) or
@@ -1601,7 +1596,7 @@ proc createStreamServer*[T](host: TransportAddress,
                             init: TransportInitCallback = nil): StreamServer =
   var fflags = flags + {GCUserData}
   GC_ref(udata)
-  result = createStreamServer(host, cbproc, flags, sock, backlog, bufferSize,
+  result = createStreamServer(host, cbproc, fflags, sock, backlog, bufferSize,
                               child, init, cast[pointer](udata))
 
 proc getUserData*[T](server: StreamServer): T {.inline.} =

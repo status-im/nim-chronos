@@ -243,7 +243,6 @@ proc addFirstNoWait*[T](aq: AsyncQueue[T], item: T) =
   ## Put an item ``item`` to the beginning of the queue ``aq`` immediately.
   ##
   ## If queue ``aq`` is full, then ``AsyncQueueFullError`` exception raised.
-  var w: Future[void]
   if aq.full():
     raise newException(AsyncQueueFullError, "AsyncQueue is full!")
   aq.queue.addFirst(item)
@@ -253,7 +252,6 @@ proc addLastNoWait*[T](aq: AsyncQueue[T], item: T) =
   ## Put an item ``item`` at the end of the queue ``aq`` immediately.
   ##
   ## If queue ``aq`` is full, then ``AsyncQueueFullError`` exception raised.
-  var w: Future[void]
   if aq.full():
     raise newException(AsyncQueueFullError, "AsyncQueue is full!")
   aq.queue.addLast(item)
@@ -263,7 +261,6 @@ proc popFirstNoWait*[T](aq: AsyncQueue[T]): T =
   ## Get an item from the beginning of the queue ``aq`` immediately.
   ##
   ## If queue ``aq`` is empty, then ``AsyncQueueEmptyError`` exception raised.
-  var w: Future[void]
   if aq.empty():
     raise newException(AsyncQueueEmptyError, "AsyncQueue is empty!")
   result = aq.queue.popFirst()
@@ -273,7 +270,6 @@ proc popLastNoWait*[T](aq: AsyncQueue[T]): T =
   ## Get an item from the end of the queue ``aq`` immediately.
   ##
   ## If queue ``aq`` is empty, then ``AsyncQueueEmptyError`` exception raised.
-  var w: Future[void]
   if aq.empty():
     raise newException(AsyncQueueEmptyError, "AsyncQueue is empty!")
   result = aq.queue.popLast()

@@ -5,7 +5,7 @@
 #              Licensed under either of
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
-import unittest, strutils
+import unittest
 import ../chronos
 
 when defined(nimHasUsed): {.used.}

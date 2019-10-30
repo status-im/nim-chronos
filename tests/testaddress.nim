@@ -111,7 +111,7 @@ suite "TransportAddress test suite":
     var errcounter = 0
     for item in tests:
       try:
-        var ta = initTAddress(item)
+        discard initTAddress(item)
       except TransportAddressError:
         inc(errcounter)
     check errcounter == len(tests)
@@ -126,7 +126,7 @@ suite "TransportAddress test suite":
     var errcounter = 0
     for item in tests:
       try:
-        var ta = initTAddress(item, Port(443))
+        discard initTAddress(item, Port(443))
       except TransportAddressError:
         inc(errcounter)
     check errcounter == len(tests)
@@ -134,7 +134,7 @@ suite "TransportAddress test suite":
   test "Faulty initTAddress(string, Port)":
     var errcounter = 0
     try:
-      var ta = initTAddress("127.0.0.1", 100000)
+      discard initTAddress("127.0.0.1", 100000)
     except TransportAddressError:
       inc(errcounter)
     check errcounter == 1
@@ -151,7 +151,7 @@ suite "TransportAddress test suite":
     var errcounter = 0
     for item in numeric:
       try:
-        var taseq = resolveTAddress(item)
+        discard resolveTAddress(item)
       except TransportAddressError:
         inc(errcounter)
     check errcounter == len(numeric)
@@ -168,7 +168,7 @@ suite "TransportAddress test suite":
     var errcounter = 0
     for item in numeric:
       try:
-        var taseq = resolveTAddress(item, Port(443))
+        discard resolveTAddress(item, Port(443))
       except TransportAddressError:
         inc(errcounter)
     check errcounter == len(numeric)

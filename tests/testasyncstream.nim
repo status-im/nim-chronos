@@ -547,7 +547,8 @@ suite "ChunkedStream test suite":
       var rstream2 = newChunkedStreamReader(rstream)
       try:
         var r = await rstream2.read()
-      except AsyncStreamReadError as e:
+        doAssert(len(r) > 0)
+      except AsyncStreamReadError:
         res = true
       await rstream2.closeWait()
       await rstream.closeWait()
