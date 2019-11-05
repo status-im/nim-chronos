@@ -775,15 +775,15 @@ proc addInterval*(every: Duration, cb: CallbackFunc, udata: pointer = nil): Futu
 
   var retFuture = newFuture[void]("chronos.addInterval(Duration)")
   proc interval(arg: pointer = nil) {.gcsafe.}
-  proc nextInterval() =
+  proc scheduleNext() =
     if not retFuture.finished():
       addTimer(Moment.fromNow(every), interval)
 
   proc interval(arg: pointer = nil) {.gcsafe.} =
     cb(udata)
-    nextInterval()
+    scheduleNext()
 
-  nextInterval()
+  scheduleNext()
   return retFuture
 
 proc sleepAsync*(duration: Duration): Future[void] =
