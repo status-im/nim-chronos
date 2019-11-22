@@ -49,11 +49,11 @@ type
     queue: Deque[T]
     maxsize: int
 
-  AsyncQueueEmptyError* = object of Exception
+  AsyncQueueEmptyError* = object of CatchableError
     ## ``AsyncQueue`` is empty.
-  AsyncQueueFullError* = object of Exception
+  AsyncQueueFullError* = object of CatchableError
     ## ``AsyncQueue`` is full.
-  AsyncLockError* = object of Exception
+  AsyncLockError* = object of CatchableError
     ## ``AsyncLock`` is either locked or unlocked.
 
 proc newAsyncLock*(): AsyncLock =
