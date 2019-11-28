@@ -219,8 +219,8 @@ proc initTAddress*(address: string): TransportAddress =
         else:
           raise newException(TransportAddressError, "Incorrect address family!")
         result.port = Port(port)
-      except:
-        raise newException(TransportAddressError, getCurrentException().msg)
+      except CatchableError as exc:
+        raise newException(TransportAddressError, exc.msg)
   else:
     result = TransportAddress(family: AddressFamily.Unix)
 
@@ -237,8 +237,8 @@ proc initTAddress*(address: string, port: Port): TransportAddress =
       result.address_v6 = ipaddr.address_v6
     else:
       raise newException(TransportAddressError, "Incorrect address family!")
-  except:
-    raise newException(TransportAddressError, getCurrentException().msg)
+  except CatchableError as exc:
+    raise newException(TransportAddressError, exc.msg)
 
 proc initTAddress*(address: string, port: int): TransportAddress {.inline.} =
   ## Initialize ``TransportAddress`` with IP (IPv4 or IPv6) address ``address``

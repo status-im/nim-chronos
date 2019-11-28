@@ -52,15 +52,15 @@ template createCb(retFutureSym, iteratorNameSym,
             {.pop.}
     except CancelledError:
       retFutureSym.cancel()
-    except:
+    except CatchableError as exc:
       futureVarCompletions
 
       if retFutureSym.finished():
         # Take a look at tasyncexceptions for the bug which this fixes.
         # That test explains it better than I can here.
-        raise
+        raise exc
       else:
-        retFutureSym.fail(getCurrentException())
+        retFutureSym.fail(exc)
 
   identName()
   {.pop.}
