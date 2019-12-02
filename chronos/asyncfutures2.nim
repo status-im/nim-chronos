@@ -53,8 +53,10 @@ type
 
   FutureVar*[T] = distinct Future[T]
 
-  FutureError* = object of CatchableError
+  FutureDefect* = object of Exception
     cause*: FutureBase
+
+  FutureError* = object of CatchableError
 
   CancelledError* = object of FutureError
 
@@ -141,7 +143,7 @@ proc failed*(future: FutureBase): bool {.inline.} =
 
 proc checkFinished[T](future: Future[T], loc: ptr SrcLoc) =
   ## Checks whether `future` is finished. If it is then raises a
-  ## ``FutureError``.
+  ## ``FutureDefect``.
   if future.finished():
     var msg = ""
     msg.add("An attempt was made to complete a Future more than once. ")
@@ -161,7 +163,7 @@ proc checkFinished[T](future: Future[T], loc: ptr SrcLoc) =
     msg.add("\n  Stack trace to moment of secondary completion:")
     msg.add("\n" & indent(getStackTrace().strip(), 4))
     msg.add("\n\n")
-    var err = newException(FutureError, msg)
+    var err = newException(FutureDefect, msg)
     err.cause = future
     raise err
   else:
