@@ -42,8 +42,8 @@ template createCb(retFutureSym, iteratorNameSym,
 
         if next == nil:
           if not(retFutureSym.finished()):
-            let msg = "Async procedure ($1) yielded `nil`, are you await'ing a " &
-                    "`nil` Future?"
+            let msg = "Async procedure ($1) yielded `nil`, " &
+                      "are you await'ing a `nil` Future?"
             raise newException(AssertionError, msg % strName)
         else:
           {.gcsafe.}:
@@ -52,7 +52,7 @@ template createCb(retFutureSym, iteratorNameSym,
             {.pop.}
     except CancelledError:
       retFutureSym.cancel()
-    except CatchableError as exc:
+    except Exception as exc:
       futureVarCompletions
 
       if retFutureSym.finished():
