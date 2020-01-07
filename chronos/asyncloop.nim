@@ -472,6 +472,9 @@ when defined(windows) or defined(nimdoc):
     # poll() call.
     loop.processCallbacks()
 
+    # Cleanup canceled timers
+    loop.removeTimers()
+
   proc closeSocket*(fd: AsyncFD, aftercb: CallbackFunc = nil) =
     ## Closes a socket and ensures that it is unregistered.
     let loop = getGlobalDispatcher()
@@ -755,6 +758,8 @@ else:
 proc setTimer*(at: Moment, cb: CallbackFunc, udata: pointer = nil): TimerHandle =
   ## Arrange for the callback ``cb`` to be called at the given absolute
   ## timestamp ``at``. You can also pass ``udata`` to callback.
+  ## Returns an opaque handle to be passed to ``clearTimer()`` to cancel
+  ## a pending timer.
   let loop = getGlobalDispatcher()
 
   var timer = TimerCallback(finishAt: at,
@@ -770,6 +775,7 @@ proc setTimer*(at: Moment, cb: CallbackFunc, udata: pointer = nil): TimerHandle 
     loop.timers.push(timer)
 
 proc clearTimer*(handle: TimerHandle) =
+  ## Clear the timer associated with the passed handle
   var loop = getGlobalDispatcher()
   var timer = loop.timerHandles[handle.Natural]
   loop.timerHandles[handle.Natural] = nil
