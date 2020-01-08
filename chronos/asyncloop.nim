@@ -229,25 +229,19 @@ func getAsyncTimestamp*(a: Duration): auto {.inline.} =
     result += min(1, cast[int32](mid))
 
 template processTimersGetTimeout(loop, timeout: untyped) =
-  var count = len(loop.timers)
-  if count > 0:
-    var lastFinish = curTime
-    while count > 0:
-      if not(loop.timers.len > 0):
-        break
+  var lastFinish = curTime
+  while loop.timers.len > 0:
+    if loop.timers[0].deleted:
+      discard loop.timers.pop()
+      continue
 
-      if loop.timers[0].deleted:
-        discard loop.timers.pop()
-        continue
+    lastFinish = loop.timers[0].finishAt
+    if curTime < lastFinish:
+      break
 
-      lastFinish = loop.timers[0].finishAt
-      if curTime < lastFinish:
-        break
-
-      loop.callbacks.addLast(loop.timers.pop().function)
-      dec(count)
-    if count > 0:
-      timeout = (lastFinish - curTime).getAsyncTimestamp()
+    loop.callbacks.addLast(loop.timers.pop().function)
+  if loop.timers.len > 0:
+    timeout = (lastFinish - curTime).getAsyncTimestamp()
 
   if timeout == 0:
     if len(loop.callbacks) == 0:
@@ -261,20 +255,14 @@ template processTimersGetTimeout(loop, timeout: untyped) =
 
 template processTimers(loop: untyped) =
   var curTime = Moment.now()
-  var count = len(loop.timers)
-  if count > 0:
-    while count > 0:
-      if not(loop.timers.len > 0):
-        break
+  while loop.timers.len > 0:
+    if loop.timers[0].deleted:
+      discard loop.timers.pop()
+      continue
 
-      if loop.timers[0].deleted:
-        discard loop.timers.pop()
-        continue
-
-      if curTime < loop.timers[0].finishAt:
-        break
-      loop.callbacks.addLast(loop.timers.pop().function)
-      dec(count)
+    if curTime < loop.timers[0].finishAt:
+      break
+    loop.callbacks.addLast(loop.timers.pop().function)
 
 template processCallbacks(loop: untyped) =
   var count = len(loop.callbacks)
