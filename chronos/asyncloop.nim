@@ -741,7 +741,7 @@ proc setTimer(at: Moment, cb: CallbackFunc, udata: pointer = nil): TimerCallback
                           function: AsyncCallback(function: cb, udata: udata))
   loop.timers.push(result)
 
-proc clearTimer(timer: TimerCallback) =
+proc clearTimer(timer: TimerCallback) {.inline.} =
   timer.deleted = true
 
 proc addTimer*(at: Moment, cb: CallbackFunc, udata: pointer = nil)
