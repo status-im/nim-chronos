@@ -180,7 +180,7 @@ type
   CallbackFunc* = proc (arg: pointer = nil) {.gcsafe.}
   CallSoonProc* = proc (c: CallbackFunc, u: pointer = nil) {.gcsafe.}
 
-  AsyncCallback* = ref object
+  AsyncCallback* = object
     function*: CallbackFunc
     udata*: pointer
     deleted*: bool
@@ -569,7 +569,7 @@ elif unixPlatform:
       adata.reader = acb
       adata.rdata = CompletionData(fd: fd, udata: udata)
       newEvents.incl(Event.Read)
-      if not(isNil(adata.writer)) and not(isNil(adata.writer.function)):
+      if not(isNil(adata.writer.function)):
         newEvents.incl(Event.Write)
     do:
       raise newException(ValueError, "File descriptor not registered.")
@@ -583,7 +583,7 @@ elif unixPlatform:
       # We need to clear `reader` data, because `selectors` don't do it
       adata.reader.function = nil
       # adata.rdata = CompletionData()
-      if not(isNil(adata.writer)) and not(isNil(adata.writer.function)):
+      if not(isNil(adata.writer.function)):
         newEvents.incl(Event.Write)
     do:
       raise newException(ValueError, "File descriptor not registered.")
@@ -599,7 +599,7 @@ elif unixPlatform:
       adata.writer = acb
       adata.wdata = CompletionData(fd: fd, udata: udata)
       newEvents.incl(Event.Write)
-      if not(isNil(adata.reader)) and not(isNil(adata.reader.function)):
+      if not(isNil(adata.reader.function)):
         newEvents.incl(Event.Read)
     do:
       raise newException(ValueError, "File descriptor not registered.")
@@ -613,7 +613,7 @@ elif unixPlatform:
       # We need to clear `writer` data, because `selectors` don't do it
       adata.writer.function = nil
       # adata.wdata = CompletionData()
-      if not(isNil(adata.reader)) and not(isNil(adata.reader.function)):
+      if not(isNil(adata.reader.function)):
         newEvents.incl(Event.Read)
     do:
       raise newException(ValueError, "File descriptor not registered.")
@@ -637,16 +637,16 @@ elif unixPlatform:
     withData(loop.selector, int(fd), adata) do:
       # We are scheduling reader and writer callbacks to be called
       # explicitly, so they can get an error and continue work.
-      if not(isNil(adata.reader)) and not(isNil(adata.reader.function)):
+      if not(isNil(adata.reader.function)):
         if not adata.reader.deleted:
           loop.callbacks.addLast(adata.reader)
-      if not(isNil(adata.writer)) and not(isNil(adata.writer.function)):
+      if not(isNil(adata.writer.function)):
         if not adata.writer.deleted:
           loop.callbacks.addLast(adata.writer)
       # Mark callbacks as deleted, we don't need to get REAL notifications
       # from system queue for this reader and writer.
-      if not isNil(adata.reader): adata.reader.deleted = true
-      if not isNil(adata.writer): adata.writer.deleted = true
+      adata.reader.deleted = true
+      adata.writer.deleted = true
 
     # We can't unregister file descriptor from system queue here, because
     # in such case processing queue will stuck on poll() call, because there
