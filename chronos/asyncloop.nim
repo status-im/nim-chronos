@@ -823,7 +823,7 @@ proc withTimeout*[T](fut: Future[T], timeout: Duration): Future[bool] =
     if not(retFuture.finished()):
       if isNil(udata):
         # Timer exceeded first.
-        clearTimer(timer)
+        fut.removeCallback(continuation)
         fut.cancel()
         retFuture.complete(false)
       else:
