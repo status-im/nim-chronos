@@ -233,22 +233,33 @@ func getAsyncTimestamp*(a: Duration): auto {.inline.} =
     result = cast[int32](res)
     result += min(1, cast[int32](mid))
 
-template removeDeletedTimers(loop: PDispatcherBase) =
+template removeDeletedTimers(loop: PDispatcherBase, curTimeout: untyped) =
   if loop.deletedTimers >= MaxDeletedTimers:
-    var newHeap = initHeapQueue[TimerCallback]()
-    while loop.timers.len > 0:
-      var timer = loop.timers.pop()
-      if not timer.deleted:
-        newHeap.push(timer)
+    if (curTimeout > 0 or curTimeout == -1):
+      var before = Moment.now()
+      var newHeap = initHeapQueue[TimerCallback]()
+      while loop.timers.len > 0:
+        var timer = loop.timers.pop()
+        if not timer.deleted:
+          newHeap.push(timer)
+        else:
+          loop.deletedTimers.dec()
 
-    if newHeap.len > 0:
-      loop.timers = newHeap
+      if newHeap.len > 0:
+        loop.timers.clear()
+        loop.timers = newHeap
+
+      if curTimeout > 0:
+        curTimeout = curTimeout - (Moment.now() - before).getAsyncTimestamp()
+        if curTimeout < 0:
+          curTimeout = 0
 
 template processTimersGetTimeout(loop, timeout: untyped) =
   var lastFinish = curTime
   while loop.timers.len > 0:
     if loop.timers[0].deleted:
       discard loop.timers.pop()
+      loop.deletedTimers.dec()
       continue
 
     lastFinish = loop.timers[0].finishAt
@@ -335,6 +346,7 @@ template processTimers(loop: untyped) =
   while loop.timers.len > 0:
     if loop.timers[0].deleted:
       discard loop.timers.pop()
+      loop.deletedTimers.dec()
       continue
 
     if curTime < loop.timers[0].finishAt:
@@ -501,6 +513,9 @@ when defined(windows) or defined(nimdoc):
 
     # Moving expired timers to `loop.callbacks` and calculate timeout
     loop.processTimersGetTimeout(curTimeout)
+
+    # Cleanup timers
+    loop.removeDeletedTimers(curTimeout)
 
     # Processing handles
     var lpNumberOfBytesTransferred: Dword
@@ -791,6 +806,9 @@ elif unixPlatform:
 
     # Moving expired timers to `loop.callbacks` and calculate timeout.
     loop.processTimersGetTimeout(curTimeout)
+
+    # Cleanup timers
+    loop.removeDeletedTimers(curTimeout)
 
     # Processing IO descriptors and all hardware events.
     var count = loop.selector.selectInto(curTimeout, loop.keys)
