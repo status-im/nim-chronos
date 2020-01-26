@@ -875,7 +875,7 @@ proc wait*[T](fut: Future[T], timeout = InfiniteDuration): Future[T] =
 
   proc continuation(udata: pointer) {.gcsafe.} =
     if not(retFuture.finished()):
-      if isNil(udata):
+      if not(fut.finished()):
         # Timer exceeded first.
         fut.removeCallback(continuation)
         fut.cancel()
