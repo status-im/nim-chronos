@@ -84,6 +84,13 @@ suite "Future[T] behavior test suite":
     except:
       result = -6
 
+    ## Test for future not completing twice
+    try:
+      await wait(sleepAsync(5.millis), 5.millis)
+      result = 7
+    except:
+      result = -7
+
   proc test1(): bool =
     var fut = testFuture1()
     poll()
@@ -779,7 +786,7 @@ suite "Future[T] behavior test suite":
   test "Future[T] callbacks not changing order after removeCallback()":
     check test4() == "1245"
   test "wait[T]() test":
-    check test5() == 6
+    check test5() == 7
 
   test "asyncDiscard() test":
     check testAsyncDiscard() == 10
