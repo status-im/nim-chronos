@@ -757,7 +757,7 @@ suite "Future[T] behavior test suite":
           removeTimer(moment, completion, cast[pointer](retFuture))
 
       retFuture.cancelCallback = cancel
-      addTimer(moment, completion, cast[pointer](retFuture))
+      discard setTimer(moment, completion, cast[pointer](retFuture))
       return retFuture
 
     var fut = client1(100.milliseconds)
@@ -769,6 +769,70 @@ suite "Future[T] behavior test suite":
     if (completed != 0) and (cancelled != 1):
       return false
     return true
+
+  proc testWaitAsync(): Future[bool] {.async.} =
+    var neverFlag1, neverFlag2, neverFlag3: bool
+    var waitProc1, waitProc2: bool
+    proc neverEndingProc(): Future[void] =
+      var res = newFuture[void]()
+      proc continuation(udata: pointer) {.gcsafe.} =
+        neverFlag2 = true
+      proc cancellation(udata: pointer) {.gcsafe.} =
+        neverFlag3 = true
+      res.addCallback(continuation)
+      res.cancelCallback = cancellation
+      result = res
+      neverFlag1 = true
+
+    proc waitProc() {.async.} =
+      try:
+        await wait(neverEndingProc(), 100.milliseconds)
+      except CancelledError:
+        waitProc1 = true
+      finally:
+        waitProc2 = true
+
+    var fut = waitProc()
+    await cancelAndWait(fut)
+    result = (fut.state == FutureState.Finished) and
+             neverFlag1 and neverFlag2 and neverFlag3 and
+             waitProc1 and waitProc2
+
+  proc testWithTimeoutAsync(): Future[bool] {.async.} =
+    var neverFlag1, neverFlag2, neverFlag3: bool
+    var waitProc1, waitProc2: bool
+    proc neverEndingProc(): Future[void] =
+      var res = newFuture[void]()
+      proc continuation(udata: pointer) {.gcsafe.} =
+        neverFlag2 = true
+      proc cancellation(udata: pointer) {.gcsafe.} =
+        neverFlag3 = true
+      res.addCallback(continuation)
+      res.cancelCallback = cancellation
+      result = res
+      neverFlag1 = true
+
+    proc withTimeoutProc() {.async.} =
+      try:
+        discard await withTimeout(neverEndingProc(), 100.milliseconds)
+        doAssert(false)
+      except CancelledError:
+        waitProc1 = true
+      finally:
+        waitProc2 = true
+
+    var fut = withTimeoutProc()
+    await cancelAndWait(fut)
+    result = (fut.state == FutureState.Finished) and
+             neverFlag1 and neverFlag2 and neverFlag3 and
+             waitProc1 and waitProc2
+
+
+  proc testWait(): bool =
+    result = waitFor(testWaitAsync())
+
+  proc testWithTimeout(): bool =
+    result = waitFor(testWithTimeoutAsync())
 
   test "Async undefined behavior (#7758) test":
     check test1() == true
@@ -806,3 +870,7 @@ suite "Future[T] behavior test suite":
     check testBreakCancellation() == true
   test "Cancellation callback test":
     check testCancelCallback() == true
+  test "Cancellation wait() test":
+    check testWait() == true
+  test "Cancellation withTimeout() test":
+    check testWithTimeout() == true

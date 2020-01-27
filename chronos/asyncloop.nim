@@ -733,33 +733,31 @@ else:
   proc initAPI() = discard
   proc globalInit() = discard
 
-proc setTimer(at: Moment, cb: CallbackFunc, udata: pointer = nil): TimerCallback =
+proc setTimer*(at: Moment, cb: CallbackFunc,
+               udata: pointer = nil): TimerCallback =
   ## Arrange for the callback ``cb`` to be called at the given absolute
   ## timestamp ``at``. You can also pass ``udata`` to callback.
   let loop = getGlobalDispatcher()
   result = TimerCallback(finishAt: at,
-                          function: AsyncCallback(function: cb, udata: udata))
+                         function: AsyncCallback(function: cb, udata: udata))
   loop.timers.push(result)
 
-proc clearTimer(timer: TimerCallback) {.inline.} =
+proc clearTimer*(timer: TimerCallback) {.inline.} =
   timer.deleted = true
 
-proc addTimer*(at: Moment, cb: CallbackFunc, udata: pointer = nil)
-  {.deprecated: "Use setTimer/clearTimer instead".} =
+proc addTimer*(at: Moment, cb: CallbackFunc, udata: pointer = nil) {.
+     inline, deprecated: "Use setTimer/clearTimer instead".} =
   ## Arrange for the callback ``cb`` to be called at the given absolute
   ## timestamp ``at``. You can also pass ``udata`` to callback.
-  let loop = getGlobalDispatcher()
-  var tcb = TimerCallback(finishAt: at,
-                          function: AsyncCallback(function: cb, udata: udata))
-  loop.timers.push(tcb)
+  discard setTimer(at, cb, udata)
 
 proc addTimer*(at: int64, cb: CallbackFunc, udata: pointer = nil) {.
      inline, deprecated: "Use addTimer(Duration, cb, udata)".} =
-  addTimer(Moment.init(at, Millisecond), cb, udata)
+  discard setTimer(Moment.init(at, Millisecond), cb, udata)
 
 proc addTimer*(at: uint64, cb: CallbackFunc, udata: pointer = nil) {.
      inline, deprecated: "Use addTimer(Duration, cb, udata)".} =
-  addTimer(Moment.init(int64(at), Millisecond), cb, udata)
+  discard setTimer(Moment.init(int64(at), Millisecond), cb, udata)
 
 proc removeTimer*(at: Moment, cb: CallbackFunc, udata: pointer = nil) =
   ## Remove timer callback ``cb`` with absolute timestamp ``at`` from waiting
@@ -793,14 +791,12 @@ proc sleepAsync*(duration: Duration): Future[void] =
   var timer: TimerCallback
 
   proc completion(data: pointer) {.gcsafe.} =
-    if not(retFuture.finished()):
-      retFuture.complete()
+    retFuture.complete()
 
-  proc cancel(udata: pointer) {.gcsafe.} =
-    if not(retFuture.finished()):
-      clearTimer(timer)
+  proc cancellation(udata: pointer) {.gcsafe.} =
+    clearTimer(timer)
 
-  retFuture.cancelCallback = cancel
+  retFuture.cancelCallback = cancellation
   timer = setTimer(moment, completion, cast[pointer](retFuture))
   return retFuture
 
@@ -821,7 +817,7 @@ proc withTimeout*[T](fut: Future[T], timeout: Duration): Future[bool] =
 
   proc continuation(udata: pointer) {.gcsafe.} =
     if not(retFuture.finished()):
-      if isNil(udata):
+      if not(fut.finished()):
         # Timer exceeded first.
         fut.removeCallback(continuation)
         fut.cancel()
@@ -832,13 +828,12 @@ proc withTimeout*[T](fut: Future[T], timeout: Duration): Future[bool] =
           clearTimer(timer)
         retFuture.complete(true)
 
-  proc cancel(udata: pointer) {.gcsafe.} =
-    if not(retFuture.finished()):
-      if not isNil(timer):
-        clearTimer(timer)
-      if not(fut.finished()):
-        fut.removeCallback(continuation)
-        fut.cancel()
+  proc cancellation(udata: pointer) {.gcsafe.} =
+    if not isNil(timer):
+      clearTimer(timer)
+    if not(fut.finished()):
+      fut.removeCallback(continuation)
+      fut.cancel()
 
   if fut.finished():
     retFuture.complete(true)
@@ -846,11 +841,11 @@ proc withTimeout*[T](fut: Future[T], timeout: Duration): Future[bool] =
     if timeout.isZero():
       retFuture.complete(false)
     elif timeout.isInfinite():
-      retFuture.cancelCallback = cancel
+      retFuture.cancelCallback = cancellation
       fut.addCallback(continuation)
     else:
       moment = Moment.fromNow(timeout)
-      retFuture.cancelCallback = cancel
+      retFuture.cancelCallback = cancellation
       timer = setTimer(moment, continuation, nil)
       fut.addCallback(continuation)
 
@@ -875,7 +870,7 @@ proc wait*[T](fut: Future[T], timeout = InfiniteDuration): Future[T] =
 
   proc continuation(udata: pointer) {.gcsafe.} =
     if not(retFuture.finished()):
-      if isNil(udata):
+      if not(fut.finished()):
         # Timer exceeded first.
         fut.removeCallback(continuation)
         fut.cancel()
@@ -893,13 +888,12 @@ proc wait*[T](fut: Future[T], timeout = InfiniteDuration): Future[T] =
           else:
             retFuture.complete(fut.read())
 
-  proc cancel(udata: pointer) {.gcsafe.} =
-    if not(retFuture.finished()):
-      if not isNil(timer):
-        clearTimer(timer)
-      if not(fut.finished()):
-        fut.removeCallback(continuation)
-        fut.cancel()
+  proc cancellation(udata: pointer) {.gcsafe.} =
+    if not isNil(timer):
+      clearTimer(timer)
+    if not(fut.finished()):
+      fut.removeCallback(continuation)
+      fut.cancel()
 
   if fut.finished():
     if fut.failed():
@@ -913,11 +907,11 @@ proc wait*[T](fut: Future[T], timeout = InfiniteDuration): Future[T] =
     if timeout.isZero():
       retFuture.fail(newException(AsyncTimeoutError, "Timeout exceeded!"))
     elif timeout.isInfinite():
-      retFuture.cancelCallback = cancel
+      retFuture.cancelCallback = cancellation
       fut.addCallback(continuation)
     else:
       moment = Moment.fromNow(timeout)
-      retFuture.cancelCallback = cancel
+      retFuture.cancelCallback = cancellation
       timer = setTimer(moment, continuation, nil)
       fut.addCallback(continuation)
 
