@@ -768,7 +768,8 @@ when defined(windows):
           if pipeHandle == INVALID_HANDLE_VALUE:
             let err = osLastError()
             if int32(err) == ERROR_PIPE_BUSY:
-              addTimer(Moment.fromNow(50.milliseconds), pipeContinuation, nil)
+              discard setTimer(Moment.fromNow(50.milliseconds),
+                               pipeContinuation, nil)
             else:
               retFuture.fail(getTransportOsError(err))
           else:

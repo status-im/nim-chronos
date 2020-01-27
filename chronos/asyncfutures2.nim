@@ -482,13 +482,12 @@ proc `and`*[T, Y](fut1: Future[T], fut2: Future[Y]): Future[void] {.
   fut1.callback = cb
   fut2.callback = cb
 
-  proc cancel(udata: pointer) {.gcsafe.} =
+  proc cancellation(udata: pointer) {.gcsafe.} =
     # On cancel we remove all our callbacks only.
-    if not(retFuture.finished()):
-      fut1.removeCallback(cb)
-      fut2.removeCallback(cb)
+    fut1.removeCallback(cb)
+    fut2.removeCallback(cb)
 
-  retFuture.cancelCallback = cancel
+  retFuture.cancelCallback = cancellation
   return retFuture
 
 proc `or`*[T, Y](fut1: Future[T], fut2: Future[Y]): Future[void] {.
@@ -510,13 +509,12 @@ proc `or`*[T, Y](fut1: Future[T], fut2: Future[Y]): Future[void] {.
   fut1.callback = cb
   fut2.callback = cb
 
-  proc cancel(udata: pointer) {.gcsafe.} =
+  proc cancellation(udata: pointer) {.gcsafe.} =
     # On cancel we remove all our callbacks only.
-    if not(retFuture.finished()):
-      fut1.removeCallback(cb)
-      fut2.removeCallback(cb)
+    fut1.removeCallback(cb)
+    fut2.removeCallback(cb)
 
-  retFuture.cancelCallback = cancel
+  retFuture.cancelCallback = cancellation
   return retFuture
 
 proc all*[T](futs: varargs[Future[T]]): auto {.
@@ -688,17 +686,16 @@ proc allFutures*[T](futs: varargs[Future[T]]): Future[void] =
       if completedFutures == totalFutures:
         retFuture.complete()
 
-  proc cancel(udata: pointer) {.gcsafe.} =
+  proc cancellation(udata: pointer) {.gcsafe.} =
     # On cancel we remove all our callbacks only.
-    if not(retFuture.finished()):
-      for i in 0..<len(nfuts):
-        if not(nfuts[i].finished()):
-          nfuts[i].removeCallback(cb)
+    for i in 0..<len(nfuts):
+      if not(nfuts[i].finished()):
+        nfuts[i].removeCallback(cb)
 
   for fut in nfuts:
     fut.addCallback(cb)
 
-  retFuture.cancelCallback = cancel
+  retFuture.cancelCallback = cancellation
   if len(nfuts) == 0:
     retFuture.complete()
 
@@ -729,12 +726,11 @@ proc one*[T](futs: varargs[Future[T]]): Future[Future[T]] =
           res = nfuts[i]
       retFuture.complete(res)
 
-  proc cancel(udata: pointer) {.gcsafe.} =
+  proc cancellation(udata: pointer) {.gcsafe.} =
     # On cancel we remove all our callbacks only.
-    if not(retFuture.finished()):
-      for i in 0..<len(nfuts):
-        if not(nfuts[i].finished()):
-          nfuts[i].removeCallback(cb)
+    for i in 0..<len(nfuts):
+      if not(nfuts[i].finished()):
+        nfuts[i].removeCallback(cb)
 
   for fut in nfuts:
     fut.addCallback(cb)
@@ -742,5 +738,5 @@ proc one*[T](futs: varargs[Future[T]]): Future[Future[T]] =
   if len(nfuts) == 0:
     retFuture.fail(newException(ValueError, "Empty Future[T] list"))
 
-  retFuture.cancelCallback = cancel
+  retFuture.cancelCallback = cancellation
   return retFuture
