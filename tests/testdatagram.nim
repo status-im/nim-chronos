@@ -434,18 +434,19 @@ suite "Datagram Transport test suite":
       result += counters[i]
 
   proc testConnReset(): Future[bool] {.async.} =
-    var ta = initTAddress("127.0.0.1:65000")
+    var ta = initTAddress("127.0.0.1:0")
     var counter = 0
     proc clientMark(transp: DatagramTransport,
                     raddr: TransportAddress): Future[void] {.async.} =
       counter = 1
       transp.close()
     var dgram1 = newDatagramTransport(client1, local = ta)
+    var localta = dgram1.localAddress()
     dgram1.close()
     await dgram1.join()
     var dgram2 = newDatagramTransport(clientMark)
     var data = "MESSAGE"
-    asyncCheck dgram2.sendTo(ta, data)
+    asyncCheck dgram2.sendTo(localta, data)
     await sleepAsync(2000.milliseconds)
     result = (counter == 0)
     dgram2.close()
