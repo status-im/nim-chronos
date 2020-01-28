@@ -536,7 +536,7 @@ else:
             closeSocket(localSock)
           raiseTransportOsError(err)
 
-    if local.port != Port(0):
+    if local.family != AddressFamily.None:
       var saddr: Sockaddr_storage
       var slen: SockLen
       toSAddr(local, saddr, slen)
@@ -546,7 +546,6 @@ else:
         if sock == asyncInvalidSocket:
           closeSocket(localSock)
         raiseTransportOsError(err)
-      result.local = local
 
     if remote.port != Port(0):
       var saddr: Sockaddr_storage
