@@ -65,6 +65,28 @@ type
 const
   DgramTransportTrackerName = "datagram.transport"
 
+proc remoteAddress*(transp: DatagramTransport): TransportAddress =
+  ## Returns ``transp`` remote socket address.
+  if transp.remote.family == AddressFamily.None:
+    var saddr: Sockaddr_storage
+    var slen = SockLen(sizeof(saddr))
+    if getpeername(SocketHandle(transp.fd), cast[ptr SockAddr](addr saddr),
+                   addr slen) != 0:
+      raiseTransportOsError(osLastError())
+    fromSAddr(addr saddr, slen, transp.remote)
+  result = transp.remote
+
+proc localAddress*(transp: DatagramTransport): TransportAddress =
+  ## Returns ``transp`` local socket address.
+  if transp.local.family == AddressFamily.None:
+    var saddr: Sockaddr_storage
+    var slen = SockLen(sizeof(saddr))
+    if getsockname(SocketHandle(transp.fd), cast[ptr SockAddr](addr saddr),
+                   addr slen) != 0:
+      raiseTransportOsError(osLastError())
+    fromSAddr(addr saddr, slen, transp.local)
+  result = transp.local
+
 template setReadError(t, e: untyped) =
   (t).state.incl(ReadError)
   (t).error = getTransportOsError(e)
@@ -318,13 +340,13 @@ when defined(windows):
       var saddr: Sockaddr_storage
       var slen: SockLen
       toSAddr(local, saddr, slen)
+
       if bindAddr(SocketHandle(localSock), cast[ptr SockAddr](addr saddr),
                   slen) != 0:
         let err = osLastError()
         if sock == asyncInvalidSocket:
           closeSocket(localSock)
         raiseTransportOsError(err)
-      result.local = local
     else:
       var saddr: Sockaddr_storage
       var slen: SockLen
@@ -514,7 +536,7 @@ else:
             closeSocket(localSock)
           raiseTransportOsError(err)
 
-    if local.port != Port(0):
+    if local.family != AddressFamily.None:
       var saddr: Sockaddr_storage
       var slen: SockLen
       toSAddr(local, saddr, slen)
@@ -524,7 +546,6 @@ else:
         if sock == asyncInvalidSocket:
           closeSocket(localSock)
         raiseTransportOsError(err)
-      result.local = local
 
     if remote.port != Port(0):
       var saddr: Sockaddr_storage
