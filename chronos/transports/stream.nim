@@ -171,6 +171,19 @@ template checkPending(t: untyped) =
   if not isNil((t).reader):
     raise newException(TransportError, "Read operation already pending!")
 
+template prepareReader(transp: StreamTransport, name: static string): Future[void] =
+  doAssert isNil(transp.reader), "Read operation already pending"
+
+  var fut = newFuture[void](name)
+  transp.reader = fut
+  transp.resumeRead()
+  fut
+
+template completeReader(transp: StreamTransport) =
+  if not(isNil(transp.reader)) and not(transp.reader.finished()):
+    transp.reader.complete()
+    transp.reader = nil
+
 template shiftBuffer(t, c: untyped) =
   if (t).offset > c:
     moveMem(addr((t).buffer[0]), addr((t).buffer[(c)]), (t).offset - (c))
@@ -525,9 +538,7 @@ when defined(windows):
         else:
           transp.setReadError(err)
 
-        if not(isNil(transp.reader)) and not(transp.reader.finished()):
-          transp.reader.complete()
-          transp.reader = nil
+        transp.completeReader()
 
         if ReadClosed in transp.state:
           # Stop tracking transport
@@ -563,16 +574,12 @@ when defined(windows):
               elif int32(err) in {WSAECONNRESET, WSAENETRESET, WSAECONNABORTED}:
                 transp.state.excl(ReadPending)
                 transp.state.incl({ReadEof, ReadPaused})
-                if not(isNil(transp.reader)) and not(transp.reader.finished()):
-                  transp.reader.complete()
-                  transp.reader = nil
+                transp.completeReader()
               elif int32(err) != ERROR_IO_PENDING:
                 transp.state.excl(ReadPending)
                 transp.state.incl(ReadPaused)
                 transp.setReadError(err)
-                if not(isNil(transp.reader)) and not(transp.reader.finished()):
-                  transp.reader.complete()
-                  transp.reader = nil
+                transp.completeReader()
           elif transp.kind == TransportKind.Pipe:
             let pipe = Handle(transp.rovl.data.fd)
             transp.roffset = transp.offset
@@ -589,21 +596,15 @@ when defined(windows):
               elif int32(err) in {ERROR_BROKEN_PIPE, ERROR_PIPE_NOT_CONNECTED}:
                 transp.state.excl(ReadPending)
                 transp.state.incl({ReadEof, ReadPaused})
-                if not(isNil(transp.reader)) and not(transp.reader.finished()):
-                  transp.reader.complete()
-                  transp.reader = nil
+                transp.completeReader()
               elif int32(err) != ERROR_IO_PENDING:
                 transp.state.excl(ReadPending)
                 transp.state.incl(ReadPaused)
                 transp.setReadError(err)
-                if not(isNil(transp.reader)) and not(transp.reader.finished()):
-                  transp.reader.complete()
-                  transp.reader = nil
+                transp.completeReader()
         else:
           transp.state.incl(ReadPaused)
-          if not(isNil(transp.reader)) and not(transp.reader.finished()):
-            transp.reader.complete()
-            transp.reader = nil
+          transp.completeReader()
           # Transport close happens in callback, and we not started new
           # WSARecvFrom session.
           if ReadClosed in transp.state:
@@ -947,12 +948,14 @@ when defined(windows):
               GC_unref(server)
 
   proc resumeRead(transp: StreamTransport) {.inline.} =
-    transp.state.excl(ReadPaused)
-    readStreamLoop(cast[pointer](addr transp.rovl))
+    if ReadPaused in transp.state:
+      transp.state.excl(ReadPaused)
+      readStreamLoop(cast[pointer](addr transp.rovl))
 
   proc resumeWrite(transp: StreamTransport) {.inline.} =
-    transp.state.excl(WritePaused)
-    writeStreamLoop(cast[pointer](addr transp.wovl))
+    if WritePaused in transp.state:
+      transp.state.excl(WritePaused)
+      writeStreamLoop(cast[pointer](addr transp.wovl))
 
   proc pauseAccept(server: StreamServer) {.inline.} =
     if server.apending:
@@ -1124,9 +1127,7 @@ else:
 
     if ReadClosed in transp.state:
       transp.state.incl({ReadPaused})
-      if not(isNil(transp.reader)) and not(transp.reader.finished()):
-        transp.reader.complete()
-        transp.reader = nil
+      transp.completeReader()
     else:
       if transp.kind == TransportKind.Socket:
         while true:
@@ -1151,9 +1152,7 @@ else:
             if transp.offset == len(transp.buffer):
               transp.state.incl(ReadPaused)
               cdata.fd.removeReader()
-          if not(isNil(transp.reader)) and not(transp.reader.finished()):
-            transp.reader.complete()
-            transp.reader = nil
+          transp.completeReader()
           break
       elif transp.kind == TransportKind.Pipe:
         while true:
@@ -1175,9 +1174,7 @@ else:
             if transp.offset == len(transp.buffer):
               transp.state.incl(ReadPaused)
               cdata.fd.removeReader()
-          if not(isNil(transp.reader)) and not(transp.reader.finished()):
-            transp.reader.complete()
-            transp.reader = nil
+          transp.completeReader()
           break
 
   proc newStreamSocketTransport(sock: AsyncFD, bufsize: int,
@@ -1321,12 +1318,14 @@ else:
     removeReader(server.sock)
 
   proc resumeRead(transp: StreamTransport) {.inline.} =
-    transp.state.excl(ReadPaused)
-    addReader(transp.fd, readStreamLoop, cast[pointer](transp))
+    if ReadPaused in transp.state:
+      transp.state.excl(ReadPaused)
+      transp.fd.addReader(readStreamLoop, cast[pointer](transp))
 
   proc resumeWrite(transp: StreamTransport) {.inline.} =
-    transp.state.excl(WritePaused)
-    addWriter(transp.fd, writeStreamLoop, cast[pointer](transp))
+    if WritePaused in transp.state:
+      transp.state.excl(WritePaused)
+      transp.fd.addWriter(writeStreamLoop, cast[pointer](transp))
 
 proc start*(server: StreamServer) =
   ## Starts ``server``.
@@ -1604,8 +1603,7 @@ proc write*(transp: StreamTransport, pbytes: pointer,
   var vector = StreamVector(kind: DataBuffer, writer: retFuture,
                             buf: pbytes, buflen: nbytes, size: nbytes)
   transp.queue.addLast(vector)
-  if WritePaused in transp.state:
-    transp.resumeWrite()
+  transp.resumeWrite()
   return retFuture
 
 proc write*(transp: StreamTransport, msg: string, msglen = -1): Future[int] =
@@ -1623,8 +1621,7 @@ proc write*(transp: StreamTransport, msg: string, msglen = -1): Future[int] =
                             buf: addr retFuture.gcholder[0], buflen: length,
                             size: length)
   transp.queue.addLast(vector)
-  if WritePaused in transp.state:
-    transp.resumeWrite()
+  transp.resumeWrite()
   return retFuture
 
 proc write*[T](transp: StreamTransport, msg: seq[T], msglen = -1): Future[int] =
@@ -1700,12 +1697,8 @@ proc readExactly*(transp: StreamTransport, pbytes: pointer,
                 addr(transp.buffer[0]), transp.offset)
         index += transp.offset
 
-      var fut = newFuture[void]("stream.transport.readExactly")
-      transp.reader = fut
       transp.offset = 0
-      if ReadPaused in transp.state:
-        transp.resumeRead()
-      await fut
+      await transp.prepareReader("stream.transport.readExactly")
 
 proc readOnce*(transp: StreamTransport, pbytes: pointer,
                nbytes: int): Future[int] {.async.} =
@@ -1723,11 +1716,7 @@ proc readOnce*(transp: StreamTransport, pbytes: pointer,
       if (ReadClosed in transp.state) or transp.atEof():
         result = 0
         break
-      var fut = newFuture[void]("stream.transport.readOnce")
-      transp.reader = fut
-      if ReadPaused in transp.state:
-        transp.resumeRead()
-      await fut
+      await transp.prepareReader("stream.transport.readOnce")
     else:
       if transp.offset > nbytes:
         copyMem(pbytes, addr(transp.buffer[0]), nbytes)
@@ -1789,11 +1778,7 @@ proc readUntil*(transp: StreamTransport, pbytes: pointer, nbytes: int,
       break
     else:
       transp.shiftBuffer(transp.offset)
-      var fut = newFuture[void]("stream.transport.readUntil")
-      transp.reader = fut
-      if ReadPaused in transp.state:
-        transp.resumeRead()
-      await fut
+      await transp.prepareReader("stream.transport.readUntil")
 
 proc readLine*(transp: StreamTransport, limit = 0,
                sep = "\r\n"): Future[string] {.async.} =
@@ -1841,11 +1826,7 @@ proc readLine*(transp: StreamTransport, limit = 0,
       break
     else:
       transp.shiftBuffer(transp.offset)
-      var fut = newFuture[void]("stream.transport.readLine")
-      transp.reader = fut
-      if ReadPaused in transp.state:
-        transp.resumeRead()
-      await fut
+      await transp.prepareReader("stream.transport.readLine")
 
 proc read*(transp: StreamTransport, n = -1): Future[seq[byte]] {.async.} =
   ## Read all bytes (n <= 0) or exactly `n` bytes from transport ``transp``.
@@ -1887,11 +1868,7 @@ proc read*(transp: StreamTransport, n = -1): Future[seq[byte]] {.async.} =
                   transp.offset)
           transp.offset = 0
 
-    var fut = newFuture[void]("stream.transport.read")
-    transp.reader = fut
-    if ReadPaused in transp.state:
-      transp.resumeRead()
-    await fut
+    await transp.prepareReader("stream.transport.read")
 
 proc consume*(transp: StreamTransport, n = -1): Future[int] {.async.} =
   ## Consume all bytes (n == -1) or ``n`` bytes from transport ``transp``.
@@ -1924,11 +1901,7 @@ proc consume*(transp: StreamTransport, n = -1): Future[int] {.async.} =
           result += transp.offset
           transp.offset = 0
 
-    var fut = newFuture[void]("stream.transport.consume")
-    transp.reader = fut
-    if ReadPaused in transp.state:
-      transp.resumeRead()
-    await fut
+    await transp.prepareReader("stream.transport.consume")
 
 proc join*(transp: StreamTransport): Future[void] =
   ## Wait until ``transp`` will not be closed.
