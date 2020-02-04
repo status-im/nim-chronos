@@ -5,7 +5,7 @@
 #              Licensed under either of
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
-import strutils, unittest, os
+import strutils, unittest, os, options
 import ../chronos
 
 when defined(nimHasUsed): {.used.}
@@ -130,6 +130,46 @@ suite "Stream Transport test suite":
       dec(counter)
     transp.close()
     await transp.join()
+
+  proc readLV(transp: StreamTransport, maxLen: int): Future[seq[byte]] {.async.} =
+    # Read length-prefixed value where length is a 32-bit integer in native
+    # endian (don't do this at home)
+    # TODO write a test using this
+
+    var
+      valueLen = 0'u32
+      res: seq[byte]
+
+    proc predicate(data: openArray[byte]): tuple[consumed: int, done: bool] =
+      if data.len() == 0:
+        # There will be no more data, length-value incomplete
+        raise newException(ValueError, "LV incomplete")
+
+      var consumed = 0
+      if valueLen == 0:
+        if data.len() < 4: # need more data
+          return (0, false)
+
+        copyMem(addr valueLen, unsafeAddr data[0], sizeof(valueLen))
+
+        if valueLen == 0: # Length in stream says there's no more data
+          return (sizeof(valueLen), true)
+
+        if valueLen.int > maxLen:
+          raise newException(ValueError, "Value too long")
+
+        consumed += sizeof(valueLen)
+
+      let
+        dataLeft = data.len() - consumed
+        bytes = min(dataLeft, valueLen.int - res.len)
+
+      res.add(data.toOpenArray(consumed, bytes + consumed - 1))
+      return (bytes, res.len() == valueLen.int)
+
+    await transp.readMsg(predicate)
+
+    return res
 
   proc serveClient4(server: StreamServer, transp: StreamTransport) {.async.} =
     var pathname = await transp.readLine()
