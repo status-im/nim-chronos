@@ -59,6 +59,12 @@ suite "Stream Transport test suite":
     ]
   var prefixes = ["[IP] ", "[UNIX] "]
 
+  proc createBigMessage(size: int): seq[byte] =
+    var message = "MESSAGE"
+    result = newSeq[byte](size)
+    for i in 0 ..< len(result):
+      result[i] = byte(message[i mod len(message)])
+
   proc serveClient1(server: StreamServer, transp: StreamTransport) {.async.} =
     while not transp.atEof():
       var data = await transp.readLine()
@@ -746,6 +752,48 @@ suite "Stream Transport test suite":
       server.stop()
       server.close()
 
+  proc testWriteReturn(address: TransportAddress): Future[bool] {.async.} =
+    var bigMessageSize = 10 * 1024 * 1024 - 1
+    var finishMessage = "DONE"
+    var cdata = newSeqOfCap[byte](bigMessageSize)
+    proc serveClient(server: StreamServer, transp: StreamTransport) {.async.} =
+      cdata = await transp.read(bigMessageSize)
+      var size = await transp.write(finishMessage)
+      doAssert(size == len(finishMessage))
+      await transp.closeWait()
+      server.stop()
+      server.close()
+
+    var flag = false
+    var server = createStreamServer(address, serveClient, {ReuseAddr})
+    server.start()
+
+    var transp: StreamTransport
+
+    try:
+      transp = await connect(address)
+      flag = true
+    except:
+      server.stop()
+      server.close()
+      await server.join()
+
+    if flag:
+      flag = false
+      try:
+        var msg = createBigMessage(bigMessageSize)
+        var size = await transp.write(msg)
+        var data = await transp.read()
+        doAssert(cdata == msg)
+        doAssert(len(data) == len(finishMessage))
+        doAssert(equalMem(addr data[0], addr finishMessage[0], len(data)))
+
+        flag = (size == bigMessageSize)
+      finally:
+        await transp.closeWait()
+        await server.join()
+    result = flag
+
   for i in 0..<len(addresses):
     test prefixes[i] & "close(transport) test":
       check waitFor(testCloseTransport(addresses[i])) == 1
@@ -795,6 +843,8 @@ suite "Stream Transport test suite":
         check waitFor(testAnyAddress()) == true
       else:
         skip()
+    test prefixes[i] & "write() return value test (issue #73)":
+      check waitFor(testWriteReturn(addresses[i])) == true
 
   test "Servers leak test":
     check getTracker("stream.server").isLeaked() == false

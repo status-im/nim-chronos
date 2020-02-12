@@ -998,7 +998,7 @@ else:
             if res >= 0:
               if vector.buflen - res == 0:
                 if not(vector.writer.finished()):
-                  vector.writer.complete(vector.buflen)
+                  vector.writer.complete(vector.size)
               else:
                 vector.shiftVectorBuffer(res)
                 transp.queue.addFirst(vector)
@@ -1062,7 +1062,7 @@ else:
             if res >= 0:
               if vector.buflen - res == 0:
                 if not(vector.writer.finished()):
-                  vector.writer.complete(vector.buflen)
+                  vector.writer.complete(vector.size)
               else:
                 vector.shiftVectorBuffer(res)
                 transp.queue.addFirst(vector)
@@ -1612,7 +1612,7 @@ proc write*(transp: StreamTransport, pbytes: pointer,
   transp.checkClosed(retFuture)
   transp.checkWriteEof(retFuture)
   var vector = StreamVector(kind: DataBuffer, writer: retFuture,
-                            buf: pbytes, buflen: nbytes)
+                            buf: pbytes, buflen: nbytes, size: nbytes)
   transp.queue.addLast(vector)
   if WritePaused in transp.state:
     transp.resumeWrite()
@@ -1630,7 +1630,8 @@ proc write*(transp: StreamTransport, msg: string, msglen = -1): Future[int] =
   let length = if msglen <= 0: len(msg) else: msglen
   var vector = StreamVector(kind: DataBuffer,
                             writer: cast[Future[int]](retFuture),
-                            buf: addr retFuture.gcholder[0], buflen: length)
+                            buf: addr retFuture.gcholder[0], buflen: length,
+                            size: length)
   transp.queue.addLast(vector)
   if WritePaused in transp.state:
     transp.resumeWrite()
@@ -1649,7 +1650,7 @@ proc write*[T](transp: StreamTransport, msg: seq[T], msglen = -1): Future[int] =
   var vector = StreamVector(kind: DataBuffer,
                             writer: cast[Future[int]](retFuture),
                             buf: addr retFuture.gcholder[0],
-                            buflen: length)
+                            buflen: length, size: length)
   transp.queue.addLast(vector)
   if WritePaused in transp.state:
     transp.resumeWrite()
