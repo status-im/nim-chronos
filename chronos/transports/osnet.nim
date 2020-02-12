@@ -906,23 +906,16 @@ elif defined(macosx) or defined(bsd):
   const
     AF_LINK = 18
     IFF_UP = 0x01
-    IFF_POINTOPOINT = 0x10
     IFF_RUNNING = 0x40
 
     PF_ROUTE = cint(17)
     RTM_GET = 0x04'u8
     RTF_UP = 0x01
     RTF_GATEWAY = 0x02
-    RTF_HOST = 0x04
-    RTF_MASK = 0x80
-    RTF_STATIC = 0x800
     RTM_VERSION = 5'u8
 
     RTA_DST = 0x01
     RTA_GATEWAY = 0x02
-    RTA_NETMASK = 0x04
-    RTA_GENMASK = 0x08
-    RTA_IFA = 0x20
 
   type
     IfAddrs {.importc: "struct ifaddrs", header: "<ifaddrs.h>",
@@ -1011,10 +1004,6 @@ elif defined(macosx) or defined(bsd):
       rtm: RtMsgHeader
       space: array[512, byte]
 
-    BSDSockAddrHeader = object
-      sa_len: byte
-      sa_family: byte
-
   proc getIfAddrs(ifap: ptr PIfAddrs): cint {.importc: "getifaddrs",
        header: """#include <sys/types.h>
                   #include <sys/socket.h>
@@ -1079,7 +1068,6 @@ elif defined(macosx) or defined(bsd):
                       Socklen(sizeof(SockAddr_in6)), ifaddress.host)
         if not isNil(ifap.ifa_netmask):
           var na: TransportAddress
-          var slen: Socklen
           var family = cast[cint](ifap.ifa_netmask.sa_family)
           if family == posix.AF_INET:
             fromSAddr(cast[ptr Sockaddr_storage](ifap.ifa_netmask),
