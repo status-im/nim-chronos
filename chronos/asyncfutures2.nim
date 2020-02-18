@@ -53,7 +53,7 @@ type
 
   FutureVar*[T] = distinct Future[T]
 
-  FutureDefect* = object of Exception
+  FutureDefect* = object of Defect
     cause*: FutureBase
 
   FutureError* = object of CatchableError
