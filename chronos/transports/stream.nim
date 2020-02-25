@@ -685,18 +685,8 @@ when defined(windows):
         sock: AsyncFD
         povl: RefCustomOverlapped
         proto: Protocol
-        raddress: TransportAddress
 
-      ## BSD Sockets on *nix systems are able to perform connections to
-      ## `0.0.0.0` or `::0` which are equal to `127.0.0.1` or `::1`.
-      if (address.family == AddressFamily.IPv4 and
-          address.address_v4 == AnyAddress.address_v4):
-        raddress = initTAddress("127.0.0.1", address.port)
-      elif (address.family == AddressFamily.IPv6 and
-            address.address_v6 == AnyAddress6.address_v6):
-        raddress = initTAddress("::1", address.port)
-      else:
-        raddress = address
+      var raddress = windowsAnyAddressFix(address)
 
       toSAddr(raddress, saddr, slen)
       proto = Protocol.IPPROTO_TCP

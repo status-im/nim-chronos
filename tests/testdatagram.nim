@@ -483,6 +483,55 @@ suite "Datagram Transport test suite":
     await wait(dgram1.join(), 5.seconds)
     result = res
 
+  proc testAnyAddress(): Future[int] {.async.} =
+    var expectStr = "ANYADDRESS MESSAGE"
+    var expectSeq = cast[seq[byte]](expectStr)
+    let ta = initTAddress("0.0.0.0:0")
+    var res = 0
+    var event = newAsyncEvent()
+
+    proc clientMark1(transp: DatagramTransport,
+                     raddr: TransportAddress): Future[void] {.async.} =
+      var bmsg = transp.getMessage()
+      var smsg = cast[string](bmsg)
+      if smsg == expectStr:
+        inc(res)
+      event.fire()
+
+    proc clientMark2(transp: DatagramTransport,
+                     raddr: TransportAddress): Future[void] {.async.} =
+      discard
+
+    var dgram1 = newDatagramTransport(clientMark1, local = ta)
+    let la = dgram1.localAddress()
+    var dgram2 = newDatagramTransport(clientMark2)
+    var dgram3 = newDatagramTransport(clientMark2,
+                                      remote = la)
+    await dgram2.sendTo(la, addr expectStr[0], len(expectStr))
+    await event.wait()
+    event.clear()
+    await dgram2.sendTo(la, expectStr)
+    await event.wait()
+    event.clear()
+    await dgram2.sendTo(la, expectSeq)
+    await event.wait()
+    event.clear()
+    await dgram3.send(addr expectStr[0], len(expectStr))
+    await event.wait()
+    event.clear()
+    await dgram3.send(expectStr)
+    await event.wait()
+    event.clear()
+    await dgram3.send(expectSeq)
+    await event.wait()
+    event.clear()
+
+    await dgram1.closeWait()
+    await dgram2.closeWait()
+    await dgram3.closeWait()
+
+    result = res
+
   test "close(transport) test":
     check waitFor(testTransportClose()) == true
   test m1:
@@ -505,5 +554,7 @@ suite "Datagram Transport test suite":
     check waitFor(testConnReset()) == true
   test "Broadcast test":
     check waitFor(testBroadcast()) == 1
+  test "0.0.0.0/::0 (INADDR_ANY) test":
+    check waitFor(testAnyAddress()) == 6
   test "Transports leak test":
     check getTracker("datagram.transport").isLeaked() == false

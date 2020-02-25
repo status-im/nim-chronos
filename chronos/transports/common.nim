@@ -448,6 +448,21 @@ proc resolveTAddress*(address: string, port: Port,
   elif family == IpAddressFamily.IPv6:
     result = resolveTAddress(address, port, AddressFamily.IPv6)
 
+proc windowsAnyAddressFix*(a: TransportAddress): TransportAddress {.inline.} =
+  ## BSD Sockets on *nix systems are able to perform connections to
+  ## `0.0.0.0` or `::0` which are equal to `127.0.0.1` or `::1`.
+  when defined(windows):
+    if (a.family == AddressFamily.IPv4 and
+        a.address_v4 == AnyAddress.address_v4):
+      result = initTAddress("127.0.0.1", a.port)
+    elif (a.family == AddressFamily.IPv6 and
+          a.address_v6 == AnyAddress6.address_v6):
+      result = initTAddress("::1", a.port)
+    else:
+      result = a
+  else:
+    result = a
+
 template checkClosed*(t: untyped) =
   if (ReadClosed in (t).state) or (WriteClosed in (t).state):
     raise newException(TransportError, "Transport is already closed!")

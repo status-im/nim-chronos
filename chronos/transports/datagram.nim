@@ -165,7 +165,8 @@ when defined(windows):
         transp.setWriterWSABuffer(vector)
         var ret: cint
         if vector.kind == WithAddress:
-          toSAddr(vector.address, transp.waddr, transp.walen)
+          var fixedAddress = windowsAnyAddressFix(vector.address)
+          toSAddr(fixedAddress, transp.waddr, transp.walen)
           ret = WSASendTo(fd, addr transp.wwsabuf, DWORD(1), addr bytesCount,
                           DWORD(0), cast[ptr SockAddr](addr transp.waddr),
                           cint(transp.walen),
@@ -359,16 +360,17 @@ when defined(windows):
         raiseTransportOsError(err)
 
     if remote.port != Port(0):
+      var fixedAddress = windowsAnyAddressFix(remote)
       var saddr: Sockaddr_storage
       var slen: SockLen
-      toSAddr(remote, saddr, slen)
+      toSAddr(fixedAddress, saddr, slen)
       if connect(SocketHandle(localSock), cast[ptr SockAddr](addr saddr),
                  slen) != 0:
         let err = osLastError()
         if sock == asyncInvalidSocket:
           closeSocket(localSock)
         raiseTransportOsError(err)
-      result.remote = remote
+      result.remote = fixedAddress
 
     result.fd = localSock
     result.function = cbproc
