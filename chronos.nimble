@@ -13,10 +13,10 @@ requires "nim > 1.2.0",
 
 task test, "Run all tests":
   var commands = [
-    "nim c -r -d:useSysAssert -d:useGcAssert tests/",
-    "nim c -r -d:chronosStackTrace tests/",
-    "nim c -r -d:release tests/",
-    "nim c -r -d:release -d:chronosFutureTracking tests/"
+    "nim c -r --skipUserCfg --skipParentCfg -d:useSysAssert -d:useGcAssert tests/",
+    "nim c -r --skipUserCfg --skipParentCfg -d:chronosStackTrace tests/",
+    "nim c -r --skipUserCfg --skipParentCfg -d:release tests/",
+    "nim c -r --skipUserCfg --skipParentCfg -d:release -d:chronosFutureTracking tests/"
   ]
   for testname in ["testall"]:
     for cmd in commands:
