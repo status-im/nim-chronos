@@ -52,7 +52,7 @@ template createCb(retFutureSym, iteratorNameSym,
             {.pop.}
     except CancelledError:
       retFutureSym.cancel()
-    except Exception as exc:
+    except CatchableError as exc:
       futureVarCompletions
 
       if retFutureSym.finished():
