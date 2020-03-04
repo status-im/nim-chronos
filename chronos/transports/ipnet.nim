@@ -8,7 +8,7 @@
 #              MIT license (LICENSE-MIT)
 
 ## This module implements various IP network utility procedures.
-import endians, strutils
+import stew/endians2, strutils
 import common
 export common
 
@@ -31,29 +31,21 @@ proc toNetworkOrder(mask: IpMask): IpMask {.inline.} =
   ## network order (which is big-endian) representation.
   result = IpMask(family: mask.family)
   if mask.family == AddressFamily.IPv4:
-    bigEndian32(cast[pointer](addr result.mask4),
-                cast[pointer](unsafeAddr mask.mask4))
+    result.mask4 = mask.mask4.toBE()
   elif mask.family == AddressFamily.IPv6:
-    bigEndian64(cast[pointer](addr result.mask6[0]),
-                cast[pointer](unsafeAddr mask.mask6[0]))
-    bigEndian64(cast[pointer](addr result.mask6[1]),
-                cast[pointer](unsafeAddr mask.mask6[1]))
+    result.mask6[0] = mask.mask6[0].toBE()
+    result.mask6[1] = mask.mask6[1].toBE()
 
 proc toHostOrder(mask: IpMask): IpMask {.inline.} =
   ## Converts ``mask`` from network order (which is big-endian) back to
   ## host representation (which can be big/little-endian).
-  when system.cpuEndian == bigEndian:
-    result = mask
-  else:
-    result = IpMask(family: mask.family)
-    if mask.family == AddressFamily.IPv4:
-      swapEndian32(cast[pointer](addr result.mask4),
-                   cast[pointer](unsafeAddr mask.mask4))
-    elif mask.family == AddressFamily.IPv6:
-      swapEndian64(cast[pointer](addr result.mask6[0]),
-                   cast[pointer](unsafeAddr mask.mask6[0]))
-      swapEndian64(cast[pointer](addr result.mask6[1]),
-                   cast[pointer](unsafeAddr mask.mask6[1]))
+
+  result = IpMask(family: mask.family)
+  if mask.family == AddressFamily.IPv4:
+    result.mask4 =mask.mask4.fromBE()
+  elif mask.family == AddressFamily.IPv6:
+    result.mask6[0] = mask.mask6[0].fromBE()
+    result.mask6[1] = mask.mask6[1].fromBE()
 
 proc `==`*(m1, m2: IpMask): bool {.inline.} =
   ## Returns ``true`` if masks ``m1`` and ``m2`` are equal in IP family and
@@ -146,7 +138,7 @@ proc init*(t: typedesc[IpMask], netmask: string): IpMask =
       else:
         return
       r = (r shl 4) or v
-    bigEndian32(addr res.mask4, addr r)
+    res.mask4 = r.toBE()
     result = res
   elif length == 32 or length == (2 + 32):
     ## IPv6 mask
@@ -167,7 +159,7 @@ proc init*(t: typedesc[IpMask], netmask: string): IpMask =
           return
         r = (r shl 4) or v
       offset += 16
-      bigEndian64(addr res.mask6[i], addr r)
+      res.mask6[i] = r.toBE()
     result = res
 
 proc toIPv6*(address: TransportAddress): TransportAddress =
@@ -527,32 +519,21 @@ proc `not`*(address: TransportAddress): TransportAddress =
 
 proc `+`*(address: TransportAddress, v: uint): TransportAddress =
   ## Add to IPv4/IPv6 transport ``address`` unsigned integer ``v``.
-  result = TransportAddress(family: address.family)
+  result = TransportAddress(family: address.family, port: address.port)
   if address.family == AddressFamily.IPv4:
-    var a: uint64
-    let data = cast[ptr uint32](unsafeAddr address.address_v4[0])
-    when system.cpuEndian == bigEndian:
-      a = data
-    else:
-      swapEndian32(addr a, data)
+    var a = uint64(uint32.fromBytesBE(address.address_v4))
     a = a + v
-    bigEndian32(cast[pointer](addr result.address_v4[0]), addr a)
+    result.address_v4[0..<4] = uint32(a).toBytesBE()
   elif address.family == AddressFamily.IPv6:
-    var a1, a2: uint64
-    let data1 = cast[ptr uint64](unsafeAddr address.address_v6[0])
-    let data2 = cast[ptr uint64](unsafeAddr address.address_v6[8])
-    when system.cpuEndian == bigEndian:
-      a1 = data1
-      a2 = data2
-    else:
-      swapEndian64(addr a1, data1)
-      swapEndian64(addr a2, data2)
+    var a1 = uint64.fromBytesBE(address.address_v6[0..<8])
+    var a2 = uint64.fromBytesBE(address.address_v6[8..<16])
+
     var a3 = a2 + v
     if a3 < a2:
       ## Overflow
       a1 = a1 + 1
-    bigEndian64(cast[pointer](addr result.address_v6[0]), addr a1)
-    bigEndian64(cast[pointer](addr result.address_v6[8]), addr a3)
+    cast[ptr uint64](addr result.address_v6[0])[] = a1.toBE()
+    cast[ptr uint64](addr result.address_v6[8])[] = a3.toBE()
 
 proc inc*(address: var TransportAddress, v: uint = 1'u) =
   ## Increment IPv4/IPv6 transport ``address`` by unsigned integer ``v``.
