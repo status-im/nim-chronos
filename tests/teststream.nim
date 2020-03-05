@@ -633,11 +633,14 @@ suite "Stream Transport test suite":
     server.start()
     var transp = await connect(address)
     var fut = swarmWorker(transp)
-    transp.close()
+    # We perfrom shutdown(SHUT_RD/SD_RECEIVE) for the socket, in such way its
+    # possible to emulate socket's EOF.
+    discard shutdown(SocketHandle(transp.fd), 0)
     await fut
     server.stop()
     server.close()
     await server.join()
+    transp.close()
     await transp.join()
     result = subres
 
@@ -794,6 +797,266 @@ suite "Stream Transport test suite":
         await server.join()
     result = flag
 
+  proc testReadLine(address: TransportAddress): Future[bool] {.async.} =
+    proc serveClient(server: StreamServer, transp: StreamTransport) {.async.} =
+      discard await transp.write("DATA\r\r\r\r\r\n")
+      transp.close()
+      await transp.join()
+
+    var server = createStreamServer(address, serveClient, {ReuseAddr})
+    server.start()
+    try:
+      var r1, r2, r3, r4, r5: string
+      var t1 = await connect(address)
+      try:
+        r1 = await t1.readLine(4)
+      finally:
+        await t1.closeWait()
+
+      var t2 = await connect(address)
+      try:
+        r2 = await t2.readLine(6)
+      finally:
+        await t2.closeWait()
+
+      var t3 = await connect(address)
+      try:
+        r3 = await t3.readLine(8)
+      finally:
+        await t3.closeWait()
+
+      var t4 = await connect(address)
+      try:
+        r4 = await t4.readLine(8)
+      finally:
+        await t4.closeWait()
+
+      var t5 = await connect(address)
+      try:
+        r5 = await t5.readLine()
+      finally:
+        await t5.closeWait()
+
+      doAssert(r1 == "DATA")
+      doAssert(r2 == "DATA\r\r")
+      doAssert(r3 == "DATA\r\r\r\r")
+      doAssert(r4 == "DATA\r\r\r\r")
+      doAssert(r5 == "DATA\r\r\r\r")
+
+      result = true
+    finally:
+      server.stop()
+      server.close()
+      await server.join()
+  proc readLV(transp: StreamTransport,
+              maxLen: int): Future[seq[byte]] {.async.} =
+    # Read length-prefixed value where length is a 32-bit integer in native
+    # endian (don't do this at home)
+    var
+      valueLen = 0'u32
+      res: seq[byte]
+      error: ref Exception
+
+    proc predicate(data: openarray[byte]): tuple[consumed: int, done: bool] =
+      if len(data) == 0:
+        # There will be no more data, length-value incomplete
+        error = newException(TransportIncompleteError, "LV incomplete")
+        return (0, true)
+
+      var consumed = 0
+
+      if valueLen == 0:
+        if len(data) < 4:
+          return (0, false)
+        copyMem(addr valueLen, unsafeAddr data[0], sizeof(valueLen))
+        if valueLen == 0:
+          return (sizeof(valueLen), true)
+        if int(valueLen) > maxLen:
+          error = newException(ValueError, "Size is too big")
+          return (sizeof(valueLen), true)
+        consumed += sizeof(valueLen)
+
+      let
+        dataLeft = len(data) - consumed
+        count = min(dataLeft, int(valueLen) - len(res))
+
+      res.add(data.toOpenArray(consumed, count + consumed - 1))
+      return (consumed + count, len(res) == int(valueLen))
+
+    await transp.readMessage(predicate)
+    if not isNil(error):
+      raise error
+    else:
+      return res
+
+  proc createMessage(size: uint32): seq[byte] =
+    var message = "MESSAGE"
+    result = newSeq[byte](int(size))
+    for i in 0 ..< size:
+      result[int(i)] = byte(message[int(i) mod len(message)])
+
+  proc createLVMessage(size: uint32): seq[byte] =
+    var message = "MESSAGE"
+    result = newSeq[byte](sizeof(size) + int(size))
+    copyMem(addr result[0], unsafeAddr size, sizeof(size))
+    for i in 0 ..< size:
+      result[int(i) + sizeof(size)] = byte(message[int(i) mod len(message)])
+
+  proc testReadMessage(address: TransportAddress): Future[bool] {.async.} =
+    var state = 0
+    var c1, c2, c3, c4, c5, c6, c7: bool
+
+    proc serveClient(server: StreamServer, transp: StreamTransport) {.async.} =
+      if state == 0:
+        # EOF from the beginning.
+        state = 1
+        await transp.closeWait()
+      elif state == 1:
+        # Message has only zero-size header.
+        var message = createLVMessage(0'u32)
+        discard await transp.write(message)
+        state = 2
+        await transp.closeWait()
+      elif state == 2:
+        # Message has header, but do not have any data at all.
+        var message = createLVMessage(4'u32)
+        message.setLen(4)
+        discard await transp.write(message)
+        state = 3
+        await transp.closeWait()
+      elif state == 3:
+        # Message do not have enough data for specified size in header.
+        var message = createLVMessage(1024'u32)
+        message.setLen(1024)
+        discard await transp.write(message)
+        state = 4
+        await transp.closeWait()
+      elif state == 4:
+        # Good encoded message with oversize.
+        var message = createLVMessage(1024'u32)
+        discard await transp.write(message)
+        state = 5
+        await transp.closeWait()
+      elif state == 5:
+        # Good encoded message.
+        var message = createLVMessage(1024'u32)
+        discard await transp.write(message)
+        state = 6
+        await transp.closeWait()
+      elif state == 6:
+        # Good encoded message with additional data.
+        var message = createLVMessage(1024'u32)
+        discard await transp.write(message)
+        discard await transp.write("DONE")
+        state = 7
+        await transp.closeWait()
+      else:
+        doAssert(false)
+
+    var server = createStreamServer(address, serveClient, {ReuseAddr})
+    server.start()
+
+    var t1 = await connect(address)
+    try:
+      discard await t1.readLV(2000)
+    except TransportIncompleteError:
+      c1 = true
+    finally:
+      await t1.closeWait()
+
+    if not c1:
+      server.stop()
+      server.close()
+      await server.join()
+      return false
+
+    var t2 = await connect(address)
+    try:
+      var r2 = await t2.readLV(2000)
+      c2 = (r2 == @[])
+    finally:
+      await t2.closeWait()
+
+    if not c2:
+      server.stop()
+      server.close()
+      await server.join()
+      return false
+
+    var t3 = await connect(address)
+    try:
+      discard await t3.readLV(2000)
+    except TransportIncompleteError:
+      c3 = true
+    finally:
+      await t3.closeWait()
+
+    if not c3:
+      server.stop()
+      server.close()
+      await server.join()
+      return false
+
+    var t4 = await connect(address)
+    try:
+      discard await t4.readLV(2000)
+    except TransportIncompleteError:
+      c4 = true
+    finally:
+      await t4.closeWait()
+
+    if not c4:
+      server.stop()
+      server.close()
+      await server.join()
+      return false
+
+    var t5 = await connect(address)
+    try:
+      discard await t5.readLV(1000)
+    except ValueError:
+      c5 = true
+    finally:
+      await t5.closeWait()
+
+    if not c5:
+      server.stop()
+      server.close()
+      await server.join()
+      return false
+
+    var t6 = await connect(address)
+    try:
+      var expectMsg = createMessage(1024)
+      var r6 = await t6.readLV(2000)
+      if len(r6) == 1024 and r6 == expectMsg:
+        c6 = true
+    finally:
+      await t6.closeWait()
+
+    if not c6:
+      server.stop()
+      server.close()
+      await server.join()
+      return false
+
+    var t7 = await connect(address)
+    try:
+      var expectMsg = createMessage(1024)
+      var expectDone = "DONE"
+      var r7 = await t7.readLV(2000)
+      if len(r7) == 1024 and r7 == expectMsg:
+        var m = await t7.read(4)
+        if len(m) == 4 and equalMem(addr m[0], addr expectDone[0], 4):
+          c7 = true
+    finally:
+      await t7.closeWait()
+
+    server.stop()
+    server.close()
+    await server.join()
+    result = c7
+
   for i in 0..<len(addresses):
     test prefixes[i] & "close(transport) test":
       check waitFor(testCloseTransport(addresses[i])) == 1
@@ -845,6 +1108,10 @@ suite "Stream Transport test suite":
         skip()
     test prefixes[i] & "write() return value test (issue #73)":
       check waitFor(testWriteReturn(addresses[i])) == true
+    test prefixes[i] & "readLine() partial separator test":
+      check waitFor(testReadLine(addresses[i])) == true
+    test prefixes[i] & "readMessage() test":
+      check waitFor(testReadMessage(addresses[i])) == true
 
   test "Servers leak test":
     check getTracker("stream.server").isLeaked() == false

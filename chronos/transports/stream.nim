@@ -60,6 +60,10 @@ type
     opened*: int64
     closed*: int64
 
+  ReadMessagePredicate* = proc (data: openarray[byte]): tuple[consumed: int,
+                                                              done: bool] {.
+    gcsafe, raises: [].}
+
 const
   StreamTransportTrackerName = "stream.transport"
   StreamServerTrackerName = "stream.server"
@@ -163,6 +167,11 @@ proc localAddress*(server: StreamServer): TransportAddress =
   ## Returns ``server`` bound local socket address.
   result = server.local
 
+template completeReader(stream: StreamTransport) =
+  if not(isNil(transp.reader)) and not(transp.reader.finished()):
+    transp.reader.complete()
+    transp.reader = nil
+
 template setReadError(t, e: untyped) =
   (t).state.incl(ReadError)
   (t).error = getTransportOsError(e)
@@ -173,8 +182,9 @@ template checkPending(t: untyped) =
 
 template shiftBuffer(t, c: untyped) =
   if (t).offset > c:
-    moveMem(addr((t).buffer[0]), addr((t).buffer[(c)]), (t).offset - (c))
-    (t).offset = (t).offset - (c)
+    if c > 0:
+      moveMem(addr((t).buffer[0]), addr((t).buffer[(c)]), (t).offset - (c))
+      (t).offset = (t).offset - (c)
   else:
     (t).offset = 0
 
@@ -525,9 +535,7 @@ when defined(windows):
         else:
           transp.setReadError(err)
 
-        if not(isNil(transp.reader)) and not(transp.reader.finished()):
-          transp.reader.complete()
-          transp.reader = nil
+        transp.completeReader()
 
         if ReadClosed in transp.state:
           # Stop tracking transport
@@ -563,16 +571,12 @@ when defined(windows):
               elif int32(err) in {WSAECONNRESET, WSAENETRESET, WSAECONNABORTED}:
                 transp.state.excl(ReadPending)
                 transp.state.incl({ReadEof, ReadPaused})
-                if not(isNil(transp.reader)) and not(transp.reader.finished()):
-                  transp.reader.complete()
-                  transp.reader = nil
+                transp.completeReader()
               elif int32(err) != ERROR_IO_PENDING:
                 transp.state.excl(ReadPending)
                 transp.state.incl(ReadPaused)
                 transp.setReadError(err)
-                if not(isNil(transp.reader)) and not(transp.reader.finished()):
-                  transp.reader.complete()
-                  transp.reader = nil
+                transp.completeReader()
           elif transp.kind == TransportKind.Pipe:
             let pipe = Handle(transp.rovl.data.fd)
             transp.roffset = transp.offset
@@ -589,21 +593,15 @@ when defined(windows):
               elif int32(err) in {ERROR_BROKEN_PIPE, ERROR_PIPE_NOT_CONNECTED}:
                 transp.state.excl(ReadPending)
                 transp.state.incl({ReadEof, ReadPaused})
-                if not(isNil(transp.reader)) and not(transp.reader.finished()):
-                  transp.reader.complete()
-                  transp.reader = nil
+                transp.completeReader()
               elif int32(err) != ERROR_IO_PENDING:
                 transp.state.excl(ReadPending)
                 transp.state.incl(ReadPaused)
                 transp.setReadError(err)
-                if not(isNil(transp.reader)) and not(transp.reader.finished()):
-                  transp.reader.complete()
-                  transp.reader = nil
+                transp.completeReader()
         else:
           transp.state.incl(ReadPaused)
-          if not(isNil(transp.reader)) and not(transp.reader.finished()):
-            transp.reader.complete()
-            transp.reader = nil
+          transp.completeReader()
           # Transport close happens in callback, and we not started new
           # WSARecvFrom session.
           if ReadClosed in transp.state:
@@ -947,12 +945,14 @@ when defined(windows):
               GC_unref(server)
 
   proc resumeRead(transp: StreamTransport) {.inline.} =
-    transp.state.excl(ReadPaused)
-    readStreamLoop(cast[pointer](addr transp.rovl))
+    if ReadPaused in transp.state:
+      transp.state.excl(ReadPaused)
+      readStreamLoop(cast[pointer](addr transp.rovl))
 
   proc resumeWrite(transp: StreamTransport) {.inline.} =
-    transp.state.excl(WritePaused)
-    writeStreamLoop(cast[pointer](addr transp.wovl))
+    if WritePaused in transp.state:
+      transp.state.excl(WritePaused)
+      writeStreamLoop(cast[pointer](addr transp.wovl))
 
   proc pauseAccept(server: StreamServer) {.inline.} =
     if server.apending:
@@ -1124,9 +1124,7 @@ else:
 
     if ReadClosed in transp.state:
       transp.state.incl({ReadPaused})
-      if not(isNil(transp.reader)) and not(transp.reader.finished()):
-        transp.reader.complete()
-        transp.reader = nil
+      transp.completeReader()
     else:
       if transp.kind == TransportKind.Socket:
         while true:
@@ -1151,9 +1149,7 @@ else:
             if transp.offset == len(transp.buffer):
               transp.state.incl(ReadPaused)
               cdata.fd.removeReader()
-          if not(isNil(transp.reader)) and not(transp.reader.finished()):
-            transp.reader.complete()
-            transp.reader = nil
+          transp.completeReader()
           break
       elif transp.kind == TransportKind.Pipe:
         while true:
@@ -1175,9 +1171,7 @@ else:
             if transp.offset == len(transp.buffer):
               transp.state.incl(ReadPaused)
               cdata.fd.removeReader()
-          if not(isNil(transp.reader)) and not(transp.reader.finished()):
-            transp.reader.complete()
-            transp.reader = nil
+          transp.completeReader()
           break
 
   proc newStreamSocketTransport(sock: AsyncFD, bufsize: int,
@@ -1321,12 +1315,14 @@ else:
     removeReader(server.sock)
 
   proc resumeRead(transp: StreamTransport) {.inline.} =
-    transp.state.excl(ReadPaused)
-    addReader(transp.fd, readStreamLoop, cast[pointer](transp))
+    if ReadPaused in transp.state:
+      transp.state.excl(ReadPaused)
+      addReader(transp.fd, readStreamLoop, cast[pointer](transp))
 
   proc resumeWrite(transp: StreamTransport) {.inline.} =
-    transp.state.excl(WritePaused)
-    addWriter(transp.fd, writeStreamLoop, cast[pointer](transp))
+    if WritePaused in transp.state:
+      transp.state.excl(WritePaused)
+      addWriter(transp.fd, writeStreamLoop, cast[pointer](transp))
 
 proc start*(server: StreamServer) =
   ## Starts ``server``.
@@ -1604,8 +1600,7 @@ proc write*(transp: StreamTransport, pbytes: pointer,
   var vector = StreamVector(kind: DataBuffer, writer: retFuture,
                             buf: pbytes, buflen: nbytes, size: nbytes)
   transp.queue.addLast(vector)
-  if WritePaused in transp.state:
-    transp.resumeWrite()
+  transp.resumeWrite()
   return retFuture
 
 proc write*(transp: StreamTransport, msg: string, msglen = -1): Future[int] =
@@ -1623,8 +1618,7 @@ proc write*(transp: StreamTransport, msg: string, msglen = -1): Future[int] =
                             buf: addr retFuture.gcholder[0], buflen: length,
                             size: length)
   transp.queue.addLast(vector)
-  if WritePaused in transp.state:
-    transp.resumeWrite()
+  transp.resumeWrite()
   return retFuture
 
 proc write*[T](transp: StreamTransport, msg: seq[T], msglen = -1): Future[int] =
@@ -1642,8 +1636,7 @@ proc write*[T](transp: StreamTransport, msg: seq[T], msglen = -1): Future[int] =
                             buf: addr retFuture.gcholder[0],
                             buflen: length, size: length)
   transp.queue.addLast(vector)
-  if WritePaused in transp.state:
-    transp.resumeWrite()
+  transp.resumeWrite()
   return retFuture
 
 proc writeFile*(transp: StreamTransport, handle: int,
@@ -1662,8 +1655,7 @@ proc writeFile*(transp: StreamTransport, handle: int,
                             buf: cast[pointer](size), offset: offset,
                             buflen: handle)
   transp.queue.addLast(vector)
-  if WritePaused in transp.state:
-    transp.resumeWrite()
+  transp.resumeWrite()
   return retFuture
 
 proc atEof*(transp: StreamTransport): bool {.inline.} =
@@ -1671,41 +1663,54 @@ proc atEof*(transp: StreamTransport): bool {.inline.} =
   result = (transp.offset == 0) and (ReadEof in transp.state) and
            (ReadPaused in transp.state)
 
+template prepareReader(transp: StreamTransport,
+                       name: static string): Future[void] =
+  checkPending(transp)
+  var fut = newFuture[void](name)
+  transp.reader = fut
+  resumeRead(transp)
+  fut
+
+template readLoop(name, body: untyped): untyped =
+  # Read data until a predicate is satisfied - the body should return a tuple
+  # signalling how many bytes have been processed and whether we're done reading
+  checkClosed(transp)
+  checkPending(transp)
+  while true:
+    if ReadClosed in transp.state:
+      raise newException(TransportUseClosedError,
+                         "Attempt to read data from closed stream")
+    if transp.offset == 0:
+      # We going to raise an error, only if transport buffer is empty.
+      if ReadError in transp.state:
+        raise transp.getError()
+
+    let (consumed, done) = body
+    transp.shiftBuffer(consumed)
+    if done:
+      break
+    else:
+      await transp.prepareReader(name)
+
 proc readExactly*(transp: StreamTransport, pbytes: pointer,
                   nbytes: int) {.async.} =
   ## Read exactly ``nbytes`` bytes from transport ``transp`` and store it to
   ## ``pbytes``.
   ##
   ## If EOF is received and ``nbytes`` is not yet readed, the procedure
-  ## will raise ``TransportIncompleteError``.
-  checkClosed(transp)
-  checkPending(transp)
-
+  ## will raise ``TransportIncompleteError``, potentially with some bytes
+  ## already written.
   var index = 0
-  while true:
+  var pbuffer = cast[ptr UncheckedArray[byte]](pbytes)
+  readLoop("stream.transport.readExactly"):
     if transp.offset == 0:
-      if (ReadError in transp.state):
-        raise transp.getError()
-      if (ReadClosed in transp.state) or transp.atEof():
+      if transp.atEof():
         raise newException(TransportIncompleteError, "Data incomplete!")
-
-    if transp.offset >= (nbytes - index):
-      copyMem(cast[pointer](cast[uint](pbytes) + uint(index)),
-              addr(transp.buffer[0]), nbytes - index)
-      transp.shiftBuffer(nbytes - index)
-      break
-    else:
-      if transp.offset != 0:
-        copyMem(cast[pointer](cast[uint](pbytes) + uint(index)),
-                addr(transp.buffer[0]), transp.offset)
-        index += transp.offset
-
-      var fut = newFuture[void]("stream.transport.readExactly")
-      transp.reader = fut
-      transp.offset = 0
-      if ReadPaused in transp.state:
-        transp.resumeRead()
-      await fut
+    let count = min(nbytes - index, transp.offset)
+    if count > 0:
+      copyMem(addr pbuffer[index], addr(transp.buffer[0]), count)
+      index += count
+    (consumed: count, done: index == nbytes)
 
 proc readOnce*(transp: StreamTransport, pbytes: pointer,
                nbytes: int): Future[int] {.async.} =
@@ -1713,31 +1718,15 @@ proc readOnce*(transp: StreamTransport, pbytes: pointer,
   ##
   ## If internal buffer is not empty, ``nbytes`` bytes will be transferred from
   ## internal buffer, otherwise it will wait until some bytes will be received.
-  checkClosed(transp)
-  checkPending(transp)
-
-  while true:
+  var count = 0
+  readLoop("stream.transport.readOnce"):
     if transp.offset == 0:
-      if (ReadError in transp.state):
-        raise transp.getError()
-      if (ReadClosed in transp.state) or transp.atEof():
-        result = 0
-        break
-      var fut = newFuture[void]("stream.transport.readOnce")
-      transp.reader = fut
-      if ReadPaused in transp.state:
-        transp.resumeRead()
-      await fut
+      (0, transp.atEof())
     else:
-      if transp.offset > nbytes:
-        copyMem(pbytes, addr(transp.buffer[0]), nbytes)
-        transp.shiftBuffer(nbytes)
-        result = nbytes
-      else:
-        copyMem(pbytes, addr(transp.buffer[0]), transp.offset)
-        result = transp.offset
-        transp.offset = 0
-      break
+      count = min(transp.offset, nbytes)
+      copyMem(pbytes, addr(transp.buffer[0]), count)
+      (count, true)
+  return count
 
 proc readUntil*(transp: StreamTransport, pbytes: pointer, nbytes: int,
                 sep: seq[byte]): Future[int] {.async.} =
@@ -1753,47 +1742,36 @@ proc readUntil*(transp: StreamTransport, pbytes: pointer, nbytes: int,
   ## will raise ``TransportLimitError``.
   ##
   ## Procedure returns actual number of bytes read.
-  checkClosed(transp)
-  checkPending(transp)
-
-  var dest = cast[ptr UncheckedArray[byte]](pbytes)
+  var pbuffer = cast[ptr UncheckedArray[byte]](pbytes)
   var state = 0
   var k = 0
-  var index = 0
 
-  while true:
-    if ReadError in transp.state:
-      raise transp.getError()
-    if (ReadClosed in transp.state) or transp.atEof():
+  readLoop("stream.transport.readUntil"):
+    if transp.atEof():
       raise newException(TransportIncompleteError, "Data incomplete!")
 
-    index = 0
+    var index = 0
+
     while index < transp.offset:
-      let ch = transp.buffer[index]
-      if sep[state] == ch:
-        inc(state)
-      else:
-        state = 0
-      if k < nbytes:
-        dest[k] = ch
-        inc(k)
-      else:
+      if k >= nbytes:
         raise newException(TransportLimitError, "Limit reached!")
-      if state == len(sep):
-        break
+
+      let ch = transp.buffer[index]
       inc(index)
 
-    if state == len(sep):
-      transp.shiftBuffer(index + 1)
-      result = k
-      break
-    else:
-      transp.shiftBuffer(transp.offset)
-      var fut = newFuture[void]("stream.transport.readUntil")
-      transp.reader = fut
-      if ReadPaused in transp.state:
-        transp.resumeRead()
-      await fut
+      pbuffer[k] = ch
+      inc(k)
+
+      if sep[state] == ch:
+        inc(state)
+        if state == len(sep):
+          break
+      else:
+        state = 0
+
+    (index, state == len(sep))
+
+  return k
 
 proc readLine*(transp: StreamTransport, limit = 0,
                sep = "\r\n"): Future[string] {.async.} =
@@ -1807,128 +1785,113 @@ proc readLine*(transp: StreamTransport, limit = 0,
   ## empty string.
   ##
   ## If ``limit`` more then 0, then read is limited to ``limit`` bytes.
-  checkClosed(transp)
-  checkPending(transp)
-
-  result = ""
-  var lim = if limit <= 0: -1 else: limit
+  let lim = if limit <= 0: -1 else: limit
   var state = 0
-  var index = 0
 
-  while true:
-    if (ReadError in transp.state):
-      raise transp.getError()
-    if (ReadClosed in transp.state) or transp.atEof():
-      break
-
-    index = 0
-    while index < transp.offset:
-      let ch = char(transp.buffer[index])
-      if sep[state] == ch:
-        inc(state)
-        if state == len(sep):
-          transp.shiftBuffer(index + 1)
-          break
-      else:
-        state = 0
-        result.add(ch)
-        if len(result) == lim:
-          transp.shiftBuffer(index + 1)
-          break
-      inc(index)
-
-    if (state == len(sep)) or (lim == len(result)):
-      break
+  readLoop("stream.transport.readLine"):
+    if transp.atEof():
+      (0, true)
     else:
-      transp.shiftBuffer(transp.offset)
-      var fut = newFuture[void]("stream.transport.readLine")
-      transp.reader = fut
-      if ReadPaused in transp.state:
-        transp.resumeRead()
-      await fut
+      var index = 0
+      while index < transp.offset:
+        let ch = char(transp.buffer[index])
+        index += 1
 
-proc read*(transp: StreamTransport, n = -1): Future[seq[byte]] {.async.} =
+        if sep[state] == ch:
+          inc(state)
+          if state == len(sep):
+            break
+        else:
+          if state != 0:
+            if limit > 0:
+              let missing = min(state, lim - len(result) - 1)
+              result.add(sep[0 ..< missing])
+            else:
+              result.add(sep[0 ..< state])
+            state = 0
+
+          result.add(ch)
+          if len(result) == lim:
+            break
+
+      (index, (state == len(sep)) or (lim == len(result)))
+
+proc read*(transp: StreamTransport): Future[seq[byte]] {.async.} =
+  ## Read all bytes from transport ``transp``.
+  ##
+  ## This procedure allocates buffer seq[byte] and return it as result.
+  readLoop("stream.transport.read"):
+    if transp.atEof():
+      (0, true)
+    else:
+      result.add(transp.buffer.toOpenArray(0, transp.offset - 1))
+      (transp.offset, false)
+
+proc read*(transp: StreamTransport, n: int): Future[seq[byte]] {.async.} =
   ## Read all bytes (n <= 0) or exactly `n` bytes from transport ``transp``.
   ##
   ## This procedure allocates buffer seq[byte] and return it as result.
-  checkClosed(transp)
-  checkPending(transp)
-  var res = newSeq[byte]()
-  while true:
-    if (ReadError in transp.state):
-      raise transp.getError()
-    if (ReadClosed in transp.state) or transp.atEof():
-      result = res
-      break
-
-    if transp.offset > 0:
-      let s = len(res)
-      let o = s + transp.offset
-      if n <= 0:
-        # grabbing all incoming data, until EOF
-        res.setLen(o)
-        copyMem(cast[pointer](addr res[s]), addr(transp.buffer[0]),
-                transp.offset)
-        transp.offset = 0
+  if n <= 0:
+    return await transp.read()
+  else:
+    readLoop("stream.transport.read"):
+      if transp.atEof():
+        (0, true)
       else:
-        let left = n - s
-        if transp.offset >= left:
-          # size of buffer data is more then we need, grabbing only part
-          res.setLen(n)
-          copyMem(cast[pointer](addr res[s]), addr(transp.buffer[0]),
-                  left)
-          transp.shiftBuffer(left)
-          result = res
-          break
-        else:
-          # there not enough data in buffer, grabbing all
-          res.setLen(o)
-          copyMem(cast[pointer](addr res[s]), addr(transp.buffer[0]),
-                  transp.offset)
-          transp.offset = 0
+        let count = min(transp.offset, n - len(result))
+        result.add(transp.buffer.toOpenArray(0, count - 1))
+        (count, len(result) == n)
 
-    var fut = newFuture[void]("stream.transport.read")
-    transp.reader = fut
-    if ReadPaused in transp.state:
-      transp.resumeRead()
-    await fut
-
-proc consume*(transp: StreamTransport, n = -1): Future[int] {.async.} =
-  ## Consume all bytes (n == -1) or ``n`` bytes from transport ``transp``.
+proc consume*(transp: StreamTransport): Future[int] {.async.} =
+  ## Consume all bytes from transport ``transp`` and discard it.
   ##
-  ## Return number of bytes actually consumed
-  checkClosed(transp)
-  checkPending(transp)
+  ## Return number of bytes actually consumed and discarded.
+  readLoop("stream.transport.consume"):
+    if transp.atEof():
+      (0, true)
+    else:
+      result += transp.offset
+      (transp.offset, false)
 
-  result = 0
-  while true:
-    if (ReadError in transp.state):
-      raise transp.getError()
-    if ReadClosed in transp.state or transp.atEof():
-      break
-
-    if transp.offset > 0:
-      if n <= 0:
-        # consume all incoming data, until EOF
-        result += transp.offset
-        transp.offset = 0
+proc consume*(transp: StreamTransport, n: int): Future[int] {.async.} =
+  ## Consume all bytes (n <= 0) or ``n`` bytes from transport ``transp`` and
+  ## discard it.
+  ##
+  ## Return number of bytes actually consumed and discarded.
+  if n <= 0:
+    return await transp.consume()
+  else:
+    readLoop("stream.transport.consume"):
+      if transp.atEof():
+        (0, true)
       else:
-        let left = n - result
-        if transp.offset >= left:
-          # size of buffer data is more then we need, consume only part
-          result += left
-          transp.shiftBuffer(left)
-          break
-        else:
-          # there not enough data in buffer, consume all
-          result += transp.offset
-          transp.offset = 0
+        let count = min(transp.offset, n - result)
+        result += count
+        (count, result == n)
 
-    var fut = newFuture[void]("stream.transport.consume")
-    transp.reader = fut
-    if ReadPaused in transp.state:
-      transp.resumeRead()
-    await fut
+proc readMessage*(transp: StreamTransport,
+                  predicate: ReadMessagePredicate) {.async.} =
+  ## Read all bytes from transport ``transp`` until ``predicate`` callback
+  ## will not be satisfied.
+  ##
+  ## ``predicate`` callback should return tuple ``(consumed, result)``, where
+  ## ``consumed`` is the number of bytes processed and ``result`` is a
+  ## completion flag (``true`` if readMessage() should stop reading data,
+  ## or ``false`` if readMessage() should continue to read data from transport).
+  ##
+  ## ``predicate`` callback must copy all the data from ``data`` array and
+  ## return number of bytes it is going to consume.
+  ## ``predicate`` callback will receive (zero-length) openarray, if transport
+  ## is at EOF.
+  readLoop("stream.transport.readMessage"):
+    if transp.offset == 0:
+      if transp.atEof():
+        predicate([])
+      else:
+        # Case, when transport's buffer is not yet filled with data.
+        (0, false)
+    else:
+      predicate(transp.buffer.toOpenArray(0, transp.offset - 1))
 
 proc join*(transp: StreamTransport): Future[void] =
   ## Wait until ``transp`` will not be closed.

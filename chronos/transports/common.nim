@@ -98,6 +98,8 @@ type
     code*: OSErrorCode
   TransportNoSupport* = object of TransportError
     ## Transport's capability not supported exception
+  TransportUseClosedError* = object of TransportError
+    ## Usage after transport close exception
 
   TransportState* = enum
     ## Transport's state
