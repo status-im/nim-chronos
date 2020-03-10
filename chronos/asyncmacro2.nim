@@ -30,7 +30,7 @@ template createCb(retFutureSym, iteratorNameSym,
 
   var nameIterVar = iteratorNameSym
   {.push stackTrace: off.}
-  proc identName(udata: pointer = nil) {.closure.} =
+  proc identName(udata: pointer = nil) {.closure, gcsafe.} =
     try:
       if not(nameIterVar.finished()):
         var next = nameIterVar()
@@ -48,7 +48,7 @@ template createCb(retFutureSym, iteratorNameSym,
         else:
           {.gcsafe.}:
             {.push hint[ConvFromXtoItselfNotNeeded]: off.}
-            next.callback = CallbackFunc(identName)
+            next.callback = identName
             {.pop.}
     except CancelledError:
       retFutureSym.cancel()

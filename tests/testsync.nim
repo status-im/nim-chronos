@@ -11,8 +11,8 @@ import ../chronos
 when defined(nimHasUsed): {.used.}
 
 suite "Asynchronous sync primitives test suite":
-  var testLockResult = ""
-  var testEventResult = ""
+  var testLockResult {.threadvar.}: string
+  var testEventResult {.threadvar.}: string
   var testQueue1Result = 0
   var testQueue2Result = 0
   var testQueue3Result = 0
