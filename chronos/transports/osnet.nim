@@ -625,6 +625,9 @@ when defined(linux):
       iov: IOVec
       req: NLReq
       address: SockAddr_nl
+
+    type TIovLen = type iov.iov_len
+
     address.family = cushort(AF_NETLINK)
     req.hdr.nlmsg_len = NLMSG_LENGTH(sizeof(RtGenMsg))
     req.hdr.nlmsg_type = ntype
@@ -633,12 +636,12 @@ when defined(linux):
     req.hdr.nlmsg_pid = cast[uint32](pid)
     req.msg.rtgen_family = byte(AF_PACKET)
     iov.iov_base = cast[pointer](addr req)
-    iov.iov_len = cast[csize](req.hdr.nlmsg_len)
+    iov.iov_len = cast[TIovLen](req.hdr.nlmsg_len)
     rmsg.msg_iov = addr iov
     rmsg.msg_iovlen = 1
     rmsg.msg_name = cast[pointer](addr address)
     rmsg.msg_namelen = Socklen(sizeof(SockAddr_nl))
-    let res = posix.sendmsg(fd, addr rmsg, 0)
+    let res = posix.sendmsg(fd, addr rmsg, 0).TIovLen
     if res == iov.iov_len:
       result = true
 
@@ -650,6 +653,8 @@ when defined(linux):
       iov: IOVec
       address: SockAddr_nl
       buffer: array[64, byte]
+
+    type TIovLen = type iov.iov_len
 
     var req = cast[ptr NlRouteReq](addr buffer[0])
 
@@ -680,12 +685,12 @@ when defined(linux):
       req.msg.rtm_dst_len = 16 * 8
 
     iov.iov_base = cast[pointer](addr buffer[0])
-    iov.iov_len = cast[csize](req.hdr.nlmsg_len)
+    iov.iov_len = cast[TIovLen](req.hdr.nlmsg_len)
     rmsg.msg_iov = addr iov
     rmsg.msg_iovlen = 1
     rmsg.msg_name = cast[pointer](addr address)
     rmsg.msg_namelen = Socklen(sizeof(SockAddr_nl))
-    let res = posix.sendmsg(fd, addr rmsg, 0)
+    let res = posix.sendmsg(fd, addr rmsg, 0).TIovLen
     if res == iov.iov_len:
       result = true
 
