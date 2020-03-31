@@ -701,7 +701,7 @@ proc allFutures*[T](futs: varargs[Future[T]]): Future[void] =
 
   return retFuture
 
-proc allCompleted*[T](futs: varargs[Future[T]]): Future[seq[Future[T]]] =
+proc allFinished*[T](futs: varargs[Future[T]]): Future[seq[Future[T]]] =
   ## Returns a future which will complete only when all futures in ``futs``
   ## will be completed, failed or canceled.
   ##
