@@ -701,6 +701,43 @@ proc allFutures*[T](futs: varargs[Future[T]]): Future[void] =
 
   return retFuture
 
+proc allCompleted*[T](futs: varargs[Future[T]]): Future[seq[Future[T]]] =
+  ## Returns a future which will complete only when all futures in ``futs``
+  ## will be completed, failed or canceled.
+  ##
+  ## Returned sequence will hold all the Future[T] objects passed to
+  ## ``allCompleted`` with the order preserved.
+  ##
+  ## If the argument is empty, the returned future COMPLETES immediately.
+  ##
+  ## On cancel all the awaited futures ``futs`` WILL NOT BE cancelled.
+  var retFuture = newFuture[seq[Future[T]]]("chronos.allCompleted()")
+  let totalFutures = len(futs)
+  var completedFutures = 0
+
+  var nfuts = @futs
+
+  proc cb(udata: pointer) {.gcsafe.} =
+    if not(retFuture.finished()):
+      inc(completedFutures)
+      if completedFutures == totalFutures:
+        retFuture.complete(nfuts)
+
+  proc cancellation(udata: pointer) {.gcsafe.} =
+    # On cancel we remove all our callbacks only.
+    for i in 0..<len(nfuts):
+      if not(nfuts[i].finished()):
+        nfuts[i].removeCallback(cb)
+
+  for fut in nfuts:
+    fut.addCallback(cb)
+
+  retFuture.cancelCallback = cancellation
+  if len(nfuts) == 0:
+    retFuture.complete(nfuts)
+
+  return retFuture
+
 proc one*[T](futs: varargs[Future[T]]): Future[Future[T]] =
   ## Returns a future which will complete and return completed Future[T] inside,
   ## when one of the futures in ``futs`` will be completed, failed or canceled.
