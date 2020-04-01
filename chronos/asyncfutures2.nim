@@ -711,7 +711,7 @@ proc allFinished*[T](futs: varargs[Future[T]]): Future[seq[Future[T]]] =
   ## If the argument is empty, the returned future COMPLETES immediately.
   ##
   ## On cancel all the awaited futures ``futs`` WILL NOT BE cancelled.
-  var retFuture = newFuture[seq[Future[T]]]("chronos.allCompleted()")
+  var retFuture = newFuture[seq[Future[T]]]("chronos.allFinished()")
   let totalFutures = len(futs)
   var completedFutures = 0
 
@@ -725,9 +725,9 @@ proc allFinished*[T](futs: varargs[Future[T]]): Future[seq[Future[T]]] =
 
   proc cancellation(udata: pointer) {.gcsafe.} =
     # On cancel we remove all our callbacks only.
-    for i in 0..<len(nfuts):
-      if not(nfuts[i].finished()):
-        nfuts[i].removeCallback(cb)
+    for fut in nfuts.mitems():
+      if not(fut.finished()):
+        fut.removeCallback(cb)
 
   for fut in nfuts:
     fut.addCallback(cb)
