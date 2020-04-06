@@ -693,10 +693,13 @@ proc allFutures*[T](futs: varargs[Future[T]]): Future[void] =
         nfuts[i].removeCallback(cb)
 
   for fut in nfuts:
-    fut.addCallback(cb)
+    if not(fut.finished()):
+      fut.addCallback(cb)
+    else:
+      inc(completedFutures)
 
   retFuture.cancelCallback = cancellation
-  if len(nfuts) == 0:
+  if len(nfuts) == 0 or len(nfuts) == completedFutures:
     retFuture.complete()
 
   return retFuture
@@ -730,10 +733,13 @@ proc allFinished*[T](futs: varargs[Future[T]]): Future[seq[Future[T]]] =
         fut.removeCallback(cb)
 
   for fut in nfuts:
-    fut.addCallback(cb)
+    if not(fut.finished()):
+      fut.addCallback(cb)
+    else:
+      inc(completedFutures)
 
   retFuture.cancelCallback = cancellation
-  if len(nfuts) == 0:
+  if len(nfuts) == 0 or len(nfuts) == completedFutures:
     retFuture.complete(nfuts)
 
   return retFuture
@@ -744,7 +750,7 @@ proc one*[T](futs: varargs[Future[T]]): Future[Future[T]] =
   ##
   ## If the argument is empty, the returned future FAILS immediately.
   ##
-  ## On success returned Future will hold index in ``futs`` array.
+  ## On success returned Future will hold finished Future[T].
   ##
   ## On cancel futures in ``futs`` WILL NOT BE cancelled.
   var retFuture = newFuture[Future[T]]("chronos.one()")
@@ -768,6 +774,12 @@ proc one*[T](futs: varargs[Future[T]]): Future[Future[T]] =
     for i in 0..<len(nfuts):
       if not(nfuts[i].finished()):
         nfuts[i].removeCallback(cb)
+
+  # If one of the Future[T] already finished we return it as result
+  for fut in nfuts:
+    if fut.finished():
+      retFuture.complete(fut)
+      return retFuture
 
   for fut in nfuts:
     fut.addCallback(cb)
