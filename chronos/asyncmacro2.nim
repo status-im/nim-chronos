@@ -47,9 +47,7 @@ template createCb(retFutureSym, iteratorNameSym,
             raise newException(AssertionError, msg % strName)
         else:
           {.gcsafe.}:
-            {.push hint[ConvFromXtoItselfNotNeeded]: off.}
-            next.callback = identName
-            {.pop.}
+            next.addCallback(identName)
     except CancelledError:
       retFutureSym.cancel()
     except CatchableError as exc:

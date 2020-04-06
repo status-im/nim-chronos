@@ -56,6 +56,23 @@ suite "Asynchronous issues test suite":
       discard await withTimeout(sleepAsync(4.milliseconds), 4.milliseconds)
     result = true
 
+  proc testMultipleAwait(): Future[bool] {.async.} =
+    var promise = newFuture[void]()
+    var checkstr = ""
+
+    proc believers(name: string) {.async.} =
+      await promise
+      checkstr = checkstr & name
+
+    asyncCheck believers("Foo")
+    asyncCheck believers("Bar")
+    asyncCheck believers("Baz")
+
+    await sleepAsync(100.milliseconds)
+    promise.complete()
+    await sleepAsync(100.milliseconds)
+    result = (checkstr == "FooBarBaz")
+
   test "Issue #6":
     check waitFor(issue6()) == true
 
@@ -64,3 +81,6 @@ suite "Asynchronous issues test suite":
 
   test "Callback-race double completion [withTimeout()] test":
     check waitFor(testWithTimeout()) == true
+
+  test "Multiple await on single future test [Nim's issue #13889]":
+    check waitFor(testMultipleAwait()) == true
