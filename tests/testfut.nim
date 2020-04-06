@@ -520,6 +520,21 @@ suite "Future[T] behavior test suite":
     # 10 * 10 completed futures = 100
     result += completedFutures
 
+  proc testAllCompleted(operation: int): bool =
+    proc client1(): Future[int] {.async.} =
+      result = 1
+
+    proc client2(): Future[int] {.async.} =
+      if true:
+        raise newException(ValueError, "")
+
+    if operation == 1:
+      var fut = allFutures(client1(), client2())
+      result = fut.finished() and not(fut.failed())
+    elif operation == 2:
+      var fut = allFinished(client1(), client2())
+      result = fut.finished() and not(fut.failed()) and (len(fut.read()) == 2)
+
   proc testOneZero(): bool =
     var tseq = newSeq[Future[int]]()
     var fut = one(tseq)
@@ -644,6 +659,30 @@ suite "Future[T] behavior test suite":
       return false
 
     result = true
+
+  proc testOneCompleted(): bool =
+    proc client1(): Future[int] {.async.} =
+      result = 1
+
+    proc client2(): Future[int] {.async.} =
+      if true:
+        raise newException(ValueError, "")
+
+    proc client3(): Future[int] {.async.} =
+      await sleepAsync(100.milliseconds)
+      result = 3
+
+    var f10 = client1()
+    var f20 = client2()
+    var f30 = client3()
+    var fut1 = one(f30, f10, f20)
+    var f11 = client1()
+    var f21 = client2()
+    var f31 = client3()
+    var fut2 = one(f31, f21, f11)
+
+    result = fut1.finished() and not(fut1.failed()) and fut1.read() == f10 and
+             fut2.finished() and not(fut2.failed()) and fut2.read() == f21
 
   proc testCancelIter(): bool =
     var completed = 0
@@ -854,6 +893,10 @@ suite "Future[T] behavior test suite":
     check testAllFuturesVarargs() == 30
   test "allFutures(varargs) test":
     check testAllFuturesSeq() == 300
+  test "allFutures() already completed test":
+    check testAllCompleted(1) == true
+  test "allFinished() already completed test":
+    check testAllCompleted(2) == true
 
   test "one(zero) test":
     check testOneZero() == true
@@ -861,6 +904,8 @@ suite "Future[T] behavior test suite":
     check testOneVarargs() == true
   test "one(seq) test":
     check testOneSeq() == true
+  test "one() already completed test":
+    check testOneCompleted() == true
 
   test "cancel() async procedure test":
     check testCancelIter() == true
