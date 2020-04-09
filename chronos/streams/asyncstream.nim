@@ -768,10 +768,11 @@ proc close*(rw: AsyncStreamRW) =
   if rw.closed():
     raise newAsyncStreamIncorrectError("Stream is already closed!")
 
+  rw.state = AsyncStreamState.Closed
+
   proc continuation(udata: pointer) =
     if not isNil(rw.udata):
       GC_unref(cast[ref int](rw.udata))
-    rw.state = AsyncStreamState.Closed
     if not(rw.future.finished()):
       rw.future.complete()
     when rw is AsyncStreamReader:
