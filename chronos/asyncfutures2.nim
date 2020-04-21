@@ -490,13 +490,15 @@ proc `and`*[T, Y](fut1: Future[T], fut2: Future[Y]): Future[void] {.
   retFuture.cancelCallback = cancellation
   return retFuture
 
-proc `or`*[T, Y](fut1: Future[T], fut2: Future[Y]): Future[void] {.
-  deprecated: "Use one[T](varargs[Future[T]])".} =
+proc `or`*[T, Y](fut1: Future[T], fut2: Future[Y]): Future[void] =
   ## Returns a future which will complete once either ``fut1`` or ``fut2``
   ## complete.
   ##
+  ## If ``fut1`` or ``fut2`` will fail, result future will also fail with an
+  ## error stored in ``fut1`` or ``fut2`` respectively.
+  ##
   ## If cancelled, ``fut1`` and ``fut2`` futures WILL NOT BE cancelled.
-  var retFuture = newFuture[void]("chronos.`or`")
+  var retFuture = newFuture[void]("chronos.or")
   proc cb(udata: pointer) {.gcsafe.} =
     if not(retFuture.finished()):
       var fut = cast[FutureBase](udata)
@@ -504,15 +506,32 @@ proc `or`*[T, Y](fut1: Future[T], fut2: Future[Y]): Future[void] {.
         fut2.removeCallback(cb)
       else:
         fut1.removeCallback(cb)
-      if fut.failed(): retFuture.fail(fut.error)
-      else: retFuture.complete()
-  fut1.callback = cb
-  fut2.callback = cb
+      if fut.failed():
+        retFuture.fail(fut.error)
+      else:
+        retFuture.complete()
 
   proc cancellation(udata: pointer) {.gcsafe.} =
     # On cancel we remove all our callbacks only.
     fut1.removeCallback(cb)
     fut2.removeCallback(cb)
+
+  if fut1.finished():
+    if fut1.failed():
+      retFuture.fail(fut1.error)
+    else:
+      retFuture.complete()
+    return retFuture
+
+  if fut2.finished():
+    if fut2.failed():
+      retFuture.fail(fut2.error)
+    else:
+      retFuture.complete()
+    return retFuture
+
+  fut1.addCallback(cb)
+  fut2.addCallback(cb)
 
   retFuture.cancelCallback = cancellation
   return retFuture

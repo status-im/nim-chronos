@@ -684,6 +684,76 @@ suite "Future[T] behavior test suite":
     result = fut1.finished() and not(fut1.failed()) and fut1.read() == f10 and
              fut2.finished() and not(fut2.failed()) and fut2.read() == f21
 
+  proc waitForNeLocal[T](fut: Future[T]): Future[T] =
+    ## **Blocks** the current thread until the specified future completes.
+    while not(fut.finished()):
+      poll()
+    result = fut
+
+  proc testOr(): bool =
+
+    proc client1() {.async.} =
+      await sleepAsync(200.milliseconds)
+
+    proc client2() {.async.} =
+      await sleepAsync(300.milliseconds)
+
+    proc client3() {.async.} =
+      await sleepAsync(100.milliseconds)
+      if true:
+        raise newException(ValueError, "")
+
+    proc client4() {.async.} =
+      await sleepAsync(400.milliseconds)
+      if true:
+        raise newException(KeyError, "")
+
+    var f1 = waitForNeLocal(client1() or client2())
+    var f2 = waitForNeLocal(client2() or client1())
+    var f3 = waitForNeLocal(client1() or client4())
+    var f4 = waitForNeLocal(client2() or client4())
+    var f5 = waitForNeLocal(client1() or client3())
+    var f6 = waitForNeLocal(client3() or client1())
+    var f7 = waitForNeLocal(client2() or client4())
+    var f8 = waitForNeLocal(client4() or client2())
+    var f9 = waitForNeLocal(client3() or client4())
+    var f10 = waitForNeLocal(client4() or client3())
+
+    result = (f1.finished() and not(f1.failed())) and
+             (f2.finished() and not(f2.failed())) and
+             (f3.finished() and not(f3.failed())) and
+             (f4.finished() and not(f4.failed())) and
+             (f5.finished() and f5.failed()) and
+             (f6.finished() and f6.failed()) and
+             (f7.finished() and not(f7.failed())) and
+             (f8.finished() and not(f8.failed())) and
+             (f9.finished() and f9.failed()) and
+             (f10.finished() and f10.failed())
+
+  proc testOrCompleted(): bool =
+    proc client1(): Future[int] {.async.} =
+      result = 1
+    proc client2(): Future[int] {.async.} =
+      if true:
+        raise newException(ValueError, "")
+    proc client3(): Future[int] {.async.} =
+      await sleepAsync(100.milliseconds)
+      result = 3
+
+    var f1 = client1() or client2()
+    var f2 = client1() or client3()
+    var f3 = client2() or client3()
+    var f4 = client2() or client1()
+    var f5 = client3() or client1()
+    var f6 = client3() or client2()
+
+    result = (f1.finished() and not(f1.failed())) and
+             (f2.finished() and not(f2.failed())) and
+             (f3.finished() and f3.failed()) and
+             (f4.finished() and f4.failed()) and
+             (f5.finished() and not(f5.failed())) and
+             (f6.finished() and f6.failed())
+
   proc testCancelIter(): bool =
     var completed = 0
 
@@ -906,6 +976,11 @@ suite "Future[T] behavior test suite":
     check testOneSeq() == true
   test "one() already completed test":
     check testOneCompleted() == true
+
+  test "or() test":
+    check testOr() == true
+  test "or() already completed test":
+    check testOrCompleted() == true
 
   test "cancel() async procedure test":
     check testCancelIter() == true
