@@ -494,8 +494,13 @@ proc `or`*[T, Y](fut1: Future[T], fut2: Future[Y]): Future[void] =
   ## Returns a future which will complete once either ``fut1`` or ``fut2``
   ## complete.
   ##
-  ## If ``fut1`` or ``fut2`` will fail, result future will also fail with an
-  ## error stored in ``fut1`` or ``fut2`` respectively.
+  ## If ``fut1`` or ``fut2`` future is failed, the result future will also be
+  ## failed with an error stored in ``fut1`` or ``fut2`` respectively.
+  ##
+  ## If both ``fut1`` and ``fut2`` future are completed or failed, the result
+  ## future will depend on the state of ``fut1`` future. So if ``fut1`` future
+  ## is failed, the result future will also be failed, if ``fut1`` future is
+  ## completed, the result future will also be completed.
   ##
   ## If cancelled, ``fut1`` and ``fut2`` futures WILL NOT BE cancelled.
   var retFuture = newFuture[void]("chronos.or")
