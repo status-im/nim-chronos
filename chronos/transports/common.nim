@@ -253,14 +253,13 @@ proc initTAddress*(address: string, port: int): TransportAddress {.inline.} =
 proc initTAddress*(address: IpAddress, port: Port): TransportAddress =
   ## Initialize ``TransportAddress`` with net.nim ``IpAddress`` and
   ## port number ``port``.
-  if address.family == IpAddressFamily.IPv4:
+  case address.family
+  of IpAddressFamily.IPv4:
     result = TransportAddress(family: AddressFamily.IPv4, port: port)
     result.address_v4 = address.address_v4
-  elif address.family == IpAddressFamily.IPv6:
+  of IpAddressFamily.IPv6:
     result = TransportAddress(family: AddressFamily.IPv6, port: port)
     result.address_v6 = address.address_v6
-  else:
-    raise newException(TransportAddressError, "Incorrect address family!")
 
 proc getAddrInfo(address: string, port: Port, domain: Domain,
                  sockType: SockType = SockType.SOCK_STREAM,
