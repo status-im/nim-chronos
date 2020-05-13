@@ -467,11 +467,11 @@ proc windowsAnyAddressFix*(a: TransportAddress): TransportAddress {.inline.} =
 
 template checkClosed*(t: untyped) =
   if (ReadClosed in (t).state) or (WriteClosed in (t).state):
-    raise newException(TransportError, "Transport is already closed!")
+    raise newException(TransportUseClosedError, "Transport is already closed!")
 
 template checkClosed*(t: untyped, future: untyped) =
   if (ReadClosed in (t).state) or (WriteClosed in (t).state):
-    future.fail(newException(TransportError, "Transport is already closed!"))
+    future.fail(newException(TransportUseClosedError, "Transport is already closed!"))
     return future
 
 template checkWriteEof*(t: untyped, future: untyped) =
