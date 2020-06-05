@@ -629,8 +629,9 @@ elif unixPlatform:
     let loop = getGlobalDispatcher()
 
     proc continuation(udata: pointer) =
-      unregister(fd)
-      close(SocketHandle(fd))
+      if SocketHandle(fd) in loop.selector:
+        unregister(fd)
+        close(SocketHandle(fd))
       if not isNil(aftercb):
         aftercb(nil)
 
