@@ -1057,62 +1057,75 @@ suite "Stream Transport test suite":
     await server.join()
     result = c7
 
-  for i in 0..<len(addresses):
-    test prefixes[i] & "close(transport) test":
-      check waitFor(testCloseTransport(addresses[i])) == 1
-    test prefixes[i] & m8:
-      check waitFor(test8(addresses[i])) == 1
-    test prefixes[i] & m7:
-      check waitFor(test7(addresses[i])) == 1
-    test prefixes[i] & m11:
-      check waitFor(test11(addresses[i])) == 1
-    test prefixes[i] & m12:
-      check waitFor(test12(addresses[i])) == 1
-    test prefixes[i] & m13:
-      check waitFor(test13(addresses[i])) == 1
-    test prefixes[i] & m14:
-      check waitFor(test14(addresses[i])) == 1
-    test prefixes[i] & m1:
-      check waitFor(test1(addresses[i])) == ClientsCount * MessagesCount
-    test prefixes[i] & m2:
-      check waitFor(test2(addresses[i])) == ClientsCount * MessagesCount
-    test prefixes[i] & m3:
-      check waitFor(test3(addresses[i])) == ClientsCount * MessagesCount
-    test prefixes[i] & m5:
-      check waitFor(testWR(addresses[i])) == ClientsCount * MessagesCount
-    test prefixes[i] & m6:
-      check waitFor(testWCR(addresses[i])) == ClientsCount * MessagesCount
-    test prefixes[i] & m4:
-      when defined(windows):
-        if addresses[i].family == AddressFamily.IPv4:
-          check waitFor(testSendFile(addresses[i])) == FilesCount
-        else:
-          skip()
-      else:
-        check waitFor(testSendFile(addresses[i])) == FilesCount
-    test prefixes[i] & m15:
-      var address: TransportAddress
-      if addresses[i].family == AddressFamily.Unix:
-        address = initTAddress("/tmp/notexistingtestpipe")
-      else:
-        address = initTAddress("127.0.0.1:43335")
-      check waitFor(testConnectionRefused(address)) == true
-    test prefixes[i] & m16:
-      check waitFor(test16(addresses[i])) == 1
-    test prefixes[i] & "Connection reset test on send() only":
-      check waitFor(testWriteConnReset(addresses[i])) == 1
-    test prefixes[i] & m17:
-      if addresses[i].family == AddressFamily.IPv4:
-        check waitFor(testAnyAddress()) == true
-      else:
-        skip()
-    test prefixes[i] & "write() return value test (issue #73)":
-      check waitFor(testWriteReturn(addresses[i])) == true
-    test prefixes[i] & "readLine() partial separator test":
-      check waitFor(testReadLine(addresses[i])) == true
-    test prefixes[i] & "readMessage() test":
-      check waitFor(testReadMessage(addresses[i])) == true
+  proc testAcceptClose(address: TransportAddress): Future[bool] {.async.} =
+    var server = createStreamServer(address, nil, flags = {ReuseAddr})
+    proc acceptTask(server: StreamServer) {.async.} =
+      let transp = await server.accept()
+      await transp.closeWait()
 
+    asyncCheck acceptTask(server)
+
+    await server.closeWait()
+
+
+  for i in 0..<len(addresses):
+    # test prefixes[i] & "close(transport) test":
+    #   check waitFor(testCloseTransport(addresses[i])) == 1
+    # test prefixes[i] & m8:
+    #   check waitFor(test8(addresses[i])) == 1
+    # test prefixes[i] & m7:
+    #   check waitFor(test7(addresses[i])) == 1
+    # test prefixes[i] & m11:
+    #   check waitFor(test11(addresses[i])) == 1
+    # test prefixes[i] & m12:
+    #   check waitFor(test12(addresses[i])) == 1
+    # test prefixes[i] & m13:
+    #   check waitFor(test13(addresses[i])) == 1
+    # test prefixes[i] & m14:
+    #   check waitFor(test14(addresses[i])) == 1
+    # test prefixes[i] & m1:
+    #   check waitFor(test1(addresses[i])) == ClientsCount * MessagesCount
+    # test prefixes[i] & m2:
+    #   check waitFor(test2(addresses[i])) == ClientsCount * MessagesCount
+    # test prefixes[i] & m3:
+    #   check waitFor(test3(addresses[i])) == ClientsCount * MessagesCount
+    # test prefixes[i] & m5:
+    #   check waitFor(testWR(addresses[i])) == ClientsCount * MessagesCount
+    # test prefixes[i] & m6:
+    #   check waitFor(testWCR(addresses[i])) == ClientsCount * MessagesCount
+    # test prefixes[i] & m4:
+    #   when defined(windows):
+    #     if addresses[i].family == AddressFamily.IPv4:
+    #       check waitFor(testSendFile(addresses[i])) == FilesCount
+    #     else:
+    #       skip()
+    #   else:
+    #     check waitFor(testSendFile(addresses[i])) == FilesCount
+    # test prefixes[i] & m15:
+    #   var address: TransportAddress
+    #   if addresses[i].family == AddressFamily.Unix:
+    #     address = initTAddress("/tmp/notexistingtestpipe")
+    #   else:
+    #     address = initTAddress("127.0.0.1:43335")
+    #   check waitFor(testConnectionRefused(address)) == true
+    # test prefixes[i] & m16:
+    #   check waitFor(test16(addresses[i])) == 1
+    # test prefixes[i] & "Connection reset test on send() only":
+    #   check waitFor(testWriteConnReset(addresses[i])) == 1
+    # test prefixes[i] & m17:
+    #   if addresses[i].family == AddressFamily.IPv4:
+    #     check waitFor(testAnyAddress()) == true
+    #   else:
+    #     skip()
+    # test prefixes[i] & "write() return value test (issue #73)":
+    #   check waitFor(testWriteReturn(addresses[i])) == true
+    # test prefixes[i] & "readLine() partial separator test":
+    #   check waitFor(testReadLine(addresses[i])) == true
+    # test prefixes[i] & "readMessage() test":
+    #   check waitFor(testReadMessage(addresses[i])) == true
+
+  test "accept()/close() test":
+    check waitFor(testAcceptClose(addresses[i])) == true
   test "Servers leak test":
     check getTracker("stream.server").isLeaked() == false
   test "Transports leak test":

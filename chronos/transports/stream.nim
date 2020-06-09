@@ -691,7 +691,11 @@ when defined(windows):
       sock = createAsyncSocket(raddress.getDomain(), SockType.SOCK_STREAM,
                                proto)
       if sock == asyncInvalidSocket:
-        retFuture.fail(getTransportOsError(osLastError()))
+        let err = osLastError()
+        if int32(err) == ERROR_TOO_MANY_OPEN_FILES:
+          retFuture.fail(getTransportTooManyError())
+        else:
+          retFuture.fail(getTransportOsError(osLastError()))
         return retFuture
 
       if not bindToDomain(sock, raddress.getDomain()):
@@ -758,6 +762,8 @@ when defined(windows):
             if int32(err) == ERROR_PIPE_BUSY:
               discard setTimer(Moment.fromNow(50.milliseconds),
                                pipeContinuation, nil)
+            elif int32(err) == ERROR_TOO_MANY_OPEN_FILES:
+              retFuture.fail(getTransportTooManyError())
             else:
               retFuture.fail(getTransportOsError(err))
           else:
@@ -961,6 +967,153 @@ when defined(windows):
   proc resumeAccept(server: StreamServer) {.inline.} =
     if not server.apending:
       server.aovl.data.cb(addr server.aovl)
+
+  proc accept*(server: StreamServer): Future[StreamTransport] =
+    var retFuture = newFuture[StreamTransport]("stream.server.accept")
+    let prevStatus = server.status
+
+    doAssert(server.status != ServerStatus.Running,
+             "You could not use accept() if server was already started")
+
+    if server.status == ServerStatus.Closed:
+      retFuture.fail(getServerUseClosedError())
+      return retFuture
+
+    proc continuationSocket(udata: pointer) {.gcsafe.} =
+      var ovl = cast[PtrCustomOverlapped](udata)
+      var server = cast[StreamServer](ovl.data.udata)
+      var loop = getGlobalDispatcher()
+
+      server.apending = false
+      if ovl.data.errCode == OSErrorCode(-1):
+        if setsockopt(SocketHandle(server.asock), cint(SOL_SOCKET),
+                      cint(SO_UPDATE_ACCEPT_CONTEXT), addr server.sock,
+                      SockLen(sizeof(SocketHandle))) != 0'i32:
+          let err = OSErrorCode(wsaGetLastError())
+          server.asock.closeSocket()
+          retFuture.fail(getTransportOsError(err))
+        else:
+          var ntransp: StreamTransport
+          if not isNil(server.init):
+            let transp = server.init(server, server.asock)
+            ntransp = newStreamSocketTransport(server.asock,
+                                               server.bufferSize,
+                                               transp)
+          else:
+            ntransp = newStreamSocketTransport(server.asock,
+                                               server.bufferSize, nil)
+          # Start tracking transport
+          trackStream(ntransp)
+          retFuture.complete(ntransp)
+      elif int32(ovl.data.errCode) == ERROR_OPERATION_ABORTED:
+        # CancelIO() interrupt or close.
+        server.asock.closeSocket()
+        if server.status in {ServerStatus.Closed, ServerStatus.Stopped}:
+          # Stop tracking server
+          if not(server.loopFuture.finished()):
+            untrackServer(server)
+            server.loopFuture.complete()
+            if not isNil(server.udata) and GCUserData in server.flags:
+              GC_unref(cast[ref int](server.udata))
+            GC_unref(server)
+      else:
+        server.asock.closeSocket()
+        raiseTransportOsError(ovl.data.errCode)
+
+    proc cancellationSocket(udata: pointer) {.gcsafe.} =
+      server.asock.closeSocket()
+
+
+    proc continuationPipe(udata: pointer) {.gcsafe.} =
+      discard
+
+    proc cancellationPipe(udata: pointer) {.gcsafe.} =
+      discard
+
+    if server.local.family in {AddressFamily.IPv4, AddressFamily.IPv6}:
+      # TCP Sockets part
+      server.asock = createAsyncSocket(server.domain, SockType.SOCK_STREAM,
+                                       Protocol.IPPROTO_TCP)
+      if server.asock == asyncInvalidSocket:
+        let err = osLastError()
+        if int32(err) == ERROR_TOO_MANY_OPEN_FILES:
+          retFuture.fail(getTransportTooManyError())
+        else:
+          retFuture.fail(getTransportOsError(err))
+        return retFuture
+
+      var dwBytesReceived = DWORD(0)
+      let dwReceiveDataLength = DWORD(0)
+      let dwLocalAddressLength = DWORD(sizeof(Sockaddr_in6) + 16)
+      let dwRemoteAddressLength = DWORD(sizeof(Sockaddr_in6) + 16)
+
+      server.aovl.data = CompletionData(fd: server.sock,
+                                        cb: continuationSocket,
+                                        udata: cast[pointer](server))
+
+      let res = loop.acceptEx(SocketHandle(server.sock),
+                              SocketHandle(server.asock),
+                              addr server.abuffer[0],
+                              dwReceiveDataLength, dwLocalAddressLength,
+                              dwRemoteAddressLength, addr dwBytesReceived,
+                              cast[POVERLAPPED](addr server.aovl))
+      if not res:
+        let err = osLastError()
+        if int32(err) == ERROR_OPERATION_ABORTED:
+          server.status = prevStatus
+          server.apending = false
+          break
+        elif int32(err) == ERROR_IO_PENDING:
+          discard
+        else:
+          server.status = prevStatus
+          server.apending = false
+          retFuture.fail(getTransportOsError(err))
+
+    elif server.local.family in {AddressFamily.Unix}:
+      # Unix domain sockets emulation via Windows Named pipes part.
+      server.apending = true
+      let pipeSuffix = $cast[cstring](addr server.local.address_un)
+      let pipeName = newWideCString(r"\\.\pipe\" & pipeSuffix[1 .. ^1])
+      var openMode = PIPE_ACCESS_DUPLEX or FILE_FLAG_OVERLAPPED
+      if FirstPipe notin server.flags:
+        openMode = openMode or FILE_FLAG_FIRST_PIPE_INSTANCE
+        server.flags.incl(FirstPipe)
+      let pipeMode = int32(PIPE_TYPE_BYTE or PIPE_READMODE_BYTE or PIPE_WAIT)
+      let pipeHandle = createNamedPipe(pipeName, openMode, pipeMode,
+                                       PIPE_UNLIMITED_INSTANCES,
+                                       DWORD(server.bufferSize),
+                                       DWORD(server.bufferSize),
+                                       DWORD(0), nil)
+      if pipeHandle == INVALID_HANDLE_VALUE:
+        let err = osLastError()
+        if int32(err) == ERROR_TOO_MANY_OPEN_FILES:
+          retFuture.fail(getTransportTooManyError())
+        else:
+          retFuture.fail(getTransportOsError(err))
+        return retFuture
+
+      server.sock = AsyncFD(pipeHandle)
+      server.aovl.data = CompletionData(fd: AsyncFD(pipeHandle),
+                                        cb: continuationPipe,
+                                        udata: cast[pointer](server))
+
+      let res = connectNamedPipe(pipeHandle,
+                                 cast[POVERLAPPED](addr server.aovl))
+      if res == 0:
+        let err = osLastError()
+        if int32(err) == ERROR_OPERATION_ABORTED:
+          discard
+        elif int32(err) == ERROR_IO_PENDING:
+          discard
+        elif int32(err) == ERROR_PIPE_CONNECTED:
+          discard
+        elif int32(err) == ERROR_TOO_MANY_OPEN_FILES:
+          retFuture.fail(getTransportTooManyError())
+        else:
+          retFuture.fail(getTransportOsError(err))
+
+    return retFuture
 
 else:
   import ../sendfile
@@ -1227,7 +1380,11 @@ else:
     sock = createAsyncSocket(address.getDomain(), SockType.SOCK_STREAM,
                              proto)
     if sock == asyncInvalidSocket:
-      retFuture.fail(getTransportOsError(osLastError()))
+      let err = osLastError()
+        if int(err) == EMFILE:
+          retFuture.fail(getTransportTooManyError())
+        else:
+          retFuture.fail(getTransportOsError(err))
       return retFuture
 
     proc continuation(udata: pointer) {.gcsafe.} =
@@ -1323,6 +1480,57 @@ else:
     if WritePaused in transp.state:
       transp.state.excl(WritePaused)
       addWriter(transp.fd, writeStreamLoop, cast[pointer](transp))
+
+  proc accept*(server: StreamServer): Future[StreamTransport] =
+    var retFuture = newFuture[void]("stream.server.accept")
+
+    doAssert(server.status != ServerStatus.Running,
+             "You could not use accept() if server was started with start()")
+    if server.status == ServerStatus.Closed:
+      retFuture.fail(getServerUseClosedError())
+      return retFuture
+
+    proc continuation(udata: pointer) {.gcsafe.} =
+      var
+        saddr: Sockaddr_storage
+        slen: SockLen
+      while true:
+        let res = posix.accept(SocketHandle(server.sock),
+                               cast[ptr SockAddr](addr saddr), addr slen)
+        if int(res) > 0:
+          let sock = wrapAsyncSocket(res)
+          if sock != asyncInvalidSocket:
+            var ntransp: StreamTransport
+            if not isNil(server.init):
+              let transp = server.init(server, sock)
+              ntransp = newStreamSocketTransport(sock, server.bufferSize,
+                                                 transp)
+            else:
+              ntransp = newStreamSocketTransport(sock, server.bufferSize, nil)
+            # Start tracking transport
+            trackStream(ntransp)
+            retFuture.complete(ntransp)
+          else:
+            retFuture.fail(getTransportOsError(err))
+          break
+        else:
+          let err = osLastError()
+          if int(err) == EINTR:
+            continue
+          elif int(err) == EMFILE:
+            retFuture.fail(getTransportTooManyError())
+          else:
+            retFuture.fail(getTransportOsError(err))
+          break
+
+      removeReader(server.sock)
+
+    proc cancellation(udata: pointer) {.gcsafe.} =
+      discard
+
+    addReader(server.sock, continuation, nil)
+    retFuture.cancelCallback = cancellation
+    return retFuture
 
 proc start*(server: StreamServer) =
   ## Starts ``server``.
