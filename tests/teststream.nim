@@ -1075,8 +1075,7 @@ suite "Stream Transport test suite":
     try:
       for i in 0 ..< TestsCount:
         transp = await connect(address)
-        when defined(windows):
-          await sleepAsync(10.milliseconds)
+        await sleepAsync(10.milliseconds)
         await transp.closeWait()
         inc(connected)
       if await withTimeout(acceptFut, 5.seconds):
