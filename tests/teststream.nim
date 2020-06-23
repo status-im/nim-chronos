@@ -1118,25 +1118,39 @@ suite "Stream Transport test suite":
         var transports = newSeq[StreamTransport]()
         try:
           for i in 0 ..< 2:
+            echo "accepting ", i
             let transp = await server.accept()
+            echo "accepted ", i
             transports.add(transp)
         except TransportTooManyError:
+          echo "accepted with proper error"
           var pending = newSeq[Future[void]]()
           for item in transports:
             pending.add(closeWait(item))
           await allFutures(pending)
           return true
+        except CatchableError as exc:
+          echo "accepted without proper error"
+          raise exc
 
       var acceptFut = acceptTask(server)
 
       try:
         for i in 0 ..< 2:
           try:
+            echo "connecting ", i
             let transp = await connect(address)
+            echo "connected ", i
             await sleepAsync(10.milliseconds)
+            echo "closing connection ", i
             await transp.closeWait()
+            echo "closed connection ", i
           except TransportTooManyError:
+            echo "connected with an error"
             break
+          except CatchableError as exc:
+            echo "connected without proper error"
+            raise exc
         if await withTimeout(acceptFut, 5.seconds):
           if acceptFut.finished() and not(acceptFut.failed()):
             if acceptFut.read() == true:

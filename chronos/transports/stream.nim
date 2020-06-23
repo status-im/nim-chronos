@@ -1044,8 +1044,6 @@ when defined(windows):
       elif int32(ovl.data.errCode) in {ERROR_OPERATION_ABORTED,
                                        ERROR_PIPE_NOT_CONNECTED}:
         # CancelIO() interrupt or close call.
-        let sock = server.sock
-        closeHandle(sock)
         retFuture.fail(getServerUseClosedError())
         server.clean()
       else:
@@ -1089,11 +1087,14 @@ when defined(windows):
         let err = osLastError()
         if int32(err) == ERROR_OPERATION_ABORTED:
           server.apending = false
+          retFuture.fail(getServerUseClosedError())
+          return retFuture
         elif int32(err) == ERROR_IO_PENDING:
           discard
         else:
           server.apending = false
           retFuture.fail(getTransportOsError(err))
+          return retFuture
 
       retFuture.cancelCallback = cancellationPipe
 
@@ -1119,13 +1120,16 @@ when defined(windows):
         if int32(err) == ERROR_OPERATION_ABORTED:
           server.apending = false
           retFuture.fail(getServerUseClosedError())
+          return retFuture
         elif int32(err) in {ERROR_IO_PENDING, ERROR_PIPE_CONNECTED}:
           discard
         else:
           server.apending = false
           retFuture.fail(getTransportOsError(err))
+          return retFuture
 
       retFuture.cancelCallback = cancellationPipe
+
     return retFuture
 
 else:
@@ -1525,7 +1529,6 @@ else:
             retFuture.complete(ntransp)
           else:
             retFuture.fail(getTransportOsError(osLastError()))
-          break
         else:
           let err = osLastError()
           if int(err) == EINTR:
@@ -1538,12 +1541,12 @@ else:
             retFuture.fail(getTransportTooManyError())
           else:
             retFuture.fail(getTransportOsError(err))
-          break
+        break
 
       removeReader(server.sock)
 
     proc cancellation(udata: pointer) {.gcsafe.} =
-      discard
+      removeReader(server.sock)
 
     addReader(server.sock, continuation, nil)
     retFuture.cancelCallback = cancellation
