@@ -1109,6 +1109,7 @@ suite "Stream Transport test suite":
       echo "maxFiles = ", maxFiles
       var server = createStreamServer(address, flags = {ReuseAddr})
       let isock = int(server.sock)
+      echo "created server with fd = ", int(server.sock)
       let newMaxFiles = isock + 4
       echo "newMaxFiles = ", newMaxFiles
       setMaxOpenFiles(newMaxFiles)
@@ -1120,7 +1121,7 @@ suite "Stream Transport test suite":
           for i in 0 ..< 2:
             echo "accepting ", i
             let transp = await server.accept()
-            echo "accepted ", i
+            echo "accepted ", i, ", fd = ", int(transp.fd)
             transports.add(transp)
         except TransportTooManyError:
           echo "accepted with proper error"
@@ -1140,7 +1141,7 @@ suite "Stream Transport test suite":
           try:
             echo "connecting ", i
             let transp = await connect(address)
-            echo "connected ", i
+            echo "connected ", i, ", fd = ", int(transp.fd)
             await sleepAsync(10.milliseconds)
             echo "closing connection ", i
             await transp.closeWait()
