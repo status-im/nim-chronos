@@ -1106,10 +1106,13 @@ suite "Stream Transport test suite":
   when not(defined(windows)):
     proc testAcceptTooMany(address: TransportAddress): Future[bool] {.async.} =
       let maxFiles = getMaxOpenFiles()
+      echo "maxFiles = ", maxFiles
       var server = createStreamServer(address, flags = {ReuseAddr})
       let isock = int(server.sock)
       let newMaxFiles = isock + 4
+      echo "newMaxFiles = ", newMaxFiles
       setMaxOpenFiles(newMaxFiles)
+      echo "current maxFiles = ", getMaxOpenFiles()
 
       proc acceptTask(server: StreamServer): Future[bool] {.async.} =
         var transports = newSeq[StreamTransport]()
