@@ -1118,7 +1118,7 @@ suite "Stream Transport test suite":
       proc acceptTask(server: StreamServer): Future[bool] {.async.} =
         var transports = newSeq[StreamTransport]()
         try:
-          for i in 0 ..< 2:
+          for i in 0 ..< 3:
             echo "accepting ", i
             let transp = await server.accept()
             echo "accepted ", i, ", fd = ", int(transp.fd)
@@ -1137,7 +1137,7 @@ suite "Stream Transport test suite":
       var acceptFut = acceptTask(server)
 
       try:
-        for i in 0 ..< 2:
+        for i in 0 ..< 3:
           try:
             echo "connecting ", i
             let transp = await connect(address)
