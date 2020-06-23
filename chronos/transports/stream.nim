@@ -273,6 +273,20 @@ proc failPendingWriteQueue(queue: var Deque[StreamVector],
     if not(vector.writer.finished()):
       vector.writer.fail(error)
 
+proc clean(server: StreamServer) {.inline.} =
+  if not(server.loopFuture.finished()):
+    untrackServer(server)
+    server.loopFuture.complete()
+    if not isNil(server.udata) and GCUserData in server.flags:
+      GC_unref(cast[ref int](server.udata))
+    GC_unref(server)
+
+proc clean(transp: StreamTransport) {.inline.} =
+  if not(transp.future.finished()):
+    untrackStream(transp)
+    transp.future.complete()
+    GC_unref(transp)
+
 when defined(windows):
 
   template zeroOvelappedOffset(t: untyped) =
@@ -539,11 +553,7 @@ when defined(windows):
 
         if ReadClosed in transp.state:
           # Stop tracking transport
-          untrackStream(transp)
-          # If `ReadClosed` present, then close(transport) was called.
-          if not(transp.future.finished()):
-            transp.future.complete()
-          GC_unref(transp)
+          transp.clean()
 
         if ReadPaused in transp.state:
           # Transport buffer is full, so we will not continue on reading.
@@ -771,6 +781,26 @@ when defined(windows):
 
     return retFuture
 
+  proc createAcceptPipe(server: StreamServer) =
+    let pipeSuffix = $cast[cstring](addr server.local.address_un)
+    let pipeName = newWideCString(r"\\.\pipe\" & pipeSuffix[1 .. ^1])
+    var openMode = PIPE_ACCESS_DUPLEX or FILE_FLAG_OVERLAPPED
+    if FirstPipe notin server.flags:
+      openMode = openMode or FILE_FLAG_FIRST_PIPE_INSTANCE
+      server.flags.incl(FirstPipe)
+    let pipeMode = int32(PIPE_TYPE_BYTE or PIPE_READMODE_BYTE or PIPE_WAIT)
+    let pipeHandle = createNamedPipe(pipeName, openMode, pipeMode,
+                                     PIPE_UNLIMITED_INSTANCES,
+                                     DWORD(server.bufferSize),
+                                     DWORD(server.bufferSize),
+                                     DWORD(0), nil)
+    if pipeHandle != INVALID_HANDLE_VALUE:
+      server.sock = AsyncFD(pipeHandle)
+      register(server.sock)
+    else:
+      server.sock = asyncInvalidPipe
+      server.errorCode = osLastError()
+
   proc acceptPipeLoop(udata: pointer) {.gcsafe, nimcall.} =
     var ovl = cast[PtrCustomOverlapped](udata)
     var server = cast[StreamServer](ovl.data.udata)
@@ -797,14 +827,7 @@ when defined(windows):
         elif int32(ovl.data.errCode) == ERROR_OPERATION_ABORTED:
           # CancelIO() interrupt or close call.
           if server.status in {ServerStatus.Closed, ServerStatus.Stopped}:
-            # Stop tracking server
-            untrackServer(server)
-            # Completing server's Future
-            if not(server.loopFuture.finished()):
-              server.loopFuture.complete()
-            if not isNil(server.udata) and GCUserData in server.flags:
-              GC_unref(cast[ref int](server.udata))
-            GC_unref(server)
+            server.clean()
           break
         else:
           doAssert disconnectNamedPipe(Handle(server.sock)) == 1
@@ -850,13 +873,7 @@ when defined(windows):
           # connectNamedPipe session.
           if server.status in {ServerStatus.Closed, ServerStatus.Stopped}:
             if not(server.loopFuture.finished()):
-              # Stop tracking server
-              untrackServer(server)
-              server.loopFuture.complete()
-              if not isNil(server.udata) and GCUserData in server.flags:
-                GC_unref(cast[ref int](server.udata))
-
-              GC_unref(server)
+              server.clean()
 
   proc acceptLoop(udata: pointer) {.gcsafe, nimcall.} =
     var ovl = cast[PtrCustomOverlapped](udata)
@@ -893,11 +910,7 @@ when defined(windows):
           if server.status in {ServerStatus.Closed, ServerStatus.Stopped}:
             # Stop tracking server
             if not(server.loopFuture.finished()):
-              untrackServer(server)
-              server.loopFuture.complete()
-              if not isNil(server.udata) and GCUserData in server.flags:
-                GC_unref(cast[ref int](server.udata))
-              GC_unref(server)
+              server.clean()
           break
         else:
           server.asock.closeSocket()
@@ -937,12 +950,7 @@ when defined(windows):
           # AcceptEx session.
           if server.status in {ServerStatus.Closed, ServerStatus.Stopped}:
             if not(server.loopFuture.finished()):
-              # Stop tracking server
-              untrackServer(server)
-              server.loopFuture.complete()
-              if not isNil(server.udata) and GCUserData in server.flags:
-                GC_unref(cast[ref int](server.udata))
-              GC_unref(server)
+              server.clean()
 
   proc resumeRead(transp: StreamTransport) {.inline.} =
     if ReadPaused in transp.state:
@@ -961,6 +969,164 @@ when defined(windows):
   proc resumeAccept(server: StreamServer) {.inline.} =
     if not server.apending:
       server.aovl.data.cb(addr server.aovl)
+
+  proc accept*(server: StreamServer): Future[StreamTransport] =
+    var retFuture = newFuture[StreamTransport]("stream.server.accept")
+
+    doAssert(server.status != ServerStatus.Running,
+             "You could not use accept() if server was already started")
+
+    if server.status == ServerStatus.Closed:
+      retFuture.fail(getServerUseClosedError())
+      return retFuture
+
+    proc continuationSocket(udata: pointer) {.gcsafe.} =
+      var ovl = cast[PtrCustomOverlapped](udata)
+      var server = cast[StreamServer](ovl.data.udata)
+      var loop = getGlobalDispatcher()
+
+      server.apending = false
+      if ovl.data.errCode == OSErrorCode(-1):
+        if setsockopt(SocketHandle(server.asock), cint(SOL_SOCKET),
+                      cint(SO_UPDATE_ACCEPT_CONTEXT), addr server.sock,
+                      SockLen(sizeof(SocketHandle))) != 0'i32:
+          let err = OSErrorCode(wsaGetLastError())
+          server.asock.closeSocket()
+          retFuture.fail(getTransportOsError(err))
+        else:
+          var ntransp: StreamTransport
+          if not isNil(server.init):
+            let transp = server.init(server, server.asock)
+            ntransp = newStreamSocketTransport(server.asock,
+                                               server.bufferSize,
+                                               transp)
+          else:
+            ntransp = newStreamSocketTransport(server.asock,
+                                               server.bufferSize, nil)
+          # Start tracking transport
+          trackStream(ntransp)
+          retFuture.complete(ntransp)
+      elif int32(ovl.data.errCode) == ERROR_OPERATION_ABORTED:
+        # CancelIO() interrupt or close.
+        server.asock.closeSocket()
+        retFuture.fail(getServerUseClosedError())
+        server.clean()
+      else:
+        server.asock.closeSocket()
+        retFuture.fail(getTransportOsError(ovl.data.errCode))
+
+    proc cancellationSocket(udata: pointer) {.gcsafe.} =
+      server.asock.closeSocket()
+
+    proc continuationPipe(udata: pointer) {.gcsafe.} =
+      var ovl = cast[PtrCustomOverlapped](udata)
+      var server = cast[StreamServer](ovl.data.udata)
+      var loop = getGlobalDispatcher()
+
+      server.apending = false
+      if ovl.data.errCode == OSErrorCode(-1):
+        var ntransp: StreamTransport
+        var flags = {WinServerPipe}
+        if NoPipeFlash in server.flags:
+          flags.incl(WinNoPipeFlash)
+        if not isNil(server.init):
+          var transp = server.init(server, server.sock)
+          ntransp = newStreamPipeTransport(server.sock, server.bufferSize,
+                                           transp, flags)
+        else:
+          ntransp = newStreamPipeTransport(server.sock, server.bufferSize,
+                                           nil, flags)
+        # Start tracking transport
+        trackStream(ntransp)
+        server.createAcceptPipe()
+        retFuture.complete(ntransp)
+
+      elif int32(ovl.data.errCode) in {ERROR_OPERATION_ABORTED,
+                                       ERROR_PIPE_NOT_CONNECTED}:
+        # CancelIO() interrupt or close call.
+        let sock = server.sock
+        closeHandle(sock)
+        retFuture.fail(getServerUseClosedError())
+        server.clean()
+      else:
+        let sock = server.sock
+        server.createAcceptPipe()
+        closeHandle(sock)
+        retFuture.fail(getTransportOsError(ovl.data.errCode))
+
+    proc cancellationPipe(udata: pointer) {.gcsafe.} =
+      server.sock.closeHandle()
+
+    if server.local.family in {AddressFamily.IPv4, AddressFamily.IPv6}:
+      # TCP Sockets part
+      var loop = getGlobalDispatcher()
+      server.asock = createAsyncSocket(server.domain, SockType.SOCK_STREAM,
+                                       Protocol.IPPROTO_TCP)
+      if server.asock == asyncInvalidSocket:
+        let err = osLastError()
+        if int32(err) == ERROR_TOO_MANY_OPEN_FILES:
+          retFuture.fail(getTransportTooManyError())
+        else:
+          retFuture.fail(getTransportOsError(err))
+        return retFuture
+
+      var dwBytesReceived = DWORD(0)
+      let dwReceiveDataLength = DWORD(0)
+      let dwLocalAddressLength = DWORD(sizeof(Sockaddr_in6) + 16)
+      let dwRemoteAddressLength = DWORD(sizeof(Sockaddr_in6) + 16)
+
+      server.aovl.data = CompletionData(fd: server.sock,
+                                        cb: continuationSocket,
+                                        udata: cast[pointer](server))
+      server.apending = true
+      let res = loop.acceptEx(SocketHandle(server.sock),
+                              SocketHandle(server.asock),
+                              addr server.abuffer[0],
+                              dwReceiveDataLength, dwLocalAddressLength,
+                              dwRemoteAddressLength, addr dwBytesReceived,
+                              cast[POVERLAPPED](addr server.aovl))
+      if not res:
+        let err = osLastError()
+        if int32(err) == ERROR_OPERATION_ABORTED:
+          server.apending = false
+        elif int32(err) == ERROR_IO_PENDING:
+          discard
+        else:
+          server.apending = false
+          retFuture.fail(getTransportOsError(err))
+
+      retFuture.cancelCallback = cancellationPipe
+
+    elif server.local.family in {AddressFamily.Unix}:
+      # Unix domain sockets emulation via Windows Named pipes part.
+      server.apending = true
+      if server.sock == asyncInvalidPipe:
+        let err = server.errorCode
+        if int32(err) == ERROR_TOO_MANY_OPEN_FILES:
+          retFuture.fail(getTransportTooManyError())
+        else:
+          retFuture.fail(getTransportOsError(err))
+        return retFuture
+
+      server.aovl.data = CompletionData(fd: AsyncFD(server.sock),
+                                        cb: continuationPipe,
+                                        udata: cast[pointer](server))
+      server.apending = true
+      let res = connectNamedPipe(HANDLE(server.sock),
+                                 cast[POVERLAPPED](addr server.aovl))
+      if res == 0:
+        let err = osLastError()
+        if int32(err) == ERROR_OPERATION_ABORTED:
+          server.apending = false
+          retFuture.fail(getServerUseClosedError())
+        elif int32(err) in {ERROR_IO_PENDING, ERROR_PIPE_CONNECTED}:
+          discard
+        else:
+          server.apending = false
+          retFuture.fail(getTransportOsError(err))
+
+      retFuture.cancelCallback = cancellationPipe
+    return retFuture
 
 else:
   import ../sendfile
@@ -1227,7 +1393,11 @@ else:
     sock = createAsyncSocket(address.getDomain(), SockType.SOCK_STREAM,
                              proto)
     if sock == asyncInvalidSocket:
-      retFuture.fail(getTransportOsError(osLastError()))
+      let err = osLastError()
+      if int(err) == EMFILE:
+        retFuture.fail(getTransportTooManyError())
+      else:
+        retFuture.fail(getTransportOsError(err))
       return retFuture
 
     proc continuation(udata: pointer) {.gcsafe.} =
@@ -1324,8 +1494,64 @@ else:
       transp.state.excl(WritePaused)
       addWriter(transp.fd, writeStreamLoop, cast[pointer](transp))
 
+  proc accept*(server: StreamServer): Future[StreamTransport] =
+    var retFuture = newFuture[StreamTransport]("stream.server.accept")
+
+    doAssert(server.status != ServerStatus.Running,
+             "You could not use accept() if server was started with start()")
+    if server.status == ServerStatus.Closed:
+      retFuture.fail(getServerUseClosedError())
+      return retFuture
+
+    proc continuation(udata: pointer) {.gcsafe.} =
+      var
+        saddr: Sockaddr_storage
+        slen: SockLen
+      while true:
+        let res = posix.accept(SocketHandle(server.sock),
+                               cast[ptr SockAddr](addr saddr), addr slen)
+        if int(res) > 0:
+          let sock = wrapAsyncSocket(res)
+          if sock != asyncInvalidSocket:
+            var ntransp: StreamTransport
+            if not isNil(server.init):
+              let transp = server.init(server, sock)
+              ntransp = newStreamSocketTransport(sock, server.bufferSize,
+                                                 transp)
+            else:
+              ntransp = newStreamSocketTransport(sock, server.bufferSize, nil)
+            # Start tracking transport
+            trackStream(ntransp)
+            retFuture.complete(ntransp)
+          else:
+            retFuture.fail(getTransportOsError(osLastError()))
+          break
+        else:
+          let err = osLastError()
+          if int(err) == EINTR:
+            continue
+          elif int(err) == EAGAIN:
+            # This error appears only when server get closed, while accept()
+            # call pending.
+            retFuture.fail(getServerUseClosedError())
+          elif int(err) == EMFILE:
+            retFuture.fail(getTransportTooManyError())
+          else:
+            retFuture.fail(getTransportOsError(err))
+          break
+
+      removeReader(server.sock)
+
+    proc cancellation(udata: pointer) {.gcsafe.} =
+      discard
+
+    addReader(server.sock, continuation, nil)
+    retFuture.cancelCallback = cancellation
+    return retFuture
+
 proc start*(server: StreamServer) =
   ## Starts ``server``.
+  doAssert(not(isNil(server.function)))
   if server.status == ServerStatus.Starting:
     server.resumeAccept()
     server.status = ServerStatus.Running
@@ -1363,13 +1589,13 @@ proc close*(server: StreamServer) =
   proc continuation(udata: pointer) {.gcsafe.} =
     # Stop tracking server
     if not(server.loopFuture.finished()):
-      untrackServer(server)
-      server.loopFuture.complete()
-      if not isNil(server.udata) and GCUserData in server.flags:
-        GC_unref(cast[ref int](server.udata))
-      GC_unref(server)
+      server.clean()
 
-  if server.status == ServerStatus.Stopped:
+  let r1 = (server.status == ServerStatus.Stopped) and
+            not(isNil(server.function))
+  let r2 = (server.status == ServerStatus.Starting) and isNil(server.function)
+
+  if r1 or r2:
     server.status = ServerStatus.Closed
     when defined(windows):
       if server.local.family in {AddressFamily.IPv4, AddressFamily.IPv6}:
@@ -1380,7 +1606,7 @@ proc close*(server: StreamServer) =
       elif server.local.family in {AddressFamily.Unix}:
         if NoPipeFlash notin server.flags:
           discard flushFileBuffers(Handle(server.sock))
-        doAssert disconnectNamedPipe(Handle(server.sock)) == 1
+        discard disconnectNamedPipe(Handle(server.sock))
         if not server.apending:
           server.sock.closeHandle(continuation)
         else:
@@ -1563,14 +1789,30 @@ proc createStreamServer*(host: TransportAddress,
     elif host.family == AddressFamily.Unix:
       cb = acceptPipeLoop
 
-    result.aovl.data = CompletionData(fd: serverSocket, cb: cb,
-                                      udata: cast[pointer](result))
+    if not(isNil(cbproc)):
+      result.aovl.data = CompletionData(fd: serverSocket, cb: cb,
+                                        udata: cast[pointer](result))
+    else:
+      if host.family == AddressFamily.Unix:
+        result.createAcceptPipe()
+
     result.domain = host.getDomain()
     result.apending = false
 
   # Start tracking server
   trackServer(result)
   GC_ref(result)
+
+proc createStreamServer*(host: TransportAddress,
+                         flags: set[ServerFlags] = {},
+                         sock: AsyncFD = asyncInvalidSocket,
+                         backlog: int = 100,
+                         bufferSize: int = DefaultStreamBufferSize,
+                         child: StreamServer = nil,
+                         init: TransportInitCallback = nil,
+                         udata: pointer = nil): StreamServer =
+  result = createStreamServer(host, nil, flags, sock, backlog, bufferSize,
+                              child, init, cast[pointer](udata))
 
 proc createStreamServer*[T](host: TransportAddress,
                             cbproc: StreamCallback,
@@ -1584,6 +1826,19 @@ proc createStreamServer*[T](host: TransportAddress,
   var fflags = flags + {GCUserData}
   GC_ref(udata)
   result = createStreamServer(host, cbproc, fflags, sock, backlog, bufferSize,
+                              child, init, cast[pointer](udata))
+
+proc createStreamServer*[T](host: TransportAddress,
+                            flags: set[ServerFlags] = {},
+                            udata: ref T,
+                            sock: AsyncFD = asyncInvalidSocket,
+                            backlog: int = 100,
+                            bufferSize: int = DefaultStreamBufferSize,
+                            child: StreamServer = nil,
+                            init: TransportInitCallback = nil): StreamServer =
+  var fflags = flags + {GCUserData}
+  GC_ref(udata)
+  result = createStreamServer(host, nil, fflags, sock, backlog, bufferSize,
                               child, init, cast[pointer](udata))
 
 proc getUserData*[T](server: StreamServer): T {.inline.} =
@@ -1916,11 +2171,7 @@ proc close*(transp: StreamTransport) =
   ## Please note that release of resources is not completed immediately, to be
   ## sure all resources got released please use ``await transp.join()``.
   proc continuation(udata: pointer) {.gcsafe.} =
-    if not(transp.future.finished()):
-      transp.future.complete()
-      # Stop tracking stream
-      untrackStream(transp)
-      GC_unref(transp)
+    transp.clean()
 
   if {ReadClosed, WriteClosed} * transp.state == {}:
     transp.state.incl({WriteClosed, ReadClosed})
@@ -1929,7 +2180,7 @@ proc close*(transp: StreamTransport) =
         if WinServerPipe in transp.flags:
           if WinNoPipeFlash notin transp.flags:
             discard flushFileBuffers(Handle(transp.fd))
-          doAssert disconnectNamedPipe(Handle(transp.fd)) == 1
+          discard disconnectNamedPipe(Handle(transp.fd))
         else:
           if WinNoPipeFlash notin transp.flags:
             discard flushFileBuffers(Handle(transp.fd))
