@@ -73,6 +73,31 @@ suite "Asynchronous issues test suite":
     await sleepAsync(100.milliseconds)
     result = (checkstr == "FooBarBaz")
 
+  proc testDefer(): Future[bool] {.async.} =
+    proc someConnect() {.async.} =
+      await sleepAsync(100.milliseconds)
+
+    proc someClose() {.async.} =
+      await sleepAsync(100.milliseconds)
+
+    proc testFooFails(): Future[bool] {.async.} =
+      await someConnect()
+      defer:
+        await someClose()
+        result = true
+
+    proc testFooSucceed(): Future[bool] {.async.} =
+      try:
+        await someConnect()
+      finally:
+        await someClose()
+        result = true
+
+    let r1 = await testFooFails()
+    let r2 = await testFooSucceed()
+
+    result = r1 and r2
+
   test "Issue #6":
     check waitFor(issue6()) == true
 
@@ -84,3 +109,6 @@ suite "Asynchronous issues test suite":
 
   test "Multiple await on single future test [Nim's issue #13889]":
     check waitFor(testMultipleAwait()) == true
+
+  test "Defer for asynchronous procedures test [Nim's issue #13899]":
+    check waitFor(testDefer()) == true
