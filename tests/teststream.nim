@@ -49,16 +49,26 @@ suite "Stream Transport test suite":
     m17 = "0.0.0.0/::0 (INADDR_ANY) test"
 
   when defined(windows):
-    var addresses = [
+    let addresses = [
       initTAddress("127.0.0.1:33335"),
       initTAddress(r"/LOCAL\testpipe")
     ]
   else:
-    var addresses = [
+    let addresses = [
       initTAddress("127.0.0.1:33335"),
       initTAddress(r"/tmp/testpipe")
     ]
-  var prefixes = ["[IP] ", "[UNIX] "]
+
+  let prefixes = ["[IP] ", "[UNIX] "]
+
+  var markFD: int
+
+  proc getCurrentFD(): int =
+    let local = initTAddress("127.0.0.1:33334")
+    let sock = createAsyncSocket(local.getDomain(), SockType.SOCK_DGRAM,
+                                 Protocol.IPPROTO_UDP)
+    closeSocket(sock)
+    return int(sock)
 
   proc createBigMessage(size: int): seq[byte] =
     var message = "MESSAGE"
@@ -1106,52 +1116,34 @@ suite "Stream Transport test suite":
   when not(defined(windows)):
     proc testAcceptTooMany(address: TransportAddress): Future[bool] {.async.} =
       let maxFiles = getMaxOpenFiles()
-      echo "maxFiles = ", maxFiles
       var server = createStreamServer(address, flags = {ReuseAddr})
       let isock = int(server.sock)
-      echo "created server with fd = ", int(server.sock)
       let newMaxFiles = isock + 4
-      echo "newMaxFiles = ", newMaxFiles
       setMaxOpenFiles(newMaxFiles)
-      echo "current maxFiles = ", getMaxOpenFiles()
 
       proc acceptTask(server: StreamServer): Future[bool] {.async.} =
         var transports = newSeq[StreamTransport]()
         try:
           for i in 0 ..< 3:
-            echo "accepting ", i
             let transp = await server.accept()
-            echo "accepted ", i, ", fd = ", int(transp.fd)
             transports.add(transp)
         except TransportTooManyError:
-          echo "accepted with proper error"
           var pending = newSeq[Future[void]]()
           for item in transports:
             pending.add(closeWait(item))
           await allFutures(pending)
           return true
-        except CatchableError as exc:
-          echo "accepted without proper error"
-          raise exc
 
       var acceptFut = acceptTask(server)
 
       try:
         for i in 0 ..< 3:
           try:
-            echo "connecting ", i
             let transp = await connect(address)
-            echo "connected ", i, ", fd = ", int(transp.fd)
             await sleepAsync(10.milliseconds)
-            echo "closing connection ", i
             await transp.closeWait()
-            echo "closed connection ", i
           except TransportTooManyError:
-            echo "connected with an error"
             break
-          except CatchableError as exc:
-            echo "connected without proper error"
-            raise exc
         if await withTimeout(acceptFut, 5.seconds):
           if acceptFut.finished() and not(acceptFut.failed()):
             if acceptFut.read() == true:
@@ -1159,6 +1151,8 @@ suite "Stream Transport test suite":
       finally:
         await server.closeWait()
         setMaxOpenFiles(maxFiles)
+
+  markFD = getCurrentFD()
 
   for i in 0..<len(addresses):
     test prefixes[i] & "close(transport) test":
@@ -1233,3 +1227,10 @@ suite "Stream Transport test suite":
     check getTracker("stream.server").isLeaked() == false
   test "Transports leak test":
     check getTracker("stream.transport").isLeaked() == false
+  test "File descriptors leak test":
+    when defined(windows):
+      # Windows handle numbers depends on many conditions, so we can't use
+      # our FD leak detection method.
+      skip()
+    else:
+      check getCurrentFD() == markFD

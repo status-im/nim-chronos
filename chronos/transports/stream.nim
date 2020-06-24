@@ -907,6 +907,7 @@ when defined(windows):
 
         elif int32(ovl.data.errCode) == ERROR_OPERATION_ABORTED:
           # CancelIO() interrupt or close.
+          server.asock.closeSocket()
           if server.status in {ServerStatus.Closed, ServerStatus.Stopped}:
             # Stop tracking server
             if not(server.loopFuture.finished()):
@@ -983,7 +984,6 @@ when defined(windows):
     proc continuationSocket(udata: pointer) {.gcsafe.} =
       var ovl = cast[PtrCustomOverlapped](udata)
       var server = cast[StreamServer](ovl.data.udata)
-      var loop = getGlobalDispatcher()
 
       server.apending = false
       if ovl.data.errCode == OSErrorCode(-1):
@@ -1021,7 +1021,6 @@ when defined(windows):
     proc continuationPipe(udata: pointer) {.gcsafe.} =
       var ovl = cast[PtrCustomOverlapped](udata)
       var server = cast[StreamServer](ovl.data.udata)
-      var loop = getGlobalDispatcher()
 
       server.apending = false
       if ovl.data.errCode == OSErrorCode(-1):
@@ -1096,7 +1095,7 @@ when defined(windows):
           retFuture.fail(getTransportOsError(err))
           return retFuture
 
-      retFuture.cancelCallback = cancellationPipe
+      retFuture.cancelCallback = cancellationSocket
 
     elif server.local.family in {AddressFamily.Unix}:
       # Unix domain sockets emulation via Windows Named pipes part.
@@ -1109,7 +1108,7 @@ when defined(windows):
           retFuture.fail(getTransportOsError(err))
         return retFuture
 
-      server.aovl.data = CompletionData(fd: AsyncFD(server.sock),
+      server.aovl.data = CompletionData(fd: server.sock,
                                         cb: continuationPipe,
                                         udata: cast[pointer](server))
       server.apending = true
@@ -1605,6 +1604,7 @@ proc close*(server: StreamServer) =
         if not server.apending:
           server.sock.closeSocket(continuation)
         else:
+          server.asock.closeSocket()
           server.sock.closeSocket()
       elif server.local.family in {AddressFamily.Unix}:
         if NoPipeFlash notin server.flags:
