@@ -465,7 +465,7 @@ when defined(windows) or defined(nimdoc):
     ## Closes a (pipe/file) handle and ensures that it is unregistered.
     let loop = getGlobalDispatcher()
     loop.handles.excl(fd)
-    doAssert closeHandle(Handle(fd)) == 1
+    discard closeHandle(Handle(fd))
     if not isNil(aftercb):
       var acb = AsyncCallback(function: aftercb)
       loop.callbacks.addLast(acb)

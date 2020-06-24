@@ -25,6 +25,7 @@ suite "Stream Transport test suite":
     MessagesCount = 10
     MessageSize = 20
     FilesCount = 10
+    TestsCount = 100
 
     m1 = "readLine() multiple clients with messages (" & $ClientsCount &
          " clients x " & $MessagesCount & " messages)"
@@ -48,16 +49,26 @@ suite "Stream Transport test suite":
     m17 = "0.0.0.0/::0 (INADDR_ANY) test"
 
   when defined(windows):
-    var addresses = [
+    let addresses = [
       initTAddress("127.0.0.1:33335"),
       initTAddress(r"/LOCAL\testpipe")
     ]
   else:
-    var addresses = [
+    let addresses = [
       initTAddress("127.0.0.1:33335"),
       initTAddress(r"/tmp/testpipe")
     ]
-  var prefixes = ["[IP] ", "[UNIX] "]
+
+  let prefixes = ["[IP] ", "[UNIX] "]
+
+  var markFD: int
+
+  proc getCurrentFD(): int =
+    let local = initTAddress("127.0.0.1:33334")
+    let sock = createAsyncSocket(local.getDomain(), SockType.SOCK_DGRAM,
+                                 Protocol.IPPROTO_UDP)
+    closeSocket(sock)
+    return int(sock)
 
   proc createBigMessage(size: int): seq[byte] =
     var message = "MESSAGE"
@@ -1057,6 +1068,92 @@ suite "Stream Transport test suite":
     await server.join()
     result = c7
 
+  proc testAccept(address: TransportAddress): Future[bool] {.async.} =
+    var server = createStreamServer(address, flags = {ReuseAddr})
+    var connected = 0
+    var accepted = 0
+
+    proc acceptTask(server: StreamServer) {.async.} =
+      for i in 0 ..< TestsCount:
+        let transp = await server.accept()
+        await transp.closeWait()
+        inc(accepted)
+
+    var acceptFut = acceptTask(server)
+    var transp: StreamTransport
+
+    try:
+      for i in 0 ..< TestsCount:
+        transp = await connect(address)
+        await sleepAsync(10.milliseconds)
+        await transp.closeWait()
+        inc(connected)
+      if await withTimeout(acceptFut, 5.seconds):
+        if acceptFut.finished() and not(acceptFut.failed()):
+          result = (connected == TestsCount) and (connected == accepted)
+    finally:
+      await server.closeWait()
+      if not(isNil(transp)):
+        await transp.closeWait()
+
+  proc testAcceptClose(address: TransportAddress): Future[bool] {.async.} =
+    var server = createStreamServer(address, flags = {ReuseAddr})
+
+    proc acceptTask(server: StreamServer) {.async.} =
+      let transp = await server.accept()
+      await transp.closeWait()
+
+    var acceptFut = acceptTask(server)
+    await server.closeWait()
+
+    if await withTimeout(acceptFut, 5.seconds):
+      if acceptFut.finished() and acceptFut.failed():
+        if acceptFut.readError() of TransportUseClosedError:
+          result = true
+    else:
+      result = false
+
+  when not(defined(windows)):
+    proc testAcceptTooMany(address: TransportAddress): Future[bool] {.async.} =
+      let maxFiles = getMaxOpenFiles()
+      var server = createStreamServer(address, flags = {ReuseAddr})
+      let isock = int(server.sock)
+      let newMaxFiles = isock + 4
+      setMaxOpenFiles(newMaxFiles)
+
+      proc acceptTask(server: StreamServer): Future[bool] {.async.} =
+        var transports = newSeq[StreamTransport]()
+        try:
+          for i in 0 ..< 3:
+            let transp = await server.accept()
+            transports.add(transp)
+        except TransportTooManyError:
+          var pending = newSeq[Future[void]]()
+          for item in transports:
+            pending.add(closeWait(item))
+          await allFutures(pending)
+          return true
+
+      var acceptFut = acceptTask(server)
+
+      try:
+        for i in 0 ..< 3:
+          try:
+            let transp = await connect(address)
+            await sleepAsync(10.milliseconds)
+            await transp.closeWait()
+          except TransportTooManyError:
+            break
+        if await withTimeout(acceptFut, 5.seconds):
+          if acceptFut.finished() and not(acceptFut.failed()):
+            if acceptFut.read() == true:
+              result = true
+      finally:
+        await server.closeWait()
+        setMaxOpenFiles(maxFiles)
+
+  markFD = getCurrentFD()
+
   for i in 0..<len(addresses):
     test prefixes[i] & "close(transport) test":
       check waitFor(testCloseTransport(addresses[i])) == 1
@@ -1112,8 +1209,28 @@ suite "Stream Transport test suite":
       check waitFor(testReadLine(addresses[i])) == true
     test prefixes[i] & "readMessage() test":
       check waitFor(testReadMessage(addresses[i])) == true
-
+    test prefixes[i] & "accept() test":
+      check waitFor(testAccept(addresses[i])) == true
+    test prefixes[i] & "close() while in accept() waiting test":
+      check waitFor(testAcceptClose(addresses[i])) == true
+    test prefixes[i] & "Intermediate transports leak test #1":
+      when defined(windows):
+        skip()
+      else:
+        check getTracker("stream.transport").isLeaked() == false
+    test prefixes[i] & "accept() too many file descriptors test":
+      when defined(windows):
+        skip()
+      else:
+        check waitFor(testAcceptTooMany(addresses[i])) == true
   test "Servers leak test":
     check getTracker("stream.server").isLeaked() == false
   test "Transports leak test":
     check getTracker("stream.transport").isLeaked() == false
+  test "File descriptors leak test":
+    when defined(windows):
+      # Windows handle numbers depends on many conditions, so we can't use
+      # our FD leak detection method.
+      skip()
+    else:
+      check getCurrentFD() == markFD
