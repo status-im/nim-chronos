@@ -1143,7 +1143,7 @@ else:
     var transp = cast[StreamTransport](cdata.udata)
     let fd = SocketHandle(cdata.fd)
 
-    if int(fd) == 0:
+    if int(fd) == 0 or isNil(transp):
       ## This situation can be happen, when there events present
       ## after transport was closed.
       return
@@ -1286,7 +1286,7 @@ else:
     var cdata = cast[ptr CompletionData](udata)
     var transp = cast[StreamTransport](cdata.udata)
     let fd = SocketHandle(cdata.fd)
-    if int(fd) == 0:
+    if int(fd) == 0 or isNil(transp):
       ## This situation can be happen, when there events present
       ## after transport was closed.
       return
