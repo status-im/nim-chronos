@@ -12,13 +12,12 @@ requires "nim > 0.19.4",
 
 task test, "Run all tests":
   var commands = [
-    "nim c -r -d:useSysAssert -d:useGcAssert tests/testall",
-    "nim c -r tests/testall",
-    "nim c -r -d:release tests/testall"
+    "nim c -r -d:useSysAssert -d:useGcAssert tests/",
+    "nim c -r tests/",
+    "nim c -r -d:release tests/"
   ]
-  echo "\n" & commands[0]
-  exec commands[0]
-  echo "\n" & commands[1]
-  exec commands[1]
-  echo "\n" & commands[2]
-  exec commands[2]
+  for testname in ["testall", "testutils"]:
+    for cmd in commands:
+      let curcmd = cmd & testname
+      echo "\n" & curcmd
+      exec curcmd
