@@ -936,12 +936,38 @@ suite "Future[T] behavior test suite":
              neverFlag1 and neverFlag2 and neverFlag3 and
              waitProc1 and waitProc2
 
+  proc testCancellationRaceAsync(): Future[bool] {.async.} =
+    var someFut = newFuture[void]()
+
+    proc raceProc(): Future[void] {.async.} =
+      await someFut
+
+    var raceFut1 = raceProc()
+    someFut.complete()
+    await cancelAndWait(raceFut1)
+
+    someFut = newFuture[void]()
+    var raceFut2 = raceProc()
+    someFut.fail(newException(ValueError, ""))
+    await cancelAndWait(raceFut2)
+
+    someFut = newFuture[void]()
+    var raceFut3 = raceProc()
+    someFut.cancel()
+    await cancelAndWait(raceFut3)
+
+    result = (raceFut1.state == FutureState.Cancelled) and
+             (raceFut2.state == FutureState.Cancelled) and
+             (raceFut3.state == FutureState.Cancelled)
 
   proc testWait(): bool =
-    result = waitFor(testWaitAsync())
+    waitFor(testWaitAsync())
 
   proc testWithTimeout(): bool =
-    result = waitFor(testWithTimeoutAsync())
+    waitFor(testWithTimeoutAsync())
+
+  proc testCancellationRace(): bool =
+    waitFor(testCancellationRaceAsync())
 
   test "Async undefined behavior (#7758) test":
     check test1() == true
@@ -994,3 +1020,5 @@ suite "Future[T] behavior test suite":
     check testWait() == true
   test "Cancellation withTimeout() test":
     check testWithTimeout() == true
+  test "Cancellation race test":
+    check testCancellationRace() == true

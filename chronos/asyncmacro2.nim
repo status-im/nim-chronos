@@ -49,7 +49,7 @@ template createCb(retFutureSym, iteratorNameSym,
           {.gcsafe.}:
             next.addCallback(identName)
     except CancelledError:
-      retFutureSym.cancel()
+      retFutureSym.cancelAndSchedule()
     except CatchableError as exc:
       futureVarCompletions
 
@@ -273,8 +273,10 @@ template await*[T](f: Future[T]): auto =
     chronosInternalTmpFuture = f
     chronosInternalRetFuture.child = chronosInternalTmpFuture
     yield chronosInternalTmpFuture
-    chronosInternalTmpFuture.internalCheckComplete()
     chronosInternalRetFuture.child = nil
+    if chronosInternalRetFuture.mustCancel:
+      raise newException(CancelledError, "")
+    chronosInternalTmpFuture.internalCheckComplete()
     cast[type(f)](chronosInternalTmpFuture).internalRead()
   else:
     unsupported "await is only available within {.async.}"
@@ -287,6 +289,8 @@ template awaitne*[T](f: Future[T]): Future[T] =
     chronosInternalRetFuture.child = chronosInternalTmpFuture
     yield chronosInternalTmpFuture
     chronosInternalRetFuture.child = nil
+    if chronosInternalRetFuture.mustCancel:
+      raise newException(CancelledError, "")
     cast[type(f)](chronosInternalTmpFuture)
   else:
     unsupported "awaitne is only available within {.async.}"
