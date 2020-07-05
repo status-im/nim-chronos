@@ -1,5 +1,5 @@
 packageName   = "chronos"
-version       = "2.4.1"
+version       = "2.4.2"
 author        = "Status Research & Development GmbH"
 description   = "Chronos"
 license       = "Apache License 2.0 or MIT"
@@ -16,7 +16,7 @@ task test, "Run all tests":
     "nim c -r tests/",
     "nim c -r -d:release tests/"
   ]
-  for testname in ["testall", "testutils"]:
+  for testname in ["testall"]:
     for cmd in commands:
       let curcmd = cmd & testname
       echo "\n" & curcmd
