@@ -275,7 +275,7 @@ template await*[T](f: Future[T]): auto =
     yield chronosInternalTmpFuture
     chronosInternalRetFuture.child = nil
     if chronosInternalRetFuture.mustCancel:
-      raise newException(CancelledError, "")
+      raise newCancelledError()
     chronosInternalTmpFuture.internalCheckComplete()
     cast[type(f)](chronosInternalTmpFuture).internalRead()
   else:
@@ -290,7 +290,7 @@ template awaitne*[T](f: Future[T]): Future[T] =
     yield chronosInternalTmpFuture
     chronosInternalRetFuture.child = nil
     if chronosInternalRetFuture.mustCancel:
-      raise newException(CancelledError, "")
+      raise newCancelledError()
     cast[type(f)](chronosInternalTmpFuture)
   else:
     unsupported "awaitne is only available within {.async.}"
