@@ -959,5 +959,18 @@ proc getTracker*(id: string): TrackerBase =
   let loop = getGlobalDispatcher()
   result = loop.trackers.getOrDefault(id, nil)
 
+iterator pendingFutures*(): FutureBase =
+  ## Iterates over the list of pending Futures (Future[T] objects which not yet
+  ## completed, cancelled or failed).
+  var slider = futureList.head
+  while not(isNil(slider)):
+    yield slider
+    slider = slider.next
+
+proc pendingFuturesCount*(): int =
+  ## Returns number of pending Futures (Future[T] objects which not yet
+  ## completed, cancelled or failed).
+  futureList.count
+
 # Perform global per-module initialization.
 globalInit()

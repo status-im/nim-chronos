@@ -13,8 +13,8 @@ import srcloc
 export srcloc
 
 const
-  LocCreateIndex = 0
-  LocCompleteIndex = 1
+  LocCreateIndex* = 0
+  LocCompleteIndex* = 1
 
 type
   # ZAH: This can probably be stored with a cheaper representation
@@ -36,6 +36,8 @@ type
     stackTrace: StackTrace ## For debugging purposes only.
     mustCancel*: bool
     id*: int
+    next*: FutureBase
+    prev*: FutureBase
 
   # ZAH: we have discussed some possible optimizations where
   # the future can be stored within the caller's stack frame.
@@ -61,8 +63,15 @@ type
 
   CancelledError* = object of FutureError
 
+  FutureList* = object
+    head*: FutureBase
+    tail*: FutureBase
+    count*: int
+
 var currentID* {.threadvar.}: int
+var futureList* {.threadvar.}: FutureList
 currentID = 0
+futureList = FutureList()
 
 template setupFutureBase(loc: ptr SrcLoc) =
   new(result)
@@ -71,6 +80,15 @@ template setupFutureBase(loc: ptr SrcLoc) =
   result.id = currentID
   result.location[LocCreateIndex] = loc
   currentID.inc()
+
+  result.next = nil
+  result.prev = futureList.tail
+  if not(isNil(futureList.tail)):
+    futureList.tail.next = result
+  futureList.tail = result
+  if isNil(futureList.head):
+    futureList.head = result
+  futureList.count.inc()
 
 proc newFuture[T](loc: ptr SrcLoc): Future[T] =
   setupFutureBase(loc)
@@ -137,6 +155,16 @@ proc failed*(future: FutureBase): bool {.inline.} =
   ## Determines whether ``future`` completed with an error.
   result = (future.state == FutureState.Failed)
 
+proc futureDestructor(udata: pointer) {.gcsafe.} =
+  ## This procedure will be called when Future[T] got finished, cancelled or
+  ## failed and all Future[T].callbacks are already scheduled and processed.
+  let future = cast[FutureBase](udata)
+  if future == futureList.tail: futureList.tail = future.prev
+  if future == futureList.head: futureList.head = future.next
+  if not(isNil(future.next)): future.next.prev = future.prev
+  if not(isNil(future.prev)): future.prev.next = future.next
+  futureList.count.dec()
+
 proc checkFinished(future: FutureBase, loc: ptr SrcLoc) =
   ## Checks whether `future` is finished. If it is then raises a
   ## ``FutureDefect``.
@@ -170,6 +198,9 @@ proc call(callbacks: var Deque[AsyncCallback]) =
       callSoon(item.function, item.udata)
     dec(count)
 
+proc scheduleDestructor(future: FutureBase) {.inline.} =
+  callSoon(futureDestructor, cast[pointer](future))
+
 proc add(callbacks: var Deque[AsyncCallback], item: AsyncCallback) =
   if len(callbacks) == 0:
     callbacks = initDeque[AsyncCallback]()
@@ -187,6 +218,7 @@ proc complete[T](future: Future[T], val: T, loc: ptr SrcLoc) =
     future.value = val
     future.state = FutureState.Finished
     future.callbacks.call()
+    scheduleDestructor(FutureBase(future))
 
 template complete*[T](future: Future[T], val: T) =
   ## Completes ``future`` with value ``val``.
@@ -198,6 +230,7 @@ proc complete(future: Future[void], loc: ptr SrcLoc) =
     doAssert(isNil(future.error))
     future.state = FutureState.Finished
     future.callbacks.call()
+    scheduleDestructor(FutureBase(future))
 
 template complete*(future: Future[void]) =
   ## Completes a void ``future``.
@@ -210,6 +243,7 @@ proc complete[T](future: FutureVar[T], loc: ptr SrcLoc) =
     doAssert(isNil(fut.error))
     fut.state = FutureState.Finished
     fut.callbacks.call()
+    scheduleDestructor(FutureBase(future))
 
 template complete*[T](futvar: FutureVar[T]) =
   ## Completes a ``FutureVar``.
@@ -223,6 +257,7 @@ proc complete[T](futvar: FutureVar[T], val: T, loc: ptr SrcLoc) =
     fut.state = FutureState.Finished
     fut.value = val
     fut.callbacks.call()
+    scheduleDestructor(FutureBase(fut))
 
 template complete*[T](futvar: FutureVar[T], val: T) =
   ## Completes a ``FutureVar`` with value ``val``.
@@ -238,6 +273,7 @@ proc fail[T](future: Future[T], error: ref Exception, loc: ptr SrcLoc) =
     future.errorStackTrace =
       if getStackTrace(error) == "": getStackTrace() else: getStackTrace(error)
     future.callbacks.call()
+    scheduleDestructor(FutureBase(future))
 
 template fail*[T](future: Future[T], error: ref Exception) =
   ## Completes ``future`` with ``error``.
@@ -250,6 +286,7 @@ proc cancelAndSchedule(future: FutureBase, loc: ptr SrcLoc) =
     future.error = newException(CancelledError, "")
     future.errorStackTrace = getStackTrace()
     future.callbacks.call()
+    scheduleDestructor(future)
 
 template cancelAndSchedule*[T](future: Future[T]) =
   cancelAndSchedule(FutureBase(future), getSrcLocation())
