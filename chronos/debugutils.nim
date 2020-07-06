@@ -37,10 +37,10 @@ proc dumpPendingFutures*(filter = AllFutureStates): string =
       else:
         "\"" & procedure & "\""
       let item = "Future[" & $item.id & "] with name " & $procname &
-                 " created at " & "<" & filename & ":" & $loc.line & "> " &
+                 " created at " & "<" & filename & ":" & $loc.line & ">" &
                  " and state = " & $item.state & "\n"
       res.add(item)
-  result = $count & " pending futures found:\n" & $res
+  result = $count & " pending Future[T] objects found:\n" & $res
 
 proc pendingFuturesCount*(filter: set[FutureState]): int =
   ## Returns number of `pending` Future[T] objects which satisfy the ``filter``
