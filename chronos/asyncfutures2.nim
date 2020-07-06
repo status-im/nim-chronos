@@ -16,7 +16,7 @@ const
   LocCreateIndex* = 0
   LocCompleteIndex* = 1
 
-when defined(getStackTraceEntries):
+when defined(chronosStackTrace):
   type StackTrace = string
 
 type
@@ -80,7 +80,7 @@ when defined(chronosFutureTracking):
 template setupFutureBase(loc: ptr SrcLoc) =
   new(result)
   result.state = FutureState.Pending
-  when defined(getStackTraceEntries):
+  when defined(chronosStackTrace):
     result.stackTrace = getStackTrace()
   result.id = currentID
   result.location[LocCreateIndex] = loc
