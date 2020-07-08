@@ -16,12 +16,10 @@ const
   LocCreateIndex* = 0
   LocCompleteIndex* = 1
 
-type
-  # ZAH: This can probably be stored with a cheaper representation
-  # until the moment it needs to be printed to the screen
-  # (e.g. seq[StackTraceEntry])
-  StackTrace = string
+when defined(chronosStackTrace):
+  type StackTrace = string
 
+type
   FutureState* {.pure.} = enum
     Pending, Finished, Cancelled, Failed
 
@@ -32,12 +30,16 @@ type
     child*: FutureBase
     state*: FutureState
     error*: ref Exception ## Stored exception
-    errorStackTrace*: StackTrace
-    stackTrace: StackTrace ## For debugging purposes only.
     mustCancel*: bool
     id*: int
-    next*: FutureBase
-    prev*: FutureBase
+
+    when defined(chronosStackTrace):
+      errorStackTrace*: StackTrace
+      stackTrace: StackTrace ## For debugging purposes only.
+
+    when defined(chronosFutureTracking):
+      next*: FutureBase
+      prev*: FutureBase
 
   # ZAH: we have discussed some possible optimizations where
   # the future can be stored within the caller's stack frame.
@@ -69,26 +71,30 @@ type
     count*: int
 
 var currentID* {.threadvar.}: int
-var futureList* {.threadvar.}: FutureList
 currentID = 0
-futureList = FutureList()
+
+when defined(chronosFutureTracking):
+  var futureList* {.threadvar.}: FutureList
+  futureList = FutureList()
 
 template setupFutureBase(loc: ptr SrcLoc) =
   new(result)
   result.state = FutureState.Pending
-  result.stackTrace = getStackTrace()
+  when defined(chronosStackTrace):
+    result.stackTrace = getStackTrace()
   result.id = currentID
   result.location[LocCreateIndex] = loc
   currentID.inc()
 
-  result.next = nil
-  result.prev = futureList.tail
-  if not(isNil(futureList.tail)):
-    futureList.tail.next = result
-  futureList.tail = result
-  if isNil(futureList.head):
-    futureList.head = result
-  futureList.count.inc()
+  when defined(chronosFutureTracking):
+    result.next = nil
+    result.prev = futureList.tail
+    if not(isNil(futureList.tail)):
+      futureList.tail.next = result
+    futureList.tail = result
+    if isNil(futureList.head):
+      futureList.head = result
+    futureList.count.inc()
 
 proc newFuture[T](loc: ptr SrcLoc): Future[T] =
   setupFutureBase(loc)
@@ -155,15 +161,19 @@ proc failed*(future: FutureBase): bool {.inline.} =
   ## Determines whether ``future`` completed with an error.
   result = (future.state == FutureState.Failed)
 
-proc futureDestructor(udata: pointer) {.gcsafe.} =
-  ## This procedure will be called when Future[T] got finished, cancelled or
-  ## failed and all Future[T].callbacks are already scheduled and processed.
-  let future = cast[FutureBase](udata)
-  if future == futureList.tail: futureList.tail = future.prev
-  if future == futureList.head: futureList.head = future.next
-  if not(isNil(future.next)): future.next.prev = future.prev
-  if not(isNil(future.prev)): future.prev.next = future.next
-  futureList.count.dec()
+when defined(chronosFutureTracking):
+  proc futureDestructor(udata: pointer) {.gcsafe.} =
+    ## This procedure will be called when Future[T] got finished, cancelled or
+    ## failed and all Future[T].callbacks are already scheduled and processed.
+    let future = cast[FutureBase](udata)
+    if future == futureList.tail: futureList.tail = future.prev
+    if future == futureList.head: futureList.head = future.next
+    if not(isNil(future.next)): future.next.prev = future.prev
+    if not(isNil(future.prev)): future.prev.next = future.next
+    futureList.count.dec()
+
+  proc scheduleDestructor(future: FutureBase) {.inline.} =
+    callSoon(futureDestructor, cast[pointer](future))
 
 proc checkFinished(future: FutureBase, loc: ptr SrcLoc) =
   ## Checks whether `future` is finished. If it is then raises a
@@ -179,10 +189,11 @@ proc checkFinished(future: FutureBase, loc: ptr SrcLoc) =
     msg.add("\n    " & $future.location[LocCompleteIndex])
     msg.add("\n  Second completion location:")
     msg.add("\n    " & $loc)
-    msg.add("\n  Stack trace to moment of creation:")
-    msg.add("\n" & indent(future.stackTrace.strip(), 4))
-    msg.add("\n  Stack trace to moment of secondary completion:")
-    msg.add("\n" & indent(getStackTrace().strip(), 4))
+    when defined(chronosStackTrace):
+      msg.add("\n  Stack trace to moment of creation:")
+      msg.add("\n" & indent(future.stackTrace.strip(), 4))
+      msg.add("\n  Stack trace to moment of secondary completion:")
+      msg.add("\n" & indent(getStackTrace().strip(), 4))
     msg.add("\n\n")
     var err = newException(FutureDefect, msg)
     err.cause = future
@@ -197,9 +208,6 @@ proc call(callbacks: var Deque[AsyncCallback]) =
     if not(item.deleted):
       callSoon(item.function, item.udata)
     dec(count)
-
-proc scheduleDestructor(future: FutureBase) {.inline.} =
-  callSoon(futureDestructor, cast[pointer](future))
 
 proc add(callbacks: var Deque[AsyncCallback], item: AsyncCallback) =
   if len(callbacks) == 0:
@@ -218,7 +226,8 @@ proc complete[T](future: Future[T], val: T, loc: ptr SrcLoc) =
     future.value = val
     future.state = FutureState.Finished
     future.callbacks.call()
-    scheduleDestructor(FutureBase(future))
+    when defined(chronosFutureTracking):
+      scheduleDestructor(FutureBase(future))
 
 template complete*[T](future: Future[T], val: T) =
   ## Completes ``future`` with value ``val``.
@@ -230,7 +239,8 @@ proc complete(future: Future[void], loc: ptr SrcLoc) =
     doAssert(isNil(future.error))
     future.state = FutureState.Finished
     future.callbacks.call()
-    scheduleDestructor(FutureBase(future))
+    when defined(chronosFutureTracking):
+      scheduleDestructor(FutureBase(future))
 
 template complete*(future: Future[void]) =
   ## Completes a void ``future``.
@@ -243,7 +253,8 @@ proc complete[T](future: FutureVar[T], loc: ptr SrcLoc) =
     doAssert(isNil(fut.error))
     fut.state = FutureState.Finished
     fut.callbacks.call()
-    scheduleDestructor(FutureBase(future))
+    when defined(chronosFutureTracking):
+      scheduleDestructor(FutureBase(future))
 
 template complete*[T](futvar: FutureVar[T]) =
   ## Completes a ``FutureVar``.
@@ -257,7 +268,8 @@ proc complete[T](futvar: FutureVar[T], val: T, loc: ptr SrcLoc) =
     fut.state = FutureState.Finished
     fut.value = val
     fut.callbacks.call()
-    scheduleDestructor(FutureBase(fut))
+    when defined(chronosFutureTracking):
+      scheduleDestructor(FutureBase(fut))
 
 template complete*[T](futvar: FutureVar[T], val: T) =
   ## Completes a ``FutureVar`` with value ``val``.
@@ -270,23 +282,32 @@ proc fail[T](future: Future[T], error: ref Exception, loc: ptr SrcLoc) =
     checkFinished(FutureBase(future), loc)
     future.state = FutureState.Failed
     future.error = error
-    future.errorStackTrace =
-      if getStackTrace(error) == "": getStackTrace() else: getStackTrace(error)
+    when defined(chronosStackTrace):
+      future.errorStackTrace = if getStackTrace(error) == "":
+                                 getStackTrace()
+                               else:
+                                 getStackTrace(error)
     future.callbacks.call()
-    scheduleDestructor(FutureBase(future))
+    when defined(chronosFutureTracking):
+      scheduleDestructor(FutureBase(future))
 
 template fail*[T](future: Future[T], error: ref Exception) =
   ## Completes ``future`` with ``error``.
   fail(future, error, getSrcLocation())
 
+template newCancelledError(): ref CancelledError =
+  (ref CancelledError)(msg: "Future operation cancelled!")
+
 proc cancelAndSchedule(future: FutureBase, loc: ptr SrcLoc) =
   if not(future.finished()):
     checkFinished(future, loc)
     future.state = FutureState.Cancelled
-    future.error = newException(CancelledError, "")
-    future.errorStackTrace = getStackTrace()
+    future.error = newCancelledError()
+    when defined(chronosStackTrace):
+      future.errorStackTrace = getStackTrace()
     future.callbacks.call()
-    scheduleDestructor(future)
+    when defined(chronosFutureTracking):
+      scheduleDestructor(future)
 
 template cancelAndSchedule*[T](future: Future[T]) =
   cancelAndSchedule(FutureBase(future), getSrcLocation())
@@ -405,33 +426,35 @@ proc `$`*(entries: seq[StackTraceEntry]): string =
     if hint.len > 0:
       result.add(spaces(indent+2) & "## " & hint & "\n")
 
-proc injectStacktrace(future: FutureBase) =
-  const header = "\nAsync traceback:\n"
+when defined(chronosStackTrace):
+  proc injectStacktrace(future: FutureBase) =
+    const header = "\nAsync traceback:\n"
 
-  var exceptionMsg = future.error.msg
-  if header in exceptionMsg:
-    # This is messy: extract the original exception message from the msg
-    # containing the async traceback.
-    let start = exceptionMsg.find(header)
-    exceptionMsg = exceptionMsg[0..<start]
+    var exceptionMsg = future.error.msg
+    if header in exceptionMsg:
+      # This is messy: extract the original exception message from the msg
+      # containing the async traceback.
+      let start = exceptionMsg.find(header)
+      exceptionMsg = exceptionMsg[0..<start]
 
-  var newMsg = exceptionMsg & header
+    var newMsg = exceptionMsg & header
 
-  let entries = getStackTraceEntries(future.error)
-  newMsg.add($entries)
+    let entries = getStackTraceEntries(future.error)
+    newMsg.add($entries)
 
-  newMsg.add("Exception message: " & exceptionMsg & "\n")
-  newMsg.add("Exception type:")
+    newMsg.add("Exception message: " & exceptionMsg & "\n")
+    newMsg.add("Exception type:")
 
-  # # For debugging purposes
-  # for entry in getStackTraceEntries(future.error):
-  #   newMsg.add "\n" & $entry
-  future.error.msg = newMsg
+    # # For debugging purposes
+    # for entry in getStackTraceEntries(future.error):
+    #   newMsg.add "\n" & $entry
+    future.error.msg = newMsg
 
 proc internalCheckComplete*(fut: FutureBase) =
   # For internal use only. Used in asyncmacro
   if not(isNil(fut.error)):
-    injectStacktrace(fut)
+    when defined(chronosStackTrace):
+      injectStacktrace(fut)
     raise fut.error
 
 proc internalRead*[T](fut: Future[T] | FutureVar[T]): T {.inline.} =
@@ -480,7 +503,8 @@ proc asyncCheck*[T](future: Future[T]) =
   doAssert(not isNil(future), "Future is nil")
   proc cb(data: pointer) =
     if future.failed() or future.cancelled():
-      injectStacktrace(future)
+      when defined(chronosStackTrace):
+        injectStacktrace(future)
       raise future.error
   future.callback = cb
 

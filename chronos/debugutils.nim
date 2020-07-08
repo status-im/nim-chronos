@@ -26,20 +26,21 @@ proc dumpPendingFutures*(filter = AllFutureStates): string =
   ##    which callbacks are scheduled, but not yet fully processed.
   var count = 0
   var res = ""
-  for item in pendingFutures():
-    if item.state in filter:
-      inc(count)
-      let loc = item.location[LocCreateIndex][]
-      let procedure = $loc.procedure
-      let filename = $loc.file
-      let procname = if len(procedure) == 0:
-        "\"unspecified\""
-      else:
-        "\"" & procedure & "\""
-      let item = "Future[" & $item.id & "] with name " & $procname &
-                 " created at " & "<" & filename & ":" & $loc.line & ">" &
-                 " and state = " & $item.state & "\n"
-      res.add(item)
+  when defined(chronosFutureTracking):
+    for item in pendingFutures():
+      if item.state in filter:
+        inc(count)
+        let loc = item.location[LocCreateIndex][]
+        let procedure = $loc.procedure
+        let filename = $loc.file
+        let procname = if len(procedure) == 0:
+          "\"unspecified\""
+        else:
+          "\"" & procedure & "\""
+        let item = "Future[" & $item.id & "] with name " & $procname &
+                   " created at " & "<" & filename & ":" & $loc.line & ">" &
+                   " and state = " & $item.state & "\n"
+        res.add(item)
   result = $count & " pending Future[T] objects found:\n" & $res
 
 proc pendingFuturesCount*(filter: set[FutureState]): int =
@@ -48,11 +49,14 @@ proc pendingFuturesCount*(filter: set[FutureState]): int =
   ##
   ## If ``filter`` is equal to ``AllFutureStates`` Operation's complexity is
   ## O(1), otherwise operation's complexity is O(n).
-  if filter == AllFutureStates:
-    pendingFuturesCount()
+  when defined(chronosFutureTracking):
+    if filter == AllFutureStates:
+      pendingFuturesCount()
+    else:
+      var res = 0
+      for item in pendingFutures():
+        if item.state in filter:
+          inc(res)
+      res
   else:
-    var res = 0
-    for item in pendingFutures():
-      if item.state in filter:
-        inc(res)
-    res
+    0

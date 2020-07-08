@@ -13,8 +13,9 @@ requires "nim > 0.19.4",
 task test, "Run all tests":
   var commands = [
     "nim c -r -d:useSysAssert -d:useGcAssert tests/",
-    "nim c -r tests/",
-    "nim c -r -d:release tests/"
+    "nim c -r -d:chronosStackTrace tests/",
+    "nim c -r -d:release tests/",
+    "nim c -r -d:release -d:chronosFutureTracking tests/"
   ]
   for testname in ["testall"]:
     for cmd in commands:
