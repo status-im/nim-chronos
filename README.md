@@ -92,6 +92,44 @@ back to the dispatcher for as many steps as it's necessary for the awaited
 future to complete (or be cancelled). `await` calls the equivalent of
 `Future.read()` on the completed future and returns the encapsulated value.
 
+```nim
+proc p1() {.async.} =
+  await sleepAsync(1.seconds)
+
+proc p2() {.async.} =
+  await sleepAsync(1.seconds)
+
+proc p3() {.async.} =
+  let
+    fut1 = p1()
+    fut2 = p2()
+  # Just by executing the async procs, both resulting futures entered the
+  # dispatcher's queue and their "clocks" started ticking.
+  await fut1
+  await fut2
+  # Only one second passed while awaiting them both, not two.
+
+waitFor p3()
+```
+
+Not as intuitive, but the same thing happens if we create those futures on the
+same line as `await`, due to the Nim compiler's use of hidden temporary
+variables:
+
+```nim
+proc p4() {.async.} =
+  await p1()
+  await p2()
+  # Also takes a single second for both futures sleeping concurrently.
+
+waitFor p4()
+```
+
+Don't let `await`'s behaviour of giving back control to the dispatcher surprise
+you. If an async procedure modifies global state, and you can't predict when it
+will start executing, the only way to avoid that state changing underneath your
+feet in a certain section is to not use `await` in it.
+
 ## TODO
   * Pipe/Subprocess Transports.
   * Multithreading Stream/Datagram servers
