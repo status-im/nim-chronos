@@ -1,7 +1,7 @@
 # Chronos - An efficient library for asynchronous programming
 
 [![Build Status (Travis)](https://img.shields.io/travis/status-im/nim-chronos/master.svg?label=Linux%20/%20macOS "Linux/macOS build status (Travis)")](https://travis-ci.org/status-im/nim-chronos)
-[![Windows build status (Appveyor)](https://img.shields.io/appveyor/ci/nimbus/nim-asyncdispatch2/master.svg?label=Windows "Windows build status (Appveyor)")](https://ci.appveyor.com/project/nimbus/nim-asyncdispatch2)
+[![Windows build status (AppVeyor)](https://img.shields.io/appveyor/ci/nimbus/nim-asyncdispatch2/master.svg?label=Windows "Windows build status (Appveyor)")](https://ci.appveyor.com/project/nimbus/nim-asyncdispatch2)
 [![License: Apache](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 ![Stability: experimental](https://img.shields.io/badge/stability-experimental-orange.svg)
@@ -46,7 +46,7 @@ future is completed.
 
 ### Dispatcher
 
-You can run the event loop forever, with `runForever()` which is defined as:
+You can run the "dispatcher" event loop forever, with `runForever()` which is defined as:
 
 ```nim
 proc runForever*() =
@@ -74,10 +74,28 @@ proc waitFor*[T](fut: Future[T]): T =
   return fut.read()
 ```
 
+### Async procedures and methods
+
+The `{.async.}` pragma will transform a procedure (or a method) returning a
+specialised `Future` type into a closure iterator. If there is no return type
+specified, a `Future[void]` is returned.
+
+```nim
+proc p() {.async.} =
+  await sleepAsync(100.milliseconds)
+
+echo p().type # prints "Future[system.void]"
+```
+
+Whenever `await` is encountered inside an async procedure, control is passed
+back to the dispatcher for as many steps as it's necessary for the awaited
+future to complete (or be cancelled). `await` calls the equivalent of
+`Future.read()` on the completed future and returns the encapsulated value.
+
 ## TODO
   * Pipe/Subprocess Transports.
   * Multithreading Stream/Datagram servers
-  * Future[T] cancelation
+  * Future[T] cancellation
 
 ## Contributing
 
