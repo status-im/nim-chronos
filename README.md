@@ -44,6 +44,36 @@ Inside an async procedure, you can `await` the future returned by another async
 procedure. At this point, control will be handled to the event loop until that
 future is completed.
 
+### Dispatcher
+
+You can run the event loop forever, with `runForever()` which is defined as:
+
+```nim
+proc runForever*() =
+  while true:
+    poll()
+```
+
+You can also run it until a certain future is completed, with `waitFor()` which
+will also call `Future.read()` on it:
+
+```nim
+proc p(): Future[int] {.async.} =
+  await sleepAsync(100.milliseconds)
+  return 1
+
+echo waitFor p() # prints "1"
+```
+
+`waitFor()` is defined like this:
+
+```nim
+proc waitFor*[T](fut: Future[T]): T =
+  while not(fut.finished()):
+    poll()
+  return fut.read()
+```
+
 ## TODO
   * Pipe/Subprocess Transports.
   * Multithreading Stream/Datagram servers
