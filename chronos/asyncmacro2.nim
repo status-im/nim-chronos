@@ -277,13 +277,13 @@ template await*[T](f: Future[T]): auto =
     yield chronosInternalTmpFuture
 
     # By the time we get control back here, we're guaranteed that the Future we
-    # just yielded has been completed, through a very complicated mechanism in
-    # which the caller proc (a regular closure) adds itself as a callback to
-    # chronosInternalTmpFuture.
+    # just yielded has been completed (success, failure or cancellation),
+    # through a very complicated mechanism in which the caller proc (a regular
+    # closure) adds itself as a callback to chronosInternalTmpFuture.
     #
-    # Callbacks are called only after completion/cancellation and a copy of the
-    # closure iterator that calls this template is still in that callback's
-    # closure environment. That's where control actually gets back to us.
+    # Callbacks are called only after completion and a copy of the closure
+    # iterator that calls this template is still in that callback's closure
+    # environment. That's where control actually gets back to us.
 
     chronosInternalRetFuture.child = nil
     if chronosInternalRetFuture.mustCancel:
