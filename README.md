@@ -131,6 +131,66 @@ you. If an async procedure modifies global state, and you can't predict when it
 will start executing, the only way to avoid that state changing underneath your
 feet in a certain section is to not use `await` in it.
 
+### Error handling
+
+Exceptions inheriting from `CatchableError` are caught by hidden `try` blocks
+and placed in the `Future.error` field, changing the future's status to
+`Failed`.
+
+When a future is awaited, that exception is reraised, only to be caught again
+by a hidden `try` block in the calling async procedure. That's how these
+exceptions move up the async chain.
+
+A failed future's callbacks will still be scheduled, but it's not possible to
+resume execution from the point an exception was raised.
+
+```nim
+proc p1() {.async.} =
+  await sleepAsync(1.seconds)
+  raise newException(ValueError, "ValueError inherits from CatchableError")
+
+proc p2() {.async.} =
+  await sleepAsync(1.seconds)
+
+proc p3() {.async.} =
+  let
+    fut1 = p1()
+    fut2 = p2()
+  await fut1
+  echo "unreachable code here"
+  await fut2
+
+# `waitFor()` would call `Future.read()` unconditionally, which would raise the
+# exception in `Future.error`.
+let fut3 = p3()
+while not(fut3.finished()):
+  poll()
+
+echo "fut3.state = ", fut3.state # "Failed"
+if fut3.failed():
+  echo "p3() failed: ", fut3.error.name, ": ", fut3.error.msg
+  # prints "p3() failed: ValueError: ValueError inherits from CatchableError"
+```
+
+You can put the `await` in a `try` block, to deal with that exception sooner:
+
+```nim
+proc p3() {.async.} =
+  let
+    fut1 = p1()
+    fut2 = p2()
+  try:
+    await fut1
+  except:
+    echo "p1() failed: ", fut1.error.name, ": ", fut1.error.msg
+  echo "reachable code here"
+  await fut2
+```
+
+Exceptions inheriting from `Defect` are treated differently, being raised
+directly. Don't try to catch them coming out of `poll()`, because this would
+leave behind some zombie futures.
+
 ## TODO
   * Pipe/Subprocess Transports.
   * Multithreading Stream/Datagram servers
