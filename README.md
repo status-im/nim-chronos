@@ -139,7 +139,7 @@ Exceptions inheriting from `CatchableError` are caught by hidden `try` blocks
 and placed in the `Future.error` field, changing the future's status to
 `Failed`.
 
-When a future is awaited, that exception is reraised, only to be caught again
+When a future is awaited, that exception is re-raised, only to be caught again
 by a hidden `try` block in the calling async procedure. That's how these
 exceptions move up the async chain.
 
@@ -196,7 +196,6 @@ leave behind some zombie futures.
 ## TODO
   * Pipe/Subprocess Transports.
   * Multithreading Stream/Datagram servers
-  * Future[T] cancellation
 
 ## Contributing
 
