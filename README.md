@@ -46,6 +46,12 @@ Inside an async procedure, you can `await` the future returned by another async
 procedure. At this point, control will be handled to the event loop until that
 future is completed.
 
+Future completion is tested with `Future.finished()` and is defined as success,
+failure or cancellation. This means that a future is either pending or completed.
+
+To differentiate between completion states, we have `Future.failed()` and
+`Future.cancelled()`.
+
 ### Dispatcher
 
 You can run the "dispatcher" event loop forever, with `runForever()` which is defined as:
