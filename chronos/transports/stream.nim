@@ -1723,9 +1723,15 @@ proc createStreamServer*(host: TransportAddress,
       serverSocket = sock
 
     if host.family in {AddressFamily.IPv4, AddressFamily.IPv6}:
-      # SO_REUSEADDR is not useful for Unix domain sockets.
+      # SO_REUSEADDR and SO_REUSEPORT are not useful for Unix domain sockets.
       if ServerFlags.ReuseAddr in flags:
         if not setSockOpt(serverSocket, SOL_SOCKET, SO_REUSEADDR, 1):
+          let err = osLastError()
+          if sock == asyncInvalidSocket:
+            serverSocket.closeSocket()
+          raiseTransportOsError(err)
+      if ServerFlags.ReusePort in flags:
+        if not setSockOpt(serverSocket, SOL_SOCKET, SO_REUSEPORT, 1):
           let err = osLastError()
           if sock == asyncInvalidSocket:
             serverSocket.closeSocket()
