@@ -1477,6 +1477,10 @@ else:
         let err = osLastError()
         if int(err) == EINTR:
           continue
+        elif int(err) == EAGAIN:
+          # This error appears only when server get closed, while acceptLoop()
+          # reader callback is already scheduled.
+          break
         else:
           ## Critical unrecoverable error
           raiseTransportOsError(err)
