@@ -809,30 +809,38 @@ when defined(windows):
       if server.apending:
         ## Continuation
         server.apending = false
-        if ovl.data.errCode == OSErrorCode(-1):
-          var ntransp: StreamTransport
-          var flags = {WinServerPipe}
-          if NoPipeFlash in server.flags:
-            flags.incl(WinNoPipeFlash)
-          if not isNil(server.init):
-            var transp = server.init(server, server.sock)
-            ntransp = newStreamPipeTransport(server.sock, server.bufferSize,
-                                             transp, flags)
+        if server.status notin {ServerStatus.Stopped, ServerStatus.Closed}:
+          if ovl.data.errCode == OSErrorCode(-1):
+            var ntransp: StreamTransport
+            var flags = {WinServerPipe}
+            if NoPipeFlash in server.flags:
+              flags.incl(WinNoPipeFlash)
+            if not isNil(server.init):
+              var transp = server.init(server, server.sock)
+              ntransp = newStreamPipeTransport(server.sock, server.bufferSize,
+                                               transp, flags)
+            else:
+              ntransp = newStreamPipeTransport(server.sock, server.bufferSize,
+                                               nil, flags)
+            # Start tracking transport
+            trackStream(ntransp)
+            asyncCheck server.function(server, ntransp)
+          elif int32(ovl.data.errCode) == ERROR_OPERATION_ABORTED:
+            # CancelIO() interrupt or close call.
+            if server.status in {ServerStatus.Closed, ServerStatus.Stopped}:
+              server.clean()
+            break
           else:
-            ntransp = newStreamPipeTransport(server.sock, server.bufferSize,
-                                             nil, flags)
-          # Start tracking transport
-          trackStream(ntransp)
-          asyncCheck server.function(server, ntransp)
-        elif int32(ovl.data.errCode) == ERROR_OPERATION_ABORTED:
-          # CancelIO() interrupt or close call.
-          if server.status in {ServerStatus.Closed, ServerStatus.Stopped}:
+            # We should not raise defects in this loop.
+            discard disconnectNamedPipe(Handle(server.sock))
+            discard closeHandle(HANDLE(server.sock))
+            raiseTransportOsError(osLastError())
+        else:
+          # Server close happens in callback, and we are not started new
+          # connectNamedPipe session.
+          if not(server.loopFuture.finished()):
             server.clean()
           break
-        else:
-          doAssert disconnectNamedPipe(Handle(server.sock)) == 1
-          doAssert closeHandle(HANDLE(server.sock)) == 1
-          raiseTransportOsError(osLastError())
       else:
         ## Initiation
         if server.status notin {ServerStatus.Stopped, ServerStatus.Closed}:
@@ -871,9 +879,9 @@ when defined(windows):
         else:
           # Server close happens in callback, and we are not started new
           # connectNamedPipe session.
-          if server.status in {ServerStatus.Closed, ServerStatus.Stopped}:
-            if not(server.loopFuture.finished()):
-              server.clean()
+          if not(server.loopFuture.finished()):
+            server.clean()
+          break
 
   proc acceptLoop(udata: pointer) {.gcsafe, nimcall.} =
     var ovl = cast[PtrCustomOverlapped](udata)
@@ -884,38 +892,45 @@ when defined(windows):
       if server.apending:
         ## Continuation
         server.apending = false
-        if ovl.data.errCode == OSErrorCode(-1):
-          if setsockopt(SocketHandle(server.asock), cint(SOL_SOCKET),
-                        cint(SO_UPDATE_ACCEPT_CONTEXT), addr server.sock,
-                        SockLen(sizeof(SocketHandle))) != 0'i32:
-            let err = OSErrorCode(wsaGetLastError())
-            server.asock.closeSocket()
-            raiseTransportOsError(err)
-          else:
-            var ntransp: StreamTransport
-            if not isNil(server.init):
-              let transp = server.init(server, server.asock)
-              ntransp = newStreamSocketTransport(server.asock,
-                                                 server.bufferSize,
-                                                 transp)
+        if server.status notin {ServerStatus.Stopped, ServerStatus.Closed}:
+          if ovl.data.errCode == OSErrorCode(-1):
+            if setsockopt(SocketHandle(server.asock), cint(SOL_SOCKET),
+                          cint(SO_UPDATE_ACCEPT_CONTEXT), addr server.sock,
+                          SockLen(sizeof(SocketHandle))) != 0'i32:
+              let err = OSErrorCode(wsaGetLastError())
+              server.asock.closeSocket()
+              raiseTransportOsError(err)
             else:
-              ntransp = newStreamSocketTransport(server.asock,
-                                                 server.bufferSize, nil)
-            # Start tracking transport
-            trackStream(ntransp)
-            asyncCheck server.function(server, ntransp)
+              var ntransp: StreamTransport
+              if not isNil(server.init):
+                let transp = server.init(server, server.asock)
+                ntransp = newStreamSocketTransport(server.asock,
+                                                   server.bufferSize,
+                                                   transp)
+              else:
+                ntransp = newStreamSocketTransport(server.asock,
+                                                   server.bufferSize, nil)
+              # Start tracking transport
+              trackStream(ntransp)
+              asyncCheck server.function(server, ntransp)
 
-        elif int32(ovl.data.errCode) == ERROR_OPERATION_ABORTED:
-          # CancelIO() interrupt or close.
-          server.asock.closeSocket()
-          if server.status in {ServerStatus.Closed, ServerStatus.Stopped}:
-            # Stop tracking server
-            if not(server.loopFuture.finished()):
-              server.clean()
-          break
+          elif int32(ovl.data.errCode) == ERROR_OPERATION_ABORTED:
+            # CancelIO() interrupt or close.
+            server.asock.closeSocket()
+            if server.status in {ServerStatus.Closed, ServerStatus.Stopped}:
+              # Stop tracking server
+              if not(server.loopFuture.finished()):
+                server.clean()
+            break
+          else:
+            server.asock.closeSocket()
+            raiseTransportOsError(ovl.data.errCode)
         else:
-          server.asock.closeSocket()
-          raiseTransportOsError(ovl.data.errCode)
+          # Server close happens in callback, and we are not started new
+          # AcceptEx session.
+          if not(server.loopFuture.finished()):
+            server.clean()
+          break
       else:
         ## Initiation
         if server.status notin {ServerStatus.Stopped, ServerStatus.Closed}:
@@ -949,9 +964,9 @@ when defined(windows):
         else:
           # Server close happens in callback, and we are not started new
           # AcceptEx session.
-          if server.status in {ServerStatus.Closed, ServerStatus.Stopped}:
-            if not(server.loopFuture.finished()):
-              server.clean()
+          if not(server.loopFuture.finished()):
+            server.clean()
+          break
 
   proc resumeRead(transp: StreamTransport) {.inline.} =
     if ReadPaused in transp.state:
@@ -992,7 +1007,12 @@ when defined(windows):
                       SockLen(sizeof(SocketHandle))) != 0'i32:
           let err = OSErrorCode(wsaGetLastError())
           server.asock.closeSocket()
-          retFuture.fail(getTransportOsError(err))
+          if int32(err) == WSAENOTSOCK:
+            # This can be happened when server get closed, but continuation was
+            # already scheduled, so we failing it not with OS error.
+            retFuture.fail(getServerUseClosedError())
+          else:
+            retFuture.fail(getTransportOsError(err))
         else:
           var ntransp: StreamTransport
           if not isNil(server.init):
@@ -1538,7 +1558,7 @@ else:
             continue
           elif int(err) == EAGAIN:
             # This error appears only when server get closed, while accept()
-            # call pending.
+            # continuation is already scheduled.
             retFuture.fail(getServerUseClosedError())
           elif int(err) == EMFILE:
             retFuture.fail(getTransportTooManyError())
