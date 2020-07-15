@@ -1478,6 +1478,9 @@ else:
       slen: SockLen
     var server = cast[StreamServer](cast[ptr CompletionData](udata).udata)
     while true:
+      if server.status in {ServerStatus.Stopped, ServerStatus.Closed}:
+        break
+
       let res = posix.accept(SocketHandle(server.sock),
                              cast[ptr SockAddr](addr saddr), addr slen)
       if int(res) > 0:
@@ -1534,38 +1537,41 @@ else:
       var
         saddr: Sockaddr_storage
         slen: SockLen
-      while true:
-        let res = posix.accept(SocketHandle(server.sock),
-                               cast[ptr SockAddr](addr saddr), addr slen)
-        if int(res) > 0:
-          let sock = wrapAsyncSocket(res)
-          if sock != asyncInvalidSocket:
-            var ntransp: StreamTransport
-            if not isNil(server.init):
-              let transp = server.init(server, sock)
-              ntransp = newStreamSocketTransport(sock, server.bufferSize,
-                                                 transp)
-            else:
-              ntransp = newStreamSocketTransport(sock, server.bufferSize, nil)
-            # Start tracking transport
-            trackStream(ntransp)
-            retFuture.complete(ntransp)
-          else:
-            retFuture.fail(getTransportOsError(osLastError()))
-        else:
-          let err = osLastError()
-          if int(err) == EINTR:
-            continue
-          elif int(err) == EAGAIN:
-            # This error appears only when server get closed, while accept()
-            # continuation is already scheduled.
-            retFuture.fail(getServerUseClosedError())
-          elif int(err) == EMFILE:
-            retFuture.fail(getTransportTooManyError())
-          else:
-            retFuture.fail(getTransportOsError(err))
-        break
 
+      if server.status in {ServerStatus.Stopped, ServerStatus.Closed}:
+        retFuture.fail(getServerUseClosedError())
+      else:
+        while true:
+          let res = posix.accept(SocketHandle(server.sock),
+                                 cast[ptr SockAddr](addr saddr), addr slen)
+          if int(res) > 0:
+            let sock = wrapAsyncSocket(res)
+            if sock != asyncInvalidSocket:
+              var ntransp: StreamTransport
+              if not isNil(server.init):
+                let transp = server.init(server, sock)
+                ntransp = newStreamSocketTransport(sock, server.bufferSize,
+                                                   transp)
+              else:
+                ntransp = newStreamSocketTransport(sock, server.bufferSize, nil)
+              # Start tracking transport
+              trackStream(ntransp)
+              retFuture.complete(ntransp)
+            else:
+              retFuture.fail(getTransportOsError(osLastError()))
+          else:
+            let err = osLastError()
+            if int(err) == EINTR:
+              continue
+            elif int(err) == EAGAIN:
+              # This error appears only when server get closed, while accept()
+              # continuation is already scheduled.
+              retFuture.fail(getServerUseClosedError())
+            elif int(err) == EMFILE:
+              retFuture.fail(getTransportTooManyError())
+            else:
+              retFuture.fail(getTransportOsError(err))
+          break
       removeReader(server.sock)
 
     proc cancellation(udata: pointer) {.gcsafe.} =
