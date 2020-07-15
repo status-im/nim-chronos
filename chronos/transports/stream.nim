@@ -1001,39 +1001,44 @@ when defined(windows):
       var server = cast[StreamServer](ovl.data.udata)
 
       server.apending = false
-      if ovl.data.errCode == OSErrorCode(-1):
-        if setsockopt(SocketHandle(server.asock), cint(SOL_SOCKET),
-                      cint(SO_UPDATE_ACCEPT_CONTEXT), addr server.sock,
-                      SockLen(sizeof(SocketHandle))) != 0'i32:
-          let err = OSErrorCode(wsaGetLastError())
-          server.asock.closeSocket()
-          if int32(err) == WSAENOTSOCK:
-            # This can be happened when server get closed, but continuation was
-            # already scheduled, so we failing it not with OS error.
-            retFuture.fail(getServerUseClosedError())
-          else:
-            retFuture.fail(getTransportOsError(err))
-        else:
-          var ntransp: StreamTransport
-          if not isNil(server.init):
-            let transp = server.init(server, server.asock)
-            ntransp = newStreamSocketTransport(server.asock,
-                                               server.bufferSize,
-                                               transp)
-          else:
-            ntransp = newStreamSocketTransport(server.asock,
-                                               server.bufferSize, nil)
-          # Start tracking transport
-          trackStream(ntransp)
-          retFuture.complete(ntransp)
-      elif int32(ovl.data.errCode) == ERROR_OPERATION_ABORTED:
-        # CancelIO() interrupt or close.
+      if server.status in {ServerStatus.Stopped, ServerStatus.Closed}:
         server.asock.closeSocket()
         retFuture.fail(getServerUseClosedError())
         server.clean()
       else:
-        server.asock.closeSocket()
-        retFuture.fail(getTransportOsError(ovl.data.errCode))
+        if ovl.data.errCode == OSErrorCode(-1):
+          if setsockopt(SocketHandle(server.asock), cint(SOL_SOCKET),
+                        cint(SO_UPDATE_ACCEPT_CONTEXT), addr server.sock,
+                        SockLen(sizeof(SocketHandle))) != 0'i32:
+            let err = OSErrorCode(wsaGetLastError())
+            server.asock.closeSocket()
+            if int32(err) == WSAENOTSOCK:
+              # This can be happened when server get closed, but continuation was
+              # already scheduled, so we failing it not with OS error.
+              retFuture.fail(getServerUseClosedError())
+            else:
+              retFuture.fail(getTransportOsError(err))
+          else:
+            var ntransp: StreamTransport
+            if not isNil(server.init):
+              let transp = server.init(server, server.asock)
+              ntransp = newStreamSocketTransport(server.asock,
+                                                 server.bufferSize,
+                                                 transp)
+            else:
+              ntransp = newStreamSocketTransport(server.asock,
+                                                 server.bufferSize, nil)
+            # Start tracking transport
+            trackStream(ntransp)
+            retFuture.complete(ntransp)
+        elif int32(ovl.data.errCode) == ERROR_OPERATION_ABORTED:
+          # CancelIO() interrupt or close.
+          server.asock.closeSocket()
+          retFuture.fail(getServerUseClosedError())
+          server.clean()
+        else:
+          server.asock.closeSocket()
+          retFuture.fail(getTransportOsError(ovl.data.errCode))
 
     proc cancellationSocket(udata: pointer) {.gcsafe.} =
       server.asock.closeSocket()
@@ -1043,33 +1048,37 @@ when defined(windows):
       var server = cast[StreamServer](ovl.data.udata)
 
       server.apending = false
-      if ovl.data.errCode == OSErrorCode(-1):
-        var ntransp: StreamTransport
-        var flags = {WinServerPipe}
-        if NoPipeFlash in server.flags:
-          flags.incl(WinNoPipeFlash)
-        if not isNil(server.init):
-          var transp = server.init(server, server.sock)
-          ntransp = newStreamPipeTransport(server.sock, server.bufferSize,
-                                           transp, flags)
-        else:
-          ntransp = newStreamPipeTransport(server.sock, server.bufferSize,
-                                           nil, flags)
-        # Start tracking transport
-        trackStream(ntransp)
-        server.createAcceptPipe()
-        retFuture.complete(ntransp)
-
-      elif int32(ovl.data.errCode) in {ERROR_OPERATION_ABORTED,
-                                       ERROR_PIPE_NOT_CONNECTED}:
-        # CancelIO() interrupt or close call.
+      if server.status in {ServerStatus.Stopped, ServerStatus.Closed}:
         retFuture.fail(getServerUseClosedError())
         server.clean()
       else:
-        let sock = server.sock
-        server.createAcceptPipe()
-        closeHandle(sock)
-        retFuture.fail(getTransportOsError(ovl.data.errCode))
+        if ovl.data.errCode == OSErrorCode(-1):
+          var ntransp: StreamTransport
+          var flags = {WinServerPipe}
+          if NoPipeFlash in server.flags:
+            flags.incl(WinNoPipeFlash)
+          if not isNil(server.init):
+            var transp = server.init(server, server.sock)
+            ntransp = newStreamPipeTransport(server.sock, server.bufferSize,
+                                             transp, flags)
+          else:
+            ntransp = newStreamPipeTransport(server.sock, server.bufferSize,
+                                             nil, flags)
+          # Start tracking transport
+          trackStream(ntransp)
+          server.createAcceptPipe()
+          retFuture.complete(ntransp)
+
+        elif int32(ovl.data.errCode) in {ERROR_OPERATION_ABORTED,
+                                         ERROR_PIPE_NOT_CONNECTED}:
+          # CancelIO() interrupt or close call.
+          retFuture.fail(getServerUseClosedError())
+          server.clean()
+        else:
+          let sock = server.sock
+          server.createAcceptPipe()
+          closeHandle(sock)
+          retFuture.fail(getTransportOsError(ovl.data.errCode))
 
     proc cancellationPipe(udata: pointer) {.gcsafe.} =
       server.sock.closeHandle()
