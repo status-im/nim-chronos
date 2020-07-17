@@ -1197,7 +1197,10 @@ suite "Stream Transport test suite":
     test prefixes[i] & m16:
       check waitFor(test16(addresses[i])) == 1
     test prefixes[i] & "Connection reset test on send() only":
-      check waitFor(testWriteConnReset(addresses[i])) == 1
+      when defined(macos):
+        skip()
+      else:
+        check waitFor(testWriteConnReset(addresses[i])) == 1
     test prefixes[i] & m17:
       if addresses[i].family == AddressFamily.IPv4:
         check waitFor(testAnyAddress()) == true
