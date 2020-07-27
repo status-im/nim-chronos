@@ -340,12 +340,12 @@ proc cancel(future: FutureBase, loc: ptr SrcLoc) =
     # `cancelAndSchedule()` on that parent, thus propagating the cancellation
     # up the chain.
     if not(isNil(future.child)):
-      cancel(future.child, getSrcLocation())
+      cancel(future.child, loc)
       future.mustCancel = true
     else:
       if not(isNil(future.cancelcb)):
         future.cancelcb(cast[pointer](future))
-      cancelAndSchedule(future, getSrcLocation())
+      cancelAndSchedule(future, loc)
 
 template cancel*[T](future: Future[T]) =
   ## Cancel ``future``.

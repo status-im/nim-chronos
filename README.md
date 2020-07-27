@@ -199,6 +199,81 @@ Exceptions inheriting from `Defect` are treated differently, being raised
 directly. Don't try to catch them coming out of `poll()`, because this would
 leave behind some zombie futures.
 
+### Cancellation
+
+A cancelled future will raise `CancelledError` (which inherits from
+`CatchableError`) when `await`-ed. Any other future that the cancelled future
+is waiting on (its "children") will also be cancelled.
+
+If this `CancelledError` exception is not caught in an explicit `try` block, it
+will propagate up the future chain, cancelling everything in its path.
+
+It's not possible to establish whether the awaited future was cancelled directly or indirectly.
+
+Let's look at a simple case:
+
+```nim
+proc p1() {.async.} =
+  await sleepAsync(1.seconds)
+
+proc p2() {.async.} =
+  let fut1 = p1()
+
+  fut1.cancel()
+  try:
+    await fut1
+  except CancelledError:
+    echo "fut1 cancelled"
+
+waitFor p2()
+```
+
+This works as expected. The direct cancellation is dealt with on the spot.
+
+Now let's let that cancellation exception propagate to the parent future:
+
+```nim
+proc p1() {.async.} =
+  await sleepAsync(1.seconds)
+
+proc p2() {.async.} =
+  let fut1 = p1()
+  fut1.cancel()
+  await fut1
+
+let fut2 = p2()
+while not(fut2.finished()):
+  poll()
+
+echo "fut2.state = ", fut2.state # prints "Cancelled"
+doAssert fut2.cancelled() == true
+```
+
+Let's see it propagate from parent to child:
+
+```nim
+proc p1() {.async.} =
+  await sleepAsync(1.seconds)
+
+proc p2() {.async.} =
+  let fut1 = p1()
+
+  try:
+    await fut1
+  except CancelledError:
+    echo "fut1 cancelled"
+
+let fut2 = p2()
+fut2.cancel()
+while not(fut2.finished()):
+  poll()
+
+echo "fut2.state = ", fut2.state # prints "Finished"
+```
+
+Somewhat surprising, `fut2` is not appearing as cancelled, because we
+interrupted the propagation of `CancelledError` in its child `fut1`.
+
 ## TODO
   * Pipe/Subprocess Transports.
   * Multithreading Stream/Datagram servers
