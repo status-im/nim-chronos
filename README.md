@@ -203,7 +203,7 @@ leave behind some zombie futures.
 
 A cancelled future will raise `CancelledError` (which inherits from
 `CatchableError`) when `await`-ed. Any other future that the cancelled future
-is waiting on (its "children") will also be cancelled.
+is waiting on (its "children") will also be cancelled, after some event loop ticks.
 
 If this `CancelledError` exception is not caught in an explicit `try` block, it
 will propagate up the future chain, cancelling everything in its path.
