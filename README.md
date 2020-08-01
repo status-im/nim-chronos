@@ -201,47 +201,19 @@ leave behind some zombie futures.
 
 ### Cancellation
 
-A cancelled future will raise `CancelledError` (which inherits from
-`CatchableError`) when `await`-ed. Any other future that the cancelled future
-is waiting on (its "children") will also be cancelled, after some event loop ticks.
-
-If this `CancelledError` exception is not caught in an explicit `try` block, it
-will propagate up the future chain, cancelling everything in its path.
-
-It's not possible to establish whether the awaited future was cancelled directly or indirectly.
-
-Let's look at a simple case:
+Calling `cancel()` on a future will set its state to `FutureState.Cancelled`
+and the cancellation will propagate to all its children and all its parents, at
+some point in the future. A cancelled future's callbacks are still scheduled for execution.
 
 ```nim
 proc p1() {.async.} =
-  await sleepAsync(1.seconds)
+  await sleepAsync(100.seconds) # this sleep will also be cancelled
 
 proc p2() {.async.} =
-  let fut1 = p1()
-
-  fut1.cancel()
-  try:
-    await fut1
-  except CancelledError:
-    echo "fut1 cancelled"
-
-waitFor p2()
-```
-
-This works as expected. The direct cancellation is dealt with on the spot.
-
-Now let's let that cancellation exception propagate to the parent future:
-
-```nim
-proc p1() {.async.} =
-  await sleepAsync(1.seconds)
-
-proc p2() {.async.} =
-  let fut1 = p1()
-  fut1.cancel()
-  await fut1
+  await p1()
 
 let fut2 = p2()
+fut2.cancel()
 while not(fut2.finished()):
   poll()
 
@@ -249,30 +221,21 @@ echo "fut2.state = ", fut2.state # prints "Cancelled"
 doAssert fut2.cancelled() == true
 ```
 
-Let's see it propagate from parent to child:
+Sometimes you need to wait for a future to be cancelled (and all its callbacks
+executed). To do this, you `await` a new future created by `cancelAndWait()`
+which is guaranteed to complete after the cancellation processed is finished.
 
 ```nim
 proc p1() {.async.} =
-  await sleepAsync(1.seconds)
+  await sleepAsync(100.seconds) # the sleep will also be cancelled
 
 proc p2() {.async.} =
   let fut1 = p1()
+  await cancelAndWait(fut1)
+  doAssert fut1.cancelled() == true
 
-  try:
-    await fut1
-  except CancelledError:
-    echo "fut1 cancelled"
-
-let fut2 = p2()
-fut2.cancel()
-while not(fut2.finished()):
-  poll()
-
-echo "fut2.state = ", fut2.state # prints "Finished"
+waitFor p2()
 ```
-
-Somewhat surprising, `fut2` is not appearing as cancelled, because we
-interrupted the propagation of `CancelledError` in its child `fut1`.
 
 ## TODO
   * Pipe/Subprocess Transports.
