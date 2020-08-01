@@ -237,6 +237,11 @@ proc p2() {.async.} =
 waitFor p2()
 ```
 
+If you put an `await` in a `try` block, always catch `CatchableError` or some
+other specific exception, in order to avoid catching by mistake
+`CancelledError` (object of `Exception`, used internally to propagate
+cancellation).
+
 ## TODO
   * Pipe/Subprocess Transports.
   * Multithreading Stream/Datagram servers
