@@ -61,3 +61,38 @@ suite "Asynchronous timers test suite":
   test $TimersCount & " timers with 1000ms timeout":
     var res = waitFor(test(1000.milliseconds))
     check (res >= 1000.milliseconds) and (res <= 5000.milliseconds)
+
+  test "Interval trigger":
+    proc testInterval(): Future[bool] {.async, gcsafe.} =
+      var count = 0
+      let cancelation = addInterval(1.millis,
+                                    proc (data: pointer = nil) {.gcsafe.} = 
+                                      count.inc())
+
+      # wait 100 milliseconds and then complete the interval
+      await sleepAsync(100.millis)
+      cancelation.complete()
+
+      # allow interval to finish
+      await sleepAsync(1.millis)
+      result = count > 50
+
+    check waitFor(testInterval()) == true
+
+  test "Interval cancelation":
+    proc testInterval(): Future[bool] {.async, gcsafe.} =
+      var count = 0
+      var cancelation: Future[void]
+      proc handler(data: pointer = nil) {.gcsafe.} = 
+        if count == 10:
+          cancelation.complete()
+          return
+        count.inc()
+
+      cancelation = addInterval(1.millis, handler)
+
+      await sleepAsync(20.millis)
+      check cancelation.finished() == true
+      result = count == 10 # shouldn't be called more than 10 times
+
+    check waitFor(testInterval()) == true

@@ -760,6 +760,11 @@ proc addTimer*(at: uint64, cb: CallbackFunc, udata: pointer = nil) {.
      inline, deprecated: "Use addTimer(Duration, cb, udata)".} =
   discard setTimer(Moment.init(int64(at), Millisecond), cb, udata)
 
+proc addTimer*(at: Duration, cb: CallbackFunc, udata: pointer = nil) =
+  ## Arrange for the callback ``cb`` to be called at the given absolute
+  ## timestamp ``at``. You can also pass ``udata`` to callback.
+  addTimer(Moment.fromNow(at), cb, udata)
+
 proc removeTimer*(at: Moment, cb: CallbackFunc, udata: pointer = nil) =
   ## Remove timer callback ``cb`` with absolute timestamp ``at`` from waiting
   ## queue.
@@ -783,6 +788,22 @@ proc removeTimer*(at: uint64, cb: CallbackFunc, udata: pointer = nil) {.
   removeTimer(Moment.init(int64(at), Millisecond), cb, udata)
 
 include asyncfutures2
+
+proc addInterval*(every: Duration, cb: CallbackFunc, udata: pointer = nil): Future[void] =
+  ## Arrange the callback ``cb`` to be called on every ``Duration`` window
+
+  var retFuture = newFuture[void]("chronos.addInterval(Duration)")
+  proc interval(arg: pointer = nil) {.gcsafe.}
+  proc scheduleNext() =
+    if not retFuture.finished():
+      addTimer(Moment.fromNow(every), interval)
+
+  proc interval(arg: pointer = nil) {.gcsafe.} =
+    cb(udata)
+    scheduleNext()
+
+  scheduleNext()
+  return retFuture
 
 proc sleepAsync*(duration: Duration): Future[void] =
   ## Suspends the execution of the current async procedure for the next
