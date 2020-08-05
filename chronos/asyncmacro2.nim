@@ -200,9 +200,15 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
   # ->   complete(retFuture, result)
   var iteratorNameSym = genSym(nskIterator, $prcName)
   var procBody = prc.body.processBody(retFutureSym, subtypeIsVoid,
-                                    futureVarIdents)
+                                      futureVarIdents)
   # don't do anything with forward bodies (empty)
   if procBody.kind != nnkEmpty:
+    if subtypeIsVoid:
+      let resultTemplate = quote do:
+        template result: auto {.used.} =
+          {.fatal: "You should not reference the `result` variable inside a void async proc".}
+      procBody = newStmtList(resultTemplate, procBody)
+
     # fix #13899, `defer` should not escape its original scope
     procBody = newStmtList(newTree(nnkBlockStmt, newEmptyNode(), procBody))
 
