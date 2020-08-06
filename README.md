@@ -199,6 +199,49 @@ Exceptions inheriting from `Defect` are treated differently, being raised
 directly. Don't try to catch them coming out of `poll()`, because this would
 leave behind some zombie futures.
 
+### Cancellation
+
+Calling `cancel()` on a future will set its state to `FutureState.Cancelled`
+and the cancellation will propagate to all its children and all its parents, at
+some point in the future. A cancelled future's callbacks are still scheduled for execution.
+
+```nim
+proc p1() {.async.} =
+  await sleepAsync(100.seconds) # this sleep will also be cancelled
+
+proc p2() {.async.} =
+  await p1()
+
+let fut2 = p2()
+fut2.cancel()
+while not(fut2.finished()):
+  poll()
+
+echo "fut2.state = ", fut2.state # prints "Cancelled"
+doAssert fut2.cancelled() == true
+```
+
+Sometimes you need to wait for a future to be cancelled (and all its callbacks
+executed). To do this, you `await` a new future created by `cancelAndWait()`
+which is guaranteed to complete after the cancellation processed is finished.
+
+```nim
+proc p1() {.async.} =
+  await sleepAsync(100.seconds) # the sleep will also be cancelled
+
+proc p2() {.async.} =
+  let fut1 = p1()
+  await cancelAndWait(fut1)
+  doAssert fut1.cancelled() == true
+
+waitFor p2()
+```
+
+If you put an `await` in a `try` block, always catch `CatchableError` or some
+other specific exception, in order to avoid catching by mistake
+`CancelledError` (object of `Exception`, used internally to propagate
+cancellation).
+
 ## TODO
   * Pipe/Subprocess Transports.
   * Multithreading Stream/Datagram servers

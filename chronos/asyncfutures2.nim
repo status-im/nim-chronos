@@ -65,12 +65,15 @@ type
 
   FutureError* = object of CatchableError
 
-  CancelledError* = object of FutureError
-
   FutureList* = object
     head*: FutureBase
     tail*: FutureBase
     count*: int
+
+{.push warning[InheritFromException]: off.}
+# used internally; should not be caught by the API user
+type CancelledError* = object of Exception
+{.pop.}
 
 var currentID* {.threadvar.}: int
 currentID = 0
@@ -340,12 +343,12 @@ proc cancel(future: FutureBase, loc: ptr SrcLoc) =
     # `cancelAndSchedule()` on that parent, thus propagating the cancellation
     # up the chain.
     if not(isNil(future.child)):
-      cancel(future.child, getSrcLocation())
+      cancel(future.child, loc)
       future.mustCancel = true
     else:
       if not(isNil(future.cancelcb)):
         future.cancelcb(cast[pointer](future))
-      cancelAndSchedule(future, getSrcLocation())
+      cancelAndSchedule(future, loc)
 
 template cancel*[T](future: Future[T]) =
   ## Cancel ``future``.
@@ -767,16 +770,15 @@ proc cancelAndWait*[T](fut: Future[T]): Future[void] =
   ## ``await``s on another Future.
 
   # When `retFuture` completes, `fut` and all its children have been
-  # cancelled. If `fut` doesn't have any children, the `continuation()` callback
-  # runs immediately, without control getting back to the dispatcher.
+  # cancelled.
   var retFuture = newFuture[void]("chronos.cancelAndWait(T)")
   proc continuation(udata: pointer) {.gcsafe.} =
     if not(retFuture.finished()):
       retFuture.complete()
   fut.addCallback(continuation)
 
-  # Start the cancellation process. If `fut` has children, multiple event loop
-  # steps will be needed for it to complete.
+  # Start the cancellation process. One or more event loop steps will be needed
+  # for it to complete.
   fut.cancel()
 
   return retFuture
