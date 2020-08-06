@@ -178,7 +178,7 @@ elif unixPlatform:
   from posix import EINTR, EAGAIN, EINPROGRESS, EWOULDBLOCK, MSG_PEEK,
                     MSG_NOSIGNAL, SIGPIPE
 
-const MaxDeletedTimers = 1024
+const MinDeletedTimers = 1024
 
 type
   CallbackFunc* = proc (arg: pointer = nil) {.gcsafe.}
@@ -234,7 +234,7 @@ func getAsyncTimestamp*(a: Duration): auto {.inline.} =
     result += min(1, cast[int32](mid))
 
 template removeDeletedTimers(loop: PDispatcherBase, curTimeout: untyped) =
-  if loop.deletedTimers >= MaxDeletedTimers:
+  if loop.deletedTimers >= MinDeletedTimers:
     if (curTimeout > 0 or curTimeout == -1):
       var before = Moment.now()
       var newHeap = initHeapQueue[TimerCallback]()
@@ -554,8 +554,6 @@ when defined(windows) or defined(nimdoc):
     when defined(metrics):
       processFutureMetrics()
       chronos_poll_duration_seconds.observe((Moment.now() - curTime).milliseconds.float64 / 1000)
-    # cleanup timers
-    loop.removeDeletedTimers()
 
   proc closeSocket*(fd: AsyncFD, aftercb: CallbackFunc = nil) =
     ## Closes a socket and ensures that it is unregistered.
@@ -847,8 +845,6 @@ elif unixPlatform:
     when defined(metrics):
       processFutureMetrics()
       chronos_poll_duration_seconds.observe((Moment.now() - curTime).milliseconds.float64 / 1000)
-    # cleanup timers
-    loop.removeDeletedTimers()
 
 else:
   proc initAPI() = discard
