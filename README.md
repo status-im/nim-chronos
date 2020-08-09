@@ -242,6 +242,53 @@ other specific exception, in order to avoid catching by mistake
 `CancelledError` (object of `Exception`, used internally to propagate
 cancellation).
 
+### Yielding
+
+If you need to give control back to the event loop, but there's no future you
+need to `await` at that point, you can call `yieldAsync()` - a simple wrapper
+around `sleepAsync()`:
+
+```nim
+template yieldAsync*() =
+  await sleepAsync(0.seconds)
+```
+
+This comes in handy when splitting a blocking task into smaller parts:
+
+```nim
+proc showMsg(after: int) {.async.} =
+  echo "begin showMsg()"
+  await sleepAsync(after.seconds)
+  echo "msg: after = ", after
+
+let maxDuration = 10
+
+proc heavy() {.async.} =
+  echo "begin showMsg(", after, ")"
+  let start = Moment.now()
+  var s: uint64
+  while true:
+    s += 1
+
+    # try commenting this out and see what happens
+    if s mod 1000000 == 0:
+      yieldAsync()
+
+    if (Moment.now() - start).seconds >= (maxDuration + 1):
+      break
+  echo "sum: ", s
+
+proc p1() {.async.} =
+  var futures: seq[Future[void]]
+
+  for after in 1..maxDuration:
+    futures.add(showMsg(after))
+  futures.add(heavy())
+  await allFutures(futures)
+
+waitFor p1()
+```
+
 ## TODO
   * Pipe/Subprocess Transports.
   * Multithreading Stream/Datagram servers
