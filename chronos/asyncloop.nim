@@ -891,10 +891,6 @@ proc sleepAsync*(ms: int): Future[void] {.
      inline, deprecated: "Use sleepAsync(Duration)".} =
   result = sleepAsync(ms.milliseconds())
 
-# This can't be an async proc, because its `await` needs to modify the caller.
-template yieldAsync*() =
-  await sleepAsync(0.seconds)
-
 proc withTimeout*[T](fut: Future[T], timeout: Duration): Future[bool] =
   ## Returns a future which will complete once ``fut`` completes or after
   ## ``timeout`` milliseconds has elapsed.

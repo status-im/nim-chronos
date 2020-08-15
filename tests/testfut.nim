@@ -969,38 +969,6 @@ suite "Future[T] behavior test suite":
   proc testCancellationRace(): bool =
     waitFor(testCancellationRaceAsync())
 
-  proc testYieldAsync(): Future[bool] {.async.} =
-    proc showMsg(after: int, results: ptr seq[string]) {.async.} =
-      await sleepAsync(after.seconds)
-      results[].add("after " & $after)
-
-    let maxDuration = 2
-
-    proc heavy(results: ptr seq[string]) {.async.} =
-      let start = Moment.now()
-      var s: uint64
-      while true:
-        s += 1
-        if s mod 1000000 == 0:
-          yieldAsync()
-        if (Moment.now() - start).seconds >= (maxDuration + 1):
-          break
-      results[].add("heavy")
-
-    var
-      futures: seq[Future[void]]
-      results: seq[string]
-
-    for after in 1..maxDuration:
-      futures.add(showMsg(after, results.addr))
-    futures.add(heavy(results.addr))
-    await allFutures(futures)
-
-    return results == @["after 1", "after 2", "heavy"]
-
-  proc testYield(): bool =
-    waitFor(testYieldAsync())
-
   test "Async undefined behavior (#7758) test":
     check test1() == true
   test "Immediately completed asynchronous procedure test":
@@ -1054,6 +1022,3 @@ suite "Future[T] behavior test suite":
     check testWithTimeout() == true
   test "Cancellation race test":
     check testCancellationRace() == true
-  test "Yielding test":
-    check testYield() == true
-
