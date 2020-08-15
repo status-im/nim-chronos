@@ -295,6 +295,8 @@ proc readExactly*(rstream: AsyncStreamReader, pbytes: pointer,
   if isNil(rstream.rsource):
     try:
       await readExactly(rstream.tsource, pbytes, nbytes)
+    except CancelledError:
+      raise
     except TransportIncompleteError:
       raise newAsyncStreamIncompleteError()
     except CatchableError as exc:
@@ -333,6 +335,8 @@ proc readOnce*(rstream: AsyncStreamReader, pbytes: pointer,
   if isNil(rstream.rsource):
     try:
       result = await readOnce(rstream.tsource, pbytes, nbytes)
+    except CancelledError:
+      raise
     except CatchableError as exc:
       raise newAsyncStreamReadError(exc)
   else:
@@ -376,6 +380,8 @@ proc readUntil*(rstream: AsyncStreamReader, pbytes: pointer, nbytes: int,
   if isNil(rstream.rsource):
     try:
       result = await readUntil(rstream.tsource, pbytes, nbytes, sep)
+    except CancelledError:
+      raise
     except TransportIncompleteError:
       raise newAsyncStreamIncompleteError()
     except TransportLimitError:
@@ -441,6 +447,8 @@ proc readLine*(rstream: AsyncStreamReader, limit = 0,
   if isNil(rstream.rsource):
     try:
       result = await readLine(rstream.tsource, limit, sep)
+    except CancelledError:
+      raise
     except CatchableError as exc:
       raise newAsyncStreamReadError(exc)
   else:
@@ -494,6 +502,8 @@ proc read*(rstream: AsyncStreamReader, n = 0): Future[seq[byte]] {.async.} =
   if isNil(rstream.rsource):
     try:
       result = await read(rstream.tsource, n)
+    except CancelledError:
+      raise
     except CatchableError as exc:
       raise newAsyncStreamReadError(exc)
   else:
@@ -542,6 +552,8 @@ proc consume*(rstream: AsyncStreamReader, n = -1): Future[int] {.async.} =
   if isNil(rstream.rsource):
     try:
       result = await consume(rstream.tsource, n)
+    except CancelledError:
+      raise
     except TransportLimitError:
       raise newAsyncStreamLimitError()
     except CatchableError as exc:
@@ -594,6 +606,8 @@ proc write*(wstream: AsyncStreamWriter, pbytes: pointer,
     var res: int
     try:
       res = await write(wstream.tsource, pbytes, nbytes)
+    except CancelledError:
+      raise
     except CatchableError as exc:
       raise newAsyncStreamWriteError(exc)
     if res != nbytes:
@@ -609,7 +623,9 @@ proc write*(wstream: AsyncStreamWriter, pbytes: pointer,
       await wstream.queue.put(item)
       try:
         await item.future
-      except CatchableError:
+      except CancelledError:
+        raise
+      except:
         raise newAsyncStreamWriteError(item.future.error)
 
 proc write*(wstream: AsyncStreamWriter, sbytes: seq[byte],
@@ -633,6 +649,8 @@ proc write*(wstream: AsyncStreamWriter, sbytes: seq[byte],
     var res: int
     try:
       res = await write(wstream.tsource, sbytes, msglen)
+    except CancelledError:
+      raise
     except CatchableError as exc:
       raise newAsyncStreamWriteError(exc)
     if res != length:
@@ -651,7 +669,9 @@ proc write*(wstream: AsyncStreamWriter, sbytes: seq[byte],
       await wstream.queue.put(item)
       try:
         await item.future
-      except CatchableError:
+      except CancelledError:
+        raise
+      except:
         raise newAsyncStreamWriteError(item.future.error)
 
 proc write*(wstream: AsyncStreamWriter, sbytes: string,
@@ -674,6 +694,8 @@ proc write*(wstream: AsyncStreamWriter, sbytes: string,
     var res: int
     try:
       res = await write(wstream.tsource, sbytes, msglen)
+    except CancelledError:
+      raise
     except CatchableError as exc:
       raise newAsyncStreamWriteError(exc)
     if res != length:
@@ -692,7 +714,9 @@ proc write*(wstream: AsyncStreamWriter, sbytes: string,
       await wstream.queue.put(item)
       try:
         await item.future
-      except CatchableError:
+      except CancelledError:
+        raise
+      except:
         raise newAsyncStreamWriteError(item.future.error)
 
 proc finish*(wstream: AsyncStreamWriter) {.async.} =
@@ -710,7 +734,9 @@ proc finish*(wstream: AsyncStreamWriter) {.async.} =
       await wstream.queue.put(item)
       try:
         await item.future
-      except CatchableError:
+      except CancelledError:
+        raise
+      except:
         raise newAsyncStreamWriteError(item.future.error)
 
 proc join*(rw: AsyncStreamRW): Future[void] =
