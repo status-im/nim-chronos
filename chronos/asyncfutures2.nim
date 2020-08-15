@@ -531,11 +531,13 @@ proc mget*[T](future: FutureVar[T]): var T =
   result = Future[T](future).value
 
 proc asyncCheck*[T](future: Future[T]) =
-  ## Sets a callback on ``future`` which raises an exception in ``poll()`` if the
-  ## future failed.
+  ## Sets a callback on ``future`` which raises an exception if the future
+  ## finished with an error.
+  ##
+  ## This should be used instead of ``discard`` to discard void futures.
   doAssert(not isNil(future), "Future is nil")
   proc cb(data: pointer) =
-    if future.failed():
+    if future.failed() or future.cancelled():
       when defined(chronosStackTrace):
         injectStacktrace(future)
       raise future.error
