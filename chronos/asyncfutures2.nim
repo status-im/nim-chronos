@@ -8,10 +8,8 @@
 #    Apache License, version 2.0, (LICENSE-APACHEv2)
 #                MIT license (LICENSE-MIT)
 
-import os, tables, strutils, heapqueue, options, deques, cstrutils, sets, hashes
-when defined(metrics):
-  import metrics, locks
-import ./srcloc
+import os, tables, strutils, heapqueue, options, deques, cstrutils
+import srcloc
 export srcloc
 
 const
@@ -75,39 +73,9 @@ type
 var currentID* {.threadvar.}: int
 currentID = 0
 
-when defined(metrics):
-  declareCounter chronos_new_future, "new Future being created"
-
 when defined(chronosFutureTracking):
   var futureList* {.threadvar.}: FutureList
   futureList = FutureList()
-
-when defined(chronosFutureTracking):
-  proc registerPendingFuture(future: var FutureBase) =
-    future.next = nil
-    future.prev = futureList.tail
-    if not(isNil(futureList.tail)):
-      futureList.tail.next = future
-    futureList.tail = future
-    if isNil(futureList.head):
-      futureList.head = future
-    futureList.count.inc()
-    when defined(metrics):
-      chronos_new_future.inc()
-      {.gcsafe.}:
-        withLock(pendingFuturesTableLock):
-          pendingFuturesTable[$future.location[LocCreateIndex]] = pendingFuturesTable.getOrDefault($future.location[LocCreateIndex]) + 1
-
-  proc unregisterPendingFuture(future: var FutureBase) =
-    if future == futureList.tail: futureList.tail = future.prev
-    if future == futureList.head: futureList.head = future.next
-    if not(isNil(future.next)): future.next.prev = future.prev
-    if not(isNil(future.prev)): future.prev.next = future.next
-    futureList.count.dec()
-    when defined(metrics):
-      {.gcsafe.}:
-        withLock(pendingFuturesTableLock):
-          pendingFuturesTable[$future.location[LocCreateIndex]] = pendingFuturesTable.getOrDefault($future.location[LocCreateIndex]) - 1
 
 template setupFutureBase(loc: ptr SrcLoc) =
   new(result)
@@ -119,7 +87,14 @@ template setupFutureBase(loc: ptr SrcLoc) =
   currentID.inc()
 
   when defined(chronosFutureTracking):
-    registerPendingFuture(result.FutureBase)
+    result.next = nil
+    result.prev = futureList.tail
+    if not(isNil(futureList.tail)):
+      futureList.tail.next = result
+    futureList.tail = result
+    if isNil(futureList.head):
+      futureList.head = result
+    futureList.count.inc()
 
 proc newFuture[T](loc: ptr SrcLoc): Future[T] =
   setupFutureBase(loc)
@@ -190,8 +165,12 @@ when defined(chronosFutureTracking):
   proc futureDestructor(udata: pointer) {.gcsafe.} =
     ## This procedure will be called when Future[T] got finished, cancelled or
     ## failed and all Future[T].callbacks are already scheduled and processed.
-    var future = cast[FutureBase](udata)
-    unregisterPendingFuture(future)
+    let future = cast[FutureBase](udata)
+    if future == futureList.tail: futureList.tail = future.prev
+    if future == futureList.head: futureList.head = future.next
+    if not(isNil(future.next)): future.next.prev = future.prev
+    if not(isNil(future.prev)): future.prev.next = future.next
+    futureList.count.dec()
 
   proc scheduleDestructor(future: FutureBase) {.inline.} =
     callSoon(futureDestructor, cast[pointer](future))
@@ -358,13 +337,6 @@ proc addCallback*(future: FutureBase, cb: CallbackFunc, udata: pointer = nil) =
   ## Adds the callbacks proc to be called when the future completes.
   ##
   ## If future has already completed then ``cb`` will be called immediately.
-
-  when defined(metrics):
-    {.gcsafe.}:
-      if future.location[0] != nil:
-        withLock(callbacksByFutureLock):
-          callbacksByFuture.inc($future.location[LocCreateIndex])
-
   doAssert(not isNil(cb))
   if future.finished():
     callSoon(cb, udata)
