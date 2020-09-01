@@ -512,7 +512,48 @@ proc asyncCheck*[T](future: Future[T]) =
       raise future.error
   future.callback = cb
 
-proc asyncDiscard*[T](future: Future[T]) = discard
+proc asyncSpawn*(future: Future[void]) =
+  ## Spawns a new concurrent async task.
+  ##
+  ## Tasks may not raise exceptions or be cancelled - a ``Defect`` will be
+  ## raised when this happens.
+  ##
+  ## This should be used instead of ``discard`` and ``asyncCheck`` when calling
+  ## an ``async`` procedure without ``await``, to ensure exceptions in the
+  ## returned future are not silently discarded.
+  ##
+  ## Note, that if passed ``future`` is already finished, it will be checked
+  ## and processed immediately.
+  doAssert(not isNil(future), "Future is nil")
+
+  template getFutureLocation(): string =
+    let loc = future.location[0]
+    "[" & (
+      if len(loc.procedure) == 0: "[unspecified]" else: $loc.procedure & "()"
+      ) & " at " & $loc.file & ":" & $(loc.line) & "]"
+
+  template getErrorMessage(): string =
+    "Asynchronous task " & getFutureLocation() &
+    " finished with an exception \"" & $future.error.name & "\"!"
+  template getCancelMessage(): string =
+    "Asynchronous task " & getFutureLocation() & " was cancelled!"
+
+  proc cb(data: pointer) =
+    if future.failed():
+      raise newException(FutureDefect, getErrorMessage())
+    elif future.cancelled():
+      raise newException(FutureDefect, getCancelMessage())
+
+  if not(future.finished()):
+    # We adding completion callback only if ``future`` is not finished yet.
+    future.addCallback(cb)
+  else:
+    if future.failed():
+      raise newException(FutureDefect, getErrorMessage())
+    elif future.cancelled():
+      raise newException(FutureDefect, getCancelMessage())
+
+proc asyncDiscard*[T](future: Future[T]) {.deprecated.} = discard
   ## This is async workaround for discard ``Future[T]``.
 
 proc `and`*[T, Y](fut1: Future[T], fut2: Future[Y]): Future[void] {.

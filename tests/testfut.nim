@@ -969,6 +969,58 @@ suite "Future[T] behavior test suite":
   proc testCancellationRace(): bool =
     waitFor(testCancellationRaceAsync())
 
+
+  proc testAsyncSpawnAsync(): Future[bool] {.async.} =
+
+    proc completeTask1() {.async.} =
+      discard
+
+    proc completeTask2() {.async.} =
+      await sleepAsync(100.milliseconds)
+
+    proc errorTask() {.async.} =
+      if true:
+        raise newException(ValueError, "")
+
+    proc cancelTask() {.async.} =
+      await sleepAsync(10.seconds)
+
+    try:
+      var fut1 = completeTask1()
+      var fut2 = completeTask2()
+      asyncSpawn fut1
+      asyncSpawn fut2
+      await sleepAsync(200.milliseconds)
+      if not(fut1.finished()) or not(fut2.finished()):
+        return false
+      if fut1.failed() or fut1.cancelled() or fut2.failed() or fut2.cancelled():
+        return false
+    except:
+      return false
+
+    try:
+      asyncSpawn errorTask()
+      return false
+    except FutureDefect:
+      discard
+    except:
+      return false
+
+    try:
+      var fut = cancelTask()
+      await cancelAndWait(fut)
+      asyncSpawn fut
+      return false
+    except FutureDefect:
+      discard
+    except:
+      return false
+
+    return true
+
+  proc testAsyncSpawn(): bool =
+    waitFor(testAsyncSpawnAsync())
+
   test "Async undefined behavior (#7758) test":
     check test1() == true
   test "Immediately completed asynchronous procedure test":
@@ -1022,3 +1074,6 @@ suite "Future[T] behavior test suite":
     check testWithTimeout() == true
   test "Cancellation race test":
     check testCancellationRace() == true
+
+  test "asyncSpawn() test":
+    check testAsyncSpawn() == true
