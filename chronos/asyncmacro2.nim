@@ -190,7 +190,7 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
     if returnType.kind == nnkEmpty: newIdentNode("void")
     else: baseType
   outerProcBody.add quote do:
-    var `retFutureSym` = newFuture[`subRetType`](`prcName`)
+    var `retFutureSym` = newFuture[`subRetType`](`prcName`, callerAt = -2)
 
   # -> iterator nameIter(): FutureBase {.closure.} =
   # ->   {.push warning[resultshadowed]: off.}

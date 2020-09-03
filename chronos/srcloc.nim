@@ -22,6 +22,8 @@ proc srcLocImpl(procedure: static string,
   )
   return addr(loc)
 
-template getSrcLocation*(procedure: static string = ""): ptr SrcLoc =
+template getSrcLocation*(procedure: static string = "",
+                         callerAt = -2): ptr SrcLoc =
   srcLocImpl(procedure,
-             instantiationInfo(-2).filename, instantiationInfo(-2).line)
+             instantiationInfo(callerAt).filename,
+             instantiationInfo(callerAt).line)

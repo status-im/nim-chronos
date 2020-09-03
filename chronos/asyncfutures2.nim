@@ -108,12 +108,12 @@ proc newFutureStr[T](loc: ptr SrcLoc): FutureStr[T] =
 proc newFutureVar[T](loc: ptr SrcLoc): FutureVar[T] =
   FutureVar[T](newFuture[T](loc))
 
-template newFuture*[T](fromProc: static[string] = ""): auto =
+template newFuture*[T](fromProc: static[string] = "", callerAt = -1): auto =
   ## Creates a new future.
   ##
   ## Specifying ``fromProc``, which is a string specifying the name of the proc
   ## that this future belongs to, is a good habit as it helps with debugging.
-  newFuture[T](getSrcLocation(fromProc))
+  newFuture[T](getSrcLocation(fromProc, callerAt - 1))
 
 template newFutureSeq*[A, B](fromProc: static[string] = ""): auto =
   ## Create a new future which can hold/preserve GC sequence until future will
