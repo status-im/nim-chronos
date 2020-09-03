@@ -194,16 +194,16 @@ suite "Future[T] behavior test suite":
       if true:
         raise newException(ValueError, "")
 
-    asyncDiscard client1()
-    asyncDiscard client1f()
-    asyncDiscard client2()
-    asyncDiscard client2f()
-    asyncDiscard client3()
-    asyncDiscard client3f()
-    asyncDiscard client4()
-    asyncDiscard client4f()
-    asyncDiscard client5()
-    asyncDiscard client5f()
+    discard client1()
+    discard client1f()
+    discard client2()
+    discard client2f()
+    discard client3()
+    discard client3f()
+    discard client4()
+    discard client4f()
+    discard client5()
+    discard client5f()
 
     waitFor(sleepAsync(2000.milliseconds))
     result = completedFutures
@@ -1021,6 +1021,52 @@ suite "Future[T] behavior test suite":
   proc testAsyncSpawn(): bool =
     waitFor(testAsyncSpawnAsync())
 
+  proc testSrcLocation(): bool =
+    # WARNING: This test is very sensitive to line numbers and module name.
+
+    proc macroFuture() {.async.} =
+      let someVar {.used.} = 5
+      let someOtherVar {.used.} = 4
+      if true:
+        let otherVar {.used.} = 3
+
+    template templateFuture(): untyped =
+      newFuture[void]("template")
+
+    proc procFuture(): Future[void] =
+      newFuture[void]("procedure")
+
+    var fut1 = macroFuture()
+    var fut2 = templateFuture()
+    var fut3 = procFuture()
+
+    fut2.complete()
+    fut3.complete()
+
+    let loc10 = fut1.location[0]
+    let loc11 = fut1.location[1]
+    let loc20 = fut2.location[0]
+    let loc21 = fut2.location[1]
+    let loc30 = fut3.location[0]
+    let loc31 = fut3.location[1]
+
+    proc chk(loc: ptr SrcLoc, file: string, line: int,
+             procedure: string): bool =
+      if len(procedure) == 0:
+        (loc.line == line) and ($loc.file  == file)
+      else:
+        (loc.line == line) and ($loc.file  == file) and
+        (loc.procedure == procedure)
+
+    let r10 = chk(loc10, "testfut.nim", 1027, "macroFuture")
+    let r11 = chk(loc11, "testfut.nim", 1028, "")
+    let r20 = chk(loc20, "testfut.nim", 1040, "template")
+    let r21 = chk(loc21, "testfut.nim", 1043, "")
+    let r30 = chk(loc30, "testfut.nim", 1037, "procedure")
+    let r31 = chk(loc31, "testfut.nim", 1044, "")
+
+    r10 and r11 and r20 and r21 and r30 and r31
+
   test "Async undefined behavior (#7758) test":
     check test1() == true
   test "Immediately completed asynchronous procedure test":
@@ -1032,7 +1078,7 @@ suite "Future[T] behavior test suite":
   test "wait[T]() test":
     check test5() == 6
 
-  test "asyncDiscard() test":
+  test "discard result Future[T] test":
     check testAsyncDiscard() == 10
 
   test "allFutures(zero) test":
@@ -1077,3 +1123,6 @@ suite "Future[T] behavior test suite":
 
   test "asyncSpawn() test":
     check testAsyncSpawn() == true
+
+  test "location test":
+    check testSrcLocation() == true

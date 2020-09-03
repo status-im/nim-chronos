@@ -187,10 +187,19 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
   # -> var retFuture = newFuture[T]()
   var retFutureSym = ident "chronosInternalRetFuture"
   var subRetType =
-    if returnType.kind == nnkEmpty: newIdentNode("void")
-    else: baseType
-  outerProcBody.add quote do:
-    var `retFutureSym` = newFuture[`subRetType`](`prcName`)
+    if returnType.kind == nnkEmpty:
+      newIdentNode("void")
+    else:
+      baseType
+  # Do not change this code to `quote do` version because `instantiationInfo`
+  # will be broken for `newFuture()` call.
+  outerProcBody.add(
+    newVarStmt(
+      retFutureSym,
+      newCall(newTree(nnkBracketExpr, ident "newFuture", subRetType),
+              newLit(prcName))
+    )
+  )
 
   # -> iterator nameIter(): FutureBase {.closure.} =
   # ->   {.push warning[resultshadowed]: off.}
