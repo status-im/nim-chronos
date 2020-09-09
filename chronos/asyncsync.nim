@@ -9,6 +9,7 @@
 #                MIT license (LICENSE-MIT)
 
 ## This module implements some core synchronization primitives
+import std/sequtils
 import asyncloop, deques
 
 type
@@ -145,22 +146,19 @@ proc newAsyncEvent*(): AsyncEvent =
   result.waiters = newSeq[Future[void]]()
   result.flag = false
 
-proc removeWaiter(event: AsyncEvent, waiter: Future[void]) {.inline.} =
-  ## Removes ``waiter`` from list of waiters in ``lock``.
-  event.waiters.delete(event.waiters.find(waiter))
-
-proc wait*(event: AsyncEvent) {.async.} =
+proc wait*(event: AsyncEvent): Future[void] =
   ## Block until the internal flag of ``event`` is `true`.
   ## If the internal flag is `true` on entry, return immediately. Otherwise,
   ## block until another task calls `fire()` to set the flag to `true`,
   ## then return.
+  var w = newFuture[void]("AsyncEvent.wait")
+
   if not(event.flag):
-    var w = newFuture[void]("AsyncEvent.wait")
     event.waiters.add(w)
-    try:
-      await w
-    finally:
-      event.removeWaiter(w)
+  else:
+    w.complete()
+
+  w
 
 proc fire*(event: AsyncEvent) =
   ## Set the internal flag of ``event`` to `true`. All tasks waiting for it
@@ -169,8 +167,9 @@ proc fire*(event: AsyncEvent) =
   if not(event.flag):
     event.flag = true
     for fut in event.waiters:
-      if not(fut.finished()):
+      if not fut.finished(): # Could have been cancelled
         fut.complete()
+    event.waiters.setLen(0)
 
 proc clear*(event: AsyncEvent) =
   ## Reset the internal flag of ``event`` to `false`. Subsequently, tasks
@@ -198,32 +197,13 @@ proc wakeupNext(waiters: var seq[Future[void]]) {.inline.} =
   var i = 0
   while i < len(waiters):
     var waiter = waiters[i]
-    if not(waiter.finished()):
-      let length = len(waiters) - (i + 1)
-      let offset = len(waiters) - length
-      if length > 0:
-        for k in 0..<length:
-          shallowCopy(waiters[k], waiters[k + offset])
-      waiters.setLen(length)
-      waiter.complete()
-      break
     inc(i)
 
-proc removeWaiter(waiters: var seq[Future[void]],
-                  waiter: Future[void]) {.inline.} =
-  ## Safely remove ``waiter`` from list of waiters in ``waiters``. This
-  ## procedure will not raise if ``waiter`` is not in the list of waiters.
-  var index = waiters.find(waiter)
-  if index >= 0:
-    waiters.delete(index)
+    if not(waiter.finished()):
+      waiter.complete()
+      break
 
-proc removeWaiter(waiters: var Deque[Future[void]],
-                  fut: Future[void]) {.inline.} =
-  var nwaiters = initDeque[Future[void]]()
-  while len(waiters) > 0:
-    var waiter = waiters.popFirst()
-    if waiter != fut:
-      nwaiters.addFirst(waiter)
+  waiters.delete(0, i - 1)
 
 proc full*[T](aq: AsyncQueue[T]): bool {.inline.} =
   ## Return ``true`` if there are ``maxsize`` items in the queue.
@@ -283,11 +263,10 @@ proc addFirst*[T](aq: AsyncQueue[T], item: T) {.async.} =
     aq.putters.add(putter)
     try:
       await putter
-    except:
-      aq.putters.removeWaiter(putter)
+    except CatchableError as exc:
       if not aq.full() and not(putter.cancelled()):
         aq.putters.wakeupNext()
-      raise
+      raise exc
   aq.addFirstNoWait(item)
 
 proc addLast*[T](aq: AsyncQueue[T], item: T) {.async.} =
@@ -298,11 +277,10 @@ proc addLast*[T](aq: AsyncQueue[T], item: T) {.async.} =
     aq.putters.add(putter)
     try:
       await putter
-    except:
-      aq.putters.removeWaiter(putter)
+    except CatchableError as exc:
       if not aq.full() and not(putter.cancelled()):
         aq.putters.wakeupNext()
-      raise
+      raise exc
   aq.addLastNoWait(item)
 
 proc popFirst*[T](aq: AsyncQueue[T]): Future[T] {.async.} =
@@ -313,11 +291,10 @@ proc popFirst*[T](aq: AsyncQueue[T]): Future[T] {.async.} =
     aq.getters.add(getter)
     try:
       await getter
-    except:
-      aq.getters.removeWaiter(getter)
+    except CatchableError as exc:
       if not(aq.empty()) and not(getter.cancelled()):
         aq.getters.wakeupNext()
-      raise
+      raise exc
   result = aq.popFirstNoWait()
 
 proc popLast*[T](aq: AsyncQueue[T]): Future[T] {.async.} =
@@ -328,11 +305,10 @@ proc popLast*[T](aq: AsyncQueue[T]): Future[T] {.async.} =
     aq.getters.add(getter)
     try:
       await getter
-    except:
-      aq.getters.removeWaiter(getter)
+    except CatchableError as exc:
       if not(aq.empty()) and not(getter.cancelled()):
         aq.getters.wakeupNext()
-      raise
+      raise exc
   result = aq.popLastNoWait()
 
 proc putNoWait*[T](aq: AsyncQueue[T], item: T) {.inline.} =
