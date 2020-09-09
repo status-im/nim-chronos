@@ -2003,6 +2003,9 @@ proc readExactly*(transp: StreamTransport, pbytes: pointer,
   ## If EOF is received and ``nbytes`` is not yet readed, the procedure
   ## will raise ``TransportIncompleteError``, potentially with some bytes
   ## already written.
+  doAssert(not(isNil(pbytes)), "pbytes must not be nil")
+  doAssert(nbytes > 0, "nbytes must be positive value")
+
   var index = 0
   var pbuffer = cast[ptr UncheckedArray[byte]](pbytes)
   readLoop("stream.transport.readExactly"):
@@ -2021,6 +2024,9 @@ proc readOnce*(transp: StreamTransport, pbytes: pointer,
   ##
   ## If internal buffer is not empty, ``nbytes`` bytes will be transferred from
   ## internal buffer, otherwise it will wait until some bytes will be received.
+  doAssert(not(isNil(pbytes)), "pbytes must not be nil")
+  doAssert(nbytes > 0, "nbytes must be positive value")
+
   var count = 0
   readLoop("stream.transport.readOnce"):
     if transp.offset == 0:
@@ -2045,6 +2051,9 @@ proc readUntil*(transp: StreamTransport, pbytes: pointer, nbytes: int,
   ## will raise ``TransportLimitError``.
   ##
   ## Procedure returns actual number of bytes read.
+  doAssert(not(isNil(pbytes)), "pbytes must not be nil")
+  doAssert(nbytes > 0, "nbytes must be positive value")
+
   var pbuffer = cast[ptr UncheckedArray[byte]](pbytes)
   var state = 0
   var k = 0
