@@ -203,7 +203,8 @@ proc wakeupNext(waiters: var seq[Future[void]]) {.inline.} =
       waiter.complete()
       break
 
-  waiters.delete(0, i - 1)
+  if i > 0:
+    waiters.delete(0, i - 1)
 
 proc full*[T](aq: AsyncQueue[T]): bool {.inline.} =
   ## Return ``true`` if there are ``maxsize`` items in the queue.
