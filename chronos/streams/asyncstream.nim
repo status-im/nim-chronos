@@ -290,7 +290,10 @@ proc readExactly*(rstream: AsyncStreamReader, pbytes: pointer,
   ## If EOF is received and ``nbytes`` is not yet readed, the procedure
   ## will raise ``AsyncStreamIncompleteError``.
   doAssert(not(isNil(pbytes)), "pbytes must not be nil")
-  doAssert(nbytes > 0, "nbytes must be positive value")
+  doAssert(nbytes >= 0, "nbytes must be non-negative integer")
+
+  if nbytes == 0:
+    return
 
   if not rstream.running():
     raise newAsyncStreamIncorrectError("Incorrect stream state")
@@ -381,7 +384,11 @@ proc readUntil*(rstream: AsyncStreamReader, pbytes: pointer, nbytes: int,
   ##
   ## Procedure returns actual number of bytes read.
   doAssert(not(isNil(pbytes)), "pbytes must not be nil")
-  doAssert(nbytes > 0, "nbytes must be positive value")
+  doAssert(len(sep) > 0, "separator must not be empty")
+  doAssert(nbytes >= 0, "nbytes must be non-negative value")
+
+  if nbytes == 0:
+    raise newAsyncStreamLimitError()
 
   if not rstream.running():
     raise newAsyncStreamIncorrectError("Incorrect stream state")
