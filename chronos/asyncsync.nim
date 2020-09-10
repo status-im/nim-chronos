@@ -9,8 +9,8 @@
 #                MIT license (LICENSE-MIT)
 
 ## This module implements some core synchronization primitives
-import std/sequtils
-import asyncloop, deques
+import std/[sequtils, deques]
+import ./asyncloop
 
 type
   AsyncLock* = ref object of RootRef
