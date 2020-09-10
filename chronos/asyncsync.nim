@@ -23,6 +23,7 @@ type
     ## ``release()`` call resets the state to unlocked; first coroutine which
     ## is blocked in ``acquire()`` is being processed.
     locked: bool
+    released: bool
     waiters: seq[Future[void]]
 
   AsyncEvent* = ref object of RootRef
@@ -71,7 +72,7 @@ proc newAsyncLock*(): AsyncLock =
   # Workaround for callSoon() not worked correctly before
   # getGlobalDispatcher() call.
   discard getGlobalDispatcher()
-  AsyncLock(waiters: newSeq[Future[void]](), locked: false)
+  AsyncLock(waiters: newSeq[Future[void]](), locked: false, released: true)
 
 proc wakeUpFirst(lock: AsyncLock): bool {.inline.} =
   ## Wake up the first waiter if it isn't done.
@@ -101,11 +102,13 @@ proc acquire*(lock: AsyncLock) {.async.} =
   ## This procedure blocks until the lock ``lock`` is unlocked, then sets it
   ## to locked and returns.
   if not(lock.locked) and lock.checkAll():
+    lock.released = false
     lock.locked = true
   else:
     var w = newFuture[void]("AsyncLock.acquire")
     lock.waiters.add(w)
     await w
+    lock.released = false
     lock.locked = true
 
 proc locked*(lock: AsyncLock): bool =
@@ -122,8 +125,12 @@ proc release*(lock: AsyncLock) =
     # We set ``lock.locked`` to ``false`` only when there no active waiters.
     # If active waiters are present, then ``lock.locked`` will be set to `true`
     # in ``acquire()`` procedure's continuation.
-    if not(lock.wakeUpFirst()):
-      lock.locked = false
+    if lock.released:
+      raise newException(AsyncLockError, "AsyncLock was already released!")
+    else:
+      lock.released = true
+      if not(lock.wakeUpFirst()):
+        lock.locked = false
   else:
     raise newException(AsyncLockError, "AsyncLock is not acquired!")
 

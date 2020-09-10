@@ -87,6 +87,15 @@ suite "Asynchronous sync primitives test suite":
 
     return true
 
+  proc testNoAcquiredRelease(): Future[bool] {.async.} =
+    var lock = newAsyncLock()
+    var res = false
+    try:
+      lock.release()
+    except AsyncLockError:
+      res = true
+    return res
+
   proc testDoubleRelease(): Future[bool] {.async.} =
     var lock = newAsyncLock()
     var fut0 = lock.acquire()
@@ -95,12 +104,10 @@ suite "Asynchronous sync primitives test suite":
     asyncSpawn fut0
     asyncSpawn fut1
     lock.release()
-    lock.release()
     try:
       lock.release()
     except AsyncLockError:
       res = true
-    await sleepAsync(10.milliseconds)
     return res
 
   proc testBehaviorLock(n1, n2, n3: Duration): Future[seq[int]] {.async.} =
@@ -315,15 +322,20 @@ suite "Asynchronous sync primitives test suite":
       waitFor(testBehaviorLock(50.milliseconds,
                                20.milliseconds,
                                10.milliseconds)) == @[10, 20, 30, 11, 21, 31]
+  test "AsyncLock() cancellation test":
+    check:
       waitFor(testCancelLock(10.milliseconds,
                              20.milliseconds,
                              50.milliseconds, 2)) == @[10, 30, 11, 31]
       waitFor(testCancelLock(50.milliseconds,
                              20.milliseconds,
                              10.milliseconds, 3)) == @[10, 20, 11, 21]
-      waitFor(testFlag()) == true
-      waitFor(testDoubleRelease()) == true
-
+  test "AsyncLock() flag consistency test":
+    check waitFor(testFlag()) == true
+  test "AsyncLock() double release test":
+    check waitFor(testDoubleRelease()) == true
+  test "AsyncLock() non-acquired release test":
+    check waitFor(testNoAcquiredRelease()) == true
   test "AsyncEvent() behavior test":
     check test2() == "0123456789"
   test "AsyncQueue() behavior test":
