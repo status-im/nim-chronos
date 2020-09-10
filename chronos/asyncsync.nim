@@ -142,9 +142,7 @@ proc newAsyncEvent*(): AsyncEvent =
   # Workaround for callSoon() not worked correctly before
   # getGlobalDispatcher() call.
   discard getGlobalDispatcher()
-  result = new AsyncEvent
-  result.waiters = newSeq[Future[void]]()
-  result.flag = false
+  AsyncEvent(waiters: newSeq[Future[void]](), flag: false)
 
 proc wait*(event: AsyncEvent): Future[void] =
   ## Block until the internal flag of ``event`` is `true`.
@@ -152,12 +150,10 @@ proc wait*(event: AsyncEvent): Future[void] =
   ## block until another task calls `fire()` to set the flag to `true`,
   ## then return.
   var w = newFuture[void]("AsyncEvent.wait")
-
   if not(event.flag):
     event.waiters.add(w)
   else:
     w.complete()
-
   w
 
 proc fire*(event: AsyncEvent) =
@@ -167,7 +163,7 @@ proc fire*(event: AsyncEvent) =
   if not(event.flag):
     event.flag = true
     for fut in event.waiters:
-      if not fut.finished(): # Could have been cancelled
+      if not(fut.finished()): # Could have been cancelled
         fut.complete()
     event.waiters.setLen(0)
 
@@ -179,7 +175,7 @@ proc clear*(event: AsyncEvent) =
 
 proc isSet*(event: AsyncEvent): bool =
   ## Return `true` if and only if the internal flag of ``event`` is `true`.
-  result = event.flag
+  event.flag
 
 proc newAsyncQueue*[T](maxsize: int = 0): AsyncQueue[T] =
   ## Creates a new asynchronous queue ``AsyncQueue``.
@@ -187,11 +183,12 @@ proc newAsyncQueue*[T](maxsize: int = 0): AsyncQueue[T] =
   # Workaround for callSoon() not worked correctly before
   # getGlobalDispatcher() call.
   discard getGlobalDispatcher()
-  result = new AsyncQueue[T]
-  result.getters = newSeq[Future[void]]()
-  result.putters = newSeq[Future[void]]()
-  result.queue = initDeque[T]()
-  result.maxsize = maxsize
+  AsyncQueue[T](
+    getters: newSeq[Future[void]](),
+    putters: newSeq[Future[void]](),
+    queue: initDeque[T](),
+    maxsize: maxsize
+  )
 
 proc wakeupNext(waiters: var seq[Future[void]]) {.inline.} =
   var i = 0
@@ -212,13 +209,13 @@ proc full*[T](aq: AsyncQueue[T]): bool {.inline.} =
   ## Note: If the ``aq`` was initialized with ``maxsize = 0`` (default),
   ## then ``full()`` is never ``true``.
   if aq.maxsize <= 0:
-    result = false
+    false
   else:
-    result = (len(aq.queue) >= aq.maxsize)
+    (len(aq.queue) >= aq.maxsize)
 
 proc empty*[T](aq: AsyncQueue[T]): bool {.inline.} =
   ## Return ``true`` if the queue is empty, ``false`` otherwise.
-  result = (len(aq.queue) == 0)
+  (len(aq.queue) == 0)
 
 proc addFirstNoWait*[T](aq: AsyncQueue[T], item: T) =
   ## Put an item ``item`` to the beginning of the queue ``aq`` immediately.
@@ -244,8 +241,9 @@ proc popFirstNoWait*[T](aq: AsyncQueue[T]): T =
   ## If queue ``aq`` is empty, then ``AsyncQueueEmptyError`` exception raised.
   if aq.empty():
     raise newException(AsyncQueueEmptyError, "AsyncQueue is empty!")
-  result = aq.queue.popFirst()
+  let res = aq.queue.popFirst()
   aq.putters.wakeupNext()
+  res
 
 proc popLastNoWait*[T](aq: AsyncQueue[T]): T =
   ## Get an item from the end of the queue ``aq`` immediately.
@@ -253,8 +251,9 @@ proc popLastNoWait*[T](aq: AsyncQueue[T]): T =
   ## If queue ``aq`` is empty, then ``AsyncQueueEmptyError`` exception raised.
   if aq.empty():
     raise newException(AsyncQueueEmptyError, "AsyncQueue is empty!")
-  result = aq.queue.popLast()
+  let res = aq.queue.popLast()
   aq.putters.wakeupNext()
+  res
 
 proc addFirst*[T](aq: AsyncQueue[T], item: T) {.async.} =
   ## Put an ``item`` to the beginning of the queue ``aq``. If the queue is full,
@@ -265,7 +264,7 @@ proc addFirst*[T](aq: AsyncQueue[T], item: T) {.async.} =
     try:
       await putter
     except CatchableError as exc:
-      if not aq.full() and not(putter.cancelled()):
+      if not(aq.full()) and not(putter.cancelled()):
         aq.putters.wakeupNext()
       raise exc
   aq.addFirstNoWait(item)
@@ -279,7 +278,7 @@ proc addLast*[T](aq: AsyncQueue[T], item: T) {.async.} =
     try:
       await putter
     except CatchableError as exc:
-      if not aq.full() and not(putter.cancelled()):
+      if not(aq.full()) and not(putter.cancelled()):
         aq.putters.wakeupNext()
       raise exc
   aq.addLastNoWait(item)
@@ -296,7 +295,7 @@ proc popFirst*[T](aq: AsyncQueue[T]): Future[T] {.async.} =
       if not(aq.empty()) and not(getter.cancelled()):
         aq.getters.wakeupNext()
       raise exc
-  result = aq.popFirstNoWait()
+  return aq.popFirstNoWait()
 
 proc popLast*[T](aq: AsyncQueue[T]): Future[T] {.async.} =
   ## Remove and return an ``item`` from the end of the queue ``aq``.
@@ -310,7 +309,7 @@ proc popLast*[T](aq: AsyncQueue[T]): Future[T] {.async.} =
       if not(aq.empty()) and not(getter.cancelled()):
         aq.getters.wakeupNext()
       raise exc
-  result = aq.popLastNoWait()
+  return aq.popLastNoWait()
 
 proc putNoWait*[T](aq: AsyncQueue[T], item: T) {.inline.} =
   ## Alias of ``addLastNoWait()``.
@@ -318,15 +317,15 @@ proc putNoWait*[T](aq: AsyncQueue[T], item: T) {.inline.} =
 
 proc getNoWait*[T](aq: AsyncQueue[T]): T {.inline.} =
   ## Alias of ``popFirstNoWait()``.
-  result = aq.popFirstNoWait()
+  aq.popFirstNoWait()
 
 proc put*[T](aq: AsyncQueue[T], item: T): Future[void] {.inline.} =
   ## Alias of ``addLast()``.
-  result = aq.addLast(item)
+  aq.addLast(item)
 
 proc get*[T](aq: AsyncQueue[T]): Future[T] {.inline.} =
   ## Alias of ``popFirst()``.
-  result = aq.popFirst()
+  aq.popFirst()
 
 proc clear*[T](aq: AsyncQueue[T]) {.inline.} =
   ## Clears all elements of queue ``aq``.
@@ -334,21 +333,21 @@ proc clear*[T](aq: AsyncQueue[T]) {.inline.} =
 
 proc len*[T](aq: AsyncQueue[T]): int {.inline.} =
   ## Return the number of elements in ``aq``.
-  result = len(aq.queue)
+  len(aq.queue)
 
 proc size*[T](aq: AsyncQueue[T]): int {.inline.} =
   ## Return the maximum number of elements in ``aq``.
-  result = len(aq.maxsize)
+  len(aq.maxsize)
 
 proc `[]`*[T](aq: AsyncQueue[T], i: Natural) : T {.inline.} =
   ## Access the i-th element of ``aq`` by order from first to last.
   ## ``aq[0]`` is the first element, ``aq[^1]`` is the last element.
-  result = aq.queue[i]
+  aq.queue[i]
 
 proc `[]`*[T](aq: AsyncQueue[T], i: BackwardsIndex) : T {.inline.} =
   ## Access the i-th element of ``aq`` by order from first to last.
   ## ``aq[0]`` is the first element, ``aq[^1]`` is the last element.
-  result = aq.queue[len(aq.queue) - int(i)]
+  aq.queue[len(aq.queue) - int(i)]
 
 proc `[]=`* [T](aq: AsyncQueue[T], i: Natural, item: T) {.inline.} =
   ## Change the i-th element of ``aq``.
@@ -382,8 +381,9 @@ proc contains*[T](aq: AsyncQueue[T], item: T): bool {.inline.} =
 
 proc `$`*[T](aq: AsyncQueue[T]): string =
   ## Turn an async queue ``aq`` into its string representation.
-  result = "["
+  var res = "["
   for item in aq.queue.items():
-    if result.len > 1: result.add(", ")
-    result.addQuoted(item)
-  result.add("]")
+    if len(res) > 1: res.add(", ")
+    res.addQuoted(item)
+  res.add("]")
+  res
