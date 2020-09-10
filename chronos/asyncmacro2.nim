@@ -42,9 +42,9 @@ template createCb(retFutureSym, iteratorNameSym,
 
         if next == nil:
           if not(retFutureSym.finished()):
-            let msg = "Async procedure ($1) yielded `nil`, " &
-                      "are you await'ing a `nil` Future?"
-            raise newException(AssertionError, msg % strName)
+            const msg = "Async procedure (&" & strName & ") yielded `nil`, " &
+                        "are you await'ing a `nil` Future?"
+            raiseAssert msg
         else:
           {.gcsafe.}:
             next.addCallback(identName)

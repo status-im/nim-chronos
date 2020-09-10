@@ -525,8 +525,8 @@ proc `+`*(address: TransportAddress, v: uint): TransportAddress =
     a = a + v
     result.address_v4[0..<4] = uint32(a).toBytesBE()
   elif address.family == AddressFamily.IPv6:
-    var a1 = uint64.fromBytesBE(address.address_v6[0..<8])
-    var a2 = uint64.fromBytesBE(address.address_v6[8..<16])
+    var a1 = uint64.fromBytesBE(address.address_v6.toOpenArray(0, 7))
+    var a2 = uint64.fromBytesBE(address.address_v6.toOpenArray(8, 15))
 
     var a3 = a2 + v
     if a3 < a2:

@@ -105,8 +105,7 @@ suite "Asynchronous sync primitives test suite":
     discard testEvent(8, event)
     discard testEvent(9, event)
     event.fire()
-    ## There must be exactly 2 poll() calls
-    poll()
+    ## There must be exactly 1 poll() call
     poll()
     result = testEventResult
 
