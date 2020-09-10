@@ -9,8 +9,8 @@
 #                MIT license (LICENSE-MIT)
 
 ## This module implements some core synchronization primitives
-import std/sequtils
-import asyncloop, deques
+import std/[sequtils, deques]
+import ./asyncloop
 
 type
   AsyncLock* = ref object of RootRef
@@ -23,6 +23,7 @@ type
     ## ``release()`` call resets the state to unlocked; first coroutine which
     ## is blocked in ``acquire()`` is being processed.
     locked: bool
+    acquired: bool
     waiters: seq[Future[void]]
 
   AsyncEvent* = ref object of RootRef
@@ -71,28 +72,29 @@ proc newAsyncLock*(): AsyncLock =
   # Workaround for callSoon() not worked correctly before
   # getGlobalDispatcher() call.
   discard getGlobalDispatcher()
-  result = new AsyncLock
-  result.waiters = newSeq[Future[void]]()
-  result.locked = false
+  AsyncLock(waiters: newSeq[Future[void]](), locked: false, acquired: false)
 
-proc wakeUpFirst(lock: AsyncLock) {.inline.} =
+proc wakeUpFirst(lock: AsyncLock): bool {.inline.} =
   ## Wake up the first waiter if it isn't done.
-  for fut in lock.waiters.mitems():
-    if not(fut.finished()):
-      fut.complete()
+  var i = 0
+  var res = false
+  while i < len(lock.waiters):
+    var waiter = lock.waiters[i]
+    inc(i)
+    if not(waiter.finished()):
+      waiter.complete()
+      res = true
       break
+  if i > 0:
+    lock.waiters.delete(0, i - 1)
+  res
 
 proc checkAll(lock: AsyncLock): bool {.inline.} =
   ## Returns ``true`` if waiters array is empty or full of cancelled futures.
-  result = true
   for fut in lock.waiters.mitems():
     if not(fut.cancelled()):
-      result = false
-      break
-
-proc removeWaiter(lock: AsyncLock, waiter: Future[void]) {.inline.} =
-  ## Removes ``waiter`` from list of waiters in ``lock``.
-  lock.waiters.delete(lock.waiters.find(waiter))
+      return false
+  return true
 
 proc acquire*(lock: AsyncLock) {.async.} =
   ## Acquire a lock ``lock``.
@@ -100,24 +102,18 @@ proc acquire*(lock: AsyncLock) {.async.} =
   ## This procedure blocks until the lock ``lock`` is unlocked, then sets it
   ## to locked and returns.
   if not(lock.locked) and lock.checkAll():
+    lock.acquired = true
     lock.locked = true
   else:
     var w = newFuture[void]("AsyncLock.acquire")
     lock.waiters.add(w)
-    try:
-      try:
-        await w
-      finally:
-        lock.removeWaiter(w)
-    except CancelledError:
-      if not(lock.locked):
-        lock.wakeUpFirst()
-      raise
+    await w
+    lock.acquired = true
     lock.locked = true
 
 proc locked*(lock: AsyncLock): bool =
   ## Return `true` if the lock ``lock`` is acquired, `false` otherwise.
-  result = lock.locked
+  lock.locked
 
 proc release*(lock: AsyncLock) =
   ## Release a lock ``lock``.
@@ -126,8 +122,15 @@ proc release*(lock: AsyncLock) =
   ## other coroutines are blocked waiting for the lock to become unlocked,
   ## allow exactly one of them to proceed.
   if lock.locked:
-    lock.locked = false
-    lock.wakeUpFirst()
+    # We set ``lock.locked`` to ``false`` only when there no active waiters.
+    # If active waiters are present, then ``lock.locked`` will be set to `true`
+    # in ``acquire()`` procedure's continuation.
+    if not(lock.acquired):
+      raise newException(AsyncLockError, "AsyncLock was already released!")
+    else:
+      lock.acquired = false
+      if not(lock.wakeUpFirst()):
+        lock.locked = false
   else:
     raise newException(AsyncLockError, "AsyncLock is not acquired!")
 

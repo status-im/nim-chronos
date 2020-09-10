@@ -41,6 +41,75 @@ suite "Asynchronous sync primitives test suite":
       poll()
     result = testLockResult
 
+  proc testFlag(): Future[bool] {.async.} =
+    var lock = newAsyncLock()
+    var futs: array[4, Future[void]]
+    futs[0] = lock.acquire()
+    futs[1] = lock.acquire()
+    futs[2] = lock.acquire()
+    futs[3] = lock.acquire()
+
+    proc checkFlags(b0, b1, b2, b3, b4: bool): bool =
+      (lock.locked == b0) and
+        (futs[0].finished == b1) and (futs[1].finished == b2) and
+        (futs[2].finished == b3) and (futs[3].finished == b4)
+
+    if not(checkFlags(true, true, false, false ,false)):
+      return false
+
+    lock.release()
+    if not(checkFlags(true, true, false, false, false)):
+      return false
+    await sleepAsync(10.milliseconds)
+    if not(checkFlags(true, true, true, false, false)):
+      return false
+
+    lock.release()
+    if not(checkFlags(true, true, true, false, false)):
+      return false
+    await sleepAsync(10.milliseconds)
+    if not(checkFlags(true, true, true, true, false)):
+      return false
+
+    lock.release()
+    if not(checkFlags(true, true, true, true, false)):
+      return false
+    await sleepAsync(10.milliseconds)
+    if not(checkFlags(true, true, true, true, true)):
+      return false
+
+    lock.release()
+    if not(checkFlags(false, true, true, true, true)):
+      return false
+    await sleepAsync(10.milliseconds)
+    if not(checkFlags(false, true, true, true, true)):
+      return false
+
+    return true
+
+  proc testNoAcquiredRelease(): Future[bool] {.async.} =
+    var lock = newAsyncLock()
+    var res = false
+    try:
+      lock.release()
+    except AsyncLockError:
+      res = true
+    return res
+
+  proc testDoubleRelease(): Future[bool] {.async.} =
+    var lock = newAsyncLock()
+    var fut0 = lock.acquire()
+    var fut1 = lock.acquire()
+    var res = false
+    asyncSpawn fut0
+    asyncSpawn fut1
+    lock.release()
+    try:
+      lock.release()
+    except AsyncLockError:
+      res = true
+    return res
+
   proc testBehaviorLock(n1, n2, n3: Duration): Future[seq[int]] {.async.} =
     var stripe: seq[int]
 
@@ -70,6 +139,7 @@ suite "Asynchronous sync primitives test suite":
       stripe.add(n * 10)
       await sleepAsync(timeout)
       lock.release()
+
       await lock.acquire()
       stripe.add(n * 10 + 1)
       await sleepAsync(timeout)
@@ -252,13 +322,20 @@ suite "Asynchronous sync primitives test suite":
       waitFor(testBehaviorLock(50.milliseconds,
                                20.milliseconds,
                                10.milliseconds)) == @[10, 20, 30, 11, 21, 31]
+  test "AsyncLock() cancellation test":
+    check:
       waitFor(testCancelLock(10.milliseconds,
                              20.milliseconds,
                              50.milliseconds, 2)) == @[10, 30, 11, 31]
       waitFor(testCancelLock(50.milliseconds,
                              20.milliseconds,
                              10.milliseconds, 3)) == @[10, 20, 11, 21]
-
+  test "AsyncLock() flag consistency test":
+    check waitFor(testFlag()) == true
+  test "AsyncLock() double release test":
+    check waitFor(testDoubleRelease()) == true
+  test "AsyncLock() non-acquired release test":
+    check waitFor(testNoAcquiredRelease()) == true
   test "AsyncEvent() behavior test":
     check test2() == "0123456789"
   test "AsyncQueue() behavior test":
