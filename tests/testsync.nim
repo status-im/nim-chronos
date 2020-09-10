@@ -41,6 +41,52 @@ suite "Asynchronous sync primitives test suite":
       poll()
     result = testLockResult
 
+  proc testFlag(): Future[bool] {.async.} =
+    var lock = newAsyncLock()
+    var futs: array[4, Future[void]]
+    futs[0] = lock.acquire()
+    futs[1] = lock.acquire()
+    futs[2] = lock.acquire()
+    futs[3] = lock.acquire()
+
+    proc checkFlags(b0, b1, b2, b3, b4: bool): bool =
+      (lock.locked == b0) and
+        (futs[0].finished == b1) and (futs[1].finished == b2) and
+        (futs[2].finished == b3) and (futs[3].finished == b4)
+
+    if not(checkFlags(true, true, false, false ,false)):
+      return false
+
+    lock.release()
+    if not(checkFlags(true, true, false, false, false)):
+      return false
+    await sleepAsync(10.milliseconds)
+    if not(checkFlags(true, true, true, false, false)):
+      return false
+
+    lock.release()
+    if not(checkFlags(true, true, true, false, false)):
+      return false
+    await sleepAsync(10.milliseconds)
+    if not(checkFlags(true, true, true, true, false)):
+      return false
+
+    lock.release()
+    if not(checkFlags(true, true, true, true, false)):
+      return false
+    await sleepAsync(10.milliseconds)
+    if not(checkFlags(true, true, true, true, true)):
+      return false
+
+    lock.release()
+    if not(checkFlags(false, true, true, true, true)):
+      return false
+    await sleepAsync(10.milliseconds)
+    if not(checkFlags(false, true, true, true, true)):
+      return false
+
+    return true
+
   proc testBehaviorLock(n1, n2, n3: Duration): Future[seq[int]] {.async.} =
     var stripe: seq[int]
 
@@ -70,6 +116,7 @@ suite "Asynchronous sync primitives test suite":
       stripe.add(n * 10)
       await sleepAsync(timeout)
       lock.release()
+
       await lock.acquire()
       stripe.add(n * 10 + 1)
       await sleepAsync(timeout)
@@ -258,6 +305,7 @@ suite "Asynchronous sync primitives test suite":
       waitFor(testCancelLock(50.milliseconds,
                              20.milliseconds,
                              10.milliseconds, 3)) == @[10, 20, 11, 21]
+      waitFor(testFlag()) == true
 
   test "AsyncEvent() behavior test":
     check test2() == "0123456789"
