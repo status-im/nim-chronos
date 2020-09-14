@@ -183,7 +183,6 @@ type
   AsyncCallback* = object
     function*: CallbackFunc
     udata*: pointer
-    deleted*: bool
 
   AsyncError* = object of CatchableError
     ## Generic async exception
@@ -193,7 +192,6 @@ type
   TimerCallback* = ref object
     finishAt*: Moment
     function*: AsyncCallback
-    deleted*: bool
 
   TrackerBase* = ref object of RootRef
     id*: string
@@ -231,7 +229,7 @@ func getAsyncTimestamp*(a: Duration): auto {.inline.} =
 template processTimersGetTimeout(loop, timeout: untyped) =
   var lastFinish = curTime
   while loop.timers.len > 0:
-    if loop.timers[0].deleted:
+    if loop.timers[0].function.function.isNil:
       discard loop.timers.pop()
       continue
 
@@ -256,7 +254,7 @@ template processTimersGetTimeout(loop, timeout: untyped) =
 template processTimers(loop: untyped) =
   var curTime = Moment.now()
   while loop.timers.len > 0:
-    if loop.timers[0].deleted:
+    if loop.timers[0].function.function.isNil:
       discard loop.timers.pop()
       continue
 
@@ -581,7 +579,7 @@ elif unixPlatform:
     var newEvents: set[Event]
     withData(loop.selector, int(fd), adata) do:
       # We need to clear `reader` data, because `selectors` don't do it
-      adata.reader.function = nil
+      adata.reader = default(AsyncCallback)
       # adata.rdata = CompletionData()
       if not(isNil(adata.writer.function)):
         newEvents.incl(Event.Write)
@@ -611,7 +609,7 @@ elif unixPlatform:
     var newEvents: set[Event]
     withData(loop.selector, int(fd), adata) do:
       # We need to clear `writer` data, because `selectors` don't do it
-      adata.writer.function = nil
+      adata.writer = default(AsyncCallback)
       # adata.wdata = CompletionData()
       if not(isNil(adata.reader.function)):
         newEvents.incl(Event.Read)
@@ -638,16 +636,16 @@ elif unixPlatform:
     withData(loop.selector, int(fd), adata) do:
       # We are scheduling reader and writer callbacks to be called
       # explicitly, so they can get an error and continue work.
-      if not(isNil(adata.reader.function)):
-        if not adata.reader.deleted:
-          loop.callbacks.addLast(adata.reader)
-      if not(isNil(adata.writer.function)):
-        if not adata.writer.deleted:
-          loop.callbacks.addLast(adata.writer)
-      # Mark callbacks as deleted, we don't need to get REAL notifications
+      # Callbacks marked as deleted so we don't need to get REAL notifications
       # from system queue for this reader and writer.
-      adata.reader.deleted = true
-      adata.writer.deleted = true
+
+      if not(isNil(adata.reader.function)):
+        loop.callbacks.addLast(adata.reader)
+        adata.reader = default(AsyncCallback)
+
+      if not(isNil(adata.writer.function)):
+        loop.callbacks.addLast(adata.writer)
+        adata.writer = default(AsyncCallback)
 
     # We can't unregister file descriptor from system queue here, because
     # in such case processing queue will stuck on poll() call, because there
@@ -707,20 +705,20 @@ elif unixPlatform:
 
       withData(loop.selector, fd, adata) do:
         if Event.Read in events or events == {Event.Error}:
-          if not adata.reader.deleted:
+          if not isNil(adata.reader.function):
             loop.callbacks.addLast(adata.reader)
 
         if Event.Write in events or events == {Event.Error}:
-          if not adata.writer.deleted:
+          if not isNil(adata.writer.function):
             loop.callbacks.addLast(adata.writer)
 
         if Event.User in events:
-          if not adata.reader.deleted:
+          if not isNil(adata.reader.function):
             loop.callbacks.addLast(adata.reader)
 
         when ioselSupportedPlatform:
           if customSet * events != {}:
-            if not adata.reader.deleted:
+            if not isNil(adata.reader.function):
               loop.callbacks.addLast(adata.reader)
 
     # Moving expired timers to `loop.callbacks`.
@@ -744,7 +742,7 @@ proc setTimer*(at: Moment, cb: CallbackFunc,
   loop.timers.push(result)
 
 proc clearTimer*(timer: TimerCallback) {.inline.} =
-  timer.deleted = true
+  timer.function = default(AsyncCallback)
 
 proc addTimer*(at: Moment, cb: CallbackFunc, udata: pointer = nil) {.
      inline, deprecated: "Use setTimer/clearTimer instead".} =
