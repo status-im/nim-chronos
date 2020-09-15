@@ -203,8 +203,9 @@ proc checkFinished(future: FutureBase, loc: ptr SrcLoc) =
     future.location[LocCompleteIndex] = loc
 
 proc finish(fut: FutureBase, state: FutureState) =
-  doAssert fut.state == FutureState.Pending
-  doAssert state != FutureState.Pending
+  # We do not perform any checks here, because:
+  # 1. `finish()` is a private procedure and `state` is under our control.
+  # 2. `fut.state` is checked by `checkFinished()`.
   fut.state = state
   fut.cancelcb = nil # release cancellation callback memory
   for item in fut.callbacks.mitems():
