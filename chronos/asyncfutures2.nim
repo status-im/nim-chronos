@@ -8,7 +8,7 @@
 #    Apache License, version 2.0, (LICENSE-APACHEv2)
 #                MIT license (LICENSE-MIT)
 
-import os, tables, strutils, heapqueue, options, deques, cstrutils
+import std/[os, tables, strutils, heapqueue, options, deques, cstrutils, sequtils]
 import srcloc
 export srcloc
 
@@ -25,7 +25,7 @@ type
 
   FutureBase* = ref object of RootObj ## Untyped future.
     location*: array[2, ptr SrcLoc]
-    callbacks: Deque[AsyncCallback]
+    callbacks: seq[AsyncCallback]
     cancelcb*: CallbackFunc
     child*: FutureBase
     state*: FutureState
@@ -142,6 +142,7 @@ template newFutureVar*[T](fromProc: static[string] = ""): auto =
 proc clean*[T](future: FutureVar[T]) =
   ## Resets the ``finished`` status of ``future``.
   Future[T](future).state = FutureState.Pending
+  Future[T](future).value = default(T)
   Future[T](future).error = nil
 
 proc finished*(future: FutureBase | FutureVar): bool {.inline.} =
@@ -201,33 +202,27 @@ proc checkFinished(future: FutureBase, loc: ptr SrcLoc) =
   else:
     future.location[LocCompleteIndex] = loc
 
-proc call(callbacks: var Deque[AsyncCallback]) =
-  var count = len(callbacks)
-  while count > 0:
-    var item = callbacks.popFirst()
-    if not(item.deleted):
+proc finish(fut: FutureBase, state: FutureState) =
+  # We do not perform any checks here, because:
+  # 1. `finish()` is a private procedure and `state` is under our control.
+  # 2. `fut.state` is checked by `checkFinished()`.
+  fut.state = state
+  fut.cancelcb = nil # release cancellation callback memory
+  for item in fut.callbacks.mitems():
+    if not(isNil(item.function)):
       callSoon(item.function, item.udata)
-    dec(count)
+    item = default(AsyncCallback) # release memory as early as possible
+  fut.callbacks = default(seq[AsyncCallback]) # release seq as well
 
-proc add(callbacks: var Deque[AsyncCallback], item: AsyncCallback) =
-  if len(callbacks) == 0:
-    callbacks = initDeque[AsyncCallback]()
-  callbacks.addLast(item)
-
-proc remove(callbacks: var Deque[AsyncCallback], item: AsyncCallback) =
-  for p in callbacks.mitems():
-    if p.function == item.function and p.udata == item.udata:
-      p.deleted = true
+  when defined(chronosFutureTracking):
+    scheduleDestructor(fut)
 
 proc complete[T](future: Future[T], val: T, loc: ptr SrcLoc) =
   if not(future.cancelled()):
     checkFinished(FutureBase(future), loc)
     doAssert(isNil(future.error))
     future.value = val
-    future.state = FutureState.Finished
-    future.callbacks.call()
-    when defined(chronosFutureTracking):
-      scheduleDestructor(FutureBase(future))
+    future.finish(FutureState.Finished)
 
 template complete*[T](future: Future[T], val: T) =
   ## Completes ``future`` with value ``val``.
@@ -237,10 +232,7 @@ proc complete(future: Future[void], loc: ptr SrcLoc) =
   if not(future.cancelled()):
     checkFinished(FutureBase(future), loc)
     doAssert(isNil(future.error))
-    future.state = FutureState.Finished
-    future.callbacks.call()
-    when defined(chronosFutureTracking):
-      scheduleDestructor(FutureBase(future))
+    future.finish(FutureState.Finished)
 
 template complete*(future: Future[void]) =
   ## Completes a void ``future``.
@@ -251,10 +243,7 @@ proc complete[T](future: FutureVar[T], loc: ptr SrcLoc) =
     template fut: untyped = Future[T](future)
     checkFinished(FutureBase(fut), loc)
     doAssert(isNil(fut.error))
-    fut.state = FutureState.Finished
-    fut.callbacks.call()
-    when defined(chronosFutureTracking):
-      scheduleDestructor(FutureBase(future))
+    fut.finish(FutureState.Finished)
 
 template complete*[T](futvar: FutureVar[T]) =
   ## Completes a ``FutureVar``.
@@ -265,11 +254,8 @@ proc complete[T](futvar: FutureVar[T], val: T, loc: ptr SrcLoc) =
     template fut: untyped = Future[T](futvar)
     checkFinished(FutureBase(fut), loc)
     doAssert(isNil(fut.error))
-    fut.state = FutureState.Finished
     fut.value = val
-    fut.callbacks.call()
-    when defined(chronosFutureTracking):
-      scheduleDestructor(FutureBase(fut))
+    fut.finish(FutureState.Finished)
 
 template complete*[T](futvar: FutureVar[T], val: T) =
   ## Completes a ``FutureVar`` with value ``val``.
@@ -280,16 +266,13 @@ template complete*[T](futvar: FutureVar[T], val: T) =
 proc fail[T](future: Future[T], error: ref Exception, loc: ptr SrcLoc) =
   if not(future.cancelled()):
     checkFinished(FutureBase(future), loc)
-    future.state = FutureState.Failed
     future.error = error
     when defined(chronosStackTrace):
       future.errorStackTrace = if getStackTrace(error) == "":
                                  getStackTrace()
                                else:
                                  getStackTrace(error)
-    future.callbacks.call()
-    when defined(chronosFutureTracking):
-      scheduleDestructor(FutureBase(future))
+    future.finish(FutureState.Failed)
 
 template fail*[T](future: Future[T], error: ref Exception) =
   ## Completes ``future`` with ``error``.
@@ -301,13 +284,10 @@ template newCancelledError(): ref CancelledError =
 proc cancelAndSchedule(future: FutureBase, loc: ptr SrcLoc) =
   if not(future.finished()):
     checkFinished(future, loc)
-    future.state = FutureState.Cancelled
     future.error = newCancelledError()
     when defined(chronosStackTrace):
       future.errorStackTrace = getStackTrace()
-    future.callbacks.call()
-    when defined(chronosFutureTracking):
-      scheduleDestructor(future)
+    future.finish(FutureState.Cancelled)
 
 template cancelAndSchedule*[T](future: Future[T]) =
   cancelAndSchedule(FutureBase(future), getSrcLocation())
@@ -324,6 +304,7 @@ proc cancel(future: FutureBase, loc: ptr SrcLoc) =
     else:
       if not(isNil(future.cancelcb)):
         future.cancelcb(cast[pointer](future))
+        future.cancelcb = nil
       cancelAndSchedule(future, getSrcLocation())
 
 template cancel*[T](future: Future[T]) =
@@ -331,7 +312,7 @@ template cancel*[T](future: Future[T]) =
   cancel(FutureBase(future), getSrcLocation())
 
 proc clearCallbacks(future: FutureBase) =
-  future.callbacks.clear()
+  future.callbacks = default(seq[AsyncCallback])
 
 proc addCallback*(future: FutureBase, cb: CallbackFunc, udata: pointer = nil) =
   ## Adds the callbacks proc to be called when the future completes.
@@ -352,9 +333,13 @@ proc addCallback*[T](future: Future[T], cb: CallbackFunc) =
 
 proc removeCallback*(future: FutureBase, cb: CallbackFunc,
                      udata: pointer = nil) =
+  ## Remove future from list of callbacks - this operation may be slow if there
+  ## are many registered callbacks!
   doAssert(not isNil(cb))
-  let acb = AsyncCallback(function: cb, udata: udata)
-  future.callbacks.remove acb
+  # Make sure to release memory associated with callback, or reference chains
+  # may be created!
+  future.callbacks.keepItIf:
+    it.function != cb or it.udata != udata
 
 proc removeCallback*[T](future: Future[T], cb: CallbackFunc) =
   future.removeCallback(cb, cast[pointer](future))
