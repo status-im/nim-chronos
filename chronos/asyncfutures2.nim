@@ -292,24 +292,39 @@ proc cancelAndSchedule(future: FutureBase, loc: ptr SrcLoc) =
 template cancelAndSchedule*[T](future: Future[T]) =
   cancelAndSchedule(FutureBase(future), getSrcLocation())
 
-proc cancel(future: FutureBase, loc: ptr SrcLoc) =
-  if not(future.finished()):
-    # Cancel the bottom-most child. When that happens, its parent's `await` call
-    # will raise CancelledError. Some macro will catch that and call
-    # `cancelAndSchedule()` on that parent, thus propagating the cancellation
-    # up the chain.
-    if not(isNil(future.child)):
-      cancel(future.child, getSrcLocation())
-      future.mustCancel = true
-    else:
-      if not(isNil(future.cancelcb)):
-        future.cancelcb(cast[pointer](future))
-        future.cancelcb = nil
-      cancelAndSchedule(future, getSrcLocation())
+proc cancel(future: FutureBase, loc: ptr SrcLoc): bool =
+  ## Request that Future ``future`` cancel itself.
+  ##
+  ## This arranges for a `CancelledError` to be thrown into procedure which
+  ## waits for ``future`` on the next cycle through the event loop.
+  ## The procedure then has a chance to clean up or even deny the request
+  ## using `try/except/finally`.
+  ##
+  ## This call do not guarantee that the ``future`` will be cancelled: the
+  ## exception might be caught and acted upon, delaying cancellation of the
+  ## ``future`` or preventing cancellation completely. The ``future`` may also
+  ## return value or raise different exception.
+  ##
+  ## Immediately after this procedure is called, ``future.cancelled()`` will
+  ## not return ``true`` (unless the Future was already cancelled).
+  if future.finished():
+    return false
+
+  if not(isNil(future.child)):
+    if cancel(future.child, getSrcLocation()):
+      return true
+  else:
+    if not(isNil(future.cancelcb)):
+      future.cancelcb(cast[pointer](future))
+      future.cancelcb = nil
+    cancelAndSchedule(future, getSrcLocation())
+
+  future.mustCancel = true
+  return true
 
 template cancel*[T](future: Future[T]) =
   ## Cancel ``future``.
-  cancel(FutureBase(future), getSrcLocation())
+  discard cancel(FutureBase(future), getSrcLocation())
 
 proc clearCallbacks(future: FutureBase) =
   future.callbacks = default(seq[AsyncCallback])
@@ -763,10 +778,6 @@ proc oneValue*[T](futs: varargs[Future[T]]): Future[T] {.
 proc cancelAndWait*[T](fut: Future[T]): Future[void] =
   ## Cancel ``fut`` and wait until it completes, in case it already
   ## ``await``s on another Future.
-
-  # When `retFuture` completes, `fut` and all its children have been
-  # cancelled. If `fut` doesn't have any children, the `continuation()` callback
-  # runs immediately, without control getting back to the dispatcher.
   var retFuture = newFuture[void]("chronos.cancelAndWait(T)")
   proc continuation(udata: pointer) {.gcsafe.} =
     if not(retFuture.finished()):
