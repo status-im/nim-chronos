@@ -156,11 +156,19 @@ proc finished*(future: FutureBase | FutureVar): bool {.inline.} =
 
 proc cancelled*(future: FutureBase): bool {.inline.} =
   ## Determines whether ``future`` has cancelled.
-  result = (future.state == FutureState.Cancelled)
+  (future.state == FutureState.Cancelled)
 
 proc failed*(future: FutureBase): bool {.inline.} =
   ## Determines whether ``future`` completed with an error.
-  result = (future.state == FutureState.Failed)
+  (future.state == FutureState.Failed)
+
+proc completed*(future: FutureBase): bool {.inline.} =
+  ## Determines whether ``future`` completed without an error.
+  (future.state == FutureState.Finished)
+
+proc done*(future: FutureBase): bool {.inline.} =
+  ## This is an alias for ``completed(future)`` procedure.
+  completed(future)
 
 when defined(chronosFutureTracking):
   proc futureDestructor(udata: pointer) {.gcsafe.} =
