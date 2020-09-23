@@ -581,8 +581,10 @@ proc `and`*[T, Y](fut1: Future[T], fut2: Future[Y]): Future[void] {.
 
   proc cancellation(udata: pointer) {.gcsafe.} =
     # On cancel we remove all our callbacks only.
-    fut1.removeCallback(cb)
-    fut2.removeCallback(cb)
+    if not(fut1.finished()):
+      fut1.removeCallback(cb)
+    if not(fut2.finished()):
+      fut2.removeCallback(cb)
 
   retFuture.cancelCallback = cancellation
   return retFuture
@@ -615,8 +617,10 @@ proc `or`*[T, Y](fut1: Future[T], fut2: Future[Y]): Future[void] =
 
   proc cancellation(udata: pointer) {.gcsafe.} =
     # On cancel we remove all our callbacks only.
-    fut1.removeCallback(cb)
-    fut2.removeCallback(cb)
+    if not(fut1.finished()):
+      fut1.removeCallback(cb)
+    if not(fut2.finished()):
+      fut2.removeCallback(cb)
 
   if fut1.finished():
     if fut1.failed():
@@ -776,18 +780,24 @@ proc oneValue*[T](futs: varargs[Future[T]]): Future[T] {.
   return retFuture
 
 proc cancelAndWait*[T](fut: Future[T]): Future[void] =
-  ## Cancel ``fut`` and wait until it completes, in case it already
-  ## ``await``s on another Future.
+  ## Initiate cancellation process for Future ``fut`` and wait until ``fut`` is
+  ## done e.g. changes its state (become completed, failed or cancelled).
+  ##
+  ## If ``fut`` is already finished (completed, failed or cancelled) result
+  ## Future[void] object will be returned complete.
   var retFuture = newFuture[void]("chronos.cancelAndWait(T)")
   proc continuation(udata: pointer) {.gcsafe.} =
     if not(retFuture.finished()):
       retFuture.complete()
-  fut.addCallback(continuation)
-
-  # Start the cancellation process. If `fut` has children, multiple event loop
-  # steps will be needed for it to complete.
-  fut.cancel()
-
+  proc cancellation(udata: pointer) {.gcsafe.} =
+    if not(fut.finished()):
+      fut.removeCallback(continuation)
+  if fut.finished():
+    retFuture.complete()
+  else:
+    fut.addCallback(continuation)
+    # Initiate cancellation process.
+    fut.cancel()
   return retFuture
 
 proc allFutures*[T](futs: varargs[Future[T]]): Future[void] =
