@@ -260,6 +260,15 @@ proc tlsReadLoop(stream: AsyncStreamReader) {.async.} =
 
   except CancelledError:
     rstream.state = AsyncStreamState.Stopped
+  except TLSStreamProtocolError as exc:
+    rstream.error = exc
+    rstream.state = AsyncStreamState.Error
+    if not(rstream.handshaked):
+      rstream.handshaked = true
+      rstream.stream.writer.handshaked = true
+      if not(isNil(rstream.handshakeFut)):
+        rstream.handshakeFut.fail(rstream.error)
+      rstream.switchToWriter.fire()
   except AsyncStreamReadError as exc:
     rstream.error = exc
     rstream.state = AsyncStreamState.Error
