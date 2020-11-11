@@ -808,6 +808,13 @@ proc sleepAsync*(ms: int): Future[void] {.
 proc stepsAsync*(number: int): Future[void] =
   ## Suspends the execution of the current async procedure for the next
   ## ``number`` of asynchronous steps (``poll()`` calls).
+  ##
+  ## This primitive can be useful when you need to create more deterministic
+  ## tests and cases.
+  ##
+  ## WARNING! Do not use this primitive to perform switch between tasks, because
+  ## this can lead to 100% CPU load in the moments when there are no I/O
+  ## events. Usually when there no I/O events CPU consumption should be near 0%.
   var retFuture = newFuture[void]("chronos.stepsAsync(int)")
   var counter = 0
 
