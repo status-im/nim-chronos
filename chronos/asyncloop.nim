@@ -790,10 +790,12 @@ proc sleepAsync*(duration: Duration): Future[void] =
   var timer: TimerCallback
 
   proc completion(data: pointer) {.gcsafe.} =
-    retFuture.complete()
+    if not(retFuture.finished()):
+      retFuture.complete()
 
   proc cancellation(udata: pointer) {.gcsafe.} =
-    clearTimer(timer)
+    if not(retFuture.finished()):
+      clearTimer(timer)
 
   retFuture.cancelCallback = cancellation
   timer = setTimer(moment, completion, cast[pointer](retFuture))
@@ -802,6 +804,31 @@ proc sleepAsync*(duration: Duration): Future[void] =
 proc sleepAsync*(ms: int): Future[void] {.
      inline, deprecated: "Use sleepAsync(Duration)".} =
   result = sleepAsync(ms.milliseconds())
+
+proc stepsAsync*(number: int): Future[void] =
+  ## Suspends the execution of the current async procedure for the next
+  ## ``number`` of asynchronous steps (``poll()`` calls).
+  var retFuture = newFuture[void]("chronos.stepsAsync(int)")
+  var counter = 0
+
+  proc continuation(data: pointer) {.gcsafe.} =
+    if not(retFuture.finished()):
+      inc(counter)
+      if counter < number:
+        callSoon(continuation, nil)
+      else:
+        retFuture.complete()
+
+  proc cancellation(udata: pointer) {.gcsafe.} =
+    discard
+
+  if number <= 0:
+    retFuture.complete()
+  else:
+    retFuture.cancelCallback = cancellation
+    callSoon(continuation, nil)
+
+  retFuture
 
 proc withTimeout*[T](fut: Future[T], timeout: Duration): Future[bool] =
   ## Returns a future which will complete once ``fut`` completes or after
