@@ -146,9 +146,9 @@ proc clean*[T](future: FutureVar[T]) =
   Future[T](future).error = nil
 
 proc finished*(future: FutureBase | FutureVar): bool {.inline.} =
-  ## Determines whether ``future`` has completed.
-  ##
-  ## ``True`` may indicate an error or a value. Use ``failed`` to distinguish.
+  ## Determines whether ``future`` has completed, i.e. ``future`` state changed
+  ## from state ``Pending`` to one of the states (``Finished``, ``Cancelled``,
+  ## ``Failed``).
   when future is FutureVar:
     result = (FutureBase(future).state != FutureState.Pending)
   else:
