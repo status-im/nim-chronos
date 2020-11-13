@@ -790,10 +790,12 @@ proc sleepAsync*(duration: Duration): Future[void] =
   var timer: TimerCallback
 
   proc completion(data: pointer) {.gcsafe.} =
-    retFuture.complete()
+    if not(retFuture.finished()):
+      retFuture.complete()
 
   proc cancellation(udata: pointer) {.gcsafe.} =
-    clearTimer(timer)
+    if not(retFuture.finished()):
+      clearTimer(timer)
 
   retFuture.cancelCallback = cancellation
   timer = setTimer(moment, completion, cast[pointer](retFuture))
@@ -802,6 +804,38 @@ proc sleepAsync*(duration: Duration): Future[void] =
 proc sleepAsync*(ms: int): Future[void] {.
      inline, deprecated: "Use sleepAsync(Duration)".} =
   result = sleepAsync(ms.milliseconds())
+
+proc stepsAsync*(number: int): Future[void] =
+  ## Suspends the execution of the current async procedure for the next
+  ## ``number`` of asynchronous steps (``poll()`` calls).
+  ##
+  ## This primitive can be useful when you need to create more deterministic
+  ## tests and cases.
+  ##
+  ## WARNING! Do not use this primitive to perform switch between tasks, because
+  ## this can lead to 100% CPU load in the moments when there are no I/O
+  ## events. Usually when there no I/O events CPU consumption should be near 0%.
+  var retFuture = newFuture[void]("chronos.stepsAsync(int)")
+  var counter = 0
+
+  proc continuation(data: pointer) {.gcsafe.} =
+    if not(retFuture.finished()):
+      inc(counter)
+      if counter < number:
+        callSoon(continuation, nil)
+      else:
+        retFuture.complete()
+
+  proc cancellation(udata: pointer) {.gcsafe.} =
+    discard
+
+  if number <= 0:
+    retFuture.complete()
+  else:
+    retFuture.cancelCallback = cancellation
+    callSoon(continuation, nil)
+
+  retFuture
 
 proc withTimeout*[T](fut: Future[T], timeout: Duration): Future[bool] =
   ## Returns a future which will complete once ``fut`` completes or after
