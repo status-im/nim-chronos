@@ -96,48 +96,48 @@ template setupFutureBase(loc: ptr SrcLoc) =
       futureList.head = result
     futureList.count.inc()
 
-proc newFuture[T](loc: ptr SrcLoc): Future[T] =
+proc newFutureImpl[T](loc: ptr SrcLoc): Future[T] =
   setupFutureBase(loc)
 
-proc newFutureSeq[A, B](loc: ptr SrcLoc): FutureSeq[A, B] =
+proc newFutureSeqImpl[A, B](loc: ptr SrcLoc): FutureSeq[A, B] =
   setupFutureBase(loc)
 
-proc newFutureStr[T](loc: ptr SrcLoc): FutureStr[T] =
+proc newFutureStrImpl[T](loc: ptr SrcLoc): FutureStr[T] =
   setupFutureBase(loc)
 
-proc newFutureVar[T](loc: ptr SrcLoc): FutureVar[T] =
-  FutureVar[T](newFuture[T](loc))
+proc newFutureVarImpl[T](loc: ptr SrcLoc): FutureVar[T] =
+  FutureVar[T](newFutureImpl[T](loc))
 
-template newFuture*[T](fromProc: static[string] = ""): auto =
+template newFuture*[T](fromProc: static[string] = ""): Future[T] =
   ## Creates a new future.
   ##
   ## Specifying ``fromProc``, which is a string specifying the name of the proc
   ## that this future belongs to, is a good habit as it helps with debugging.
-  newFuture[T](getSrcLocation(fromProc))
+  newFutureImpl[T](getSrcLocation(fromProc))
 
-template newFutureSeq*[A, B](fromProc: static[string] = ""): auto =
+template newFutureSeq*[A, B](fromProc: static[string] = ""): FutureSeq[A, B] =
   ## Create a new future which can hold/preserve GC sequence until future will
   ## not be completed.
   ##
   ## Specifying ``fromProc``, which is a string specifying the name of the proc
   ## that this future belongs to, is a good habit as it helps with debugging.
-  newFutureSeq[A, B](getSrcLocation(fromProc))
+  newFutureSeqImpl[A, B](getSrcLocation(fromProc))
 
-template newFutureStr*[T](fromProc: static[string] = ""): auto =
+template newFutureStr*[T](fromProc: static[string] = ""): FutureStr[T] =
   ## Create a new future which can hold/preserve GC string until future will
   ## not be completed.
   ##
   ## Specifying ``fromProc``, which is a string specifying the name of the proc
   ## that this future belongs to, is a good habit as it helps with debugging.
-  newFutureStr[T](getSrcLocation(fromProc))
+  newFutureStrImpl[T](getSrcLocation(fromProc))
 
-template newFutureVar*[T](fromProc: static[string] = ""): auto =
+template newFutureVar*[T](fromProc: static[string] = ""): FutureVar[T] =
   ## Create a new ``FutureVar``. This Future type is ideally suited for
   ## situations where you want to avoid unnecessary allocations of Futures.
   ##
   ## Specifying ``fromProc``, which is a string specifying the name of the proc
   ## that this future belongs to, is a good habit as it helps with debugging.
-  newFutureVar[T](getSrcLocation(fromProc))
+  newFutureVarImpl[T](getSrcLocation(fromProc))
 
 proc clean*[T](future: FutureVar[T]) =
   ## Resets the ``finished`` status of ``future``.
