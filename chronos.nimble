@@ -23,3 +23,14 @@ task test, "Run all tests":
       let curcmd = cmd & testname
       echo "\n" & curcmd
       exec curcmd
+
+task test_orc, "Run all tests":
+  var commands = [
+    "nim c -r --gc:orc tests/",
+    "nim c -r --gc:orc -d:release tests/",
+  ]
+  for testname in ["testall"]:
+    for cmd in commands:
+      let curcmd = cmd & testname
+      echo "\n" & curcmd
+      exec curcmd

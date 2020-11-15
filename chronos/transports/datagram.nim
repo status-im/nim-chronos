@@ -728,10 +728,7 @@ proc send*(transp: DatagramTransport, msg: string, msglen = -1): Future[void] =
   ## address which was bounded on transport.
   var retFuture = newFutureStr[void]("datagram.transport.send(string)")
   transp.checkClosed(retFuture)
-  if not isLiteral(msg):
-    shallowCopy(retFuture.gcholder, msg)
-  else:
-    retFuture.gcholder = msg
+  retFuture.gcholder = msg
   let length = if msglen <= 0: len(msg) else: msglen
   let vector = GramVector(kind: WithoutAddress, buf: addr retFuture.gcholder[0],
                           buflen: length,
@@ -747,10 +744,7 @@ proc send*[T](transp: DatagramTransport, msg: seq[T],
   ## address which was bounded on transport.
   var retFuture = newFutureSeq[void, T]("datagram.transport.send(seq)")
   transp.checkClosed(retFuture)
-  if not isLiteral(msg):
-    shallowCopy(retFuture.gcholder, msg)
-  else:
-    retFuture.gcholder = msg
+  retFuture.gcholder = msg
   let length = if msglen <= 0: (len(msg) * sizeof(T)) else: (msglen * sizeof(T))
   let vector = GramVector(kind: WithoutAddress, buf: addr retFuture.gcholder[0],
                           buflen: length,
@@ -779,10 +773,7 @@ proc sendTo*(transp: DatagramTransport, remote: TransportAddress,
   ## address ``remote``.
   var retFuture = newFutureStr[void]("datagram.transport.sendTo(string)")
   transp.checkClosed(retFuture)
-  if not isLiteral(msg):
-    shallowCopy(retFuture.gcholder, msg)
-  else:
-    retFuture.gcholder = msg
+  retFuture.gcholder = msg
   let length = if msglen <= 0: len(msg) else: msglen
   let vector = GramVector(kind: WithAddress, buf: addr retFuture.gcholder[0],
                           buflen: length,
@@ -799,10 +790,7 @@ proc sendTo*[T](transp: DatagramTransport, remote: TransportAddress,
   ## address ``remote``.
   var retFuture = newFutureSeq[void, T]("datagram.transport.sendTo(seq)")
   transp.checkClosed(retFuture)
-  if not isLiteral(msg):
-    shallowCopy(retFuture.gcholder, msg)
-  else:
-    retFuture.gcholder = msg
+  retFuture.gcholder = msg
   let length = if msglen <= 0: (len(msg) * sizeof(T)) else: (msglen * sizeof(T))
   let vector = GramVector(kind: WithAddress, buf: addr retFuture.gcholder[0],
                           buflen: length,

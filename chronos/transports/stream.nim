@@ -1911,10 +1911,7 @@ proc write*(transp: StreamTransport, msg: string, msglen = -1): Future[int] =
   var retFuture = newFutureStr[int]("stream.transport.write(string)")
   transp.checkClosed(retFuture)
   transp.checkWriteEof(retFuture)
-  if not isLiteral(msg):
-    shallowCopy(retFuture.gcholder, msg)
-  else:
-    retFuture.gcholder = msg
+  retFuture.gcholder = msg
   let length = if msglen <= 0: len(msg) else: msglen
   var vector = StreamVector(kind: DataBuffer,
                             writer: cast[Future[int]](retFuture),
@@ -1929,10 +1926,7 @@ proc write*[T](transp: StreamTransport, msg: seq[T], msglen = -1): Future[int] =
   var retFuture = newFutureSeq[int, T]("stream.transport.write(seq)")
   transp.checkClosed(retFuture)
   transp.checkWriteEof(retFuture)
-  if not isLiteral(msg):
-    shallowCopy(retFuture.gcholder, msg)
-  else:
-    retFuture.gcholder = msg
+  retFuture.gcholder = msg
   let length = if msglen <= 0: (len(msg) * sizeof(T)) else: (msglen * sizeof(T))
   var vector = StreamVector(kind: DataBuffer,
                             writer: cast[Future[int]](retFuture),

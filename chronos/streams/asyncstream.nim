@@ -676,10 +676,7 @@ proc write*(wstream: AsyncStreamWriter, sbytes: seq[byte],
       await write(wstream.wsource, sbytes, msglen)
     else:
       var item = WriteItem(kind: Sequence)
-      if not isLiteral(sbytes):
-        shallowCopy(item.data2, sbytes)
-      else:
-        item.data2 = sbytes
+      item.data2 = sbytes
       item.size = length
       item.future = newFuture[void]("async.stream.write(seq)")
       await wstream.queue.put(item)
@@ -721,10 +718,7 @@ proc write*(wstream: AsyncStreamWriter, sbytes: string,
       await write(wstream.wsource, sbytes, msglen)
     else:
       var item = WriteItem(kind: String)
-      if not isLiteral(sbytes):
-        shallowCopy(item.data3, sbytes)
-      else:
-        item.data3 = sbytes
+      item.data3 = sbytes
       item.size = length
       item.future = newFuture[void]("async.stream.write(string)")
       await wstream.queue.put(item)
