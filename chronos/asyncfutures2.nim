@@ -804,6 +804,7 @@ proc cancelAndWait*[T](fut: Future[T]): Future[void] =
     retFuture.complete()
   else:
     fut.addCallback(continuation)
+    retFuture.cancelCallback = cancellation
     # Initiate cancellation process.
     fut.cancel()
   return retFuture
