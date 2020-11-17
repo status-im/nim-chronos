@@ -847,19 +847,23 @@ proc withTimeout*[T](fut: Future[T], timeout: Duration): Future[bool] =
   var retFuture = newFuture[bool]("chronos.`withTimeout`")
   var moment: Moment
   var timer: TimerCallback
+  var cancelling = false
 
   proc continuation(udata: pointer) {.gcsafe.} =
     if not(retFuture.finished()):
-      if not(fut.finished()):
-        # Timer exceeded first.
-        fut.removeCallback(continuation)
-        fut.cancel()
-        retFuture.complete(false)
+      if not(cancelling):
+        if not(fut.finished()):
+          # Timer exceeded first, we going to cancel `fut` and wait until it
+          # not completes.
+          cancelling = true
+          fut.cancel()
+        else:
+          # Future `fut` completed/failed/cancelled first.
+          if not(isNil(timer)):
+            clearTimer(timer)
+          retFuture.complete(true)
       else:
-        # Future `fut` completed/failed/cancelled first.
-        if not isNil(timer):
-          clearTimer(timer)
-        retFuture.complete(true)
+        retFuture.complete(false)
 
   proc cancellation(udata: pointer) {.gcsafe.} =
     if not isNil(timer):
@@ -900,26 +904,29 @@ proc wait*[T](fut: Future[T], timeout = InfiniteDuration): Future[T] =
   var retFuture = newFuture[T]("chronos.wait()")
   var moment: Moment
   var timer: TimerCallback
+  var cancelling = false
 
   proc continuation(udata: pointer) {.gcsafe.} =
     if not(retFuture.finished()):
-      if not(fut.finished()):
-        # Timer exceeded first.
-        fut.removeCallback(continuation)
-        fut.cancel()
-        retFuture.fail(newException(AsyncTimeoutError, "Timeout exceeded!"))
-      else:
-        # Future `fut` completed/failed/cancelled first.
-        if not isNil(timer):
-          clearTimer(timer)
-
-        if fut.failed():
-          retFuture.fail(fut.error)
+      if not(cancelling):
+        if not(fut.finished()):
+          # Timer exceeded first.
+          cancelling = true
+          fut.cancel()
         else:
-          when T is void:
-            retFuture.complete()
+          # Future `fut` completed/failed/cancelled first.
+          if not isNil(timer):
+            clearTimer(timer)
+
+          if fut.failed():
+            retFuture.fail(fut.error)
           else:
-            retFuture.complete(fut.read())
+            when T is void:
+              retFuture.complete()
+            else:
+              retFuture.complete(fut.read())
+      else:
+        retFuture.fail(newException(AsyncTimeoutError, "Timeout exceeded!"))
 
   proc cancellation(udata: pointer) {.gcsafe.} =
     if not isNil(timer):

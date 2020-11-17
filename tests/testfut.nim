@@ -1067,6 +1067,52 @@ suite "Future[T] behavior test suite":
 
     r10 and r11 and r20 and r21 and r30 and r31
 
+  proc testWithTimeoutCancelAndWait(): bool =
+    proc futureNeverEnds(): Future[void] =
+      newFuture[void]("neverending.future")
+
+    proc futureOneLevelMore() {.async.} =
+      await futureNeverEnds()
+
+    proc testWithTimeout(): Future[bool] {.async.} =
+      var fut = futureOneLevelMore()
+      try:
+        let res = await withTimeout(fut, 100.milliseconds)
+        # Because `fut` is never-ending Future[T], `withTimeout` should return
+        # `false` but it also has to wait until `fut` is cancelled.
+        if not(res) and fut.cancelled():
+          return true
+        else:
+          return false
+      except CatchableError:
+        return false
+
+    waitFor testWithTimeout()
+
+  proc testWaitCancelAndWait(): bool =
+    proc futureNeverEnds(): Future[void] =
+      newFuture[void]("neverending.future")
+
+    proc futureOneLevelMore() {.async.} =
+      await futureNeverEnds()
+
+    proc testWait(): Future[bool] {.async.} =
+      var fut = futureOneLevelMore()
+      try:
+        await wait(fut, 100.milliseconds)
+        return false
+      except AsyncTimeoutError:
+        # Because `fut` is never-ending Future[T], `wait` should raise
+        # `AsyncTimeoutError`, but only after `fut` is cancelled.
+        if fut.cancelled():
+          return true
+        else:
+          return false
+      except CatchableError:
+        return false
+
+    waitFor testWait()
+
   test "Async undefined behavior (#7758) test":
     check test1() == true
   test "Immediately completed asynchronous procedure test":
@@ -1126,3 +1172,9 @@ suite "Future[T] behavior test suite":
 
   test "location test":
     check testSrcLocation() == true
+
+  test "withTimeout(fut) should wait cancellation test":
+    check testWithTimeoutCancelAndWait()
+
+  test "wait(fut) should wait cancellation test":
+    check testWaitCancelAndWait()
