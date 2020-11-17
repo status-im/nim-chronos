@@ -7,12 +7,15 @@
 #              MIT license (LICENSE-MIT)
 import strutils, net, unittest
 import ../chronos
+import os
 
 when defined(nimHasUsed): {.used.}
 
+let isNimPackageTest = existsEnv("NIM_TEST_PACKAGES")
+let TestsCount = if isNimPackageTest: 1 else: 2000
+
 suite "Datagram Transport test suite":
-  const
-    TestsCount = 2000
+  let
     ClientsCount = 20
     MessagesCount = 20
 
