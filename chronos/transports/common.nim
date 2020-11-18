@@ -495,6 +495,9 @@ template getServerUseClosedError*(): ref TransportUseClosedError =
 template getTransportTooManyError*(): ref TransportTooManyError =
   newException(TransportTooManyError, "Too many open transports!")
 
+template getTransportUseClosedError*(): ref TransportUseClosedError =
+  newException(TransportUseClosedError, "Transport is already closed!")
+
 template getTransportOsError*(err: OSErrorCode): ref TransportOsError =
   var msg = "(" & $int(err) & ") " & osErrorMsg(err)
   var tre = newException(TransportOsError, msg)
