@@ -1152,6 +1152,54 @@ suite "Stream Transport test suite":
         await server.closeWait()
         setMaxOpenFiles(maxFiles)
 
+  proc testWriteOnClose(address: TransportAddress): Future[bool] {.async.} =
+    var server = createStreamServer(address, flags = {ReuseAddr, NoPipeFlash})
+    var res = 0
+
+    proc acceptTask(server: StreamServer) {.async.} =
+      let transp = await server.accept()
+      var futs = newSeq[Future[int]](TestsCount)
+      var msg = createBigMessage(1024)
+      for i in 0 ..< len(futs):
+        futs[i] = transp.write(msg)
+
+      await transp.closeWait()
+      await sleepAsync(100.milliseconds)
+
+      for i in 0 ..< len(futs):
+        if futs[i].failed() and (futs[i].error of TransportUseClosedError):
+          inc(res)
+
+      await server.closeWait()
+
+    var acceptFut = acceptTask(server)
+    var transp = await connect(address)
+    await server.join()
+    await transp.closeWait()
+    await acceptFut
+    return (res == TestsCount)
+
+  proc testReadOnClose(address: TransportAddress): Future[bool] {.async.} =
+    var server = createStreamServer(address, flags = {ReuseAddr, NoPipeFlash})
+    var res = false
+
+    proc acceptTask(server: StreamServer) {.async.} =
+      let transp = await server.accept()
+      var buffer = newSeq[byte](1024)
+      var fut = transp.readOnce(addr buffer[0], len(buffer))
+      await transp.closeWait()
+      await sleepAsync(100.milliseconds)
+      if fut.failed() and (fut.error of TransportUseClosedError):
+        res = true
+      await server.closeWait()
+
+    var acceptFut = acceptTask(server)
+    var transp = await connect(address)
+    await server.join()
+    await transp.closeWait()
+    await acceptFut
+    return res
+
   markFD = getCurrentFD()
 
   for i in 0..<len(addresses):
@@ -1226,6 +1274,10 @@ suite "Stream Transport test suite":
         skip()
       else:
         check waitFor(testAcceptTooMany(addresses[i])) == true
+    test prefixes[i] & "write() queue notification on close() test":
+      check waitFor(testWriteOnClose(addresses[i])) == true
+    test prefixes[i] & "read() notification on close() test":
+      check waitFor(testReadOnClose(addresses[i])) == true
   test "Servers leak test":
     check getTracker("stream.server").isLeaked() == false
   test "Transports leak test":
