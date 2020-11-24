@@ -971,7 +971,7 @@ proc race*(futs: varargs[FutureBase]): Future[FutureBase] =
       return retFuture
 
   for fut in nfuts:
-    fut.addCallback(cb)
+    fut.addCallback(cb, cast[pointer](fut))
 
   if len(nfuts) == 0:
     retFuture.fail(newException(ValueError, "Empty Future[T] list"))
