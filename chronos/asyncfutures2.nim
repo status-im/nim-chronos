@@ -932,3 +932,49 @@ proc one*[T](futs: varargs[Future[T]]): Future[Future[T]] =
 
   retFuture.cancelCallback = cancellation
   return retFuture
+
+proc race*(futs: varargs[FutureBase]): Future[FutureBase] =
+  ## Returns a future which will complete and return completed FutureBase,
+  ## when one of the futures in ``futs`` will be completed, failed or canceled.
+  ##
+  ## If the argument is empty, the returned future FAILS immediately.
+  ##
+  ## On success returned Future will hold finished FutureBase.
+  ##
+  ## On cancel futures in ``futs`` WILL NOT BE cancelled.
+  var retFuture = newFuture[FutureBase]("chronos.race()")
+
+  # Because we can't capture varargs[T] in closures we need to create copy.
+  var nfuts = @futs
+
+  proc cb(udata: pointer) {.gcsafe.} =
+    if not(retFuture.finished()):
+      var res: FutureBase
+      var rfut = cast[FutureBase](udata)
+      for i in 0..<len(nfuts):
+        if nfuts[i] != rfut:
+          nfuts[i].removeCallback(cb)
+        else:
+          res = nfuts[i]
+      retFuture.complete(res)
+
+  proc cancellation(udata: pointer) {.gcsafe.} =
+    # On cancel we remove all our callbacks only.
+    for i in 0..<len(nfuts):
+      if not(nfuts[i].finished()):
+        nfuts[i].removeCallback(cb)
+
+  # If one of the Future[T] already finished we return it as result
+  for fut in nfuts:
+    if fut.finished():
+      retFuture.complete(fut)
+      return retFuture
+
+  for fut in nfuts:
+    fut.addCallback(cb, cast[pointer](fut))
+
+  if len(nfuts) == 0:
+    retFuture.fail(newException(ValueError, "Empty Future[T] list"))
+
+  retFuture.cancelCallback = cancellation
+  return retFuture
