@@ -1245,7 +1245,7 @@ suite "Stream Transport test suite":
     test prefixes[i] & m16:
       check waitFor(test16(addresses[i])) == 1
     test prefixes[i] & "Connection reset test on send() only":
-      when defined(macos):
+      when defined(macosx):
         skip()
       else:
         check waitFor(testWriteConnReset(addresses[i])) == 1
