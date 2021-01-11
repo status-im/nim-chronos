@@ -432,7 +432,7 @@ when defined(windows):
               else:
                 transp.queue.addFirst(vector)
             else:
-              let loop = getGlobalDispatcher()
+              let loop = getThreadDispatcher()
               var size: int32
               var flags: int32
 
@@ -688,7 +688,7 @@ when defined(windows):
     ## Open new connection to remote peer with address ``address`` and create
     ## new transport object ``StreamTransport`` for established connection.
     ## ``bufferSize`` is size of internal buffer for transport.
-    let loop = getGlobalDispatcher()
+    let loop = getThreadDispatcher()
 
     var retFuture = newFuture[StreamTransport]("stream.transport.connect")
     if address.family in {AddressFamily.IPv4, AddressFamily.IPv6}:
@@ -892,7 +892,7 @@ when defined(windows):
   proc acceptLoop(udata: pointer) {.gcsafe, nimcall.} =
     var ovl = cast[PtrCustomOverlapped](udata)
     var server = cast[StreamServer](ovl.data.udata)
-    var loop = getGlobalDispatcher()
+    var loop = getThreadDispatcher()
 
     while true:
       if server.apending:
@@ -1091,7 +1091,7 @@ when defined(windows):
 
     if server.local.family in {AddressFamily.IPv4, AddressFamily.IPv6}:
       # TCP Sockets part
-      var loop = getGlobalDispatcher()
+      var loop = getThreadDispatcher()
       server.asock = createAsyncSocket(server.domain, SockType.SOCK_STREAM,
                                        Protocol.IPPROTO_TCP)
       if server.asock == asyncInvalidSocket:
