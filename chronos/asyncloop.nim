@@ -177,8 +177,7 @@ elif unixPlatform:
                     MSG_NOSIGNAL, SIGPIPE
 
 type
-  CallbackFunc* = proc (arg: pointer = nil) {.gcsafe.}
-  CallSoonProc* = proc (c: CallbackFunc, u: pointer = nil) {.gcsafe.}
+  CallbackFunc* = proc (arg: pointer) {.gcsafe.}
 
   AsyncCallback* = object
     function*: CallbackFunc
@@ -205,9 +204,6 @@ type
 
 proc `<`(a, b: TimerCallback): bool =
   result = a.finishAt < b.finishAt
-
-proc callSoon*(cbproc: CallbackFunc, data: pointer = nil) {.
-     gcsafe, raises: [Defect].}
 
 func getAsyncTimestamp*(a: Duration): auto {.inline.} =
   ## Return rounded up value of duration with milliseconds resolution.
@@ -808,6 +804,22 @@ proc removeTimer*(at: uint64, cb: CallbackFunc, udata: pointer = nil) {.
      inline, deprecated: "Use removeTimer(Duration, cb, udata)".} =
   removeTimer(Moment.init(int64(at), Millisecond), cb, udata)
 
+proc callSoon*(acb: AsyncCallback) {.gcsafe, raises: [Defect].} =
+  ## Schedule `cbproc` to be called as soon as possible.
+  ## The callback is called when control returns to the event loop.
+  getThreadDispatcher().callbacks.addLast(acb)
+
+proc callSoon*(cbproc: CallbackFunc, data: pointer) {.
+     gcsafe, raises: [Defect].} =
+  ## Schedule `cbproc` to be called as soon as possible.
+  ## The callback is called when control returns to the event loop.
+  doAssert(not isNil(cbproc))
+  callSoon(AsyncCallback(function: cbproc, udata: data))
+
+proc callSoon*(cbproc: CallbackFunc) {.
+     gcsafe, raises: [Defect].} =
+  callSoon(cbproc, nil)
+
 include asyncfutures2
 
 proc sleepAsync*(duration: Duration): Future[void] =
@@ -995,13 +1007,6 @@ proc wait*[T](fut: Future[T], timeout = -1): Future[T] {.
     wait(fut, timeout.milliseconds())
 
 include asyncmacro2
-
-proc callSoon*(cbproc: CallbackFunc, data: pointer = nil) =
-  ## Schedule `cbproc` to be called as soon as possible.
-  ## The callback is called when control returns to the event loop.
-  doAssert(not isNil(cbproc))
-  let acb = AsyncCallback(function: cbproc, udata: data)
-  getThreadDispatcher().callbacks.addLast(acb)
 
 proc runForever*() =
   ## Begins a never ending global dispatcher poll loop.
