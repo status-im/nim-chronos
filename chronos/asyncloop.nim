@@ -383,8 +383,8 @@ when defined(windows) or defined(nimdoc):
 
   var gDisp{.threadvar.}: PDispatcher ## Global dispatcher
 
-  proc setThreadDispatcher*(disp: PDispatcher) {.gcsafe.}
-  proc getThreadDispatcher*(): PDispatcher {.gcsafe.}
+  proc setThreadDispatcher*(disp: PDispatcher) {.gcsafe, raises: [Defect].}
+  proc getThreadDispatcher*(): PDispatcher {.gcsafe, raises: [Defect].}
   proc setGlobalDispatcher*(disp: PDispatcher) {.
        gcsafe, deprecated: "Use setThreadDispatcher() instead".}
   proc getGlobalDispatcher*(): PDispatcher {.
@@ -521,8 +521,8 @@ elif unixPlatform:
 
   var gDisp{.threadvar.}: PDispatcher ## Global dispatcher
 
-  proc setThreadDispatcher*(disp: PDispatcher) {.gcsafe.}
-  proc getThreadDispatcher*(): PDispatcher {.gcsafe.}
+  proc setThreadDispatcher*(disp: PDispatcher) {.gcsafe, raises: [Defect].}
+  proc getThreadDispatcher*(): PDispatcher {.gcsafe, raises: [Defect].}
   proc setGlobalDispatcher*(disp: PDispatcher) {.
        gcsafe, deprecated: "Use setThreadDispatcher() instead".}
   proc getGlobalDispatcher*(): PDispatcher {.
@@ -731,13 +731,24 @@ proc setThreadDispatcher*(disp: PDispatcher) =
 
 proc getThreadDispatcher*(): PDispatcher =
   ## Returns current thread's dispatcher instance.
+  template getErrorMessage(exc): string =
+    "Cannot create thread dispatcher: " & exc.msg
+
   if gDisp.isNil:
-    let disp =
-      try:
-        newDispatcher()
-      except CatchableError as exc:
-        raise newException(Defect,
-                           "Cannot create thread dispatcher: " & exc.msg)
+    when defined(windows):
+      let disp =
+        try:
+          newDispatcher()
+        except CatchableError as exc:
+          raise newException(Defect, getErrorMessage(exc))
+    else:
+      let disp =
+        try:
+          newDispatcher()
+        except IOSelectorsException as exc:
+          raise newException(Defect, getErrorMessage(exc))
+        except CatchableError as exc:
+          raise newException(Defect, getErrorMessage(exc))
     setThreadDispatcher(disp)
   return gDisp
 
