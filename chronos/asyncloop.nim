@@ -206,7 +206,8 @@ type
 proc `<`(a, b: TimerCallback): bool =
   result = a.finishAt < b.finishAt
 
-proc callSoon*(cbproc: CallbackFunc, data: pointer = nil) {.gcsafe.}
+proc callSoon*(cbproc: CallbackFunc, data: pointer = nil) {.
+     gcsafe, raises: [Defect].}
 
 func getAsyncTimestamp*(a: Duration): auto {.inline.} =
   ## Return rounded up value of duration with milliseconds resolution.
@@ -382,10 +383,12 @@ when defined(windows) or defined(nimdoc):
 
   var gDisp{.threadvar.}: PDispatcher ## Global dispatcher
 
-  proc setGlobalDispatcher*(disp: PDispatcher) {.gcsafe.}
-  proc getGlobalDispatcher*(): PDispatcher {.gcsafe.}
   proc setThreadDispatcher*(disp: PDispatcher) {.gcsafe.}
   proc getThreadDispatcher*(): PDispatcher {.gcsafe.}
+  proc setGlobalDispatcher*(disp: PDispatcher) {.
+       gcsafe, deprecated: "Use setThreadDispatcher() instead".}
+  proc getGlobalDispatcher*(): PDispatcher {.
+       gcsafe, deprecated: "Use getThreadDispatcher() instead".}
 
   proc getIoHandler*(disp: PDispatcher): Handle =
     ## Returns the underlying IO Completion Port handle (Windows) or selector
@@ -518,10 +521,12 @@ elif unixPlatform:
 
   var gDisp{.threadvar.}: PDispatcher ## Global dispatcher
 
-  proc setGlobalDispatcher*(disp: PDispatcher) {.gcsafe.}
-  proc getGlobalDispatcher*(): PDispatcher {.gcsafe.}
   proc setThreadDispatcher*(disp: PDispatcher) {.gcsafe.}
   proc getThreadDispatcher*(): PDispatcher {.gcsafe.}
+  proc setGlobalDispatcher*(disp: PDispatcher) {.
+       gcsafe, deprecated: "Use setThreadDispatcher() instead".}
+  proc getGlobalDispatcher*(): PDispatcher {.
+       gcsafe, deprecated: "Use getThreadDispatcher() instead".}
 
   proc getIoHandler*(disp: PDispatcher): Selector[SelectorData] =
     ## Returns system specific OS queue.
@@ -718,13 +723,13 @@ else:
   proc initAPI() = discard
   proc globalInit() = discard
 
-proc setThreadDispatcher*(disp: PDispatcher) {.gcsafe.} =
+proc setThreadDispatcher*(disp: PDispatcher) =
   ## Set current thread's dispatcher instance to ``disp``.
   if not gDisp.isNil:
     doAssert gDisp.callbacks.len == 0
   gDisp = disp
 
-proc getThreadDispatcher*(): PDispatcher {.gcsafe.} =
+proc getThreadDispatcher*(): PDispatcher =
   ## Returns current thread's dispatcher instance.
   if gDisp.isNil:
     let disp =
@@ -736,13 +741,11 @@ proc getThreadDispatcher*(): PDispatcher {.gcsafe.} =
     setThreadDispatcher(disp)
   return gDisp
 
-proc setGlobalDispatcher*(disp: PDispatcher) {.
-     gcsafe, deprecated: "Use setThreadDispatcher() instead".} =
+proc setGlobalDispatcher*(disp: PDispatcher) =
   ## Set current thread's dispatcher instance to ``disp``.
   setThreadDispatcher(disp)
 
-proc getGlobalDispatcher*(): PDispatcher {.
-     gcsafe, deprecated: "Use getThreadDispatcher() instead".} =
+proc getGlobalDispatcher*(): PDispatcher =
   ## Returns current thread's dispatcher instance.
   getThreadDispatcher()
 
