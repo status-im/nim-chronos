@@ -218,7 +218,7 @@ proc finish(fut: FutureBase, state: FutureState) =
   fut.cancelcb = nil # release cancellation callback memory
   for item in fut.callbacks.mitems():
     if not(isNil(item.function)):
-      callSoon(item.function, item.udata)
+      callSoon(item)
     item = default(AsyncCallback) # release memory as early as possible
   fut.callbacks = default(seq[AsyncCallback]) # release seq as well
 
