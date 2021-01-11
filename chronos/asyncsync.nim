@@ -70,8 +70,8 @@ proc newAsyncLock*(): AsyncLock =
   ## immediately.
 
   # Workaround for callSoon() not worked correctly before
-  # getGlobalDispatcher() call.
-  discard getGlobalDispatcher()
+  # getThreadDispatcher() call.
+  discard getThreadDispatcher()
   AsyncLock(waiters: newSeq[Future[void]](), locked: false, acquired: false)
 
 proc wakeUpFirst(lock: AsyncLock): bool {.inline.} =
@@ -143,8 +143,8 @@ proc newAsyncEvent*(): AsyncEvent =
   ## initially `false`.
 
   # Workaround for callSoon() not worked correctly before
-  # getGlobalDispatcher() call.
-  discard getGlobalDispatcher()
+  # getThreadDispatcher() call.
+  discard getThreadDispatcher()
   AsyncEvent(waiters: newSeq[Future[void]](), flag: false)
 
 proc wait*(event: AsyncEvent): Future[void] =
@@ -184,8 +184,8 @@ proc newAsyncQueue*[T](maxsize: int = 0): AsyncQueue[T] =
   ## Creates a new asynchronous queue ``AsyncQueue``.
 
   # Workaround for callSoon() not worked correctly before
-  # getGlobalDispatcher() call.
-  discard getGlobalDispatcher()
+  # getThreadDispatcher() call.
+  discard getThreadDispatcher()
   AsyncQueue[T](
     getters: newSeq[Future[void]](),
     putters: newSeq[Future[void]](),
