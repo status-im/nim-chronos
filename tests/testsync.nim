@@ -234,16 +234,6 @@ suite "Asynchronous sync primitives test suite":
     poll()
     result = testQueue3Result
 
-  proc test6(): bool =
-    var queue = newAsyncQueue[int]()
-    queue.putNoWait(1)
-    queue.putNoWait(2)
-    queue.putNoWait(3)
-    queue.putNoWait(4)
-    queue.putNoWait(5)
-    queue.clear()
-    result = (len(queue) == 0)
-
   proc test7(): bool =
     var queue = newAsyncQueue[int]()
     var arr1 = @[1, 2, 3, 4, 5]
@@ -313,6 +303,36 @@ suite "Asynchronous sync primitives test suite":
     q.putNoWait(5)
     result = (5 in q and not(6 in q))
 
+  proc testPriorityBehavior(): int =
+    proc task1(aq: AsyncPriorityQueue[int]): Future[int] {.async.} =
+      var item1 = await aq.pop()
+      var item2 = await aq.pop()
+      return item1 + item2
+
+    proc task2(aq: AsyncPriorityQueue[int]) {.async.} =
+      await aq.push(1000)
+      await aq.push(2000)
+
+    var queue = newAsyncPriorityQueue[int](1)
+    var fut = task1(queue)
+    discard task2(queue)
+    ## There must be exactly 2 poll() calls
+    poll()
+    poll()
+    result = if fut.finished(): fut.read() else: 0
+
+  proc testPriorityQueue(): int =
+    proc task1(aq: AsyncPriorityQueue[int]): Future[int] {.async.} =
+      var res = ""
+      for i in 0 ..< 10:
+        var item = await aq.pop()
+        res = res & $item
+      return res
+
+    proc task2(aq: AsyncPriorityQueue[int]) {.async.} =
+      await aq.push(5)
+      await aq.push(6)
+
   test "AsyncLock() behavior test":
     check:
       test1() == "0123456789"
@@ -344,11 +364,13 @@ suite "Asynchronous sync primitives test suite":
     check test4() == 0
   test "AsyncQueue() addLast/addFirst/popLast/popFirst test":
     check test5() == 1100
-  test "AsyncQueue() clear test":
-    check test6() == true
   test "AsyncQueue() iterators/assignments test":
     check test7() == true
   test "AsyncQueue() representation test":
     check test8() == true
   test "AsyncQueue() contains test":
     check test9() == true
+  test "AsyncPriorityQueue() behavior test":
+    check testPriorityBehavior() == 3000
+  test "AsyncPriorityQueue() priority test":
+    check testPriorityQueue() == "0123456789"
