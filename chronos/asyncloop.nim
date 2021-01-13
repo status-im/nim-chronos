@@ -200,6 +200,7 @@ type
   PDispatcherBase = ref object of RootRef
     timers*: HeapQueue[TimerCallback]
     callbacks*: Deque[AsyncCallback]
+    idlers*: seq[AsyncCallback]
     trackers*: Table[string, TrackerBase]
 
 proc `<`(a, b: TimerCallback): bool =
@@ -235,17 +236,18 @@ template processTimersGetTimeout(loop, timeout: untyped) =
       break
 
     loop.callbacks.addLast(loop.timers.pop().function)
+
   if loop.timers.len > 0:
     timeout = (lastFinish - curTime).getAsyncTimestamp()
 
   if timeout == 0:
-    if len(loop.callbacks) == 0:
+    if (len(loop.callbacks) == 0) and (len(loop.idlers) == 0):
       when defined(windows):
         timeout = INFINITE
       else:
         timeout = -1
   else:
-    if len(loop.callbacks) != 0:
+    if (len(loop.callbacks) != 0) or (len(loop.idlers) != 0):
       timeout = 0
 
 template processTimers(loop: untyped) =
@@ -258,6 +260,11 @@ template processTimers(loop: untyped) =
     if curTime < loop.timers[0].finishAt:
       break
     loop.callbacks.addLast(loop.timers.pop().function)
+
+template processIdlers(loop: untyped) =
+  for item in loop.idlers:
+    loop.callbacks.addLast(item)
+  loop.idlers.setLen(0)
 
 template processCallbacks(loop: untyped) =
   var count = len(loop.callbacks)
@@ -404,6 +411,7 @@ when defined(windows) or defined(nimdoc):
     let loop = getThreadDispatcher()
     var curTime = Moment.now()
     var curTimeout = DWORD(0)
+    var noNetworkEvents = false
 
     # Moving expired timers to `loop.callbacks` and calculate timeout
     loop.processTimersGetTimeout(curTimeout)
@@ -434,9 +442,16 @@ when defined(windows) or defined(nimdoc):
       else:
         if int32(errCode) != WAIT_TIMEOUT:
           raiseOSError(errCode)
+        else:
+          noNetworkEvents = true
 
     # Moving expired timers to `loop.callbacks`.
     loop.processTimers()
+
+    # We move idle callbacks to `loop.callbacks` only if there no pending
+    # network events.
+    if noNetworkEvents:
+      loop.processIdlers()
 
     # All callbacks which will be added in process will be processed on next
     # poll() call.
@@ -685,7 +700,7 @@ elif unixPlatform:
     loop.processTimersGetTimeout(curTimeout)
 
     # Processing IO descriptors and all hardware events.
-    var count = loop.selector.selectInto(curTimeout, loop.keys)
+    let count = loop.selector.selectInto(curTimeout, loop.keys)
     for i in 0..<count:
       let fd = loop.keys[i].fd
       let events = loop.keys[i].events
@@ -710,6 +725,11 @@ elif unixPlatform:
 
     # Moving expired timers to `loop.callbacks`.
     loop.processTimers()
+
+    # We move idle callbacks to `loop.callbacks` only if there no pending
+    # network events.
+    if count == 0:
+      loop.processIdlers()
 
     # All callbacks which will be added in process, will be processed on next
     # poll() call.
@@ -816,9 +836,31 @@ proc callSoon*(cbproc: CallbackFunc, data: pointer) {.
   doAssert(not isNil(cbproc))
   callSoon(AsyncCallback(function: cbproc, udata: data))
 
-proc callSoon*(cbproc: CallbackFunc) {.
-     gcsafe, raises: [Defect].} =
+proc callSoon*(cbproc: CallbackFunc) {.gcsafe, raises: [Defect].} =
   callSoon(cbproc, nil)
+
+proc callIdle*(acb: AsyncCallback) {.gcsafe, raises: [Defect].} =
+  ## Schedule ``cbproc`` to be called when there no pending network events
+  ## available.
+  ##
+  ## **WARNING!** Despite the name, idle handles will get their callbacks called
+  ## on every loop iteration (if there no network events available), not when
+  ## the loop is actually "idle".
+  getThreadDispatcher().idlers.add(acb)
+
+proc callIdle*(cbproc: CallbackFunc, data: pointer) {.
+     gcsafe, raises: [Defect].} =
+  ## Schedule ``cbproc`` to be called when there no pending network events
+  ## available.
+  ##
+  ## **WARNING!** Despite the name, idle handles will get their callbacks called
+  ## on every loop iteration (if there no network events available), not when
+  ## the loop is actually "idle".
+  doAssert(not isNil(cbproc))
+  callIdle(AsyncCallback(function: cbproc, udata: data))
+
+proc callIdle*(cbproc: CallbackFunc) {.gcsafe, raises: [Defect].} =
+  callIdle(cbproc, nil)
 
 include asyncfutures2
 
