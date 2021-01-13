@@ -200,7 +200,7 @@ type
   PDispatcherBase = ref object of RootRef
     timers*: HeapQueue[TimerCallback]
     callbacks*: Deque[AsyncCallback]
-    idlers*: seq[AsyncCallback]
+    idlers*: Deque[AsyncCallback]
     trackers*: Table[string, TrackerBase]
 
 proc `<`(a, b: TimerCallback): bool =
@@ -262,9 +262,8 @@ template processTimers(loop: untyped) =
     loop.callbacks.addLast(loop.timers.pop().function)
 
 template processIdlers(loop: untyped) =
-  for item in loop.idlers:
-    loop.callbacks.addLast(item)
-  loop.idlers.setLen(0)
+  if len(loop.idlers) > 0:
+    loop.callbacks.addLast(loop.idlers.popFirst())
 
 template processCallbacks(loop: untyped) =
   var count = len(loop.callbacks)
@@ -366,23 +365,25 @@ when defined(windows) or defined(nimdoc):
 
   proc newDispatcher*(): PDispatcher =
     ## Creates a new Dispatcher instance.
-    new result
-    result.ioPort = createIoCompletionPort(INVALID_HANDLE_VALUE, 0, 0, 1)
+    var res = PDispatcher()
+    res.ioPort = createIoCompletionPort(INVALID_HANDLE_VALUE, 0, 0, 1)
     when declared(initHashSet):
       # After 0.20.0 Nim's stdlib version
-      result.handles = initHashSet[AsyncFD]()
+      res.handles = initHashSet[AsyncFD]()
     else:
       # Pre 0.20.0 Nim's stdlib version
-      result.handles = initSet[AsyncFD]()
+      res.handles = initSet[AsyncFD]()
     when declared(initHeapQueue):
       # After 0.20.0 Nim's stdlib version
-      result.timers = initHeapQueue[TimerCallback]()
+      res.timers = initHeapQueue[TimerCallback]()
     else:
       # Pre 0.20.0 Nim's stdlib version
-      result.timers = newHeapQueue[TimerCallback]()
-    result.callbacks = initDeque[AsyncCallback](64)
-    result.trackers = initTable[string, TrackerBase]()
-    initAPI(result)
+      res.timers = newHeapQueue[TimerCallback]()
+    res.callbacks = initDeque[AsyncCallback](64)
+    res.idlers = initDeque[AsyncCallback]()
+    res.trackers = initTable[string, TrackerBase]()
+    initAPI(res)
+    res
 
   var gDisp{.threadvar.}: PDispatcher ## Global dispatcher
 
@@ -517,18 +518,20 @@ elif unixPlatform:
 
   proc newDispatcher*(): PDispatcher =
     ## Create new dispatcher.
-    new result
-    result.selector = newSelector[SelectorData]()
+    var res = PDispatcher()
+    res.selector = newSelector[SelectorData]()
     when declared(initHeapQueue):
       # After 0.20.0 Nim's stdlib version
-      result.timers = initHeapQueue[TimerCallback]()
+      res.timers = initHeapQueue[TimerCallback]()
     else:
       # Before 0.20.0 Nim's stdlib version
-      result.timers.newHeapQueue()
-    result.callbacks = initDeque[AsyncCallback](64)
-    result.keys = newSeq[ReadyKey](64)
-    result.trackers = initTable[string, TrackerBase]()
-    initAPI(result)
+      res.timers.newHeapQueue()
+    res.callbacks = initDeque[AsyncCallback](64)
+    res.idlers = initDeque[AsyncCallback]()
+    res.keys = newSeq[ReadyKey](64)
+    res.trackers = initTable[string, TrackerBase]()
+    initAPI(res)
+    res
 
   var gDisp{.threadvar.}: PDispatcher ## Global dispatcher
 
@@ -843,19 +846,19 @@ proc callIdle*(acb: AsyncCallback) {.gcsafe, raises: [Defect].} =
   ## Schedule ``cbproc`` to be called when there no pending network events
   ## available.
   ##
-  ## **WARNING!** Despite the name, idle handles will get their callbacks called
-  ## on every loop iteration (if there no network events available), not when
-  ## the loop is actually "idle".
-  getThreadDispatcher().idlers.add(acb)
+  ## **WARNING!** Despite the name, "idle" callbacks called on every loop
+  ## iteration if there no network events available, not when the loop is
+  ## actually "idle".
+  getThreadDispatcher().idlers.addLast(acb)
 
 proc callIdle*(cbproc: CallbackFunc, data: pointer) {.
      gcsafe, raises: [Defect].} =
   ## Schedule ``cbproc`` to be called when there no pending network events
   ## available.
   ##
-  ## **WARNING!** Despite the name, idle handles will get their callbacks called
-  ## on every loop iteration (if there no network events available), not when
-  ## the loop is actually "idle".
+  ## **WARNING!** Despite the name, "idle" callbacks called on every loop
+  ## iteration if there no network events available, not when the loop is
+  ## actually "idle".
   doAssert(not isNil(cbproc))
   callIdle(AsyncCallback(function: cbproc, udata: data))
 
@@ -917,6 +920,24 @@ proc stepsAsync*(number: int): Future[void] =
     retFuture.cancelCallback = cancellation
     callSoon(continuation, nil)
 
+  retFuture
+
+proc idleAsync*(): Future[void] =
+  ## Suspends the execution of the current asynchronous task until "idle" time.
+  ##
+  ## "idle" time its moment of time, when no network events were processed by
+  ## ``poll()`` call.
+  var retFuture = newFuture[void]("chronos.idleAsync()")
+
+  proc continuation(data: pointer) {.gcsafe.} =
+    if not(retFuture.finished()):
+      retFuture.complete()
+
+  proc cancellation(udata: pointer) {.gcsafe.} =
+    discard
+
+  retFuture.cancelCallback = cancellation
+  callIdle(continuation, nil)
   retFuture
 
 proc withTimeout*[T](fut: Future[T], timeout: Duration): Future[bool] =
