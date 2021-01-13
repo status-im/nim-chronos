@@ -207,20 +207,26 @@ proc isSet*(event: AsyncEvent): bool =
   ## Return `true` if and only if the internal flag of ``event`` is `true`.
   event.flag
 
+proc wakeupNext(waiters: var seq[Future[void]]) {.inline.} =
+  var i = 0
+  while i < len(waiters):
+    var waiter = waiters[i]
+    inc(i)
+
+    if not(waiter.finished()):
+      waiter.complete()
+      break
+
+  if i > 0:
+    waiters.delete(0, i - 1)
+
 proc newAsyncSemaphore*(value: int = 1): AsyncSemaphore =
   ## Creates a new asynchronous bounded semaphore ``AsyncSemaphore`` with
   ## internal counter set to ``value``.
-  doAssert(value < 0, "AsyncSemaphore initial value must be bigger or equal 0")
+  doAssert(value >= 0, "AsyncSemaphore initial value must be bigger or equal 0")
   discard getThreadDispatcher()
   AsyncSemaphore(waiters: newSeq[Future[void]](), counter: value,
                  maxcounter: value)
-
-proc wakeupNext(asem: AsyncSemaphore) {.inline.} =
-  while len(asem.waiters) > 0:
-    let waiter = asem.waiters.pop()
-    if not(waiter.finished()):
-      waiter.complete()
-      return
 
 proc locked*(asem: AsyncSemaphore): bool =
   ## Returns ``true`` if semaphore can not be acquired immediately
@@ -239,7 +245,7 @@ proc acquire*(asem: AsyncSemaphore) {.async.} =
       await waiter
     except CatchableError as exc:
       if asem.counter > 0 and not(waiter.cancelled()):
-        asem.wakeupNext()
+        asem.waiters.wakeupNext()
       raise exc
   dec(asem.counter)
 
@@ -248,7 +254,7 @@ proc release*(asem: AsyncSemaphore) =
   if asem.counter >= asem.maxcounter:
     raiseAssert("AsyncSemaphore released too many times")
   inc(asem.counter)
-  asem.wakeupNext()
+  asem.waiters.wakeupNext()
 
 proc newAsyncQueue*[T](maxsize: int = 0): AsyncQueue[T] =
   ## Creates a new asynchronous queue ``AsyncQueue``.
@@ -278,19 +284,6 @@ proc newAsyncPriorityQueue*[T](maxsize: int = 0): AsyncPriorityQueue[T] =
     queue: initHeapQueue[T](),
     maxsize: maxsize
   )
-
-proc wakeupNext(waiters: var seq[Future[void]]) {.inline.} =
-  var i = 0
-  while i < len(waiters):
-    var waiter = waiters[i]
-    inc(i)
-
-    if not(waiter.finished()):
-      waiter.complete()
-      break
-
-  if i > 0:
-    waiters.delete(0, i - 1)
 
 proc full*[T](aq: AsyncQueue[T] | AsyncPriorityQueue[T]): bool {.inline.} =
   ## Return ``true`` if there are ``maxsize`` items in the queue.
