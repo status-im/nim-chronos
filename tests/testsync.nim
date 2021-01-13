@@ -321,8 +321,8 @@ suite "Asynchronous sync primitives test suite":
     poll()
     result = if fut.finished(): fut.read() else: 0
 
-  proc testPriorityQueue(): int =
-    proc task1(aq: AsyncPriorityQueue[int]): Future[int] {.async.} =
+  proc testPriorityQueue(): bool =
+    proc task1(aq: AsyncPriorityQueue[int]): Future[string] {.async.} =
       var res = ""
       for i in 0 ..< 10:
         var item = await aq.pop()
@@ -330,8 +330,26 @@ suite "Asynchronous sync primitives test suite":
       return res
 
     proc task2(aq: AsyncPriorityQueue[int]) {.async.} =
-      await aq.push(5)
       await aq.push(6)
+      await aq.push(5)
+      await aq.push(9)
+      await aq.push(3)
+      await aq.push(4)
+      await aq.push(8)
+      await aq.push(2)
+      await aq.push(1)
+      await aq.push(0)
+      await aq.push(7)
+
+    var queue1 = newAsyncPriorityQueue[int](10)
+    var queue2 = newAsyncPriorityQueue[int](1)
+
+    var fut1 = task2(queue1)
+    let r1 = waitFor task1(queue1)
+    var fut2 = task2(queue2)
+    let r2 = waitFor task1(queue2)
+
+    return r1 == "0123456789" and r2 == "6593482107"
 
   test "AsyncLock() behavior test":
     check:
@@ -373,4 +391,4 @@ suite "Asynchronous sync primitives test suite":
   test "AsyncPriorityQueue() behavior test":
     check testPriorityBehavior() == 3000
   test "AsyncPriorityQueue() priority test":
-    check testPriorityQueue() == "0123456789"
+    check testPriorityQueue() == true
