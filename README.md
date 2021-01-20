@@ -5,6 +5,7 @@
 [![License: Apache](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 ![Stability: experimental](https://img.shields.io/badge/stability-experimental-orange.svg)
+![Github action](https://github.com/status-im/nim-chronos/workflows/nim-chronos%20CI/badge.svg)
 
 ## Introduction
 
