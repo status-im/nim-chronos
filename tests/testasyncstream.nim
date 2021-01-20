@@ -715,19 +715,6 @@ suite "BoundedStream test suite":
           except BoundedStreamIncompleteError:
             clientRes = true
           await wbstream.closeWait()
-        elif test == 3:
-          for i in 0 ..< 10:
-            await wbstream.write(messagePart)
-          await wbstream.finish()
-          await wbstream.closeWait()
-          clientRes = true
-        elif test == 4:
-          for i in 0 ..< 9:
-            await wbstream.write(messagePart)
-          try:
-            await wbstream.closeWait()
-          except BoundedStreamIncompleteError:
-            clientRes = true
 
         await wstream.closeWait()
         await transp.closeWait()
@@ -755,18 +742,6 @@ suite "BoundedStream test suite":
         except BoundedStreamIncompleteError:
           res = true
         await rbstream.closeWait()
-      elif test == 3:
-        let response {.used.} = await rbstream.read(int(size) - 1)
-        try:
-          await rbstream.closeWait()
-        except BoundedStreamIncompleteError:
-          res = true
-      elif test == 4:
-        try:
-          let response {.used.} = await rbstream.read()
-        except BoundedStreamIncompleteError:
-          res = true
-        await rbstream.closeWait()
 
       await rstream.closeWait()
       await conn.closeWait()
@@ -780,7 +755,3 @@ suite "BoundedStream test suite":
       check waitFor(boundedTest(address, 1, item)) == true
     test "BoundedStream incomplete test [" & $item & "]":
       check waitFor(boundedTest(address, 2, item)) == true
-    test "BoundedStream read() close test [" & $item & "]":
-      check waitFor(boundedTest(address, 3, item)) == true
-    test "BoundedStream write() close test [" & $item & "]":
-      check waitFor(boundedTest(address, 4, item)) == true

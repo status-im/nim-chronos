@@ -186,27 +186,3 @@ proc newBoundedStreamWriter*(wsource: AsyncStreamWriter,
   var res = BoundedStreamWriter(boundSize: boundSize)
   res.init(wsource, queueSize)
   res
-
-proc close*(rw: BoundedStreamRW) =
-  ## Close and frees resources of stream ``rw``.
-  ##
-  ## Note close() procedure is not completed immediately.
-  if rw.closed():
-    raise newAsyncStreamIncorrectError("Stream is already closed!")
-  # We do not want to raise one more IncompleteError if it was already raised
-  # by one of the read()/write() primitives.
-  if rw.state != AsyncStreamState.Error:
-    if rw.bytesLeft() != 0'u64:
-      raise newBoundedStreamIncompleteError()
-  when rw is BoundedStreamReader:
-    cast[AsyncStreamReader](rw).close()
-  elif rw is BoundedStreamWriter:
-    cast[AsyncStreamWriter](rw).close()
-
-proc closeWait*(rw: BoundedStreamRW): Future[void] =
-  ## Close and frees resources of stream ``rw``.
-  rw.close()
-  when rw is BoundedStreamReader:
-    cast[AsyncStreamReader](rw).join()
-  elif rw is BoundedStreamWriter:
-    cast[AsyncStreamWriter](rw).join()
