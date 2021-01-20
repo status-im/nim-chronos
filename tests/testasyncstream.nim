@@ -6,7 +6,8 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 import unittest
-import ../chronos, ../chronos/streams/tlsstream
+import ../chronos
+import ../chronos/streams/[tlsstream, chunkstream, boundstream]
 
 when defined(nimHasUsed): {.used.}
 
@@ -553,8 +554,12 @@ suite "ChunkedStream test suite":
       try:
         var r = await rstream2.read()
         doAssert(len(r) > 0)
-      except AsyncStreamReadError:
-        res = true
+      except ChunkedStreamIncompleteError:
+        if inputstr == "100000000 \r\n1":
+          res = true
+      except ChunkedStreamProtocolError:
+        if inputstr == "z\r\n1":
+          res = true
       await rstream2.closeWait()
       await rstream.closeWait()
       await transp.closeWait()
@@ -663,3 +668,119 @@ suite "TLSStream test suite":
       getTracker("async.stream.writer").isLeaked() == false
       getTracker("stream.server").isLeaked() == false
       getTracker("stream.transport").isLeaked() == false
+
+suite "BoundedStream test suite":
+
+  proc createBigMessage(size: int): seq[byte] =
+    var message = "MESSAGE"
+    result = newSeq[byte](size)
+    for i in 0 ..< len(result):
+      result[i] = byte(message[i mod len(message)])
+
+  for item in [100'u64, 60000'u64]:
+
+    proc boundedTest(address: TransportAddress, test: int,
+                     size: uint64): Future[bool] {.async.} =
+      var clientRes = false
+      var res = false
+
+      let messagePart = createBigMessage(int(item) div 10)
+      var message: seq[byte]
+      for i in 0 ..< 10:
+        message.add(messagePart)
+
+      proc processClient(server: StreamServer,
+                         transp: StreamTransport) {.async.} =
+        var wstream = newAsyncStreamWriter(transp)
+        var wbstream = newBoundedStreamWriter(wstream, size)
+        if test == 0:
+          for i in 0 ..< 10:
+            await wbstream.write(messagePart)
+          await wbstream.finish()
+          await wbstream.closeWait()
+          clientRes = true
+        elif test == 1:
+          for i in 0 ..< 10:
+            await wbstream.write(messagePart)
+          try:
+            await wbstream.write(messagePart)
+          except BoundedStreamOverflowError:
+            clientRes = true
+          await wbstream.closeWait()
+        elif test == 2:
+          for i in 0 ..< 9:
+            await wbstream.write(messagePart)
+          try:
+            await wbstream.finish()
+          except BoundedStreamIncompleteError:
+            clientRes = true
+          await wbstream.closeWait()
+        elif test == 3:
+          for i in 0 ..< 10:
+            await wbstream.write(messagePart)
+          await wbstream.finish()
+          await wbstream.closeWait()
+          clientRes = true
+        elif test == 4:
+          for i in 0 ..< 9:
+            await wbstream.write(messagePart)
+          try:
+            await wbstream.closeWait()
+          except BoundedStreamIncompleteError:
+            clientRes = true
+
+        await wstream.closeWait()
+        await transp.closeWait()
+        server.stop()
+        server.close()
+
+      var server = createStreamServer(address, processClient, flags = {ReuseAddr})
+      server.start()
+      var conn = await connect(address)
+      var rstream = newAsyncStreamReader(conn)
+      var rbstream = newBoundedStreamReader(rstream, size)
+      if test == 0:
+        let response = await rbstream.read()
+        await rbstream.closeWait()
+        if response == message:
+          res = true
+      elif test == 1:
+        let response = await rbstream.read()
+        await rbstream.closeWait()
+        if response == message:
+          res = true
+      elif test == 2:
+        try:
+          let response {.used.} = await rbstream.read()
+        except BoundedStreamIncompleteError:
+          res = true
+        await rbstream.closeWait()
+      elif test == 3:
+        let response {.used.} = await rbstream.read(int(size) - 1)
+        try:
+          await rbstream.closeWait()
+        except BoundedStreamIncompleteError:
+          res = true
+      elif test == 4:
+        try:
+          let response {.used.} = await rbstream.read()
+        except BoundedStreamIncompleteError:
+          res = true
+        await rbstream.closeWait()
+
+      await rstream.closeWait()
+      await conn.closeWait()
+      await server.join()
+      return (res and clientRes)
+
+    let address = initTAddress("127.0.0.1:48030")
+    test "BoundedStream reading/writing test [" & $item & "]":
+      check waitFor(boundedTest(address, 0, item)) == true
+    test "BoundedStream overflow test [" & $item & "]":
+      check waitFor(boundedTest(address, 1, item)) == true
+    test "BoundedStream incomplete test [" & $item & "]":
+      check waitFor(boundedTest(address, 2, item)) == true
+    test "BoundedStream read() close test [" & $item & "]":
+      check waitFor(boundedTest(address, 3, item)) == true
+    test "BoundedStream write() close test [" & $item & "]":
+      check waitFor(boundedTest(address, 4, item)) == true
