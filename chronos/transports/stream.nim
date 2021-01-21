@@ -274,15 +274,12 @@ proc failPendingWriteQueue(queue: var Deque[StreamVector],
       vector.writer.fail(error)
 
 proc clean(server: StreamServer) {.inline.} =
-  echo "cleaning server instance"
   if not(server.loopFuture.finished()):
-    echo "cleaning server complete()"
     untrackServer(server)
     server.loopFuture.complete()
     if not isNil(server.udata) and GCUserData in server.flags:
       GC_unref(cast[ref int](server.udata))
     GC_unref(server)
-  echo "clean server exit"
 
 proc clean(transp: StreamTransport) {.inline.} =
   if not(transp.future.finished()):

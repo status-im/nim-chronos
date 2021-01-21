@@ -634,6 +634,8 @@ suite "TLSStream test suite":
       echo "server handshaked"
       await sstream.writer.write(testMessage & "\r\n")
       echo "server wrote string"
+      await sstream.writer.finish()
+      echo "server finished string"
       await sstream.writer.closeWait()
       echo "server closed secure writer"
       await sstream.reader.closeWait()
