@@ -65,6 +65,7 @@ type
     switchToWriter*: AsyncEvent
     handshaked*: bool
     handshakeFut*: Future[void]
+    closeshakeFut*: Future[void]
 
   TLSStreamReader* = ref object of AsyncStreamReader
     case kind: TLSStreamKind
@@ -77,6 +78,7 @@ type
     switchToWriter*: AsyncEvent
     handshaked*: bool
     handshakeFut*: Future[void]
+    closeshakeFut*: Future[void]
 
   TLSAsyncStream* = ref object of RootRef
     xwc*: X509NoAnchorContext
@@ -110,6 +112,25 @@ template newTLSStreamProtocolError[T](message: T): ref TLSStreamProtocolError =
   err.errCode = code
   err
 
+proc dumpState*(state: cuint): string =
+  var res = ""
+  if (state and SSL_CLOSED) == SSL_CLOSED:
+    if len(res) > 0: res.add(", ")
+    res.add("SSL_CLOSED")
+  if (state and SSL_SENDREC) == SSL_SENDREC:
+    if len(res) > 0: res.add(", ")
+    res.add("SSL_SENDREC")
+  if (state and SSL_SENDAPP) == SSL_SENDAPP:
+    if len(res) > 0: res.add(", ")
+    res.add("SSL_SENDAPP")
+  if (state and SSL_RECVREC) == SSL_RECVREC:
+    if len(res) > 0: res.add(", ")
+    res.add("SSL_RECVREC")
+  if (state and SSL_RECVAPP) == SSL_RECVAPP:
+    if len(res) > 0: res.add(", ")
+    res.add("SSL_RECVAPP")
+  "{" & res & "}"
+
 template raiseTLSStreamProtoError*[T](message: T) =
   raise newTLSStreamProtocolError(message)
 
@@ -135,47 +156,49 @@ proc tlsWriteLoop(stream: AsyncStreamWriter) {.async.} =
         if (state and (SSL_RECVREC or SSL_RECVAPP)) != 0:
           if not(wstream.switchToReader.isSet()):
             wstream.switchToReader.fire()
-        if (state and (SSL_SENDREC or SSL_SENDAPP)) == 0:
+
+        if (state and SSL_SENDREC) == SSL_SENDREC:
+          # TLS record needs to be sent over stream.
+          var length = 0'u
+          var buf = sslEngineSendrecBuf(engine, length)
+          doAssert(length != 0 and not isNil(buf))
+          await wstream.wsource.write(buf, int(length))
+          sslEngineSendrecAck(engine, length)
+        elif (state and SSL_SENDAPP) == SSL_SENDAPP:
+          # Application data can be sent over stream.
+          if not(wstream.handshaked):
+            wstream.stream.reader.handshaked = true
+            wstream.handshaked = true
+            if not(isNil(wstream.handshakeFut)):
+              wstream.handshakeFut.complete()
+          item = await wstream.queue.get()
+          if item.size > 0:
+            var length = 0'u
+            var buf = sslEngineSendappBuf(engine, length)
+            let toWrite = min(int(length), item.size)
+            copyOut(buf, item, toWrite)
+            if int(length) >= item.size:
+              # BearSSL is ready to accept whole item size.
+              sslEngineSendappAck(engine, uint(item.size))
+              sslEngineFlush(engine, 0)
+              item.future.complete()
+            else:
+              # BearSSL is not ready to accept whole item, so we will send
+              # only part of item and adjust offset.
+              item.offset = item.offset + int(length)
+              item.size = item.size - int(length)
+              wstream.queue.addFirstNoWait(item)
+              sslEngineSendappAck(engine, length)
+          else:
+            # Zero length item means finish, so we going to trigger TLS
+            # closure protocol.
+            wstream.state = AsyncStreamState.Finished
+            sslEngineClose(engine)
+            item.future.complete()
+        else:
           await wstream.switchToWriter.wait()
           wstream.switchToWriter.clear()
-          # We need to refresh `state` because we just returned from readerLoop.
-        else:
-          if (state and SSL_SENDREC) == SSL_SENDREC:
-            # TLS record needs to be sent over stream.
-            var length = 0'u
-            var buf = sslEngineSendrecBuf(engine, length)
-            doAssert(length != 0 and not isNil(buf))
-            await wstream.wsource.write(buf, int(length))
-            sslEngineSendrecAck(engine, length)
-          elif (state and SSL_SENDAPP) == SSL_SENDAPP:
-            # Application data can be sent over stream.
-            if not(wstream.handshaked):
-              wstream.stream.reader.handshaked = true
-              wstream.handshaked = true
-              if not(isNil(wstream.handshakeFut)):
-                wstream.handshakeFut.complete()
-            item = await wstream.queue.get()
-            if item.size > 0:
-              var length = 0'u
-              var buf = sslEngineSendappBuf(engine, length)
-              let toWrite = min(int(length), item.size)
-              copyOut(buf, item, toWrite)
-              if int(length) >= item.size:
-                # BearSSL is ready to accept whole item size.
-                sslEngineSendappAck(engine, uint(item.size))
-                sslEngineFlush(engine, 0)
-                item.future.complete()
-              else:
-                # BearSSL is not ready to accept whole item, so we will send
-                # only part of item and adjust offset.
-                item.offset = item.offset + int(length)
-                item.size = item.size - int(length)
-                wstream.queue.addFirstNoWait(item)
-                sslEngineSendappAck(engine, length)
-            else:
-              # Zero length item means finish, so we going to trigger TLS
-              # closure protocol.
-              sslEngineClose(engine)
+
     except CancelledError:
       wstream.state = AsyncStreamState.Stopped
       error = newAsyncStreamUseClosedError()
@@ -222,28 +245,28 @@ proc tlsReadLoop(stream: AsyncStreamReader) {.async.} =
         if (state and (SSL_SENDREC or SSL_SENDAPP)) != 0:
           if not(rstream.switchToWriter.isSet()):
             rstream.switchToWriter.fire()
-        if (state and (SSL_RECVREC or SSL_RECVAPP)) == 0:
+
+        if (state and SSL_RECVREC) == SSL_RECVREC:
+          # TLS records required for further processing
+          var length = 0'u
+          var buf = sslEngineRecvrecBuf(engine, length)
+          let res = await rstream.rsource.readOnce(buf, int(length))
+          if res > 0:
+            sslEngineRecvrecAck(engine, uint(res))
+          else:
+            # readOnce() returns `0` if stream is at EOF.
+            rstream.state = AsyncStreamState.Finished
+            sslEngineClose(engine)
+        elif (state and SSL_RECVAPP) == SSL_RECVAPP:
+          # Application data can be recovered.
+          var length = 0'u
+          var buf = sslEngineRecvappBuf(engine, length)
+          await upload(addr rstream.buffer, buf, int(length))
+          sslEngineRecvappAck(engine, length)
+        else:
           await rstream.switchToReader.wait()
           rstream.switchToReader.clear()
-          # We need to refresh `state` because we just returned from writerLoop.
-        else:
-          if (state and SSL_RECVREC) == SSL_RECVREC:
-            # TLS records required for further processing
-            var length = 0'u
-            var buf = sslEngineRecvrecBuf(engine, length)
-            let res = await rstream.rsource.readOnce(buf, int(length))
-            if res > 0:
-              sslEngineRecvrecAck(engine, uint(res))
-            else:
-              # readOnce() returns `0` if stream is at EOF, so we initiate TLS
-              # closure procedure.
-              sslEngineClose(engine)
-          elif (state and SSL_RECVAPP) == SSL_RECVAPP:
-            # Application data can be recovered.
-            var length = 0'u
-            var buf = sslEngineRecvappBuf(engine, length)
-            await upload(addr rstream.buffer, buf, int(length))
-            sslEngineRecvappAck(engine, length)
+
     except CancelledError:
       rstream.state = AsyncStreamState.Stopped
     except AsyncStreamError as exc:

@@ -615,12 +615,9 @@ elif unixPlatform:
 
     proc continuation(udata: pointer) =
       if SocketHandle(fd) in loop.selector:
-        echo "closeSocket() continuation unregistering"
         unregister(fd)
-        echo "closeSocket() continuation close()"
         close(SocketHandle(fd))
       if not isNil(aftercb):
-        echo "closeSocket() invoke user-callback"
         aftercb(nil)
 
     withData(loop.selector, int(fd), adata) do:
@@ -630,12 +627,10 @@ elif unixPlatform:
       # from system queue for this reader and writer.
 
       if not(isNil(adata.reader.function)):
-        echo "closeSocket() scheduling reader"
         loop.callbacks.addLast(adata.reader)
         adata.reader = default(AsyncCallback)
 
       if not(isNil(adata.writer.function)):
-        echo "closeSocket() scheduling writer"
         loop.callbacks.addLast(adata.writer)
         adata.writer = default(AsyncCallback)
 
@@ -643,7 +638,6 @@ elif unixPlatform:
     # in such case processing queue will stuck on poll() call, because there
     # can be no file descriptors registered in system queue.
     var acb = AsyncCallback(function: continuation)
-    echo "closeSocket() scheduling actual close"
     loop.callbacks.addLast(acb)
 
   proc closeHandle*(fd: AsyncFD, aftercb: CallbackFunc = nil) {.inline.} =
