@@ -65,7 +65,6 @@ type
     switchToWriter*: AsyncEvent
     handshaked*: bool
     handshakeFut*: Future[void]
-    closeshakeFut*: Future[void]
 
   TLSStreamReader* = ref object of AsyncStreamReader
     case kind: TLSStreamKind
@@ -78,7 +77,6 @@ type
     switchToWriter*: AsyncEvent
     handshaked*: bool
     handshakeFut*: Future[void]
-    closeshakeFut*: Future[void]
 
   TLSAsyncStream* = ref object of RootRef
     xwc*: X509NoAnchorContext
@@ -150,20 +148,23 @@ proc tlsWriteLoop(stream: AsyncStreamWriter) {.async.} =
     var item: WriteItem
     try:
       var state = engine.sslEngineCurrentState()
+      echo "tlsWriteLoop(", cast[uint](wstream.stream), ") state = ", dumpState(state)
       if (state and SSL_CLOSED) == SSL_CLOSED:
         wstream.state = AsyncStreamState.Finished
       else:
         if (state and (SSL_RECVREC or SSL_RECVAPP)) != 0:
-          if not(wstream.switchToReader.isSet()):
-            wstream.switchToReader.fire()
+          echo "tlsWriteLoop(", cast[uint](wstream.stream), ") firing switch to reader, waiters = ", len(wstream.switchToReader.waiters)
+          wstream.switchToReader.fire()
 
         if (state and SSL_SENDREC) == SSL_SENDREC:
           # TLS record needs to be sent over stream.
           var length = 0'u
           var buf = sslEngineSendrecBuf(engine, length)
           doAssert(length != 0 and not isNil(buf))
+          echo "tlsWriteLoop(", cast[uint](wstream.stream), ") sending record ", int(length), " bytes"
           await wstream.wsource.write(buf, int(length))
           sslEngineSendrecAck(engine, length)
+          echo "tlsWriteLoop(", cast[uint](wstream.stream), ") record ", int(length), " bytes sent"
         elif (state and SSL_SENDAPP) == SSL_SENDAPP:
           # Application data can be sent over stream.
           if not(wstream.handshaked):
@@ -171,38 +172,53 @@ proc tlsWriteLoop(stream: AsyncStreamWriter) {.async.} =
             wstream.handshaked = true
             if not(isNil(wstream.handshakeFut)):
               wstream.handshakeFut.complete()
-          item = await wstream.queue.get()
-          if item.size > 0:
-            var length = 0'u
-            var buf = sslEngineSendappBuf(engine, length)
-            let toWrite = min(int(length), item.size)
-            copyOut(buf, item, toWrite)
-            if int(length) >= item.size:
-              # BearSSL is ready to accept whole item size.
-              sslEngineSendappAck(engine, uint(item.size))
-              sslEngineFlush(engine, 0)
-              item.future.complete()
+          if not(wstream.queue.empty()):
+            echo "tlsWriteLoop(", cast[uint](wstream.stream), ") waiting for appdata"
+            item = await wstream.queue.get()
+            echo "tlsWriteLoop(", cast[uint](wstream.stream), ") sending appdata ", int(item.size), " bytes"
+            if item.size > 0:
+              var length = 0'u
+              var buf = sslEngineSendappBuf(engine, length)
+              let toWrite = min(int(length), item.size)
+              copyOut(buf, item, toWrite)
+              if int(length) >= item.size:
+                # BearSSL is ready to accept whole item size.
+                sslEngineSendappAck(engine, uint(item.size))
+                sslEngineFlush(engine, 0)
+                item.future.complete()
+              else:
+                # BearSSL is not ready to accept whole item, so we will send
+                # only part of item and adjust offset.
+                item.offset = item.offset + int(length)
+                item.size = item.size - int(length)
+                wstream.queue.addFirstNoWait(item)
+                sslEngineSendappAck(engine, length)
             else:
-              # BearSSL is not ready to accept whole item, so we will send
-              # only part of item and adjust offset.
-              item.offset = item.offset + int(length)
-              item.size = item.size - int(length)
-              wstream.queue.addFirstNoWait(item)
-              sslEngineSendappAck(engine, length)
+              # Zero length item means finish, so we going to trigger TLS
+              # closure protocol.
+              sslEngineClose(engine)
+              echo "tlsWriteLoop(", cast[uint](wstream.stream), ") ",
+                   "received zero-length item, state = ",
+                   dumpState(engine.sslEngineCurrentState())
           else:
-            # Zero length item means finish, so we going to trigger TLS
-            # closure protocol.
-            wstream.state = AsyncStreamState.Finished
-            sslEngineClose(engine)
-            item.future.complete()
+            echo "tlsWriteLoop(", cast[uint](wstream.stream), ") empty queue"
+            echo "tlsWriteLoop(", cast[uint](wstream.stream), ") waiting for switch back"
+            await wstream.switchToWriter.wait()
+            echo "tlsWriteLoop(", cast[uint](wstream.stream), ") got flow after switch"
+            wstream.switchToWriter.clear()
         else:
+          echo "tlsWriteLoop(", cast[uint](wstream.stream), ") waiting for switch back, switchToReader.isSet() == ", wstream.switchToReader.isSet()
           await wstream.switchToWriter.wait()
+          echo "tlsWriteLoop(", cast[uint](wstream.stream), ") got flow after switch"
           wstream.switchToWriter.clear()
 
     except CancelledError:
+      echo "tlsWriteLoop(", cast[uint](wstream.stream), ") received cancellation"
       wstream.state = AsyncStreamState.Stopped
       error = newAsyncStreamUseClosedError()
     except AsyncStreamError as exc:
+      echo "tlsWriteLoop(", cast[uint](wstream.stream), ") got an exception ",
+           exc.msg
       wstream.state = AsyncStreamState.Error
       error = exc
 
@@ -217,8 +233,15 @@ proc tlsWriteLoop(stream: AsyncStreamWriter) {.async.} =
         let pitem = wstream.queue.popFirstNoWait()
         if not(pitem.future.finished()):
           pitem.future.fail(error)
-      wstream.stream = nil
+
+      if not(isNil(wstream.stream.reader)):
+        wstream.switchToReader.fire()
+
+      wstream.stream.writer = nil
+
+      echo "tlsWriteLoop(", cast[uint](wstream.stream), ") handle exited"
       break
+  echo "tlsWriteLoop(", cast[uint](wstream.stream), ") exited"
 
 proc tlsReadLoop(stream: AsyncStreamReader) {.async.} =
   var rstream = cast[TLSStreamReader](stream)
@@ -234,6 +257,7 @@ proc tlsReadLoop(stream: AsyncStreamReader) {.async.} =
   while true:
     try:
       var state = engine.sslEngineCurrentState()
+      echo "tlsReadLoop(", cast[uint](rstream.stream), ") state = ", dumpState(state)
       if (state and SSL_CLOSED) == SSL_CLOSED:
         let err = engine.sslEngineLastError()
         if err != 0:
@@ -243,20 +267,26 @@ proc tlsReadLoop(stream: AsyncStreamReader) {.async.} =
           rstream.state = AsyncStreamState.Finished
       else:
         if (state and (SSL_SENDREC or SSL_SENDAPP)) != 0:
-          if not(rstream.switchToWriter.isSet()):
-            rstream.switchToWriter.fire()
+          echo "tlsReadLoop(", cast[uint](rstream.stream), ") ",
+               "firing switch to writer, len(waiters) = ",
+               len(rstream.switchToWriter.waiters)
+          rstream.switchToWriter.fire()
 
         if (state and SSL_RECVREC) == SSL_RECVREC:
           # TLS records required for further processing
           var length = 0'u
           var buf = sslEngineRecvrecBuf(engine, length)
+          echo "tlsReadLoop(", cast[uint](rstream.stream), ") waiting for record"
           let res = await rstream.rsource.readOnce(buf, int(length))
-          if res > 0:
-            sslEngineRecvrecAck(engine, uint(res))
-          else:
-            # readOnce() returns `0` if stream is at EOF.
-            rstream.state = AsyncStreamState.Finished
-            sslEngineClose(engine)
+          sslEngineRecvrecAck(engine, uint(res))
+          echo "tlsReadLoop(", cast[uint](rstream.stream), ") received ", res, " length rec, state = ", dumpState(engine.sslEngineCurrentState())
+          # if res > 0:
+          #   sslEngineRecvrecAck(engine, uint(res))
+          # else:
+          #   echo "tlsReadLoop() received 0 length ack"
+          #   # readOnce() returns `0` if stream is at EOF.
+          #   # rstream.state = AsyncStreamState.Finished
+          #   sslEngineClose(engine)
         elif (state and SSL_RECVAPP) == SSL_RECVAPP:
           # Application data can be recovered.
           var length = 0'u
@@ -264,28 +294,39 @@ proc tlsReadLoop(stream: AsyncStreamReader) {.async.} =
           await upload(addr rstream.buffer, buf, int(length))
           sslEngineRecvappAck(engine, length)
         else:
+          echo "tlsReadLoop(", cast[uint](rstream.stream), ") waiting for `switchToReader` back, ",
+               "switchToReader.isSet() == ", rstream.switchToReader.isSet(),
+               ", state = ", dumpState(engine.sslEngineCurrentState())
           await rstream.switchToReader.wait()
+          echo "tlsReadLoop(", cast[uint](rstream.stream), ") got flow after switch"
           rstream.switchToReader.clear()
 
     except CancelledError:
+      echo "tlsReadLoop(", cast[uint](rstream.stream), ") cancellation received"
       rstream.state = AsyncStreamState.Stopped
     except AsyncStreamError as exc:
+      echo "tlsReadLoop(", cast[uint](rstream.stream), ") got an exception ",
+           exc.msg
       rstream.error = exc
       rstream.state = AsyncStreamState.Error
+
+    if rstream.state != AsyncStreamState.Running:
       if not(rstream.handshaked):
         rstream.handshaked = true
         rstream.stream.writer.handshaked = true
         if not(isNil(rstream.handshakeFut)):
           rstream.handshakeFut.fail(rstream.error)
-        rstream.switchToWriter.fire()
 
-    if rstream.state != AsyncStreamState.Running:
       # Perform TLS cleanup procedure
+      if not(isNil(rstream.stream.writer)):
+        rstream.switchToWriter.fire()
       if rstream.state != AsyncStreamState.Finished:
         sslEngineClose(engine)
       rstream.buffer.forget()
-      rstream.stream = nil
+      rstream.stream.reader = nil
+      echo "tlsReadLoop(", cast[uint](rstream.stream), ") handle exited"
       break
+  echo "tlsReadLoop(", cast[uint](rstream.stream), ") exited"
 
 proc getSignerAlgo(xc: X509Certificate): int =
   ## Get certificate's signing algorithm.
