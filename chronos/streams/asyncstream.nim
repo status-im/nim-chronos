@@ -80,6 +80,7 @@ type
     writerLoop*: StreamWriterLoop
     state*: AsyncStreamState
     queue*: AsyncQueue[WriteItem]
+    error*: ref AsyncStreamError
     udata: pointer
     bytesCount*: uint64
     future: Future[void]
