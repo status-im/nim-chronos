@@ -401,7 +401,6 @@ when defined(windows) or defined(nimdoc):
 
   proc poll*() =
     ## Perform single asynchronous step.
-    echo "poll()"
     let loop = getThreadDispatcher()
     var curTime = Moment.now()
     var curTimeout = DWORD(0)
@@ -413,8 +412,6 @@ when defined(windows) or defined(nimdoc):
     var lpNumberOfBytesTransferred: Dword
     var lpCompletionKey: ULONG_PTR
     var customOverlapped: PtrCustomOverlapped
-
-    echo "poll() timeout = ", curTimeout, ", len(callbacks) = ", len(loop.callbacks)
 
     let res = getQueuedCompletionStatus(
       loop.ioPort, addr lpNumberOfBytesTransferred,
@@ -444,7 +441,6 @@ when defined(windows) or defined(nimdoc):
     # All callbacks which will be added in process will be processed on next
     # poll() call.
     loop.processCallbacks()
-    echo "exit poll()"
 
   proc closeSocket*(fd: AsyncFD, aftercb: CallbackFunc = nil) =
     ## Closes a socket and ensures that it is unregistered.

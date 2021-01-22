@@ -1639,7 +1639,6 @@ proc close*(server: StreamServer) =
   ## Please note that release of resources is not completed immediately, to be
   ## sure all resources got released please use ``await server.join()``.
   proc continuation(udata: pointer) {.gcsafe.} =
-    echo "server close() continuation"
     server.clean()
 
   let r1 = (server.status == ServerStatus.Stopped) and
