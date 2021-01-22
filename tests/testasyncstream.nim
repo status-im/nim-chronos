@@ -594,7 +594,6 @@ suite "TLSStream test suite":
       var reader = newAsyncStreamReader(transp)
       var writer = newAsyncStreamWriter(transp)
       var tlsstream = newTLSClientAsyncStream(reader, writer, name)
-
       await tlsstream.writer.write("GET / HTTP/1.1\r\nHost: " & name &
                                    "\r\nConnection: close\r\n\r\n")
       var readFut = tlsstream.reader.readUntil(addr buffer[0], len(buffer),
@@ -625,65 +624,39 @@ suite "TLSStream test suite":
 
     proc serveClient(server: StreamServer,
                      transp: StreamTransport) {.async.} =
-      echo "- server accepted client"
       var reader = newAsyncStreamReader(transp)
       var writer = newAsyncStreamWriter(transp)
       var sstream = newTLSServerAsyncStream(reader, writer, key, cert)
-      echo "- server stream is [", cast[uint](sstream), "]"
-      echo "- server handshaking"
       await handshake(sstream)
-      echo "- server handshaked"
       await sstream.writer.write(testMessage & "\r\n")
-      echo "- server wrote string"
       await sstream.writer.finish()
-      echo "- server finished"
-      await sleepAsync(5.seconds)
-      echo "- server sleeped"
       await sstream.writer.closeWait()
-      echo "- server closed secure writer"
       await sstream.reader.closeWait()
-      echo "- server closed secure reader"
       await reader.closeWait()
-      echo "- server closed reader"
       await writer.closeWait()
-      echo "- server closed writer"
       await transp.closeWait()
-      echo "- server closed transport"
       server.stop()
-      echo "- server stopped server"
       server.close()
-      echo "- server closed server"
 
     key = TLSPrivateKey.init(pemkey)
     cert = TLSCertificate.init(pemcert)
 
     var server = createStreamServer(address, serveClient, {ReuseAddr})
     server.start()
-    echo "server started"
     var conn = await connect(address)
-    echo "= client connected"
     var creader = newAsyncStreamReader(conn)
     var cwriter = newAsyncStreamWriter(conn)
     # We are using self-signed certificate
     let flags = {NoVerifyHost, NoVerifyServerName}
     var cstream = newTLSClientAsyncStream(creader, cwriter, "", flags = flags)
-    echo "= client stream is [", cast[uint](cstream), "]"
-    echo "= client reading line"
     let res = await cstream.reader.read()
-    echo "= client readed line"
     await cstream.reader.closeWait()
-    echo "= client closed reader"
     await cstream.writer.closeWait()
-    echo "= client closed writer"
     await creader.closeWait()
-    echo "= client closed creader"
     await cwriter.closeWait()
-    echo "= client closed cwriter"
     await conn.closeWait()
-    echo "= client closed connection"
     await server.join()
-    echo "= client waited server"
-    result = true # res == testMessage
+    return cast[string](res) == (testMessage & "\r\n")
 
   test "Simple server with RSA self-signed certificate":
     let res = waitFor(checkSSLServer(initTAddress("127.0.0.1:43808"),
