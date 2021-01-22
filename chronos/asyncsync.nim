@@ -37,7 +37,7 @@ type
     ## state to be signaled, when event get fired, then all coroutines
     ## continue proceeds in order, they have entered waiting state.
     flag: bool
-    waiters*: seq[Future[void]]
+    waiters: seq[Future[void]]
 
   AsyncQueue*[T] = ref object of RootRef
     ## A queue, useful for coordinating producer and consumer coroutines.
