@@ -206,7 +206,7 @@ proc newAsyncStreamIncorrectError*(m: string): ref AsyncStreamIncorrectError {.
      inline.} =
   newException(AsyncStreamIncorrectError, m)
 
-template checkRunning(t: untyped) =
+template checkRunning*(t: untyped) =
   if not(t.running()):
     raise newAsyncStreamIncorrectError("Incorrect stream state")
 
@@ -320,7 +320,7 @@ template readLoop(body: untyped): untyped =
     if done:
       break
     else:
-     await rstream.buffer.wait()
+      await rstream.buffer.wait()
 
 proc readExactly*(rstream: AsyncStreamReader, pbytes: pointer,
                   nbytes: int) {.async.} =
