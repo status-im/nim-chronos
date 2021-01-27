@@ -21,14 +21,24 @@ type
   HttpServerFlags* = enum
     Secure
 
-  TransferEncodingFlags* {.pure.} = enum
-    Identity, Chunked, Compress, Deflate, Gzip
+  HttpConnectionStatus* = enum
+    DropConnection, KeepConnection
 
-  ContentEncodingFlags* {.pure.} = enum
-    Identity, Br, Compress, Deflate, Gzip
+  HttpErrorEnum* = enum
+    TimeoutError, CatchableError, RecoverableError, CriticalError
+
+  HttpProcessError* = object
+    error*: HttpErrorEnum
+    exc*: HttpError
+    remote*: TransportAddress
+
+  HttpProcessStatus*[T] = Result[T, HttpProcessError]
 
   HttpRequestFlags* {.pure.} = enum
     BoundBody, UnboundBody, MultipartForm, UrlencodedForm
+
+  HttpProcessCallback* =
+    proc(request: HttpProcessStatus[HttpRequest]): Future[HttpStatus]
 
   HttpServer* = ref object of RootRef
     instance*: StreamServer
@@ -43,6 +53,7 @@ type
     bodyTimeout: Duration
     maxHeadersSize: int
     maxRequestBodySize: int
+    processCallback: HttpProcessCallback
 
   HttpServerState* = enum
     ServerRunning, ServerStopped, ServerClosed
@@ -64,18 +75,24 @@ type
     connection*: HttpConnection
     mainReader*: AsyncStreamReader
 
+  HttpResponse* = object
+    code*: HttpCode
+    version*: HttpVersion
+    headersTable: HttpTable
+    body*: seq[byte]
+    connection*: HttpConnection
+    mainWriter: AsyncStreamWriter
+
   HttpConnection* = ref object of RootRef
-    server: HttpServer
+    server*: HttpServer
     transp: StreamTransport
     buffer: seq[byte]
-
-const
-  HeadersMark = @[byte(0x0D), byte(0x0A), byte(0x0D), byte(0x0A)]
 
 proc new*(htype: typedesc[HttpServer],
           address: TransportAddress,
           flags: set[HttpServerFlags] = {},
           serverUri = Uri(),
+          processCallback: HttpProcessCallback,
           maxConnections: int = -1,
           bufferSize: int = 4096,
           backlogSize: int = 100,
@@ -88,7 +105,8 @@ proc new*(htype: typedesc[HttpServer],
     headersTimeout: httpHeadersTimeout,
     bodyTimeout: httpBodyTimeout,
     maxHeadersSize: maxHeadersSize,
-    maxRequestBodySize: maxRequestBodySize
+    maxRequestBodySize: maxRequestBodySize,
+    processCallback: processCallback
   )
 
   res.baseUri =
@@ -117,92 +135,6 @@ proc new*(htype: typedesc[HttpServer],
 proc getId(transp: StreamTransport): string {.inline.} =
   ## Returns string unique transport's identifier as string.
   $transp.remoteAddress() & "_" & $transp.localAddress()
-
-proc newHttpCriticalFailure*(msg: string): ref HttpCriticalFailure =
-  newException(HttpCriticalFailure, msg)
-
-proc newHttpRecoverableFailure*(msg: string): ref HttpRecoverableFailure =
-  newException(HttpRecoverableFailure, msg)
-
-iterator queryParams(query: string): tuple[key: string, value: string] =
-  for pair in query.split('&'):
-    let items = pair.split('=', maxsplit = 1)
-    let k = items[0]
-    let v = if len(items) > 1: items[1] else: ""
-    yield (decodeUrl(k), decodeUrl(v))
-
-func getMultipartBoundary*(contentType: string): HttpResult[string] =
-  let mparts = contentType.split(";")
-  if strip(mparts[0]).toLowerAscii() != "multipart/form-data":
-    return err("Content-Type is not multipart")
-  if len(mparts) < 2:
-    return err("Content-Type missing boundary value")
-  let stripped = strip(mparts[1])
-  if not(stripped.toLowerAscii().startsWith("boundary")):
-    return err("Incorrect Content-Type boundary format")
-  let bparts = stripped.split("=")
-  if len(bparts) < 2:
-    err("Missing Content-Type boundary")
-  else:
-    ok(strip(bparts[1]))
-
-func getContentType*(contentHeader: seq[string]): HttpResult[string] =
-  if len(contentHeader) > 1:
-    return err("Multiple Content-Type values found")
-  let mparts = contentHeader[0].split(";")
-  ok(strip(mparts[0]).toLowerAscii())
-
-func getTransferEncoding(contentHeader: seq[string]): HttpResult[
-                                                   set[TransferEncodingFlags]] =
-  var res: set[TransferEncodingFlags] = {}
-  if len(contentHeader) == 0:
-    res.incl(TransferEncodingFlags.Identity)
-    ok(res)
-  else:
-    for header in contentHeader:
-      for item in header.split(","):
-        case strip(item.toLowerAscii())
-        of "identity":
-          res.incl(TransferEncodingFlags.Identity)
-        of "chunked":
-          res.incl(TransferEncodingFlags.Chunked)
-        of "compress":
-          res.incl(TransferEncodingFlags.Compress)
-        of "deflate":
-          res.incl(TransferEncodingFlags.Deflate)
-        of "gzip":
-          res.incl(TransferEncodingFlags.Gzip)
-        of "":
-          res.incl(TransferEncodingFlags.Identity)
-        else:
-          return err("Incorrect Transfer-Encoding value")
-    ok(res)
-
-func getContentEncoding(contentHeader: seq[string]): HttpResult[
-                                                    set[ContentEncodingFlags]] =
-  var res: set[ContentEncodingFlags] = {}
-  if len(contentHeader) == 0:
-    res.incl(ContentEncodingFlags.Identity)
-    ok(res)
-  else:
-    for header in contentHeader:
-      for item in header.split(","):
-        case strip(item.toLowerAscii()):
-        of "identity":
-          res.incl(ContentEncodingFlags.Identity)
-        of "br":
-          res.incl(ContentEncodingFlags.Br)
-        of "compress":
-          res.incl(ContentEncodingFlags.Compress)
-        of "deflate":
-          res.incl(ContentEncodingFlags.Deflate)
-        of "gzip":
-          res.incl(ContentEncodingFlags.Gzip)
-        of "":
-          res.incl(ContentEncodingFlags.Identity)
-        else:
-          return err("Incorrect Content-Encoding value")
-    ok(res)
 
 proc hasBody*(request: HttpRequest): bool =
   ## Returns ``true`` if request has body.
@@ -333,7 +265,7 @@ proc getBody*(request: HttpRequest): Future[seq[byte]] {.async.} =
     try:
       return await read(res.get())
     except AsyncStreamError:
-      raise newHttpCriticalFailure("Read failure")
+      raise newHttpCriticalError("Read Error")
 
 proc consumeBody*(request: HttpRequest): Future[void] {.async.} =
   ## Consume/discard request's body.
@@ -346,7 +278,7 @@ proc consumeBody*(request: HttpRequest): Future[void] {.async.} =
       discard await reader.consume()
       return
     except AsyncStreamError:
-      raise newHttpCriticalFailure("Read failure")
+      raise newHttpCriticalError("Read Error")
 
 proc sendErrorResponse(conn: HttpConnection, version: HttpVersion,
                        code: HttpCode, keepAlive = true,
@@ -374,17 +306,13 @@ proc sendErrorResponse(conn: HttpConnection, version: HttpVersion,
   except CatchableError:
     return false
 
-proc sendErrorResponse(request: HttpRequest, code: HttpCode, keepAlive = true,
-                       datatype = "text/text",
-                       databody = ""): Future[bool] =
+proc sendErrorResponse*(request: HttpRequest, code: HttpCode, keepAlive = true,
+                        datatype = "text/text",
+                        databody = ""): Future[bool] =
   sendErrorResponse(request.connection, request.version, code, keepAlive,
                     datatype, databody)
 
 proc getRequest*(conn: HttpConnection): Future[HttpRequest] {.async.} =
-  when defined(useChroniclesLogging):
-    logScope:
-      peer = $conn.transp.remoteAddress
-
   try:
     conn.buffer.setLen(conn.server.maxHeadersSize)
     let res = await conn.transp.readUntil(addr conn.buffer[0], len(conn.buffer),
@@ -392,42 +320,62 @@ proc getRequest*(conn: HttpConnection): Future[HttpRequest] {.async.} =
     conn.buffer.setLen(res)
     let header = parseRequest(conn.buffer)
     if header.failed():
-      log debug "Malformed header received"
       discard await conn.sendErrorResponse(HttpVersion11, Http400, false)
-      raise newHttpCriticalFailure("Malformed request recieved")
+      raise newHttpCriticalError("Malformed request recieved")
     else:
       let res = prepareRequest(conn, header)
       if res.isErr():
         discard await conn.sendErrorResponse(HttpVersion11, Http400, false)
-        raise newHttpCriticalFailure("Invalid request received")
+        raise newHttpCriticalError("Invalid request received")
       else:
         return res.get()
   except TransportOsError:
-    log debug "Unexpected OS error"
-    raise newHttpCriticalFailure("Unexpected OS error")
+    raise newHttpCriticalError("Unexpected OS error")
   except TransportIncompleteError:
-    log debug "Remote peer disconnected"
-    raise newHttpCriticalFailure("Remote peer disconnected")
+    raise newHttpCriticalError("Remote peer disconnected")
   except TransportLimitError:
-    log debug "Maximum size of request headers reached"
     discard await conn.sendErrorResponse(HttpVersion11, Http413, false)
-    raise newHttpCriticalFailure("Maximum size of request headers reached")
+    raise newHttpCriticalError("Maximum size of request headers reached")
 
 proc processLoop(server: HttpServer, transp: StreamTransport) {.async.} =
-  when defined(useChroniclesLogging):
-    logScope:
-      peer = $transp.remoteAddress
-
   var conn = HttpConnection(
     transp: transp, buffer: newSeq[byte](server.maxHeadersSize),
     server: server
   )
 
-  log info "Client connected"
   var breakLoop = false
   while true:
+    var status: HttpProcessStatus
+    var arg: HttpProcessStatus[HttpRequest]
     try:
       let request = await conn.getRequest().wait(server.headersTimeout)
+      arg = ok(request)
+    except AsyncTimeoutError as exc:
+      discard await conn.sendErrorResponse(HttpVersion11, Http408, false)
+      breakLoop = true
+      arg = err(HttpProcessError(exc: exc, remote: transp.remoteAddress()))
+    except CancelledError:
+      breakLoop = true
+    except HttpRecoverableError:
+      breakLoop = false
+      arg = err()
+    except CatchableError:
+      breakLoop = true
+
+    if breakLoop:
+      break
+
+    breakLoop = false
+    let status =
+      try:
+        await conn.server.processCallback()
+      except CancelledError:
+        breakLoop = true
+        HttpCriticalError
+      except CatchableError:
+        breakLoop = true
+        HttpCriticalError
+
       echo "== HEADERS TABLE"
       echo request.headersTable
       echo "== QUERY TABLE"
@@ -439,19 +387,17 @@ proc processLoop(server: HttpServer, transp: StreamTransport) {.async.} =
       echo cast[string](stream)
       discard await conn.sendErrorResponse(HttpVersion11, Http200, true,
                                            databody = "OK")
-      log debug "Response sent"
     except AsyncTimeoutError:
-      log debug "Timeout reached while reading headers"
       discard await conn.sendErrorResponse(HttpVersion11, Http408, false)
       breakLoop = true
 
     except CancelledError:
       breakLoop = true
 
-    except HttpRecoverableFailure:
+    except HttpRecoverableError:
       breakLoop = false
 
-    except HttpCriticalFailure:
+    except HttpCriticalError:
       breakLoop = true
 
     except CatchableError as exc:
@@ -464,7 +410,6 @@ proc processLoop(server: HttpServer, transp: StreamTransport) {.async.} =
   server.connections.del(transp.getId())
   # if server.maxConnections > 0:
   #   server.semaphore.release()
-  log info "Client got disconnected"
 
 proc acceptClientLoop(server: HttpServer) {.async.} =
   var breakLoop = false
