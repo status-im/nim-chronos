@@ -8,9 +8,11 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 import std/[monotimes, strutils]
-import chronos, stew/results
+import stew/results
+import ../../asyncloop
+import ../../streams/[asyncstream, boundstream, chunkstream]
 import httptable, httpcommon
-export httptable, httpcommon
+export httptable, httpcommon, asyncstream
 
 type
   MultiPartSource {.pure.} = enum
@@ -20,9 +22,9 @@ type
     case kind: MultiPartSource
     of MultiPartSource.Stream:
       stream: AsyncStreamReader
-      last: BoundedAsyncStreamReader
     of MultiPartSource.Buffer:
       discard
+    firstTime: bool
     buffer: seq[byte]
     offset: int
     boundary: seq[byte]
@@ -30,17 +32,24 @@ type
   MultiPartReaderRef* = ref MultiPartReader
 
   MultiPart* = object
+    case kind: MultiPartSource
+    of MultiPartSource.Stream:
+      stream*: BoundedStreamReader
+    of MultiPartSource.Buffer:
+      discard
+    buffer: seq[byte]
     headers: HttpTable
-    stream: BoundedAsyncStreamReader
-    offset: int
-    size: int
 
-  MultipartError* = object of HttpError
+  MultipartError* = object of HttpCriticalError
   MultipartEOMError* = object of MultipartError
-  MultiPartIncorrectError* = object of MultipartError
-  MultiPartIncompleteError* = object of MultipartError
+  MultipartIncorrectError* = object of MultipartError
+  MultipartIncompleteError* = object of MultipartError
+  MultipartReadError* = object of MultipartError
 
   BChar* = byte | char
+
+proc newMultipartReadError(msg: string): ref MultipartReadError =
+  newException(MultipartReadError, msg)
 
 proc startsWith*(s, prefix: openarray[byte]): bool =
   var i = 0
@@ -100,60 +109,106 @@ proc init*[B: BChar](mpt: typedesc[MultiPartReader],
 
 proc readPart*(mpr: MultiPartReaderRef): Future[MultiPart] {.async.} =
   doAssert(mpr.kind == MultiPartSource.Stream)
-  # According to RFC1521 says that a boundary "must be no longer than 70
-  # characters, not counting the two leading hyphens.
   if mpr.firstTime:
-    # Read and verify initial <-><-><boundary><CR><LF>
-    mpr.firstTime = false
-    await mpr.stream.readExactly(addr mpr.buffer[0], len(mpr.boundary) - 2)
-    if startsWith(mpr.buffer.toOpenArray(0, len(mpr.boundary) - 5),
-                  mpr.boundary.toOpenArray(2, len(mpr.boundary) - 1)):
-      if buffer[0] == byte('-') and buffer[1] == byte("-"):
-        raise newException(MultiPartEOMError, "Unexpected EOM encountered")
-      if buffer[0] != 0x0D'u8 or buffer[1] != 0x0A'u8:
+    try:
+      # Read and verify initial <-><-><boundary><CR><LF>
+      await mpr.stream.readExactly(addr mpr.buffer[0], len(mpr.boundary) - 2)
+      mpr.firstTime = false
+      if startsWith(mpr.buffer.toOpenArray(0, len(mpr.boundary) - 5),
+                    mpr.boundary.toOpenArray(2, len(mpr.boundary) - 1)):
+        if mpr.buffer[0] == byte('-') and mpr.buffer[1] == byte('-'):
+          raise newException(MultiPartEOMError,
+                             "Unexpected EOM encountered")
+        if mpr.buffer[0] != 0x0D'u8 or mpr.buffer[1] != 0x0A'u8:
+          raise newException(MultiPartIncorrectError,
+                             "Unexpected boundary suffix")
+      else:
         raise newException(MultiPartIncorrectError,
-                           "Unexpected boundary suffix")
-    else:
-      raise newException(MultiPartIncorrectError,
-                         "Unexpected boundary encountered")
+                           "Unexpected boundary encountered")
+    except CancelledError as exc:
+      raise exc
+    except AsyncStreamIncompleteError:
+      raise newMultipartReadError("Error reading multipart message")
+    except AsyncStreamReadError:
+      raise newMultipartReadError("Error reading multipart message")
 
   # Reading part's headers
-  let res = await mpr.stream.readUntil(addr mpr.buffer[0], len(mpr.buffer),
+  try:
+    let res = await mpr.stream.readUntil(addr mpr.buffer[0], len(mpr.buffer),
                                        HeadersMark)
-  var headersList = parseHeaders(mpr.buffer.toOpenArray(0, res - 1))
-  if headersList.failed():
-    raise newException(MultiPartIncorrectError, "Incorrect part headers found")
+    var headersList = parseHeaders(mpr.buffer.toOpenArray(0, res - 1), false)
+    if headersList.failed():
+      raise newException(MultiPartIncorrectError,
+                         "Incorrect part headers found")
 
-  var part = MultiPart()
+    var part = MultiPart(
+      kind: MultiPartSource.Stream,
+      headers: HttpTable.init(),
+      stream: newBoundedStreamReader(mpr.stream, -1, mpr.boundary)
+    )
 
-    await mpr.stream.readExactly(addr buffer[0], len(mpr.boundary) - 4)
-    if startsWith(buffer.toOpenArray(0, len(mpr.boundary) - 5),
-                  mpr.boundary.toOpenArray(2, len(mpr.boundary) - 1)):
-      await mpr.stream.readExactly(addr buffer[0], 2)
-      if buffer[0] == byte('-') and buffer[1] == byte("-"):
-        raise newException(MultiPartEOMError, "")
-      if buffer[0] == 0x0D'u8 and buffer[1] == 0x0A'u8:
+    for k, v in headersList.headers(mpr.buffer.toOpenArray(0, res - 1)):
+      part.headers.add(k, v)
 
-  except:
-    discard
-  # if mpr.offset >= len(mpr.buffer):
-  #   raise newException(MultiPartEOMError, "End of multipart form encountered")
+    return part
 
-proc getStream*(mp: MultiPart): AsyncStreamReader =
-  mp.stream
+  except CancelledError as exc:
+    raise exc
+  except AsyncStreamIncompleteError:
+    raise newMultipartReadError("Error reading multipart message")
+  except AsyncStreamLimitError:
+    raise newMultipartReadError("Multipart message headers size too big")
+  except AsyncStreamReadError:
+    raise newMultipartReadError("Error reading multipart message")
 
 proc getBody*(mp: MultiPart): Future[seq[byte]] {.async.} =
-  try:
-    let res = await mp.stream.read()
-    return res
-  except AsyncStreamError:
-    raise newException(HttpCriticalError, "Could not read multipart body")
+  case mp.kind
+  of MultiPartSource.Stream:
+    try:
+      let res = await mp.stream.read()
+      return res
+    except AsyncStreamError:
+      raise newException(HttpCriticalError, "Could not read multipart body")
+  of MultiPartSource.Buffer:
+    return mp.buffer
 
 proc consumeBody*(mp: MultiPart) {.async.} =
-  try:
-    await mp.stream.consume()
-  except AsyncStreamError:
-    raise newException(HttpCriticalError, "Could not consume multipart body")
+  case mp.kind
+  of MultiPartSource.Stream:
+    try:
+      await mp.stream.consume()
+    except AsyncStreamError:
+      raise newException(HttpCriticalError, "Could not consume multipart body")
+  of MultiPartSource.Buffer:
+    discard
+
+proc getBytes*(mp: MultiPart): seq[byte] =
+  ## Returns MultiPart value as sequence of bytes.
+  case mp.kind
+  of MultiPartSource.Buffer:
+    mp.buffer
+  of MultiPartSource.Stream:
+    doAssert(not(mp.stream.atEof()), "Value is not obtained yet")
+    mp.buffer
+
+proc getString*(mp: MultiPart): string =
+  ## Returns MultiPart value as string.
+  case mp.kind
+  of MultiPartSource.Buffer:
+    if len(mp.buffer) > 0:
+      var res = newString(len(mp.buffer))
+      copyMem(addr res[0], unsafeAddr mp.buffer[0], len(mp.buffer))
+      res
+    else:
+      ""
+  of MultiPartSource.Stream:
+    doAssert(not(mp.stream.atEof()), "Value is not obtained yet")
+    if len(mp.buffer) > 0:
+      var res = newString(len(mp.buffer))
+      copyMem(addr res[0], unsafeAddr mp.buffer[0], len(mp.buffer))
+      res
+    else:
+      ""
 
 proc getPart*(mpr: var MultiPartReader): Result[MultiPart, string] =
   doAssert(mpr.kind == MultiPartSource.Buffer)
@@ -215,8 +270,11 @@ proc getPart*(mpr: var MultiPartReader): Result[MultiPart, string] =
 
       # We set reader's offset to the place right after <CR><LF>
       mpr.offset = start + pos2 + 2
-
-      var part = MultiPart(offset: start, size: pos2, headers: HttpTable.init())
+      var part = MultiPart(
+        kind: MultiPartSource.Buffer,
+        headers: HttpTable.init(),
+        buffer: @(mpr.buffer.toOpenArray(start, start + pos2 - 1))
+      )
       for k, v in headersList.headers(mpr.buffer.toOpenArray(hstart, hfinish)):
         part.headers.add(k, v)
       ok(part)
@@ -255,7 +313,7 @@ proc boundaryValue2(c: char): bool =
   c in {'a'..'z', 'A' .. 'Z', '0' .. '9',
         '\'' .. ')', '+' .. '/', ':', '=', '?', '_'}
 
-func getMultipartBoundary*(contentType: string): Result[string, string] =
+func getMultipartBoundary*(contentType: string): HttpResult[string] =
   let mparts = contentType.split(";")
   if strip(mparts[0]).toLowerAscii() != "multipart/form-data":
     return err("Content-Type is not multipart")
@@ -270,7 +328,7 @@ func getMultipartBoundary*(contentType: string): Result[string, string] =
   else:
     ok(strip(bparts[1]))
 
-func getContentType*(contentHeader: seq[string]): Result[string, string] =
+func getContentType*(contentHeader: seq[string]): HttpResult[string] =
   if len(contentHeader) > 1:
     return err("Multiple Content-Header values found")
   let mparts = contentHeader[0].split(";")
