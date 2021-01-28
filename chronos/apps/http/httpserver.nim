@@ -21,24 +21,24 @@ type
   HttpServerFlags* = enum
     Secure
 
-  HttpConnectionStatus* = enum
+  HttpStatus* = enum
     DropConnection, KeepConnection
 
-  HttpErrorEnum* = enum
+  HTTPServerError* {.pure.} = enum
     TimeoutError, CatchableError, RecoverableError, CriticalError
 
   HttpProcessError* = object
-    error*: HttpErrorEnum
-    exc*: HttpError
+    error*: HTTPServerError
+    exc*: ref CatchableError
     remote*: TransportAddress
 
-  HttpProcessStatus*[T] = Result[T, HttpProcessError]
+  RequestFence*[T] = Result[T, HttpProcessError]
 
   HttpRequestFlags* {.pure.} = enum
     BoundBody, UnboundBody, MultipartForm, UrlencodedForm
 
   HttpProcessCallback* =
-    proc(request: HttpProcessStatus[HttpRequest]): Future[HttpStatus]
+    proc(req: RequestFence[HttpRequest]): Future[HttpStatus] {.gcsafe.}
 
   HttpServer* = ref object of RootRef
     instance*: StreamServer
@@ -74,6 +74,7 @@ type
     contentLength: int
     connection*: HttpConnection
     mainReader*: AsyncStreamReader
+    mainWriter*: AsyncStreamWriter
 
   HttpResponse* = object
     code*: HttpCode
@@ -88,11 +89,24 @@ type
     transp: StreamTransport
     buffer: seq[byte]
 
+proc init(htype: typedesc[HttpProcessError], error: HTTPServerError,
+          exc: ref CatchableError,
+          remote: TransportAddress): HttpProcessError =
+  HttpProcessError(error: error, exc: exc, remote: remote)
+
+proc init*(htype: typedesc[HttpResponse], req: HttpRequest): HttpResponse =
+  HttpResponse(
+    version: req.version,
+    headersTable: HttpTable.init(),
+    connection: req.connection,
+    mainWriter: req.mainWriter
+  )
+
 proc new*(htype: typedesc[HttpServer],
           address: TransportAddress,
+          processCallback: HttpProcessCallback,
           flags: set[HttpServerFlags] = {},
           serverUri = Uri(),
-          processCallback: HttpProcessCallback,
           maxConnections: int = -1,
           bufferSize: int = 4096,
           backlogSize: int = 100,
@@ -246,9 +260,11 @@ proc prepareRequest(conn: HttpConnection,
         request.requestFlags.incl(MultipartForm)
 
   request.mainReader = newAsyncStreamReader(conn.transp)
+  request.mainWriter = newAsyncStreamWriter(conn.transp)
   ok(request)
 
 proc getBodyStream*(request: HttpRequest): HttpResult[AsyncStreamReader] =
+  ## Returns stream's reader instance which can be used to read request's body.
   if HttpRequestFlags.BoundBody in request.requestFlags:
     ok(newBoundedStreamReader(request.mainReader, request.contentLength))
   elif HttpRequestFlags.UnboundBody in request.requestFlags:
@@ -345,66 +361,81 @@ proc processLoop(server: HttpServer, transp: StreamTransport) {.async.} =
 
   var breakLoop = false
   while true:
-    var status: HttpProcessStatus
-    var arg: HttpProcessStatus[HttpRequest]
+    var
+      arg: RequestFence[HttpRequest]
+      resp = HttpStatus.DropConnection
+
     try:
       let request = await conn.getRequest().wait(server.headersTimeout)
-      arg = ok(request)
-    except AsyncTimeoutError as exc:
-      discard await conn.sendErrorResponse(HttpVersion11, Http408, false)
-      breakLoop = true
-      arg = err(HttpProcessError(exc: exc, remote: transp.remoteAddress()))
+      arg = RequestFence[HttpRequest].ok(request)
     except CancelledError:
       breakLoop = true
-    except HttpRecoverableError:
-      breakLoop = false
-      arg = err()
-    except CatchableError:
-      breakLoop = true
+    except AsyncTimeoutError as exc:
+      let error = HttpProcessError.init(HTTPServerError.TimeoutError, exc,
+                                        transp.remoteAddress())
+      arg = RequestFence[HttpRequest].err(error)
+    except HttpRecoverableError as exc:
+      let error = HttpProcessError.init(HTTPServerError.RecoverableError, exc,
+                                        transp.remoteAddress())
+      arg = RequestFence[HttpRequest].err(error)
+    except HttpCriticalError as exc:
+      let error = HttpProcessError.init(HTTPServerError.CriticalError, exc,
+                                        transp.remoteAddress())
+      arg = RequestFence[HttpRequest].err(error)
+    except CatchableError as exc:
+      let error = HttpProcessError.init(HTTPServerError.CatchableError, exc,
+                                        transp.remoteAddress())
+      arg = RequestFence[HttpRequest].err(error)
 
     if breakLoop:
       break
 
     breakLoop = false
-    let status =
-      try:
-        await conn.server.processCallback()
-      except CancelledError:
-        breakLoop = true
-        HttpCriticalError
-      except CatchableError:
-        breakLoop = true
-        HttpCriticalError
+    var lastError: ref CatchableError
 
-      echo "== HEADERS TABLE"
-      echo request.headersTable
-      echo "== QUERY TABLE"
-      echo request.queryTable
-      echo "== TRANSFER ENCODING ", request.transferEncoding
-      echo "== CONTENT ENCODING ", request.contentEncoding
-      echo "== REQUEST FLAGS ", request.requestFlags
-      var stream = await request.getBody()
-      echo cast[string](stream)
-      discard await conn.sendErrorResponse(HttpVersion11, Http200, true,
-                                           databody = "OK")
-    except AsyncTimeoutError:
-      discard await conn.sendErrorResponse(HttpVersion11, Http408, false)
-      breakLoop = true
-
+    try:
+      resp = await conn.server.processCallback(arg)
     except CancelledError:
       breakLoop = true
-
-    except HttpRecoverableError:
-      breakLoop = false
-
-    except HttpCriticalError:
-      breakLoop = true
-
     except CatchableError as exc:
-      echo "CatchableError received ", exc.name
+      lastError = exc
 
     if breakLoop:
       break
+
+    let keepConn =
+      case resp
+        of DropConnection:
+          false
+        of KeepConnection:
+          false
+
+    if arg.isErr():
+      case arg.error().error
+      of HTTPServerError.TimeoutError:
+        discard await conn.sendErrorResponse(HttpVersion11, Http408, keepConn)
+      of HTTPServerError.RecoverableError:
+        discard await conn.sendErrorResponse(HttpVersion11, Http400, keepConn)
+      of HTTPServerError.CriticalError:
+        discard await conn.sendErrorResponse(HttpVersion11, Http400, keepConn)
+      of HTTPServerError.CatchableError:
+        discard await conn.sendErrorResponse(HttpVersion11, Http400, keepConn)
+      if not(keepConn):
+        break
+    else:
+      if isNil(lastError):
+        if arg.get().mainWriter.bytesCount == 0'u64:
+          # Processor callback finished without an error, but response was not
+          # sent to client, so we going to send HTTP404 error.
+          discard await conn.sendErrorResponse(HttpVersion11, Http404, keepConn)
+      else:
+        if arg.get().mainWriter.bytesCount == 0'u64:
+          # Processor callback finished with an error, but response was not
+          # sent to client, so we going to send HTTP503 error.
+          discard await conn.sendErrorResponse(HttpVersion11, Http503, keepConn)
+
+      if not(keepConn):
+        break
 
   await transp.closeWait()
   server.connections.del(transp.getId())
@@ -495,7 +526,12 @@ proc join*(server: HttpServer): Future[void] =
   retFuture
 
 when isMainModule:
-  let res = HttpServer.new(initTAddress("127.0.0.1:30080"), maxConnections = 1)
+  proc processCallback(req: RequestFence[HttpRequest]): Future[HttpStatus] {.
+       async.} =
+    echo "process callback"
+
+  let res = HttpServer.new(initTAddress("127.0.0.1:30080"), processCallback,
+                           maxConnections = 1)
   if res.isOk():
     let server = res.get()
     server.start()
