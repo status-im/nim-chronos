@@ -48,7 +48,7 @@ proc readUntilBoundary*(rstream: AsyncStreamReader, pbytes: pointer,
   doAssert(not(isNil(pbytes)), "pbytes must not be nil")
   doAssert(len(sep) > 0, "separator must not be empty")
   doAssert(nbytes >= 0, "nbytes must be non-negative value")
-  checkRunning(rstream)
+  checkStreamClosed(rstream)
 
   var k = 0
   var state = 0
