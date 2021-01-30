@@ -10,8 +10,8 @@ import std/[tables, options, uri, strutils]
 import stew/results, httputils
 import ../../asyncloop, ../../asyncsync
 import ../../streams/[asyncstream, boundstream, chunkstream]
-import httptable, httpcommon
-export httpcommon
+import httptable, httpcommon, multipart
+export httpcommon, multipart
 
 when defined(useChroniclesLogging):
   echo "Importing chronicles"
@@ -58,10 +58,10 @@ type
   HttpServerState* = enum
     ServerRunning, ServerStopped, ServerClosed
 
-  HttpRequest* = object
+  HttpRequest* = ref object of RootRef
     headersTable: HttpTable
     queryTable: HttpTable
-    postTable: HttpTable
+    postTable: Option[HttpTable]
     rawPath*: string
     rawQuery*: string
     uri*: Uri
@@ -398,6 +398,8 @@ proc processLoop(server: HttpServer, transp: StreamTransport) {.async.} =
     except CancelledError:
       breakLoop = true
     except CatchableError as exc:
+      resp = DropConnection
+      echo "Exception received from processor callback ", exc.name
       lastError = exc
 
     if breakLoop:
@@ -424,15 +426,20 @@ proc processLoop(server: HttpServer, transp: StreamTransport) {.async.} =
         break
     else:
       if isNil(lastError):
+        echo "lastError = nil"
+        echo "mainWriter.bytesCount = ", arg.get().mainWriter.bytesCount
+
         if arg.get().mainWriter.bytesCount == 0'u64:
+          echo "Sending 404 keepConn = ", keepConn
           # Processor callback finished without an error, but response was not
           # sent to client, so we going to send HTTP404 error.
           discard await conn.sendErrorResponse(HttpVersion11, Http404, keepConn)
+          echo "bytesCount = ", arg.get().mainWriter.bytesCount
       else:
         if arg.get().mainWriter.bytesCount == 0'u64:
           # Processor callback finished with an error, but response was not
           # sent to client, so we going to send HTTP503 error.
-          discard await conn.sendErrorResponse(HttpVersion11, Http503, keepConn)
+          discard await conn.sendErrorResponse(HttpVersion11, Http503, true)
 
       if not(keepConn):
         break
@@ -525,9 +532,69 @@ proc join*(server: HttpServer): Future[void] =
 
   retFuture
 
+proc post*(req: HttpRequest): Future[HttpTable] {.async.} =
+  ## Return POST parameters
+  if req.postTable.isSome():
+    return req.postTable.get()
+  else:
+    if req.meth notin PostMethods:
+      return HttpTable.init()
+
+    if UrlencodedForm in req.requestFlags:
+      var table = HttpTable.init()
+      var body = await req.getBody()
+      ## TODO (cheatfate) double copy here.
+      var strbody = newString(len(body))
+      if len(body) > 0:
+        copyMem(addr strbody[0], addr body[0], len(body))
+      for key, value in queryParams(strbody):
+        table.add(key, value)
+      req.postTable = some(table)
+      return table
+    elif MultipartForm in req.requestFlags:
+      let cres = getContentType(req.headersTable.getList("content-type"))
+      if cres.isErr():
+        raise newHttpCriticalError(cres.error)
+      let bres = getMultipartBoundary(req.headersTable.getList("content-type"))
+      if bres.isErr():
+        raise newHttpCriticalError(bres.error)
+      var reader = req.getBodyStream()
+      if reader.isErr():
+        raise newHttpCriticalError(reader.error)
+      var mpreader = MultiPartReaderRef.new(reader.get(), bres.get())
+      var table = HttpTable.init()
+      var runLoop = true
+      while runLoop:
+        try:
+          let res = await mpreader.readPart()
+          var value = await res.getBody()
+          ## TODO (cheatfate) double copy here.
+          var strvalue = newString(len(value))
+          if len(value) > 0:
+            copyMem(addr strvalue[0], addr value[0], len(value))
+          table.add(res.name, strvalue)
+        except MultiPartEoM:
+          runLoop = false
+      req.postTable = some(table)
+      return table
+    else:
+      if BoundBody in req.requestFlags:
+        if req.contentLength != 0:
+          raise newHttpCriticalError("Unsupported request body")
+        return HttpTable.init()
+      elif UnboundBody in req.requestFlags:
+        raise newHttpCriticalError("Unsupported request body")
+
 when isMainModule:
   proc processCallback(req: RequestFence[HttpRequest]): Future[HttpStatus] {.
        async.} =
+    if req.isOk():
+      let request = req.get()
+      echo "Got ", request.meth, " request"
+      let post = await request.post()
+      echo "post = ", post
+    else:
+      echo "Got FAILURE", req.error()
     echo "process callback"
 
   let res = HttpServer.new(initTAddress("127.0.0.1:30080"), processCallback,
