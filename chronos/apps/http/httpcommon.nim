@@ -13,6 +13,7 @@ const
   useChroniclesLogging* {.booldefine.} = false
 
   HeadersMark* = @[byte(0x0D), byte(0x0A), byte(0x0D), byte(0x0A)]
+  PostMethods* = {MethodPost, MethodPatch, MethodPut, MethodDelete}
 
 type
   HttpResult*[T] = Result[T, string]
@@ -109,20 +110,3 @@ func getContentType*(ch: openarray[string]): HttpResult[string] =
   else:
     let mparts = ch[0].split(";")
     ok(strip(mparts[0]).toLowerAscii())
-
-func getMultipartBoundary*(contentType: string): HttpResult[string] =
-  ## Process ``multipart/form-data`` ``Content-Type`` header and return
-  ## multipart boundary.
-  let mparts = contentType.split(";")
-  if strip(mparts[0]).toLowerAscii() != "multipart/form-data":
-    return err("Content-Type is not multipart")
-  if len(mparts) < 2:
-    return err("Content-Type missing boundary value")
-  let stripped = strip(mparts[1])
-  if not(stripped.toLowerAscii().startsWith("boundary")):
-    return err("Incorrect Content-Type boundary format")
-  let bparts = stripped.split("=")
-  if len(bparts) < 2:
-    err("Missing Content-Type boundary")
-  else:
-    ok(strip(bparts[1]))
