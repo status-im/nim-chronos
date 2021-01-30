@@ -9,7 +9,8 @@ skipDirs      = @["tests"]
 
 requires "nim > 1.2.0",
          "stew",
-         "bearssl"
+         "bearssl",
+         "nim-http-utils"
 
 task test, "Run all tests":
   var commands = [
