@@ -60,16 +60,26 @@ proc add*(ht: var HttpTables, key: string, value: string) =
 proc add*(ht: var HttpTables, key: string, value: SomeInteger) =
   ht.add(key, $value)
 
+proc set*(ht: var HttpTables, key: string, value: string) =
+  let lowkey = key.toLowerAscii()
+  ht.table[lowkey] = @[value]
+
 proc contains*(ht: var HttpTables, key: string): bool =
   ht.table.contains(key.toLowerAscii())
 
-proc getList*(ht: HttpTables, key: string): seq[string] =
-  var default: seq[string]
-  ht.table.getOrDefault(key.toLowerAscii(), default)
+proc getList*(ht: HttpTables, key: string,
+              default: openarray[string] = []): seq[string] =
+  var defseq = @default
+  ht.table.getOrDefault(key.toLowerAscii(), defseq)
 
-proc getString*(ht: HttpTables, key: string): string =
-  var default: seq[string]
-  ht.table.getOrDefault(key.toLowerAscii(), default).join(",")
+proc getString*(ht: HttpTables, key: string,
+                default: string = ""): string =
+  var defseq = newSeq[string]()
+  let res = ht.table.getOrDefault(key.toLowerAscii(), defseq)
+  if len(res) == 0:
+    return default
+  else:
+    res.join(",")
 
 proc count*(ht: HttpTables, key: string): int =
   var default: seq[string]
