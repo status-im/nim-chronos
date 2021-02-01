@@ -15,13 +15,13 @@ import httptable, httpcommon
 export httptable, httpcommon, asyncstream
 
 type
-  MultiPartSource {.pure.} = enum
+  MultiPartSource* {.pure.} = enum
     Stream, Buffer
 
   MultiPartReader* = object
     case kind: MultiPartSource
     of MultiPartSource.Stream:
-      stream: AsyncStreamReader
+      stream*: AsyncStreamReader
     of MultiPartSource.Buffer:
       discard
     firstTime: bool
@@ -35,7 +35,7 @@ type
   MultiPart* = object
     case kind: MultiPartSource
     of MultiPartSource.Stream:
-      stream*: BoundedStreamReader
+      stream: BoundedStreamReader
     of MultiPartSource.Buffer:
       discard
     buffer: seq[byte]
@@ -76,10 +76,13 @@ proc parseUntil*(s, until: openarray[byte]): int =
 proc init*[A: BChar, B: BChar](mpt: typedesc[MultiPartReader],
                                buffer: openarray[A],
                                boundary: openarray[B]): MultiPartReader =
-  # Boundary should not be empty.
+  ## Create new MultiPartReader instance with `buffer` interface.
+  ##
+  ## ``buffer`` - is buffer which will be used to read data.
+  ## ``boundary`` - is multipart boundary, this value must not be empty.
   doAssert(len(boundary) > 0)
-  # Our internal boundary has format `<CR><LF><-><-><boundary>`, so we can reuse
-  # different parts of this sequence for processing.
+  # Our internal boundary has format `<CR><LF><-><-><boundary>`, so we can
+  # reuse different parts of this sequence for processing.
   var fboundary = newSeq[byte](len(boundary) + 4)
   fboundary[0] = 0x0D'u8
   fboundary[1] = 0x0A'u8
@@ -94,13 +97,17 @@ proc init*[A: BChar, B: BChar](mpt: typedesc[MultiPartReader],
                   buffer: buf, offset: 0, boundary: fboundary)
 
 proc new*[B: BChar](mpt: typedesc[MultiPartReaderRef],
-                     stream: AsyncStreamReader,
-                     boundary: openarray[B],
-                     partHeadersMaxSize = 4096): MultiPartReaderRef =
-  # Boundary should not be empty.
+                    stream: AsyncStreamReader,
+                    boundary: openarray[B],
+                    partHeadersMaxSize = 4096): MultiPartReaderRef =
+  ## Create new MultiPartReader instance with `stream` interface.
+  ##
+  ## ``stream`` is stream used to read data.
+  ## ``boundary`` is multipart boundary, this value must not be empty.
+  ## ``partHeadersMaxSize`` is maximum size of multipart's headers.
   doAssert(len(boundary) > 0)
-  # Our internal boundary has format `<CR><LF><-><-><boundary>`, so we can reuse
-  # different parts of this sequence for processing.
+  # Our internal boundary has format `<CR><LF><-><-><boundary>`, so we can
+  # reuse different parts of this sequence for processing.
   var fboundary = newSeq[byte](len(boundary) + 4)
   fboundary[0] = 0x0D'u8
   fboundary[1] = 0x0A'u8
@@ -111,7 +118,7 @@ proc new*[B: BChar](mpt: typedesc[MultiPartReaderRef],
                      stream: stream, offset: 0, boundary: fboundary,
                      buffer: newSeq[byte](partHeadersMaxSize))
 
-func setPartNames*(part: var MultiPart): HttpResult[void] =
+func setPartNames(part: var MultiPart): HttpResult[void] =
   if part.headers.count("content-disposition") != 1:
     return err("Content-Disposition header is incorrect")
   var header = part.headers.getString("content-disposition")
@@ -192,28 +199,55 @@ proc readPart*(mpr: MultiPartReaderRef): Future[MultiPart] {.async.} =
     raise newMultipartReadError("Error reading multipart message")
 
 proc getBody*(mp: MultiPart): Future[seq[byte]] {.async.} =
+  ## Get multipart's ``mp`` value as sequence of bytes.
   case mp.kind
   of MultiPartSource.Stream:
     try:
       let res = await mp.stream.read()
       return res
     except AsyncStreamError:
-      raise newException(HttpCriticalError, "Could not read multipart body")
+      raise newException(MultipartReadError, "Could not read multipart body")
   of MultiPartSource.Buffer:
     return mp.buffer
 
 proc consumeBody*(mp: MultiPart) {.async.} =
+  ## Discard multipart's ``mp`` value.
   case mp.kind
   of MultiPartSource.Stream:
     try:
       await mp.stream.consume()
     except AsyncStreamError:
-      raise newException(HttpCriticalError, "Could not consume multipart body")
+      raise newException(MultipartReadError, "Could not consume multipart body")
   of MultiPartSource.Buffer:
     discard
 
+proc getBodyStream*(mp: MultiPart): HttpResult[AsyncStreamReader] =
+  ## Get multipart's ``mp`` stream, which can be used to obtain value of the
+  ## part.
+  case mp.kind
+  of MultiPartSource.Stream:
+    ok(mp.stream)
+  else:
+    err("Could not obtain stream from buffer-like part")
+
+proc close*(mp: MultiPart) {.async.} =
+  ## Close and release MultiPart's ``mp`` stream and resources.
+  case mp.kind
+  of MultiPartSource.Stream:
+    await closeWait(mp.stream)
+  else:
+    discard
+
+proc close*(mpr: MultiPartReaderRef) {.async.} =
+  ## Close and release MultiPartReader's ``mpr`` stream and resources.
+  case mpr.kind
+  of MultiPartSource.Stream:
+    await mpr.stream.closeWait()
+  else:
+    discard
+
 proc getBytes*(mp: MultiPart): seq[byte] =
-  ## Returns MultiPart value as sequence of bytes.
+  ## Returns value for MultiPart ``mp`` as sequence of bytes.
   case mp.kind
   of MultiPartSource.Buffer:
     mp.buffer
@@ -222,7 +256,7 @@ proc getBytes*(mp: MultiPart): seq[byte] =
     mp.buffer
 
 proc getString*(mp: MultiPart): string =
-  ## Returns MultiPart value as string.
+  ## Returns value for MultiPart ``mp`` as string.
   case mp.kind
   of MultiPartSource.Buffer:
     if len(mp.buffer) > 0:
@@ -240,7 +274,28 @@ proc getString*(mp: MultiPart): string =
     else:
       ""
 
+proc atEoM*(mpr: var MultiPartReader): bool =
+  ## Procedure returns ``true`` if MultiPartReader has reached the end of
+  ## multipart message.
+  case mpr.kind
+  of MultiPartSource.Buffer:
+    mpr.offset >= len(mpr.buffer)
+  of MultiPartSource.Stream:
+    mpr.stream.atEof()
+
+proc atEoM*(mpr: MultiPartReaderRef): bool =
+  ## Procedure returns ``true`` if MultiPartReader has reached the end of
+  ## multipart message.
+  case mpr.kind
+  of MultiPartSource.Buffer:
+    mpr.offset >= len(mpr.buffer)
+  of MultiPartSource.Stream:
+    mpr.stream.atEof()
+
 proc getPart*(mpr: var MultiPartReader): Result[MultiPart, string] =
+  ## Get multipart part from MultiPartReader instance.
+  ##
+  ## This procedure will work only for MultiPartReader with buffer source.
   doAssert(mpr.kind == MultiPartSource.Buffer)
   if mpr.offset >= len(mpr.buffer):
     return err("End of multipart form encountered")
@@ -320,6 +375,15 @@ proc getPart*(mpr: var MultiPartReader): Result[MultiPart, string] =
     err("Incorrect multipart form")
 
 func getMultipartBoundary*(ch: openarray[string]): HttpResult[string] =
+  ## Returns ``multipart/form-data`` boundary value from ``Content-Type``
+  ## header.
+  ##
+  ## The procedure carries out all the necessary checks:
+  ##   1) There should be single `Content-Type` header value in headers.
+  ##   2) `Content-Type` must be ``multipart/form-data``.
+  ##   3) `boundary` value must be present
+  ##   4) `boundary` value must be less then 70 characters length and
+  ##      all characters should be part of alphabet.
   if len(ch) > 1:
     err("Multiple Content-Type headers found")
   else:
@@ -347,12 +411,3 @@ func getMultipartBoundary*(ch: openarray[string]): HttpResult[string] =
                          '\'' .. ')', '+' .. '/', ':', '=', '?', '_'}:
               return err("Content-Type boundary alphabat incorrect")
           ok(candidate)
-
-when isMainModule:
-  var buf = "--------------------------5e7d0dd0ed6eb849\r\nContent-Disposition: form-data; =\"key1\"\r\n\r\nvalue1\r\n--------------------------5e7d0dd0ed6eb849\r\nContent-Disposition: form-data; name=\"key2\"\r\n\r\nvalue2\r\n--------------------------5e7d0dd0ed6eb849--"
-  var reader = MultiPartReader.init(buf, "------------------------5e7d0dd0ed6eb849")
-  echo getPart(reader)
-  echo "===="
-  echo getPart(reader)
-  echo "===="
-  echo getPart(reader)

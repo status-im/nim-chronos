@@ -730,18 +730,18 @@ proc write*(wstream: AsyncStreamWriter, sbytes: seq[byte],
   if isNil(wstream.wsource):
     var res: int
     try:
-      res = await write(wstream.tsource, sbytes, msglen)
+      res = await write(wstream.tsource, sbytes, length)
     except CancelledError as exc:
       raise exc
     except CatchableError as exc:
       raise newAsyncStreamWriteError(exc)
     if res != length:
       raise newAsyncStreamIncompleteError()
-    wstream.bytesCount = wstream.bytesCount + uint64(msglen)
+    wstream.bytesCount = wstream.bytesCount + uint64(length)
   else:
     if isNil(wstream.writerLoop):
-      await write(wstream.wsource, sbytes, msglen)
-      wstream.bytesCount = wstream.bytesCount + uint64(msglen)
+      await write(wstream.wsource, sbytes, length)
+      wstream.bytesCount = wstream.bytesCount + uint64(length)
     else:
       var item = WriteItem(kind: Sequence)
       if not isLiteral(sbytes):
@@ -778,18 +778,18 @@ proc write*(wstream: AsyncStreamWriter, sbytes: string,
   if isNil(wstream.wsource):
     var res: int
     try:
-      res = await write(wstream.tsource, sbytes, msglen)
+      res = await write(wstream.tsource, sbytes, length)
     except CancelledError as exc:
       raise exc
     except CatchableError as exc:
       raise newAsyncStreamWriteError(exc)
     if res != length:
       raise newAsyncStreamIncompleteError()
-    wstream.bytesCount = wstream.bytesCount + uint64(msglen)
+    wstream.bytesCount = wstream.bytesCount + uint64(length)
   else:
     if isNil(wstream.writerLoop):
-      await write(wstream.wsource, sbytes, msglen)
-      wstream.bytesCount = wstream.bytesCount + uint64(msglen)
+      await write(wstream.wsource, sbytes, length)
+      wstream.bytesCount = wstream.bytesCount + uint64(length)
     else:
       var item = WriteItem(kind: String)
       if not isLiteral(sbytes):

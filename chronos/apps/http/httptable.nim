@@ -105,6 +105,15 @@ proc init*(htt: typedesc[HttpTable]): HttpTable =
 proc new*(htt: typedesc[HttpTableRef]): HttpTableRef =
   HttpTableRef(table: initTable[string, seq[string]]())
 
+iterator stringItems*(ht: HttpTables): tuple[key: string, value: string] =
+  for k, v in ht.table.pairs():
+    for item in v:
+      yield (k, item)
+
+iterator items*(ht: HttpTables): tuple[key: string, value: seq[string]] =
+  for k, v in ht.table.pairs():
+    yield (k, v)
+
 proc normalizeHeaderName*(value: string): string =
   var res = value.toLowerAscii()
   var k = 0
