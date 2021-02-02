@@ -1,7 +1,7 @@
 #
 #        Chronos HTTP/S case-insensitive non-unique
 #              key-value memory storage
-#             (c) Copyright 2019-Present
+#             (c) Copyright 2021-Present
 #         Status Research & Development GmbH
 #
 #              Licensed under either of
@@ -104,6 +104,20 @@ proc init*(htt: typedesc[HttpTable]): HttpTable =
 
 proc new*(htt: typedesc[HttpTableRef]): HttpTableRef =
   HttpTableRef(table: initTable[string, seq[string]]())
+
+proc init*(htt: typedesc[HttpTable],
+           data: openArray[tuple[key: string, value: string]]): HttpTable =
+  var res = HttpTable.init()
+  for item in data:
+    res.add(item.key, item.value)
+  res
+
+proc new*(htt: typedesc[HttpTableRef],
+          data: openArray[tuple[key: string, value: string]]): HttpTableRef =
+  var res = HttpTableRef.new()
+  for item in data:
+    res.add(item.key, item.value)
+  res
 
 proc isEmpty*(ht: HttpTables): bool =
   ## Returns ``true`` if HttpTable ``ht`` is empty (do not have any values).

@@ -1,6 +1,6 @@
 #
 #            Chronos HTTP/S common types
-#             (c) Copyright 2019-Present
+#             (c) Copyright 2021-Present
 #         Status Research & Development GmbH
 #
 #              Licensed under either of
