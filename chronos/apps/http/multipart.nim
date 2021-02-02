@@ -173,13 +173,13 @@ proc readPart*(mpr: MultiPartReaderRef): Future[MultiPart] {.async.} =
     if headersList.failed():
       raise newException(MultiPartIncorrectError,
                          "Incorrect part headers found")
+    inc(mpr.counter)
     var part = MultiPart(
       kind: MultiPartSource.Stream,
       headers: HttpTable.init(),
       stream: newBoundedStreamReader(mpr.stream, -1, mpr.boundary),
       counter: mpr.counter
     )
-    inc(mpr.counter)
 
     for k, v in headersList.headers(mpr.buffer.toOpenArray(0, res - 1)):
       part.headers.add(k, v)
@@ -355,13 +355,13 @@ proc getPart*(mpr: var MultiPartReader): Result[MultiPart, string] =
 
       # We set reader's offset to the place right after <CR><LF>
       mpr.offset = start + pos2 + 2
+      inc(mpr.counter)
       var part = MultiPart(
         kind: MultiPartSource.Buffer,
         headers: HttpTable.init(),
         buffer: @(mpr.buffer.toOpenArray(start, start + pos2 - 1)),
         counter: mpr.counter
       )
-      inc(mpr.counter)
 
       for k, v in headersList.headers(mpr.buffer.toOpenArray(hstart, hfinish)):
         part.headers.add(k, v)
@@ -373,6 +373,10 @@ proc getPart*(mpr: var MultiPartReader): Result[MultiPart, string] =
       err("Incorrect multipart form")
   else:
     err("Incorrect multipart form")
+
+func isEmpty*(mp: MultiPart): bool =
+  ## Returns ``true`` is multipart ``mp`` is not initialized/filled yet.
+  mp.counter == 0
 
 func getMultipartBoundary*(ch: openarray[string]): HttpResult[string] =
   ## Returns ``multipart/form-data`` boundary value from ``Content-Type``

@@ -44,8 +44,9 @@ iterator queryParams*(query: string): tuple[key: string, value: string] =
   for pair in query.split('&'):
     let items = pair.split('=', maxsplit = 1)
     let k = items[0]
-    let v = if len(items) > 1: items[1] else: ""
-    yield (decodeUrl(k), decodeUrl(v))
+    if len(k) > 0:
+      let v = if len(items) > 1: items[1] else: ""
+      yield (decodeUrl(k), decodeUrl(v))
 
 func getTransferEncoding*(ch: openarray[string]): HttpResult[
                                                    set[TransferEncodingFlags]] =
