@@ -105,16 +105,16 @@ proc init*(htt: typedesc[HttpTable]): HttpTable =
 proc new*(htt: typedesc[HttpTableRef]): HttpTableRef =
   HttpTableRef(table: initTable[string, seq[string]]())
 
-iterator stringItems*(ht: HttpTables): tuple[key: string, value: string] =
-  for k, v in ht.table.pairs():
-    for item in v:
-      yield (k, item)
-
-iterator items*(ht: HttpTables): tuple[key: string, value: seq[string]] =
-  for k, v in ht.table.pairs():
-    yield (k, v)
+proc isEmpty*(ht: HttpTables): bool =
+  ## Returns ``true`` if HttpTable ``ht`` is empty (do not have any values).
+  len(ht.table) == 0
 
 proc normalizeHeaderName*(value: string): string =
+  ## Set any header name to have first capital letters in their name
+  ##
+  ## For example:
+  ## "content-length" become "<C>ontent-<L>ength"
+  ## "expect" become "<E>xpect"
   var res = value.toLowerAscii()
   var k = 0
   while k < len(res):
@@ -131,6 +131,27 @@ proc normalizeHeaderName*(value: string): string =
       else:
         inc(k, 1)
   res
+
+iterator stringItems*(ht: HttpTables,
+                      normalizeKey = false): tuple[key: string, value: string] =
+  ## Iterate over HttpTable values.
+  ##
+  ## If ``normalizeKey`` is true, key name value will be normalized using
+  ## normalizeHeaderName() procedure.
+  for k, v in ht.table.pairs():
+    let key = if normalizeKey: normalizeHeaderName(k) else: k
+    for item in v:
+      yield (key, item)
+
+iterator items*(ht: HttpTables,
+                normalizeKey = false): tuple[key: string, value: seq[string]] =
+  ## Iterate over HttpTable values.
+  ##
+  ## If ``normalizeKey`` is true, key name value will be normalized using
+  ## normalizeHeaderName() procedure.
+  for k, v in ht.table.pairs():
+    let key = if normalizeKey: normalizeHeaderName(k) else: k
+    yield (key, v)
 
 proc `$`*(ht: HttpTables): string =
   var res = ""
