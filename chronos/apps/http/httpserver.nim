@@ -51,8 +51,10 @@ type
     instance*: StreamServer
     # semaphore*: AsyncSemaphore
     maxConnections*: int
+    backlogSize: int
     baseUri*: Uri
     flags*: set[HttpServerFlags]
+    socketFlags*: set[ServerFlags]
     connections*: Table[string, Future[void]]
     acceptLoop*: Future[void]
     lifetime*: Future[void]
@@ -130,7 +132,9 @@ proc new*(htype: typedesc[HttpServerRef],
     maxHeadersSize: maxHeadersSize,
     maxRequestBodySize: maxRequestBodySize,
     processCallback: processCallback,
-    flags: serverFlags
+    backLogSize: backLogSize,
+    flags: serverFlags,
+    socketFlags: socketFlags
   )
 
   res.baseUri =
@@ -190,6 +194,12 @@ proc prepareRequest(conn: HttpConnectionRef,
 
   if req.version notin {HttpVersion10, HttpVersion11}:
     return err(Http505)
+
+  request.scheme =
+    if HttpServerFlags.Secure in conn.server.flags:
+      "https"
+    else:
+      "http"
 
   request.version = req.version
   request.meth = req.meth
@@ -641,16 +651,19 @@ proc post*(req: HttpRequestRef): Future[HttpTable] {.async.} =
       # We must handle `Expect` first.
       try:
         await req.handleExpect()
+      except CancelledError as exc:
+        await mpreader.close()
+        raise exc
       except HttpCriticalError as exc:
         await mpreader.close()
         raise exc
 
       # Reading multipart/form-data parts.
       var runLoop = true
-      var loopError: ref MultipartError
       while runLoop:
+        var part: MultiPart
         try:
-          let part = await mpreader.readPart()
+          part = await mpreader.readPart()
           var value = await part.getBody()
           ## TODO (cheatfate) double copy here.
           var strvalue = newString(len(value))
@@ -660,14 +673,17 @@ proc post*(req: HttpRequestRef): Future[HttpTable] {.async.} =
           await part.close()
         except MultiPartEoM:
           runLoop = false
+        except CancelledError as exc:
+          if not(part.isEmpty()):
+            await part.close()
+          await mpreader.close()
+          raise exc
         except MultipartError as exc:
-          # We preserve error to avoid Nim's exception transformation bug.
-          runLoop = false
-          loopError = exc
-
+          if not(part.isEmpty()):
+            await part.close()
+          await mpreader.close()
+          raise exc
       await mpreader.close()
-      if not(isNil(loopError)):
-        raise loopError
       req.postTable = some(table)
       return table
     else:
@@ -883,24 +899,95 @@ proc finish*(resp: HttpResponseRef) {.async.} =
     resp.state = HttpResponseState.Failed
     raise newHttpCriticalError("Unable to send response")
 
-when isMainModule:
-  proc process(req: RequestFence[HttpRequestRef]): Future[HttpResponseRef] {.
-       async.} =
-    if req.isOk():
-      let request = req.get()
-      let post = await request.post()
-      let response = request.getResponse()
-      await response.sendBody("Got [" & $request.meth & "] request")
-      return response
+proc requestInfo*(req: HttpRequestRef, contentType = "text/text"): string =
+  proc h(t: string): string =
+    case contentType
+    of "text/text":
+      "\r\n" & t & " ===\r\n"
+    of "text/html":
+      "<h3>" & t & "</h3>"
     else:
-      return dumbResponse()
+      t
+  proc kv(k, v: string): string =
+    case contentType
+    of "text/text":
+      k & ": " & v & "\r\n"
+    of "text/html":
+      "<div><code><b>" & k & "</b></code><code>" & v & "</code></div>"
+    else:
+      k & ": " & v
 
-  let res = HttpServerRef.new(initTAddress("127.0.0.1:30080"), process,
-                              maxConnections = 1)
-  if res.isOk():
-    let server = res.get()
-    server.start()
-    echo "HTTP server was started"
-    waitFor server.join()
-  else:
-    echo "Failed to start server: ", res.error
+  let header =
+    case contentType
+    of "text/html":
+      "<html><head><title>Request Information</title>" &
+      "<style>code {padding-left: 30px;}</style>" &
+      "</head><body>"
+    else:
+      ""
+
+  let footer =
+    case contentType
+    of "text/html":
+      "</body></html>"
+    else:
+      ""
+
+  var res = h("Request information")
+  res.add(kv("request.scheme", $req.scheme))
+  res.add(kv("request.method", $req.meth))
+  res.add(kv("request.version", $req.version))
+  res.add(kv("request.uri", $req.uri))
+  res.add(kv("request.flags", $req.requestFlags))
+  res.add(kv("request.TransferEncoding", $req.transferEncoding))
+  res.add(kv("request.ContentEncoding", $req.contentEncoding))
+
+  let body =
+    if req.hasBody():
+      if req.contentLength == 0:
+        "present, size not available"
+      else:
+        "present, size = " & $req.contentLength
+    else:
+      "not available"
+  res.add(kv("request.body", body))
+
+  if not(req.queryTable.isEmpty()):
+    res.add(h("Query arguments"))
+    for k, v in req.queryTable.stringItems():
+      res.add(kv(k, v))
+
+  if not(req.headersTable.isEmpty()):
+    res.add(h("HTTP headers"))
+    for k, v in req.headersTable.stringItems(true):
+      res.add(kv(k, v))
+
+  if req.meth in PostMethods:
+    if req.postTable.isSome():
+      let postTable = req.postTable.get()
+      if not(postTable.isEmpty()):
+        res.add(h("POST arguments"))
+        for k, v in postTable.stringItems():
+          res.add(kv(k, v))
+
+  res.add(h("Connection information"))
+  res.add(kv("local.address", $req.connection.transp.localAddress()))
+  res.add(kv("remote.address", $req.connection.transp.remoteAddress()))
+
+  res.add(h("Server configuration"))
+  let maxConn =
+    if req.connection.server.maxConnections < 0:
+      "unlimited"
+    else:
+      $req.connection.server.maxConnections
+  res.add(kv("server.maxConnections", $maxConn))
+  res.add(kv("server.maxHeadersSize", $req.connection.server.maxHeadersSize))
+  res.add(kv("server.maxRequestBodySize",
+             $req.connection.server.maxRequestBodySize))
+  res.add(kv("server.backlog", $req.connection.server.backLogSize))
+  res.add(kv("server.headersTimeout", $req.connection.server.headersTimeout))
+  res.add(kv("server.bodyTimeout", $req.connection.server.bodyTimeout))
+  res.add(kv("server.baseUri", $req.connection.server.baseUri))
+  res.add(kv("server.flags", $req.connection.server.flags))
+  res.add(kv("server.socket.flags", $req.connection.server.socketFlags))
+  header & res & footer
