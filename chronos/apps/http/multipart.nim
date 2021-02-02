@@ -1,7 +1,7 @@
 #
 #           Chronos HTTP/S multipart/form
 #      encoding and decoding helper procedures
-#             (c) Copyright 2019-Present
+#             (c) Copyright 2021-Present
 #         Status Research & Development GmbH
 #
 #              Licensed under either of
@@ -144,7 +144,7 @@ proc readPart*(mpr: MultiPartReaderRef): Future[MultiPart] {.async.} =
   doAssert(mpr.kind == MultiPartSource.Stream)
   if mpr.firstTime:
     try:
-      # Read and verify initial <-><-><boundary><CR><LF>
+      # Read and verify initial <-><-><boundary>
       await mpr.stream.readExactly(addr mpr.buffer[0], len(mpr.boundary) - 2)
       mpr.firstTime = false
       if not(startsWith(mpr.buffer.toOpenArray(0, len(mpr.boundary) - 3),
@@ -160,13 +160,23 @@ proc readPart*(mpr: MultiPartReaderRef): Future[MultiPart] {.async.} =
 
   # Reading part's headers
   try:
+    # Read 2 bytes more
     await mpr.stream.readExactly(addr mpr.buffer[0], 2)
     if mpr.buffer[0] == byte('-') and mpr.buffer[1] == byte('-'):
-      raise newException(MultiPartEoM,
-                         "End of multipart message")
+      # If two bytes are "--" we are at the end
+      await mpr.stream.readExactly(addr mpr.buffer[0], 2)
+      if mpr.buffer[0] == 0x0D'u8 and mpr.buffer[1] == 0x0A'u8:
+        # If 3rd and 4th bytes are CRLF we are exactly at the end of message.
+        raise newException(MultiPartEoM,
+                           "End of multipart message")
+      else:
+        raise newException(MultiPartIncorrectError,
+                         "Incorrect part headers found")
     if mpr.buffer[0] != 0x0D'u8 or mpr.buffer[1] != 0x0A'u8:
       raise newException(MultiPartIncorrectError,
                          "Unexpected boundary suffix")
+    # If two bytes are CRLF we are at the part beginning.
+    # Reading part's headers
     let res = await mpr.stream.readUntil(addr mpr.buffer[0], len(mpr.buffer),
                                          HeadersMark)
     var headersList = parseHeaders(mpr.buffer.toOpenArray(0, res - 1), false)
@@ -314,7 +324,15 @@ proc getPart*(mpr: var MultiPartReader): Result[MultiPart, string] =
       # If we have <-><-><boundary><-><-> it means we have found last boundary
       # of multipart message.
       mpr.offset += 2
-      return err("End of multipart form encountered")
+      if len(mpr.buffer) <= mpr.offset + 1:
+        if mpr.buffer[mpr.offset] == 0x0D'u8 and
+           mpr.buffer[mpr.offset + 1] == 0x0A'u8:
+          mpr.offset += 2
+          return err("End of multipart form encountered")
+        else:
+          return err("Incorrect multipart last boundary")
+      else:
+        return err("Incomplete multipart form")
 
     if mpr.buffer[mpr.offset] == 0x0D'u8 and
        mpr.buffer[mpr.offset + 1] == 0x0A'u8:

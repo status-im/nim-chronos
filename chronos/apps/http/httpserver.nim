@@ -1,6 +1,6 @@
 #
 #        Chronos HTTP/S server implementation
-#             (c) Copyright 2019-Present
+#             (c) Copyright 2021-Present
 #         Status Research & Development GmbH
 #
 #              Licensed under either of
@@ -14,7 +14,6 @@ import httptable, httpcommon, multipart
 export httptable, httpcommon, multipart
 
 when defined(useChroniclesLogging):
-  echo "Importing chronicles"
   import chronicles
 
 type
@@ -67,8 +66,8 @@ type
   HttpServerRef* = ref HttpServer
 
   HttpRequest* = object of RootObj
-    headersTable: HttpTable
-    queryTable: HttpTable
+    headers*: HttpTable
+    query*: HttpTable
     postTable: Option[HttpTable]
     rawPath*: string
     rawQuery*: string
@@ -222,14 +221,14 @@ proc prepareRequest(conn: HttpConnectionRef,
       uri.path = "*"
       uri
 
-  request.queryTable =
+  request.query =
     block:
       var table = HttpTable.init()
       for key, value in queryParams(request.uri.query):
         table.add(key, value)
       table
 
-  request.headersTable =
+  request.headers =
     block:
       var table = HttpTable.init()
       # Retrieve headers and values
@@ -248,8 +247,7 @@ proc prepareRequest(conn: HttpConnectionRef,
   # Preprocessing "Content-Encoding" header.
   request.contentEncoding =
     block:
-      let res = getContentEncoding(
-                  request.headersTable.getList("content-encoding"))
+      let res = getContentEncoding(request.headers.getList("content-encoding"))
       if res.isErr():
         return err(Http400)
       else:
@@ -259,7 +257,7 @@ proc prepareRequest(conn: HttpConnectionRef,
   request.transferEncoding =
     block:
       let res = getTransferEncoding(
-                  request.headersTable.getList("transfer-encoding"))
+                                   request.headers.getList("transfer-encoding"))
       if res.isErr():
         return err(Http400)
       else:
@@ -267,8 +265,8 @@ proc prepareRequest(conn: HttpConnectionRef,
 
   # Almost all HTTP requests could have body (except TRACE), we perform some
   # steps to reveal information about body.
-  if "content-length" in request.headersTable:
-    let length = request.headersTable.getInt("content-length")
+  if "content-length" in request.headers:
+    let length = request.headers.getInt("content-length")
     if length > 0:
       if request.meth == MethodTrace:
         return err(Http400)
@@ -290,16 +288,16 @@ proc prepareRequest(conn: HttpConnectionRef,
       UrlEncodedType = "application/x-www-form-urlencoded"
       MultipartType = "multipart/form-data"
 
-    if "content-type" in request.headersTable:
-      let contentType = request.headersTable.getString("content-type")
+    if "content-type" in request.headers:
+      let contentType = request.headers.getString("content-type")
       let tmp = strip(contentType).toLowerAscii()
       if tmp.startsWith(UrlEncodedType):
         request.requestFlags.incl(HttpRequestFlags.UrlencodedForm)
       elif tmp.startsWith(MultipartType):
         request.requestFlags.incl(HttpRequestFlags.MultipartForm)
 
-    if "expect" in request.headersTable:
-      let expectHeader = request.headersTable.getString("expect")
+    if "expect" in request.headers:
+      let expectHeader = request.headers.getString("expect")
       if strip(expectHeader).toLowerAscii() == "100-continue":
         request.requestFlags.incl(HttpRequestFlags.ClientExpect)
 
@@ -369,9 +367,10 @@ proc sendErrorResponse(conn: HttpConnectionRef, version: HttpVersion,
                        databody = ""): Future[bool] {.async.} =
   var answer = $version & " " & $code & "\r\n"
   answer.add("Date: " & httpDate() & "\r\n")
-  if len(databody) > 0:
+  if len(datatype) > 0:
     answer.add("Content-Type: " & datatype & "\r\n")
-  answer.add("Content-Length: " & $len(databody) & "\r\n")
+  if len(databody) > 0:
+    answer.add("Content-Length: " & $len(databody) & "\r\n")
   if keepAlive:
     answer.add("Connection: keep-alive\r\n")
   else:
@@ -494,18 +493,25 @@ proc processLoop(server: HttpServerRef, transp: StreamTransport) {.async.} =
       break
     else:
       let request = arg.get()
-      let keepConn = if request.version == HttpVersion11: true else: false
+      var keepConn = if request.version == HttpVersion11: true else: false
       if isNil(lastError):
-        case resp.state
-        of HttpResponseState.Empty:
-          # Response was ignored
-          discard await conn.sendErrorResponse(HttpVersion11, Http404, keepConn)
-        of HttpResponseState.Prepared:
-          # Response was prepared but not sent.
-          discard await conn.sendErrorResponse(HttpVersion11, Http409, keepConn)
+        if isNil(resp):
+          # Response was `nil`.
+          discard await conn.sendErrorResponse(HttpVersion11, Http404,
+                                               false)
         else:
-          # some data was already sent to the client.
-          discard
+          case resp.state
+          of HttpResponseState.Empty:
+            # Response was ignored
+            discard await conn.sendErrorResponse(HttpVersion11, Http404,
+                                                 keepConn)
+          of HttpResponseState.Prepared:
+            # Response was prepared but not sent.
+            discard await conn.sendErrorResponse(HttpVersion11, Http409,
+                                                 keepConn)
+          else:
+            # some data was already sent to the client.
+            discard
       else:
         discard await conn.sendErrorResponse(HttpVersion11, Http503, true)
 
@@ -607,12 +613,12 @@ proc getMultipartReader*(req: HttpRequestRef): HttpResult[MultiPartReaderRef] =
   ## Create new MultiPartReader interface for specific request.
   if req.meth in PostMethods:
     if MultipartForm in req.requestFlags:
-      let ctype = ? getContentType(req.headersTable.getList("content-type"))
+      let ctype = ? getContentType(req.headers.getList("content-type"))
       if ctype != "multipart/form-data":
         err("Content type is not supported")
       else:
         let boundary = ? getMultipartBoundary(
-          req.headersTable.getList("content-type")
+          req.headers.getList("content-type")
         )
         var stream = ? req.getBodyStream()
         ok(MultiPartReaderRef.new(stream, boundary))
@@ -899,7 +905,22 @@ proc finish*(resp: HttpResponseRef) {.async.} =
     resp.state = HttpResponseState.Failed
     raise newHttpCriticalError("Unable to send response")
 
+proc respond*(req: HttpRequestRef, code: HttpCode, content: string,
+              headers: HttpTable): Future[HttpResponseRef] {.async.} =
+  ## Responds to the request with the specified ``HttpCode``, headers and
+  ## content.
+  let response = req.getResponse()
+  response.status = code
+  for k, v in headers.stringItems():
+    response.addHeader(k, v)
+  await response.sendBody(content)
+  return response
+
 proc requestInfo*(req: HttpRequestRef, contentType = "text/text"): string =
+  ## Returns comprehensive information about request for specific content
+  ## type.
+  ##
+  ## Only two content-types are supported: "text/text" and "text/html".
   proc h(t: string): string =
     case contentType
     of "text/text":
@@ -952,14 +973,14 @@ proc requestInfo*(req: HttpRequestRef, contentType = "text/text"): string =
       "not available"
   res.add(kv("request.body", body))
 
-  if not(req.queryTable.isEmpty()):
+  if not(req.query.isEmpty()):
     res.add(h("Query arguments"))
-    for k, v in req.queryTable.stringItems():
+    for k, v in req.query.stringItems():
       res.add(kv(k, v))
 
-  if not(req.headersTable.isEmpty()):
+  if not(req.headers.isEmpty()):
     res.add(h("HTTP headers"))
-    for k, v in req.headersTable.stringItems(true):
+    for k, v in req.headers.stringItems(true):
       res.add(kv(k, v))
 
   if req.meth in PostMethods:
