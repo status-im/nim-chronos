@@ -15,10 +15,11 @@ when defined(windows):
   import winlean
 else:
   import posix
-  var IP_MULTICAST_TTL* {.importc: "IP_MULTICAST_TTL",
-                          header: "<netinet/in.h>".}: cint
-  var IPV6_MULTICAST_HOPS* {.importc: "IPV6_MULTICAST_HOPS",
-                             header: "<netinet/in.h>".}: cint
+  when (defined(linux) and not defined(android)) and defined(amd64):
+    const IP_MULTICAST_TTL: cint = 33
+  else:
+    var IP_MULTICAST_TTL* {.importc: "IP_MULTICAST_TTL",
+                            header: "<netinet/in.h>".}: cint
 
 type
   VectorKind = enum
