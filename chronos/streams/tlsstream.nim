@@ -31,6 +31,9 @@ type
   TLSKeyType {.pure.} = enum
     RSA, EC
 
+  TLSResult {.pure.} = enum
+    Success, Error, EOF
+
   TLSPrivateKey* = ref object
     case kind: TLSKeyType
     of RSA:
@@ -127,24 +130,23 @@ template newTLSStreamProtocolError[T](message: T): ref TLSStreamProtocolError =
   err
 
 proc tlsWriteRec(engine: ptr SslEngineContext,
-                 writer: TLSStreamWriter): Future[bool] {.async.} =
+                 writer: TLSStreamWriter): Future[TLSResult] {.async.} =
   try:
     var length = 0'u
     var buf = sslEngineSendrecBuf(engine, length)
     doAssert(length != 0 and not isNil(buf))
     await writer.wsource.write(buf, int(length))
     sslEngineSendrecAck(engine, length)
-    return true
+    return TLSResult.Success
   except AsyncStreamError as exc:
     writer.state = AsyncStreamState.Error
     writer.error = exc
   except CancelledError:
     writer.state = AsyncStreamState.Stopped
-
-  return false
+  return TLSResult.Error
 
 proc tlsWriteApp(engine: ptr SslEngineContext,
-                 writer: TLSStreamWriter): Future[bool] {.async.} =
+                 writer: TLSStreamWriter): Future[TLSResult] {.async.} =
   try:
     var item = await writer.queue.get()
     if item.size > 0:
@@ -157,7 +159,7 @@ proc tlsWriteApp(engine: ptr SslEngineContext,
         sslEngineSendappAck(engine, uint(item.size))
         sslEngineFlush(engine, 0)
         item.future.complete()
-        return true
+        return TLSResult.Success
       else:
         # BearSSL is not ready to accept whole item, so we will send
         # only part of item and adjust offset.
@@ -165,58 +167,68 @@ proc tlsWriteApp(engine: ptr SslEngineContext,
         item.size = item.size - int(length)
         writer.queue.addFirstNoWait(item)
         sslEngineSendappAck(engine, length)
-        return true
+        return TLSResult.Success
     else:
       sslEngineClose(engine)
       item.future.complete()
-      return true
+      return TLSResult.Success
   except CancelledError:
     writer.state = AsyncStreamState.Stopped
-
-  return false
+  return TLSResult.Error
 
 proc tlsReadRec(engine: ptr SslEngineContext,
-                reader: TLSStreamReader): Future[bool] {.async.} =
+                reader: TLSStreamReader): Future[TLSResult] {.async.} =
   try:
     var length = 0'u
     var buf = sslEngineRecvrecBuf(engine, length)
     let res = await reader.rsource.readOnce(buf, int(length))
     sslEngineRecvrecAck(engine, uint(res))
-    return true
+    if res == 0:
+      sslEngineClose(engine)
+
+      return TLSResult.EOF
+    else:
+      return TLSResult.Success
   except CancelledError:
     reader.state = AsyncStreamState.Stopped
   except AsyncStreamError as exc:
     reader.state = AsyncStreamState.Error
     reader.error = exc
-  return false
+  return TLSResult.Error
 
 proc tlsReadApp(engine: ptr SslEngineContext,
-                reader: TLSStreamReader): Future[bool] {.async.} =
+                reader: TLSStreamReader): Future[TLSResult] {.async.} =
   try:
     var length = 0'u
     var buf = sslEngineRecvappBuf(engine, length)
     await upload(addr reader.buffer, buf, int(length))
     sslEngineRecvappAck(engine, length)
-    return true
+    return TLSResult.Success
   except CancelledError:
     reader.state = AsyncStreamState.Stopped
-  return false
+  return TLSResult.Error
 
 template raiseTLSStreamProtoError*[T](message: T) =
   raise newTLSStreamProtocolError(message)
 
 template readAndReset(fut: untyped) =
   if fut.finished():
-    if fut.read():
+    let res = fut.read()
+    case res
+    of TLSREsult.Success:
       fut = nil
       continue
-    else:
+    of TLSResult.Error:
       fut = nil
       loopState = AsyncStreamState.Error
       break
+    of TLSResult.EOF:
+      fut = nil
+      loopState = AsyncStreamState.Finished
+      break
 
-proc cancelAndWait*(a, b, c, d: Future[bool]): Future[void] =
-  var waiting: seq[Future[bool]]
+proc cancelAndWait*(a, b, c, d: Future[TLSResult]): Future[void] =
+  var waiting: seq[Future[TLSResult]]
   if not(isNil(a)) and not(a.finished()):
     a.cancel()
     waiting.add(a)
@@ -231,10 +243,29 @@ proc cancelAndWait*(a, b, c, d: Future[bool]): Future[void] =
     waiting.add(d)
   allFutures(waiting)
 
+proc dumpState*(state: cuint): string =
+  var res = ""
+  if (state and SSL_CLOSED) == SSL_CLOSED:
+    if len(res) > 0: res.add(", ")
+    res.add("SSL_CLOSED")
+  if (state and SSL_SENDREC) == SSL_SENDREC:
+    if len(res) > 0: res.add(", ")
+    res.add("SSL_SENDREC")
+  if (state and SSL_SENDAPP) == SSL_SENDAPP:
+    if len(res) > 0: res.add(", ")
+    res.add("SSL_SENDAPP")
+  if (state and SSL_RECVREC) == SSL_RECVREC:
+    if len(res) > 0: res.add(", ")
+    res.add("SSL_RECVREC")
+  if (state and SSL_RECVAPP) == SSL_RECVAPP:
+    if len(res) > 0: res.add(", ")
+    res.add("SSL_RECVAPP")
+  "{" & res & "}"
+
 proc tlsLoop*(stream: TLSAsyncStream) {.async.} =
   var
-    sendRecFut, sendAppFut: Future[bool]
-    recvRecFut, recvAppFut: Future[bool]
+    sendRecFut, sendAppFut: Future[TLSResult]
+    recvRecFut, recvAppFut: Future[TLSResult]
 
   let engine =
     case stream.reader.kind
@@ -246,7 +277,7 @@ proc tlsLoop*(stream: TLSAsyncStream) {.async.} =
   var loopState = AsyncStreamState.Running
 
   while true:
-    var waiting: seq[Future[bool]]
+    var waiting: seq[Future[TLSResult]]
     var state = sslEngineCurrentState(engine)
 
     if (state and SSL_CLOSED) == SSL_CLOSED:
@@ -343,6 +374,14 @@ proc tlsLoop*(stream: TLSAsyncStream) {.async.} =
       if not(isNil(stream.writer.handshakeFut)):
         if not(stream.writer.handshakeFut.finished()):
           stream.writer.handshakeFut.fail(error)
+  else:
+    if not(stream.writer.handshaked):
+      if not(isNil(stream.writer.handshakeFut)):
+        if not(stream.writer.handshakeFut.finished()):
+          stream.writer.handshakeFut.fail(
+            newTLSStreamProtocolError("Connection with remote peer lost")
+          )
+
   # Completing readers
   stream.reader.buffer.forget()
 

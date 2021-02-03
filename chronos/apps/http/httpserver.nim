@@ -9,12 +9,9 @@
 import std/[tables, options, uri, strutils]
 import stew/results, httputils
 import ../../asyncloop, ../../asyncsync
-import ../../streams/[asyncstream, boundstream, chunkstream]
+import ../../streams/[asyncstream, boundstream, chunkstream, tlsstream]
 import httptable, httpcommon, multipart
-export httptable, httpcommon, multipart
-
-when defined(useChroniclesLogging):
-  import chronicles
+export httptable, httpcommon, multipart, tlsstream, asyncstream
 
 type
   HttpServerFlags* {.pure.} = enum
@@ -28,6 +25,7 @@ type
 
   HttpProcessError* = object
     error*: HTTPServerError
+    code*: HttpCode
     exc*: ref CatchableError
     remote*: TransportAddress
 
@@ -54,6 +52,7 @@ type
     baseUri*: Uri
     flags*: set[HttpServerFlags]
     socketFlags*: set[ServerFlags]
+    secureFlags*: set[TLSFlags]
     connections*: Table[string, Future[void]]
     acceptLoop*: Future[void]
     lifetime*: Future[void]
@@ -62,6 +61,8 @@ type
     maxHeadersSize: int
     maxRequestBodySize: int
     processCallback: HttpProcessCallback
+    tlsPrivateKey: TLSPrivateKey
+    tlsCertificate: TLSCertificate
 
   HttpServerRef* = ref HttpServer
 
@@ -99,16 +100,19 @@ type
   HttpConnection* = object of RootObj
     server*: HttpServerRef
     transp: StreamTransport
-    mainReader*: AsyncStreamReader
-    mainWriter*: AsyncStreamWriter
+    mainReader: AsyncStreamReader
+    mainWriter: AsyncStreamWriter
+    tlsStream: TLSAsyncStream
+    reader*: AsyncStreamReader
+    writer*: AsyncStreamWriter
     buffer: seq[byte]
 
   HttpConnectionRef* = ref HttpConnection
 
 proc init(htype: typedesc[HttpProcessError], error: HTTPServerError,
-          exc: ref CatchableError,
-          remote: TransportAddress): HttpProcessError =
-  HttpProcessError(error: error, exc: exc, remote: remote)
+          exc: ref CatchableError, remote: TransportAddress,
+          code: HttpCode): HttpProcessError =
+  HttpProcessError(error: error, exc: exc, remote: remote, code: code)
 
 proc new*(htype: typedesc[HttpServerRef],
           address: TransportAddress,
@@ -116,6 +120,9 @@ proc new*(htype: typedesc[HttpServerRef],
           serverFlags: set[HttpServerFlags] = {},
           socketFlags: set[ServerFlags] = {ReuseAddr},
           serverUri = Uri(),
+          tlsPrivateKey: TLSPrivateKey = nil,
+          tlsCertificate: TLSCertificate = nil,
+          secureFlags: set[TLSFlags] = {},
           maxConnections: int = -1,
           bufferSize: int = 4096,
           backlogSize: int = 100,
@@ -123,6 +130,10 @@ proc new*(htype: typedesc[HttpServerRef],
           httpBodyTimeout = 30.seconds,
           maxHeadersSize: int = 8192,
           maxRequestBodySize: int = 1_048_576): HttpResult[HttpServerRef] =
+
+  if HttpServerFlags.Secure in serverFlags:
+    if isNil(tlsPrivateKey) or isNil(tlsCertificate):
+      return err("PrivateKey or Certificate is missing")
 
   var res = HttpServerRef(
     maxConnections: maxConnections,
@@ -133,7 +144,9 @@ proc new*(htype: typedesc[HttpServerRef],
     processCallback: processCallback,
     backLogSize: backLogSize,
     flags: serverFlags,
-    socketFlags: socketFlags
+    socketFlags: socketFlags,
+    tlsPrivateKey: tlsPrivateKey,
+    tlsCertificate: tlsCertificate
   )
 
   res.baseUri =
@@ -311,10 +324,10 @@ proc getBodyStream*(request: HttpRequestRef): HttpResult[AsyncStreamReader] =
   ## Streams which was obtained using this procedure must be closed to avoid
   ## leaks.
   if HttpRequestFlags.BoundBody in request.requestFlags:
-    ok(newBoundedStreamReader(request.connection.mainReader,
+    ok(newBoundedStreamReader(request.connection.reader,
                               request.contentLength))
   elif HttpRequestFlags.UnboundBody in request.requestFlags:
-    ok(newChunkedStreamReader(request.connection.mainReader))
+    ok(newChunkedStreamReader(request.connection.reader))
   else:
     err("Request do not have body available")
 
@@ -326,7 +339,7 @@ proc handleExpect*(request: HttpRequestRef) {.async.} =
       if request.version == HttpVersion11:
         try:
           let message = $request.version & " " & $Http100 & "\r\n\r\n"
-          await request.connection.mainWriter.write(message)
+          await request.connection.writer.write(message)
         except CancelledError as exc:
           raise exc
         except AsyncStreamWriteError, AsyncStreamIncompleteError:
@@ -379,7 +392,7 @@ proc sendErrorResponse(conn: HttpConnectionRef, version: HttpVersion,
   if len(databody) > 0:
     answer.add(databody)
   try:
-    await conn.mainWriter.write(answer)
+    await conn.writer.write(answer)
     return true
   except CancelledError:
     return false
@@ -388,44 +401,73 @@ proc sendErrorResponse(conn: HttpConnectionRef, version: HttpVersion,
   except AsyncStreamIncompleteError:
     return false
 
-proc getRequest*(conn: HttpConnectionRef): Future[HttpRequestRef] {.async.} =
+proc getRequest(conn: HttpConnectionRef): Future[HttpRequestRef] {.async.} =
   try:
     conn.buffer.setLen(conn.server.maxHeadersSize)
-    let res = await conn.transp.readUntil(addr conn.buffer[0], len(conn.buffer),
+    let res = await conn.reader.readUntil(addr conn.buffer[0], len(conn.buffer),
                                           HeadersMark)
     conn.buffer.setLen(res)
     let header = parseRequest(conn.buffer)
     if header.failed():
-      discard await conn.sendErrorResponse(HttpVersion11, Http400, false)
       raise newHttpCriticalError("Malformed request recieved")
     else:
       let res = prepareRequest(conn, header)
       if res.isErr():
-        discard await conn.sendErrorResponse(HttpVersion11, Http400, false)
         raise newHttpCriticalError("Invalid request received")
       else:
         return res.get()
-  except TransportOsError:
-    raise newHttpCriticalError("Unexpected OS error")
-  except TransportIncompleteError:
+  except AsyncStreamIncompleteError:
     raise newHttpCriticalError("Remote peer disconnected")
-  except TransportLimitError:
-    discard await conn.sendErrorResponse(HttpVersion11, Http413, false)
-    raise newHttpCriticalError("Maximum size of request headers reached")
+  except AsyncStreamReadError:
+    raise newHttpCriticalError("Connection with remote peer has been lost")
+  except AsyncStreamLimitError:
+    raise newHttpCriticalError("Maximum size of request headers reached",
+                               Http413)
 
 proc new(ht: typedesc[HttpConnectionRef], server: HttpServerRef,
          transp: StreamTransport): HttpConnectionRef =
+  let mainReader = newAsyncStreamReader(transp)
+  let mainWriter = newAsyncStreamWriter(transp)
+  let tlsStream =
+    if HttpServerFlags.Secure in server.flags:
+      newTLSServerAsyncStream(mainReader, mainWriter, server.tlsPrivateKey,
+                              server.tlsCertificate,
+                              minVersion = TLSVersion.TLS12,
+                              flags = server.secureFlags)
+    else:
+      nil
+
+  let reader =
+    if isNil(tlsStream):
+      mainReader
+    else:
+      cast[AsyncStreamReader](tlsStream.reader)
+
+  let writer =
+    if isNil(tlsStream):
+      mainWriter
+    else:
+      cast[AsyncStreamWriter](tlsStream.writer)
+
   HttpConnectionRef(
     transp: transp,
     server: server,
     buffer: newSeq[byte](server.maxHeadersSize),
-    mainReader: newAsyncStreamReader(transp),
-    mainWriter: newAsyncStreamWriter(transp)
+    mainReader: mainReader,
+    mainWriter: mainWriter,
+    tlsStream: tlsStream,
+    reader: reader,
+    writer: writer
   )
 
-proc close(conn: HttpConnectionRef): Future[void] =
-  allFutures(conn.mainReader.closeWait(), conn.mainWriter.closeWait(),
-             conn.transp.closeWait())
+proc close(conn: HttpConnectionRef) {.async.} =
+  if HttpServerFlags.Secure in conn.server.flags:
+    # First we will close TLS streams.
+    await allFutures(conn.reader.closeWait(), conn.writer.closeWait())
+
+  # After we going to close everything else.
+  await allFutures(conn.mainReader.closeWait(), conn.mainWriter.closeWait(),
+                   conn.transp.closeWait())
 
 proc close(req: HttpRequestRef) {.async.} =
   if req.response.isSome():
@@ -434,10 +476,57 @@ proc close(req: HttpRequestRef) {.async.} =
        not(isNil(resp.chunkedWriter)):
       await resp.chunkedWriter.closeWait()
 
-proc processLoop(server: HttpServerRef, transp: StreamTransport) {.async.} =
+proc createConnection(server: HttpServerRef,
+                      transp: StreamTransport): Future[HttpConnectionRef] {.
+     async.} =
   var conn = HttpConnectionRef.new(server, transp)
+  if HttpServerFlags.Secure notin server.flags:
+    # Non secure connection
+    return conn
+
+  try:
+    await handshake(conn.tlsStream)
+    return conn
+  except CancelledError as exc:
+    await conn.close()
+    raise exc
+  except TLSStreamError:
+    await conn.close()
+    raise newHttpCriticalError("Unable to establish secure connection")
+
+proc processLoop(server: HttpServerRef, transp: StreamTransport) {.async.} =
+  var
+    conn: HttpConnectionRef
+    connArg: RequestFence[HttpRequestRef]
+    runLoop = false
+
+  try:
+    conn = await createConnection(server, transp)
+    runLoop = true
+  except CancelledError:
+    # We could be cancelled only when we perform TLS handshake, connection
+    server.connections.del(transp.getId())
+    return
+  except HttpCriticalError as exc:
+    let error = HttpProcessError.init(HTTPServerError.CriticalError, exc,
+                                      transp.remoteAddress(), exc.code)
+    connArg = RequestFence[HttpRequestRef].err(error)
+    runLoop = false
+
+  if not(runLoop):
+    try:
+      # We still want to notify process callback about failure, but we ignore
+      # result and swallow all the exceptions.
+      discard await server.processCallback(connArg)
+    except CancelledError:
+      server.connections.del(transp.getId())
+      return
+    except CatchableError as exc:
+      # There should be no exceptions, so we will raise `Defect`.
+      raise newHttpDefect("Unexpected exception catched [" & $exc.name & "]")
+
   var breakLoop = false
-  while true:
+  while runLoop:
     var
       arg: RequestFence[HttpRequestRef]
       resp: HttpResponseRef
@@ -449,19 +538,19 @@ proc processLoop(server: HttpServerRef, transp: StreamTransport) {.async.} =
       breakLoop = true
     except AsyncTimeoutError as exc:
       let error = HttpProcessError.init(HTTPServerError.TimeoutError, exc,
-                                        transp.remoteAddress())
+                                        transp.remoteAddress(), Http408)
       arg = RequestFence[HttpRequestRef].err(error)
     except HttpRecoverableError as exc:
       let error = HttpProcessError.init(HTTPServerError.RecoverableError, exc,
-                                        transp.remoteAddress())
+                                        transp.remoteAddress(), exc.code)
       arg = RequestFence[HttpRequestRef].err(error)
     except HttpCriticalError as exc:
       let error = HttpProcessError.init(HTTPServerError.CriticalError, exc,
-                                        transp.remoteAddress())
+                                        transp.remoteAddress(), exc.code)
       arg = RequestFence[HttpRequestRef].err(error)
     except CatchableError as exc:
       let error = HttpProcessError.init(HTTPServerError.CatchableError, exc,
-                                        transp.remoteAddress())
+                                        transp.remoteAddress(), Http500)
       arg = RequestFence[HttpRequestRef].err(error)
 
     if breakLoop:
@@ -481,15 +570,16 @@ proc processLoop(server: HttpServerRef, transp: StreamTransport) {.async.} =
       break
 
     if arg.isErr():
+      let code = arg.error().code
       case arg.error().error
       of HTTPServerError.TimeoutError:
-        discard await conn.sendErrorResponse(HttpVersion11, Http408, false)
+        discard await conn.sendErrorResponse(HttpVersion11, code, false)
       of HTTPServerError.RecoverableError:
-        discard await conn.sendErrorResponse(HttpVersion11, Http400, false)
+        discard await conn.sendErrorResponse(HttpVersion11, code, false)
       of HTTPServerError.CriticalError:
-        discard await conn.sendErrorResponse(HttpVersion11, Http400, false)
+        discard await conn.sendErrorResponse(HttpVersion11, code, false)
       of HTTPServerError.CatchableError:
-        discard await conn.sendErrorResponse(HttpVersion11, Http400, false)
+        discard await conn.sendErrorResponse(HttpVersion11, code, false)
       break
     else:
       let request = arg.get()
@@ -521,7 +611,10 @@ proc processLoop(server: HttpServerRef, transp: StreamTransport) {.async.} =
       if not(keepConn):
         break
 
-  await conn.close()
+  # Connection could be `nil` only when secure handshake is failed.
+  if not(isNil(conn)):
+    await conn.close()
+
   server.connections.del(transp.getId())
   # if server.maxConnections > 0:
   #   server.semaphore.release()
@@ -784,9 +877,9 @@ proc sendBody*(resp: HttpResponseRef, pbytes: pointer, nbytes: int) {.async.} =
   resp.state = HttpResponseState.Prepared
   try:
     resp.state = HttpResponseState.Sending
-    await resp.connection.mainWriter.write(responseHeaders)
+    await resp.connection.writer.write(responseHeaders)
     if nbytes > 0:
-      await resp.connection.mainWriter.write(pbytes, nbytes)
+      await resp.connection.writer.write(pbytes, nbytes)
     resp.state = HttpResponseState.Finished
   except CancelledError as exc:
     resp.state = HttpResponseState.Cancelled
@@ -802,9 +895,9 @@ proc sendBody*[T: string|seq[byte]](resp: HttpResponseRef, data: T) {.async.} =
   resp.state = HttpResponseState.Prepared
   try:
     resp.state = HttpResponseState.Sending
-    await resp.connection.mainWriter.write(responseHeaders)
+    await resp.connection.writer.write(responseHeaders)
     if len(data) > 0:
-      await resp.connection.mainWriter.write(data)
+      await resp.connection.writer.write(data)
     resp.state = HttpResponseState.Finished
   except CancelledError as exc:
     resp.state = HttpResponseState.Cancelled
@@ -821,9 +914,9 @@ proc sendError*(resp: HttpResponseRef, code: HttpCode, body = "") {.async.} =
   resp.state = HttpResponseState.Prepared
   try:
     resp.state = HttpResponseState.Sending
-    await resp.connection.mainWriter.write(responseHeaders)
+    await resp.connection.writer.write(responseHeaders)
     if len(body) > 0:
-      await resp.connection.mainWriter.write(body)
+      await resp.connection.writer.write(body)
     resp.state = HttpResponseState.Finished
   except CancelledError as exc:
     resp.state = HttpResponseState.Cancelled
@@ -841,8 +934,8 @@ proc prepare*(resp: HttpResponseRef) {.async.} =
   resp.state = HttpResponseState.Prepared
   try:
     resp.state = HttpResponseState.Sending
-    await resp.connection.mainWriter.write(responseHeaders)
-    resp.chunkedWriter = newChunkedStreamWriter(resp.connection.mainWriter)
+    await resp.connection.writer.write(responseHeaders)
+    resp.chunkedWriter = newChunkedStreamWriter(resp.connection.writer)
     resp.flags.incl(HttpResponseFlags.Chunked)
   except CancelledError as exc:
     resp.state = HttpResponseState.Cancelled

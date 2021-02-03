@@ -10,8 +10,6 @@ import stew/results, httputils, strutils, uri
 export results, httputils, strutils
 
 const
-  useChroniclesLogging* {.booldefine.} = false
-
   HeadersMark* = @[byte(0x0D), byte(0x0A), byte(0x0D), byte(0x0A)]
   PostMethods* = {MethodPost, MethodPatch, MethodPut, MethodDelete}
 
@@ -19,9 +17,12 @@ type
   HttpResult*[T] = Result[T, string]
   HttpResultCode*[T] = Result[T, HttpCode]
 
+  HttpDefect* = object of Defect
   HttpError* = object of CatchableError
   HttpCriticalError* = object of HttpError
+    code*: HttpCode
   HttpRecoverableError* = object of HttpError
+    code*: HttpCode
 
   TransferEncodingFlags* {.pure.} = enum
     Identity, Chunked, Compress, Deflate, Gzip
@@ -29,15 +30,19 @@ type
   ContentEncodingFlags* {.pure.} = enum
     Identity, Br, Compress, Deflate, Gzip
 
-template log*(body: untyped) =
-  when defined(useChroniclesLogging):
-    body
+proc newHttpDefect*(msg: string): ref HttpDefect =
+  newException(HttpDefect, msg)
 
-proc newHttpCriticalError*(msg: string): ref HttpCriticalError =
-  newException(HttpCriticalError, msg)
+proc newHttpCriticalError*(msg: string, code = Http400): ref HttpCriticalError =
+  var tre = newException(HttpCriticalError, msg)
+  tre.code = code
+  tre
 
-proc newHttpRecoverableError*(msg: string): ref HttpRecoverableError =
-  newException(HttpRecoverableError, msg)
+proc newHttpRecoverableError*(msg: string,
+                              code = Http400): ref HttpRecoverableError =
+  var tre = newException(HttpRecoverableError, msg)
+  tre.code = code
+  tre
 
 iterator queryParams*(query: string): tuple[key: string, value: string] =
   ## Iterate over url-encoded query string.
