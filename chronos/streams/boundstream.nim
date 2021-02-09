@@ -19,14 +19,19 @@ import asyncstream, ../transports/stream, ../transports/common
 export asyncstream, stream, timer, common
 
 type
+  BoundCmp* {.pure.} = enum
+    Equal, LessOrEqual
+
   BoundedStreamReader* = ref object of AsyncStreamReader
     boundSize: int
     boundary: seq[byte]
     offset: int
+    cmpop: BoundCmp
 
   BoundedStreamWriter* = ref object of AsyncStreamWriter
     boundSize: int
     offset: int
+    cmpop: BoundCmp
 
   BoundedStreamError* = object of AsyncStreamError
   BoundedStreamIncompleteError* = object of BoundedStreamError
@@ -46,18 +51,18 @@ template newBoundedStreamOverflowError*(): ref BoundedStreamError =
 proc readUntilBoundary*(rstream: AsyncStreamReader, pbytes: pointer,
                         nbytes: int, sep: seq[byte]): Future[int] {.async.} =
   doAssert(not(isNil(pbytes)), "pbytes must not be nil")
-  doAssert(len(sep) > 0, "separator must not be empty")
   doAssert(nbytes >= 0, "nbytes must be non-negative value")
   checkStreamClosed(rstream)
+
+  if nbytes == 0:
+    return 0
 
   var k = 0
   var state = 0
   var pbuffer = cast[ptr UncheckedArray[byte]](pbytes)
-  var error: ref AsyncStreamIncompleteError
 
   proc predicate(data: openarray[byte]): tuple[consumed: int, done: bool] =
     if len(data) == 0:
-      error = newAsyncStreamIncompleteError()
       (0, true)
     else:
       var index = 0
@@ -68,19 +73,17 @@ proc readUntilBoundary*(rstream: AsyncStreamReader, pbytes: pointer,
         inc(index)
         pbuffer[k] = ch
         inc(k)
-        if sep[state] == ch:
-          inc(state)
-          if state == len(sep):
-            break
-        else:
-          state = 0
-      (index, state == len(sep) or (k == nbytes))
+        if len(sep) > 0:
+          if sep[state] == ch:
+            inc(state)
+            if state == len(sep):
+              break
+          else:
+            state = 0
+      (index, (state == len(sep)) or (k == nbytes))
 
   await rstream.readMessage(predicate)
-  if not isNil(error):
-    raise error
-  else:
-    return k
+  return k
 
 func endsWith(s, suffix: openarray[byte]): bool =
   var i = 0
@@ -95,65 +98,55 @@ proc boundedReadLoop(stream: AsyncStreamReader) {.async.} =
   rstream.state = AsyncStreamState.Running
   var buffer = newSeq[byte](rstream.buffer.bufferLen())
   while true:
-    if len(rstream.boundary) == 0:
-      # Only size boundary set
-      if rstream.offset < rstream.boundSize:
-        let toRead = min(rstream.boundSize - rstream.offset,
-                         rstream.buffer.bufferLen())
-        try:
-          await rstream.rsource.readExactly(rstream.buffer.getBuffer(), toRead)
-          rstream.offset = rstream.offset + toRead
-          rstream.buffer.update(toRead)
-          await rstream.buffer.transfer()
-        except AsyncStreamIncompleteError:
-          rstream.state = AsyncStreamState.Error
-          rstream.error = newBoundedStreamIncompleteError()
-        except AsyncStreamReadError as exc:
-          rstream.state = AsyncStreamState.Error
-          rstream.error = exc
-        except CancelledError:
-          rstream.state = AsyncStreamState.Stopped
-
-        if rstream.state != AsyncStreamState.Running:
-          break
-      else:
-        rstream.state = AsyncStreamState.Finished
-        await rstream.buffer.transfer()
-        break
-    else:
-      # Sequence boundary set
-      if ((rstream.boundSize >= 0) and (rstream.offset < rstream.boundSize)) or
-         (rstream.boundSize < 0):
-        let toRead =
-          if rstream.boundSize < 0:
-            len(buffer)
-          else:
-            min(rstream.boundSize - rstream.offset, len(buffer))
-        try:
-          let res = await readUntilBoundary(rstream.rsource, addr buffer[0],
-                                            toRead, rstream.boundary)
-          if endsWith(buffer.toOpenArray(0, res - 1), rstream.boundary):
-            let length = res - len(rstream.boundary)
-            rstream.offset = rstream.offset + length
-            await upload(addr rstream.buffer, addr buffer[0], length)
-            rstream.state = AsyncStreamState.Finished
+    # r1 is `true` if `boundSize` was not set.
+    let r1 = rstream.boundSize < 0
+    # r2 is `true` if number of bytes read is less then `boundSize`.
+    let r2 = (rstream.boundSize > 0) and (rstream.offset < rstream.boundSize)
+    if r1 or r2:
+      let toRead =
+        if rstream.boundSize < 0:
+          len(buffer)
+        else:
+          min(rstream.boundSize - rstream.offset, len(buffer))
+      try:
+        let res = await readUntilBoundary(rstream.rsource, addr buffer[0],
+                                          toRead, rstream.boundary)
+        if res > 0:
+          if len(rstream.boundary) > 0:
+            if endsWith(buffer.toOpenArray(0, res - 1), rstream.boundary):
+              let length = res - len(rstream.boundary)
+              rstream.offset = rstream.offset + length
+              await upload(addr rstream.buffer, addr buffer[0], length)
+              rstream.state = AsyncStreamState.Finished
+            else:
+              rstream.offset = rstream.offset + res
+              await upload(addr rstream.buffer, addr buffer[0], res)
           else:
             rstream.offset = rstream.offset + res
             await upload(addr rstream.buffer, addr buffer[0], res)
-        except AsyncStreamIncompleteError:
-          rstream.state = AsyncStreamState.Error
-          rstream.error = newBoundedStreamIncompleteError()
-        except AsyncStreamReadError as exc:
-          rstream.state = AsyncStreamState.Error
-          rstream.error = exc
-        except CancelledError:
-          rstream.state = AsyncStreamState.Stopped
+        else:
+          case rstream.cmpop
+          of BoundCmp.Equal:
+            rstream.state = AsyncStreamState.Error
+            rstream.error = newBoundedStreamIncompleteError()
+          of BoundCmp.LessOrEqual:
+            rstream.state = AsyncStreamState.Finished
 
-        if rstream.state != AsyncStreamState.Running:
-          break
-      else:
-        rstream.state = AsyncStreamState.Finished
+      except AsyncStreamReadError as exc:
+        rstream.state = AsyncStreamState.Error
+        rstream.error = exc
+      except CancelledError:
+        rstream.state = AsyncStreamState.Stopped
+
+      if rstream.state != AsyncStreamState.Running:
+        if rstream.state == AsyncStreamState.Finished:
+          # This is state when BoundCmp.LessOrEqual and readExactly returned
+          # `AsyncStreamIncompleteError`.
+          await rstream.buffer.transfer()
         break
+    else:
+      rstream.state = AsyncStreamState.Finished
+      break
 
   # Without this additional wait, procedures such as `read()` could got stuck
   # in `await.buffer.wait()` because procedures are unable to detect EOF while
@@ -191,8 +184,13 @@ proc boundedWriteLoop(stream: AsyncStreamWriter) {.async.} =
           error = newBoundedStreamOverflowError()
       else:
         if wstream.offset != wstream.boundSize:
-          wstream.state = AsyncStreamState.Error
-          error = newBoundedStreamIncompleteError()
+          case wstream.cmpop
+          of BoundCmp.Equal:
+            wstream.state = AsyncStreamState.Error
+            error = newBoundedStreamIncompleteError()
+          of BoundCmp.LessOrEqual:
+            wstream.state = AsyncStreamState.Finished
+            item.future.complete()
         else:
           wstream.state = AsyncStreamState.Finished
           item.future.complete()
@@ -235,22 +233,26 @@ proc init*(child: BoundedStreamReader, rsource: AsyncStreamReader,
 proc newBoundedStreamReader*[T](rsource: AsyncStreamReader,
                                 boundSize: int,
                                 boundary: openarray[byte] = [],
+                                comparison = BoundCmp.Equal,
                                 bufferSize = BoundedBufferSize,
                                 udata: ref T): BoundedStreamReader =
-  doAssert(boundSize >= 0 or len(boundary) > 0,
+  doAssert(not(boundSize <= 0 and (len(boundary) == 0)),
            "At least one type of boundary should be set")
-  var res = BoundedStreamReader(boundSize: boundSize, boundary: @boundary)
+  var res = BoundedStreamReader(boundSize: boundSize, boundary: @boundary,
+                                cmpop: comparison)
   res.init(rsource, bufferSize, udata)
   res
 
 proc newBoundedStreamReader*(rsource: AsyncStreamReader,
                              boundSize: int,
                              boundary: openarray[byte] = [],
+                             comparison = BoundCmp.Equal,
                              bufferSize = BoundedBufferSize,
                              ): BoundedStreamReader =
-  doAssert(boundSize >= 0 or len(boundary) > 0,
+  doAssert(not(boundSize <= 0 and (len(boundary) == 0)),
            "At least one type of boundary should be set")
-  var res = BoundedStreamReader(boundSize: boundSize, boundary: @boundary)
+  var res = BoundedStreamReader(boundSize: boundSize, boundary: @boundary,
+                                cmpop: comparison)
   res.init(rsource, bufferSize)
   res
 
@@ -265,16 +267,20 @@ proc init*(child: BoundedStreamWriter, wsource: AsyncStreamWriter,
 
 proc newBoundedStreamWriter*[T](wsource: AsyncStreamWriter,
                                 boundSize: int,
+                                comparison = BoundCmp.Equal,
                                 queueSize = AsyncStreamDefaultQueueSize,
                                 udata: ref T): BoundedStreamWriter =
-  var res = BoundedStreamWriter(boundSize: boundSize)
+  doAssert(boundSize > 0, "Bound size must be bigger then zero")
+  var res = BoundedStreamWriter(boundSize: boundSize, cmpop: comparison)
   res.init(wsource, queueSize, udata)
   res
 
 proc newBoundedStreamWriter*(wsource: AsyncStreamWriter,
                              boundSize: int,
+                             comparison = BoundCmp.Equal,
                              queueSize = AsyncStreamDefaultQueueSize,
                              ): BoundedStreamWriter =
-  var res = BoundedStreamWriter(boundSize: boundSize)
+  doAssert(boundSize > 0, "Bound size must be bigger then zero")
+  var res = BoundedStreamWriter(boundSize: boundSize, cmpop: comparison)
   res.init(wsource, queueSize)
   res
