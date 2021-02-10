@@ -219,7 +219,7 @@ proc boundedWriteLoop(stream: AsyncStreamWriter) {.async.} =
 
 proc bytesLeft*(stream: BoundedStreamRW): uint64 =
   ## Returns number of bytes left in stream.
-  stream.boundSize - stream.bytesCount
+  uint64(stream.boundSize) - stream.bytesCount
 
 proc init*[T](child: BoundedStreamReader, rsource: AsyncStreamReader,
               bufferSize = BoundedBufferSize, udata: ref T) =
