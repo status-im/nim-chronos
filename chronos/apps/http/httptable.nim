@@ -9,6 +9,8 @@
 #              MIT license (LICENSE-MIT)
 import std/[tables, strutils]
 
+{.push raises: [Defect].}
+
 type
   HttpTable* = object
     table: Table[string, seq[string]]
@@ -50,10 +52,11 @@ proc bytesToDec*[T: byte|char](src: openarray[T]): uint64 =
   v
 
 proc add*(ht: var HttpTables, key: string, value: string) =
+  var default: seq[string]
   let lowkey = key.toLowerAscii()
   var nitem = @[value]
   if ht.table.hasKeyOrPut(lowkey, nitem):
-    var oitem = ht.table[lowkey]
+    var oitem = ht.table.getOrDefault(lowkey, default)
     oitem.add(value)
     ht.table[lowkey] = oitem
 
@@ -64,7 +67,8 @@ proc set*(ht: var HttpTables, key: string, value: string) =
   let lowkey = key.toLowerAscii()
   ht.table[lowkey] = @[value]
 
-proc contains*(ht: var HttpTables, key: string): bool =
+proc contains*(ht: var HttpTables, key: string): bool {.
+     raises: [Defect].} =
   ht.table.contains(key.toLowerAscii())
 
 proc getList*(ht: HttpTables, key: string,
@@ -147,24 +151,24 @@ proc normalizeHeaderName*(value: string): string =
   res
 
 iterator stringItems*(ht: HttpTables,
-                      normalizeKey = false): tuple[key: string, value: string] =
+                      normKey = false): tuple[key: string, value: string] =
   ## Iterate over HttpTable values.
   ##
-  ## If ``normalizeKey`` is true, key name value will be normalized using
+  ## If ``normKey`` is true, key name value will be normalized using
   ## normalizeHeaderName() procedure.
   for k, v in ht.table.pairs():
-    let key = if normalizeKey: normalizeHeaderName(k) else: k
+    let key = if normKey: normalizeHeaderName(k) else: k
     for item in v:
       yield (key, item)
 
 iterator items*(ht: HttpTables,
-                normalizeKey = false): tuple[key: string, value: seq[string]] =
+                normKey = false): tuple[key: string, value: seq[string]] =
   ## Iterate over HttpTable values.
   ##
-  ## If ``normalizeKey`` is true, key name value will be normalized using
+  ## If ``normKey`` is true, key name value will be normalized using
   ## normalizeHeaderName() procedure.
   for k, v in ht.table.pairs():
-    let key = if normalizeKey: normalizeHeaderName(k) else: k
+    let key = if normKey: normalizeHeaderName(k) else: k
     yield (key, v)
 
 proc `$`*(ht: HttpTables): string =

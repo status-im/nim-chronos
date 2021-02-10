@@ -50,14 +50,16 @@ type
 
   BChar* = byte | char
 
-proc startsWith*(s, prefix: openarray[byte]): bool =
+proc startsWith(s, prefix: openarray[byte]): bool {.
+     raises: [Defect].} =
   var i = 0
   while true:
     if i >= len(prefix): return true
     if i >= len(s) or s[i] != prefix[i]: return false
     inc(i)
 
-proc parseUntil*(s, until: openarray[byte]): int =
+proc parseUntil(s, until: openarray[byte]): int {.
+     raises: [Defect].} =
   var i = 0
   while i < len(s):
     if len(until) > 0 and s[i] == until[0]:
@@ -68,9 +70,33 @@ proc parseUntil*(s, until: openarray[byte]): int =
     inc(i)
   -1
 
+func setPartNames(part: var MultiPart): HttpResult[void] {.
+     raises: [Defect].} =
+  if part.headers.count("content-disposition") != 1:
+    return err("Content-Disposition header is incorrect")
+  var header = part.headers.getString("content-disposition")
+  let disp = parseDisposition(header, false)
+  if disp.failed():
+    return err("Content-Disposition header value is incorrect")
+  let dtype = disp.dispositionType(header.toOpenArrayByte(0, len(header) - 1))
+  if dtype.toLowerAscii() != "form-data":
+    return err("Content-Disposition type is incorrect")
+  for k, v in disp.fields(header.toOpenArrayByte(0, len(header) - 1)):
+    case k.toLowerAscii()
+    of "name":
+      part.name = v
+    of "filename":
+      part.filename = v
+    else:
+      discard
+  if len(part.name) == 0:
+    part.name = $part.counter
+  ok()
+
 proc init*[A: BChar, B: BChar](mpt: typedesc[MultiPartReader],
                                buffer: openarray[A],
-                               boundary: openarray[B]): MultiPartReader =
+                               boundary: openarray[B]): MultiPartReader {.
+     raises: [Defect].} =
   ## Create new MultiPartReader instance with `buffer` interface.
   ##
   ## ``buffer`` - is buffer which will be used to read data.
@@ -94,7 +120,8 @@ proc init*[A: BChar, B: BChar](mpt: typedesc[MultiPartReader],
 proc new*[B: BChar](mpt: typedesc[MultiPartReaderRef],
                     stream: HttpBodyReader,
                     boundary: openarray[B],
-                    partHeadersMaxSize = 4096): MultiPartReaderRef =
+                    partHeadersMaxSize = 4096): MultiPartReaderRef {.
+     raises: [Defect].} =
   ## Create new MultiPartReader instance with `stream` interface.
   ##
   ## ``stream`` is stream used to read data.
@@ -112,28 +139,6 @@ proc new*[B: BChar](mpt: typedesc[MultiPartReaderRef],
   MultiPartReaderRef(kind: MultiPartSource.Stream, firstTime: true,
                      stream: stream, offset: 0, boundary: fboundary,
                      buffer: newSeq[byte](partHeadersMaxSize))
-
-func setPartNames(part: var MultiPart): HttpResult[void] =
-  if part.headers.count("content-disposition") != 1:
-    return err("Content-Disposition header is incorrect")
-  var header = part.headers.getString("content-disposition")
-  let disp = parseDisposition(header, false)
-  if disp.failed():
-    return err("Content-Disposition header value is incorrect")
-  let dtype = disp.dispositionType(header.toOpenArrayByte(0, len(header) - 1))
-  if dtype.toLowerAscii() != "form-data":
-    return err("Content-Disposition type is incorrect")
-  for k, v in disp.fields(header.toOpenArrayByte(0, len(header) - 1)):
-    case k.toLowerAscii()
-    of "name":
-      part.name = v
-    of "filename":
-      part.filename = v
-    else:
-      discard
-  if len(part.name) == 0:
-    part.name = $part.counter
-  ok()
 
 proc readPart*(mpr: MultiPartReaderRef): Future[MultiPart] {.async.} =
   doAssert(mpr.kind == MultiPartSource.Stream)
@@ -235,7 +240,8 @@ proc consumeBody*(mp: MultiPart) {.async.} =
   of MultiPartSource.Buffer:
     discard
 
-proc getBodyStream*(mp: MultiPart): HttpResult[AsyncStreamReader] =
+proc getBodyStream*(mp: MultiPart): HttpResult[AsyncStreamReader] {.
+     raises: [Defect].} =
   ## Get multipart's ``mp`` stream, which can be used to obtain value of the
   ## part.
   case mp.kind
@@ -260,7 +266,8 @@ proc closeWait*(mpr: MultiPartReaderRef) {.async.} =
   else:
     discard
 
-proc getBytes*(mp: MultiPart): seq[byte] =
+proc getBytes*(mp: MultiPart): seq[byte] {.
+     raises: [Defect].} =
   ## Returns value for MultiPart ``mp`` as sequence of bytes.
   case mp.kind
   of MultiPartSource.Buffer:
@@ -269,7 +276,8 @@ proc getBytes*(mp: MultiPart): seq[byte] =
     doAssert(not(mp.stream.atEof()), "Value is not obtained yet")
     mp.buffer
 
-proc getString*(mp: MultiPart): string =
+proc getString*(mp: MultiPart): string {.
+     raises: [Defect].} =
   ## Returns value for MultiPart ``mp`` as string.
   case mp.kind
   of MultiPartSource.Buffer:
@@ -288,7 +296,8 @@ proc getString*(mp: MultiPart): string =
     else:
       ""
 
-proc atEoM*(mpr: var MultiPartReader): bool =
+proc atEoM*(mpr: var MultiPartReader): bool {.
+     raises: [Defect].} =
   ## Procedure returns ``true`` if MultiPartReader has reached the end of
   ## multipart message.
   case mpr.kind
@@ -297,7 +306,8 @@ proc atEoM*(mpr: var MultiPartReader): bool =
   of MultiPartSource.Stream:
     mpr.stream.atEof()
 
-proc atEoM*(mpr: MultiPartReaderRef): bool =
+proc atEoM*(mpr: MultiPartReaderRef): bool {.
+     raises: [Defect].} =
   ## Procedure returns ``true`` if MultiPartReader has reached the end of
   ## multipart message.
   case mpr.kind
@@ -306,7 +316,8 @@ proc atEoM*(mpr: MultiPartReaderRef): bool =
   of MultiPartSource.Stream:
     mpr.stream.atEof()
 
-proc getPart*(mpr: var MultiPartReader): Result[MultiPart, string] =
+proc getPart*(mpr: var MultiPartReader): Result[MultiPart, string] {.
+     raises: [Defect].} =
   ## Get multipart part from MultiPartReader instance.
   ##
   ## This procedure will work only for MultiPartReader with buffer source.
@@ -396,11 +407,13 @@ proc getPart*(mpr: var MultiPartReader): Result[MultiPart, string] =
   else:
     err("Incorrect multipart form")
 
-func isEmpty*(mp: MultiPart): bool =
+func isEmpty*(mp: MultiPart): bool {.
+     raises: [Defect].} =
   ## Returns ``true`` is multipart ``mp`` is not initialized/filled yet.
   mp.counter == 0
 
-func getMultipartBoundary*(ch: openarray[string]): HttpResult[string] =
+func getMultipartBoundary*(ch: openarray[string]): HttpResult[string] {.
+     raises: [Defect].} =
   ## Returns ``multipart/form-data`` boundary value from ``Content-Type``
   ## header.
   ##
