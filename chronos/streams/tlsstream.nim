@@ -416,7 +416,7 @@ proc newTLSClientAsyncStream*(rsource: AsyncStreamReader,
                               wsource: AsyncStreamWriter,
                               serverName: string,
                               bufferSize = SSL_BUFSIZE_BIDI,
-                              minVersion = TLSVersion.TLS11,
+                              minVersion = TLSVersion.TLS12,
                               maxVersion = TLSVersion.TLS12,
                               flags: set[TLSFlags] = {}): TLSAsyncStream =
   ## Create new TLS asynchronous stream for outbound (client) connections
