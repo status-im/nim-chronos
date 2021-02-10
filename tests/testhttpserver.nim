@@ -8,7 +8,6 @@
 import std/[strutils, unittest, algorithm, strutils]
 import ../chronos, ../chronos/apps
 
-
 # To create self-signed certificate and key you can use openssl
 # openssl req -new -x509 -sha256 -newkey rsa:2048 -nodes \
 # -keyout example-com.key.pem -days 3650 -out example-com.cert.pem
@@ -770,6 +769,107 @@ suite "HTTP server testing suite":
         check bytesToDec($char(i)) == 0'u64
     for item in TestVectors:
       check bytesToDec(item[0]) == item[1]
+
+  test "getTransferEncoding() test":
+    var encodings = [
+      "chunked", "compress", "deflate", "gzip", "identity", "x-gzip"
+    ]
+
+    const FlagsVectors = [
+      {
+        TransferEncodingFlags.Identity, TransferEncodingFlags.Chunked,
+        TransferEncodingFlags.Compress, TransferEncodingFlags.Deflate,
+        TransferEncodingFlags.Gzip
+      },
+      {
+        TransferEncodingFlags.Identity, TransferEncodingFlags.Compress,
+        TransferEncodingFlags.Deflate, TransferEncodingFlags.Gzip
+      },
+      {
+        TransferEncodingFlags.Identity, TransferEncodingFlags.Deflate,
+        TransferEncodingFlags.Gzip
+      },
+      { TransferEncodingFlags.Identity, TransferEncodingFlags.Gzip },
+      { TransferEncodingFlags.Identity, TransferEncodingFlags.Gzip },
+      { TransferEncodingFlags.Gzip },
+      { TransferEncodingFlags.Identity }
+    ]
+
+    for i in 0 ..< 7:
+      var checkEncodings = @encodings
+      if i - 1 >= 0:
+        for k in 0 .. (i - 1):
+          checkEncodings.delete(0)
+
+      while nextPermutation(checkEncodings):
+        let res1 = getTransferEncoding([checkEncodings.join(", ")])
+        let res2 = getTransferEncoding([checkEncodings.join(",")])
+        let res3 = getTransferEncoding([checkEncodings.join("")])
+        let res4 = getTransferEncoding([checkEncodings.join(" ")])
+        let res5 = getTransferEncoding([checkEncodings.join(" , ")])
+        check:
+          res1.isOk()
+          res1.get() == FlagsVectors[i]
+          res2.isOk()
+          res2.get() == FlagsVectors[i]
+          res3.isErr()
+          res5.isOk()
+          res5.get() == FlagsVectors[i]
+
+    check:
+      getTransferEncoding([]).tryGet() == { TransferEncodingFlags.Identity }
+      getTransferEncoding(["", ""]).tryGet() ==
+        { TransferEncodingFlags.Identity }
+
+  test "getContentEncoding() test":
+    var encodings = [
+      "br", "compress", "deflate", "gzip", "identity", "x-gzip"
+    ]
+
+    const FlagsVectors = [
+      {
+        ContentEncodingFlags.Identity, ContentEncodingFlags.Br,
+        ContentEncodingFlags.Compress, ContentEncodingFlags.Deflate,
+        ContentEncodingFlags.Gzip
+      },
+      {
+        ContentEncodingFlags.Identity, ContentEncodingFlags.Compress,
+        ContentEncodingFlags.Deflate, ContentEncodingFlags.Gzip
+      },
+      {
+        ContentEncodingFlags.Identity, ContentEncodingFlags.Deflate,
+        ContentEncodingFlags.Gzip
+      },
+      { ContentEncodingFlags.Identity, ContentEncodingFlags.Gzip },
+      { ContentEncodingFlags.Identity, ContentEncodingFlags.Gzip },
+      { ContentEncodingFlags.Gzip },
+      { ContentEncodingFlags.Identity }
+    ]
+
+    for i in 0 ..< 7:
+      var checkEncodings = @encodings
+      if i - 1 >= 0:
+        for k in 0 .. (i - 1):
+          checkEncodings.delete(0)
+
+      while nextPermutation(checkEncodings):
+        let res1 = getContentEncoding([checkEncodings.join(", ")])
+        let res2 = getContentEncoding([checkEncodings.join(",")])
+        let res3 = getContentEncoding([checkEncodings.join("")])
+        let res4 = getContentEncoding([checkEncodings.join(" ")])
+        let res5 = getContentEncoding([checkEncodings.join(" , ")])
+        check:
+          res1.isOk()
+          res1.get() == FlagsVectors[i]
+          res2.isOk()
+          res2.get() == FlagsVectors[i]
+          res3.isErr()
+          res5.isOk()
+          res5.get() == FlagsVectors[i]
+
+    check:
+      getContentEncoding([]).tryGet() == { ContentEncodingFlags.Identity }
+      getContentEncoding(["", ""]).tryGet() == { ContentEncodingFlags.Identity }
 
   test "Leaks test":
     check:
