@@ -7,6 +7,8 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 import stew/results, httputils, strutils, uri
+import ../../asyncloop, ../../asyncsync
+import ../../streams/[asyncstream, boundstream]
 export results, httputils, strutils
 
 const
@@ -29,6 +31,35 @@ type
 
   ContentEncodingFlags* {.pure.} = enum
     Identity, Br, Compress, Deflate, Gzip
+
+  HttpBodyReader* = ref object of AsyncStreamReader
+    streams*: seq[AsyncStreamReader]
+
+proc newHttpBodyReader*(streams: varargs[AsyncStreamReader]): HttpBodyReader =
+  ## HttpBodyReader is AsyncStreamReader which holds references to all the
+  ## ``streams``. Also on close it will close all the ``streams``.
+  ##
+  ## First stream in sequence will be used as a source.
+  doAssert(len(streams) > 0, "At least one stream must be added")
+  var res = HttpBodyReader(streams: @streams)
+  res.init(streams[0])
+  res
+
+proc closeWait*(bstream: HttpBodyReader) {.async.} =
+  ## Close and free resource allocated by body reader.
+  if len(bstream.streams) > 0:
+    var res = newSeq[Future[void]]()
+    for item in bstream.streams.items():
+      res.add(item.closeWait())
+    await allFutures(res)
+  await procCall(AsyncStreamReader(bstream).closeWait())
+
+proc atBound*(bstream: HttpBodyReader): bool =
+  ## Returns ``true`` if lowest stream is at EOF.
+  let lreader = bstream.streams[^1]
+  doAssert(lreader of BoundedStreamReader)
+  let breader = cast[BoundedStreamReader](lreader)
+  breader.atEof() and (breader.bytesLeft() == 0)
 
 proc newHttpDefect*(msg: string): ref HttpDefect =
   newException(HttpDefect, msg)

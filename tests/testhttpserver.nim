@@ -69,7 +69,6 @@ N8r5CwGcIX/XPC3lKazzbZ8baA==
 -----END CERTIFICATE-----
 """
 
-
 suite "HTTP server testing suite":
   proc httpClient(address: TransportAddress,
                   data: string): Future[string] {.async.} =
@@ -120,6 +119,69 @@ suite "HTTP server testing suite":
         await allFutures(reader.closeWait(), writer.closeWait(),
                          transp.closeWait())
 
+  proc testTooBigBodyChunked(address: TransportAddress,
+                             operation: int): Future[bool] {.async.} =
+    var serverRes = false
+    proc process(r: RequestFence[HttpRequestRef]): Future[HttpResponseRef] {.
+         async.} =
+      if r.isOk():
+        let request = r.get()
+        try:
+          if operation == 0:
+            let body {.used.} = await request.getBody()
+          elif operation == 1:
+            await request.consumeBody()
+          elif operation == 2:
+            let ptable {.used.} = await request.post()
+          elif operation == 3:
+            let ptable {.used.} = await request.post()
+        except HttpCriticalError as exc:
+          if exc.code == Http413:
+            serverRes = true
+          # Reraising exception, because processor should properly handle it.
+          raise exc
+      else:
+        return dumbResponse()
+
+    let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
+    let res = HttpServerRef.new(address, process,
+                                maxRequestBodySize = 10,
+                                socketFlags = socketFlags)
+    if res.isErr():
+      return false
+
+    let server = res.get()
+    server.start()
+
+    let request =
+      if operation in [0, 1, 2]:
+        "POST / HTTP/1.0\r\n" &
+        "Content-Type: application/x-www-form-urlencoded\r\n" &
+        "Transfer-Encoding: chunked\r\n" &
+        "Cookie: 2\r\n\r\n" &
+        "5\r\na=a&b\r\n5\r\n=b&c=\r\n4\r\nc&d=\r\n4\r\n%D0%\r\n" &
+        "2\r\n9F\r\n0\r\n\r\n"
+      elif operation in [3]:
+        "POST / HTTP/1.0\r\n" &
+        "Host: 127.0.0.1:30080\r\n" &
+        "Transfer-Encoding: chunked\r\n" &
+        "Content-Type: multipart/form-data; boundary=f98f0\r\n\r\n" &
+        "3b\r\n--f98f0\r\nContent-Disposition: form-data; name=\"key1\"" &
+        "\r\n\r\nA\r\n\r\n" &
+        "3b\r\n--f98f0\r\nContent-Disposition: form-data; name=\"key2\"" &
+        "\r\n\r\nB\r\n\r\n" &
+        "3b\r\n--f98f0\r\nContent-Disposition: form-data; name=\"key3\"" &
+        "\r\n\r\nC\r\n\r\n" &
+        "b\r\n--f98f0--\r\n\r\n" &
+        "0\r\n\r\n"
+      else:
+        ""
+
+    let data = await httpClient(address, request)
+    await server.stop()
+    await server.closeWait()
+    return serverRes and (data.startsWith("HTTP/1.1 413"))
+
   test "Request headers timeout test":
     proc testTimeout(address: TransportAddress): Future[bool] {.async.} =
       var serverRes = false
@@ -144,7 +206,7 @@ suite "HTTP server testing suite":
 
       let data = await httpClient(address, "")
       await server.stop()
-      await server.close()
+      await server.closeWait()
       return serverRes and (data.startsWith("HTTP/1.1 408"))
 
     check waitFor(testTimeout(initTAddress("127.0.0.1:30080"))) == true
@@ -172,7 +234,7 @@ suite "HTTP server testing suite":
 
       let data = await httpClient(address, "\r\n\r\n")
       await server.stop()
-      await server.close()
+      await server.closeWait()
       return serverRes and (data.startsWith("HTTP/1.1 400"))
 
     check waitFor(testEmpty(initTAddress("127.0.0.1:30080"))) == true
@@ -202,10 +264,56 @@ suite "HTTP server testing suite":
 
       let data = await httpClient(address, "GET / HTTP/1.1\r\n\r\n")
       await server.stop()
-      await server.close()
+      await server.closeWait()
       return serverRes and (data.startsWith("HTTP/1.1 413"))
 
     check waitFor(testTooBig(initTAddress("127.0.0.1:30080"))) == true
+
+  test "Too big request body test (content-length)":
+    proc testTooBigBody(address: TransportAddress): Future[bool] {.async.} =
+      var serverRes = false
+      proc process(r: RequestFence[HttpRequestRef]): Future[HttpResponseRef] {.
+           async.} =
+        if r.isOk():
+          discard
+        else:
+          if r.error().error == HTTPServerError.CriticalError:
+            serverRes = true
+          return dumbResponse()
+
+      let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
+      let res = HttpServerRef.new(address, process,
+                                  maxRequestBodySize = 10,
+                                  socketFlags = socketFlags)
+      if res.isErr():
+        return false
+
+      let server = res.get()
+      server.start()
+
+      let request = "GET / HTTP/1.1\r\nContent-Length: 20\r\n\r\n"
+      let data = await httpClient(address, request)
+      await server.stop()
+      await server.closeWait()
+      return serverRes and (data.startsWith("HTTP/1.1 413"))
+
+    check waitFor(testTooBigBody(initTAddress("127.0.0.1:30080"))) == true
+
+  test "Too big request body test (getBody()/chunked encoding)":
+    check:
+      waitFor(testTooBigBodyChunked(initTAddress("127.0.0.1:30080"), 0)) == true
+
+  test "Too big request body test (consumeBody()/chunked encoding)":
+    check:
+      waitFor(testTooBigBodyChunked(initTAddress("127.0.0.1:30080"), 1)) == true
+
+  test "Too big request body test (post()/urlencoded/chunked encoding)":
+    check:
+      waitFor(testTooBigBodyChunked(initTAddress("127.0.0.1:30080"), 2)) == true
+
+  test "Too big request body test (post()/multipart/chunked encoding)":
+    check:
+      waitFor(testTooBigBodyChunked(initTAddress("127.0.0.1:30080"), 3)) == true
 
   test "Query arguments test":
     proc testQuery(address: TransportAddress): Future[bool] {.async.} =
@@ -239,7 +347,7 @@ suite "HTTP server testing suite":
       let data2 = await httpClient(address,
               "GET /?a=%D0%9F&%D0%A4=%D0%91&b=%D0%A6&c=%D0%AE HTTP/1.0\r\n\r\n")
       await server.stop()
-      await server.close()
+      await server.closeWait()
       let r = serverRes and
               (data1.find("TEST_OK:a:1:a:2:b:3:c:4") >= 0) and
               (data2.find("TEST_OK:a:П:b:Ц:c:Ю:Ф:Б") >= 0)
@@ -285,12 +393,12 @@ suite "HTTP server testing suite":
                    ":expect:100-continue:host:www.google.com"
       let data = await httpClient(address, message)
       await server.stop()
-      await server.close()
+      await server.closeWait()
       return serverRes and (data.find(expect) >= 0)
 
     check waitFor(testHeaders(initTAddress("127.0.0.1:30080"))) == true
 
-  test "POST arguments (application/x-www-form-urlencoded) test":
+  test "POST arguments (urlencoded/content-length) test":
     proc testPostUrl(address: TransportAddress): Future[bool] {.async.} =
       var serverRes = false
       proc process(r: RequestFence[HttpRequestRef]): Future[HttpResponseRef] {.
@@ -328,12 +436,56 @@ suite "HTTP server testing suite":
       let data = await httpClient(address, message)
       let expect = "TEST_OK:a:a:b:b:c:c:d:П"
       await server.stop()
-      await server.close()
+      await server.closeWait()
       return serverRes and (data.find(expect) >= 0)
 
     check waitFor(testPostUrl(initTAddress("127.0.0.1:30080"))) == true
 
-  test "POST arguments (multipart/form-data) test":
+  test "POST arguments (urlencoded/chunked encoding) test":
+    proc testPostUrl2(address: TransportAddress): Future[bool] {.async.} =
+      var serverRes = false
+      proc process(r: RequestFence[HttpRequestRef]): Future[HttpResponseRef] {.
+           async.} =
+        if r.isOk():
+          var kres = newSeq[string]()
+          let request = r.get()
+          if request.meth in PostMethods:
+            let post = await request.post()
+            for k, v in post.stringItems():
+              kres.add(k & ":" & v)
+            sort(kres)
+            serverRes = true
+          return await request.respond(Http200, "TEST_OK:" & kres.join(":"),
+                                       HttpTable.init())
+        else:
+          serverRes = false
+          return dumbResponse()
+
+      let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
+      let res = HttpServerRef.new(address, process,
+                                  socketFlags = socketFlags)
+      if res.isErr():
+        return false
+
+      let server = res.get()
+      server.start()
+
+      let message =
+        "POST / HTTP/1.0\r\n" &
+        "Content-Type: application/x-www-form-urlencoded\r\n" &
+        "Transfer-Encoding: chunked\r\n" &
+        "Cookie: 2\r\n\r\n" &
+        "5\r\na=a&b\r\n5\r\n=b&c=\r\n4\r\nc&d=\r\n4\r\n%D0%\r\n" &
+        "2\r\n9F\r\n0\r\n\r\n"
+      let data = await httpClient(address, message)
+      let expect = "TEST_OK:a:a:b:b:c:c:d:П"
+      await server.stop()
+      await server.closeWait()
+      return serverRes and (data.find(expect) >= 0)
+
+    check waitFor(testPostUrl2(initTAddress("127.0.0.1:30080"))) == true
+
+  test "POST arguments (multipart/content-length) test":
     proc testPostMultipart(address: TransportAddress): Future[bool] {.async.} =
       var serverRes = false
       proc process(r: RequestFence[HttpRequestRef]): Future[HttpResponseRef] {.
@@ -383,12 +535,12 @@ suite "HTTP server testing suite":
       let data = await httpClient(address, message)
       let expect = "TEST_OK:key1:value1:key2:value2:key2:value4"
       await server.stop()
-      await server.close()
+      await server.closeWait()
       return serverRes and (data.find(expect) >= 0)
 
     check waitFor(testPostMultipart(initTAddress("127.0.0.1:30080"))) == true
 
-  test "POST arguments (multipart/form-data + chunked encoding) test":
+  test "POST arguments (multipart/chunked encoding) test":
     proc testPostMultipart2(address: TransportAddress): Future[bool] {.async.} =
       var serverRes = false
       proc process(r: RequestFence[HttpRequestRef]): Future[HttpResponseRef] {.
@@ -447,7 +599,7 @@ suite "HTTP server testing suite":
                    "BBB:key2:CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC" &
                    "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC"
       await server.stop()
-      await server.close()
+      await server.closeWait()
       return serverRes and (data.find(expect) >= 0)
 
     check waitFor(testPostMultipart2(initTAddress("127.0.0.1:30080"))) == true
@@ -484,7 +636,7 @@ suite "HTTP server testing suite":
       let data = await httpsClient(address, message)
 
       await server.stop()
-      await server.close()
+      await server.closeWait()
       return serverRes and (data.find("TEST_OK:GET") >= 0)
 
     check waitFor(testHTTPS(initTAddress("127.0.0.1:30080"))) == true
@@ -523,7 +675,7 @@ suite "HTTP server testing suite":
       let data = await httpsClient(address, message, {NoVerifyServerName})
       await testFut
       await server.stop()
-      await server.close()
+      await server.closeWait()
       return serverRes and data == "EXCEPTION"
 
     check waitFor(testHTTPS2(initTAddress("127.0.0.1:30080"))) == true

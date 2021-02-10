@@ -491,6 +491,22 @@ suite "ChunkedStream test suite":
        "Wikipedia in\r\n\r\nchunks."],
       ["4\r\nWiki\r\n5\r\npedia\r\nE\r\n in\r\n\r\nchunks.\r\n0\r\n\r\n0\r\n\r\n",
        "Wikipedia in\r\n\r\nchunks."],
+      ["3b\r\n--f98f0\r\nContent-Disposition: form-data; name=\"key1\"" &
+       "\r\n\r\nA\r\n\r\n" &
+       "3b\r\n--f98f0\r\nContent-Disposition: form-data; name=\"key2\"" &
+       "\r\n\r\nB\r\n\r\n" &
+       "3b\r\n--f98f0\r\nContent-Disposition: form-data; name=\"key3\"" &
+       "\r\n\r\nC\r\n\r\n" &
+       "b\r\n--f98f0--\r\n\r\n" &
+       "0\r\n\r\n",
+       "--f98f0\r\nContent-Disposition: form-data; name=\"key1\"" &
+       "\r\n\r\nA\r\n" &
+       "--f98f0\r\nContent-Disposition: form-data; name=\"key2\"" &
+       "\r\n\r\nB\r\n" &
+       "--f98f0\r\nContent-Disposition: form-data; name=\"key3\"" &
+       "\r\n\r\nC\r\n" &
+       "--f98f0--\r\n"
+      ]
     ]
     proc checkVector(address: TransportAddress,
                      inputstr: string): Future[string] {.async.} =

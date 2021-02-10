@@ -316,7 +316,7 @@ proc prepareRequest(conn: HttpConnectionRef,
 
   ok(request)
 
-proc getBodyStream*(request: HttpRequestRef): HttpResult[AsyncStreamReader] =
+proc getBodyReader*(request: HttpRequestRef): HttpResult[HttpBodyReader] =
   ## Returns stream's reader instance which can be used to read request's body.
   ##
   ## Please be sure to handle ``Expect`` header properly.
@@ -324,10 +324,15 @@ proc getBodyStream*(request: HttpRequestRef): HttpResult[AsyncStreamReader] =
   ## Streams which was obtained using this procedure must be closed to avoid
   ## leaks.
   if HttpRequestFlags.BoundBody in request.requestFlags:
-    ok(newBoundedStreamReader(request.connection.reader,
-                              request.contentLength))
+    let bstream = newBoundedStreamReader(request.connection.reader,
+                                         request.contentLength)
+    ok(newHttpBodyReader(bstream))
   elif HttpRequestFlags.UnboundBody in request.requestFlags:
-    ok(newChunkedStreamReader(request.connection.reader))
+    let maxBodySize = request.connection.server.maxRequestBodySize
+    let bstream = newBoundedStreamReader(request.connection.reader, maxBodySize,
+                                         comparison = BoundCmp.LessOrEqual)
+    let cstream = newChunkedStreamReader(bstream)
+    ok(newHttpBodyReader(cstream, bstream))
   else:
     err("Request do not have body available")
 
@@ -347,21 +352,25 @@ proc handleExpect*(request: HttpRequestRef) {.async.} =
 
 proc getBody*(request: HttpRequestRef): Future[seq[byte]] {.async.} =
   ## Obtain request's body as sequence of bytes.
-  let res = request.getBodyStream()
+  let res = request.getBodyReader()
   if res.isErr():
     return @[]
   else:
+    let reader = res.get()
     try:
       await request.handleExpect()
-      return await read(res.get())
+      return await reader.read()
     except AsyncStreamError:
-      raise newHttpCriticalError("Unable to read request's body")
+      if reader.atBound():
+        raise newHttpCriticalError("Maximum size of body reached", Http413)
+      else:
+        raise newHttpCriticalError("Unable to read request's body")
     finally:
       await closeWait(res.get())
 
 proc consumeBody*(request: HttpRequestRef): Future[void] {.async.} =
   ## Consume/discard request's body.
-  let res = request.getBodyStream()
+  let res = request.getBodyReader()
   if res.isErr():
     return
   else:
@@ -370,7 +379,10 @@ proc consumeBody*(request: HttpRequestRef): Future[void] {.async.} =
       await request.handleExpect()
       discard await reader.consume()
     except AsyncStreamError:
-      raise newHttpCriticalError("Unable to consume request's body")
+      if reader.atBound():
+        raise newHttpCriticalError("Maximum size of body reached", Http413)
+      else:
+        raise newHttpCriticalError("Unable to read request's body")
     finally:
       await closeWait(res.get())
 
@@ -413,7 +425,7 @@ proc getRequest(conn: HttpConnectionRef): Future[HttpRequestRef] {.async.} =
     else:
       let res = prepareRequest(conn, header)
       if res.isErr():
-        raise newHttpCriticalError("Invalid request received")
+        raise newHttpCriticalError("Invalid request received", res.error)
       else:
         return res.get()
   except AsyncStreamIncompleteError:
@@ -460,7 +472,7 @@ proc new(ht: typedesc[HttpConnectionRef], server: HttpServerRef,
     writer: writer
   )
 
-proc close(conn: HttpConnectionRef) {.async.} =
+proc closeWait(conn: HttpConnectionRef) {.async.} =
   if HttpServerFlags.Secure in conn.server.flags:
     # First we will close TLS streams.
     await allFutures(conn.reader.closeWait(), conn.writer.closeWait())
@@ -469,7 +481,7 @@ proc close(conn: HttpConnectionRef) {.async.} =
   await allFutures(conn.mainReader.closeWait(), conn.mainWriter.closeWait(),
                    conn.transp.closeWait())
 
-proc close(req: HttpRequestRef) {.async.} =
+proc closeWait(req: HttpRequestRef) {.async.} =
   if req.response.isSome():
     let resp = req.response.get()
     if (HttpResponseFlags.Chunked in resp.flags) and
@@ -488,10 +500,10 @@ proc createConnection(server: HttpServerRef,
     await handshake(conn.tlsStream)
     return conn
   except CancelledError as exc:
-    await conn.close()
+    await conn.closeWait()
     raise exc
   except TLSStreamError:
-    await conn.close()
+    await conn.closeWait()
     raise newHttpCriticalError("Unable to establish secure connection")
 
 proc processLoop(server: HttpServerRef, transp: StreamTransport) {.async.} =
@@ -557,14 +569,18 @@ proc processLoop(server: HttpServerRef, transp: StreamTransport) {.async.} =
       break
 
     breakLoop = false
-    var lastError: ref CatchableError
+    var lastErrorCode: Option[HttpCode]
 
     try:
       resp = await conn.server.processCallback(arg)
     except CancelledError:
       breakLoop = true
-    except CatchableError as exc:
-      lastError = exc
+    except HttpCriticalError as exc:
+      lastErrorCode = some(exc.code)
+    except HttpRecoverableError as exc:
+      lastErrorCode = some(exc.code)
+    except CatchableError:
+      lastErrorCode = some(Http503)
 
     if breakLoop:
       break
@@ -584,7 +600,7 @@ proc processLoop(server: HttpServerRef, transp: StreamTransport) {.async.} =
     else:
       let request = arg.get()
       var keepConn = if request.version == HttpVersion11: true else: false
-      if isNil(lastError):
+      if lastErrorCode.isNone():
         if isNil(resp):
           # Response was `nil`.
           discard await conn.sendErrorResponse(HttpVersion11, Http404,
@@ -603,17 +619,17 @@ proc processLoop(server: HttpServerRef, transp: StreamTransport) {.async.} =
             # some data was already sent to the client.
             discard
       else:
-        discard await conn.sendErrorResponse(HttpVersion11, Http503, true)
-
+        discard await conn.sendErrorResponse(HttpVersion11, lastErrorCode.get(),
+                                             false)
       # Closing and releasing all the request resources.
-      await request.close()
+      await request.closeWait()
 
       if not(keepConn):
         break
 
   # Connection could be `nil` only when secure handshake is failed.
   if not(isNil(conn)):
-    await conn.close()
+    await conn.closeWait()
 
   server.connections.del(transp.getId())
   # if server.maxConnections > 0:
@@ -674,7 +690,7 @@ proc drop*(server: HttpServerRef) {.async.} =
   if server.state in {ServerStopped, ServerRunning}:
     discard
 
-proc close*(server: HttpServerRef) {.async.} =
+proc closeWait*(server: HttpServerRef) {.async.} =
   ## Stop HTTP server and drop all the pending connections.
   if server.state != ServerClosed:
     await server.stop()
@@ -713,7 +729,7 @@ proc getMultipartReader*(req: HttpRequestRef): HttpResult[MultiPartReaderRef] =
         let boundary = ? getMultipartBoundary(
           req.headers.getList("content-type")
         )
-        var stream = ? req.getBodyStream()
+        var stream = ? req.getBodyReader()
         ok(MultiPartReaderRef.new(stream, boundary))
     else:
       err("Request's data is not multipart encoded")
@@ -732,7 +748,8 @@ proc post*(req: HttpRequestRef): Future[HttpTable] {.async.} =
       var table = HttpTable.init()
       # getBody() will handle `Expect`.
       var body = await req.getBody()
-      ## TODO (cheatfate) double copy here.
+      # TODO (cheatfate) double copy here, because of `byte` to `char`
+      # conversion.
       var strbody = newString(len(body))
       if len(body) > 0:
         copyMem(addr strbody[0], addr body[0], len(body))
@@ -751,10 +768,10 @@ proc post*(req: HttpRequestRef): Future[HttpTable] {.async.} =
       try:
         await req.handleExpect()
       except CancelledError as exc:
-        await mpreader.close()
+        await mpreader.closeWait()
         raise exc
       except HttpCriticalError as exc:
-        await mpreader.close()
+        await mpreader.closeWait()
         raise exc
 
       # Reading multipart/form-data parts.
@@ -764,25 +781,26 @@ proc post*(req: HttpRequestRef): Future[HttpTable] {.async.} =
         try:
           part = await mpreader.readPart()
           var value = await part.getBody()
-          ## TODO (cheatfate) double copy here.
+          # TODO (cheatfate) double copy here, because of `byte` to `char`
+          # conversion.
           var strvalue = newString(len(value))
           if len(value) > 0:
             copyMem(addr strvalue[0], addr value[0], len(value))
           table.add(part.name, strvalue)
-          await part.close()
-        except MultiPartEoM:
+          await part.closeWait()
+        except MultipartEOMError:
           runLoop = false
+        except HttpCriticalError as exc:
+          if not(part.isEmpty()):
+            await part.closeWait()
+          await mpreader.closeWait()
+          raise exc
         except CancelledError as exc:
           if not(part.isEmpty()):
-            await part.close()
-          await mpreader.close()
+            await part.closeWait()
+          await mpreader.closeWait()
           raise exc
-        except MultipartError as exc:
-          if not(part.isEmpty()):
-            await part.close()
-          await mpreader.close()
-          raise exc
-      await mpreader.close()
+      await mpreader.closeWait()
       req.postTable = some(table)
       return table
     else:
