@@ -57,7 +57,6 @@ type
     acceptLoop*: Future[void]
     lifetime*: Future[void]
     headersTimeout: Duration
-    bodyTimeout: Duration
     maxHeadersSize: int
     maxRequestBodySize: int
     processCallback: HttpProcessCallback
@@ -127,7 +126,6 @@ proc new*(htype: typedesc[HttpServerRef],
           bufferSize: int = 4096,
           backlogSize: int = 100,
           httpHeadersTimeout = 10.seconds,
-          httpBodyTimeout = 30.seconds,
           maxHeadersSize: int = 8192,
           maxRequestBodySize: int = 1_048_576): HttpResult[HttpServerRef] =
 
@@ -138,7 +136,6 @@ proc new*(htype: typedesc[HttpServerRef],
   var res = HttpServerRef(
     maxConnections: maxConnections,
     headersTimeout: httpHeadersTimeout,
-    bodyTimeout: httpBodyTimeout,
     maxHeadersSize: maxHeadersSize,
     maxRequestBodySize: maxRequestBodySize,
     processCallback: processCallback,
@@ -1118,7 +1115,6 @@ proc requestInfo*(req: HttpRequestRef, contentType = "text/text"): string =
              $req.connection.server.maxRequestBodySize))
   res.add(kv("server.backlog", $req.connection.server.backLogSize))
   res.add(kv("server.headersTimeout", $req.connection.server.headersTimeout))
-  res.add(kv("server.bodyTimeout", $req.connection.server.bodyTimeout))
   res.add(kv("server.baseUri", $req.connection.server.baseUri))
   res.add(kv("server.flags", $req.connection.server.flags))
   res.add(kv("server.socket.flags", $req.connection.server.socketFlags))
