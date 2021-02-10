@@ -754,6 +754,23 @@ suite "HTTP server testing suite":
         res.isOk()
         item[1] == res.get()
 
+  test "HttpTable integer parser test":
+    const TestVectors = [
+      ("", 0'u64), ("0", 0'u64), ("-0", 0'u64), ("0-", 0'u64),
+      ("01", 1'u64), ("001", 1'u64), ("0000000000001", 1'u64),
+      ("18446744073709551615", 0xFFFF_FFFF_FFFF_FFFF'u64),
+      ("18446744073709551616", 1844674407370955161'u64),
+      ("FFFFFFFFFFFFFFFF", 0'u64),
+      ("0123456789ABCDEF", 123456789'u64)
+    ]
+    for i in 0 ..< 256:
+      if char(i) in {'0' .. '9'}:
+        check bytesToDec($char(i)) == uint64(i - ord('0'))
+      else:
+        check bytesToDec($char(i)) == 0'u64
+    for item in TestVectors:
+      check bytesToDec(item[0]) == item[1]
+
   test "Leaks test":
     check:
       getTracker("async.stream.reader").isLeaked() == false
