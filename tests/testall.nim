@@ -7,4 +7,5 @@
 #              MIT license (LICENSE-MIT)
 import testmacro, testsync, testsoon, testtime, testfut, testsignal,
        testaddress, testdatagram, teststream, testserver, testbugs, testnet,
-       testasyncstream, testutils, testhttpserver
+       testasyncstream, testhttpserver
+import testutils
