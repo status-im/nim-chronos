@@ -8,7 +8,7 @@
 import unittest
 import ../chronos
 import ../chronos/streams/[tlsstream, chunkstream, boundstream]
-import nimcrypto/utils
+
 when defined(nimHasUsed): {.used.}
 
 # To create self-signed certificate and key you can use openssl
