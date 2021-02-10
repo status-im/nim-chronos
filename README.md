@@ -122,19 +122,6 @@ proc p3() {.async.} =
 waitFor p3()
 ```
 
-Not as intuitive, but the same thing happens if we create those futures on the
-same line as `await`, due to the Nim compiler's use of hidden temporary
-variables:
-
-```nim
-proc p4() {.async.} =
-  await p1()
-  await p2()
-  # Also takes a single second for both futures sleeping concurrently.
-
-waitFor p4()
-```
-
 Don't let `await`'s behaviour of giving back control to the dispatcher surprise
 you. If an async procedure modifies global state, and you can't predict when it
 will start executing, the only way to avoid that state changing underneath your
