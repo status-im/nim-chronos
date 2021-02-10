@@ -423,19 +423,36 @@ func getMultipartBoundary*(ch: openarray[string]): HttpResult[string] =
         return err("Content-Type is not multipart")
       if len(mparts) < 2:
         return err("Content-Type missing boundary value")
-      let stripped = strip(mparts[1])
-      if not(stripped.toLowerAscii().startsWith("boundary")):
-        return err("Incorrect Content-Type boundary format")
-      let bparts = stripped.split("=")
-      if len(bparts) < 2:
-        err("Missing Content-Type boundary")
+
+      let index =
+        block:
+          var idx = 0
+          for i in 1 ..< len(mparts):
+            let stripped = strip(mparts[i])
+            if stripped.toLowerAscii().startsWith("boundary="):
+              idx = i
+              break
+          idx
+
+      if index == 0:
+        err("Missing Content-Type boundary key")
       else:
-        let candidate = strip(bparts[1])
-        if len(candidate) > 70:
-          err("Content-Type boundary must be less then 70 characters")
+        let stripped = strip(mparts[index])
+        let bparts = stripped.split("=", 1)
+        if len(bparts) < 2:
+          err("Missing Content-Type boundary")
         else:
-          for ch in candidate:
-            if ch notin {'a'..'z', 'A' .. 'Z', '0' .. '9',
-                         '\'' .. ')', '+' .. '/', ':', '=', '?', '_'}:
-              return err("Content-Type boundary alphabat incorrect")
-          ok(candidate)
+          if bparts[0].toLowerAscii() != "boundary":
+            err("Missing boundary key")
+          else:
+            let candidate = strip(bparts[1])
+            if len(candidate) == 0:
+              err("Content-Type boundary must be at least 1 character size")
+            elif len(candidate) > 70:
+              err("Content-Type boundary must be less then 70 characters")
+            else:
+              for ch in candidate:
+                if ch notin {'a' .. 'z', 'A' .. 'Z', '0' .. '9',
+                             '\'' .. ')', '+' .. '/', ':', '=', '?', '_'}:
+                  return err("Content-Type boundary alphabet incorrect")
+              ok(candidate)
