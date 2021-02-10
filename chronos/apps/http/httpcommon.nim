@@ -54,28 +54,34 @@ proc closeWait*(bstream: HttpBodyReader) {.async.} =
     await allFutures(res)
   await procCall(AsyncStreamReader(bstream).closeWait())
 
-proc atBound*(bstream: HttpBodyReader): bool =
+proc atBound*(bstream: HttpBodyReader): bool {.
+     raises: [Defect].} =
   ## Returns ``true`` if lowest stream is at EOF.
   let lreader = bstream.streams[^1]
   doAssert(lreader of BoundedStreamReader)
   let breader = cast[BoundedStreamReader](lreader)
   breader.atEof() and (breader.bytesLeft() == 0)
 
-proc newHttpDefect*(msg: string): ref HttpDefect =
+proc newHttpDefect*(msg: string): ref HttpDefect {.
+     raises: [HttpDefect].} =
   newException(HttpDefect, msg)
 
-proc newHttpCriticalError*(msg: string, code = Http400): ref HttpCriticalError =
+proc newHttpCriticalError*(msg: string,
+                           code = Http400): ref HttpCriticalError {.
+     raises: [HttpCriticalError].} =
   var tre = newException(HttpCriticalError, msg)
   tre.code = code
   tre
 
 proc newHttpRecoverableError*(msg: string,
-                              code = Http400): ref HttpRecoverableError =
+                              code = Http400): ref HttpRecoverableError {.
+     raises: [HttpRecoverableError].} =
   var tre = newException(HttpRecoverableError, msg)
   tre.code = code
   tre
 
-iterator queryParams*(query: string): tuple[key: string, value: string] =
+iterator queryParams*(query: string): tuple[key: string, value: string] {.
+         raises: [Defect].} =
   ## Iterate over url-encoded query string.
   for pair in query.split('&'):
     let items = pair.split('=', maxsplit = 1)
@@ -85,7 +91,8 @@ iterator queryParams*(query: string): tuple[key: string, value: string] =
       yield (decodeUrl(k), decodeUrl(v))
 
 func getTransferEncoding*(ch: openarray[string]): HttpResult[
-                                                   set[TransferEncodingFlags]] =
+                                                  set[TransferEncodingFlags]] {.
+     raises: [Defect].} =
   ## Parse value of multiple HTTP headers ``Transfer-Encoding`` and return
   ## it as set of ``TransferEncodingFlags``.
   var res: set[TransferEncodingFlags] = {}
@@ -106,6 +113,8 @@ func getTransferEncoding*(ch: openarray[string]): HttpResult[
           res.incl(TransferEncodingFlags.Deflate)
         of "gzip":
           res.incl(TransferEncodingFlags.Gzip)
+        of "x-gzip":
+          res.incl(TransferEncodingFlags.Gzip)
         of "":
           res.incl(TransferEncodingFlags.Identity)
         else:
@@ -113,7 +122,8 @@ func getTransferEncoding*(ch: openarray[string]): HttpResult[
     ok(res)
 
 func getContentEncoding*(ch: openarray[string]): HttpResult[
-                                                    set[ContentEncodingFlags]] =
+                                                   set[ContentEncodingFlags]] {.
+     raises: [Defect].} =
   ## Parse value of multiple HTTP headers ``Content-Encoding`` and return
   ## it as set of ``ContentEncodingFlags``.
   var res: set[ContentEncodingFlags] = {}
@@ -134,13 +144,16 @@ func getContentEncoding*(ch: openarray[string]): HttpResult[
           res.incl(ContentEncodingFlags.Deflate)
         of "gzip":
           res.incl(ContentEncodingFlags.Gzip)
+        of "x-gzip":
+          res.incl(ContentEncodingFlags.Gzip)
         of "":
           res.incl(ContentEncodingFlags.Identity)
         else:
           return err("Incorrect Content-Encoding value")
     ok(res)
 
-func getContentType*(ch: openarray[string]): HttpResult[string] =
+func getContentType*(ch: openarray[string]): HttpResult[string]  {.
+     raises: [Defect].} =
   ## Check and prepare value of ``Content-Type`` header.
   if len(ch) > 1:
     err("Multiple Content-Type values found")

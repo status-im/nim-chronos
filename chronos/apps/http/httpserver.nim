@@ -110,7 +110,7 @@ type
 
 proc init(htype: typedesc[HttpProcessError], error: HTTPServerError,
           exc: ref CatchableError, remote: TransportAddress,
-          code: HttpCode): HttpProcessError =
+          code: HttpCode): HttpProcessError {.raises: [Defect].} =
   HttpProcessError(error: error, exc: exc, remote: remote, code: code)
 
 proc new*(htype: typedesc[HttpServerRef],
@@ -147,13 +147,16 @@ proc new*(htype: typedesc[HttpServerRef],
   )
 
   res.baseUri =
-    if len(serverUri.hostname) > 0 and isAbsolute(serverUri):
-      serverUri
-    else:
-      if HttpServerFlags.Secure in serverFlags:
-        parseUri("https://" & $address & "/")
+    try:
+      if len(serverUri.hostname) > 0 and isAbsolute(serverUri):
+        serverUri
       else:
-        parseUri("http://" & $address & "/")
+        if HttpServerFlags.Secure in serverFlags:
+          parseUri("https://" & $address & "/")
+        else:
+          parseUri("http://" & $address & "/")
+    except TransportAddressError as exc:
+      return err(exc.msg)
 
   try:
     res.instance = createStreamServer(address, flags = socketFlags,
@@ -169,7 +172,7 @@ proc new*(htype: typedesc[HttpServerRef],
   except CatchableError as exc:
     return err(exc.msg)
 
-proc getResponse*(req: HttpRequestRef): HttpResponseRef =
+proc getResponse*(req: HttpRequestRef): HttpResponseRef {.raises: [Defect].} =
   if req.response.isNone():
     var resp = HttpResponseRef(
       status: Http200,
@@ -184,7 +187,7 @@ proc getResponse*(req: HttpRequestRef): HttpResponseRef =
   else:
     req.response.get()
 
-proc dumbResponse*(): HttpResponseRef =
+proc dumbResponse*(): HttpResponseRef {.raises: [Defect].} =
   ## Create an empty response to return when request processor got no request.
   HttpResponseRef(state: HttpResponseState.Dumb, version: HttpVersion11)
 
@@ -192,13 +195,14 @@ proc getId(transp: StreamTransport): string {.inline.} =
   ## Returns string unique transport's identifier as string.
   $transp.remoteAddress() & "_" & $transp.localAddress()
 
-proc hasBody*(request: HttpRequestRef): bool =
+proc hasBody*(request: HttpRequestRef): bool {.raises: [Defect].} =
   ## Returns ``true`` if request has body.
   request.requestFlags * {HttpRequestFlags.BoundBody,
                           HttpRequestFlags.UnboundBody} != {}
 
 proc prepareRequest(conn: HttpConnectionRef,
-                    req: HttpRequestHeader): HttpResultCode[HttpRequestRef] =
+                    req: HttpRequestHeader): HttpResultCode[HttpRequestRef] {.
+     raises: [Defect].}=
   var request = HttpRequestRef(connection: conn)
 
   if req.version notin {HttpVersion10, HttpVersion11}:
@@ -659,7 +663,7 @@ proc acceptClientLoop(server: HttpServerRef) {.async.} =
     if breakLoop:
       break
 
-proc state*(server: HttpServerRef): HttpServerState =
+proc state*(server: HttpServerRef): HttpServerState {.raises: [Defect].} =
   ## Returns current HTTP server's state.
   if server.lifetime.finished():
     ServerClosed
@@ -815,22 +819,24 @@ proc `keepalive=`*(resp: HttpResponseRef, value: bool) =
   else:
     resp.flags.excl(KeepAlive)
 
-proc keepalive*(resp: HttpResponseRef): bool =
+proc keepalive*(resp: HttpResponseRef): bool {.raises: [Defect].} =
   KeepAlive in resp.flags
 
-proc setHeader*(resp: HttpResponseRef, key, value: string) =
+proc setHeader*(resp: HttpResponseRef, key, value: string) {.
+     raises: [Defect].} =
   doAssert(resp.state == HttpResponseState.Empty)
   resp.headersTable.set(key, value)
 
-proc addHeader*(resp: HttpResponseRef, key, value: string) =
+proc addHeader*(resp: HttpResponseRef, key, value: string) {.
+     raises: [Defect].}=
   doAssert(resp.state == HttpResponseState.Empty)
   resp.headersTable.add(key, value)
 
 proc getHeader*(resp: HttpResponseRef, key: string,
-                default: string = ""): string =
+                default: string = ""): string {.raises: [Defect].} =
   resp.headersTable.getString(key, default)
 
-proc hasHeader*(resp: HttpResponseRef, key: string): bool =
+proc hasHeader*(resp: HttpResponseRef, key: string): bool {.raises: [Defect].} =
   key in resp.headersTable
 
 template doHeaderDef(buf, resp, name, default) =
@@ -849,7 +855,8 @@ template checkPending(t: untyped) =
   if t.state != HttpResponseState.Empty:
     raise newHttpCriticalError("Response body was already sent")
 
-proc prepareLengthHeaders(resp: HttpResponseRef, length: int): string =
+proc prepareLengthHeaders(resp: HttpResponseRef, length: int): string {.
+     raises: [Defect].}=
   var answer = $(resp.version) & " " & $(resp.status) & "\r\n"
   answer.doHeaderDef(resp, "Date", httpDate())
   answer.doHeaderDef(resp, "Content-Type", "text/html; charset=utf-8")
@@ -866,7 +873,8 @@ proc prepareLengthHeaders(resp: HttpResponseRef, length: int): string =
   answer.add("\r\n")
   answer
 
-proc prepareChunkedHeaders(resp: HttpResponseRef): string =
+proc prepareChunkedHeaders(resp: HttpResponseRef): string {.
+     raises: [Defect].} =
   var answer = $(resp.version) & " " & $(resp.status) & "\r\n"
   answer.doHeaderDef(resp, "Date", httpDate())
   answer.doHeaderDef(resp, "Content-Type", "text/html; charset=utf-8")
@@ -1024,7 +1032,8 @@ proc respond*(req: HttpRequestRef, code: HttpCode, content: string,
   await response.sendBody(content)
   return response
 
-proc requestInfo*(req: HttpRequestRef, contentType = "text/text"): string =
+proc requestInfo*(req: HttpRequestRef, contentType = "text/text"): string {.
+     raises: [Defect].} =
   ## Returns comprehensive information about request for specific content
   ## type.
   ##
@@ -1100,8 +1109,19 @@ proc requestInfo*(req: HttpRequestRef, contentType = "text/text"): string =
           res.add(kv(k, v))
 
   res.add(h("Connection information"))
-  res.add(kv("local.address", $req.connection.transp.localAddress()))
-  res.add(kv("remote.address", $req.connection.transp.remoteAddress()))
+  let localAddress =
+    try:
+      $req.connection.transp.localAddress()
+    except TransportError:
+      "incorrect address"
+  let remoteAddress =
+    try:
+      $req.connection.transp.remoteAddress()
+    except TransportError:
+      "incorrect address"
+
+  res.add(kv("local.address", localAddress))
+  res.add(kv("remote.address", remoteAddress))
 
   res.add(h("Server configuration"))
   let maxConn =
