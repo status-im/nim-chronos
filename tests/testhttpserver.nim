@@ -680,6 +680,80 @@ suite "HTTP server testing suite":
 
     check waitFor(testHTTPS2(initTAddress("127.0.0.1:30080"))) == true
 
+
+  test "Content-Type multipart boundary test":
+    const AllowedCharacters = {
+      'a' .. 'z', 'A' .. 'Z', '0' .. '9',
+      '\'', '(', ')', '+', '_', ',', '-', '.' ,'/', ':', '=', '?'
+    }
+
+    const FailureVectors = [
+      "",
+      "multipart/byteranges; boundary=A",
+      "multipart/form-data;",
+      "multipart/form-data; boundary",
+      "multipart/form-data; boundary=",
+      "multipart/form-data; boundaryMore=A",
+      "multipart/form-data; charset=UTF-8; boundary",
+      "multipart/form-data; charset=UTF-8; boundary=",
+      "multipart/form-data; charset=UTF-8; boundary =",
+      "multipart/form-data; charset=UTF-8; boundary= ",
+      "multipart/form-data; charset=UTF-8; boundaryMore=",
+      "multipart/form-data; charset=UTF-8; boundaryMore=A",
+      "multipart/form-data; charset=UTF-8; boundaryMore=AAAAAAAAAAAAAAAAAAAA" &
+      "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    ]
+
+    const SuccessVectors = [
+      ("multipart/form-data; boundary=A", "A"),
+      ("multipart/form-data; charset=UTF-8; boundary=B", "B"),
+      ("multipart/form-data; charset=UTF-8; boundary=--------------------" &
+       "--------------------------------------------------", "-----------" &
+       "-----------------------------------------------------------"),
+      ("multipart/form-data; boundary=--------------------" &
+       "--------------------------------------------------", "-----------" &
+       "-----------------------------------------------------------"),
+      ("multipart/form-data; boundary=--------------------" &
+       "--------------------------------------------------; charset=UTF-8",
+       "-----------------------------------------------------------------" &
+       "-----"),
+      ("multipart/form-data; boundary=ABCDEFGHIJKLMNOPQRST" &
+       "UVWXYZabcdefghijklmnopqrstuvwxyz0123456789'()+_,-.; charset=UTF-8",
+       "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'()" &
+       "+_,-."),
+      ("multipart/form-data; boundary=ABCDEFGHIJKLMNOPQRST" &
+       "UVWXYZabcdefghijklmnopqrstuvwxyz0123456789'()+?=:/; charset=UTF-8",
+       "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'()" &
+       "+?=:/"),
+      ("multipart/form-data; charset=UTF-8; boundary=ABCDEFGHIJKLMNOPQRST" &
+       "UVWXYZabcdefghijklmnopqrstuvwxyz0123456789'()+_,-.",
+       "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'()" &
+       "+_,-."),
+      ("multipart/form-data; charset=UTF-8; boundary=ABCDEFGHIJKLMNOPQRST" &
+       "UVWXYZabcdefghijklmnopqrstuvwxyz0123456789'()+?=:/",
+       "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'()" &
+       "+?=:/")
+    ]
+
+    for i in 0 ..< 256:
+      let boundary = "multipart/form-data; boundary=" & $char(i)
+      if char(i) in AllowedCharacters:
+        check getMultipartBoundary([boundary]).isOk()
+      else:
+        check getMultipartBoundary([boundary]).isErr()
+
+    check:
+      getMultipartBoundary([]).isErr()
+      getMultipartBoundary(["multipart/form-data; boundary=A",
+                            "multipart/form-data; boundary=B"]).isErr()
+    for item in FailureVectors:
+      check getMultipartBoundary([item]).isErr()
+    for item in SuccessVectors:
+      let res = getMultipartBoundary([item[0]])
+      check:
+        res.isOk()
+        item[1] == res.get()
+
   test "Leaks test":
     check:
       getTracker("async.stream.reader").isLeaked() == false
