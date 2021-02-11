@@ -25,6 +25,7 @@ type
     code*: HttpCode
   HttpRecoverableError* = object of HttpError
     code*: HttpCode
+  HttpDisconnectError* = object of HttpError
 
   TransferEncodingFlags* {.pure.} = enum
     Identity, Chunked, Compress, Deflate, Gzip
@@ -78,6 +79,11 @@ proc newHttpRecoverableError*(msg: string,
      raises: [HttpRecoverableError].} =
   var tre = newException(HttpRecoverableError, msg)
   tre.code = code
+  tre
+
+proc newHttpDisconnectError*(): ref HttpDisconnectError {.
+     raises: [HttpDisconnectError].} =
+  var tre = newException(HttpDisconnectError, "Remote peer disconnected")
   tre
 
 iterator queryParams*(query: string): tuple[key: string, value: string] {.
