@@ -429,10 +429,8 @@ proc getRequest(conn: HttpConnectionRef): Future[HttpRequestRef] {.async.} =
         raise newHttpCriticalError("Invalid request received", res.error)
       else:
         return res.get()
-  except AsyncStreamIncompleteError:
-    raise newHttpCriticalError("Remote peer disconnected")
-  except AsyncStreamReadError:
-    raise newHttpCriticalError("Connection with remote peer has been lost")
+  except AsyncStreamIncompleteError, AsyncStreamReadError:
+    raise newHttpDisconnectError()
   except AsyncStreamLimitError:
     raise newHttpCriticalError("Maximum size of request headers reached",
                                Http413)
@@ -561,6 +559,9 @@ proc processLoop(server: HttpServerRef, transp: StreamTransport) {.async.} =
       let error = HttpProcessError.init(HTTPServerError.CriticalError, exc,
                                         transp.remoteAddress(), exc.code)
       arg = RequestFence[HttpRequestRef].err(error)
+    except HttpDisconnectError:
+      # If remote peer disconnected we just exiting loop
+      breakLoop = true
     except CatchableError as exc:
       let error = HttpProcessError.init(HTTPServerError.CatchableError, exc,
                                         transp.remoteAddress(), Http500)
