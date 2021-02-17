@@ -91,6 +91,7 @@ type
 
   TLSStreamError* = object of AsyncStreamError
   TLSStreamHandshakeError* = object of TLSStreamError
+  TLSStreamInitError* = object of TLSStreamError
   TLSStreamReadError* = object of TLSStreamError
     par*: ref AsyncStreamError
   TLSStreamWriteError* = object of TLSStreamError
@@ -99,20 +100,20 @@ type
     errCode*: int
 
 proc newTLSStreamReadError(p: ref AsyncStreamError): ref TLSStreamReadError {.
-     inline.} =
+     noinline.} =
   var w = newException(TLSStreamReadError, "Read stream failed")
   w.msg = w.msg & ", originated from [" & $p.name & "] " & p.msg
   w.par = p
   w
 
 proc newTLSStreamWriteError(p: ref AsyncStreamError): ref TLSStreamWriteError {.
-     inline.} =
+     noinline.} =
   var w = newException(TLSStreamWriteError, "Write stream failed")
   w.msg = w.msg & ", originated from [" & $p.name & "] " & p.msg
   w.par = p
   w
 
-template newTLSStreamProtocolError[T](message: T): ref TLSStreamProtocolError =
+template newTLSStreamProtocolImpl[T](message: T): ref TLSStreamProtocolError =
   var msg = ""
   var code = 0
   when T is string:
@@ -128,6 +129,12 @@ template newTLSStreamProtocolError[T](message: T): ref TLSStreamProtocolError =
   var err = newException(TLSStreamProtocolError, msg)
   err.errCode = code
   err
+
+proc newTLSStreamProtocolError[T](message: T): ref TLSStreamProtocolError =
+  newTLSStreamProtocolImpl(message)
+
+proc raiseTLSStreamProtocolError[T](message: T) {.noreturn, noinline.} =
+  raise newTLSStreamProtocolImpl(message)
 
 proc tlsWriteRec(engine: ptr SslEngineContext,
                  writer: TLSStreamWriter): Future[TLSResult] {.async.} =
@@ -207,9 +214,6 @@ proc tlsReadApp(engine: ptr SslEngineContext,
   except CancelledError:
     reader.state = AsyncStreamState.Stopped
   return TLSResult.Error
-
-template raiseTLSStreamProtoError*[T](message: T) =
-  raise newTLSStreamProtocolError(message)
 
 template readAndReset(fut: untyped) =
   if fut.finished():
@@ -386,7 +390,7 @@ proc tlsLoop*(stream: TLSAsyncStream) {.async.} =
   stream.reader.buffer.forget()
 
 proc tlsWriteLoop(stream: AsyncStreamWriter) {.async.} =
-  var wstream = cast[TLSStreamWriter](stream)
+  var wstream = TLSStreamWriter(stream)
   wstream.state = AsyncStreamState.Running
   await stepsAsync(1)
   if isNil(wstream.stream.mainLoop):
@@ -394,7 +398,7 @@ proc tlsWriteLoop(stream: AsyncStreamWriter) {.async.} =
   await wstream.stream.mainLoop
 
 proc tlsReadLoop(stream: AsyncStreamReader) {.async.} =
-  var rstream = cast[TLSStreamReader](stream)
+  var rstream = TLSStreamReader(stream)
   rstream.state = AsyncStreamState.Running
   await stepsAsync(1)
   if isNil(rstream.stream.mainLoop):
@@ -468,18 +472,19 @@ proc newTLSClientAsyncStream*(rsource: AsyncStreamReader,
   if TLSFlags.NoVerifyServerName in flags:
     let err = sslClientReset(addr res.ccontext, "", 0)
     if err == 0:
-      raise newException(TLSStreamError, "Could not initialize TLS layer")
+      raise newException(TLSStreamInitError, "Could not initialize TLS layer")
   else:
     if len(serverName) == 0:
-      raise newException(TLSStreamError, "serverName must not be empty string")
+      raise newException(TLSStreamInitError,
+                         "serverName must not be empty string")
 
     let err = sslClientReset(addr res.ccontext, serverName, 0)
     if err == 0:
-      raise newException(TLSStreamError, "Could not initialize TLS layer")
+      raise newException(TLSStreamInitError, "Could not initialize TLS layer")
 
-  init(cast[AsyncStreamWriter](res.writer), wsource, tlsWriteLoop,
+  init(AsyncStreamWriter(res.writer), wsource, tlsWriteLoop,
        bufferSize)
-  init(cast[AsyncStreamReader](res.reader), rsource, tlsReadLoop,
+  init(AsyncStreamReader(res.reader), rsource, tlsReadLoop,
        bufferSize)
   res
 
@@ -507,9 +512,9 @@ proc newTLSServerAsyncStream*(rsource: AsyncStreamReader,
   ##
   ## ``flags`` - custom TLS connection flags.
   if isNil(privateKey) or privateKey.kind notin {TLSKeyType.RSA, TLSKeyType.EC}:
-    raiseTLSStreamProtoError("Incorrect private key")
+    raiseTLSStreamProtocolError("Incorrect private key")
   if isNil(certificate) or len(certificate.certs) == 0:
-    raiseTLSStreamProtoError("Incorrect certificate")
+    raiseTLSStreamProtocolError("Incorrect certificate")
 
   var res = TLSAsyncStream()
   var reader = TLSStreamReader(
@@ -528,7 +533,7 @@ proc newTLSServerAsyncStream*(rsource: AsyncStreamReader,
   if privateKey.kind == TLSKeyType.EC:
     let algo = getSignerAlgo(certificate.certs[0])
     if algo == -1:
-      raiseTLSStreamProtoError("Could not decode certificate")
+      raiseTLSStreamProtocolError("Could not decode certificate")
     sslServerInitFullEc(addr res.scontext, addr certificate.certs[0],
                         len(certificate.certs), cuint(algo),
                         addr privateKey.eckey)
@@ -557,11 +562,11 @@ proc newTLSServerAsyncStream*(rsource: AsyncStreamReader,
 
   let err = sslServerReset(addr res.scontext)
   if err == 0:
-    raise newException(TLSStreamError, "Could not initialize TLS layer")
+    raise newException(TLSStreamInitError, "Could not initialize TLS layer")
 
-  init(cast[AsyncStreamWriter](res.writer), wsource, tlsWriteLoop,
+  init(AsyncStreamWriter(res.writer), wsource, tlsWriteLoop,
        bufferSize)
-  init(cast[AsyncStreamReader](res.reader), rsource, tlsReadLoop,
+  init(AsyncStreamReader(res.reader), rsource, tlsReadLoop,
        bufferSize)
   res
 
@@ -610,12 +615,12 @@ proc init*(tt: typedesc[TLSPrivateKey], data: openarray[byte]): TLSPrivateKey =
   ## or wrapped in an unencrypted PKCS#8 archive (again DER-encoded).
   var ctx: SkeyDecoderContext
   if len(data) == 0:
-    raiseTLSStreamProtoError("Incorrect private key")
+    raiseTLSStreamProtocolError("Incorrect private key")
   skeyDecoderInit(addr ctx)
   skeyDecoderPush(addr ctx, cast[pointer](unsafeAddr data[0]), len(data))
   let err = skeyDecoderLastError(addr ctx)
   if err != 0:
-    raiseTLSStreamProtoError(err)
+    raiseTLSStreamProtocolError(err)
   let keyType = skeyDecoderKeyType(addr ctx)
   let res =
     if keyType == KEYTYPE_RSA:
@@ -623,13 +628,13 @@ proc init*(tt: typedesc[TLSPrivateKey], data: openarray[byte]): TLSPrivateKey =
     elif keyType == KEYTYPE_EC:
       copyKey(ctx.key.ec)
     else:
-      raiseTLSStreamProtoError("Unknown key type (" & $keyType & ")")
+      raiseTLSStreamProtocolError("Unknown key type (" & $keyType & ")")
   res
 
 proc pemDecode*(data: openarray[char]): seq[PEMElement] =
   ## Decode PEM encoded string and get array of binary blobs.
   if len(data) == 0:
-    raiseTLSStreamProtoError("Empty PEM message")
+    raiseTLSStreamProtocolError("Empty PEM message")
   var ctx: PemDecoderContext
   var pctx = new PEMContext
   var res = newSeq[PEMElement]()
@@ -666,7 +671,7 @@ proc pemDecode*(data: openarray[char]): seq[PEMElement] =
       else:
         break
     else:
-      raiseTLSStreamProtoError("Invalid PEM encoding")
+      raiseTLSStreamProtocolError("Invalid PEM encoding")
   res
 
 proc init*(tt: typedesc[TLSPrivateKey], data: openarray[char]): TLSPrivateKey =
@@ -683,7 +688,7 @@ proc init*(tt: typedesc[TLSPrivateKey], data: openarray[char]): TLSPrivateKey =
       res = TLSPrivateKey.init(item.data)
       break
   if isNil(res):
-    raiseTLSStreamProtoError("Could not find private key")
+    raiseTLSStreamProtocolError("Could not find private key")
   res
 
 proc init*(tt: typedesc[TLSCertificate],
@@ -703,12 +708,13 @@ proc init*(tt: typedesc[TLSCertificate],
       )
       let ares = getSignerAlgo(cert)
       if ares == -1:
-        raiseTLSStreamProtoError("Could not decode certificate")
+        raiseTLSStreamProtocolError("Could not decode certificate")
       elif ares != KEYTYPE_RSA and ares != KEYTYPE_EC:
-        raiseTLSStreamProtoError("Unsupported signing key type in certificate")
+        raiseTLSStreamProtocolError(
+          "Unsupported signing key type in certificate")
       res.certs.add(cert)
   if len(res.storage) == 0:
-    raiseTLSStreamProtoError("Could not find any certificates")
+    raiseTLSStreamProtocolError("Could not find any certificates")
   res
 
 proc init*(tt: typedesc[TLSSessionCache], size: int = 4096): TLSSessionCache =

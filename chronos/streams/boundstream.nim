@@ -42,11 +42,9 @@ type
 const
   BoundedBufferSize* = 4096
 
-template newBoundedStreamIncompleteError*(): ref BoundedStreamError =
+proc newBoundedStreamIncompleteError*(): ref BoundedStreamError {.noinline.} =
   newException(BoundedStreamIncompleteError,
                "Stream boundary is not reached yet")
-template newBoundedStreamOverflowError*(): ref BoundedStreamError =
-  newException(BoundedStreamOverflowError, "Stream boundary exceeded")
 
 proc readUntilBoundary*(rstream: AsyncStreamReader, pbytes: pointer,
                         nbytes: int, sep: seq[byte]): Future[int] {.async.} =
@@ -94,7 +92,7 @@ func endsWith(s, suffix: openarray[byte]): bool =
   if i >= len(suffix): return true
 
 proc boundedReadLoop(stream: AsyncStreamReader) {.async.} =
-  var rstream = cast[BoundedStreamReader](stream)
+  var rstream = BoundedStreamReader(stream)
   rstream.state = AsyncStreamState.Running
   var buffer = newSeq[byte](rstream.buffer.bufferLen())
   while true:
@@ -157,7 +155,7 @@ proc boundedReadLoop(stream: AsyncStreamReader) {.async.} =
   rstream.buffer.forget()
 
 proc boundedWriteLoop(stream: AsyncStreamWriter) {.async.} =
-  var wstream = cast[BoundedStreamWriter](stream)
+  var wstream = BoundedStreamWriter(stream)
 
   wstream.state = AsyncStreamState.Running
   while true:
@@ -181,7 +179,8 @@ proc boundedWriteLoop(stream: AsyncStreamWriter) {.async.} =
           item.future.complete()
         else:
           wstream.state = AsyncStreamState.Error
-          error = newBoundedStreamOverflowError()
+          error = newException(BoundedStreamOverflowError,
+                               "Stream boundary exceeded")
       else:
         if wstream.offset != wstream.boundSize:
           case wstream.cmpop
@@ -223,12 +222,12 @@ proc bytesLeft*(stream: BoundedStreamRW): uint64 =
 
 proc init*[T](child: BoundedStreamReader, rsource: AsyncStreamReader,
               bufferSize = BoundedBufferSize, udata: ref T) =
-  init(cast[AsyncStreamReader](child), rsource, boundedReadLoop, bufferSize,
+  init(AsyncStreamReader(child), rsource, boundedReadLoop, bufferSize,
        udata)
 
 proc init*(child: BoundedStreamReader, rsource: AsyncStreamReader,
            bufferSize = BoundedBufferSize) =
-  init(cast[AsyncStreamReader](child), rsource, boundedReadLoop, bufferSize)
+  init(AsyncStreamReader(child), rsource, boundedReadLoop, bufferSize)
 
 proc newBoundedStreamReader*[T](rsource: AsyncStreamReader,
                                 boundSize: int,
@@ -258,12 +257,12 @@ proc newBoundedStreamReader*(rsource: AsyncStreamReader,
 
 proc init*[T](child: BoundedStreamWriter, wsource: AsyncStreamWriter,
               queueSize = AsyncStreamDefaultQueueSize, udata: ref T) =
-  init(cast[AsyncStreamWriter](child), wsource, boundedWriteLoop, queueSize,
+  init(AsyncStreamWriter(child), wsource, boundedWriteLoop, queueSize,
        udata)
 
 proc init*(child: BoundedStreamWriter, wsource: AsyncStreamWriter,
            queueSize = AsyncStreamDefaultQueueSize) =
-  init(cast[AsyncStreamWriter](child), wsource, boundedWriteLoop, queueSize)
+  init(AsyncStreamWriter(child), wsource, boundedWriteLoop, queueSize)
 
 proc newBoundedStreamWriter*[T](wsource: AsyncStreamWriter,
                                 boundSize: int,

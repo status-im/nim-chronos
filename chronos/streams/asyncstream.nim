@@ -22,7 +22,7 @@ const
 
 type
   AsyncStreamError* = object of CatchableError
-  AsyncStreamIncorrectError* = object of Defect
+  AsyncStreamIncorrectDefect* = object of Defect
   AsyncStreamIncompleteError* = object of AsyncStreamError
   AsyncStreamLimitError* = object of AsyncStreamError
   AsyncStreamUseClosedError* = object of AsyncStreamError
@@ -179,36 +179,49 @@ template copyOut*(dest: pointer, item: WriteItem, length: int) =
     copyMem(dest, unsafeAddr item.data3[item.offset], length)
 
 proc newAsyncStreamReadError(p: ref CatchableError): ref AsyncStreamReadError {.
-     inline.} =
+     noinline.} =
   var w = newException(AsyncStreamReadError, "Read stream failed")
   w.msg = w.msg & ", originated from [" & $p.name & "] " & p.msg
   w.par = p
   w
 
 proc newAsyncStreamWriteError(p: ref CatchableError): ref AsyncStreamWriteError {.
-     inline.} =
+     noinline.} =
   var w = newException(AsyncStreamWriteError, "Write stream failed")
   w.msg = w.msg & ", originated from [" & $p.name & "] " & p.msg
   w.par = p
   w
 
 proc newAsyncStreamIncompleteError*(): ref AsyncStreamIncompleteError {.
-     inline.} =
+     noinline.} =
   newException(AsyncStreamIncompleteError, "Incomplete data sent or received")
 
-proc newAsyncStreamLimitError*(): ref AsyncStreamLimitError {.inline.} =
+proc newAsyncStreamLimitError*(): ref AsyncStreamLimitError {.noinline.} =
   newException(AsyncStreamLimitError, "Buffer limit reached")
 
-proc newAsyncStreamUseClosedError*(): ref AsyncStreamUseClosedError {.inline.} =
+proc newAsyncStreamUseClosedError*(): ref AsyncStreamUseClosedError {.
+     noinline.} =
   newException(AsyncStreamUseClosedError, "Stream is already closed")
 
-proc newAsyncStreamIncorrectError*(m: string): ref AsyncStreamIncorrectError {.
-     inline.} =
-  newException(AsyncStreamIncorrectError, m)
+proc raiseAsyncStreamUseClosedError*() {.noinline, noreturn.} =
+  raise newAsyncStreamUseClosedError()
+
+proc raiseAsyncStreamLimitError*() {.noinline, noreturn.} =
+  raise newAsyncStreamLimitError()
+
+proc raiseAsyncStreamIncompleteError*() {.noinline, noreturn.} =
+  raise newAsyncStreamIncompleteError()
+
+proc raiseAsyncStreamIncorrectDefect*(m: string) {.noinline, noreturn.} =
+  raise newException(AsyncStreamIncorrectDefect, m)
+
+proc raiseEmptyMessageDefect*() {.noinline, noreturn.} =
+  raise newException(AsyncStreamIncorrectDefect,
+                     "Could not write empty message")
 
 template checkStreamClosed*(t: untyped) =
   if t.state == AsyncStreamState.Closed:
-    raise newAsyncStreamUseClosedError()
+    raiseAsyncStreamUseClosedError()
 
 proc atEof*(rstream: AsyncStreamReader): bool =
   ## Returns ``true`` is reading stream is closed or finished and internal
@@ -677,7 +690,7 @@ proc write*(wstream: AsyncStreamWriter, pbytes: pointer,
   ## ``nbytes` must be more then zero.
   checkStreamClosed(wstream)
   if nbytes <= 0:
-    raise newAsyncStreamIncorrectError("Zero length message")
+    raiseEmptyMessageDefect()
 
   if isNil(wstream.wsource):
     var res: int
@@ -725,7 +738,7 @@ proc write*(wstream: AsyncStreamWriter, sbytes: seq[byte],
   checkStreamClosed(wstream)
   let length = if msglen <= 0: len(sbytes) else: min(msglen, len(sbytes))
   if length <= 0:
-    raise newAsyncStreamIncorrectError("Zero length message")
+    raiseEmptyMessageDefect()
 
   if isNil(wstream.wsource):
     var res: int
@@ -773,7 +786,7 @@ proc write*(wstream: AsyncStreamWriter, sbytes: string,
   checkStreamClosed(wstream)
   let length = if msglen <= 0: len(sbytes) else: min(msglen, len(sbytes))
   if length <= 0:
-    raise newAsyncStreamIncorrectError("Zero length message")
+    raiseEmptyMessageDefect()
 
   if isNil(wstream.wsource):
     var res: int
@@ -857,7 +870,7 @@ proc close*(rw: AsyncStreamRW) =
   ##
   ## Note close() procedure is not completed immediately!
   if rw.closed():
-    raise newAsyncStreamIncorrectError("Stream is already closed!")
+    raiseAsyncStreamIncorrectDefect("Stream is already closed!")
 
   rw.state = AsyncStreamState.Closed
 
