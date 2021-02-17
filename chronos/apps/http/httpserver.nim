@@ -349,7 +349,7 @@ proc handleExpect*(request: HttpRequestRef) {.async.} =
         except CancelledError as exc:
           raise exc
         except AsyncStreamWriteError, AsyncStreamIncompleteError:
-          raise newHttpCriticalError("Unable to send `100-continue` response")
+          raiseHttpCriticalError("Unable to send `100-continue` response")
 
 proc getBody*(request: HttpRequestRef): Future[seq[byte]] {.async.} =
   ## Obtain request's body as sequence of bytes.
@@ -363,9 +363,9 @@ proc getBody*(request: HttpRequestRef): Future[seq[byte]] {.async.} =
       return await reader.read()
     except AsyncStreamError:
       if reader.atBound():
-        raise newHttpCriticalError("Maximum size of body reached", Http413)
+        raiseHttpCriticalError("Maximum size of body reached", Http413)
       else:
-        raise newHttpCriticalError("Unable to read request's body")
+        raiseHttpCriticalError("Unable to read request's body")
     finally:
       await closeWait(res.get())
 
@@ -381,9 +381,9 @@ proc consumeBody*(request: HttpRequestRef): Future[void] {.async.} =
       discard await reader.consume()
     except AsyncStreamError:
       if reader.atBound():
-        raise newHttpCriticalError("Maximum size of body reached", Http413)
+        raiseHttpCriticalError("Maximum size of body reached", Http413)
       else:
-        raise newHttpCriticalError("Unable to read request's body")
+        raiseHttpCriticalError("Unable to read request's body")
     finally:
       await closeWait(res.get())
 
@@ -422,18 +422,17 @@ proc getRequest(conn: HttpConnectionRef): Future[HttpRequestRef] {.async.} =
     conn.buffer.setLen(res)
     let header = parseRequest(conn.buffer)
     if header.failed():
-      raise newHttpCriticalError("Malformed request recieved")
+      raiseHttpCriticalError("Malformed request recieved")
     else:
       let res = prepareRequest(conn, header)
       if res.isErr():
-        raise newHttpCriticalError("Invalid request received", res.error)
+        raiseHttpCriticalError("Invalid request received", res.error)
       else:
         return res.get()
   except AsyncStreamIncompleteError, AsyncStreamReadError:
-    raise newHttpDisconnectError()
+    raiseHttpDisconnectError()
   except AsyncStreamLimitError:
-    raise newHttpCriticalError("Maximum size of request headers reached",
-                               Http413)
+    raiseHttpCriticalError("Maximum size of request headers reached", Http413)
 
 proc new(ht: typedesc[HttpConnectionRef], server: HttpServerRef,
          transp: StreamTransport): HttpConnectionRef =
@@ -503,7 +502,7 @@ proc createConnection(server: HttpServerRef,
     raise exc
   except TLSStreamError:
     await conn.closeWait()
-    raise newHttpCriticalError("Unable to establish secure connection")
+    raiseHttpCriticalError("Unable to establish secure connection")
 
 proc processLoop(server: HttpServerRef, transp: StreamTransport) {.async.} =
   var
@@ -534,7 +533,7 @@ proc processLoop(server: HttpServerRef, transp: StreamTransport) {.async.} =
       return
     except CatchableError as exc:
       # There should be no exceptions, so we will raise `Defect`.
-      raise newHttpDefect("Unexpected exception catched [" & $exc.name & "]")
+      raiseHttpDefect("Unexpected exception catched [" & $exc.name & "]")
 
   var breakLoop = false
   while runLoop:
@@ -763,7 +762,7 @@ proc post*(req: HttpRequestRef): Future[HttpTable] {.async.} =
       var table = HttpTable.init()
       let res = getMultipartReader(req)
       if res.isErr():
-        raise newHttpCriticalError("Unable to retrieve multipart form data")
+        raiseHttpCriticalError("Unable to retrieve multipart form data")
       var mpreader = res.get()
 
       # We must handle `Expect` first.
@@ -808,10 +807,10 @@ proc post*(req: HttpRequestRef): Future[HttpTable] {.async.} =
     else:
       if HttpRequestFlags.BoundBody in req.requestFlags:
         if req.contentLength != 0:
-          raise newHttpCriticalError("Unsupported request body")
+          raiseHttpCriticalError("Unsupported request body")
         return HttpTable.init()
       elif HttpRequestFlags.UnboundBody in req.requestFlags:
-        raise newHttpCriticalError("Unsupported request body")
+        raiseHttpCriticalError("Unsupported request body")
 
 proc `keepalive=`*(resp: HttpResponseRef, value: bool) =
   doAssert(resp.state == HttpResponseState.Empty)
@@ -854,7 +853,7 @@ template doHeaderVal(buf, name, value) =
 
 template checkPending(t: untyped) =
   if t.state != HttpResponseState.Empty:
-    raise newHttpCriticalError("Response body was already sent")
+    raiseHttpCriticalError("Response body was already sent")
 
 proc prepareLengthHeaders(resp: HttpResponseRef, length: int): string {.
      raises: [Defect].}=
@@ -910,7 +909,7 @@ proc sendBody*(resp: HttpResponseRef, pbytes: pointer, nbytes: int) {.async.} =
     raise exc
   except AsyncStreamWriteError, AsyncStreamIncompleteError:
     resp.state = HttpResponseState.Failed
-    raise newHttpCriticalError("Unable to send response")
+    raiseHttpCriticalError("Unable to send response")
 
 proc sendBody*[T: string|seq[byte]](resp: HttpResponseRef, data: T) {.async.} =
   ## Send HTTP response at once by using data ``data``.
@@ -928,7 +927,7 @@ proc sendBody*[T: string|seq[byte]](resp: HttpResponseRef, data: T) {.async.} =
     raise exc
   except AsyncStreamWriteError, AsyncStreamIncompleteError:
     resp.state = HttpResponseState.Failed
-    raise newHttpCriticalError("Unable to send response")
+    raiseHttpCriticalError("Unable to send response")
 
 proc sendError*(resp: HttpResponseRef, code: HttpCode, body = "") {.async.} =
   ## Send HTTP error status response.
@@ -947,7 +946,7 @@ proc sendError*(resp: HttpResponseRef, code: HttpCode, body = "") {.async.} =
     raise exc
   except AsyncStreamWriteError, AsyncStreamIncompleteError:
     resp.state = HttpResponseState.Failed
-    raise newHttpCriticalError("Unable to send response")
+    raiseHttpCriticalError("Unable to send response")
 
 proc prepare*(resp: HttpResponseRef) {.async.} =
   ## Prepare for HTTP stream response.
@@ -966,16 +965,16 @@ proc prepare*(resp: HttpResponseRef) {.async.} =
     raise exc
   except AsyncStreamWriteError, AsyncStreamIncompleteError:
     resp.state = HttpResponseState.Failed
-    raise newHttpCriticalError("Unable to send response")
+    raiseHttpCriticalError("Unable to send response")
 
 proc sendChunk*(resp: HttpResponseRef, pbytes: pointer, nbytes: int) {.async.} =
   ## Send single chunk of data pointed by ``pbytes`` and ``nbytes``.
   doAssert(not(isNil(pbytes)), "pbytes must not be nil")
   doAssert(nbytes >= 0, "nbytes should be bigger or equal to zero")
   if HttpResponseFlags.Chunked notin resp.flags:
-    raise newHttpCriticalError("Response was not prepared")
+    raiseHttpCriticalError("Response was not prepared")
   if resp.state notin {HttpResponseState.Prepared, HttpResponseState.Sending}:
-    raise newHttpCriticalError("Response in incorrect state")
+    raiseHttpCriticalError("Response in incorrect state")
   try:
     resp.state = HttpResponseState.Sending
     await resp.chunkedWriter.write(pbytes, nbytes)
@@ -985,15 +984,15 @@ proc sendChunk*(resp: HttpResponseRef, pbytes: pointer, nbytes: int) {.async.} =
     raise exc
   except AsyncStreamWriteError, AsyncStreamIncompleteError:
     resp.state = HttpResponseState.Failed
-    raise newHttpCriticalError("Unable to send response")
+    raiseHttpCriticalError("Unable to send response")
 
 proc sendChunk*[T: string|seq[byte]](resp: HttpResponseRef,
                                      data: T) {.async.} =
   ## Send single chunk of data ``data``.
   if HttpResponseFlags.Chunked notin resp.flags:
-    raise newHttpCriticalError("Response was not prepared")
+    raiseHttpCriticalError("Response was not prepared")
   if resp.state notin {HttpResponseState.Prepared, HttpResponseState.Sending}:
-    raise newHttpCriticalError("Response in incorrect state")
+    raiseHttpCriticalError("Response in incorrect state")
   try:
     resp.state = HttpResponseState.Sending
     await resp.chunkedWriter.write(data)
@@ -1003,14 +1002,14 @@ proc sendChunk*[T: string|seq[byte]](resp: HttpResponseRef,
     raise exc
   except AsyncStreamWriteError, AsyncStreamIncompleteError:
     resp.state = HttpResponseState.Failed
-    raise newHttpCriticalError("Unable to send response")
+    raiseHttpCriticalError("Unable to send response")
 
 proc finish*(resp: HttpResponseRef) {.async.} =
   ## Sending last chunk of data, so it will indicate end of HTTP response.
   if HttpResponseFlags.Chunked notin resp.flags:
-    raise newHttpCriticalError("Response was not prepared")
+    raiseHttpCriticalError("Response was not prepared")
   if resp.state notin {HttpResponseState.Prepared, HttpResponseState.Sending}:
-    raise newHttpCriticalError("Response in incorrect state")
+    raiseHttpCriticalError("Response in incorrect state")
   try:
     resp.state = HttpResponseState.Sending
     await resp.chunkedWriter.finish()
@@ -1020,7 +1019,7 @@ proc finish*(resp: HttpResponseRef) {.async.} =
     raise exc
   except AsyncStreamWriteError, AsyncStreamIncompleteError:
     resp.state = HttpResponseState.Failed
-    raise newHttpCriticalError("Unable to send response")
+    raiseHttpCriticalError("Unable to send response")
 
 proc respond*(req: HttpRequestRef, code: HttpCode, content: string,
               headers: HttpTable): Future[HttpResponseRef] {.async.} =

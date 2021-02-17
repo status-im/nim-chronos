@@ -813,6 +813,7 @@ suite "HTTP server testing suite":
           res2.isOk()
           res2.get() == FlagsVectors[i]
           res3.isErr()
+          res4.isErr()
           res5.isOk()
           res5.get() == FlagsVectors[i]
 
@@ -864,6 +865,7 @@ suite "HTTP server testing suite":
           res2.isOk()
           res2.get() == FlagsVectors[i]
           res3.isErr()
+          res4.isErr()
           res5.isOk()
           res5.get() == FlagsVectors[i]
 

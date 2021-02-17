@@ -149,14 +149,14 @@ proc readPart*(mpr: MultiPartReaderRef): Future[MultiPart] {.async.} =
       mpr.firstTime = false
       if not(startsWith(mpr.buffer.toOpenArray(0, len(mpr.boundary) - 3),
                         mpr.boundary.toOpenArray(2, len(mpr.boundary) - 1))):
-        raise newHttpCriticalError("Unexpected boundary encountered")
+        raiseHttpCriticalError("Unexpected boundary encountered")
     except CancelledError as exc:
       raise exc
     except AsyncStreamError:
       if mpr.stream.atBound():
-        raise newHttpCriticalError("Maximum size of body reached", Http413)
+        raiseHttpCriticalError("Maximum size of body reached", Http413)
       else:
-        raise newHttpCriticalError("Unable to read multipart body")
+        raiseHttpCriticalError("Unable to read multipart body")
 
   # Reading part's headers
   try:
@@ -170,9 +170,9 @@ proc readPart*(mpr: MultiPartReaderRef): Future[MultiPart] {.async.} =
         raise newException(MultipartEOMError,
                            "End of multipart message")
       else:
-        raise newHttpCriticalError("Incorrect multipart header found")
+        raiseHttpCriticalError("Incorrect multipart header found")
     if mpr.buffer[0] != 0x0D'u8 or mpr.buffer[1] != 0x0A'u8:
-      raise newHttpCriticalError("Incorrect multipart boundary found")
+      raiseHttpCriticalError("Incorrect multipart boundary found")
 
     # If two bytes are CRLF we are at the part beginning.
     # Reading part's headers
@@ -180,7 +180,7 @@ proc readPart*(mpr: MultiPartReaderRef): Future[MultiPart] {.async.} =
                                          HeadersMark)
     var headersList = parseHeaders(mpr.buffer.toOpenArray(0, res - 1), false)
     if headersList.failed():
-      raise newHttpCriticalError("Incorrect multipart's headers found")
+      raiseHttpCriticalError("Incorrect multipart's headers found")
     inc(mpr.counter)
 
     var part = MultiPart(
@@ -196,16 +196,16 @@ proc readPart*(mpr: MultiPartReaderRef): Future[MultiPart] {.async.} =
 
     let sres = part.setPartNames()
     if sres.isErr():
-      raise newHttpCriticalError(sres.error)
+      raiseHttpCriticalError($sres.error)
     return part
 
   except CancelledError as exc:
     raise exc
   except AsyncStreamError:
     if mpr.stream.atBound():
-      raise newHttpCriticalError("Maximum size of body reached", Http413)
+      raiseHttpCriticalError("Maximum size of body reached", Http413)
     else:
-      raise newHttpCriticalError("Unable to read multipart body")
+      raiseHttpCriticalError("Unable to read multipart body")
 
 proc atBound*(mp: MultiPart): bool =
   ## Returns ``true`` if MultiPart's stream reached request body maximum size.
@@ -220,9 +220,9 @@ proc getBody*(mp: MultiPart): Future[seq[byte]] {.async.} =
       return res
     except AsyncStreamError:
       if mp.breader.atBound():
-        raise newHttpCriticalError("Maximum size of body reached", Http413)
+        raiseHttpCriticalError("Maximum size of body reached", Http413)
       else:
-        raise newHttpCriticalError("Unable to read multipart body")
+        raiseHttpCriticalError("Unable to read multipart body")
   of MultiPartSource.Buffer:
     return mp.buffer
 
@@ -234,9 +234,9 @@ proc consumeBody*(mp: MultiPart) {.async.} =
       discard await mp.stream.consume()
     except AsyncStreamError:
       if mp.breader.atBound():
-        raise newHttpCriticalError("Maximum size of body reached", Http413)
+        raiseHttpCriticalError("Maximum size of body reached", Http413)
       else:
-        raise newHttpCriticalError("Unable to consume multipart body")
+        raiseHttpCriticalError("Unable to consume multipart body")
   of MultiPartSource.Buffer:
     discard
 

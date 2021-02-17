@@ -63,28 +63,15 @@ proc atBound*(bstream: HttpBodyReader): bool {.
   let breader = cast[BoundedStreamReader](lreader)
   breader.atEof() and (breader.bytesLeft() == 0)
 
-proc newHttpDefect*(msg: string): ref HttpDefect {.
-     raises: [HttpDefect].} =
-  newException(HttpDefect, msg)
+proc raiseHttpCriticalError*(msg: string,
+                             code = Http400) {.noinline, noreturn.} =
+  raise (ref HttpCriticalError)(code: code, msg: msg)
 
-proc newHttpCriticalError*(msg: string,
-                           code = Http400): ref HttpCriticalError {.
-     raises: [HttpCriticalError].} =
-  var tre = newException(HttpCriticalError, msg)
-  tre.code = code
-  tre
+proc raiseHttpDisconnectError*() {.noinline, noreturn.} =
+  raise (ref HttpDisconnectError)(msg: "Remote peer disconnected")
 
-proc newHttpRecoverableError*(msg: string,
-                              code = Http400): ref HttpRecoverableError {.
-     raises: [HttpRecoverableError].} =
-  var tre = newException(HttpRecoverableError, msg)
-  tre.code = code
-  tre
-
-proc newHttpDisconnectError*(): ref HttpDisconnectError {.
-     raises: [HttpDisconnectError].} =
-  var tre = newException(HttpDisconnectError, "Remote peer disconnected")
-  tre
+proc raiseHttpDefect*(msg: string) {.noinline, noreturn.} =
+  raise (ref HttpDefect)(msg: msg)
 
 iterator queryParams*(query: string): tuple[key: string, value: string] {.
          raises: [Defect].} =
