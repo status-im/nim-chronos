@@ -37,6 +37,8 @@ proc LT(x, y: uint32): uint32 {.inline.} =
   (z xor ((y xor x) and (y xor z))) shr 31
 
 proc hexValue(c: byte): int =
+  # This is nim adaptation of
+  # https://github.com/pornin/CTTK/blob/master/src/hex.c#L28-L52
   let x = uint32(c) - 0x30'u32
   let y = uint32(c) - 0x41'u32
   let z = uint32(c) - 0x61'u32
