@@ -52,6 +52,8 @@ type
 
 proc startsWith(s, prefix: openarray[byte]): bool {.
      raises: [Defect].} =
+  # This procedure is copy of strutils.startsWith() procedure, however,
+  # it is intended to work with arrays of bytes, but not with strings.
   var i = 0
   while true:
     if i >= len(prefix): return true
@@ -60,6 +62,8 @@ proc startsWith(s, prefix: openarray[byte]): bool {.
 
 proc parseUntil(s, until: openarray[byte]): int {.
      raises: [Defect].} =
+  # This procedure is copy of parseutils.parseUntil() procedure, however,
+  # it is intended to work with arrays of bytes, but not with strings.
   var i = 0
   while i < len(s):
     if len(until) > 0 and s[i] == until[0]:
@@ -127,7 +131,15 @@ proc new*[B: BChar](mpt: typedesc[MultiPartReaderRef],
   ## ``stream`` is stream used to read data.
   ## ``boundary`` is multipart boundary, this value must not be empty.
   ## ``partHeadersMaxSize`` is maximum size of multipart's headers.
-  doAssert(len(boundary) > 0)
+  # According to specification length of boundary must be bigger then `0` and
+  # less or equal to `70`.
+  doAssert(len(boundary) > 0 and len(boundary) <= 70)
+  # 256 bytes is minimum value because we going to use single buffer for
+  # reading boundaries and for reading headers.
+  # Minimal buffer value for boundary is 5 bytes, maximum is 74 bytes. But at
+  # least one header should be present "Content-Disposition", so minimum value
+  # of multipart headers will be near 150 bytes.
+  doAssert(partHeadersMaxSize >= 256)
   # Our internal boundary has format `<CR><LF><-><-><boundary>`, so we can
   # reuse different parts of this sequence for processing.
   var fboundary = newSeq[byte](len(boundary) + 4)
@@ -266,8 +278,7 @@ proc closeWait*(mpr: MultiPartReaderRef) {.async.} =
   else:
     discard
 
-proc getBytes*(mp: MultiPart): seq[byte] {.
-     raises: [Defect].} =
+proc getBytes*(mp: MultiPart): seq[byte] {.raises: [Defect].} =
   ## Returns value for MultiPart ``mp`` as sequence of bytes.
   case mp.kind
   of MultiPartSource.Buffer:
@@ -276,28 +287,16 @@ proc getBytes*(mp: MultiPart): seq[byte] {.
     doAssert(not(mp.stream.atEof()), "Value is not obtained yet")
     mp.buffer
 
-proc getString*(mp: MultiPart): string {.
-     raises: [Defect].} =
+proc getString*(mp: MultiPart): string {.raises: [Defect].} =
   ## Returns value for MultiPart ``mp`` as string.
   case mp.kind
   of MultiPartSource.Buffer:
-    if len(mp.buffer) > 0:
-      var res = newString(len(mp.buffer))
-      copyMem(addr res[0], unsafeAddr mp.buffer[0], len(mp.buffer))
-      res
-    else:
-      ""
+    bytesToString(mp.buffer)
   of MultiPartSource.Stream:
     doAssert(not(mp.stream.atEof()), "Value is not obtained yet")
-    if len(mp.buffer) > 0:
-      var res = newString(len(mp.buffer))
-      copyMem(addr res[0], unsafeAddr mp.buffer[0], len(mp.buffer))
-      res
-    else:
-      ""
+    bytesToString(mp.buffer)
 
-proc atEoM*(mpr: var MultiPartReader): bool {.
-     raises: [Defect].} =
+proc atEoM*(mpr: var MultiPartReader): bool {.raises: [Defect].} =
   ## Procedure returns ``true`` if MultiPartReader has reached the end of
   ## multipart message.
   case mpr.kind
@@ -306,8 +305,7 @@ proc atEoM*(mpr: var MultiPartReader): bool {.
   of MultiPartSource.Stream:
     mpr.stream.atEof()
 
-proc atEoM*(mpr: MultiPartReaderRef): bool {.
-     raises: [Defect].} =
+proc atEoM*(mpr: MultiPartReaderRef): bool {.raises: [Defect].} =
   ## Procedure returns ``true`` if MultiPartReader has reached the end of
   ## multipart message.
   case mpr.kind
@@ -422,7 +420,7 @@ func getMultipartBoundary*(ch: openarray[string]): HttpResult[string] {.
   ##   2) `Content-Type` must be ``multipart/form-data``.
   ##   3) `boundary` value must be present
   ##   4) `boundary` value must be less then 70 characters length and
-  ##      all characters should be part of alphabet.
+  ##      all characters should be part of specific alphabet.
   if len(ch) > 1:
     err("Multiple Content-Type headers found")
   else:
@@ -455,17 +453,14 @@ func getMultipartBoundary*(ch: openarray[string]): HttpResult[string] {.
         if len(bparts) < 2:
           err("Missing Content-Type boundary")
         else:
-          if bparts[0].toLowerAscii() != "boundary":
-            err("Missing boundary key")
+          let candidate = strip(bparts[1])
+          if len(candidate) == 0:
+            err("Content-Type boundary must be at least 1 character size")
+          elif len(candidate) > 70:
+            err("Content-Type boundary must be less then 70 characters")
           else:
-            let candidate = strip(bparts[1])
-            if len(candidate) == 0:
-              err("Content-Type boundary must be at least 1 character size")
-            elif len(candidate) > 70:
-              err("Content-Type boundary must be less then 70 characters")
-            else:
-              for ch in candidate:
-                if ch notin {'a' .. 'z', 'A' .. 'Z', '0' .. '9',
-                             '\'' .. ')', '+' .. '/', ':', '=', '?', '_'}:
-                  return err("Content-Type boundary alphabet incorrect")
-              ok(candidate)
+            for ch in candidate:
+              if ch notin {'a' .. 'z', 'A' .. 'Z', '0' .. '9',
+                           '\'' .. ')', '+' .. '/', ':', '=', '?', '_'}:
+                return err("Content-Type boundary alphabet incorrect")
+            ok(candidate)

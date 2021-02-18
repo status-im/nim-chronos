@@ -117,9 +117,23 @@ proc boundedReadLoop(stream: AsyncStreamReader) {.async.} =
               await upload(addr rstream.buffer, addr buffer[0], length)
               rstream.state = AsyncStreamState.Finished
             else:
+              if (res < toRead) and rstream.rsource.atEof():
+                case rstream.cmpop
+                of BoundCmp.Equal:
+                  rstream.state = AsyncStreamState.Error
+                  rstream.error = newBoundedStreamIncompleteError()
+                of BoundCmp.LessOrEqual:
+                  rstream.state = AsyncStreamState.Finished
               rstream.offset = rstream.offset + res
               await upload(addr rstream.buffer, addr buffer[0], res)
           else:
+            if (res < toRead) and rstream.rsource.atEof():
+              case rstream.cmpop
+              of BoundCmp.Equal:
+                rstream.state = AsyncStreamState.Error
+                rstream.error = newBoundedStreamIncompleteError()
+              of BoundCmp.LessOrEqual:
+                rstream.state = AsyncStreamState.Finished
             rstream.offset = rstream.offset + res
             await upload(addr rstream.buffer, addr buffer[0], res)
         else:
@@ -146,10 +160,6 @@ proc boundedReadLoop(stream: AsyncStreamReader) {.async.} =
       rstream.state = AsyncStreamState.Finished
       break
 
-  # Without this additional wait, procedures such as `read()` could got stuck
-  # in `await.buffer.wait()` because procedures are unable to detect EOF while
-  # inside readLoop body.
-  await stepsAsync(1)
   # We need to notify consumer about error/close, but we do not care about
   # incoming data anymore.
   rstream.buffer.forget()
@@ -170,11 +180,11 @@ proc boundedWriteLoop(stream: AsyncStreamWriter) {.async.} =
           # Writing chunk data.
           case item.kind
           of WriteType.Pointer:
-            await wstream.wsource.write(item.data1, item.size)
+            await wstream.wsource.write(item.dataPtr, item.size)
           of WriteType.Sequence:
-            await wstream.wsource.write(addr item.data2[0], item.size)
+            await wstream.wsource.write(addr item.dataSeq[0], item.size)
           of WriteType.String:
-            await wstream.wsource.write(addr item.data3[0], item.size)
+            await wstream.wsource.write(addr item.dataStr[0], item.size)
           wstream.offset = wstream.offset + item.size
           item.future.complete()
         else:

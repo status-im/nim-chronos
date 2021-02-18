@@ -29,7 +29,7 @@ type
     exc*: ref CatchableError
     remote*: TransportAddress
 
-  RequestFence*[T] = Result[T, HttpProcessError]
+  RequestFence* = Result[HttpRequestRef, HttpProcessError]
 
   HttpRequestFlags* {.pure.} = enum
     BoundBody, UnboundBody, MultipartForm, UrlencodedForm,
@@ -42,7 +42,7 @@ type
     Empty, Prepared, Sending, Finished, Failed, Cancelled, Dumb
 
   HttpProcessCallback* =
-    proc(req: RequestFence[HttpRequestRef]): Future[HttpResponseRef] {.gcsafe.}
+    proc(req: RequestFence): Future[HttpResponseRef] {.gcsafe.}
 
   HttpServer* = object of RootObj
     instance*: StreamServer
@@ -507,7 +507,7 @@ proc createConnection(server: HttpServerRef,
 proc processLoop(server: HttpServerRef, transp: StreamTransport) {.async.} =
   var
     conn: HttpConnectionRef
-    connArg: RequestFence[HttpRequestRef]
+    connArg: RequestFence
     runLoop = false
 
   try:
@@ -520,7 +520,7 @@ proc processLoop(server: HttpServerRef, transp: StreamTransport) {.async.} =
   except HttpCriticalError as exc:
     let error = HttpProcessError.init(HTTPServerError.CriticalError, exc,
                                       transp.remoteAddress(), exc.code)
-    connArg = RequestFence[HttpRequestRef].err(error)
+    connArg = RequestFence.err(error)
     runLoop = false
 
   if not(runLoop):
@@ -538,33 +538,33 @@ proc processLoop(server: HttpServerRef, transp: StreamTransport) {.async.} =
   var breakLoop = false
   while runLoop:
     var
-      arg: RequestFence[HttpRequestRef]
+      arg: RequestFence
       resp: HttpResponseRef
 
     try:
       let request = await conn.getRequest().wait(server.headersTimeout)
-      arg = RequestFence[HttpRequestRef].ok(request)
+      arg = RequestFence.ok(request)
     except CancelledError:
       breakLoop = true
     except AsyncTimeoutError as exc:
       let error = HttpProcessError.init(HTTPServerError.TimeoutError, exc,
                                         transp.remoteAddress(), Http408)
-      arg = RequestFence[HttpRequestRef].err(error)
+      arg = RequestFence.err(error)
     except HttpRecoverableError as exc:
       let error = HttpProcessError.init(HTTPServerError.RecoverableError, exc,
                                         transp.remoteAddress(), exc.code)
-      arg = RequestFence[HttpRequestRef].err(error)
+      arg = RequestFence.err(error)
     except HttpCriticalError as exc:
       let error = HttpProcessError.init(HTTPServerError.CriticalError, exc,
                                         transp.remoteAddress(), exc.code)
-      arg = RequestFence[HttpRequestRef].err(error)
+      arg = RequestFence.err(error)
     except HttpDisconnectError:
       # If remote peer disconnected we just exiting loop
       breakLoop = true
     except CatchableError as exc:
       let error = HttpProcessError.init(HTTPServerError.CatchableError, exc,
                                         transp.remoteAddress(), Http500)
-      arg = RequestFence[HttpRequestRef].err(error)
+      arg = RequestFence.err(error)
 
     if breakLoop:
       break

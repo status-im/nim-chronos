@@ -42,11 +42,11 @@ type
   WriteItem* = object
     case kind*: WriteType
     of Pointer:
-      data1*: pointer
+      dataPtr*: pointer
     of Sequence:
-      data2*: seq[byte]
+      dataSeq*: seq[byte]
     of String:
-      data3*: string
+      dataStr*: string
     size*: int
     offset*: int
     future*: Future[void]
@@ -96,12 +96,11 @@ type
   AsyncStreamRW* = AsyncStreamReader | AsyncStreamWriter
 
 proc init*(t: typedesc[AsyncBuffer], size: int): AsyncBuffer =
-  var res = AsyncBuffer(
+  AsyncBuffer(
     buffer: newSeq[byte](size),
     events: [newAsyncEvent(), newAsyncEvent()],
     offset: 0
   )
-  res
 
 proc getBuffer*(sb: AsyncBuffer): pointer {.inline.} =
   unsafeAddr sb.buffer[sb.offset]
@@ -171,12 +170,12 @@ template toBufferOpenArray*(sb: AsyncBuffer): auto =
 
 template copyOut*(dest: pointer, item: WriteItem, length: int) =
   if item.kind == Pointer:
-    let p = cast[pointer](cast[uint](item.data1) + uint(item.offset))
+    let p = cast[pointer](cast[uint](item.dataPtr) + uint(item.offset))
     copyMem(dest, p, length)
   elif item.kind == Sequence:
-    copyMem(dest, unsafeAddr item.data2[item.offset], length)
+    copyMem(dest, unsafeAddr item.dataSeq[item.offset], length)
   elif item.kind == String:
-    copyMem(dest, unsafeAddr item.data3[item.offset], length)
+    copyMem(dest, unsafeAddr item.dataStr[item.offset], length)
 
 proc newAsyncStreamReadError(p: ref CatchableError): ref AsyncStreamReadError {.
      noinline.} =
@@ -226,7 +225,7 @@ template checkStreamClosed*(t: untyped) =
 proc atEof*(rstream: AsyncStreamReader): bool =
   ## Returns ``true`` is reading stream is closed or finished and internal
   ## buffer do not have any bytes left.
-  rstream.state in {AsyncStreamState.Stopped, Finished, Closed} and
+  rstream.state in {AsyncStreamState.Stopped, Finished, Closed, Error} and
     (rstream.buffer.dataLen() == 0)
 
 proc atEof*(wstream: AsyncStreamWriter): bool =
@@ -327,13 +326,13 @@ template readLoop(body: untyped): untyped =
         raise rstream.error
 
     let (consumed, done) = body
-
     rstream.buffer.shift(consumed)
     rstream.bytesCount = rstream.bytesCount + uint64(consumed)
     if done:
       break
     else:
-      await rstream.buffer.wait()
+      if not(rstream.atEof()):
+        await rstream.buffer.wait()
 
 proc readExactly*(rstream: AsyncStreamReader, pbytes: pointer,
                   nbytes: int) {.async.} =
@@ -711,7 +710,7 @@ proc write*(wstream: AsyncStreamWriter, pbytes: pointer,
       wstream.bytesCount = wstream.bytesCount + uint64(nbytes)
     else:
       var item = WriteItem(kind: Pointer)
-      item.data1 = pbytes
+      item.dataPtr = pbytes
       item.size = nbytes
       item.future = newFuture[void]("async.stream.write(pointer)")
       try:
@@ -758,9 +757,9 @@ proc write*(wstream: AsyncStreamWriter, sbytes: seq[byte],
     else:
       var item = WriteItem(kind: Sequence)
       if not isLiteral(sbytes):
-        shallowCopy(item.data2, sbytes)
+        shallowCopy(item.dataSeq, sbytes)
       else:
-        item.data2 = sbytes
+        item.dataSeq = sbytes
       item.size = length
       item.future = newFuture[void]("async.stream.write(seq)")
       try:
@@ -806,9 +805,9 @@ proc write*(wstream: AsyncStreamWriter, sbytes: string,
     else:
       var item = WriteItem(kind: String)
       if not isLiteral(sbytes):
-        shallowCopy(item.data3, sbytes)
+        shallowCopy(item.dataStr, sbytes)
       else:
-        item.data3 = sbytes
+        item.dataStr = sbytes
       item.size = length
       item.future = newFuture[void]("async.stream.write(string)")
       try:
