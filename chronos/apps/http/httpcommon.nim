@@ -153,3 +153,47 @@ func getContentType*(ch: openarray[string]): HttpResult[string]  {.
   else:
     let mparts = ch[0].split(";")
     ok(strip(mparts[0]).toLowerAscii())
+
+proc bytesToString*(src: openarray[byte], dst: var openarray[char]) =
+  ## Convert array of bytes to array of characters.
+  ##
+  ## Note, that this procedure assume that `sizeof(byte) == sizeof(char) == 1`.
+  ## If this equation is not correct this procedures MUST not be used.
+  doAssert(len(src) == len(dst))
+  if len(src) > 0:
+    copyMem(addr dst[0], unsafeAddr src[0], len(src))
+
+proc stringToBytes*(src: openarray[char], dst: var openarray[byte]) =
+  ## Convert array of characters to array of bytes.
+  ##
+  ## Note, that this procedure assume that `sizeof(byte) == sizeof(char) == 1`.
+  ## If this equation is not correct this procedures MUST not be used.
+  doAssert(len(src) == len(dst))
+  if len(src) > 0:
+    copyMem(addr dst[0], unsafeAddr src[0], len(src))
+
+func bytesToString*(src: openarray[byte]): string =
+  ## Convert array of bytes to a string.
+  ##
+  ## Note, that this procedure assume that `sizeof(byte) == sizeof(char) == 1`.
+  ## If this equation is not correct this procedures MUST not be used.
+  var default: string
+  if len(src) > 0:
+    var dst = newString(len(src))
+    bytesToString(src, dst)
+    dst
+  else:
+    default
+
+func stringToBytes*(src: openarray[char]): seq[byte] =
+  ## Convert string to sequence of bytes.
+  ##
+  ## Note, that this procedure assume that `sizeof(byte) == sizeof(char) == 1`.
+  ## If this equation is not correct this procedures MUST not be used.
+  var default: seq[byte]
+  if len(src) > 0:
+    var dst = newSeq[byte](len(src))
+    stringToBytes(src, dst)
+    dst
+  else:
+    default

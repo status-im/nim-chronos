@@ -506,7 +506,10 @@ suite "ChunkedStream test suite":
        "--f98f0\r\nContent-Disposition: form-data; name=\"key3\"" &
        "\r\n\r\nC\r\n" &
        "--f98f0--\r\n"
-      ]
+      ],
+      ["4;position=1\r\nWiki\r\n5;position=2\r\npedia\r\nE;position=3\r\n" &
+       " in\r\n\r\nchunks.\r\n0;position=4\r\n\r\n",
+       "Wikipedia in\r\n\r\nchunks."],
     ]
     proc checkVector(address: TransportAddress,
                      inputstr: string): Future[string] {.async.} =
@@ -545,7 +548,16 @@ suite "ChunkedStream test suite":
     check waitFor(testVectors(initTAddress("127.0.0.1:46001"))) == true
   test "ChunkedStream incorrect chunk test":
     const BadVectors = [
-      ["100000000 \r\n1"],
+      ["10000000;\r\n1"],
+      ["10000000\r\n1"],
+      ["FFFFFFFF;extension1=value1;extension2=value2\r\n1"],
+      ["FFFFFFFF\r\n1"],
+      ["100000000\r\n1"],
+      ["10000000 \r\n1"],
+      ["100000000 ;\r\n"],
+      ["FFFFFFFF0\r\n1"],
+      ["FFFFFFFF \r\n1"],
+      ["FFFFFFFF ;\r\n1"],
       ["z\r\n1"]
     ]
     proc checkVector(address: TransportAddress,
@@ -571,11 +583,36 @@ suite "ChunkedStream test suite":
         var r = await rstream2.read()
         doAssert(len(r) > 0)
       except ChunkedStreamIncompleteError:
-        if inputstr == "100000000 \r\n1":
+        case inputstr
+        of "10000000;\r\n1":
           res = true
+        of "10000000\r\n1":
+          res = true
+        of "FFFFFFFF;extension1=value1;extension2=value2\r\n1":
+          res = true
+        of "FFFFFFFF\r\n1":
+          res = true
+        else:
+          res = false
       except ChunkedStreamProtocolError:
-        if inputstr == "z\r\n1":
+        case inputstr
+        of "100000000\r\n1":
           res = true
+        of "10000000 \r\n1":
+          res = true
+        of "100000000 ;\r\n":
+          res = true
+        of "z\r\n1":
+          res = true
+        of "FFFFFFFF0\r\n1":
+          res = true
+        of "FFFFFFFF \r\n1":
+          res = true
+        of "FFFFFFFF ;\r\n1":
+          res = true
+        else:
+          res = false
+
       await rstream2.closeWait()
       await rstream.closeWait()
       await transp.closeWait()
@@ -687,6 +724,13 @@ suite "TLSStream test suite":
 
 suite "BoundedStream test suite":
 
+  type
+    BoundarySizeTest = enum
+      SizeReadWrite, SizeOverflow, SizeIncomplete, SizeEmpty
+    BoundaryBytesTest = enum
+      BoundaryRead, BoundaryDouble, BoundarySize, BoundaryIncomplete,
+      BoundaryEmpty
+
   proc createBigMessage(size: int): seq[byte] =
     var message = "ABCDEFGHIJKLMNOP"
     var res = newSeq[byte](size)
@@ -697,8 +741,8 @@ suite "BoundedStream test suite":
   for itemComp in [BoundCmp.Equal, BoundCmp.LessOrEqual]:
     for itemSize in [100, 60000]:
 
-      proc boundaryTest(address: TransportAddress, test: int, size: int,
-                        boundary: seq[byte],
+      proc boundaryTest(address: TransportAddress, btest: BoundaryBytesTest,
+                        size: int, boundary: seq[byte],
                         cmp: BoundCmp): Future[bool] {.async.} =
         var message = createBigMessage(size)
         var clientRes = false
@@ -706,20 +750,21 @@ suite "BoundedStream test suite":
         proc processClient(server: StreamServer,
                            transp: StreamTransport) {.async.} =
           var wstream = newAsyncStreamWriter(transp)
-          if test == 0:
+          case btest
+          of BoundaryRead:
             await wstream.write(message)
             await wstream.write(boundary)
             await wstream.finish()
             await wstream.closeWait()
             clientRes = true
-          elif test == 1:
+          of BoundaryDouble:
             await wstream.write(message)
             await wstream.write(boundary)
             await wstream.write(message)
             await wstream.finish()
             await wstream.closeWait()
             clientRes = true
-          elif test == 2:
+          of BoundarySize:
             var ncmessage = message
             ncmessage.setLen(len(message) - 2)
             await wstream.write(ncmessage)
@@ -727,14 +772,14 @@ suite "BoundedStream test suite":
             await wstream.finish()
             await wstream.closeWait()
             clientRes = true
-          elif test == 3:
+          of BoundaryIncomplete:
             var ncmessage = message
             ncmessage.setLen(len(message) - 2)
             await wstream.write(ncmessage)
             await wstream.finish()
             await wstream.closeWait()
             clientRes = true
-          elif test == 4:
+          of BoundaryEmpty:
             await wstream.write(boundary)
             await wstream.finish()
             await wstream.closeWait()
@@ -750,20 +795,21 @@ suite "BoundedStream test suite":
         server.start()
         var conn = await connect(address)
         var rstream = newAsyncStreamReader(conn)
-        if test == 0:
+        case btest
+        of BoundaryRead:
           var rbstream = newBoundedStreamReader(rstream, -1, boundary)
           let response = await rbstream.read()
           if response == message:
             res = true
           await rbstream.closeWait()
-        elif test == 1:
+        of BoundaryDouble:
           var rbstream = newBoundedStreamReader(rstream, -1, boundary)
           let response1 = await rbstream.read()
           await rbstream.closeWait()
           let response2 = await rstream.read()
           if (response1 == message) and (response2 == message):
             res = true
-        elif test == 2:
+        of BoundarySize:
           var expectMessage = message
           expectMessage[^2] = 0x2D'u8
           expectMessage[^1] = 0x2D'u8
@@ -772,14 +818,14 @@ suite "BoundedStream test suite":
           await rbstream.closeWait()
           if (len(response) == size) and response == expectMessage:
             res = true
-        elif test == 3:
+        of BoundaryIncomplete:
           var rbstream = newBoundedStreamReader(rstream, -1, boundary)
           try:
             let response {.used.} = await rbstream.read()
           except BoundedStreamIncompleteError:
             res = true
           await rbstream.closeWait()
-        elif test == 4:
+        of BoundaryEmpty:
           var rbstream = newBoundedStreamReader(rstream, -1, boundary)
           let response = await rbstream.read()
           await rbstream.closeWait()
@@ -791,7 +837,7 @@ suite "BoundedStream test suite":
         await server.join()
         return (res and clientRes)
 
-      proc boundedTest(address: TransportAddress, test: int,
+      proc boundedTest(address: TransportAddress, stest: BoundarySizeTest,
                        size: int, cmp: BoundCmp): Future[bool] {.async.} =
         var clientRes = false
         var res = false
@@ -805,13 +851,14 @@ suite "BoundedStream test suite":
                            transp: StreamTransport) {.async.} =
           var wstream = newAsyncStreamWriter(transp)
           var wbstream = newBoundedStreamWriter(wstream, size, comparison = cmp)
-          if test == 0:
+          case stest
+          of SizeReadWrite:
             for i in 0 ..< 10:
               await wbstream.write(messagePart)
             await wbstream.finish()
             await wbstream.closeWait()
             clientRes = true
-          elif test == 1:
+          of SizeOverflow:
             for i in 0 ..< 10:
               await wbstream.write(messagePart)
             try:
@@ -819,7 +866,7 @@ suite "BoundedStream test suite":
             except BoundedStreamOverflowError:
               clientRes = true
             await wbstream.closeWait()
-          elif test == 2:
+          of SizeIncomplete:
             for i in 0 ..< 9:
               await wbstream.write(messagePart)
             case cmp
@@ -835,7 +882,7 @@ suite "BoundedStream test suite":
               except BoundedStreamIncompleteError:
                 discard
             await wbstream.closeWait()
-          elif test == 3:
+          of SizeEmpty:
             case cmp
             of BoundCmp.Equal:
               try:
@@ -861,17 +908,18 @@ suite "BoundedStream test suite":
         var conn = await connect(address)
         var rstream = newAsyncStreamReader(conn)
         var rbstream = newBoundedStreamReader(rstream, size, comparison = cmp)
-        if test == 0:
+        case stest
+        of SizeReadWrite:
           let response = await rbstream.read()
           await rbstream.closeWait()
           if response == message:
             res = true
-        elif test == 1:
+        of SizeOverflow:
           let response = await rbstream.read()
           await rbstream.closeWait()
           if response == message:
             res = true
-        elif test == 2:
+        of SizeIncomplete:
           case cmp
           of BoundCmp.Equal:
             try:
@@ -886,7 +934,7 @@ suite "BoundedStream test suite":
             except BoundedStreamIncompleteError:
               res = false
           await rbstream.closeWait()
-        elif test == 3:
+        of SizeEmpty:
           case cmp
           of BoundCmp.Equal:
             try:
@@ -916,30 +964,34 @@ suite "BoundedStream test suite":
           "<= " & $itemSize
 
       test "BoundedStream(size) reading/writing test [" & suffix & "]":
-        check waitFor(boundedTest(address, 0, itemSize, itemComp)) == true
+        check waitFor(boundedTest(address, SizeReadWrite, itemSize,
+                                  itemComp)) == true
       test "BoundedStream(size) overflow test [" & suffix & "]":
-        check waitFor(boundedTest(address, 1, itemSize, itemComp)) == true
+        check waitFor(boundedTest(address, SizeOverflow, itemSize,
+                                  itemComp)) == true
       test "BoundedStream(size) incomplete test [" & suffix & "]":
-        check waitFor(boundedTest(address, 2, itemSize, itemComp)) == true
+        check waitFor(boundedTest(address, SizeIncomplete, itemSize,
+                                  itemComp)) == true
       test "BoundedStream(size) empty message test [" & suffix & "]":
-        check waitFor(boundedTest(address, 3, itemSize, itemComp)) == true
+        check waitFor(boundedTest(address, SizeEmpty, itemSize,
+                                  itemComp)) == true
       test "BoundedStream(boundary) reading test [" & suffix & "]":
-        check waitFor(boundaryTest(address, 0, itemSize,
+        check waitFor(boundaryTest(address, BoundaryRead, itemSize,
                                    @[0x2D'u8, 0x2D'u8, 0x2D'u8], itemComp))
       test "BoundedStream(boundary) double message test [" & suffix & "]":
-        check waitFor(boundaryTest(address, 1, itemSize,
+        check waitFor(boundaryTest(address, BoundaryDouble, itemSize,
                                    @[0x2D'u8, 0x2D'u8, 0x2D'u8], itemComp))
       test "BoundedStream(size+boundary) reading size-bound test [" &
            suffix & "]":
-        check waitFor(boundaryTest(address, 2, itemSize,
+        check waitFor(boundaryTest(address, BoundarySize, itemSize,
                                    @[0x2D'u8, 0x2D'u8, 0x2D'u8], itemComp))
       test "BoundedStream(boundary) reading incomplete test [" &
            suffix & "]":
-        check waitFor(boundaryTest(address, 3, itemSize,
+        check waitFor(boundaryTest(address, BoundaryIncomplete, itemSize,
                                    @[0x2D'u8, 0x2D'u8, 0x2D'u8], itemComp))
       test "BoundedStream(boundary) empty message test [" &
            suffix & "]":
-        check waitFor(boundaryTest(address, 4, itemSize,
+        check waitFor(boundaryTest(address, BoundaryEmpty, itemSize,
                                    @[0x2D'u8, 0x2D'u8, 0x2D'u8], itemComp))
 
   test "BoundedStream leaks test":

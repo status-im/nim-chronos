@@ -49,11 +49,18 @@ proc getChunkSize(buffer: openarray[byte]): Result[uint64, cstring] =
   # We using `uint64` representation, but allow only 2^32 chunk size,
   # ChunkHeaderSize.
   var res = 0'u64
-  for i in 0 ..< min(len(buffer), ChunkHeaderSize):
+  for i in 0 ..< min(len(buffer), ChunkHeaderSize + 1):
     let value = hexValue(buffer[i])
     if value < 0:
-      return err("Incorrect chunk size encoding")
-    res = (res shl 4) or uint64(value)
+      if buffer[i] == byte(';'):
+        # chunk-extension is present, so chunk size is already decoded in res.
+        return ok(res)
+      else:
+        return err("Incorrect chunk size encoding")
+    else:
+      if i >= ChunkHeaderSize:
+        return err("The chunk size exceeds the limit")
+      res = (res shl 4) or uint64(value)
   ok(res)
 
 proc setChunkSize(buffer: var openarray[byte], length: int64): int =
@@ -135,7 +142,7 @@ proc chunkedReadLoop(stream: AsyncStreamReader) {.async.} =
       rstream.state = AsyncStreamState.Error
       rstream.error = exc
 
-    if rstream.state in {AsyncStreamState.Stopped, AsyncStreamState.Error}:
+    if rstream.state != AsyncStreamState.Running:
       # We need to notify consumer about error/close, but we do not care about
       # incoming data anymore.
       rstream.buffer.forget()
@@ -161,11 +168,11 @@ proc chunkedWriteLoop(stream: AsyncStreamWriter) {.async.} =
         # Writing chunk data.
         case item.kind
         of WriteType.Pointer:
-          await wstream.wsource.write(item.data1, item.size)
+          await wstream.wsource.write(item.dataPtr, item.size)
         of WriteType.Sequence:
-          await wstream.wsource.write(addr item.data2[0], item.size)
+          await wstream.wsource.write(addr item.dataSeq[0], item.size)
         of WriteType.String:
-          await wstream.wsource.write(addr item.data3[0], item.size)
+          await wstream.wsource.write(addr item.dataStr[0], item.size)
         # Writing chunk footer CRLF.
         await wstream.wsource.write(CRLF)
         # Everything is fine, completing queue item's future.

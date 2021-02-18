@@ -69,6 +69,10 @@ N8r5CwGcIX/XPC3lKazzbZ8baA==
 """
 
 suite "HTTP server testing suite":
+  type
+    TooBigTest = enum
+      GetBodyTest, ConsumeBodyTest, PostUrlTest, PostMultipartTest
+
   proc httpClient(address: TransportAddress,
                   data: string): Future[string] {.async.} =
     var transp: StreamTransport
@@ -77,10 +81,7 @@ suite "HTTP server testing suite":
       if len(data) > 0:
         let wres {.used.} = await transp.write(data)
       var rres = await transp.read()
-      var sres = newString(len(rres))
-      if len(rres) > 0:
-        copyMem(addr sres[0], addr rres[0], len(rres))
-      return sres
+      return bytesToString(rres)
     except CatchableError:
       return "EXCEPTION"
     finally:
@@ -104,10 +105,7 @@ suite "HTTP server testing suite":
       if len(data) > 0:
         await tlsstream.writer.write(data)
       var rres = await tlsstream.reader.read()
-      var sres = newString(len(rres))
-      if len(rres) > 0:
-        copyMem(addr sres[0], addr rres[0], len(rres))
-      return sres
+      return bytesToString(rres)
     except CatchableError:
       return "EXCEPTION"
     finally:
@@ -119,20 +117,21 @@ suite "HTTP server testing suite":
                          transp.closeWait())
 
   proc testTooBigBodyChunked(address: TransportAddress,
-                             operation: int): Future[bool] {.async.} =
+                             operation: TooBigTest): Future[bool] {.async.} =
     var serverRes = false
-    proc process(r: RequestFence[HttpRequestRef]): Future[HttpResponseRef] {.
+    proc process(r: RequestFence): Future[HttpResponseRef] {.
          async.} =
       if r.isOk():
         let request = r.get()
         try:
-          if operation == 0:
+          case operation
+          of GetBodyTest:
             let body {.used.} = await request.getBody()
-          elif operation == 1:
+          of ConsumeBodyTest:
             await request.consumeBody()
-          elif operation == 2:
+          of PostUrlTest:
             let ptable {.used.} = await request.post()
-          elif operation == 3:
+          of PostMultipartTest:
             let ptable {.used.} = await request.post()
         except HttpCriticalError as exc:
           if exc.code == Http413:
@@ -153,14 +152,15 @@ suite "HTTP server testing suite":
     server.start()
 
     let request =
-      if operation in [0, 1, 2]:
+      case operation
+      of GetBodyTest, ConsumeBodyTest, PostUrlTest:
         "POST / HTTP/1.0\r\n" &
         "Content-Type: application/x-www-form-urlencoded\r\n" &
         "Transfer-Encoding: chunked\r\n" &
         "Cookie: 2\r\n\r\n" &
         "5\r\na=a&b\r\n5\r\n=b&c=\r\n4\r\nc&d=\r\n4\r\n%D0%\r\n" &
         "2\r\n9F\r\n0\r\n\r\n"
-      elif operation in [3]:
+      of PostMultipartTest:
         "POST / HTTP/1.0\r\n" &
         "Host: 127.0.0.1:30080\r\n" &
         "Transfer-Encoding: chunked\r\n" &
@@ -173,8 +173,6 @@ suite "HTTP server testing suite":
         "\r\n\r\nC\r\n\r\n" &
         "b\r\n--f98f0--\r\n\r\n" &
         "0\r\n\r\n"
-      else:
-        ""
 
     let data = await httpClient(address, request)
     await server.stop()
@@ -184,7 +182,7 @@ suite "HTTP server testing suite":
   test "Request headers timeout test":
     proc testTimeout(address: TransportAddress): Future[bool] {.async.} =
       var serverRes = false
-      proc process(r: RequestFence[HttpRequestRef]): Future[HttpResponseRef] {.
+      proc process(r: RequestFence): Future[HttpResponseRef] {.
            async.} =
         if r.isOk():
           let request = r.get()
@@ -213,7 +211,7 @@ suite "HTTP server testing suite":
   test "Empty headers test":
     proc testEmpty(address: TransportAddress): Future[bool] {.async.} =
       var serverRes = false
-      proc process(r: RequestFence[HttpRequestRef]): Future[HttpResponseRef] {.
+      proc process(r: RequestFence): Future[HttpResponseRef] {.
            async.} =
         if r.isOk():
           let request = r.get()
@@ -241,7 +239,7 @@ suite "HTTP server testing suite":
   test "Too big headers test":
     proc testTooBig(address: TransportAddress): Future[bool] {.async.} =
       var serverRes = false
-      proc process(r: RequestFence[HttpRequestRef]): Future[HttpResponseRef] {.
+      proc process(r: RequestFence): Future[HttpResponseRef] {.
            async.} =
         if r.isOk():
           let request = r.get()
@@ -271,7 +269,7 @@ suite "HTTP server testing suite":
   test "Too big request body test (content-length)":
     proc testTooBigBody(address: TransportAddress): Future[bool] {.async.} =
       var serverRes = false
-      proc process(r: RequestFence[HttpRequestRef]): Future[HttpResponseRef] {.
+      proc process(r: RequestFence): Future[HttpResponseRef] {.
            async.} =
         if r.isOk():
           discard
@@ -300,24 +298,28 @@ suite "HTTP server testing suite":
 
   test "Too big request body test (getBody()/chunked encoding)":
     check:
-      waitFor(testTooBigBodyChunked(initTAddress("127.0.0.1:30080"), 0)) == true
+      waitFor(testTooBigBodyChunked(initTAddress("127.0.0.1:30080"),
+              GetBodyTest)) == true
 
   test "Too big request body test (consumeBody()/chunked encoding)":
     check:
-      waitFor(testTooBigBodyChunked(initTAddress("127.0.0.1:30080"), 1)) == true
+      waitFor(testTooBigBodyChunked(initTAddress("127.0.0.1:30080"),
+              ConsumeBodyTest)) == true
 
   test "Too big request body test (post()/urlencoded/chunked encoding)":
     check:
-      waitFor(testTooBigBodyChunked(initTAddress("127.0.0.1:30080"), 2)) == true
+      waitFor(testTooBigBodyChunked(initTAddress("127.0.0.1:30080"),
+              PostUrlTest)) == true
 
   test "Too big request body test (post()/multipart/chunked encoding)":
     check:
-      waitFor(testTooBigBodyChunked(initTAddress("127.0.0.1:30080"), 3)) == true
+      waitFor(testTooBigBodyChunked(initTAddress("127.0.0.1:30080"),
+              PostMultipartTest)) == true
 
   test "Query arguments test":
     proc testQuery(address: TransportAddress): Future[bool] {.async.} =
       var serverRes = false
-      proc process(r: RequestFence[HttpRequestRef]): Future[HttpResponseRef] {.
+      proc process(r: RequestFence): Future[HttpResponseRef] {.
            async.} =
         if r.isOk():
           let request = r.get()
@@ -357,7 +359,7 @@ suite "HTTP server testing suite":
   test "Headers test":
     proc testHeaders(address: TransportAddress): Future[bool] {.async.} =
       var serverRes = false
-      proc process(r: RequestFence[HttpRequestRef]): Future[HttpResponseRef] {.
+      proc process(r: RequestFence): Future[HttpResponseRef] {.
            async.} =
         if r.isOk():
           let request = r.get()
@@ -400,7 +402,7 @@ suite "HTTP server testing suite":
   test "POST arguments (urlencoded/content-length) test":
     proc testPostUrl(address: TransportAddress): Future[bool] {.async.} =
       var serverRes = false
-      proc process(r: RequestFence[HttpRequestRef]): Future[HttpResponseRef] {.
+      proc process(r: RequestFence): Future[HttpResponseRef] {.
            async.} =
         if r.isOk():
           var kres = newSeq[string]()
@@ -443,7 +445,7 @@ suite "HTTP server testing suite":
   test "POST arguments (urlencoded/chunked encoding) test":
     proc testPostUrl2(address: TransportAddress): Future[bool] {.async.} =
       var serverRes = false
-      proc process(r: RequestFence[HttpRequestRef]): Future[HttpResponseRef] {.
+      proc process(r: RequestFence): Future[HttpResponseRef] {.
            async.} =
         if r.isOk():
           var kres = newSeq[string]()
@@ -487,7 +489,7 @@ suite "HTTP server testing suite":
   test "POST arguments (multipart/content-length) test":
     proc testPostMultipart(address: TransportAddress): Future[bool] {.async.} =
       var serverRes = false
-      proc process(r: RequestFence[HttpRequestRef]): Future[HttpResponseRef] {.
+      proc process(r: RequestFence): Future[HttpResponseRef] {.
            async.} =
         if r.isOk():
           var kres = newSeq[string]()
@@ -542,7 +544,7 @@ suite "HTTP server testing suite":
   test "POST arguments (multipart/chunked encoding) test":
     proc testPostMultipart2(address: TransportAddress): Future[bool] {.async.} =
       var serverRes = false
-      proc process(r: RequestFence[HttpRequestRef]): Future[HttpResponseRef] {.
+      proc process(r: RequestFence): Future[HttpResponseRef] {.
            async.} =
         if r.isOk():
           var kres = newSeq[string]()
@@ -606,7 +608,7 @@ suite "HTTP server testing suite":
   test "HTTPS server (successful handshake) test":
     proc testHTTPS(address: TransportAddress): Future[bool] {.async.} =
       var serverRes = false
-      proc process(r: RequestFence[HttpRequestRef]): Future[HttpResponseRef] {.
+      proc process(r: RequestFence): Future[HttpResponseRef] {.
            async.} =
         if r.isOk():
           let request = r.get()
@@ -644,7 +646,7 @@ suite "HTTP server testing suite":
     proc testHTTPS2(address: TransportAddress): Future[bool] {.async.} =
       var serverRes = false
       var testFut = newFuture[void]()
-      proc process(r: RequestFence[HttpRequestRef]): Future[HttpResponseRef] {.
+      proc process(r: RequestFence): Future[HttpResponseRef] {.
            async.} =
         if r.isOk():
           let request = r.get()
@@ -758,7 +760,9 @@ suite "HTTP server testing suite":
       ("", 0'u64), ("0", 0'u64), ("-0", 0'u64), ("0-", 0'u64),
       ("01", 1'u64), ("001", 1'u64), ("0000000000001", 1'u64),
       ("18446744073709551615", 0xFFFF_FFFF_FFFF_FFFF'u64),
-      ("18446744073709551616", 1844674407370955161'u64),
+      ("18446744073709551616", 0xFFFF_FFFF_FFFF_FFFF'u64),
+      ("99999999999999999999", 0xFFFF_FFFF_FFFF_FFFF'u64),
+      ("999999999999999999999999999999999999", 0xFFFF_FFFF_FFFF_FFFF'u64),
       ("FFFFFFFFFFFFFFFF", 0'u64),
       ("0123456789ABCDEF", 123456789'u64)
     ]
@@ -769,6 +773,51 @@ suite "HTTP server testing suite":
         check bytesToDec($char(i)) == 0'u64
     for item in TestVectors:
       check bytesToDec(item[0]) == item[1]
+
+  test "HttpTable behavior test":
+    var table1 = HttpTable.init()
+    var table2 = HttpTable.init([("Header1", "value1"), ("Header2", "value2")])
+    check:
+      table1.isEmpty() == true
+      table2.isEmpty() == false
+
+    table1.add("Header1", "value1")
+    table1.add("Header2", "value2")
+    table1.add("HEADER2", "VALUE3")
+    check:
+      table1.getList("HeAdEr2") == @["value2", "VALUE3"]
+      table1.getString("HeAdEr2") == "value2,VALUE3"
+      table2.getString("HEADER1") == "value1"
+      table1.count("HEADER2") == 2
+      table1.count("HEADER1") == 1
+      table1.getLastString("HEADER1") == "value1"
+      table1.getLastString("HEADER2") == "VALUE3"
+      "header1" in table1 == true
+      "HEADER1" in table1 == true
+      "header2" in table1 == true
+      "HEADER2" in table1 == true
+      "HEADER3" in table1 == false
+
+    var
+      data1: seq[tuple[key: string, value: string]]
+      data2: seq[tuple[key: string, value: seq[string]]]
+    for key, value in table1.stringItems(true):
+      data1.add((key, value))
+    for key, value in table1.items(true):
+      data2.add((key, value))
+
+    check:
+      data1 == @[("Header2", "value2"), ("Header2", "VALUE3"),
+                 ("Header1", "value1")]
+      data2 == @[("Header2", @["value2", "VALUE3"]),
+                 ("Header1", @["value1"])]
+
+    table1.set("header2", "value4")
+    check:
+      table1.getList("header2") == @["value4"]
+      table1.getString("header2") == "value4"
+      table1.count("header2") == 1
+      table1.getLastString("header2") == "value4"
 
   test "getTransferEncoding() test":
     var encodings = [
