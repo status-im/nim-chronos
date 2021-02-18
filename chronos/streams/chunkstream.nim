@@ -111,7 +111,8 @@ proc chunkedReadLoop(stream: AsyncStreamReader) {.async.} =
         var chunksize = cres.get()
         if chunksize > 0'u64:
           while chunksize > 0'u64:
-            let toRead = min(int(chunksize), rstream.buffer.bufferLen())
+            let toRead = int(min(chunksize,
+                                 uint64(rstream.buffer.bufferLen())))
             await rstream.rsource.readExactly(rstream.buffer.getBuffer(),
                                               toRead)
             rstream.buffer.update(toRead)
