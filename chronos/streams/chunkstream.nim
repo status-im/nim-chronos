@@ -36,7 +36,7 @@ proc LT(x, y: uint32): uint32 {.inline.} =
   let z = x - y
   (z xor ((y xor x) and (y xor z))) shr 31
 
-proc hexValue(c: byte): int =
+proc hexValue*(c: byte): int =
   # This is nim adaptation of
   # https://github.com/pornin/CTTK/blob/master/src/hex.c#L28-L52
   let x = uint32(c) - 0x30'u32

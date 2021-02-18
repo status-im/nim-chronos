@@ -629,6 +629,19 @@ suite "ChunkedStream test suite":
       result = res
     check waitFor(testVectors2(initTAddress("127.0.0.1:46001"))) == true
 
+  test "ChunkedStream hex decoding test":
+    for i in 0 ..< 256:
+      let ch = char(i)
+      case ch
+      of '0' .. '9':
+        check hexValue(byte(ch)) == ord(ch) - ord('0')
+      of 'a' .. 'f':
+        check hexValue(byte(ch)) == ord(ch) - ord('a') + 10
+      of 'A' .. 'F':
+        check hexValue(byte(ch)) == ord(ch) - ord('A') + 10
+      else:
+        check hexValue(byte(ch)) == -1
+
   test "ChunkedStream leaks test":
     check:
       getTracker("async.stream.reader").isLeaked() == false
