@@ -685,8 +685,6 @@ suite "HTTP server testing suite":
     const ClientsCount = 10
 
     proc testHTTPdrop(address: TransportAddress): Future[bool] {.async.} =
-      var serverRes = false
-      var testFut = newFuture[void]()
       var eventWait = newAsyncEvent()
       var eventContinue = newAsyncEvent()
       var count = 0
@@ -700,8 +698,6 @@ suite "HTTP server testing suite":
           await eventContinue.wait()
           return await request.respond(Http404, "", HttpTable.init())
         else:
-          serverRes = true
-          testFut.complete()
           return dumbResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
