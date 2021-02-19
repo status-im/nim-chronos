@@ -681,6 +681,61 @@ suite "HTTP server testing suite":
 
     check waitFor(testHTTPS2(initTAddress("127.0.0.1:30080"))) == true
 
+  test "drop() connections test":
+    const ClientsCount = 10
+
+    proc testHTTPdrop(address: TransportAddress): Future[bool] {.async.} =
+      var serverRes = false
+      var testFut = newFuture[void]()
+      var eventWait = newAsyncEvent()
+      var eventContinue = newAsyncEvent()
+      var count = 0
+
+      proc process(r: RequestFence): Future[HttpResponseRef] {.async.} =
+        if r.isOk():
+          let request = r.get()
+          inc(count)
+          if count == ClientsCount:
+            eventWait.fire()
+          await eventContinue.wait()
+          return await request.respond(Http404, "", HttpTable.init())
+        else:
+          serverRes = true
+          testFut.complete()
+          return dumbResponse()
+
+      let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
+      let res = HttpServerRef.new(address, process,
+                                  socketFlags = socketFlags,
+                                  maxConnections = 100)
+      if res.isErr():
+        return false
+
+      let server = res.get()
+      server.start()
+
+      var clients: seq[Future[string]]
+      let message = "GET / HTTP/1.0\r\nHost: https://127.0.0.1:80\r\n\r\n"
+      for i in 0 ..< ClientsCount:
+        var clientFut = httpClient(address, message)
+        if clientFut.finished():
+          return false
+        clients.add(clientFut)
+      # Waiting for all clients to connect to the server
+      await eventWait.wait()
+      # Dropping
+      await server.closeWait()
+      # We are firing second event to unblock client loops, but this loops
+      # must be already cancelled.
+      eventContinue.fire()
+      # Now all clients should be dropped
+      discard await allFutures(clients).withTimeout(1.seconds)
+      for item in clients:
+        if item.read() != "":
+          return false
+      return true
+
+    check waitFor(testHTTPdrop(initTAddress("127.0.0.1:30080"))) == true
 
   test "Content-Type multipart boundary test":
     const AllowedCharacters = {

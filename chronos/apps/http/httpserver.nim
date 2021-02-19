@@ -11,7 +11,8 @@ import stew/results, httputils
 import ../../asyncloop, ../../asyncsync
 import ../../streams/[asyncstream, boundstream, chunkstream, tlsstream]
 import httptable, httpcommon, multipart
-export httptable, httpcommon, multipart, tlsstream, asyncstream
+export httptable, httpcommon, multipart, tlsstream, asyncstream, uri, tables,
+       options, results
 
 type
   HttpServerFlags* {.pure.} = enum
@@ -516,6 +517,7 @@ proc processLoop(server: HttpServerRef, transp: StreamTransport) {.async.} =
   except CancelledError:
     # We could be cancelled only when we perform TLS handshake, connection
     server.connections.del(transp.getId())
+    await transp.closeWait()
     return
   except HttpCriticalError as exc:
     let error = HttpProcessError.init(HTTPServerError.CriticalError, exc,
@@ -526,11 +528,10 @@ proc processLoop(server: HttpServerRef, transp: StreamTransport) {.async.} =
   if not(runLoop):
     try:
       # We still want to notify process callback about failure, but we ignore
-      # result and swallow all the exceptions.
+      # result.
       discard await server.processCallback(connArg)
     except CancelledError:
-      server.connections.del(transp.getId())
-      return
+      runLoop = false
     except CatchableError as exc:
       # There should be no exceptions, so we will raise `Defect`.
       raiseHttpDefect("Unexpected exception catched [" & $exc.name & "]")
@@ -688,8 +689,13 @@ proc stop*(server: HttpServerRef) {.async.} =
 
 proc drop*(server: HttpServerRef) {.async.} =
   ## Drop all pending HTTP connections.
+  var pending: seq[Future[void]]
   if server.state in {ServerStopped, ServerRunning}:
-    discard
+    for fut in server.connections.values():
+      if not(fut.finished()):
+        fut.cancel()
+        pending.add(fut)
+    await allFutures(pending)
 
 proc closeWait*(server: HttpServerRef) {.async.} =
   ## Stop HTTP server and drop all the pending connections.
