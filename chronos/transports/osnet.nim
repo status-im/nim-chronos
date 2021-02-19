@@ -1155,14 +1155,19 @@ elif defined(macosx) or defined(bsd):
       msg.rtm.rtm_addrs = RTA_DST
       msg.space[0] = cast[byte](salen)
       msg.rtm.rtm_msglen = uint16(sizeof(RtMessage))
-      var res = posix.write(sock, addr msg, sizeof(RtMessage))
-      if res >= 0:
-        while true:
-          res = posix.read(sock, addr msg, sizeof(RtMessage))
-          if res >= 0 and msg.rtm.rtm_pid == pid and msg.rtm.rtm_seq == 0xCAFE:
-            break
-        if res >= 0 and msg.rtm.rtm_version == RTM_VERSION and
-           msg.rtm.rtm_errno == 0:
+      let wres = posix.write(sock, addr msg, sizeof(RtMessage))
+      if wres >= 0:
+        let rres =
+          block:
+            var pres = 0
+            while true:
+              pres = posix.read(sock, addr msg, sizeof(RtMessage))
+              if ((pres >= 0) and (msg.rtm.rtm_pid == pid) and
+                 (msg.rtm.rtm_seq == 0xCAFE)) or (pres < 0):
+                break
+            pres
+        if (rres >= 0) and (msg.rtm.rtm_version == RTM_VERSION) and
+           (msg.rtm.rtm_errno == 0):
           res.ifIndex = int(msg.rtm.rtm_index)
           var so = 0
           var eo = len(msg.space) - 1
