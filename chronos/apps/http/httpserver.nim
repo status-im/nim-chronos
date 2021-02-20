@@ -11,8 +11,8 @@ import stew/results, httputils
 import ../../asyncloop, ../../asyncsync
 import ../../streams/[asyncstream, boundstream, chunkstream, tlsstream]
 import httptable, httpcommon, multipart
-export httptable, httpcommon, multipart, tlsstream, asyncstream, uri, tables,
-       options, results
+export httptable, httpcommon, httputils, multipart, tlsstream, asyncstream,
+       uri, tables, options, results
 
 type
   HttpServerFlags* {.pure.} = enum
@@ -47,6 +47,7 @@ type
 
   HttpServer* = object of RootObj
     instance*: StreamServer
+    address*: TransportAddress
     # semaphore*: AsyncSemaphore
     maxConnections*: int
     backlogSize: int
@@ -135,6 +136,7 @@ proc new*(htype: typedesc[HttpServerRef],
       return err("PrivateKey or Certificate is missing")
 
   var res = HttpServerRef(
+    address: address,
     maxConnections: maxConnections,
     headersTimeout: httpHeadersTimeout,
     maxHeadersSize: maxHeadersSize,
