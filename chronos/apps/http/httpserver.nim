@@ -16,10 +16,11 @@ export httptable, httpcommon, httputils, multipart, tlsstream, asyncstream,
 
 type
   HttpServerFlags* {.pure.} = enum
-    Secure, NoExpectHandler
+    Secure, NoExpectHandler, NotifyDisconnect
 
   HttpServerError* {.pure.} = enum
-    TimeoutError, CatchableError, RecoverableError, CriticalError
+    TimeoutError, CatchableError, RecoverableError, CriticalError,
+    DisconnectError
 
   HttpServerState* {.pure.} = enum
     ServerRunning, ServerStopped, ServerClosed
@@ -398,8 +399,7 @@ proc sendErrorResponse(conn: HttpConnectionRef, version: HttpVersion,
   answer.add("Date: " & httpDate() & "\r\n")
   if len(datatype) > 0:
     answer.add("Content-Type: " & datatype & "\r\n")
-  if len(databody) > 0:
-    answer.add("Content-Length: " & $len(databody) & "\r\n")
+  answer.add("Content-Length: " & $len(databody) & "\r\n")
   if keepAlive:
     answer.add("Connection: keep-alive\r\n")
   else:
@@ -435,7 +435,7 @@ proc getRequest(conn: HttpConnectionRef): Future[HttpRequestRef] {.async.} =
   except AsyncStreamIncompleteError, AsyncStreamReadError:
     raiseHttpDisconnectError()
   except AsyncStreamLimitError:
-    raiseHttpCriticalError("Maximum size of request headers reached", Http413)
+    raiseHttpCriticalError("Maximum size of request headers reached", Http431)
 
 proc new(ht: typedesc[HttpConnectionRef], server: HttpServerRef,
          transp: StreamTransport): HttpConnectionRef =
@@ -561,9 +561,13 @@ proc processLoop(server: HttpServerRef, transp: StreamTransport) {.async.} =
       let error = HttpProcessError.init(HTTPServerError.CriticalError, exc,
                                         transp.remoteAddress(), exc.code)
       arg = RequestFence.err(error)
-    except HttpDisconnectError:
-      # If remote peer disconnected we just exiting loop
-      breakLoop = true
+    except HttpDisconnectError as exc:
+      if HttpServerFlags.NotifyDisconnect in server.flags:
+        let error = HttpProcessError.init(HttpServerError.DisconnectError, exc,
+                                          transp.remoteAddress(), Http400)
+        arg = RequestFence.err(error)
+      else:
+        breakLoop = true
     except CatchableError as exc:
       let error = HttpProcessError.init(HTTPServerError.CatchableError, exc,
                                         transp.remoteAddress(), Http500)
@@ -600,6 +604,8 @@ proc processLoop(server: HttpServerRef, transp: StreamTransport) {.async.} =
         discard await conn.sendErrorResponse(HttpVersion11, code, false)
       of HTTPServerError.CatchableError:
         discard await conn.sendErrorResponse(HttpVersion11, code, false)
+      of HttpServerError.DisconnectError:
+        discard
       break
     else:
       let request = arg.get()
@@ -867,9 +873,9 @@ proc prepareLengthHeaders(resp: HttpResponseRef, length: int): string {.
      raises: [Defect].}=
   var answer = $(resp.version) & " " & $(resp.status) & "\r\n"
   answer.doHeaderDef(resp, "Date", httpDate())
-  answer.doHeaderDef(resp, "Content-Type", "text/html; charset=utf-8")
   if length > 0:
-    answer.doHeaderVal("Content-Length", $(length))
+    answer.doHeaderDef(resp, "Content-Type", "text/html; charset=utf-8")
+  answer.doHeaderVal("Content-Length", $(length))
   if "Connection" notin resp.headersTable:
     if KeepAlive in resp.flags:
       answer.doHeaderVal("Connection", "keep-alive")
