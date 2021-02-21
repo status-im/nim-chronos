@@ -262,7 +262,7 @@ suite "HTTP server testing suite":
       let data = await httpClient(address, "GET / HTTP/1.1\r\n\r\n")
       await server.stop()
       await server.closeWait()
-      return serverRes and (data.startsWith("HTTP/1.1 413"))
+      return serverRes and (data.startsWith("HTTP/1.1 431"))
 
     check waitFor(testTooBig(initTAddress("127.0.0.1:30080"))) == true
 

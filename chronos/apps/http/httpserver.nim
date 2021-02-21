@@ -1046,6 +1046,14 @@ proc respond*(req: HttpRequestRef, code: HttpCode, content: string,
   await response.sendBody(content)
   return response
 
+proc remoteAddress*(conn: HttpConnectionRef): TransportAddress =
+  ## Returns address of the remote host that established connection ``conn``.
+  conn.transp.remoteAddress()
+
+proc remoteAddress*(request: HttpRequestRef): TransportAddress =
+  ## Returns address of the remote host that made request ``request``.
+  request.connection.remoteAddress()
+
 proc requestInfo*(req: HttpRequestRef, contentType = "text/text"): string {.
      raises: [Defect].} =
   ## Returns comprehensive information about request for specific content
