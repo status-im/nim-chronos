@@ -42,16 +42,14 @@ template createCb(retFutureSym, iteratorNameSym,
 
         if next == nil:
           if not(retFutureSym.finished()):
-            let msg = "Async procedure ($1) yielded `nil`, " &
-                      "are you await'ing a `nil` Future?"
-            raise newException(AssertionError, msg % strName)
+            const msg = "Async procedure (&" & strName & ") yielded `nil`, " &
+                        "are you await'ing a `nil` Future?"
+            raiseAssert msg
         else:
           {.gcsafe.}:
-            {.push hint[ConvFromXtoItselfNotNeeded]: off.}
-            next.callback = identName
-            {.pop.}
+            next.addCallback(identName)
     except CancelledError:
-      retFutureSym.cancel()
+      retFutureSym.cancelAndSchedule()
     except CatchableError as exc:
       futureVarCompletions
 
@@ -189,10 +187,19 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
   # -> var retFuture = newFuture[T]()
   var retFutureSym = ident "chronosInternalRetFuture"
   var subRetType =
-    if returnType.kind == nnkEmpty: newIdentNode("void")
-    else: baseType
-  outerProcBody.add quote do:
-    var `retFutureSym` = newFuture[`subRetType`](`prcName`)
+    if returnType.kind == nnkEmpty:
+      newIdentNode("void")
+    else:
+      baseType
+  # Do not change this code to `quote do` version because `instantiationInfo`
+  # will be broken for `newFuture()` call.
+  outerProcBody.add(
+    newVarStmt(
+      retFutureSym,
+      newCall(newTree(nnkBracketExpr, ident "newFuture", subRetType),
+              newLit(prcName))
+    )
+  )
 
   # -> iterator nameIter(): FutureBase {.closure.} =
   # ->   {.push warning[resultshadowed]: off.}
@@ -202,9 +209,18 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
   # ->   complete(retFuture, result)
   var iteratorNameSym = genSym(nskIterator, $prcName)
   var procBody = prc.body.processBody(retFutureSym, subtypeIsVoid,
-                                    futureVarIdents)
+                                      futureVarIdents)
   # don't do anything with forward bodies (empty)
   if procBody.kind != nnkEmpty:
+    if subtypeIsVoid:
+      let resultTemplate = quote do:
+        template result: auto {.used.} =
+          {.fatal: "You should not reference the `result` variable inside a void async proc".}
+      procBody = newStmtList(resultTemplate, procBody)
+
+    # fix #13899, `defer` should not escape its original scope
+    procBody = newStmtList(newTree(nnkBlockStmt, newEmptyNode(), procBody))
+
     procBody.add(createFutureVarCompletions(futureVarIdents, nil))
 
     if not subtypeIsVoid:
@@ -271,9 +287,23 @@ template await*[T](f: Future[T]): auto =
       var chronosInternalTmpFuture {.inject.}: FutureBase
     chronosInternalTmpFuture = f
     chronosInternalRetFuture.child = chronosInternalTmpFuture
+
+    # This "yield" is meant for a closure iterator in the caller.
     yield chronosInternalTmpFuture
-    chronosInternalTmpFuture.internalCheckComplete()
+
+    # By the time we get control back here, we're guaranteed that the Future we
+    # just yielded has been completed (success, failure or cancellation),
+    # through a very complicated mechanism in which the caller proc (a regular
+    # closure) adds itself as a callback to chronosInternalTmpFuture.
+    #
+    # Callbacks are called only after completion and a copy of the closure
+    # iterator that calls this template is still in that callback's closure
+    # environment. That's where control actually gets back to us.
+
     chronosInternalRetFuture.child = nil
+    if chronosInternalRetFuture.mustCancel:
+      raise newCancelledError()
+    chronosInternalTmpFuture.internalCheckComplete()
     cast[type(f)](chronosInternalTmpFuture).internalRead()
   else:
     unsupported "await is only available within {.async.}"
@@ -286,6 +316,8 @@ template awaitne*[T](f: Future[T]): Future[T] =
     chronosInternalRetFuture.child = chronosInternalTmpFuture
     yield chronosInternalTmpFuture
     chronosInternalRetFuture.child = nil
+    if chronosInternalRetFuture.mustCancel:
+      raise newCancelledError()
     cast[type(f)](chronosInternalTmpFuture)
   else:
     unsupported "awaitne is only available within {.async.}"

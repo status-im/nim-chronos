@@ -21,6 +21,16 @@ const
     ## AsyncStreamWriter leaks tracker name
 
 type
+  AsyncStreamError* = object of CatchableError
+  AsyncStreamIncorrectDefect* = object of Defect
+  AsyncStreamIncompleteError* = object of AsyncStreamError
+  AsyncStreamLimitError* = object of AsyncStreamError
+  AsyncStreamUseClosedError* = object of AsyncStreamError
+  AsyncStreamReadError* = object of AsyncStreamError
+    par*: ref CatchableError
+  AsyncStreamWriteError* = object of AsyncStreamError
+    par*: ref CatchableError
+
   AsyncBuffer* = object
     offset*: int
     buffer*: seq[byte]
@@ -32,11 +42,11 @@ type
   WriteItem* = object
     case kind*: WriteType
     of Pointer:
-      data1*: pointer
+      dataPtr*: pointer
     of Sequence:
-      data2*: seq[byte]
+      dataSeq*: seq[byte]
     of String:
-      data3*: string
+      dataStr*: string
     size*: int
     offset*: int
     future*: Future[void]
@@ -60,7 +70,8 @@ type
     state*: AsyncStreamState
     buffer*: AsyncBuffer
     udata: pointer
-    error*: ref Exception
+    error*: ref AsyncStreamError
+    bytesCount*: uint64
     future: Future[void]
 
   AsyncStreamWriter* = ref object of RootRef
@@ -69,7 +80,9 @@ type
     writerLoop*: StreamWriterLoop
     state*: AsyncStreamState
     queue*: AsyncQueue[WriteItem]
+    error*: ref AsyncStreamError
     udata: pointer
+    bytesCount*: uint64
     future: Future[void]
 
   AsyncStream* = object of RootObj
@@ -82,36 +95,28 @@ type
 
   AsyncStreamRW* = AsyncStreamReader | AsyncStreamWriter
 
-  AsyncStreamError* = object of CatchableError
-  AsyncStreamIncompleteError* = object of AsyncStreamError
-  AsyncStreamIncorrectError* = object of Defect
-  AsyncStreamLimitError* = object of AsyncStreamError
-  AsyncStreamReadError* = object of AsyncStreamError
-    par*: ref Exception
-  AsyncStreamWriteError* = object of AsyncStreamError
-    par*: ref Exception
-
 proc init*(t: typedesc[AsyncBuffer], size: int): AsyncBuffer =
-  result.buffer = newSeq[byte](size)
-  result.events[0] = newAsyncEvent()
-  result.events[1] = newAsyncEvent()
-  result.offset = 0
+  AsyncBuffer(
+    buffer: newSeq[byte](size),
+    events: [newAsyncEvent(), newAsyncEvent()],
+    offset: 0
+  )
 
 proc getBuffer*(sb: AsyncBuffer): pointer {.inline.} =
-  result = unsafeAddr sb.buffer[sb.offset]
+  unsafeAddr sb.buffer[sb.offset]
 
 proc bufferLen*(sb: AsyncBuffer): int {.inline.} =
-  result = len(sb.buffer) - sb.offset
+  len(sb.buffer) - sb.offset
 
 proc getData*(sb: AsyncBuffer): pointer {.inline.} =
-  result = unsafeAddr sb.buffer[0]
+  unsafeAddr sb.buffer[0]
 
-proc dataLen*(sb: AsyncBuffer): int {.inline.} =
-  result = sb.offset
+template dataLen*(sb: AsyncBuffer): int =
+  sb.offset
 
 proc `[]`*(sb: AsyncBuffer, index: int): byte {.inline.} =
   doAssert(index < sb.offset)
-  result = sb.buffer[index]
+  sb.buffer[index]
 
 proc update*(sb: var AsyncBuffer, size: int) {.inline.} =
   sb.offset += size
@@ -119,12 +124,12 @@ proc update*(sb: var AsyncBuffer, size: int) {.inline.} =
 proc wait*(sb: var AsyncBuffer): Future[void] =
   sb.events[0].clear()
   sb.events[1].fire()
-  result = sb.events[0].wait()
+  sb.events[0].wait()
 
 proc transfer*(sb: var AsyncBuffer): Future[void] =
   sb.events[1].clear()
   sb.events[0].fire()
-  result = sb.events[1].wait()
+  sb.events[1].wait()
 
 proc forget*(sb: var AsyncBuffer) {.inline.} =
   sb.events[1].clear()
@@ -165,43 +170,67 @@ template toBufferOpenArray*(sb: AsyncBuffer): auto =
 
 template copyOut*(dest: pointer, item: WriteItem, length: int) =
   if item.kind == Pointer:
-    let p = cast[pointer](cast[uint](item.data1) + uint(item.offset))
+    let p = cast[pointer](cast[uint](item.dataPtr) + uint(item.offset))
     copyMem(dest, p, length)
   elif item.kind == Sequence:
-    copyMem(dest, unsafeAddr item.data2[item.offset], length)
+    copyMem(dest, unsafeAddr item.dataSeq[item.offset], length)
   elif item.kind == String:
-    copyMem(dest, unsafeAddr item.data3[item.offset], length)
+    copyMem(dest, unsafeAddr item.dataStr[item.offset], length)
 
-proc newAsyncStreamReadError(p: ref Exception): ref Exception {.inline.} =
+proc newAsyncStreamReadError(p: ref CatchableError): ref AsyncStreamReadError {.
+     noinline.} =
   var w = newException(AsyncStreamReadError, "Read stream failed")
   w.msg = w.msg & ", originated from [" & $p.name & "] " & p.msg
   w.par = p
-  result = w
+  w
 
-proc newAsyncStreamWriteError(p: ref Exception): ref Exception {.inline.} =
+proc newAsyncStreamWriteError(p: ref CatchableError): ref AsyncStreamWriteError {.
+     noinline.} =
   var w = newException(AsyncStreamWriteError, "Write stream failed")
   w.msg = w.msg & ", originated from [" & $p.name & "] " & p.msg
   w.par = p
-  result = w
+  w
 
-proc newAsyncStreamIncompleteError(): ref Exception {.inline.} =
-  result = newException(AsyncStreamIncompleteError, "Incomplete data received")
+proc newAsyncStreamIncompleteError*(): ref AsyncStreamIncompleteError {.
+     noinline.} =
+  newException(AsyncStreamIncompleteError, "Incomplete data sent or received")
 
-proc newAsyncStreamLimitError(): ref Exception {.inline.} =
-  result = newException(AsyncStreamLimitError, "Buffer limit reached")
+proc newAsyncStreamLimitError*(): ref AsyncStreamLimitError {.noinline.} =
+  newException(AsyncStreamLimitError, "Buffer limit reached")
 
-proc newAsyncStreamIncorrectError(m: string): ref Exception {.inline.} =
-  result = newException(AsyncStreamIncorrectError, m)
+proc newAsyncStreamUseClosedError*(): ref AsyncStreamUseClosedError {.
+     noinline.} =
+  newException(AsyncStreamUseClosedError, "Stream is already closed")
+
+proc raiseAsyncStreamUseClosedError*() {.noinline, noreturn.} =
+  raise newAsyncStreamUseClosedError()
+
+proc raiseAsyncStreamLimitError*() {.noinline, noreturn.} =
+  raise newAsyncStreamLimitError()
+
+proc raiseAsyncStreamIncompleteError*() {.noinline, noreturn.} =
+  raise newAsyncStreamIncompleteError()
+
+proc raiseAsyncStreamIncorrectDefect*(m: string) {.noinline, noreturn.} =
+  raise newException(AsyncStreamIncorrectDefect, m)
+
+proc raiseEmptyMessageDefect*() {.noinline, noreturn.} =
+  raise newException(AsyncStreamIncorrectDefect,
+                     "Could not write empty message")
+
+template checkStreamClosed*(t: untyped) =
+  if t.state == AsyncStreamState.Closed:
+    raiseAsyncStreamUseClosedError()
 
 proc atEof*(rstream: AsyncStreamReader): bool =
   ## Returns ``true`` is reading stream is closed or finished and internal
   ## buffer do not have any bytes left.
-  result = rstream.state in {AsyncStreamState.Stopped, Finished, Closed} and
-           (rstream.buffer.dataLen() == 0)
+  rstream.state in {AsyncStreamState.Stopped, Finished, Closed, Error} and
+    (rstream.buffer.dataLen() == 0)
 
 proc atEof*(wstream: AsyncStreamWriter): bool =
   ## Returns ``true`` is writing stream ``wstream`` closed or finished.
-  result = wstream.state in {AsyncStreamState.Stopped, Finished, Closed}
+  wstream.state in {AsyncStreamState.Stopped, Finished, Closed}
 
 proc closed*(rw: AsyncStreamRW): bool {.inline.} =
   ## Returns ``true`` is reading/writing stream is closed.
@@ -223,32 +252,36 @@ proc setupAsyncStreamReaderTracker(): AsyncStreamTracker {.gcsafe.}
 proc setupAsyncStreamWriterTracker(): AsyncStreamTracker {.gcsafe.}
 
 proc getAsyncStreamReaderTracker(): AsyncStreamTracker {.inline.} =
-  result = cast[AsyncStreamTracker](getTracker(AsyncStreamReaderTrackerName))
-  if isNil(result):
-    result = setupAsyncStreamReaderTracker()
+  var res = cast[AsyncStreamTracker](getTracker(AsyncStreamReaderTrackerName))
+  if isNil(res):
+    res = setupAsyncStreamReaderTracker()
+  res
 
 proc getAsyncStreamWriterTracker(): AsyncStreamTracker {.inline.} =
-  result = cast[AsyncStreamTracker](getTracker(AsyncStreamWriterTrackerName))
-  if isNil(result):
-    result = setupAsyncStreamWriterTracker()
+  var res = cast[AsyncStreamTracker](getTracker(AsyncStreamWriterTrackerName))
+  if isNil(res):
+    res = setupAsyncStreamWriterTracker()
+  res
 
 proc dumpAsyncStreamReaderTracking(): string {.gcsafe.} =
   var tracker = getAsyncStreamReaderTracker()
-  result = "Opened async stream readers: " & $tracker.opened & "\n" &
-           "Closed async stream readers: " & $tracker.closed
+  let res = "Opened async stream readers: " & $tracker.opened & "\n" &
+            "Closed async stream readers: " & $tracker.closed
+  res
 
 proc dumpAsyncStreamWriterTracking(): string {.gcsafe.} =
   var tracker = getAsyncStreamWriterTracker()
-  result = "Opened async stream writers: " & $tracker.opened & "\n" &
-           "Closed async stream writers: " & $tracker.closed
+  let res = "Opened async stream writers: " & $tracker.opened & "\n" &
+            "Closed async stream writers: " & $tracker.closed
+  res
 
 proc leakAsyncStreamReader(): bool {.gcsafe.} =
   var tracker = getAsyncStreamReaderTracker()
-  result = tracker.opened != tracker.closed
+  tracker.opened != tracker.closed
 
 proc leakAsyncStreamWriter(): bool {.gcsafe.} =
   var tracker = getAsyncStreamWriterTracker()
-  result = tracker.opened != tracker.closed
+  tracker.opened != tracker.closed
 
 proc trackAsyncStreamReader(t: AsyncStreamReader) {.inline.} =
   var tracker = getAsyncStreamReaderTracker()
@@ -267,20 +300,39 @@ proc untrackAsyncStreamWriter*(t: AsyncStreamWriter) {.inline.}  =
   inc(tracker.closed)
 
 proc setupAsyncStreamReaderTracker(): AsyncStreamTracker {.gcsafe.} =
-  result = new AsyncStreamTracker
-  result.opened = 0
-  result.closed = 0
-  result.dump = dumpAsyncStreamReaderTracking
-  result.isLeaked = leakAsyncStreamReader
-  addTracker(AsyncStreamReaderTrackerName, result)
+  var res = AsyncStreamTracker(
+    opened: 0,
+    closed: 0,
+    dump: dumpAsyncStreamReaderTracking,
+    isLeaked: leakAsyncStreamReader
+  )
+  addTracker(AsyncStreamReaderTrackerName, res)
+  res
 
 proc setupAsyncStreamWriterTracker(): AsyncStreamTracker {.gcsafe.} =
-  result = new AsyncStreamTracker
-  result.opened = 0
-  result.closed = 0
-  result.dump = dumpAsyncStreamWriterTracking
-  result.isLeaked = leakAsyncStreamWriter
-  addTracker(AsyncStreamWriterTrackerName, result)
+  var res = AsyncStreamTracker(
+    opened: 0,
+    closed: 0,
+    dump: dumpAsyncStreamWriterTracking,
+    isLeaked: leakAsyncStreamWriter
+  )
+  addTracker(AsyncStreamWriterTrackerName, res)
+  res
+
+template readLoop(body: untyped): untyped =
+  while true:
+    if rstream.buffer.dataLen() == 0:
+      if rstream.state == AsyncStreamState.Error:
+        raise rstream.error
+
+    let (consumed, done) = body
+    rstream.buffer.shift(consumed)
+    rstream.bytesCount = rstream.bytesCount + uint64(consumed)
+    if done:
+      break
+    else:
+      if not(rstream.atEof()):
+        await rstream.buffer.wait()
 
 proc readExactly*(rstream: AsyncStreamReader, pbytes: pointer,
                   nbytes: int) {.async.} =
@@ -289,14 +341,19 @@ proc readExactly*(rstream: AsyncStreamReader, pbytes: pointer,
   ##
   ## If EOF is received and ``nbytes`` is not yet readed, the procedure
   ## will raise ``AsyncStreamIncompleteError``.
-  if not rstream.running():
-    raise newAsyncStreamIncorrectError("Incorrect stream state")
+  doAssert(not(isNil(pbytes)), "pbytes must not be nil")
+  doAssert(nbytes >= 0, "nbytes must be non-negative integer")
+
+  checkStreamClosed(rstream)
+
+  if nbytes == 0:
+    return
 
   if isNil(rstream.rsource):
     try:
       await readExactly(rstream.tsource, pbytes, nbytes)
-    except CancelledError:
-      raise
+    except CancelledError as exc:
+      raise exc
     except TransportIncompleteError:
       raise newAsyncStreamIncompleteError()
     except CatchableError as exc:
@@ -306,58 +363,47 @@ proc readExactly*(rstream: AsyncStreamReader, pbytes: pointer,
       await readExactly(rstream.rsource, pbytes, nbytes)
     else:
       var index = 0
-      while true:
-        let datalen = rstream.buffer.dataLen()
-        if rstream.state == Error:
-          raise newAsyncStreamReadError(rstream.error)
-        if datalen == 0 and rstream.atEof():
-          raise newAsyncStreamIncompleteError()
-
-        if datalen >= (nbytes - index):
-          rstream.buffer.copyData(pbytes, index, nbytes - index)
-          rstream.buffer.shift(nbytes - index)
-          break
-        else:
-          rstream.buffer.copyData(pbytes, index, datalen)
-          index += datalen
-          rstream.buffer.shift(datalen)
-        await rstream.buffer.wait()
+      var pbuffer = cast[ptr UncheckedArray[byte]](pbytes)
+      readLoop():
+        if rstream.buffer.dataLen() == 0:
+          if rstream.atEof():
+            raise newAsyncStreamIncompleteError()
+        let count = min(nbytes - index, rstream.buffer.dataLen())
+        if count > 0:
+          rstream.buffer.copyData(addr pbuffer[index], 0, count)
+          index += count
+        (consumed: count, done: index == nbytes)
 
 proc readOnce*(rstream: AsyncStreamReader, pbytes: pointer,
                nbytes: int): Future[int] {.async.} =
   ## Perform one read operation on read-only stream ``rstream``.
   ##
   ## If internal buffer is not empty, ``nbytes`` bytes will be transferred from
-  ## internal buffer, otherwise it will wait until some bytes will be received.
-  if not rstream.running():
-    raise newAsyncStreamIncorrectError("Incorrect stream state")
+  ## internal buffer, otherwise it will wait until some bytes will be available.
+  doAssert(not(isNil(pbytes)), "pbytes must not be nil")
+  doAssert(nbytes > 0, "nbytes must be positive value")
+  checkStreamClosed(rstream)
 
   if isNil(rstream.rsource):
     try:
-      result = await readOnce(rstream.tsource, pbytes, nbytes)
-    except CancelledError:
-      raise
+      return await readOnce(rstream.tsource, pbytes, nbytes)
+    except CancelledError as exc:
+      raise exc
     except CatchableError as exc:
       raise newAsyncStreamReadError(exc)
   else:
     if isNil(rstream.readerLoop):
-      result = await readOnce(rstream.rsource, pbytes, nbytes)
+      return await readOnce(rstream.rsource, pbytes, nbytes)
     else:
-      while true:
-        let datalen = rstream.buffer.dataLen()
-        if rstream.state == Error:
-          raise newAsyncStreamReadError(rstream.error)
-        if datalen == 0:
-          if rstream.atEof():
-            result = 0
-            break
-          await rstream.buffer.wait()
+      var count = 0
+      readLoop():
+        if rstream.buffer.dataLen() == 0:
+          (0, rstream.atEof())
         else:
-          let size = min(datalen, nbytes)
-          rstream.buffer.copyData(pbytes, 0, size)
-          rstream.buffer.shift(size)
-          result = size
-          break
+          count = min(rstream.buffer.dataLen(), nbytes)
+          rstream.buffer.copyData(pbytes, 0, count)
+          (count, true)
+      return count
 
 proc readUntil*(rstream: AsyncStreamReader, pbytes: pointer, nbytes: int,
                 sep: seq[byte]): Future[int] {.async.} =
@@ -374,14 +420,19 @@ proc readUntil*(rstream: AsyncStreamReader, pbytes: pointer, nbytes: int,
   ## will raise ``AsyncStreamLimitError``.
   ##
   ## Procedure returns actual number of bytes read.
-  if not rstream.running():
-    raise newAsyncStreamIncorrectError("Incorrect stream state")
+  doAssert(not(isNil(pbytes)), "pbytes must not be nil")
+  doAssert(len(sep) > 0, "separator must not be empty")
+  doAssert(nbytes >= 0, "nbytes must be non-negative value")
+  checkStreamClosed(rstream)
+
+  if nbytes == 0:
+    raise newAsyncStreamLimitError()
 
   if isNil(rstream.rsource):
     try:
-      result = await readUntil(rstream.tsource, pbytes, nbytes, sep)
-    except CancelledError:
-      raise
+      return await readUntil(rstream.tsource, pbytes, nbytes, sep)
+    except CancelledError as exc:
+      raise exc
     except TransportIncompleteError:
       raise newAsyncStreamIncompleteError()
     except TransportLimitError:
@@ -390,43 +441,30 @@ proc readUntil*(rstream: AsyncStreamReader, pbytes: pointer, nbytes: int,
       raise newAsyncStreamReadError(exc)
   else:
     if isNil(rstream.readerLoop):
-      result = await readUntil(rstream.rsource, pbytes, nbytes, sep)
+      return await readUntil(rstream.rsource, pbytes, nbytes, sep)
     else:
-      var
-        dest = cast[ptr UncheckedArray[byte]](pbytes)
-        state = 0
-        k = 0
-
-      while true:
-        let datalen = rstream.buffer.dataLen()
-        if rstream.state == Error:
-          raise newAsyncStreamReadError(rstream.error)
-        if datalen == 0 and rstream.atEof():
+      var pbuffer = cast[ptr UncheckedArray[byte]](pbytes)
+      var state = 0
+      var k = 0
+      readLoop():
+        if rstream.atEof():
           raise newAsyncStreamIncompleteError()
-
         var index = 0
-        while index < datalen:
+        while index < rstream.buffer.dataLen():
+          if k >= nbytes:
+            raise newAsyncStreamLimitError()
           let ch = rstream.buffer[index]
+          inc(index)
+          pbuffer[k] = ch
+          inc(k)
           if sep[state] == ch:
             inc(state)
+            if state == len(sep):
+              break
           else:
             state = 0
-          if k < nbytes:
-            dest[k] = ch
-            inc(k)
-          else:
-            raise newAsyncStreamLimitError()
-          if state == len(sep):
-            break
-          inc(index)
-
-        if state == len(sep):
-          rstream.buffer.shift(index + 1)
-          result = k
-          break
-        else:
-          rstream.buffer.shift(datalen)
-          await rstream.buffer.wait()
+        (index, state == len(sep))
+      return k
 
 proc readLine*(rstream: AsyncStreamReader, limit = 0,
                sep = "\r\n"): Future[string] {.async.} =
@@ -441,155 +479,207 @@ proc readLine*(rstream: AsyncStreamReader, limit = 0,
   ##
   ## If ``limit`` more then 0, then result string will be limited to ``limit``
   ## bytes.
-  if not rstream.running():
-    raise newAsyncStreamIncorrectError("Incorrect stream state")
+  checkStreamClosed(rstream)
 
   if isNil(rstream.rsource):
     try:
-      result = await readLine(rstream.tsource, limit, sep)
-    except CancelledError:
-      raise
+      return await readLine(rstream.tsource, limit, sep)
+    except CancelledError as exc:
+      raise exc
     except CatchableError as exc:
       raise newAsyncStreamReadError(exc)
   else:
     if isNil(rstream.readerLoop):
-      result = await readLine(rstream.rsource, limit, sep)
+      return await readLine(rstream.rsource, limit, sep)
     else:
+      let lim = if limit <= 0: -1 else: limit
+      var state = 0
       var res = ""
-      var
-        lim = if limit <= 0: -1 else: limit
-        state = 0
-
-      while true:
-        let datalen = rstream.buffer.dataLen()
-        if rstream.state == Error:
-          raise newAsyncStreamReadError(rstream.error)
-        if datalen == 0 and rstream.atEof():
-          result = res
-          break
-
-        var index = 0
-        while index < datalen:
-          let ch = char(rstream.buffer[index])
-          if sep[state] == ch:
-            inc(state)
-            if state == len(sep) or len(res) == lim:
-              rstream.buffer.shift(index + 1)
-              break
-          else:
-            state = 0
-            res.add(ch)
-            if len(res) == lim:
-              rstream.buffer.shift(index + 1)
-              break
-          inc(index)
-
-        if state == len(sep) or (lim == len(res)):
-          result = res
-          break
+      readLoop():
+        if rstream.atEof():
+          (0, true)
         else:
-          rstream.buffer.shift(datalen)
-          await rstream.buffer.wait()
+          var index = 0
+          while index < rstream.buffer.dataLen():
+            let ch = char(rstream.buffer[index])
+            inc(index)
 
-proc read*(rstream: AsyncStreamReader, n = 0): Future[seq[byte]] {.async.} =
-  ## Read all bytes (n <= 0) or exactly `n` bytes from read-only stream
-  ## ``rstream``.
+            if sep[state] == ch:
+              inc(state)
+              if state == len(sep):
+                break
+            else:
+              if state != 0:
+                if limit > 0:
+                  let missing = min(state, lim - len(res) - 1)
+                  res.add(sep[0 ..< missing])
+                else:
+                  res.add(sep[0 ..< state])
+              res.add(ch)
+              if len(res) == lim:
+                break
+          (index, (state == len(sep)) or (lim == len(res)))
+      return res
+
+proc read*(rstream: AsyncStreamReader): Future[seq[byte]] {.async.} =
+  ## Read all bytes from read-only stream ``rstream``.
   ##
   ## This procedure allocates buffer seq[byte] and return it as result.
-  if not rstream.running():
-    raise newAsyncStreamIncorrectError("Incorrect stream state")
+  checkStreamClosed(rstream)
 
   if isNil(rstream.rsource):
     try:
-      result = await read(rstream.tsource, n)
-    except CancelledError:
-      raise
-    except CatchableError as exc:
-      raise newAsyncStreamReadError(exc)
-  else:
-    if isNil(rstream.readerLoop):
-      result = await read(rstream.rsource, n)
-    else:
-      var res = newSeq[byte]()
-      while true:
-        let datalen = rstream.buffer.dataLen()
-        if rstream.state == Error:
-          raise newAsyncStreamReadError(rstream.error)
-        if datalen == 0 and rstream.atEof():
-          result = res
-          break
-
-        if datalen > 0:
-          let s = len(res)
-          let o = s + datalen
-          if n <= 0:
-            res.setLen(o)
-            rstream.buffer.copyData(addr res[s], 0, datalen)
-            rstream.buffer.shift(datalen)
-          else:
-            let left = n - s
-            if datalen >= left:
-              res.setLen(n)
-              rstream.buffer.copyData(addr res[s], 0, left)
-              rstream.buffer.shift(left)
-              result = res
-              break
-            else:
-              res.setLen(o)
-              rstream.buffer.copyData(addr res[s], 0, datalen)
-              rstream.buffer.shift(datalen)
-
-        await rstream.buffer.wait()
-
-proc consume*(rstream: AsyncStreamReader, n = -1): Future[int] {.async.} =
-  ## Consume (discard) all bytes (n <= 0) or ``n`` bytes from read-only stream
-  ## ``rstream``.
-  ##
-  ## Return number of bytes actually consumed (discarded).
-  if not rstream.running():
-    raise newAsyncStreamIncorrectError("Incorrect stream state")
-
-  if isNil(rstream.rsource):
-    try:
-      result = await consume(rstream.tsource, n)
-    except CancelledError:
-      raise
+      return await read(rstream.tsource)
+    except CancelledError as exc:
+      raise exc
     except TransportLimitError:
       raise newAsyncStreamLimitError()
     except CatchableError as exc:
       raise newAsyncStreamReadError(exc)
   else:
     if isNil(rstream.readerLoop):
-      result = await consume(rstream.rsource, n)
+      return await read(rstream.rsource)
+    else:
+      var res = newSeq[byte]()
+      readLoop():
+        if rstream.atEof():
+          (0, true)
+        else:
+          let count = rstream.buffer.dataLen()
+          res.add(rstream.buffer.buffer.toOpenArray(0, count - 1))
+          (count, false)
+      return res
+
+proc read*(rstream: AsyncStreamReader, n: int): Future[seq[byte]] {.async.} =
+  ## Read all bytes (n <= 0) or exactly `n` bytes from read-only stream
+  ## ``rstream``.
+  ##
+  ## This procedure allocates buffer seq[byte] and return it as result.
+  checkStreamClosed(rstream)
+
+  if isNil(rstream.rsource):
+    try:
+      return await read(rstream.tsource, n)
+    except CancelledError as exc:
+      raise exc
+    except CatchableError as exc:
+      raise newAsyncStreamReadError(exc)
+  else:
+    if isNil(rstream.readerLoop):
+      return await read(rstream.rsource, n)
+    else:
+      if n <= 0:
+        return await read(rstream.rsource)
+      else:
+        var res = newSeq[byte]()
+        readLoop():
+          if rstream.atEof():
+            (0, true)
+          else:
+            let count = min(rstream.buffer.dataLen(), n - len(res))
+            res.add(rstream.buffer.buffer.toOpenArray(0, count - 1))
+            (count, len(res) == n)
+        return res
+
+proc consume*(rstream: AsyncStreamReader): Future[int] {.async.} =
+  ## Consume (discard) all bytes from read-only stream ``rstream``.
+  ##
+  ## Return number of bytes actually consumed (discarded).
+  checkStreamClosed(rstream)
+
+  if isNil(rstream.rsource):
+    try:
+      return await consume(rstream.tsource)
+    except CancelledError as exc:
+      raise exc
+    except TransportLimitError:
+      raise newAsyncStreamLimitError()
+    except CatchableError as exc:
+      raise newAsyncStreamReadError(exc)
+  else:
+    if isNil(rstream.readerLoop):
+      return await consume(rstream.rsource)
     else:
       var res = 0
-      while true:
-        let datalen = rstream.buffer.dataLen()
-        if rstream.state == Error:
-          raise newAsyncStreamReadError(rstream.error)
-        if datalen == 0:
-          if rstream.atEof():
-            if n <= 0:
-              result = res
-              break
-            else:
-              raise newAsyncStreamLimitError()
+      readLoop():
+        if rstream.atEof():
+          (0, true)
         else:
-          if n <= 0:
-            res += datalen
-            rstream.buffer.shift(datalen)
-          else:
-            let left = n - res
-            if datalen >= left:
-              res += left
-              rstream.buffer.shift(left)
-              result = res
-              break
-            else:
-              res += datalen
-              rstream.buffer.shift(datalen)
+          res += rstream.buffer.dataLen()
+          (rstream.buffer.dataLen(), false)
+      return res
 
-        await rstream.buffer.wait()
+proc consume*(rstream: AsyncStreamReader, n: int): Future[int] {.async.} =
+  ## Consume (discard) all bytes (n <= 0) or ``n`` bytes from read-only stream
+  ## ``rstream``.
+  ##
+  ## Return number of bytes actually consumed (discarded).
+  checkStreamClosed(rstream)
+
+  if isNil(rstream.rsource):
+    try:
+      return await consume(rstream.tsource, n)
+    except CancelledError as exc:
+      raise exc
+    except TransportLimitError:
+      raise newAsyncStreamLimitError()
+    except CatchableError as exc:
+      raise newAsyncStreamReadError(exc)
+  else:
+    if isNil(rstream.readerLoop):
+      return await consume(rstream.rsource, n)
+    else:
+      if n <= 0:
+        return await rstream.consume()
+      else:
+        var res = 0
+        readLoop():
+          if rstream.atEof():
+            (0, true)
+          else:
+            let count = min(rstream.buffer.dataLen(), n - res)
+            res += count
+            (count, res == n)
+        return res
+
+proc readMessage*(rstream: AsyncStreamReader, pred: ReadMessagePredicate) {.
+     async.} =
+  ## Read all bytes from stream ``rstream`` until ``predicate`` callback
+  ## will not be satisfied.
+  ##
+  ## ``predicate`` callback should return tuple ``(consumed, result)``, where
+  ## ``consumed`` is the number of bytes processed and ``result`` is a
+  ## completion flag (``true`` if readMessage() should stop reading data,
+  ## or ``false`` if readMessage() should continue to read data from stream).
+  ##
+  ## ``predicate`` callback must copy all the data from ``data`` array and
+  ## return number of bytes it is going to consume.
+  ## ``predicate`` callback will receive (zero-length) openarray, if stream
+  ## is at EOF.
+  doAssert(not(isNil(pred)), "`predicate` callback should not be `nil`")
+  checkStreamClosed(rstream)
+
+  if isNil(rstream.rsource):
+    try:
+      await readMessage(rstream.tsource, pred)
+    except CancelledError as exc:
+      raise exc
+    except CatchableError as exc:
+      raise newAsyncStreamReadError(exc)
+  else:
+    if isNil(rstream.readerLoop):
+      await readMessage(rstream.rsource, pred)
+    else:
+      readLoop():
+        let count = rstream.buffer.dataLen()
+        if count == 0:
+          if rstream.atEof():
+            pred([])
+          else:
+            # Case, when transport's buffer is not yet filled with data.
+            (0, false)
+        else:
+          pred(rstream.buffer.buffer.toOpenArray(0, count - 1))
 
 proc write*(wstream: AsyncStreamWriter, pbytes: pointer,
             nbytes: int) {.async.} =
@@ -597,36 +687,42 @@ proc write*(wstream: AsyncStreamWriter, pbytes: pointer,
   ## writer stream ``wstream``.
   ##
   ## ``nbytes` must be more then zero.
-  if not wstream.running():
-    raise newAsyncStreamIncorrectError("Incorrect stream state")
+  checkStreamClosed(wstream)
   if nbytes <= 0:
-    raise newAsyncStreamIncorrectError("Zero length message")
+    raiseEmptyMessageDefect()
 
   if isNil(wstream.wsource):
     var res: int
     try:
       res = await write(wstream.tsource, pbytes, nbytes)
-    except CancelledError:
-      raise
+    except CancelledError as exc:
+      raise exc
+    except AsyncStreamError as exc:
+      raise exc
     except CatchableError as exc:
       raise newAsyncStreamWriteError(exc)
     if res != nbytes:
       raise newAsyncStreamIncompleteError()
+    wstream.bytesCount = wstream.bytesCount + uint64(nbytes)
   else:
     if isNil(wstream.writerLoop):
       await write(wstream.wsource, pbytes, nbytes)
+      wstream.bytesCount = wstream.bytesCount + uint64(nbytes)
     else:
       var item = WriteItem(kind: Pointer)
-      item.data1 = pbytes
+      item.dataPtr = pbytes
       item.size = nbytes
       item.future = newFuture[void]("async.stream.write(pointer)")
-      await wstream.queue.put(item)
       try:
+        await wstream.queue.put(item)
         await item.future
-      except CancelledError:
-        raise
-      except:
-        raise newAsyncStreamWriteError(item.future.error)
+        wstream.bytesCount = wstream.bytesCount + uint64(item.size)
+      except CancelledError as exc:
+        raise exc
+      except AsyncStreamError as exc:
+        raise exc
+      except CatchableError as exc:
+        raise newAsyncStreamWriteError(exc)
 
 proc write*(wstream: AsyncStreamWriter, sbytes: seq[byte],
             msglen = -1) {.async.} =
@@ -638,41 +734,44 @@ proc write*(wstream: AsyncStreamWriter, sbytes: seq[byte],
   ## If ``msglen < 0`` whole sequence ``sbytes`` will be writen to stream.
   ## If ``msglen > len(sbytes)`` only ``len(sbytes)`` bytes will be written to
   ## stream.
+  checkStreamClosed(wstream)
   let length = if msglen <= 0: len(sbytes) else: min(msglen, len(sbytes))
-
-  if not wstream.running():
-    raise newAsyncStreamIncorrectError("Incorrect stream state")
   if length <= 0:
-    raise newAsyncStreamIncorrectError("Zero length message")
+    raiseEmptyMessageDefect()
 
   if isNil(wstream.wsource):
     var res: int
     try:
-      res = await write(wstream.tsource, sbytes, msglen)
-    except CancelledError:
-      raise
+      res = await write(wstream.tsource, sbytes, length)
+    except CancelledError as exc:
+      raise exc
     except CatchableError as exc:
       raise newAsyncStreamWriteError(exc)
     if res != length:
       raise newAsyncStreamIncompleteError()
+    wstream.bytesCount = wstream.bytesCount + uint64(length)
   else:
     if isNil(wstream.writerLoop):
-      await write(wstream.wsource, sbytes, msglen)
+      await write(wstream.wsource, sbytes, length)
+      wstream.bytesCount = wstream.bytesCount + uint64(length)
     else:
       var item = WriteItem(kind: Sequence)
       if not isLiteral(sbytes):
-        shallowCopy(item.data2, sbytes)
+        shallowCopy(item.dataSeq, sbytes)
       else:
-        item.data2 = sbytes
+        item.dataSeq = sbytes
       item.size = length
       item.future = newFuture[void]("async.stream.write(seq)")
-      await wstream.queue.put(item)
       try:
+        await wstream.queue.put(item)
         await item.future
-      except CancelledError:
-        raise
-      except:
-        raise newAsyncStreamWriteError(item.future.error)
+        wstream.bytesCount = wstream.bytesCount + uint64(item.size)
+      except CancelledError as exc:
+        raise exc
+      except AsyncStreamError as exc:
+        raise exc
+      except CatchableError as exc:
+        raise newAsyncStreamWriteError(exc)
 
 proc write*(wstream: AsyncStreamWriter, sbytes: string,
             msglen = -1) {.async.} =
@@ -683,46 +782,48 @@ proc write*(wstream: AsyncStreamWriter, sbytes: string,
   ## If ``msglen < 0`` whole string ``sbytes`` will be writen to stream.
   ## If ``msglen > len(sbytes)`` only ``len(sbytes)`` bytes will be written to
   ## stream.
+  checkStreamClosed(wstream)
   let length = if msglen <= 0: len(sbytes) else: min(msglen, len(sbytes))
-
-  if not wstream.running():
-    raise newAsyncStreamIncorrectError("Incorrect stream state")
   if length <= 0:
-    raise newAsyncStreamIncorrectError("Zero length message")
+    raiseEmptyMessageDefect()
 
   if isNil(wstream.wsource):
     var res: int
     try:
-      res = await write(wstream.tsource, sbytes, msglen)
-    except CancelledError:
-      raise
+      res = await write(wstream.tsource, sbytes, length)
+    except CancelledError as exc:
+      raise exc
     except CatchableError as exc:
       raise newAsyncStreamWriteError(exc)
     if res != length:
       raise newAsyncStreamIncompleteError()
+    wstream.bytesCount = wstream.bytesCount + uint64(length)
   else:
     if isNil(wstream.writerLoop):
-      await write(wstream.wsource, sbytes, msglen)
+      await write(wstream.wsource, sbytes, length)
+      wstream.bytesCount = wstream.bytesCount + uint64(length)
     else:
       var item = WriteItem(kind: String)
       if not isLiteral(sbytes):
-        shallowCopy(item.data3, sbytes)
+        shallowCopy(item.dataStr, sbytes)
       else:
-        item.data3 = sbytes
+        item.dataStr = sbytes
       item.size = length
       item.future = newFuture[void]("async.stream.write(string)")
-      await wstream.queue.put(item)
       try:
+        await wstream.queue.put(item)
         await item.future
-      except CancelledError:
-        raise
-      except:
-        raise newAsyncStreamWriteError(item.future.error)
+        wstream.bytesCount = wstream.bytesCount + uint64(item.size)
+      except CancelledError as exc:
+        raise exc
+      except AsyncStreamError as exc:
+        raise exc
+      except CatchableError as exc:
+        raise newAsyncStreamWriteError(exc)
 
 proc finish*(wstream: AsyncStreamWriter) {.async.} =
   ## Finish write stream ``wstream``.
-  if not wstream.running():
-    raise newAsyncStreamIncorrectError("Incorrect stream state")
+  checkStreamClosed(wstream)
 
   if not isNil(wstream.wsource):
     if isNil(wstream.writerLoop):
@@ -731,13 +832,15 @@ proc finish*(wstream: AsyncStreamWriter) {.async.} =
       var item = WriteItem(kind: Pointer)
       item.size = 0
       item.future = newFuture[void]("async.stream.finish")
-      await wstream.queue.put(item)
       try:
+        await wstream.queue.put(item)
         await item.future
-      except CancelledError:
-        raise
-      except:
-        raise newAsyncStreamWriteError(item.future.error)
+      except CancelledError as exc:
+        raise exc
+      except AsyncStreamError as exc:
+        raise exc
+      except CatchableError as exc:
+        raise newAsyncStreamWriteError(exc)
 
 proc join*(rw: AsyncStreamRW): Future[void] =
   ## Get Future[void] which will be completed when stream become finished or
@@ -750,12 +853,12 @@ proc join*(rw: AsyncStreamRW): Future[void] =
   proc continuation(udata: pointer) {.gcsafe.} =
     retFuture.complete()
 
-  proc cancel(udata: pointer) {.gcsafe.} =
+  proc cancellation(udata: pointer) {.gcsafe.} =
     rw.future.removeCallback(continuation, cast[pointer](retFuture))
 
   if not(rw.future.finished()):
     rw.future.addCallback(continuation, cast[pointer](retFuture))
-    rw.future.cancelCallback = cancel
+    rw.future.cancelCallback = cancellation
   else:
     retFuture.complete()
 
@@ -766,12 +869,13 @@ proc close*(rw: AsyncStreamRW) =
   ##
   ## Note close() procedure is not completed immediately!
   if rw.closed():
-    raise newAsyncStreamIncorrectError("Stream is already closed!")
+    raiseAsyncStreamIncorrectDefect("Stream is already closed!")
+
+  rw.state = AsyncStreamState.Closed
 
   proc continuation(udata: pointer) =
     if not isNil(rw.udata):
       GC_unref(cast[ref int](rw.udata))
-    rw.state = AsyncStreamState.Closed
     if not(rw.future.finished()):
       rw.future.complete()
     when rw is AsyncStreamReader:
@@ -801,7 +905,7 @@ proc close*(rw: AsyncStreamRW) =
 proc closeWait*(rw: AsyncStreamRW): Future[void] =
   ## Close and frees resources of stream ``rw``.
   rw.close()
-  result = rw.join()
+  rw.join()
 
 proc startReader(rstream: AsyncStreamReader) =
   rstream.state = Running
@@ -964,8 +1068,9 @@ proc newAsyncStreamReader*[T](rsource: AsyncStreamReader,
   ##
   ## ``udata`` - user object which will be associated with new AsyncStreamReader
   ## object.
-  result = new AsyncStreamReader
-  result.init(rsource, loop, bufferSize, udata)
+  var res = AsyncStreamReader()
+  res.init(rsource, loop, bufferSize, udata)
+  res
 
 proc newAsyncStreamReader*(rsource: AsyncStreamReader,
                            loop: StreamReaderLoop,
@@ -977,8 +1082,9 @@ proc newAsyncStreamReader*(rsource: AsyncStreamReader,
   ## ``loop`` is main reading loop procedure.
   ##
   ## ``bufferSize`` is internal buffer size.
-  result = new AsyncStreamReader
-  result.init(rsource, loop, bufferSize)
+  var res = AsyncStreamReader()
+  res.init(rsource, loop, bufferSize)
+  res
 
 proc newAsyncStreamReader*[T](tsource: StreamTransport,
                               udata: ref T): AsyncStreamReader =
@@ -987,14 +1093,16 @@ proc newAsyncStreamReader*[T](tsource: StreamTransport,
   ##
   ## ``udata`` - user object which will be associated with new AsyncStreamWriter
   ## object.
-  result = new AsyncStreamReader
-  result.init(tsource, udata)
+  var res = AsyncStreamReader()
+  res.init(tsource, udata)
+  res
 
 proc newAsyncStreamReader*(tsource: StreamTransport): AsyncStreamReader =
   ## Create new AsyncStreamReader object, which will use stream transport
   ## ``tsource`` as source data channel.
-  result = new AsyncStreamReader
-  result.init(tsource)
+  var res = AsyncStreamReader()
+  res.init(tsource)
+  res
 
 proc newAsyncStreamWriter*[T](wsource: AsyncStreamWriter,
                               loop: StreamWriterLoop,
@@ -1009,8 +1117,9 @@ proc newAsyncStreamWriter*[T](wsource: AsyncStreamWriter,
   ##
   ## ``udata`` - user object which will be associated with new AsyncStreamWriter
   ## object.
-  result = new AsyncStreamWriter
-  result.init(wsource, loop, queueSize, udata)
+  var res = AsyncStreamWriter()
+  res.init(wsource, loop, queueSize, udata)
+  res
 
 proc newAsyncStreamWriter*(wsource: AsyncStreamWriter,
                            loop: StreamWriterLoop,
@@ -1022,8 +1131,9 @@ proc newAsyncStreamWriter*(wsource: AsyncStreamWriter,
   ## ``loop`` is main writing loop procedure.
   ##
   ## ``queueSize`` is writing queue size (default size is unlimited).
-  result = new AsyncStreamWriter
-  result.init(wsource, loop, queueSize)
+  var res = AsyncStreamWriter()
+  res.init(wsource, loop, queueSize)
+  res
 
 proc newAsyncStreamWriter*[T](tsource: StreamTransport,
                               udata: ref T): AsyncStreamWriter =
@@ -1032,14 +1142,16 @@ proc newAsyncStreamWriter*[T](tsource: StreamTransport,
   ##
   ## ``udata`` - user object which will be associated with new AsyncStreamWriter
   ## object.
-  result = new AsyncStreamWriter
-  result.init(tsource, udata)
+  var res = AsyncStreamWriter()
+  res.init(tsource, udata)
+  res
 
 proc newAsyncStreamWriter*(tsource: StreamTransport): AsyncStreamWriter =
   ## Create new AsyncStreamWriter object which will use stream transport
   ## ``tsource`` as data channel.
-  result = new AsyncStreamWriter
-  result.init(tsource)
+  var res = AsyncStreamWriter()
+  res.init(tsource)
+  res
 
 proc newAsyncStreamWriter*[T](wsource: AsyncStreamWriter,
                               udata: ref T): AsyncStreamWriter =
@@ -1047,13 +1159,15 @@ proc newAsyncStreamWriter*[T](wsource: AsyncStreamWriter,
   ##
   ## ``udata`` - user object which will be associated with new AsyncStreamWriter
   ## object.
-  result = new AsyncStreamWriter
-  result.init(wsource, udata)
+  var res = AsyncStreamWriter()
+  res.init(wsource, udata)
+  res
 
 proc newAsyncStreamWriter*(wsource: AsyncStreamWriter): AsyncStreamWriter =
   ## Create copy of AsyncStreamWriter object ``wsource``.
-  result = new AsyncStreamWriter
-  result.init(wsource)
+  var res = AsyncStreamWriter()
+  res.init(wsource)
+  res
 
 proc newAsyncStreamReader*[T](rsource: AsyncStreamWriter,
                               udata: ref T): AsyncStreamWriter =
@@ -1061,15 +1175,17 @@ proc newAsyncStreamReader*[T](rsource: AsyncStreamWriter,
   ##
   ## ``udata`` - user object which will be associated with new AsyncStreamReader
   ## object.
-  result = new AsyncStreamReader
-  result.init(rsource, udata)
+  var res = AsyncStreamReader()
+  res.init(rsource, udata)
+  res
 
 proc newAsyncStreamReader*(rsource: AsyncStreamReader): AsyncStreamReader =
   ## Create copy of AsyncStreamReader object ``rsource``.
-  result = new AsyncStreamReader
-  result.init(rsource)
+  var res = AsyncStreamReader()
+  res.init(rsource)
+  res
 
 proc getUserData*[T](rw: AsyncStreamRW): T {.inline.} =
   ## Obtain user data associated with AsyncStreamReader or AsyncStreamWriter
   ## object ``rw``.
-  result = cast[T](rw.udata)
+  cast[T](rw.udata)

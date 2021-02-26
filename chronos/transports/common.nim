@@ -69,6 +69,7 @@ when defined(windows):
       domain*: Domain               # Current server domain (IPv4 or IPv6)
       apending*: bool
       asock*: AsyncFD               # Current AcceptEx() socket
+      errorCode*: OSErrorCode       # Current error code
       abuffer*: array[128, byte]    # Windows AcceptEx() buffer
       aovl*: CustomOverlapped       # AcceptEx OVERLAPPED structure
 else:
@@ -82,6 +83,7 @@ else:
       flags*: set[ServerFlags]      # Flags
       bufferSize*: int              # Size of internal transports' buffer
       loopFuture*: Future[void]     # Server's main Future
+      errorCode*: OSErrorCode       # Current error code
 
 type
   TransportError* = object of AsyncError
@@ -100,6 +102,8 @@ type
     ## Transport's capability not supported exception
   TransportUseClosedError* = object of TransportError
     ## Usage after transport close exception
+  TransportTooManyError* = object of TransportError
+    ## Too many open file descriptors exception
 
   TransportState* = enum
     ## Transport's state
@@ -253,14 +257,13 @@ proc initTAddress*(address: string, port: int): TransportAddress {.inline.} =
 proc initTAddress*(address: IpAddress, port: Port): TransportAddress =
   ## Initialize ``TransportAddress`` with net.nim ``IpAddress`` and
   ## port number ``port``.
-  if address.family == IpAddressFamily.IPv4:
+  case address.family
+  of IpAddressFamily.IPv4:
     result = TransportAddress(family: AddressFamily.IPv4, port: port)
     result.address_v4 = address.address_v4
-  elif address.family == IpAddressFamily.IPv6:
+  of IpAddressFamily.IPv6:
     result = TransportAddress(family: AddressFamily.IPv6, port: port)
     result.address_v6 = address.address_v6
-  else:
-    raise newException(TransportAddressError, "Incorrect address family!")
 
 proc getAddrInfo(address: string, port: Port, domain: Domain,
                  sockType: SockType = SockType.SOCK_STREAM,
@@ -467,11 +470,12 @@ proc windowsAnyAddressFix*(a: TransportAddress): TransportAddress {.inline.} =
 
 template checkClosed*(t: untyped) =
   if (ReadClosed in (t).state) or (WriteClosed in (t).state):
-    raise newException(TransportError, "Transport is already closed!")
+    raise newException(TransportUseClosedError, "Transport is already closed!")
 
 template checkClosed*(t: untyped, future: untyped) =
   if (ReadClosed in (t).state) or (WriteClosed in (t).state):
-    future.fail(newException(TransportError, "Transport is already closed!"))
+    future.fail(newException(TransportUseClosedError,
+                             "Transport is already closed!"))
     return future
 
 template checkWriteEof*(t: untyped, future: untyped) =
@@ -484,6 +488,15 @@ template getError*(t: untyped): ref Exception =
   var err = (t).error
   (t).error = nil
   err
+
+template getServerUseClosedError*(): ref TransportUseClosedError =
+  newException(TransportUseClosedError, "Server is already closed!")
+
+template getTransportTooManyError*(): ref TransportTooManyError =
+  newException(TransportTooManyError, "Too many open transports!")
+
+template getTransportUseClosedError*(): ref TransportUseClosedError =
+  newException(TransportUseClosedError, "Transport is already closed!")
 
 template getTransportOsError*(err: OSErrorCode): ref TransportOsError =
   var msg = "(" & $int(err) & ") " & osErrorMsg(err)
@@ -527,6 +540,7 @@ when defined(windows):
     ERROR_PIPE_NOT_CONNECTED* = 233
     ERROR_NO_DATA* = 232
     ERROR_CONNECTION_ABORTED* = 1236
+    ERROR_TOO_MANY_OPEN_FILES* = 4
 
   proc cancelIo*(hFile: HANDLE): WINBOOL
        {.stdcall, dynlib: "kernel32", importc: "CancelIo".}

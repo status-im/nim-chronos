@@ -9,7 +9,8 @@
 #                MIT license (LICENSE-MIT)
 
 ## This module implements some core synchronization primitives
-import asyncloop, deques
+import std/[sequtils, deques]
+import ./asyncloop
 
 type
   AsyncLock* = ref object of RootRef
@@ -22,6 +23,7 @@ type
     ## ``release()`` call resets the state to unlocked; first coroutine which
     ## is blocked in ``acquire()`` is being processed.
     locked: bool
+    acquired: bool
     waiters: seq[Future[void]]
 
   AsyncEvent* = ref object of RootRef
@@ -68,30 +70,31 @@ proc newAsyncLock*(): AsyncLock =
   ## immediately.
 
   # Workaround for callSoon() not worked correctly before
-  # getGlobalDispatcher() call.
-  discard getGlobalDispatcher()
-  result = new AsyncLock
-  result.waiters = newSeq[Future[void]]()
-  result.locked = false
+  # getThreadDispatcher() call.
+  discard getThreadDispatcher()
+  AsyncLock(waiters: newSeq[Future[void]](), locked: false, acquired: false)
 
-proc wakeUpFirst(lock: AsyncLock) {.inline.} =
+proc wakeUpFirst(lock: AsyncLock): bool {.inline.} =
   ## Wake up the first waiter if it isn't done.
-  for fut in lock.waiters.mitems():
-    if not(fut.finished()):
-      fut.complete()
+  var i = 0
+  var res = false
+  while i < len(lock.waiters):
+    var waiter = lock.waiters[i]
+    inc(i)
+    if not(waiter.finished()):
+      waiter.complete()
+      res = true
       break
+  if i > 0:
+    lock.waiters.delete(0, i - 1)
+  res
 
 proc checkAll(lock: AsyncLock): bool {.inline.} =
   ## Returns ``true`` if waiters array is empty or full of cancelled futures.
-  result = true
   for fut in lock.waiters.mitems():
     if not(fut.cancelled()):
-      result = false
-      break
-
-proc removeWaiter(lock: AsyncLock, waiter: Future[void]) {.inline.} =
-  ## Removes ``waiter`` from list of waiters in ``lock``.
-  lock.waiters.delete(lock.waiters.find(waiter))
+      return false
+  return true
 
 proc acquire*(lock: AsyncLock) {.async.} =
   ## Acquire a lock ``lock``.
@@ -99,24 +102,18 @@ proc acquire*(lock: AsyncLock) {.async.} =
   ## This procedure blocks until the lock ``lock`` is unlocked, then sets it
   ## to locked and returns.
   if not(lock.locked) and lock.checkAll():
+    lock.acquired = true
     lock.locked = true
   else:
     var w = newFuture[void]("AsyncLock.acquire")
     lock.waiters.add(w)
-    try:
-      try:
-        await w
-      finally:
-        lock.removeWaiter(w)
-    except CancelledError:
-      if not(lock.locked):
-        lock.wakeUpFirst()
-      raise
+    await w
+    lock.acquired = true
     lock.locked = true
 
 proc locked*(lock: AsyncLock): bool =
   ## Return `true` if the lock ``lock`` is acquired, `false` otherwise.
-  result = lock.locked
+  lock.locked
 
 proc release*(lock: AsyncLock) =
   ## Release a lock ``lock``.
@@ -125,8 +122,15 @@ proc release*(lock: AsyncLock) =
   ## other coroutines are blocked waiting for the lock to become unlocked,
   ## allow exactly one of them to proceed.
   if lock.locked:
-    lock.locked = false
-    lock.wakeUpFirst()
+    # We set ``lock.locked`` to ``false`` only when there no active waiters.
+    # If active waiters are present, then ``lock.locked`` will be set to `true`
+    # in ``acquire()`` procedure's continuation.
+    if not(lock.acquired):
+      raise newException(AsyncLockError, "AsyncLock was already released!")
+    else:
+      lock.acquired = false
+      if not(lock.wakeUpFirst()):
+        lock.locked = false
   else:
     raise newException(AsyncLockError, "AsyncLock is not acquired!")
 
@@ -139,28 +143,21 @@ proc newAsyncEvent*(): AsyncEvent =
   ## initially `false`.
 
   # Workaround for callSoon() not worked correctly before
-  # getGlobalDispatcher() call.
-  discard getGlobalDispatcher()
-  result = new AsyncEvent
-  result.waiters = newSeq[Future[void]]()
-  result.flag = false
+  # getThreadDispatcher() call.
+  discard getThreadDispatcher()
+  AsyncEvent(waiters: newSeq[Future[void]](), flag: false)
 
-proc removeWaiter(event: AsyncEvent, waiter: Future[void]) {.inline.} =
-  ## Removes ``waiter`` from list of waiters in ``lock``.
-  event.waiters.delete(event.waiters.find(waiter))
-
-proc wait*(event: AsyncEvent) {.async.} =
+proc wait*(event: AsyncEvent): Future[void] =
   ## Block until the internal flag of ``event`` is `true`.
   ## If the internal flag is `true` on entry, return immediately. Otherwise,
   ## block until another task calls `fire()` to set the flag to `true`,
   ## then return.
+  var w = newFuture[void]("AsyncEvent.wait")
   if not(event.flag):
-    var w = newFuture[void]("AsyncEvent.wait")
     event.waiters.add(w)
-    try:
-      await w
-    finally:
-      event.removeWaiter(w)
+  else:
+    w.complete()
+  w
 
 proc fire*(event: AsyncEvent) =
   ## Set the internal flag of ``event`` to `true`. All tasks waiting for it
@@ -169,8 +166,9 @@ proc fire*(event: AsyncEvent) =
   if not(event.flag):
     event.flag = true
     for fut in event.waiters:
-      if not(fut.finished()):
+      if not(fut.finished()): # Could have been cancelled
         fut.complete()
+    event.waiters.setLen(0)
 
 proc clear*(event: AsyncEvent) =
   ## Reset the internal flag of ``event`` to `false`. Subsequently, tasks
@@ -180,50 +178,33 @@ proc clear*(event: AsyncEvent) =
 
 proc isSet*(event: AsyncEvent): bool =
   ## Return `true` if and only if the internal flag of ``event`` is `true`.
-  result = event.flag
+  event.flag
 
 proc newAsyncQueue*[T](maxsize: int = 0): AsyncQueue[T] =
   ## Creates a new asynchronous queue ``AsyncQueue``.
 
   # Workaround for callSoon() not worked correctly before
-  # getGlobalDispatcher() call.
-  discard getGlobalDispatcher()
-  result = new AsyncQueue[T]
-  result.getters = newSeq[Future[void]]()
-  result.putters = newSeq[Future[void]]()
-  result.queue = initDeque[T]()
-  result.maxsize = maxsize
+  # getThreadDispatcher() call.
+  discard getThreadDispatcher()
+  AsyncQueue[T](
+    getters: newSeq[Future[void]](),
+    putters: newSeq[Future[void]](),
+    queue: initDeque[T](),
+    maxsize: maxsize
+  )
 
 proc wakeupNext(waiters: var seq[Future[void]]) {.inline.} =
   var i = 0
   while i < len(waiters):
     var waiter = waiters[i]
-    if not(waiter.finished()):
-      let length = len(waiters) - (i + 1)
-      let offset = len(waiters) - length
-      if length > 0:
-        for k in 0..<length:
-          shallowCopy(waiters[k], waiters[k + offset])
-      waiters.setLen(length)
-      waiter.complete()
-      break
     inc(i)
 
-proc removeWaiter(waiters: var seq[Future[void]],
-                  waiter: Future[void]) {.inline.} =
-  ## Safely remove ``waiter`` from list of waiters in ``waiters``. This
-  ## procedure will not raise if ``waiter`` is not in the list of waiters.
-  var index = waiters.find(waiter)
-  if index >= 0:
-    waiters.delete(index)
+    if not(waiter.finished()):
+      waiter.complete()
+      break
 
-proc removeWaiter(waiters: var Deque[Future[void]],
-                  fut: Future[void]) {.inline.} =
-  var nwaiters = initDeque[Future[void]]()
-  while len(waiters) > 0:
-    var waiter = waiters.popFirst()
-    if waiter != fut:
-      nwaiters.addFirst(waiter)
+  if i > 0:
+    waiters.delete(0, i - 1)
 
 proc full*[T](aq: AsyncQueue[T]): bool {.inline.} =
   ## Return ``true`` if there are ``maxsize`` items in the queue.
@@ -231,13 +212,13 @@ proc full*[T](aq: AsyncQueue[T]): bool {.inline.} =
   ## Note: If the ``aq`` was initialized with ``maxsize = 0`` (default),
   ## then ``full()`` is never ``true``.
   if aq.maxsize <= 0:
-    result = false
+    false
   else:
-    result = (len(aq.queue) >= aq.maxsize)
+    (len(aq.queue) >= aq.maxsize)
 
 proc empty*[T](aq: AsyncQueue[T]): bool {.inline.} =
   ## Return ``true`` if the queue is empty, ``false`` otherwise.
-  result = (len(aq.queue) == 0)
+  (len(aq.queue) == 0)
 
 proc addFirstNoWait*[T](aq: AsyncQueue[T], item: T) =
   ## Put an item ``item`` to the beginning of the queue ``aq`` immediately.
@@ -263,8 +244,9 @@ proc popFirstNoWait*[T](aq: AsyncQueue[T]): T =
   ## If queue ``aq`` is empty, then ``AsyncQueueEmptyError`` exception raised.
   if aq.empty():
     raise newException(AsyncQueueEmptyError, "AsyncQueue is empty!")
-  result = aq.queue.popFirst()
+  let res = aq.queue.popFirst()
   aq.putters.wakeupNext()
+  res
 
 proc popLastNoWait*[T](aq: AsyncQueue[T]): T =
   ## Get an item from the end of the queue ``aq`` immediately.
@@ -272,8 +254,9 @@ proc popLastNoWait*[T](aq: AsyncQueue[T]): T =
   ## If queue ``aq`` is empty, then ``AsyncQueueEmptyError`` exception raised.
   if aq.empty():
     raise newException(AsyncQueueEmptyError, "AsyncQueue is empty!")
-  result = aq.queue.popLast()
+  let res = aq.queue.popLast()
   aq.putters.wakeupNext()
+  res
 
 proc addFirst*[T](aq: AsyncQueue[T], item: T) {.async.} =
   ## Put an ``item`` to the beginning of the queue ``aq``. If the queue is full,
@@ -283,11 +266,10 @@ proc addFirst*[T](aq: AsyncQueue[T], item: T) {.async.} =
     aq.putters.add(putter)
     try:
       await putter
-    except:
-      aq.putters.removeWaiter(putter)
-      if not aq.full() and not(putter.cancelled()):
+    except CatchableError as exc:
+      if not(aq.full()) and not(putter.cancelled()):
         aq.putters.wakeupNext()
-      raise
+      raise exc
   aq.addFirstNoWait(item)
 
 proc addLast*[T](aq: AsyncQueue[T], item: T) {.async.} =
@@ -298,11 +280,10 @@ proc addLast*[T](aq: AsyncQueue[T], item: T) {.async.} =
     aq.putters.add(putter)
     try:
       await putter
-    except:
-      aq.putters.removeWaiter(putter)
-      if not aq.full() and not(putter.cancelled()):
+    except CatchableError as exc:
+      if not(aq.full()) and not(putter.cancelled()):
         aq.putters.wakeupNext()
-      raise
+      raise exc
   aq.addLastNoWait(item)
 
 proc popFirst*[T](aq: AsyncQueue[T]): Future[T] {.async.} =
@@ -313,12 +294,11 @@ proc popFirst*[T](aq: AsyncQueue[T]): Future[T] {.async.} =
     aq.getters.add(getter)
     try:
       await getter
-    except:
-      aq.getters.removeWaiter(getter)
+    except CatchableError as exc:
       if not(aq.empty()) and not(getter.cancelled()):
         aq.getters.wakeupNext()
-      raise
-  result = aq.popFirstNoWait()
+      raise exc
+  return aq.popFirstNoWait()
 
 proc popLast*[T](aq: AsyncQueue[T]): Future[T] {.async.} =
   ## Remove and return an ``item`` from the end of the queue ``aq``.
@@ -328,12 +308,11 @@ proc popLast*[T](aq: AsyncQueue[T]): Future[T] {.async.} =
     aq.getters.add(getter)
     try:
       await getter
-    except:
-      aq.getters.removeWaiter(getter)
+    except CatchableError as exc:
       if not(aq.empty()) and not(getter.cancelled()):
         aq.getters.wakeupNext()
-      raise
-  result = aq.popLastNoWait()
+      raise exc
+  return aq.popLastNoWait()
 
 proc putNoWait*[T](aq: AsyncQueue[T], item: T) {.inline.} =
   ## Alias of ``addLastNoWait()``.
@@ -341,15 +320,15 @@ proc putNoWait*[T](aq: AsyncQueue[T], item: T) {.inline.} =
 
 proc getNoWait*[T](aq: AsyncQueue[T]): T {.inline.} =
   ## Alias of ``popFirstNoWait()``.
-  result = aq.popFirstNoWait()
+  aq.popFirstNoWait()
 
 proc put*[T](aq: AsyncQueue[T], item: T): Future[void] {.inline.} =
   ## Alias of ``addLast()``.
-  result = aq.addLast(item)
+  aq.addLast(item)
 
 proc get*[T](aq: AsyncQueue[T]): Future[T] {.inline.} =
   ## Alias of ``popFirst()``.
-  result = aq.popFirst()
+  aq.popFirst()
 
 proc clear*[T](aq: AsyncQueue[T]) {.inline.} =
   ## Clears all elements of queue ``aq``.
@@ -357,21 +336,21 @@ proc clear*[T](aq: AsyncQueue[T]) {.inline.} =
 
 proc len*[T](aq: AsyncQueue[T]): int {.inline.} =
   ## Return the number of elements in ``aq``.
-  result = len(aq.queue)
+  len(aq.queue)
 
 proc size*[T](aq: AsyncQueue[T]): int {.inline.} =
   ## Return the maximum number of elements in ``aq``.
-  result = len(aq.maxsize)
+  len(aq.maxsize)
 
 proc `[]`*[T](aq: AsyncQueue[T], i: Natural) : T {.inline.} =
   ## Access the i-th element of ``aq`` by order from first to last.
   ## ``aq[0]`` is the first element, ``aq[^1]`` is the last element.
-  result = aq.queue[i]
+  aq.queue[i]
 
 proc `[]`*[T](aq: AsyncQueue[T], i: BackwardsIndex) : T {.inline.} =
   ## Access the i-th element of ``aq`` by order from first to last.
   ## ``aq[0]`` is the first element, ``aq[^1]`` is the last element.
-  result = aq.queue[len(aq.queue) - int(i)]
+  aq.queue[len(aq.queue) - int(i)]
 
 proc `[]=`* [T](aq: AsyncQueue[T], i: Natural, item: T) {.inline.} =
   ## Change the i-th element of ``aq``.
@@ -405,8 +384,9 @@ proc contains*[T](aq: AsyncQueue[T], item: T): bool {.inline.} =
 
 proc `$`*[T](aq: AsyncQueue[T]): string =
   ## Turn an async queue ``aq`` into its string representation.
-  result = "["
+  var res = "["
   for item in aq.queue.items():
-    if result.len > 1: result.add(", ")
-    result.addQuoted(item)
-  result.add("]")
+    if len(res) > 1: res.add(", ")
+    res.addQuoted(item)
+  res.add("]")
+  res

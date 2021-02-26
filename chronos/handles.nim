@@ -26,7 +26,7 @@ when defined(windows):
   proc connectNamedPipe(hNamedPipe: Handle, lpOverlapped: pointer): WINBOOL
        {.importc: "ConnectNamedPipe", stdcall, dynlib: "kernel32".}
 else:
-  import posix
+  import os, posix
   const
     asyncInvalidSocket* = AsyncFD(posix.INVALID_SOCKET)
     TCP_NODELAY* = 1
@@ -116,6 +116,34 @@ proc wrapAsyncSocket*(sock: SocketHandle): AsyncFD =
       return asyncInvalidSocket
   result = AsyncFD(sock)
   register(result)
+
+proc getMaxOpenFiles*(): int =
+  ## Returns maximum file descriptor number that can be opened by this process.
+  ##
+  ## Note: On Windows its impossible to obtain such number, so getMaxOpenFiles()
+  ## will return constant value of 16384. You can get more information on this
+  ## link https://docs.microsoft.com/en-us/archive/blogs/markrussinovich/pushing-the-limits-of-windows-handles
+  when defined(windows):
+    result = 16384
+  else:
+    var limits: RLimit
+    if getrlimit(posix.RLIMIT_NOFILE, limits) != 0:
+      raiseOSError(osLastError())
+    result = int(limits.rlim_cur)
+
+proc setMaxOpenFiles*(count: int) =
+  ## Set maximum file descriptor number that can be opened by this process.
+  ##
+  ## Note: On Windows its impossible to set this value, so it just a nop call.
+  when defined(windows):
+    discard
+  else:
+    var limits: RLimit
+    if getrlimit(posix.RLIMIT_NOFILE, limits) != 0:
+      raiseOSError(osLastError())
+    limits.rlim_cur = count
+    if setrlimit(posix.RLIMIT_NOFILE, limits) != 0:
+      raiseOSError(osLastError())
 
 proc createAsyncPipe*(): tuple[read: AsyncFD, write: AsyncFD] =
   ## Create new asynchronouse pipe.

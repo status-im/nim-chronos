@@ -5,64 +5,70 @@
 #              Licensed under either of
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
-import strutils, unittest
-import ../chronos, ../chronos/streams/tlsstream
+import unittest
+import ../chronos
+import ../chronos/streams/[tlsstream, chunkstream, boundstream]
 
 when defined(nimHasUsed): {.used.}
 
+# To create self-signed certificate and key you can use openssl
+# openssl req -new -x509 -sha256 -newkey rsa:2048 -nodes \
+# -keyout example-com.key.pem -days 3650 -out example-com.cert.pem
+
 const SelfSignedRsaKey = """
 -----BEGIN PRIVATE KEY-----
-MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDSXcKMR6zIIHSy
-+UUjgyIlJWzEu3JFCEN+qBpjmwbuae3GNed0YgPels6AKe0AlWQNgpqoWfMQrWco
-qNf9dcm9OIdUK5FGMWYC8mJu6OjwnexSXt0R/k07lc5ePPDUbGvkbvgDyHzl1Ynj
-jYhe/2ujL0E99/KAuA7cvRILEl4rLpnngE+MMYNrFWmsSDzC+w0Hv5Fuyc8wZoSy
-nzODvojvFXTva9Nx4LxPF1W79WidwJHwrJghVlGUUhSeRGLHQWRY+954rj6TavoJ
-6gLYSHx6ELnRkFMbqxRrCJ0wAbrV8SwcPHjKSc6LQGRMzBRqxT45DoKmzH9Pwdnw
-6P0PGJyPAgMBAAECggEAd5Ck39hpIwIXchXtrwZ8ZMKFtLeZdhUBT7656P0XDnEU
-nQDMQcDn1B7A1eV+eENwr6EYyDD/zu3P4TM+OCg3dp3nhPaSRmQTR/995O3qX8BS
-rmqOmgiA2yoFNljKxOGu3RIZUwUjv/oDulsaNGxWQFS+bzs7EOAMSngIBlT1QvLc
-1etvGOW6hc4nzacrXpzhzWem6EzOabPZBmIy0DDz2ARlND1YSd2P5IMpOv0terNF
-ZwYl5SZ6Rnbv6GJWKl5IIpJOOtRtwyIhKNU/bd835vOfW07aaHVAT6GNYlyEoGWT
-36UjOyl3YxSLNvQOeIz4Y0n+vupBu/YL+mFtQdxJgQKBgQDtjEi0cNlt+Vz5sp4q
-wAVBJ/6h7hu3KJkY+xDpdrLyFTcxttKM9q/dR8V2bEaqMYT/mTvADfmW2BBcfi2J
-3VdR1lQ5pXeKAuxt1/Vc+Q4UCnX5OX7UXpP9aSetDdo5FXUC9X2H0hO0BqOcc+h2
-khVyXjKt6TdBwV94dP9bmQp9QQKBgQDitPVqRHGepYBYasScyTUXPp7vL9T7PMSu
-PGjqEkwvauhICpUbWpE/j8M0UXk64zwSmOYwQ37uiPpws88GL57oy1ZQZnhF/Hi3
-tM00Mn4x0xbyONbWu/AcFIZwSeSL6QhHYfeyVj7Jb/lqUg8sMiGmO25JjlAQBfTb
-vvBgEpcVzwKBgQCwgz87JWfLejIGMR2qcoj1A30IYmAh1377uwO0F0mc7PrYbBtE
-N8IyUTR/bLGNocJME1b8vOWrmt19fRzlhp1t6C8prrSGzulULdbawQ4fAi7rhDek
-Iqsg8FRVGSgAptsN2dDvbcDKUuycQtyHzsE0/J338IXozIHehkGBlNTggQKBgQCF
-RDTj5BoaVVWuJA0x0UGJSYFqP2bmzWEcv1w5BMqOMT0cZEQkkUfC4oKwdZhbGosM
-r57ZDkRGenUl3T08eK/kTuuNVb8r/O8Fpp3eKjRum5TojKsWDeJmz1X8GiPkbvcz
-5w4RYouEJHOsoVJT+6A2NMdvK946nRXEO2jYQPVZlwKBgBro8qGm0+T0T2xNP21q
-IzjP/EHT7iIkM5kiUCc2bPIrfzAGxXImakDzd6AgpgxhhficJOpp792Upe/b/Hwy
-bwfmbdWlT7/hPCnlVVH2dgO/ysDyEfxPigBMd+MmucRm6fzGIU7XSQw4KJqH4vQN
-9IASWlgzyQ1RytAduzRuepzB
+MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQCn7tXGLKMIMzOG
+tVzUixax1/ftlSLcpEAkZMORuiCCnYjtIJhGZdzRFZC8fBlfAJZpLIAOfX2L2f1J
+ZuwpwDkOIvNqKMBrl5Mvkl5azPT0rtnjuwrcqN5NFtbmZPKFYvbjex2aXGqjl5MW
+nQIs/ZA++DVEXmaN9oDxcZsvRMDKfrGQf9iLeoVL47Gx9KpqNqD/JLIn4LpieumV
+yYidm6ukTOqHRvrWm36y6VvKW4TE97THacULmkeahtTf8zDJbbh4EO+gifgwgJ2W
+BUS0+5hMcWu8111mXmanlOVlcoW8fH8RmPjL1eK1Z3j3SVHEf7oWZtIVW5gGA0jQ
+nfA4K51RAgMBAAECggEANZ7/R13tWKrwouy6DWuz/WlWUtgx333atUQvZhKmWs5u
+cDjeJmxUC7b1FhoSB9GqNT7uTLIpKkSaqZthgRtNnIPwcU890Zz+dEwqMJgNByvl
+it+oYjjRco/+YmaNQaYN6yjelPE5Y678WlYb4b29Fz4t0/zIhj/VgEKkKH2tiXpS
+TIicoM7pSOscEUfaW3yp5bS5QwNU6/AaF1wws0feBACd19ZkcdPvr52jopbhxlXw
+h3XTV/vXIJd5zWGp0h/Jbd4xcD4MVo2GjfkeORKY6SjDaNzt8OGtePcKnnbUVu8b
+2XlDxukhDQXqJ3g0sHz47mhvo4JeIM+FgymRm+3QmQKBgQDTawrEA3Zy9WvucaC7
+Zah02oE9nuvpF12lZ7WJh7+tZ/1ss+Fm7YspEKaUiEk7nn1CAVFtem4X4YCXTBiC
+Oqq/o+ipv1yTur0ae6m4pwLm5wcMWBh3H5zjfQTfrClNN8yjWv8u3/sq8KesHPnT
+R92/sMAptAChPgTzQphWbxFiYwKBgQDLWFaBqXfZYVnTyUvKX8GorS6jGWc6Eh4l
+lAFA+2EBWDICrUxsDPoZjEXrWCixdqLhyehaI3KEFIx2bcPv6X2c7yx3IG5lA/Gx
+TZiKlY74c6jOTstkdLW9RJbg1VUHUVZMf/Owt802YmEfUI5S5v7jFmKW6VG+io+K
++5KYeHD1uwKBgQDMf53KPA82422jFwYCPjLT1QduM2q97HwIomhWv5gIg63+l4BP
+rzYMYq6+vZUYthUy41OAMgyLzPQ1ZMXQMi83b7R9fTxvKRIBq9xfYCzObGnE5vHD
+SDDZWvR75muM5Yxr9nkfPkgVIPMO6Hg+hiVYZf96V0LEtNjU9HWmJYkLQQKBgQCQ
+ULGUdGHKtXy7AjH3/t3CiKaAupa4cANVSCVbqQy/l4hmvfdu+AbH+vXkgTzgNgKD
+nHh7AI1Vj//gTSayLlQn/Nbh9PJkXtg5rYiFUn+VdQBo6yMOuIYDPZqXFtCx0Nge
+kvCwisHpxwiG4PUhgS+Em259DDonsM8PJFx2OYRx4QKBgEQpGhg71Oi9MhPJshN7
+dYTowaMS5eLTk2264ARaY+hAIV7fgvUa+5bgTVaWL+Cfs33hi4sMRqlEwsmfds2T
+cnQiJ4cU20Euldfwa5FLnk6LaWdOyzYt/ICBJnKFRwfCUbS4Bu5rtMEM+3t0wxnJ
+IgaD04WhoL9EX0Qo3DC1+0kG
 -----END PRIVATE KEY-----
 """
 
+# This SSL certificate will expire 13 October 2030.
 const SelfSignedRsaCert = """
 -----BEGIN CERTIFICATE-----
-MIIDkzCCAnugAwIBAgIUEFovLJkPSn4T8BBZMYBrXPDajF0wDQYJKoZIhvcNAQEL
-BQAwWTELMAkGA1UEBhMCQVUxEzARBgNVBAgMClNvbWUtU3RhdGUxITAfBgNVBAoM
-GEludGVybmV0IFdpZGdpdHMgUHR5IEx0ZDESMBAGA1UEAwwJbG9jYWxob3N0MB4X
-DTE5MTAxMjA1NDQ0N1oXDTIwMTAxMTA1NDQ0OFowWTELMAkGA1UEBhMCQVUxEzAR
-BgNVBAgMClNvbWUtU3RhdGUxITAfBgNVBAoMGEludGVybmV0IFdpZGdpdHMgUHR5
-IEx0ZDESMBAGA1UEAwwJbG9jYWxob3N0MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8A
-MIIBCgKCAQEA0l3CjEesyCB0svlFI4MiJSVsxLtyRQhDfqgaY5sG7mntxjXndGID
-3pbOgCntAJVkDYKaqFnzEK1nKKjX/XXJvTiHVCuRRjFmAvJibujo8J3sUl7dEf5N
-O5XOXjzw1Gxr5G74A8h85dWJ442IXv9roy9BPffygLgO3L0SCxJeKy6Z54BPjDGD
-axVprEg8wvsNB7+RbsnPMGaEsp8zg76I7xV072vTceC8TxdVu/VoncCR8KyYIVZR
-lFIUnkRix0FkWPveeK4+k2r6CeoC2Eh8ehC50ZBTG6sUawidMAG61fEsHDx4yknO
-i0BkTMwUasU+OQ6Cpsx/T8HZ8Oj9DxicjwIDAQABo1MwUTAdBgNVHQ4EFgQUMM+1
-FZ6KmN2eCJfDxY+8xa1JKnYwHwYDVR0jBBgwFoAUMM+1FZ6KmN2eCJfDxY+8xa1J
-KnYwDwYDVR0TAQH/BAUwAwEB/zANBgkqhkiG9w0BAQsFAAOCAQEASglh98fXvPwA
-KMaEezCUqTeE7DehLlhZ8n6ETKaBDcP3JR4+KTEh9y7gRGJ7DXGFAYfU3itgjyZo
-kbgpZIhrTKyYCAsF96Q1mHf/cBQ96UXr0U0SbYXSSJFeeMthMvki556dJZajtxcA
-9xR/U0PxPjhC9NIfpVSAv/7ocnXh73qOiFHoN9Cr2smzcGPxsifys2iv1qm5LwDr
-Dx5h/RfyfuAjS8e1ZCAhS++PYjb8BX54NilW2lTYF3pwpXL8znc4eBmklBkw5L60
-99jrK7LSQT9Nk8Mf9t4P/77N4hXCqsHIxZIqJlbdgdKfvBF3vRomxm3/aWtGlTVD
-vvzZPnlYfQ==
+MIIDnzCCAoegAwIBAgIUUdcusjDd3XQi3FPM8urdFG3qI+8wDQYJKoZIhvcNAQEL
+BQAwXzELMAkGA1UEBhMCQVUxEzARBgNVBAgMClNvbWUtU3RhdGUxITAfBgNVBAoM
+GEludGVybmV0IFdpZGdpdHMgUHR5IEx0ZDEYMBYGA1UEAwwPMTI3LjAuMC4xOjQz
+ODA4MB4XDTIwMTAxMjIxNDUwMVoXDTMwMTAxMDIxNDUwMVowXzELMAkGA1UEBhMC
+QVUxEzARBgNVBAgMClNvbWUtU3RhdGUxITAfBgNVBAoMGEludGVybmV0IFdpZGdp
+dHMgUHR5IEx0ZDEYMBYGA1UEAwwPMTI3LjAuMC4xOjQzODA4MIIBIjANBgkqhkiG
+9w0BAQEFAAOCAQ8AMIIBCgKCAQEAp+7VxiyjCDMzhrVc1IsWsdf37ZUi3KRAJGTD
+kboggp2I7SCYRmXc0RWQvHwZXwCWaSyADn19i9n9SWbsKcA5DiLzaijAa5eTL5Je
+Wsz09K7Z47sK3KjeTRbW5mTyhWL243sdmlxqo5eTFp0CLP2QPvg1RF5mjfaA8XGb
+L0TAyn6xkH/Yi3qFS+OxsfSqajag/ySyJ+C6YnrplcmInZurpEzqh0b61pt+sulb
+yluExPe0x2nFC5pHmobU3/MwyW24eBDvoIn4MICdlgVEtPuYTHFrvNddZl5mp5Tl
+ZXKFvHx/EZj4y9XitWd490lRxH+6FmbSFVuYBgNI0J3wOCudUQIDAQABo1MwUTAd
+BgNVHQ4EFgQUBKha84woY5WkFxKw7qx1cONg1H8wHwYDVR0jBBgwFoAUBKha84wo
+Y5WkFxKw7qx1cONg1H8wDwYDVR0TAQH/BAUwAwEB/zANBgkqhkiG9w0BAQsFAAOC
+AQEAHZMYt9Ry+Xj3vTbzpGFQzYQVTJlfJWSN6eWNOivRFQE5io9kOBEe5noa8aLo
+dLkw6ztxRP2QRJmlhGCO9/HwS17ckrkgZp3EC2LFnzxcBmoZu+owfxOT1KqpO52O
+IKOl8eVohi1pEicE4dtTJVcpI7VCMovnXUhzx1Ci4Vibns4a6H+BQa19a1JSpifN
+tO8U5jkjJ8Jprs/VPFhJj2O3di53oDHaYSE5eOrm2ZO14KFHSk9cGcOGmcYkUv8B
+nV5vnGadH5Lvfxb/BCpuONabeRdOxMt9u9yQ89vNpxFtRdZDCpGKZBCfmUP+5m3m
+N8r5CwGcIX/XPC3lKazzbZ8baA==
 -----END CERTIFICATE-----
 """
 
@@ -485,6 +491,25 @@ suite "ChunkedStream test suite":
        "Wikipedia in\r\n\r\nchunks."],
       ["4\r\nWiki\r\n5\r\npedia\r\nE\r\n in\r\n\r\nchunks.\r\n0\r\n\r\n0\r\n\r\n",
        "Wikipedia in\r\n\r\nchunks."],
+      ["3b\r\n--f98f0\r\nContent-Disposition: form-data; name=\"key1\"" &
+       "\r\n\r\nA\r\n\r\n" &
+       "3b\r\n--f98f0\r\nContent-Disposition: form-data; name=\"key2\"" &
+       "\r\n\r\nB\r\n\r\n" &
+       "3b\r\n--f98f0\r\nContent-Disposition: form-data; name=\"key3\"" &
+       "\r\n\r\nC\r\n\r\n" &
+       "b\r\n--f98f0--\r\n\r\n" &
+       "0\r\n\r\n",
+       "--f98f0\r\nContent-Disposition: form-data; name=\"key1\"" &
+       "\r\n\r\nA\r\n" &
+       "--f98f0\r\nContent-Disposition: form-data; name=\"key2\"" &
+       "\r\n\r\nB\r\n" &
+       "--f98f0\r\nContent-Disposition: form-data; name=\"key3\"" &
+       "\r\n\r\nC\r\n" &
+       "--f98f0--\r\n"
+      ],
+      ["4;position=1\r\nWiki\r\n5;position=2\r\npedia\r\nE;position=3\r\n" &
+       " in\r\n\r\nchunks.\r\n0;position=4\r\n\r\n",
+       "Wikipedia in\r\n\r\nchunks."],
     ]
     proc checkVector(address: TransportAddress,
                      inputstr: string): Future[string] {.async.} =
@@ -523,7 +548,16 @@ suite "ChunkedStream test suite":
     check waitFor(testVectors(initTAddress("127.0.0.1:46001"))) == true
   test "ChunkedStream incorrect chunk test":
     const BadVectors = [
-      ["100000000 \r\n1"],
+      ["10000000;\r\n1"],
+      ["10000000\r\n1"],
+      ["FFFFFFFF;extension1=value1;extension2=value2\r\n1"],
+      ["FFFFFFFF\r\n1"],
+      ["100000000\r\n1"],
+      ["10000000 \r\n1"],
+      ["100000000 ;\r\n"],
+      ["FFFFFFFF0\r\n1"],
+      ["FFFFFFFF \r\n1"],
+      ["FFFFFFFF ;\r\n1"],
       ["z\r\n1"]
     ]
     proc checkVector(address: TransportAddress,
@@ -548,8 +582,37 @@ suite "ChunkedStream test suite":
       try:
         var r = await rstream2.read()
         doAssert(len(r) > 0)
-      except AsyncStreamReadError:
-        res = true
+      except ChunkedStreamIncompleteError:
+        case inputstr
+        of "10000000;\r\n1":
+          res = true
+        of "10000000\r\n1":
+          res = true
+        of "FFFFFFFF;extension1=value1;extension2=value2\r\n1":
+          res = true
+        of "FFFFFFFF\r\n1":
+          res = true
+        else:
+          res = false
+      except ChunkedStreamProtocolError:
+        case inputstr
+        of "100000000\r\n1":
+          res = true
+        of "10000000 \r\n1":
+          res = true
+        of "100000000 ;\r\n":
+          res = true
+        of "z\r\n1":
+          res = true
+        of "FFFFFFFF0\r\n1":
+          res = true
+        of "FFFFFFFF \r\n1":
+          res = true
+        of "FFFFFFFF ;\r\n1":
+          res = true
+        else:
+          res = false
+
       await rstream2.closeWait()
       await rstream.closeWait()
       await transp.closeWait()
@@ -565,6 +628,19 @@ suite "ChunkedStream test suite":
           break
       result = res
     check waitFor(testVectors2(initTAddress("127.0.0.1:46001"))) == true
+
+  test "ChunkedStream hex decoding test":
+    for i in 0 ..< 256:
+      let ch = char(i)
+      case ch
+      of '0' .. '9':
+        check hexValue(byte(ch)) == ord(ch) - ord('0')
+      of 'a' .. 'f':
+        check hexValue(byte(ch)) == ord(ch) - ord('a') + 10
+      of 'A' .. 'F':
+        check hexValue(byte(ch)) == ord(ch) - ord('A') + 10
+      else:
+        check hexValue(byte(ch)) == -1
 
   test "ChunkedStream leaks test":
     check:
@@ -584,7 +660,6 @@ suite "TLSStream test suite":
       var reader = newAsyncStreamReader(transp)
       var writer = newAsyncStreamWriter(transp)
       var tlsstream = newTLSClientAsyncStream(reader, writer, name)
-
       await tlsstream.writer.write("GET / HTTP/1.1\r\nHost: " & name &
                                    "\r\nConnection: close\r\n\r\n")
       var readFut = tlsstream.reader.readUntil(addr buffer[0], len(buffer),
@@ -620,6 +695,7 @@ suite "TLSStream test suite":
       var sstream = newTLSServerAsyncStream(reader, writer, key, cert)
       await handshake(sstream)
       await sstream.writer.write(testMessage & "\r\n")
+      await sstream.writer.finish()
       await sstream.writer.closeWait()
       await sstream.reader.closeWait()
       await reader.closeWait()
@@ -639,20 +715,299 @@ suite "TLSStream test suite":
     # We are using self-signed certificate
     let flags = {NoVerifyHost, NoVerifyServerName}
     var cstream = newTLSClientAsyncStream(creader, cwriter, "", flags = flags)
-    let res = await cstream.reader.readLine()
+    let res = await cstream.reader.read()
     await cstream.reader.closeWait()
     await cstream.writer.closeWait()
     await creader.closeWait()
     await cwriter.closeWait()
     await conn.closeWait()
     await server.join()
-    result = res == testMessage
+    return cast[string](res) == (testMessage & "\r\n")
 
   test "Simple server with RSA self-signed certificate":
     let res = waitFor(checkSSLServer(initTAddress("127.0.0.1:43808"),
                                      SelfSignedRsaKey, SelfSignedRsaCert))
     check res == true
   test "TLSStream leaks test":
+    check:
+      getTracker("async.stream.reader").isLeaked() == false
+      getTracker("async.stream.writer").isLeaked() == false
+      getTracker("stream.server").isLeaked() == false
+      getTracker("stream.transport").isLeaked() == false
+
+suite "BoundedStream test suite":
+
+  type
+    BoundarySizeTest = enum
+      SizeReadWrite, SizeOverflow, SizeIncomplete, SizeEmpty
+    BoundaryBytesTest = enum
+      BoundaryRead, BoundaryDouble, BoundarySize, BoundaryIncomplete,
+      BoundaryEmpty
+
+  proc createBigMessage(size: int): seq[byte] =
+    var message = "ABCDEFGHIJKLMNOP"
+    var res = newSeq[byte](size)
+    for i in 0 ..< len(result):
+      res[i] = byte(message[i mod len(message)])
+    res
+
+  for itemComp in [BoundCmp.Equal, BoundCmp.LessOrEqual]:
+    for itemSize in [100, 60000]:
+
+      proc boundaryTest(address: TransportAddress, btest: BoundaryBytesTest,
+                        size: int, boundary: seq[byte],
+                        cmp: BoundCmp): Future[bool] {.async.} =
+        var message = createBigMessage(size)
+        var clientRes = false
+
+        proc processClient(server: StreamServer,
+                           transp: StreamTransport) {.async.} =
+          var wstream = newAsyncStreamWriter(transp)
+          case btest
+          of BoundaryRead:
+            await wstream.write(message)
+            await wstream.write(boundary)
+            await wstream.finish()
+            await wstream.closeWait()
+            clientRes = true
+          of BoundaryDouble:
+            await wstream.write(message)
+            await wstream.write(boundary)
+            await wstream.write(message)
+            await wstream.finish()
+            await wstream.closeWait()
+            clientRes = true
+          of BoundarySize:
+            var ncmessage = message
+            ncmessage.setLen(len(message) - 2)
+            await wstream.write(ncmessage)
+            await wstream.write(@[0x2D'u8, 0x2D'u8])
+            await wstream.finish()
+            await wstream.closeWait()
+            clientRes = true
+          of BoundaryIncomplete:
+            var ncmessage = message
+            ncmessage.setLen(len(message) - 2)
+            await wstream.write(ncmessage)
+            await wstream.finish()
+            await wstream.closeWait()
+            clientRes = true
+          of BoundaryEmpty:
+            await wstream.write(boundary)
+            await wstream.finish()
+            await wstream.closeWait()
+            clientRes = true
+
+          await transp.closeWait()
+          server.stop()
+          server.close()
+
+        var res = false
+        let flags = {ServerFlags.ReuseAddr, ServerFlags.TcpNoDelay}
+        var server = createStreamServer(address, processClient, flags = flags)
+        server.start()
+        var conn = await connect(address)
+        var rstream = newAsyncStreamReader(conn)
+        case btest
+        of BoundaryRead:
+          var rbstream = newBoundedStreamReader(rstream, -1, boundary)
+          let response = await rbstream.read()
+          if response == message:
+            res = true
+          await rbstream.closeWait()
+        of BoundaryDouble:
+          var rbstream = newBoundedStreamReader(rstream, -1, boundary)
+          let response1 = await rbstream.read()
+          await rbstream.closeWait()
+          let response2 = await rstream.read()
+          if (response1 == message) and (response2 == message):
+            res = true
+        of BoundarySize:
+          var expectMessage = message
+          expectMessage[^2] = 0x2D'u8
+          expectMessage[^1] = 0x2D'u8
+          var rbstream = newBoundedStreamReader(rstream, size, boundary)
+          let response = await rbstream.read()
+          await rbstream.closeWait()
+          if (len(response) == size) and response == expectMessage:
+            res = true
+        of BoundaryIncomplete:
+          var rbstream = newBoundedStreamReader(rstream, -1, boundary)
+          try:
+            let response {.used.} = await rbstream.read()
+          except BoundedStreamIncompleteError:
+            res = true
+          await rbstream.closeWait()
+        of BoundaryEmpty:
+          var rbstream = newBoundedStreamReader(rstream, -1, boundary)
+          let response = await rbstream.read()
+          await rbstream.closeWait()
+          if len(response) == 0:
+            res = true
+
+        await rstream.closeWait()
+        await conn.closeWait()
+        await server.join()
+        return (res and clientRes)
+
+      proc boundedTest(address: TransportAddress, stest: BoundarySizeTest,
+                       size: int, cmp: BoundCmp): Future[bool] {.async.} =
+        var clientRes = false
+        var res = false
+
+        let messagePart = createBigMessage(int(itemSize) div 10)
+        var message: seq[byte]
+        for i in 0 ..< 10:
+          message.add(messagePart)
+
+        proc processClient(server: StreamServer,
+                           transp: StreamTransport) {.async.} =
+          var wstream = newAsyncStreamWriter(transp)
+          var wbstream = newBoundedStreamWriter(wstream, size, comparison = cmp)
+          case stest
+          of SizeReadWrite:
+            for i in 0 ..< 10:
+              await wbstream.write(messagePart)
+            await wbstream.finish()
+            await wbstream.closeWait()
+            clientRes = true
+          of SizeOverflow:
+            for i in 0 ..< 10:
+              await wbstream.write(messagePart)
+            try:
+              await wbstream.write(messagePart)
+            except BoundedStreamOverflowError:
+              clientRes = true
+            await wbstream.closeWait()
+          of SizeIncomplete:
+            for i in 0 ..< 9:
+              await wbstream.write(messagePart)
+            case cmp
+            of BoundCmp.Equal:
+              try:
+                await wbstream.finish()
+              except BoundedStreamIncompleteError:
+                clientRes = true
+            of BoundCmp.LessOrEqual:
+              try:
+                await wbstream.finish()
+                clientRes = true
+              except BoundedStreamIncompleteError:
+                discard
+            await wbstream.closeWait()
+          of SizeEmpty:
+            case cmp
+            of BoundCmp.Equal:
+              try:
+                await wbstream.finish()
+              except BoundedStreamIncompleteError:
+                clientRes = true
+            of BoundCmp.LessOrEqual:
+              try:
+                await wbstream.finish()
+                clientRes = true
+              except BoundedStreamIncompleteError:
+                discard
+            await wbstream.closeWait()
+
+          await wstream.closeWait()
+          await transp.closeWait()
+          server.stop()
+          server.close()
+
+        let flags = {ServerFlags.ReuseAddr, ServerFlags.TcpNoDelay}
+        var server = createStreamServer(address, processClient, flags = flags)
+        server.start()
+        var conn = await connect(address)
+        var rstream = newAsyncStreamReader(conn)
+        var rbstream = newBoundedStreamReader(rstream, size, comparison = cmp)
+        case stest
+        of SizeReadWrite:
+          let response = await rbstream.read()
+          await rbstream.closeWait()
+          if response == message:
+            res = true
+        of SizeOverflow:
+          let response = await rbstream.read()
+          await rbstream.closeWait()
+          if response == message:
+            res = true
+        of SizeIncomplete:
+          case cmp
+          of BoundCmp.Equal:
+            try:
+              let response {.used.} = await rbstream.read()
+            except BoundedStreamIncompleteError:
+              res = true
+          of BoundCmp.LessOrEqual:
+            try:
+              let response = await rbstream.read()
+              if len(response) == 9 * len(messagePart):
+                res = true
+            except BoundedStreamIncompleteError:
+              res = false
+          await rbstream.closeWait()
+        of SizeEmpty:
+          case cmp
+          of BoundCmp.Equal:
+            try:
+              let response {.used.} = await rbstream.read()
+            except BoundedStreamIncompleteError:
+              res = true
+          of BoundCmp.LessOrEqual:
+            try:
+              let response = await rbstream.read()
+              if len(response) == 0:
+                res = true
+            except BoundedStreamIncompleteError:
+              res = false
+          await rbstream.closeWait()
+
+        await rstream.closeWait()
+        await conn.closeWait()
+        await server.join()
+        return (res and clientRes)
+
+      let address = initTAddress("127.0.0.1:48030")
+      let suffix =
+        case itemComp
+        of BoundCmp.Equal:
+          "== " & $itemSize
+        of BoundCmp.LessOrEqual:
+          "<= " & $itemSize
+
+      test "BoundedStream(size) reading/writing test [" & suffix & "]":
+        check waitFor(boundedTest(address, SizeReadWrite, itemSize,
+                                  itemComp)) == true
+      test "BoundedStream(size) overflow test [" & suffix & "]":
+        check waitFor(boundedTest(address, SizeOverflow, itemSize,
+                                  itemComp)) == true
+      test "BoundedStream(size) incomplete test [" & suffix & "]":
+        check waitFor(boundedTest(address, SizeIncomplete, itemSize,
+                                  itemComp)) == true
+      test "BoundedStream(size) empty message test [" & suffix & "]":
+        check waitFor(boundedTest(address, SizeEmpty, itemSize,
+                                  itemComp)) == true
+      test "BoundedStream(boundary) reading test [" & suffix & "]":
+        check waitFor(boundaryTest(address, BoundaryRead, itemSize,
+                                   @[0x2D'u8, 0x2D'u8, 0x2D'u8], itemComp))
+      test "BoundedStream(boundary) double message test [" & suffix & "]":
+        check waitFor(boundaryTest(address, BoundaryDouble, itemSize,
+                                   @[0x2D'u8, 0x2D'u8, 0x2D'u8], itemComp))
+      test "BoundedStream(size+boundary) reading size-bound test [" &
+           suffix & "]":
+        check waitFor(boundaryTest(address, BoundarySize, itemSize,
+                                   @[0x2D'u8, 0x2D'u8, 0x2D'u8], itemComp))
+      test "BoundedStream(boundary) reading incomplete test [" &
+           suffix & "]":
+        check waitFor(boundaryTest(address, BoundaryIncomplete, itemSize,
+                                   @[0x2D'u8, 0x2D'u8, 0x2D'u8], itemComp))
+      test "BoundedStream(boundary) empty message test [" &
+           suffix & "]":
+        check waitFor(boundaryTest(address, BoundaryEmpty, itemSize,
+                                   @[0x2D'u8, 0x2D'u8, 0x2D'u8], itemComp))
+
+  test "BoundedStream leaks test":
     check:
       getTracker("async.stream.reader").isLeaked() == false
       getTracker("async.stream.writer").isLeaked() == false
