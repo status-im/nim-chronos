@@ -516,10 +516,16 @@ type
     length, reserved: int
 
 proc isLiteral*(s: string): bool {.inline.} =
-  (cast[ptr SeqHeader](s).reserved and (1 shl (sizeof(int) * 8 - 2))) != 0
+  when defined(gcOrc) or defined(gcArc):
+    false
+  else:
+    (cast[ptr SeqHeader](s).reserved and (1 shl (sizeof(int) * 8 - 2))) != 0
 
 proc isLiteral*[T](s: seq[T]): bool {.inline.} =
-  (cast[ptr SeqHeader](s).reserved and (1 shl (sizeof(int) * 8 - 2))) != 0
+  when defined(gcOrc) or defined(gcArc):
+    false
+  else:
+    (cast[ptr SeqHeader](s).reserved and (1 shl (sizeof(int) * 8 - 2))) != 0
 
 when defined(windows):
   import winlean
