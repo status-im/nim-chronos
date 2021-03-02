@@ -93,7 +93,7 @@ type
     headersTable: HttpTable
     body: seq[byte]
     flags: set[HttpResponseFlags]
-    state: HttpResponseState
+    state*: HttpResponseState
     connection*: HttpConnectionRef
     chunkedWriter: AsyncStreamWriter
 
@@ -110,6 +110,8 @@ type
     buffer: seq[byte]
 
   HttpConnectionRef* = ref HttpConnection
+
+  ByteChar* = string | seq[byte]
 
 proc init(htype: typedesc[HttpProcessError], error: HTTPServerError,
           exc: ref CatchableError, remote: TransportAddress,
@@ -925,7 +927,7 @@ proc sendBody*(resp: HttpResponseRef, pbytes: pointer, nbytes: int) {.async.} =
     resp.state = HttpResponseState.Failed
     raiseHttpCriticalError("Unable to send response")
 
-proc sendBody*[T: string|seq[byte]](resp: HttpResponseRef, data: T) {.async.} =
+proc sendBody*(resp: HttpResponseRef, data: ByteChar) {.async.} =
   ## Send HTTP response at once by using data ``data``.
   checkPending(resp)
   let responseHeaders = resp.prepareLengthHeaders(len(data))
@@ -1000,8 +1002,7 @@ proc sendChunk*(resp: HttpResponseRef, pbytes: pointer, nbytes: int) {.async.} =
     resp.state = HttpResponseState.Failed
     raiseHttpCriticalError("Unable to send response")
 
-proc sendChunk*[T: string|seq[byte]](resp: HttpResponseRef,
-                                     data: T) {.async.} =
+proc sendChunk*(resp: HttpResponseRef, data: ByteChar) {.async.} =
   ## Send single chunk of data ``data``.
   if HttpResponseFlags.Chunked notin resp.flags:
     raiseHttpCriticalError("Response was not prepared")
@@ -1035,16 +1036,35 @@ proc finish*(resp: HttpResponseRef) {.async.} =
     resp.state = HttpResponseState.Failed
     raiseHttpCriticalError("Unable to send response")
 
-proc respond*(req: HttpRequestRef, code: HttpCode, content: string,
+proc respond*(req: HttpRequestRef, code: HttpCode, content: ByteChar,
               headers: HttpTable): Future[HttpResponseRef] {.async.} =
-  ## Responds to the request with the specified ``HttpCode``, headers and
-  ## content.
+  ## Responds to the request with the specified ``HttpCode``, HTTP ``headers``
+  ## and ``content``.
   let response = req.getResponse()
   response.status = code
   for k, v in headers.stringItems():
     response.addHeader(k, v)
   await response.sendBody(content)
   return response
+
+proc respond*(req: HttpRequestRef, code: HttpCode,
+              content: ByteChar): Future[HttpResponseRef] =
+  ## Responds to the request with specified ``HttpCode`` and ``content``.
+  respond(req, code, content, HttpTable.init())
+
+proc respond*(req: HttpRequestRef, code: HttpCode): Future[HttpResponseRef] =
+  ## Reponds to the request with specified ``HttpCode`` only.
+  respond(req, code, "", HttpTable.init())
+
+proc responded*(req: HttpRequestRef): bool =
+  ## Returns ``true`` if request ``req`` has been responded or responding.
+  if isSome(req.response):
+    if req.response.get().state == HttpResponseState.Empty:
+      false
+    else:
+      true
+  else:
+    false
 
 proc remoteAddress*(conn: HttpConnectionRef): TransportAddress =
   ## Returns address of the remote host that established connection ``conn``.
