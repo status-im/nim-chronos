@@ -148,7 +148,9 @@ func getContentEncoding*(ch: openarray[string]): HttpResult[
 func getContentType*(ch: openarray[string]): HttpResult[string]  {.
      raises: [Defect].} =
   ## Check and prepare value of ``Content-Type`` header.
-  if len(ch) > 1:
+  if len(ch) == 0:
+    err("No Content-Type values found")
+  elif len(ch) > 1:
     err("Multiple Content-Type values found")
   else:
     let mparts = ch[0].split(";")
