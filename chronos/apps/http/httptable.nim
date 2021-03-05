@@ -8,6 +8,7 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 import std/[tables, strutils]
+import stew/base10
 
 {.push raises: [Defect].}
 
@@ -18,40 +19,6 @@ type
   HttpTableRef* = ref HttpTable
 
   HttpTables* = HttpTable | HttpTableRef
-
-proc `-`(x: uint32): uint32 {.inline.} =
-  (0xFFFF_FFFF'u32 - x) + 1'u32
-
-proc LT(x, y: uint32): uint32 {.inline.} =
-  let z = x - y
-  (z xor ((y xor x) and (y xor z))) shr 31
-
-proc decValue(c: byte): int =
-  # Procedure returns values [0..9] for character [`0`..`9`] and -1 for all
-  # other characters.
-  let x = uint32(c) - 0x30'u32
-  let r = ((x + 1'u32) and -LT(x, 10))
-  int(r) - 1
-
-proc bytesToDec*[T: byte|char](src: openarray[T]): uint64 =
-  var v = 0'u64
-  for i in 0 ..< len(src):
-    let d =
-      when T is byte:
-        decValue(src[i])
-      else:
-        decValue(byte(src[i]))
-    if d < 0:
-      # non-decimal character encountered
-      return v
-    else:
-      let nv = ((v shl 3) + (v shl 1)) + uint64(d)
-      if nv < v:
-        # overflow happened
-        return 0xFFFF_FFFF_FFFF_FFFF'u64
-      else:
-        v = nv
-  v
 
 proc add*(ht: var HttpTables, key: string, value: string) =
   ## Add string ``value`` to header with key ``key``.
@@ -101,17 +68,15 @@ proc getInt*(ht: HttpTables, key: string): uint64 =
   ## Integers are parsed in safe way, there no exceptions or errors will be
   ## raised.
   ##
-  ## If a non-decimal character is encountered during the parsing of the string
-  ## the current accumulated value will be returned. So if string starts with
-  ## non-decimal character, procedure will always return `0` (for example "-1"
-  ## will be decoded as `0`). But if non-decimal character will be encountered
-  ## later, only decimal part will be decoded, like `1234_5678` will be decoded
-  ## as `1234`.
-  ## Also, if in the parsing process result exceeds `uint64` maximum allowed
-  ## value, then `0xFFFF_FFFF_FFFF_FFFF'u64` will be returned (for example
-  ## `18446744073709551616` will be decoded as `18446744073709551615` because it
-  ## overflows uint64 maximum value of `18446744073709551615`).
-  bytesToDec(ht.getString(key))
+  ## Procedure returns `0` value in next cases:
+  ## 1. The value is empty.
+  ## 2. Non-decimal character encountered during the parsing of the value.
+  ## 3. Result exceeds `uint64` maximum allowed value.
+  let res = Base10.decode(uint64, ht.getString(key))
+  if res.isOk():
+    res.get()
+  else:
+    0'u64
 
 proc getLastString*(ht: HttpTables, key: string): string =
   ## Returns "last" value of header ``key``.
@@ -132,7 +97,11 @@ proc getLastInt*(ht: HttpTables, key: string): uint64 =
   ## encountered header will be returned.
   ##
   ## Unsigned integer will be parsed using rules of getInt() procedure.
-  bytesToDec(ht.getLastString())
+  let res = Base10.decode(uint64, ht.getLastString(key))
+  if res.isOk():
+    res.get()
+  else:
+    0'u64
 
 proc init*(htt: typedesc[HttpTable]): HttpTable =
   ## Create empty HttpTable.
