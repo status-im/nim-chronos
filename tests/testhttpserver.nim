@@ -7,6 +7,7 @@
 #              MIT license (LICENSE-MIT)
 import std/[strutils, unittest, algorithm, strutils]
 import ../chronos, ../chronos/apps
+import stew/base10
 
 # To create self-signed certificate and key you can use openssl
 # openssl req -new -x509 -sha256 -newkey rsa:2048 -nodes \
@@ -431,7 +432,7 @@ suite "HTTP server testing suite":
       let message =
         "POST / HTTP/1.0\r\n" &
         "Content-Type: application/x-www-form-urlencoded\r\n" &
-        "Content-Length: 20" &
+        "Content-Length: 20\r\n" &
         "Cookie: 2\r\n\r\n" &
         "a=a&b=b&c=c&d=%D0%9F"
       let data = await httpClient(address, message)
@@ -811,19 +812,25 @@ suite "HTTP server testing suite":
       ("", 0'u64), ("0", 0'u64), ("-0", 0'u64), ("0-", 0'u64),
       ("01", 1'u64), ("001", 1'u64), ("0000000000001", 1'u64),
       ("18446744073709551615", 0xFFFF_FFFF_FFFF_FFFF'u64),
-      ("18446744073709551616", 0xFFFF_FFFF_FFFF_FFFF'u64),
-      ("99999999999999999999", 0xFFFF_FFFF_FFFF_FFFF'u64),
-      ("999999999999999999999999999999999999", 0xFFFF_FFFF_FFFF_FFFF'u64),
+      ("18446744073709551616", 0'u64),
+      ("99999999999999999999", 0'u64),
+      ("999999999999999999999999999999999999", 0'u64),
       ("FFFFFFFFFFFFFFFF", 0'u64),
-      ("0123456789ABCDEF", 123456789'u64)
+      ("0123456789ABCDEF", 0'u64)
     ]
     for i in 0 ..< 256:
+      let res = Base10.decode(uint64, [char(i)])
       if char(i) in {'0' .. '9'}:
-        check bytesToDec($char(i)) == uint64(i - ord('0'))
+        check:
+          res.isOk()
+          res.get() == uint64(i - ord('0'))
       else:
-        check bytesToDec($char(i)) == 0'u64
+        check res.isErr()
+
     for item in TestVectors:
-      check bytesToDec(item[0]) == item[1]
+      var ht = HttpTable.init([("test", item[0])])
+      let value = ht.getInt("test")
+      check value == item[1]
 
   test "HttpTable behavior test":
     var table1 = HttpTable.init()
