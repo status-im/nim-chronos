@@ -34,6 +34,11 @@ proc set*(ht: var HttpTables, key: string, value: string) =
   let lowkey = key.toLowerAscii()
   ht.table[lowkey] = @[value]
 
+proc hasKeyOrPut*(ht: var HttpTables, key: string, value: string): bool =
+  ## Returns true if ``key`` is in the table ``ht``,
+  ## otherwise inserts ``value``.
+  ht.table.hasKeyOrPut(key, @[value])
+
 proc contains*(ht: HttpTables, key: string): bool =
   ## Returns ``true`` if header with name ``key`` is present in HttpTable/Ref.
   ht.table.contains(key.toLowerAscii())

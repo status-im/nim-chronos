@@ -7,7 +7,7 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 import std/[tables, options, uri, strutils]
-import stew/results, httputils
+import stew/[results, base10], httputils
 import ../../asyncloop, ../../asyncsync
 import ../../streams/[asyncstream, boundstream, chunkstream, tlsstream]
 import httptable, httpcommon, multipart
@@ -53,6 +53,7 @@ type
     maxConnections*: int
     backlogSize: int
     baseUri*: Uri
+    serverIdent*: string
     flags*: set[HttpServerFlags]
     socketFlags*: set[ServerFlags]
     secureFlags*: set[TLSFlags]
@@ -124,6 +125,7 @@ proc new*(htype: typedesc[HttpServerRef],
           serverFlags: set[HttpServerFlags] = {},
           socketFlags: set[ServerFlags] = {ReuseAddr},
           serverUri = Uri(),
+          serverIdent = "",
           tlsPrivateKey: TLSPrivateKey = nil,
           tlsCertificate: TLSCertificate = nil,
           secureFlags: set[TLSFlags] = {},
@@ -140,6 +142,7 @@ proc new*(htype: typedesc[HttpServerRef],
 
   var res = HttpServerRef(
     address: address,
+    serverIdent: serverIdent,
     maxConnections: maxConnections,
     headersTimeout: httpHeadersTimeout,
     maxHeadersSize: maxHeadersSize,
@@ -192,6 +195,12 @@ proc getResponse*(req: HttpRequestRef): HttpResponseRef {.raises: [Defect].} =
     resp
   else:
     req.response.get()
+
+proc getHostname*(server: HttpServerRef): string =
+  if len(server.baseUri.port) > 0:
+    server.baseUri.hostname & ":" & server.baseUri.port
+  else:
+    server.baseUri.hostname
 
 proc dumbResponse*(): HttpResponseRef {.raises: [Defect].} =
   ## Create an empty response to return when request processor got no request.
@@ -401,11 +410,13 @@ proc sendErrorResponse(conn: HttpConnectionRef, version: HttpVersion,
   answer.add("Date: " & httpDate() & "\r\n")
   if len(datatype) > 0:
     answer.add("Content-Type: " & datatype & "\r\n")
-  answer.add("Content-Length: " & $len(databody) & "\r\n")
+  answer.add("Content-Length: " &
+              Base10.toString(uint64(len(databody))) & "\r\n")
   if keepAlive:
     answer.add("Connection: keep-alive\r\n")
   else:
     answer.add("Connection: close\r\n")
+  answer.add("Host: " & conn.server.getHostname() & "\r\n")
   answer.add("\r\n")
   if len(databody) > 0:
     answer.add(databody)
@@ -840,32 +851,31 @@ proc keepalive*(resp: HttpResponseRef): bool {.raises: [Defect].} =
 
 proc setHeader*(resp: HttpResponseRef, key, value: string) {.
      raises: [Defect].} =
+  ## Sets value of header ``key`` to ``value``.
   doAssert(resp.state == HttpResponseState.Empty)
   resp.headersTable.set(key, value)
 
+proc setHeaderDefault*(resp: HttpResponseRef, key, value: string) {.
+     raises: [Defect].} =
+  ## Sets value of header ``key`` to ``value``, only if header ``key`` is not
+  ## present in the headers table.
+  discard resp.headersTable.hasKeyOrPut(key, value)
+
 proc addHeader*(resp: HttpResponseRef, key, value: string) {.
-     raises: [Defect].}=
+     raises: [Defect].} =
+  ## Adds value ``value`` to header's ``key`` value.
   doAssert(resp.state == HttpResponseState.Empty)
   resp.headersTable.add(key, value)
 
 proc getHeader*(resp: HttpResponseRef, key: string,
                 default: string = ""): string {.raises: [Defect].} =
+  ## Returns value of header with name ``name`` or ``default``, if header is
+  ## not present in the table.
   resp.headersTable.getString(key, default)
 
 proc hasHeader*(resp: HttpResponseRef, key: string): bool {.raises: [Defect].} =
+  ## Returns ``true`` if header with name ``key`` present in the headers table.
   key in resp.headersTable
-
-template doHeaderDef(buf, resp, name, default) =
-  buf.add(name)
-  buf.add(": ")
-  buf.add(resp.getHeader(name, default))
-  buf.add("\r\n")
-
-template doHeaderVal(buf, name, value) =
-  buf.add(name)
-  buf.add(": ")
-  buf.add(value)
-  buf.add("\r\n")
 
 template checkPending(t: untyped) =
   if t.state != HttpResponseState.Empty:
@@ -873,36 +883,55 @@ template checkPending(t: untyped) =
 
 proc prepareLengthHeaders(resp: HttpResponseRef, length: int): string {.
      raises: [Defect].}=
-  var answer = $(resp.version) & " " & $(resp.status) & "\r\n"
-  answer.doHeaderDef(resp, "Date", httpDate())
-  if length > 0:
-    answer.doHeaderDef(resp, "Content-Type", "text/html; charset=utf-8")
-  answer.doHeaderVal("Content-Length", $(length))
-  if "Connection" notin resp.headersTable:
+  if not(resp.hasHeader("date")):
+    resp.setHeader("date", httpDate())
+  if not(resp.hasHeader("content-type")):
+    resp.setHeader("content-type", "text/html; charset=utf-8")
+  if not(resp.hasHeader("content-length")):
+    resp.setHeader("content-length", Base10.toString(uint64(length)))
+  if not(resp.hasHeader("server")):
+    resp.setHeader("server", resp.connection.server.serverIdent)
+  if not(resp.hasHeader("host")):
+    resp.setHeader("host", resp.connection.server.getHostname())
+  if not(resp.hasHeader("connection")):
     if KeepAlive in resp.flags:
-      answer.doHeaderVal("Connection", "keep-alive")
+      resp.setHeader("connection", "keep-alive")
     else:
-      answer.doHeaderVal("Connection", "close")
+      resp.setHeader("connection", "close")
+  var answer = $(resp.version) & " " & $(resp.status) & "\r\n"
   for k, v in resp.headersTable.stringItems():
-    if k notin ["date", "content-type", "content-length"]:
-      answer.doHeaderVal(normalizeHeaderName(k), v)
+    if len(v) > 0:
+      answer.add(normalizeHeaderName(k))
+      answer.add(": ")
+      answer.add(v)
+      answer.add("\r\n")
   answer.add("\r\n")
   answer
 
 proc prepareChunkedHeaders(resp: HttpResponseRef): string {.
      raises: [Defect].} =
-  var answer = $(resp.version) & " " & $(resp.status) & "\r\n"
-  answer.doHeaderDef(resp, "Date", httpDate())
-  answer.doHeaderDef(resp, "Content-Type", "text/html; charset=utf-8")
-  answer.doHeaderDef(resp, "Transfer-Encoding", "chunked")
-  if "Connection" notin resp.headersTable:
+  if not(resp.hasHeader("date")):
+    resp.setHeader("date", httpDate())
+  if not(resp.hasHeader("content-type")):
+    resp.setHeader("content-type", "text/html; charset=utf-8")
+  if not(resp.hasHeader("transfer-encoding")):
+    resp.setHeader("transfer-encoding", "chunked")
+  if not(resp.hasHeader("server")):
+    resp.setHeader("server", resp.connection.server.serverIdent)
+  if not(resp.hasHeader("host")):
+    resp.setHeader("host", resp.connection.server.getHostname())
+  if not(resp.hasHeader("connection")):
     if KeepAlive in resp.flags:
-      answer.doHeaderVal("Connection", "keep-alive")
+      resp.setHeader("connection", "keep-alive")
     else:
-      answer.doHeaderVal("Connection", "close")
+      resp.setHeader("connection", "close")
+  var answer = $(resp.version) & " " & $(resp.status) & "\r\n"
   for k, v in resp.headersTable.stringItems():
-    if k notin ["date", "content-type", "content-length", "transfer-encoding"]:
-      answer.doHeaderVal(normalizeHeaderName(k), v)
+    if len(v) > 0:
+      answer.add(normalizeHeaderName(k))
+      answer.add(": ")
+      answer.add(v)
+      answer.add("\r\n")
   answer.add("\r\n")
   answer
 
