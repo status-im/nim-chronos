@@ -42,15 +42,16 @@ proc new*(ht: typedesc[SecureHttpConnectionRef], server: SecureHttpServerRef,
 proc createSecConnection(server: HttpServerRef,
                          transp: StreamTransport): Future[HttpConnectionRef] {.
      async.} =
-  var conn = SecureHttpConnectionRef.new(SecureHttpServerRef(server), transp)
+  let secureServ = cast[SecureHttpServerRef](server)
+  var sconn = SecureHttpConnectionRef.new(secureServ, transp)
   try:
-    await handshake(conn.tlsStream)
-    return HttpConnectionRef(conn)
+    await handshake(sconn.tlsStream)
+    return HttpConnectionRef(sconn)
   except CancelledError as exc:
-    await HttpConnectionRef(conn).closeWait()
+    await HttpConnectionRef(sconn).closeWait()
     raise exc
   except TLSStreamError:
-    await HttpConnectionRef(conn).closeWait()
+    await HttpConnectionRef(sconn).closeWait()
     raiseHttpCriticalError("Unable to establish secure connection")
 
 proc new*(htype: typedesc[SecureHttpServerRef],
@@ -102,29 +103,3 @@ proc new*(htype: typedesc[SecureHttpServerRef],
   res.tlsPrivateKey = tlsPrivateKey
   res.secureFlags = secureFlags
   ok(res)
-
-# proc getHostname*(server: SecureHttpServerRef): string =
-#   getHostname(HttpServerRef(server))
-
-# proc state*(server: SecureHttpServerRef): HttpServerState {.raises: [Defect].} =
-#   state(HttpServerRef(server))
-
-# proc start*(server: SecureHttpServerRef) =
-#   ## Starts secure HTTP server.
-#   start(HttpServerRef(server))
-
-# proc stop*(server: SecureHttpServerRef): Future[void] =
-#   ## Stop secure HTTP server from accepting new connections.
-#   stop(HttpServerRef(server))
-
-# proc drop*(server: SecureHttpServerRef): Future[void] =
-#   ## Drop all pending secure HTTP connections.
-#   drop(HttpServerRef(server))
-
-# proc closeWait*(server: SecureHttpServerRef): Future[void] =
-#   ## Stop secure HTTP server and drop all the pending connections.
-#   closeWait(HttpServerRef(server))
-
-# proc join*(server: SecureHttpServerRef): Future[void] =
-#   ## Wait until secure HTTP server will not be closed.
-#   join(HttpServerRef(server))

@@ -64,6 +64,7 @@ type
     acceptLoop*: Future[void]
     lifetime*: Future[void]
     headersTimeout: Duration
+    bufferSize: int
     maxHeadersSize: int
     maxRequestBodySize: int
     processCallback: HttpProcessCallback
@@ -136,26 +137,29 @@ proc init*(value: var HttpServer,
            maxHeadersSize: int = 8192,
            maxRequestBodySize: int = 1_048_576) =
 
-  value.instance = server
-  value.address = address
-  value.serverIdent = serverIdent
-  value.maxConnections = maxConnections
-  value.headersTimeout = httpHeadersTimeout
-  value.maxHeadersSize = maxHeadersSize
-  value.maxRequestBodySize = maxRequestBodySize
-  value.processCallback = processCallback
-  value.createConnCallback = createConnCallback
-  value.backLogSize = backLogSize
-  value.flags = serverFlags
-  value.socketFlags = socketFlags
-  value.baseUri = serverUri
-  # value.semaphore =
-  #   if maxConnections > 0:
-  #     newAsyncSemaphore(maxConnections)
-  #   else:
-  #     nil
-  value.lifetime = newFuture[void]("http.server.lifetime")
-  value.connections = initTable[string, Future[void]]()
+  value = HttpServer(
+    address: address,
+    instance: server,
+    processCallback: processCallback,
+    createConnCallback: createConnCallback,
+    baseUri: serverUri,
+    serverIdent: serverIdent,
+    flags: serverFlags,
+    socketFlags: socketFlags,
+    maxConnections: maxConnections,
+    bufferSize: bufferSize,
+    backlogSize: backlogSize,
+    headersTimeout: httpHeadersTimeout,
+    maxHeadersSize: maxHeadersSize,
+    maxRequestBodySize: maxRequestBodySize,
+    # semaphore:
+    #   if maxConnections > 0:
+    #     newAsyncSemaphore(maxConnections)
+    #   else:
+    #     nil
+    lifetime: newFuture[void]("http.server.lifetime"),
+    connections: initTable[string, Future[void]]()
+  )
 
 proc createConnection(server: HttpServerRef,
                      transp: StreamTransport): Future[HttpConnectionRef] {.
@@ -471,11 +475,13 @@ proc getRequest(conn: HttpConnectionRef): Future[HttpRequestRef] {.async.} =
 
 proc init*(value: var HttpConnection, server: HttpServerRef,
            transp: StreamTransport) =
-  value.server = server
-  value.transp = transp
-  value.buffer = newSeq[byte](server.maxHeadersSize)
-  value.mainReader = newAsyncStreamReader(transp)
-  value.mainWriter = newAsyncStreamWriter(transp)
+  value = HttpConnection(
+    server: server,
+    transp: transp,
+    buffer: newSeq[byte](server.maxHeadersSize),
+    mainReader: newAsyncStreamReader(transp),
+    mainWriter: newAsyncStreamWriter(transp)
+  )
 
 proc new(ht: typedesc[HttpConnectionRef], server: HttpServerRef,
          transp: StreamTransport): HttpConnectionRef =
