@@ -6,6 +6,9 @@
 #              Licensed under either of
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
+
+{.push raises: [Defect].}
+
 import ../asyncloop, ../asyncsync
 import ../transports/common, ../transports/stream
 export asyncsync, stream, common
@@ -58,9 +61,9 @@ type
     Finished, ## Stream was properly finished
     Closed    ## Stream was closed
 
-  StreamReaderLoop* = proc (stream: AsyncStreamReader): Future[void] {.gcsafe.}
+  StreamReaderLoop* = proc (stream: AsyncStreamReader): Future[void] {.gcsafe, raises: [Defect].}
     ## Main read loop for read streams.
-  StreamWriterLoop* = proc (stream: AsyncStreamWriter): Future[void] {.gcsafe.}
+  StreamWriterLoop* = proc (stream: AsyncStreamWriter): Future[void] {.gcsafe, raises: [Defect].}
     ## Main write loop for write streams.
 
   AsyncStreamReader* = ref object of RootRef
@@ -202,16 +205,20 @@ proc newAsyncStreamUseClosedError*(): ref AsyncStreamUseClosedError {.
      noinline.} =
   newException(AsyncStreamUseClosedError, "Stream is already closed")
 
-proc raiseAsyncStreamUseClosedError*() {.noinline, noreturn.} =
+proc raiseAsyncStreamUseClosedError*() {.
+    noinline, noreturn, raises: [Defect, AsyncStreamUseClosedError].} =
   raise newAsyncStreamUseClosedError()
 
-proc raiseAsyncStreamLimitError*() {.noinline, noreturn.} =
+proc raiseAsyncStreamLimitError*() {.
+    noinline, noreturn, raises: [Defect, AsyncStreamLimitError].} =
   raise newAsyncStreamLimitError()
 
-proc raiseAsyncStreamIncompleteError*() {.noinline, noreturn.} =
+proc raiseAsyncStreamIncompleteError*() {.
+    noinline, noreturn, raises: [Defect, AsyncStreamIncompleteError].} =
   raise newAsyncStreamIncompleteError()
 
-proc raiseAsyncStreamIncorrectDefect*(m: string) {.noinline, noreturn.} =
+proc raiseAsyncStreamIncorrectDefect*(m: string) {.
+    noinline, noreturn, raises: [Defect].} =
   raise newException(AsyncStreamIncorrectDefect, m)
 
 proc raiseEmptyMessageDefect*() {.noinline, noreturn.} =
@@ -248,8 +255,8 @@ proc running*(rw: AsyncStreamRW): bool {.inline.} =
   ## Returns ``true`` is reading/writing stream is still pending.
   (rw.state == AsyncStreamState.Running)
 
-proc setupAsyncStreamReaderTracker(): AsyncStreamTracker {.gcsafe.}
-proc setupAsyncStreamWriterTracker(): AsyncStreamTracker {.gcsafe.}
+proc setupAsyncStreamReaderTracker(): AsyncStreamTracker {.gcsafe, raises: [Defect].}
+proc setupAsyncStreamWriterTracker(): AsyncStreamTracker {.gcsafe, raises: [Defect].}
 
 proc getAsyncStreamReaderTracker(): AsyncStreamTracker {.inline.} =
   var res = cast[AsyncStreamTracker](getTracker(AsyncStreamReaderTrackerName))
@@ -873,7 +880,7 @@ proc close*(rw: AsyncStreamRW) =
 
   rw.state = AsyncStreamState.Closed
 
-  proc continuation(udata: pointer) =
+  proc continuation(udata: pointer) {.raises: [Defect].} =
     if not isNil(rw.udata):
       GC_unref(cast[ref int](rw.udata))
     if not(rw.future.finished()):

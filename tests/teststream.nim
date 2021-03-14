@@ -5,7 +5,8 @@
 #              Licensed under either of
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
-import strutils, unittest, os
+import std/[strutils, os]
+import unittest2
 import ../chronos
 
 when defined(nimHasUsed): {.used.}
@@ -866,7 +867,7 @@ suite "Stream Transport test suite":
     var
       valueLen = 0'u32
       res: seq[byte]
-      error: ref Exception
+      error: ref CatchableError
 
     proc predicate(data: openarray[byte]): tuple[consumed: int, done: bool] =
       if len(data) == 0:

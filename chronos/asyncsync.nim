@@ -9,6 +9,9 @@
 #                MIT license (LICENSE-MIT)
 
 ## This module implements some core synchronization primitives
+
+{.push raises: [Defect].}
+
 import std/[sequtils, deques]
 import ./asyncloop
 
@@ -115,7 +118,7 @@ proc locked*(lock: AsyncLock): bool =
   ## Return `true` if the lock ``lock`` is acquired, `false` otherwise.
   lock.locked
 
-proc release*(lock: AsyncLock) =
+proc release*(lock: AsyncLock) {.raises: [Defect, AsyncLockError].} =
   ## Release a lock ``lock``.
   ##
   ## When the ``lock`` is locked, reset it to unlocked, and return. If any
@@ -220,7 +223,8 @@ proc empty*[T](aq: AsyncQueue[T]): bool {.inline.} =
   ## Return ``true`` if the queue is empty, ``false`` otherwise.
   (len(aq.queue) == 0)
 
-proc addFirstNoWait*[T](aq: AsyncQueue[T], item: T) =
+proc addFirstNoWait*[T](aq: AsyncQueue[T], item: T) {.
+    raises: [Defect, AsyncQueueFullError].}=
   ## Put an item ``item`` to the beginning of the queue ``aq`` immediately.
   ##
   ## If queue ``aq`` is full, then ``AsyncQueueFullError`` exception raised.
@@ -229,7 +233,8 @@ proc addFirstNoWait*[T](aq: AsyncQueue[T], item: T) =
   aq.queue.addFirst(item)
   aq.getters.wakeupNext()
 
-proc addLastNoWait*[T](aq: AsyncQueue[T], item: T) =
+proc addLastNoWait*[T](aq: AsyncQueue[T], item: T) {.
+    raises: [Defect, AsyncQueueFullError].}=
   ## Put an item ``item`` at the end of the queue ``aq`` immediately.
   ##
   ## If queue ``aq`` is full, then ``AsyncQueueFullError`` exception raised.
@@ -238,7 +243,8 @@ proc addLastNoWait*[T](aq: AsyncQueue[T], item: T) =
   aq.queue.addLast(item)
   aq.getters.wakeupNext()
 
-proc popFirstNoWait*[T](aq: AsyncQueue[T]): T =
+proc popFirstNoWait*[T](aq: AsyncQueue[T]): T {.
+    raises: [Defect, AsyncQueueEmptyError].} =
   ## Get an item from the beginning of the queue ``aq`` immediately.
   ##
   ## If queue ``aq`` is empty, then ``AsyncQueueEmptyError`` exception raised.
@@ -248,7 +254,8 @@ proc popFirstNoWait*[T](aq: AsyncQueue[T]): T =
   aq.putters.wakeupNext()
   res
 
-proc popLastNoWait*[T](aq: AsyncQueue[T]): T =
+proc popLastNoWait*[T](aq: AsyncQueue[T]): T {.
+    raises: [Defect, AsyncQueueEmptyError].} =
   ## Get an item from the end of the queue ``aq`` immediately.
   ##
   ## If queue ``aq`` is empty, then ``AsyncQueueEmptyError`` exception raised.
@@ -314,11 +321,13 @@ proc popLast*[T](aq: AsyncQueue[T]): Future[T] {.async.} =
       raise exc
   return aq.popLastNoWait()
 
-proc putNoWait*[T](aq: AsyncQueue[T], item: T) {.inline.} =
+proc putNoWait*[T](aq: AsyncQueue[T], item: T) {.
+    raises: [Defect, AsyncQueueFullError].} =
   ## Alias of ``addLastNoWait()``.
   aq.addLastNoWait(item)
 
-proc getNoWait*[T](aq: AsyncQueue[T]): T {.inline.} =
+proc getNoWait*[T](aq: AsyncQueue[T]): T {.
+    raises: [Defect, AsyncQueueEmptyError].} =
   ## Alias of ``popFirstNoWait()``.
   aq.popFirstNoWait()
 

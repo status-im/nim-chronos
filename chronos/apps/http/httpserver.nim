@@ -44,11 +44,11 @@ type
     Empty, Prepared, Sending, Finished, Failed, Cancelled, Dumb
 
   HttpProcessCallback* =
-    proc(req: RequestFence): Future[HttpResponseRef] {.gcsafe.}
+    proc(req: RequestFence): Future[HttpResponseRef] {.gcsafe, raises: [Defect].}
 
   HttpConnectionCallback* =
     proc(server: HttpServerRef,
-         transp: StreamTransport): Future[HttpConnectionRef] {.gcsafe.}
+         transp: StreamTransport): Future[HttpConnectionRef] {.gcsafe, raises: [Defect].}
 
   HttpServer* = object of RootObj
     instance*: StreamServer

@@ -7,11 +7,7 @@
 #    distribution, for details about the copyright.
 #
 
-## AsyncMacro
-## *************
-## `asyncdispatch` module depends on the `asyncmacro` module to work properly.
-
-import macros, strutils
+import std/[macros, strutils]
 
 proc skipUntilStmtList(node: NimNode): NimNode {.compileTime.} =
   # Skips a nest of StmtList's.
@@ -30,8 +26,13 @@ template createCb(retFutureSym, iteratorNameSym,
 
   var nameIterVar = iteratorNameSym
   {.push stackTrace: off.}
-  proc identName(udata: pointer = nil) {.closure, gcsafe.} =
+  var identName: proc(udata: pointer) {.gcsafe, raises: [Defect].}
+  identName = proc(udata: pointer) {.raises: [Defect].} =
     try:
+      # If the compiler complains about unlisted exception here, it's usually
+      # because you're calling a callback or forward declaration in your code
+      # for which the compiler cannot deduce raises signatures - make sure
+      # to annotate both forward declarations and `proc` types with `raises`!
       if not(nameIterVar.finished()):
         var next = nameIterVar()
         # Continue while the yielded future is already finished.
@@ -46,21 +47,15 @@ template createCb(retFutureSym, iteratorNameSym,
                         "are you await'ing a `nil` Future?"
             raiseAssert msg
         else:
-          {.gcsafe.}:
-            next.addCallback(identName)
+          next.addCallback(identName)
     except CancelledError:
       retFutureSym.cancelAndSchedule()
     except CatchableError as exc:
       futureVarCompletions
 
-      if retFutureSym.finished():
-        # Take a look at tasyncexceptions for the bug which this fixes.
-        # That test explains it better than I can here.
-        raise exc
-      else:
-        retFutureSym.fail(exc)
+      retFutureSym.fail(exc)
 
-  identName()
+  identName(nil)
   {.pop.}
 
 proc createFutureVarCompletions(futureVarIdents: seq[NimNode],
@@ -247,6 +242,19 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
     closureIterator.pragma = newNimNode(nnkPragma, lineInfoFrom=prc.body)
     closureIterator.addPragma(newIdentNode("closure"))
 
+    # TODO when push raises is active in a module, the iterator here inherits
+    #      that annotation - here we explicitly disable it again which goes
+    #      against the spirit of the raises annotation - one should investigate
+    #      here the possibility of transporting more specific error types here
+    #      for example by casting exceptions coming out of `await`..
+    closureIterator.addPragma(nnkExprColonExpr.newTree(
+      newIdentNode("raises"),
+      nnkBracket.newTree(
+        newIdentNode("Defect"),
+        newIdentNode("CatchableError")
+      )
+    ))
+
     # If proc has an explicit gcsafe pragma, we add it to iterator as well.
     if prc.pragma.findChild(it.kind in {nnkSym, nnkIdent} and $it == "gcsafe") != nil:
       closureIterator.addPragma(newIdentNode("gcsafe"))
@@ -255,7 +263,7 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
     # -> createCb(retFuture)
     # NOTE: The "_continue" suffix is checked for in asyncfutures.nim to produce
     # friendlier stack traces:
-    var cbName = genSym(nskProc, prcName & "_continue")
+    var cbName = genSym(nskVar, prcName & "_continue")
     var procCb = getAst createCb(retFutureSym, iteratorNameSym,
                          newStrLitNode(prcName),
                          cbName,
@@ -281,7 +289,7 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
   #if prcName == "recvLineInto":
   #  echo(toStrLit(result))
 
-template await*[T](f: Future[T]): auto =
+template await*[T](f: Future[T]): untyped =
   when declared(chronosInternalRetFuture):
     when not declaredInScope(chronosInternalTmpFuture):
       var chronosInternalTmpFuture {.inject.}: FutureBase
@@ -304,7 +312,8 @@ template await*[T](f: Future[T]): auto =
     if chronosInternalRetFuture.mustCancel:
       raise newCancelledError()
     chronosInternalTmpFuture.internalCheckComplete()
-    cast[type(f)](chronosInternalTmpFuture).internalRead()
+    when T isnot void:
+      cast[type(f)](chronosInternalTmpFuture).internalRead()
   else:
     unsupported "await is only available within {.async.}"
 

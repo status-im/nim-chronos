@@ -8,11 +8,13 @@
 #    Apache License, version 2.0, (LICENSE-APACHEv2)
 #                MIT license (LICENSE-MIT)
 
+{.push raises: [Defect].}
+
 include "system/inclrtl"
 
-import os, tables, strutils, heapqueue, lists, options, nativesockets, net,
-       deques
-import timer
+import std/[os, tables, strutils, heapqueue, lists, options, nativesockets, net,
+        deques]
+import ./timer
 
 export Port, SocketFlag
 export timer
@@ -172,12 +174,12 @@ const unixPlatform = defined(macosx) or defined(freebsd) or
 when defined(windows):
   import winlean, sets, hashes
 elif unixPlatform:
-  import selectors
+  import ./selectors2
   from posix import EINTR, EAGAIN, EINPROGRESS, EWOULDBLOCK, MSG_PEEK,
                     MSG_NOSIGNAL, SIGPIPE
 
 type
-  CallbackFunc* = proc (arg: pointer) {.gcsafe.}
+  CallbackFunc* = proc (arg: pointer) {.gcsafe, raises: [Defect].}
 
   AsyncCallback* = object
     function*: CallbackFunc
@@ -194,8 +196,8 @@ type
 
   TrackerBase* = ref object of RootRef
     id*: string
-    dump*: proc(): string {.gcsafe.}
-    isLeaked*: proc(): bool {.gcsafe.}
+    dump*: proc(): string {.gcsafe, raises: [Defect].}
+    isLeaked*: proc(): bool {.gcsafe, raises: [Defect].}
 
   PDispatcherBase = ref object of RootRef
     timers*: HeapQueue[TimerCallback]
@@ -278,6 +280,12 @@ template processCallbacks(loop: untyped) =
     if not isNil(callable.function):
       callable.function(callable.udata)
 
+proc raiseAsDefect*(exc: ref Exception, msg: string) {.
+    raises: [Defect], noreturn, noinline.} =
+  # Reraise an exception as a Defect, where it's unexpected and can't be handled
+  raise (ref Defect)(
+    msg: msg & "\n" & exc.msg & "\n" & exc.getStackTrace(), parent: exc)
+
 when defined(windows) or defined(nimdoc):
   type
     WSAPROC_TRANSMITFILE = proc(hSocket: SocketHandle, hFile: Handle,
@@ -286,7 +294,7 @@ when defined(windows) or defined(nimdoc):
                                 lpOverlapped: POVERLAPPED,
                                 lpTransmitBuffers: pointer,
                                 dwReserved: DWORD): cint {.
-                                gcsafe, stdcall.}
+                                gcsafe, stdcall, raises: [].}
 
     CompletionKey = ULONG_PTR
 
@@ -324,12 +332,12 @@ when defined(windows) or defined(nimdoc):
                       sizeof(GUID).DWORD, addr fun, sizeof(pointer).DWORD,
                       addr bytesRet, nil, nil) == 0
 
-  proc globalInit() =
+  proc globalInit() {.raises: [Defect, OSError].} =
     var wsa: WSAData
     if wsaStartup(0x0202'i16, addr wsa) != 0:
       raiseOSError(osLastError())
 
-  proc initAPI(loop: PDispatcher) =
+  proc initAPI(loop: PDispatcher) {.raises: [Defect, OSError].} =
     var
       WSAID_TRANSMITFILE = GUID(
         D1: 0xb5367df0'i32, D2: 0xcbac'i16, D3: 0x11cf'i16,
@@ -363,7 +371,7 @@ when defined(windows) or defined(nimdoc):
     loop.transmitFile = cast[WSAPROC_TRANSMITFILE](funcPointer)
     close(sock)
 
-  proc newDispatcher*(): PDispatcher =
+  proc newDispatcher*(): PDispatcher {.raises: [Defect, CatchableError].} =
     ## Creates a new Dispatcher instance.
     var res = PDispatcher()
     res.ioPort = createIoCompletionPort(INVALID_HANDLE_VALUE, 0, 0, 1)
@@ -389,17 +397,13 @@ when defined(windows) or defined(nimdoc):
 
   proc setThreadDispatcher*(disp: PDispatcher) {.gcsafe, raises: [Defect].}
   proc getThreadDispatcher*(): PDispatcher {.gcsafe, raises: [Defect].}
-  proc setGlobalDispatcher*(disp: PDispatcher) {.
-       gcsafe, deprecated: "Use setThreadDispatcher() instead".}
-  proc getGlobalDispatcher*(): PDispatcher {.
-       gcsafe, deprecated: "Use getThreadDispatcher() instead".}
 
   proc getIoHandler*(disp: PDispatcher): Handle =
     ## Returns the underlying IO Completion Port handle (Windows) or selector
     ## (Unix) for the specified dispatcher.
     return disp.ioPort
 
-  proc register*(fd: AsyncFD) =
+  proc register*(fd: AsyncFD) {.raises: [Defect, OSError].} =
     ## Register file descriptor ``fd`` in thread's dispatcher.
     let loop = getThreadDispatcher()
     if createIoCompletionPort(fd.Handle, loop.ioPort,
@@ -407,7 +411,7 @@ when defined(windows) or defined(nimdoc):
       raiseOSError(osLastError())
     loop.handles.incl(fd)
 
-  proc poll*() =
+  proc poll*() {.raises: [Defect, CatchableError].} =
     ## Perform single asynchronous step.
     let loop = getThreadDispatcher()
     var curTime = Moment.now()
@@ -476,7 +480,7 @@ when defined(windows) or defined(nimdoc):
       var acb = AsyncCallback(function: aftercb)
       loop.callbacks.addLast(acb)
 
-  proc unregister*(fd: AsyncFD) =
+  proc unregister*(fd: AsyncFD) {.raises: [Defect].} =
     ## Unregisters ``fd``.
     getThreadDispatcher().handles.excl(fd)
 
@@ -486,7 +490,7 @@ when defined(windows) or defined(nimdoc):
 
 elif unixPlatform:
   const
-    SIG_IGN = cast[proc(x: cint) {.noconv,gcsafe.}](1)
+    SIG_IGN = cast[proc(x: cint) {.raises: [], noconv, gcsafe.}](1)
 
   type
     AsyncFD* = distinct cint
@@ -516,7 +520,7 @@ elif unixPlatform:
   proc initAPI(disp: PDispatcher) =
     discard
 
-  proc newDispatcher*(): PDispatcher =
+  proc newDispatcher*(): PDispatcher {.raises: [Defect, CatchableError].} =
     ## Create new dispatcher.
     var res = PDispatcher()
     res.selector = newSelector[SelectorData]()
@@ -537,16 +541,12 @@ elif unixPlatform:
 
   proc setThreadDispatcher*(disp: PDispatcher) {.gcsafe, raises: [Defect].}
   proc getThreadDispatcher*(): PDispatcher {.gcsafe, raises: [Defect].}
-  proc setGlobalDispatcher*(disp: PDispatcher) {.
-       gcsafe, deprecated: "Use setThreadDispatcher() instead".}
-  proc getGlobalDispatcher*(): PDispatcher {.
-       gcsafe, deprecated: "Use getThreadDispatcher() instead".}
 
   proc getIoHandler*(disp: PDispatcher): Selector[SelectorData] =
     ## Returns system specific OS queue.
     return disp.selector
 
-  proc register*(fd: AsyncFD) =
+  proc register*(fd: AsyncFD) {.raises: [Defect, OSError, IOSelectorsException].} =
     ## Register file descriptor ``fd`` in thread's dispatcher.
     let loop = getThreadDispatcher()
     var data: SelectorData
@@ -554,7 +554,7 @@ elif unixPlatform:
     data.wdata.fd = fd
     loop.selector.registerHandle(int(fd), {}, data)
 
-  proc unregister*(fd: AsyncFD) =
+  proc unregister*(fd: AsyncFD) {.raises: [Defect, IOSelectorsException].} =
     ## Unregister file descriptor ``fd`` from thread's dispatcher.
     getThreadDispatcher().selector.unregister(int(fd))
 
@@ -562,7 +562,8 @@ elif unixPlatform:
     ## Returns ``true`` if ``fd`` is registered in thread's dispatcher.
     result = int(fd) in disp.selector
 
-  proc addReader*(fd: AsyncFD, cb: CallbackFunc, udata: pointer = nil) =
+  proc addReader*(fd: AsyncFD, cb: CallbackFunc, udata: pointer = nil) {.
+      raises: [Defect, IOSelectorsException, ValueError].} =
     ## Start watching the file descriptor ``fd`` for read availability and then
     ## call the callback ``cb`` with specified argument ``udata``.
     let loop = getThreadDispatcher()
@@ -578,7 +579,7 @@ elif unixPlatform:
       raise newException(ValueError, "File descriptor not registered.")
     loop.selector.updateHandle(int(fd), newEvents)
 
-  proc removeReader*(fd: AsyncFD) =
+  proc removeReader*(fd: AsyncFD) {.raises: [Defect, IOSelectorsException, ValueError].} =
     ## Stop watching the file descriptor ``fd`` for read availability.
     let loop = getThreadDispatcher()
     var newEvents: set[Event]
@@ -592,7 +593,7 @@ elif unixPlatform:
       raise newException(ValueError, "File descriptor not registered.")
     loop.selector.updateHandle(int(fd), newEvents)
 
-  proc addWriter*(fd: AsyncFD, cb: CallbackFunc, udata: pointer = nil) =
+  proc addWriter*(fd: AsyncFD, cb: CallbackFunc, udata: pointer = nil) {.raises: [Defect, IOSelectorsException, ValueError].} =
     ## Start watching the file descriptor ``fd`` for write availability and then
     ## call the callback ``cb`` with specified argument ``udata``.
     let loop = getThreadDispatcher()
@@ -608,7 +609,7 @@ elif unixPlatform:
       raise newException(ValueError, "File descriptor not registered.")
     loop.selector.updateHandle(int(fd), newEvents)
 
-  proc removeWriter*(fd: AsyncFD) =
+  proc removeWriter*(fd: AsyncFD) {.raises: [Defect, IOSelectorsException, ValueError].} =
     ## Stop watching the file descriptor ``fd`` for write availability.
     let loop = getThreadDispatcher()
     var newEvents: set[Event]
@@ -631,9 +632,13 @@ elif unixPlatform:
     ## You can execute ``aftercb`` before actual socket close operation.
     let loop = getThreadDispatcher()
 
-    proc continuation(udata: pointer) =
+    proc continuation(udata: pointer) {.raises: [Defect].} =
       if SocketHandle(fd) in loop.selector:
-        unregister(fd)
+        try:
+          unregister(fd)
+        except IOSelectorsException as exc:
+          raiseAsDefect(exc, "unregister failed")
+
         close(SocketHandle(fd))
       if not isNil(aftercb):
         aftercb(nil)
@@ -658,7 +663,7 @@ elif unixPlatform:
     var acb = AsyncCallback(function: continuation)
     loop.callbacks.addLast(acb)
 
-  proc closeHandle*(fd: AsyncFD, aftercb: CallbackFunc = nil) {.inline.} =
+  proc closeHandle*(fd: AsyncFD, aftercb: CallbackFunc = nil) =
     ## Close asynchronous file/pipe handle.
     ##
     ## Please note, that socket is not closed immediately. To avoid bugs with
@@ -669,7 +674,7 @@ elif unixPlatform:
 
   when ioselSupportedPlatform:
     proc addSignal*(signal: int, cb: CallbackFunc,
-                    udata: pointer = nil): int =
+                    udata: pointer = nil): int  {.raises: [Defect, IOSelectorsException, ValueError, OSError].} =
       ## Start watching signal ``signal``, and when signal appears, call the
       ## callback ``cb`` with specified argument ``udata``. Returns signal
       ## identifier code, which can be used to remove signal callback
@@ -684,12 +689,12 @@ elif unixPlatform:
       do:
         raise newException(ValueError, "File descriptor not registered.")
 
-    proc removeSignal*(sigfd: int) =
+    proc removeSignal*(sigfd: int)  {.raises: [Defect, IOSelectorsException].} =
       ## Remove watching signal ``signal``.
       let loop = getThreadDispatcher()
       loop.selector.unregister(sigfd)
 
-  proc poll*() =
+  proc poll*() {.raises: [Defect, CatchableError].} =
     ## Perform single asynchronous step.
     let loop = getThreadDispatcher()
     var curTime = Moment.now()
@@ -750,33 +755,19 @@ proc setThreadDispatcher*(disp: PDispatcher) =
 
 proc getThreadDispatcher*(): PDispatcher =
   ## Returns current thread's dispatcher instance.
-  template getErrorMessage(exc): string =
-    "Cannot create thread dispatcher: " & exc.msg
-
   if gDisp.isNil:
-    when defined(windows):
-      let disp =
-        try:
-          newDispatcher()
-        except CatchableError as exc:
-          raise newException(Defect, getErrorMessage(exc))
-    else:
-      let disp =
-        try:
-          newDispatcher()
-        except IOSelectorsException as exc:
-          raise newException(Defect, getErrorMessage(exc))
-        except CatchableError as exc:
-          raise newException(Defect, getErrorMessage(exc))
-    setThreadDispatcher(disp)
-  return gDisp
+    try:
+      setThreadDispatcher(newDispatcher())
+    except CatchableError as exc:
+      raiseAsDefect exc, "Cannot create dispatcher"
+  gdisp
 
-proc setGlobalDispatcher*(disp: PDispatcher) =
-  ## Set current thread's dispatcher instance to ``disp``.
+proc setGlobalDispatcher*(disp: PDispatcher) {.
+      gcsafe, deprecated: "Use setThreadDispatcher() instead".} =
   setThreadDispatcher(disp)
 
-proc getGlobalDispatcher*(): PDispatcher =
-  ## Returns current thread's dispatcher instance.
+proc getGlobalDispatcher*(): PDispatcher {.
+      gcsafe, deprecated: "Use getThreadDispatcher() instead".} =
   getThreadDispatcher()
 
 proc setTimer*(at: Moment, cb: CallbackFunc,
@@ -903,7 +894,8 @@ proc stepsAsync*(number: int): Future[void] =
   var retFuture = newFuture[void]("chronos.stepsAsync(int)")
   var counter = 0
 
-  proc continuation(data: pointer) {.gcsafe.} =
+  var continuation: proc(data: pointer) {.gcsafe, raises: [Defect].}
+  continuation = proc(data: pointer) =
     if not(retFuture.finished()):
       inc(counter)
       if counter < number:
@@ -911,7 +903,7 @@ proc stepsAsync*(number: int): Future[void] =
       else:
         retFuture.complete()
 
-  proc cancellation(udata: pointer) {.gcsafe.} =
+  proc cancellation(udata: pointer) =
     discard
 
   if number <= 0:
@@ -1009,7 +1001,7 @@ proc wait*[T](fut: Future[T], timeout = InfiniteDuration): Future[T] =
   var timer: TimerCallback
   var cancelling = false
 
-  proc continuation(udata: pointer) {.gcsafe.} =
+  proc continuation(udata: pointer) {.raises: [Defect].} =
     if not(retFuture.finished()):
       if not(cancelling):
         if not(fut.finished()):
@@ -1027,11 +1019,15 @@ proc wait*[T](fut: Future[T], timeout = InfiniteDuration): Future[T] =
             when T is void:
               retFuture.complete()
             else:
-              retFuture.complete(fut.read())
+              try:
+                retFuture.complete(fut.read())
+              except CatchableError as exc:
+                retFuture.fail(exc)
       else:
         retFuture.fail(newException(AsyncTimeoutError, "Timeout exceeded!"))
 
-  proc cancellation(udata: pointer) {.gcsafe.} =
+  var cancellation: proc(udata: pointer) {.gcsafe, raises: [Defect].}
+  cancellation = proc(udata: pointer) =
     if not isNil(timer):
       clearTimer(timer)
     if not(fut.finished()):
@@ -1045,7 +1041,10 @@ proc wait*[T](fut: Future[T], timeout = InfiniteDuration): Future[T] =
       when T is void:
         retFuture.complete()
       else:
-        retFuture.complete(fut.read())
+        try:
+          retFuture.complete(fut.read())
+        except CatchableError as exc:
+          retFuture.fail(exc)
   else:
     if timeout.isZero():
       retFuture.fail(newException(AsyncTimeoutError, "Timeout exceeded!"))
@@ -1069,15 +1068,21 @@ proc wait*[T](fut: Future[T], timeout = -1): Future[T] {.
   else:
     wait(fut, timeout.milliseconds())
 
+{.pop.}
+
 include asyncmacro2
 
-proc runForever*() =
+{.push raises: [Defect].}
+
+proc runForever*() {.raises: [Defect, CatchableError].} =
   ## Begins a never ending global dispatcher poll loop.
+  ## Raises different exceptions depending on the platform.
   while true:
     poll()
 
-proc waitFor*[T](fut: Future[T]): T =
+proc waitFor*[T](fut: Future[T]): T {.raises: [Defect, CatchableError].} =
   ## **Blocks** the current thread until the specified future completes.
+  ## There's no way to tell if poll or read raised the exception
   while not(fut.finished()):
     poll()
 

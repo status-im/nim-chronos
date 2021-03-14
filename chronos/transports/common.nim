@@ -6,7 +6,10 @@
 #              Licensed under either of
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
-import os, strutils, nativesockets, net
+
+{.push raises: [Defect].}
+
+import std/[os, strutils, nativesockets, net]
 import ../asyncloop
 export net
 
@@ -183,9 +186,10 @@ proc `$`*(address: TransportAddress): string =
     else:
       result = ""
   else:
-    raise newException(TransportAddressError, "Unknown address family!")
+    result = "Unknown address family: " & $address.family
 
-proc initTAddress*(address: string): TransportAddress =
+proc initTAddress*(address: string): TransportAddress {.
+    raises: [Defect, TransportAddressError].} =
   ## Parses string representation of ``address``. ``address`` can be IPv4, IPv6
   ## or Unix domain address.
   ##
@@ -230,7 +234,8 @@ proc initTAddress*(address: string): TransportAddress =
   else:
     result = TransportAddress(family: AddressFamily.Unix)
 
-proc initTAddress*(address: string, port: Port): TransportAddress =
+proc initTAddress*(address: string, port: Port): TransportAddress {.
+    raises: [Defect, TransportAddressError].} =
   ## Initialize ``TransportAddress`` with IP (IPv4 or IPv6) address ``address``
   ## and port number ``port``.
   try:
@@ -246,7 +251,8 @@ proc initTAddress*(address: string, port: Port): TransportAddress =
   except CatchableError as exc:
     raise newException(TransportAddressError, exc.msg)
 
-proc initTAddress*(address: string, port: int): TransportAddress {.inline.} =
+proc initTAddress*(address: string, port: int): TransportAddress {.
+    raises: [Defect, TransportAddressError].} =
   ## Initialize ``TransportAddress`` with IP (IPv4 or IPv6) address ``address``
   ## and port number ``port``.
   if port < 0 or port >= 65536:
@@ -267,7 +273,8 @@ proc initTAddress*(address: IpAddress, port: Port): TransportAddress =
 
 proc getAddrInfo(address: string, port: Port, domain: Domain,
                  sockType: SockType = SockType.SOCK_STREAM,
-                 protocol: Protocol = Protocol.IPPROTO_TCP): ptr AddrInfo =
+                 protocol: Protocol = Protocol.IPPROTO_TCP): ptr AddrInfo {.
+    raises: [Defect, TransportAddressError].} =
   ## We have this one copy of ``getAddrInfo()`` because of AI_V4MAPPED in
   ## ``net.nim:getAddrInfo()``, which is not cross-platform.
   var hints: AddrInfo
@@ -346,7 +353,7 @@ proc toSAddr*(address: TransportAddress, sa: var Sockaddr_storage,
   else:
     discard
 
-proc address*(ta: TransportAddress): IpAddress =
+proc address*(ta: TransportAddress): IpAddress {.raises: [Defect, ValueError].} =
   ## Converts ``TransportAddress`` to ``net.IpAddress`` object.
   ##
   ## Note its impossible to convert ``TransportAddress`` of ``Unix`` family,
@@ -361,7 +368,8 @@ proc address*(ta: TransportAddress): IpAddress =
     raise newException(ValueError, "IpAddress supports only IPv4/IPv6!")
 
 proc resolveTAddress*(address: string,
-                      family = AddressFamily.IPv4): seq[TransportAddress] =
+                      family = AddressFamily.IPv4): seq[TransportAddress] {.
+    raises: [Defect, TransportAddressError].} =
   ## Resolve string representation of ``address``.
   ##
   ## Supported formats are:
@@ -412,7 +420,8 @@ proc resolveTAddress*(address: string,
   freeAddrInfo(aiList)
 
 proc resolveTAddress*(address: string, port: Port,
-                      family = AddressFamily.IPv4): seq[TransportAddress] =
+                      family = AddressFamily.IPv4): seq[TransportAddress] {.
+    raises: [Defect, TransportAddressError].} =
   ## Resolve string representation of ``address``.
   ##
   ## ``address`` could be dot IPv4/IPv6 address or hostname.
@@ -439,7 +448,7 @@ proc resolveTAddress*(address: string, port: Port,
 
 proc resolveTAddress*(address: string,
                       family: IpAddressFamily): seq[TransportAddress] {.
-     deprecated.} =
+     deprecated, raises: [Defect, TransportAddressError].} =
   if family == IpAddressFamily.IPv4:
     result = resolveTAddress(address, AddressFamily.IPv4)
   elif family == IpAddressFamily.IPv6:
@@ -447,22 +456,24 @@ proc resolveTAddress*(address: string,
 
 proc resolveTAddress*(address: string, port: Port,
                       family: IpAddressFamily): seq[TransportAddress] {.
-     deprecated.} =
+     deprecated, raises: [Defect, TransportAddressError].} =
   if family == IpAddressFamily.IPv4:
     result = resolveTAddress(address, port, AddressFamily.IPv4)
   elif family == IpAddressFamily.IPv6:
     result = resolveTAddress(address, port, AddressFamily.IPv6)
 
-proc windowsAnyAddressFix*(a: TransportAddress): TransportAddress {.inline.} =
+proc windowsAnyAddressFix*(a: TransportAddress): TransportAddress =
   ## BSD Sockets on *nix systems are able to perform connections to
   ## `0.0.0.0` or `::0` which are equal to `127.0.0.1` or `::1`.
   when defined(windows):
     if (a.family == AddressFamily.IPv4 and
         a.address_v4 == AnyAddress.address_v4):
-      result = initTAddress("127.0.0.1", a.port)
+      result = try: initTAddress("127.0.0.1", a.port)
+      except TransportAddressError as exc: raiseAssert exc.msg
     elif (a.family == AddressFamily.IPv6 and
           a.address_v6 == AnyAddress6.address_v6):
-      result = initTAddress("::1", a.port)
+      result = try: initTAddress("::1", a.port)
+      except TransportAddressError as exc: raiseAssert exc.msg
     else:
       result = a
   else:
@@ -484,7 +495,7 @@ template checkWriteEof*(t: untyped, future: untyped) =
                              "Transport connection is already dropped!"))
     return future
 
-template getError*(t: untyped): ref Exception =
+template getError*(t: untyped): ref CatchableError =
   var err = (t).error
   (t).error = nil
   err
@@ -507,7 +518,8 @@ template getTransportOsError*(err: OSErrorCode): ref TransportOsError =
 template getTransportOsError*(err: cint): ref TransportOsError =
   getTransportOsError(OSErrorCode(err))
 
-proc raiseTransportOsError*(err: OSErrorCode) =
+proc raiseTransportOsError*(err: OSErrorCode) {.
+    raises: [Defect, TransportOsError].} =
   ## Raises transport specific OS error.
   raise getTransportOsError(err)
 

@@ -9,9 +9,12 @@
 
 ## This module implements cross-platform network interfaces list.
 ## Currently supported OSes are Windows, Linux, MacOS, BSD(not tested).
-import algorithm
+
+{.push raises: [Defect].}
+
+import std/algorithm
 from strutils import toHex
-import ipnet
+import ./ipnet
 export ipnet
 
 const
@@ -19,7 +22,7 @@ const
 
 type
   InterfaceType* = enum
-    IfError = 0, # This is workaround element for ProoveInit warnings.
+    IfError = 0, # This is workaround element for ProveInit warnings.
     IfOther = 1,
     IfRegular1822 = 2,
     IfHdh1822 = 3,
@@ -316,21 +319,22 @@ proc `$`*(iface: NetworkInterface): string =
       res.add("inet6 ")
     res.add($item)
     res.add(" netmask ")
-    res.add($(item.netmask().address()))
+    res.add(try: $(item.netmask().address()) except ValueError as exc: exc.msg)
     res.add(" brd ")
-    res.add($(item.broadcast().address()))
+    res.add(
+      try: $(item.broadcast().address()) except ValueError as exc: exc.msg)
   res
 
 proc `$`*(route: Route): string =
-  var res = $route.dest.address()
+  var res = try: $route.dest.address() except ValueError as exc: exc.msg
   res.add(" via ")
   if route.gateway.family != AddressFamily.None:
     res.add("gateway ")
-    res.add($route.gateway.address())
+    res.add(try: $route.gateway.address() except ValueError as exc: exc.msg)
   else:
     res.add("link")
   res.add(" src ")
-  res.add($route.source.address())
+  res.add(try: $route.source.address() except ValueError as exc: exc.msg)
   res
 
 proc cmp*(a, b: NetworkInterface): int =

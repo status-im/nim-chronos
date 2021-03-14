@@ -5,7 +5,7 @@
 #              Licensed under either of
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
-import unittest
+import unittest2
 import ../chronos
 
 when defined(nimHasUsed): {.used.}
@@ -46,9 +46,11 @@ suite "callSoon() tests suite":
       await sleepAsync(100.milliseconds)
       timeoutsTest1 += 1
 
-  proc callbackProc(udata: pointer) {.gcsafe.} =
+  var callbackproc: proc(udata: pointer) {.gcsafe, raises: [Defect].}
+  callbackproc = proc (udata: pointer) {.gcsafe, raises: [Defect].} =
     timeoutsTest2 += 1
-    callSoon(callbackProc)
+    {.gcsafe.}:
+      callSoon(callbackProc)
 
   proc test2(timers, callbacks: var int) =
     callSoon(callbackProc)

@@ -5,7 +5,8 @@
 #              Licensed under either of
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
-import strutils, net, unittest
+import std/[strutils, net]
+import unittest2
 import ../chronos
 
 when defined(nimHasUsed): {.used.}
