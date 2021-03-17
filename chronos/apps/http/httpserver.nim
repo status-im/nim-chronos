@@ -9,9 +9,9 @@
 import std/[tables, options, uri, strutils]
 import stew/[results, base10], httputils
 import ../../asyncloop, ../../asyncsync
-import ../../streams/[asyncstream, boundstream, chunkstream, tlsstream]
+import ../../streams/[asyncstream, boundstream, chunkstream]
 import httptable, httpcommon, multipart
-export httptable, httpcommon, httputils, multipart, tlsstream, asyncstream,
+export httptable, httpcommon, httputils, multipart, asyncstream,
        uri, tables, options, results
 
 type
@@ -46,6 +46,10 @@ type
   HttpProcessCallback* =
     proc(req: RequestFence): Future[HttpResponseRef] {.gcsafe.}
 
+  HttpConnectionCallback* =
+    proc(server: HttpServerRef,
+         transp: StreamTransport): Future[HttpConnectionRef] {.gcsafe.}
+
   HttpServer* = object of RootObj
     instance*: StreamServer
     address*: TransportAddress
@@ -56,16 +60,15 @@ type
     serverIdent*: string
     flags*: set[HttpServerFlags]
     socketFlags*: set[ServerFlags]
-    secureFlags*: set[TLSFlags]
     connections*: Table[string, Future[void]]
     acceptLoop*: Future[void]
     lifetime*: Future[void]
     headersTimeout: Duration
+    bufferSize: int
     maxHeadersSize: int
     maxRequestBodySize: int
     processCallback: HttpProcessCallback
-    tlsPrivateKey: TLSPrivateKey
-    tlsCertificate: TLSCertificate
+    createConnCallback: HttpConnectionCallback
 
   HttpServerRef* = ref HttpServer
 
@@ -103,9 +106,8 @@ type
   HttpConnection* = object of RootObj
     server*: HttpServerRef
     transp: StreamTransport
-    mainReader: AsyncStreamReader
-    mainWriter: AsyncStreamWriter
-    tlsStream: TLSAsyncStream
+    mainReader*: AsyncStreamReader
+    mainWriter*: AsyncStreamWriter
     reader*: AsyncStreamReader
     writer*: AsyncStreamWriter
     buffer: seq[byte]
@@ -119,6 +121,50 @@ proc init(htype: typedesc[HttpProcessError], error: HTTPServerError,
           code: HttpCode): HttpProcessError {.raises: [Defect].} =
   HttpProcessError(error: error, exc: exc, remote: remote, code: code)
 
+proc init*(value: var HttpServer,
+           address: TransportAddress,
+           server: StreamServer,
+           processCallback: HttpProcessCallback,
+           createConnCallback: HttpConnectionCallback,
+           serverUri: Uri,
+           serverFlags: set[HttpServerFlags] = {},
+           socketFlags: set[ServerFlags] = {ReuseAddr},
+           serverIdent = "",
+           maxConnections: int = -1,
+           bufferSize: int = 4096,
+           backlogSize: int = 100,
+           httpHeadersTimeout = 10.seconds,
+           maxHeadersSize: int = 8192,
+           maxRequestBodySize: int = 1_048_576) =
+
+  value = HttpServer(
+    address: address,
+    instance: server,
+    processCallback: processCallback,
+    createConnCallback: createConnCallback,
+    baseUri: serverUri,
+    serverIdent: serverIdent,
+    flags: serverFlags,
+    socketFlags: socketFlags,
+    maxConnections: maxConnections,
+    bufferSize: bufferSize,
+    backlogSize: backlogSize,
+    headersTimeout: httpHeadersTimeout,
+    maxHeadersSize: maxHeadersSize,
+    maxRequestBodySize: maxRequestBodySize,
+    # semaphore:
+    #   if maxConnections > 0:
+    #     newAsyncSemaphore(maxConnections)
+    #   else:
+    #     nil
+    lifetime: newFuture[void]("http.server.lifetime"),
+    connections: initTable[string, Future[void]]()
+  )
+
+proc createConnection(server: HttpServerRef,
+                     transp: StreamTransport): Future[HttpConnectionRef] {.
+     gcsafe.}
+
 proc new*(htype: typedesc[HttpServerRef],
           address: TransportAddress,
           processCallback: HttpProcessCallback,
@@ -126,9 +172,6 @@ proc new*(htype: typedesc[HttpServerRef],
           socketFlags: set[ServerFlags] = {ReuseAddr},
           serverUri = Uri(),
           serverIdent = "",
-          tlsPrivateKey: TLSPrivateKey = nil,
-          tlsCertificate: TLSCertificate = nil,
-          secureFlags: set[TLSFlags] = {},
           maxConnections: int = -1,
           bufferSize: int = 4096,
           backlogSize: int = 100,
@@ -136,50 +179,30 @@ proc new*(htype: typedesc[HttpServerRef],
           maxHeadersSize: int = 8192,
           maxRequestBodySize: int = 1_048_576): HttpResult[HttpServerRef] =
 
-  if HttpServerFlags.Secure in serverFlags:
-    if isNil(tlsPrivateKey) or isNil(tlsCertificate):
-      return err("PrivateKey or Certificate is missing")
+  let serverUri =
+    if len(serverUri.hostname) > 0:
+      serverUri
+    else:
+      try:
+        parseUri("http://" & $address & "/")
+      except TransportAddressError as exc:
+        return err(exc.msg)
 
-  var res = HttpServerRef(
-    address: address,
-    serverIdent: serverIdent,
-    maxConnections: maxConnections,
-    headersTimeout: httpHeadersTimeout,
-    maxHeadersSize: maxHeadersSize,
-    maxRequestBodySize: maxRequestBodySize,
-    processCallback: processCallback,
-    backLogSize: backLogSize,
-    flags: serverFlags,
-    socketFlags: socketFlags,
-    tlsPrivateKey: tlsPrivateKey,
-    tlsCertificate: tlsCertificate
-  )
-
-  res.baseUri =
+  let serverInstance =
     try:
-      if len(serverUri.hostname) > 0 and isAbsolute(serverUri):
-        serverUri
-      else:
-        if HttpServerFlags.Secure in serverFlags:
-          parseUri("https://" & $address & "/")
-        else:
-          parseUri("http://" & $address & "/")
-    except TransportAddressError as exc:
+      createStreamServer(address, flags = socketFlags, bufferSize = bufferSize,
+                         backlog = backlogSize)
+    except TransportOsError as exc:
+      return err(exc.msg)
+    except CatchableError as exc:
       return err(exc.msg)
 
-  try:
-    res.instance = createStreamServer(address, flags = socketFlags,
-                                      bufferSize = bufferSize,
-                                      backlog = backlogSize)
-    # if maxConnections > 0:
-    #   res.semaphore = newAsyncSemaphore(maxConnections)
-    res.lifetime = newFuture[void]("http.server.lifetime")
-    res.connections = initTable[string, Future[void]]()
-    return ok(res)
-  except TransportOsError as exc:
-    return err(exc.msg)
-  except CatchableError as exc:
-    return err(exc.msg)
+  var res = HttpServerRef()
+  res[].init(address, serverInstance, processCallback, createConnection,
+             serverUri, serverFlags, socketFlags, serverIdent, maxConnections,
+             bufferSize, backLogSize, httpHeadersTimeout, maxHeadersSize,
+             maxRequestBodySize)
+  ok(res)
 
 proc getResponse*(req: HttpRequestRef): HttpResponseRef {.raises: [Defect].} =
   if req.response.isNone():
@@ -450,47 +473,32 @@ proc getRequest(conn: HttpConnectionRef): Future[HttpRequestRef] {.async.} =
   except AsyncStreamLimitError:
     raiseHttpCriticalError("Maximum size of request headers reached", Http431)
 
-proc new(ht: typedesc[HttpConnectionRef], server: HttpServerRef,
-         transp: StreamTransport): HttpConnectionRef =
-  let mainReader = newAsyncStreamReader(transp)
-  let mainWriter = newAsyncStreamWriter(transp)
-  let tlsStream =
-    if HttpServerFlags.Secure in server.flags:
-      newTLSServerAsyncStream(mainReader, mainWriter, server.tlsPrivateKey,
-                              server.tlsCertificate,
-                              minVersion = TLSVersion.TLS12,
-                              flags = server.secureFlags)
-    else:
-      nil
-
-  let reader =
-    if isNil(tlsStream):
-      mainReader
-    else:
-      cast[AsyncStreamReader](tlsStream.reader)
-
-  let writer =
-    if isNil(tlsStream):
-      mainWriter
-    else:
-      cast[AsyncStreamWriter](tlsStream.writer)
-
-  HttpConnectionRef(
-    transp: transp,
+proc init*(value: var HttpConnection, server: HttpServerRef,
+           transp: StreamTransport) =
+  value = HttpConnection(
     server: server,
+    transp: transp,
     buffer: newSeq[byte](server.maxHeadersSize),
-    mainReader: mainReader,
-    mainWriter: mainWriter,
-    tlsStream: tlsStream,
-    reader: reader,
-    writer: writer
+    mainReader: newAsyncStreamReader(transp),
+    mainWriter: newAsyncStreamWriter(transp)
   )
 
-proc closeWait(conn: HttpConnectionRef) {.async.} =
-  if HttpServerFlags.Secure in conn.server.flags:
-    # First we will close TLS streams.
-    await allFutures(conn.reader.closeWait(), conn.writer.closeWait())
+proc new(ht: typedesc[HttpConnectionRef], server: HttpServerRef,
+         transp: StreamTransport): HttpConnectionRef =
+  var res = HttpConnectionRef()
+  res[].init(server, transp)
+  res.reader = res.mainReader
+  res.writer = res.mainWriter
+  res
 
+proc closeWait*(conn: HttpConnectionRef) {.async.} =
+  var pending: seq[Future[void]]
+  if conn.reader != conn.mainReader:
+    pending.add(conn.reader.closeWait())
+  if conn.writer != conn.mainWriter:
+    pending.add(conn.writer.closeWait())
+  if len(pending) > 0:
+    await allFutures(pending)
   # After we going to close everything else.
   await allFutures(conn.mainReader.closeWait(), conn.mainWriter.closeWait(),
                    conn.transp.closeWait())
@@ -505,20 +513,7 @@ proc closeWait(req: HttpRequestRef) {.async.} =
 proc createConnection(server: HttpServerRef,
                       transp: StreamTransport): Future[HttpConnectionRef] {.
      async.} =
-  var conn = HttpConnectionRef.new(server, transp)
-  if HttpServerFlags.Secure notin server.flags:
-    # Non secure connection
-    return conn
-
-  try:
-    await handshake(conn.tlsStream)
-    return conn
-  except CancelledError as exc:
-    await conn.closeWait()
-    raise exc
-  except TLSStreamError:
-    await conn.closeWait()
-    raiseHttpCriticalError("Unable to establish secure connection")
+  return HttpConnectionRef.new(server, transp)
 
 proc processLoop(server: HttpServerRef, transp: StreamTransport) {.async.} =
   var
@@ -527,10 +522,9 @@ proc processLoop(server: HttpServerRef, transp: StreamTransport) {.async.} =
     runLoop = false
 
   try:
-    conn = await createConnection(server, transp)
+    conn = await server.createConnCallback(server, transp)
     runLoop = true
   except CancelledError:
-    # We could be cancelled only when we perform TLS handshake, connection
     server.connections.del(transp.getId())
     await transp.closeWait()
     return
