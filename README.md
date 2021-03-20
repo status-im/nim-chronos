@@ -1,6 +1,6 @@
 # Chronos - An efficient library for asynchronous programming
 
-![Github action](https://github.com/status-im/nim-chronos/workflows/nim-chronos%20CI/badge.svg)
+[![Github action](https://github.com/status-im/nim-chronos/workflows/nim-chronos%20CI/badge.svg)](https://github.com/status-im/nim-chronos/actions/workflows/ci.yml)
 [![Windows build status (AppVeyor)](https://img.shields.io/appveyor/ci/nimbus/nim-asyncdispatch2/master.svg?label=Windows "Windows build status (Appveyor)")](https://ci.appveyor.com/project/nimbus/nim-asyncdispatch2)
 [![License: Apache](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
@@ -8,15 +8,37 @@
 
 ## Introduction
 
-Chronos is an [asyncdispatch](https://nim-lang.org/docs/asyncdispatch.html)
-fork with a unified callback type, FIFO processing order for Future callbacks and [many other changes](https://github.com/status-im/nim-chronos/wiki/AsyncDispatch-comparison) that diverged from upstream's philosophy.
+Chronos is an efficient [async/await](https://en.wikipedia.org/wiki/Async/await) framework for Nim. Features include:
+
+* Efficient dispatch pipeline for asynchronous execution
+* HTTP server with SSL/TLS support out of the box (no OpenSSL needed)
+* Cancellation support
+* Synchronization primitivies like queues, events and locks
+* FIFO processing order of dispatch queue
 
 ## Installation
+
 You can use Nim's official package manager Nimble to install Chronos:
 
+```text
+nimble install https://github.com/status-im/nim-chronos.git
 ```
-$ nimble install https://github.com/status-im/nim-chronos.git
+
+or add a dependency to your `.nimble` file:
+
+```text
+requires "chronos"
 ```
+
+## Projects using `chronos`
+
+* [libp2p](https://github.com/status-im/nim-libp2p) - Peer-to-Peer networking stack implemented in many languages
+* [Looper](https://github.com/bung87/Looper) - Web framework
+* [2DeFi](https://github.com/gogolxdong/2DeFi) - Decentralised file system
+
+`chronos` is available in the [Nim Playground](https://play.nim-lang.org/#ix=2TpS)
+
+Submit a PR to add yours!
 
 ## Documentation
 
@@ -194,6 +216,12 @@ leave behind some zombie futures.
 
 When submitting pull requests, please add test cases for any new features or fixes and make sure `nimble test` is still able to execute the entire test suite successfully.
 
+`chronos` follows the [Status Nim Style Guide](https://status-im.github.io/nim-style-guide/).
+
+## Other resources
+
+* [Historical differences with asyncdispatch](https://github.com/status-im/nim-chronos/wiki/AsyncDispatch-comparison)
+
 ## License
 
 Licensed and distributed under either of
@@ -205,4 +233,3 @@ or
 * Apache License, Version 2.0, ([LICENSE-APACHEv2](LICENSE-APACHEv2) or http://www.apache.org/licenses/LICENSE-2.0)
 
 at your option. These files may not be copied, modified, or distributed except according to those terms.
-
