@@ -27,8 +27,9 @@
 ##
 ## TODO: ``/dev/poll``, ``event ports`` and filesystem events.
 
-# Same as std/selectors with fixed exception type, remove when upgrading to
-# nim 1.4+
+# Based on std/selectors, but with stricter exception handling and effect
+# support - changes could potentially be backported to nim but are not
+# backwards-compatible.
 
 import os, nativesockets
 

@@ -283,6 +283,8 @@ template processCallbacks(loop: untyped) =
 proc raiseAsDefect*(exc: ref Exception, msg: string) {.
     raises: [Defect], noreturn, noinline.} =
   # Reraise an exception as a Defect, where it's unexpected and can't be handled
+  # We include the stack trace in the message because otherwise, it's easily
+  # lost - Nim doesn't print it for `parent` exceptions for example (!)
   raise (ref Defect)(
     msg: msg & "\n" & exc.msg & "\n" & exc.getStackTrace(), parent: exc)
 
@@ -412,7 +414,12 @@ when defined(windows) or defined(nimdoc):
     loop.handles.incl(fd)
 
   proc poll*() {.raises: [Defect, CatchableError].} =
-    ## Perform single asynchronous step.
+    ## Perform single asynchronous step, processing timers and completing
+    ## unblocked tasks. Blocks until at least one event has completed.
+    ##
+    ## Exceptions raised here indicate that waiting for tasks to be unblocked
+    ## failed - exceptions from within tasks are instead propagated through
+    ## their respective futures and not allowed to interrrupt the poll call.
     let loop = getThreadDispatcher()
     var curTime = Moment.now()
     var curTimeout = DWORD(0)
@@ -632,7 +639,7 @@ elif unixPlatform:
     ## You can execute ``aftercb`` before actual socket close operation.
     let loop = getThreadDispatcher()
 
-    proc continuation(udata: pointer) {.raises: [Defect].} =
+    proc continuation(udata: pointer) =
       if SocketHandle(fd) in loop.selector:
         try:
           unregister(fd)
@@ -1019,10 +1026,7 @@ proc wait*[T](fut: Future[T], timeout = InfiniteDuration): Future[T] =
             when T is void:
               retFuture.complete()
             else:
-              try:
-                retFuture.complete(fut.read())
-              except CatchableError as exc:
-                retFuture.fail(exc)
+              retFuture.complete(fut.value)
       else:
         retFuture.fail(newException(AsyncTimeoutError, "Timeout exceeded!"))
 
@@ -1041,10 +1045,7 @@ proc wait*[T](fut: Future[T], timeout = InfiniteDuration): Future[T] =
       when T is void:
         retFuture.complete()
       else:
-        try:
-          retFuture.complete(fut.read())
-        except CatchableError as exc:
-          retFuture.fail(exc)
+        retFuture.complete(fut.value)
   else:
     if timeout.isZero():
       retFuture.fail(newException(AsyncTimeoutError, "Timeout exceeded!"))

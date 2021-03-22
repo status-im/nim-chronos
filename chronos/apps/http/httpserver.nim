@@ -44,7 +44,8 @@ type
     Empty, Prepared, Sending, Finished, Failed, Cancelled, Dumb
 
   HttpProcessCallback* =
-    proc(req: RequestFence): Future[HttpResponseRef] {.gcsafe, raises: [Defect].}
+    proc(req: RequestFence): Future[HttpResponseRef] {.
+      gcsafe, raises: [Defect, CatchableError].}
 
   HttpConnectionCallback* =
     proc(server: HttpServerRef,
