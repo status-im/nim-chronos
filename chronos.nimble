@@ -1,5 +1,5 @@
 packageName   = "chronos"
-version       = "2.6.1"
+version       = "3.0.0"
 author        = "Status Research & Development GmbH"
 description   = "Chronos"
 license       = "Apache License 2.0 or MIT"
@@ -16,7 +16,7 @@ requires "nim > 1.2.0",
 task test, "Run all tests":
   var commands = @[
     "nim c -r -d:useSysAssert -d:useGcAssert tests/",
-    "nim c -r -d:chronosStackTrace tests/",
+    "nim c -r -d:chronosStackTrace -d:chronosStrictException tests/",
     "nim c -r -d:release tests/",
     "nim c -r -d:release -d:chronosFutureTracking tests/"
   ]

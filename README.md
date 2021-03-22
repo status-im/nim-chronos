@@ -232,8 +232,16 @@ Because of this, the effect system thinks no exceptions are "leaking" because in
 fact, exception _handling_ is deferred to when the future is being read.
 
 Effectively, this means that while code can be compiled with
-`{.push raises: [Defect]}`, the intended effect propoagation and checking is
+`{.push raises: [Defect]}`, the intended effect propagation and checking is
 **disabled** for `async` functions.
+
+To enable checking exception effects in `async` code, enable strict mode with
+`-d:chronosStrictException`.
+
+In the strict mode, `async` functions are checked such that they only raise
+`CatchableError` and thus must make sure to explicitly specify exception
+effects on forward declarations, callbacks and methods using
+`{.raises: [CatchableError].}` (or more strict) annotations.
 
 ## TODO
   * Pipe/Subprocess Transports.

@@ -19,44 +19,87 @@ proc skipUntilStmtList(node: NimNode): NimNode {.compileTime.} =
 #   result = node
 #   if node[0].kind == nnkStmtList:
 #     result = node[0]
+when defined(chronosStrictException):
+  template createCb(retFutureSym, iteratorNameSym,
+                    strName, identName, futureVarCompletions: untyped) =
+    bind finished
 
-template createCb(retFutureSym, iteratorNameSym,
-                  strName, identName, futureVarCompletions: untyped) =
-  bind finished
+    var nameIterVar = iteratorNameSym
+    {.push stackTrace: off.}
+    var identName: proc(udata: pointer) {.gcsafe, raises: [Defect].}
+    identName = proc(udata: pointer) {.raises: [Defect].} =
+      try:
+        # If the compiler complains about unlisted exception here, it's usually
+        # because you're calling a callback or forward declaration in your code
+        # for which the compiler cannot deduce raises signatures - make sure
+        # to annotate both forward declarations and `proc` types with `raises`!
+        if not(nameIterVar.finished()):
+          var next = nameIterVar()
+          # Continue while the yielded future is already finished.
+          while (not next.isNil()) and next.finished():
+            next = nameIterVar()
+            if nameIterVar.finished():
+              break
 
-  var nameIterVar = iteratorNameSym
-  {.push stackTrace: off.}
-  var identName: proc(udata: pointer) {.gcsafe, raises: [Defect].}
-  identName = proc(udata: pointer) {.raises: [Defect].} =
-    try:
-      # If the compiler complains about unlisted exception here, it's usually
-      # because you're calling a callback or forward declaration in your code
-      # for which the compiler cannot deduce raises signatures - make sure
-      # to annotate both forward declarations and `proc` types with `raises`!
-      if not(nameIterVar.finished()):
-        var next = nameIterVar()
-        # Continue while the yielded future is already finished.
-        while (not next.isNil()) and next.finished():
-          next = nameIterVar()
-          if nameIterVar.finished():
-            break
+          if next == nil:
+            if not(retFutureSym.finished()):
+              const msg = "Async procedure (&" & strName & ") yielded `nil`, " &
+                          "are you await'ing a `nil` Future?"
+              raiseAssert msg
+          else:
+            next.addCallback(identName)
+      except CancelledError:
+        retFutureSym.cancelAndSchedule()
+      except CatchableError as exc:
+        futureVarCompletions
+        retFutureSym.fail(exc)
 
-        if next == nil:
-          if not(retFutureSym.finished()):
-            const msg = "Async procedure (&" & strName & ") yielded `nil`, " &
-                        "are you await'ing a `nil` Future?"
-            raiseAssert msg
-        else:
-          next.addCallback(identName)
-    except CancelledError:
-      retFutureSym.cancelAndSchedule()
-    except CatchableError as exc:
-      futureVarCompletions
+    identName(nil)
+    {.pop.}
+else:
+  template createCb(retFutureSym, iteratorNameSym,
+                    strName, identName, futureVarCompletions: untyped) =
+    bind finished
 
-      retFutureSym.fail(exc)
+    var nameIterVar = iteratorNameSym
+    {.push stackTrace: off.}
+    var identName: proc(udata: pointer) {.gcsafe, raises: [Defect].}
+    identName = proc(udata: pointer) {.raises: [Defect].} =
+      try:
+        # If the compiler complains about unlisted exception here, it's usually
+        # because you're calling a callback or forward declaration in your code
+        # for which the compiler cannot deduce raises signatures - make sure
+        # to annotate both forward declarations and `proc` types with `raises`!
+        if not(nameIterVar.finished()):
+          var next = nameIterVar()
+          # Continue while the yielded future is already finished.
+          while (not next.isNil()) and next.finished():
+            next = nameIterVar()
+            if nameIterVar.finished():
+              break
 
-  identName(nil)
-  {.pop.}
+          if next == nil:
+            if not(retFutureSym.finished()):
+              const msg = "Async procedure (&" & strName & ") yielded `nil`, " &
+                          "are you await'ing a `nil` Future?"
+              raiseAssert msg
+          else:
+            next.addCallback(identName)
+      except CancelledError:
+        retFutureSym.cancelAndSchedule()
+      except CatchableError as exc:
+        futureVarCompletions
+        retFutureSym.fail(exc)
+      except Exception as exc:
+        # TODO remove Exception handler to turn on strict mode
+        if exc is Defect:
+          raise (ref Defect)(exc)
+
+        futureVarCompletions
+        retFutureSym.fail((ref ValueError)(msg: exc.msg, parent: exc))
+
+    identName(nil)
+    {.pop.}
 
 proc createFutureVarCompletions(futureVarIdents: seq[NimNode],
     fromNode: NimNode): NimNode {.compileTime.} =
@@ -247,13 +290,23 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
     #      against the spirit of the raises annotation - one should investigate
     #      here the possibility of transporting more specific error types here
     #      for example by casting exceptions coming out of `await`..
-    closureIterator.addPragma(nnkExprColonExpr.newTree(
-      newIdentNode("raises"),
-      nnkBracket.newTree(
-        newIdentNode("Defect"),
-        newIdentNode("CatchableError")
-      )
-    ))
+    when defined(chronosStrictException):
+      closureIterator.addPragma(nnkExprColonExpr.newTree(
+        newIdentNode("raises"),
+        nnkBracket.newTree(
+          newIdentNode("Defect"),
+          newIdentNode("CatchableError")
+        )
+      ))
+    else:
+      closureIterator.addPragma(nnkExprColonExpr.newTree(
+        newIdentNode("raises"),
+        nnkBracket.newTree(
+          newIdentNode("Defect"),
+          newIdentNode("CatchableError"),
+          newIdentNode("Exception") # Allow exception effects
+        )
+      ))
 
     # If proc has an explicit gcsafe pragma, we add it to iterator as well.
     if prc.pragma.findChild(it.kind in {nnkSym, nnkIdent} and $it == "gcsafe") != nil:
