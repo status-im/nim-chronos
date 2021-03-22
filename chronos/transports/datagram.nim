@@ -291,7 +291,7 @@ when defined(windows):
                                   child: DatagramTransport,
                                   bufferSize: int,
                                   ttl: int): DatagramTransport {.
-      raises: [Defect, OSError, TransportOsError, IOSelectorsException].} =
+      raises: [Defect, CatchableError].} =
     var localSock: AsyncFD
     doAssert(remote.family == local.family)
     doAssert(not isNil(cbproc))
@@ -503,10 +503,10 @@ else:
                                   sock: AsyncFD,
                                   flags: set[ServerFlags],
                                   udata: pointer,
-                                  child: DatagramTransport = nil,
+                                  child: DatagramTransport,
                                   bufferSize: int,
                                   ttl: int): DatagramTransport {.
-      raises: [Defect, OSError, TransportOsError, IOSelectorsException].} =
+      raises: [Defect, CatchableError].} =
     var localSock: AsyncFD
     doAssert(remote.family == local.family)
     doAssert(not isNil(cbproc))
@@ -635,7 +635,7 @@ proc newDatagramTransport*(cbproc: DatagramCallback,
                            bufSize: int = DefaultDatagramBufferSize,
                            ttl: int = 0
                            ): DatagramTransport {.
-    raises: [Defect, OSError, TransportOsError, IOSelectorsException].} =
+    raises: [Defect, CatchableError].} =
   ## Create new UDP datagram transport (IPv4).
   ##
   ## ``cbproc`` - callback which will be called, when new datagram received.
@@ -661,7 +661,7 @@ proc newDatagramTransport*[T](cbproc: DatagramCallback,
                               bufSize: int = DefaultDatagramBufferSize,
                               ttl: int = 0
                               ): DatagramTransport {.
-    raises: [Defect, OSError, TransportOsError, IOSelectorsException].} =
+    raises: [Defect, CatchableError].} =
   var fflags = flags + {GCUserData}
   GC_ref(udata)
   result = newDatagramTransportCommon(cbproc, remote, local, sock,
@@ -678,7 +678,7 @@ proc newDatagramTransport6*(cbproc: DatagramCallback,
                             bufSize: int = DefaultDatagramBufferSize,
                             ttl: int = 0
                             ): DatagramTransport {.
-    raises: [Defect, OSError, TransportOsError, IOSelectorsException].} =
+    raises: [Defect, CatchableError].} =
   ## Create new UDP datagram transport (IPv6).
   ##
   ## ``cbproc`` - callback which will be called, when new datagram received.
@@ -704,7 +704,7 @@ proc newDatagramTransport6*[T](cbproc: DatagramCallback,
                                bufSize: int = DefaultDatagramBufferSize,
                                ttl: int = 0
                                ): DatagramTransport {.
-    raises: [Defect, OSError, TransportAddressError, TransportOsError, IOSelectorsException].} =
+    raises: [Defect, CatchableError].} =
   var fflags = flags + {GCUserData}
   GC_ref(udata)
   result = newDatagramTransportCommon(cbproc, remote, local, sock,

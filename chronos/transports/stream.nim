@@ -320,7 +320,7 @@ when defined(windows):
              (err == OSErrorCode(WSAECONNABORTED)) or
              (err == OSErrorCode(ERROR_PIPE_NOT_CONNECTED))
 
-  proc writeStreamLoop(udata: pointer) {.gcsafe, nimcall, raises: [Defect].} =
+  proc writeStreamLoop(udata: pointer) {.gcsafe, nimcall.} =
     var bytesCount: int32
     var ovl = cast[PtrCustomOverlapped](udata)
     var transp = cast[StreamTransport](ovl.data.udata)
@@ -524,7 +524,7 @@ when defined(windows):
       if len(transp.queue) == 0:
         transp.state.incl(WritePaused)
 
-  proc readStreamLoop(udata: pointer) {.gcsafe, nimcall, raises: [Defect].} =
+  proc readStreamLoop(udata: pointer) {.gcsafe, nimcall.} =
     var ovl = cast[PtrCustomOverlapped](udata)
     var transp = cast[StreamTransport](ovl.data.udata)
     while true:
@@ -767,7 +767,7 @@ when defined(windows):
       ## Unix domain socket emulation with Windows Named Pipes.
       var pipeHandle = INVALID_HANDLE_VALUE
       var pipeContinuation: proc (udata: pointer) {.gcsafe, raises: [Defect].}
-      pipeContinuation = proc (udata: pointer) {.raises: [Defect].} =
+      pipeContinuation = proc (udata: pointer) =
         # Continue only if `retFuture` is not cancelled.
         if not(retFuture.finished()):
           var pipeSuffix = $cast[cstring](unsafeAddr address.address_un[0])
@@ -786,7 +786,7 @@ when defined(windows):
           else:
             try:
               register(AsyncFD(pipeHandle))
-            except OSError as exc:
+            except CatchableError as exc:
               retFuture.fail(exc)
               return
 
@@ -802,7 +802,8 @@ when defined(windows):
 
     return retFuture
 
-  proc createAcceptPipe(server: StreamServer) {.raises: [Defect, OSError].} =
+  proc createAcceptPipe(server: StreamServer) {.
+      raises: [Defect, CatchableError].} =
     let pipeSuffix = $cast[cstring](addr server.local.address_un)
     let pipeName = newWideCString(r"\\.\pipe\" & pipeSuffix[1 .. ^1])
     var openMode = PIPE_ACCESS_DUPLEX or FILE_FLAG_OVERLAPPED
@@ -855,7 +856,7 @@ when defined(windows):
             # We should not raise defects in this loop.
             discard disconnectNamedPipe(Handle(server.sock))
             discard closeHandle(HANDLE(server.sock))
-            raiseAssert $osLastError()
+            raiseAssert osErrorMsg(osLastError())
         else:
           # Server close happens in callback, and we are not started new
           # connectNamedPipe session.
@@ -879,11 +880,11 @@ when defined(windows):
                                            DWORD(server.bufferSize),
                                            DWORD(0), nil)
           if pipeHandle == INVALID_HANDLE_VALUE:
-            raiseAssert $osLastError()
+            raiseAssert osErrorMsg(osLastError())
           server.sock = AsyncFD(pipeHandle)
           server.aovl.data.fd = AsyncFD(pipeHandle)
           try: register(server.sock)
-          except OSError as exc:
+          except CatchableError as exc:
             raiseAsDefect exc, "register"
           let res = connectNamedPipe(pipeHandle,
                                      cast[POVERLAPPED](addr server.aovl))
@@ -897,7 +898,7 @@ when defined(windows):
             elif int32(err) == ERROR_PIPE_CONNECTED:
               discard
             else:
-              raiseAssert $err
+              raiseAssert osErrorMsg(err)
           break
         else:
           # Server close happens in callback, and we are not started new
@@ -922,7 +923,7 @@ when defined(windows):
                           SockLen(sizeof(SocketHandle))) != 0'i32:
               let err = OSErrorCode(wsaGetLastError())
               server.asock.closeSocket()
-              raiseAssert $(err)
+              raiseAssert osErrorMsg(err)
             else:
               var ntransp: StreamTransport
               if not isNil(server.init):
@@ -961,10 +962,9 @@ when defined(windows):
           # TODO No way to report back errors!
           server.asock = try: createAsyncSocket(server.domain, SockType.SOCK_STREAM,
                                            Protocol.IPPROTO_TCP)
-          except OSError as exc: raiseAsDefect exc, "createAsyncSocket"
-          except IOSelectorsException as exc: raiseAsDefect exc, "createAsyncSocket"
+          except CatchableError as exc: raiseAsDefect exc, "createAsyncSocket"
           if server.asock == asyncInvalidSocket:
-            raiseAssert $(OSErrorCode(wsaGetLastError()))
+            raiseAssert osErrorMsg(OSErrorCode(wsaGetLastError()))
 
           var dwBytesReceived = DWORD(0)
           let dwReceiveDataLength = DWORD(0)
@@ -985,7 +985,7 @@ when defined(windows):
             elif int32(err) == ERROR_IO_PENDING:
               discard
             else:
-              raiseAssert $(err)
+              raiseAssert osErrorMsg(err)
           break
         else:
           # Server close happens in callback, and we are not started new
@@ -1091,13 +1091,13 @@ when defined(windows):
             ntransp = newStreamPipeTransport(server.sock, server.bufferSize,
                                              nil, flags)
           # Start tracking transport
-          trackStream(ntransp)
           try:
             server.createAcceptPipe()
           except CatchableError as exc:
-            # TODO close transp!
+            closeHandle(server.sock)
             retFuture.fail(exc)
             return
+          trackStream(ntransp)
           retFuture.complete(ntransp)
 
         elif int32(ovl.data.errCode) in {ERROR_OPERATION_ABORTED,
@@ -1208,7 +1208,7 @@ else:
     result = (err == OSErrorCode(ECONNRESET)) or
              (err == OSErrorCode(EPIPE))
 
-  proc writeStreamLoop(udata: pointer) {.raises: [Defect].} =
+  proc writeStreamLoop(udata: pointer) =
     # TODO fix Defect raises - they "shouldn't" happen
     var cdata = cast[ptr CompletionData](udata)
     var transp = cast[StreamTransport](cdata.udata)
@@ -1547,7 +1547,7 @@ else:
         retFuture.fail(getTransportOsError(err))
       return retFuture
 
-    proc continuation(udata: pointer) {.gcsafe, raises: [Defect].} =
+    proc continuation(udata: pointer) =
       if not(retFuture.finished()):
         var data = cast[ptr CompletionData](udata)
         var err = 0
@@ -1611,7 +1611,7 @@ else:
           break
     return retFuture
 
-  proc acceptLoop(udata: pointer) {.raises: [Defect].} =
+  proc acceptLoop(udata: pointer) =
     var
       saddr: Sockaddr_storage
       slen: SockLen
@@ -1624,9 +1624,7 @@ else:
                              cast[ptr SockAddr](addr saddr), addr slen)
       if int(res) > 0:
         let sock = try: wrapAsyncSocket(res)
-        except IOSelectorsException as exc:
-          raiseAsDefect exc, "wrapAsyncSocket"
-        except OSError as exc:
+        except CatchableError as exc:
           raiseAsDefect exc, "wrapAsyncSocket"
         if sock != asyncInvalidSocket:
           var ntransp: StreamTransport
@@ -1841,7 +1839,7 @@ proc createStreamServer*(host: TransportAddress,
                          child: StreamServer = nil,
                          init: TransportInitCallback = nil,
                          udata: pointer = nil): StreamServer {.
-    raises: [Defect, OSError, TransportOsError, IOSelectorsException].} =
+    raises: [Defect, CatchableError].} =
   ## Create new TCP stream server.
   ##
   ## ``host`` - address to which server will be bound.
@@ -2033,7 +2031,7 @@ proc createStreamServer*(host: TransportAddress,
                          child: StreamServer = nil,
                          init: TransportInitCallback = nil,
                          udata: pointer = nil): StreamServer {.
-    raises: [Defect, OSError, TransportOsError, IOSelectorsException].} =
+    raises: [Defect, CatchableError].} =
   result = createStreamServer(host, nil, flags, sock, backlog, bufferSize,
                               child, init, cast[pointer](udata))
 
@@ -2046,7 +2044,7 @@ proc createStreamServer*[T](host: TransportAddress,
                             bufferSize: int = DefaultStreamBufferSize,
                             child: StreamServer = nil,
                             init: TransportInitCallback = nil): StreamServer {.
-    raises: [Defect, OSError, TransportOsError, IOSelectorsException].} =
+    raises: [Defect, CatchableError].} =
   var fflags = flags + {GCUserData}
   GC_ref(udata)
   result = createStreamServer(host, cbproc, fflags, sock, backlog, bufferSize,
@@ -2060,7 +2058,7 @@ proc createStreamServer*[T](host: TransportAddress,
                             bufferSize: int = DefaultStreamBufferSize,
                             child: StreamServer = nil,
                             init: TransportInitCallback = nil): StreamServer {.
-    raises: [Defect, TransportOsError].} =
+    raises: [Defect, CatchableError].} =
   var fflags = flags + {GCUserData}
   GC_ref(udata)
   result = createStreamServer(host, nil, fflags, sock, backlog, bufferSize,
@@ -2464,7 +2462,7 @@ proc closed*(transp: StreamTransport): bool {.inline.} =
 
 proc fromPipe*(fd: AsyncFD, child: StreamTransport = nil,
                bufferSize = DefaultStreamBufferSize): StreamTransport {.
-    raises: [Defect, OSError, IOSelectorsException].} =
+    raises: [Defect, CatchableError].} =
   ## Create new transport object using pipe's file descriptor.
   ##
   ## ``bufferSize`` is size of internal buffer for transport.

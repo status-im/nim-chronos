@@ -706,7 +706,7 @@ proc all*[T](futs: varargs[Future[T]]): auto {.
               retFuture.fail(nfut.error)
               break
             else:
-              retValues[k] = nfut.read()
+              retValues[k] = nfut.value
           if not(retFuture.failed()):
             retFuture.complete(retValues)
 

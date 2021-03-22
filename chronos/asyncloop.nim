@@ -339,7 +339,7 @@ when defined(windows) or defined(nimdoc):
     if wsaStartup(0x0202'i16, addr wsa) != 0:
       raiseOSError(osLastError())
 
-  proc initAPI(loop: PDispatcher) {.raises: [Defect, OSError].} =
+  proc initAPI(loop: PDispatcher) {.raises: [Defect, CatchableError].} =
     var
       WSAID_TRANSMITFILE = GUID(
         D1: 0xb5367df0'i32, D2: 0xcbac'i16, D3: 0x11cf'i16,
@@ -405,13 +405,17 @@ when defined(windows) or defined(nimdoc):
     ## (Unix) for the specified dispatcher.
     return disp.ioPort
 
-  proc register*(fd: AsyncFD) {.raises: [Defect, OSError].} =
+  proc register*(fd: AsyncFD) {.raises: [Defect, CatchableError].} =
     ## Register file descriptor ``fd`` in thread's dispatcher.
     let loop = getThreadDispatcher()
     if createIoCompletionPort(fd.Handle, loop.ioPort,
                               cast[CompletionKey](fd), 1) == 0:
       raiseOSError(osLastError())
     loop.handles.incl(fd)
+
+  proc unregister*(fd: AsyncFD) {.raises: [Defect, CatchableError].} =
+    ## Unregisters ``fd``.
+    getThreadDispatcher().handles.excl(fd)
 
   proc poll*() {.raises: [Defect, CatchableError].} =
     ## Perform single asynchronous step, processing timers and completing
@@ -487,10 +491,6 @@ when defined(windows) or defined(nimdoc):
       var acb = AsyncCallback(function: aftercb)
       loop.callbacks.addLast(acb)
 
-  proc unregister*(fd: AsyncFD) {.raises: [Defect].} =
-    ## Unregisters ``fd``.
-    getThreadDispatcher().handles.excl(fd)
-
   proc contains*(disp: PDispatcher, fd: AsyncFD): bool =
     ## Returns ``true`` if ``fd`` is registered in thread's dispatcher.
     return fd in disp.handles
@@ -524,7 +524,7 @@ elif unixPlatform:
     # We are ignoring SIGPIPE signal, because we are working with EPIPE.
     posix.signal(cint(SIGPIPE), SIG_IGN)
 
-  proc initAPI(disp: PDispatcher) =
+  proc initAPI(disp: PDispatcher) {.raises: [Defect, CatchableError].} =
     discard
 
   proc newDispatcher*(): PDispatcher {.raises: [Defect, CatchableError].} =
@@ -553,7 +553,7 @@ elif unixPlatform:
     ## Returns system specific OS queue.
     return disp.selector
 
-  proc register*(fd: AsyncFD) {.raises: [Defect, OSError, IOSelectorsException].} =
+  proc register*(fd: AsyncFD) {.raises: [Defect, CatchableError].} =
     ## Register file descriptor ``fd`` in thread's dispatcher.
     let loop = getThreadDispatcher()
     var data: SelectorData
@@ -561,7 +561,7 @@ elif unixPlatform:
     data.wdata.fd = fd
     loop.selector.registerHandle(int(fd), {}, data)
 
-  proc unregister*(fd: AsyncFD) {.raises: [Defect, IOSelectorsException].} =
+  proc unregister*(fd: AsyncFD) {.raises: [Defect, CatchableError].} =
     ## Unregister file descriptor ``fd`` from thread's dispatcher.
     getThreadDispatcher().selector.unregister(int(fd))
 
@@ -643,7 +643,7 @@ elif unixPlatform:
       if SocketHandle(fd) in loop.selector:
         try:
           unregister(fd)
-        except IOSelectorsException as exc:
+        except CatchableError as exc:
           raiseAsDefect(exc, "unregister failed")
 
         close(SocketHandle(fd))

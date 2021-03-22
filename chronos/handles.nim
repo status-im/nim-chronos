@@ -94,7 +94,7 @@ proc getSocketError*(socket: AsyncFD, err: var int): bool =
 
 proc createAsyncSocket*(domain: Domain, sockType: SockType,
                         protocol: Protocol): AsyncFD {.
-    raises: [Defect, OSError, IOSelectorsException].} =
+    raises: [Defect, CatchableError].} =
   ## Creates new asynchronous socket.
   ## Returns ``asyncInvalidSocket`` on error.
   let handle = createNativeSocket(domain, sockType, protocol)
@@ -111,7 +111,7 @@ proc createAsyncSocket*(domain: Domain, sockType: SockType,
   register(result)
 
 proc wrapAsyncSocket*(sock: SocketHandle): AsyncFD {.
-    raises: [Defect, OSError, IOSelectorsException].} =
+    raises: [Defect, CatchableError].} =
   ## Wraps socket to asynchronous socket handle.
   ## Return ``asyncInvalidSocket`` on error.
   if not setSocketBlocking(sock, false):
