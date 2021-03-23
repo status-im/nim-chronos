@@ -506,6 +506,19 @@ proc mget*[T](future: FutureVar[T]): var T =
   ## Future has not been finished.
   result = Future[T](future).value
 
+template taskFutureLocation(future: FutureBase): string =
+  let loc = future.location[0]
+  "[" & (
+    if len(loc.procedure) == 0: "[unspecified]" else: $loc.procedure & "()"
+    ) & " at " & $loc.file & ":" & $(loc.line) & "]"
+
+template taskErrorMessage(future: FutureBase): string =
+  "Asynchronous task " & taskFutureLocation(future) &
+  " finished with an exception \"" & $future.error.name & "\"!\nStack trace: " &
+  future.error.getStackTrace()
+template taskCancelMessage(future: FutureBase): string =
+  "Asynchronous task " & taskFutureLocation(future) & " was cancelled!"
+
 proc asyncSpawn*(future: Future[void]) =
   ## Spawns a new concurrent async task.
   ##
@@ -520,32 +533,17 @@ proc asyncSpawn*(future: Future[void]) =
   ## and processed immediately.
   doAssert(not isNil(future), "Future is nil")
 
-  template getFutureLocation(): string =
-    let loc = future.location[0]
-    "[" & (
-      if len(loc.procedure) == 0: "[unspecified]" else: $loc.procedure & "()"
-      ) & " at " & $loc.file & ":" & $(loc.line) & "]"
-
-  template getErrorMessage(): string =
-    "Asynchronous task " & getFutureLocation() &
-    " finished with an exception \"" & $future.error.name & "\"!"
-  template getCancelMessage(): string =
-    "Asynchronous task " & getFutureLocation() & " was cancelled!"
-
   proc cb(data: pointer) =
     if future.failed():
-      raise newException(FutureDefect, getErrorMessage())
+      raise newException(FutureDefect, taskErrorMessage(future))
     elif future.cancelled():
-      raise newException(FutureDefect, getCancelMessage())
+      raise newException(FutureDefect, taskCancelMessage(future))
 
   if not(future.finished()):
     # We adding completion callback only if ``future`` is not finished yet.
     future.addCallback(cb)
   else:
-    if future.failed():
-      raise newException(FutureDefect, getErrorMessage())
-    elif future.cancelled():
-      raise newException(FutureDefect, getCancelMessage())
+    cb(nil)
 
 proc asyncCheck*[T](future: Future[T]) {.
     deprecated: "Raises Defect on future failure, fix your code and use asyncSpawn!".} =
@@ -553,7 +551,20 @@ proc asyncCheck*[T](future: Future[T]) {.
   ## the given future failed - there's no way to handle such exceptions so this
   ## function is now an alias for `asyncSpawn`
   ##
-  asyncSpawn(future)
+  when T is void:
+    asyncSpawn(future)
+  else:
+    proc cb(data: pointer) =
+      if future.failed():
+        raise newException(FutureDefect, taskErrorMessage(future))
+      elif future.cancelled():
+        raise newException(FutureDefect, taskCancelMessage(future))
+
+    if not(future.finished()):
+      # We adding completion callback only if ``future`` is not finished yet.
+      future.addCallback(cb)
+    else:
+      cb(nil)
 
 proc asyncDiscard*[T](future: Future[T]) {.
     deprecated: "Use asyncSpawn or `discard await`".} = discard
