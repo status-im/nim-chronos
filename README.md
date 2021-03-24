@@ -15,6 +15,7 @@ Chronos is an efficient [async/await](https://en.wikipedia.org/wiki/Async/await)
 * Cancellation support
 * Synchronization primitivies like queues, events and locks
 * FIFO processing order of dispatch queue
+* Minimal exception effect support (see [exception effects](#exception-effects))
 
 ## Installation
 
@@ -198,15 +199,49 @@ proc p3() {.async.} =
     fut2 = p2()
   try:
     await fut1
-  except:
+  except CachableError:
     echo "p1() failed: ", fut1.error.name, ": ", fut1.error.msg
   echo "reachable code here"
   await fut2
 ```
 
-Exceptions inheriting from `Defect` are treated differently, being raised
-directly. Don't try to catch them coming out of `poll()`, because this would
-leave behind some zombie futures.
+Chronos does not allow that future continuations and other callbacks raise
+`CatchableError` - as such, calls to `poll` will never raise exceptions caused
+originating from tasks on the dispatcher queue. It is however possible that
+`Defect` that happen in tasks bubble up through `poll` as these are not caught
+by the transformation.
+
+### Platform independence
+
+Several functions in `chronos` are backed by the operating system, such as
+waiting for network events, creating files and sockets etc. The specific
+exceptions that are raised by the OS is platform-dependent, thus such functions
+are declared as raising `CatchableError` but will in general raise something
+more specific. In particular, it's possible that some functions that are
+annotated as raising `CatchableError` only raise on _some_ platforms - in order
+to work on all platforms, calling code must assume that they will raise even
+when they don't seem to do so on one platform.
+
+### Exception effects
+
+`chronos` currently offers minimal support for exception effects and `raises`
+annotations. In general, during the `async` transformation, a generic
+`except CatchableError` handler is added around the entire function being
+transformed, in order to catch any exceptions and transfer them to the `Future`.
+Because of this, the effect system thinks no exceptions are "leaking" because in
+fact, exception _handling_ is deferred to when the future is being read.
+
+Effectively, this means that while code can be compiled with
+`{.push raises: [Defect]}`, the intended effect propagation and checking is
+**disabled** for `async` functions.
+
+To enable checking exception effects in `async` code, enable strict mode with
+`-d:chronosStrictException`.
+
+In the strict mode, `async` functions are checked such that they only raise
+`CatchableError` and thus must make sure to explicitly specify exception
+effects on forward declarations, callbacks and methods using
+`{.raises: [CatchableError].}` (or more strict) annotations.
 
 ## TODO
   * Pipe/Subprocess Transports.

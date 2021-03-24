@@ -9,6 +9,8 @@
 
 ## This module provides cross-platform wrapper for ``sendfile()`` syscall.
 
+{.push raises: [Defect].}
+
 when defined(nimdoc):
   proc sendfile*(outfd, infd: int, offset: int, count: var int): int =
     ## Copies data between file descriptor ``infd`` and ``outfd``. Because this

@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 type
   SrcLoc* = object
     procedure*: cstring

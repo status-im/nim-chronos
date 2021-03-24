@@ -7,7 +7,12 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 
-import net, nativesockets, asyncloop
+{.push raises: [Defect].}
+
+import
+  std/[net, nativesockets],
+  ./selectors2,
+  ./asyncloop
 
 when defined(windows):
   import os, winlean
@@ -88,7 +93,8 @@ proc getSocketError*(socket: AsyncFD, err: var int): bool =
   result = getSockOpt(socket, cint(SOL_SOCKET), cint(SO_ERROR), err)
 
 proc createAsyncSocket*(domain: Domain, sockType: SockType,
-                        protocol: Protocol): AsyncFD =
+                        protocol: Protocol): AsyncFD {.
+    raises: [Defect, CatchableError].} =
   ## Creates new asynchronous socket.
   ## Returns ``asyncInvalidSocket`` on error.
   let handle = createNativeSocket(domain, sockType, protocol)
@@ -104,7 +110,8 @@ proc createAsyncSocket*(domain: Domain, sockType: SockType,
   result = AsyncFD(handle)
   register(result)
 
-proc wrapAsyncSocket*(sock: SocketHandle): AsyncFD =
+proc wrapAsyncSocket*(sock: SocketHandle): AsyncFD {.
+    raises: [Defect, CatchableError].} =
   ## Wraps socket to asynchronous socket handle.
   ## Return ``asyncInvalidSocket`` on error.
   if not setSocketBlocking(sock, false):
@@ -117,7 +124,7 @@ proc wrapAsyncSocket*(sock: SocketHandle): AsyncFD =
   result = AsyncFD(sock)
   register(result)
 
-proc getMaxOpenFiles*(): int =
+proc getMaxOpenFiles*(): int {.raises: [Defect, OSError].} =
   ## Returns maximum file descriptor number that can be opened by this process.
   ##
   ## Note: On Windows its impossible to obtain such number, so getMaxOpenFiles()
@@ -131,7 +138,7 @@ proc getMaxOpenFiles*(): int =
       raiseOSError(osLastError())
     result = int(limits.rlim_cur)
 
-proc setMaxOpenFiles*(count: int) =
+proc setMaxOpenFiles*(count: int) {.raises: [Defect, OSError].} =
   ## Set maximum file descriptor number that can be opened by this process.
   ##
   ## Note: On Windows its impossible to set this value, so it just a nop call.

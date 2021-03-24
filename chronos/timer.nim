@@ -24,6 +24,8 @@
 ## You can specify which timer you want to use ``-d:asyncTimer=<system/mono>``.
 const asyncTimer* {.strdefine.} = "mono"
 
+{.push raises: [Defect].}
+
 when defined(windows):
   when asyncTimer == "system":
     from winlean import getSystemTimeAsFileTime, FILETIME

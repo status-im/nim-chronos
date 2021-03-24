@@ -6,11 +6,12 @@
 #              Licensed under either of
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
-import net, nativesockets, os, deques
-import ../asyncloop, ../handles
-import common
 
-{.deadCodeElim: on.}
+{.push raises: [Defect].}
+
+import std/[net, nativesockets, os, deques]
+import ".."/[asyncloop, handles, selectors2]
+import common
 
 when defined(windows):
   import winlean
@@ -62,7 +63,7 @@ type
 
   ReadMessagePredicate* = proc (data: openarray[byte]): tuple[consumed: int,
                                                               done: bool] {.
-    gcsafe, raises: [].}
+    gcsafe, raises: [Defect].}
 
 const
   StreamTransportTrackerName = "stream.transport"
@@ -78,7 +79,7 @@ when defined(windows):
       reader: Future[void]            # Current reader Future
       buffer: seq[byte]               # Reading buffer
       offset: int                     # Reading buffer offset
-      error: ref Exception            # Current error
+      error: ref CatchableError       # Current error
       queue: Deque[StreamVector]      # Writer queue
       future: Future[void]            # Stream life future
       # Windows specific part
@@ -105,7 +106,7 @@ else:
       reader: Future[void]            # Current reader Future
       buffer: seq[byte]               # Reading buffer
       offset: int                     # Reading buffer offset
-      error: ref Exception            # Current error
+      error: ref CatchableError       # Current error
       queue: Deque[StreamVector]      # Writer queue
       future: Future[void]            # Stream life future
       case kind*: TransportKind
@@ -120,13 +121,13 @@ else:
 
 type
   StreamCallback* = proc(server: StreamServer,
-                         client: StreamTransport): Future[void] {.gcsafe.}
+                         client: StreamTransport): Future[void] {.gcsafe, raises: [Defect].}
     ## New remote client connection callback
     ## ``server`` - StreamServer object.
     ## ``client`` - accepted client transport.
 
   TransportInitCallback* = proc(server: StreamServer,
-                                fd: AsyncFD): StreamTransport {.gcsafe.}
+                                fd: AsyncFD): StreamTransport {.gcsafe, raises: [Defect].}
     ## Custom transport initialization procedure, which can allocate inherited
     ## StreamTransport object.
 
@@ -137,7 +138,8 @@ type
     init*: TransportInitCallback      # callback which will be called before
                                       # transport for new client
 
-proc remoteAddress*(transp: StreamTransport): TransportAddress =
+proc remoteAddress*(transp: StreamTransport): TransportAddress {.
+    raises: [Defect, TransportError].} =
   ## Returns ``transp`` remote socket address.
   if transp.kind != TransportKind.Socket:
     raise newException(TransportError, "Socket required!")
@@ -150,7 +152,8 @@ proc remoteAddress*(transp: StreamTransport): TransportAddress =
     fromSAddr(addr saddr, slen, transp.remote)
   result = transp.remote
 
-proc localAddress*(transp: StreamTransport): TransportAddress =
+proc localAddress*(transp: StreamTransport): TransportAddress {.
+    raises: [Defect, TransportError].} =
   ## Returns ``transp`` local socket address.
   if transp.kind != TransportKind.Socket:
     raise newException(TransportError, "Socket required!")
@@ -196,8 +199,8 @@ template shiftVectorFile(v, o: untyped) =
   (v).buf = cast[pointer](cast[uint]((v).buf) - cast[uint](o))
   (v).offset += cast[uint]((o))
 
-proc setupStreamTransportTracker(): StreamTransportTracker {.gcsafe.}
-proc setupStreamServerTracker(): StreamServerTracker {.gcsafe.}
+proc setupStreamTransportTracker(): StreamTransportTracker {.gcsafe, raises: [Defect].}
+proc setupStreamServerTracker(): StreamServerTracker {.gcsafe, raises: [Defect].}
 
 proc getStreamTransportTracker(): StreamTransportTracker {.inline.} =
   result = cast[StreamTransportTracker](getTracker(StreamTransportTrackerName))
@@ -267,7 +270,7 @@ proc completePendingWriteQueue(queue: var Deque[StreamVector],
       vector.writer.complete(v)
 
 proc failPendingWriteQueue(queue: var Deque[StreamVector],
-                           error: ref Exception) {.inline.} =
+                           error: ref CatchableError) {.inline.} =
   while len(queue) > 0:
     var vector = queue.popFirst()
     if not(vector.writer.finished()):
@@ -704,8 +707,11 @@ when defined(windows):
 
       toSAddr(raddress, saddr, slen)
       proto = Protocol.IPPROTO_TCP
-      sock = createAsyncSocket(raddress.getDomain(), SockType.SOCK_STREAM,
+      sock = try: createAsyncSocket(raddress.getDomain(), SockType.SOCK_STREAM,
                                proto)
+      except CatchableError as exc:
+        retFuture.fail(exc)
+        return retFuture
       if sock == asyncInvalidSocket:
         retFuture.fail(getTransportOsError(osLastError()))
         return retFuture
@@ -760,7 +766,8 @@ when defined(windows):
     elif address.family == AddressFamily.Unix:
       ## Unix domain socket emulation with Windows Named Pipes.
       var pipeHandle = INVALID_HANDLE_VALUE
-      proc pipeContinuation(udata: pointer) {.gcsafe.} =
+      var pipeContinuation: proc (udata: pointer) {.gcsafe, raises: [Defect].}
+      pipeContinuation = proc (udata: pointer) =
         # Continue only if `retFuture` is not cancelled.
         if not(retFuture.finished()):
           var pipeSuffix = $cast[cstring](unsafeAddr address.address_un[0])
@@ -777,9 +784,17 @@ when defined(windows):
             else:
               retFuture.fail(getTransportOsError(err))
           else:
-            register(AsyncFD(pipeHandle))
-            let transp = newStreamPipeTransport(AsyncFD(pipeHandle),
+            try:
+              register(AsyncFD(pipeHandle))
+            except CatchableError as exc:
+              retFuture.fail(exc)
+              return
+
+            let transp = try: newStreamPipeTransport(AsyncFD(pipeHandle),
                                                 bufferSize, child)
+            except CatchableError as exc:
+              retFuture.fail(exc)
+              return
             # Start tracking transport
             trackStream(transp)
             retFuture.complete(transp)
@@ -787,7 +802,8 @@ when defined(windows):
 
     return retFuture
 
-  proc createAcceptPipe(server: StreamServer) =
+  proc createAcceptPipe(server: StreamServer) {.
+      raises: [Defect, CatchableError].} =
     let pipeSuffix = $cast[cstring](addr server.local.address_un)
     let pipeName = newWideCString(r"\\.\pipe\" & pipeSuffix[1 .. ^1])
     var openMode = PIPE_ACCESS_DUPLEX or FILE_FLAG_OVERLAPPED
@@ -840,7 +856,7 @@ when defined(windows):
             # We should not raise defects in this loop.
             discard disconnectNamedPipe(Handle(server.sock))
             discard closeHandle(HANDLE(server.sock))
-            raiseTransportOsError(osLastError())
+            raiseAssert osErrorMsg(osLastError())
         else:
           # Server close happens in callback, and we are not started new
           # connectNamedPipe session.
@@ -864,10 +880,12 @@ when defined(windows):
                                            DWORD(server.bufferSize),
                                            DWORD(0), nil)
           if pipeHandle == INVALID_HANDLE_VALUE:
-            raiseTransportOsError(osLastError())
+            raiseAssert osErrorMsg(osLastError())
           server.sock = AsyncFD(pipeHandle)
           server.aovl.data.fd = AsyncFD(pipeHandle)
-          register(server.sock)
+          try: register(server.sock)
+          except CatchableError as exc:
+            raiseAsDefect exc, "register"
           let res = connectNamedPipe(pipeHandle,
                                      cast[POVERLAPPED](addr server.aovl))
           if res == 0:
@@ -880,7 +898,7 @@ when defined(windows):
             elif int32(err) == ERROR_PIPE_CONNECTED:
               discard
             else:
-              raiseTransportOsError(err)
+              raiseAssert osErrorMsg(err)
           break
         else:
           # Server close happens in callback, and we are not started new
@@ -905,7 +923,7 @@ when defined(windows):
                           SockLen(sizeof(SocketHandle))) != 0'i32:
               let err = OSErrorCode(wsaGetLastError())
               server.asock.closeSocket()
-              raiseTransportOsError(err)
+              raiseAssert osErrorMsg(err)
             else:
               var ntransp: StreamTransport
               if not isNil(server.init):
@@ -930,7 +948,7 @@ when defined(windows):
             break
           else:
             server.asock.closeSocket()
-            raiseTransportOsError(ovl.data.errCode)
+            raiseAssert $(ovl.data.errCode)
         else:
           # Server close happens in callback, and we are not started new
           # AcceptEx session.
@@ -941,10 +959,12 @@ when defined(windows):
         ## Initiation
         if server.status notin {ServerStatus.Stopped, ServerStatus.Closed}:
           server.apending = true
-          server.asock = createAsyncSocket(server.domain, SockType.SOCK_STREAM,
+          # TODO No way to report back errors!
+          server.asock = try: createAsyncSocket(server.domain, SockType.SOCK_STREAM,
                                            Protocol.IPPROTO_TCP)
+          except CatchableError as exc: raiseAsDefect exc, "createAsyncSocket"
           if server.asock == asyncInvalidSocket:
-            raiseTransportOsError(OSErrorCode(wsaGetLastError()))
+            raiseAssert osErrorMsg(OSErrorCode(wsaGetLastError()))
 
           var dwBytesReceived = DWORD(0)
           let dwReceiveDataLength = DWORD(0)
@@ -965,7 +985,7 @@ when defined(windows):
             elif int32(err) == ERROR_IO_PENDING:
               discard
             else:
-              raiseTransportOsError(err)
+              raiseAssert osErrorMsg(err)
           break
         else:
           # Server close happens in callback, and we are not started new
@@ -1071,8 +1091,13 @@ when defined(windows):
             ntransp = newStreamPipeTransport(server.sock, server.bufferSize,
                                              nil, flags)
           # Start tracking transport
+          try:
+            server.createAcceptPipe()
+          except CatchableError as exc:
+            closeHandle(server.sock)
+            retFuture.fail(exc)
+            return
           trackStream(ntransp)
-          server.createAcceptPipe()
           retFuture.complete(ntransp)
 
         elif int32(ovl.data.errCode) in {ERROR_OPERATION_ABORTED,
@@ -1082,8 +1107,14 @@ when defined(windows):
           server.clean()
         else:
           let sock = server.sock
-          server.createAcceptPipe()
+          try:
+            server.createAcceptPipe()
+          except CatchableError as exc:
+            closeHandle(sock)
+            retFuture.fail(exc)
+            return
           closeHandle(sock)
+
           retFuture.fail(getTransportOsError(ovl.data.errCode))
 
     proc cancellationPipe(udata: pointer) {.gcsafe.} =
@@ -1092,8 +1123,12 @@ when defined(windows):
     if server.local.family in {AddressFamily.IPv4, AddressFamily.IPv6}:
       # TCP Sockets part
       var loop = getThreadDispatcher()
-      server.asock = createAsyncSocket(server.domain, SockType.SOCK_STREAM,
+      server.asock = try: createAsyncSocket(server.domain, SockType.SOCK_STREAM,
                                        Protocol.IPPROTO_TCP)
+      except CatchableError as exc:
+        retFuture.fail(exc)
+        return retFuture
+
       if server.asock == asyncInvalidSocket:
         let err = osLastError()
         if int32(err) == ERROR_TOO_MANY_OPEN_FILES:
@@ -1173,7 +1208,8 @@ else:
     result = (err == OSErrorCode(ECONNRESET)) or
              (err == OSErrorCode(EPIPE))
 
-  proc writeStreamLoop(udata: pointer) {.gcsafe.} =
+  proc writeStreamLoop(udata: pointer) =
+    # TODO fix Defect raises - they "shouldn't" happen
     var cdata = cast[ptr CompletionData](udata)
     var transp = cast[StreamTransport](cdata.udata)
     let fd = SocketHandle(cdata.fd)
@@ -1206,7 +1242,13 @@ else:
                 if int(err) == EINTR:
                   continue
                 else:
-                  transp.fd.removeWriter()
+                  try:
+                    transp.fd.removeWriter()
+                  except IOSelectorsException as exc:
+                    raiseAsDefect exc, "removeWriter"
+                  except ValueError as exc:
+                    raiseAsDefect exc, "removeWriter"
+
                   if isConnResetError(err):
                     # Soft error happens which indicates that remote peer got
                     # disconnected, complete all pending writes in queue with 0.
@@ -1239,7 +1281,13 @@ else:
                 if int(err) == EINTR:
                   continue
                 else:
-                  transp.fd.removeWriter()
+                  try:
+                    transp.fd.removeWriter()
+                  except IOSelectorsException as exc:
+                    raiseAsDefect exc, "removeWriter"
+                  except ValueError as exc:
+                    raiseAsDefect exc, "removeWriter"
+
                   if isConnResetError(err):
                     # Soft error happens which indicates that remote peer got
                     # disconnected, complete all pending writes in queue with 0.
@@ -1270,7 +1318,13 @@ else:
                 if int(err) == EINTR:
                   continue
                 else:
-                  transp.fd.removeWriter()
+                  try:
+                    transp.fd.removeWriter()
+                  except IOSelectorsException as exc:
+                    raiseAsDefect exc, "removeWriter"
+                  except ValueError as exc:
+                    raiseAsDefect exc, "removeWriter"
+
                   if isConnResetError(err):
                     # Soft error happens which indicates that remote peer got
                     # disconnected, complete all pending writes in queue with 0.
@@ -1303,7 +1357,12 @@ else:
                 if int(err) == EINTR:
                   continue
                 else:
-                  transp.fd.removeWriter()
+                  try:
+                    transp.fd.removeWriter()
+                  except IOSelectorsException as exc:
+                    raiseAsDefect exc, "removeWriter"
+                  except ValueError as exc:
+                    raiseAsDefect exc, "removeWriter"
                   if isConnResetError(err):
                     # Soft error happens which indicates that remote peer got
                     # disconnected, complete all pending writes in queue with 0.
@@ -1320,9 +1379,15 @@ else:
             break
       else:
         transp.state.incl(WritePaused)
-        transp.fd.removeWriter()
+        try:
+          transp.fd.removeWriter()
+        except IOSelectorsException as exc:
+          raiseAsDefect exc, "removeWriter"
+        except ValueError as exc:
+          raiseAsDefect exc, "removeWriter"
 
-  proc readStreamLoop(udata: pointer) {.gcsafe.} =
+  proc readStreamLoop(udata: pointer) =
+    # TODO fix Defect raises - they "shouldn't" happen
     var cdata = cast[ptr CompletionData](udata)
     var transp = cast[StreamTransport](cdata.udata)
     let fd = SocketHandle(cdata.fd)
@@ -1345,19 +1410,39 @@ else:
               continue
             elif int(err) in {ECONNRESET}:
               transp.state.incl({ReadEof, ReadPaused})
-              cdata.fd.removeReader()
+              try:
+                cdata.fd.removeReader()
+              except IOSelectorsException as exc:
+                raiseAsDefect exc, "removeReader"
+              except ValueError as exc:
+                raiseAsDefect exc, "removeReader"
             else:
               transp.state.incl(ReadPaused)
               transp.setReadError(err)
-              cdata.fd.removeReader()
+              try:
+                cdata.fd.removeReader()
+              except IOSelectorsException as exc:
+                raiseAsDefect exc, "removeReader"
+              except ValueError as exc:
+                raiseAsDefect exc, "removeReader"
           elif res == 0:
             transp.state.incl({ReadEof, ReadPaused})
-            cdata.fd.removeReader()
+            try:
+              cdata.fd.removeReader()
+            except IOSelectorsException as exc:
+              raiseAsDefect exc, "removeReader"
+            except ValueError as exc:
+              raiseAsDefect exc, "removeReader"
           else:
             transp.offset += res
             if transp.offset == len(transp.buffer):
               transp.state.incl(ReadPaused)
-              cdata.fd.removeReader()
+              try:
+                cdata.fd.removeReader()
+              except IOSelectorsException as exc:
+                raiseAsDefect exc, "removeReader"
+              except ValueError as exc:
+                raiseAsDefect exc, "removeReader"
           transp.completeReader()
           break
       elif transp.kind == TransportKind.Pipe:
@@ -1371,15 +1456,30 @@ else:
             else:
               transp.state.incl(ReadPaused)
               transp.setReadError(err)
-              cdata.fd.removeReader()
+              try:
+                cdata.fd.removeReader()
+              except IOSelectorsException as exc:
+                raiseAsDefect exc, "removeReader"
+              except ValueError as exc:
+                raiseAsDefect exc, "removeReader"
           elif res == 0:
             transp.state.incl({ReadEof, ReadPaused})
-            cdata.fd.removeReader()
+            try:
+              cdata.fd.removeReader()
+            except IOSelectorsException as exc:
+              raiseAsDefect exc, "removeReader"
+            except ValueError as exc:
+              raiseAsDefect exc, "removeReader"
           else:
             transp.offset += res
             if transp.offset == len(transp.buffer):
               transp.state.incl(ReadPaused)
-              cdata.fd.removeReader()
+              try:
+                cdata.fd.removeReader()
+              except IOSelectorsException as exc:
+                raiseAsDefect exc, "removeReader"
+              except ValueError as exc:
+                raiseAsDefect exc, "removeReader"
           transp.completeReader()
           break
 
@@ -1424,7 +1524,6 @@ else:
     var
       saddr: Sockaddr_storage
       slen: SockLen
-      sock: AsyncFD
       proto: Protocol
     var retFuture = newFuture[StreamTransport]("stream.transport.connect")
     address.toSAddr(saddr, slen)
@@ -1433,8 +1532,13 @@ else:
       # `Protocol` enum is missing `0` value, so we making here cast, until
       # `Protocol` enum will not support IPPROTO_IP == 0.
       proto = cast[Protocol](0)
-    sock = createAsyncSocket(address.getDomain(), SockType.SOCK_STREAM,
-                             proto)
+
+    let sock = try: createAsyncSocket(address.getDomain(), SockType.SOCK_STREAM,
+                              proto)
+    except CatchableError as exc:
+      retFuture.fail(exc)
+      return retFuture
+
     if sock == asyncInvalidSocket:
       let err = osLastError()
       if int(err) == EMFILE:
@@ -1443,12 +1547,20 @@ else:
         retFuture.fail(getTransportOsError(err))
       return retFuture
 
-    proc continuation(udata: pointer) {.gcsafe.} =
+    proc continuation(udata: pointer) =
       if not(retFuture.finished()):
         var data = cast[ptr CompletionData](udata)
         var err = 0
         let fd = data.fd
-        fd.removeWriter()
+        try:
+          fd.removeWriter()
+        except IOSelectorsException as exc:
+          retFuture.fail(exc)
+          return
+        except ValueError as exc:
+          retFuture.fail(exc)
+          return
+
         if not fd.getSocketError(err):
           closeSocket(fd)
           retFuture.fail(getTransportOsError(osLastError()))
@@ -1462,7 +1574,7 @@ else:
         trackStream(transp)
         retFuture.complete(transp)
 
-    proc cancel(udata: pointer) {.gcsafe.} =
+    proc cancel(udata: pointer) =
       closeSocket(sock)
 
     while true:
@@ -1483,11 +1595,18 @@ else:
         #
         # http://www.madore.org/~david/computers/connect-intr.html
         if int(err) == EINPROGRESS or int(err) == EINTR:
-          sock.addWriter(continuation)
+          try:
+            sock.addWriter(continuation)
+          except CatchableError as exc:
+            closeSocket(sock)
+            retFuture.fail(exc)
+            return retFuture
+
           retFuture.cancelCallback = cancel
           break
         else:
           sock.closeSocket()
+
           retFuture.fail(getTransportOsError(err))
           break
     return retFuture
@@ -1504,7 +1623,9 @@ else:
       let res = posix.accept(SocketHandle(server.sock),
                              cast[ptr SockAddr](addr saddr), addr slen)
       if int(res) > 0:
-        let sock = wrapAsyncSocket(res)
+        let sock = try: wrapAsyncSocket(res)
+        except CatchableError as exc:
+          raiseAsDefect exc, "wrapAsyncSocket"
         if sock != asyncInvalidSocket:
           var ntransp: StreamTransport
           if not isNil(server.init):
@@ -1526,23 +1647,37 @@ else:
           break
         else:
           ## Critical unrecoverable error
-          raiseTransportOsError(err)
+          raiseAssert $err
 
-  proc resumeAccept(server: StreamServer) =
+  proc resumeAccept(server: StreamServer) {.
+      raises: [Defect, IOSelectorsException, ValueError].} =
     addReader(server.sock, acceptLoop, cast[pointer](server))
 
-  proc pauseAccept(server: StreamServer) =
+  proc pauseAccept(server: StreamServer) {.
+      raises: [Defect, IOSelectorsException, ValueError].} =
     removeReader(server.sock)
 
   proc resumeRead(transp: StreamTransport) {.inline.} =
     if ReadPaused in transp.state:
       transp.state.excl(ReadPaused)
-      addReader(transp.fd, readStreamLoop, cast[pointer](transp))
+      # TODO reset flag on exception??
+      try:
+        addReader(transp.fd, readStreamLoop, cast[pointer](transp))
+      except IOSelectorsException as exc:
+        raiseAsDefect exc, "addReader"
+      except ValueError as exc:
+        raiseAsDefect exc, "addReader"
 
   proc resumeWrite(transp: StreamTransport) {.inline.} =
     if WritePaused in transp.state:
       transp.state.excl(WritePaused)
-      addWriter(transp.fd, writeStreamLoop, cast[pointer](transp))
+      # TODO reset flag on exception??
+      try:
+        addWriter(transp.fd, writeStreamLoop, cast[pointer](transp))
+      except IOSelectorsException as exc:
+        raiseAsDefect exc, "addWriter"
+      except ValueError as exc:
+        raiseAsDefect exc, "addWriter"
 
   proc accept*(server: StreamServer): Future[StreamTransport] =
     var retFuture = newFuture[StreamTransport]("stream.server.accept")
@@ -1565,7 +1700,12 @@ else:
           let res = posix.accept(SocketHandle(server.sock),
                                  cast[ptr SockAddr](addr saddr), addr slen)
           if int(res) > 0:
-            let sock = wrapAsyncSocket(res)
+            let sock = try: wrapAsyncSocket(res)
+            except CatchableError as exc:
+              close(res)
+              retFuture.fail(exc)
+              return
+
             if sock != asyncInvalidSocket:
               var ntransp: StreamTransport
               if not isNil(server.init):
@@ -1592,23 +1732,41 @@ else:
             else:
               retFuture.fail(getTransportOsError(err))
           break
-      removeReader(server.sock)
+      try:
+        removeReader(server.sock)
+      except IOSelectorsException as exc:
+        raiseAsDefect exc, "removeReader"
+      except ValueError as exc:
+        raiseAsDefect exc, "removeReader"
 
-    proc cancellation(udata: pointer) {.gcsafe.} =
-      removeReader(server.sock)
+    proc cancellation(udata: pointer) =
+      try:
+        removeReader(server.sock)
+      except IOSelectorsException as exc:
+        raiseAsDefect exc, "removeReader"
+      except ValueError as exc:
+        raiseAsDefect exc, "removeReader"
 
-    addReader(server.sock, continuation, nil)
+    try:
+      addReader(server.sock, continuation, nil)
+    except IOSelectorsException as exc:
+      raiseAsDefect exc, "addReader"
+    except ValueError as exc:
+      raiseAsDefect exc, "addReader"
+
     retFuture.cancelCallback = cancellation
     return retFuture
 
-proc start*(server: StreamServer) =
+proc start*(server: StreamServer) {.
+    raises: [Defect, IOSelectorsException, ValueError].} =
   ## Starts ``server``.
   doAssert(not(isNil(server.function)))
   if server.status == ServerStatus.Starting:
     server.resumeAccept()
     server.status = ServerStatus.Running
 
-proc stop*(server: StreamServer) =
+proc stop*(server: StreamServer) {.
+    raises: [Defect, IOSelectorsException, ValueError].} =
   ## Stops ``server``.
   if server.status == ServerStatus.Running:
     server.pauseAccept()
@@ -1620,10 +1778,10 @@ proc join*(server: StreamServer): Future[void] =
   ## Waits until ``server`` is not closed.
   var retFuture = newFuture[void]("stream.transport.server.join")
 
-  proc continuation(udata: pointer) {.gcsafe.} =
+  proc continuation(udata: pointer) =
     retFuture.complete()
 
-  proc cancel(udata: pointer) {.gcsafe.} =
+  proc cancel(udata: pointer) =
     server.loopFuture.removeCallback(continuation, cast[pointer](retFuture))
 
   if not(server.loopFuture.finished()):
@@ -1638,7 +1796,7 @@ proc close*(server: StreamServer) =
   ##
   ## Please note that release of resources is not completed immediately, to be
   ## sure all resources got released please use ``await server.join()``.
-  proc continuation(udata: pointer) {.gcsafe.} =
+  proc continuation(udata: pointer) =
     # Stop tracking server
     if not(server.loopFuture.finished()):
       server.clean()
@@ -1680,7 +1838,8 @@ proc createStreamServer*(host: TransportAddress,
                          bufferSize: int = DefaultStreamBufferSize,
                          child: StreamServer = nil,
                          init: TransportInitCallback = nil,
-                         udata: pointer = nil): StreamServer =
+                         udata: pointer = nil): StreamServer {.
+    raises: [Defect, CatchableError].} =
   ## Create new TCP stream server.
   ##
   ## ``host`` - address to which server will be bound.
@@ -1707,6 +1866,7 @@ proc createStreamServer*(host: TransportAddress,
         serverSocket = createAsyncSocket(host.getDomain(),
                                          SockType.SOCK_STREAM,
                                          Protocol.IPPROTO_TCP)
+
         if serverSocket == asyncInvalidSocket:
           raiseTransportOsError(osLastError())
       else:
@@ -1770,6 +1930,7 @@ proc createStreamServer*(host: TransportAddress,
       if not setSocketBlocking(SocketHandle(sock), false):
         raiseTransportOsError(osLastError())
       register(sock)
+
       serverSocket = sock
 
     if host.family in {AddressFamily.IPv4, AddressFamily.IPv6}:
@@ -1869,7 +2030,8 @@ proc createStreamServer*(host: TransportAddress,
                          bufferSize: int = DefaultStreamBufferSize,
                          child: StreamServer = nil,
                          init: TransportInitCallback = nil,
-                         udata: pointer = nil): StreamServer =
+                         udata: pointer = nil): StreamServer {.
+    raises: [Defect, CatchableError].} =
   result = createStreamServer(host, nil, flags, sock, backlog, bufferSize,
                               child, init, cast[pointer](udata))
 
@@ -1881,7 +2043,8 @@ proc createStreamServer*[T](host: TransportAddress,
                             backlog: int = 100,
                             bufferSize: int = DefaultStreamBufferSize,
                             child: StreamServer = nil,
-                            init: TransportInitCallback = nil): StreamServer =
+                            init: TransportInitCallback = nil): StreamServer {.
+    raises: [Defect, CatchableError].} =
   var fflags = flags + {GCUserData}
   GC_ref(udata)
   result = createStreamServer(host, cbproc, fflags, sock, backlog, bufferSize,
@@ -1894,7 +2057,8 @@ proc createStreamServer*[T](host: TransportAddress,
                             backlog: int = 100,
                             bufferSize: int = DefaultStreamBufferSize,
                             child: StreamServer = nil,
-                            init: TransportInitCallback = nil): StreamServer =
+                            init: TransportInitCallback = nil): StreamServer {.
+    raises: [Defect, CatchableError].} =
   var fflags = flags + {GCUserData}
   GC_ref(udata)
   result = createStreamServer(host, nil, fflags, sock, backlog, bufferSize,
@@ -1959,10 +2123,12 @@ proc writeFile*(transp: StreamTransport, handle: int,
   ##
   ## You can specify starting ``offset`` in opened file and number of bytes
   ## to transfer from file to transport via ``size``.
+  var retFuture = newFuture[int]("stream.transport.writeFile")
   when defined(windows):
     if transp.kind != TransportKind.Socket:
-      raise newException(TransportNoSupport, "writeFile() is not supported!")
-  var retFuture = newFuture[int]("stream.transport.writeFile")
+      retFuture.fail(newException(
+        TransportNoSupport, "writeFile() is not supported!"))
+      return retFuture
   transp.checkClosed(retFuture)
   transp.checkWriteEof(retFuture)
   var vector = StreamVector(kind: DataFile, writer: retFuture,
@@ -2295,11 +2461,13 @@ proc closed*(transp: StreamTransport): bool {.inline.} =
   result = ({ReadClosed, WriteClosed} * transp.state != {})
 
 proc fromPipe*(fd: AsyncFD, child: StreamTransport = nil,
-               bufferSize = DefaultStreamBufferSize): StreamTransport =
+               bufferSize = DefaultStreamBufferSize): StreamTransport {.
+    raises: [Defect, CatchableError].} =
   ## Create new transport object using pipe's file descriptor.
   ##
   ## ``bufferSize`` is size of internal buffer for transport.
   register(fd)
+
   result = newStreamPipeTransport(fd, bufferSize, child)
   # Start tracking transport
   trackStream(result)
