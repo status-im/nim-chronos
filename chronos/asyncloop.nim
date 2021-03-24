@@ -951,7 +951,9 @@ proc withTimeout*[T](fut: Future[T], timeout: Duration): Future[bool] =
   var timer: TimerCallback
   var cancelling = false
 
-  proc continuation(udata: pointer) {.gcsafe.} =
+  # TODO: raises annotation shouldn't be needed, but likely similar issue as
+  # https://github.com/nim-lang/Nim/issues/17369
+  proc continuation(udata: pointer) {.gcsafe, raises: [Defect].} =
     if not(retFuture.finished()):
       if not(cancelling):
         if not(fut.finished()):
@@ -967,7 +969,9 @@ proc withTimeout*[T](fut: Future[T], timeout: Duration): Future[bool] =
       else:
         retFuture.complete(false)
 
-  proc cancellation(udata: pointer) {.gcsafe.} =
+  # TODO: raises annotation shouldn't be needed, but likely similar issue as
+  # https://github.com/nim-lang/Nim/issues/17369
+  proc cancellation(udata: pointer) {.gcsafe, raises: [Defect].} =
     if not isNil(timer):
       clearTimer(timer)
     if not(fut.finished()):
