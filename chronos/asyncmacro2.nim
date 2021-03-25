@@ -92,7 +92,7 @@ else:
         retFutureSym.fail(exc)
       except Exception as exc:
         # TODO remove Exception handler to turn on strict mode
-        if exc is Defect:
+        if exc of Defect:
           raise (ref Defect)(exc)
 
         futureVarCompletions
