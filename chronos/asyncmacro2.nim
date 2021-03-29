@@ -184,8 +184,7 @@ proc isInvalidReturnType(typeName: string): bool =
 
 proc verifyReturnType(typeName: string) {.compileTime.} =
   if typeName.isInvalidReturnType:
-    error("Expected return type of 'Future' got '$1'" %
-          typeName)
+    error("Expected return type of 'Future' got '" & typeName & "'")
 
 macro unsupported(s: static[string]): untyped =
   error s
@@ -335,7 +334,10 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
     # Add discardable pragma.
     if returnType.kind == nnkEmpty:
       # Add Future[void]
-      result.params[0] = parseExpr("Future[void]")
+      try:
+        result.params[0] = parseExpr("Future[void]")
+      except ValueError:
+        discard
   if procBody.kind != nnkEmpty:
     result.body = outerProcBody
   #echo(treeRepr(result))
