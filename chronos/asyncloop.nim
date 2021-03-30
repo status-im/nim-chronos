@@ -10,8 +10,6 @@
 
 {.push raises: [Defect].}
 
-include "system/inclrtl"
-
 import std/[os, tables, strutils, heapqueue, lists, options, nativesockets, net,
         deques]
 import ./timer
