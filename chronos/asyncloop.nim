@@ -1073,11 +1073,7 @@ proc wait*[T](fut: Future[T], timeout = -1): Future[T] {.
   else:
     wait(fut, timeout.milliseconds())
 
-{.pop.}
-
 include asyncmacro2
-
-{.push raises: [Defect].}
 
 proc runForever*() {.raises: [Defect, CatchableError].} =
   ## Begins a never ending global dispatcher poll loop.
