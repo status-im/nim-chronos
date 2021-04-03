@@ -900,7 +900,7 @@ proc stepsAsync*(number: int): Future[void] =
   var counter = 0
 
   var continuation: proc(data: pointer) {.gcsafe, raises: [Defect].}
-  continuation = proc(data: pointer) =
+  continuation = proc(data: pointer) {.gcsafe, raises: [Defect].} =
     if not(retFuture.finished()):
       inc(counter)
       if counter < number:
@@ -1033,7 +1033,7 @@ proc wait*[T](fut: Future[T], timeout = InfiniteDuration): Future[T] =
         retFuture.fail(newException(AsyncTimeoutError, "Timeout exceeded!"))
 
   var cancellation: proc(udata: pointer) {.gcsafe, raises: [Defect].}
-  cancellation = proc(udata: pointer) =
+  cancellation = proc(udata: pointer) {.gcsafe, raises: [Defect].} =
     if not isNil(timer):
       clearTimer(timer)
     if not(fut.finished()):

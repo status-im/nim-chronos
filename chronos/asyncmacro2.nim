@@ -27,7 +27,7 @@ when defined(chronosStrictException):
     var nameIterVar = iteratorNameSym
     {.push stackTrace: off.}
     var identName: proc(udata: pointer) {.gcsafe, raises: [Defect].}
-    identName = proc(udata: pointer) {.raises: [Defect].} =
+    identName = proc(udata: pointer) {.gcsafe, raises: [Defect].} =
       try:
         # If the compiler complains about unlisted exception here, it's usually
         # because you're calling a callback or forward declaration in your code
@@ -64,7 +64,7 @@ else:
     var nameIterVar = iteratorNameSym
     {.push stackTrace: off.}
     var identName: proc(udata: pointer) {.gcsafe, raises: [Defect].}
-    identName = proc(udata: pointer) {.raises: [Defect].} =
+    identName = proc(udata: pointer) {.gcsafe, raises: [Defect].} =
       try:
         # If the compiler complains about unlisted exception here, it's usually
         # because you're calling a callback or forward declaration in your code

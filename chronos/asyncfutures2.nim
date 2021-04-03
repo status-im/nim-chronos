@@ -621,7 +621,7 @@ proc `or`*[T, Y](fut1: Future[T], fut2: Future[Y]): Future[void] =
   ## If cancelled, ``fut1`` and ``fut2`` futures WILL NOT BE cancelled.
   var retFuture = newFuture[void]("chronos.or")
   var cb: proc(udata: pointer) {.gcsafe, raises: [Defect].}
-  cb = proc(udata: pointer) =
+  cb = proc(udata: pointer) {.gcsafe, raises: [Defect].} =
     if not(retFuture.finished()):
       var fut = cast[FutureBase](udata)
       if cast[pointer](fut1) == udata:
@@ -912,7 +912,7 @@ proc one*[T](futs: varargs[Future[T]]): Future[Future[T]] =
   var nfuts = @futs
 
   var cb: proc(udata: pointer) {.gcsafe, raises: [Defect].}
-  cb = proc(udata: pointer) =
+  cb = proc(udata: pointer) {.gcsafe, raises: [Defect].} =
     if not(retFuture.finished()):
       var res: Future[T]
       var rfut = cast[FutureBase](udata)
@@ -959,7 +959,7 @@ proc race*(futs: varargs[FutureBase]): Future[FutureBase] =
   var nfuts = @futs
 
   var cb: proc(udata: pointer) {.gcsafe, raises: [Defect].}
-  cb = proc(udata: pointer) =
+  cb = proc(udata: pointer) {.gcsafe, raises: [Defect].} =
     if not(retFuture.finished()):
       var res: FutureBase
       var rfut = cast[FutureBase](udata)
