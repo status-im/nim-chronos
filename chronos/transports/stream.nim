@@ -767,7 +767,7 @@ when defined(windows):
       ## Unix domain socket emulation with Windows Named Pipes.
       var pipeHandle = INVALID_HANDLE_VALUE
       var pipeContinuation: proc (udata: pointer) {.gcsafe, raises: [Defect].}
-      pipeContinuation = proc (udata: pointer) =
+      pipeContinuation = proc (udata: pointer) {.gcsafe, raises: [Defect].} =
         # Continue only if `retFuture` is not cancelled.
         if not(retFuture.finished()):
           var pipeSuffix = $cast[cstring](unsafeAddr address.address_un[0])
