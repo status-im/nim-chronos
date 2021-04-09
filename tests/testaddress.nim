@@ -151,7 +151,7 @@ suite "TransportAddress test suite":
     var errcounter = 0
     for item in numeric:
       try:
-        discard resolveTAddress(item)
+        discard resolveTAddress(item, AddressFamily.IPv4)
       except TransportAddressError:
         inc(errcounter)
     check errcounter == len(numeric)
@@ -168,7 +168,7 @@ suite "TransportAddress test suite":
     var errcounter = 0
     for item in numeric:
       try:
-        discard resolveTAddress(item, Port(443))
+        discard resolveTAddress(item, Port(443), AddressFamily.IPv4)
       except TransportAddressError:
         inc(errcounter)
     check errcounter == len(numeric)
