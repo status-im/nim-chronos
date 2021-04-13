@@ -29,6 +29,7 @@ type
   HttpRecoverableError* = object of HttpError
     code*: HttpCode
   HttpDisconnectError* = object of HttpError
+  HttpConnectionError* = object of HttpError
 
   TransferEncodingFlags* {.pure.} = enum
     Identity, Chunked, Compress, Deflate, Gzip
@@ -38,6 +39,9 @@ type
 
   HttpBodyReader* = ref object of AsyncStreamReader
     streams*: seq[AsyncStreamReader]
+
+  HttpBodyWriter* = ref object of AsyncStreamWriter
+    streams*: seq[AsyncStreamWriter]
 
 proc newHttpBodyReader*(streams: varargs[AsyncStreamReader]): HttpBodyReader =
   ## HttpBodyReader is AsyncStreamReader which holds references to all the
@@ -54,7 +58,7 @@ proc closeWait*(bstream: HttpBodyReader) {.async.} =
   var res = newSeq[Future[void]]()
   # We closing streams in reversed order because stream at position [0], uses
   # data from stream at position [1].
-  for index in countdown((len(bstream.streams) - 1), 0):
+  for index in countdown(len(bstream.streams) - 1, 0):
     res.add(bstream.streams[index].closeWait())
   await allFutures(res)
   await procCall(closeWait(AsyncStreamReader(bstream)))
@@ -75,6 +79,25 @@ proc hasOverflow*(bstream: HttpBodyReader): bool {.raises: [Defect].} =
     else:
       false
 
+proc newHttpBodyWriter*(streams: varargs[AsyncStreamWriter]): HttpBodyWriter =
+  ## HttpBodyWriter is AsyncStreamWriter which holds references to all the
+  ## ``streams``. Also on close it will close all the ``streams``.
+  ##
+  ## First stream in sequence will be used as a destination.
+  doAssert(len(streams) > 0, "At least one stream must be added")
+  var res = HttpBodyWriter(streams: @streams)
+  res.init(streams[0])
+  res
+
+proc closeWait*(bstream: HttpBodyWriter) {.async.} =
+  ## Close and free all the resources allocated by body writer.
+  var res = newSeq[Future[void]]()
+  for index in countdown(len(bstream.streams) - 1, 0):
+    res.add(bstream.streams[index].closeWait())
+  await allFutures(res)
+  await procCall(closeWait(AsyncStreamWriter(bstream)))
+
+
 proc raiseHttpCriticalError*(msg: string,
                              code = Http400) {.noinline, noreturn.} =
   raise (ref HttpCriticalError)(code: code, msg: msg)
@@ -84,6 +107,9 @@ proc raiseHttpDisconnectError*() {.noinline, noreturn.} =
 
 proc raiseHttpDefect*(msg: string) {.noinline, noreturn.} =
   raise (ref HttpDefect)(msg: msg)
+
+proc raiseHttpConnectionError*() {.noinline, noreturn.} =
+  raise (ref HttpConnectionError)(msg: "Could not connect to remote host")
 
 iterator queryParams*(query: string): tuple[key: string, value: string] {.
          raises: [Defect].} =
