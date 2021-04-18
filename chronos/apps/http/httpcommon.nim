@@ -31,8 +31,8 @@ const
   ServerHeader* = "server"
   LocationHeader* = "location"
 
-  UrlEncodedContentType = "application/x-www-form-urlencoded"
-  MultipartContentType = "multipart/form-data"
+  UrlEncodedContentType* = "application/x-www-form-urlencoded"
+  MultipartContentType* = "multipart/form-data"
 
 type
   HttpResult*[T] = Result[T, string]
@@ -146,11 +146,11 @@ proc raiseHttpWriteError*(msg: string) {.noinline, noreturn.} =
 template newHttpInterruptError*(): ref HttpInterruptError =
   newException(HttpInterruptError, "Connection was interrupted")
 
-template newHttpReadError*(msg: string): ref HttpReadError =
-  newException(HttpReadError, msg: msg)
+template newHttpReadError*(message: string): ref HttpReadError =
+  newException(HttpReadError, message)
 
-template newHttpWriteError*(msg: string): ref HttpWriteError =
-  newException(HttpWriteError, msg: msg)
+template newHttpWriteError*(message: string): ref HttpWriteError =
+  newException(HttpWriteError, message)
 
 iterator queryParams*(query: string): tuple[key: string, value: string] {.
          raises: [Defect].} =

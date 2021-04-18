@@ -1,4 +1,4 @@
-import std/[uri, tables, strutils]
+import std/[uri, tables, strutils, sequtils]
 import stew/[results, base10], httputils
 import ../../asyncloop, ../../asyncsync
 import ../../streams/[asyncstream, tlsstream, chunkstream, boundstream]
@@ -17,7 +17,7 @@ const
 
 type
   HttpClientConnectionState* {.pure.} = enum
-    Closed                    ## Connection closed
+    Closed                    ## Connection has been closed
     Resolving,                ## Resolving remote hostname
     Connecting,               ## Connecting to remote server
     Ready,                    ## Connected to remote server
@@ -32,9 +32,11 @@ type
     Error                     ## Error happens
 
   HttpClientConnectionType* {.pure.} = enum
-    NonSecure, Secure
+    NonSecure,                ## Non-secure connection
+    Secure                    ## Secure TLS connection
 
   HttpClientRequestState* {.pure.} = enum
+    Closed,                   ## Request has been closed
     Created,                  ## Request created
     Connecting,               ## Connecting to remote host
     HeadersSending,           ## Sending request headers
@@ -42,14 +44,13 @@ type
     BodySending,              ## Sending request body
     BodySent,                 ## Request body has been sent
     Error,                    ## Error happens
-    Closed                    ## Closed
 
   HttpClientResponseState* {.pure.} = enum
+    Closed,                   ## Response has been closed
     HeadersReceived,          ## Response headers received
     BodyReceiving,            ## Response body receiving
     BodyReceived,             ## Response body received
-    Error,                    ## Error happens
-    Closed                    ## Closed
+    Error                     ## Error happens
 
   HttpClientBodyFlag* {.pure.} = enum
     Sized,                    ## `Content-Length` present
@@ -74,7 +75,7 @@ type
     transp*: StreamTransport
     reader*: AsyncStreamReader
     writer*: AsyncStreamWriter
-    state*: HttpClientState
+    state*: HttpClientConnectionState
     error*: ref HttpError
     remoteHostname*: string
 
@@ -250,7 +251,7 @@ proc new(t: typedesc[HttpClientConnectionRef], session: HttpSessionRef,
       transp: transp,
       reader: newAsyncStreamReader(transp),
       writer: newAsyncStreamWriter(transp),
-      state: HttpClientState.Ready,
+      state: HttpClientConnectionState.Connecting,
       remoteHostname: ha.id
     )
   of HttpClientConnectionType.Secure:
@@ -266,7 +267,7 @@ proc new(t: typedesc[HttpClientConnectionRef], session: HttpSessionRef,
       reader: tls.reader,
       writer: tls.writer,
       tls: tls,
-      state: HttpClientState.Connecting,
+      state: HttpClientConnectionState.Connecting,
       remoteHostname: ha.id
     )
 
@@ -290,11 +291,12 @@ proc setState(response: HttpClientResponseRef,
   response.state = state
   case state
   of HttpClientResponseState.HeadersReceived:
-    request.connection.state = HttpClientConnectionState.ResponseHeadersReceived
-  of HttpClientResponseState.BodyReceiving
-    request.connection.state = HttpClientConnectionState.ResponseBodyReceiving
-  of HttpClientResponseState.BodyReceived
-    request.connection.state = HttpClientConnectionState.ResponseBodyReceived
+    response.connection.state =
+      HttpClientConnectionState.ResponseHeadersReceived
+  of HttpClientResponseState.BodyReceiving:
+    response.connection.state = HttpClientConnectionState.ResponseBodyReceiving
+  of HttpClientResponseState.BodyReceived:
+    response.connection.state = HttpClientConnectionState.ResponseBodyReceived
   else:
     discard
 
@@ -316,17 +318,19 @@ proc setError(response: HttpClientResponseRef, error: ref HttpError) {.
 
 proc closeWait*(conn: HttpClientConnectionRef) {.async.} =
   ## Close HttpClientConnectionRef instance ``conn`` and free all the resources.
-  await allFutures(conn.reader.closeWait(), conn.writer.closeWait())
-  case conn.kind
-  of HttpClientConnectionType.Secure:
-    await allFutures(conn.treader.closeWait(), conn.twriter.closeWait())
-  of HttpClientConnectionType.NonSecure:
-    discard
-  await conn.transp.closeWait()
+  if conn.state != HttpClientConnectionState.Closed:
+    await allFutures(conn.reader.closeWait(), conn.writer.closeWait())
+    case conn.kind
+    of HttpClientConnectionType.Secure:
+      await allFutures(conn.treader.closeWait(), conn.twriter.closeWait())
+    of HttpClientConnectionType.NonSecure:
+      discard
+    await conn.transp.closeWait()
+    conn.state = HttpClientConnectionState.Closed
 
 proc closeWait*(req: HttpClientRequestRef) {.async.} =
   ## Close HttpClientResponseRef instance ``req`` and free all the resources.
-
+  discard
 
 proc closeWait*(resp: HttpClientResponseRef) {.async.} =
   ## Close HttpClientResponseRef instance ``resp`` and free all the resources.
@@ -351,7 +355,8 @@ proc connect(session: HttpSessionRef,
       let conn =
         block:
           let res = HttpClientConnectionRef.new(session, ha, transp)
-          if res.kind == HttpClientConnectionType.Secure:
+          case res.kind
+          of HttpClientConnectionType.Secure:
             try:
               await res.tls.handshake()
               res.state = HttpClientConnectionState.Ready
@@ -359,9 +364,11 @@ proc connect(session: HttpSessionRef,
               await res.closeWait()
               raise exc
             except AsyncStreamError:
-              discard
+              await res.closeWait()
+          of HttpClientConnectionType.Nonsecure:
+            res.state = HttpClientConnectionState.Ready
           res
-      if not(isNil(conn)):
+      if conn.state == HttpClientConnectionState.Ready:
         return conn
 
   # If all attempts to connect to the remote host have failed.
@@ -396,10 +403,15 @@ proc acquireConnection(session: HttpSessionRef,
 
 proc releaseConnection(session: HttpSessionRef,
                        conn: HttpClientConnectionRef) {.async.} =
-
+  if conn.state != HttpClientConnectionState.Ready:
+    var conns = session.connections.getOrDefault(conn.remoteHostname)
+    conns.keepItIf(it != conn)
+    session.connections[conn.remoteHostname] = conns
+    await conn.closeWait()
 
 proc prepareResponse(request: HttpClientRequestRef,
-                     data: openarray[byte]): HttpResult[HttpClientResponseRef] =
+                    data: openarray[byte]): HttpResult[HttpClientResponseRef] {.
+     raises: [Defect] .} =
   let resp = parseResponse(data, false)
   if resp.failed():
     return err("Invalid headers received")
@@ -447,11 +459,11 @@ proc prepareResponse(request: HttpClientRequestRef,
         (0'u64, HttpClientBodyFlag.Custom)
 
   ok(HttpClientResponseRef(
-    status: resp.code, reason: resp.reason(data), version: resp.version,
-    session: request.session, connection: request.connection,
-    request: request, headers: headers, contentEncoding: contentEncoding,
-    transferEncoding: transferEncoding, contentLength: contentLength,
-    bodyFlag: bodyFlag
+    state: HttpClientResponseState.HeadersReceived, status: resp.code,
+    reason: resp.reason(data), version: resp.version, session: request.session,
+    connection: request.connection, request: request, headers: headers,
+    contentEncoding: contentEncoding, transferEncoding: transferEncoding,
+    contentLength: contentLength, bodyFlag: bodyFlag
   ))
 
 proc getResponse(req: HttpClientRequestRef): Future[HttpClientResponseRef] {.
@@ -478,7 +490,8 @@ proc new*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
           version: HttpVersion = HttpVersion11,
           flags: set[HttpClientRequestFlag] = {},
           headers: openarray[HttpHeaderTuple] = [],
-          body: openarray[byte] = []): HttpClientRequestRef =
+          body: openarray[byte] = []): HttpClientRequestRef {.
+     raises: [Defect].} =
   HttpClientRequestRef(
     state: HttpClientRequestState.Created, session: session, meth: meth,
     version: version, flags: flags, headers: HttpTable.init(headers),
@@ -490,7 +503,8 @@ proc new*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
           version: HttpVersion = HttpVersion11,
           flags: set[HttpClientRequestFlag] = {},
           headers: openarray[HttpHeaderTuple] = [],
-          body: openarray[byte] = []): HttpResult[HttpClientRequestRef] =
+          body: openarray[byte] = []): HttpResult[HttpClientRequestRef] {.
+     raises: [Defect].} =
   let address = ? session.getAddress(parseUri(url))
   ok(HttpClientRequestRef(
     state: HttpClientRequestState.Created, session: session, meth: meth,
@@ -502,14 +516,14 @@ proc get*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
           url: string, version: HttpVersion = HttpVersion11,
           flags: set[HttpClientRequestFlag] = {},
           headers: openarray[HttpHeaderTuple] = []
-         ): HttpResult[HttpClientRequestRef] =
+         ): HttpResult[HttpClientRequestRef] {.raises: [Defect].} =
   HttpClientRequestRef.new(session, url, MethodGet, version, flags, headers)
 
 proc get*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
           ha: HttpAddress, version: HttpVersion = HttpVersion11,
           flags: set[HttpClientRequestFlag] = {},
           headers: openarray[HttpHeaderTuple] = []
-         ): HttpClientRequestRef =
+         ): HttpClientRequestRef {.raises: [Defect].} =
   HttpClientRequestRef.new(session, ha, MethodGet, version, flags, headers)
 
 proc post*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
@@ -517,7 +531,7 @@ proc post*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
            flags: set[HttpClientRequestFlag] = {},
            headers: openarray[HttpHeaderTuple] = [],
            body: openarray[byte] = []
-          ): HttpResult[HttpClientRequestRef] =
+          ): HttpResult[HttpClientRequestRef] {.raises: [Defect].} =
   HttpClientRequestRef.new(session, url, MethodPost, version, flags, headers,
                            body)
 
@@ -525,7 +539,8 @@ proc post*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
            url: string, version: HttpVersion = HttpVersion11,
            flags: set[HttpClientRequestFlag] = {},
            headers: openarray[HttpHeaderTuple] = [],
-           body: openarray[char] = []): HttpResult[HttpClientRequestRef] =
+           body: openarray[char] = []): HttpResult[HttpClientRequestRef] {.
+     raises: [Defect].} =
   HttpClientRequestRef.new(session, url, MethodPost, version, flags, headers,
                            body.toOpenArrayByte(0, len(body) - 1))
 
@@ -533,7 +548,8 @@ proc post*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
            ha: HttpAddress, version: HttpVersion = HttpVersion11,
            flags: set[HttpClientRequestFlag] = {},
            headers: openarray[HttpHeaderTuple] = [],
-           body: openarray[byte] = []): HttpClientRequestRef =
+           body: openarray[byte] = []): HttpClientRequestRef {.
+     raises: [Defect].} =
   HttpClientRequestRef.new(session, ha, MethodPost, version, flags, headers,
                            body)
 
@@ -541,11 +557,13 @@ proc post*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
            ha: HttpAddress, version: HttpVersion = HttpVersion11,
            flags: set[HttpClientRequestFlag] = {},
            headers: openarray[HttpHeaderTuple] = [],
-           body: openarray[char] = []): HttpClientRequestRef =
+           body: openarray[char] = []): HttpClientRequestRef {.
+     raises: [Defect].} =
   HttpClientRequestRef.new(session, ha, MethodPost, version, flags, headers,
                            body.toOpenArrayByte(0, len(body) - 1))
 
-proc prepareRequest(request: HttpClientRequestRef): string =
+proc prepareRequest(request: HttpClientRequestRef): string {.
+     raises: [Defect].} =
   template hasChunkedEncoding(request: HttpClientRequestRef): bool =
     toLowerAscii(request.headers.getString(TransferEncodingHeader)) == "chunked"
 
@@ -606,10 +624,10 @@ proc prepareRequest(request: HttpClientRequestRef): string =
 
 proc open*(request: HttpClientRequestRef): Future[HttpBodyWriter] {.
      async.} =
-  request.state = HttpClientRequestState.Connecting
-  var conn =
+  request.setState(HttpClientRequestState.Connecting)
+  request.connection =
     try:
-      await request.session.getConnection(request.address)
+      await request.session.acquireConnection(request.address)
     except CancelledError as exc:
       let error = newHttpInterruptError()
       request.setError(error)
@@ -618,7 +636,6 @@ proc open*(request: HttpClientRequestRef): Future[HttpBodyWriter] {.
       request.setError(exc)
       raise exc
 
-  request.connection = conn
   let headers = request.prepareRequest()
 
   request.setState(HttpClientRequestState.HeadersSending)
@@ -652,32 +669,53 @@ proc open*(request: HttpClientRequestRef): Future[HttpBodyWriter] {.
       newHttpBodyWriter([writer])
 
   request.writer = writer
-  request.connection.state = HttpClientState.RequestBodySending
-  request.state = HttpClientRequestState.BodySending
+  request.setState(HttpClientRequestState.BodySending)
   return writer
 
 proc finish*(request: HttpClientRequestRef): Future[HttpClientResponseRef] {.
      async.} =
   doAssert(request.state == HttpClientRequestState.BodySending)
-  doAssert(request.state == HttpClientState.RequestBodySending)
+  request.setState(HttpClientRequestState.BodySent)
 
-  request.connection.state = HttpClientState.RequestBodySent
-  request.state =
   let resp =
     try:
       await request.getResponse()
     except CancelledError as exc:
-      request.error = newHttpInterruptError()
-      request.state = HttpClientState.Error
+      request.setError(newHttpInterruptError())
       raise exc
     except HttpError as exc:
-      request.error = exc
-      request.state = HttpClientState.Error
+      request.setError(exc)
       raise exc
 
   if HttpClientFlag.NoAutomaticRedirect notin request.session.flags:
     return resp
 
+proc getBodyReader*(resp: HttpClientResponseRef): HttpResult[HttpBodyReader] =
+  ## Returns stream's reader instance which can be used to read response's body.
+  ##
+  ## Streams which was obtained using this procedure must be closed to avoid
+  ## leaks.
+  case resp.bodyFlag
+  of HttpClientBodyFlag.Sized:
+    let bstream = newBoundedStreamReader(response.connection.reader,
+                                         response.contentLength)
+  of HttpClientBodyFlag.Chunked:
+    discard
+  of HttpClientBodyFlag.Custom:
+    discard
+
+  if HttpRequestFlags.BoundBody in request.requestFlags:
+    let bstream = newBoundedStreamReader(request.connection.reader,
+                                         request.contentLength)
+    ok(newHttpBodyReader(bstream))
+  elif HttpRequestFlags.UnboundBody in request.requestFlags:
+    let maxBodySize = request.connection.server.maxRequestBodySize
+    let bstream = newBoundedStreamReader(request.connection.reader, maxBodySize,
+                                         comparison = BoundCmp.LessOrEqual)
+    let cstream = newChunkedStreamReader(bstream)
+    ok(newHttpBodyReader(cstream, bstream))
+  else:
+    err("Request do not have body available")
 
 
 # proc send*(request: HttpClientRequestRef): Future[HttpClientResponseRef] {.
@@ -701,6 +739,10 @@ proc testClient*(address: string) {.async.} =
   echo resp.reason
   echo resp.version
   echo resp.headers
+  echo ""
+  echo resp.contentEncoding
+  echo resp.transferEncoding
+  echo resp.bodyFlag
 
 when isMainModule:
   # var value = "HTTP/1.1 301 Moved Permanently\r\n" &
