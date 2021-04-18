@@ -13,10 +13,26 @@ import ../../streams/[asyncstream, boundstream]
 export results, httputils, strutils
 
 const
-  HeadersMark* = @[byte(0x0D), byte(0x0A), byte(0x0D), byte(0x0A)]
+  HeadersMark* = @[0x0d'u8, 0x0a'u8, 0x0d'u8, 0x0a'u8]
   PostMethods* = {MethodPost, MethodPatch, MethodPut, MethodDelete}
 
   MaximumBodySizeError* = "Maximum size of request's body reached"
+  
+  UserAgentHeader* = "user-agent"
+  DateHeader* = "date"
+  HostHeader* = "host"
+  ConnectionHeader* = "connection"
+  AcceptHeader* = "accept"
+  ContentLengthHeader* = "content-length"
+  TransferEncodingHeader* = "transfer-encoding"
+  ContentEncodingHeader* = "content-encoding"
+  ContentTypeHeader* = "content-type"
+  ExpectHeader* = "expect"
+  ServerHeader* = "server"
+  LocationHeader* = "location"
+
+  UrlEncodedContentType = "application/x-www-form-urlencoded"
+  MultipartContentType = "multipart/form-data"
 
 type
   HttpResult*[T] = Result[T, string]
@@ -30,6 +46,10 @@ type
     code*: HttpCode
   HttpDisconnectError* = object of HttpError
   HttpConnectionError* = object of HttpError
+  HttpInterruptError* = object of HttpError
+  HttpReadError* = object of HttpError
+  HttpWriteError* = object of HttpError
+  HttpProtocolError* = object of HttpError
 
   TransferEncodingFlags* {.pure.} = enum
     Identity, Chunked, Compress, Deflate, Gzip
@@ -108,8 +128,29 @@ proc raiseHttpDisconnectError*() {.noinline, noreturn.} =
 proc raiseHttpDefect*(msg: string) {.noinline, noreturn.} =
   raise (ref HttpDefect)(msg: msg)
 
-proc raiseHttpConnectionError*() {.noinline, noreturn.} =
-  raise (ref HttpConnectionError)(msg: "Could not connect to remote host")
+proc raiseHttpConnectionError*(msg: string) {.noinline, noreturn.} =
+  raise (ref HttpConnectionError)(msg: msg)
+
+proc raiseHttpInterruptError*() {.noinline, noreturn.} =
+  raise (ref HttpInterruptError)(msg: "Connection was interrupted")
+
+proc raiseHttpReadError*(msg: string) {.noinline, noreturn.} =
+  raise (ref HttpReadError)(msg: msg)
+
+proc raiseHttpProtocolError*(msg: string) {.noinline, noreturn.} =
+  raise (ref HttpProtocolError)(msg: msg)
+
+proc raiseHttpWriteError*(msg: string) {.noinline, noreturn.} =
+  raise (ref HttpWriteError)(msg: msg)
+
+template newHttpInterruptError*(): ref HttpInterruptError =
+  newException(HttpInterruptError, "Connection was interrupted")
+
+template newHttpReadError*(msg: string): ref HttpReadError =
+  newException(HttpReadError, msg: msg)
+
+template newHttpWriteError*(msg: string): ref HttpWriteError =
+  newException(HttpWriteError, msg: msg)
 
 iterator queryParams*(query: string): tuple[key: string, value: string] {.
          raises: [Defect].} =
