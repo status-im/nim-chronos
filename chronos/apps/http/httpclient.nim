@@ -115,6 +115,7 @@ type
     flags: set[HttpClientRequestFlag]
     connection*: HttpClientConnectionRef
     session*: HttpSessionRef
+    response: HttpClientResponseRef
     error*: ref HttpError
     buffer*: seq[byte]
     writer*: HttpBodyWriter
@@ -129,7 +130,6 @@ type
     headers*: HttpTable
     connection*: HttpClientConnectionRef
     session*: HttpSessionRef
-    request*: HttpClientRequestRef
     reader*: HttpBodyReader
     error*: ref HttpError
     bodyFlag*: HttpClientBodyFlag
@@ -313,9 +313,9 @@ proc setError(response: HttpClientResponseRef, error: ref HttpError) {.
      raises: [Defect] .} =
   response.error = error
   response.setState(HttpClientResponseState.Error)
-  if not(isNil(response.request)):
-    # This call will set an error for corresponding connection too.
-    response.request.setError(error)
+  if not(isNil(response.connection)):
+    response.connection.state = HttpClientConnectionState.Error
+    response.connection.error = error
 
 proc closeWait(conn: HttpClientConnectionRef) {.async.} =
   ## Close HttpClientConnectionRef instance ``conn`` and free all the resources.
@@ -328,16 +328,6 @@ proc closeWait(conn: HttpClientConnectionRef) {.async.} =
       discard
     await conn.transp.closeWait()
     conn.state = HttpClientConnectionState.Closed
-
-proc closeWait*(session: HttpSessionRef) {.async.} =
-  ## Closes HTTP session object.
-  ##
-  ## This closes all the connections opened to remote servers.
-  var pending: seq[Future[void]]
-  for items in session.connections.values():
-    for item in items:
-      pending.add(closeWait(item))
-  await allFutures(pending)
 
 proc connect(session: HttpSessionRef,
              ha: HttpAddress): Future[HttpClientConnectionRef] {.async.} =
@@ -417,6 +407,43 @@ proc releaseConnection(session: HttpSessionRef,
     session.connections[conn.remoteHostname] = conns
     await conn.closeWait()
 
+proc closeWait*(session: HttpSessionRef) {.async.} =
+  ## Closes HTTP session object.
+  ##
+  ## This closes all the connections opened to remote servers.
+  var pending: seq[Future[void]]
+  for items in session.connections.values():
+    for item in items:
+      pending.add(closeWait(item))
+  await allFutures(pending)
+
+proc closeWait*(request: HttpClientRequestRef) {.async.} =
+  if request.state != HttpClientRequestState.Closed:
+    if not(isNil(request.writer)):
+      if not(request.writer.closed()):
+        await request.writer.closeWait()
+      request.writer = nil
+    if isNil(request.response):
+      if not(isNil(request.connection)):
+        await request.session.releaseConnection(request.connection)
+        request.connection = nil
+    request.session = nil
+    request.error = nil
+    request.setState(HttpClientRequestState.Closed)
+
+proc closeWait*(response: HttpClientResponseRef) {.async.} =
+  if response.state != HttpClientResponseState.Closed:
+    if not(isNil(response.reader)):
+      if not(response.reader.closed()):
+        await response.reader.closeWait()
+      response.reader = nil
+    if not(isNil(response.connection)):
+      await response.session.releaseConnection(response.connection)
+      response.connection = nil
+    response.session = nil
+    response.error = nil
+    response.setState(HttpClientResponseState.Closed)
+
 proc prepareResponse(request: HttpClientRequestRef,
                     data: openarray[byte]): HttpResult[HttpClientResponseRef] {.
      raises: [Defect] .} =
@@ -467,13 +494,15 @@ proc prepareResponse(request: HttpClientRequestRef,
       else:
         (0'u64, HttpClientBodyFlag.Custom)
 
-  ok(HttpClientResponseRef(
+  let res = HttpClientResponseRef(
     state: HttpClientResponseState.HeadersReceived, status: resp.code,
     reason: resp.reason(data), version: resp.version, session: request.session,
-    connection: request.connection, request: request, headers: headers,
+    connection: request.connection, headers: headers,
     contentEncoding: contentEncoding, transferEncoding: transferEncoding,
     contentLength: contentLength, bodyFlag: bodyFlag
-  ))
+  )
+  request.response = res
+  ok(res)
 
 proc getResponse(req: HttpClientRequestRef): Future[HttpClientResponseRef] {.
      async.} =
@@ -757,9 +786,6 @@ proc finish*(request: HttpClientRequestRef): Future[HttpClientResponseRef] {.
     except HttpError as exc:
       request.setError(exc)
       raise exc
-  request.writer = nil
-  request.connection = nil
-  request.session = nil
   return resp
 
 proc getBodyReader*(resp: HttpClientResponseRef): HttpBodyReader =
@@ -795,40 +821,57 @@ proc finish*(resp: HttpClientResponseRef) {.async.} =
   doAssert(resp.reader.closed())
   resp.setState(HttpClientResponseState.BodyReceived)
   resp.connection.state = HttpClientConnectionState.Ready
-  await resp.session.releaseConnection(resp.connection)
-  resp.reader = nil
-  resp.request = nil
-  resp.connection = nil
-  resp.session = nil
-
-proc getBodyBytes*(resp: HttpClientResponseRef): Future[seq[byte]] {.async.} =
-  let reader = resp.getBodyReader()
-  let res =
-    try:
-      await reader.read()
-    except CancelledError as exc:
-      request.setError(newHttpInterruptError())
-      raise exc
-    except AsyncStreamError as exc:
-      let error = newHttpReadError("Could not read response")
-      resp.setError(error)
-      raise error
-  return res
-
-proc getBodyBytes*(resp: HttpClientResponseRef,
-                   nbytes: int): Future[seq[byte]] {.async.} =
-  let reader = resp.getBodyReader()
   try:
-    let resp = await reader.read(nbytes)
-    await reader.closeWait()
-    await resp.finish()
-    return resp
+    await resp.session.releaseConnection(resp.connection)
   except CancelledError as exc:
-    request.setError(newHttpInterruptError())
+    resp.setError(newHttpInterruptError())
+    raise exc
+
+proc getBodyBytes*(response: HttpClientResponseRef): Future[seq[byte]] {.
+     async.} =
+  let reader = response.getBodyReader()
+  try:
+    let data = await reader.read()
+    await reader.closeWait()
+    await response.finish()
+    return data
+  except CancelledError as exc:
+    response.setError(newHttpInterruptError())
     raise exc
   except AsyncStreamError as exc:
     let error = newHttpReadError("Could not read response")
-    resp.setError(error)
+    response.setError(error)
+    raise error
+
+proc getBodyBytes*(response: HttpClientResponseRef,
+                   nbytes: int): Future[seq[byte]] {.async.} =
+  let reader = response.getBodyReader()
+  try:
+    let data = await reader.read(nbytes)
+    await reader.closeWait()
+    await response.finish()
+    return data
+  except CancelledError as exc:
+    response.setError(newHttpInterruptError())
+    raise exc
+  except AsyncStreamError as exc:
+    let error = newHttpReadError("Could not read response")
+    response.setError(error)
+    raise error
+
+proc consumeBody*(response: HttpClientResponseRef): Future[int] {.async.} =
+  let reader = response.getBodyReader()
+  try:
+    let res = await reader.consume()
+    await reader.closeWait()
+    await response.finish()
+    return res
+  except CancelledError as exc:
+    response.setError(newHttpInterruptError())
+    raise exc
+  except AsyncStreamError as exc:
+    let error = newHttpReadError("Could not read response")
+    response.setError(error)
     raise error
 
 proc testClient*(address: string) {.async.} =
