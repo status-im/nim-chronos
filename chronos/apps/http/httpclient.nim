@@ -31,7 +31,7 @@ type
     ResponseBodyReceived,     ## Response body has been received
     Error                     ## Error happens
 
-  HttpClientConnectionType* {.pure.} = enum
+  HttpClientScheme* {.pure.} = enum
     NonSecure,                ## Non-secure connection
     Secure                    ## Secure TLS connection
 
@@ -43,7 +43,8 @@ type
     HeadersSent,              ## Request headers has been sent
     BodySending,              ## Sending request body
     BodySent,                 ## Request body has been sent
-    Error,                    ## Error happens
+    ResponseReceived,         ## Request's response headers received
+    Error                     ## Error happens
 
   HttpClientResponseState* {.pure.} = enum
     Closed,                   ## Response has been closed
@@ -58,17 +59,21 @@ type
     Custom                    ## None of the above
 
   HttpClientRequestFlag* {.pure.} = enum
-    CloseConnection           ## Send `Connection: close` in request
+    CloseConnection,          ## Send `Connection: close` in request
 
   HttpHeaderTuple* = tuple
     key: string
     value: string
 
+  HttpResponseTuple* = tuple
+    status: int
+    data: seq[byte]
+
   HttpClientConnection* = object of RootObj
-    case kind*: HttpClientConnectionType
-    of HttpClientConnectionType.NonSecure:
+    case kind*: HttpClientScheme
+    of HttpClientScheme.NonSecure:
       discard
-    of HttpClientConnectionType.Secure:
+    of HttpClientScheme.Secure:
       treader*: AsyncStreamReader
       twriter*: AsyncStreamWriter
       tls*: TLSAsyncStream
@@ -90,12 +95,9 @@ type
     maxConnections*: int
     flags*: HttpClientFlags
 
-  HttpClientScheme* {.pure.} = enum
-    Nonsecure, Secure
-
   HttpAddress* = object
     id*: string
-    scheme*: HttpClientConnectionType
+    scheme*: HttpClientScheme
     hostname*: string
     port*: uint16
     path*: string
@@ -115,7 +117,6 @@ type
     flags: set[HttpClientRequestFlag]
     connection*: HttpClientConnectionRef
     session*: HttpSessionRef
-    response: HttpClientResponseRef
     error*: ref HttpError
     buffer*: seq[byte]
     writer*: HttpBodyWriter
@@ -179,26 +180,26 @@ proc getTLSFlags(flags: HttpClientFlags): set[TLSFlags] {.raises: [Defect] .} =
     res.incl(TLSFlags.NoVerifyServerName)
   res
 
-proc getAddress(session: HttpSessionRef, url: Uri): HttpResult[HttpAddress] {.
+proc getAddress*(session: HttpSessionRef, url: Uri): HttpResult[HttpAddress] {.
      raises: [Defect] .} =
   let scheme =
     if len(url.scheme) == 0:
-      HttpClientConnectionType.NonSecure
+      HttpClientScheme.NonSecure
     else:
       case toLowerAscii(url.scheme)
       of "http":
-        HttpClientConnectionType.NonSecure
+        HttpClientScheme.NonSecure
       of "https":
-        HttpClientConnectionType.Secure
+        HttpClientScheme.Secure
       else:
         return err("URL scheme not supported")
 
   let port =
     if len(url.port) == 0:
       case scheme
-      of HttpClientConnectionType.NonSecure:
+      of HttpClientScheme.NonSecure:
         80'u16
-      of HttpClientConnectionType.Secure:
+      of HttpClientScheme.Secure:
         443'u16
     else:
       let res = Base10.decode(uint16, url.port)
@@ -243,25 +244,39 @@ proc getAddress(session: HttpSessionRef, url: Uri): HttpResult[HttpAddress] {.
                  username: url.username, password: url.password,
                  addresses: addresses))
 
+proc getAddress*(session: HttpSessionRef,
+                 url: string): HttpResult[HttpAddress] {.raises: [Defect].} =
+  session.getAddress(parseUri(url))
+
+proc getAddress*(session: HttpSessionRef,
+                 address: TransportAddress,
+                 ctype: HttpClientScheme = HttpClientScheme.NonSecure,
+                 queryString: string = "/"): HttpAddress {.raises: [Defect].} =
+  let uri = parseUri(queryString)
+  HttpAddress(id: $address, scheme: ctype, hostname: address.host,
+    port: uint16(address.port), path: uri.path, query: uri.query,
+    anchor: uri.anchor, username: "", password: "", addresses: @[address]
+  )
+
 proc new(t: typedesc[HttpClientConnectionRef], session: HttpSessionRef,
          ha: HttpAddress, transp: StreamTransport): HttpClientConnectionRef =
   case ha.scheme
-  of HttpClientConnectionType.NonSecure:
+  of HttpClientScheme.NonSecure:
     HttpClientConnectionRef(
-      kind: HttpClientConnectionType.NonSecure,
+      kind: HttpClientScheme.NonSecure,
       transp: transp,
       reader: newAsyncStreamReader(transp),
       writer: newAsyncStreamWriter(transp),
       state: HttpClientConnectionState.Connecting,
       remoteHostname: ha.id
     )
-  of HttpClientConnectionType.Secure:
+  of HttpClientScheme.Secure:
     let treader = newAsyncStreamReader(transp)
     let twriter = newAsyncStreamWriter(transp)
     let tls = newTLSClientAsyncStream(treader, twriter, ha.hostname,
                                       flags = session.flags.getTLSFlags())
     HttpClientConnectionRef(
-      kind: HttpClientConnectionType.Secure,
+      kind: HttpClientScheme.Secure,
       transp: transp,
       treader: treader,
       twriter: twriter,
@@ -284,6 +299,8 @@ proc setState(request: HttpClientRequestRef, state: HttpClientRequestState) {.
     request.connection.state = HttpClientConnectionState.RequestBodySending
   of HttpClientRequestState.BodySent:
     request.connection.state = HttpClientConnectionState.RequestBodySent
+  of HttpClientRequestState.ResponseReceived:
+    request.connection.state = HttpClientConnectionState.ResponseHeadersReceived
   else:
     discard
 
@@ -322,9 +339,9 @@ proc closeWait(conn: HttpClientConnectionRef) {.async.} =
   if conn.state != HttpClientConnectionState.Closed:
     await allFutures(conn.reader.closeWait(), conn.writer.closeWait())
     case conn.kind
-    of HttpClientConnectionType.Secure:
+    of HttpClientScheme.Secure:
       await allFutures(conn.treader.closeWait(), conn.twriter.closeWait())
-    of HttpClientConnectionType.NonSecure:
+    of HttpClientScheme.NonSecure:
       discard
     await conn.transp.closeWait()
     conn.state = HttpClientConnectionState.Closed
@@ -349,7 +366,7 @@ proc connect(session: HttpSessionRef,
         block:
           let res = HttpClientConnectionRef.new(session, ha, transp)
           case res.kind
-          of HttpClientConnectionType.Secure:
+          of HttpClientScheme.Secure:
             try:
               await res.tls.handshake()
               res.state = HttpClientConnectionState.Ready
@@ -358,7 +375,7 @@ proc connect(session: HttpSessionRef,
               raise exc
             except AsyncStreamError:
               await res.closeWait()
-          of HttpClientConnectionType.Nonsecure:
+          of HttpClientScheme.Nonsecure:
             res.state = HttpClientConnectionState.Ready
           res
       if conn.state == HttpClientConnectionState.Ready:
@@ -395,6 +412,13 @@ proc acquireConnection(session: HttpSessionRef,
     session.connections.mgetOrPut(ha.id, default).add(res)
     return res
 
+proc removeConnection(session: HttpSessionRef,
+                      conn: HttpClientConnectionRef) {.async.} =
+  var conns = session.connections.getOrDefault(conn.remoteHostname)
+  conns.keepItIf(it != conn)
+  session.connections[conn.remoteHostname] = conns
+  await conn.closeWait()
+
 proc releaseConnection(session: HttpSessionRef,
                        conn: HttpClientConnectionRef) {.async.} =
   ## Return connection back to the ``session``.
@@ -402,10 +426,7 @@ proc releaseConnection(session: HttpSessionRef,
   ## If connection not in ``Ready`` state it will be closed and removed from
   ## the ``session``.
   if conn.state != HttpClientConnectionState.Ready:
-    var conns = session.connections.getOrDefault(conn.remoteHostname)
-    conns.keepItIf(it != conn)
-    session.connections[conn.remoteHostname] = conns
-    await conn.closeWait()
+    await session.removeConnection(conn)
 
 proc closeWait*(session: HttpSessionRef) {.async.} =
   ## Closes HTTP session object.
@@ -423,7 +444,7 @@ proc closeWait*(request: HttpClientRequestRef) {.async.} =
       if not(request.writer.closed()):
         await request.writer.closeWait()
       request.writer = nil
-    if isNil(request.response):
+    if request.state != HttpClientRequestState.ResponseReceived:
       if not(isNil(request.connection)):
         await request.session.releaseConnection(request.connection)
         request.connection = nil
@@ -501,7 +522,7 @@ proc prepareResponse(request: HttpClientRequestRef,
     contentEncoding: contentEncoding, transferEncoding: transferEncoding,
     contentLength: contentLength, bodyFlag: bodyFlag
   )
-  request.response = res
+  request.setState(HttpClientRequestState.ResponseReceived)
   ok(res)
 
 proc getResponse(req: HttpClientRequestRef): Future[HttpClientResponseRef] {.
@@ -660,8 +681,9 @@ proc prepareRequest(request: HttpClientRequestRef): string {.
   res.add("\r\n")
   res
 
-template sendImpl(request: HttpClientRequestRef,
-                  writeBody: untyped): HttpClientResponseRef =
+proc send*(request: HttpClientRequestRef): Future[HttpClientResponseRef] {.
+     async.} =
+  doAssert(request.state == HttpClientRequestState.Created)
   request.setState(HttpClientRequestState.Connecting)
   request.connection =
     try:
@@ -680,7 +702,8 @@ template sendImpl(request: HttpClientRequestRef,
     await request.connection.writer.write(headers)
     request.setState(HttpClientRequestState.HeadersSent)
     request.setState(HttpClientRequestState.BodySending)
-    writeBody
+    if len(request.buffer) > 0:
+      await request.connection.writer.write(request.buffer)
     request.setState(HttpClientRequestState.BodySent)
   except CancelledError as exc:
     request.setError(newHttpInterruptError())
@@ -699,34 +722,13 @@ template sendImpl(request: HttpClientRequestRef,
     except HttpError as exc:
       request.setError(exc)
       raise exc
-  resp
-
-proc send*(request: HttpClientRequestRef, pbytes: pointer,
-           nbytes: int): Future[HttpClientResponseRef] {.async.} =
-  let resp =
-    sendImpl(request) do:
-      if (nbytes > 0) and not(isNil(pbytes)):
-        await request.connection.writer.write(pbytes, nbytes)
-  return resp
-
-proc send*(request: HttpClientRequestRef,
-           data: string = ""): Future[HttpClientResponseRef] {.async.} =
-  let resp =
-    sendImpl(request) do:
-      if len(data) > 0:
-        await request.connection.writer.write(data)
-  return resp
-
-proc send*(request: HttpClientRequestRef,
-           data: seq[byte] = @[]): Future[HttpClientResponseRef] {.async.} =
-  let resp =
-    sendImpl(request) do:
-      if len(data) > 0:
-        await request.connection.writer.write(data)
   return resp
 
 proc open*(request: HttpClientRequestRef): Future[HttpBodyWriter] {.
      async.} =
+  doAssert(request.state == HttpClientRequestState.Created)
+  doAssert(len(request.buffer) == 0,
+           "Request should not have static body content (len(buffer) == 0)")
   request.setState(HttpClientRequestState.Connecting)
   request.connection =
     try:
@@ -821,19 +823,20 @@ proc finish*(resp: HttpClientResponseRef) {.async.} =
   doAssert(resp.reader.closed())
   resp.setState(HttpClientResponseState.BodyReceived)
   resp.connection.state = HttpClientConnectionState.Ready
-  try:
-    await resp.session.releaseConnection(resp.connection)
-  except CancelledError as exc:
-    resp.setError(newHttpInterruptError())
-    raise exc
 
 proc getBodyBytes*(response: HttpClientResponseRef): Future[seq[byte]] {.
      async.} =
+  ## Read all bytes from response ``response``.
   let reader = response.getBodyReader()
+  echo "got reader"
+  echo response.bodyFlag
   try:
     let data = await reader.read()
+    echo "got data"
     await reader.closeWait()
+    echo "closed reader"
     await response.finish()
+    echo "response finished"
     return data
   except CancelledError as exc:
     response.setError(newHttpInterruptError())
@@ -845,6 +848,8 @@ proc getBodyBytes*(response: HttpClientResponseRef): Future[seq[byte]] {.
 
 proc getBodyBytes*(response: HttpClientResponseRef,
                    nbytes: int): Future[seq[byte]] {.async.} =
+  ## Read all bytes (nbytes <= 0) or exactly `nbytes` bytes from response
+  ## ``response``.
   let reader = response.getBodyReader()
   try:
     let data = await reader.read(nbytes)
@@ -860,6 +865,7 @@ proc getBodyBytes*(response: HttpClientResponseRef,
     raise error
 
 proc consumeBody*(response: HttpClientResponseRef): Future[int] {.async.} =
+  ## Consume/discard response and return number of bytes consumed.
   let reader = response.getBodyReader()
   try:
     let res = await reader.consume()
@@ -873,6 +879,15 @@ proc consumeBody*(response: HttpClientResponseRef): Future[int] {.async.} =
     let error = newHttpReadError("Could not read response")
     response.setError(error)
     raise error
+
+proc fetch*(request: HttpClientRequestRef): Future[HttpResponseTuple] {.
+     async.} =
+  let response = await request.send()
+  let data = await response.getBodyBytes()
+  await response.finish()
+  let code = response.status
+  await response.closeWait()
+  return (code, data)
 
 proc testClient*(address: string) {.async.} =
   var session = HttpSessionRef.new()
