@@ -77,7 +77,7 @@ suite "HTTP client testing suite":
     TooBigTest = enum
       GetBodyTest, ConsumeBodyTest, PostUrlTest, PostMultipartTest
 
-  proc testMethods(address: TransportAddress): Future[bool] {.async.} =
+  proc testMethods(address: TransportAddress): Future[int] {.async.} =
     const RequestTests = [
       (MethodGet, "/test/get"),
       (MethodPost, "/test/post"),
@@ -87,48 +87,71 @@ suite "HTTP client testing suite":
       (MethodTrace, "/test/trace"),
       (MethodOptions, "/test/options"),
       (MethodConnect, "/test/connect"),
-      (MethodPatch, "/test/patch"),
-      (MethodError, "/test/error")
+      (MethodPatch, "/test/patch")
     ]
     proc process(r: RequestFence): Future[HttpResponseRef] {.
          async.} =
       if r.isOk():
         let request = r.get()
-        echo "server got request [", request.uri.path, "]"
         case request.uri.path
         of "/test/get", "/test/post", "/test/head", "/test/put",
            "/test/delete", "/test/trace", "/test/options", "/test/connect",
            "/test/patch", "/test/error":
-          echo "responding with [", request.uri.path, "]"
           return await request.respond(Http200, request.uri.path)
         else:
-          return await request.respond(Http400, "Page not found")
+          return await request.respond(Http404, "Page not found")
       else:
         return dumbResponse()
 
     let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
     let res = HttpServerRef.new(address, process, socketFlags = socketFlags)
     if res.isErr():
-      return false
+      return 0
     let server = res.get()
     server.start()
 
+    var counter = 0
+
     var session = HttpSessionRef.new()
-    var requests: seq[HttpClientRequestRef]
     for item in RequestTests:
       let ha = session.getAddress(address, HttpClientScheme.NonSecure, item[1])
       var req = HttpClientRequestRef.new(session, ha, item[0])
-      let resp = await fetch(req)
-      echo resp.status
-
+      let response = await fetch(req)
+      if response.status == 200:
+        let data = cast[string](response.data)
+        if data == item[1]:
+          inc(counter)
+      await req.closeWait()
     await session.closeWait()
 
-  test "Different HTTP method requests test":
-    check waitFor(testMethods(initTAddress("127.0.0.1:30080"))) == true
+    for item in RequestTests:
+      var session = HttpSessionRef.new()
+      let ha = session.getAddress(address, HttpClientScheme.NonSecure, item[1])
+      var req = HttpClientRequestRef.new(session, ha, item[0])
+      let response = await fetch(req)
+      if response.status == 200:
+        let data = cast[string](response.data)
+        if data == item[1]:
+          inc(counter)
+      await req.closeWait()
+      await session.closeWait()
 
-  # test "Leaks test":
-  #   check:
-  #     getTracker("async.stream.reader").isLeaked() == false
-  #     getTracker("async.stream.writer").isLeaked() == false
-  #     getTracker("stream.server").isLeaked() == false
-  #     getTracker("stream.transport").isLeaked() == false
+    await server.stop()
+    await server.closeWait()
+
+    return counter
+
+  test "Different HTTP method requests test":
+    check waitFor(testMethods(initTAddress("127.0.0.1:30080"))) == 18
+
+  test "Leaks test":
+    check:
+      getTracker("http.body.reader").isLeaked() == false
+      getTracker("http.body.writer").isLeaked() == false
+      getTracker("httpclient.connection").isLeaked() == false
+      getTracker("httpclient.request").isLeaked() == false
+      getTracker("httpclient.response").isLeaked() == false
+      getTracker("async.stream.reader").isLeaked() == false
+      getTracker("async.stream.writer").isLeaked() == false
+      getTracker("stream.server").isLeaked() == false
+      getTracker("stream.transport").isLeaked() == false

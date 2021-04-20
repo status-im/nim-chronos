@@ -7,7 +7,7 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 import std/[strutils, uri]
-import stew/results, httputils
+import stew/[results, endians2], httputils
 import ../../asyncloop, ../../asyncsync
 import ../../streams/[asyncstream, boundstream]
 export results, httputils, strutils
@@ -56,67 +56,6 @@ type
 
   ContentEncodingFlags* {.pure.} = enum
     Identity, Br, Compress, Deflate, Gzip
-
-  HttpBodyReader* = ref object of AsyncStreamReader
-    streams*: seq[AsyncStreamReader]
-
-  HttpBodyWriter* = ref object of AsyncStreamWriter
-    streams*: seq[AsyncStreamWriter]
-
-proc newHttpBodyReader*(streams: varargs[AsyncStreamReader]): HttpBodyReader =
-  ## HttpBodyReader is AsyncStreamReader which holds references to all the
-  ## ``streams``. Also on close it will close all the ``streams``.
-  ##
-  ## First stream in sequence will be used as a source.
-  doAssert(len(streams) > 0, "At least one stream must be added")
-  var res = HttpBodyReader(streams: @streams)
-  res.init(streams[0])
-  res
-
-proc closeWait*(bstream: HttpBodyReader) {.async.} =
-  ## Close and free resource allocated by body reader.
-  var res = newSeq[Future[void]]()
-  # We closing streams in reversed order because stream at position [0], uses
-  # data from stream at position [1].
-  for index in countdown(len(bstream.streams) - 1, 0):
-    res.add(bstream.streams[index].closeWait())
-  await allFutures(res)
-  await procCall(closeWait(AsyncStreamReader(bstream)))
-
-proc hasOverflow*(bstream: HttpBodyReader): bool {.raises: [Defect].} =
-  if len(bstream.streams) == 1:
-    # If HttpBodyReader has only one stream it has ``BoundedStreamReader``, in
-    # such case its impossible to get more bytes then expected amount.
-    false
-  else:
-    # If HttpBodyReader has two or more streams, we check if
-    # ``BoundedStreamReader`` at EOF.
-    if bstream.streams[0].atEof():
-      for i in 1 ..< len(bstream.streams):
-        if not(bstream.streams[1].atEof()):
-          return true
-      false
-    else:
-      false
-
-proc newHttpBodyWriter*(streams: varargs[AsyncStreamWriter]): HttpBodyWriter =
-  ## HttpBodyWriter is AsyncStreamWriter which holds references to all the
-  ## ``streams``. Also on close it will close all the ``streams``.
-  ##
-  ## First stream in sequence will be used as a destination.
-  doAssert(len(streams) > 0, "At least one stream must be added")
-  var res = HttpBodyWriter(streams: @streams)
-  res.init(streams[0])
-  res
-
-proc closeWait*(bstream: HttpBodyWriter) {.async.} =
-  ## Close and free all the resources allocated by body writer.
-  var res = newSeq[Future[void]]()
-  for index in countdown(len(bstream.streams) - 1, 0):
-    res.add(bstream.streams[index].closeWait())
-  await allFutures(res)
-  await procCall(closeWait(AsyncStreamWriter(bstream)))
-
 
 proc raiseHttpCriticalError*(msg: string,
                              code = Http400) {.noinline, noreturn.} =
@@ -278,3 +217,48 @@ func stringToBytes*(src: openarray[char]): seq[byte] =
     dst
   else:
     default
+
+proc dumpHex*(pbytes: openarray[byte], groupBy = 1, ascii = true): string =
+  ## Get hexadecimal dump of memory for array ``pbytes``.
+  var res = ""
+  var offset = 0
+  var ascii = ""
+
+  while offset < len(pbytes):
+    if (offset mod 16) == 0:
+      res = res & toHex(uint64(offset)) & ":  "
+
+    for k in 0 ..< groupBy:
+      let ch = pbytes[offset + k]
+      ascii.add(if ord(ch) > 31 and ord(ch) < 127: char(ch) else: '.')
+
+    let item =
+      case groupBy:
+      of 1:
+        toHex(pbytes[offset])
+      of 2:
+        toHex(uint16.fromBytes(pbytes.toOpenArray(offset, len(pbytes) - 1)))
+      of 4:
+        toHex(uint32.fromBytes(pbytes.toOpenArray(offset, len(pbytes) - 1)))
+      of 8:
+        toHex(uint64.fromBytes(pbytes.toOpenArray(offset, len(pbytes) - 1)))
+      else:
+        ""
+    res.add(item)
+    res.add(" ")
+    offset = offset + groupBy
+
+    if (offset mod 16) == 0:
+      res.add(" ")
+      res.add(ascii)
+      ascii.setLen(0)
+      res.add("\p")
+
+  if (offset mod 16) != 0:
+    let spacesCount = ((16 - (offset mod 16)) div groupBy) *
+                        (groupBy * 2 + 1) + 1
+    res = res & repeat(' ', spacesCount)
+    res = res & ascii
+
+  res.add("\p")
+  res

@@ -1,9 +1,17 @@
+#
+#                Chronos HTTP/S client
+#             (c) Copyright 2021-Present
+#         Status Research & Development GmbH
+#
+#              Licensed under either of
+#  Apache License, version 2.0, (LICENSE-APACHEv2)
+#              MIT license (LICENSE-MIT)
 import std/[uri, tables, strutils, sequtils]
 import stew/[results, base10], httputils
 import ../../asyncloop, ../../asyncsync
 import ../../streams/[asyncstream, tlsstream, chunkstream, boundstream]
-import httptable, httpcommon, httpagent, multipart
-export httptable, httpcommon, httpagent, multipart
+import httptable, httpcommon, httpagent, httpbodyrw, multipart
+export httptable, httpcommon, httpagent, httpbodyrw, multipart
 
 const
   HttpMaxHeadersSize* = 8192
@@ -14,6 +22,12 @@ const
     ## Timeout for receiving response headers (120 sec)
   HttpMaxRedirections* = 10
     ## Maximum number of Location redirections.
+  HttpClientConnectionTrackerName* = "httpclient.connection"
+    ## HttpClient connection leaks tracker name
+  HttpClientRequestTrackerName* = "httpclient.request"
+    ## HttpClient request leaks tracker name
+  HttpClientResponseTrackerName* = "httpclient.response"
+    ## HttpClient response leaks tracker name
 
 type
   HttpClientConnectionState* {.pure.} = enum
@@ -149,6 +163,104 @@ type
 
   HttpClientFlags* = set[HttpClientFlag]
 
+  HttpClientTracker* = ref object of TrackerBase
+    opened*: int64
+    closed*: int64
+
+proc setupHttpClientConnectionTracker(): HttpClientTracker {.
+     gcsafe, raises: [Defect].}
+proc setupHttpClientRequestTracker(): HttpClientTracker {.
+     gcsafe, raises: [Defect].}
+proc setupHttpClientResponseTracker(): HttpClientTracker {.
+     gcsafe, raises: [Defect].}
+
+proc getHttpClientConnectionTracker(): HttpClientTracker {.inline.} =
+  var res = cast[HttpClientTracker](getTracker(HttpClientConnectionTrackerName))
+  if isNil(res):
+    res = setupHttpClientConnectionTracker()
+  res
+
+proc getHttpClientRequestTracker(): HttpClientTracker {.inline.} =
+  var res = cast[HttpClientTracker](getTracker(HttpClientRequestTrackerName))
+  if isNil(res):
+    res = setupHttpClientRequestTracker()
+  res
+
+proc getHttpClientResponseTracker(): HttpClientTracker {.inline.} =
+  var res = cast[HttpClientTracker](getTracker(HttpClientResponseTrackerName))
+  if isNil(res):
+    res = setupHttpClientResponseTracker()
+  res
+
+proc dumpHttpClientConnectionTracking(): string {.gcsafe.} =
+  let tracker = getHttpClientConnectionTracker()
+  "Opened HTTP client connections: " & $tracker.opened & "\n" &
+  "Closed HTTP client connections: " & $tracker.closed
+
+proc dumpHttpClientRequestTracking(): string {.gcsafe.} =
+  let tracker = getHttpClientRequestTracker()
+  "Opened HTTP client requests: " & $tracker.opened & "\n" &
+  "Closed HTTP client requests: " & $tracker.closed
+
+proc dumpHttpClientResponseTracking(): string {.gcsafe.} =
+  let tracker = getHttpClientResponseTracker()
+  "Opened HTTP client responses: " & $tracker.opened & "\n" &
+  "Closed HTTP client responses: " & $tracker.closed
+
+proc leakHttpClientConnection(): bool {.gcsafe.} =
+  var tracker = getHttpClientConnectionTracker()
+  tracker.opened != tracker.closed
+
+proc leakHttpClientRequest(): bool {.gcsafe.} =
+  var tracker = getHttpClientRequestTracker()
+  tracker.opened != tracker.closed
+
+proc leakHttpClientResponse(): bool {.gcsafe.} =
+  var tracker = getHttpClientResponseTracker()
+  tracker.opened != tracker.closed
+
+proc trackHttpClientConnection(t: HttpClientConnectionRef) {.inline.} =
+  inc(getHttpClientConnectionTracker().opened)
+
+proc untrackHttpClientConnection*(t: HttpClientConnectionRef) {.inline.}  =
+  inc(getHttpClientConnectionTracker().closed)
+
+proc trackHttpClientRequest(t: HttpClientRequestRef) {.inline.} =
+  inc(getHttpClientRequestTracker().opened)
+
+proc untrackHttpClientRequest*(t: HttpClientRequestRef) {.inline.}  =
+  inc(getHttpClientRequestTracker().closed)
+
+proc trackHttpClientResponse(t: HttpClientResponseRef) {.inline.} =
+  inc(getHttpClientResponseTracker().opened)
+
+proc untrackHttpClientResponse*(t: HttpClientResponseRef) {.inline.}  =
+  inc(getHttpClientResponseTracker().closed)
+
+proc setupHttpClientConnectionTracker(): HttpClientTracker {.gcsafe.} =
+  var res = HttpClientTracker(opened: 0, closed: 0,
+    dump: dumpHttpClientConnectionTracking,
+    isLeaked: leakHttpClientConnection
+  )
+  addTracker(HttpClientConnectionTrackerName, res)
+  res
+
+proc setupHttpClientRequestTracker(): HttpClientTracker {.gcsafe.} =
+  var res = HttpClientTracker(opened: 0, closed: 0,
+    dump: dumpHttpClientRequestTracking,
+    isLeaked: leakHttpClientRequest
+  )
+  addTracker(HttpClientRequestTrackerName, res)
+  res
+
+proc setupHttpClientResponseTracker(): HttpClientTracker {.gcsafe.} =
+  var res = HttpClientTracker(opened: 0, closed: 0,
+    dump: dumpHttpClientResponseTracking,
+    isLeaked: leakHttpClientResponse
+  )
+  addTracker(HttpClientResponseTrackerName, res)
+  res
+
 proc new*(t: typedesc[HttpSessionRef],
           flags: HttpClientFlags = {},
           maxRedirections = HttpMaxRedirections,
@@ -262,7 +374,7 @@ proc new(t: typedesc[HttpClientConnectionRef], session: HttpSessionRef,
          ha: HttpAddress, transp: StreamTransport): HttpClientConnectionRef =
   case ha.scheme
   of HttpClientScheme.NonSecure:
-    HttpClientConnectionRef(
+    let res = HttpClientConnectionRef(
       kind: HttpClientScheme.NonSecure,
       transp: transp,
       reader: newAsyncStreamReader(transp),
@@ -270,12 +382,14 @@ proc new(t: typedesc[HttpClientConnectionRef], session: HttpSessionRef,
       state: HttpClientConnectionState.Connecting,
       remoteHostname: ha.id
     )
+    trackHttpClientConnection(res)
+    res
   of HttpClientScheme.Secure:
     let treader = newAsyncStreamReader(transp)
     let twriter = newAsyncStreamWriter(transp)
     let tls = newTLSClientAsyncStream(treader, twriter, ha.hostname,
                                       flags = session.flags.getTLSFlags())
-    HttpClientConnectionRef(
+    let res = HttpClientConnectionRef(
       kind: HttpClientScheme.Secure,
       transp: transp,
       treader: treader,
@@ -286,6 +400,8 @@ proc new(t: typedesc[HttpClientConnectionRef], session: HttpSessionRef,
       state: HttpClientConnectionState.Connecting,
       remoteHostname: ha.id
     )
+    trackHttpClientConnection(res)
+    res
 
 proc setState(request: HttpClientRequestRef, state: HttpClientRequestState) {.
      raises: [Defect] .} =
@@ -345,6 +461,7 @@ proc closeWait(conn: HttpClientConnectionRef) {.async.} =
       discard
     await conn.transp.closeWait()
     conn.state = HttpClientConnectionState.Closed
+    untrackHttpClientConnection(conn)
 
 proc connect(session: HttpSessionRef,
              ha: HttpAddress): Future[HttpClientConnectionRef] {.async.} =
@@ -451,6 +568,7 @@ proc closeWait*(request: HttpClientRequestRef) {.async.} =
     request.session = nil
     request.error = nil
     request.setState(HttpClientRequestState.Closed)
+    untrackHttpClientRequest(request)
 
 proc closeWait*(response: HttpClientResponseRef) {.async.} =
   if response.state != HttpClientResponseState.Closed:
@@ -464,6 +582,7 @@ proc closeWait*(response: HttpClientResponseRef) {.async.} =
     response.session = nil
     response.error = nil
     response.setState(HttpClientResponseState.Closed)
+    untrackHttpClientResponse(response)
 
 proc prepareResponse(request: HttpClientRequestRef,
                     data: openarray[byte]): HttpResult[HttpClientResponseRef] {.
@@ -506,8 +625,8 @@ proc prepareResponse(request: HttpClientRequestRef,
 
   # Preprocessing "Content-Length" header.
   let (contentLength, bodyFlag) =
-    if ContentLengthHeader in request.headers:
-      let length = request.headers.getInt(ContentLengthHeader)
+    if ContentLengthHeader in headers:
+      let length = headers.getInt(ContentLengthHeader)
       (length, HttpClientBodyFlag.Sized)
     else:
       if TransferEncodingFlags.Chunked in transferEncoding:
@@ -523,6 +642,7 @@ proc prepareResponse(request: HttpClientRequestRef,
     contentLength: contentLength, bodyFlag: bodyFlag
   )
   request.setState(HttpClientRequestState.ResponseReceived)
+  trackHttpClientResponse(res)
   ok(res)
 
 proc getResponse(req: HttpClientRequestRef): Future[HttpClientResponseRef] {.
@@ -551,11 +671,13 @@ proc new*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
           headers: openarray[HttpHeaderTuple] = [],
           body: openarray[byte] = []): HttpClientRequestRef {.
      raises: [Defect].} =
-  HttpClientRequestRef(
+  let res = HttpClientRequestRef(
     state: HttpClientRequestState.Created, session: session, meth: meth,
     version: version, flags: flags, headers: HttpTable.init(headers),
     address: ha, bodyFlag: HttpClientBodyFlag.Custom, buffer: @body
   )
+  trackHttpClientRequest(res)
+  res
 
 proc new*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
           url: string, meth: HttpMethod = MethodGet,
@@ -565,11 +687,13 @@ proc new*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
           body: openarray[byte] = []): HttpResult[HttpClientRequestRef] {.
      raises: [Defect].} =
   let address = ? session.getAddress(parseUri(url))
-  ok(HttpClientRequestRef(
+  let res = HttpClientRequestRef(
     state: HttpClientRequestState.Created, session: session, meth: meth,
     version: version, flags: flags, headers: HttpTable.init(headers),
     address: address, bodyFlag: HttpClientBodyFlag.Custom, buffer: @body
-  ))
+  )
+  trackHttpClientRequest(res)
+  ok(res)
 
 proc get*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
           url: string, version: HttpVersion = HttpVersion11,
@@ -828,15 +952,10 @@ proc getBodyBytes*(response: HttpClientResponseRef): Future[seq[byte]] {.
      async.} =
   ## Read all bytes from response ``response``.
   let reader = response.getBodyReader()
-  echo "got reader"
-  echo response.bodyFlag
   try:
     let data = await reader.read()
-    echo "got data"
     await reader.closeWait()
-    echo "closed reader"
     await response.finish()
-    echo "response finished"
     return data
   except CancelledError as exc:
     response.setError(newHttpInterruptError())
@@ -884,61 +1003,6 @@ proc fetch*(request: HttpClientRequestRef): Future[HttpResponseTuple] {.
      async.} =
   let response = await request.send()
   let data = await response.getBodyBytes()
-  await response.finish()
   let code = response.status
   await response.closeWait()
   return (code, data)
-
-proc testClient*(address: string) {.async.} =
-  var session = HttpSessionRef.new()
-  let ha = session.getAddress(parseUri(address)).tryGet()
-  var request = HttpClientRequestRef.get(session, ha)
-  var writer = await request.open()
-  await writer.closeWait()
-  var resp = await request.finish()
-
-  echo resp.status
-  echo resp.reason
-  echo resp.version
-  echo resp.headers
-  echo ""
-  echo resp.contentEncoding
-  echo resp.transferEncoding
-  echo resp.bodyFlag
-
-when isMainModule:
-  # var value = "HTTP/1.1 301 Moved Permanently\r\n" &
-  #   "Location: http://www.google.com/\r\n" &
-  #   "Content-Type: text/html; charset=UTF-8\r\n" &
-  #   "Date: Sun, 26 Apr 2009 11:11:49 GMT\r\n" &
-  #   "Expires: Tue, 26 May 2009 11:11:49 GMT\r\n" &
-  #   "X-$PrototypeBI-Version: 1.6.0.3\r\n" &
-  #   "Cache-Control: public, max-age=2592000\r\n" &
-  #   "Server: gws\r\n" &
-  #   "Content-Length:  219  \r\n" &
-  #   "\r\n"
-
-  # var buffer: array[4096, byte]
-
-  # copyMem(addr buffer[0], addr value[0], len(value))
-  # let resp = parseResponse(buffer.toOpenArray(0, len(value) - 1), false)
-  # echo resp.success()
-  # for k, v in resp.headers(buffer.toOpenArray(0, len(value) - 1)):
-  #   echo k, ": ", v
-
-  waitFor(testClient("https://www.google.com"))
-
-  # var session = HttpSessionRef.new()
-  # let r1 = session.newBufferRequest("https://www.google.com")
-  # let r2 = session.newBufferRequest("https://www.google.com/")
-  # let r3 = session.newBufferRequest("https://www.google.com/?a=b#a")
-  # let r4 = session.newBufferRequest("https://www.google.com/index.html?a=b#a")
-  # #waitFor testClient("https://www.google.com")
-  # echo r1.tryGet().prepareRequest()
-  # echo ""
-  # echo r2.tryGet().prepareRequest()
-  # echo ""
-  # echo r3.tryGet().prepareRequest()
-  # echo ""
-  # echo r4.tryGet().prepareRequest()
-  # echo ""
