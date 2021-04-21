@@ -5,7 +5,7 @@
 #              Licensed under either of
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
-import std/[strutils, algorithm, strutils]
+import std/[strutils, strutils, sha1]
 import unittest2
 import ../chronos, ../chronos/apps/http/[httpserver, shttpserver, httpclient]
 import stew/base10
@@ -73,12 +73,38 @@ N8r5CwGcIX/XPC3lKazzbZ8baA==
 """
 
 suite "HTTP client testing suite":
-  type
-    TooBigTest = enum
-      GetBodyTest, ConsumeBodyTest, PostUrlTest, PostMultipartTest
 
-  proc testMethods(address: TransportAddress): Future[int] {.async.} =
-    const RequestTests = [
+  proc createBigMessage(message: string, size: int): seq[byte] =
+    var res = newSeq[byte](size)
+    for i in 0 ..< len(result):
+      res[i] = byte(message[i mod len(message)])
+    res
+
+  proc createServer(address: TransportAddress,
+                    process: HttpProcessCallback, secure: bool): HttpServerRef =
+    let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
+    if secure:
+      let secureKey = TLSPrivateKey.init(HttpsSelfSignedRsaKey)
+      let secureCert = TLSCertificate.init(HttpsSelfSignedRsaCert)
+      let res = SecureHttpServerRef.new(address, process,
+                                        socketFlags = socketFlags,
+                                        tlsPrivateKey = secureKey,
+                                        tlsCertificate = secureCert)
+      HttpServerRef(res.get())
+    else:
+      let res = HttpServerRef.new(address, process, socketFlags = socketFlags)
+      res.get()
+
+  proc createSession(secure: bool): HttpSessionRef =
+    if secure:
+      HttpSessionRef.new({HttpClientFlag.NoVerifyHost,
+                          HttpClientFlag.NoVerifyServerName})
+    else:
+      HttpSessionRef.new()
+
+  proc testMethods(address: TransportAddress,
+                   secure: bool): Future[int] {.async.} =
+    let RequestTests = [
       (MethodGet, "/test/get"),
       (MethodPost, "/test/post"),
       (MethodHead, "/test/head"),
@@ -103,18 +129,18 @@ suite "HTTP client testing suite":
       else:
         return dumbResponse()
 
-    let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
-    let res = HttpServerRef.new(address, process, socketFlags = socketFlags)
-    if res.isErr():
-      return 0
-    let server = res.get()
+    var server = createServer(address, process, secure)
     server.start()
-
     var counter = 0
 
-    var session = HttpSessionRef.new()
+    var session = createSession(secure)
+
     for item in RequestTests:
-      let ha = session.getAddress(address, HttpClientScheme.NonSecure, item[1])
+      let ha =
+        if secure:
+          session.getAddress(address, HttpClientScheme.Secure, item[1])
+        else:
+          session.getAddress(address, HttpClientScheme.NonSecure, item[1])
       var req = HttpClientRequestRef.new(session, ha, item[0])
       let response = await fetch(req)
       if response.status == 200:
@@ -125,8 +151,12 @@ suite "HTTP client testing suite":
     await session.closeWait()
 
     for item in RequestTests:
-      var session = HttpSessionRef.new()
-      let ha = session.getAddress(address, HttpClientScheme.NonSecure, item[1])
+      var session = createSession(secure)
+      let ha =
+        if secure:
+          session.getAddress(address, HttpClientScheme.Secure, item[1])
+        else:
+          session.getAddress(address, HttpClientScheme.NonSecure, item[1])
       var req = HttpClientRequestRef.new(session, ha, item[0])
       let response = await fetch(req)
       if response.status == 200:
@@ -138,20 +168,536 @@ suite "HTTP client testing suite":
 
     await server.stop()
     await server.closeWait()
-
     return counter
 
-  test "Different HTTP method requests test":
-    check waitFor(testMethods(initTAddress("127.0.0.1:30080"))) == 18
+  proc testResponseStreamReadingTest(address: TransportAddress,
+                                     secure: bool): Future[int] {.async.} =
+    let ResponseTests = [
+      (MethodGet, "/test/short_size_response", 65600, 1024,
+       "SHORTSIZERESPONSE"),
+      (MethodGet, "/test/long_size_response", 262400, 1024,
+       "LONGSIZERESPONSE"),
+      (MethodGet, "/test/short_chunked_response", 65600, 1024,
+       "SHORTCHUNKRESPONSE"),
+      (MethodGet, "/test/long_chunked_response", 262400, 1024,
+       "LONGCHUNKRESPONSE")
+    ]
+    proc process(r: RequestFence): Future[HttpResponseRef] {.
+         async.} =
+      if r.isOk():
+        let request = r.get()
+        case request.uri.path
+        of "/test/short_size_response":
+          var response = request.getResponse()
+          var data = createBigMessage(ResponseTests[0][4], ResponseTests[0][2])
+          response.status = Http200
+          await response.sendBody(data)
+          return response
+        of "/test/long_size_response":
+          var response = request.getResponse()
+          var data = createBigMessage(ResponseTests[1][4], ResponseTests[1][2])
+          response.status = Http200
+          await response.sendBody(data)
+          return response
+        of "/test/short_chunked_response":
+          var response = request.getResponse()
+          var data = createBigMessage(ResponseTests[2][4], ResponseTests[2][2])
+          response.status = Http200
+          await response.prepare()
+          var offset = 0
+          while true:
+            if len(data) == offset:
+              break
+            let toWrite = min(1024, len(data) - offset)
+            await response.sendChunk(addr data[offset], toWrite)
+            offset = offset + toWrite
+          await response.finish()
+          return response
+        of "/test/long_chunked_response":
+          var response = request.getResponse()
+          var data = createBigMessage(ResponseTests[3][4], ResponseTests[3][2])
+          response.status = Http200
+          await response.prepare()
+          var offset = 0
+          while true:
+            if len(data) == offset:
+              break
+            let toWrite = min(1024, len(data) - offset)
+            await response.sendChunk(addr data[offset], toWrite)
+            offset = offset + toWrite
+          await response.finish()
+          return response
+        else:
+          return await request.respond(Http404, "Page not found")
+      else:
+        return dumbResponse()
+
+    var server = createServer(address, process, secure)
+    server.start()
+    var counter = 0
+
+    var session = createSession(secure)
+    for item in ResponseTests:
+      let ha =
+        if secure:
+          session.getAddress(address, HttpClientScheme.Secure, item[1])
+        else:
+          session.getAddress(address, HttpClientScheme.NonSecure, item[1])
+      var req = HttpClientRequestRef.new(session, ha, item[0])
+      var response = await send(req)
+      if response.status == 200:
+        var reader = response.getBodyReader()
+        var res: seq[byte]
+        while true:
+          var data = await reader.read(item[3])
+          res.add(data)
+          if len(data) != item[3]:
+            break
+        await reader.closeWait()
+        if len(res) == item[2]:
+          let expect = createBigMessage(item[4], len(res))
+          if expect == res:
+            inc(counter)
+      await response.closeWait()
+      await req.closeWait()
+    await session.closeWait()
+
+    for item in ResponseTests:
+      var session = createSession(secure)
+      let ha =
+        if secure:
+          session.getAddress(address, HttpClientScheme.Secure, item[1])
+        else:
+          session.getAddress(address, HttpClientScheme.NonSecure, item[1])
+      var req = HttpClientRequestRef.new(session, ha, item[0])
+      var response = await send(req)
+      if response.status == 200:
+        var reader = response.getBodyReader()
+        var res: seq[byte]
+        while true:
+          var data = await reader.read(item[3])
+          res.add(data)
+          if len(data) != item[3]:
+            break
+        await reader.closeWait()
+        if len(res) == item[2]:
+          let expect = createBigMessage(item[4], len(res))
+          if expect == res:
+            inc(counter)
+      await response.closeWait()
+      await req.closeWait()
+      await session.closeWait()
+
+    await server.stop()
+    await server.closeWait()
+    return counter
+
+  proc testRequestSizeStreamWritingTest(address: TransportAddress,
+                                        secure: bool): Future[int] {.async.} =
+    let RequestTests = [
+      (MethodPost, "/test/big_request", 65600),
+      (MethodPost, "/test/big_request", 262400)
+    ]
+    proc process(r: RequestFence): Future[HttpResponseRef] {.
+         async.} =
+      if r.isOk():
+        let request = r.get()
+        case request.uri.path
+        of "/test/big_request":
+          if request.hasBody():
+            let body = await request.getBody()
+            let digest = $secureHash(cast[string](body))
+            return await request.respond(Http200, digest)
+          else:
+            return await request.respond(Http400, "Missing content body")
+        else:
+          return await request.respond(Http404, "Page not found")
+      else:
+        return dumbResponse()
+
+    var server = createServer(address, process, secure)
+    server.start()
+    var counter = 0
+
+    var session = createSession(secure)
+    for item in RequestTests:
+      let ha =
+        if secure:
+          session.getAddress(address, HttpClientScheme.Secure, item[1])
+        else:
+          session.getAddress(address, HttpClientScheme.NonSecure, item[1])
+      var data = createBigMessage("REQUESTSTREAMMESSAGE", item[2])
+      let headers = [
+        ("Content-Type", "application/octet-stream"),
+        ("Content-Length", Base10.toString(uint64(len(data))))
+      ]
+      var request = HttpClientRequestRef.new(
+        session, ha, item[0], headers = headers
+      )
+
+      var expectDigest = $secureHash(cast[string](data))
+      # Sending big request by 1024bytes long chunks
+      var writer = await open(request)
+      var offset = 0
+      while true:
+        if len(data) == offset:
+          break
+        let toWrite = min(1024, len(data) - offset)
+        await writer.write(addr data[offset], toWrite)
+        offset = offset + toWrite
+      await writer.finish()
+      await writer.closeWait()
+      var response = await request.finish()
+
+      if response.status == 200:
+        var res = await response.getBodyBytes()
+        if cast[string](res) == expectDigest:
+          inc(counter)
+      await response.closeWait()
+      await request.closeWait()
+    await session.closeWait()
+
+    await server.stop()
+    await server.closeWait()
+    return counter
+
+  proc testRequestChunkedStreamWritingTest(address: TransportAddress,
+                                          secure: bool): Future[int] {.async.} =
+    let RequestTests = [
+      (MethodPost, "/test/big_chunk_request", 65600),
+      (MethodPost, "/test/big_chunk_request", 262400)
+    ]
+    proc process(r: RequestFence): Future[HttpResponseRef] {.
+         async.} =
+      if r.isOk():
+        let request = r.get()
+        case request.uri.path
+        of "/test/big_chunk_request":
+          if request.hasBody():
+            let body = await request.getBody()
+            let digest = $secureHash(cast[string](body))
+            return await request.respond(Http200, digest)
+          else:
+            return await request.respond(Http400, "Missing content body")
+        else:
+          return await request.respond(Http404, "Page not found")
+      else:
+        return dumbResponse()
+
+    var server = createServer(address, process, secure)
+    server.start()
+    var counter = 0
+
+    var session = createSession(secure)
+    for item in RequestTests:
+      let ha =
+        if secure:
+          session.getAddress(address, HttpClientScheme.Secure, item[1])
+        else:
+          session.getAddress(address, HttpClientScheme.NonSecure, item[1])
+      var data = createBigMessage("REQUESTSTREAMMESSAGE", item[2])
+      let headers = [
+        ("Content-Type", "application/octet-stream"),
+        ("Transfer-Encoding", "chunked")
+      ]
+      var request = HttpClientRequestRef.new(
+        session, ha, item[0], headers = headers
+      )
+
+      var expectDigest = $secureHash(cast[string](data))
+      # Sending big request by 1024bytes long chunks
+      var writer = await open(request)
+      var offset = 0
+      while true:
+        if len(data) == offset:
+          break
+        let toWrite = min(1024, len(data) - offset)
+        await writer.write(addr data[offset], toWrite)
+        offset = offset + toWrite
+      await writer.finish()
+      await writer.closeWait()
+      var response = await request.finish()
+
+      if response.status == 200:
+        var res = await response.getBodyBytes()
+        if cast[string](res) == expectDigest:
+          inc(counter)
+      await response.closeWait()
+      await request.closeWait()
+    await session.closeWait()
+
+    await server.stop()
+    await server.closeWait()
+    return counter
+
+  proc testRequestPostUrlEncodedTest(address: TransportAddress,
+                                     secure: bool): Future[int] {.async.} =
+    let PostRequests = [
+      ("/test/post/urlencoded_size",
+       "field1=value1&field2=value2&field3=value3", "value1:value2:value3"),
+      ("/test/post/urlencoded_chunked",
+       "field1=longlonglongvalue1&field2=longlonglongvalue2&" &
+       "field3=longlonglongvalue3", "longlonglongvalue1:longlonglongvalue2:" &
+       "longlonglongvalue3")
+    ]
+
+    proc process(r: RequestFence): Future[HttpResponseRef] {.
+         async.} =
+      if r.isOk():
+        let request = r.get()
+        case request.uri.path
+        of "/test/post/urlencoded_size", "/test/post/urlencoded_chunked":
+          if request.hasBody():
+            var postTable = await request.post()
+            let body = postTable.getString("field1") & ":" &
+                       postTable.getString("field2") & ":" &
+                       postTable.getString("field3")
+            return await request.respond(Http200, body)
+          else:
+            return await request.respond(Http400, "Missing content body")
+        else:
+          return await request.respond(Http404, "Page not found")
+      else:
+        return dumbResponse()
+
+    var server = createServer(address, process, secure)
+    server.start()
+    var counter = 0
+
+    ## Sized url-encoded form
+    block:
+      var session = createSession(secure)
+      let ha =
+        if secure:
+          session.getAddress(address, HttpClientScheme.Secure,
+                             PostRequests[0][0])
+        else:
+          session.getAddress(address, HttpClientScheme.NonSecure,
+                             PostRequests[0][0])
+      let headers = [
+        ("Content-Type", "application/x-www-form-urlencoded"),
+      ]
+      var request = HttpClientRequestRef.new(
+        session, ha, MethodPost, headers = headers,
+        body = cast[seq[byte]](PostRequests[0][1]))
+      var response = await send(request)
+
+      if response.status == 200:
+        var res = await response.getBodyBytes()
+        if cast[string](res) == PostRequests[0][2]:
+          inc(counter)
+      await response.closeWait()
+      await request.closeWait()
+      await session.closeWait()
+
+    ## Chunked url-encoded form
+    block:
+      var session = createSession(secure)
+      let ha =
+        if secure:
+          session.getAddress(address, HttpClientScheme.Secure,
+                             PostRequests[1][0])
+        else:
+          session.getAddress(address, HttpClientScheme.NonSecure,
+                             PostRequests[1][0])
+      let headers = [
+        ("Content-Type", "application/x-www-form-urlencoded"),
+        ("Transfer-Encoding", "chunked")
+      ]
+      var request = HttpClientRequestRef.new(
+        session, ha, MethodPost, headers = headers)
+
+      var data = PostRequests[1][1]
+
+      var writer = await open(request)
+      var offset = 0
+      while true:
+        if len(data) == offset:
+          break
+        let toWrite = min(16, len(data) - offset)
+        await writer.write(addr data[offset], toWrite)
+        offset = offset + toWrite
+      await writer.finish()
+      await writer.closeWait()
+      var response = await request.finish()
+      if response.status == 200:
+        var res = await response.getBodyBytes()
+        if cast[string](res) == PostRequests[1][2]:
+          inc(counter)
+      await response.closeWait()
+      await request.closeWait()
+      await session.closeWait()
+
+    await server.stop()
+    await server.closeWait()
+    return counter
+
+  proc testRequestPostMultipartTest(address: TransportAddress,
+                                    secure: bool): Future[int] {.async.} =
+    let PostRequests = [
+      ("/test/post/multipart_size", "some-part-boundary",
+       [("field1", "value1"), ("field2", "value2"), ("field3", "value3")],
+       "value1:value2:value3"),
+      ("/test/post/multipart_chunked", "some-part-boundary",
+       [("field1", "longlonglongvalue1"), ("field2", "longlonglongvalue2"),
+        ("field3", "longlonglongvalue3")],
+       "longlonglongvalue1:longlonglongvalue2:longlonglongvalue3")
+    ]
+
+    proc process(r: RequestFence): Future[HttpResponseRef] {.
+         async.} =
+      if r.isOk():
+        let request = r.get()
+        case request.uri.path
+        of "/test/post/multipart_size", "/test/post/multipart_chunked":
+          if request.hasBody():
+            var postTable = await request.post()
+            let body = postTable.getString("field1") & ":" &
+                       postTable.getString("field2") & ":" &
+                       postTable.getString("field3")
+            return await request.respond(Http200, body)
+          else:
+            return await request.respond(Http400, "Missing content body")
+        else:
+          return await request.respond(Http404, "Page not found")
+      else:
+        return dumbResponse()
+
+    var server = createServer(address, process, secure)
+    server.start()
+    var counter = 0
+
+    ## Sized multipart form
+    block:
+      var mp = MultiPartWriter.init(PostRequests[0][1])
+      mp.begin()
+      for item in PostRequests[0][2]:
+        mp.beginPart(item[0], "", HttpTable.init())
+        mp.write(item[1])
+        mp.finishPart()
+      let data = mp.finish()
+
+      var session = createSession(secure)
+      let ha =
+        if secure:
+          session.getAddress(address, HttpClientScheme.Secure,
+                             PostRequests[0][0])
+        else:
+          session.getAddress(address, HttpClientScheme.NonSecure,
+                             PostRequests[0][0])
+      let headers = [
+        ("Content-Type", "multipart/form-data; boundary=" & PostRequests[0][1]),
+      ]
+      var request = HttpClientRequestRef.new(
+        session, ha, MethodPost, headers = headers, body = data)
+      var response = await send(request)
+      if response.status == 200:
+        var res = await response.getBodyBytes()
+        if cast[string](res) == PostRequests[0][3]:
+          inc(counter)
+      await response.closeWait()
+      await request.closeWait()
+      await session.closeWait()
+
+    ## Chunked multipart form
+    block:
+      var session = createSession(secure)
+      let ha =
+        if secure:
+          session.getAddress(address, HttpClientScheme.Secure,
+                             PostRequests[0][0])
+        else:
+          session.getAddress(address, HttpClientScheme.NonSecure,
+                             PostRequests[0][0])
+      let headers = [
+        ("Content-Type", "multipart/form-data; boundary=" & PostRequests[1][1]),
+        ("Transfer-Encoding", "chunked")
+      ]
+      var request = HttpClientRequestRef.new(
+        session, ha, MethodPost, headers = headers)
+      var writer = await open(request)
+      var mpw = MultiPartWriterRef.new(writer, PostRequests[1][1])
+      await mpw.begin()
+      for item in PostRequests[1][2]:
+        await mpw.beginPart(item[0], "", HttpTable.init())
+        await mpw.write(item[1])
+        await mpw.finishPart()
+      await mpw.finish()
+      await writer.finish()
+      await writer.closeWait()
+      let response = await request.finish()
+      if response.status == 200:
+        var res = await response.getBodyBytes()
+        if cast[string](res) == PostRequests[1][3]:
+          inc(counter)
+      await response.closeWait()
+      await request.closeWait()
+      await session.closeWait()
+
+    await server.stop()
+    await server.closeWait()
+    return counter
+
+  test "HTTP all request methods test":
+    let address = initTAddress("127.0.0.1:30080")
+    check waitFor(testMethods(address, false)) == 18
+
+  test "HTTP(S) all request methods test":
+    let address = initTAddress("127.0.0.1:30080")
+    check waitFor(testMethods(address, true)) == 18
+
+  test "HTTP client response streaming test":
+    let address = initTAddress("127.0.0.1:30080")
+    check waitFor(testResponseStreamReadingTest(address, false)) == 8
+
+  test "HTTP(S) client response streaming test":
+    let address = initTAddress("127.0.0.1:30080")
+    check waitFor(testResponseStreamReadingTest(address, true)) == 8
+
+  test "HTTP client (size) request streaming test":
+    let address = initTAddress("127.0.0.1:30080")
+    check waitFor(testRequestSizeStreamWritingTest(address, false)) == 2
+
+  test "HTTP(S) client (size) request streaming test":
+    let address = initTAddress("127.0.0.1:30080")
+    check waitFor(testRequestSizeStreamWritingTest(address, true)) == 2
+
+  test "HTTP client (chunked) request streaming test":
+    let address = initTAddress("127.0.0.1:30080")
+    check waitFor(testRequestChunkedStreamWritingTest(address, false)) == 2
+
+  test "HTTP(S) client (chunked) request streaming test":
+    let address = initTAddress("127.0.0.1:30080")
+    check waitFor(testRequestChunkedStreamWritingTest(address, true)) == 2
+
+  test "HTTP client (size + chunked) url-encoded POST test":
+    let address = initTAddress("127.0.0.1:30080")
+    check waitFor(testRequestPostUrlEncodedTest(address, false)) == 2
+
+  test "HTTP(S) client (size + chunked) url-encoded POST test":
+    let address = initTAddress("127.0.0.1:30080")
+    check waitFor(testRequestPostUrlEncodedTest(address, true)) == 2
+
+  test "HTTP client (size + chunked) multipart POST test":
+    let address = initTAddress("127.0.0.1:30080")
+    check waitFor(testRequestPostMultipartTest(address, false)) == 2
+
+  test "HTTP(S) client (size + chunked) multipart POST test":
+    let address = initTAddress("127.0.0.1:30080")
+    check waitFor(testRequestPostMultipartTest(address, true)) == 2
 
   test "Leaks test":
+    proc getTrackerLeaks(tracker: string): bool =
+      let tracker = getTracker(tracker)
+      if isNil(tracker): false else: tracker.isLeaked()
+
     check:
-      getTracker("http.body.reader").isLeaked() == false
-      getTracker("http.body.writer").isLeaked() == false
-      getTracker("httpclient.connection").isLeaked() == false
-      getTracker("httpclient.request").isLeaked() == false
-      getTracker("httpclient.response").isLeaked() == false
-      getTracker("async.stream.reader").isLeaked() == false
-      getTracker("async.stream.writer").isLeaked() == false
-      getTracker("stream.server").isLeaked() == false
-      getTracker("stream.transport").isLeaked() == false
+      getTrackerLeaks("http.body.reader") == false
+      getTrackerLeaks("http.body.writer") == false
+      getTrackerLeaks("httpclient.connection") == false
+      getTrackerLeaks("httpclient.request") == false
+      getTrackerLeaks("httpclient.response") == false
+      getTrackerLeaks("async.stream.reader") == false
+      getTrackerLeaks("async.stream.writer") == false
+      getTrackerLeaks("stream.server") == false
+      getTrackerLeaks("stream.transport") == false

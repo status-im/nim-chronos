@@ -516,12 +516,24 @@ proc init*[B: BChar](mpt: typedesc[MultiPartWriter],
   ##
   ## ``boundary`` - is multipart boundary, this value must not be empty.
   doAssert(validateBoundary(boundary).isOk())
+
+  let sboundary =
+    when B is char:
+      @(boundary.toOpenArrayByte(0, len(boundary) - 1))
+    else:
+      @boundary
+
+  var finishMark = sboundary
+  finishMark.add([0x2d'u8, 0x2d'u8, 0x0d'u8, 0x0a'u8])
+  var beginPartMark = sboundary
+  beginPartMark.add([0x0d'u8, 0x0a'u8])
+
   MultiPartWriter(
     kind: MultiPartSource.Buffer,
     buffer: newSeq[byte](),
     beginMark: @[0x2d'u8, 0x2d'u8],
-    finishMark: @boundary & [0x2d'u8, 0x2d'u8],
-    beginPartMark: @boundary & [0x0d'u8, 0x0a'u8],
+    finishMark: finishMark,
+    beginPartMark: beginPartMark,
     finishPartMark: @[0x0d'u8, 0x0a'u8, 0x2d'u8, 0x2d'u8],
     state: MultiPartWriterState.MessagePreparing
   )
@@ -532,12 +544,24 @@ proc new*[B: BChar](mpt: typedesc[MultiPartWriterRef],
      raises: [Defect].} =
   doAssert(validateBoundary(boundary).isOk())
   doAssert(not(isNil(stream)))
+
+  let sboundary =
+    when B is char:
+      @(boundary.toOpenArrayByte(0, len(boundary) - 1))
+    else:
+      @boundary
+
+  var finishMark = sboundary
+  finishMark.add([0x2d'u8, 0x2d'u8, 0x0d'u8, 0x0a'u8])
+  var beginPartMark = sboundary
+  beginPartMark.add([0x0d'u8, 0x0a'u8])
+
   MultiPartWriterRef(
     kind: MultiPartSource.Stream,
     stream: stream,
     beginMark: @[0x2d'u8, 0x2d'u8],
-    finishMark: @boundary & [0x2d'u8, 0x2d'u8],
-    beginPartMark: @boundary & [0x0d'u8, 0x0a'u8],
+    finishMark: finishMark,
+    beginPartMark: beginPartMark,
     finishPartMark: @[0x0d'u8, 0x0a'u8, 0x2d'u8, 0x2d'u8],
     state: MultiPartWriterState.MessagePreparing
   )
@@ -602,6 +626,7 @@ proc begin*(mpw: var MultiPartWriter) =
   doAssert(mpw.state == MultiPartWriterState.MessagePreparing)
   # write "--"
   mpw.buffer.add(mpw.beginMark)
+  mpw.state = MultiPartWriterState.MessageStarted
 
 proc beginPart*(mpw: MultiPartWriterRef, name: string,
                 filename: string, headers: HttpTable) {.async.} =
@@ -735,11 +760,3 @@ proc finish*(mpw: var MultiPartWriter): seq[byte] =
   mpw.buffer.add(mpw.finishMark)
   mpw.state = MultiPartWriterState.MessageFinished
   mpw.buffer
-
-proc closeWait*(mpw: MultiPartWriterRef) {.async.} =
-  ## Close and release MultiPartWriter's ``mpr`` streams and resources.
-  case mpw.kind
-  of MultiPartSource.Stream:
-    await mpw.stream.closeWait()
-  else:
-    discard

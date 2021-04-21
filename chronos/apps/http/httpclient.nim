@@ -766,6 +766,14 @@ proc prepareRequest(request: HttpClientRequestRef): string {.
   if AcceptHeader notin request.headers:
     discard request.headers.hasKeyOrPut(AcceptHeader, "*/*")
 
+  # Here we perform automatic detection: if request was created with non-zero
+  # body and `Content-Length` header is missing we will create one with size
+  # of body stored in request.
+  if ContentLengthHeader notin request.headers:
+    if len(request.buffer) > 0:
+      let slength = Base10.toString(uint64(len(request.buffer)))
+      discard request.headers.hasKeyOrPut(ContentLengthHeader, slength)
+
   request.bodyFlag =
     if ContentLengthHeader in request.headers:
       HttpClientBodyFlag.Sized
@@ -951,11 +959,13 @@ proc finish*(resp: HttpClientResponseRef) {.async.} =
 proc getBodyBytes*(response: HttpClientResponseRef): Future[seq[byte]] {.
      async.} =
   ## Read all bytes from response ``response``.
+  doAssert(response.state == HttpClientResponseState.HeadersReceived)
+  doAssert(response.connection.state ==
+           HttpClientConnectionState.ResponseHeadersReceived)
   let reader = response.getBodyReader()
   try:
     let data = await reader.read()
     await reader.closeWait()
-    await response.finish()
     return data
   except CancelledError as exc:
     response.setError(newHttpInterruptError())
@@ -969,11 +979,13 @@ proc getBodyBytes*(response: HttpClientResponseRef,
                    nbytes: int): Future[seq[byte]] {.async.} =
   ## Read all bytes (nbytes <= 0) or exactly `nbytes` bytes from response
   ## ``response``.
+  doAssert(response.state == HttpClientResponseState.HeadersReceived)
+  doAssert(response.connection.state ==
+           HttpClientConnectionState.ResponseHeadersReceived)
   let reader = response.getBodyReader()
   try:
     let data = await reader.read(nbytes)
     await reader.closeWait()
-    await response.finish()
     return data
   except CancelledError as exc:
     response.setError(newHttpInterruptError())
@@ -985,6 +997,9 @@ proc getBodyBytes*(response: HttpClientResponseRef,
 
 proc consumeBody*(response: HttpClientResponseRef): Future[int] {.async.} =
   ## Consume/discard response and return number of bytes consumed.
+  doAssert(response.state == HttpClientResponseState.HeadersReceived)
+  doAssert(response.connection.state ==
+           HttpClientConnectionState.ResponseHeadersReceived)
   let reader = response.getBodyReader()
   try:
     let res = await reader.consume()
