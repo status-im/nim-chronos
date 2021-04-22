@@ -13,32 +13,17 @@ jobs:
             cpu: amd64
             TEST_LANG: c
           - os: linux
-            cpu: amd64
-            TEST_LANG: cpp
-          - os: linux
             cpu: i386
             TEST_LANG: c
-          - os: linux
-            cpu: i386
-            TEST_LANG: cpp
           - os: macos
             cpu: amd64
             TEST_LANG: c
-          - os: macos
-            cpu: amd64
-            TEST_LANG: cpp
           - os: windows
             cpu: amd64
             TEST_LANG: c
           - os: windows
-            cpu: amd64
-            TEST_LANG: cpp
-          - os: windows
             cpu: i386
             TEST_LANG: c
-          - os: windows
-            cpu: i386
-            TEST_LANG: cpp
         include:
           - target:
               os: linux
