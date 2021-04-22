@@ -485,6 +485,12 @@ suite "AsyncStream test suite":
       getTracker("stream.transport").isLeaked() == false
 
 suite "ChunkedStream test suite":
+  proc createBigMessage(message: string, size: int): string =
+    var res = newString(size)
+    for i in 0 ..< len(res):
+      res[i] = chr(ord(message[i mod len(message)]))
+    res
+
   test "ChunkedStream test vectors":
     const ChunkedVectors = [
       ["4\r\nWiki\r\n5\r\npedia\r\nE\r\n in\r\n\r\nchunks.\r\n0\r\n\r\n",
@@ -641,6 +647,91 @@ suite "ChunkedStream test suite":
         check hexValue(byte(ch)) == ord(ch) - ord('A') + 10
       else:
         check hexValue(byte(ch)) == -1
+
+  test "ChunkedStream too big chunk header test":
+    proc checkTooBigChunkHeader(address: TransportAddress,
+                                inputstr: string): Future[bool] {.async.} =
+      proc serveClient(server: StreamServer,
+                       transp: StreamTransport) {.async.} =
+        var wstream = newAsyncStreamWriter(transp)
+        var data = inputstr
+        await wstream.write(data)
+        await wstream.finish()
+        await wstream.closeWait()
+        await transp.closeWait()
+        server.stop()
+        server.close()
+
+      var server = createStreamServer(address, serveClient, {ReuseAddr})
+      server.start()
+      var transp = await connect(address)
+      var rstream = newAsyncStreamReader(transp)
+      var rstream2 = newChunkedStreamReader(rstream)
+      let res =
+        try:
+          var data {.used.} = await rstream2.read()
+          false
+        except ChunkedStreamProtocolError:
+          true
+        except CatchableError:
+          false
+      await rstream2.closeWait()
+      await rstream.closeWait()
+      await transp.closeWait()
+      await server.join()
+      return res
+
+    let address = initTAddress("127.0.0.1:46001")
+    var data1 = createBigMessage("REQUESTSTREAMMESSAGE", 65600)
+    var data2 = createBigMessage("REQUESTSTREAMMESSAGE", 262400)
+    check waitFor(checkTooBigChunkHeader(address, data1)) == true
+    check waitFor(checkTooBigChunkHeader(address, data2)) == true
+
+  test "ChunkedStream read/write test":
+    proc checkVector(address: TransportAddress,
+                     inputstr: string, chsize: int): Future[string] {.async.} =
+      proc serveClient(server: StreamServer,
+                       transp: StreamTransport) {.async.} =
+        var wstream = newAsyncStreamWriter(transp)
+        var wstream2 = newChunkedStreamWriter(wstream)
+        var data = inputstr
+        var offset = 0
+        while true:
+          if len(data) == offset:
+            break
+          let toWrite = min(chsize, len(data) - offset)
+          await wstream2.write(addr data[offset], toWrite)
+          offset = offset + toWrite
+        await wstream2.finish()
+        await wstream2.closeWait()
+        await wstream.closeWait()
+        await transp.closeWait()
+        server.stop()
+        server.close()
+
+      var server = createStreamServer(address, serveClient, {ReuseAddr})
+      server.start()
+      var transp = await connect(address)
+      var rstream = newAsyncStreamReader(transp)
+      var rstream2 = newChunkedStreamReader(rstream)
+      var res = await rstream2.read()
+      var ress = cast[string](res)
+      await rstream2.closeWait()
+      await rstream.closeWait()
+      await transp.closeWait()
+      await server.join()
+      result = ress
+
+    proc testBigData(address: TransportAddress,
+                     datasize: int, chunksize: int): Future[bool] {.async.} =
+      var data = createBigMessage("REQUESTSTREAMMESSAGE", datasize)
+      var check = await checkVector(address, data, chunksize)
+      return (data == check)
+
+    let address = initTAddress("127.0.0.1:46001")
+    check waitFor(testBigData(address, 65600, 1024)) == true
+    check waitFor(testBigData(address, 262400, 4096)) == true
+    check waitFor(testBigData(address, 767309, 4457)) == true
 
   test "ChunkedStream leaks test":
     check:

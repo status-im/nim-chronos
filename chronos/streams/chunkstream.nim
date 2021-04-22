@@ -15,7 +15,8 @@ export asyncstream, stream, timer, common
 
 const
   ChunkBufferSize = 4096
-  ChunkHeaderSize = 8
+  MaxChunkHeaderSize = 1024
+  ChunkHeaderValueSize = 8
     # This is limit for chunk size to 8 hexadecimal digits, so maximum
     # chunk size for this implementation become:
     # 2^32 == FFFF_FFFF'u32 == 4,294,967,295 bytes.
@@ -49,9 +50,9 @@ proc hexValue*(c: byte): int =
 
 proc getChunkSize(buffer: openarray[byte]): Result[uint64, cstring] =
   # We using `uint64` representation, but allow only 2^32 chunk size,
-  # ChunkHeaderSize.
+  # ChunkHeaderValueSize.
   var res = 0'u64
-  for i in 0 ..< min(len(buffer), ChunkHeaderSize + 1):
+  for i in 0 ..< min(len(buffer), ChunkHeaderValueSize + 1):
     let value = hexValue(buffer[i])
     if value < 0:
       if buffer[i] == byte(';'):
@@ -60,7 +61,7 @@ proc getChunkSize(buffer: openarray[byte]): Result[uint64, cstring] =
       else:
         return err("Incorrect chunk size encoding")
     else:
-      if i >= ChunkHeaderSize:
+      if i >= ChunkHeaderValueSize:
         return err("The chunk size exceeds the limit")
       res = (res shl 4) or uint64(value)
   ok(res)
@@ -96,7 +97,7 @@ proc setChunkSize(buffer: var openarray[byte], length: int64): int =
 
 proc chunkedReadLoop(stream: AsyncStreamReader) {.async.} =
   var rstream = ChunkedStreamReader(stream)
-  var buffer = newSeq[byte](1024)
+  var buffer = newSeq[byte](MaxChunkHeaderSize)
   rstream.state = AsyncStreamState.Running
 
   while true:
@@ -137,6 +138,10 @@ proc chunkedReadLoop(stream: AsyncStreamReader) {.async.} =
           await rstream.buffer.transfer()
     except CancelledError:
       rstream.state = AsyncStreamState.Stopped
+    except AsyncStreamLimitError:
+      rstream.state = AsyncStreamState.Error
+      rstream.error = newException(ChunkedStreamProtocolError,
+                                   "Chunk header exceeds maximum size")
     except AsyncStreamIncompleteError:
       rstream.state = AsyncStreamState.Error
       rstream.error = newException(ChunkedStreamIncompleteError,
