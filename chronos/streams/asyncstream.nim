@@ -151,16 +151,22 @@ proc copyData*(sb: AsyncBuffer, dest: pointer, offset, length: int) {.inline.} =
 
 proc upload*(sb: ptr AsyncBuffer, pbytes: ptr byte,
              nbytes: int): Future[void] {.async.} =
+  ## You can upload any amount of bytes to the buffer. If size of internal
+  ## buffer is not enough to fit all the data at once, data will be uploaded
+  ## via chunks of size up to internal buffer size.
   var length = nbytes
+  var srcBuffer = cast[ptr UncheckedArray[byte]](pbytes)
+  var srcOffset = 0
   while length > 0:
     let size = min(length, sb[].bufferLen())
     if size == 0:
       # Internal buffer is full, we need to transfer data to consumer.
       await sb[].transfer()
-      continue
     else:
-      copyMem(addr sb[].buffer[sb.offset], pbytes, size)
+      # Copy data from `pbytes` to internal buffer.
+      copyMem(addr sb[].buffer[sb.offset], addr srcBuffer[srcOffset], size)
       sb[].offset = sb[].offset + size
+      srcOffset = srcOffset + size
       length = length - size
   # We notify consumers that new data is available.
   sb[].forget()
