@@ -76,7 +76,7 @@ suite "HTTP client testing suite":
 
   proc createBigMessage(message: string, size: int): seq[byte] =
     var res = newSeq[byte](size)
-    for i in 0 ..< len(result):
+    for i in 0 ..< len(res):
       res[i] = byte(message[i mod len(message)])
     res
 
