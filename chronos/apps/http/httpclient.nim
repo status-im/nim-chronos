@@ -938,7 +938,7 @@ proc getBodyReader*(resp: HttpClientResponseRef): HttpBodyReader =
       case resp.bodyFlag
       of HttpClientBodyFlag.Sized:
         let bstream = newBoundedStreamReader(resp.connection.reader,
-                                             some(resp.contentLength))
+                                             resp.contentLength)
         newHttpBodyReader(bstream)
       of HttpClientBodyFlag.Chunked:
         newHttpBodyReader(newChunkedStreamReader(resp.connection.reader))
