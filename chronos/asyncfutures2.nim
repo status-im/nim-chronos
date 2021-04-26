@@ -1,8 +1,8 @@
 #
 #                     Chronos
 #
-#           (c) Copyright 2015 Dominik Picheta
-#  (c) Copyright 2018-Present Status Research & Development GmbH
+#  (c) Copyright 2015 Dominik Picheta
+#  (c) Copyright 2018-2021 Status Research & Development GmbH
 #
 #                Licensed under either of
 #    Apache License, version 2.0, (LICENSE-APACHEv2)
@@ -11,6 +11,13 @@
 import std/[os, tables, strutils, heapqueue, options, deques, cstrutils, sequtils]
 import ./srcloc
 export srcloc
+
+when defined(nimHasStacktracesModule):
+  import system/stacktraces
+else:
+  const
+    reraisedFromBegin = -10
+    reraisedFromEnd = -100
 
 const
   LocCreateIndex* = 0
@@ -390,49 +397,71 @@ proc `cancelCallback=`*[T](future: Future[T], cb: CallbackFunc) =
   ## This callback will be called immediately as ``future.cancel()`` invoked.
   future.cancelcb = cb
 
+template getFilenameProcname(entry: StackTraceEntry): (string, string) =
+  when compiles(entry.filenameStr) and compiles(entry.procnameStr):
+    # We can't rely on "entry.filename" and "entry.procname" still being valid
+    # cstring pointers, because the "string.data" buffers they pointed to might
+    # be already garbage collected (this entry being a non-shallow copy,
+    # "entry.filename" no longer points to "entry.filenameStr.data", but to the
+    # buffer of the original object).
+    (entry.filenameStr, entry.procnameStr)
+  else:
+    ($entry.filename, $entry.procname)
+
 proc getHint(entry: StackTraceEntry): string =
   ## We try to provide some hints about stack trace entries that the user
   ## may not be familiar with, in particular calls inside the stdlib.
-  result = ""
-  if entry.procname == "processPendingCallbacks":
-    if cmpIgnoreStyle(entry.filename, "asyncdispatch.nim") == 0:
+
+  let (filename, procname) = getFilenameProcname(entry)
+
+  if procname == "processPendingCallbacks":
+    if cmpIgnoreStyle(filename, "asyncdispatch.nim") == 0:
       return "Executes pending callbacks"
-  elif entry.procname == "poll":
-    if cmpIgnoreStyle(entry.filename, "asyncdispatch.nim") == 0:
+  elif procname == "poll":
+    if cmpIgnoreStyle(filename, "asyncdispatch.nim") == 0:
       return "Processes asynchronous completion events"
 
-  if entry.procname.endsWith("_continue"):
-    if cmpIgnoreStyle(entry.filename, "asyncmacro.nim") == 0:
+  if procname.endsWith("_continue"):
+    if cmpIgnoreStyle(filename, "asyncmacro.nim") == 0:
       return "Resumes an async procedure"
 
-proc `$`*(entries: seq[StackTraceEntry]): string =
+proc `$`(stackTraceEntries: seq[StackTraceEntry]): string =
   try:
+    when defined(nimStackTraceOverride) and declared(addDebuggingInfo):
+      let entries = addDebuggingInfo(stackTraceEntries)
+    else:
+      let entries = stackTraceEntries
+
     # Find longest filename & line number combo for alignment purposes.
     var longestLeft = 0
     for entry in entries:
-      if isNil(entry.procName): continue
+      let (filename, procname) = getFilenameProcname(entry)
 
-      let left = $entry.filename & $entry.line
-      if left.len > longestLeft:
-        longestLeft = left.len
+      if procname == "": continue
+
+      let leftLen = filename.len + len($entry.line)
+      if leftLen > longestLeft:
+        longestLeft = leftLen
 
     var indent = 2
     # Format the entries.
     for entry in entries:
-      if isNil(entry.procName):
-        if entry.line == -10:
+      let (filename, procname) = getFilenameProcname(entry)
+
+      if procname == "":
+        if entry.line == reraisedFromBegin:
           result.add(spaces(indent) & "#[\n")
           indent.inc(2)
-        else:
+        elif entry.line == reraisedFromEnd:
           indent.dec(2)
           result.add(spaces(indent) & "]#\n")
         continue
 
-      let left = "$#($#)" % [$entry.filename, $entry.line]
+      let left = "$#($#)" % [filename, $entry.line]
       result.add((spaces(indent) & "$#$# $#\n") % [
         left,
         spaces(longestLeft - left.len + 2),
-        $entry.procName
+        procname
       ])
       let hint = getHint(entry)
       if hint.len > 0:
@@ -457,9 +486,9 @@ when defined(chronosStackTrace):
     newMsg.add($entries)
 
     newMsg.add("Exception message: " & exceptionMsg & "\n")
-    newMsg.add("Exception type:")
 
     # # For debugging purposes
+    # newMsg.add("Exception type:")
     # for entry in getStackTraceEntries(future.error):
     #   newMsg.add "\n" & $entry
     future.error.msg = newMsg
