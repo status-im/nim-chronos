@@ -2458,7 +2458,20 @@ proc closeWait*(transp: StreamTransport): Future[void] =
 
 proc closed*(transp: StreamTransport): bool {.inline.} =
   ## Returns ``true`` if transport in closed state.
-  result = ({ReadClosed, WriteClosed} * transp.state != {})
+  ({ReadClosed, WriteClosed} * transp.state != {})
+
+proc finished*(transp: StreamTransport): bool {.inline.} =
+  ## Returns ``true`` if transport in finished (EOF) state.
+  ({ReadEof, WriteEof} * transp.state != {})
+
+proc failed*(transp: StreamTransport): bool {.inline.} =
+  ## Returns ``true`` if transport in error state.
+  ({ReadError, WriteError} * transp.state != {})
+
+proc running*(transp: StreamTransport): bool {.inline.} =
+  ## Returns ``true`` if transport is still pending.
+  ({ReadClosed, ReadEof, ReadError,
+    WriteClosed, WriteEof, WriteError} * transp.state == {})
 
 proc fromPipe*(fd: AsyncFD, child: StreamTransport = nil,
                bufferSize = DefaultStreamBufferSize): StreamTransport {.

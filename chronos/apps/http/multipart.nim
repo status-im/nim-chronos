@@ -14,6 +14,9 @@ import ../../streams/[asyncstream, boundstream, chunkstream]
 import httptable, httpcommon
 export httptable, httpcommon, asyncstream
 
+const
+  UnableToReadMultipartBody = "Unable to read multipart message body"
+
 type
   MultiPartSource* {.pure.} = enum
     Stream, Buffer
@@ -165,10 +168,10 @@ proc readPart*(mpr: MultiPartReaderRef): Future[MultiPart] {.async.} =
     except CancelledError as exc:
       raise exc
     except AsyncStreamError:
-      if mpr.stream.atBound():
-        raiseHttpCriticalError("Maximum size of body reached", Http413)
+      if mpr.stream.hasOverflow():
+        raiseHttpCriticalError(MaximumBodySizeError, Http413)
       else:
-        raiseHttpCriticalError("Unable to read multipart body")
+        raiseHttpCriticalError(UnableToReadMultipartBody)
 
   # Reading part's headers
   try:
@@ -199,7 +202,7 @@ proc readPart*(mpr: MultiPartReaderRef): Future[MultiPart] {.async.} =
       kind: MultiPartSource.Stream,
       headers: HttpTable.init(),
       breader: mpr.stream,
-      stream: newBoundedStreamReader(mpr.stream, -1, mpr.boundary),
+      stream: newBoundedStreamReader(mpr.stream, mpr.boundary),
       counter: mpr.counter
     )
 
@@ -214,14 +217,10 @@ proc readPart*(mpr: MultiPartReaderRef): Future[MultiPart] {.async.} =
   except CancelledError as exc:
     raise exc
   except AsyncStreamError:
-    if mpr.stream.atBound():
-      raiseHttpCriticalError("Maximum size of body reached", Http413)
+    if mpr.stream.hasOverflow():
+      raiseHttpCriticalError(MaximumBodySizeError, Http413)
     else:
-      raiseHttpCriticalError("Unable to read multipart body")
-
-proc atBound*(mp: MultiPart): bool =
-  ## Returns ``true`` if MultiPart's stream reached request body maximum size.
-  mp.breader.atBound()
+      raiseHttpCriticalError(UnableToReadMultipartBody)
 
 proc getBody*(mp: MultiPart): Future[seq[byte]] {.async.} =
   ## Get multipart's ``mp`` value as sequence of bytes.
@@ -231,10 +230,10 @@ proc getBody*(mp: MultiPart): Future[seq[byte]] {.async.} =
       let res = await mp.stream.read()
       return res
     except AsyncStreamError:
-      if mp.breader.atBound():
-        raiseHttpCriticalError("Maximum size of body reached", Http413)
+      if mp.breader.hasOverflow():
+        raiseHttpCriticalError(MaximumBodySizeError, Http413)
       else:
-        raiseHttpCriticalError("Unable to read multipart body")
+        raiseHttpCriticalError(UnableToReadMultipartBody)
   of MultiPartSource.Buffer:
     return mp.buffer
 
@@ -245,10 +244,10 @@ proc consumeBody*(mp: MultiPart) {.async.} =
     try:
       discard await mp.stream.consume()
     except AsyncStreamError:
-      if mp.breader.atBound():
-        raiseHttpCriticalError("Maximum size of body reached", Http413)
+      if mp.breader.hasOverflow():
+        raiseHttpCriticalError(MaximumBodySizeError, Http413)
       else:
-        raiseHttpCriticalError("Unable to consume multipart body")
+        raiseHttpCriticalError(UnableToReadMultipartBody)
   of MultiPartSource.Buffer:
     discard
 

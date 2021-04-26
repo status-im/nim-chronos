@@ -238,31 +238,115 @@ template checkStreamClosed*(t: untyped) =
 proc atEof*(rstream: AsyncStreamReader): bool =
   ## Returns ``true`` is reading stream is closed or finished and internal
   ## buffer do not have any bytes left.
-  rstream.state in {AsyncStreamState.Stopped, Finished, Closed, Error} and
-    (rstream.buffer.dataLen() == 0)
+  if isNil(rstream.readerLoop):
+    if isNil(rstream.rsource):
+      rstream.tsource.atEof()
+    else:
+      rstream.rsource.atEof()
+  else:
+    rstream.state in {AsyncStreamState.Stopped, Finished, Closed, Error} and
+      (rstream.buffer.dataLen() == 0)
 
 proc atEof*(wstream: AsyncStreamWriter): bool =
   ## Returns ``true`` is writing stream ``wstream`` closed or finished.
-  wstream.state in {AsyncStreamState.Stopped, Finished, Closed}
+  if isNil(wstream.writerLoop):
+    if isNil(wstream.wsource):
+      wstream.tsource.atEof()
+    else:
+      wstream.wsource.atEof()
+  else:
+    wstream.state in {AsyncStreamState.Stopped, Finished, Closed, Error}
 
-proc closed*(rw: AsyncStreamRW): bool {.inline.} =
+proc closed*(reader: AsyncStreamReader): bool =
   ## Returns ``true`` is reading/writing stream is closed.
-  (rw.state == AsyncStreamState.Closed)
+  (reader.state == AsyncStreamState.Closed)
 
-proc finished*(rw: AsyncStreamRW): bool {.inline.} =
+proc finished*(reader: AsyncStreamReader): bool =
   ## Returns ``true`` is reading/writing stream is finished (completed).
-  (rw.state == AsyncStreamState.Finished)
+  if isNil(reader.readerLoop):
+    if isNil(reader.rsource):
+      reader.tsource.finished()
+    else:
+      reader.rsource.finished()
+  else:
+    (reader.state == AsyncStreamState.Finished)
 
-proc stopped*(rw: AsyncStreamRW): bool {.inline.} =
+proc stopped*(reader: AsyncStreamReader): bool =
   ## Returns ``true`` is reading/writing stream is stopped (interrupted).
-  (rw.state == AsyncStreamState.Stopped)
+  if isNil(reader.readerLoop):
+    if isNil(reader.rsource):
+      false
+    else:
+      reader.rsource.stopped()
+  else:
+    (reader.state == AsyncStreamState.Stopped)
 
-proc running*(rw: AsyncStreamRW): bool {.inline.} =
+proc running*(reader: AsyncStreamReader): bool =
   ## Returns ``true`` is reading/writing stream is still pending.
-  (rw.state == AsyncStreamState.Running)
+  if isNil(reader.readerLoop):
+    if isNil(reader.rsource):
+      reader.tsource.running()
+    else:
+      reader.rsource.running()
+  else:
+    (reader.state == AsyncStreamState.Running)
 
-proc setupAsyncStreamReaderTracker(): AsyncStreamTracker {.gcsafe, raises: [Defect].}
-proc setupAsyncStreamWriterTracker(): AsyncStreamTracker {.gcsafe, raises: [Defect].}
+proc failed*(reader: AsyncStreamReader): bool =
+  if isNil(reader.readerLoop):
+    if isNil(reader.rsource):
+      reader.tsource.failed()
+    else:
+      reader.rsource.failed()
+  else:
+    (reader.state == AsyncStreamState.Error)
+
+proc closed*(writer: AsyncStreamWriter): bool =
+  ## Returns ``true`` is reading/writing stream is closed.
+  (writer.state == AsyncStreamState.Closed)
+
+proc finished*(writer: AsyncStreamWriter): bool =
+  ## Returns ``true`` is reading/writing stream is finished (completed).
+  if isNil(writer.writerLoop):
+    if isNil(writer.wsource):
+      writer.tsource.finished()
+    else:
+      writer.wsource.finished()
+  else:
+    (writer.state == AsyncStreamState.Finished)
+
+proc stopped*(writer: AsyncStreamWriter): bool =
+  ## Returns ``true`` is reading/writing stream is stopped (interrupted).
+  if isNil(writer.writerLoop):
+    if isNil(writer.wsource):
+      false
+    else:
+      writer.wsource.stopped()
+  else:
+    (writer.state == AsyncStreamState.Stopped)
+
+proc running*(writer: AsyncStreamWriter): bool =
+  ## Returns ``true`` is reading/writing stream is still pending.
+  if isNil(writer.writerLoop):
+    if isNil(writer.wsource):
+      writer.tsource.running()
+    else:
+      writer.wsource.running()
+  else:
+    (writer.state == AsyncStreamState.Running)
+
+proc failed*(writer: AsyncStreamWriter): bool =
+  if isNil(writer.writerLoop):
+    if isNil(writer.wsource):
+      writer.tsource.failed()
+    else:
+      writer.wsource.failed()
+  else:
+    (writer.state == AsyncStreamState.Error)
+
+proc setupAsyncStreamReaderTracker(): AsyncStreamTracker {.
+     gcsafe, raises: [Defect].}
+proc setupAsyncStreamWriterTracker(): AsyncStreamTracker {.
+     gcsafe, raises: [Defect].}
 
 proc getAsyncStreamReaderTracker(): AsyncStreamTracker {.inline.} =
   var res = cast[AsyncStreamTracker](getTracker(AsyncStreamReaderTrackerName))

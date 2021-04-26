@@ -365,14 +365,14 @@ proc getBodyReader*(request: HttpRequestRef): HttpResult[HttpBodyReader] =
   ## leaks.
   if HttpRequestFlags.BoundBody in request.requestFlags:
     let bstream = newBoundedStreamReader(request.connection.reader,
-                                         request.contentLength)
+                                         uint64(request.contentLength))
     ok(newHttpBodyReader(bstream))
   elif HttpRequestFlags.UnboundBody in request.requestFlags:
     let maxBodySize = request.connection.server.maxRequestBodySize
-    let bstream = newBoundedStreamReader(request.connection.reader, maxBodySize,
+    let cstream = newChunkedStreamReader(request.connection.reader)
+    let bstream = newBoundedStreamReader(cstream, uint64(maxBodySize),
                                          comparison = BoundCmp.LessOrEqual)
-    let cstream = newChunkedStreamReader(bstream)
-    ok(newHttpBodyReader(cstream, bstream))
+    ok(newHttpBodyReader(bstream, cstream))
   else:
     err("Request do not have body available")
 
@@ -399,12 +399,12 @@ proc getBody*(request: HttpRequestRef): Future[seq[byte]] {.async.} =
     let reader = res.get()
     try:
       await request.handleExpect()
-      return await reader.read()
+      var res = await reader.read()
+      if reader.hasOverflow():
+        raiseHttpCriticalError(MaximumBodySizeError, Http413)
+      return res
     except AsyncStreamError:
-      if reader.atBound():
-        raiseHttpCriticalError("Maximum size of body reached", Http413)
-      else:
-        raiseHttpCriticalError("Unable to read request's body")
+      raiseHttpCriticalError("Unable to read request's body")
     finally:
       await closeWait(res.get())
 
@@ -418,11 +418,10 @@ proc consumeBody*(request: HttpRequestRef): Future[void] {.async.} =
     try:
       await request.handleExpect()
       discard await reader.consume()
+      if reader.hasOverflow():
+        raiseHttpCriticalError(MaximumBodySizeError, Http413)
     except AsyncStreamError:
-      if reader.atBound():
-        raiseHttpCriticalError("Maximum size of body reached", Http413)
-      else:
-        raiseHttpCriticalError("Unable to read request's body")
+      raiseHttpCriticalError("Unable to read request's body")
     finally:
       await closeWait(res.get())
 
