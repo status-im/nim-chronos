@@ -947,13 +947,13 @@ suite "BoundedStream test suite":
         var rstream = newAsyncStreamReader(conn)
         case btest
         of BoundaryRead:
-          var rbstream = newBoundedStreamReader(rstream, -1, boundary)
+          var rbstream = newBoundedStreamReader(rstream, boundary)
           let response = await rbstream.read()
           if response == message:
             res = true
           await rbstream.closeWait()
         of BoundaryDouble:
-          var rbstream = newBoundedStreamReader(rstream, -1, boundary)
+          var rbstream = newBoundedStreamReader(rstream, boundary)
           let response1 = await rbstream.read()
           await rbstream.closeWait()
           let response2 = await rstream.read()
@@ -963,20 +963,20 @@ suite "BoundedStream test suite":
           var expectMessage = message
           expectMessage[^2] = 0x2D'u8
           expectMessage[^1] = 0x2D'u8
-          var rbstream = newBoundedStreamReader(rstream, size, boundary)
+          var rbstream = newBoundedStreamReader(rstream, uint64(size), boundary)
           let response = await rbstream.read()
           await rbstream.closeWait()
           if (len(response) == size) and response == expectMessage:
             res = true
         of BoundaryIncomplete:
-          var rbstream = newBoundedStreamReader(rstream, -1, boundary)
+          var rbstream = newBoundedStreamReader(rstream, boundary)
           try:
             let response {.used.} = await rbstream.read()
           except BoundedStreamIncompleteError:
             res = true
           await rbstream.closeWait()
         of BoundaryEmpty:
-          var rbstream = newBoundedStreamReader(rstream, -1, boundary)
+          var rbstream = newBoundedStreamReader(rstream, boundary)
           let response = await rbstream.read()
           await rbstream.closeWait()
           if len(response) == 0:
@@ -1001,7 +1001,8 @@ suite "BoundedStream test suite":
         proc processClient(server: StreamServer,
                            transp: StreamTransport) {.async.} =
           var wstream = newAsyncStreamWriter(transp)
-          var wbstream = newBoundedStreamWriter(wstream, size, comparison = cmp)
+          var wbstream = newBoundedStreamWriter(wstream, uint64(size),
+                                                comparison = cmp)
           case stest
           of SizeReadWrite:
             for i in 0 ..< 10:
@@ -1058,7 +1059,8 @@ suite "BoundedStream test suite":
         server.start()
         var conn = await connect(address)
         var rstream = newAsyncStreamReader(conn)
-        var rbstream = newBoundedStreamReader(rstream, size, comparison = cmp)
+        var rbstream = newBoundedStreamReader(rstream, uint64(size),
+                                              comparison = cmp)
         case stest
         of SizeReadWrite:
           let response = await rbstream.read()
@@ -1153,7 +1155,7 @@ suite "BoundedStream test suite":
       proc serveClient(server: StreamServer,
                        transp: StreamTransport) {.async.} =
         var wstream = newAsyncStreamWriter(transp)
-        var wstream2 = newBoundedStreamWriter(wstream, len(inputstr))
+        var wstream2 = newBoundedStreamWriter(wstream, uint64(len(inputstr)))
         var data = inputstr
         var offset = 0
         while true:

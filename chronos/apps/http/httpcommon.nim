@@ -6,7 +6,8 @@
 #              Licensed under either of
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
-import stew/results, httputils, strutils, uri
+import std/[strutils, uri]
+import stew/results, httputils
 import ../../asyncloop, ../../asyncsync
 import ../../streams/[asyncstream, boundstream]
 export results, httputils, strutils
@@ -14,6 +15,8 @@ export results, httputils, strutils
 const
   HeadersMark* = @[byte(0x0D), byte(0x0A), byte(0x0D), byte(0x0A)]
   PostMethods* = {MethodPost, MethodPatch, MethodPut, MethodDelete}
+
+  MaximumBodySizeError* = "Maximum size of request's body reached"
 
 type
   HttpResult*[T] = Result[T, string]
@@ -48,20 +51,29 @@ proc newHttpBodyReader*(streams: varargs[AsyncStreamReader]): HttpBodyReader =
 
 proc closeWait*(bstream: HttpBodyReader) {.async.} =
   ## Close and free resource allocated by body reader.
-  if len(bstream.streams) > 0:
-    var res = newSeq[Future[void]]()
-    for item in bstream.streams.items():
-      res.add(item.closeWait())
-    await allFutures(res)
-  await procCall(AsyncStreamReader(bstream).closeWait())
+  var res = newSeq[Future[void]]()
+  # We closing streams in reversed order because stream at position [0], uses
+  # data from stream at position [1].
+  for index in countdown((len(bstream.streams) - 1), 0):
+    res.add(bstream.streams[index].closeWait())
+  await allFutures(res)
+  await procCall(closeWait(AsyncStreamReader(bstream)))
 
-proc atBound*(bstream: HttpBodyReader): bool {.
-     raises: [Defect].} =
-  ## Returns ``true`` if lowest stream is at EOF.
-  let lreader = bstream.streams[^1]
-  doAssert(lreader of BoundedStreamReader)
-  let breader = cast[BoundedStreamReader](lreader)
-  breader.atEof() and (breader.bytesLeft() == 0)
+proc hasOverflow*(bstream: HttpBodyReader): bool {.raises: [Defect].} =
+  if len(bstream.streams) == 1:
+    # If HttpBodyReader has only one stream it has ``BoundedStreamReader``, in
+    # such case its impossible to get more bytes then expected amount.
+    false
+  else:
+    # If HttpBodyReader has two or more streams, we check if
+    # ``BoundedStreamReader`` at EOF.
+    if bstream.streams[0].atEof():
+      for i in 1 ..< len(bstream.streams):
+        if not(bstream.streams[1].atEof()):
+          return true
+      false
+    else:
+      false
 
 proc raiseHttpCriticalError*(msg: string,
                              code = Http400) {.noinline, noreturn.} =
