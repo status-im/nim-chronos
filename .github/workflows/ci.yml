@@ -11,19 +11,14 @@ jobs:
         target:
           - os: linux
             cpu: amd64
-            TEST_LANG: c
           - os: linux
             cpu: i386
-            TEST_LANG: c
           - os: macos
             cpu: amd64
-            TEST_LANG: c
           - os: windows
             cpu: amd64
-            TEST_LANG: c
           - os: windows
             cpu: i386
-            TEST_LANG: c
         include:
           - target:
               os: linux
@@ -35,7 +30,7 @@ jobs:
               os: windows
             builder: windows-2019
 
-    name: '${{ matrix.target.os }}-${{ matrix.target.cpu }}-${{ matrix.target.TEST_LANG }} (${{ matrix.branch }})'
+    name: '${{ matrix.target.os }}-${{ matrix.target.cpu }} (${{ matrix.branch }})'
     runs-on: ${{ matrix.builder }}
     steps:
       - name: Checkout nim-chronos
@@ -130,8 +125,8 @@ jobs:
         id: nim-cache
         uses: actions/cache@v2
         with:
-          path: nim
-          key: 'nim-${{ matrix.target.os }}-${{ matrix.target.cpu }}-${{ steps.versions.outputs.nimbus_build_system }}'
+          path: NimBinaries
+          key: 'nim-${{ matrix.target.os }}-${{ matrix.target.cpu }}-${{ steps.versions.outputs.nimbus_build_system }}-2'
 
       - name: Build Nim and associated tools
         if: steps.nim-cache.outputs.cache-hit != 'true'
@@ -150,15 +145,6 @@ jobs:
           fi
           env MAKE="$MAKE_CMD -j2" ARCH_OVERRIDE=$PLATFORM CC=gcc bash build_nim.sh nim csources dist/nimble NimBinaries
 
-          # clean up to save cache space
-          cd nim
-          rm koch
-          rm -rf nimcache
-          rm -rf csources
-          rm -rf tests
-          rm -rf dist
-          rm -rf .git
-
       - name: Setup environment
         shell: bash
         run: echo '${{ github.workspace }}/nim/bin' >> $GITHUB_PATH
@@ -168,4 +154,5 @@ jobs:
         working-directory: nim-chronos
         run: |
           nimble install -y --depsOnly
-          env TEST_LANG="${{ matrix.target.TEST_LANG }}" nimble test
+          nimble install -y libbacktrace
+          nimble test
