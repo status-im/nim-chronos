@@ -962,15 +962,21 @@ proc getBodyBytes*(response: HttpClientResponseRef): Future[seq[byte]] {.
   doAssert(response.state == HttpClientResponseState.HeadersReceived)
   doAssert(response.connection.state ==
            HttpClientConnectionState.ResponseHeadersReceived)
-  let reader = response.getBodyReader()
+  var reader = response.getBodyReader()
   try:
     let data = await reader.read()
     await reader.closeWait()
+    reader = nil
+    await response.finish()
     return data
   except CancelledError as exc:
+    if not(isNil(reader)):
+      await reader.closeWait()
     response.setError(newHttpInterruptError())
     raise exc
   except AsyncStreamError as exc:
+    if not(isNil(reader)):
+      await reader.closeWait()
     let error = newHttpReadError("Could not read response")
     response.setError(error)
     raise error
@@ -982,15 +988,21 @@ proc getBodyBytes*(response: HttpClientResponseRef,
   doAssert(response.state == HttpClientResponseState.HeadersReceived)
   doAssert(response.connection.state ==
            HttpClientConnectionState.ResponseHeadersReceived)
-  let reader = response.getBodyReader()
+  var reader = response.getBodyReader()
   try:
     let data = await reader.read(nbytes)
     await reader.closeWait()
+    reader = nil
+    await response.finish()
     return data
   except CancelledError as exc:
+    if not(isNil(reader)):
+      await reader.closeWait()
     response.setError(newHttpInterruptError())
     raise exc
   except AsyncStreamError as exc:
+    if not(isNil(reader)):
+      await reader.closeWait()
     let error = newHttpReadError("Could not read response")
     response.setError(error)
     raise error
@@ -1000,16 +1012,21 @@ proc consumeBody*(response: HttpClientResponseRef): Future[int] {.async.} =
   doAssert(response.state == HttpClientResponseState.HeadersReceived)
   doAssert(response.connection.state ==
            HttpClientConnectionState.ResponseHeadersReceived)
-  let reader = response.getBodyReader()
+  var reader = response.getBodyReader()
   try:
     let res = await reader.consume()
     await reader.closeWait()
+    reader = nil
     await response.finish()
     return res
   except CancelledError as exc:
+    if not(isNil(reader)):
+      await reader.closeWait()
     response.setError(newHttpInterruptError())
     raise exc
   except AsyncStreamError as exc:
+    if not(isNil(reader)):
+      await reader.closeWait()
     let error = newHttpReadError("Could not read response")
     response.setError(error)
     raise error
