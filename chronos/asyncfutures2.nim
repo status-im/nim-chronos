@@ -514,8 +514,9 @@ template taskFutureLocation(future: FutureBase): string =
 
 template taskErrorMessage(future: FutureBase): string =
   "Asynchronous task " & taskFutureLocation(future) &
-  " finished with an exception \"" & $future.error.name & "\"!\nStack trace: " &
-  future.error.getStackTrace()
+  " finished with an exception \"" & $future.error.name &
+  "\"!\nMessage: " & future.error.msg &
+  "\nStack trace: " & future.error.getStackTrace()
 template taskCancelMessage(future: FutureBase): string =
   "Asynchronous task " & taskFutureLocation(future) & " was cancelled!"
 
