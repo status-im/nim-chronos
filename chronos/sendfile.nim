@@ -32,8 +32,8 @@ when defined(nimdoc):
     ## file descriptors.
     ##
     ## If the transfer was successful, the number of bytes written to ``outfd``
-    ## is stored in ``count``, and ``0`` returned. Note that a successful call to
-    ## ``sendfile()`` may write fewer bytes than requested; the caller should
+    ## is stored in ``count``, and ``0`` returned. Note that a successful call
+    ## to ``sendfile()`` may write fewer bytes than requested; the caller should
     ## be prepared to retry the call if there were unsent bytes.
     ##
     ## On error, ``-1`` is returned.

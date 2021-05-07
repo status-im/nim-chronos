@@ -64,9 +64,9 @@ suite "Asynchronous issues test suite":
       await promise
       checkstr = checkstr & name
 
-    asyncCheck believers("Foo")
-    asyncCheck believers("Bar")
-    asyncCheck believers("Baz")
+    asyncSpawn believers("Foo")
+    asyncSpawn believers("Bar")
+    asyncSpawn believers("Baz")
 
     await sleepAsync(100.milliseconds)
     promise.complete()

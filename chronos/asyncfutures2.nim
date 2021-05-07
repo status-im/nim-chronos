@@ -8,7 +8,7 @@
 #    Apache License, version 2.0, (LICENSE-APACHEv2)
 #                MIT license (LICENSE-MIT)
 
-import std/[os, tables, strutils, heapqueue, options, deques, cstrutils, sequtils]
+import std/[os, tables, strutils, heapqueue, options, deques, sequtils]
 import ./srcloc
 export srcloc
 
@@ -467,7 +467,8 @@ proc `$`(stackTraceEntries: seq[StackTraceEntry]): string =
       if hint.len > 0:
         result.add(spaces(indent+2) & "## " & hint & "\n")
   except ValueError as exc:
-    return exc.msg # Shouldn't actually happen since we set the formatting string
+    return exc.msg # Shouldn't actually happen since we set the formatting
+                   # string
 
 when defined(chronosStackTrace):
   proc injectStacktrace(future: FutureBase) =
@@ -493,7 +494,8 @@ when defined(chronosStackTrace):
     #   newMsg.add "\n" & $entry
     future.error.msg = newMsg
 
-proc internalCheckComplete*(fut: FutureBase) {.raises: [Defect, CatchableError].} =
+proc internalCheckComplete*(fut: FutureBase) {.
+     raises: [Defect, CatchableError].} =
   # For internal use only. Used in asyncmacro
   if not(isNil(fut.error)):
     when defined(chronosStackTrace):
@@ -505,7 +507,8 @@ proc internalRead*[T](fut: Future[T] | FutureVar[T]): T {.inline.} =
   when T isnot void:
     return fut.value
 
-proc read*[T](future: Future[T] | FutureVar[T]): T {.raises: [Defect, CatchableError].} =
+proc read*[T](future: Future[T] | FutureVar[T]): T {.
+     raises: [Defect, CatchableError].} =
   ## Retrieves the value of ``future``. Future must be finished otherwise
   ## this function will fail with a ``ValueError`` exception.
   ##
@@ -517,7 +520,8 @@ proc read*[T](future: Future[T] | FutureVar[T]): T {.raises: [Defect, CatchableE
     # TODO: Make a custom exception type for this?
     raise newException(ValueError, "Future still in progress.")
 
-proc readError*[T](future: Future[T]): ref CatchableError {.raises: [Defect, ValueError].} =
+proc readError*[T](future: Future[T]): ref CatchableError {.
+     raises: [Defect, ValueError].} =
   ## Retrieves the exception stored in ``future``.
   ##
   ## An ``ValueError`` exception will be thrown if no exception exists
@@ -576,7 +580,8 @@ proc asyncSpawn*(future: Future[void]) =
     cb(nil)
 
 proc asyncCheck*[T](future: Future[T]) {.
-    deprecated: "Raises Defect on future failure, fix your code and use asyncSpawn!".} =
+    deprecated: "Raises Defect on future failure, fix your code and use" &
+                " asyncSpawn!".} =
   ## This function used to raise an exception through the `poll` call if
   ## the given future failed - there's no way to handle such exceptions so this
   ## function is now an alias for `asyncSpawn`

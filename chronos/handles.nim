@@ -9,10 +9,8 @@
 
 {.push raises: [Defect].}
 
-import
-  std/[net, nativesockets],
-  ./selectors2,
-  ./asyncloop
+import std/[net, nativesockets]
+import ./asyncloop
 
 when defined(windows):
   import os, winlean
@@ -43,33 +41,35 @@ const
 proc setSocketBlocking*(s: SocketHandle, blocking: bool): bool =
   ## Sets blocking mode on socket.
   when defined(windows):
-    result = true
     var mode = clong(ord(not blocking))
     if ioctlsocket(s, FIONBIO, addr(mode)) == -1:
-      result = false
-  else:
-    result = true
-    var x: int = fcntl(s, F_GETFL, 0)
-    if x == -1:
-      result = false
+      false
     else:
-      var mode = if blocking: x and not O_NONBLOCK else: x or O_NONBLOCK
+      true
+  else:
+    let x: int = fcntl(s, F_GETFL, 0)
+    if x == -1:
+      false
+    else:
+      let mode = if blocking: x and not O_NONBLOCK else: x or O_NONBLOCK
       if fcntl(s, F_SETFL, mode) == -1:
-        result = false
+        false
+      else:
+        true
 
 proc setSockOpt*(socket: AsyncFD, level, optname, optval: int): bool =
   ## `setsockopt()` for integer options.
   ## Returns ``true`` on success, ``false`` on error.
   var value = cint(optval)
-  result = setsockopt(SocketHandle(socket), cint(level), cint(optname),
-                      addr(value), SockLen(sizeof(value))) >= cint(0)
+  setsockopt(SocketHandle(socket), cint(level), cint(optname),
+             addr(value), SockLen(sizeof(value))) >= cint(0)
 
 proc setSockOpt*(socket: AsyncFD, level, optname: int, value: pointer,
                  valuelen: int): bool =
   ## `setsockopt()` for custom options (pointer and length).
   ## Returns ``true`` on success, ``false`` on error.
-  result = setsockopt(SocketHandle(socket), cint(level), cint(optname), value,
-                      SockLen(valuelen)) >= cint(0)
+  setsockopt(SocketHandle(socket), cint(level), cint(optname), value,
+             SockLen(valuelen)) >= cint(0)
 
 proc getSockOpt*(socket: AsyncFD, level, optname: int, value: var int): bool =
   ## `getsockopt()` for integer options.
@@ -79,18 +79,20 @@ proc getSockOpt*(socket: AsyncFD, level, optname: int, value: var int): bool =
   if getsockopt(SocketHandle(socket), cint(level), cint(optname),
                 addr(res), addr(size)) >= cint(0):
     value = int(res)
-    result = true
+    true
+  else:
+    false
 
 proc getSockOpt*(socket: AsyncFD, level, optname: int, value: pointer,
                  valuelen: var int): bool =
   ## `getsockopt()` for custom options (pointer and length).
   ## Returns ``true`` on success, ``false`` on error.
-  result = getsockopt(SocketHandle(socket), cint(level), cint(optname),
-                      value, cast[ptr Socklen](addr valuelen)) >= cint(0)
+  getsockopt(SocketHandle(socket), cint(level), cint(optname),
+             value, cast[ptr Socklen](addr valuelen)) >= cint(0)
 
 proc getSocketError*(socket: AsyncFD, err: var int): bool =
   ## Recover error code associated with socket handle ``socket``.
-  result = getSockOpt(socket, cint(SOL_SOCKET), cint(SO_ERROR), err)
+  getSockOpt(socket, cint(SOL_SOCKET), cint(SO_ERROR), err)
 
 proc createAsyncSocket*(domain: Domain, sockType: SockType,
                         protocol: Protocol): AsyncFD {.
@@ -107,8 +109,8 @@ proc createAsyncSocket*(domain: Domain, sockType: SockType,
     if not setSockOpt(AsyncFD(handle), SOL_SOCKET, SO_NOSIGPIPE, 1):
       close(handle)
       return asyncInvalidSocket
-  result = AsyncFD(handle)
-  register(result)
+  register(AsyncFD(handle))
+  AsyncFD(handle)
 
 proc wrapAsyncSocket*(sock: SocketHandle): AsyncFD {.
     raises: [Defect, CatchableError].} =
@@ -121,8 +123,8 @@ proc wrapAsyncSocket*(sock: SocketHandle): AsyncFD {.
     if not setSockOpt(AsyncFD(sock), SOL_SOCKET, SO_NOSIGPIPE, 1):
       close(sock)
       return asyncInvalidSocket
-  result = AsyncFD(sock)
-  register(result)
+  register(AsyncFD(sock))
+  AsyncFD(sock)
 
 proc getMaxOpenFiles*(): int {.raises: [Defect, OSError].} =
   ## Returns maximum file descriptor number that can be opened by this process.
@@ -131,12 +133,12 @@ proc getMaxOpenFiles*(): int {.raises: [Defect, OSError].} =
   ## will return constant value of 16384. You can get more information on this
   ## link https://docs.microsoft.com/en-us/archive/blogs/markrussinovich/pushing-the-limits-of-windows-handles
   when defined(windows):
-    result = 16384
+    16384
   else:
     var limits: RLimit
     if getrlimit(posix.RLIMIT_NOFILE, limits) != 0:
       raiseOSError(osLastError())
-    result = int(limits.rlim_cur)
+    int(limits.rlim_cur)
 
 proc setMaxOpenFiles*(count: int) {.raises: [Defect, OSError].} =
   ## Set maximum file descriptor number that can be opened by this process.
@@ -154,7 +156,8 @@ proc setMaxOpenFiles*(count: int) {.raises: [Defect, OSError].} =
 
 proc createAsyncPipe*(): tuple[read: AsyncFD, write: AsyncFD] =
   ## Create new asynchronouse pipe.
-  ## Returns tuple of read pipe handle and write pipe handle``asyncInvalidPipe`` on error.
+  ## Returns tuple of read pipe handle and write pipe handle``asyncInvalidPipe``
+  ## on error.
   when defined(windows):
     var pipeIn, pipeOut: Handle
     var pipeName: WideCString
@@ -175,8 +178,7 @@ proc createAsyncPipe*(): tuple[read: AsyncFD, write: AsyncFD] =
         # If error in {ERROR_ACCESS_DENIED, ERROR_PIPE_BUSY}, then named pipe
         # with such name already exists.
         if int32(err) != ERROR_ACCESS_DENIED and int32(err) != ERROR_PIPE_BUSY:
-          result = (read: asyncInvalidPipe, write: asyncInvalidPipe)
-          return
+          return (read: asyncInvalidPipe, write: asyncInvalidPipe)
         continue
       else:
         break
@@ -186,39 +188,35 @@ proc createAsyncPipe*(): tuple[read: AsyncFD, write: AsyncFD] =
                           FILE_FLAG_OVERLAPPED, 0)
     if pipeOut == INVALID_HANDLE_VALUE:
       discard closeHandle(pipeIn)
-      result = (read: asyncInvalidPipe, write: asyncInvalidPipe)
-      return
+      return (read: asyncInvalidPipe, write: asyncInvalidPipe)
 
     var ovl = OVERLAPPED()
     let res = connectNamedPipe(pipeIn, cast[pointer](addr ovl))
     if res == 0:
       let err = osLastError()
-      if int32(err) == ERROR_PIPE_CONNECTED:
+      case int32(err)
+      of ERROR_PIPE_CONNECTED:
         discard
-      elif int32(err) == ERROR_IO_PENDING:
+      of ERROR_IO_PENDING:
         var bytesRead = 0.Dword
         if getOverlappedResult(pipeIn, addr ovl, bytesRead, 1) == 0:
           discard closeHandle(pipeIn)
           discard closeHandle(pipeOut)
-          result = (read: asyncInvalidPipe, write: asyncInvalidPipe)
-          return
+          return (read: asyncInvalidPipe, write: asyncInvalidPipe)
       else:
         discard closeHandle(pipeIn)
         discard closeHandle(pipeOut)
-        result = (read: asyncInvalidPipe, write: asyncInvalidPipe)
-        return
+        return (read: asyncInvalidPipe, write: asyncInvalidPipe)
 
-    result = (read: AsyncFD(pipeIn), write: AsyncFD(pipeOut))
+    (read: AsyncFD(pipeIn), write: AsyncFD(pipeOut))
   else:
     var fds: array[2, cint]
 
     if posix.pipe(fds) == -1:
-      result = (read: asyncInvalidPipe, write: asyncInvalidPipe)
-      return
+      return (read: asyncInvalidPipe, write: asyncInvalidPipe)
 
     if not(setSocketBlocking(SocketHandle(fds[0]), false)) or
        not(setSocketBlocking(SocketHandle(fds[1]), false)):
-      result = (read: asyncInvalidPipe, write: asyncInvalidPipe)
-      return
+      return (read: asyncInvalidPipe, write: asyncInvalidPipe)
 
-    result = (read: AsyncFD(fds[0]), write: AsyncFD(fds[1]))
+    (read: AsyncFD(fds[0]), write: AsyncFD(fds[1]))
