@@ -7,7 +7,7 @@
 #    distribution, for details about the copyright.
 #
 
-import std/[macros, strutils]
+import std/[macros]
 
 proc skipUntilStmtList(node: NimNode): NimNode {.compileTime.} =
   # Skips a nest of StmtList's.
@@ -252,7 +252,8 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
     if subtypeIsVoid:
       let resultTemplate = quote do:
         template result: auto {.used.} =
-          {.fatal: "You should not reference the `result` variable inside a void async proc".}
+          {.fatal: "You should not reference the `result` variable inside" &
+                   " a void async proc".}
       procBody = newStmtList(resultTemplate, procBody)
 
     # fix #13899, `defer` should not escape its original scope
@@ -308,7 +309,8 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
       ))
 
     # If proc has an explicit gcsafe pragma, we add it to iterator as well.
-    if prc.pragma.findChild(it.kind in {nnkSym, nnkIdent} and it.strVal == "gcsafe") != nil:
+    if prc.pragma.findChild(it.kind in {nnkSym, nnkIdent} and
+                            it.strVal == "gcsafe") != nil:
       closureIterator.addPragma(newIdentNode("gcsafe"))
     outerProcBody.add(closureIterator)
 

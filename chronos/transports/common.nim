@@ -363,7 +363,8 @@ proc toSAddr*(address: TransportAddress, sa: var Sockaddr_storage,
   else:
     discard
 
-proc address*(ta: TransportAddress): IpAddress {.raises: [Defect, ValueError].} =
+proc address*(ta: TransportAddress): IpAddress {.
+     raises: [Defect, ValueError].} =
   ## Converts ``TransportAddress`` to ``net.IpAddress`` object.
   ##
   ## Note its impossible to convert ``TransportAddress`` of ``Unix`` family,

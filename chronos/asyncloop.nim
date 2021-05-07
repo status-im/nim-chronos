@@ -11,7 +11,7 @@
 {.push raises: [Defect].}
 
 import std/[os, tables, strutils, heapqueue, lists, options, nativesockets, net,
-        deques]
+            deques]
 import ./timer
 
 export Port, SocketFlag
@@ -584,7 +584,8 @@ elif unixPlatform:
       raise newException(ValueError, "File descriptor not registered.")
     loop.selector.updateHandle(int(fd), newEvents)
 
-  proc removeReader*(fd: AsyncFD) {.raises: [Defect, IOSelectorsException, ValueError].} =
+  proc removeReader*(fd: AsyncFD) {.
+       raises: [Defect, IOSelectorsException, ValueError].} =
     ## Stop watching the file descriptor ``fd`` for read availability.
     let loop = getThreadDispatcher()
     var newEvents: set[Event]
@@ -598,7 +599,8 @@ elif unixPlatform:
       raise newException(ValueError, "File descriptor not registered.")
     loop.selector.updateHandle(int(fd), newEvents)
 
-  proc addWriter*(fd: AsyncFD, cb: CallbackFunc, udata: pointer = nil) {.raises: [Defect, IOSelectorsException, ValueError].} =
+  proc addWriter*(fd: AsyncFD, cb: CallbackFunc, udata: pointer = nil) {.
+       raises: [Defect, IOSelectorsException, ValueError].} =
     ## Start watching the file descriptor ``fd`` for write availability and then
     ## call the callback ``cb`` with specified argument ``udata``.
     let loop = getThreadDispatcher()
@@ -614,7 +616,8 @@ elif unixPlatform:
       raise newException(ValueError, "File descriptor not registered.")
     loop.selector.updateHandle(int(fd), newEvents)
 
-  proc removeWriter*(fd: AsyncFD) {.raises: [Defect, IOSelectorsException, ValueError].} =
+  proc removeWriter*(fd: AsyncFD) {.
+       raises: [Defect, IOSelectorsException, ValueError].} =
     ## Stop watching the file descriptor ``fd`` for write availability.
     let loop = getThreadDispatcher()
     var newEvents: set[Event]
@@ -679,7 +682,8 @@ elif unixPlatform:
 
   when ioselSupportedPlatform:
     proc addSignal*(signal: int, cb: CallbackFunc,
-                    udata: pointer = nil): int  {.raises: [Defect, IOSelectorsException, ValueError, OSError].} =
+                    udata: pointer = nil): int {.
+         raises: [Defect, IOSelectorsException, ValueError, OSError].} =
       ## Start watching signal ``signal``, and when signal appears, call the
       ## callback ``cb`` with specified argument ``udata``. Returns signal
       ## identifier code, which can be used to remove signal callback
@@ -694,7 +698,8 @@ elif unixPlatform:
       do:
         raise newException(ValueError, "File descriptor not registered.")
 
-    proc removeSignal*(sigfd: int)  {.raises: [Defect, IOSelectorsException].} =
+    proc removeSignal*(sigfd: int) {.
+         raises: [Defect, IOSelectorsException].} =
       ## Remove watching signal ``signal``.
       let loop = getThreadDispatcher()
       loop.selector.unregister(sigfd)

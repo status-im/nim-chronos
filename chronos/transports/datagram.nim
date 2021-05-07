@@ -35,7 +35,8 @@ type
     writer: Future[void]        # Writer vector completion Future
 
   DatagramCallback* = proc(transp: DatagramTransport,
-                           remote: TransportAddress): Future[void] {.gcsafe, raises: [Defect].}
+                           remote: TransportAddress): Future[void] {.
+                      gcsafe, raises: [Defect].}
 
   DatagramTransport* = ref object of RootRef
     fd*: AsyncFD                    # File descriptor
@@ -96,7 +97,8 @@ template setReadError(t, e: untyped) =
   (t).state.incl(ReadError)
   (t).error = getTransportOsError(e)
 
-proc setupDgramTransportTracker(): DgramTransportTracker {.gcsafe, raises: [Defect].}
+proc setupDgramTransportTracker(): DgramTransportTracker {.
+     gcsafe, raises: [Defect].}
 
 proc getDgramTransportTracker(): DgramTransportTracker {.inline.} =
   result = cast[DgramTransportTracker](getTracker(DgramTransportTrackerName))

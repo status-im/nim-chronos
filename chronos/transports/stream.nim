@@ -199,8 +199,10 @@ template shiftVectorFile(v, o: untyped) =
   (v).buf = cast[pointer](cast[uint]((v).buf) - cast[uint](o))
   (v).offset += cast[uint]((o))
 
-proc setupStreamTransportTracker(): StreamTransportTracker {.gcsafe, raises: [Defect].}
-proc setupStreamServerTracker(): StreamServerTracker {.gcsafe, raises: [Defect].}
+proc setupStreamTransportTracker(): StreamTransportTracker {.
+     gcsafe, raises: [Defect].}
+proc setupStreamServerTracker(): StreamServerTracker {.
+     gcsafe, raises: [Defect].}
 
 proc getStreamTransportTracker(): StreamTransportTracker {.inline.} =
   result = cast[StreamTransportTracker](getTracker(StreamTransportTrackerName))
@@ -960,9 +962,12 @@ when defined(windows):
         if server.status notin {ServerStatus.Stopped, ServerStatus.Closed}:
           server.apending = true
           # TODO No way to report back errors!
-          server.asock = try: createAsyncSocket(server.domain, SockType.SOCK_STREAM,
-                                           Protocol.IPPROTO_TCP)
-          except CatchableError as exc: raiseAsDefect exc, "createAsyncSocket"
+          server.asock =
+            try:
+              createAsyncSocket(server.domain, SockType.SOCK_STREAM,
+                                Protocol.IPPROTO_TCP)
+            except CatchableError as exc:
+              raiseAsDefect exc, "createAsyncSocket"
           if server.asock == asyncInvalidSocket:
             raiseAssert osErrorMsg(OSErrorCode(wsaGetLastError()))
 
@@ -1039,8 +1044,8 @@ when defined(windows):
             let err = OSErrorCode(wsaGetLastError())
             server.asock.closeSocket()
             if int32(err) == WSAENOTSOCK:
-              # This can be happened when server get closed, but continuation was
-              # already scheduled, so we failing it not with OS error.
+              # This can be happened when server get closed, but continuation
+              # was already scheduled, so we failing it not with OS error.
               retFuture.fail(getServerUseClosedError())
             else:
               retFuture.fail(getTransportOsError(err))
