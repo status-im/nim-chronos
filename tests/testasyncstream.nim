@@ -1202,6 +1202,50 @@ suite "BoundedStream test suite":
     check waitFor(testSmallChunk(address, 262400, 4096, 61)) == true
     check waitFor(testSmallChunk(address, 767309, 4457, 173)) == true
 
+  test "BoundedStream zero-sized streams test":
+    proc checkEmptyStreams(address: TransportAddress): Future[bool] {.async.} =
+      var writer1Res = false
+      proc serveClient(server: StreamServer,
+                       transp: StreamTransport) {.async.} =
+        var wstream = newAsyncStreamWriter(transp)
+        var wstream2 = newBoundedStreamWriter(wstream, 0'u64)
+        await wstream2.finish()
+        let res = wstream2.atEof()
+        await wstream2.closeWait()
+        await wstream.closeWait()
+        await transp.closeWait()
+        server.stop()
+        server.close()
+        writer1Res = res
+
+      var server = createStreamServer(address, serveClient, {ReuseAddr})
+      server.start()
+      var transp = await connect(address)
+      var rstream = newAsyncStreamReader(transp)
+      var wstream3 = newAsyncStreamWriter(transp)
+      var rstream2 = newBoundedStreamReader(rstream, 0'u64)
+      var wstream4 = newBoundedStreamWriter(wstream3, 0'u64)
+
+      let readerRes = rstream2.atEof()
+      let writer2Res =
+        try:
+          await wstream4.write("data")
+          false
+        except BoundedStreamOverflowError:
+          true
+        except CatchableError:
+          false
+
+      await wstream4.closeWait()
+      await wstream3.closeWait()
+      await rstream2.closeWait()
+      await rstream.closeWait()
+      await transp.closeWait()
+      await server.join()
+      return (writer1Res and writer2Res and readerRes)
+
+    let address = initTAddress("127.0.0.1:46001")
+    check waitFor(checkEmptyStreams(address)) == true
 
   test "BoundedStream leaks test":
     check:
