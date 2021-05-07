@@ -47,7 +47,6 @@ proc setSocketBlocking*(s: SocketHandle, blocking: bool): bool =
     else:
       true
   else:
-    result = true
     let x: int = fcntl(s, F_GETFL, 0)
     if x == -1:
       false
