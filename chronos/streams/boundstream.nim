@@ -42,7 +42,6 @@ type
 
 const
   BoundedBufferSize* = 4096
-  BoundSizeDefectMessage = "Bound size must be bigger than zero"
   BoundarySizeDefectMessage = "Boundary must not be empty array"
 
 template newBoundedStreamIncompleteError(): ref BoundedStreamError =
@@ -108,18 +107,37 @@ proc boundedReadLoop(stream: AsyncStreamReader) {.async.} =
       else:
         int(min(rstream.boundSize.get() - rstream.offset, uint64(len(buffer))))
     try:
-      let res = await readUntilBoundary(rstream.rsource, addr buffer[0],
-                                        toRead, rstream.boundary)
-      if res > 0:
-        if len(rstream.boundary) > 0:
-          if endsWith(buffer.toOpenArray(0, res - 1), rstream.boundary):
-            let length = res - len(rstream.boundary)
-            rstream.offset = rstream.offset + uint64(length)
-            # There should be one step between transferring last bytes to the
-            # consumer and declaring stream EOF. Otherwise could not be
-            # consumed.
-            await upload(addr rstream.buffer, addr buffer[0], length)
-            rstream.state = AsyncStreamState.Finished
+      if toRead == 0:
+        # When ``rstream.boundSize`` is set and we already readed
+        # ``rstream.boundSize`` bytes.
+        rstream.state = AsyncStreamState.Finished
+      else:
+        let res = await readUntilBoundary(rstream.rsource, addr buffer[0],
+                                          toRead, rstream.boundary)
+        if res > 0:
+          if len(rstream.boundary) > 0:
+            if endsWith(buffer.toOpenArray(0, res - 1), rstream.boundary):
+              let length = res - len(rstream.boundary)
+              rstream.offset = rstream.offset + uint64(length)
+              # There should be one step between transferring last bytes to the
+              # consumer and declaring stream EOF. Otherwise could not be
+              # consumed.
+              await upload(addr rstream.buffer, addr buffer[0], length)
+              rstream.state = AsyncStreamState.Finished
+            else:
+              rstream.offset = rstream.offset + uint64(res)
+              # There should be one step between transferring last bytes to the
+              # consumer and declaring stream EOF. Otherwise could not be
+              # consumed.
+              await upload(addr rstream.buffer, addr buffer[0], res)
+
+              if (res < toRead) and rstream.rsource.atEof():
+                case rstream.cmpop
+                of BoundCmp.Equal:
+                  rstream.state = AsyncStreamState.Error
+                  rstream.error = newBoundedStreamIncompleteError()
+                of BoundCmp.LessOrEqual:
+                  rstream.state = AsyncStreamState.Finished
           else:
             rstream.offset = rstream.offset + uint64(res)
             # There should be one step between transferring last bytes to the
@@ -134,37 +152,13 @@ proc boundedReadLoop(stream: AsyncStreamReader) {.async.} =
                 rstream.error = newBoundedStreamIncompleteError()
               of BoundCmp.LessOrEqual:
                 rstream.state = AsyncStreamState.Finished
-
-            if rstream.state == AsyncStreamState.Running and
-               rstream.boundSize.isSome() and
-               (rstream.offset == rstream.boundSize.get()):
-              rstream.state = AsyncStreamState.Finished
         else:
-          rstream.offset = rstream.offset + uint64(res)
-          # There should be one step between transferring last bytes to the
-          # consumer and declaring stream EOF. Otherwise could not be
-          # consumed.
-          await upload(addr rstream.buffer, addr buffer[0], res)
-
-          if (res < toRead) and rstream.rsource.atEof():
-            case rstream.cmpop
-            of BoundCmp.Equal:
-              rstream.state = AsyncStreamState.Error
-              rstream.error = newBoundedStreamIncompleteError()
-            of BoundCmp.LessOrEqual:
-              rstream.state = AsyncStreamState.Finished
-
-          if rstream.state == AsyncStreamState.Running and
-             rstream.boundSize.isSome() and
-             (rstream.offset == rstream.boundSize.get()):
+          case rstream.cmpop
+          of BoundCmp.Equal:
+            rstream.state = AsyncStreamState.Error
+            rstream.error = newBoundedStreamIncompleteError()
+          of BoundCmp.LessOrEqual:
             rstream.state = AsyncStreamState.Finished
-      else:
-        case rstream.cmpop
-        of BoundCmp.Equal:
-          rstream.state = AsyncStreamState.Error
-          rstream.error = newBoundedStreamIncompleteError()
-        of BoundCmp.LessOrEqual:
-          rstream.state = AsyncStreamState.Finished
 
     except AsyncStreamError as exc:
       rstream.state = AsyncStreamState.Error
@@ -258,7 +252,6 @@ proc bytesLeft*(stream: BoundedStreamRW): uint64 =
 proc init*[T](child: BoundedStreamReader, rsource: AsyncStreamReader,
               boundSize: uint64, comparison = BoundCmp.Equal,
               bufferSize = BoundedBufferSize, udata: ref T) =
-  doAssert(boundSize > 0'u64, BoundSizeDefectMessage)
   child.boundSize = some(boundSize)
   child.cmpop = comparison
   init(AsyncStreamReader(child), rsource, boundedReadLoop, bufferSize,
@@ -277,7 +270,6 @@ proc init*[T](child: BoundedStreamReader, rsource: AsyncStreamReader,
               boundSize: uint64, boundary: openarray[byte],
               comparison = BoundCmp.Equal,
               bufferSize = BoundedBufferSize, udata: ref T) =
-  doAssert(boundSize > 0'u64, BoundSizeDefectMessage)
   doAssert(len(boundary) > 0, BoundarySizeDefectMessage)
   child.boundSize = some(boundSize)
   child.boundary = @boundary
@@ -288,7 +280,6 @@ proc init*[T](child: BoundedStreamReader, rsource: AsyncStreamReader,
 proc init*(child: BoundedStreamReader, rsource: AsyncStreamReader,
            boundSize: uint64, comparison = BoundCmp.Equal,
            bufferSize = BoundedBufferSize) =
-  doAssert(boundSize > 0'u64, BoundSizeDefectMessage)
   child.boundSize = some(boundSize)
   child.cmpop = comparison
   init(AsyncStreamReader(child), rsource, boundedReadLoop, bufferSize)
@@ -304,7 +295,6 @@ proc init*(child: BoundedStreamReader, rsource: AsyncStreamReader,
 proc init*(child: BoundedStreamReader, rsource: AsyncStreamReader,
            boundSize: uint64, boundary: openarray[byte],
            comparison = BoundCmp.Equal, bufferSize = BoundedBufferSize) =
-  doAssert(boundSize > 0'u64, BoundSizeDefectMessage)
   doAssert(len(boundary) > 0, BoundarySizeDefectMessage)
   child.boundSize = some(boundSize)
   child.boundary = @boundary
@@ -430,7 +420,6 @@ proc newBoundedStreamReader*(rsource: AsyncStreamReader,
 proc init*[T](child: BoundedStreamWriter, wsource: AsyncStreamWriter,
               boundSize: uint64, comparison = BoundCmp.Equal,
               queueSize = AsyncStreamDefaultQueueSize, udata: ref T) =
-  doAssert(boundSize > 0'u64, BoundSizeDefectMessage)
   child.boundSize = boundSize
   child.cmpop = comparison
   init(AsyncStreamWriter(child), wsource, boundedWriteLoop, queueSize,
@@ -439,7 +428,6 @@ proc init*[T](child: BoundedStreamWriter, wsource: AsyncStreamWriter,
 proc init*(child: BoundedStreamWriter, wsource: AsyncStreamWriter,
            boundSize: uint64, comparison = BoundCmp.Equal,
            queueSize = AsyncStreamDefaultQueueSize) =
-  doAssert(boundSize > 0'u64, BoundSizeDefectMessage)
   child.boundSize = boundSize
   child.cmpop = comparison
   init(AsyncStreamWriter(child), wsource, boundedWriteLoop, queueSize)
