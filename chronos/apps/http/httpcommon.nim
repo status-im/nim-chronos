@@ -17,7 +17,7 @@ const
   PostMethods* = {MethodPost, MethodPatch, MethodPut, MethodDelete}
 
   MaximumBodySizeError* = "Maximum size of request's body reached"
-  
+
   UserAgentHeader* = "user-agent"
   DateHeader* = "date"
   HostHeader* = "host"
@@ -50,6 +50,8 @@ type
   HttpReadError* = object of HttpError
   HttpWriteError* = object of HttpError
   HttpProtocolError* = object of HttpError
+  HttpRedirectError* = object of HttpError
+  HttpAddressError* = object of HttpError
 
   TransferEncodingFlags* {.pure.} = enum
     Identity, Chunked, Compress, Deflate, Gzip
@@ -81,6 +83,12 @@ proc raiseHttpProtocolError*(msg: string) {.noinline, noreturn.} =
 
 proc raiseHttpWriteError*(msg: string) {.noinline, noreturn.} =
   raise (ref HttpWriteError)(msg: msg)
+
+proc raiseHttpRedirectError*(msg: string) {.noinline, noreturn.} =
+  raise (ref HttpRedirectError)(msg: msg)
+
+proc raiseHttpAddressError*(msg: string) {.noinline, noreturn.} =
+  raise (ref HttpAddressError)(msg: msg)
 
 template newHttpInterruptError*(): ref HttpInterruptError =
   newException(HttpInterruptError, "Connection was interrupted")

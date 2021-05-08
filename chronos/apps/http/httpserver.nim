@@ -1085,8 +1085,20 @@ proc respond*(req: HttpRequestRef, code: HttpCode,
   respond(req, code, content, HttpTable.init())
 
 proc respond*(req: HttpRequestRef, code: HttpCode): Future[HttpResponseRef] =
-  ## Reponds to the request with specified ``HttpCode`` only.
+  ## Responds to the request with specified ``HttpCode`` only.
   respond(req, code, "", HttpTable.init())
+
+proc redirect*(req: HttpRequestRef, code: HttpCode,
+               location: Uri): Future[HttpResponseRef] =
+  ## Responds to the request with redirection to location ``location``.
+  let headers = HttpTable.init([("location", $location)])
+  respond(req, code, "", headers)
+
+proc redirect*(req: HttpRequestRef, code: HttpCode,
+               location: string): Future[HttpResponseRef] =
+  ## Responds to the request with redirection to location ``location``.
+  let headers = HttpTable.init([("location", location)])
+  respond(req, code, "", headers)
 
 proc responded*(req: HttpRequestRef): bool =
   ## Returns ``true`` if request ``req`` has been responded or responding.

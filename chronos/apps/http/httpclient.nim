@@ -134,11 +134,14 @@ type
     error*: ref HttpError
     buffer*: seq[byte]
     writer*: HttpBodyWriter
+    redirectCount: int
 
   HttpClientRequestRef* = ref HttpClientRequest
 
   HttpClientResponse* = object
     state: HttpClientResponseState
+    requestMethod*: HttpMethod
+    address*: HttpAddress
     status*: int
     reason*: string
     version*: HttpVersion
@@ -274,6 +277,7 @@ proc new*(t: typedesc[HttpSessionRef],
   ## ``maxRedirections`` - maximum number of HTTP 3xx redirections
   ## ``connectTimeout`` - timeout for ongoing HTTP connection
   ## ``headersTimeout`` - timeout for receiving HTTP response headers
+  doAssert(maxRedirections >= 0, "maxRedirections should not be negative")
   HttpSessionRef(
     flags: flags,
     maxRedirections: maxRedirections,
@@ -358,17 +362,89 @@ proc getAddress*(session: HttpSessionRef, url: Uri): HttpResult[HttpAddress] {.
 
 proc getAddress*(session: HttpSessionRef,
                  url: string): HttpResult[HttpAddress] {.raises: [Defect].} =
+  ## Create new HTTP address using URL string ``url`` and .
   session.getAddress(parseUri(url))
 
-proc getAddress*(session: HttpSessionRef,
-                 address: TransportAddress,
+proc getAddress*(address: TransportAddress,
                  ctype: HttpClientScheme = HttpClientScheme.NonSecure,
                  queryString: string = "/"): HttpAddress {.raises: [Defect].} =
+  ## Create new HTTP address using Transport address ``address``, connection
+  ## type ``ctype`` and query string ``queryString``.
   let uri = parseUri(queryString)
   HttpAddress(id: $address, scheme: ctype, hostname: address.host,
     port: uint16(address.port), path: uri.path, query: uri.query,
     anchor: uri.anchor, username: "", password: "", addresses: @[address]
   )
+
+proc getUri*(address: HttpAddress): Uri =
+  ## Retrieve URI from ``address``.
+  let scheme =
+    case address.scheme
+    of HttpClientScheme.NonSecure:
+      "http"
+    of HttpClientScheme.Secure:
+      "https"
+  Uri(
+    scheme: scheme, username: address.username, password: address.password,
+    hostname: address.hostname, port: Base10.toString(address.port),
+    path: address.path, query: address.query, anchor: address.anchor,
+    opaque: false
+  )
+
+proc redirect*(srcuri, dsturi: Uri): Uri =
+  ## Transform original's URL ``srcuri`` to ``dsturi``.
+  if (len(dsturi.scheme) > 0) and (len(dsturi.hostname) > 0):
+    # `dsturi` is absolute URL, replace
+    dsturi
+  else:
+    # `dsturi` is relative URL, combine
+    var tmpuri = dsturi
+    tmpuri.username = ""
+    tmpuri.password = ""
+    combine(srcuri, tmpuri)
+
+proc redirect*(session: HttpSessionRef,
+               srcaddr: HttpAddress, uri: Uri): HttpResult[HttpAddress] =
+  ## Transform original address ``srcaddr`` using redirected url ``uri`` and
+  ## session ``session`` parameters.
+  let srcuri = srcaddr.getUri()
+  var newuri = srcuri.redirect(uri)
+  if newuri.hostname != srcuri.hostname:
+    session.getAddress(newuri)
+  else:
+    let scheme =
+      case newuri.scheme
+      of "http":
+        HttpClientScheme.NonSecure
+      of "https":
+        HttpClientScheme.Secure
+      else:
+        return err("URL scheme not supported")
+
+    let port =
+      if len(newuri.port) == 0:
+        case scheme:
+        of HttpClientScheme.NonSecure:
+          80'u16
+        of HttpClientScheme.Secure:
+          443'u16
+      else:
+        let res = Base10.decode(uint16, newuri.port)
+        if res.isErr():
+          return err("Invalid URL port number")
+        res.get()
+
+    if len(newuri.hostname) == 0:
+      return err("URL hostname is missing")
+
+    let id = newuri.hostname & ":" & Base10.toString(port)
+
+    ok(HttpAddress(
+      id: id, scheme: scheme, hostname: newuri.hostname, port: port,
+      path: newuri.path, query: newuri.query, anchor: newuri.anchor,
+      username: newuri.username, password: newuri.password,
+      addresses: srcaddr.addresses
+    ))
 
 proc new(t: typedesc[HttpClientConnectionRef], session: HttpSessionRef,
          ha: HttpAddress, transp: StreamTransport): HttpClientConnectionRef =
@@ -636,6 +712,7 @@ proc prepareResponse(request: HttpClientRequestRef,
 
   let res = HttpClientResponseRef(
     state: HttpClientResponseState.HeadersReceived, status: resp.code,
+    address: request.address, requestMethod: request.meth,
     reason: resp.reason(data), version: resp.version, session: request.session,
     connection: request.connection, headers: headers,
     contentEncoding: contentEncoding, transferEncoding: transferEncoding,
@@ -858,6 +935,8 @@ proc send*(request: HttpClientRequestRef): Future[HttpClientResponseRef] {.
 
 proc open*(request: HttpClientRequestRef): Future[HttpBodyWriter] {.
      async.} =
+  ## Start sending request's headers and return `HttpBodyWriter`, which can be
+  ## used to send request's body.
   doAssert(request.state == HttpClientRequestState.Created)
   doAssert(len(request.buffer) == 0,
            "Request should not have static body content (len(buffer) == 0)")
@@ -906,6 +985,7 @@ proc open*(request: HttpClientRequestRef): Future[HttpBodyWriter] {.
 
 proc finish*(request: HttpClientRequestRef): Future[HttpClientResponseRef] {.
      async.} =
+  ## Finish sending request and receive response.
   doAssert(request.state == HttpClientRequestState.BodySending)
   doAssert(request.connection.state ==
            HttpClientConnectionState.RequestBodySending)
@@ -921,6 +1001,17 @@ proc finish*(request: HttpClientRequestRef): Future[HttpClientResponseRef] {.
       request.setError(exc)
       raise exc
   return resp
+
+proc getNewLocation*(resp: HttpClientResponseRef): HttpResult[HttpAddress] =
+  ## Returns new address according to response's `Location` header value.
+  if "location" in resp.headers:
+    let location = resp.headers.getString("location")
+    if len(location) > 0:
+      resp.session.redirect(resp.address, parseUri(location))
+    else:
+      err("Location header with empty value")
+  else:
+    err("Location header is missing")
 
 proc getBodyReader*(resp: HttpClientResponseRef): HttpBodyReader =
   ## Returns stream's reader instance which can be used to read response's body.
@@ -949,6 +1040,7 @@ proc getBodyReader*(resp: HttpClientResponseRef): HttpBodyReader =
   resp.reader
 
 proc finish*(resp: HttpClientResponseRef) {.async.} =
+  ## Finish receiving response.
   doAssert(resp.state == HttpClientResponseState.BodyReceiving)
   doAssert(resp.connection.state ==
            HttpClientConnectionState.ResponseBodyReceiving)
@@ -1031,6 +1123,40 @@ proc consumeBody*(response: HttpClientResponseRef): Future[int] {.async.} =
     response.setError(error)
     raise error
 
+proc redirect*(request: HttpClientRequestRef,
+               ha: HttpAddress): HttpResult[HttpClientRequestRef] =
+  ## Create new request object using original request object ``request`` and
+  ## new redirected address ``ha``.
+  ##
+  ## This procedure could return an error if number of redirects exceeded
+  ## maximum allowed number of redirects in request's session.
+  let redirectCount = request.redirectCount + 1
+  if redirectCount > request.session.maxRedirections:
+    err("Maximum number of redirects exceeded")
+  else:
+    var res = HttpClientRequestRef.new(request.session, ha, request.meth,
+      request.version, request.flags, request.headers.toList(), request.buffer)
+    res.redirectCount = redirectCount
+    ok(res)
+
+proc redirect*(request: HttpClientRequestRef,
+               uri: Uri): HttpResult[HttpClientRequestRef] =
+  ## Create new request object using original request object ``request`` and
+  ## redirected URL ``uri``.
+  ##
+  ## This procedure could return an error if number of redirects exceeded
+  ## maximum allowed number of redirects in request's session or ``uri`` is
+  ## incorrect or not supported.
+  let redirectCount = request.redirectCount + 1
+  if redirectCount > request.session.maxRedirections:
+    err("Maximum number of redirects exceeded")
+  else:
+    let address = ? request.session.redirect(request.address, uri)
+    var res = HttpClientRequestRef.new(request.session, address, request.meth,
+      request.version, request.flags, request.headers.toList(), request.buffer)
+    res.redirectCount = redirectCount
+    ok(res)
+
 proc fetch*(request: HttpClientRequestRef): Future[HttpResponseTuple] {.
      async.} =
   let response = await request.send()
@@ -1038,3 +1164,70 @@ proc fetch*(request: HttpClientRequestRef): Future[HttpResponseTuple] {.
   let code = response.status
   await response.closeWait()
   return (code, data)
+
+proc fetch*(session: HttpSessionRef, url: Uri): Future[HttpResponseTuple] {.
+     async.} =
+  ## Fetch resource pointed by ``url`` using HTTP GET method and ``session``
+  ## parameters.
+  ##
+  ## This procedure supports HTTP redirections.
+  let address =
+    block:
+      let res = session.getAddress(url)
+      if res.isErr():
+        raiseHttpAddressError(res.error())
+      res.get()
+
+  var
+    request = HttpClientRequestRef.new(session, address)
+    response: HttpClientResponseRef = nil
+    redirect: HttpClientRequestRef = nil
+
+  while true:
+    try:
+      response = await request.send()
+      if response.status >= 300 and response.status < 400:
+        redirect =
+          block:
+            if "location" in response.headers:
+              let location = response.headers.getString("location")
+              if len(location) > 0:
+                let res = request.redirect(parseUri(location))
+                if res.isErr():
+                  raiseHttpRedirectError(res.error())
+                res.get()
+              else:
+                raiseHttpRedirectError("Location header with an empty value")
+            else:
+              raiseHttpRedirectError("Location header missing")
+        await request.closeWait()
+        request = nil
+        discard await response.consumeBody()
+        await response.closeWait()
+        response = nil
+        request = redirect
+        redirect = nil
+      else:
+        await request.closeWait()
+        request = nil
+        let data = await response.getBodyBytes()
+        let code = response.status
+        await response.closeWait()
+        response = nil
+        return (code, data)
+    except CancelledError as exc:
+      if not(isNil(request)):
+        await closeWait(request)
+      if not(isNil(redirect)):
+        await closeWait(redirect)
+      if not(isNil(response)):
+        await closeWait(response)
+      raise exc
+    except HttpError as exc:
+      if not(isNil(request)):
+        await closeWait(request)
+      if not(isNil(redirect)):
+        await closeWait(redirect)
+      if not(isNil(response)):
+        await closeWait(response)
+      raise exc

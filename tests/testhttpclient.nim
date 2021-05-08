@@ -95,12 +95,14 @@ suite "HTTP client testing suite":
       let res = HttpServerRef.new(address, process, socketFlags = socketFlags)
       res.get()
 
-  proc createSession(secure: bool): HttpSessionRef =
+  proc createSession(secure: bool,
+                     maxRedirections = HttpMaxRedirections): HttpSessionRef =
     if secure:
       HttpSessionRef.new({HttpClientFlag.NoVerifyHost,
-                          HttpClientFlag.NoVerifyServerName})
+                          HttpClientFlag.NoVerifyServerName},
+                         maxRedirections = maxRedirections)
     else:
-      HttpSessionRef.new()
+      HttpSessionRef.new(maxRedirections = maxRedirections)
 
   proc testMethods(address: TransportAddress,
                    secure: bool): Future[int] {.async.} =
@@ -138,9 +140,9 @@ suite "HTTP client testing suite":
     for item in RequestTests:
       let ha =
         if secure:
-          session.getAddress(address, HttpClientScheme.Secure, item[1])
+          getAddress(address, HttpClientScheme.Secure, item[1])
         else:
-          session.getAddress(address, HttpClientScheme.NonSecure, item[1])
+          getAddress(address, HttpClientScheme.NonSecure, item[1])
       var req = HttpClientRequestRef.new(session, ha, item[0])
       let response = await fetch(req)
       if response.status == 200:
@@ -154,9 +156,9 @@ suite "HTTP client testing suite":
       var session = createSession(secure)
       let ha =
         if secure:
-          session.getAddress(address, HttpClientScheme.Secure, item[1])
+          getAddress(address, HttpClientScheme.Secure, item[1])
         else:
-          session.getAddress(address, HttpClientScheme.NonSecure, item[1])
+          getAddress(address, HttpClientScheme.NonSecure, item[1])
       var req = HttpClientRequestRef.new(session, ha, item[0])
       let response = await fetch(req)
       if response.status == 200:
@@ -240,9 +242,9 @@ suite "HTTP client testing suite":
     for item in ResponseTests:
       let ha =
         if secure:
-          session.getAddress(address, HttpClientScheme.Secure, item[1])
+          getAddress(address, HttpClientScheme.Secure, item[1])
         else:
-          session.getAddress(address, HttpClientScheme.NonSecure, item[1])
+          getAddress(address, HttpClientScheme.NonSecure, item[1])
       var req = HttpClientRequestRef.new(session, ha, item[0])
       var response = await send(req)
       if response.status == 200:
@@ -266,9 +268,9 @@ suite "HTTP client testing suite":
       var session = createSession(secure)
       let ha =
         if secure:
-          session.getAddress(address, HttpClientScheme.Secure, item[1])
+          getAddress(address, HttpClientScheme.Secure, item[1])
         else:
-          session.getAddress(address, HttpClientScheme.NonSecure, item[1])
+          getAddress(address, HttpClientScheme.NonSecure, item[1])
       var req = HttpClientRequestRef.new(session, ha, item[0])
       var response = await send(req)
       if response.status == 200:
@@ -323,9 +325,9 @@ suite "HTTP client testing suite":
     for item in RequestTests:
       let ha =
         if secure:
-          session.getAddress(address, HttpClientScheme.Secure, item[1])
+          getAddress(address, HttpClientScheme.Secure, item[1])
         else:
-          session.getAddress(address, HttpClientScheme.NonSecure, item[1])
+          getAddress(address, HttpClientScheme.NonSecure, item[1])
       var data = createBigMessage("REQUESTSTREAMMESSAGE", item[2])
       let headers = [
         ("Content-Type", "application/octet-stream"),
@@ -392,9 +394,9 @@ suite "HTTP client testing suite":
     for item in RequestTests:
       let ha =
         if secure:
-          session.getAddress(address, HttpClientScheme.Secure, item[1])
+          getAddress(address, HttpClientScheme.Secure, item[1])
         else:
-          session.getAddress(address, HttpClientScheme.NonSecure, item[1])
+          getAddress(address, HttpClientScheme.NonSecure, item[1])
       var data = createBigMessage("REQUESTSTREAMMESSAGE", item[2])
       let headers = [
         ("Content-Type", "application/octet-stream"),
@@ -469,11 +471,9 @@ suite "HTTP client testing suite":
       var session = createSession(secure)
       let ha =
         if secure:
-          session.getAddress(address, HttpClientScheme.Secure,
-                             PostRequests[0][0])
+          getAddress(address, HttpClientScheme.Secure, PostRequests[0][0])
         else:
-          session.getAddress(address, HttpClientScheme.NonSecure,
-                             PostRequests[0][0])
+          getAddress(address, HttpClientScheme.NonSecure, PostRequests[0][0])
       let headers = [
         ("Content-Type", "application/x-www-form-urlencoded"),
       ]
@@ -495,11 +495,9 @@ suite "HTTP client testing suite":
       var session = createSession(secure)
       let ha =
         if secure:
-          session.getAddress(address, HttpClientScheme.Secure,
-                             PostRequests[1][0])
+          getAddress(address, HttpClientScheme.Secure, PostRequests[1][0])
         else:
-          session.getAddress(address, HttpClientScheme.NonSecure,
-                             PostRequests[1][0])
+          getAddress(address, HttpClientScheme.NonSecure, PostRequests[1][0])
       let headers = [
         ("Content-Type", "application/x-www-form-urlencoded"),
         ("Transfer-Encoding", "chunked")
@@ -580,11 +578,9 @@ suite "HTTP client testing suite":
       var session = createSession(secure)
       let ha =
         if secure:
-          session.getAddress(address, HttpClientScheme.Secure,
-                             PostRequests[0][0])
+          getAddress(address, HttpClientScheme.Secure, PostRequests[0][0])
         else:
-          session.getAddress(address, HttpClientScheme.NonSecure,
-                             PostRequests[0][0])
+          getAddress(address, HttpClientScheme.NonSecure, PostRequests[0][0])
       let headers = [
         ("Content-Type", "multipart/form-data; boundary=" & PostRequests[0][1]),
       ]
@@ -604,11 +600,9 @@ suite "HTTP client testing suite":
       var session = createSession(secure)
       let ha =
         if secure:
-          session.getAddress(address, HttpClientScheme.Secure,
-                             PostRequests[0][0])
+          getAddress(address, HttpClientScheme.Secure, PostRequests[0][0])
         else:
-          session.getAddress(address, HttpClientScheme.NonSecure,
-                             PostRequests[0][0])
+          getAddress(address, HttpClientScheme.NonSecure, PostRequests[0][0])
       let headers = [
         ("Content-Type", "multipart/form-data; boundary=" & PostRequests[1][1]),
         ("Transfer-Encoding", "chunked")
@@ -637,6 +631,62 @@ suite "HTTP client testing suite":
     await server.stop()
     await server.closeWait()
     return counter
+
+  proc testRequestRedirectTest(address: TransportAddress,
+                               secure: bool,
+                               max: int): Future[string] {.async.} =
+    var session = createSession(secure, maxRedirections = max)
+
+    let ha =
+      if secure:
+        getAddress(address, HttpClientScheme.Secure, "/")
+      else:
+        getAddress(address, HttpClientScheme.NonSecure, "/")
+    let lastAddress = ha.getUri().combine(parseUri("/final/5"))
+
+    proc process(r: RequestFence): Future[HttpResponseRef] {.
+         async.} =
+      if r.isOk():
+        let request = r.get()
+        case request.uri.path
+        of "/":
+          return await request.redirect(Http302, "/redirect/1")
+        of "/redirect/1":
+          return await request.redirect(Http302, "/next/redirect/2")
+        of "/next/redirect/2":
+          return await request.redirect(Http302, "redirect/3")
+        of "/next/redirect/redirect/3":
+          return await request.redirect(Http302, "next/redirect/4")
+        of "/next/redirect/redirect/next/redirect/4":
+          return await request.redirect(Http302, lastAddress)
+        of "/final/5":
+          return await request.respond(Http200, "ok-5")
+        else:
+          return await request.respond(Http404, "Page not found")
+      else:
+        return dumbResponse()
+
+    var server = createServer(address, process, secure)
+    server.start()
+    if session.maxRedirections >= 5:
+      let (code, data) = await session.fetch(ha.getUri())
+      await session.closeWait()
+      await server.stop()
+      await server.closeWait()
+      return data.bytesToString() & "-" & $code
+    else:
+      let res =
+        try:
+          let (code {.used.}, data {.used.}) = await session.fetch(ha.getUri())
+          false
+        except HttpRedirectError:
+          true
+        except CatchableError:
+          false
+      await session.closeWait()
+      await server.stop()
+      await server.closeWait()
+      return "redirect-" & $res
 
   test "HTTP all request methods test":
     let address = initTAddress("127.0.0.1:30080")
@@ -685,6 +735,22 @@ suite "HTTP client testing suite":
   test "HTTP(S) client (size + chunked) multipart POST test":
     let address = initTAddress("127.0.0.1:30080")
     check waitFor(testRequestPostMultipartTest(address, true)) == 2
+
+  test "HTTP client redirection test":
+    let address = initTAddress("127.0.0.1:30080")
+    check waitFor(testRequestRedirectTest(address, false, 5)) == "ok-5-200"
+
+  test "HTTP(S) client redirection test":
+    let address = initTAddress("127.0.0.1:30080")
+    check waitFor(testRequestRedirectTest(address, true, 5)) == "ok-5-200"
+
+  test "HTTP client maximum redirections test":
+    let address = initTAddress("127.0.0.1:30080")
+    check waitFor(testRequestRedirectTest(address, false, 4)) == "redirect-true"
+
+  test "HTTP(S) client maximum redirections test":
+    let address = initTAddress("127.0.0.1:30080")
+    check waitFor(testRequestRedirectTest(address, true, 4)) == "redirect-true"
 
   test "Leaks test":
     proc getTrackerLeaks(tracker: string): bool =
