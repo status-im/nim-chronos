@@ -289,18 +289,19 @@ proc prepareRequest(conn: HttpConnectionRef,
         table.add(key, value)
       # Validating HTTP request headers
       # Some of the headers must be present only once.
-      if table.count("content-type") > 1:
+      if table.count(ContentTypeHeader) > 1:
         return err(Http400)
-      if table.count("content-length") > 1:
+      if table.count(ContentLengthHeader) > 1:
         return err(Http400)
-      if table.count("transfer-encoding") > 1:
+      if table.count(TransferEncodingHeader) > 1:
         return err(Http400)
       table
 
   # Preprocessing "Content-Encoding" header.
   request.contentEncoding =
     block:
-      let res = getContentEncoding(request.headers.getList("content-encoding"))
+      let res = getContentEncoding(
+        request.headers.getList(ContentEncodingHeader))
       if res.isErr():
         return err(Http400)
       else:
@@ -310,7 +311,7 @@ proc prepareRequest(conn: HttpConnectionRef,
   request.transferEncoding =
     block:
       let res = getTransferEncoding(
-                                   request.headers.getList("transfer-encoding"))
+        request.headers.getList(TransferEncodingHeader))
       if res.isErr():
         return err(Http400)
       else:
@@ -318,8 +319,8 @@ proc prepareRequest(conn: HttpConnectionRef,
 
   # Almost all HTTP requests could have body (except TRACE), we perform some
   # steps to reveal information about body.
-  if "content-length" in request.headers:
-    let length = request.headers.getInt("content-length")
+  if ContentLengthHeader in request.headers:
+    let length = request.headers.getInt(ContentLengthHeader)
     if length > 0:
       if request.meth == MethodTrace:
         return err(Http400)
@@ -337,20 +338,16 @@ proc prepareRequest(conn: HttpConnectionRef,
 
   if request.hasBody():
     # If request has body, we going to understand how its encoded.
-    const
-      UrlEncodedType = "application/x-www-form-urlencoded"
-      MultipartType = "multipart/form-data"
-
-    if "content-type" in request.headers:
-      let contentType = request.headers.getString("content-type")
+    if ContentTypeHeader in request.headers:
+      let contentType = request.headers.getString(ContentTypeHeader)
       let tmp = strip(contentType).toLowerAscii()
-      if tmp.startsWith(UrlEncodedType):
+      if tmp.startsWith(UrlEncodedContentType):
         request.requestFlags.incl(HttpRequestFlags.UrlencodedForm)
-      elif tmp.startsWith(MultipartType):
+      elif tmp.startsWith(MultipartContentType):
         request.requestFlags.incl(HttpRequestFlags.MultipartForm)
 
-    if "expect" in request.headers:
-      let expectHeader = request.headers.getString("expect")
+    if ExpectHeader in request.headers:
+      let expectHeader = request.headers.getString(ExpectHeader)
       if strip(expectHeader).toLowerAscii() == "100-continue":
         request.requestFlags.incl(HttpRequestFlags.ClientExpect)
 
@@ -430,17 +427,29 @@ proc sendErrorResponse(conn: HttpConnectionRef, version: HttpVersion,
                        datatype = "text/text",
                        databody = ""): Future[bool] {.async.} =
   var answer = $version & " " & $code & "\r\n"
-  answer.add("Date: " & httpDate() & "\r\n")
-  if len(datatype) > 0:
-    answer.add("Content-Type: " & datatype & "\r\n")
-  answer.add("Content-Length: " &
-              Base10.toString(uint64(len(databody))) & "\r\n")
-  if keepAlive:
-    answer.add("Connection: keep-alive\r\n")
-  else:
-    answer.add("Connection: close\r\n")
-  answer.add("Host: " & conn.server.getHostname() & "\r\n")
+  answer.add(DateHeader)
+  answer.add(": ")
+  answer.add(httpDate())
   answer.add("\r\n")
+  if len(datatype) > 0:
+    answer.add(ContentTypeHeader)
+    answer.add(": ")
+    answer.add(datatype)
+    answer.add("\r\n")
+  answer.add(ContentLengthHeader)
+  answer.add(": ")
+  answer.add(Base10.toString(uint64(len(databody))))
+  answer.add("\r\n")
+  if keepAlive:
+    answer.add(ConnectionHeader)
+    answer.add(": keep-alive\r\n")
+  else:
+    answer.add(ConnectionHeader)
+    answer.add(": close\r\n")
+  answer.add(HostHeader)
+  answer.add(": ")
+  answer.add(conn.server.getHostname())
+  answer.add("\r\n\r\n")
   if len(databody) > 0:
     answer.add(databody)
   try:
@@ -744,12 +753,12 @@ proc getMultipartReader*(req: HttpRequestRef): HttpResult[MultiPartReaderRef] =
   ## Create new MultiPartReader interface for specific request.
   if req.meth in PostMethods:
     if MultipartForm in req.requestFlags:
-      let ctype = ? getContentType(req.headers.getList("content-type"))
-      if ctype != "multipart/form-data":
+      let ctype = ? getContentType(req.headers.getList(ContentTypeHeader))
+      if ctype != MultipartContentType:
         err("Content type is not supported")
       else:
         let boundary = ? getMultipartBoundary(
-          req.headers.getList("content-type")
+          req.headers.getList(ContentTypeHeader)
         )
         var stream = ? req.getBodyReader()
         ok(MultiPartReaderRef.new(stream, boundary))
@@ -877,21 +886,21 @@ template checkPending(t: untyped) =
 
 proc prepareLengthHeaders(resp: HttpResponseRef, length: int): string {.
      raises: [Defect].}=
-  if not(resp.hasHeader("date")):
-    resp.setHeader("date", httpDate())
-  if not(resp.hasHeader("content-type")):
-    resp.setHeader("content-type", "text/html; charset=utf-8")
-  if not(resp.hasHeader("content-length")):
-    resp.setHeader("content-length", Base10.toString(uint64(length)))
-  if not(resp.hasHeader("server")):
-    resp.setHeader("server", resp.connection.server.serverIdent)
-  if not(resp.hasHeader("host")):
-    resp.setHeader("host", resp.connection.server.getHostname())
-  if not(resp.hasHeader("connection")):
+  if not(resp.hasHeader(DateHeader)):
+    resp.setHeader(DateHeader, httpDate())
+  if not(resp.hasHeader(ContentTypeHeader)):
+    resp.setHeader(ContentTypeHeader, "text/html; charset=utf-8")
+  if not(resp.hasHeader(ContentLengthHeader)):
+    resp.setHeader(ContentLengthHeader, Base10.toString(uint64(length)))
+  if not(resp.hasHeader(ServerHeader)):
+    resp.setHeader(ServerHeader, resp.connection.server.serverIdent)
+  if not(resp.hasHeader(HostHeader)):
+    resp.setHeader(HostHeader, resp.connection.server.getHostname())
+  if not(resp.hasHeader(ConnectionHeader)):
     if KeepAlive in resp.flags:
-      resp.setHeader("connection", "keep-alive")
+      resp.setHeader(ConnectionHeader, "keep-alive")
     else:
-      resp.setHeader("connection", "close")
+      resp.setHeader(ConnectionHeader, "close")
   var answer = $(resp.version) & " " & $(resp.status) & "\r\n"
   for k, v in resp.headersTable.stringItems():
     if len(v) > 0:
@@ -904,21 +913,21 @@ proc prepareLengthHeaders(resp: HttpResponseRef, length: int): string {.
 
 proc prepareChunkedHeaders(resp: HttpResponseRef): string {.
      raises: [Defect].} =
-  if not(resp.hasHeader("date")):
-    resp.setHeader("date", httpDate())
-  if not(resp.hasHeader("content-type")):
-    resp.setHeader("content-type", "text/html; charset=utf-8")
-  if not(resp.hasHeader("transfer-encoding")):
-    resp.setHeader("transfer-encoding", "chunked")
-  if not(resp.hasHeader("server")):
-    resp.setHeader("server", resp.connection.server.serverIdent)
-  if not(resp.hasHeader("host")):
-    resp.setHeader("host", resp.connection.server.getHostname())
-  if not(resp.hasHeader("connection")):
+  if not(resp.hasHeader(DateHeader)):
+    resp.setHeader(DateHeader, httpDate())
+  if not(resp.hasHeader(ContentTypeHeader)):
+    resp.setHeader(ContentTypeHeader, "text/html; charset=utf-8")
+  if not(resp.hasHeader(TransferEncodingHeader)):
+    resp.setHeader(TransferEncodingHeader, "chunked")
+  if not(resp.hasHeader(ServerHeader)):
+    resp.setHeader(ServerHeader, resp.connection.server.serverIdent)
+  if not(resp.hasHeader(HostHeader)):
+    resp.setHeader(HostHeader, resp.connection.server.getHostname())
+  if not(resp.hasHeader(ConnectionHeader)):
     if KeepAlive in resp.flags:
-      resp.setHeader("connection", "keep-alive")
+      resp.setHeader(ConnectionHeader, "keep-alive")
     else:
-      resp.setHeader("connection", "close")
+      resp.setHeader(ConnectionHeader, "close")
   var answer = $(resp.version) & " " & $(resp.status) & "\r\n"
   for k, v in resp.headersTable.stringItems():
     if len(v) > 0:
@@ -1076,8 +1085,20 @@ proc respond*(req: HttpRequestRef, code: HttpCode,
   respond(req, code, content, HttpTable.init())
 
 proc respond*(req: HttpRequestRef, code: HttpCode): Future[HttpResponseRef] =
-  ## Reponds to the request with specified ``HttpCode`` only.
+  ## Responds to the request with specified ``HttpCode`` only.
   respond(req, code, "", HttpTable.init())
+
+proc redirect*(req: HttpRequestRef, code: HttpCode,
+               location: Uri): Future[HttpResponseRef] =
+  ## Responds to the request with redirection to location ``location``.
+  let headers = HttpTable.init([("location", $location)])
+  respond(req, code, "", headers)
+
+proc redirect*(req: HttpRequestRef, code: HttpCode,
+               location: string): Future[HttpResponseRef] =
+  ## Responds to the request with redirection to location ``location``.
+  let headers = HttpTable.init([("location", location)])
+  respond(req, code, "", headers)
 
 proc responded*(req: HttpRequestRef): bool =
   ## Returns ``true`` if request ``req`` has been responded or responding.

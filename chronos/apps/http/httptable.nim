@@ -190,3 +190,10 @@ proc `$`*(ht: HttpTables): string =
       res.add(item)
       res.add("\p")
   res
+
+proc toList*(ht: HttpTables, normKey = false): auto =
+  ## Returns sequence of (key, value) pairs.
+  var res: seq[tuple[key: string, value: string]]
+  for key, value in ht.stringItems(normKey):
+    res.add((key, value))
+  res
