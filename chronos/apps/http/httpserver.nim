@@ -78,7 +78,6 @@ type
     query*: HttpTable
     postTable: Option[HttpTable]
     rawPath*: string
-    rawQuery*: string
     uri*: Uri
     scheme*: string
     version*: HttpVersion

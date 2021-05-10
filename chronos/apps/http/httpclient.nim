@@ -123,7 +123,7 @@ type
 
   HttpClientRequest* = object
     meth*: HttpMethod
-    address: HttpAddress
+    address*: HttpAddress
     state: HttpClientRequestState
     version*: HttpVersion
     headers*: HttpTable
