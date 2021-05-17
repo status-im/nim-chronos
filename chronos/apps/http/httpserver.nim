@@ -16,7 +16,15 @@ export httptable, httpcommon, httputils, multipart, asyncstream,
 
 type
   HttpServerFlags* {.pure.} = enum
-    Secure, NoExpectHandler, NotifyDisconnect
+    Secure,
+      ## Internal flag which indicates that server working in secure TLS mode
+    NoExpectHandler,
+      ## Do not handle `Expect` header automatically
+    NotifyDisconnect,
+      ## Notify user-callback when remote client disconnects.
+    QueryCommaSeparatedArray
+      ## Enable usage of comma as an array item delimiter in url-encoded
+      ## entities (e.g. query string or POST body).
 
   HttpServerError* {.pure.} = enum
     TimeoutError, CatchableError, RecoverableError, CriticalError,
@@ -49,7 +57,8 @@ type
 
   HttpConnectionCallback* =
     proc(server: HttpServerRef,
-         transp: StreamTransport): Future[HttpConnectionRef] {.gcsafe, raises: [Defect].}
+         transp: StreamTransport): Future[HttpConnectionRef] {.
+      gcsafe, raises: [Defect].}
 
   HttpServer* = object of RootObj
     instance*: StreamServer
@@ -275,8 +284,13 @@ proc prepareRequest(conn: HttpConnectionRef,
 
   request.query =
     block:
+      let queryFlags =
+        if QueryCommaSeparatedArray in conn.server.flags:
+          {QueryParamsFlag.CommaSeparatedArray}
+        else:
+          {}
       var table = HttpTable.init()
-      for key, value in queryParams(request.uri.query):
+      for key, value in queryParams(request.uri.query, queryFlags):
         table.add(key, value)
       table
 
@@ -775,6 +789,11 @@ proc post*(req: HttpRequestRef): Future[HttpTable] {.async.} =
       return HttpTable.init()
 
     if UrlencodedForm in req.requestFlags:
+      let queryFlags =
+        if QueryCommaSeparatedArray in req.connection.server.flags:
+          {QueryParamsFlag.CommaSeparatedArray}
+        else:
+          {}
       var table = HttpTable.init()
       # getBody() will handle `Expect`.
       var body = await req.getBody()
@@ -783,7 +802,7 @@ proc post*(req: HttpRequestRef): Future[HttpTable] {.async.} =
       var strbody = newString(len(body))
       if len(body) > 0:
         copyMem(addr strbody[0], addr body[0], len(body))
-      for key, value in queryParams(strbody):
+      for key, value in queryParams(strbody, queryFlags):
         table.add(key, value)
       req.postTable = some(table)
       return table

@@ -53,11 +53,19 @@ type
   HttpRedirectError* = object of HttpError
   HttpAddressError* = object of HttpError
 
+  KeyValueTuple* = tuple
+    key: string
+    value: string
+
   TransferEncodingFlags* {.pure.} = enum
     Identity, Chunked, Compress, Deflate, Gzip
 
   ContentEncodingFlags* {.pure.} = enum
     Identity, Br, Compress, Deflate, Gzip
+
+  QueryParamsFlag* {.pure.} = enum
+    CommaSeparatedArray ## Enable usage of comma symbol as separator of array
+                        ## items
 
 proc raiseHttpCriticalError*(msg: string,
                              code = Http400) {.noinline, noreturn.} =
@@ -99,7 +107,8 @@ template newHttpReadError*(message: string): ref HttpReadError =
 template newHttpWriteError*(message: string): ref HttpWriteError =
   newException(HttpWriteError, message)
 
-iterator queryParams*(query: string): tuple[key: string, value: string] {.
+iterator queryParams*(query: string,
+                      flags: set[QueryParamsFlag] = {}): KeyValueTuple {.
          raises: [Defect].} =
   ## Iterate over url-encoded query string.
   for pair in query.split('&'):
@@ -107,7 +116,12 @@ iterator queryParams*(query: string): tuple[key: string, value: string] {.
     let k = items[0]
     if len(k) > 0:
       let v = if len(items) > 1: items[1] else: ""
-      yield (decodeUrl(k), decodeUrl(v))
+      if CommaSeparatedArray in flags:
+        let key = decodeUrl(k)
+        for av in decodeUrl(v).split(','):
+          yield (k, av)
+      else:
+        yield (decodeUrl(k), decodeUrl(v))
 
 func getTransferEncoding*(ch: openarray[string]): HttpResult[
                                                   set[TransferEncodingFlags]] {.

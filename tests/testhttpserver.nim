@@ -7,7 +7,8 @@
 #              MIT license (LICENSE-MIT)
 import std/[strutils, algorithm, strutils]
 import unittest2
-import ../chronos, ../chronos/apps/http/httpserver
+import ../chronos, ../chronos/apps/http/httpserver,
+       ../chronos/apps/http/httpcommon
 import stew/base10
 
 when defined(nimHasUsed): {.used.}
@@ -818,6 +819,41 @@ suite "HTTP server testing suite":
     check:
       getContentEncoding([]).tryGet() == { ContentEncodingFlags.Identity }
       getContentEncoding(["", ""]).tryGet() == { ContentEncodingFlags.Identity }
+
+  test "queryParams() test":
+    const Vectors = [
+      ("id=1&id=2&id=3&id=4", {}, "id:1,id:2,id:3,id:4"),
+      ("id=1,2,3,4", {}, "id:1,2,3,4"),
+      ("id=1%2C2%2C3%2C4", {}, "id:1,2,3,4"),
+      ("id=", {}, "id:"),
+      ("id=&id=", {}, "id:,id:"),
+      ("id=1&id=2&id=3&id=4", {QueryParamsFlag.CommaSeparatedArray},
+       "id:1,id:2,id:3,id:4"),
+      ("id=1,2,3,4", {QueryParamsFlag.CommaSeparatedArray},
+       "id:1,id:2,id:3,id:4"),
+      ("id=1%2C2%2C3%2C4", {QueryParamsFlag.CommaSeparatedArray},
+       "id:1,id:2,id:3,id:4"),
+      ("id=", {QueryParamsFlag.CommaSeparatedArray}, "id:"),
+      ("id=&id=", {QueryParamsFlag.CommaSeparatedArray}, "id:,id:"),
+      ("id=,", {QueryParamsFlag.CommaSeparatedArray}, "id:,id:"),
+      ("id=,,", {QueryParamsFlag.CommaSeparatedArray}, "id:,id:,id:"),
+      ("id=1&id=2&id=3,4,5,6&id=7%2C8%2C9%2C10",
+       {QueryParamsFlag.CommaSeparatedArray},
+       "id:1,id:2,id:3,id:4,id:5,id:6,id:7,id:8,id:9,id:10")
+    ]
+
+    proc toString(ht: HttpTable): string =
+      var res: seq[string]
+      for key, value in ht.items():
+        for item in value:
+          res.add(key & ":" & item)
+      res.join(",")
+
+    for vector in Vectors:
+      var table = HttpTable.init()
+      for key, value in queryParams(vector[0], vector[1]):
+        table.add(key, value)
+      check toString(table) == vector[2]
 
   test "Leaks test":
     check:
