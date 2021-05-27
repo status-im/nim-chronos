@@ -84,19 +84,19 @@ suite "Future[T] behavior test suite":
     except:
       result = -6
 
-  proc test1(): bool =
+  test "Async undefined behavior (#7758) test":
     var fut = testFuture1()
     poll()
     poll()
     if not fut.finished:
       poll()
-    result = fut.finished
+    check: fut.finished
 
-  proc test2(): bool =
+  test "Immediately completed asynchronous procedure test":
     var fut = testFuture3()
-    result = fut.finished
+    check: fut.finished
 
-  proc test3(): string =
+  test "Future[T] callbacks are invoked in reverse order (#7197) test":
     var testResult = ""
     var fut = testFuture1()
     fut.addCallback proc(udata: pointer) =
@@ -111,10 +111,12 @@ suite "Future[T] behavior test suite":
       testResult &= "5"
     discard waitFor(fut)
     poll()
-    if fut.finished:
-      result = testResult
 
-  proc test4(): string =
+    check:
+      fut.finished
+      testResult == "12345"
+
+  test "Future[T] callbacks not changing order after removeCallback()":
     var testResult = ""
     var fut = testFuture1()
     proc cb1(udata: pointer) =
@@ -135,13 +137,15 @@ suite "Future[T] behavior test suite":
     fut.removeCallback cb3
     discard waitFor(fut)
     poll()
-    if fut.finished:
-      result = testResult
+    check:
+      fut.finished
+      testResult == "1245"
 
-  proc test5(): int =
-    result = waitFor(testFuture4())
+  test "wait[T]() test":
+    check:
+      waitFor(testFuture4()) == 6
 
-  proc testAsyncDiscard(): int =
+  test "discard result Future[T] test":
     var completedFutures = 0
 
     proc client1() {.async.} =
@@ -206,14 +210,16 @@ suite "Future[T] behavior test suite":
     discard client5f()
 
     waitFor(sleepAsync(2000.milliseconds))
-    result = completedFutures
+    check:
+      completedFutures == 10
 
-  proc testAllFuturesZero(): bool =
+  test "allFutures(zero) test":
     var tseq = newSeq[Future[int]]()
     var fut = allFutures(tseq)
-    result = fut.finished
+    check:
+      fut.finished
 
-  proc testAllFuturesVarargs(): int =
+  test "allFutures(varargs) test":
     var completedFutures = 0
 
     proc vlient1() {.async.} =
@@ -322,22 +328,21 @@ suite "Future[T] behavior test suite":
         raise newException(ValueError, "")
 
     waitFor(allFutures(vlient1(), vlient2(), vlient3(), vlient4(), vlient5()))
-    # 5 completed futures = 5
-    result += completedFutures
 
+    check: completedFutures == 5
     completedFutures = 0
+
     waitFor(allFutures(vlient1(), vlient1f(),
                        vlient2(), vlient2f(),
                        vlient3(), vlient3f(),
                        vlient4(), vlient4f(),
                        vlient5(), vlient5f()))
-    # 10 completed futures = 10
-    result += completedFutures
+
+    check: completedFutures == 10
 
     completedFutures = 0
     waitFor(allFutures(client1(), client2(), client3(), client4(), client5()))
-    # 5 completed futures
-    result += completedFutures
+    check: completedFutures  == 5
 
     completedFutures = 0
     waitFor(allFutures(client1(), client1f(),
@@ -345,10 +350,9 @@ suite "Future[T] behavior test suite":
                        client3(), client3f(),
                        client4(), client4f(),
                        client5(), client5f()))
-    # 10 completed futures = 10
-    result += completedFutures
+    check: completedFutures == 10
 
-  proc testAllFuturesSeq(): int =
+  test "allFutures(varargs) test":
     var completedFutures = 0
     var vfutures = newSeq[Future[void]]()
     var nfutures = newSeq[Future[int]]()
@@ -468,7 +472,7 @@ suite "Future[T] behavior test suite":
 
     waitFor(allFutures(vfutures))
     # 5 * 10 completed futures = 50
-    result += completedFutures
+    check: completedFutures == 50
 
     completedFutures = 0
     vfutures.setLen(0)
@@ -486,7 +490,7 @@ suite "Future[T] behavior test suite":
 
     waitFor(allFutures(vfutures))
     # 10 * 10 completed futures = 100
-    result += completedFutures
+    check: completedFutures == 100
 
     completedFutures = 0
     nfutures.setLen(0)
@@ -499,7 +503,7 @@ suite "Future[T] behavior test suite":
 
     waitFor(allFutures(nfutures))
     # 5 * 10 completed futures = 50
-    result += completedFutures
+    check: completedFutures == 50
 
     completedFutures = 0
     nfutures.setLen(0)
@@ -518,9 +522,9 @@ suite "Future[T] behavior test suite":
     waitFor(allFutures(nfutures))
 
     # 10 * 10 completed futures = 100
-    result += completedFutures
+    check: completedFutures == 100
 
-  proc testAllCompleted(operation: int): bool =
+  test "allFutures() already completed test":
     proc client1(): Future[int] {.async.} =
       result = 1
 
@@ -528,19 +532,31 @@ suite "Future[T] behavior test suite":
       if true:
         raise newException(ValueError, "")
 
-    if operation == 1:
-      var fut = allFutures(client1(), client2())
-      result = fut.finished() and not(fut.failed())
-    elif operation == 2:
-      var fut = allFinished(client1(), client2())
-      result = fut.finished() and not(fut.failed()) and (len(fut.read()) == 2)
+    var fut = allFutures(client1(), client2())
+    check:
+      fut.finished()
+      not(fut.failed())
 
-  proc testOneZero(): bool =
+  test "allFinished() already completed test":
+    proc client1(): Future[int] {.async.} =
+      result = 1
+
+    proc client2(): Future[int] {.async.} =
+      if true:
+        raise newException(ValueError, "")
+
+    var fut = allFinished(client1(), client2())
+    check:
+      fut.finished()
+      not(fut.failed())
+      len(fut.read()) == 2
+
+  test "one(zero) test":
     var tseq = newSeq[Future[int]]()
     var fut = one(tseq)
-    result = fut.finished and fut.failed
+    check: fut.finished and fut.failed
 
-  proc testOneVarargs(): bool =
+  test "one(varargs) test":
     proc vlient1() {.async.} =
       await sleepAsync(100.milliseconds)
 
@@ -577,8 +593,10 @@ suite "Future[T] behavior test suite":
     var fut33 = vlient1()
     var res3 = waitFor(one(fut31, fut32, fut33))
 
-    if fut11 != res1 or fut22 != res2 or fut33 != res3:
-      return false
+    check:
+      fut11 == res1
+      fut22 == res2
+      fut33 == res3
 
     var cut11 = client1()
     var cut12 = client2()
@@ -595,12 +613,12 @@ suite "Future[T] behavior test suite":
     var cut33 = client1()
     var res6 = waitFor(one(cut31, cut32, cut33))
 
-    if cut11 != res4 or cut22 != res5 or cut33 != res6:
-      return false
+    check:
+      cut11 == res4
+      cut22 == res5
+      cut33 == res6
 
-    result = true
-
-  proc testOneSeq(): bool =
+  test "one(seq) test":
     proc vlient1() {.async.} =
       await sleepAsync(100.milliseconds)
 
@@ -637,8 +655,10 @@ suite "Future[T] behavior test suite":
     var v32 = vlient1()
     var res3 = waitFor(one(@[v30, v31, v32]))
 
-    if res1 != v10 or res2 != v21 or res3 != v32:
-      return false
+    check:
+      res1 == v10
+      res2 == v21
+      res3 == v32
 
     var c10 = client1()
     var c11 = client2()
@@ -655,12 +675,12 @@ suite "Future[T] behavior test suite":
     var c32 = client1()
     var res6 = waitFor(one(@[c30, c31, c32]))
 
-    if res4 != c10 or res5 != c21 or res6 != c32:
-      return false
+    check:
+      res4 == c10
+      res5 == c21
+      res6 == c32
 
-    result = true
-
-  proc testOneCompleted(): bool =
+  test "one(completed) test":
     proc client1(): Future[int] {.async.} =
       result = 1
 
@@ -681,8 +701,13 @@ suite "Future[T] behavior test suite":
     var f31 = client3()
     var fut2 = one(f31, f21, f11)
 
-    result = fut1.finished() and not(fut1.failed()) and fut1.read() == f10 and
-             fut2.finished() and not(fut2.failed()) and fut2.read() == f21
+    check:
+      fut1.finished()
+      not(fut1.failed())
+      fut1.read() == f10
+      fut2.finished()
+      not(fut2.failed())
+      fut2.read() == f21
 
   proc waitForNeLocal[T](fut: Future[T]): Future[T] =
     ## **Blocks** the current thread until the specified future completes.
@@ -690,8 +715,7 @@ suite "Future[T] behavior test suite":
       poll()
     result = fut
 
-  proc testOr(): bool =
-
+  test "or() test":
     proc client1() {.async.} =
       await sleepAsync(200.milliseconds)
 
@@ -719,18 +743,19 @@ suite "Future[T] behavior test suite":
     var f9 = waitForNeLocal(client3() or client4())
     var f10 = waitForNeLocal(client4() or client3())
 
-    result = (f1.finished() and not(f1.failed())) and
-             (f2.finished() and not(f2.failed())) and
-             (f3.finished() and not(f3.failed())) and
-             (f4.finished() and not(f4.failed())) and
-             (f5.finished() and f5.failed()) and
-             (f6.finished() and f6.failed()) and
-             (f7.finished() and not(f7.failed())) and
-             (f8.finished() and not(f8.failed())) and
-             (f9.finished() and f9.failed()) and
-             (f10.finished() and f10.failed())
+    check:
+      (f1.finished() and not(f1.failed()))
+      (f2.finished() and not(f2.failed()))
+      (f3.finished() and not(f3.failed()))
+      (f4.finished() and not(f4.failed()))
+      (f5.finished() and f5.failed())
+      (f6.finished() and f6.failed())
+      (f7.finished() and not(f7.failed()))
+      (f8.finished() and not(f8.failed()))
+      (f9.finished() and f9.failed())
+      (f10.finished() and f10.failed())
 
-  proc testOrCompleted(): bool =
+  test "or() already completed test":
     proc client1(): Future[int] {.async.} =
       result = 1
     proc client2(): Future[int] {.async.} =
@@ -747,14 +772,15 @@ suite "Future[T] behavior test suite":
     var f5 = client3() or client1()
     var f6 = client3() or client2()
 
-    result = (f1.finished() and not(f1.failed())) and
+    check:
+      (f1.finished() and not(f1.failed())) and
              (f2.finished() and not(f2.failed())) and
              (f3.finished() and f3.failed()) and
              (f4.finished() and f4.failed()) and
              (f5.finished() and not(f5.failed())) and
              (f6.finished() and f6.failed())
 
-  proc testCancelIter(): bool =
+  test "cancel() async procedure test":
     var completed = 0
 
     proc client1() {.async.} =
@@ -778,19 +804,15 @@ suite "Future[T] behavior test suite":
 
     # Future must not be cancelled immediately, because it has many nested
     # futures.
-    if fut.cancelled():
-      return false
+    check:
+      not fut.cancelled()
 
-    try:
+    expect(CancelledError):
       waitFor fut
-      result = false
-    except CancelledError:
-      if completed == 0:
-        result = true
-      else:
-        result = false
 
-  proc testCancelAndWait(): bool =
+    check: completed == 0
+
+  test "cancelAndWait() test":
     var completed = 0
 
     proc client1() {.async.} =
@@ -811,11 +833,10 @@ suite "Future[T] behavior test suite":
 
     var fut = client4()
     waitFor cancelAndWait(fut)
-    if not(fut.cancelled()):
-      return false
-    return true
+    check:
+      fut.cancelled()
 
-  proc testBreakCancellation(): bool =
+  test "Break cancellation propagation test":
     var completed = 0
 
     proc client1() {.async.} =
@@ -835,17 +856,12 @@ suite "Future[T] behavior test suite":
     waitFor fut1
     waitFor cancelAndWait(fut2)
 
-    if fut1.cancelled():
-      return false
-    if fut2.cancelled():
-      return false
+    check:
+      not fut1.cancelled()
+      not fut2.cancelled()
+      completed == 2
 
-    if completed != 2:
-      return false
-
-    return true
-
-  proc testCancelCallback(): bool =
+  test "Cancellation callback test":
     var completed = 0
     var cancelled = 0
 
@@ -873,11 +889,10 @@ suite "Future[T] behavior test suite":
     fut.cancel()
     waitFor(sleepAsync(500.milliseconds))
 
-    if not(fut.cancelled()):
-      return false
-    if (completed != 0) and (cancelled != 1):
-      return false
-    return true
+    check:
+      fut.cancelled()
+      completed == 0
+      cancelled == 1
 
   proc testWaitAsync(): Future[bool] {.async.} =
     var neverFlag1, neverFlag2, neverFlag3: bool
@@ -960,15 +975,14 @@ suite "Future[T] behavior test suite":
              (raceFut2.state == FutureState.Cancelled) and
              (raceFut3.state == FutureState.Cancelled)
 
-  proc testWait(): bool =
-    waitFor(testWaitAsync())
+  test "Cancellation wait() test":
+    check: waitFor(testWaitAsync())
 
-  proc testWithTimeout(): bool =
-    waitFor(testWithTimeoutAsync())
+  test "Cancellation withTimeout() test":
+    check: waitFor(testWithTimeoutAsync())
 
-  proc testCancellationRace(): bool =
-    waitFor(testCancellationRaceAsync())
-
+  test "Cancellation race test":
+    check: waitFor(testCancellationRaceAsync())
 
   proc testAsyncSpawnAsync(): Future[bool] {.async.} =
 
@@ -1018,10 +1032,10 @@ suite "Future[T] behavior test suite":
 
     return true
 
-  proc testAsyncSpawn(): bool =
-    waitFor(testAsyncSpawnAsync())
+  test "asyncSpawn() test":
+    check: waitFor(testAsyncSpawnAsync())
 
-  proc testSrcLocation(): bool =
+  test "location test":
     # WARNING: This test is very sensitive to line numbers and module name.
 
     proc macroFuture() {.async.} =
@@ -1058,16 +1072,15 @@ suite "Future[T] behavior test suite":
         (loc.line == line) and ($loc.file  == file) and
         (loc.procedure == procedure)
 
-    let r10 = chk(loc10, "testfut.nim", 1027, "macroFuture")
-    let r11 = chk(loc11, "testfut.nim", 1028, "")
-    let r20 = chk(loc20, "testfut.nim", 1040, "template")
-    let r21 = chk(loc21, "testfut.nim", 1043, "")
-    let r30 = chk(loc30, "testfut.nim", 1037, "procedure")
-    let r31 = chk(loc31, "testfut.nim", 1044, "")
+    check:
+      chk(loc10, "testfut.nim", 1041, "macroFuture")
+      chk(loc11, "testfut.nim", 1042, "")
+      chk(loc20, "testfut.nim", 1054, "template")
+      chk(loc21, "testfut.nim", 1057, "")
+      chk(loc30, "testfut.nim", 1051, "procedure")
+      chk(loc31, "testfut.nim", 1058, "")
 
-    r10 and r11 and r20 and r21 and r30 and r31
-
-  proc testWithTimeoutCancelAndWait(): bool =
+  test "withTimeout(fut) should wait cancellation test":
     proc futureNeverEnds(): Future[void] =
       newFuture[void]("neverending.future")
 
@@ -1087,9 +1100,9 @@ suite "Future[T] behavior test suite":
       except CatchableError:
         return false
 
-    waitFor testWithTimeout()
+    check: waitFor testWithTimeout()
 
-  proc testWaitCancelAndWait(): bool =
+  test "wait(fut) should wait cancellation test":
     proc futureNeverEnds(): Future[void] =
       newFuture[void]("neverending.future")
 
@@ -1111,16 +1124,19 @@ suite "Future[T] behavior test suite":
       except CatchableError:
         return false
 
-    waitFor testWait()
+    check: waitFor testWait()
 
-  proc testRaceZero(): bool =
+  test "race(zero) test":
     var tseq = newSeq[FutureBase]()
     var fut1 = race(tseq)
     var fut2 = race()
     var fut3 = race([])
-    fut1.failed() and fut2.failed() and fut3.failed()
+    check:
+      fut1.failed()
+      fut2.failed()
+      fut3.failed()
 
-  proc testRaceVarargs(): bool =
+  test "race(varargs) test":
     proc vlient1() {.async.} =
       await sleepAsync(100.milliseconds)
 
@@ -1174,15 +1190,13 @@ suite "Future[T] behavior test suite":
     var fut43 = ilient3()
     var res4 = waitFor(race(fut41, fut42, fut43))
 
-    if (FutureBase(fut11) != res1) or
-       (FutureBase(fut22) != res2) or
-       (FutureBase(fut33) != res3) or
-       (FutureBase(fut41) != res4):
-      return false
+    check:
+      FutureBase(fut11) == res1
+      FutureBase(fut22) == res2
+      FutureBase(fut33) == res3
+      FutureBase(fut41) == res4
 
-    result = true
-
-  proc testRaceSeq(): bool =
+  test "race(seq) test":
     proc vlient1() {.async.} =
       await sleepAsync(100.milliseconds)
 
@@ -1240,15 +1254,13 @@ suite "Future[T] behavior test suite":
     var res4 = waitFor(race(@[FutureBase(v40), FutureBase(v41),
                               FutureBase(v42)]))
 
-    if res1 != FutureBase(v10) or
-       res2 != FutureBase(v21) or
-       res3 != FutureBase(v32) or
-       res4 != FutureBase(v40):
-      return false
+    check:
+      res1 == FutureBase(v10)
+      res2 == FutureBase(v21)
+      res3 == FutureBase(v32)
+      res4 == FutureBase(v40)
 
-    result = true
-
-  proc testRaceCompleted(): bool =
+  test "race() already completed test":
     proc client1(): Future[int] {.async.} =
       result = 1
 
@@ -1269,10 +1281,11 @@ suite "Future[T] behavior test suite":
     var f31 = client3()
     var fut2 = race(f31, f21, f11)
 
-    result = (fut1.done() and fut1.read() == FutureBase(f10)) and
-             (fut2.done() and fut2.read() == FutureBase(f21))
+    check:
+      fut1.done() and fut1.read() == FutureBase(f10)
+      fut2.done() and fut2.read() == FutureBase(f21)
 
-  proc testRaceCancelled(): bool =
+  test "race() cancellation test":
     proc client1() {.async.} =
       await sleepAsync(100.milliseconds)
 
@@ -1290,88 +1303,16 @@ suite "Future[T] behavior test suite":
     var fut = race(f1, f2, f3)
     waitFor(cancelAndWait(fut))
 
-    if f1.finished() or f2.finished() or f3.finished():
-      return false
+    check:
+      not f1.finished()
+      not f2.finished()
+      not f3.finished()
 
     waitFor(sleepAsync(400.milliseconds))
-    if not(f1.finished()) or not(f2.finished()) or not(f3.finished()):
-      return false
 
-    return true
+    check:
+      f1.finished()
+      f2.finished()
+      f3.finished()
 
-  test "Async undefined behavior (#7758) test":
-    check test1() == true
-  test "Immediately completed asynchronous procedure test":
-    check test2() == true
-  test "Future[T] callbacks are invoked in reverse order (#7197) test":
-    check test3() == "12345"
-  test "Future[T] callbacks not changing order after removeCallback()":
-    check test4() == "1245"
-  test "wait[T]() test":
-    check test5() == 6
 
-  test "discard result Future[T] test":
-    check testAsyncDiscard() == 10
-
-  test "allFutures(zero) test":
-    check testAllFuturesZero() == true
-  test "allFutures(varargs) test":
-    check testAllFuturesVarargs() == 30
-  test "allFutures(varargs) test":
-    check testAllFuturesSeq() == 300
-  test "allFutures() already completed test":
-    check testAllCompleted(1) == true
-  test "allFinished() already completed test":
-    check testAllCompleted(2) == true
-
-  test "one(zero) test":
-    check testOneZero() == true
-  test "one(varargs) test":
-    check testOneVarargs() == true
-  test "one(seq) test":
-    check testOneSeq() == true
-  test "one() already completed test":
-    check testOneCompleted() == true
-
-  test "or() test":
-    check testOr() == true
-  test "or() already completed test":
-    check testOrCompleted() == true
-
-  test "race(zero) test":
-    check testRaceZero() == true
-  test "race(varargs) test":
-    check testRaceVarargs() == true
-  test "race(seq) test":
-    check testRaceSeq() == true
-  test "race() already completed test":
-    check testRaceCompleted() == true
-  test "race() cancellation test":
-    check testRaceCancelled() == true
-
-  test "cancel() async procedure test":
-    check testCancelIter() == true
-  test "cancelAndWait() test":
-    check testCancelAndWait() == true
-  test "Break cancellation propagation test":
-    check testBreakCancellation() == true
-  test "Cancellation callback test":
-    check testCancelCallback() == true
-  test "Cancellation wait() test":
-    check testWait() == true
-  test "Cancellation withTimeout() test":
-    check testWithTimeout() == true
-  test "Cancellation race test":
-    check testCancellationRace() == true
-
-  test "asyncSpawn() test":
-    check testAsyncSpawn() == true
-
-  test "location test":
-    check testSrcLocation() == true
-
-  test "withTimeout(fut) should wait cancellation test":
-    check testWithTimeoutCancelAndWait()
-
-  test "wait(fut) should wait cancellation test":
-    check testWaitCancelAndWait()
