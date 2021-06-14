@@ -534,7 +534,15 @@ proc closeWait(conn: HttpClientConnectionRef) {.async.} =
   if conn.state notin {HttpClientConnectionState.Closing,
                        HttpClientConnectionState.Closed}:
     conn.state = HttpClientConnectionState.Closing
-    await allFutures(conn.reader.closeWait(), conn.writer.closeWait())
+    let pending =
+      block:
+        var res: seq[Future[void]]
+        if not(isNil(conn.reader)) and not(conn.reader.closed()):
+          res.add(conn.reader.closeWait())
+        if not(isNil(conn.writer)) and not(conn.writer.closed()):
+          res.add(conn.writer.closeWait())
+        res
+    if len(pending) > 0: await allFutures(pending)
     case conn.kind
     of HttpClientScheme.Secure:
       await allFutures(conn.treader.closeWait(), conn.twriter.closeWait())
