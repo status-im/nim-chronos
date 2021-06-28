@@ -30,6 +30,7 @@ const
   ExpectHeader* = "expect"
   ServerHeader* = "server"
   LocationHeader* = "location"
+  AuthorizationHeader* = "authorization"
 
   UrlEncodedContentType* = "application/x-www-form-urlencoded"
   MultipartContentType* = "multipart/form-data"
