@@ -7,7 +7,7 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 import std/[uri, tables, strutils, sequtils]
-import stew/[results, base10], httputils
+import stew/[results, base10, base64], httputils
 import ../../asyncloop, ../../asyncsync
 import ../../streams/[asyncstream, tlsstream, chunkstream, boundstream]
 import httptable, httpcommon, httpagent, httpbodyrw, multipart
@@ -846,20 +846,26 @@ proc prepareRequest(request: HttpClientRequestRef): string {.
     toLowerAscii(request.headers.getString(TransferEncodingHeader)) == "chunked"
 
   # We use ChronosIdent as `User-Agent` string if its not set.
-  if UserAgentHeader notin request.headers:
-    discard request.headers.hasKeyOrPut(UserAgentHeader, ChronosIdent)
+  discard request.headers.hasKeyOrPut(UserAgentHeader, ChronosIdent)
   # We use request's hostname as `Host` string if its not set.
-  if HostHeader notin request.headers:
-    discard request.headers.hasKeyOrPut(HostHeader, request.address.hostname)
+  discard request.headers.hasKeyOrPut(HostHeader, request.address.hostname)
   # We set `Connection` to value according to flags if its not set.
   if ConnectionHeader notin request.headers:
     if HttpClientRequestFlag.CloseConnection in request.flags:
-      discard request.headers.hasKeyOrPut(ConnectionHeader, "close")
+      request.headers.add(ConnectionHeader, "close")
     else:
-      discard request.headers.hasKeyOrPut(ConnectionHeader, "keep-alive")
+      request.headers.add(ConnectionHeader, "keep-alive")
   # We set `Accept` to accept any content if its not set.
-  if AcceptHeader notin request.headers:
-    discard request.headers.hasKeyOrPut(AcceptHeader, "*/*")
+  discard request.headers.hasKeyOrPut(AcceptHeader, "*/*")
+
+  # We will send `Authorization` information only if username or password set,
+  # and `Authorization` header is not present in request's headers.
+  if len(request.address.username) > 0 or len(request.address.password) > 0:
+    if AuthorizationHeader notin request.headers:
+      let auth = request.address.username & ":" & request.address.password
+      let header = "Basic " &
+                   Base64Pad.encode(auth.toOpenArrayByte(0, len(auth) - 1))
+      request.headers.add(AuthorizationHeader, header)
 
   # Here we perform automatic detection: if request was created with non-zero
   # body and `Content-Length` header is missing we will create one with size
@@ -867,7 +873,7 @@ proc prepareRequest(request: HttpClientRequestRef): string {.
   if ContentLengthHeader notin request.headers:
     if len(request.buffer) > 0:
       let slength = Base10.toString(uint64(len(request.buffer)))
-      discard request.headers.hasKeyOrPut(ContentLengthHeader, slength)
+      request.headers.add(ContentLengthHeader, slength)
 
   request.bodyFlag =
     if ContentLengthHeader in request.headers:

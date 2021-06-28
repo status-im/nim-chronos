@@ -688,6 +688,17 @@ suite "HTTP client testing suite":
       await server.closeWait()
       return "redirect-" & $res
 
+  proc testBasicAuthorization(): Future[bool] {.async.} =
+    var session = createSession(true, maxRedirections = 10)
+    let url = parseUri("https://guest:guest@jigsaw.w3.org/HTTP/Basic/")
+    let resp = await session.fetch(url)
+    await session.closeWait()
+    if (resp.status == 200) and
+       ("Your browser made it!" in cast[string](resp.data)):
+      return true
+    else:
+      return false
+
   test "HTTP all request methods test":
     let address = initTAddress("127.0.0.1:30080")
     check waitFor(testMethods(address, false)) == 18
@@ -751,6 +762,9 @@ suite "HTTP client testing suite":
   test "HTTP(S) client maximum redirections test":
     let address = initTAddress("127.0.0.1:30080")
     check waitFor(testRequestRedirectTest(address, true, 4)) == "redirect-true"
+
+  test "HTTPS basic authorization test":
+    check waitFor(testBasicAuthorization()) == true
 
   test "Leaks test":
     proc getTrackerLeaks(tracker: string): bool =
