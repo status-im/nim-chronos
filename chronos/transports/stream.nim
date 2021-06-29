@@ -1033,8 +1033,9 @@ when defined(windows):
 
       server.apending = false
       if server.status in {ServerStatus.Stopped, ServerStatus.Closed}:
+        if not(retFuture.finished()):
+          retFuture.fail(getServerUseClosedError())
         server.asock.closeSocket()
-        retFuture.fail(getServerUseClosedError())
         server.clean()
       else:
         if ovl.data.errCode == OSErrorCode(-1):
@@ -1072,7 +1073,7 @@ when defined(windows):
           retFuture.fail(getTransportOsError(ovl.data.errCode))
 
     proc cancellationSocket(udata: pointer) {.gcsafe.} =
-      server.asock.closeSocket()
+      discard
 
     proc continuationPipe(udata: pointer) {.gcsafe.} =
       var ovl = cast[PtrCustomOverlapped](udata)
@@ -1080,7 +1081,9 @@ when defined(windows):
 
       server.apending = false
       if server.status in {ServerStatus.Stopped, ServerStatus.Closed}:
-        retFuture.fail(getServerUseClosedError())
+        if not(retFuture.finished()):
+          retFuture.fail(getServerUseClosedError())
+        server.sock.closeHandle()
         server.clean()
       else:
         if ovl.data.errCode == OSErrorCode(-1):
@@ -1699,7 +1702,8 @@ else:
         slen: SockLen
 
       if server.status in {ServerStatus.Stopped, ServerStatus.Closed}:
-        retFuture.fail(getServerUseClosedError())
+        if not(retFuture.finished()):
+          retFuture.fail(getServerUseClosedError())
       else:
         while true:
           let res = posix.accept(SocketHandle(server.sock),
