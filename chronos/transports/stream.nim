@@ -1126,7 +1126,7 @@ when defined(windows):
           retFuture.fail(getTransportOsError(ovl.data.errCode))
 
     proc cancellationPipe(udata: pointer) {.gcsafe.} =
-      server.sock.closeHandle()
+      discard
 
     if server.local.family in {AddressFamily.IPv4, AddressFamily.IPv6}:
       # TCP Sockets part
