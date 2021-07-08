@@ -33,6 +33,9 @@ type
   HttpServerState* {.pure.} = enum
     ServerRunning, ServerStopped, ServerClosed
 
+  HttpServerConnectionState* {.pure.} = enum
+    Established, Closing, Closed
+
   HttpProcessError* = object
     error*: HTTPServerError
     code*: HttpCode
@@ -113,6 +116,7 @@ type
   HttpResponseRef* = ref HttpResponse
 
   HttpConnection* = object of RootObj
+    state*: HttpServerConnectionState
     server*: HttpServerRef
     transp: StreamTransport
     mainReader*: AsyncStreamReader
@@ -124,6 +128,12 @@ type
   HttpConnectionRef* = ref HttpConnection
 
   ByteChar* = string | seq[byte]
+
+template ignoreCancel*(body: untyped): untyped =
+  try:
+    body
+  except CancelledError:
+    body
 
 proc init(htype: typedesc[HttpProcessError], error: HTTPServerError,
           exc: ref CatchableError, remote: TransportAddress,
@@ -402,11 +412,11 @@ proc handleExpect*(request: HttpRequestRef) {.async.} =
 
 proc getBody*(request: HttpRequestRef): Future[seq[byte]] {.async.} =
   ## Obtain request's body as sequence of bytes.
-  let res = request.getBodyReader()
-  if res.isErr():
+  let bodyReader = request.getBodyReader()
+  if bodyReader.isErr():
     return @[]
   else:
-    let reader = res.get()
+    let reader = bodyReader.get()
     try:
       await request.handleExpect()
       var res = await reader.read()
@@ -416,15 +426,16 @@ proc getBody*(request: HttpRequestRef): Future[seq[byte]] {.async.} =
     except AsyncStreamError:
       raiseHttpCriticalError("Unable to read request's body")
     finally:
-      await closeWait(res.get())
+      ignoreCancel:
+        await closeWait(reader)
 
 proc consumeBody*(request: HttpRequestRef): Future[void] {.async.} =
   ## Consume/discard request's body.
-  let res = request.getBodyReader()
-  if res.isErr():
+  let bodyReader = request.getBodyReader()
+  if bodyReader.isErr():
     return
   else:
-    let reader = res.get()
+    let reader = bodyReader.get()
     try:
       await request.handleExpect()
       discard await reader.consume()
@@ -433,7 +444,8 @@ proc consumeBody*(request: HttpRequestRef): Future[void] {.async.} =
     except AsyncStreamError:
       raiseHttpCriticalError("Unable to read request's body")
     finally:
-      await closeWait(res.get())
+      ignoreCancel:
+        await closeWait(reader)
 
 proc sendErrorResponse(conn: HttpConnectionRef, version: HttpVersion,
                        code: HttpCode, keepAlive = true,
@@ -498,6 +510,7 @@ proc getRequest(conn: HttpConnectionRef): Future[HttpRequestRef] {.async.} =
 proc init*(value: var HttpConnection, server: HttpServerRef,
            transp: StreamTransport) =
   value = HttpConnection(
+    state: HttpServerConnectionState.Established,
     server: server,
     transp: transp,
     buffer: newSeq[byte](server.maxHeadersSize),
@@ -515,22 +528,30 @@ proc new(ht: typedesc[HttpConnectionRef], server: HttpServerRef,
 
 proc closeWait*(conn: HttpConnectionRef) {.async.} =
   var pending: seq[Future[void]]
-  if conn.reader != conn.mainReader:
-    pending.add(conn.reader.closeWait())
-  if conn.writer != conn.mainWriter:
-    pending.add(conn.writer.closeWait())
-  if len(pending) > 0:
-    await allFutures(pending)
-  # After we going to close everything else.
-  await allFutures(conn.mainReader.closeWait(), conn.mainWriter.closeWait(),
-                   conn.transp.closeWait())
+  const ClosingState =
+    {HttpServerConnectionState.Closing, HttpServerConnectionState.Closed}
+  if conn.state notin ClosingState:
+    conn.state = HttpServerConnectionState.Closing
+    if conn.reader != conn.mainReader:
+      pending.add(conn.reader.closeWait())
+    if conn.writer != conn.mainWriter:
+      pending.add(conn.writer.closeWait())
+    if len(pending) > 0:
+      ignoreCancel:
+        await allFutures(pending)
+    # After we going to close everything else.
+    ignoreCancel:
+      await allFutures(conn.mainReader.closeWait(), conn.mainWriter.closeWait(),
+                       conn.transp.closeWait())
+    conn.state = HttpServerConnectionState.Closed
 
 proc closeWait(req: HttpRequestRef) {.async.} =
   if req.response.isSome():
     let resp = req.response.get()
     if (HttpResponseFlags.Chunked in resp.flags) and
        not(isNil(resp.chunkedWriter)):
-      await resp.chunkedWriter.closeWait()
+      ignoreCancel:
+        await resp.chunkedWriter.closeWait()
 
 proc createConnection(server: HttpServerRef,
                       transp: StreamTransport): Future[HttpConnectionRef] {.
@@ -548,7 +569,8 @@ proc processLoop(server: HttpServerRef, transp: StreamTransport) {.async.} =
     runLoop = true
   except CancelledError:
     server.connections.del(transp.getId())
-    await transp.closeWait()
+    ignoreCancel:
+      await transp.closeWait()
     return
   except HttpCriticalError as exc:
     let error = HttpProcessError.init(HTTPServerError.CriticalError, exc,
@@ -682,11 +704,7 @@ proc processLoop(server: HttpServerRef, transp: StreamTransport) {.async.} =
           keepConn = false
 
       # Closing and releasing all the request resources.
-      try:
-        await request.closeWait()
-      except CancelledError:
-        # We swallowing `CancelledError` in a loop, but we still need to close
-        # `request` before exiting.
+      ignoreCancel:
         await request.closeWait()
 
       if not(keepConn):
@@ -694,12 +712,7 @@ proc processLoop(server: HttpServerRef, transp: StreamTransport) {.async.} =
 
   # Connection could be `nil` only when secure handshake is failed.
   if not(isNil(conn)):
-    try:
-
-      await conn.closeWait()
-    except CancelledError:
-      # Cancellation could be happened while we closing `conn`. But we still
-      # need to close it.
+    ignoreCancel:
       await conn.closeWait()
 
   server.connections.del(transp.getId())
@@ -769,9 +782,12 @@ proc drop*(server: HttpServerRef) {.async.} =
 proc closeWait*(server: HttpServerRef) {.async.} =
   ## Stop HTTP server and drop all the pending connections.
   if server.state != ServerClosed:
-    await server.stop()
-    await server.drop()
-    await server.instance.closeWait()
+    ignoreCancel:
+      await server.stop()
+    ignoreCancel:
+      await server.drop()
+    ignoreCancel:
+      await server.instance.closeWait()
     server.lifetime.complete()
 
 proc join*(server: HttpServerRef): Future[void] =
@@ -849,10 +865,12 @@ proc post*(req: HttpRequestRef): Future[HttpTable] {.async.} =
       try:
         await req.handleExpect()
       except CancelledError as exc:
-        await mpreader.closeWait()
+        ignoreCancel:
+          await mpreader.closeWait()
         raise exc
       except HttpCriticalError as exc:
-        await mpreader.closeWait()
+        ignoreCancel:
+          await mpreader.closeWait()
         raise exc
 
       # Reading multipart/form-data parts.
@@ -868,20 +886,26 @@ proc post*(req: HttpRequestRef): Future[HttpTable] {.async.} =
           if len(value) > 0:
             copyMem(addr strvalue[0], addr value[0], len(value))
           table.add(part.name, strvalue)
-          await part.closeWait()
+          ignoreCancel:
+            await part.closeWait()
         except MultipartEOMError:
           runLoop = false
         except HttpCriticalError as exc:
           if not(part.isEmpty()):
-            await part.closeWait()
-          await mpreader.closeWait()
+            ignoreCancel:
+              await part.closeWait()
+          ignoreCancel:
+            await mpreader.closeWait()
           raise exc
         except CancelledError as exc:
           if not(part.isEmpty()):
-            await part.closeWait()
-          await mpreader.closeWait()
+            ignoreCancel:
+              await part.closeWait()
+          ignoreCancel:
+            await mpreader.closeWait()
           raise exc
-      await mpreader.closeWait()
+      ignoreCancel:
+        await mpreader.closeWait()
       req.postTable = some(table)
       return table
     else:
