@@ -8,4 +8,4 @@
 import testmacro, testsync, testsoon, testtime, testfut, testsignal,
        testaddress, testdatagram, teststream, testserver, testbugs, testnet,
        testasyncstream, testhttpserver, testshttpserver, testhttpclient
-import testutils
+import testcancel, testutils

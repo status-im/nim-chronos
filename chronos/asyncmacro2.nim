@@ -350,6 +350,11 @@ template await*[T](f: Future[T]): untyped =
   when declared(chronosInternalRetFuture):
     when not declaredInScope(chronosInternalTmpFuture):
       var chronosInternalTmpFuture {.inject.}: FutureBase
+
+    if chronosInternalRetFuture.mustCancel:
+      chronosInternalRetFuture.mustCancel = false
+      raise newCancelledError()
+
     chronosInternalTmpFuture = f
     chronosInternalRetFuture.child = chronosInternalTmpFuture
 
@@ -366,8 +371,6 @@ template await*[T](f: Future[T]): untyped =
     # environment. That's where control actually gets back to us.
 
     chronosInternalRetFuture.child = nil
-    if chronosInternalRetFuture.mustCancel:
-      raise newCancelledError()
     chronosInternalTmpFuture.internalCheckComplete()
     when T isnot void:
       cast[type(f)](chronosInternalTmpFuture).internalRead()
@@ -378,12 +381,13 @@ template awaitne*[T](f: Future[T]): Future[T] =
   when declared(chronosInternalRetFuture):
     when not declaredInScope(chronosInternalTmpFuture):
       var chronosInternalTmpFuture {.inject.}: FutureBase
+    if chronosInternalRetFuture.mustCancel:
+      chronosInternalRetFuture.mustCancel = false
+      raise newCancelledError()
     chronosInternalTmpFuture = f
     chronosInternalRetFuture.child = chronosInternalTmpFuture
     yield chronosInternalTmpFuture
     chronosInternalRetFuture.child = nil
-    if chronosInternalRetFuture.mustCancel:
-      raise newCancelledError()
     cast[type(f)](chronosInternalTmpFuture)
   else:
     unsupported "awaitne is only available within {.async.}"

@@ -624,16 +624,21 @@ proc processLoop(server: HttpServerRef, transp: StreamTransport) {.async.} =
 
     if arg.isErr():
       let code = arg.error().code
-      case arg.error().error
-      of HTTPServerError.TimeoutError:
-        discard await conn.sendErrorResponse(HttpVersion11, code, false)
-      of HTTPServerError.RecoverableError:
-        discard await conn.sendErrorResponse(HttpVersion11, code, false)
-      of HTTPServerError.CriticalError:
-        discard await conn.sendErrorResponse(HttpVersion11, code, false)
-      of HTTPServerError.CatchableError:
-        discard await conn.sendErrorResponse(HttpVersion11, code, false)
-      of HttpServerError.DisconnectError:
+      try:
+        case arg.error().error
+        of HTTPServerError.TimeoutError:
+          discard await conn.sendErrorResponse(HttpVersion11, code, false)
+        of HTTPServerError.RecoverableError:
+          discard await conn.sendErrorResponse(HttpVersion11, code, false)
+        of HTTPServerError.CriticalError:
+          discard await conn.sendErrorResponse(HttpVersion11, code, false)
+        of HTTPServerError.CatchableError:
+          discard await conn.sendErrorResponse(HttpVersion11, code, false)
+        of HttpServerError.DisconnectError:
+          discard
+      except CancelledError:
+        # We swallowing `CancelledError` in a loop, but we going to exit
+        # loop ASAP.
         discard
       break
     else:
@@ -642,33 +647,60 @@ proc processLoop(server: HttpServerRef, transp: StreamTransport) {.async.} =
       if lastErrorCode.isNone():
         if isNil(resp):
           # Response was `nil`.
-          discard await conn.sendErrorResponse(HttpVersion11, Http404,
-                                               false)
-        else:
-          case resp.state
-          of HttpResponseState.Empty:
-            # Response was ignored
+          try:
             discard await conn.sendErrorResponse(HttpVersion11, Http404,
-                                                 keepConn)
-          of HttpResponseState.Prepared:
-            # Response was prepared but not sent.
-            discard await conn.sendErrorResponse(HttpVersion11, Http409,
-                                                 keepConn)
-          else:
-            # some data was already sent to the client.
-            discard
+                                                 false)
+          except CancelledError:
+            # We swallowing `CancelledError` in a loop, but we going to exit
+            # loop ASAP.
+            keepConn = false
+        else:
+          try:
+            case resp.state
+            of HttpResponseState.Empty:
+              # Response was ignored
+              discard await conn.sendErrorResponse(HttpVersion11, Http404,
+                                                   keepConn)
+            of HttpResponseState.Prepared:
+              # Response was prepared but not sent.
+              discard await conn.sendErrorResponse(HttpVersion11, Http409,
+                                                   keepConn)
+            else:
+              # some data was already sent to the client.
+              discard
+          except CancelledError:
+            # We swallowing `CancelledError` in a loop, but we going to exit
+            # loop ASAP.
+            keepConn = false
       else:
-        discard await conn.sendErrorResponse(HttpVersion11, lastErrorCode.get(),
-                                             false)
+        try:
+          discard await conn.sendErrorResponse(HttpVersion11,
+                                               lastErrorCode.get(), false)
+        except CancelledError:
+          # We swallowing `CancelledError` in a loop, but we going to exit
+          # loop ASAP.
+          keepConn = false
+
       # Closing and releasing all the request resources.
-      await request.closeWait()
+      try:
+        await request.closeWait()
+      except CancelledError:
+        # We swallowing `CancelledError` in a loop, but we still need to close
+        # `request` before exiting.
+        await request.closeWait()
 
       if not(keepConn):
         break
 
   # Connection could be `nil` only when secure handshake is failed.
   if not(isNil(conn)):
-    await conn.closeWait()
+    try:
+
+      await conn.closeWait()
+    except CancelledError:
+      # Cancellation could be happened while we closing `conn`. But we still
+      # need to close it.
+      await conn.closeWait()
 
   server.connections.del(transp.getId())
   # if server.maxConnections > 0:
