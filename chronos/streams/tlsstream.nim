@@ -337,8 +337,14 @@ proc tlsLoop*(stream: TLSAsyncStream) {.async.} =
     if loopState != AsyncStreamState.Running:
       break
 
-  # Cancelling and waiting all the pending operations
-  await cancelAndWait(sendRecFut, sendAppFut, recvRecFut, recvAppFut)
+  # Cancelling and waiting all the pending operations, its possible that we
+  # receive `CancelledError` while awaiting, so we need to perform operation
+  # one more time.
+  try:
+    await cancelAndWait(sendRecFut, sendAppFut, recvRecFut, recvAppFut)
+  except CancelledError:
+    await cancelAndWait(sendRecFut, sendAppFut, recvRecFut, recvAppFut)
+
   # Calculating error
   let error =
     case loopState

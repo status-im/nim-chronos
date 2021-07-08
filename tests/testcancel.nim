@@ -266,7 +266,9 @@ suite "Cancellation test suite":
           var raceFut = raceProc2(someFut, otherFut)
           someFut.complete()
           await cancelAndWait(raceFut)
-          (raceFut.state, someFut.state, otherFut.state)
+          let res = (raceFut.state, someFut.state, otherFut.state)
+          await cancelAndWait(otherFut)
+          res
 
       # Ancestor Future is failed before cancellation and other Future is not
       # yet started. Because `raceProc2` do not have any `try/except` it
@@ -279,7 +281,9 @@ suite "Cancellation test suite":
           var raceFut = raceProc2(someFut, otherFut)
           someFut.fail(newException(ValueError, ""))
           await cancelAndWait(raceFut)
-          (raceFut.state, someFut.state, otherFut.state)
+          let res = (raceFut.state, someFut.state, otherFut.state)
+          await cancelAndWait(otherFut)
+          res
 
       # Ancestor Future is cancelled before cancellation and other Future is not
       # yet started. Because `raceProc2` do not have any `try/except` it
@@ -292,7 +296,9 @@ suite "Cancellation test suite":
           var raceFut = raceProc2(someFut, otherFut)
           someFut.cancel()
           await cancelAndWait(raceFut)
-          (raceFut.state, someFut.state, otherFut.state)
+          let res = (raceFut.state, someFut.state, otherFut.state)
+          await cancelAndWait(otherFut)
+          res
 
       # Ancestor Future is pending before cancellation. Other Future is not
       # yet started. Because `raceProc2` do not have any `try/except` it
@@ -304,7 +310,9 @@ suite "Cancellation test suite":
           var otherFut = newFuture[void]()
           var raceFut = raceProc2(someFut, otherFut)
           await cancelAndWait(raceFut)
-          (raceFut.state, someFut.state, otherFut.state)
+          let res = (raceFut.state, someFut.state, otherFut.state)
+          await cancelAndWait(otherFut)
+          res
 
       let res9 =
         block:
@@ -313,7 +321,10 @@ suite "Cancellation test suite":
           var raceFut = raceProc3(someFut, otherFut)
           someFut.complete()
           await cancelAndWait(raceFut)
-          (raceFut.state, someFut.state, otherFut.state, raceFut.getOrDefault())
+          let res = (raceFut.state, someFut.state, otherFut.state,
+                     raceFut.getOrDefault())
+          await cancelAndWait(otherFut)
+          res
 
       let res10 =
         block:
@@ -322,7 +333,10 @@ suite "Cancellation test suite":
           var raceFut = raceProc3(someFut, otherFut)
           someFut.fail(newException(ValueError, ""))
           await cancelAndWait(raceFut)
-          (raceFut.state, someFut.state, otherFut.state, raceFut.getOrDefault())
+          let res = (raceFut.state, someFut.state, otherFut.state,
+                     raceFut.getOrDefault())
+          await cancelAndWait(otherFut)
+          res
 
       let res11 =
         block:
@@ -331,7 +345,10 @@ suite "Cancellation test suite":
           var raceFut = raceProc3(someFut, otherFut)
           someFut.cancel()
           await cancelAndWait(raceFut)
-          (raceFut.state, someFut.state, otherFut.state, raceFut.getOrDefault())
+          let res = (raceFut.state, someFut.state, otherFut.state,
+                     raceFut.getOrDefault())
+          await cancelAndWait(otherFut)
+          res
 
       let res12 =
         block:
@@ -339,7 +356,10 @@ suite "Cancellation test suite":
           var otherFut = newFuture[void]()
           var raceFut = raceProc3(someFut, otherFut)
           await cancelAndWait(raceFut)
-          (raceFut.state, someFut.state, otherFut.state, raceFut.getOrDefault())
+          let res = (raceFut.state, someFut.state, otherFut.state,
+                     raceFut.getOrDefault())
+          await cancelAndWait(otherFut)
+          res
 
       check:
         res1 == (FutureState.Finished, FutureState.Finished)
