@@ -7,7 +7,7 @@
 #    distribution, for details about the copyright.
 #
 
-import std/[macros, strutils]
+import std/macros
 
 proc skipUntilStmtList(node: NimNode): NimNode {.compileTime.} =
   # Skips a nest of StmtList's.
