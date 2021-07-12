@@ -129,12 +129,6 @@ type
 
   ByteChar* = string | seq[byte]
 
-template ignoreCancel*(body: untyped): untyped =
-  try:
-    body
-  except CancelledError:
-    body
-
 proc init(htype: typedesc[HttpProcessError], error: HTTPServerError,
           exc: ref CatchableError, remote: TransportAddress,
           code: HttpCode): HttpProcessError {.raises: [Defect].} =
@@ -416,18 +410,26 @@ proc getBody*(request: HttpRequestRef): Future[seq[byte]] {.async.} =
   if bodyReader.isErr():
     return @[]
   else:
-    let reader = bodyReader.get()
+    var reader = bodyReader.get()
     try:
       await request.handleExpect()
-      var res = await reader.read()
+      let res = await reader.read()
       if reader.hasOverflow():
+        await reader.closeWait()
+        reader = nil
         raiseHttpCriticalError(MaximumBodySizeError, Http413)
-      return res
+      else:
+        await reader.closeWait()
+        reader = nil
+        return res
+    except CancelledError as exc:
+      if not(isNil(reader)):
+        awaitrc reader.closeWait()
+      raise exc
     except AsyncStreamError:
+      if not(isNil(reader)):
+        awaitrc reader.closeWait()
       raiseHttpCriticalError("Unable to read request's body")
-    finally:
-      ignoreCancel:
-        await closeWait(reader)
 
 proc consumeBody*(request: HttpRequestRef): Future[void] {.async.} =
   ## Consume/discard request's body.
@@ -435,17 +437,26 @@ proc consumeBody*(request: HttpRequestRef): Future[void] {.async.} =
   if bodyReader.isErr():
     return
   else:
-    let reader = bodyReader.get()
+    var reader = bodyReader.get()
     try:
       await request.handleExpect()
       discard await reader.consume()
       if reader.hasOverflow():
+        await reader.closeWait()
+        reader = nil
         raiseHttpCriticalError(MaximumBodySizeError, Http413)
+      else:
+        await reader.closeWait()
+        reader = nil
+        return
+    except CancelledError as exc:
+      if not(isNil(reader)):
+        awaitrc reader.closeWait()
+      raise exc
     except AsyncStreamError:
+      if not(isNil(reader)):
+        awaitrc reader.closeWait()
       raiseHttpCriticalError("Unable to read request's body")
-    finally:
-      ignoreCancel:
-        await closeWait(reader)
 
 proc sendErrorResponse(conn: HttpConnectionRef, version: HttpVersion,
                        code: HttpCode, keepAlive = true,
@@ -537,12 +548,13 @@ proc closeWait*(conn: HttpConnectionRef) {.async.} =
     if conn.writer != conn.mainWriter:
       pending.add(conn.writer.closeWait())
     if len(pending) > 0:
-      ignoreCancel:
-        await allFutures(pending)
+      awaitrc allFutures(pending)
     # After we going to close everything else.
-    ignoreCancel:
-      await allFutures(conn.mainReader.closeWait(), conn.mainWriter.closeWait(),
-                       conn.transp.closeWait())
+    pending.setLen(3)
+    pending[0] = conn.mainReader.closeWait()
+    pending[1] = conn.mainWriter.closeWait()
+    pending[2] = conn.transp.closeWait()
+    awaitrc allFutures(pending)
     conn.state = HttpServerConnectionState.Closed
 
 proc closeWait(req: HttpRequestRef) {.async.} =
@@ -550,8 +562,7 @@ proc closeWait(req: HttpRequestRef) {.async.} =
     let resp = req.response.get()
     if (HttpResponseFlags.Chunked in resp.flags) and
        not(isNil(resp.chunkedWriter)):
-      ignoreCancel:
-        await resp.chunkedWriter.closeWait()
+      awaitrc resp.chunkedWriter.closeWait()
 
 proc createConnection(server: HttpServerRef,
                       transp: StreamTransport): Future[HttpConnectionRef] {.
@@ -569,8 +580,7 @@ proc processLoop(server: HttpServerRef, transp: StreamTransport) {.async.} =
     runLoop = true
   except CancelledError:
     server.connections.del(transp.getId())
-    ignoreCancel:
-      await transp.closeWait()
+    awaitrc transp.closeWait()
     return
   except HttpCriticalError as exc:
     let error = HttpProcessError.init(HTTPServerError.CriticalError, exc,
@@ -704,16 +714,14 @@ proc processLoop(server: HttpServerRef, transp: StreamTransport) {.async.} =
           keepConn = false
 
       # Closing and releasing all the request resources.
-      ignoreCancel:
-        await request.closeWait()
+      awaitrc request.closeWait()
 
       if not(keepConn):
         break
 
   # Connection could be `nil` only when secure handshake is failed.
   if not(isNil(conn)):
-    ignoreCancel:
-      await conn.closeWait()
+    awaitrc conn.closeWait()
 
   server.connections.del(transp.getId())
   # if server.maxConnections > 0:
@@ -777,17 +785,18 @@ proc drop*(server: HttpServerRef) {.async.} =
       if not(fut.finished()):
         fut.cancel()
         pending.add(fut)
-    await allFutures(pending)
+    try:
+      await allFutures(pending)
+    except CancelledError:
+      await allFutures(pending)
+    server.connections.clear()
 
 proc closeWait*(server: HttpServerRef) {.async.} =
   ## Stop HTTP server and drop all the pending connections.
   if server.state != ServerClosed:
-    ignoreCancel:
-      await server.stop()
-    ignoreCancel:
-      await server.drop()
-    ignoreCancel:
-      await server.instance.closeWait()
+    awaitrc server.stop()
+    awaitrc server.drop()
+    awaitrc server.instance.closeWait()
     server.lifetime.complete()
 
 proc join*(server: HttpServerRef): Future[void] =
@@ -865,12 +874,10 @@ proc post*(req: HttpRequestRef): Future[HttpTable] {.async.} =
       try:
         await req.handleExpect()
       except CancelledError as exc:
-        ignoreCancel:
-          await mpreader.closeWait()
+        awaitrc mpreader.closeWait()
         raise exc
       except HttpCriticalError as exc:
-        ignoreCancel:
-          await mpreader.closeWait()
+        awaitrc mpreader.closeWait()
         raise exc
 
       # Reading multipart/form-data parts.
@@ -886,26 +893,20 @@ proc post*(req: HttpRequestRef): Future[HttpTable] {.async.} =
           if len(value) > 0:
             copyMem(addr strvalue[0], addr value[0], len(value))
           table.add(part.name, strvalue)
-          ignoreCancel:
-            await part.closeWait()
+          awaitrc part.closeWait()
         except MultipartEOMError:
           runLoop = false
         except HttpCriticalError as exc:
           if not(part.isEmpty()):
-            ignoreCancel:
-              await part.closeWait()
-          ignoreCancel:
-            await mpreader.closeWait()
+            awaitrc part.closeWait()
+          awaitrc mpreader.closeWait()
           raise exc
         except CancelledError as exc:
           if not(part.isEmpty()):
-            ignoreCancel:
-              await part.closeWait()
-          ignoreCancel:
-            await mpreader.closeWait()
+            awaitrc part.closeWait()
+          awaitrc mpreader.closeWait()
           raise exc
-      ignoreCancel:
-        await mpreader.closeWait()
+      awaitrc mpreader.closeWait()
       req.postTable = some(table)
       return table
     else:

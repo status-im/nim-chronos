@@ -178,7 +178,7 @@ proc boundedReadLoop(stream: AsyncStreamReader) {.async.} =
       # Send `EOF` state to the consumer and wait until it will be received.
       await rstream.buffer.transfer()
       break
-    of AsyncStreamState.Closed:
+    of AsyncStreamState.Closing, AsyncStreamState.Closed:
       break
 
 proc boundedWriteLoop(stream: AsyncStreamWriter) {.async.} =
@@ -232,7 +232,8 @@ proc boundedWriteLoop(stream: AsyncStreamWriter) {.async.} =
         if not(item.future.finished()):
           item.future.fail(error)
       break
-    of AsyncStreamState.Finished, AsyncStreamState.Closed:
+    of AsyncStreamState.Finished, AsyncStreamState.Closing,
+       AsyncStreamState.Closed:
       error = newAsyncStreamUseClosedError()
       break
 

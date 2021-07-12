@@ -384,3 +384,104 @@ suite "Cancellation test suite":
                   FutureState.Pending, 2)
 
     waitFor(testCancellationRaceAsync())
+
+  test "awaitrc() test":
+    proc testCancellationRCAsync() {.async.} =
+
+      proc testSimple() {.async.} =
+        await sleepAsync(0.milliseconds)
+
+      proc testProc1(someFut: Future[void]) {.async.} =
+        awaitrc someFut
+
+      proc testProc2() {.async.} =
+        awaitrc testSimple()
+
+      proc testProc3(kind: int): Future[string] {.async.} =
+        try:
+          await testSimple()
+          return "ERROR"
+        except CancelledError:
+          if kind == 0:
+            awaitrc testSimple()
+            awaitrc testSimple()
+            awaitrc testSimple()
+            return "OK"
+          elif kind == 1:
+            awaitrc testSimple()
+            awaitrc testSimple()
+            awaitrc testSimple()
+            if true:
+              raise newException(ValueError, "")
+
+      let res1 =
+        block:
+          var someFut = newFuture[void]()
+          var testFut = testProc1(someFut)
+          someFut.complete()
+          try:
+            await testFut
+            (testFut.state, someFut.state, "")
+          except CatchableError as exc:
+            (testFut.state, someFut.state, $exc.name)
+
+      let res2 =
+        block:
+          var someFut = newFuture[void]()
+          var testFut = testProc1(someFut)
+          someFut.fail(newException(ValueError, "Value error"))
+          try:
+            await testFut
+            (testFut.state, someFut.state, "")
+          except CatchableError as exc:
+            (testFut.state, someFut.state, $exc.name)
+
+      let res3 =
+        block:
+          var someFut = newFuture[void]()
+          var testFut = testProc1(someFut)
+          someFut.cancel()
+          try:
+            await testFut
+            (testFut.state, someFut.state, "")
+          except CatchableError as exc:
+            (testFut.state, someFut.state, $exc.name)
+
+      let res4 =
+        block:
+          var testFut = testProc2()
+          try:
+            await testFut.cancelAndWait()
+            (testFut.state, "")
+          except CatchableError as exc:
+            (testFut.state, $exc.name)
+
+      let res5 =
+        block:
+          var testFut = testProc3(0)
+          try:
+            await testFut.cancelAndWait()
+            let res = testFut.read()
+            (testFut.state, res, "")
+          except CatchableError as exc:
+            (testFut.state, "", $exc.name)
+
+      let res6 =
+        block:
+          var testFut = testProc3(1)
+          try:
+            await testFut.cancelAndWait()
+            let res = testFut.read()
+            (testFut.state, res, "")
+          except CatchableError as exc:
+            (testFut.state, "", $exc.name)
+
+      check:
+        res1 == (FutureState.Finished, FutureState.Finished, "")
+        res2 == (FutureState.Failed, FutureState.Failed, "ValueError")
+        res3 == (FutureState.Cancelled, FutureState.Cancelled, "CancelledError")
+        res4 == (FutureState.Finished, "")
+        res5 == (FutureState.Finished, "OK", "")
+        res6 == (FutureState.Failed, "", "ValueError")
+
+    waitFor(testCancellationRCAsync())
