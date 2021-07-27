@@ -534,7 +534,25 @@ else:
       localSock = sock
       register(localSock)
 
+    if ServerFlags.Dualstack in flags:
+      if local != initTAddress(IPv6_any(), local.port):
+        raise newException(ValueError, 
+        "Bind address needs to be :: for dualstack sockets, not" & $local
+        )
+      if ServerFlags.NoDualstack in flags:
+        raise newException(ValueError, 
+          "ServerFlags.Dualstack and ServerFlags.NoDualstack may not both be set."
+        )
+
     ## Apply ServerFlags here
+    if ServerFlags.Dualstack in flags or ServerFlags.NoDualstack in flags:
+      let dualstack = if ServerFlags.Dualstack in flags: 1 else: 0
+      if not setSockOpt(localSock, handles.IPPROTO_IPV6, handles.IPV6_V6ONLY, dualstack):
+        let err = osLastError()
+        if sock == asyncInvalidSocket:
+          closeSocket(localSock)
+        raiseTransportOsError(err)
+    
     if ServerFlags.ReuseAddr in flags:
       if not setSockOpt(localSock, SOL_SOCKET, SO_REUSEADDR, 1):
         let err = osLastError()

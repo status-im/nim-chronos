@@ -28,7 +28,7 @@ type
   ServerFlags* = enum
     ## Server's flags
     ReuseAddr, ReusePort, TcpNoDelay, NoAutoRead, GCUserData, FirstPipe,
-    NoPipeFlash, Broadcast
+    NoPipeFlash, Broadcast, Dualstack, NoDualstack
 
   AddressFamily* {.pure.} = enum
     None, IPv4, IPv6, Unix

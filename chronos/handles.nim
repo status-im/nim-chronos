@@ -25,6 +25,8 @@ when defined(windows):
     ERROR_PIPE_CONNECTED = 535
     ERROR_PIPE_BUSY = 231
     pipeHeaderName = r"\\.\pipe\chronos\"
+  var IPV6_V6ONLY* {.importc, nodecl, header: "<ws2tcpip.h>".}: cint
+  var IPPROTO_IPV6* {.importc, nodecl.}: cint
 
   proc connectNamedPipe(hNamedPipe: Handle, lpOverlapped: pointer): WINBOOL
        {.importc: "ConnectNamedPipe", stdcall, dynlib: "kernel32".}
@@ -34,6 +36,8 @@ else:
     asyncInvalidSocket* = AsyncFD(posix.INVALID_SOCKET)
     TCP_NODELAY* = 1
     IPPROTO_TCP* = 6
+  var IPV6_V6ONLY* = posix.IPV6_V6ONLY
+  var IPPROTO_IPV6* = posix.IPPROTO_IPV6
 
 const
   asyncInvalidPipe* = asyncInvalidSocket

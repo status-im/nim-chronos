@@ -1902,6 +1902,25 @@ proc createStreamServer*(host: TransportAddress,
           if sock == asyncInvalidSocket:
             serverSocket.closeSocket()
           raiseTransportOsError(err)
+      # And neither are IPv6 flags 😉
+      if ServerFlags.Dualstack in flags:
+        if host != initTAddress(IPv6_any(), host.port):
+          raise newException(ValueError, 
+          "Bind address needs to be :: for dualstack sockets, not" & $host
+          )
+        if ServerFlags.NoDualstack in flags:
+          raise newException(ValueError, 
+            "ServerFlags.Dualstack and ServerFlags.NoDualstack may not both be set."
+          )
+      if ServerFlags.Dualstack in flags or ServerFlags.NoDualstack in flags:
+        let dualstack = if ServerFlags.Dualstack in flags: 1 else: 0
+        if not setSockOpt(serverSocket, handles.IPPROTO_IPV6,
+                          handles.IPV6_V6ONLY, dualstack):
+          let err = osLastError()
+          if sock == asyncInvalidSocket:
+            serverSocket.closeSocket()
+          raiseTransportOsError(err)
+      
       host.toSAddr(saddr, slen)
       if bindAddr(SocketHandle(serverSocket), cast[ptr SockAddr](addr saddr),
                   slen) != 0:
@@ -1964,6 +1983,24 @@ proc createStreamServer*(host: TransportAddress,
       if ServerFlags.TcpNoDelay in flags:
         if not setSockOpt(serverSocket, handles.IPPROTO_TCP,
                           handles.TCP_NODELAY, 1):
+          let err = osLastError()
+          if sock == asyncInvalidSocket:
+            serverSocket.closeSocket()
+          raiseTransportOsError(err)
+      # And neither are IPv6 flags 😉
+      if ServerFlags.Dualstack in flags:
+        if host != initTAddress(IPv6_any(), host.port):
+          raise newException(ValueError, 
+          "Bind address needs to be :: for dualstack sockets, not" & $host
+          )
+        if ServerFlags.NoDualstack in flags:
+          raise newException(ValueError, 
+            "ServerFlags.Dualstack and ServerFlags.NoDualstack may not both be set."
+          )
+      if ServerFlags.Dualstack in flags or ServerFlags.NoDualstack in flags:
+        let dualstack = if ServerFlags.Dualstack in flags: 1 else: 0
+        if not setSockOpt(serverSocket, handles.IPPROTO_IPV6,
+                          handles.IPV6_V6ONLY, dualstack):
           let err = osLastError()
           if sock == asyncInvalidSocket:
             serverSocket.closeSocket()
