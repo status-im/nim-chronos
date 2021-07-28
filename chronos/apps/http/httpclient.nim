@@ -856,7 +856,7 @@ proc prepareRequest(request: HttpClientRequestRef): string {.
     else:
       request.headers.add(ConnectionHeader, "keep-alive")
   # We set `Accept` to accept any content if its not set.
-  discard request.headers.hasKeyOrPut(AcceptHeader, "*/*")
+  discard request.headers.hasKeyOrPut(AcceptHeaderName, "*/*")
 
   # We will send `Authorization` information only if username or password set,
   # and `Authorization` header is not present in request's headers.
