@@ -855,6 +855,58 @@ suite "HTTP server testing suite":
         table.add(key, value)
       check toString(table) == vector[2]
 
+  test "Preferred Accept handling test":
+    proc createRequest(acceptHeader: string): HttpRequestRef =
+      let headers = HttpTable.init([("accept", acceptHeader)])
+      HttpRequestRef(headers: headers)
+
+    proc createRequest(): HttpRequestRef =
+      HttpRequestRef(headers: HttpTable.init())
+
+    var requests = @[
+      (
+        createRequest("application/json;q=0.9,application/octet-stream"),
+        @[
+          "application/octet-stream",
+          "application/octet-stream",
+          "application/octet-stream",
+          "application/json",
+        ]
+      ),
+      (
+        createRequest(""),
+        @[
+          "*/*",
+          "*/*",
+          "application/json",
+          "application/json"
+        ]
+      ),
+      (
+        createRequest(),
+        @[
+          "*/*",
+          "*/*",
+          "application/json",
+          "application/json"
+        ]
+      )
+    ]
+
+    for req in requests:
+      check $req[0].preferredContentMediaType() == req[1][1]
+      let r0 = req[0].preferredContentType()
+      let r1 = req[0].preferredContentType("application/json",
+                                           "application/octet-stream")
+      let r2 = req[0].preferredContentType("application/json")
+      check:
+        r0.isOk() == true
+        r1.isOk() == true
+        r2.isOk() == true
+        r0.get() == req[1][0]
+        r1.get() == req[1][2]
+        r2.get() == req[1][3]
+
   test "Leaks test":
     check:
       getTracker("async.stream.reader").isLeaked() == false

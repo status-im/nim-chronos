@@ -435,6 +435,82 @@ proc consumeBody*(request: HttpRequestRef): Future[void] {.async.} =
     finally:
       await closeWait(res.get())
 
+proc getAcceptInfo*(request: HttpRequestRef): Result[AcceptInfo, cstring] =
+  ## Returns value of `Accept` header as `AcceptInfo` object.
+  ##
+  ## If ``Accept`` header is missing in request headers, ``*/*`` content
+  ## type will be returned.
+  let acceptHeader = request.headers.getString(AcceptHeaderName)
+  getAcceptInfo(acceptHeader)
+
+proc preferredContentMediaType*(request: HttpRequestRef): MediaType =
+  ## Returns preferred content-type using ``Accept`` header specified by
+  ## client in request ``request``.
+  let acceptHeader = request.headers.getString(AcceptHeaderName)
+  let res = getAcceptInfo(acceptHeader)
+  if res.isErr():
+    # If `Accept` header is incorrect, client accepts any type of content.
+    MediaType.init("*", "*")
+  else:
+    let mediaTypes = res.get().data
+    if len(mediaTypes) > 0:
+      mediaTypes[0].mediaType
+    else:
+      MediaType.init("*", "*")
+
+proc preferredContentType*(request: HttpRequestRef,
+                           types: varargs[string]): Result[string, cstring] =
+  ## Match or obtain preferred content-type using ``Accept`` header specified by
+  ## client in request ``request``.
+  ##
+  ## If ``Accept`` header is missing in client's request - ``types[0]`` or
+  ## ``*/*`` value will be returned as result.
+  ##
+  ## If ``Accept`` header has incorrect format in client's request -
+  ## ``types[0]`` or ``*/*`` value will be returned as result.
+  ##
+  ## If ``Accept`` header is present and has one or more content types supported
+  ## by client, the best value will be selected from ``types`` using
+  ## quality value (weight) reported in ``Accept`` header. If client do not
+  ## support any methods in ``types`` error will be returned.
+  let acceptHeader = request.headers.getString(AcceptHeaderName)
+  if len(types) == 0:
+    if len(acceptHeader) == 0:
+      # If `Accept` header is missing, return `*/*`.
+      ok("*/*")
+    else:
+      let res = getAcceptInfo(acceptHeader)
+      if res.isErr():
+        # If `Accept` header is incorrect, client accepts any type of content.
+        ok("*/*")
+      else:
+        let mediaTypes = res.get().data
+        if len(mediaTypes) > 0:
+          ok($mediaTypes[0].mediaType)
+        else:
+          ok("*/*")
+  else:
+    if len(acceptHeader) == 0:
+      # If `Accept` header is missing, client accepts any type of content.
+      ok(types[0])
+    else:
+      let res = getAcceptInfo(acceptHeader)
+      if res.isErr():
+        # If `Accept` header is incorrect, client accepts any type of content.
+        ok(types[0])
+      else:
+        let mediaTypes =
+          block:
+            var res: seq[MediaType]
+            for item in types:
+              res.add(MediaType.init(item))
+            res
+        for item in res.get().data:
+          for expect in mediaTypes:
+            if expect == item.mediaType:
+              return ok($expect)
+        err("Preferred content type not found")
+
 proc sendErrorResponse(conn: HttpConnectionRef, version: HttpVersion,
                        code: HttpCode, keepAlive = true,
                        datatype = "text/text",

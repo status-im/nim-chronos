@@ -22,7 +22,7 @@ const
   DateHeader* = "date"
   HostHeader* = "host"
   ConnectionHeader* = "connection"
-  AcceptHeader* = "accept"
+  AcceptHeaderName* = "accept"
   ContentLengthHeader* = "content-length"
   TransferEncodingHeader* = "transfer-encoding"
   ContentEncodingHeader* = "content-encoding"
