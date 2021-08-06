@@ -1183,11 +1183,22 @@ proc redirect*(request: HttpClientRequestRef,
 
 proc fetch*(request: HttpClientRequestRef): Future[HttpResponseTuple] {.
      async.} =
-  let response = await request.send()
-  let data = await response.getBodyBytes()
-  let code = response.status
-  await response.closeWait()
-  return (code, data)
+  var response: HttpClientResponseRef
+  try:
+    response = await request.send()
+    let buffer = await response.getBodyBytes()
+    let status = response.status
+    await response.closeWait()
+    response = nil
+    return (status, buffer)
+  except HttpError as exc:
+    if not(isNil(response)):
+      await response.closeWait()
+    raise exc
+  except CancelledError as exc:
+    if not(isNil(response)):
+      await response.closeWait()
+    raise exc
 
 proc fetch*(session: HttpSessionRef, url: Uri): Future[HttpResponseTuple] {.
      async.} =
