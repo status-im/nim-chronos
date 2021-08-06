@@ -8,6 +8,7 @@
 #              MIT license (LICENSE-MIT)
 import ../../asyncloop, ../../asyncsync
 import ../../streams/[asyncstream, boundstream]
+import httpcommon
 
 const
   HttpBodyReaderTrackerName* = "http.body.reader"
@@ -17,9 +18,11 @@ const
 
 type
   HttpBodyReader* = ref object of AsyncStreamReader
+    bstate*: HttpState
     streams*: seq[AsyncStreamReader]
 
   HttpBodyWriter* = ref object of AsyncStreamWriter
+    bstate*: HttpState
     streams*: seq[AsyncStreamWriter]
 
   HttpBodyTracker* = ref object of TrackerBase
@@ -93,21 +96,24 @@ proc newHttpBodyReader*(streams: varargs[AsyncStreamReader]): HttpBodyReader =
   ##
   ## First stream in sequence will be used as a source.
   doAssert(len(streams) > 0, "At least one stream must be added")
-  var res = HttpBodyReader(streams: @streams)
+  var res = HttpBodyReader(bstate: HttpState.Alive, streams: @streams)
   res.init(streams[0])
   trackHttpBodyReader(res)
   res
 
 proc closeWait*(bstream: HttpBodyReader) {.async.} =
   ## Close and free resource allocated by body reader.
-  var res = newSeq[Future[void]]()
-  # We closing streams in reversed order because stream at position [0], uses
-  # data from stream at position [1].
-  for index in countdown((len(bstream.streams) - 1), 0):
-    res.add(bstream.streams[index].closeWait())
-  await allFutures(res)
-  await procCall(closeWait(AsyncStreamReader(bstream)))
-  untrackHttpBodyReader(bstream)
+  if bstream.bstate == HttpState.Alive:
+    bstream.bstate = HttpState.Closing
+    var res = newSeq[Future[void]]()
+    # We closing streams in reversed order because stream at position [0], uses
+    # data from stream at position [1].
+    for index in countdown((len(bstream.streams) - 1), 0):
+      res.add(bstream.streams[index].closeWait())
+    await allFutures(res)
+    await procCall(closeWait(AsyncStreamReader(bstream)))
+    bstream.bstate = HttpState.Closed
+    untrackHttpBodyReader(bstream)
 
 proc newHttpBodyWriter*(streams: varargs[AsyncStreamWriter]): HttpBodyWriter =
   ## HttpBodyWriter is AsyncStreamWriter which holds references to all the
@@ -115,19 +121,22 @@ proc newHttpBodyWriter*(streams: varargs[AsyncStreamWriter]): HttpBodyWriter =
   ##
   ## First stream in sequence will be used as a destination.
   doAssert(len(streams) > 0, "At least one stream must be added")
-  var res = HttpBodyWriter(streams: @streams)
+  var res = HttpBodyWriter(bstate: HttpState.Alive, streams: @streams)
   res.init(streams[0])
   trackHttpBodyWriter(res)
   res
 
 proc closeWait*(bstream: HttpBodyWriter) {.async.} =
   ## Close and free all the resources allocated by body writer.
-  var res = newSeq[Future[void]]()
-  for index in countdown(len(bstream.streams) - 1, 0):
-    res.add(bstream.streams[index].closeWait())
-  await allFutures(res)
-  await procCall(closeWait(AsyncStreamWriter(bstream)))
-  untrackHttpBodyWriter(bstream)
+  if bstream.bstate == HttpState.Alive:
+    bstream.bstate = HttpState.Closing
+    var res = newSeq[Future[void]]()
+    for index in countdown(len(bstream.streams) - 1, 0):
+      res.add(bstream.streams[index].closeWait())
+    await allFutures(res)
+    await procCall(closeWait(AsyncStreamWriter(bstream)))
+    bstream.bstate = HttpState.Closed
+    untrackHttpBodyWriter(bstream)
 
 proc hasOverflow*(bstream: HttpBodyReader): bool {.raises: [Defect].} =
   if len(bstream.streams) == 1:
@@ -144,3 +153,7 @@ proc hasOverflow*(bstream: HttpBodyReader): bool {.raises: [Defect].} =
       false
     else:
       false
+
+proc closed*(bstream: HttpBodyReader | HttpBodyWriter): bool {.
+     raises: [Defect].} =
+  bstream.bstate != HttpState.Alive

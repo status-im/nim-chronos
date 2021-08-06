@@ -68,6 +68,9 @@ type
     CommaSeparatedArray ## Enable usage of comma symbol as separator of array
                         ## items
 
+  HttpState* {.pure.} = enum
+    Alive, Closing, Closed
+
 proc raiseHttpCriticalError*(msg: string,
                              code = Http400) {.noinline, noreturn.} =
   raise (ref HttpCriticalError)(code: code, msg: msg)
