@@ -352,3 +352,162 @@ suite "Asynchronous sync primitives test suite":
     check test8() == true
   test "AsyncQueue() contains test":
     check test9() == true
+  test "AsyncEventBus() awaitable primitives test":
+    const TestsCount = 10
+    var bus = newAsyncEventBus()
+    var flag = ""
+
+    proc waiter(bus: AsyncEventBus) {.async.} =
+      for i in 0 ..< TestsCount:
+        let payload = await bus.waitEvent(string, "event")
+        flag = flag & payload
+
+    proc sender(bus: AsyncEventBus) {.async.} =
+      for i in 0 ..< (TestsCount + (TestsCount div 2)):
+        await bus.emitWait("event", $i)
+
+    waitFor allFutures(waiter(bus), sender(bus))
+    check flag == "0123456789"
+  test "AsyncEventBus() waiters test":
+    var bus = newAsyncEventBus()
+    let fut11 = bus.waitEvent(int, "event")
+    let fut12 = bus.waitEvent(int, "event")
+    let fut13 = bus.waitEvent(int, "event")
+    let fut21 = bus.waitEvent(string, "event")
+    let fut22 = bus.waitEvent(string, "event")
+    let fut23 = bus.waitEvent(string, "event")
+    bus.emit("event", 65535)
+    check:
+      fut11.done() == true
+      fut12.done() == true
+      fut13.done() == true
+      fut21.finished() == false
+      fut22.finished() == false
+      fut23.finished() == false
+    bus.emit("event", "data")
+    check:
+      fut21.done() == true
+      fut22.done() == true
+      fut23.done() == true
+  test "AsyncEventBus() subscribers test":
+    const TestsCount = 10
+    var bus = newAsyncEventBus()
+    var flagInt = 0
+    var flagStr = ""
+    proc eventIntCallback(bus: AsyncEventBus,
+                          payload: EventPayload[int]) {.async.} =
+      flagInt = payload.get()
+    proc eventStrCallback(bus: AsyncEventBus,
+                          payload: EventPayload[string]) {.async.} =
+      flagStr = payload.get()
+
+    let key1 = bus.subscribe("event", eventIntCallback)
+    let key2 = bus.subscribe("event", eventStrCallback)
+
+    proc test() {.async.} =
+      check:
+        flagInt == 0
+        flagStr == ""
+      for i in 0 ..< TestsCount:
+        await bus.emitWait("event", i)
+        check:
+          flagInt == i
+          flagStr == ""
+      flagInt = 0
+      for i in 0 ..< TestsCount:
+        await bus.emitWait("event", $i)
+        check:
+          flagInt == 0
+          flagStr == $i
+      flagInt = 0
+      flagStr = ""
+      bus.unsubscribe(key1)
+      for i in 0 ..< TestsCount:
+        await bus.emitWait("event", i)
+        check:
+          flagInt == 0
+          flagStr == ""
+      flagInt = 0
+      flagStr = ""
+      bus.unsubscribe(key2)
+      for i in 0 ..< TestsCount:
+        await bus.emitWait("event", $i)
+        check:
+          flagInt == 0
+          flagStr == ""
+    waitFor(test())
+  test "AsyncEventBus() waiters for all events test":
+    var bus = newAsyncEventBus()
+    let fut11 = bus.waitAllEvents()
+    let fut12 = bus.waitAllEvents()
+    bus.emit("intevent", 65535)
+    check:
+      fut11.done() == true
+      fut12.done() == true
+    let event11 = fut11.read()
+    let event12 = fut12.read()
+    check:
+      event11.event() == "intevent"
+      event12.event() == "intevent"
+      event11.get(int) == 65535
+      event12.get(int) == 65535
+
+    let fut21 = bus.waitAllEvents()
+    let fut22 = bus.waitAllEvents()
+    bus.emit("strevent", "hello")
+    check:
+      fut21.done() == true
+      fut22.done() == true
+    let event21 = fut21.read()
+    let event22 = fut22.read()
+    check:
+      event21.event() == "strevent"
+      event22.event() == "strevent"
+      event21.get(string) == "hello"
+      event22.get(string) == "hello"
+  test "AsyncEventBus() subscribers to all events test":
+    const TestsCount = 10
+    var
+      bus = newAsyncEventBus()
+      flagInt = 0
+      flagStr = ""
+
+    proc eventCallback(bus: AsyncEventBus, event: AwaitableEvent) {.async.} =
+      case event.event()
+      of "event1":
+        flagStr = ""
+        flagInt = event.get(int)
+      of "event2":
+        flagInt = 0
+        flagStr = event.get(string)
+      else:
+        flagInt = -1
+        flagStr = "error"
+
+    proc test() {.async.} =
+      let key = bus.subscribeAll(eventCallback)
+      for i in 0 ..< TestsCount:
+        await bus.emitWait("event1", i)
+        check:
+          flagStr == ""
+          flagInt == i
+        await bus.emitWait("event2", $i)
+        check:
+          flagStr == $i
+          flagInt == 0
+
+      bus.unsubscribe(key)
+
+      flagInt = high(int)
+      flagStr = "empty"
+      for i in 0 ..< TestsCount:
+        await bus.emitWait("event1", i)
+        check:
+          flagStr == "empty"
+          flagInt == high(int)
+        await bus.emitWait("event2", $i)
+        check:
+          flagStr == "empty"
+          flagInt == high(int)
+
+    waitFor(test())
