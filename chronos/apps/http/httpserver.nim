@@ -555,10 +555,7 @@ proc sendErrorResponse(conn: HttpConnectionRef, version: HttpVersion,
   else:
     answer.add(ConnectionHeader)
     answer.add(": close\r\n")
-  answer.add(HostHeader)
-  answer.add(": ")
-  answer.add(conn.server.getHostname())
-  answer.add("\r\n\r\n")
+  answer.add("\r\n")
   if len(databody) > 0:
     answer.add(databody)
   try:
@@ -1042,8 +1039,6 @@ proc prepareLengthHeaders(resp: HttpResponseRef, length: int): string {.
     resp.setHeader(ContentLengthHeader, Base10.toString(uint64(length)))
   if not(resp.hasHeader(ServerHeader)):
     resp.setHeader(ServerHeader, resp.connection.server.serverIdent)
-  if not(resp.hasHeader(HostHeader)):
-    resp.setHeader(HostHeader, resp.connection.server.getHostname())
   if not(resp.hasHeader(ConnectionHeader)):
     if KeepAlive in resp.flags:
       resp.setHeader(ConnectionHeader, "keep-alive")
@@ -1069,8 +1064,6 @@ proc prepareChunkedHeaders(resp: HttpResponseRef): string {.
     resp.setHeader(TransferEncodingHeader, "chunked")
   if not(resp.hasHeader(ServerHeader)):
     resp.setHeader(ServerHeader, resp.connection.server.serverIdent)
-  if not(resp.hasHeader(HostHeader)):
-    resp.setHeader(HostHeader, resp.connection.server.getHostname())
   if not(resp.hasHeader(ConnectionHeader)):
     if KeepAlive in resp.flags:
       resp.setHeader(ConnectionHeader, "keep-alive")
