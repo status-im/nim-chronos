@@ -10,6 +10,7 @@
 {.push raises: [Defect].}
 
 import ./asyncloop
+export asyncloop
 
 const
   AllFutureStates* = {FutureState.Pending, FutureState.Cancelled,

@@ -11,8 +11,8 @@ import stew/[results, base10], httputils
 import ../../asyncloop, ../../asyncsync
 import ../../streams/[asyncstream, boundstream, chunkstream]
 import httptable, httpcommon, multipart
-export httptable, httpcommon, httputils, multipart, asyncstream,
-       uri, tables, options, results
+export asyncloop, asyncsync, httptable, httpcommon, httputils, multipart,
+       asyncstream, boundstream, chunkstream, uri, tables, options, results
 
 type
   HttpServerFlags* {.pure.} = enum

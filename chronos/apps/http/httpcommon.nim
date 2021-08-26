@@ -10,7 +10,7 @@ import std/[strutils, uri]
 import stew/[results, endians2], httputils
 import ../../asyncloop, ../../asyncsync
 import ../../streams/[asyncstream, boundstream]
-export results, httputils, strutils
+export asyncloop, asyncsync, results, httputils, strutils
 
 const
   HeadersMark* = @[0x0d'u8, 0x0a'u8, 0x0d'u8, 0x0a'u8]

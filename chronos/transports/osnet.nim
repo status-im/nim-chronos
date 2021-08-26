@@ -13,7 +13,7 @@
 {.push raises: [Defect].}
 
 import std/algorithm
-from strutils import toHex
+from std/strutils import toHex
 import ./ipnet
 export ipnet
 
