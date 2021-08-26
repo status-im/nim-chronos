@@ -12,7 +12,7 @@ import stew/results
 import ../../asyncloop
 import ../../streams/[asyncstream, boundstream, chunkstream]
 import httptable, httpcommon, httpbodyrw
-export httptable, httpcommon, httpbodyrw, asyncstream
+export asyncloop, httptable, httpcommon, httpbodyrw, asyncstream
 
 const
   UnableToReadMultipartBody = "Unable to read multipart message body"

@@ -14,6 +14,7 @@
 
 import std/[sequtils, deques]
 import ./asyncloop
+export asyncloop
 
 type
   AsyncLock* = ref object of RootRef

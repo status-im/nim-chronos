@@ -11,7 +11,9 @@ import stew/[results, base10, base64], httputils
 import ../../asyncloop, ../../asyncsync
 import ../../streams/[asyncstream, tlsstream, chunkstream, boundstream]
 import httptable, httpcommon, httpagent, httpbodyrw, multipart
-export httptable, httpcommon, httpagent, httpbodyrw, multipart
+export results, asyncloop, asyncsync, asyncstream, tlsstream, chunkstream,
+       boundstream, httptable, httpcommon, httpagent, httpbodyrw, multipart,
+       httputils
 
 const
   HttpMaxHeadersSize* = 8192

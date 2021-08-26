@@ -11,7 +11,7 @@
 
 import ../asyncloop, ../asyncsync
 import ../transports/common, ../transports/stream
-export asyncsync, stream, common
+export asyncloop, asyncsync, stream, common
 
 const
   AsyncStreamDefaultBufferSize* = 4096

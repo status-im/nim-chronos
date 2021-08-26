@@ -11,7 +11,7 @@
 import ../asyncloop, ../timer
 import asyncstream, ../transports/stream, ../transports/common
 import stew/results
-export asyncstream, stream, timer, common
+export asyncloop, asyncstream, stream, timer, common, results
 
 const
   ChunkBufferSize = 4096

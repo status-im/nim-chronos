@@ -17,7 +17,7 @@
 import std/options
 import ../asyncloop, ../timer
 import asyncstream, ../transports/stream, ../transports/common
-export asyncstream, stream, timer, common
+export asyncloop, asyncstream, stream, timer, common
 
 type
   BoundCmp* {.pure.} = enum

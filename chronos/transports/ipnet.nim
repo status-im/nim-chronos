@@ -11,7 +11,8 @@
 
 {.push raises: [Defect].}
 
-import stew/endians2, std/strutils
+import std/strutils
+import stew/endians2
 import ./common
 export common
 
