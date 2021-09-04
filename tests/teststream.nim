@@ -1203,27 +1203,27 @@ suite "Stream Transport test suite":
 
   proc testAcceptRace(address: TransportAddress): Future[bool] {.async.} =
     proc test1(address: TransportAddress) {.async.} =
-      let server = createStreamServer(address)
+      let server = createStreamServer(address, flags = {ReuseAddr})
       let acceptFut = server.accept()
       server.close()
       await allFutures(acceptFut.cancelAndWait(), server.join())
 
     proc test2(address: TransportAddress) {.async.} =
-      let server = createStreamServer(address)
+      let server = createStreamServer(address, flags = {ReuseAddr})
       let acceptFut = server.accept()
       await acceptFut.cancelAndWait()
       server.close()
       await server.join()
 
     proc test3(address: TransportAddress) {.async.} =
-      let server = createStreamServer(address)
+      let server = createStreamServer(address, flags = {ReuseAddr})
       let acceptFut = server.accept()
       server.stop()
       server.close()
       await allFutures(acceptFut.cancelAndWait(), server.join())
 
     proc test4(address: TransportAddress) {.async.} =
-      let server = createStreamServer(address)
+      let server = createStreamServer(address, flags = {ReuseAddr})
       let acceptFut = server.accept()
       await acceptFut.cancelAndWait()
       server.stop()
