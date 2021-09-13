@@ -907,6 +907,57 @@ suite "HTTP server testing suite":
         r1.get() == req[1][2]
         r2.get() == req[1][3]
 
+  test "SSE server-side events stream test":
+    proc testPostMultipart2(address: TransportAddress): Future[bool] {.async.} =
+      var serverRes = false
+      proc process(r: RequestFence): Future[HttpResponseRef] {.
+           async.} =
+        if r.isOk():
+          let request = r.get()
+          let response = request.getResponse()
+          await response.prepareSSE()
+          await response.send("event: event1\r\ndata: data1\r\n\r\n")
+          await response.send("event: event2\r\ndata: data2\r\n\r\n")
+          await response.sendEvent("event3", "data3")
+          await response.sendEvent("event4", "data4")
+          await response.send("data: data5\r\n\r\n")
+          await response.sendEvent("", "data6")
+          await response.finish()
+          serverRes = true
+          return response
+        else:
+          serverRes = false
+          return dumbResponse()
+
+      let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
+      let res = HttpServerRef.new(address, process,
+                                  socketFlags = socketFlags)
+      if res.isErr():
+        return false
+
+      let server = res.get()
+      server.start()
+
+      let message =
+        "GET / HTTP/1.1\r\n" &
+        "Host: 127.0.0.1:30080\r\n" &
+        "Accept: text/event-stream\r\n" &
+        "\r\n"
+
+      let data = await httpClient(address, message)
+      let expect = "event: event1\r\ndata: data1\r\n\r\n" &
+                   "event: event2\r\ndata: data2\r\n\r\n" &
+                   "event: event3\r\ndata: data3\r\n\r\n" &
+                   "event: event4\r\ndata: data4\r\n\r\n" &
+                   "data: data5\r\n\r\n" &
+                   "data: data6\r\n\r\n"
+      await server.stop()
+      await server.closeWait()
+      return serverRes and (data.find(expect) >= 0)
+
+    check waitFor(testPostMultipart2(initTAddress("127.0.0.1:30080"))) == true
+
+
   test "Leaks test":
     check:
       getTracker("async.stream.reader").isLeaked() == false
