@@ -396,7 +396,7 @@ proc resolveTAddress*(address: string, port: Port,
                       domain: Domain): seq[TransportAddress] {.
      raises: [Defect, TransportAddressError].} =
   var res: seq[TransportAddress]
-  let aiList = getAddrInfo(address, Port(port), domain)
+  let aiList = getAddrInfo(address, port, domain)
   var it = aiList
   while not(isNil(it)):
     var ta: TransportAddress
