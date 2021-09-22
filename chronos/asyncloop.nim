@@ -322,8 +322,8 @@ when defined(windows) or defined(nimdoc):
 
     AsyncFD* = distinct int
 
-  proc hash(x: AsyncFD): Hash {.borrow.}
-  proc `==`*(x: AsyncFD, y: AsyncFD): bool {.borrow.}
+  proc hash(x: AsyncFD): Hash {.borrow, gcsafe.}
+  proc `==`*(x: AsyncFD, y: AsyncFD): bool {.borrow, gcsafe.}
 
   proc getFunc(s: SocketHandle, fun: var pointer, guid: var GUID): bool =
     var bytesRet: DWORD
@@ -471,7 +471,7 @@ when defined(windows) or defined(nimdoc):
     # poll() call.
     loop.processCallbacks()
 
-  proc closeSocket*(fd: AsyncFD, aftercb: CallbackFunc = nil) =
+  proc closeSocket*(fd: AsyncFD, aftercb: CallbackFunc = nil) {.gcsafe.} =
     ## Closes a socket and ensures that it is unregistered.
     let loop = getThreadDispatcher()
     loop.handles.excl(fd)
@@ -516,7 +516,7 @@ elif unixPlatform:
       selector: Selector[SelectorData]
       keys: seq[ReadyKey]
 
-  proc `==`*(x, y: AsyncFD): bool {.borrow.}
+  proc `==`*(x, y: AsyncFD): bool {.borrow, gcsafe.}
 
   proc globalInit() =
     # We are ignoring SIGPIPE signal, because we are working with EPIPE.

@@ -33,21 +33,23 @@ when defined(chronosStrictException):
         # because you're calling a callback or forward declaration in your code
         # for which the compiler cannot deduce raises signatures - make sure
         # to annotate both forward declarations and `proc` types with `raises`!
-        if not(nameIterVar.finished()):
-          var next = nameIterVar()
-          # Continue while the yielded future is already finished.
-          while (not next.isNil()) and next.finished():
-            next = nameIterVar()
-            if nameIterVar.finished():
-              break
+        {.gcsafe.}:
+          # Nim-1.6 considers nameIterVar to be a GC-ed global
+          if not(nameIterVar.finished()):
+            var next = nameIterVar()
+            # Continue while the yielded future is already finished.
+            while (not next.isNil()) and next.finished():
+              next = nameIterVar()
+              if nameIterVar.finished():
+                break
 
-          if next == nil:
-            if not(retFutureSym.finished()):
-              const msg = "Async procedure (&" & strName & ") yielded `nil`, " &
-                          "are you await'ing a `nil` Future?"
-              raiseAssert msg
-          else:
-            next.addCallback(identName)
+            if next == nil:
+              if not(retFutureSym.finished()):
+                const msg = "Async procedure (&" & strName & ") yielded `nil`, " &
+                            "are you await'ing a `nil` Future?"
+                raiseAssert msg
+            else:
+              next.addCallback(identName)
       except CancelledError:
         retFutureSym.cancelAndSchedule()
       except CatchableError as exc:
@@ -70,21 +72,23 @@ else:
         # because you're calling a callback or forward declaration in your code
         # for which the compiler cannot deduce raises signatures - make sure
         # to annotate both forward declarations and `proc` types with `raises`!
-        if not(nameIterVar.finished()):
-          var next = nameIterVar()
-          # Continue while the yielded future is already finished.
-          while (not next.isNil()) and next.finished():
-            next = nameIterVar()
-            if nameIterVar.finished():
-              break
+        {.gcsafe.}:
+          # Nim-1.6 considers nameIterVar to be a GC-ed global
+          if not(nameIterVar.finished()):
+            var next = nameIterVar()
+            # Continue while the yielded future is already finished.
+            while (not next.isNil()) and next.finished():
+              next = nameIterVar()
+              if nameIterVar.finished():
+                break
 
-          if next == nil:
-            if not(retFutureSym.finished()):
-              const msg = "Async procedure (&" & strName & ") yielded `nil`, " &
-                          "are you await'ing a `nil` Future?"
-              raiseAssert msg
-          else:
-            next.addCallback(identName)
+            if next == nil:
+              if not(retFutureSym.finished()):
+                const msg = "Async procedure (&" & strName & ") yielded `nil`, " &
+                            "are you await'ing a `nil` Future?"
+                raiseAssert msg
+            else:
+              next.addCallback(identName)
       except CancelledError:
         retFutureSym.cancelAndSchedule()
       except CatchableError as exc:

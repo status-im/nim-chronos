@@ -571,8 +571,9 @@ proc emit[T](bus: AsyncEventBus, event: string, data: T, loc: ptr SrcLoc) =
 
     # Schedule subscriber's callbacks, which are subscribed to the event.
     for subscriber in item.subscribers:
+      let subscriberCopy = subscriber
       callSoon(proc(udata: pointer) =
-        subscriber.cb(bus, event, subscriber, payload)
+        subscriberCopy.cb(bus, event, subscriberCopy, payload)
       )
 
   # Schedule waiters which are waiting all events
@@ -583,8 +584,9 @@ proc emit[T](bus: AsyncEventBus, event: string, data: T, loc: ptr SrcLoc) =
 
   # Schedule subscriber's callbacks which are subscribed to all events.
   for subscriber in bus.subscribers:
+    let subscriberCopy = subscriber
     callSoon(proc(udata: pointer) =
-      subscriber.cb(bus, event, subscriber, payload)
+      subscriberCopy.cb(bus, event, subscriberCopy, payload)
     )
 
 template emit*[T](bus: AsyncEventBus, event: string, data: T) =
