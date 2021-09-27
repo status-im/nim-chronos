@@ -470,10 +470,9 @@ proc getAcceptInfo*(request: HttpRequestRef): Result[AcceptInfo, cstring] =
   let acceptHeader = request.headers.getString(AcceptHeaderName)
   getAcceptInfo(acceptHeader)
 
-proc preferredContentMediaType*(request: HttpRequestRef): MediaType =
-  ## Returns preferred content-type using ``Accept`` header specified by
-  ## client in request ``request``.
-  let acceptHeader = request.headers.getString(AcceptHeaderName)
+proc preferredContentMediaType*(acceptHeader: string): MediaType =
+  ## Returns preferred content-type using ``Accept`` header value specified by
+  ## string ``accept``.
   let res = getAcceptInfo(acceptHeader)
   if res.isErr():
     # If `Accept` header is incorrect, client accepts any type of content.
@@ -485,10 +484,10 @@ proc preferredContentMediaType*(request: HttpRequestRef): MediaType =
     else:
       MediaType.init("*", "*")
 
-proc preferredContentType*(request: HttpRequestRef,
+proc preferredContentType*(acceptHeader: string,
                            types: varargs[string]): Result[string, cstring] =
   ## Match or obtain preferred content-type using ``Accept`` header specified by
-  ## client in request ``request``.
+  ## string ``acceptHeader``.
   ##
   ## If ``Accept`` header is missing in client's request - ``types[0]`` or
   ## ``*/*`` value will be returned as result.
@@ -500,7 +499,6 @@ proc preferredContentType*(request: HttpRequestRef,
   ## by client, the best value will be selected from ``types`` using
   ## quality value (weight) reported in ``Accept`` header. If client do not
   ## support any methods in ``types`` error will be returned.
-  let acceptHeader = request.headers.getString(AcceptHeaderName)
   if len(types) == 0:
     if len(acceptHeader) == 0:
       # If `Accept` header is missing, return `*/*`.
@@ -537,6 +535,17 @@ proc preferredContentType*(request: HttpRequestRef,
             if expect == item.mediaType:
               return ok($expect)
         err("Preferred content type not found")
+
+proc preferredContentMediaType*(request: HttpRequestRef): MediaType =
+  ## Returns preferred content-type using ``Accept`` header specified by
+  ## client in request ``request``.
+  preferredContentMediaType(request.headers.getString(AcceptHeaderName))
+
+proc preferredContentType*(request: HttpRequestRef,
+                           types: varargs[string]): Result[string, cstring] =
+  ## Match or obtain preferred content-type using ``Accept`` header specified by
+  ## client in request ``request``.
+  preferredContentType(request.headers.getString(AcceptHeaderName), types)
 
 proc sendErrorResponse(conn: HttpConnectionRef, version: HttpVersion,
                        code: HttpCode, keepAlive = true,
