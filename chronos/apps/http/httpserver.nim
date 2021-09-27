@@ -472,7 +472,7 @@ proc getAcceptInfo*(request: HttpRequestRef): Result[AcceptInfo, cstring] =
 
 proc preferredContentMediaType*(acceptHeader: string): MediaType =
   ## Returns preferred content-type using ``Accept`` header value specified by
-  ## string ``accept``.
+  ## string ``acceptHeader``.
   let res = getAcceptInfo(acceptHeader)
   if res.isErr():
     # If `Accept` header is incorrect, client accepts any type of content.
