@@ -6,5 +6,5 @@
 #              Licensed under either of
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
-import apps/http/httpserver
-export httpserver
+import ./apps/http/[httpserver, shttpserver]
+export httpserver, shttpserver

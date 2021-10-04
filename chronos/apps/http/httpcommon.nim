@@ -6,14 +6,34 @@
 #              Licensed under either of
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
-import stew/results, httputils, strutils, uri
+import std/[strutils, uri]
+import stew/[results, endians2], httputils
 import ../../asyncloop, ../../asyncsync
 import ../../streams/[asyncstream, boundstream]
-export results, httputils, strutils
+export asyncloop, asyncsync, results, httputils, strutils
 
 const
-  HeadersMark* = @[byte(0x0D), byte(0x0A), byte(0x0D), byte(0x0A)]
+  HeadersMark* = @[0x0d'u8, 0x0a'u8, 0x0d'u8, 0x0a'u8]
   PostMethods* = {MethodPost, MethodPatch, MethodPut, MethodDelete}
+
+  MaximumBodySizeError* = "Maximum size of request's body reached"
+
+  UserAgentHeader* = "user-agent"
+  DateHeader* = "date"
+  HostHeader* = "host"
+  ConnectionHeader* = "connection"
+  AcceptHeaderName* = "accept"
+  ContentLengthHeader* = "content-length"
+  TransferEncodingHeader* = "transfer-encoding"
+  ContentEncodingHeader* = "content-encoding"
+  ContentTypeHeader* = "content-type"
+  ExpectHeader* = "expect"
+  ServerHeader* = "server"
+  LocationHeader* = "location"
+  AuthorizationHeader* = "authorization"
+
+  UrlEncodedContentType* = "application/x-www-form-urlencoded"
+  MultipartContentType* = "multipart/form-data"
 
 type
   HttpResult*[T] = Result[T, string]
@@ -26,6 +46,17 @@ type
   HttpRecoverableError* = object of HttpError
     code*: HttpCode
   HttpDisconnectError* = object of HttpError
+  HttpConnectionError* = object of HttpError
+  HttpInterruptError* = object of HttpError
+  HttpReadError* = object of HttpError
+  HttpWriteError* = object of HttpError
+  HttpProtocolError* = object of HttpError
+  HttpRedirectError* = object of HttpError
+  HttpAddressError* = object of HttpError
+
+  KeyValueTuple* = tuple
+    key: string
+    value: string
 
   TransferEncodingFlags* {.pure.} = enum
     Identity, Chunked, Compress, Deflate, Gzip
@@ -33,35 +64,12 @@ type
   ContentEncodingFlags* {.pure.} = enum
     Identity, Br, Compress, Deflate, Gzip
 
-  HttpBodyReader* = ref object of AsyncStreamReader
-    streams*: seq[AsyncStreamReader]
+  QueryParamsFlag* {.pure.} = enum
+    CommaSeparatedArray ## Enable usage of comma symbol as separator of array
+                        ## items
 
-proc newHttpBodyReader*(streams: varargs[AsyncStreamReader]): HttpBodyReader =
-  ## HttpBodyReader is AsyncStreamReader which holds references to all the
-  ## ``streams``. Also on close it will close all the ``streams``.
-  ##
-  ## First stream in sequence will be used as a source.
-  doAssert(len(streams) > 0, "At least one stream must be added")
-  var res = HttpBodyReader(streams: @streams)
-  res.init(streams[0])
-  res
-
-proc closeWait*(bstream: HttpBodyReader) {.async.} =
-  ## Close and free resource allocated by body reader.
-  if len(bstream.streams) > 0:
-    var res = newSeq[Future[void]]()
-    for item in bstream.streams.items():
-      res.add(item.closeWait())
-    await allFutures(res)
-  await procCall(AsyncStreamReader(bstream).closeWait())
-
-proc atBound*(bstream: HttpBodyReader): bool {.
-     raises: [Defect].} =
-  ## Returns ``true`` if lowest stream is at EOF.
-  let lreader = bstream.streams[^1]
-  doAssert(lreader of BoundedStreamReader)
-  let breader = cast[BoundedStreamReader](lreader)
-  breader.atEof() and (breader.bytesLeft() == 0)
+  HttpState* {.pure.} = enum
+    Alive, Closing, Closed
 
 proc raiseHttpCriticalError*(msg: string,
                              code = Http400) {.noinline, noreturn.} =
@@ -73,7 +81,38 @@ proc raiseHttpDisconnectError*() {.noinline, noreturn.} =
 proc raiseHttpDefect*(msg: string) {.noinline, noreturn.} =
   raise (ref HttpDefect)(msg: msg)
 
-iterator queryParams*(query: string): tuple[key: string, value: string] {.
+proc raiseHttpConnectionError*(msg: string) {.noinline, noreturn.} =
+  raise (ref HttpConnectionError)(msg: msg)
+
+proc raiseHttpInterruptError*() {.noinline, noreturn.} =
+  raise (ref HttpInterruptError)(msg: "Connection was interrupted")
+
+proc raiseHttpReadError*(msg: string) {.noinline, noreturn.} =
+  raise (ref HttpReadError)(msg: msg)
+
+proc raiseHttpProtocolError*(msg: string) {.noinline, noreturn.} =
+  raise (ref HttpProtocolError)(msg: msg)
+
+proc raiseHttpWriteError*(msg: string) {.noinline, noreturn.} =
+  raise (ref HttpWriteError)(msg: msg)
+
+proc raiseHttpRedirectError*(msg: string) {.noinline, noreturn.} =
+  raise (ref HttpRedirectError)(msg: msg)
+
+proc raiseHttpAddressError*(msg: string) {.noinline, noreturn.} =
+  raise (ref HttpAddressError)(msg: msg)
+
+template newHttpInterruptError*(): ref HttpInterruptError =
+  newException(HttpInterruptError, "Connection was interrupted")
+
+template newHttpReadError*(message: string): ref HttpReadError =
+  newException(HttpReadError, message)
+
+template newHttpWriteError*(message: string): ref HttpWriteError =
+  newException(HttpWriteError, message)
+
+iterator queryParams*(query: string,
+                      flags: set[QueryParamsFlag] = {}): KeyValueTuple {.
          raises: [Defect].} =
   ## Iterate over url-encoded query string.
   for pair in query.split('&'):
@@ -81,7 +120,12 @@ iterator queryParams*(query: string): tuple[key: string, value: string] {.
     let k = items[0]
     if len(k) > 0:
       let v = if len(items) > 1: items[1] else: ""
-      yield (decodeUrl(k), decodeUrl(v))
+      if CommaSeparatedArray in flags:
+        let key = decodeUrl(k)
+        for av in decodeUrl(v).split(','):
+          yield (k, av)
+      else:
+        yield (decodeUrl(k), decodeUrl(v))
 
 func getTransferEncoding*(ch: openarray[string]): HttpResult[
                                                   set[TransferEncodingFlags]] {.
@@ -148,7 +192,9 @@ func getContentEncoding*(ch: openarray[string]): HttpResult[
 func getContentType*(ch: openarray[string]): HttpResult[string]  {.
      raises: [Defect].} =
   ## Check and prepare value of ``Content-Type`` header.
-  if len(ch) > 1:
+  if len(ch) == 0:
+    err("No Content-Type values found")
+  elif len(ch) > 1:
     err("Multiple Content-Type values found")
   else:
     let mparts = ch[0].split(";")
@@ -197,3 +243,48 @@ func stringToBytes*(src: openarray[char]): seq[byte] =
     dst
   else:
     default
+
+proc dumpHex*(pbytes: openarray[byte], groupBy = 1, ascii = true): string =
+  ## Get hexadecimal dump of memory for array ``pbytes``.
+  var res = ""
+  var offset = 0
+  var ascii = ""
+
+  while offset < len(pbytes):
+    if (offset mod 16) == 0:
+      res = res & toHex(uint64(offset)) & ":  "
+
+    for k in 0 ..< groupBy:
+      let ch = pbytes[offset + k]
+      ascii.add(if ord(ch) > 31 and ord(ch) < 127: char(ch) else: '.')
+
+    let item =
+      case groupBy:
+      of 1:
+        toHex(pbytes[offset])
+      of 2:
+        toHex(uint16.fromBytes(pbytes.toOpenArray(offset, len(pbytes) - 1)))
+      of 4:
+        toHex(uint32.fromBytes(pbytes.toOpenArray(offset, len(pbytes) - 1)))
+      of 8:
+        toHex(uint64.fromBytes(pbytes.toOpenArray(offset, len(pbytes) - 1)))
+      else:
+        ""
+    res.add(item)
+    res.add(" ")
+    offset = offset + groupBy
+
+    if (offset mod 16) == 0:
+      res.add(" ")
+      res.add(ascii)
+      ascii.setLen(0)
+      res.add("\p")
+
+  if (offset mod 16) != 0:
+    let spacesCount = ((16 - (offset mod 16)) div groupBy) *
+                        (groupBy * 2 + 1) + 1
+    res = res & repeat(' ', spacesCount)
+    res = res & ascii
+
+  res.add("\p")
+  res

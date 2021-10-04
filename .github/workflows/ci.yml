@@ -11,34 +11,14 @@ jobs:
         target:
           - os: linux
             cpu: amd64
-            TEST_LANG: c
-          - os: linux
-            cpu: amd64
-            TEST_LANG: cpp
           - os: linux
             cpu: i386
-            TEST_LANG: c
-          - os: linux
-            cpu: i386
-            TEST_LANG: cpp
           - os: macos
             cpu: amd64
-            TEST_LANG: c
-          - os: macos
-            cpu: amd64
-            TEST_LANG: cpp
           - os: windows
             cpu: amd64
-            TEST_LANG: c
-          - os: windows
-            cpu: amd64
-            TEST_LANG: cpp
           - os: windows
             cpu: i386
-            TEST_LANG: c
-          - os: windows
-            cpu: i386
-            TEST_LANG: cpp
         include:
           - target:
               os: linux
@@ -50,7 +30,7 @@ jobs:
               os: windows
             builder: windows-2019
 
-    name: '${{ matrix.target.os }}-${{ matrix.target.cpu }}-${{ matrix.target.TEST_LANG }} (${{ matrix.branch }})'
+    name: '${{ matrix.target.os }}-${{ matrix.target.cpu }} (${{ matrix.branch }})'
     runs-on: ${{ matrix.builder }}
     steps:
       - name: Checkout nim-chronos
@@ -103,10 +83,10 @@ jobs:
         run: |
           mkdir -p external
           if [[ '${{ matrix.target.cpu }}' == 'amd64' ]]; then
-            MINGW_URL="https://sourceforge.net/projects/mingw-w64/files/Toolchains targetting Win64/Personal Builds/mingw-builds/8.1.0/threads-posix/seh/x86_64-8.1.0-release-posix-seh-rt_v6-rev0.7z"
+            MINGW_URL="https://github.com/brechtsanders/winlibs_mingw/releases/download/11.2.0-12.0.1-9.0.0-r1/winlibs-x86_64-posix-seh-gcc-11.2.0-mingw-w64-9.0.0-r1.7z"
             ARCH=64
           else
-            MINGW_URL="https://sourceforge.net/projects/mingw-w64/files/Toolchains targetting Win32/Personal Builds/mingw-builds/8.1.0/threads-posix/dwarf/i686-8.1.0-release-posix-dwarf-rt_v6-rev0.7z"
+            MINGW_URL="https://github.com/brechtsanders/winlibs_mingw/releases/download/11.2.0-12.0.1-9.0.0-r1/winlibs-i686-posix-dwarf-gcc-11.2.0-mingw-w64-9.0.0-r1.7z"
             ARCH=32
           fi
           curl -L "$MINGW_URL" -o "external/mingw-${{ matrix.target.cpu }}.7z"
@@ -145,11 +125,10 @@ jobs:
         id: nim-cache
         uses: actions/cache@v2
         with:
-          path: nim
-          key: 'nim-${{ matrix.target.os }}-${{ matrix.target.cpu }}-${{ steps.versions.outputs.nimbus_build_system }}'
+          path: NimBinaries
+          key: 'nim-${{ matrix.target.os }}-${{ matrix.target.cpu }}-${{ steps.versions.outputs.nimbus_build_system }}-2'
 
       - name: Build Nim and associated tools
-        if: steps.nim-cache.outputs.cache-hit != 'true'
         shell: bash
         run: |
           curl -O -L -s -S https://raw.githubusercontent.com/status-im/nimbus-build-system/master/scripts/build_nim.sh
@@ -165,15 +144,6 @@ jobs:
           fi
           env MAKE="$MAKE_CMD -j2" ARCH_OVERRIDE=$PLATFORM CC=gcc bash build_nim.sh nim csources dist/nimble NimBinaries
 
-          # clean up to save cache space
-          cd nim
-          rm koch
-          rm -rf nimcache
-          rm -rf csources
-          rm -rf tests
-          rm -rf dist
-          rm -rf .git
-
       - name: Setup environment
         shell: bash
         run: echo '${{ github.workspace }}/nim/bin' >> $GITHUB_PATH
@@ -183,4 +153,5 @@ jobs:
         working-directory: nim-chronos
         run: |
           nimble install -y --depsOnly
-          env TEST_LANG="${{ matrix.target.TEST_LANG }}" nimble test
+          nimble install -y libbacktrace
+          nimble test

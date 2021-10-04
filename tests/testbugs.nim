@@ -5,7 +5,7 @@
 #              Licensed under either of
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
-import unittest
+import unittest2
 import ../chronos
 
 when defined(nimHasUsed): {.used.}
@@ -64,9 +64,9 @@ suite "Asynchronous issues test suite":
       await promise
       checkstr = checkstr & name
 
-    asyncCheck believers("Foo")
-    asyncCheck believers("Bar")
-    asyncCheck believers("Baz")
+    asyncSpawn believers("Foo")
+    asyncSpawn believers("Bar")
+    asyncSpawn believers("Baz")
 
     await sleepAsync(100.milliseconds)
     promise.complete()

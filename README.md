@@ -1,23 +1,45 @@
 # Chronos - An efficient library for asynchronous programming
 
-[![Build Status (Travis)](https://img.shields.io/travis/status-im/nim-chronos/master.svg?label=Linux%20/%20macOS "Linux/macOS build status (Travis)")](https://travis-ci.org/status-im/nim-chronos)
+[![Github action](https://github.com/status-im/nim-chronos/workflows/nim-chronos%20CI/badge.svg)](https://github.com/status-im/nim-chronos/actions/workflows/ci.yml)
 [![Windows build status (AppVeyor)](https://img.shields.io/appveyor/ci/nimbus/nim-asyncdispatch2/master.svg?label=Windows "Windows build status (Appveyor)")](https://ci.appveyor.com/project/nimbus/nim-asyncdispatch2)
 [![License: Apache](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 ![Stability: experimental](https://img.shields.io/badge/stability-experimental-orange.svg)
-![Github action](https://github.com/status-im/nim-chronos/workflows/nim-chronos%20CI/badge.svg)
 
 ## Introduction
 
-Chronos is an [asyncdispatch](https://nim-lang.org/docs/asyncdispatch.html)
-fork with a unified callback type, FIFO processing order for Future callbacks and [many other changes](https://github.com/status-im/nim-chronos/wiki/AsyncDispatch-comparison) that diverged from upstream's philosophy.
+Chronos is an efficient [async/await](https://en.wikipedia.org/wiki/Async/await) framework for Nim. Features include:
+
+* Efficient dispatch pipeline for asynchronous execution
+* HTTP server with SSL/TLS support out of the box (no OpenSSL needed)
+* Cancellation support
+* Synchronization primitivies like queues, events and locks
+* FIFO processing order of dispatch queue
+* Minimal exception effect support (see [exception effects](#exception-effects))
 
 ## Installation
+
 You can use Nim's official package manager Nimble to install Chronos:
 
+```text
+nimble install https://github.com/status-im/nim-chronos.git
 ```
-$ nimble install https://github.com/status-im/nim-chronos.git
+
+or add a dependency to your `.nimble` file:
+
+```text
+requires "chronos"
 ```
+
+## Projects using `chronos`
+
+* [libp2p](https://github.com/status-im/nim-libp2p) - Peer-to-Peer networking stack implemented in many languages
+* [Scorper](https://github.com/bung87/scorper) - Web framework
+* [2DeFi](https://github.com/gogolxdong/2DeFi) - Decentralised file system
+
+`chronos` is available in the [Nim Playground](https://play.nim-lang.org/#ix=2TpS)
+
+Submit a PR to add yours!
 
 ## Documentation
 
@@ -177,15 +199,49 @@ proc p3() {.async.} =
     fut2 = p2()
   try:
     await fut1
-  except:
+  except CachableError:
     echo "p1() failed: ", fut1.error.name, ": ", fut1.error.msg
   echo "reachable code here"
   await fut2
 ```
 
-Exceptions inheriting from `Defect` are treated differently, being raised
-directly. Don't try to catch them coming out of `poll()`, because this would
-leave behind some zombie futures.
+Chronos does not allow that future continuations and other callbacks raise
+`CatchableError` - as such, calls to `poll` will never raise exceptions caused
+originating from tasks on the dispatcher queue. It is however possible that
+`Defect` that happen in tasks bubble up through `poll` as these are not caught
+by the transformation.
+
+### Platform independence
+
+Several functions in `chronos` are backed by the operating system, such as
+waiting for network events, creating files and sockets etc. The specific
+exceptions that are raised by the OS is platform-dependent, thus such functions
+are declared as raising `CatchableError` but will in general raise something
+more specific. In particular, it's possible that some functions that are
+annotated as raising `CatchableError` only raise on _some_ platforms - in order
+to work on all platforms, calling code must assume that they will raise even
+when they don't seem to do so on one platform.
+
+### Exception effects
+
+`chronos` currently offers minimal support for exception effects and `raises`
+annotations. In general, during the `async` transformation, a generic
+`except CatchableError` handler is added around the entire function being
+transformed, in order to catch any exceptions and transfer them to the `Future`.
+Because of this, the effect system thinks no exceptions are "leaking" because in
+fact, exception _handling_ is deferred to when the future is being read.
+
+Effectively, this means that while code can be compiled with
+`{.push raises: [Defect]}`, the intended effect propagation and checking is
+**disabled** for `async` functions.
+
+To enable checking exception effects in `async` code, enable strict mode with
+`-d:chronosStrictException`.
+
+In the strict mode, `async` functions are checked such that they only raise
+`CatchableError` and thus must make sure to explicitly specify exception
+effects on forward declarations, callbacks and methods using
+`{.raises: [CatchableError].}` (or more strict) annotations.
 
 ## TODO
   * Pipe/Subprocess Transports.
@@ -194,6 +250,12 @@ leave behind some zombie futures.
 ## Contributing
 
 When submitting pull requests, please add test cases for any new features or fixes and make sure `nimble test` is still able to execute the entire test suite successfully.
+
+`chronos` follows the [Status Nim Style Guide](https://status-im.github.io/nim-style-guide/).
+
+## Other resources
+
+* [Historical differences with asyncdispatch](https://github.com/status-im/nim-chronos/wiki/AsyncDispatch-comparison)
 
 ## License
 
@@ -206,4 +268,3 @@ or
 * Apache License, Version 2.0, ([LICENSE-APACHEv2](LICENSE-APACHEv2) or http://www.apache.org/licenses/LICENSE-2.0)
 
 at your option. These files may not be copied, modified, or distributed except according to those terms.
-

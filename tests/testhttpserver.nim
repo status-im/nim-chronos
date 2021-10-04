@@ -5,68 +5,13 @@
 #              Licensed under either of
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
-import std/[strutils, unittest, algorithm, strutils]
-import ../chronos, ../chronos/apps
+import std/[strutils, algorithm, strutils]
+import unittest2
+import ../chronos, ../chronos/apps/http/httpserver,
+       ../chronos/apps/http/httpcommon
+import stew/base10
 
-# To create self-signed certificate and key you can use openssl
-# openssl req -new -x509 -sha256 -newkey rsa:2048 -nodes \
-# -keyout example-com.key.pem -days 3650 -out example-com.cert.pem
-const HttpsSelfSignedRsaKey = """
------BEGIN PRIVATE KEY-----
-MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQCn7tXGLKMIMzOG
-tVzUixax1/ftlSLcpEAkZMORuiCCnYjtIJhGZdzRFZC8fBlfAJZpLIAOfX2L2f1J
-ZuwpwDkOIvNqKMBrl5Mvkl5azPT0rtnjuwrcqN5NFtbmZPKFYvbjex2aXGqjl5MW
-nQIs/ZA++DVEXmaN9oDxcZsvRMDKfrGQf9iLeoVL47Gx9KpqNqD/JLIn4LpieumV
-yYidm6ukTOqHRvrWm36y6VvKW4TE97THacULmkeahtTf8zDJbbh4EO+gifgwgJ2W
-BUS0+5hMcWu8111mXmanlOVlcoW8fH8RmPjL1eK1Z3j3SVHEf7oWZtIVW5gGA0jQ
-nfA4K51RAgMBAAECggEANZ7/R13tWKrwouy6DWuz/WlWUtgx333atUQvZhKmWs5u
-cDjeJmxUC7b1FhoSB9GqNT7uTLIpKkSaqZthgRtNnIPwcU890Zz+dEwqMJgNByvl
-it+oYjjRco/+YmaNQaYN6yjelPE5Y678WlYb4b29Fz4t0/zIhj/VgEKkKH2tiXpS
-TIicoM7pSOscEUfaW3yp5bS5QwNU6/AaF1wws0feBACd19ZkcdPvr52jopbhxlXw
-h3XTV/vXIJd5zWGp0h/Jbd4xcD4MVo2GjfkeORKY6SjDaNzt8OGtePcKnnbUVu8b
-2XlDxukhDQXqJ3g0sHz47mhvo4JeIM+FgymRm+3QmQKBgQDTawrEA3Zy9WvucaC7
-Zah02oE9nuvpF12lZ7WJh7+tZ/1ss+Fm7YspEKaUiEk7nn1CAVFtem4X4YCXTBiC
-Oqq/o+ipv1yTur0ae6m4pwLm5wcMWBh3H5zjfQTfrClNN8yjWv8u3/sq8KesHPnT
-R92/sMAptAChPgTzQphWbxFiYwKBgQDLWFaBqXfZYVnTyUvKX8GorS6jGWc6Eh4l
-lAFA+2EBWDICrUxsDPoZjEXrWCixdqLhyehaI3KEFIx2bcPv6X2c7yx3IG5lA/Gx
-TZiKlY74c6jOTstkdLW9RJbg1VUHUVZMf/Owt802YmEfUI5S5v7jFmKW6VG+io+K
-+5KYeHD1uwKBgQDMf53KPA82422jFwYCPjLT1QduM2q97HwIomhWv5gIg63+l4BP
-rzYMYq6+vZUYthUy41OAMgyLzPQ1ZMXQMi83b7R9fTxvKRIBq9xfYCzObGnE5vHD
-SDDZWvR75muM5Yxr9nkfPkgVIPMO6Hg+hiVYZf96V0LEtNjU9HWmJYkLQQKBgQCQ
-ULGUdGHKtXy7AjH3/t3CiKaAupa4cANVSCVbqQy/l4hmvfdu+AbH+vXkgTzgNgKD
-nHh7AI1Vj//gTSayLlQn/Nbh9PJkXtg5rYiFUn+VdQBo6yMOuIYDPZqXFtCx0Nge
-kvCwisHpxwiG4PUhgS+Em259DDonsM8PJFx2OYRx4QKBgEQpGhg71Oi9MhPJshN7
-dYTowaMS5eLTk2264ARaY+hAIV7fgvUa+5bgTVaWL+Cfs33hi4sMRqlEwsmfds2T
-cnQiJ4cU20Euldfwa5FLnk6LaWdOyzYt/ICBJnKFRwfCUbS4Bu5rtMEM+3t0wxnJ
-IgaD04WhoL9EX0Qo3DC1+0kG
------END PRIVATE KEY-----
-"""
-
-# This SSL certificate will expire 13 October 2030.
-const HttpsSelfSignedRsaCert = """
------BEGIN CERTIFICATE-----
-MIIDnzCCAoegAwIBAgIUUdcusjDd3XQi3FPM8urdFG3qI+8wDQYJKoZIhvcNAQEL
-BQAwXzELMAkGA1UEBhMCQVUxEzARBgNVBAgMClNvbWUtU3RhdGUxITAfBgNVBAoM
-GEludGVybmV0IFdpZGdpdHMgUHR5IEx0ZDEYMBYGA1UEAwwPMTI3LjAuMC4xOjQz
-ODA4MB4XDTIwMTAxMjIxNDUwMVoXDTMwMTAxMDIxNDUwMVowXzELMAkGA1UEBhMC
-QVUxEzARBgNVBAgMClNvbWUtU3RhdGUxITAfBgNVBAoMGEludGVybmV0IFdpZGdp
-dHMgUHR5IEx0ZDEYMBYGA1UEAwwPMTI3LjAuMC4xOjQzODA4MIIBIjANBgkqhkiG
-9w0BAQEFAAOCAQ8AMIIBCgKCAQEAp+7VxiyjCDMzhrVc1IsWsdf37ZUi3KRAJGTD
-kboggp2I7SCYRmXc0RWQvHwZXwCWaSyADn19i9n9SWbsKcA5DiLzaijAa5eTL5Je
-Wsz09K7Z47sK3KjeTRbW5mTyhWL243sdmlxqo5eTFp0CLP2QPvg1RF5mjfaA8XGb
-L0TAyn6xkH/Yi3qFS+OxsfSqajag/ySyJ+C6YnrplcmInZurpEzqh0b61pt+sulb
-yluExPe0x2nFC5pHmobU3/MwyW24eBDvoIn4MICdlgVEtPuYTHFrvNddZl5mp5Tl
-ZXKFvHx/EZj4y9XitWd490lRxH+6FmbSFVuYBgNI0J3wOCudUQIDAQABo1MwUTAd
-BgNVHQ4EFgQUBKha84woY5WkFxKw7qx1cONg1H8wHwYDVR0jBBgwFoAUBKha84wo
-Y5WkFxKw7qx1cONg1H8wDwYDVR0TAQH/BAUwAwEB/zANBgkqhkiG9w0BAQsFAAOC
-AQEAHZMYt9Ry+Xj3vTbzpGFQzYQVTJlfJWSN6eWNOivRFQE5io9kOBEe5noa8aLo
-dLkw6ztxRP2QRJmlhGCO9/HwS17ckrkgZp3EC2LFnzxcBmoZu+owfxOT1KqpO52O
-IKOl8eVohi1pEicE4dtTJVcpI7VCMovnXUhzx1Ci4Vibns4a6H+BQa19a1JSpifN
-tO8U5jkjJ8Jprs/VPFhJj2O3di53oDHaYSE5eOrm2ZO14KFHSk9cGcOGmcYkUv8B
-nV5vnGadH5Lvfxb/BCpuONabeRdOxMt9u9yQ89vNpxFtRdZDCpGKZBCfmUP+5m3m
-N8r5CwGcIX/XPC3lKazzbZ8baA==
------END CERTIFICATE-----
-"""
+when defined(nimHasUsed): {.used.}
 
 suite "HTTP server testing suite":
   type
@@ -87,34 +32,6 @@ suite "HTTP server testing suite":
     finally:
       if not(isNil(transp)):
         await closeWait(transp)
-
-  proc httpsClient(address: TransportAddress,
-                   data: string, flags = {NoVerifyHost, NoVerifyServerName}
-                  ): Future[string] {.async.} =
-    var
-      transp: StreamTransport
-      tlsstream: TlsAsyncStream
-      reader: AsyncStreamReader
-      writer: AsyncStreamWriter
-
-    try:
-      transp = await connect(address)
-      reader = newAsyncStreamReader(transp)
-      writer = newAsyncStreamWriter(transp)
-      tlsstream = newTLSClientAsyncStream(reader, writer, "", flags = flags)
-      if len(data) > 0:
-        await tlsstream.writer.write(data)
-      var rres = await tlsstream.reader.read()
-      return bytesToString(rres)
-    except CatchableError:
-      return "EXCEPTION"
-    finally:
-      if not(isNil(tlsstream)):
-        await allFutures(tlsstream.reader.closeWait(),
-                         tlsstream.writer.closeWait())
-      if not(isNil(reader)):
-        await allFutures(reader.closeWait(), writer.closeWait(),
-                         transp.closeWait())
 
   proc testTooBigBodyChunked(address: TransportAddress,
                              operation: TooBigTest): Future[bool] {.async.} =
@@ -431,7 +348,7 @@ suite "HTTP server testing suite":
       let message =
         "POST / HTTP/1.0\r\n" &
         "Content-Type: application/x-www-form-urlencoded\r\n" &
-        "Content-Length: 20" &
+        "Content-Length: 20\r\n" &
         "Cookie: 2\r\n\r\n" &
         "a=a&b=b&c=c&d=%D0%9F"
       let data = await httpClient(address, message)
@@ -605,82 +522,6 @@ suite "HTTP server testing suite":
 
     check waitFor(testPostMultipart2(initTAddress("127.0.0.1:30080"))) == true
 
-  test "HTTPS server (successful handshake) test":
-    proc testHTTPS(address: TransportAddress): Future[bool] {.async.} =
-      var serverRes = false
-      proc process(r: RequestFence): Future[HttpResponseRef] {.
-           async.} =
-        if r.isOk():
-          let request = r.get()
-          serverRes = true
-          return await request.respond(Http200, "TEST_OK:" & $request.meth,
-                                       HttpTable.init())
-        else:
-          serverRes = false
-          return dumbResponse()
-
-      let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
-      let serverFlags = {Secure}
-      let secureKey = TLSPrivateKey.init(HttpsSelfSignedRsaKey)
-      let secureCert = TLSCertificate.init(HttpsSelfSignedRsaCert)
-      let res = HttpServerRef.new(address, process,
-                                  socketFlags = socketFlags,
-                                  serverFlags = serverFlags,
-                                  tlsPrivateKey = secureKey,
-                                  tlsCertificate = secureCert)
-      if res.isErr():
-        return false
-
-      let server = res.get()
-      server.start()
-      let message = "GET / HTTP/1.0\r\nHost: https://127.0.0.1:80\r\n\r\n"
-      let data = await httpsClient(address, message)
-
-      await server.stop()
-      await server.closeWait()
-      return serverRes and (data.find("TEST_OK:GET") >= 0)
-
-    check waitFor(testHTTPS(initTAddress("127.0.0.1:30080"))) == true
-
-  test "HTTPS server (failed handshake) test":
-    proc testHTTPS2(address: TransportAddress): Future[bool] {.async.} =
-      var serverRes = false
-      var testFut = newFuture[void]()
-      proc process(r: RequestFence): Future[HttpResponseRef] {.
-           async.} =
-        if r.isOk():
-          let request = r.get()
-          serverRes = false
-          return await request.respond(Http200, "TEST_OK:" & $request.meth,
-                                       HttpTable.init())
-        else:
-          serverRes = true
-          testFut.complete()
-          return dumbResponse()
-
-      let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
-      let serverFlags = {Secure}
-      let secureKey = TLSPrivateKey.init(HttpsSelfSignedRsaKey)
-      let secureCert = TLSCertificate.init(HttpsSelfSignedRsaCert)
-      let res = HttpServerRef.new(address, process,
-                                  socketFlags = socketFlags,
-                                  serverFlags = serverFlags,
-                                  tlsPrivateKey = secureKey,
-                                  tlsCertificate = secureCert)
-      if res.isErr():
-        return false
-
-      let server = res.get()
-      server.start()
-      let message = "GET / HTTP/1.0\r\nHost: https://127.0.0.1:80\r\n\r\n"
-      let data = await httpsClient(address, message, {NoVerifyServerName})
-      await testFut
-      await server.stop()
-      await server.closeWait()
-      return serverRes and data == "EXCEPTION"
-
-    check waitFor(testHTTPS2(initTAddress("127.0.0.1:30080"))) == true
-
   test "drop() connections test":
     const ClientsCount = 10
 
@@ -811,19 +652,25 @@ suite "HTTP server testing suite":
       ("", 0'u64), ("0", 0'u64), ("-0", 0'u64), ("0-", 0'u64),
       ("01", 1'u64), ("001", 1'u64), ("0000000000001", 1'u64),
       ("18446744073709551615", 0xFFFF_FFFF_FFFF_FFFF'u64),
-      ("18446744073709551616", 0xFFFF_FFFF_FFFF_FFFF'u64),
-      ("99999999999999999999", 0xFFFF_FFFF_FFFF_FFFF'u64),
-      ("999999999999999999999999999999999999", 0xFFFF_FFFF_FFFF_FFFF'u64),
+      ("18446744073709551616", 0'u64),
+      ("99999999999999999999", 0'u64),
+      ("999999999999999999999999999999999999", 0'u64),
       ("FFFFFFFFFFFFFFFF", 0'u64),
-      ("0123456789ABCDEF", 123456789'u64)
+      ("0123456789ABCDEF", 0'u64)
     ]
     for i in 0 ..< 256:
+      let res = Base10.decode(uint64, [char(i)])
       if char(i) in {'0' .. '9'}:
-        check bytesToDec($char(i)) == uint64(i - ord('0'))
+        check:
+          res.isOk()
+          res.get() == uint64(i - ord('0'))
       else:
-        check bytesToDec($char(i)) == 0'u64
+        check res.isErr()
+
     for item in TestVectors:
-      check bytesToDec(item[0]) == item[1]
+      var ht = HttpTable.init([("test", item[0])])
+      let value = ht.getInt("test")
+      check value == item[1]
 
   test "HttpTable behavior test":
     var table1 = HttpTable.init()
@@ -972,6 +819,144 @@ suite "HTTP server testing suite":
     check:
       getContentEncoding([]).tryGet() == { ContentEncodingFlags.Identity }
       getContentEncoding(["", ""]).tryGet() == { ContentEncodingFlags.Identity }
+
+  test "queryParams() test":
+    const Vectors = [
+      ("id=1&id=2&id=3&id=4", {}, "id:1,id:2,id:3,id:4"),
+      ("id=1,2,3,4", {}, "id:1,2,3,4"),
+      ("id=1%2C2%2C3%2C4", {}, "id:1,2,3,4"),
+      ("id=", {}, "id:"),
+      ("id=&id=", {}, "id:,id:"),
+      ("id=1&id=2&id=3&id=4", {QueryParamsFlag.CommaSeparatedArray},
+       "id:1,id:2,id:3,id:4"),
+      ("id=1,2,3,4", {QueryParamsFlag.CommaSeparatedArray},
+       "id:1,id:2,id:3,id:4"),
+      ("id=1%2C2%2C3%2C4", {QueryParamsFlag.CommaSeparatedArray},
+       "id:1,id:2,id:3,id:4"),
+      ("id=", {QueryParamsFlag.CommaSeparatedArray}, "id:"),
+      ("id=&id=", {QueryParamsFlag.CommaSeparatedArray}, "id:,id:"),
+      ("id=,", {QueryParamsFlag.CommaSeparatedArray}, "id:,id:"),
+      ("id=,,", {QueryParamsFlag.CommaSeparatedArray}, "id:,id:,id:"),
+      ("id=1&id=2&id=3,4,5,6&id=7%2C8%2C9%2C10",
+       {QueryParamsFlag.CommaSeparatedArray},
+       "id:1,id:2,id:3,id:4,id:5,id:6,id:7,id:8,id:9,id:10")
+    ]
+
+    proc toString(ht: HttpTable): string =
+      var res: seq[string]
+      for key, value in ht.items():
+        for item in value:
+          res.add(key & ":" & item)
+      res.join(",")
+
+    for vector in Vectors:
+      var table = HttpTable.init()
+      for key, value in queryParams(vector[0], vector[1]):
+        table.add(key, value)
+      check toString(table) == vector[2]
+
+  test "Preferred Accept handling test":
+    proc createRequest(acceptHeader: string): HttpRequestRef =
+      let headers = HttpTable.init([("accept", acceptHeader)])
+      HttpRequestRef(headers: headers)
+
+    proc createRequest(): HttpRequestRef =
+      HttpRequestRef(headers: HttpTable.init())
+
+    var requests = @[
+      (
+        createRequest("application/json;q=0.9,application/octet-stream"),
+        @[
+          "application/octet-stream",
+          "application/octet-stream",
+          "application/octet-stream",
+          "application/json",
+        ]
+      ),
+      (
+        createRequest(""),
+        @[
+          "*/*",
+          "*/*",
+          "application/json",
+          "application/json"
+        ]
+      ),
+      (
+        createRequest(),
+        @[
+          "*/*",
+          "*/*",
+          "application/json",
+          "application/json"
+        ]
+      )
+    ]
+
+    for req in requests:
+      check $req[0].preferredContentMediaType() == req[1][1]
+      let r0 = req[0].preferredContentType()
+      let r1 = req[0].preferredContentType("application/json",
+                                           "application/octet-stream")
+      let r2 = req[0].preferredContentType("application/json")
+      check:
+        r0.isOk() == true
+        r1.isOk() == true
+        r2.isOk() == true
+        r0.get() == req[1][0]
+        r1.get() == req[1][2]
+        r2.get() == req[1][3]
+
+  test "SSE server-side events stream test":
+    proc testPostMultipart2(address: TransportAddress): Future[bool] {.async.} =
+      var serverRes = false
+      proc process(r: RequestFence): Future[HttpResponseRef] {.
+           async.} =
+        if r.isOk():
+          let request = r.get()
+          let response = request.getResponse()
+          await response.prepareSSE()
+          await response.send("event: event1\r\ndata: data1\r\n\r\n")
+          await response.send("event: event2\r\ndata: data2\r\n\r\n")
+          await response.sendEvent("event3", "data3")
+          await response.sendEvent("event4", "data4")
+          await response.send("data: data5\r\n\r\n")
+          await response.sendEvent("", "data6")
+          await response.finish()
+          serverRes = true
+          return response
+        else:
+          serverRes = false
+          return dumbResponse()
+
+      let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
+      let res = HttpServerRef.new(address, process,
+                                  socketFlags = socketFlags)
+      if res.isErr():
+        return false
+
+      let server = res.get()
+      server.start()
+
+      let message =
+        "GET / HTTP/1.1\r\n" &
+        "Host: 127.0.0.1:30080\r\n" &
+        "Accept: text/event-stream\r\n" &
+        "\r\n"
+
+      let data = await httpClient(address, message)
+      let expect = "event: event1\r\ndata: data1\r\n\r\n" &
+                   "event: event2\r\ndata: data2\r\n\r\n" &
+                   "event: event3\r\ndata: data3\r\n\r\n" &
+                   "event: event4\r\ndata: data4\r\n\r\n" &
+                   "data: data5\r\n\r\n" &
+                   "data: data6\r\n\r\n"
+      await server.stop()
+      await server.closeWait()
+      return serverRes and (data.find(expect) >= 0)
+
+    check waitFor(testPostMultipart2(initTAddress("127.0.0.1:30080"))) == true
+
 
   test "Leaks test":
     check:

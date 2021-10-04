@@ -9,6 +9,8 @@
 
 ## This module provides cross-platform wrapper for ``sendfile()`` syscall.
 
+{.push raises: [Defect].}
+
 when defined(nimdoc):
   proc sendfile*(outfd, infd: int, offset: int, count: var int): int =
     ## Copies data between file descriptor ``infd`` and ``outfd``. Because this
@@ -30,8 +32,8 @@ when defined(nimdoc):
     ## file descriptors.
     ##
     ## If the transfer was successful, the number of bytes written to ``outfd``
-    ## is stored in ``count``, and ``0`` returned. Note that a successful call to
-    ## ``sendfile()`` may write fewer bytes than requested; the caller should
+    ## is stored in ``count``, and ``0`` returned. Note that a successful call
+    ## to ``sendfile()`` may write fewer bytes than requested; the caller should
     ## be prepared to retry the call if there were unsent bytes.
     ##
     ## On error, ``-1`` is returned.

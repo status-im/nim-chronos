@@ -6,7 +6,11 @@
 #                Licensed under either of
 #    Apache License, version 2.0, (LICENSE-APACHEv2)
 #                MIT license (LICENSE-MIT)
-import asyncloop
+
+{.push raises: [Defect].}
+
+import ./asyncloop
+export asyncloop
 
 const
   AllFutureStates* = {FutureState.Pending, FutureState.Cancelled,

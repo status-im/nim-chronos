@@ -5,7 +5,8 @@
 #              Licensed under either of
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
-import strutils, net, unittest
+import std/[strutils, net]
+import unittest2
 import ../chronos
 
 when defined(nimHasUsed): {.used.}
@@ -446,7 +447,7 @@ suite "Datagram Transport test suite":
     await dgram1.join()
     var dgram2 = newDatagramTransport(clientMark)
     var data = "MESSAGE"
-    asyncCheck dgram2.sendTo(localta, data)
+    asyncSpawn dgram2.sendTo(localta, data)
     await sleepAsync(2000.milliseconds)
     result = (counter == 0)
     dgram2.close()

@@ -8,8 +8,12 @@
 #              MIT license (LICENSE-MIT)
 
 ## This module implements various IP network utility procedures.
-import stew/endians2, strutils
-import common
+
+{.push raises: [Defect].}
+
+import std/strutils
+import stew/endians2
+import ./common
 export common
 
 type
@@ -171,6 +175,7 @@ proc toIPv6*(address: TransportAddress): TransportAddress =
   ## If ``address`` is IPv6 address it will be returned without any changes.
   if address.family == AddressFamily.IPv4:
     result = TransportAddress(family: AddressFamily.IPv6)
+    result.port = address.port
     result.address_v6[10] = 0xFF'u8
     result.address_v6[11] = 0xFF'u8
     let data = cast[ptr uint32](unsafeAddr address.address_v4[0])[]
@@ -199,6 +204,7 @@ proc toIPv4*(address: TransportAddress): TransportAddress =
   if address.family == AddressFamily.IPv6:
     if isV4Mapped(address):
       result = TransportAddress(family: AddressFamily.IPv4)
+      result.port = address.port
       let data = cast[ptr uint32](unsafeAddr address.address_v6[12])[]
       cast[ptr uint32](addr result.address_v4[0])[] = data
   elif address.family == AddressFamily.IPv4:
@@ -325,9 +331,9 @@ proc `$`*(mask: IpMask, include0x = false): string =
         else:
           result.add(chr(ord('A') + (c - 10)))
   else:
-    raise newException(ValueError, "Invalid mask")
+    return "Unknown mask family: " & $host.family
 
-proc ip*(mask: IpMask): string =
+proc ip*(mask: IpMask): string {.raises: [Defect, ValueError].} =
   ## Returns IP address text representation of IP mask ``mask``.
   if mask.family == AddressFamily.IPv4:
     var ip = IpAddress(family: IpAddressFamily.IPv4)
@@ -363,7 +369,8 @@ proc init*(t: typedesc[IpNet], host: TransportAddress,
   result.mask = mask
   result.host = host
 
-proc init*(t: typedesc[IpNet], network: string): IpNet =
+proc init*(t: typedesc[IpNet], network: string): IpNet {.
+    raises: [Defect, TransportAddressError].} =
   ## Initialize IP Network from string representation in format
   ## <address>/<prefix length> or <address>/<netmask address>.
   var parts = network.rsplit("/", maxsplit = 1)
@@ -549,7 +556,10 @@ proc `$`*(net: IpNet): string =
     result.add("/")
     let prefix = net.mask.prefix()
     if prefix == -1:
-      result.add(net.mask.ip())
+      try:
+        result.add(net.mask.ip())
+      except ValueError as exc:
+        result.add(exc.msg)
     else:
       result.add($prefix)
   elif net.host.family == AddressFamily.IPv6:
@@ -559,7 +569,10 @@ proc `$`*(net: IpNet): string =
     result.add("/")
     let prefix = net.mask.prefix()
     if prefix == -1:
-      result.add(net.mask.ip())
+      try:
+        result.add(net.mask.ip())
+      except ValueError as exc:
+        result.add(exc.msg)
     else:
       result.add($prefix)
 

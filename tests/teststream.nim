@@ -5,7 +5,8 @@
 #              Licensed under either of
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
-import strutils, unittest, os
+import std/[strutils, os]
+import unittest2
 import ../chronos
 
 when defined(nimHasUsed): {.used.}
@@ -866,7 +867,7 @@ suite "Stream Transport test suite":
     var
       valueLen = 0'u32
       res: seq[byte]
-      error: ref Exception
+      error: ref CatchableError
 
     proc predicate(data: openarray[byte]): tuple[consumed: int, done: bool] =
       if len(data) == 0:
@@ -1200,6 +1201,44 @@ suite "Stream Transport test suite":
     await acceptFut
     return res
 
+  proc testAcceptRace(address: TransportAddress): Future[bool] {.async.} =
+    proc test1(address: TransportAddress) {.async.} =
+      let server = createStreamServer(address, flags = {ReuseAddr})
+      let acceptFut = server.accept()
+      server.close()
+      await allFutures(acceptFut.cancelAndWait(), server.join())
+
+    proc test2(address: TransportAddress) {.async.} =
+      let server = createStreamServer(address, flags = {ReuseAddr})
+      let acceptFut = server.accept()
+      await acceptFut.cancelAndWait()
+      server.close()
+      await server.join()
+
+    proc test3(address: TransportAddress) {.async.} =
+      let server = createStreamServer(address, flags = {ReuseAddr})
+      let acceptFut = server.accept()
+      server.stop()
+      server.close()
+      await allFutures(acceptFut.cancelAndWait(), server.join())
+
+    proc test4(address: TransportAddress) {.async.} =
+      let server = createStreamServer(address, flags = {ReuseAddr})
+      let acceptFut = server.accept()
+      await acceptFut.cancelAndWait()
+      server.stop()
+      server.close()
+      await server.join()
+
+    try:
+      await test1(address).wait(5.seconds)
+      await test2(address).wait(5.seconds)
+      await test3(address).wait(5.seconds)
+      await test4(address).wait(5.seconds)
+      return true
+    except AsyncTimeoutError:
+      return false
+
   markFD = getCurrentFD()
 
   for i in 0..<len(addresses):
@@ -1274,6 +1313,8 @@ suite "Stream Transport test suite":
         skip()
       else:
         check waitFor(testAcceptTooMany(addresses[i])) == true
+    test prefixes[i] & "accept() and close() race test":
+      check waitFor(testAcceptRace(addresses[i])) == true
     test prefixes[i] & "write() queue notification on close() test":
       check waitFor(testWriteOnClose(addresses[i])) == true
     test prefixes[i] & "read() notification on close() test":

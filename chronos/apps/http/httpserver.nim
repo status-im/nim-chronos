@@ -7,16 +7,24 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 import std/[tables, options, uri, strutils]
-import stew/results, httputils
+import stew/[results, base10], httputils
 import ../../asyncloop, ../../asyncsync
-import ../../streams/[asyncstream, boundstream, chunkstream, tlsstream]
+import ../../streams/[asyncstream, boundstream, chunkstream]
 import httptable, httpcommon, multipart
-export httptable, httpcommon, httputils, multipart, tlsstream, asyncstream,
-       uri, tables, options, results
+export asyncloop, asyncsync, httptable, httpcommon, httputils, multipart,
+       asyncstream, boundstream, chunkstream, uri, tables, options, results
 
 type
   HttpServerFlags* {.pure.} = enum
-    Secure, NoExpectHandler, NotifyDisconnect
+    Secure,
+      ## Internal flag which indicates that server working in secure TLS mode
+    NoExpectHandler,
+      ## Do not handle `Expect` header automatically
+    NotifyDisconnect,
+      ## Notify user-callback when remote client disconnects.
+    QueryCommaSeparatedArray
+      ## Enable usage of comma as an array item delimiter in url-encoded
+      ## entities (e.g. query string or POST body).
 
   HttpServerError* {.pure.} = enum
     TimeoutError, CatchableError, RecoverableError, CriticalError,
@@ -34,17 +42,25 @@ type
   RequestFence* = Result[HttpRequestRef, HttpProcessError]
 
   HttpRequestFlags* {.pure.} = enum
-    BoundBody, UnboundBody, MultipartForm, UrlencodedForm,
-    ClientExpect
+    BoundBody, UnboundBody, MultipartForm, UrlencodedForm, ClientExpect
 
   HttpResponseFlags* {.pure.} = enum
-    KeepAlive, Chunked
+    KeepAlive, Stream
+
+  HttpResponseStreamType* {.pure.} = enum
+    Plain, SSE, Chunked
 
   HttpResponseState* {.pure.} = enum
     Empty, Prepared, Sending, Finished, Failed, Cancelled, Dumb
 
   HttpProcessCallback* =
-    proc(req: RequestFence): Future[HttpResponseRef] {.gcsafe.}
+    proc(req: RequestFence): Future[HttpResponseRef] {.
+      gcsafe, raises: [Defect, CatchableError].}
+
+  HttpConnectionCallback* =
+    proc(server: HttpServerRef,
+         transp: StreamTransport): Future[HttpConnectionRef] {.
+      gcsafe, raises: [Defect].}
 
   HttpServer* = object of RootObj
     instance*: StreamServer
@@ -53,27 +69,27 @@ type
     maxConnections*: int
     backlogSize: int
     baseUri*: Uri
+    serverIdent*: string
     flags*: set[HttpServerFlags]
     socketFlags*: set[ServerFlags]
-    secureFlags*: set[TLSFlags]
     connections*: Table[string, Future[void]]
     acceptLoop*: Future[void]
     lifetime*: Future[void]
     headersTimeout: Duration
+    bufferSize: int
     maxHeadersSize: int
     maxRequestBodySize: int
     processCallback: HttpProcessCallback
-    tlsPrivateKey: TLSPrivateKey
-    tlsCertificate: TLSCertificate
+    createConnCallback: HttpConnectionCallback
 
   HttpServerRef* = ref HttpServer
 
   HttpRequest* = object of RootObj
+    state*: HttpState
     headers*: HttpTable
     query*: HttpTable
     postTable: Option[HttpTable]
     rawPath*: string
-    rawQuery*: string
     uri*: Uri
     scheme*: string
     version*: HttpVersion
@@ -93,28 +109,75 @@ type
     headersTable: HttpTable
     body: seq[byte]
     flags: set[HttpResponseFlags]
-    state: HttpResponseState
+    state*: HttpResponseState
     connection*: HttpConnectionRef
-    chunkedWriter: AsyncStreamWriter
+    streamType*: HttpResponseStreamType
+    writer: AsyncStreamWriter
 
   HttpResponseRef* = ref HttpResponse
 
   HttpConnection* = object of RootObj
+    state*: HttpState
     server*: HttpServerRef
     transp: StreamTransport
-    mainReader: AsyncStreamReader
-    mainWriter: AsyncStreamWriter
-    tlsStream: TLSAsyncStream
+    mainReader*: AsyncStreamReader
+    mainWriter*: AsyncStreamWriter
     reader*: AsyncStreamReader
     writer*: AsyncStreamWriter
     buffer: seq[byte]
 
   HttpConnectionRef* = ref HttpConnection
 
+  ByteChar* = string | seq[byte]
+
 proc init(htype: typedesc[HttpProcessError], error: HTTPServerError,
           exc: ref CatchableError, remote: TransportAddress,
           code: HttpCode): HttpProcessError {.raises: [Defect].} =
   HttpProcessError(error: error, exc: exc, remote: remote, code: code)
+
+proc init*(value: var HttpServer,
+           address: TransportAddress,
+           server: StreamServer,
+           processCallback: HttpProcessCallback,
+           createConnCallback: HttpConnectionCallback,
+           serverUri: Uri,
+           serverFlags: set[HttpServerFlags] = {},
+           socketFlags: set[ServerFlags] = {ReuseAddr},
+           serverIdent = "",
+           maxConnections: int = -1,
+           bufferSize: int = 4096,
+           backlogSize: int = 100,
+           httpHeadersTimeout = 10.seconds,
+           maxHeadersSize: int = 8192,
+           maxRequestBodySize: int = 1_048_576) =
+
+  value = HttpServer(
+    address: address,
+    instance: server,
+    processCallback: processCallback,
+    createConnCallback: createConnCallback,
+    baseUri: serverUri,
+    serverIdent: serverIdent,
+    flags: serverFlags,
+    socketFlags: socketFlags,
+    maxConnections: maxConnections,
+    bufferSize: bufferSize,
+    backlogSize: backlogSize,
+    headersTimeout: httpHeadersTimeout,
+    maxHeadersSize: maxHeadersSize,
+    maxRequestBodySize: maxRequestBodySize,
+    # semaphore:
+    #   if maxConnections > 0:
+    #     newAsyncSemaphore(maxConnections)
+    #   else:
+    #     nil
+    lifetime: newFuture[void]("http.server.lifetime"),
+    connections: initTable[string, Future[void]]()
+  )
+
+proc createConnection(server: HttpServerRef,
+                     transp: StreamTransport): Future[HttpConnectionRef] {.
+     gcsafe.}
 
 proc new*(htype: typedesc[HttpServerRef],
           address: TransportAddress,
@@ -122,9 +185,7 @@ proc new*(htype: typedesc[HttpServerRef],
           serverFlags: set[HttpServerFlags] = {},
           socketFlags: set[ServerFlags] = {ReuseAddr},
           serverUri = Uri(),
-          tlsPrivateKey: TLSPrivateKey = nil,
-          tlsCertificate: TLSCertificate = nil,
-          secureFlags: set[TLSFlags] = {},
+          serverIdent = "",
           maxConnections: int = -1,
           bufferSize: int = 4096,
           backlogSize: int = 100,
@@ -132,49 +193,30 @@ proc new*(htype: typedesc[HttpServerRef],
           maxHeadersSize: int = 8192,
           maxRequestBodySize: int = 1_048_576): HttpResult[HttpServerRef] =
 
-  if HttpServerFlags.Secure in serverFlags:
-    if isNil(tlsPrivateKey) or isNil(tlsCertificate):
-      return err("PrivateKey or Certificate is missing")
+  let serverUri =
+    if len(serverUri.hostname) > 0:
+      serverUri
+    else:
+      try:
+        parseUri("http://" & $address & "/")
+      except TransportAddressError as exc:
+        return err(exc.msg)
 
-  var res = HttpServerRef(
-    address: address,
-    maxConnections: maxConnections,
-    headersTimeout: httpHeadersTimeout,
-    maxHeadersSize: maxHeadersSize,
-    maxRequestBodySize: maxRequestBodySize,
-    processCallback: processCallback,
-    backLogSize: backLogSize,
-    flags: serverFlags,
-    socketFlags: socketFlags,
-    tlsPrivateKey: tlsPrivateKey,
-    tlsCertificate: tlsCertificate
-  )
-
-  res.baseUri =
+  let serverInstance =
     try:
-      if len(serverUri.hostname) > 0 and isAbsolute(serverUri):
-        serverUri
-      else:
-        if HttpServerFlags.Secure in serverFlags:
-          parseUri("https://" & $address & "/")
-        else:
-          parseUri("http://" & $address & "/")
-    except TransportAddressError as exc:
+      createStreamServer(address, flags = socketFlags, bufferSize = bufferSize,
+                         backlog = backlogSize)
+    except TransportOsError as exc:
+      return err(exc.msg)
+    except CatchableError as exc:
       return err(exc.msg)
 
-  try:
-    res.instance = createStreamServer(address, flags = socketFlags,
-                                      bufferSize = bufferSize,
-                                      backlog = backlogSize)
-    # if maxConnections > 0:
-    #   res.semaphore = newAsyncSemaphore(maxConnections)
-    res.lifetime = newFuture[void]("http.server.lifetime")
-    res.connections = initTable[string, Future[void]]()
-    return ok(res)
-  except TransportOsError as exc:
-    return err(exc.msg)
-  except CatchableError as exc:
-    return err(exc.msg)
+  var res = HttpServerRef()
+  res[].init(address, serverInstance, processCallback, createConnection,
+             serverUri, serverFlags, socketFlags, serverIdent, maxConnections,
+             bufferSize, backLogSize, httpHeadersTimeout, maxHeadersSize,
+             maxRequestBodySize)
+  ok(res)
 
 proc getResponse*(req: HttpRequestRef): HttpResponseRef {.raises: [Defect].} =
   if req.response.isNone():
@@ -184,12 +226,21 @@ proc getResponse*(req: HttpRequestRef): HttpResponseRef {.raises: [Defect].} =
       version: req.version,
       headersTable: HttpTable.init(),
       connection: req.connection,
-      flags: if req.version == HttpVersion11: {KeepAlive} else: {}
+      flags: if req.version == HttpVersion11:
+               {HttpResponseFlags.KeepAlive}
+             else:
+               {}
     )
     req.response = some(resp)
     resp
   else:
     req.response.get()
+
+proc getHostname*(server: HttpServerRef): string =
+  if len(server.baseUri.port) > 0:
+    server.baseUri.hostname & ":" & server.baseUri.port
+  else:
+    server.baseUri.hostname
 
 proc dumbResponse*(): HttpResponseRef {.raises: [Defect].} =
   ## Create an empty response to return when request processor got no request.
@@ -207,7 +258,7 @@ proc hasBody*(request: HttpRequestRef): bool {.raises: [Defect].} =
 proc prepareRequest(conn: HttpConnectionRef,
                     req: HttpRequestHeader): HttpResultCode[HttpRequestRef] {.
      raises: [Defect].}=
-  var request = HttpRequestRef(connection: conn)
+  var request = HttpRequestRef(connection: conn, state: HttpState.Alive)
 
   if req.version notin {HttpVersion10, HttpVersion11}:
     return err(Http505)
@@ -241,8 +292,13 @@ proc prepareRequest(conn: HttpConnectionRef,
 
   request.query =
     block:
+      let queryFlags =
+        if QueryCommaSeparatedArray in conn.server.flags:
+          {QueryParamsFlag.CommaSeparatedArray}
+        else:
+          {}
       var table = HttpTable.init()
-      for key, value in queryParams(request.uri.query):
+      for key, value in queryParams(request.uri.query, queryFlags):
         table.add(key, value)
       table
 
@@ -254,18 +310,19 @@ proc prepareRequest(conn: HttpConnectionRef,
         table.add(key, value)
       # Validating HTTP request headers
       # Some of the headers must be present only once.
-      if table.count("content-type") > 1:
+      if table.count(ContentTypeHeader) > 1:
         return err(Http400)
-      if table.count("content-length") > 1:
+      if table.count(ContentLengthHeader) > 1:
         return err(Http400)
-      if table.count("transfer-encoding") > 1:
+      if table.count(TransferEncodingHeader) > 1:
         return err(Http400)
       table
 
   # Preprocessing "Content-Encoding" header.
   request.contentEncoding =
     block:
-      let res = getContentEncoding(request.headers.getList("content-encoding"))
+      let res = getContentEncoding(
+        request.headers.getList(ContentEncodingHeader))
       if res.isErr():
         return err(Http400)
       else:
@@ -275,7 +332,7 @@ proc prepareRequest(conn: HttpConnectionRef,
   request.transferEncoding =
     block:
       let res = getTransferEncoding(
-                                   request.headers.getList("transfer-encoding"))
+        request.headers.getList(TransferEncodingHeader))
       if res.isErr():
         return err(Http400)
       else:
@@ -283,8 +340,8 @@ proc prepareRequest(conn: HttpConnectionRef,
 
   # Almost all HTTP requests could have body (except TRACE), we perform some
   # steps to reveal information about body.
-  if "content-length" in request.headers:
-    let length = request.headers.getInt("content-length")
+  if ContentLengthHeader in request.headers:
+    let length = request.headers.getInt(ContentLengthHeader)
     if length > 0:
       if request.meth == MethodTrace:
         return err(Http400)
@@ -302,20 +359,16 @@ proc prepareRequest(conn: HttpConnectionRef,
 
   if request.hasBody():
     # If request has body, we going to understand how its encoded.
-    const
-      UrlEncodedType = "application/x-www-form-urlencoded"
-      MultipartType = "multipart/form-data"
-
-    if "content-type" in request.headers:
-      let contentType = request.headers.getString("content-type")
+    if ContentTypeHeader in request.headers:
+      let contentType = request.headers.getString(ContentTypeHeader)
       let tmp = strip(contentType).toLowerAscii()
-      if tmp.startsWith(UrlEncodedType):
+      if tmp.startsWith(UrlEncodedContentType):
         request.requestFlags.incl(HttpRequestFlags.UrlencodedForm)
-      elif tmp.startsWith(MultipartType):
+      elif tmp.startsWith(MultipartContentType):
         request.requestFlags.incl(HttpRequestFlags.MultipartForm)
 
-    if "expect" in request.headers:
-      let expectHeader = request.headers.getString("expect")
+    if ExpectHeader in request.headers:
+      let expectHeader = request.headers.getString(ExpectHeader)
       if strip(expectHeader).toLowerAscii() == "100-continue":
         request.requestFlags.incl(HttpRequestFlags.ClientExpect)
 
@@ -330,14 +383,14 @@ proc getBodyReader*(request: HttpRequestRef): HttpResult[HttpBodyReader] =
   ## leaks.
   if HttpRequestFlags.BoundBody in request.requestFlags:
     let bstream = newBoundedStreamReader(request.connection.reader,
-                                         request.contentLength)
+                                         uint64(request.contentLength))
     ok(newHttpBodyReader(bstream))
   elif HttpRequestFlags.UnboundBody in request.requestFlags:
     let maxBodySize = request.connection.server.maxRequestBodySize
-    let bstream = newBoundedStreamReader(request.connection.reader, maxBodySize,
+    let cstream = newChunkedStreamReader(request.connection.reader)
+    let bstream = newBoundedStreamReader(cstream, uint64(maxBodySize),
                                          comparison = BoundCmp.LessOrEqual)
-    let cstream = newChunkedStreamReader(bstream)
-    ok(newHttpBodyReader(cstream, bstream))
+    ok(newHttpBodyReader(bstream, cstream))
   else:
     err("Request do not have body available")
 
@@ -357,53 +410,167 @@ proc handleExpect*(request: HttpRequestRef) {.async.} =
 
 proc getBody*(request: HttpRequestRef): Future[seq[byte]] {.async.} =
   ## Obtain request's body as sequence of bytes.
-  let res = request.getBodyReader()
-  if res.isErr():
+  let bodyReader = request.getBodyReader()
+  if bodyReader.isErr():
     return @[]
   else:
-    let reader = res.get()
+    var reader = bodyReader.get()
     try:
       await request.handleExpect()
-      return await reader.read()
-    except AsyncStreamError:
-      if reader.atBound():
-        raiseHttpCriticalError("Maximum size of body reached", Http413)
+      let res = await reader.read()
+      if reader.hasOverflow():
+        await reader.closeWait()
+        reader = nil
+        raiseHttpCriticalError(MaximumBodySizeError, Http413)
       else:
-        raiseHttpCriticalError("Unable to read request's body")
-    finally:
-      await closeWait(res.get())
+        await reader.closeWait()
+        reader = nil
+        return res
+    except CancelledError as exc:
+      if not(isNil(reader)):
+        await reader.closeWait()
+      raise exc
+    except AsyncStreamError:
+      if not(isNil(reader)):
+        await reader.closeWait()
+      raiseHttpCriticalError("Unable to read request's body")
 
 proc consumeBody*(request: HttpRequestRef): Future[void] {.async.} =
   ## Consume/discard request's body.
-  let res = request.getBodyReader()
-  if res.isErr():
+  let bodyReader = request.getBodyReader()
+  if bodyReader.isErr():
     return
   else:
-    let reader = res.get()
+    var reader = bodyReader.get()
     try:
       await request.handleExpect()
       discard await reader.consume()
-    except AsyncStreamError:
-      if reader.atBound():
-        raiseHttpCriticalError("Maximum size of body reached", Http413)
+      if reader.hasOverflow():
+        await reader.closeWait()
+        reader = nil
+        raiseHttpCriticalError(MaximumBodySizeError, Http413)
       else:
-        raiseHttpCriticalError("Unable to read request's body")
-    finally:
-      await closeWait(res.get())
+        await reader.closeWait()
+        reader = nil
+        return
+    except CancelledError as exc:
+      if not(isNil(reader)):
+        await reader.closeWait()
+      raise exc
+    except AsyncStreamError:
+      if not(isNil(reader)):
+        await reader.closeWait()
+      raiseHttpCriticalError("Unable to read request's body")
+
+proc getAcceptInfo*(request: HttpRequestRef): Result[AcceptInfo, cstring] =
+  ## Returns value of `Accept` header as `AcceptInfo` object.
+  ##
+  ## If ``Accept`` header is missing in request headers, ``*/*`` content
+  ## type will be returned.
+  let acceptHeader = request.headers.getString(AcceptHeaderName)
+  getAcceptInfo(acceptHeader)
+
+proc preferredContentMediaType*(acceptHeader: string): MediaType =
+  ## Returns preferred content-type using ``Accept`` header value specified by
+  ## string ``acceptHeader``.
+  let res = getAcceptInfo(acceptHeader)
+  if res.isErr():
+    # If `Accept` header is incorrect, client accepts any type of content.
+    MediaType.init("*", "*")
+  else:
+    let mediaTypes = res.get().data
+    if len(mediaTypes) > 0:
+      mediaTypes[0].mediaType
+    else:
+      MediaType.init("*", "*")
+
+proc preferredContentType*(acceptHeader: string,
+                           types: varargs[string]): Result[string, cstring] =
+  ## Match or obtain preferred content-type using ``Accept`` header specified by
+  ## string ``acceptHeader``.
+  ##
+  ## If ``Accept`` header is missing in client's request - ``types[0]`` or
+  ## ``*/*`` value will be returned as result.
+  ##
+  ## If ``Accept`` header has incorrect format in client's request -
+  ## ``types[0]`` or ``*/*`` value will be returned as result.
+  ##
+  ## If ``Accept`` header is present and has one or more content types supported
+  ## by client, the best value will be selected from ``types`` using
+  ## quality value (weight) reported in ``Accept`` header. If client do not
+  ## support any methods in ``types`` error will be returned.
+  if len(types) == 0:
+    if len(acceptHeader) == 0:
+      # If `Accept` header is missing, return `*/*`.
+      ok("*/*")
+    else:
+      let res = getAcceptInfo(acceptHeader)
+      if res.isErr():
+        # If `Accept` header is incorrect, client accepts any type of content.
+        ok("*/*")
+      else:
+        let mediaTypes = res.get().data
+        if len(mediaTypes) > 0:
+          ok($mediaTypes[0].mediaType)
+        else:
+          ok("*/*")
+  else:
+    if len(acceptHeader) == 0:
+      # If `Accept` header is missing, client accepts any type of content.
+      ok(types[0])
+    else:
+      let res = getAcceptInfo(acceptHeader)
+      if res.isErr():
+        # If `Accept` header is incorrect, client accepts any type of content.
+        ok(types[0])
+      else:
+        let mediaTypes =
+          block:
+            var res: seq[MediaType]
+            for item in types:
+              res.add(MediaType.init(item))
+            res
+        for item in res.get().data:
+          for expect in mediaTypes:
+            if expect == item.mediaType:
+              return ok($expect)
+        err("Preferred content type not found")
+
+proc preferredContentMediaType*(request: HttpRequestRef): MediaType =
+  ## Returns preferred content-type using ``Accept`` header specified by
+  ## client in request ``request``.
+  preferredContentMediaType(request.headers.getString(AcceptHeaderName))
+
+proc preferredContentType*(request: HttpRequestRef,
+                           types: varargs[string]): Result[string, cstring] =
+  ## Match or obtain preferred content-type using ``Accept`` header specified by
+  ## client in request ``request``.
+  preferredContentType(request.headers.getString(AcceptHeaderName), types)
 
 proc sendErrorResponse(conn: HttpConnectionRef, version: HttpVersion,
                        code: HttpCode, keepAlive = true,
                        datatype = "text/text",
                        databody = ""): Future[bool] {.async.} =
   var answer = $version & " " & $code & "\r\n"
-  answer.add("Date: " & httpDate() & "\r\n")
+  answer.add(DateHeader)
+  answer.add(": ")
+  answer.add(httpDate())
+  answer.add("\r\n")
   if len(datatype) > 0:
-    answer.add("Content-Type: " & datatype & "\r\n")
-  answer.add("Content-Length: " & $len(databody) & "\r\n")
+    answer.add(ContentTypeHeader)
+    answer.add(": ")
+    answer.add(datatype)
+    answer.add("\r\n")
+  answer.add(ContentLengthHeader)
+  answer.add(": ")
+  answer.add(Base10.toString(uint64(len(databody))))
+  answer.add("\r\n")
   if keepAlive:
-    answer.add("Connection: keep-alive\r\n")
+    answer.add(ConnectionHeader)
+    answer.add(": keep-alive\r\n")
   else:
-    answer.add("Connection: close\r\n")
+    answer.add(ConnectionHeader)
+    answer.add(": close\r\n")
   answer.add("\r\n")
   if len(databody) > 0:
     answer.add(databody)
@@ -437,75 +604,66 @@ proc getRequest(conn: HttpConnectionRef): Future[HttpRequestRef] {.async.} =
   except AsyncStreamLimitError:
     raiseHttpCriticalError("Maximum size of request headers reached", Http431)
 
-proc new(ht: typedesc[HttpConnectionRef], server: HttpServerRef,
-         transp: StreamTransport): HttpConnectionRef =
-  let mainReader = newAsyncStreamReader(transp)
-  let mainWriter = newAsyncStreamWriter(transp)
-  let tlsStream =
-    if HttpServerFlags.Secure in server.flags:
-      newTLSServerAsyncStream(mainReader, mainWriter, server.tlsPrivateKey,
-                              server.tlsCertificate,
-                              minVersion = TLSVersion.TLS12,
-                              flags = server.secureFlags)
-    else:
-      nil
-
-  let reader =
-    if isNil(tlsStream):
-      mainReader
-    else:
-      cast[AsyncStreamReader](tlsStream.reader)
-
-  let writer =
-    if isNil(tlsStream):
-      mainWriter
-    else:
-      cast[AsyncStreamWriter](tlsStream.writer)
-
-  HttpConnectionRef(
-    transp: transp,
+proc init*(value: var HttpConnection, server: HttpServerRef,
+           transp: StreamTransport) =
+  value = HttpConnection(
+    state: HttpState.Alive,
     server: server,
+    transp: transp,
     buffer: newSeq[byte](server.maxHeadersSize),
-    mainReader: mainReader,
-    mainWriter: mainWriter,
-    tlsStream: tlsStream,
-    reader: reader,
-    writer: writer
+    mainReader: newAsyncStreamReader(transp),
+    mainWriter: newAsyncStreamWriter(transp)
   )
 
-proc closeWait(conn: HttpConnectionRef) {.async.} =
-  if HttpServerFlags.Secure in conn.server.flags:
-    # First we will close TLS streams.
-    await allFutures(conn.reader.closeWait(), conn.writer.closeWait())
+proc new(ht: typedesc[HttpConnectionRef], server: HttpServerRef,
+         transp: StreamTransport): HttpConnectionRef =
+  var res = HttpConnectionRef()
+  res[].init(server, transp)
+  res.reader = res.mainReader
+  res.writer = res.mainWriter
+  res
 
-  # After we going to close everything else.
-  await allFutures(conn.mainReader.closeWait(), conn.mainWriter.closeWait(),
-                   conn.transp.closeWait())
+proc closeWait*(conn: HttpConnectionRef) {.async.} =
+  if conn.state == HttpState.Alive:
+    conn.state = HttpState.Closing
+    var pending: seq[Future[void]]
+    if conn.reader != conn.mainReader:
+      pending.add(conn.reader.closeWait())
+    if conn.writer != conn.mainWriter:
+      pending.add(conn.writer.closeWait())
+    if len(pending) > 0:
+      await allFutures(pending)
+    # After we going to close everything else.
+    pending.setLen(3)
+    pending[0] = conn.mainReader.closeWait()
+    pending[1] = conn.mainWriter.closeWait()
+    pending[2] = conn.transp.closeWait()
+    await allFutures(pending)
+    conn.state = HttpState.Closed
 
-proc closeWait(req: HttpRequestRef) {.async.} =
-  if req.response.isSome():
-    let resp = req.response.get()
-    if (HttpResponseFlags.Chunked in resp.flags) and
-       not(isNil(resp.chunkedWriter)):
-      await resp.chunkedWriter.closeWait()
+proc closeWait*(req: HttpRequestRef) {.async.} =
+  if req.state == HttpState.Alive:
+    if req.response.isSome():
+      req.state = HttpState.Closing
+      let resp = req.response.get()
+      if (HttpResponseFlags.Stream in resp.flags) and not(isNil(resp.writer)):
+        await resp.writer.closeWait()
+    req.state = HttpState.Closed
 
 proc createConnection(server: HttpServerRef,
                       transp: StreamTransport): Future[HttpConnectionRef] {.
      async.} =
-  var conn = HttpConnectionRef.new(server, transp)
-  if HttpServerFlags.Secure notin server.flags:
-    # Non secure connection
-    return conn
+  return HttpConnectionRef.new(server, transp)
 
-  try:
-    await handshake(conn.tlsStream)
-    return conn
-  except CancelledError as exc:
-    await conn.closeWait()
-    raise exc
-  except TLSStreamError:
-    await conn.closeWait()
-    raiseHttpCriticalError("Unable to establish secure connection")
+proc `keepalive=`*(resp: HttpResponseRef, value: bool) =
+  doAssert(resp.state == HttpResponseState.Empty)
+  if value:
+    resp.flags.incl(HttpResponseFlags.KeepAlive)
+  else:
+    resp.flags.excl(HttpResponseFlags.KeepAlive)
+
+proc keepalive*(resp: HttpResponseRef): bool {.raises: [Defect].} =
+  HttpResponseFlags.KeepAlive in resp.flags
 
 proc processLoop(server: HttpServerRef, transp: StreamTransport) {.async.} =
   var
@@ -514,10 +672,9 @@ proc processLoop(server: HttpServerRef, transp: StreamTransport) {.async.} =
     runLoop = false
 
   try:
-    conn = await createConnection(server, transp)
+    conn = await server.createConnCallback(server, transp)
     runLoop = true
   except CancelledError:
-    # We could be cancelled only when we perform TLS handshake, connection
     server.connections.del(transp.getId())
     await transp.closeWait()
     return
@@ -595,16 +752,21 @@ proc processLoop(server: HttpServerRef, transp: StreamTransport) {.async.} =
 
     if arg.isErr():
       let code = arg.error().code
-      case arg.error().error
-      of HTTPServerError.TimeoutError:
-        discard await conn.sendErrorResponse(HttpVersion11, code, false)
-      of HTTPServerError.RecoverableError:
-        discard await conn.sendErrorResponse(HttpVersion11, code, false)
-      of HTTPServerError.CriticalError:
-        discard await conn.sendErrorResponse(HttpVersion11, code, false)
-      of HTTPServerError.CatchableError:
-        discard await conn.sendErrorResponse(HttpVersion11, code, false)
-      of HttpServerError.DisconnectError:
+      try:
+        case arg.error().error
+        of HTTPServerError.TimeoutError:
+          discard await conn.sendErrorResponse(HttpVersion11, code, false)
+        of HTTPServerError.RecoverableError:
+          discard await conn.sendErrorResponse(HttpVersion11, code, false)
+        of HTTPServerError.CriticalError:
+          discard await conn.sendErrorResponse(HttpVersion11, code, false)
+        of HTTPServerError.CatchableError:
+          discard await conn.sendErrorResponse(HttpVersion11, code, false)
+        of HttpServerError.DisconnectError:
+          discard
+      except CancelledError:
+        # We swallowing `CancelledError` in a loop, but we going to exit
+        # loop ASAP.
         discard
       break
     else:
@@ -613,33 +775,52 @@ proc processLoop(server: HttpServerRef, transp: StreamTransport) {.async.} =
       if lastErrorCode.isNone():
         if isNil(resp):
           # Response was `nil`.
-          discard await conn.sendErrorResponse(HttpVersion11, Http404,
-                                               false)
+          try:
+            discard await conn.sendErrorResponse(HttpVersion11, Http404, false)
+          except CancelledError:
+            keepConn = false
         else:
-          case resp.state
-          of HttpResponseState.Empty:
-            # Response was ignored
-            discard await conn.sendErrorResponse(HttpVersion11, Http404,
-                                                 keepConn)
-          of HttpResponseState.Prepared:
-            # Response was prepared but not sent.
-            discard await conn.sendErrorResponse(HttpVersion11, Http409,
-                                                 keepConn)
-          else:
-            # some data was already sent to the client.
-            discard
+          try:
+            case resp.state
+            of HttpResponseState.Empty:
+              # Response was ignored
+              discard await conn.sendErrorResponse(HttpVersion11, Http404,
+                                                   keepConn)
+            of HttpResponseState.Prepared:
+              # Response was prepared but not sent.
+              discard await conn.sendErrorResponse(HttpVersion11, Http409,
+                                                   keepConn)
+            else:
+              # some data was already sent to the client.
+              keepConn = resp.keepalive()
+          except CancelledError:
+            keepConn = false
       else:
-        discard await conn.sendErrorResponse(HttpVersion11, lastErrorCode.get(),
-                                             false)
+        try:
+          discard await conn.sendErrorResponse(HttpVersion11,
+                                               lastErrorCode.get(), false)
+        except CancelledError:
+          keepConn = false
+
       # Closing and releasing all the request resources.
-      await request.closeWait()
+      try:
+        await request.closeWait()
+      except CancelledError:
+        # We swallowing `CancelledError` in a loop, but we still need to close
+        # `request` before exiting.
+        await request.closeWait()
 
       if not(keepConn):
         break
 
   # Connection could be `nil` only when secure handshake is failed.
   if not(isNil(conn)):
-    await conn.closeWait()
+    try:
+      await conn.closeWait()
+    except CancelledError:
+      # Cancellation could be happened while we closing `conn`. But we still
+      # need to close it.
+      await conn.closeWait()
 
   server.connections.del(transp.getId())
   # if server.maxConnections > 0:
@@ -737,12 +918,12 @@ proc getMultipartReader*(req: HttpRequestRef): HttpResult[MultiPartReaderRef] =
   ## Create new MultiPartReader interface for specific request.
   if req.meth in PostMethods:
     if MultipartForm in req.requestFlags:
-      let ctype = ? getContentType(req.headers.getList("content-type"))
-      if ctype != "multipart/form-data":
+      let ctype = ? getContentType(req.headers.getList(ContentTypeHeader))
+      if ctype != MultipartContentType:
         err("Content type is not supported")
       else:
         let boundary = ? getMultipartBoundary(
-          req.headers.getList("content-type")
+          req.headers.getList(ContentTypeHeader)
         )
         var stream = ? req.getBodyReader()
         ok(MultiPartReaderRef.new(stream, boundary))
@@ -760,6 +941,11 @@ proc post*(req: HttpRequestRef): Future[HttpTable] {.async.} =
       return HttpTable.init()
 
     if UrlencodedForm in req.requestFlags:
+      let queryFlags =
+        if QueryCommaSeparatedArray in req.connection.server.flags:
+          {QueryParamsFlag.CommaSeparatedArray}
+        else:
+          {}
       var table = HttpTable.init()
       # getBody() will handle `Expect`.
       var body = await req.getBody()
@@ -768,7 +954,7 @@ proc post*(req: HttpRequestRef): Future[HttpTable] {.async.} =
       var strbody = newString(len(body))
       if len(body) > 0:
         copyMem(addr strbody[0], addr body[0], len(body))
-      for key, value in queryParams(strbody):
+      for key, value in queryParams(strbody, queryFlags):
         table.add(key, value)
       req.postTable = some(table)
       return table
@@ -826,83 +1012,106 @@ proc post*(req: HttpRequestRef): Future[HttpTable] {.async.} =
       elif HttpRequestFlags.UnboundBody in req.requestFlags:
         raiseHttpCriticalError("Unsupported request body")
 
-proc `keepalive=`*(resp: HttpResponseRef, value: bool) =
-  doAssert(resp.state == HttpResponseState.Empty)
-  if value:
-    resp.flags.incl(KeepAlive)
-  else:
-    resp.flags.excl(KeepAlive)
-
-proc keepalive*(resp: HttpResponseRef): bool {.raises: [Defect].} =
-  KeepAlive in resp.flags
-
 proc setHeader*(resp: HttpResponseRef, key, value: string) {.
      raises: [Defect].} =
+  ## Sets value of header ``key`` to ``value``.
   doAssert(resp.state == HttpResponseState.Empty)
   resp.headersTable.set(key, value)
 
+proc setHeaderDefault*(resp: HttpResponseRef, key, value: string) {.
+     raises: [Defect].} =
+  ## Sets value of header ``key`` to ``value``, only if header ``key`` is not
+  ## present in the headers table.
+  discard resp.headersTable.hasKeyOrPut(key, value)
+
 proc addHeader*(resp: HttpResponseRef, key, value: string) {.
-     raises: [Defect].}=
+     raises: [Defect].} =
+  ## Adds value ``value`` to header's ``key`` value.
   doAssert(resp.state == HttpResponseState.Empty)
   resp.headersTable.add(key, value)
 
 proc getHeader*(resp: HttpResponseRef, key: string,
                 default: string = ""): string {.raises: [Defect].} =
+  ## Returns value of header with name ``name`` or ``default``, if header is
+  ## not present in the table.
   resp.headersTable.getString(key, default)
 
 proc hasHeader*(resp: HttpResponseRef, key: string): bool {.raises: [Defect].} =
+  ## Returns ``true`` if header with name ``key`` present in the headers table.
   key in resp.headersTable
-
-template doHeaderDef(buf, resp, name, default) =
-  buf.add(name)
-  buf.add(": ")
-  buf.add(resp.getHeader(name, default))
-  buf.add("\r\n")
-
-template doHeaderVal(buf, name, value) =
-  buf.add(name)
-  buf.add(": ")
-  buf.add(value)
-  buf.add("\r\n")
 
 template checkPending(t: untyped) =
   if t.state != HttpResponseState.Empty:
     raiseHttpCriticalError("Response body was already sent")
 
-proc prepareLengthHeaders(resp: HttpResponseRef, length: int): string {.
-     raises: [Defect].}=
+func createHeaders(resp: HttpResponseRef): string =
   var answer = $(resp.version) & " " & $(resp.status) & "\r\n"
-  answer.doHeaderDef(resp, "Date", httpDate())
-  if length > 0:
-    answer.doHeaderDef(resp, "Content-Type", "text/html; charset=utf-8")
-  answer.doHeaderVal("Content-Length", $(length))
-  if "Connection" notin resp.headersTable:
-    if KeepAlive in resp.flags:
-      answer.doHeaderVal("Connection", "keep-alive")
-    else:
-      answer.doHeaderVal("Connection", "close")
   for k, v in resp.headersTable.stringItems():
-    if k notin ["date", "content-type", "content-length"]:
-      answer.doHeaderVal(normalizeHeaderName(k), v)
+    if len(v) > 0:
+      answer.add(normalizeHeaderName(k))
+      answer.add(": ")
+      answer.add(v)
+      answer.add("\r\n")
   answer.add("\r\n")
   answer
 
+proc prepareLengthHeaders(resp: HttpResponseRef, length: int): string {.
+     raises: [Defect].}=
+  if not(resp.hasHeader(DateHeader)):
+    resp.setHeader(DateHeader, httpDate())
+  if not(resp.hasHeader(ContentTypeHeader)):
+    resp.setHeader(ContentTypeHeader, "text/html; charset=utf-8")
+  if not(resp.hasHeader(ContentLengthHeader)):
+    resp.setHeader(ContentLengthHeader, Base10.toString(uint64(length)))
+  if not(resp.hasHeader(ServerHeader)):
+    resp.setHeader(ServerHeader, resp.connection.server.serverIdent)
+  if not(resp.hasHeader(ConnectionHeader)):
+    if HttpResponseFlags.KeepAlive in resp.flags:
+      resp.setHeader(ConnectionHeader, "keep-alive")
+    else:
+      resp.setHeader(ConnectionHeader, "close")
+  resp.createHeaders()
+
 proc prepareChunkedHeaders(resp: HttpResponseRef): string {.
      raises: [Defect].} =
-  var answer = $(resp.version) & " " & $(resp.status) & "\r\n"
-  answer.doHeaderDef(resp, "Date", httpDate())
-  answer.doHeaderDef(resp, "Content-Type", "text/html; charset=utf-8")
-  answer.doHeaderDef(resp, "Transfer-Encoding", "chunked")
-  if "Connection" notin resp.headersTable:
-    if KeepAlive in resp.flags:
-      answer.doHeaderVal("Connection", "keep-alive")
+  if not(resp.hasHeader(DateHeader)):
+    resp.setHeader(DateHeader, httpDate())
+  if not(resp.hasHeader(ContentTypeHeader)):
+    resp.setHeader(ContentTypeHeader, "text/html; charset=utf-8")
+  if not(resp.hasHeader(TransferEncodingHeader)):
+    resp.setHeader(TransferEncodingHeader, "chunked")
+  if not(resp.hasHeader(ServerHeader)):
+    resp.setHeader(ServerHeader, resp.connection.server.serverIdent)
+  if not(resp.hasHeader(ConnectionHeader)):
+    if HttpResponseFlags.KeepAlive in resp.flags:
+      resp.setHeader(ConnectionHeader, "keep-alive")
     else:
-      answer.doHeaderVal("Connection", "close")
-  for k, v in resp.headersTable.stringItems():
-    if k notin ["date", "content-type", "content-length", "transfer-encoding"]:
-      answer.doHeaderVal(normalizeHeaderName(k), v)
-  answer.add("\r\n")
-  answer
+      resp.setHeader(ConnectionHeader, "close")
+  resp.createHeaders()
+
+proc prepareServerSideEventHeaders(resp: HttpResponseRef): string {.
+     raises: [Defect].} =
+  if not(resp.hasHeader(DateHeader)):
+    resp.setHeader(DateHeader, httpDate())
+  if not(resp.hasHeader(ContentTypeHeader)):
+    resp.setHeader(ContentTypeHeader, "text/event-stream")
+  if not(resp.hasHeader(ServerHeader)):
+    resp.setHeader(ServerHeader, resp.connection.server.serverIdent)
+  if not(resp.hasHeader(ConnectionHeader)):
+    resp.flags.excl(HttpResponseFlags.KeepAlive)
+    resp.setHeader(ConnectionHeader, "close")
+  resp.createHeaders()
+
+proc preparePlainHeaders(resp: HttpResponseRef): string {.
+     raises: [Defect].} =
+  if not(resp.hasHeader(DateHeader)):
+    resp.setHeader(DateHeader, httpDate())
+  if not(resp.hasHeader(ServerHeader)):
+    resp.setHeader(ServerHeader, resp.connection.server.serverIdent)
+  if not(resp.hasHeader(ConnectionHeader)):
+    resp.flags.excl(HttpResponseFlags.KeepAlive)
+    resp.setHeader(ConnectionHeader, "close")
+  resp.createHeaders()
 
 proc sendBody*(resp: HttpResponseRef, pbytes: pointer, nbytes: int) {.async.} =
   ## Send HTTP response at once by using bytes pointer ``pbytes`` and length
@@ -925,7 +1134,7 @@ proc sendBody*(resp: HttpResponseRef, pbytes: pointer, nbytes: int) {.async.} =
     resp.state = HttpResponseState.Failed
     raiseHttpCriticalError("Unable to send response")
 
-proc sendBody*[T: string|seq[byte]](resp: HttpResponseRef, data: T) {.async.} =
+proc sendBody*(resp: HttpResponseRef, data: ByteChar) {.async.} =
   ## Send HTTP response at once by using data ``data``.
   checkPending(resp)
   let responseHeaders = resp.prepareLengthHeaders(len(data))
@@ -962,18 +1171,31 @@ proc sendError*(resp: HttpResponseRef, code: HttpCode, body = "") {.async.} =
     resp.state = HttpResponseState.Failed
     raiseHttpCriticalError("Unable to send response")
 
-proc prepare*(resp: HttpResponseRef) {.async.} =
+proc prepare*(resp: HttpResponseRef,
+              streamType = HttpResponseStreamType.Chunked) {.async.} =
   ## Prepare for HTTP stream response.
   ##
   ## Such responses will be sent chunk by chunk using ``chunked`` encoding.
   resp.checkPending()
-  let responseHeaders = resp.prepareChunkedHeaders()
+  let responseHeaders =
+    case streamType
+    of HttpResponseStreamType.Plain:
+      resp.preparePlainHeaders()
+    of HttpResponseStreamType.SSE:
+      resp.prepareServerSideEventHeaders()
+    of HttpResponseStreamType.Chunked:
+      resp.prepareChunkedHeaders()
+  resp.streamType = streamType
   resp.state = HttpResponseState.Prepared
   try:
     resp.state = HttpResponseState.Sending
     await resp.connection.writer.write(responseHeaders)
-    resp.chunkedWriter = newChunkedStreamWriter(resp.connection.writer)
-    resp.flags.incl(HttpResponseFlags.Chunked)
+    case streamType
+    of HttpResponseStreamType.Plain, HttpResponseStreamType.SSE:
+      resp.writer = newAsyncStreamWriter(resp.connection.writer)
+    of HttpResponseStreamType.Chunked:
+      resp.writer = newChunkedStreamWriter(resp.connection.writer)
+    resp.flags.incl(HttpResponseFlags.Stream)
   except CancelledError as exc:
     resp.state = HttpResponseState.Cancelled
     raise exc
@@ -981,17 +1203,33 @@ proc prepare*(resp: HttpResponseRef) {.async.} =
     resp.state = HttpResponseState.Failed
     raiseHttpCriticalError("Unable to send response")
 
-proc sendChunk*(resp: HttpResponseRef, pbytes: pointer, nbytes: int) {.async.} =
+proc prepareChunked*(resp: HttpResponseRef): Future[void] =
+  ## Prepare for HTTP chunked stream response.
+  ##
+  ## Such responses will be sent chunk by chunk using ``chunked`` encoding.
+  resp.prepare(HttpResponseStreamType.Chunked)
+
+proc preparePlain*(resp: HttpResponseRef): Future[void] =
+  ## Prepare for HTTP plain stream response.
+  ##
+  ## Such responses will be sent without any encoding.
+  resp.prepare(HttpResponseStreamType.Plain)
+
+proc prepareSSE*(resp: HttpResponseRef): Future[void] =
+  ## Prepare for HTTP server-side event stream response.
+  resp.prepare(HttpResponseStreamType.SSE)
+
+proc send*(resp: HttpResponseRef, pbytes: pointer, nbytes: int) {.async.} =
   ## Send single chunk of data pointed by ``pbytes`` and ``nbytes``.
   doAssert(not(isNil(pbytes)), "pbytes must not be nil")
   doAssert(nbytes >= 0, "nbytes should be bigger or equal to zero")
-  if HttpResponseFlags.Chunked notin resp.flags:
+  if HttpResponseFlags.Stream notin resp.flags:
     raiseHttpCriticalError("Response was not prepared")
   if resp.state notin {HttpResponseState.Prepared, HttpResponseState.Sending}:
     raiseHttpCriticalError("Response in incorrect state")
   try:
     resp.state = HttpResponseState.Sending
-    await resp.chunkedWriter.write(pbytes, nbytes)
+    await resp.writer.write(pbytes, nbytes)
     resp.state = HttpResponseState.Sending
   except CancelledError as exc:
     resp.state = HttpResponseState.Cancelled
@@ -1000,16 +1238,15 @@ proc sendChunk*(resp: HttpResponseRef, pbytes: pointer, nbytes: int) {.async.} =
     resp.state = HttpResponseState.Failed
     raiseHttpCriticalError("Unable to send response")
 
-proc sendChunk*[T: string|seq[byte]](resp: HttpResponseRef,
-                                     data: T) {.async.} =
+proc send*(resp: HttpResponseRef, data: ByteChar) {.async.} =
   ## Send single chunk of data ``data``.
-  if HttpResponseFlags.Chunked notin resp.flags:
+  if HttpResponseFlags.Stream notin resp.flags:
     raiseHttpCriticalError("Response was not prepared")
   if resp.state notin {HttpResponseState.Prepared, HttpResponseState.Sending}:
     raiseHttpCriticalError("Response in incorrect state")
   try:
     resp.state = HttpResponseState.Sending
-    await resp.chunkedWriter.write(data)
+    await resp.writer.write(data)
     resp.state = HttpResponseState.Sending
   except CancelledError as exc:
     resp.state = HttpResponseState.Cancelled
@@ -1017,16 +1254,40 @@ proc sendChunk*[T: string|seq[byte]](resp: HttpResponseRef,
   except AsyncStreamWriteError, AsyncStreamIncompleteError:
     resp.state = HttpResponseState.Failed
     raiseHttpCriticalError("Unable to send response")
+
+proc sendChunk*(resp: HttpResponseRef, pbytes: pointer,
+                nbytes: int): Future[void] =
+  resp.send(pbytes, nbytes)
+
+proc sendChunk*(resp: HttpResponseRef, data: ByteChar): Future[void] =
+  resp.send(data)
+
+proc sendEvent*(resp: HttpResponseRef, eventName: string,
+                data: string): Future[void] =
+  ## Send server-side event with name ``eventName`` and payload ``data`` to
+  ## remote peer.
+  let data =
+    block:
+      var res = ""
+      if len(eventName) > 0:
+        res.add("event: ")
+        res.add(eventName)
+        res.add("\r\n")
+      res.add("data: ")
+      res.add(data)
+      res.add("\r\n\r\n")
+      res
+  resp.send(data)
 
 proc finish*(resp: HttpResponseRef) {.async.} =
   ## Sending last chunk of data, so it will indicate end of HTTP response.
-  if HttpResponseFlags.Chunked notin resp.flags:
+  if HttpResponseFlags.Stream notin resp.flags:
     raiseHttpCriticalError("Response was not prepared")
   if resp.state notin {HttpResponseState.Prepared, HttpResponseState.Sending}:
     raiseHttpCriticalError("Response in incorrect state")
   try:
     resp.state = HttpResponseState.Sending
-    await resp.chunkedWriter.finish()
+    await resp.writer.finish()
     resp.state = HttpResponseState.Finished
   except CancelledError as exc:
     resp.state = HttpResponseState.Cancelled
@@ -1035,16 +1296,47 @@ proc finish*(resp: HttpResponseRef) {.async.} =
     resp.state = HttpResponseState.Failed
     raiseHttpCriticalError("Unable to send response")
 
-proc respond*(req: HttpRequestRef, code: HttpCode, content: string,
+proc respond*(req: HttpRequestRef, code: HttpCode, content: ByteChar,
               headers: HttpTable): Future[HttpResponseRef] {.async.} =
-  ## Responds to the request with the specified ``HttpCode``, headers and
-  ## content.
+  ## Responds to the request with the specified ``HttpCode``, HTTP ``headers``
+  ## and ``content``.
   let response = req.getResponse()
   response.status = code
   for k, v in headers.stringItems():
     response.addHeader(k, v)
   await response.sendBody(content)
   return response
+
+proc respond*(req: HttpRequestRef, code: HttpCode,
+              content: ByteChar): Future[HttpResponseRef] =
+  ## Responds to the request with specified ``HttpCode`` and ``content``.
+  respond(req, code, content, HttpTable.init())
+
+proc respond*(req: HttpRequestRef, code: HttpCode): Future[HttpResponseRef] =
+  ## Responds to the request with specified ``HttpCode`` only.
+  respond(req, code, "", HttpTable.init())
+
+proc redirect*(req: HttpRequestRef, code: HttpCode,
+               location: Uri): Future[HttpResponseRef] =
+  ## Responds to the request with redirection to location ``location``.
+  let headers = HttpTable.init([("location", $location)])
+  respond(req, code, "", headers)
+
+proc redirect*(req: HttpRequestRef, code: HttpCode,
+               location: string): Future[HttpResponseRef] =
+  ## Responds to the request with redirection to location ``location``.
+  let headers = HttpTable.init([("location", location)])
+  respond(req, code, "", headers)
+
+proc responded*(req: HttpRequestRef): bool =
+  ## Returns ``true`` if request ``req`` has been responded or responding.
+  if isSome(req.response):
+    if req.response.get().state == HttpResponseState.Empty:
+      false
+    else:
+      true
+  else:
+    false
 
 proc remoteAddress*(conn: HttpConnectionRef): TransportAddress =
   ## Returns address of the remote host that established connection ``conn``.

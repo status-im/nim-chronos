@@ -1,3 +1,14 @@
+#
+#          Chronos source location utilities
+#              (c) Copyright 2018-Present
+#         Status Research & Development GmbH
+#
+#              Licensed under either of
+#  Apache License, version 2.0, (LICENSE-APACHEv2)
+#              MIT license (LICENSE-MIT)
+{.push raises: [Defect].}
+import stew/base10
+
 type
   SrcLoc* = object
     procedure*: cstring
@@ -5,15 +16,16 @@ type
     line*: int
 
 proc `$`*(loc: ptr SrcLoc): string =
-  result.add loc.file
-  result.add "("
-  result.add $loc.line
-  result.add ")"
-  result.add "    "
+  var res = $loc.file
+  res.add("(")
+  res.add(Base10.toString(uint64(loc.line)))
+  res.add(")")
+  res.add("    ")
   if len(loc.procedure) == 0:
-    result.add "[unspecified]"
+    res.add("[unspecified]")
   else:
-    result.add loc.procedure
+    res.add($loc.procedure)
+  res
 
 proc srcLocImpl(procedure: static string,
                 file: static string, line: static int): ptr SrcLoc =

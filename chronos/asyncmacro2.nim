@@ -7,11 +7,7 @@
 #    distribution, for details about the copyright.
 #
 
-## AsyncMacro
-## *************
-## `asyncdispatch` module depends on the `asyncmacro` module to work properly.
-
-import macros, strutils
+import std/[macros]
 
 proc skipUntilStmtList(node: NimNode): NimNode {.compileTime.} =
   # Skips a nest of StmtList's.
@@ -23,45 +19,87 @@ proc skipUntilStmtList(node: NimNode): NimNode {.compileTime.} =
 #   result = node
 #   if node[0].kind == nnkStmtList:
 #     result = node[0]
+when defined(chronosStrictException):
+  template createCb(retFutureSym, iteratorNameSym,
+                    strName, identName, futureVarCompletions: untyped) =
+    bind finished
 
-template createCb(retFutureSym, iteratorNameSym,
-                  strName, identName, futureVarCompletions: untyped) =
-  bind finished
+    var nameIterVar = iteratorNameSym
+    {.push stackTrace: off.}
+    var identName: proc(udata: pointer) {.gcsafe, raises: [Defect].}
+    identName = proc(udata: pointer) {.gcsafe, raises: [Defect].} =
+      try:
+        # If the compiler complains about unlisted exception here, it's usually
+        # because you're calling a callback or forward declaration in your code
+        # for which the compiler cannot deduce raises signatures - make sure
+        # to annotate both forward declarations and `proc` types with `raises`!
+        if not(nameIterVar.finished()):
+          var next = nameIterVar()
+          # Continue while the yielded future is already finished.
+          while (not next.isNil()) and next.finished():
+            next = nameIterVar()
+            if nameIterVar.finished():
+              break
 
-  var nameIterVar = iteratorNameSym
-  {.push stackTrace: off.}
-  proc identName(udata: pointer = nil) {.closure, gcsafe.} =
-    try:
-      if not(nameIterVar.finished()):
-        var next = nameIterVar()
-        # Continue while the yielded future is already finished.
-        while (not next.isNil()) and next.finished():
-          next = nameIterVar()
-          if nameIterVar.finished():
-            break
-
-        if next == nil:
-          if not(retFutureSym.finished()):
-            const msg = "Async procedure (&" & strName & ") yielded `nil`, " &
-                        "are you await'ing a `nil` Future?"
-            raiseAssert msg
-        else:
-          {.gcsafe.}:
+          if next == nil:
+            if not(retFutureSym.finished()):
+              const msg = "Async procedure (&" & strName & ") yielded `nil`, " &
+                          "are you await'ing a `nil` Future?"
+              raiseAssert msg
+          else:
             next.addCallback(identName)
-    except CancelledError:
-      retFutureSym.cancelAndSchedule()
-    except CatchableError as exc:
-      futureVarCompletions
-
-      if retFutureSym.finished():
-        # Take a look at tasyncexceptions for the bug which this fixes.
-        # That test explains it better than I can here.
-        raise exc
-      else:
+      except CancelledError:
+        retFutureSym.cancelAndSchedule()
+      except CatchableError as exc:
+        futureVarCompletions
         retFutureSym.fail(exc)
 
-  identName()
-  {.pop.}
+    identName(nil)
+    {.pop.}
+else:
+  template createCb(retFutureSym, iteratorNameSym,
+                    strName, identName, futureVarCompletions: untyped) =
+    bind finished
+
+    var nameIterVar = iteratorNameSym
+    {.push stackTrace: off.}
+    var identName: proc(udata: pointer) {.gcsafe, raises: [Defect].}
+    identName = proc(udata: pointer) {.gcsafe, raises: [Defect].} =
+      try:
+        # If the compiler complains about unlisted exception here, it's usually
+        # because you're calling a callback or forward declaration in your code
+        # for which the compiler cannot deduce raises signatures - make sure
+        # to annotate both forward declarations and `proc` types with `raises`!
+        if not(nameIterVar.finished()):
+          var next = nameIterVar()
+          # Continue while the yielded future is already finished.
+          while (not next.isNil()) and next.finished():
+            next = nameIterVar()
+            if nameIterVar.finished():
+              break
+
+          if next == nil:
+            if not(retFutureSym.finished()):
+              const msg = "Async procedure (&" & strName & ") yielded `nil`, " &
+                          "are you await'ing a `nil` Future?"
+              raiseAssert msg
+          else:
+            next.addCallback(identName)
+      except CancelledError:
+        retFutureSym.cancelAndSchedule()
+      except CatchableError as exc:
+        futureVarCompletions
+        retFutureSym.fail(exc)
+      except Exception as exc:
+        # TODO remove Exception handler to turn on strict mode
+        if exc of Defect:
+          raise (ref Defect)(exc)
+
+        futureVarCompletions
+        retFutureSym.fail((ref ValueError)(msg: exc.msg, parent: exc))
+
+    identName(nil)
+    {.pop.}
 
 proc createFutureVarCompletions(futureVarIdents: seq[NimNode],
     fromNode: NimNode): NimNode {.compileTime.} =
@@ -123,7 +161,7 @@ proc processBody(node, retFutureSym: NimNode,
 proc getName(node: NimNode): string {.compileTime.} =
   case node.kind
   of nnkSym:
-    return $node
+    return node.strVal
   of nnkPostfix:
     return node[1].strVal
   of nnkIdent:
@@ -146,8 +184,7 @@ proc isInvalidReturnType(typeName: string): bool =
 
 proc verifyReturnType(typeName: string) {.compileTime.} =
   if typeName.isInvalidReturnType:
-    error("Expected return type of 'Future' got '$1'" %
-          typeName)
+    error("Expected return type of 'Future' got '" & typeName & "'")
 
 macro unsupported(s: static[string]): untyped =
   error s
@@ -215,7 +252,8 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
     if subtypeIsVoid:
       let resultTemplate = quote do:
         template result: auto {.used.} =
-          {.fatal: "You should not reference the `result` variable inside a void async proc".}
+          {.fatal: "You should not reference the `result` variable inside" &
+                   " a void async proc".}
       procBody = newStmtList(resultTemplate, procBody)
 
     # fix #13899, `defer` should not escape its original scope
@@ -247,15 +285,39 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
     closureIterator.pragma = newNimNode(nnkPragma, lineInfoFrom=prc.body)
     closureIterator.addPragma(newIdentNode("closure"))
 
+    # TODO when push raises is active in a module, the iterator here inherits
+    #      that annotation - here we explicitly disable it again which goes
+    #      against the spirit of the raises annotation - one should investigate
+    #      here the possibility of transporting more specific error types here
+    #      for example by casting exceptions coming out of `await`..
+    when defined(chronosStrictException):
+      closureIterator.addPragma(nnkExprColonExpr.newTree(
+        newIdentNode("raises"),
+        nnkBracket.newTree(
+          newIdentNode("Defect"),
+          newIdentNode("CatchableError")
+        )
+      ))
+    else:
+      closureIterator.addPragma(nnkExprColonExpr.newTree(
+        newIdentNode("raises"),
+        nnkBracket.newTree(
+          newIdentNode("Defect"),
+          newIdentNode("CatchableError"),
+          newIdentNode("Exception") # Allow exception effects
+        )
+      ))
+
     # If proc has an explicit gcsafe pragma, we add it to iterator as well.
-    if prc.pragma.findChild(it.kind in {nnkSym, nnkIdent} and $it == "gcsafe") != nil:
+    if prc.pragma.findChild(it.kind in {nnkSym, nnkIdent} and
+                            it.strVal == "gcsafe") != nil:
       closureIterator.addPragma(newIdentNode("gcsafe"))
     outerProcBody.add(closureIterator)
 
     # -> createCb(retFuture)
     # NOTE: The "_continue" suffix is checked for in asyncfutures.nim to produce
     # friendlier stack traces:
-    var cbName = genSym(nskProc, prcName & "_continue")
+    var cbName = genSym(nskVar, prcName & "_continue")
     var procCb = getAst createCb(retFutureSym, iteratorNameSym,
                          newStrLitNode(prcName),
                          cbName,
@@ -274,14 +336,17 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
     # Add discardable pragma.
     if returnType.kind == nnkEmpty:
       # Add Future[void]
-      result.params[0] = parseExpr("Future[void]")
+      result.params[0] =
+        newNimNode(nnkBracketExpr, prc)
+        .add(newIdentNode("Future"))
+        .add(newIdentNode("void"))
   if procBody.kind != nnkEmpty:
     result.body = outerProcBody
   #echo(treeRepr(result))
   #if prcName == "recvLineInto":
   #  echo(toStrLit(result))
 
-template await*[T](f: Future[T]): auto =
+template await*[T](f: Future[T]): untyped =
   when declared(chronosInternalRetFuture):
     when not declaredInScope(chronosInternalTmpFuture):
       var chronosInternalTmpFuture {.inject.}: FutureBase
@@ -304,7 +369,8 @@ template await*[T](f: Future[T]): auto =
     if chronosInternalRetFuture.mustCancel:
       raise newCancelledError()
     chronosInternalTmpFuture.internalCheckComplete()
-    cast[type(f)](chronosInternalTmpFuture).internalRead()
+    when T isnot void:
+      cast[type(f)](chronosInternalTmpFuture).internalRead()
   else:
     unsupported "await is only available within {.async.}"
 

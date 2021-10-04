@@ -1,16 +1,23 @@
 #
 #                     Chronos
 #
-#           (c) Copyright 2015 Dominik Picheta
-#  (c) Copyright 2018-Present Status Research & Development GmbH
+#  (c) Copyright 2015 Dominik Picheta
+#  (c) Copyright 2018-2021 Status Research & Development GmbH
 #
 #                Licensed under either of
 #    Apache License, version 2.0, (LICENSE-APACHEv2)
 #                MIT license (LICENSE-MIT)
 
-import std/[os, tables, strutils, heapqueue, options, deques, cstrutils, sequtils]
-import srcloc
+import std/[os, tables, strutils, heapqueue, options, deques, sequtils]
+import ./srcloc
 export srcloc
+
+when defined(nimHasStacktracesModule):
+  import system/stacktraces
+else:
+  const
+    reraisedFromBegin = -10
+    reraisedFromEnd = -100
 
 const
   LocCreateIndex* = 0
@@ -29,7 +36,7 @@ type
     cancelcb*: CallbackFunc
     child*: FutureBase
     state*: FutureState
-    error*: ref Exception ## Stored exception
+    error*: ref CatchableError ## Stored exception
     mustCancel*: bool
     id*: int
 
@@ -171,7 +178,7 @@ proc done*(future: FutureBase): bool {.inline.} =
   completed(future)
 
 when defined(chronosFutureTracking):
-  proc futureDestructor(udata: pointer) {.gcsafe.} =
+  proc futureDestructor(udata: pointer) =
     ## This procedure will be called when Future[T] got finished, cancelled or
     ## failed and all Future[T].callbacks are already scheduled and processed.
     let future = cast[FutureBase](udata)
@@ -271,7 +278,7 @@ template complete*[T](futvar: FutureVar[T], val: T) =
   ## Any previously stored value will be overwritten.
   complete(futvar, val, getSrcLocation())
 
-proc fail[T](future: Future[T], error: ref Exception, loc: ptr SrcLoc) =
+proc fail[T](future: Future[T], error: ref CatchableError, loc: ptr SrcLoc) =
   if not(future.cancelled()):
     checkFinished(FutureBase(future), loc)
     future.error = error
@@ -282,7 +289,7 @@ proc fail[T](future: Future[T], error: ref Exception, loc: ptr SrcLoc) =
                                  getStackTrace(error)
     future.finish(FutureState.Failed)
 
-template fail*[T](future: Future[T], error: ref Exception) =
+template fail*[T](future: Future[T], error: ref CatchableError) =
   ## Completes ``future`` with ``error``.
   fail(future, error, getSrcLocation())
 
@@ -390,53 +397,78 @@ proc `cancelCallback=`*[T](future: Future[T], cb: CallbackFunc) =
   ## This callback will be called immediately as ``future.cancel()`` invoked.
   future.cancelcb = cb
 
+template getFilenameProcname(entry: StackTraceEntry): (string, string) =
+  when compiles(entry.filenameStr) and compiles(entry.procnameStr):
+    # We can't rely on "entry.filename" and "entry.procname" still being valid
+    # cstring pointers, because the "string.data" buffers they pointed to might
+    # be already garbage collected (this entry being a non-shallow copy,
+    # "entry.filename" no longer points to "entry.filenameStr.data", but to the
+    # buffer of the original object).
+    (entry.filenameStr, entry.procnameStr)
+  else:
+    ($entry.filename, $entry.procname)
+
 proc getHint(entry: StackTraceEntry): string =
   ## We try to provide some hints about stack trace entries that the user
   ## may not be familiar with, in particular calls inside the stdlib.
-  result = ""
-  if entry.procname == "processPendingCallbacks":
-    if cmpIgnoreStyle(entry.filename, "asyncdispatch.nim") == 0:
+
+  let (filename, procname) = getFilenameProcname(entry)
+
+  if procname == "processPendingCallbacks":
+    if cmpIgnoreStyle(filename, "asyncdispatch.nim") == 0:
       return "Executes pending callbacks"
-  elif entry.procname == "poll":
-    if cmpIgnoreStyle(entry.filename, "asyncdispatch.nim") == 0:
+  elif procname == "poll":
+    if cmpIgnoreStyle(filename, "asyncdispatch.nim") == 0:
       return "Processes asynchronous completion events"
 
-  if entry.procname.endsWith("_continue"):
-    if cmpIgnoreStyle(entry.filename, "asyncmacro.nim") == 0:
+  if procname.endsWith("_continue"):
+    if cmpIgnoreStyle(filename, "asyncmacro.nim") == 0:
       return "Resumes an async procedure"
 
-proc `$`*(entries: seq[StackTraceEntry]): string =
-  result = ""
-  # Find longest filename & line number combo for alignment purposes.
-  var longestLeft = 0
-  for entry in entries:
-    if isNil(entry.procName): continue
+proc `$`(stackTraceEntries: seq[StackTraceEntry]): string =
+  try:
+    when defined(nimStackTraceOverride) and declared(addDebuggingInfo):
+      let entries = addDebuggingInfo(stackTraceEntries)
+    else:
+      let entries = stackTraceEntries
 
-    let left = $entry.filename & $entry.line
-    if left.len > longestLeft:
-      longestLeft = left.len
+    # Find longest filename & line number combo for alignment purposes.
+    var longestLeft = 0
+    for entry in entries:
+      let (filename, procname) = getFilenameProcname(entry)
 
-  var indent = 2
-  # Format the entries.
-  for entry in entries:
-    if isNil(entry.procName):
-      if entry.line == -10:
-        result.add(spaces(indent) & "#[\n")
-        indent.inc(2)
-      else:
-        indent.dec(2)
-        result.add(spaces(indent) & "]#\n")
-      continue
+      if procname == "": continue
 
-    let left = "$#($#)" % [$entry.filename, $entry.line]
-    result.add((spaces(indent) & "$#$# $#\n") % [
-      left,
-      spaces(longestLeft - left.len + 2),
-      $entry.procName
-    ])
-    let hint = getHint(entry)
-    if hint.len > 0:
-      result.add(spaces(indent+2) & "## " & hint & "\n")
+      let leftLen = filename.len + len($entry.line)
+      if leftLen > longestLeft:
+        longestLeft = leftLen
+
+    var indent = 2
+    # Format the entries.
+    for entry in entries:
+      let (filename, procname) = getFilenameProcname(entry)
+
+      if procname == "":
+        if entry.line == reraisedFromBegin:
+          result.add(spaces(indent) & "#[\n")
+          indent.inc(2)
+        elif entry.line == reraisedFromEnd:
+          indent.dec(2)
+          result.add(spaces(indent) & "]#\n")
+        continue
+
+      let left = "$#($#)" % [filename, $entry.line]
+      result.add((spaces(indent) & "$#$# $#\n") % [
+        left,
+        spaces(longestLeft - left.len + 2),
+        procname
+      ])
+      let hint = getHint(entry)
+      if hint.len > 0:
+        result.add(spaces(indent+2) & "## " & hint & "\n")
+  except ValueError as exc:
+    return exc.msg # Shouldn't actually happen since we set the formatting
+                   # string
 
 when defined(chronosStackTrace):
   proc injectStacktrace(future: FutureBase) =
@@ -455,14 +487,15 @@ when defined(chronosStackTrace):
     newMsg.add($entries)
 
     newMsg.add("Exception message: " & exceptionMsg & "\n")
-    newMsg.add("Exception type:")
 
     # # For debugging purposes
+    # newMsg.add("Exception type:")
     # for entry in getStackTraceEntries(future.error):
     #   newMsg.add "\n" & $entry
     future.error.msg = newMsg
 
-proc internalCheckComplete*(fut: FutureBase) =
+proc internalCheckComplete*(fut: FutureBase) {.
+     raises: [Defect, CatchableError].} =
   # For internal use only. Used in asyncmacro
   if not(isNil(fut.error)):
     when defined(chronosStackTrace):
@@ -474,22 +507,21 @@ proc internalRead*[T](fut: Future[T] | FutureVar[T]): T {.inline.} =
   when T isnot void:
     return fut.value
 
-proc read*[T](future: Future[T] | FutureVar[T]): T =
+proc read*[T](future: Future[T] | FutureVar[T]): T {.
+     raises: [Defect, CatchableError].} =
   ## Retrieves the value of ``future``. Future must be finished otherwise
   ## this function will fail with a ``ValueError`` exception.
   ##
   ## If the result of the future is an error then that error will be raised.
-  {.push hint[ConvFromXtoItselfNotNeeded]: off.}
-  let fut = Future[T](future)
-  {.pop.}
-  if fut.finished():
+  if future.finished():
     internalCheckComplete(future)
     internalRead(future)
   else:
     # TODO: Make a custom exception type for this?
     raise newException(ValueError, "Future still in progress.")
 
-proc readError*[T](future: Future[T]): ref Exception =
+proc readError*[T](future: Future[T]): ref CatchableError {.
+     raises: [Defect, ValueError].} =
   ## Retrieves the exception stored in ``future``.
   ##
   ## An ``ValueError`` exception will be thrown if no exception exists
@@ -507,18 +539,19 @@ proc mget*[T](future: FutureVar[T]): var T =
   ## Future has not been finished.
   result = Future[T](future).value
 
-proc asyncCheck*[T](future: Future[T]) =
-  ## Sets a callback on ``future`` which raises an exception if the future
-  ## finished with an error.
-  ##
-  ## This should be used instead of ``discard`` to discard void futures.
-  doAssert(not isNil(future), "Future is nil")
-  proc cb(data: pointer) =
-    if future.failed() or future.cancelled():
-      when defined(chronosStackTrace):
-        injectStacktrace(future)
-      raise future.error
-  future.callback = cb
+template taskFutureLocation(future: FutureBase): string =
+  let loc = future.location[0]
+  "[" & (
+    if len(loc.procedure) == 0: "[unspecified]" else: $loc.procedure & "()"
+    ) & " at " & $loc.file & ":" & $(loc.line) & "]"
+
+template taskErrorMessage(future: FutureBase): string =
+  "Asynchronous task " & taskFutureLocation(future) &
+  " finished with an exception \"" & $future.error.name &
+  "\"!\nMessage: " & future.error.msg &
+  "\nStack trace: " & future.error.getStackTrace()
+template taskCancelMessage(future: FutureBase): string =
+  "Asynchronous task " & taskFutureLocation(future) & " was cancelled!"
 
 proc asyncSpawn*(future: Future[void]) =
   ## Spawns a new concurrent async task.
@@ -534,35 +567,46 @@ proc asyncSpawn*(future: Future[void]) =
   ## and processed immediately.
   doAssert(not isNil(future), "Future is nil")
 
-  template getFutureLocation(): string =
-    let loc = future.location[0]
-    "[" & (
-      if len(loc.procedure) == 0: "[unspecified]" else: $loc.procedure & "()"
-      ) & " at " & $loc.file & ":" & $(loc.line) & "]"
-
-  template getErrorMessage(): string =
-    "Asynchronous task " & getFutureLocation() &
-    " finished with an exception \"" & $future.error.name & "\"!"
-  template getCancelMessage(): string =
-    "Asynchronous task " & getFutureLocation() & " was cancelled!"
-
   proc cb(data: pointer) =
     if future.failed():
-      raise newException(FutureDefect, getErrorMessage())
+      raise newException(FutureDefect, taskErrorMessage(future))
     elif future.cancelled():
-      raise newException(FutureDefect, getCancelMessage())
+      raise newException(FutureDefect, taskCancelMessage(future))
 
   if not(future.finished()):
     # We adding completion callback only if ``future`` is not finished yet.
     future.addCallback(cb)
   else:
-    if future.failed():
-      raise newException(FutureDefect, getErrorMessage())
-    elif future.cancelled():
-      raise newException(FutureDefect, getCancelMessage())
+    cb(nil)
 
-proc asyncDiscard*[T](future: Future[T]) {.deprecated.} = discard
-  ## This is async workaround for discard ``Future[T]``.
+proc asyncCheck*[T](future: Future[T]) {.
+    deprecated: "Raises Defect on future failure, fix your code and use" &
+                " asyncSpawn!".} =
+  ## This function used to raise an exception through the `poll` call if
+  ## the given future failed - there's no way to handle such exceptions so this
+  ## function is now an alias for `asyncSpawn`
+  ##
+  when T is void:
+    asyncSpawn(future)
+  else:
+    proc cb(data: pointer) =
+      if future.failed():
+        raise newException(FutureDefect, taskErrorMessage(future))
+      elif future.cancelled():
+        raise newException(FutureDefect, taskCancelMessage(future))
+
+    if not(future.finished()):
+      # We adding completion callback only if ``future`` is not finished yet.
+      future.addCallback(cb)
+    else:
+      cb(nil)
+
+proc asyncDiscard*[T](future: Future[T]) {.
+    deprecated: "Use asyncSpawn or `discard await`".} = discard
+  ## `asyncDiscard` will discard the outcome of the operation - unlike `discard`
+  ## it also throws away exceptions! Use `asyncSpawn` if you're sure your
+  ## code doesn't raise exceptions, or `discard await` to ignore successful
+  ## outcomes
 
 proc `and`*[T, Y](fut1: Future[T], fut2: Future[Y]): Future[void] {.
   deprecated: "Use allFutures[T](varargs[Future[T]])".} =
@@ -587,7 +631,7 @@ proc `and`*[T, Y](fut1: Future[T], fut2: Future[Y]): Future[void] {.
   fut1.callback = cb
   fut2.callback = cb
 
-  proc cancellation(udata: pointer) {.gcsafe.} =
+  proc cancellation(udata: pointer) =
     # On cancel we remove all our callbacks only.
     if not(fut1.finished()):
       fut1.removeCallback(cb)
@@ -611,7 +655,8 @@ proc `or`*[T, Y](fut1: Future[T], fut2: Future[Y]): Future[void] =
   ##
   ## If cancelled, ``fut1`` and ``fut2`` futures WILL NOT BE cancelled.
   var retFuture = newFuture[void]("chronos.or")
-  proc cb(udata: pointer) {.gcsafe.} =
+  var cb: proc(udata: pointer) {.gcsafe, raises: [Defect].}
+  cb = proc(udata: pointer) {.gcsafe, raises: [Defect].} =
     if not(retFuture.finished()):
       var fut = cast[FutureBase](udata)
       if cast[pointer](fut1) == udata:
@@ -623,7 +668,7 @@ proc `or`*[T, Y](fut1: Future[T], fut2: Future[Y]): Future[void] =
       else:
         retFuture.complete()
 
-  proc cancellation(udata: pointer) {.gcsafe.} =
+  proc cancellation(udata: pointer) =
     # On cancel we remove all our callbacks only.
     if not(fut1.finished()):
       fut1.removeCallback(cb)
@@ -676,7 +721,7 @@ proc all*[T](futs: varargs[Future[T]]): auto {.
 
   when T is void:
     var retFuture = newFuture[void]("chronos.all(void)")
-    proc cb(udata: pointer) {.gcsafe.} =
+    proc cb(udata: pointer) =
       if not(retFuture.finished()):
         inc(completedFutures)
         if completedFutures == totalFutures:
@@ -698,7 +743,7 @@ proc all*[T](futs: varargs[Future[T]]): auto {.
     var retFuture = newFuture[seq[T]]("chronos.all(T)")
     var retValues = newSeq[T](totalFutures)
 
-    proc cb(udata: pointer) {.gcsafe.} =
+    proc cb(udata: pointer) =
       if not(retFuture.finished()):
         inc(completedFutures)
         if completedFutures == totalFutures:
@@ -707,7 +752,7 @@ proc all*[T](futs: varargs[Future[T]]): auto {.
               retFuture.fail(nfut.error)
               break
             else:
-              retValues[k] = nfut.read()
+              retValues[k] = nfut.value
           if not(retFuture.failed()):
             retFuture.complete(retValues)
 
@@ -731,7 +776,7 @@ proc oneIndex*[T](futs: varargs[Future[T]]): Future[int] {.
   var nfuts = @futs
   var retFuture = newFuture[int]("chronos.oneIndex(T)")
 
-  proc cb(udata: pointer) {.gcsafe.} =
+  proc cb(udata: pointer) =
     var res = -1
     if not(retFuture.finished()):
       var rfut = cast[FutureBase](udata)
@@ -762,7 +807,7 @@ proc oneValue*[T](futs: varargs[Future[T]]): Future[T] {.
   var nfuts = @futs
   var retFuture = newFuture[T]("chronos.oneValue(T)")
 
-  proc cb(udata: pointer) {.gcsafe.} =
+  proc cb(udata: pointer) =
     var resFut: Future[T]
     if not(retFuture.finished()):
       var rfut = cast[FutureBase](udata)
@@ -794,10 +839,10 @@ proc cancelAndWait*[T](fut: Future[T]): Future[void] =
   ## If ``fut`` is already finished (completed, failed or cancelled) result
   ## Future[void] object will be returned complete.
   var retFuture = newFuture[void]("chronos.cancelAndWait(T)")
-  proc continuation(udata: pointer) {.gcsafe.} =
+  proc continuation(udata: pointer) =
     if not(retFuture.finished()):
       retFuture.complete()
-  proc cancellation(udata: pointer) {.gcsafe.} =
+  proc cancellation(udata: pointer) =
     if not(fut.finished()):
       fut.removeCallback(continuation)
   if fut.finished():
@@ -823,13 +868,13 @@ proc allFutures*[T](futs: varargs[Future[T]]): Future[void] =
   # Because we can't capture varargs[T] in closures we need to create copy.
   var nfuts = @futs
 
-  proc cb(udata: pointer) {.gcsafe.} =
+  proc cb(udata: pointer) =
     if not(retFuture.finished()):
       inc(completedFutures)
       if completedFutures == totalFutures:
         retFuture.complete()
 
-  proc cancellation(udata: pointer) {.gcsafe.} =
+  proc cancellation(udata: pointer) =
     # On cancel we remove all our callbacks only.
     for i in 0..<len(nfuts):
       if not(nfuts[i].finished()):
@@ -863,13 +908,13 @@ proc allFinished*[T](futs: varargs[Future[T]]): Future[seq[Future[T]]] =
 
   var nfuts = @futs
 
-  proc cb(udata: pointer) {.gcsafe.} =
+  proc cb(udata: pointer) =
     if not(retFuture.finished()):
       inc(completedFutures)
       if completedFutures == totalFutures:
         retFuture.complete(nfuts)
 
-  proc cancellation(udata: pointer) {.gcsafe.} =
+  proc cancellation(udata: pointer) =
     # On cancel we remove all our callbacks only.
     for fut in nfuts.mitems():
       if not(fut.finished()):
@@ -901,7 +946,8 @@ proc one*[T](futs: varargs[Future[T]]): Future[Future[T]] =
   # Because we can't capture varargs[T] in closures we need to create copy.
   var nfuts = @futs
 
-  proc cb(udata: pointer) {.gcsafe.} =
+  var cb: proc(udata: pointer) {.gcsafe, raises: [Defect].}
+  cb = proc(udata: pointer) {.gcsafe, raises: [Defect].} =
     if not(retFuture.finished()):
       var res: Future[T]
       var rfut = cast[FutureBase](udata)
@@ -912,7 +958,7 @@ proc one*[T](futs: varargs[Future[T]]): Future[Future[T]] =
           res = nfuts[i]
       retFuture.complete(res)
 
-  proc cancellation(udata: pointer) {.gcsafe.} =
+  proc cancellation(udata: pointer) =
     # On cancel we remove all our callbacks only.
     for i in 0..<len(nfuts):
       if not(nfuts[i].finished()):
@@ -947,7 +993,8 @@ proc race*(futs: varargs[FutureBase]): Future[FutureBase] =
   # Because we can't capture varargs[T] in closures we need to create copy.
   var nfuts = @futs
 
-  proc cb(udata: pointer) {.gcsafe.} =
+  var cb: proc(udata: pointer) {.gcsafe, raises: [Defect].}
+  cb = proc(udata: pointer) {.gcsafe, raises: [Defect].} =
     if not(retFuture.finished()):
       var res: FutureBase
       var rfut = cast[FutureBase](udata)
@@ -958,7 +1005,7 @@ proc race*(futs: varargs[FutureBase]): Future[FutureBase] =
           res = nfuts[i]
       retFuture.complete(res)
 
-  proc cancellation(udata: pointer) {.gcsafe.} =
+  proc cancellation(udata: pointer) =
     # On cancel we remove all our callbacks only.
     for i in 0..<len(nfuts):
       if not(nfuts[i].finished()):
