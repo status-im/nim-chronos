@@ -284,6 +284,7 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
                                   procBody, nnkIteratorDef)
     closureIterator.pragma = newNimNode(nnkPragma, lineInfoFrom=prc.body)
     closureIterator.addPragma(newIdentNode("closure"))
+    closureIterator.addPragma(newIdentNode("gcsafe"))
 
     # TODO when push raises is active in a module, the iterator here inherits
     #      that annotation - here we explicitly disable it again which goes
@@ -330,6 +331,7 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
   if prc.kind != nnkLambda: # TODO: Nim bug?
     prc.addPragma(newColonExpr(ident "stackTrace", ident "off"))
 
+  prc.addPragma(newIdentNode("gcsafe"))
   result = prc
 
   if subtypeIsVoid:
