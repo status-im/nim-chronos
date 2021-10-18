@@ -49,7 +49,7 @@ proc dumpPendingFutures*(filter = AllFutureStates): string =
         res.add(item)
   result = Base10.toString(count) & " pending Future[T] objects found:\n" & $res
 
-proc pendingFuturesCount*(filter: set[FutureState]): int =
+proc pendingFuturesCount*(filter: set[FutureState]): uint64 =
   ## Returns number of `pending` Future[T] objects which satisfy the ``filter``
   ## condition.
   ##
@@ -59,10 +59,10 @@ proc pendingFuturesCount*(filter: set[FutureState]): int =
     if filter == AllFutureStates:
       pendingFuturesCount()
     else:
-      var res = 0
+      var res = 0'u64
       for item in pendingFutures():
         if item.state in filter:
           inc(res)
       res
   else:
-    0
+    0'u64
