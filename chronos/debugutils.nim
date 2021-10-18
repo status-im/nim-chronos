@@ -9,6 +9,7 @@
 
 {.push raises: [Defect].}
 
+import stew/base10
 import ./asyncloop
 export asyncloop
 
@@ -28,7 +29,7 @@ proc dumpPendingFutures*(filter = AllFutureStates): string =
   ##    not yet finished).
   ## 2. Future[T] objects with ``FutureState.Finished/Cancelled/Failed`` state
   ##    which callbacks are scheduled, but not yet fully processed.
-  var count = 0
+  var count = 0'u64
   var res = ""
   when defined(chronosFutureTracking):
     for item in pendingFutures():
@@ -41,11 +42,12 @@ proc dumpPendingFutures*(filter = AllFutureStates): string =
           "\"unspecified\""
         else:
           "\"" & procedure & "\""
-        let item = "Future[" & $item.id & "] with name " & $procname &
-                   " created at " & "<" & filename & ":" & $loc.line & ">" &
+        let item = "Future[" & Base10.toString(item.id) & "] with name " &
+                   $procname & " created at " & "<" & filename & ":" &
+                   Base10.toString(uint64(loc.line)) & ">" &
                    " and state = " & $item.state & "\n"
         res.add(item)
-  result = $count & " pending Future[T] objects found:\n" & $res
+  result = Base10.toString(count) & " pending Future[T] objects found:\n" & $res
 
 proc pendingFuturesCount*(filter: set[FutureState]): int =
   ## Returns number of `pending` Future[T] objects which satisfy the ``filter``
