@@ -485,7 +485,7 @@ proc preferredContentMediaType*(acceptHeader: string): MediaType =
       MediaType.init("*", "*")
 
 proc preferredContentType*(acceptHeader: string,
-                           types: varargs[string]): Result[string, cstring] =
+                       types: openArray[string] = []): Result[string, cstring] =
   ## Match or obtain preferred content-type using ``Accept`` header specified by
   ## string ``acceptHeader``.
   ##
@@ -519,8 +519,8 @@ proc preferredContentType*(acceptHeader: string,
       # If `Accept` header is missing, client accepts any type of content.
       ok(types[0])
     else:
-      let res = getAcceptInfo(acceptHeader)
-      if res.isErr():
+      let ares = getAcceptInfo(acceptHeader)
+      if ares.isErr():
         # If `Accept` header is incorrect, client accepts any type of content.
         ok(types[0])
       else:
@@ -530,7 +530,7 @@ proc preferredContentType*(acceptHeader: string,
             for item in types:
               res.add(MediaType.init(item))
             res
-        for item in res.get().data:
+        for item in ares.get().data:
           for expect in mediaTypes:
             if expect == item.mediaType:
               return ok($expect)
