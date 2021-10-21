@@ -39,7 +39,7 @@ type
     state*: FutureState
     error*: ref CatchableError ## Stored exception
     mustCancel*: bool
-    id*: uint64
+    id*: uint
 
     when defined(chronosStackTrace):
       errorStackTrace*: StackTrace
@@ -78,8 +78,8 @@ type
     tail*: FutureBase
     count*: uint
 
-var currentID* {.threadvar.}: uint64
-currentID = 0'u64
+var currentID* {.threadvar.}: uint
+currentID = 0'u
 
 when defined(chronosFutureTracking):
   var futureList* {.threadvar.}: FutureList

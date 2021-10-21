@@ -59,8 +59,8 @@ suite "Asynchronous utilities test suite":
       fut3.cancel()
       poll()
       check:
-        getCount() == 0'u64
-        pendingFuturesCount() == 0'u64
+        getCount() == 0'u
+        pendingFuturesCount() == 0'u
     else:
       skip()
 
@@ -71,17 +71,17 @@ suite "Asynchronous utilities test suite":
 
       var fut = simpleProc()
       check:
-        getCount() == 2'u64
-        pendingFuturesCount() == 2'u64
+        getCount() == 2'u
+        pendingFuturesCount() == 2'u
 
       waitFor fut
       check:
-        getCount() == 1'u64
-        pendingFuturesCount() == 1'u64
+        getCount() == 1'u
+        pendingFuturesCount() == 1'u
 
       poll()
       check:
-        getCount() == 0'u64
-        pendingFuturesCount() == 0'u64
+        getCount() == 0'u
+        pendingFuturesCount() == 0'u
     else:
       skip()
