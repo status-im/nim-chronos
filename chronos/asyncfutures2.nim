@@ -76,7 +76,7 @@ type
   FutureList* = object
     head*: FutureBase
     tail*: FutureBase
-    count*: uint64
+    count*: uint
 
 var currentID* {.threadvar.}: uint64
 currentID = 0'u64

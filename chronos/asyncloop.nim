@@ -1112,7 +1112,7 @@ when defined(chronosFutureTracking):
       yield slider
       slider = slider.next
 
-  proc pendingFuturesCount*(): uint64 =
+  proc pendingFuturesCount*(): uint =
     ## Returns number of pending Futures (Future[T] objects which not yet
     ## completed, cancelled or failed).
     futureList.count
