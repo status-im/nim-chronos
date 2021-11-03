@@ -11,6 +11,7 @@ requires "nim > 1.2.0",
          "stew",
          "bearssl",
          "httputils",
+         "libbacktrace",
          "https://github.com/status-im/nim-unittest2.git#head"
 
 task test, "Run all tests":
