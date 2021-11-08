@@ -155,3 +155,4 @@ jobs:
           nimble install -y --depsOnly
           nimble install -y libbacktrace
           nimble test
+          nimble test_libbacktrace
