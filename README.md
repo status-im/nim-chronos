@@ -243,6 +243,33 @@ In the strict mode, `async` functions are checked such that they only raise
 effects on forward declarations, callbacks and methods using
 `{.raises: [CatchableError].}` (or more strict) annotations.
 
+### Multiple async backend support
+
+Thanks to its powerful macro support, Nim allows `async`/`await` to be
+implemented in libraries with only minimal support from the language - as such,
+multiple `async` libraries exist, including `chronos` and `asyncdispatch`, and
+more may come to be developed in the futures.
+
+Libraries built on top of `async`/`await` may wish to support multiple async
+backends - the best way to do so is to create separate modules for each backend
+that may be imported side-by-side - see [nim-metrics](https://github.com/status-im/nim-metrics/blob/master/metrics/)
+for an example.
+
+An alternative way is to select backend using a global compile flag - this
+method makes it diffucult to compose applications that use both backends as may
+happen with transitive dependencies, but may be appropriate in some cases -
+libraries choosing this path should call the flag `asyncBackend`, allowing
+applications to choose the backend with `-d:asyncBackend=<backend_name>`.
+
+Known `async` backends include:
+
+* `chronos` - this library (`-d:asyncBackend=chronos`)
+* `asyncdispatch` the standard library `asyncdispatch` [module](https://nim-lang.org/docs/asyncdispatch.html) (`-d:asyncBackend=asyncdispatch`)
+* `none` - ``-d:asyncBackend=none`` - disable ``async`` support completely
+
+``none`` can be used when a library supports both a synchronous and
+asynchronous API, to disable the latter.
+
 ## TODO
   * Pipe/Subprocess Transports.
   * Multithreading Stream/Datagram servers
