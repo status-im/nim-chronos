@@ -105,10 +105,6 @@ proc createAsyncSocket*(domain: Domain, sockType: SockType,
   if not setSocketBlocking(handle, false):
     close(handle)
     return asyncInvalidSocket
-  when defined(macosx) and not defined(nimdoc):
-    if not setSockOpt(AsyncFD(handle), SOL_SOCKET, SO_NOSIGPIPE, 1):
-      close(handle)
-      return asyncInvalidSocket
   register(AsyncFD(handle))
   AsyncFD(handle)
 
@@ -119,10 +115,6 @@ proc wrapAsyncSocket*(sock: SocketHandle): AsyncFD {.
   if not setSocketBlocking(sock, false):
     close(sock)
     return asyncInvalidSocket
-  when defined(macosx) and not defined(nimdoc):
-    if not setSockOpt(AsyncFD(sock), SOL_SOCKET, SO_NOSIGPIPE, 1):
-      close(sock)
-      return asyncInvalidSocket
   register(AsyncFD(sock))
   AsyncFD(sock)
 
