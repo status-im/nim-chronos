@@ -833,8 +833,47 @@ proc acceptClientLoop(server: HttpServerRef) {.async.} =
       # if server.maxConnections > 0:
       #   await server.semaphore.acquire()
 
-      let transp = await server.instance.accept()
-      server.connections[transp.getId()] = processLoop(server, transp)
+      let
+        transp =
+          try:
+            await server.instance.accept()
+          except TransportOsError:
+            # When a socket was already closed by the peer prior to getting
+            # accepted and fully registered, various errors may occur.
+            # - accept: [ECONNABORTED]
+            #   A connection has been aborted.
+            # - accept: [EPROTO]
+            #   A protocol error has occurred.
+            # - setsockopt: [EINVAL]
+            #   The specified option is invalid at the
+            #   specified socket level or the socket has been shut down.
+            #
+            # Unfortunately, the specific errors are underspecified and platform
+            # specific. Furthermore, the current implementation hides the errors
+            # behind a generic `TransportOsError` that no longer carries info
+            # about the specific syscall that failed. Note that this is in line
+            # with Nim, e.g., `createAsyncNativeSocket` in `asyncdispatch.nim`.
+            # Ideally, programming errors (i.e., accepting a socket NEVER works)
+            # should be caught by assertions next to the call site, and only
+            # intermittent socket-specific errors should make their way here.
+            #
+            # Ignore the socket-specific errors, and continue to next socket.
+            continue
+        transpId =
+          try:
+            transp.getId()
+          except TransportOsError:
+            # When a socket is already closed by the time we try to query its
+            # identity for the first time, various errors may occur.
+            # - getpeername: [EINVAL]
+            #   The socket has been shut down.
+            # - getsockname: [EINVAL]
+            #   The socket has been shut down.
+            #
+            # Release the error'ed socket, and continue to next socket.
+            await transp.closeWait()
+            continue
+      server.connections[transpId] = processLoop(server, transp)
 
     except CancelledError:
       # Server was stopped
