@@ -1764,11 +1764,11 @@ else:
                 # continuation is already scheduled.
                 retFuture.fail(getServerUseClosedError())
               elif err in {EMFILE, ENFILE, ENOBUFS, ENOMEM}:
-                retFuture.fail(getTransportTooManyError(int(err)))
+                retFuture.fail(getTransportTooManyError(err))
               elif err in {ECONNABORTED, EPERM, ETIMEDOUT}:
-                retFuture.fail(getConnectionAbortedError(int(err)))
+                retFuture.fail(getConnectionAbortedError(err))
               else:
-                retFuture.fail(getTransportOsError(err))
+                retFuture.fail(getTransportOsError(OSErrorCode(err)))
             break
 
         try:
