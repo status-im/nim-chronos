@@ -635,16 +635,15 @@ when defined(windows):
 template getTransportTooManyError*(code: int = 0): ref TransportTooManyError =
   let msg =
     when defined(posix):
-      case code
-      of 0:
+      if code == 0
         "Too many open transports"
-      of EMFILE:
+      elif code == EMFILE:
         "[EMFILE] Too many open files in the process"
-      of ENFILE:
+      elif code == ENFILE:
         "[ENFILE] Too many open files in system"
-      of ENOBUFS:
+      elif code == ENOBUFS:
         "[ENOBUFS] No buffer space available"
-      of ENOMEM:
+      elif code == ENOMEM:
         "[ENOMEM] Not enough memory availble"
       else:
         "[" & $code & "] Too many open transports"
@@ -674,18 +673,17 @@ template getConnectionAbortedError*(m: string = ""): ref TransportAbortedError =
 template getConnectionAbortedError*(code: int): ref TransportAbortedError =
   let msg =
     when defined(posix):
-      case code
-      of 0:
+      if code == 0
         "[ECONNABORTED] Connection has been aborted before being accepted"
-      of EPERM:
+      elif code == EPERM:
         "[EPERM] Firewall rules forbid connection"
-      of ETIMEDOUT:
+      elif code == ETIMEDOUT:
         "[ETIMEDOUT] Operation has been timed out"
       else:
         "[" & $code & "] Connection has been aborted"
     elif defined(windows):
-      case uint32(code)
-      of 0'u32, WSAECONNABORTED:
+      case code
+      of 0, WSAECONNABORTED:
         "[ECONNABORTED] Connection has been aborted before being accepted"
       of WSAENETDOWN:
         "[ENETDOWN] Network is down"
