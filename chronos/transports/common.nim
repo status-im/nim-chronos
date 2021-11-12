@@ -108,6 +108,8 @@ type
     ## Usage after transport close exception
   TransportTooManyError* = object of TransportError
     ## Too many open file descriptors exception
+  TransportAbortedError* = object of TransportError
+    ## Remote client disconnected before server accepts connection
 
   TransportState* = enum
     ## Transport's state
@@ -557,9 +559,6 @@ template getError*(t: untyped): ref CatchableError =
 template getServerUseClosedError*(): ref TransportUseClosedError =
   newException(TransportUseClosedError, "Server is already closed!")
 
-template getTransportTooManyError*(): ref TransportTooManyError =
-  newException(TransportTooManyError, "Too many open transports!")
-
 template getTransportUseClosedError*(): ref TransportUseClosedError =
   newException(TransportUseClosedError, "Transport is already closed!")
 
@@ -613,6 +612,13 @@ when defined(windows):
     ERROR_NO_DATA* = 232
     ERROR_CONNECTION_ABORTED* = 1236
     ERROR_TOO_MANY_OPEN_FILES* = 4
+    WSAEMFILE* = 10024
+    WSAENETDOWN* = 10050
+    WSAENETRESET* = 10052
+    WSAECONNABORTED* = 10053
+    WSAECONNRESET* = 10054
+    WSAENOBUFS* = 10055
+    WSAETIMEDOUT* = 10060
 
   proc cancelIo*(hFile: HANDLE): WINBOOL
        {.stdcall, dynlib: "kernel32", importc: "CancelIo".}
@@ -625,3 +631,72 @@ when defined(windows):
        {.stdcall, dynlib: "kernel32", importc: "SetNamedPipeHandleState".}
   proc resetEvent*(hEvent: HANDLE): WINBOOL
        {.stdcall, dynlib: "kernel32", importc: "ResetEvent".}
+
+template getTransportTooManyError*(code: int = 0): ref TransportTooManyError =
+  let msg =
+    when defined(posix):
+      if code == 0:
+        "Too many open transports"
+      elif code == EMFILE:
+        "[EMFILE] Too many open files in the process"
+      elif code == ENFILE:
+        "[ENFILE] Too many open files in system"
+      elif code == ENOBUFS:
+        "[ENOBUFS] No buffer space available"
+      elif code == ENOMEM:
+        "[ENOMEM] Not enough memory availble"
+      else:
+        "[" & $code & "] Too many open transports"
+    elif defined(windows):
+      case code
+      of 0:
+        "Too many open transports"
+      of ERROR_TOO_MANY_OPEN_FILES:
+        "[ERROR_TOO_MANY_OPEN_FILES] Too many open files"
+      of WSAENOBUFS:
+        "[WSAENOBUFS] No buffer space available"
+      of WSAEMFILE:
+        "[WSAEMFILE] Too many open sockets"
+      else:
+        "[" & $code & "] Too many open transports"
+    else:
+      "[" & $code & "] Too many open transports"
+  newException(TransportTooManyError, msg)
+
+template getConnectionAbortedError*(m: string = ""): ref TransportAbortedError =
+  let msg =
+    if len(m) == 0:
+      "[ECONNABORTED] Connection has been aborted before being accepted"
+    else:
+      "[ECONNABORTED] " & m
+  newException(TransportAbortedError, msg)
+
+template getConnectionAbortedError*(code: int): ref TransportAbortedError =
+  let msg =
+    when defined(posix):
+      if code == 0:
+        "[ECONNABORTED] Connection has been aborted before being accepted"
+      elif code == EPERM:
+        "[EPERM] Firewall rules forbid connection"
+      elif code == ETIMEDOUT:
+        "[ETIMEDOUT] Operation has been timed out"
+      else:
+        "[" & $code & "] Connection has been aborted"
+    elif defined(windows):
+      case code
+      of 0, WSAECONNABORTED:
+        "[ECONNABORTED] Connection has been aborted before being accepted"
+      of WSAENETDOWN:
+        "[ENETDOWN] Network is down"
+      of WSAENETRESET:
+        "[ENETRESET] Network dropped connection on reset"
+      of WSAECONNRESET:
+        "[ECONNRESET] Connection reset by peer"
+      of WSAETIMEDOUT:
+        "[ETIMEDOUT] Connection timed out"
+      else:
+        "[" & $code & "] Connection has been aborted"
+    else:
+      "[" & $code & "] Connection has been aborted"
+
+  newException(TransportAbortedError, msg)

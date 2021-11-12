@@ -318,9 +318,9 @@ when defined(windows):
     (t).wwsabuf.len = cast[int32](v.buflen)
 
   proc isConnResetError(err: OSErrorCode): bool {.inline.} =
-    result = (err == OSErrorCode(WSAECONNRESET)) or
-             (err == OSErrorCode(WSAECONNABORTED)) or
-             (err == OSErrorCode(ERROR_PIPE_NOT_CONNECTED))
+    result = (err == OSErrorCode(common.WSAECONNRESET)) or
+             (err == OSErrorCode(common.WSAECONNABORTED)) or
+             (err == OSErrorCode(common.ERROR_PIPE_NOT_CONNECTED))
 
   proc writeStreamLoop(udata: pointer) {.gcsafe, nimcall.} =
     var bytesCount: int32
@@ -552,7 +552,7 @@ when defined(windows):
           # CancelIO() interrupt or closeSocket() call.
           transp.state.incl(ReadPaused)
         elif transp.kind == TransportKind.Socket and
-             (int(err) in {ERROR_NETNAME_DELETED, WSAECONNABORTED}):
+             (int(err) in {ERROR_NETNAME_DELETED, common.WSAECONNABORTED}):
           transp.state.incl({ReadEof, ReadPaused})
         elif transp.kind == TransportKind.Pipe and
              (int(err) in {ERROR_PIPE_NOT_CONNECTED}):
@@ -589,7 +589,8 @@ when defined(windows):
                 # CancelIO() interrupt
                 transp.state.excl(ReadPending)
                 transp.state.incl(ReadPaused)
-              elif int32(err) in {WSAECONNRESET, WSAENETRESET, WSAECONNABORTED}:
+              elif int32(err) in {common.WSAECONNRESET, common.WSAENETRESET,
+                                  common.WSAECONNABORTED}:
                 transp.state.excl(ReadPending)
                 transp.state.incl({ReadEof, ReadPaused})
                 transp.completeReader()
@@ -1038,7 +1039,8 @@ when defined(windows):
           server.asock.closeSocket()
           server.clean()
         else:
-          if ovl.data.errCode == OSErrorCode(-1):
+          case ovl.data.errCode
+          of OSErrorCode(-1):
             if setsockopt(SocketHandle(server.asock), cint(SOL_SOCKET),
                           cint(SO_UPDATE_ACCEPT_CONTEXT), addr server.sock,
                           SockLen(sizeof(SocketHandle))) != 0'i32:
@@ -1049,7 +1051,8 @@ when defined(windows):
                 # was already scheduled, so we failing it not with OS error.
                 retFuture.fail(getServerUseClosedError())
               else:
-                retFuture.fail(getTransportOsError(err))
+                let errorMsg = osErrorMsg(err)
+                retFuture.fail(getConnectionAbortedError(errorMsg))
             else:
               var ntransp: StreamTransport
               if not(isNil(server.init)):
@@ -1063,10 +1066,17 @@ when defined(windows):
               # Start tracking transport
               trackStream(ntransp)
               retFuture.complete(ntransp)
-          elif int32(ovl.data.errCode) == ERROR_OPERATION_ABORTED:
+          of OSErrorCode(ERROR_OPERATION_ABORTED):
             # CancelIO() interrupt or close.
             server.asock.closeSocket()
             retFuture.fail(getServerUseClosedError())
+            server.clean()
+          of OsErrorCode(common.WSAENETDOWN), OSErrorCode(common.WSAENETRESET),
+             OSErrorCode(common.WSAECONNABORTED),
+             OSErrorCode(common.WSAECONNRESET),
+             OSErrorCode(common.WSAETIMEDOUT):
+            server.asock.closeSocket()
+            retFuture.fail(getConnectionAbortedError(int(ovl.data.errCode)))
             server.clean()
           else:
             server.asock.closeSocket()
@@ -1135,16 +1145,19 @@ when defined(windows):
     if server.local.family in {AddressFamily.IPv4, AddressFamily.IPv6}:
       # TCP Sockets part
       var loop = getThreadDispatcher()
-      server.asock = try: createAsyncSocket(server.domain, SockType.SOCK_STREAM,
-                                       Protocol.IPPROTO_TCP)
-      except CatchableError as exc:
-        retFuture.fail(exc)
-        return retFuture
+      server.asock =
+        try:
+          createAsyncSocket(server.domain, SockType.SOCK_STREAM,
+                            Protocol.IPPROTO_TCP)
+        except CatchableError as exc:
+          retFuture.fail(exc)
+          return retFuture
 
       if server.asock == asyncInvalidSocket:
         let err = osLastError()
-        if int32(err) == ERROR_TOO_MANY_OPEN_FILES:
-          retFuture.fail(getTransportTooManyError())
+        case int(err)
+        of ERROR_TOO_MANY_OPEN_FILES, WSAENOBUFS, WSAEMFILE:
+          retFuture.fail(getTransportTooManyError(int(err)))
         else:
           retFuture.fail(getTransportOsError(err))
         return retFuture
@@ -1166,12 +1179,18 @@ when defined(windows):
                               cast[POVERLAPPED](addr server.aovl))
       if not(res):
         let err = osLastError()
-        if int32(err) == ERROR_OPERATION_ABORTED:
+        case int(err)
+        of ERROR_OPERATION_ABORTED:
           server.apending = false
           retFuture.fail(getServerUseClosedError())
           return retFuture
-        elif int32(err) == ERROR_IO_PENDING:
+        of ERROR_IO_PENDING:
           discard
+        of common.WSAECONNRESET, common.WSAECONNABORTED, common.WSAENETDOWN,
+           common.WSAENETRESET, common.WSAETIMEDOUT:
+          server.apending = false
+          retFuture.fail(getConnectionAbortedError(int(err)))
+          return retFuture
         else:
           server.apending = false
           retFuture.fail(getTransportOsError(err))
@@ -1718,7 +1737,7 @@ else:
                   wrapAsyncSocket(res)
                 except CatchableError as exc:
                   close(res)
-                  retFuture.fail(exc)
+                  retFuture.fail(getConnectionAbortedError($exc.msg))
                   return
 
               if sock != asyncInvalidSocket:
@@ -1734,19 +1753,22 @@ else:
                 trackStream(ntransp)
                 retFuture.complete(ntransp)
               else:
-                retFuture.fail(getTransportOsError(osLastError()))
+                let errorMsg = osErrorMsg(osLastError())
+                retFuture.fail(getConnectionAbortedError(errorMsg))
             else:
-              let err = osLastError()
-              if int(err) == EINTR:
+              let err = int(osLastError())
+              if err == EINTR:
                 continue
-              elif int(err) == EAGAIN:
+              elif err == EAGAIN:
                 # This error appears only when server get closed, while accept()
                 # continuation is already scheduled.
                 retFuture.fail(getServerUseClosedError())
-              elif int(err) == EMFILE:
-                retFuture.fail(getTransportTooManyError())
+              elif err in {EMFILE, ENFILE, ENOBUFS, ENOMEM}:
+                retFuture.fail(getTransportTooManyError(err))
+              elif err in {ECONNABORTED, EPERM, ETIMEDOUT}:
+                retFuture.fail(getConnectionAbortedError(err))
               else:
-                retFuture.fail(getTransportOsError(err))
+                retFuture.fail(getTransportOsError(OSErrorCode(err)))
             break
 
         try:

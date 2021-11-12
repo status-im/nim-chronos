@@ -254,7 +254,7 @@ when defined(windows):
               # CancelIO() interrupt
               transp.state.excl(ReadPending)
               transp.state.incl(ReadPaused)
-            elif int(err) == WSAECONNRESET:
+            elif int(err) == common.WSAECONNRESET:
               transp.state.excl(ReadPending)
               transp.state.incl({ReadPaused, ReadEof})
               break
