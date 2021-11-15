@@ -21,7 +21,6 @@ task test, "Run all tests":
       commandStart & " -d:chronosStackTrace -d:chronosStrictException tests/",
       commandStart & " -d:release tests/",
       commandStart & " -d:release -d:chronosFutureTracking tests/",
-      commandStart & " -d:release --debugger:native -d:chronosStackTrace -d:nimStackTraceOverride --import:libbacktrace tests/",
     ]
   when (NimMajor, NimMinor) >= (1, 5):
     commands.add commandStart & " --gc:orc -d:chronosFutureTracking -d:release -d:chronosStackTrace tests/"
