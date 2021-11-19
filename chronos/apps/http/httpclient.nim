@@ -167,7 +167,8 @@ type
     NoVerifyServerName,  ## Skip remote server name CN verification
     NoInet4Resolution,   ## Do not resolve server hostname to IPv4 addresses
     NoInet6Resolution,   ## Do not resolve server hostname to IPv6 addresses
-    NoAutomaticRedirect  ## Do not handle HTTP redirection automatically
+    NoAutomaticRedirect, ## Do not handle HTTP redirection automatically
+    NewConnectionAlways  ## Always create new connection to HTTP server
 
   HttpClientFlags* = set[HttpClientFlag]
 
@@ -597,21 +598,7 @@ proc acquireConnection(session: HttpSessionRef,
                        ha: HttpAddress): Future[HttpClientConnectionRef] {.
      async.} =
   ## Obtain connection from ``session`` or establish a new one.
-  let conn =
-    block:
-      let conns = session.connections.getOrDefault(ha.id)
-      if len(conns) > 0:
-        var res: HttpClientConnectionRef = nil
-        for item in conns:
-          if item.state == HttpClientConnectionState.Ready:
-            res = item
-            break
-        res
-      else:
-        nil
-  if not(isNil(conn)):
-    return conn
-  else:
+  if HttpClientFlag.NewConnectionAlways in session.flags:
     var default: seq[HttpClientConnectionRef]
     let res =
       try:
@@ -620,12 +607,35 @@ proc acquireConnection(session: HttpSessionRef,
         raiseHttpConnectionError("Connection timed out")
     session.connections.mgetOrPut(ha.id, default).add(res)
     return res
+  else:
+    let conn =
+      block:
+        let conns = session.connections.getOrDefault(ha.id)
+        if len(conns) > 0:
+          var res: HttpClientConnectionRef = nil
+          for item in conns:
+            if item.state == HttpClientConnectionState.Ready:
+              res = item
+              break
+          res
+        else:
+          nil
+    if not(isNil(conn)):
+      return conn
+    else:
+      var default: seq[HttpClientConnectionRef]
+      let res =
+        try:
+          await session.connect(ha).wait(session.connectTimeout)
+        except AsyncTimeoutError:
+          raiseHttpConnectionError("Connection timed out")
+      session.connections.mgetOrPut(ha.id, default).add(res)
+      return res
 
 proc removeConnection(session: HttpSessionRef,
                       conn: HttpClientConnectionRef) {.async.} =
-  var conns = session.connections.getOrDefault(conn.remoteHostname)
-  conns.keepItIf(it != conn)
-  session.connections[conn.remoteHostname] = conns
+  session.connections.withValue(conn.remoteHostname, connections):
+    connections[].keepItIf(it != conn)
   await conn.closeWait()
 
 proc releaseConnection(session: HttpSessionRef,
