@@ -323,7 +323,7 @@ when defined(windows) or defined(nimdoc):
     AsyncFD* = distinct int
 
   proc hash(x: AsyncFD): Hash {.borrow.}
-  proc `==`*(x: AsyncFD, y: AsyncFD): bool {.borrow.}
+  proc `==`*(x: AsyncFD, y: AsyncFD): bool {.borrow, gcsafe.}
 
   proc getFunc(s: SocketHandle, fun: var pointer, guid: var GUID): bool =
     var bytesRet: DWORD
@@ -516,7 +516,7 @@ elif unixPlatform:
       selector: Selector[SelectorData]
       keys: seq[ReadyKey]
 
-  proc `==`*(x, y: AsyncFD): bool {.borrow.}
+  proc `==`*(x, y: AsyncFD): bool {.borrow, gcsafe.}
 
   proc globalInit() =
     # We are ignoring SIGPIPE signal, because we are working with EPIPE.
