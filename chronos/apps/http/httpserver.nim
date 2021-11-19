@@ -706,7 +706,11 @@ proc processLoop(server: HttpServerRef, transp: StreamTransport,
       resp: HttpResponseRef
 
     try:
-      let request = await conn.getRequest().wait(server.headersTimeout)
+      let request =
+        if server.headersTimeout.isInfinite():
+          await conn.getRequest()
+        else:
+          await conn.getRequest().wait(server.headersTimeout)
       arg = RequestFence.ok(request)
     except CancelledError:
       breakLoop = true
