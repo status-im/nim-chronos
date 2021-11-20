@@ -41,7 +41,7 @@ jobs:
 
     name: '${{ matrix.target.os }}-${{ matrix.target.cpu }} (Nim ${{ matrix.branch }})'
     runs-on: ${{ matrix.builder }}
-    continue-on-error: ${{ matrix.branch == 'version-1-6' || matrix.branch == 'devel' }}
+    continue-on-error: ${{ matrix.branch == 'devel' }}
     steps:
       - name: Checkout nim-chronos
         uses: actions/checkout@v2
@@ -152,6 +152,8 @@ jobs:
       - name: Run nim-chronos tests
         working-directory: nim-chronos
         run: |
+          nim --version
+          nimble --version
           nimble install -y --depsOnly
           nimble install -y libbacktrace
           nimble test
