@@ -571,8 +571,10 @@ proc emit[T](bus: AsyncEventBus, event: string, data: T, loc: ptr SrcLoc) =
 
     # Schedule subscriber's callbacks, which are subscribed to the event.
     for subscriber in item.subscribers:
+      # Nim-1.6 says: "'subscriber' is of type <lent EventBusKey> which cannot be captured as it would violate memory safety"
+      let subscriber_copy = subscriber
       callSoon(proc(udata: pointer) =
-        subscriber.cb(bus, event, subscriber, payload)
+        subscriber_copy.cb(bus, event, subscriber_copy, payload)
       )
 
   # Schedule waiters which are waiting all events
@@ -583,8 +585,10 @@ proc emit[T](bus: AsyncEventBus, event: string, data: T, loc: ptr SrcLoc) =
 
   # Schedule subscriber's callbacks which are subscribed to all events.
   for subscriber in bus.subscribers:
+    # Nim-1.6 says: "'subscriber' is of type <lent EventBusKey> which cannot be captured as it would violate memory safety"
+    let subscriber_copy = subscriber
     callSoon(proc(udata: pointer) =
-      subscriber.cb(bus, event, subscriber, payload)
+      subscriber_copy.cb(bus, event, subscriber_copy, payload)
     )
 
 template emit*[T](bus: AsyncEventBus, event: string, data: T) =

@@ -1642,7 +1642,7 @@ else:
           break
     return retFuture
 
-  proc acceptLoop(udata: pointer) =
+  proc acceptLoop(udata: pointer) {.gcsafe.} =
     var
       saddr: Sockaddr_storage
       slen: SockLen
