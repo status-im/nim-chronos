@@ -629,13 +629,38 @@ proc removeConnection(session: HttpSessionRef,
   await conn.closeWait()
 
 proc releaseConnection(session: HttpSessionRef,
-                       conn: HttpClientConnectionRef) {.async.} =
+                       conn: HttpClientConnectionRef,
+                       forceRemove = false) {.async.} =
   ## Return connection back to the ``session``.
   ##
   ## If connection not in ``Ready`` state it will be closed and removed from
   ## the ``session``.
-  if conn.state != HttpClientConnectionState.Ready:
+  if forceRemove:
     await session.removeConnection(conn)
+  else:
+    if conn.state != HttpClientConnectionState.Ready:
+      await session.removeConnection(conn)
+
+proc needKeepConnection(request: HttpClientRequestRef): bool =
+  ## Returns ``true`` if the request's corresponding connection should be kept
+  ## alive, and ``false`` if this connection should be dropped.
+  case request.state
+  of HttpClientRequestState.ResponseReceived:
+    case request.version
+    of HttpVersion11, HttpVersion20:
+      let connection = toLowerAscii(request.headers.getString(ConnectionHeader))
+      if connection == "keep-alive":
+        true
+      else:
+        # If `Connection` header is missing or its value not equal to
+        # `keep-alive`.
+        false
+    else:
+      # Versions prior HTTP 1.1 do not support request pipelining.
+      false
+  else:
+    # Request not in proper state.
+    false
 
 proc closeWait*(session: HttpSessionRef) {.async.} =
   ## Closes HTTP session object.
@@ -655,10 +680,12 @@ proc closeWait*(request: HttpClientRequestRef) {.async.} =
       if not(request.writer.closed()):
         await request.writer.closeWait()
       request.writer = nil
-    if request.state != HttpClientRequestState.ResponseReceived:
-      if not(isNil(request.connection)):
-        await request.session.releaseConnection(request.connection)
-        request.connection = nil
+    if not(isNil(request.connection)):
+      if request.needKeepConnection():
+        await request.session.releaseConnection(request.connection, false)
+      else:
+        await request.session.releaseConnection(request.connection, true)
+      request.connection = nil
     request.session = nil
     request.error = nil
     request.setState(HttpClientRequestState.Closed)
@@ -672,9 +699,6 @@ proc closeWait*(response: HttpClientResponseRef) {.async.} =
       if not(response.reader.closed()):
         await response.reader.closeWait()
       response.reader = nil
-    if not(isNil(response.connection)):
-      await response.session.releaseConnection(response.connection)
-      response.connection = nil
     response.session = nil
     response.error = nil
     response.setState(HttpClientResponseState.Closed)
