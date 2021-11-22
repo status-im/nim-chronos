@@ -1,9 +1,7 @@
-name: CI
+name: Daily
 on:
-  push:
-    branches:
-      - master
-  pull_request:
+  schedule:
+    - cron: "30 5 * * *"
   workflow_dispatch:
 
 jobs:

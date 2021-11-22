@@ -246,9 +246,12 @@ proc dumbResponse*(): HttpResponseRef {.raises: [Defect].} =
   ## Create an empty response to return when request processor got no request.
   HttpResponseRef(state: HttpResponseState.Dumb, version: HttpVersion11)
 
-proc getId(transp: StreamTransport): string {.inline.} =
+proc getId(transp: StreamTransport): Result[string, string]  {.inline.} =
   ## Returns string unique transport's identifier as string.
-  $transp.remoteAddress() & "_" & $transp.localAddress()
+  try:
+    ok($transp.remoteAddress() & "_" & $transp.localAddress())
+  except TransportOsError as exc:
+    err($exc.msg)
 
 proc hasBody*(request: HttpRequestRef): bool {.raises: [Defect].} =
   ## Returns ``true`` if request has body.
@@ -485,7 +488,7 @@ proc preferredContentMediaType*(acceptHeader: string): MediaType =
       MediaType.init("*", "*")
 
 proc preferredContentType*(acceptHeader: string,
-                           types: varargs[string]): Result[string, cstring] =
+                       types: openArray[string] = []): Result[string, cstring] =
   ## Match or obtain preferred content-type using ``Accept`` header specified by
   ## string ``acceptHeader``.
   ##
@@ -519,8 +522,8 @@ proc preferredContentType*(acceptHeader: string,
       # If `Accept` header is missing, client accepts any type of content.
       ok(types[0])
     else:
-      let res = getAcceptInfo(acceptHeader)
-      if res.isErr():
+      let ares = getAcceptInfo(acceptHeader)
+      if ares.isErr():
         # If `Accept` header is incorrect, client accepts any type of content.
         ok(types[0])
       else:
@@ -530,7 +533,7 @@ proc preferredContentType*(acceptHeader: string,
             for item in types:
               res.add(MediaType.init(item))
             res
-        for item in res.get().data:
+        for item in ares.get().data:
           for expect in mediaTypes:
             if expect == item.mediaType:
               return ok($expect)
@@ -665,7 +668,8 @@ proc `keepalive=`*(resp: HttpResponseRef, value: bool) =
 proc keepalive*(resp: HttpResponseRef): bool {.raises: [Defect].} =
   HttpResponseFlags.KeepAlive in resp.flags
 
-proc processLoop(server: HttpServerRef, transp: StreamTransport) {.async.} =
+proc processLoop(server: HttpServerRef, transp: StreamTransport,
+                 connId: string) {.async.} =
   var
     conn: HttpConnectionRef
     connArg: RequestFence
@@ -675,7 +679,7 @@ proc processLoop(server: HttpServerRef, transp: StreamTransport) {.async.} =
     conn = await server.createConnCallback(server, transp)
     runLoop = true
   except CancelledError:
-    server.connections.del(transp.getId())
+    server.connections.del(connId)
     await transp.closeWait()
     return
   except HttpCriticalError as exc:
@@ -702,7 +706,11 @@ proc processLoop(server: HttpServerRef, transp: StreamTransport) {.async.} =
       resp: HttpResponseRef
 
     try:
-      let request = await conn.getRequest().wait(server.headersTimeout)
+      let request =
+        if server.headersTimeout.isInfinite():
+          await conn.getRequest()
+        else:
+          await conn.getRequest().wait(server.headersTimeout)
       arg = RequestFence.ok(request)
     except CancelledError:
       breakLoop = true
@@ -822,7 +830,7 @@ proc processLoop(server: HttpServerRef, transp: StreamTransport) {.async.} =
       # need to close it.
       await conn.closeWait()
 
-  server.connections.del(transp.getId())
+  server.connections.del(connId)
   # if server.maxConnections > 0:
   #   server.semaphore.release()
 
@@ -832,10 +840,16 @@ proc acceptClientLoop(server: HttpServerRef) {.async.} =
     try:
       # if server.maxConnections > 0:
       #   await server.semaphore.acquire()
-
       let transp = await server.instance.accept()
-      server.connections[transp.getId()] = processLoop(server, transp)
-
+      let resId = transp.getId()
+      if resId.isErr():
+        # We are unable to identify remote peer, it means that remote peer
+        # disconnected before identification.
+        await transp.closeWait()
+        breakLoop = false
+      else:
+        let connId = resId.get()
+        server.connections[connId] = processLoop(server, transp, connId)
     except CancelledError:
       # Server was stopped
       breakLoop = true
@@ -845,10 +859,12 @@ proc acceptClientLoop(server: HttpServerRef) {.async.} =
     except TransportTooManyError:
       # Non critical error
       breakLoop = false
+    except TransportAbortedError:
+      # Non critical error
+      breakLoop = false
     except CatchableError:
       # Unexpected error
       breakLoop = true
-      discard
 
     if breakLoop:
       break

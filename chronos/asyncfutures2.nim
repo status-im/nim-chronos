@@ -9,6 +9,7 @@
 #                MIT license (LICENSE-MIT)
 
 import std/[os, tables, strutils, heapqueue, options, deques, sequtils]
+import stew/base10
 import ./srcloc
 export srcloc
 
@@ -38,7 +39,7 @@ type
     state*: FutureState
     error*: ref CatchableError ## Stored exception
     mustCancel*: bool
-    id*: int
+    id*: uint
 
     when defined(chronosStackTrace):
       errorStackTrace*: StackTrace
@@ -75,10 +76,10 @@ type
   FutureList* = object
     head*: FutureBase
     tail*: FutureBase
-    count*: int
+    count*: uint
 
-var currentID* {.threadvar.}: int
-currentID = 0
+var currentID* {.threadvar.}: uint
+currentID = 0'u
 
 when defined(chronosFutureTracking):
   var futureList* {.threadvar.}: FutureList
@@ -86,12 +87,12 @@ when defined(chronosFutureTracking):
 
 template setupFutureBase(loc: ptr SrcLoc) =
   new(result)
+  currentID.inc()
   result.state = FutureState.Pending
   when defined(chronosStackTrace):
     result.stackTrace = getStackTrace()
   result.id = currentID
   result.location[LocCreateIndex] = loc
-  currentID.inc()
 
   when defined(chronosFutureTracking):
     result.next = nil
@@ -198,7 +199,7 @@ proc checkFinished(future: FutureBase, loc: ptr SrcLoc) =
     var msg = ""
     msg.add("An attempt was made to complete a Future more than once. ")
     msg.add("Details:")
-    msg.add("\n  Future ID: " & $future.id)
+    msg.add("\n  Future ID: " & Base10.toString(future.id))
     msg.add("\n  Creation location:")
     msg.add("\n    " & $future.location[LocCreateIndex])
     msg.add("\n  First completion location:")
