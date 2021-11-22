@@ -12,6 +12,9 @@
 import ./asyncloop
 export asyncloop
 
+when defined(chronosFutureTracking):
+  import stew/base10
+
 const
   AllFutureStates* = {FutureState.Pending, FutureState.Cancelled,
                       FutureState.Finished, FutureState.Failed}
@@ -28,7 +31,7 @@ proc dumpPendingFutures*(filter = AllFutureStates): string =
   ##    not yet finished).
   ## 2. Future[T] objects with ``FutureState.Finished/Cancelled/Failed`` state
   ##    which callbacks are scheduled, but not yet fully processed.
-  var count = 0
+  var count = 0'u
   var res = ""
   when defined(chronosFutureTracking):
     for item in pendingFutures():
@@ -41,13 +44,16 @@ proc dumpPendingFutures*(filter = AllFutureStates): string =
           "\"unspecified\""
         else:
           "\"" & procedure & "\""
-        let item = "Future[" & $item.id & "] with name " & $procname &
-                   " created at " & "<" & filename & ":" & $loc.line & ">" &
+        let item = "Future[" & Base10.toString(item.id) & "] with name " &
+                   $procname & " created at " & "<" & filename & ":" &
+                   Base10.toString(uint(loc.line)) & ">" &
                    " and state = " & $item.state & "\n"
         res.add(item)
-  result = $count & " pending Future[T] objects found:\n" & $res
+    Base10.toString(count) & " pending Future[T] objects found:\n" & $res
+  else:
+    "0 pending Future[T] objects found\n"
 
-proc pendingFuturesCount*(filter: set[FutureState]): int =
+proc pendingFuturesCount*(filter: set[FutureState]): uint =
   ## Returns number of `pending` Future[T] objects which satisfy the ``filter``
   ## condition.
   ##
@@ -57,10 +63,10 @@ proc pendingFuturesCount*(filter: set[FutureState]): int =
     if filter == AllFutureStates:
       pendingFuturesCount()
     else:
-      var res = 0
+      var res = 0'u
       for item in pendingFutures():
         if item.state in filter:
           inc(res)
       res
   else:
-    0
+    0'u

@@ -12,19 +12,20 @@ when defined(nimHasUsed): {.used.}
 
 suite "Asynchronous utilities test suite":
   when defined(chronosFutureTracking):
-    proc getCount(): int =
+    proc getCount(): uint =
       # This procedure counts number of Future[T] in double-linked list via list
       # iteration.
-      result = 0
+      var res = 0'u
       for item in pendingFutures():
-        inc(result)
+        inc(res)
+      res
 
   test "Future clean and leaks test":
     when defined(chronosFutureTracking):
-      if pendingFuturesCount(WithoutFinished) == 0:
-        if pendingFuturesCount(OnlyFinished) > 0:
+      if pendingFuturesCount(WithoutFinished) == 0'u:
+        if pendingFuturesCount(OnlyFinished) > 0'u:
           poll()
-        check pendingFuturesCount() == 0
+        check pendingFuturesCount() == 0'u
       else:
         echo dumpPendingFutures()
         check false
@@ -35,31 +36,31 @@ suite "Asynchronous utilities test suite":
     when defined(chronosFutureTracking):
       var fut1 = newFuture[void]()
       check:
-        getCount() == 1
-        pendingFuturesCount() == 1
+        getCount() == 1'u
+        pendingFuturesCount() == 1'u
       var fut2 = newFuture[void]()
       check:
-        getCount() == 2
-        pendingFuturesCount() == 2
+        getCount() == 2'u
+        pendingFuturesCount() == 2'u
       var fut3 = newFuture[void]()
       check:
-        getCount() == 3
-        pendingFuturesCount() == 3
+        getCount() == 3'u
+        pendingFuturesCount() == 3'u
       fut1.complete()
       poll()
       check:
-        getCount() == 2
-        pendingFuturesCount() == 2
+        getCount() == 2'u
+        pendingFuturesCount() == 2'u
       fut2.fail(newException(ValueError, ""))
       poll()
       check:
-        getCount() == 1
-        pendingFuturesCount() == 1
+        getCount() == 1'u
+        pendingFuturesCount() == 1'u
       fut3.cancel()
       poll()
       check:
-        getCount() == 0
-        pendingFuturesCount() == 0
+        getCount() == 0'u
+        pendingFuturesCount() == 0'u
     else:
       skip()
 
@@ -70,17 +71,17 @@ suite "Asynchronous utilities test suite":
 
       var fut = simpleProc()
       check:
-        getCount() == 2
-        pendingFuturesCount() == 2
+        getCount() == 2'u
+        pendingFuturesCount() == 2'u
 
       waitFor fut
       check:
-        getCount() == 1
-        pendingFuturesCount() == 1
+        getCount() == 1'u
+        pendingFuturesCount() == 1'u
 
       poll()
       check:
-        getCount() == 0
-        pendingFuturesCount() == 0
+        getCount() == 0'u
+        pendingFuturesCount() == 0'u
     else:
       skip()

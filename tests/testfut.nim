@@ -1315,4 +1315,39 @@ suite "Future[T] behavior test suite":
       f2.finished()
       f3.finished()
 
+  test "Unsigned integer overflow test":
+    check:
+      0xFFFF_FFFF_FFFF_FFFF'u64 + 1'u64 == 0'u64
+      0xFFFF_FFFF'u32 + 1'u32 == 0'u32
 
+    when sizeof(uint) == 8:
+      check 0xFFFF_FFFF_FFFF_FFFF'u + 1'u == 0'u
+    else:
+      check 0xFFFF_FFFF'u + 1'u == 0'u
+
+    var v1_64 = 0xFFFF_FFFF_FFFF_FFFF'u64
+    var v2_64 = 0xFFFF_FFFF_FFFF_FFFF'u64
+    var v1_32 = 0xFFFF_FFFF'u32
+    var v2_32 = 0xFFFF_FFFF'u32
+    inc(v1_64)
+    inc(v1_32)
+    check:
+      v1_64 == 0'u64
+      v2_64 + 1'u64 == 0'u64
+      v1_32 == 0'u32
+      v2_32 + 1'u32 == 0'u32
+
+    when sizeof(uint) == 8:
+      var v1_u = 0xFFFF_FFFF_FFFF_FFFF'u
+      var v2_u = 0xFFFF_FFFF_FFFF_FFFF'u
+      inc(v1_u)
+      check:
+        v1_u == 0'u
+        v2_u + 1'u == 0'u
+    else:
+      var v1_u = 0xFFFF_FFFF'u
+      var v2_u = 0xFFFF_FFFF'u
+      inc(v1_u)
+      check:
+        v1_u == 0'u
+        v2_u + 1'u == 0'u

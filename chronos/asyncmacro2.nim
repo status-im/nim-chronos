@@ -284,6 +284,7 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
                                   procBody, nnkIteratorDef)
     closureIterator.pragma = newNimNode(nnkPragma, lineInfoFrom=prc.body)
     closureIterator.addPragma(newIdentNode("closure"))
+    # https://github.com/nim-lang/RFCs/issues/435
     closureIterator.addPragma(newIdentNode("gcsafe"))
 
     # TODO when push raises is active in a module, the iterator here inherits
@@ -331,6 +332,7 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
   if prc.kind != nnkLambda: # TODO: Nim bug?
     prc.addPragma(newColonExpr(ident "stackTrace", ident "off"))
 
+  # https://github.com/nim-lang/RFCs/issues/435
   prc.addPragma(newIdentNode("gcsafe"))
   result = prc
 
