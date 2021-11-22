@@ -284,7 +284,14 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
                                   procBody, nnkIteratorDef)
     closureIterator.pragma = newNimNode(nnkPragma, lineInfoFrom=prc.body)
     closureIterator.addPragma(newIdentNode("closure"))
+    # **Remark 435**: We generate a proc with an inner iterator which call each other
+    # recursively. The current Nim compiler is not smart enough to infer
+    # the `gcsafe`-ty aspect of this setup, so we always annotate it explicitly
+    # with `gcsafe`. This means that the client code is always enforced to be
+    # `gcsafe`. This is still **safe**, the compiler still checks for `gcsafe`-ty
+    # regardless, it is only helping the compiler's inference algorithm. See
     # https://github.com/nim-lang/RFCs/issues/435
+    # for more details.
     closureIterator.addPragma(newIdentNode("gcsafe"))
 
     # TODO when push raises is active in a module, the iterator here inherits
@@ -332,6 +339,7 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
   if prc.kind != nnkLambda: # TODO: Nim bug?
     prc.addPragma(newColonExpr(ident "stackTrace", ident "off"))
 
+  # See **Remark 435** in this file.
   # https://github.com/nim-lang/RFCs/issues/435
   prc.addPragma(newIdentNode("gcsafe"))
   result = prc
