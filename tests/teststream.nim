@@ -1168,7 +1168,9 @@ suite "Stream Transport test suite":
       await sleepAsync(100.milliseconds)
 
       for i in 0 ..< len(futs):
-        if futs[i].failed() and (futs[i].error of TransportUseClosedError):
+        # writes may complete via fast write
+        if futs[i].completed() or (
+            futs[i].failed() and (futs[i].error of TransportUseClosedError)):
           inc(res)
 
       await server.closeWait()
