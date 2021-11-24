@@ -54,6 +54,7 @@ type
   # How much refactoring is needed to make this a regular non-ref type?
   # Obviously, it will still be allocated on the heap when necessary.
   Future*[T] = ref object of FutureBase ## Typed future.
+    closure*: iterator(f: Future[T]): FutureBase {.raises: [Defect, CatchableError, Exception], gcsafe.}
     value: T ## Stored value
 
   FutureStr*[T] = ref object of Future[T]
@@ -397,6 +398,38 @@ proc `cancelCallback=`*[T](future: Future[T], cb: CallbackFunc) =
   ##
   ## This callback will be called immediately as ``future.cancel()`` invoked.
   future.cancelcb = cb
+
+{.push stackTrace: off.}
+proc futureContinue*[T](fut: Future[T]) {.gcsafe, raises: [Defect].} =
+  try:
+    if not (fut.closure.finished()):
+      var next = fut.closure(fut)
+      while (not next.isNil()) and
+          next.finished():
+        next = fut.closure(fut)
+        if fut.closure.finished():
+          break
+      if next == nil:
+        if not (fut.finished()):
+          const
+            msg = "Async procedure (&" & "testInner" &
+                ") yielded `nil`, " &
+                "are you await\'ing a `nil` Future?"
+          raiseAssert msg
+      else:
+        next.addCallback(proc (arg: pointer) {.gcsafe, raises: [Defect].} =
+          futureContinue(fut))
+  except CancelledError:
+    fut.cancelAndSchedule()
+  except CatchableError as exc:
+    fut.fail(exc)
+  except Exception as exc:
+    if exc of Defect:
+      raise (ref Defect)(exc)
+    fut.fail((ref ValueError)(msg: exc.msg,
+        parent: exc))
+{.pop.}
+
 
 template getFilenameProcname(entry: StackTraceEntry): (string, string) =
   when compiles(entry.filenameStr) and compiles(entry.procnameStr):
