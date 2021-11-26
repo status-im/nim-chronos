@@ -403,7 +403,10 @@ proc `cancelCallback=`*[T](future: Future[T], cb: CallbackFunc) =
   future.cancelcb = cb
 
 {.push stackTrace: off.}
+proc internalContinue[T](fut: pointer) {.gcsafe, raises: [Defect].}
+
 proc futureContinue*[T](fut: Future[T]) {.gcsafe, raises: [Defect].} =
+
   # Used internally by async transformation
   try:
     if not(fut.closure.finished()):
@@ -421,8 +424,8 @@ proc futureContinue*[T](fut: Future[T]) {.gcsafe, raises: [Defect].} =
                       "are you await'ing a `nil` Future?"
           raiseAssert msg
       else:
-        next.addCallback(proc (arg: pointer) {.gcsafe, raises: [Defect].} =
-          futureContinue(fut))
+        GC_ref(fut)
+        next.addCallback(internalContinue[T], cast[pointer](fut))
   except CancelledError:
     fut.cancelAndSchedule()
   except CatchableError as exc:
@@ -434,8 +437,13 @@ proc futureContinue*[T](fut: Future[T]) {.gcsafe, raises: [Defect].} =
 
     #TODO what was that? futureVarCompletions
     fut.fail((ref ValueError)(msg: exc.msg, parent: exc))
-{.pop.}
 
+proc internalContinue[T](fut: pointer) {.gcsafe, raises: [Defect].} =
+  let asFut = cast[Future[T]](fut)
+  futureContinue(asFut)
+  GC_unref(asFut)
+
+{.pop.}
 
 template getFilenameProcname(entry: StackTraceEntry): (string, string) =
   when compiles(entry.filenameStr) and compiles(entry.procnameStr):
