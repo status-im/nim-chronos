@@ -54,7 +54,10 @@ type
   # How much refactoring is needed to make this a regular non-ref type?
   # Obviously, it will still be allocated on the heap when necessary.
   Future*[T] = ref object of FutureBase ## Typed future.
-    closure*: iterator(f: Future[T]): FutureBase {.raises: [Defect, CatchableError, Exception], gcsafe.}
+    when defined(chronosStrictException):
+      closure*: iterator(f: Future[T]): FutureBase {.raises: [Defect, CatchableError], gcsafe.}
+    else:
+      closure*: iterator(f: Future[T]): FutureBase {.raises: [Defect, CatchableError, Exception], gcsafe.}
     value: T ## Stored value
 
   FutureStr*[T] = ref object of Future[T]
@@ -401,6 +404,7 @@ proc `cancelCallback=`*[T](future: Future[T], cb: CallbackFunc) =
 
 {.push stackTrace: off.}
 proc futureContinue*[T](fut: Future[T]) {.gcsafe, raises: [Defect].} =
+  # Used internally by async transformation
   try:
     if not (fut.closure.finished()):
       var next = fut.closure(fut)

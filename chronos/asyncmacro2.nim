@@ -286,6 +286,7 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
 
 template await*[T](f: Future[T]): untyped =
   when declared(chronosInternalRetFuture):
+    #work around https://github.com/nim-lang/Nim/issues/19193
     when not declaredInScope(chronosInternalTmpFuture):
       var chronosInternalTmpFuture {.inject.}: FutureBase = f
     else:
@@ -315,6 +316,7 @@ template await*[T](f: Future[T]): untyped =
 
 template awaitne*[T](f: Future[T]): Future[T] =
   when declared(chronosInternalRetFuture):
+    #work around https://github.com/nim-lang/Nim/issues/19193
     when not declaredInScope(chronosInternalTmpFuture):
       var chronosInternalTmpFuture {.inject.}: FutureBase = f
     else:
