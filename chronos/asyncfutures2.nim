@@ -406,19 +406,19 @@ proc `cancelCallback=`*[T](future: Future[T], cb: CallbackFunc) =
 proc futureContinue*[T](fut: Future[T]) {.gcsafe, raises: [Defect].} =
   # Used internally by async transformation
   try:
-    if not (fut.closure.finished()):
+    if not(fut.closure.finished()):
       var next = fut.closure(fut)
-      while (not next.isNil()) and
-          next.finished():
+      # Continue while the yielded future is already finished.
+      while (not next.isNil()) and next.finished():
         next = fut.closure(fut)
         if fut.closure.finished():
           break
+
       if next == nil:
-        if not (fut.finished()):
-          const
-            msg = "Async procedure (&" & "testInner" &
-                ") yielded `nil`, " &
-                "are you await\'ing a `nil` Future?"
+        if not(fut.finished()):
+          # Can't get strName anymore
+          const msg = "Async procedure yielded `nil`, " &
+                      "are you await'ing a `nil` Future?"
           raiseAssert msg
       else:
         next.addCallback(proc (arg: pointer) {.gcsafe, raises: [Defect].} =
@@ -426,12 +426,14 @@ proc futureContinue*[T](fut: Future[T]) {.gcsafe, raises: [Defect].} =
   except CancelledError:
     fut.cancelAndSchedule()
   except CatchableError as exc:
+    #TODO what was that? futureVarCompletions
     fut.fail(exc)
   except Exception as exc:
     if exc of Defect:
       raise (ref Defect)(exc)
-    fut.fail((ref ValueError)(msg: exc.msg,
-        parent: exc))
+
+    #TODO what was that? futureVarCompletions
+    fut.fail((ref ValueError)(msg: exc.msg, parent: exc))
 {.pop.}
 
 
