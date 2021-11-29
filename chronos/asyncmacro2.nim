@@ -141,7 +141,7 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
   # ->   var result: T
   # ->   {.pop.}
   # ->   <proc_body>
-  # ->   complete(retFuture, result)
+  # ->   complete(chronosInternalRetFuture, result)
   let internalFutureSym = ident "chronosInternalRetFuture"
   var iteratorNameSym = genSym(nskIterator, $prcName)
   var procBody = prc.body.processBody(internalFutureSym, subtypeIsVoid,
@@ -174,9 +174,9 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
 
       procBody.add(
         newCall(newIdentNode("complete"),
-          internalFutureSym, newIdentNode("result"))) # -> complete(retFuture, result)
+          internalFutureSym, newIdentNode("result"))) # -> complete(chronosInternalRetFuture, result)
     else:
-      # -> complete(retFuture)
+      # -> complete(chronosInternalRetFuture)
       procBody.add(newCall(newIdentNode("complete"), internalFutureSym))
 
     let
