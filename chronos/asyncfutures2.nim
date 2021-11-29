@@ -162,9 +162,9 @@ proc finished*(future: FutureBase | FutureVar): bool {.inline.} =
   else:
     result = (future.state != FutureState.Pending)
 
-proc cancelled*(future: FutureBase): bool {.inline.} =
+proc cancelled*(future: FutureBase | FutureVar): bool {.inline.} =
   ## Determines whether ``future`` has cancelled.
-  (future.state == FutureState.Cancelled)
+  (FutureBase(future).state == FutureState.Cancelled)
 
 proc failed*(future: FutureBase): bool {.inline.} =
   ## Determines whether ``future`` completed with an error.
@@ -506,7 +506,7 @@ proc internalCheckComplete*(fut: FutureBase) {.
 proc internalRead*[T](fut: Future[T] | FutureVar[T]): T {.inline.} =
   # For internal use only. Used in asyncmacro
   when T isnot void:
-    return fut.value
+    return ((Future[T])fut).value
 
 proc read*[T](future: Future[T] | FutureVar[T]): T {.
      raises: [Defect, CatchableError].} =
@@ -515,7 +515,7 @@ proc read*[T](future: Future[T] | FutureVar[T]): T {.
   ##
   ## If the result of the future is an error then that error will be raised.
   if future.finished():
-    internalCheckComplete(future)
+    internalCheckComplete(FutureBase(future))
     internalRead(future)
   else:
     # TODO: Make a custom exception type for this?
