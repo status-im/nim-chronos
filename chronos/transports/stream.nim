@@ -191,11 +191,11 @@ template shiftBuffer(t, c: untyped) =
   else:
     (t).offset = 0
 
-template shiftVectorBuffer(v, o: untyped) =
+template shiftVectorBuffer(v: var StreamVector, o: untyped) =
   (v).buf = cast[pointer](cast[uint]((v).buf) + uint(o))
   (v).buflen -= int(o)
 
-template shiftVectorFile(v, o: untyped) =
+template shiftVectorFile(v: var StreamVector, o: untyped) =
   (v).buf = cast[pointer](cast[uint]((v).buf) - cast[uint](o))
   (v).offset += cast[uint]((o))
 
@@ -1321,16 +1321,20 @@ else:
         var nbytes = cast[int](vector.buf)
         let res = sendfile(int(fd), cast[int](vector.buflen),
                            int(vector.offset), nbytes)
+
+        # In case of some errors on some systems, some bytes may have been
+        # written (see sendfile.nim)
+        vector.size += nbytes
+
         if res >= 0:
           if cast[int](vector.buf) == nbytes:
-            vector.size += nbytes
             if not(vector.writer.finished()):
               vector.writer.complete(vector.size)
           else:
-            vector.size += nbytes
             vector.shiftVectorFile(nbytes)
             transp.queue.addFirst(vector)
         else:
+          vector.shiftVectorFile(nbytes)
           handleError()
 
     # Nothing left in the queue - no need for further write notifications
