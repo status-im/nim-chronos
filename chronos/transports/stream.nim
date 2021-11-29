@@ -1258,105 +1258,83 @@ else:
       return
 
     if WriteClosed in transp.state:
-      let error = getTransportUseClosedError()
-      failPendingWriteQueue(transp.queue, error)
-      # TODO where does removeWriter happen?
-    else:
-      # We exit this loop in two ways:
-      # * The queue is empty: we call removeWriter to disable further callbacks
-      # * EWOULDBLOCK is returned and we need to wait for a new notification
+      doAssert transp.queue.len() == 0, "`close` should have emptied queue"
+      return
 
-      while len(transp.queue) > 0:
-        template handleError() =
-          let err = osLastError()
+    # We exit this loop in two ways:
+    # * The queue is empty: we call removeWriter to disable further callbacks
+    # * EWOULDBLOCK is returned and we need to wait for a new notification
 
-          if cint(err) == EINTR:
-            # Signal happened while writing - try again with all data
-            transp.queue.addFirst(vector)
-            continue
+    while len(transp.queue) > 0:
+      template handleError() =
+        let err = osLastError()
 
-          if cint(err) in [EWOULDBLOCK, EAGAIN]:
-            # Socket buffer is full - wait until next write notification
-            transp.queue.addFirst(vector)
-            return
+        if cint(err) == EINTR:
+          # Signal happened while writing - try again with all data
+          transp.queue.addFirst(vector)
+          continue
 
-          # The errors below will clear the write queue and removeWriter
-          # will be called next as a result
-          if isConnResetError(err):
-            # Soft error happens which indicates that remote peer got
-            # disconnected, complete all pending writes in queue with 0.
-            transp.state.incl({WriteEof})
+        if cint(err) in [EWOULDBLOCK, EAGAIN]:
+          # Socket buffer is full - wait until next write notification - in
+          # particular, ensure removeWriter is not called
+          transp.queue.addFirst(vector)
+          return
+
+        # The errors below will clear the write queue, meaning we'll exit the
+        # loop
+        if isConnResetError(err):
+          # Soft error happens which indicates that remote peer got
+          # disconnected, complete all pending writes in queue with 0.
+          transp.state.incl({WriteEof})
+          if not(vector.writer.finished()):
+            vector.writer.complete(0)
+          completePendingWriteQueue(transp.queue, 0)
+        else:
+          transp.state.incl({WriteError})
+          let error = getTransportOsError(err)
+          if not(vector.writer.finished()):
+            vector.writer.fail(error)
+          failPendingWriteQueue(transp.queue, error)
+
+      var vector = transp.queue.popFirst()
+      case vector.kind
+      of VectorKind.DataBuffer:
+        let res =
+          case transp.kind
+          of TransportKind.Socket:
+            posix.send(fd, vector.buf, vector.buflen, MSG_NOSIGNAL)
+          of TransportKind.Pipe:
+            posix.write(cint(fd), vector.buf, vector.buflen)
+          else: raiseAssert "Unsupported transport kind: " & $transp.kind
+
+        if res >= 0:
+          if vector.buflen == res:
             if not(vector.writer.finished()):
-              vector.writer.complete(0)
-            completePendingWriteQueue(transp.queue, 0)
+              vector.writer.complete(vector.size)
           else:
-            transp.state.incl({WriteError})
-            let error = getTransportOsError(err)
+            vector.shiftVectorBuffer(res)
+            transp.queue.addFirst(vector) # Try again with rest of data
+        else:
+          handleError()
+
+      of VectorKind.DataFile:
+        var nbytes = cast[int](vector.buf)
+        let res = sendfile(int(fd), cast[int](vector.buflen),
+                           int(vector.offset), nbytes)
+        if res >= 0:
+          if cast[int](vector.buf) == nbytes:
+            vector.size += nbytes
             if not(vector.writer.finished()):
-              vector.writer.fail(error)
-            failPendingWriteQueue(transp.queue, error)
-
-        var vector = transp.queue.popFirst()
-        if transp.kind == TransportKind.Socket:
-          if vector.kind == VectorKind.DataBuffer:
-            let res = posix.send(fd, vector.buf, vector.buflen, MSG_NOSIGNAL)
-            if res >= 0:
-              if vector.buflen == res:
-                if not(vector.writer.finished()):
-                  vector.writer.complete(vector.size)
-              else:
-                vector.shiftVectorBuffer(res)
-                transp.queue.addFirst(vector) # Try again with rest of data
-            else:
-              handleError()
+              vector.writer.complete(vector.size)
           else:
-            var nbytes = cast[int](vector.buf)
-            let res = sendfile(int(fd), cast[int](vector.buflen),
-                                int(vector.offset),
-                                nbytes)
-            if res >= 0:
-              if cast[int](vector.buf) - nbytes == 0:
-                vector.size += nbytes
-                if not(vector.writer.finished()):
-                  vector.writer.complete(vector.size)
-              else:
-                vector.size += nbytes
-                vector.shiftVectorFile(nbytes)
-                transp.queue.addFirst(vector)
-            else:
-              handleError()
+            vector.size += nbytes
+            vector.shiftVectorFile(nbytes)
+            transp.queue.addFirst(vector)
+        else:
+          handleError()
 
-        elif transp.kind == TransportKind.Pipe:
-          if vector.kind == VectorKind.DataBuffer:
-            let res = posix.write(cint(fd), vector.buf, vector.buflen)
-            if res >= 0:
-              if vector.buflen == res:
-                if not(vector.writer.finished()):
-                  vector.writer.complete(vector.size)
-              else:
-                vector.shiftVectorBuffer(res)
-                transp.queue.addFirst(vector)
-            else:
-              handleError()
-          else:
-            var nbytes = cast[int](vector.buf)
-            let res = sendfile(int(fd), cast[int](vector.buflen),
-                                int(vector.offset),
-                                nbytes)
-            if res >= 0:
-              if cast[int](vector.buf) == nbytes:
-                vector.size += nbytes
-                if not(vector.writer.finished()):
-                  vector.writer.complete(vector.size)
-              else:
-                vector.size += nbytes
-                vector.shiftVectorFile(nbytes)
-                transp.queue.addFirst(vector)
-            else:
-              handleError()
-
-      # Nothing left in the queue - no need for further write notifications
-      transp.removeWriter()
+    # Nothing left in the queue - no need for further write notifications
+    transp.removeWriter()
 
   proc readStreamLoop(udata: pointer) =
     # TODO fix Defect raises - they "shouldn't" happen
@@ -2486,6 +2464,12 @@ proc close*(transp: StreamTransport) =
           # of readStreamLoop().
           closeSocket(transp.fd)
     else:
+      if transp.queue.len > 0:
+        transp.removeWriter()
+
+        let error = getTransportUseClosedError()
+        failPendingWriteQueue(transp.queue, error)
+
       if transp.kind == TransportKind.Pipe:
         closeHandle(transp.fd, continuation)
       elif transp.kind == TransportKind.Socket:
