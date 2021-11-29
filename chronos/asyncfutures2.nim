@@ -419,10 +419,8 @@ proc futureContinue*[T](fut: Future[T]) {.gcsafe, raises: [Defect].} =
 
       if next == nil:
         if not(fut.finished()):
-          # Can't get strName anymore
-          const msg = "Async procedure yielded `nil`, " &
+          raiseAssert "Async procedure (" & ($fut.location[LocCreateIndex]) & ") yielded `nil`, " &
                       "are you await'ing a `nil` Future?"
-          raiseAssert msg
       else:
         GC_ref(fut)
         next.addCallback(internalContinue[T], cast[pointer](fut))
