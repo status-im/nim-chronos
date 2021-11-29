@@ -417,6 +417,8 @@ proc futureContinue*[T](fut: Future[T]) {.gcsafe, raises: [Defect].} =
         if fut.closure.finished():
           break
 
+      if fut.closure.finished():
+        fut.closure = nil
       if next == nil:
         if not(fut.finished()):
           raiseAssert "Async procedure (" & ($fut.location[LocCreateIndex]) & ") yielded `nil`, " &
