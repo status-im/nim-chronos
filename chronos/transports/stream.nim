@@ -1258,7 +1258,11 @@ else:
       return
 
     if WriteClosed in transp.state:
-      doAssert transp.queue.len() == 0, "`close` should have emptied queue"
+      if transp.queue.len > 0:
+        transp.removeWriter()
+
+        let error = getTransportUseClosedError()
+        failPendingWriteQueue(transp.queue, error)
       return
 
     # We exit this loop in two ways:
@@ -2468,12 +2472,6 @@ proc close*(transp: StreamTransport) =
           # of readStreamLoop().
           closeSocket(transp.fd)
     else:
-      if transp.queue.len > 0:
-        transp.removeWriter()
-
-        let error = getTransportUseClosedError()
-        failPendingWriteQueue(transp.queue, error)
-
       if transp.kind == TransportKind.Pipe:
         closeHandle(transp.fd, continuation)
       elif transp.kind == TransportKind.Socket:
