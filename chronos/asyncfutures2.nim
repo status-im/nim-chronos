@@ -406,7 +406,6 @@ proc `cancelCallback=`*[T](future: Future[T], cb: CallbackFunc) =
 proc internalContinue[T](fut: pointer) {.gcsafe, raises: [Defect].}
 
 proc futureContinue*[T](fut: Future[T]) {.gcsafe, raises: [Defect].} =
-
   # Used internally by async transformation
   try:
     if not(fut.closure.finished()):
@@ -429,19 +428,17 @@ proc futureContinue*[T](fut: Future[T]) {.gcsafe, raises: [Defect].} =
   except CancelledError:
     fut.cancelAndSchedule()
   except CatchableError as exc:
-    #TODO what was that? futureVarCompletions
     fut.fail(exc)
   except Exception as exc:
     if exc of Defect:
       raise (ref Defect)(exc)
 
-    #TODO what was that? futureVarCompletions
     fut.fail((ref ValueError)(msg: exc.msg, parent: exc))
 
 proc internalContinue[T](fut: pointer) {.gcsafe, raises: [Defect].} =
   let asFut = cast[Future[T]](fut)
-  futureContinue(asFut)
   GC_unref(asFut)
+  futureContinue(asFut)
 
 {.pop.}
 
@@ -469,8 +466,8 @@ proc getHint(entry: StackTraceEntry): string =
     if cmpIgnoreStyle(filename, "asyncdispatch.nim") == 0:
       return "Processes asynchronous completion events"
 
-  if procname.endsWith("_continue"):
-    if cmpIgnoreStyle(filename, "asyncmacro.nim") == 0:
+  if procname == "internalContinue":
+    if cmpIgnoreStyle(filename, "asyncfutures.nim") == 0:
       return "Resumes an async procedure"
 
 proc `$`(stackTraceEntries: seq[StackTraceEntry]): string =
