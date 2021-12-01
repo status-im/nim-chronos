@@ -717,6 +717,9 @@ proc closeWait*(response: HttpClientResponseRef) {.async.} =
       if not(response.reader.closed()):
         await response.reader.closeWait()
       response.reader = nil
+    if not(isNil(response.connection)):
+      await response.session.releaseConnection(response.connection)
+      response.connection = nil
     response.session = nil
     response.error = nil
     response.setState(HttpClientResponseState.Closed)
