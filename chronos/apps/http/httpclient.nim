@@ -89,6 +89,7 @@ type
     data: seq[byte]
 
   HttpClientConnection* = object of RootObj
+    id*: uint64
     case kind*: HttpClientScheme
     of HttpClientScheme.NonSecure:
       discard
@@ -107,6 +108,7 @@ type
 
   HttpSessionRef* = ref object
     connections*: Table[string, seq[HttpClientConnectionRef]]
+    counter*: uint64
     maxRedirections*: int
     connectTimeout*: Duration
     headersTimeout*: Duration
@@ -451,11 +453,16 @@ proc redirect*(session: HttpSessionRef,
       addresses: srcaddr.addresses
     ))
 
+proc getUniqueConnectionId(session: HttpSessionRef): uint64 =
+  inc(session.counter)
+  session.counter
+
 proc new(t: typedesc[HttpClientConnectionRef], session: HttpSessionRef,
          ha: HttpAddress, transp: StreamTransport): HttpClientConnectionRef =
   case ha.scheme
   of HttpClientScheme.NonSecure:
     let res = HttpClientConnectionRef(
+      id: session.getUniqueConnectionId(),
       kind: HttpClientScheme.NonSecure,
       transp: transp,
       reader: newAsyncStreamReader(transp),
@@ -471,6 +478,7 @@ proc new(t: typedesc[HttpClientConnectionRef], session: HttpSessionRef,
     let tls = newTLSClientAsyncStream(treader, twriter, ha.hostname,
                                       flags = session.flags.getTLSFlags())
     let res = HttpClientConnectionRef(
+      id: session.getUniqueConnectionId(),
       kind: HttpClientScheme.Secure,
       transp: transp,
       treader: treader,
