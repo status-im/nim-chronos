@@ -963,7 +963,8 @@ proc prepareRequest(request: HttpClientRequestRef): string {.
 
 proc send*(request: HttpClientRequestRef): Future[HttpClientResponseRef] {.
      async.} =
-  doAssert(request.state == HttpClientRequestState.Created)
+  doAssert(request.state == HttpClientRequestState.Created,
+           "Request's state is " & $request.state)
   request.setState(HttpClientRequestState.Connecting)
   request.connection =
     try:
@@ -1008,7 +1009,8 @@ proc open*(request: HttpClientRequestRef): Future[HttpBodyWriter] {.
      async.} =
   ## Start sending request's headers and return `HttpBodyWriter`, which can be
   ## used to send request's body.
-  doAssert(request.state == HttpClientRequestState.Created)
+  doAssert(request.state == HttpClientRequestState.Created,
+           "Request's state is " & $request.state)
   doAssert(len(request.buffer) == 0,
            "Request should not have static body content (len(buffer) == 0)")
   request.setState(HttpClientRequestState.Connecting)
@@ -1057,9 +1059,11 @@ proc open*(request: HttpClientRequestRef): Future[HttpBodyWriter] {.
 proc finish*(request: HttpClientRequestRef): Future[HttpClientResponseRef] {.
      async.} =
   ## Finish sending request and receive response.
-  doAssert(request.state == HttpClientRequestState.BodySending)
+  doAssert(request.state == HttpClientRequestState.BodySending,
+           "Request's state is " & $request.state)
   doAssert(request.connection.state ==
-           HttpClientConnectionState.RequestBodySending)
+           HttpClientConnectionState.RequestBodySending,
+           "Connection's state is " & $request.connection.state)
   doAssert(request.writer.closed())
   request.setState(HttpClientRequestState.BodySent)
   let resp =
