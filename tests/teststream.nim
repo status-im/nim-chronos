@@ -1138,18 +1138,31 @@ suite "Stream Transport test suite":
 
     proc acceptTask(server: StreamServer) {.async.} =
       let transp = await server.accept()
-      var futs = newSeq[Future[int]](TestsCount)
+      var futs = newSeq[Future[int]]()
       var msg = createBigMessage(1024)
-      for i in 0 ..< len(futs):
-        futs[i] = transp.write(msg)
+      var tries = 0
+
+      while futs.len() < TestsCount:
+        let fut = transp.write(msg)
+        # `write` has a fast path that puts the data in the OS socket buffer -
+        # we'll keep writing until we get EAGAIN from the OS so that we have
+        # data in the in-chronos queue to fail on close
+        if not fut.completed():
+          futs.add(fut)
+        else:
+          tries += 1
+          if tries > 65*1024:
+            # We've queued 64mb on the socket and it still allows writing,
+            # something is wrong - we'll break here which will cause the test
+            # to fail
+            break
 
       await transp.closeWait()
       await sleepAsync(100.milliseconds)
 
       for i in 0 ..< len(futs):
         # writes may complete via fast write
-        if futs[i].completed() or (
-            futs[i].failed() and (futs[i].error of TransportUseClosedError)):
+        if futs[i].failed() and (futs[i].error of TransportUseClosedError):
           inc(res)
 
       await server.closeWait()
