@@ -1242,6 +1242,8 @@ else:
   proc removeWriter(transp: StreamTransport) =
     try:
       transp.fd.removeWriter()
+      # For debugging, record that we're no longer getting write notifications
+      transp.state.incl WritePaused
     except IOSelectorsException as exc:
       raiseAsDefect exc, "removeWriter"
     except ValueError as exc:
@@ -1628,9 +1630,16 @@ else:
 
   proc resumeWrite(transp: StreamTransport) {.inline.} =
     if transp.queue.len() == 1:
-      # writeStreamLoop keeps writing until queue is empty
+      # writeStreamLoop keeps writing until queue is empty - we should not call
+      # resumeWrite under any other condition than when the items are
+      # added to a queue - if the flag is not set here, it means that the socket
+      # was not removed from write notifications at the right time, and this
+      # would mean an imbalance in registration and deregistration
+      doAssert WritePaused in transp.state
       try:
         addWriter(transp.fd, writeStreamLoop, cast[pointer](transp))
+
+        transp.state.excl WritePaused
       except IOSelectorsException as exc:
         raiseAsDefect exc, "addWriter"
       except ValueError as exc:
