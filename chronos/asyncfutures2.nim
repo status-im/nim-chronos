@@ -68,8 +68,6 @@ type
     ## Future to hold GC seqs
     gcholder*: seq[B]
 
-  FutureVar*[T] = distinct Future[T]
-
   FutureDefect* = object of Defect
     cause*: FutureBase
 
@@ -117,9 +115,6 @@ proc newFutureSeqImpl[A, B](loc: ptr SrcLoc): FutureSeq[A, B] =
 proc newFutureStrImpl[T](loc: ptr SrcLoc): FutureStr[T] =
   setupFutureBase(loc)
 
-proc newFutureVarImpl[T](loc: ptr SrcLoc): FutureVar[T] =
-  FutureVar[T](newFutureImpl[T](loc))
-
 template newFuture*[T](fromProc: static[string] = ""): Future[T] =
   ## Creates a new future.
   ##
@@ -143,28 +138,11 @@ template newFutureStr*[T](fromProc: static[string] = ""): FutureStr[T] =
   ## that this future belongs to, is a good habit as it helps with debugging.
   newFutureStrImpl[T](getSrcLocation(fromProc))
 
-template newFutureVar*[T](fromProc: static[string] = ""): FutureVar[T] =
-  ## Create a new ``FutureVar``. This Future type is ideally suited for
-  ## situations where you want to avoid unnecessary allocations of Futures.
-  ##
-  ## Specifying ``fromProc``, which is a string specifying the name of the proc
-  ## that this future belongs to, is a good habit as it helps with debugging.
-  newFutureVarImpl[T](getSrcLocation(fromProc))
-
-proc clean*[T](future: FutureVar[T]) =
-  ## Resets the ``finished`` status of ``future``.
-  Future[T](future).state = FutureState.Pending
-  Future[T](future).value = default(T)
-  Future[T](future).error = nil
-
-proc finished*(future: FutureBase | FutureVar): bool {.inline.} =
+proc finished*(future: FutureBase): bool {.inline.} =
   ## Determines whether ``future`` has completed, i.e. ``future`` state changed
   ## from state ``Pending`` to one of the states (``Finished``, ``Cancelled``,
   ## ``Failed``).
-  when future is FutureVar:
-    result = (FutureBase(future).state != FutureState.Pending)
-  else:
-    result = (future.state != FutureState.Pending)
+  result = (future.state != FutureState.Pending)
 
 proc cancelled*(future: FutureBase): bool {.inline.} =
   ## Determines whether ``future`` has cancelled.
@@ -257,31 +235,6 @@ proc complete(future: Future[void], loc: ptr SrcLoc) =
 template complete*(future: Future[void]) =
   ## Completes a void ``future``.
   complete(future, getSrcLocation())
-
-proc complete[T](future: FutureVar[T], loc: ptr SrcLoc) =
-  if not(future.cancelled()):
-    template fut: untyped = Future[T](future)
-    checkFinished(FutureBase(fut), loc)
-    doAssert(isNil(fut.error))
-    fut.finish(FutureState.Finished)
-
-template complete*[T](futvar: FutureVar[T]) =
-  ## Completes a ``FutureVar``.
-  complete(futvar, getSrcLocation())
-
-proc complete[T](futvar: FutureVar[T], val: T, loc: ptr SrcLoc) =
-  if not(futvar.cancelled()):
-    template fut: untyped = Future[T](futvar)
-    checkFinished(FutureBase(fut), loc)
-    doAssert(isNil(fut.error))
-    fut.value = val
-    fut.finish(FutureState.Finished)
-
-template complete*[T](futvar: FutureVar[T], val: T) =
-  ## Completes a ``FutureVar`` with value ``val``.
-  ##
-  ## Any previously stored value will be overwritten.
-  complete(futvar, val, getSrcLocation())
 
 proc fail[T](future: Future[T], error: ref CatchableError, loc: ptr SrcLoc) =
   if not(future.cancelled()):
@@ -547,12 +500,12 @@ proc internalCheckComplete*(fut: FutureBase) {.
       injectStacktrace(fut)
     raise fut.error
 
-proc internalRead*[T](fut: Future[T] | FutureVar[T]): T {.inline.} =
+proc internalRead*[T](fut: Future[T]): T {.inline.} =
   # For internal use only. Used in asyncmacro
   when T isnot void:
     return fut.value
 
-proc read*[T](future: Future[T] | FutureVar[T]): T {.
+proc read*[T](future: Future[T] ): T {.
      raises: [Defect, CatchableError].} =
   ## Retrieves the value of ``future``. Future must be finished otherwise
   ## this function will fail with a ``ValueError`` exception.
@@ -576,13 +529,6 @@ proc readError*[T](future: Future[T]): ref CatchableError {.
   else:
     # TODO: Make a custom exception type for this?
     raise newException(ValueError, "No error in future.")
-
-proc mget*[T](future: FutureVar[T]): var T =
-  ## Returns a mutable value stored in ``future``.
-  ##
-  ## Unlike ``read``, this function will not raise an exception if the
-  ## Future has not been finished.
-  result = Future[T](future).value
 
 template taskFutureLocation(future: FutureBase): string =
   let loc = future.location[0]
