@@ -61,7 +61,7 @@ type
     opened*: int64
     closed*: int64
 
-  ReadMessagePredicate* = proc (data: openarray[byte]): tuple[consumed: int,
+  ReadMessagePredicate* = proc (data: openArray[byte]): tuple[consumed: int,
                                                               done: bool] {.
     gcsafe, raises: [Defect].}
 
@@ -2415,7 +2415,7 @@ proc readMessage*(transp: StreamTransport,
   ##
   ## ``predicate`` callback must copy all the data from ``data`` array and
   ## return number of bytes it is going to consume.
-  ## ``predicate`` callback will receive (zero-length) openarray, if transport
+  ## ``predicate`` callback will receive (zero-length) openArray, if transport
   ## is at EOF.
   readLoop("stream.transport.readMessage"):
     if transp.offset == 0:

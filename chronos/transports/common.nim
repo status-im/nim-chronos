@@ -301,7 +301,7 @@ proc getAddrInfo(address: string, port: Port, domain: Domain,
       raise newException(TransportAddressError, $gai_strerror(gaiRes))
   res
 
-proc fromSAddr*(sa: ptr Sockaddr_storage, sl: Socklen,
+proc fromSAddr*(sa: ptr Sockaddr_storage, sl: SockLen,
                 address: var TransportAddress) =
   ## Set transport address ``address`` with value from OS specific socket
   ## address storage.
@@ -333,19 +333,19 @@ proc fromSAddr*(sa: ptr Sockaddr_storage, sl: Socklen,
       discard
 
 proc toSAddr*(address: TransportAddress, sa: var Sockaddr_storage,
-             sl: var Socklen) =
+             sl: var SockLen) =
   ## Set socket OS specific socket address storage with address from transport
   ## address ``address``.
   case address.family
   of AddressFamily.IPv4:
-    sl = Socklen(sizeof(Sockaddr_in))
+    sl = SockLen(sizeof(Sockaddr_in))
     let s = cast[ptr Sockaddr_in](addr sa)
     s.sin_family = type(s.sin_family)(toInt(Domain.AF_INET))
     s.sin_port = nativesockets.htons(uint16(address.port))
     copyMem(addr s.sin_addr, unsafeAddr address.address_v4[0],
             sizeof(s.sin_addr))
   of AddressFamily.IPv6:
-    sl = Socklen(sizeof(Sockaddr_in6))
+    sl = SockLen(sizeof(Sockaddr_in6))
     let s = cast[ptr Sockaddr_in6](addr sa)
     s.sin6_family = type(s.sin6_family)(toInt(Domain.AF_INET6))
     s.sin6_port = nativesockets.htons(uint16(address.port))
@@ -354,11 +354,11 @@ proc toSAddr*(address: TransportAddress, sa: var Sockaddr_storage,
   of AddressFamily.Unix:
     when not defined(windows):
       if address.port == Port(0):
-        sl = Socklen(sizeof(sa.ss_family))
+        sl = SockLen(sizeof(sa.ss_family))
       else:
         let s = cast[ptr Sockaddr_un](addr sa)
         var name = cast[cstring](unsafeAddr address.address_un[0])
-        sl = Socklen(sizeof(sa.ss_family) + len(name) + 1)
+        sl = SockLen(sizeof(sa.ss_family) + len(name) + 1)
         s.sun_family = type(s.sun_family)(toInt(Domain.AF_UNIX))
         copyMem(addr s.sun_path, unsafeAddr address.address_un[0],
                 len(name) + 1)

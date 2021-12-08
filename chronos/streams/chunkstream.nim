@@ -48,7 +48,7 @@ proc hexValue*(c: byte): int =
           ((z + 11'u32) and -LT(z, 6))
   int(r) - 1
 
-proc getChunkSize(buffer: openarray[byte]): Result[uint64, cstring] =
+proc getChunkSize(buffer: openArray[byte]): Result[uint64, cstring] =
   # We using `uint64` representation, but allow only 2^32 chunk size,
   # ChunkHeaderValueSize.
   var res = 0'u64
@@ -66,7 +66,7 @@ proc getChunkSize(buffer: openarray[byte]): Result[uint64, cstring] =
       res = (res shl 4) or uint64(value)
   ok(res)
 
-proc setChunkSize(buffer: var openarray[byte], length: int64): int =
+proc setChunkSize(buffer: var openArray[byte], length: int64): int =
   # Store length as chunk header size (hexadecimal value) with CRLF.
   # Maximum stored value is ``0xFFFF_FFFF``.
   # Buffer ``buffer`` length must be at least 10 octets.

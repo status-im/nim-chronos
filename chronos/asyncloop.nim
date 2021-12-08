@@ -563,7 +563,7 @@ elif unixPlatform:
     ## Unregister file descriptor ``fd`` from thread's dispatcher.
     getThreadDispatcher().selector.unregister(int(fd))
 
-  proc contains*(disp: PDispatcher, fd: AsyncFd): bool {.inline.} =
+  proc contains*(disp: PDispatcher, fd: AsyncFD): bool {.inline.} =
     ## Returns ``true`` if ``fd`` is registered in thread's dispatcher.
     result = int(fd) in disp.selector
 
@@ -770,7 +770,7 @@ proc getThreadDispatcher*(): PDispatcher =
       setThreadDispatcher(newDispatcher())
     except CatchableError as exc:
       raiseAsDefect exc, "Cannot create dispatcher"
-  gdisp
+  gDisp
 
 proc setGlobalDispatcher*(disp: PDispatcher) {.
       gcsafe, deprecated: "Use setThreadDispatcher() instead".} =

@@ -88,7 +88,7 @@ proc getSockOpt*(socket: AsyncFD, level, optname: int, value: pointer,
   ## `getsockopt()` for custom options (pointer and length).
   ## Returns ``true`` on success, ``false`` on error.
   getsockopt(SocketHandle(socket), cint(level), cint(optname),
-             value, cast[ptr Socklen](addr valuelen)) >= cint(0)
+             value, cast[ptr SockLen](addr valuelen)) >= cint(0)
 
 proc getSocketError*(socket: AsyncFD, err: var int): bool =
   ## Recover error code associated with socket handle ``socket``.
