@@ -21,7 +21,7 @@ proc skipUntilStmtList(node: NimNode): NimNode {.compileTime.} =
 #     result = node[0]
 when defined(chronosStrictException):
   template createCb(retFutureSym, iteratorNameSym,
-                    strName, identName, futureVarCompletions: untyped) =
+                    strName, identName: untyped) =
     bind finished
 
     var nameIterVar = iteratorNameSym
@@ -51,14 +51,13 @@ when defined(chronosStrictException):
       except CancelledError:
         retFutureSym.cancelAndSchedule()
       except CatchableError as exc:
-        futureVarCompletions
         retFutureSym.fail(exc)
 
     identName(nil)
     {.pop.}
 else:
   template createCb(retFutureSym, iteratorNameSym,
-                    strName, identName, futureVarCompletions: untyped) =
+                    strName, identName: untyped) =
     bind finished
 
     var nameIterVar = iteratorNameSym
@@ -88,40 +87,19 @@ else:
       except CancelledError:
         retFutureSym.cancelAndSchedule()
       except CatchableError as exc:
-        futureVarCompletions
         retFutureSym.fail(exc)
       except Exception as exc:
         # TODO remove Exception handler to turn on strict mode
         if exc of Defect:
           raise (ref Defect)(exc)
 
-        futureVarCompletions
         retFutureSym.fail((ref ValueError)(msg: exc.msg, parent: exc))
 
     identName(nil)
     {.pop.}
 
-proc createFutureVarCompletions(futureVarIdents: seq[NimNode],
-    fromNode: NimNode): NimNode {.compileTime.} =
-  result = newNimNode(nnkStmtList, fromNode)
-  # Add calls to complete each FutureVar parameter.
-  for ident in futureVarIdents:
-    # Only complete them if they have not been completed already by the user.
-    # TODO: Once https://github.com/nim-lang/Nim/issues/5617 is fixed.
-    # TODO: Add line info to the complete() call!
-    # In the meantime, this was really useful for debugging :)
-    #result.add(newCall(newIdentNode("echo"), newStrLitNode(fromNode.lineinfo)))
-    result.add newIfStmt(
-      (
-        newCall(newIdentNode("not"),
-                newDotExpr(ident, newIdentNode("finished"))),
-        newCall(newIdentNode("complete"), ident)
-      )
-    )
-
 proc processBody(node, retFutureSym: NimNode,
-                 subTypeIsVoid: bool,
-                 futureVarIdents: seq[NimNode]): NimNode {.compileTime.} =
+                 subTypeIsVoid: bool): NimNode {.compileTime.} =
   #echo(node.treeRepr)
   result = node
   case node.kind
@@ -129,8 +107,6 @@ proc processBody(node, retFutureSym: NimNode,
     result = newNimNode(nnkStmtList, node)
 
     # As I've painfully found out, the order here really DOES matter.
-    result.add createFutureVarCompletions(futureVarIdents, node)
-
     if node[0].kind == nnkEmpty:
       if not subTypeIsVoid:
         result.add newCall(newIdentNode("complete"), retFutureSym,
@@ -138,8 +114,7 @@ proc processBody(node, retFutureSym: NimNode,
       else:
         result.add newCall(newIdentNode("complete"), retFutureSym)
     else:
-      let x = node[0].processBody(retFutureSym, subTypeIsVoid,
-                                  futureVarIdents)
+      let x = node[0].processBody(retFutureSym, subTypeIsVoid)
       if x.kind == nnkYieldStmt: result.add x
       else:
         result.add newCall(newIdentNode("complete"), retFutureSym, x)
@@ -155,8 +130,7 @@ proc processBody(node, retFutureSym: NimNode,
     # We must not transform nested procedures of any form, otherwise
     # `retFutureSym` will be used for all nested procedures as their own
     # `retFuture`.
-    result[i] = processBody(result[i], retFutureSym, subTypeIsVoid,
-                            futureVarIdents)
+    result[i] = processBody(result[i], retFutureSym, subTypeIsVoid)
 
 proc getName(node: NimNode): string {.compileTime.} =
   case node.kind
@@ -170,14 +144,6 @@ proc getName(node: NimNode): string {.compileTime.} =
     return "anonymous"
   else:
     error("Unknown name.")
-
-proc getFutureVarIdents(params: NimNode): seq[NimNode] {.compileTime.} =
-  result = @[]
-  for i in 1 ..< len(params):
-    expectKind(params[i], nnkIdentDefs)
-    if params[i][1].kind == nnkBracketExpr and
-       params[i][1][0].eqIdent("futurevar"):
-      result.add(params[i][0])
 
 proc isInvalidReturnType(typeName: string): bool =
   return typeName notin ["Future"] #, "FutureStream"]
@@ -217,8 +183,6 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
   let subtypeIsVoid = returnType.kind == nnkEmpty or
         (baseType.kind == nnkIdent and returnType[1].eqIdent("void"))
 
-  let futureVarIdents = getFutureVarIdents(prc.params)
-
   var outerProcBody = newNimNode(nnkStmtList, prc.body)
 
   # -> var retFuture = newFuture[T]()
@@ -245,8 +209,7 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
   # ->   <proc_body>
   # ->   complete(retFuture, result)
   var iteratorNameSym = genSym(nskIterator, $prcName)
-  var procBody = prc.body.processBody(retFutureSym, subtypeIsVoid,
-                                      futureVarIdents)
+  var procBody = prc.body.processBody(retFutureSym, subtypeIsVoid)
   # don't do anything with forward bodies (empty)
   if procBody.kind != nnkEmpty:
     if subtypeIsVoid:
@@ -258,8 +221,6 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
 
     # fix #13899, `defer` should not escape its original scope
     procBody = newStmtList(newTree(nnkBlockStmt, newEmptyNode(), procBody))
-
-    procBody.add(createFutureVarCompletions(futureVarIdents, nil))
 
     if not subtypeIsVoid:
       procBody.insert(0, newNimNode(nnkPragma).add(newIdentNode("push"),
@@ -329,8 +290,7 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
     var cbName = genSym(nskVar, prcName & "_continue")
     var procCb = getAst createCb(retFutureSym, iteratorNameSym,
                          newStrLitNode(prcName),
-                         cbName,
-                         createFutureVarCompletions(futureVarIdents, nil))
+                         cbName)
     outerProcBody.add procCb
 
     # -> return retFuture
