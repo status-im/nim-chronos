@@ -750,7 +750,7 @@ proc readMessage*(rstream: AsyncStreamReader, pred: ReadMessagePredicate) {.
   ##
   ## ``predicate`` callback must copy all the data from ``data`` array and
   ## return number of bytes it is going to consume.
-  ## ``predicate`` callback will receive (zero-length) openarray, if stream
+  ## ``predicate`` callback will receive (zero-length) openArray, if stream
   ## is at EOF.
   doAssert(not(isNil(pred)), "`predicate` callback should not be `nil`")
   checkStreamClosed(rstream)

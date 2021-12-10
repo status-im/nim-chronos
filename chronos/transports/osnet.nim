@@ -1118,7 +1118,7 @@ elif defined(macosx) or defined(bsd):
       freeIfAddrs(ifap)
     res
 
-  proc sasize(data: openarray[byte]): int =
+  proc sasize(data: openArray[byte]): int =
     # SA_SIZE() template. Taken from FreeBSD net/route.h:1.63
     if len(data) > 0:
       if data[0] == 0x00'u8:

@@ -13,7 +13,7 @@ requires "nim > 1.2.0",
          "httputils",
          "https://github.com/status-im/nim-unittest2.git#head"
 
-var commandStart = "nim c -r --hints:off --verbosity:0 --skipParentCfg:on --warning[ObservableStores]:off"
+var commandStart = "nim c -r --hints:off --verbosity:0 --skipParentCfg:on --warning[ObservableStores]:off --styleCheck:usages --styleCheck:error"
 
 task test, "Run all tests":
   var commands = @[

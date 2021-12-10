@@ -34,7 +34,7 @@ type
     ServerRunning, ServerStopped, ServerClosed
 
   HttpProcessError* = object
-    error*: HTTPServerError
+    error*: HttpServerError
     code*: HttpCode
     exc*: ref CatchableError
     remote*: TransportAddress
@@ -130,7 +130,7 @@ type
 
   ByteChar* = string | seq[byte]
 
-proc init(htype: typedesc[HttpProcessError], error: HTTPServerError,
+proc init(htype: typedesc[HttpProcessError], error: HttpServerError,
           exc: ref CatchableError, remote: TransportAddress,
           code: HttpCode): HttpProcessError {.raises: [Defect].} =
   HttpProcessError(error: error, exc: exc, remote: remote, code: code)
@@ -214,7 +214,7 @@ proc new*(htype: typedesc[HttpServerRef],
   var res = HttpServerRef()
   res[].init(address, serverInstance, processCallback, createConnection,
              serverUri, serverFlags, socketFlags, serverIdent, maxConnections,
-             bufferSize, backLogSize, httpHeadersTimeout, maxHeadersSize,
+             bufferSize, backlogSize, httpHeadersTimeout, maxHeadersSize,
              maxRequestBodySize)
   ok(res)
 
@@ -683,7 +683,7 @@ proc processLoop(server: HttpServerRef, transp: StreamTransport,
     await transp.closeWait()
     return
   except HttpCriticalError as exc:
-    let error = HttpProcessError.init(HTTPServerError.CriticalError, exc,
+    let error = HttpProcessError.init(HttpServerError.CriticalError, exc,
                                       transp.remoteAddress(), exc.code)
     connArg = RequestFence.err(error)
     runLoop = false
@@ -715,15 +715,15 @@ proc processLoop(server: HttpServerRef, transp: StreamTransport,
     except CancelledError:
       breakLoop = true
     except AsyncTimeoutError as exc:
-      let error = HttpProcessError.init(HTTPServerError.TimeoutError, exc,
+      let error = HttpProcessError.init(HttpServerError.TimeoutError, exc,
                                         transp.remoteAddress(), Http408)
       arg = RequestFence.err(error)
     except HttpRecoverableError as exc:
-      let error = HttpProcessError.init(HTTPServerError.RecoverableError, exc,
+      let error = HttpProcessError.init(HttpServerError.RecoverableError, exc,
                                         transp.remoteAddress(), exc.code)
       arg = RequestFence.err(error)
     except HttpCriticalError as exc:
-      let error = HttpProcessError.init(HTTPServerError.CriticalError, exc,
+      let error = HttpProcessError.init(HttpServerError.CriticalError, exc,
                                         transp.remoteAddress(), exc.code)
       arg = RequestFence.err(error)
     except HttpDisconnectError as exc:
@@ -734,7 +734,7 @@ proc processLoop(server: HttpServerRef, transp: StreamTransport,
       else:
         breakLoop = true
     except CatchableError as exc:
-      let error = HttpProcessError.init(HTTPServerError.CatchableError, exc,
+      let error = HttpProcessError.init(HttpServerError.CatchableError, exc,
                                         transp.remoteAddress(), Http500)
       arg = RequestFence.err(error)
 
@@ -762,13 +762,13 @@ proc processLoop(server: HttpServerRef, transp: StreamTransport,
       let code = arg.error().code
       try:
         case arg.error().error
-        of HTTPServerError.TimeoutError:
+        of HttpServerError.TimeoutError:
           discard await conn.sendErrorResponse(HttpVersion11, code, false)
-        of HTTPServerError.RecoverableError:
+        of HttpServerError.RecoverableError:
           discard await conn.sendErrorResponse(HttpVersion11, code, false)
-        of HTTPServerError.CriticalError:
+        of HttpServerError.CriticalError:
           discard await conn.sendErrorResponse(HttpVersion11, code, false)
-        of HTTPServerError.CatchableError:
+        of HttpServerError.CatchableError:
           discard await conn.sendErrorResponse(HttpVersion11, code, false)
         of HttpServerError.DisconnectError:
           discard
@@ -1463,7 +1463,7 @@ proc requestInfo*(req: HttpRequestRef, contentType = "text/text"): string {.
   res.add(kv("server.maxHeadersSize", $req.connection.server.maxHeadersSize))
   res.add(kv("server.maxRequestBodySize",
              $req.connection.server.maxRequestBodySize))
-  res.add(kv("server.backlog", $req.connection.server.backLogSize))
+  res.add(kv("server.backlog", $req.connection.server.backlogSize))
   res.add(kv("server.headersTimeout", $req.connection.server.headersTimeout))
   res.add(kv("server.baseUri", $req.connection.server.baseUri))
   res.add(kv("server.flags", $req.connection.server.flags))
