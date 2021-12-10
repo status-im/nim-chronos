@@ -226,7 +226,7 @@ template readAndReset(fut: untyped) =
   if fut.finished():
     let res = fut.read()
     case res
-    of TLSREsult.Success:
+    of TLSResult.Success:
       fut = nil
       continue
     of TLSResult.Error:
@@ -619,7 +619,7 @@ proc copyKey(src: EcPrivateKey): TLSPrivateKey =
   res.eckey.curve = src.curve
   res
 
-proc init*(tt: typedesc[TLSPrivateKey], data: openarray[byte]): TLSPrivateKey =
+proc init*(tt: typedesc[TLSPrivateKey], data: openArray[byte]): TLSPrivateKey =
   ## Initialize TLS private key from array of bytes ``data``.
   ##
   ## This procedure initializes private key using raw, DER-encoded format,
@@ -642,7 +642,7 @@ proc init*(tt: typedesc[TLSPrivateKey], data: openarray[byte]): TLSPrivateKey =
       raiseTLSStreamProtocolError("Unknown key type (" & $keyType & ")")
   res
 
-proc pemDecode*(data: openarray[char]): seq[PEMElement] =
+proc pemDecode*(data: openArray[char]): seq[PEMElement] =
   ## Decode PEM encoded string and get array of binary blobs.
   if len(data) == 0:
     raiseTLSStreamProtocolError("Empty PEM message")
@@ -685,7 +685,7 @@ proc pemDecode*(data: openarray[char]): seq[PEMElement] =
       raiseTLSStreamProtocolError("Invalid PEM encoding")
   res
 
-proc init*(tt: typedesc[TLSPrivateKey], data: openarray[char]): TLSPrivateKey =
+proc init*(tt: typedesc[TLSPrivateKey], data: openArray[char]): TLSPrivateKey =
   ## Initialize TLS private key from string ``data``.
   ##
   ## This procedure initializes private key using unencrypted PKCS#8 PEM
@@ -703,7 +703,7 @@ proc init*(tt: typedesc[TLSPrivateKey], data: openarray[char]): TLSPrivateKey =
   res
 
 proc init*(tt: typedesc[TLSCertificate],
-           data: openarray[char]): TLSCertificate =
+           data: openArray[char]): TLSCertificate =
   ## Initialize TLS certificates from string ``data``.
   ##
   ## This procedure initializes array of certificates from PEM encoded string.

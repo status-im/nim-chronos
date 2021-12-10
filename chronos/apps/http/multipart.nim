@@ -71,7 +71,7 @@ type
 
   BChar* = byte | char
 
-proc startsWith(s, prefix: openarray[byte]): bool {.
+proc startsWith(s, prefix: openArray[byte]): bool {.
      raises: [Defect].} =
   # This procedure is copy of strutils.startsWith() procedure, however,
   # it is intended to work with arrays of bytes, but not with strings.
@@ -81,7 +81,7 @@ proc startsWith(s, prefix: openarray[byte]): bool {.
     if i >= len(s) or s[i] != prefix[i]: return false
     inc(i)
 
-proc parseUntil(s, until: openarray[byte]): int {.
+proc parseUntil(s, until: openArray[byte]): int {.
      raises: [Defect].} =
   # This procedure is copy of parseutils.parseUntil() procedure, however,
   # it is intended to work with arrays of bytes, but not with strings.
@@ -119,8 +119,8 @@ func setPartNames(part: var MultiPart): HttpResult[void] {.
   ok()
 
 proc init*[A: BChar, B: BChar](mpt: typedesc[MultiPartReader],
-                               buffer: openarray[A],
-                               boundary: openarray[B]): MultiPartReader {.
+                               buffer: openArray[A],
+                               boundary: openArray[B]): MultiPartReader {.
      raises: [Defect].} =
   ## Create new MultiPartReader instance with `buffer` interface.
   ##
@@ -144,7 +144,7 @@ proc init*[A: BChar, B: BChar](mpt: typedesc[MultiPartReader],
 
 proc new*[B: BChar](mpt: typedesc[MultiPartReaderRef],
                     stream: HttpBodyReader,
-                    boundary: openarray[B],
+                    boundary: openArray[B],
                     partHeadersMaxSize = 4096): MultiPartReaderRef {.
      raises: [Defect].} =
   ## Create new MultiPartReader instance with `stream` interface.
@@ -427,7 +427,7 @@ func isEmpty*(mp: MultiPart): bool {.
   ## Returns ``true`` is multipart ``mp`` is not initialized/filled yet.
   mp.counter == 0
 
-func validateBoundary[B: BChar](boundary: openarray[B]): HttpResult[void] =
+func validateBoundary[B: BChar](boundary: openArray[B]): HttpResult[void] =
   if len(boundary) == 0:
     err("Content-Type boundary must be at least 1 character size")
   elif len(boundary) > 70:
@@ -439,7 +439,7 @@ func validateBoundary[B: BChar](boundary: openarray[B]): HttpResult[void] =
         return err("Content-Type boundary alphabet incorrect")
     ok()
 
-func getMultipartBoundary*(ch: openarray[string]): HttpResult[string] {.
+func getMultipartBoundary*(ch: openArray[string]): HttpResult[string] {.
      raises: [Defect].} =
   ## Returns ``multipart/form-data`` boundary value from ``Content-Type``
   ## header.
@@ -510,7 +510,7 @@ proc quoteCheck(name: string): HttpResult[string] =
     ok(name)
 
 proc init*[B: BChar](mpt: typedesc[MultiPartWriter],
-                     boundary: openarray[B]): MultiPartWriter {.
+                     boundary: openArray[B]): MultiPartWriter {.
      raises: [Defect].} =
   ## Create new MultiPartWriter instance with `buffer` interface.
   ##
@@ -540,7 +540,7 @@ proc init*[B: BChar](mpt: typedesc[MultiPartWriter],
 
 proc new*[B: BChar](mpt: typedesc[MultiPartWriterRef],
                     stream: HttpBodyWriter,
-                    boundary: openarray[B]): MultiPartWriterRef {.
+                    boundary: openArray[B]): MultiPartWriterRef {.
      raises: [Defect].} =
   doAssert(validateBoundary(boundary).isOk())
   doAssert(not(isNil(stream)))
@@ -566,7 +566,7 @@ proc new*[B: BChar](mpt: typedesc[MultiPartWriterRef],
     state: MultiPartWriterState.MessagePreparing
   )
 
-proc prepareHeaders(partMark: openarray[byte], name: string, filename: string,
+proc prepareHeaders(partMark: openArray[byte], name: string, filename: string,
                     headers: HttpTable): string =
   const ContentDisposition = "Content-Disposition"
   let qname =
@@ -707,13 +707,13 @@ proc write*(mpw: var MultiPartWriter, pbytes: pointer, nbytes: int) =
     mpw.buffer.setLen(index + nbytes)
     copyMem(addr mpw.buffer[0], pbytes, nbytes)
 
-proc write*(mpw: var MultiPartWriter, data: openarray[byte]) =
+proc write*(mpw: var MultiPartWriter, data: openArray[byte]) =
   ## Write part's data ``data`` to the output stream.
   doAssert(mpw.kind == MultiPartSource.Buffer)
   doAssert(mpw.state == MultiPartWriterState.PartStarted)
   mpw.buffer.add(data)
 
-proc write*(mpw: var MultiPartWriter, data: openarray[char]) =
+proc write*(mpw: var MultiPartWriter, data: openArray[char]) =
   ## Write part's data ``data`` to the output stream.
   doAssert(mpw.kind == MultiPartSource.Buffer)
   doAssert(mpw.state == MultiPartWriterState.PartStarted)

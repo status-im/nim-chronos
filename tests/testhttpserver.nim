@@ -105,7 +105,7 @@ suite "HTTP server testing suite":
           let request = r.get()
           return await request.respond(Http200, "TEST_OK", HttpTable.init())
         else:
-          if r.error().error == HTTPServerError.TimeoutError:
+          if r.error().error == HttpServerError.TimeoutError:
             serverRes = true
           return dumbResponse()
 
@@ -134,7 +134,7 @@ suite "HTTP server testing suite":
           let request = r.get()
           return await request.respond(Http200, "TEST_OK", HttpTable.init())
         else:
-          if r.error().error == HTTPServerError.CriticalError:
+          if r.error().error == HttpServerError.CriticalError:
             serverRes = true
           return dumbResponse()
 
@@ -162,7 +162,7 @@ suite "HTTP server testing suite":
           let request = r.get()
           return await request.respond(Http200, "TEST_OK", HttpTable.init())
         else:
-          if r.error().error == HTTPServerError.CriticalError:
+          if r.error().error == HttpServerError.CriticalError:
             serverRes = true
           return dumbResponse()
 
@@ -191,7 +191,7 @@ suite "HTTP server testing suite":
         if r.isOk():
           discard
         else:
-          if r.error().error == HTTPServerError.CriticalError:
+          if r.error().error == HttpServerError.CriticalError:
             serverRes = true
           return dumbResponse()
 

@@ -848,7 +848,7 @@ suite "Stream Transport test suite":
       res: seq[byte]
       error: ref CatchableError
 
-    proc predicate(data: openarray[byte]): tuple[consumed: int, done: bool] =
+    proc predicate(data: openArray[byte]): tuple[consumed: int, done: bool] =
       if len(data) == 0:
         # There will be no more data, length-value incomplete
         error = newException(TransportIncompleteError, "LV incomplete")

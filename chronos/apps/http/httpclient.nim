@@ -710,7 +710,7 @@ proc closeWait*(response: HttpClientResponseRef) {.async.} =
     response.state = HttpReqRespState.Closed
     untrackHttpClientResponse(response)
 
-proc prepareResponse(request: HttpClientRequestRef, data: openarray[byte]
+proc prepareResponse(request: HttpClientRequestRef, data: openArray[byte]
                     ): HttpResult[HttpClientResponseRef] {.raises: [Defect] .} =
   ## Process response headers.
   let resp = parseResponse(data, false)
@@ -813,8 +813,8 @@ proc new*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
           ha: HttpAddress, meth: HttpMethod = MethodGet,
           version: HttpVersion = HttpVersion11,
           flags: set[HttpClientRequestFlag] = {},
-          headers: openarray[HttpHeaderTuple] = [],
-          body: openarray[byte] = []): HttpClientRequestRef {.
+          headers: openArray[HttpHeaderTuple] = [],
+          body: openArray[byte] = []): HttpClientRequestRef {.
      raises: [Defect].} =
   let res = HttpClientRequestRef(
     state: HttpReqRespState.Ready, session: session, meth: meth,
@@ -828,8 +828,8 @@ proc new*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
           url: string, meth: HttpMethod = MethodGet,
           version: HttpVersion = HttpVersion11,
           flags: set[HttpClientRequestFlag] = {},
-          headers: openarray[HttpHeaderTuple] = [],
-          body: openarray[byte] = []): HttpResult[HttpClientRequestRef] {.
+          headers: openArray[HttpHeaderTuple] = [],
+          body: openArray[byte] = []): HttpResult[HttpClientRequestRef] {.
      raises: [Defect].} =
   let address = ? session.getAddress(parseUri(url))
   let res = HttpClientRequestRef(
@@ -843,22 +843,22 @@ proc new*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
 proc get*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
           url: string, version: HttpVersion = HttpVersion11,
           flags: set[HttpClientRequestFlag] = {},
-          headers: openarray[HttpHeaderTuple] = []
+          headers: openArray[HttpHeaderTuple] = []
          ): HttpResult[HttpClientRequestRef] {.raises: [Defect].} =
   HttpClientRequestRef.new(session, url, MethodGet, version, flags, headers)
 
 proc get*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
           ha: HttpAddress, version: HttpVersion = HttpVersion11,
           flags: set[HttpClientRequestFlag] = {},
-          headers: openarray[HttpHeaderTuple] = []
+          headers: openArray[HttpHeaderTuple] = []
          ): HttpClientRequestRef {.raises: [Defect].} =
   HttpClientRequestRef.new(session, ha, MethodGet, version, flags, headers)
 
 proc post*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
            url: string, version: HttpVersion = HttpVersion11,
            flags: set[HttpClientRequestFlag] = {},
-           headers: openarray[HttpHeaderTuple] = [],
-           body: openarray[byte] = []
+           headers: openArray[HttpHeaderTuple] = [],
+           body: openArray[byte] = []
           ): HttpResult[HttpClientRequestRef] {.raises: [Defect].} =
   HttpClientRequestRef.new(session, url, MethodPost, version, flags, headers,
                            body)
@@ -866,8 +866,8 @@ proc post*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
 proc post*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
            url: string, version: HttpVersion = HttpVersion11,
            flags: set[HttpClientRequestFlag] = {},
-           headers: openarray[HttpHeaderTuple] = [],
-           body: openarray[char] = []): HttpResult[HttpClientRequestRef] {.
+           headers: openArray[HttpHeaderTuple] = [],
+           body: openArray[char] = []): HttpResult[HttpClientRequestRef] {.
      raises: [Defect].} =
   HttpClientRequestRef.new(session, url, MethodPost, version, flags, headers,
                            body.toOpenArrayByte(0, len(body) - 1))
@@ -875,8 +875,8 @@ proc post*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
 proc post*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
            ha: HttpAddress, version: HttpVersion = HttpVersion11,
            flags: set[HttpClientRequestFlag] = {},
-           headers: openarray[HttpHeaderTuple] = [],
-           body: openarray[byte] = []): HttpClientRequestRef {.
+           headers: openArray[HttpHeaderTuple] = [],
+           body: openArray[byte] = []): HttpClientRequestRef {.
      raises: [Defect].} =
   HttpClientRequestRef.new(session, ha, MethodPost, version, flags, headers,
                            body)
@@ -884,8 +884,8 @@ proc post*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
 proc post*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
            ha: HttpAddress, version: HttpVersion = HttpVersion11,
            flags: set[HttpClientRequestFlag] = {},
-           headers: openarray[HttpHeaderTuple] = [],
-           body: openarray[char] = []): HttpClientRequestRef {.
+           headers: openArray[HttpHeaderTuple] = [],
+           body: openArray[char] = []): HttpClientRequestRef {.
      raises: [Defect].} =
   HttpClientRequestRef.new(session, ha, MethodPost, version, flags, headers,
                            body.toOpenArrayByte(0, len(body) - 1))

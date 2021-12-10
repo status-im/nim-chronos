@@ -64,7 +64,7 @@ proc readUntilBoundary(rstream: AsyncStreamReader, pbytes: pointer,
   var state = 0
   var pbuffer = cast[ptr UncheckedArray[byte]](pbytes)
 
-  proc predicate(data: openarray[byte]): tuple[consumed: int, done: bool] =
+  proc predicate(data: openArray[byte]): tuple[consumed: int, done: bool] =
     if len(data) == 0:
       (0, true)
     else:
@@ -88,7 +88,7 @@ proc readUntilBoundary(rstream: AsyncStreamReader, pbytes: pointer,
   await rstream.readMessage(predicate)
   return k
 
-func endsWith(s, suffix: openarray[byte]): bool =
+func endsWith(s, suffix: openArray[byte]): bool =
   var i = 0
   var j = len(s) - len(suffix)
   while i + j >= 0 and i + j < len(s):
@@ -275,7 +275,7 @@ proc init*[T](child: BoundedStreamReader, rsource: AsyncStreamReader,
        udata)
 
 proc init*[T](child: BoundedStreamReader, rsource: AsyncStreamReader,
-              boundary: openarray[byte], comparison = BoundCmp.Equal,
+              boundary: openArray[byte], comparison = BoundCmp.Equal,
               bufferSize = BoundedBufferSize, udata: ref T) =
   doAssert(len(boundary) > 0, BoundarySizeDefectMessage)
   child.boundary = @boundary
@@ -284,7 +284,7 @@ proc init*[T](child: BoundedStreamReader, rsource: AsyncStreamReader,
        udata)
 
 proc init*[T](child: BoundedStreamReader, rsource: AsyncStreamReader,
-              boundSize: uint64, boundary: openarray[byte],
+              boundSize: uint64, boundary: openArray[byte],
               comparison = BoundCmp.Equal,
               bufferSize = BoundedBufferSize, udata: ref T) =
   doAssert(len(boundary) > 0, BoundarySizeDefectMessage)
@@ -302,7 +302,7 @@ proc init*(child: BoundedStreamReader, rsource: AsyncStreamReader,
   init(AsyncStreamReader(child), rsource, boundedReadLoop, bufferSize)
 
 proc init*(child: BoundedStreamReader, rsource: AsyncStreamReader,
-           boundary: openarray[byte], comparison = BoundCmp.Equal,
+           boundary: openArray[byte], comparison = BoundCmp.Equal,
            bufferSize = BoundedBufferSize) =
   doAssert(len(boundary) > 0, BoundarySizeDefectMessage)
   child.boundary = @boundary
@@ -310,7 +310,7 @@ proc init*(child: BoundedStreamReader, rsource: AsyncStreamReader,
   init(AsyncStreamReader(child), rsource, boundedReadLoop, bufferSize)
 
 proc init*(child: BoundedStreamReader, rsource: AsyncStreamReader,
-           boundSize: uint64, boundary: openarray[byte],
+           boundSize: uint64, boundary: openArray[byte],
            comparison = BoundCmp.Equal, bufferSize = BoundedBufferSize) =
   doAssert(len(boundary) > 0, BoundarySizeDefectMessage)
   child.boundSize = some(boundSize)
@@ -338,7 +338,7 @@ proc newBoundedStreamReader*[T](rsource: AsyncStreamReader,
   res
 
 proc newBoundedStreamReader*[T](rsource: AsyncStreamReader,
-                                boundary: openarray[byte],
+                                boundary: openArray[byte],
                                 comparison = BoundCmp.Equal,
                                 bufferSize = BoundedBufferSize,
                                 udata: ref T): BoundedStreamReader =
@@ -357,7 +357,7 @@ proc newBoundedStreamReader*[T](rsource: AsyncStreamReader,
 
 proc newBoundedStreamReader*[T](rsource: AsyncStreamReader,
                                 boundSize: uint64,
-                                boundary: openarray[byte],
+                                boundary: openArray[byte],
                                 comparison = BoundCmp.Equal,
                                 bufferSize = BoundedBufferSize,
                                 udata: ref T): BoundedStreamReader =
@@ -396,7 +396,7 @@ proc newBoundedStreamReader*(rsource: AsyncStreamReader,
   res
 
 proc newBoundedStreamReader*(rsource: AsyncStreamReader,
-                             boundary: openarray[byte],
+                             boundary: openArray[byte],
                              comparison = BoundCmp.Equal,
                              bufferSize = BoundedBufferSize,
                             ): BoundedStreamReader =
@@ -415,7 +415,7 @@ proc newBoundedStreamReader*(rsource: AsyncStreamReader,
 
 proc newBoundedStreamReader*(rsource: AsyncStreamReader,
                              boundSize: uint64,
-                             boundary: openarray[byte],
+                             boundary: openArray[byte],
                              comparison = BoundCmp.Equal,
                              bufferSize = BoundedBufferSize,
                             ): BoundedStreamReader =
