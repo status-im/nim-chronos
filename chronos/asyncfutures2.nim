@@ -54,6 +54,10 @@ type
   # How much refactoring is needed to make this a regular non-ref type?
   # Obviously, it will still be allocated on the heap when necessary.
   Future*[T] = ref object of FutureBase ## Typed future.
+    when defined(chronosStrictException):
+      closure*: iterator(f: Future[T]): FutureBase {.raises: [Defect, CatchableError], gcsafe.}
+    else:
+      closure*: iterator(f: Future[T]): FutureBase {.raises: [Defect, CatchableError, Exception], gcsafe.}
     value: T ## Stored value
 
   FutureStr*[T] = ref object of Future[T]
@@ -351,6 +355,46 @@ proc `cancelCallback=`*[T](future: Future[T], cb: CallbackFunc) =
   ## This callback will be called immediately as ``future.cancel()`` invoked.
   future.cancelcb = cb
 
+{.push stackTrace: off.}
+proc internalContinue[T](fut: pointer) {.gcsafe, raises: [Defect].}
+
+proc futureContinue*[T](fut: Future[T]) {.gcsafe, raises: [Defect].} =
+  # Used internally by async transformation
+  try:
+    if not(fut.closure.finished()):
+      var next = fut.closure(fut)
+      # Continue while the yielded future is already finished.
+      while (not next.isNil()) and next.finished():
+        next = fut.closure(fut)
+        if fut.closure.finished():
+          break
+
+      if fut.closure.finished():
+        fut.closure = nil
+      if next == nil:
+        if not(fut.finished()):
+          raiseAssert "Async procedure (" & ($fut.location[LocCreateIndex]) & ") yielded `nil`, " &
+                      "are you await'ing a `nil` Future?"
+      else:
+        GC_ref(fut)
+        next.addCallback(internalContinue[T], cast[pointer](fut))
+  except CancelledError:
+    fut.cancelAndSchedule()
+  except CatchableError as exc:
+    fut.fail(exc)
+  except Exception as exc:
+    if exc of Defect:
+      raise (ref Defect)(exc)
+
+    fut.fail((ref ValueError)(msg: exc.msg, parent: exc))
+
+proc internalContinue[T](fut: pointer) {.gcsafe, raises: [Defect].} =
+  let asFut = cast[Future[T]](fut)
+  GC_unref(asFut)
+  futureContinue(asFut)
+
+{.pop.}
+
 template getFilenameProcname(entry: StackTraceEntry): (string, string) =
   when compiles(entry.filenameStr) and compiles(entry.procnameStr):
     # We can't rely on "entry.filename" and "entry.procname" still being valid
@@ -375,8 +419,8 @@ proc getHint(entry: StackTraceEntry): string =
     if cmpIgnoreStyle(filename, "asyncdispatch.nim") == 0:
       return "Processes asynchronous completion events"
 
-  if procname.endsWith("_continue"):
-    if cmpIgnoreStyle(filename, "asyncmacro.nim") == 0:
+  if procname == "internalContinue":
+    if cmpIgnoreStyle(filename, "asyncfutures.nim") == 0:
       return "Resumes an async procedure"
 
 proc `$`(stackTraceEntries: seq[StackTraceEntry]): string =
