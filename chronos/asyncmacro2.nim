@@ -85,6 +85,10 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
     possibleExceptions = nnkBracket.newTree(newIdentNode("CancelledError"))
     possibleExceptionsTuple = nnkTupleConstr.newTree(newIdentNode("CancelledError"))
     foundRaises = -1
+
+  when (NimMajor, NimMinor) < (1, 4):
+    possibleExceptions.add(newIdentNode("Defect"))
+
   for index, pragma in pragma(prc):
     if pragma[0] == ident "raises":
       foundRaises = index
@@ -230,9 +234,14 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
     prc.addPragma(newColonExpr(ident "stackTrace", ident "off"))
 
   # The proc itself can't raise
+  let emptyRaises =
+    when (NimMajor, NimMinor) < (1, 4):
+      nnkBracket.newTree(newIdentNode("Defect"))
+    else:
+      nnkBracket.newTree()
   prc.addPragma(nnkExprColonExpr.newTree(
     newIdentNode("raises"),
-    nnkBracket.newTree()))
+    emptyRaises))
 
   # See **Remark 435** in this file.
   # https://github.com/nim-lang/RFCs/issues/435
