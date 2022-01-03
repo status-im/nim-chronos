@@ -57,7 +57,7 @@ type
     closure*: iterator(f: FuturEx[T, E]): FutureBase {.raises: [Defect, CatchableError, Exception], gcsafe.}
     value: T ## Stored value
 
-  Future*[T] = FuturEx[T, (CatchableError)]
+  Future*[T] = FuturEx[T, (CatchableError,)]
 
   FutureStr*[T] = ref object of Future[T]
     ## Future to hold GC strings

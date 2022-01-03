@@ -84,17 +84,18 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
   var
     possibleExceptions = nnkBracket.newTree(newIdentNode("CancelledError"))
     possibleExceptionsTuple = nnkTupleConstr.newTree(newIdentNode("CancelledError"))
-    foundRaises = false
-  for pragma in pragma(prc):
+    foundRaises = -1
+  for index, pragma in pragma(prc):
     if pragma[0] == ident "raises":
-      foundRaises = true
+      foundRaises = index
       for possibleRaise in pragma[1]:
         possibleExceptions.add(possibleRaise)
         possibleExceptionsTuple.add(possibleRaise)
       break
-  if not foundRaises:
+  if foundRaises < 0:
     possibleExceptions.add(ident "CatchableError")
     possibleExceptionsTuple.add(ident "CatchableError")
+  else: pragma(prc).del(foundRaises)
 
   let returnType = prc.params[0]
   var baseType: NimNode
