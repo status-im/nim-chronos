@@ -868,10 +868,10 @@ proc callIdle*(cbproc: CallbackFunc) {.gcsafe, raises: [Defect].} =
 
 include asyncfutures2
 
-proc sleepAsync*(duration: Duration): FuturEx[void, (CancelledError,)] =
+proc sleepAsync*(duration: Duration): Future[void] =
   ## Suspends the execution of the current async procedure for the next
   ## ``duration`` time.
-  var retFuture = newFuturEx[void, (CancelledError,)]("chronos.sleepAsync(Duration)")
+  var retFuture = newFuture[void]("chronos.sleepAsync(Duration)")
   let moment = Moment.fromNow(duration)
   var timer: TimerCallback
 

@@ -169,7 +169,7 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
           newNimNode(nnkBracketExpr, prc).add(newIdentNode("Future")).add(newIdentNode("void"))
         else: returnType
       returnTypeWithException = newNimNode(nnkBracketExpr).add(newIdentNode("FuturEx")).add(internalFutureType[1]).add(possibleExceptionsTuple)
-      internalFutureParameter = nnkIdentDefs.newTree(internalFutureSym, returnTypeWithException, newEmptyNode())
+      internalFutureParameter = nnkIdentDefs.newTree(internalFutureSym, internalFutureType, newEmptyNode())
     prc.params[0] = returnTypeWithException
     var closureIterator = newProc(iteratorNameSym, [newIdentNode("FutureBase"), internalFutureParameter],
                                   procBody, nnkIteratorDef)
@@ -210,7 +210,7 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
     outerProcBody.add(
       newVarStmt(
         retFutureSym,
-        newCall(newTree(nnkBracketExpr, ident "newFuturEx", subRetType, possibleExceptionsTuple),
+        newCall(newTree(nnkBracketExpr, ident "newFuture", subRetType),
                 newLit(prcName))
       )
     )
@@ -254,50 +254,24 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
   #if prcName == "recvLineInto":
   #  echo(toStrLit(result))
 
-template await*[T](f: Future[T]): untyped =
-  when declared(chronosInternalRetFuture):
-    #work around https://github.com/nim-lang/Nim/issues/19193
-    when not declaredInScope(chronosInternalTmpFuture):
-      var chronosInternalTmpFuture {.inject.}: FutureBase = f
-    else:
-      chronosInternalTmpFuture = f
-    chronosInternalRetFuture.child = chronosInternalTmpFuture
+macro checkMagical(f: typed): untyped =
+  if getTypeInst(f)[0].repr != "FuturEx":
+    return quote do:
+      `f`.internalCheckComplete()
 
-    # This "yield" is meant for a closure iterator in the caller.
-    yield chronosInternalTmpFuture
-
-    # By the time we get control back here, we're guaranteed that the Future we
-    # just yielded has been completed (success, failure or cancellation),
-    # through a very complicated mechanism in which the caller proc (a regular
-    # closure) adds itself as a callback to chronosInternalTmpFuture.
-    #
-    # Callbacks are called only after completion and a copy of the closure
-    # iterator that calls this template is still in that callback's closure
-    # environment. That's where control actually gets back to us.
-
-    chronosInternalRetFuture.child = nil
-    if chronosInternalRetFuture.mustCancel:
-      raise newCancelledError()
-    chronosInternalTmpFuture.internalCheckComplete()
-    when T isnot void:
-      cast[type(f)](chronosInternalTmpFuture).internalRead()
-  else:
-    unsupported "await is only available within {.async.}"
-
-macro checkMagical(f, e: typed): untyped =
   result = newNimNode(nnkStmtList)
 
+  let e = getTypeInst(f)[2]
   let types = getType(e)
   if types.len < 1: return
   for errorType in types[1..^1]:
     result.add quote do:
       if not isNil(`f`.error) and `f`.error of type `errorType`:
         raise cast[ref `errorType`](`f`.error)
-  #echo treeRepr(result)
 
-template await*[T, E](f: FuturEx[T, E]): untyped =
+template await*[T](f: Future[T]): untyped =
   when declared(chronosInternalRetFuture):
-    let chronosInternalTmpFuture: FuturEx[T, E] = f
+    let chronosInternalTmpFuture = f
     chronosInternalRetFuture.child = chronosInternalTmpFuture
 
     # This "yield" is meant for a closure iterator in the caller.
@@ -315,7 +289,7 @@ template await*[T, E](f: FuturEx[T, E]): untyped =
     chronosInternalRetFuture.child = nil
     if chronosInternalRetFuture.mustCancel:
       raise newCancelledError()
-    checkMagical(chronosInternalTmpFuture, E)
+    checkMagical(chronosInternalTmpFuture)
     when T isnot void:
       cast[type(f)](chronosInternalTmpFuture).internalRead()
   else:
