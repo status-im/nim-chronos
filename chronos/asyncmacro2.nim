@@ -90,7 +90,7 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
     possibleExceptions.add(newIdentNode("Defect"))
 
   for index, pragma in pragma(prc):
-    if pragma[0] == ident "raises":
+    if pragma.kind == nnkExprColonExpr and pragma[0] == ident "raises":
       foundRaises = index
       for possibleRaise in pragma[1]:
         possibleExceptions.add(possibleRaise)
@@ -122,6 +122,13 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
 
   var outerProcBody = newNimNode(nnkStmtList, prc.body)
 
+  let
+    internalFutureType =
+      if subtypeIsVoid:
+        newNimNode(nnkBracketExpr, prc).add(newIdentNode("Future")).add(newIdentNode("void"))
+      else: returnType
+    returnTypeWithException = newNimNode(nnkBracketExpr).add(newIdentNode("FuturEx")).add(internalFutureType[1]).add(possibleExceptionsTuple)
+  prc.params[0] = returnTypeWithException
 
   # -> iterator nameIter(chronosInternalRetFuture: Future[T]): FutureBase {.closure.} =
   # ->   {.push warning[resultshadowed]: off.}
@@ -163,14 +170,7 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
       # -> complete(chronosInternalRetFuture)
       procBody.add(newCall(newIdentNode("complete"), internalFutureSym))
 
-    let
-      internalFutureType =
-        if subtypeIsVoid:
-          newNimNode(nnkBracketExpr, prc).add(newIdentNode("Future")).add(newIdentNode("void"))
-        else: returnType
-      returnTypeWithException = newNimNode(nnkBracketExpr).add(newIdentNode("FuturEx")).add(internalFutureType[1]).add(possibleExceptionsTuple)
-      internalFutureParameter = nnkIdentDefs.newTree(internalFutureSym, internalFutureType, newEmptyNode())
-    prc.params[0] = returnTypeWithException
+    let internalFutureParameter = nnkIdentDefs.newTree(internalFutureSym, internalFutureType, newEmptyNode())
     var closureIterator = newProc(iteratorNameSym, [newIdentNode("FutureBase"), internalFutureParameter],
                                   procBody, nnkIteratorDef)
     closureIterator.pragma = newNimNode(nnkPragma, lineInfoFrom=prc.body)
