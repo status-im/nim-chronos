@@ -81,6 +81,21 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
 
   let prcName = prc.name.getName
 
+  var
+    possibleExceptions = nnkBracket.newTree(newIdentNode("CancelledError"))
+    possibleExceptionsTuple = nnkTupleConstr.newTree(newIdentNode("CancelledError"))
+    foundRaises = false
+  for pragma in pragma(prc):
+    if pragma[0] == ident "raises":
+      foundRaises = true
+      for possibleRaise in pragma[1]:
+        possibleExceptions.add(possibleRaise)
+        possibleExceptionsTuple.add(possibleRaise)
+      break
+  if not foundRaises:
+    possibleExceptions.add(ident "CatchableError")
+    possibleExceptionsTuple.add(ident "CatchableError")
+
   let returnType = prc.params[0]
   var baseType: NimNode
   # Verify that the return type is a Future[T]
@@ -148,7 +163,9 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
         if subtypeIsVoid:
           newNimNode(nnkBracketExpr, prc).add(newIdentNode("Future")).add(newIdentNode("void"))
         else: returnType
-      internalFutureParameter = nnkIdentDefs.newTree(internalFutureSym, internalFutureType, newEmptyNode())
+      returnTypeWithException = newNimNode(nnkBracketExpr).add(newIdentNode("FuturEx")).add(internalFutureType[1]).add(possibleExceptionsTuple)
+      internalFutureParameter = nnkIdentDefs.newTree(internalFutureSym, returnTypeWithException, newEmptyNode())
+    prc.params[0] = returnTypeWithException
     var closureIterator = newProc(iteratorNameSym, [newIdentNode("FutureBase"), internalFutureParameter],
                                   procBody, nnkIteratorDef)
     closureIterator.pragma = newNimNode(nnkPragma, lineInfoFrom=prc.body)
@@ -163,28 +180,10 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
     # for more details.
     closureIterator.addPragma(newIdentNode("gcsafe"))
 
-    # TODO when push raises is active in a module, the iterator here inherits
-    #      that annotation - here we explicitly disable it again which goes
-    #      against the spirit of the raises annotation - one should investigate
-    #      here the possibility of transporting more specific error types here
-    #      for example by casting exceptions coming out of `await`..
-    when defined(chronosStrictException):
-      closureIterator.addPragma(nnkExprColonExpr.newTree(
-        newIdentNode("raises"),
-        nnkBracket.newTree(
-          newIdentNode("Defect"),
-          newIdentNode("CatchableError")
-        )
-      ))
-    else:
-      closureIterator.addPragma(nnkExprColonExpr.newTree(
-        newIdentNode("raises"),
-        nnkBracket.newTree(
-          newIdentNode("Defect"),
-          newIdentNode("CatchableError"),
-          newIdentNode("Exception") # Allow exception effects
-        )
-      ))
+    closureIterator.addPragma(nnkExprColonExpr.newTree(
+      newIdentNode("raises"),
+      possibleExceptions
+    ))
 
     # If proc has an explicit gcsafe pragma, we add it to iterator as well.
     if prc.pragma.findChild(it.kind in {nnkSym, nnkIdent} and
@@ -206,7 +205,7 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
     outerProcBody.add(
       newVarStmt(
         retFutureSym,
-        newCall(newTree(nnkBracketExpr, ident "newFuture", subRetType),
+        newCall(newTree(nnkBracketExpr, ident "newFuturEx", subRetType, possibleExceptionsTuple),
                 newLit(prcName))
       )
     )
@@ -229,19 +228,16 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
   if prc.kind != nnkLambda: # TODO: Nim bug?
     prc.addPragma(newColonExpr(ident "stackTrace", ident "off"))
 
+  # The proc itself can't raise
+  prc.addPragma(nnkExprColonExpr.newTree(
+    newIdentNode("raises"),
+    nnkBracket.newTree()))
+
   # See **Remark 435** in this file.
   # https://github.com/nim-lang/RFCs/issues/435
   prc.addPragma(newIdentNode("gcsafe"))
   result = prc
 
-  if subtypeIsVoid:
-    # Add discardable pragma.
-    if returnType.kind == nnkEmpty:
-      # Add Future[void]
-      result.params[0] =
-        newNimNode(nnkBracketExpr, prc)
-        .add(newIdentNode("Future"))
-        .add(newIdentNode("void"))
   if procBody.kind != nnkEmpty:
     result.body = outerProcBody
   #echo(treeRepr(result))
@@ -273,6 +269,43 @@ template await*[T](f: Future[T]): untyped =
     if chronosInternalRetFuture.mustCancel:
       raise newCancelledError()
     chronosInternalTmpFuture.internalCheckComplete()
+    when T isnot void:
+      cast[type(f)](chronosInternalTmpFuture).internalRead()
+  else:
+    unsupported "await is only available within {.async.}"
+
+macro checkMagical(f, e: typed): untyped =
+  result = newNimNode(nnkStmtList)
+
+  let types = getType(e)
+  if types.len < 1: return
+  for errorType in types[1..^1]:
+    result.add quote do:
+      if not isNil(`f`.error) and `f`.error of type `errorType`:
+        raise cast[ref `errorType`](`f`.error)
+  #echo treeRepr(result)
+
+template await*[T, E](f: FuturEx[T, E]): untyped =
+  when declared(chronosInternalRetFuture):
+    let chronosInternalTmpFuture: FuturEx[T, E] = f
+    chronosInternalRetFuture.child = chronosInternalTmpFuture
+
+    # This "yield" is meant for a closure iterator in the caller.
+    yield chronosInternalTmpFuture
+
+    # By the time we get control back here, we're guaranteed that the Future we
+    # just yielded has been completed (success, failure or cancellation),
+    # through a very complicated mechanism in which the caller proc (a regular
+    # closure) adds itself as a callback to chronosInternalTmpFuture.
+    #
+    # Callbacks are called only after completion and a copy of the closure
+    # iterator that calls this template is still in that callback's closure
+    # environment. That's where control actually gets back to us.
+
+    chronosInternalRetFuture.child = nil
+    if chronosInternalRetFuture.mustCancel:
+      raise newCancelledError()
+    checkMagical(chronosInternalTmpFuture, E)
     when T isnot void:
       cast[type(f)](chronosInternalTmpFuture).internalRead()
   else:

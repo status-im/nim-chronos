@@ -53,12 +53,11 @@ type
   # the future can be stored within the caller's stack frame.
   # How much refactoring is needed to make this a regular non-ref type?
   # Obviously, it will still be allocated on the heap when necessary.
-  Future*[T] = ref object of FutureBase ## Typed future.
-    when defined(chronosStrictException):
-      closure*: iterator(f: Future[T]): FutureBase {.raises: [Defect, CatchableError], gcsafe.}
-    else:
-      closure*: iterator(f: Future[T]): FutureBase {.raises: [Defect, CatchableError, Exception], gcsafe.}
+  FuturEx*[T, E] = ref object of FutureBase ## Typed future.
+    closure*: iterator(f: FuturEx[T, E]): FutureBase {.raises: [Defect, CatchableError, Exception], gcsafe.}
     value: T ## Stored value
+
+  Future*[T] = FuturEx[T, (CatchableError)]
 
   FutureStr*[T] = ref object of Future[T]
     ## Future to hold GC strings
@@ -109,6 +108,9 @@ template setupFutureBase(loc: ptr SrcLoc) =
 proc newFutureImpl[T](loc: ptr SrcLoc): Future[T] =
   setupFutureBase(loc)
 
+proc newFuturExImpl[T, E](loc: ptr SrcLoc): FuturEx[T, E] =
+  setupFutureBase(loc)
+
 proc newFutureSeqImpl[A, B](loc: ptr SrcLoc): FutureSeq[A, B] =
   setupFutureBase(loc)
 
@@ -121,6 +123,16 @@ template newFuture*[T](fromProc: static[string] = ""): Future[T] =
   ## Specifying ``fromProc``, which is a string specifying the name of the proc
   ## that this future belongs to, is a good habit as it helps with debugging.
   newFutureImpl[T](getSrcLocation(fromProc))
+
+template newFuturEx*[T, E](fromProc: static[string] = ""): FuturEx[T, E] =
+  ## Creates a new future.
+  ##
+  ## Specifying ``fromProc``, which is a string specifying the name of the proc
+  ## that this future belongs to, is a good habit as it helps with debugging.
+  newFuturExImpl[T, E](getSrcLocation(fromProc))
+
+converter toFuture*[T, E](futurex: FuturEx[T, E]): Future[T] =
+  cast[Future[T]](futurex)
 
 template newFutureSeq*[A, B](fromProc: static[string] = ""): FutureSeq[A, B] =
   ## Create a new future which can hold/preserve GC sequence until future will
