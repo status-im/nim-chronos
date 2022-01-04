@@ -13,7 +13,7 @@ import std/[net, nativesockets, os, deques]
 import ".."/[selectors2, asyncloop, handles]
 import ./common
 
-when defined(windows):
+when defined(windows) or defined(nimdoc):
   import winlean
 else:
   import posix
@@ -130,8 +130,26 @@ proc setupDgramTransportTracker(): DgramTransportTracker {.gcsafe.} =
   result.isLeaked = leakTransport
   addTracker(DgramTransportTrackerName, result)
 
-when defined(windows):
+when defined(nimdoc):
+  proc newDatagramTransportCommon(cbproc: DatagramCallback,
+                                  remote: TransportAddress,
+                                  local: TransportAddress,
+                                  sock: AsyncFD,
+                                  flags: set[ServerFlags],
+                                  udata: pointer,
+                                  child: DatagramTransport,
+                                  bufferSize: int,
+                                  ttl: int): DatagramTransport {.
+      raises: [Defect, CatchableError].} =
+    discard
 
+  proc resumeRead(transp: DatagramTransport) {.inline.} =
+    discard
+
+  proc resumeWrite(transp: DatagramTransport) {.inline.} =
+    discard
+
+elif defined(windows):
   template setWriterWSABuffer(t, v: untyped) =
     (t).wwsabuf.buf = cast[cstring](v.buf)
     (t).wwsabuf.len = cast[int32](v.buflen)

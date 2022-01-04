@@ -14,7 +14,7 @@ import stew/base10
 import ../asyncloop
 export net
 
-when defined(windows):
+when defined(windows) or defined(nimdoc):
   import winlean
 else:
   import posix
@@ -59,7 +59,7 @@ type
     Running,                      # Server running
     Closed                        # Server closed
 
-when defined(windows):
+when defined(windows) or defined(nimdoc):
   type
     SocketServer* = ref object of RootRef
       ## Socket server object
@@ -75,7 +75,8 @@ when defined(windows):
       asock*: AsyncFD               # Current AcceptEx() socket
       errorCode*: OSErrorCode       # Current error code
       abuffer*: array[128, byte]    # Windows AcceptEx() buffer
-      aovl*: CustomOverlapped       # AcceptEx OVERLAPPED structure
+      when defined(windows):
+        aovl*: CustomOverlapped       # AcceptEx OVERLAPPED structure
 else:
   type
     SocketServer* = ref object of RootRef
@@ -295,7 +296,7 @@ proc getAddrInfo(address: string, port: Port, domain: Domain,
   var gaiRes = getaddrinfo(address, Base10.toString(uint16(port)),
                            addr(hints), res)
   if gaiRes != 0'i32:
-    when defined(windows):
+    when defined(windows) or defined(nimdoc):
       raise newException(TransportAddressError, osErrorMsg(osLastError()))
     else:
       raise newException(TransportAddressError, $gai_strerror(gaiRes))
@@ -320,7 +321,7 @@ proc fromSAddr*(sa: ptr Sockaddr_storage, sl: SockLen,
             sizeof(address.address_v6))
     address.port = Port(nativesockets.ntohs(s.sin6_port))
   elif int(sa.ss_family) == toInt(Domain.AF_UNIX):
-    when not defined(windows):
+    when not defined(windows) and not defined(nimdoc):
       address = TransportAddress(family: AddressFamily.Unix)
       if int(sl) > sizeof(sa.ss_family):
         var length = int(sl) - sizeof(sa.ss_family)
@@ -352,7 +353,7 @@ proc toSAddr*(address: TransportAddress, sa: var Sockaddr_storage,
     copyMem(addr s.sin6_addr, unsafeAddr address.address_v6[0],
             sizeof(s.sin6_addr))
   of AddressFamily.Unix:
-    when not defined(windows):
+    when not defined(windows) and not defined(nimdoc):
       if address.port == Port(0):
         sl = SockLen(sizeof(sa.ss_family))
       else:
