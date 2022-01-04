@@ -286,7 +286,7 @@ proc raiseAsDefect*(exc: ref Exception, msg: string) {.
   raise (ref Defect)(
     msg: msg & "\n" & exc.msg & "\n" & exc.getStackTrace(), parent: exc)
 
-when defined(windows) or defined(nimdoc):
+when defined(windows):
   type
     WSAPROC_TRANSMITFILE = proc(hSocket: SocketHandle, hFile: Handle,
                                 nNumberOfBytesToWrite: DWORD,
