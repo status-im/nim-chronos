@@ -431,7 +431,7 @@ when defined(windows):
     loop.processTimersGetTimeout(curTimeout)
 
     # Processing handles
-    var lpNumberOfBytesTransferred: Dword
+    var lpNumberOfBytesTransferred: DWORD
     var lpCompletionKey: ULONG_PTR
     var customOverlapped: PtrCustomOverlapped
 

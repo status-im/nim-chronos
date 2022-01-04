@@ -1,5 +1,5 @@
 packageName   = "chronos"
-version       = "3.0.10"
+version       = "3.0.11"
 author        = "Status Research & Development GmbH"
 description   = "Chronos"
 license       = "Apache License 2.0 or MIT"
