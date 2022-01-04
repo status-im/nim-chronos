@@ -431,7 +431,7 @@ when defined(windows) or defined(nimdoc):
     loop.processTimersGetTimeout(curTimeout)
 
     # Processing handles
-    var lpNumberOfBytesTransferred: Dword
+    var lpNumberOfBytesTransferred: DWORD
     var lpCompletionKey: ULONG_PTR
     var customOverlapped: PtrCustomOverlapped
 
