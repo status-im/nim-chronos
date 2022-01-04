@@ -858,7 +858,7 @@ when defined(windows):
           else:
             # We should not raise defects in this loop.
             discard disconnectNamedPipe(Handle(server.sock))
-            discard closeHandle(HANDLE(server.sock))
+            discard closeHandle(Handle(server.sock))
             raiseAssert osErrorMsg(osLastError())
         else:
           # Server close happens in callback, and we are not started new
@@ -1012,7 +1012,7 @@ when defined(windows):
 
   proc pauseAccept(server: StreamServer) {.inline.} =
     if server.apending:
-      discard cancelIO(Handle(server.sock))
+      discard cancelIo(Handle(server.sock))
 
   proc resumeAccept(server: StreamServer) {.inline.} =
     if not(server.apending):
@@ -1071,7 +1071,7 @@ when defined(windows):
             server.asock.closeSocket()
             retFuture.fail(getServerUseClosedError())
             server.clean()
-          of OsErrorCode(common.WSAENETDOWN), OSErrorCode(common.WSAENETRESET),
+          of OSErrorCode(common.WSAENETDOWN), OSErrorCode(common.WSAENETRESET),
              OSErrorCode(common.WSAECONNABORTED),
              OSErrorCode(common.WSAECONNRESET),
              OSErrorCode(common.WSAETIMEDOUT):
@@ -1213,7 +1213,7 @@ when defined(windows):
                                         cb: continuationPipe,
                                         udata: cast[pointer](server))
       server.apending = true
-      let res = connectNamedPipe(HANDLE(server.sock),
+      let res = connectNamedPipe(Handle(server.sock),
                                  cast[POVERLAPPED](addr server.aovl))
       if res == 0:
         let err = osLastError()

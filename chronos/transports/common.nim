@@ -620,16 +620,16 @@ when defined(windows):
     WSAENOBUFS* = 10055
     WSAETIMEDOUT* = 10060
 
-  proc cancelIo*(hFile: HANDLE): WINBOOL
+  proc cancelIo*(hFile: Handle): WINBOOL
        {.stdcall, dynlib: "kernel32", importc: "CancelIo".}
-  proc connectNamedPipe*(hPipe: HANDLE, lpOverlapped: ptr OVERLAPPED): WINBOOL
+  proc connectNamedPipe*(hPipe: Handle, lpOverlapped: ptr OVERLAPPED): WINBOOL
        {.stdcall, dynlib: "kernel32", importc: "ConnectNamedPipe".}
-  proc disconnectNamedPipe*(hPipe: HANDLE): WINBOOL
+  proc disconnectNamedPipe*(hPipe: Handle): WINBOOL
        {.stdcall, dynlib: "kernel32", importc: "DisconnectNamedPipe".}
-  proc setNamedPipeHandleState*(hPipe: HANDLE, lpMode, lpMaxCollectionCount,
+  proc setNamedPipeHandleState*(hPipe: Handle, lpMode, lpMaxCollectionCount,
                                 lpCollectDataTimeout: ptr DWORD): WINBOOL
        {.stdcall, dynlib: "kernel32", importc: "SetNamedPipeHandleState".}
-  proc resetEvent*(hEvent: HANDLE): WINBOOL
+  proc resetEvent*(hEvent: Handle): WINBOOL
        {.stdcall, dynlib: "kernel32", importc: "ResetEvent".}
 
 template getTransportTooManyError*(code: int = 0): ref TransportTooManyError =
