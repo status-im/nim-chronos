@@ -190,7 +190,7 @@ proc createAsyncPipe*(): tuple[read: AsyncFD, write: AsyncFD] =
       of ERROR_PIPE_CONNECTED:
         discard
       of ERROR_IO_PENDING:
-        var bytesRead = 0.Dword
+        var bytesRead = 0.DWORD
         if getOverlappedResult(pipeIn, addr ovl, bytesRead, 1) == 0:
           discard closeHandle(pipeIn)
           discard closeHandle(pipeOut)
