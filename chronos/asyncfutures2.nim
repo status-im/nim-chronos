@@ -53,10 +53,15 @@ type
   # the future can be stored within the caller's stack frame.
   # How much refactoring is needed to make this a regular non-ref type?
   # Obviously, it will still be allocated on the heap when necessary.
-  Future*[T] = ref object of FutureBase
-    closure*: iterator(f: Future[T]): FutureBase {.raises: [Defect, CatchableError, Exception], gcsafe.}
+  Future*[T] = ref object of FutureBase ## Typed future.
+    when defined(chronosStrictException):
+      closure*: iterator(f: Future[T]): FutureBase {.raises: [Defect, CatchableError], gcsafe.}
+    else:
+      closure*: iterator(f: Future[T]): FutureBase {.raises: [Defect, CatchableError, Exception], gcsafe.}
     value: T ## Stored value
 
+  # Future with a tuple of possible exception types
+  # eg FuturEx[void, (ValueError, OSError)]
   FuturEx*[T, E] = Future[T]
 
   FutureStr*[T] = ref object of Future[T]

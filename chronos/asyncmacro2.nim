@@ -97,8 +97,9 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
         possibleExceptionsTuple.add(possibleRaise)
       break
   if foundRaises < 0:
-    possibleExceptions.add(ident "CatchableError")
-    possibleExceptionsTuple.add(ident "CatchableError")
+    const defaultException = when defined(chronosStrictException): "CatchableError" else: "Exception"
+    possibleExceptions.add(ident defaultException)
+    possibleExceptionsTuple.add(ident defaultException)
   else: pragma(prc).del(foundRaises)
 
   let returnType = prc.params[0]
