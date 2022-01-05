@@ -39,7 +39,7 @@ when defined(nimdoc):
     ##
     ## On error, ``-1`` is returned.
 
-when defined(linux) or defined(android):
+elif defined(linux) or defined(android):
 
   proc osSendFile*(outfd, infd: cint, offset: ptr int, count: int): int
       {.importc: "sendfile", header: "<sys/sendfile.h>".}

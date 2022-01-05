@@ -12,7 +12,7 @@
 import std/[net, nativesockets]
 import ./asyncloop
 
-when defined(windows):
+when defined(windows) or defined(nimdoc):
   import os, winlean
   const
     asyncInvalidSocket* = AsyncFD(-1)
@@ -40,7 +40,7 @@ const
 
 proc setSocketBlocking*(s: SocketHandle, blocking: bool): bool =
   ## Sets blocking mode on socket.
-  when defined(windows):
+  when defined(windows) or defined(nimdoc):
     var mode = clong(ord(not blocking))
     if ioctlsocket(s, FIONBIO, addr(mode)) == -1:
       false
@@ -124,7 +124,7 @@ proc getMaxOpenFiles*(): int {.raises: [Defect, OSError].} =
   ## Note: On Windows its impossible to obtain such number, so getMaxOpenFiles()
   ## will return constant value of 16384. You can get more information on this
   ## link https://docs.microsoft.com/en-us/archive/blogs/markrussinovich/pushing-the-limits-of-windows-handles
-  when defined(windows):
+  when defined(windows) or defined(nimdoc):
     16384
   else:
     var limits: RLimit
@@ -136,7 +136,7 @@ proc setMaxOpenFiles*(count: int) {.raises: [Defect, OSError].} =
   ## Set maximum file descriptor number that can be opened by this process.
   ##
   ## Note: On Windows its impossible to set this value, so it just a nop call.
-  when defined(windows):
+  when defined(windows) or defined(nimdoc):
     discard
   else:
     var limits: RLimit
@@ -190,7 +190,7 @@ proc createAsyncPipe*(): tuple[read: AsyncFD, write: AsyncFD] =
       of ERROR_PIPE_CONNECTED:
         discard
       of ERROR_IO_PENDING:
-        var bytesRead = 0.Dword
+        var bytesRead = 0.DWORD
         if getOverlappedResult(pipeIn, addr ovl, bytesRead, 1) == 0:
           discard closeHandle(pipeIn)
           discard closeHandle(pipeOut)
@@ -201,6 +201,7 @@ proc createAsyncPipe*(): tuple[read: AsyncFD, write: AsyncFD] =
         return (read: asyncInvalidPipe, write: asyncInvalidPipe)
 
     (read: AsyncFD(pipeIn), write: AsyncFD(pipeOut))
+  elif defined(nimdoc): discard
   else:
     var fds: array[2, cint]
 

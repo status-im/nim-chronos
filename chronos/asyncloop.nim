@@ -286,7 +286,7 @@ proc raiseAsDefect*(exc: ref Exception, msg: string) {.
   raise (ref Defect)(
     msg: msg & "\n" & exc.msg & "\n" & exc.getStackTrace(), parent: exc)
 
-when defined(windows) or defined(nimdoc):
+when defined(windows):
   type
     WSAPROC_TRANSMITFILE = proc(hSocket: SocketHandle, hFile: Handle,
                                 nNumberOfBytesToWrite: DWORD,
@@ -431,7 +431,7 @@ when defined(windows) or defined(nimdoc):
     loop.processTimersGetTimeout(curTimeout)
 
     # Processing handles
-    var lpNumberOfBytesTransferred: Dword
+    var lpNumberOfBytesTransferred: DWORD
     var lpCompletionKey: ULONG_PTR
     var customOverlapped: PtrCustomOverlapped
 

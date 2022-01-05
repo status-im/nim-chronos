@@ -69,6 +69,8 @@ when defined(nimdoc):
       VnodeRename, ## NOTE_RENAME (BSD specific, file renamed)
       VnodeRevoke  ## NOTE_REVOKE (BSD specific, file revoke occurred)
 
+    IOSelectorsException* = object of CatchableError
+
     ReadyKey* = object
       ## An object which holds result for descriptor
       fd* : int ## file/socket descriptor

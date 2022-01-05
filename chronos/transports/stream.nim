@@ -13,7 +13,7 @@ import std/[net, nativesockets, os, deques]
 import ".."/[asyncloop, handles, selectors2]
 import common
 
-when defined(windows):
+when defined(windows) or defined(nimdoc):
   import winlean
 else:
   import posix
@@ -292,7 +292,17 @@ proc clean(transp: StreamTransport) {.inline.} =
     transp.future.complete()
     GC_unref(transp)
 
-when defined(windows):
+when defined(nimdoc):
+  proc pauseAccept(server: StreamServer) {.inline.} = discard
+  proc resumeAccept(server: StreamServer) {.inline.} = discard
+  proc resumeRead(transp: StreamTransport) {.inline.} = discard
+  proc accept*(server: StreamServer): Future[StreamTransport] = discard
+  proc resumeWrite(transp: StreamTransport) {.inline.} = discard
+  proc newStreamPipeTransport(fd: AsyncFD, bufsize: int,
+                              child: StreamTransport,
+                             flags: set[TransportFlags] = {}): StreamTransport =
+    discard
+elif defined(windows):
 
   template zeroOvelappedOffset(t: untyped) =
     (t).offset = 0
@@ -858,7 +868,7 @@ when defined(windows):
           else:
             # We should not raise defects in this loop.
             discard disconnectNamedPipe(Handle(server.sock))
-            discard closeHandle(HANDLE(server.sock))
+            discard closeHandle(Handle(server.sock))
             raiseAssert osErrorMsg(osLastError())
         else:
           # Server close happens in callback, and we are not started new
@@ -1012,7 +1022,7 @@ when defined(windows):
 
   proc pauseAccept(server: StreamServer) {.inline.} =
     if server.apending:
-      discard cancelIO(Handle(server.sock))
+      discard cancelIo(Handle(server.sock))
 
   proc resumeAccept(server: StreamServer) {.inline.} =
     if not(server.apending):
@@ -1071,7 +1081,7 @@ when defined(windows):
             server.asock.closeSocket()
             retFuture.fail(getServerUseClosedError())
             server.clean()
-          of OsErrorCode(common.WSAENETDOWN), OSErrorCode(common.WSAENETRESET),
+          of OSErrorCode(common.WSAENETDOWN), OSErrorCode(common.WSAENETRESET),
              OSErrorCode(common.WSAECONNABORTED),
              OSErrorCode(common.WSAECONNRESET),
              OSErrorCode(common.WSAETIMEDOUT):
@@ -1213,7 +1223,7 @@ when defined(windows):
                                         cb: continuationPipe,
                                         udata: cast[pointer](server))
       server.apending = true
-      let res = connectNamedPipe(HANDLE(server.sock),
+      let res = connectNamedPipe(Handle(server.sock),
                                  cast[POVERLAPPED](addr server.aovl))
       if res == 0:
         let err = osLastError()
@@ -1827,7 +1837,9 @@ proc createStreamServer*(host: TransportAddress,
     serverSocket: AsyncFD
     localAddress: TransportAddress
 
-  when defined(windows):
+  when defined(nimdoc):
+    discard
+  elif defined(windows):
     # Windows
     if host.family in {AddressFamily.IPv4, AddressFamily.IPv6}:
       if sock == asyncInvalidSocket:
@@ -2040,7 +2052,7 @@ template fastWrite(fd: auto, pbytes: var ptr byte, rbytes: var int, nbytes: int)
   # On windows, the write could be initiated here if there is no other write
   # ongoing, but the queue is still needed due to the mechanics of iocp
 
-  when not defined(windows):
+  when not defined(windows) and not defined(nimdoc):
     if transp.queue.len == 0:
       while rbytes > 0:
         let res = posix.send(SocketHandle(fd), pbytes, rbytes, MSG_NOSIGNAL)
