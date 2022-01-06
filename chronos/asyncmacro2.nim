@@ -127,6 +127,8 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
     internalFutureType =
       if subtypeIsVoid:
         newNimNode(nnkBracketExpr, prc).add(newIdentNode("Future")).add(newIdentNode("void"))
+      elif returnType.kind in nnkCallKinds and returnType[0].eqIdent("[]"):
+        newNimNode(nnkBracketExpr, prc).add(newIdentNode("Future")).add(returnType[2])
       else: returnType
     returnTypeWithException = newNimNode(nnkBracketExpr).add(newIdentNode("FuturEx")).add(internalFutureType[1]).add(possibleExceptionsTuple)
   prc.params[0] = returnTypeWithException
