@@ -255,20 +255,44 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
   #if prcName == "recvLineInto":
   #  echo(toStrLit(result))
 
-macro checkMagical(f: typed): untyped =
+macro checkFutureExceptions(f: typed): untyped =
   if getTypeInst(f)[0].repr != "FuturEx":
     return quote do:
       `f`.internalCheckComplete()
 
-  result = newNimNode(nnkStmtList)
-
+  # For FuturEx[void, (ValueError, OSError), will do:
+  # if isNil(f.error): discard
+  # elif f.error of type ValueError: raise cast[ref ValueError](f.error)
+  # elif f.error of type OSError: raise cast[ref OSError](f.error)
+  # else: raiseAssert("Unhandled future exception: " & f.error.msg)
+  #
+  # In future nim versions, this could simply be
+  # {.cast(raises: [ValueError, OSError]).}:
+  #   raise f.error
   let e = getTypeInst(f)[2]
   let types = getType(e)
-  if types.len < 1: return
+
+  expectKind(types, nnkBracketExpr)
+  expectKind(types[0], nnkSym)
+  assert types[0].strVal == "tuple"
+  assert types.len > 1
+
+  result = nnkIfExpr.newTree(
+    nnkElifExpr.newTree(
+      quote do: isNil(`f`.error),
+      quote do: discard
+    )
+  )
+
   for errorType in types[1..^1]:
-    result.add quote do:
-      if not isNil(`f`.error) and `f`.error of type `errorType`:
-        raise cast[ref `errorType`](`f`.error)
+    result.add nnkElifExpr.newTree(
+      quote do: `f`.error of type `errorType`,
+      quote do: raise cast[ref `errorType`](`f`.error)
+    )
+
+  result.add nnkElseExpr.newTree(
+    quote do: raiseAssert("Unhandled future exception: " & `f`.error.msg)
+  )
 
 template await*[T](f: Future[T]): untyped =
   when declared(chronosInternalRetFuture):
@@ -290,7 +314,7 @@ template await*[T](f: Future[T]): untyped =
     chronosInternalRetFuture.child = nil
     if chronosInternalRetFuture.mustCancel:
       raise newCancelledError()
-    checkMagical(chronosInternalTmpFuture)
+    checkFutureExceptions(chronosInternalTmpFuture)
     when T isnot void:
       cast[type(f)](chronosInternalTmpFuture).internalRead()
   else:
