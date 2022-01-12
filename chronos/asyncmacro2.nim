@@ -72,14 +72,19 @@ proc verifyReturnType(typeName: string) {.compileTime.} =
 macro unsupported(s: static[string]): untyped =
   error s
 
+proc params2*(someProc: NimNode): NimNode =
+  if someProc.kind == nnkProcTy:
+    someProc[0]
+  else:
+    params(someProc)
+
+
 proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
   ## This macro transforms a single procedure into a closure iterator.
   ## The ``async`` macro supports a stmtList holding multiple async procedures.
-  if prc.kind notin {nnkProcDef, nnkLambda, nnkMethodDef, nnkDo}:
+  if prc.kind notin {nnkProcDef, nnkLambda, nnkMethodDef, nnkDo, nnkProcTy}:
       error("Cannot transform this node kind into an async proc." &
             " proc/method definition or lambda node expected.")
-
-  let prcName = prc.name.getName
 
   var
     possibleExceptions = nnkBracket.newTree(newIdentNode("CancelledError"))
@@ -102,7 +107,7 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
     possibleExceptionsTuple.add(ident defaultException)
   else: pragma(prc).del(foundRaises)
 
-  let returnType = prc.params[0]
+  let returnType = prc.params2[0]
   var baseType: NimNode
   # Verify that the return type is a Future[T]
   if returnType.kind == nnkBracketExpr:
@@ -121,7 +126,7 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
   let subtypeIsVoid = returnType.kind == nnkEmpty or
         (baseType.kind == nnkIdent and returnType[1].eqIdent("void"))
 
-  var outerProcBody = newNimNode(nnkStmtList, prc.body)
+  var outerProcBody = newNimNode(nnkStmtList, prc)
 
   let
     internalFutureType =
@@ -131,7 +136,7 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
         newNimNode(nnkBracketExpr, prc).add(newIdentNode("Future")).add(returnType[2])
       else: returnType
     returnTypeWithException = newNimNode(nnkBracketExpr).add(newIdentNode("FuturEx")).add(internalFutureType[1]).add(possibleExceptionsTuple)
-  prc.params[0] = returnTypeWithException
+  prc.params2[0] = returnTypeWithException
 
   # -> iterator nameIter(chronosInternalRetFuture: Future[T]): FutureBase {.closure.} =
   # ->   {.push warning[resultshadowed]: off.}
@@ -140,10 +145,13 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
   # ->   <proc_body>
   # ->   complete(chronosInternalRetFuture, result)
   let internalFutureSym = ident "chronosInternalRetFuture"
-  var iteratorNameSym = genSym(nskIterator, $prcName)
-  var procBody = prc.body.processBody(internalFutureSym, subtypeIsVoid)
+  var procBody =
+    if prc.kind == nnkProcTy: newNimNode(nnkEmpty)
+    else: prc.body.processBody(internalFutureSym, subtypeIsVoid)
   # don't do anything with forward bodies (empty)
   if procBody.kind != nnkEmpty:
+    let prcName = prc.name.getName
+    var iteratorNameSym = genSym(nskIterator, $prcName)
     if subtypeIsVoid:
       let resultTemplate = quote do:
         template result: auto {.used.} =
@@ -233,7 +241,7 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
     # -> return resultFuture
     outerProcBody.add newNimNode(nnkReturnStmt, prc.body[^1]).add(retFutureSym)
 
-  if prc.kind != nnkLambda: # TODO: Nim bug?
+  if prc.kind != nnkLambda and prc.kind != nnkProcTy: # TODO: Nim bug?
     prc.addPragma(newColonExpr(ident "stackTrace", ident "off"))
 
   # The proc itself can't raise
