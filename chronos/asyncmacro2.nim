@@ -294,6 +294,37 @@ template awaitne*[T](f: Future[T]): Future[T] =
   else:
     unsupported "awaitne is only available within {.async.}"
 
+template onDone*(code: untyped): untyped =
+  when not declared(chronosInternalRetFuture):
+    unsupported "onFinished is only available within {.async.}"
+
+  chronosInternalRetFuture.addCallback(proc (fut: pointer) {.gcsafe, raises: [Defect].} =
+    let future {.inject.} = cast[type(chronosInternalRetFuture)](fut)
+    GC_unref(future)
+    code
+  , cast[pointer](chronosInternalRetFuture))
+  GC_ref(chronosInternalRetFuture)
+
+template onCompleted*(code: untyped): untyped =
+  onFinish:
+    if future.completed():
+      code
+
+template onUncompleted*(code: untyped): untyped =
+  onFinish:
+    if future.failed() or future.cancelled():
+      code
+
+template onFail*(code: untyped): untyped =
+  onFinish:
+    if future.failed():
+      code
+
+template onCancel*(code: untyped): untyped =
+  onFinish:
+    if future.cancelled():
+      code
+
 macro async*(prc: untyped): untyped =
   ## Macro which processes async procedures into the appropriate
   ## iterators and yield statements.
