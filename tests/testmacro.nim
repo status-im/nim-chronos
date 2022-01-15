@@ -80,3 +80,48 @@ suite "Macro transformations test suite":
     check waitFor(testAwait()) == true
   test "`awaitne` command test":
     check waitFor(testAwaitne()) == true
+
+suite "Exceptions tracking":
+  test "Can raise valid exception":
+    proc test1 {.async.} = raise newException(ValueError, "hey")
+    proc test2 {.async, raises: [ValueError].} = raise newException(ValueError, "hey")
+    proc test3 {.async, raises: [IOError, ValueError].} =
+      if 1 == 2:
+        raise newException(ValueError, "hey")
+      else:
+        raise newException(IOError, "hey")
+
+    proc test4 {.async, raises: [].} = raise newException(Defect, "hey")
+
+  test "Cannot raise invalid exception":
+    check not (compiles do:
+      proc test3 {.async, raises: [IOError].} = raise newException(ValueError, "hey")
+    )
+
+  test "Non-raising compatibility":
+    proc test1 {.async, raises: [ValueError].} = raise newException(ValueError, "hey")
+    let testVar: Future[void] = test1()
+
+    proc test2 {.async.} = raise newException(ValueError, "hey")
+    let testVar2: proc: Future[void] = test2
+
+    # Doesn't work unfortunately
+    #let testVar3: proc: Future[void] = test1
+
+  test "Cannot store invalid future types":
+    proc test1 {.async, raises: [ValueError].} = raise newException(ValueError, "hey")
+    proc test2 {.async, raises: [IOError].} = raise newException(IOError, "hey")
+
+    var a = test1()
+    check not compiles(a = test2())
+
+  test "Await raises the correct types":
+    proc test1 {.async, raises: [ValueError].} = raise newException(ValueError, "hey")
+    proc test2 {.async, raises: [ValueError].} = await test1()
+    check not (compiles do:
+      proc test3 {.async, raises: [].} = await test1()
+    )
+
+  test "Can create callbacks":
+    proc test1 {.async, raises: [ValueError].} = raise newException(ValueError, "hey")
+    let callback: proc {.async, raises: [ValueError].} = test1

@@ -274,7 +274,7 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
   #if prcName == "recvLineInto":
   #  echo(toStrLit(result))
 
-macro checkFutureExceptions(f: typed): untyped =
+macro checkFutureExceptions(f, typ: typed): untyped =
   # For FuturEx[void, (ValueError, OSError), will do:
   # if isNil(f.error): discard
   # elif f.error of type ValueError: raise cast[ref ValueError](f.error)
@@ -284,7 +284,7 @@ macro checkFutureExceptions(f: typed): untyped =
   # In future nim versions, this could simply be
   # {.cast(raises: [ValueError, OSError]).}:
   #   raise f.error
-  let e = getTypeInst(f)[2]
+  let e = getTypeInst(typ)[2]
   let types = getType(e)
 
   expectKind(types, nnkBracketExpr)
@@ -302,7 +302,9 @@ macro checkFutureExceptions(f: typed): untyped =
   for errorType in types[1..^1]:
     result.add nnkElifExpr.newTree(
       quote do: `f`.error of type `errorType`,
-      quote do: raise cast[ref `errorType`](`f`.error)
+      nnkRaiseStmt.newNimNode(lineInfoFrom=typ).add(
+        quote do: cast[ref `errorType`](`f`.error)
+      )
     )
 
   result.add nnkElseExpr.newTree(
@@ -335,7 +337,7 @@ template await*[T](f: Future[T]): untyped =
     if chronosInternalRetFuture.mustCancel:
       raise newCancelledError()
     when f is FuturEx:
-      checkFutureExceptions(chronosInternalTmpFuture)
+      checkFutureExceptions(chronosInternalTmpFuture, f)
     else:
       chronosInternalTmpFuture.internalCheckComplete()
     when T isnot void:
