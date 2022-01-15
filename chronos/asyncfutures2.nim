@@ -62,7 +62,7 @@ type
 
   # Future with a tuple of possible exception types
   # eg FuturEx[void, (ValueError, OSError)]
-  FuturEx*[T, E] = Future[T]
+  FuturEx*[T, E] = ref object of Future[T]
 
   FutureStr*[T] = ref object of Future[T]
     ## Future to hold GC strings
@@ -113,6 +113,9 @@ template setupFutureBase(loc: ptr SrcLoc) =
 proc newFutureImpl[T](loc: ptr SrcLoc): Future[T] =
   setupFutureBase(loc)
 
+proc newFuturExImpl[T, E](loc: ptr SrcLoc): FuturEx[T, E] =
+  setupFutureBase(loc)
+
 proc newFutureSeqImpl[A, B](loc: ptr SrcLoc): FutureSeq[A, B] =
   setupFutureBase(loc)
 
@@ -125,6 +128,13 @@ template newFuture*[T](fromProc: static[string] = ""): Future[T] =
   ## Specifying ``fromProc``, which is a string specifying the name of the proc
   ## that this future belongs to, is a good habit as it helps with debugging.
   newFutureImpl[T](getSrcLocation(fromProc))
+
+template newFuturEx*[T, E](fromProc: static[string] = ""): FuturEx[T, E] =
+  ## Creates a new future.
+  ##
+  ## Specifying ``fromProc``, which is a string specifying the name of the proc
+  ## that this future belongs to, is a good habit as it helps with debugging.
+  newFuturExImpl[T, E](getSrcLocation(fromProc))
 
 template newFutureSeq*[A, B](fromProc: static[string] = ""): FutureSeq[A, B] =
   ## Create a new future which can hold/preserve GC sequence until future will

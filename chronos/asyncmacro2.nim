@@ -136,7 +136,16 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
         newNimNode(nnkBracketExpr, prc).add(newIdentNode("Future")).add(returnType[2])
       else: returnType
     returnTypeWithException = newNimNode(nnkBracketExpr).add(newIdentNode("FuturEx")).add(internalFutureType[1]).add(possibleExceptionsTuple)
-  prc.params2[0] = returnTypeWithException
+
+  # Rewrite return type
+  if foundRaises >= 0:
+    prc.params2[0] = nnkBracketExpr.newTree(
+      newIdentNode("FuturEx"),
+      internalFutureType[1],
+      possibleExceptionsTuple
+    )
+  elif subtypeIsVoid:
+    prc.params2[0] = internalFutureType
 
   # -> iterator nameIter(chronosInternalRetFuture: Future[T]): FutureBase {.closure.} =
   # ->   {.push warning[resultshadowed]: off.}
@@ -207,7 +216,7 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
       closureIterator.addPragma(newIdentNode("gcsafe"))
     outerProcBody.add(closureIterator)
 
-    # -> var resultFuture = newFuture[T]()
+    # -> var resultFuture = newFuturEx[T ,E]()
     # declared at the end to be sure that the closure
     # doesn't reference it, avoid cyclic ref (#203)
     var retFutureSym = ident "resultFuture"
@@ -221,7 +230,7 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
     outerProcBody.add(
       newVarStmt(
         retFutureSym,
-        newCall(newTree(nnkBracketExpr, ident "newFuture", subRetType),
+        newCall(newTree(nnkBracketExpr, ident "newFuturEx", subRetType, possibleExceptionsTuple),
                 newLit(prcName))
       )
     )
@@ -266,10 +275,6 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
   #  echo(toStrLit(result))
 
 macro checkFutureExceptions(f: typed): untyped =
-  if getTypeInst(f)[0].repr != "FuturEx":
-    return quote do:
-      `f`.internalCheckComplete()
-
   # For FuturEx[void, (ValueError, OSError), will do:
   # if isNil(f.error): discard
   # elif f.error of type ValueError: raise cast[ref ValueError](f.error)
@@ -306,7 +311,12 @@ macro checkFutureExceptions(f: typed): untyped =
 
 template await*[T](f: Future[T]): untyped =
   when declared(chronosInternalRetFuture):
-    let chronosInternalTmpFuture = f
+    #work around https://github.com/nim-lang/Nim/issues/19193
+    when not declaredInScope(chronosInternalTmpFuture):
+      var chronosInternalTmpFuture {.inject.}: FutureBase = f
+    else:
+      chronosInternalTmpFuture = f
+
     chronosInternalRetFuture.child = chronosInternalTmpFuture
 
     # This "yield" is meant for a closure iterator in the caller.
@@ -324,7 +334,10 @@ template await*[T](f: Future[T]): untyped =
     chronosInternalRetFuture.child = nil
     if chronosInternalRetFuture.mustCancel:
       raise newCancelledError()
-    checkFutureExceptions(chronosInternalTmpFuture)
+    when f is FuturEx:
+      checkFutureExceptions(chronosInternalTmpFuture)
+    else:
+      chronosInternalTmpFuture.internalCheckComplete()
     when T isnot void:
       cast[type(f)](chronosInternalTmpFuture).internalRead()
   else:
