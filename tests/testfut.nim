@@ -1065,20 +1065,23 @@ suite "Future[T] behavior test suite":
     let loc31 = fut3.location[1]
 
     proc chk(loc: ptr SrcLoc, file: string, line: int,
-             procedure: string): bool =
+             procedure: string) =
       if len(procedure) == 0:
-        (loc.line == line) and ($loc.file  == file)
+        check:
+          loc.line == line
+          $loc.file  == file
       else:
-        (loc.line == line) and ($loc.file  == file) and
-        (loc.procedure == procedure)
+        check:
+          loc.line == line
+          $loc.file  == file
+          loc.procedure == procedure
 
-    check:
-      chk(loc10, "testfut.nim", 1041, "macroFuture")
-      chk(loc11, "testfut.nim", 1042, "")
-      chk(loc20, "testfut.nim", 1054, "template")
-      chk(loc21, "testfut.nim", 1057, "")
-      chk(loc30, "testfut.nim", 1051, "procedure")
-      chk(loc31, "testfut.nim", 1058, "")
+    chk(loc10, "testfut.nim", 1041, "macroFuture")
+    chk(loc11, "testfut.nim", 1041, "")
+    chk(loc20, "testfut.nim", 1054, "template")
+    chk(loc21, "testfut.nim", 1057, "")
+    chk(loc30, "testfut.nim", 1051, "procedure")
+    chk(loc31, "testfut.nim", 1058, "")
 
   test "withTimeout(fut) should wait cancellation test":
     proc futureNeverEnds(): Future[void] =
