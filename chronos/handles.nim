@@ -10,6 +10,7 @@
 {.push raises: [Defect].}
 
 import std/[net, nativesockets]
+import stew/base10
 import ./asyncloop
 
 when defined(windows) or defined(nimdoc):
@@ -24,7 +25,7 @@ when defined(windows) or defined(nimdoc):
     DEFAULT_PIPE_SIZE = 65536'i32
     ERROR_PIPE_CONNECTED = 535
     ERROR_PIPE_BUSY = 231
-    pipeHeaderName = r"\\.\pipe\chronos\"
+    pipeHeaderName = r"\\.\pipe\LOCAL\chronos\"
 
   proc connectNamedPipe(hNamedPipe: Handle, lpOverlapped: pointer): WINBOOL
        {.importc: "ConnectNamedPipe", stdcall, dynlib: "kernel32".}
@@ -152,18 +153,19 @@ proc createAsyncPipe*(): tuple[read: AsyncFD, write: AsyncFD] =
   ## on error.
   when defined(windows):
     var pipeIn, pipeOut: Handle
-    var pipeName: WideCString
+    var pipeName: string
     var uniq = 0'u64
     var sa = SECURITY_ATTRIBUTES(nLength: sizeof(SECURITY_ATTRIBUTES).cint,
                                  lpSecurityDescriptor: nil, bInheritHandle: 0)
     while true:
       QueryPerformanceCounter(uniq)
-      pipeName = newWideCString(pipeHeaderName & $uniq)
+      pipeName = pipeHeaderName & Base10.toString(uniq)
+
       var openMode = FILE_FLAG_FIRST_PIPE_INSTANCE or FILE_FLAG_OVERLAPPED or
                      PIPE_ACCESS_INBOUND
       var pipeMode = PIPE_TYPE_BYTE or PIPE_READMODE_BYTE or PIPE_WAIT
-      pipeIn = createNamedPipe(pipeName, openMode, pipeMode, 1'i32,
-                               DEFAULT_PIPE_SIZE, DEFAULT_PIPE_SIZE,
+      pipeIn = createNamedPipe(newWideCString(pipeName), openMode, pipeMode,
+                               1'i32, DEFAULT_PIPE_SIZE, DEFAULT_PIPE_SIZE,
                                0'i32, addr sa)
       if pipeIn == INVALID_HANDLE_VALUE:
         let err = osLastError()
@@ -176,8 +178,8 @@ proc createAsyncPipe*(): tuple[read: AsyncFD, write: AsyncFD] =
         break
 
     var openMode = (GENERIC_WRITE or FILE_WRITE_DATA or SYNCHRONIZE)
-    pipeOut = createFileW(pipeName, openMode, 0, addr(sa), OPEN_EXISTING,
-                          FILE_FLAG_OVERLAPPED, 0)
+    pipeOut = createFileW(newWideCString(pipeName), openMode, 0, addr(sa),
+                          OPEN_EXISTING, FILE_FLAG_OVERLAPPED, 0)
     if pipeOut == INVALID_HANDLE_VALUE:
       discard closeHandle(pipeIn)
       return (read: asyncInvalidPipe, write: asyncInvalidPipe)

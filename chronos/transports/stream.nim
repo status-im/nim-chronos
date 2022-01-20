@@ -2048,14 +2048,23 @@ proc getUserData*[T](server: StreamServer): T {.inline.} =
   ## Obtain user data stored in ``server`` object.
   result = cast[T](server.udata)
 
-template fastWrite(fd: auto, pbytes: var ptr byte, rbytes: var int, nbytes: int) =
+template fastWrite(transp: auto, pbytes: var ptr byte, rbytes: var int,
+                   nbytes: int) =
   # On windows, the write could be initiated here if there is no other write
   # ongoing, but the queue is still needed due to the mechanics of iocp
 
   when not defined(windows) and not defined(nimdoc):
     if transp.queue.len == 0:
       while rbytes > 0:
-        let res = posix.send(SocketHandle(fd), pbytes, rbytes, MSG_NOSIGNAL)
+        let res =
+          case transp.kind
+          of TransportKind.Socket:
+            posix.send(SocketHandle(transp.fd), pbytes, rbytes,
+                       MSG_NOSIGNAL)
+          of TransportKind.Pipe:
+            posix.write(cint(transp.fd), pbytes, rbytes)
+          else:
+            raiseAssert "Unsupported transport kind: " & $transp.kind
         if res > 0:
           pbytes = cast[ptr byte](cast[uint](pbytes) + cast[uint](res))
           rbytes -= res
@@ -2094,7 +2103,7 @@ proc write*(transp: StreamTransport, pbytes: pointer,
     pbytes = cast[ptr byte](pbytes)
     rbytes = nbytes # Remaining bytes
 
-  fastWrite(transp.fd, pbytes, rbytes, nbytes)
+  fastWrite(transp, pbytes, rbytes, nbytes)
 
   var vector = StreamVector(kind: DataBuffer, writer: retFuture,
                             buf: pbytes, buflen: rbytes, size: nbytes)
@@ -2115,7 +2124,7 @@ proc write*(transp: StreamTransport, msg: string, msglen = -1): Future[int] =
     pbytes = cast[ptr byte](unsafeAddr msg[0])
     rbytes = nbytes
 
-  fastWrite(transp.fd, pbytes, rbytes, nbytes)
+  fastWrite(transp, pbytes, rbytes, nbytes)
 
   let
     written = nbytes - rbytes # In case fastWrite wrote some
@@ -2146,7 +2155,7 @@ proc write*[T](transp: StreamTransport, msg: seq[T], msglen = -1): Future[int] =
     pbytes = cast[ptr byte](unsafeAddr msg[0])
     rbytes = nbytes
 
-  fastWrite(transp.fd, pbytes, rbytes, nbytes)
+  fastWrite(transp, pbytes, rbytes, nbytes)
 
   let
     written = nbytes - rbytes # In case fastWrite wrote some
