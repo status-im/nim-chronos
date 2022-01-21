@@ -488,7 +488,7 @@ proc preferredContentMediaType*(acceptHeader: string): MediaType =
       MediaType.init("*", "*")
 
 proc preferredContentType*(acceptHeader: string,
-                       types: openArray[string] = []): Result[string, cstring] =
+                           types: varargs[MediaType]): Result[MediaType, cstring] =
   ## Match or obtain preferred content-type using ``Accept`` header specified by
   ## string ``acceptHeader``.
   ##
@@ -505,18 +505,18 @@ proc preferredContentType*(acceptHeader: string,
   if len(types) == 0:
     if len(acceptHeader) == 0:
       # If `Accept` header is missing, return `*/*`.
-      ok("*/*")
+      ok(wildCardMediaType)
     else:
       let res = getAcceptInfo(acceptHeader)
       if res.isErr():
         # If `Accept` header is incorrect, client accepts any type of content.
-        ok("*/*")
+        ok(wildCardMediaType)
       else:
         let mediaTypes = res.get().data
         if len(mediaTypes) > 0:
-          ok($mediaTypes[0].mediaType)
+          ok(mediaTypes[0].mediaType)
         else:
-          ok("*/*")
+          ok(wildCardMediaType)
   else:
     if len(acceptHeader) == 0:
       # If `Accept` header is missing, client accepts any type of content.
@@ -527,17 +527,7 @@ proc preferredContentType*(acceptHeader: string,
         # If `Accept` header is incorrect, client accepts any type of content.
         ok(types[0])
       else:
-        let mediaTypes =
-          block:
-            var res: seq[MediaType]
-            for item in types:
-              res.add(MediaType.init(item))
-            res
-        for item in ares.get().data:
-          for expect in mediaTypes:
-            if expect == item.mediaType:
-              return ok($expect)
-        err("Preferred content type not found")
+        selectContentType(ares.get().data, types)
 
 proc preferredContentMediaType*(request: HttpRequestRef): MediaType =
   ## Returns preferred content-type using ``Accept`` header specified by
@@ -545,7 +535,7 @@ proc preferredContentMediaType*(request: HttpRequestRef): MediaType =
   preferredContentMediaType(request.headers.getString(AcceptHeaderName))
 
 proc preferredContentType*(request: HttpRequestRef,
-                           types: varargs[string]): Result[string, cstring] =
+                           types: varargs[MediaType]): Result[MediaType, cstring] =
   ## Match or obtain preferred content-type using ``Accept`` header specified by
   ## client in request ``request``.
   preferredContentType(request.headers.getString(AcceptHeaderName), types)
