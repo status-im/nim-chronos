@@ -708,7 +708,8 @@ proc init*(tt: typedesc[TLSCertificate],
   ##
   ## This procedure initializes array of certificates from PEM encoded string.
   var items = pemDecode(data)
-  var res = TLSCertificate()
+  # storage needs to be big enough for input data
+  var res = TLSCertificate(storage: newSeqOfCap[byte](data.len))
   for item in items:
     if item.name == "CERTIFICATE" and len(item.data) > 0:
       let offset = len(res.storage)
