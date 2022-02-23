@@ -72,6 +72,21 @@ proc verifyReturnType(typeName: string) {.compileTime.} =
 macro unsupported(s: static[string]): untyped =
   error s
 
+proc cleanupOpenSymChoice(node: NimNode): NimNode {.compileTime.} =
+  # Replace every Call -> OpenSymChoice by a Bracket expr
+  # ref https://github.com/nim-lang/Nim/issues/11091
+  if node.kind in nnkCallKinds and
+    node[0].kind == nnkOpenSymChoice and node[0].eqIdent("[]"):
+    result = newNimNode(nnkBracketExpr).add(
+      node[1],
+      node[2]
+    )
+  else:
+    result = node
+
+  for index, child in result:
+    result[index] = cleanupOpenSymChoice(child)
+
 proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
   ## This macro transforms a single procedure into a closure iterator.
   ## The ``async`` macro supports a stmtList holding multiple async procedures.
@@ -81,7 +96,7 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
 
   let prcName = prc.name.getName
 
-  let returnType = prc.params[0]
+  let returnType = cleanupOpenSymChoice(prc.params[0])
   var baseType: NimNode
   # Verify that the return type is a Future[T]
   if returnType.kind == nnkBracketExpr:
