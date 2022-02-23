@@ -103,10 +103,6 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
     let fut = repr(returnType[0])
     verifyReturnType(fut)
     baseType = returnType[1]
-  elif returnType.kind in nnkCallKinds and returnType[0].eqIdent("[]"):
-    let fut = repr(returnType[1])
-    verifyReturnType(fut)
-    baseType = returnType[2]
   elif returnType.kind == nnkEmpty:
     baseType = returnType
   else:
