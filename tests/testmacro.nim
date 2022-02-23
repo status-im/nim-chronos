@@ -96,4 +96,4 @@ suite "Macro transformations test suite":
 
     type OpenObject = object
     macroAsync(testMacro, seq, OpenObject)
-    check waitFor(testmacro()).len == 0
+    check waitFor(testMacro()).len == 0
