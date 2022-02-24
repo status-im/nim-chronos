@@ -384,7 +384,7 @@ template awaitne*[T](f: Future[T]): Future[T] =
 
 proc asyncMultipleProcs(
   prc, raises: NimNode,
-  trackExceptions: bool): NimNode {.compiletime.} =
+  trackExceptions: bool): NimNode {.compileTime.} =
   if prc.kind == nnkStmtList:
     for oneProc in prc:
       result = newStmtList()
