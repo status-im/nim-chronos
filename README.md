@@ -213,20 +213,19 @@ by the transformation.
 
 #### Checked exceptions
 
-By specifying a `raises` list to an async procedure, you can check which
-exceptions can be thrown by it.
+By using `asyncraises` instead of `async`, you can check which
+exceptions can be thrown by an async procedure.
 ```nim
-proc p1(): Future[void] {.async, raises: [IOError].} =
+proc p1(): Future[void] {.asyncraises: [IOError].} =
   assert not (compiles do: raise newException(ValueError, "uh-uh"))
   raise newException(IOError, "works") # Or any child of IOError
 ```
 
-Note that this won't work with a pushed `raises` pragma. Under the hood,
-the return type of `p1` will be rewritten to another type, which will
-convey raises informations to await.
+Under the hood, the return type of `p1` will be rewritten to another type,
+which will convey raises informations to await.
 
 ```nim
-proc p2(): Future[void] {.async, raises: [IOError].} =
+proc p2(): Future[void] {.asyncraises: [IOError].} =
   await p1() # Works, because await knows that p1
              # can only raise IOError
 ```
@@ -234,16 +233,16 @@ proc p2(): Future[void] {.async, raises: [IOError].} =
 The hidden type (`FuturEx`) is implicitely convertible into a Future.
 However, it may causes issues when creating callback or methods
 ```nim
-proc p3(): Future[void] {.async, raises: [IOError].} =
+proc p3(): Future[void] {.asyncraises: [IOError].} =
   let fut: Future[void] = p1() # works
   assert not compiles(await fut) # await lost informations about raises,
                                  # so it can raise anything
 
   # Callbacks
   assert not(compiles do: let cb1: proc(): Future[void] = p1) # doesn't work
-  let cb2: proc(): Future[void] {.async, raises: [IOError].} = p1 # works
+  let cb2: proc(): Future[void] {.asyncraises: [IOError].} = p1 # works
   assert not(compiles do:
-    type c = proc(): Future[void] {.async, raises: [IOError, ValueError].}
+    type c = proc(): Future[void] {.asyncraises: [IOError, ValueError].}
     let cb3: c = p1 # doesn't work, the raises must match _exactly_
   )
 ```
