@@ -82,6 +82,8 @@ suite "Macro transformations test suite":
     check waitFor(testAwaitne()) == true
 
 suite "Exceptions tracking":
+  template checkNotCompiles(body: untyped) =
+    check (not compiles(body))
   test "Can raise valid exception":
     proc test1 {.async.} = raise newException(ValueError, "hey")
     proc test2 {.asyncraises: [ValueError].} = raise newException(ValueError, "hey")
@@ -95,9 +97,8 @@ suite "Exceptions tracking":
     proc test5 {.asyncraises: [].} = await test5()
 
   test "Cannot raise invalid exception":
-    check not (compiles do:
+    checkNotCompiles:
       proc test3 {.asyncraises: [IOError].} = raise newException(ValueError, "hey")
-    )
 
   test "Non-raising compatibility":
     proc test1 {.asyncraises: [ValueError].} = raise newException(ValueError, "hey")
@@ -114,15 +115,27 @@ suite "Exceptions tracking":
     proc test2 {.asyncraises: [IOError].} = raise newException(IOError, "hey")
 
     var a = test1()
-    check not compiles(a = test2())
+    checkNotCompiles:
+      a = test2()
 
   test "Await raises the correct types":
     proc test1 {.asyncraises: [ValueError].} = raise newException(ValueError, "hey")
     proc test2 {.asyncraises: [ValueError].} = await test1()
-    check not (compiles do:
+    checkNotCompiles:
       proc test3 {.asyncraises: [].} = await test1()
-    )
 
   test "Can create callbacks":
     proc test1 {.asyncraises: [ValueError].} = raise newException(ValueError, "hey")
     let callback: proc {.asyncraises: [ValueError].} = test1
+
+  test "Can return values":
+    proc test1: Future[int] {.asyncraises: [ValueError].} =
+      if 1 == 0: raise newException(ValueError, "hey")
+      return 12
+    proc test2: Future[int] {.asyncraises: [ValueError, IOError].} =
+      return await test1()
+
+    checkNotCompiles:
+      proc test3: Future[int] {.asyncraises: [].}= await test1()
+
+    check waitFor(test2()) == 12
