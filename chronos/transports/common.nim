@@ -516,7 +516,7 @@ proc resolveTAddress*(address: string, port: Port,
     resolveTAddress(address, port, AddressFamily.IPv6)
 
 proc windowsAnyAddressFix*(a: TransportAddress): TransportAddress =
-  ## BSD Sockets on *nix systems are able to perform connections to
+  ## BSD Sockets on \*nix systems are able to perform connections to
   ## `0.0.0.0` or `::0` which are equal to `127.0.0.1` or `::1`.
   when defined(windows):
     if (a.family == AddressFamily.IPv4 and

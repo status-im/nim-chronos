@@ -1233,6 +1233,33 @@ suite "Stream Transport test suite":
     except AsyncTimeoutError:
       return false
 
+  proc testPipe(): Future[bool] {.async.} =
+    let (rfd, wfd) = createAsyncPipe()
+
+    let
+      message = createBigMessage(16384 * 1024)
+      rtransp = fromPipe(rfd)
+      wtransp = fromPipe(wfd)
+    var
+      buffer = newSeq[byte](16384 * 1024)
+
+    proc writer(transp: StreamTransport): Future[int] {.async.} =
+      let res =
+        try:
+          await transp.write(message)
+        except CatchableError:
+          -1
+      return res
+
+    var fut = wtransp.writer()
+    try:
+      await rtransp.readExactly(addr buffer[0], 16384 * 1024)
+    except CatchableError:
+      discard
+
+    await allFutures(rtransp.closeWait(), wtransp.closeWait())
+    return buffer == message
+
   markFD = getCurrentFD()
 
   for i in 0..<len(addresses):
@@ -1318,6 +1345,8 @@ suite "Stream Transport test suite":
       check waitFor(testWriteOnClose(addresses[i])) == true
     test prefixes[i] & "read() notification on close() test":
       check waitFor(testReadOnClose(addresses[i])) == true
+  test "[PIPE] readExactly()/write() test":
+    check waitFor(testPipe()) == true
   test "Servers leak test":
     check getTracker("stream.server").isLeaked() == false
   test "Transports leak test":

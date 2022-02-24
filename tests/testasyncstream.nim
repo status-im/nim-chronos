@@ -943,7 +943,7 @@ suite "BoundedStream test suite":
         let flags = {ServerFlags.ReuseAddr, ServerFlags.TcpNoDelay}
         var server = createStreamServer(address, processClient, flags = flags)
         server.start()
-        var conn = await connect(address)
+        var conn = await connect(server.localAddress())
         var rstream = newAsyncStreamReader(conn)
         case btest
         of BoundaryRead:
@@ -1057,7 +1057,7 @@ suite "BoundedStream test suite":
         let flags = {ServerFlags.ReuseAddr, ServerFlags.TcpNoDelay}
         var server = createStreamServer(address, processClient, flags = flags)
         server.start()
-        var conn = await connect(address)
+        var conn = await connect(server.localAddress())
         var rstream = newAsyncStreamReader(conn)
         var rbstream = newBoundedStreamReader(rstream, uint64(size),
                                               comparison = cmp)
@@ -1108,7 +1108,7 @@ suite "BoundedStream test suite":
         await server.join()
         return (res and clientRes)
 
-      let address = initTAddress("127.0.0.1:48030")
+      let address = initTAddress("127.0.0.1:0")
       let suffix =
         case itemComp
         of BoundCmp.Equal:

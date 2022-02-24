@@ -856,6 +856,12 @@ suite "HTTP server testing suite":
       check toString(table) == vector[2]
 
   test "Preferred Accept handling test":
+    const
+      jsonMediaType = MediaType.init("application/json")
+      sszMediaType = MediaType.init("application/octet-stream")
+      plainTextMediaType = MediaType.init("text/plain")
+      imageMediaType = MediaType.init("image/jpg")
+
     proc createRequest(acceptHeader: string): HttpRequestRef =
       let headers = HttpTable.init([("accept", acceptHeader)])
       HttpRequestRef(headers: headers)
@@ -863,49 +869,305 @@ suite "HTTP server testing suite":
     proc createRequest(): HttpRequestRef =
       HttpRequestRef(headers: HttpTable.init())
 
-    var requests = @[
+    var singleHeader = @[
       (
-        createRequest("application/json;q=0.9,application/octet-stream"),
+        createRequest("application/json"),
         @[
-          "application/octet-stream",
-          "application/octet-stream",
+          "application/json"
+        ]
+      )
+    ]
+
+    var complexHeaders = @[
+      (
+        createRequest(),
+        @[
+          "*/*",
+          "application/json",
           "application/octet-stream",
           "application/json",
+          "application/octet-stream",
+          "application/json",
+          "image/jpg"
         ]
       ),
       (
         createRequest(""),
         @[
           "*/*",
-          "*/*",
+          "application/json",
+          "application/octet-stream",
+          "application/json",
+          "application/octet-stream",
+          "application/json",
+          "image/jpg"
+        ]
+      ),
+      (
+        createRequest("application/json, application/octet-stream"),
+        @[
+          "application/json",
+          "application/json",
+          "application/octet-stream",
+          "application/json",
+          "application/octet-stream",
           "application/json",
           "application/json"
         ]
       ),
       (
-        createRequest(),
+        createRequest("application/octet-stream, application/json"),
+        @[
+          "application/octet-stream",
+          "application/json",
+          "application/octet-stream",
+          "application/json",
+          "application/octet-stream",
+          "application/json",
+          "application/json"
+        ]
+      ),
+      (
+        createRequest("application/json;q=0.9, application/octet-stream"),
+        @[
+          "application/octet-stream",
+          "application/json",
+          "application/octet-stream",
+          "application/octet-stream",
+          "application/octet-stream",
+          "application/octet-stream",
+          "application/octet-stream"
+        ]
+      ),
+      (
+        createRequest("application/json, application/octet-stream;q=0.9"),
+        @[
+          "application/json",
+          "application/json",
+          "application/octet-stream",
+          "application/json",
+          "application/json",
+          "application/json",
+          "application/json"
+        ]
+      ),
+      (
+        createRequest("application/json;q=0.9, application/octet-stream;q=0.8"),
+        @[
+          "application/json",
+          "application/json",
+          "application/octet-stream",
+          "application/json",
+          "application/json",
+          "application/json",
+          "application/json"
+        ]
+      ),
+       (
+        createRequest("application/json;q=0.8, application/octet-stream;q=0.9"),
+        @[
+          "application/octet-stream",
+          "application/json",
+          "application/octet-stream",
+          "application/octet-stream",
+          "application/octet-stream",
+          "application/octet-stream",
+          "application/octet-stream"
+        ]
+      ),
+      (
+      createRequest("text/plain, application/octet-stream, application/json"),
+        @[
+          "text/plain",
+          "application/json",
+          "application/octet-stream",
+          "application/json",
+          "application/octet-stream",
+          "application/json",
+          "application/json"
+        ]
+      ),
+      (
+      createRequest("text/plain, application/json;q=0.8, application/octet-stream;q=0.8"),
+        @[
+          "text/plain",
+          "application/json",
+          "application/octet-stream",
+          "application/json",
+          "application/octet-stream",
+          "text/plain",
+          "text/plain"
+        ]
+      ),
+      (
+      createRequest("text/plain, application/json;q=0.8, application/octet-stream;q=0.5"),
+        @[
+          "text/plain",
+          "application/json",
+          "application/octet-stream",
+          "application/json",
+          "application/json",
+          "text/plain",
+          "text/plain"
+        ]
+      ),
+      (
+       createRequest("text/plain;q=0.8, application/json, application/octet-stream;q=0.8"),
+        @[
+          "application/json",
+          "application/json",
+          "application/octet-stream",
+          "application/json",
+          "application/json",
+          "application/json",
+          "application/json"
+        ]
+      ),
+      (
+      createRequest("text/*, application/json;q=0.8, application/octet-stream;q=0.8"),
+        @[
+          "text/*",
+          "application/json",
+          "application/octet-stream",
+          "application/json",
+          "application/octet-stream",
+          "text/plain",
+          "text/plain"
+        ]
+      ),
+      (
+      createRequest("text/*, application/json;q=0.8, application/octet-stream;q=0.5"),
+        @[
+          "text/*",
+          "application/json",
+          "application/octet-stream",
+          "application/json",
+          "application/json",
+          "text/plain",
+          "text/plain"
+        ]
+      ),
+      (createRequest("image/jpg, text/plain, application/octet-stream, application/json"),
+         @[
+            "image/jpg",
+            "application/json",
+            "application/octet-stream",
+            "application/json",
+            "application/octet-stream",
+            "application/json",
+            "image/jpg"
+           ]
+        ),
+        (createRequest("image/jpg;q=1, text/plain;q=0.2, application/octet-stream;q=0.2, application/json;q=0.2"),
+         @[
+            "image/jpg",
+            "application/json",
+            "application/octet-stream",
+            "application/json",
+            "application/octet-stream",
+            "application/json",
+            "image/jpg"
+           ]
+        ),
+      (
+      createRequest("*/*, application/json;q=0.8, application/octet-stream;q=0.5"),
         @[
           "*/*",
+          "application/json",
+          "application/octet-stream",
+          "application/json",
+          "application/octet-stream",
+          "application/json",
+          "image/jpg"
+        ]
+      ),
+      (
+        createRequest("*/*"),
+        @[
           "*/*",
+          "application/json",
+          "application/octet-stream",
+          "application/json",
+          "application/octet-stream",
+          "application/json",
+          "image/jpg"
+        ]
+      ),
+      (
+        createRequest("application/*"),
+        @[
+          "application/*",
+          "application/json",
+          "application/octet-stream",
+          "application/json",
+          "application/octet-stream",
           "application/json",
           "application/json"
         ]
       )
     ]
 
-    for req in requests:
-      check $req[0].preferredContentMediaType() == req[1][1]
+    for req in singleHeader:
+      check $req[0].preferredContentMediaType() == req[1][0]
       let r0 = req[0].preferredContentType()
-      let r1 = req[0].preferredContentType("application/json",
-                                           "application/octet-stream")
-      let r2 = req[0].preferredContentType("application/json")
+      let r1 = req[0].preferredContentType(jsonMediaType)
+      let r2 = req[0].preferredContentType(sszMediaType)
+      let r3 = req[0].preferredContentType(jsonMediaType,
+                                           sszMediaType)
+      let r4 = req[0].preferredContentType(sszMediaType,
+                                           jsonMediaType)
+      let r5 = req[0].preferredContentType(jsonMediaType,
+                                           sszMediaType,
+                                           plainTextMediaType)
+      let r6 = req[0].preferredContentType(imageMediaType,
+                                           jsonMediaType,
+                                           sszMediaType,
+                                           plainTextMediaType)
+      check:
+        r0.isOk() == true
+        r1.isOk() == true
+        r2.isErr() == true
+        r3.isOk() == true
+        r4.isOk() == true
+        r5.isOk() == true
+        r6.isOk() == true
+        r0.get() == MediaType.init(req[1][0])
+        r1.get() == MediaType.init(req[1][0])
+        r3.get() == MediaType.init(req[1][0])
+        r4.get() == MediaType.init(req[1][0])
+        r5.get() == MediaType.init(req[1][0])
+        r6.get() == MediaType.init(req[1][0])
+
+    for req in complexHeaders:
+      let r0 = req[0].preferredContentType()
+      let r1 = req[0].preferredContentType(jsonMediaType)
+      let r2 = req[0].preferredContentType(sszMediaType)
+      let r3 = req[0].preferredContentType(jsonMediaType,
+                                           sszMediaType)
+      let r4 = req[0].preferredContentType(sszMediaType,
+                                           jsonMediaType)
+      let r5 = req[0].preferredContentType(jsonMediaType,
+                                           sszMediaType,
+                                           plainTextMediaType)
+      let r6 = req[0].preferredContentType(imageMediaType,
+                                           jsonMediaType,
+                                           sszMediaType,
+                                           plainTextMediaType)
       check:
         r0.isOk() == true
         r1.isOk() == true
         r2.isOk() == true
-        r0.get() == req[1][0]
-        r1.get() == req[1][2]
-        r2.get() == req[1][3]
+        r3.isOk() == true
+        r4.isOk() == true
+        r5.isOk() == true
+        r6.isOk() == true
+        r0.get() == MediaType.init(req[1][0])
+        r1.get() == MediaType.init(req[1][1])
+        r2.get() == MediaType.init(req[1][2])
+        r3.get() == MediaType.init(req[1][3])
+        r4.get() == MediaType.init(req[1][4])
+        r5.get() == MediaType.init(req[1][5])
+        r6.get() == MediaType.init(req[1][6])
 
   test "SSE server-side events stream test":
     proc testPostMultipart2(address: TransportAddress): Future[bool] {.async.} =
