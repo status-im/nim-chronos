@@ -230,7 +230,7 @@ proc p2(): Future[void] {.asyncraises: [IOError].} =
              # can only raise IOError
 ```
 
-The hidden type (`FuturEx`) is implicitely convertible into a Future.
+The hidden type (`RaiseTrackingFuture`) is implicitely convertible into a Future.
 However, it may causes issues when creating callback or methods
 ```nim
 proc p3(): Future[void] {.asyncraises: [IOError].} =

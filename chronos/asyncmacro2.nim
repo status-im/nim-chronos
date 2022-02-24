@@ -132,12 +132,16 @@ proc asyncSingleProc(prc, raises: NimNode, trackExceptions: bool): NimNode {.com
       elif returnType.kind in nnkCallKinds and returnType[0].eqIdent("[]"):
         newNimNode(nnkBracketExpr, prc).add(newIdentNode("Future")).add(returnType[2])
       else: returnType
-    returnTypeWithException = newNimNode(nnkBracketExpr).add(newIdentNode("FuturEx")).add(internalFutureType[1]).add(raisesTuple)
+    returnTypeWithException =
+      newNimNode(nnkBracketExpr).
+      add(newIdentNode("RaiseTrackingFuture")).
+      add(internalFutureType[1]).
+      add(raisesTuple)
 
   #Rewrite return type
   if trackExceptions:
     prc.params2[0] = nnkBracketExpr.newTree(
-      newIdentNode("FuturEx"),
+      newIdentNode("RaiseTrackingFuture"),
       internalFutureType[1],
       raisesTuple
     )
@@ -218,7 +222,7 @@ proc asyncSingleProc(prc, raises: NimNode, trackExceptions: bool): NimNode {.com
       closureIterator.addPragma(newIdentNode("gcsafe"))
     outerProcBody.add(closureIterator)
 
-    # -> var resultFuture = newFuturEx[T ,E]()
+    # -> var resultFuture = newRaiseTrackingFuture[T ,E]()
     # declared at the end to be sure that the closure
     # doesn't reference it, avoid cyclic ref (#203)
     var retFutureSym = ident "resultFuture"
@@ -232,7 +236,7 @@ proc asyncSingleProc(prc, raises: NimNode, trackExceptions: bool): NimNode {.com
     outerProcBody.add(
       newVarStmt(
         retFutureSym,
-        newCall(newTree(nnkBracketExpr, ident "newFuturEx", subRetType, raisesTuple),
+        newCall(newTree(nnkBracketExpr, ident "newRaiseTrackingFuture", subRetType, raisesTuple),
                 newLit(prcName))
       )
     )
@@ -277,7 +281,7 @@ proc asyncSingleProc(prc, raises: NimNode, trackExceptions: bool): NimNode {.com
   #  echo(toStrLit(result))
 
 macro checkFutureExceptions(f, typ: typed): untyped =
-  # For FuturEx[void, (ValueError, OSError), will do:
+  # For RaiseTrackingFuture[void, (ValueError, OSError), will do:
   # if isNil(f.error): discard
   # elif f.error of type CancelledError: raise cast[ref CancelledError](f.error)
   # elif f.error of type ValueError: raise cast[ref ValueError](f.error)
@@ -353,7 +357,7 @@ template await*[T](f: Future[T]): untyped =
     chronosInternalRetFuture.child = nil
     if chronosInternalRetFuture.mustCancel:
       raise newCancelledError()
-    when f is FuturEx:
+    when f is RaiseTrackingFuture:
       checkFutureExceptions(chronosInternalTmpFuture, f)
     else:
       chronosInternalTmpFuture.internalCheckComplete()
