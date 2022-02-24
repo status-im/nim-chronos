@@ -78,14 +78,13 @@ proc cleanupOpenSymChoice(node: NimNode): NimNode {.compileTime.} =
   if node.kind in nnkCallKinds and
     node[0].kind == nnkOpenSymChoice and node[0].eqIdent("[]"):
     result = newNimNode(nnkBracketExpr).add(
-      node[1],
-      node[2]
+      cleanupOpenSymChoice(node[1]),
+      cleanupOpenSymChoice(node[2])
     )
   else:
-    result = node
-
-  for index, child in result:
-    result[index] = cleanupOpenSymChoice(child)
+    result = node.copyNimNode()
+    for child in node:
+      result.add(cleanupOpenSymChoice(child))
 
 proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
   ## This macro transforms a single procedure into a closure iterator.
