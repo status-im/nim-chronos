@@ -107,6 +107,8 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
     const defaultException =
       when defined(chronosStrictException): "CatchableError"
       else: "Exception"
+    when defined(chronosWarnMissingRaises):
+      warning("Async proc miss asyncraises")
     raisesTuple.add(ident(defaultException))
 
   let returnType = prc.params2[0]
