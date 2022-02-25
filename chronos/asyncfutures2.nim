@@ -60,8 +60,9 @@ type
       closure*: iterator(f: Future[T]): FutureBase {.raises: [Defect, CatchableError, Exception], gcsafe.}
     value: T ## Stored value
 
-  # Future with a tuple of possible exception types
-  # eg RaiseTrackingFuture[void, (ValueError, OSError)]
+  ## Future with a tuple of possible exception types
+  ## eg RaiseTrackingFuture[void, (ValueError, OSError)]
+  ## Should generally not be used manually
   RaiseTrackingFuture*[T, E] = ref object of Future[T]
 
   FutureStr*[T] = ref object of Future[T]
