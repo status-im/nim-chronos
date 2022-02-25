@@ -213,10 +213,10 @@ by the transformation.
 
 #### Checked exceptions
 
-By using `asyncraises` instead of `async`, you can check which
-exceptions can be thrown by an async procedure.
+By specifying a `asyncraises` list to an async procedure, you can check which
+exceptions can be thrown by it.
 ```nim
-proc p1(): Future[void] {.asyncraises: [IOError].} =
+proc p1(): Future[void] {.async, asyncraises: [IOError].} =
   assert not (compiles do: raise newException(ValueError, "uh-uh"))
   raise newException(IOError, "works") # Or any child of IOError
 ```
@@ -225,7 +225,7 @@ Under the hood, the return type of `p1` will be rewritten to another type,
 which will convey raises informations to await.
 
 ```nim
-proc p2(): Future[void] {.asyncraises: [IOError].} =
+proc p2(): Future[void] {.async, asyncraises: [IOError].} =
   await p1() # Works, because await knows that p1
              # can only raise IOError
 ```
@@ -233,16 +233,16 @@ proc p2(): Future[void] {.asyncraises: [IOError].} =
 The hidden type (`RaiseTrackingFuture`) is implicitely convertible into a Future.
 However, it may causes issues when creating callback or methods
 ```nim
-proc p3(): Future[void] {.asyncraises: [IOError].} =
+proc p3(): Future[void] {.async, asyncraises: [IOError].} =
   let fut: Future[void] = p1() # works
   assert not compiles(await fut) # await lost informations about raises,
                                  # so it can raise anything
 
   # Callbacks
   assert not(compiles do: let cb1: proc(): Future[void] = p1) # doesn't work
-  let cb2: proc(): Future[void] {.asyncraises: [IOError].} = p1 # works
+  let cb2: proc(): Future[void] {.async, asyncraises: [IOError].} = p1 # works
   assert not(compiles do:
-    type c = proc(): Future[void] {.asyncraises: [IOError, ValueError].}
+    type c = proc(): Future[void] {.async, asyncraises: [IOError, ValueError].}
     let cb3: c = p1 # doesn't work, the raises must match _exactly_
   )
 ```

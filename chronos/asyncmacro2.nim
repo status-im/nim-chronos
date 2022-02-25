@@ -79,7 +79,7 @@ proc params2*(someProc: NimNode): NimNode =
     params(someProc)
 
 
-proc asyncSingleProc(prc, raises: NimNode, trackExceptions: bool): NimNode {.compileTime.} =
+proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
   ## This macro transforms a single procedure into a closure iterator.
   ## The ``async`` macro supports a stmtList holding multiple async procedures.
   if prc.kind notin {nnkProcDef, nnkLambda, nnkMethodDef, nnkDo, nnkProcTy}:
@@ -87,22 +87,27 @@ proc asyncSingleProc(prc, raises: NimNode, trackExceptions: bool): NimNode {.com
             " proc/method definition or lambda node expected.")
 
   var
-    raisesTuple =
-      if raises.len > 0:
-        nnkTupleConstr.newTree()
-      else:
-        ident("void")
+    raisesTuple = nnkTupleConstr.newTree()
     foundRaises = -1
 
   for index, pragma in pragma(prc):
     if pragma.kind == nnkExprColonExpr and pragma[0] == ident "raises":
       warning("The raises pragma doesn't work on async procedure. " &
         "Use asyncraises instead")
+    elif pragma.kind == nnkExprColonExpr and pragma[0] == ident "asyncraises":
       foundRaises = index
-  if foundRaises >= 0: pragma(prc).del(foundRaises)
 
-  for possibleRaise in raises:
-    raisesTuple.add(possibleRaise)
+  let trackExceptions = foundRaises >= 0
+  if trackExceptions:
+    for possibleRaise in pragma(prc)[foundRaises][1]:
+      raisesTuple.add(possibleRaise)
+    if raisesTuple.len == 0:
+      raisesTuple = ident("void")
+  else:
+    const defaultException =
+      when defined(chronosStrictException): "CatchableError"
+      else: "Exception"
+    raisesTuple.add(ident(defaultException))
 
   let returnType = prc.params2[0]
   var baseType: NimNode
@@ -206,7 +211,10 @@ proc asyncSingleProc(prc, raises: NimNode, trackExceptions: bool): NimNode {.com
     # for more details.
     closureIterator.addPragma(newIdentNode("gcsafe"))
 
-    let closureRaises = raises.copy()
+    let closureRaises = nnkBracket.newNimNode()
+    for exception in raisesTuple:
+      closureRaises.add(exception)
+
     closureRaises.add(ident("CancelledError"))
     when (NimMajor, NimMinor) < (1, 4):
       closureRaises.add(ident("Defect"))
@@ -382,30 +390,17 @@ template awaitne*[T](f: Future[T]): Future[T] =
   else:
     unsupported "awaitne is only available within {.async.}"
 
-proc asyncMultipleProcs(
-  prc, raises: NimNode,
-  trackExceptions: bool): NimNode {.compileTime.} =
-  if prc.kind == nnkStmtList:
-    for oneProc in prc:
-      result = newStmtList()
-      result.add asyncSingleProc(oneProc, raises, trackExceptions)
-  else:
-    result = asyncSingleProc(prc, raises, trackExceptions)
-  when defined(nimDumpAsync):
-    echo repr result
-
 macro async*(prc: untyped): untyped =
   ## Macro which processes async procedures into the appropriate
   ## iterators and yield statements.
 
-  const defaultException =
-    when defined(chronosStrictException): "CatchableError"
-    else: "Exception"
-  let possibleExceptions = nnkBracket.newTree(newIdentNode(defaultException))
-  asyncMultipleProcs(prc, possibleExceptions, false)
+  if prc.kind == nnkStmtList:
+    result = newStmtList()
+    for oneProc in prc:
+      result.add asyncSingleProc(oneProc)
+  else:
+    result = asyncSingleProc(prc)
+  when defined(nimDumpAsync):
+    echo repr result
 
-macro asyncraises*(possibleExceptions, prc: untyped): untyped =
-  asyncMultipleProcs(prc, possibleExceptions, true)
-
-template asyncraises*(prc: untyped): untyped =
-  {.error: "Use .asyncraises: [].".}
+template asyncraises*(possibleExceptions: untyped) {.pragma.}
