@@ -11,6 +11,7 @@
 import std/[os, tables, strutils, heapqueue, options, deques, sequtils]
 import stew/base10
 import ./srcloc
+import macros
 export srcloc
 
 when defined(nimHasStacktracesModule):
@@ -130,12 +131,18 @@ template newFuture*[T](fromProc: static[string] = ""): Future[T] =
   ## that this future belongs to, is a good habit as it helps with debugging.
   newFutureImpl[T](getSrcLocation(fromProc))
 
-template newRaiseTrackingFuture*[T, E](fromProc: static[string] = ""): RaiseTrackingFuture[T, E] =
+macro getSubType(T: typedesc): untyped =
+  if getTypeInst(T)[1].len > 2:
+    getTypeInst(T)[1][2]
+  else:
+    ident"void"
+
+template newRaiseTrackingFuture*[T](fromProc: static[string] = ""): auto =
   ## Creates a new future.
   ##
   ## Specifying ``fromProc``, which is a string specifying the name of the proc
   ## that this future belongs to, is a good habit as it helps with debugging.
-  newRaiseTrackingFutureImpl[T, E](getSrcLocation(fromProc))
+  newRaiseTrackingFutureImpl[T, getSubType(typeof(result))](getSrcLocation(fromProc))
 
 template newFutureSeq*[A, B](fromProc: static[string] = ""): FutureSeq[A, B] =
   ## Create a new future which can hold/preserve GC sequence until future will

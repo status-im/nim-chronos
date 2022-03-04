@@ -139,3 +139,14 @@ suite "Exceptions tracking":
       proc test3: Future[int] {.async, asyncraises: [].} = await test1()
 
     check waitFor(test2()) == 12
+
+  test "Standalone asyncraises":
+    proc test1: Future[int] {.asyncraises: [ValueError].} =
+      result = newRaiseTrackingFuture[int]()
+      result.complete(12)
+    check waitFor(test1()) == 12
+
+  test "Reversed async, asyncraises":
+    proc test44 {.asyncraises: [ValueError], async.} = raise newException(ValueError, "hey")
+    checkNotCompiles:
+      proc test33 {.asyncraises: [IOError], async.} = raise newException(ValueError, "hey")
