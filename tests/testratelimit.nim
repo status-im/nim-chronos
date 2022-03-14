@@ -60,3 +60,15 @@ suite "RateLimiter test suite":
 
       # Out of budget, should fail
       counter[].tryConsume(operationsPerSecond(2)) == false
+
+  test "Time Budget Per Second":
+    var counter = RateCounter.init(1.seconds)
+
+    check:
+      # Use start budget
+      counter.tryConsume(timeBudgetPerSecond(10.milliseconds, 30.milliseconds)) == true
+      counter.tryConsume(timeBudgetPerSecond(10.milliseconds, 30.milliseconds)) == true
+      counter.tryConsume(timeBudgetPerSecond(10.milliseconds, 30.milliseconds)) == true
+
+      counter.tryConsume(timeBudgetPerSecond(10.milliseconds, 30.milliseconds)) == true
+      counter.tryConsume(timeBudgetPerSecond(10.milliseconds, 30.milliseconds)) == false

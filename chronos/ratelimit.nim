@@ -20,7 +20,7 @@ type
 
   RateCounterRef* = ref RateCounter
 
-  RateCost* = distinct int
+  RateCost* = distinct int64
 
 proc update(rc: var RateCounter) =
   let
@@ -37,12 +37,29 @@ proc operationsPerSecond*(ops: float): RateCost =
 
   RateCost(budgetPerSecond / ops)
 
+proc timeBudgetPerSecond*(time, budget: Duration): RateCost =
+  ## Create a RateCost from a time budget per second.
+  runnableExamples:
+    let start = Moment.now()
+    # expensive computation
+    let cost = timeBudgetPerSecond(
+      Moment.now() - start,
+      300.milliseconds # Allow 300 milliseconds of
+                       # computation per second
+    )
+  let
+    timeAsUs = time.nanoseconds.float
+    budgetAsUs = budget.nanoseconds.float
+    budgetUsed = timeAsUs / budgetAsUs
+    allowedPerSeconds = 1.float / budgetUsed
+  operationsPerSecond(allowedPerSeconds)
+
 proc tryConsume*(rc: var RateCounter, cost: RateCost): bool =
   ## If there is still budget left, remove cost from the budget
   ## Otherwise, return false
   rc.update()
   if rc.budget >= 0:
-    rc.budget.dec(int(cost))
+    rc.budget -= int64(cost)
     true
   else:
     false
@@ -53,7 +70,7 @@ proc consume*(rc: var RateCounter, cost: RateCost): Future[void] =
 
   # Manual async because of var argument
   rc.update()
-  rc.budget.dec(int(cost))
+  rc.budget -= int64(cost)
 
   if rc.budget >= 0:
     result = newFuture[void]("RateCounter.consume")
