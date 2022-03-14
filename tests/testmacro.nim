@@ -140,11 +140,26 @@ suite "Exceptions tracking":
 
     check waitFor(test2()) == 12
 
-  test "Standalone asyncraises":
+  test "Manual tracking":
     proc test1: Future[int] {.asyncraises: [ValueError].} =
       result = newRaiseTrackingFuture[int]()
       result.complete(12)
     check waitFor(test1()) == 12
+
+    proc test2: Future[int] {.asyncraises: [IOError, OSError].} =
+      result = newRaiseTrackingFuture[int]()
+      result.fail(newException(IOError, "fail"))
+      result.fail(newException(OSError, "fail"))
+      checkNotCompiles:
+        result.fail(newException(ValueError, "fail"))
+
+    proc test3: Future[void] {.asyncraises: [].} =
+      checkNotCompiles:
+        result.fail(newException(ValueError, "fail"))
+
+    # Inheritance
+    proc test4: Future[void] {.asyncraises: [CatchableError].} =
+      result.fail(newException(IOError, "fail"))
 
   test "Reversed async, asyncraises":
     proc test44 {.asyncraises: [ValueError], async.} = raise newException(ValueError, "hey")

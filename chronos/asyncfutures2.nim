@@ -273,6 +273,49 @@ template fail*[T](future: Future[T], error: ref CatchableError) =
   ## Completes ``future`` with ``error``.
   fail(future, error, getSrcLocation())
 
+macro checkFailureType(future, error: typed): untyped =
+  let e = getTypeInst(future)[2]
+  let types = getType(e)
+
+  if types.eqIdent("void"):
+    error("Can't raise exceptions on this Future")
+
+  expectKind(types, nnkBracketExpr)
+  expectKind(types[0], nnkSym)
+  assert types[0].strVal == "tuple"
+  assert types.len > 1
+
+  expectKind(getTypeInst(error), nnkRefTy)
+  let toMatch = getTypeInst(error)[0]
+
+  # Can't find a way to check `is` in the macro. (sameType doesn't
+  # work for inherited objects). Dirty hack here, for [IOError, OSError],
+  # this will generate:
+  #
+  # static:
+  #   if not((`toMatch` is IOError) or (`toMatch` is OSError)
+  #     or (`toMatch` is CancelledError) or false):
+  #     raiseAssert("Can't fail with `toMatch`, only [IOError, OSError] is allowed")
+  var typeChecker = ident"false"
+
+  for errorType in types[1..^1]:
+    typeChecker = newCall("or", typeChecker, newCall("is", toMatch, errorType))
+  typeChecker = newCall(
+    "or", typeChecker,
+    newCall("is", toMatch, ident"CancelledError"))
+
+  let errorMsg = "Can't fail with " & repr(toMatch) & ". Only " & repr(types[1..^1]) & " allowed"
+
+  result = nnkStaticStmt.newNimNode(lineInfoFrom=error).add(
+    quote do:
+      if not(`typeChecker`):
+        raiseAssert(`errorMsg`)
+  )
+
+template fail*[T, E](future: RaiseTrackingFuture[T, E], error: ref CatchableError) =
+  checkFailureType(future, error)
+  fail(future, error, getSrcLocation())
+
 template newCancelledError(): ref CancelledError =
   (ref CancelledError)(msg: "Future operation cancelled!")
 
