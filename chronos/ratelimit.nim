@@ -9,6 +9,7 @@
 {.push raises: [Defect].}
 
 import ../chronos
+import timer
 
 export timer
 
