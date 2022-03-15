@@ -49,7 +49,7 @@ suite "RateLimiter test suite":
       duration < 1600.milliseconds
 
   test "Ref version":
-    let counter = RateCounterRef.new(2.seconds)
+    let counter = RateCounter.new(2.seconds)
 
     check:
       # Use up the 2 seconds budget

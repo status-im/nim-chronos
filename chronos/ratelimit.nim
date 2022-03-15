@@ -19,8 +19,6 @@ type
     budgetCap: int64
     lastUpdate: Moment
 
-  RateCounterRef* = ref RateCounter
-
   RateCost* = distinct int64
 
 proc update(rc: var RateCounter) =
@@ -93,8 +91,8 @@ proc init*(T: typedesc[RateCounter], cap: Duration): T =
     lastUpdate: Moment.now()
   )
 
-proc new*(T: typedesc[RateCounterRef], cap: Duration): T =
-  T(
+proc new*(T: typedesc[RateCounter], cap: Duration): ref RateCounter =
+  (ref T)(
     budget: cap.nanoseconds,
     budgetCap: cap.nanoseconds,
     lastUpdate: Moment.now()
