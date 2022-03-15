@@ -36,6 +36,18 @@ proc operationsPerSecond*(ops: float): RateCost =
 
   RateCost(budgetPerSecond / ops)
 
+proc tokensPerSecond*(tokens, budget: SomeNumber): RateCost =
+  ## Create a RateCost from a token budget per second
+  runnableExamples:
+    let cost = tokensPerSecond(
+      1518, # packet of 1518 bytes
+      1000000 # budget of 1mb
+    )
+  let
+    budgetUsed = tokens / budget
+    allowedPerSeconds = 1.float / budgetUsed
+  operationsPerSecond(allowedPerSeconds)
+
 proc timeBudgetPerSecond*(time, budget: Duration): RateCost =
   ## Create a RateCost from a time budget per second.
   runnableExamples:
@@ -49,9 +61,7 @@ proc timeBudgetPerSecond*(time, budget: Duration): RateCost =
   let
     timeAsUs = time.nanoseconds.float
     budgetAsUs = budget.nanoseconds.float
-    budgetUsed = timeAsUs / budgetAsUs
-    allowedPerSeconds = 1.float / budgetUsed
-  operationsPerSecond(allowedPerSeconds)
+  tokensPerSecond(timeAsUs, budgetAsUs)
 
 proc tryConsume*(rc: var RateCounter, cost: RateCost): bool =
   ## If there is still budget left, remove cost from the budget

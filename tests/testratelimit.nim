@@ -72,3 +72,15 @@ suite "RateLimiter test suite":
 
       counter.tryConsume(timeBudgetPerSecond(10.milliseconds, 30.milliseconds)) == true
       counter.tryConsume(timeBudgetPerSecond(10.milliseconds, 30.milliseconds)) == false
+
+  test "TokensPerSecond":
+    var counter = RateCounter.init(1.seconds)
+
+    check:
+      # Use start budget
+      counter.tryConsume(tokensPerSecond(10, 30)) == true
+      counter.tryConsume(tokensPerSecond(10, 30)) == true
+      counter.tryConsume(tokensPerSecond(10, 30)) == true
+
+      counter.tryConsume(tokensPerSecond(10, 30)) == true
+      counter.tryConsume(tokensPerSecond(10, 30)) == false
