@@ -764,9 +764,6 @@ suite "HTTP client testing suite":
     check waitFor(testRequestRedirectTest(address, true, 4)) == "redirect-true"
 
   test "HTTPS basic authorization test":
-    skip()
-    return
-    # started to fail out of the blue
     check waitFor(testBasicAuthorization()) == true
 
   test "Leaks test":
