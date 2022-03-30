@@ -690,11 +690,11 @@ suite "HTTP client testing suite":
 
   proc testBasicAuthorization(): Future[bool] {.async.} =
     var session = createSession(true, maxRedirections = 10)
-    let url = parseUri("https://guest:guest@jigsaw.w3.org/HTTP/Basic/")
+    let url = parseUri("https://user:passwd@httpbin.org/basic-auth/user/passwd")
     let resp = await session.fetch(url)
     await session.closeWait()
     if (resp.status == 200) and
-       ("Your browser made it!" in cast[string](resp.data)):
+       ("true," in cast[string](resp.data)):
       return true
     else:
       return false
@@ -764,9 +764,6 @@ suite "HTTP client testing suite":
     check waitFor(testRequestRedirectTest(address, true, 4)) == "redirect-true"
 
   test "HTTPS basic authorization test":
-    skip()
-    return
-    # started to fail out of the blue
     check waitFor(testBasicAuthorization()) == true
 
   test "Leaks test":
