@@ -6,6 +6,7 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 import unittest2
+import macros
 import ../chronos
 
 when defined(nimHasUsed): {.used.}
@@ -80,3 +81,19 @@ suite "Macro transformations test suite":
     check waitFor(testAwait()) == true
   test "`awaitne` command test":
     check waitFor(testAwaitne()) == true
+
+
+  test "template async macro transformation":
+    template templatedAsync(name, restype: untyped): untyped =
+      proc name(): Future[restype] {.async.} = return @[4]
+
+    templatedAsync(testTemplate, seq[int])
+    check waitFor(testTemplate()) == @[4]
+
+    macro macroAsync(name, restype, innerrestype: untyped): untyped =
+      quote do:
+        proc `name`(): Future[`restype`[`innerrestype`]] {.async.} = return
+
+    type OpenObject = object
+    macroAsync(testMacro, seq, OpenObject)
+    check waitFor(testMacro()).len == 0
