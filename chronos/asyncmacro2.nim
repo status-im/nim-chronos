@@ -138,7 +138,6 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
 
   let
     baseType = getBaseType(prc)
-    prcName = prc.name.getName
     returnType = cleanupOpenSymChoice(prc.params2[0])
     subtypeIsVoid = baseType.eqIdent("void")
 
