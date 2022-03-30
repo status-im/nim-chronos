@@ -131,7 +131,7 @@ template newFuture*[T](fromProc: static[string] = ""): Future[T] =
   ## that this future belongs to, is a good habit as it helps with debugging.
   newFutureImpl[T](getSrcLocation(fromProc))
 
-macro getSubType(T: typedesc): untyped =
+macro getFutureExceptions(T: typedesc): untyped =
   if getTypeInst(T)[1].len > 2:
     getTypeInst(T)[1][2]
   else:
@@ -142,7 +142,7 @@ template newRaiseTrackingFuture*[T](fromProc: static[string] = ""): auto =
   ##
   ## Specifying ``fromProc``, which is a string specifying the name of the proc
   ## that this future belongs to, is a good habit as it helps with debugging.
-  newRaiseTrackingFutureImpl[T, getSubType(typeof(result))](getSrcLocation(fromProc))
+  newRaiseTrackingFutureImpl[T, getFutureExceptions(typeof(result))](getSrcLocation(fromProc))
 
 template newFutureSeq*[A, B](fromProc: static[string] = ""): FutureSeq[A, B] =
   ## Create a new future which can hold/preserve GC sequence until future will

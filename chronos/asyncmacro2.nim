@@ -72,7 +72,7 @@ proc verifyReturnType(typeName: string) {.compileTime.} =
 macro unsupported(s: static[string]): untyped =
   error s
 
-proc params2*(someProc: NimNode): NimNode =
+proc params2(someProc: NimNode): NimNode =
   # until https://github.com/nim-lang/Nim/pull/19563 is available
   if someProc.kind == nnkProcTy:
     someProc[0]
@@ -99,46 +99,55 @@ template emptyRaises: NimNode =
   else:
     nnkBracket.newTree()
 
-proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
-  ## This macro transforms a single procedure into a closure iterator.
-  ## The ``async`` macro supports a stmtList holding multiple async procedures.
+template asyncinternal* {.pragma.}
+  # used to disarm the raises warning
+  # when the raises was added automatically
+
+proc getBaseType(prc: NimNode): NimNode {.compileTime.} =
   if prc.kind notin {nnkProcDef, nnkLambda, nnkMethodDef, nnkDo, nnkProcTy}:
       error("Cannot transform this node kind into an async proc." &
             " proc/method definition or lambda node expected.")
 
-  let returnType = cleanupOpenSymChoice(prc.params[0])
-  let prcName = prc.name.getName
+  # Warn about raises usage
+  let pragmas = pragma(prc)
+  for index, pragma in pragmas:
+    if pragma.kind == nnkExprColonExpr and pragma[0] == ident "raises":
+      if pragmas.hasCustomPragma(asyncinternal):
+        warning("The raises pragma doesn't work on async procedure. " &
+          "Please remove it")
 
-  var baseType: NimNode
+  let returnType = cleanupOpenSymChoice(prc.params2[0])
+
   # Verify that the return type is a Future[T]
+  # and extract the BaseType from it
   if returnType.kind == nnkBracketExpr:
     let fut = repr(returnType[0])
     verifyReturnType(fut)
-    baseType = returnType[1]
+    returnType[1]
   elif returnType.kind == nnkEmpty:
-    baseType = returnType
+    ident("void")
   else:
     error("Unhandled async return type: " & $prc.kind)
+    # error isn't noreturn..
+    return
 
-  let subtypeIsVoid = returnType.kind == nnkEmpty or
-    (baseType.kind == nnkIdent and returnType[1].eqIdent("void"))
+
+proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
+  ## This macro transforms a single procedure into a closure iterator.
+  ## The ``async`` macro supports a stmtList holding multiple async procedures.
+
+  let
+    baseType = getBaseType(prc)
+    prcName = prc.name.getName
+    returnType = cleanupOpenSymChoice(prc.params2[0])
+    subtypeIsVoid = baseType.eqIdent("void")
 
   var
     raisesTuple = nnkTupleConstr.newTree()
     foundRaises = -1
 
   for index, pragma in pragma(prc):
-    if pragma.kind == nnkExprColonExpr and pragma[0] == ident "raises":
-      var wasAddedAutomatically = false
-      for index, pragma in pragma(prc):
-        if pragma.eqIdent("asyncinternal"):
-          wasAddedAutomatically = true
-          break
-      if not wasAddedAutomatically:
-        warning("The raises pragma doesn't work on async procedure. " &
-          "Use asyncraises instead")
-
-    elif pragma.kind == nnkExprColonExpr and pragma[0] == ident "asyncraises":
+    if pragma.kind == nnkExprColonExpr and pragma[0] == ident "asyncraises":
       foundRaises = index
 
   if foundRaises >= 0:
@@ -158,20 +167,14 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
       warning("Async proc miss asyncraises")
     raisesTuple.add(ident(defaultException))
 
+  # Rewrite the implicit Future[void]
+  if subtypeIsVoid and returnType.kind == nnkEmpty:
+    prc.params2[0] =
+        newNimNode(nnkBracketExpr, prc).
+          add(newIdentNode("Future")).
+          add(newIdentNode("void"))
 
   var outerProcBody = newNimNode(nnkStmtList, prc)
-
-  let
-    internalFutureType =
-      if subtypeIsVoid:
-        newNimNode(nnkBracketExpr, prc).add(newIdentNode("Future")).add(newIdentNode("void"))
-      elif returnType.kind in nnkCallKinds and returnType[0].eqIdent("[]"):
-        newNimNode(nnkBracketExpr, prc).add(newIdentNode("Future")).add(returnType[2])
-      else: returnType
-
-  #Rewrite return type
-  if subtypeIsVoid and returnType.kind == nnkEmpty:
-    prc.params2[0] = internalFutureType
 
   # -> iterator nameIter(chronosInternalRetFuture: Future[T]): FutureBase {.closure.} =
   # ->   {.push warning[resultshadowed]: off.}
@@ -216,7 +219,11 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
       # -> complete(chronosInternalRetFuture)
       procBody.add(newCall(newIdentNode("complete"), internalFutureSym))
 
-    let internalFutureParameter = nnkIdentDefs.newTree(internalFutureSym, internalFutureType, newEmptyNode())
+    let internalFutureParameter =
+      nnkIdentDefs.newTree(
+        internalFutureSym,
+        newNimNode(nnkBracketExpr, prc).add(newIdentNode("Future")).add(baseType),
+        newEmptyNode())
     var closureIterator = newProc(iteratorNameSym, [newIdentNode("FutureBase"), internalFutureParameter],
                                   procBody, nnkIteratorDef)
     closureIterator.pragma = newNimNode(nnkPragma, lineInfoFrom=prc.body)
@@ -254,17 +261,12 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
     # declared at the end to be sure that the closure
     # doesn't reference it, avoid cyclic ref (#203)
     var retFutureSym = ident "resultFuture"
-    var subRetType =
-      if returnType.kind == nnkEmpty:
-        newIdentNode("void")
-      else:
-        baseType
     # Do not change this code to `quote do` version because `instantiationInfo`
     # will be broken for `newFuture()` call.
     outerProcBody.add(
       newVarStmt(
         retFutureSym,
-        newCall(newTree(nnkBracketExpr, ident "newRaiseTrackingFuture", subRetType),
+        newCall(newTree(nnkBracketExpr, ident "newRaiseTrackingFuture", baseType),
                 newLit(prcName))
       )
     )
@@ -304,65 +306,6 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
   #echo(treeRepr(result))
   #if prcName == "recvLineInto":
   #  echo(toStrLit(result))
-
-proc trackReturnType(prc, exceptions: NimNode): NimNode {.compileTime.} =
-  if prc.kind notin {nnkProcDef, nnkLambda, nnkMethodDef, nnkDo, nnkProcTy}:
-      error("Cannot transform this node kind into an async proc." &
-            " proc/method definition or lambda node expected.")
-
-  var raisesTuple = nnkTupleConstr.newTree()
-
-  for possibleRaise in exceptions:
-    raisesTuple.add(possibleRaise)
-  if raisesTuple.len == 0:
-    raisesTuple = ident("void")
-
-  for index, pragma in pragma(prc):
-    if pragma.kind == nnkExprColonExpr and pragma[0] == ident "raises":
-      var wasAddedAutomatically = false
-      for index, pragma in pragma(prc):
-        if pragma.eqIdent("asyncinternal"):
-          wasAddedAutomatically = true
-          break
-      if not wasAddedAutomatically:
-        warning("The raises pragma doesn't work on async procedure. " &
-          "Please remove it")
-
-  let returnType = prc.params2[0]
-  var baseType: NimNode
-  # Verify that the return type is a Future[T]
-  if returnType.kind == nnkBracketExpr:
-    let fut = repr(returnType[0])
-    verifyReturnType(fut)
-    baseType = returnType[1]
-  elif returnType.kind in nnkCallKinds and returnType[0].eqIdent("[]"):
-    let fut = repr(returnType[1])
-    verifyReturnType(fut)
-    baseType = returnType[2]
-  elif returnType.kind == nnkEmpty:
-    baseType = returnType
-  else:
-    verifyReturnType(repr(returnType))
-
-  let subtypeIsVoid = returnType.kind == nnkEmpty or
-    (baseType.kind == nnkIdent and returnType[1].eqIdent("void"))
-
-  #Rewrite return type
-  prc.params2[0] = nnkBracketExpr.newTree(
-    newIdentNode("RaiseTrackingFuture"),
-    if subtypeIsVoid: ident"void"
-    else: baseType,
-    raisesTuple
-  )
-
-  # The proc itself can't raise
-  prc.addPragma(nnkExprColonExpr.newTree(
-    newIdentNode("raises"),
-    emptyRaises))
-
-  prc.addPragma(newIdentNode("asyncinternal"))
-
-  prc
 
 macro checkFutureExceptions(f, typ: typed): untyped =
   # For RaiseTrackingFuture[void, (ValueError, OSError), will do:
@@ -479,6 +422,34 @@ macro async*(prc: untyped): untyped =
   when defined(nimDumpAsync):
     echo repr result
 
+proc trackReturnType(prc, exceptions: NimNode): NimNode {.compileTime.} =
+  var raisesTuple = nnkTupleConstr.newTree()
+
+  for possibleRaise in exceptions:
+    raisesTuple.add(possibleRaise)
+  if raisesTuple.len == 0:
+    raisesTuple = ident("void")
+
+  let baseType = getBaseType(prc)
+
+  #Rewrite return type
+  prc.params2[0] = nnkBracketExpr.newTree(
+    newIdentNode("RaiseTrackingFuture"),
+    baseType,
+    raisesTuple
+  )
+
+  # The proc itself can't raise
+  prc.addPragma(nnkExprColonExpr.newTree(
+    newIdentNode("raises"),
+    emptyRaises))
+
+  # This is used to inform `.async.` that the raises pragma
+  # was added by us. Otherwise, it would pop a warning
+  prc.addPragma(newIdentNode("asyncinternal"))
+
+  prc
+
 macro asyncraises*(possibleExceptions, prc: untyped): untyped =
   if prc.kind == nnkStmtList:
     result = newStmtList()
@@ -488,6 +459,3 @@ macro asyncraises*(possibleExceptions, prc: untyped): untyped =
     result = trackReturnType(prc, possibleExceptions)
   when defined(nimDumpAsync):
     echo repr result
-
-template asyncinternal* {.pragma.}
-  # used to disarm some warnings
