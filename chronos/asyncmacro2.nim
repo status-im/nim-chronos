@@ -73,10 +73,25 @@ macro unsupported(s: static[string]): untyped =
   error s
 
 proc params2*(someProc: NimNode): NimNode =
+  # until https://github.com/nim-lang/Nim/pull/19563 is available
   if someProc.kind == nnkProcTy:
     someProc[0]
   else:
     params(someProc)
+
+proc cleanupOpenSymChoice(node: NimNode): NimNode {.compileTime.} =
+  # Replace every Call -> OpenSymChoice by a Bracket expr
+  # ref https://github.com/nim-lang/Nim/issues/11091
+  if node.kind in nnkCallKinds and
+    node[0].kind == nnkOpenSymChoice and node[0].eqIdent("[]"):
+    result = newNimNode(nnkBracketExpr).add(
+      cleanupOpenSymChoice(node[1]),
+      cleanupOpenSymChoice(node[2])
+    )
+  else:
+    result = node.copyNimNode()
+    for child in node:
+      result.add(cleanupOpenSymChoice(child))
 
 template emptyRaises: NimNode =
   when (NimMajor, NimMinor) < (1, 4):
@@ -91,17 +106,15 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
       error("Cannot transform this node kind into an async proc." &
             " proc/method definition or lambda node expected.")
 
-  let returnType = prc.params2[0]
+  let returnType = cleanupOpenSymChoice(prc.params[0])
+  let prcName = prc.name.getName
+
   var baseType: NimNode
   # Verify that the return type is a Future[T]
   if returnType.kind == nnkBracketExpr:
     let fut = repr(returnType[0])
     verifyReturnType(fut)
     baseType = returnType[1]
-  elif returnType.kind in nnkCallKinds and returnType[0].eqIdent("[]"):
-    let fut = repr(returnType[1])
-    verifyReturnType(fut)
-    baseType = returnType[2]
   elif returnType.kind == nnkEmpty:
     baseType = returnType
   else:
