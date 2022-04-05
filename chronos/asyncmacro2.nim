@@ -112,6 +112,10 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
 
   var outerProcBody = newNimNode(nnkStmtList, prc.body)
 
+  # Copy comment for nimdoc
+  if prc.body.len > 0 and prc.body[0].kind == nnkCommentStmt:
+    outerProcBody.add(prc.body[0])
+
 
   # -> iterator nameIter(chronosInternalRetFuture: Future[T]): FutureBase {.closure.} =
   # ->   {.push warning[resultshadowed]: off.}
