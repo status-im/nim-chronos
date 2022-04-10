@@ -978,6 +978,7 @@ proc send*(request: HttpClientRequestRef): Future[HttpClientResponseRef] {.
       request.setError(exc)
       raise exc
 
+  connection.flags.incl(HttpClientConnectionFlag.Request)
   request.connection = connection
 
   try:
@@ -1028,6 +1029,7 @@ proc open*(request: HttpClientRequestRef): Future[HttpBodyWriter] {.
       request.setError(exc)
       raise exc
 
+  connection.flags.incl(HttpClientConnectionFlag.Request)
   request.connection = connection
 
   try:
