@@ -299,7 +299,6 @@ when defined(windows):
     CompletionKey = ULONG_PTR
 
     CompletionData* = object
-      fd*: AsyncFD
       cb*: CallbackFunc
       errCode*: OSErrorCode
       bytesCount*: int32
@@ -500,17 +499,9 @@ elif unixPlatform:
   type
     AsyncFD* = distinct cint
 
-    CompletionData* = object
-      fd*: AsyncFD
-      udata*: pointer
-
-    PCompletionData* = ptr CompletionData
-
     SelectorData* = object
       reader*: AsyncCallback
-      rdata*: CompletionData
       writer*: AsyncCallback
-      wdata*: CompletionData
 
     PDispatcher* = ref object of PDispatcherBase
       selector: Selector[SelectorData]
@@ -555,8 +546,6 @@ elif unixPlatform:
     ## Register file descriptor ``fd`` in thread's dispatcher.
     let loop = getThreadDispatcher()
     var data: SelectorData
-    data.rdata.fd = fd
-    data.wdata.fd = fd
     loop.selector.registerHandle(int(fd), {}, data)
 
   proc unregister*(fd: AsyncFD) {.raises: [Defect, CatchableError].} =
@@ -574,9 +563,8 @@ elif unixPlatform:
     let loop = getThreadDispatcher()
     var newEvents = {Event.Read}
     withData(loop.selector, int(fd), adata) do:
-      let acb = AsyncCallback(function: cb, udata: addr adata.rdata)
+      let acb = AsyncCallback(function: cb, udata: udata)
       adata.reader = acb
-      adata.rdata = CompletionData(fd: fd, udata: udata)
       newEvents.incl(Event.Read)
       if not(isNil(adata.writer.function)):
         newEvents.incl(Event.Write)
@@ -592,7 +580,6 @@ elif unixPlatform:
     withData(loop.selector, int(fd), adata) do:
       # We need to clear `reader` data, because `selectors` don't do it
       adata.reader = default(AsyncCallback)
-      # adata.rdata = CompletionData()
       if not(isNil(adata.writer.function)):
         newEvents.incl(Event.Write)
     do:
@@ -606,9 +593,8 @@ elif unixPlatform:
     let loop = getThreadDispatcher()
     var newEvents = {Event.Write}
     withData(loop.selector, int(fd), adata) do:
-      let acb = AsyncCallback(function: cb, udata: addr adata.wdata)
+      let acb = AsyncCallback(function: cb, udata: udata)
       adata.writer = acb
-      adata.wdata = CompletionData(fd: fd, udata: udata)
       newEvents.incl(Event.Write)
       if not(isNil(adata.reader.function)):
         newEvents.incl(Event.Read)
@@ -624,7 +610,6 @@ elif unixPlatform:
     withData(loop.selector, int(fd), adata) do:
       # We need to clear `writer` data, because `selectors` don't do it
       adata.writer = default(AsyncCallback)
-      # adata.wdata = CompletionData()
       if not(isNil(adata.reader.function)):
         newEvents.incl(Event.Read)
     do:
@@ -692,9 +677,7 @@ elif unixPlatform:
       var data: SelectorData
       result = loop.selector.registerSignal(signal, data)
       withData(loop.selector, result, adata) do:
-        adata.reader = AsyncCallback(function: cb, udata: addr adata.rdata)
-        adata.rdata.fd = AsyncFD(result)
-        adata.rdata.udata = udata
+        adata.reader = AsyncCallback(function: cb, udata: udata)
       do:
         raise newException(ValueError, "File descriptor not registered.")
 
