@@ -1256,7 +1256,12 @@ else:
       raiseAsDefect exc, "removeWriter"
 
   proc writeStreamLoop(udata: pointer) =
-    doAssert not isNil(udata)
+    if isNil(udata):
+      # TODO this is an if rather than an assert for historical reasons:
+      # it should not happen unless there are race conditions - but if there
+      # are race conditions, `transp` might be invalid even if it's not nil:
+      # it could have been released
+      return
 
     let
       transp = cast[StreamTransport](udata)
@@ -1350,7 +1355,12 @@ else:
     transp.removeWriter()
 
   proc readStreamLoop(udata: pointer) =
-    doAssert not isNil(udata)
+    if isNil(udata):
+      # TODO this is an if rather than an assert for historical reasons:
+      # it should not happen unless there are race conditions - but if there
+      # are race conditions, `transp` might be invalid even if it's not nil:
+      # it could have been released
+      return
 
     let
       transp = cast[StreamTransport](udata)
