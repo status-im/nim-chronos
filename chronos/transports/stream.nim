@@ -1256,14 +1256,11 @@ else:
       raiseAsDefect exc, "removeWriter"
 
   proc writeStreamLoop(udata: pointer) =
+    doAssert not isNil(udata)
+
     let
       transp = cast[StreamTransport](udata)
       fd = SocketHandle(transp.fd)
-
-    if int(fd) <= 0:
-      ## This situation can be happen, when there events present
-      ## after transport was closed.
-      return
 
     if WriteClosed in transp.state:
       if transp.queue.len > 0:
@@ -1353,14 +1350,11 @@ else:
     transp.removeWriter()
 
   proc readStreamLoop(udata: pointer) =
-    # TODO fix Defect raises - they "shouldn't" happen
+    doAssert not isNil(udata)
+
     let
       transp = cast[StreamTransport](udata)
       fd = SocketHandle(transp.fd)
-    if int(fd) <= 0:
-      ## This situation can be happen, when there events present
-      ## after transport was closed.
-      return
 
     if ReadClosed in transp.state:
       transp.state.incl({ReadPaused})
@@ -1575,7 +1569,9 @@ else:
           break
     return retFuture
 
-  proc acceptLoop(udata: pointer) {.gcsafe.} =
+  proc acceptLoop(udata: pointer) =
+    doAssert not isNil(udata)
+
     var
       saddr: Sockaddr_storage
       slen: SockLen
