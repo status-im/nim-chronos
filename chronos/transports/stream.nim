@@ -1260,7 +1260,7 @@ else:
       transp = cast[StreamTransport](udata)
       fd = SocketHandle(transp.fd)
 
-    if int(fd) == 0:
+    if int(fd) <= 0:
       ## This situation can be happen, when there events present
       ## after transport was closed.
       return
