@@ -755,7 +755,7 @@ elif unixPlatform:
         block:
           let res = loop.selector.registerSignal(signal, data)
           if res.isErr():
-            raise newException(ValueError, OsErrorMsg(res.error()))
+            raise newException(ValueError, osErrorMsg(res.error()))
           res.get()
       withData(loop.selector, sigfd, adata) do:
         adata.reader = AsyncCallback(function: cb, udata: udata)
@@ -774,7 +774,7 @@ elif unixPlatform:
         block:
           let res = loop.selector.registerProcess(pid, data)
           if res.isErr():
-            raise newException(ValueError, OsErrorMsg(res.error()))
+            raise newException(ValueError, osErrorMsg(res.error()))
           res.get()
       withData(loop.selector, procfd, adata) do:
         adata.reader = AsyncCallback(function: cb, udata: udata)
