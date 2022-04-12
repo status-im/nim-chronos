@@ -14,7 +14,11 @@ when (NimMajor, NimMinor) < (1, 4):
 else:
   {.push raises: [].}
 
-import posix, times, epoll
+import std/[posix, times, epoll]
+import stew/results
+import ../handles
+
+export results, times
 
 # Maximum number of events that can be returned
 const MAX_EPOLL_EVENTS = 64
@@ -40,6 +44,10 @@ when not defined(android):
       ssi_stime*: uint64
       ssi_addr*: uint64
       pad* {.importc: "__pad".}: array[0..47, uint8]
+
+  const
+    SFD_CLOEXEC = cint(0x80000)
+    SFD_NONBLOCK = cint(0x800)
 
 proc timerfd_create(clock_id: ClockId, flags: cint): cint
      {.cdecl, importc: "timerfd_create", header: "<sys/timerfd.h>".}
@@ -106,7 +114,8 @@ proc close*[T](s: Selector[T]) =
   if res != 0:
     raiseIOSelectorsError(osLastError())
 
-proc newSelectEvent*(): SelectEvent {.raises: [Defect, OSError, IOSelectorsException].} =
+proc newSelectEvent*(): SelectEvent {.
+     raises: [Defect, OSError, IOSelectorsException].} =
   let fdci = eventfd(0, 0)
   if fdci == -1:
     raiseIOSelectorsError(osLastError())
@@ -142,7 +151,8 @@ proc registerHandle*[T](s: Selector[T], fd: int | SocketHandle,
     raises: [Defect, IOSelectorsException].} =
   let fdi = int(fd)
   s.checkFd(fdi)
-  doAssert(s.fds[fdi].ident == InvalidIdent, "Descriptor " & $fdi & " already registered")
+  doAssert(s.fds[fdi].ident == InvalidIdent,
+           "Descriptor " & $fdi & " already registered")
   s.setKey(fdi, events, 0, data)
   if events != {}:
     var epv = EpollEvent(events: EPOLLRDHUP)
@@ -153,7 +163,8 @@ proc registerHandle*[T](s: Selector[T], fd: int | SocketHandle,
       raiseIOSelectorsError(osLastError())
     inc(s.count)
 
-proc updateHandle*[T](s: Selector[T], fd: int | SocketHandle, events: set[Event]) {.
+proc updateHandle*[T](s: Selector[T], fd: int | SocketHandle,
+                      events: set[Event]) {.
     raises: [Defect, IOSelectorsException].} =
   let maskEvents = {Event.Timer, Event.Signal, Event.Process, Event.Vnode,
                     Event.User, Event.Oneshot, Event.Error}
@@ -184,7 +195,8 @@ proc updateHandle*[T](s: Selector[T], fd: int | SocketHandle, events: set[Event]
         dec(s.count)
     pkey.events = events
 
-proc unregister*[T](s: Selector[T], fd: int|SocketHandle) {.raises: [Defect, IOSelectorsException].} =
+proc unregister*[T](s: Selector[T], fd: int|SocketHandle) {.
+     raises: [Defect, IOSelectorsException].} =
   let fdi = int(fd)
   s.checkFd(fdi)
   var pkey = addr(s.fds[fdi])
@@ -192,7 +204,8 @@ proc unregister*[T](s: Selector[T], fd: int|SocketHandle) {.raises: [Defect, IOS
            "Descriptor " & $fdi & " is not registered in the selector!")
   if pkey.events != {}:
     when not defined(android):
-      if Event.Read in pkey.events or Event.Write in pkey.events or Event.User in pkey.events:
+      if (Event.Read in pkey.events) or
+         (Event.Write in pkey.events) or (Event.User in pkey.events):
         var epv = EpollEvent()
         # TODO: Refactor all these EPOLL_CTL_DEL + dec(s.count) into a proc.
         if epoll_ctl(s.epollFD, EPOLL_CTL_DEL, fdi.cint, addr epv) != 0:
@@ -232,7 +245,8 @@ proc unregister*[T](s: Selector[T], fd: int|SocketHandle) {.raises: [Defect, IOS
         if posix.close(cint(fdi)) != 0:
           raiseIOSelectorsError(osLastError())
     else:
-      if Event.Read in pkey.events or Event.Write in pkey.events or Event.User in pkey.events:
+      if (Event.Read in pkey.events) or
+         (Event.Write in pkey.events) or (Event.User in pkey.events):
         var epv = EpollEvent()
         if epoll_ctl(s.epollFD, EPOLL_CTL_DEL, fdi.cint, addr epv) != 0:
           raiseIOSelectorsError(osLastError())
@@ -301,8 +315,7 @@ proc registerTimer*[T](s: Selector[T], timeout: int, oneshot: bool,
 
 when not defined(android):
   proc registerSignal*[T](s: Selector[T], signal: int,
-                          data: T): int {.
-      discardable, raises: [Defect, OSError, IOSelectorsException].} =
+                          data: T): Result[int, OSError] {.raises: [Defect].} =
     var
       nmask: Sigset
       omask: Sigset
@@ -310,27 +323,31 @@ when not defined(android):
     discard sigemptyset(nmask)
     discard sigemptyset(omask)
     discard sigaddset(nmask, cint(signal))
-    blockSignals(nmask, omask)
 
-    let fdi = signalfd(-1, nmask, 0).int
+    when hasThreadSupport:
+      if posix.pthread_sigmask(SIG_BLOCK, nmask, omask) == -1:
+        return err(osLastError())
+    else:
+      if posix.sigprocmask(SIG_BLOCK, nmask, omask) == -1:
+        return err(osLastError())
+
+    let fdi = int(signalfd(-1, nmask, SFD_NONBLOCK or SFD_CLOEXEC))
     if fdi == -1:
-      raiseIOSelectorsError(osLastError())
-    setNonBlocking(fdi.cint)
+      return err(osLastError())
 
     s.checkFd(fdi)
     doAssert(s.fds[fdi].ident == InvalidIdent)
 
     var epv = EpollEvent(events: EPOLLIN or EPOLLRDHUP)
-    epv.data.u64 = fdi.uint
-    if epoll_ctl(s.epollFD, EPOLL_CTL_ADD, fdi.cint, addr epv) != 0:
-      raiseIOSelectorsError(osLastError())
+    epv.data.u64 = uint64(fdi)
+    if epoll_ctl(s.epollFD, EPOLL_CTL_ADD, cint(fdi), addr epv) != 0:
+      return err(osLastError())
     s.setKey(fdi, {Event.Signal}, signal, data)
     inc(s.count)
-    result = fdi
+    ok(fdi)
 
   proc registerProcess*[T](s: Selector, pid: int,
-                           data: T): int {.
-      discardable, raises: [Defect, IOSelectorsException].} =
+                           data: T): Result[int, OSError] {.raises: [Defect].} =
     var
       nmask: Sigset
       omask: Sigset
@@ -338,28 +355,35 @@ when not defined(android):
     discard sigemptyset(nmask)
     discard sigemptyset(omask)
     discard sigaddset(nmask, posix.SIGCHLD)
-    blockSignals(nmask, omask)
 
-    let fdi = signalfd(-1, nmask, 0).int
+    when hasThreadSupport:
+      if posix.pthread_sigmask(SIG_BLOCK, nmask, omask) == -1:
+        return err(osLastError())
+    else:
+      if posix.sigprocmask(SIG_BLOCK, nmask, omask) == -1:
+        return err(osLastError())
+
+    let fdi = int(signalfd(-1, nmask, SFD_NONBLOCK or SFD_CLOEXEC))
     if fdi == -1:
-      raiseIOSelectorsError(osLastError())
-    setNonBlocking(fdi.cint)
+      return err(osLastError())
 
     s.checkFd(fdi)
     doAssert(s.fds[fdi].ident == InvalidIdent)
 
     var epv = EpollEvent(events: EPOLLIN or EPOLLRDHUP)
-    epv.data.u64 = fdi.uint
+    epv.data.u64 = uint64(fdi)
     epv.events = EPOLLIN or EPOLLRDHUP
-    if epoll_ctl(s.epollFD, EPOLL_CTL_ADD, fdi.cint, addr epv) != 0:
-      raiseIOSelectorsError(osLastError())
+    if epoll_ctl(s.epollFD, EPOLL_CTL_ADD, cint(fdi), addr epv) != 0:
+      return err(osLastError())
     s.setKey(fdi, {Event.Process, Event.Oneshot}, pid, data)
     inc(s.count)
-    result = fdi
+    ok(fdi)
 
-proc registerEvent*[T](s: Selector[T], ev: SelectEvent, data: T) {.raises: [Defect, IOSelectorsException].} =
+proc registerEvent*[T](s: Selector[T], ev: SelectEvent, data: T) {.
+     raises: [Defect, IOSelectorsException].} =
   let fdi = int(ev.efd)
-  doAssert(s.fds[fdi].ident == InvalidIdent, "Event is already registered in the queue!")
+  doAssert(s.fds[fdi].ident == InvalidIdent,
+           "Event is already registered in the queue!")
   s.setKey(fdi, {Event.User}, 0, data)
   var epv = EpollEvent(events: EPOLLIN or EPOLLRDHUP)
   epv.data.u64 = ev.efd.uint
@@ -368,7 +392,8 @@ proc registerEvent*[T](s: Selector[T], ev: SelectEvent, data: T) {.raises: [Defe
   inc(s.count)
 
 proc selectInto*[T](s: Selector[T], timeout: int,
-                    results: var openArray[ReadyKey]): int {.raises: [Defect, IOSelectorsException].} =
+                    results: var openArray[ReadyKey]): int {.
+     raises: [Defect, IOSelectorsException].} =
   var
     resTable: array[MAX_EPOLL_EVENTS, EpollEvent]
     maxres = MAX_EPOLL_EVENTS

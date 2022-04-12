@@ -744,24 +744,55 @@ elif unixPlatform:
   when ioselSupportedPlatform:
     proc addSignal*(signal: int, cb: CallbackFunc,
                     udata: pointer = nil): int {.
-         raises: [Defect, IOSelectorsException, ValueError, OSError].} =
+         raises: [Defect, ValueError].} =
       ## Start watching signal ``signal``, and when signal appears, call the
       ## callback ``cb`` with specified argument ``udata``. Returns signal
       ## identifier code, which can be used to remove signal callback
       ## via ``removeSignal``.
       let loop = getThreadDispatcher()
       var data: SelectorData
-      result = loop.selector.registerSignal(signal, data)
-      withData(loop.selector, result, adata) do:
+      let sigfd =
+        block:
+          let res = loop.selector.registerSignal(signal, data)
+          if res.isErr():
+            raise newException(ValueError, OsErrorMsg(res.error()))
+          res.get()
+      withData(loop.selector, sigfd, adata) do:
         adata.reader = AsyncCallback(function: cb, udata: udata)
       do:
         raise newException(ValueError, "File descriptor not registered.")
+      sigfd
+
+    proc addProcess*(pid: int, cb: CallbackFunc, udata: pointer = nil): int {.
+         raises: [Defect, ValueError].} =
+      ## Registers callback ``cb`` to be called when process with process
+      ## identifier ``pid`` exited. Returns process identifier, which can be
+      ## used to remove process callback via ``removeProcess``.
+      var loop = getThreadDispatcher()
+      var data: SelectorData
+      let procfd =
+        block:
+          let res = loop.selector.registerProcess(pid, data)
+          if res.isErr():
+            raise newException(ValueError, OsErrorMsg(res.error()))
+          res.get()
+      withData(loop.selector, procfd, adata) do:
+        adata.reader = AsyncCallback(function: cb, udata: udata)
+      do:
+        raise newException(ValueError, "File descriptor not registered.")
+      procfd
 
     proc removeSignal*(sigfd: int) {.
          raises: [Defect, IOSelectorsException].} =
       ## Remove watching signal ``signal``.
       let loop = getThreadDispatcher()
       loop.selector.unregister(sigfd)
+
+    proc removeProcess*(procfd: int) {.
+         raises: [Defect, IOSelectorsException].} =
+      ## Remove watching process ``procfd``.
+      let loop = getThreadDispatcher()
+      loop.selector.unregister(procfd)
 
   proc poll*() {.raises: [Defect, CatchableError].} =
     ## Perform single asynchronous step.

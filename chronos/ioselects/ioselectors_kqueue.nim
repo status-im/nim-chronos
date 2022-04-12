@@ -9,7 +9,11 @@
 
 #  This module implements BSD kqueue().
 
-import posix, times, kqueue
+import std/[posix, times, kqueue]
+import stew/results
+import ../handles
+
+export results, times
 
 const
   # Maximum number of events that can be returned.
@@ -27,19 +31,19 @@ when defined(macosx) or defined(freebsd) or defined(dragonfly):
     const MAX_DESCRIPTORS_ID = 29 # KERN_MAXFILESPERPROC (MacOS)
   else:
     const MAX_DESCRIPTORS_ID = 27 # KERN_MAXFILESPERPROC (FreeBSD)
-  proc sysctl(name: ptr cint, namelen: cuint, oldp: pointer, oldplen: ptr csize_t,
-              newp: pointer, newplen: csize_t): cint
-       {.importc: "sysctl",header: """#include <sys/types.h>
-                                      #include <sys/sysctl.h>"""}
+  proc sysctl(name: ptr cint, namelen: cuint, oldp: pointer,
+              oldplen: ptr csize_t, newp: pointer, newplen: csize_t): cint {.
+       importc: "sysctl",header: """#include <sys/types.h>
+                                    #include <sys/sysctl.h>"""}
 elif defined(netbsd) or defined(openbsd):
   # OpenBSD and NetBSD don't have KERN_MAXFILESPERPROC, so we are using
   # KERN_MAXFILES, because KERN_MAXFILES is always bigger,
   # than KERN_MAXFILESPERPROC.
   const MAX_DESCRIPTORS_ID = 7 # KERN_MAXFILES
-  proc sysctl(name: ptr cint, namelen: cuint, oldp: pointer, oldplen: ptr csize_t,
-              newp: pointer, newplen: csize_t): cint
-       {.importc: "sysctl",header: """#include <sys/param.h>
-                                      #include <sys/sysctl.h>"""}
+  proc sysctl(name: ptr cint, namelen: cuint, oldp: pointer,
+              oldplen: ptr csize_t, newp: pointer, newplen: csize_t): cint {.
+       importc: "sysctl",header: """#include <sys/param.h>
+                                    #include <sys/sysctl.h>"""}
 
 when hasThreadSupport:
   type
@@ -74,11 +78,13 @@ type
   # SelectEvent is declared as `ptr` to be placed in `shared memory`,
   # so you can share one SelectEvent handle between threads.
 
-proc getUnique[T](s: Selector[T]): int {.inline.} =
+proc getUnique[T](s: Selector[T]): Result[int, OSErrorCode] =
   # we create duplicated handles to get unique indexes for our `fds` array.
-  result = posix.fcntl(s.sock, F_DUPFD, s.sock)
-  if result == -1:
-    raiseIOSelectorsError(osLastError())
+  let res = posix.fcntl(s.sock, F_DUPFD, s.sock)
+  if res == -1:
+    err(osLastError())
+  else:
+    ok(res)
 
 proc newSelector*[T](): owned(Selector[T]) =
   var maxFD = 0.cint
@@ -196,6 +202,17 @@ when hasThreadSupport:
                     nil, 0, nil) == -1:
             raiseIOSelectorsError(osLastError())
           s.changesLength = 0
+
+    proc flushKQueueRes[T](s: Selector[T]): Result[void, OSErrorCode] =
+      mixin withChangeLock
+      s.withChangeLock():
+        if s.changesLength > 0:
+          if kevent(s.kqFD, addr(s.changes[0]), cint(s.changesLength),
+                    nil, 0, nil) == -1:
+            return err(osLastError())
+          s.changesLength = 0
+      ok()
+
 else:
   template modifyKQueue[T](s: Selector[T], nident: uint, nfilter: cshort,
                            nflags: cushort, nfflags: cuint, ndata: int,
@@ -213,6 +230,15 @@ else:
                   nil, 0, nil) == -1:
           raiseIOSelectorsError(osLastError())
         s.changes.setLen(0)
+
+    proc flushKQueueRes[T](s: Selector[T]): Result[void, OSErrorCode] =
+      let length = cint(len(s.changes))
+      if length > 0:
+        if kevent(s.kqFD, addr(s.changes[0]), length,
+                  nil, 0, nil) == -1:
+          return err(osLastError())
+        s.changes.setLen(0)
+      ok()
 
 proc registerHandle*[T](s: Selector[T], fd: int | SocketHandle,
                         events: set[Event], data: T) =
@@ -263,8 +289,9 @@ proc updateHandle*[T](s: Selector[T], fd: int | SocketHandle,
     pkey.events = events
 
 proc registerTimer*[T](s: Selector[T], timeout: int, oneshot: bool,
-                       data: T): int {.discardable.} =
-  let fdi = getUnique(s)
+                       data: T): Result[int, OSErrorCode] {.
+     raises: [Defect].} =
+  let fdi = ? getUnique(s)
   s.checkFd(fdi)
   doAssert(s.fds[fdi].ident == InvalidIdent)
 
@@ -279,14 +306,15 @@ proc registerTimer*[T](s: Selector[T], timeout: int, oneshot: bool,
   modifyKQueue(s, fdi.uint, EVFILT_TIMER, flags, 0, cint(timeout), nil)
 
   when not declared(CACHE_EVENTS):
-    flushKQueue(s)
+    ? flushKQueueRes(s)
 
   inc(s.count)
-  result = fdi
+  ok(fdi)
 
 proc registerSignal*[T](s: Selector[T], signal: int,
-                        data: T): int {.discardable.} =
-  let fdi = getUnique(s)
+                        data: T): Result[int, OSErrorCode] {.
+     raises: [Defect].} =
+  let fdi = ? getUnique(s)
   s.checkFd(fdi)
   doAssert(s.fds[fdi].ident == InvalidIdent)
 
@@ -295,7 +323,13 @@ proc registerSignal*[T](s: Selector[T], signal: int,
   discard sigemptyset(nmask)
   discard sigemptyset(omask)
   discard sigaddset(nmask, cint(signal))
-  blockSignals(nmask, omask)
+
+  when hasThreadSupport:
+    if posix.pthread_sigmask(SIG_BLOCK, nmask, omask) == -1:
+      return err(osLastError())
+  else:
+    if posix.sigprocmask(SIG_BLOCK, nmask, omask) == -1:
+      return err(osLastError())
   # to be compatible with linux semantic we need to "eat" signals
   posix.signal(cint(signal), SIG_IGN)
 
@@ -303,14 +337,15 @@ proc registerSignal*[T](s: Selector[T], signal: int,
                cast[pointer](fdi))
 
   when not declared(CACHE_EVENTS):
-    flushKQueue(s)
+    ? flushKQueueRes(s)
 
   inc(s.count)
   result = fdi
 
 proc registerProcess*[T](s: Selector[T], pid: int,
-                         data: T): int {.discardable.} =
-  let fdi = getUnique(s)
+                         data: T): Result[int, OSErrorCode] {.
+     raises: [Defect].} =
+  let fdi = ? getUnique(s)
   s.checkFd(fdi)
   doAssert(s.fds[fdi].ident == InvalidIdent)
 
@@ -321,14 +356,15 @@ proc registerProcess*[T](s: Selector[T], pid: int,
                cast[pointer](fdi))
 
   when not declared(CACHE_EVENTS):
-    flushKQueue(s)
+    ? flushKQueueRes(s)
 
   inc(s.count)
   result = fdi
 
 proc registerEvent*[T](s: Selector[T], ev: SelectEvent, data: T) =
   let fdi = ev.rfd.int
-  doAssert(s.fds[fdi].ident == InvalidIdent, "Event is already registered in the queue!")
+  doAssert(s.fds[fdi].ident == InvalidIdent,
+           "Event is already registered in the queue!")
   setKey(s, fdi, {Event.User}, 0, data)
 
   modifyKQueue(s, fdi.uint, EVFILT_READ, EV_ADD, 0, 0, nil)
