@@ -109,23 +109,27 @@ proc newSelector*[T](): owned(Selector[T]) =
     discard posix.close(kqFD)
     raiseIOSelectorsError(err)
 
-  when hasThreadSupport:
-    result = cast[Selector[T]](allocShared0(sizeof(SelectorImpl[T])))
-    result.fds = allocSharedArray[SelectorKey[T]](maxFD)
-    result.changes = allocSharedArray[KEvent](MAX_KQUEUE_EVENTS)
-    result.changesSize = MAX_KQUEUE_EVENTS
-    initLock(result.changesLock)
-  else:
-    result = Selector[T]()
-    result.fds = newSeq[SelectorKey[T]](maxFD)
-    result.changes = newSeqOfCap[KEvent](MAX_KQUEUE_EVENTS)
+  var selector =
+    when hasThreadSupport:
+      var res = cast[Selector[T]](allocShared0(sizeof(SelectorImpl[T])))
+      res.fds = allocSharedArray[SelectorKey[T]](maxFD)
+      res.changes = allocSharedArray[KEvent](MAX_KQUEUE_EVENTS)
+      res.changesSize = MAX_KQUEUE_EVENTS
+      initLock(res.changesLock)
+      res
+    else:
+      var res = Selector[T]()
+      res.fds = newSeq[SelectorKey[T]](maxFD)
+      res.changes = newSeqOfCap[KEvent](MAX_KQUEUE_EVENTS)
+      res
 
   for i in 0 ..< maxFD:
-    result.fds[i].ident = InvalidIdent
+    selector.fds[i].ident = InvalidIdent
 
-  result.sock = usock
-  result.kqFD = kqFD
-  result.maxFD = maxFD.int
+  selector.sock = usock
+  selector.kqFD = kqFD
+  selector.maxFD = maxFD.int
+  selector
 
 proc close*[T](s: Selector[T]) =
   let res1 = posix.close(s.kqFD)
@@ -143,9 +147,10 @@ proc newSelectEvent*(): SelectEvent =
     raiseIOSelectorsError(osLastError())
   setNonBlocking(fds[0])
   setNonBlocking(fds[1])
-  result = cast[SelectEvent](allocShared0(sizeof(SelectEventImpl)))
-  result.rfd = fds[0]
-  result.wfd = fds[1]
+  var res = cast[SelectEvent](allocShared0(sizeof(SelectEventImpl)))
+  res.rfd = fds[0]
+  res.wfd = fds[1]
+  res
 
 proc trigger*(ev: SelectEvent) =
   var data: uint64 = 1
@@ -340,7 +345,7 @@ proc registerSignal*[T](s: Selector[T], signal: int,
     ? flushKQueueRes(s)
 
   inc(s.count)
-  result = fdi
+  ok(fdi)
 
 proc registerProcess*[T](s: Selector[T], pid: int,
                          data: T): Result[int, OSErrorCode] {.
@@ -359,7 +364,7 @@ proc registerProcess*[T](s: Selector[T], pid: int,
     ? flushKQueueRes(s)
 
   inc(s.count)
-  result = fdi
+  ok(fdi)
 
 proc registerEvent*[T](s: Selector[T], ev: SelectEvent, data: T) =
   let fdi = ev.rfd.int
@@ -522,12 +527,12 @@ proc selectInto*[T](s: Selector[T], timeout: int,
                        ptv)
 
   if count < 0:
-    result = 0
     let err = osLastError()
     if cint(err) != EINTR:
       raiseIOSelectorsError(err)
+    0
   elif count == 0:
-    result = 0
+    0
   else:
     var i = 0
     var k = 0 # do not delete this, because `continue` used in cycle.
@@ -620,12 +625,13 @@ proc selectInto*[T](s: Selector[T], timeout: int,
       results[k] = rkey
       inc(k)
       inc(i)
-    result = k
+    k
 
 proc select*[T](s: Selector[T], timeout: int): seq[ReadyKey] =
-  result = newSeq[ReadyKey](MAX_KQUEUE_EVENTS)
-  let count = selectInto(s, timeout, result)
-  result.setLen(count)
+  var res = newSeq[ReadyKey](MAX_KQUEUE_EVENTS)
+  let count = selectInto(s, timeout, res)
+  res.setLen(count)
+  res
 
 template isEmpty*[T](s: Selector[T]): bool =
   (s.count == 0)
@@ -638,7 +644,9 @@ proc setData*[T](s: Selector[T], fd: SocketHandle|int, data: T): bool =
   let fdi = int(fd)
   if fdi in s:
     s.fds[fdi].data = data
-    result = true
+    true
+  else:
+    false
 
 template withData*[T](s: Selector[T], fd: SocketHandle|int, value,
                       body: untyped) =

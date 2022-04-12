@@ -92,19 +92,24 @@ proc newSelector*[T](): Selector[T] {.raises: [Defect, OSError].} =
   if epollFD < 0:
     raiseOSError(osLastError())
 
-  when hasThreadSupport:
-    result = cast[Selector[T]](allocShared0(sizeof(SelectorImpl[T])))
-    result.epollFD = epollFD
-    result.numFD = numFD
-    result.fds = allocSharedArray[SelectorKey[T]](numFD)
-  else:
-    result = Selector[T]()
-    result.epollFD = epollFD
-    result.numFD = numFD
-    result.fds = newSeq[SelectorKey[T]](numFD)
+  var selector =
+    when hasThreadSupport:
+      var res = cast[Selector[T]](allocShared0(sizeof(SelectorImpl[T])))
+      res.epollFD = epollFD
+      res.numFD = numFD
+      res.fds = allocSharedArray[SelectorKey[T]](numFD)
+      res
+    else:
+      var res = Selector[T]()
+      res.epollFD = epollFD
+      res.numFD = numFD
+      res.fds = newSeq[SelectorKey[T]](numFD)
+      res
 
   for i in 0 ..< numFD:
-    result.fds[i].ident = InvalidIdent
+    selector.fds[i].ident = InvalidIdent
+
+  selector
 
 proc close*[T](s: Selector[T]) =
   let res = posix.close(s.epollFD)
@@ -120,8 +125,9 @@ proc newSelectEvent*(): SelectEvent {.
   if fdci == -1:
     raiseIOSelectorsError(osLastError())
   setNonBlocking(fdci)
-  result = cast[SelectEvent](allocShared0(sizeof(SelectEventImpl)))
-  result.efd = fdci
+  var res = cast[SelectEvent](allocShared0(sizeof(SelectEventImpl)))
+  res.efd = fdci
+  res
 
 proc trigger*(ev: SelectEvent) {.raises: [Defect, IOSelectorsException].} =
   var data: uint64 = 1
@@ -311,7 +317,7 @@ proc registerTimer*[T](s: Selector[T], timeout: int, oneshot: bool,
     raiseIOSelectorsError(osLastError())
   s.setKey(fdi, events, 0, data)
   inc(s.count)
-  result = fdi
+  fdi
 
 when not defined(android):
   proc registerSignal*[T](s: Selector[T], signal: int,
@@ -407,12 +413,12 @@ proc selectInto*[T](s: Selector[T], timeout: int,
   let count = epoll_wait(s.epollFD, addr(resTable[0]), maxres.cint,
                          timeout.cint)
   if count < 0:
-    result = 0
     let err = osLastError()
     if cint(err) != EINTR:
       raiseIOSelectorsError(err)
+    0
   elif count == 0:
-    result = 0
+    0
   else:
     i = 0
     k = 0
@@ -510,12 +516,13 @@ proc selectInto*[T](s: Selector[T], timeout: int,
       results[k] = rkey
       inc(k)
       inc(i)
-    result = k
+    k
 
 proc select*[T](s: Selector[T], timeout: int): seq[ReadyKey] =
-  result = newSeq[ReadyKey](MAX_EPOLL_EVENTS)
-  let count = selectInto(s, timeout, result)
-  result.setLen(count)
+  var res = newSeq[ReadyKey](MAX_EPOLL_EVENTS)
+  let count = selectInto(s, timeout, res)
+  res.setLen(count)
+  res
 
 template isEmpty*[T](s: Selector[T]): bool =
   (s.count == 0)
@@ -529,7 +536,9 @@ proc setData*[T](s: Selector[T], fd: SocketHandle|int, data: T): bool =
   s.checkFd(fdi)
   if fdi in s:
     s.fds[fdi].data = data
-    result = true
+    true
+  else:
+    false
 
 template withData*[T](s: Selector[T], fd: SocketHandle|int, value,
                         body: untyped) =
