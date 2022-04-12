@@ -11,9 +11,8 @@
 
 import std/[posix, times, kqueue]
 import stew/results
-import ../handles
 
-export results, times
+export results
 
 const
   # Maximum number of events that can be returned.
