@@ -15,10 +15,12 @@ else:
 
 import std/[os, tables, strutils, heapqueue, lists, nativesockets, net,
             deques]
+import stew/results
+
 import ./timer
 
 export Port, SocketFlag
-export timer
+export timer, results
 
 #{.injectStmt: newGcInvariant().}
 
@@ -326,6 +328,9 @@ when defined(windows):
       cb*: CallbackFunc
       errCode*: OSErrorCode
       bytesCount*: int32
+      cell*: ForeignCell # we need this `cell` to protect our `cb` environment,
+                         # when using `RegisterWaitForSingleObject()`, because
+                         # waiting is done in different thread.
       udata*: pointer
 
     CustomOverlapped* = object of OVERLAPPED
@@ -453,7 +458,17 @@ when defined(windows):
       raiseOSError(osLastError())
     loop.handles.incl(fd)
 
-  proc unregister*(fd: AsyncFD) {.raises: [Defect, CatchableError].} =
+  proc registerNe*(fd: AsyncFD): Result[void, OSErrorCode] {.
+       raises: [Defect].} =
+    ## Register file descriptor ``fd`` in thread's dispatcher.
+    let loop = getThreadDispatcher()
+    if createIoCompletionPort(fd.Handle, loop.ioPort,
+                              cast[CompletionKey](fd), 1) == 0:
+      return err(osLastError())
+    loop.handles.incl(fd)
+    ok()
+
+  proc unregister*(fd: AsyncFD) {.raises: [Defect].} =
     ## Unregisters ``fd``.
     getThreadDispatcher().handles.excl(fd)
 
