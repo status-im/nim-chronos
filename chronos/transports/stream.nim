@@ -1966,8 +1966,8 @@ proc createStreamServer*(host: TransportAddress,
           raiseTransportOsError(err)
       # TCP flags are not useful for Unix domain sockets.
       if ServerFlags.TcpNoDelay in flags:
-        if not(setSockOpt(serverSocket, handles.IPPROTO_TCP,
-                          handles.TCP_NODELAY, 1)):
+        if not(setSockOpt(serverSocket, osdefs.IPPROTO_TCP,
+                          osdefs.TCP_NODELAY, 1)):
           let err = osLastError()
           if sock == asyncInvalidSocket:
             serverSocket.closeSocket()
