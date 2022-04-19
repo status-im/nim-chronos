@@ -338,6 +338,21 @@ when defined(windows):
                     dwProcessId: DWORD): HANDLE {.
        stdcall, dynlib: "kernel32", importc: "OpenProcess", sideEffect.}
 
+  proc duplicateHandle*(hSourceProcessHandle: HANDLE, hSourceHandle: HANDLE,
+                        hTargetProcessHandle: HANDLE,
+                        lpTargetHandle: ptr HANDLE,
+                        dwDesiredAccess: DWORD, bInheritHandle: WINBOOL,
+                        dwOptions: DWORD): WINBOOL {.
+       stdcall, dynlib: "kernel32", importc: "DuplicateHandle", sideEffect.}
+
+  proc setHandleInformation*(hObject: HANDLE, dwMask: DWORD,
+                             dwFlags: DWORD): WINBOOL {.
+       stdcall, dynlib: "kernel32", importc: "SetHandleInformation",
+       sideEffect.}
+
+  proc getCurrentProcess*(): HANDLE {.
+       stdcall, dynlib: "kernel32", importc: "GetCurrentProcess", sideEffect.}
+
   proc getSystemTimeAsFileTime*(lpSystemTimeAsFileTime: var FILETIME) {.
        stdcall, dynlib: "kernel32", importc: "GetSystemTimeAsFileTime",
        sideEffect.}
@@ -451,6 +466,10 @@ when defined(windows):
                    dwCreationDisposition, dwFlagsAndAttributes: DWORD,
                    hTemplateFile: HANDLE): HANDLE {.
        stdcall, dynlib: "kernel32", importc: "CreateFileW", sideEffect.}
+
+  proc reOpenFile*(hOriginalFile: HANDLE, dwDesiredAccess, dwShareMode,
+                   dwFlagsAndAttributes: DWORD): HANDLE {.
+       stdcall, dynlib: "kernel32", importc: "ReOpenFile", sideEffect.}
 
   proc writeFile*(hFile: HANDLE, buffer: pointer, nNumberOfBytesToWrite: DWORD,
                 lpNumberOfBytesWritten: ptr DWORD,
@@ -651,22 +670,6 @@ when defined(windows):
     SO_TYPE* = 0x1008
     TCP_NODELAY* = 1
 
-
-    # PROCESS_TERMINATE* = 0x00000001'i32
-    # PROCESS_CREATE_THREAD* = 0x00000002'i32
-    # PROCESS_SET_SESSIONID* = 0x00000004'i32
-    # PROCESS_VM_OPERATION* = 0x00000008'i32
-    # PROCESS_VM_READ* = 0x00000010'i32
-    # PROCESS_VM_WRITE* = 0x00000020'i32
-    # PROCESS_DUP_HANDLE* = 0x00000040'i32
-    # PROCESS_CREATE_PROCESS* = 0x00000080'i32
-    # PROCESS_SET_QUOTA* = 0x00000100'i32
-    # PROCESS_SET_INFORMATION* = 0x00000200'i32
-    # PROCESS_QUERY_INFORMATION* = 0x00000400'i32
-    # PROCESS_SUSPEND_RESUME* = 0x00000800'i32
-    # PROCESS_QUERY_LIMITED_INFORMATION* = 0x00001000'i32
-    # PROCESS_SET_LIMITED_INFORMATION* = 0x00002000'i32
-
     WSAID_CONNECTEX* =
       GUID(D1: 0x25a207b9'u32, D2: 0xddf3'u16, D3: 0x4660'u16,
            D4: [0x8e'u8, 0xe9'u8, 0x76'u8, 0xe5'u8,
@@ -695,10 +698,10 @@ elif defined(macosx):
   export posix, os
 
   type
-    MachTimebaseInfo {.importc: "struct mach_timebase_info",
-                       header: "<mach/mach_time.h>", pure, final.} = object
-      numer: uint32
-      denom: uint32
+    MachTimebaseInfo* {.importc: "struct mach_timebase_info",
+                        header: "<mach/mach_time.h>", pure, final.} = object
+      numer*: uint32
+      denom*: uint32
 
   proc posix_gettimeofday*(tp: var Timeval, unused: pointer = nil) {.
        importc: "gettimeofday", header: "<sys/time.h>".}
