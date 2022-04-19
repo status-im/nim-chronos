@@ -407,10 +407,10 @@ else:
     else:
       while true:
         transp.ralen = SockLen(sizeof(Sockaddr_storage))
-        var res = posix.recvfrom(fd, addr transp.buffer[0],
-                                 cint(len(transp.buffer)), cint(0),
-                                 cast[ptr SockAddr](addr transp.raddr),
-                                 addr transp.ralen)
+        var res = osdefs.recvfrom(fd, addr transp.buffer[0],
+                                  cint(len(transp.buffer)), cint(0),
+                                  cast[ptr SockAddr](addr transp.raddr),
+                                  addr transp.ralen)
         if res >= 0:
           fromSAddr(addr transp.raddr, transp.ralen, raddr)
           transp.buflen = res
@@ -442,11 +442,11 @@ else:
         while true:
           if vector.kind == WithAddress:
             toSAddr(vector.address, transp.waddr, transp.walen)
-            res = posix.sendto(fd, vector.buf, vector.buflen, MSG_NOSIGNAL,
-                               cast[ptr SockAddr](addr transp.waddr),
-                               transp.walen)
+            res = osdefs.sendto(fd, vector.buf, vector.buflen, MSG_NOSIGNAL,
+                                cast[ptr SockAddr](addr transp.waddr),
+                                transp.walen)
           elif vector.kind == WithoutAddress:
-            res = posix.send(fd, vector.buf, vector.buflen, MSG_NOSIGNAL)
+            res = osdefs.send(fd, vector.buf, vector.buflen, MSG_NOSIGNAL)
           if res >= 0:
             if not(vector.writer.finished()):
               vector.writer.complete()
@@ -536,14 +536,16 @@ else:
         raiseTransportOsError(err)
 
       if ttl > 0:
-        var res: bool
-        if local.family == AddressFamily.IPv4:
-          res = setSockOpt(localSock, posix.IPPROTO_IP, IP_MULTICAST_TTL,
-                           cint(ttl))
-        elif local.family == AddressFamily.IPv6:
-           res = setSockOpt(localSock, posix.IPPROTO_IP, IPV6_MULTICAST_HOPS,
-                            cint(ttl))
-        if not res:
+        let res =
+          if local.family == AddressFamily.IPv4:
+            setSockOpt(localSock, osdefs.IPPROTO_IP,
+                       osdefs.IP_MULTICAST_TTL, cint(ttl))
+          elif local.family == AddressFamily.IPv6:
+            setSockOpt(localSock, osdefs.IPPROTO_IP,
+                       osdefs.IPV6_MULTICAST_HOPS, cint(ttl))
+          else:
+            false
+        if not(res):
           let err = osLastError()
           if sock == asyncInvalidSocket:
             closeSocket(localSock)

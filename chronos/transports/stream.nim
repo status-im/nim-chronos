@@ -1336,9 +1336,9 @@ else:
         let res =
           case transp.kind
           of TransportKind.Socket:
-            posix.send(fd, vector.buf, vector.buflen, MSG_NOSIGNAL)
+            osdefs.send(fd, vector.buf, vector.buflen, MSG_NOSIGNAL)
           of TransportKind.Pipe:
-            posix.write(cint(fd), vector.buf, vector.buflen)
+            osdefs.write(cint(fd), vector.buf, vector.buflen)
           else: raiseAssert "Unsupported transport kind: " & $transp.kind
 
         if res >= 0:
@@ -1392,8 +1392,8 @@ else:
     else:
       if transp.kind == TransportKind.Socket:
         while true:
-          var res = posix.recv(fd, addr transp.buffer[transp.offset],
-                               len(transp.buffer) - transp.offset, cint(0))
+          var res = osdefs.recv(fd, addr transp.buffer[transp.offset],
+                                len(transp.buffer) - transp.offset, cint(0))
           if res < 0:
             let err = osLastError()
             if int(err) == EINTR:
@@ -1437,8 +1437,8 @@ else:
           break
       elif transp.kind == TransportKind.Pipe:
         while true:
-          var res = posix.read(cint(fd), addr transp.buffer[transp.offset],
-                               len(transp.buffer) - transp.offset)
+          var res = osdefs.read(cint(fd), addr transp.buffer[transp.offset],
+                                len(transp.buffer) - transp.offset)
           if res < 0:
             let err = osLastError()
             if int(err) == EINTR:
@@ -1577,8 +1577,8 @@ else:
       closeSocket(sock)
 
     while true:
-      var res = posix.connect(SocketHandle(sock),
-                              cast[ptr SockAddr](addr saddr), slen)
+      var res = osdefs.connect(SocketHandle(sock),
+                               cast[ptr SockAddr](addr saddr), slen)
       if res == 0:
         let transp = newStreamSocketTransport(sock, bufferSize, child)
         # Start tracking transport
@@ -1626,8 +1626,8 @@ else:
       if server.status in {ServerStatus.Stopped, ServerStatus.Closed}:
         break
 
-      let res = posix.accept(SocketHandle(server.sock),
-                             cast[ptr SockAddr](addr saddr), addr slen)
+      let res = osdefs.accept(SocketHandle(server.sock),
+                              cast[ptr SockAddr](addr saddr), addr slen)
       if int(res) > 0:
         let sock = try: wrapAsyncSocket(res)
         except CatchableError as exc:
@@ -1710,8 +1710,8 @@ else:
           retFuture.fail(getServerUseClosedError())
         else:
           while true:
-            let res = posix.accept(SocketHandle(server.sock),
-                                   cast[ptr SockAddr](addr saddr), addr slen)
+            let res = osdefs.accept(SocketHandle(server.sock),
+                                    cast[ptr SockAddr](addr saddr), addr slen)
             if int(res) > 0:
               let sock =
                 try:
@@ -1975,7 +1975,7 @@ proc createStreamServer*(host: TransportAddress,
     elif host.family in {AddressFamily.Unix}:
       # We do not care about result here, because if file cannot be removed,
       # `bindAddr` will return EADDRINUSE.
-      discard posix.unlink(cast[cstring](unsafeAddr host.address_un[0]))
+      discard osdefs.unlink(cast[cstring](unsafeAddr host.address_un[0]))
 
     host.toSAddr(saddr, slen)
     if bindAddr(SocketHandle(serverSocket), cast[ptr SockAddr](addr saddr),
@@ -2096,10 +2096,10 @@ template fastWrite(transp: auto, pbytes: var ptr byte, rbytes: var int,
         let res =
           case transp.kind
           of TransportKind.Socket:
-            posix.send(SocketHandle(transp.fd), pbytes, rbytes,
+            osdefs.send(SocketHandle(transp.fd), pbytes, rbytes,
                        MSG_NOSIGNAL)
           of TransportKind.Pipe:
-            posix.write(cint(transp.fd), pbytes, rbytes)
+            osdefs.write(cint(transp.fd), pbytes, rbytes)
           else:
             raiseAssert "Unsupported transport kind: " & $transp.kind
         if res > 0:
