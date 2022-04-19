@@ -22,7 +22,7 @@ when defined(windows) or defined(nimdoc):
     PipeHeaderName = r"\\.\pipe\LOCAL\chronos\"
 else:
   const
-    asyncInvalidSocket* = AsyncFD(posix.INVALID_SOCKET)
+    asyncInvalidSocket* = AsyncFD(osdefs.INVALID_SOCKET)
 
 const
   asyncInvalidPipe* = asyncInvalidSocket
@@ -117,7 +117,7 @@ proc getMaxOpenFiles*(): int {.raises: [Defect, OSError].} =
     16384
   else:
     var limits: RLimit
-    if getrlimit(posix.RLIMIT_NOFILE, limits) != 0:
+    if getrlimit(osdefs.RLIMIT_NOFILE, limits) != 0:
       raiseOSError(osLastError())
     int(limits.rlim_cur)
 
@@ -129,10 +129,10 @@ proc setMaxOpenFiles*(count: int) {.raises: [Defect, OSError].} =
     discard
   else:
     var limits: RLimit
-    if getrlimit(posix.RLIMIT_NOFILE, limits) != 0:
+    if getrlimit(osdefs.RLIMIT_NOFILE, limits) != 0:
       raiseOSError(osLastError())
     limits.rlim_cur = count
-    if setrlimit(posix.RLIMIT_NOFILE, limits) != 0:
+    if setrlimit(osdefs.RLIMIT_NOFILE, limits) != 0:
       raiseOSError(osLastError())
 
 proc createAsyncPipe*(): tuple[read: AsyncFD, write: AsyncFD] =
@@ -195,7 +195,7 @@ proc createAsyncPipe*(): tuple[read: AsyncFD, write: AsyncFD] =
   else:
     var fds: array[2, cint]
 
-    if posix.pipe(fds) == -1:
+    if osdefs.pipe(fds) == -1:
       return (read: asyncInvalidPipe, write: asyncInvalidPipe)
 
     if not(setSocketBlocking(SocketHandle(fds[0]), false)) or
