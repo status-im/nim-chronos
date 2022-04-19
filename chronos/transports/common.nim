@@ -14,13 +14,8 @@ else:
 
 import std/[os, strutils, nativesockets, net]
 import stew/base10
-import ../asyncloop
+import ".."/[asyncloop, osdefs]
 export net
-
-when defined(windows) or defined(nimdoc):
-  import winlean
-else:
-  import posix
 
 const
   DefaultStreamBufferSize* = 4096    ## Default buffer size for stream
@@ -595,46 +590,6 @@ proc isLiteral*[T](s: seq[T]): bool {.inline.} =
     false
   else:
     (cast[ptr SeqHeader](s).reserved and (1 shl (sizeof(int) * 8 - 2))) != 0
-
-when defined(windows):
-  import winlean
-
-  const
-    ERROR_OPERATION_ABORTED* = 995
-    ERROR_PIPE_CONNECTED* = 535
-    ERROR_PIPE_BUSY* = 231
-    ERROR_SUCCESS* = 0
-    ERROR_CONNECTION_REFUSED* = 1225
-    PIPE_TYPE_BYTE* = 0
-    PIPE_READMODE_BYTE* = 0
-    PIPE_TYPE_MESSAGE* = 0x4
-    PIPE_READMODE_MESSAGE* = 0x2
-    PIPE_WAIT* = 0
-    PIPE_UNLIMITED_INSTANCES* = 255
-    ERROR_BROKEN_PIPE* = 109
-    ERROR_PIPE_NOT_CONNECTED* = 233
-    ERROR_NO_DATA* = 232
-    ERROR_CONNECTION_ABORTED* = 1236
-    ERROR_TOO_MANY_OPEN_FILES* = 4
-    WSAEMFILE* = 10024
-    WSAENETDOWN* = 10050
-    WSAENETRESET* = 10052
-    WSAECONNABORTED* = 10053
-    WSAECONNRESET* = 10054
-    WSAENOBUFS* = 10055
-    WSAETIMEDOUT* = 10060
-
-  proc cancelIo*(hFile: Handle): WINBOOL
-       {.stdcall, dynlib: "kernel32", importc: "CancelIo".}
-  proc connectNamedPipe*(hPipe: Handle, lpOverlapped: ptr OVERLAPPED): WINBOOL
-       {.stdcall, dynlib: "kernel32", importc: "ConnectNamedPipe".}
-  proc disconnectNamedPipe*(hPipe: Handle): WINBOOL
-       {.stdcall, dynlib: "kernel32", importc: "DisconnectNamedPipe".}
-  proc setNamedPipeHandleState*(hPipe: Handle, lpMode, lpMaxCollectionCount,
-                                lpCollectDataTimeout: ptr DWORD): WINBOOL
-       {.stdcall, dynlib: "kernel32", importc: "SetNamedPipeHandleState".}
-  proc resetEvent*(hEvent: Handle): WINBOOL
-       {.stdcall, dynlib: "kernel32", importc: "ResetEvent".}
 
 template getTransportTooManyError*(code: int = 0): ref TransportTooManyError =
   let msg =

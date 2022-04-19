@@ -13,11 +13,11 @@ when (NimMajor, NimMinor) < (1, 4):
 else:
   {.push raises: [].}
 
-import std/[os, tables, strutils, heapqueue, lists, nativesockets, net,
+import std/[tables, strutils, heapqueue, lists, options, nativesockets, net,
             deques]
 import stew/results
 
-import ./timer
+import ./timer, ./osdefs
 
 export Port, SocketFlag
 export timer, results
@@ -177,7 +177,7 @@ const
   MaxEventsCount* = 64
 
 when defined(windows):
-  import winlean, sets, hashes
+  import sets, hashes
 elif unixPlatform:
   import ./selectors2
   from posix import EINTR, EAGAIN, EINPROGRESS, EWOULDBLOCK, MSG_PEEK,
@@ -327,7 +327,7 @@ when defined(windows):
     CompletionData* = object
       cb*: CallbackFunc
       errCode*: OSErrorCode
-      bytesCount*: int32
+      bytesCount*: uint32
       cell*: ForeignCell # we need this `cell` to protect our `cb` environment,
                          # when using `RegisterWaitForSingleObject()`, because
                          # waiting is done in different thread.
@@ -367,25 +367,19 @@ when defined(windows):
   proc hash(x: AsyncFD): Hash {.borrow.}
   proc `==`*(x: AsyncFD, y: AsyncFD): bool {.borrow, gcsafe.}
 
-  proc getFunc(s: SocketHandle, fun: var pointer, guid: var GUID): bool =
+  proc getFunc(s: SocketHandle, fun: var pointer, guid: GUID): bool =
     var bytesRet: DWORD
     fun = nil
-    result = WSAIoctl(s, SIO_GET_EXTENSION_FUNCTION_POINTER, addr guid,
+    result = wsaIoctl(s, SIO_GET_EXTENSION_FUNCTION_POINTER, unsafeAddr guid,
                       sizeof(GUID).DWORD, addr fun, sizeof(pointer).DWORD,
                       addr bytesRet, nil, nil) == 0
 
   proc globalInit() {.raises: [Defect, OSError].} =
     var wsa: WSAData
-    if wsaStartup(0x0202'i16, addr wsa) != 0:
+    if wsaStartup(0x0202'u16, addr wsa) != 0:
       raiseOSError(osLastError())
 
   proc initAPI(loop: PDispatcher) {.raises: [Defect, CatchableError].} =
-    var
-      WSAID_TRANSMITFILE = GUID(
-        D1: 0xb5367df0'i32, D2: 0xcbac'i16, D3: 0x11cf'i16,
-        D4: [0x95'i8, 0xca'i8, 0x00'i8, 0x80'i8,
-             0x5f'i8, 0x48'i8, 0xa1'i8, 0x92'i8])
-
     let kernel32 = getModuleHandle(newWideCString("kernel32.dll"))
     loop.getQueuedCompletionStatusEx = cast[LPFN_GETQUEUEDCOMPLETIONSTATUSEX](
       getProcAddress(kernel32, "GetQueuedCompletionStatusEx"))
@@ -420,7 +414,8 @@ when defined(windows):
   proc newDispatcher*(): PDispatcher {.raises: [Defect, CatchableError].} =
     ## Creates a new Dispatcher instance.
     var res = PDispatcher()
-    res.ioPort = createIoCompletionPort(INVALID_HANDLE_VALUE, 0, 0, 1)
+    res.ioPort = createIoCompletionPort(osdefs.INVALID_HANDLE_VALUE,
+                                        HANDLE(0), 0, 1)
     when declared(initHashSet):
       # After 0.20.0 Nim's stdlib version
       res.handles = initHashSet[AsyncFD]()
@@ -445,7 +440,7 @@ when defined(windows):
   proc setThreadDispatcher*(disp: PDispatcher) {.gcsafe, raises: [Defect].}
   proc getThreadDispatcher*(): PDispatcher {.gcsafe, raises: [Defect].}
 
-  proc getIoHandler*(disp: PDispatcher): Handle =
+  proc getIoHandler*(disp: PDispatcher): HANDLE =
     ## Returns the underlying IO Completion Port handle (Windows) or selector
     ## (Unix) for the specified dispatcher.
     return disp.ioPort
@@ -453,8 +448,8 @@ when defined(windows):
   proc register*(fd: AsyncFD) {.raises: [Defect, CatchableError].} =
     ## Register file descriptor ``fd`` in thread's dispatcher.
     let loop = getThreadDispatcher()
-    if createIoCompletionPort(fd.Handle, loop.ioPort,
-                              cast[CompletionKey](fd), 1) == 0:
+    if createIoCompletionPort(HANDLE(fd), loop.ioPort, cast[CompletionKey](fd),
+                              1) == osdefs.INVALID_HANDLE_VALUE:
       raiseOSError(osLastError())
     loop.handles.incl(fd)
 
@@ -462,8 +457,8 @@ when defined(windows):
        raises: [Defect].} =
     ## Register file descriptor ``fd`` in thread's dispatcher.
     let loop = getThreadDispatcher()
-    if createIoCompletionPort(fd.Handle, loop.ioPort,
-                              cast[CompletionKey](fd), 1) == 0:
+    if createIoCompletionPort(HANDLE(fd), loop.ioPort, cast[CompletionKey](fd),
+                              1) == osdefs.INVALID_HANDLE_VALUE:
       return err(osLastError())
     loop.handles.incl(fd)
     ok()
@@ -573,7 +568,7 @@ when defined(windows):
     ## Closes a (pipe/file) handle and ensures that it is unregistered.
     let loop = getThreadDispatcher()
     loop.handles.excl(fd)
-    discard closeHandle(Handle(fd))
+    discard closeHandle(HANDLE(fd))
     if not isNil(aftercb):
       var acb = AsyncCallback(function: aftercb)
       loop.callbacks.addLast(acb)

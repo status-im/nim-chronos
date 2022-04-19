@@ -13,18 +13,8 @@ else:
   {.push raises: [].}
 
 import std/[net, nativesockets, os, deques]
-import ".."/[selectors2, asyncloop, handles]
+import ".."/[selectors2, asyncloop, osdefs, handles]
 import ./common
-
-when defined(windows) or defined(nimdoc):
-  import winlean
-else:
-  import posix
-  when (defined(linux) and not defined(android)) and defined(amd64):
-    const IP_MULTICAST_TTL: cint = 33
-  else:
-    var IP_MULTICAST_TTL* {.importc: "IP_MULTICAST_TTL",
-                            header: "<netinet/in.h>".}: cint
 
 type
   VectorKind = enum
@@ -61,9 +51,9 @@ type
     when defined(windows):
       rovl: CustomOverlapped          # Reader OVERLAPPED structure
       wovl: CustomOverlapped          # Writer OVERLAPPED structure
-      rflag: int32                    # Reader flags storage
-      rwsabuf: TWSABuf                # Reader WSABUF structure
-      wwsabuf: TWSABuf                # Writer WSABUF structure
+      rflag: uint32                    # Reader flags storage
+      rwsabuf: WSABUF                 # Reader WSABUF structure
+      wwsabuf: WSABUF                 # Writer WSABUF structure
 
   DgramTransportTracker* = ref object of TrackerBase
     opened*: int64
@@ -82,7 +72,7 @@ proc remoteAddress*(transp: DatagramTransport): TransportAddress {.
                    addr slen) != 0:
       raiseTransportOsError(osLastError())
     fromSAddr(addr saddr, slen, transp.remote)
-  result = transp.remote
+  transp.remote
 
 proc localAddress*(transp: DatagramTransport): TransportAddress {.
     raises: [Defect, TransportOsError].} =
@@ -94,7 +84,7 @@ proc localAddress*(transp: DatagramTransport): TransportAddress {.
                    addr slen) != 0:
       raiseTransportOsError(osLastError())
     fromSAddr(addr saddr, slen, transp.local)
-  result = transp.local
+  transp.local
 
 template setReadError(t, e: untyped) =
   (t).state.incl(ReadError)
@@ -133,38 +123,13 @@ proc setupDgramTransportTracker(): DgramTransportTracker {.gcsafe.} =
   result.isLeaked = leakTransport
   addTracker(DgramTransportTrackerName, result)
 
-when defined(nimdoc):
-  proc newDatagramTransportCommon(cbproc: DatagramCallback,
-                                  remote: TransportAddress,
-                                  local: TransportAddress,
-                                  sock: AsyncFD,
-                                  flags: set[ServerFlags],
-                                  udata: pointer,
-                                  child: DatagramTransport,
-                                  bufferSize: int,
-                                  ttl: int): DatagramTransport {.
-      raises: [Defect, CatchableError].} =
-    discard
-
-  proc resumeRead(transp: DatagramTransport) {.inline.} =
-    discard
-
-  proc resumeWrite(transp: DatagramTransport) {.inline.} =
-    discard
-
-elif defined(windows):
+when defined(windows):
   template setWriterWSABuffer(t, v: untyped) =
     (t).wwsabuf.buf = cast[cstring](v.buf)
-    (t).wwsabuf.len = cast[int32](v.buflen)
-
-  const
-    IOC_VENDOR = DWORD(0x18000000)
-    SIO_UDP_CONNRESET = DWORD(winlean.IOC_IN) or IOC_VENDOR or DWORD(12)
-    IPPROTO_IP = DWORD(0)
-    IP_TTL = DWORD(4)
+    (t).wwsabuf.len = cast[ULONG](v.buflen)
 
   proc writeDatagramLoop(udata: pointer) =
-    var bytesCount: int32
+    var bytesCount: uint32
     var ovl = cast[PtrCustomOverlapped](udata)
     var transp = cast[DatagramTransport](ovl.data.udata)
     while len(transp.queue) > 0:
@@ -176,7 +141,7 @@ elif defined(windows):
         if err == OSErrorCode(-1):
           if not(vector.writer.finished()):
             vector.writer.complete()
-        elif int(err) == ERROR_OPERATION_ABORTED:
+        elif int(err) == osdefs.ERROR_OPERATION_ABORTED:
           # CancelIO() interrupt
           transp.state.incl(WritePaused)
           if not(vector.writer.finished()):
@@ -191,26 +156,26 @@ elif defined(windows):
         let fd = SocketHandle(transp.fd)
         var vector = transp.queue.popFirst()
         transp.setWriterWSABuffer(vector)
-        var ret: cint
-        if vector.kind == WithAddress:
-          var fixedAddress = windowsAnyAddressFix(vector.address)
-          toSAddr(fixedAddress, transp.waddr, transp.walen)
-          ret = WSASendTo(fd, addr transp.wwsabuf, DWORD(1), addr bytesCount,
-                          DWORD(0), cast[ptr SockAddr](addr transp.waddr),
-                          cint(transp.walen),
-                          cast[POVERLAPPED](addr transp.wovl), nil)
-        else:
-          ret = WSASend(fd, addr transp.wwsabuf, DWORD(1), addr bytesCount,
-                        DWORD(0), cast[POVERLAPPED](addr transp.wovl), nil)
+        let ret =
+          if vector.kind == WithAddress:
+            var fixedAddress = windowsAnyAddressFix(vector.address)
+            toSAddr(fixedAddress, transp.waddr, transp.walen)
+            wsaSendTo(fd, addr transp.wwsabuf, DWORD(1), addr bytesCount,
+                      DWORD(0), cast[ptr SockAddr](addr transp.waddr),
+                      cint(transp.walen),
+                      cast[POVERLAPPED](addr transp.wovl), nil)
+          else:
+            wsaSend(fd, addr transp.wwsabuf, DWORD(1), addr bytesCount,
+                    DWORD(0), cast[POVERLAPPED](addr transp.wovl), nil)
         if ret != 0:
           let err = osLastError()
-          if int(err) == ERROR_OPERATION_ABORTED:
+          if int(err) == osdefs.ERROR_OPERATION_ABORTED:
             # CancelIO() interrupt
             transp.state.excl(WritePending)
             transp.state.incl(WritePaused)
             if not(vector.writer.finished()):
               vector.writer.complete()
-          elif int(err) == ERROR_IO_PENDING:
+          elif int(err) == osdefs.ERROR_IO_PENDING:
             transp.queue.addFirst(vector)
           else:
             transp.state.excl(WritePending)
@@ -226,7 +191,7 @@ elif defined(windows):
 
   proc readDatagramLoop(udata: pointer) =
     var
-      bytesCount: int32
+      bytesCount: uint32
       raddr: TransportAddress
     var ovl = cast[PtrCustomOverlapped](udata)
     var transp = cast[DatagramTransport](ovl.data.udata)
@@ -240,9 +205,9 @@ elif defined(windows):
           if bytesCount == 0:
             transp.state.incl({ReadEof, ReadPaused})
           fromSAddr(addr transp.raddr, transp.ralen, raddr)
-          transp.buflen = bytesCount
+          transp.buflen = int(bytesCount)
           asyncCheck transp.function(transp, raddr)
-        elif int(err) == ERROR_OPERATION_ABORTED:
+        elif int(err) == osdefs.ERROR_OPERATION_ABORTED:
           # CancelIO() interrupt or closeSocket() call.
           transp.state.incl(ReadPaused)
           if ReadClosed in transp.state and not(transp.future.finished()):
@@ -264,22 +229,22 @@ elif defined(windows):
           let fd = SocketHandle(transp.fd)
           transp.rflag = 0
           transp.ralen = SockLen(sizeof(Sockaddr_storage))
-          let ret = WSARecvFrom(fd, addr transp.rwsabuf, DWORD(1),
+          let ret = wsaRecvFrom(fd, addr transp.rwsabuf, DWORD(1),
                                 addr bytesCount, addr transp.rflag,
                                 cast[ptr SockAddr](addr transp.raddr),
                                 cast[ptr cint](addr transp.ralen),
                                 cast[POVERLAPPED](addr transp.rovl), nil)
           if ret != 0:
             let err = osLastError()
-            if int(err) == ERROR_OPERATION_ABORTED:
+            if int(err) == osdefs.ERROR_OPERATION_ABORTED:
               # CancelIO() interrupt
               transp.state.excl(ReadPending)
               transp.state.incl(ReadPaused)
-            elif int(err) == common.WSAECONNRESET:
+            elif int(err) == osdefs.WSAECONNRESET:
               transp.state.excl(ReadPending)
               transp.state.incl({ReadPaused, ReadEof})
               break
-            elif int(err) == ERROR_IO_PENDING:
+            elif int(err) == osdefs.ERROR_IO_PENDING:
               discard
             else:
               transp.state.excl(ReadPending)
@@ -339,21 +304,21 @@ elif defined(windows):
 
     ## Apply ServerFlags here
     if ServerFlags.ReuseAddr in flags:
-      if not setSockOpt(localSock, SOL_SOCKET, SO_REUSEADDR, 1):
+      if not setSockOpt(localSock, osdefs.SOL_SOCKET, osdefs.SO_REUSEADDR, 1):
         let err = osLastError()
         if sock == asyncInvalidSocket:
           closeSocket(localSock)
         raiseTransportOsError(err)
 
     if ServerFlags.Broadcast in flags:
-      if not setSockOpt(localSock, SOL_SOCKET, SO_BROADCAST, 1):
+      if not setSockOpt(localSock, osdefs.SOL_SOCKET, osdefs.SO_BROADCAST, 1):
         let err = osLastError()
         if sock == asyncInvalidSocket:
           closeSocket(localSock)
         raiseTransportOsError(err)
 
       if ttl > 0:
-        if not setSockOpt(localSock, IPPROTO_IP, IP_TTL, DWORD(ttl)):
+        if not setSockOpt(localSock, osdefs.IPPROTO_IP, osdefs.IP_TTL, ttl):
           let err = osLastError()
           if sock == asyncInvalidSocket:
             closeSocket(localSock)
@@ -362,7 +327,7 @@ elif defined(windows):
     ## Fix for Q263823.
     var bytesRet: DWORD
     var bval = WINBOOL(0)
-    if WSAIoctl(SocketHandle(localSock), SIO_UDP_CONNRESET, addr bval,
+    if wsaIoctl(SocketHandle(localSock), osdefs.SIO_UDP_CONNRESET, addr bval,
                 sizeof(WINBOOL).DWORD, nil, DWORD(0),
                 addr bytesRet, nil, nil) != 0:
       raiseTransportOsError(osLastError())
@@ -413,8 +378,8 @@ elif defined(windows):
                                       udata: cast[pointer](result))
     result.wovl.data = CompletionData(cb: writeDatagramLoop,
                                       udata: cast[pointer](result))
-    result.rwsabuf = TWSABuf(buf: cast[cstring](addr result.buffer[0]),
-                             len: int32(len(result.buffer)))
+    result.rwsabuf = WSABUF(buf: cast[cstring](addr result.buffer[0]),
+                            len: ULONG(len(result.buffer)))
     GC_ref(result)
     # Start tracking transport
     trackDgram(result)
@@ -423,6 +388,8 @@ elif defined(windows):
     else:
       result.state.incl(ReadPaused)
 
+elif defined(nimdoc):
+  discard
 else:
   # Linux/BSD/MacOS part
 

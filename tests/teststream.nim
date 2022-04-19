@@ -12,9 +12,8 @@ import ../chronos
 when defined(nimHasUsed): {.used.}
 
 when defined(windows):
-  import winlean
-else:
-  import posix
+  proc get_osfhandle*(fd: FileHandle): HANDLE {.
+       importc: "_get_osfhandle", header:"<io.h>".}
 
 suite "Stream Transport test suite":
   const

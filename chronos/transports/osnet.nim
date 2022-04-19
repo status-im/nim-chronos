@@ -17,11 +17,16 @@ else:
 
 import std/algorithm
 from std/strutils import toHex
+import ".."/osdefs
 import ./ipnet
 export ipnet
 
 const
-  MaxAdapterAddressLength* = 8
+  MaxAdapterAddressLength* =
+    when defined(windows):
+      MAX_ADAPTER_ADDRESS_LENGTH
+    else:
+      8
 
 type
   InterfaceType* = enum
@@ -1202,137 +1207,11 @@ elif defined(macosx) or defined(bsd):
     res
 
 elif defined(windows):
-  import winlean, dynlib
+  import dynlib
 
   const
     WorkBufferSize = 16384'u32
     MaxTries = 3
-
-    AF_UNSPEC = 0x00'u32
-
-    GAA_FLAG_INCLUDE_PREFIX = 0x0010'u32
-
-    CP_UTF8 = 65001'u32
-
-    ERROR_BUFFER_OVERFLOW* = 111'u32
-    ERROR_SUCCESS* = 0'u32
-
-  type
-    WCHAR = distinct uint16
-
-    SocketAddress = object
-      lpSockaddr: ptr SockAddr
-      iSockaddrLength: cint
-
-    IpAdapterUnicastAddressXpLh = object
-      length: uint32
-      flags: uint32
-      next: ptr IpAdapterUnicastAddressXpLh
-      address: SocketAddress
-      prefixOrigin: cint
-      suffixOrigin: cint
-      dadState: cint
-      validLifetime: uint32
-      preferredLifetime: uint32
-      leaseLifetime: uint32
-      onLinkPrefixLength: byte # This field is available only from Vista
-
-    IpAdapterAnycastAddressXp = object
-      length: uint32
-      flags: uint32
-      next: ptr IpAdapterAnycastAddressXp
-      address: SocketAddress
-
-    IpAdapterMulticastAddressXp = object
-      length: uint32
-      flags: uint32
-      next: ptr IpAdapterMulticastAddressXp
-      address: SocketAddress
-
-    IpAdapterDnsServerAddressXp = object
-      length: uint32
-      flags: uint32
-      next: ptr IpAdapterDnsServerAddressXp
-      address: SocketAddress
-
-    IpAdapterPrefixXp = object
-      length: uint32
-      flags: uint32
-      next: ptr IpAdapterPrefixXp
-      address: SocketAddress
-      prefixLength: uint32
-
-    IpAdapterAddressesXp = object
-      length: uint32
-      ifIndex: uint32
-      next: ptr IpAdapterAddressesXp
-      adapterName: cstring
-      unicastAddress: ptr IpAdapterUnicastAddressXpLh
-      anycastAddress: ptr IpAdapterAnycastAddressXp
-      multicastAddress: ptr IpAdapterMulticastAddressXp
-      dnsServerAddress: ptr IpAdapterDnsServerAddressXp
-      dnsSuffix: ptr WCHAR
-      description: ptr WCHAR
-      friendlyName: ptr WCHAR
-      physicalAddress: array[MaxAdapterAddressLength, byte]
-      physicalAddressLength: uint32
-      flags: uint32
-      mtu: uint32
-      ifType: uint32
-      operStatus: cint
-      ipv6IfIndex: uint32
-      zoneIndices: array[16, uint32]
-      firstPrefix: ptr IpAdapterPrefixXp
-
-    MibIpForwardRow = object
-      dwForwardDest: uint32
-      dwForwardMask: uint32
-      dwForwardPolicy: uint32
-      dwForwardNextHop: uint32
-      dwForwardIfIndex: uint32
-      dwForwardType: uint32
-      dwForwardProto: uint32
-      dwForwardAge: uint32
-      dwForwardNextHopAS: uint32
-      dwForwardMetric1: uint32
-      dwForwardMetric2: uint32
-      dwForwardMetric3: uint32
-      dwForwardMetric4: uint32
-      dwForwardMetric5: uint32
-
-    SOCKADDR_INET {.union.} = object
-      ipv4: Sockaddr_in
-      ipv6: Sockaddr_in6
-      si_family: uint16
-
-    IPADDRESS_PREFIX = object
-      prefix: SOCKADDR_INET
-      prefixLength: uint8
-
-    MibIpForwardRow2 = object
-      interfaceLuid: uint64
-      interfaceIndex: uint32
-      destinationPrefix: IPADDRESS_PREFIX
-      nextHop: SOCKADDR_INET
-      sitePrefixLength: byte
-      validLifetime: uint32
-      preferredLifetime: uint32
-      metric: uint32
-      protocol: uint32
-      loopback: bool
-      autoconfigureAddress: bool
-      publish: bool
-      immortal: bool
-      age: uint32
-      origin: uint32
-
-    GETBESTROUTE2 = proc(InterfaceLuid: ptr uint64, InterfaceIndex: uint32,
-                         SourceAddress: ptr SOCKADDR_INET,
-                         DestinationAddress: ptr SOCKADDR_INET,
-                         AddressSortOptions: uint32,
-                         BestRoute: ptr MibIpForwardRow2,
-                         BestSourceAddress: ptr SOCKADDR_INET): DWORD {.
-                    gcsafe, stdcall, raises: [].}
 
   proc toInterfaceType(ft: uint32): InterfaceType {.inline.} =
     if (ft >= 1'u32 and ft <= 196'u32) or
@@ -1347,32 +1226,13 @@ elif defined(windows):
     else:
       StatusUnknown
 
-  proc GetAdaptersAddresses(family: uint32, flags: uint32, reserved: pointer,
-                            addresses: ptr IpAdapterAddressesXp,
-                            sizeptr: ptr uint32): uint32 {.
-       stdcall, dynlib: "iphlpapi", importc: "GetAdaptersAddresses",
-       raises: [].}
-
-  proc WideCharToMultiByte(CodePage: uint32, dwFlags: uint32,
-                           lpWideCharStr: ptr WCHAR, cchWideChar: cint,
-                           lpMultiByteStr: ptr char, cbMultiByte: cint,
-                           lpDefaultChar: ptr char,
-                           lpUsedDefaultChar: ptr uint32): cint
-       {.stdcall, dynlib: "kernel32.dll", importc: "WideCharToMultiByte",
-         raises: [].}
-
-  proc getBestRouteXp(dwDestAddr: uint32, dwSourceAddr: uint32,
-                      pBestRoute: ptr MibIpForwardRow): uint32 {.
-       stdcall, dynlib: "iphlpapi", importc: "GetBestRoute",
-       raises: [].}
-
   proc `$`(bstr: ptr WCHAR): string =
     var buffer: char
-    var count = WideCharToMultiByte(CP_UTF8, 0, bstr, -1, addr(buffer), 0,
+    var count = wideCharToMultiByte(CP_UTF8, 0, bstr, -1, addr(buffer), 0,
                                     nil, nil)
     if count > 0:
       var res = newString(count + 8)
-      let wres = WideCharToMultiByte(CP_UTF8, 0, bstr, -1, addr(res[0]),
+      let wres = wideCharToMultiByte(CP_UTF8, 0, bstr, -1, addr(res[0]),
                                      count, nil, nil)
       if wres > 0:
         res.setLen(wres - 1)
@@ -1385,7 +1245,7 @@ elif defined(windows):
   proc isVista(): bool =
     var ver: OSVERSIONINFO
     ver.dwOSVersionInfoSize = DWORD(sizeof(ver))
-    let res = getVersionExW(addr(ver))
+    let res = getVersionEx(addr(ver))
     if res == 0:
       false
     else:
@@ -1466,8 +1326,8 @@ elif defined(windows):
     while true:
       buffer = newSeq[byte](size)
       var addresses = cast[ptr IpAdapterAddressesXp](addr buffer[0])
-      gres = GetAdaptersAddresses(AF_UNSPEC, GAA_FLAG_INCLUDE_PREFIX, nil,
-                                  addresses, addr size)
+      gres = getAdaptersAddresses(osdefs.AF_UNSPEC, GAA_FLAG_INCLUDE_PREFIX,
+                                  nil, addresses, addr size)
       if gres == ERROR_SUCCESS:
         buffer.setLen(size)
         break
@@ -1525,14 +1385,14 @@ elif defined(windows):
                                 addr bestRoute,
                                 cast[ptr SOCKADDR_INET](addr src))
         if gres == 0:
-          if src.ss_family == winlean.AF_INET:
+          if src.ss_family == osdefs.AF_INET:
             fromSAddr(addr src, SockLen(sizeof(Sockaddr_in)), res.source)
-          elif src.ss_family == winlean.AF_INET6:
+          elif src.ss_family == osdefs.AF_INET6:
             fromSAddr(addr src, SockLen(sizeof(Sockaddr_in6)), res.source)
-          if bestRoute.nextHop.si_family == winlean.AF_INET:
+          if bestRoute.nextHop.si_family == osdefs.AF_INET:
             fromSAddr(cast[ptr Sockaddr_storage](addr bestRoute.nextHop),
                       SockLen(sizeof(Sockaddr_in)), res.gateway)
-          elif bestRoute.nextHop.si_family == winlean.AF_INET6:
+          elif bestRoute.nextHop.si_family == osdefs.AF_INET6:
             fromSAddr(cast[ptr Sockaddr_storage](addr bestRoute.nextHop),
                       SockLen(sizeof(Sockaddr_in6)), res.gateway)
           if res.gateway.isZero():

@@ -13,30 +13,16 @@ else:
   {.push raises: [].}
 
 import std/[net, nativesockets]
-import ./asyncloop
+import stew/base10
+import "."/[asyncloop, osdefs]
 
 when defined(windows) or defined(nimdoc):
-  import os, winlean, stew/base10
   const
     asyncInvalidSocket* = AsyncFD(-1)
-    TCP_NODELAY* = 1
-    IPPROTO_TCP* = 6
-    PIPE_TYPE_BYTE = 0x00000000'i32
-    PIPE_READMODE_BYTE = 0x00000000'i32
-    PIPE_WAIT = 0x00000000'i32
-    DEFAULT_PIPE_SIZE = 65536'i32
-    ERROR_PIPE_CONNECTED = 535
-    ERROR_PIPE_BUSY = 231
-    pipeHeaderName = r"\\.\pipe\LOCAL\chronos\"
-
-  proc connectNamedPipe(hNamedPipe: Handle, lpOverlapped: pointer): WINBOOL
-       {.importc: "ConnectNamedPipe", stdcall, dynlib: "kernel32".}
+    PipeHeaderName = r"\\.\pipe\LOCAL\chronos\"
 else:
-  import os, posix
   const
     asyncInvalidSocket* = AsyncFD(posix.INVALID_SOCKET)
-    TCP_NODELAY* = 1
-    IPPROTO_TCP* = 6
 
 const
   asyncInvalidPipe* = asyncInvalidSocket
@@ -95,7 +81,7 @@ proc getSockOpt*(socket: AsyncFD, level, optname: int, value: pointer,
 
 proc getSocketError*(socket: AsyncFD, err: var int): bool =
   ## Recover error code associated with socket handle ``socket``.
-  getSockOpt(socket, cint(SOL_SOCKET), cint(SO_ERROR), err)
+  getSockOpt(socket, cint(osdefs.SOL_SOCKET), cint(osdefs.SO_ERROR), err)
 
 proc createAsyncSocket*(domain: Domain, sockType: SockType,
                         protocol: Protocol): AsyncFD {.
@@ -154,21 +140,21 @@ proc createAsyncPipe*(): tuple[read: AsyncFD, write: AsyncFD] =
   ## Returns tuple of read pipe handle and write pipe handle``asyncInvalidPipe``
   ## on error.
   when defined(windows):
-    var pipeIn, pipeOut: Handle
+    var pipeIn, pipeOut: HANDLE
     var pipeName: string
     var uniq = 0'u64
-    var sa = SECURITY_ATTRIBUTES(nLength: sizeof(SECURITY_ATTRIBUTES).cint,
+    var sa = SECURITY_ATTRIBUTES(nLength: DWORD(sizeof(SECURITY_ATTRIBUTES)),
                                  lpSecurityDescriptor: nil, bInheritHandle: 0)
     while true:
       QueryPerformanceCounter(uniq)
-      pipeName = pipeHeaderName & Base10.toString(uniq)
+      pipeName = PipeHeaderName & Base10.toString(uniq)
 
       var openMode = FILE_FLAG_FIRST_PIPE_INSTANCE or FILE_FLAG_OVERLAPPED or
                      PIPE_ACCESS_INBOUND
       var pipeMode = PIPE_TYPE_BYTE or PIPE_READMODE_BYTE or PIPE_WAIT
       pipeIn = createNamedPipe(newWideCString(pipeName), openMode, pipeMode,
-                               1'i32, DEFAULT_PIPE_SIZE, DEFAULT_PIPE_SIZE,
-                               0'i32, addr sa)
+                               1'u32, DEFAULT_PIPE_SIZE, DEFAULT_PIPE_SIZE,
+                               0'u32, addr sa)
       if pipeIn == INVALID_HANDLE_VALUE:
         let err = osLastError()
         # If error in {ERROR_ACCESS_DENIED, ERROR_PIPE_BUSY}, then named pipe
@@ -180,8 +166,8 @@ proc createAsyncPipe*(): tuple[read: AsyncFD, write: AsyncFD] =
         break
 
     var openMode = (GENERIC_WRITE or FILE_WRITE_DATA or SYNCHRONIZE)
-    pipeOut = createFileW(newWideCString(pipeName), openMode, 0, addr(sa),
-                          OPEN_EXISTING, FILE_FLAG_OVERLAPPED, 0)
+    pipeOut = createFile(newWideCString(pipeName), openMode, 0, addr(sa),
+                         OPEN_EXISTING, FILE_FLAG_OVERLAPPED, HANDLE(0))
     if pipeOut == INVALID_HANDLE_VALUE:
       discard closeHandle(pipeIn)
       return (read: asyncInvalidPipe, write: asyncInvalidPipe)
