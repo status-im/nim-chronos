@@ -297,7 +297,7 @@ proc registerTimer*[T](s: Selector[T], timeout: int, oneshot: bool,
      raises: [Defect].} =
   let fdi = ? getUnique(s)
   if fdi >= s.maxFD:
-    return err(osdefs.EMFILE)
+    return err(OSErrorCode(osdefs.EMFILE))
   doAssert(s.fds[fdi].ident == InvalidIdent)
 
   let events = if oneshot: {Event.Timer, Event.Oneshot} else: {Event.Timer}
@@ -321,7 +321,7 @@ proc registerSignal*[T](s: Selector[T], signal: int,
      raises: [Defect].} =
   let fdi = ? getUnique(s)
   if fdi >= s.maxFD:
-    return err(osdefs.EMFILE)
+    return err(OSErrorCode(osdefs.EMFILE))
   doAssert(s.fds[fdi].ident == InvalidIdent)
 
   s.setKey(fdi, {Event.Signal}, signal, data)
@@ -353,7 +353,7 @@ proc registerProcess*[T](s: Selector[T], pid: int,
      raises: [Defect].} =
   let fdi = ? getUnique(s)
   if fdi >= s.maxFD:
-    return err(osdefs.EMFILE)
+    return err(OSErrorCode(osdefs.EMFILE))
   doAssert(s.fds[fdi].ident == InvalidIdent)
 
   var kflags: cushort = EV_ONESHOT or EV_ADD
