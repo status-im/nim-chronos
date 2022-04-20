@@ -7,7 +7,8 @@
 #              MIT license (LICENSE-MIT)
 import std/[strutils, os]
 import unittest2
-import ../chronos
+import ".."/chronos, ".."/chronos/osdefs
+
 
 when defined(nimHasUsed): {.used.}
 
