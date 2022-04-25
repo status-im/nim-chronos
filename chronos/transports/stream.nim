@@ -2580,7 +2580,7 @@ proc running*(transp: StreamTransport): bool {.inline.} =
 
 proc fromPipe*(fd: AsyncFD, child: StreamTransport = nil,
                bufferSize = DefaultStreamBufferSize): StreamTransport {.
-    raises: [Defect, CatchableError].} =
+    raises: [Defect, OSError].} =
   ## Create new transport object using pipe's file descriptor.
   ##
   ## ``bufferSize`` is size of internal buffer for transport.

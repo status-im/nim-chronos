@@ -38,6 +38,7 @@ when defined(windows):
     ULONG_PTR* = uint
     PULONG_PTR* = ptr uint
     WCHAR* = distinct uint16
+    GROUP* = uint32
 
     WSAData* {.importc: "WSADATA", header: "winsock2.h".} = object
       wVersion, wHighVersion: WORD
@@ -288,6 +289,12 @@ when defined(windows):
   proc setStdHandle*(nStdHandle: DWORD, hHandle: HANDLE): WINBOOL {.
        stdcall, dynlib: "kernel32", importc: "SetStdHandle", sideEffect.}
 
+  proc suspendThread*(hThread: HANDLE): DWORD {.
+      stdcall, dynlib: "kernel32", importc: "SuspendThread", sideEffect.}
+
+  proc resumeThread*(hThread: HANDLE): DWORD {.
+       stdcall, dynlib: "kernel32", importc: "ResumeThread", sideEffect.}
+
   proc closeHandle*(hObject: HANDLE): WINBOOL {.
        stdcall, dynlib: "kernel32", importc: "CloseHandle", sideEffect.}
 
@@ -394,6 +401,11 @@ when defined(windows):
   proc wsaGetLastError*(): cint {.
        stdcall, dynlib: "ws2_32", importc: "WSAGetLastError", sideEffect.}
 
+  proc wsaSocket*(af: cint, stype: cint, protocol: cint,
+                  lpProtocolInfo: pointer, g: GROUP,
+                  dwFlags: DWORD): SocketHandle {.
+       stdcall, dynlib: "ws2_32", importc: "WSASocketW", sideEffect.}
+
   proc socket*(af, typ, protocol: cint): SocketHandle {.
        stdcall, dynlib: "ws2_32", importc: "socket", sideEffect.}
 
@@ -418,6 +430,9 @@ when defined(windows):
   proc getpeername*(s: SocketHandle, name: ptr SockAddr,
                     namelen: ptr SockLen): cint {.
        stdcall, dynlib: "ws2_32", importc: "getpeername", sideEffect.}
+
+  proc ioctlsocket*(s: SocketHandle, cmd: clong, argp: ptr clong): cint {.
+       stdcall, dynlib: "ws2_32", importc: "ioctlsocket", sideEffect.}
 
   proc getaddrinfo*(nodename, servname: cstring, hints: ptr AddrInfo,
                     res: var ptr AddrInfo): cint {.
@@ -524,9 +539,11 @@ when defined(windows):
        stdcall, dynlib: "kernel32", importc: "QueryPerformanceFrequency",
        sideEffect.}
 
-  template WSAIORW*(x,y): untyped = (IOC_INOUT or x or y)
-
-  proc `==`*(x, y: HANDLE): bool {.borrow.}
+  template WSAIORW*(x, y): untyped = (IOC_INOUT or x or y)
+  template WSAIOW*(x, y): untyped =
+    cast[clong](IOC_IN) or
+      ((clong(sizeof(int32)) and clong(IOCPARM_MASK)) shl 16) or
+      (x shl 8) or y
 
   const
     WAIT_ABANDONED* = 0x80'u32
@@ -611,12 +628,13 @@ when defined(windows):
     AF_BTH* = 32
     AF_MAX* = 33
 
+    IOCPARM_MASK* = 0x7f'u32
     IOC_OUT* = 0x40000000'u32
     IOC_IN*  = 0x80000000'u32
     IOC_WS2* = 0x08000000'u32
     IOC_INOUT* = IOC_IN or IOC_OUT
 
-    INVALID_SOCKET* = SocketHandle(-1)
+    INVALID_SOCKET* = SocketHandle(not(0))
     INVALID_HANDLE_VALUE* = HANDLE(uint(not(0'u)))
 
     SIO_GET_EXTENSION_FUNCTION_POINTER* = WSAIORW(IOC_WS2, 6).DWORD
@@ -670,6 +688,59 @@ when defined(windows):
     SO_TYPE* = 0x1008
     TCP_NODELAY* = 1
 
+    STD_INPUT_HANDLE* = 0xFFFF_FFF6'u32
+    STD_OUTPUT_HANDLE* = 0xFFFF_FFF5'u32
+    STD_ERROR_HANDLE* = 0xFFFF_FFF4'u32
+
+    STARTF_USESHOWWINDOW* = 0x00000001'u32
+    STARTF_USESIZE* = 0x00000002'u32
+    STARTF_USEPOSITION* = 0x00000004'u32
+    STARTF_USECOUNTCHARS* = 0x00000008'u32
+    STARTF_USEFILLATTRIBUTE* = 0x00000010'u32
+    STARTF_RUNFULLSCREEN* = 0x00000020'u32
+    STARTF_FORCEONFEEDBACK* = 0x00000040'u32
+    STARTF_FORCEOFFFEEDBACK* = 0x00000080'u32
+    STARTF_USESTDHANDLES* = 0x00000100'u32
+    STARTF_USEHOTKEY* = 0x00000200'u32
+    STARTF_TITLEISLINKNAME* = 0x00000800'u32
+    STARTF_TITLEISAPPID* = 0x00001000'u32
+    STARTF_PREVENTPINNING* = 0x00002000'u32
+    STARTF_UNTRUSTEDSOURCE* = 0x00008000'u32
+
+    DEBUG_PROCESS* = 0x1'u32
+    DEBUG_ONLY_THIS_PROCESS* = 0x2'u32
+    CREATE_SUSPENDED* = 0x4'u32
+    DETACHED_PROCESS* = 0x8'u32
+    CREATE_NEW_CONSOLE* = 0x10'u32
+    NORMAL_PRIORITY_CLASS* = 0x20'u32
+    IDLE_PRIORITY_CLASS* = 0x40'u32
+    HIGH_PRIORITY_CLASS* = 0x80'u32
+    REALTIME_PRIORITY_CLASS* = 0x100'u32
+    CREATE_NEW_PROCESS_GROUP* = 0x200'u32
+    CREATE_UNICODE_ENVIRONMENT* = 0x400'u32
+    CREATE_SEPARATE_WOW_VDM* = 0x800'u32
+    CREATE_SHARED_WOW_VDM* = 0x1000'u32
+    CREATE_FORCEDOS* = 0x2000'u32
+    BELOW_NORMAL_PRIORITY_CLASS* = 0x4000'u32
+    ABOVE_NORMAL_PRIORITY_CLASS* = 0x8000'u32
+    INHERIT_PARENT_AFFINITY* = 0x10000'u32
+    INHERIT_CALLER_PRIORITY* = 0x20000'u32
+    CREATE_PROTECTED_PROCESS* = 0x40000'u32
+    EXTENDED_STARTUPINFO_PRESENT* = 0x80000'u32
+    PROCESS_MODE_BACKGROUND_BEGIN* = 0x100000'u32
+    PROCESS_MODE_BACKGROUND_END* = 0x200000'u32
+    CREATE_SECURE_PROCESS* = 0x400000'u32
+    CREATE_BREAKAWAY_FROM_JOB* = 0x1000000'u32
+    CREATE_PRESERVE_CODE_AUTHZ_LEVEL* = 0x2000000'u32
+    CREATE_DEFAULT_ERROR_MODE* = 0x4000000'u32
+    CREATE_NO_WINDOW* = 0x8000000'u32
+    PROFILE_USER* = 0x10000000'u32
+    PROFILE_KERNEL* = 0x20000000'u32
+    PROFILE_SERVER* = 0x40000000'u32
+    CREATE_IGNORE_SYSTEM_DEFAULT* = 0x80000000'u32
+
+    STILL_ACTIVE* = 0x00000103'u32
+
     WSAID_CONNECTEX* =
       GUID(D1: 0x25a207b9'u32, D2: 0xddf3'u16, D3: 0x4660'u16,
            D4: [0x8e'u8, 0xe9'u8, 0x76'u8, 0xe5'u8,
@@ -692,6 +763,23 @@ when defined(windows):
     SYNCHRONIZE* = 0x00100000'u32
 
     CP_UTF8* = 65001'u32
+
+    WSA_FLAG_OVERLAPPED* = 0x01'u32
+    WSA_FLAG_NO_HANDLE_INHERIT* = 0x80'u32
+
+    FIONBIO* = WSAIOW(102, 126)
+
+  proc `==`*(x, y: HANDLE): bool {.borrow.}
+  proc `==`*(x, y: SocketHandle): bool {.borrow.}
+  proc `==`*(x: OSErrorCode, y: int): bool =
+    x == OSErrorCode(y)
+
+  proc getSecurityAttributes*(inheritHandle = false): SECURITY_ATTRIBUTES =
+    SECURITY_ATTRIBUTES(
+      nLength: DWORD(sizeof(SECURITY_ATTRIBUTES)),
+      lpSecurityDescriptor: nil,
+      bInheritHandle: if inheritHandle: TRUE else: FALSE
+    )
 
 elif defined(macosx):
   import std/[posix, os]
@@ -719,6 +807,10 @@ elif defined(linux):
   import std/[posix, os]
   export posix, os
 
+  const
+    SOCK_NONBLOCK* = 0x4000
+    SOCK_CLOEXEC* = 0x2000000
+
   when not defined(android) and defined(amd64):
     const IP_MULTICAST_TTL*: cint = 33
   else:
@@ -735,3 +827,23 @@ when not(defined(windows)):
   const
     TCP_NODELAY* = 1
     IPPROTO_TCP* = 6
+
+when defined(linux) or defined(freebsd) or defined(openbsd) or
+     defined(netbsd) or defined(dragonflybsd):
+
+  proc pipe2*(a: array[0..1, cint], flags: cint): cint {.
+       importc, header: "<unistd.h>".}
+
+when defined(linux):
+  const
+    SOCK_NONBLOCK* = 0x4000
+    SOCK_CLOEXEC* = 0x2000000
+elif defined(freebsd) or defined(netbsd) or defined(dragonflybsd):
+  const
+    SOCK_NONBLOCK* = 0x20000000
+    SOCK_CLOEXEC* = 0x10000000
+elif defined(openbsd):
+  const
+    SOCK_CLOEXEC* = 0x8000
+    SOCK_NONBLOCK* = 0x4000
+

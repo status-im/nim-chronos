@@ -13,12 +13,12 @@ when (NimMajor, NimMinor) < (1, 4):
 else:
   {.push raises: [].}
 
-import std/[tables, strutils, heapqueue, lists, options, nativesockets, net,
-            deques]
+from nativesockets import Port
+import std/[tables, strutils, heapqueue, lists, options, deques]
 import stew/results
 import "."/[osdefs, timer]
 
-export Port, SocketFlag
+export Port
 export timer, results
 
 #{.injectStmt: newGcInvariant().}
@@ -402,25 +402,25 @@ when defined(windows):
     var funcPointer: pointer = nil
     if not getFunc(sock, funcPointer, WSAID_CONNECTEX):
       let err = osLastError()
-      close(sock)
+      discard closeSocket(sock)
       raiseOSError(err)
     loop.connectEx = cast[WSAPROC_CONNECTEX](funcPointer)
     if not getFunc(sock, funcPointer, WSAID_ACCEPTEX):
       let err = osLastError()
-      close(sock)
+      discard closeSocket(sock)
       raiseOSError(err)
     loop.acceptEx = cast[WSAPROC_ACCEPTEX](funcPointer)
     if not getFunc(sock, funcPointer, WSAID_GETACCEPTEXSOCKADDRS):
       let err = osLastError()
-      close(sock)
+      discard closeSocket(sock)
       raiseOSError(err)
     loop.getAcceptExSockAddrs = cast[WSAPROC_GETACCEPTEXSOCKADDRS](funcPointer)
     if not getFunc(sock, funcPointer, WSAID_TRANSMITFILE):
       let err = osLastError()
-      close(sock)
+      discard closeSocket(sock)
       raiseOSError(err)
     loop.transmitFile = cast[WSAPROC_TRANSMITFILE](funcPointer)
-    close(sock)
+    discard closeSocket(sock)
 
   proc newDispatcher*(): PDispatcher {.raises: [Defect, CatchableError].} =
     ## Creates a new Dispatcher instance.
@@ -456,7 +456,7 @@ when defined(windows):
     ## (Unix) for the specified dispatcher.
     return disp.ioPort
 
-  proc register*(fd: AsyncFD) {.raises: [Defect, CatchableError].} =
+  proc register*(fd: AsyncFD) {.raises: [Defect, OSError].} =
     ## Register file descriptor ``fd`` in thread's dispatcher.
     let loop = getThreadDispatcher()
     if createIoCompletionPort(HANDLE(fd), loop.ioPort, cast[CompletionKey](fd),
@@ -708,7 +708,7 @@ when defined(windows):
     ## Closes a socket and ensures that it is unregistered.
     let loop = getThreadDispatcher()
     loop.handles.excl(fd)
-    close(SocketHandle(fd))
+    discard closeSocket(SocketHandle(fd))
     if not isNil(aftercb):
       var acb = AsyncCallback(function: aftercb)
       loop.callbacks.addLast(acb)

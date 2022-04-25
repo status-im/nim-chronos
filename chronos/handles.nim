@@ -12,8 +12,10 @@ when (NimMajor, NimMinor) < (1, 4):
 else:
   {.push raises: [].}
 
-import std/[net, nativesockets]
 import "."/[asyncloop, osdefs]
+from nativesockets import Domain, Protocol, SockType, toInt
+export Domain, Protocol, SockType
+
 
 when defined(windows) or defined(nimdoc):
   import stew/base10
@@ -31,17 +33,18 @@ proc setSocketBlocking*(s: SocketHandle, blocking: bool): bool =
   ## Sets blocking mode on socket.
   when defined(windows) or defined(nimdoc):
     var mode = clong(ord(not blocking))
-    if ioctlsocket(s, FIONBIO, addr(mode)) == -1:
+    if osdefs.ioctlsocket(s, osdefs.FIONBIO, addr(mode)) == -1:
       false
     else:
       true
   else:
-    let x: int = fcntl(s, F_GETFL, 0)
+    let x: int = osdefs.fcntl(s, osdefs.F_GETFL, 0)
     if x == -1:
       false
     else:
-      let mode = if blocking: x and not O_NONBLOCK else: x or O_NONBLOCK
-      if fcntl(s, F_SETFL, mode) == -1:
+      let mode =
+        if blocking: x and not(osdefs.O_NONBLOCK) else: x or osdefs.O_NONBLOCK
+      if osdefs.fcntl(s, osdefs.F_SETFL, mode) == -1:
         false
       else:
         true
@@ -50,23 +53,23 @@ proc setSockOpt*(socket: AsyncFD, level, optname, optval: int): bool =
   ## `setsockopt()` for integer options.
   ## Returns ``true`` on success, ``false`` on error.
   var value = cint(optval)
-  setsockopt(SocketHandle(socket), cint(level), cint(optname),
-             addr(value), SockLen(sizeof(value))) >= cint(0)
+  osdefs.setsockopt(SocketHandle(socket), cint(level), cint(optname),
+                    addr(value), SockLen(sizeof(value))) >= cint(0)
 
 proc setSockOpt*(socket: AsyncFD, level, optname: int, value: pointer,
                  valuelen: int): bool =
   ## `setsockopt()` for custom options (pointer and length).
   ## Returns ``true`` on success, ``false`` on error.
-  setsockopt(SocketHandle(socket), cint(level), cint(optname), value,
-             SockLen(valuelen)) >= cint(0)
+  osdefs.setsockopt(SocketHandle(socket), cint(level), cint(optname), value,
+                    SockLen(valuelen)) >= cint(0)
 
 proc getSockOpt*(socket: AsyncFD, level, optname: int, value: var int): bool =
   ## `getsockopt()` for integer options.
   ## Returns ``true`` on success, ``false`` on error.
   var res: cint
   var size = SockLen(sizeof(res))
-  if getsockopt(SocketHandle(socket), cint(level), cint(optname),
-                addr(res), addr(size)) >= cint(0):
+  if osdefs.getsockopt(SocketHandle(socket), cint(level), cint(optname),
+                       addr(res), addr(size)) >= cint(0):
     value = int(res)
     true
   else:
@@ -76,35 +79,83 @@ proc getSockOpt*(socket: AsyncFD, level, optname: int, value: pointer,
                  valuelen: var int): bool =
   ## `getsockopt()` for custom options (pointer and length).
   ## Returns ``true`` on success, ``false`` on error.
-  getsockopt(SocketHandle(socket), cint(level), cint(optname),
-             value, cast[ptr SockLen](addr valuelen)) >= cint(0)
+  osdefs.getsockopt(SocketHandle(socket), cint(level), cint(optname),
+                    value, cast[ptr SockLen](addr valuelen)) >= cint(0)
 
 proc getSocketError*(socket: AsyncFD, err: var int): bool =
   ## Recover error code associated with socket handle ``socket``.
   getSockOpt(socket, cint(osdefs.SOL_SOCKET), cint(osdefs.SO_ERROR), err)
 
 proc createAsyncSocket*(domain: Domain, sockType: SockType,
-                        protocol: Protocol): AsyncFD {.
-    raises: [Defect, CatchableError].} =
+                        protocol: Protocol, inherit = true): AsyncFD {.
+     raises: [Defect].} =
   ## Creates new asynchronous socket.
   ## Returns ``asyncInvalidSocket`` on error.
-  let handle = createNativeSocket(domain, sockType, protocol)
-  if handle == osInvalidSocket:
-    return asyncInvalidSocket
-  if not setSocketBlocking(handle, false):
-    close(handle)
-    return asyncInvalidSocket
-  register(AsyncFD(handle))
-  AsyncFD(handle)
+  when defined(windows):
+    let flags =
+      if inherit:
+        osdefs.WSA_FLAG_OVERLAPPED
+      else:
+        osdefs.WSA_FLAG_OVERLAPPED or osdefs.WSA_FLAG_NO_HANDLE_INHERIT
+    let fd = wsaSocket(toInt(domain), toInt(sockType), toInt(protocol),
+                       nil, GROUP(0), flags)
+    if fd == osdefs.INVALID_SOCKET:
+      return asyncInvalidSocket
+    if not(setSocketBlocking(fd, false)):
+      discard osdefs.closeSocket(fd)
+      return asyncInvalidSocket
+    try:
+      register(AsyncFD(fd))
+    except OSError:
+      discard osdefs.closeSocket(fd)
+      return asyncInvalidSocket
+    AsyncFD(fd)
+  else:
+    when declared(SOCK_NONBLOCK) and declared(SOCK_CLOEXEC):
+      let socketType =
+        if inherit:
+          toInt(sockType) or osdefs.SOCK_NONBLOCK
+        else:
+          toInt(sockType) or osdefs.SOCK_NONBLOCK or osdefs.SOCK_CLOEXEC
+      let fd = osdefs.socket(toInt(domain), socketType, toInt(protocol))
+      if fd == -1:
+        return asyncInvalidSocket
+      try:
+        register(AsyncFD(fd))
+      except OSError:
+        discard osdefs.close(fd)
+        return asyncInvalidSocket
+      AsyncFD(fd)
+    else:
+      let fd = osdefs.socket(toInt(domain), toInt(sockType), toInt(protocol))
+      if fd == -1:
+        return asyncInvalidSocket
+      if not(inherit):
+        if osdefs.fcntl(fd, osdefs.F_SETFD, osdefs.FD_CLOEXEC) == -1:
+          discard osdefs.close(fd)
+          return asyncInvalidSocket
+      if not(setSocketBlocking(fd, false)):
+        discard osdefs.close(fd)
+        return asyncInvalidSocket
+      try:
+        register(AsyncFD(handle))
+      except OSError:
+        discard osdefs.close(fd)
+        return asyncInvalidSocket
+      AsyncFD(handle)
 
 proc wrapAsyncSocket*(sock: SocketHandle): AsyncFD {.
-    raises: [Defect, CatchableError].} =
+     raises: [Defect].} =
   ## Wraps socket to asynchronous socket handle.
   ## Return ``asyncInvalidSocket`` on error.
-  if not setSocketBlocking(sock, false):
-    close(sock)
+  if not(setSocketBlocking(sock, false)):
+    discard osdefs.closeSocket(sock)
     return asyncInvalidSocket
-  register(AsyncFD(sock))
+  try:
+    register(AsyncFD(sock))
+  except OSError:
+    discard osdefs.closeSocket(sock)
+    return asyncInvalidSocket
   AsyncFD(sock)
 
 proc getMaxOpenFiles*(): int {.raises: [Defect, OSError].} =
@@ -117,7 +168,7 @@ proc getMaxOpenFiles*(): int {.raises: [Defect, OSError].} =
     16384
   else:
     var limits: RLimit
-    if getrlimit(osdefs.RLIMIT_NOFILE, limits) != 0:
+    if osdefs.getrlimit(osdefs.RLIMIT_NOFILE, limits) != 0:
       raiseOSError(osLastError())
     int(limits.rlim_cur)
 
@@ -129,13 +180,14 @@ proc setMaxOpenFiles*(count: int) {.raises: [Defect, OSError].} =
     discard
   else:
     var limits: RLimit
-    if getrlimit(osdefs.RLIMIT_NOFILE, limits) != 0:
+    if osdefs.getrlimit(osdefs.RLIMIT_NOFILE, limits) != 0:
       raiseOSError(osLastError())
     limits.rlim_cur = count
-    if setrlimit(osdefs.RLIMIT_NOFILE, limits) != 0:
+    if osdefs.setrlimit(osdefs.RLIMIT_NOFILE, limits) != 0:
       raiseOSError(osLastError())
 
-proc createAsyncPipe*(): tuple[read: AsyncFD, write: AsyncFD] =
+proc createAsyncPipe*(inherit = true): tuple[read: AsyncFD, write: AsyncFD] {.
+     raises: [Defect].}=
   ## Create new asynchronouse pipe.
   ## Returns tuple of read pipe handle and write pipe handle``asyncInvalidPipe``
   ## on error.
@@ -143,43 +195,45 @@ proc createAsyncPipe*(): tuple[read: AsyncFD, write: AsyncFD] =
     var pipeIn, pipeOut: HANDLE
     var pipeName: string
     var uniq = 0'u64
-    var sa = SECURITY_ATTRIBUTES(nLength: DWORD(sizeof(SECURITY_ATTRIBUTES)),
-                                 lpSecurityDescriptor: nil, bInheritHandle: 0)
+    var sa = getSecurityAttributes(inherit)
     while true:
       QueryPerformanceCounter(uniq)
       pipeName = PipeHeaderName & Base10.toString(uniq)
 
-      var openMode = FILE_FLAG_FIRST_PIPE_INSTANCE or FILE_FLAG_OVERLAPPED or
-                     PIPE_ACCESS_INBOUND
-      var pipeMode = PIPE_TYPE_BYTE or PIPE_READMODE_BYTE or PIPE_WAIT
+      var openMode = osdefs.FILE_FLAG_FIRST_PIPE_INSTANCE or
+                     osdefs.FILE_FLAG_OVERLAPPED or osdefs.PIPE_ACCESS_INBOUND
+      var pipeMode = osdefs.PIPE_TYPE_BYTE or osdefs.PIPE_READMODE_BYTE or
+                     osdefs.PIPE_WAIT
       pipeIn = createNamedPipe(newWideCString(pipeName), openMode, pipeMode,
-                               1'u32, DEFAULT_PIPE_SIZE, DEFAULT_PIPE_SIZE,
-                               0'u32, addr sa)
-      if pipeIn == INVALID_HANDLE_VALUE:
+                               1'u32, osdefs.DEFAULT_PIPE_SIZE,
+                               osdefs.DEFAULT_PIPE_SIZE, 0'u32, addr sa)
+      if pipeIn == osdefs.INVALID_HANDLE_VALUE:
         let err = osLastError()
         # If error in {ERROR_ACCESS_DENIED, ERROR_PIPE_BUSY}, then named pipe
         # with such name already exists.
-        if int32(err) != ERROR_ACCESS_DENIED and int32(err) != ERROR_PIPE_BUSY:
+        if err != osdefs.ERROR_ACCESS_DENIED and err != osdefs.ERROR_PIPE_BUSY:
           return (read: asyncInvalidPipe, write: asyncInvalidPipe)
         continue
       else:
         break
 
-    var openMode = (GENERIC_WRITE or FILE_WRITE_DATA or SYNCHRONIZE)
+    var openMode = osdefs.GENERIC_WRITE or osdefs.FILE_WRITE_DATA or
+                   osdefs.SYNCHRONIZE
     pipeOut = createFile(newWideCString(pipeName), openMode, 0, addr(sa),
-                         OPEN_EXISTING, FILE_FLAG_OVERLAPPED, HANDLE(0))
-    if pipeOut == INVALID_HANDLE_VALUE:
+                         osdefs.OPEN_EXISTING, osdefs.FILE_FLAG_OVERLAPPED,
+                         HANDLE(0))
+    if pipeOut == osdefs.INVALID_HANDLE_VALUE:
       discard closeHandle(pipeIn)
       return (read: asyncInvalidPipe, write: asyncInvalidPipe)
 
-    var ovl = OVERLAPPED()
+    var ovl = osdefs.OVERLAPPED()
     let res = connectNamedPipe(pipeIn, cast[pointer](addr ovl))
     if res == 0:
       let err = osLastError()
-      case int32(err)
-      of ERROR_PIPE_CONNECTED:
+      case int(err)
+      of osdefs.ERROR_PIPE_CONNECTED:
         discard
-      of ERROR_IO_PENDING:
+      of osdefs.ERROR_IO_PENDING:
         var bytesRead = 0.DWORD
         if getOverlappedResult(pipeIn, addr ovl, bytesRead, 1) == 0:
           discard closeHandle(pipeIn)
@@ -191,15 +245,36 @@ proc createAsyncPipe*(): tuple[read: AsyncFD, write: AsyncFD] =
         return (read: asyncInvalidPipe, write: asyncInvalidPipe)
 
     (read: AsyncFD(pipeIn), write: AsyncFD(pipeOut))
-  elif defined(nimdoc): discard
   else:
-    var fds: array[2, cint]
+    when declared(pipe2):
+      var fds: array[2, cint]
+      let flags =
+        if inherit:
+          osdefs.O_NONBLOCK
+        else:
+          osdefs.O_NONBLOCK or osdefs.O_CLOEXEC
 
-    if osdefs.pipe(fds) == -1:
-      return (read: asyncInvalidPipe, write: asyncInvalidPipe)
+      if osdefs.pipe2(fds, cint(flags)) == -1:
+        return (read: asyncInvalidPipe, write: asyncInvalidPipe)
 
-    if not(setSocketBlocking(SocketHandle(fds[0]), false)) or
-       not(setSocketBlocking(SocketHandle(fds[1]), false)):
-      return (read: asyncInvalidPipe, write: asyncInvalidPipe)
+      (read: AsyncFD(fds[0]), write: AsyncFD(fds[1]))
 
-    (read: AsyncFD(fds[0]), write: AsyncFD(fds[1]))
+    else:
+      var fds: array[2, cint]
+      if osdefs.pipe(fds) == -1:
+        return (read: asyncInvalidPipe, write: asyncInvalidPipe)
+
+      if not(inherit):
+        if fcntl(fds[0], osdefs.F_SETFD, osdefs.FD_CLOEXEC) == -1 or
+           fcntl(fds[1], osdefs.F_SETFD, osdefs.FD_CLOEXEC) == -1:
+          discard osdefs.close(fds[0])
+          discard osdefs.close(fds[1])
+          return (read: asyncInvalidPipe, write: asyncInvalidPipe)
+
+      if not(setSocketBlocking(SocketHandle(fds[0]), false)) or
+         not(setSocketBlocking(SocketHandle(fds[1]), false)):
+        discard osdefs.close(fds[0])
+        discard osdefs.close(fds[1])
+        return (read: asyncInvalidPipe, write: asyncInvalidPipe)
+
+      (read: AsyncFD(fds[0]), write: AsyncFD(fds[1]))
