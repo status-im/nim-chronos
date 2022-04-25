@@ -122,7 +122,7 @@ proc createAsyncSocket*(domain: Domain, sockType: SockType,
         return asyncInvalidSocket
       try:
         register(AsyncFD(fd))
-      except OSError:
+      except CatchableError:
         discard osdefs.close(fd)
         return asyncInvalidSocket
       AsyncFD(fd)
@@ -139,7 +139,7 @@ proc createAsyncSocket*(domain: Domain, sockType: SockType,
         return asyncInvalidSocket
       try:
         register(AsyncFD(handle))
-      except OSError:
+      except CatchableError:
         discard osdefs.close(fd)
         return asyncInvalidSocket
       AsyncFD(handle)
@@ -149,12 +149,18 @@ proc wrapAsyncSocket*(sock: SocketHandle): AsyncFD {.
   ## Wraps socket to asynchronous socket handle.
   ## Return ``asyncInvalidSocket`` on error.
   if not(setSocketBlocking(sock, false)):
-    discard osdefs.closeSocket(sock)
+    when defined(windows):
+      discard osdefs.closeSocket(sock)
+    else:
+      discard osdefs.close(sock)
     return asyncInvalidSocket
   try:
     register(AsyncFD(sock))
-  except OSError:
-    discard osdefs.closeSocket(sock)
+  except CatchableError:
+    when defined(windows):
+      discard osdefs.closeSocket(sock)
+    else:
+      discard osdefs.close(sock)
     return asyncInvalidSocket
   AsyncFD(sock)
 

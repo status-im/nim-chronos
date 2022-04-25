@@ -116,8 +116,8 @@ proc init*(t: typedesc[AsyncStreamHolder], handle: ProcessStreamHandle,
       let transp =
         try:
           fromPipe(handle.handle)
-        except OSError as exc:
-          return err(OSErrorCode(exc.errorCode))
+        except CatchableError:
+          return err(osLastError())
       let
         reader = newAsyncStreamReader(transp)
         flags = baseFlags + {StreamHolderFlag.Stream,
@@ -128,8 +128,8 @@ proc init*(t: typedesc[AsyncStreamHolder], handle: ProcessStreamHandle,
       let transp =
         try:
           fromPipe(handle.handle)
-        except OSError as exc:
-          return err(OSErrorCode(exc.errorCode))
+        except CatchableError:
+          return err(osLastError())
       let
         writer = newAsyncStreamWriter(transp)
         flags = baseFlags + {StreamHolderFlag.Stream,
@@ -242,8 +242,8 @@ when defined(windows):
     let res =
       try:
         fromPipe(AsyncFD(hFile))
-      except OSError as exc:
-        return err(OSErrorCode(exc.errorCode))
+      except CatchableError:
+        return err(osLastError())
     ok(res)
 
   proc buildEnvironment(env: StringTableRef): WideCString =

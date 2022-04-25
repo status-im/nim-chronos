@@ -770,9 +770,6 @@ when defined(windows):
     FIONBIO* = WSAIOW(102, 126)
 
   proc `==`*(x, y: HANDLE): bool {.borrow.}
-  proc `==`*(x, y: SocketHandle): bool {.borrow.}
-  proc `==`*(x: OSErrorCode, y: int): bool =
-    x == OSErrorCode(y)
 
   proc getSecurityAttributes*(inheritHandle = false): SECURITY_ATTRIBUTES =
     SECURITY_ATTRIBUTES(
@@ -806,10 +803,6 @@ elif defined(macosx):
 elif defined(linux):
   import std/[posix, os]
   export posix, os
-
-  const
-    SOCK_NONBLOCK* = 0x4000
-    SOCK_CLOEXEC* = 0x2000000
 
   when not defined(android) and defined(amd64):
     const IP_MULTICAST_TTL*: cint = 33
@@ -847,3 +840,19 @@ elif defined(openbsd):
     SOCK_CLOEXEC* = 0x8000
     SOCK_NONBLOCK* = 0x4000
 
+when defined(linux):
+  const O_CLOEXEC* = 0x02000000
+elif defined(freebsd):
+  const O_CLOEXEC* = 0x00100000
+elif defined(openbsd):
+  const O_CLOEXEC* = 0x10000
+elif defined(netbsd):
+  const O_CLOEXEC* = 0x00400000
+elif defined(dragonflybsd):
+  const O_CLOEXEC* = 0x00020000
+
+proc `==`*(x, y: SocketHandle): bool {.borrow.}
+proc `==`*(x: OSErrorCode, y: int): bool =
+  x == OSErrorCode(y)
+proc `==`*(x: SocketHandle, y: int): bool =
+  x == SocketHandle(y)
