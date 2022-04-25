@@ -926,10 +926,6 @@ elif defined(linux):
          SIGPIPE, SIGALRM, SIGTERM, SIGPIPE, SIGCHLD, SIGSTOP,
          SIGCONT
 
-  const
-    SOCK_NONBLOCK* = 0x4000
-    SOCK_CLOEXEC* = 0x2000000
-
   when not defined(android) and defined(amd64):
     const IP_MULTICAST_TTL*: cint = 33
   else:
