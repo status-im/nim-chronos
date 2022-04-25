@@ -545,6 +545,8 @@ when defined(windows):
       ((clong(sizeof(int32)) and clong(IOCPARM_MASK)) shl 16) or
       (x shl 8) or y
 
+  proc `==`*(x, y: SocketHandle): bool {.borrow.}
+
   const
     WAIT_ABANDONED* = 0x80'u32
     WAIT_OBJECT_0* = 0x00'u32
@@ -829,8 +831,8 @@ when defined(linux) or defined(freebsd) or defined(openbsd) or
 
 when defined(linux):
   const
-    SOCK_NONBLOCK* = 0x4000
-    SOCK_CLOEXEC* = 0x2000000
+    SOCK_NONBLOCK* = 0x800
+    SOCK_CLOEXEC* = 0x80000
 elif defined(freebsd) or defined(netbsd) or defined(dragonflybsd):
   const
     SOCK_NONBLOCK* = 0x20000000
@@ -851,7 +853,6 @@ elif defined(netbsd):
 elif defined(dragonflybsd):
   const O_CLOEXEC* = 0x00020000
 
-proc `==`*(x, y: SocketHandle): bool {.borrow.}
 proc `==`*(x: OSErrorCode, y: int): bool =
   x == OSErrorCode(y)
 proc `==`*(x: SocketHandle, y: int): bool =
