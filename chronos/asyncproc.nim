@@ -461,10 +461,10 @@ else:
        raises: [Defect].} =
     let itemsCount = len(t)
     var
-      res = cast[cstringArray](alloc0(itemsCount + 1) * sizeof(cstring))
+      res = cast[cstringArray](alloc0((itemsCount + 1) * sizeof(cstring)))
       i = 0
-    for key, val in pairs(t):
-      var x = key & "=" & val
+    for key, value in pairs(t):
+      var x = key & "=" & value
       res[i] = cast[cstring](alloc0(len(x) + 1))
       copyMem(res[i], addr(x[0]), len(x))
       inc(i)
@@ -480,7 +480,7 @@ else:
       res = cast[cstringArray](alloc0((itemsCount + 1) * sizeof(cstring)))
       i = 0
     for key, value in envPairs():
-      var x = string(key) & "=" & string(val)
+      var x = string(key) & "=" & string(value)
       res[i] = cast[cstring](alloc0(len(x) + 1))
       copyMem(res[i], addr(x[0]), len(x))
       inc(i)
@@ -497,18 +497,27 @@ else:
       raiseAssert "Incorrect stream holder"
 
   proc getCurrentDirectory(): AsyncProcessResult[string] {.raises: [Defect].} =
+    var bufsize = 1024
+    var res = newString(bufsize)
+
+    proc strLength(a: string): int {.nimcall.} =
+      for i in 0 ..< len(a):
+        if a[i] == '\x00':
+          return i
+      len(a)
+
     while true:
-      let res = osdefs.getcwd(nil, 0)
-      if isNil(res):
-        let errCode = ioLastError()
-        if errCode == EINTR:
-          continue
-        else:
-          return err(errCode)
+      if osdefs.getcwd(res, bufsize) != nil:
+        setLen(res, strLength(res))
+        return ok(res)
       else:
-        var buffer = $res
-        c_free(res)
-        return ok(buffer)
+        let errorCode = osLastError()
+        if errorCode == osdefs.ERANGE:
+          bufsize = bufsize shl 1
+          doAssert(bufsize >= 0)
+          res = newString(bufsize)
+        else:
+          return err(errorCode)
 
   proc setCurrentDirectory(dir: string): AsyncProcessResult[void] {.
        raises: [Defect].} =
@@ -539,7 +548,7 @@ else:
 
     let transp =
       try:
-        fromPipe(fd)
+        fromPipe(AsyncFD(fd))
       except CatchableError:
         discard osdefs.close(fd)
         return err(osLastError())
@@ -602,7 +611,8 @@ else:
             discard posixSpawnAttrDestroy(posixAttr)
             raise newException(AsyncProcessError, osErrorMsg(OSErrorCode(res)))
           value
-      mask = Sigset()
+      mask: Sigset
+      pid: Pid
     let
       pipes =
         block:
@@ -628,7 +638,7 @@ else:
     template checkSpawnError(e: untyped) =
       let res = e
       if res != 0:
-        currentError = res
+        currentError = OSErrorCode(res)
         raise newException(AsyncProcessError, osErrorMsg(currentError))
 
     template checkSigError(e: untyped) =
@@ -645,10 +655,10 @@ else:
       let flags =
         if AsyncProcessOption.ProcessGroup in options:
           checkSpawnError posixSpawnAttrSetPgroup(posixAttr, 0)
-          POSIX_SPAWN_USEVFORK or POSIX_SPAWN_SETSIGMASK or
-          POSIX_SPAWN_SETPGROUP
+          osdefs.POSIX_SPAWN_USEVFORK or osdefs.POSIX_SPAWN_SETSIGMASK or
+          osdefs.POSIX_SPAWN_SETPGROUP
         else:
-          POSIX_SPAWN_USEVFORK or POSIX_SPAWN_SETSIGMASK
+          osdefs.POSIX_SPAWN_USEVFORK or osdefs.POSIX_SPAWN_SETSIGMASK
       checkSpawnError posixSpawnAttrSetFlags(posixAttr, flags)
 
       if AsyncProcessOption.ParentStreams notin options:
@@ -695,7 +705,7 @@ else:
 
       if res != 0:
         await pipes.closeProcessStreams()
-      currentError = closeProcessHandles(pipes, options, res)
+      currentError = closeProcessHandles(pipes, options, OSErrorCode(res))
 
     finally:
       # Restore working directory
@@ -720,11 +730,11 @@ else:
 
       # Cleanup posix_spawn attributes and file operations
       if currentError == 0:
-        currentError = posixSpawnAttrDestroy(posixAttr)
+        currentError = OSErrorCode(posixSpawnAttrDestroy(posixAttr))
       else:
         discard posixSpawnAttrDestroy(posixAttr)
       if currentError == 0:
-        currentError = posixSpawnFileActionsDestroy(posixFops)
+        currentError = OSErrorCode(posixSpawnFileActionsDestroy(posixFops))
       else:
         discard posixSpawnFileActionsDestroy(posixFops)
 
@@ -890,19 +900,6 @@ proc stderrStream*(p: AsyncProcessRef): AsyncStreamReader {.
      raises: [Defect].} =
   doAssert(p.pipes.stderrHolder.kind == StreamKind.Reader)
   p.pipes.stderrHolder.reader
-
-proc test() {.async.} =
-  var hEvent = createEvent(nil, 0, 0, nil)
-  if hEvent == INVALID_HANDLE_VALUE:
-    raiseOSError(osLastError())
-
-  echo await waitForSingleObject(hEvent, 2.seconds)
-
-  var fut = waitForSingleObject(hEvent, InfiniteDuration)
-  await sleepAsync(2.seconds)
-  echo "fut.state = ", fut.state
-  discard setEvent(hEvent)
-  echo await fut
 
 when isMainModule:
   echo "here"
