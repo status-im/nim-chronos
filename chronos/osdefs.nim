@@ -853,6 +853,127 @@ elif defined(netbsd):
 elif defined(dragonflybsd):
   const O_CLOEXEC* = 0x00020000
 
+when defined(linux) or defined(macosx) or defined(freebsd) or
+     defined(openbsd) or defined(netbsd) or defined(dragonflybsd):
+  const
+    POSIX_SPAWN_RESETIDS* = 0x01
+    POSIX_SPAWN_SETPGROUP* = 0x02
+    POSIX_SPAWN_SETSCHEDPARAM* = 0x04
+    POSIX_SPAWN_SETSCHEDULER* = 0x08
+    POSIX_SPAWN_SETSIGDEF* = 0x10
+    POSIX_SPAWN_SETSIGMASK* = 0x20
+
+  type
+    SchedParam* {.importc: "struct sched_param", header: "<sched.h>",
+                  final, pure.} = object ## struct sched_param
+      sched_priority*: cint
+      sched_ss_low_priority*: cint     ## Low scheduling priority for
+                                       ## sporadic server.
+      sched_ss_repl_period*: Timespec  ## Replenishment period for
+                                       ## sporadic server.
+      sched_ss_init_budget*: Timespec  ## Initial budget for sporadic server.
+      sched_ss_max_repl*: cint         ## Maximum pending replenishments for
+                                       ## sporadic server.
+
+    PosixSpawnAttr* {.importc: "posix_spawnattr_t",
+                      header: "<spawn.h>", final, pure.} = object
+      flags*: cshort
+      pgrp*: Pid
+      sd*: Sigset
+      ss*: Sigset
+      sp*: SchedParam
+      policy*: cint
+      pad*: array[16, cint]
+
+    PosixSpawnFileActions* {.importc: "posix_spawn_file_actions_t",
+                             header: "<spawn.h>", final, pure.} = object
+      allocated*: cint
+      used*: cint
+      actions*: pointer
+      pad*: array[16, cint]
+
+  proc posixSpawn*(a1: var Pid, a2: cstring, a3: var PosixSpawnFileActions,
+                   a4: var PosixSpawnAttr, a5, a6: cstringArray): cint {.
+       importc: "posix_spawn", header: "<spawn.h>", sideEffect.}
+  proc posixSpawnp*(a1: var Pid, a2: cstring, a3: var PosixSpawnFileActions,
+                    a4: var PosixSpawnAttr, a5, a6: cstringArray): cint {.
+       importc: "posix_spawnp", header: "<spawn.h>", sideEffect.}
+
+  proc posixSpawnFileActionsInit*(a1: var PosixSpawnFileActions): cint {.
+       importc: "posix_spawn_file_actions_init", header: "<spawn.h>",
+       sideEffect.}
+  proc posixSpawnFileActionsDestroy*(a1: var PosixSpawnFileActions): cint {.
+       importc: "posix_spawn_file_actions_destroy", header: "<spawn.h>",
+       sideEffect.}
+
+  proc posixSpawnFileActionsAddClose*(a1: var PosixSpawnFileActions,
+                                      a2: cint): cint {.
+       importc: "posix_spawn_file_actions_addclose", header: "<spawn.h>",
+       sideEffect.}
+  proc posixSpawnFileActionsAddDup2*(a1: var PosixSpawnFileActions,
+                                     a2, a3: cint): cint {.
+       importc: "posix_spawn_file_actions_adddup2", header: "<spawn.h>",
+       sideEffect.}
+  proc posixSpawnFileActionsAddOpen*(a1: var PosixSpawnFileActions,
+                                     a2: cint, a3: cstring, a4: cint,
+                                     a5: Mode): cint {.
+       importc: "posix_spawn_file_actions_addopen", header: "<spawn.h>",
+       sideEffect.}
+
+  proc posixSpawnAttrInit*(a1: var PosixSpawnAttr): cint {.
+       importc: "posix_spawnattr_init", header: "<spawn.h>",
+       sideEffect.}
+  proc posixSpawnAttrDestroy*(a1: var PosixSpawnAttr): cint {.
+       importc: "posix_spawnattr_destroy", header: "<spawn.h>",
+       sideEffect.}
+
+  proc posixSpawnAttrGetSigDefault*(a1: var PosixSpawnAttr,
+                                    a2: var Sigset): cint {.
+       importc: "posix_spawnattr_getsigdefault", header: "<spawn.h>",
+       sideEffect.}
+  proc posixSpawnAttrSetSigDefault*(a1: var PosixSpawnAttr,
+                                    a2: var Sigset): cint {.
+       importc: "posix_spawnattr_setsigdefault", header: "<spawn.h>",
+       sideEffect.}
+  proc posixSpawnAttrGetFlags*(a1: var PosixSpawnAttr,
+                               a2: var cshort): cint {.
+       importc: "posix_spawnattr_getflags", header: "<spawn.h>",
+       sideEffect.}
+  proc posixSpawnAttrSetFlags*(a1: var PosixSpawnAttr, a2: cint): cint {.
+       importc: "posix_spawnattr_setflags", header: "<spawn.h>",
+       sideEffect.}
+  proc posixSpawnAttrGetPgroup*(a1: var PosixSpawnAttr,
+                                a2: var Pid): cint {.
+       importc: "posix_spawnattr_getpgroup", header: "<spawn.h>",
+       sideEffect.}
+  proc posixSpawnAttrSetPgroup*(a1: var PosixSpawnAttr, a2: Pid): cint {.
+       importc: "posix_spawnattr_setpgroup", header: "<spawn.h>",
+       sideEffect.}
+  proc posixSpawnAttrGetSchedParam*(a1: var PosixSpawnAttr,
+                                    a2: var SchedParam): cint {.
+       importc: "posix_spawnattr_getschedparam", header: "<spawn.h>",
+       sideEffect.}
+  proc posixSpawnAttrSetSchedParam*(a1: var PosixSpawnAttr,
+                                    a2: var SchedParam): cint {.
+       importc: "posix_spawnattr_setschedparam", header: "<spawn.h>",
+       sideEffect.}
+  proc posixSpawnAttrGetSchedPolicy*(a1: var PosixSpawnAttr,
+                                     a2: var cint): cint {.
+       importc: "posix_spawnattr_getschedpolicy", header: "<spawn.h>",
+       sideEffect.}
+  proc posixSpawnAttrSetSchedPolicy*(a1: var PosixSpawnAttr,
+                                     a2: cint): cint {.
+       importc: "posix_spawnattr_setschedpolicy", header: "<spawn.h>",
+       sideEffect.}
+  proc posixSpawnAttrGetSigMask*(a1: var PosixSpawnAttr,
+                                 a2: var Sigset): cint {.
+       importc: "posix_spawnattr_getsigmask", header: "<spawn.h>",
+       sideEffect.}
+  proc posixSpawnAttrSetSigMask*(a1: var PosixSpawnAttr,
+                                 a2: var Sigset): cint {.
+       importc: "posix_spawnattr_setsigmask", header: "<spawn.h>",
+       sideEffect.}
+
 proc `==`*(x: OSErrorCode, y: int): bool =
   x == OSErrorCode(y)
 proc `==`*(x: SocketHandle, y: int): bool =
