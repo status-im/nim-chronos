@@ -519,11 +519,11 @@ else:
     res
 
   template exitStatusLikeShell(status: int): int =
-    if WIFSIGNALED(status):
+    if WAITIFSIGNALED(status):
       # like the shell!
-      128 + WTERMSIG(status)
+      128 + WAITTERMSIG(status)
     else:
-      WEXITSTATUS(status)
+      WAITEXITSTATUS(status)
 
   proc getFd(h: AsyncStreamHolder): cint =
     doAssert(h.kind != StreamKind.None)
@@ -629,7 +629,7 @@ else:
                      stdinHandle = ProcessStreamHandle(),
                      stdoutHandle = ProcessStreamHandle(),
                      stderrHandle = ProcessStreamHandle(),
-                    ): Future[AsyncProcessRef] {.async.} =
+                   ): Future[AsyncProcessRef] {.async.} =
     var
       posixAttr =
         block:
@@ -791,7 +791,7 @@ else:
       return ok(p.exitStatus.get())
     let res = osdefs.waitpid(p.processId, wstatus, osdefs.WNOHANG)
     if res == p.processId:
-      if osdefs.WIFEXITED(wstatus) or osdefs.WIFSIGNALED(wstatus):
+      if WAITIFEXITED(wstatus) or WAITIFSIGNALED(wstatus):
         let status = int(wstatus)
         p.exitStatus = some(status)
         ok(status)
