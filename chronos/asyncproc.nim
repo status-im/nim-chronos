@@ -789,9 +789,9 @@ else:
     var wstatus: cint = 0
     if p.exitStatus.isSome():
       return ok(p.exitStatus.get())
-    let res = osdefs.waitpid(p.processId, wstatus, WNOHANG)
+    let res = osdefs.waitpid(p.processId, wstatus, osdefs.WNOHANG)
     if res == p.processId:
-      if WIFEXITED(wstatus) or WIFSIGNALED(wstatus):
+      if osdefs.WIFEXITED(wstatus) or osdefs.WIFSIGNALED(wstatus):
         let status = int(wstatus)
         p.exitStatus = some(status)
         ok(status)

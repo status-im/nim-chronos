@@ -803,7 +803,9 @@ elif defined(macos) or defined(macosx):
                           header: "<netinet/in.h>".}: cint
 
 elif defined(linux):
-  import std/[posix, os]
+  import std/posix except WNOHANG, WEXITSTATUS, WTERMSIG, WSTOPSIG, WIFEXITED,
+                          WIFSIGNALED, WIFSTOPPED, WIFCONTINUED
+  import std/os
   export posix, os
 
   when not defined(android) and defined(amd64):
@@ -812,7 +814,9 @@ elif defined(linux):
     var IP_MULTICAST_TTL* {.importc: "IP_MULTICAST_TTL",
                             header: "<netinet/in.h>".}: cint
 else:
-  import std/[posix, os]
+  import std/posix except WNOHANG, WEXITSTATUS, WTERMSIG, WSTOPSIG, WIFEXITED,
+                          WIFSIGNALED, WIFSTOPPED, WIFCONTINUED
+  import std/os
   export posix, os
 
   var IP_MULTICAST_TTL* {.importc: "IP_MULTICAST_TTL",
