@@ -489,6 +489,8 @@ when defined(windows):
     else:
       ok(-1)
 else:
+  from selectors2 import IOSelectorsException
+
   proc envToCStringArray(t: StringTableRef): cstringArray {.
        raises: [Defect].} =
     let itemsCount = len(t)
@@ -837,6 +839,7 @@ else:
                    timeout = InfiniteDuration): Future[int] =
     var
       retFuture = newFuture[int]("chronos.waitForExit()")
+      processHandle: int = 0
       wstatus: cint = 1
       timer: TimerCallback
 
@@ -873,32 +876,46 @@ else:
         if source == 1:
           clearTimer(timer)
         else:
-          removeProcess(int(p.processId))
+          try:
+            removeProcess(processHandle)
+          except IOSelectorsException:
+            retFuture.fail(newException(AsyncProcessError,
+                                        osErrorMsg(osLastError())))
+            return
           let res = p.terminate()
           if res.isErr():
             retFuture.fail(newException(AsyncProcessError,
-                                          osErrorMsg(pres.error())))
+                                        osErrorMsg(res.error())))
             return
         let exitCode =
           block:
-            let pres = p.peekProcessExitCode()
-            if pres.isErr():
+            let res = p.peekProcessExitCode()
+            if res.isErr():
               retFuture.fail(newException(AsyncProcessError,
-                                          osErrorMsg(pres.error())))
+                                          osErrorMsg(res.error())))
               return
-            pres.get()
+            res.get()
         if exitCode == -1:
           retFuture.complete(-1)
         else:
           retFuture.complete(exitStatusLikeShell(exitCode))
 
-    proc cancellation(udata: pointer) {.gccsafe.} =
+    proc cancellation(udata: pointer) {.gcsafe.} =
       if not(retFuture.finished()):
         clearTimer(timer)
-        removeProcess(int(p.processId))
+        try:
+          removeProcess(processHandle)
+        except IOSelectorsException:
+          # Ignore any exceptions because of cancellation.
+          discard
 
-    timer = setTimer(Moment.fromNow(duration), continuation, cast[pointer](2))
-    addProcess(int(p.processId), continuation, cast[pointer](1))
+    timer = setTimer(Moment.fromNow(timeout), continuation, cast[pointer](2))
+    processHandle =
+      try:
+        addProcess(int(p.processId), continuation, cast[pointer](1))
+      except ValueError as exc:
+        retFuture.fail(newException(AsyncProcessError, exc.msg))
+        return retFuture
     return retFuture
 
   proc peekExitCode(p: AsyncProcessRef): AsyncProcessResult[int] =
