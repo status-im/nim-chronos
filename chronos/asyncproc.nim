@@ -824,7 +824,7 @@ else:
                      stdinHandle = ProcessStreamHandle(),
                      stdoutHandle = ProcessStreamHandle(),
                      stderrHandle = ProcessStreamHandle(),
-                    ): Future[AsyncProcessRef] {.async.} =
+                   ): Future[AsyncProcessRef] {.async.} =
     var
       pid: Pid
       pipes = preparePipes(options, stdinHandle, stdoutHandle,
