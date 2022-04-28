@@ -519,11 +519,11 @@ else:
     res
 
   template exitStatusLikeShell(status: int): int =
-    if WAITIFSIGNALED(status):
+    if WAITIFSIGNALED(cint(status)):
       # like the shell!
-      128 + WAITTERMSIG(status)
+      128 + WAITTERMSIG(cint(status))
     else:
-      WAITEXITSTATUS(status)
+      WAITEXITSTATUS(cint(status))
 
   proc getFd(h: AsyncStreamHolder): cint =
     doAssert(h.kind != StreamKind.None)
@@ -836,24 +836,28 @@ else:
   proc waitForExit(p: AsyncProcessRef,
                    timeout = InfiniteDuration): Future[int] =
     var
-      retFuture = newFuture[WaitableResult]("chronos.waitForExit()")
+      retFuture = newFuture[int]("chronos.waitForExit()")
       wstatus: cint = 1
       timer: TimerCallback
 
     if p.exitStatus.isSome():
-      return p.exitStatus.get()
+      retFuture.complete(p.exitStatus.get())
+      return retFuture
 
     if timeout == ZeroDuration:
-      p.terminate()
+      let res = p.terminate()
+      if res.isErr():
+        retFuture.fail(newException(AsyncProcessError, osErrorMsg(res.error())))
+        return retFuture
 
     let exitCode =
       block:
-        let pres = p.peekProcessExitCode()
-        if pres.isErr():
+        let res = p.peekProcessExitCode()
+        if res.isErr():
           retFuture.fail(newException(AsyncProcessError,
-                                      osErrorMsg(pres.error)))
+                                      osErrorMsg(res.error())))
           return retFuture
-        exitStatusLikeShell(pres.get())
+        exitStatusLikeShell(res.get())
 
     if exitCode > 0:
       retFuture.complete(exitStatusLikeShell(exitCode))
@@ -869,8 +873,12 @@ else:
         if source == 1:
           clearTimer(timer)
         else:
-          removeProcess(int(pid))
-          p.terminate()
+          removeProcess(int(p.processId))
+          let res = p.terminate()
+          if res.isErr():
+            retFuture.fail(newException(AsyncProcessError,
+                                          osErrorMsg(pres.error())))
+            return
         let exitCode =
           block:
             let pres = p.peekProcessExitCode()
@@ -887,10 +895,10 @@ else:
     proc cancellation(udata: pointer) {.gccsafe.} =
       if not(retFuture.finished()):
         clearTimer(timer)
-        removeProcess(int(pid))
+        removeProcess(int(p.processId))
 
     timer = setTimer(Moment.fromNow(duration), continuation, cast[pointer](2))
-    addProcess(int(pid), continuation, cast[pointer](1))
+    addProcess(int(p.processId), continuation, cast[pointer](1))
     return retFuture
 
   proc peekExitCode(p: AsyncProcessRef): AsyncProcessResult[int] =
