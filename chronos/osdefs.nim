@@ -780,7 +780,7 @@ when defined(windows):
       bInheritHandle: if inheritHandle: TRUE else: FALSE
     )
 
-elif defined(macosx):
+elif defined(macos) or defined(macosx):
   import std/[posix, os]
   export posix, os
 
@@ -853,7 +853,7 @@ elif defined(netbsd):
 elif defined(dragonflybsd):
   const O_CLOEXEC* = 0x00020000
 
-when defined(linux) or defined(macosx) or defined(freebsd) or
+when defined(linux) or defined(macos) or defined(macosx) or defined(freebsd) or
      defined(openbsd) or defined(netbsd) or defined(dragonflybsd):
   const
     POSIX_SPAWN_RESETIDS* = 0x01
@@ -973,6 +973,133 @@ when defined(linux) or defined(macosx) or defined(freebsd) or
                                  a2: var Sigset): cint {.
        importc: "posix_spawnattr_setsigmask", header: "<spawn.h>",
        sideEffect.}
+
+when defined(posix):
+  when defined(linux):
+    const WNOHANG* = 1
+    template WSTATUS(s: cint): cint =
+      s and 0x7F
+    template WEXITSTATUS*(s: cint): cint =
+      (s and 0xFF00) shr 8
+    template WTERMSIG*(s: cint): cint =
+      WSTATUS(s)
+    template WSTOPSIG*(s: cint): cint =
+      WEXITSTATUS(s)
+    template WIFEXITED*(s: cint): bool =
+      WSTATUS(s) == 0
+    template WIFSIGNALED*(s: cint): bool =
+      (cast[int8](WSTATUS(s) + 1) shr 1) > 0
+    template WIFSTOPPED*(s: cint): bool =
+      (s and 0xFF) == 0x7F
+    template WIFCONTINUED*(s: cint): bool =
+      s == 0xFFFF
+  elif defined(openbsd):
+    const WNOHANG* = 1
+    template WSTATUS(s: cint): cint =
+      s and 0x7F
+    template WEXITSTATUS*(s: cint): cint =
+      (s shr 8) and 0xFF
+    template WTERMSIG*(s: cint): cint =
+      WSTATUS(s)
+    template WSTOPSIG*(s: cint): cint =
+      WEXITSTATUS(s)
+    template WIFEXITED*(s: cint): bool =
+      WSTATUS(s) == 0
+    template WIFSIGNALED*(s: cint): bool =
+      (WTERMSIG(s) != 0x7F) and (WSTATUS(s) != 0)
+    template WIFSTOPPED*(s: cint): bool =
+      WSTATUS(s) == 0x7F
+    template WIFCONTINUED*(s: cint): bool =
+      s == 0xFFFF
+  elif defined(dragonfly):
+    const WNOHANG* = 1
+    template WSTATUS(s: cint): cint =
+      s and 0x7F
+    template WEXITSTATUS*(s: cint): cint =
+      (s shr 8)
+    template WTERMSIG*(s: cint): cint =
+      WSTATUS(s)
+    template WSTOPSIG*(s: cint): cint =
+      WEXITSTATUS(s)
+    template WIFEXITED*(s: cint): bool =
+      WSTATUS(s) == 0
+    template WIFSIGNALED*(s: cint): bool =
+      (WTERMSIG(s) != 0x7F) and (WSTATUS(s) != 0)
+    template WIFSTOPPED*(s: cint): bool =
+      WSTATUS(s) == 0x7F
+    template WIFCONTINUED*(s: cint): bool =
+      s == 19
+  elif defined(netbsd):
+    const WNOHANG* = 1
+    template WSTATUS(s: cint): cint =
+      s and 0x7F
+    template WEXITSTATUS*(s: cint): cint =
+      (s shr 8) and 0xFF
+    template WTERMSIG*(s: cint): cint =
+      WSTATUS(s)
+    template WSTOPSIG*(s: cint): cint =
+      WEXITSTATUS(s)
+    template WIFEXITED*(s: cint): bool =
+      WSTATUS(s) == 0
+    template WIFSIGNALED*(s: cint): bool =
+      not(WIFSTOPPED(s)) and not(WIFCONTINUED(s)) and not(WIFEXITED(s))
+    template WIFSTOPPED*(s: cint): bool =
+      (WSTATUS(s) == 0x7F) and not(WIFCONTINUED(s))
+    template WIFCONTINUED*(s: cint): bool =
+      s == 0xFFFF
+  elif defined(freebsd):
+    const WNOHANG* = 1
+    template WSTATUS(s: cint): cint =
+      s and 0x7F
+    template WEXITSTATUS*(s: cint): cint =
+      s shr 8
+    template WTERMSIG*(s: cint): cint =
+      WSTATUS(s)
+    template WSTOPSIG*(s: cint): cint =
+      s shr 8
+    template WIFEXITED*(s: cint): bool =
+      WSTATUS(s) == 0
+    template WIFSIGNALED*(s: cint): bool =
+      let wstatus = WSTATUS(s)
+      (wstatus != 0x7F) and (wstatus != 0) and (s != 0x13)
+    template WIFSTOPPED*(s: cint): bool =
+      WSTATUS(s) == 0x7F
+    template WIFCONTINUED*(s: cint): bool =
+      x == 0x13
+  elif defined(macos) or defined(macosx):
+    const WNOHANG* = 1
+    template WSTATUS(s: cint): cint =
+      s and 0x7F
+    template WEXITSTATUS*(s: cint): cint =
+      (s shr 8) and 0xFF
+    template WTERMSIG*(s: cint): cint =
+      WSTATUS(s)
+    template WSTOPSIG*(s: cint): cint =
+      s shr 8
+    template WIFEXITED*(s: cint): bool =
+      WSTATUS(s) == 0
+    template WIFSIGNALED*(s: cint): bool =
+      let wstatus = WSTATUS(s)
+      (wstatus != 0x7F) and (wstatus != 0)
+    template WIFSTOPPED*(s: cint): bool =
+      (WSTATUS(s) == 0x7F) and (WSTOPSIG(s) != 0x13)
+    template WIFCONTINUED*(s: cint): bool =
+      (WSTATUS(s) == 0x7F) and (WSTOPSIG(s) == 0x13)
+  else:
+    proc WEXITSTATUS*(s: cint): cint {.importc, header: "<sys/wait.h>".}
+      ## Exit code, iff WIFEXITED(s)
+    proc WTERMSIG*(s: cint): cint {.importc, header: "<sys/wait.h>".}
+      ## Termination signal, iff WIFSIGNALED(s)
+    proc WSTOPSIG*(s: cint): cint {.importc, header: "<sys/wait.h>".}
+      ## Stop signal, iff WIFSTOPPED(s)
+    proc WIFEXITED*(s: cint): bool {.importc, header: "<sys/wait.h>".}
+      ## True if child exited normally.
+    proc WIFSIGNALED*(s: cint): bool {.importc, header: "<sys/wait.h>".}
+      ## True if child exited due to uncaught signal.
+    proc WIFSTOPPED*(s: cint): bool {.importc, header: "<sys/wait.h>".}
+      ## True if child is currently stopped.
+    proc WIFCONTINUED*(s: cint): bool {.importc, header: "<sys/wait.h>".}
+      ## True if child has been continued.
 
 proc `==`*(x: OSErrorCode, y: int): bool =
   x == OSErrorCode(y)

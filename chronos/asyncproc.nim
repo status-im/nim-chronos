@@ -6,6 +6,8 @@
 #                Licensed under either of
 #    Apache License, version 2.0, (LICENSE-APACHEv2)
 #                MIT license (LICENSE-MIT)
+{.push raises: [Defect].}
+
 import std/[options, strtabs]
 import "."/[asyncloop, handles, osdefs], streams/asyncstream
 import stew/results
@@ -13,7 +15,13 @@ export options, strtabs, results
 
 const
   ShellPath {.strdefine.} =
-    when not defined(android): "/bin/sh" else: "/system/bin/sh"
+    when defined(posix):
+      when defined(android):
+        "/system/bin/sh"
+      else:
+        "/bin/sh"
+    else:
+      "cmd.exe"
 
 type
   AsyncProcessError* = object of CatchableError
@@ -89,8 +97,7 @@ type
 
   AsyncProcessRef* = ref AsyncProcessImpl
 
-proc init*(t: typedesc[AsyncFD], handle: ProcessStreamHandle): AsyncFD {.
-     raises: [Defect].} =
+proc init*(t: typedesc[AsyncFD], handle: ProcessStreamHandle): AsyncFD =
   case handle.kind
   of ProcessStreamHandleKind.Handle:
     handle.handle
@@ -118,8 +125,7 @@ proc init*(t: typedesc[AsyncStreamHolder]): AsyncStreamHolder =
 
 proc init*(t: typedesc[AsyncStreamHolder], handle: ProcessStreamHandle,
            kind: StreamKind, baseFlags: set[StreamHolderFlag] = {}
-          ): AsyncProcessResult[AsyncStreamHolder] {.
-     raises: [Defect].} =
+          ): AsyncProcessResult[AsyncStreamHolder] =
   case handle.kind
   of ProcessStreamHandleKind.Handle:
     case kind
@@ -174,36 +180,43 @@ proc init*(t: typedesc[AsyncStreamHolder], handle: ProcessStreamHandle,
   of ProcessStreamHandleKind.None:
     ok(AsyncStreamHolder(kind: StreamKind.None))
 
-proc init*(t: typedesc[ProcessStreamHandle]): ProcessStreamHandle {.
-     raises: [Defect].} =
+proc init*(t: typedesc[ProcessStreamHandle]): ProcessStreamHandle =
   ProcessStreamHandle(kind: ProcessStreamHandleKind.None)
 
 proc init*(t: typedesc[ProcessStreamHandle],
-           handle: AsyncFD): ProcessStreamHandle {.
-     raises: [Defect].} =
+           handle: AsyncFD): ProcessStreamHandle =
   ProcessStreamHandle(kind: ProcessStreamHandleKind.Handle, handle: handle)
 
 proc init*(t: typedesc[ProcessStreamHandle],
-           transp: StreamTransport): ProcessStreamHandle {.
-     raises: [Defect].} =
+           transp: StreamTransport): ProcessStreamHandle =
   doAssert(transp.kind == TransportKind.Pipe,
            "Only pipe transports can be used as process streams")
   ProcessStreamHandle(kind: ProcessStreamHandleKind.Handle, transp: transp)
 
 proc init*(t: typedesc[ProcessStreamHandle],
-           reader: AsyncStreamReader): ProcessStreamHandle {.
-     raises: [Defect].} =
+           reader: AsyncStreamReader): ProcessStreamHandle =
   ProcessStreamHandle(kind: ProcessStreamHandleKind.StreamReader,
                       reader: reader)
 
 proc init*(t: typedesc[ProcessStreamHandle],
-           writer: AsyncStreamWriter): ProcessStreamHandle {.
-     raises: [Defect].} =
+           writer: AsyncStreamWriter): ProcessStreamHandle =
   ProcessStreamHandle(kind: ProcessStreamHandleKind.StreamWriter,
                       writer: writer)
 
 proc isEmpty*(handle: ProcessStreamHandle): bool =
   handle.kind == ProcessStreamHandleKind.None
+
+proc suspend*(p: AsyncProcessRef): AsyncProcessResult[void]
+
+proc resume*(p: AsyncProcessRef): AsyncProcessResult[void]
+
+proc terminate*(p: AsyncProcessRef): AsyncProcessResult[void]
+
+proc kill*(p: AsyncProcessRef): AsyncProcessResult[void]
+
+proc running*(p: AsyncProcessRef): AsyncProcessResult[bool]
+
+proc peekExitCode*(p: AsyncProcessRef): AsyncProcessResult[int]
 
 proc buildCommandLine(a: string, args: openArray[string]): string {.
      raises: [Defect].} =
@@ -242,12 +255,8 @@ proc closeProcessStreams(pipes: AsyncProcessPipes): Future[void] {.
 proc closeWait(holder: AsyncStreamHolder): Future[void] {.
      raises: [Defect], gcsafe.}
 
-proc closeWait*(p: AsyncProcessRef): Future[void] {.
-     raises: [Defect], gcsafe.}
-
 when defined(windows):
-  proc getStdTransport(k: StandardKind): AsyncProcessResult[StreamTransport] {.
-       raises: [Defect].} =
+  proc getStdTransport(k: StandardKind): AsyncProcessResult[StreamTransport] =
     # Its impossible to use handles returned by GetStdHandle() because this
     # handles created without flag `FILE_FLAG_OVERLAPPED` being set.
     var sa = getSecurityAttributes(false)
@@ -288,8 +297,7 @@ when defined(windows):
     newWideCString(str)
 
   proc closeThreadAndProcessHandle(p: AsyncProcessRef
-                                  ): AsyncProcessResult[void] {.
-       raises: [Defect].} =
+                                  ): AsyncProcessResult[void] =
     if p.threadHandle != HANDLE(0):
       if closeHandle(p.threadHandle) == FALSE:
         discard closeHandle(p.processHandle)
@@ -303,8 +311,7 @@ when defined(windows):
 
   proc closeProcessHandles(pipes: AsyncProcessPipes,
                            options: set[AsyncProcessOption],
-                           lastError: OSErrorCode): OSErrorCode {.
-       raises: [Defect].} =
+                           lastError: OSErrorCode): OSErrorCode =
     # We trying to preserve error code of last failed operation.
     var currentError = lastError
     if AsyncProcessOption.ParentStreams notin options:
@@ -328,15 +335,15 @@ when defined(windows):
           discard closeHandle(HANDLE(pipes.stderrHandle))
     currentError
 
-  proc startProcess(command: string, workingDir: string = "",
-                    arguments: seq[string] = @[],
-                    environment: StringTableRef = nil,
-                    options: set[AsyncProcessOption] = {
-                      AsyncProcessOption.StdErrToStdOut},
-                    stdinHandle = ProcessStreamHandle(),
-                    stdoutHandle = ProcessStreamHandle(),
-                    stderrHandle = ProcessStreamHandle(),
-                   ): Future[AsyncProcessRef] {.async.} =
+  proc startProcess*(command: string, workingDir: string = "",
+                     arguments: seq[string] = @[],
+                     environment: StringTableRef = nil,
+                     options: set[AsyncProcessOption] = {
+                       AsyncProcessOption.StdErrToStdOut},
+                     stdinHandle = ProcessStreamHandle(),
+                     stdoutHandle = ProcessStreamHandle(),
+                     stderrHandle = ProcessStreamHandle(),
+                    ): Future[AsyncProcessRef] {.async.} =
     let
       pipes =
         block:
@@ -396,66 +403,91 @@ when defined(windows):
       flags: pipes.flags
     )
 
-  proc suspend(p: AsyncProcessRef) =
-    discard suspendThread(p.threadHandle)
-
-  proc resume(p: AsyncProcessRef) =
-    discard resumeThread(p.threadHandle)
-
-  proc running(p: AsyncProcessRef): bool =
+  proc peekProcessExitCode(p: AsyncProcessRef): AsyncProcessResult[int] {.
+       raises: [Defect].} =
+    var wstatus: DWORD = 0
     if p.exitStatus.isSome():
-      false
+      return ok(p.exitStatus.get())
+
+    let res = getExitCodeProcess(p.processHandle, wstatus)
+    if res == TRUE:
+      if wstatus != STILL_ACTIVE:
+        let status = cast[int](wstatus)
+        p.exitStatus = some(status)
+        ok(status)
+      else:
+        ok(-1)
     else:
-      let res = waitForSingleObject(p.processHandle, DWORD(0))
-      res == WAIT_TIMEOUT
+      err(osLastError())
 
-  proc terminate(p: AsyncProcessRef) =
-    if running(p):
-      discard terminateProcess(p.processHandle, 0)
+  proc suspend(p: AsyncProcessRef): AsyncProcessResult[void] {.
+       raises: [Defect].} =
+    if suspendThread(p.threadHandle) != 0xFFFF_FFFF'u32:
+      ok()
+    else:
+      err(osLastError())
 
-  proc waitForExit(p: AsyncProcessRef,
-                   timeout = InfiniteDuration): Future[int] {.async.} =
+  proc resume(p: AsyncProcessRef): AsyncProcessResult[void] {.
+       raises: [Defect].} =
+    if resumeThread(p.threadHandle) != 0xFFFF_FFFF'u32:
+      ok()
+    else:
+      err(osLastError())
+
+  proc terminate(p: AsyncProcessRef): AsyncProcessResult[void] {.
+       raises: [Defect].} =
+    if terminateProcess(p.processHandle, 0) != 0'u32:
+      ok()
+    else:
+      err(osLastError())
+
+  proc kill(p: AsyncProcessRef): AsyncProcessResult[void] {.
+       raises: [Defect].} =
+    p.terminate()
+
+  proc running(p: AsyncProcessRef): AsyncProcessResult[bool] =
+    let res = ? p.peekExitCode()
+    if res == -1:
+      ok(true)
+    else:
+      ok(false)
+
+  proc waitForExit*(p: AsyncProcessRef,
+                    timeout = InfiniteDuration): Future[int] {.async.} =
     if p.exitStatus.isSome():
       return p.exitStatus.get()
 
-    let res = await waitForSingleObject(p.processHandle, timeout)
-    if res == WaitableResult.Timeout:
-      terminate(p)
+    let wres =
+      try:
+        await waitForSingleObject(p.processHandle, timeout)
+      except ValueError as exc:
+        raise newException(AsyncProcessError, exc.msg)
 
-    var status: DWORD
-    discard getExitCodeProcess(p.processHandle, status)
-    if status != STILL_ACTIVE:
-      let integerStatus = cast[int](status)
-      p.exitStatus = some(integerStatus)
-      discard p.closeThreadAndProcessHandle()
-      return integerStatus
-    else:
-      return -1
+    if wres == WaitableResult.Timeout:
+      let res = p.terminate()
+      if res.isErr():
+        raise newException(AsyncProcessError, osErrorMsg(res.error()))
 
-  proc peekExitCode(p: AsyncProcessRef): int =
+    let exitCode =
+      block:
+        let res = p.peekProcessExitCode()
+        if res.isErr():
+          raise newException(AsyncProcessError, osErrorMsg(res.error()))
+        res.get()
+
+    if exitCode >= 0:
+      p.exitStatus = some(exitCode)
+    return exitCode
+
+  proc peekExitCode(p: AsyncProcessRef): AsyncProcessResult[int] =
     if p.exitStatus.isSome():
-      return p.exitStatus.get()
-
+      return ok(p.exitStatus.get())
     let res = waitForSingleObject(p.processHandle, DWORD(0))
     if res != WAIT_TIMEOUT:
-      var status: DWORD = 0
-
-      discard getExitCodeProcess(p.processHandle, status)
-      let integerStatus = cast[int](status)
-      p.exitStatus = some(integerStatus)
-      discard p.closeThreadAndProcessHandle()
-      integerStatus
+      let exitCode = ? p.peekProcessExitCode()
+      ok(exitCode)
     else:
-      -1
-
-  proc execCommand(command: string): Future[int] {.async.} =
-    let process = await startProcess(command)
-    let res =
-      try:
-        await process.waitForExit(InfiniteDuration)
-      finally:
-        await process.closeWait()
-    return res
+      ok(-1)
 else:
   proc envToCStringArray(t: StringTableRef): cstringArray {.
        raises: [Defect].} =
@@ -470,7 +502,7 @@ else:
       inc(i)
     res
 
-  proc envToCStringArray(): cstringArray {.raises: [Defect].} =
+  proc envToCStringArray(): cstringArray =
     let itemsCount =
       block:
         var res = 0
@@ -486,7 +518,14 @@ else:
       inc(i)
     res
 
-  proc getFd(h: AsyncStreamHolder): cint {.raises: [Defect].} =
+  template exitStatusLikeShell(status: int): int =
+    if WIFSIGNALED(status):
+      # like the shell!
+      128 + WTERMSIG(status)
+    else:
+      WEXITSTATUS(status)
+
+  proc getFd(h: AsyncStreamHolder): cint =
     doAssert(h.kind != StreamKind.None)
     case h.kind
     of StreamKind.Reader:
@@ -496,7 +535,7 @@ else:
     of StreamKind.None:
       raiseAssert "Incorrect stream holder"
 
-  proc getCurrentDirectory(): AsyncProcessResult[string] {.raises: [Defect].} =
+  proc getCurrentDirectory(): AsyncProcessResult[string] =
     var bufsize = 1024
     var res = newString(bufsize)
 
@@ -519,15 +558,13 @@ else:
         else:
           return err(errorCode)
 
-  proc setCurrentDirectory(dir: string): AsyncProcessResult[void] {.
-       raises: [Defect].} =
+  proc setCurrentDirectory(dir: string): AsyncProcessResult[void] =
     let res = osdefs.chdir(cstring(dir))
     if res == -1:
       return err(osLastError())
     ok()
 
-  proc getStdTransport(k: StandardKind): AsyncProcessResult[StreamTransport] {.
-       raises: [Defect].} =
+  proc getStdTransport(k: StandardKind): AsyncProcessResult[StreamTransport] =
     let fd =
       case k
       of StandardKind.Stdin:
@@ -556,8 +593,7 @@ else:
 
   proc closeProcessHandles(pipes: AsyncProcessPipes,
                            options: set[AsyncProcessOption],
-                           lastError: OSErrorCode): OSErrorCode {.
-       raises: [Defect].} =
+                           lastError: OSErrorCode): OSErrorCode =
     # We trying to preserve error code of last failed operation.
     var currentError = lastError
     if AsyncProcessOption.ParentStreams notin options:
@@ -582,19 +618,18 @@ else:
     currentError
 
   proc closeThreadAndProcessHandle(p: AsyncProcessRef
-                                  ): AsyncProcessResult[void] {.
-       raises: [Defect].} =
+                                  ): AsyncProcessResult[void] =
     discard
 
-  proc startProcess(command: string, workingDir: string = "",
-                    arguments: seq[string] = @[],
-                    environment: StringTableRef = nil,
-                    options: set[AsyncProcessOption] = {
-                      AsyncProcessOption.StdErrToStdOut},
-                    stdinHandle = ProcessStreamHandle(),
-                    stdoutHandle = ProcessStreamHandle(),
-                    stderrHandle = ProcessStreamHandle(),
-                   ): Future[AsyncProcessRef] {.async.} =
+  proc startProcess*(command: string, workingDir: string = "",
+                     arguments: seq[string] = @[],
+                     environment: StringTableRef = nil,
+                     options: set[AsyncProcessOption] = {
+                       AsyncProcessOption.StdErrToStdOut},
+                     stdinHandle = ProcessStreamHandle(),
+                     stdoutHandle = ProcessStreamHandle(),
+                     stderrHandle = ProcessStreamHandle(),
+                    ): Future[AsyncProcessRef] {.async.} =
     var
       posixAttr =
         block:
@@ -750,16 +785,126 @@ else:
       flags: pipes.flags
     )
 
-proc getParentStdin(): AsyncProcessResult[AsyncStreamHolder] {.
-     raises: [Defect].} =
+  proc peekProcessExitCode(p: AsyncProcessRef): AsyncProcessResult[int] =
+    var wstatus: cint = 0
+    if p.exitStatus.isSome():
+      return ok(p.exitStatus.get())
+    let res = osdefs.waitpid(p.processId, wstatus, WNOHANG)
+    if res == p.processId:
+      if WIFEXITED(wstatus) or WIFSIGNALED(wstatus):
+        let status = int(wstatus)
+        p.exitStatus = some(status)
+        ok(status)
+      else:
+        ok(-1)
+    elif res == 0:
+      ok(-1)
+    else:
+      err(osLastError())
+
+  proc suspend(p: AsyncProcessRef): AsyncProcessResult[void] =
+    if osdefs.kill(p.processId, osdefs.SIGSTOP) == 0:
+      ok()
+    else:
+      err(osLastError())
+
+  proc resume(p: AsyncProcessRef): AsyncProcessResult[void] =
+    if osdefs.kill(p.processId, osdefs.SIGCONT) == 0:
+      ok()
+    else:
+      err(osLastError())
+
+  proc terminate(p: AsyncProcessRef): AsyncProcessResult[void] =
+    if osdefs.kill(p.processId, osdefs.SIGTERM) == 0:
+      ok()
+    else:
+      err(osLastError())
+
+  proc kill(p: AsyncProcessRef): AsyncProcessResult[void] =
+    if osdefs.kill(p.processId, osdefs.SIGKILL) == 0:
+      ok()
+    else:
+      err(osLastError())
+
+  proc running(p: AsyncProcessRef): AsyncProcessResult[bool] =
+    let res = ? p.peekProcessExitCode()
+    if res == -1:
+      ok(true)
+    else:
+      ok(false)
+
+  proc waitForExit(p: AsyncProcessRef,
+                   timeout = InfiniteDuration): Future[int] =
+    var
+      retFuture = newFuture[WaitableResult]("chronos.waitForExit()")
+      wstatus: cint = 1
+      timer: TimerCallback
+
+    if p.exitStatus.isSome():
+      return p.exitStatus.get()
+
+    if timeout == ZeroDuration:
+      p.terminate()
+
+    let exitCode =
+      block:
+        let pres = p.peekProcessExitCode()
+        if pres.isErr():
+          retFuture.fail(newException(AsyncProcessError,
+                                      osErrorMsg(pres.error)))
+          return retFuture
+        exitStatusLikeShell(pres.get())
+
+    if exitCode > 0:
+      retFuture.complete(exitStatusLikeShell(exitCode))
+      return retFuture
+
+    if timeout == ZeroDuration:
+      retFuture.complete(-1)
+      return retFuture
+
+    proc continuation(udata: pointer) {.gcsafe.} =
+      let source = cast[int](udata)
+      if not(retFuture.finished()):
+        if source == 1:
+          clearTimer(timer)
+        else:
+          removeProcess(int(pid))
+          p.terminate()
+        let exitCode =
+          block:
+            let pres = p.peekProcessExitCode()
+            if pres.isErr():
+              retFuture.fail(newException(AsyncProcessError,
+                                          osErrorMsg(pres.error())))
+              return
+            pres.get()
+        if exitCode == -1:
+          retFuture.complete(-1)
+        else:
+          retFuture.complete(exitStatusLikeShell(exitCode))
+
+    proc cancellation(udata: pointer) {.gccsafe.} =
+      if not(retFuture.finished()):
+        clearTimer(timer)
+        removeProcess(int(pid))
+
+    timer = setTimer(Moment.fromNow(duration), continuation, cast[pointer](2))
+    addProcess(int(pid), continuation, cast[pointer](1))
+    return retFuture
+
+  proc peekExitCode(p: AsyncProcessRef): AsyncProcessResult[int] =
+    let res = ? p.peekProcessExitCode()
+    ok(exitStatusLikeShell(res))
+
+proc getParentStdin(): AsyncProcessResult[AsyncStreamHolder] =
   let
     transp = ? getStdTransport(StandardKind.Stdin)
     flags = {StreamHolderFlag.Transport, StreamHolderFlag.Stream}
     holder = AsyncStreamHolder.init(newAsyncStreamWriter(transp), flags)
   ok(holder)
 
-proc getParentStdout(): AsyncProcessResult[AsyncStreamHolder] {.
-     raises: [Defect].} =
+proc getParentStdout(): AsyncProcessResult[AsyncStreamHolder] =
   let
     transp = ? getStdTransport(StandardKind.Stdout)
     flags = {StreamHolderFlag.Transport, StreamHolderFlag.Stream}
@@ -767,8 +912,7 @@ proc getParentStdout(): AsyncProcessResult[AsyncStreamHolder] {.
 
   ok(holder)
 
-proc getParentStderr(): AsyncProcessResult[AsyncStreamHolder] {.
-     raises: [Defect].} =
+proc getParentStderr(): AsyncProcessResult[AsyncStreamHolder] =
   let
     transp = ? getStdTransport(StandardKind.Stderr)
     flags = {StreamHolderFlag.Transport, StreamHolderFlag.Stream}
@@ -778,8 +922,7 @@ proc getParentStderr(): AsyncProcessResult[AsyncStreamHolder] {.
 proc preparePipes(options: set[AsyncProcessOption],
                   stdinHandle, stdoutHandle,
                   stderrHandle: ProcessStreamHandle,
-                  inheritable: bool): AsyncProcessResult[AsyncProcessPipes] {.
-     raises: [Defect].} =
+                  inheritable: bool): AsyncProcessResult[AsyncProcessPipes] =
   if AsyncProcessOption.ParentStreams notin options:
     let
       (stdinFlags, localStdin, stdinHandle) =
@@ -873,8 +1016,7 @@ proc closeWait(holder: AsyncStreamHolder) {.async.} =
   if len(pending) > 0:
     await allFutures(pending)
 
-proc closeProcessStreams(pipes: AsyncProcessPipes): Future[void] {.
-     raises: [Defect].} =
+proc closeProcessStreams(pipes: AsyncProcessPipes): Future[void] =
   allFutures(pipes.stdinHolder.closeWait(),
              pipes.stdoutHolder.closeWait(),
              pipes.stderrHolder.closeWait())
@@ -886,20 +1028,26 @@ proc closeWait*(p: AsyncProcessRef) {.async.} =
   await p.pipes.closeProcessStreams()
   discard p.closeThreadAndProcessHandle()
 
-proc stdinStream*(p: AsyncProcessRef): AsyncStreamWriter {.
-     raises: [Defect].} =
+proc stdinStream*(p: AsyncProcessRef): AsyncStreamWriter =
   doAssert(p.pipes.stdinHolder.kind == StreamKind.Writer)
   p.pipes.stdinHolder.writer
 
-proc stdoutStream*(p: AsyncProcessRef): AsyncStreamReader {.
-     raises: [Defect].} =
+proc stdoutStream*(p: AsyncProcessRef): AsyncStreamReader =
   doAssert(p.pipes.stdoutHolder.kind == StreamKind.Reader)
   p.pipes.stdoutHolder.reader
 
-proc stderrStream*(p: AsyncProcessRef): AsyncStreamReader {.
-     raises: [Defect].} =
+proc stderrStream*(p: AsyncProcessRef): AsyncStreamReader =
   doAssert(p.pipes.stderrHolder.kind == StreamKind.Reader)
   p.pipes.stderrHolder.reader
+
+proc execCommand*(command: string): Future[int] {.async.} =
+  let process = await startProcess(command)
+  let res =
+    try:
+      await process.waitForExit(InfiniteDuration)
+    finally:
+      await process.closeWait()
+  return res
 
 when isMainModule:
   echo "here"
