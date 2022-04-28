@@ -218,18 +218,6 @@ proc running*(p: AsyncProcessRef): AsyncProcessResult[bool]
 
 proc peekExitCode*(p: AsyncProcessRef): AsyncProcessResult[int]
 
-proc buildCommandLine(a: string, args: openArray[string]): string {.
-     raises: [Defect].} =
-  # TODO: Procedures quoteShell/(Windows, Posix)() needs security and bug review
-  # or reimplementation, for example quoteShellWindows() do not handle `\`
-  # properly.
-  # https://docs.microsoft.com/en-us/cpp/cpp/main-function-command-line-args?redirectedfrom=MSDN&view=msvc-170#parsing-c-command-line-arguments
-  var res = quoteShell(a)
-  for i in 0 ..< len(args):
-    res.add(' ')
-    res.add(quoteShell(args[i]))
-  res
-
 proc getParentStdin(): AsyncProcessResult[AsyncStreamHolder] {.
      raises: [Defect].}
 
@@ -256,6 +244,18 @@ proc closeWait(holder: AsyncStreamHolder): Future[void] {.
      raises: [Defect], gcsafe.}
 
 when defined(windows):
+  proc buildCommandLine(a: string, args: openArray[string]): string {.
+     raises: [Defect].} =
+    # TODO: Procedures quoteShell/(Windows, Posix)() needs security and bug review
+    # or reimplementation, for example quoteShellWindows() do not handle `\`
+    # properly.
+    # https://docs.microsoft.com/en-us/cpp/cpp/main-function-command-line-args?redirectedfrom=MSDN&view=msvc-170#parsing-c-command-line-arguments
+    var res = quoteShell(a)
+    for i in 0 ..< len(args):
+      res.add(' ')
+      res.add(quoteShell(args[i]))
+    res
+
   proc getStdTransport(k: StandardKind): AsyncProcessResult[StreamTransport] =
     # Its impossible to use handles returned by GetStdHandle() because this
     # handles created without flag `FILE_FLAG_OVERLAPPED` being set.
