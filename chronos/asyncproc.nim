@@ -382,6 +382,9 @@ when defined(windows):
           res
       procInfo = PROCESS_INFORMATION()
 
+    if AsyncProcessOption.EchoCommand in options:
+      discard
+
     var res = createProcess(nil, commandLine, addr psa, addr tsa, FALSE,
                             flags, environment, workingDirectory, startupInfo,
                             procInfo)
@@ -860,9 +863,9 @@ else:
           retFuture.fail(newException(AsyncProcessError,
                                       osErrorMsg(res.error())))
           return retFuture
-        exitStatusLikeShell(res.get())
+        res.get()
 
-    if exitCode > 0:
+    if exitCode != -1:
       retFuture.complete(exitStatusLikeShell(exitCode))
       return retFuture
 
@@ -874,7 +877,8 @@ else:
       let source = cast[int](udata)
       if not(retFuture.finished()):
         if source == 1:
-          clearTimer(timer)
+          if timer.function != default(AsyncCallback):
+            clearTimer(timer)
         else:
           try:
             removeProcess(processHandle)
@@ -902,14 +906,17 @@ else:
 
     proc cancellation(udata: pointer) {.gcsafe.} =
       if not(retFuture.finished()):
-        clearTimer(timer)
+        if timer.function != default(AsyncCallback):
+          clearTimer(timer)
         try:
           removeProcess(processHandle)
         except IOSelectorsException:
           # Ignore any exceptions because of cancellation.
           discard
 
-    timer = setTimer(Moment.fromNow(timeout), continuation, cast[pointer](2))
+    if timeout != InfiniteDuration:
+      timer = setTimer(Moment.fromNow(timeout), continuation, cast[pointer](2))
+
     processHandle =
       try:
         addProcess(int(p.processId), continuation, cast[pointer](1))
