@@ -844,7 +844,7 @@ else:
       retFuture = newFuture[int]("chronos.waitForExit()")
       processHandle: int = 0
       wstatus: cint = 1
-      timer: TimerCallback
+      timer: TimerCallback = nil
 
     if p.exitStatus.isSome():
       retFuture.complete(p.exitStatus.get())
@@ -877,7 +877,7 @@ else:
       let source = cast[int](udata)
       if not(retFuture.finished()):
         if source == 1:
-          if timer.function != default(AsyncCallback):
+          if not(isNil(timer)):
             clearTimer(timer)
         else:
           try:
@@ -906,7 +906,7 @@ else:
 
     proc cancellation(udata: pointer) {.gcsafe.} =
       if not(retFuture.finished()):
-        if timer.function != default(AsyncCallback):
+        if not(isNil(timer)):
           clearTimer(timer)
         try:
           removeProcess(processHandle)
