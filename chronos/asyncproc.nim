@@ -243,19 +243,20 @@ proc closeProcessStreams(pipes: AsyncProcessPipes): Future[void] {.
 proc closeWait(holder: AsyncStreamHolder): Future[void] {.
      raises: [Defect], gcsafe.}
 
-proc buildCommandLine(a: string, args: openArray[string]): string {.
-   raises: [Defect].} =
-  # TODO: Procedures quoteShell/(Windows, Posix)() needs security and bug review
-  # or reimplementation, for example quoteShellWindows() do not handle `\`
-  # properly.
-  # https://docs.microsoft.com/en-us/cpp/cpp/main-function-command-line-args?redirectedfrom=MSDN&view=msvc-170#parsing-c-command-line-arguments
-  var res = quoteShell(a)
-  for i in 0 ..< len(args):
-    res.add(' ')
-    res.add(quoteShell(args[i]))
-  res
-
 when defined(windows):
+
+  proc buildCommandLine(a: string, args: openArray[string]): string {.
+     raises: [Defect].} =
+    # TODO: Procedures quoteShell/(Windows, Posix)() needs security and bug review
+    # or reimplementation, for example quoteShellWindows() do not handle `\`
+    # properly.
+    # https://docs.microsoft.com/en-us/cpp/cpp/main-function-command-line-args?redirectedfrom=MSDN&view=msvc-170#parsing-c-command-line-arguments
+    var res = quoteShell(a)
+    for i in 0 ..< len(args):
+      res.add(' ')
+      res.add(quoteShell(args[i]))
+    res
+
   proc getStdTransport(k: StandardKind): AsyncProcessResult[StreamTransport] =
     # Its impossible to use handles returned by GetStdHandle() because this
     # handles created without flag `FILE_FLAG_OVERLAPPED` being set.
@@ -678,7 +679,7 @@ else:
           res.get()
       (commandLine, commandArguments) =
         if AsyncProcessOption.EvalCommand in options:
-          let args = @[asyncProcShellPath, "-c", buildCommandLine(command, [])]
+          let args = @[asyncProcShellPath, "-c", command]
           (asyncProcShellPath, allocCStringArray(args))
         else:
           var res = @[command]
@@ -857,8 +858,8 @@ else:
     else:
       ok(false)
 
-  proc waitForExit(p: AsyncProcessRef,
-                   timeout = InfiniteDuration): Future[int] =
+  proc waitForExit*(p: AsyncProcessRef,
+                    timeout = InfiniteDuration): Future[int] =
     var
       retFuture = newFuture[int]("chronos.waitForExit()")
       processHandle: int = 0
@@ -895,16 +896,16 @@ else:
     proc continuation(udata: pointer) {.gcsafe.} =
       let source = cast[int](udata)
       if not(retFuture.finished()):
+        try:
+          removeProcess(processHandle)
+        except IOSelectorsException:
+          retFuture.fail(newException(AsyncProcessError,
+                                      osErrorMsg(osLastError())))
+          return
         if source == 1:
           if not(isNil(timer)):
             clearTimer(timer)
         else:
-          try:
-            removeProcess(processHandle)
-          except IOSelectorsException:
-            retFuture.fail(newException(AsyncProcessError,
-                                        osErrorMsg(osLastError())))
-            return
           let res = p.terminate()
           if res.isErr():
             retFuture.fail(newException(AsyncProcessError,
