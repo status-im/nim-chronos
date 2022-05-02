@@ -243,19 +243,19 @@ proc closeProcessStreams(pipes: AsyncProcessPipes): Future[void] {.
 proc closeWait(holder: AsyncStreamHolder): Future[void] {.
      raises: [Defect], gcsafe.}
 
-when defined(windows):
-  proc buildCommandLine(a: string, args: openArray[string]): string {.
-     raises: [Defect].} =
-    # TODO: Procedures quoteShell/(Windows, Posix)() needs security and bug review
-    # or reimplementation, for example quoteShellWindows() do not handle `\`
-    # properly.
-    # https://docs.microsoft.com/en-us/cpp/cpp/main-function-command-line-args?redirectedfrom=MSDN&view=msvc-170#parsing-c-command-line-arguments
-    var res = quoteShell(a)
-    for i in 0 ..< len(args):
-      res.add(' ')
-      res.add(quoteShell(args[i]))
-    res
+proc buildCommandLine(a: string, args: openArray[string]): string {.
+   raises: [Defect].} =
+  # TODO: Procedures quoteShell/(Windows, Posix)() needs security and bug review
+  # or reimplementation, for example quoteShellWindows() do not handle `\`
+  # properly.
+  # https://docs.microsoft.com/en-us/cpp/cpp/main-function-command-line-args?redirectedfrom=MSDN&view=msvc-170#parsing-c-command-line-arguments
+  var res = quoteShell(a)
+  for i in 0 ..< len(args):
+    res.add(' ')
+    res.add(quoteShell(args[i]))
+  res
 
+when defined(windows):
   proc getStdTransport(k: StandardKind): AsyncProcessResult[StreamTransport] =
     # Its impossible to use handles returned by GetStdHandle() because this
     # handles created without flag `FILE_FLAG_OVERLAPPED` being set.
@@ -492,6 +492,7 @@ when defined(windows):
     else:
       ok(-1)
 else:
+  import std/strutils
   from selectors2 import IOSelectorsException
 
   proc envToCStringArray(t: StringTableRef): cstringArray {.
@@ -522,6 +523,20 @@ else:
       copyMem(res[i], addr(x[0]), len(x))
       inc(i)
     res
+
+  proc getFullCommand(command: string, arguments: cstringArray): string =
+    let length =
+      if isNil(arguments):
+        0
+      else:
+        var res = 0
+        while not(isNil(arguments[res])): inc(res)
+        res
+    var res = @[command]
+    if length > 0:
+      for index in 1 ..< length:
+        res.add($arguments[index])
+    res.join(" ")
 
   template exitStatusLikeShell(status: int): int =
     if WAITIFSIGNALED(cint(status)):
@@ -663,8 +678,8 @@ else:
           res.get()
       (commandLine, commandArguments) =
         if AsyncProcessOption.EvalCommand in options:
-          (asyncProcShellPath,
-           allocCStringArray(@[asyncProcShellPath, "-c", command]))
+          let args = @[asyncProcShellPath, "-c", buildCommandLine(command, [])]
+          (asyncProcShellPath, allocCStringArray(args))
         else:
           var res = @[command]
           for arg in arguments.items():
@@ -737,7 +752,7 @@ else:
           ""
 
       if AsyncProcessOption.EchoCommand in options:
-        echo commandLine, " ", join(commandArguments, " ")
+        echo getFullCommand(commandLine, commandArguments)
 
       let res =
         if AsyncProcessOption.UsePath in options:
