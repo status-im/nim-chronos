@@ -14,7 +14,7 @@ import stew/results
 export options, strtabs, results
 
 const
-  ShellPath* {.strdefine.} =
+  asyncProcShellPath* {.strdefine.} =
     when defined(posix):
       when defined(android):
         "/system/bin/sh"
@@ -663,7 +663,8 @@ else:
           res.get()
       (commandLine, commandArguments) =
         if AsyncProcessOption.EvalCommand in options:
-          (ShellPath, allocCStringArray(@[ShellPath, "-c", command]))
+          (asyncProcShellPath,
+           allocCStringArray(@[asyncProcShellPath, "-c", command]))
         else:
           var res = @[command]
           for arg in arguments.items():
@@ -1075,9 +1076,11 @@ proc stderrStream*(p: AsyncProcessRef): AsyncStreamReader =
   doAssert(p.pipes.stderrHolder.kind == StreamKind.Reader)
   p.pipes.stderrHolder.reader
 
-proc execCommand*(command: string): Future[int] {.async.} =
-  let options = {AsyncProcessOption.EvalCommand}
-  let process = await startProcess(command, options = options)
+proc execCommand*(command: string,
+                  options = {AsyncProcessOption.EvalCommand}
+                 ): Future[int] {.async.} =
+  let poptions = options + {AsyncProcessOption.EvalCommand}
+  let process = await startProcess(command, options = poptions)
   let res =
     try:
       await process.waitForExit(InfiniteDuration)
