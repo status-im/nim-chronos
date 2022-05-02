@@ -872,7 +872,7 @@ else:
           ""
 
       if AsyncProcessOption.EchoCommand in options:
-        echo commandLine, " ", join(commandArguments, " ")
+        echo getFullCommand(commandLine, commandArguments)
 
       let res =
         if AsyncProcessOption.UsePath in options:
