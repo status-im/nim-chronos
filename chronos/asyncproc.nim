@@ -871,6 +871,9 @@ else:
         else:
           ""
 
+      if AsyncProcessOption.EchoCommand in options:
+        echo commandLine, " ", join(commandArguments, " ")
+
       let res =
         if AsyncProcessOption.UsePath in options:
           posixSpawnp(pid, cstring(commandLine), sa.actions, sa.attrs,
