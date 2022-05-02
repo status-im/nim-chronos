@@ -14,7 +14,7 @@ import stew/results
 export options, strtabs, results
 
 const
-  ShellPath {.strdefine.} =
+  ShellPath* {.strdefine.} =
     when defined(posix):
       when defined(android):
         "/system/bin/sh"
@@ -354,9 +354,9 @@ when defined(windows):
           res.get()
       commandLine =
         if AsyncProcessOption.EvalCommand in options:
-          newWideCString(command)
+          command
         else:
-          newWideCString(buildCommandLine(command, arguments))
+          buildCommandLine(command, arguments)
       workingDirectory =
         if len(workingDir) > 0:
           newWideCString(workingDir)
@@ -383,11 +383,11 @@ when defined(windows):
       procInfo = PROCESS_INFORMATION()
 
     if AsyncProcessOption.EchoCommand in options:
-      discard
+      echo commandLine
 
-    var res = createProcess(nil, commandLine, addr psa, addr tsa, FALSE,
-                            flags, environment, workingDirectory, startupInfo,
-                            procInfo)
+    var res = createProcess(nil, newWideCString(commandLine), addr psa,
+                            addr tsa, FALSE, flags, environment,
+                            workingDirectory, startupInfo, procInfo)
     var currentError = osLastError()
     if res == FALSE:
       await pipes.closeProcessStreams()
@@ -735,6 +735,9 @@ else:
         else:
           ""
 
+      if AsyncProcessOption.EchoCommand in options:
+        echo commandLine, " ", join(commandArguments, " ")
+
       let res =
         if AsyncProcessOption.UsePath in options:
           posixSpawnp(pid, commandLine, posixFops, posixAttr, commandArguments,
@@ -1073,19 +1076,11 @@ proc stderrStream*(p: AsyncProcessRef): AsyncStreamReader =
   p.pipes.stderrHolder.reader
 
 proc execCommand*(command: string): Future[int] {.async.} =
-  let process = await startProcess(command)
+  let options = {AsyncProcessOption.EvalCommand}
+  let process = await startProcess(command, options = options)
   let res =
     try:
       await process.waitForExit(InfiniteDuration)
     finally:
       await process.closeWait()
   return res
-
-when isMainModule:
-  echo "here"
-  echo waitFor execCommand("cmd.exe")
-  # echo cast[uint32](-10)
-  # echo cast[uint32](-11)
-  # echo cast[uint32](-12)
-
-  # waitFor test()
