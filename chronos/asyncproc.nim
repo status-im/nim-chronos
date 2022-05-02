@@ -15,13 +15,13 @@ export options, strtabs, results
 
 const
   asyncProcShellPath* {.strdefine.} =
-    when defined(posix):
+    when defined(windows):
+      "cmd.exe"
+    else:
       when defined(android):
         "/system/bin/sh"
       else:
         "/bin/sh"
-    else:
-      "cmd.exe"
 
 type
   AsyncProcessError* = object of CatchableError
@@ -355,7 +355,7 @@ when defined(windows):
           res.get()
       commandLine =
         if AsyncProcessOption.EvalCommand in options:
-          command
+          asyncProcShellPath & " /C " & command
         else:
           buildCommandLine(command, arguments)
       workingDirectory =
