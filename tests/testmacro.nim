@@ -97,3 +97,10 @@ suite "Macro transformations test suite":
     type OpenObject = object
     macroAsync(testMacro, seq, OpenObject)
     check waitFor(testMacro()).len == 0
+
+    macro macroAsync2(name, restype, inner1, inner2, inner3, inner4: untyped): untyped =
+      quote do:
+        proc `name`(): Future[`restype`[`inner1`[`inner2`[`inner3`, `inner4`]]]] {.async.} = return
+
+    macroAsync2(testMacro2, seq, Opt, Result, OpenObject, cstring)
+    check waitFor(testMacro2()).len == 0
