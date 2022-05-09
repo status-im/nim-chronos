@@ -29,6 +29,9 @@ const
 
 
 
+  AsyncProcessTrackerName* = "async.process"
+    ## AsyncProcess leaks tracker name
+
 type
   AsyncProcessError* = object of CatchableError
 

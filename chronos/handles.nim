@@ -220,7 +220,42 @@ proc getInheritable*(fd: AsyncFD): Result[bool, OSErrorCode] =
       return err(osLastError())
     ok((flags and osdefs.FD_CLOEXEC) == osdefs.FD_CLOEXEC)
 
-proc createAsyncPipe*(inherit = true): tuple[read: AsyncFD, write: AsyncFD] {.
+proc setInheritable*(fd: AsyncFD, inherit = true): Result[void, OSErrorCode] {.
+     raises: [Defect].} =
+  when defined(windows):
+    let value = if inherit: HANDLE_FLAG_INHERIT else: 0'u32
+    if osdefs.setHandleInformation(HANDLE(fd),
+                                   HANDLE_FLAG_INHERIT, value) == FALSE:
+      return err(osLastError())
+    ok()
+  else:
+    let flags = osdefs.fcntl(cint(fd), osdefs.F_GETFD)
+    if flags == -1:
+      return err(osLastError())
+    let value =
+      if inherit:
+        flags and not(osdefs.FD_CLOEXEC)
+      else:
+        flags or osdefs.FD_CLOEXEC
+    if osdefs.fcntl(cint(fd), osdefs.F_SETFD, value) == -1:
+      return err(osLastError())
+    ok()
+
+proc getInheritable*(fd: AsyncFD): Result[bool, OSErrorCode] {.
+     raises: [Defect].} =
+  when defined(windows):
+    var flags = 0'u32
+    if getHandleInformation(HANDLE(fd), flags) == FALSE:
+      return err(osLastError())
+    ok((flags and HANDLE_FLAG_INHERIT) == HANDLE_FLAG_INHERIT)
+  else:
+    let flags = osdefs.fcntl(cint(fd), osdefs.F_GETFD)
+    if flags == -1:
+      return err(osLastError())
+    ok((flags and osdefs.FD_CLOEXEC) == osdefs.FD_CLOEXEC)
+
+proc createAsyncPipe*(inheritRead = true, inheritWrite = true
+                     ): tuple[read: AsyncFD, write: AsyncFD] {.
      raises: [Defect].}=
   ## Create new asynchronouse pipe.
   ## Returns tuple of read pipe handle and write pipe handle``asyncInvalidPipe``
