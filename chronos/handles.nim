@@ -12,21 +12,18 @@ when (NimMajor, NimMinor) < (1, 4):
 else:
   {.push raises: [].}
 
+import std/os
 import "."/[asyncloop, osdefs]
+import stew/results
 from nativesockets import Domain, Protocol, SockType, toInt
-export Domain, Protocol, SockType
-
+export Domain, Protocol, SockType, results
 
 when defined(windows) or defined(nimdoc):
   import stew/base10
-  const
-    asyncInvalidSocket* = AsyncFD(-1)
-    PipeHeaderName = r"\\.\pipe\LOCAL\chronos\"
-else:
-  const
-    asyncInvalidSocket* = AsyncFD(osdefs.INVALID_SOCKET)
+  const PipeHeaderName = r"\\.\pipe\LOCAL\chronos\"
 
 const
+  asyncInvalidSocket* = AsyncFD(osdefs.INVALID_SOCKET)
   asyncInvalidPipe* = asyncInvalidSocket
 
 proc setSocketBlocking*(s: SocketHandle, blocking: bool): bool =
@@ -192,18 +189,55 @@ proc setMaxOpenFiles*(count: int) {.raises: [Defect, OSError].} =
     if osdefs.setrlimit(osdefs.RLIMIT_NOFILE, limits) != 0:
       raiseOSError(osLastError())
 
-proc createAsyncPipe*(inherit = true): tuple[read: AsyncFD, write: AsyncFD] {.
+proc setInheritable*(fd: AsyncFD, inherit = true): Result[void, OSErrorCode] {.
+     raises: [Defect].} =
+  when defined(windows):
+    let value = if inherit: HANDLE_FLAG_INHERIT else: 0'u32
+    if osdefs.setHandleInformation(HANDLE(fd),
+                                   HANDLE_FLAG_INHERIT, value) == FALSE:
+      return err(osLastError())
+    ok()
+  else:
+    let flags = osdefs.fcntl(cint(fd), osdefs.F_GETFD)
+    if flags == -1:
+      return err(osLastError())
+    let value =
+      if inherit:
+        flags and not(osdefs.FD_CLOEXEC)
+      else:
+        flags or osdefs.FD_CLOEXEC
+    if osdefs.fcntl(cint(fd), osdefs.F_SETFD, value) == -1:
+      return err(osLastError())
+    ok()
+
+proc getInheritable*(fd: AsyncFD): Result[bool, OSErrorCode] {.
+     raises: [Defect].} =
+  when defined(windows):
+    var flags = 0'u32
+    if getHandleInformation(HANDLE(fd), flags) == FALSE:
+      return err(osLastError())
+    ok((flags and HANDLE_FLAG_INHERIT) == HANDLE_FLAG_INHERIT)
+  else:
+    let flags = osdefs.fcntl(cint(fd), osdefs.F_GETFD)
+    if flags == -1:
+      return err(osLastError())
+    ok((flags and osdefs.FD_CLOEXEC) == osdefs.FD_CLOEXEC)
+
+proc createAsyncPipe*(inheritRead = true, inheritWrite = true
+                     ): tuple[read: AsyncFD, write: AsyncFD] {.
      raises: [Defect].}=
   ## Create new asynchronouse pipe.
   ## Returns tuple of read pipe handle and write pipe handle``asyncInvalidPipe``
   ## on error.
   when defined(windows):
-    var pipeIn, pipeOut: HANDLE
-    var pipeName: string
-    var uniq = 0'u64
-    var sa = getSecurityAttributes(inherit)
+    var
+      pipeIn, pipeOut: HANDLE
+      pipeName: string
+      uniq = 0'u64
+      rsa = getSecurityAttributes(inheritRead)
+      wsa = getSecurityAttributes(inheritWrite)
     while true:
-      QueryPerformanceCounter(uniq)
+      queryPerformanceCounter(uniq)
       pipeName = PipeHeaderName & Base10.toString(uniq)
 
       var openMode = osdefs.FILE_FLAG_FIRST_PIPE_INSTANCE or
@@ -212,7 +246,7 @@ proc createAsyncPipe*(inherit = true): tuple[read: AsyncFD, write: AsyncFD] {.
                      osdefs.PIPE_WAIT
       pipeIn = createNamedPipe(newWideCString(pipeName), openMode, pipeMode,
                                1'u32, osdefs.DEFAULT_PIPE_SIZE,
-                               osdefs.DEFAULT_PIPE_SIZE, 0'u32, addr sa)
+                               osdefs.DEFAULT_PIPE_SIZE, 0'u32, addr rsa)
       if pipeIn == osdefs.INVALID_HANDLE_VALUE:
         let err = osLastError()
         # If error in {ERROR_ACCESS_DENIED, ERROR_PIPE_BUSY}, then named pipe
@@ -225,7 +259,7 @@ proc createAsyncPipe*(inherit = true): tuple[read: AsyncFD, write: AsyncFD] {.
 
     var openMode = osdefs.GENERIC_WRITE or osdefs.FILE_WRITE_DATA or
                    osdefs.SYNCHRONIZE
-    pipeOut = createFile(newWideCString(pipeName), openMode, 0, addr(sa),
+    pipeOut = createFile(newWideCString(pipeName), openMode, 0, addr wsa,
                          osdefs.OPEN_EXISTING, osdefs.FILE_FLAG_OVERLAPPED,
                          HANDLE(0))
     if pipeOut == osdefs.INVALID_HANDLE_VALUE:
@@ -255,13 +289,19 @@ proc createAsyncPipe*(inherit = true): tuple[read: AsyncFD, write: AsyncFD] {.
     when declared(pipe2):
       var fds: array[2, cint]
       let flags =
-        if inherit:
+        if inheritRead:
           osdefs.O_NONBLOCK
         else:
           osdefs.O_NONBLOCK or osdefs.O_CLOEXEC
 
       if osdefs.pipe2(fds, cint(flags)) == -1:
         return (read: asyncInvalidPipe, write: asyncInvalidPipe)
+
+      if not(inheritWrite):
+        if fcntl(fds[1], osdefs.F_SETFD, osdefs.FD_CLOEXEC) == -1:
+          discard osdefs.close(fds[0])
+          discard osdefs.close(fds[1])
+          return (read: asyncInvalidPipe, write: asyncInvalidPipe)
 
       (read: AsyncFD(fds[0]), write: AsyncFD(fds[1]))
 
@@ -270,9 +310,14 @@ proc createAsyncPipe*(inherit = true): tuple[read: AsyncFD, write: AsyncFD] {.
       if osdefs.pipe(fds) == -1:
         return (read: asyncInvalidPipe, write: asyncInvalidPipe)
 
-      if not(inherit):
-        if fcntl(fds[0], osdefs.F_SETFD, osdefs.FD_CLOEXEC) == -1 or
-           fcntl(fds[1], osdefs.F_SETFD, osdefs.FD_CLOEXEC) == -1:
+      if not(inheritRead):
+        if fcntl(fds[0], osdefs.F_SETFD, osdefs.FD_CLOEXEC) == -1:
+          discard osdefs.close(fds[0])
+          discard osdefs.close(fds[1])
+          return (read: asyncInvalidPipe, write: asyncInvalidPipe)
+
+      if not(inheritWrite):
+        if fcntl(fds[1], osdefs.F_SETFD, osdefs.FD_CLOEXEC) == -1:
           discard osdefs.close(fds[0])
           discard osdefs.close(fds[1])
           return (read: asyncInvalidPipe, write: asyncInvalidPipe)

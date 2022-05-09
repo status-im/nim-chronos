@@ -1228,12 +1228,12 @@ elif defined(windows):
 
   proc `$`(bstr: ptr WCHAR): string =
     var buffer: char
-    var count = wideCharToMultiByte(CP_UTF8, 0, bstr, -1, addr(buffer), 0,
-                                    nil, nil)
+    var count = osdefs.wideCharToMultiByte(CP_UTF8, 0, cast[WideCString](bstr),
+                                           -1, addr(buffer), 0, nil, nil)
     if count > 0:
       var res = newString(count + 8)
-      let wres = wideCharToMultiByte(CP_UTF8, 0, bstr, -1, addr(res[0]),
-                                     count, nil, nil)
+      let wres = osdefs.wideCharToMultiByte(CP_UTF8, 0, cast[WideCString](bstr),
+                                            -1, addr(res[0]), count, nil, nil)
       if wres > 0:
         res.setLen(wres - 1)
       else:

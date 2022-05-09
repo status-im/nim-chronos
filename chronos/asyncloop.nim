@@ -464,16 +464,6 @@ when defined(windows):
       raiseOSError(osLastError())
     loop.handles.incl(fd)
 
-  proc registerNe*(fd: AsyncFD): Result[void, OSErrorCode] {.
-       raises: [Defect].} =
-    ## Register file descriptor ``fd`` in thread's dispatcher.
-    let loop = getThreadDispatcher()
-    if createIoCompletionPort(HANDLE(fd), loop.ioPort, cast[CompletionKey](fd),
-                              1) == osdefs.INVALID_HANDLE_VALUE:
-      return err(osLastError())
-    loop.handles.incl(fd)
-    ok()
-
   proc unregister*(fd: AsyncFD) {.raises: [Defect].} =
     ## Unregisters ``fd``.
     getThreadDispatcher().handles.excl(fd)

@@ -357,6 +357,10 @@ when defined(windows):
        stdcall, dynlib: "kernel32", importc: "SetHandleInformation",
        sideEffect.}
 
+  proc getHandleInformation*(hObject: HANDLE, lpdwFlags: var DWORD): WINBOOL {.
+       stdcall, dynlib: "kernel32", importc: "GetHandleInformation",
+       sideEffect.}
+
   proc getCurrentProcess*(): HANDLE {.
        stdcall, dynlib: "kernel32", importc: "GetCurrentProcess", sideEffect.}
 
@@ -521,7 +525,7 @@ when defined(windows):
        sideEffect.}
 
   proc wideCharToMultiByte*(codePage: uint32, dwFlags: uint32,
-                            lpWideCharStr: ptr WCHAR, cchWideChar: cint,
+                            lpWideCharStr: WideCString, cchWideChar: cint,
                             lpMultiByteStr: ptr char, cbMultiByte: cint,
                             lpDefaultChar: ptr char,
                             lpUsedDefaultChar: ptr uint32): cint {.
@@ -531,13 +535,24 @@ when defined(windows):
                        pBestRoute: ptr MibIpForwardRow): uint32 {.
        stdcall, dynlib: "iphlpapi", importc: "GetBestRoute", sideEffect.}
 
-  proc QueryPerformanceCounter*(res: var uint64) {.
+  proc queryPerformanceCounter*(res: var uint64) {.
        stdcall, dynlib: "kernel32", importc: "QueryPerformanceCounter",
        sideEffect.}
 
-  proc QueryPerformanceFrequency*(res: var uint64) {.
+  proc queryPerformanceFrequency*(res: var uint64) {.
        stdcall, dynlib: "kernel32", importc: "QueryPerformanceFrequency",
        sideEffect.}
+
+  proc getEnvironmentStringsW*(): WideCString {.
+       stdcall, dynlib: "kernel32", importc: "GetEnvironmentStringsW",
+       sideEffect.}
+
+  proc freeEnvironmentStringsW*(penv: WideCString): WINBOOL {.
+       stdcall, dynlib: "kernel32", importc: "FreeEnvironmentStringsW",
+       sideEffect.}
+
+  proc wcschr*(ws: WideCString, wc: Utf16Char): WideCString {.
+       stdcall, dynlib: "ntdll", importc: "wcschr", sideEffect.}
 
   template WSAIORW*(x, y): untyped = (IOC_INOUT or x or y)
   template WSAIOW*(x, y): untyped =
@@ -636,7 +651,7 @@ when defined(windows):
     IOC_WS2* = 0x08000000'u32
     IOC_INOUT* = IOC_IN or IOC_OUT
 
-    INVALID_SOCKET* = SocketHandle(not(0))
+    INVALID_SOCKET* = SocketHandle(-1)
     INVALID_HANDLE_VALUE* = HANDLE(uint(not(0'u)))
 
     SIO_GET_EXTENSION_FUNCTION_POINTER* = WSAIORW(IOC_WS2, 6).DWORD
@@ -762,6 +777,10 @@ when defined(windows):
 
     GAA_FLAG_INCLUDE_PREFIX* = 0x0010'u32
 
+    DELETE* = 0x00010000'u32
+    READ_CONTROL* = 0x00020000'u32
+    WRITE_DAC* = 0x00040000'u32
+    WRITE_OWNER* = 0x00080000'u32
     SYNCHRONIZE* = 0x00100000'u32
 
     CP_UTF8* = 65001'u32
@@ -770,6 +789,8 @@ when defined(windows):
     WSA_FLAG_NO_HANDLE_INHERIT* = 0x80'u32
 
     FIONBIO* = WSAIOW(102, 126)
+
+    HANDLE_FLAG_INHERIT* = 1'u32
 
   proc `==`*(x, y: HANDLE): bool {.borrow.}
 
@@ -1108,7 +1129,13 @@ when defined(posix):
          importc: "WIFCONTINUED", header: "<sys/wait.h>".}
       ## True if child has been continued.
 
+when defined(posix):
+  const
+    INVALID_SOCKET* = SocketHandle(-1)
+    INVALID_HANDLE_VALUE* = cint(-1)
+
 proc `==`*(x: OSErrorCode, y: int): bool =
   x == OSErrorCode(y)
 proc `==`*(x: SocketHandle, y: int): bool =
   x == SocketHandle(y)
+

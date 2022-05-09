@@ -10,7 +10,7 @@
 
 import std/[options, strtabs]
 import "."/[asyncloop, handles, osdefs], streams/asyncstream
-import stew/results
+import stew/[results, byteutils]
 export options, strtabs, results
 
 const
@@ -22,6 +22,9 @@ const
         "/system/bin/sh"
       else:
         "/bin/sh"
+
+  AsyncProcessTrackerName* = "async.process"
+    ## AsyncProcess leaks tracker name
 
 type
   AsyncProcessError* = object of CatchableError
@@ -96,6 +99,52 @@ type
     options: set[AsyncProcessOption]
 
   AsyncProcessRef* = ref AsyncProcessImpl
+
+  CommandExResponse* = object
+    stdOutput*: string
+    stdError*: string
+    status*: int
+
+  AsyncProcessTracker* = ref object of TrackerBase
+    opened*: int64
+    closed*: int64
+
+proc setupAsyncProcessTracker(): AsyncProcessTracker {.
+     gcsafe, raises: [Defect].}
+
+proc getAsyncProcessTracker(): AsyncProcessTracker {.inline.} =
+  var res = cast[AsyncProcessTracker](getTracker(AsyncProcessTrackerName))
+  if isNil(res):
+    res = setupAsyncProcessTracker()
+  res
+
+proc dumpAsyncProcessTracking(): string {.gcsafe.} =
+  var tracker = getAsyncProcessTracker()
+  let res = "Started async processes: " & $tracker.opened & "\n" &
+            "Closed async processes: " & $tracker.closed
+  res
+
+proc leakAsyncProccessTracker(): bool {.gcsafe.} =
+  var tracker = getAsyncProcessTracker()
+  tracker.opened != tracker.closed
+
+proc trackAsyncProccess(t: AsyncProcessRef) {.inline.} =
+  var tracker = getAsyncProcessTracker()
+  inc(tracker.opened)
+
+proc untrackAsyncProcess(t: AsyncProcessRef) {.inline.}  =
+  var tracker = getAsyncProcessTracker()
+  inc(tracker.closed)
+
+proc setupAsyncProcessTracker(): AsyncProcessTracker {.gcsafe.} =
+  var res = AsyncProcessTracker(
+    opened: 0,
+    closed: 0,
+    dump: dumpAsyncProcessTracking,
+    isLeaked: leakAsyncProccessTracker
+  )
+  addTracker(AsyncProcessTrackerName, res)
+  res
 
 proc init*(t: typedesc[AsyncFD], handle: ProcessStreamHandle): AsyncFD =
   case handle.kind
@@ -206,33 +255,30 @@ proc init*(t: typedesc[ProcessStreamHandle],
 proc isEmpty*(handle: ProcessStreamHandle): bool =
   handle.kind == ProcessStreamHandleKind.None
 
-proc suspend*(p: AsyncProcessRef): AsyncProcessResult[void]
+proc suspend*(p: AsyncProcessRef): AsyncProcessResult[void] {.gcsafe.}
 
-proc resume*(p: AsyncProcessRef): AsyncProcessResult[void]
+proc resume*(p: AsyncProcessRef): AsyncProcessResult[void] {.gcsafe.}
 
-proc terminate*(p: AsyncProcessRef): AsyncProcessResult[void]
+proc terminate*(p: AsyncProcessRef): AsyncProcessResult[void] {.gcsafe.}
 
-proc kill*(p: AsyncProcessRef): AsyncProcessResult[void]
+proc kill*(p: AsyncProcessRef): AsyncProcessResult[void] {.gcsafe.}
 
-proc running*(p: AsyncProcessRef): AsyncProcessResult[bool]
+proc running*(p: AsyncProcessRef): AsyncProcessResult[bool] {.gcsafe.}
 
-proc peekExitCode*(p: AsyncProcessRef): AsyncProcessResult[int]
+proc peekExitCode*(p: AsyncProcessRef): AsyncProcessResult[int] {.gcsafe.}
 
-proc getParentStdin(): AsyncProcessResult[AsyncStreamHolder] {.
-     raises: [Defect].}
+proc getParentStdin(): AsyncProcessResult[AsyncStreamHolder]
 
-proc getParentStdout(): AsyncProcessResult[AsyncStreamHolder] {.
-     raises: [Defect].}
+proc getParentStdout(): AsyncProcessResult[AsyncStreamHolder]
 
-proc getParentStderr(): AsyncProcessResult[AsyncStreamHolder] {.
-     raises: [Defect].}
+proc getParentStderr(): AsyncProcessResult[AsyncStreamHolder]
 
 proc preparePipes(options: set[AsyncProcessOption],
-                  stdinHandle, stdoutHandle, stderrHandle: ProcessStreamHandle,
-                  inheritable: bool): AsyncProcessResult[AsyncProcessPipes] {.
+                  stdinHandle, stdoutHandle, stderrHandle: ProcessStreamHandle
+                 ): AsyncProcessResult[AsyncProcessPipes] {.
      raises: [Defect], gcsafe.}
 
-proc closeProcessHandles(pipes: AsyncProcessPipes,
+proc closeProcessHandles(pipes: var AsyncProcessPipes,
                          options: set[AsyncProcessOption],
                          lastError: OSErrorCode): OSErrorCode {.
      raises: [Defect].}
@@ -243,7 +289,112 @@ proc closeProcessStreams(pipes: AsyncProcessPipes): Future[void] {.
 proc closeWait(holder: AsyncStreamHolder): Future[void] {.
      raises: [Defect], gcsafe.}
 
+proc getFd(h: AsyncStreamHolder): cint =
+  doAssert(h.kind != StreamKind.None)
+  case h.kind
+  of StreamKind.Reader:
+    cint(h.reader.tsource.fd)
+  of StreamKind.Writer:
+    cint(h.writer.tsource.fd)
+  of StreamKind.None:
+    raiseAssert "Incorrect stream holder"
+
+template isOk(code: OSErrorCode): bool =
+  when defined(windows):
+    code == ERROR_SUCCESS
+  else:
+    code == 0
+
+template closePipe(handle: AsyncFD): bool =
+  when defined(windows):
+    osdefs.closeHandle(HANDLE(handle)) == TRUE
+  else:
+    osdefs.close(cint(handle)) != -1
+
+proc closeProcessHandles(pipes: var AsyncProcessPipes,
+                         options: set[AsyncProcessOption],
+                         lastError: OSErrorCode): OSErrorCode =
+  # We trying to preserve error code of last failed operation.
+  var currentError = lastError
+  if AsyncProcessOption.ParentStreams notin options:
+    if ProcessFlag.UserStdin notin pipes.flags:
+      if pipes.stdinHandle != asyncInvalidPipe:
+        if currentError.isOk():
+          if not(closePipe(pipes.stdinHandle)):
+            currentError = osLastError()
+        else:
+          discard closePipe(pipes.stdinHandle)
+        pipes.stdinHandle = asyncInvalidPipe
+    if ProcessFlag.UserStdout notin pipes.flags:
+      if pipes.stdoutHandle != asyncInvalidPipe:
+        if currentError.isOk():
+          if not(closePipe(pipes.stdoutHandle)):
+            currentError = osLastError()
+        else:
+          discard closePipe(pipes.stdoutHandle)
+        pipes.stdoutHandle = asyncInvalidPipe
+    if ProcessFlag.UserStderr notin pipes.flags:
+      if pipes.stderrHandle != asyncInvalidPipe:
+        if currentError.isOk():
+          if not(closePipe(pipes.stderrHandle)):
+            currentError = osLastError()
+        else:
+          discard closePipe(pipes.stderrHandle)
+        pipes.stderrHandle = asyncInvalidPipe
+  currentError
+
+proc raiseAsyncProcessError(msg: string, exc: ref AsyncStreamError = nil) {.
+     noreturn, noinit, noinline, raises: [AsyncProcessError].} =
+  let message =
+    if isNil(exc):
+      msg
+    else:
+      msg & " ([" & $exc.name & "]: " & $exc.msg & ")"
+  raise newException(AsyncProcessError, message)
+
 when defined(windows):
+
+  proc toString*(w: WideCString): AsyncProcessResult[string] =
+    if isNil(w):
+      ok("")
+    else:
+      let bytesNeeded = wideCharToMultiByte(CP_UTF8, 0'u32, w, cint(-1), nil,
+                                            cint(0), nil, nil)
+      if bytesNeeded <= cint(0):
+        return err(osLastError())
+
+      var buffer = newString(bytesNeeded)
+      let res = wideCharToMultiByte(CP_UTF8, 0'u32, w, cint(-1),
+                                    addr buffer[0], cint(len(buffer)), nil, nil)
+      if res != bytesNeeded:
+        err(osLastError())
+      else:
+        # We need to strip trailing `\x00`.
+        for i in countdown(len(buffer) - 1, 0):
+          if buffer[i] != '\x00':
+            buffer.setLen(i + 1)
+            break
+        ok(buffer)
+
+  proc getProcessEnvironment*(): StringTableRef =
+    var res = newStringTable(modeCaseInsensitive)
+    var env = getEnvironmentStringsW()
+    if isNil(env):
+      return res
+    var slider = env
+    while int(slider[0]) != 0:
+      let pos = wcschr(slider, Utf16Char(0x0000))
+      let line =
+        block:
+          let res = slider.toString()
+          if res.isErr(): "" else: res.get()
+      slider = cast[WideCString](cast[ByteAddress](pos) + sizeof(Utf16Char))
+      if len(line) > 0:
+        let delim = line.find('=')
+        if delim > 0:
+          res[substr(line, 0, delim - 1)] = substr(line, delim + 1)
+    discard freeEnvironmentStringsW(env)
+    res
 
   proc buildCommandLine(a: string, args: openArray[string]): string {.
      raises: [Defect].} =
@@ -310,32 +461,6 @@ when defined(windows):
         return err(osLastError())
       p.processHandle = HANDLE(0)
 
-  proc closeProcessHandles(pipes: AsyncProcessPipes,
-                           options: set[AsyncProcessOption],
-                           lastError: OSErrorCode): OSErrorCode =
-    # We trying to preserve error code of last failed operation.
-    var currentError = lastError
-    if AsyncProcessOption.ParentStreams notin options:
-      if ProcessFlag.UserStdin notin pipes.flags:
-        if currentError == ERROR_SUCCESS:
-          if closeHandle(HANDLE(pipes.stdinHandle)) == FALSE:
-            currentError = osLastError()
-        else:
-          discard closeHandle(HANDLE(pipes.stdinHandle))
-      if ProcessFlag.UserStdout notin pipes.flags:
-        if currentError == ERROR_SUCCESS:
-          if closeHandle(HANDLE(pipes.stdoutHandle)) == FALSE:
-            currentError = osLastError()
-        else:
-          discard closeHandle(HANDLE(pipes.stdoutHandle))
-      if ProcessFlag.UserStderr notin pipes.flags:
-        if currentError == ERROR_SUCCESS:
-          if closeHandle(HANDLE(pipes.stderrHandle)) == FALSE:
-            currentError = osLastError()
-        else:
-          discard closeHandle(HANDLE(pipes.stderrHandle))
-    currentError
-
   proc startProcess*(command: string, workingDir: string = "",
                      arguments: seq[string] = @[],
                      environment: StringTableRef = nil,
@@ -345,14 +470,15 @@ when defined(windows):
                      stdoutHandle = ProcessStreamHandle(),
                      stderrHandle = ProcessStreamHandle(),
                     ): Future[AsyncProcessRef] {.async.} =
-    let
+    var
       pipes =
         block:
           let res = preparePipes(options, stdinHandle, stdoutHandle,
-                                 stderrHandle, false)
+                                 stderrHandle)
           if res.isErr():
             raise newException(AsyncProcessError, osErrorMsg(res.error()))
           res.get()
+    let
       commandLine =
         if AsyncProcessOption.EvalCommand in options:
           asyncProcShellPath & " /C " & command
@@ -386,19 +512,26 @@ when defined(windows):
     if AsyncProcessOption.EchoCommand in options:
       echo commandLine
 
-    var res = createProcess(nil, newWideCString(commandLine), addr psa,
-                            addr tsa, FALSE, flags, environment,
-                            workingDirectory, startupInfo, procInfo)
+    let res = createProcess(
+      nil,
+      newWideCString(commandLine),
+      addr psa, addr tsa,
+      TRUE, # NOTE: This is very important flag and MUST not be modified.
+      flags,
+      environment,
+      workingDirectory,
+      startupInfo, procInfo
+    )
+
     var currentError = osLastError()
     if res == FALSE:
       await pipes.closeProcessStreams()
-
     currentError = closeProcessHandles(pipes, options, currentError)
 
     if res == FALSE:
       raise newException(AsyncProcessError, osErrorMsg(currentError))
 
-    return AsyncProcessRef(
+    let process = AsyncProcessRef(
       processHandle: procInfo.hProcess,
       threadHandle: procInfo.hThread,
       processId: procInfo.dwProcessId,
@@ -406,6 +539,9 @@ when defined(windows):
       options: options,
       flags: pipes.flags
     )
+
+    trackAsyncProccess(process)
+    return process
 
   proc peekProcessExitCode(p: AsyncProcessRef): AsyncProcessResult[int] {.
        raises: [Defect].} =
@@ -546,16 +682,6 @@ else:
     else:
       WAITEXITSTATUS(cint(status))
 
-  proc getFd(h: AsyncStreamHolder): cint =
-    doAssert(h.kind != StreamKind.None)
-    case h.kind
-    of StreamKind.Reader:
-      cint(h.reader.tsource.fd)
-    of StreamKind.Writer:
-      cint(h.writer.tsource.fd)
-    of StreamKind.None:
-      raiseAssert "Incorrect stream holder"
-
   proc getCurrentDirectory(): AsyncProcessResult[string] =
     var bufsize = 1024
     var res = newString(bufsize)
@@ -612,32 +738,6 @@ else:
         return err(osLastError())
     ok(transp)
 
-  proc closeProcessHandles(pipes: AsyncProcessPipes,
-                           options: set[AsyncProcessOption],
-                           lastError: OSErrorCode): OSErrorCode =
-    # We trying to preserve error code of last failed operation.
-    var currentError = lastError
-    if AsyncProcessOption.ParentStreams notin options:
-      if ProcessFlag.UserStdin notin pipes.flags:
-        if currentError == 0:
-          if osdefs.close(cint(pipes.stdinHandle)) == -1:
-            currentError = osLastError()
-        else:
-          discard osdefs.close(cint(pipes.stdinHandle))
-      if ProcessFlag.UserStdout notin pipes.flags:
-        if currentError == 0:
-          if osdefs.close(cint(pipes.stdoutHandle)) == -1:
-            currentError = osLastError()
-        else:
-          discard osdefs.close(cint(pipes.stdoutHandle))
-      if ProcessFlag.UserStderr notin pipes.flags:
-        if currentError == 0:
-          if osdefs.close(cint(pipes.stderrHandle)) == -1:
-            currentError = osLastError()
-        else:
-          discard osdefs.close(cint(pipes.stderrHandle))
-    currentError
-
   proc closeThreadAndProcessHandle(p: AsyncProcessRef
                                   ): AsyncProcessResult[void] =
     discard
@@ -673,7 +773,7 @@ else:
       pipes =
         block:
           let res = preparePipes(options, stdinHandle, stdoutHandle,
-                                 stderrHandle, true)
+                                 stderrHandle)
           if res.isErr():
             raise newException(AsyncProcessError, osErrorMsg(res.error()))
           res.get()
@@ -719,18 +819,18 @@ else:
       checkSpawnError posixSpawnAttrSetFlags(posixAttr, flags)
 
       if AsyncProcessOption.ParentStreams notin options:
-        checkSpawnError:
-          posixSpawnFileActionsAddClose(posixFops, pipes.stdinHolder.getFd())
+        # checkSpawnError:
+        #   posixSpawnFileActionsAddClose(posixFops, pipes.stdinHolder.getFd())
         checkSpawnError:
           posixSpawnFileActionsAddDup2(posixFops, cint(pipes.stdinHandle),
                                        cint(0))
-        checkSpawnError:
-          posixSpawnFileActionsAddClose(posixFops, pipes.stdoutHolder.getFd())
+        # checkSpawnError:
+        #   posixSpawnFileActionsAddClose(posixFops, pipes.stdoutHolder.getFd())
         checkSpawnError:
           posixSpawnFileActionsAddDup2(posixFops, cint(pipes.stdoutHandle),
                                        cint(1))
-        checkSpawnError:
-          posixSpawnFileActionsAddClose(posixFops, pipes.stderrHolder.getFd())
+        # checkSpawnError:
+        #   posixSpawnFileActionsAddClose(posixFops, pipes.stderrHolder.getFd())
         checkSpawnError:
           if AsyncProcessOption.StdErrToStdOut in options:
             posixSpawnFileActionsAddDup2(posixFops, cint(pipes.stdoutHandle),
@@ -973,13 +1073,13 @@ proc getParentStderr(): AsyncProcessResult[AsyncStreamHolder] =
 
 proc preparePipes(options: set[AsyncProcessOption],
                   stdinHandle, stdoutHandle,
-                  stderrHandle: ProcessStreamHandle,
-                  inheritable: bool): AsyncProcessResult[AsyncProcessPipes] =
+                  stderrHandle: ProcessStreamHandle
+                 ): AsyncProcessResult[AsyncProcessPipes] =
   if AsyncProcessOption.ParentStreams notin options:
     let
       (stdinFlags, localStdin, stdinHandle) =
         if stdinHandle.isEmpty():
-          let (pipeIn, pipeOut) = createAsyncPipe(inheritable)
+          let (pipeIn, pipeOut) = createAsyncPipe(true, false)
           if (pipeIn == asyncInvalidPipe) or (pipeOut == asyncInvalidPipe):
             return err(osLastError())
           let holder = ? AsyncStreamHolder.init(
@@ -990,7 +1090,7 @@ proc preparePipes(options: set[AsyncProcessOption],
            AsyncStreamHolder.init(), AsyncFD.init(stdinHandle))
       (stdoutFlags, localStdout, stdoutHandle) =
         if stdoutHandle.isEmpty():
-          let (pipeIn, pipeOut) = createAsyncPipe(inheritable)
+          let (pipeIn, pipeOut) = createAsyncPipe(false, true)
           if (pipeIn == asyncInvalidPipe) or (pipeOut == asyncInvalidPipe):
             return err(osLastError())
           let holder = ? AsyncStreamHolder.init(
@@ -1001,7 +1101,7 @@ proc preparePipes(options: set[AsyncProcessOption],
            AsyncStreamHolder.init(), AsyncFD.init(stdoutHandle))
       (stderrFlags, localStderr, stderrHandle) =
         if stderrHandle.isEmpty():
-          let (pipeIn, pipeOut) = createAsyncPipe(inheritable)
+          let (pipeIn, pipeOut) = createAsyncPipe(false, true)
           if (pipeIn == asyncInvalidPipe) or (pipeOut == asyncInvalidPipe):
             return err(osLastError())
           let holder = ? AsyncStreamHolder.init(
@@ -1079,6 +1179,7 @@ proc closeWait*(p: AsyncProcessRef) {.async.} =
   discard closeProcessHandles(p.pipes, p.options, OSErrorCode(0))
   await p.pipes.closeProcessStreams()
   discard p.closeThreadAndProcessHandle()
+  untrackAsyncProcess(p)
 
 proc stdinStream*(p: AsyncProcessRef): AsyncStreamWriter =
   doAssert(p.pipes.stdinHolder.kind == StreamKind.Writer)
@@ -1102,4 +1203,33 @@ proc execCommand*(command: string,
       await process.waitForExit(InfiniteDuration)
     finally:
       await process.closeWait()
+  return res
+
+proc execCommandEx*(command: string,
+                    options = {AsyncProcessOption.EvalCommand}
+                   ): Future[CommandExResponse] {.async.} =
+  let
+    process = await startProcess(command, options = options)
+    outputReader = process.stdoutStream.read()
+    errorReader = process.stderrStream.read()
+    res =
+      try:
+        await allFutures(outputReader, errorReader)
+        let status = await process.waitForExit(InfiniteDuration)
+        let output =
+          try:
+            string.fromBytes(outputReader.read())
+          except AsyncStreamError as exc:
+            raiseAsyncProcessError("Unable to read process' stdout channel",
+                                   exc)
+        let error =
+          try:
+            string.fromBytes(errorReader.read())
+          except AsyncStreamError as exc:
+            raiseAsyncProcessError("Unable to read process' stderr channel",
+                                   exc)
+        CommandExResponse(status: status, stdOutput: output, stdError: error)
+      finally:
+        await process.closeWait()
+
   return res
