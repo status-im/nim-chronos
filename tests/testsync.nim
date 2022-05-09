@@ -511,3 +511,23 @@ suite "Asynchronous sync primitives test suite":
           flagInt == high(int)
 
     waitFor(test())
+
+  test "AsyncEventBus() multiple subscribers test":
+    let
+      eventBus = newAsyncEventBus()
+      futA = newFuture[void]()
+      futB = newFuture[void]()
+
+    proc eventEV1(bus: AsyncEventBus, payload: EventPayload[int]) {.async.} =
+      futA.complete()
+
+    proc eventEV2(bus: AsyncEventBus, payload: EventPayload[int]) {.async.} =
+      futB.complete()
+
+    proc test() {.async.} =
+      discard eventBus.subscribe("EV", eventEV1)
+      discard eventBus.subscribe("EV", eventEV2)
+      eventBus.emit("EV", 5)
+      await allFutures(futA, futB).wait(1.seconds)
+
+    waitFor test()
