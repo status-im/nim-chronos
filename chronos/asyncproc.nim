@@ -289,15 +289,15 @@ proc closeProcessStreams(pipes: AsyncProcessPipes): Future[void] {.
 proc closeWait(holder: AsyncStreamHolder): Future[void] {.
      raises: [Defect], gcsafe.}
 
-proc getFd(h: AsyncStreamHolder): cint =
-  doAssert(h.kind != StreamKind.None)
-  case h.kind
-  of StreamKind.Reader:
-    cint(h.reader.tsource.fd)
-  of StreamKind.Writer:
-    cint(h.writer.tsource.fd)
-  of StreamKind.None:
-    raiseAssert "Incorrect stream holder"
+# proc getFd(h: AsyncStreamHolder): cint =
+#   doAssert(h.kind != StreamKind.None)
+#   case h.kind
+#   of StreamKind.Reader:
+#     cint(h.reader.tsource.fd)
+#   of StreamKind.Writer:
+#     cint(h.writer.tsource.fd)
+#   of StreamKind.None:
+#     raiseAssert "Incorrect stream holder"
 
 template isOk(code: OSErrorCode): bool =
   when defined(windows):
@@ -773,7 +773,7 @@ else:
                      stdinHandle = ProcessStreamHandle(),
                      stdoutHandle = ProcessStreamHandle(),
                      stderrHandle = ProcessStreamHandle(),
-                   ): Future[AsyncProcessRef] {.async.} =
+                    ): Future[AsyncProcessRef] {.async.} =
     var
       posixAttr =
         block:
@@ -794,7 +794,7 @@ else:
       pid: Pid
       pipes =
         block:
-          let res = preparePipes(options, stdinHandle, stdoutHandle,
+          var res = preparePipes(options, stdinHandle, stdoutHandle,
                                  stderrHandle)
           if res.isErr():
             raise newException(AsyncProcessError, osErrorMsg(res.error()))

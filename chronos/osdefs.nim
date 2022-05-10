@@ -864,7 +864,7 @@ elif defined(openbsd):
     SOCK_NONBLOCK* = 0x4000
 
 when defined(linux):
-  const O_CLOEXEC* = 0x02000000
+  const O_CLOEXEC* = 0x80000
 elif defined(freebsd):
   const O_CLOEXEC* = 0x00100000
 elif defined(openbsd):
