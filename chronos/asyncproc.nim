@@ -921,19 +921,29 @@ else:
     trackAsyncProccess(process)
     return process
 
-  proc peekProcessExitCode(p: AsyncProcessRef): AsyncProcessResult[int] =
+  proc peekProcessExitCode(p: AsyncProcessRef,
+                           reap = false): AsyncProcessResult[int] =
     var wstatus: cint = 0
     if p.exitStatus.isSome():
       return ok(p.exitStatus.get())
-    let res = osdefs.waitpid(p.processId, wstatus, osdefs.WNOHANG)
-    if res == p.processId:
+    let
+      flags = if reap: cint(0) else: osdefs.WNOHANG
+      waitRes =
+        block:
+          var res: cint = 0
+          while true:
+            res = osdefs.waitpid(p.processId, wstatus, flags)
+            if not((res == -1) and (osLastError() == EINTR)):
+              break
+          res
+    if waitRes == p.processId:
       if WAITIFEXITED(wstatus) or WAITIFSIGNALED(wstatus):
         let status = int(wstatus)
         p.exitStatus = some(status)
         ok(status)
       else:
         ok(-1)
-    elif res == 0:
+    elif waitRes == 0:
       ok(-1)
     else:
       err(osLastError())
@@ -1056,13 +1066,13 @@ else:
         else:
           let errorCode = res.error()
           if errorCode == osdefs.ESRCH:
-            # If process exited between right after `waitpid()` call `kqueue`
-            # could return ESRCH on MacOS/BSD systems. So we need to handle
-            # it properly and try to obtain exit code one more time before
-            # we could return ESRCH error.
+            # "zombie death race" problem.
+            # If process exited right after `waitpid()` - `kqueue` call
+            # could return ESRCH error. So we need to handle it properly and
+            # try to reap process code from exiting process.
             let exitCode =
               block:
-                let pres = p.peekProcessExitCode()
+                let pres = p.peekProcessExitCode(true)
                 if pres.isErr():
                   retFuture.fail(newException(AsyncProcessError,
                                  osErrorMsg(pres.error())))
