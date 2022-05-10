@@ -661,6 +661,29 @@ else:
       inc(i)
     res
 
+  when defined(macosx) or defined(macos) or defined(ios):
+    proc getEnvironment(): ptr cstringArray {.
+      importc: "_NSGetEnviron", header: "<crt_externs.h>".}
+  else:
+    var globalEnv {.importc: "environ", header: "<unistd.h>".}: cstringArray
+
+  proc getProcessEnvironment*(): StringTableRef =
+    var res = newStringTable(modeCaseInsensitive)
+    let env =
+      when defined(macosx) or defined(macos) or defined(ios):
+        getEnvironment()[]
+      else:
+        globalEnv
+    var i = 0
+    while not(isNil(env[i])):
+      let line = $env[i]
+      if len(line) > 0:
+        let delim = line.find('=')
+        if delim > 0:
+          res[substr(line, 0, delim - 1)] = substr(line, delim + 1)
+      inc(i)
+    res
+
   proc getFullCommand(command: string, arguments: cstringArray): string =
     let length =
       if isNil(arguments):
@@ -769,7 +792,6 @@ else:
           value
       mask: Sigset
       pid: Pid
-    let
       pipes =
         block:
           let res = preparePipes(options, stdinHandle, stdoutHandle,
@@ -777,6 +799,7 @@ else:
           if res.isErr():
             raise newException(AsyncProcessError, osErrorMsg(res.error()))
           res.get()
+    let
       (commandLine, commandArguments) =
         if AsyncProcessOption.EvalCommand in options:
           let args = @[asyncProcShellPath, "-c", command]
@@ -903,12 +926,15 @@ else:
         raise newException(AsyncProcessError,
                            osErrorMsg(OSErrorCode(currentError)))
 
-    return AsyncProcessRef(
+    let process = AsyncProcessRef(
       processId: pid,
       pipes: pipes,
       options: options,
       flags: pipes.flags
     )
+
+    trackAsyncProccess(process)
+    return process
 
   proc peekProcessExitCode(p: AsyncProcessRef): AsyncProcessResult[int] =
     var wstatus: cint = 0
