@@ -1084,7 +1084,7 @@ else:
               retFuture.fail(newException(AsyncProcessError,
                              osErrorMsg(OSErrorCode(osdefs.ESRCH))))
             else:
-              retFuture.complete(exitCode)
+              retFuture.complete(exitStatusLikeShell(exitCode))
           else:
             retFuture.fail(newException(AsyncProcessError,
                                         osErrorMsg(res.error())))
