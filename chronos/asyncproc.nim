@@ -109,8 +109,7 @@ type
     opened*: int64
     closed*: int64
 
-proc setupAsyncProcessTracker(): AsyncProcessTracker {.
-     gcsafe, raises: [Defect].}
+proc setupAsyncProcessTracker(): AsyncProcessTracker {.gcsafe.}
 
 proc getAsyncProcessTracker(): AsyncProcessTracker {.inline.} =
   var res = cast[AsyncProcessTracker](getTracker(AsyncProcessTrackerName))
@@ -275,19 +274,15 @@ proc getParentStderr(): AsyncProcessResult[AsyncStreamHolder]
 
 proc preparePipes(options: set[AsyncProcessOption],
                   stdinHandle, stdoutHandle, stderrHandle: ProcessStreamHandle
-                 ): AsyncProcessResult[AsyncProcessPipes] {.
-     raises: [Defect], gcsafe.}
+                 ): AsyncProcessResult[AsyncProcessPipes] {.gcsafe.}
 
 proc closeProcessHandles(pipes: var AsyncProcessPipes,
                          options: set[AsyncProcessOption],
-                         lastError: OSErrorCode): OSErrorCode {.
-     raises: [Defect].}
+                         lastError: OSErrorCode): OSErrorCode
 
-proc closeProcessStreams(pipes: AsyncProcessPipes): Future[void] {.
-     raises: [Defect], gcsafe.}
+proc closeProcessStreams(pipes: AsyncProcessPipes): Future[void] {.gcsafe.}
 
-proc closeWait(holder: AsyncStreamHolder): Future[void] {.
-     raises: [Defect], gcsafe.}
+proc closeWait(holder: AsyncStreamHolder): Future[void] {.gcsafe.}
 
 template isOk(code: OSErrorCode): bool =
   when defined(windows):
@@ -394,8 +389,7 @@ when defined(windows):
     discard freeEnvironmentStringsW(env)
     res
 
-  proc buildCommandLine(a: string, args: openArray[string]): string {.
-     raises: [Defect].} =
+  proc buildCommandLine(a: string, args: openArray[string]): string =
     # TODO: Procedures quoteShell/(Windows, Posix)() needs security and bug review
     # or reimplementation, for example quoteShellWindows() do not handle `\`
     # properly.
@@ -542,8 +536,7 @@ when defined(windows):
     trackAsyncProccess(process)
     return process
 
-  proc peekProcessExitCode(p: AsyncProcessRef): AsyncProcessResult[int] {.
-       raises: [Defect].} =
+  proc peekProcessExitCode(p: AsyncProcessRef): AsyncProcessResult[int] =
     var wstatus: DWORD = 0
     if p.exitStatus.isSome():
       return ok(p.exitStatus.get())
@@ -559,29 +552,25 @@ when defined(windows):
     else:
       err(osLastError())
 
-  proc suspend(p: AsyncProcessRef): AsyncProcessResult[void] {.
-       raises: [Defect].} =
+  proc suspend(p: AsyncProcessRef): AsyncProcessResult[void] =
     if suspendThread(p.threadHandle) != 0xFFFF_FFFF'u32:
       ok()
     else:
       err(osLastError())
 
-  proc resume(p: AsyncProcessRef): AsyncProcessResult[void] {.
-       raises: [Defect].} =
+  proc resume(p: AsyncProcessRef): AsyncProcessResult[void] =
     if resumeThread(p.threadHandle) != 0xFFFF_FFFF'u32:
       ok()
     else:
       err(osLastError())
 
-  proc terminate(p: AsyncProcessRef): AsyncProcessResult[void] {.
-       raises: [Defect].} =
+  proc terminate(p: AsyncProcessRef): AsyncProcessResult[void] =
     if terminateProcess(p.processHandle, 0) != 0'u32:
       ok()
     else:
       err(osLastError())
 
-  proc kill(p: AsyncProcessRef): AsyncProcessResult[void] {.
-       raises: [Defect].} =
+  proc kill(p: AsyncProcessRef): AsyncProcessResult[void] =
     p.terminate()
 
   proc running(p: AsyncProcessRef): AsyncProcessResult[bool] =
@@ -632,8 +621,7 @@ else:
   import std/strutils
   from selectors2 import IOSelectorsException
 
-  proc envToCStringArray(t: StringTableRef): cstringArray {.
-       raises: [Defect].} =
+  proc envToCStringArray(t: StringTableRef): cstringArray =
     let itemsCount = len(t)
     var
       res = cast[cstringArray](alloc0((itemsCount + 1) * sizeof(cstring)))
