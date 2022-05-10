@@ -342,9 +342,12 @@ proc raiseAsyncProcessError(msg: string, exc: ref CatchableError = nil) {.
       msg & " ([" & $exc.name & "]: " & $exc.msg & ")"
   raise newException(AsyncProcessError, message)
 
-proc raiseAsyncProcessError(msg: string, error: OSErrorCode) {.
+proc raiseAsyncProcessError(msg: string, error: OSErrorCode|cint) {.
      noreturn, noinit, noinline, raises: [AsyncProcessError].} =
-  let message = msg & " ([OSError]: " & osErrorMsg(error) & ")"
+  when error is OSErrorCode:
+    let message = msg & " ([OSError]: " & osErrorMsg(error) & ")"
+  else:
+    let message = msg & " ([OSError]: " & osErrorMsg(OSErrorCode(error)) & ")"
   raise newException(AsyncProcessError, message)
 
 when defined(windows):
