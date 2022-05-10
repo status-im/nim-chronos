@@ -5,6 +5,7 @@ if [ "$1" == "stdin" ]; then
   echo "STDIN DATA: $inputdata"
 elif [ "$1" == "timeout2" ]; then
   sleep 2s
+  exit 2
 elif [ "$1" == "timeout10" ]; then
   sleep 10s
 else

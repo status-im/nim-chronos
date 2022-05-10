@@ -23,8 +23,8 @@ suite "Asynchronous process management test suite":
     else:
       [
         ("echo TESTOUT", "TESTOUT\n", ""),
-        ("echo TESTERR 1>&2", "", "TESTERR"),
-        ("echo TESTBOTH && echo TESTBOTH 1>&2", "TESTBOTH", "TESTBOTH")
+        ("echo TESTERR 1>&2", "", "TESTERR\n"),
+        ("echo TESTBOTH && echo TESTBOTH 1>&2", "TESTBOTH\n", "TESTBOTH\n")
       ]
 
   const ExitCodes = [5, 13, 64, 100, 126, 127, 128, 130, 255]
@@ -133,23 +133,23 @@ suite "Asynchronous process management test suite":
   asyncTest "terminate() test":
     let command =
       when defined(windows):
-        ("tests\\testproc.bat", "timeout10")
+        ("tests\\testproc.bat", "timeout10", 0)
       else:
-        ("tests/testproc.sh", "timeout10")
+        ("tests/testproc.sh", "timeout10", 143) # 128 + SIGTERM
     let process = await startProcess(command[0], arguments = @[command[1]])
     try:
       check process.terminate().isOk()
       let res = await process.waitForExit(InfiniteDuration)
-      check res == 0
+      check res == command[2]
     finally:
       await process.closeWait()
 
   asyncTest "kill() test":
     let command =
       when defined(windows):
-        ("tests\\testproc.bat", "timeout10")
+        ("tests\\testproc.bat", "timeout10", 0)
       else:
-        ("tests/testproc.sh", "timeout10")
+        ("tests/testproc.sh", "timeout10", 137) # 128 + SIGKILL
     let process = await startProcess(command[0], arguments = @[command[1]])
     try:
       check process.kill().isOk()
