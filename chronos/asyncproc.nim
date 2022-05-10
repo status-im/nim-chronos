@@ -1051,7 +1051,9 @@ else:
     processHandle =
       block:
         let res = addProcessNe(int(p.processId), continuation, cast[pointer](1))
-        if res.isErr():
+        if res.isOk():
+          res.get()
+        else:
           let errorCode = res.error()
           if errorCode == osdefs.ESRCH:
             # If process exited between right after `waitpid()` call `kqueue`
@@ -1070,16 +1072,13 @@ else:
               # This should not be happens one more time, so we just report
               # original error.
               retFuture.fail(newException(AsyncProcessError,
-                             osErrorMsg(osdefs.ESRCH)))
-              return retFuture
-            retFuture.complete(exitCode)
-            return retFuture
+                             osErrorMsg(OSErrorCode(osdefs.ESRCH))))
+            else:
+              retFuture.complete(exitCode)
           else:
             retFuture.fail(newException(AsyncProcessError,
                                         osErrorMsg(res.error())))
-            return retFuture
-        else:
-          res.get()
+          return retFuture
 
     return retFuture
 
