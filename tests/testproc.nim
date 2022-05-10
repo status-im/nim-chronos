@@ -59,9 +59,9 @@ suite "Asynchronous process management test suite":
     let
       command =
         when defined(windows):
-          "tests\\testproc.bat STDIN"
+          "tests\\testproc.bat stdin"
         else:
-          "tests/testproc.sh"
+          "tests/testproc.sh stdin"
       options = {AsyncProcessOption.EvalCommand}
       shellHeader = "STDIN DATA: ".toBytes()
       smallTest =
@@ -154,7 +154,7 @@ suite "Asynchronous process management test suite":
     try:
       check process.kill().isOk()
       let res = await process.waitForExit(InfiniteDuration)
-      check res == 0
+      check res == command[2]
     finally:
       await process.closeWait()
 
