@@ -557,8 +557,9 @@ when defined(windows):
         return err(res)
     ok()
 
-  proc addProcess*(pid: int, cb: CallbackFunc, udata: pointer = nil): int {.
-       raises: [Defect, ValueError].} =
+  proc addProcessNe*(pid: int, cb: CallbackFunc,
+                     udata: pointer = nil): Result[int, OSErrorCode] {.
+       raises: [Defect].} =
     ## Registers callback ``cb`` to be called when process with process
     ## identifier ``pid`` exited. Returns process identifier, which can be
     ## used to clear process callback via ``removeProcess``.
@@ -571,7 +572,7 @@ when defined(windows):
     var wh: WaitableHandle = nil
 
     if hProcess == Handle(0):
-      raise newException(ValueError, osErrorMsg(osLastError()))
+      return err(osLastError())
 
     proc continuation(udata: pointer) {.gcsafe.} =
       doAssert(not(isNil(udata)))
@@ -591,9 +592,19 @@ when defined(windows):
                                    continuation, udata)
         if res.isErr():
           discard closeHandle(hProcess)
-          raise newException(ValueError, osErrorMsg(res.error()))
+          return err(res.error())
         res.get()
-    cast[int](wh)
+    ok(cast[int](wh))
+
+  proc addProcess*(pid: int, cb: CallbackFunc, udata: pointer = nil): int {.
+       raises: [Defect, ValueError].} =
+    ## Registers callback ``cb`` to be called when process with process
+    ## identifier ``pid`` exited. Returns process identifier, which can be
+    ## used to clear process callback via ``removeProcess``.
+    let res = addProcessNe(pid, cb, udata)
+    if res.isErr():
+      raise newException(ValueError, osErrorMsg(res.error()))
+    res.get()
 
   proc removeProcess*(procfd: int) {.raises: [Defect, ValueError].} =
     ## Remove process' watching using process' descriptor ``procfd``.
@@ -889,45 +900,57 @@ elif unixPlatform:
     closeSocket(fd, aftercb)
 
   when ioselSupportedPlatform:
-    proc addSignal*(signal: int, cb: CallbackFunc,
-                    udata: pointer = nil): int {.
-         raises: [Defect, ValueError].} =
+    proc addSignalNe*(signal: int, cb: CallbackFunc,
+                      udata: pointer = nil): Result[int, OSErrorCode] {.
+         raises: [Defect].} =
       ## Start watching signal ``signal``, and when signal appears, call the
       ## callback ``cb`` with specified argument ``udata``. Returns signal
       ## identifier code, which can be used to remove signal callback
       ## via ``removeSignal``.
       let loop = getThreadDispatcher()
       var data: SelectorData
-      let sigfd =
-        block:
-          let res = loop.selector.registerSignal(signal, data)
-          if res.isErr():
-            raise newException(ValueError, osErrorMsg(res.error()))
-          res.get()
+      let sigfd = ? loop.selector.registerSignal(signal, data)
       withData(loop.selector, sigfd, adata) do:
         adata.reader = AsyncCallback(function: cb, udata: udata)
       do:
-        raise newException(ValueError, "File descriptor not registered.")
-      sigfd
+        return err(OSErrorCode(osdefs.EBADF))
+      ok(sigfd)
+
+    proc addSignal*(signal: int, cb: CallbackFunc, udata: pointer = nil): int {.
+         raises: [Defect, ValueError].} =
+      ## Start watching signal ``signal``, and when signal appears, call the
+      ## callback ``cb`` with specified argument ``udata``. Returns signal
+      ## identifier code, which can be used to remove signal callback
+      ## via ``removeSignal``.
+      let res = addSignalNe(signal, cb, udata)
+      if res.isErr():
+        raise newException(ValueError, osErrorMsg(res.error()))
+      res.get()
+
+    proc addProcessNe*(pid: int, cb: CallbackFunc,
+                       udata: pointer = nil): Result[int, OSErrorCode] {.
+         raises: [Defect].} =
+      ## Registers callback ``cb`` to be called when process with process
+      ## identifier ``pid`` exited. Returns process' descriptor, which can be
+      ## used to clear process callback via ``removeProcess``.
+      let loop = getThreadDispatcher()
+      var data: SelectorData
+      let procfd = ? loop.selector.registerProcess(pid, data)
+      withData(loop.selector, procfd, adata) do:
+        adata.reader = AsyncCallback(function: cb, udata: udata)
+      do:
+        return err(OSErrorCode(osdefs.EBADF))
+      ok(procfd)
 
     proc addProcess*(pid: int, cb: CallbackFunc, udata: pointer = nil): int {.
          raises: [Defect, ValueError].} =
       ## Registers callback ``cb`` to be called when process with process
       ## identifier ``pid`` exited. Returns process' descriptor, which can be
       ## used to clear process callback via ``removeProcess``.
-      var loop = getThreadDispatcher()
-      var data: SelectorData
-      let procfd =
-        block:
-          let res = loop.selector.registerProcess(pid, data)
-          if res.isErr():
-            raise newException(ValueError, osErrorMsg(res.error()))
-          res.get()
-      withData(loop.selector, procfd, adata) do:
-        adata.reader = AsyncCallback(function: cb, udata: udata)
-      do:
-        raise newException(ValueError, "File descriptor not registered.")
-      procfd
+      let res = addProcessNe(pid, cb, udata)
+      if res.isErr():
+        raise newException(ValueError, osErrorMsg(res.error()))
+      res.get()
 
     proc removeSignal*(sigfd: int) {.
          raises: [Defect, IOSelectorsException].} =

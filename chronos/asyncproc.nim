@@ -1049,11 +1049,38 @@ else:
       timer = setTimer(Moment.fromNow(timeout), continuation, cast[pointer](2))
 
     processHandle =
-      try:
-        addProcess(int(p.processId), continuation, cast[pointer](1))
-      except ValueError as exc:
-        retFuture.fail(newException(AsyncProcessError, exc.msg))
-        return retFuture
+      block:
+        let res = addProcessNe(int(p.processId), continuation, cast[pointer](1))
+        if res.isErr():
+          let errorCode = res.error()
+          if errorCode == osdefs.ESRCH:
+            # If process exited between right after `waitpid()` call `kqueue`
+            # could return ESRCH on MacOS/BSD systems. So we need to handle
+            # it properly and try to obtain exit code one more time before
+            # we could return ESRCH error.
+            let exitCode =
+              block:
+                let pres = p.peekProcessExitCode()
+                if pres.isErr():
+                  retFuture.fail(newException(AsyncProcessError,
+                                 osErrorMsg(pres.error())))
+                  return retFuture
+                pres.get()
+            if exitCode == -1:
+              # This should not be happens one more time, so we just report
+              # original error.
+              retFuture.fail(newException(AsyncProcessError,
+                             osErrorMsg(osdefs.ESRCH)))
+              return retFuture
+            retFuture.complete(exitCode)
+            return retFuture
+          else:
+            retFuture.fail(newException(AsyncProcessError,
+                                        osErrorMsg(res.error())))
+            return retFuture
+        else:
+          res.get()
+
     return retFuture
 
   proc peekExitCode(p: AsyncProcessRef): AsyncProcessResult[int] =
