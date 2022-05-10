@@ -32,13 +32,6 @@ suite "Asynchronous process management test suite":
 
   const ExitCodes = [5, 13, 64, 100, 126, 127, 128, 130, 255]
 
-  proc getCurrentFD(): int =
-    let local = initTAddress("127.0.0.1:34334")
-    let sock = createAsyncSocket(local.getDomain(), SockType.SOCK_DGRAM,
-                                 Protocol.IPPROTO_UDP)
-    closeSocket(sock)
-    return int(sock)
-
   proc createBigMessage(size: int): seq[byte] =
     var message = "MESSAGE"
     result = newSeq[byte](size)
