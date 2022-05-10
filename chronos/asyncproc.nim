@@ -289,16 +289,6 @@ proc closeProcessStreams(pipes: AsyncProcessPipes): Future[void] {.
 proc closeWait(holder: AsyncStreamHolder): Future[void] {.
      raises: [Defect], gcsafe.}
 
-# proc getFd(h: AsyncStreamHolder): cint =
-#   doAssert(h.kind != StreamKind.None)
-#   case h.kind
-#   of StreamKind.Reader:
-#     cint(h.reader.tsource.fd)
-#   of StreamKind.Writer:
-#     cint(h.writer.tsource.fd)
-#   of StreamKind.None:
-#     raiseAssert "Incorrect stream holder"
-
 template isOk(code: OSErrorCode): bool =
   when defined(windows):
     code == ERROR_SUCCESS
@@ -343,13 +333,18 @@ proc closeProcessHandles(pipes: var AsyncProcessPipes,
         pipes.stderrHandle = asyncInvalidPipe
   currentError
 
-proc raiseAsyncProcessError(msg: string, exc: ref AsyncStreamError = nil) {.
+proc raiseAsyncProcessError(msg: string, exc: ref CatchableError = nil) {.
      noreturn, noinit, noinline, raises: [AsyncProcessError].} =
   let message =
     if isNil(exc):
       msg
     else:
       msg & " ([" & $exc.name & "]: " & $exc.msg & ")"
+  raise newException(AsyncProcessError, message)
+
+proc raiseAsyncProcessError(msg: string, error: OSErrorCode) {.
+     noreturn, noinit, noinline, raises: [AsyncProcessError].} =
+  let message = msg & " ([OSError]: " & osErrorMsg(error) & ")"
   raise newException(AsyncProcessError, message)
 
 when defined(windows):
@@ -476,7 +471,8 @@ when defined(windows):
           let res = preparePipes(options, stdinHandle, stdoutHandle,
                                  stderrHandle)
           if res.isErr():
-            raise newException(AsyncProcessError, osErrorMsg(res.error()))
+            raiseAsyncProcessError("Unable to initialze process pipes",
+                                   res.error())
           res.get()
     let
       commandLine =
@@ -529,7 +525,7 @@ when defined(windows):
     currentError = closeProcessHandles(pipes, options, currentError)
 
     if res == FALSE:
-      raise newException(AsyncProcessError, osErrorMsg(currentError))
+      raiseAsyncProcessError("Unable to spawn process", currentError)
 
     let process = AsyncProcessRef(
       processHandle: procInfo.hProcess,
@@ -601,18 +597,19 @@ when defined(windows):
       try:
         await waitForSingleObject(p.processHandle, timeout)
       except ValueError as exc:
-        raise newException(AsyncProcessError, exc.msg)
+        raiseAsyncProcessError("Unable to wait for process handle", exc)
 
     if wres == WaitableResult.Timeout:
       let res = p.terminate()
       if res.isErr():
-        raise newException(AsyncProcessError, osErrorMsg(res.error()))
+        raiseAsyncProcessError("Unable to terminate process", res.error())
 
     let exitCode =
       block:
         let res = p.peekProcessExitCode()
         if res.isErr():
-          raise newException(AsyncProcessError, osErrorMsg(res.error()))
+          raiseAsyncProcessError("Unable to peek process exit code",
+                                 res.error())
         res.get()
 
     if exitCode >= 0:
@@ -780,7 +777,7 @@ else:
           var value: PosixSpawnAttr
           let res = posixSpawnAttrInit(value)
           if res != 0:
-            raise newException(AsyncProcessError, osErrorMsg(OSErrorCode(res)))
+            raiseAsyncProcessError("Unable to initalize spawn attributes", res)
           value
       posixFops =
         block:
@@ -788,7 +785,7 @@ else:
           let res = posixSpawnFileActionsInit(value)
           if res != 0:
             discard posixSpawnAttrDestroy(posixAttr)
-            raise newException(AsyncProcessError, osErrorMsg(OSErrorCode(res)))
+            raiseAsyncProcessError("Unable to initialize spaw actions", res)
           value
       mask: Sigset
       pid: Pid
@@ -797,7 +794,8 @@ else:
           var res = preparePipes(options, stdinHandle, stdoutHandle,
                                  stderrHandle)
           if res.isErr():
-            raise newException(AsyncProcessError, osErrorMsg(res.error()))
+            raiseAsyncProcessError("Unable to initialze process pipes",
+                                   res.error())
           res.get()
     let
       (commandLine, commandArguments) =
@@ -819,13 +817,13 @@ else:
       let res = e
       if res != 0:
         currentError = OSErrorCode(res)
-        raise newException(AsyncProcessError, osErrorMsg(currentError))
+        raiseAsyncProcessError("Unable to prepare attributes and flags", res)
 
     template checkSigError(e: untyped) =
       let res = e
       if res != 0:
         currentError = osLastError()
-        raise newException(AsyncProcessError, osErrorMsg(currentError))
+        raiseAsyncProcessError("Unable to initalize signal set", currentError)
 
     var currentError: OSErrorCode
     var currentDir: string
@@ -842,18 +840,12 @@ else:
       checkSpawnError posixSpawnAttrSetFlags(posixAttr, flags)
 
       if AsyncProcessOption.ParentStreams notin options:
-        # checkSpawnError:
-        #   posixSpawnFileActionsAddClose(posixFops, pipes.stdinHolder.getFd())
         checkSpawnError:
           posixSpawnFileActionsAddDup2(posixFops, cint(pipes.stdinHandle),
                                        cint(0))
-        # checkSpawnError:
-        #   posixSpawnFileActionsAddClose(posixFops, pipes.stdoutHolder.getFd())
         checkSpawnError:
           posixSpawnFileActionsAddDup2(posixFops, cint(pipes.stdoutHandle),
                                        cint(1))
-        # checkSpawnError:
-        #   posixSpawnFileActionsAddClose(posixFops, pipes.stderrHolder.getFd())
         checkSpawnError:
           if AsyncProcessOption.StdErrToStdOut in options:
             posixSpawnFileActionsAddDup2(posixFops, cint(pipes.stdoutHandle),
@@ -867,10 +859,12 @@ else:
           # Save current working directory and change it to `workingDir`.
           let cres = getCurrentDirectory()
           if cres.isErr():
-            raise newException(AsyncProcessError, osErrorMsg(cres.error()))
+            raiseAsyncProcessError("Unable to obtain current directory",
+                                   cres.error())
           let sres = setCurrentDirectory(workingDir)
           if sres.isErr():
-            raise newException(AsyncProcessError, osErrorMsg(sres.error()))
+            raiseAsyncProcessError("Unable to change current directory",
+                                   sres.error())
           cres.get()
         else:
           ""
@@ -923,8 +917,8 @@ else:
 
       # If currentError has been set, raising an exception.
       if currentError != 0:
-        raise newException(AsyncProcessError,
-                           osErrorMsg(OSErrorCode(currentError)))
+        raiseAsyncProcessError("Unable to spawn process",
+                               OSErrorCode(currentError))
 
     let process = AsyncProcessRef(
       processId: pid,
