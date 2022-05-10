@@ -171,7 +171,7 @@ suite "Asynchronous process management test suite":
     when defined(windows):
       check len(env["SYSTEMROOT"]) > 0
     else:
-      discard
+      check len(env["SHELL"]) > 0
 
   test "Leaks test":
     proc getTrackerLeaks(tracker: string): bool =
