@@ -130,6 +130,25 @@ proc new*(t: typedesc[Selector],
   selector.maxFD = int(maxFD)
   ok(selector)
 
+proc close2*[T](s: Selector[T]): Result[void, OSErrorCode] =
+  let
+    kqFD = s.kqFD
+    sockFD = s.sock
+
+  when hasThreadSupport:
+    deinitLock(s.changesLock)
+    deallocSharedArray(s.fds)
+    deallocShared(cast[pointer](s))
+
+  if osdefs.close(sockFD) != 0:
+    discard osdefs.close(kqFD)
+    err(osLastError())
+  else:
+    if osdefs.close(kqFD) != 0:
+      err(osLastError())
+    else:
+      ok()
+
 proc setSocketFlags(s: cint,
                     nonblock, cloexec: bool): Result[void, OSErrorCode] =
   if nonblock:
@@ -587,6 +606,7 @@ proc selectInto2*[T](s: Selector[T], timeout: int,
       rkey.fd = cast[int](kevent.udata)
       rkey.events.incl(Event.Signal)
     of EVFILT_PROC:
+      var pkey = addr(s.fds[int(kevent.ident)])
       rkey.fd = cast[int](kevent.udata)
       rkey.events.incl(Event.Process)
       pkey.events.incl(Event.Finished)
@@ -610,89 +630,88 @@ proc select2*[T](s: Selector[T],
   ok(res)
 
 proc newSelector*[T](): owned(Selector[T]) {.
-     raises: [Defect, IOSelectorsError].} =
+     raises: [Defect, IOSelectorsException].} =
   let res = Selector.new(T)
   if res.isErr():
     raiseIOSelectorsError(res.error())
   res.get()
 
-proc newSelectEvent*(): SelectEvent {.raises: [Defect, IOSelectorsError].} =
+proc newSelectEvent*(): SelectEvent {.
+     raises: [Defect, IOSelectorsException].} =
   let res = SelectEvent.new()
   if res.isErr():
     raiseIOSelectorsError(res.error())
   res.get()
 
-proc trigger*(ev: SelectEvent) {.raises: [Defect, IOSelectorsError].} =
+proc trigger*(ev: SelectEvent) {.
+     raises: [Defect, IOSelectorsException].} =
   let res = ev.trigger2()
   if res.isErr():
     raiseIOSelectorsError(res.error())
 
-proc close*(ev: SelectEvent) {.raises: [Defect, IOSelectorsError].} =
+proc close*(ev: SelectEvent) {.
+     raises: [Defect, IOSelectorsException].} =
   let res = ev.close2()
   if res.isErr():
     raiseIOSelectorsError(res.error())
 
 proc registerHandle*[T](s: Selector[T], fd: int | SocketHandle,
                         events: set[Event], data: T) {.
-     raises: [Defect, IOSelectorsError].} =
+     raises: [Defect, IOSelectorsException].} =
   let res = registerHandle2(s, fd, events, data)
   if res.isErr():
     raiseIOSelectorsError(res.error())
 
 proc updateHandle*[T](s: Selector[T], fd: int | SocketHandle,
                       events: set[Event]) {.
-     raises: [Defect, IOSelectorsError].} =
+     raises: [Defect, IOSelectorsException].} =
   let res = updateHandle2(s, fd, events)
   if res.isErr():
     raiseIOSelectorsError(res.error())
 
 proc registerEvent*[T](s: Selector[T], ev: SelectEvent, data: T) {.
-     raises: [Defect, IOSelectorsError].} =
+     raises: [Defect, IOSelectorsException].} =
   let res = registerEvent2(s, ev, data)
   if res.isErr():
     raiseIOSelectorsError(res.error())
 
 proc registerVnode*[T](s: Selector[T], fd: cint, events: set[Event], data: T) {.
-     raises: [Defect, IOSelectorsError].} =
+     raises: [Defect, IOSelectorsException].} =
   let res = registerVnode2(s, fd, events, data)
   if res.isErr():
     raiseIOSelectorsError(res.error())
 
 proc unregister*[T](s: Selector[T], event: SelectEvent) {.
-  raises: [Defect, IOSelectorsError].} =
+  raises: [Defect, IOSelectorsException].} =
   let res = unregister2(s, event)
   if res.isErr():
     raiseIOSelectorsError(res.error())
 
 proc unregister*[T](s: Selector[T], fd: int|SocketHandle) {.
-  raises: [Defect, IOSelectorsError].} =
+  raises: [Defect, IOSelectorsException].} =
   let res = unregister2(s, fd)
   if res.isErr():
     raiseIOSelectorsError(res.error())
 
 proc selectInto*[T](s: Selector[T], timeout: int,
                     results: var openArray[ReadyKey]): int {.
-     raises: [Defect, IOSelectorsError].} =
+     raises: [Defect, IOSelectorsException].} =
   let res = selectInto2(s, timeout, results)
   if res.isErr():
     raiseIOSelectorsError(res.error())
   res.get()
 
 proc select*[T](s: Selector[T], timeout: int): seq[ReadyKey] {.
-     raises: [Defect, IOSelectorsError].} =
+     raises: [Defect, IOSelectorsException].} =
   let res = select2(s, timeout)
   if res.isErr():
     raiseIOSelectorsError(res.error())
   res.get()
 
-proc close*[T](s: Selector[T]) {.
-     raises: [Defect, IOSelectorsError].} =
-  discard posix.close(s.kqFD)
-  discard posix.close(s.sock)
-  when hasThreadSupport:
-    deinitLock(s.changesLock)
-    deallocSharedArray(s.fds)
-    deallocShared(cast[pointer](s))
+proc close*[T](s: Selector[T]) {.raises: [Defect, IOSelectorsException].} =
+  let res = s.close2()
+  if res.isErr():
+    raiseIOSelectorsError(res.error())
 
 template isEmpty*[T](s: Selector[T]): bool =
   (s.count == 0)
