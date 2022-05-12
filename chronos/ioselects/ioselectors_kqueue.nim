@@ -7,6 +7,7 @@
 #    distribution, for details about the copyright.
 #
 #  This module implements BSD kqueue().
+{.push raises: [Defect].}
 
 {.push raises: [Defect].}
 import std/[kqueue, deques, tables]
@@ -417,6 +418,7 @@ proc unregister2*[T](s: Selector[T], fd: cint): SelectResult[void] =
 
   if pkey.events != {}:
     if pkey.events * {Event.Read, Event.Write} != {}:
+      var count = 0
       if Event.Read in pkey.events:
         changes.modifyKQueue(k, uint(uint32(fdi32)), EVFILT_READ, EV_DELETE,
                              0, 0, nil)
