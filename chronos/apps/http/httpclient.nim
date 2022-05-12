@@ -1066,6 +1066,12 @@ proc open*(request: HttpClientRequestRef): Future[HttpBodyWriter] {.
 
 proc finish*(request: HttpClientRequestRef): Future[HttpClientResponseRef] {.
      async.} =
+  if request.connection.state in {HttpClientConnectionState.Closing,
+                                  HttpClientConnectionState.Closed}:
+    let e = newHttpInterruptError()
+    request.setError(e)
+    raise e
+ 
   ## Finish sending request and receive response.
   doAssert(not(isNil(request.connection)),
            "Request missing connection instance")
