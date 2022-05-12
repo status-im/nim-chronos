@@ -6,10 +6,11 @@
 #    See the file "copying.txt", included in this
 #    distribution, for details about the copyright.
 #
-
 #  This module implements BSD kqueue().
+{.push raises: [Defect].}
 
-import std/[posix, times, kqueue]
+import "."/chronos/osdefs
+import std/kqueue
 import stew/results
 
 export results
@@ -21,9 +22,6 @@ const
   # to be constants and GC-safe.
   SIG_DFL = cast[proc(x: cint) {.raises: [],noconv,gcsafe.}](0)
   SIG_IGN = cast[proc(x: cint) {.raises: [],noconv,gcsafe.}](1)
-
-when defined(kqcache):
-  const CACHE_EVENTS = true
 
 when defined(macosx) or defined(freebsd) or defined(dragonfly):
   when defined(macosx):
@@ -85,28 +83,30 @@ proc getUnique[T](s: Selector[T]): Result[int, OSErrorCode] =
   else:
     ok(res)
 
-proc newSelector*[T](): owned(Selector[T]) =
-  var maxFD = 0.cint
-  var size = csize_t(sizeof(cint))
-  var namearr = [1.cint, MAX_DESCRIPTORS_ID.cint]
-  # Obtain maximum number of opened file descriptors for process
+proc new*(t: typedesc[Selector],
+          T: typedesc): Result[Selector[T], OSErrorCode] =
+  var
+    maxFD = cint(0)
+    size = csize_t(sizeof(cint))
+    namearr = [cint(1), cint(MAX_DESCRIPTORS_ID)]
+
   if sysctl(addr(namearr[0]), 2, cast[pointer](addr maxFD), addr size,
             nil, 0) != 0:
-    raiseIOSelectorsError(osLastError())
+    return err(osLastError())
 
   var kqFD = kqueue()
   if kqFD < 0:
-    raiseIOSelectorsError(osLastError())
+    return err(osLastError())
 
   # we allocating empty socket to duplicate it handle in future, to get unique
   # indexes for `fds` array. This is needed to properly identify
   # {Event.Timer, Event.Signal, Event.Process} events.
-  let usock = posix.socket(posix.AF_INET, posix.SOCK_STREAM,
-                             posix.IPPROTO_TCP).cint
+  let usock = osdefs.socket(osdefs.AF_INET, osdefs.SOCK_STREAM,
+                            osdefs.IPPROTO_TCP).cint
   if usock == -1:
     let err = osLastError()
-    discard posix.close(kqFD)
-    raiseIOSelectorsError(err)
+    discard osdefs.close(kqFD)
+    return err(err)
 
   var selector =
     when hasThreadSupport:
@@ -127,45 +127,78 @@ proc newSelector*[T](): owned(Selector[T]) =
 
   selector.sock = usock
   selector.kqFD = kqFD
-  selector.maxFD = maxFD.int
-  selector
+  selector.maxFD = int(maxFD)
+  ok(selector)
 
-proc close*[T](s: Selector[T]) =
-  let res1 = posix.close(s.kqFD)
-  let res2 = posix.close(s.sock)
-  when hasThreadSupport:
-    deinitLock(s.changesLock)
-    deallocSharedArray(s.fds)
-    deallocShared(cast[pointer](s))
-  if res1 != 0 or res2 != 0:
-    raiseIOSelectorsError(osLastError())
+proc setSocketFlags(s: cint,
+                    nonblock, cloexec: bool): Result[void, OSErrorCode] =
+  if nonblock:
+    let flags = osdefs.fcntl(s, osdefs.F_GETFL)
+    if flags == -1:
+      return err(osLastError())
+    let value = flags or osdefs.O_NONBLOCK
+    if osdefs.fcntl(s, osdefs.F_SETFL, value) == -1:
+      return err(osLastError())
+  if cloexec:
+    let flags = osdefs.fcntl(s, osdefs.F_GETFD)
+    if flags == -1:
+      return err(osLastError())
+    let value = flags or osdefs.FD_CLOEXEC
+    if osdefs.fcntl(s, osdefs.F_SETFD, value) == -1:
+      return err(osLastError())
+  ok()
 
-proc newSelectEvent*(): SelectEvent =
+proc new*(t: typedesc[SelectEvent]): Result[SelectEvent, OSErrorCode] =
   var fds: array[2, cint]
-  if posix.pipe(fds) != 0:
-    raiseIOSelectorsError(osLastError())
-  setNonBlocking(fds[0])
-  setNonBlocking(fds[1])
-  var res = cast[SelectEvent](allocShared0(sizeof(SelectEventImpl)))
-  res.rfd = fds[0]
-  res.wfd = fds[1]
-  res
+  when declared(pipe2):
+    if osdefs.pipe2(fds, osdefs.O_NONBLOCK or osdefs.O_CLOEXEC) == -1:
+      return err(osLastError())
 
-proc trigger*(ev: SelectEvent) =
+    var res = cast[SelectEvent](allocShared0(sizeof(SelectEventImpl)))
+    res.rfd = fds[0]
+    res.wfd = fds[1]
+    ok(res)
+  else:
+    if osdefs.pipe(fd) == -1:
+      return err(osLastError())
+
+    let res1 = setSocketFlags(fds[0], true, true)
+    if res1.isErr():
+      discard osdefs.close(fds[0])
+      discard osdefs.close(fds[1])
+      return err(res1.error())
+    let res2 = setSocketFlags(fds[1], true, true)
+    if res2.isErr():
+      discard osdefs.close(fds[0])
+      discard osdefs.close(fds[1])
+      return err(res2.error())
+
+    var res = cast[SelectEvent](allocShared0(sizeof(SelectEventImpl)))
+    res.rfd = fds[0]
+    res.wfd = fds[1]
+    ok(res)
+
+proc trigger2*(ev: SelectEvent): Result[void, OSErrorCode] =
   var data: uint64 = 1
-  if posix.write(ev.wfd, addr data, sizeof(uint64)) != sizeof(uint64):
-    raiseIOSelectorsError(osLastError())
+  if osdefs.write(ev.wfd, addr data, sizeof(uint64)) != sizeof(uint64):
+    err(osLastError())
+  else:
+    ok()
 
-proc close*(ev: SelectEvent) =
-  let res1 = posix.close(ev.rfd)
-  let res2 = posix.close(ev.wfd)
+proc close2*(ev: SelectEvent): Result[void, OSErrorCode] =
+  let
+    rfd = ev.rfd
+    wfd = ev.wfd
   deallocShared(cast[pointer](ev))
-  if res1 != 0 or res2 != 0:
-    raiseIOSelectorsError(osLastError())
 
-template checkFd(s, f) =
-  if f >= s.maxFD:
-    raiseIOSelectorsError("Maximum number of descriptors is exhausted!")
+  if osdefs.close(rfd) != 0:
+    discard osdefs.close(wfd)
+    err(osLastError())
+  else:
+    if osdefs.close(wfd) != 0:
+      err(osLastError())
+    else:
+      ok()
 
 when hasThreadSupport:
   template withChangeLock[T](s: Selector[T], body: untyped) =
@@ -197,25 +230,15 @@ when hasThreadSupport:
                                           udata: nudata)
       inc(s.changesLength)
 
-  when not declared(CACHE_EVENTS):
-    template flushKQueue[T](s: Selector[T]) =
-      mixin withChangeLock
-      s.withChangeLock():
-        if s.changesLength > 0:
-          if kevent(s.kqFD, addr(s.changes[0]), cint(s.changesLength),
-                    nil, 0, nil) == -1:
-            raiseIOSelectorsError(osLastError())
-          s.changesLength = 0
-
-    proc flushKQueueRes[T](s: Selector[T]): Result[void, OSErrorCode] =
-      mixin withChangeLock
-      s.withChangeLock():
-        if s.changesLength > 0:
-          if kevent(s.kqFD, addr(s.changes[0]), cint(s.changesLength),
-                    nil, 0, nil) == -1:
-            return err(osLastError())
-          s.changesLength = 0
-      ok()
+  proc flushKQueue[T](s: Selector[T]): Result[void, OSErrorCode] =
+    mixin withChangeLock
+    s.withChangeLock():
+      if s.changesLength > 0:
+        if kevent(s.kqFD, addr(s.changes[0]), cint(s.changesLength),
+                  nil, 0, nil) == -1:
+          return err(osLastError())
+        s.changesLength = 0
+    ok()
 
 else:
   template modifyKQueue[T](s: Selector[T], nident: uint, nfilter: cshort,
@@ -226,28 +249,21 @@ else:
                          fflags: nfflags, data: ndata,
                          udata: nudata))
 
-  when not declared(CACHE_EVENTS):
-    template flushKQueue[T](s: Selector[T]) =
-      let length = cint(len(s.changes))
-      if length > 0:
-        if kevent(s.kqFD, addr(s.changes[0]), length,
-                  nil, 0, nil) == -1:
-          raiseIOSelectorsError(osLastError())
-        s.changes.setLen(0)
+  proc flushKQueue[T](s: Selector[T]): Result[void, OSErrorCode] =
+    let length = cint(len(s.changes))
+    if length > 0:
+      if kevent(s.kqFD, addr(s.changes[0]), length,
+                nil, 0, nil) == -1:
+        return err(osLastError())
+      s.changes.setLen(0)
+    ok()
 
-    proc flushKQueueRes[T](s: Selector[T]): Result[void, OSErrorCode] =
-      let length = cint(len(s.changes))
-      if length > 0:
-        if kevent(s.kqFD, addr(s.changes[0]), length,
-                  nil, 0, nil) == -1:
-          return err(osLastError())
-        s.changes.setLen(0)
-      ok()
-
-proc registerHandle*[T](s: Selector[T], fd: int | SocketHandle,
-                        events: set[Event], data: T) =
+proc registerHandle2*[T](s: Selector[T], fd: int | SocketHandle,
+                         events: set[Event],
+                         data: T): Result[void, OSErrorCode] =
   let fdi = int(fd)
-  s.checkFd(fdi)
+  if fdi >= s.maxFD:
+    return err(OSErrorCode(osdefs.EMFILE))
   doAssert(s.fds[fdi].ident == InvalidIdent)
   s.setKey(fdi, events, 0, data)
 
@@ -258,19 +274,19 @@ proc registerHandle*[T](s: Selector[T], fd: int | SocketHandle,
     if Event.Write in events:
       modifyKQueue(s, uint(fdi), EVFILT_WRITE, EV_ADD, 0, 0, nil)
       inc(s.count)
+    ? flushKQueue(s)
+  ok()
 
-    when not declared(CACHE_EVENTS):
-      flushKQueue(s)
-
-proc updateHandle*[T](s: Selector[T], fd: int | SocketHandle,
-                      events: set[Event]) =
+proc updateHandle2*[T](s: Selector[T], fd: int | SocketHandle,
+                       events: set[Event]): Result[void, OSErrorCode] =
   let maskEvents = {Event.Timer, Event.Signal, Event.Process, Event.Vnode,
                     Event.User, Event.Oneshot, Event.Error}
   let fdi = int(fd)
-  s.checkFd(fdi)
+  doAssert(fdi < s.maxFD,
+           "Descriptor [" & $fdi & " is not registered in the queue!")
   var pkey = addr(s.fds[fdi])
   doAssert(pkey.ident != InvalidIdent,
-           "Descriptor $# is not registered in the queue!" % $fdi)
+           "Descriptor [" & $fdi & " is not registered in the queue!")
   doAssert(pkey.events * maskEvents == {})
 
   if pkey.events != events:
@@ -287,14 +303,12 @@ proc updateHandle*[T](s: Selector[T], fd: int | SocketHandle,
       modifyKQueue(s, fdi.uint, EVFILT_WRITE, EV_ADD, 0, 0, nil)
       inc(s.count)
 
-    when not declared(CACHE_EVENTS):
-      flushKQueue(s)
-
+    ? flushKQueue(s)
     pkey.events = events
+  ok()
 
 proc registerTimer*[T](s: Selector[T], timeout: int, oneshot: bool,
-                       data: T): Result[int, OSErrorCode] {.
-     raises: [Defect].} =
+                       data: T): Result[int, OSErrorCode] =
   let fdi = ? getUnique(s)
   if fdi >= s.maxFD:
     return err(OSErrorCode(osdefs.EMFILE))
@@ -308,17 +322,13 @@ proc registerTimer*[T](s: Selector[T], timeout: int, oneshot: bool,
   # EVFILT_TIMER on Open/Net(BSD) has granularity of only milliseconds,
   # but MacOS and FreeBSD allow use `0` as `fflags` to use milliseconds
   # too
-  modifyKQueue(s, fdi.uint, EVFILT_TIMER, flags, 0, cint(timeout), nil)
-
-  when not declared(CACHE_EVENTS):
-    ? flushKQueueRes(s)
-
+  modifyKQueue(s, uint(fdi), EVFILT_TIMER, flags, 0, cint(timeout), nil)
+  ? flushKQueue(s)
   inc(s.count)
   ok(fdi)
 
 proc registerSignal*[T](s: Selector[T], signal: int,
-                        data: T): Result[int, OSErrorCode] {.
-     raises: [Defect].} =
+                        data: T): Result[int, OSErrorCode] =
   let fdi = ? getUnique(s)
   if fdi >= s.maxFD:
     return err(OSErrorCode(osdefs.EMFILE))
@@ -336,21 +346,17 @@ proc registerSignal*[T](s: Selector[T], signal: int,
   else:
     if posix.sigprocmask(SIG_BLOCK, nmask, omask) == -1:
       return err(osLastError())
+
   # to be compatible with linux semantic we need to "eat" signals
   posix.signal(cint(signal), SIG_IGN)
 
-  modifyKQueue(s, signal.uint, EVFILT_SIGNAL, EV_ADD, 0, 0,
-               cast[pointer](fdi))
-
-  when not declared(CACHE_EVENTS):
-    ? flushKQueueRes(s)
-
+  modifyKQueue(s, uint(signal), EVFILT_SIGNAL, EV_ADD, 0, 0, cast[pointer](fdi))
+  ? flushKQueue(s)
   inc(s.count)
   ok(fdi)
 
 proc registerProcess*[T](s: Selector[T], pid: int,
-                         data: T): Result[int, OSErrorCode] {.
-     raises: [Defect].} =
+                         data: T): Result[int, OSErrorCode] =
   let fdi = ? getUnique(s)
   if fdi >= s.maxFD:
     return err(OSErrorCode(osdefs.EMFILE))
@@ -359,27 +365,23 @@ proc registerProcess*[T](s: Selector[T], pid: int,
   var kflags: cushort = EV_ONESHOT or EV_ADD
   setKey(s, fdi, {Event.Process, Event.Oneshot}, pid, data)
 
-  modifyKQueue(s, pid.uint, EVFILT_PROC, kflags, NOTE_EXIT, 0,
+  modifyKQueue(s, uint(pid), EVFILT_PROC, kflags, NOTE_EXIT, 0,
                cast[pointer](fdi))
-
-  when not declared(CACHE_EVENTS):
-    ? flushKQueueRes(s)
-
+  ? flushKQueue(s)
   inc(s.count)
   ok(fdi)
 
-proc registerEvent*[T](s: Selector[T], ev: SelectEvent, data: T) =
-  let fdi = ev.rfd.int
+proc registerEvent2*[T](s: Selector[T], ev: SelectEvent,
+                        data: T): Result[void, OSErrorCode] =
+  let fdi = int(ev.rfd)
   doAssert(s.fds[fdi].ident == InvalidIdent,
            "Event is already registered in the queue!")
   setKey(s, fdi, {Event.User}, 0, data)
 
   modifyKQueue(s, fdi.uint, EVFILT_READ, EV_ADD, 0, 0, nil)
-
-  when not declared(CACHE_EVENTS):
-    flushKQueue(s)
-
+  ? flushKQueue(s)
   inc(s.count)
+  ok()
 
 template processVnodeEvents(events: set[Event]): cuint =
   var rfflags = 0.cuint
@@ -398,242 +400,299 @@ template processVnodeEvents(events: set[Event]): cuint =
     if Event.VnodeRevoke in events: rfflags = rfflags or NOTE_REVOKE
   rfflags
 
-proc registerVnode*[T](s: Selector[T], fd: cint, events: set[Event], data: T) =
-  let fdi = fd.int
-  setKey(s, fdi, {Event.Vnode} + events, 0, data)
-  var fflags = processVnodeEvents(events)
-
-  modifyKQueue(s, fdi.uint, EVFILT_VNODE, EV_ADD or EV_CLEAR, fflags, 0, nil)
-
-  when not declared(CACHE_EVENTS):
-    flushKQueue(s)
-
-  inc(s.count)
-
-proc unregister*[T](s: Selector[T], fd: int|SocketHandle) =
+proc registerVnode2*[T](s: Selector[T], fd: cint, events: set[Event],
+                        data: T): Result[void, OSErrorCode] =
   let fdi = int(fd)
-  s.checkFd(fdi)
+  setKey(s, fdi, {Event.Vnode} + events, 0, data)
+  let fflags = processVnodeEvents(events)
+
+  modifyKQueue(s, uint(fdi), EVFILT_VNODE, EV_ADD or EV_CLEAR, fflags, 0, nil)
+  ? flushKQueue(s)
+  inc(s.count)
+  ok()
+
+proc unregister2*[T](s: Selector[T],
+                     fd: int|SocketHandle): Result[void, OSErrorCode] =
+  let fdi = int(fd)
+  doAssert(fdi < s.maxFD,
+           "Descriptor [" & $fdi & "] is not registered in the queue")
   var pkey = addr(s.fds[fdi])
   doAssert(pkey.ident != InvalidIdent,
            "Descriptor [" & $fdi & "] is not registered in the queue!")
 
   if pkey.events != {}:
     if pkey.events * {Event.Read, Event.Write} != {}:
+      var count = 0
       if Event.Read in pkey.events:
         modifyKQueue(s, uint(fdi), EVFILT_READ, EV_DELETE, 0, 0, nil)
-        dec(s.count)
+        inc(count)
       if Event.Write in pkey.events:
         modifyKQueue(s, uint(fdi), EVFILT_WRITE, EV_DELETE, 0, 0, nil)
-        dec(s.count)
-      when not declared(CACHE_EVENTS):
-        flushKQueue(s)
+        inc(count)
+      ? flushKQueue(s)
+      dec(s.count, count)
     elif Event.Timer in pkey.events:
       if Event.Finished notin pkey.events:
         modifyKQueue(s, uint(fdi), EVFILT_TIMER, EV_DELETE, 0, 0, nil)
-        when not declared(CACHE_EVENTS):
-          flushKQueue(s)
+        ? flushKQueue(s)
         dec(s.count)
-      if posix.close(cint(pkey.ident)) != 0:
-        raiseIOSelectorsError(osLastError())
+      if osdefs.close(cint(pkey.ident)) != 0:
+        return err(osLastError())
     elif Event.Signal in pkey.events:
       var nmask, omask: Sigset
       let signal = cint(pkey.param)
       discard sigemptyset(nmask)
       discard sigemptyset(omask)
       discard sigaddset(nmask, signal)
-      unblockSignals(nmask, omask)
-      posix.signal(signal, SIG_DFL)
+      when hasThreadSupport:
+        if posix.pthread_sigmask(SIG_UNBLOCK, nmask, omask) == -1:
+          return err(osLastError())
+      else:
+        if posix.sigprocmask(SIG_UNBLOCK, nmask, omask) == -1:
+          return err(osLastError())
+      discard osdefs.signal(signal, SIG_DFL)
       modifyKQueue(s, uint(pkey.param), EVFILT_SIGNAL, EV_DELETE, 0, 0, nil)
-      when not declared(CACHE_EVENTS):
-        flushKQueue(s)
+      ? flushKQueue(s)
       dec(s.count)
-      if posix.close(cint(pkey.ident)) != 0:
-        raiseIOSelectorsError(osLastError())
+      if osdefs.close(cint(pkey.ident)) != 0:
+        return err(osLastError())
     elif Event.Process in pkey.events:
       if Event.Finished notin pkey.events:
         modifyKQueue(s, uint(pkey.param), EVFILT_PROC, EV_DELETE, 0, 0, nil)
-        when not declared(CACHE_EVENTS):
-          flushKQueue(s)
+        ? flushKQueue(s)
         dec(s.count)
-      if posix.close(cint(pkey.ident)) != 0:
-        raiseIOSelectorsError(osLastError())
+      if osdefs.close(cint(pkey.ident)) != 0:
+        return err(osLastError())
     elif Event.Vnode in pkey.events:
       modifyKQueue(s, uint(fdi), EVFILT_VNODE, EV_DELETE, 0, 0, nil)
-      when not declared(CACHE_EVENTS):
-        flushKQueue(s)
+      ? flushKQueue(s)
       dec(s.count)
     elif Event.User in pkey.events:
       modifyKQueue(s, uint(fdi), EVFILT_READ, EV_DELETE, 0, 0, nil)
-      when not declared(CACHE_EVENTS):
-        flushKQueue(s)
+      ? flushKQueue(s)
       dec(s.count)
 
   clearKey(pkey)
+  ok()
 
-proc unregister*[T](s: Selector[T], ev: SelectEvent) =
-  let fdi = int(ev.rfd)
-  s.checkFd(fdi)
+proc unregister2*[T](s: Selector[T],
+                     event: SelectEvent): Result[void, OSErrorCode] =
+  const NotRegisteredMessage = "Event is not registered in the queue!"
+  let fdi = int(event.rfd)
+  doAssert(fdi < s.maxFD, NotRegisteredMessage)
   var pkey = addr(s.fds[fdi])
-  doAssert(pkey.ident != InvalidIdent, "Event is not registered in the queue!")
+  doAssert(pkey.ident != InvalidIdent, NotRegisteredMessage)
   doAssert(Event.User in pkey.events)
   modifyKQueue(s, uint(fdi), EVFILT_READ, EV_DELETE, 0, 0, nil)
-  when not declared(CACHE_EVENTS):
-    flushKQueue(s)
+  ? flushKQueue(s)
   clearKey(pkey)
   dec(s.count)
+  ok()
 
-proc selectInto*[T](s: Selector[T], timeout: int,
-                    results: var openArray[ReadyKey]): int =
+proc selectInto2*[T](s: Selector[T], timeout: int,
+                     readyKeys: var openArray[ReadyKey]
+                     ): Result[int, OSErrorCode] =
   var
     tv: Timespec
-    resTable: array[MAX_KQUEUE_EVENTS, KEvent]
-    ptv = addr tv
-    maxres = MAX_KQUEUE_EVENTS
+    queueEvents: array[MAX_KQUEUE_EVENTS, KEvent]
 
   verifySelectParams(timeout)
 
-  if timeout != -1:
-    if timeout >= 1000:
-      tv.tv_sec = posix.Time(timeout div 1_000)
-      tv.tv_nsec = (timeout %% 1_000) * 1_000_000
-    else:
-      tv.tv_sec = posix.Time(0)
-      tv.tv_nsec = timeout * 1_000_000
-  else:
-    ptv = nil
-
-  if maxres > len(results):
-    maxres = len(results)
-
-  var count = 0
-  when not declared(CACHE_EVENTS):
-    count = kevent(s.kqFD, nil, cint(0), addr(resTable[0]), cint(maxres), ptv)
-  else:
-    when hasThreadSupport:
-      s.withChangeLock():
-        if s.changesLength > 0:
-          count = kevent(s.kqFD, addr(s.changes[0]), cint(s.changesLength),
-                         addr(resTable[0]), cint(maxres), ptv)
-          s.changesLength = 0
+  let
+    ptrTimeout =
+      if timeout != -1:
+        if timeout >= 1000:
+          tv.tv_sec = posix.Time(timeout div 1_000)
+          tv.tv_nsec = (timeout %% 1_000) * 1_000_000
         else:
-          count = kevent(s.kqFD, nil, cint(0), addr(resTable[0]), cint(maxres),
-                         ptv)
-    else:
-      let length = cint(len(s.changes))
-      if length > 0:
-        count = kevent(s.kqFD, addr(s.changes[0]), length,
-                       addr(resTable[0]), cint(maxres), ptv)
-        s.changes.setLen(0)
+          tv.tv_sec = posix.Time(0)
+          tv.tv_nsec = timeout * 1_000_000
+        addr tv
       else:
-        count = kevent(s.kqFD, nil, cint(0), addr(resTable[0]), cint(maxres),
-                       ptv)
-
-  if count < 0:
-    let err = osLastError()
-    if cint(err) != EINTR:
-      raiseIOSelectorsError(err)
-    0
-  elif count == 0:
-    0
-  else:
-    var i = 0
-    var k = 0 # do not delete this, because `continue` used in cycle.
-    var pkey: ptr SelectorKey[T]
-    while i < count:
-      let kevent = addr(resTable[i])
-      var rkey = ReadyKey(fd: int(kevent.ident), events: {})
-
-      if (kevent.flags and EV_ERROR) != 0:
-        rkey.events = {Event.Error}
-        rkey.errorCode = OSErrorCode(kevent.data)
-
-      case kevent.filter:
-      of EVFILT_READ:
-        pkey = addr(s.fds[int(kevent.ident)])
-        rkey.events.incl(Event.Read)
-        if Event.User in pkey.events:
-          var data: uint64 = 0
-          if posix.read(cint(kevent.ident), addr data,
-                        sizeof(uint64)) != sizeof(uint64):
-            let err = osLastError()
-            if err == OSErrorCode(EAGAIN):
-              # someone already consumed event data
-              inc(i)
+        nil
+    maxEventsCount = cint(min(MAX_KQUEUE_EVENTS, len(results)))
+    eventsCount =
+      block:
+        var res = 0
+        while true:
+          res = kevent(s.kqFD, nil, cint(0), addr(queueEvents[0]),
+                       maxEventsCount, ptrTimeout)
+          if res < 0:
+            let errorCode = osLastError()
+            if errorCode == EINTR:
               continue
-            else:
-              raiseIOSelectorsError(err)
-          rkey.events = {Event.User}
-      of EVFILT_WRITE:
-        pkey = addr(s.fds[int(kevent.ident)])
-        rkey.events.incl(Event.Write)
-        rkey.events = {Event.Write}
-      of EVFILT_TIMER:
-        pkey = addr(s.fds[int(kevent.ident)])
-        if Event.Oneshot in pkey.events:
-          # we will not clear key until it will be unregistered, so
-          # application can obtain data, but we will decrease counter,
-          # because kqueue is empty.
-          dec(s.count)
-          # we are marking key with `Finished` event, to avoid double decrease.
-          pkey.events.incl(Event.Finished)
-        rkey.events.incl(Event.Timer)
-      of EVFILT_VNODE:
-        pkey = addr(s.fds[int(kevent.ident)])
-        rkey.events.incl(Event.Vnode)
-        if (kevent.fflags and NOTE_DELETE) != 0:
-          rkey.events.incl(Event.VnodeDelete)
-        if (kevent.fflags and NOTE_WRITE) != 0:
-          rkey.events.incl(Event.VnodeWrite)
-        if (kevent.fflags and NOTE_EXTEND) != 0:
-          rkey.events.incl(Event.VnodeExtend)
-        if (kevent.fflags and NOTE_ATTRIB) != 0:
-          rkey.events.incl(Event.VnodeAttrib)
-        if (kevent.fflags and NOTE_LINK) != 0:
-          rkey.events.incl(Event.VnodeLink)
-        if (kevent.fflags and NOTE_RENAME) != 0:
-          rkey.events.incl(Event.VnodeRename)
-        if (kevent.fflags and NOTE_REVOKE) != 0:
-          rkey.events.incl(Event.VnodeRevoke)
-      of EVFILT_SIGNAL:
-        pkey = addr(s.fds[cast[int](kevent.udata)])
-        rkey.fd = cast[int](kevent.udata)
-        rkey.events.incl(Event.Signal)
-      of EVFILT_PROC:
-        rkey.fd = cast[int](kevent.udata)
-        pkey = addr(s.fds[cast[int](kevent.udata)])
-        # we will not clear key, until it will be unregistered, so
+            return err(errorCode)
+          else:
+            break
+        res
+
+  var k = 0
+  for i in 0 ..< eventsCount:
+    let kevent = addr(queueEvents[i])
+    var rkey = ReadyKey(fd: int(kevent.ident), events: {})
+
+    if (kevent.flags and EV_ERROR) != 0:
+      rkey.events.incl(Event.Error)
+      rkey.errorCode = OSErrorCode(kevent.data)
+
+    if (kevent.flags and EV_EOF) != 0:
+      rkey.events.incl(Event.Error)
+
+    case kevent.filter
+    of EVFILT_READ:
+      var pkey = addr(s.fds[int(kevent.ident)])
+      if Event.User in pkey.events:
+        var data: uint64 = 0
+        if osdefs.read(cint(kevent.ident), addr data,
+                       sizeof(uint64)) != sizeof(uint64):
+          let errorCode = osLastError()
+          if errorCode == EAGAIN:
+            # someone already consumed event data
+            continue
+          else:
+            rkey.errorCode = errorCode
+            rkey.events.incl(Event.Error)
+        rkey.events.incl(Event.User)
+      else:
+        rkey.events.incl(Event.Read)
+    of EVFILT_WRITE:
+      rkey.events.incl(Event.Write)
+    of EVFILT_TIMER:
+      var pkey = addr(s.fds[int(kevent.ident)])
+      rkey.events.incl(Event.Timer)
+      if Event.Oneshot in pkey.events:
+        # we will not clear key until it will be unregistered, so
         # application can obtain data, but we will decrease counter,
         # because kqueue is empty.
         dec(s.count)
         # we are marking key with `Finished` event, to avoid double decrease.
         pkey.events.incl(Event.Finished)
-        rkey.events.incl(Event.Process)
-      else:
-        doAssert(true, "Unsupported kqueue filter in the queue!")
+    of EVFILT_VNODE:
+      rkey.events.incl(Event.Vnode)
+      if (kevent.fflags and NOTE_DELETE) != 0:
+        rkey.events.incl(Event.VnodeDelete)
+      if (kevent.fflags and NOTE_WRITE) != 0:
+        rkey.events.incl(Event.VnodeWrite)
+      if (kevent.fflags and NOTE_EXTEND) != 0:
+        rkey.events.incl(Event.VnodeExtend)
+      if (kevent.fflags and NOTE_ATTRIB) != 0:
+        rkey.events.incl(Event.VnodeAttrib)
+      if (kevent.fflags and NOTE_LINK) != 0:
+        rkey.events.incl(Event.VnodeLink)
+      if (kevent.fflags and NOTE_RENAME) != 0:
+        rkey.events.incl(Event.VnodeRename)
+      if (kevent.fflags and NOTE_REVOKE) != 0:
+        rkey.events.incl(Event.VnodeRevoke)
+    of EVFILT_SIGNAL:
+      rkey.fd = cast[int](kevent.udata)
+      rkey.events.incl(Event.Signal)
+    of EVFILT_PROC:
+      rkey.fd = cast[int](kevent.udata)
+      rkey.events.incl(Event.Process)
+      pkey.events.incl(Event.Finished)
+      # we will not clear key, until it will be unregistered, so
+      # application can obtain data, but we will decrease counter,
+      # because kqueue is empty.
+      dec(s.count)
+    else:
+      doAssert(true, "Unsupported kqueue filter in the queue!")
 
-      if (kevent.flags and EV_EOF) != 0:
-        # TODO this error handling needs to be rethought.
-        # `fflags` can sometimes be `0x80000000` and thus we use 'cast'
-        # here:
-        if kevent.fflags != 0:
-          rkey.errorCode = cast[OSErrorCode](kevent.fflags)
-        else:
-          # This assumes we are dealing with sockets.
-          # TODO: For future-proofing it might be a good idea to give the
-          #       user access to the raw `kevent`.
-          rkey.errorCode = OSErrorCode(ECONNRESET)
-        rkey.events.incl(Event.Error)
+    readyKeys[k] = rkey
+    inc(k)
 
-      results[k] = rkey
-      inc(k)
-      inc(i)
-    k
+  ok(k)
 
-proc select*[T](s: Selector[T], timeout: int): seq[ReadyKey] =
+proc select2*[T](s: Selector[T],
+                 timeout: int): Result[seq[ReadyKey], OSErrorCode] =
   var res = newSeq[ReadyKey](MAX_KQUEUE_EVENTS)
-  let count = selectInto(s, timeout, res)
+  let count = ? selectInto2(s, timeout, res)
   res.setLen(count)
-  res
+  ok(res)
+
+proc newSelector*[T](): owned(Selector[T]) {.
+     raises: [Defect, IOSelectorsError].} =
+  let res = Selector.new(T)
+  if res.isErr():
+    raiseIOSelectorsError(res.error())
+  res.get()
+
+proc newSelectEvent*(): SelectEvent {.raises: [Defect, IOSelectorsError].} =
+  let res = SelectEvent.new()
+  if res.isErr():
+    raiseIOSelectorsError(res.error())
+  res.get()
+
+proc trigger*(ev: SelectEvent) {.raises: [Defect, IOSelectorsError].} =
+  let res = ev.trigger2()
+  if res.isErr():
+    raiseIOSelectorsError(res.error())
+
+proc close*(ev: SelectEvent) {.raises: [Defect, IOSelectorsError].} =
+  let res = ev.close2()
+  if res.isErr():
+    raiseIOSelectorsError(res.error())
+
+proc registerHandle*[T](s: Selector[T], fd: int | SocketHandle,
+                        events: set[Event], data: T) {.
+     raises: [Defect, IOSelectorsError].} =
+  let res = registerHandle2(s, fd, events, data)
+  if res.isErr():
+    raiseIOSelectorsError(res.error())
+
+proc updateHandle*[T](s: Selector[T], fd: int | SocketHandle,
+                      events: set[Event]) {.
+     raises: [Defect, IOSelectorsError].} =
+  let res = updateHandle2(s, fd, events)
+  if res.isErr():
+    raiseIOSelectorsError(res.error())
+
+proc registerEvent*[T](s: Selector[T], ev: SelectEvent, data: T) {.
+     raises: [Defect, IOSelectorsError].} =
+  let res = registerEvent2(s, ev, data)
+  if res.isErr():
+    raiseIOSelectorsError(res.error())
+
+proc registerVnode*[T](s: Selector[T], fd: cint, events: set[Event], data: T) {.
+     raises: [Defect, IOSelectorsError].} =
+  let res = registerVnode2(s, fd, events, data)
+  if res.isErr():
+    raiseIOSelectorsError(res.error())
+
+proc unregister*[T](s: Selector[T], event: SelectEvent) {.
+  raises: [Defect, IOSelectorsError].} =
+  let res = unregister2(s, event)
+  if res.isErr():
+    raiseIOSelectorsError(res.error())
+
+proc unregister*[T](s: Selector[T], fd: int|SocketHandle) {.
+  raises: [Defect, IOSelectorsError].} =
+  let res = unregister2(s, fd)
+  if res.isErr():
+    raiseIOSelectorsError(res.error())
+
+proc selectInto*[T](s: Selector[T], timeout: int,
+                    results: var openArray[ReadyKey]): int {.
+     raises: [Defect, IOSelectorsError].} =
+  let res = selectInto2(s, timeout, results)
+  if res.isErr():
+    raiseIOSelectorsError(res.error())
+  res.get()
+
+proc select*[T](s: Selector[T], timeout: int): seq[ReadyKey] {.
+     raises: [Defect, IOSelectorsError].} =
+  let res = select2(s, timeout)
+  if res.isErr():
+    raiseIOSelectorsError(res.error())
+  res.get()
+
+proc close*[T](s: Selector[T]) {.
+     raises: [Defect, IOSelectorsError].} =
+  discard posix.close(s.kqFD)
+  discard posix.close(s.sock)
+  when hasThreadSupport:
+    deinitLock(s.changesLock)
+    deallocSharedArray(s.fds)
+    deallocShared(cast[pointer](s))
 
 template isEmpty*[T](s: Selector[T]): bool =
   (s.count == 0)
@@ -665,7 +724,6 @@ template withData*[T](s: Selector[T], fd: SocketHandle|int, value, body1,
     body1
   else:
     body2
-
 
 proc getFd*[T](s: Selector[T]): int =
   return s.kqFD.int
