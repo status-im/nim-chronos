@@ -8,11 +8,9 @@
 #
 #  This module implements BSD kqueue().
 {.push raises: [Defect].}
-
 import "."/chronos/osdefs
 import std/kqueue
 import stew/results
-
 export results
 
 const
@@ -178,7 +176,7 @@ proc new*(t: typedesc[SelectEvent]): Result[SelectEvent, OSErrorCode] =
     res.wfd = fds[1]
     ok(res)
   else:
-    if osdefs.pipe(fd) == -1:
+    if osdefs.pipe(fds) == -1:
       return err(osLastError())
 
     let res1 = setSocketFlags(fds[0], true, true)
@@ -227,11 +225,7 @@ when hasThreadSupport:
         body
       finally:
         release(s.changesLock)
-else:
-  template withChangeLock(s, body: untyped) =
-    body
 
-when hasThreadSupport:
   template modifyKQueue[T](s: Selector[T], nident: uint, nfilter: cshort,
                            nflags: cushort, nfflags: cuint, ndata: int,
                            nudata: pointer) =
@@ -469,7 +463,7 @@ proc unregister2*[T](s: Selector[T],
       else:
         if posix.sigprocmask(SIG_UNBLOCK, nmask, omask) == -1:
           return err(osLastError())
-      discard osdefs.signal(signal, SIG_DFL)
+      osdefs.signal(signal, SIG_DFL)
       modifyKQueue(s, uint(pkey.param), EVFILT_SIGNAL, EV_DELETE, 0, 0, nil)
       ? flushKQueue(s)
       dec(s.count)
@@ -529,7 +523,7 @@ proc selectInto2*[T](s: Selector[T], timeout: int,
         addr tv
       else:
         nil
-    maxEventsCount = cint(min(MAX_KQUEUE_EVENTS, len(results)))
+    maxEventsCount = cint(min(MAX_KQUEUE_EVENTS, len(readyKeys)))
     eventsCount =
       block:
         var res = 0
@@ -606,8 +600,9 @@ proc selectInto2*[T](s: Selector[T], timeout: int,
       rkey.fd = cast[int](kevent.udata)
       rkey.events.incl(Event.Signal)
     of EVFILT_PROC:
-      var pkey = addr(s.fds[int(kevent.ident)])
-      rkey.fd = cast[int](kevent.udata)
+      let fd = cast[int](kevent.udata)
+      var pkey = addr(s.fds[fd])
+      rkey.fd = fd
       rkey.events.incl(Event.Process)
       pkey.events.incl(Event.Finished)
       # we will not clear key, until it will be unregistered, so
