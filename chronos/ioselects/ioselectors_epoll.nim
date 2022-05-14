@@ -401,7 +401,7 @@ proc selectInto2*[T](s: Selector[T], timeout: int,
       var epv = EpollEvent()
       if epoll_ctl(s.epollFD, EPOLL_CTL_DEL, cint(fdi), nil) != 0:
         rkey.events.incl(Event.Error)
-        rkey.errCode = osLastError()
+        rkey.errorCode = osLastError()
       # we will not clear key until it will be unregistered, so
       # application can obtain data, but we will decrease counter,
       # because epoll is empty.
