@@ -1073,6 +1073,11 @@ proc finish*(request: HttpClientRequestRef): Future[HttpClientResponseRef] {.
   ## Finish sending request and receive response.
   doAssert(not(isNil(request.connection)),
            "Request missing connection instance")
+  if request.connection.state in {HttpClientConnectionState.Closing,
+                                  HttpClientConnectionState.Closed}:
+    let e = newHttpUseClosedError()
+    request.setError(e)
+    raise e
   doAssert(request.state == HttpReqRespState.Open,
            "Request's state is " & $request.state)
   doAssert(request.connection.state ==
