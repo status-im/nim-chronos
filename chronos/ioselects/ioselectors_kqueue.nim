@@ -65,17 +65,17 @@ proc new*(t: typedesc[Selector], T: typedesc): SelectResult[Selector[T]] =
   # we allocating empty socket to duplicate it handle in future, to get unique
   # indexes for `fds` array. This is needed to properly identify
   # {Event.Timer, Event.Signal, Event.Process} events.
-  let usock = osdefs.socket(osdefs.AF_INET, osdefs.SOCK_STREAM,
-                            osdefs.IPPROTO_TCP).cint
+  let usock = cint(osdefs.socket(osdefs.AF_INET, osdefs.SOCK_STREAM,
+                                 osdefs.IPPROTO_TCP))
   if usock == -1:
     let errorCode = osLastError()
-    discard handleEintr(osdefs.close(kqFD))
+    discard handleEintr(osdefs.close(cint(kqFD)))
     return err(errorCode)
 
   var selector =
     when hasThreadSupport:
       var res = cast[Selector[T]](allocShared0(sizeof(SelectorImpl[T])))
-      res.kqFD = kqFD
+      res.kqFD = cint(kqFD)
       res.sock = usock
       res.numFD = asyncInitialSize
       res.fds = allocSharedArray[SelectorKey[T]](asyncInitialSize)
@@ -84,7 +84,7 @@ proc new*(t: typedesc[Selector], T: typedesc): SelectResult[Selector[T]] =
       initLock(res.changesLock)
       res
     else:
-      Selector[T](kqFD: kqFD, sock: usock, numFD: asyncInitialSize,
+      Selector[T](kqFD: cint(kqFD), sock: usock, numFD: asyncInitialSize,
                   fds: newSeq[SelectorKey[T]](asyncInitialSize),
                   changes: newSeqOfCap[KEvent](asyncEventsCount))
 
@@ -218,7 +218,7 @@ else:
     let length = cint(len(s.changes))
     if length > 0:
       if handleEintr(kevent(s.kqFD, addr(s.changes[0]), length, nil,
-                            0, nil) == -1:
+                            0, nil)) == -1:
         return err(osLastError())
       s.changes.setLen(0)
     ok()

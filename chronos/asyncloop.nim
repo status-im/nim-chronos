@@ -381,52 +381,44 @@ when defined(windows):
   proc getFunc(s: SocketHandle, fun: var pointer, guid: GUID): bool =
     var bytesRet: DWORD
     fun = nil
-    result = wsaIoctl(s, SIO_GET_EXTENSION_FUNCTION_POINTER, unsafeAddr guid,
-                      sizeof(GUID).DWORD, addr fun, sizeof(pointer).DWORD,
-                      addr bytesRet, nil, nil) == 0
+    wsaIoctl(s, SIO_GET_EXTENSION_FUNCTION_POINTER, unsafeAddr guid,
+             sizeof(GUID).DWORD, addr fun, sizeof(pointer).DWORD,
+             addr(bytesRet), nil, nil) == 0
 
-  proc globalInit() {.raises: [Defect, OSError].} =
+  proc globalInit() {.raises: [Defect].} =
     var wsa: WSAData
-    if wsaStartup(0x0202'u16, addr wsa) != 0:
-      raiseOSError(osLastError())
+    doAssert(wsaStartup(0x0202'u16, addr wsa) == 0,
+             "Unable to initialize Windows Sockets API")
 
-  proc initAPI(loop: PDispatcher) {.raises: [Defect, CatchableError].} =
-    let kernel32 = getModuleHandle(newWideCString("kernel32.dll"))
-    loop.getQueuedCompletionStatusEx = cast[LPFN_GETQUEUEDCOMPLETIONSTATUSEX](
-      getProcAddress(kernel32, "GetQueuedCompletionStatusEx"))
-
-    let sock = winlean.socket(winlean.AF_INET, 1, 6)
-    if sock == INVALID_SOCKET:
-      raiseOSError(osLastError())
-
+  proc initAPI(loop: PDispatcher) {.raises: [Defect].} =
     var funcPointer: pointer = nil
-    if not getFunc(sock, funcPointer, WSAID_CONNECTEX):
-      let err = osLastError()
-      discard closeSocket(sock)
-      raiseOSError(err)
+    let sock = socket(osdefs.AF_INET, 1, 6)
+    doAssert(sock != osdefs.INVALID_SOCKET, "Unable to create control socket")
+    doAssert(getFunc(sock, funcPointer, WSAID_CONNECTEX),
+             "Unable to initialize dispatcher's ConnectEx() with error: " &
+             osErrorMsg(osLastError()))
     loop.connectEx = cast[WSAPROC_CONNECTEX](funcPointer)
-    if not getFunc(sock, funcPointer, WSAID_ACCEPTEX):
-      let err = osLastError()
-      discard closeSocket(sock)
-      raiseOSError(err)
+    doAssert(getFunc(sock, funcPointer, WSAID_ACCEPTEX),
+             "Unable to initialize dispatcher's AcceptEx() with an error: " &
+             osErrorMsg(osLastError()))
     loop.acceptEx = cast[WSAPROC_ACCEPTEX](funcPointer)
-    if not getFunc(sock, funcPointer, WSAID_GETACCEPTEXSOCKADDRS):
-      let err = osLastError()
-      discard closeSocket(sock)
-      raiseOSError(err)
+    doAssert(getFunc(sock, funcPointer, WSAID_GETACCEPTEXSOCKADDRS),
+             "Unable to initialize dispatcher's GetAcceptExSockAddrs() with " &
+             "an error: " & osErrorMsg(osLastError()))
     loop.getAcceptExSockAddrs = cast[WSAPROC_GETACCEPTEXSOCKADDRS](funcPointer)
-    if not getFunc(sock, funcPointer, WSAID_TRANSMITFILE):
-      let err = osLastError()
-      discard closeSocket(sock)
-      raiseOSError(err)
+    doAssert(getFunc(sock, funcPointer, WSAID_TRANSMITFILE),
+             "Unable to initialize dispatcher's TransmitFile() with an " &
+             "error: " & osErrorMsg(osLastError()))
     loop.transmitFile = cast[WSAPROC_TRANSMITFILE](funcPointer)
-    discard closeSocket(sock)
+    doAssert(closeSocket(sock) == 0, "Unable to initialize dispatcher with " &
+             "an error: " & osErrorMsg(osLastError()))
 
-  proc newDispatcher*(): PDispatcher {.raises: [Defect, CatchableError].} =
+  proc newDispatcher*(): PDispatcher {.raises: [Defect].} =
     ## Creates a new Dispatcher instance.
     var res = PDispatcher()
     res.ioPort = createIoCompletionPort(osdefs.INVALID_HANDLE_VALUE,
                                         HANDLE(0), 0, 1)
+    doAssert(res.ioPort != INVALID_HANDLE_VALUE, "Unable to create IOCP port")
     when declared(initHashSet):
       # After 0.20.0 Nim's stdlib version
       res.handles = initHashSet[AsyncFD]()
@@ -758,7 +750,7 @@ elif unixPlatform:
     # We are ignoring SIGPIPE signal, because we are working with EPIPE.
     posix.signal(cint(SIGPIPE), SIG_IGN)
 
-  proc initAPI(disp: PDispatcher) {.raises: [Defect, CatchableError].} =
+  proc initAPI(disp: PDispatcher) {.raises: [Defect].} =
     discard
 
   proc newDispatcher*(): PDispatcher {.raises: [Defect].} =
