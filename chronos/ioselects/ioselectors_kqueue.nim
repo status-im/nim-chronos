@@ -223,8 +223,7 @@ else:
       s.changes.setLen(0)
     ok()
 
-proc registerHandle2*[T](s: Selector[T], fd: int | SocketHandle,
-                         events: set[Event],
+proc registerHandle2*[T](s: Selector[T], fd: cint, events: set[Event],
                          data: T): Result[void, OSErrorCode] =
   let fdi = int(fd)
   s.checkFd(fdi)
@@ -613,7 +612,7 @@ proc close*(ev: SelectEvent) {.
 proc registerHandle*[T](s: Selector[T], fd: int | SocketHandle,
                         events: set[Event], data: T) {.
      raises: [Defect, IOSelectorsException].} =
-  let res = registerHandle2(s, fd, events, data)
+  let res = registerHandle2(s, cint(fd), events, data)
   if res.isErr():
     raiseIOSelectorsError(res.error())
 
