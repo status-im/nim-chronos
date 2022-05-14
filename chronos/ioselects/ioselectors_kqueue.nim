@@ -112,23 +112,6 @@ proc close2*[T](s: Selector[T]): SelectResult[void] =
     else:
       ok()
 
-proc setSocketFlags(s: cint, nonblock, cloexec: bool): SelectResult[void] =
-  if nonblock:
-    let flags = handleEintr(osdefs.fcntl(s, osdefs.F_GETFL))
-    if flags == -1:
-      return err(osLastError())
-    let value = flags or osdefs.O_NONBLOCK
-    if handleEintr(osdefs.fcntl(s, osdefs.F_SETFL, value)) == -1:
-      return err(osLastError())
-  if cloexec:
-    let flags = handleEintr(osdefs.fcntl(s, osdefs.F_GETFD))
-    if flags == -1:
-      return err(osLastError())
-    let value = flags or osdefs.FD_CLOEXEC
-    if handleEintr(osdefs.fcntl(s, osdefs.F_SETFD, value)) == -1:
-      return err(osLastError())
-  ok()
-
 proc new*(t: typedesc[SelectEvent]): SelectResult[SelectEvent] =
   var fds: array[2, cint]
   when declared(pipe2):

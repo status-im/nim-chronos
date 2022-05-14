@@ -267,7 +267,7 @@ else:
 
   type
     IOSelectorsException* = object of CatchableError
-    SelectResult[T]* = Result[T, OSErrorCode]
+    SelectResult*[T] = Result[T, OSErrorCode]
 
     ReadyKey* = object
       fd* : int
@@ -307,8 +307,35 @@ else:
     var err = newException(IOSelectorsException, msg)
     raise err
 
+  template handleEintr(body: untyped): untyped =
+    var res = 0
+    while true:
+      res = body
+      if not((res == -1) and (osLastError() == EINTR)):
+        break
+    res
+
+  proc setSocketFlags*(s: cint, nonblock, cloexec: bool): SelectResult[void] =
+    if nonblock:
+      let flags = handleEintr(osdefs.fcntl(s, osdefs.F_GETFL))
+      if flags == -1:
+        return err(osLastError())
+      let value = flags or osdefs.O_NONBLOCK
+      if handleEintr(osdefs.fcntl(s, osdefs.F_SETFL, value)) == -1:
+        return err(osLastError())
+    if cloexec:
+      let flags = handleEintr(osdefs.fcntl(s, osdefs.F_GETFD))
+      if flags == -1:
+        return err(osLastError())
+      let value = flags or osdefs.FD_CLOEXEC
+      if handleEintr(osdefs.fcntl(s, osdefs.F_SETFD, value)) == -1:
+        return err(osLastError())
+    ok()
+
   proc setNonBlocking(fd: cint) {.inline.} =
-    setBlocking(fd.SocketHandle, false)
+    let res = setSocketFlags(fd, true, true)
+    if res.isErr():
+      raiseIOSelectorsError(res.error())
 
   when not defined(windows):
     import posix
@@ -352,14 +379,6 @@ else:
     key.ident = InvalidIdent
     key.events = {}
     key.data = empty
-
-  template handleEintr(body: untyped): untyped =
-    var res: cint = 0
-    while true:
-      res = body
-      if not((res == -1) and (osLastError() == EINTR)):
-        break
-    res
 
   proc verifySelectParams(timeout: int) =
     # Timeout of -1 means: wait forever

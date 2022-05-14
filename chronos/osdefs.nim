@@ -904,14 +904,14 @@ elif defined(linux):
       ssi_addr*: uint64
       pad* {.importc: "__pad".}: array[0..47, uint8]
 
-  proc timerfd_create(clock_id: ClockId, flags: cint): cint {.
+  proc timerfd_create*(clock_id: ClockId, flags: cint): cint {.
        cdecl, importc: "timerfd_create", header: "<sys/timerfd.h>".}
-  proc timerfd_settime(ufd: cint, flags: cint,
-                       utmr: var Itimerspec, otmr: var Itimerspec): cint {.
+  proc timerfd_settime*(ufd: cint, flags: cint,
+                        utmr: var Itimerspec, otmr: var Itimerspec): cint {.
        cdecl, importc: "timerfd_settime", header: "<sys/timerfd.h>".}
-  proc eventfd(count: cuint, flags: cint): cint {.
+  proc eventfd*(count: cuint, flags: cint): cint {.
        cdecl, importc: "eventfd", header: "<sys/eventfd.h>".}
-  proc signalfd(fd: cint, mask: var Sigset, flags: cint): cint {.
+  proc signalfd*(fd: cint, mask: var Sigset, flags: cint): cint {.
        cdecl, importc: "signalfd", header: "<sys/signalfd.h>".}
 
 else:
