@@ -1717,7 +1717,7 @@ else:
                 try:
                   wrapAsyncSocket(res)
                 except CatchableError as exc:
-                  close(res)
+                  discard handleEintr(osdefs.close(res))
                   retFuture.fail(getConnectionAbortedError($exc.msg))
                   return
 
@@ -1978,8 +1978,8 @@ proc createStreamServer*(host: TransportAddress,
       discard osdefs.unlink(cast[cstring](unsafeAddr host.address_un[0]))
 
     host.toSAddr(saddr, slen)
-    if bindAddr(SocketHandle(serverSocket), cast[ptr SockAddr](addr saddr),
-                slen) != 0:
+    if bindSocket(SocketHandle(serverSocket), cast[ptr SockAddr](addr saddr),
+                  slen) != 0:
       let err = osLastError()
       if sock == asyncInvalidSocket:
         serverSocket.closeSocket()
@@ -1995,7 +1995,7 @@ proc createStreamServer*(host: TransportAddress,
       raiseTransportOsError(err)
     fromSAddr(addr saddr, slen, localAddress)
 
-    if nativesockets.listen(SocketHandle(serverSocket), cint(backlog)) != 0:
+    if listen(SocketHandle(serverSocket), cint(backlog)) != 0:
       let err = osLastError()
       if sock == asyncInvalidSocket:
         serverSocket.closeSocket()

@@ -555,8 +555,8 @@ else:
       var saddr: Sockaddr_storage
       var slen: SockLen
       toSAddr(local, saddr, slen)
-      if bindAddr(SocketHandle(localSock), cast[ptr SockAddr](addr saddr),
-                  slen) != 0:
+      if bindSocket(SocketHandle(localSock), cast[ptr SockAddr](addr saddr),
+                    slen) != 0:
         let err = osLastError()
         if sock == asyncInvalidSocket:
           closeSocket(localSock)

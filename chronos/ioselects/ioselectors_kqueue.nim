@@ -241,9 +241,9 @@ proc registerHandle2*[T](s: Selector[T], fd: int | SocketHandle,
     ? flushKQueue(s)
   ok()
 
-proc updateHandle2*[T](s: Selector[T], fd: int | SocketHandle,
+proc updateHandle2*[T](s: Selector[T], fd: cint,
                        events: set[Event]): SelectResult[void] =
-  let maskEvents = {Event.Timer, Event.Signal, Event.Process, Event.Vnode,
+  let EventsMask = {Event.Timer, Event.Signal, Event.Process, Event.Vnode,
                     Event.User, Event.Oneshot, Event.Error}
   let fdi = int(fd)
   doAssert(fdi < s.numFD,
@@ -307,20 +307,20 @@ proc registerSignal*[T](s: Selector[T], signal: int,
   discard sigemptyset(omask)
   discard sigaddset(nmask, cint(signal))
 
-  let res = blockSignals(nmask, omask)
-  if res.isErr():
+  let bres = blockSignals(nmask, omask)
+  if bres.isErr():
     discard handleEintr(osdefs.close(cint(fdi)))
-    return err(res.error())
+    return err(bres.error())
 
   # to be compatible with linux semantic we need to "eat" signals
   posix.signal(cint(signal), SIG_IGN)
   modifyKQueue(s, uint(signal), EVFILT_SIGNAL, EV_ADD, 0, 0, cast[pointer](fdi))
 
-  let res = flushKQueue(s)
-  if res.isErr():
+  let fres = flushKQueue(s)
+  if fres.isErr():
     discard unblockSignals(nmask, omask)
     discard handleEintr(osdefs.close(cint(fdi)))
-    return err(res.error())
+    return err(fres.error())
   inc(s.count)
   ok(fdi)
 
@@ -413,14 +413,14 @@ proc unregister2*[T](s: Selector[T], fd: cint): SelectResult[void] =
         return err(osLastError())
     elif Event.Signal in pkey.events:
       var nmask, omask: Sigset
-      osdefs.signal(signal, SIG_DFL)
+      let sig = cint(pkey.param)
+      osdefs.signal(sig, SIG_DFL)
       modifyKQueue(s, uint(pkey.param), EVFILT_SIGNAL, EV_DELETE, 0, 0, nil)
       ? flushKQueue(s)
       dec(s.count)
-      let signal = cint(pkey.param)
       discard sigemptyset(nmask)
       discard sigemptyset(omask)
-      discard sigaddset(nmask, signal)
+      discard sigaddset(nmask, sig)
       let res = unblockSignals(nmask, omask)
       if res.isErr():
         discard handleEintr(osdefs.close(cint(pkey.ident)))
@@ -620,7 +620,7 @@ proc registerHandle*[T](s: Selector[T], fd: int | SocketHandle,
 proc updateHandle*[T](s: Selector[T], fd: int | SocketHandle,
                       events: set[Event]) {.
      raises: [Defect, IOSelectorsException].} =
-  let res = updateHandle2(s, fd, events)
+  let res = updateHandle2(s, cint(fd), events)
   if res.isErr():
     raiseIOSelectorsError(res.error())
 

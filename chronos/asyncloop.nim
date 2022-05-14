@@ -792,9 +792,8 @@ elif unixPlatform:
 
   proc register2*(fd: AsyncFD): Result[void, OSErrorCode] =
     ## Register file descriptor ``fd`` in thread's dispatcher.
-    let loop = getThreadDispatcher()
     var data: SelectorData
-    loop.selector.registerHandle(int(fd), {}, data)
+    getThreadDispatcher().selector.registerHandle2(cint(fd), {}, data)
 
   proc unregister2*(fd: AsyncFD): Result[void, OSErrorCode] =
     ## Unregister file descriptor ``fd`` from thread's dispatcher.
@@ -876,14 +875,14 @@ elif unixPlatform:
     ## call the callback ``cb`` with specified argument ``udata``.
     let res = addReader2(fd, cb, udata)
     if res.isErr():
-      raise newException(ValueError, res.error())
+      raise newException(ValueError, osErrorMsg(res.error()))
 
   proc removeReader*(fd: AsyncFD) {.
        raises: [Defect, ValueError].} =
     ## Stop watching the file descriptor ``fd`` for read availability.
-    let res = removeReader2(fd, cb, udata)
+    let res = removeReader2(fd)
     if res.isErr():
-      raise newException(ValueError, res.error())
+      raise newException(ValueError, osErrorMsg(res.error()))
 
   proc addWriter*(fd: AsyncFD, cb: CallbackFunc, udata: pointer = nil) {.
        raises: [Defect, ValueError].} =
@@ -911,16 +910,18 @@ elif unixPlatform:
     proc continuation(udata: pointer) =
       let param =
         if int(fd) in loop.selector:
-          let ures = unregister2(cint(fd))
+          let ures = unregister2(fd)
           if ures.isErr():
             discard handleEintr(osdefs.close(cint(fd)))
             ures.error()
           else:
-            let cres = handleEintr(osdefs.close(cint(fd)))
-            if cres.isErr():
-              cres.error()
+            if handleEintr(osdefs.close(cint(fd))) != 0:
+              osLastError()
             else:
               OSErrorCode(0)
+        else:
+          OSErrorCode(EINVAL)
+
       if not isNil(aftercb):
         aftercb(cast[pointer](param))
 
@@ -986,12 +987,12 @@ elif unixPlatform:
     proc removeSignal2*(sigfd: int): Result[void, OSErrorCode] =
       ## Remove watching signal ``signal``.
       let loop = getThreadDispatcher()
-      loop.selector.unregister2(sigfd)
+      loop.selector.unregister2(cint(sigfd))
 
     proc removeProcess2*(procfd: int): Result[void, OSErrorCode] =
       ## Remove process' watching using process' descriptor ``procfd``.
       let loop = getThreadDispatcher()
-      loop.selector.unregister2(procfd)
+      loop.selector.unregister2(cint(procfd))
 
     proc addSignal*(signal: int, cb: CallbackFunc, udata: pointer = nil): int {.
          raises: [Defect, ValueError].} =
@@ -1050,7 +1051,7 @@ elif unixPlatform:
     let count =
       block:
         let res = loop.selector.selectInto2(curTimeout, loop.keys)
-        doAssert(res.isOk(), "Selector failed with error: ",
+        doAssert(res.isOk(), "Selector failed with error: " &
                  osErrorMsg(res.error()))
         res.get()
 

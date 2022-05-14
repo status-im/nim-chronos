@@ -1060,7 +1060,7 @@ else:
 
     processHandle =
       block:
-        let res = addProcessNe(int(p.processId), continuation, cast[pointer](1))
+        let res = addProcess2(int(p.processId), continuation, cast[pointer](1))
         if res.isOk():
           res.get()
         else:
