@@ -832,6 +832,88 @@ elif defined(linux):
   else:
     var IP_MULTICAST_TTL* {.importc: "IP_MULTICAST_TTL",
                             header: "<netinet/in.h>".}: cint
+  const
+    EPOLLIN* = 0x00000001
+    EPOLLPRI* = 0x00000002
+    EPOLLOUT* = 0x00000004
+    EPOLLERR* = 0x00000008
+    EPOLLHUP* = 0x00000010
+    EPOLLRDNORM* = 0x00000040
+    EPOLLRDBAND* = 0x00000080
+    EPOLLWRNORM* = 0x00000100
+    EPOLLWRBAND* = 0x00000200
+    EPOLLMSG* = 0x00000400
+    EPOLLRDHUP* = 0x00002000
+    EPOLLEXCLUSIVE* = 1 shl 28
+    EPOLLWAKEUP* = 1 shl 29
+    EPOLLONESHOT* = 1 shl 30
+    EPOLLET* = 1 shl 31
+
+    SFD_CLOEXEC* = cint(0x80000)
+    SFD_NONBLOCK* = cint(0x800)
+    EFD_CLOEXEC* = cint(0x80000)
+    EFD_NONBLOCK* = cint(0x800)
+    TFD_CLOEXEC* = cint(0x80000)
+    TFD_NONBLOCK* = cint(0x800)
+
+    EPOLL_CTL_ADD* = 1
+    EPOLL_CTL_DEL* = 2
+    EPOLL_CTL_MOD* = 3
+
+  type
+    EpollData* {.importc: "union epoll_data",
+        header: "<sys/epoll.h>", pure, final.} = object
+      u64* {.importc: "u64".}: uint64
+
+    EpollEvent* {.importc: "struct epoll_event", header: "<sys/epoll.h>",
+                  pure, final.} = object
+      events*: uint32 # Epoll events
+      data*: EpollData # User data variable
+
+  proc epoll_create*(size: cint): cint {.importc: "epoll_create",
+       header: "<sys/epoll.h>", sideEffect.}
+
+  proc epoll_create1*(flags: cint): cint {.importc: "epoll_create1",
+       header: "<sys/epoll.h>", sideEffect.}
+
+  proc epoll_ctl*(epfd: cint; op: cint; fd: cint; event: ptr EpollEvent): cint {.
+       importc: "epoll_ctl", header: "<sys/epoll.h>", sideEffect.}
+
+  proc epoll_wait*(epfd: cint; events: ptr EpollEvent; maxevents: cint;
+                   timeout: cint): cint {.
+       importc: "epoll_wait", header: "<sys/epoll.h>", sideEffect.}
+
+  type
+    SignalFdInfo* {.importc: "struct signalfd_siginfo",
+                    header: "<sys/signalfd.h>", pure, final.} = object
+      ssi_signo*: uint32
+      ssi_errno*: int32
+      ssi_code*: int32
+      ssi_pid*: uint32
+      ssi_uid*: uint32
+      ssi_fd*: int32
+      ssi_tid*: uint32
+      ssi_band*: uint32
+      ssi_overrun*: uint32
+      ssi_trapno*: uint32
+      ssi_status*: int32
+      ssi_int*: int32
+      ssi_ptr*: uint64
+      ssi_utime*: uint64
+      ssi_stime*: uint64
+      ssi_addr*: uint64
+      pad* {.importc: "__pad".}: array[0..47, uint8]
+
+  proc timerfd_create(clock_id: ClockId, flags: cint): cint {.
+       cdecl, importc: "timerfd_create", header: "<sys/timerfd.h>".}
+  proc timerfd_settime(ufd: cint, flags: cint,
+                       utmr: var Itimerspec, otmr: var Itimerspec): cint {.
+       cdecl, importc: "timerfd_settime", header: "<sys/timerfd.h>".}
+  proc eventfd(count: cuint, flags: cint): cint {.
+       cdecl, importc: "eventfd", header: "<sys/eventfd.h>".}
+  proc signalfd(fd: cint, mask: var Sigset, flags: cint): cint {.
+       cdecl, importc: "signalfd", header: "<sys/signalfd.h>".}
+
 else:
   import std/[posix, os]
   export posix, os

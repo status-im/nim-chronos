@@ -31,20 +31,28 @@
 # support - changes could potentially be backported to nim but are not
 # backwards-compatible.
 
-import os, nativesockets
+from std/os import OSErrorCode, osErrorMsg, osLastError
+import stew/results
+import "."/chronos/osdefs
 
-const hasThreadSupport = compileOption("threads") and defined(threadsafe)
+export results
 
-const ioselSupportedPlatform* = defined(macosx) or defined(freebsd) or
-                                defined(netbsd) or defined(openbsd) or
-                                defined(dragonfly) or
-                                (defined(linux) and not defined(android))
+const
+  hasThreadSupport = compileOption("threads") and defined(threadsafe)
+
+  ioselSupportedPlatform* = defined(macosx) or defined(freebsd) or
+                            defined(netbsd) or defined(openbsd) or
+                            defined(dragonfly) or defined(linux)
   ## This constant is used to determine whether the destination platform is
   ## fully supported by ``ioselectors`` module.
 
-const bsdPlatform = defined(macosx) or defined(freebsd) or
-                    defined(netbsd) or defined(openbsd) or
-                    defined(dragonfly)
+  bsdPlatform = defined(macosx) or defined(freebsd) or defined(netbsd) or
+                defined(openbsd) or defined(dragonfly)
+
+  asyncEventsCount* {.intdefine.} = 64
+    ## Number of epoll events retrieved by syscall.
+  asyncInitialSize* {.intdefine.} = 1024
+    ## Initial size of Selector[T]'s array of file descriptors.
 
 when defined(nimdoc):
   type
@@ -259,6 +267,7 @@ else:
 
   type
     IOSelectorsException* = object of CatchableError
+    SelectResult[T]* = Result[T, OSErrorCode]
 
     ReadyKey* = object
       fd* : int
@@ -273,6 +282,19 @@ else:
 
   const
     InvalidIdent = -1
+    NotRegisteredMessage = "Event is not registered in selector!"
+
+  template checkFd(s, f) =
+    if f >= s.numFD:
+      var numFD = s.numFD
+      while numFD <= f: numFD *= 2
+      when hasThreadSupport:
+        s.fds = reallocSharedArray(s.fds, numFD)
+      else:
+        s.fds.setLen(numFD)
+      for i in s.numFD ..< numFD:
+        s.fds[i].ident = InvalidIdent
+      s.numFD = numFD
 
   proc raiseIOSelectorsError[T](message: T) =
     var msg = ""
@@ -299,27 +321,45 @@ else:
       skey.data = data
 
   when ioselSupportedPlatform:
-    template blockSignals(newmask: var Sigset, oldmask: var Sigset) =
+    proc blockSignals(newmask: var Sigset,
+                      oldmask: var Sigset): Result[void, OSErrorCode] =
       when hasThreadSupport:
         if posix.pthread_sigmask(SIG_BLOCK, newmask, oldmask) == -1:
-          raiseIOSelectorsError(osLastError())
+          err(osLastError())
+        else:
+          ok()
       else:
         if posix.sigprocmask(SIG_BLOCK, newmask, oldmask) == -1:
-          raiseIOSelectorsError(osLastError())
+          err(osLastError())
+        else:
+          ok()
 
-    template unblockSignals(newmask: var Sigset, oldmask: var Sigset) =
+    proc unblockSignals(newmask: var Sigset,
+                        oldmask: var Sigset): Result[void, OSErrorCode] =
       when hasThreadSupport:
         if posix.pthread_sigmask(SIG_UNBLOCK, newmask, oldmask) == -1:
-          raiseIOSelectorsError(osLastError())
+          err(osLastError())
+        else:
+          ok()
       else:
         if posix.sigprocmask(SIG_UNBLOCK, newmask, oldmask) == -1:
-          raiseIOSelectorsError(osLastError())
+          err(osLastError())
+        else:
+          ok()
 
   template clearKey[T](key: ptr SelectorKey[T]) =
     var empty: T
     key.ident = InvalidIdent
     key.events = {}
     key.data = empty
+
+  template handleEintr(body: untyped): untyped =
+    var res: cint = 0
+    while true:
+      res = body
+      if not((res == -1) and (osLastError() == EINTR)):
+        break
+    res
 
   proc verifySelectParams(timeout: int) =
     # Timeout of -1 means: wait forever
