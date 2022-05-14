@@ -75,8 +75,7 @@ proc new*(t: typedesc[SelectEvent]): SelectResult[SelectEvent] =
 
 proc trigger2*(event: SelectEvent): SelectResult[void] =
   var data: uint64 = 1
-  let res = handleEintr(osdefs.write(cint(event.efd), addr data,
-                                     sizeof(uint64)))
+  let res = handleEintr(osdefs.write(event.efd, addr data, sizeof(uint64)))
   if res == -1:
     err(osLastError())
   elif res != sizeof(uint64):
@@ -94,9 +93,9 @@ proc close2*(event: SelectEvent): SelectResult[void] =
     ok()
 
 proc init(t: typedesc[EpollEvent], fdi: int, events: set[Event]): EpollEvent =
-  var res = EPOLLRDHUP
-  if Event.Read in events: res = res or EPOLLIN
-  if Event.Write in events: res = res or EPOLLOUT
+  var res = uint32(EPOLLRDHUP)
+  if Event.Read in events: res = res or uint32(EPOLLIN)
+  if Event.Write in events: res = res or uint32(EPOLLOUT)
   EpollEvent(events: res, data: EpollData(u64: uint64(fdi)))
 
 proc registerHandle2*[T](s: Selector[T], fd: cint, events: set[Event],
@@ -344,11 +343,11 @@ proc selectInto2*[T](s: Selector[T], timeout: int,
 
     if (pevents and EPOLLERR) != 0:
       rkey.events.incl(Event.Error)
-      rkey.errorCode = ECONNRESET
+      rkey.errorCode = OSErrorCode(ECONNRESET)
 
     if (pevents and EPOLLHUP) != 0 or (pevents and EPOLLRDHUP) != 0:
       rkey.events.incl(Event.Error)
-      rkey.errorCode = ECONNRESET
+      rkey.errorCode = OSErrorCode(ECONNRESET)
 
     if (pevents and EPOLLOUT) != 0:
       rkey.events.incl(Event.Write)
@@ -401,8 +400,8 @@ proc selectInto2*[T](s: Selector[T], timeout: int,
     if Event.Oneshot in pkey.events:
       var epv = EpollEvent()
       if epoll_ctl(s.epollFD, EPOLL_CTL_DEL, cint(fdi), nil) != 0:
-        pkey.events.incl(Event.Error)
-        pkey.errorCode = osLastError()
+        rkey.events.incl(Event.Error)
+        rkey.errCode = osLastError()
       # we will not clear key until it will be unregistered, so
       # application can obtain data, but we will decrease counter,
       # because epoll is empty.
