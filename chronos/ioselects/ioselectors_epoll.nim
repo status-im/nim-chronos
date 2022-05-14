@@ -135,8 +135,7 @@ proc new*(t: typedesc[SelectEvent]): SelectResult[SelectEvent] =
 
 proc trigger2*(event: SelectEvent): SelectResult[void] =
   var data: uint64 = 1
-  let res = handleEintr(osdefs.write(cint(event.efd), addr data,
-                                     sizeof(uint64)))
+  let res = handleEintr(osdefs.write(event.efd, addr data, sizeof(uint64)))
   if res == -1:
     err(osLastError())
   elif res != sizeof(uint64):
