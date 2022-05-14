@@ -269,6 +269,19 @@ else:
 
   const
     InvalidIdent = -1
+    NotRegisteredMessage = "Event is not registered in selector!"
+
+  template checkFd(s, f) =
+    if f >= s.numFD:
+      var numFD = s.numFD
+      while numFD <= f: numFD *= 2
+      when hasThreadSupport:
+        s.fds = reallocSharedArray(s.fds, numFD)
+      else:
+        s.fds.setLen(numFD)
+      for i in s.numFD ..< numFD:
+        s.fds[i].ident = InvalidIdent
+      s.numFD = numFD
 
   proc raiseIOSelectorsError[T](message: T) =
     var msg = ""
