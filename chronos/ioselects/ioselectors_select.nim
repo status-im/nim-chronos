@@ -9,17 +9,14 @@
 
 # This module implements Posix and Windows select().
 
-import times, nativesockets
-
 when defined(windows):
-  import winlean
   when defined(gcc):
     {.passl: "-lws2_32".}
   elif defined(vcc):
     {.passl: "ws2_32.lib".}
   const platformHeaders = """#include <winsock2.h>
                              #include <windows.h>"""
-  const EAGAIN = WSAEWOULDBLOCK
+  const EAGAIN = osdefs.WSAEWOULDBLOCK
 else:
   const platformHeaders = """#include <sys/select.h>
                              #include <sys/time.h>
@@ -38,6 +35,11 @@ proc IOFD_ZERO(fdset: ptr Fdset)
      {.cdecl, importc: "FD_ZERO", header: platformHeaders, inline.}
 
 when defined(windows):
+  type
+    Timeval* {.pure, final.} = object
+      tv_sec*: clong
+      tv_usec*: clong
+
   proc IOFD_ISSET(fd: SocketHandle, fdset: ptr Fdset): cint
        {.stdcall, importc: "FD_ISSET", header: platformHeaders, inline.}
   proc ioselect(nfds: cint, readFds, writeFds, exceptFds: ptr Fdset,
@@ -113,44 +115,44 @@ proc close*[T](s: Selector[T]) =
 
 when defined(windows):
   proc newSelectEvent*(): SelectEvent =
-    var ssock = createNativeSocket()
-    var wsock = createNativeSocket()
-    var rsock: SocketHandle = INVALID_SOCKET
+    var ssock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)
+    var wsock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)
+    var rsock: SocketHandle = osdefs.INVALID_SOCKET
     var saddr = Sockaddr_in()
 
-    saddr.sin_family = winlean.AF_INET
+    saddr.sin_family = osdefs.AF_INET
     saddr.sin_port = 0
     saddr.sin_addr.s_addr = INADDR_ANY
     if bindAddr(ssock, cast[ptr SockAddr](addr(saddr)),
                 sizeof(saddr).SockLen) < 0'i32:
       raiseIOSelectorsError(osLastError())
 
-    if winlean.listen(ssock, 1) != 0:
+    if osdefs.listen(ssock, 1) != 0:
       raiseIOSelectorsError(osLastError())
 
     var namelen = sizeof(saddr).SockLen
-    if getsockname(ssock, cast[ptr SockAddr](addr(saddr)),
-                   addr(namelen)) != 0'i32:
+    if osdefs.getsockname(ssock, cast[ptr SockAddr](addr(saddr)),
+                          addr(namelen)) != 0'i32:
       raiseIOSelectorsError(osLastError())
 
     saddr.sin_addr.s_addr = 0x0100007F
-    if winlean.connect(wsock, cast[ptr SockAddr](addr(saddr)),
+    if osdefs.connect(wsock, cast[ptr SockAddr](addr(saddr)),
                        sizeof(saddr).SockLen) != 0:
       raiseIOSelectorsError(osLastError())
     namelen = sizeof(saddr).SockLen
-    rsock = winlean.accept(ssock, cast[ptr SockAddr](addr(saddr)),
+    rsock = osdefs.accept(ssock, cast[ptr SockAddr](addr(saddr)),
                            cast[ptr SockLen](addr(namelen)))
-    if rsock == SocketHandle(-1):
+    if int(rsock) == -1:
       raiseIOSelectorsError(osLastError())
 
-    if winlean.closesocket(ssock) != 0:
+    if osdefs.closesocket(ssock) != 0:
       raiseIOSelectorsError(osLastError())
 
     var mode = clong(1)
-    if ioctlsocket(rsock, FIONBIO, addr(mode)) != 0:
+    if ioctlsocket(rsock, osdefs.FIONBIO, addr(mode)) != 0:
       raiseIOSelectorsError(osLastError())
     mode = clong(1)
-    if ioctlsocket(wsock, FIONBIO, addr(mode)) != 0:
+    if ioctlsocket(wsock, osdefs.FIONBIO, addr(mode)) != 0:
       raiseIOSelectorsError(osLastError())
 
     result = cast[SelectEvent](allocShared0(sizeof(SelectEventImpl)))
@@ -159,13 +161,13 @@ when defined(windows):
 
   proc trigger*(ev: SelectEvent) =
     var data: uint64 = 1
-    if winlean.send(ev.wsock, cast[pointer](addr data),
+    if osdefs.send(ev.wsock, cast[pointer](addr data),
                     cint(sizeof(uint64)), 0) != sizeof(uint64):
       raiseIOSelectorsError(osLastError())
 
   proc close*(ev: SelectEvent) =
-    let res1 = winlean.closesocket(ev.rsock)
-    let res2 = winlean.closesocket(ev.wsock)
+    let res1 = osdefs.closesocket(ev.rsock)
+    let res2 = osdefs.closesocket(ev.wsock)
     deallocShared(cast[pointer](ev))
     if res1 != 0 or res2 != 0:
       raiseIOSelectorsError(osLastError())

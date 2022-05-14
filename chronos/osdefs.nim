@@ -23,6 +23,31 @@ when defined(windows):
     MAX_ADAPTER_NAME_LENGTH* = 256
     MAX_ADAPTER_ADDRESS_LENGTH* = 8
 
+    SOCK_STREAM* = 1
+    SOCK_DGRAM* = 2
+    SOCK_RAW* = 3
+
+    AF_UNSPEC* = 0
+    AF_UNIX* = 1
+    AF_INET* = 2
+    AF_INET6* = 23
+    AF_BTH* = 32
+    AF_MAX* = 33
+
+    IPPROTO_IP* = 0
+    IPPROTO_ICMP* = 1
+    IPPROTO_IPV4* = 4
+    IPPROTO_UDP* = 17
+    IPPROTO_IPV6* = 41
+    IPPROTO_ICMPV6* = 58
+    IPPROTO_RAW* = 255
+    IPPROTO_MAX* = 256
+
+    INADDR_ANY* = 0x0000_0000'u32
+    INADDR_LOOPBACK* = 0x7f00_0001'u32
+    INADDR_BROADCAST* = 0xffff_ffff'u32
+    INADDR_NONE* = 0xffff_ffff'u32
+
   type
     HANDLE* = distinct uint
     LONG* = int32
@@ -438,6 +463,22 @@ when defined(windows):
   proc ioctlsocket*(s: SocketHandle, cmd: clong, argp: ptr clong): cint {.
        stdcall, dynlib: "ws2_32", importc: "ioctlsocket", sideEffect.}
 
+  proc listen*(s: SocketHandle, backlog: cint): cint {.
+       stdcall, dynlib: "ws2_32", importc: "listen", sideEffect.}
+
+  proc connect*(s: SocketHandle, name: ptr SockAddr, namelen: SockLen): cint {.
+       stdcall, dynlib: "ws2_32", importc: "connect", sideEffect.}
+
+  proc accept*(s: SocketHandle, a: ptr SockAddr,
+               addrlen: ptr SockLen): SocketHandle {.
+       stdcall, dynlib: "ws2_32", importc: "accept", sideEffect.}
+
+  proc bindAddr*(s: SocketHandle, name: ptr SockAddr, namelen: SockLen): cint {.
+       stdcall, dynlib: "ws2_32", importc: "bind", sideEffect.}
+
+  proc send*(s: SocketHandle, buf: pointer, len, flags: cint): cint {.
+       stdcall, dynlib: "ws2_32", importc: "send", sideEffect.}
+
   proc getaddrinfo*(nodename, servname: cstring, hints: ptr AddrInfo,
                     res: var ptr AddrInfo): cint {.
        stdcall, dynlib: "ws2_32", importc: "getaddrinfo", sideEffect.}
@@ -635,16 +676,6 @@ when defined(windows):
     ERROR_NETNAME_DELETED* = 64
     STATUS_PENDING* = 0x103
 
-    AF_UNSPEC* = 0
-    AF_UNIX* = 1
-    AF_INET* = 2
-    AF_APPLETALK* = 16
-    AF_NETBIOS* = 17
-    AF_INET6* = 23
-    AF_IRDA* = 26
-    AF_BTH* = 32
-    AF_MAX* = 33
-
     IOCPARM_MASK* = 0x7f'u32
     IOC_OUT* = 0x40000000'u32
     IOC_IN*  = 0x80000000'u32
@@ -678,7 +709,6 @@ when defined(windows):
 
     IOC_VENDOR* = 0x18000000'u32
     SIO_UDP_CONNRESET* = DWORD(IOC_IN) or IOC_VENDOR or 12'u32
-    IPPROTO_IP* = 0
     IP_TTL* = 4
     SOMAXCONN* = 2147483647
     SOL_SOCKET* = 0xFFFF

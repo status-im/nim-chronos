@@ -12,9 +12,9 @@ when (NimMajor, NimMinor) < (1, 4):
 else:
   {.push raises: [].}
 
-import std/[net, nativesockets, os, deques]
+import std/deques
 import ".."/[selectors2, asyncloop, osdefs, handles]
-import ./common
+import common
 
 type
   VectorKind = enum

@@ -12,7 +12,7 @@ when (NimMajor, NimMinor) < (1, 4):
 else:
   {.push raises: [].}
 
-import std/[net, nativesockets, os, deques]
+import std/deques
 import ".."/[asyncloop, handles, osdefs, selectors2]
 import common
 
@@ -696,13 +696,13 @@ elif defined(windows):
   proc bindToDomain(handle: AsyncFD, domain: Domain): bool =
     if domain == Domain.AF_INET6:
       var saddr: Sockaddr_in6
-      saddr.sin6_family = type(saddr.sin6_family)(toInt(domain))
+      saddr.sin6_family = type(saddr.sin6_family)(osdefs.AF_INET6)
       if bindAddr(SocketHandle(handle), cast[ptr SockAddr](addr(saddr)),
                   sizeof(saddr).SockLen) != 0'i32:
         return false
     elif domain == Domain.AF_INET:
       var saddr: Sockaddr_in
-      saddr.sin_family = type(saddr.sin_family)(toInt(domain))
+      saddr.sin_family = type(saddr.sin_family)(osdefs.AF_INET)
       if bindAddr(SocketHandle(handle), cast[ptr SockAddr](addr(saddr)),
                   sizeof(saddr).SockLen) != 0'i32:
         return false
@@ -1778,7 +1778,7 @@ else:
     return retFuture
 
 proc start*(server: StreamServer) {.
-    raises: [Defect, IOSelectorsException, ValueError].} =
+     raises: [Defect, IOSelectorsException, ValueError].} =
   ## Starts ``server``.
   doAssert(not(isNil(server.function)),
         "You should not start server, if you have not set processing callback!")
@@ -1923,7 +1923,7 @@ proc createStreamServer*(host: TransportAddress,
         raiseTransportOsError(err)
       fromSAddr(addr saddr, slen, localAddress)
 
-      if nativesockets.listen(SocketHandle(serverSocket), cint(backlog)) != 0:
+      if listen(SocketHandle(serverSocket), cint(backlog)) != 0:
         let err = osLastError()
         if sock == asyncInvalidSocket:
           serverSocket.closeSocket()
