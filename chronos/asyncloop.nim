@@ -904,7 +904,6 @@ elif unixPlatform:
     ## Please note, that socket is not closed immediately. To avoid bugs with
     ## closing socket, while operation pending, socket will be closed as
     ## soon as all pending operations will be notified.
-    ## You can execute ``aftercb`` before actual socket close operation.
     let loop = getThreadDispatcher()
 
     proc continuation(udata: pointer) =

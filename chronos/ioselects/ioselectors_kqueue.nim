@@ -126,12 +126,12 @@ proc new*(t: typedesc[SelectEvent]): SelectResult[SelectEvent] =
     if osdefs.pipe(fds) == -1:
       return err(osLastError())
 
-    let res1 = setSocketFlags(fds[0], true, true)
+    let res1 = setDescriptorFlags(fds[0], true, true)
     if res1.isErr():
       discard handleEintr(osdefs.close(fds[0]))
       discard handleEintr(osdefs.close(fds[1]))
       return err(res1.error())
-    let res2 = setSocketFlags(fds[1], true, true)
+    let res2 = setDescriptorFlags(fds[1], true, true)
     if res2.isErr():
       discard handleEintr(osdefs.close(fds[0]))
       discard handleEintr(osdefs.close(fds[1]))

@@ -33,7 +33,7 @@
 
 from std/os import OSErrorCode, osErrorMsg, osLastError
 import stew/results
-import "."/chronos/osdefs
+import "."/chronos/[osdefs, osutils]
 
 export results
 
@@ -308,7 +308,6 @@ else:
     raise err
 
   when not defined(windows):
-    import posix
 
     template setKey(s, pident, pevents, pparam, pdata: untyped) =
       var skey = addr(s.fds[pident])
@@ -316,32 +315,6 @@ else:
       skey.events = pevents
       skey.param = pparam
       skey.data = data
-
-    template handleEintr*(body: untyped): untyped =
-      var res = 0
-      while true:
-        res = body
-        if not((res == -1) and (osLastError() == EINTR)):
-          break
-      res
-
-    proc setSocketFlags*(s: cint, nonblock,
-                         cloexec: bool): Result[void, OSErrorCode] =
-      if nonblock:
-        let flags = handleEintr(osdefs.fcntl(s, osdefs.F_GETFL))
-        if flags == -1:
-          return err(osLastError())
-        let value = flags or osdefs.O_NONBLOCK
-        if handleEintr(osdefs.fcntl(s, osdefs.F_SETFL, value)) == -1:
-          return err(osLastError())
-      if cloexec:
-        let flags = handleEintr(osdefs.fcntl(s, osdefs.F_GETFD))
-        if flags == -1:
-          return err(osLastError())
-        let value = flags or osdefs.FD_CLOEXEC
-        if handleEintr(osdefs.fcntl(s, osdefs.F_SETFD, value)) == -1:
-          return err(osLastError())
-      ok()
 
     proc setNonBlocking(fd: cint) {.inline.} =
       let res = setSocketFlags(fd, true, true)

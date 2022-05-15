@@ -12,7 +12,6 @@ when (NimMajor, NimMinor) < (1, 4):
 else:
   {.push raises: [].}
 
-import std/os
 import "."/[asyncloop, osdefs]
 import stew/results
 from nativesockets import Domain, Protocol, SockType, toInt
@@ -189,27 +188,6 @@ proc setMaxOpenFiles*(count: int) {.raises: [Defect, OSError].} =
     if osdefs.setrlimit(osdefs.RLIMIT_NOFILE, limits) != 0:
       raiseOSError(osLastError())
 
-proc setInheritable*(fd: AsyncFD, inherit = true): Result[void, OSErrorCode] {.
-     raises: [Defect].} =
-  when defined(windows):
-    let value = if inherit: HANDLE_FLAG_INHERIT else: 0'u32
-    if osdefs.setHandleInformation(HANDLE(fd),
-                                   HANDLE_FLAG_INHERIT, value) == FALSE:
-      return err(osLastError())
-    ok()
-  else:
-    let flags = osdefs.fcntl(cint(fd), osdefs.F_GETFD)
-    if flags == -1:
-      return err(osLastError())
-    let value =
-      if inherit:
-        flags and not(osdefs.FD_CLOEXEC)
-      else:
-        flags or osdefs.FD_CLOEXEC
-    if osdefs.fcntl(cint(fd), osdefs.F_SETFD, value) == -1:
-      return err(osLastError())
-    ok()
-
 proc getInheritable*(fd: AsyncFD): Result[bool, OSErrorCode] {.
      raises: [Defect].} =
   when defined(windows):
@@ -298,34 +276,27 @@ proc createAsyncPipe*(inheritRead = true, inheritWrite = true
         return (read: asyncInvalidPipe, write: asyncInvalidPipe)
 
       if not(inheritWrite):
-        if fcntl(fds[1], osdefs.F_SETFD, osdefs.FD_CLOEXEC) == -1:
-          discard osdefs.close(fds[0])
-          discard osdefs.close(fds[1])
+        let res = setDescriptorInheritance(fds[1], inheritWrite)
+        if res.isErr():
+          discard handleEintr(osdefs.close(fds[0]))
+          discard handleEintr(osdefs.close(fds[1]))
           return (read: asyncInvalidPipe, write: asyncInvalidPipe)
-
       (read: AsyncFD(fds[0]), write: AsyncFD(fds[1]))
-
     else:
       var fds: array[2, cint]
       if osdefs.pipe(fds) == -1:
         return (read: asyncInvalidPipe, write: asyncInvalidPipe)
 
-      if not(inheritRead):
-        if fcntl(fds[0], osdefs.F_SETFD, osdefs.FD_CLOEXEC) == -1:
-          discard osdefs.close(fds[0])
-          discard osdefs.close(fds[1])
-          return (read: asyncInvalidPipe, write: asyncInvalidPipe)
+      let res0 = setDescriptorFlags(fds[0], true, not(inheritRead))
+      if res0.isErr():
+        discard handleEintr(osdefs.close(fds[0]))
+        discard handleEintr(osdefs.close(fds[1]))
+        return (read: asyncInvalidPipe, write: asyncInvalidPipe)
 
-      if not(inheritWrite):
-        if fcntl(fds[1], osdefs.F_SETFD, osdefs.FD_CLOEXEC) == -1:
-          discard osdefs.close(fds[0])
-          discard osdefs.close(fds[1])
-          return (read: asyncInvalidPipe, write: asyncInvalidPipe)
-
-      if not(setSocketBlocking(SocketHandle(fds[0]), false)) or
-         not(setSocketBlocking(SocketHandle(fds[1]), false)):
-        discard osdefs.close(fds[0])
-        discard osdefs.close(fds[1])
+      let res1 = setDescriptorFlags(fds[1], true, not(inheritWrite))
+      if res1.isErr():
+        discard handleEintr(osdefs.close(fds[0]))
+        discard handleEintr(osdefs.close(fds[1]))
         return (read: asyncInvalidPipe, write: asyncInvalidPipe)
 
       (read: AsyncFD(fds[0]), write: AsyncFD(fds[1]))
