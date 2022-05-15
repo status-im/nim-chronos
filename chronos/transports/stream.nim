@@ -1667,8 +1667,7 @@ else:
     if ReadPaused in transp.state:
       ? addReader2(transp.fd, readStreamLoop, cast[pointer](transp))
       transp.state.excl(ReadPaused)
-    else:
-      ok()
+    ok()
 
   proc resumeWrite(transp: StreamTransport): Result[void, OSErrorCode] =
     if transp.queue.len() == 1:
