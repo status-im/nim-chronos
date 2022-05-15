@@ -2267,8 +2267,10 @@ template readLoop(name, body: untyped): untyped =
       checkPending(transp)
       let res = resumeRead(transp)
       if res.isErr():
-        let errorCode = res.error()
-        when defined(posix):
+        when defined(windows):
+          raiseAssert osErrorMsg(res.error())
+        else:
+          let errorCode = res.error()
           if errorCode == ESRCH:
             # ESRCH 3 "No such process"
             # This error could be happened on pipes only, when process which
@@ -2278,8 +2280,7 @@ template readLoop(name, body: untyped): untyped =
             # at EOF.
             transp.state.incl({ReadEof, ReadPaused})
           else:
-            transp.setError(errorCode)
-            raise transp.getError()
+            raiseTransportOsError(errorCode)
       else:
         var fut = newFuture[void](name)
         transp.reader = fut
@@ -2600,7 +2601,7 @@ proc fromPipe2*(fd: AsyncFD, child: StreamTransport = nil,
 
 proc fromPipe*(fd: AsyncFD, child: StreamTransport = nil,
                bufferSize = DefaultStreamBufferSize): StreamTransport {.
-    raises: [Defect, OSError].} =
+    raises: [Defect, TransportOsError].} =
   ## Create new transport object using pipe's file descriptor.
   ##
   ## ``bufferSize`` is size of internal buffer for transport.
