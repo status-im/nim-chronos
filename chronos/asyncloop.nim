@@ -16,7 +16,7 @@ else:
 from nativesockets import Port
 import std/[tables, strutils, heapqueue, lists, options, deques]
 import stew/results
-import "."/[osdefs, timer]
+import "."/[osdefs, osutils, timer]
 
 export Port
 export timer, results
@@ -748,7 +748,7 @@ elif unixPlatform:
 
   proc globalInit() =
     # We are ignoring SIGPIPE signal, because we are working with EPIPE.
-    posix.signal(cint(SIGPIPE), SIG_IGN)
+    signal(cint(SIGPIPE), SIG_IGN)
 
   proc initAPI(disp: PDispatcher) {.raises: [Defect].} =
     discard

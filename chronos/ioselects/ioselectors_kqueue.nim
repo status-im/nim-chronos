@@ -51,7 +51,7 @@ type
 
 proc getUnique[T](s: Selector[T]): SelectResult[int] =
   # we create duplicated handles to get unique indexes for our `fds` array.
-  let res = handleEintr(posix.fcntl(s.sock, F_DUPFD, s.sock))
+  let res = handleEintr(fcntl(s.sock, F_DUPFD, s.sock))
   if res == -1:
     err(osLastError())
   else:
@@ -312,7 +312,7 @@ proc registerSignal*[T](s: Selector[T], signal: int,
     return err(bres.error())
 
   # to be compatible with linux semantic we need to "eat" signals
-  posix.signal(cint(signal), SIG_IGN)
+  signal(cint(signal), SIG_IGN)
   modifyKQueue(s, uint(signal), EVFILT_SIGNAL, EV_ADD, 0, 0, cast[pointer](fdi))
 
   let fres = flushKQueue(s)
@@ -473,10 +473,10 @@ proc selectInto2*[T](s: Selector[T], timeout: int,
     ptrTimeout =
       if timeout != -1:
         if timeout >= 1000:
-          tv.tv_sec = posix.Time(timeout div 1_000)
+          tv.tv_sec = Time(timeout div 1_000)
           tv.tv_nsec = (timeout %% 1_000) * 1_000_000
         else:
-          tv.tv_sec = posix.Time(0)
+          tv.tv_sec = Time(0)
           tv.tv_nsec = timeout * 1_000_000
         addr tv
       else:

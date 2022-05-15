@@ -317,7 +317,7 @@ else:
       skey.data = data
 
     proc setNonBlocking(fd: cint) {.inline.} =
-      let res = setSocketFlags(fd, true, true)
+      let res = setDescriptorFlags(fd, true, true)
       if res.isErr():
         raiseIOSelectorsError(res.error())
 
@@ -325,12 +325,12 @@ else:
     proc blockSignals(newmask: var Sigset,
                       oldmask: var Sigset): Result[void, OSErrorCode] =
       when hasThreadSupport:
-        if posix.pthread_sigmask(SIG_BLOCK, newmask, oldmask) == -1:
+        if pthread_sigmask(SIG_BLOCK, newmask, oldmask) == -1:
           err(osLastError())
         else:
           ok()
       else:
-        if posix.sigprocmask(SIG_BLOCK, newmask, oldmask) == -1:
+        if sigprocmask(SIG_BLOCK, newmask, oldmask) == -1:
           err(osLastError())
         else:
           ok()
@@ -338,12 +338,12 @@ else:
     proc unblockSignals(newmask: var Sigset,
                         oldmask: var Sigset): Result[void, OSErrorCode] =
       when hasThreadSupport:
-        if posix.pthread_sigmask(SIG_UNBLOCK, newmask, oldmask) == -1:
+        if pthread_sigmask(SIG_UNBLOCK, newmask, oldmask) == -1:
           err(osLastError())
         else:
           ok()
       else:
-        if posix.sigprocmask(SIG_UNBLOCK, newmask, oldmask) == -1:
+        if sigprocmask(SIG_UNBLOCK, newmask, oldmask) == -1:
           err(osLastError())
         else:
           ok()

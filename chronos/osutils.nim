@@ -13,10 +13,12 @@ import osdefs
 {.push raises: [Defect].}
 
 when defined(windows):
+  type
+    WINDESCRIPTOR* = SocketHandle|HANDLE
   template handleEintr*(body: untyped): untyped =
     discard
 
-  proc setDescriptorInheritance*(s: SocketHandle|HANDLE,
+  proc setDescriptorInheritance*(s: WINDESCRIPTOR,
                                  value: bool): Result[void, OSErrorCode] =
     var flags = 0'u32
     let fd = when s is SocketHandle: HANDLE(s) else: s
@@ -28,7 +30,7 @@ when defined(windows):
         return err(osLastError())
     ok()
 
-  proc getDescriptorInheritance*(s: SocketHandle|HANDLE
+  proc getDescriptorInheritance*(s: WINDESCRIPTOR
                                 ): Result[bool, OSErrorCode] =
     var flags = 0'u32
     let fd = when s is SocketHandle: HANDLE(s) else: s
@@ -36,10 +38,16 @@ when defined(windows):
       return err(osLastError())
     ok((flags and HANDLE_FLAG_INHERIT) == HANDLE_FLAG_INHERIT)
 
-  proc setDescriptorBlocking*(s: SocketHandle | HANDLE,
+  proc setDescriptorBlocking*(s: WINDESCRIPTOR,
                               value: bool): Result[void, OSErrorCode] =
     # TODO: Here should be present code which will obtain handle type and check
     # for FILE_FLAG_OVERLAPPED (pipes) or WSA_FLAG_OVERLAPPED (socket).
+    ok()
+
+  proc setDescriptorFlags*(s: WINDESCRIPTOR, nonblock,
+                           cloexec: bool): Result[void, OSErrorCode] =
+    ? setDescriptorBlocking(s, not(nonblock))
+    ? setDescriptorInheritance(s, not(cloexec))
     ok()
 
 else:
@@ -82,13 +90,13 @@ else:
     ok()
 
   proc getDescriptorInheritance*(s: cint): Result[bool, OSErrorCode] =
-    let flags = handleEintr(osdefs.fcntl(cint(fd), osdefs.F_GETFD))
+    let flags = handleEintr(osdefs.fcntl(s, osdefs.F_GETFD))
     if flags == -1:
       return err(osLastError())
     ok((flags and osdefs.FD_CLOEXEC) == osdefs.FD_CLOEXEC)
 
-proc setDescriptorFlags*(s: SocketHandle|HANDLE|cint, nonblock,
-                         cloexec: bool): Result[void, OSErrorCode] =
-  ? setDescriptorBlocking(s, not(nonblock))
-  ? setDescriptorInheritance(s, not(cloexec))
-  ok()
+  proc setDescriptorFlags*(s: cint, nonblock,
+                           cloexec: bool): Result[void, OSErrorCode] =
+    ? setDescriptorBlocking(s, not(nonblock))
+    ? setDescriptorInheritance(s, not(cloexec))
+    ok()
