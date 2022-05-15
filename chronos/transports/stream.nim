@@ -297,9 +297,7 @@ proc clean(transp: StreamTransport) {.inline.} =
 when defined(nimdoc):
   proc pauseAccept(server: StreamServer) {.inline.} = discard
   proc resumeAccept(server: StreamServer) {.inline.} = discard
-  proc resumeRead(transp: StreamTransport) {.inline.} = discard
   proc accept*(server: StreamServer): Future[StreamTransport] = discard
-  proc resumeWrite(transp: StreamTransport) {.inline.} = discard
   proc newStreamPipeTransport(fd: AsyncFD, bufsize: int,
                               child: StreamTransport,
                              flags: set[TransportFlags] = {}): StreamTransport =
@@ -1024,15 +1022,17 @@ elif defined(windows):
             server.clean()
           break
 
-  proc resumeRead(transp: StreamTransport) {.inline.} =
+  proc resumeRead(transp: StreamTransport): Result[void, OSErrorCode] =
     if ReadPaused in transp.state:
       transp.state.excl(ReadPaused)
       readStreamLoop(cast[pointer](addr transp.rovl))
+    ok()
 
-  proc resumeWrite(transp: StreamTransport) {.inline.} =
+  proc resumeWrite(transp: StreamTransport): Result[void, OSErrorCode] =
     if WritePaused in transp.state:
       transp.state.excl(WritePaused)
       writeStreamLoop(cast[pointer](addr transp.wovl))
+    ok()
 
   proc pauseAccept(server: StreamServer) {.inline.} =
     if server.apending:
@@ -1663,18 +1663,14 @@ else:
       raises: [Defect, IOSelectorsException, ValueError].} =
     removeReader(server.sock)
 
-  proc resumeRead(transp: StreamTransport) {.inline.} =
+  proc resumeRead(transp: StreamTransport): Result[void, OSErrorCode] =
     if ReadPaused in transp.state:
+      ? addReader2(transp.fd, readStreamLoop, cast[pointer](transp))
       transp.state.excl(ReadPaused)
-      # TODO reset flag on exception??
-      try:
-        addReader(transp.fd, readStreamLoop, cast[pointer](transp))
-      except IOSelectorsException as exc:
-        raiseAsDefect exc, "addReader"
-      except ValueError as exc:
-        raiseAsDefect exc, "addReader"
+    else:
+      ok()
 
-  proc resumeWrite(transp: StreamTransport) {.inline.} =
+  proc resumeWrite(transp: StreamTransport): Result[void, OSErrorCode] =
     if transp.queue.len() == 1:
       # writeStreamLoop keeps writing until queue is empty - we should not call
       # resumeWrite under any other condition than when the items are
@@ -1682,14 +1678,8 @@ else:
       # was not removed from write notifications at the right time, and this
       # would mean an imbalance in registration and deregistration
       doAssert WritePaused in transp.state
-      try:
-        addWriter(transp.fd, writeStreamLoop, cast[pointer](transp))
-
-        transp.state.excl WritePaused
-      except IOSelectorsException as exc:
-        raiseAsDefect exc, "addWriter"
-      except ValueError as exc:
-        raiseAsDefect exc, "addWriter"
+      ? addWriter2(transp.fd, writeStreamLoop, cast[pointer](transp))
+    ok()
 
   proc accept*(server: StreamServer): Future[StreamTransport] =
     var retFuture = newFuture[StreamTransport]("stream.server.accept")
@@ -2097,7 +2087,7 @@ template fastWrite(transp: auto, pbytes: var ptr byte, rbytes: var int,
           case transp.kind
           of TransportKind.Socket:
             osdefs.send(SocketHandle(transp.fd), pbytes, rbytes,
-                       MSG_NOSIGNAL)
+                        MSG_NOSIGNAL)
           of TransportKind.Pipe:
             osdefs.write(cint(transp.fd), pbytes, rbytes)
           else:
@@ -2145,7 +2135,9 @@ proc write*(transp: StreamTransport, pbytes: pointer,
   var vector = StreamVector(kind: DataBuffer, writer: retFuture,
                             buf: pbytes, buflen: rbytes, size: nbytes)
   transp.queue.addLast(vector)
-  transp.resumeWrite()
+  let res = transp.resumeWrite()
+  if res.isErr():
+    retFuture.fail(getTransportOsError(res.error()))
   return retFuture
 
 proc write*(transp: StreamTransport, msg: sink string,
@@ -2182,7 +2174,9 @@ proc write*(transp: StreamTransport, msg: sink string,
   var vector = StreamVector(kind: DataBuffer, writer: retFuture,
                             buf: pbytes, buflen: rbytes, size: nbytes)
   transp.queue.addLast(vector)
-  transp.resumeWrite()
+  let res = transp.resumeWrite()
+  if res.isErr():
+    retFuture.fail(getTransportOsError(res.error()))
   return retFuture
 
 proc write*[T](transp: StreamTransport, msg: sink seq[T],
@@ -2219,7 +2213,9 @@ proc write*[T](transp: StreamTransport, msg: sink seq[T],
   var vector = StreamVector(kind: DataBuffer, writer: retFuture,
                             buf: pbytes, buflen: rbytes, size: nbytes)
   transp.queue.addLast(vector)
-  transp.resumeWrite()
+  let res = transp.resumeWrite()
+  if res.isErr():
+    retFuture.fail(getTransportOsError(res.error()))
   return retFuture
 
 proc writeFile*(transp: StreamTransport, handle: int,
@@ -2240,21 +2236,15 @@ proc writeFile*(transp: StreamTransport, handle: int,
                             buf: cast[pointer](size), offset: offset,
                             buflen: handle)
   transp.queue.addLast(vector)
-  transp.resumeWrite()
+  let res = transp.resumeWrite()
+  if res.isErr():
+    retFuture.fail(getTransportOsError(res.error()))
   return retFuture
 
 proc atEof*(transp: StreamTransport): bool {.inline.} =
   ## Returns ``true`` if ``transp`` is at EOF.
-  result = (transp.offset == 0) and (ReadEof in transp.state) and
-           (ReadPaused in transp.state)
-
-template prepareReader(transp: StreamTransport,
-                       name: static string): Future[void] =
-  checkPending(transp)
-  var fut = newFuture[void](name)
-  transp.reader = fut
-  resumeRead(transp)
-  fut
+  (transp.offset == 0) and (ReadEof in transp.state) and
+  (ReadPaused in transp.state)
 
 template readLoop(name, body: untyped): untyped =
   # Read data until a predicate is satisfied - the body should return a tuple
@@ -2275,7 +2265,26 @@ template readLoop(name, body: untyped): untyped =
     if done:
       break
     else:
-      await transp.prepareReader(name)
+      checkPending(transp)
+      let res = resumeRead(transp)
+      if res.isErr():
+        let errorCode = res.error()
+        when defined(posix):
+          if errorCode == ESRCH:
+            # ESRCH 3 "No such process"
+            # This error could be happened on pipes only, when process which
+            # owns
+            # and communicates through this pipe (stdin, stdout, stderr) is
+            # already dead. In such case we need to assume that this pipe is
+            # at EOF.
+            transp.state.incl({ReadEof, ReadPaused})
+          else:
+            transp.setError(errorCode)
+            raise transp.getError()
+      else:
+        var fut = newFuture[void](name)
+        transp.reader = fut
+        await fut
 
 proc readExactly*(transp: StreamTransport, pbytes: pointer,
                   nbytes: int) {.async.} =
@@ -2578,14 +2587,25 @@ proc running*(transp: StreamTransport): bool {.inline.} =
   ({ReadClosed, ReadEof, ReadError,
     WriteClosed, WriteEof, WriteError} * transp.state == {})
 
-proc fromPipe*(fd: AsyncFD, child: StreamTransport = nil,
-               bufferSize = DefaultStreamBufferSize): StreamTransport {.
-    raises: [Defect, CatchableError].} =
+proc fromPipe2*(fd: AsyncFD, child: StreamTransport = nil,
+                bufferSize = DefaultStreamBufferSize
+               ): Result[StreamTransport, OSErrorCode] =
   ## Create new transport object using pipe's file descriptor.
   ##
   ## ``bufferSize`` is size of internal buffer for transport.
-  register(fd)
-
-  result = newStreamPipeTransport(fd, bufferSize, child)
+  ? register2(fd)
+  var res = newStreamPipeTransport(fd, bufferSize, child)
   # Start tracking transport
-  trackStream(result)
+  trackStream(res)
+  ok(res)
+
+proc fromPipe*(fd: AsyncFD, child: StreamTransport = nil,
+               bufferSize = DefaultStreamBufferSize): StreamTransport {.
+    raises: [Defect, OSError].} =
+  ## Create new transport object using pipe's file descriptor.
+  ##
+  ## ``bufferSize`` is size of internal buffer for transport.
+  let res = fromPipe2(fd, child, bufferSize)
+  if res.isErr():
+    raiseTransportOsError(res.error())
+  res.get()
