@@ -31,7 +31,6 @@ const
 when defined(windows):
   type
     WINDESCRIPTOR* = SocketHandle|HANDLE
-
   template handleEintr*(body: untyped): untyped =
     discard
 
