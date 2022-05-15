@@ -280,7 +280,7 @@ proc registerProcess*[T](s: Selector, pid: int, data: T): SelectResult[int] =
 
   discard sigemptyset(nmask)
   discard sigemptyset(omask)
-  discard sigaddset(nmask, posix.SIGCHLD)
+  discard sigaddset(nmask, osdefs.SIGCHLD)
   ? blockSignals(nmask, omask)
 
   let fdi = int(signalfd(-1, nmask, SFD_NONBLOCK or SFD_CLOEXEC))

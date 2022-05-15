@@ -12,7 +12,7 @@ when (NimMajor, NimMinor) < (1, 4):
 else:
   {.push raises: [].}
 
-import "."/[asyncloop, osdefs]
+import "."/[asyncloop, osdefs, osutils]
 import stew/results
 from nativesockets import Domain, Protocol, SockType, toInt
 export Domain, Protocol, SockType, results
