@@ -137,7 +137,11 @@ proc createAsyncSocket*(domain: Domain, sockType: SockType,
       AsyncFD(fd)
 
 proc wrapAsyncSocket2*(sock: cint|SocketHandle): Result[AsyncFD, OSErrorCode] =
-  let fd = when sock is cint: sock else: cint(sock)
+  let fd =
+    when defined(windows):
+      sock
+    else:
+      when sock is cint: sock else: cint(sock)
   ? setDescriptorFlags(fd, true, true)
   ? register2(AsyncFD(fd))
   ok(AsyncFD(fd))
