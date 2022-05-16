@@ -2150,7 +2150,7 @@ proc createStreamServer*[T](host: TransportAddress,
 
 proc getUserData*[T](server: StreamServer): T {.inline.} =
   ## Obtain user data stored in ``server`` object.
-  result = cast[T](server.udata)
+  cast[T](server.udata)
 
 template fastWrite(transp: auto, pbytes: var ptr byte, rbytes: var int,
                    nbytes: int) =
@@ -2164,7 +2164,7 @@ template fastWrite(transp: auto, pbytes: var ptr byte, rbytes: var int,
           case transp.kind
           of TransportKind.Socket:
             osdefs.send(SocketHandle(transp.fd), pbytes, rbytes,
-                        MSG_NOSIGNAL)
+                       MSG_NOSIGNAL)
           of TransportKind.Pipe:
             osdefs.write(cint(transp.fd), pbytes, rbytes)
           else:
