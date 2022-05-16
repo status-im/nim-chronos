@@ -316,6 +316,13 @@ else:
       skey.param = pparam
       skey.data = data
 
+    template clearKey[T](s: Selector[T], pident) =
+      var empty: T
+      var skey = addr(s.fds[pident])
+      skey.ident = InvalidIdent
+      skey.events = {}
+      skey.data = empty
+
     proc setNonBlocking(fd: cint) {.inline.} =
       let res = setDescriptorFlags(fd, true, true)
       if res.isErr():

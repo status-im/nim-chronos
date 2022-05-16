@@ -237,7 +237,10 @@ proc registerHandle2*[T](s: Selector[T], fd: cint, events: set[Event],
     if Event.Write in events:
       modifyKQueue(s, uint(fdi), EVFILT_WRITE, EV_ADD, 0, 0, nil)
       inc(s.count)
-    ? flushKQueue(s)
+    let res = flushKQueue(s)
+    if res.isErr():
+      s.clearKey(fdi)
+      return err(res.error())
   ok()
 
 proc updateHandle2*[T](s: Selector[T], fd: cint,
@@ -288,6 +291,7 @@ proc registerTimer*[T](s: Selector[T], timeout: int, oneshot: bool,
 
   let res = flushKQueue(s)
   if res.isErr():
+    s.clearKey(fdi)
     discard closeFd(cint(fdi))
     return err(res.error())
   inc(s.count)
@@ -317,6 +321,7 @@ proc registerSignal*[T](s: Selector[T], signal: int,
 
   let fres = flushKQueue(s)
   if fres.isErr():
+    s.clearKey(fdi)
     discard unblockSignals(nmask, omask)
     discard closeFd(cint(fdi))
     return err(fres.error())
@@ -336,6 +341,7 @@ proc registerProcess*[T](s: Selector[T], pid: int, data: T): SelectResult[int] =
                cast[pointer](fdi))
   let res = flushKQueue(s)
   if res.isErr():
+    s.clearKey(fdi)
     discard closeFd(cint(fdi))
     return err(res.error())
   inc(s.count)
@@ -350,7 +356,9 @@ proc registerEvent2*[T](s: Selector[T], ev: SelectEvent,
   setKey(s, fdi, {Event.User}, 0, data)
 
   modifyKQueue(s, fdi.uint, EVFILT_READ, EV_ADD, 0, 0, nil)
-  ? flushKQueue(s)
+  let res = flushKQueue(s)
+  if res.isErr():
+    s.clearKey(fdi)
   inc(s.count)
   ok()
 
