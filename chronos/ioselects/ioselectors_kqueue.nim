@@ -69,7 +69,7 @@ proc new*(t: typedesc[Selector], T: typedesc): SelectResult[Selector[T]] =
                                  osdefs.IPPROTO_TCP))
   if usock == -1:
     let errorCode = osLastError()
-    discard handleEintr(osdefs.close(cint(kqFD)))
+    discard closeFd(kqFD)
     return err(errorCode)
 
   var selector =
@@ -102,12 +102,12 @@ proc close2*[T](s: Selector[T]): SelectResult[void] =
     deallocSharedArray(s.fds)
     deallocShared(cast[pointer](s))
 
-  if handleEintr(osdefs.close(sockFD)) != 0:
+  if closeFd(sockFD) != 0:
     let errorCode = osLastError()
-    discard osdefs.close(kqFD)
+    discard closeFd(kqFD)
     err(errorCode)
   else:
-    if handleEintr(osdefs.close(kqFD)) != 0:
+    if closeFd(kqFD) != 0:
       err(osLastError())
     else:
       ok()
@@ -128,13 +128,13 @@ proc new*(t: typedesc[SelectEvent]): SelectResult[SelectEvent] =
 
     let res1 = setDescriptorFlags(fds[0], true, true)
     if res1.isErr():
-      discard handleEintr(osdefs.close(fds[0]))
-      discard handleEintr(osdefs.close(fds[1]))
+      discard closeFd(fds[0])
+      discard closeFd(fds[1])
       return err(res1.error())
     let res2 = setDescriptorFlags(fds[1], true, true)
     if res2.isErr():
-      discard handleEintr(osdefs.close(fds[0]))
-      discard handleEintr(osdefs.close(fds[1]))
+      discard closeFd(fds[0])
+      discard closeFd(fds[1])
       return err(res2.error())
 
     var res = cast[SelectEvent](allocShared0(sizeof(SelectEventImpl)))
@@ -159,12 +159,12 @@ proc close2*(ev: SelectEvent): SelectResult[void] =
 
   deallocShared(cast[pointer](ev))
 
-  if handleEintr(osdefs.close(rfd)) != 0:
+  if closeFd(rfd) != 0:
     let errorCode = osLastError()
-    discard osdefs.close(wfd)
+    discard closeFd(wfd)
     err(errorCode)
   else:
-    if handleEintr(osdefs.close(wfd)) != 0:
+    if closeFd(wfd) != 0:
       err(osLastError())
     else:
       ok()
@@ -288,7 +288,7 @@ proc registerTimer*[T](s: Selector[T], timeout: int, oneshot: bool,
 
   let res = flushKQueue(s)
   if res.isErr():
-    discard handleEintr(osdefs.close(cint(fdi)))
+    discard closeFd(cint(fdi))
     return err(res.error())
   inc(s.count)
   ok(fdi)
@@ -308,7 +308,7 @@ proc registerSignal*[T](s: Selector[T], signal: int,
 
   let bres = blockSignals(nmask, omask)
   if bres.isErr():
-    discard handleEintr(osdefs.close(cint(fdi)))
+    discard closeFd(cint(fdi))
     return err(bres.error())
 
   # to be compatible with linux semantic we need to "eat" signals
@@ -318,7 +318,7 @@ proc registerSignal*[T](s: Selector[T], signal: int,
   let fres = flushKQueue(s)
   if fres.isErr():
     discard unblockSignals(nmask, omask)
-    discard handleEintr(osdefs.close(cint(fdi)))
+    discard closeFd(cint(fdi))
     return err(fres.error())
   inc(s.count)
   ok(fdi)
@@ -336,7 +336,7 @@ proc registerProcess*[T](s: Selector[T], pid: int, data: T): SelectResult[int] =
                cast[pointer](fdi))
   let res = flushKQueue(s)
   if res.isErr():
-    discard handleEintr(osdefs.close(cint(fdi)))
+    discard closeFd(cint(fdi))
     return err(res.error())
   inc(s.count)
   ok(fdi)
@@ -408,7 +408,7 @@ proc unregister2*[T](s: Selector[T], fd: cint): SelectResult[void] =
         modifyKQueue(s, uint(fdi), EVFILT_TIMER, EV_DELETE, 0, 0, nil)
         ? flushKQueue(s)
         dec(s.count)
-      if handleEintr(osdefs.close(cint(pkey.ident))) != 0:
+      if closeFd(cint(pkey.ident)) != 0:
         return err(osLastError())
     elif Event.Signal in pkey.events:
       var nmask, omask: Sigset
@@ -422,17 +422,17 @@ proc unregister2*[T](s: Selector[T], fd: cint): SelectResult[void] =
       discard sigaddset(nmask, sig)
       let res = unblockSignals(nmask, omask)
       if res.isErr():
-        discard handleEintr(osdefs.close(cint(pkey.ident)))
+        discard closeFd(cint(pkey.ident))
         return err(res.error())
       else:
-        if handleEintr(osdefs.close(cint(pkey.ident))) != 0:
+        if closeFd(cint(pkey.ident)) != 0:
           return err(osLastError())
     elif Event.Process in pkey.events:
       if Event.Finished notin pkey.events:
         modifyKQueue(s, uint(pkey.param), EVFILT_PROC, EV_DELETE, 0, 0, nil)
         ? flushKQueue(s)
         dec(s.count)
-      if handleEintr(osdefs.close(cint(pkey.ident))) != 0:
+      if closeFd(cint(pkey.ident)) != 0:
         return err(osLastError())
     elif Event.Vnode in pkey.events:
       modifyKQueue(s, uint(fdi), EVFILT_VNODE, EV_DELETE, 0, 0, nil)

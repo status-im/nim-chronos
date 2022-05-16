@@ -9,7 +9,7 @@
 {.push raises: [Defect].}
 
 import std/[options, strtabs]
-import "."/[asyncloop, handles, osdefs], streams/asyncstream
+import "."/[asyncloop, handles, osdefs, osutils], streams/asyncstream
 import stew/[results, byteutils]
 export options, strtabs, results
 
@@ -178,24 +178,16 @@ proc init*(t: typedesc[AsyncStreamHolder], handle: ProcessStreamHandle,
   of ProcessStreamHandleKind.Handle:
     case kind
     of StreamKind.Reader:
-      let transp =
-        try:
-          fromPipe(handle.handle)
-        except CatchableError:
-          return err(osLastError())
       let
+        transp = ? fromPipe2(handle.handle)
         reader = newAsyncStreamReader(transp)
         flags = baseFlags + {StreamHolderFlag.Stream,
                              StreamHolderFlag.Transport}
       ok(AsyncStreamHolder(kind: StreamKind.Reader, reader: reader,
                            flags: flags))
     of StreamKind.Writer:
-      let transp =
-        try:
-          fromPipe(handle.handle)
-        except CatchableError:
-          return err(osLastError())
       let
+        transp = ? fromPipe2(handle.handle)
         writer = newAsyncStreamWriter(transp)
         flags = baseFlags + {StreamHolderFlag.Stream,
                              StreamHolderFlag.Transport}
@@ -291,10 +283,8 @@ template isOk(code: OSErrorCode): bool =
     code == 0
 
 template closePipe(handle: AsyncFD): bool =
-  when defined(windows):
-    osdefs.closeHandle(HANDLE(handle)) == TRUE
-  else:
-    osdefs.close(cint(handle)) != -1
+  let fd = when defined(windows): HANDLE(handle) else: cint(handle)
+  closeFd(fd) != -1
 
 proc closeProcessHandles(pipes: var AsyncProcessPipes,
                          options: set[AsyncProcessOption],
@@ -421,13 +411,14 @@ when defined(windows):
     if hFile == INVALID_HANDLE_VALUE:
       return err(osLastError())
 
-    let res =
-      try:
-        fromPipe(AsyncFD(hFile))
-      except CatchableError:
-        discard closeHandle(hFile)
-        return err(osLastError())
-    ok(res)
+    let transp =
+      block:
+        let res = fromPipe2(AsyncFD(hFile))
+        if res.isErr():
+          discard closeFd(hFile)
+          return err(res.error())
+        res.get()
+    ok(transp)
 
   proc buildEnvironment(env: StringTableRef): WideCString =
     var str: string
@@ -734,19 +725,19 @@ else:
 
     if fd == -1:
       return err(osLastError())
-    if osdefs.fcntl(fd, osdefs.F_SETFD, osdefs.FD_CLOEXEC) == -1:
-      discard osdefs.close(fd)
-      return err(osLastError())
-    if not(setSocketBlocking(SocketHandle(fd), false)):
-      discard osdefs.close(fd)
-      return err(osLastError())
+
+    let sres = setDescriptorFlags(fd, true, true)
+    if sres.isErr():
+      discard closeFd(fd)
+      return err(sres.error())
 
     let transp =
-      try:
-        fromPipe(AsyncFD(fd))
-      except CatchableError:
-        discard osdefs.close(fd)
-        return err(osLastError())
+      block:
+        let res = fromPipe2(AsyncFD(fd))
+        if res.isErr():
+          discard closeFd(fd)
+          return err(res.error())
+        res.get()
     ok(transp)
 
   proc closeThreadAndProcessHandle(p: AsyncProcessRef
@@ -1017,11 +1008,10 @@ else:
     proc continuation(udata: pointer) {.gcsafe.} =
       let source = cast[int](udata)
       if not(retFuture.finished()):
-        try:
-          removeProcess(processHandle)
-        except IOSelectorsException:
+        let res = removeProcess2(processHandle)
+        if res.isErr():
           retFuture.fail(newException(AsyncProcessError,
-                                      osErrorMsg(osLastError())))
+                                      osErrorMsg(res.error())))
           return
         if source == 1:
           if not(isNil(timer)):
@@ -1049,11 +1039,8 @@ else:
       if not(retFuture.finished()):
         if not(isNil(timer)):
           clearTimer(timer)
-        try:
-          removeProcess(processHandle)
-        except IOSelectorsException:
-          # Ignore any exceptions because of cancellation.
-          discard
+        # Ignore any errors because of cancellation.
+        discard removeProcess2(processHandle)
 
     if timeout != InfiniteDuration:
       timer = setTimer(Moment.fromNow(timeout), continuation, cast[pointer](2))
