@@ -58,7 +58,7 @@ proc getUnique[T](s: Selector[T]): SelectResult[int] =
     ok(res)
 
 proc new*(t: typedesc[Selector], T: typedesc): SelectResult[Selector[T]] =
-  var kqFD = handleEintr(kqueue())
+  var kqFD = cint(handleEintr(kqueue()))
   if kqFD == -1:
     return err(osLastError())
 
@@ -75,7 +75,7 @@ proc new*(t: typedesc[Selector], T: typedesc): SelectResult[Selector[T]] =
   var selector =
     when hasThreadSupport:
       var res = cast[Selector[T]](allocShared0(sizeof(SelectorImpl[T])))
-      res.kqFD = cint(kqFD)
+      res.kqFD = kqFD
       res.sock = usock
       res.numFD = asyncInitialSize
       res.fds = allocSharedArray[SelectorKey[T]](asyncInitialSize)
@@ -84,7 +84,7 @@ proc new*(t: typedesc[Selector], T: typedesc): SelectResult[Selector[T]] =
       initLock(res.changesLock)
       res
     else:
-      Selector[T](kqFD: cint(kqFD), sock: usock, numFD: asyncInitialSize,
+      Selector[T](kqFD: kqFD, sock: usock, numFD: asyncInitialSize,
                   fds: newSeq[SelectorKey[T]](asyncInitialSize),
                   changes: newSeqOfCap[KEvent](asyncEventsCount))
 
