@@ -1888,7 +1888,7 @@ proc createStreamServer*(host: TransportAddress,
                           osdefs.SO_REUSEADDR, 1)):
           let err = osLastError()
           if sock == asyncInvalidSocket:
-            serverSocket.closeSocket()
+            discard closeFd(SocketHandle(serverSocket))
           raiseTransportOsError(err)
       # TCP flags are not useful for Unix domain sockets.
       if ServerFlags.TcpNoDelay in flags:
@@ -1896,14 +1896,14 @@ proc createStreamServer*(host: TransportAddress,
                           osdefs.TCP_NODELAY, 1)):
           let err = osLastError()
           if sock == asyncInvalidSocket:
-            serverSocket.closeSocket()
+            discard closeFd(SocketHandle(serverSocket))
           raiseTransportOsError(err)
       host.toSAddr(saddr, slen)
       if bindAddr(SocketHandle(serverSocket), cast[ptr SockAddr](addr saddr),
                   slen) != 0:
         let err = osLastError()
         if sock == asyncInvalidSocket:
-          serverSocket.closeSocket()
+          discard closeFd(SocketHandle(serverSocket))
         raiseTransportOsError(err)
 
       slen = SockLen(sizeof(saddr))
@@ -1911,14 +1911,14 @@ proc createStreamServer*(host: TransportAddress,
                      addr slen) != 0:
         let err = osLastError()
         if sock == asyncInvalidSocket:
-          serverSocket.closeSocket()
+          discard closeFd(SocketHandle(serverSocket))
         raiseTransportOsError(err)
       fromSAddr(addr saddr, slen, localAddress)
 
       if listen(SocketHandle(serverSocket), cint(backlog)) != 0:
         let err = osLastError()
         if sock == asyncInvalidSocket:
-          serverSocket.closeSocket()
+          discard closeFd(SocketHandle(serverSocket))
           raiseTransportOsError(err)
     elif host.family == AddressFamily.Unix:
       serverSocket = AsyncFD(0)
@@ -1936,9 +1936,12 @@ proc createStreamServer*(host: TransportAddress,
       if serverSocket == asyncInvalidSocket:
         raiseTransportOsError(osLastError())
     else:
-      if not(setSocketBlocking(SocketHandle(sock), false)):
+      let bres = setDescriptorFlags(cint(sock), true, true)
+      if bres.isErr():
         raiseTransportOsError(osLastError())
-      register(sock)
+      let rres = register2(sock)
+      if rres.isErr():
+        raiseTransportOsError(osLastError())
 
       serverSocket = sock
 
@@ -1948,13 +1951,13 @@ proc createStreamServer*(host: TransportAddress,
         if not(setSockOpt(serverSocket, SOL_SOCKET, SO_REUSEADDR, 1)):
           let err = osLastError()
           if sock == asyncInvalidSocket:
-            serverSocket.closeSocket()
+            discard closeFd(cint(serverSocket))
           raiseTransportOsError(err)
       if ServerFlags.ReusePort in flags:
         if not(setSockOpt(serverSocket, SOL_SOCKET, SO_REUSEPORT, 1)):
           let err = osLastError()
           if sock == asyncInvalidSocket:
-            serverSocket.closeSocket()
+            discard closeFd(cint(serverSocket))
           raiseTransportOsError(err)
       # TCP flags are not useful for Unix domain sockets.
       if ServerFlags.TcpNoDelay in flags:
@@ -1962,7 +1965,7 @@ proc createStreamServer*(host: TransportAddress,
                           osdefs.TCP_NODELAY, 1)):
           let err = osLastError()
           if sock == asyncInvalidSocket:
-            serverSocket.closeSocket()
+            discard closeFd(cint(serverSocket))
           raiseTransportOsError(err)
     elif host.family in {AddressFamily.Unix}:
       # We do not care about result here, because if file cannot be removed,
@@ -1974,7 +1977,7 @@ proc createStreamServer*(host: TransportAddress,
                   slen) != 0:
       let err = osLastError()
       if sock == asyncInvalidSocket:
-        serverSocket.closeSocket()
+        discard closeFd(cint(serverSocket))
       raiseTransportOsError(err)
 
     # Obtain real address
@@ -1983,14 +1986,14 @@ proc createStreamServer*(host: TransportAddress,
                    addr slen) != 0:
       let err = osLastError()
       if sock == asyncInvalidSocket:
-        serverSocket.closeSocket()
+        discard closeFd(cint(serverSocket))
       raiseTransportOsError(err)
     fromSAddr(addr saddr, slen, localAddress)
 
     if listen(SocketHandle(serverSocket), cint(backlog)) != 0:
       let err = osLastError()
       if sock == asyncInvalidSocket:
-        serverSocket.closeSocket()
+        discard closeFd(cint(serverSocket))
       raiseTransportOsError(err)
 
   var sres =
