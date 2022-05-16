@@ -97,12 +97,13 @@ proc createAsyncSocket*(domain: Domain, sockType: SockType,
                        nil, GROUP(0), flags)
     if fd == osdefs.INVALID_SOCKET:
       return asyncInvalidSocket
-    if not(setSocketBlocking(fd, false)):
+    let bres = setDescriptorBlocking(fd, false)
+    if bres.isErr():
       discard osdefs.closeSocket(fd)
       return asyncInvalidSocket
-    try:
-      register(AsyncFD(fd))
-    except OSError:
+
+    let res = register2(AsyncFD(fd))
+    if res.isErr():
       discard osdefs.closeSocket(fd)
       return asyncInvalidSocket
     AsyncFD(fd)
@@ -116,27 +117,22 @@ proc createAsyncSocket*(domain: Domain, sockType: SockType,
       let fd = osdefs.socket(toInt(domain), socketType, toInt(protocol))
       if fd == -1:
         return asyncInvalidSocket
-      try:
-        register(AsyncFD(fd))
-      except CatchableError:
-        discard osdefs.close(fd)
+      let res = register2(AsyncFD(fd))
+      if res.isErr():
+        discard handleEintr(osdefs.close(fd))
         return asyncInvalidSocket
       AsyncFD(fd)
     else:
       let fd = osdefs.socket(toInt(domain), toInt(sockType), toInt(protocol))
       if fd == -1:
         return asyncInvalidSocket
-      if not(inherit):
-        if osdefs.fcntl(fd, osdefs.F_SETFD, osdefs.FD_CLOEXEC) == -1:
-          discard osdefs.close(fd)
-          return asyncInvalidSocket
-      if not(setSocketBlocking(fd, false)):
-        discard osdefs.close(fd)
+      let bres = setDescriptorFlags(fd, true, true)
+      if bres.isErr():
+        discard handleEintr(osdefs.close(fd))
         return asyncInvalidSocket
-      try:
-        register(AsyncFD(fd))
-      except CatchableError:
-        discard osdefs.close(fd)
+      let res = register2(AsyncFD(fd))
+      if res.isErr():
+        discard handleEintr(osdefs.close(fd))
         return asyncInvalidSocket
       AsyncFD(fd)
 

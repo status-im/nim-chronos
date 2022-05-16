@@ -38,10 +38,11 @@ when defined(windows):
       return err(osLastError())
     ok((flags and HANDLE_FLAG_INHERIT) == HANDLE_FLAG_INHERIT)
 
-  proc setDescriptorBlocking*(s: WINDESCRIPTOR,
+  proc setDescriptorBlocking*(s: SocketHandle,
                               value: bool): Result[void, OSErrorCode] =
-    # TODO: Here should be present code which will obtain handle type and check
-    # for FILE_FLAG_OVERLAPPED (pipes) or WSA_FLAG_OVERLAPPED (socket).
+    var mode = clong(ord(not value))
+    if ioctlsocket(s, osdefs.FIONBIO, addr(mode)) == -1:
+      return err(osLastError())
     ok()
 
   proc setDescriptorFlags*(s: WINDESCRIPTOR, nonblock,
