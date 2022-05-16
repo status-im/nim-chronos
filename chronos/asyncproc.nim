@@ -1022,11 +1022,10 @@ else:
     proc continuation(udata: pointer) {.gcsafe.} =
       let source = cast[int](udata)
       if not(retFuture.finished()):
-        try:
-          removeProcess(processHandle)
-        except IOSelectorsException:
+        let res = removeProcess2(processHandle)
+        if res.isErr():
           retFuture.fail(newException(AsyncProcessError,
-                                      osErrorMsg(osLastError())))
+                                      osErrorMsg(res.error())))
           return
         if source == 1:
           # Process exited.
