@@ -610,7 +610,6 @@ when defined(windows):
       ok(-1)
 else:
   import std/strutils
-  from selectors2 import IOSelectorsException
 
   proc envToCStringArray(t: StringTableRef): cstringArray =
     let itemsCount = len(t)
