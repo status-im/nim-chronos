@@ -410,7 +410,7 @@ when defined(windows):
              "Unable to initialize dispatcher's TransmitFile() with an " &
              "error: " & osErrorMsg(osLastError()))
     loop.transmitFile = cast[WSAPROC_TRANSMITFILE](funcPointer)
-    doAssert(closeSocket(sock) == 0, "Unable to initialize dispatcher with " &
+    doAssert(closeFd(sock) == 0, "Unable to initialize dispatcher with " &
              "an error: " & osErrorMsg(osLastError()))
 
   proc newDispatcher*(): PDispatcher {.raises: [Defect].} =
@@ -578,7 +578,7 @@ when defined(windows):
         udata = ovl.data.udata
       # We ignore result here because its not possible to indicate an error.
       discard closeWaitable(wh)
-      discard closeHandle(hProcess)
+      discard closeFd(hProcess)
       cb(udata)
 
     wh =
@@ -586,10 +586,17 @@ when defined(windows):
         let res = registerWaitable(hProcess, flags, InfiniteDuration,
                                    continuation, udata)
         if res.isErr():
-          discard closeHandle(hProcess)
+          discard closeFd(hProcess)
           return err(res.error())
         res.get()
     ok(cast[int](wh))
+
+  proc removeProcess2*(procfd: int): Result[void, OSErrorCode] =
+    doAssert(procfd != 0)
+    # WaitableHandle is allocated in shared memory, so it is not managed by GC.
+    let wh = cast[WaitableHandle](procfd)
+    ? closeWaitable(wh)
+    ok()
 
   proc addProcess*(pid: int, cb: CallbackFunc, udata: pointer = nil): int {.
        raises: [Defect, ValueError].} =
@@ -604,10 +611,7 @@ when defined(windows):
   proc removeProcess*(procfd: int) {.
        raises: [Defect, ValueError].} =
     ## Remove process' watching using process' descriptor ``procfd``.
-    doAssert(procfd != 0)
-    # WaitableHandle is allocated in shared memory, so it is not managed by GC.
-    let wh = cast[WaitableHandle](procfd)
-    let res = closeWaitable(wh)
+    let res = removeProcess2(procfd)
     if res.isErr():
       raise newException(ValueError, osErrorMsg(res.error()))
 
@@ -704,7 +708,7 @@ when defined(windows):
     let loop = getThreadDispatcher()
     loop.handles.excl(fd)
     let param =
-      if osdefs.closeSocket(SocketHandle(fd)) == 0:
+      if closeFd(SocketHandle(fd)) == 0:
         OSErrorCode(0)
       else:
         osLastError()
@@ -717,7 +721,7 @@ when defined(windows):
     let loop = getThreadDispatcher()
     loop.handles.excl(fd)
     let param =
-      if osdefs.closeHandle(HANDLE(fd)) == TRUE:
+      if closeFd(HANDLE(fd)) == 0:
         OSErrorCode(0)
       else:
         osLastError()
@@ -911,10 +915,10 @@ elif unixPlatform:
         if int(fd) in loop.selector:
           let ures = unregister2(fd)
           if ures.isErr():
-            discard handleEintr(osdefs.close(cint(fd)))
+            discard closeFd(cint(fd))
             ures.error()
           else:
-            if handleEintr(osdefs.close(cint(fd))) != 0:
+            if closeFd(cint(fd)) != 0:
               osLastError()
             else:
               OSErrorCode(0)

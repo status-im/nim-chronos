@@ -50,6 +50,14 @@ suite "Asynchronous process management test suite":
       let res = await execCommand(command)
       check res == item
 
+  asyncTest "execCommandEx() exit codes and outputs test":
+    for test in OutputTests:
+      let response = await execCommandEx(test[0])
+      check:
+        response.stdOutput == test[1]
+        response.stdError == test[2]
+        response.status == 0
+
   asyncTest "waitForExit() & peekExitCode() exit codes test":
     let options = {AsyncProcessOption.EvalCommand}
     for item in ExitCodes:
@@ -166,14 +174,6 @@ suite "Asynchronous process management test suite":
       check res == command[2]
     finally:
       await process.closeWait()
-
-  asyncTest "execCommandEx() exit codes and outputs test":
-    for test in OutputTests:
-      let response = await execCommandEx(test[0])
-      check:
-        response.stdOutput == test[1]
-        response.stdError == test[2]
-        response.status == 0
 
   test "getProcessEnvironment() test":
     let env = getProcessEnvironment()
