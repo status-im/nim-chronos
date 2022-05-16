@@ -51,11 +51,11 @@ when defined(windows):
     ? setDescriptorInheritance(s, not(cloexec))
     ok()
 
-  proc closeFd*(s: SocketHandle): cint =
-    osdefs.closesocket(s)
+  proc closeFd*(s: SocketHandle): int =
+    int(osdefs.closesocket(s))
 
-  proc closeFd*(s: HANDLE): cint =
-    if osdefs.closeHandle(s) == TRUE: cint(0) else: cint(-1)
+  proc closeFd*(s: HANDLE): int =
+    if osdefs.closeHandle(s) == TRUE: 0 else: -1
 
 else:
   template handleEintr*(body: untyped): untyped =
@@ -108,8 +108,8 @@ else:
     ? setDescriptorInheritance(s, not(cloexec))
     ok()
 
-  proc closeFd*(s: cint): cint =
+  proc closeFd*(s: cint): int =
     handleEintr(osdefs.close(s))
 
-  proc closeFd*(s: SocketHandle): cint =
+  proc closeFd*(s: SocketHandle): int =
     handleEintr(osdefs.close(cint(s)))
