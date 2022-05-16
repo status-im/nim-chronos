@@ -316,7 +316,7 @@ else:
       skey.param = pparam
       skey.data = data
 
-    template clearKey[T](s: Selector[T], pident) =
+    template clearKey(s, pident: untyped, T: typedesc) =
       var empty: T
       var skey = addr(s.fds[pident])
       skey.ident = InvalidIdent

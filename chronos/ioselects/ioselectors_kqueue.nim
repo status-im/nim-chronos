@@ -239,7 +239,7 @@ proc registerHandle2*[T](s: Selector[T], fd: cint, events: set[Event],
       inc(s.count)
     let res = flushKQueue(s)
     if res.isErr():
-      s.clearKey(fdi)
+      s.clearKey(fdi, T)
       return err(res.error())
   ok()
 
@@ -291,7 +291,7 @@ proc registerTimer*[T](s: Selector[T], timeout: int, oneshot: bool,
 
   let res = flushKQueue(s)
   if res.isErr():
-    s.clearKey(fdi)
+    s.clearKey(fdi, T)
     discard closeFd(cint(fdi))
     return err(res.error())
   inc(s.count)
@@ -321,7 +321,7 @@ proc registerSignal*[T](s: Selector[T], signal: int,
 
   let fres = flushKQueue(s)
   if fres.isErr():
-    s.clearKey(fdi)
+    s.clearKey(fdi, T)
     discard unblockSignals(nmask, omask)
     discard closeFd(cint(fdi))
     return err(fres.error())
@@ -341,7 +341,7 @@ proc registerProcess*[T](s: Selector[T], pid: int, data: T): SelectResult[int] =
                cast[pointer](fdi))
   let res = flushKQueue(s)
   if res.isErr():
-    s.clearKey(fdi)
+    s.clearKey(fdi, T)
     discard closeFd(cint(fdi))
     return err(res.error())
   inc(s.count)
@@ -358,7 +358,7 @@ proc registerEvent2*[T](s: Selector[T], ev: SelectEvent,
   modifyKQueue(s, fdi.uint, EVFILT_READ, EV_ADD, 0, 0, nil)
   let res = flushKQueue(s)
   if res.isErr():
-    s.clearKey(fdi)
+    s.clearKey(fdi, T)
   inc(s.count)
   ok()
 
@@ -382,7 +382,7 @@ template processVnodeEvents(events: set[Event]): cuint =
 proc registerVnode2*[T](s: Selector[T], fd: cint, events: set[Event],
                         data: T): SelectResult[void] =
   let fdi = int(fd)
-  s.checkFd(fdi)
+  s.checkFd(fdi, T)
   doAssert(s.fds[fdi].ident == InvalidIdent,
            "Descriptor [" & $fdi & " is already registered in the selector!")
   setKey(s, fdi, {Event.Vnode} + events, 0, data)
