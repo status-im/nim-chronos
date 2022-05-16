@@ -1645,10 +1645,10 @@ else:
           raiseAssert $err
 
   proc resumeAccept(server: StreamServer): Result[void, OSErrorCode] =
-    ? addReader2(server.sock, acceptLoop, cast[pointer](server))
+    addReader2(server.sock, acceptLoop, cast[pointer](server))
 
   proc pauseAccept(server: StreamServer): Result[void, OSErrorCode] =
-    ? removeReader2(server.sock)
+    removeReader2(server.sock)
 
   proc resumeRead(transp: StreamTransport): Result[void, OSErrorCode] =
     if ReadPaused in transp.state:
