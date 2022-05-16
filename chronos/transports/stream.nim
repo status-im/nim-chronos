@@ -2055,7 +2055,7 @@ proc createStreamServer*(host: TransportAddress,
                    addr slen) != 0:
       let err = osLastError()
       if sock == asyncInvalidSocket:
-        serverSocket.closeSocket()
+        discard closeFd(cint(serverSocket))
       raiseTransportOsError(err)
     fromSAddr(addr saddr, slen, localAddress)
 
