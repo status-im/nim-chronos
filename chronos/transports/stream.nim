@@ -295,11 +295,7 @@ proc clean(transp: StreamTransport) {.inline.} =
     GC_unref(transp)
 
 when defined(nimdoc):
-  proc pauseAccept(server: StreamServer) {.inline.} = discard
-  proc resumeAccept(server: StreamServer) {.inline.} = discard
-  proc resumeRead(transp: StreamTransport) {.inline.} = discard
   proc accept*(server: StreamServer): Future[StreamTransport] = discard
-  proc resumeWrite(transp: StreamTransport) {.inline.} = discard
   proc newStreamPipeTransport(fd: AsyncFD, bufsize: int,
                               child: StreamTransport,
                              flags: set[TransportFlags] = {}): StreamTransport =
@@ -1648,13 +1644,11 @@ else:
           ## Critical unrecoverable error
           raiseAssert $err
 
-  proc resumeAccept(server: StreamServer) {.
-      raises: [Defect, IOSelectorsException, ValueError].} =
-    addReader(server.sock, acceptLoop, cast[pointer](server))
+  proc resumeAccept(server: StreamServer): Result[void, OSErrorCode] =
+    ? addReader2(server.sock, acceptLoop, cast[pointer](server))
 
-  proc pauseAccept(server: StreamServer) {.
-      raises: [Defect, IOSelectorsException, ValueError].} =
-    removeReader(server.sock)
+  proc pauseAccept(server: StreamServer): Result[void, OSErrorCode] =
+    ? removeReader2(server.sock)
 
   proc resumeRead(transp: StreamTransport): Result[void, OSErrorCode] =
     if ReadPaused in transp.state:

@@ -99,12 +99,12 @@ proc createAsyncSocket*(domain: Domain, sockType: SockType,
       return asyncInvalidSocket
     let bres = setDescriptorBlocking(fd, false)
     if bres.isErr():
-      discard osdefs.closeSocket(fd)
+      discard closeFd(fd)
       return asyncInvalidSocket
 
     let res = register2(AsyncFD(fd))
     if res.isErr():
-      discard osdefs.closeSocket(fd)
+      discard closeFd(fd)
       return asyncInvalidSocket
     AsyncFD(fd)
   else:
@@ -119,40 +119,35 @@ proc createAsyncSocket*(domain: Domain, sockType: SockType,
         return asyncInvalidSocket
       let res = register2(AsyncFD(fd))
       if res.isErr():
-        discard handleEintr(osdefs.close(fd))
+        discard closeFd(fd)
         return asyncInvalidSocket
       AsyncFD(fd)
     else:
       let fd = osdefs.socket(toInt(domain), toInt(sockType), toInt(protocol))
       if fd == -1:
         return asyncInvalidSocket
-      let bres = setDescriptorFlags(fd, true, true)
+      let bres = setDescriptorFlags(cint(fd), true, true)
       if bres.isErr():
-        discard handleEintr(osdefs.close(fd))
+        discard closeFd(fd)
         return asyncInvalidSocket
       let res = register2(AsyncFD(fd))
       if res.isErr():
-        discard handleEintr(osdefs.close(fd))
+        discard closeFd(fd)
         return asyncInvalidSocket
       AsyncFD(fd)
+
+proc wrapAsyncSocket2*(sock: cint|SocketHandle): Result[AsyncFD, OSErrorCode] =
+  let fd = when sock is cint: fd else: cint(fd)
+  ? setDescriptorFlags(fd, true, true)
+  ? register2(AsyncFD(fd))
+  ok(AsyncFD(fd))
 
 proc wrapAsyncSocket*(sock: SocketHandle): AsyncFD {.
      raises: [Defect].} =
   ## Wraps socket to asynchronous socket handle.
   ## Return ``asyncInvalidSocket`` on error.
-  if not(setSocketBlocking(sock, false)):
-    when defined(windows):
-      discard osdefs.closeSocket(sock)
-    else:
-      discard osdefs.close(sock)
-    return asyncInvalidSocket
-  try:
-    register(AsyncFD(sock))
-  except CatchableError:
-    when defined(windows):
-      discard osdefs.closeSocket(sock)
-    else:
-      discard osdefs.close(sock)
+  let res = wrapAsyncSocket2(sock)
+  if res.isErr():
     return asyncInvalidSocket
   AsyncFD(sock)
 
@@ -274,8 +269,8 @@ proc createAsyncPipe*(inheritRead = true, inheritWrite = true
       if not(inheritWrite):
         let res = setDescriptorInheritance(fds[1], inheritWrite)
         if res.isErr():
-          discard handleEintr(osdefs.close(fds[0]))
-          discard handleEintr(osdefs.close(fds[1]))
+          discard closeFd(fds[0])
+          discard closeFd(fds[1])
           return (read: asyncInvalidPipe, write: asyncInvalidPipe)
       (read: AsyncFD(fds[0]), write: AsyncFD(fds[1]))
     else:
@@ -285,14 +280,14 @@ proc createAsyncPipe*(inheritRead = true, inheritWrite = true
 
       let res0 = setDescriptorFlags(fds[0], true, not(inheritRead))
       if res0.isErr():
-        discard handleEintr(osdefs.close(fds[0]))
-        discard handleEintr(osdefs.close(fds[1]))
+        discard closeFd(fds[0])
+        discard closeFd(fds[1])
         return (read: asyncInvalidPipe, write: asyncInvalidPipe)
 
       let res1 = setDescriptorFlags(fds[1], true, not(inheritWrite))
       if res1.isErr():
-        discard handleEintr(osdefs.close(fds[0]))
-        discard handleEintr(osdefs.close(fds[1]))
+        discard closeFd(fds[0])
+        discard closeFd(fds[1])
         return (read: asyncInvalidPipe, write: asyncInvalidPipe)
 
       (read: AsyncFD(fds[0]), write: AsyncFD(fds[1]))

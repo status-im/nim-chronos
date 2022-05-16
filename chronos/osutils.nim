@@ -51,6 +51,12 @@ when defined(windows):
     ? setDescriptorInheritance(s, not(cloexec))
     ok()
 
+  proc closeFd*(s: SocketHandle): cint =
+    osdefs.closesocket(s)
+
+  proc closeFd*(s: HANDLE): cint =
+    if osdefs.closeHandle(s) == TRUE: cint(0) else: cint(-1)
+
 else:
   template handleEintr*(body: untyped): untyped =
     var res = 0
@@ -101,3 +107,9 @@ else:
     ? setDescriptorBlocking(s, not(nonblock))
     ? setDescriptorInheritance(s, not(cloexec))
     ok()
+
+  proc closeFd*(s: cint): cint =
+    handleEintr(osdefs.close(s))
+
+  proc closeFd*(s: SocketHandle): cint =
+    handleEintr(osdefs.close(cint(s)))

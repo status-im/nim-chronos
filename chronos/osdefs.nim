@@ -1250,4 +1250,3 @@ proc `==`*(x: OSErrorCode, y: int): bool =
   x == OSErrorCode(y)
 proc `==`*(x: SocketHandle, y: int): bool =
   x == SocketHandle(y)
-
