@@ -134,7 +134,7 @@ else:
         return err(osLastError())
       ok(res)
     else:
-      let sock = cint(handleEintr(accept(a1, a2, a3)))
+      let sock = cint(handleEintr(cint(accept(SocketHandle(a1), a2, a3))))
       if sock == -1:
         return err(osLastError())
       let
