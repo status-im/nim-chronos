@@ -152,7 +152,7 @@ proc remoteAddress*(transp: StreamTransport): TransportAddress {.
                    addr slen) != 0:
       raiseTransportOsError(osLastError())
     fromSAddr(addr saddr, slen, transp.remote)
-  result = transp.remote
+  transp.remote
 
 proc localAddress*(transp: StreamTransport): TransportAddress {.
     raises: [Defect, TransportError].} =
@@ -166,11 +166,11 @@ proc localAddress*(transp: StreamTransport): TransportAddress {.
                    addr slen) != 0:
       raiseTransportOsError(osLastError())
     fromSAddr(addr saddr, slen, transp.local)
-  result = transp.local
+  transp.local
 
 proc localAddress*(server: StreamServer): TransportAddress =
   ## Returns ``server`` bound local socket address.
-  result = server.local
+  server.local
 
 template completeReader(stream: StreamTransport) =
   if not(isNil(transp.reader)) and not(transp.reader.finished()):
@@ -207,32 +207,36 @@ proc setupStreamServerTracker(): StreamServerTracker {.
      gcsafe, raises: [Defect].}
 
 proc getStreamTransportTracker(): StreamTransportTracker {.inline.} =
-  result = cast[StreamTransportTracker](getTracker(StreamTransportTrackerName))
-  if isNil(result):
-    result = setupStreamTransportTracker()
+  var res = cast[StreamTransportTracker](getTracker(StreamTransportTrackerName))
+  if isNil(res):
+    res = setupStreamTransportTracker()
+  doAssert(not(isNil(res)))
+  res
 
 proc getStreamServerTracker(): StreamServerTracker {.inline.} =
-  result = cast[StreamServerTracker](getTracker(StreamServerTrackerName))
-  if isNil(result):
-    result = setupStreamServerTracker()
+  var res = cast[StreamServerTracker](getTracker(StreamServerTrackerName))
+  if isNil(res):
+    res = setupStreamServerTracker()
+  doAssert(not(isNil(res)))
+  res
 
 proc dumpTransportTracking(): string {.gcsafe.} =
   var tracker = getStreamTransportTracker()
-  result = "Opened transports: " & $tracker.opened & "\n" &
-           "Closed transports: " & $tracker.closed
+  "Opened transports: " & $tracker.opened & "\n" &
+    "Closed transports: " & $tracker.closed
 
 proc dumpServerTracking(): string {.gcsafe.} =
   var tracker = getStreamServerTracker()
-  result = "Opened servers: " & $tracker.opened & "\n" &
-           "Closed servers: " & $tracker.closed
+  "Opened servers: " & $tracker.opened & "\n" &
+    "Closed servers: " & $tracker.closed
 
 proc leakTransport(): bool {.gcsafe.} =
   var tracker = getStreamTransportTracker()
-  result = tracker.opened != tracker.closed
+  tracker.opened != tracker.closed
 
 proc leakServer(): bool {.gcsafe.} =
   var tracker = getStreamServerTracker()
-  result = tracker.opened != tracker.closed
+  tracker.opened != tracker.closed
 
 proc trackStream(t: StreamTransport) {.inline.} =
   var tracker = getStreamTransportTracker()
@@ -251,20 +255,16 @@ proc untrackServer(s: StreamServer) {.inline.}  =
   inc(tracker.closed)
 
 proc setupStreamTransportTracker(): StreamTransportTracker {.gcsafe.} =
-  result = new StreamTransportTracker
-  result.opened = 0
-  result.closed = 0
-  result.dump = dumpTransportTracking
-  result.isLeaked = leakTransport
-  addTracker(StreamTransportTrackerName, result)
+  let res = StreamTransportTracker(opened: 0, closed: 0,
+    dump: dumpTransportTracking, isLeaked: leakTransport)
+  addTracker(StreamTransportTrackerName, res)
+  res
 
 proc setupStreamServerTracker(): StreamServerTracker {.gcsafe.} =
-  result = new StreamServerTracker
-  result.opened = 0
-  result.closed = 0
-  result.dump = dumpServerTracking
-  result.isLeaked = leakServer
-  addTracker(StreamServerTrackerName, result)
+  let res = StreamServerTracker(opened: 0, closed: 0,
+    dump: dumpServerTracking, isLeaked: leakServer)
+  addTracker(StreamServerTrackerName, res)
+  res
 
 proc completePendingWriteQueue(queue: var Deque[StreamVector],
                                v: int) {.inline.} =
@@ -666,7 +666,7 @@ elif defined(windows):
     transp.queue = initDeque[StreamVector]()
     transp.future = newFuture[void]("stream.socket.transport")
     GC_ref(transp)
-    result = transp
+    transp
 
   proc newStreamPipeTransport(fd: AsyncFD, bufsize: int,
                               child: StreamTransport,
@@ -687,7 +687,7 @@ elif defined(windows):
     transp.queue = initDeque[StreamVector]()
     transp.future = newFuture[void]("stream.pipe.transport")
     GC_ref(transp)
-    result = transp
+    transp
 
   proc bindToDomain(handle: AsyncFD, domain: Domain): bool =
     if domain == Domain.AF_INET6:
@@ -1255,18 +1255,7 @@ else:
   import ../sendfile
 
   proc isConnResetError(err: OSErrorCode): bool {.inline.} =
-    result = (err == OSErrorCode(ECONNRESET)) or
-             (err == OSErrorCode(EPIPE))
-
-  proc removeWriter(transp: StreamTransport) =
-    try:
-      transp.fd.removeWriter()
-      # For debugging, record that we're no longer getting write notifications
-      transp.state.incl WritePaused
-    except IOSelectorsException as exc:
-      raiseAsDefect exc, "removeWriter"
-    except ValueError as exc:
-      raiseAsDefect exc, "removeWriter"
+    (err == OSErrorCode(ECONNRESET)) or (err == OSErrorCode(EPIPE))
 
   proc writeStreamLoop(udata: pointer) =
     if isNil(udata):
@@ -1282,8 +1271,7 @@ else:
 
     if WriteClosed in transp.state:
       if transp.queue.len > 0:
-        transp.removeWriter()
-
+        discard removeWriter2(transp.fd)
         let error = getTransportUseClosedError()
         failPendingWriteQueue(transp.queue, error)
       return
@@ -1365,7 +1353,9 @@ else:
           handleError()
 
     # Nothing left in the queue - no need for further write notifications
-    transp.removeWriter()
+    # All writers are already scheduled, so its impossible to notify about an
+    # error.
+    discard removeWriter2(transp.fd)
 
   proc readStreamLoop(udata: pointer) =
     if isNil(udata):
@@ -1384,87 +1374,57 @@ else:
       transp.completeReader()
     else:
       if transp.kind == TransportKind.Socket:
-        while true:
-          var res = osdefs.recv(fd, addr transp.buffer[transp.offset],
-                                len(transp.buffer) - transp.offset, cint(0))
-          if res < 0:
-            let err = osLastError()
-            if int(err) == EINTR:
-              continue
-            elif int(err) == ECONNRESET:
-              transp.state.incl({ReadEof, ReadPaused})
-              try:
-                transp.fd.removeReader()
-              except IOSelectorsException as exc:
-                raiseAsDefect exc, "removeReader"
-              except ValueError as exc:
-                raiseAsDefect exc, "removeReader"
-            else:
-              transp.state.incl(ReadPaused)
-              transp.setReadError(err)
-              try:
-                transp.fd.removeReader()
-              except IOSelectorsException as exc:
-                raiseAsDefect exc, "removeReader"
-              except ValueError as exc:
-                raiseAsDefect exc, "removeReader"
-          elif res == 0:
+        let res = handleEintr(osdefs.recv(fd, addr transp.buffer[transp.offset],
+                                          len(transp.buffer) - transp.offset,
+                                          cint(0)))
+        if res < 0:
+          let err = osLastError()
+          if int(err) in {ECONNRESET}:
             transp.state.incl({ReadEof, ReadPaused})
-            try:
-              transp.fd.removeReader()
-            except IOSelectorsException as exc:
-              raiseAsDefect exc, "removeReader"
-            except ValueError as exc:
-              raiseAsDefect exc, "removeReader"
+            discard removeReader2(transp.fd)
           else:
-            transp.offset += res
-            if transp.offset == len(transp.buffer):
+            transp.state.incl(ReadPaused)
+            transp.setReadError(err)
+            discard removeReader2(transp.fd)
+        elif res == 0:
+          transp.state.incl({ReadEof, ReadPaused})
+          let rres = removeReader2(transp.fd)
+          if rres.isErr():
+            transp.state.incl(ReadPaused)
+            transp.setReadError(rres.error())
+        else:
+          transp.offset += res
+          if transp.offset == len(transp.buffer):
+            transp.state.incl(ReadPaused)
+            let rres = removeReader2(transp.fd)
+            if rres.isErr():
               transp.state.incl(ReadPaused)
-              try:
-                transp.fd.removeReader()
-              except IOSelectorsException as exc:
-                raiseAsDefect exc, "removeReader"
-              except ValueError as exc:
-                raiseAsDefect exc, "removeReader"
-          transp.completeReader()
-          break
+              transp.setReadError(rres.error())
+        transp.completeReader()
       elif transp.kind == TransportKind.Pipe:
-        while true:
-          var res = osdefs.read(cint(fd), addr transp.buffer[transp.offset],
-                                len(transp.buffer) - transp.offset)
-          if res < 0:
-            let err = osLastError()
-            if int(err) == EINTR:
-              continue
-            else:
+        let res = handleEintr(osdefs.read(cint(fd),
+                                          addr transp.buffer[transp.offset],
+                                          len(transp.buffer) - transp.offset))
+        if res < 0:
+          let err = osLastError()
+          transp.state.incl(ReadPaused)
+          transp.setReadError(err)
+          discard removeReader2(transp.fd)
+        elif res == 0:
+          transp.state.incl({ReadEof, ReadPaused})
+          let rres = removeReader2(transp.fd)
+          if rres.isErr():
+            transp.state.incl(ReadPaused)
+            transp.setReadError(rres.error())
+        else:
+          transp.offset += res
+          if transp.offset == len(transp.buffer):
+            transp.state.incl(ReadPaused)
+            let rres = removeReader2(transp.fd)
+            if rres.isErr():
               transp.state.incl(ReadPaused)
-              transp.setReadError(err)
-              try:
-                transp.fd.removeReader()
-              except IOSelectorsException as exc:
-                raiseAsDefect exc, "removeReader"
-              except ValueError as exc:
-                raiseAsDefect exc, "removeReader"
-          elif res == 0:
-            transp.state.incl({ReadEof, ReadPaused})
-            try:
-              transp.fd.removeReader()
-            except IOSelectorsException as exc:
-              raiseAsDefect exc, "removeReader"
-            except ValueError as exc:
-              raiseAsDefect exc, "removeReader"
-          else:
-            transp.offset += res
-            if transp.offset == len(transp.buffer):
-              transp.state.incl(ReadPaused)
-              try:
-                transp.fd.removeReader()
-              except IOSelectorsException as exc:
-                raiseAsDefect exc, "removeReader"
-              except ValueError as exc:
-                raiseAsDefect exc, "removeReader"
-          transp.completeReader()
-          break
+              transp.setReadError(rres.error())
+        transp.completeReader()
 
   proc newStreamSocketTransport(sock: AsyncFD, bufsize: int,
                                 child: StreamTransport): StreamTransport =
@@ -1540,30 +1500,27 @@ else:
     proc continuation(udata: pointer) =
       if not(retFuture.finished()):
         var err = 0
-        try:
-          sock.removeWriter()
-        except IOSelectorsException as exc:
-          retFuture.fail(exc)
-          return
-        except ValueError as exc:
-          retFuture.fail(exc)
-          return
-
-        if not(sock.getSocketError(err)):
-          closeSocket(sock)
-          retFuture.fail(getTransportOsError(osLastError()))
-          return
-        if err != 0:
-          closeSocket(sock)
-          retFuture.fail(getTransportOsError(OSErrorCode(err)))
-          return
-        let transp = newStreamSocketTransport(sock, bufferSize, child)
-        # Start tracking transport
-        trackStream(transp)
-        retFuture.complete(transp)
+        let res = removeWriter2(sock)
+        if res.isErr():
+          discard closeFd(cint(sock))
+          retFuture.fail(getTransportOsError(res.error()))
+        else:
+          if not(sock.getSocketError(err)):
+            discard closeFd(cint(sock))
+            retFuture.fail(getTransportOsError(osLastError()))
+            return
+          if err != 0:
+            discard closeFd(sock)
+            retFuture.fail(getTransportOsError(OSErrorCode(err)))
+            return
+          let transp = newStreamSocketTransport(sock, bufferSize, child)
+          # Start tracking transport
+          trackStream(transp)
+          retFuture.complete(transp)
 
     proc cancel(udata: pointer) =
-      closeSocket(sock)
+      if not(retFuture.finished()):
+        discard closeFd(cint(sock))
 
     while true:
       var res = osdefs.connect(SocketHandle(sock),
@@ -1575,27 +1532,24 @@ else:
         retFuture.complete(transp)
         break
       else:
-        let err = osLastError()
+        let errorCode = osLastError()
         # If connect() is interrupted by a signal that is caught while blocked
         # waiting to establish a connection, connect() shall fail and set
         # connect() to [EINTR], but the connection request shall not be aborted,
         # and the connection shall be established asynchronously.
         #
         # http://www.madore.org/~david/computers/connect-intr.html
-        if int(err) == EINPROGRESS or int(err) == EINTR:
-          try:
-            sock.addWriter(continuation)
-          except CatchableError as exc:
-            closeSocket(sock)
-            retFuture.fail(exc)
+        if (errorCode == EINPROGRESS) or (errorCode == EINTR):
+          let res = addWriter2(sock, continuation)
+          if res.isErr():
+            discard closeFd(cint(sock))
+            retFuture.fail(getTransportOsError(res.error()))
             return retFuture
-
           retFuture.cancelCallback = cancel
           break
         else:
-          sock.closeSocket()
-
-          retFuture.fail(getTransportOsError(err))
+          discard closeFd(cint(sock))
+          retFuture.fail(getTransportOsError(errorCode))
           break
     return retFuture
 
@@ -1707,11 +1661,7 @@ else:
               rres = register2(sock)
             if rres.isOk():
               let res = removeReader2(server.sock)
-              if res.isErr():
-                discard closeFd(cint(sock))
-                let errorMsg = osErrorMsg(res.error())
-                retFuture.fail(getConnectionAbortedError(errorMsg))
-              else:
+              if res.isOk():
                 let ntransp =
                   if not(isNil(server.init)):
                     let transp = server.init(server, sock)
@@ -1721,6 +1671,10 @@ else:
                 # Start tracking transport
                 trackStream(ntransp)
                 retFuture.complete(ntransp)
+              else:
+                discard closeFd(cint(sock))
+                let errorMsg = osErrorMsg(res.error())
+                retFuture.fail(getConnectionAbortedError(errorMsg))
             else:
               # Error is already happened so we ignore errors.
               discard removeReader2(server.sock)
@@ -1816,7 +1770,7 @@ proc close*(server: StreamServer) =
 proc closeWait*(server: StreamServer): Future[void] =
   ## Close server ``server`` and release all resources.
   server.close()
-  result = server.join()
+  server.join()
 
 proc createStreamServer*(host: TransportAddress,
                          cbproc: StreamCallback,
