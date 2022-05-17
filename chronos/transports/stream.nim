@@ -1510,7 +1510,7 @@ else:
             retFuture.fail(getTransportOsError(osLastError()))
             return
           if err != 0:
-            discard closeFd(sock)
+            discard closeFd(cint(sock))
             retFuture.fail(getTransportOsError(OSErrorCode(err)))
             return
           let transp = newStreamSocketTransport(sock, bufferSize, child)
