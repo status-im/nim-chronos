@@ -1612,7 +1612,7 @@ else:
       slen: SockLen
     let server = cast[StreamServer](udata)
     if server.status in {ServerStatus.Stopped, ServerStatus.Closed}:
-      break
+      return
 
     let
       flags = {DescriptorFlag.CloseOnExec, DescriptorFlag.NonBlock}
@@ -1629,11 +1629,11 @@ else:
           else:
             newStreamSocketTransport(sock, server.bufferSize, nil)
         trackStream(ntransp)
-        asyncSpawn server.funcion(server, ntransp)
+        asyncSpawn server.function(server, ntransp)
       else:
         # Client was accepted, so we not going to raise assertion, but
         # we need to close the socket.
-        discard closeFd(sock)
+        discard closeFd(cint(sock))
     else:
       let errorCode = sres.error()
       if errorCode != EAGAIN:
@@ -1693,10 +1693,10 @@ else:
               # This error appears only when server get closed, while accept()
               # continuation is already scheduled.
               retFuture.fail(getServerUseClosedError())
-            elif errorCode in {EMFILE, ENFILE, ENOBUFS, ENOMEM}:
-              retFuture.fail(getTransportTooManyError(errorCode))
-            elif errorCode in {ECONNABORTED, EPERM, ETIMEDOUT}:
-              retFuture.fail(getConnectionAbortedError(errorCode))
+            elif cint(errorCode) in {EMFILE, ENFILE, ENOBUFS, ENOMEM}:
+              retFuture.fail(getTransportTooManyError(cint(errorCode)))
+            elif cint(errorCode) in {ECONNABORTED, EPERM, ETIMEDOUT}:
+              retFuture.fail(getConnectionAbortedError(cint(errorCode)))
             else:
               retFuture.fail(getTransportOsError(errorCode))
             # Error is already happened so we ignore removeReader2() errors.

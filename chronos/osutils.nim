@@ -129,12 +129,12 @@ else:
           if DescriptorFlag.NonBlock in a4:
             res = res or SOCK_NONBLOCK
           res
-      let res = handleEintr(accept4(a1, a2, a3, flags))
+      let res = cint(handleEintr(accept4(a1, a2, a3, flags)))
       if res == -1:
         return err(osLastError())
       ok(res)
     else:
-      let sock = handleEintr(accept(a1, a2, a3))
+      let sock = cint(handleEintr(accept(a1, a2, a3)))
       if sock == -1:
         return err(osLastError())
       let
