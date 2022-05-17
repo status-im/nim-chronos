@@ -910,7 +910,10 @@ elif unixPlatform:
     ## Please use closeSocket(AsyncFD) and closeHandle(AsyncFD) instead.
     doAssert(fd != AsyncFD(osdefs.INVALID_SOCKET))
     ? unregister2(fd)
-    closeFd(cint(fd))
+    if closeFd(cint(fd)) != 0:
+      err(osLastError())
+    else:
+      ok()
 
   proc closeSocket*(fd: AsyncFD, aftercb: CallbackFunc = nil) =
     ## Close asynchronous socket.
