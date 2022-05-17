@@ -28,6 +28,10 @@ const
   AsyncDescriptorDefault* = {
     DescriptorFlag.CloseOnExec, DescriptorFlag.NonBlock}
 
+type
+  DescriptorFlag* {.pure.} = enum
+    CloseOnExec, NonBlock
+
 when defined(windows):
   type
     WINDESCRIPTOR* = SocketHandle|HANDLE
