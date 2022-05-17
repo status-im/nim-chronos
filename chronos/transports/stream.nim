@@ -1542,13 +1542,13 @@ else:
         if (errorCode == EINPROGRESS) or (errorCode == EINTR):
           let res = addWriter2(sock, continuation)
           if res.isErr():
-            discard unregisterAndCloseFd(cint(sock))
+            discard unregisterAndCloseFd(sock)
             retFuture.fail(getTransportOsError(res.error()))
             return retFuture
           retFuture.cancelCallback = cancel
           break
         else:
-          discard unregisterAndCloseFd(cint(sock))
+          discard unregisterAndCloseFd(sock)
           retFuture.fail(getTransportOsError(errorCode))
           break
     return retFuture
