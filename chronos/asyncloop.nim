@@ -864,6 +864,16 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     else:
       ok()
 
+  proc unregisterAndCloseFd*(fd: AsyncFD): Result[void, OSErrorCode] =
+    ## Unregister from system queue and close asynchronous socket.
+    ##
+    ## NOTE: Use this function to close temporary sockets/pipes only (which
+    ## are not exposed to the public and not supposed to be used/reused).
+    ## Please use closeSocket(AsyncFD) and closeHandle(AsyncFD) instead.
+    doAssert(fd != AsyncFD(osdefs.INVALID_SOCKET))
+    ? unregister2(fd)
+    closeFd(cint(fd))
+
   proc closeSocket*(fd: AsyncFD, aftercb: CallbackFunc = nil) =
     ## Close asynchronous socket.
     ##
