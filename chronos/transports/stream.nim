@@ -1502,15 +1502,15 @@ else:
         var err = 0
         let res = removeWriter2(sock)
         if res.isErr():
-          discard closeFd(cint(sock))
+          discard unregisterAndCloseFd(sock)
           retFuture.fail(getTransportOsError(res.error()))
         else:
           if not(sock.getSocketError(err)):
-            discard closeFd(cint(sock))
+            discard unregisterAndCloseFd(sock)
             retFuture.fail(getTransportOsError(osLastError()))
             return
           if err != 0:
-            discard closeFd(cint(sock))
+            discard unregisterAndCloseFd(sock)
             retFuture.fail(getTransportOsError(OSErrorCode(err)))
             return
           let transp = newStreamSocketTransport(sock, bufferSize, child)
@@ -1520,7 +1520,7 @@ else:
 
     proc cancel(udata: pointer) =
       if not(retFuture.finished()):
-        discard closeFd(cint(sock))
+        discard unregisterAndCloseFd(sock)
 
     while true:
       var res = osdefs.connect(SocketHandle(sock),
