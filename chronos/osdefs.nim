@@ -960,7 +960,10 @@ when defined(linux) or defined(freebsd) or defined(openbsd) or
      defined(netbsd) or defined(dragonfly):
 
   proc pipe2*(a: array[0..1, cint], flags: cint): cint {.
-       importc, header: "<unistd.h>".}
+       importc, header: "<unistd.h>", sideEffect.}
+
+  proc accept4*(a1: cint, a2: ptr SockAddr, a3: ptr SockLen, a4: cint): cint {.
+       importc, header: "<sys/socket.h>", sideEffect.}
 
 when defined(linux):
   const

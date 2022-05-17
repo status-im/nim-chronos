@@ -1611,38 +1611,35 @@ else:
       saddr: Sockaddr_storage
       slen: SockLen
     let server = cast[StreamServer](udata)
-    while true:
-      if server.status in {ServerStatus.Stopped, ServerStatus.Closed}:
-        break
+    if server.status in {ServerStatus.Stopped, ServerStatus.Closed}:
+      break
 
-      let res = osdefs.accept(SocketHandle(server.sock),
-                              cast[ptr SockAddr](addr saddr), addr slen)
-      if int(res) > 0:
-        let sock = try: wrapAsyncSocket(res)
-        except CatchableError as exc:
-          raiseAsDefect exc, "wrapAsyncSocket"
-        if sock != asyncInvalidSocket:
-          var ntransp: StreamTransport
+    let
+      flags = {DescriptorFlag.CloseOnExec, DescriptorFlag.NonBlock}
+      sres = acceptConn(cint(server.sock), cast[ptr SockAddr](addr saddr),
+                        addr slen, flags)
+    if sres.isOk():
+      let sock = AsyncFD(sres.get())
+      let rres = register2(sock)
+      if rres.isOk():
+        let ntransp =
           if not(isNil(server.init)):
             let transp = server.init(server, sock)
-            ntransp = newStreamSocketTransport(sock, server.bufferSize, transp)
+            newStreamSocketTransport(sock, server.bufferSize, transp)
           else:
-            ntransp = newStreamSocketTransport(sock, server.bufferSize, nil)
-          # Start tracking transport
-          trackStream(ntransp)
-          asyncCheck server.function(server, ntransp)
-        break
+            newStreamSocketTransport(sock, server.bufferSize, nil)
+        trackStream(ntransp)
+        asyncSpawn server.funcion(server, ntransp)
       else:
-        let err = osLastError()
-        if int(err) == EINTR:
-          continue
-        elif int(err) == EAGAIN:
-          # This error appears only when server get closed, while acceptLoop()
-          # reader callback is already scheduled.
-          break
-        else:
-          ## Critical unrecoverable error
-          raiseAssert $err
+        # Client was accepted, so we not going to raise assertion, but
+        # we need to close the socket.
+        discard closeFd(sock)
+    else:
+      let errorCode = sres.error()
+      if errorCode != EAGAIN:
+        # This EAGAIN error appears only when server get closed, while
+        # acceptLoop() reader callback is already scheduled.
+        raiseAssert osErrorMsg(errorCode)
 
   proc resumeAccept(server: StreamServer): Result[void, OSErrorCode] =
     addReader2(server.sock, acceptLoop, cast[pointer](server))
@@ -1686,72 +1683,60 @@ else:
         if server.status in {ServerStatus.Stopped, ServerStatus.Closed}:
           retFuture.fail(getServerUseClosedError())
         else:
-          while true:
-            let res = osdefs.accept(SocketHandle(server.sock),
-                                    cast[ptr SockAddr](addr saddr), addr slen)
-            if int(res) > 0:
-              let sock =
-                try:
-                  wrapAsyncSocket(res)
-                except CatchableError as exc:
-                  discard handleEintr(osdefs.close(res))
-                  retFuture.fail(getConnectionAbortedError($exc.msg))
-                  return
-
-              if sock != asyncInvalidSocket:
-                var ntransp: StreamTransport
-                if not(isNil(server.init)):
-                  let transp = server.init(server, sock)
-                  ntransp = newStreamSocketTransport(sock, server.bufferSize,
-                                                     transp)
-                else:
-                  ntransp = newStreamSocketTransport(sock, server.bufferSize,
-                                                     nil)
+          let
+            flags = {DescriptorFlag.CloseOnExec, DescriptorFlag.NonBlock}
+            sres = acceptConn(cint(server.sock), cast[ptr SockAddr](addr saddr),
+                              addr slen, flags)
+          if sres.isErr():
+            let errorCode = sres.error()
+            if errorCode == EAGAIN:
+              # This error appears only when server get closed, while accept()
+              # continuation is already scheduled.
+              retFuture.fail(getServerUseClosedError())
+            elif errorCode in {EMFILE, ENFILE, ENOBUFS, ENOMEM}:
+              retFuture.fail(getTransportTooManyError(errorCode))
+            elif errorCode in {ECONNABORTED, EPERM, ETIMEDOUT}:
+              retFuture.fail(getConnectionAbortedError(errorCode))
+            else:
+              retFuture.fail(getTransportOsError(errorCode))
+            # Error is already happened so we ignore removeReader2() errors.
+            discard removeReader2(server.sock)
+          else:
+            let
+              sock = AsyncFD(sres.get())
+              rres = register2(sock)
+            if rres.isOk():
+              let res = removeReader2(server.sock)
+              if res.isErr():
+                discard closeFd(cint(sock))
+                let errorMsg = osErrorMsg(res.error())
+                retFuture.fail(getConnectionAbortedError(errorMsg))
+              else:
+                let ntransp =
+                  if not(isNil(server.init)):
+                    let transp = server.init(server, sock)
+                    newStreamSocketTransport(sock, server.bufferSize, transp)
+                  else:
+                    newStreamSocketTransport(sock, server.bufferSize, nil)
                 # Start tracking transport
                 trackStream(ntransp)
                 retFuture.complete(ntransp)
-              else:
-                let errorMsg = osErrorMsg(osLastError())
-                retFuture.fail(getConnectionAbortedError(errorMsg))
             else:
-              let err = osLastError().int32
-              if err == EINTR:
-                continue
-              elif err == EAGAIN:
-                # This error appears only when server get closed, while accept()
-                # continuation is already scheduled.
-                retFuture.fail(getServerUseClosedError())
-              elif err in [EMFILE, ENFILE, ENOBUFS, ENOMEM]:
-                retFuture.fail(getTransportTooManyError(err))
-              elif err in [ECONNABORTED, EPERM, ETIMEDOUT]:
-                retFuture.fail(getConnectionAbortedError(err))
-              else:
-                retFuture.fail(getTransportOsError(OSErrorCode(err)))
-            break
-
-        try:
-          removeReader(server.sock)
-        except IOSelectorsException as exc:
-          raiseAsDefect exc, "removeReader"
-        except ValueError as exc:
-          raiseAsDefect exc, "removeReader"
+              # Error is already happened so we ignore errors.
+              discard removeReader2(server.sock)
+              discard closeFd(cint(sock))
+              let errorMsg = osErrorMsg(rres.error())
+              retFuture.fail(getConnectionAbortedError(errorMsg))
 
     proc cancellation(udata: pointer) =
-      try:
-        removeReader(server.sock)
-      except IOSelectorsException as exc:
-        raiseAsDefect exc, "removeReader"
-      except ValueError as exc:
-        raiseAsDefect exc, "removeReader"
+      if not(retFuture.finished()):
+        discard removeReader2(server.sock)
 
-    try:
-      addReader(server.sock, continuation, nil)
-    except IOSelectorsException as exc:
-      raiseAsDefect exc, "addReader"
-    except ValueError as exc:
-      raiseAsDefect exc, "addReader"
-
-    retFuture.cancelCallback = cancellation
+    let res = addReader2(server.sock, continuation, nil)
+    if res.isErr():
+      retFuture.fail(getTransportOsError(res.error()))
+    else:
+      retFuture.cancelCallback = cancellation
     return retFuture
 
 proc start2*(server: StreamServer): Result[void, OSErrorCode] =

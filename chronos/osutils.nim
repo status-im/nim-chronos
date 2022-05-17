@@ -12,6 +12,10 @@ import osdefs
 
 {.push raises: [Defect].}
 
+type
+  DescriptorFlag* {.pure.} = enum
+    CloseOnExec, NonBlock
+
 when defined(windows):
   type
     WINDESCRIPTOR* = SocketHandle|HANDLE
@@ -113,3 +117,31 @@ else:
 
   proc closeFd*(s: SocketHandle): int =
     handleEintr(osdefs.close(cint(s)))
+
+  proc acceptConn*(a1: cint, a2: ptr SockAddr, a3: ptr SockLen,
+                   a4: set[DescriptorFlag]): Result[cint, OSErrorCode] =
+    when declared(accept4):
+      let flags =
+        block:
+          var res: cint = 0
+          if DescriptorFlag.CloseOnExec in a4:
+            res = res or SOCK_CLOEXEC
+          if DescriptorFlag.NonBlock in a4:
+            res = res or SOCK_NONBLOCK
+          res
+      let res = handleEintr(accept4(a1, a2, a3, flags))
+      if res == -1:
+        return err(osLastError())
+      ok(res)
+    else:
+      let sock = handleEintr(accept(a1, a2, a3))
+      if sock == -1:
+        return err(osLastError())
+      let
+        cloexec = DescriptorFlag.CloseOnExec in a4
+        nonblock = DescriptorFlag.NonBlock in a4
+      let res = setDescriptorFlags(sock, nonblock, cloexec)
+      if res.isErr():
+        discard closeFd(sock)
+        return err(res.error())
+      ok(sock)
