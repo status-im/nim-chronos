@@ -8,6 +8,11 @@ elif [ "$1" == "timeout2" ]; then
   exit 2
 elif [ "$1" == "timeout10" ]; then
   sleep 10
+elif [ "$1" == "bigdata" ]; then
+  for i in {1..400000}
+  do
+    echo "ALICEWASBEGINNINGTOGETVERYTIREDOFSITTINGBYHERSISTERONTHEBANKANDO"
+  done
 else
   echo "arguments missing"
 fi

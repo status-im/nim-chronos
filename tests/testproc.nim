@@ -102,8 +102,12 @@ suite "Asynchronous process management test suite":
       let process = await startProcess(command, options = options)
       try:
         await process.stdinStream.write(item)
-        let stdoutData = await process.stdoutStream.read()
-        check stdoutData == shellHeader & item
+        let stdoutDataFut = process.stdoutStream.read()
+        let res = await process.waitForExit(InfiniteDuration)
+        await allFutures(stdoutDataFut)
+        check:
+          res == 0
+          stdoutDataFut.read() == shellHeader & item
       finally:
         await process.closeWait()
 
@@ -113,11 +117,14 @@ suite "Asynchronous process management test suite":
     for test in OutputTests:
       let process = await startProcess(test[0], options = options)
       try:
-        let outBytes = await process.stdoutStream.read()
-        let errBytes = await process.stderrStream.read()
+        let outBytesFut = process.stdoutStream.read()
+        let errBytesFut = process.stderrStream.read()
+        let res = await process.waitForExit(InfiniteDuration)
+        await allFutures(outBytesFut, errBytesFut)
         check:
-          string.fromBytes(outBytes) == test[1]
-          string.fromBytes(errBytes) == test[2]
+          string.fromBytes(outBytesFut.read()) == test[1]
+          string.fromBytes(errBytesFut.read()) == test[2]
+          res == 0
       finally:
         await process.closeWait()
 
@@ -136,11 +143,36 @@ suite "Asynchronous process management test suite":
         "TESTSTDOUT\nTESTSTDERR\n"
     let process = await startProcess(command, options = options)
     try:
-      let outBytes = await process.stdoutStream.read()
-      let errBytes = await process.stderrStream.read()
+      let outBytesFut = process.stdoutStream.read()
+      let res = await process.waitForExit(InfiniteDuration)
+      await allFutures(outBytesFut)
       check:
-        string.fromBytes(outBytes) == expect
-        string.fromBytes(errBytes) == ""
+        string.fromBytes(outBytesFut.read()) == expect
+        res == 0
+    finally:
+      await process.closeWait()
+
+  asyncTest "CAPTURE BIG DATA STDOUT stream test":
+    let options = {AsyncProcessOption.EvalCommand}
+    let command =
+      when defined(windows):
+        "tests\\testproc.bat bigdata"
+      else:
+        "tests/testproc.sh bigdata"
+    let expect =
+      when defined(windows):
+        400_000 * (64 + 2)
+      else:
+        400_000 * (64 + 1)
+    let process = await startProcess(command, options = options)
+    try:
+      let outBytesFut = process.stdoutStream.read()
+      let errBytesFut = process.stderrStream.read()
+      let res = await process.waitForExit(InfiniteDuration)
+      await allFutures(outBytesFut, errBytesFut)
+      check:
+        res == 0
+        len(outBytesFut.read()) == expect
     finally:
       await process.closeWait()
 
