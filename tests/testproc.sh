@@ -9,7 +9,7 @@ elif [ "$1" == "timeout2" ]; then
 elif [ "$1" == "timeout10" ]; then
   sleep 10
 elif [ "$1" == "bigdata" ]; then
-  for i in {1..400000}
+  for i in {1..200000}
   do
     echo "ALICEWASBEGINNINGTOGETVERYTIREDOFSITTINGBYHERSISTERONTHEBANKANDO"
   done
