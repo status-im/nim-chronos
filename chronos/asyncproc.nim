@@ -825,22 +825,56 @@ else:
           osdefs.POSIX_SPAWN_SETPGROUP
         else:
           osdefs.POSIX_SPAWN_USEVFORK or osdefs.POSIX_SPAWN_SETSIGMASK
-      checkSpawnError posixSpawnAttrSetFlags(posixAttr, flags)
+
+      # Set spawn flags
+      checkSpawnError:
+        posixSpawnAttrSetFlags(posixAttr, flags)
+      # Close original process' STDIN
+      checkSpawnError:
+        posixSpawnFileActionsAddClose(posixFops, cint(0))
+      # Close original process' STDOUT
+      checkSpawnError:
+        posixSpawnFileActionsAddClose(posixFops, cint(1))
+      # Close original process' STDERR
+      checkSpawnError:
+        posixSpawnFileActionsAddClose(posixFops, cint(2))
 
       if AsyncProcessOption.ParentStreams notin options:
+        # Make a duplicate `stdinHandle` as process' STDIN
         checkSpawnError:
           posixSpawnFileActionsAddDup2(posixFops, cint(pipes.stdinHandle),
                                        cint(0))
+        # Close original `stdinHandle`.
         checkSpawnError:
-          posixSpawnFileActionsAddDup2(posixFops, cint(pipes.stdoutHandle),
-                                       cint(1))
-        checkSpawnError:
-          if AsyncProcessOption.StdErrToStdOut in options:
+          posixSpawnFileActionsAddClose(posixFops, cint(pipes.stdinHandle))
+
+        if AsyncProcessOption.StdErrToStdOut in options:
+          # Make duplicate `stdoutHandle` as process' STDOUT
+          checkSpawnError:
+            posixSpawnFileActionsAddDup2(posixFops, cint(pipes.stdoutHandle),
+                                         cint(1))
+          # Make duplicate `stdoutHandle` as process' STDERR
+          checkSpawnError:
             posixSpawnFileActionsAddDup2(posixFops, cint(pipes.stdoutHandle),
                                          cint(2))
-          else:
+          # Close original `stdoutHandle`.
+          checkSpawnError:
+            posixSpawnFileActionsAddClose(posixFops, cint(pipes.stdoutHandle))
+        else:
+          # Make duplicate `stdoutHandle` as process' STDOUT
+          checkSpawnError:
+            posixSpawnFileActionsAddDup2(posixFops, cint(pipes.stdoutHandle),
+                                         cint(1))
+          # Close original `stdoutHandle`.
+          checkSpawnError:
+            posixSpawnFileActionsAddClose(posixFops, cint(pipes.stdoutHandle))
+          # Make duplicate `stderrHandle` as process' STDERR
+          checkSpawnError:
             posixSpawnFileActionsAddDup2(posixFops, cint(pipes.stderrHandle),
                                          cint(2))
+          # Close original `stderrHandle`.
+          checkSpawnError:
+            posixSpawnFileActionsAddClose(posixFops, cint(pipes.stderrHandle))
 
       currentDir =
         if len(workingDir) > 0:
