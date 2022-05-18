@@ -869,7 +869,7 @@ else:
                      commandEnv)
 
       if res != 0:
-        await pipes.closeProcessStreams()
+        await pipes.closeProcessStreams(options)
       currentError = closeProcessHandles(pipes, options, OSErrorCode(res))
 
     finally:
