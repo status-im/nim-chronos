@@ -121,6 +121,29 @@ suite "Asynchronous process management test suite":
       finally:
         await process.closeWait()
 
+  asyncTest "STDERR to STDOUT streams test":
+    let options = {AsyncProcessOption.EvalCommand,
+                   AsyncProcessOption.StdErrToStdOut}
+    let command =
+      when defined(windows):
+        "ECHO TESTSTDOUT && ECHO TESTSTDERR 1>&2"
+      else:
+        "echo TESTSTDOUT && echo TESTSTDERR 1>&2"
+    let expect =
+      when defined(windows):
+        "TESTSTDOUT \r\nTESTSTDERR \r\n"
+      else:
+        "TESTSTDOUT\nTESTSTDERR\n"
+    let process = await startProcess(command, options = options)
+    try:
+      let outBytes = await process.stdoutStream.read()
+      let errBytes = await process.stderrStream.read()
+      check:
+        string.fromBytes(outBytes) == expect
+        string.fromBytes(errBytes) == ""
+    finally:
+      await process.closeWait()
+
   asyncTest "Long-waiting waitForExit() test":
     let command =
       when defined(windows):

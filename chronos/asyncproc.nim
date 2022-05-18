@@ -272,7 +272,9 @@ proc closeProcessHandles(pipes: var AsyncProcessPipes,
                          options: set[AsyncProcessOption],
                          lastError: OSErrorCode): OSErrorCode
 
-proc closeProcessStreams(pipes: AsyncProcessPipes): Future[void] {.gcsafe.}
+proc closeProcessStreams(pipes: AsyncProcessPipes,
+                         options: set[AsyncProcessOption]): Future[void] {.
+     gcsafe.}
 
 proc closeWait(holder: AsyncStreamHolder): Future[void] {.gcsafe.}
 
@@ -309,12 +311,15 @@ proc closeProcessHandles(pipes: var AsyncProcessPipes,
           discard closePipe(pipes.stdoutHandle)
         pipes.stdoutHandle = asyncInvalidPipe
     if ProcessFlag.UserStderr notin pipes.flags:
-      if pipes.stderrHandle != asyncInvalidPipe:
-        if currentError.isOk():
-          if not(closePipe(pipes.stderrHandle)):
-            currentError = osLastError()
-        else:
-          discard closePipe(pipes.stderrHandle)
+      if AsyncProcessOption.StdErrToStdOut notin options:
+        if pipes.stderrHandle != asyncInvalidPipe:
+          if currentError.isOk():
+            if not(closePipe(pipes.stderrHandle)):
+              currentError = osLastError()
+          else:
+            discard closePipe(pipes.stderrHandle)
+          pipes.stderrHandle = asyncInvalidPipe
+      else:
         pipes.stderrHandle = asyncInvalidPipe
   currentError
 
@@ -501,6 +506,8 @@ when defined(windows):
       newWideCString(commandLine),
       addr psa, addr tsa,
       TRUE, # NOTE: This is very important flag and MUST not be modified.
+            # All overloaded pipe handles will not work if this flag will be
+            # set to FALSE.
       flags,
       environment,
       workingDirectory,
@@ -509,7 +516,7 @@ when defined(windows):
 
     var currentError = osLastError()
     if res == FALSE:
-      await pipes.closeProcessStreams()
+      await pipes.closeProcessStreams(options)
     currentError = closeProcessHandles(pipes, options, currentError)
 
     if res == FALSE:
@@ -1110,7 +1117,7 @@ proc preparePipes(options: set[AsyncProcessOption],
                  ): AsyncProcessResult[AsyncProcessPipes] =
   if AsyncProcessOption.ParentStreams notin options:
     let
-      (stdinFlags, localStdin, stdinHandle) =
+      (stdinFlags, localStdin, remoteStdin) =
         if stdinHandle.isEmpty():
           let (pipeIn, pipeOut) = createAsyncPipe(true, false)
           if (pipeIn == asyncInvalidPipe) or (pipeOut == asyncInvalidPipe):
@@ -1121,7 +1128,7 @@ proc preparePipes(options: set[AsyncProcessOption],
         else:
           ({ProcessFlag.UserStdin},
            AsyncStreamHolder.init(), AsyncFD.init(stdinHandle))
-      (stdoutFlags, localStdout, stdoutHandle) =
+      (stdoutFlags, localStdout, remoteStdout) =
         if stdoutHandle.isEmpty():
           let (pipeIn, pipeOut) = createAsyncPipe(false, true)
           if (pipeIn == asyncInvalidPipe) or (pipeOut == asyncInvalidPipe):
@@ -1132,25 +1139,33 @@ proc preparePipes(options: set[AsyncProcessOption],
         else:
           ({ProcessFlag.UserStdout},
            AsyncStreamHolder.init(), AsyncFD.init(stdoutHandle))
-      (stderrFlags, localStderr, stderrHandle) =
-        if stderrHandle.isEmpty():
-          let (pipeIn, pipeOut) = createAsyncPipe(false, true)
-          if (pipeIn == asyncInvalidPipe) or (pipeOut == asyncInvalidPipe):
-            return err(osLastError())
-          let holder = ? AsyncStreamHolder.init(
-            ProcessStreamHandle.init(pipeIn), StreamKind.Reader, {})
-          (set[ProcessFlag]({}), holder, pipeOut)
+      (stderrFlags, localStderr, remoteStderr) =
+        if AsyncProcessOption.StdErrToStdOut notin options:
+          if stderrHandle.isEmpty():
+            let (pipeIn, pipeOut) = createAsyncPipe(false, true)
+            if (pipeIn == asyncInvalidPipe) or (pipeOut == asyncInvalidPipe):
+              return err(osLastError())
+            let holder = ? AsyncStreamHolder.init(
+              ProcessStreamHandle.init(pipeIn), StreamKind.Reader, {})
+            (set[ProcessFlag]({}), holder, pipeOut)
+          else:
+            ({ProcessFlag.UserStderr},
+             AsyncStreamHolder.init(), AsyncFD.init(stderrHandle))
         else:
-          ({ProcessFlag.UserStderr},
-           AsyncStreamHolder.init(), AsyncFD.init(stderrHandle))
+          if stdoutHandle.isEmpty():
+            (set[ProcessFlag]({}), localStdout, remoteStdout)
+          else:
+            ({ProcessFlag.UserStderr},
+             AsyncStreamHolder.init(), AsyncFD.init(stdoutHandle))
+
     ok(AsyncProcessPipes(
       flags: stdinFlags + stdoutFlags + stderrFlags,
       stdinHolder: localStdin,
       stdoutHolder: localStdout,
       stderrHolder: localStderr,
-      stdinHandle: stdinHandle,
-      stdoutHandle: stdoutHandle,
-      stderrHandle: stderrHandle
+      stdinHandle: remoteStdin,
+      stdoutHandle: remoteStdout,
+      stderrHandle: remoteStderr
     ))
   else:
     doAssert(stdinHandle.isEmpty(),
@@ -1201,16 +1216,21 @@ proc closeWait(holder: AsyncStreamHolder) {.async.} =
   if len(pending) > 0:
     await allFutures(pending)
 
-proc closeProcessStreams(pipes: AsyncProcessPipes): Future[void] =
-  allFutures(pipes.stdinHolder.closeWait(),
-             pipes.stdoutHolder.closeWait(),
-             pipes.stderrHolder.closeWait())
+proc closeProcessStreams(pipes: AsyncProcessPipes,
+                         options: set[AsyncProcessOption]): Future[void] =
+  if AsyncProcessOption.StdErrToStdOut in options:
+    allFutures(pipes.stdinHolder.closeWait(),
+               pipes.stderrHolder.closeWait())
+  else:
+    allFutures(pipes.stdinHolder.closeWait(),
+               pipes.stdoutHolder.closeWait(),
+               pipes.stderrHolder.closeWait())
 
 proc closeWait*(p: AsyncProcessRef) {.async.} =
   # Here we ignore all possible errrors, because we do not want to raise
   # exceptions.
   discard closeProcessHandles(p.pipes, p.options, OSErrorCode(0))
-  await p.pipes.closeProcessStreams()
+  await p.pipes.closeProcessStreams(p.options)
   discard p.closeThreadAndProcessHandle()
   untrackAsyncProcess(p)
 
