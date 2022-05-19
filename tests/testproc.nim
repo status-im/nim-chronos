@@ -12,6 +12,8 @@ import ".."/chronos/unittest2/asynctests
 when defined(posix):
   from ".."/chronos/osdefs import SIGKILL
 
+from ".."/chronos/osdefs import SIGTERM
+
 when defined(nimHasUsed): {.used.}
 
 suite "Asynchronous process management test suite":
