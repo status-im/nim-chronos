@@ -233,9 +233,7 @@ proc getInheritable*(fd: AsyncFD): Result[bool, OSErrorCode] {.
       return err(osLastError())
     ok((flags and osdefs.FD_CLOEXEC) == osdefs.FD_CLOEXEC)
 
-proc createAsyncPipe*(inheritRead = true, inheritWrite = true
-                     ): tuple[read: AsyncFD, write: AsyncFD] {.
-     raises: [Defect].}=
+proc createAsyncPipe*(): tuple[read: AsyncFD, write: AsyncFD] =
   ## Create new asynchronouse pipe.
   ## Returns tuple of read pipe handle and write pipe handle``asyncInvalidPipe``
   ## on error.

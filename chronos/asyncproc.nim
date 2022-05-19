@@ -1134,6 +1134,36 @@ proc createPipe(kind: StandardKind
         ? createOsPipe(readFlags, writeFlags)
     ok((read: AsyncFD(pipes.read), write: AsyncFD(pipes.write)))
 
+proc createPipe(kind: StandardKind
+               ): Result[tuple[read: AsyncFD, write: AsyncFD], OSErrorCode] =
+  case kind
+  of StandardKind.Stdin:
+    let pipes =
+      when defined(windows):
+        let
+          readFlags: set[DescriptorFlag] = {DescriptorFlag.NonBlock}
+          writeFlags: set[DescriptorFlag] = {DescriptorFlag.NonBlock}
+        ? createOsPipe(readFlags, writeFlags)
+      else:
+        let
+          readFlags: set[DescriptorFlag] = {}
+          writeFlags: set[DescriptorFlag] = {DescriptorFlag.NonBlock}
+        ? createOsPipe(readFlags, writeFlags)
+    ok((read: AsyncFD(pipes.read), write: AsyncFD(pipes.write)))
+  of StandardKind.Stdout, StandardKind.Stderr:
+    let pipes =
+      when defined(windows):
+        let
+          readFlags: set[DescriptorFlag] = {DescriptorFlag.NonBlock}
+          writeFlags: set[DescriptorFlag] = {DescriptorFlag.NonBlock}
+        ? createOsPipe(readFlags, writeFlags)
+      else:
+        let
+          readFlags: set[DescriptorFlag] = {DescriptorFlag.NonBlock}
+          writeFlags: set[DescriptorFlag] = {}
+        ? createOsPipe(readFlags, writeFlags)
+    ok((read: AsyncFD(pipes.read), write: AsyncFD(pipes.write)))
+
 proc preparePipes(options: set[AsyncProcessOption],
                   stdinHandle, stdoutHandle,
                   stderrHandle: ProcessStreamHandle
