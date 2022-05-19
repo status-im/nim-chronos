@@ -9,7 +9,8 @@ import unittest2, stew/[base10, byteutils]
 import ".."/chronos
 import testhelpers
 
-from ".."/chronos/osdefs import SIGTERM
+when defined(windows):
+  from ".."/chronos/osdefs import SIGTERM
 
 when defined(nimHasUsed): {.used.}
 
