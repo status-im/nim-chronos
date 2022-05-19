@@ -782,7 +782,7 @@ proc write*(wstream: AsyncStreamWriter, pbytes: pointer,
   ## Write sequence of bytes pointed by ``pbytes`` of length ``nbytes`` to
   ## writer stream ``wstream``.
   ##
-  ## ``nbytes` must be more then zero.
+  ## ``nbytes`` must be more then zero.
   checkStreamClosed(wstream)
   if nbytes <= 0:
     raiseEmptyMessageDefect()
