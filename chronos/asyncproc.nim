@@ -683,6 +683,19 @@ else:
         res.add($arguments[index])
     res.join(" ")
 
+  proc fd(h: AsyncStreamHolder): cint =
+    doAssert(h.kind != StreamKind.None)
+    case h.kind
+    of StreamKind.Reader:
+      cint(h.reader.tsource.fd)
+    of StreamKind.Writer:
+      cint(h.writer.tsource.fd)
+    of StreamKind.None:
+      raiseAssert "Incorrect stream holder"
+
+  proc isEmpty(h: AsyncStreamHolder): bool =
+    h.kind == StreamKind.None
+
   template exitStatusLikeShell(status: int): int =
     if WAITIFSIGNALED(cint(status)):
       # like the shell!
@@ -829,52 +842,73 @@ else:
       # Set spawn flags
       checkSpawnError:
         posixSpawnAttrSetFlags(posixAttr, flags)
-      # Close original process' STDIN
+      # Close child process STDIN
       checkSpawnError:
         posixSpawnFileActionsAddClose(posixFops, cint(0))
-      # Close original process' STDOUT
+      # Close child process STDOUT
       checkSpawnError:
         posixSpawnFileActionsAddClose(posixFops, cint(1))
-      # Close original process' STDERR
+      # Close child process STDERR
       checkSpawnError:
         posixSpawnFileActionsAddClose(posixFops, cint(2))
 
       if AsyncProcessOption.ParentStreams notin options:
-        # Make a duplicate `stdinHandle` as process' STDIN
+        # Make a duplicate of `stdinHandle` as child process STDIN
         checkSpawnError:
           posixSpawnFileActionsAddDup2(posixFops, cint(pipes.stdinHandle),
                                        cint(0))
-        # Close original `stdinHandle`.
+        # Close child process side of `stdinHandle`.
         checkSpawnError:
           posixSpawnFileActionsAddClose(posixFops, cint(pipes.stdinHandle))
+        # Close parent process side of `stdinHandle`.
+        if not(pipes.stdinHolder.isEmpty()):
+          checkSpawnError:
+            posixSpawnFileActionsAddClose(posixFops,
+                                          cint(pipes.stdinHolder.fd()))
 
         if AsyncProcessOption.StdErrToStdOut in options:
-          # Make duplicate `stdoutHandle` as process' STDOUT
+          # Make duplicate of `stdoutHandle` as child process STDOUT
           checkSpawnError:
             posixSpawnFileActionsAddDup2(posixFops, cint(pipes.stdoutHandle),
                                          cint(1))
-          # Make duplicate `stdoutHandle` as process' STDERR
+          # Make duplicate of `stdoutHandle` as child process STDERR
           checkSpawnError:
             posixSpawnFileActionsAddDup2(posixFops, cint(pipes.stdoutHandle),
                                          cint(2))
-          # Close original `stdoutHandle`.
+          # Close child process side of `stdoutHandle`.
           checkSpawnError:
             posixSpawnFileActionsAddClose(posixFops, cint(pipes.stdoutHandle))
+
+          # Close parent process side of `stdoutHandle`.
+          if not(pipes.stdoutHolder.isEmpty()):
+            checkSpawnError:
+              posixSpawnFileActionsAddClose(posixFops,
+                                            cint(pipes.stdoutHolder.fd()))
         else:
-          # Make duplicate `stdoutHandle` as process' STDOUT
+          # Make duplicate of `stdoutHandle` as child process STDOUT
           checkSpawnError:
             posixSpawnFileActionsAddDup2(posixFops, cint(pipes.stdoutHandle),
                                          cint(1))
-          # Close original `stdoutHandle`.
+          # Close child process side of `stdoutHandle`.
           checkSpawnError:
             posixSpawnFileActionsAddClose(posixFops, cint(pipes.stdoutHandle))
-          # Make duplicate `stderrHandle` as process' STDERR
+          # Close parent process side of `stdoutHandle`.
+          if not(pipes.stdoutHolder.isEmpty()):
+            checkSpawnError:
+              posixSpawnFileActionsAddClose(posixFops,
+                                            cint(pipes.stdoutHolder.fd()))
+          # Make duplicate of `stderrHandle` as child process STDERR
           checkSpawnError:
             posixSpawnFileActionsAddDup2(posixFops, cint(pipes.stderrHandle),
                                          cint(2))
-          # Close original `stderrHandle`.
+          # Close child process side of `stderrHandle`.
           checkSpawnError:
             posixSpawnFileActionsAddClose(posixFops, cint(pipes.stderrHandle))
+          # Close parent process side of `stderrHandle`.
+          if not(pipes.stderrHolder.isEmpty()):
+            checkSpawnError:
+              posixSpawnFileActionsAddClose(posixFops,
+                                            cint(pipes.stderrHolder.fd()))
 
       currentDir =
         if len(workingDir) > 0:
@@ -1153,7 +1187,7 @@ proc preparePipes(options: set[AsyncProcessOption],
     let
       (stdinFlags, localStdin, remoteStdin) =
         if stdinHandle.isEmpty():
-          let (pipeIn, pipeOut) = createAsyncPipe(true, false)
+          let (pipeIn, pipeOut) = createAsyncPipe(true, true)
           if (pipeIn == asyncInvalidPipe) or (pipeOut == asyncInvalidPipe):
             return err(osLastError())
           let holder = ? AsyncStreamHolder.init(
@@ -1164,7 +1198,7 @@ proc preparePipes(options: set[AsyncProcessOption],
            AsyncStreamHolder.init(), AsyncFD.init(stdinHandle))
       (stdoutFlags, localStdout, remoteStdout) =
         if stdoutHandle.isEmpty():
-          let (pipeIn, pipeOut) = createAsyncPipe(false, true)
+          let (pipeIn, pipeOut) = createAsyncPipe(true, true)
           if (pipeIn == asyncInvalidPipe) or (pipeOut == asyncInvalidPipe):
             return err(osLastError())
           let holder = ? AsyncStreamHolder.init(
@@ -1176,7 +1210,7 @@ proc preparePipes(options: set[AsyncProcessOption],
       (stderrFlags, localStderr, remoteStderr) =
         if AsyncProcessOption.StdErrToStdOut notin options:
           if stderrHandle.isEmpty():
-            let (pipeIn, pipeOut) = createAsyncPipe(false, true)
+            let (pipeIn, pipeOut) = createAsyncPipe(true, true)
             if (pipeIn == asyncInvalidPipe) or (pipeOut == asyncInvalidPipe):
               return err(osLastError())
             let holder = ? AsyncStreamHolder.init(
