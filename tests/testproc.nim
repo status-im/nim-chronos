@@ -12,7 +12,7 @@ import ".."/chronos/unittest2/asynctests
 when defined(posix):
   from ".."/chronos/osdefs import SIGKILL
 
-when defined(windows):
+when defined(posix):
   from ".."/chronos/osdefs import SIGTERM
 
 when defined(nimHasUsed): {.used.}
