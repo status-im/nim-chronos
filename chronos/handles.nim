@@ -17,10 +17,6 @@ import stew/results
 from nativesockets import Domain, Protocol, SockType, toInt
 export Domain, Protocol, SockType, results
 
-when defined(windows) or defined(nimdoc):
-  import stew/base10
-  const PipeHeaderName = r"\\.\pipe\LOCAL\chronos\"
-
 const
   asyncInvalidSocket* = AsyncFD(osdefs.INVALID_SOCKET)
   asyncInvalidPipe* = asyncInvalidSocket
@@ -196,102 +192,13 @@ proc getInheritable*(fd: AsyncFD): Result[bool, OSErrorCode] {.
       return err(osLastError())
     ok((flags and osdefs.FD_CLOEXEC) == osdefs.FD_CLOEXEC)
 
-proc createAsyncPipe*(inheritRead = true, inheritWrite = true
-                     ): tuple[read: AsyncFD, write: AsyncFD] {.
-     raises: [Defect].}=
+proc createAsyncPipe*(): tuple[read: AsyncFD, write: AsyncFD] =
   ## Create new asynchronouse pipe.
   ## Returns tuple of read pipe handle and write pipe handle``asyncInvalidPipe``
   ## on error.
-  when defined(windows):
-    var
-      pipeIn, pipeOut: HANDLE
-      pipeName: string
-      uniq = 0'u64
-      rsa = getSecurityAttributes(inheritRead)
-      wsa = getSecurityAttributes(inheritWrite)
-    while true:
-      queryPerformanceCounter(uniq)
-      pipeName = PipeHeaderName & Base10.toString(uniq)
-
-      var openMode = osdefs.FILE_FLAG_FIRST_PIPE_INSTANCE or
-                     osdefs.FILE_FLAG_OVERLAPPED or osdefs.PIPE_ACCESS_INBOUND
-      var pipeMode = osdefs.PIPE_TYPE_BYTE or osdefs.PIPE_READMODE_BYTE or
-                     osdefs.PIPE_WAIT
-      pipeIn = createNamedPipe(newWideCString(pipeName), openMode, pipeMode,
-                               1'u32, osdefs.DEFAULT_PIPE_SIZE,
-                               osdefs.DEFAULT_PIPE_SIZE, 0'u32, addr rsa)
-      if pipeIn == osdefs.INVALID_HANDLE_VALUE:
-        let err = osLastError()
-        # If error in {ERROR_ACCESS_DENIED, ERROR_PIPE_BUSY}, then named pipe
-        # with such name already exists.
-        if err != osdefs.ERROR_ACCESS_DENIED and err != osdefs.ERROR_PIPE_BUSY:
-          return (read: asyncInvalidPipe, write: asyncInvalidPipe)
-        continue
-      else:
-        break
-
-    var openMode = osdefs.GENERIC_WRITE or osdefs.FILE_WRITE_DATA or
-                   osdefs.SYNCHRONIZE
-    pipeOut = createFile(newWideCString(pipeName), openMode, 0, addr wsa,
-                         osdefs.OPEN_EXISTING, osdefs.FILE_FLAG_OVERLAPPED,
-                         HANDLE(0))
-    if pipeOut == osdefs.INVALID_HANDLE_VALUE:
-      discard closeHandle(pipeIn)
-      return (read: asyncInvalidPipe, write: asyncInvalidPipe)
-
-    var ovl = osdefs.OVERLAPPED()
-    let res = connectNamedPipe(pipeIn, cast[pointer](addr ovl))
-    if res == 0:
-      let err = osLastError()
-      case int(err)
-      of osdefs.ERROR_PIPE_CONNECTED:
-        discard
-      of osdefs.ERROR_IO_PENDING:
-        var bytesRead = 0.DWORD
-        if getOverlappedResult(pipeIn, addr ovl, bytesRead, 1) == 0:
-          discard closeHandle(pipeIn)
-          discard closeHandle(pipeOut)
-          return (read: asyncInvalidPipe, write: asyncInvalidPipe)
-      else:
-        discard closeHandle(pipeIn)
-        discard closeHandle(pipeOut)
-        return (read: asyncInvalidPipe, write: asyncInvalidPipe)
-
-    (read: AsyncFD(pipeIn), write: AsyncFD(pipeOut))
+  let res = createOsPipe(AsyncDescriptorDefault, AsyncDescriptorDefault)
+  if res.isErr():
+    (read: asyncInvalidPipe, write: asyncInvalidPipe)
   else:
-    when declared(pipe2):
-      var fds: array[2, cint]
-      let flags =
-        if inheritRead:
-          osdefs.O_NONBLOCK
-        else:
-          osdefs.O_NONBLOCK or osdefs.O_CLOEXEC
-
-      if osdefs.pipe2(fds, cint(flags)) == -1:
-        return (read: asyncInvalidPipe, write: asyncInvalidPipe)
-
-      if not(inheritWrite):
-        let res = setDescriptorInheritance(fds[1], inheritWrite)
-        if res.isErr():
-          discard closeFd(fds[0])
-          discard closeFd(fds[1])
-          return (read: asyncInvalidPipe, write: asyncInvalidPipe)
-      (read: AsyncFD(fds[0]), write: AsyncFD(fds[1]))
-    else:
-      var fds: array[2, cint]
-      if osdefs.pipe(fds) == -1:
-        return (read: asyncInvalidPipe, write: asyncInvalidPipe)
-
-      let res0 = setDescriptorFlags(fds[0], true, not(inheritRead))
-      if res0.isErr():
-        discard closeFd(fds[0])
-        discard closeFd(fds[1])
-        return (read: asyncInvalidPipe, write: asyncInvalidPipe)
-
-      let res1 = setDescriptorFlags(fds[1], true, not(inheritWrite))
-      if res1.isErr():
-        discard closeFd(fds[0])
-        discard closeFd(fds[1])
-        return (read: asyncInvalidPipe, write: asyncInvalidPipe)
-
-      (read: AsyncFD(fds[0]), write: AsyncFD(fds[1]))
+    let pipes = res.get()
+    (read: AsyncFD(pipes.read), write: AsyncFD(pipes.write))

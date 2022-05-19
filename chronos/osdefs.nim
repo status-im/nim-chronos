@@ -393,9 +393,6 @@ when defined(windows):
        stdcall, dynlib: "kernel32", importc: "GetSystemTimeAsFileTime",
        sideEffect.}
 
-  proc connectNamedPipe*(hNamedPipe: HANDLE, lpOverlapped: pointer): WINBOOL {.
-       stdcall, dynlib: "kernel32", importc: "ConnectNamedPipe", sideEffect.}
-
   proc wsaIoctl*(s: SocketHandle, dwIoControlCode: DWORD, lpvInBuffer: pointer,
                  cbInBuffer: DWORD, lpvOutBuffer: pointer, cbOutBuffer: DWORD,
                  lpcbBytesReturned: PDWORD, lpOverlapped: POVERLAPPED,

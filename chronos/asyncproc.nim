@@ -1179,6 +1179,36 @@ proc getParentStderr(): AsyncProcessResult[AsyncStreamHolder] =
     holder = AsyncStreamHolder.init(newAsyncStreamReader(transp), flags)
   ok(holder)
 
+proc createPipe(kind: StandardKind
+               ): Result[tuple[read: AsyncFD, write: AsyncFD], OSErrorCode] =
+  case kind
+  of StandardKind.Stdin:
+    let pipes =
+      when defined(windows):
+        let
+          readFlags: set[DescriptorFlag] = {DescriptorFlag.NonBlock}
+          writeFlags: set[DescriptorFlag] = {DescriptorFlag.NonBlock}
+        ? createOsPipe(readFlags, writeFlags)
+      else:
+        let
+          readFlags: set[DescriptorFlag] = {}
+          writeFlags: set[DescriptorFlag] = {DescriptorFlag.NonBlock}
+        ? createOsPipe(readFlags, writeFlags)
+    ok((read: AsyncFD(pipes.read), write: AsyncFD(pipes.write)))
+  of StandardKind.Stdout, StandardKind.Stderr:
+    let pipes =
+      when defined(windows):
+        let
+          readFlags: set[DescriptorFlag] = {DescriptorFlag.NonBlock}
+          writeFlags: set[DescriptorFlag] = {DescriptorFlag.NonBlock}
+        ? createOsPipe(readFlags, writeFlags)
+      else:
+        let
+          readFlags: set[DescriptorFlag] = {DescriptorFlag.NonBlock}
+          writeFlags: set[DescriptorFlag] = {}
+        ? createOsPipe(readFlags, writeFlags)
+    ok((read: AsyncFD(pipes.read), write: AsyncFD(pipes.write)))
+
 proc preparePipes(options: set[AsyncProcessOption],
                   stdinHandle, stdoutHandle,
                   stderrHandle: ProcessStreamHandle
@@ -1187,9 +1217,7 @@ proc preparePipes(options: set[AsyncProcessOption],
     let
       (stdinFlags, localStdin, remoteStdin) =
         if stdinHandle.isEmpty():
-          let (pipeIn, pipeOut) = createAsyncPipe(true, true)
-          if (pipeIn == asyncInvalidPipe) or (pipeOut == asyncInvalidPipe):
-            return err(osLastError())
+          let (pipeIn, pipeOut) = ? createPipe(StandardKind.Stdin)
           let holder = ? AsyncStreamHolder.init(
             ProcessStreamHandle.init(pipeOut), StreamKind.Writer, {})
           (set[ProcessFlag]({}), holder, pipeIn)
@@ -1198,9 +1226,7 @@ proc preparePipes(options: set[AsyncProcessOption],
            AsyncStreamHolder.init(), AsyncFD.init(stdinHandle))
       (stdoutFlags, localStdout, remoteStdout) =
         if stdoutHandle.isEmpty():
-          let (pipeIn, pipeOut) = createAsyncPipe(true, true)
-          if (pipeIn == asyncInvalidPipe) or (pipeOut == asyncInvalidPipe):
-            return err(osLastError())
+          let (pipeIn, pipeOut) = ? createPipe(StandardKind.Stdout)
           let holder = ? AsyncStreamHolder.init(
             ProcessStreamHandle.init(pipeIn), StreamKind.Reader, {})
           (set[ProcessFlag]({}), holder, pipeOut)
@@ -1210,9 +1236,7 @@ proc preparePipes(options: set[AsyncProcessOption],
       (stderrFlags, localStderr, remoteStderr) =
         if AsyncProcessOption.StdErrToStdOut notin options:
           if stderrHandle.isEmpty():
-            let (pipeIn, pipeOut) = createAsyncPipe(true, true)
-            if (pipeIn == asyncInvalidPipe) or (pipeOut == asyncInvalidPipe):
-              return err(osLastError())
+            let (pipeIn, pipeOut) = ? createPipe(StandardKind.Stderr)
             let holder = ? AsyncStreamHolder.init(
               ProcessStreamHandle.init(pipeIn), StreamKind.Reader, {})
             (set[ProcessFlag]({}), holder, pipeOut)
