@@ -1082,32 +1082,33 @@ else:
     proc continuation(udata: pointer) {.gcsafe.} =
       let source = cast[int](udata)
       if not(retFuture.finished()):
-        let res = removeProcess2(processHandle)
-        if res.isErr():
-          retFuture.fail(newException(AsyncProcessError,
-                                      osErrorMsg(res.error())))
-          return
         if source == 1:
-          if not(isNil(timer)):
-            clearTimer(timer)
-        else:
-          let res = p.terminate()
+          # Process exited.
+          let res = removeProcess2(processHandle)
           if res.isErr():
             retFuture.fail(newException(AsyncProcessError,
                                         osErrorMsg(res.error())))
             return
-        let exitCode =
-          block:
-            let res = p.peekProcessExitCode()
-            if res.isErr():
-              retFuture.fail(newException(AsyncProcessError,
-                                          osErrorMsg(res.error())))
-              return
-            res.get()
-        if exitCode == -1:
-          retFuture.complete(-1)
+          if not(isNil(timer)):
+            clearTimer(timer)
+          let exitCode =
+            block:
+              let res = p.peekProcessExitCode()
+              if res.isErr():
+                retFuture.fail(newException(AsyncProcessError,
+                                            osErrorMsg(res.error())))
+                return
+              res.get()
+          if exitCode == -1:
+            retFuture.complete(-1)
+          else:
+            retFuture.complete(exitStatusLikeShell(exitCode))
         else:
-          retFuture.complete(exitStatusLikeShell(exitCode))
+          # Timeout exceeded.
+          let res = p.terminate()
+          if res.isErr():
+            retFuture.fail(newException(AsyncProcessError,
+                                        osErrorMsg(res.error())))
 
     proc cancellation(udata: pointer) {.gcsafe.} =
       if not(retFuture.finished()):

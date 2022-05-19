@@ -9,6 +9,8 @@ import unittest2, stew/[base10, byteutils]
 import ".."/chronos
 import testhelpers
 
+from ".."/chronos/osdefs import SIGTERM
+
 when defined(nimHasUsed): {.used.}
 
 suite "Asynchronous process management test suite":
@@ -195,10 +197,15 @@ suite "Asynchronous process management test suite":
         ("tests\\testproc.bat", "stdin")
       else:
         ("tests/testproc.sh", "stdin")
+    let expect =
+      when defined(windows):
+        0
+      else:
+        128 + int(SIGTERM)
     let process = await startProcess(command[0], arguments = @[command[1]])
     try:
       let res = await process.waitForExit(1.seconds)
-      check res == 0
+      check res == expect
     finally:
       await process.closeWait()
 
