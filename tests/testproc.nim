@@ -90,7 +90,7 @@ suite "Asynchronous process management test suite":
         else:
           "SMALL AMOUNT\n".toBytes()
 
-    var bigTest =
+    let bigTest =
       when defined(windows):
         var res = createBigMessage(256)
         res.add(byte(0x0D))
@@ -102,7 +102,9 @@ suite "Asynchronous process management test suite":
         res
 
     for item in [smallTest, bigTest]:
-      let process = await startProcess(command, options = options)
+      let process = await startProcess(command, options = options,
+                                       stdinHandle = AsyncProcess.Pipe,
+                                       stdoutHandle = AsyncProcess.Pipe)
       try:
         await process.stdinStream.write(item)
         let stdoutDataFut = process.stdoutStream.read()
@@ -118,7 +120,9 @@ suite "Asynchronous process management test suite":
     let options = {AsyncProcessOption.EvalCommand}
 
     for test in OutputTests:
-      let process = await startProcess(test[0], options = options)
+      let process = await startProcess(test[0], options = options,
+                                       stdoutHandle = AsyncProcess.Pipe,
+                                       stderrHandle = AsyncProcess.Pipe)
       try:
         let outBytesFut = process.stdoutStream.read()
         let errBytesFut = process.stderrStream.read()
@@ -144,7 +148,8 @@ suite "Asynchronous process management test suite":
         "TESTSTDOUT \r\nTESTSTDERR \r\n"
       else:
         "TESTSTDOUT\nTESTSTDERR\n"
-    let process = await startProcess(command, options = options)
+    let process = await startProcess(command, options = options,
+                                     stdoutHandle = AsyncProcess.Pipe)
     try:
       let outBytesFut = process.stdoutStream.read()
       let res = await process.waitForExit(InfiniteDuration)
@@ -167,7 +172,9 @@ suite "Asynchronous process management test suite":
         400_000 * (64 + 2)
       else:
         400_000 * (64 + 1)
-    let process = await startProcess(command, options = options)
+    let process = await startProcess(command, options = options,
+                                     stdoutHandle = AsyncProcess.Pipe,
+                                     stderrHandle = AsyncProcess.Pipe)
     try:
       let outBytesFut = process.stdoutStream.read()
       let errBytesFut = process.stderrStream.read()
@@ -176,6 +183,7 @@ suite "Asynchronous process management test suite":
       check:
         res == 0
         len(outBytesFut.read()) == expect
+        len(errBytesFut.read()) == 0
     finally:
       await process.closeWait()
 
