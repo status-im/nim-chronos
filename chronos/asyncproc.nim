@@ -257,6 +257,9 @@ proc init*(t: typedesc[ProcessStreamHandle],
 proc isEmpty*(handle: ProcessStreamHandle): bool =
   handle.kind == ProcessStreamHandleKind.None
 
+proc isEmpty(h: AsyncStreamHolder): bool =
+  h.kind == StreamKind.None
+
 proc suspend*(p: AsyncProcessRef): AsyncProcessResult[void] {.gcsafe.}
 
 proc resume*(p: AsyncProcessRef): AsyncProcessResult[void] {.gcsafe.}
@@ -622,6 +625,15 @@ else:
       attrs: PosixSpawnAttr
       actions: PosixSpawnFileActions
 
+  proc fd(h: AsyncStreamHolder): cint =
+    case h.kind
+    of StreamKind.Reader:
+      cint(h.reader.tsource.fd)
+    of StreamKind.Writer:
+      cint(h.writer.tsource.fd)
+    of StreamKind.None:
+      raiseAssert "Incorrect stream holder"
+
   proc initSpawn(pipes: AsyncProcessPipes, options: set[AsyncProcessOption]
                 ): Result[SpawnAttr, OSErrorCode] =
     template doCheck(body: untyped): untyped =
@@ -693,7 +705,7 @@ else:
 
     if pipes.flags * {ProcessFlag.AutoStderr, ProcessFlag.UserStderr} != {}:
       # Close child process STDERR.
-      doCheck(posixSpawnFileActionsAddClose(actions, cint(2)) == 0)
+      doCheck(posixSpawnFileActionsAddClose(actions, cint(2)))
       # Make a duplicate of `stderrHandle` as child process STDERR.
       doCheck(posixSpawnFileActionsAddDup2(actions, cint(pipes.stderrHandle),
                                            cint(2)))
@@ -720,7 +732,7 @@ else:
           doCheck(posixSpawnFileActionsAddClose(actions, fd))
     ok(SpawnAttr(attrs: attrs, actions: actions))
 
-  proc free(v: SpawnAttr): Result[void, OSErrorCode] =
+  proc free(v: var SpawnAttr): Result[void, OSErrorCode] =
     block:
       let res = posixSpawnAttrDestroy(v.attrs)
       if res != 0:
@@ -797,19 +809,6 @@ else:
         res.add($arguments[index])
     res.join(" ")
 
-  proc fd(h: AsyncStreamHolder): cint =
-    doAssert(h.kind != StreamKind.None)
-    case h.kind
-    of StreamKind.Reader:
-      cint(h.reader.tsource.fd)
-    of StreamKind.Writer:
-      cint(h.writer.tsource.fd)
-    of StreamKind.None:
-      raiseAssert "Incorrect stream holder"
-
-  proc isEmpty(h: AsyncStreamHolder): bool =
-    h.kind == StreamKind.None
-
   template exitStatusLikeShell(status: int): int =
     if WAITIFSIGNALED(cint(status)):
       # like the shell!
@@ -860,13 +859,6 @@ else:
                     ): Future[AsyncProcessRef] {.async.} =
     var
       pid: Pid
-      sa =
-        block:
-          let res = pipes.initSpawn(options)
-          if res.isErr():
-            raiseAsyncProcessError("Unable to initalize spawn attributes",
-                                   res.error())
-          res.get()
       pipes =
         block:
           var res = preparePipes(options, stdinHandle, stdoutHandle,
@@ -876,6 +868,16 @@ else:
             raiseAsyncProcessError("Unable to initialze process pipes",
                                    res.error())
           res.get()
+      sa =
+        block:
+          let res = pipes.initSpawn(options)
+          if res.isErr():
+            discard closeProcessHandles(p.pipes, p.options, OSErrorCode(0))
+            await pipes.closeProcessStreams(options)
+            raiseAsyncProcessError("Unable to initalize spawn attributes",
+                                   res.error())
+          res.get()
+
     let
       (commandLine, commandArguments) =
         if AsyncProcessOption.EvalCommand in options:
