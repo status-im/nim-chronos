@@ -562,7 +562,7 @@ proc emit[T](bus: AsyncEventBus, event: string, data: T, loc: ptr SrcLoc) =
         cast[EventPayloadBase](data)
 
   # Used to capture the "subscriber" variable in the loops
-  # suger.capture doesn't work in Nim <1.6
+  # sugar.capture doesn't work in Nim <1.6
   proc triggerSubscriberCallback(subscriber: EventBusKey) =
     callSoon(proc(udata: pointer) =
       subscriber.cb(bus, event, subscriber, payload)
