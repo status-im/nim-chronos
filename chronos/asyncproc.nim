@@ -639,9 +639,8 @@ else:
     template doCheck(body: untyped): untyped =
       let res = body
       if res != 0:
-        discard posixSpawnAttrDestroy(attrs)
-        discard posixSpawnFileActionsDestroy(actions)
         return err(OSErrorCode(res))
+
     var
       attrs =
         block:
@@ -864,7 +863,6 @@ else:
           var res = preparePipes(options, stdinHandle, stdoutHandle,
                                  stderrHandle)
           if res.isErr():
-            discard sa.free()
             raiseAsyncProcessError("Unable to initialze process pipes",
                                    res.error())
           res.get()
@@ -872,10 +870,9 @@ else:
         block:
           let res = pipes.initSpawn(options)
           if res.isErr():
-            discard closeProcessHandles(p.pipes, p.options, OSErrorCode(0))
+            discard closeProcessHandles(pipes, options, OSErrorCode(0))
             await pipes.closeProcessStreams(options)
-            raiseAsyncProcessError("Unable to initalize spawn attributes",
-                                   res.error())
+            raiseAsyncProcessError("Unable to initalize spawn attributes", 0)
           res.get()
 
     let
