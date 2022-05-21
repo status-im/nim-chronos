@@ -692,7 +692,7 @@ else:
       doCheck(posixSpawnFileActionsAddClose(actions, cint(1)))
       # Make a duplicate of `stdoutHandle` as child process STDOUT.
       doCheck(posixSpawnFileActionsAddDup2(actions, cint(pipes.stdoutHandle),
-                                           cint(2)))
+                                           cint(1)))
       if AsyncProcessOption.StdErrToStdOut notin options:
         # Close child process side of `stdoutHandle`.
         doCheck(posixSpawnFileActionsAddClose(actions,
