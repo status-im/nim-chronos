@@ -560,34 +560,8 @@ suite "Asynchronous sync primitives test suite":
     test2()
     eventQueue.close()
 
-  test "AsyncEventQueue() concurrency assert test":
-    let eventQueue = newAsyncEventQueue[int]()
-    let key1 = eventQueue.register()
-    let key2 = eventQueue.register()
-
-    proc test() =
-      let dataFut = eventQueue.waitEvents(key1)
-      expect AssertionError:
-        let failFut {.used.} = eventQueue.waitEvents(key1)
-      eventQueue.emit(100)
-      expect AssertionError:
-        let failFut {.used.} = eventQueue.waitEvents(key1)
-      let goodFut = eventQueue.waitEvents(key2)
-      check:
-        dataFut.finished() == false
-        goodFut.finished() == true
-        goodFut.read() == @[100]
-      poll()
-      check:
-        dataFut.finished() == true
-        dataFut.read() == @[100]
-
-    test()
-    eventQueue.close()
-
   test "AsyncEventQueue() concurrency test":
     let eventQueue = newAsyncEventQueue[int]()
-
     let key0 = eventQueue.register()
     let key1 = eventQueue.register()
     eventQueue.emit(100)
@@ -635,7 +609,8 @@ suite "Asynchronous sync primitives test suite":
       dataFut0.finished() == true
       dataFut0.read() == @[100, 200, 300, 400, 500, 600, 700, 800, 900, 1000,
                            2000]
-    eventQueue.close()
+
+    waitFor eventQueue.closeWait()
 
   test "AsyncEventQueue() specific number test":
     let eventQueue = newAsyncEventQueue[int]()
@@ -651,10 +626,12 @@ suite "Asynchronous sync primitives test suite":
     check:
       dataFut1.finished() == true
       dataFut1.read() == @[100]
+
     let dataFut2 = eventQueue.waitEvents(key, 2)
     check:
       dataFut2.finished() == true
       dataFut2.read() == @[200, 300]
+
     let dataFut3 = eventQueue.waitEvents(key, 5)
     check dataFut3.finished() == false
     eventQueue.emit(500)
@@ -666,6 +643,7 @@ suite "Asynchronous sync primitives test suite":
     check:
       dataFut3.finished() == true
       dataFut3.read() == @[400, 500, 600, 700, 800]
+
     let dataFut4 = eventQueue.waitEvents(key, -1)
     check dataFut4.finished() == false
     eventQueue.emit(900)
@@ -682,7 +660,7 @@ suite "Asynchronous sync primitives test suite":
       dataFut4.finished() == true
       dataFut4.read() == @[900, 1000, 1100, 1200, 1300, 1400, 1500, 1600]
 
-    eventQueue.close()
+    waitFor eventQueue.closeWait()
 
   test "AsyncEventQueue() register()/unregister() test":
     var emptySeq: seq[int]
@@ -729,7 +707,7 @@ suite "Asynchronous sync primitives test suite":
       dataFut3.finished() == true
       dataFut3.read() == @[100, 200, 300]
 
-    eventQueue.close()
+    waitFor eventQueue.closeWait()
 
   test "AsyncEventQueue() garbage collection test":
     let eventQueue = newAsyncEventQueue[int]()
@@ -771,7 +749,7 @@ suite "Asynchronous sync primitives test suite":
       dataFut2.read() == @[400, 500, 600, 700, 800, 900, 1000, 1100, 1200]
       len(eventQueue) == 0
 
-    eventQueue.close()
+    waitFor eventQueue.closeWait()
 
   test "AsyncEventQueue() 1,000,000 of events to 10 clients test":
     let eventQueue = newAsyncEventQueue[int]()
@@ -808,7 +786,7 @@ suite "Asynchronous sync primitives test suite":
           await sleepAsync(0.milliseconds)
         eventQueue.emit(i)
 
-      eventQueue.close()
+      await eventQueue.closeWait()
       await allFutures(futs)
       for fut in futs:
         check:

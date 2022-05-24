@@ -683,6 +683,15 @@ proc close*[T](ab: AsyncEventQueue[T]) =
   ab.readers.setLen(0)
   ab.queue.clear()
 
+proc closeWait*[T](ab: AsyncEventQueue[T]): Future[void] =
+  var retFuture = newFuture[void]("AsyncEventQueue.closeWait()")
+  proc continuation(udata: pointer) {.gcsafe.} =
+    if not(retFuture.finished()):
+      retFuture.complete()
+  ab.close()
+  callSoon(continuation)
+  retFuture
+
 proc waitEvents*[T](ab: AsyncEventQueue[T],
                     key: EventQueueKey,
                     eventsCount = -1): Future[seq[T]] {.async.} =
