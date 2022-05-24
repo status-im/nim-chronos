@@ -106,6 +106,19 @@ type
     eventName: string
     payload: EventPayloadBase
 
+  EventQueueKey* = distinct uint64
+
+  EventQueueReader* = object
+    key: EventQueueKey
+    offset: int
+    waiter: Future[void]
+
+  AsyncEventQueue*[T] = ref object of RootObj
+    readers: seq[EventQueueReader]
+    queue: Deque[T]
+    counter: uint64
+    offset: int
+
 proc newAsyncLock*(): AsyncLock =
   ## Creates new asynchronous lock ``AsyncLock``.
   ##
@@ -610,3 +623,122 @@ template emitWait*[T](bus: AsyncEventBus, event: string,
   ## wait until all the subscribers/waiters will receive notification about
   ## event.
   emitWait(bus, event, data, getSrcLocation())
+
+proc `==`(a, b: EventQueueKey): bool {.borrow.}
+
+proc compact[T](ab: AsyncEventQueue[T]) =
+  if len(ab.readers) > 0:
+    let minOffset = ab.readers[0].offset
+    doAssert(minOffset >= ab.offset)
+    if minOffset > ab.offset:
+      let delta = minOffset - ab.offset
+      ab.queue.shrink(fromFirst = delta)
+      ab.offset += delta
+  else:
+    ab.queue.clear()
+
+proc getReaderIndex[T](ab: AsyncEventQueue[T], key: EventQueueKey): int =
+  for index, value in ab.readers.pairs():
+    if value.key == key:
+      return index
+  -1
+
+proc newAsyncEventQueue*[T](): AsyncEventQueue[T] =
+  ## Creates new ``AsyncEventBus``.
+  AsyncEventQueue[T](counter: 0'u64, queue: initDeque[T]())
+
+proc len*[T](ab: AsyncEventQueue[T]): int =
+  len(ab.queue)
+
+proc register*[T](ab: AsyncEventQueue[T]): EventQueueKey =
+  inc(ab.counter)
+  let reader = EventQueueReader(key: EventQueueKey(ab.counter),
+                                offset: ab.offset + len(ab.queue))
+  ab.readers.add(reader)
+  EventQueueKey(ab.counter)
+
+proc unregister*[T](ab: AsyncEventQueue[T], key: EventQueueKey) =
+  let index = ab.getReaderIndex(key)
+  if index >= 0:
+    let reader = ab.readers[index]
+    # Completing pending Future to avoid deadlock.
+    if not(isNil(reader.waiter)) and not(reader.waiter.finished()):
+      reader.waiter.complete()
+    ab.readers.delete(index)
+    ab.compact()
+
+proc emit*[T](ab: AsyncEventQueue[T], data: T) =
+  if len(ab.readers) > 0:
+    # We enqueue `data` only if there active reader present.
+    ab.queue.addLast(data)
+    for reader in ab.readers.items():
+      if not(isNil(reader.waiter)) and not(reader.waiter.finished()):
+        reader.waiter.complete()
+
+proc close*[T](ab: AsyncEventQueue[T]) =
+  for reader in ab.readers.items():
+    if not(isNil(reader.waiter)) and not(reader.waiter.finished()):
+      reader.waiter.complete()
+  # This could generate leak, shrink() is not yet implemented for sequences.
+  ab.readers.setLen(0)
+  ab.queue.clear()
+
+proc waitEvents*[T](ab: AsyncEventQueue[T],
+                    key: EventQueueKey,
+                    eventsCount = -1): Future[seq[T]] {.async.} =
+  ## Wait for events
+  var
+    events: seq[T]
+    resetFuture = false
+
+  while true:
+    # We need to obtain reader index at every iteration, because `ab.readers`
+    # sequence could be changed after `await waitFuture` call.
+    let index = ab.getReaderIndex(key)
+    if index < 0:
+      # We going to return everything we have in `events`.
+      break
+
+    if resetFuture:
+      resetFuture = false
+      ab.readers[index].waiter = nil
+
+    let reader = ab.readers[index]
+    doAssert(isNil(reader.waiter),
+             "Concurrent waits on same key are not allowed!")
+
+    let length = len(ab.queue) + ab.offset
+    doAssert(length >= ab.readers[index].offset)
+    if length == ab.readers[index].offset:
+      # We are at the end of queue, it means that we should wait for new events.
+      let waitFuture = newFuture[void]("AsyncEventQueue.waitEvents")
+      ab.readers[index].waiter = waitFuture
+      resetFuture = true
+      await waitFuture
+    else:
+      let
+        itemsInQueue = length - ab.readers[index].offset
+        itemsOffset = ab.readers[index].offset - ab.offset
+        itemsCount =
+          if eventsCount <= 0:
+            itemsInQueue
+          else:
+            min(itemsInQueue, eventsCount - len(events))
+
+      for i in 0 ..< itemsCount:
+        events.add(ab.queue[itemsOffset + i])
+      ab.readers[index].offset += itemsCount
+
+      # Keep readers sequence sorted by `offset` field.
+      var slider = index
+      while (slider + 1 < len(ab.readers)) and
+            (ab.readers[slider].offset > ab.readers[slider + 1].offset):
+        swap(ab.readers[slider], ab.readers[slider + 1])
+        inc(slider)
+      # Shrink data queue.
+      ab.compact()
+
+      if (eventsCount <= 0) or (len(events) == eventsCount):
+        break
+
+  return events

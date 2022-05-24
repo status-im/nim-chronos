@@ -531,3 +531,293 @@ suite "Asynchronous sync primitives test suite":
       await allFutures(futA, futB).wait(1.seconds)
 
     waitFor test()
+
+  test "AsyncEventQueue() behavior test":
+    let eventQueue = newAsyncEventQueue[int]()
+    let key = eventQueue.register()
+    eventQueue.emit(100)
+    eventQueue.emit(200)
+    eventQueue.emit(300)
+
+    proc test1() =
+      let dataFut = eventQueue.waitEvents(key)
+      check:
+        dataFut.finished() == true
+        dataFut.read() == @[100, 200, 300]
+
+    proc test2() =
+      let dataFut = eventQueue.waitEvents(key)
+      check:
+        dataFut.finished() == false
+      eventQueue.emit(400)
+      eventQueue.emit(500)
+      poll()
+      check:
+        dataFut.finished() == true
+        dataFut.read() == @[400, 500]
+
+    test1()
+    test2()
+    eventQueue.close()
+
+  test "AsyncEventQueue() concurrency assert test":
+    let eventQueue = newAsyncEventQueue[int]()
+    let key1 = eventQueue.register()
+    let key2 = eventQueue.register()
+
+    proc test() =
+      let dataFut = eventQueue.waitEvents(key1)
+      expect AssertionError:
+        let failFut {.used.} = eventQueue.waitEvents(key1)
+      eventQueue.emit(100)
+      expect AssertionError:
+        let failFut {.used.} = eventQueue.waitEvents(key1)
+      let goodFut = eventQueue.waitEvents(key2)
+      check:
+        dataFut.finished() == false
+        goodFut.finished() == true
+        goodFut.read() == @[100]
+      poll()
+      check:
+        dataFut.finished() == true
+        dataFut.read() == @[100]
+
+    test()
+    eventQueue.close()
+
+  test "AsyncEventQueue() concurrency test":
+    let eventQueue = newAsyncEventQueue[int]()
+
+    let key0 = eventQueue.register()
+    let key1 = eventQueue.register()
+    eventQueue.emit(100)
+    let key2 = eventQueue.register()
+    eventQueue.emit(200)
+    eventQueue.emit(300)
+    let key3 = eventQueue.register()
+    eventQueue.emit(400)
+    eventQueue.emit(500)
+    eventQueue.emit(600)
+    let key4 = eventQueue.register()
+    eventQueue.emit(700)
+    eventQueue.emit(800)
+    eventQueue.emit(900)
+    eventQueue.emit(1000)
+    let key5 = eventQueue.register()
+    let key6 = eventQueue.register()
+
+    let dataFut1 = eventQueue.waitEvents(key1)
+    let dataFut2 = eventQueue.waitEvents(key2)
+    let dataFut3 = eventQueue.waitEvents(key3)
+    let dataFut4 = eventQueue.waitEvents(key4)
+    let dataFut5 = eventQueue.waitEvents(key5)
+    let dataFut6 = eventQueue.waitEvents(key6)
+    check:
+      dataFut1.finished() == true
+      dataFut1.read() == @[100, 200, 300, 400, 500, 600, 700, 800, 900, 1000]
+      dataFut2.finished() == true
+      dataFut2.read() == @[200, 300, 400, 500, 600, 700, 800, 900, 1000]
+      dataFut3.finished() == true
+      dataFut3.read() == @[400, 500, 600, 700, 800, 900, 1000]
+      dataFut4.finished() == true
+      dataFut4.read() == @[700, 800, 900, 1000]
+      dataFut5.finished() == false
+      dataFut6.finished() == false
+
+    eventQueue.emit(2000)
+    poll()
+    let dataFut0 = eventQueue.waitEvents(key0)
+    check:
+      dataFut5.finished() == true
+      dataFut5.read() == @[2000]
+      dataFut6.finished() == true
+      dataFut6.read() == @[2000]
+      dataFut0.finished() == true
+      dataFut0.read() == @[100, 200, 300, 400, 500, 600, 700, 800, 900, 1000,
+                           2000]
+    eventQueue.close()
+
+  test "AsyncEventQueue() specific number test":
+    let eventQueue = newAsyncEventQueue[int]()
+    let key = eventQueue.register()
+
+    let dataFut1 = eventQueue.waitEvents(key, 1)
+    eventQueue.emit(100)
+    eventQueue.emit(200)
+    eventQueue.emit(300)
+    eventQueue.emit(400)
+    check dataFut1.finished() == false
+    poll()
+    check:
+      dataFut1.finished() == true
+      dataFut1.read() == @[100]
+    let dataFut2 = eventQueue.waitEvents(key, 2)
+    check:
+      dataFut2.finished() == true
+      dataFut2.read() == @[200, 300]
+    let dataFut3 = eventQueue.waitEvents(key, 5)
+    check dataFut3.finished() == false
+    eventQueue.emit(500)
+    eventQueue.emit(600)
+    eventQueue.emit(700)
+    eventQueue.emit(800)
+    check dataFut3.finished() == false
+    poll()
+    check:
+      dataFut3.finished() == true
+      dataFut3.read() == @[400, 500, 600, 700, 800]
+    let dataFut4 = eventQueue.waitEvents(key, -1)
+    check dataFut4.finished() == false
+    eventQueue.emit(900)
+    eventQueue.emit(1000)
+    eventQueue.emit(1100)
+    eventQueue.emit(1200)
+    eventQueue.emit(1300)
+    eventQueue.emit(1400)
+    eventQueue.emit(1500)
+    eventQueue.emit(1600)
+    check dataFut4.finished() == false
+    poll()
+    check:
+      dataFut4.finished() == true
+      dataFut4.read() == @[900, 1000, 1100, 1200, 1300, 1400, 1500, 1600]
+
+    eventQueue.close()
+
+  test "AsyncEventQueue() register()/unregister() test":
+    var emptySeq: seq[int]
+    let eventQueue = newAsyncEventQueue[int]()
+    let key1 = eventQueue.register()
+
+    let dataFut1 = eventQueue.waitEvents(key1, 1)
+    check dataFut1.finished() == false
+    eventQueue.unregister(key1)
+    check dataFut1.finished() == false
+    poll()
+    check:
+      dataFut1.finished() == true
+      dataFut1.read() == emptySeq
+
+    let key2 = eventQueue.register()
+    let dataFut2 = eventQueue.waitEvents(key2, 5)
+    check dataFut2.finished() == false
+    eventQueue.emit(100)
+    eventQueue.emit(200)
+    eventQueue.emit(300)
+    eventQueue.emit(400)
+    eventQueue.emit(500)
+    check dataFut2.finished() == false
+    eventQueue.unregister(key2)
+    poll()
+    check:
+      dataFut2.finished() == true
+      dataFut2.read() == emptySeq
+
+    let key3 = eventQueue.register()
+    let dataFut3 = eventQueue.waitEvents(key3, 5)
+    check dataFut3.finished() == false
+    eventQueue.emit(100)
+    eventQueue.emit(200)
+    eventQueue.emit(300)
+    check dataFut3.finished() == false
+    poll()
+    eventQueue.unregister(key3)
+    eventQueue.emit(400)
+    check dataFut3.finished() == false
+    poll()
+    check:
+      dataFut3.finished() == true
+      dataFut3.read() == @[100, 200, 300]
+
+    eventQueue.close()
+
+  test "AsyncEventQueue() garbage collection test":
+    let eventQueue = newAsyncEventQueue[int]()
+    let key1 = eventQueue.register()
+    check len(eventQueue) == 0
+    eventQueue.emit(100)
+    eventQueue.emit(200)
+    eventQueue.emit(300)
+    check len(eventQueue) == 3
+    let key2 = eventQueue.register()
+    eventQueue.emit(400)
+    eventQueue.emit(500)
+    eventQueue.emit(600)
+    eventQueue.emit(700)
+    check len(eventQueue) == 7
+    let key3 = eventQueue.register()
+    eventQueue.emit(800)
+    eventQueue.emit(900)
+    eventQueue.emit(1000)
+    eventQueue.emit(1100)
+    eventQueue.emit(1200)
+    check len(eventQueue) == 12
+    let dataFut1 = eventQueue.waitEvents(key1)
+    check:
+      dataFut1.finished() == true
+      dataFut1.read() == @[100, 200, 300, 400, 500, 600, 700, 800, 900, 1000,
+                           1100, 1200]
+      len(eventQueue) == 9
+
+    let dataFut3 = eventQueue.waitEvents(key3)
+    check:
+      dataFut3.finished() == true
+      dataFut3.read() == @[800, 900, 1000, 1100, 1200]
+      len(eventQueue) == 9
+
+    let dataFut2 = eventQueue.waitEvents(key2)
+    check:
+      dataFut2.finished() == true
+      dataFut2.read() == @[400, 500, 600, 700, 800, 900, 1000, 1100, 1200]
+      len(eventQueue) == 0
+
+    eventQueue.close()
+
+  test "AsyncEventQueue() 1,000,000 of events to 10 clients test":
+    let eventQueue = newAsyncEventQueue[int]()
+    let keys = [
+      eventQueue.register(), eventQueue.register(),
+      eventQueue.register(), eventQueue.register(),
+      eventQueue.register(), eventQueue.register(),
+      eventQueue.register(), eventQueue.register(),
+      eventQueue.register(), eventQueue.register()
+    ]
+
+    proc clientTask(queue: AsyncEventQueue[int],
+                    key: EventQueueKey): Future[seq[int]] {.async.} =
+      var events: seq[int]
+      while true:
+        let res = await queue.waitEvents(key)
+        if len(res) == 0:
+          break
+        events.add(res)
+      return events
+
+    var futs = [
+      clientTask(eventQueue, keys[0]), clientTask(eventQueue, keys[1]),
+      clientTask(eventQueue, keys[2]), clientTask(eventQueue, keys[3]),
+      clientTask(eventQueue, keys[4]), clientTask(eventQueue, keys[5]),
+      clientTask(eventQueue, keys[6]), clientTask(eventQueue, keys[7]),
+      clientTask(eventQueue, keys[8]), clientTask(eventQueue, keys[9])
+    ]
+
+    proc test() {.async.} =
+      for i in 1 .. 1_000_000:
+        if (i mod 1000) == 0:
+          # Give some CPU for clients.
+          await sleepAsync(0.milliseconds)
+        eventQueue.emit(i)
+
+      eventQueue.close()
+      await allFutures(futs)
+      for fut in futs:
+        check:
+          fut.finished() == true
+        let data = fut.read()
+        var counter = 1
+        for item in data:
+          check:
+            item == counter
+          inc(counter)
+
+    waitFor test()
