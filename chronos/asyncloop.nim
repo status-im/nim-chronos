@@ -483,7 +483,7 @@ when defined(windows):
                                        cast[pointer](wh.ovl))
   {.pop.}
 
-  proc registerWaitable(handle: Handle, flags: ULONG,
+  proc registerWaitable(handle: HANDLE, flags: ULONG,
                         timeout: Duration, cb: CallbackFunc, udata: pointer
                         ): Result[WaitableHandle, OSErrorCode] =
     ## Register handle of (Change notification, Console input, Event,
@@ -566,7 +566,7 @@ when defined(windows):
 
     var wh: WaitableHandle = nil
 
-    if hProcess == Handle(0):
+    if hProcess == HANDLE(0):
       return err(osLastError())
 
     proc continuation(udata: pointer) {.gcsafe.} =
