@@ -33,7 +33,7 @@
 
 from std/os import OSErrorCode, osErrorMsg, osLastError
 import stew/results
-import "."/chronos/[osdefs, osutils]
+import osdefs, osutils
 
 export results
 
