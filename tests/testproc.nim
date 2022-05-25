@@ -203,14 +203,14 @@ suite "Asynchronous process management test suite":
   asyncTest "waitForExit(duration) test":
     let command =
       when defined(windows):
-        ("tests\\testproc.bat", "stdin")
+        ("tests\\testproc.bat", "timeout10")
       else:
-        ("tests/testproc.sh", "stdin")
+        ("tests/testproc.sh", "timeout10")
     let expect =
       when defined(windows):
         0
       else:
-        128 + int(SIGTERM)
+        128 + int(SIGKILL)
     let process = await startProcess(command[0], arguments = @[command[1]])
     try:
       let res = await process.waitForExit(1.seconds)
