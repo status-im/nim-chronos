@@ -449,7 +449,7 @@ when defined(windows):
             raiseAsyncProcessError("Unable to proceed working directory path",
                                    error)
         else:
-          nil
+          cast[WideCString](nil)
       environment =
         if not(isNil(environment)):
           buildEnvironment(environment).valueOr:
