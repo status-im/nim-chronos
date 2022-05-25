@@ -483,7 +483,7 @@ when defined(windows):
         if len(workingDir) > 0:
           newWideCString(workingDir)
         else:
-          nil
+          cast[WideCString](nil)
       environment =
         if not(isNil(environment)):
           buildEnvironment(environment)
