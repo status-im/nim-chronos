@@ -503,8 +503,14 @@ when defined(windows):
       loop = getThreadDispatcher()
       handleFd = AsyncFD(handle)
 
+    let cell =
+      try:
+        system.protect(rawEnv(cb))
+      except Exception:
+        raiseAssert "Unable to protect callback environment"
+
     var ovl = RefCustomOverlapped(
-      data: CompletionData(cb: cb, cell: system.protect(rawEnv(cb)))
+      data: CompletionData(cb: cb, cell: cell)
     )
     GC_ref(ovl)
     var whandle = cast[WaitableHandle](allocShared0(sizeof(PostCallbackData)))
@@ -525,7 +531,10 @@ when defined(windows):
                                    cast[pointer](whandle),
                                    dwordTimeout,
                                    flags) == WINBOOL(0):
-      system.dispose(ovl.data.cell)
+      try:
+        system.dispose(ovl.data.cell)
+      except Exception:
+        raiseAssert "Unable to dispose callback environment"
       ovl.data.udata = nil
       GC_unref(ovl)
       deallocShared(cast[pointer](whandle))
@@ -543,7 +552,11 @@ when defined(windows):
       handleFd = wh.handleFd
       waitFd = wh.waitFd
 
-    system.dispose(wh.ovl.data.cell)
+    try:
+      system.dispose(wh.ovl.data.cell)
+    except Exception:
+      raiseAssert "Unable to dispose callback environment"
+
     GC_unref(wh.ovl)
     deallocShared(cast[pointer](wh))
 
