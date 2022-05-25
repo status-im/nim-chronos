@@ -216,9 +216,9 @@ else:
         block:
           var res: cint = 0
           if DescriptorFlag.CloseOnExec in a4:
-            res = res or SOCK_CLOEXEC
+            res = res or osdefs.SOCK_CLOEXEC
           if DescriptorFlag.NonBlock in a4:
-            res = res or SOCK_NONBLOCK
+            res = res or osdefs.SOCK_NONBLOCK
           res
       let res = cint(handleEintr(accept4(a1, a2, a3, flags)))
       if res == -1:
