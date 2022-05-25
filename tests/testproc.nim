@@ -251,6 +251,7 @@ suite "Asynchronous process management test suite":
     when defined(windows):
       check len(env["SYSTEMROOT"]) > 0
     else:
+      echo env
       check len(env["SHELL"]) > 0
 
   test "File descriptors leaks test":
