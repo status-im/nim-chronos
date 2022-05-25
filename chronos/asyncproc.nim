@@ -1088,7 +1088,7 @@ else:
             retFuture.complete(exitStatusLikeShell(exitCode))
         else:
           # Timeout exceeded.
-          let res = p.terminate()
+          let res = p.kill()
           if res.isErr():
             retFuture.fail(newException(AsyncProcessError,
                                         osErrorMsg(res.error())))
@@ -1307,19 +1307,21 @@ proc stderrStream*(p: AsyncProcessRef): AsyncStreamReader =
   p.pipes.stderrHolder.reader
 
 proc execCommand*(command: string,
-                  options = {AsyncProcessOption.EvalCommand}
+                  options = {AsyncProcessOption.EvalCommand},
+                  timeout = InfiniteDuration
                  ): Future[int] {.async.} =
   let poptions = options + {AsyncProcessOption.EvalCommand}
   let process = await startProcess(command, options = poptions)
   let res =
     try:
-      await process.waitForExit(InfiniteDuration)
+      await process.waitForExit(timeout)
     finally:
       await process.closeWait()
   return res
 
 proc execCommandEx*(command: string,
-                    options = {AsyncProcessOption.EvalCommand}
+                    options = {AsyncProcessOption.EvalCommand},
+                    timeout = InfiniteDuration
                    ): Future[CommandExResponse] {.async.} =
   let
     process = await startProcess(command, options = options,
@@ -1330,7 +1332,7 @@ proc execCommandEx*(command: string,
     res =
       try:
         await allFutures(outputReader, errorReader)
-        let status = await process.waitForExit(InfiniteDuration)
+        let status = await process.waitForExit(timeout)
         let output =
           try:
             string.fromBytes(outputReader.read())
