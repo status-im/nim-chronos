@@ -10,7 +10,7 @@ import ".."/chronos
 import testhelpers
 
 when defined(posix):
-  from ".."/chronos/osdefs import SIGTERM
+  from ".."/chronos/osdefs import SIGKILL
 
 when defined(nimHasUsed): {.used.}
 
