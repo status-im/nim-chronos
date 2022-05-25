@@ -293,7 +293,11 @@ template isOk(code: OSErrorCode): bool =
     code == 0
 
 template closePipe(handle: AsyncFD): bool =
-  let fd = when defined(windows): HANDLE(handle) else: cint(handle)
+  let fd =
+    when defined(windows):
+      osdefs.HANDLE(handle)
+    else:
+      cint(handle)
   closeFd(fd) != -1
 
 proc closeProcessHandles(pipes: var AsyncProcessPipes,
