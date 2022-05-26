@@ -938,7 +938,7 @@ elif defined(macosx) or defined(macos) or defined(bsd):
     res
 
 elif defined(windows):
-  import ".."/[osdefs, osutils]
+  import ".."/osutils
   import dynlib
   import ".."/osutils
 
