@@ -249,9 +249,9 @@ suite "Asynchronous process management test suite":
   asyncTest "Child process environment test":
     let command =
       when defined(windows):
-        ("tests\\testproc.bat", "environ", 0, "CHILDPROCESSTEST\r\n")
+        ("tests\\testproc.bat", "envtest", 0, "CHILDPROCESSTEST\r\n")
       else:
-        ("tests/testproc.sh", "environ", 0, "CHILDPROCESSTEST\n")
+        ("tests/testproc.sh", "envtest", 0, "CHILDPROCESSTEST\n")
 
     let env = getProcessEnvironment()
     env["CHRONOSASYNC"] = "CHILDPROCESSTEST"

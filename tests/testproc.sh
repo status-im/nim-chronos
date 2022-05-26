@@ -13,8 +13,10 @@ elif [ "$1" == "bigdata" ]; then
   do
     echo "ALICEWASBEGINNINGTOGETVERYTIREDOFSITTINGBYHERSISTERONTHEBANKANDO"
   done
-elif [ "$1" == "environ" ]; then
-  echo $CHRONOSASYNC
+elif [ "$1" == "envtest" ]; then
+  echo "TESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTEST"
+  echo "$CHRONOSASYNC"
+  env
   printenv
 else
   echo "arguments missing"
