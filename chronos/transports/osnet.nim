@@ -17,7 +17,7 @@ else:
 
 import std/algorithm
 from std/strutils import toHex
-import ".."/[osdefs, osutils]
+import ".."/osdefs
 import ./ipnet
 export ipnet
 
@@ -349,6 +349,7 @@ proc cmp*(a, b: NetworkInterface): int =
   cmp(a.ifIndex, b.ifIndex)
 
 when defined(linux):
+  import ".."/osutils
   const
     AF_NETLINK = cint(16)
     AF_PACKET = cint(17)
@@ -1203,7 +1204,7 @@ elif defined(macosx) or defined(macos) or defined(bsd):
     res
 
 elif defined(windows):
-  import ".."/[osdefs, osutils]
+  import ".."/osutils
   import dynlib
 
   const
