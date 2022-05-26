@@ -349,8 +349,6 @@ proc cmp*(a, b: NetworkInterface): int =
   cmp(a.ifIndex, b.ifIndex)
 
 when defined(linux):
-  import posix
-
   const
     AF_NETLINK = cint(16)
     AF_PACKET = cint(17)
@@ -939,9 +937,7 @@ when defined(linux):
       discard posix.close(sock)
       res
 
-elif defined(macosx) or defined(bsd):
-  import posix
-
+elif defined(macosx) or defined(macos) or defined(bsd):
   const
     AF_LINK = 18
     IFF_UP = 0x01
@@ -1207,6 +1203,7 @@ elif defined(macosx) or defined(bsd):
     res
 
 elif defined(windows):
+  import ".."/[osdefs, osutils]
   import dynlib
 
   const
