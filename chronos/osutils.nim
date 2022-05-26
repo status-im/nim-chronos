@@ -30,7 +30,7 @@ const
 
 when defined(windows) or defined(nimdoc):
   import stew/base10
-  const PipeHeaderName = r"\\.\pipe\LOCAL\chronos\"
+  const PipeHeaderName* = r"\\.\pipe\LOCAL\chronos\"
 
 type
   DescriptorFlag* {.pure.} = enum

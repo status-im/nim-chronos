@@ -449,7 +449,7 @@ when defined(windows):
             raiseAsyncProcessError("Unable to proceed working directory path",
                                    error)
         else:
-          cast[WideCString](nil)
+          nil
       environment =
         if not(isNil(environment)):
           buildEnvironment(environment).valueOr:
@@ -474,6 +474,14 @@ when defined(windows):
 
     let wideCommandLine = commandLine.toWideString().valueOr:
       raiseAsyncProcessError("Unable to proceed command line", error)
+
+    let wideCommandLine =
+      block:
+        let res = commandLine.toWideString()
+        if res.isErr():
+          raiseAsyncProcessError("Unable to proceed command line",
+                                 res.error())
+        res.get()
 
     let res = createProcess(
       nil,
