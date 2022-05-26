@@ -160,7 +160,7 @@ suite "Asynchronous process management test suite":
     finally:
       await process.closeWait()
 
-  asyncTest "CAPTURE BIG DATA STDOUT stream test":
+  asyncTest "Capture big amount of bytes from STDOUT stream test":
     let options = {AsyncProcessOption.EvalCommand}
     let command =
       when defined(windows):

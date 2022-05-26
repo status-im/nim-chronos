@@ -14,7 +14,7 @@ import osdefs
 
 when defined(windows) or defined(nimdoc):
   import stew/base10
-  const PipeHeaderName = r"\\.\pipe\LOCAL\chronos\"
+  const PipeHeaderName* = r"\\.\pipe\LOCAL\chronos\"
 
 type
   DescriptorFlag* {.pure.} = enum
@@ -70,18 +70,62 @@ when defined(windows):
   proc closeFd*(s: HANDLE): int =
     if osdefs.closeHandle(s) == TRUE: 0 else: -1
 
+  proc toWideString*(s: string): Result[LPWSTR, OSErrorCode] =
+    if len(s) == 0:
+      ok(cast[LPWSTR](alloc0(sizeof(WCHAR))))
+    else:
+      let charsNeeded = multiByteToWideChar(CP_UTF8, 0'u32,
+                                            cast[ptr char](unsafeAddr s[0]),
+                                            cint(len(s)), nil, cint(0))
+      if charsNeeded <= cint(0):
+        return err(osLastError())
+      var buffer = cast[LPWSTR](alloc0((charsNeeded + 1) * sizeof(WCHAR)))
+      let res = multiByteToWideChar(CP_UTF8, 0'u32,
+                                    cast[ptr char](unsafeAddr s[0]),
+                                    cint(len(s)), buffer, charsNeeded)
+      if res != charsNeeded:
+        err(osLastError())
+      else:
+        ok(buffer)
+
+  proc toString*(w: LPWSTR): Result[string, OSErrorCode] =
+    if isNil(w):
+      ok("")
+    else:
+      let bytesNeeded = wideCharToMultiByte(CP_UTF8, 0'u32, w, cint(-1), nil,
+                                            cint(0), nil, nil)
+      if bytesNeeded <= cint(0):
+        return err(osLastError())
+
+      var buffer = newString(bytesNeeded)
+      let res = wideCharToMultiByte(CP_UTF8, 0'u32, w, cint(-1),
+                                    addr buffer[0], cint(len(buffer)), nil, nil)
+      if res != bytesNeeded:
+        err(osLastError())
+      else:
+        # We need to strip trailing `\x00`.
+        for i in countdown(len(buffer) - 1, 0):
+          if buffer[i] != '\x00':
+            buffer.setLen(i + 1)
+            break
+        ok(buffer)
+
+  proc free*(w: LPWSTR) =
+    if not(isNil(w)):
+      dealloc(cast[pointer](w))
+
   proc createOsPipe*(readset, writeset: set[DescriptorFlag]
                     ): Result[tuple[read: HANDLE, write: HANDLE], OSErrorCode] =
     var
       pipeIn, pipeOut: HANDLE
-      pipeName: string
+      widePipeName: LPWSTR
       uniq = 0'u64
       rsa = getSecurityAttributes(DescriptorFlag.CloseOnExec notin readset)
       wsa = getSecurityAttributes(DescriptorFlag.CloseOnExec notin writeset)
 
     while true:
       queryPerformanceCounter(uniq)
-      pipeName = PipeHeaderName & Base10.toString(uniq)
+      let pipeName = PipeHeaderName & Base10.toString(uniq)
 
       let openMode =
         if DescriptorFlag.NonBlock in readset:
@@ -92,12 +136,18 @@ when defined(windows):
 
       let pipeMode = osdefs.PIPE_TYPE_BYTE or osdefs.PIPE_READMODE_BYTE or
                      osdefs.PIPE_WAIT
-
-      pipeIn = createNamedPipe(newWideCString(pipeName), openMode, pipeMode,
+      widePipeName =
+        block:
+          let res = pipeName.toWideString()
+          if res.isErr():
+            return err(res.error())
+          res.get()
+      pipeIn = createNamedPipe(widePipeName, openMode, pipeMode,
                                1'u32, osdefs.DEFAULT_PIPE_SIZE,
                                osdefs.DEFAULT_PIPE_SIZE, 0'u32, addr rsa)
       if pipeIn == osdefs.INVALID_HANDLE_VALUE:
         let errorCode = osLastError()
+        free(widePipeName)
         # If error in {ERROR_ACCESS_DENIED, ERROR_PIPE_BUSY}, then named pipe
         # with such name already exists.
         if (errorCode == osdefs.ERROR_ACCESS_DENIED) or
@@ -115,11 +165,13 @@ when defined(windows):
       else:
         DWORD(0)
 
-    pipeOut = createFile(newWideCString(pipeName), openMode, 0, addr wsa,
+    pipeOut = createFile(widePipeName, openMode, 0, addr wsa,
                          osdefs.OPEN_EXISTING, openFlags, HANDLE(0))
     if pipeOut == osdefs.INVALID_HANDLE_VALUE:
+      let errorCode = osLastError()
+      free(widePipeName)
       discard closeFd(pipeIn)
-      return err(osLastError())
+      return err(errorCode)
 
     var ovl = osdefs.OVERLAPPED()
     let res =
@@ -146,9 +198,11 @@ when defined(windows):
           else:
             true
       if cleanupFlag:
+        let errorCode = osLastError()
+        free(widePipeName)
         discard closeFd(pipeIn)
         discard closeFd(pipeOut)
-        return err(osLastError())
+        return err(errorCode)
     ok((read: pipeIn, write: pipeOut))
 
 else:

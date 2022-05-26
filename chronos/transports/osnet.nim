@@ -17,7 +17,7 @@ else:
 
 import std/algorithm
 from std/strutils import toHex
-import ".."/osdefs
+import ".."/[osdefs, osutils]
 import ./ipnet
 export ipnet
 
@@ -1227,20 +1227,11 @@ elif defined(windows):
       StatusUnknown
 
   proc `$`(bstr: ptr WCHAR): string =
-    var buffer: char
-    var count = osdefs.wideCharToMultiByte(CP_UTF8, 0, cast[WideCString](bstr),
-                                           -1, addr(buffer), 0, nil, nil)
-    if count > 0:
-      var res = newString(count + 8)
-      let wres = osdefs.wideCharToMultiByte(CP_UTF8, 0, cast[WideCString](bstr),
-                                            -1, addr(res[0]), count, nil, nil)
-      if wres > 0:
-        res.setLen(wres - 1)
-      else:
-        res.setLen(0)
-      res
-    else:
+    let res = toString(bstr)
+    if res.isErr():
       ""
+    else:
+      res.get()
 
   proc isVista(): bool =
     var ver: OSVERSIONINFO

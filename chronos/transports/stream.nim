@@ -787,12 +787,18 @@ elif defined(windows):
         # Continue only if `retFuture` is not cancelled.
         if not(retFuture.finished()):
           var pipeSuffix = $cast[cstring](unsafeAddr address.address_un[0])
-          var pipeName = newWideCString(r"\\.\pipe\" & pipeSuffix[1 .. ^1])
+          let pipeName =
+            block:
+              let res = toWideString(PipeHeaderName & pipeSuffix[1 .. ^1])
+              if res.isErr():
+                retFuture.fail(getTransportOsError(res.error()))
+              res.get()
           let genericFlags = osdefs.GENERIC_READ or osdefs.GENERIC_WRITE
           let shareFlags = osdefs.FILE_SHARE_READ or osdefs.FILE_SHARE_WRITE
           pipeHandle = createFile(pipeName, genericFlags, shareFlags,
                                   nil, osdefs.OPEN_EXISTING,
                                   osdefs.FILE_FLAG_OVERLAPPED, HANDLE(0))
+          free(pipeName)
           if pipeHandle == osdefs.INVALID_HANDLE_VALUE:
             let err = osLastError()
             if uint32(err) == osdefs.ERROR_PIPE_BUSY:
@@ -816,7 +822,12 @@ elif defined(windows):
 
   proc createAcceptPipe(server: StreamServer): Result[AsyncFD, OSErrorCode] =
     let pipeSuffix = $cast[cstring](addr server.local.address_un)
-    let pipeName = newWideCString(r"\\.\pipe\" & pipeSuffix)
+    let pipeName =
+      block:
+        let res = toWideString(PipeHeaderName & pipeSuffix)
+        if res.isErr():
+          return err(res.error())
+        res.get()
     var openMode = osdefs.PIPE_ACCESS_DUPLEX or osdefs.FILE_FLAG_OVERLAPPED
     if FirstPipe notin server.flags:
       openMode = openMode or osdefs.FILE_FLAG_FIRST_PIPE_INSTANCE
@@ -828,6 +839,7 @@ elif defined(windows):
                                      DWORD(server.bufferSize),
                                      DWORD(server.bufferSize),
                                      DWORD(0), nil)
+    free(pipeName)
     if pipeHandle == osdefs.INVALID_HANDLE_VALUE:
       return err(osLastError())
 
@@ -883,8 +895,13 @@ elif defined(windows):
         ## Initiation
         if server.status notin {ServerStatus.Stopped, ServerStatus.Closed}:
           server.apending = true
-          var pipeSuffix = $cast[cstring](addr server.local.address_un)
-          var pipeName = newWideCString(r"\\.\pipe\" & pipeSuffix[1 .. ^1])
+          let pipeSuffix = $cast[cstring](addr server.local.address_un)
+          let pipeName =
+            block:
+              let res = toWideString(PipeHeaderName & pipeSuffix[1 .. ^1])
+              if res.isErr():
+                raiseAssert osErrorMsg(res.error())
+              res.get()
           var openMode = osdefs.PIPE_ACCESS_DUPLEX or
                          osdefs.FILE_FLAG_OVERLAPPED
           if FirstPipe notin server.flags:
@@ -897,6 +914,7 @@ elif defined(windows):
                                            DWORD(server.bufferSize),
                                            DWORD(server.bufferSize),
                                            DWORD(0), nil)
+          free(pipeName)
           if pipeHandle == osdefs.INVALID_HANDLE_VALUE:
             raiseAssert osErrorMsg(osLastError())
           server.sock = AsyncFD(pipeHandle)

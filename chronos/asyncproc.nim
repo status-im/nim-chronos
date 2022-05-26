@@ -379,41 +379,19 @@ when defined(windows):
     else:
       getStdHandle(STD_ERROR_HANDLE)
 
-  proc toString*(w: WideCString): AsyncProcessResult[string] =
-    if isNil(w):
-      ok("")
-    else:
-      let bytesNeeded = wideCharToMultiByte(CP_UTF8, 0'u32, w, cint(-1), nil,
-                                            cint(0), nil, nil)
-      if bytesNeeded <= cint(0):
-        return err(osLastError())
-
-      var buffer = newString(bytesNeeded)
-      let res = wideCharToMultiByte(CP_UTF8, 0'u32, w, cint(-1),
-                                    addr buffer[0], cint(len(buffer)), nil, nil)
-      if res != bytesNeeded:
-        err(osLastError())
-      else:
-        # We need to strip trailing `\x00`.
-        for i in countdown(len(buffer) - 1, 0):
-          if buffer[i] != '\x00':
-            buffer.setLen(i + 1)
-            break
-        ok(buffer)
-
   proc getProcessEnvironment*(): StringTableRef =
     var res = newStringTable(modeCaseInsensitive)
     var env = getEnvironmentStringsW()
     if isNil(env):
       return res
     var slider = env
-    while int(slider[0]) != 0:
-      let pos = wcschr(slider, Utf16Char(0x0000))
+    while int(slider[]) != 0:
+      let pos = wcschr(slider, WCHAR(0x0000))
       let line =
         block:
           let res = slider.toString()
           if res.isErr(): "" else: res.get()
-      slider = cast[WideCString](cast[ByteAddress](pos) + sizeof(Utf16Char))
+      slider = cast[LPWSTR](cast[ByteAddress](pos) + sizeof(WCHAR))
       if len(line) > 0:
         let delim = line.find('=')
         if delim > 0:
@@ -432,7 +410,7 @@ when defined(windows):
       res.add(quoteShell(args[i]))
     res
 
-  proc buildEnvironment(env: StringTableRef): WideCString =
+  proc buildEnvironment(env: StringTableRef): Result[LPWSTR, OSErrorCode] =
     var str: string
     for key, value in pairs(env):
       doAssert('=' notin key, "`=` must not be present in key name")
@@ -441,7 +419,7 @@ when defined(windows):
       str.add(value)
       str.add('\x00')
     str.add("\x00\x00")
-    newWideCString(str)
+    toWideString(str)
 
   proc closeThreadAndProcessHandle(p: AsyncProcessRef
                                   ): AsyncProcessResult[void] =
@@ -481,12 +459,20 @@ when defined(windows):
           buildCommandLine(command, arguments)
       workingDirectory =
         if len(workingDir) > 0:
-          newWideCString(workingDir)
+          let res = workingDir.toWideString()
+          if res.isErr():
+            raiseAsyncProcessError("Unable to proceed working directory path",
+                                   res.error())
+          res.get()
         else:
-          cast[WideCString](nil)
+          nil
       environment =
         if not(isNil(environment)):
-          buildEnvironment(environment)
+          let res = buildEnvironment(environment)
+          if res.isErr():
+            raiseAsyncProcessError("Unable to build child process environment",
+                                   res.error())
+          res.get()
         else:
           nil
       flags = CREATE_UNICODE_ENVIRONMENT
@@ -507,9 +493,17 @@ when defined(windows):
     if AsyncProcessOption.EchoCommand in options:
       echo commandLine
 
+    let wideCommandLine =
+      block:
+        let res = commandLine.toWideString()
+        if res.isErr():
+          raiseAsyncProcessError("Unable to proceed command line",
+                                 res.error())
+        res.get()
+
     let res = createProcess(
       nil,
-      newWideCString(commandLine),
+      wideCommandLine,
       addr psa, addr tsa,
       TRUE, # NOTE: This is very important flag and MUST not be modified.
             # All overloaded pipe handles will not work if this flag will be
@@ -519,6 +513,10 @@ when defined(windows):
       workingDirectory,
       startupInfo, procInfo
     )
+
+    if(not(isNil(environment))):
+      free(environment)
+    free(wideCommandLine)
 
     var currentError = osLastError()
     if res == FALSE:

@@ -63,6 +63,7 @@ when defined(windows):
     ULONG_PTR* = uint
     PULONG_PTR* = ptr uint
     WCHAR* = distinct uint16
+    LPWSTR* = ptr WCHAR
     GROUP* = uint32
 
     WSAData* {.importc: "WSADATA", header: "winsock2.h".} = object
@@ -293,11 +294,11 @@ when defined(windows):
   proc getVersionEx*(lpVersionInfo: ptr OSVERSIONINFO): WINBOOL {.
        stdcall, dynlib: "kernel32", importc: "GetVersionExW", sideEffect.}
 
-  proc createProcess*(lpApplicationName, lpCommandLine: WideCString,
+  proc createProcess*(lpApplicationName, lpCommandLine: LPWSTR,
                       lpProcessAttributes: ptr SECURITY_ATTRIBUTES,
                       lpThreadAttributes: ptr SECURITY_ATTRIBUTES,
                       bInheritHandles: WINBOOL, dwCreationFlags: DWORD,
-                      lpEnvironment, lpCurrentDirectory: WideCString,
+                      lpEnvironment, lpCurrentDirectory: LPWSTR,
                       lpStartupInfo: var STARTUPINFO,
                       lpProcessInformation: var PROCESS_INFORMATION): WINBOOL {.
        stdcall, dynlib: "kernel32", importc: "CreateProcessW", sideEffect.}
@@ -327,19 +328,19 @@ when defined(windows):
        stdcall, dynlib: "kernel32", importc: "FlushFileBuffers", sideEffect.}
 
   proc getCurrentDirectory*(nBufferLength: DWORD,
-                            lpBuffer: WideCString): DWORD {.
+                            lpBuffer: LPWSTR): DWORD {.
        stdcall, dynlib: "kernel32", importc: "GetCurrentDirectoryW",
        sideEffect.}
 
-  proc setCurrentDirectory*(lpPathName: WideCString): DWORD {.
+  proc setCurrentDirectory*(lpPathName: LPWSTR): DWORD {.
        stdcall, dynlib: "kernel32", importc: "SetCurrentDirectoryW",
        sideEffect.}
 
-  proc setEnvironmentVariable*(lpName, lpValue: WideCString): DWORD {.
+  proc setEnvironmentVariable*(lpName, lpValue: LPWSTR): DWORD {.
        stdcall, dynlib: "kernel32", importc: "SetEnvironmentVariableW",
        sideEffect.}
 
-  proc getModuleFileName*(handle: HANDLE, buf: WideCString,
+  proc getModuleFileName*(handle: HANDLE, buf: LPWSTR,
                           size: DWORD): DWORD {.
        stdcall, dynlib: "kernel32", importc: "GetModuleFileNameW", sideEffect.}
 
@@ -505,20 +506,20 @@ when defined(windows):
 
   proc createEvent*(lpEventAttributes: ptr SECURITY_ATTRIBUTES,
                     bManualReset: DWORD, bInitialState: DWORD,
-                    lpName: WideCString): HANDLE {.
+                    lpName: LPWSTR): HANDLE {.
        stdcall, dynlib: "kernel32", importc: "CreateEventW", sideEffect.}
 
   proc setEvent*(hEvent: HANDLE): WINBOOL {.
        stdcall, dynlib: "kernel32", importc: "SetEvent", sideEffect.}
 
-  proc createNamedPipe*(lpName: WideCString,
+  proc createNamedPipe*(lpName: LPWSTR,
                         dwOpenMode, dwPipeMode, nMaxInstances, nOutBufferSize,
                         nInBufferSize, nDefaultTimeOut: DWORD,
                         lpSecurityAttributes: ptr SECURITY_ATTRIBUTES
                        ): HANDLE {.
        stdcall, dynlib: "kernel32", importc: "CreateNamedPipeW", sideEffect.}
 
-  proc createFile*(lpFileName: WideCString, dwDesiredAccess, dwShareMode: DWORD,
+  proc createFile*(lpFileName: LPWSTR, dwDesiredAccess, dwShareMode: DWORD,
                    lpSecurityAttributes: pointer,
                    dwCreationDisposition, dwFlagsAndAttributes: DWORD,
                    hTemplateFile: HANDLE): HANDLE {.
@@ -563,11 +564,16 @@ when defined(windows):
        sideEffect.}
 
   proc wideCharToMultiByte*(codePage: uint32, dwFlags: uint32,
-                            lpWideCharStr: WideCString, cchWideChar: cint,
+                            lpWideCharStr: LPWSTR, cchWideChar: cint,
                             lpMultiByteStr: ptr char, cbMultiByte: cint,
                             lpDefaultChar: ptr char,
                             lpUsedDefaultChar: ptr uint32): cint {.
        stdcall, dynlib: "kernel32", importc: "WideCharToMultiByte", sideEffect.}
+
+  proc multiByteToWideChar*(codePage: uint32, dwFlags: uint32,
+                            lpMultiByteStr: ptr char, cbMultiByte: cint,
+                            lpWideCharStr: LPWSTR, cchWideChar: cint): cint {.
+       stdcall, dynlib: "kernel32", importc: "MultiByteToWideChar", sideEffect.}
 
   proc getBestRouteXp*(dwDestAddr: uint32, dwSourceAddr: uint32,
                        pBestRoute: ptr MibIpForwardRow): uint32 {.
@@ -581,15 +587,15 @@ when defined(windows):
        stdcall, dynlib: "kernel32", importc: "QueryPerformanceFrequency",
        sideEffect.}
 
-  proc getEnvironmentStringsW*(): WideCString {.
+  proc getEnvironmentStringsW*(): LPWSTR {.
        stdcall, dynlib: "kernel32", importc: "GetEnvironmentStringsW",
        sideEffect.}
 
-  proc freeEnvironmentStringsW*(penv: WideCString): WINBOOL {.
+  proc freeEnvironmentStringsW*(penv: LPWSTR): WINBOOL {.
        stdcall, dynlib: "kernel32", importc: "FreeEnvironmentStringsW",
        sideEffect.}
 
-  proc wcschr*(ws: WideCString, wc: Utf16Char): WideCString {.
+  proc wcschr*(ws: LPWSTR, wc: WCHAR): LPWSTR {.
        stdcall, dynlib: "ntdll", importc: "wcschr", sideEffect.}
 
   template WSAIORW*(x, y): untyped = (IOC_INOUT or x or y)
