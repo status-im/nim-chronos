@@ -624,11 +624,11 @@ when defined(linux):
     address.family = cushort(AF_NETLINK)
     address.groups = 0
     address.pid = cast[uint32](pid)
-    var res = posix.socket(AF_NETLINK, posix.SOCK_DGRAM, NETLINK_ROUTE)
+    var res = osdefs.socket(AF_NETLINK, osdefs.SOCK_DGRAM, NETLINK_ROUTE)
     if res != SocketHandle(-1):
-      if posix.bindSocket(res, cast[ptr SockAddr](addr address),
+      if osdefs.bindSocket(res, cast[ptr SockAddr](addr address),
                           SockLen(sizeof(Sockaddr_nl))) != 0:
-        discard posix.close(res)
+        discard osdefs.close(res)
         res = SocketHandle(-1)
     res
 
@@ -655,7 +655,7 @@ when defined(linux):
     rmsg.msg_iovlen = 1
     rmsg.msg_name = cast[pointer](addr address)
     rmsg.msg_namelen = SockLen(sizeof(Sockaddr_nl))
-    let res = posix.sendmsg(fd, addr rmsg, 0).TIovLen
+    let res = osdefs.sendmsg(fd, addr rmsg, 0).TIovLen
     (res == iov.iov_len)
 
   proc sendRouteMessage(fd: SocketHandle, pid: Pid, seqno: uint32,
@@ -683,14 +683,14 @@ when defined(linux):
     req.msg.rtm_flags = RTM_F_LOOKUP_TABLE
     attr.rta_type = RTA_DST
     if dest.family == AddressFamily.IPv4:
-      req.msg.rtm_family = byte(posix.AF_INET)
+      req.msg.rtm_family = byte(osdefs.AF_INET)
       attr.rta_len = cast[cushort](RTA_LENGTH(4))
       copyMem(RTA_DATA(attr), cast[ptr byte](unsafeAddr dest.address_v4[0]), 4)
       req.hdr.nlmsg_len = uint32(NLMSG_ALIGN(uint(req.hdr.nlmsg_len)) +
                                  RTA_ALIGN(uint(attr.rta_len)))
       req.msg.rtm_dst_len = 4 * 8
     elif dest.family == AddressFamily.IPv6:
-      req.msg.rtm_family = byte(posix.AF_INET6)
+      req.msg.rtm_family = byte(osdefs.AF_INET6)
       attr.rta_len = cast[cushort](RTA_LENGTH(16))
       copyMem(RTA_DATA(attr), cast[ptr byte](unsafeAddr dest.address_v6[0]), 16)
       req.hdr.nlmsg_len = uint32(NLMSG_ALIGN(uint(req.hdr.nlmsg_len)) +
@@ -703,7 +703,7 @@ when defined(linux):
     rmsg.msg_iovlen = 1
     rmsg.msg_name = cast[pointer](addr address)
     rmsg.msg_namelen = SockLen(sizeof(Sockaddr_nl))
-    let res = posix.sendmsg(fd, addr rmsg, 0).TIovLen
+    let res = osdefs.sendmsg(fd, addr rmsg, 0).TIovLen
     (res == iov.iov_len)
 
   proc readNetlinkMessage(fd: SocketHandle, data: var seq[byte]): bool =
@@ -718,7 +718,7 @@ when defined(linux):
     rmsg.msg_iovlen = 1
     rmsg.msg_name = cast[pointer](addr address)
     rmsg.msg_namelen = SockLen(sizeof(Sockaddr_nl))
-    var length = posix.recvmsg(fd, addr rmsg, 0)
+    var length = osdefs.recvmsg(fd, addr rmsg, 0)
     if length >= 0:
       data.setLen(length)
       true
@@ -760,11 +760,11 @@ when defined(linux):
     res
 
   proc getAddress(f: int, p: pointer): TransportAddress =
-    if f == posix.AF_INET:
+    if f == osdefs.AF_INET:
       var res = TransportAddress(family: AddressFamily.IPv4)
       copyMem(addr res.address_v4[0], p, len(res.address_v4))
       res
-    elif f == posix.AF_INET6:
+    elif f == osdefs.AF_INET6:
       var res = TransportAddress(family: AddressFamily.IPv6)
       copyMem(addr res.address_v6[0], p, len(res.address_v6))
       res
@@ -913,7 +913,7 @@ when defined(linux):
   proc getInterfaces*(): seq[NetworkInterface] {.raises: [Defect].} =
     ## Return list of available interfaces.
     var res: seq[NetworkInterface]
-    var pid = posix.getpid()
+    var pid = osdefs.getpid()
     var sock = createNetlinkSocket(pid)
     if sock == InvalidSocketHandle:
       return res
@@ -921,20 +921,20 @@ when defined(linux):
       res = getLinks(sock, pid)
       getAddresses(sock, pid, res)
       sort(res, cmp)
-      discard posix.close(sock)
+      discard osdefs.close(sock)
       res
 
   proc getBestRoute*(address: TransportAddress): Route {.raises: [Defect].} =
     ## Return best applicable OS route, which will be used for connecting to
     ## address ``address``.
-    var pid = posix.getpid()
+    var pid = osdefs.getpid()
     var res = Route()
     var sock = createNetlinkSocket(pid)
     if sock == InvalidSocketHandle:
       res
     else:
       res = getRoute(sock, pid, address)
-      discard posix.close(sock)
+      discard osdefs.close(sock)
       res
 
 elif defined(macosx) or defined(macos) or defined(bsd):
@@ -1094,20 +1094,20 @@ elif defined(macosx) or defined(macos) or defined(bsd):
             res[i].maclen = int(link.sdl_alen)
             res[i].ifType = toInterfaceType(data.ifi_type)
             res[i].state = toInterfaceState(ifap.ifa_flags)
-            res[i].mtu = int(data.ifi_mtu)
-          elif family == posix.AF_INET:
+            res[i].mtu = cast[int](data.ifi_mtu)
+          elif family == osdefs.AF_INET:
             fromSAddr(cast[ptr Sockaddr_storage](ifap.ifa_addr),
                       SockLen(sizeof(Sockaddr_in)), ifaddress.host)
-          elif family == posix.AF_INET6:
+          elif family == osdefs.AF_INET6:
             fromSAddr(cast[ptr Sockaddr_storage](ifap.ifa_addr),
                       SockLen(sizeof(Sockaddr_in6)), ifaddress.host)
         if not isNil(ifap.ifa_netmask):
           var na: TransportAddress
-          var family = cint(ifap.ifa_netmask.sa_family)
-          if family == posix.AF_INET:
+          var family = cast[cint](ifap.ifa_netmask.sa_family)
+          if family == osdefs.AF_INET:
             fromSAddr(cast[ptr Sockaddr_storage](ifap.ifa_netmask),
                       SockLen(sizeof(Sockaddr_in)), na)
-          elif family == posix.AF_INET6:
+          elif family == osdefs.AF_INET6:
             fromSAddr(cast[ptr Sockaddr_storage](ifap.ifa_netmask),
                       SockLen(sizeof(Sockaddr_in6)), na)
           ifaddress.net = IpNet.init(ifaddress.host, na)
@@ -1138,15 +1138,15 @@ elif defined(macosx) or defined(macos) or defined(bsd):
     var sock: cint
     var msg: RtMessage
     var res = Route()
-    var pid = posix.getpid()
+    var pid = osdefs.getpid()
 
     if address.family notin {AddressFamily.IPv4, AddressFamily.IPv6}:
       return
 
     if address.family == AddressFamily.IPv4:
-      sock = cint(posix.socket(PF_ROUTE, posix.SOCK_RAW, posix.AF_INET))
+      sock = cint(osdefs.socket(PF_ROUTE, osdefs.SOCK_RAW, osdefs.AF_INET))
     elif address.family == AddressFamily.IPv6:
-      sock = cint(posix.socket(PF_ROUTE, posix.SOCK_RAW, posix.AF_INET6))
+      sock = cint(osdefs.socket(PF_ROUTE, osdefs.SOCK_RAW, osdefs.AF_INET6))
 
     if sock != -1:
       var sastore: Sockaddr_storage
@@ -1163,13 +1163,13 @@ elif defined(macosx) or defined(macos) or defined(bsd):
       msg.rtm.rtm_addrs = RTA_DST
       msg.space[0] = cast[byte](salen)
       msg.rtm.rtm_msglen = uint16(sizeof(RtMessage))
-      let wres = posix.write(sock, addr msg, sizeof(RtMessage))
+      let wres = osdefs.write(sock, addr msg, sizeof(RtMessage))
       if wres >= 0:
         let rres =
           block:
             var pres = 0
             while true:
-              pres = posix.read(sock, addr msg, sizeof(RtMessage))
+              pres = osdefs.read(sock, addr msg, sizeof(RtMessage))
               if ((pres >= 0) and (msg.rtm.rtm_pid == pid) and
                  (msg.rtm.rtm_seq == 0xCAFE)) or (pres < 0):
                 break
@@ -1199,7 +1199,7 @@ elif defined(macosx) or defined(macos) or defined(bsd):
                 if a.host.family == address.family:
                   res.source = a.host
               break
-      discard posix.close(sock)
+      discard osdefs.close(sock)
     res
 
 elif defined(windows):
