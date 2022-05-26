@@ -13,6 +13,8 @@ elif [ "$1" == "bigdata" ]; then
   do
     echo "ALICEWASBEGINNINGTOGETVERYTIREDOFSITTINGBYHERSISTERONTHEBANKANDO"
   done
+elif [ "$1" == "environ" ]; then
+  echo $CHRONOSASYNC
 else
   echo "arguments missing"
 fi

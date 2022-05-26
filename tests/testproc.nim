@@ -246,6 +246,28 @@ suite "Asynchronous process management test suite":
     finally:
       await process.closeWait()
 
+  asyncTest "Child process environment test":
+    let command =
+      when defined(windows):
+        ("tests\\testproc.bat", "environ", 0, "CHILDPROCESSTEST\r\n")
+      else:
+        ("tests/testproc.sh", "environ", 0, "CHILDPROCESSTEST")
+
+    let env = getProcessEnvironment()
+    env["CHRONOSASYNC"] = "CHILDPROCESSTEST"
+    let process = await startProcess(command[0], arguments = @[command[1]],
+                                     environment = env,
+                                     stdoutHandle = AsyncProcess.Pipe)
+    try:
+      let outBytesFut = process.stdoutStream.read()
+      let res = await process.waitForExit(InfiniteDuration)
+      let outBytes = await outBytesFut
+      check:
+        res == command[2]
+        string.fromBytes(outBytes) == command[3]
+    finally:
+      await process.closeWait()
+
   test "getProcessEnvironment() test":
     let env = getProcessEnvironment()
     when defined(windows):
