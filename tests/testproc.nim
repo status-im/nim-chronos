@@ -229,20 +229,11 @@ suite "Asynchronous process management test suite":
     env["CHRONOSASYNC"] = "CHILDPROCESSTEST"
     let process = await startProcess(command[0], arguments = @[command[1]],
                                      environment = env,
-                                     stdoutHandle = AsyncProcess.Pipe,
-                                     stderrHandle = AsyncProcess.Pipe)
+                                     stdoutHandle = AsyncProcess.Pipe)
     try:
       let outBytesFut = process.stdoutStream.read()
-      let errBytesFut = process.stderrStream.read()
       let res = await process.waitForExit(InfiniteDuration)
-      await allFutures(outBytesFut, errBytesFut)
-      let outBytes = outBytesFut.read()
-      let errBytes = errBytesFut.read()
-      echo "STDERR ================= "
-      echo string.fromBytes(outBytes)
-      echo "STDOUT ================= "
-      echo string.fromBytes(errBytes)
-      echo "RESULT = ", res
+      let outBytes = await outBytesFut
       check:
         res == command[2]
         string.fromBytes(outBytes) == command[3]
