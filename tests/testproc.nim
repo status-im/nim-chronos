@@ -218,34 +218,6 @@ suite "Asynchronous process management test suite":
     finally:
       await process.closeWait()
 
-  asyncTest "terminate() test":
-    let command =
-      when defined(windows):
-        ("tests\\testproc.bat", "timeout10", 0)
-      else:
-        ("tests/testproc.sh", "timeout10", 143) # 128 + SIGTERM
-    let process = await startProcess(command[0], arguments = @[command[1]])
-    try:
-      check process.terminate().isOk()
-      let res = await process.waitForExit(InfiniteDuration)
-      check res == command[2]
-    finally:
-      await process.closeWait()
-
-  asyncTest "kill() test":
-    let command =
-      when defined(windows):
-        ("tests\\testproc.bat", "timeout10", 0)
-      else:
-        ("tests/testproc.sh", "timeout10", 137) # 128 + SIGKILL
-    let process = await startProcess(command[0], arguments = @[command[1]])
-    try:
-      check process.kill().isOk()
-      let res = await process.waitForExit(InfiniteDuration)
-      check res == command[2]
-    finally:
-      await process.closeWait()
-
   asyncTest "Child process environment test":
     let command =
       when defined(windows):
@@ -283,6 +255,34 @@ suite "Asynchronous process management test suite":
       check len(env["SYSTEMROOT"]) > 0
     else:
       check len(env["USER"]) > 0
+
+  asyncTest "terminate() test":
+    let command =
+      when defined(windows):
+        ("tests\\testproc.bat", "timeout10", 0)
+      else:
+        ("tests/testproc.sh", "timeout10", 143) # 128 + SIGTERM
+    let process = await startProcess(command[0], arguments = @[command[1]])
+    try:
+      check process.terminate().isOk()
+      let res = await process.waitForExit(InfiniteDuration)
+      check res == command[2]
+    finally:
+      await process.closeWait()
+
+  asyncTest "kill() test":
+    let command =
+      when defined(windows):
+        ("tests\\testproc.bat", "timeout10", 0)
+      else:
+        ("tests/testproc.sh", "timeout10", 137) # 128 + SIGKILL
+    let process = await startProcess(command[0], arguments = @[command[1]])
+    try:
+      check process.kill().isOk()
+      let res = await process.waitForExit(InfiniteDuration)
+      check res == command[2]
+    finally:
+      await process.closeWait()
 
   test "File descriptors leaks test":
     when defined(windows):
