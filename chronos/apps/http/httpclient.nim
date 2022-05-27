@@ -274,6 +274,13 @@ proc setupHttpClientResponseTracker(): HttpClientTracker {.gcsafe.} =
   addTracker(HttpClientResponseTrackerName, res)
   res
 
+template checkClosed(reqresp: untyped): untyped =
+  if reqresp.connection.state in {HttpClientConnectionState.Closing,
+                                  HttpClientConnectionState.Closed}:
+    let e = newHttpUseClosedError()
+    reqresp.setError(e)
+    raise e
+
 proc new*(t: typedesc[HttpSessionRef],
           flags: HttpClientFlags = {},
           maxRedirections = HttpMaxRedirections,
@@ -1073,11 +1080,7 @@ proc finish*(request: HttpClientRequestRef): Future[HttpClientResponseRef] {.
   ## Finish sending request and receive response.
   doAssert(not(isNil(request.connection)),
            "Request missing connection instance")
-  if request.connection.state in {HttpClientConnectionState.Closing,
-                                  HttpClientConnectionState.Closed}:
-    let e = newHttpUseClosedError()
-    request.setError(e)
-    raise e
+  request.checkClosed()
   doAssert(request.state == HttpReqRespState.Open,
            "Request's state is " & $request.state)
   doAssert(request.connection.state ==
@@ -1145,6 +1148,7 @@ proc finish*(response: HttpClientResponseRef) {.async.} =
   if response.state == HttpReqRespState.Open:
     doAssert(not(isNil(response.connection)),
              "Response missing connection instance")
+    response.checkClosed()
     doAssert(response.connection.state ==
              HttpClientConnectionState.ResponseBodyReceiving,
              "Connection state is " & $response.connection.state)
