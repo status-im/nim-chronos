@@ -1119,6 +1119,7 @@ proc getBodyReader*(response: HttpClientResponseRef): HttpBodyReader =
   ## leaks.
   doAssert(not(isNil(response.connection)),
            "Response missing connection instance")
+  response.checkClosed()
   doAssert(response.state == HttpReqRespState.Open,
            "Response's state is " & $response.state)
   doAssert(response.connection.state in
