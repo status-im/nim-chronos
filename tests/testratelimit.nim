@@ -6,7 +6,6 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 
-import std/sugar
 import unittest
 import ../chronos
 import ../chronos/ratelimit
@@ -32,9 +31,9 @@ suite "Token Bucket":
     var bucket = TokenBucket.init(1000, 1)
     check: bucket.tryConsume(1000) == true
 
-    var toWait = collect(newSeq):
-      for _ in 0..<150:
-        bucket.consume(10)
+    var toWait = newSeq[Future[void]]()
+    for _ in 0..<150:
+      toWait.add(bucket.consume(10))
 
     let start = Moment.now()
     waitFor(allFutures(toWait))
