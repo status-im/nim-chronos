@@ -41,6 +41,11 @@ suite "Token Bucket":
 
     check: duration in 1400.milliseconds .. 1600.milliseconds
 
+  test "Over budget async":
+    var bucket = TokenBucket.new(100, 100)
+    # Consume 10* the budget cap
+    waitFor(bucket.consume(1000).wait(100.milliseconds))
+
   test "Sync manual replenish":
     var bucket = TokenBucket.new(1000, 0)
     check:

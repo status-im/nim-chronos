@@ -17,6 +17,7 @@ type
   BucketWaiter = object
     future: Future[void]
     value: int
+    alreadyConsumed: int
 
   TokenBucket* = ref object
     budget: int
@@ -53,17 +54,22 @@ proc worker(bucket: TokenBucket) {.async.} =
 
   while bucket.pendingRequests.len > 0:
     bucket.manuallyReplenished.clear()
-    let waiter = bucket.pendingRequests[0]
+    template waiter: untyped = bucket.pendingRequests[0]
 
     if bucket.tryConsume(waiter.value):
       waiter.future.complete()
       bucket.pendingRequests.delete(0)
       continue
 
+    waiter.value -= bucket.budget
+    waiter.alreadyConsumed.inc(bucket.budget)
+    bucket.budget = 0
+
     let eventWaiter = bucket.manuallyReplenished.wait()
     if bucket.fillPerMs > 0:
       let
-        timeToZero = ((waiter.value - bucket.budget) div bucket.fillPerMs) + 1
+        nextCycleValue = min(waiter.value, bucket.budgetCap)
+        timeToZero = (nextCycleValue div bucket.fillPerMs) + 1
         sleeper = sleepAsync(milliseconds(timeToZero))
       await sleeper or eventWaiter
       sleeper.cancel()
@@ -87,6 +93,7 @@ proc consume*(bucket: TokenBucket, tokens: int): Future[void] =
   proc cancellation(udata: pointer) =
     for index in 0..<bucket.pendingRequests.len:
       if bucket.pendingRequests[index].future == retFuture:
+        bucket.budget.inc(bucket.pendingRequests[index].alreadyConsumed)
         bucket.pendingRequests.delete(index)
         if index == 0:
           bucket.manuallyReplenished.fire()
