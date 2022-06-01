@@ -14,13 +14,20 @@ import timer
 export timer
 
 type
-  TokenBucket* = object
+  BucketWaiter = object
+    future: Future[void]
+    value: int
+
+  TokenBucket* = ref object
     budget: int
     budgetCap: int
     lastUpdate: Moment
     fillPerMs: int
+    workFuture: Future[void]
+    pendingRequests: seq[BucketWaiter]
+    manuallyReplenished: AsyncEvent
 
-proc update(bucket: var TokenBucket) =
+proc update(bucket: TokenBucket) =
   let
     currentTime = Moment.now()
     timeDelta = milliseconds(currentTime - bucket.lastUpdate).int
@@ -29,7 +36,7 @@ proc update(bucket: var TokenBucket) =
   bucket.lastUpdate += timeDelta.milliseconds
   bucket.budget = min(bucket.budgetCap, bucket.budget + replenished)
 
-proc tryConsume*(bucket: var TokenBucket, tokens: int): bool =
+proc tryConsume*(bucket: TokenBucket, tokens: int): bool =
   ## If `tokens` are available, consume them,
   ## Otherwhise, return false.
 
@@ -41,27 +48,59 @@ proc tryConsume*(bucket: var TokenBucket, tokens: int): bool =
   else:
     false
 
-proc consume*(bucket: var TokenBucket, tokens: int): Future[void] =
+proc worker(bucket: TokenBucket) {.async.} =
+  defer: bucket.workFuture = nil
+
+  while bucket.pendingRequests.len > 0:
+    bucket.manuallyReplenished.clear()
+    let waiter = bucket.pendingRequests[0]
+
+    if bucket.tryConsume(waiter.value):
+      waiter.future.complete()
+      bucket.pendingRequests.delete(0)
+      continue
+
+    let eventWaiter = bucket.manuallyReplenished.wait()
+    if bucket.fillPerMs > 0:
+      let
+        timeToZero = ((waiter.value - bucket.budget) div bucket.fillPerMs) + 1
+        sleeper = sleepAsync(milliseconds(timeToZero))
+      await sleeper or eventWaiter
+      sleeper.cancel()
+      eventWaiter.cancel()
+    else:
+      await eventWaiter
+
+proc consume*(bucket: TokenBucket, tokens: int): Future[void] =
   ## Wait for `tokens` to be available, and consume them.
-  ##
-  ## `tokens` is not limited to the bucket cap
-  doAssert(bucket.fillPerMs > 0, "consume is only available on autofilled buckets")
 
-  if bucket.tryConsume(tokens):
-    result = newFuture[void]("TokenBucket.consume")
-    result.complete()
-    return result
+  let retFuture = newFuture[void]("TokenBucket.consume")
+  if isNil(bucket.workFuture):
+    if bucket.tryConsume(tokens):
+      retFuture.complete()
+      return retFuture
 
-  bucket.budget -= tokens
-  let timeToZero = milliseconds((-bucket.budget) div bucket.fillPerMs)
-  return sleepAsync(timeToZero)
+  bucket.pendingRequests.add(BucketWaiter(future: retFuture, value: tokens))
+  if isNil(bucket.workFuture):
+    bucket.workFuture = worker(bucket)
 
-proc replenish*(bucket: var TokenBucket, tokens: int) =
+  proc cancellation(udata: pointer) =
+    for index in 0..<bucket.pendingRequests.len:
+      if bucket.pendingRequests[index].future == retFuture:
+        bucket.pendingRequests.delete(index)
+        if index == 0:
+          bucket.manuallyReplenished.fire()
+        break
+  retFuture.cancelCallback = cancellation
+  return retFuture
+
+proc replenish*(bucket: TokenBucket, tokens: int) =
   ## Add `tokens` to the budget (capped to the bucket capacity)
   bucket.budget += tokens
   bucket.update()
+  bucket.manuallyReplenished.fire()
 
-proc init*(
+proc new*(
   T: type[TokenBucket],
   budgetCap, fillPerMs: int): T =
   ## Create a TokenBucket
@@ -69,5 +108,6 @@ proc init*(
     budget: budgetCap,
     budgetCap: budgetCap,
     fillPerMs: fillPerMs,
-    lastUpdate: Moment.now()
+    lastUpdate: Moment.now(),
+    manuallyReplenished: newAsyncEvent()
   )
