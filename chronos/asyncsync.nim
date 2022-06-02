@@ -679,8 +679,7 @@ proc close*[T](ab: AsyncEventQueue[T]) =
   for reader in ab.readers.items():
     if not(isNil(reader.waiter)) and not(reader.waiter.finished()):
       reader.waiter.complete()
-  # This could generate leak, shrink() is not yet implemented for sequences.
-  ab.readers.setLen(0)
+  ab.readers.reset()
   ab.queue.clear()
 
 proc closeWait*[T](ab: AsyncEventQueue[T]): Future[void] =
