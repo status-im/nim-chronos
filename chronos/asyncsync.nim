@@ -12,7 +12,7 @@
 
 {.push raises: [Defect].}
 
-import std/[sequtils, deques, tables, typetraits]
+import std/[sequtils, math, deques, tables, typetraits]
 import ./asyncloop
 export asyncloop
 
@@ -55,11 +55,11 @@ type
     queue: Deque[T]
     maxsize: int
 
-  AsyncQueueEmptyError* = object of CatchableError
+  AsyncQueueEmptyError* = object of AsyncError
     ## ``AsyncQueue`` is empty.
-  AsyncQueueFullError* = object of CatchableError
+  AsyncQueueFullError* = object of AsyncError
     ## ``AsyncQueue`` is full.
-  AsyncLockError* = object of CatchableError
+  AsyncLockError* = object of AsyncError
     ## ``AsyncLock`` is either locked or unlocked.
 
   EventBusSubscription*[T] = proc(bus: AsyncEventBus,
@@ -106,6 +106,8 @@ type
     eventName: string
     payload: EventPayloadBase
 
+  AsyncEventQueueFullError* = object of AsyncError
+
   EventQueueKey* = distinct uint64
 
   EventQueueReader* = object
@@ -117,6 +119,7 @@ type
     readers: seq[EventQueueReader]
     queue: Deque[T]
     counter: uint64
+    limit: int
     offset: int
 
 proc newAsyncLock*(): AsyncLock =
@@ -643,9 +646,23 @@ proc getReaderIndex[T](ab: AsyncEventQueue[T], key: EventQueueKey): int =
       return index
   -1
 
-proc newAsyncEventQueue*[T](): AsyncEventQueue[T] =
-  ## Creates new ``AsyncEventBus``.
-  AsyncEventQueue[T](counter: 0'u64, queue: initDeque[T]())
+proc newAsyncEventQueue*[T](limitSize = 0): AsyncEventQueue[T] =
+  ## Creates new ``AsyncEventBus`` maximum size of ``limitSize`` (default is
+  ## ``0`` which means that there no limits).
+  ##
+  ## When number of events emitted exceeds ``limitSize`` - emit() procedure
+  ## will discard new events, consumers which has number of pending events
+  ## more than ``limitSize`` will get ``AsyncEventQueueFullError``
+  ## error.
+  doAssert(limitSize >= 0, "Limit size should be non-negative integer")
+  let queue =
+    if limitSize == 0:
+      initDeque[T]()
+    elif isPowerOfTwo(limitSize + 1):
+      initDeque[T](limitSize + 1)
+    else:
+      initDeque[T](nextPowerOfTwo(limitSize + 1))
+  AsyncEventQueue[T](counter: 0'u64, queue: queue, limit: limitSize)
 
 proc len*[T](ab: AsyncEventQueue[T]): int =
   len(ab.queue)
@@ -670,10 +687,22 @@ proc unregister*[T](ab: AsyncEventQueue[T], key: EventQueueKey) =
 proc emit*[T](ab: AsyncEventQueue[T], data: T) =
   if len(ab.readers) > 0:
     # We enqueue `data` only if there active reader present.
-    ab.queue.addLast(data)
-    for reader in ab.readers.items():
-      if not(isNil(reader.waiter)) and not(reader.waiter.finished()):
-        reader.waiter.complete()
+    let couldEmit =
+      if ab.limit == 0:
+        true
+      else:
+        # Because ab.readers is sequence sorted by `offset`, we will apply our
+        # limit to the most recent consumer.
+        if ab.limit + (ab.readers[^1].offset - ab.offset) < len(ab.queue):
+          false
+        else:
+          true
+
+    if couldEmit:
+      ab.queue.addLast(data)
+      for reader in ab.readers.items():
+        if not(isNil(reader.waiter)) and not(reader.waiter.finished()):
+          reader.waiter.complete()
 
 proc close*[T](ab: AsyncEventQueue[T]) =
   for reader in ab.readers.items():
@@ -727,6 +756,12 @@ proc waitEvents*[T](ab: AsyncEventQueue[T],
       let
         itemsInQueue = length - ab.readers[index].offset
         itemsOffset = ab.readers[index].offset - ab.offset
+
+      if (ab.limit > 0) and (itemsInQueue > ab.limit):
+        raise newException(AsyncEventQueueFullError,
+                           "AsyncEventQueue size exceeds limits")
+
+      let
         itemsCount =
           if eventsCount <= 0:
             itemsInQueue
