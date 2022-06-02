@@ -104,3 +104,26 @@ suite "Macro transformations test suite":
 
     macroAsync2(testMacro2, seq, Opt, Result, OpenObject, cstring)
     check waitFor(testMacro2()).len == 0
+
+  test "Insert CatchableError re-raise":
+    proc swallower {.async.} =
+      while true:
+        try:
+          await sleepAsync(1000.minutes)
+        except CatchableError: discard
+        except Defect as exc: discard
+        except: discard
+        
+
+    var tester = false
+    proc handler {.async.} =
+      while true:
+        try:
+          await sleepAsync(1000.minutes)
+        except CancelledError as exc:
+          tester = true
+          raise exc
+        
+    waitFor(handler().cancelAndWait())
+    waitFor(swallower().cancelAndWait()) # would hang without autoinject
+    check: tester == true

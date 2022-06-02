@@ -41,6 +41,40 @@ proc processBody(node, retFutureSym: NimNode,
   of RoutineNodes-{nnkTemplateDef}:
     # skip all the nested procedure definitions
     return node
+  of nnkTryStmt:
+    var cancelledHandled = false
+    for tryBranch in 1 ..< node.len:
+      for child in node[tryBranch]:
+        case child.kind:
+        of nnkStmtList: break
+        of nnkInfix:
+          if child[1] == ident"CancelledError":
+            cancelledHandled = true
+            break
+        of nnkIdent:
+          if child == ident"CancelledError":
+            cancelledHandled = true
+            break
+        else: discard
+    
+    if not cancelledHandled:
+      result = newNimNode(nnkTryStmt, node)
+      result.add(node[0])
+      result.add(nnkExceptBranch.newTree(
+        nnkInfix.newTree(
+          ident"as",
+          ident"CancelledError",
+          ident"exc"
+        ),
+        nnkStmtList.newTree(
+          nnkRaiseStmt.newTree(
+            ident"exc"
+          )
+        )
+      ))
+      for tryBranch in 1 ..< node.len:
+        result.add(node[tryBranch])
+
   else: discard
 
   for i in 0 ..< result.len:
