@@ -15,13 +15,14 @@ when not defined(windows):
 
 suite "Signal handling test suite":
   when not defined(windows):
-    var signalCounter = 0
+    var
+      signalCounter = 0
+      sigfd = -1
 
     proc signalProc(udata: pointer) =
-      var cdata = cast[ptr CompletionData](udata)
-      signalCounter = cast[int](cdata.udata)
+      signalCounter = cast[int](udata)
       try:
-        removeSignal(int(cdata.fd))
+        removeSignal(sigfd)
       except Exception as exc:
         raiseAssert exc.msg
 
@@ -30,7 +31,7 @@ suite "Signal handling test suite":
 
     proc test(signal, value: int): bool =
       try:
-        discard addSignal(signal, signalProc, cast[pointer](value))
+        sigfd = addSignal(signal, signalProc, cast[pointer](value))
       except Exception as exc:
         raiseAssert exc.msg
       var fut = asyncProc()

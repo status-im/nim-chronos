@@ -38,6 +38,7 @@ type
     Resolving,                ## Resolving remote hostname
     Connecting,               ## Connecting to remote server
     Ready,                    ## Connected to remote server
+    Acquired,                 ## Connection is acquired for use
     RequestHeadersSending,    ## Sending request headers
     RequestHeadersSent,       ## Request headers has been sent
     RequestBodySending,       ## Sending request body
@@ -272,6 +273,13 @@ proc setupHttpClientResponseTracker(): HttpClientTracker {.gcsafe.} =
   )
   addTracker(HttpClientResponseTrackerName, res)
   res
+
+template checkClosed(reqresp: untyped): untyped =
+  if reqresp.connection.state in {HttpClientConnectionState.Closing,
+                                  HttpClientConnectionState.Closed}:
+    let e = newHttpUseClosedError()
+    reqresp.setError(e)
+    raise e
 
 proc new*(t: typedesc[HttpSessionRef],
           flags: HttpClientFlags = {},
@@ -583,6 +591,7 @@ proc acquireConnection(session: HttpSessionRef,
         await session.connect(ha).wait(session.connectTimeout)
       except AsyncTimeoutError:
         raiseHttpConnectionError("Connection timed out")
+    res[].state = HttpClientConnectionState.Acquired
     session.connections.mgetOrPut(ha.id, default).add(res)
     return res
   else:
@@ -599,6 +608,7 @@ proc acquireConnection(session: HttpSessionRef,
         else:
           nil
     if not(isNil(conn)):
+      conn[].state = HttpClientConnectionState.Acquired
       return conn
     else:
       var default: seq[HttpClientConnectionRef]
@@ -607,6 +617,7 @@ proc acquireConnection(session: HttpSessionRef,
           await session.connect(ha).wait(session.connectTimeout)
         except AsyncTimeoutError:
           raiseHttpConnectionError("Connection timed out")
+      res[].state = HttpClientConnectionState.Acquired
       session.connections.mgetOrPut(ha.id, default).add(res)
       return res
 
@@ -978,6 +989,7 @@ proc send*(request: HttpClientRequestRef): Future[HttpClientResponseRef] {.
       request.setError(exc)
       raise exc
 
+  connection.flags.incl(HttpClientConnectionFlag.Request)
   request.connection = connection
 
   try:
@@ -1028,6 +1040,7 @@ proc open*(request: HttpClientRequestRef): Future[HttpBodyWriter] {.
       request.setError(exc)
       raise exc
 
+  connection.flags.incl(HttpClientConnectionFlag.Request)
   request.connection = connection
 
   try:
@@ -1067,6 +1080,7 @@ proc finish*(request: HttpClientRequestRef): Future[HttpClientResponseRef] {.
   ## Finish sending request and receive response.
   doAssert(not(isNil(request.connection)),
            "Request missing connection instance")
+  request.checkClosed()
   doAssert(request.state == HttpReqRespState.Open,
            "Request's state is " & $request.state)
   doAssert(request.connection.state ==
@@ -1105,6 +1119,7 @@ proc getBodyReader*(response: HttpClientResponseRef): HttpBodyReader =
   ## leaks.
   doAssert(not(isNil(response.connection)),
            "Response missing connection instance")
+  response.checkClosed()
   doAssert(response.state == HttpReqRespState.Open,
            "Response's state is " & $response.state)
   doAssert(response.connection.state in
@@ -1134,6 +1149,7 @@ proc finish*(response: HttpClientResponseRef) {.async.} =
   if response.state == HttpReqRespState.Open:
     doAssert(not(isNil(response.connection)),
              "Response missing connection instance")
+    response.checkClosed()
     doAssert(response.connection.state ==
              HttpClientConnectionState.ResponseBodyReceiving,
              "Connection state is " & $response.connection.state)

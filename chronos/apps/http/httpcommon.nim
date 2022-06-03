@@ -53,6 +53,7 @@ type
   HttpProtocolError* = object of HttpError
   HttpRedirectError* = object of HttpError
   HttpAddressError* = object of HttpError
+  HttpUseClosedError* = object of HttpError
 
   KeyValueTuple* = tuple
     key: string
@@ -110,6 +111,9 @@ template newHttpReadError*(message: string): ref HttpReadError =
 
 template newHttpWriteError*(message: string): ref HttpWriteError =
   newException(HttpWriteError, message)
+
+template newHttpUseClosedError*(): ref HttpUseClosedError =
+  newException(HttpUseClosedError, "Connection was already closed")
 
 iterator queryParams*(query: string,
                       flags: set[QueryParamsFlag] = {}): KeyValueTuple {.

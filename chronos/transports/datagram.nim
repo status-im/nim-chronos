@@ -185,7 +185,7 @@ elif defined(windows):
       else:
         ## Initiation
         transp.state.incl(WritePending)
-        let fd = SocketHandle(ovl.data.fd)
+        let fd = SocketHandle(transp.fd)
         var vector = transp.queue.popFirst()
         transp.setWriterWSABuffer(vector)
         var ret: cint
@@ -258,7 +258,7 @@ elif defined(windows):
         ## Initiation
         if transp.state * {ReadEof, ReadClosed, ReadError} == {}:
           transp.state.incl(ReadPending)
-          let fd = SocketHandle(ovl.data.fd)
+          let fd = SocketHandle(transp.fd)
           transp.rflag = 0
           transp.ralen = SockLen(sizeof(Sockaddr_storage))
           let ret = WSARecvFrom(fd, addr transp.rwsabuf, DWORD(1),
@@ -406,9 +406,9 @@ elif defined(windows):
     result.udata = udata
     result.state = {WritePaused}
     result.future = newFuture[void]("datagram.transport")
-    result.rovl.data = CompletionData(fd: localSock, cb: readDatagramLoop,
+    result.rovl.data = CompletionData(cb: readDatagramLoop,
                                       udata: cast[pointer](result))
-    result.wovl.data = CompletionData(fd: localSock, cb: writeDatagramLoop,
+    result.wovl.data = CompletionData(cb: writeDatagramLoop,
                                       udata: cast[pointer](result))
     result.rwsabuf = TWSABuf(buf: cast[cstring](addr result.buffer[0]),
                              len: int32(len(result.buffer)))
@@ -426,9 +426,8 @@ else:
   proc readDatagramLoop(udata: pointer) {.raises: Defect.}=
     var raddr: TransportAddress
     doAssert(not isNil(udata))
-    var cdata = cast[ptr CompletionData](udata)
-    var transp = cast[DatagramTransport](cdata.udata)
-    let fd = SocketHandle(cdata.fd)
+    let transp = cast[DatagramTransport](udata)
+    let fd = SocketHandle(transp.fd)
     if int(fd) == 0:
       ## This situation can be happen, when there events present
       ## after transport was closed.
@@ -459,9 +458,8 @@ else:
   proc writeDatagramLoop(udata: pointer) =
     var res: int
     doAssert(not isNil(udata))
-    var cdata = cast[ptr CompletionData](udata)
-    var transp = cast[DatagramTransport](cdata.udata)
-    let fd = SocketHandle(cdata.fd)
+    var transp = cast[DatagramTransport](udata)
+    let fd = SocketHandle(transp.fd)
     if int(fd) == 0:
       ## This situation can be happen, when there events present
       ## after transport was closed.

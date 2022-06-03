@@ -84,10 +84,9 @@ proc cleanupOpenSymChoice(node: NimNode): NimNode {.compileTime.} =
   # ref https://github.com/nim-lang/Nim/issues/11091
   if node.kind in nnkCallKinds and
     node[0].kind == nnkOpenSymChoice and node[0].eqIdent("[]"):
-    result = newNimNode(nnkBracketExpr).add(
-      cleanupOpenSymChoice(node[1]),
-      cleanupOpenSymChoice(node[2])
-    )
+    result = newNimNode(nnkBracketExpr)
+    for child in node[1..^1]:
+      result.add(cleanupOpenSymChoice(child))
   else:
     result = node.copyNimNode()
     for child in node:
@@ -174,6 +173,9 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
           add(newIdentNode("void"))
 
   var outerProcBody = newNimNode(nnkStmtList, prc)
+  # Copy comment for nimdoc
+  if prc.body.len > 0 and prc.body[0].kind == nnkCommentStmt:
+    outerProcBody.add(prc.body[0])
 
   # -> iterator nameIter(chronosInternalRetFuture: Future[T]): FutureBase {.closure.} =
   # ->   {.push warning[resultshadowed]: off.}

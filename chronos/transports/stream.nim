@@ -407,7 +407,7 @@ elif defined(windows):
           ## Initiation
           transp.state.incl(WritePending)
           if transp.kind == TransportKind.Socket:
-            let sock = SocketHandle(transp.wovl.data.fd)
+            let sock = SocketHandle(transp.fd)
             var vector = transp.queue.popFirst()
             if vector.kind == VectorKind.DataBuffer:
               transp.wovl.zeroOvelappedOffset()
@@ -492,7 +492,7 @@ elif defined(windows):
               else:
                 transp.queue.addFirst(vector)
           elif transp.kind == TransportKind.Pipe:
-            let pipe = Handle(transp.wovl.data.fd)
+            let pipe = Handle(transp.fd)
             var vector = transp.queue.popFirst()
             if vector.kind == VectorKind.DataBuffer:
               transp.wovl.zeroOvelappedOffset()
@@ -587,7 +587,7 @@ elif defined(windows):
           transp.state.excl(ReadPaused)
           transp.state.incl(ReadPending)
           if transp.kind == TransportKind.Socket:
-            let sock = SocketHandle(transp.rovl.data.fd)
+            let sock = SocketHandle(transp.fd)
             transp.roffset = transp.offset
             transp.setReaderWSABuffer()
             let ret = WSARecv(sock, addr transp.rwsabuf, 1,
@@ -610,7 +610,7 @@ elif defined(windows):
                 transp.setReadError(err)
                 transp.completeReader()
           elif transp.kind == TransportKind.Pipe:
-            let pipe = Handle(transp.rovl.data.fd)
+            let pipe = Handle(transp.fd)
             transp.roffset = transp.offset
             transp.setReaderWSABuffer()
             let ret = readFile(pipe, cast[pointer](transp.rwsabuf.buf),
@@ -650,9 +650,9 @@ elif defined(windows):
     else:
       transp = StreamTransport(kind: TransportKind.Socket)
     transp.fd = sock
-    transp.rovl.data = CompletionData(fd: sock, cb: readStreamLoop,
+    transp.rovl.data = CompletionData(cb: readStreamLoop,
                                       udata: cast[pointer](transp))
-    transp.wovl.data = CompletionData(fd: sock, cb: writeStreamLoop,
+    transp.wovl.data = CompletionData(cb: writeStreamLoop,
                                       udata: cast[pointer](transp))
     transp.buffer = newSeq[byte](bufsize)
     transp.state = {ReadPaused, WritePaused}
@@ -670,9 +670,9 @@ elif defined(windows):
     else:
       transp = StreamTransport(kind: TransportKind.Pipe)
     transp.fd = fd
-    transp.rovl.data = CompletionData(fd: fd, cb: readStreamLoop,
+    transp.rovl.data = CompletionData(cb: readStreamLoop,
                                       udata: cast[pointer](transp))
-    transp.wovl.data = CompletionData(fd: fd, cb: writeStreamLoop,
+    transp.wovl.data = CompletionData(cb: writeStreamLoop,
                                       udata: cast[pointer](transp))
     transp.buffer = newSeq[byte](bufsize)
     transp.flags = flags
@@ -746,8 +746,7 @@ elif defined(windows):
               sock.closeSocket()
               retFuture.fail(getTransportOsError(err))
             else:
-              let transp = newStreamSocketTransport(povl.data.fd, bufferSize,
-                                                    child)
+              let transp = newStreamSocketTransport(sock, bufferSize, child)
               # Start tracking transport
               trackStream(transp)
               retFuture.complete(transp)
@@ -761,7 +760,7 @@ elif defined(windows):
 
       povl = RefCustomOverlapped()
       GC_ref(povl)
-      povl.data = CompletionData(fd: sock, cb: socketContinuation)
+      povl.data = CompletionData(cb: socketContinuation)
       let res = loop.connectEx(SocketHandle(sock),
                                cast[ptr SockAddr](addr saddr),
                                DWORD(slen), nil, 0, nil,
@@ -895,7 +894,6 @@ elif defined(windows):
           if pipeHandle == INVALID_HANDLE_VALUE:
             raiseAssert osErrorMsg(osLastError())
           server.sock = AsyncFD(pipeHandle)
-          server.aovl.data.fd = AsyncFD(pipeHandle)
           try: register(server.sock)
           except CatchableError as exc:
             raiseAsDefect exc, "register"
@@ -1177,8 +1175,7 @@ elif defined(windows):
       let dwLocalAddressLength = DWORD(sizeof(Sockaddr_in6) + 16)
       let dwRemoteAddressLength = DWORD(sizeof(Sockaddr_in6) + 16)
 
-      server.aovl.data = CompletionData(fd: server.sock,
-                                        cb: continuationSocket,
+      server.aovl.data = CompletionData(cb: continuationSocket,
                                         udata: cast[pointer](server))
       server.apending = true
       let res = loop.acceptEx(SocketHandle(server.sock),
@@ -1219,8 +1216,7 @@ elif defined(windows):
           retFuture.fail(getTransportOsError(err))
         return retFuture
 
-      server.aovl.data = CompletionData(fd: server.sock,
-                                        cb: continuationPipe,
+      server.aovl.data = CompletionData(cb: continuationPipe,
                                         udata: cast[pointer](server))
       server.apending = true
       let res = connectNamedPipe(Handle(server.sock),
@@ -1260,14 +1256,16 @@ else:
       raiseAsDefect exc, "removeWriter"
 
   proc writeStreamLoop(udata: pointer) =
-    var cdata = cast[ptr CompletionData](udata)
-    var transp = cast[StreamTransport](cdata.udata)
-    let fd = SocketHandle(cdata.fd)
-
-    if int(fd) == 0 or isNil(transp):
-      ## This situation can be happen, when there events present
-      ## after transport was closed.
+    if isNil(udata):
+      # TODO this is an if rather than an assert for historical reasons:
+      # it should not happen unless there are race conditions - but if there
+      # are race conditions, `transp` might be invalid even if it's not nil:
+      # it could have been released
       return
+
+    let
+      transp = cast[StreamTransport](udata)
+      fd = SocketHandle(transp.fd)
 
     if WriteClosed in transp.state:
       if transp.queue.len > 0:
@@ -1357,14 +1355,16 @@ else:
     transp.removeWriter()
 
   proc readStreamLoop(udata: pointer) =
-    # TODO fix Defect raises - they "shouldn't" happen
-    var cdata = cast[ptr CompletionData](udata)
-    var transp = cast[StreamTransport](cdata.udata)
-    let fd = SocketHandle(cdata.fd)
-    if int(fd) == 0 or isNil(transp):
-      ## This situation can be happen, when there events present
-      ## after transport was closed.
+    if isNil(udata):
+      # TODO this is an if rather than an assert for historical reasons:
+      # it should not happen unless there are race conditions - but if there
+      # are race conditions, `transp` might be invalid even if it's not nil:
+      # it could have been released
       return
+
+    let
+      transp = cast[StreamTransport](udata)
+      fd = SocketHandle(transp.fd)
 
     if ReadClosed in transp.state:
       transp.state.incl({ReadPaused})
@@ -1381,7 +1381,7 @@ else:
             elif int(err) in {ECONNRESET}:
               transp.state.incl({ReadEof, ReadPaused})
               try:
-                cdata.fd.removeReader()
+                transp.fd.removeReader()
               except IOSelectorsException as exc:
                 raiseAsDefect exc, "removeReader"
               except ValueError as exc:
@@ -1390,7 +1390,7 @@ else:
               transp.state.incl(ReadPaused)
               transp.setReadError(err)
               try:
-                cdata.fd.removeReader()
+                transp.fd.removeReader()
               except IOSelectorsException as exc:
                 raiseAsDefect exc, "removeReader"
               except ValueError as exc:
@@ -1398,7 +1398,7 @@ else:
           elif res == 0:
             transp.state.incl({ReadEof, ReadPaused})
             try:
-              cdata.fd.removeReader()
+              transp.fd.removeReader()
             except IOSelectorsException as exc:
               raiseAsDefect exc, "removeReader"
             except ValueError as exc:
@@ -1408,7 +1408,7 @@ else:
             if transp.offset == len(transp.buffer):
               transp.state.incl(ReadPaused)
               try:
-                cdata.fd.removeReader()
+                transp.fd.removeReader()
               except IOSelectorsException as exc:
                 raiseAsDefect exc, "removeReader"
               except ValueError as exc:
@@ -1427,7 +1427,7 @@ else:
               transp.state.incl(ReadPaused)
               transp.setReadError(err)
               try:
-                cdata.fd.removeReader()
+                transp.fd.removeReader()
               except IOSelectorsException as exc:
                 raiseAsDefect exc, "removeReader"
               except ValueError as exc:
@@ -1435,7 +1435,7 @@ else:
           elif res == 0:
             transp.state.incl({ReadEof, ReadPaused})
             try:
-              cdata.fd.removeReader()
+              transp.fd.removeReader()
             except IOSelectorsException as exc:
               raiseAsDefect exc, "removeReader"
             except ValueError as exc:
@@ -1445,7 +1445,7 @@ else:
             if transp.offset == len(transp.buffer):
               transp.state.incl(ReadPaused)
               try:
-                cdata.fd.removeReader()
+                transp.fd.removeReader()
               except IOSelectorsException as exc:
                 raiseAsDefect exc, "removeReader"
               except ValueError as exc:
@@ -1519,11 +1519,9 @@ else:
 
     proc continuation(udata: pointer) =
       if not(retFuture.finished()):
-        var data = cast[ptr CompletionData](udata)
         var err = 0
-        let fd = data.fd
         try:
-          fd.removeWriter()
+          sock.removeWriter()
         except IOSelectorsException as exc:
           retFuture.fail(exc)
           return
@@ -1531,15 +1529,15 @@ else:
           retFuture.fail(exc)
           return
 
-        if not(fd.getSocketError(err)):
-          closeSocket(fd)
+        if not(sock.getSocketError(err)):
+          closeSocket(sock)
           retFuture.fail(getTransportOsError(osLastError()))
           return
         if err != 0:
-          closeSocket(fd)
+          closeSocket(sock)
           retFuture.fail(getTransportOsError(OSErrorCode(err)))
           return
-        let transp = newStreamSocketTransport(fd, bufferSize, child)
+        let transp = newStreamSocketTransport(sock, bufferSize, child)
         # Start tracking transport
         trackStream(transp)
         retFuture.complete(transp)
@@ -1581,11 +1579,18 @@ else:
           break
     return retFuture
 
-  proc acceptLoop(udata: pointer) {.gcsafe.} =
+  proc acceptLoop(udata: pointer) =
+    if isNil(udata):
+      # TODO this is an if rather than an assert for historical reasons:
+      # it should not happen unless there are race conditions - but if there
+      # are race conditions, `transp` might be invalid even if it's not nil:
+      # it could have been released
+      return
+
     var
       saddr: Sockaddr_storage
       slen: SockLen
-    var server = cast[StreamServer](cast[ptr CompletionData](udata).udata)
+    let server = cast[StreamServer](udata)
     while true:
       if server.status in {ServerStatus.Stopped, ServerStatus.Closed}:
         break
@@ -1990,7 +1995,7 @@ proc createStreamServer*(host: TransportAddress,
       cb = acceptPipeLoop
 
     if not(isNil(cbproc)):
-      result.aovl.data = CompletionData(fd: serverSocket, cb: cb,
+      result.aovl.data = CompletionData(cb: cb,
                                         udata: cast[pointer](result))
     else:
       if host.family == AddressFamily.Unix:
