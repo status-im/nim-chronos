@@ -95,7 +95,7 @@ suite "Exceptions tracking":
         raise newException(IOError, "hey")
 
     proc test4 {.async, asyncraises: [].} = raise newException(Defect, "hey")
-    proc test5 {.async, asyncraises: [].} = await test5()
+    proc test5 {.async, asyncraises: [CancelledError].} = await test5()
 
   test "Cannot raise invalid exception":
     checkNotCompiles:
@@ -121,9 +121,9 @@ suite "Exceptions tracking":
 
   test "Await raises the correct types":
     proc test1 {.async, asyncraises: [ValueError].} = raise newException(ValueError, "hey")
-    proc test2 {.async, asyncraises: [ValueError].} = await test1()
+    proc test2 {.async, asyncraises: [ValueError, CancelledError].} = await test1()
     checkNotCompiles:
-      proc test3 {.async, asyncraises: [].} = await test1()
+      proc test3 {.async, asyncraises: [CancelledError].} = await test1()
 
   test "Can create callbacks":
     proc test1 {.async, asyncraises: [ValueError].} = raise newException(ValueError, "hey")
@@ -133,11 +133,11 @@ suite "Exceptions tracking":
     proc test1: Future[int] {.async, asyncraises: [ValueError].} =
       if 1 == 0: raise newException(ValueError, "hey")
       return 12
-    proc test2: Future[int] {.async, asyncraises: [ValueError, IOError].} =
+    proc test2: Future[int] {.async, asyncraises: [ValueError, IOError, CancelledError].} =
       return await test1()
 
     checkNotCompiles:
-      proc test3: Future[int] {.async, asyncraises: [].} = await test1()
+      proc test3: Future[int] {.async, asyncraises: [CancelledError].} = await test1()
 
     check waitFor(test2()) == 12
 

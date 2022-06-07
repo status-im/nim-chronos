@@ -243,7 +243,6 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
     for exception in raisesTuple:
       closureRaises.add(exception)
 
-    closureRaises.add(ident("CancelledError"))
     when (NimMajor, NimMinor) < (1, 4):
       closureRaises.add(ident("Defect"))
 
@@ -311,7 +310,6 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
 macro checkFutureExceptions(f, typ: typed): untyped =
   # For RaiseTrackingFuture[void, (ValueError, OSError), will do:
   # if isNil(f.error): discard
-  # elif f.error of type CancelledError: raise (ref CancelledError)(f.error)
   # elif f.error of type ValueError: raise (ref ValueError)(f.error)
   # elif f.error of type OSError: raise (ref OSError)(f.error)
   # else: raiseAssert("Unhandled future exception: " & f.error.msg)
@@ -325,10 +323,7 @@ macro checkFutureExceptions(f, typ: typed): untyped =
   if types.eqIdent("void"):
     return quote do:
       if not(isNil(`f`.error)):
-        if `f`.error of type CancelledError:
-          raise (ref CancelledError)(`f`.error)
-        else:
-          raiseAssert("Unhandled future exception: " & `f`.error.msg)
+        raiseAssert("Unhandled future exception: " & `f`.error.msg)
 
   expectKind(types, nnkBracketExpr)
   expectKind(types[0], nnkSym)
@@ -342,12 +337,6 @@ macro checkFutureExceptions(f, typ: typed): untyped =
     )
   )
 
-  result.add nnkElifExpr.newTree(
-    quote do: `f`.error of type CancelledError,
-    nnkRaiseStmt.newNimNode(lineInfoFrom=typ).add(
-      quote do: (ref CancelledError)(`f`.error)
-    )
-  )
   for errorType in types[1..^1]:
     result.add nnkElifExpr.newTree(
       quote do: `f`.error of type `errorType`,
