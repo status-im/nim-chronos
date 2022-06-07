@@ -50,8 +50,6 @@ proc tryConsume*(bucket: TokenBucket, tokens: int): bool =
     false
 
 proc worker(bucket: TokenBucket) {.async.} =
-  defer: bucket.workFuture = nil
-
   while bucket.pendingRequests.len > 0:
     bucket.manuallyReplenished.clear()
     template waiter: untyped = bucket.pendingRequests[0]
@@ -59,35 +57,36 @@ proc worker(bucket: TokenBucket) {.async.} =
     if bucket.tryConsume(waiter.value):
       waiter.future.complete()
       bucket.pendingRequests.delete(0)
-      continue
-
-    waiter.value -= bucket.budget
-    waiter.alreadyConsumed.inc(bucket.budget)
-    bucket.budget = 0
-
-    let eventWaiter = bucket.manuallyReplenished.wait()
-    if bucket.fillPerMs > 0:
-      let
-        nextCycleValue = min(waiter.value, bucket.budgetCap)
-        timeToZero = (nextCycleValue div bucket.fillPerMs) + 1
-        sleeper = sleepAsync(milliseconds(timeToZero))
-      await sleeper or eventWaiter
-      sleeper.cancel()
-      eventWaiter.cancel()
     else:
-      await eventWaiter
+      waiter.value -= bucket.budget
+      waiter.alreadyConsumed.inc(bucket.budget)
+      bucket.budget = 0
+
+      let eventWaiter = bucket.manuallyReplenished.wait()
+      if bucket.fillPerMs > 0:
+        let
+          nextCycleValue = min(waiter.value, bucket.budgetCap)
+          timeToZero = (nextCycleValue div bucket.fillPerMs) + 1
+          sleeper = sleepAsync(milliseconds(timeToZero))
+        await sleeper or eventWaiter
+        sleeper.cancel()
+        eventWaiter.cancel()
+      else:
+        await eventWaiter
+
+  bucket.workFuture = nil
 
 proc consume*(bucket: TokenBucket, tokens: int): Future[void] =
   ## Wait for `tokens` to be available, and consume them.
 
   let retFuture = newFuture[void]("TokenBucket.consume")
-  if isNil(bucket.workFuture):
+  if isNil(bucket.workFuture) or bucket.workFuture.finished():
     if bucket.tryConsume(tokens):
       retFuture.complete()
       return retFuture
 
   bucket.pendingRequests.add(BucketWaiter(future: retFuture, value: tokens))
-  if isNil(bucket.workFuture):
+  if isNil(bucket.workFuture) or bucket.workFuture.finished():
     bucket.workFuture = worker(bucket)
 
   proc cancellation(udata: pointer) =
