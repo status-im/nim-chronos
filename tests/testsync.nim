@@ -828,27 +828,27 @@ suite "Asynchronous sync primitives test suite":
     eventQueue.emit(1000)
     eventQueue.emit(1100)
     eventQueue.emit(1200)
+    check len(eventQueue) == 4
+    # Overfilling queue
     eventQueue.emit(1300)
-    # So `1300` is overfill item here, but we queue will still accept it so
-    # consumers could be notified about overfill.
-    check len(eventQueue) == 5
+    # Because overfill for single consumer happend, whole queue should become
+    # empty.
+    check len(eventQueue) == 0
     eventQueue.emit(1400)
     eventQueue.emit(1500)
     eventQueue.emit(1600)
     eventQueue.emit(1700)
     eventQueue.emit(1800)
-    # No more items should be accepted.
-    check len(eventQueue) == 5
+    check len(eventQueue) == 0
     let errorFut1 = eventQueue.waitEvents(key1)
     check errorFut1.finished() == true
     expect AsyncEventQueueFullError:
       let res {.used.} = errorFut1.read()
-    # All items are still in queue, because consumer should unregister.
-    check len(eventQueue) == 5
+    # There should be no items because consumer was overflowed.
+    check len(eventQueue) == 0
     eventQueue.unregister(key1)
     # All items should be garbage collected after unregister.
     check len(eventQueue) == 0
-
     waitFor eventQueue.closeWait()
 
   test "AsyncEventQueue() many consumers limits test":
@@ -868,67 +868,65 @@ suite "Asynchronous sync primitives test suite":
       check len(eventQueue) == 4
       let key5 = eventQueue.register()
       eventQueue.emit(500)
-      # At this point consumers with key1 is overfilled, but new events should
-      # be accepted.
-      check len(eventQueue) == 5
+      # At this point consumer with `key1` is overfilled, so after `emit()`
+      # queue length should be decreased by one item.
+      # So queue should look like this: [200, 300, 400, 500]
+      check len(eventQueue) == 4
       eventQueue.emit(600)
-      # At this point consumers with key2 is overfilled, but new events should
-      # be accepted.
-      check len(eventQueue) == 6
+      # At this point consumers with `key2` is overfilled, so after `emit()`
+      # queue length should be decreased by one item.
+      # So queue should look like this: [300, 400, 500, 600]
+      check len(eventQueue) == 4
       eventQueue.emit(700)
-      # At this point consumers with key3 is overfilled, but new events should
-      # be accepted.
-      check len(eventQueue) == 7
+      # At this point consumers with `key3` is overfilled, so after `emit()`
+      # queue length should be decreased by one item.
+      # So queue should look like this: [400, 500, 600, 700]
+      check len(eventQueue) == 4
       eventQueue.emit(800)
-      # At this point consumers with key4 is overfilled, but new events should
-      # be accepted.
-      check len(eventQueue) == 8
-
+      # At this point consumers with `key4` is overfilled, so after `emit()`
+      # queue length should be decreased by one item.
+      # So queue should look like this: [500, 600, 700, 800]
+      check len(eventQueue) == 4
       # Consumer with key5 is not overfilled.
       let dataFut5 = eventQueue.waitEvents(key5)
       check:
         dataFut5.finished() == true
         dataFut5.read() == @[500, 600, 700, 800]
-        len(eventQueue) == 8
-
+      # No more items should be left because all other consumers are overfilled.
+      check len(eventQueue) == 0
       eventQueue.unregister(key5)
-      check len(eventQueue) == 8
+      check len(eventQueue) == 0
 
       let dataFut2 = eventQueue.waitEvents(key2)
       check dataFut2.finished() == true
       expect AsyncEventQueueFullError:
         let res {.used.} = dataFut2.read()
-      # All items are still in queue, because consumer should unregister.
-      check len(eventQueue) == 8
+      check len(eventQueue) == 0
       eventQueue.unregister(key2)
-      check len(eventQueue) == 8
+      check len(eventQueue) == 0
 
       let dataFut4 = eventQueue.waitEvents(key4)
       check dataFut4.finished() == true
       expect AsyncEventQueueFullError:
         let res {.used.} = dataFut4.read()
-      # All items are still in queue, because consumer should unregister.
-      check len(eventQueue) == 8
+      check len(eventQueue) == 0
       eventQueue.unregister(key4)
-      check len(eventQueue) == 8
+      check len(eventQueue) == 0
 
       let dataFut3 = eventQueue.waitEvents(key3)
       check dataFut3.finished() == true
       expect AsyncEventQueueFullError:
         let res {.used.} = dataFut3.read()
-      # All items are still in queue, because consumer should unregister.
-      check len(eventQueue) == 8
+      check len(eventQueue) == 0
       eventQueue.unregister(key3)
-      check len(eventQueue) == 8
+      check len(eventQueue) == 0
 
       let dataFut1 = eventQueue.waitEvents(key1)
       check dataFut1.finished() == true
       expect AsyncEventQueueFullError:
         let res {.used.} = dataFut1.read()
-      # All items are still in queue, because consumer should unregister.
-      check len(eventQueue) == 8
+      check len(eventQueue) == 0
       eventQueue.unregister(key1)
-      # All items should be garbage collected after unregister.
       check len(eventQueue) == 0
 
     block:
@@ -946,25 +944,29 @@ suite "Asynchronous sync primitives test suite":
       check len(eventQueue) == 4
       let key5 = eventQueue.register()
       eventQueue.emit(500)
-      # At this point consumers with key1 is overfilled, but new events should
-      # be accepted.
-      check len(eventQueue) == 5
+      # At this point consumer with `key1` is overfilled, so after `emit()`
+      # queue length should be decreased by one item.
+      # So queue should look like this: [200, 300, 400, 500]
+      check len(eventQueue) == 4
       eventQueue.emit(600)
-      # At this point consumers with key2 is overfilled, but new events should
-      # be accepted.
-      check len(eventQueue) == 6
+      # At this point consumer with `key2` is overfilled, so after `emit()`
+      # queue length should be decreased by one item.
+      # So queue should look like this: [300, 400, 500, 600]
+      check len(eventQueue) == 4
       eventQueue.emit(700)
-      # At this point consumers with key3 is overfilled, but new events should
-      # be accepted.
-      check len(eventQueue) == 7
+      # At this point consumer with `key3` is overfilled, so after `emit()`
+      # queue length should be decreased by one item.
+      # So queue should look like this: [400, 500, 600, 700]
+      check len(eventQueue) == 4
       eventQueue.emit(800)
-      # At this point consumers with key4 is overfilled, but new events should
-      # be accepted.
-      check len(eventQueue) == 8
+      # At this point consumer with `key4` is overfilled, so after `emit()`
+      # queue length should be decreased by one item.
+      # So queue should look like this: [500, 600, 700, 800]
+      check len(eventQueue) == 4
       eventQueue.emit(900)
-      # At this point all the consumers are overfilled, but single new event still
-      # should be accepted.
-      check len(eventQueue) == 9
+      # At this point all consumers are overfilled, so after `emit()`
+      # queue length should become 0.
+      check len(eventQueue) == 0
       eventQueue.emit(1000)
       eventQueue.emit(1100)
       eventQueue.emit(1200)
@@ -976,57 +978,75 @@ suite "Asynchronous sync primitives test suite":
       eventQueue.emit(1800)
       eventQueue.emit(1900)
       # No more events should be accepted.
-      check len(eventQueue) == 9
+      check len(eventQueue) == 0
 
       let dataFut1 = eventQueue.waitEvents(key1)
       check dataFut1.finished() == true
       expect AsyncEventQueueFullError:
         let res {.used.} = dataFut1.read()
-      # All items are still in queue, because consumer should unregister.
-      check len(eventQueue) == 9
+      check len(eventQueue) == 0
       eventQueue.unregister(key1)
-      # Only the first item should be garbage collected.
-      check len(eventQueue) == 8
+      check len(eventQueue) == 0
 
       let dataFut2 = eventQueue.waitEvents(key2)
       check dataFut2.finished() == true
       expect AsyncEventQueueFullError:
         let res {.used.} = dataFut2.read()
-      # All items are still in queue, because consumer should unregister.
-      check len(eventQueue) == 8
+      check len(eventQueue) == 0
       eventQueue.unregister(key2)
-      # Only the first item should be garbage collected.
-      check len(eventQueue) == 7
+      check len(eventQueue) == 0
 
       let dataFut3 = eventQueue.waitEvents(key3)
       check dataFut3.finished() == true
       expect AsyncEventQueueFullError:
         let res {.used.} = dataFut3.read()
-      # All items are still in queue, because consumer should unregister.
-      check len(eventQueue) == 7
+      check len(eventQueue) == 0
       eventQueue.unregister(key3)
-      # Only the first item should be garbage collected.
-      check len(eventQueue) == 6
+      check len(eventQueue) == 0
 
       let dataFut4 = eventQueue.waitEvents(key4)
       check dataFut4.finished() == true
       expect AsyncEventQueueFullError:
         let res {.used.} = dataFut4.read()
-      # All items are still in queue, because consumer should unregister.
-      check len(eventQueue) == 6
+      check len(eventQueue) == 0
       eventQueue.unregister(key4)
-      # Only the first item should be garbage collected.
-      check len(eventQueue) == 5
+      check len(eventQueue) == 0
 
       let dataFut5 = eventQueue.waitEvents(key5)
       check dataFut5.finished() == true
       expect AsyncEventQueueFullError:
         let res {.used.} = dataFut5.read()
-      # All items are still in queue, because consumer should unregister.
-      check len(eventQueue) == 5
+      check len(eventQueue) == 0
       eventQueue.unregister(key5)
-      # All items should be garbage collected after unregister, because there no
-      # more consumers left.
       check len(eventQueue) == 0
 
     waitFor eventQueue.closeWait()
+
+  test "AsyncEventQueue() slow and fast consumer test":
+    proc test() {.async.} =
+      let eventQueue = newAsyncEventQueue[int](1)
+      let
+        fastConsumer = eventQueue.register()
+        slowConsumer = eventQueue.register()
+        slowFut = eventQueue.waitEvents(slowConsumer)
+
+      for i in 0 ..< 1000:
+        eventQueue.emit(i)
+        let fastData {.used.} = await eventQueue.waitEvents(fastConsumer)
+
+      check len(eventQueue) == 0
+      await allFutures(slowFut)
+      check len(eventQueue) == 0
+      expect AsyncEventQueueFullError:
+        let res {.used.} = slowFut.read()
+
+      check len(eventQueue) == 0
+      eventQueue.unregister(fastConsumer)
+      check len(eventQueue) == 0
+      eventQueue.unregister(slowConsumer)
+      check len(eventQueue) == 0
+      await eventQueue.closeWait()
+
+    waitFor test()
+
+

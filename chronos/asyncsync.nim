@@ -114,6 +114,7 @@ type
     key: EventQueueKey
     offset: int
     waiter: Future[void]
+    overflow: bool
 
   AsyncEventQueue*[T] = ref object of RootObj
     readers: seq[EventQueueReader]
@@ -631,12 +632,24 @@ proc `==`(a, b: EventQueueKey): bool {.borrow.}
 
 proc compact[T](ab: AsyncEventQueue[T]) =
   if len(ab.readers) > 0:
-    let minOffset = ab.readers[0].offset
-    doAssert(minOffset >= ab.offset)
-    if minOffset > ab.offset:
-      let delta = minOffset - ab.offset
-      ab.queue.shrink(fromFirst = delta)
-      ab.offset += delta
+    let minOffset =
+      block:
+        var res = -1
+        for reader in ab.readers.items():
+          if not(reader.overflow):
+            res = reader.offset
+            break
+        res
+
+    if minOffset == -1:
+      ab.offset += len(ab.queue)
+      ab.queue.clear()
+    else:
+      doAssert(minOffset >= ab.offset)
+      if minOffset > ab.offset:
+        let delta = minOffset - ab.offset
+        ab.queue.shrink(fromFirst = delta)
+        ab.offset += delta
   else:
     ab.queue.clear()
 
@@ -670,7 +683,8 @@ proc len*[T](ab: AsyncEventQueue[T]): int =
 proc register*[T](ab: AsyncEventQueue[T]): EventQueueKey =
   inc(ab.counter)
   let reader = EventQueueReader(key: EventQueueKey(ab.counter),
-                                offset: ab.offset + len(ab.queue))
+                                offset: ab.offset + len(ab.queue),
+                                overflow: false)
   ab.readers.add(reader)
   EventQueueKey(ab.counter)
 
@@ -684,25 +698,44 @@ proc unregister*[T](ab: AsyncEventQueue[T], key: EventQueueKey) =
     ab.readers.delete(index)
     ab.compact()
 
+template readerOverflow*[T](ab: AsyncEventQueue[T],
+                            reader: EventQueueReader): bool =
+  ab.limit + (reader.offset - ab.offset) <= len(ab.queue)
+
 proc emit*[T](ab: AsyncEventQueue[T], data: T) =
   if len(ab.readers) > 0:
     # We enqueue `data` only if there active reader present.
+    var changesPresent = false
     let couldEmit =
       if ab.limit == 0:
         true
       else:
         # Because ab.readers is sequence sorted by `offset`, we will apply our
         # limit to the most recent consumer.
-        if ab.limit + (ab.readers[^1].offset - ab.offset) < len(ab.queue):
+        if ab.readerOverflow(ab.readers[^1]):
           false
         else:
           true
 
     if couldEmit:
+      if ab.limit != 0:
+        for reader in ab.readers.mitems():
+          if not(reader.overflow):
+            if ab.readerOverflow(reader):
+              reader.overflow = true
+              changesPresent = true
       ab.queue.addLast(data)
-      for reader in ab.readers.items():
+      for reader in ab.readers.mitems():
         if not(isNil(reader.waiter)) and not(reader.waiter.finished()):
           reader.waiter.complete()
+    else:
+      for reader in ab.readers.mitems():
+        if not(reader.overflow):
+          reader.overflow = true
+          changesPresent = true
+
+    if changesPresent:
+      ab.compact()
 
 proc close*[T](ab: AsyncEventQueue[T]) =
   for reader in ab.readers.items():
@@ -744,6 +777,10 @@ proc waitEvents*[T](ab: AsyncEventQueue[T],
     doAssert(isNil(reader.waiter),
              "Concurrent waits on same key are not allowed!")
 
+    if reader.overflow:
+      raise newException(AsyncEventQueueFullError,
+                         "AsyncEventQueue size exceeds limits")
+
     let length = len(ab.queue) + ab.offset
     doAssert(length >= ab.readers[index].offset)
     if length == ab.readers[index].offset:
@@ -756,12 +793,6 @@ proc waitEvents*[T](ab: AsyncEventQueue[T],
       let
         itemsInQueue = length - ab.readers[index].offset
         itemsOffset = ab.readers[index].offset - ab.offset
-
-      if (ab.limit > 0) and (itemsInQueue > ab.limit):
-        raise newException(AsyncEventQueueFullError,
-                           "AsyncEventQueue size exceeds limits")
-
-      let
         itemsCount =
           if eventsCount <= 0:
             itemsInQueue
@@ -778,6 +809,7 @@ proc waitEvents*[T](ab: AsyncEventQueue[T],
             (ab.readers[slider].offset > ab.readers[slider + 1].offset):
         swap(ab.readers[slider], ab.readers[slider + 1])
         inc(slider)
+
       # Shrink data queue.
       ab.compact()
 
