@@ -572,7 +572,7 @@ suite "Asynchronous sync primitives test suite":
 
     waitFor eventQueue.closeWait()
 
-  test "AsyncEventQueue() 1,000,000 of events to 10 clients test":
+  test "AsyncEventQueue() 100,000 of events to 10 clients test":
     let eventQueue = newAsyncEventQueue[int]()
     let keys = [
       eventQueue.register(), eventQueue.register(),
@@ -602,7 +602,7 @@ suite "Asynchronous sync primitives test suite":
     ]
 
     proc test() {.async.} =
-      for i in 1 .. 1_000_000:
+      for i in 1 .. 100_000:
         if (i mod 1000) == 0:
           # Give some CPU for clients.
           await sleepAsync(0.milliseconds)
