@@ -481,7 +481,7 @@ template location*(payload: EventPayloadBase): SrcLoc =
 
 proc get*(event: AwaitableEvent, T: typedesc): T {.
      deprecated: "Implementation has unfixable flaws, please use " &
-                 "AsyncEventQueue[T] instead".} =.}
+                 "AsyncEventQueue[T] instead".} =
   ## Returns event's payload of type ``T`` from event ``event``.
   cast[EventPayload[T]](event.payload).value
 
