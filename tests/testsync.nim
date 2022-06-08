@@ -590,9 +590,10 @@ suite "Asynchronous sync primitives test suite":
         if len(res) == 0:
           break
         events.add(res)
+      queue.unregister(key)
       return events
 
-    var futs = [
+    var futs = @[
       clientTask(eventQueue, keys[0]), clientTask(eventQueue, keys[1]),
       clientTask(eventQueue, keys[2]), clientTask(eventQueue, keys[3]),
       clientTask(eventQueue, keys[4]), clientTask(eventQueue, keys[5]),
@@ -606,20 +607,20 @@ suite "Asynchronous sync primitives test suite":
           # Give some CPU for clients.
           await sleepAsync(0.milliseconds)
         eventQueue.emit(i)
-
       await eventQueue.closeWait()
       await allFutures(futs)
-      for fut in futs:
-        check:
-          fut.finished() == true
+      for index in 0 ..< len(futs):
+        let fut = futs[index]
+        check fut.finished() == true
         let data = fut.read()
         var counter = 1
         for item in data:
-          check:
-            item == counter
+          check item == counter
           inc(counter)
+        futs[index] = nil
 
     waitFor test()
+    futs.reset()
 
   test "AsyncEventQueue() one consumer limits test":
     let eventQueue = newAsyncEventQueue[int](4)
