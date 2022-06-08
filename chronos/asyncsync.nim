@@ -465,7 +465,9 @@ proc `$`*[T](aq: AsyncQueue[T]): string =
 template generateKey(typeName, eventName: string): string =
   "type[" & typeName & "]-key[" & eventName & "]"
 
-proc newAsyncEventBus*(): AsyncEventBus =
+proc newAsyncEventBus*(): AsyncEventBus {.
+     deprecated: "Implementation has unfixable flaws, please use" &
+                  "AsyncEventQueue[T] instead".} =
   ## Creates new ``AsyncEventBus``.
   AsyncEventBus(counter: 0'u64, events: initTable[string, EventItem]())
 
@@ -477,7 +479,9 @@ template location*(payload: EventPayloadBase): SrcLoc =
   ## Returns source location address of event emitter.
   payload.loc[]
 
-proc get*(event: AwaitableEvent, T: typedesc): T =
+proc get*(event: AwaitableEvent, T: typedesc): T {.
+     deprecated: "Implementation has unfixable flaws, please use " &
+                 "AsyncEventQueue[T] instead".} =.}
   ## Returns event's payload of type ``T`` from event ``event``.
   cast[EventPayload[T]](event.payload).value
 
@@ -489,7 +493,9 @@ template location*(event: AwaitableEvent): SrcLoc =
   ## Returns source location address of event emitter.
   event.payload.loc[]
 
-proc waitEvent*(bus: AsyncEventBus, T: typedesc, event: string): Future[T] =
+proc waitEvent*(bus: AsyncEventBus, T: typedesc, event: string): Future[T] {.
+     deprecated: "Implementation has unfixable flaws, please use " &
+                 "AsyncEventQueue[T] instead".} =
   ## Wait for the event from AsyncEventBus ``bus`` with name ``event``.
   ##
   ## Returned ``Future[T]`` will hold event's payload of type ``T``.
@@ -505,7 +511,9 @@ proc waitEvent*(bus: AsyncEventBus, T: typedesc, event: string): Future[T] =
   bus.events.mgetOrPut(eventKey, default).waiters.add(baseFuture)
   retFuture
 
-proc waitAllEvents*(bus: AsyncEventBus): Future[AwaitableEvent] =
+proc waitAllEvents*(bus: AsyncEventBus): Future[AwaitableEvent] {.
+     deprecated: "Implementation has unfixable flaws, please use " &
+                 "AsyncEventQueue[T] instead".} =
   ## Wait for any event from AsyncEventBus ``bus``.
   ##
   ## Returns ``Future`` which holds helper object. Using this object you can
@@ -519,7 +527,9 @@ proc waitAllEvents*(bus: AsyncEventBus): Future[AwaitableEvent] =
   retFuture
 
 proc subscribe*[T](bus: AsyncEventBus, event: string,
-                   callback: EventBusSubscription[T]): EventBusKey =
+                   callback: EventBusSubscription[T]): EventBusKey {.
+     deprecated: "Implementation has unfixable flaws, please use " &
+                 "AsyncEventQueue[T] instead".} =
   ## Subscribe to the event ``event`` passed through eventbus ``bus`` with
   ## callback ``callback``.
   ##
@@ -541,7 +551,9 @@ proc subscribe*[T](bus: AsyncEventBus, event: string,
   subkey
 
 proc subscribeAll*(bus: AsyncEventBus,
-                   callback: EventBusAllSubscription): EventBusKey =
+                   callback: EventBusAllSubscription): EventBusKey {.
+     deprecated: "Implementation has unfixable flaws, please use " &
+                 "AsyncEventQueue instead".} =
   ## Subscribe to all events passed through eventbus ``bus`` with callback
   ## ``callback``.
   ##
@@ -559,7 +571,9 @@ proc subscribeAll*(bus: AsyncEventBus,
   bus.subscribers.add(subkey)
   subkey
 
-proc unsubscribe*(bus: AsyncEventBus, key: EventBusKey) =
+proc unsubscribe*(bus: AsyncEventBus, key: EventBusKey) {.
+     deprecated: "Implementation has unfixable flaws, please use " &
+                 "AsyncEventQueue instead".} =
   ## Cancel subscription of subscriber with key ``key`` from eventbus ``bus``.
   let eventKey = generateKey(key.typeName, key.eventName)
 
@@ -570,7 +584,9 @@ proc unsubscribe*(bus: AsyncEventBus, key: EventBusKey) =
   # Clean subscribers subscribed to all events.
   bus.subscribers.keepItIf(it.unique != key.unique)
 
-proc emit[T](bus: AsyncEventBus, event: string, data: T, loc: ptr SrcLoc) =
+proc emit[T](bus: AsyncEventBus, event: string, data: T, loc: ptr SrcLoc) {.
+     deprecated: "Implementation has unfixable flaws, please use " &
+                 "AsyncEventQueue instead".} =
   let
     eventKey = generateKey(T.name, event)
     payload =
@@ -612,7 +628,9 @@ template emit*[T](bus: AsyncEventBus, event: string, data: T) =
   emit(bus, event, data, getSrcLocation())
 
 proc emitWait[T](bus: AsyncEventBus, event: string, data: T,
-                 loc: ptr SrcLoc): Future[void] =
+                 loc: ptr SrcLoc): Future[void] {.
+     deprecated: "Implementation has unfixable flaws, please use " &
+                 "AsyncEventQueue instead".} =
   var retFuture = newFuture[void]("AsyncEventBus.emitWait")
   proc continuation(udata: pointer) {.gcsafe.} =
     if not(retFuture.finished()):
@@ -630,7 +648,7 @@ template emitWait*[T](bus: AsyncEventBus, event: string,
 
 proc `==`(a, b: EventQueueKey): bool {.borrow.}
 
-proc compact(ab: AsyncEventQueue) =
+proc compact(ab: AsyncEventQueue) {.raises: [Defect].} =
   if len(ab.readers) > 0:
     let minOffset =
       block:
@@ -653,13 +671,15 @@ proc compact(ab: AsyncEventQueue) =
   else:
     ab.queue.clear()
 
-proc getReaderIndex(ab: AsyncEventQueue, key: EventQueueKey): int =
+proc getReaderIndex(ab: AsyncEventQueue, key: EventQueueKey): int {.
+     raises: [Defect].} =
   for index, value in ab.readers.pairs():
     if value.key == key:
       return index
   -1
 
-proc newAsyncEventQueue*[T](limitSize = 0): AsyncEventQueue[T] =
+proc newAsyncEventQueue*[T](limitSize = 0): AsyncEventQueue[T] {.
+     raises: [Defect].} =
   ## Creates new ``AsyncEventBus`` maximum size of ``limitSize`` (default is
   ## ``0`` which means that there no limits).
   ##
@@ -677,10 +697,10 @@ proc newAsyncEventQueue*[T](limitSize = 0): AsyncEventQueue[T] =
       initDeque[T](nextPowerOfTwo(limitSize + 1))
   AsyncEventQueue[T](counter: 0'u64, queue: queue, limit: limitSize)
 
-proc len*(ab: AsyncEventQueue): int =
+proc len*(ab: AsyncEventQueue): int {.raises: [Defect].} =
   len(ab.queue)
 
-proc register*(ab: AsyncEventQueue): EventQueueKey =
+proc register*(ab: AsyncEventQueue): EventQueueKey {.raises: [Defect].} =
   inc(ab.counter)
   let reader = EventQueueReader(key: EventQueueKey(ab.counter),
                                 offset: ab.offset + len(ab.queue),
@@ -688,7 +708,8 @@ proc register*(ab: AsyncEventQueue): EventQueueKey =
   ab.readers.add(reader)
   EventQueueKey(ab.counter)
 
-proc unregister*(ab: AsyncEventQueue, key: EventQueueKey) =
+proc unregister*(ab: AsyncEventQueue, key: EventQueueKey) {.
+     raises: [Defect] .} =
   let index = ab.getReaderIndex(key)
   if index >= 0:
     let reader = ab.readers[index]
@@ -698,19 +719,21 @@ proc unregister*(ab: AsyncEventQueue, key: EventQueueKey) =
     ab.readers.delete(index)
     ab.compact()
 
-proc close*(ab: AsyncEventQueue) =
+proc close*(ab: AsyncEventQueue) {.raises: [Defect].} =
   for reader in ab.readers.items():
     if not(isNil(reader.waiter)) and not(reader.waiter.finished()):
       reader.waiter.complete()
   ab.readers.reset()
   ab.queue.clear()
 
-proc closeWait*(ab: AsyncEventQueue): Future[void] =
+proc closeWait*(ab: AsyncEventQueue): Future[void] {.raises: [Defect].} =
   var retFuture = newFuture[void]("AsyncEventQueue.closeWait()")
   proc continuation(udata: pointer) {.gcsafe.} =
     if not(retFuture.finished()):
       retFuture.complete()
   ab.close()
+  # Schedule `continuation` to be called only after all the `reader`
+  # notifications will be scheduled and processed.
   callSoon(continuation)
   retFuture
 
@@ -718,7 +741,7 @@ template readerOverflow*(ab: AsyncEventQueue,
                          reader: EventQueueReader): bool =
   ab.limit + (reader.offset - ab.offset) <= len(ab.queue)
 
-proc emit*[T](ab: AsyncEventQueue[T], data: T) =
+proc emit*[T](ab: AsyncEventQueue[T], data: T) {.raises: [Defect].} =
   if len(ab.readers) > 0:
     # We enqueue `data` only if there active reader present.
     var changesPresent = false

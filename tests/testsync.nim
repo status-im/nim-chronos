@@ -379,7 +379,9 @@ suite "Asynchronous sync primitives test suite":
 
     test1()
     test2()
-    eventQueue.close()
+    waitFor eventQueue.closeWait()
+    GC_fullCollect()
+    debugEcho GC_getStatistics()
 
   test "AsyncEventQueue() concurrency test":
     let eventQueue = newAsyncEventQueue[int]()
@@ -432,6 +434,8 @@ suite "Asynchronous sync primitives test suite":
                            2000]
 
     waitFor eventQueue.closeWait()
+    GC_fullCollect()
+    debugEcho GC_getStatistics()
 
   test "AsyncEventQueue() specific number test":
     let eventQueue = newAsyncEventQueue[int]()
@@ -482,6 +486,8 @@ suite "Asynchronous sync primitives test suite":
       dataFut4.read() == @[900, 1000, 1100, 1200, 1300, 1400, 1500, 1600]
 
     waitFor eventQueue.closeWait()
+    GC_fullCollect()
+    debugEcho GC_getStatistics()
 
   test "AsyncEventQueue() register()/unregister() test":
     var emptySeq: seq[int]
@@ -529,6 +535,8 @@ suite "Asynchronous sync primitives test suite":
       dataFut3.read() == @[100, 200, 300]
 
     waitFor eventQueue.closeWait()
+    GC_fullCollect()
+    debugEcho GC_getStatistics()
 
   test "AsyncEventQueue() garbage collection test":
     let eventQueue = newAsyncEventQueue[int]()
@@ -571,6 +579,8 @@ suite "Asynchronous sync primitives test suite":
       len(eventQueue) == 0
 
     waitFor eventQueue.closeWait()
+    GC_fullCollect()
+    debugEcho GC_getStatistics()
 
   test "AsyncEventQueue() 100,000 of events to 10 clients test":
     let eventQueue = newAsyncEventQueue[int]()
@@ -621,6 +631,8 @@ suite "Asynchronous sync primitives test suite":
 
     waitFor test()
     futs.reset()
+    GC_fullCollect()
+    debugEcho GC_getStatistics()
 
   test "AsyncEventQueue() one consumer limits test":
     let eventQueue = newAsyncEventQueue[int](4)
@@ -671,7 +683,10 @@ suite "Asynchronous sync primitives test suite":
     eventQueue.unregister(key1)
     # All items should be garbage collected after unregister.
     check len(eventQueue) == 0
+
     waitFor eventQueue.closeWait()
+    GC_fullCollect()
+    debugEcho GC_getStatistics()
 
   test "AsyncEventQueue() many consumers limits test":
     let eventQueue = newAsyncEventQueue[int](4)
@@ -843,6 +858,8 @@ suite "Asynchronous sync primitives test suite":
       check len(eventQueue) == 0
 
     waitFor eventQueue.closeWait()
+    GC_fullCollect()
+    debugEcho GC_getStatistics()
 
   test "AsyncEventQueue() slow and fast consumer test":
     proc test() {.async.} =
@@ -870,3 +887,5 @@ suite "Asynchronous sync primitives test suite":
       await eventQueue.closeWait()
 
     waitFor test()
+    GC_fullCollect()
+    debugEcho GC_getStatistics()
