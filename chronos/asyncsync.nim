@@ -630,7 +630,7 @@ template emitWait*[T](bus: AsyncEventBus, event: string,
 
 proc `==`(a, b: EventQueueKey): bool {.borrow.}
 
-proc compact[T](ab: AsyncEventQueue[T]) =
+proc compact(ab: AsyncEventQueue) =
   if len(ab.readers) > 0:
     let minOffset =
       block:
@@ -653,7 +653,7 @@ proc compact[T](ab: AsyncEventQueue[T]) =
   else:
     ab.queue.clear()
 
-proc getReaderIndex[T](ab: AsyncEventQueue[T], key: EventQueueKey): int =
+proc getReaderIndex(ab: AsyncEventQueue, key: EventQueueKey): int =
   for index, value in ab.readers.pairs():
     if value.key == key:
       return index
@@ -677,10 +677,10 @@ proc newAsyncEventQueue*[T](limitSize = 0): AsyncEventQueue[T] =
       initDeque[T](nextPowerOfTwo(limitSize + 1))
   AsyncEventQueue[T](counter: 0'u64, queue: queue, limit: limitSize)
 
-proc len*[T](ab: AsyncEventQueue[T]): int =
+proc len*(ab: AsyncEventQueue): int =
   len(ab.queue)
 
-proc register*[T](ab: AsyncEventQueue[T]): EventQueueKey =
+proc register*(ab: AsyncEventQueue): EventQueueKey =
   inc(ab.counter)
   let reader = EventQueueReader(key: EventQueueKey(ab.counter),
                                 offset: ab.offset + len(ab.queue),
@@ -688,7 +688,7 @@ proc register*[T](ab: AsyncEventQueue[T]): EventQueueKey =
   ab.readers.add(reader)
   EventQueueKey(ab.counter)
 
-proc unregister*[T](ab: AsyncEventQueue[T], key: EventQueueKey) =
+proc unregister*(ab: AsyncEventQueue, key: EventQueueKey) =
   let index = ab.getReaderIndex(key)
   if index >= 0:
     let reader = ab.readers[index]
@@ -698,8 +698,24 @@ proc unregister*[T](ab: AsyncEventQueue[T], key: EventQueueKey) =
     ab.readers.delete(index)
     ab.compact()
 
-template readerOverflow*[T](ab: AsyncEventQueue[T],
-                            reader: EventQueueReader): bool =
+proc close*(ab: AsyncEventQueue) =
+  for reader in ab.readers.items():
+    if not(isNil(reader.waiter)) and not(reader.waiter.finished()):
+      reader.waiter.complete()
+  ab.readers.reset()
+  ab.queue.clear()
+
+proc closeWait*(ab: AsyncEventQueue): Future[void] =
+  var retFuture = newFuture[void]("AsyncEventQueue.closeWait()")
+  proc continuation(udata: pointer) {.gcsafe.} =
+    if not(retFuture.finished()):
+      retFuture.complete()
+  ab.close()
+  callSoon(continuation)
+  retFuture
+
+template readerOverflow*(ab: AsyncEventQueue,
+                         reader: EventQueueReader): bool =
   ab.limit + (reader.offset - ab.offset) <= len(ab.queue)
 
 proc emit*[T](ab: AsyncEventQueue[T], data: T) =
@@ -736,22 +752,6 @@ proc emit*[T](ab: AsyncEventQueue[T], data: T) =
 
     if changesPresent:
       ab.compact()
-
-proc close*[T](ab: AsyncEventQueue[T]) =
-  for reader in ab.readers.items():
-    if not(isNil(reader.waiter)) and not(reader.waiter.finished()):
-      reader.waiter.complete()
-  ab.readers.reset()
-  ab.queue.clear()
-
-proc closeWait*[T](ab: AsyncEventQueue[T]): Future[void] =
-  var retFuture = newFuture[void]("AsyncEventQueue.closeWait()")
-  proc continuation(udata: pointer) {.gcsafe.} =
-    if not(retFuture.finished()):
-      retFuture.complete()
-  ab.close()
-  callSoon(continuation)
-  retFuture
 
 proc waitEvents*[T](ab: AsyncEventQueue[T],
                     key: EventQueueKey,
