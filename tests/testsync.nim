@@ -634,14 +634,18 @@ suite "Asynchronous sync primitives test suite":
     waitFor test()
     GC_fullCollect()
     debugEcho GC_getStatistics()
+    echo "0"
 
   test "AsyncEventQueue() one consumer limits test":
+    echo "1"
     let eventQueue = newAsyncEventQueue[int](4)
+    echo "2"
     check len(eventQueue) == 0
     eventQueue.emit(100)
     eventQueue.emit(200)
     eventQueue.emit(300)
     eventQueue.emit(400)
+    echo "3"
     # There no consumers, so all the items should be discarded
     check len(eventQueue) == 0
     let key1 = eventQueue.register()
@@ -685,9 +689,12 @@ suite "Asynchronous sync primitives test suite":
     # All items should be garbage collected after unregister.
     check len(eventQueue) == 0
 
+    echo "10"
     waitFor eventQueue.closeWait()
+    echo "11"
     GC_fullCollect()
     debugEcho GC_getStatistics()
+    echo "12"
 
   test "AsyncEventQueue() many consumers limits test":
     let eventQueue = newAsyncEventQueue[int](4)
