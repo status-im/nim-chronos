@@ -691,12 +691,17 @@ suite "Asynchronous sync primitives test suite":
     echo "91"
     let checkException =
       try:
+        echo "910"
         let res {.used.} = errorFut1.read()
+        echo "911"
         false
       except AsyncEventQueueFullError:
+        echo "912"
         true
       except CatchableError:
+        echo "913"
         false
+    echo "914"
     check checkException == true
     echo "92"
     # There should be no items because consumer was overflowed.
