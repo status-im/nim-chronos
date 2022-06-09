@@ -583,41 +583,43 @@ suite "Asynchronous sync primitives test suite":
     debugEcho GC_getStatistics()
 
   test "AsyncEventQueue() 100,000 of events to 10 clients test":
-    let eventQueue = newAsyncEventQueue[int]()
-    let keys = [
-      eventQueue.register(), eventQueue.register(),
-      eventQueue.register(), eventQueue.register(),
-      eventQueue.register(), eventQueue.register(),
-      eventQueue.register(), eventQueue.register(),
-      eventQueue.register(), eventQueue.register()
-    ]
-
-    proc clientTask(queue: AsyncEventQueue[int],
-                    key: EventQueueKey): Future[seq[int]] {.async.} =
-      var events: seq[int]
-      while true:
-        let res = await queue.waitEvents(key)
-        if len(res) == 0:
-          break
-        events.add(res)
-      queue.unregister(key)
-      return events
-
-    var futs = @[
-      clientTask(eventQueue, keys[0]), clientTask(eventQueue, keys[1]),
-      clientTask(eventQueue, keys[2]), clientTask(eventQueue, keys[3]),
-      clientTask(eventQueue, keys[4]), clientTask(eventQueue, keys[5]),
-      clientTask(eventQueue, keys[6]), clientTask(eventQueue, keys[7]),
-      clientTask(eventQueue, keys[8]), clientTask(eventQueue, keys[9])
-    ]
-
     proc test() {.async.} =
+      let eventQueue = newAsyncEventQueue[int]()
+      var keys = @[
+        eventQueue.register(), eventQueue.register(),
+        eventQueue.register(), eventQueue.register(),
+        eventQueue.register(), eventQueue.register(),
+        eventQueue.register(), eventQueue.register(),
+        eventQueue.register(), eventQueue.register()
+      ]
+
+      proc clientTask(queue: AsyncEventQueue[int],
+                      key: EventQueueKey): Future[seq[int]] {.async.} =
+        var events: seq[int]
+        while true:
+          let res = await queue.waitEvents(key)
+          if len(res) == 0:
+            break
+          events.add(res)
+        queue.unregister(key)
+        return events
+
+      var futs = @[
+        clientTask(eventQueue, keys[0]), clientTask(eventQueue, keys[1]),
+        clientTask(eventQueue, keys[2]), clientTask(eventQueue, keys[3]),
+        clientTask(eventQueue, keys[4]), clientTask(eventQueue, keys[5]),
+        clientTask(eventQueue, keys[6]), clientTask(eventQueue, keys[7]),
+        clientTask(eventQueue, keys[8]), clientTask(eventQueue, keys[9])
+      ]
+
       for i in 1 .. 100_000:
         if (i mod 1000) == 0:
           # Give some CPU for clients.
           await sleepAsync(0.milliseconds)
         eventQueue.emit(i)
+
       await eventQueue.closeWait()
+
       await allFutures(futs)
       for index in 0 ..< len(futs):
         let fut = futs[index]
@@ -630,7 +632,6 @@ suite "Asynchronous sync primitives test suite":
         futs[index] = nil
 
     waitFor test()
-    futs.reset()
     GC_fullCollect()
     debugEcho GC_getStatistics()
 

@@ -584,9 +584,7 @@ proc unsubscribe*(bus: AsyncEventBus, key: EventBusKey) {.
   # Clean subscribers subscribed to all events.
   bus.subscribers.keepItIf(it.unique != key.unique)
 
-proc emit[T](bus: AsyncEventBus, event: string, data: T, loc: ptr SrcLoc) {.
-     deprecated: "Implementation has unfixable flaws, please use " &
-                 "AsyncEventQueue instead".} =
+proc emit[T](bus: AsyncEventBus, event: string, data: T, loc: ptr SrcLoc) =
   let
     eventKey = generateKey(T.name, event)
     payload =
@@ -623,14 +621,14 @@ proc emit[T](bus: AsyncEventBus, event: string, data: T, loc: ptr SrcLoc) {.
   for subscriber in bus.subscribers:
     triggerSubscriberCallback(subscriber)
 
-template emit*[T](bus: AsyncEventBus, event: string, data: T) =
+template emit*[T](bus: AsyncEventBus, event: string, data: T) {.
+         deprecated: "Implementation has unfixable flaws, please use " &
+                     "AsyncEventQueue instead".} =
   ## Emit new event ``event`` to the eventbus ``bus`` with payload ``data``.
   emit(bus, event, data, getSrcLocation())
 
 proc emitWait[T](bus: AsyncEventBus, event: string, data: T,
-                 loc: ptr SrcLoc): Future[void] {.
-     deprecated: "Implementation has unfixable flaws, please use " &
-                 "AsyncEventQueue instead".} =
+                 loc: ptr SrcLoc): Future[void] =
   var retFuture = newFuture[void]("AsyncEventBus.emitWait")
   proc continuation(udata: pointer) {.gcsafe.} =
     if not(retFuture.finished()):
@@ -640,7 +638,9 @@ proc emitWait[T](bus: AsyncEventBus, event: string, data: T,
   return retFuture
 
 template emitWait*[T](bus: AsyncEventBus, event: string,
-                      data: T): Future[void] =
+                      data: T): Future[void] {.
+     deprecated: "Implementation has unfixable flaws, please use " &
+                 "AsyncEventQueue instead".} =
   ## Emit new event ``event`` to the eventbus ``bus`` with payload ``data`` and
   ## wait until all the subscribers/waiters will receive notification about
   ## event.
