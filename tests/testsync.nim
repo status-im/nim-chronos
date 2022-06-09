@@ -380,8 +380,6 @@ suite "Asynchronous sync primitives test suite":
     test1()
     test2()
     waitFor eventQueue.closeWait()
-    GC_fullCollect()
-    debugEcho GC_getStatistics()
 
   test "AsyncEventQueue() concurrency test":
     let eventQueue = newAsyncEventQueue[int]()
@@ -434,8 +432,6 @@ suite "Asynchronous sync primitives test suite":
                            2000]
 
     waitFor eventQueue.closeWait()
-    GC_fullCollect()
-    debugEcho GC_getStatistics()
 
   test "AsyncEventQueue() specific number test":
     let eventQueue = newAsyncEventQueue[int]()
@@ -486,8 +482,6 @@ suite "Asynchronous sync primitives test suite":
       dataFut4.read() == @[900, 1000, 1100, 1200, 1300, 1400, 1500, 1600]
 
     waitFor eventQueue.closeWait()
-    GC_fullCollect()
-    debugEcho GC_getStatistics()
 
   test "AsyncEventQueue() register()/unregister() test":
     var emptySeq: seq[int]
@@ -535,8 +529,6 @@ suite "Asynchronous sync primitives test suite":
       dataFut3.read() == @[100, 200, 300]
 
     waitFor eventQueue.closeWait()
-    GC_fullCollect()
-    debugEcho GC_getStatistics()
 
   test "AsyncEventQueue() garbage collection test":
     let eventQueue = newAsyncEventQueue[int]()
@@ -579,8 +571,6 @@ suite "Asynchronous sync primitives test suite":
       len(eventQueue) == 0
 
     waitFor eventQueue.closeWait()
-    GC_fullCollect()
-    debugEcho GC_getStatistics()
 
   test "AsyncEventQueue() 1,000,000 of events to 10 clients test":
     proc test() {.async.} =
@@ -632,8 +622,6 @@ suite "Asynchronous sync primitives test suite":
         futs[index] = nil
 
     waitFor test()
-    GC_fullCollect()
-    debugEcho GC_getStatistics()
 
   test "AsyncEventQueue() one consumer limits test":
     proc test() {.async.} =
@@ -695,9 +683,6 @@ suite "Asynchronous sync primitives test suite":
       await eventQueue.closeWait()
 
     waitFor test()
-    GC_fullCollect()
-    debugEcho GC_getStatistics()
-    echo "13"
 
   test "AsyncEventQueue() many consumers limits test":
     proc test() {.async.} =
@@ -871,8 +856,6 @@ suite "Asynchronous sync primitives test suite":
       await eventQueue.closeWait()
 
     waitFor test()
-    GC_fullCollect()
-    debugEcho GC_getStatistics()
 
   test "AsyncEventQueue() slow and fast consumer test":
     proc test() {.async.} =
@@ -900,5 +883,3 @@ suite "Asynchronous sync primitives test suite":
       await eventQueue.closeWait()
 
     waitFor test()
-    GC_fullCollect()
-    debugEcho GC_getStatistics()
