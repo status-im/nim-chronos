@@ -649,11 +649,13 @@ suite "Asynchronous sync primitives test suite":
     # There no consumers, so all the items should be discarded
     check len(eventQueue) == 0
     let key1 = eventQueue.register()
+    echo "4"
     check len(eventQueue) == 0
     eventQueue.emit(500)
     eventQueue.emit(600)
     eventQueue.emit(700)
     eventQueue.emit(800)
+    echo "5"
     # So exact `limit` number of items added, consumer should receive all of
     # them.
     check len(eventQueue) == 4
@@ -662,39 +664,44 @@ suite "Asynchronous sync primitives test suite":
       dataFut1.finished() == true
       dataFut1.read() == @[500, 600, 700, 800]
       len(eventQueue) == 0
+    echo "6"
 
     eventQueue.emit(900)
     eventQueue.emit(1000)
     eventQueue.emit(1100)
     eventQueue.emit(1200)
+    echo "7"
     check len(eventQueue) == 4
     # Overfilling queue
     eventQueue.emit(1300)
     # Because overfill for single consumer happend, whole queue should become
     # empty.
     check len(eventQueue) == 0
+    echo "8"
     eventQueue.emit(1400)
     eventQueue.emit(1500)
     eventQueue.emit(1600)
     eventQueue.emit(1700)
     eventQueue.emit(1800)
     check len(eventQueue) == 0
+    echo "9"
     let errorFut1 = eventQueue.waitEvents(key1)
     check errorFut1.finished() == true
     expect AsyncEventQueueFullError:
       let res {.used.} = errorFut1.read()
     # There should be no items because consumer was overflowed.
     check len(eventQueue) == 0
+    echo "10"
     eventQueue.unregister(key1)
     # All items should be garbage collected after unregister.
     check len(eventQueue) == 0
 
-    echo "10"
-    waitFor eventQueue.closeWait()
     echo "11"
+    waitFor eventQueue.closeWait()
+    echo "12"
     GC_fullCollect()
     debugEcho GC_getStatistics()
-    echo "12"
+    echo "13"
 
   test "AsyncEventQueue() many consumers limits test":
     let eventQueue = newAsyncEventQueue[int](4)
