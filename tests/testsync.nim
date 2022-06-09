@@ -689,8 +689,15 @@ suite "Asynchronous sync primitives test suite":
     echo "90"
     check errorFut1.finished() == true
     echo "91"
-    expect AsyncEventQueueFullError:
-      let res {.used.} = errorFut1.read()
+    let checkException =
+      try:
+        let res {.used.} = errorFut1.read()
+        false
+      except AsyncEventQueueFullError:
+        true
+      except CatchableError:
+        false
+    check checkException == true
     echo "92"
     # There should be no items because consumer was overflowed.
     check len(eventQueue) == 0
