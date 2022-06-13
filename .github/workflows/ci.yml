@@ -12,30 +12,30 @@ jobs:
       fail-fast: false
       matrix:
         target:
-          - os: linux
-            cpu: amd64
-          - os: linux
-            cpu: i386
-          - os: macos
-            cpu: amd64
+          # - os: linux
+          #   cpu: amd64
+          # - os: linux
+          #   cpu: i386
+          # - os: macos
+          #   cpu: amd64
           - os: windows
             cpu: amd64
           #- os: windows
             #cpu: i386
         branch: [version-1-2, version-1-4, version-1-6, devel]
         include:
-          - target:
-              os: linux
-            builder: ubuntu-18.04
-            shell: bash
-          - target:
-              os: macos
-            builder: macos-10.15
-            shell: bash
+          # - target:
+          #     os: linux
+          #   builder: ubuntu-18.04
+          #   shell: bash
+          # - target:
+          #     os: macos
+          #   builder: macos-10.15
+          #   shell: bash
           - target:
               os: windows
             builder: windows-2019
-            shell: msys2 {0}
+            shell: bash
 
     defaults:
       run:
@@ -68,26 +68,31 @@ jobs:
           chmod 755 external/bin/gcc external/bin/g++
           echo '${{ github.workspace }}/external/bin' >> $GITHUB_PATH
 
-      - name: MSYS2 (Windows i386)
-        if: runner.os == 'Windows' && matrix.target.cpu == 'i386'
-        uses: msys2/setup-msys2@v2
+      - name: Restore Mingw from cache
+        if: runner.os == 'Windows'
+        id: windows-mingw-cache
+        uses: actions/cache@v2
         with:
-          path-type: inherit
-          msystem: MINGW32
-          install: >-
-            base-devel
-            git
-            mingw-w64-i686-toolchain
+          path: mingw
+          key: 'mingw-${{ matrix.target.cpu }}'
 
-      - name: MSYS2 (Windows amd64)
-        if: runner.os == 'Windows' && matrix.target.cpu == 'amd64'
-        uses: msys2/setup-msys2@v2
-        with:
-          path-type: inherit
-          install: >-
-            base-devel
-            git
-            mingw-w64-x86_64-toolchain
+      - name: Install WinLibs MinGW (i386)
+        if: >
+          steps.windows-mingw-cache.outputs.cache-hit != 'true' &&
+          runner.os == 'Windows' && matrix.target.cpu == 'i386'
+        run: |
+          mkdir -p mingw
+          curl -L "https://github.com/brechtsanders/winlibs_mingw/releases/download/11.2.0-14.0.0-9.0.0-msvcrt-r7/winlibs-i686-posix-dwarf-gcc-11.2.0-mingw-w64msvcrt-9.0.0-r7.7z" -o mingw.7z
+          7z x -y mingw.7z -omingw/
+
+      - name: Install WinLibs MinGW (amd64)
+        if: >
+          steps.windows-mingw-cache.outputs.cache-hit != 'true' &&
+          runner.os == 'Windows' && matrix.target.cpu == 'amd64'
+        run: |
+          mkdir -p mingw
+          curl -L "https://github.com/brechtsanders/winlibs_mingw/releases/download/11.2.0-14.0.0-9.0.0-msvcrt-r7/winlibs-x86_64-posix-seh-gcc-11.2.0-mingw-w64msvcrt-9.0.0-r7.7z" -o mingw.7z
+          7z x -y mingw.7z -omingw/
 
       - name: Restore Nim DLLs dependencies (Windows) from cache
         if: runner.os == 'Windows'
@@ -110,6 +115,7 @@ jobs:
         if: >
           runner.os == 'Windows'
         run: |
+          echo '${{ github.workspace }}'"/mingw/bin" >> $GITHUB_PATH
           echo '${{ github.workspace }}'"/external/dlls-${{ matrix.target.cpu }}" >> $GITHUB_PATH
 
       - name: Derive environment variables
