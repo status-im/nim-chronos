@@ -12,26 +12,26 @@ jobs:
       fail-fast: false
       matrix:
         target:
-          - os: linux
-            cpu: amd64
-          - os: linux
-            cpu: i386
-          - os: macos
-            cpu: amd64
+          # - os: linux
+          #   cpu: amd64
+          # - os: linux
+          #   cpu: i386
+          # - os: macos
+          #   cpu: amd64
           - os: windows
             cpu: amd64
           #- os: windows
             #cpu: i386
         branch: [version-1-2, version-1-4, version-1-6, devel]
         include:
-          - target:
-              os: linux
-            builder: ubuntu-18.04
-            shell: bash
-          - target:
-              os: macos
-            builder: macos-10.15
-            shell: bash
+          # - target:
+          #     os: linux
+          #   builder: ubuntu-18.04
+          #   shell: bash
+          # - target:
+          #     os: macos
+          #   builder: macos-10.15
+          #   shell: bash
           - target:
               os: windows
             builder: windows-2019
@@ -115,11 +115,13 @@ jobs:
         if: >
           runner.os == 'Windows'
         run: |
-          echo '${{ github.workspace }}'"/mingw/bin" >> $GITHUB_PATH
-          echo '${{ github.workspace }}'"/external/dlls-${{ matrix.target.cpu }}" >> $GITHUB_PATH
+          echo "${{ github.workspace }}/mingw/bin" >> $GITHUB_PATH
+          echo "${{ github.workspace }}/external/dlls-${{ matrix.target.cpu }}" >> $GITHUB_PATH
 
       - name: Derive environment variables
         run: |
+          echo "$PATH"
+
           if [[ '${{ matrix.target.cpu }}' == 'amd64' ]]; then
             PLATFORM=x64
           else
