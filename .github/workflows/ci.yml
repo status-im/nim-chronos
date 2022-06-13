@@ -68,6 +68,11 @@ jobs:
           chmod 755 external/bin/gcc external/bin/g++
           echo '${{ github.workspace }}/external/bin' >> $GITHUB_PATH
 
+      - name: Remove pre-installed Mingw64
+        if: runner.os == 'Windows'
+        run: |
+          rm -Rf /mingw64
+
       - name: Restore Mingw from cache
         if: runner.os == 'Windows'
         id: windows-mingw-cache
