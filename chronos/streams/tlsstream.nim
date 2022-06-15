@@ -648,10 +648,8 @@ proc pemDecode*(data: openArray[char]): seq[PEMElement] =
   ## Decode PEM encoded string and get array of binary blobs.
   if len(data) == 0:
     raiseTLSStreamProtocolError("Empty PEM message")
-  var ctx: PemDecoderContext
   var pctx = new PEMContext
   var res = newSeq[PEMElement]()
-  pemDecoderInit(ctx)
 
   proc itemAppend(ctx: pointer, pbytes: pointer, nbytes: uint) {.cdecl.} =
     var p = cast[PEMContext](ctx)
@@ -659,23 +657,23 @@ proc pemDecode*(data: openArray[char]): seq[PEMElement] =
     p.data.setLen(o + nbytes)
     copyMem(addr p.data[o], pbytes, nbytes)
 
-  var length = uint len(data)
-  var offset = 0'u
+  var offset = 0
   var inobj = false
   var elem: PEMElement
 
-  while length > 0:
-    var tlen = pemDecoderPush(ctx,
-                              cast[pointer](unsafeAddr data[offset]), length)
-    offset = offset + tlen
-    length = length - tlen
+  var ctx: PemDecoderContext
+  ctx.init()
+  ctx.setdest(itemAppend, cast[pointer](pctx))
 
-    let event = pemDecoderEvent(ctx)
+  while offset < data.len:
+    let tlen = ctx.push(data.toOpenArray(offset, data.high))
+    offset = offset + tlen
+
+    let event = ctx.lastEvent()
     if event == PEM_BEGIN_OBJ:
       inobj = true
-      elem.name = $pemDecoderName(ctx)
-      pctx.data = newSeq[byte]()
-      pemDecoderSetdest(ctx, itemAppend, cast[pointer](pctx))
+      elem.name = ctx.banner()
+      pctx.data.setLen(0)
     elif event == PEM_END_OBJ:
       if inobj:
         elem.data = pctx.data
