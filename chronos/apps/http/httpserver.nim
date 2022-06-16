@@ -1350,7 +1350,7 @@ proc redirect*(req: HttpRequestRef, code: HttpCode,
 proc redirect*(req: HttpRequestRef, code: HttpCode,
                location: string): Future[HttpResponseRef] =
   ## Responds to the request with redirection to location ``location``.
-  redirecT(req, code, location, HttpTable.init())
+  redirect(req, code, location, HttpTable.init())
 
 proc responded*(req: HttpRequestRef): bool =
   ## Returns ``true`` if request ``req`` has been responded or responding.
