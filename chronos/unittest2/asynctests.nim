@@ -7,9 +7,9 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 import unittest2
-import ".."/asyncloop
+import ../../chronos
 
-export unittest2
+export unittest2, chronos
 
 template asyncTest*(name: string, body: untyped): untyped =
   test name:
