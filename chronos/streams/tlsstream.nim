@@ -473,7 +473,7 @@ proc newTLSClientAsyncStream*(rsource: AsyncStreamReader,
   else:
     sslClientInitFull(res.ccontext, addr res.x509,
                       unsafeAddr MozillaTrustAnchors[0],
-                      uint len(MozillaTrustAnchors))
+                      uint(len(MozillaTrustAnchors)))
 
   let size = max(SSL_BUFSIZE_BIDI, bufferSize)
   res.sbuffer = newSeq[byte](size)
@@ -548,11 +548,11 @@ proc newTLSServerAsyncStream*(rsource: AsyncStreamReader,
     if algo == -1:
       raiseTLSStreamProtocolError("Could not decode certificate")
     sslServerInitFullEc(res.scontext, addr certificate.certs[0],
-                        uint len(certificate.certs), cuint(algo),
+                        uint(len(certificate.certs)), cuint(algo),
                         addr privateKey.eckey)
   elif privateKey.kind == TLSKeyType.RSA:
     sslServerInitFullRsa(res.scontext, addr certificate.certs[0],
-                         uint len(certificate.certs), addr privateKey.rsakey)
+                         uint(len(certificate.certs)), addr privateKey.rsakey)
 
   let size = max(SSL_BUFSIZE_BIDI, bufferSize)
   res.sbuffer = newSeq[byte](size)
@@ -630,7 +630,7 @@ proc init*(tt: typedesc[TLSPrivateKey], data: openArray[byte]): TLSPrivateKey =
   if len(data) == 0:
     raiseTLSStreamProtocolError("Incorrect private key")
   skeyDecoderInit(ctx)
-  skeyDecoderPush(ctx, cast[pointer](unsafeAddr data[0]), uint len(data))
+  skeyDecoderPush(ctx, cast[pointer](unsafeAddr data[0]), uint(len(data)))
   let err = skeyDecoderLastError(ctx)
   if err != 0:
     raiseTLSStreamProtocolError(err)
@@ -653,7 +653,7 @@ proc pemDecode*(data: openArray[char]): seq[PEMElement] =
 
   proc itemAppend(ctx: pointer, pbytes: pointer, nbytes: uint) {.cdecl.} =
     var p = cast[PEMContext](ctx)
-    var o = uint len(p.data)
+    var o = uint(len(p.data))
     p.data.setLen(o + nbytes)
     copyMem(addr p.data[o], pbytes, nbytes)
 
@@ -716,7 +716,7 @@ proc init*(tt: typedesc[TLSCertificate],
       res.storage.add(item.data)
       let cert = X509Certificate(
         data: addr res.storage[offset],
-        dataLen: uint len(item.data)
+        dataLen: uint(len(item.data))
       )
       let ares = getSignerAlgo(cert)
       if ares == -1:
