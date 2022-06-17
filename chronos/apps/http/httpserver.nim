@@ -1323,16 +1323,34 @@ proc respond*(req: HttpRequestRef, code: HttpCode): Future[HttpResponseRef] =
   respond(req, code, "", HttpTable.init())
 
 proc redirect*(req: HttpRequestRef, code: HttpCode,
+               location: string, headers: HttpTable): Future[HttpResponseRef] =
+  ## Responds to the request with redirection to location ``location`` and
+  ## additional headers ``headers``.
+  ##
+  ## Note, ``location`` argument's value has priority over "Location" header's
+  ## value in ``headers`` argument.
+  var mheaders = headers
+  mheaders.set("location", location)
+  respond(req, code, "", mheaders)
+
+proc redirect*(req: HttpRequestRef, code: HttpCode,
+               location: Uri, headers: HttpTable): Future[HttpResponseRef] =
+  ## Responds to the request with redirection to location ``location`` and
+  ## additional headers ``headers``.
+  ##
+  ## Note, ``location`` argument's value has priority over "Location" header's
+  ## value in ``headers`` argument.
+  redirect(req, code, $location, headers)
+
+proc redirect*(req: HttpRequestRef, code: HttpCode,
                location: Uri): Future[HttpResponseRef] =
   ## Responds to the request with redirection to location ``location``.
-  let headers = HttpTable.init([("location", $location)])
-  respond(req, code, "", headers)
+  redirect(req, code, location, HttpTable.init())
 
 proc redirect*(req: HttpRequestRef, code: HttpCode,
                location: string): Future[HttpResponseRef] =
   ## Responds to the request with redirection to location ``location``.
-  let headers = HttpTable.init([("location", location)])
-  respond(req, code, "", headers)
+  redirect(req, code, location, HttpTable.init())
 
 proc responded*(req: HttpRequestRef): bool =
   ## Returns ``true`` if request ``req`` has been responded or responding.
