@@ -6,8 +6,7 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 import unittest2, stew/[base10, byteutils]
-import ".."/chronos
-import testhelpers
+import ".."/chronos/unittest2/asynctests
 
 when defined(posix):
   from ".."/chronos/osdefs import SIGKILL
