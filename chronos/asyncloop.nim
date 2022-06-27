@@ -852,9 +852,9 @@ proc callIdle*(cbproc: CallbackFunc) {.gcsafe, raises: [Defect].} =
 include asyncfutures2
 
 when ioselSupportedPlatform:
-  proc waitForSignal*(signal: int): Future[void] {.
+  proc waitSignal*(signal: int): Future[void] {.
        raises: [Defect].} =
-    var retFuture = newFuture[void]("chronos.waitForSignal()")
+    var retFuture = newFuture[void]("chronos.waitSignal()")
     var sigfd: int = -1
 
     template getSignalException(e: untyped): untyped =

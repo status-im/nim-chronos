@@ -40,7 +40,7 @@ suite "Signal handling test suite":
       signalCounter == value
 
     proc testWait(signal: int): bool =
-      var fut = waitForSignal(signal)
+      var fut = waitSignal(signal)
       discard posix.kill(posix.getpid(), cint(signal))
       waitFor(fut)
       true
@@ -57,13 +57,13 @@ suite "Signal handling test suite":
     else:
       check test(SIGTERM, 65537) == true
 
-  test "waitForSignal(SIGINT) test":
+  test "waitSignal(SIGINT) test":
     when defined(windows):
       skip()
     else:
       check testWait(SIGINT) == true
 
-  test "waitForSignal(SIGTERM) test":
+  test "waitSignal(SIGTERM) test":
     when defined(windows):
       skip()
     else:
