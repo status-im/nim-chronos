@@ -687,7 +687,7 @@ elif unixPlatform:
       let loop = getThreadDispatcher()
       loop.selector.unregister(sigfd)
 
-    proc poll*() {.raises: [Defect, CatchableError].} =
+  proc poll*() {.raises: [Defect, CatchableError].} =
     ## Perform single asynchronous step.
     let loop = getThreadDispatcher()
     var curTime = Moment.now()
