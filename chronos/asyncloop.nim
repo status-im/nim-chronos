@@ -687,45 +687,7 @@ elif unixPlatform:
       let loop = getThreadDispatcher()
       loop.selector.unregister(sigfd)
 
-    proc waitForSignal*(signal: int): Future[void] {.
-         raises: [Defect].} =
-      var retFuture = newFuture[void]("chronos.waitForSignal()")
-      var sigfd: int = -1
-
-      template getSignalException(e: untyped) =
-        newEvents(AsyncError, "Could not setup signal handler, reason [",
-                  $e.name, "]: ", $e.msg)
-
-      proc continuation(udata: pointer) {.gcsafe.} =
-        if not(retFuture.finished()):
-          retFuture.complete()
-
-      proc cancellation(udata: pointer) {.gcsafe.} =
-        if not(retFuture.finished()):
-          if sigfd != -1:
-            try:
-              removeSignal(sigfd)
-            except IOSelectorsException as exc:
-              # We are going to ignore this
-              retFuture.fail(getSignalException())
-
-      sigfd =
-        try:
-          addSignal(signal, continuation)
-        except IOSelectorsException as exc:
-          retFuture.fail(getSignalException(exc))
-          return retFuture
-        except ValueError as exc:
-          retFuture.fail(getSignalException(exc))
-          return retFuture
-        except OSError as exc:
-          retFuture.fail(getSignalException(exc))
-          return retFuture
-
-      retFuture.cancelCallback = cancellation
-      return retFuture
-
-  proc poll*() {.raises: [Defect, CatchableError].} =
+    proc poll*() {.raises: [Defect, CatchableError].} =
     ## Perform single asynchronous step.
     let loop = getThreadDispatcher()
     var curTime = Moment.now()
@@ -888,6 +850,44 @@ proc callIdle*(cbproc: CallbackFunc) {.gcsafe, raises: [Defect].} =
   callIdle(cbproc, nil)
 
 include asyncfutures2
+
+when ioselSupportedPlatform:
+  proc waitForSignal*(signal: int): Future[void] {.
+       raises: [Defect].} =
+    var retFuture = newFuture[void]("chronos.waitForSignal()")
+    var sigfd: int = -1
+
+    template getSignalException(e: untyped): untyped =
+      newException(AsyncError, "Could not setup signal handler, reason [" &
+                   $e.name & "]: " & $e.msg)
+
+    proc continuation(udata: pointer) {.gcsafe.} =
+      if not(retFuture.finished()):
+        retFuture.complete()
+
+    proc cancellation(udata: pointer) {.gcsafe.} =
+      if not(retFuture.finished()):
+        if sigfd != -1:
+          try:
+            removeSignal(sigfd)
+          except IOSelectorsException as exc:
+            retFuture.fail(getSignalException(exc))
+
+    sigfd =
+      try:
+        addSignal(signal, continuation)
+      except IOSelectorsException as exc:
+        retFuture.fail(getSignalException(exc))
+        return retFuture
+      except ValueError as exc:
+        retFuture.fail(getSignalException(exc))
+        return retFuture
+      except OSError as exc:
+        retFuture.fail(getSignalException(exc))
+        return retFuture
+
+    retFuture.cancelCallback = cancellation
+    retFuture
 
 proc sleepAsync*(duration: Duration): Future[void] =
   ## Suspends the execution of the current async procedure for the next
