@@ -11,6 +11,11 @@ import ../chronos, ../chronos/timer
 
 when defined(nimHasUsed): {.used.}
 
+static:
+  doAssert Moment.high - Moment.low == Duration.high
+  doAssert Moment.low.epochSeconds == 0
+  doAssert Moment.low.epochNanoSeconds == 0
+
 suite "Asynchronous timers & steps test suite":
   const TimersCount = 10
 
