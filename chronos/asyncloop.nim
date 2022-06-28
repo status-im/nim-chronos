@@ -174,7 +174,13 @@ when defined(windows):
 elif unixPlatform:
   import ./selectors2
   from posix import EINTR, EAGAIN, EINPROGRESS, EWOULDBLOCK, MSG_PEEK,
-                    MSG_NOSIGNAL, SIGPIPE
+                    MSG_NOSIGNAL
+  from posix import SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
+                    SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV, SIGUSR2,
+                    SIGPIPE, SIGALRM, SIGTERM, SIGPIPE
+  export SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
+         SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV, SIGUSR2,
+         SIGPIPE, SIGALRM, SIGTERM, SIGPIPE
 
 type
   CallbackFunc* = proc (arg: pointer) {.gcsafe, raises: [Defect].}
@@ -850,6 +856,50 @@ proc callIdle*(cbproc: CallbackFunc) {.gcsafe, raises: [Defect].} =
   callIdle(cbproc, nil)
 
 include asyncfutures2
+
+when not(defined(windows)):
+  when ioselSupportedPlatform:
+    proc waitSignal*(signal: int): Future[void] {.
+         raises: [Defect].} =
+      var retFuture = newFuture[void]("chronos.waitSignal()")
+      var sigfd: int = -1
+
+      template getSignalException(e: untyped): untyped =
+        newException(AsyncError, "Could not manipulate signal handler, " &
+                     "reason [" & $e.name & "]: " & $e.msg)
+
+      proc continuation(udata: pointer) {.gcsafe.} =
+        if not(retFuture.finished()):
+          if sigfd != -1:
+            try:
+              removeSignal(sigfd)
+              retFuture.complete()
+            except IOSelectorsException as exc:
+              retFuture.fail(getSignalException(exc))
+
+      proc cancellation(udata: pointer) {.gcsafe.} =
+        if not(retFuture.finished()):
+          if sigfd != -1:
+            try:
+              removeSignal(sigfd)
+            except IOSelectorsException as exc:
+              retFuture.fail(getSignalException(exc))
+
+      sigfd =
+        try:
+          addSignal(signal, continuation)
+        except IOSelectorsException as exc:
+          retFuture.fail(getSignalException(exc))
+          return retFuture
+        except ValueError as exc:
+          retFuture.fail(getSignalException(exc))
+          return retFuture
+        except OSError as exc:
+          retFuture.fail(getSignalException(exc))
+          return retFuture
+
+      retFuture.cancelCallback = cancellation
+      retFuture
 
 proc sleepAsync*(duration: Duration): Future[void] =
   ## Suspends the execution of the current async procedure for the next
