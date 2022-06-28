@@ -865,12 +865,17 @@ when not(defined(windows)):
       var sigfd: int = -1
 
       template getSignalException(e: untyped): untyped =
-        newException(AsyncError, "Could not setup signal handler, reason [" &
-                     $e.name & "]: " & $e.msg)
+        newException(AsyncError, "Could not manipulate signal handler, " &
+                     "reason [" & $e.name & "]: " & $e.msg)
 
       proc continuation(udata: pointer) {.gcsafe.} =
         if not(retFuture.finished()):
-          retFuture.complete()
+          if sigfd != -1:
+            try:
+              removeSignal(sigfd)
+              retFuture.complete()
+            except IOSelectorsException as exc:
+              retFuture.fail(getSignalException(exc))
 
       proc cancellation(udata: pointer) {.gcsafe.} =
         if not(retFuture.finished()):
