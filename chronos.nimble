@@ -11,7 +11,7 @@ requires "nim > 1.2.0",
          "stew",
          "bearssl",
          "httputils",
-         "https://github.com/status-im/nim-unittest2.git#head"
+         "unittest2"
 
 var commandStart = "nim c -r --hints:off --verbosity:0 --skipParentCfg:on --warning[ObservableStores]:off --styleCheck:usages --styleCheck:error"
 
