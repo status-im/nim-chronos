@@ -70,7 +70,7 @@ proc new*(htype: typedesc[SecureHttpServerRef],
           httpHeadersTimeout = 10.seconds,
           maxHeadersSize: int = 8192,
           maxRequestBodySize: int = 1_048_576
-         ): HttpResult[SecureHttpServerRef] =
+         ): HttpResult[SecureHttpServerRef] {.raises: [Defect].} =
 
   doAssert(not(isNil(tlsPrivateKey)), "TLS private key must not be nil!")
   doAssert(not(isNil(tlsCertificate)), "TLS certificate must not be nil!")
@@ -93,13 +93,30 @@ proc new*(htype: typedesc[SecureHttpServerRef],
     except CatchableError as exc:
       return err(exc.msg)
 
-  var res = SecureHttpServerRef()
-  HttpServer(res[]).init(address, serverInstance, processCallback,
-                         createSecConnection, serverUri, serverFlags,
-                         socketFlags, serverIdent, maxConnections,
-                         bufferSize, backlogSize, httpHeadersTimeout,
-                         maxHeadersSize, maxRequestBodySize)
-  res.tlsCertificate = tlsCertificate
-  res.tlsPrivateKey = tlsPrivateKey
-  res.secureFlags = secureFlags
+  let res = SecureHttpServerRef(
+    address: address,
+    instance: serverInstance,
+    processCallback: processCallback,
+    createConnCallback: createSecConnection,
+    baseUri: serverUri,
+    serverIdent: serverIdent,
+    flags: serverFlags,
+    socketFlags: socketFlags,
+    maxConnections: maxConnections,
+    bufferSize: bufferSize,
+    backlogSize: backlogSize,
+    headersTimeout: httpHeadersTimeout,
+    maxHeadersSize: maxHeadersSize,
+    maxRequestBodySize: maxRequestBodySize,
+    # semaphore:
+    #   if maxConnections > 0:
+    #     newAsyncSemaphore(maxConnections)
+    #   else:
+    #     nil
+    lifetime: newFuture[void]("http.server.lifetime"),
+    connections: initTable[string, Future[void]](),
+    tlsCertificate: tlsCertificate,
+    tlsPrivateKey: tlsPrivateKey,
+    secureFlags: secureFlags
+  )
   ok(res)

@@ -67,7 +67,7 @@ type
     address*: TransportAddress
     # semaphore*: AsyncSemaphore
     maxConnections*: int
-    backlogSize: int
+    backlogSize*: int
     baseUri*: Uri
     serverIdent*: string
     flags*: set[HttpServerFlags]
@@ -75,12 +75,12 @@ type
     connections*: Table[string, Future[void]]
     acceptLoop*: Future[void]
     lifetime*: Future[void]
-    headersTimeout: Duration
-    bufferSize: int
-    maxHeadersSize: int
-    maxRequestBodySize: int
-    processCallback: HttpProcessCallback
-    createConnCallback: HttpConnectionCallback
+    headersTimeout*: Duration
+    bufferSize*: int
+    maxHeadersSize*: int
+    maxRequestBodySize*: int
+    processCallback*: HttpProcessCallback
+    createConnCallback*: HttpConnectionCallback
 
   HttpServerRef* = ref HttpServer
 
@@ -135,46 +135,6 @@ proc init(htype: typedesc[HttpProcessError], error: HttpServerError,
           code: HttpCode): HttpProcessError {.raises: [Defect].} =
   HttpProcessError(error: error, exc: exc, remote: remote, code: code)
 
-proc init*(value: var HttpServer,
-           address: TransportAddress,
-           server: StreamServer,
-           processCallback: HttpProcessCallback,
-           createConnCallback: HttpConnectionCallback,
-           serverUri: Uri,
-           serverFlags: set[HttpServerFlags] = {},
-           socketFlags: set[ServerFlags] = {ReuseAddr},
-           serverIdent = "",
-           maxConnections: int = -1,
-           bufferSize: int = 4096,
-           backlogSize: int = 100,
-           httpHeadersTimeout = 10.seconds,
-           maxHeadersSize: int = 8192,
-           maxRequestBodySize: int = 1_048_576) =
-
-  value = HttpServer(
-    address: address,
-    instance: server,
-    processCallback: processCallback,
-    createConnCallback: createConnCallback,
-    baseUri: serverUri,
-    serverIdent: serverIdent,
-    flags: serverFlags,
-    socketFlags: socketFlags,
-    maxConnections: maxConnections,
-    bufferSize: bufferSize,
-    backlogSize: backlogSize,
-    headersTimeout: httpHeadersTimeout,
-    maxHeadersSize: maxHeadersSize,
-    maxRequestBodySize: maxRequestBodySize,
-    # semaphore:
-    #   if maxConnections > 0:
-    #     newAsyncSemaphore(maxConnections)
-    #   else:
-    #     nil
-    lifetime: newFuture[void]("http.server.lifetime"),
-    connections: initTable[string, Future[void]]()
-  )
-
 proc createConnection(server: HttpServerRef,
                      transp: StreamTransport): Future[HttpConnectionRef] {.
      gcsafe.}
@@ -191,7 +151,8 @@ proc new*(htype: typedesc[HttpServerRef],
           backlogSize: int = 100,
           httpHeadersTimeout = 10.seconds,
           maxHeadersSize: int = 8192,
-          maxRequestBodySize: int = 1_048_576): HttpResult[HttpServerRef] =
+          maxRequestBodySize: int = 1_048_576): HttpResult[HttpServerRef] {.
+     raises: [Defect].} =
 
   let serverUri =
     if len(serverUri.hostname) > 0:
@@ -211,11 +172,29 @@ proc new*(htype: typedesc[HttpServerRef],
     except CatchableError as exc:
       return err(exc.msg)
 
-  var res = HttpServerRef()
-  res[].init(address, serverInstance, processCallback, createConnection,
-             serverUri, serverFlags, socketFlags, serverIdent, maxConnections,
-             bufferSize, backlogSize, httpHeadersTimeout, maxHeadersSize,
-             maxRequestBodySize)
+  var res = HttpServerRef(
+    address: address,
+    instance: serverInstance,
+    processCallback: processCallback,
+    createConnCallback: createConnection,
+    baseUri: serverUri,
+    serverIdent: serverIdent,
+    flags: serverFlags,
+    socketFlags: socketFlags,
+    maxConnections: maxConnections,
+    bufferSize: bufferSize,
+    backlogSize: backlogSize,
+    headersTimeout: httpHeadersTimeout,
+    maxHeadersSize: maxHeadersSize,
+    maxRequestBodySize: maxRequestBodySize,
+    # semaphore:
+    #   if maxConnections > 0:
+    #     newAsyncSemaphore(maxConnections)
+    #   else:
+    #     nil
+    lifetime: newFuture[void]("http.server.lifetime"),
+    connections: initTable[string, Future[void]]()
+  )
   ok(res)
 
 proc getResponse*(req: HttpRequestRef): HttpResponseRef {.raises: [Defect].} =
