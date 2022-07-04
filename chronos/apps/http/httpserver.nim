@@ -67,7 +67,7 @@ type
     address*: TransportAddress
     # semaphore*: AsyncSemaphore
     maxConnections*: int
-    backlogSize: int
+    backlogSize*: int
     baseUri*: Uri
     serverIdent*: string
     flags*: set[HttpServerFlags]
@@ -75,12 +75,12 @@ type
     connections*: Table[string, Future[void]]
     acceptLoop*: Future[void]
     lifetime*: Future[void]
-    headersTimeout: Duration
-    bufferSize: int
-    maxHeadersSize: int
-    maxRequestBodySize: int
-    processCallback: HttpProcessCallback
-    createConnCallback: HttpConnectionCallback
+    headersTimeout*: Duration
+    bufferSize*: int
+    maxHeadersSize*: int
+    maxRequestBodySize*: int
+    processCallback*: HttpProcessCallback
+    createConnCallback*: HttpConnectionCallback
 
   HttpServerRef* = ref HttpServer
 
