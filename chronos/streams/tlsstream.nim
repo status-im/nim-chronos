@@ -81,7 +81,7 @@ type
     handshakeFut*: Future[void]
 
   TLSAsyncStream* = ref object of RootRef
-    xwc*: X509NoAnchorContext
+    xwc*: X509NoanchorContext
     ccontext*: SslClientContext
     scontext*: SslServerContext
     sbuffer*: seq[byte]
