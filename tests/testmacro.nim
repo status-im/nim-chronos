@@ -116,8 +116,8 @@ suite "async transformation issues":
           await sleepAsync(0)
           return
         finally:
-          answer = 42
-      except:
-        discard
+          answer = 32
+      finally:
+        answer.inc(10)
     waitFor(a())
     check answer == 42
