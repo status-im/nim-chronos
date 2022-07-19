@@ -10,7 +10,10 @@
 
 ## This module implements some core synchronization primitives.
 
-{.push raises: [Defect].}
+when (NimMajor, NimMinor) < (1, 4):
+  {.push raises: [Defect].}
+else:
+  {.push raises: [].}
 
 import std/[sequtils, math, deques, tables, typetraits]
 import ./asyncloop

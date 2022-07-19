@@ -24,7 +24,10 @@
 ## You can specify which timer you want to use ``-d:asyncTimer=<system/mono>``.
 const asyncTimer* {.strdefine.} = "mono"
 
-{.push raises: [Defect].}
+when (NimMajor, NimMinor) < (1, 4):
+  {.push raises: [Defect].}
+else:
+  {.push raises: [].}
 
 when defined(windows):
   when asyncTimer == "system":
