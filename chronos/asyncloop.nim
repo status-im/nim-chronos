@@ -901,10 +901,12 @@ when not(defined(windows)):
       retFuture.cancelCallback = cancellation
       retFuture
 
-proc sleepAsync*(duration: Duration): Future[void] =
+include asyncmacro2
+
+proc sleepAsync*(duration: Duration): Future[void] {.asyncraises: [CancelledError].} =
   ## Suspends the execution of the current async procedure for the next
   ## ``duration`` time.
-  var retFuture = newFuture[void]("chronos.sleepAsync(Duration)")
+  var retFuture = newRaiseTrackingFuture[void]("chronos.sleepAsync(Duration)")
   let moment = Moment.fromNow(duration)
   var timer: TimerCallback
 
@@ -924,7 +926,7 @@ proc sleepAsync*(ms: int): Future[void] {.
      inline, deprecated: "Use sleepAsync(Duration)".} =
   result = sleepAsync(ms.milliseconds())
 
-proc stepsAsync*(number: int): Future[void] =
+proc stepsAsync*(number: int): Future[void] {.asyncraises: [CancelledError].} =
   ## Suspends the execution of the current async procedure for the next
   ## ``number`` of asynchronous steps (``poll()`` calls).
   ##
@@ -934,7 +936,7 @@ proc stepsAsync*(number: int): Future[void] =
   ## WARNING! Do not use this primitive to perform switch between tasks, because
   ## this can lead to 100% CPU load in the moments when there are no I/O
   ## events. Usually when there no I/O events CPU consumption should be near 0%.
-  var retFuture = newFuture[void]("chronos.stepsAsync(int)")
+  var retFuture = newRaiseTrackingFuture[void]("chronos.stepsAsync(int)")
   var counter = 0
 
   var continuation: proc(data: pointer) {.gcsafe, raises: [Defect].}
@@ -957,12 +959,12 @@ proc stepsAsync*(number: int): Future[void] =
 
   retFuture
 
-proc idleAsync*(): Future[void] =
+proc idleAsync*(): Future[void] {.asyncraises: [CancelledError].} =
   ## Suspends the execution of the current asynchronous task until "idle" time.
   ##
   ## "idle" time its moment of time, when no network events were processed by
   ## ``poll()`` call.
-  var retFuture = newFuture[void]("chronos.idleAsync()")
+  var retFuture = newRaiseTrackingFuture[void]("chronos.idleAsync()")
 
   proc continuation(data: pointer) {.gcsafe.} =
     if not(retFuture.finished()):
@@ -975,14 +977,14 @@ proc idleAsync*(): Future[void] =
   callIdle(continuation, nil)
   retFuture
 
-proc withTimeout*[T](fut: Future[T], timeout: Duration): Future[bool] =
+proc withTimeout*[T](fut: Future[T], timeout: Duration): Future[bool] {.asyncraises: [CancelledError].} =
   ## Returns a future which will complete once ``fut`` completes or after
   ## ``timeout`` milliseconds has elapsed.
   ##
   ## If ``fut`` completes first the returned future will hold true,
   ## otherwise, if ``timeout`` milliseconds has elapsed first, the returned
   ## future will hold false.
-  var retFuture = newFuture[bool]("chronos.`withTimeout`")
+  var retFuture = newRaiseTrackingFuture[bool]("chronos.`withTimeout`")
   var moment: Moment
   var timer: TimerCallback
   var cancelling = false
@@ -1100,6 +1102,15 @@ proc wait*[T](fut: Future[T], timeout = InfiniteDuration): Future[T] =
 
   return retFuture
 
+proc wait*[T, E](fut: RaiseTrackingFuture[T, E], timeout = InfiniteDuration): auto =
+  macro concatError(e1: typed): untyped =
+    result = nnkTupleConstr.newTree()
+    result.add ident"CancelledError"
+    for err in getTypeInst(e1)[1]:
+      result.add err
+  #TODO is this really safe?
+  return cast[RaiseTrackingFuture[void, concatError(E)]](Future[T](fut).wait(timeout))
+
 proc wait*[T](fut: Future[T], timeout = -1): Future[T] {.
      inline, deprecated: "Use wait(Future[T], Duration)".} =
   if timeout == -1:
@@ -1108,8 +1119,6 @@ proc wait*[T](fut: Future[T], timeout = -1): Future[T] {.
     wait(fut, ZeroDuration)
   else:
     wait(fut, timeout.milliseconds())
-
-include asyncmacro2
 
 proc runForever*() {.raises: [Defect, CatchableError].} =
   ## Begins a never ending global dispatcher poll loop.

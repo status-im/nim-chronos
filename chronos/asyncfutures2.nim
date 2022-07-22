@@ -613,18 +613,23 @@ macro checkFutureExceptions*(f, typ: typed): untyped =
     quote do: raiseAssert("Unhandled future exception: " & `f`.error.msg)
   )
 
-proc read*[T](future: Future[T] ): T {.
-     raises: [Defect, CatchableError].} =
+# we have to rely on inference here
+{.pop.}
+proc read*(future: Future | RaiseTrackingFuture ): auto =
   ## Retrieves the value of ``future``. Future must be finished otherwise
   ## this function will fail with a ``ValueError`` exception.
   ##
   ## If the result of the future is an error then that error will be raised.
   if future.finished():
-    internalCheckComplete(future)
+    when future is RaiseTrackingFuture:
+      checkFutureExceptions(future, future)
+    else:
+      internalCheckComplete(future)
     internalRead(future)
   else:
     # TODO: Make a custom exception type for this?
     raise newException(ValueError, "Future still in progress.")
+{.push raises: [Defect].}
 
 proc readError*[T](future: Future[T]): ref CatchableError {.
      raises: [Defect, ValueError].} =
@@ -794,6 +799,16 @@ proc `or`*[T, Y](fut1: Future[T], fut2: Future[Y]): Future[void] =
   retFuture.cancelCallback = cancellation
   return retFuture
 
+proc `or`*[T, E1, Y, E2](fut1: RaiseTrackingFuture[T, E1], fut2: RaiseTrackingFuture[Y, E2]): auto =
+  macro concatError(e1, e2: typed): untyped =
+    result = nnkTupleConstr.newTree()
+    for err in getTypeInst(e1)[1]:
+      result.add err
+    for err in getTypeInst(e2)[1]:
+      result.add err
+  #TODO is this really safe?
+  return cast[RaiseTrackingFuture[void, concatError(E1, E2)]](Future[T](fut1) or Future[Y](fut2))
+
 proc all*[T](futs: varargs[Future[T]]): auto {.
   deprecated: "Use allFutures(varargs[Future[T]])".} =
   ## Returns a future which will complete once all futures in ``futs`` complete.
@@ -931,13 +946,13 @@ proc oneValue*[T](futs: varargs[Future[T]]): Future[T] {.
 
   return retFuture
 
-proc cancelAndWait*[T](fut: Future[T]): Future[void] =
+proc cancelAndWait*[T](fut: Future[T]): RaiseTrackingFuture[void, (CancelledError,)] =
   ## Initiate cancellation process for Future ``fut`` and wait until ``fut`` is
   ## done e.g. changes its state (become completed, failed or cancelled).
   ##
   ## If ``fut`` is already finished (completed, failed or cancelled) result
   ## Future[void] object will be returned complete.
-  var retFuture = newFuture[void]("chronos.cancelAndWait(T)")
+  var retFuture = newRaiseTrackingFuture[void]("chronos.cancelAndWait(T)")
   proc continuation(udata: pointer) =
     if not(retFuture.finished()):
       retFuture.complete()
@@ -953,14 +968,14 @@ proc cancelAndWait*[T](fut: Future[T]): Future[void] =
     fut.cancel()
   return retFuture
 
-proc allFutures*[T](futs: varargs[Future[T]]): Future[void] =
+proc allFutures*[T](futs: varargs[Future[T]]): RaiseTrackingFuture[void, (CancelledError,)] =
   ## Returns a future which will complete only when all futures in ``futs``
   ## will be completed, failed or canceled.
   ##
   ## If the argument is empty, the returned future COMPLETES immediately.
   ##
   ## On cancel all the awaited futures ``futs`` WILL NOT BE cancelled.
-  var retFuture = newFuture[void]("chronos.allFutures()")
+  var retFuture = newRaiseTrackingFuture[void]("chronos.allFutures()")
   let totalFutures = len(futs)
   var completedFutures = 0
 
@@ -992,6 +1007,7 @@ proc allFutures*[T](futs: varargs[Future[T]]): Future[void] =
   return retFuture
 
 proc allFinished*[T](futs: varargs[Future[T]]): Future[seq[Future[T]]] =
+  #TODO how to track exceptions here?
   ## Returns a future which will complete only when all futures in ``futs``
   ## will be completed, failed or canceled.
   ##
@@ -1032,6 +1048,7 @@ proc allFinished*[T](futs: varargs[Future[T]]): Future[seq[Future[T]]] =
   return retFuture
 
 proc one*[T](futs: varargs[Future[T]]): Future[Future[T]] =
+  #TODO how to track exceptions here?
   ## Returns a future which will complete and return completed Future[T] inside,
   ## when one of the futures in ``futs`` will be completed, failed or canceled.
   ##
