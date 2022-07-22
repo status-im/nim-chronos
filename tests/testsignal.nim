@@ -38,13 +38,33 @@ suite "Signal handling test suite":
       discard posix.kill(posix.getpid(), cint(signal))
       waitFor(fut)
       signalCounter == value
-  else:
-    const
-      SIGINT = 0
-      SIGTERM = 0
-    proc test(signal, value: int): bool = true
+
+    proc testWait(signal: int): bool =
+      var fut = waitSignal(signal)
+      discard posix.kill(posix.getpid(), cint(signal))
+      waitFor(fut)
+      true
 
   test "SIGINT test":
-    check test(SIGINT, 31337) == true
+    when not defined(windows):
+      check test(SIGINT, 31337) == true
+    else:
+      skip()
+
   test "SIGTERM test":
-    check test(SIGTERM, 65537) == true
+    when defined(windows):
+      skip()
+    else:
+      check test(SIGTERM, 65537) == true
+
+  test "waitSignal(SIGINT) test":
+    when defined(windows):
+      skip()
+    else:
+      check testWait(SIGINT) == true
+
+  test "waitSignal(SIGTERM) test":
+    when defined(windows):
+      skip()
+    else:
+      check testWait(SIGTERM) == true
