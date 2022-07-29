@@ -855,7 +855,7 @@ suite "HTTP server testing suite":
         table.add(key, value)
       check toString(table) == vector[2]
 
-  test "Preferred Accept handling test":
+  test "preferredContentType() test":
     const
       jsonMediaType = MediaType.init("application/json")
       sszMediaType = MediaType.init("application/octet-stream")
@@ -988,7 +988,8 @@ suite "HTTP server testing suite":
         ]
       ),
       (
-      createRequest("text/plain, application/json;q=0.8, application/octet-stream;q=0.8"),
+      createRequest("text/plain, application/json;q=0.8, " &
+                    "application/octet-stream;q=0.8"),
         @[
           "text/plain",
           "application/json",
@@ -1000,7 +1001,8 @@ suite "HTTP server testing suite":
         ]
       ),
       (
-      createRequest("text/plain, application/json;q=0.8, application/octet-stream;q=0.5"),
+      createRequest("text/plain, application/json;q=0.8, " &
+                    "application/octet-stream;q=0.5"),
         @[
           "text/plain",
           "application/json",
@@ -1012,7 +1014,8 @@ suite "HTTP server testing suite":
         ]
       ),
       (
-       createRequest("text/plain;q=0.8, application/json, application/octet-stream;q=0.8"),
+       createRequest("text/plain;q=0.8, application/json, " &
+                     "application/octet-stream;q=0.8"),
         @[
           "application/json",
           "application/json",
@@ -1024,7 +1027,8 @@ suite "HTTP server testing suite":
         ]
       ),
       (
-      createRequest("text/*, application/json;q=0.8, application/octet-stream;q=0.8"),
+      createRequest("text/*, application/json;q=0.8, " &
+                    "application/octet-stream;q=0.8"),
         @[
           "text/*",
           "application/json",
@@ -1036,7 +1040,8 @@ suite "HTTP server testing suite":
         ]
       ),
       (
-      createRequest("text/*, application/json;q=0.8, application/octet-stream;q=0.5"),
+      createRequest("text/*, application/json;q=0.8, " &
+                    "application/octet-stream;q=0.5"),
         @[
           "text/*",
           "application/json",
@@ -1047,7 +1052,8 @@ suite "HTTP server testing suite":
           "text/plain"
         ]
       ),
-      (createRequest("image/jpg, text/plain, application/octet-stream, application/json"),
+      (createRequest("image/jpg, text/plain, application/octet-stream, " &
+                     "application/json"),
          @[
             "image/jpg",
             "application/json",
@@ -1058,7 +1064,9 @@ suite "HTTP server testing suite":
             "image/jpg"
            ]
         ),
-        (createRequest("image/jpg;q=1, text/plain;q=0.2, application/octet-stream;q=0.2, application/json;q=0.2"),
+        (createRequest("image/jpg;q=1, text/plain;q=0.2, " &
+                       "application/octet-stream;q=0.2, " &
+                       "application/json;q=0.2"),
          @[
             "image/jpg",
             "application/json",
@@ -1070,7 +1078,8 @@ suite "HTTP server testing suite":
            ]
         ),
       (
-      createRequest("*/*, application/json;q=0.8, application/octet-stream;q=0.5"),
+      createRequest("*/*, application/json;q=0.8, " &
+                    "application/octet-stream;q=0.5"),
         @[
           "*/*",
           "application/json",
