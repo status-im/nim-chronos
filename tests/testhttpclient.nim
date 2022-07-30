@@ -689,12 +689,13 @@ suite "HTTP client testing suite":
       return "redirect-" & $res
 
   proc testBasicAuthorization(): Future[bool] {.async.} =
-    var session = createSession(true, maxRedirections = 10)
-    let url = parseUri("https://user:passwd@httpbin.org/basic-auth/user/passwd")
+    let session = HttpSessionRef.new({HttpClientFlag.NoVerifyHost},
+                                     maxRedirections = 10)
+    let url = parseUri("https://guest:guest@jigsaw.w3.org/HTTP/Basic/")
     let resp = await session.fetch(url)
     await session.closeWait()
     if (resp.status == 200) and
-       ("true," in cast[string](resp.data)):
+       ("Your browser made it!" in bytesToString(resp.data)):
       return true
     else:
       return false
