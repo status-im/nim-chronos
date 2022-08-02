@@ -98,6 +98,7 @@ type
     transferEncoding*: set[TransferEncodingFlags]
     requestFlags*: set[HttpRequestFlags]
     contentLength: int
+    contentTypeData*: Option[ContentTypeData]
     connection*: HttpConnectionRef
     response*: Option[HttpResponseRef]
 
@@ -324,12 +325,15 @@ proc prepareRequest(conn: HttpConnectionRef,
   # steps to reveal information about body.
   if ContentLengthHeader in request.headers:
     let length = request.headers.getInt(ContentLengthHeader)
-    if length > 0:
+    if length >= 0:
       if request.meth == MethodTrace:
         return err(Http400)
       if length > uint64(high(int)):
         return err(Http413)
       if length > uint64(conn.server.maxRequestBodySize):
+        return err(Http413)
+      # Because of coversion to `int` we should avoid unexpected OverflowError.
+      if length > uint64(high(int)):
         return err(Http413)
       request.contentLength = int(length)
       request.requestFlags.incl(HttpRequestFlags.BoundBody)
@@ -342,12 +346,17 @@ proc prepareRequest(conn: HttpConnectionRef,
   if request.hasBody():
     # If request has body, we going to understand how its encoded.
     if ContentTypeHeader in request.headers:
-      let contentType = request.headers.getString(ContentTypeHeader)
-      let tmp = strip(contentType).toLowerAscii()
-      if tmp.startsWith(UrlEncodedContentType):
+      let contentType =
+        block:
+          let res = getContentType(request.headers.getList(ContentTypeHeader))
+          if res.isErr():
+            return err(Http415)
+          res.get()
+      if contentType == UrlEncodedContentType:
         request.requestFlags.incl(HttpRequestFlags.UrlencodedForm)
-      elif tmp.startsWith(MultipartContentType):
+      elif contentType == MultipartContentType:
         request.requestFlags.incl(HttpRequestFlags.MultipartForm)
+      request.contentTypeData = some(contentType)
 
     if ExpectHeader in request.headers:
       let expectHeader = request.headers.getString(ExpectHeader)
@@ -899,19 +908,17 @@ proc join*(server: HttpServerRef): Future[void] =
 
   retFuture
 
-proc getMultipartReader*(req: HttpRequestRef): HttpResult[MultiPartReaderRef] =
+proc getMultipartReader*(req: HttpRequestRef): HttpResult[MultiPartReaderRef] {.
+     raises: [Defect].} =
   ## Create new MultiPartReader interface for specific request.
   if req.meth in PostMethods:
     if MultipartForm in req.requestFlags:
-      let ctype = ? getContentType(req.headers.getList(ContentTypeHeader))
-      if ctype != MultipartContentType:
-        err("Content type is not supported")
-      else:
-        let boundary = ? getMultipartBoundary(
-          req.headers.getList(ContentTypeHeader)
-        )
+      if req.contentTypeData.isSome():
+        let boundary = ? getMultipartBoundary(req.contentTypeData.get())
         var stream = ? req.getBodyReader()
         ok(MultiPartReaderRef.new(stream, boundary))
+      else:
+        err("Content type is missing or invalid")
     else:
       err("Request's data is not multipart encoded")
   else:

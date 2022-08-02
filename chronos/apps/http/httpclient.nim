@@ -157,6 +157,7 @@ type
     contentEncoding*: set[ContentEncodingFlags]
     transferEncoding*: set[TransferEncodingFlags]
     contentLength*: uint64
+    contentType*: Opt[ContentTypeData]
 
   HttpClientResponseRef* = ref HttpClientResponse
 
@@ -783,13 +784,25 @@ proc prepareResponse(request: HttpClientRequestRef, data: openArray[byte]
       else:
         false
 
+  let contentType =
+    block:
+      let list = headers.getList(ContentTypeHeader)
+      if len(list) > 0:
+        let res = getContentType(list)
+        if res.isErr():
+          return err("Invalid headers received, invalid `Content-Type`")
+        else:
+          Opt.some(res.get())
+      else:
+        Opt.none(ContentTypeData)
+
   let res = HttpClientResponseRef(
     state: HttpReqRespState.Open, status: resp.code,
     address: request.address, requestMethod: request.meth,
     reason: resp.reason(data), version: resp.version, session: request.session,
     connection: request.connection, headers: headers,
     contentEncoding: contentEncoding, transferEncoding: transferEncoding,
-    contentLength: contentLength, bodyFlag: bodyFlag
+    contentLength: contentLength, contentType: contentType, bodyFlag: bodyFlag
   )
   res.connection.state = HttpClientConnectionState.ResponseHeadersReceived
   if nobodyFlag:
