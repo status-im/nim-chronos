@@ -328,12 +328,10 @@ proc prepareRequest(conn: HttpConnectionRef,
     if length >= 0:
       if request.meth == MethodTrace:
         return err(Http400)
+      # Because of coversion to `int` we should avoid unexpected OverflowError.
       if length > uint64(high(int)):
         return err(Http413)
       if length > uint64(conn.server.maxRequestBodySize):
-        return err(Http413)
-      # Because of coversion to `int` we should avoid unexpected OverflowError.
-      if length > uint64(high(int)):
         return err(Http413)
       request.contentLength = int(length)
       request.requestFlags.incl(HttpRequestFlags.BoundBody)
