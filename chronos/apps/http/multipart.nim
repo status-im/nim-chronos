@@ -8,11 +8,11 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 import std/[monotimes, strutils]
-import stew/results
+import stew/results, httputils
 import ../../asyncloop
 import ../../streams/[asyncstream, boundstream, chunkstream]
 import httptable, httpcommon, httpbodyrw
-export asyncloop, httptable, httpcommon, httpbodyrw, asyncstream
+export asyncloop, httptable, httpcommon, httpbodyrw, asyncstream, httputils
 
 const
   UnableToReadMultipartBody = "Unable to read multipart message body"
@@ -439,55 +439,25 @@ func validateBoundary[B: BChar](boundary: openArray[B]): HttpResult[void] =
         return err("Content-Type boundary alphabet incorrect")
     ok()
 
-func getMultipartBoundary*(ch: openArray[string]): HttpResult[string] {.
+func getMultipartBoundary*(contentData: ContentTypeData): HttpResult[string] {.
      raises: [Defect].} =
   ## Returns ``multipart/form-data`` boundary value from ``Content-Type``
   ## header.
   ##
   ## The procedure carries out all the necessary checks:
-  ##   1) There should be single `Content-Type` header value in headers.
-  ##   2) `Content-Type` must be ``multipart/form-data``.
-  ##   3) `boundary` value must be present
-  ##   4) `boundary` value must be less then 70 characters length and
+  ##   1) `boundary` value must be present.
+  ##   2) `boundary` value must be less then 70 characters length and
   ##      all characters should be part of specific alphabet.
-  if len(ch) > 1:
-    err("Multiple Content-Type headers found")
-  else:
-    if len(ch) == 0:
-      err("Content-Type header is missing")
-    else:
-      if len(ch[0]) == 0:
-        return err("Content-Type header has empty value")
-      let mparts = ch[0].split(";")
-      if strip(mparts[0]).toLowerAscii() != "multipart/form-data":
-        return err("Content-Type is not multipart")
-      if len(mparts) < 2:
-        return err("Content-Type missing boundary value")
-
-      let index =
-        block:
-          var idx = 0
-          for i in 1 ..< len(mparts):
-            let stripped = strip(mparts[i])
-            if stripped.toLowerAscii().startsWith("boundary="):
-              idx = i
-              break
-          idx
-
-      if index == 0:
-        err("Missing Content-Type boundary key")
-      else:
-        let stripped = strip(mparts[index])
-        let bparts = stripped.split("=", 1)
-        if len(bparts) < 2:
-          err("Missing Content-Type boundary")
-        else:
-          let candidate = strip(bparts[1])
-          let res = validateBoundary(candidate)
-          if res.isErr():
-            err($res.error())
-          else:
-            ok(candidate)
+  let candidate =
+    block:
+      var res: string
+      for item in contentData.params:
+        if cmpIgnoreCase(item.name, "boundary") == 0:
+          res = item.value
+          break
+      res
+  ? validateBoundary(candidate)
+  ok(candidate)
 
 proc quoteCheck(name: string): HttpResult[string] =
   if len(name) > 0:
