@@ -345,11 +345,8 @@ proc prepareRequest(conn: HttpConnectionRef,
     # If request has body, we going to understand how its encoded.
     if ContentTypeHeader in request.headers:
       let contentType =
-        block:
-          let res = getContentType(request.headers.getList(ContentTypeHeader))
-          if res.isErr():
-            return err(Http415)
-          res.get()
+        getContentType(request.headers.getList(ContentTypeHeader)).valueOr:
+          return err(Http415)
       if contentType == UrlEncodedContentType:
         request.requestFlags.incl(HttpRequestFlags.UrlencodedForm)
       elif contentType == MultipartContentType:
