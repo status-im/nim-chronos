@@ -10,7 +10,10 @@
 ## This module implements cross-platform network interfaces list.
 ## Currently supported OSes are Windows, Linux, MacOS, BSD(not tested).
 
-{.push raises: [Defect].}
+when (NimMajor, NimMinor) < (1, 4):
+  {.push raises: [Defect].}
+else:
+  {.push raises: [].}
 
 import std/algorithm
 from std/strutils import toHex

@@ -9,7 +9,10 @@
 
 ## This module provides cross-platform wrapper for ``sendfile()`` syscall.
 
-{.push raises: [Defect].}
+when (NimMajor, NimMinor) < (1, 4):
+  {.push raises: [Defect].}
+else:
+  {.push raises: [].}
 
 when defined(nimdoc):
   proc sendfile*(outfd, infd: int, offset: int, count: var int): int =
