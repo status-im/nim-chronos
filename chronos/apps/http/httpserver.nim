@@ -470,6 +470,25 @@ proc preferredContentMediaType*(acceptHeader: string): MediaType =
     else:
       MediaType.init("*", "*")
 
+proc cmp*(a, b: tuple[qvalue: float, index: int]): int =
+  if a.qvalue < b.qvalue:
+    -1
+  elif a.qvalue > b.qvalue:
+    1
+  else:
+    if a.index < b.index:
+      -1
+    elif a.index > b.index:
+      1
+    else:
+      0
+
+proc `==`*(a, b: tuple[qvalue: float, index: int]): bool =
+  cmp(a, b) == 0
+
+proc `<`*(a, b: tuple[qvalue: float, index: int]): bool =
+  cmp(a, b) < 0
+
 proc preferredContentType*(acceptHeader: string,
                            types: varargs[MediaType]
                           ): Result[MediaType, cstring] =
@@ -534,34 +553,27 @@ proc preferredContentType*(acceptHeader: string,
 
         # ``maxWeight`` represents maximum possible weight value which can be
         # obtained.
-        let maxWeight = 1.0 + float(len(types)) / float(100_000)
+        let maxWeight = (1.0, 0)
         var
           currentType = MediaType()
-          currentWeight = 0.0
-        for itemType in ares.get().data:
-          let
-            preferredIndex = types.find(itemType.mediaType)
-            preferredWeight =
-              if preferredIndex == -1:
-                0.0
-              else:
-                # Calculate weight which depends on position in ``types``
-                # array. Because ``preferredIndex`` is always less than
-                # ``len(types)`` this weight could not be ``0.0``.
-                float(len(types) - preferredIndex) / float(100_000)
+          currentIndex = -1
+          currentWeight = (-1.0, 0)
 
-          if preferredWeight != 0:
-            let weight = itemType.qvalue + preferredWeight
+        for itemType in ares.get().data:
+          let preferredIndex = types.find(itemType.mediaType)
+          if preferredIndex != -1:
+            let weight = (itemType.qvalue, -preferredIndex)
             if currentWeight < weight:
               currentType = types[preferredIndex]
               currentWeight = weight
+              currentIndex = preferredIndex
 
           if currentWeight == maxWeight:
             # There is no reason to continue search, because maximum possible
             # weight is already achieved, so this is the best match.
             break
 
-        if currentWeight == 0.0:
+        if currentIndex == -1:
           err("Preferred content type not found")
         else:
           ok(currentType)
