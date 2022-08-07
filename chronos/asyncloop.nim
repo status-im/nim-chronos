@@ -8,7 +8,10 @@
 #    Apache License, version 2.0, (LICENSE-APACHEv2)
 #                MIT license (LICENSE-MIT)
 
-{.push raises: [Defect].}
+when (NimMajor, NimMinor) < (1, 4):
+  {.push raises: [Defect].}
+else:
+  {.push raises: [].}
 
 import std/[os, tables, strutils, heapqueue, lists, options, nativesockets, net,
             deques]
@@ -174,7 +177,13 @@ when defined(windows):
 elif unixPlatform:
   import ./selectors2
   from posix import EINTR, EAGAIN, EINPROGRESS, EWOULDBLOCK, MSG_PEEK,
-                    MSG_NOSIGNAL, SIGPIPE
+                    MSG_NOSIGNAL
+  from posix import SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
+                    SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV, SIGUSR2,
+                    SIGPIPE, SIGALRM, SIGTERM, SIGPIPE
+  export SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
+         SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV, SIGUSR2,
+         SIGPIPE, SIGALRM, SIGTERM, SIGPIPE
 
 type
   CallbackFunc* = proc (arg: pointer) {.gcsafe, raises: [Defect].}
@@ -286,7 +295,7 @@ proc raiseAsDefect*(exc: ref Exception, msg: string) {.
   raise (ref Defect)(
     msg: msg & "\n" & exc.msg & "\n" & exc.getStackTrace(), parent: exc)
 
-when defined(windows) or defined(nimdoc):
+when defined(windows):
   type
     WSAPROC_TRANSMITFILE = proc(hSocket: SocketHandle, hFile: Handle,
                                 nNumberOfBytesToWrite: DWORD,
@@ -299,7 +308,6 @@ when defined(windows) or defined(nimdoc):
     CompletionKey = ULONG_PTR
 
     CompletionData* = object
-      fd*: AsyncFD
       cb*: CallbackFunc
       errCode*: OSErrorCode
       bytesCount*: int32
@@ -323,7 +331,7 @@ when defined(windows) or defined(nimdoc):
     AsyncFD* = distinct int
 
   proc hash(x: AsyncFD): Hash {.borrow.}
-  proc `==`*(x: AsyncFD, y: AsyncFD): bool {.borrow.}
+  proc `==`*(x: AsyncFD, y: AsyncFD): bool {.borrow, gcsafe.}
 
   proc getFunc(s: SocketHandle, fun: var pointer, guid: var GUID): bool =
     var bytesRet: DWORD
@@ -431,7 +439,7 @@ when defined(windows) or defined(nimdoc):
     loop.processTimersGetTimeout(curTimeout)
 
     # Processing handles
-    var lpNumberOfBytesTransferred: Dword
+    var lpNumberOfBytesTransferred: DWORD
     var lpCompletionKey: ULONG_PTR
     var customOverlapped: PtrCustomOverlapped
 
@@ -500,23 +508,15 @@ elif unixPlatform:
   type
     AsyncFD* = distinct cint
 
-    CompletionData* = object
-      fd*: AsyncFD
-      udata*: pointer
-
-    PCompletionData* = ptr CompletionData
-
     SelectorData* = object
       reader*: AsyncCallback
-      rdata*: CompletionData
       writer*: AsyncCallback
-      wdata*: CompletionData
 
     PDispatcher* = ref object of PDispatcherBase
       selector: Selector[SelectorData]
       keys: seq[ReadyKey]
 
-  proc `==`*(x, y: AsyncFD): bool {.borrow.}
+  proc `==`*(x, y: AsyncFD): bool {.borrow, gcsafe.}
 
   proc globalInit() =
     # We are ignoring SIGPIPE signal, because we are working with EPIPE.
@@ -555,15 +555,13 @@ elif unixPlatform:
     ## Register file descriptor ``fd`` in thread's dispatcher.
     let loop = getThreadDispatcher()
     var data: SelectorData
-    data.rdata.fd = fd
-    data.wdata.fd = fd
     loop.selector.registerHandle(int(fd), {}, data)
 
   proc unregister*(fd: AsyncFD) {.raises: [Defect, CatchableError].} =
     ## Unregister file descriptor ``fd`` from thread's dispatcher.
     getThreadDispatcher().selector.unregister(int(fd))
 
-  proc contains*(disp: PDispatcher, fd: AsyncFd): bool {.inline.} =
+  proc contains*(disp: PDispatcher, fd: AsyncFD): bool {.inline.} =
     ## Returns ``true`` if ``fd`` is registered in thread's dispatcher.
     result = int(fd) in disp.selector
 
@@ -574,9 +572,8 @@ elif unixPlatform:
     let loop = getThreadDispatcher()
     var newEvents = {Event.Read}
     withData(loop.selector, int(fd), adata) do:
-      let acb = AsyncCallback(function: cb, udata: addr adata.rdata)
+      let acb = AsyncCallback(function: cb, udata: udata)
       adata.reader = acb
-      adata.rdata = CompletionData(fd: fd, udata: udata)
       newEvents.incl(Event.Read)
       if not(isNil(adata.writer.function)):
         newEvents.incl(Event.Write)
@@ -592,7 +589,6 @@ elif unixPlatform:
     withData(loop.selector, int(fd), adata) do:
       # We need to clear `reader` data, because `selectors` don't do it
       adata.reader = default(AsyncCallback)
-      # adata.rdata = CompletionData()
       if not(isNil(adata.writer.function)):
         newEvents.incl(Event.Write)
     do:
@@ -606,9 +602,8 @@ elif unixPlatform:
     let loop = getThreadDispatcher()
     var newEvents = {Event.Write}
     withData(loop.selector, int(fd), adata) do:
-      let acb = AsyncCallback(function: cb, udata: addr adata.wdata)
+      let acb = AsyncCallback(function: cb, udata: udata)
       adata.writer = acb
-      adata.wdata = CompletionData(fd: fd, udata: udata)
       newEvents.incl(Event.Write)
       if not(isNil(adata.reader.function)):
         newEvents.incl(Event.Read)
@@ -624,7 +619,6 @@ elif unixPlatform:
     withData(loop.selector, int(fd), adata) do:
       # We need to clear `writer` data, because `selectors` don't do it
       adata.writer = default(AsyncCallback)
-      # adata.wdata = CompletionData()
       if not(isNil(adata.reader.function)):
         newEvents.incl(Event.Read)
     do:
@@ -692,9 +686,7 @@ elif unixPlatform:
       var data: SelectorData
       result = loop.selector.registerSignal(signal, data)
       withData(loop.selector, result, adata) do:
-        adata.reader = AsyncCallback(function: cb, udata: addr adata.rdata)
-        adata.rdata.fd = AsyncFD(result)
-        adata.rdata.udata = udata
+        adata.reader = AsyncCallback(function: cb, udata: udata)
       do:
         raise newException(ValueError, "File descriptor not registered.")
 
@@ -770,7 +762,7 @@ proc getThreadDispatcher*(): PDispatcher =
       setThreadDispatcher(newDispatcher())
     except CatchableError as exc:
       raiseAsDefect exc, "Cannot create dispatcher"
-  gdisp
+  gDisp
 
 proc setGlobalDispatcher*(disp: PDispatcher) {.
       gcsafe, deprecated: "Use setThreadDispatcher() instead".} =
@@ -867,6 +859,50 @@ proc callIdle*(cbproc: CallbackFunc) {.gcsafe, raises: [Defect].} =
   callIdle(cbproc, nil)
 
 include asyncfutures2
+
+when not(defined(windows)):
+  when ioselSupportedPlatform:
+    proc waitSignal*(signal: int): Future[void] {.
+         raises: [Defect].} =
+      var retFuture = newFuture[void]("chronos.waitSignal()")
+      var sigfd: int = -1
+
+      template getSignalException(e: untyped): untyped =
+        newException(AsyncError, "Could not manipulate signal handler, " &
+                     "reason [" & $e.name & "]: " & $e.msg)
+
+      proc continuation(udata: pointer) {.gcsafe.} =
+        if not(retFuture.finished()):
+          if sigfd != -1:
+            try:
+              removeSignal(sigfd)
+              retFuture.complete()
+            except IOSelectorsException as exc:
+              retFuture.fail(getSignalException(exc))
+
+      proc cancellation(udata: pointer) {.gcsafe.} =
+        if not(retFuture.finished()):
+          if sigfd != -1:
+            try:
+              removeSignal(sigfd)
+            except IOSelectorsException as exc:
+              retFuture.fail(getSignalException(exc))
+
+      sigfd =
+        try:
+          addSignal(signal, continuation)
+        except IOSelectorsException as exc:
+          retFuture.fail(getSignalException(exc))
+          return retFuture
+        except ValueError as exc:
+          retFuture.fail(getSignalException(exc))
+          return retFuture
+        except OSError as exc:
+          retFuture.fail(getSignalException(exc))
+          return retFuture
+
+      retFuture.cancelCallback = cancellation
+      retFuture
 
 proc sleepAsync*(duration: Duration): Future[void] =
   ## Suspends the execution of the current async procedure for the next
@@ -1112,7 +1148,7 @@ when defined(chronosFutureTracking):
       yield slider
       slider = slider.next
 
-  proc pendingFuturesCount*(): int =
+  proc pendingFuturesCount*(): uint =
     ## Returns number of pending Futures (Future[T] objects which not yet
     ## completed, cancelled or failed).
     futureList.count

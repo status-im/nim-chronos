@@ -9,7 +9,10 @@
 
 ## This module provides cross-platform wrapper for ``sendfile()`` syscall.
 
-{.push raises: [Defect].}
+when (NimMajor, NimMinor) < (1, 4):
+  {.push raises: [Defect].}
+else:
+  {.push raises: [].}
 
 when defined(nimdoc):
   proc sendfile*(outfd, infd: int, offset: int, count: var int): int =
@@ -29,7 +32,8 @@ when defined(nimdoc):
     ##
     ## ``count`` is the number of bytes to copy between the file descriptors.
     ## On exit ``count`` will hold number of bytes actually transferred between
-    ## file descriptors.
+    ## file descriptors. May be >0 even in the case of error return, if some
+    ## bytes were sent before the error occurred.
     ##
     ## If the transfer was successful, the number of bytes written to ``outfd``
     ## is stored in ``count``, and ``0`` returned. Note that a successful call
@@ -38,17 +42,20 @@ when defined(nimdoc):
     ##
     ## On error, ``-1`` is returned.
 
-when defined(linux) or defined(android):
+elif defined(linux) or defined(android):
 
   proc osSendFile*(outfd, infd: cint, offset: ptr int, count: int): int
       {.importc: "sendfile", header: "<sys/sendfile.h>".}
 
   proc sendfile*(outfd, infd: int, offset: int, count: var int): int =
     var o = offset
-    result = osSendFile(cint(outfd), cint(infd), addr o, count)
-    if result >= 0:
-      count = result
-      result = 0
+    let res = osSendFile(cint(outfd), cint(infd), addr o, count)
+    if res >= 0:
+      count = res
+      0
+    else:
+      count = 0
+      -1
 
 elif defined(freebsd) or defined(openbsd) or defined(netbsd) or
      defined(dragonflybsd):
@@ -69,18 +76,17 @@ elif defined(freebsd) or defined(openbsd) or defined(netbsd) or
 
   proc sendfile*(outfd, infd: int, offset: int, count: var int): int =
     var o = 0'u
-    result = osSendFile(cint(infd), cint(outfd), uint(offset), uint(count), nil,
+    let res = osSendFile(cint(infd), cint(outfd), uint(offset), uint(count), nil,
                         addr o, 0)
-    if result >= 0:
+    if res >= 0:
       count = int(o)
-      result = 0
+      0
     else:
       let err = osLastError()
-      if int(err) == EAGAIN:
-        count = int(o)
-        result = 0
-      else:
-        result = -1
+      count =
+        if int(err) == EAGAIN: int(o)
+        else: 0
+      -1
 
 elif defined(macosx):
   import posix, os
@@ -100,14 +106,13 @@ elif defined(macosx):
 
   proc sendfile*(outfd, infd: int, offset: int, count: var int): int =
     var o = count
-    result = osSendFile(cint(infd), cint(outfd), offset, addr o, nil, 0)
-    if result >= 0:
+    let res = osSendFile(cint(infd), cint(outfd), offset, addr o, nil, 0)
+    if res >= 0:
       count = int(o)
-      result = 0
+      0
     else:
       let err = osLastError()
-      if int(err) == EAGAIN:
-        count = int(o)
-        result = 0
-      else:
-        result = -1
+      count =
+        if int(err) == EAGAIN: int(o)
+        else: 0
+      -1

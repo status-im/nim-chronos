@@ -7,11 +7,14 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 
-{.push raises: [Defect].}
+when (NimMajor, NimMinor) < (1, 4):
+  {.push raises: [Defect].}
+else:
+  {.push raises: [].}
 
 import ../asyncloop, ../asyncsync
 import ../transports/common, ../transports/stream
-export asyncsync, stream, common
+export asyncloop, asyncsync, stream, common
 
 const
   AsyncStreamDefaultBufferSize* = 4096
@@ -59,11 +62,14 @@ type
     Error,    ## Stream has stored error
     Stopped,  ## Stream was closed while working
     Finished, ## Stream was properly finished
+    Closing,  ## Stream is closing
     Closed    ## Stream was closed
 
-  StreamReaderLoop* = proc (stream: AsyncStreamReader): Future[void] {.gcsafe, raises: [Defect].}
+  StreamReaderLoop* = proc (stream: AsyncStreamReader): Future[void] {.
+                        gcsafe, raises: [Defect].}
     ## Main read loop for read streams.
-  StreamWriterLoop* = proc (stream: AsyncStreamWriter): Future[void] {.gcsafe, raises: [Defect].}
+  StreamWriterLoop* = proc (stream: AsyncStreamWriter): Future[void] {.
+                        gcsafe, raises: [Defect].}
     ## Main write loop for write streams.
 
   AsyncStreamReader* = ref object of RootRef
@@ -223,10 +229,6 @@ proc raiseAsyncStreamIncompleteError*() {.
     noinline, noreturn, raises: [Defect, AsyncStreamIncompleteError].} =
   raise newAsyncStreamIncompleteError()
 
-proc raiseAsyncStreamIncorrectDefect*(m: string) {.
-    noinline, noreturn, raises: [Defect].} =
-  raise newException(AsyncStreamIncorrectDefect, m)
-
 proc raiseEmptyMessageDefect*() {.noinline, noreturn.} =
   raise newException(AsyncStreamIncorrectDefect,
                      "Could not write empty message")
@@ -244,7 +246,7 @@ proc atEof*(rstream: AsyncStreamReader): bool =
     else:
       rstream.rsource.atEof()
   else:
-    rstream.state in {AsyncStreamState.Stopped, Finished, Closed, Error} and
+    (rstream.state != AsyncStreamState.Running) and
       (rstream.buffer.dataLen() == 0)
 
 proc atEof*(wstream: AsyncStreamWriter): bool =
@@ -255,11 +257,11 @@ proc atEof*(wstream: AsyncStreamWriter): bool =
     else:
       wstream.wsource.atEof()
   else:
-    wstream.state in {AsyncStreamState.Stopped, Finished, Closed, Error}
+    wstream.state != AsyncStreamState.Running
 
 proc closed*(reader: AsyncStreamReader): bool =
   ## Returns ``true`` is reading/writing stream is closed.
-  (reader.state == AsyncStreamState.Closed)
+  reader.state in {AsyncStreamState.Closing, Closed}
 
 proc finished*(reader: AsyncStreamReader): bool =
   ## Returns ``true`` is reading/writing stream is finished (completed).
@@ -302,7 +304,7 @@ proc failed*(reader: AsyncStreamReader): bool =
 
 proc closed*(writer: AsyncStreamWriter): bool =
   ## Returns ``true`` is reading/writing stream is closed.
-  (writer.state == AsyncStreamState.Closed)
+  writer.state in {AsyncStreamState.Closing, Closed}
 
 proc finished*(writer: AsyncStreamWriter): bool =
   ## Returns ``true`` is reading/writing stream is finished (completed).
@@ -751,7 +753,7 @@ proc readMessage*(rstream: AsyncStreamReader, pred: ReadMessagePredicate) {.
   ##
   ## ``predicate`` callback must copy all the data from ``data`` array and
   ## return number of bytes it is going to consume.
-  ## ``predicate`` callback will receive (zero-length) openarray, if stream
+  ## ``predicate`` callback will receive (zero-length) openArray, if stream
   ## is at EOF.
   doAssert(not(isNil(pred)), "`predicate` callback should not be `nil`")
   checkStreamClosed(rstream)
@@ -783,7 +785,7 @@ proc write*(wstream: AsyncStreamWriter, pbytes: pointer,
   ## Write sequence of bytes pointed by ``pbytes`` of length ``nbytes`` to
   ## writer stream ``wstream``.
   ##
-  ## ``nbytes` must be more then zero.
+  ## ``nbytes`` must be more then zero.
   checkStreamClosed(wstream)
   if nbytes <= 0:
     raiseEmptyMessageDefect()
@@ -821,7 +823,7 @@ proc write*(wstream: AsyncStreamWriter, pbytes: pointer,
       except CatchableError as exc:
         raise newAsyncStreamWriteError(exc)
 
-proc write*(wstream: AsyncStreamWriter, sbytes: seq[byte],
+proc write*(wstream: AsyncStreamWriter, sbytes: sink seq[byte],
             msglen = -1) {.async.} =
   ## Write sequence of bytes ``sbytes`` of length ``msglen`` to writer
   ## stream ``wstream``.
@@ -853,8 +855,11 @@ proc write*(wstream: AsyncStreamWriter, sbytes: seq[byte],
       wstream.bytesCount = wstream.bytesCount + uint64(length)
     else:
       var item = WriteItem(kind: Sequence)
-      if not isLiteral(sbytes):
-        shallowCopy(item.dataSeq, sbytes)
+      when declared(shallowCopy):
+        if not(isLiteral(sbytes)):
+          shallowCopy(item.dataSeq, sbytes)
+        else:
+          item.dataSeq = sbytes
       else:
         item.dataSeq = sbytes
       item.size = length
@@ -870,7 +875,7 @@ proc write*(wstream: AsyncStreamWriter, sbytes: seq[byte],
       except CatchableError as exc:
         raise newAsyncStreamWriteError(exc)
 
-proc write*(wstream: AsyncStreamWriter, sbytes: string,
+proc write*(wstream: AsyncStreamWriter, sbytes: sink string,
             msglen = -1) {.async.} =
   ## Write string ``sbytes`` of length ``msglen`` to writer stream ``wstream``.
   ##
@@ -901,8 +906,11 @@ proc write*(wstream: AsyncStreamWriter, sbytes: string,
       wstream.bytesCount = wstream.bytesCount + uint64(length)
     else:
       var item = WriteItem(kind: String)
-      if not isLiteral(sbytes):
-        shallowCopy(item.dataStr, sbytes)
+      when declared(shallowCopy):
+        if not(isLiteral(sbytes)):
+          shallowCopy(item.dataStr, sbytes)
+        else:
+          item.dataStr = sbytes
       else:
         item.dataStr = sbytes
       item.size = length
@@ -965,39 +973,38 @@ proc close*(rw: AsyncStreamRW) =
   ## Close and frees resources of stream ``rw``.
   ##
   ## Note close() procedure is not completed immediately!
-  if rw.closed():
-    raiseAsyncStreamIncorrectDefect("Stream is already closed!")
+  if not(rw.closed()):
+    rw.state = AsyncStreamState.Closing
 
-  rw.state = AsyncStreamState.Closed
+    proc continuation(udata: pointer) {.raises: [Defect].} =
+      if not isNil(rw.udata):
+        GC_unref(cast[ref int](rw.udata))
+      if not(rw.future.finished()):
+        rw.future.complete()
+      when rw is AsyncStreamReader:
+        untrackAsyncStreamReader(rw)
+      elif rw is AsyncStreamWriter:
+        untrackAsyncStreamWriter(rw)
+      rw.state = AsyncStreamState.Closed
 
-  proc continuation(udata: pointer) {.raises: [Defect].} =
-    if not isNil(rw.udata):
-      GC_unref(cast[ref int](rw.udata))
-    if not(rw.future.finished()):
-      rw.future.complete()
     when rw is AsyncStreamReader:
-      untrackAsyncStreamReader(rw)
+      if isNil(rw.rsource) or isNil(rw.readerLoop) or isNil(rw.future):
+        callSoon(continuation)
+      else:
+        if rw.future.finished():
+          callSoon(continuation)
+        else:
+          rw.future.addCallback(continuation)
+          rw.future.cancel()
     elif rw is AsyncStreamWriter:
-      untrackAsyncStreamWriter(rw)
-
-  when rw is AsyncStreamReader:
-    if isNil(rw.rsource) or isNil(rw.readerLoop) or isNil(rw.future):
-      callSoon(continuation)
-    else:
-      if rw.future.finished():
+      if isNil(rw.wsource) or isNil(rw.writerLoop) or isNil(rw.future):
         callSoon(continuation)
       else:
-        rw.future.addCallback(continuation)
-        rw.future.cancel()
-  elif rw is AsyncStreamWriter:
-    if isNil(rw.wsource) or isNil(rw.writerLoop) or isNil(rw.future):
-      callSoon(continuation)
-    else:
-      if rw.future.finished():
-        callSoon(continuation)
-      else:
-        rw.future.addCallback(continuation)
-        rw.future.cancel()
+        if rw.future.finished():
+          callSoon(continuation)
+        else:
+          rw.future.addCallback(continuation)
+          rw.future.cancel()
 
 proc closeWait*(rw: AsyncStreamRW): Future[void] =
   ## Close and frees resources of stream ``rw``.

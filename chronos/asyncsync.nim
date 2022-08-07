@@ -8,12 +8,16 @@
 #    Apache License, version 2.0, (LICENSE-APACHEv2)
 #                MIT license (LICENSE-MIT)
 
-## This module implements some core synchronization primitives
+## This module implements some core synchronization primitives.
 
-{.push raises: [Defect].}
+when (NimMajor, NimMinor) < (1, 4):
+  {.push raises: [Defect].}
+else:
+  {.push raises: [].}
 
-import std/[sequtils, deques]
+import std/[sequtils, math, deques, tables, typetraits]
 import ./asyncloop
+export asyncloop
 
 type
   AsyncLock* = ref object of RootRef
@@ -54,12 +58,73 @@ type
     queue: Deque[T]
     maxsize: int
 
-  AsyncQueueEmptyError* = object of CatchableError
+  AsyncQueueEmptyError* = object of AsyncError
     ## ``AsyncQueue`` is empty.
-  AsyncQueueFullError* = object of CatchableError
+  AsyncQueueFullError* = object of AsyncError
     ## ``AsyncQueue`` is full.
-  AsyncLockError* = object of CatchableError
+  AsyncLockError* = object of AsyncError
     ## ``AsyncLock`` is either locked or unlocked.
+
+  EventBusSubscription*[T] = proc(bus: AsyncEventBus,
+                                  payload: EventPayload[T]): Future[void] {.
+                                  gcsafe, raises: [Defect].}
+    ## EventBus subscription callback type.
+
+  EventBusAllSubscription* = proc(bus: AsyncEventBus,
+                                  event: AwaitableEvent): Future[void] {.
+                                  gcsafe, raises: [Defect].}
+    ## EventBus subscription callback type.
+
+  EventBusCallback = proc(bus: AsyncEventBus, event: string, key: EventBusKey,
+                          data: EventPayloadBase) {.
+                          gcsafe, raises: [Defect].}
+
+  EventBusKey* = object
+    ## Unique subscription key.
+    eventName: string
+    typeName: string
+    unique: uint64
+    cb: EventBusCallback
+
+  EventItem = object
+    waiters: seq[FutureBase]
+    subscribers: seq[EventBusKey]
+
+  AsyncEventBus* = ref object of RootObj
+    ## An eventbus object.
+    counter: uint64
+    events: Table[string, EventItem]
+    subscribers: seq[EventBusKey]
+    waiters: seq[Future[AwaitableEvent]]
+
+  EventPayloadBase* = ref object of RootObj
+    loc: ptr SrcLoc
+
+  EventPayload*[T] = ref object of EventPayloadBase
+    ## Eventbus' event payload object
+    value: T
+
+  AwaitableEvent* = object
+    ## Eventbus' event payload object
+    eventName: string
+    payload: EventPayloadBase
+
+  AsyncEventQueueFullError* = object of AsyncError
+
+  EventQueueKey* = distinct uint64
+
+  EventQueueReader* = object
+    key: EventQueueKey
+    offset: int
+    waiter: Future[void]
+    overflow: bool
+
+  AsyncEventQueue*[T] = ref object of RootObj
+    readers: seq[EventQueueReader]
+    queue: Deque[T]
+    counter: uint64
+    limit: int
+    offset: int
 
 proc newAsyncLock*(): AsyncLock =
   ## Creates new asynchronous lock ``AsyncLock``.
@@ -399,3 +464,382 @@ proc `$`*[T](aq: AsyncQueue[T]): string =
     res.addQuoted(item)
   res.add("]")
   res
+
+template generateKey(typeName, eventName: string): string =
+  "type[" & typeName & "]-key[" & eventName & "]"
+
+proc newAsyncEventBus*(): AsyncEventBus {.
+     deprecated: "Implementation has unfixable flaws, please use" &
+                  "AsyncEventQueue[T] instead".} =
+  ## Creates new ``AsyncEventBus``.
+  AsyncEventBus(counter: 0'u64, events: initTable[string, EventItem]())
+
+template get*[T](payload: EventPayload[T]): T =
+  ## Returns event payload data.
+  payload.value
+
+template location*(payload: EventPayloadBase): SrcLoc =
+  ## Returns source location address of event emitter.
+  payload.loc[]
+
+proc get*(event: AwaitableEvent, T: typedesc): T {.
+     deprecated: "Implementation has unfixable flaws, please use " &
+                 "AsyncEventQueue[T] instead".} =
+  ## Returns event's payload of type ``T`` from event ``event``.
+  cast[EventPayload[T]](event.payload).value
+
+template event*(event: AwaitableEvent): string =
+  ## Returns event's name from event ``event``.
+  event.eventName
+
+template location*(event: AwaitableEvent): SrcLoc =
+  ## Returns source location address of event emitter.
+  event.payload.loc[]
+
+proc waitEvent*(bus: AsyncEventBus, T: typedesc, event: string): Future[T] {.
+     deprecated: "Implementation has unfixable flaws, please use " &
+                 "AsyncEventQueue[T] instead".} =
+  ## Wait for the event from AsyncEventBus ``bus`` with name ``event``.
+  ##
+  ## Returned ``Future[T]`` will hold event's payload of type ``T``.
+  var default: EventItem
+  var retFuture = newFuture[T]("AsyncEventBus.waitEvent")
+  let eventKey = generateKey(T.name, event)
+  proc cancellation(udata: pointer) {.gcsafe, raises: [Defect].} =
+    if not(retFuture.finished()):
+      bus.events.withValue(eventKey, item):
+        item.waiters.keepItIf(it != cast[FutureBase](retFuture))
+  retFuture.cancelCallback = cancellation
+  let baseFuture = cast[FutureBase](retFuture)
+  bus.events.mgetOrPut(eventKey, default).waiters.add(baseFuture)
+  retFuture
+
+proc waitAllEvents*(bus: AsyncEventBus): Future[AwaitableEvent] {.
+     deprecated: "Implementation has unfixable flaws, please use " &
+                 "AsyncEventQueue[T] instead".} =
+  ## Wait for any event from AsyncEventBus ``bus``.
+  ##
+  ## Returns ``Future`` which holds helper object. Using this object you can
+  ## retrieve event's name and payload.
+  var retFuture = newFuture[AwaitableEvent]("AsyncEventBus.waitAllEvents")
+  proc cancellation(udata: pointer) {.gcsafe, raises: [Defect].} =
+    if not(retFuture.finished()):
+      bus.waiters.keepItIf(it != retFuture)
+  retFuture.cancelCallback = cancellation
+  bus.waiters.add(retFuture)
+  retFuture
+
+proc subscribe*[T](bus: AsyncEventBus, event: string,
+                   callback: EventBusSubscription[T]): EventBusKey {.
+     deprecated: "Implementation has unfixable flaws, please use " &
+                 "AsyncEventQueue[T] instead".} =
+  ## Subscribe to the event ``event`` passed through eventbus ``bus`` with
+  ## callback ``callback``.
+  ##
+  ## Returns key that can be used to unsubscribe.
+  proc trampoline(tbus: AsyncEventBus, event: string, key: EventBusKey,
+                  data: EventPayloadBase) {.gcsafe, raises: [Defect].} =
+    let payload = cast[EventPayload[T]](data)
+    asyncSpawn callback(bus, payload)
+
+  let subkey =
+    block:
+      inc(bus.counter)
+      EventBusKey(eventName: event, typeName: T.name, unique: bus.counter,
+                  cb: trampoline)
+
+  var default: EventItem
+  let eventKey = generateKey(T.name, event)
+  bus.events.mgetOrPut(eventKey, default).subscribers.add(subkey)
+  subkey
+
+proc subscribeAll*(bus: AsyncEventBus,
+                   callback: EventBusAllSubscription): EventBusKey {.
+     deprecated: "Implementation has unfixable flaws, please use " &
+                 "AsyncEventQueue instead".} =
+  ## Subscribe to all events passed through eventbus ``bus`` with callback
+  ## ``callback``.
+  ##
+  ## Returns key that can be used to unsubscribe.
+  proc trampoline(tbus: AsyncEventBus, event: string, key: EventBusKey,
+                  data: EventPayloadBase) {.gcsafe, raises: [Defect].} =
+    let event = AwaitableEvent(eventName: event, payload: data)
+    asyncSpawn callback(bus, event)
+
+  let subkey =
+    block:
+      inc(bus.counter)
+      EventBusKey(eventName: "", typeName: "", unique: bus.counter,
+                  cb: trampoline)
+  bus.subscribers.add(subkey)
+  subkey
+
+proc unsubscribe*(bus: AsyncEventBus, key: EventBusKey) {.
+     deprecated: "Implementation has unfixable flaws, please use " &
+                 "AsyncEventQueue instead".} =
+  ## Cancel subscription of subscriber with key ``key`` from eventbus ``bus``.
+  let eventKey = generateKey(key.typeName, key.eventName)
+
+  # Clean event's subscribers.
+  bus.events.withValue(eventKey, item):
+    item.subscribers.keepItIf(it.unique != key.unique)
+
+  # Clean subscribers subscribed to all events.
+  bus.subscribers.keepItIf(it.unique != key.unique)
+
+proc emit[T](bus: AsyncEventBus, event: string, data: T, loc: ptr SrcLoc) =
+  let
+    eventKey = generateKey(T.name, event)
+    payload =
+      block:
+        var data = EventPayload[T](value: data, loc: loc)
+        cast[EventPayloadBase](data)
+
+  # Used to capture the "subscriber" variable in the loops
+  # sugar.capture doesn't work in Nim <1.6
+  proc triggerSubscriberCallback(subscriber: EventBusKey) =
+    callSoon(proc(udata: pointer) =
+      subscriber.cb(bus, event, subscriber, payload)
+    )
+
+  bus.events.withValue(eventKey, item):
+    # Schedule waiters which are waiting for the event ``event``.
+    for waiter in item.waiters:
+      var fut = cast[Future[T]](waiter)
+      fut.complete(data)
+    # Clear all the waiters.
+    item.waiters.setLen(0)
+
+    # Schedule subscriber's callbacks, which are subscribed to the event.
+    for subscriber in item.subscribers:
+      triggerSubscriberCallback(subscriber)
+
+  # Schedule waiters which are waiting all events
+  for waiter in bus.waiters:
+    waiter.complete(AwaitableEvent(eventName: event, payload: payload))
+  # Clear all the waiters.
+  bus.waiters.setLen(0)
+
+  # Schedule subscriber's callbacks which are subscribed to all events.
+  for subscriber in bus.subscribers:
+    triggerSubscriberCallback(subscriber)
+
+template emit*[T](bus: AsyncEventBus, event: string, data: T) {.
+         deprecated: "Implementation has unfixable flaws, please use " &
+                     "AsyncEventQueue instead".} =
+  ## Emit new event ``event`` to the eventbus ``bus`` with payload ``data``.
+  emit(bus, event, data, getSrcLocation())
+
+proc emitWait[T](bus: AsyncEventBus, event: string, data: T,
+                 loc: ptr SrcLoc): Future[void] =
+  var retFuture = newFuture[void]("AsyncEventBus.emitWait")
+  proc continuation(udata: pointer) {.gcsafe.} =
+    if not(retFuture.finished()):
+      retFuture.complete()
+  emit(bus, event, data, loc)
+  callSoon(continuation)
+  return retFuture
+
+template emitWait*[T](bus: AsyncEventBus, event: string,
+                      data: T): Future[void] {.
+     deprecated: "Implementation has unfixable flaws, please use " &
+                 "AsyncEventQueue instead".} =
+  ## Emit new event ``event`` to the eventbus ``bus`` with payload ``data`` and
+  ## wait until all the subscribers/waiters will receive notification about
+  ## event.
+  emitWait(bus, event, data, getSrcLocation())
+
+proc `==`(a, b: EventQueueKey): bool {.borrow.}
+
+proc compact(ab: AsyncEventQueue) {.raises: [Defect].} =
+  if len(ab.readers) > 0:
+    let minOffset =
+      block:
+        var res = -1
+        for reader in ab.readers.items():
+          if not(reader.overflow):
+            res = reader.offset
+            break
+        res
+
+    if minOffset == -1:
+      ab.offset += len(ab.queue)
+      ab.queue.clear()
+    else:
+      doAssert(minOffset >= ab.offset)
+      if minOffset > ab.offset:
+        let delta = minOffset - ab.offset
+        ab.queue.shrink(fromFirst = delta)
+        ab.offset += delta
+  else:
+    ab.queue.clear()
+
+proc getReaderIndex(ab: AsyncEventQueue, key: EventQueueKey): int {.
+     raises: [Defect].} =
+  for index, value in ab.readers.pairs():
+    if value.key == key:
+      return index
+  -1
+
+proc newAsyncEventQueue*[T](limitSize = 0): AsyncEventQueue[T] {.
+     raises: [Defect].} =
+  ## Creates new ``AsyncEventBus`` maximum size of ``limitSize`` (default is
+  ## ``0`` which means that there no limits).
+  ##
+  ## When number of events emitted exceeds ``limitSize`` - emit() procedure
+  ## will discard new events, consumers which has number of pending events
+  ## more than ``limitSize`` will get ``AsyncEventQueueFullError``
+  ## error.
+  doAssert(limitSize >= 0, "Limit size should be non-negative integer")
+  let queue =
+    if limitSize == 0:
+      initDeque[T]()
+    elif isPowerOfTwo(limitSize + 1):
+      initDeque[T](limitSize + 1)
+    else:
+      initDeque[T](nextPowerOfTwo(limitSize + 1))
+  AsyncEventQueue[T](counter: 0'u64, queue: queue, limit: limitSize)
+
+proc len*(ab: AsyncEventQueue): int {.raises: [Defect].} =
+  len(ab.queue)
+
+proc register*(ab: AsyncEventQueue): EventQueueKey {.raises: [Defect].} =
+  inc(ab.counter)
+  let reader = EventQueueReader(key: EventQueueKey(ab.counter),
+                                offset: ab.offset + len(ab.queue),
+                                overflow: false)
+  ab.readers.add(reader)
+  EventQueueKey(ab.counter)
+
+proc unregister*(ab: AsyncEventQueue, key: EventQueueKey) {.
+     raises: [Defect] .} =
+  let index = ab.getReaderIndex(key)
+  if index >= 0:
+    let reader = ab.readers[index]
+    # Completing pending Future to avoid deadlock.
+    if not(isNil(reader.waiter)) and not(reader.waiter.finished()):
+      reader.waiter.complete()
+    ab.readers.delete(index)
+    ab.compact()
+
+proc close*(ab: AsyncEventQueue) {.raises: [Defect].} =
+  for reader in ab.readers.items():
+    if not(isNil(reader.waiter)) and not(reader.waiter.finished()):
+      reader.waiter.complete()
+  ab.readers.reset()
+  ab.queue.clear()
+
+proc closeWait*(ab: AsyncEventQueue): Future[void] {.raises: [Defect].} =
+  var retFuture = newFuture[void]("AsyncEventQueue.closeWait()")
+  proc continuation(udata: pointer) {.gcsafe.} =
+    if not(retFuture.finished()):
+      retFuture.complete()
+  ab.close()
+  # Schedule `continuation` to be called only after all the `reader`
+  # notifications will be scheduled and processed.
+  callSoon(continuation)
+  retFuture
+
+template readerOverflow*(ab: AsyncEventQueue,
+                         reader: EventQueueReader): bool =
+  ab.limit + (reader.offset - ab.offset) <= len(ab.queue)
+
+proc emit*[T](ab: AsyncEventQueue[T], data: T) {.raises: [Defect].} =
+  if len(ab.readers) > 0:
+    # We enqueue `data` only if there active reader present.
+    var changesPresent = false
+    let couldEmit =
+      if ab.limit == 0:
+        true
+      else:
+        # Because ab.readers is sequence sorted by `offset`, we will apply our
+        # limit to the most recent consumer.
+        if ab.readerOverflow(ab.readers[^1]):
+          false
+        else:
+          true
+
+    if couldEmit:
+      if ab.limit != 0:
+        for reader in ab.readers.mitems():
+          if not(reader.overflow):
+            if ab.readerOverflow(reader):
+              reader.overflow = true
+              changesPresent = true
+      ab.queue.addLast(data)
+      for reader in ab.readers.mitems():
+        if not(isNil(reader.waiter)) and not(reader.waiter.finished()):
+          reader.waiter.complete()
+    else:
+      for reader in ab.readers.mitems():
+        if not(reader.overflow):
+          reader.overflow = true
+          changesPresent = true
+
+    if changesPresent:
+      ab.compact()
+
+proc waitEvents*[T](ab: AsyncEventQueue[T],
+                    key: EventQueueKey,
+                    eventsCount = -1): Future[seq[T]] {.async.} =
+  ## Wait for events
+  var
+    events: seq[T]
+    resetFuture = false
+
+  while true:
+    # We need to obtain reader index at every iteration, because `ab.readers`
+    # sequence could be changed after `await waitFuture` call.
+    let index = ab.getReaderIndex(key)
+    if index < 0:
+      # We going to return everything we have in `events`.
+      break
+
+    if resetFuture:
+      resetFuture = false
+      ab.readers[index].waiter = nil
+
+    let reader = ab.readers[index]
+    doAssert(isNil(reader.waiter),
+             "Concurrent waits on same key are not allowed!")
+
+    if reader.overflow:
+      raise newException(AsyncEventQueueFullError,
+                         "AsyncEventQueue size exceeds limits")
+
+    let length = len(ab.queue) + ab.offset
+    doAssert(length >= ab.readers[index].offset)
+    if length == ab.readers[index].offset:
+      # We are at the end of queue, it means that we should wait for new events.
+      let waitFuture = newFuture[void]("AsyncEventQueue.waitEvents")
+      ab.readers[index].waiter = waitFuture
+      resetFuture = true
+      await waitFuture
+    else:
+      let
+        itemsInQueue = length - ab.readers[index].offset
+        itemsOffset = ab.readers[index].offset - ab.offset
+        itemsCount =
+          if eventsCount <= 0:
+            itemsInQueue
+          else:
+            min(itemsInQueue, eventsCount - len(events))
+
+      for i in 0 ..< itemsCount:
+        events.add(ab.queue[itemsOffset + i])
+      ab.readers[index].offset += itemsCount
+
+      # Keep readers sequence sorted by `offset` field.
+      var slider = index
+      while (slider + 1 < len(ab.readers)) and
+            (ab.readers[slider].offset > ab.readers[slider + 1].offset):
+        swap(ab.readers[slider], ab.readers[slider + 1])
+        inc(slider)
+
+      # Shrink data queue.
+      ab.compact()
+
+      if (eventsCount <= 0) or (len(events) == eventsCount):
+        break
+
+  return events

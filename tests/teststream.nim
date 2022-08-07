@@ -28,27 +28,6 @@ suite "Stream Transport test suite":
     FilesCount = 10
     TestsCount = 100
 
-    m1 = "readLine() multiple clients with messages (" & $ClientsCount &
-         " clients x " & $MessagesCount & " messages)"
-    m2 = "readExactly() multiple clients with messages (" & $ClientsCount &
-         " clients x " & $MessagesCount & " messages)"
-    m3 = "readUntil() multiple clients with messages (" & $ClientsCount &
-         " clients x " & $MessagesCount & " messages)"
-    m4 = "writeFile() multiple clients (" & $FilesCount & " files)"
-    m5 = "write(string)/read(int) multiple clients (" & $ClientsCount &
-         " clients x " & $MessagesCount & " messages)"
-    m6 = "write(seq[byte])/consume(int)/read(int) multiple clients (" &
-         $ClientsCount & " clients x " & $MessagesCount & " messages)"
-    m7 = "readLine() buffer overflow test"
-    m8 = "readUntil() buffer overflow test"
-    m11 = "readExactly() unexpected disconnect test"
-    m12 = "readUntil() unexpected disconnect test"
-    m13 = "readLine() unexpected disconnect empty string test"
-    m14 = "Closing socket while operation pending test (issue #8)"
-    m15 = "Connection refused test"
-    m16 = "readOnce() read until atEof() test"
-    m17 = "0.0.0.0/::0 (INADDR_ANY) test"
-
   when defined(windows):
     let addresses = [
       initTAddress("127.0.0.1:33335"),
@@ -869,7 +848,7 @@ suite "Stream Transport test suite":
       res: seq[byte]
       error: ref CatchableError
 
-    proc predicate(data: openarray[byte]): tuple[consumed: int, done: bool] =
+    proc predicate(data: openArray[byte]): tuple[consumed: int, done: bool] =
       if len(data) == 0:
         # There will be no more data, length-value incomplete
         error = newException(TransportIncompleteError, "LV incomplete")
@@ -1159,15 +1138,30 @@ suite "Stream Transport test suite":
 
     proc acceptTask(server: StreamServer) {.async.} =
       let transp = await server.accept()
-      var futs = newSeq[Future[int]](TestsCount)
+      var futs = newSeq[Future[int]]()
       var msg = createBigMessage(1024)
-      for i in 0 ..< len(futs):
-        futs[i] = transp.write(msg)
+      var tries = 0
+
+      while futs.len() < TestsCount:
+        let fut = transp.write(msg)
+        # `write` has a fast path that puts the data in the OS socket buffer -
+        # we'll keep writing until we get EAGAIN from the OS so that we have
+        # data in the in-chronos queue to fail on close
+        if not fut.completed():
+          futs.add(fut)
+        else:
+          tries += 1
+          if tries > 65*1024:
+            # We've queued 64mb on the socket and it still allows writing,
+            # something is wrong - we'll break here which will cause the test
+            # to fail
+            break
 
       await transp.closeWait()
       await sleepAsync(100.milliseconds)
 
       for i in 0 ..< len(futs):
+        # writes may complete via fast write
         if futs[i].failed() and (futs[i].error of TransportUseClosedError):
           inc(res)
 
@@ -1201,34 +1195,104 @@ suite "Stream Transport test suite":
     await acceptFut
     return res
 
+  proc testAcceptRace(address: TransportAddress): Future[bool] {.async.} =
+    proc test1(address: TransportAddress) {.async.} =
+      let server = createStreamServer(address, flags = {ReuseAddr})
+      let acceptFut = server.accept()
+      server.close()
+      await allFutures(acceptFut.cancelAndWait(), server.join())
+
+    proc test2(address: TransportAddress) {.async.} =
+      let server = createStreamServer(address, flags = {ReuseAddr})
+      let acceptFut = server.accept()
+      await acceptFut.cancelAndWait()
+      server.close()
+      await server.join()
+
+    proc test3(address: TransportAddress) {.async.} =
+      let server = createStreamServer(address, flags = {ReuseAddr})
+      let acceptFut = server.accept()
+      server.stop()
+      server.close()
+      await allFutures(acceptFut.cancelAndWait(), server.join())
+
+    proc test4(address: TransportAddress) {.async.} =
+      let server = createStreamServer(address, flags = {ReuseAddr})
+      let acceptFut = server.accept()
+      await acceptFut.cancelAndWait()
+      server.stop()
+      server.close()
+      await server.join()
+
+    try:
+      await test1(address).wait(5.seconds)
+      await test2(address).wait(5.seconds)
+      await test3(address).wait(5.seconds)
+      await test4(address).wait(5.seconds)
+      return true
+    except AsyncTimeoutError:
+      return false
+
+  proc testPipe(): Future[bool] {.async.} =
+    let (rfd, wfd) = createAsyncPipe()
+
+    let
+      message = createBigMessage(16384 * 1024)
+      rtransp = fromPipe(rfd)
+      wtransp = fromPipe(wfd)
+    var
+      buffer = newSeq[byte](16384 * 1024)
+
+    proc writer(transp: StreamTransport): Future[int] {.async.} =
+      let res =
+        try:
+          await transp.write(message)
+        except CatchableError:
+          -1
+      return res
+
+    var fut = wtransp.writer()
+    try:
+      await rtransp.readExactly(addr buffer[0], 16384 * 1024)
+    except CatchableError:
+      discard
+
+    await allFutures(rtransp.closeWait(), wtransp.closeWait())
+    return buffer == message
+
   markFD = getCurrentFD()
 
   for i in 0..<len(addresses):
     test prefixes[i] & "close(transport) test":
       check waitFor(testCloseTransport(addresses[i])) == 1
-    test prefixes[i] & m8:
+    test prefixes[i] & "readUntil() buffer overflow test":
       check waitFor(test8(addresses[i])) == 1
-    test prefixes[i] & m7:
+    test prefixes[i] & "readLine() buffer overflow test":
       check waitFor(test7(addresses[i])) == 1
-    test prefixes[i] & m11:
+    test prefixes[i] & "readExactly() unexpected disconnect test":
       check waitFor(test11(addresses[i])) == 1
-    test prefixes[i] & m12:
+    test prefixes[i] & "readUntil() unexpected disconnect test":
       check waitFor(test12(addresses[i])) == 1
-    test prefixes[i] & m13:
+    test prefixes[i] & "readLine() unexpected disconnect empty string test":
       check waitFor(test13(addresses[i])) == 1
-    test prefixes[i] & m14:
+    test prefixes[i] & "Closing socket while operation pending test (issue #8)":
       check waitFor(test14(addresses[i])) == 1
-    test prefixes[i] & m1:
+    test prefixes[i] & "readLine() multiple clients with messages (" &
+        $ClientsCount & " clients x " & $MessagesCount & " messages)":
       check waitFor(test1(addresses[i])) == ClientsCount * MessagesCount
-    test prefixes[i] & m2:
+    test prefixes[i] & "readExactly() multiple clients with messages (" &
+        $ClientsCount & " clients x " & $MessagesCount & " messages)":
       check waitFor(test2(addresses[i])) == ClientsCount * MessagesCount
-    test prefixes[i] & m3:
+    test prefixes[i] & "readUntil() multiple clients with messages (" &
+        $ClientsCount & " clients x " & $MessagesCount & " messages)":
       check waitFor(test3(addresses[i])) == ClientsCount * MessagesCount
-    test prefixes[i] & m5:
+    test prefixes[i] & "write(string)/read(int) multiple clients (" &
+        $ClientsCount & " clients x " & $MessagesCount & " messages)":
       check waitFor(testWR(addresses[i])) == ClientsCount * MessagesCount
-    test prefixes[i] & m6:
+    test prefixes[i] & "write(seq[byte])/consume(int)/read(int) multiple clients (" &
+         $ClientsCount & " clients x " & $MessagesCount & " messages)":
       check waitFor(testWCR(addresses[i])) == ClientsCount * MessagesCount
-    test prefixes[i] & m4:
+    test prefixes[i] & "writeFile() multiple clients (" & $FilesCount & " files)":
       when defined(windows):
         if addresses[i].family == AddressFamily.IPv4:
           check waitFor(testSendFile(addresses[i])) == FilesCount
@@ -1236,21 +1300,21 @@ suite "Stream Transport test suite":
           skip()
       else:
         check waitFor(testSendFile(addresses[i])) == FilesCount
-    test prefixes[i] & m15:
+    test prefixes[i] & "Connection refused test":
       var address: TransportAddress
       if addresses[i].family == AddressFamily.Unix:
         address = initTAddress("/tmp/notexistingtestpipe")
       else:
         address = initTAddress("127.0.0.1:43335")
       check waitFor(testConnectionRefused(address)) == true
-    test prefixes[i] & m16:
+    test prefixes[i] & "readOnce() read until atEof() test":
       check waitFor(test16(addresses[i])) == 1
     test prefixes[i] & "Connection reset test on send() only":
       when defined(macosx):
         skip()
       else:
         check waitFor(testWriteConnReset(addresses[i])) == 1
-    test prefixes[i] & m17:
+    test prefixes[i] & "0.0.0.0/::0 (INADDR_ANY) test":
       if addresses[i].family == AddressFamily.IPv4:
         check waitFor(testAnyAddress()) == true
       else:
@@ -1275,10 +1339,14 @@ suite "Stream Transport test suite":
         skip()
       else:
         check waitFor(testAcceptTooMany(addresses[i])) == true
+    test prefixes[i] & "accept() and close() race test":
+      check waitFor(testAcceptRace(addresses[i])) == true
     test prefixes[i] & "write() queue notification on close() test":
       check waitFor(testWriteOnClose(addresses[i])) == true
     test prefixes[i] & "read() notification on close() test":
       check waitFor(testReadOnClose(addresses[i])) == true
+  test "[PIPE] readExactly()/write() test":
+    check waitFor(testPipe()) == true
   test "Servers leak test":
     check getTracker("stream.server").isLeaked() == false
   test "Transports leak test":

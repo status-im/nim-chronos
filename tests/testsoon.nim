@@ -50,10 +50,10 @@ suite "callSoon() tests suite":
   callbackproc = proc (udata: pointer) {.gcsafe, raises: [Defect].} =
     timeoutsTest2 += 1
     {.gcsafe.}:
-      callSoon(callbackProc)
+      callSoon(callbackproc)
 
   proc test2(timers, callbacks: var int) =
-    callSoon(callbackProc)
+    callSoon(callbackproc)
     waitFor(testProc())
     timers = timeoutsTest1
     callbacks = timeoutsTest2

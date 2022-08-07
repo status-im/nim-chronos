@@ -1,6 +1,7 @@
-switch("threads", "on")
-# switch("hints", "off")
-# switch("verbosity", "0")
+# begin Nimble config (version 1)
+when system.fileExists("nimble.paths"):
+  include "nimble.paths"
+# end Nimble config
 
 # This is workaround for `mingw64-gcc-12.1.0` issue.
 # https://github.com/nim-lang/Nim/pull/19197

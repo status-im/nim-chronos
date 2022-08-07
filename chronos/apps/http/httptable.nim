@@ -10,7 +10,10 @@
 import std/[tables, strutils]
 import stew/base10
 
-{.push raises: [Defect].}
+when (NimMajor, NimMinor) < (1, 4):
+  {.push raises: [Defect].}
+else:
+  {.push raises: [].}
 
 type
   HttpTable* = object
@@ -44,7 +47,7 @@ proc contains*(ht: HttpTables, key: string): bool =
   ht.table.contains(key.toLowerAscii())
 
 proc getList*(ht: HttpTables, key: string,
-              default: openarray[string] = []): seq[string] =
+              default: openArray[string] = []): seq[string] =
   ## Returns sequence of headers with key ``key``.
   var defseq = @default
   ht.table.getOrDefault(key.toLowerAscii(), defseq)

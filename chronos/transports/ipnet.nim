@@ -9,9 +9,13 @@
 
 ## This module implements various IP network utility procedures.
 
-{.push raises: [Defect].}
+when (NimMajor, NimMinor) < (1, 4):
+  {.push raises: [Defect].}
+else:
+  {.push raises: [].}
 
-import stew/endians2, std/strutils
+import std/strutils
+import stew/endians2
 import ./common
 export common
 

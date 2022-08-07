@@ -105,7 +105,7 @@ suite "HTTP server testing suite":
           let request = r.get()
           return await request.respond(Http200, "TEST_OK", HttpTable.init())
         else:
-          if r.error().error == HTTPServerError.TimeoutError:
+          if r.error().error == HttpServerError.TimeoutError:
             serverRes = true
           return dumbResponse()
 
@@ -134,7 +134,7 @@ suite "HTTP server testing suite":
           let request = r.get()
           return await request.respond(Http200, "TEST_OK", HttpTable.init())
         else:
-          if r.error().error == HTTPServerError.CriticalError:
+          if r.error().error == HttpServerError.CriticalError:
             serverRes = true
           return dumbResponse()
 
@@ -162,7 +162,7 @@ suite "HTTP server testing suite":
           let request = r.get()
           return await request.respond(Http200, "TEST_OK", HttpTable.init())
         else:
-          if r.error().error == HTTPServerError.CriticalError:
+          if r.error().error == HttpServerError.CriticalError:
             serverRes = true
           return dumbResponse()
 
@@ -191,7 +191,7 @@ suite "HTTP server testing suite":
         if r.isOk():
           discard
         else:
-          if r.error().error == HTTPServerError.CriticalError:
+          if r.error().error == HttpServerError.CriticalError:
             serverRes = true
           return dumbResponse()
 
@@ -610,39 +610,50 @@ suite "HTTP server testing suite":
        "--------------------------------------------------; charset=UTF-8",
        "-----------------------------------------------------------------" &
        "-----"),
-      ("multipart/form-data; boundary=ABCDEFGHIJKLMNOPQRST" &
-       "UVWXYZabcdefghijklmnopqrstuvwxyz0123456789'()+_,-.; charset=UTF-8",
+      ("multipart/form-data; boundary=\"ABCDEFGHIJKLMNOPQRST" &
+       "UVWXYZabcdefghijklmnopqrstuvwxyz0123456789'()+_,-.\"; charset=UTF-8",
        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'()" &
        "+_,-."),
-      ("multipart/form-data; boundary=ABCDEFGHIJKLMNOPQRST" &
-       "UVWXYZabcdefghijklmnopqrstuvwxyz0123456789'()+?=:/; charset=UTF-8",
+      ("multipart/form-data; boundary=\"ABCDEFGHIJKLMNOPQRST" &
+       "UVWXYZabcdefghijklmnopqrstuvwxyz0123456789'()+?=:/\"; charset=UTF-8",
        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'()" &
        "+?=:/"),
-      ("multipart/form-data; charset=UTF-8; boundary=ABCDEFGHIJKLMNOPQRST" &
-       "UVWXYZabcdefghijklmnopqrstuvwxyz0123456789'()+_,-.",
+      ("multipart/form-data; charset=UTF-8; boundary=\"ABCDEFGHIJKLMNOPQRST" &
+       "UVWXYZabcdefghijklmnopqrstuvwxyz0123456789'()+_,-.\"",
        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'()" &
        "+_,-."),
-      ("multipart/form-data; charset=UTF-8; boundary=ABCDEFGHIJKLMNOPQRST" &
-       "UVWXYZabcdefghijklmnopqrstuvwxyz0123456789'()+?=:/",
+      ("multipart/form-data; charset=UTF-8; boundary=\"ABCDEFGHIJKLMNOPQRST" &
+       "UVWXYZabcdefghijklmnopqrstuvwxyz0123456789'()+?=:/\"",
        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'()" &
-       "+?=:/")
+       "+?=:/"),
+      ("multipart/form-data; charset=UTF-8; boundary=0123456789ABCDEFGHIJKL" &
+       "MNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz+-",
+       "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz+-"),
+      ("multipart/form-data; boundary=0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZa" &
+       "bcdefghijklmnopqrstuvwxyz+-; charset=UTF-8",
+       "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz+-")
     ]
+    proc performCheck(ch: openArray[string]): HttpResult[string] =
+      let cdata = ? getContentType(ch)
+      if cdata.mediaType != MediaType.init("multipart/form-data"):
+        return err("Invalid media type")
+      getMultipartBoundary(cdata)
 
     for i in 0 ..< 256:
-      let boundary = "multipart/form-data; boundary=" & $char(i)
+      let boundary = "multipart/form-data; boundary=\"" & $char(i) & "\""
       if char(i) in AllowedCharacters:
-        check getMultipartBoundary([boundary]).isOk()
+        check performCheck([boundary]).isOk()
       else:
-        check getMultipartBoundary([boundary]).isErr()
+        check performCheck([boundary]).isErr()
 
     check:
-      getMultipartBoundary([]).isErr()
-      getMultipartBoundary(["multipart/form-data; boundary=A",
-                            "multipart/form-data; boundary=B"]).isErr()
+      performCheck([]).isErr()
+      performCheck(["multipart/form-data; boundary=A",
+                    "multipart/form-data; boundary=B"]).isErr()
     for item in FailureVectors:
-      check getMultipartBoundary([item]).isErr()
+      check performCheck([item]).isErr()
     for item in SuccessVectors:
-      let res = getMultipartBoundary([item[0]])
+      let res = performCheck([item[0]])
       check:
         res.isOk()
         item[1] == res.get()
@@ -854,6 +865,380 @@ suite "HTTP server testing suite":
       for key, value in queryParams(vector[0], vector[1]):
         table.add(key, value)
       check toString(table) == vector[2]
+
+  test "preferredContentType() test":
+    const
+      jsonMediaType = MediaType.init("application/json")
+      sszMediaType = MediaType.init("application/octet-stream")
+      plainTextMediaType = MediaType.init("text/plain")
+      imageMediaType = MediaType.init("image/jpg")
+
+    proc createRequest(acceptHeader: string): HttpRequestRef =
+      let headers = HttpTable.init([("accept", acceptHeader)])
+      HttpRequestRef(headers: headers)
+
+    proc createRequest(): HttpRequestRef =
+      HttpRequestRef(headers: HttpTable.init())
+
+    var singleHeader = @[
+      (
+        createRequest("application/json"),
+        @[
+          "application/json"
+        ]
+      )
+    ]
+
+    var complexHeaders = @[
+      (
+        createRequest(),
+        @[
+          "*/*",
+          "application/json",
+          "application/octet-stream",
+          "application/json",
+          "application/octet-stream",
+          "application/json",
+          "image/jpg"
+        ]
+      ),
+      (
+        createRequest(""),
+        @[
+          "*/*",
+          "application/json",
+          "application/octet-stream",
+          "application/json",
+          "application/octet-stream",
+          "application/json",
+          "image/jpg"
+        ]
+      ),
+      (
+        createRequest("application/json, application/octet-stream"),
+        @[
+          "application/json",
+          "application/json",
+          "application/octet-stream",
+          "application/json",
+          "application/octet-stream",
+          "application/json",
+          "application/json"
+        ]
+      ),
+      (
+        createRequest("application/octet-stream, application/json"),
+        @[
+          "application/octet-stream",
+          "application/json",
+          "application/octet-stream",
+          "application/json",
+          "application/octet-stream",
+          "application/json",
+          "application/json"
+        ]
+      ),
+      (
+        createRequest("application/json;q=0.9, application/octet-stream"),
+        @[
+          "application/octet-stream",
+          "application/json",
+          "application/octet-stream",
+          "application/octet-stream",
+          "application/octet-stream",
+          "application/octet-stream",
+          "application/octet-stream"
+        ]
+      ),
+      (
+        createRequest("application/json, application/octet-stream;q=0.9"),
+        @[
+          "application/json",
+          "application/json",
+          "application/octet-stream",
+          "application/json",
+          "application/json",
+          "application/json",
+          "application/json"
+        ]
+      ),
+      (
+        createRequest("application/json;q=0.9, application/octet-stream;q=0.8"),
+        @[
+          "application/json",
+          "application/json",
+          "application/octet-stream",
+          "application/json",
+          "application/json",
+          "application/json",
+          "application/json"
+        ]
+      ),
+       (
+        createRequest("application/json;q=0.8, application/octet-stream;q=0.9"),
+        @[
+          "application/octet-stream",
+          "application/json",
+          "application/octet-stream",
+          "application/octet-stream",
+          "application/octet-stream",
+          "application/octet-stream",
+          "application/octet-stream"
+        ]
+      ),
+      (
+      createRequest("text/plain, application/octet-stream, application/json"),
+        @[
+          "text/plain",
+          "application/json",
+          "application/octet-stream",
+          "application/json",
+          "application/octet-stream",
+          "application/json",
+          "application/json"
+        ]
+      ),
+      (
+      createRequest("text/plain, application/json;q=0.8, " &
+                    "application/octet-stream;q=0.8"),
+        @[
+          "text/plain",
+          "application/json",
+          "application/octet-stream",
+          "application/json",
+          "application/octet-stream",
+          "text/plain",
+          "text/plain"
+        ]
+      ),
+      (
+      createRequest("text/plain, application/json;q=0.8, " &
+                    "application/octet-stream;q=0.5"),
+        @[
+          "text/plain",
+          "application/json",
+          "application/octet-stream",
+          "application/json",
+          "application/json",
+          "text/plain",
+          "text/plain"
+        ]
+      ),
+      (
+       createRequest("text/plain;q=0.8, application/json, " &
+                     "application/octet-stream;q=0.8"),
+        @[
+          "application/json",
+          "application/json",
+          "application/octet-stream",
+          "application/json",
+          "application/json",
+          "application/json",
+          "application/json"
+        ]
+      ),
+      (
+      createRequest("text/*, application/json;q=0.8, " &
+                    "application/octet-stream;q=0.8"),
+        @[
+          "text/*",
+          "application/json",
+          "application/octet-stream",
+          "application/json",
+          "application/octet-stream",
+          "text/plain",
+          "text/plain"
+        ]
+      ),
+      (
+      createRequest("text/*, application/json;q=0.8, " &
+                    "application/octet-stream;q=0.5"),
+        @[
+          "text/*",
+          "application/json",
+          "application/octet-stream",
+          "application/json",
+          "application/json",
+          "text/plain",
+          "text/plain"
+        ]
+      ),
+      (createRequest("image/jpg, text/plain, application/octet-stream, " &
+                     "application/json"),
+         @[
+            "image/jpg",
+            "application/json",
+            "application/octet-stream",
+            "application/json",
+            "application/octet-stream",
+            "application/json",
+            "image/jpg"
+           ]
+        ),
+        (createRequest("image/jpg;q=1, text/plain;q=0.2, " &
+                       "application/octet-stream;q=0.2, " &
+                       "application/json;q=0.2"),
+         @[
+            "image/jpg",
+            "application/json",
+            "application/octet-stream",
+            "application/json",
+            "application/octet-stream",
+            "application/json",
+            "image/jpg"
+           ]
+        ),
+      (
+      createRequest("*/*, application/json;q=0.8, " &
+                    "application/octet-stream;q=0.5"),
+        @[
+          "*/*",
+          "application/json",
+          "application/octet-stream",
+          "application/json",
+          "application/octet-stream",
+          "application/json",
+          "image/jpg"
+        ]
+      ),
+      (
+        createRequest("*/*"),
+        @[
+          "*/*",
+          "application/json",
+          "application/octet-stream",
+          "application/json",
+          "application/octet-stream",
+          "application/json",
+          "image/jpg"
+        ]
+      ),
+      (
+        createRequest("application/*"),
+        @[
+          "application/*",
+          "application/json",
+          "application/octet-stream",
+          "application/json",
+          "application/octet-stream",
+          "application/json",
+          "application/json"
+        ]
+      )
+    ]
+
+    for req in singleHeader:
+      check $req[0].preferredContentMediaType() == req[1][0]
+      let r0 = req[0].preferredContentType()
+      let r1 = req[0].preferredContentType(jsonMediaType)
+      let r2 = req[0].preferredContentType(sszMediaType)
+      let r3 = req[0].preferredContentType(jsonMediaType,
+                                           sszMediaType)
+      let r4 = req[0].preferredContentType(sszMediaType,
+                                           jsonMediaType)
+      let r5 = req[0].preferredContentType(jsonMediaType,
+                                           sszMediaType,
+                                           plainTextMediaType)
+      let r6 = req[0].preferredContentType(imageMediaType,
+                                           jsonMediaType,
+                                           sszMediaType,
+                                           plainTextMediaType)
+      check:
+        r0.isOk() == true
+        r1.isOk() == true
+        r2.isErr() == true
+        r3.isOk() == true
+        r4.isOk() == true
+        r5.isOk() == true
+        r6.isOk() == true
+        r0.get() == MediaType.init(req[1][0])
+        r1.get() == MediaType.init(req[1][0])
+        r3.get() == MediaType.init(req[1][0])
+        r4.get() == MediaType.init(req[1][0])
+        r5.get() == MediaType.init(req[1][0])
+        r6.get() == MediaType.init(req[1][0])
+
+    for req in complexHeaders:
+      let r0 = req[0].preferredContentType()
+      let r1 = req[0].preferredContentType(jsonMediaType)
+      let r2 = req[0].preferredContentType(sszMediaType)
+      let r3 = req[0].preferredContentType(jsonMediaType,
+                                           sszMediaType)
+      let r4 = req[0].preferredContentType(sszMediaType,
+                                           jsonMediaType)
+      let r5 = req[0].preferredContentType(jsonMediaType,
+                                           sszMediaType,
+                                           plainTextMediaType)
+      let r6 = req[0].preferredContentType(imageMediaType,
+                                           jsonMediaType,
+                                           sszMediaType,
+                                           plainTextMediaType)
+      check:
+        r0.isOk() == true
+        r1.isOk() == true
+        r2.isOk() == true
+        r3.isOk() == true
+        r4.isOk() == true
+        r5.isOk() == true
+        r6.isOk() == true
+        r0.get() == MediaType.init(req[1][0])
+        r1.get() == MediaType.init(req[1][1])
+        r2.get() == MediaType.init(req[1][2])
+        r3.get() == MediaType.init(req[1][3])
+        r4.get() == MediaType.init(req[1][4])
+        r5.get() == MediaType.init(req[1][5])
+        r6.get() == MediaType.init(req[1][6])
+
+  test "SSE server-side events stream test":
+    proc testPostMultipart2(address: TransportAddress): Future[bool] {.async.} =
+      var serverRes = false
+      proc process(r: RequestFence): Future[HttpResponseRef] {.
+           async.} =
+        if r.isOk():
+          let request = r.get()
+          let response = request.getResponse()
+          await response.prepareSSE()
+          await response.send("event: event1\r\ndata: data1\r\n\r\n")
+          await response.send("event: event2\r\ndata: data2\r\n\r\n")
+          await response.sendEvent("event3", "data3")
+          await response.sendEvent("event4", "data4")
+          await response.send("data: data5\r\n\r\n")
+          await response.sendEvent("", "data6")
+          await response.finish()
+          serverRes = true
+          return response
+        else:
+          serverRes = false
+          return dumbResponse()
+
+      let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
+      let res = HttpServerRef.new(address, process,
+                                  socketFlags = socketFlags)
+      if res.isErr():
+        return false
+
+      let server = res.get()
+      server.start()
+
+      let message =
+        "GET / HTTP/1.1\r\n" &
+        "Host: 127.0.0.1:30080\r\n" &
+        "Accept: text/event-stream\r\n" &
+        "\r\n"
+
+      let data = await httpClient(address, message)
+      let expect = "event: event1\r\ndata: data1\r\n\r\n" &
+                   "event: event2\r\ndata: data2\r\n\r\n" &
+                   "event: event3\r\ndata: data3\r\n\r\n" &
+                   "event: event4\r\ndata: data4\r\n\r\n" &
+                   "data: data5\r\n\r\n" &
+                   "data: data6\r\n\r\n"
+      await server.stop()
+      await server.closeWait()
+      return serverRes and (data.find(expect) >= 0)
+
+    check waitFor(testPostMultipart2(initTAddress("127.0.0.1:30080"))) == true
+
 
   test "Leaks test":
     check:

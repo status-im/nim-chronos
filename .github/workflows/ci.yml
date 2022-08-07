@@ -1,13 +1,16 @@
-name: nim-chronos CI
-on: [push, pull_request]
+name: CI
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+  workflow_dispatch:
 
 jobs:
   build:
     strategy:
       fail-fast: false
-      max-parallel: 20
       matrix:
-        branch: [master]
         target:
           - os: linux
             cpu: amd64
@@ -17,27 +20,33 @@ jobs:
             cpu: amd64
           - os: windows
             cpu: amd64
-          - os: windows
-            cpu: i386
+          #- os: windows
+            #cpu: i386
+        branch: [version-1-2, version-1-4, version-1-6, devel]
         include:
           - target:
               os: linux
             builder: ubuntu-18.04
+            shell: bash
           - target:
               os: macos
             builder: macos-10.15
+            shell: bash
           - target:
               os: windows
             builder: windows-2019
+            shell: msys2 {0}
 
-    name: '${{ matrix.target.os }}-${{ matrix.target.cpu }} (${{ matrix.branch }})'
+    defaults:
+      run:
+        shell: ${{ matrix.shell }}
+
+    name: '${{ matrix.target.os }}-${{ matrix.target.cpu }} (Nim ${{ matrix.branch }})'
     runs-on: ${{ matrix.builder }}
+    continue-on-error: ${{ matrix.branch == 'version-1-6' || matrix.branch == 'devel' }}
     steps:
-      - name: Checkout nim-chronos
+      - name: Checkout
         uses: actions/checkout@v2
-        with:
-          path: nim-chronos
-          submodules: false
 
       - name: Install build dependencies (Linux i386)
         if: runner.os == 'Linux' && matrix.target.cpu == 'i386'
@@ -59,13 +68,26 @@ jobs:
           chmod 755 external/bin/gcc external/bin/g++
           echo '${{ github.workspace }}/external/bin' >> $GITHUB_PATH
 
-      - name: Restore MinGW-W64 (Windows) from cache
-        if: runner.os == 'Windows'
-        id: windows-mingw-cache
-        uses: actions/cache@v2
+      - name: MSYS2 (Windows i386)
+        if: runner.os == 'Windows' && matrix.target.cpu == 'i386'
+        uses: msys2/setup-msys2@v2
         with:
-          path: external/mingw-${{ matrix.target.cpu }}
-          key: 'mingw-${{ matrix.target.cpu }}'
+          path-type: inherit
+          msystem: MINGW32
+          install: >-
+            base-devel
+            git
+            mingw-w64-i686-toolchain
+
+      - name: MSYS2 (Windows amd64)
+        if: runner.os == 'Windows' && matrix.target.cpu == 'amd64'
+        uses: msys2/setup-msys2@v2
+        with:
+          path-type: inherit
+          install: >-
+            base-devel
+            git
+            mingw-w64-x86_64-toolchain
 
       - name: Restore Nim DLLs dependencies (Windows) from cache
         if: runner.os == 'Windows'
@@ -75,29 +97,10 @@ jobs:
           path: external/dlls-${{ matrix.target.cpu }}
           key: 'dlls-${{ matrix.target.cpu }}'
 
-      - name: Install MinGW64 dependency (Windows)
-        if: >
-          steps.windows-mingw-cache.outputs.cache-hit != 'true' &&
-          runner.os == 'Windows'
-        shell: bash
-        run: |
-          mkdir -p external
-          if [[ '${{ matrix.target.cpu }}' == 'amd64' ]]; then
-            MINGW_URL="https://sourceforge.net/projects/mingw-w64/files/Toolchains targetting Win64/Personal Builds/mingw-builds/8.1.0/threads-posix/seh/x86_64-8.1.0-release-posix-seh-rt_v6-rev0.7z"
-            ARCH=64
-          else
-            MINGW_URL="https://sourceforge.net/projects/mingw-w64/files/Toolchains targetting Win32/Personal Builds/mingw-builds/8.1.0/threads-posix/dwarf/i686-8.1.0-release-posix-dwarf-rt_v6-rev0.7z"
-            ARCH=32
-          fi
-          curl -L "$MINGW_URL" -o "external/mingw-${{ matrix.target.cpu }}.7z"
-          7z x -y "external/mingw-${{ matrix.target.cpu }}.7z" -oexternal/
-          mv external/mingw$ARCH external/mingw-${{ matrix.target.cpu }}
-
       - name: Install DLLs dependencies (Windows)
         if: >
           steps.windows-dlls-cache.outputs.cache-hit != 'true' &&
           runner.os == 'Windows'
-        shell: bash
         run: |
           mkdir -p external
           curl -L "https://nim-lang.org/download/windeps.zip" -o external/windeps.zip
@@ -106,52 +109,49 @@ jobs:
       - name: Path to cached dependencies (Windows)
         if: >
           runner.os == 'Windows'
-        shell: bash
         run: |
-          echo '${{ github.workspace }}'"/external/mingw-${{ matrix.target.cpu }}/bin" >> $GITHUB_PATH
           echo '${{ github.workspace }}'"/external/dlls-${{ matrix.target.cpu }}" >> $GITHUB_PATH
 
-      - name: Get latest nimbus-build-system commit hash
-        id: versions
-        shell: bash
+      - name: Derive environment variables
         run: |
-          getHash() {
-            git ls-remote "https://github.com/$1" "${2:-HEAD}" | cut -f 1
-          }
-          nbsHash=$(getHash status-im/nimbus-build-system)
-          echo "::set-output name=nimbus_build_system::$nbsHash"
-
-      - name: Restore prebuilt Nim from cache
-        id: nim-cache
-        uses: actions/cache@v2
-        with:
-          path: NimBinaries
-          key: 'nim-${{ matrix.target.os }}-${{ matrix.target.cpu }}-${{ steps.versions.outputs.nimbus_build_system }}-2'
-
-      - name: Build Nim and associated tools
-        shell: bash
-        run: |
-          curl -O -L -s -S https://raw.githubusercontent.com/status-im/nimbus-build-system/master/scripts/build_nim.sh
           if [[ '${{ matrix.target.cpu }}' == 'amd64' ]]; then
             PLATFORM=x64
           else
             PLATFORM=x86
           fi
-          if [[ '${{ matrix.target.os }}' == 'windows' ]]; then
+          echo "PLATFORM=$PLATFORM" >> $GITHUB_ENV
+
+          ncpu=
+          MAKE_CMD="make"
+          case '${{ runner.os }}' in
+          'Linux')
+            ncpu=$(nproc)
+            ;;
+          'macOS')
+            ncpu=$(sysctl -n hw.ncpu)
+            ;;
+          'Windows')
+            ncpu=$NUMBER_OF_PROCESSORS
             MAKE_CMD="mingw32-make"
-          else
-            MAKE_CMD="make"
-          fi
-          env MAKE="$MAKE_CMD -j2" ARCH_OVERRIDE=$PLATFORM CC=gcc bash build_nim.sh nim csources dist/nimble NimBinaries
+            ;;
+          esac
+          [[ -z "$ncpu" || $ncpu -le 0 ]] && ncpu=1
+          echo "ncpu=$ncpu" >> $GITHUB_ENV
+          echo "MAKE_CMD=${MAKE_CMD}" >> $GITHUB_ENV
 
-      - name: Setup environment
-        shell: bash
-        run: echo '${{ github.workspace }}/nim/bin' >> $GITHUB_PATH
-
-      - name: Run nim-chronos tests
-        shell: bash
-        working-directory: nim-chronos
+      - name: Build Nim and Nimble
         run: |
+          curl -O -L -s -S https://raw.githubusercontent.com/status-im/nimbus-build-system/master/scripts/build_nim.sh
+          env MAKE="${MAKE_CMD} -j${ncpu}" ARCH_OVERRIDE=${PLATFORM} NIM_COMMIT=${{ matrix.branch }} \
+            QUICK_AND_DIRTY_COMPILER=1 QUICK_AND_DIRTY_NIMBLE=1 CC=gcc \
+            bash build_nim.sh nim csources dist/nimble NimBinaries
+          echo '${{ github.workspace }}/nim/bin' >> $GITHUB_PATH
+
+      - name: Run tests
+        run: |
+          nim --version
+          nimble --version
           nimble install -y --depsOnly
           nimble install -y libbacktrace
           nimble test
+          nimble test_libbacktrace

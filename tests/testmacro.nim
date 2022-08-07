@@ -6,6 +6,7 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 import unittest2
+import macros
 import ../chronos
 
 when defined(nimHasUsed): {.used.}
@@ -80,3 +81,43 @@ suite "Macro transformations test suite":
     check waitFor(testAwait()) == true
   test "`awaitne` command test":
     check waitFor(testAwaitne()) == true
+
+
+  test "template async macro transformation":
+    template templatedAsync(name, restype: untyped): untyped =
+      proc name(): Future[restype] {.async.} = return @[4]
+
+    templatedAsync(testTemplate, seq[int])
+    check waitFor(testTemplate()) == @[4]
+
+    macro macroAsync(name, restype, innerrestype: untyped): untyped =
+      quote do:
+        proc `name`(): Future[`restype`[`innerrestype`]] {.async.} = return
+
+    type OpenObject = object
+    macroAsync(testMacro, seq, OpenObject)
+    check waitFor(testMacro()).len == 0
+
+    macro macroAsync2(name, restype, inner1, inner2, inner3, inner4: untyped): untyped =
+      quote do:
+        proc `name`(): Future[`restype`[`inner1`[`inner2`[`inner3`, `inner4`]]]] {.async.} = return
+
+    macroAsync2(testMacro2, seq, Opt, Result, OpenObject, cstring)
+    check waitFor(testMacro2()).len == 0
+
+suite "async transformation issues":
+  test "Nested defer/finally not called on return":
+    # issue #288
+    # fixed by https://github.com/nim-lang/Nim/pull/19933
+    var answer = 0
+    proc a {.async.} =
+      try:
+        try:
+          await sleepAsync(0)
+          return
+        finally:
+          answer = 32
+      finally:
+        answer.inc(10)
+    waitFor(a())
+    check answer == 42

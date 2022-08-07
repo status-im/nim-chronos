@@ -10,10 +10,13 @@
 ## This module implements cross-platform network interfaces list.
 ## Currently supported OSes are Windows, Linux, MacOS, BSD(not tested).
 
-{.push raises: [Defect].}
+when (NimMajor, NimMinor) < (1, 4):
+  {.push raises: [Defect].}
+else:
+  {.push raises: [].}
 
 import std/algorithm
-from strutils import toHex
+from std/strutils import toHex
 import ./ipnet
 export ipnet
 
@@ -451,7 +454,7 @@ when defined(linux):
     # ARPHRD_NONE = 0xFFFE
 
   type
-    SockAddr_nl = object
+    Sockaddr_nl = object
       family: cushort
       pad: cushort
       pid: uint32
@@ -614,14 +617,14 @@ when defined(linux):
       IfOther
 
   proc createNetlinkSocket(pid: Pid): SocketHandle =
-    var address: SockAddr_nl
+    var address: Sockaddr_nl
     address.family = cushort(AF_NETLINK)
     address.groups = 0
     address.pid = cast[uint32](pid)
     var res = posix.socket(AF_NETLINK, posix.SOCK_DGRAM, NETLINK_ROUTE)
     if res != SocketHandle(-1):
       if posix.bindSocket(res, cast[ptr SockAddr](addr address),
-                          Socklen(sizeof(SockAddr_nl))) != 0:
+                          SockLen(sizeof(Sockaddr_nl))) != 0:
         discard posix.close(res)
         res = SocketHandle(-1)
     res
@@ -632,7 +635,7 @@ when defined(linux):
       rmsg: Tmsghdr
       iov: IOVec
       req: NLReq
-      address: SockAddr_nl
+      address: Sockaddr_nl
 
     type TIovLen = type iov.iov_len
 
@@ -648,7 +651,7 @@ when defined(linux):
     rmsg.msg_iov = addr iov
     rmsg.msg_iovlen = 1
     rmsg.msg_name = cast[pointer](addr address)
-    rmsg.msg_namelen = Socklen(sizeof(SockAddr_nl))
+    rmsg.msg_namelen = SockLen(sizeof(Sockaddr_nl))
     let res = posix.sendmsg(fd, addr rmsg, 0).TIovLen
     (res == iov.iov_len)
 
@@ -658,12 +661,12 @@ when defined(linux):
     var
       rmsg: Tmsghdr
       iov: IOVec
-      address: SockAddr_nl
+      address: Sockaddr_nl
       buffer: array[64, byte]
 
     type TIovLen = type iov.iov_len
 
-    var req = cast[ptr NlRouteReq](addr buffer[0])
+    var req = cast[ptr NLRouteReq](addr buffer[0])
 
     address.family = cushort(AF_NETLINK)
     req.hdr.nlmsg_len = NLMSG_LENGTH(sizeof(RtMessage))
@@ -696,7 +699,7 @@ when defined(linux):
     rmsg.msg_iov = addr iov
     rmsg.msg_iovlen = 1
     rmsg.msg_name = cast[pointer](addr address)
-    rmsg.msg_namelen = Socklen(sizeof(SockAddr_nl))
+    rmsg.msg_namelen = SockLen(sizeof(Sockaddr_nl))
     let res = posix.sendmsg(fd, addr rmsg, 0).TIovLen
     (res == iov.iov_len)
 
@@ -704,14 +707,14 @@ when defined(linux):
     var
       rmsg: Tmsghdr
       iov: IOVec
-      address: SockAddr_nl
+      address: Sockaddr_nl
     data.setLen(IFLIST_REPLY_BUFFER)
     iov.iov_base = cast[pointer](addr data[0])
     iov.iov_len = IFLIST_REPLY_BUFFER
     rmsg.msg_iov = addr iov
     rmsg.msg_iovlen = 1
     rmsg.msg_name = cast[pointer](addr address)
-    rmsg.msg_namelen = SockLen(sizeof(SockAddr_nl))
+    rmsg.msg_namelen = SockLen(sizeof(Sockaddr_nl))
     var length = posix.recvmsg(fd, addr rmsg, 0)
     if length >= 0:
       data.setLen(length)
@@ -993,7 +996,7 @@ elif defined(macosx) or defined(bsd):
       ifi_reserved1 {.importc: "ifi_reserved1".}: uint32
       ifi_reserved2 {.importc: "ifi_reserved2".}: uint32
 
-    SockAddr_dl = object
+    Sockaddr_dl = object
       sdl_len: byte
       sdl_family: byte
       sdl_index: uint16
@@ -1081,7 +1084,7 @@ elif defined(macosx) or defined(bsd):
           let family = cast[int](ifap.ifa_addr.sa_family)
           if family == AF_LINK:
             var data = cast[ptr IfData](ifap.ifa_data)
-            var link = cast[ptr SockAddr_dl](ifap.ifa_addr)
+            var link = cast[ptr Sockaddr_dl](ifap.ifa_addr)
             res[i].ifIndex = cast[int](link.sdl_index)
             let nlen = cast[int](link.sdl_nlen)
             if nlen < len(link.sdl_data):
@@ -1093,19 +1096,19 @@ elif defined(macosx) or defined(bsd):
             res[i].mtu = cast[int](data.ifi_mtu)
           elif family == posix.AF_INET:
             fromSAddr(cast[ptr Sockaddr_storage](ifap.ifa_addr),
-                      Socklen(sizeof(SockAddr_in)), ifaddress.host)
+                      SockLen(sizeof(Sockaddr_in)), ifaddress.host)
           elif family == posix.AF_INET6:
             fromSAddr(cast[ptr Sockaddr_storage](ifap.ifa_addr),
-                      Socklen(sizeof(SockAddr_in6)), ifaddress.host)
+                      SockLen(sizeof(Sockaddr_in6)), ifaddress.host)
         if not isNil(ifap.ifa_netmask):
           var na: TransportAddress
           var family = cast[cint](ifap.ifa_netmask.sa_family)
           if family == posix.AF_INET:
             fromSAddr(cast[ptr Sockaddr_storage](ifap.ifa_netmask),
-                      Socklen(sizeof(SockAddr_in)), na)
+                      SockLen(sizeof(Sockaddr_in)), na)
           elif family == posix.AF_INET6:
             fromSAddr(cast[ptr Sockaddr_storage](ifap.ifa_netmask),
-                      Socklen(sizeof(SockAddr_in6)), na)
+                      SockLen(sizeof(Sockaddr_in6)), na)
           ifaddress.net = IpNet.init(ifaddress.host, na)
 
         if ifaddress.host.family != AddressFamily.None:
@@ -1118,7 +1121,7 @@ elif defined(macosx) or defined(bsd):
       freeIfAddrs(ifap)
     res
 
-  proc sasize(data: openarray[byte]): int =
+  proc sasize(data: openArray[byte]): int =
     # SA_SIZE() template. Taken from FreeBSD net/route.h:1.63
     if len(data) > 0:
       if data[0] == 0x00'u8:
@@ -1146,7 +1149,7 @@ elif defined(macosx) or defined(bsd):
 
     if sock != -1:
       var sastore: Sockaddr_storage
-      var salen: Socklen
+      var salen: SockLen
       address.toSAddr(sastore, salen)
       # We doing this trick because Nim's posix declaration of Sockaddr_storage
       # is not compatible with BSD version. First byte in BSD version is length
@@ -1181,9 +1184,9 @@ elif defined(macosx) or defined(bsd):
               var saddr = cast[ptr Sockaddr_storage](addr msg.space[so])
               let size = sasize(msg.space.toOpenArray(so, eo))
               if mask == RTA_DST:
-                fromSAddr(saddr, Socklen(size), res.dest)
+                fromSAddr(saddr, SockLen(size), res.dest)
               elif mask == RTA_GATEWAY:
-                fromSAddr(saddr, Socklen(size), res.gateway)
+                fromSAddr(saddr, SockLen(size), res.gateway)
               so += size
 
           if res.dest.isZero():
@@ -1513,7 +1516,7 @@ elif defined(windows):
         var empty: TransportAddress
         var dest, src: Sockaddr_storage
         var luid: uint64
-        var destlen: Socklen
+        var destlen: SockLen
         address.toSAddr(dest, destlen)
         var getBestRoute2  = cast[GETBESTROUTE2](symAddr(iph, "GetBestRoute2"))
         var gres = getBestRoute2(addr luid, 0'u32, nil,
@@ -1523,15 +1526,15 @@ elif defined(windows):
                                 cast[ptr SOCKADDR_INET](addr src))
         if gres == 0:
           if src.ss_family == winlean.AF_INET:
-            fromSAddr(addr src, Socklen(sizeof(Sockaddr_in)), res.source)
+            fromSAddr(addr src, SockLen(sizeof(Sockaddr_in)), res.source)
           elif src.ss_family == winlean.AF_INET6:
-            fromSAddr(addr src, Socklen(sizeof(Sockaddr_in6)), res.source)
+            fromSAddr(addr src, SockLen(sizeof(Sockaddr_in6)), res.source)
           if bestRoute.nextHop.si_family == winlean.AF_INET:
             fromSAddr(cast[ptr Sockaddr_storage](addr bestRoute.nextHop),
-                      Socklen(sizeof(Sockaddr_in)), res.gateway)
+                      SockLen(sizeof(Sockaddr_in)), res.gateway)
           elif bestRoute.nextHop.si_family == winlean.AF_INET6:
             fromSAddr(cast[ptr Sockaddr_storage](addr bestRoute.nextHop),
-                      Socklen(sizeof(Sockaddr_in6)), res.gateway)
+                      SockLen(sizeof(Sockaddr_in6)), res.gateway)
           if res.gateway.isZero():
             res.gateway = empty
           res.dest = address

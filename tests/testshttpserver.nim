@@ -80,7 +80,7 @@ suite "Secure HTTP server testing suite":
                   ): Future[string] {.async.} =
     var
       transp: StreamTransport
-      tlsstream: TlsAsyncStream
+      tlsstream: TLSAsyncStream
       reader: AsyncStreamReader
       writer: AsyncStreamWriter
 

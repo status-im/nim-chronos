@@ -7,14 +7,17 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 
-{.push raises: [Defect].}
+when (NimMajor, NimMinor) < (1, 4):
+  {.push raises: [Defect].}
+else:
+  {.push raises: [].}
 
 import std/[os, strutils, nativesockets, net]
 import stew/base10
 import ../asyncloop
 export net
 
-when defined(windows):
+when defined(windows) or defined(nimdoc):
   import winlean
 else:
   import posix
@@ -59,7 +62,7 @@ type
     Running,                      # Server running
     Closed                        # Server closed
 
-when defined(windows):
+when defined(windows) or defined(nimdoc):
   type
     SocketServer* = ref object of RootRef
       ## Socket server object
@@ -75,7 +78,8 @@ when defined(windows):
       asock*: AsyncFD               # Current AcceptEx() socket
       errorCode*: OSErrorCode       # Current error code
       abuffer*: array[128, byte]    # Windows AcceptEx() buffer
-      aovl*: CustomOverlapped       # AcceptEx OVERLAPPED structure
+      when defined(windows):
+        aovl*: CustomOverlapped       # AcceptEx OVERLAPPED structure
 else:
   type
     SocketServer* = ref object of RootRef
@@ -108,6 +112,8 @@ type
     ## Usage after transport close exception
   TransportTooManyError* = object of TransportError
     ## Too many open file descriptors exception
+  TransportAbortedError* = object of TransportError
+    ## Remote client disconnected before server accepts connection
 
   TransportState* = enum
     ## Transport's state
@@ -293,13 +299,13 @@ proc getAddrInfo(address: string, port: Port, domain: Domain,
   var gaiRes = getaddrinfo(address, Base10.toString(uint16(port)),
                            addr(hints), res)
   if gaiRes != 0'i32:
-    when defined(windows):
+    when defined(windows) or defined(nimdoc):
       raise newException(TransportAddressError, osErrorMsg(osLastError()))
     else:
       raise newException(TransportAddressError, $gai_strerror(gaiRes))
   res
 
-proc fromSAddr*(sa: ptr Sockaddr_storage, sl: Socklen,
+proc fromSAddr*(sa: ptr Sockaddr_storage, sl: SockLen,
                 address: var TransportAddress) =
   ## Set transport address ``address`` with value from OS specific socket
   ## address storage.
@@ -318,7 +324,7 @@ proc fromSAddr*(sa: ptr Sockaddr_storage, sl: Socklen,
             sizeof(address.address_v6))
     address.port = Port(nativesockets.ntohs(s.sin6_port))
   elif int(sa.ss_family) == toInt(Domain.AF_UNIX):
-    when not defined(windows):
+    when not defined(windows) and not defined(nimdoc):
       address = TransportAddress(family: AddressFamily.Unix)
       if int(sl) > sizeof(sa.ss_family):
         var length = int(sl) - sizeof(sa.ss_family)
@@ -331,32 +337,32 @@ proc fromSAddr*(sa: ptr Sockaddr_storage, sl: Socklen,
       discard
 
 proc toSAddr*(address: TransportAddress, sa: var Sockaddr_storage,
-             sl: var Socklen) =
+             sl: var SockLen) =
   ## Set socket OS specific socket address storage with address from transport
   ## address ``address``.
   case address.family
   of AddressFamily.IPv4:
-    sl = Socklen(sizeof(Sockaddr_in))
+    sl = SockLen(sizeof(Sockaddr_in))
     let s = cast[ptr Sockaddr_in](addr sa)
     s.sin_family = type(s.sin_family)(toInt(Domain.AF_INET))
     s.sin_port = nativesockets.htons(uint16(address.port))
     copyMem(addr s.sin_addr, unsafeAddr address.address_v4[0],
             sizeof(s.sin_addr))
   of AddressFamily.IPv6:
-    sl = Socklen(sizeof(Sockaddr_in6))
+    sl = SockLen(sizeof(Sockaddr_in6))
     let s = cast[ptr Sockaddr_in6](addr sa)
     s.sin6_family = type(s.sin6_family)(toInt(Domain.AF_INET6))
     s.sin6_port = nativesockets.htons(uint16(address.port))
     copyMem(addr s.sin6_addr, unsafeAddr address.address_v6[0],
             sizeof(s.sin6_addr))
   of AddressFamily.Unix:
-    when not defined(windows):
+    when not defined(windows) and not defined(nimdoc):
       if address.port == Port(0):
-        sl = Socklen(sizeof(sa.ss_family))
+        sl = SockLen(sizeof(sa.ss_family))
       else:
         let s = cast[ptr Sockaddr_un](addr sa)
         var name = cast[cstring](unsafeAddr address.address_un[0])
-        sl = Socklen(sizeof(sa.ss_family) + len(name) + 1)
+        sl = SockLen(sizeof(sa.ss_family) + len(name) + 1)
         s.sun_family = type(s.sun_family)(toInt(Domain.AF_UNIX))
         copyMem(addr s.sun_path, unsafeAddr address.address_un[0],
                 len(name) + 1)
@@ -396,7 +402,7 @@ proc resolveTAddress*(address: string, port: Port,
                       domain: Domain): seq[TransportAddress] {.
      raises: [Defect, TransportAddressError].} =
   var res: seq[TransportAddress]
-  let aiList = getAddrInfo(address, Port(port), domain)
+  let aiList = getAddrInfo(address, port, domain)
   var it = aiList
   while not(isNil(it)):
     var ta: TransportAddress
@@ -513,7 +519,7 @@ proc resolveTAddress*(address: string, port: Port,
     resolveTAddress(address, port, AddressFamily.IPv6)
 
 proc windowsAnyAddressFix*(a: TransportAddress): TransportAddress =
-  ## BSD Sockets on *nix systems are able to perform connections to
+  ## BSD Sockets on \*nix systems are able to perform connections to
   ## `0.0.0.0` or `::0` which are equal to `127.0.0.1` or `::1`.
   when defined(windows):
     if (a.family == AddressFamily.IPv4 and
@@ -556,9 +562,6 @@ template getError*(t: untyped): ref CatchableError =
 
 template getServerUseClosedError*(): ref TransportUseClosedError =
   newException(TransportUseClosedError, "Server is already closed!")
-
-template getTransportTooManyError*(): ref TransportTooManyError =
-  newException(TransportTooManyError, "Too many open transports!")
 
 template getTransportUseClosedError*(): ref TransportUseClosedError =
   newException(TransportUseClosedError, "Transport is already closed!")
@@ -613,15 +616,91 @@ when defined(windows):
     ERROR_NO_DATA* = 232
     ERROR_CONNECTION_ABORTED* = 1236
     ERROR_TOO_MANY_OPEN_FILES* = 4
+    WSAEMFILE* = 10024
+    WSAENETDOWN* = 10050
+    WSAENETRESET* = 10052
+    WSAECONNABORTED* = 10053
+    WSAECONNRESET* = 10054
+    WSAENOBUFS* = 10055
+    WSAETIMEDOUT* = 10060
 
-  proc cancelIo*(hFile: HANDLE): WINBOOL
+  proc cancelIo*(hFile: Handle): WINBOOL
        {.stdcall, dynlib: "kernel32", importc: "CancelIo".}
-  proc connectNamedPipe*(hPipe: HANDLE, lpOverlapped: ptr OVERLAPPED): WINBOOL
+  proc connectNamedPipe*(hPipe: Handle, lpOverlapped: ptr OVERLAPPED): WINBOOL
        {.stdcall, dynlib: "kernel32", importc: "ConnectNamedPipe".}
-  proc disconnectNamedPipe*(hPipe: HANDLE): WINBOOL
+  proc disconnectNamedPipe*(hPipe: Handle): WINBOOL
        {.stdcall, dynlib: "kernel32", importc: "DisconnectNamedPipe".}
-  proc setNamedPipeHandleState*(hPipe: HANDLE, lpMode, lpMaxCollectionCount,
+  proc setNamedPipeHandleState*(hPipe: Handle, lpMode, lpMaxCollectionCount,
                                 lpCollectDataTimeout: ptr DWORD): WINBOOL
        {.stdcall, dynlib: "kernel32", importc: "SetNamedPipeHandleState".}
-  proc resetEvent*(hEvent: HANDLE): WINBOOL
+  proc resetEvent*(hEvent: Handle): WINBOOL
        {.stdcall, dynlib: "kernel32", importc: "ResetEvent".}
+
+template getTransportTooManyError*(code: int = 0): ref TransportTooManyError =
+  let msg =
+    when defined(posix):
+      if code == 0:
+        "Too many open transports"
+      elif code == EMFILE:
+        "[EMFILE] Too many open files in the process"
+      elif code == ENFILE:
+        "[ENFILE] Too many open files in system"
+      elif code == ENOBUFS:
+        "[ENOBUFS] No buffer space available"
+      elif code == ENOMEM:
+        "[ENOMEM] Not enough memory availble"
+      else:
+        "[" & $code & "] Too many open transports"
+    elif defined(windows):
+      case code
+      of 0:
+        "Too many open transports"
+      of ERROR_TOO_MANY_OPEN_FILES:
+        "[ERROR_TOO_MANY_OPEN_FILES] Too many open files"
+      of WSAENOBUFS:
+        "[WSAENOBUFS] No buffer space available"
+      of WSAEMFILE:
+        "[WSAEMFILE] Too many open sockets"
+      else:
+        "[" & $code & "] Too many open transports"
+    else:
+      "[" & $code & "] Too many open transports"
+  newException(TransportTooManyError, msg)
+
+template getConnectionAbortedError*(m: string = ""): ref TransportAbortedError =
+  let msg =
+    if len(m) == 0:
+      "[ECONNABORTED] Connection has been aborted before being accepted"
+    else:
+      "[ECONNABORTED] " & m
+  newException(TransportAbortedError, msg)
+
+template getConnectionAbortedError*(code: int): ref TransportAbortedError =
+  let msg =
+    when defined(posix):
+      if code == 0:
+        "[ECONNABORTED] Connection has been aborted before being accepted"
+      elif code == EPERM:
+        "[EPERM] Firewall rules forbid connection"
+      elif code == ETIMEDOUT:
+        "[ETIMEDOUT] Operation has been timed out"
+      else:
+        "[" & $code & "] Connection has been aborted"
+    elif defined(windows):
+      case code
+      of 0, WSAECONNABORTED:
+        "[ECONNABORTED] Connection has been aborted before being accepted"
+      of WSAENETDOWN:
+        "[ENETDOWN] Network is down"
+      of WSAENETRESET:
+        "[ENETRESET] Network dropped connection on reset"
+      of WSAECONNRESET:
+        "[ECONNRESET] Connection reset by peer"
+      of WSAETIMEDOUT:
+        "[ETIMEDOUT] Connection timed out"
+      else:
+        "[" & $code & "] Connection has been aborted"
+    else:
+      "[" & $code & "] Connection has been aborted"
+
+  newException(TransportAbortedError, msg)

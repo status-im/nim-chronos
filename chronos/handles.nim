@@ -7,12 +7,16 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 
-{.push raises: [Defect].}
+when (NimMajor, NimMinor) < (1, 4):
+  {.push raises: [Defect].}
+else:
+  {.push raises: [].}
 
 import std/[net, nativesockets]
+import stew/base10
 import ./asyncloop
 
-when defined(windows):
+when defined(windows) or defined(nimdoc):
   import os, winlean
   const
     asyncInvalidSocket* = AsyncFD(-1)
@@ -24,9 +28,10 @@ when defined(windows):
     DEFAULT_PIPE_SIZE = 65536'i32
     ERROR_PIPE_CONNECTED = 535
     ERROR_PIPE_BUSY = 231
-    pipeHeaderName = r"\\.\pipe\chronos\"
+    pipeHeaderName = r"\\.\pipe\LOCAL\chronos\"
     IPV6_V6ONLY* = 27
     IPPROTO_IPV6* = 41
+
 
   proc connectNamedPipe(hNamedPipe: Handle, lpOverlapped: pointer): WINBOOL
        {.importc: "ConnectNamedPipe", stdcall, dynlib: "kernel32".}
@@ -44,7 +49,7 @@ const
 
 proc setSocketBlocking*(s: SocketHandle, blocking: bool): bool =
   ## Sets blocking mode on socket.
-  when defined(windows):
+  when defined(windows) or defined(nimdoc):
     var mode = clong(ord(not blocking))
     if ioctlsocket(s, FIONBIO, addr(mode)) == -1:
       false
@@ -92,7 +97,7 @@ proc getSockOpt*(socket: AsyncFD, level, optname: int, value: pointer,
   ## `getsockopt()` for custom options (pointer and length).
   ## Returns ``true`` on success, ``false`` on error.
   getsockopt(SocketHandle(socket), cint(level), cint(optname),
-             value, cast[ptr Socklen](addr valuelen)) >= cint(0)
+             value, cast[ptr SockLen](addr valuelen)) >= cint(0)
 
 proc getSocketError*(socket: AsyncFD, err: var int): bool =
   ## Recover error code associated with socket handle ``socket``.
@@ -109,10 +114,6 @@ proc createAsyncSocket*(domain: Domain, sockType: SockType,
   if not setSocketBlocking(handle, false):
     close(handle)
     return asyncInvalidSocket
-  when defined(macosx) and not defined(nimdoc):
-    if not setSockOpt(AsyncFD(handle), SOL_SOCKET, SO_NOSIGPIPE, 1):
-      close(handle)
-      return asyncInvalidSocket
   register(AsyncFD(handle))
   AsyncFD(handle)
 
@@ -123,10 +124,6 @@ proc wrapAsyncSocket*(sock: SocketHandle): AsyncFD {.
   if not setSocketBlocking(sock, false):
     close(sock)
     return asyncInvalidSocket
-  when defined(macosx) and not defined(nimdoc):
-    if not setSockOpt(AsyncFD(sock), SOL_SOCKET, SO_NOSIGPIPE, 1):
-      close(sock)
-      return asyncInvalidSocket
   register(AsyncFD(sock))
   AsyncFD(sock)
 
@@ -136,7 +133,7 @@ proc getMaxOpenFiles*(): int {.raises: [Defect, OSError].} =
   ## Note: On Windows its impossible to obtain such number, so getMaxOpenFiles()
   ## will return constant value of 16384. You can get more information on this
   ## link https://docs.microsoft.com/en-us/archive/blogs/markrussinovich/pushing-the-limits-of-windows-handles
-  when defined(windows):
+  when defined(windows) or defined(nimdoc):
     16384
   else:
     var limits: RLimit
@@ -148,7 +145,7 @@ proc setMaxOpenFiles*(count: int) {.raises: [Defect, OSError].} =
   ## Set maximum file descriptor number that can be opened by this process.
   ##
   ## Note: On Windows its impossible to set this value, so it just a nop call.
-  when defined(windows):
+  when defined(windows) or defined(nimdoc):
     discard
   else:
     var limits: RLimit
@@ -164,18 +161,19 @@ proc createAsyncPipe*(): tuple[read: AsyncFD, write: AsyncFD] =
   ## on error.
   when defined(windows):
     var pipeIn, pipeOut: Handle
-    var pipeName: WideCString
+    var pipeName: string
     var uniq = 0'u64
     var sa = SECURITY_ATTRIBUTES(nLength: sizeof(SECURITY_ATTRIBUTES).cint,
                                  lpSecurityDescriptor: nil, bInheritHandle: 0)
     while true:
       QueryPerformanceCounter(uniq)
-      pipeName = newWideCString(pipeHeaderName & $uniq)
+      pipeName = pipeHeaderName & Base10.toString(uniq)
+
       var openMode = FILE_FLAG_FIRST_PIPE_INSTANCE or FILE_FLAG_OVERLAPPED or
                      PIPE_ACCESS_INBOUND
       var pipeMode = PIPE_TYPE_BYTE or PIPE_READMODE_BYTE or PIPE_WAIT
-      pipeIn = createNamedPipe(pipeName, openMode, pipeMode, 1'i32,
-                               DEFAULT_PIPE_SIZE, DEFAULT_PIPE_SIZE,
+      pipeIn = createNamedPipe(newWideCString(pipeName), openMode, pipeMode,
+                               1'i32, DEFAULT_PIPE_SIZE, DEFAULT_PIPE_SIZE,
                                0'i32, addr sa)
       if pipeIn == INVALID_HANDLE_VALUE:
         let err = osLastError()
@@ -188,8 +186,8 @@ proc createAsyncPipe*(): tuple[read: AsyncFD, write: AsyncFD] =
         break
 
     var openMode = (GENERIC_WRITE or FILE_WRITE_DATA or SYNCHRONIZE)
-    pipeOut = createFileW(pipeName, openMode, 0, addr(sa), OPEN_EXISTING,
-                          FILE_FLAG_OVERLAPPED, 0)
+    pipeOut = createFileW(newWideCString(pipeName), openMode, 0, addr(sa),
+                          OPEN_EXISTING, FILE_FLAG_OVERLAPPED, 0)
     if pipeOut == INVALID_HANDLE_VALUE:
       discard closeHandle(pipeIn)
       return (read: asyncInvalidPipe, write: asyncInvalidPipe)
@@ -202,7 +200,7 @@ proc createAsyncPipe*(): tuple[read: AsyncFD, write: AsyncFD] =
       of ERROR_PIPE_CONNECTED:
         discard
       of ERROR_IO_PENDING:
-        var bytesRead = 0.Dword
+        var bytesRead = 0.DWORD
         if getOverlappedResult(pipeIn, addr ovl, bytesRead, 1) == 0:
           discard closeHandle(pipeIn)
           discard closeHandle(pipeOut)
@@ -213,6 +211,7 @@ proc createAsyncPipe*(): tuple[read: AsyncFD, write: AsyncFD] =
         return (read: asyncInvalidPipe, write: asyncInvalidPipe)
 
     (read: AsyncFD(pipeIn), write: AsyncFD(pipeOut))
+  elif defined(nimdoc): discard
   else:
     var fds: array[2, cint]
 
