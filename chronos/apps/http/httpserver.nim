@@ -470,25 +470,6 @@ proc preferredContentMediaType*(acceptHeader: string): MediaType =
     else:
       MediaType.init("*", "*")
 
-proc cmp*(a, b: tuple[qvalue: float, index: int]): int =
-  if a.qvalue < b.qvalue:
-    -1
-  elif a.qvalue > b.qvalue:
-    1
-  else:
-    if a.index < b.index:
-      -1
-    elif a.index > b.index:
-      1
-    else:
-      0
-
-proc `==`*(a, b: tuple[qvalue: float, index: int]): bool =
-  cmp(a, b) == 0
-
-proc `<`*(a, b: tuple[qvalue: float, index: int]): bool =
-  cmp(a, b) < 0
-
 proc preferredContentType*(acceptHeader: string,
                            types: varargs[MediaType]
                           ): Result[MediaType, cstring] =
