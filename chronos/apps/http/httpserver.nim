@@ -490,7 +490,6 @@ proc preferredContentType*(acceptHeader: string,
   ##
   ## Note: Quality value (weight) for content type has priority over server's
   ## preferred content-type.
-  doAssert(len(types) < 99, "Maximum number of types is 99")
   if len(types) == 0:
     if len(acceptHeader) == 0:
       # If `Accept` header is missing, return `*/*`.
@@ -525,13 +524,6 @@ proc preferredContentType*(acceptHeader: string,
         # If `Accept` header is incorrect, client accepts any type of content.
         ok(types[0])
       else:
-        # This algorithm exploits ``q-value`` range which is [0.000, 1.000],
-        # by using smaller values for sorting server's preferred content types.
-        # So between 0.000 and 0.001 there present 99 possible values
-        # [0.00001, 0.00099] which can be used.
-        # Server's preferred types marked with `preferred-value` which is
-        # has highest value for first index and the lowest for the last.
-
         # ``maxWeight`` represents maximum possible weight value which can be
         # obtained.
         let maxWeight = (1.0, 0)
