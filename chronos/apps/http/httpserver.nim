@@ -490,7 +490,6 @@ proc preferredContentType*(acceptHeader: string,
   ##
   ## Note: Quality value (weight) for content type has priority over server's
   ## preferred content-type.
-  doAssert(len(types) < 99, "Maximum number of types is 99")
   if len(types) == 0:
     if len(acceptHeader) == 0:
       # If `Accept` header is missing, return `*/*`.
@@ -525,43 +524,29 @@ proc preferredContentType*(acceptHeader: string,
         # If `Accept` header is incorrect, client accepts any type of content.
         ok(types[0])
       else:
-        # This algorithm exploits ``q-value`` range which is [0.000, 1.000],
-        # by using smaller values for sorting server's preferred content types.
-        # So between 0.000 and 0.001 there present 99 possible values
-        # [0.00001, 0.00099] which can be used.
-        # Server's preferred types marked with `preferred-value` which is
-        # has highest value for first index and the lowest for the last.
-
         # ``maxWeight`` represents maximum possible weight value which can be
         # obtained.
-        let maxWeight = 1.0 + float(len(types)) / float(100_000)
+        let maxWeight = (1.0, 0)
         var
           currentType = MediaType()
-          currentWeight = 0.0
-        for itemType in ares.get().data:
-          let
-            preferredIndex = types.find(itemType.mediaType)
-            preferredWeight =
-              if preferredIndex == -1:
-                0.0
-              else:
-                # Calculate weight which depends on position in ``types``
-                # array. Because ``preferredIndex`` is always less than
-                # ``len(types)`` this weight could not be ``0.0``.
-                float(len(types) - preferredIndex) / float(100_000)
+          currentIndex = -1
+          currentWeight = (-1.0, 0)
 
-          if preferredWeight != 0:
-            let weight = itemType.qvalue + preferredWeight
+        for itemType in ares.get().data:
+          let preferredIndex = types.find(itemType.mediaType)
+          if preferredIndex != -1:
+            let weight = (itemType.qvalue, -preferredIndex)
             if currentWeight < weight:
               currentType = types[preferredIndex]
               currentWeight = weight
+              currentIndex = preferredIndex
 
           if currentWeight == maxWeight:
             # There is no reason to continue search, because maximum possible
             # weight is already achieved, so this is the best match.
             break
 
-        if currentWeight == 0.0:
+        if currentIndex == -1:
           err("Preferred content type not found")
         else:
           ok(currentType)
