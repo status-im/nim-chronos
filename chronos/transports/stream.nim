@@ -13,7 +13,10 @@ else:
   {.push raises: [].}
 
 import std/deques
-import ".."/[asyncloop, handles, osdefs, osutils, selectors2]
+when defined(windows):
+  import ".."/[asyncloop, handles, osdefs, osutils]
+else:
+  import ".."/[asyncloop, handles, osdefs, osutils, selectors2]
 import common
 
 type
