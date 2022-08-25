@@ -7,7 +7,7 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 import std/[strutils, uri]
-import stew/[results, endians2], httputils
+import stew/results, httputils
 import ../../asyncloop, ../../asyncsync
 import ../../streams/[asyncstream, boundstream]
 export asyncloop, asyncsync, results, httputils, strutils
