@@ -68,6 +68,13 @@ jobs:
           chmod 755 external/bin/gcc external/bin/g++
           echo '${{ github.workspace }}/external/bin' >> $GITHUB_PATH
 
+      - name: 'Install dependencies (macOS)'
+        if: runner.os == 'macOS' && matrix.branch == 'devel'
+        run: |
+          brew install openssl@1.1
+          ln -s $(brew --prefix)/opt/openssl/lib/libcrypto.1.1.dylib /usr/local/lib
+          ln -s $(brew --prefix)/opt/openssl/lib/libssl.1.1.dylib /usr/local/lib/
+
       - name: MSYS2 (Windows i386)
         if: runner.os == 'Windows' && matrix.target.cpu == 'i386'
         uses: msys2/setup-msys2@v2
