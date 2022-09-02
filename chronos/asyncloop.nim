@@ -13,7 +13,7 @@ when (NimMajor, NimMinor) < (1, 4):
 else:
   {.push raises: [].}
 
-import std/[os, tables, strutils, heapqueue, lists, options, nativesockets, net,
+import std/[os, tables, strutils, heapqueue, lists, nativesockets, net,
             deques]
 import ./timer
 

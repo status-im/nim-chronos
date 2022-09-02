@@ -6,13 +6,13 @@
 #              Licensed under either of
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
-import std/[tables, options, uri, strutils]
+import std/[tables, uri, strutils]
 import stew/[results, base10], httputils
 import ../../asyncloop, ../../asyncsync
 import ../../streams/[asyncstream, boundstream, chunkstream]
 import httptable, httpcommon, multipart
 export asyncloop, asyncsync, httptable, httpcommon, httputils, multipart,
-       asyncstream, boundstream, chunkstream, uri, tables, options, results
+       asyncstream, boundstream, chunkstream, uri, tables, results
 
 type
   HttpServerFlags* {.pure.} = enum
@@ -88,7 +88,7 @@ type
     state*: HttpState
     headers*: HttpTable
     query*: HttpTable
-    postTable: Option[HttpTable]
+    postTable: Opt[HttpTable]
     rawPath*: string
     uri*: Uri
     scheme*: string
@@ -98,9 +98,9 @@ type
     transferEncoding*: set[TransferEncodingFlags]
     requestFlags*: set[HttpRequestFlags]
     contentLength: int
-    contentTypeData*: Option[ContentTypeData]
+    contentTypeData*: Opt[ContentTypeData]
     connection*: HttpConnectionRef
-    response*: Option[HttpResponseRef]
+    response*: Opt[HttpResponseRef]
 
   HttpRequestRef* = ref HttpRequest
 
@@ -211,7 +211,7 @@ proc getResponse*(req: HttpRequestRef): HttpResponseRef {.raises: [Defect].} =
              else:
                {}
     )
-    req.response = some(resp)
+    req.response = Opt.some(resp)
     resp
   else:
     req.response.get()
@@ -351,7 +351,7 @@ proc prepareRequest(conn: HttpConnectionRef,
         request.requestFlags.incl(HttpRequestFlags.UrlencodedForm)
       elif contentType == MultipartContentType:
         request.requestFlags.incl(HttpRequestFlags.MultipartForm)
-      request.contentTypeData = some(contentType)
+      request.contentTypeData = Opt.some(contentType)
 
     if ExpectHeader in request.headers:
       let expectHeader = request.headers.getString(ExpectHeader)
@@ -755,18 +755,18 @@ proc processLoop(server: HttpServerRef, transp: StreamTransport,
       break
 
     breakLoop = false
-    var lastErrorCode: Option[HttpCode]
+    var lastErrorCode: Opt[HttpCode]
 
     try:
       resp = await conn.server.processCallback(arg)
     except CancelledError:
       breakLoop = true
     except HttpCriticalError as exc:
-      lastErrorCode = some(exc.code)
+      lastErrorCode = Opt.some(exc.code)
     except HttpRecoverableError as exc:
-      lastErrorCode = some(exc.code)
+      lastErrorCode = Opt.some(exc.code)
     except CatchableError:
-      lastErrorCode = some(Http503)
+      lastErrorCode = Opt.some(Http503)
 
     if breakLoop:
       break
@@ -983,7 +983,7 @@ proc post*(req: HttpRequestRef): Future[HttpTable] {.async.} =
         copyMem(addr strbody[0], addr body[0], len(body))
       for key, value in queryParams(strbody, queryFlags):
         table.add(key, value)
-      req.postTable = some(table)
+      req.postTable = Opt.some(table)
       return table
     elif MultipartForm in req.requestFlags:
       var table = HttpTable.init()
@@ -1029,7 +1029,7 @@ proc post*(req: HttpRequestRef): Future[HttpTable] {.async.} =
           await mpreader.closeWait()
           raise exc
       await mpreader.closeWait()
-      req.postTable = some(table)
+      req.postTable = Opt.some(table)
       return table
     else:
       if HttpRequestFlags.BoundBody in req.requestFlags:
