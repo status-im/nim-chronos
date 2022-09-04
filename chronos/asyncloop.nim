@@ -211,6 +211,17 @@ type
     callbacks*: Deque[AsyncCallback]
     idlers*: Deque[AsyncCallback]
     trackers*: Table[string, TrackerBase]
+    inPoll: uint64
+
+proc sentinelCallbackImpl(arg: pointer) {.gcsafe, raises: [Defect].} =
+  raiseAssert "Sentinel callback MUST not be scheduled"
+
+const
+  SentinelCallback = AsyncCallback(function: sentinelCallbackImpl,
+                                   udata: nil)
+
+proc isSentinel(acb: AsyncCallback): bool {.raises: [Defect].} =
+  acb == SentinelCallback
 
 proc `<`(a, b: TimerCallback): bool =
   result = a.finishAt < b.finishAt
@@ -275,16 +286,13 @@ template processIdlers(loop: untyped) =
     loop.callbacks.addLast(loop.idlers.popFirst())
 
 template processCallbacks(loop: untyped) =
-  var count = len(loop.callbacks)
-  for i in 0..<count:
-    # This is mostly workaround for people which are using `waitFor` where
-    # it must be used `await`. While using `waitFor` inside of callbacks
-    # dispatcher's callback list is got decreased and length of
-    # `loop.callbacks` become not equal to `count`, its why `IndexError`
-    # can be generated.
-    if len(loop.callbacks) == 0: break
+  while true:
+    if len(loop.callbacks) == 0:
+      break
     let callable = loop.callbacks.popFirst()
-    if not isNil(callable.function):
+    if isSentinel(callable):
+      break
+    if not(isNil(callable.function)):
       callable.function(callable.udata)
 
 proc raiseAsDefect*(exc: ref Exception, msg: string) {.
@@ -706,6 +714,11 @@ elif unixPlatform:
       let customSet = {Event.Timer, Event.Signal, Event.Process,
                        Event.Vnode}
 
+    if loop.inPoll != 0'u64:
+      # This is call of `poll()` from the `poll()` scheduled callback, we invoke
+      # all pending callbacks which was not called by parent `poll()`.
+      processCallbacks(loop)
+
     # Moving expired timers to `loop.callbacks` and calculate timeout.
     loop.processTimersGetTimeout(curTimeout)
 
@@ -741,9 +754,15 @@ elif unixPlatform:
     if count == 0:
       loop.processIdlers()
 
+    loop.callbacks.addLast(SentinelCallback)
+
+    inc(loop.inPoll)
+
     # All callbacks which will be added in process, will be processed on next
     # poll() call.
     loop.processCallbacks()
+
+    dec(loop.inPoll)
 
 else:
   proc initAPI() = discard
