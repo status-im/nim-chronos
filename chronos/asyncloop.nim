@@ -211,7 +211,6 @@ type
     callbacks*: Deque[AsyncCallback]
     idlers*: Deque[AsyncCallback]
     trackers*: Table[string, TrackerBase]
-    inPoll: uint64
 
 proc sentinelCallbackImpl(arg: pointer) {.gcsafe, raises: [Defect].} =
   raiseAssert "Sentinel callback MUST not be scheduled"
@@ -287,8 +286,7 @@ template processIdlers(loop: untyped) =
 
 template processCallbacks(loop: untyped) =
   while true:
-    if len(loop.callbacks) == 0:
-      break
+    doAssert loop.callbacks.len > 0  # Sentinel element is always added before
     let callable = loop.callbacks.popFirst()
     if isSentinel(callable):
       break
@@ -404,6 +402,7 @@ when defined(windows):
       # Pre 0.20.0 Nim's stdlib version
       res.timers = newHeapQueue[TimerCallback]()
     res.callbacks = initDeque[AsyncCallback](64)
+    res.callbacks.addLast(SentinelCallback)
     res.idlers = initDeque[AsyncCallback]()
     res.trackers = initTable[string, TrackerBase]()
     initAPI(res)
@@ -442,6 +441,11 @@ when defined(windows):
     var curTime = Moment.now()
     var curTimeout = DWORD(0)
     var noNetworkEvents = false
+
+    # On reentrant `poll` calls from `processCallbacks`, e.g., `waitFor`,
+    # complete pending work of the outer `processCallbacks` call.
+    # On non-reentrant `poll` calls, this only removes sentinel element.
+    processCallbacks(loop)
 
     # Moving expired timers to `loop.callbacks` and calculate timeout
     loop.processTimersGetTimeout(curTimeout)
@@ -483,9 +487,13 @@ when defined(windows):
     if noNetworkEvents:
       loop.processIdlers()
 
-    # All callbacks which will be added in process will be processed on next
-    # poll() call.
-    loop.processCallbacks()
+    # All callbacks which will be added during `processCallbacks` will be
+    # scheduled after the sentinel and are processed on next `poll()` call.
+    loop.callbacks.addLast(SentinelCallback)
+    processCallbacks(loop)
+
+    # All callbacks done, skip `processCallbacks` at start.
+    loop.callbacks.addFirst(SentinelCallback)
 
   proc closeSocket*(fd: AsyncFD, aftercb: CallbackFunc = nil) =
     ## Closes a socket and ensures that it is unregistered.
@@ -544,6 +552,7 @@ elif unixPlatform:
       # Before 0.20.0 Nim's stdlib version
       res.timers.newHeapQueue()
     res.callbacks = initDeque[AsyncCallback](64)
+    res.callbacks.addLast(SentinelCallback)
     res.idlers = initDeque[AsyncCallback]()
     res.keys = newSeq[ReadyKey](64)
     res.trackers = initTable[string, TrackerBase]()
@@ -714,10 +723,10 @@ elif unixPlatform:
       let customSet = {Event.Timer, Event.Signal, Event.Process,
                        Event.Vnode}
 
-    if loop.inPoll != 0'u64:
-      # This is call of `poll()` from the `poll()` scheduled callback, we invoke
-      # all pending callbacks which was not called by parent `poll()`.
-      processCallbacks(loop)
+    # On reentrant `poll` calls from `processCallbacks`, e.g., `waitFor`,
+    # complete pending work of the outer `processCallbacks` call.
+    # On non-reentrant `poll` calls, this only removes sentinel element.
+    processCallbacks(loop)
 
     # Moving expired timers to `loop.callbacks` and calculate timeout.
     loop.processTimersGetTimeout(curTimeout)
@@ -754,15 +763,13 @@ elif unixPlatform:
     if count == 0:
       loop.processIdlers()
 
+    # All callbacks which will be added during `processCallbacks` will be
+    # scheduled after the sentinel and are processed on next `poll()` call.
     loop.callbacks.addLast(SentinelCallback)
+    processCallbacks(loop)
 
-    inc(loop.inPoll)
-
-    # All callbacks which will be added in process, will be processed on next
-    # poll() call.
-    loop.processCallbacks()
-
-    dec(loop.inPoll)
+    # All callbacks done, skip `processCallbacks` at start.
+    loop.callbacks.addFirst(SentinelCallback)
 
 else:
   proc initAPI() = discard
