@@ -126,6 +126,10 @@ suite "Asynchronous issues test suite":
         raiseAssert "Unexpected exception happened"
     let timer = setTimer(Moment.fromNow(0.seconds), waiterProc, nil)
     await sleepAsync(100.milliseconds)
+
+    await inpTransp.closeWait()
+    await outTransp.closeWait()
+    await server.closeWait()
     return true
 
   test "Issue #6":
