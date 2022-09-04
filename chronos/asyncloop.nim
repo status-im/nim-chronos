@@ -286,8 +286,7 @@ template processIdlers(loop: untyped) =
 
 template processCallbacks(loop: untyped) =
   while true:
-    doAssert loop.callbacks.len > 0  # Sentinel element is always added before
-    let callable = loop.callbacks.popFirst()
+    let callable = loop.callbacks.popFirst()  # len must be > 0 due to sentinel
     if isSentinel(callable):
       break
     if not(isNil(callable.function)):
