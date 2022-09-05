@@ -352,9 +352,9 @@ when defined(windows):
 
     AsyncFD* = distinct int
 
-  proc getModuleHandle(lpModuleName: WideCString): HANDLE {.
+  proc getModuleHandle(lpModuleName: WideCString): Handle {.
        stdcall, dynlib: "kernel32", importc: "GetModuleHandleW", sideEffect.}
-  proc getProcAddress(hModule: HANDLE, lpProcName: cstring): pointer {.
+  proc getProcAddress(hModule: Handle, lpProcName: cstring): pointer {.
        stdcall, dynlib: "kernel32", importc: "GetProcAddress", sideEffect.}
   proc rtlNtStatusToDosError(code: uint64): ULONG {.
        stdcall, dynlib: "ntdll", importc: "RtlNtStatusToDosError", sideEffect.}
