@@ -166,11 +166,13 @@ export timer
 
 # TODO: Check if yielded future is nil and throw a more meaningful exception
 
-const unixPlatform = defined(macosx) or defined(freebsd) or
-                     defined(netbsd) or defined(openbsd) or
-                     defined(dragonfly) or defined(macos) or
-                     defined(linux) or defined(android) or
-                     defined(solaris)
+const
+  unixPlatform = defined(macosx) or defined(freebsd) or
+                 defined(netbsd) or defined(openbsd) or
+                 defined(dragonfly) or defined(macos) or
+                 defined(linux) or defined(android) or
+                 defined(solaris)
+  MaxEventsCount* = 64
 
 when defined(windows):
   import winlean, sets, hashes
@@ -310,6 +312,14 @@ when defined(windows):
                                 dwReserved: DWORD): cint {.
                                 gcsafe, stdcall, raises: [].}
 
+    LPFN_GETQUEUEDCOMPLETIONSTATUSEX = proc(completionPort: Handle,
+                                            lpPortEntries: ptr OVERLAPPED_ENTRY,
+                                            ulCount: DWORD,
+                                            ulEntriesRemoved: var ULONG,
+                                            dwMilliseconds: DWORD,
+                                            fAlertable: WINBOOL): WINBOOL {.
+                                            gcsafe, stdcall, raises: [].}
+
     CompletionKey = ULONG_PTR
 
     CompletionData* = object
@@ -321,6 +331,12 @@ when defined(windows):
     CustomOverlapped* = object of OVERLAPPED
       data*: CompletionData
 
+    OVERLAPPED_ENTRY* = object
+      lpCompletionKey*: ULONG_PTR
+      lpOverlapped*: ptr CustomOverlapped
+      internal: ULONG_PTR
+      dwNumberOfBytesTransferred: DWORD
+
     PDispatcher* = ref object of PDispatcherBase
       ioPort: Handle
       handles: HashSet[AsyncFD]
@@ -328,12 +344,20 @@ when defined(windows):
       acceptEx*: WSAPROC_ACCEPTEX
       getAcceptExSockAddrs*: WSAPROC_GETACCEPTEXSOCKADDRS
       transmitFile*: WSAPROC_TRANSMITFILE
+      getQueuedCompletionStatusEx*: LPFN_GETQUEUEDCOMPLETIONSTATUSEX
 
     PtrCustomOverlapped* = ptr CustomOverlapped
 
     RefCustomOverlapped* = ref CustomOverlapped
 
     AsyncFD* = distinct int
+
+  proc getModuleHandle(lpModuleName: WideCString): HANDLE {.
+       stdcall, dynlib: "kernel32", importc: "GetModuleHandleW", sideEffect.}
+  proc getProcAddress(hModule: HANDLE, lpProcName: cstring): pointer {.
+       stdcall, dynlib: "kernel32", importc: "GetProcAddress", sideEffect.}
+  proc rtlNtStatusToDosError(code: uint64): ULONG {.
+       stdcall, dynlib: "ntdll", importc: "RtlNtStatusToDosError", sideEffect.}
 
   proc hash(x: AsyncFD): Hash {.borrow.}
   proc `==`*(x: AsyncFD, y: AsyncFD): bool {.borrow, gcsafe.}
@@ -356,6 +380,10 @@ when defined(windows):
         D1: 0xb5367df0'i32, D2: 0xcbac'i16, D3: 0x11cf'i16,
         D4: [0x95'i8, 0xca'i8, 0x00'i8, 0x80'i8,
              0x5f'i8, 0x48'i8, 0xa1'i8, 0x92'i8])
+
+    let kernel32 = getModuleHandle(newWideCString("kernel32.dll"))
+    loop.getQueuedCompletionStatusEx = cast[LPFN_GETQUEUEDCOMPLETIONSTATUSEX](
+      getProcAddress(kernel32, "GetQueuedCompletionStatusEx"))
 
     let sock = winlean.socket(winlean.AF_INET, 1, 6)
     if sock == INVALID_SOCKET:
@@ -431,15 +459,16 @@ when defined(windows):
 
   proc poll*() {.raises: [Defect, CatchableError].} =
     ## Perform single asynchronous step, processing timers and completing
-    ## unblocked tasks. Blocks until at least one event has completed.
+    ## tasks. Blocks until at least one event has completed.
     ##
     ## Exceptions raised here indicate that waiting for tasks to be unblocked
     ## failed - exceptions from within tasks are instead propagated through
     ## their respective futures and not allowed to interrrupt the poll call.
     let loop = getThreadDispatcher()
-    var curTime = Moment.now()
-    var curTimeout = DWORD(0)
-    var noNetworkEvents = false
+    var
+      curTime = Moment.now()
+      curTimeout = DWORD(0)
+      events: array[MaxEventsCount, OVERLAPPED_ENTRY]
 
     # On reentrant `poll` calls from `processCallbacks`, e.g., `waitFor`,
     # complete pending work of the outer `processCallbacks` call.
@@ -449,41 +478,63 @@ when defined(windows):
     # Moving expired timers to `loop.callbacks` and calculate timeout
     loop.processTimersGetTimeout(curTimeout)
 
-    # Processing handles
-    var lpNumberOfBytesTransferred: DWORD
-    var lpCompletionKey: ULONG_PTR
-    var customOverlapped: PtrCustomOverlapped
+    let networkEventsCount =
+      if isNil(loop.getQueuedCompletionStatusEx):
+        let res = getQueuedCompletionStatus(
+          loop.ioPort,
+          addr events[0].dwNumberOfBytesTransferred,
+          addr events[0].lpCompletionKey,
+          cast[ptr POVERLAPPED](addr events[0].lpOverlapped),
+          curTimeout
+        )
+        if res == WINBOOL(0):
+          let errCode = osLastError()
+          if not(isNil(events[0].lpOverlapped)):
+            1
+          else:
+            if int32(errCode) != WAIT_TIMEOUT:
+              raiseOSError(errCode)
+            0
+        else:
+          1
+      else:
+        var eventsReceived = ULONG(0)
+        let res = loop.getQueuedCompletionStatusEx(
+          loop.ioPort,
+          addr events[0],
+          ULONG(len(events)),
+          eventsReceived,
+          curTimeout,
+          WINBOOL(0)
+        )
+        if res == WINBOOL(0):
+          let errCode = osLastError()
+          if int32(errCode) != WAIT_TIMEOUT:
+            raiseOSError(errCode)
+          0
+        else:
+          eventsReceived
 
-    let res = getQueuedCompletionStatus(
-      loop.ioPort, addr lpNumberOfBytesTransferred,
-      addr lpCompletionKey, cast[ptr POVERLAPPED](addr customOverlapped),
-      curTimeout).bool
-
-    if res:
-      customOverlapped.data.bytesCount = lpNumberOfBytesTransferred
-      customOverlapped.data.errCode = OSErrorCode(-1)
+    for i in 0 ..< networkEventsCount:
+      var customOverlapped = events[i].lpOverlapped
+      customOverlapped.data.errCode =
+        block:
+          let res = cast[uint64](customOverlapped.internal)
+          if res == 0'u64:
+            OSErrorCode(-1)
+          else:
+            OSErrorCode(rtlNtStatusToDosError(res))
+      customOverlapped.data.bytesCount = events[i].dwNumberOfBytesTransferred
       let acb = AsyncCallback(function: customOverlapped.data.cb,
                               udata: cast[pointer](customOverlapped))
       loop.callbacks.addLast(acb)
-    else:
-      let errCode = osLastError()
-      if customOverlapped != nil:
-        customOverlapped.data.errCode = errCode
-        let acb = AsyncCallback(function: customOverlapped.data.cb,
-                                udata: cast[pointer](customOverlapped))
-        loop.callbacks.addLast(acb)
-      else:
-        if int32(errCode) != WAIT_TIMEOUT:
-          raiseOSError(errCode)
-        else:
-          noNetworkEvents = true
 
     # Moving expired timers to `loop.callbacks`.
     loop.processTimers()
 
     # We move idle callbacks to `loop.callbacks` only if there no pending
     # network events.
-    if noNetworkEvents:
+    if networkEventsCount == 0:
       loop.processIdlers()
 
     # All callbacks which will be added during `processCallbacks` will be
