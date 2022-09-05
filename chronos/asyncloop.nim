@@ -225,11 +225,11 @@ func getAsyncTimestamp*(a: Duration): auto {.inline.} =
   var res = nansec div milsec
   let mid = nansec mod milsec
   when defined(windows):
-    res = min(cast[int64](high(int32) - 1), res)
+    res = min(int64(high(int32) - 1), res)
     result = cast[DWORD](res)
     result += DWORD(min(1'i32, cast[int32](mid)))
   else:
-    res = min(cast[int64](high(int32) - 1), res)
+    res = min(int64(high(int32) - 1), res)
     result = cast[int32](res)
     result += min(1, cast[int32](mid))
 

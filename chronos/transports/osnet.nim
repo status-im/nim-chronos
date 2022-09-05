@@ -468,18 +468,18 @@ when defined(linux):
       nlmsg_pid: uint32
 
     IfInfoMessage = object
-      ifi_family: cuchar
-      ifi_pad: cuchar
+      ifi_family: byte
+      ifi_pad: byte
       ifi_type: cushort
       ifi_index: cint
       ifi_flags: cuint
       ifi_change: cuint
 
     IfAddrMessage = object
-      ifa_family: cuchar
-      ifa_prefixlen: cuchar
-      ifa_flags: cuchar
-      ifa_scope: cuchar
+      ifa_family: byte
+      ifa_prefixlen: byte
+      ifa_flags: byte
+      ifa_scope: byte
       ifa_index: uint32
 
     RtMessage = object
@@ -647,7 +647,7 @@ when defined(linux):
     req.hdr.nlmsg_pid = cast[uint32](pid)
     req.msg.rtgen_family = byte(AF_PACKET)
     iov.iov_base = cast[pointer](addr req)
-    iov.iov_len = cast[TIovLen](req.hdr.nlmsg_len)
+    iov.iov_len = TIovLen(req.hdr.nlmsg_len)
     rmsg.msg_iov = addr iov
     rmsg.msg_iovlen = 1
     rmsg.msg_name = cast[pointer](addr address)
@@ -695,7 +695,7 @@ when defined(linux):
       req.msg.rtm_dst_len = 16 * 8
 
     iov.iov_base = cast[pointer](addr buffer[0])
-    iov.iov_len = cast[TIovLen](req.hdr.nlmsg_len)
+    iov.iov_len = TIovLen(req.hdr.nlmsg_len)
     rmsg.msg_iov = addr iov
     rmsg.msg_iovlen = 1
     rmsg.msg_name = cast[pointer](addr address)
@@ -735,7 +735,7 @@ when defined(linux):
     var res = NetworkInterface(
       ifType: toInterfaceType(iface.ifi_type),
       ifIndex: iface.ifi_index,
-      flags: cast[uint64](iface.ifi_flags)
+      flags: uint64(iface.ifi_flags)
     )
 
     while RTA_OK(attr, length):
@@ -749,10 +749,10 @@ when defined(linux):
         res.maclen = plen
       elif attr.rta_type == IFLA_MTU:
         var p = cast[ptr uint32](RTA_DATA(attr))
-        res.mtu = cast[int](p[])
+        res.mtu = int(p[])
       elif attr.rta_type == IFLA_OPERSTATE:
         var p = cast[ptr byte](RTA_DATA(attr))
-        res.state = toInterfaceState(cast[cint](p[]), iface.ifi_flags)
+        res.state = toInterfaceState(cint(p[]), iface.ifi_flags)
       attr = RTA_NEXT(attr, length)
     res
 
@@ -778,8 +778,8 @@ when defined(linux):
 
     attr = IFA_RTA(cast[ptr byte](iaddr))
 
-    let family = cast[int](iaddr.ifa_family)
-    var res = NetworkInterface(ifIndex: cast[int](iaddr.ifa_index))
+    let family = int(iaddr.ifa_family)
+    var res = NetworkInterface(ifIndex: int(iaddr.ifa_index))
 
     var address, local: TransportAddress
 
@@ -793,7 +793,7 @@ when defined(linux):
     if local.family != AddressFamily.None:
       address = local
 
-    let prefixLength = cast[int](iaddr.ifa_prefixlen)
+    let prefixLength = int(iaddr.ifa_prefixlen)
     let ifaddr = InterfaceAddress.init(address, prefixLength)
     res.addresses.add(ifaddr)
     res
