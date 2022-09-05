@@ -310,7 +310,7 @@ proc `$`*(iface: NetworkInterface): string =
   res.add($iface.ifType)
   res.add(" ")
   if iface.maclen > 0:
-    for i in 0..<iface.maclen:
+    for i in 0 ..< iface.maclen:
       res.add(toHex(iface.mac[i]))
       if i < iface.maclen - 1:
         res.add(":")
@@ -1048,7 +1048,7 @@ elif defined(macosx) or defined(bsd):
                   #include <ifaddrs.h>""".}
 
   proc toInterfaceType(f: byte): InterfaceType =
-    var ft = cast[int](f)
+    var ft = int(f)
     if (ft >= 1 and ft <= 196) or (ft == 237) or (ft == 243) or (ft == 244):
       cast[InterfaceType](ft)
     else:
@@ -1070,8 +1070,8 @@ elif defined(macosx) or defined(bsd):
         var iface: NetworkInterface
         var ifaddress: InterfaceAddress
 
-        iface.name = $ifap.ifa_name
-        iface.flags = cast[uint64](ifap.ifa_flags)
+        iface.name = cstring($ifap.ifa_name)
+        iface.flags = uint64(ifap.ifa_flags)
         var i = 0
         while i < len(res):
           if res[i].name == iface.name:
@@ -1081,19 +1081,19 @@ elif defined(macosx) or defined(bsd):
           res.add(iface)
 
         if not isNil(ifap.ifa_addr):
-          let family = cast[int](ifap.ifa_addr.sa_family)
+          let family = int(ifap.ifa_addr.sa_family)
           if family == AF_LINK:
             var data = cast[ptr IfData](ifap.ifa_data)
             var link = cast[ptr Sockaddr_dl](ifap.ifa_addr)
-            res[i].ifIndex = cast[int](link.sdl_index)
-            let nlen = cast[int](link.sdl_nlen)
+            res[i].ifIndex = int(link.sdl_index)
+            let nlen = int(link.sdl_nlen)
             if nlen < len(link.sdl_data):
               let minsize = min(cast[int](link.sdl_alen), len(res[i].mac))
               copyMem(addr res[i].mac[0], addr link.sdl_data[nlen], minsize)
-            res[i].maclen = cast[int](link.sdl_alen)
+            res[i].maclen = int(link.sdl_alen)
             res[i].ifType = toInterfaceType(data.ifi_type)
             res[i].state = toInterfaceState(ifap.ifa_flags)
-            res[i].mtu = cast[int](data.ifi_mtu)
+            res[i].mtu = int(data.ifi_mtu)
           elif family == posix.AF_INET:
             fromSAddr(cast[ptr Sockaddr_storage](ifap.ifa_addr),
                       SockLen(sizeof(Sockaddr_in)), ifaddress.host)
@@ -1102,7 +1102,7 @@ elif defined(macosx) or defined(bsd):
                       SockLen(sizeof(Sockaddr_in6)), ifaddress.host)
         if not isNil(ifap.ifa_netmask):
           var na: TransportAddress
-          var family = cast[cint](ifap.ifa_netmask.sa_family)
+          var family = cint(ifap.ifa_netmask.sa_family)
           if family == posix.AF_INET:
             fromSAddr(cast[ptr Sockaddr_storage](ifap.ifa_netmask),
                       SockLen(sizeof(Sockaddr_in)), na)
