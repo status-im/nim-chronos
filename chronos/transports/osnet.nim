@@ -1443,13 +1443,13 @@ elif defined(windows):
         fromSAddr(cast[ptr Sockaddr_storage](prefix.address.lpSockaddr),
                   SockLen(prefix.address.iSockaddrLength), pa)
         if netfamily == prefamily:
-          if ipMatchPrefix(res.host, pa, cast[int](prefix.prefixLength)):
-            prefixLength = max(prefixLength, cast[int](prefix.prefixLength))
+          if ipMatchPrefix(res.host, pa, int(prefix.prefixLength)):
+            prefixLength = max(prefixLength, int(prefix.prefixLength))
         prefix = prefix.next
       if prefixLength >= 0:
         res.net = IpNet.init(res.host, prefixLength)
     else:
-      let prefixLength = cast[int](ifunic.onLinkPrefixLength)
+      let prefixLength = int(ifunic.onLinkPrefixLength)
       if prefixLength >= 0:
         res.net = IpNet.init(res.host, prefixLength)
     res
@@ -1483,14 +1483,14 @@ elif defined(windows):
       var slider = cast[ptr IpAdapterAddressesXp](addr buffer[0])
       while not isNil(slider):
         var iface = NetworkInterface(
-          ifIndex: cast[int](slider.ifIndex),
+          ifIndex: int(slider.ifIndex),
           ifType: toInterfaceType(slider.ifType),
           state: toInterfaceState(slider.operStatus),
           name: $slider.adapterName,
           desc: $slider.description,
-          mtu: cast[int](slider.mtu),
-          maclen: cast[int](slider.physicalAddressLength),
-          flags: cast[uint64](slider.flags)
+          mtu: int(slider.mtu),
+          maclen: int(slider.physicalAddressLength),
+          flags: uint64(slider.flags)
         )
         copyMem(addr iface.mac[0], addr slider.physicalAddress[0],
                 len(iface.mac))
