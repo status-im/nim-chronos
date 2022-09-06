@@ -247,7 +247,7 @@ type
     ifType*: InterfaceType
     name*: string
     desc*: string
-    mtu*: int
+    mtu*: int64
     flags*: uint64
     state*: InterfaceState
     mac*: array[MaxAdapterAddressLength, byte]
@@ -749,7 +749,7 @@ when defined(linux):
         res.maclen = plen
       elif attr.rta_type == IFLA_MTU:
         var p = cast[ptr uint32](RTA_DATA(attr))
-        res.mtu = int(p[])
+        res.mtu = int64(p[])
       elif attr.rta_type == IFLA_OPERSTATE:
         var p = cast[ptr byte](RTA_DATA(attr))
         res.state = toInterfaceState(cint(p[]), iface.ifi_flags)
@@ -1070,7 +1070,7 @@ elif defined(macosx) or defined(bsd):
         var iface: NetworkInterface
         var ifaddress: InterfaceAddress
 
-        iface.name = cstring($ifap.ifa_name)
+        iface.name = string(ifap.ifa_name)
         iface.flags = uint64(ifap.ifa_flags)
         var i = 0
         while i < len(res):
