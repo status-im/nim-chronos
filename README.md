@@ -1,7 +1,6 @@
 # Chronos - An efficient library for asynchronous programming
 
 [![Github action](https://github.com/status-im/nim-chronos/workflows/nim-chronos%20CI/badge.svg)](https://github.com/status-im/nim-chronos/actions/workflows/ci.yml)
-[![Windows build status (AppVeyor)](https://img.shields.io/appveyor/ci/nimbus/nim-asyncdispatch2/master.svg?label=Windows "Windows build status (Appveyor)")](https://ci.appveyor.com/project/nimbus/nim-asyncdispatch2)
 [![License: Apache](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 ![Stability: experimental](https://img.shields.io/badge/stability-experimental-orange.svg)
@@ -22,7 +21,7 @@ Chronos is an efficient [async/await](https://en.wikipedia.org/wiki/Async/await)
 You can use Nim's official package manager Nimble to install Chronos:
 
 ```text
-nimble install https://github.com/status-im/nim-chronos.git
+nimble install chronos
 ```
 
 or add a dependency to your `.nimble` file:
@@ -242,6 +241,56 @@ In the strict mode, `async` functions are checked such that they only raise
 `CatchableError` and thus must make sure to explicitly specify exception
 effects on forward declarations, callbacks and methods using
 `{.raises: [CatchableError].}` (or more strict) annotations.
+
+### Cancellation support
+
+Any running `Future` can be cancelled.
+
+```nim
+proc c1 {.async.} =
+  echo "Before sleep"
+  try:
+    await sleepAsync(10.minutes)
+    echo "After sleep" # never reached
+  except CancelledError as exc:
+    echo "We got cancelled!"
+    raise exc
+
+proc c2 {.async.} =
+  await c1()
+  echo "Never reached, since the CancelledError bubble up"
+
+let work = c2()
+waitFor(work.cancelAndWait())
+```
+
+The cancellation will travel down the call stack, and throw a `CancelledError`
+on the currently running `await` (in this case the `await sleepAsync` in `c1`)
+
+The `CancelledError` will now travel up the stack like any other exception.
+It can be caught and handled (for instance, freeing some resources), or it can
+swallowed if a task must not be cancelled.
+
+Since `CancelledError` inherits from `CatchableError`, be careful to handle it
+appropriately:
+
+```nim
+proc c3 {.async.} =
+  try:
+    await somethingThatCanFail()
+  except CatchableError as exc:
+    echo "Something went wrong: ", exc.msg
+
+proc c4 {.async.} =
+  while true:
+    await c3()
+
+waitFor(c4().wait(10.seconds))
+```
+
+In this example, `c3` swallows cancellations, so `c4` cannot be cancelled
+properly, and the `wait` timeout will not work
+
 
 ### Multiple async backend support
 
