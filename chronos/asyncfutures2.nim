@@ -571,48 +571,6 @@ proc internalRead*[T](fut: Future[T]): T {.inline.} =
   when T isnot void:
     return fut.value
 
-macro checkFutureExceptions*(f, typ: typed): untyped =
-  # For RaiseTrackingFuture[void, (ValueError, OSError), will do:
-  # if isNil(f.error): discard
-  # elif f.error of type ValueError: raise (ref ValueError)(f.error)
-  # elif f.error of type OSError: raise (ref OSError)(f.error)
-  # else: raiseAssert("Unhandled future exception: " & f.error.msg)
-  #
-  # In future nim versions, this could simply be
-  # {.cast(raises: [ValueError, OSError]).}:
-  #   raise f.error
-  let e = getTypeInst(typ)[2]
-  let types = getType(e)
-
-  if types.eqIdent("void"):
-    return quote do:
-      if not(isNil(`f`.error)):
-        raiseAssert("Unhandled future exception: " & `f`.error.msg)
-
-  expectKind(types, nnkBracketExpr)
-  expectKind(types[0], nnkSym)
-  assert types[0].strVal == "tuple"
-  assert types.len > 1
-
-  result = nnkIfExpr.newTree(
-    nnkElifExpr.newTree(
-      quote do: isNil(`f`.error),
-      quote do: discard
-    )
-  )
-
-  for errorType in types[1..^1]:
-    result.add nnkElifExpr.newTree(
-      quote do: `f`.error of type `errorType`,
-      nnkRaiseStmt.newNimNode(lineInfoFrom=typ).add(
-        quote do: (ref `errorType`)(`f`.error)
-      )
-    )
-
-  result.add nnkElseExpr.newTree(
-    quote do: raiseAssert("Unhandled future exception: " & `f`.error.msg)
-  )
-
 proc read*[T](future: Future[T] ): T {.
      raises: [Defect, CatchableError].} =
   ## Retrieves the value of ``future``. Future must be finished otherwise
