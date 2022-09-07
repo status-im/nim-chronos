@@ -286,8 +286,14 @@ macro checkFailureType(future, error: typed): untyped =
   assert types[0].strVal == "tuple"
   assert types.len > 1
 
-  expectKind(getTypeInst(error), nnkRefTy)
-  let toMatch = getTypeInst(error)[0]
+  let toMatch =
+    if getTypeInst(error).kind == nnkRefTy:
+      getTypeInst(error)[0]
+    elif getTypeInst(error).kind == nnkBracketExpr:
+      getTypeInst(error)[1]
+    else:
+      error("Unhandled error type " & $getTypeInst(error).kind)
+      nil
 
   # Can't find a way to check `is` in the macro. (sameType doesn't
   # work for inherited objects). Dirty hack here, for [IOError, OSError],
@@ -316,6 +322,16 @@ macro checkFailureType(future, error: typed): untyped =
 template fail*[T, E](future: RaiseTrackingFuture[T, E], error: ref CatchableError) =
   checkFailureType(future, error)
   fail(future, error, getSrcLocation())
+
+macro checkMultipleFailureType(future, errors: typed): untyped =
+  result = nnkStmtList.newTree()
+  for error in getTypeInst(errors):
+    let err2 = ident(error.strVal)
+    result.add(quote do: checkFailureType(`future`, `err2`))
+
+template fail*[T1, E1, T2, E2](future: RaiseTrackingFuture[T1, E1], failedFuture: RaiseTrackingFuture[T2, E2]) =
+  checkMultipleFailureType(future, E2)
+  fail(Future[T1](future), failedFuture.error, getSrcLocation())
 
 template newCancelledError(): ref CancelledError =
   (ref CancelledError)(msg: "Future operation cancelled!")

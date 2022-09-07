@@ -108,6 +108,23 @@ proc getBaseType(prc: NimNode): NimNode {.compileTime.} =
     # error isn't noreturn..
     return
 
+macro combineAsyncExceptions*(args: varargs[typed]): untyped =
+  result = nnkTupleConstr.newTree()
+  for argRaw in args:
+    let arg = getTypeInst(argRaw)
+    if arg.kind == nnkBracketExpr and arg[0].eqIdent("typeDesc"):
+      if arg[1].kind == nnkSym:
+        result.add(ident(arg[1].strVal))
+      elif arg[1].kind == nnkTupleConstr:
+        for subArg in arg[1]:
+          result.add(ident(subArg.strVal))
+      else:
+        error("Unhandled exception subarg source" & $arg[1].kind)
+    else:
+      error("Unhandled exception source" & $arg.kind)
+
+  echo treeRepr(result)
+
 proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
   ## This macro transforms a single procedure into a closure iterator.
   ## The ``async`` macro supports a stmtList holding multiple async procedures.
@@ -119,11 +136,14 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
   var
     raisesTuple = nnkTupleConstr.newTree()
     foundRaises = -1
+    foundRaisesOf = -1
     foundAsync = -1
 
   for index, pragma in pragma(prc):
     if pragma.kind == nnkExprColonExpr and pragma[0] == ident "asyncraises":
       foundRaises = index
+    elif pragma.kind == nnkExprColonExpr and pragma[0] == ident "asyncraisesof":
+      foundRaisesOf = index
     elif pragma.eqIdent("async"):
       foundAsync = index
     elif pragma.kind == nnkExprColonExpr and pragma[0] == ident "raises":
@@ -145,7 +165,49 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
     raisesTuple.add(ident(defaultException))
 
 
-  if foundRaises >= 0:
+  var genericErrorTypes: seq[NimNode]
+  if foundRaisesOf >= 0:
+
+    if prc[2].kind == nnkEmpty:
+      prc[2] = nnkGenericParams.newTree()
+    prc.params2[0] = ident"auto"
+
+    for index, raisesOf in pragma(prc)[foundRaisesOf][1]:
+      let prcParams = params2(prc)
+      for index, param in prcParams:
+        if index == 0: continue # return type
+
+        if param[0].eqIdent(raisesOf):
+          if param[1].kind != nnkBracketExpr or (param[1][0].eqIdent("Future") == false):
+            error "asyncraisesof only applies to Future parameters"
+          param[1][0] = ident"RaiseTrackingFuture"
+
+          let genericSym = genSym(kind=nskGenericParam, ident="Err" & $index)
+          genericErrorTypes.add(genericSym)
+          prc[2].add nnkIdentDefs.newTree(
+            genericSym,
+            newEmptyNode(),
+            newEmptyNode()
+          )
+          param[1].add(genericSym)
+
+    if prc.body.kind != nnkEmpty and foundAsync < 0:
+      let macroCall = newCall("combineAsyncExceptions")
+      for a in raisesTuple: macroCall.add(a)
+      for a in genericErrorTypes: macroCall.add(ident(a.strVal))
+      prc.body.insert(0,
+        newAssignment(
+          ident"result",
+          newCall(
+            nnkBracketExpr.newTree(
+              ident"RaiseTrackingFuture",
+              baseType,
+              macroCall),
+            newNilLit()
+          )
+        )
+      )
+  elif foundRaises >= 0:
     # Rewrite to RaiseTrackingFuture
     prc.params2[0] = nnkBracketExpr.newTree(
       newIdentNode("RaiseTrackingFuture"),
@@ -159,8 +221,10 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
           add(newIdentNode("Future")).
           add(newIdentNode("void"))
 
+  echo repr(prc)
+
   # Remove pragmas
-  let toRemoveList = @[foundRaises, foundAsync].filterIt(it >= 0).sorted().reversed()
+  let toRemoveList = @[foundRaises, foundAsync, foundRaisesOf].filterIt(it >= 0).sorted().reversed()
   for toRemove in toRemoveList:
     pragma(prc).del(toRemove)
 
@@ -254,10 +318,17 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
     when (NimMajor, NimMinor) < (1, 4):
       closureRaises.add(ident("Defect"))
 
-    closureIterator.addPragma(nnkExprColonExpr.newTree(
-      newIdentNode("raises"),
-      closureRaises
-    ))
+    if foundRaisesOf < 0:
+      closureIterator.addPragma(nnkExprColonExpr.newTree(
+        newIdentNode("raises"),
+        closureRaises
+      ))
+    else:
+      for a in genericErrorTypes: closureRaises.add(ident(a.strVal))
+      closureIterator.addPragma(nnkExprColonExpr.newTree(
+        newIdentNode("asyncinternalraises"),
+        closureRaises
+      ))
 
     # If proc has an explicit gcsafe pragma, we add it to iterator as well.
     if prc.pragma.findChild(it.kind in {nnkSym, nnkIdent} and
@@ -421,5 +492,22 @@ macro asyncraises*(possibleExceptions, prc: untyped): untyped =
     prc.addPragma(nnkExprColonExpr.newTree(
       ident"asyncraises",
       possibleExceptions
+    ))
+    result = asyncSingleProc(prc)
+
+macro asyncraisesof*(raisesof, prc: untyped): untyped =
+  # Add back the pragma and let asyncSingleProc handle it
+  if prc.kind == nnkStmtList:
+    result = newStmtList()
+    for oneProc in prc:
+      oneProc.addPragma(nnkExprColonExpr.newTree(
+        ident"asyncraisesof",
+        raisesof
+      ))
+      result.add asyncSingleProc(oneProc)
+  else:
+    prc.addPragma(nnkExprColonExpr.newTree(
+      ident"asyncraisesof",
+      raisesof
     ))
     result = asyncSingleProc(prc)

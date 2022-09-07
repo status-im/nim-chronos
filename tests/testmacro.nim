@@ -189,6 +189,41 @@ suite "Exceptions tracking":
     macroAsync2(testMacro2, seq, Opt, Result, OpenObject, cstring)
     check waitFor(testMacro2()).len == 0
 
+  test "asyncRaisesOf - manual async":
+    proc test44 {.asyncraises: [ValueError], async.} = discard
+
+    proc testOr[T, Y](fut1: Future[T], fut2: Future[Y]): Future[void] {.asyncraises: [CancelledError], asyncraisesof: [fut1, fut2].} =
+      var retFuture = newRaiseTrackingFuture[void]("chronos.or")
+      var cb: proc(udata: pointer) {.gcsafe, raises: [Defect].}
+      cb = proc(udata: pointer) {.gcsafe, raises: [Defect].} =
+        if not(retFuture.finished()):
+          var fut = cast[FutureBase](udata)
+          if cast[pointer](fut1) == udata:
+            fut2.removeCallback(cb)
+            if fut.failed():
+              retFuture.fail(fut1)
+              return
+          else:
+            fut1.removeCallback(cb)
+            if fut.failed():
+              retFuture.fail(fut2)
+              return
+          retFuture.complete()
+
+      fut1.addCallback(cb)
+      fut2.addCallback(cb)
+
+      return retFuture
+
+    waitFor(testOr(test44(), test44()))
+
+  test "asyncRaisesOf - macro async":
+    proc test44 {.asyncraises: [ValueError], async.} = discard
+
+    proc wrapper1(fut: Future[void]) {.asyncraises: [CancelledError], async, asyncraisesof: [fut].} =
+      await fut
+    waitFor(wrapper1(test44()))
+
 suite "async transformation issues":
   test "Nested defer/finally not called on return":
     # issue #288
