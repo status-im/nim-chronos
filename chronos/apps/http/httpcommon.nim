@@ -31,6 +31,7 @@ const
   ServerHeader* = "server"
   LocationHeader* = "location"
   AuthorizationHeader* = "authorization"
+  ProxyAuthorizationHeader* = "proxy-authorization"
 
   UrlEncodedContentType* = MediaType.init("application/x-www-form-urlencoded")
   MultipartContentType* = MediaType.init("multipart/form-data")
@@ -71,6 +72,9 @@ type
 
   HttpState* {.pure.} = enum
     Alive, Closing, Closed
+
+  ProxyAuthenticationType* {.pure.} = enum
+    Basic, Bearer, Digest, OAuth
 
 proc raiseHttpCriticalError*(msg: string,
                              code = Http400) {.noinline, noreturn.} =
