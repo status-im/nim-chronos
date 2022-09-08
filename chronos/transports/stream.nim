@@ -199,8 +199,8 @@ template shiftVectorBuffer(v: var StreamVector, o: untyped) =
   (v).buflen -= int(o)
 
 template shiftVectorFile(v: var StreamVector, o: untyped) =
-  (v).buf = cast[pointer](cast[uint]((v).buf) - cast[uint](o))
-  (v).offset += cast[uint]((o))
+  (v).buf = cast[pointer](cast[uint]((v).buf) - uint(o))
+  (v).offset += uint(o)
 
 proc setupStreamTransportTracker(): StreamTransportTracker {.
      gcsafe, raises: [Defect].}
