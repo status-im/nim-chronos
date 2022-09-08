@@ -83,6 +83,11 @@ type
     status: int
     data: seq[byte]
 
+  ProxyAuthTuple* = tuple
+    username: string
+    password: string
+    kind: ProxyAuthenticationType
+
   HttpClientConnection* = object of RootObj
     id*: uint64
     case kind*: HttpClientScheme
@@ -104,6 +109,8 @@ type
 
   HttpSessionRef* = ref object
     connections*: Table[string, seq[HttpClientConnectionRef]]
+    proxy*: HttpAddress
+    proxyAuth*: tuple[username, password: string, kind: ProxyAuthenticationType]
     counter*: uint64
     maxRedirections*: int
     connectTimeout*: Duration
@@ -288,6 +295,8 @@ proc new*(t: typedesc[HttpSessionRef],
           connectTimeout = HttpConnectTimeout,
           headersTimeout = HttpHeadersTimeout,
           connectionBufferSize = DefaultStreamBufferSize,
+          proxy = "",
+          proxyAuth = ("", "", ProxyAuthenticationType.Basic),
           maxConnections = -1): HttpSessionRef {.
      raises: [Defect] .} =
   ## Create new HTTP session object.
@@ -297,6 +306,8 @@ proc new*(t: typedesc[HttpSessionRef],
   ## ``headersTimeout`` - timeout for receiving HTTP response headers
   doAssert(maxRedirections >= 0, "maxRedirections should not be negative")
   HttpSessionRef(
+    proxy: proxy.getAddress.get,
+    proxyAuth: proxyAuth,
     flags: flags,
     maxRedirections: maxRedirections,
     connectTimeout: connectTimeout,
@@ -393,6 +404,48 @@ proc getAddress*(address: TransportAddress,
     port: uint16(address.port), path: uri.path, query: uri.query,
     anchor: uri.anchor, username: "", password: "", addresses: @[address]
   )
+
+proc getAddress*(url: string): HttpResult[HttpAddress] {.raises: [Defect].} =
+  let uri = parseUri(url)
+  var address: TransportAddress
+  try:
+    var turi = initUri()
+    turi.hostname = uri.hostname
+    turi.port = uri.port
+    address = resolveTAddress($turi)[0]
+  except TransportAddressError:
+    echo getCurrentException()[]
+    return err("Invalid url.")
+  let ctype = if uri.scheme == "https":
+                HttpClientScheme.Secure
+              else:
+                HttpClientScheme.NonSecure
+  HttpAddress(id: $address, scheme: ctype, hostname: address.host,
+    port: uint16(address.port), path: uri.path, query: uri.query,
+    anchor: uri.anchor, username: "", password: "", addresses: @[address]
+  ).ok
+
+proc hasProxy*(session: HttpSessionRef): bool {.inline.} = session.proxy.hostname != ""
+proc hasProxy*(request: HttpClientRequestRef): bool {.inline.} = request.session.hasProxy
+proc hasProxyAuth*(request: HttpClientRequestRef): bool {.inline.} = request.session.proxyAuth.username != ""
+
+proc getAddress*(request: HttpClientRequestRef): HttpAddress =
+  if request.hasProxy:
+    request.session.proxy
+  else:
+    request.address
+
+proc proxyAuth*(username, password: string, kind=ProxyAuthenticationType.Basic): ProxyAuthTuple =
+  (username, password, kind)
+
+proc proxyAuthHeaderData(request: HttpClientRequestRef): string =
+  let v =
+    request.session.proxyAuth.username &
+    ":" &
+    request.session.proxyAuth.password
+  result.add $request.session.proxyAuth.kind
+  result.add " "
+  result.add Base64.encode(v.stringToBytes)
 
 proc getUri*(address: HttpAddress): Uri =
   ## Retrieve URI from ``address``.
@@ -949,6 +1002,9 @@ proc prepareRequest(request: HttpClientRequestRef): string {.
       let slength = Base10.toString(uint64(len(request.buffer)))
       request.headers.add(ContentLengthHeader, slength)
 
+  if request.hasProxyAuth and ProxyAuthorizationHeader notin request.headers:
+    request.headers.add(ProxyAuthorizationHeader, request.proxyAuthHeaderData)
+
   request.bodyFlag =
     if ContentLengthHeader in request.headers:
       HttpClientBodyFlag.Sized
@@ -960,17 +1016,20 @@ proc prepareRequest(request: HttpClientRequestRef): string {.
 
   let entity =
     block:
-      var res =
+      var res: string
+      if request.hasProxy:
+        res.add $request.address.getUri
+      else:
         if len(request.address.path) > 0:
-          request.address.path
+          res.add request.address.path
         else:
-          "/"
-      if len(request.address.query) > 0:
-        res.add("?")
-        res.add(request.address.query)
-      if len(request.address.anchor) > 0:
-        res.add("#")
-        res.add(request.address.anchor)
+          res.add "/"
+        if len(request.address.query) > 0:
+          res.add("?")
+          res.add(request.address.query)
+        if len(request.address.anchor) > 0:
+          res.add("#")
+          res.add(request.address.anchor)
       res
 
   var res = $request.meth
@@ -994,7 +1053,7 @@ proc send*(request: HttpClientRequestRef): Future[HttpClientResponseRef] {.
            "Request's state is " & $request.state)
   let connection =
     try:
-      await request.session.acquireConnection(request.address)
+      await request.session.acquireConnection(request.getAddress)
     except CancelledError as exc:
       request.setError(newHttpInterruptError())
       raise exc
@@ -1045,7 +1104,7 @@ proc open*(request: HttpClientRequestRef): Future[HttpBodyWriter] {.
            "Request should not have static body content (len(buffer) == 0)")
   let connection =
     try:
-      await request.session.acquireConnection(request.address)
+      await request.session.acquireConnection(request.getAddress)
     except CancelledError as exc:
       request.setError(newHttpInterruptError())
       raise exc
