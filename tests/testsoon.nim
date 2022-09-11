@@ -49,8 +49,9 @@ suite "callSoon() tests suite":
   var callbackproc: proc(udata: pointer) {.gcsafe, raises: [Defect].}
   callbackproc = proc (udata: pointer) {.gcsafe, raises: [Defect].} =
     timeoutsTest2 += 1
-    {.gcsafe.}:
-      callSoon(callbackproc)
+    if timeoutsTest2 < (CallSoonTests * 2) + 1:
+      {.gcsafe.}:
+        callSoon(callbackproc)
 
   proc test2(timers, callbacks: var int) =
     callSoon(callbackproc)
