@@ -48,7 +48,7 @@ type
     CopyStdout
 
   ProcessStreamHandleKind {.pure.} = enum
-    None, Auto, Handle, Transport, StreamReader, StreamWriter
+    None, Auto, ProcHandle, Transport, StreamReader, StreamWriter
 
   ProcessStreamHandle* = object
     case kind: ProcessStreamHandleKind
@@ -56,7 +56,7 @@ type
       discard
     of ProcessStreamHandleKind.Auto:
       discard
-    of ProcessStreamHandleKind.Handle:
+    of ProcessStreamHandleKind.ProcHandle:
       handle: AsyncFD
     of ProcessStreamHandleKind.Transport:
       transp: StreamTransport
@@ -156,7 +156,7 @@ proc setupAsyncProcessTracker(): AsyncProcessTracker {.gcsafe.} =
 
 proc init*(t: typedesc[AsyncFD], handle: ProcessStreamHandle): AsyncFD =
   case handle.kind
-  of ProcessStreamHandleKind.Handle:
+  of ProcessStreamHandleKind.ProcHandle:
     handle.handle
   of ProcessStreamHandleKind.Transport:
     handle.transp.fd
@@ -186,7 +186,7 @@ proc init*(t: typedesc[AsyncStreamHolder], handle: ProcessStreamHandle,
            kind: StreamKind, baseFlags: set[StreamHolderFlag] = {}
           ): AsyncProcessResult[AsyncStreamHolder] =
   case handle.kind
-  of ProcessStreamHandleKind.Handle:
+  of ProcessStreamHandleKind.ProcHandle:
     case kind
     of StreamKind.Reader:
       let
@@ -236,13 +236,13 @@ proc init*(t: typedesc[ProcessStreamHandle]): ProcessStreamHandle =
 
 proc init*(t: typedesc[ProcessStreamHandle],
            handle: AsyncFD): ProcessStreamHandle =
-  ProcessStreamHandle(kind: ProcessStreamHandleKind.Handle, handle: handle)
+  ProcessStreamHandle(kind: ProcessStreamHandleKind.ProcHandle, handle: handle)
 
 proc init*(t: typedesc[ProcessStreamHandle],
            transp: StreamTransport): ProcessStreamHandle =
   doAssert(transp.kind == TransportKind.Pipe,
            "Only pipe transports can be used as process streams")
-  ProcessStreamHandle(kind: ProcessStreamHandleKind.Handle, transp: transp)
+  ProcessStreamHandle(kind: ProcessStreamHandleKind.ProcHandle, transp: transp)
 
 proc init*(t: typedesc[ProcessStreamHandle],
            reader: AsyncStreamReader): ProcessStreamHandle =
