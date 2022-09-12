@@ -1286,20 +1286,21 @@ suite "Future[T] behavior test suite":
       fut2.done() and fut2.read() == FutureBase(f21)
 
   test "race() cancellation test":
-    proc client1() {.async.} =
-      await sleepAsync(100.milliseconds)
+    proc client1(fut: Future[void]) {.async.} =
+      await fut
 
-    proc client2(): Future[int] {.async.} =
-      await sleepAsync(200.milliseconds)
+    proc client2(fut: Future[void]): Future[int] {.async.} =
+      await fut
       return 10
 
-    proc client3(): Future[string] {.async.} =
-      await sleepAsync(300.milliseconds)
+    proc client3(fut: Future[void]): Future[string] {.async.} =
+      await fut
       return "client3"
 
-    var f1 = client1()
-    var f2 = client2()
-    var f3 = client3()
+    var f0 = newFuture[void]()
+    var f1 = client1(f0)
+    var f2 = client2(f0)
+    var f3 = client3(f0)
     var fut = race(f1, f2, f3)
     waitFor(cancelAndWait(fut))
 
@@ -1308,7 +1309,8 @@ suite "Future[T] behavior test suite":
       not f2.finished()
       not f3.finished()
 
-    waitFor(sleepAsync(400.milliseconds))
+    f0.complete()
+    waitFor(sleepAsync(0.seconds))
 
     check:
       f1.finished()
