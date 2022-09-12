@@ -1471,17 +1471,18 @@ suite "Future[T] behavior test suite":
     proc client1() {.async.} =
       await sleepAsync(100.milliseconds)
 
-    proc client2(): Future[int] {.async.} =
-      await sleepAsync(200.milliseconds)
+    proc client2(fut: Future[void]): Future[int] {.async.} =
+      await fut
       return 10
 
-    proc client3(): Future[string] {.async.} =
-      await sleepAsync(300.milliseconds)
+    proc client3(fut: Future[void]): Future[string] {.async.} =
+      await fut
       return "client3"
 
-    var f1 = client1()
-    var f2 = client2()
-    var f3 = client3()
+    var f0 = newFuture[void]()
+    var f1 = client1(f0)
+    var f2 = client2(f0)
+    var f3 = client3(f0)
     var fut = race(f1, f2, f3)
     await cancelAndWait(fut)
 
