@@ -11,6 +11,7 @@ import stew/[results, base10, base64], httputils
 import ../../asyncloop, ../../asyncsync
 import ../../streams/[asyncstream, tlsstream, chunkstream, boundstream]
 import httptable, httpcommon, httpagent, httpbodyrw, multipart
+import nimSocks/[client, types]
 export results, asyncloop, asyncsync, asyncstream, tlsstream, chunkstream,
        boundstream, httptable, httpcommon, httpagent, httpbodyrw, multipart,
        httputils
@@ -30,6 +31,7 @@ const
     ## HttpClient request leaks tracker name
   HttpClientResponseTrackerName* = "httpclient.response"
     ## HttpClient response leaks tracker name
+  ProxyTimeout* = 10.seconds
 
 type
   HttpClientConnectionState* {.pure.} = enum
@@ -83,12 +85,15 @@ type
     status: int
     data: seq[byte]
 
-  ProxyAuthTuple* = tuple
-    username: string
-    password: string
-    kind: ProxyAuthenticationType
+  Proxy* = object
+    address*: HttpAddress
+    auth*: ProxyAuthentication
+    timeout*: Duration
+    kind*: ProxyKind
 
-  HttpClientConnection* = object of RootObj
+  ProxyRef* = ref Proxy
+
+  HttpClientConnection* {.acyclic.} = object of RootObj
     id*: uint64
     case kind*: HttpClientScheme
     of HttpClientScheme.NonSecure:
@@ -104,13 +109,12 @@ type
     error*: ref HttpError
     remoteHostname*: string
     flags*: set[HttpClientConnectionFlag]
+    proxyConn*: HttpClientConnectionRef
 
   HttpClientConnectionRef* = ref HttpClientConnection
 
   HttpSessionRef* = ref object
     connections*: Table[string, seq[HttpClientConnectionRef]]
-    proxy*: HttpAddress
-    proxyAuth*: tuple[username, password: string, kind: ProxyAuthenticationType]
     counter*: uint64
     maxRedirections*: int
     connectTimeout*: Duration
@@ -118,6 +122,7 @@ type
     connectionBufferSize*: int
     maxConnections*: int
     flags*: HttpClientFlags
+    proxy*: ProxyRef
 
   HttpAddress* = object
     id*: string
@@ -289,6 +294,25 @@ template checkClosed(reqresp: untyped): untyped =
     reqresp.setError(e)
     raise e
 
+proc parseProxyKind(scheme: string): HttpResult[ProxyKind] =
+  let kind =
+    case scheme:
+      of "http": ProxyKind.Http
+      of "https", "tls", "ssl": ProxyKind.Tls
+      of "socks5", "s5", "socks": ProxyKind.Socks5
+      else:
+        return err("Proxy scheme not understood.")
+  ok(kind)
+
+proc new(t: typedesc[ProxyRef], url: string, auth: ProxyAuthentication, timeout: Duration): ProxyRef =
+  if url.len > 0:
+    let uri = parseUri(url)
+    new(result)
+    result.address = uri.getAddress.get
+    result.auth = auth
+    result.kind = parseProxyKind(uri.scheme).get
+    result.timeout = timeout
+
 proc new*(t: typedesc[HttpSessionRef],
           flags: HttpClientFlags = {},
           maxRedirections = HttpMaxRedirections,
@@ -296,7 +320,8 @@ proc new*(t: typedesc[HttpSessionRef],
           headersTimeout = HttpHeadersTimeout,
           connectionBufferSize = DefaultStreamBufferSize,
           proxy = "",
-          proxyAuth = ("", "", ProxyAuthenticationType.Basic),
+          proxyAuth = Basic,
+          proxyTimeout = ProxyTimeout,
           maxConnections = -1): HttpSessionRef {.
      raises: [Defect] .} =
   ## Create new HTTP session object.
@@ -306,8 +331,7 @@ proc new*(t: typedesc[HttpSessionRef],
   ## ``headersTimeout`` - timeout for receiving HTTP response headers
   doAssert(maxRedirections >= 0, "maxRedirections should not be negative")
   HttpSessionRef(
-    proxy: proxy.getAddress.get,
-    proxyAuth: proxyAuth,
+    proxy: new(ProxyRef, proxy, proxyAuth, proxyTimeout),
     flags: flags,
     maxRedirections: maxRedirections,
     connectTimeout: connectTimeout,
@@ -405,8 +429,7 @@ proc getAddress*(address: TransportAddress,
     anchor: uri.anchor, username: "", password: "", addresses: @[address]
   )
 
-proc getAddress*(url: string): HttpResult[HttpAddress] {.raises: [Defect].} =
-  let uri = parseUri(url)
+proc getAddress*(uri: Uri): HttpResult[HttpAddress] {.raises: [Defect].} =
   var address: TransportAddress
   try:
     var turi = initUri()
@@ -414,7 +437,6 @@ proc getAddress*(url: string): HttpResult[HttpAddress] {.raises: [Defect].} =
     turi.port = uri.port
     address = resolveTAddress($turi)[0]
   except TransportAddressError:
-    echo getCurrentException()[]
     return err("Invalid url.")
   let ctype = if uri.scheme == "https":
                 HttpClientScheme.Secure
@@ -422,30 +444,27 @@ proc getAddress*(url: string): HttpResult[HttpAddress] {.raises: [Defect].} =
                 HttpClientScheme.NonSecure
   HttpAddress(id: $address, scheme: ctype, hostname: address.host,
     port: uint16(address.port), path: uri.path, query: uri.query,
-    anchor: uri.anchor, username: "", password: "", addresses: @[address]
+    anchor: uri.anchor, username: uri.username, password: uri.password, addresses: @[address]
   ).ok
 
-proc hasProxy*(session: HttpSessionRef): bool {.inline.} = session.proxy.hostname != ""
+proc hasProxy*(session: HttpSessionRef): bool {.inline.} = not session.proxy.isnil
 proc hasProxy*(request: HttpClientRequestRef): bool {.inline.} = request.session.hasProxy
-proc hasProxyAuth*(request: HttpClientRequestRef): bool {.inline.} = request.session.proxyAuth.username != ""
+proc hasProxyAuth*(session: HttpSessionRef): bool {.inline.} = session.proxy.address.username != ""
 
 proc getAddress*(request: HttpClientRequestRef): HttpAddress =
   if request.hasProxy:
-    request.session.proxy
+    request.session.proxy.address
   else:
     request.address
 
-proc proxyAuth*(username, password: string, kind=ProxyAuthenticationType.Basic): ProxyAuthTuple =
-  (username, password, kind)
-
-proc proxyAuthHeaderData(request: HttpClientRequestRef): string =
+proc proxyAuthHeaderData(session: HttpSessionRef): string=
   let v =
-    request.session.proxyAuth.username &
+    session.proxy.address.username &
     ":" &
-    request.session.proxyAuth.password
-  result.add $request.session.proxyAuth.kind
+    session.proxy.address.password
+  result.add $session.proxy.auth
   result.add " "
-  result.add Base64.encode(v.stringToBytes)
+  result.add Base64Pad.encode(v.stringToBytes)
 
 proc getUri*(address: HttpAddress): Uri =
   ## Retrieve URI from ``address``.
@@ -522,23 +541,25 @@ proc getUniqueConnectionId(session: HttpSessionRef): uint64 =
   session.counter
 
 proc new(t: typedesc[HttpClientConnectionRef], session: HttpSessionRef,
-         ha: HttpAddress, transp: StreamTransport): HttpClientConnectionRef =
+         ha: HttpAddress, transp: StreamTransport, reader: AsyncStreamReader, writer:AsyncStreamWriter): HttpClientConnectionRef =
   case ha.scheme
   of HttpClientScheme.NonSecure:
     let res = HttpClientConnectionRef(
       id: session.getUniqueConnectionId(),
       kind: HttpClientScheme.NonSecure,
       transp: transp,
-      reader: newAsyncStreamReader(transp),
-      writer: newAsyncStreamWriter(transp),
+      reader: reader,
+      writer: writer,
       state: HttpClientConnectionState.Connecting,
       remoteHostname: ha.id
     )
     trackHttpClientConnection(res)
     res
   of HttpClientScheme.Secure:
-    let treader = newAsyncStreamReader(transp)
-    let twriter = newAsyncStreamWriter(transp)
+    let
+      treader = reader
+      twriter = writer
+
     let tls = newTLSClientAsyncStream(treader, twriter, ha.hostname,
                                       flags = session.flags.getTLSFlags())
     let res = HttpClientConnectionRef(
@@ -555,6 +576,17 @@ proc new(t: typedesc[HttpClientConnectionRef], session: HttpSessionRef,
     )
     trackHttpClientConnection(res)
     res
+
+proc new(t: typedesc[HttpClientConnectionRef], session: HttpSessionRef,
+         ha: HttpAddress, transp: StreamTransport): HttpClientConnectionRef =
+  let reader = newAsyncStreamReader(transp)
+  let writer = newAsyncStreamWriter(transp)
+  HttpClientConnectionRef.new(session, ha, transp, reader, writer)
+
+proc new(t: typedesc[HttpClientConnectionRef], session: HttpSessionRef,
+         ha: HttpAddress, transp: StreamTransport, proxyConn: HttpClientConnectionRef): HttpClientConnectionRef =
+  result = HttpClientConnectionRef.new(session, ha, transp, proxyConn.reader, proxyConn.writer)
+  result.proxyConn = proxyConn
 
 proc setError(request: HttpClientRequestRef, error: ref HttpError) {.
      raises: [Defect] .} =
@@ -595,41 +627,147 @@ proc closeWait(conn: HttpClientConnectionRef) {.async.} =
     conn.state = HttpClientConnectionState.Closed
     untrackHttpClientConnection(conn)
 
+proc connectHeaders(session: HttpSessionRef, ha: HttpAddress): string =
+  var res: string
+  let host = ha.hostname & ":" & $ha.port
+  var headers: HttpTable
+  headers.add(HostHeader, host)
+  headers.add(UserAgentHeader, ChronosIdent)
+  if NewConnectionAlways notin session.flags:
+    headers.add(ProxyConnectionHeader, "keep-alive")
+  if session.hasProxyAuth:
+    headers.add(ProxyAuthorizationHeader, session.proxyAuthHeaderData)
+  res.add "CONNECT "
+  res.add host
+  res.add " "
+  res.add $HttpVersion11
+  res.add "\r\n"
+  for (k, v) in headers.stringItems():
+    res.add k
+    res.add ": "
+    res.add v
+    res.add "\r\n"
+  res.add "\r\n"
+  return res
+
+template doTlsHandshake(conn) =
+  try:
+    await conn.tls.handshake()
+    conn.state = HttpClientConnectionState.Ready
+  except CancelledError as exc:
+    await conn.closeWait()
+    raise exc
+  except AsyncStreamError:
+    await conn.closeWait()
+    conn.state = HttpClientConnectionState.Error
+
+template doProxyConnect(reader, writer) =
+  block:
+    await writer.write(connectHeaders(session, ha))
+    var buffer: array[HttpMaxHeadersSize, byte]
+    let bytesRead = await reader.readUntil(addr buffer, session.connectionBufferSize, HeadersMark)
+    let resp = buffer.toOpenArray(0, bytesRead - 1).parseResponse(false)
+    if resp.code != 200:
+      raiseHttpConnectionError("Proxy connect failed, bad response.")
+
+proc proxyHandshake(session: HttpSessionRef, ha: HttpAddress, transp: StreamTransport): Future[HttpClientConnectionRef] {.async.} =
+  return case session.proxy.kind:
+    of Socks5:
+      # socks5 handshake to server
+      if not await transp.doSocksHandshake(
+        username = session.proxy.address.username,
+        password = session.proxy.address.password,
+        # the "best" auth supported gets choosen by the server!
+        methods = {NO_AUTHENTICATION_REQUIRED, USERNAME_PASSWORD}
+        ):
+        await transp.closeWait()
+        raiseHttpConnectionError("Socks5 handshake failed.")
+      # connect request to end host
+      if not await transp.doSocksConnect(ha.hostname, Port ha.port):
+        await transp.closeWait()
+        raiseHttpConnectionError("Socks5 connection failed.")
+      HttpClientConnectionRef.new(session, ha, transp)
+    of Tls:
+      let proxyConn = HttpClientConnectionRef.new(session, session.proxy.address, transp)
+      try:
+        doProxyConnect(proxyConn.tls.reader, proxyConn.tls.writer)
+        # keep the proxy connection since the end connection uses its tls stream
+        let id =  session.proxy.address.id & proxyConn.remoteHostname
+        var default: seq[HttpClientConnectionRef]
+        session.connections.mgetOrPut(id, default).add(proxyConn)
+      except CatchableError:
+          await proxyConn.closeWait()
+          raiseHttpConnectionError("Proxy https handshake failed.")
+      # make a new connection wrapping the proxy tls stream
+      HttpClientConnectionRef.new(session, ha, transp, proxyConn.reader, proxyConn.writer)
+    of Http:
+      # Http -> Https: uses CONNECT and then tls handshake to end host.
+      if ha.scheme == Secure:
+        let
+          writer = newAsyncStreamWriter(transp)
+          reader = newAsyncStreamReader(transp)
+        try:
+          doProxyConnect(reader, writer)
+          await allFutures(reader.closeWait(), writer.closeWait())
+          # FIXME: tested on
+          # https://ipinfo.io/ip OK
+          # https://httpbin.org/get OK
+          # https://api.ipify.org FAIL: tls handshake stalls
+          HttpClientConnectionRef.new(session, ha, transp)
+        except CatchableError:
+          var pending: seq[Future[void]]
+          if not reader.closed:
+            pending.add(reader.closeWait)
+          if not writer.closed:
+            pending.add(writer.closeWait)
+          await allFutures(pending)
+          raiseHttpConnectionError("Proxy http handshake failed.")
+      # Http -> Http: is a normal http request with full url in the headers after the http method.
+      else: HttpClientConnectionRef.new(session, ha, transp)
+    else: HttpClientConnectionRef.new(session, ha, transp)
+
+
+proc doConnect(session: HttpSessionRef, ha: HttpAddress, address: TransportAddress): Future[HttpClientConnectionRef] {.async.} =
+  let transp =
+    try:
+      await connect(address, bufferSize = session.connectionBufferSize)
+    except CancelledError as exc:
+      raise exc
+    except CatchableError:
+      nil
+  if not(isNil(transp)):
+    let res =
+      if session.hasProxy:
+        await proxyHandshake(session, ha, transp).wait(session.proxy.timeout)
+      else:
+        HttpClientConnectionRef.new(session, ha, transp)
+    let conn =
+      block:
+        case res.kind
+        of HttpClientScheme.Secure:
+          doTlsHandshake(res)
+        of HttpClientScheme.Nonsecure:
+          res.state = HttpClientConnectionState.Ready
+        res
+    if conn.state == HttpClientConnectionState.Ready:
+      return conn
+
 proc connect(session: HttpSessionRef,
              ha: HttpAddress): Future[HttpClientConnectionRef] {.async.} =
   ## Establish new connection with remote server using ``url`` and ``flags``.
   ## On success returns ``HttpClientConnectionRef`` object.
 
+  let proxiedHa =
+    if session.hasProxy:
+      session.proxy.address
+    else:
+      ha
   # Here we trying to connect to every possible remote host address we got after
   # DNS resolution.
-  for address in ha.addresses:
-    let transp =
-      try:
-        await connect(address, bufferSize = session.connectionBufferSize)
-      except CancelledError as exc:
-        raise exc
-      except CatchableError:
-        nil
-    if not(isNil(transp)):
-      let conn =
-        block:
-          let res = HttpClientConnectionRef.new(session, ha, transp)
-          case res.kind
-          of HttpClientScheme.Secure:
-            try:
-              await res.tls.handshake()
-              res.state = HttpClientConnectionState.Ready
-            except CancelledError as exc:
-              await res.closeWait()
-              raise exc
-            except AsyncStreamError:
-              await res.closeWait()
-              res.state = HttpClientConnectionState.Error
-          of HttpClientScheme.Nonsecure:
-            res.state = HttpClientConnectionState.Ready
-          res
-      if conn.state == HttpClientConnectionState.Ready:
-        return conn
+  for address in proxiedHa.addresses:
+    let conn = await session.doConnect(ha, address)
+    if not conn.isnil:
+      return conn
 
   # If all attempts to connect to the remote host have failed.
   raiseHttpConnectionError("Could not connect to remote host")
@@ -679,7 +817,12 @@ proc removeConnection(session: HttpSessionRef,
                       conn: HttpClientConnectionRef) {.async.} =
   session.connections.withValue(conn.remoteHostname, connections):
     connections[].keepItIf(it != conn)
-  await conn.closeWait()
+  var pending: seq[Future[void]]
+  pending.add conn.closeWait()
+  if not conn.proxyConn.isnil:
+    pending.add conn.proxyConn.closeWait()
+  await allFutures(pending)
+
 
 proc releaseConnection(session: HttpSessionRef,
                        connection: HttpClientConnectionRef) {.async.} =
@@ -1002,9 +1145,6 @@ proc prepareRequest(request: HttpClientRequestRef): string {.
       let slength = Base10.toString(uint64(len(request.buffer)))
       request.headers.add(ContentLengthHeader, slength)
 
-  if request.hasProxyAuth and ProxyAuthorizationHeader notin request.headers:
-    request.headers.add(ProxyAuthorizationHeader, request.proxyAuthHeaderData)
-
   request.bodyFlag =
     if ContentLengthHeader in request.headers:
       HttpClientBodyFlag.Sized
@@ -1017,19 +1157,23 @@ proc prepareRequest(request: HttpClientRequestRef): string {.
   let entity =
     block:
       var res: string
-      if request.hasProxy:
-        res.add $request.address.getUri
+      if request.hasProxy and request.session.proxy.kind == Http:
+        if request.session.hasProxyAuth and ProxyAuthorizationHeader notin request.headers:
+          request.headers.add(ProxyAuthorizationHeader, request.session.proxyAuthHeaderData)
+        res.add "http://"
+        res.add request.address.hostname
+        res.add ":"
+        res.add $request.address.port
+      if len(request.address.path) > 0:
+        res.add request.address.path
       else:
-        if len(request.address.path) > 0:
-          res.add request.address.path
-        else:
-          res.add "/"
-        if len(request.address.query) > 0:
-          res.add("?")
-          res.add(request.address.query)
-        if len(request.address.anchor) > 0:
-          res.add("#")
-          res.add(request.address.anchor)
+        res.add "/"
+      if len(request.address.query) > 0:
+        res.add("?")
+        res.add(request.address.query)
+      if len(request.address.anchor) > 0:
+        res.add("#")
+        res.add(request.address.anchor)
       res
 
   var res = $request.meth
@@ -1053,7 +1197,7 @@ proc send*(request: HttpClientRequestRef): Future[HttpClientResponseRef] {.
            "Request's state is " & $request.state)
   let connection =
     try:
-      await request.session.acquireConnection(request.getAddress)
+      await request.session.acquireConnection(request.address)
     except CancelledError as exc:
       request.setError(newHttpInterruptError())
       raise exc
@@ -1104,7 +1248,7 @@ proc open*(request: HttpClientRequestRef): Future[HttpBodyWriter] {.
            "Request should not have static body content (len(buffer) == 0)")
   let connection =
     try:
-      await request.session.acquireConnection(request.getAddress)
+      await request.session.acquireConnection(request.address)
     except CancelledError as exc:
       request.setError(newHttpInterruptError())
       raise exc
