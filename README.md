@@ -244,8 +244,41 @@ effects on forward declarations, callbacks and methods using
 
 ### Cancellation support
 
-Any running `Future` can be cancelled.
+Any running `Future` can be cancelled. This can be used to launch multiple
+futures, and wait for one of them to finish, and cancel the rest of them,
+to add timeout, or to let the user cancel a running task.
 
+```nim
+# Simple cancellation
+let future = sleepAsync(10.minutes)
+future.cancel()
+
+# Wait for cancellation
+let future2 = sleepAsync(10.minutes)
+await future2.cancelAndWait()
+
+# Race between futures
+proc retrievePage(uri: string): Future[string] {.async.} =
+  # requires to import uri, chronos/apps/http/httpclient, stew/byteutils
+  let resp = await HttpSessionRef.new().fetch(parseUri(uri))
+  return string.fromBytes(resp.data)
+
+let
+  futs =
+    @[
+      retrievePage("https://duckduckgo.com/?q=chronos"),
+      retrievePage("https://www.google.fr/search?q=chronos")
+    ]
+
+let finishedFut = await one(futs)
+for fut in futs:
+  if not fut.finished:
+    fut.cancel()
+echo "Result: ", await finishedFut
+```
+
+This works by throwing a `CancelledError` on the last `await` in
+the Futures call stack:
 ```nim
 proc c1 {.async.} =
   echo "Before sleep"
@@ -263,9 +296,6 @@ proc c2 {.async.} =
 let work = c2()
 waitFor(work.cancelAndWait())
 ```
-
-The cancellation will travel down the call stack, and throw a `CancelledError`
-on the currently running `await` (in this case the `await sleepAsync` in `c1`)
 
 The `CancelledError` will now travel up the stack like any other exception.
 It can be caught and handled (for instance, freeing some resources), or it can
