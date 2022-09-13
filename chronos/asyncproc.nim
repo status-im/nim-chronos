@@ -1071,6 +1071,7 @@ else:
     processHandle = addProcess2(int(p.processId), continuation,
                                 cast[pointer](1)).valueOr:
       if error == osdefs.ESRCH:
+        echo "ESEARCH ERROR"
         # "zombie death race" problem.
         # If process exited right after `waitpid()` - `kqueue` call
         # could return ESRCH error. So we need to handle it properly and
@@ -1086,9 +1087,11 @@ else:
         else:
           retFuture.complete(exitStatusLikeShell(exitCode))
       else:
+        echo "OTHER ERROR"
         retFuture.fail(newException(AsyncProcessError, osErrorMsg(error)))
       return retFuture
 
+    echo "Process added to monitoring with id = ", processHandle
     return retFuture
 
   proc peekExitCode(p: AsyncProcessRef): AsyncProcessResult[int] =
