@@ -69,7 +69,7 @@ suite "Asynchronous process management test suite":
       try:
         echo "waiting for exit"
         let res = await process.waitForExit(InfiniteDuration)
-        echo "exit awaited ", res =
+        echo "exit awaited res = ", res
         check:
           res == item
           process.peekExitCode().tryGet() == item
