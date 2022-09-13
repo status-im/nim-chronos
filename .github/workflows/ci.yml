@@ -52,21 +52,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
-      - name: Dump worker information (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          grep MemTotal /proc/meminfo
-
-      - name: Dump worker information (Windows)
-        if: runner.os == 'Windows'
-        run: |
-          wmic os get TotalVisibleMemorySize
-
-      - name: Dump worker information (MacOS)
-        if: runner.os == 'macOS'
-        run: |
-          sysctl -n hw.memsize
-
       - name: Install build dependencies (Linux i386)
         if: runner.os == 'Linux' && matrix.target.cpu == 'i386'
         run: |
