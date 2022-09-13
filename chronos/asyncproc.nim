@@ -257,9 +257,6 @@ proc init*(t: typedesc[ProcessStreamHandle],
 proc isEmpty*(handle: ProcessStreamHandle): bool =
   handle.kind == ProcessStreamHandleKind.None
 
-proc isEmpty(h: AsyncStreamHolder): bool =
-  h.kind == StreamKind.None
-
 proc suspend*(p: AsyncProcessRef): AsyncProcessResult[void] {.gcsafe.}
 
 proc resume*(p: AsyncProcessRef): AsyncProcessResult[void] {.gcsafe.}
@@ -387,10 +384,7 @@ when defined(windows):
     var slider = env
     while int(slider[]) != 0:
       let pos = wcschr(slider, WCHAR(0x0000))
-      let line =
-        block:
-          let res = slider.toString()
-          if res.isErr(): "" else: res.get()
+      let line = slider.toString().valueOr("")
       slider = cast[LPWSTR](cast[ByteAddress](pos) + sizeof(WCHAR))
       if len(line) > 0:
         let delim = line.find('=')
@@ -443,14 +437,10 @@ when defined(windows):
                      stderrHandle = ProcessStreamHandle(),
                     ): Future[AsyncProcessRef] {.async.} =
     var
-      pipes =
-        block:
-          let res = preparePipes(options, stdinHandle, stdoutHandle,
-                                 stderrHandle)
-          if res.isErr():
-            raiseAsyncProcessError("Unable to initialze process pipes",
-                                   res.error())
-          res.get()
+      pipes = preparePipes(options, stdinHandle, stdoutHandle,
+                           stderrHandle).valueOr:
+        raiseAsyncProcessError("Unable to initialze process pipes", error)
+
     let
       commandLine =
         if AsyncProcessOption.EvalCommand in options:
@@ -459,20 +449,16 @@ when defined(windows):
           buildCommandLine(command, arguments)
       workingDirectory =
         if len(workingDir) > 0:
-          let res = workingDir.toWideString()
-          if res.isErr():
+          workingDir.toWideString().valueOr:
             raiseAsyncProcessError("Unable to proceed working directory path",
-                                   res.error())
-          res.get()
+                                   error)
         else:
           nil
       environment =
         if not(isNil(environment)):
-          let res = buildEnvironment(environment)
-          if res.isErr():
+          buildEnvironment(environment).valueOr:
             raiseAsyncProcessError("Unable to build child process environment",
-                                   res.error())
-          res.get()
+                                   error)
         else:
           nil
       flags = CREATE_UNICODE_ENVIRONMENT
@@ -493,13 +479,8 @@ when defined(windows):
     if AsyncProcessOption.EchoCommand in options:
       echo commandLine
 
-    let wideCommandLine =
-      block:
-        let res = commandLine.toWideString()
-        if res.isErr():
-          raiseAsyncProcessError("Unable to proceed command line",
-                                 res.error())
-        res.get()
+    let wideCommandLine = commandLine.toWideString().valueOr:
+      raiseAsyncProcessError("Unable to proceed command line", error)
 
     let res = createProcess(
       nil,
@@ -594,17 +575,12 @@ when defined(windows):
         raiseAsyncProcessError("Unable to wait for process handle", exc)
 
     if wres == WaitableResult.Timeout:
-      let res = p.terminate()
+      let res = p.kill()
       if res.isErr():
         raiseAsyncProcessError("Unable to terminate process", res.error())
 
-    let exitCode =
-      block:
-        let res = p.peekProcessExitCode()
-        if res.isErr():
-          raiseAsyncProcessError("Unable to peek process exit code",
-                                 res.error())
-        res.get()
+    let exitCode = p.peekProcessExitCode().valueOr:
+      raiseAsyncProcessError("Unable to peek process exit code", error)
 
     if exitCode >= 0:
       p.exitStatus = some(exitCode)
@@ -860,22 +836,14 @@ else:
                     ): Future[AsyncProcessRef] {.async.} =
     var
       pid: Pid
-      pipes =
-        block:
-          var res = preparePipes(options, stdinHandle, stdoutHandle,
-                                 stderrHandle)
-          if res.isErr():
-            raiseAsyncProcessError("Unable to initialze process pipes",
-                                   res.error())
-          res.get()
-      sa =
-        block:
-          let res = pipes.initSpawn(options)
-          if res.isErr():
-            discard closeProcessHandles(pipes, options, OSErrorCode(0))
-            await pipes.closeProcessStreams(options)
-            raiseAsyncProcessError("Unable to initalize spawn attributes", 0)
-          res.get()
+      pipes = preparePipes(options, stdinHandle, stdoutHandle,
+                           stderrHandle).valueOr:
+        raiseAsyncProcessError("Unable to initialze process pipes",
+                               error)
+      sa = pipes.initSpawn(options).valueOr:
+        discard closeProcessHandles(pipes, options, OSErrorCode(0))
+        await pipes.closeProcessStreams(options)
+        raiseAsyncProcessError("Unable to initalize spawn attributes", 0)
 
     let
       (commandLine, commandArguments) =
@@ -1042,19 +1010,14 @@ else:
       return retFuture
 
     if timeout == ZeroDuration:
-      let res = p.terminate()
+      let res = p.kill()
       if res.isErr():
         retFuture.fail(newException(AsyncProcessError, osErrorMsg(res.error())))
         return retFuture
 
-    let exitCode =
-      block:
-        let res = p.peekProcessExitCode()
-        if res.isErr():
-          retFuture.fail(newException(AsyncProcessError,
-                                      osErrorMsg(res.error())))
-          return retFuture
-        res.get()
+    let exitCode = p.peekProcessExitCode().valueOr:
+      retFuture.fail(newException(AsyncProcessError, error))
+      return retFuture
 
     if exitCode != -1:
       retFuture.complete(exitStatusLikeShell(exitCode))
@@ -1076,14 +1039,9 @@ else:
             return
           if not(isNil(timer)):
             clearTimer(timer)
-          let exitCode =
-            block:
-              let res = p.peekProcessExitCode()
-              if res.isErr():
-                retFuture.fail(newException(AsyncProcessError,
-                                            osErrorMsg(res.error())))
-                return
-              res.get()
+          let exitCode = p.peekProcessExitCode().valueOr:
+            retFuture.fail(newException(AsyncProcessError, osErrorMsg(error)))
+            return
           if exitCode == -1:
             retFuture.complete(-1)
           else:
@@ -1105,37 +1063,26 @@ else:
     if timeout != InfiniteDuration:
       timer = setTimer(Moment.fromNow(timeout), continuation, cast[pointer](2))
 
-    processHandle =
-      block:
-        let res = addProcess2(int(p.processId), continuation, cast[pointer](1))
-        if res.isOk():
-          res.get()
-        else:
-          let errorCode = res.error()
-          if errorCode == osdefs.ESRCH:
-            # "zombie death race" problem.
-            # If process exited right after `waitpid()` - `kqueue` call
-            # could return ESRCH error. So we need to handle it properly and
-            # try to reap process code from exiting process.
-            let exitCode =
-              block:
-                let pres = p.peekProcessExitCode(true)
-                if pres.isErr():
-                  retFuture.fail(newException(AsyncProcessError,
-                                 osErrorMsg(pres.error())))
-                  return retFuture
-                pres.get()
-            if exitCode == -1:
-              # This should not be happens one more time, so we just report
-              # original error.
-              retFuture.fail(newException(AsyncProcessError,
-                             osErrorMsg(OSErrorCode(osdefs.ESRCH))))
-            else:
-              retFuture.complete(exitStatusLikeShell(exitCode))
-          else:
-            retFuture.fail(newException(AsyncProcessError,
-                                        osErrorMsg(res.error())))
+    processHandle = addProcess2(int(p.processId), continuation,
+                                cast[pointer](1)).valueOr:
+      if error == osdefs.ESRCH:
+        # "zombie death race" problem.
+        # If process exited right after `waitpid()` - `kqueue` call
+        # could return ESRCH error. So we need to handle it properly and
+        # try to reap process code from exiting process.
+        let exitCode = p.peekProcessExitCode(true).valueOr:
+          retFuture.fail(newException(AsyncProcessError, osErrorMsg(error)))
           return retFuture
+        if exitCode == -1:
+          # This should not be happens one more time, so we just report
+          # original error.
+          retFuture.fail(newException(AsyncProcessError,
+                         osErrorMsg(OSErrorCode(osdefs.ESRCH))))
+        else:
+          retFuture.complete(exitStatusLikeShell(exitCode))
+      else:
+        retFuture.fail(newException(AsyncProcessError, osErrorMsg(error)))
+      return retFuture
 
     return retFuture
 
