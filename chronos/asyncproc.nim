@@ -1077,6 +1077,7 @@ else:
         else:
           retFuture.complete(exitStatusLikeShell(exitCode))
       else:
+        echo "OTHER ERROR"
         retFuture.fail(newException(AsyncProcessError, osErrorMsg(error)))
       return retFuture
 
