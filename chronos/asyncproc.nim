@@ -939,6 +939,7 @@ else:
       flags: pipes.flags
     )
 
+    echo "Process started [", int(process.processId), "]"
     trackAsyncProccess(process)
     return process
 
@@ -954,6 +955,7 @@ else:
           var res: cint = 0
           while true:
             res = osdefs.waitpid(p.processId, wstatus, flags)
+            echo "Process waited [", int(p.processId), "] res = ", res
             if not((res == -1) and (osLastError() == EINTR)):
               break
           res
@@ -1241,6 +1243,7 @@ proc closeWait*(p: AsyncProcessRef) {.async.} =
   discard closeProcessHandles(p.pipes, p.options, OSErrorCode(0))
   await p.pipes.closeProcessStreams(p.options)
   discard p.closeThreadAndProcessHandle()
+  echo "Process closed [", int(process.processId), "]"
   untrackAsyncProcess(p)
 
 proc stdinStream*(p: AsyncProcessRef): AsyncStreamWriter =
