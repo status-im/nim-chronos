@@ -475,13 +475,8 @@ when defined(windows):
     let wideCommandLine = commandLine.toWideString().valueOr:
       raiseAsyncProcessError("Unable to proceed command line", error)
 
-    let wideCommandLine =
-      block:
-        let res = commandLine.toWideString()
-        if res.isErr():
-          raiseAsyncProcessError("Unable to proceed command line",
-                                 res.error())
-        res.get()
+    let wideCommandLine = commandLine.toWideString().valueOr:
+      raiseAsyncProcessError("Unable to proceed command line", error)
 
     let res = createProcess(
       nil,
