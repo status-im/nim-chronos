@@ -1278,6 +1278,7 @@ proc execCommandEx*(command: string,
                     options = {AsyncProcessOption.EvalCommand},
                     timeout = InfiniteDuration
                    ): Future[CommandExResponse] {.async.} =
+  echo "00. starting process"
   let
     process = await startProcess(command, options = options,
                                  stdoutHandle = AsyncProcess.Pipe,
@@ -1286,8 +1287,11 @@ proc execCommandEx*(command: string,
     errorReader = process.stderrStream.read()
     res =
       try:
+        echo "01. await reader/writer"
         await allFutures(outputReader, errorReader)
+        echo "02. await for exit"
         let status = await process.waitForExit(timeout)
+        echo "03. catching output"
         let output =
           try:
             string.fromBytes(outputReader.read())
@@ -1302,6 +1306,7 @@ proc execCommandEx*(command: string,
                                    exc)
         CommandExResponse(status: status, stdOutput: output, stdError: error)
       finally:
+        echo "04. closing process"
         await process.closeWait()
 
   return res
