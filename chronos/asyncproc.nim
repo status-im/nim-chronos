@@ -580,8 +580,7 @@ when defined(windows):
         raiseAsyncProcessError("Unable to terminate process", res.error())
 
     let exitCode = p.peekProcessExitCode().valueOr:
-      raiseAsyncProcessError("Unable to peek process exit code",
-                             osErrorMsg(error))
+      raiseAsyncProcessError("Unable to peek process exit code", error)
 
     if exitCode >= 0:
       p.exitStatus = some(exitCode)
