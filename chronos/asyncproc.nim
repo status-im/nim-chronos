@@ -612,6 +612,9 @@ else:
     of StreamKind.None:
       raiseAssert "Incorrect stream holder"
 
+  proc isEmpty(h: AsyncStreamHolder): bool =
+    h.kind == StreamKind.None
+
   proc initSpawn(pipes: AsyncProcessPipes, options: set[AsyncProcessOption]
                 ): Result[SpawnAttr, OSErrorCode] =
     template doCheck(body: untyped): untyped =
