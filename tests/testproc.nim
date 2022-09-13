@@ -64,9 +64,12 @@ suite "Asynchronous process management test suite":
     let options = {AsyncProcessOption.EvalCommand}
     for item in ExitCodes:
       let command = "exit " & Base10.toString(uint64(item))
+      echo "executing command [", command, "]"
       let process = await startProcess(command, options = options)
       try:
+        echo "waiting for exit"
         let res = await process.waitForExit(InfiniteDuration)
+        echo "exit awaited ", res =
         check:
           res == item
           process.peekExitCode().tryGet() == item
