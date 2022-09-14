@@ -385,7 +385,8 @@ proc selectInto2*[T](s: Selector[T], timeout: int,
             echo "Event.Process received"
             rkey.events.incl(Event.Process)
           else:
-            echo "Event.Process received for different pid = ", int(data.ssi_pid)
+            echo "Event.Process received for different pid = ",
+                 int(data.ssi_pid), ", but waiting for ", int(pkey.param)
             continue
       elif Event.User in pkey.events:
         var data: uint64 = 0
