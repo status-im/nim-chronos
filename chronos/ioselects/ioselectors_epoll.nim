@@ -383,9 +383,6 @@ proc selectInto2*[T](s: Selector[T], timeout: int,
           if cast[int](data.ssi_pid) == pkey.param:
             rkey.events.incl(Event.Process)
           else:
-            echo "Missing event has been received for pid = ",
-                 int(data.ssi_pid), ", but we waiting for pid = ",
-                 int(pkey.param)
             continue
       elif Event.User in pkey.events:
         var data: uint64 = 0
