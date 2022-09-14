@@ -1019,9 +1019,9 @@ else:
         retFuture.complete(exitStatusLikeShell(exitCode))
         return retFuture
 
-    if timeout == ZeroDuration:
-      retFuture.complete(-1)
-      return retFuture
+    # if timeout == ZeroDuration:
+    #   retFuture.complete(-1)
+    #   return retFuture
 
     proc continuation(udata: pointer) {.gcsafe.} =
       let source = cast[int](udata)
