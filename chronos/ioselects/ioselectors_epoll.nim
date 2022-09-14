@@ -403,6 +403,7 @@ proc selectInto2*[T](s: Selector[T], timeout: int,
           rkey.events.incl(Event.User)
 
     if Event.Oneshot in pkey.events:
+      echo "Remove oneshot notification for event ", int(pkey.param)
       var epv = EpollEvent()
       if epoll_ctl(s.epollFD, EPOLL_CTL_DEL, cint(fdi), nil) != 0:
         rkey.events.incl(Event.Error)
