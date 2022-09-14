@@ -373,15 +373,19 @@ proc selectInto2*[T](s: Selector[T], timeout: int,
           rkey.errorCode = osLastError()
       elif Event.Process in pkey.events:
         var data = SignalFdInfo()
+        echo "Got Event.Process event, reading ", sizeof(SignalFdInfo), " bytes"
         let res = handleEintr(osdefs.read(cint(fdi), addr data,
                                           sizeof(SignalFdInfo)))
         if res != sizeof(SignalFdInfo):
+          echo "Event.Process received with an error"
           rkey.events.incl({Event.Process, Event.Error})
           rkey.errorCode = osLastError()
         else:
           if cast[int](data.ssi_pid) == pkey.param:
+            echo "Event.Process received"
             rkey.events.incl(Event.Process)
           else:
+            echo "Event.Process received for different pid = ", int(data.ssi_pid)
             continue
       elif Event.User in pkey.events:
         var data: uint64 = 0
