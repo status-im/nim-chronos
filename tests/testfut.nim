@@ -6,7 +6,8 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 import unittest2
-import ../chronos
+import ".."/chronos
+import ".."/chronos/unittest2/asynctests
 
 when defined(nimHasUsed): {.used.}
 
@@ -219,7 +220,7 @@ suite "Future[T] behavior test suite":
     check:
       fut.finished
 
-  test "allFutures(varargs) test":
+  asyncTest "allFutures(varargs) test":
     var completedFutures = 0
 
     proc vlient1() {.async.} =
@@ -246,113 +247,104 @@ suite "Future[T] behavior test suite":
       await sleepAsync(100.milliseconds)
       inc(completedFutures)
       if true:
-        raise newException(ValueError, "")
+        raise newException(ValueError, "1F")
 
     proc vlient2f() {.async.} =
       await sleepAsync(100.milliseconds)
       inc(completedFutures)
       if true:
-        raise newException(ValueError, "")
+        raise newException(ValueError, "2F")
 
     proc vlient3f() {.async.} =
       await sleepAsync(100.milliseconds)
       inc(completedFutures)
       if true:
-        raise newException(ValueError, "")
+        raise newException(ValueError, "3F")
 
     proc vlient4f() {.async.} =
       await sleepAsync(100.milliseconds)
       inc(completedFutures)
       if true:
-        raise newException(ValueError, "")
+        raise newException(ValueError, "4F")
 
     proc vlient5f() {.async.} =
       await sleepAsync(100.milliseconds)
       inc(completedFutures)
       if true:
-        raise newException(ValueError, "")
+        raise newException(ValueError, "5F")
 
     proc client1(): Future[int] {.async.} =
       await sleepAsync(100.milliseconds)
       inc(completedFutures)
-      result = 1
+      return 1
 
     proc client2(): Future[int] {.async.} =
       await sleepAsync(200.milliseconds)
       inc(completedFutures)
-      result = 1
+      return 1
 
     proc client3(): Future[int] {.async.} =
       await sleepAsync(300.milliseconds)
       inc(completedFutures)
-      result = 1
+      return 1
 
     proc client4(): Future[int] {.async.} =
       await sleepAsync(400.milliseconds)
       inc(completedFutures)
-      result = 1
+      return 1
 
     proc client5(): Future[int] {.async.} =
       await sleepAsync(500.milliseconds)
       inc(completedFutures)
-      result = 1
+      return 1
 
     proc client1f(): Future[int] {.async.} =
       await sleepAsync(100.milliseconds)
       inc(completedFutures)
       if true:
-        raise newException(ValueError, "")
+        raise newException(ValueError, "1F")
 
     proc client2f(): Future[int] {.async.} =
       await sleepAsync(200.milliseconds)
       inc(completedFutures)
       if true:
-        raise newException(ValueError, "")
+        raise newException(ValueError, "2F")
 
     proc client3f(): Future[int] {.async.} =
       await sleepAsync(300.milliseconds)
       inc(completedFutures)
       if true:
-        raise newException(ValueError, "")
+        raise newException(ValueError, "3F")
 
     proc client4f(): Future[int] {.async.} =
       await sleepAsync(400.milliseconds)
       inc(completedFutures)
       if true:
-        raise newException(ValueError, "")
+        raise newException(ValueError, "4F")
 
     proc client5f(): Future[int] {.async.} =
       await sleepAsync(500.milliseconds)
       inc(completedFutures)
       if true:
-        raise newException(ValueError, "")
+        raise newException(ValueError, "5F")
 
-    waitFor(allFutures(vlient1(), vlient2(), vlient3(), vlient4(), vlient5()))
-
-    check: completedFutures == 5
+    await allFutures(vlient1(), vlient2(), vlient3(), vlient4(), vlient5())
+    check completedFutures == 5
     completedFutures = 0
-
-    waitFor(allFutures(vlient1(), vlient1f(),
-                       vlient2(), vlient2f(),
-                       vlient3(), vlient3f(),
-                       vlient4(), vlient4f(),
-                       vlient5(), vlient5f()))
-
-    check: completedFutures == 10
-
+    await allFutures(vlient1(), vlient1f(), vlient2(), vlient2f(),
+                     vlient3(), vlient3f(), vlient4(), vlient4f(),
+                     vlient5(), vlient5f())
+    check completedFutures == 10
     completedFutures = 0
-    waitFor(allFutures(client1(), client2(), client3(), client4(), client5()))
-    check: completedFutures  == 5
-
+    await allFutures(client1(), client2(), client3(), client4(), client5())
+    check completedFutures  == 5
     completedFutures = 0
-    waitFor(allFutures(client1(), client1f(),
-                       client2(), client2f(),
-                       client3(), client3f(),
-                       client4(), client4f(),
-                       client5(), client5f()))
-    check: completedFutures == 10
+    await allFutures(client1(), client1f(), client2(), client2f(),
+                     client3(), client3f(), client4(), client4f(),
+                     client5(), client5f())
+    check completedFutures == 10
 
-  test "allFutures(varargs) test":
+  asyncTest "allFutures(varargs) test":
     var completedFutures = 0
     var vfutures = newSeq[Future[void]]()
     var nfutures = newSeq[Future[int]]()
@@ -381,31 +373,31 @@ suite "Future[T] behavior test suite":
       await sleepAsync(100.milliseconds)
       inc(completedFutures)
       if true:
-        raise newException(ValueError, "")
+        raise newException(ValueError, "1F")
 
     proc vlient2f() {.async.} =
       await sleepAsync(100.milliseconds)
       inc(completedFutures)
       if true:
-        raise newException(ValueError, "")
+        raise newException(ValueError, "2F")
 
     proc vlient3f() {.async.} =
       await sleepAsync(100.milliseconds)
       inc(completedFutures)
       if true:
-        raise newException(ValueError, "")
+        raise newException(ValueError, "3F")
 
     proc vlient4f() {.async.} =
       await sleepAsync(100.milliseconds)
       inc(completedFutures)
       if true:
-        raise newException(ValueError, "")
+        raise newException(ValueError, "4F")
 
     proc vlient5f() {.async.} =
       await sleepAsync(100.milliseconds)
       inc(completedFutures)
       if true:
-        raise newException(ValueError, "")
+        raise newException(ValueError, "5F")
 
     proc client1(): Future[int] {.async.} =
       await sleepAsync(100.milliseconds)
@@ -436,31 +428,31 @@ suite "Future[T] behavior test suite":
       await sleepAsync(100.milliseconds)
       inc(completedFutures)
       if true:
-        raise newException(ValueError, "")
+        raise newException(ValueError, "1F")
 
     proc client2f(): Future[int] {.async.} =
       await sleepAsync(200.milliseconds)
       inc(completedFutures)
       if true:
-        raise newException(ValueError, "")
+        raise newException(ValueError, "2F")
 
     proc client3f(): Future[int] {.async.} =
       await sleepAsync(300.milliseconds)
       inc(completedFutures)
       if true:
-        raise newException(ValueError, "")
+        raise newException(ValueError, "3F")
 
     proc client4f(): Future[int] {.async.} =
       await sleepAsync(400.milliseconds)
       inc(completedFutures)
       if true:
-        raise newException(ValueError, "")
+        raise newException(ValueError, "4F")
 
     proc client5f(): Future[int] {.async.} =
       await sleepAsync(500.milliseconds)
       inc(completedFutures)
       if true:
-        raise newException(ValueError, "")
+        raise newException(ValueError, "5F")
 
     vfutures.setLen(0)
     for i in 0..<10:
@@ -470,9 +462,9 @@ suite "Future[T] behavior test suite":
       vfutures.add(vlient4())
       vfutures.add(vlient5())
 
-    waitFor(allFutures(vfutures))
+    await allFutures(vfutures)
     # 5 * 10 completed futures = 50
-    check: completedFutures == 50
+    check completedFutures == 50
 
     completedFutures = 0
     vfutures.setLen(0)
@@ -488,9 +480,9 @@ suite "Future[T] behavior test suite":
       vfutures.add(vlient5())
       vfutures.add(vlient5f())
 
-    waitFor(allFutures(vfutures))
+    await allFutures(vfutures)
     # 10 * 10 completed futures = 100
-    check: completedFutures == 100
+    check completedFutures == 100
 
     completedFutures = 0
     nfutures.setLen(0)
@@ -501,9 +493,9 @@ suite "Future[T] behavior test suite":
       nfutures.add(client4())
       nfutures.add(client5())
 
-    waitFor(allFutures(nfutures))
+    await allFutures(nfutures)
     # 5 * 10 completed futures = 50
-    check: completedFutures == 50
+    check completedFutures == 50
 
     completedFutures = 0
     nfutures.setLen(0)
@@ -519,10 +511,10 @@ suite "Future[T] behavior test suite":
       nfutures.add(client5())
       nfutures.add(client5f())
 
-    waitFor(allFutures(nfutures))
+    await allFutures(nfutures)
 
     # 10 * 10 completed futures = 100
-    check: completedFutures == 100
+    check completedFutures == 100
 
   test "allFutures() already completed test":
     proc client1(): Future[int] {.async.} =
@@ -556,7 +548,7 @@ suite "Future[T] behavior test suite":
     var fut = one(tseq)
     check: fut.finished and fut.failed
 
-  test "one(varargs) test":
+  asyncTest "one(varargs) test":
     proc vlient1() {.async.} =
       await sleepAsync(100.milliseconds)
 
@@ -568,30 +560,30 @@ suite "Future[T] behavior test suite":
 
     proc client1(): Future[int] {.async.} =
       await sleepAsync(100.milliseconds)
-      result = 10
+      return 10
 
     proc client2(): Future[int] {.async.} =
       await sleepAsync(200.milliseconds)
-      result = 20
+      return 20
 
     proc client3(): Future[int] {.async.} =
       await sleepAsync(300.milliseconds)
-      result = 30
+      return 30
 
     var fut11 = vlient1()
     var fut12 = vlient2()
     var fut13 = vlient3()
-    var res1 = waitFor(one(fut11, fut12, fut13))
+    var res1 = await one(fut11, fut12, fut13)
 
     var fut21 = vlient2()
     var fut22 = vlient1()
     var fut23 = vlient3()
-    var res2 = waitFor(one(fut21, fut22, fut23))
+    var res2 = await one(fut21, fut22, fut23)
 
     var fut31 = vlient3()
     var fut32 = vlient2()
     var fut33 = vlient1()
-    var res3 = waitFor(one(fut31, fut32, fut33))
+    var res3 = await one(fut31, fut32, fut33)
 
     check:
       fut11 == res1
@@ -601,24 +593,24 @@ suite "Future[T] behavior test suite":
     var cut11 = client1()
     var cut12 = client2()
     var cut13 = client3()
-    var res4 = waitFor(one(cut11, cut12, cut13))
+    var res4 = await one(cut11, cut12, cut13)
 
     var cut21 = client2()
     var cut22 = client1()
     var cut23 = client3()
-    var res5 = waitFor(one(cut21, cut22, cut23))
+    var res5 = await one(cut21, cut22, cut23)
 
     var cut31 = client3()
     var cut32 = client2()
     var cut33 = client1()
-    var res6 = waitFor(one(cut31, cut32, cut33))
+    var res6 = await one(cut31, cut32, cut33)
 
     check:
       cut11 == res4
       cut22 == res5
       cut33 == res6
 
-  test "one(seq) test":
+  asyncTest "one(seq) test":
     proc vlient1() {.async.} =
       await sleepAsync(100.milliseconds)
 
@@ -630,30 +622,30 @@ suite "Future[T] behavior test suite":
 
     proc client1(): Future[int] {.async.} =
       await sleepAsync(100.milliseconds)
-      result = 10
+      return 10
 
     proc client2(): Future[int] {.async.} =
       await sleepAsync(200.milliseconds)
-      result = 20
+      return 20
 
     proc client3(): Future[int] {.async.} =
       await sleepAsync(300.milliseconds)
-      result = 30
+      return 30
 
     var v10 = vlient1()
     var v11 = vlient2()
     var v12 = vlient3()
-    var res1 = waitFor(one(@[v10, v11, v12]))
+    var res1 = await one(@[v10, v11, v12])
 
     var v20 = vlient2()
     var v21 = vlient1()
     var v22 = vlient3()
-    var res2 = waitFor(one(@[v20, v21, v22]))
+    var res2 = await one(@[v20, v21, v22])
 
     var v30 = vlient3()
     var v31 = vlient2()
     var v32 = vlient1()
-    var res3 = waitFor(one(@[v30, v31, v32]))
+    var res3 = await one(@[v30, v31, v32])
 
     check:
       res1 == v10
@@ -663,17 +655,17 @@ suite "Future[T] behavior test suite":
     var c10 = client1()
     var c11 = client2()
     var c12 = client3()
-    var res4 = waitFor(one(@[c10, c11, c12]))
+    var res4 = await one(@[c10, c11, c12])
 
     var c20 = client2()
     var c21 = client1()
     var c22 = client3()
-    var res5 = waitFor(one(@[c20, c21, c22]))
+    var res5 = await one(@[c20, c21, c22])
 
     var c30 = client3()
     var c31 = client2()
     var c32 = client1()
-    var res6 = waitFor(one(@[c30, c31, c32]))
+    var res6 = await one(@[c30, c31, c32])
 
     check:
       res4 == c10
@@ -1073,12 +1065,12 @@ suite "Future[T] behavior test suite":
         (loc.procedure == procedure)
 
     check:
-      chk(loc10, "testfut.nim", 1041, "macroFuture")
-      chk(loc11, "testfut.nim", 1042, "")
-      chk(loc20, "testfut.nim", 1054, "template")
-      chk(loc21, "testfut.nim", 1057, "")
-      chk(loc30, "testfut.nim", 1051, "procedure")
-      chk(loc31, "testfut.nim", 1058, "")
+      chk(loc10, "testfut.nim", 1033, "macroFuture")
+      chk(loc11, "testfut.nim", 1034, "")
+      chk(loc20, "testfut.nim", 1046, "template")
+      chk(loc21, "testfut.nim", 1049, "")
+      chk(loc30, "testfut.nim", 1043, "procedure")
+      chk(loc31, "testfut.nim", 1050, "")
 
   test "withTimeout(fut) should wait cancellation test":
     proc futureNeverEnds(): Future[void] =
