@@ -1020,17 +1020,17 @@ else:
         retFuture.fail(newException(AsyncProcessError, osErrorMsg(res.error())))
         return retFuture
 
-    let exitCode = p.peekProcessExitCode().valueOr:
-      retFuture.fail(newException(AsyncProcessError, osErrorMsg(error)))
-      return retFuture
+    # let exitCode = p.peekProcessExitCode().valueOr:
+    #   retFuture.fail(newException(AsyncProcessError, osErrorMsg(error)))
+    #   return retFuture
 
-    if exitCode != -1:
-      retFuture.complete(exitStatusLikeShell(exitCode))
-      return retFuture
+    # if exitCode != -1:
+    #   retFuture.complete(exitStatusLikeShell(exitCode))
+    #   return retFuture
 
-    if timeout == ZeroDuration:
-      retFuture.complete(-1)
-      return retFuture
+    # if timeout == ZeroDuration:
+    #   retFuture.complete(-1)
+    #   return retFuture
 
     proc continuation(udata: pointer) {.gcsafe.} =
       let source = cast[int](udata)

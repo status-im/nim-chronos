@@ -374,32 +374,22 @@ proc selectInto2*[T](s: Selector[T], timeout: int,
           rkey.errorCode = osLastError()
       elif Event.Process in pkey.events:
         var data = SignalFdInfo()
-
-        while true:
-          echo "Got Event.Process event, reading ", sizeof(SignalFdInfo),
-               " bytes"
-          let res = handleEintr(osdefs.read(cint(fdi), addr data,
-                                sizeof(SignalFdInfo)))
-          echo "Received res = ", res
-          if res < 0:
-            let errorCode = osLastError()
-            if errorCode != EAGAIN:
-              rkey.events.incl({Event.Process, Event.Error})
-              rkey.errorCode = osLastError()
-            break
-          elif res != sizeof(SignalFdInfo):
-            echo "Event.Process received with an error"
-            rkey.events.incl({Event.Process, Event.Error})
-            rkey.errorCode = osLastError()
-            break
+        echo "Got Event.Process event, reading ", sizeof(SignalFdInfo), " bytes"
+        let res = handleEintr(osdefs.read(cint(fdi), addr data,
+                                          sizeof(SignalFdInfo)))
+        if res != sizeof(SignalFdInfo):
+          echo "Event.Process received with an error"
+          rkey.events.incl({Event.Process, Event.Error})
+          rkey.errorCode = osLastError()
+        else:
+          if cast[int](data.ssi_pid) == pkey.param:
+            echo "Event.Process received"
+            rkey.events.incl(Event.Process)
           else:
-            if cast[int](data.ssi_pid) == pkey.param:
-              echo "Event.Process received"
-              rkey.events.incl(Event.Process)
-              break
-            else:
-              echo "Event.Process received for different pid = ",
-                   int(data.ssi_pid), ", but waiting for ", int(pkey.param)
+            echo "Event.Process received for different pid = ",
+                 int(data.ssi_pid), ", but waiting for ", int(pkey.param)
+            echo "Continue processing events i = ", i, ", eventsCount = ", eventsCount
+            continue
       elif Event.User in pkey.events:
         var data: uint64 = 0
         let res = handleEintr(osdefs.read(cint(fdi), addr data,
