@@ -243,86 +243,86 @@ suite "Future[T] behavior test suite":
       await sleepAsync(100.milliseconds)
       inc(completedFutures)
       if true:
-        raise newException(ValueError, "")
+        raise newException(ValueError, "1F")
 
     proc vlient2f() {.async.} =
       await sleepAsync(100.milliseconds)
       inc(completedFutures)
       if true:
-        raise newException(ValueError, "")
+        raise newException(ValueError, "2F")
 
     proc vlient3f() {.async.} =
       await sleepAsync(100.milliseconds)
       inc(completedFutures)
       if true:
-        raise newException(ValueError, "")
+        raise newException(ValueError, "3F")
 
     proc vlient4f() {.async.} =
       await sleepAsync(100.milliseconds)
       inc(completedFutures)
       if true:
-        raise newException(ValueError, "")
+        raise newException(ValueError, "4F")
 
     proc vlient5f() {.async.} =
       await sleepAsync(100.milliseconds)
       inc(completedFutures)
       if true:
-        raise newException(ValueError, "")
+        raise newException(ValueError, "5F")
 
     proc client1(): Future[int] {.async.} =
       await sleepAsync(100.milliseconds)
       inc(completedFutures)
-      result = 1
+      return 1
 
     proc client2(): Future[int] {.async.} =
       await sleepAsync(200.milliseconds)
       inc(completedFutures)
-      result = 1
+      return 1
 
     proc client3(): Future[int] {.async.} =
       await sleepAsync(300.milliseconds)
       inc(completedFutures)
-      result = 1
+      return 1
 
     proc client4(): Future[int] {.async.} =
       await sleepAsync(400.milliseconds)
       inc(completedFutures)
-      result = 1
+      return 1
 
     proc client5(): Future[int] {.async.} =
       await sleepAsync(500.milliseconds)
       inc(completedFutures)
-      result = 1
+      return 1
 
     proc client1f(): Future[int] {.async.} =
       await sleepAsync(100.milliseconds)
       inc(completedFutures)
       if true:
-        raise newException(ValueError, "")
+        raise newException(ValueError, "1F")
 
     proc client2f(): Future[int] {.async.} =
       await sleepAsync(200.milliseconds)
       inc(completedFutures)
       if true:
-        raise newException(ValueError, "")
+        raise newException(ValueError, "2F")
 
     proc client3f(): Future[int] {.async.} =
       await sleepAsync(300.milliseconds)
       inc(completedFutures)
       if true:
-        raise newException(ValueError, "")
+        raise newException(ValueError, "3F")
 
     proc client4f(): Future[int] {.async.} =
       await sleepAsync(400.milliseconds)
       inc(completedFutures)
       if true:
-        raise newException(ValueError, "")
+        raise newException(ValueError, "4F")
 
     proc client5f(): Future[int] {.async.} =
       await sleepAsync(500.milliseconds)
       inc(completedFutures)
       if true:
-        raise newException(ValueError, "")
+        raise newException(ValueError, "5F")
 
     await allFutures(vlient1(), vlient2(), vlient3(), vlient4(), vlient5())
     check completedFutures == 5
@@ -373,31 +373,31 @@ suite "Future[T] behavior test suite":
       await sleepAsync(100.milliseconds)
       inc(completedFutures)
       if true:
-        raise newException(ValueError, "")
+        raise newException(ValueError, "1F")
 
     proc vlient2f() {.async.} =
       await sleepAsync(100.milliseconds)
       inc(completedFutures)
       if true:
-        raise newException(ValueError, "")
+        raise newException(ValueError, "2F")
 
     proc vlient3f() {.async.} =
       await sleepAsync(100.milliseconds)
       inc(completedFutures)
       if true:
-        raise newException(ValueError, "")
+        raise newException(ValueError, "3F")
 
     proc vlient4f() {.async.} =
       await sleepAsync(100.milliseconds)
       inc(completedFutures)
       if true:
-        raise newException(ValueError, "")
+        raise newException(ValueError, "4F")
 
     proc vlient5f() {.async.} =
       await sleepAsync(100.milliseconds)
       inc(completedFutures)
       if true:
-        raise newException(ValueError, "")
+        raise newException(ValueError, "5F")
 
     proc client1(): Future[int] {.async.} =
       await sleepAsync(100.milliseconds)
@@ -428,31 +428,31 @@ suite "Future[T] behavior test suite":
       await sleepAsync(100.milliseconds)
       inc(completedFutures)
       if true:
-        raise newException(ValueError, "")
+        raise newException(ValueError, "1F")
 
     proc client2f(): Future[int] {.async.} =
       await sleepAsync(200.milliseconds)
       inc(completedFutures)
       if true:
-        raise newException(ValueError, "")
+        raise newException(ValueError, "2F")
 
     proc client3f(): Future[int] {.async.} =
       await sleepAsync(300.milliseconds)
       inc(completedFutures)
       if true:
-        raise newException(ValueError, "")
+        raise newException(ValueError, "3F")
 
     proc client4f(): Future[int] {.async.} =
       await sleepAsync(400.milliseconds)
       inc(completedFutures)
       if true:
-        raise newException(ValueError, "")
+        raise newException(ValueError, "4F")
 
     proc client5f(): Future[int] {.async.} =
       await sleepAsync(500.milliseconds)
       inc(completedFutures)
       if true:
-        raise newException(ValueError, "")
+        raise newException(ValueError, "5F")
 
     vfutures.setLen(0)
     for i in 0..<10:
@@ -560,15 +560,15 @@ suite "Future[T] behavior test suite":
 
     proc client1(): Future[int] {.async.} =
       await sleepAsync(100.milliseconds)
-      result = 10
+      return 10
 
     proc client2(): Future[int] {.async.} =
       await sleepAsync(200.milliseconds)
-      result = 20
+      return 20
 
     proc client3(): Future[int] {.async.} =
       await sleepAsync(300.milliseconds)
-      result = 30
+      return 30
 
     var fut11 = vlient1()
     var fut12 = vlient2()
@@ -622,15 +622,15 @@ suite "Future[T] behavior test suite":
 
     proc client1(): Future[int] {.async.} =
       await sleepAsync(100.milliseconds)
-      result = 10
+      return 10
 
     proc client2(): Future[int] {.async.} =
       await sleepAsync(200.milliseconds)
-      result = 20
+      return 20
 
     proc client3(): Future[int] {.async.} =
       await sleepAsync(300.milliseconds)
-      result = 30
+      return 30
 
     var v10 = vlient1()
     var v11 = vlient2()
