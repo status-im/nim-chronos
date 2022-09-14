@@ -93,7 +93,7 @@ type
 
   ProxyRef* = ref Proxy
 
-  HttpClientConnection* {.acyclic.} = object of RootObj
+  HttpClientConnection* = object of RootObj
     id*: uint64
     case kind*: HttpClientScheme
     of HttpClientScheme.NonSecure:
