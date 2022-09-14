@@ -939,7 +939,6 @@ else:
       flags: pipes.flags
     )
 
-    echo "Process started [", int(process.processId), "]"
     trackAsyncProccess(process)
     return process
 
@@ -955,7 +954,6 @@ else:
           var res: cint = 0
           while true:
             res = osdefs.waitpid(p.processId, wstatus, flags)
-            echo "Process waited [", int(p.processId), "] res = ", res
             if not((res == -1) and (osLastError() == EINTR)):
               break
           res
@@ -1074,7 +1072,6 @@ else:
     processHandle = addProcess2(int(p.processId), continuation,
                                 cast[pointer](1)).valueOr:
       if error == osdefs.ESRCH:
-        echo "ESEARCH ERROR"
         # "zombie death race" problem.
         # If process exited right after `waitpid()` - `kqueue` call
         # could return ESRCH error. So we need to handle it properly and
@@ -1090,11 +1087,9 @@ else:
         else:
           retFuture.complete(exitStatusLikeShell(exitCode))
       else:
-        echo "OTHER ERROR"
         retFuture.fail(newException(AsyncProcessError, osErrorMsg(error)))
       return retFuture
 
-    echo "Process added to monitoring with id = ", processHandle
     return retFuture
 
   proc peekExitCode(p: AsyncProcessRef): AsyncProcessResult[int] =
@@ -1249,7 +1244,6 @@ proc closeWait*(p: AsyncProcessRef) {.async.} =
   discard closeProcessHandles(p.pipes, p.options, OSErrorCode(0))
   await p.pipes.closeProcessStreams(p.options)
   discard p.closeThreadAndProcessHandle()
-  echo "Process closed [", int(p.processId), "]"
   untrackAsyncProcess(p)
 
 proc stdinStream*(p: AsyncProcessRef): AsyncStreamWriter =
@@ -1284,7 +1278,6 @@ proc execCommandEx*(command: string,
                     options = {AsyncProcessOption.EvalCommand},
                     timeout = InfiniteDuration
                    ): Future[CommandExResponse] {.async.} =
-  echo "00. starting process"
   let
     process = await startProcess(command, options = options,
                                  stdoutHandle = AsyncProcess.Pipe,
@@ -1293,26 +1286,23 @@ proc execCommandEx*(command: string,
     errorReader = process.stderrStream.read()
     res =
       try:
-        echo "01. await reader/writer"
         await allFutures(outputReader, errorReader)
-        echo "02. await for exit"
-        let status = await process.waitForExit(timeout)
-        echo "03. catching output"
-        let output =
-          try:
-            string.fromBytes(outputReader.read())
-          except AsyncStreamError as exc:
-            raiseAsyncProcessError("Unable to read process' stdout channel",
-                                   exc)
-        let error =
-          try:
-            string.fromBytes(errorReader.read())
-          except AsyncStreamError as exc:
-            raiseAsyncProcessError("Unable to read process' stderr channel",
-                                   exc)
+        let
+          status = await process.waitForExit(timeout)
+          output =
+            try:
+              string.fromBytes(outputReader.read())
+            except AsyncStreamError as exc:
+              raiseAsyncProcessError("Unable to read process' stdout channel",
+                                     exc)
+          error =
+            try:
+              string.fromBytes(errorReader.read())
+            except AsyncStreamError as exc:
+              raiseAsyncProcessError("Unable to read process' stderr channel",
+                                     exc)
         CommandExResponse(status: status, stdOutput: output, stdError: error)
       finally:
-        echo "04. closing process"
         await process.closeWait()
 
   return res
