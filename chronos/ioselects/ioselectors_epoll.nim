@@ -332,7 +332,10 @@ proc selectInto2*[T](s: Selector[T], timeout: int,
     return err(osLastError())
 
   var k = 0
+  var n = false
   for i in 0 ..< eventsCount:
+    if n:
+      echo "Processing event i = ", i
     doAssert(queueEvents[i].data.u64 < uint64(len(s.fds)))
     let
       fdi = int(queueEvents[i].data.u64)
@@ -387,6 +390,8 @@ proc selectInto2*[T](s: Selector[T], timeout: int,
           else:
             echo "Event.Process received for different pid = ",
                  int(data.ssi_pid), ", but waiting for ", int(pkey.param)
+            echo "Continue processing events i = ", i, ", eventsCount = ", eventsCount
+            n = true
             continue
       elif Event.User in pkey.events:
         var data: uint64 = 0
