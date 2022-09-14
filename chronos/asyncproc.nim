@@ -932,7 +932,6 @@ else:
       flags: pipes.flags
     )
 
-    echo "Process started [", int(process.processId), "]"
     trackAsyncProccess(process)
     return process
 
@@ -1077,7 +1076,6 @@ else:
         else:
           retFuture.complete(exitStatusLikeShell(exitCode))
       else:
-        echo "OTHER ERROR"
         retFuture.fail(newException(AsyncProcessError, osErrorMsg(error)))
       return retFuture
 
@@ -1282,7 +1280,6 @@ proc closeWait*(p: AsyncProcessRef) {.async.} =
   discard closeProcessHandles(p.pipes, p.options, OSErrorCode(0))
   await p.pipes.closeProcessStreams(p.options)
   discard p.closeThreadAndProcessHandle()
-  echo "Process closed [", int(p.processId), "]"
   untrackAsyncProcess(p)
 
 proc stdinStream*(p: AsyncProcessRef): AsyncStreamWriter =
@@ -1317,7 +1314,6 @@ proc execCommandEx*(command: string,
                     options = {AsyncProcessOption.EvalCommand},
                     timeout = InfiniteDuration
                    ): Future[CommandExResponse] {.async.} =
-  echo "00. starting process"
   let
     process = await startProcess(command, options = options,
                                  stdoutHandle = AsyncProcess.Pipe,
@@ -1326,7 +1322,6 @@ proc execCommandEx*(command: string,
     errorReader = process.stderrStream.read()
     res =
       try:
-        echo "01. await reader/writer"
         await allFutures(outputReader, errorReader)
         let
           status = await process.waitForExit(timeout)
@@ -1344,7 +1339,6 @@ proc execCommandEx*(command: string,
                                      exc)
         CommandExResponse(status: status, stdOutput: output, stdError: error)
       finally:
-        echo "04. closing process"
         await process.closeWait()
 
   return res
