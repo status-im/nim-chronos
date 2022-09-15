@@ -84,6 +84,7 @@ type
   HttpResponseTuple* = tuple
     status: int
     data: seq[byte]
+    redirects: seq[string]
 
   Proxy* = object
     address*: HttpAddress
@@ -1480,7 +1481,7 @@ proc redirect*(request: HttpClientRequestRef,
     res.redirectCount = redirectCount
     ok(res)
 
-proc fetch*(request: HttpClientRequestRef): Future[HttpResponseTuple] {.
+proc fetchOnce*(request: HttpClientRequestRef): Future[HttpResponseTuple] {.
      async.} =
   var response: HttpClientResponseRef
   try:
@@ -1489,7 +1490,7 @@ proc fetch*(request: HttpClientRequestRef): Future[HttpResponseTuple] {.
     let status = response.status
     await response.closeWait()
     response = nil
-    return (status, buffer)
+    return (status, buffer, @[])
   except HttpError as exc:
     if not(isNil(response)): await response.closeWait()
     raise exc
@@ -1497,23 +1498,20 @@ proc fetch*(request: HttpClientRequestRef): Future[HttpResponseTuple] {.
     if not(isNil(response)): await response.closeWait()
     raise exc
 
-proc fetch*(session: HttpSessionRef, url: Uri): Future[HttpResponseTuple] {.
+proc fetch*(request: HttpClientRequestRef, followRedirects=false): Future[HttpResponseTuple] {.
      async.} =
-  ## Fetch resource pointed by ``url`` using HTTP GET method and ``session``
-  ## parameters.
+  ## Fetch ``request``.
   ##
   ## This procedure supports HTTP redirections.
-  let address =
-    block:
-      let res = session.getAddress(url)
-      if res.isErr():
-        raiseHttpAddressError(res.error())
-      res.get()
+
+  if not followRedirects:
+    return await fetchOnce(request)
 
   var
-    request = HttpClientRequestRef.new(session, address)
+    request = request
     response: HttpClientResponseRef = nil
     redirect: HttpClientRequestRef = nil
+    redirectUrls: seq[string]
 
   while true:
     try:
@@ -1527,6 +1525,7 @@ proc fetch*(session: HttpSessionRef, url: Uri): Future[HttpResponseTuple] {.
                 let res = request.redirect(parseUri(location))
                 if res.isErr():
                   raiseHttpRedirectError(res.error())
+                redirectUrls.add location
                 res.get()
               else:
                 raiseHttpRedirectError("Location header with an empty value")
@@ -1546,7 +1545,7 @@ proc fetch*(session: HttpSessionRef, url: Uri): Future[HttpResponseTuple] {.
         response = nil
         await request.closeWait()
         request = nil
-        return (code, data)
+        return (code, data, redirectUrls)
     except CancelledError as exc:
       if not(isNil(response)): await closeWait(response)
       if not(isNil(request)): await closeWait(request)
@@ -1557,3 +1556,17 @@ proc fetch*(session: HttpSessionRef, url: Uri): Future[HttpResponseTuple] {.
       if not(isNil(request)): await closeWait(request)
       if not(isNil(redirect)): await closeWait(redirect)
       raise exc
+
+proc fetch*(session: HttpSessionRef, url: Uri): Future[HttpResponseTuple] {.async.} =
+  ## Fetch resource pointed by ``url`` using HTTP GET method and ``session``
+  ## parameters.
+  ##
+  ## This procedure supports HTTP redirections.
+
+  let address =
+    block:
+      let res = session.getAddress(url)
+      if res.isErr():
+        raiseHttpAddressError(res.error())
+      res.get()
+  return await fetch(HttpClientRequestRef.new(session, address))
