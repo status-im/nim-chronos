@@ -274,6 +274,32 @@ suite "Asynchronous process management test suite":
     finally:
       await process.closeWait()
 
+  asyncTest "Multiple processes waiting test":
+    const ProcessesCount = 10
+
+    let command =
+      when defined(windows):
+        ("tests\\testproc.bat", "timeout2", 2)
+      else:
+        ("tests/testproc.sh", "timeout2", 2)
+
+    var processes: seq[AsyncProcessRef]
+    for n in 0 ..< ProcessesCount:
+      let process = await startProcess(command[0], arguments = @[command[1]])
+      processes.add(process)
+    try:
+      var pending: seq[Future[int]]
+      for process in processes:
+        pending.add(process.waitForExit(5.seconds))
+      await allFutures(pending)
+      for index in 0 ..< ProcessesCount:
+        check pending[index].read() == command[2]
+    finally:
+      var pending: seq[Future[void]]
+      for process in processes:
+        pending.add(process.closeWait())
+      await allFutures(pending)
+
   test "File descriptors leaks test":
     when defined(windows):
       skip()
