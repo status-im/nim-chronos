@@ -1458,6 +1458,8 @@ proc redirect*(request: HttpClientRequestRef,
   if redirectCount > request.session.maxRedirections:
     err("Maximum number of redirects exceeded")
   else:
+    if HostHeader in request.headers and ha.hostname != request.address.hostname:
+      request.headers.set HostHeader, ha.hostname
     var res = HttpClientRequestRef.new(request.session, ha, request.meth,
       request.version, request.flags, request.headers.toList(), request.buffer)
     res.redirectCount = redirectCount
@@ -1476,6 +1478,8 @@ proc redirect*(request: HttpClientRequestRef,
     err("Maximum number of redirects exceeded")
   else:
     let address = ? request.session.redirect(request.address, uri)
+    if HostHeader in request.headers and address.hostname != request.address.hostname:
+      request.headers.set HostHeader, uri.hostname
     var res = HttpClientRequestRef.new(request.session, address, request.meth,
       request.version, request.flags, request.headers.toList(), request.buffer)
     res.redirectCount = redirectCount
