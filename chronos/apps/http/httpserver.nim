@@ -97,7 +97,7 @@ type
     contentEncoding*: set[ContentEncodingFlags]
     transferEncoding*: set[TransferEncodingFlags]
     requestFlags*: set[HttpRequestFlags]
-    contentLength: int
+    contentLength*: int
     contentTypeData*: Opt[ContentTypeData]
     connection*: HttpConnectionRef
     response*: Opt[HttpResponseRef]
@@ -1086,8 +1086,9 @@ proc prepareLengthHeaders(resp: HttpResponseRef, length: int): string {.
      raises: [Defect].}=
   if not(resp.hasHeader(DateHeader)):
     resp.setHeader(DateHeader, httpDate())
-  if not(resp.hasHeader(ContentTypeHeader)):
-    resp.setHeader(ContentTypeHeader, "text/html; charset=utf-8")
+  if length > 0:
+    if not(resp.hasHeader(ContentTypeHeader)):
+      resp.setHeader(ContentTypeHeader, "text/html; charset=utf-8")
   if not(resp.hasHeader(ContentLengthHeader)):
     resp.setHeader(ContentLengthHeader, Base10.toString(uint64(length)))
   if not(resp.hasHeader(ServerHeader)):
