@@ -260,8 +260,11 @@ await future2.cancelAndWait()
 # Race between futures
 proc retrievePage(uri: string): Future[string] {.async.} =
   # requires to import uri, chronos/apps/http/httpclient, stew/byteutils
-  let resp = await HttpSessionRef.new().fetch(parseUri(uri))
-  return string.fromBytes(resp.data)
+  let
+    httpSession = HttpSessionRef.new()
+    resp = await httpSession.fetch(parseUri(uri))
+  result = string.fromBytes(resp.data)
+  await httpSession.closeWait()
 
 let
   futs =
