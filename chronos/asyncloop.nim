@@ -207,6 +207,7 @@ type
     id*: string
     dump*: proc(): string {.gcsafe, raises: [Defect].}
     isLeaked*: proc(): bool {.gcsafe, raises: [Defect].}
+    reset*: proc() {.gcsafe, raises: [Defect].}
 
   PDispatcherBase = ref object of RootRef
     timers*: HeapQueue[TimerCallback]

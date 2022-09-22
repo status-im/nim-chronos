@@ -382,6 +382,16 @@ proc leakAsyncStreamWriter(): bool {.gcsafe.} =
   var tracker = getAsyncStreamWriterTracker()
   tracker.opened != tracker.closed
 
+proc resetAsyncStreamReader() {.gcsafe.} =
+  var tracker = getAsyncStreamReaderTracker()
+  tracker.opened = 0
+  tracker.closed = 0
+
+proc resetAsyncStreamWriter() {.gcsafe.} =
+  var tracker = getAsyncStreamWriterTracker()
+  tracker.opened = 0
+  tracker.closed = 0
+
 proc trackAsyncStreamReader(t: AsyncStreamReader) {.inline.} =
   var tracker = getAsyncStreamReaderTracker()
   inc(tracker.opened)
@@ -403,7 +413,8 @@ proc setupAsyncStreamReaderTracker(): AsyncStreamTracker {.gcsafe.} =
     opened: 0,
     closed: 0,
     dump: dumpAsyncStreamReaderTracking,
-    isLeaked: leakAsyncStreamReader
+    isLeaked: leakAsyncStreamReader,
+    reset: resetAsyncStreamReader
   )
   addTracker(AsyncStreamReaderTrackerName, res)
   res
@@ -413,7 +424,8 @@ proc setupAsyncStreamWriterTracker(): AsyncStreamTracker {.gcsafe.} =
     opened: 0,
     closed: 0,
     dump: dumpAsyncStreamWriterTracking,
-    isLeaked: leakAsyncStreamWriter
+    isLeaked: leakAsyncStreamWriter,
+    reset: resetAsyncStreamWriter
   )
   addTracker(AsyncStreamWriterTrackerName, res)
   res

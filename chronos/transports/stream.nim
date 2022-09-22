@@ -235,6 +235,16 @@ proc leakServer(): bool {.gcsafe.} =
   var tracker = getStreamServerTracker()
   result = tracker.opened != tracker.closed
 
+proc resetTransport() {.gcsafe.} =
+  var tracker = getStreamTransportTracker()
+  tracker.opened = 0
+  tracker.closed = 0
+
+proc resetServer() {.gcsafe.} =
+  var tracker = getStreamServerTracker()
+  tracker.opened = 0
+  tracker.closed = 0
+
 proc trackStream(t: StreamTransport) {.inline.} =
   var tracker = getStreamTransportTracker()
   inc(tracker.opened)
@@ -257,6 +267,7 @@ proc setupStreamTransportTracker(): StreamTransportTracker {.gcsafe.} =
   result.closed = 0
   result.dump = dumpTransportTracking
   result.isLeaked = leakTransport
+  result.reset = resetTransport
   addTracker(StreamTransportTrackerName, result)
 
 proc setupStreamServerTracker(): StreamServerTracker {.gcsafe.} =
@@ -265,6 +276,7 @@ proc setupStreamServerTracker(): StreamServerTracker {.gcsafe.} =
   result.closed = 0
   result.dump = dumpServerTracking
   result.isLeaked = leakServer
+  result.reset = resetServer
   addTracker(StreamServerTrackerName, result)
 
 proc completePendingWriteQueue(queue: var Deque[StreamVector],

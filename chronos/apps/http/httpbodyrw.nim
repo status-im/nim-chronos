@@ -62,6 +62,16 @@ proc leakHttpBodyReader(): bool {.gcsafe.} =
   var tracker = getHttpBodyReaderTracker()
   tracker.opened != tracker.closed
 
+proc resetHttpBodyWriter() {.gcsafe.} =
+  var tracker = getHttpBodyWriterTracker()
+  tracker.opened = 0
+  tracker.closed = 0
+
+proc resetHttpBodyReader() {.gcsafe.} =
+  var tracker = getHttpBodyReaderTracker()
+  tracker.opened = 0
+  tracker.closed = 0
+
 proc trackHttpBodyWriter(t: HttpBodyWriter) {.inline.} =
   inc(getHttpBodyWriterTracker().opened)
 
@@ -77,7 +87,8 @@ proc untrackHttpBodyReader*(t: HttpBodyReader) {.inline.}  =
 proc setupHttpBodyWriterTracker(): HttpBodyTracker {.gcsafe.} =
   var res = HttpBodyTracker(opened: 0, closed: 0,
     dump: dumpHttpBodyWriterTracking,
-    isLeaked: leakHttpBodyWriter
+    isLeaked: leakHttpBodyWriter,
+    reset: resetHttpBodyWriter
   )
   addTracker(HttpBodyWriterTrackerName, res)
   res
@@ -85,7 +96,8 @@ proc setupHttpBodyWriterTracker(): HttpBodyTracker {.gcsafe.} =
 proc setupHttpBodyReaderTracker(): HttpBodyTracker {.gcsafe.} =
   var res = HttpBodyTracker(opened: 0, closed: 0,
     dump: dumpHttpBodyReaderTracking,
-    isLeaked: leakHttpBodyReader
+    isLeaked: leakHttpBodyReader,
+    reset: resetHttpBodyReader
   )
   addTracker(HttpBodyReaderTrackerName, res)
   res

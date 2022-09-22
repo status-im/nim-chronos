@@ -117,6 +117,11 @@ proc leakTransport(): bool {.gcsafe.} =
   var tracker = getDgramTransportTracker()
   result = (tracker.opened != tracker.closed)
 
+proc resetTransport() {.gcsafe.} =
+  var tracker = getDgramTransportTracker()
+  tracker.opened = 0
+  tracker.closed = 0
+
 proc trackDgram(t: DatagramTransport) {.inline.} =
   var tracker = getDgramTransportTracker()
   inc(tracker.opened)
@@ -131,6 +136,7 @@ proc setupDgramTransportTracker(): DgramTransportTracker {.gcsafe.} =
   result.closed = 0
   result.dump = dumpTransportTracking
   result.isLeaked = leakTransport
+  result.reset = resetTransport
   addTracker(DgramTransportTrackerName, result)
 
 when defined(nimdoc):
