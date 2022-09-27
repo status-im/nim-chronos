@@ -672,6 +672,9 @@ template doProxyConnect(reader, writer) =
       raiseHttpConnectionError("Proxy connect failed, bad response.")
 
 proc proxyHandshake(session: HttpSessionRef, ha: HttpAddress, transp: StreamTransport): Future[HttpClientConnectionRef] {.async.} =
+  template closeTransp() =
+    if not transp.closed:
+      await transp.closeWait()
   return case session.proxy.kind:
     of Socks5:
       # socks5 handshake to server
@@ -681,11 +684,11 @@ proc proxyHandshake(session: HttpSessionRef, ha: HttpAddress, transp: StreamTran
         # the "best" auth supported gets choosen by the server!
         methods = {NO_AUTHENTICATION_REQUIRED, USERNAME_PASSWORD}
         ):
-        await transp.closeWait()
+        closeTransp()
         raiseHttpConnectionError("Socks5 handshake failed.")
       # connect request to end host
       if not await transp.doSocksConnect(ha.hostname, Port ha.port):
-        await transp.closeWait()
+        closeTransp()
         raiseHttpConnectionError("Socks5 connection failed.")
       HttpClientConnectionRef.new(session, ha, transp)
     of Tls:
