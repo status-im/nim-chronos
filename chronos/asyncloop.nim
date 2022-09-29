@@ -214,11 +214,8 @@ type
     idlers*: Deque[AsyncCallback]
     trackers*: Table[string, TrackerBase]
 
-proc sentinelCallbackImpl(arg: pointer) {.gcsafe, raises: [Defect].} =
-  raiseAssert "Sentinel callback MUST not be scheduled"
-
 const
-  SentinelCallback = AsyncCallback(function: sentinelCallbackImpl,
+  SentinelCallback = AsyncCallback(function: nil,
                                    udata: nil)
 
 proc isSentinel(acb: AsyncCallback): bool {.raises: [Defect].} =
