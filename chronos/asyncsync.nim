@@ -722,6 +722,15 @@ proc unregister*(ab: AsyncEventQueue, key: EventQueueKey) {.
     ab.readers.delete(index)
     ab.compact()
 
+proc resetRegistration*(ab: AsyncEventQueue, key: EventQueueKey) {.raises: [Defect].} =
+  let index = ab.getReaderIndex(key)
+  if index >= 0:
+    ab.unregister(key)
+    let reader = EventQueueReader(key: key,
+                                  offset: ab.offset + len(ab.queue),
+                                  overflow: false)
+    ab.readers.add(reader)
+
 proc close*(ab: AsyncEventQueue) {.raises: [Defect].} =
   for reader in ab.readers.items():
     if not(isNil(reader.waiter)) and not(reader.waiter.finished()):
