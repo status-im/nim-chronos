@@ -1488,16 +1488,25 @@ proc redirect*(request: HttpClientRequestRef,
     res.redirectCount = redirectCount
     ok(res)
 
-proc fetchOnce*(request: HttpClientRequestRef): Future[HttpResponseTuple] {.
+proc fetchOnce[T](request: HttpClientRequestRef): Future[T] {.
      async.} =
   var response: HttpClientResponseRef
   try:
+    var
+      buffer: seq[byte]
+      status: int
     response = await request.send()
-    let buffer = await response.getBodyBytes()
-    let status = response.status
-    await response.closeWait()
-    response = nil
-    return (status, buffer, @[])
+    when T is HttpResponseTuple:
+      buffer = await response.getBodyBytes()
+      status = response.status
+    result =
+          when T is HttpClientResponseRef:
+            response
+          else:
+            await response.closeWait()
+            response = nil
+            (status, buffer, @[])
+    return
   except HttpError as exc:
     if not(isNil(response)): await response.closeWait()
     raise exc
@@ -1505,14 +1514,11 @@ proc fetchOnce*(request: HttpClientRequestRef): Future[HttpResponseTuple] {.
     if not(isNil(response)): await response.closeWait()
     raise exc
 
-proc fetch*(request: HttpClientRequestRef, followRedirects=false): Future[HttpResponseTuple] {.
+proc fetchImpl[T](request: HttpClientRequestRef): Future[T] {.
      async.} =
   ## Fetch ``request``.
   ##
   ## This procedure supports HTTP redirections.
-
-  if not followRedirects:
-    return await fetchOnce(request)
 
   var
     request = request
@@ -1546,13 +1552,22 @@ proc fetch*(request: HttpClientRequestRef, followRedirects=false): Future[HttpRe
         request = redirect
         redirect = nil
       else:
-        let data = await response.getBodyBytes()
-        let code = response.status
-        await response.closeWait()
-        response = nil
+        var
+          data: seq[byte]
+          code: int
+
+        when T is HttpResponseTuple:
+          data = await response.getBodyBytes()
+          code = response.status
+          response = nil
+          await response.closeWait()
+
         await request.closeWait()
         request = nil
-        return (code, data, redirectUrls)
+        result =
+          when T is HttpClientResponseRef: response
+          else: (code, data, redirectUrls)
+        return
     except CancelledError as exc:
       if not(isNil(response)): await closeWait(response)
       if not(isNil(request)): await closeWait(request)
@@ -1563,6 +1578,19 @@ proc fetch*(request: HttpClientRequestRef, followRedirects=false): Future[HttpRe
       if not(isNil(request)): await closeWait(request)
       if not(isNil(redirect)): await closeWait(redirect)
       raise exc
+
+template fetchRedir[T](request: HttpClientRequestRef, followRedirects: bool): untyped =
+  if followRedirects:
+    fetchImpl[T](request)
+  else:
+    fetchOnce[T](request)
+
+template fetch*(request: HttpClientRequestRef, raw: static[bool] = false, followRedirects: bool = true): untyped =
+  when raw:
+    fetchRedir[HttpClientResponseRef](request, followRedirects)
+  else:
+    fetchRedir[HttpResponseTuple](request, followRedirects)
+
 
 proc fetch*(session: HttpSessionRef, url: Uri): Future[HttpResponseTuple] {.async.} =
   ## Fetch resource pointed by ``url`` using HTTP GET method and ``session``
