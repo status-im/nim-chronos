@@ -834,24 +834,30 @@ proc releaseConnection(session: HttpSessionRef,
   let removeConnection =
     case connection.state
     of HttpClientConnectionState.ResponseBodyReceived:
-      if HttpClientConnectionFlag.KeepAlive in connection.flags:
-        # HTTP response body has been received and "Connection: keep-alive" is
-        # present in response headers.
-        false
-      else:
-        # HTTP response body has been received, but "Connection: keep-alive" is
-        # not present or not supported.
+      if HttpClientFlag.NewConnectionAlways in session.flags:
         true
+      else:
+        if HttpClientConnectionFlag.KeepAlive in connection.flags:
+          # HTTP response body has been received and "Connection: keep-alive"
+          # is present in response headers.
+          false
+        else:
+          # HTTP response body has been received, but "Connection: keep-alive"
+          # is not present or not supported.
+          true
     of HttpClientConnectionState.ResponseHeadersReceived:
-      if (HttpClientConnectionFlag.NoBody in connection.flags) and
-         (HttpClientConnectionFlag.KeepAlive in connection.flags):
-        # HTTP response headers received with an empty response body and
-        # "Connection: keep-alive" is present in response headers.
-        false
-      else:
-        # HTTP response body is not received or "Connection: keep-alive" is not
-        # present or not supported.
+      if HttpClientFlag.NewConnectionAlways in session.flags:
         true
+      else:
+        if (HttpClientConnectionFlag.NoBody in connection.flags) and
+           (HttpClientConnectionFlag.KeepAlive in connection.flags):
+          # HTTP response headers received with an empty response body and
+          # "Connection: keep-alive" is present in response headers.
+          false
+        else:
+          # HTTP response body is not received or "Connection: keep-alive" is
+          # not present or not supported.
+          true
     else:
       # Connection not in proper state.
       true
