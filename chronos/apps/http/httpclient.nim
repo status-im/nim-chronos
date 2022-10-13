@@ -67,7 +67,8 @@ type
     Custom                    ## None of the above
 
   HttpClientRequestFlag* {.pure.} = enum
-    CloseConnection,          ## Send `Connection: close` in request
+    DedicatedConnection,      ## Create new HTTP connection for request
+    CloseConnection           ## Send `Connection: close` in request
 
   HttpClientConnectionFlag* {.pure.} = enum
     Request,                  ## Connection has pending request
@@ -110,6 +111,7 @@ type
     headersTimeout*: Duration
     connectionBufferSize*: int
     maxConnections*: int
+    connectionsCount*: int
     flags*: HttpClientFlags
 
   HttpAddress* = object
@@ -581,11 +583,14 @@ proc connect(session: HttpSessionRef,
   # If all attempts to connect to the remote host have failed.
   raiseHttpConnectionError("Could not connect to remote host")
 
-proc acquireConnection(session: HttpSessionRef,
-                       ha: HttpAddress): Future[HttpClientConnectionRef] {.
-     async.} =
+proc acquireConnection(
+       session: HttpSessionRef,
+       ha: HttpAddress,
+       flags: set[HttpClientRequestFlag]
+     ): Future[HttpClientConnectionRef] {.async.} =
   ## Obtain connection from ``session`` or establish a new one.
-  if HttpClientFlag.NewConnectionAlways in session.flags:
+  if (HttpClientFlag.NewConnectionAlways in session.flags) or
+     (HttpClientRequestFlag.DedicatedConnection in flags):
     var default: seq[HttpClientConnectionRef]
     let res =
       try:
@@ -594,6 +599,7 @@ proc acquireConnection(session: HttpSessionRef,
         raiseHttpConnectionError("Connection timed out")
     res[].state = HttpClientConnectionState.Acquired
     session.connections.mgetOrPut(ha.id, default).add(res)
+    inc(session.connectionsCount)
     return res
   else:
     let conn =
@@ -620,12 +626,22 @@ proc acquireConnection(session: HttpSessionRef,
           raiseHttpConnectionError("Connection timed out")
       res[].state = HttpClientConnectionState.Acquired
       session.connections.mgetOrPut(ha.id, default).add(res)
+      inc(session.connectionsCount)
       return res
 
 proc removeConnection(session: HttpSessionRef,
                       conn: HttpClientConnectionRef) {.async.} =
-  session.connections.withValue(conn.remoteHostname, connections):
-    connections[].keepItIf(it != conn)
+  let removeHost =
+    block:
+      var res = false
+      session.connections.withValue(conn.remoteHostname, connections):
+        connections[].keepItIf(it != conn)
+        if len(connections[]) == 0:
+          res = true
+      res
+  if removeHost:
+    session.connections.del(conn.remoteHostname)
+  dec(session.connectionsCount)
   await conn.closeWait()
 
 proc releaseConnection(session: HttpSessionRef,
@@ -807,7 +823,11 @@ proc prepareResponse(request: HttpClientRequestRef, data: openArray[byte]
   res.connection.state = HttpClientConnectionState.ResponseHeadersReceived
   if nobodyFlag:
     res.connection.flags.incl(HttpClientConnectionFlag.NoBody)
-  if connectionFlag:
+  let newConnectionAlways =
+    HttpClientFlag.NewConnectionAlways in request.session.flags
+  let closeConnection =
+    HttpClientRequestFlag.CloseConnection in request.flags
+  if connectionFlag and not(newConnectionAlways) and not(closeConnection):
     res.connection.flags.incl(HttpClientConnectionFlag.KeepAlive)
   res.connection.flags.incl(HttpClientConnectionFlag.Response)
   trackHttpClientResponse(res)
@@ -994,7 +1014,7 @@ proc send*(request: HttpClientRequestRef): Future[HttpClientResponseRef] {.
            "Request's state is " & $request.state)
   let connection =
     try:
-      await request.session.acquireConnection(request.address)
+      await request.session.acquireConnection(request.address, request.flags)
     except CancelledError as exc:
       request.setError(newHttpInterruptError())
       raise exc
@@ -1045,7 +1065,7 @@ proc open*(request: HttpClientRequestRef): Future[HttpBodyWriter] {.
            "Request should not have static body content (len(buffer) == 0)")
   let connection =
     try:
-      await request.session.acquireConnection(request.address)
+      await request.session.acquireConnection(request.address, request.flags)
     except CancelledError as exc:
       request.setError(newHttpInterruptError())
       raise exc
