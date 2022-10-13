@@ -641,8 +641,8 @@ proc removeConnection(session: HttpSessionRef,
       res
   if removeHost:
     session.connections.del(conn.remoteHostname)
-  await conn.closeWait()
   dec(session.connectionsCount)
+  await conn.closeWait()
 
 proc releaseConnection(session: HttpSessionRef,
                        connection: HttpClientConnectionRef) {.async.} =
