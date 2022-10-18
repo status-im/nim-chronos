@@ -857,14 +857,26 @@ proc prepareResponse(request: HttpClientRequestRef, data: openArray[byte]
   let connectionFlag =
     block:
       case resp.version
-      of HttpVersion11, HttpVersion20:
+      of HttpVersion11:
+        # Keeping a connection open is the default on HTTP/1.1 requests.
+        # https://www.rfc-editor.org/rfc/rfc2068.html#section-19.7.1
         let header = toLowerAscii(headers.getString(ConnectionHeader))
         if header == "close":
           false
         else:
           true
-      else:
+      of HttpVersion10:
+        # This is the default on HTTP/1.0 requests.
         false
+      else:
+        # HTTP/2 does not use the Connection header field (Section 7.6.1 of
+        # [HTTP]) to indicate connection-specific header fields.
+        # https://httpwg.org/specs/rfc9113.html#rfc.section.8.2.2
+        #
+        # HTTP/3 does not use the Connection header field to indicate
+        # connection-specific fields;
+        # https://httpwg.org/specs/rfc9114.html#rfc.section.4.2
+        true
 
   let contentType =
     block:
