@@ -22,6 +22,9 @@ const
     ## Timeout for connecting to host (12 sec)
   HttpHeadersTimeout* = 120.seconds
     ## Timeout for receiving response headers (120 sec)
+  HttpConnectionIdleTimeout* = 120.seconds
+    ## Time after which idle connections are removed from the HttpSession's
+    ## connections pool (120 sec)
   HttpMaxRedirections* = 10
     ## Maximum number of Location redirections.
   HttpClientConnectionTrackerName* = "httpclient.connection"
@@ -100,6 +103,7 @@ type
     error*: ref HttpError
     remoteHostname*: string
     flags*: set[HttpClientConnectionFlag]
+    timestamp*: Moment
 
   HttpClientConnectionRef* = ref HttpClientConnection
 
@@ -109,6 +113,7 @@ type
     maxRedirections*: int
     connectTimeout*: Duration
     headersTimeout*: Duration
+    idleTimeout*: Duration
     connectionBufferSize*: int
     maxConnections*: int
     connectionsCount*: int
@@ -140,6 +145,8 @@ type
     buffer*: seq[byte]
     writer*: HttpBodyWriter
     redirectCount: int
+    timestamp*: Moment
+    duration*: Duration
 
   HttpClientRequestRef* = ref HttpClientRequest
 
@@ -160,6 +167,8 @@ type
     transferEncoding*: set[TransferEncodingFlags]
     contentLength*: uint64
     contentType*: Opt[ContentTypeData]
+    timestamp*: Moment
+    duration*: Duration
 
   HttpClientResponseRef* = ref HttpClientResponse
 
@@ -284,13 +293,40 @@ template checkClosed(reqresp: untyped): untyped =
     reqresp.setError(e)
     raise e
 
+template setTimestamp(conn: HttpClientConnectionRef,
+                      moment: Moment): untyped =
+  if not(isNil(conn)):
+    conn.timestamp = moment
+
+template setTimestamp(
+           reqresp: HttpClientRequestRef|HttpClientRequestRef
+         ): untyped =
+  if not(isNil(reqresp)):
+    let timestamp = Moment.now()
+    reqresp.timestamp = timestamp
+    reqresp.connection.setTimestamp(timestamp)
+
+template setTimestamp(resp: HttpClientResponseRef, moment: Moment): untyped =
+  if not(isNil(resp)):
+    resp.timestamp = moment
+    resp.connection.setTimestamp(moment)
+
+template setDuration(
+           reqresp: HttpClientRequestRef|HttpClientResponseRef
+         ): untyped =
+  if not(isNil(reqresp)):
+    let timestamp = Moment.now()
+    reqresp.duration = timestamp - reqresp.timestamp
+    reqresp.connection.setTimestamp(timestamp)
+
 proc new*(t: typedesc[HttpSessionRef],
           flags: HttpClientFlags = {},
           maxRedirections = HttpMaxRedirections,
           connectTimeout = HttpConnectTimeout,
           headersTimeout = HttpHeadersTimeout,
           connectionBufferSize = DefaultStreamBufferSize,
-          maxConnections = -1): HttpSessionRef {.
+          maxConnections = -1,
+          idleTimeout = HttpConnectionIdleTimeout): HttpSessionRef {.
      raises: [Defect] .} =
   ## Create new HTTP session object.
   ##
@@ -305,6 +341,7 @@ proc new*(t: typedesc[HttpSessionRef],
     headersTimeout: headersTimeout,
     connectionBufferSize: connectionBufferSize,
     maxConnections: maxConnections,
+    idleTimeout: idleTimeout,
     connections: initTable[string, seq[HttpClientConnectionRef]]()
   )
 
@@ -583,6 +620,31 @@ proc connect(session: HttpSessionRef,
   # If all attempts to connect to the remote host have failed.
   raiseHttpConnectionError("Could not connect to remote host")
 
+template isReady(conn: HttpClientConnectionRef): bool =
+  (conn.state == HttpClientConnectionState.Ready) and
+  (HttpClientConnectionFlag.KeepAlive in conn.flags) and
+  (HttpClientConnectionFlag.Request notin conn.flags) and
+  (HttpClientConnectionFlag.Response notin conn.flags)
+
+template isIdle(conn: HttpClientConnectionRef, timestamp: Moment,
+                timeout: Duration): bool =
+  (timestamp - conn.timestamp) >= timeout
+
+proc removeConnection(session: HttpSessionRef,
+                      conn: HttpClientConnectionRef) {.async.} =
+  let removeHost =
+    block:
+      var res = false
+      session.connections.withValue(conn.remoteHostname, connections):
+        connections[].keepItIf(it != conn)
+        if len(connections[]) == 0:
+          res = true
+      res
+  if removeHost:
+    session.connections.del(conn.remoteHostname)
+  dec(session.connectionsCount)
+  await conn.closeWait()
+
 proc acquireConnection(
        session: HttpSessionRef,
        ha: HttpAddress,
@@ -604,18 +666,35 @@ proc acquireConnection(
   else:
     let conn =
       block:
-        let conns = session.connections.getOrDefault(ha.id)
-        if len(conns) > 0:
-          var res: HttpClientConnectionRef = nil
-          for item in conns:
-            if item.state == HttpClientConnectionState.Ready:
-              res = item
-              break
-          res
-        else:
-          nil
+        var idleConnections: seq[HttpClientConnectionRef]
+        let
+          timestamp = Moment.now()
+          res =
+            block:
+              var cres: HttpClientConnectionRef = nil
+              session.connections.withValue(ha.id, connections):
+                for connection in connections[]:
+                  if connection.isReady():
+                    if connection.isIdle(timestamp, session.idleTimeout):
+                      idleConnections.add(connection)
+                    else:
+                      if isNil(cres): cres = connection
+              cres
+
+        if not(isNil(res)):
+          # We mark connection as acquired to avoid race, because we need to
+          # prune idle connections.
+          res.state = HttpClientConnectionState.Acquired
+        if len(idleConnections) > 0:
+          # Closing connections which was idle for`session.idleTimeout`
+          # time.
+          var pending: seq[Future[void]]
+          for connection in idleConnections:
+            pending.add(session.removeConnection(connection))
+          await allFutures(pending)
+        res
+
     if not(isNil(conn)):
-      conn[].state = HttpClientConnectionState.Acquired
       return conn
     else:
       var default: seq[HttpClientConnectionRef]
@@ -628,21 +707,6 @@ proc acquireConnection(
       session.connections.mgetOrPut(ha.id, default).add(res)
       inc(session.connectionsCount)
       return res
-
-proc removeConnection(session: HttpSessionRef,
-                      conn: HttpClientConnectionRef) {.async.} =
-  let removeHost =
-    block:
-      var res = false
-      session.connections.withValue(conn.remoteHostname, connections):
-        connections[].keepItIf(it != conn)
-        if len(connections[]) == 0:
-          res = true
-      res
-  if removeHost:
-    session.connections.del(conn.remoteHostname)
-  dec(session.connectionsCount)
-  await conn.closeWait()
 
 proc releaseConnection(session: HttpSessionRef,
                        connection: HttpClientConnectionRef) {.async.} =
@@ -676,7 +740,9 @@ proc releaseConnection(session: HttpSessionRef,
     await session.removeConnection(connection)
   else:
     connection.state = HttpClientConnectionState.Ready
-    connection.flags = {}
+    connection.flags.excl({HttpClientConnectionFlag.Request,
+                           HttpClientConnectionFlag.Response,
+                           HttpClientConnectionFlag.NoBody})
 
 proc releaseConnection(request: HttpClientRequestRef) {.async.} =
   let
@@ -793,10 +859,10 @@ proc prepareResponse(request: HttpClientRequestRef, data: openArray[byte]
       case resp.version
       of HttpVersion11, HttpVersion20:
         let header = toLowerAscii(headers.getString(ConnectionHeader))
-        if header == "keep-alive":
-          true
-        else:
+        if header == "close":
           false
+        else:
+          true
       else:
         false
 
@@ -836,22 +902,27 @@ proc prepareResponse(request: HttpClientRequestRef, data: openArray[byte]
 proc getResponse(req: HttpClientRequestRef): Future[HttpClientResponseRef] {.
      async.} =
   var buffer: array[HttpMaxHeadersSize, byte]
-  let bytesRead =
-    try:
-      await req.connection.reader.readUntil(addr buffer[0],
-                                            len(buffer), HeadersMark).wait(
-                                            req.session.headersTimeout)
-    except CancelledError as exc:
-      raise exc
-    except AsyncTimeoutError:
-      raiseHttpReadError("Reading response headers timed out")
-    except AsyncStreamError:
-      raiseHttpReadError("Could not read response headers")
+  let timestamp = Moment.now()
+  req.connection.setTimestamp(timestamp)
+  let
+    bytesRead =
+      try:
+        await req.connection.reader.readUntil(addr buffer[0],
+                                              len(buffer), HeadersMark).wait(
+                                              req.session.headersTimeout)
+      except CancelledError as exc:
+        raise exc
+      except AsyncTimeoutError:
+        raiseHttpReadError("Reading response headers timed out")
+      except AsyncStreamError:
+        raiseHttpReadError("Could not read response headers")
 
   let response = prepareResponse(req, buffer.toOpenArray(0, bytesRead - 1))
   if response.isErr():
     raiseHttpProtocolError(response.error())
-  return response.get()
+  let res = response.get()
+  res.setTimestamp(timestamp)
+  return res
 
 proc new*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
           ha: HttpAddress, meth: HttpMethod = MethodGet,
@@ -1029,6 +1100,7 @@ proc send*(request: HttpClientRequestRef): Future[HttpClientResponseRef] {.
     let headers = request.prepareRequest()
     request.connection.state = HttpClientConnectionState.RequestHeadersSending
     request.state = HttpReqRespState.Open
+    request.setTimestamp()
     await request.connection.writer.write(headers)
     request.connection.state = HttpClientConnectionState.RequestHeadersSent
     request.connection.state = HttpClientConnectionState.RequestBodySending
@@ -1036,10 +1108,13 @@ proc send*(request: HttpClientRequestRef): Future[HttpClientResponseRef] {.
       await request.connection.writer.write(request.buffer)
     request.connection.state = HttpClientConnectionState.RequestBodySent
     request.state = HttpReqRespState.Finished
+    request.setDuration()
   except CancelledError as exc:
+    request.setDuration()
     request.setError(newHttpInterruptError())
     raise exc
   except AsyncStreamError:
+    request.setDuration()
     let error = newHttpWriteError("Could not send request headers")
     request.setError(error)
     raise error
@@ -1079,13 +1154,16 @@ proc open*(request: HttpClientRequestRef): Future[HttpBodyWriter] {.
   try:
     let headers = request.prepareRequest()
     request.connection.state = HttpClientConnectionState.RequestHeadersSending
+    request.setTimestamp()
     await request.connection.writer.write(headers)
     request.connection.state = HttpClientConnectionState.RequestHeadersSent
   except CancelledError as exc:
+    request.setDuration()
     request.setError(newHttpInterruptError())
     raise exc
   except AsyncStreamError:
     let error = newHttpWriteError("Could not send request headers")
+    request.setDuration()
     request.setError(error)
     raise error
 
@@ -1123,6 +1201,7 @@ proc finish*(request: HttpClientRequestRef): Future[HttpClientResponseRef] {.
            "Body writer instance must be closed before finish(request) call")
   request.state = HttpReqRespState.Finished
   request.connection.state = HttpClientConnectionState.RequestBodySent
+  request.setDuration()
   let response =
     try:
       await request.getResponse()
@@ -1190,6 +1269,7 @@ proc finish*(response: HttpClientResponseRef) {.async.} =
              "Body reader instance must be closed before finish(response) call")
     response.connection.state = HttpClientConnectionState.ResponseBodyReceived
     response.state = HttpReqRespState.Finished
+    response.setDuration()
 
 proc getBodyBytes*(response: HttpClientResponseRef): Future[seq[byte]] {.
      async.} =
