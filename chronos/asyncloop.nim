@@ -417,7 +417,7 @@ when defined(windows):
     ## (Unix) for the specified dispatcher.
     return disp.ioPort
 
-  proc closeIoHandler(disp: PDispatcher): Handle {.raises: [Defect, OSError].} =
+  proc closeIoHandler(disp: PDispatcher) {.raises: [Defect, OSError].} =
     disp.ioPort.closeHandle()
 
   proc newDispatcher*(): PDispatcher {.raises: [Defect, CatchableError].} =
