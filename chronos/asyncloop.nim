@@ -445,6 +445,9 @@ when defined(windows):
     ## (Unix) for the specified dispatcher.
     return disp.ioPort
 
+  proc closeIoHandler(disp: PDispatcher): Handle {.raises: [Defect, OSError].} =
+    disp.ioPort.closeHandle()
+
   proc register*(fd: AsyncFD) {.raises: [Defect, CatchableError].} =
     ## Register file descriptor ``fd`` in thread's dispatcher.
     let loop = getThreadDispatcher()
@@ -617,6 +620,9 @@ elif unixPlatform:
   proc getIoHandler*(disp: PDispatcher): Selector[SelectorData] =
     ## Returns system specific OS queue.
     return disp.selector
+
+  proc closeIoHandler(disp: PDispatcher) {.raises: [Defect, OSError].} =
+    disp.selector.close()
 
   proc register*(fd: AsyncFD) {.raises: [Defect, CatchableError].} =
     ## Register file descriptor ``fd`` in thread's dispatcher.
@@ -828,7 +834,8 @@ else:
 proc setThreadDispatcher*(disp: PDispatcher) =
   ## Set current thread's dispatcher instance to ``disp``.
   if not gDisp.isNil:
-    doAssert gDisp.callbacks.len == 0
+    # Sentinel can be present
+    doAssert gDisp.callbacks.len <= 1
   gDisp = disp
 
 proc getThreadDispatcher*(): PDispatcher =
@@ -839,6 +846,11 @@ proc getThreadDispatcher*(): PDispatcher =
     except CatchableError as exc:
       raiseAsDefect exc, "Cannot create dispatcher"
   gDisp
+
+proc closeThreadDispatcher*() {.raises: [Defect, CatchableError].} =
+  if gDisp.isNil: return
+  gDisp.closeIoHandler()
+  setThreadDispatcher(nil)
 
 proc setGlobalDispatcher*(disp: PDispatcher) {.
       gcsafe, deprecated: "Use setThreadDispatcher() instead".} =
