@@ -446,8 +446,8 @@ when defined(windows):
     return disp.ioPort
 
   proc closeIoHandler(disp: PDispatcher) {.raises: [Defect, OSError].} =
-    if not disp.ioPort.closeHandle():
-      raiseOSError(osLastError)
+    if disp.ioPort.closeHandle() == 0:
+      raiseOSError(osLastError())
 
   proc register*(fd: AsyncFD) {.raises: [Defect, CatchableError].} =
     ## Register file descriptor ``fd`` in thread's dispatcher.
