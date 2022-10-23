@@ -412,18 +412,9 @@ when defined(windows):
     loop.transmitFile = cast[WSAPROC_TRANSMITFILE](funcPointer)
     close(sock)
 
-  proc getIoHandler*(disp: PDispatcher): Handle =
-    ## Returns the underlying IO Completion Port handle (Windows) or selector
-    ## (Unix) for the specified dispatcher.
-    return disp.ioPort
-
-  proc closeIoHandler(disp: PDispatcher) {.raises: [Defect, OSError].} =
-    disp.ioPort.closeHandle()
-
   proc newDispatcher*(): PDispatcher {.raises: [Defect, CatchableError].} =
     ## Creates a new Dispatcher instance.
-    var res: PDispatcher
-    res.new(closeIoHandler)
+    var res = PDispatcher()
     res.ioPort = createIoCompletionPort(INVALID_HANDLE_VALUE, 0, 0, 1)
     when declared(initHashSet):
       # After 0.20.0 Nim's stdlib version
@@ -448,6 +439,15 @@ when defined(windows):
 
   proc setThreadDispatcher*(disp: PDispatcher) {.gcsafe, raises: [Defect].}
   proc getThreadDispatcher*(): PDispatcher {.gcsafe, raises: [Defect].}
+
+  proc getIoHandler*(disp: PDispatcher): Handle =
+    ## Returns the underlying IO Completion Port handle (Windows) or selector
+    ## (Unix) for the specified dispatcher.
+    return disp.ioPort
+
+  proc closeIoHandler(disp: PDispatcher) {.raises: [Defect, OSError].} =
+    if not disp.ioPort.closeHandle():
+      raiseOSError(osLastError)
 
   proc register*(fd: AsyncFD) {.raises: [Defect, CatchableError].} =
     ## Register file descriptor ``fd`` in thread's dispatcher.
@@ -595,17 +595,9 @@ elif unixPlatform:
   proc initAPI(disp: PDispatcher) {.raises: [Defect, CatchableError].} =
     discard
 
-  proc getIoHandler*(disp: PDispatcher): Selector[SelectorData] =
-    ## Returns system specific OS queue.
-    return disp.selector
-
-  proc closeIoHandler(disp: PDispatcher) {.raises: [Defect, OSError].} =
-    disp.selector.close()
-
   proc newDispatcher*(): PDispatcher {.raises: [Defect, CatchableError].} =
     ## Create new dispatcher.
-    var res: PDispatcher
-    res.new(closeIoHandler)
+    var res = PDispatcher()
     res.selector = newSelector[SelectorData]()
     when declared(initHeapQueue):
       # After 0.20.0 Nim's stdlib version
@@ -625,6 +617,13 @@ elif unixPlatform:
 
   proc setThreadDispatcher*(disp: PDispatcher) {.gcsafe, raises: [Defect].}
   proc getThreadDispatcher*(): PDispatcher {.gcsafe, raises: [Defect].}
+
+  proc getIoHandler*(disp: PDispatcher): Selector[SelectorData] =
+    ## Returns system specific OS queue.
+    return disp.selector
+
+  proc closeIoHandler(disp: PDispatcher) {.raises: [Defect, OSError].} =
+    disp.selector.close()
 
   proc register*(fd: AsyncFD) {.raises: [Defect, CatchableError].} =
     ## Register file descriptor ``fd`` in thread's dispatcher.
