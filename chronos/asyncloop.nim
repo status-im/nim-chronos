@@ -850,8 +850,11 @@ proc getThreadDispatcher*(): PDispatcher =
 
 proc closeThreadDispatcher*() {.raises: [Defect, CatchableError].} =
   if gDisp.isNil: return
-  gDisp.closeIoHandler()
+  let prevDisp = gDisp
+  while gDisp.callbacks.len > 1:
+    poll()
   setThreadDispatcher(nil)
+  prevDisp.closeIoHandler()
 
 proc setGlobalDispatcher*(disp: PDispatcher) {.
       gcsafe, deprecated: "Use setThreadDispatcher() instead".} =
