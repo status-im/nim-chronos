@@ -50,6 +50,10 @@ proc tryConsume*(bucket: TokenBucket, tokens: int): bool =
   ## If `tokens` are available, consume them,
   ## Otherwhise, return false.
 
+  if bucket.budget >= tokens:
+    bucket.budget -= tokens
+    return true
+
   bucket.update()
 
   if bucket.budget >= tokens:
