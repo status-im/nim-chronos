@@ -6,13 +6,13 @@
 #              Licensed under either of
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
-import std/[tables, options, uri, strutils]
+import std/[tables, uri, strutils]
 import stew/[results, base10], httputils
 import ../../asyncloop, ../../asyncsync
 import ../../streams/[asyncstream, boundstream, chunkstream]
 import httptable, httpcommon, multipart
 export asyncloop, asyncsync, httptable, httpcommon, httputils, multipart,
-       asyncstream, boundstream, chunkstream, uri, tables, options, results
+       asyncstream, boundstream, chunkstream, uri, tables, results
 
 type
   HttpServerFlags* {.pure.} = enum
@@ -67,7 +67,7 @@ type
     address*: TransportAddress
     # semaphore*: AsyncSemaphore
     maxConnections*: int
-    backlogSize: int
+    backlogSize*: int
     baseUri*: Uri
     serverIdent*: string
     flags*: set[HttpServerFlags]
@@ -75,12 +75,12 @@ type
     connections*: Table[string, Future[void]]
     acceptLoop*: Future[void]
     lifetime*: Future[void]
-    headersTimeout: Duration
-    bufferSize: int
-    maxHeadersSize: int
-    maxRequestBodySize: int
-    processCallback: HttpProcessCallback
-    createConnCallback: HttpConnectionCallback
+    headersTimeout*: Duration
+    bufferSize*: int
+    maxHeadersSize*: int
+    maxRequestBodySize*: int
+    processCallback*: HttpProcessCallback
+    createConnCallback*: HttpConnectionCallback
 
   HttpServerRef* = ref HttpServer
 
@@ -88,7 +88,7 @@ type
     state*: HttpState
     headers*: HttpTable
     query*: HttpTable
-    postTable: Option[HttpTable]
+    postTable: Opt[HttpTable]
     rawPath*: string
     uri*: Uri
     scheme*: string
@@ -97,9 +97,10 @@ type
     contentEncoding*: set[ContentEncodingFlags]
     transferEncoding*: set[TransferEncodingFlags]
     requestFlags*: set[HttpRequestFlags]
-    contentLength: int
+    contentLength*: int
+    contentTypeData*: Opt[ContentTypeData]
     connection*: HttpConnectionRef
-    response*: Option[HttpResponseRef]
+    response*: Opt[HttpResponseRef]
 
   HttpRequestRef* = ref HttpRequest
 
@@ -135,46 +136,6 @@ proc init(htype: typedesc[HttpProcessError], error: HttpServerError,
           code: HttpCode): HttpProcessError {.raises: [Defect].} =
   HttpProcessError(error: error, exc: exc, remote: remote, code: code)
 
-proc init*(value: var HttpServer,
-           address: TransportAddress,
-           server: StreamServer,
-           processCallback: HttpProcessCallback,
-           createConnCallback: HttpConnectionCallback,
-           serverUri: Uri,
-           serverFlags: set[HttpServerFlags] = {},
-           socketFlags: set[ServerFlags] = {ReuseAddr},
-           serverIdent = "",
-           maxConnections: int = -1,
-           bufferSize: int = 4096,
-           backlogSize: int = 100,
-           httpHeadersTimeout = 10.seconds,
-           maxHeadersSize: int = 8192,
-           maxRequestBodySize: int = 1_048_576) =
-
-  value = HttpServer(
-    address: address,
-    instance: server,
-    processCallback: processCallback,
-    createConnCallback: createConnCallback,
-    baseUri: serverUri,
-    serverIdent: serverIdent,
-    flags: serverFlags,
-    socketFlags: socketFlags,
-    maxConnections: maxConnections,
-    bufferSize: bufferSize,
-    backlogSize: backlogSize,
-    headersTimeout: httpHeadersTimeout,
-    maxHeadersSize: maxHeadersSize,
-    maxRequestBodySize: maxRequestBodySize,
-    # semaphore:
-    #   if maxConnections > 0:
-    #     newAsyncSemaphore(maxConnections)
-    #   else:
-    #     nil
-    lifetime: newFuture[void]("http.server.lifetime"),
-    connections: initTable[string, Future[void]]()
-  )
-
 proc createConnection(server: HttpServerRef,
                      transp: StreamTransport): Future[HttpConnectionRef] {.
      gcsafe.}
@@ -191,7 +152,8 @@ proc new*(htype: typedesc[HttpServerRef],
           backlogSize: int = 100,
           httpHeadersTimeout = 10.seconds,
           maxHeadersSize: int = 8192,
-          maxRequestBodySize: int = 1_048_576): HttpResult[HttpServerRef] =
+          maxRequestBodySize: int = 1_048_576): HttpResult[HttpServerRef] {.
+     raises: [Defect].} =
 
   let serverUri =
     if len(serverUri.hostname) > 0:
@@ -211,11 +173,29 @@ proc new*(htype: typedesc[HttpServerRef],
     except CatchableError as exc:
       return err(exc.msg)
 
-  var res = HttpServerRef()
-  res[].init(address, serverInstance, processCallback, createConnection,
-             serverUri, serverFlags, socketFlags, serverIdent, maxConnections,
-             bufferSize, backlogSize, httpHeadersTimeout, maxHeadersSize,
-             maxRequestBodySize)
+  var res = HttpServerRef(
+    address: address,
+    instance: serverInstance,
+    processCallback: processCallback,
+    createConnCallback: createConnection,
+    baseUri: serverUri,
+    serverIdent: serverIdent,
+    flags: serverFlags,
+    socketFlags: socketFlags,
+    maxConnections: maxConnections,
+    bufferSize: bufferSize,
+    backlogSize: backlogSize,
+    headersTimeout: httpHeadersTimeout,
+    maxHeadersSize: maxHeadersSize,
+    maxRequestBodySize: maxRequestBodySize,
+    # semaphore:
+    #   if maxConnections > 0:
+    #     newAsyncSemaphore(maxConnections)
+    #   else:
+    #     nil
+    lifetime: newFuture[void]("http.server.lifetime"),
+    connections: initTable[string, Future[void]]()
+  )
   ok(res)
 
 proc getResponse*(req: HttpRequestRef): HttpResponseRef {.raises: [Defect].} =
@@ -231,7 +211,7 @@ proc getResponse*(req: HttpRequestRef): HttpResponseRef {.raises: [Defect].} =
              else:
                {}
     )
-    req.response = some(resp)
+    req.response = Opt.some(resp)
     resp
   else:
     req.response.get()
@@ -345,9 +325,10 @@ proc prepareRequest(conn: HttpConnectionRef,
   # steps to reveal information about body.
   if ContentLengthHeader in request.headers:
     let length = request.headers.getInt(ContentLengthHeader)
-    if length > 0:
+    if length >= 0:
       if request.meth == MethodTrace:
         return err(Http400)
+      # Because of coversion to `int` we should avoid unexpected OverflowError.
       if length > uint64(high(int)):
         return err(Http413)
       if length > uint64(conn.server.maxRequestBodySize):
@@ -363,12 +344,14 @@ proc prepareRequest(conn: HttpConnectionRef,
   if request.hasBody():
     # If request has body, we going to understand how its encoded.
     if ContentTypeHeader in request.headers:
-      let contentType = request.headers.getString(ContentTypeHeader)
-      let tmp = strip(contentType).toLowerAscii()
-      if tmp.startsWith(UrlEncodedContentType):
+      let contentType =
+        getContentType(request.headers.getList(ContentTypeHeader)).valueOr:
+          return err(Http415)
+      if contentType == UrlEncodedContentType:
         request.requestFlags.incl(HttpRequestFlags.UrlencodedForm)
-      elif tmp.startsWith(MultipartContentType):
+      elif contentType == MultipartContentType:
         request.requestFlags.incl(HttpRequestFlags.MultipartForm)
+      request.contentTypeData = Opt.some(contentType)
 
     if ExpectHeader in request.headers:
       let expectHeader = request.headers.getString(ExpectHeader)
@@ -488,9 +471,10 @@ proc preferredContentMediaType*(acceptHeader: string): MediaType =
       MediaType.init("*", "*")
 
 proc preferredContentType*(acceptHeader: string,
-                           types: varargs[MediaType]): Result[MediaType, cstring] =
-  ## Match or obtain preferred content-type using ``Accept`` header specified by
-  ## string ``acceptHeader``.
+                           types: varargs[MediaType]
+                          ): Result[MediaType, cstring] =
+  ## Match or obtain preferred content type using ``Accept`` header specified by
+  ## string ``acceptHeader`` and server preferred content types ``types``.
   ##
   ## If ``Accept`` header is missing in client's request - ``types[0]`` or
   ## ``*/*`` value will be returned as result.
@@ -498,10 +482,14 @@ proc preferredContentType*(acceptHeader: string,
   ## If ``Accept`` header has incorrect format in client's request -
   ## ``types[0]`` or ``*/*`` value will be returned as result.
   ##
-  ## If ``Accept`` header is present and has one or more content types supported
-  ## by client, the best value will be selected from ``types`` using
-  ## quality value (weight) reported in ``Accept`` header. If client do not
-  ## support any methods in ``types`` error will be returned.
+  ## If ``Accept`` header is present in request to server and it has one or more
+  ## content types supported by client, the best value will be selected from
+  ## ``types`` using position and quality value (weight) reported in ``Accept``
+  ## header. If client do not support any methods in ``types`` error
+  ## will be returned.
+  ##
+  ## Note: Quality value (weight) for content type has priority over server's
+  ## preferred content-type.
   if len(types) == 0:
     if len(acceptHeader) == 0:
       # If `Accept` header is missing, return `*/*`.
@@ -513,10 +501,19 @@ proc preferredContentType*(acceptHeader: string,
         ok(wildCardMediaType)
       else:
         let mediaTypes = res.get().data
-        if len(mediaTypes) > 0:
-          ok(mediaTypes[0].mediaType)
-        else:
+        var
+          currentType = MediaType()
+          currentWeight = 0.0
+        # `Accept` header values array is not sorted, so we need to find value
+        # with the biggest ``q-value``.
+        for item in mediaTypes:
+          if currentWeight < item.qvalue:
+            currentType = item.mediaType
+            currentWeight = item.qvalue
+        if len(currentType.media) == 0 and len(currentType.subtype) == 0:
           ok(wildCardMediaType)
+        else:
+          ok(currentType)
   else:
     if len(acceptHeader) == 0:
       # If `Accept` header is missing, client accepts any type of content.
@@ -527,7 +524,32 @@ proc preferredContentType*(acceptHeader: string,
         # If `Accept` header is incorrect, client accepts any type of content.
         ok(types[0])
       else:
-        selectContentType(ares.get().data, types)
+        # ``maxWeight`` represents maximum possible weight value which can be
+        # obtained.
+        let maxWeight = (1.0, 0)
+        var
+          currentType = MediaType()
+          currentIndex = -1
+          currentWeight = (-1.0, 0)
+
+        for itemType in ares.get().data:
+          let preferredIndex = types.find(itemType.mediaType)
+          if preferredIndex != -1:
+            let weight = (itemType.qvalue, -preferredIndex)
+            if currentWeight < weight:
+              currentType = types[preferredIndex]
+              currentWeight = weight
+              currentIndex = preferredIndex
+
+          if currentWeight == maxWeight:
+            # There is no reason to continue search, because maximum possible
+            # weight is already achieved, so this is the best match.
+            break
+
+        if currentIndex == -1:
+          err("Preferred content type not found")
+        else:
+          ok(currentType)
 
 proc preferredContentMediaType*(request: HttpRequestRef): MediaType =
   ## Returns preferred content-type using ``Accept`` header specified by
@@ -535,7 +557,8 @@ proc preferredContentMediaType*(request: HttpRequestRef): MediaType =
   preferredContentMediaType(request.headers.getString(AcceptHeaderName))
 
 proc preferredContentType*(request: HttpRequestRef,
-                           types: varargs[MediaType]): Result[MediaType, cstring] =
+                           types: varargs[MediaType]
+                          ): Result[MediaType, cstring] =
   ## Match or obtain preferred content-type using ``Accept`` header specified by
   ## client in request ``request``.
   preferredContentType(request.headers.getString(AcceptHeaderName), types)
@@ -732,18 +755,18 @@ proc processLoop(server: HttpServerRef, transp: StreamTransport,
       break
 
     breakLoop = false
-    var lastErrorCode: Option[HttpCode]
+    var lastErrorCode: Opt[HttpCode]
 
     try:
       resp = await conn.server.processCallback(arg)
     except CancelledError:
       breakLoop = true
     except HttpCriticalError as exc:
-      lastErrorCode = some(exc.code)
+      lastErrorCode = Opt.some(exc.code)
     except HttpRecoverableError as exc:
-      lastErrorCode = some(exc.code)
+      lastErrorCode = Opt.some(exc.code)
     except CatchableError:
-      lastErrorCode = some(Http503)
+      lastErrorCode = Opt.some(Http503)
 
     if breakLoop:
       break
@@ -920,19 +943,17 @@ proc join*(server: HttpServerRef): Future[void] =
 
   retFuture
 
-proc getMultipartReader*(req: HttpRequestRef): HttpResult[MultiPartReaderRef] =
+proc getMultipartReader*(req: HttpRequestRef): HttpResult[MultiPartReaderRef] {.
+     raises: [Defect].} =
   ## Create new MultiPartReader interface for specific request.
   if req.meth in PostMethods:
     if MultipartForm in req.requestFlags:
-      let ctype = ? getContentType(req.headers.getList(ContentTypeHeader))
-      if ctype != MultipartContentType:
-        err("Content type is not supported")
-      else:
-        let boundary = ? getMultipartBoundary(
-          req.headers.getList(ContentTypeHeader)
-        )
+      if req.contentTypeData.isSome():
+        let boundary = ? getMultipartBoundary(req.contentTypeData.get())
         var stream = ? req.getBodyReader()
         ok(MultiPartReaderRef.new(stream, boundary))
+      else:
+        err("Content type is missing or invalid")
     else:
       err("Request's data is not multipart encoded")
   else:
@@ -962,7 +983,7 @@ proc post*(req: HttpRequestRef): Future[HttpTable] {.async.} =
         copyMem(addr strbody[0], addr body[0], len(body))
       for key, value in queryParams(strbody, queryFlags):
         table.add(key, value)
-      req.postTable = some(table)
+      req.postTable = Opt.some(table)
       return table
     elif MultipartForm in req.requestFlags:
       var table = HttpTable.init()
@@ -1008,7 +1029,7 @@ proc post*(req: HttpRequestRef): Future[HttpTable] {.async.} =
           await mpreader.closeWait()
           raise exc
       await mpreader.closeWait()
-      req.postTable = some(table)
+      req.postTable = Opt.some(table)
       return table
     else:
       if HttpRequestFlags.BoundBody in req.requestFlags:
@@ -1065,8 +1086,9 @@ proc prepareLengthHeaders(resp: HttpResponseRef, length: int): string {.
      raises: [Defect].}=
   if not(resp.hasHeader(DateHeader)):
     resp.setHeader(DateHeader, httpDate())
-  if not(resp.hasHeader(ContentTypeHeader)):
-    resp.setHeader(ContentTypeHeader, "text/html; charset=utf-8")
+  if length > 0:
+    if not(resp.hasHeader(ContentTypeHeader)):
+      resp.setHeader(ContentTypeHeader, "text/html; charset=utf-8")
   if not(resp.hasHeader(ContentLengthHeader)):
     resp.setHeader(ContentLengthHeader, Base10.toString(uint64(length)))
   if not(resp.hasHeader(ServerHeader)):
@@ -1323,16 +1345,34 @@ proc respond*(req: HttpRequestRef, code: HttpCode): Future[HttpResponseRef] =
   respond(req, code, "", HttpTable.init())
 
 proc redirect*(req: HttpRequestRef, code: HttpCode,
+               location: string, headers: HttpTable): Future[HttpResponseRef] =
+  ## Responds to the request with redirection to location ``location`` and
+  ## additional headers ``headers``.
+  ##
+  ## Note, ``location`` argument's value has priority over "Location" header's
+  ## value in ``headers`` argument.
+  var mheaders = headers
+  mheaders.set("location", location)
+  respond(req, code, "", mheaders)
+
+proc redirect*(req: HttpRequestRef, code: HttpCode,
+               location: Uri, headers: HttpTable): Future[HttpResponseRef] =
+  ## Responds to the request with redirection to location ``location`` and
+  ## additional headers ``headers``.
+  ##
+  ## Note, ``location`` argument's value has priority over "Location" header's
+  ## value in ``headers`` argument.
+  redirect(req, code, $location, headers)
+
+proc redirect*(req: HttpRequestRef, code: HttpCode,
                location: Uri): Future[HttpResponseRef] =
   ## Responds to the request with redirection to location ``location``.
-  let headers = HttpTable.init([("location", $location)])
-  respond(req, code, "", headers)
+  redirect(req, code, location, HttpTable.init())
 
 proc redirect*(req: HttpRequestRef, code: HttpCode,
                location: string): Future[HttpResponseRef] =
   ## Responds to the request with redirection to location ``location``.
-  let headers = HttpTable.init([("location", location)])
-  respond(req, code, "", headers)
+  redirect(req, code, location, HttpTable.init())
 
 proc responded*(req: HttpRequestRef): bool =
   ## Returns ``true`` if request ``req`` has been responded or responding.

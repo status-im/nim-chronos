@@ -24,7 +24,10 @@
 ## You can specify which timer you want to use ``-d:asyncTimer=<system/mono>``.
 const asyncTimer* {.strdefine.} = "mono"
 
-{.push raises: [Defect].}
+when (NimMajor, NimMinor) < (1, 4):
+  {.push raises: [Defect].}
+else:
+  {.push raises: [].}
 
 when defined(windows):
   when asyncTimer == "system":
@@ -302,6 +305,18 @@ const
   ZeroDuration* = Duration(value: 0'i64)
   InfiniteDuration* = Duration(value: high(int64))
 
+template high*(T: typedesc[Moment]): Moment =
+  Moment(value: high(int64))
+
+template low*(T: typedesc[Moment]): Moment =
+  Moment(value: 0)
+
+template high*(T: typedesc[Duration]): Duration =
+  Duration(value: high(int64))
+
+template low*(T: typedesc[Duration]): Duration =
+  Duration(value: 0)
+
 func nanoseconds*(v: SomeIntegerI64): Duration {.inline.} =
   ## Initialize Duration with nanoseconds value ``v``.
   result.value = int64(v)
@@ -437,6 +452,12 @@ func init*(t: typedesc[Moment], value: int64, precision: Duration): Moment =
   ## Initialize Moment with absolute time value ``value`` with precision
   ## ``precision``.
   result.value = value * precision.value
+
+func epochSeconds*(moment: Moment): int64 =
+  moment.value div Second.value
+
+func epochNanoSeconds*(moment: Moment): int64 =
+  moment.value
 
 proc fromNow*(t: typedesc[Moment], a: Duration): Moment {.inline.} =
   ## Returns moment in time which is equal to current moment + Duration.

@@ -26,11 +26,11 @@ jobs:
         include:
           - target:
               os: linux
-            builder: ubuntu-18.04
+            builder: ubuntu-20.04
             shell: bash
           - target:
               os: macos
-            builder: macos-10.15
+            builder: macos-11
             shell: bash
           - target:
               os: windows
@@ -43,7 +43,7 @@ jobs:
 
     name: '${{ matrix.target.os }}-${{ matrix.target.cpu }} (Nim ${{ matrix.branch }})'
     runs-on: ${{ matrix.builder }}
-    continue-on-error: ${{ matrix.branch == 'version-1-6' || matrix.branch == 'devel' }}
+    continue-on-error: ${{ matrix.branch == 'devel' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v2
@@ -67,6 +67,13 @@ jobs:
           EOF
           chmod 755 external/bin/gcc external/bin/g++
           echo '${{ github.workspace }}/external/bin' >> $GITHUB_PATH
+
+      - name: 'Install dependencies (macOS)'
+        if: runner.os == 'macOS' && matrix.branch == 'devel'
+        run: |
+          brew install openssl@1.1
+          ln -s $(brew --prefix)/opt/openssl/lib/libcrypto.1.1.dylib /usr/local/lib
+          ln -s $(brew --prefix)/opt/openssl/lib/libssl.1.1.dylib /usr/local/lib/
 
       - name: MSYS2 (Windows i386)
         if: runner.os == 'Windows' && matrix.target.cpu == 'i386'

@@ -7,7 +7,10 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 
-{.push raises: [Defect].}
+when (NimMajor, NimMinor) < (1, 4):
+  {.push raises: [Defect].}
+else:
+  {.push raises: [].}
 
 import ../asyncloop, ../asyncsync
 import ../transports/common, ../transports/stream
@@ -820,7 +823,7 @@ proc write*(wstream: AsyncStreamWriter, pbytes: pointer,
       except CatchableError as exc:
         raise newAsyncStreamWriteError(exc)
 
-proc write*(wstream: AsyncStreamWriter, sbytes: seq[byte],
+proc write*(wstream: AsyncStreamWriter, sbytes: sink seq[byte],
             msglen = -1) {.async.} =
   ## Write sequence of bytes ``sbytes`` of length ``msglen`` to writer
   ## stream ``wstream``.
@@ -852,8 +855,11 @@ proc write*(wstream: AsyncStreamWriter, sbytes: seq[byte],
       wstream.bytesCount = wstream.bytesCount + uint64(length)
     else:
       var item = WriteItem(kind: Sequence)
-      if not isLiteral(sbytes):
-        shallowCopy(item.dataSeq, sbytes)
+      when declared(shallowCopy):
+        if not(isLiteral(sbytes)):
+          shallowCopy(item.dataSeq, sbytes)
+        else:
+          item.dataSeq = sbytes
       else:
         item.dataSeq = sbytes
       item.size = length
@@ -869,7 +875,7 @@ proc write*(wstream: AsyncStreamWriter, sbytes: seq[byte],
       except CatchableError as exc:
         raise newAsyncStreamWriteError(exc)
 
-proc write*(wstream: AsyncStreamWriter, sbytes: string,
+proc write*(wstream: AsyncStreamWriter, sbytes: sink string,
             msglen = -1) {.async.} =
   ## Write string ``sbytes`` of length ``msglen`` to writer stream ``wstream``.
   ##
@@ -900,8 +906,11 @@ proc write*(wstream: AsyncStreamWriter, sbytes: string,
       wstream.bytesCount = wstream.bytesCount + uint64(length)
     else:
       var item = WriteItem(kind: String)
-      if not isLiteral(sbytes):
-        shallowCopy(item.dataStr, sbytes)
+      when declared(shallowCopy):
+        if not(isLiteral(sbytes)):
+          shallowCopy(item.dataStr, sbytes)
+        else:
+          item.dataStr = sbytes
       else:
         item.dataStr = sbytes
       item.size = length

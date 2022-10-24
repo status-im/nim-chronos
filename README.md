@@ -34,8 +34,10 @@ requires "chronos"
 ## Projects using `chronos`
 
 * [libp2p](https://github.com/status-im/nim-libp2p) - Peer-to-Peer networking stack implemented in many languages
+* [presto](https://github.com/status-im/nim-presto) - REST API framework
 * [Scorper](https://github.com/bung87/scorper) - Web framework
 * [2DeFi](https://github.com/gogolxdong/2DeFi) - Decentralised file system
+* [websock](https://github.com/status-im/nim-websock/) - WebSocket library with lots of features
 
 `chronos` is available in the [Nim Playground](https://play.nim-lang.org/#ix=2TpS)
 

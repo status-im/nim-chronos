@@ -8,7 +8,7 @@
 #    Apache License, version 2.0, (LICENSE-APACHEv2)
 #                MIT license (LICENSE-MIT)
 
-import std/[os, tables, strutils, heapqueue, options, deques, sequtils]
+import std/[os, tables, strutils, heapqueue, deques, sequtils]
 import stew/base10
 import ./srcloc
 export srcloc
@@ -294,6 +294,10 @@ proc cancel(future: FutureBase, loc: ptr SrcLoc): bool =
 
   future.mustCancel = true
   return true
+
+template cancel*(future: FutureBase) =
+  ## Cancel ``future``.
+  discard cancel(future, getSrcLocation())
 
 template cancel*[T](future: Future[T]) =
   ## Cancel ``future``.
@@ -823,7 +827,7 @@ proc oneValue*[T](futs: varargs[Future[T]]): Future[T] {.
 
   return retFuture
 
-proc cancelAndWait*[T](fut: Future[T]): Future[void] =
+proc cancelAndWait*(fut: FutureBase): Future[void] =
   ## Initiate cancellation process for Future ``fut`` and wait until ``fut`` is
   ## done e.g. changes its state (become completed, failed or cancelled).
   ##
@@ -845,7 +849,10 @@ proc cancelAndWait*[T](fut: Future[T]): Future[void] =
     fut.cancel()
   return retFuture
 
-proc allFutures*[T](futs: varargs[Future[T]]): Future[void] =
+proc cancelAndWait*[T](fut: Future[T]): Future[void] =
+  cancelAndWait(FutureBase(fut))
+
+proc allFutures*(futs: varargs[FutureBase]): Future[void] =
   ## Returns a future which will complete only when all futures in ``futs``
   ## will be completed, failed or canceled.
   ##
@@ -882,6 +889,19 @@ proc allFutures*[T](futs: varargs[Future[T]]): Future[void] =
     retFuture.complete()
 
   return retFuture
+
+proc allFutures*[T](futs: varargs[Future[T]]): Future[void] =
+  ## Returns a future which will complete only when all futures in ``futs``
+  ## will be completed, failed or canceled.
+  ##
+  ## If the argument is empty, the returned future COMPLETES immediately.
+  ##
+  ## On cancel all the awaited futures ``futs`` WILL NOT BE cancelled.
+  # Because we can't capture varargs[T] in closures we need to create copy.
+  var nfuts: seq[FutureBase]
+  for future in futs:
+    nfuts.add(FutureBase(future))
+  allFutures(nfuts)
 
 proc allFinished*[T](futs: varargs[Future[T]]): Future[seq[Future[T]]] =
   ## Returns a future which will complete only when all futures in ``futs``

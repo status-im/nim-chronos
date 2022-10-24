@@ -7,7 +7,10 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 
-{.push raises: [Defect].}
+when (NimMajor, NimMinor) < (1, 4):
+  {.push raises: [Defect].}
+else:
+  {.push raises: [].}
 
 import std/[net, nativesockets, os, deques]
 import ".."/[selectors2, asyncloop, handles]
@@ -768,13 +771,17 @@ proc send*(transp: DatagramTransport, pbytes: pointer,
     transp.resumeWrite()
   return retFuture
 
-proc send*(transp: DatagramTransport, msg: string, msglen = -1): Future[void] =
+proc send*(transp: DatagramTransport, msg: sink string,
+           msglen = -1): Future[void] =
   ## Send string ``msg`` using transport ``transp`` to remote destination
   ## address which was bounded on transport.
   var retFuture = newFutureStr[void]("datagram.transport.send(string)")
   transp.checkClosed(retFuture)
-  if not isLiteral(msg):
-    shallowCopy(retFuture.gcholder, msg)
+  when declared(shallowCopy):
+    if not(isLiteral(msg)):
+      shallowCopy(retFuture.gcholder, msg)
+    else:
+      retFuture.gcholder = msg
   else:
     retFuture.gcholder = msg
   let length = if msglen <= 0: len(msg) else: msglen
@@ -786,14 +793,17 @@ proc send*(transp: DatagramTransport, msg: string, msglen = -1): Future[void] =
     transp.resumeWrite()
   return retFuture
 
-proc send*[T](transp: DatagramTransport, msg: seq[T],
+proc send*[T](transp: DatagramTransport, msg: sink seq[T],
               msglen = -1): Future[void] =
   ## Send string ``msg`` using transport ``transp`` to remote destination
   ## address which was bounded on transport.
   var retFuture = newFutureSeq[void, T]("datagram.transport.send(seq)")
   transp.checkClosed(retFuture)
-  if not isLiteral(msg):
-    shallowCopy(retFuture.gcholder, msg)
+  when declared(shallowCopy):
+    if not(isLiteral(msg)):
+      shallowCopy(retFuture.gcholder, msg)
+    else:
+      retFuture.gcholder = msg
   else:
     retFuture.gcholder = msg
   let length = if msglen <= 0: (len(msg) * sizeof(T)) else: (msglen * sizeof(T))
@@ -819,13 +829,16 @@ proc sendTo*(transp: DatagramTransport, remote: TransportAddress,
   return retFuture
 
 proc sendTo*(transp: DatagramTransport, remote: TransportAddress,
-             msg: string, msglen = -1): Future[void] =
+             msg: sink string, msglen = -1): Future[void] =
   ## Send string ``msg`` using transport ``transp`` to remote destination
   ## address ``remote``.
   var retFuture = newFutureStr[void]("datagram.transport.sendTo(string)")
   transp.checkClosed(retFuture)
-  if not isLiteral(msg):
-    shallowCopy(retFuture.gcholder, msg)
+  when declared(shallowCopy):
+    if not(isLiteral(msg)):
+      shallowCopy(retFuture.gcholder, msg)
+    else:
+      retFuture.gcholder = msg
   else:
     retFuture.gcholder = msg
   let length = if msglen <= 0: len(msg) else: msglen
@@ -839,13 +852,16 @@ proc sendTo*(transp: DatagramTransport, remote: TransportAddress,
   return retFuture
 
 proc sendTo*[T](transp: DatagramTransport, remote: TransportAddress,
-                msg: seq[T], msglen = -1): Future[void] =
+                msg: sink seq[T], msglen = -1): Future[void] =
   ## Send sequence ``msg`` using transport ``transp`` to remote destination
   ## address ``remote``.
   var retFuture = newFutureSeq[void, T]("datagram.transport.sendTo(seq)")
   transp.checkClosed(retFuture)
-  if not isLiteral(msg):
-    shallowCopy(retFuture.gcholder, msg)
+  when declared(shallowCopy):
+    if not(isLiteral(msg)):
+      shallowCopy(retFuture.gcholder, msg)
+    else:
+      retFuture.gcholder = msg
   else:
     retFuture.gcholder = msg
   let length = if msglen <= 0: (len(msg) * sizeof(T)) else: (msglen * sizeof(T))
@@ -864,7 +880,10 @@ proc peekMessage*(transp: DatagramTransport, msg: var seq[byte],
   if ReadError in transp.state:
     transp.state.excl(ReadError)
     raise transp.getError()
-  shallowCopy(msg, transp.buffer)
+  when declared(shallowCopy):
+    shallowCopy(msg, transp.buffer)
+  else:
+    msg = transp.buffer
   msglen = transp.buflen
 
 proc getMessage*(transp: DatagramTransport): seq[byte] {.
