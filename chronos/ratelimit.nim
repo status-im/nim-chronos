@@ -23,18 +23,27 @@ type
     budget: int
     budgetCap: int
     lastUpdate: Moment
-    fillPerMs: int
+    fillDuration: Duration
     workFuture: Future[void]
     pendingRequests: seq[BucketWaiter]
     manuallyReplenished: AsyncEvent
 
 proc update(bucket: TokenBucket) =
+  if bucket.fillDuration.milliseconds == 0:
+    bucket.budget = min(bucket.budgetCap, bucket.budget)
+    return
+
   let
     currentTime = Moment.now()
-    timeDelta = milliseconds(currentTime - bucket.lastUpdate).int
-    replenished = bucket.fillPerMs * timeDelta
+    timeDelta = currentTime - bucket.lastUpdate
+    fillPercent = timeDelta.milliseconds.float / bucket.fillDuration.milliseconds.float
+    replenished =
+      int(bucket.budgetCap.float * fillPercent)
+    deltaFromReplenished =
+      int(bucket.fillDuration.milliseconds.float *
+      (replenished.float / bucket.budgetCap.float))
 
-  bucket.lastUpdate += timeDelta.milliseconds
+  bucket.lastUpdate += milliseconds(deltaFromReplenished)
   bucket.budget = min(bucket.budgetCap, bucket.budget + replenished)
 
 proc tryConsume*(bucket: TokenBucket, tokens: int): bool =
@@ -63,10 +72,11 @@ proc worker(bucket: TokenBucket) {.async.} =
       bucket.budget = 0
 
       let eventWaiter = bucket.manuallyReplenished.wait()
-      if bucket.fillPerMs > 0:
+      if bucket.fillDuration.milliseconds > 0:
         let
-          nextCycleValue = min(waiter.value, bucket.budgetCap)
-          timeToZero = (nextCycleValue div bucket.fillPerMs) + 1
+          nextCycleValue = float(min(waiter.value, bucket.budgetCap))
+          budgetRatio = (nextCycleValue.float / bucket.budgetCap.float)
+          timeToZero = int(budgetRatio / bucket.fillDuration.milliseconds.float) + 1
           sleeper = sleepAsync(milliseconds(timeToZero))
         await sleeper or eventWaiter
         sleeper.cancel()
@@ -108,12 +118,15 @@ proc replenish*(bucket: TokenBucket, tokens: int) =
 
 proc new*(
   T: type[TokenBucket],
-  budgetCap, fillPerMs: int): T =
+  budgetCap: int,
+  fillDuration: Duration): T =
+  assert fillDuration.nanoseconds mod 1e6.int == 0
+
   ## Create a TokenBucket
   T(
     budget: budgetCap,
     budgetCap: budgetCap,
-    fillPerMs: fillPerMs,
+    fillDuration: fillDuration,
     lastUpdate: Moment.now(),
     manuallyReplenished: newAsyncEvent()
   )
