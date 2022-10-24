@@ -68,7 +68,7 @@ proc worker(bucket: TokenBucket) {.async.} =
       bucket.pendingRequests.delete(0)
     else:
       waiter.value -= bucket.budget
-      waiter.alreadyConsumed.inc(bucket.budget)
+      waiter.alreadyConsumed += bucket.budget
       bucket.budget = 0
 
       let eventWaiter = bucket.manuallyReplenished.wait()
@@ -102,7 +102,7 @@ proc consume*(bucket: TokenBucket, tokens: int): Future[void] =
   proc cancellation(udata: pointer) =
     for index in 0..<bucket.pendingRequests.len:
       if bucket.pendingRequests[index].future == retFuture:
-        bucket.budget.inc(bucket.pendingRequests[index].alreadyConsumed)
+        bucket.budget += bucket.pendingRequests[index].alreadyConsumed
         bucket.pendingRequests.delete(index)
         if index == 0:
           bucket.manuallyReplenished.fire()
