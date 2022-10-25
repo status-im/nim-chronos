@@ -44,7 +44,9 @@ suite "Token Bucket":
   test "Over budget async":
     var bucket = TokenBucket.new(100, 10.milliseconds)
     # Consume 10* the budget cap
-    waitFor(bucket.consume(1000).wait(100.milliseconds))
+    let beforeStart = Moment.now()
+    waitFor(bucket.consume(1000).wait(1.seconds))
+    check Moment.now() - beforeStart in 80.milliseconds .. 120.milliseconds
 
   test "Sync manual replenish":
     var bucket = TokenBucket.new(1000, 0.seconds)

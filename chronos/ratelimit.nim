@@ -79,9 +79,9 @@ proc worker(bucket: TokenBucket) {.async.} =
       if bucket.fillDuration.milliseconds > 0:
         let
           nextCycleValue = float(min(waiter.value, bucket.budgetCap))
-          budgetRatio = (nextCycleValue.float / bucket.budgetCap.float)
-          timeToZero = int(budgetRatio / bucket.fillDuration.milliseconds.float) + 1
-          sleeper = sleepAsync(milliseconds(timeToZero))
+          budgetRatio = nextCycleValue.float / bucket.budgetCap.float
+          timeToTarget = int(budgetRatio * bucket.fillDuration.milliseconds.float) + 1
+          sleeper = sleepAsync(milliseconds(timeToTarget))
         await sleeper or eventWaiter
         sleeper.cancel()
         eventWaiter.cancel()
