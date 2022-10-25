@@ -29,7 +29,7 @@ type
     manuallyReplenished: AsyncEvent
 
 proc update(bucket: TokenBucket) =
-  if bucket.fillDuration.milliseconds == 0:
+  if bucket.fillDuration == default(Duration):
     bucket.budget = min(bucket.budgetCap, bucket.budget)
     return
 
@@ -81,6 +81,9 @@ proc worker(bucket: TokenBucket) {.async.} =
           nextCycleValue = float(min(waiter.value, bucket.budgetCap))
           budgetRatio = nextCycleValue.float / bucket.budgetCap.float
           timeToTarget = int(budgetRatio * bucket.fillDuration.milliseconds.float) + 1
+          #TODO this will create a timer for each blocked bucket,
+          #which may cause performance issue when creating many
+          #buckets
           sleeper = sleepAsync(milliseconds(timeToTarget))
         await sleeper or eventWaiter
         sleeper.cancel()
@@ -123,8 +126,7 @@ proc replenish*(bucket: TokenBucket, tokens: int) =
 proc new*(
   T: type[TokenBucket],
   budgetCap: int,
-  fillDuration: Duration): T =
-  assert fillDuration.nanoseconds mod 1e6.int == 0
+  fillDuration: Duration = 1.seconds): T =
 
   ## Create a TokenBucket
   T(

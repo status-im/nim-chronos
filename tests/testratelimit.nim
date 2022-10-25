@@ -113,9 +113,6 @@ suite "Token Bucket":
     check bucket.tryConsume(1) == false
 
   test "Short replenish":
-    expect(AssertionError):
-      # < millisecond is not supported
-      discard TokenBucket.new(100, 1.nanoseconds)
     var bucket = TokenBucket.new(15000, 1.milliseconds)
     check bucket.tryConsume(15000)
     check bucket.tryConsume(1) == false
