@@ -41,7 +41,7 @@ proc update(bucket: TokenBucket) =
       int(bucket.budgetCap.float * fillPercent)
     deltaFromReplenished =
       int(bucket.fillDuration.milliseconds.float *
-      (replenished.float / bucket.budgetCap.float))
+      replenished.float / bucket.budgetCap.float)
 
   bucket.lastUpdate += milliseconds(deltaFromReplenished)
   bucket.budget = min(bucket.budgetCap, bucket.budget + replenished)
