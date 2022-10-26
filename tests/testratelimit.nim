@@ -96,19 +96,19 @@ suite "Token Bucket":
     waitFor(fut2.wait(10.milliseconds))
 
   test "Very long replenish":
-    var bucket = TokenBucket.new(15000, 1.hours)
-    check bucket.tryConsume(15000)
+    var bucket = TokenBucket.new(7000, 1.hours)
+    check bucket.tryConsume(7000)
     check bucket.tryConsume(1) == false
 
-    # With this setting, it takes 240 milliseconds
+    # With this setting, it takes 514 milliseconds
     # to tick one. Check that we can eventually
     # consume, even if we update multiple time
     # before that
-    waitFor(sleepAsync(100.milliseconds))
+    waitFor(sleepAsync(200.milliseconds))
     check bucket.tryConsume(1) == false
-    waitFor(sleepAsync(100.milliseconds))
+    waitFor(sleepAsync(200.milliseconds))
     check bucket.tryConsume(1) == false
-    waitFor(sleepAsync(100.milliseconds))
+    waitFor(sleepAsync(200.milliseconds))
     check bucket.tryConsume(1) == true
     check bucket.tryConsume(1) == false
 
