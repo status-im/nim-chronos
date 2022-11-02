@@ -67,6 +67,29 @@ suite "Asynchronous timers & steps test suite":
   test $TimersCount & " timers with 1000ms timeout":
     var res = waitFor(test(1000.milliseconds))
     check (res >= 1000.milliseconds) and (res <= 5000.milliseconds)
+  test "Timer stringification test":
+    check:
+      $weeks(1) == "1w"
+      $days(1) == "1d"
+      $hours(1) == "1h"
+      $minutes(1) == "1m"
+      $seconds(1) == "1s"
+      $milliseconds(1) == "1ms"
+      $microseconds(1) == "1us"
+      $nanoseconds(1) == "1ns"
+      $(weeks(1) + days(1)) == "1w1d"
+      $(days(1) + hours(1)) == "1d1h"
+      $(hours(1) + minutes(1)) == "1h1m"
+      $(minutes(1) + seconds(1)) == "1m1s"
+      $(seconds(1) + milliseconds(1)) == "1s1ms"
+      $(milliseconds(1) + microseconds(1)) == "1ms1us"
+      $nanoseconds(1_000_000_000) == "1s"
+      $nanoseconds(1_900_000_000) == "1s900ms"
+      $nanoseconds(1_000_900_000) == "1s900us"
+      $nanoseconds(1_000_000_900) == "1s900ns"
+      $nanoseconds(1_800_700_000) == "1s800ms700us"
+      $nanoseconds(1_800_000_600) == "1s800ms600ns"
+
   test "Asynchronous steps test":
     var futn1 = stepsAsync(-1)
     var fut0 = stepsAsync(0)

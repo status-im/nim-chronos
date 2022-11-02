@@ -296,7 +296,7 @@ proc getAddrInfo(address: string, port: Port, domain: Domain,
   hints.ai_family = toInt(domain)
   hints.ai_socktype = toInt(sockType)
   hints.ai_protocol = toInt(protocol)
-  var gaiRes = getaddrinfo(address, Base10.toString(uint16(port)),
+  var gaiRes = getaddrinfo(address, cstring(Base10.toString(uint16(port))),
                            addr(hints), res)
   if gaiRes != 0'i32:
     when defined(windows) or defined(nimdoc):

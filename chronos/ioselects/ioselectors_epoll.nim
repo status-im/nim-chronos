@@ -433,7 +433,7 @@ proc selectInto*[T](s: Selector[T], timeout: int,
             if posix.read(cint(fdi), addr data,
                           sizeof(SignalFdInfo)) != sizeof(SignalFdInfo):
               raiseIOSelectorsError(osLastError())
-            if cast[int](data.ssi_pid) == pkey.param:
+            if data.ssi_pid == uint32(pkey.param):
               rkey.events.incl(Event.Process)
             else:
               inc(i)

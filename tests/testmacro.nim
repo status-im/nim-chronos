@@ -105,7 +105,7 @@ suite "Macro transformations test suite":
     macroAsync2(testMacro2, seq, Opt, Result, OpenObject, cstring)
     check waitFor(testMacro2()).len == 0
 
-suite "async transformation issues":
+suite "Closure iterator's exception transformation issues":
   test "Nested defer/finally not called on return":
     # issue #288
     # fixed by https://github.com/nim-lang/Nim/pull/19933
@@ -113,7 +113,7 @@ suite "async transformation issues":
     proc a {.async.} =
       try:
         try:
-          await sleepAsync(0)
+          await sleepAsync(0.milliseconds)
           return
         finally:
           answer = 32
