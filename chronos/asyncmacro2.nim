@@ -108,8 +108,7 @@ proc getBaseType(prc: NimNode): NimNode {.compileTime.} =
     # error isn't noreturn..
     return
 
-macro combineAsyncExceptions*(args: varargs[typed]): untyped =
-  result = nnkTupleConstr.newTree()
+proc combineAsyncExceptionsHelper(args: NimNode): seq[NimNode] =
   for argRaw in args:
     let arg = getTypeInst(argRaw)
     if arg.kind == nnkBracketExpr and arg[0].eqIdent("typeDesc"):
@@ -123,7 +122,22 @@ macro combineAsyncExceptions*(args: varargs[typed]): untyped =
     else:
       error("Unhandled exception source" & $arg.kind)
 
-  echo treeRepr(result)
+macro combineAsyncExceptions*(args: varargs[typed]): untyped =
+  result = nnkTupleConstr.newTree()
+  for argRaw in combineAsyncExceptionsHelper(args):
+    result.add(argRaw)
+
+macro asyncinternalraises*(prc, exceptions: typed): untyped =
+  let closureRaises = nnkBracket.newNimNode()
+  for argRaw in combineAsyncExceptionsHelper(exceptions):
+    closureRaises.add(argRaw)
+
+  prc.addPragma(nnkExprColonExpr.newTree(
+      newIdentNode("raises"),
+      closureRaises
+    ))
+
+  prc
 
 proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
   ## This macro transforms a single procedure into a closure iterator.
@@ -166,6 +180,7 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
 
 
   var genericErrorTypes: seq[NimNode]
+  var resultTypeSetter: NimNode
   if foundRaisesOf >= 0:
 
     if prc[2].kind == nnkEmpty:
@@ -191,11 +206,10 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
           )
           param[1].add(genericSym)
 
-    if prc.body.kind != nnkEmpty and foundAsync < 0:
       let macroCall = newCall("combineAsyncExceptions")
       for a in raisesTuple: macroCall.add(a)
       for a in genericErrorTypes: macroCall.add(ident(a.strVal))
-      prc.body.insert(0,
+      resultTypeSetter =
         newAssignment(
           ident"result",
           newCall(
@@ -206,7 +220,8 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
             newNilLit()
           )
         )
-      )
+    if prc.body.kind != nnkEmpty and foundAsync < 0:
+      prc.body.insert(0, resultTypeSetter)
   elif foundRaises >= 0:
     # Rewrite to RaiseTrackingFuture
     prc.params2[0] = nnkBracketExpr.newTree(
@@ -220,8 +235,6 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
         newNimNode(nnkBracketExpr, prc).
           add(newIdentNode("Future")).
           add(newIdentNode("void"))
-
-  echo repr(prc)
 
   # Remove pragmas
   let toRemoveList = @[foundRaises, foundAsync, foundRaisesOf].filterIt(it >= 0).sorted().reversed()
@@ -318,6 +331,11 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
     when (NimMajor, NimMinor) < (1, 4):
       closureRaises.add(ident("Defect"))
 
+    # If proc has an explicit gcsafe pragma, we add it to iterator as well.
+    if prc.pragma.findChild(it.kind in {nnkSym, nnkIdent} and
+                            it.strVal == "gcsafe") != nil:
+      closureIterator.addPragma(newIdentNode("gcsafe"))
+
     if foundRaisesOf < 0:
       closureIterator.addPragma(nnkExprColonExpr.newTree(
         newIdentNode("raises"),
@@ -325,15 +343,8 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
       ))
     else:
       for a in genericErrorTypes: closureRaises.add(ident(a.strVal))
-      closureIterator.addPragma(nnkExprColonExpr.newTree(
-        newIdentNode("asyncinternalraises"),
-        closureRaises
-      ))
+      closureIterator = newCall("asyncinternalraises", closureIterator, closureRaises)
 
-    # If proc has an explicit gcsafe pragma, we add it to iterator as well.
-    if prc.pragma.findChild(it.kind in {nnkSym, nnkIdent} and
-                            it.strVal == "gcsafe") != nil:
-      closureIterator.addPragma(newIdentNode("gcsafe"))
     outerProcBody.add(closureIterator)
 
     # -> var resultFuture = newRaiseTrackingFuture[T]()
@@ -342,6 +353,8 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
     var retFutureSym = ident "resultFuture"
     # Do not change this code to `quote do` version because `instantiationInfo`
     # will be broken for `newFuture()` call.
+    if not isNil(resultTypeSetter):
+      outerProcBody.add(resultTypeSetter)
     outerProcBody.add(
       newVarStmt(
         retFutureSym,
@@ -349,7 +362,7 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
                 newLit(prcName))
       )
     )
- 
+
     # -> resultFuture.closure = iterator
     outerProcBody.add(
        newAssignment(

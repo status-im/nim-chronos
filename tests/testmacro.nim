@@ -194,6 +194,10 @@ suite "Exceptions tracking":
 
     proc testOr[T, Y](fut1: Future[T], fut2: Future[Y]): Future[void] {.asyncraises: [CancelledError], asyncraisesof: [fut1, fut2].} =
       var retFuture = newRaiseTrackingFuture[void]("chronos.or")
+      checkNotCompiles:
+        # Should only allow ValueError here
+        retFuture.fail(newException(IOError, "eh"))
+
       var cb: proc(udata: pointer) {.gcsafe, raises: [Defect].}
       cb = proc(udata: pointer) {.gcsafe, raises: [Defect].} =
         if not(retFuture.finished()):
@@ -219,10 +223,19 @@ suite "Exceptions tracking":
 
   test "asyncRaisesOf - macro async":
     proc test44 {.asyncraises: [ValueError], async.} = discard
+    proc testOther {.asyncraises: [IOError], async.} = discard
 
     proc wrapper1(fut: Future[void]) {.asyncraises: [CancelledError], async, asyncraisesof: [fut].} =
       await fut
-    waitFor(wrapper1(test44()))
+
+    checkNotCompiles:
+      proc wrapper2(fut: Future[void]) {.asyncraises: [CancelledError], async, asyncraisesof: [fut].} =
+        await testOther()
+      waitFor wrapper2(test44())
+
+    proc test55 {.asyncraises: [ValueError, CancelledError], async.} =
+      await wrapper1(test44())
+    waitFor(test55())
 
 suite "async transformation issues":
   test "Nested defer/finally not called on return":
