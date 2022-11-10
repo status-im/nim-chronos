@@ -15,8 +15,7 @@ proc skipUntilStmtList(node: NimNode): NimNode {.compileTime.} =
   if node[0].kind == nnkStmtList:
     result = skipUntilStmtList(node[0])
 
-proc processBody(node, retFutureSym: NimNode,
-                 subTypeIsVoid: bool): NimNode {.compileTime.} =
+proc processBody(node, retFutureSym: NimNode): NimNode {.compileTime.} =
   #echo(node.treeRepr)
   result = node
   case node.kind
@@ -25,13 +24,10 @@ proc processBody(node, retFutureSym: NimNode,
 
     # As I've painfully found out, the order here really DOES matter.
     if node[0].kind == nnkEmpty:
-      if not subTypeIsVoid:
-        result.add newCall(newIdentNode("complete"), retFutureSym,
-            newIdentNode("result"))
-      else:
-        result.add newCall(newIdentNode("complete"), retFutureSym)
+      result.add newCall(newIdentNode("complete"), retFutureSym,
+          newIdentNode("result"))
     else:
-      let x = node[0].processBody(retFutureSym, subTypeIsVoid)
+      let x = node[0].processBody(retFutureSym)
       if x.kind == nnkYieldStmt: result.add x
       else:
         result.add newCall(newIdentNode("complete"), retFutureSym, x)
@@ -47,7 +43,7 @@ proc processBody(node, retFutureSym: NimNode,
     # We must not transform nested procedures of any form, otherwise
     # `retFutureSym` will be used for all nested procedures as their own
     # `retFuture`.
-    result[i] = processBody(result[i], retFutureSym, subTypeIsVoid)
+    result[i] = processBody(result[i], retFutureSym)
 
 proc getName(node: NimNode): string {.compileTime.} =
   case node.kind
@@ -95,25 +91,22 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
   let prcName = prc.name.getName
 
   let returnType = cleanupOpenSymChoice(prc.params[0])
-  var baseType: NimNode
+  var baseType = newIdentNode("void")
   # Verify that the return type is a Future[T]
   if returnType.kind == nnkBracketExpr:
     let fut = repr(returnType[0])
     verifyReturnType(fut)
     baseType = returnType[1]
   elif returnType.kind == nnkEmpty:
-    baseType = returnType
+    discard
   else:
     verifyReturnType(repr(returnType))
-
-  let subtypeIsVoid = returnType.kind == nnkEmpty or returnType[1].eqIdent("void")
 
   var outerProcBody = newNimNode(nnkStmtList, prc.body)
 
   # Copy comment for nimdoc
   if prc.body.len > 0 and prc.body[0].kind == nnkCommentStmt:
     outerProcBody.add(prc.body[0])
-
 
   # -> iterator nameIter(chronosInternalRetFuture: Future[T]): FutureBase {.closure.} =
   # ->   {.push warning[resultshadowed]: off.}
@@ -123,41 +116,28 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
   # ->   complete(chronosInternalRetFuture, result)
   let internalFutureSym = ident "chronosInternalRetFuture"
   var iteratorNameSym = genSym(nskIterator, $prcName)
-  var procBody = prc.body.processBody(internalFutureSym, subtypeIsVoid)
+  var procBody = prc.body.processBody(internalFutureSym)
   # don't do anything with forward bodies (empty)
   if procBody.kind != nnkEmpty:
-    if subtypeIsVoid:
-      let resultTemplate = quote do:
-        template result: auto {.used.} =
-          {.fatal: "You should not reference the `result` variable inside" &
-                   " a void async proc".}
-      procBody = newStmtList(resultTemplate, procBody)
-
     # fix #13899, `defer` should not escape its original scope
     procBody = newStmtList(newTree(nnkBlockStmt, newEmptyNode(), procBody))
 
-    if not subtypeIsVoid:
-      procBody.insert(0, newNimNode(nnkPragma).add(newIdentNode("push"),
-        newNimNode(nnkExprColonExpr).add(newNimNode(nnkBracketExpr).add(
-          newIdentNode("warning"), newIdentNode("resultshadowed")),
-        newIdentNode("off")))) # -> {.push warning[resultshadowed]: off.}
+    procBody.insert(0): quote do:
+      {.push warning[resultshadowed]: off.}
+      when `baseType` is void:
+        template result: auto {.used.} =
+          raiseAssert "You should not reference the `result` variable inside a void async proc"
+      else:
+          var result: `baseType`
+      {.pop.}
 
-      procBody.insert(1, newNimNode(nnkVarSection, prc.body).add(
-        newIdentDefs(newIdentNode("result"), baseType))) # -> var result: T
-
-      procBody.insert(2, newNimNode(nnkPragma).add(
-        newIdentNode("pop"))) # -> {.pop.})
-
-      procBody.add(
-        newCall(newIdentNode("complete"),
-          internalFutureSym, newIdentNode("result"))) # -> complete(chronosInternalRetFuture, result)
-    else:
-      # -> complete(chronosInternalRetFuture)
-      procBody.add(newCall(newIdentNode("complete"), internalFutureSym))
+    procBody.add(
+      newCall(newIdentNode("complete"),
+        internalFutureSym, newIdentNode("result"))) # -> complete(chronosInternalRetFuture, result)
 
     let
       internalFutureType =
-        if subtypeIsVoid:
+        if returnType.kind == nnkEmpty:
           newNimNode(nnkBracketExpr, prc).add(newIdentNode("Future")).add(newIdentNode("void"))
         else: returnType
       internalFutureParameter = nnkIdentDefs.newTree(internalFutureSym, internalFutureType, newEmptyNode())
@@ -246,14 +226,12 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
   prc.addPragma(newIdentNode("gcsafe"))
   result = prc
 
-  if subtypeIsVoid:
-    # Add discardable pragma.
-    if returnType.kind == nnkEmpty:
-      # Add Future[void]
-      result.params[0] =
-        newNimNode(nnkBracketExpr, prc)
-        .add(newIdentNode("Future"))
-        .add(newIdentNode("void"))
+  if returnType.kind == nnkEmpty:
+    # Add Future[void]
+    result.params[0] =
+      newNimNode(nnkBracketExpr, prc)
+      .add(newIdentNode("Future"))
+      .add(newIdentNode("void"))
   if procBody.kind != nnkEmpty:
     result.body = outerProcBody
   #echo(treeRepr(result))

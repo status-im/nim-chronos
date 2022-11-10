@@ -236,6 +236,10 @@ template complete*(future: Future[void]) =
   ## Completes a void ``future``.
   complete(future, getSrcLocation())
 
+template complete*(future: Future[void], val: untyped) =
+  ## Completes ``future``
+  complete(future, getSrcLocation())
+
 proc fail[T](future: Future[T], error: ref CatchableError, loc: ptr SrcLoc) =
   if not(future.cancelled()):
     checkFinished(FutureBase(future), loc)
