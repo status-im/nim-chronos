@@ -105,6 +105,13 @@ suite "Macro transformations test suite":
     macroAsync2(testMacro2, seq, Opt, Result, OpenObject, cstring)
     check waitFor(testMacro2()).len == 0
 
+  test "Future void in generic bug":
+    proc gen(T: typedesc[int]): T =
+      proc testproc(): Future[void] {.async.} = discard
+      T(5)
+    let test = int.gen()
+
+
 suite "Closure iterator's exception transformation issues":
   test "Nested defer/finally not called on return":
     # issue #288
