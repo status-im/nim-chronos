@@ -36,6 +36,7 @@ type
     par*: ref CatchableError
   AsyncStreamWriteError* = object of AsyncStreamError
     par*: ref CatchableError
+  AsyncStreamWriteEOFError* = object of AsyncStreamWriteError
 
   AsyncBuffer* = object
     offset*: int
@@ -218,24 +219,33 @@ proc newAsyncStreamUseClosedError*(): ref AsyncStreamUseClosedError {.
   newException(AsyncStreamUseClosedError, "Stream is already closed")
 
 proc raiseAsyncStreamUseClosedError*() {.
-    noinline, noreturn, raises: [Defect, AsyncStreamUseClosedError].} =
+     noinline, noreturn, raises: [Defect, AsyncStreamUseClosedError].} =
   raise newAsyncStreamUseClosedError()
 
 proc raiseAsyncStreamLimitError*() {.
-    noinline, noreturn, raises: [Defect, AsyncStreamLimitError].} =
+     noinline, noreturn, raises: [Defect, AsyncStreamLimitError].} =
   raise newAsyncStreamLimitError()
 
 proc raiseAsyncStreamIncompleteError*() {.
-    noinline, noreturn, raises: [Defect, AsyncStreamIncompleteError].} =
+     noinline, noreturn, raises: [Defect, AsyncStreamIncompleteError].} =
   raise newAsyncStreamIncompleteError()
 
 proc raiseEmptyMessageDefect*() {.noinline, noreturn.} =
   raise newException(AsyncStreamIncorrectDefect,
                      "Could not write empty message")
 
+proc raiseAsyncStreamWriteEOFError*() {.
+     noinline, noreturn, raises: [Defect, AsyncStreamWriteEOFError].} =
+  raise newException(AsyncStreamWriteEOFError,
+                     "Stream finished or remote side dropped connection")
+
 template checkStreamClosed*(t: untyped) =
   if t.state == AsyncStreamState.Closed:
     raiseAsyncStreamUseClosedError()
+
+template checkStreamFinished*(t: untyped) =
+  if t.state == AsyncStreamState.Finished:
+    raiseAsyncStreamWriteEOFError()
 
 proc atEof*(rstream: AsyncStreamReader): bool =
   ## Returns ``true`` is reading stream is closed or finished and internal
@@ -787,6 +797,8 @@ proc write*(wstream: AsyncStreamWriter, pbytes: pointer,
   ##
   ## ``nbytes`` must be more then zero.
   checkStreamClosed(wstream)
+  checkStreamFinished(wstream)
+
   if nbytes <= 0:
     raiseEmptyMessageDefect()
 
@@ -834,6 +846,8 @@ proc write*(wstream: AsyncStreamWriter, sbytes: sink seq[byte],
   ## If ``msglen > len(sbytes)`` only ``len(sbytes)`` bytes will be written to
   ## stream.
   checkStreamClosed(wstream)
+  checkStreamFinished(wstream)
+
   let length = if msglen <= 0: len(sbytes) else: min(msglen, len(sbytes))
   if length <= 0:
     raiseEmptyMessageDefect()
@@ -885,6 +899,8 @@ proc write*(wstream: AsyncStreamWriter, sbytes: sink string,
   ## If ``msglen > len(sbytes)`` only ``len(sbytes)`` bytes will be written to
   ## stream.
   checkStreamClosed(wstream)
+  checkStreamFinished(wstream)
+
   let length = if msglen <= 0: len(sbytes) else: min(msglen, len(sbytes))
   if length <= 0:
     raiseEmptyMessageDefect()
@@ -929,23 +945,25 @@ proc write*(wstream: AsyncStreamWriter, sbytes: sink string,
 proc finish*(wstream: AsyncStreamWriter) {.async.} =
   ## Finish write stream ``wstream``.
   checkStreamClosed(wstream)
-
-  if not isNil(wstream.wsource):
-    if isNil(wstream.writerLoop):
-      await wstream.wsource.finish()
-    else:
-      var item = WriteItem(kind: Pointer)
-      item.size = 0
-      item.future = newFuture[void]("async.stream.finish")
-      try:
-        await wstream.queue.put(item)
-        await item.future
-      except CancelledError as exc:
-        raise exc
-      except AsyncStreamError as exc:
-        raise exc
-      except CatchableError as exc:
-        raise newAsyncStreamWriteError(exc)
+  # For AsyncStreamWriter Finished state could be set manually or by stream's
+  # writeLoop, so we not going to raise exception here.
+  if wstream.state != AsyncStreamState.Finished:
+    if not isNil(wstream.wsource):
+      if isNil(wstream.writerLoop):
+        await wstream.wsource.finish()
+      else:
+        var item = WriteItem(kind: Pointer)
+        item.size = 0
+        item.future = newFuture[void]("async.stream.finish")
+        try:
+          await wstream.queue.put(item)
+          await item.future
+        except CancelledError as exc:
+          raise exc
+        except AsyncStreamError as exc:
+          raise exc
+        except CatchableError as exc:
+          raise newAsyncStreamWriteError(exc)
 
 proc join*(rw: AsyncStreamRW): Future[void] =
   ## Get Future[void] which will be completed when stream become finished or
