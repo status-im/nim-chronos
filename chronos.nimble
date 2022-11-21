@@ -1,45 +1,47 @@
+mode = ScriptMode.Verbose
+
 packageName   = "chronos"
 version       = "3.0.11"
 author        = "Status Research & Development GmbH"
-description   = "Chronos"
-license       = "Apache License 2.0 or MIT"
+description   = "Networking framework with async/await support"
+license       = "MIT or Apache License 2.0"
 skipDirs      = @["tests"]
 
-### Dependencies
-
-requires "nim > 1.2.0",
+requires "nim >= 1.2.0",
          "stew",
          "bearssl",
          "httputils",
          "unittest2"
 
-var commandStart = "nim c -r --hints:off --verbosity:0 --skipParentCfg:on --warning[ObservableStores]:off --styleCheck:usages --styleCheck:error"
+let nimc = getEnv("NIMC", "nim") # Which nim compiler to use
+let lang = getEnv("NIMLANG", "c") # Which backend (c/cpp/js)
+let flags = getEnv("NIMFLAGS", "") # Extra flags for the compiler
+let verbose = getEnv("V", "") notin ["", "0"]
+
+let styleCheckStyle = if (NimMajor, NimMinor) < (1, 6): "hint" else: "error"
+let cfg =
+  " --styleCheck:usages --styleCheck:" & styleCheckStyle &
+  (if verbose: "" else: " --verbosity:0 --hints:off") &
+  " --skipParentCfg --skipUserCfg --outdir:build --nimcache:build/nimcache -f"
+
+proc build(args, path: string) =
+  exec nimc & " " & lang & " " & cfg & " " & flags & " " & args & " " & path
+
+proc run(args, path: string) =
+  build args & " -r", path
 
 task test, "Run all tests":
-  var commands = @[
-      commandStart & " -d:useSysAssert -d:useGcAssert tests/",
-      commandStart & " -d:chronosStackTrace -d:chronosStrictException tests/",
-      commandStart & " -d:release tests/",
-      commandStart & " -d:release -d:chronosFutureTracking tests/",
-    ]
-  when (NimMajor, NimMinor) >= (1, 5):
-    commands.add commandStart & " --gc:orc -d:chronosFutureTracking -d:release -d:chronosStackTrace tests/"
-
-  for testname in ["testall"]:
-    for cmd in commands:
-      let curcmd = cmd & testname
-      echo "\n" & curcmd
-      exec curcmd
-      rmFile "tests/" & testname
+  for args in [
+      "-d:useSysAssert -d:useGcAssert",
+      "-d:chronosStackTrace -d:chronosStrictException",
+      "-d:release",
+      "-d:release -d:chronosFutureTracking",
+    ]: run args, "tests/testall"
 
 task test_libbacktrace, "test with libbacktrace":
-  var commands = @[
-      commandStart & " -d:release --debugger:native -d:chronosStackTrace -d:nimStackTraceOverride --import:libbacktrace tests/",
+  var allArgs = @[
+      "-d:release --debugger:native -d:chronosStackTrace -d:nimStackTraceOverride --import:libbacktrace",
     ]
 
-  for testname in ["testall"]:
-    for cmd in commands:
-      let curcmd = cmd & testname
-      echo "\n" & curcmd
-      exec curcmd
-      rmFile "tests/" & testname
+  for args in allArgs:
+    run args, "tests/testall"
