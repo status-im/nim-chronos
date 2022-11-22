@@ -50,7 +50,7 @@ jobs:
     continue-on-error: ${{ matrix.branch == 'devel' }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: Install build dependencies (Linux i386)
         if: runner.os == 'Linux' && matrix.target.cpu == 'i386'
