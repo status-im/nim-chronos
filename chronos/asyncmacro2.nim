@@ -181,23 +181,16 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
     #      against the spirit of the raises annotation - one should investigate
     #      here the possibility of transporting more specific error types here
     #      for example by casting exceptions coming out of `await`..
-    when defined(chronosStrictException):
-      closureIterator.addPragma(nnkExprColonExpr.newTree(
-        newIdentNode("raises"),
-        nnkBracket.newTree(
-          newIdentNode("Defect"),
-          newIdentNode("CatchableError")
-        )
-      ))
-    else:
-      closureIterator.addPragma(nnkExprColonExpr.newTree(
-        newIdentNode("raises"),
-        nnkBracket.newTree(
-          newIdentNode("Defect"),
-          newIdentNode("CatchableError"),
-          newIdentNode("Exception") # Allow exception effects
-        )
-      ))
+    let raises = nnkBracket.newTree()
+    raises.add(newIdentNode("CatchableError"))
+    when not defined(chronosStrictException):
+      raises.add(newIdentNode("Exception"))
+    when (NimMajor, NimMinor) < (1, 4):
+      raises.add(newIdentNode("Defect"))
+    closureIterator.addPragma(nnkExprColonExpr.newTree(
+      newIdentNode("raises"),
+      raises
+    ))
 
     # If proc has an explicit gcsafe pragma, we add it to iterator as well.
     if prc.pragma.findChild(it.kind in {nnkSym, nnkIdent} and
