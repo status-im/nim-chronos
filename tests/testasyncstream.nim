@@ -501,6 +501,11 @@ suite "AsyncStream test suite":
           check wbstream.atEof() == true
           expect AsyncStreamWriteEOFError:
             await wbstream.write(message)
+          expect AsyncStreamWriteEOFError:
+            await wbstream.write(message)
+          expect AsyncStreamWriteEOFError:
+            await wbstream.write(message)
+          check wbstream.atEof() == true
           await wbstream.closeWait()
           check wbstream.atEof() == true
         finally:
