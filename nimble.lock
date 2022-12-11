@@ -35,8 +35,8 @@
       }
     },
     "bearssl": {
-      "version": "0.1.5",
-      "vcsRevision": "0ebb1d7a4af5f4b4d4756a9b6dbfe5d411fa55d9",
+      "version": "0.2.0",
+      "vcsRevision": "cc4e5c54aa3c083152b9f7d93f364067dbdc5e3b",
       "url": "https://github.com/status-im/nim-bearssl",
       "downloadMethod": "git",
       "dependencies": [
