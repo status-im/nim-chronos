@@ -283,18 +283,10 @@ proc stopped*(rw: AsyncStreamRW): bool =
       isNil(rw.writerLoop)
 
   if loopIsNil:
-    let rsourceIsNil =
-      when rw is AsyncStreamReader:
-        isNil(rw.rsource)
-      else:
-        isNil(rw.wsource)
-    if rsourceIsNil:
-      false
+    when rw is AsyncStreamReader:
+      if isNil(rw.rsource): false else: rw.rsource.stopped()
     else:
-      when rw is AsyncStreamReader:
-        rw.rsource.stopped()
-      else:
-        rw.wsource.stopped()
+      if isNil(rw.wsource): false else: rw.wsource.stopped()
   else:
     if isNil(rw.future) or rw.future.finished():
       false
