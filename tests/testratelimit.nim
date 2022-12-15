@@ -40,14 +40,16 @@ for _ in 0..<100:
       waitFor(allFutures(toWait))
       let duration = Moment.now() - start
 
-      check: duration in 750.milliseconds .. 1100.milliseconds
+      check: duration in 700.milliseconds .. 1100.milliseconds
 
     test "Over budget async":
       var bucket = TokenBucket.new(100, 10.milliseconds)
       # Consume 10* the budget cap
       let beforeStart = Moment.now()
       waitFor(bucket.consume(1000).wait(1.seconds))
-      check Moment.now() - beforeStart in 80.milliseconds .. 120.milliseconds
+      when not defined(macos):
+        # CI's macos scheduler is so jittery that this tests sometimes takes >500ms
+        check Moment.now() - beforeStart in 80.milliseconds .. 120.milliseconds
 
     test "Sync manual replenish":
       var bucket = TokenBucket.new(1000, 0.seconds)
