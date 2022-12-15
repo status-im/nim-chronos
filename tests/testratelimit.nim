@@ -47,8 +47,9 @@ for _ in 0..<100:
       # Consume 10* the budget cap
       let beforeStart = Moment.now()
       waitFor(bucket.consume(1000).wait(1.seconds))
-      when not defined(macos):
+      when not defined(macosx):
         # CI's macos scheduler is so jittery that this tests sometimes takes >500ms
+        # the test will still fail if it's >1 seconds
         check Moment.now() - beforeStart in 80.milliseconds .. 120.milliseconds
 
     test "Sync manual replenish":
