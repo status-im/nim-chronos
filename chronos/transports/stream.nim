@@ -45,7 +45,7 @@ type
     WinServerPipe,
     # This is internal flag which used to differentiate between server pipe
     # handle and client pipe handle.
-    WinNoPipeFlash
+    WinNoPipeFlash,
     # By default `AddressFamily.Unix` transports in Windows are using
     # `FlushFileBuffers()` when transport closing.
     # This flag disables usage of `FlushFileBuffers()` on `AddressFamily.Unix`
@@ -55,6 +55,8 @@ type
     # get stuck on transport `close()`.
     # Please use this flag only if you are making both client and server in
     # the same thread.
+    TcpNoDelay
+
 
   StreamTransportTracker* = ref object of TrackerBase
     opened*: int64
@@ -1490,7 +1492,8 @@ else:
 
   proc connect*(address: TransportAddress,
                 bufferSize = DefaultStreamBufferSize,
-                child: StreamTransport = nil): Future[StreamTransport] =
+                child: StreamTransport = nil,
+                flags: set[TransportFlags] = {}): Future[StreamTransport] =
     ## Open new connection to remote peer with address ``address`` and create
     ## new transport object ``StreamTransport`` for established connection.
     ## ``bufferSize`` - size of internal buffer for transport.
@@ -1519,6 +1522,16 @@ else:
       else:
         retFuture.fail(getTransportOsError(err))
       return retFuture
+
+
+    if address.family in {AddressFamily.IPv4, AddressFamily.IPv6}:
+      if TransportFlags.TcpNoDelay in flags:
+        if not(setSockOpt(sock, handles.IPPROTO_TCP,
+                          handles.TCP_NODELAY, 1)):
+          let err = osLastError()
+          if sock == asyncInvalidSocket:
+            sock.closeSocket()
+          retFuture.fail(getTransportOsError(err))
 
     proc continuation(udata: pointer) =
       if not(retFuture.finished()):
