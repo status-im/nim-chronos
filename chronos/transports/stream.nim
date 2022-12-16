@@ -1381,7 +1381,7 @@ else:
             let err = osLastError()
             if int(err) == EINTR:
               continue
-            elif int(err) in {ECONNRESET}:
+            elif int(err) == ECONNRESET:
               transp.state.incl({ReadEof, ReadPaused})
               try:
                 transp.fd.removeReader()
