@@ -1709,16 +1709,16 @@ else:
                 let errorMsg = osErrorMsg(osLastError())
                 retFuture.fail(getConnectionAbortedError(errorMsg))
             else:
-              let err = int(osLastError())
+              let err = osLastError().int32
               if err == EINTR:
                 continue
               elif err == EAGAIN:
                 # This error appears only when server get closed, while accept()
                 # continuation is already scheduled.
                 retFuture.fail(getServerUseClosedError())
-              elif err in {EMFILE, ENFILE, ENOBUFS, ENOMEM}:
+              elif err in [EMFILE, ENFILE, ENOBUFS, ENOMEM]:
                 retFuture.fail(getTransportTooManyError(err))
-              elif err in {ECONNABORTED, EPERM, ETIMEDOUT}:
+              elif err in [ECONNABORTED, EPERM, ETIMEDOUT]:
                 retFuture.fail(getConnectionAbortedError(err))
               else:
                 retFuture.fail(getTransportOsError(OSErrorCode(err)))
