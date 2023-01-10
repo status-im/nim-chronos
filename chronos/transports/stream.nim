@@ -702,7 +702,8 @@ elif defined(windows):
                   sizeof(saddr).SockLen) != 0'i32:
         result = false
 
-  proc connect*(address: TransportAddress,
+  proc connect*(sock: AsyncFD,
+                address: TransportAddress,
                 bufferSize = DefaultStreamBufferSize,
                 child: StreamTransport = nil,
                 flags: set[TransportFlags] = {}): Future[StreamTransport] =
@@ -719,17 +720,11 @@ elif defined(windows):
         slen: SockLen
         sock: AsyncFD
         povl: RefCustomOverlapped
-        proto: Protocol
 
       var raddress = windowsAnyAddressFix(address)
 
       toSAddr(raddress, saddr, slen)
-      proto = Protocol.IPPROTO_TCP
-      sock = try: createAsyncSocket(raddress.getDomain(), SockType.SOCK_STREAM,
-                               proto)
-      except CatchableError as exc:
-        retFuture.fail(exc)
-        return retFuture
+
       if sock == asyncInvalidSocket:
         retFuture.fail(getTransportOsError(osLastError()))
         return retFuture
@@ -818,6 +813,22 @@ elif defined(windows):
       pipeContinuation(nil)
 
     return retFuture
+
+  proc connect*(address: TransportAddress,
+                bufferSize = DefaultStreamBufferSize,
+                child: StreamTransport = nil,
+                flags: set[TransportFlags] = {}): Future[StreamTransport] =
+    ## Open new connection to remote peer with address ``address`` and create
+    ## new transport object ``StreamTransport`` for established connection.
+    ## ``bufferSize`` is size of internal buffer for transport.
+    var raddress = windowsAnyAddressFix(address)
+    let sock =
+      try: createAsyncSocket(raddress.getDomain(), SockType.SOCK_STREAM, Protocol.IPPROTO_TCP)
+    except CatchableError as exc:
+      var retFuture = newFuture[StreamTransport]("stream.transport.connect")
+      retFuture.fail(exc)
+      return retFuture
+    return connect(sock, raddress, bufferSize, child, flags)
 
   proc createAcceptPipe(server: StreamServer) {.
       raises: [Defect, CatchableError].} =
@@ -1603,15 +1614,6 @@ else:
           break
     return retFuture
 
-  proc createAsyncSocketForDst*(address: TransportAddress): AsyncFD {.
-      raises: [Defect, CatchableError].} =
-    var proto = Protocol.IPPROTO_TCP
-    if address.family == AddressFamily.Unix:
-     # `Protocol` enum is missing `0` value, so we making here cast, until
-     # `Protocol` enum will not support IPPROTO_IP == 0.
-     proto = cast[Protocol](0)
-    return createAsyncSocket(address.getDomain(), SockType.SOCK_STREAM, proto)
-
   proc connect*(address: TransportAddress,
                 bufferSize = DefaultStreamBufferSize,
                 child: StreamTransport = nil): Future[StreamTransport] =
@@ -1620,7 +1622,12 @@ else:
     ## ``bufferSize`` - size of internal buffer for transport.
     let sock =
       try:
-        createAsyncSocketForDst(address)
+        var proto = Protocol.IPPROTO_TCP
+        if address.family == AddressFamily.Unix:
+          # `Protocol` enum is missing `0` value, so we making here cast, until
+          # `Protocol` enum will not support IPPROTO_IP == 0.
+          proto = cast[Protocol](0)
+        createAsyncSocket(address.getDomain(), SockType.SOCK_STREAM, proto)
       except CatchableError as exc:
         var retFuture = newFuture[StreamTransport]("stream.transport.connect")
         retFuture.fail(exc)
