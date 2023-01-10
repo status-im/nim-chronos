@@ -1636,7 +1636,6 @@ else:
 
   proc bindSocket*(sock: AsyncFD, localAddress: TransportAddress, reuseAddr = true) {.
     raises: [Defect, OSError, TransportOsError].} =
-    var retFuture = newFuture[void]("stream.transport.bindSocket")
     if reuseAddr:
       # Setting SO_REUSEADDR option we are able to reuse ports using the 0.0.0.0 address (or equivalent)
       setSockOptInt(SocketHandle(sock), SOL_SOCKET, SO_REUSEADDR, 1)
