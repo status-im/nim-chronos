@@ -297,6 +297,24 @@ proc clean(transp: StreamTransport) {.inline.} =
     transp.future.complete()
     GC_unref(transp)
 
+proc bindSocket*(sock: AsyncFD, localAddress: TransportAddress, reuseAddr = true) {.
+  raises: [Defect, OSError, TransportOsError].} =
+  if reuseAddr:
+    # Setting SO_REUSEADDR option we are able to reuse ports using the 0.0.0.0 address (or equivalent)
+    setSockOptInt(SocketHandle(sock), SOL_SOCKET, SO_REUSEADDR, 1)
+
+  var raddress =
+    when defined(windows):
+      windowsAnyAddressFix(localAddress)
+    else:
+      localAddress
+  var
+    localAddr: Sockaddr_storage
+    localAddrLen: SockLen
+  raddress.toSAddr(localAddr, localAddrLen)
+  if bindSocket(SocketHandle(sock), cast[ptr SockAddr](addr localAddr), localAddrLen) != 0:
+    raiseTransportOsError(osLastError())
+
 when defined(nimdoc):
   proc pauseAccept(server: StreamServer) {.inline.} = discard
   proc resumeAccept(server: StreamServer) {.inline.} = discard
@@ -1633,18 +1651,6 @@ else:
         retFuture.fail(exc)
         return retFuture
     return connect(sock, address, bufferSize, child)
-
-  proc bindSocket*(sock: AsyncFD, localAddress: TransportAddress, reuseAddr = true) {.
-    raises: [Defect, OSError, TransportOsError].} =
-    if reuseAddr:
-      # Setting SO_REUSEADDR option we are able to reuse ports using the 0.0.0.0 address (or equivalent)
-      setSockOptInt(SocketHandle(sock), SOL_SOCKET, SO_REUSEADDR, 1)
-    var
-      localAddr: Sockaddr_storage
-      localAddrLen: SockLen
-    localAddress.toSAddr(localAddr, localAddrLen)
-    if posix.bindSocket(SocketHandle(sock), cast[ptr SockAddr](addr localAddr), localAddrLen) != 0:
-      raiseTransportOsError(osLastError())
 
   proc acceptLoop(udata: pointer) =
     if isNil(udata):
