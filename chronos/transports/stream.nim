@@ -1532,6 +1532,7 @@ else:
           if sock == asyncInvalidSocket:
             sock.closeSocket()
           retFuture.fail(getTransportOsError(err))
+          return retFuture
 
     proc continuation(udata: pointer) =
       if not(retFuture.finished()):
