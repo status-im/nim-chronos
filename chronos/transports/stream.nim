@@ -13,6 +13,7 @@ else:
   {.push raises: [].}
 
 import std/[net, nativesockets, os, deques]
+import stew/results
 import ".."/[asyncloop, handles, selectors2]
 import common
 
@@ -1490,7 +1491,8 @@ else:
 
   proc connect*(address: TransportAddress,
                 bufferSize = DefaultStreamBufferSize,
-                child: StreamTransport = nil): Future[StreamTransport] =
+                child: StreamTransport = nil,
+                localAddress: Opt[TransportAddress] = Opt.none(TransportAddress)): Future[StreamTransport] =
     ## Open new connection to remote peer with address ``address`` and create
     ## new transport object ``StreamTransport`` for established connection.
     ## ``bufferSize`` - size of internal buffer for transport.
@@ -1506,8 +1508,9 @@ else:
       # `Protocol` enum will not support IPPROTO_IP == 0.
       proto = cast[Protocol](0)
 
-    let sock = try: createAsyncSocket(address.getDomain(), SockType.SOCK_STREAM,
-                              proto)
+    let sock =
+      try:
+        createAsyncSocket(address.getDomain(), SockType.SOCK_STREAM, proto)
     except CatchableError as exc:
       retFuture.fail(exc)
       return retFuture
@@ -1519,6 +1522,22 @@ else:
       else:
         retFuture.fail(getTransportOsError(err))
       return retFuture
+
+    if localAddress.isSome():
+      try:
+         # Setting SO_REUSEADDR option we are able to reuse ports using the 0.0.0.0 address (or equivalent)
+        setSockOptInt(SocketHandle(sock), SOL_SOCKET, SO_REUSEADDR, 1)
+      except CatchableError as exc:
+        retFuture.fail(exc)
+        return retFuture
+      var
+        localAddr: Sockaddr_storage
+        localAddrLen: SockLen
+      localAddress.get().toSAddr(localAddr, localAddrLen)
+      if posix.bindSocket(SocketHandle(sock), cast[ptr SockAddr](addr localAddr), localAddrLen) != 0:
+        closeSocket(sock)
+        retFuture.fail(getTransportOsError(osLastError()))
+        return retFuture
 
     proc continuation(udata: pointer) =
       if not(retFuture.finished()):

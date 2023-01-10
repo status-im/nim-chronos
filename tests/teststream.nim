@@ -1358,3 +1358,40 @@ suite "Stream Transport test suite":
       skip()
     else:
       check getCurrentFD() == markFD
+
+  test "connect reusing same port in local address":
+    let dst1 = initTAddress("127.0.0.1:33335")
+    let dst2 = initTAddress("127.0.0.1:33336")
+
+    proc client(server: StreamServer, transp: StreamTransport) {.async.} =
+      waitFor transp.closeWait()
+
+    var server1 = createStreamServer(dst1, client, {ReuseAddr})
+    var server2 = createStreamServer(dst2, client, {ReuseAddr})
+
+    server1.start()
+    server2.start()
+
+    let ta = initTAddress("0.0.0.0:35000")
+    var transp1 = waitFor connect(dst1, localAddress = Opt.some(ta))
+    var transp2 = waitFor connect(dst2, localAddress = Opt.some(ta))
+
+    server1.stop
+    server2.stop
+
+    waitFor server1.closeWait()
+    waitFor server2.closeWait()
+
+    waitFor transp1.closeWait()
+    waitFor transp2.closeWait()
+
+  test "Leaks test":
+    proc getTrackerLeaks(tracker: string): bool =
+      let tracker = getTracker(tracker)
+      if isNil(tracker): false else: tracker.isLeaked()
+
+    check:
+      getTrackerLeaks("async.stream.reader") == false
+      getTrackerLeaks("async.stream.writer") == false
+      getTrackerLeaks("stream.server") == false
+      getTrackerLeaks("stream.transport") == false
