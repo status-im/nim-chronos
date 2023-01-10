@@ -13,7 +13,6 @@ else:
   {.push raises: [].}
 
 import std/[net, nativesockets, os, deques]
-import stew/results
 import ".."/[asyncloop, handles, selectors2]
 import common
 
@@ -1491,10 +1490,11 @@ else:
     GC_ref(transp)
     result = transp
 
-  proc connect*(address: TransportAddress,
+  proc connect*(sock: AsyncFD,
+                address: TransportAddress,
                 bufferSize = DefaultStreamBufferSize,
-                child: StreamTransport = nil,
-                localAddress: Opt[TransportAddress] = Opt.none(TransportAddress)): Future[StreamTransport] =
+                child: StreamTransport = nil
+                ): Future[StreamTransport] =
                 child: StreamTransport = nil,
                 flags: set[TransportFlags] = {}): Future[StreamTransport] =
     ## Open new connection to remote peer with address ``address`` and create
@@ -1503,21 +1503,9 @@ else:
     var
       saddr: Sockaddr_storage
       slen: SockLen
-      proto: Protocol
+
     var retFuture = newFuture[StreamTransport]("stream.transport.connect")
     address.toSAddr(saddr, slen)
-    proto = Protocol.IPPROTO_TCP
-    if address.family == AddressFamily.Unix:
-      # `Protocol` enum is missing `0` value, so we making here cast, until
-      # `Protocol` enum will not support IPPROTO_IP == 0.
-      proto = cast[Protocol](0)
-
-    let sock =
-      try:
-        createAsyncSocket(address.getDomain(), SockType.SOCK_STREAM, proto)
-    except CatchableError as exc:
-      retFuture.fail(exc)
-      return retFuture
 
     if sock == asyncInvalidSocket:
       let err = osLastError()
@@ -1613,6 +1601,49 @@ else:
 
           retFuture.fail(getTransportOsError(err))
           break
+    return retFuture
+
+  proc createAsyncSocketForDst*(address: TransportAddress): AsyncFD {.
+      raises: [Defect, CatchableError].} =
+    var proto = Protocol.IPPROTO_TCP
+    if address.family == AddressFamily.Unix:
+     # `Protocol` enum is missing `0` value, so we making here cast, until
+     # `Protocol` enum will not support IPPROTO_IP == 0.
+     proto = cast[Protocol](0)
+    return createAsyncSocket(address.getDomain(), SockType.SOCK_STREAM, proto)
+
+  proc connect*(address: TransportAddress,
+                bufferSize = DefaultStreamBufferSize,
+                child: StreamTransport = nil): Future[StreamTransport] =
+    ## Open new connection to remote peer with address ``address`` and create
+    ## new transport object ``StreamTransport`` for established connection.
+    ## ``bufferSize`` - size of internal buffer for transport.
+    let sock =
+      try:
+        createAsyncSocketForDst(address)
+      except CatchableError as exc:
+        var retFuture = newFuture[StreamTransport]("stream.transport.connect")
+        retFuture.fail(exc)
+        return retFuture
+    return connect(sock, address, bufferSize, child)
+
+  proc bindSocket*(sock: AsyncFD, localAddress: TransportAddress, reuseAddr = true): Future[void] =
+    var retFuture = newFuture[void]("stream.transport.bindSocket")
+    if reuseAddr:
+      try:
+         # Setting SO_REUSEADDR option we are able to reuse ports using the 0.0.0.0 address (or equivalent)
+        setSockOptInt(SocketHandle(sock), SOL_SOCKET, SO_REUSEADDR, 1)
+      except CatchableError as exc:
+        retFuture.fail(exc)
+        return retFuture
+    var
+      localAddr: Sockaddr_storage
+      localAddrLen: SockLen
+    localAddress.toSAddr(localAddr, localAddrLen)
+    if posix.bindSocket(SocketHandle(sock), cast[ptr SockAddr](addr localAddr), localAddrLen) != 0:
+      retFuture.fail(getTransportOsError(osLastError()))
+      return retFuture
+    retFuture.complete()
     return retFuture
 
   proc acceptLoop(udata: pointer) =

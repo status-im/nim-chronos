@@ -1373,8 +1373,14 @@ suite "Stream Transport test suite":
     server2.start()
 
     let ta = initTAddress("0.0.0.0:35000")
-    var transp1 = waitFor connect(dst1, localAddress = Opt.some(ta))
-    var transp2 = waitFor connect(dst2, localAddress = Opt.some(ta))
+
+    let sock1 = createAsyncSocketForDst(dst1)
+    waitFor bindSocket(sock1, ta)
+    var transp1 = waitFor connect(sock1, dst1)
+
+    let sock2 = createAsyncSocketForDst(dst2)
+    waitFor bindSocket(sock2, ta)
+    var transp2 = waitFor connect(sock2, dst2)
 
     server1.stop
     server2.stop
