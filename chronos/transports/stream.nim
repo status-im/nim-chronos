@@ -1627,24 +1627,18 @@ else:
         return retFuture
     return connect(sock, address, bufferSize, child)
 
-  proc bindSocket*(sock: AsyncFD, localAddress: TransportAddress, reuseAddr = true): Future[void] =
+  proc bindSocket*(sock: AsyncFD, localAddress: TransportAddress, reuseAddr = true) {.
+    raises: [Defect, OSError, TransportOsError].} =
     var retFuture = newFuture[void]("stream.transport.bindSocket")
     if reuseAddr:
-      try:
-         # Setting SO_REUSEADDR option we are able to reuse ports using the 0.0.0.0 address (or equivalent)
-        setSockOptInt(SocketHandle(sock), SOL_SOCKET, SO_REUSEADDR, 1)
-      except CatchableError as exc:
-        retFuture.fail(exc)
-        return retFuture
+      # Setting SO_REUSEADDR option we are able to reuse ports using the 0.0.0.0 address (or equivalent)
+      setSockOptInt(SocketHandle(sock), SOL_SOCKET, SO_REUSEADDR, 1)
     var
       localAddr: Sockaddr_storage
       localAddrLen: SockLen
     localAddress.toSAddr(localAddr, localAddrLen)
     if posix.bindSocket(SocketHandle(sock), cast[ptr SockAddr](addr localAddr), localAddrLen) != 0:
-      retFuture.fail(getTransportOsError(osLastError()))
-      return retFuture
-    retFuture.complete()
-    return retFuture
+      raiseTransportOsError(osLastError())
 
   proc acceptLoop(udata: pointer) =
     if isNil(udata):

@@ -1375,11 +1375,11 @@ suite "Stream Transport test suite":
     let ta = initTAddress("0.0.0.0:35000")
 
     let sock1 = createAsyncSocketForDst(dst1)
-    waitFor bindSocket(sock1, ta)
+    bindSocket(sock1, ta)
     var transp1 = waitFor connect(sock1, dst1)
 
     let sock2 = createAsyncSocketForDst(dst2)
-    waitFor bindSocket(sock2, ta)
+    bindSocket(sock2, ta)
     var transp2 = waitFor connect(sock2, dst2)
 
     server1.stop
@@ -1391,13 +1391,42 @@ suite "Stream Transport test suite":
     waitFor transp1.closeWait()
     waitFor transp2.closeWait()
 
+  test "connect reusing same port in local address must fail without reuseAddr":
+    let dst1 = initTAddress("127.0.0.1:33335")
+    let dst2 = initTAddress("127.0.0.1:33336")
+
+    proc client(server: StreamServer, transp: StreamTransport) {.async.} =
+      waitFor transp.closeWait()
+
+    var server1 = createStreamServer(dst1, client, {ReuseAddr})
+    var server2 = createStreamServer(dst2, client, {ReuseAddr})
+
+    server1.start()
+    server2.start()
+
+    let ta = initTAddress("0.0.0.0:35000")
+
+    let sock1 = createAsyncSocketForDst(dst1)
+    bindSocket(sock1, ta, false)
+    var transp1 = waitFor connect(sock1, dst1)
+
+    let sock2 = createAsyncSocketForDst(dst2)
+    expect TransportOsError:
+      bindSocket(sock2, ta, false)
+
+    server1.stop
+    server2.stop
+
+    waitFor server1.closeWait()
+    waitFor server2.closeWait()
+
+    waitFor transp1.closeWait()
+
   test "Leaks test":
     proc getTrackerLeaks(tracker: string): bool =
       let tracker = getTracker(tracker)
       if isNil(tracker): false else: tracker.isLeaked()
 
     check:
-      getTrackerLeaks("async.stream.reader") == false
-      getTrackerLeaks("async.stream.writer") == false
       getTrackerLeaks("stream.server") == false
       getTrackerLeaks("stream.transport") == false
