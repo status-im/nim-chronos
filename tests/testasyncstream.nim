@@ -483,6 +483,48 @@ suite "AsyncStream test suite":
       await server.join()
       result = true
     check waitFor(testConsume2(initTAddress("127.0.0.1:46001"))) == true
+  test "AsyncStream(AsyncStream) write(eof) test":
+    proc testWriteEof(address: TransportAddress): Future[bool] {.async.} =
+      let
+        size = 10240
+        message = createBigMessage("ABCDEFGHIJKLMNOP", size)
+
+      proc processClient(server: StreamServer,
+                         transp: StreamTransport) {.async.} =
+        var wstream = newAsyncStreamWriter(transp)
+        var wbstream = newBoundedStreamWriter(wstream, uint64(size))
+        try:
+          check wbstream.atEof() == false
+          await wbstream.write(message)
+          check wbstream.atEof() == false
+          await wbstream.finish()
+          check wbstream.atEof() == true
+          expect AsyncStreamWriteEOFError:
+            await wbstream.write(message)
+          expect AsyncStreamWriteEOFError:
+            await wbstream.write(message)
+          expect AsyncStreamWriteEOFError:
+            await wbstream.write(message)
+          check wbstream.atEof() == true
+          await wbstream.closeWait()
+          check wbstream.atEof() == true
+        finally:
+          await wstream.closeWait()
+          await transp.closeWait()
+
+      let flags = {ServerFlags.ReuseAddr, ServerFlags.TcpNoDelay}
+      var server = createStreamServer(address, processClient, flags = flags)
+      server.start()
+      var conn = await connect(server.localAddress())
+      try:
+        discard await conn.consume()
+      finally:
+        await conn.closeWait()
+        server.stop()
+        await server.closeWait()
+      return true
+
+    check waitFor(testWriteEof(initTAddress("127.0.0.1:46001"))) == true
   test "AsyncStream(AsyncStream) leaks test":
     check:
       getTracker("async.stream.reader").isLeaked() == false
