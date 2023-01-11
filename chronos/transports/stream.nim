@@ -303,15 +303,10 @@ proc bindSocket*(sock: AsyncFD, localAddress: TransportAddress, reuseAddr = true
     # Setting SO_REUSEADDR option we are able to reuse ports using the 0.0.0.0 address (or equivalent)
     setSockOptInt(SocketHandle(sock), SOL_SOCKET, SO_REUSEADDR, 1)
 
-  var raddress =
-    when defined(windows):
-      windowsAnyAddressFix(localAddress)
-    else:
-      localAddress
   var
     localAddr: Sockaddr_storage
     localAddrLen: SockLen
-  raddress.toSAddr(localAddr, localAddrLen)
+  localAddress.toSAddr(localAddr, localAddrLen)
   if bindSocket(SocketHandle(sock), cast[ptr SockAddr](addr localAddr), localAddrLen) != 0:
     raiseTransportOsError(osLastError())
 
@@ -720,6 +715,13 @@ elif defined(windows):
                   sizeof(saddr).SockLen) != 0'i32:
         result = false
 
+  proc isDomainSet(sock: AsyncFD): bool =
+    try:
+      discard getSockDomain(SocketHandle(sock))
+      true
+    except CatchableError as ex:
+      false
+
   proc connect*(sock: AsyncFD,
                 address: TransportAddress,
                 bufferSize = DefaultStreamBufferSize,
@@ -736,7 +738,6 @@ elif defined(windows):
       var
         saddr: Sockaddr_storage
         slen: SockLen
-        sock: AsyncFD
         povl: RefCustomOverlapped
 
       var raddress = windowsAnyAddressFix(address)
@@ -747,7 +748,7 @@ elif defined(windows):
         retFuture.fail(getTransportOsError(osLastError()))
         return retFuture
 
-      if not(bindToDomain(sock, raddress.getDomain())):
+      if not isDomainSet(sock) and not(bindToDomain(sock, raddress.getDomain())):
         let err = wsaGetLastError()
         sock.closeSocket()
         retFuture.fail(getTransportOsError(err))
@@ -793,6 +794,32 @@ elif defined(windows):
 
       retFuture.cancelCallback = cancel
 
+    else: #address.family == AddressFamily.Unix:
+      retFuture.fail(newException(TransportAddressError, "Unsupported address family"))
+
+    return retFuture
+
+  proc connect*(address: TransportAddress,
+                bufferSize = DefaultStreamBufferSize,
+                child: StreamTransport = nil,
+                flags: set[TransportFlags] = {}): Future[StreamTransport] =
+    ## Open new connection to remote peer with address ``address`` and create
+    ## new transport object ``StreamTransport`` for established connection.
+    ## ``bufferSize`` is size of internal buffer for transport.
+    var retFuture = newFuture[StreamTransport]("stream.transport.connect")
+    if address.family in {AddressFamily.IPv4, AddressFamily.IPv6}:
+      var raddress = windowsAnyAddressFix(address)
+      try:
+        let sock = createAsyncSocket(raddress.getDomain(), SockType.SOCK_STREAM, Protocol.IPPROTO_TCP)
+        let r = connect(sock, address, bufferSize, child, flags)
+        proc cb(arg: pointer) =
+          try:
+            retFuture.complete(r.read)
+          except CatchableError as exc:
+            retFuture.fail(exc)
+        r.addCallback(cb)
+      except CatchableError as exc:
+        retFuture.fail(exc)
     elif address.family == AddressFamily.Unix:
       ## Unix domain socket emulation with Windows Named Pipes.
       var pipeHandle = INVALID_HANDLE_VALUE
@@ -809,44 +836,24 @@ elif defined(windows):
           if pipeHandle == INVALID_HANDLE_VALUE:
             let err = osLastError()
             if int32(err) == ERROR_PIPE_BUSY:
-              discard setTimer(Moment.fromNow(50.milliseconds),
-                               pipeContinuation, nil)
+              discard setTimer(Moment.fromNow(50.milliseconds), pipeContinuation, nil)
             else:
               retFuture.fail(getTransportOsError(err))
           else:
-            try:
-              register(AsyncFD(pipeHandle))
-            except CatchableError as exc:
-              retFuture.fail(exc)
-              return
-
-            let transp = try: newStreamPipeTransport(AsyncFD(pipeHandle),
-                                                bufferSize, child)
-            except CatchableError as exc:
-              retFuture.fail(exc)
-              return
+            let transp =
+              try:
+                register(AsyncFD(pipeHandle))
+                newStreamPipeTransport(AsyncFD(pipeHandle), bufferSize, child)
+              except CatchableError as exc:
+                retFuture.fail(exc)
+                return
             # Start tracking transport
             trackStream(transp)
             retFuture.complete(transp)
       pipeContinuation(nil)
-
+    else:
+      retFuture.fail(newException(TransportAddressError, "Unsupported address family"))
     return retFuture
-
-  proc connect*(address: TransportAddress,
-                bufferSize = DefaultStreamBufferSize,
-                child: StreamTransport = nil,
-                flags: set[TransportFlags] = {}): Future[StreamTransport] =
-    ## Open new connection to remote peer with address ``address`` and create
-    ## new transport object ``StreamTransport`` for established connection.
-    ## ``bufferSize`` is size of internal buffer for transport.
-    var raddress = windowsAnyAddressFix(address)
-    let sock =
-      try: createAsyncSocket(raddress.getDomain(), SockType.SOCK_STREAM, Protocol.IPPROTO_TCP)
-    except CatchableError as exc:
-      var retFuture = newFuture[StreamTransport]("stream.transport.connect")
-      retFuture.fail(exc)
-      return retFuture
-    return connect(sock, raddress, bufferSize, child, flags)
 
   proc createAcceptPipe(server: StreamServer) {.
       raises: [Defect, CatchableError].} =

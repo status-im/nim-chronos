@@ -1389,13 +1389,17 @@ suite "Stream Transport test suite":
     expect TransportOsError:
       bindSocket(sock3, ta, false)
 
+    waitFor transp1.closeWait()
+    waitFor transp2.closeWait()
+    sock3.closeSocket()
+
     for server in servers:
       server.stop()
       waitFor server.closeWait()
 
     waitFor transp1.closeWait()
     waitFor transp2.closeWait()
-    sock2.closeSocket()
+    sock3.closeSocket()
 
   test "Leaks test":
     proc getTrackerLeaks(tracker: string): bool =
