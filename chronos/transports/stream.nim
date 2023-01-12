@@ -1529,8 +1529,7 @@ else:
         if not(setSockOpt(sock, handles.IPPROTO_TCP,
                           handles.TCP_NODELAY, 1)):
           let err = osLastError()
-          if sock == asyncInvalidSocket:
-            sock.closeSocket()
+          sock.closeSocket()
           retFuture.fail(getTransportOsError(err))
           return retFuture
 
