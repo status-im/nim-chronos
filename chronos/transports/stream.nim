@@ -843,13 +843,7 @@ elif defined(windows):
     if address.family in {AddressFamily.IPv4, AddressFamily.IPv6}:
       try:
         let sock = createAsyncSocket(raddress.getDomain(), SockType.SOCK_STREAM, Protocol.IPPROTO_TCP)
-        let r = connect(sock, raddress, bufferSize, child, flags)
-        proc cb(arg: pointer) =
-          try:
-            retFuture.complete(r.read)
-          except CatchableError as exc:
-            retFuture.fail(exc)
-        r.addCallback(cb)
+        retFuture.finishWith(connect(sock, raddress, bufferSize, child, flags))
       except CatchableError as exc:
         retFuture.fail(exc)
     elif address.family == AddressFamily.Unix:
@@ -866,13 +860,7 @@ elif defined(windows):
               except CatchableError as exc:
                 retFuture.fail(exc)
                 return
-            let transpFut = connect(sock, raddress, bufferSize, child, flags)
-            proc cb(arg: pointer) =
-              try:
-                retFuture.complete(transpFut.read)
-              except CatchableError as exc:
-                retFuture.fail(exc)
-            transpFut.addCallback(cb)
+            retFuture.finishWith(connect(sock, raddress, bufferSize, child, flags))
           else:
             discard setTimer(Moment.fromNow(50.milliseconds), pipeContinuation, nil)
       pipeContinuation(nil)
