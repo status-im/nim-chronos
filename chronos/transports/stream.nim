@@ -715,6 +715,30 @@ elif defined(windows):
                   sizeof(saddr).SockLen) != 0'i32:
         result = false
 
+  proc createPipe*(address: TransportAddress): Future[Handle] =
+    var retFuture = newFuture[Handle]("stream.handle")
+    var pipeHandle = INVALID_HANDLE_VALUE
+    var pipeContinuation: proc (udata: pointer) {.gcsafe, raises: [Defect].}
+    pipeContinuation = proc (udata: pointer) {.gcsafe, raises: [Defect].} =
+      # Continue only if `retFuture` is not cancelled.
+      if not(retFuture.finished()):
+        var pipeSuffix = $cast[cstring](unsafeAddr address.address_un[0])
+        var pipeName = newWideCString(r"\\.\pipe\" & pipeSuffix[1 .. ^1])
+        pipeHandle = createFileW(pipeName, GENERIC_READ or GENERIC_WRITE,
+                                 FILE_SHARE_READ or FILE_SHARE_WRITE,
+                                 nil, OPEN_EXISTING,
+                                 FILE_FLAG_OVERLAPPED, Handle(0))
+        if pipeHandle == INVALID_HANDLE_VALUE:
+          let err = osLastError()
+          if int32(err) == ERROR_PIPE_BUSY:
+            discard setTimer(Moment.fromNow(50.milliseconds), pipeContinuation, nil)
+          else:
+            retFuture.fail(getTransportOsError(err))
+        else:
+          retFuture.complete(pipeHandle)
+    pipeContinuation(nil)
+    return retFuture
+
   proc isDomainSet(sock: AsyncFD): bool =
     try:
       discard getSockDomain(SocketHandle(sock))
@@ -741,7 +765,6 @@ elif defined(windows):
         povl: RefCustomOverlapped
 
       var raddress = windowsAnyAddressFix(address)
-
       toSAddr(raddress, saddr, slen)
 
       if sock == asyncInvalidSocket:
@@ -794,8 +817,17 @@ elif defined(windows):
 
       retFuture.cancelCallback = cancel
 
-    else: #address.family == AddressFamily.Unix:
-      retFuture.fail(newException(TransportAddressError, "Unsupported address family"))
+    elif address.family == AddressFamily.Unix:
+      let transp =
+        try:
+          register(sock)
+          newStreamPipeTransport(sock, bufferSize, child)
+        except CatchableError as exc:
+          retFuture.fail(exc)
+          return
+      # Start tracking transport
+      trackStream(transp)
+      retFuture.complete(transp)
 
     return retFuture
 
@@ -807,11 +839,11 @@ elif defined(windows):
     ## new transport object ``StreamTransport`` for established connection.
     ## ``bufferSize`` is size of internal buffer for transport.
     var retFuture = newFuture[StreamTransport]("stream.transport.connect")
+    var raddress = windowsAnyAddressFix(address)
     if address.family in {AddressFamily.IPv4, AddressFamily.IPv6}:
-      var raddress = windowsAnyAddressFix(address)
       try:
         let sock = createAsyncSocket(raddress.getDomain(), SockType.SOCK_STREAM, Protocol.IPPROTO_TCP)
-        let r = connect(sock, address, bufferSize, child, flags)
+        let r = connect(sock, raddress, bufferSize, child, flags)
         proc cb(arg: pointer) =
           try:
             retFuture.complete(r.read)
@@ -822,34 +854,27 @@ elif defined(windows):
         retFuture.fail(exc)
     elif address.family == AddressFamily.Unix:
       ## Unix domain socket emulation with Windows Named Pipes.
-      var pipeHandle = INVALID_HANDLE_VALUE
+      var pipeHandleFut = createPipe(address)
       var pipeContinuation: proc (udata: pointer) {.gcsafe, raises: [Defect].}
       pipeContinuation = proc (udata: pointer) {.gcsafe, raises: [Defect].} =
         # Continue only if `retFuture` is not cancelled.
         if not(retFuture.finished()):
-          var pipeSuffix = $cast[cstring](unsafeAddr address.address_un[0])
-          var pipeName = newWideCString(r"\\.\pipe\" & pipeSuffix[1 .. ^1])
-          pipeHandle = createFileW(pipeName, GENERIC_READ or GENERIC_WRITE,
-                                   FILE_SHARE_READ or FILE_SHARE_WRITE,
-                                   nil, OPEN_EXISTING,
-                                   FILE_FLAG_OVERLAPPED, Handle(0))
-          if pipeHandle == INVALID_HANDLE_VALUE:
-            let err = osLastError()
-            if int32(err) == ERROR_PIPE_BUSY:
-              discard setTimer(Moment.fromNow(50.milliseconds), pipeContinuation, nil)
-            else:
-              retFuture.fail(getTransportOsError(err))
-          else:
-            let transp =
+          if pipeHandleFut.finished():
+            let sock =
               try:
-                register(AsyncFD(pipeHandle))
-                newStreamPipeTransport(AsyncFD(pipeHandle), bufferSize, child)
+                AsyncFD(pipeHandleFut.read)
               except CatchableError as exc:
                 retFuture.fail(exc)
                 return
-            # Start tracking transport
-            trackStream(transp)
-            retFuture.complete(transp)
+            let transpFut = connect(sock, raddress, bufferSize, child, flags)
+            proc cb(arg: pointer) =
+              try:
+                retFuture.complete(transpFut.read)
+              except CatchableError as exc:
+                retFuture.fail(exc)
+            transpFut.addCallback(cb)
+          else:
+            discard setTimer(Moment.fromNow(50.milliseconds), pipeContinuation, nil)
       pipeContinuation(nil)
     else:
       retFuture.fail(newException(TransportAddressError, "Unsupported address family"))
