@@ -11,6 +11,10 @@ import ../chronos
 
 when defined(nimHasUsed): {.used.}
 
+type
+  RetValueType = proc(n: int): Future[int] {.async.}
+  RetVoidType = proc(n: int): Future[void] {.async.}
+
 proc asyncRetValue(n: int): Future[int] {.async.} =
   await sleepAsync(n.milliseconds)
   result = n * 10
@@ -31,6 +35,7 @@ proc asyncRetExceptionVoid(n: int) {.async.} =
 
 proc testAwait(): Future[bool] {.async.} =
   var res: int
+
   await asyncRetVoid(100)
   res = await asyncRetValue(100)
   if res != 1000:
@@ -50,6 +55,15 @@ proc testAwait(): Future[bool] {.async.} =
     discard
   if res != 0:
     return false
+
+  block:
+    let fn: RetVoidType = asyncRetVoid
+    await fn(100)
+  block:
+    let fn: RetValueType = asyncRetValue
+    if (await fn(100)) != 1000:
+      return false
+
   return true
 
 proc testAwaitne(): Future[bool] {.async.} =
