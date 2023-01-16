@@ -187,6 +187,7 @@ proc updateHandle2*[T](s: Selector[T], fd: cint,
         if epoll_ctl(s.epollFd, EPOLL_CTL_ADD, fd,
                      unsafeAddr(epollEvents)) != 0:
           return err(osLastError())
+        inc(s.count)
       else:
         if events != {}:
           if epoll_ctl(s.epollFd, EPOLL_CTL_MOD, fd,
