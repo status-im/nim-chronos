@@ -19,7 +19,7 @@ else:
 type
   SelectorImpl[T] = object
     epollFd: cint
-    signalFd: Opt[cint]
+    sigFd: Opt[cint]
     pidFd: Opt[cint]
     fds: Table[uint32, SelectorKey[T]]
     signals: Table[uint32, SelectorKey[T]]
@@ -276,8 +276,8 @@ proc registerSignalEvent[T](s: Selector[T], signal: int,
     raiseAssert "Signal [" & $signal & "] could have only one handler at " &
                 "the same time!"
 
-  if s.signalFd.isSome():
-    let res = signalfd(s.signalFd.get(), s.signalMask,
+  if s.sigFd.isSome():
+    let res = signalfd(s.sigFd.get(), s.signalMask,
                        SFD_NONBLOCK or SFD_CLOEXEC)
     if res == -1:
       let errorCode = osLastError()
@@ -286,29 +286,29 @@ proc registerSignalEvent[T](s: Selector[T], signal: int,
       discard s.unblockSignal(signal)
       return err(errorCode)
   else:
-    let signalFd = signalfd(-1, s.signalMask, SFD_NONBLOCK or SFD_CLOEXEC)
-    if signalFd == -1:
+    let sigFd = signalfd(-1, s.signalMask, SFD_NONBLOCK or SFD_CLOEXEC)
+    if sigFd == -1:
       let errorCode = osLastError()
       s.freeKey(fdu32)
       s.freeSignal(signal)
       discard s.unblockSignal(signal)
       return err(errorCode)
 
-    let fdKey = SelectorKey[T](ident: signalFd, events: {Event.Signal})
-    s.addKey(uint32(signalFd), fdKey)
+    let fdKey = SelectorKey[T](ident: sigFd, events: {Event.Signal})
+    s.addKey(uint32(sigFd), fdKey)
 
     let event = EpollEvent(events: EPOLLIN or EPOLLRDHUP,
-                           data: EpollData(u64: uint64(signalFd)))
-    if epoll_ctl(s.epollFd, EPOLL_CTL_ADD, signalFd, unsafeAddr(event)) != 0:
+                           data: EpollData(u64: uint64(sigFd)))
+    if epoll_ctl(s.epollFd, EPOLL_CTL_ADD, sigFd, unsafeAddr(event)) != 0:
       let errorCode = osLastError()
       s.freeKey(fdu32)
       s.freeSignal(signal)
-      s.freeKey(uint32(signalFd))
+      s.freeKey(uint32(sigFd))
       discard s.unblockSignal(signal)
-      discard handleEintr(osdefs.close(signalFd))
+      discard handleEintr(osdefs.close(sigFd))
       return err(errorCode)
 
-    s.signalFd = Opt.some(signalFd)
+    s.sigFd = Opt.some(sigFd)
     inc(s.count)
 
   inc(s.count)
@@ -448,32 +448,32 @@ proc unregister2*[T](s: Selector[T], fd: cint): SelectResult[void] =
       if not(s.signals.hasKey(uint32(pkey.ident))):
         raiseAssert "Signal " & $pkey.ident & " is not registered in the " &
                     "selector!"
-      let signalFd =
+      let sigFd =
         block:
-          doAssert(s.signalFd.isSome(), "signalfd descriptor is missing")
-          s.signalFd.get()
+          doAssert(s.sigFd.isSome(), "signalfd descriptor is missing")
+          s.sigFd.get()
 
       s.freeSignal(pkey.ident)
 
       if len(s.signals) > 0:
-        let res = signalfd(signalFd, s.signalMask, SFD_NONBLOCK or SFD_CLOEXEC)
+        let res = signalfd(sigFd, s.signalMask, SFD_NONBLOCK or SFD_CLOEXEC)
         if res == -1:
           let errorCode = osLastError()
           discard s.unblockSignal(pkey.ident)
           return err(errorCode)
       else:
-        s.freeKey(uint32(signalFd))
-        s.signalFd = Opt.none(cint)
+        s.freeKey(uint32(sigFd))
+        s.sigFd = Opt.none(cint)
 
-        if epoll_ctl(s.epollFd, EPOLL_CTL_DEL, signalFd, nil) != 0:
+        if epoll_ctl(s.epollFd, EPOLL_CTL_DEL, sigFd, nil) != 0:
           let errorCode = osLastError()
-          discard handleEintr(osdefs.close(signalFd))
+          discard handleEintr(osdefs.close(sigFd))
           discard s.unblockSignal(pkey.ident)
           return err(errorCode)
 
         dec(s.count)
 
-        if handleEintr(osdefs.close(signalFd)) != 0:
+        if handleEintr(osdefs.close(sigFd)) != 0:
           let errorCode = osLastError()
           discard s.unblockSignal(pkey.ident)
           return err(errorCode)

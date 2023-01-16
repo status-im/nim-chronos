@@ -43,8 +43,8 @@ const
   ioselSupportedPlatform* = defined(macosx) or defined(freebsd) or
                             defined(netbsd) or defined(openbsd) or
                             defined(dragonfly) or defined(linux)
-  ## This constant is used to determine whether the destination platform is
-  ## fully supported by ``ioselectors`` module.
+    ## This constant is used to determine whether the destination platform is
+    ## fully supported by ``ioselectors`` module.
 
   asyncEventsCount* {.intdefine.} = 64
     ## Number of epoll events retrieved by syscall.

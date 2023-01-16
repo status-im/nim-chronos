@@ -5,10 +5,11 @@
 #              Licensed under either of
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
-
 import unittest
 import ../chronos
 import ../chronos/ratelimit
+
+when defined(nimHasUsed): {.used.}
 
 suite "Token Bucket":
   test "Sync test":
