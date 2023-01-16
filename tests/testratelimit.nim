@@ -12,6 +12,8 @@ import unittest2
 import ../chronos
 import ../chronos/ratelimit
 
+when defined(nimHasUsed): {.used.}
+
 suite "Token Bucket":
   test "Sync test":
     var bucket = TokenBucket.new(1000, 1.milliseconds)
