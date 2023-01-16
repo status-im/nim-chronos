@@ -46,9 +46,6 @@ const
   ## This constant is used to determine whether the destination platform is
   ## fully supported by ``ioselectors`` module.
 
-  bsdPlatform = defined(macosx) or defined(freebsd) or defined(netbsd) or
-                defined(openbsd) or defined(dragonfly)
-
   asyncEventsCount* {.intdefine.} = 64
     ## Number of epoll events retrieved by syscall.
   asyncInitialSize* {.intdefine.} = 1024
@@ -282,7 +279,6 @@ else:
 
   const
     InvalidIdent = -1
-    NotRegisteredMessage = "Event is not registered in selector!"
 
   proc raiseIOSelectorsError[T](message: T) =
     var msg = ""
@@ -368,7 +364,8 @@ else:
 
   when defined(linux):
     include ./ioselects/ioselectors_epoll
-  elif bsdPlatform:
+  elif defined(macosx) or defined(freebsd) or defined(netbsd) or
+       defined(openbsd) or defined(dragonfly):
     include ./ioselects/ioselectors_kqueue
   elif defined(windows):
     include ./ioselects/ioselectors_select

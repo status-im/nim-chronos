@@ -154,7 +154,7 @@ proc wakeUpFirst(lock: AsyncLock): bool {.inline.} =
       res = true
       break
   if i > 0:
-    lock.waiters.delete(0, i - 1)
+    lock.waiters.delete(0 .. (i - 1))
   res
 
 proc checkAll(lock: AsyncLock): bool {.inline.} =
@@ -272,7 +272,7 @@ proc wakeupNext(waiters: var seq[Future[void]]) {.inline.} =
       break
 
   if i > 0:
-    waiters.delete(0, i - 1)
+    waiters.delete(0 .. (i - 1))
 
 proc full*[T](aq: AsyncQueue[T]): bool {.inline.} =
   ## Return ``true`` if there are ``maxsize`` items in the queue.

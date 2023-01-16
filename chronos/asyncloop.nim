@@ -179,14 +179,6 @@ when defined(windows):
   import sets, hashes
 elif unixPlatform:
   import ./selectors2
-  from posix import EINTR, EAGAIN, EINPROGRESS, EWOULDBLOCK, MSG_PEEK,
-                    MSG_NOSIGNAL
-  from posix import SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
-                    SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV, SIGUSR2,
-                    SIGPIPE, SIGALRM, SIGTERM, SIGPIPE
-  export SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
-         SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV, SIGUSR2,
-         SIGPIPE, SIGALRM, SIGTERM, SIGPIPE
 
 type
   CallbackFunc* = proc (arg: pointer) {.gcsafe, raises: [Defect].}

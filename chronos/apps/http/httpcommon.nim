@@ -125,9 +125,8 @@ iterator queryParams*(query: string,
     if len(k) > 0:
       let v = if len(items) > 1: items[1] else: ""
       if CommaSeparatedArray in flags:
-        let key = decodeUrl(k)
         for av in decodeUrl(v).split(','):
-          yield (k, av)
+          yield (decodeUrl(k), av)
       else:
         yield (decodeUrl(k), decodeUrl(v))
 

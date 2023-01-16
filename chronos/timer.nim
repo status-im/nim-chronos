@@ -23,6 +23,8 @@
 ##
 ## You can specify which timer you want to use ``-d:asyncTimer=<system/mono>``.
 import ./osdefs
+import stew/base10
+
 const asyncTimer* {.strdefine.} = "mono"
 
 when (NimMajor, NimMinor) < (1, 4):

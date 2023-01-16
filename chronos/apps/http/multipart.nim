@@ -604,7 +604,6 @@ proc beginPart*(mpw: MultiPartWriterRef, name: string,
   ## output stream.
   ##
   ## Note: `filename` and `name` arguments could be only ASCII strings.
-  const ContentDisposition = "Content-Disposition"
   doAssert(mpw.kind == MultiPartSource.Stream)
   doAssert(mpw.state in {MultiPartWriterState.MessageStarted,
                          MultiPartWriterState.PartFinished})

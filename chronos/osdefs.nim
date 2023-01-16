@@ -994,6 +994,10 @@ elif defined(dragonfly):
 
 when defined(linux) or defined(macos) or defined(macosx) or defined(freebsd) or
      defined(openbsd) or defined(netbsd) or defined(dragonfly):
+  export SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
+         SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV, SIGUSR2,
+         SIGPIPE, SIGALRM, SIGTERM, SIGPIPE
+
   const
     POSIX_SPAWN_RESETIDS* = 0x01
     POSIX_SPAWN_SETPGROUP* = 0x02
