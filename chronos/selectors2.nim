@@ -269,7 +269,6 @@ else:
 
   const
     InvalidIdent = -1
-    NotRegisteredMessage = "Event is not registered in selector!"
 
   proc raiseIOSelectorsError[T](message: T) =
     var msg = ""
