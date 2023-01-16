@@ -746,7 +746,7 @@ else:
       res = cast[cstringArray](alloc0((itemsCount + 1) * sizeof(cstring)))
       i = 0
     for key, value in envPairs():
-      var x = string(key) & "=" & string(value)
+      var x = key & "=" & value
       res[i] = cast[cstring](alloc0(len(x) + 1))
       copyMem(res[i], addr(x[0]), len(x))
       inc(i)
@@ -807,7 +807,7 @@ else:
       len(a)
 
     while true:
-      if osdefs.getcwd(res, bufsize) != nil:
+      if osdefs.getcwd(cstring(res), bufsize) != nil:
         setLen(res, strLength(res))
         return ok(res)
       else:
@@ -888,11 +888,11 @@ else:
 
       let res =
         if AsyncProcessOption.UsePath in options:
-          posixSpawnp(pid, commandLine, sa.actions, sa.attrs, commandArguments,
-                      commandEnv)
+          posixSpawnp(pid, cstring(commandLine), sa.actions, sa.attrs,
+                      commandArguments, commandEnv)
         else:
-          posixSpawn(pid, commandLine, sa.actions, sa.attrs, commandArguments,
-                     commandEnv)
+          posixSpawn(pid, cstring(commandLine), sa.actions, sa.attrs,
+                     commandArguments, commandEnv)
 
       if res != 0:
         await pipes.closeProcessStreams(options)
@@ -929,8 +929,7 @@ else:
 
       # If currentError has been set, raising an exception.
       if currentError != 0:
-        raiseAsyncProcessError("Unable to spawn process",
-                               OSErrorCode(currentError))
+        raiseAsyncProcessError("Unable to spawn process", currentError)
 
     let process = AsyncProcessRef(
       processId: pid,
@@ -1005,7 +1004,6 @@ else:
     var
       retFuture = newFuture[int]("chronos.waitForExit()")
       processHandle: int = 0
-      wstatus: cint = 1
       timer: TimerCallback = nil
 
     if p.exitStatus.isSome():
@@ -1018,20 +1016,17 @@ else:
         retFuture.fail(newException(AsyncProcessError, osErrorMsg(res.error())))
         return retFuture
 
-    when defined(macosx) or defined(freebsd) or defined(netbsd) or
-         defined(openbsd) or defined(dragonfly):
-      # This code should be executed in `kqueue` enabled OS to help avoid
-      # "zombie death race" problem. But this code must not be executed on
-      # Linux.
+    block:
       let exitCode = p.peekProcessExitCode().valueOr:
         retFuture.fail(newException(AsyncProcessError, osErrorMsg(error)))
         return retFuture
       if exitCode != -1:
         retFuture.complete(exitStatusLikeShell(exitCode))
         return retFuture
-      if timeout == ZeroDuration:
-        retFuture.complete(-1)
-        return retFuture
+
+    if timeout == ZeroDuration:
+      retFuture.complete(-1)
+      return retFuture
 
     proc continuation(udata: pointer) {.gcsafe.} =
       let source = cast[int](udata)
@@ -1090,6 +1085,23 @@ else:
         retFuture.fail(newException(AsyncProcessError, osErrorMsg(error)))
       return retFuture
 
+    # addProcess2() has race condition problem inside. Its possible that child
+    # process (we going to wait) sends SIGCHLD right after addProcess2() blocks
+    # signals and before it starts monitoring for signal (`signalfd` or
+    # `kqueue`). To avoid this problem we going to check process for completion
+    # one more time.
+    block:
+      let exitCode = p.peekProcessExitCode().valueOr:
+        discard removeProcess2(processHandle)
+        retFuture.fail(newException(AsyncProcessError, osErrorMsg(error)))
+        return retFuture
+      if exitCode != -1:
+        discard removeProcess2(processHandle)
+        retFuture.complete(exitStatusLikeShell(exitCode))
+        return retFuture
+
+    # Process is still running, so we going to wait for SIGCHLD.
+    retFuture.cancelCallback = cancellation
     return retFuture
 
   proc peekExitCode(p: AsyncProcessRef): AsyncProcessResult[int] =

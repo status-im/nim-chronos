@@ -284,18 +284,6 @@ else:
     InvalidIdent = -1
     NotRegisteredMessage = "Event is not registered in selector!"
 
-  template checkFd(s, f) =
-    if f >= s.numFD:
-      var numFD = s.numFD
-      while numFD <= f: numFD *= 2
-      when hasThreadSupport:
-        s.fds = reallocSharedArray(s.fds, numFD)
-      else:
-        s.fds.setLen(numFD)
-      for i in s.numFD ..< numFD:
-        s.fds[i].ident = InvalidIdent
-      s.numFD = numFD
-
   proc raiseIOSelectorsError[T](message: T) =
     var msg = ""
     when T is string:
@@ -307,7 +295,18 @@ else:
     var err = newException(IOSelectorsException, msg)
     raise err
 
-  when not defined(windows):
+  when not defined(windows) and not defined(linux):
+    template checkFd(s, f) =
+      if f >= s.numFD:
+        var numFD = s.numFD
+        while numFD <= f: numFD *= 2
+        when hasThreadSupport:
+          s.fds = reallocSharedArray(s.fds, numFD)
+        else:
+          s.fds.setLen(numFD)
+        for i in s.numFD ..< numFD:
+          s.fds[i].ident = InvalidIdent
+        s.numFD = numFD
 
     template setKey(s, pident, pevents, pparam, pdata: untyped) =
       var skey = addr(s.fds[pident])
@@ -322,6 +321,12 @@ else:
       skey.ident = InvalidIdent
       skey.events = {}
       skey.data = empty
+
+    template clearKey[T](key: ptr SelectorKey[T]) =
+      var empty: T
+      key.ident = InvalidIdent
+      key.events = {}
+      key.data = empty
 
     proc setNonBlocking(fd: cint) {.inline.} =
       let res = setDescriptorFlags(fd, true, true)
@@ -355,16 +360,11 @@ else:
         else:
           ok()
 
-  template clearKey[T](key: ptr SelectorKey[T]) =
-    var empty: T
-    key.ident = InvalidIdent
-    key.events = {}
-    key.data = empty
-
-  proc verifySelectParams(timeout: int) =
+  template verifySelectParams(timeout, min, max: int) =
     # Timeout of -1 means: wait forever
     # Anything higher is the time to wait in milliseconds.
-    doAssert(timeout >= -1, "Cannot select with a negative value, got " & $timeout)
+    doAssert((timeout >= min) and (timeout <= max),
+             "Cannot select with incorrect timeout value, got " & $timeout)
 
   when defined(linux):
     include ./ioselects/ioselectors_epoll
@@ -380,23 +380,3 @@ else:
     include ./ioselects/ioselectors_select
   else:
     include ./ioselects/ioselectors_poll
-
-proc register*[T](s: Selector[T], fd: int | SocketHandle,
-                  events: set[Event], data: T) {.deprecated: "use registerHandle instead".} =
-  ## **Deprecated since v0.18.0:** Use ``registerHandle`` instead.
-  s.registerHandle(fd, events, data)
-
-proc setEvent*(ev: SelectEvent) {.deprecated: "use trigger instead",
-    raises: [Defect, IOSelectorsException].} =
-  ## Trigger event ``ev``.
-  ##
-  ## **Deprecated since v0.18.0:** Use ``trigger`` instead.
-  ev.trigger()
-
-proc update*[T](s: Selector[T], fd: int | SocketHandle,
-                events: set[Event]) {.deprecated: "use updateHandle instead".} =
-  ## Update file/socket descriptor ``fd``, registered in selector
-  ## ``s`` with new events set ``event``.
-  ##
-  ## **Deprecated since v0.18.0:** Use ``updateHandle`` instead.
-  s.updateHandle()
