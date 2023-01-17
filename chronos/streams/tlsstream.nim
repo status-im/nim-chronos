@@ -11,7 +11,7 @@
 ## uses sources of BearSSL <https://www.bearssl.org> by Thomas Pornin.
 import
   bearssl/[brssl, ec, errors, pem, rsa, ssl, x509],
-  bearssl/abi/cacert
+  bearssl/certs/cacert
 import ../asyncloop, ../timer, ../asyncsync
 import asyncstream, ../transports/stream, ../transports/common
 export asyncloop, asyncsync, timer, asyncstream
@@ -101,13 +101,6 @@ type
     par*: ref AsyncStreamError
   TLSStreamProtocolError* = object of TLSStreamError
     errCode*: int
-
-proc newTLSStreamReadError(p: ref AsyncStreamError): ref TLSStreamReadError {.
-     noinline.} =
-  var w = newException(TLSStreamReadError, "Read stream failed")
-  w.msg = w.msg & ", originated from [" & $p.name & "] " & p.msg
-  w.par = p
-  w
 
 proc newTLSStreamWriteError(p: ref AsyncStreamError): ref TLSStreamWriteError {.
      noinline.} =
@@ -375,10 +368,10 @@ proc tlsLoop*(stream: TLSAsyncStream) {.async.} =
 
   # Syncing state for reader and writer
   stream.writer.state = loopState
+  stream.reader.state = loopState
   if loopState == AsyncStreamState.Error:
     if isNil(stream.reader.error):
-      stream.reader.error = newTLSStreamReadError(error)
-  stream.reader.state = loopState
+      stream.reader.state = AsyncStreamState.Finished
 
   if not(isNil(error)):
     # Completing all pending writes
@@ -468,7 +461,7 @@ proc newTLSClientAsyncStream*(rsource: AsyncStreamReader,
 
   if TLSFlags.NoVerifyHost in flags:
     sslClientInitFull(res.ccontext, addr res.x509, nil, 0)
-    initNoAnchor(res.xwc, addr res.x509.vtable)
+    x509NoanchorInit(res.xwc, addr res.x509.vtable)
     sslEngineSetX509(res.ccontext.eng, addr res.xwc.vtable)
   else:
     sslClientInitFull(res.ccontext, addr res.x509,

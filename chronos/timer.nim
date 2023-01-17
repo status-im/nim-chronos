@@ -22,6 +22,8 @@
 ## This clock is slower then ``system`` clock.
 ##
 ## You can specify which timer you want to use ``-d:asyncTimer=<system/mono>``.
+import stew/base10
+
 const asyncTimer* {.strdefine.} = "mono"
 
 when (NimMajor, NimMinor) < (1, 4):
@@ -38,15 +40,15 @@ when defined(windows):
       ## Timer resolution is millisecond.
       var t: FILETIME
       getSystemTimeAsFileTime(t)
-      result = ((cast[uint64](t.dwHighDateTime) shl 32) or
-                 cast[uint64](t.dwLowDateTime)) div 10_000
+      ((cast[uint64](t.dwHighDateTime) shl 32) or
+        cast[uint64](t.dwLowDateTime)) div 10_000
 
     proc fastEpochTimeNano(): uint64 {.inline.} =
       ## Timer resolution is nanosecond.
       var t: FILETIME
       getSystemTimeAsFileTime(t)
-      result = ((cast[uint64](t.dwHighDateTime) shl 32) or
-                 cast[uint64](t.dwLowDateTime)) * 100
+      ((cast[uint64](t.dwHighDateTime) shl 32) or
+        cast[uint64](t.dwLowDateTime)) * 100
 
   else:
     proc QueryPerformanceCounter*(res: var uint64) {.
@@ -61,14 +63,13 @@ when defined(windows):
       ## Procedure's resolution is nanosecond.
       var res: uint64
       QueryPerformanceCounter(res)
-      result = res * queryFrequencyN
+      res * queryFrequencyN
 
-    proc fastEpochTime*(): uint64 {.
-         inline, deprecated: "Use Moment.now()".} =
+    proc fastEpochTime*(): uint64 {.inline, deprecated: "Use Moment.now()".} =
       ## Procedure's resolution is millisecond.
       var res: uint64
       QueryPerformanceCounter(res)
-      result = res div queryFrequencyM
+      res div queryFrequencyM
 
     proc setupQueryFrequence() =
       var freq: uint64
@@ -94,15 +95,13 @@ elif defined(macosx):
       ## Procedure's resolution is millisecond.
       var t: Timeval
       posix_gettimeofday(t)
-      result = (cast[uint64](t.tv_sec) * 1_000 +
-                cast[uint64](t.tv_usec) div 1_000)
+      uint64(t.tv_sec) * 1_000 + uint64(t.tv_usec) div 1_000
 
     proc fastEpochTimeNano(): uint64 {.inline.} =
       ## Procedure's resolution is nanosecond.
       var t: Timeval
       posix_gettimeofday(t)
-      result = (cast[uint64](t.tv_sec) * 1_000_000_000 +
-                cast[uint64](t.tv_usec) * 1_000)
+      uint64(t.tv_sec) * 1_000_000_000 + uint64(t.tv_usec) * 1_000
   else:
     type
       MachTimebaseInfo {.importc: "struct mach_timebase_info",
@@ -126,12 +125,12 @@ elif defined(macosx):
     proc fastEpochTime*(): uint64 {.
          inline, deprecated: "Use Moment.now()".} =
       ## Procedure's resolution is millisecond.
-      result = (mach_absolute_time() * queryFrequencyN) div queryFrequencyD
-      result = result div 1_000_000
+      let res = (mach_absolute_time() * queryFrequencyN) div queryFrequencyD
+      res div 1_000_000
 
     proc fastEpochTimeNano(): uint64 {.inline.} =
       ## Procedure's resolution is nanosecond.
-      result = (mach_absolute_time() * queryFrequencyN) div queryFrequencyD
+      (mach_absolute_time() * queryFrequencyN) div queryFrequencyD
 
     setupQueryFrequence()
 
@@ -144,15 +143,13 @@ elif defined(posix):
       ## Procedure's resolution is millisecond.
       var t: Timespec
       discard clock_gettime(CLOCK_REALTIME, t)
-      result = (cast[uint64](t.tv_sec) * 1_000 +
-                (cast[uint64](t.tv_nsec) div 1_000_000))
+      uint64(t.tv_sec) * 1_000 + (uint64(t.tv_nsec) div 1_000_000)
 
     proc fastEpochTimeNano(): uint64 {.inline.} =
       ## Procedure's resolution is nanosecond.
       var t: Timespec
       discard clock_gettime(CLOCK_REALTIME, t)
-      result = cast[uint64](t.tv_sec) * 1_000_000_000'u64 +
-               cast[uint64](t.tv_nsec)
+      uint64(t.tv_sec) * 1_000_000_000'u64 + uint64(t.tv_nsec)
 
   else:
     proc fastEpochTime*(): uint64 {.
@@ -160,15 +157,13 @@ elif defined(posix):
       ## Procedure's resolution is millisecond.
       var t: Timespec
       discard clock_gettime(CLOCK_MONOTONIC, t)
-      result = (cast[uint64](t.tv_sec) * 1_000 +
-                (cast[uint64](t.tv_nsec) div 1_000_000))
+      uint64(t.tv_sec) * 1_000 + (uint64(t.tv_nsec) div 1_000_000)
 
     proc fastEpochTimeNano(): uint64 {.inline.} =
       ## Procedure's resolution is nanosecond.
       var t: Timespec
       discard clock_gettime(CLOCK_MONOTONIC, t)
-      result = cast[uint64](t.tv_sec) * 1_000_000_000'u64 +
-               cast[uint64](t.tv_nsec)
+      uint64(t.tv_sec) * 1_000_000_000'u64 + uint64(t.tv_nsec)
 
 elif defined(nimdoc):
 
@@ -196,15 +191,15 @@ else:
 
 func `+`*(a: Duration, b: Duration): Duration {.inline.} =
   ## Duration + Duration = Duration
-  result.value = a.value + b.value
+  Duration(value: a.value + b.value)
 
 func `+`*(a: Duration, b: Moment): Moment {.inline.} =
   ## Duration + Moment = Moment
-  result.value = a.value + b.value
+  Moment(value: a.value + b.value)
 
 func `+`*(a: Moment, b: Duration): Moment {.inline.} =
   ## Moment + Duration = Moment
-  result.value = a.value + b.value
+  Moment(value: a.value + b.value)
 
 func `+=`*(a: var Moment, b: Duration) {.inline.} =
   ## Moment += Duration
@@ -218,79 +213,79 @@ func `-`*(a, b: Moment): Duration {.inline.} =
   ## Moment - Moment = Duration
   ##
   ## Note: Duration can't be negative.
-  result.value = if a.value >= b.value: a.value - b.value else: 0'i64
+  Duration(value: if a.value >= b.value: a.value - b.value else: 0'i64)
 
 func `-`*(a: Moment, b: Duration): Moment {.inline.} =
   ## Moment - Duration = Moment
   ##
   ## Note: Moment can be negative
-  result.value = a.value - b.value
+  Moment(value: a.value - b.value)
 
 func `-`*(a: Duration, b: Duration): Duration {.inline.} =
   ## Duration - Duration = Duration
   ##
   ## Note: Duration can't be negative.
-  result.value = if a.value >= b.value: a.value - b.value else: 0'i64
+  Duration(value: if a.value >= b.value: a.value - b.value else: 0'i64)
 
-func `-=`*(a: var Duration, b: Duration): Duration {.inline.} =
+func `-=`*(a: var Duration, b: Duration) {.inline.} =
   ## Duration -= Duration
   a.value = if a.value >= b.value: a.value - b.value else: 0'i64
 
-func `-=`*(a: var Moment, b: Duration): Moment {.inline.} =
+func `-=`*(a: var Moment, b: Duration) {.inline.} =
   ## Moment -= Duration
   a.value -= b.value
 
 func `==`*(a, b: Duration): bool {.inline.} =
   ## Returns ``true`` if ``a`` equal to ``b``.
-  result = (a.value == b.value)
+  a.value == b.value
 
 func `==`*(a, b: Moment): bool {.inline.} =
   ## Returns ``true`` if ``a`` equal to ``b``.
-  result = (a.value == b.value)
+  a.value == b.value
 
 func `<`*(a, b: Duration): bool {.inline.} =
   ## Returns ``true`` if ``a`` less then ``b``.
-  result = (a.value < b.value)
+  a.value < b.value
 
 func `<`*(a, b: Moment): bool {.inline.} =
   ## Returns ``true`` if ``a`` less then ``b``.
-  result = (a.value < b.value)
+  a.value < b.value
 
 func `<=`*(a, b: Duration): bool {.inline.} =
   ## Returns ``true`` if ``a`` less or equal ``b``.
-  result = (a.value <= b.value)
+  a.value <= b.value
 
 func `<=`*(a, b: Moment): bool {.inline.} =
   ## Returns ``true`` if ``a`` less or equal ``b``.
-  result = (a.value <= b.value)
+  a.value <= b.value
 
 func `>`*(a, b: Duration): bool {.inline.} =
   ## Returns ``true`` if ``a`` bigger then ``b``.
-  result = (a.value > b.value)
+  a.value > b.value
 
 func `>`*(a, b: Moment): bool {.inline.} =
   ## Returns ``true`` if ``a`` bigger then ``b``.
-  result = (a.value > b.value)
+  a.value > b.value
 
 func `>=`*(a, b: Duration): bool {.inline.} =
   ## Returns ``true`` if ``a`` bigger or equal ``b``.
-  result = (a.value >= b.value)
+  a.value >= b.value
 
 func `>=`*(a, b: Moment): bool {.inline.} =
   ## Returns ``true`` if ``a`` bigger or equal ``b``.
-  result = (a.value >= b.value)
+  a.value >= b.value
 
 func `*`*(a: Duration, b: SomeIntegerI64): Duration {.inline.} =
   ## Returns Duration multiplied by scalar integer.
-  result.value = a.value * int64(b)
+  Duration(value: a.value * int64(b))
 
 func `*`*(a: SomeIntegerI64, b: Duration): Duration {.inline.} =
   ## Returns Duration multiplied by scalar integer.
-  result.value = int64(a) * b.value
+  Duration(value: int64(a) * b.value)
 
 func `div`*(a: Duration, b: SomeIntegerI64): Duration {.inline.} =
   ## Returns Duration which is result of dividing a Duration by scalar integer.
-  result.value = a.value div int64(b)
+  Duration(value: a.value div int64(b))
 
 const
   Nanosecond* = Duration(value: 1'i64)
@@ -319,139 +314,167 @@ template low*(T: typedesc[Duration]): Duration =
 
 func nanoseconds*(v: SomeIntegerI64): Duration {.inline.} =
   ## Initialize Duration with nanoseconds value ``v``.
-  result.value = int64(v)
+  Duration(value: int64(v))
 
 func microseconds*(v: SomeIntegerI64): Duration {.inline.} =
   ## Initialize Duration with microseconds value ``v``.
-  result.value = int64(v) * Microsecond.value
+  Duration(value: int64(v) * Microsecond.value)
 
 func milliseconds*(v: SomeIntegerI64): Duration {.inline.} =
   ## Initialize Duration with milliseconds value ``v``.
-  result.value = int64(v) * Millisecond.value
+  Duration(value: int64(v) * Millisecond.value)
 
 func seconds*(v: SomeIntegerI64): Duration {.inline.} =
   ## Initialize Duration with seconds value ``v``.
-  result.value = int64(v) * Second.value
+  Duration(value: int64(v) * Second.value)
 
 func minutes*(v: SomeIntegerI64): Duration {.inline.} =
   ## Initialize Duration with minutes value ``v``.
-  result.value = int64(v) * Minute.value
+  Duration(value: int64(v) * Minute.value)
 
 func hours*(v: SomeIntegerI64): Duration {.inline.} =
   ## Initialize Duration with hours value ``v``.
-  result.value = int64(v) * Hour.value
+  Duration(value: int64(v) * Hour.value)
 
 func days*(v: SomeIntegerI64): Duration {.inline.} =
   ## Initialize Duration with days value ``v``.
-  result.value = int64(v) * Day.value
+  Duration(value: int64(v) * Day.value)
 
 func weeks*(v: SomeIntegerI64): Duration {.inline.} =
   ## Initialize Duration with weeks value ``v``.
-  result.value = int64(v) * Week.value
+  Duration(value: int64(v) * Week.value)
 
 func nanoseconds*(v: Duration): int64 {.inline.} =
   ## Round Duration ``v`` to nanoseconds.
-  result = v.value
+  v.value
 
 func microseconds*(v: Duration): int64 {.inline.} =
   ## Round Duration ``v`` to microseconds.
-  result = v.value div Microsecond.value
+  v.value div Microsecond.value
 
 func milliseconds*(v: Duration): int64 {.inline.} =
   ## Round Duration ``v`` to milliseconds.
-  result = v.value div Millisecond.value
+  v.value div Millisecond.value
 
 func seconds*(v: Duration): int64 {.inline.} =
   ## Round Duration ``v`` to seconds.
-  result = v.value div Second.value
+  v.value div Second.value
 
 func minutes*(v: Duration): int64 {.inline.} =
   ## Round Duration ``v`` to minutes.
-  result = v.value div Minute.value
+  v.value div Minute.value
 
 func hours*(v: Duration): int64 {.inline.} =
   ## Round Duration ``v`` to hours.
-  result = v.value div Hour.value
+  v.value div Hour.value
 
 func days*(v: Duration): int64 {.inline.} =
   ## Round Duration ``v`` to days.
-  result = v.value div Day.value
+  v.value div Day.value
 
 func weeks*(v: Duration): int64 {.inline.} =
   ## Round Duration ``v`` to weeks.
-  result = v.value div Week.value
+  v.value div Week.value
 
 func nanos*(v: SomeIntegerI64): Duration {.inline.} =
-  result = nanoseconds(v)
+  nanoseconds(v)
 
 func micros*(v: SomeIntegerI64): Duration {.inline.} =
-  result = microseconds(v)
+  microseconds(v)
 
 func millis*(v: SomeIntegerI64): Duration {.inline.} =
-  result = milliseconds(v)
+  milliseconds(v)
 
 func secs*(v: SomeIntegerI64): Duration {.inline.} =
-  result = seconds(v)
+  seconds(v)
 
 func nanos*(v: Duration): int64 {.inline.} =
-  result = nanoseconds(v)
+  nanoseconds(v)
 
 func micros*(v: Duration): int64 {.inline.} =
-  result = microseconds(v)
+  microseconds(v)
 
 func millis*(v: Duration): int64 {.inline.} =
-  result = milliseconds(v)
+  milliseconds(v)
 
 func secs*(v: Duration): int64 {.inline.} =
-  result = seconds(v)
+  seconds(v)
+
+template add(a: var string, b: Base10Buf[uint64]) =
+  for index in 0 ..< b.len:
+    a.add(char(b.data[index]))
 
 func `$`*(a: Duration): string {.inline.} =
   ## Returns string representation of Duration ``a`` as nanoseconds value.
+  var res = ""
   var v = a.value
+
   if v >= Week.value:
-    result = $(v div Week.value) & "w"
+    res.add(Base10.toBytes(uint64(v div Week.value)))
+    res.add('w')
     v = v mod Week.value
+  if v == 0: return res
   if v >= Day.value:
-    result &= $(v div Day.value) & "d"
+    res.add(Base10.toBytes(uint64(v div Day.value)))
+    res.add('d')
     v = v mod Day.value
+  if v == 0: return res
   if v >= Hour.value:
-    result &= $(v div Hour.value) & "h"
+    res.add(Base10.toBytes(uint64(v div Hour.value)))
+    res.add('h')
     v = v mod Hour.value
+  if v == 0: return res
   if v >= Minute.value:
-    result &= $(v div Minute.value) & "m"
+    res.add(Base10.toBytes(uint64(v div Minute.value)))
+    res.add('m')
     v = v mod Minute.value
+  if v == 0: return res
   if v >= Second.value:
-    result &= $(v div Second.value) & "s"
+    res.add(Base10.toBytes(uint64(v div Second.value)))
+    res.add('s')
     v = v mod Second.value
+  if v == 0: return res
   if v >= Millisecond.value:
-    result &= $(v div Millisecond.value) & "ms"
+    res.add(Base10.toBytes(uint64(v div Millisecond.value)))
+    res.add('m')
+    res.add('s')
     v = v mod Millisecond.value
+  if v == 0: return res
   if v >= Microsecond.value:
-    result &= $(v div Microsecond.value) & "us"
+    res.add(Base10.toBytes(uint64(v div Microsecond.value)))
+    res.add('u')
+    res.add('s')
     v = v mod Microsecond.value
-  result &= $(v div Nanosecond.value) & "ns"
+  if v == 0: return res
+  res.add(Base10.toBytes(uint64(v div Nanosecond.value)))
+  res.add('n')
+  res.add('s')
+  res
 
 func `$`*(a: Moment): string {.inline.} =
   ## Returns string representation of Moment ``a`` as nanoseconds value.
-  result = $(a.value)
-  result.add("ns")
+  var res = ""
+  res.add(Base10.toBytes(uint64(a.value)))
+  res.add('n')
+  res.add('s')
+  res
 
 func isZero*(a: Duration): bool {.inline.} =
   ## Returns ``true`` if Duration ``a`` is ``0``.
-  result = (a.value == 0)
+  a.value == 0
 
 func isInfinite*(a: Duration): bool {.inline.} =
   ## Returns ``true`` if Duration ``a`` is infinite.
-  result = (a.value == InfiniteDuration.value)
+  a.value == InfiniteDuration.value
 
 proc now*(t: typedesc[Moment]): Moment {.inline.} =
   ## Returns current moment in time as Moment.
-  result.value = int64(fastEpochTimeNano())
+  Moment(value: int64(fastEpochTimeNano()))
 
 func init*(t: typedesc[Moment], value: int64, precision: Duration): Moment =
   ## Initialize Moment with absolute time value ``value`` with precision
   ## ``precision``.
-  result.value = value * precision.value
+  Moment(value: value * precision.value)
 
 func epochSeconds*(moment: Moment): int64 =
   moment.value div Second.value
@@ -461,7 +484,7 @@ func epochNanoSeconds*(moment: Moment): int64 =
 
 proc fromNow*(t: typedesc[Moment], a: Duration): Moment {.inline.} =
   ## Returns moment in time which is equal to current moment + Duration.
-  result = Moment.now() + a
+  Moment.now() + a
 
 when defined(posix):
   from posix import Time, Suseconds, Timeval, Timespec
@@ -469,10 +492,14 @@ when defined(posix):
   func toTimeval*(a: Duration): Timeval =
     ## Convert Duration ``a`` to ``Timeval`` object.
     let m = a.value mod Second.value
-    result.tv_sec = Time(a.value div Second.value)
-    result.tv_usec = Suseconds(m div Microsecond.value)
+    Timeval(
+      tv_sec: Time(a.value div Second.value),
+      tv_usec: Suseconds(m div Microsecond.value)
+    )
 
   func toTimespec*(a: Duration): Timespec =
     ## Convert Duration ``a`` to ``Timespec`` object.
-    result.tv_sec = Time(a.value div Second.value)
-    result.tv_nsec = int(a.value mod Second.value)
+    Timespec(
+      tv_sec: Time(a.value div Second.value),
+      tv_nsec: int(a.value mod Second.value)
+    )
