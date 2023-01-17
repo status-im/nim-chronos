@@ -297,12 +297,21 @@ proc clean(transp: StreamTransport) {.inline.} =
     transp.future.complete()
     GC_unref(transp)
 
-proc bindSocket*(sock: AsyncFD, localAddress: TransportAddress, reuseAddr = true) {.
-  raises: [Defect, OSError, TransportOsError].} =
-  if reuseAddr:
-    # Setting SO_REUSEADDR option we are able to reuse ports using the 0.0.0.0 address (or equivalent)
-    setSockOptInt(SocketHandle(sock), SOL_SOCKET, SO_REUSEADDR, 1)
+proc setSockOpt(socket: AsyncFD, level, flag: int) {.
+  raises: [Defect, TransportOsError].} =
+  if not(setSockOpt(socket, level, flag, 1)):
+    let err = osLastError()
+    raiseTransportOsError(err)
 
+proc bindSocket*(sock: AsyncFD, localAddress: TransportAddress, flags: set[ServerFlags] = {}) {.
+  raises: [Defect, OSError, TransportOsError].} =
+  if ServerFlags.ReuseAddr in flags:
+    # Setting SO_REUSEADDR option we are able to reuse ports using the 0.0.0.0 address (or equivalent)
+    setSockOpt(sock, SOL_SOCKET, SO_REUSEADDR)
+  if ServerFlags.ReusePort in flags:
+    setSockOpt(sock, SOL_SOCKET, SO_REUSEPORT)
+  if ServerFlags.TcpNoDelay in flags:
+    setSockOpt(sock, handles.IPPROTO_TCP, handles.TCP_NODELAY)
   var
     localAddr: Sockaddr_storage
     localAddrLen: SockLen

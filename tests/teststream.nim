@@ -1378,16 +1378,16 @@ suite "Stream Transport test suite":
     let ta = initTAddress("0.0.0.0:35000")
 
     let sock1 = createAsyncSocket(dst1.getDomain(), SockType.SOCK_STREAM, Protocol.IPPROTO_TCP)
-    bindSocket(sock1, ta)
+    bindSocket(sock1, ta, {ReuseAddr})
     var transp1 = waitFor connect(sock1, dst1)
 
     let sock2 = createAsyncSocket(dst2.getDomain(), SockType.SOCK_STREAM, Protocol.IPPROTO_TCP)
-    bindSocket(sock2, ta)
+    bindSocket(sock2, ta, {ReuseAddr})
     var transp2 = waitFor connect(sock2, dst2)
 
     let sock3 = createAsyncSocket(dst3.getDomain(), SockType.SOCK_STREAM, Protocol.IPPROTO_TCP)
     expect TransportOsError:
-      bindSocket(sock3, ta, false)
+      bindSocket(sock3, ta)
 
     waitFor transp1.closeWait()
     waitFor transp2.closeWait()
