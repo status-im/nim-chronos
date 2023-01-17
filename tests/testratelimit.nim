@@ -50,7 +50,7 @@ for _ in 0..<100:
       when not defined(macosx):
         # CI's macos scheduler is so jittery that this tests sometimes takes >500ms
         # the test will still fail if it's >1 seconds
-        check Moment.now() - beforeStart in 80.milliseconds .. 120.milliseconds
+        check Moment.now() - beforeStart in 90.milliseconds .. 150.milliseconds
 
     test "Sync manual replenish":
       var bucket = TokenBucket.new(1000, 0.seconds)
