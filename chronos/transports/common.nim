@@ -645,13 +645,13 @@ template getConnectionAbortedError*(code: int): ref TransportAbortedError =
       case code
       of 0, osdefs.WSAECONNABORTED:
         "[ECONNABORTED] Connection has been aborted before being accepted"
-      of WSAENETDOWN:
+      of osdefs.WSAENETDOWN:
         "[ENETDOWN] Network is down"
-      of WSAENETRESET:
+      of osdefs.WSAENETRESET:
         "[ENETRESET] Network dropped connection on reset"
-      of WSAECONNRESET:
+      of osdefs.WSAECONNRESET:
         "[ECONNRESET] Connection reset by peer"
-      of WSAETIMEDOUT:
+      of osdefs.WSAETIMEDOUT:
         "[ETIMEDOUT] Connection timed out"
       else:
         "[" & $code & "] Connection has been aborted"

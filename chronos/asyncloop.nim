@@ -546,7 +546,7 @@ when defined(windows):
       doAssert(not(isNil(wh)))
 
       let
-        ovl = cast[CustomOverlapped](udata)
+        ovl = CustomOverlapped(udata)
         udata = ovl.data.udata
       # We ignore result here because its not possible to indicate an error.
       discard closeWaitable(wh)
@@ -685,7 +685,7 @@ when defined(windows):
       else:
         osLastError()
     if not isNil(aftercb):
-      var acb = AsyncCallback(function: aftercb, udata: cast[pointer](param))
+      var acb = AsyncCallback(function: aftercb, udata: pointer(param))
       loop.callbacks.addLast(acb)
 
   proc closeHandle*(fd: AsyncFD, aftercb: CallbackFunc = nil) =
@@ -698,7 +698,7 @@ when defined(windows):
       else:
         osLastError()
     if not isNil(aftercb):
-      var acb = AsyncCallback(function: aftercb, udata: cast[pointer](param))
+      var acb = AsyncCallback(function: aftercb, udata: pointer(param))
       loop.callbacks.addLast(acb)
 
   proc contains*(disp: PDispatcher, fd: AsyncFD): bool =
