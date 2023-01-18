@@ -73,8 +73,6 @@ const
   StreamServerTrackerName = "stream.server"
 
 when defined(windows):
-  const SO_UPDATE_CONNECT_CONTEXT = 0x7010
-
   type
     StreamTransport* = ref object of RootRef
       fd*: AsyncFD                    # File descriptor

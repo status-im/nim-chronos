@@ -168,12 +168,15 @@ export timer, results
 # TODO: Check if yielded future is nil and throw a more meaningful exception
 
 const
-  unixPlatform = defined(macosx) or defined(freebsd) or
-                 defined(netbsd) or defined(openbsd) or
-                 defined(dragonfly) or defined(macos) or
-                 defined(linux) or defined(android) or
-                 defined(solaris)
   MaxEventsCount* = 64
+
+when not(defined(windows)):
+  const
+    unixPlatform = defined(macosx) or defined(freebsd) or
+                   defined(netbsd) or defined(openbsd) or
+                   defined(dragonfly) or defined(macos) or
+                   defined(linux) or defined(android) or
+                   defined(solaris)
 
 when defined(windows):
   import sets, hashes
@@ -297,22 +300,6 @@ proc raiseAsDefect*(exc: ref Exception, msg: string) {.
 
 when defined(windows):
   type
-    WSAPROC_TRANSMITFILE = proc(hSocket: SocketHandle, hFile: Handle,
-                                nNumberOfBytesToWrite: DWORD,
-                                nNumberOfBytesPerSend: DWORD,
-                                lpOverlapped: POVERLAPPED,
-                                lpTransmitBuffers: pointer,
-                                dwReserved: DWORD): cint {.
-                                gcsafe, stdcall, raises: [].}
-
-    LPFN_GETQUEUEDCOMPLETIONSTATUSEX = proc(completionPort: Handle,
-                                            lpPortEntries: ptr OVERLAPPED_ENTRY,
-                                            ulCount: DWORD,
-                                            ulEntriesRemoved: var ULONG,
-                                            dwMilliseconds: DWORD,
-                                            fAlertable: WINBOOL): WINBOOL {.
-                                            gcsafe, stdcall, raises: [].}
-
     CompletionKey = ULONG_PTR
 
     CompletionData* = object
@@ -327,14 +314,8 @@ when defined(windows):
     CustomOverlapped* = object of OVERLAPPED
       data*: CompletionData
 
-    OVERLAPPED_ENTRY* = object
-      lpCompletionKey*: ULONG_PTR
-      lpOverlapped*: ptr CustomOverlapped
-      internal: ULONG_PTR
-      dwNumberOfBytesTransferred: DWORD
-
     PDispatcher* = ref object of PDispatcherBase
-      ioPort: Handle
+      ioPort: HANDLE
       handles: HashSet[AsyncFD]
       connectEx*: WSAPROC_CONNECTEX
       acceptEx*: WSAPROC_ACCEPTEX
@@ -360,13 +341,6 @@ when defined(windows):
 
     AsyncFD* = distinct int
 
-  proc getModuleHandle(lpModuleName: WideCString): Handle {.
-       stdcall, dynlib: "kernel32", importc: "GetModuleHandleW", sideEffect.}
-  proc getProcAddress(hModule: Handle, lpProcName: cstring): pointer {.
-       stdcall, dynlib: "kernel32", importc: "GetProcAddress", sideEffect.}
-  proc rtlNtStatusToDosError(code: uint64): ULONG {.
-       stdcall, dynlib: "ntdll", importc: "RtlNtStatusToDosError", sideEffect.}
-
   proc hash(x: AsyncFD): Hash {.borrow.}
   proc `==`*(x: AsyncFD, y: AsyncFD): bool {.borrow, gcsafe.}
 
@@ -384,6 +358,11 @@ when defined(windows):
 
   proc initAPI(loop: PDispatcher) {.raises: [Defect].} =
     var funcPointer: pointer = nil
+
+    let kernel32 = getModuleHandle(newWideCString("kernel32.dll"))
+    loop.getQueuedCompletionStatusEx = cast[LPFN_GETQUEUEDCOMPLETIONSTATUSEX](
+      getProcAddress(kernel32, "GetQueuedCompletionStatusEx"))
+
     let sock = socket(osdefs.AF_INET, 1, 6)
     doAssert(sock != osdefs.INVALID_SOCKET, "Unable to create control socket")
     doAssert(getFunc(sock, funcPointer, WSAID_CONNECTEX),
@@ -493,18 +472,15 @@ when defined(windows):
     ## please use ``waitForSingleObject()``.
     let
       loop = getThreadDispatcher()
-      handleFd = AsyncFD(handle)
+      cell =
+        try:
+          system.protect(rawEnv(cb))
+        except Exception:
+          raiseAssert "Unable to protect callback environment"
 
-    let cell =
-      try:
-        system.protect(rawEnv(cb))
-      except Exception:
-        raiseAssert "Unable to protect callback environment"
-
-    var ovl = RefCustomOverlapped(
-      data: CompletionData(cb: cb, cell: cell)
-    )
+    var ovl = RefCustomOverlapped(data: CompletionData(cb: cb, cell: cell))
     GC_ref(ovl)
+
     var whandle = cast[WaitableHandle](allocShared0(sizeof(PostCallbackData)))
     whandle.ioPort = loop.getIoHandler()
     whandle.handleFd = AsyncFD(handle)
@@ -540,9 +516,7 @@ when defined(windows):
     ##
     ## NOTE: This is private procedure, not supposed to be publicly available,
     ## please use ``waitForSingleObject()``.
-    let
-      handleFd = wh.handleFd
-      waitFd = wh.waitFd
+    let waitFd = wh.waitFd
 
     try:
       system.dispose(wh.ovl.data.cell)
@@ -565,7 +539,6 @@ when defined(windows):
     ## used to clear process callback via ``removeProcess``.
     doAssert(pid > 0, "Process identifier must be positive integer")
     let
-      loop = getThreadDispatcher()
       hProcess = openProcess(SYNCHRONIZE, WINBOOL(0), DWORD(pid))
       flags = WT_EXECUTEINWAITTHREAD or WT_EXECUTEONLYONCE
 
@@ -655,7 +628,7 @@ when defined(windows):
           if not(isNil(events[0].lpOverlapped)):
             1
           else:
-            if int32(errCode) != WAIT_TIMEOUT:
+            if uint32(errCode) != WAIT_TIMEOUT:
               raiseOSError(errCode)
             0
         else:
@@ -672,14 +645,14 @@ when defined(windows):
         )
         if res == WINBOOL(0):
           let errCode = osLastError()
-          if int32(errCode) != WAIT_TIMEOUT:
+          if uint32(errCode) != WAIT_TIMEOUT:
             raiseOSError(errCode)
           0
         else:
-          eventsReceived
+          int(eventsReceived)
 
     for i in 0 ..< networkEventsCount:
-      var customOverlapped = events[i].lpOverlapped
+      var customOverlapped = cast[ptr CustomOverlapped](events[i].lpOverlapped)
       customOverlapped.data.errCode =
         block:
           let res = cast[uint64](customOverlapped.internal)
@@ -1526,9 +1499,7 @@ when defined(windows):
                             timeout: Duration): Future[WaitableResult] {.
        raises: [Defect].} =
     ## Wait for Windows' handle in asynchronous way.
-    let
-      loop = getThreadDispatcher()
-      flags = WT_EXECUTEONLYONCE
+    let flags = WT_EXECUTEONLYONCE
 
     var
       retFuture = newFuture[WaitableResult]("chronos.waitForSingleObject()")

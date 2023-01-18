@@ -245,51 +245,54 @@ when defined(windows):
       age*: uint32
       origin*: uint32
 
-    GETBESTROUTE2* = proc(interfaceLuid: ptr uint64, interfaceIndex: uint32,
-                          sourceAddress: ptr SOCKADDR_INET,
-                          destinationAddress: ptr SOCKADDR_INET,
-                          addressSortOptions: uint32,
-                          bestRoute: ptr MibIpForwardRow2,
-                          bestSourceAddress: ptr SOCKADDR_INET): DWORD {.
-                     gcsafe, stdcall, raises: [].}
+    OVERLAPPED_ENTRY* = object
+      lpCompletionKey*: ULONG_PTR
+      lpOverlapped*: ptr OVERLAPPED
+      internal*: ULONG_PTR
+      dwNumberOfBytesTransferred*: DWORD
 
-    WAITORTIMERCALLBACK* = proc(p1: pointer, p2: DWORD): void {.
-                           gcsafe, stdcall, raises: [].}
+    GETBESTROUTE2* = proc(
+      interfaceLuid: ptr uint64, interfaceIndex: uint32,
+      sourceAddress: ptr SOCKADDR_INET, destinationAddress: ptr SOCKADDR_INET,
+      addressSortOptions: uint32, bestRoute: ptr MibIpForwardRow2,
+      bestSourceAddress: ptr SOCKADDR_INET): DWORD {.
+      gcsafe, stdcall, raises: [].}
 
-    WSAPROC_ACCEPTEX* = proc (sListenSocket: SocketHandle,
-                              sAcceptSocket: SocketHandle,
-                              lpOutputBuffer: pointer,
-                              dwReceiveDataLength: DWORD,
-                              dwLocalAddressLength: DWORD,
-                              dwRemoteAddressLength: DWORD,
-                              lpdwBytesReceived: ptr DWORD,
-                              lpOverlapped: POVERLAPPED): WINBOOL {.
-                        stdcall, gcsafe, raises: [].}
+    WAITORTIMERCALLBACK* = proc(
+      p1: pointer, p2: DWORD): void {.
+      gcsafe, stdcall, raises: [].}
 
-    WSAPROC_CONNECTEX* = proc (s: SocketHandle, name: ptr SockAddr,
-                               namelen: cint, lpSendBuffer: pointer,
-                               dwSendDataLength: DWORD,
-                               lpdwBytesSent: ptr DWORD,
-                               lpOverlapped: POVERLAPPED): WINBOOL {.
-                         stdcall, gcsafe, raises: [].}
+    WSAPROC_ACCEPTEX* = proc (
+      sListenSocket: SocketHandle, sAcceptSocket: SocketHandle,
+      lpOutputBuffer: pointer, dwReceiveDataLength: DWORD,
+      dwLocalAddressLength: DWORD, dwRemoteAddressLength: DWORD,
+      lpdwBytesReceived: ptr DWORD, lpOverlapped: POVERLAPPED): WINBOOL {.
+      stdcall, gcsafe, raises: [].}
 
-    WSAPROC_GETACCEPTEXSOCKADDRS* = proc(lpOutputBuffer: pointer,
-                                         dwReceiveDataLength: DWORD,
-                                         dwLocalAddressLength: DWORD,
-                                         dwRemoteAddressLength: DWORD,
-                                         localSockaddr: ptr ptr SockAddr,
-                                         localSockaddrLength: LPINT,
-                                         remoteSockaddr: ptr ptr SockAddr,
-                                         remoteSockaddrLength: LPINT) {.
-                                    stdcall, gcsafe, raises: [].}
+    WSAPROC_CONNECTEX* = proc (
+      s: SocketHandle, name: ptr SockAddr, namelen: cint, lpSendBuffer: pointer,
+      dwSendDataLength: DWORD, lpdwBytesSent: ptr DWORD,
+      lpOverlapped: POVERLAPPED): WINBOOL {.
+      stdcall, gcsafe, raises: [].}
 
-    WSAPROC_TRANSMITFILE* = proc(hSocket: SocketHandle, hFile: HANDLE,
-                                 nNumberOfBytesToWrite: DWORD,
-                                 nNumberOfBytesPerSend: DWORD,
-                                 lpOverlapped: POVERLAPPED,
-                                 lpTransmitBuffers: pointer,
-                                 dwReserved: DWORD): WINBOOL {.
-                            stdcall, gcsafe, raises: [].}
+    WSAPROC_GETACCEPTEXSOCKADDRS* = proc(
+      lpOutputBuffer: pointer, dwReceiveDataLength: DWORD,
+      dwLocalAddressLength: DWORD, dwRemoteAddressLength: DWORD,
+      localSockaddr: ptr ptr SockAddr, localSockaddrLength: LPINT,
+      remoteSockaddr: ptr ptr SockAddr, remoteSockaddrLength: LPINT) {.
+      stdcall, gcsafe, raises: [].}
+
+    WSAPROC_TRANSMITFILE* = proc(
+      hSocket: SocketHandle, hFile: HANDLE, nNumberOfBytesToWrite: DWORD,
+      nNumberOfBytesPerSend: DWORD, lpOverlapped: POVERLAPPED,
+      lpTransmitBuffers: pointer, dwReserved: DWORD): WINBOOL {.
+      stdcall, gcsafe, raises: [].}
+
+    LPFN_GETQUEUEDCOMPLETIONSTATUSEX* = proc(
+      completionPort: HANDLE, lpPortEntries: ptr OVERLAPPED_ENTRY,
+      ulCount: DWORD, ulEntriesRemoved: var ULONG, dwMilliseconds: DWORD,
+      fAlertable: WINBOOL): WINBOOL {.
+      stdcall, gcsafe, raises: [].}
 
   proc getVersionEx*(lpVersionInfo: ptr OSVERSIONINFO): WINBOOL {.
        stdcall, dynlib: "kernel32", importc: "GetVersionExW", sideEffect.}
@@ -597,6 +600,15 @@ when defined(windows):
 
   proc wcschr*(ws: LPWSTR, wc: WCHAR): LPWSTR {.
        stdcall, dynlib: "ntdll", importc: "wcschr", sideEffect.}
+
+  proc getModuleHandle*(lpModuleName: WideCString): HANDLE {.
+       stdcall, dynlib: "kernel32", importc: "GetModuleHandleW", sideEffect.}
+
+  proc getProcAddress*(hModule: HANDLE, lpProcName: cstring): pointer {.
+       stdcall, dynlib: "kernel32", importc: "GetProcAddress", sideEffect.}
+
+  proc rtlNtStatusToDosError*(code: uint64): ULONG {.
+       stdcall, dynlib: "ntdll", importc: "RtlNtStatusToDosError", sideEffect.}
 
   template WSAIORW*(x, y): untyped = (IOC_INOUT or x or y)
   template WSAIOW*(x, y): untyped =
