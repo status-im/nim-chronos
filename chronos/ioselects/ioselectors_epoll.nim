@@ -583,7 +583,7 @@ proc prepareKey[T](s: Selector[T], event: EpollEvent): Opt[ReadyKey] =
         # Mark process descriptor inside fds table as finished.
         var fdKey = s.fds.getOrDefault(uint32(pidKey.ident), defaultKey)
         if fdKey.ident != InvalidIdent:
-          fdkey.events.incl(Event.Finished)
+          fdKey.events.incl(Event.Finished)
           s.fds[uint32(pidKey.ident)] = fdKey
 
     elif Event.User in pkey.events:
