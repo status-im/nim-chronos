@@ -99,7 +99,7 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
       error("Cannot transform " & $prc.kind & " into an async proc." &
             " proc/method definition or lambda node expected.")
 
-  let returnType = cleanupOpenSymChoice(prc.params2)
+  let returnType = cleanupOpenSymChoice(prc.params2[0])
 
   # Verify that the return type is a Future[T]
   let baseType =
@@ -110,9 +110,7 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
     elif returnType.kind == nnkEmpty:
       ident("void")
     else:
-    error("Unhandled async return type: " & $prc.kind)
-    # error isn't noreturn..
-    return
+      raiseAssert("Unhandled async return type: " & $prc.kind)
 
   let subtypeIsVoid = baseType.eqIdent("void")
 
@@ -268,7 +266,7 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
     # Add discardable pragma.
     if returnType.kind == nnkEmpty:
       # Add Future[void]
-      prc.params[0] =
+      prc.params2[0] =
         newNimNode(nnkBracketExpr, prc)
         .add(newIdentNode("Future"))
         .add(newIdentNode("void"))
