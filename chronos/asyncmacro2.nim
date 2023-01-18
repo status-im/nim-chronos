@@ -108,7 +108,7 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
   let subtypeIsVoid = returnType.kind == nnkEmpty or
         (baseType.kind == nnkIdent and returnType[1].eqIdent("void"))
 
-  let outerProcBody = if prc.kind in {nnkProcDef, nnkLambda, nnkMethodDef, nnkDo}:
+  if prc.kind in {nnkProcDef, nnkLambda, nnkMethodDef, nnkDo}:
     let
       prcName = prc.name.getName
       outerProcBody = newNimNode(nnkStmtList, prc.body)
@@ -238,11 +238,8 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
 
       # -> return resultFuture
       outerProcBody.add newNimNode(nnkReturnStmt, prc.body[^1]).add(retFutureSym)
-      outerProcBody
-    else:
-      nil
-  else:
-    nil
+
+      prc.body = outerProcBody
 
   if prc.kind notin {nnkProcTy, nnkLambda}: # TODO: Nim bug?
     prc.addPragma(newColonExpr(ident "stackTrace", ident "off"))
@@ -259,19 +256,16 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
     raises
   ))
 
-  result = prc
-
   if subtypeIsVoid:
     # Add discardable pragma.
     if returnType.kind == nnkEmpty:
       # Add Future[void]
-      result.params[0] =
+      prc.params[0] =
         newNimNode(nnkBracketExpr, prc)
         .add(newIdentNode("Future"))
         .add(newIdentNode("void"))
 
-  if outerProcBody != nil:
-    result.body = outerProcBody
+  prc
   #echo(treeRepr(result))
 
 template await*[T](f: Future[T]): untyped =
