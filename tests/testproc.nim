@@ -411,7 +411,7 @@ suite "Asynchronous process management test suite":
       await process.closeWait()
 
   asyncTest "Multiple processes waiting test":
-    const ProcessesCount = 10
+    const ProcessesCount = 50
 
     let command =
       when defined(windows):
@@ -430,6 +430,46 @@ suite "Asynchronous process management test suite":
       await allFutures(pending)
       for index in 0 ..< ProcessesCount:
         check pending[index].read() == command[2]
+    finally:
+      var pending: seq[Future[void]]
+      for process in processes:
+        pending.add(process.closeWait())
+      await allFutures(pending)
+
+  asyncTest "Multiple processes data capture test":
+    const ProcessesCount = 50
+
+    let options = {AsyncProcessOption.EvalCommand}
+
+    var processes: seq[AsyncProcessRef]
+    for n in 0 ..< ProcessesCount:
+      let command =
+        when defined(windows):
+          "ECHO TEST" & $n
+        else:
+          "echo TEST" & $n
+
+      let process = await startProcess(command, options = options,
+                                       stdoutHandle = AsyncProcess.Pipe)
+      processes.add(process)
+
+    try:
+      var pendingReaders: seq[Future[seq[byte]]]
+      var pendingWaiters: seq[Future[int]]
+      for process in processes:
+        pendingReaders.add(process.stdoutStream.read())
+        pendingWaiters.add(process.waitForExit(5.seconds))
+      await allFutures(pendingReaders)
+      await allFutures(pendingWaiters)
+
+      for index in 0 ..< ProcessesCount:
+        let expect =
+          when defined(windows):
+            "TEST" & $index & "\r\n"
+          else:
+            "TEST" & $index & "\n"
+        check string.fromBytes(pendingReaders[index].read()) == expect
+        check pendingWaiters[index].read() == 0
     finally:
       var pending: seq[Future[void]]
       for process in processes:

@@ -495,6 +495,16 @@ proc unregister2*[T](s: Selector[T], fd: cint): SelectResult[void] =
                 res.addLast(item)
             res
 
+      # We need to filter pending events queue for just unregistered process.
+      if len(s.pendingEvents) > 0:
+        s.pendingEvents =
+          block:
+            var res = initDeque[ReadyKey](len(s.pendingEvents))
+            for item in s.pendingEvents.items():
+              if uint32(item.fd) != fdu32:
+                res.addLast(item)
+            res
+
       if len(s.processes) == 0:
         s.pidFd = Opt.none(cint)
         let res = s.unregister2(pidFd)
