@@ -221,7 +221,7 @@ const
   SentinelCallback = AsyncCallback(function: sentinelCallbackImpl,
                                    udata: nil)
 
-proc isSentinel(acb: AsyncCallback): bool {.raises: [Defect].} =
+proc isSentinel(acb: AsyncCallback): bool =
   acb == SentinelCallback
 
 proc `<`(a, b: TimerCallback): bool =
@@ -896,22 +896,22 @@ proc removeTimer*(at: uint64, cb: CallbackFunc, udata: pointer = nil) {.
      inline, deprecated: "Use removeTimer(Duration, cb, udata)".} =
   removeTimer(Moment.init(int64(at), Millisecond), cb, udata)
 
-proc callSoon*(acb: AsyncCallback) {.gcsafe, raises: [Defect].} =
+proc callSoon*(acb: AsyncCallback) =
   ## Schedule `cbproc` to be called as soon as possible.
   ## The callback is called when control returns to the event loop.
   getThreadDispatcher().callbacks.addLast(acb)
 
 proc callSoon*(cbproc: CallbackFunc, data: pointer) {.
-     gcsafe, raises: [Defect].} =
+     gcsafe.} =
   ## Schedule `cbproc` to be called as soon as possible.
   ## The callback is called when control returns to the event loop.
   doAssert(not isNil(cbproc))
   callSoon(AsyncCallback(function: cbproc, udata: data))
 
-proc callSoon*(cbproc: CallbackFunc) {.gcsafe, raises: [Defect].} =
+proc callSoon*(cbproc: CallbackFunc) =
   callSoon(cbproc, nil)
 
-proc callIdle*(acb: AsyncCallback) {.gcsafe, raises: [Defect].} =
+proc callIdle*(acb: AsyncCallback) =
   ## Schedule ``cbproc`` to be called when there no pending network events
   ## available.
   ##
@@ -920,8 +920,7 @@ proc callIdle*(acb: AsyncCallback) {.gcsafe, raises: [Defect].} =
   ## actually "idle".
   getThreadDispatcher().idlers.addLast(acb)
 
-proc callIdle*(cbproc: CallbackFunc, data: pointer) {.
-     gcsafe, raises: [Defect].} =
+proc callIdle*(cbproc: CallbackFunc, data: pointer) =
   ## Schedule ``cbproc`` to be called when there no pending network events
   ## available.
   ##
@@ -931,7 +930,7 @@ proc callIdle*(cbproc: CallbackFunc, data: pointer) {.
   doAssert(not isNil(cbproc))
   callIdle(AsyncCallback(function: cbproc, udata: data))
 
-proc callIdle*(cbproc: CallbackFunc) {.gcsafe, raises: [Defect].} =
+proc callIdle*(cbproc: CallbackFunc) =
   callIdle(cbproc, nil)
 
 include asyncfutures2
