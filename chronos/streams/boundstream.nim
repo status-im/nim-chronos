@@ -14,7 +14,7 @@
 ##
 ## For stream writing it means that you should write exactly bounded size
 ## of bytes.
-import std/options
+import stew/results
 import ../asyncloop, ../timer
 import asyncstream, ../transports/stream, ../transports/common
 export asyncloop, asyncstream, stream, timer, common
@@ -24,7 +24,7 @@ type
     Equal, LessOrEqual
 
   BoundedStreamReader* = ref object of AsyncStreamReader
-    boundSize: Option[uint64]
+    boundSize: Opt[uint64]
     boundary: seq[byte]
     offset: uint64
     cmpop: BoundCmp
@@ -288,7 +288,7 @@ proc init*[T](child: BoundedStreamReader, rsource: AsyncStreamReader,
               comparison = BoundCmp.Equal,
               bufferSize = BoundedBufferSize, udata: ref T) =
   doAssert(len(boundary) > 0, BoundarySizeDefectMessage)
-  child.boundSize = some(boundSize)
+  child.boundSize = Opt.some(boundSize)
   child.boundary = @boundary
   child.cmpop = comparison
   init(AsyncStreamReader(child), rsource, boundedReadLoop, bufferSize,
@@ -297,7 +297,7 @@ proc init*[T](child: BoundedStreamReader, rsource: AsyncStreamReader,
 proc init*(child: BoundedStreamReader, rsource: AsyncStreamReader,
            boundSize: uint64, comparison = BoundCmp.Equal,
            bufferSize = BoundedBufferSize) =
-  child.boundSize = some(boundSize)
+  child.boundSize = Opt.some(boundSize)
   child.cmpop = comparison
   init(AsyncStreamReader(child), rsource, boundedReadLoop, bufferSize)
 
@@ -313,7 +313,7 @@ proc init*(child: BoundedStreamReader, rsource: AsyncStreamReader,
            boundSize: uint64, boundary: openArray[byte],
            comparison = BoundCmp.Equal, bufferSize = BoundedBufferSize) =
   doAssert(len(boundary) > 0, BoundarySizeDefectMessage)
-  child.boundSize = some(boundSize)
+  child.boundSize = Opt.some(boundSize)
   child.boundary = @boundary
   child.cmpop = comparison
   init(AsyncStreamReader(child), rsource, boundedReadLoop, bufferSize)

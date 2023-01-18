@@ -610,39 +610,50 @@ suite "HTTP server testing suite":
        "--------------------------------------------------; charset=UTF-8",
        "-----------------------------------------------------------------" &
        "-----"),
-      ("multipart/form-data; boundary=ABCDEFGHIJKLMNOPQRST" &
-       "UVWXYZabcdefghijklmnopqrstuvwxyz0123456789'()+_,-.; charset=UTF-8",
+      ("multipart/form-data; boundary=\"ABCDEFGHIJKLMNOPQRST" &
+       "UVWXYZabcdefghijklmnopqrstuvwxyz0123456789'()+_,-.\"; charset=UTF-8",
        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'()" &
        "+_,-."),
-      ("multipart/form-data; boundary=ABCDEFGHIJKLMNOPQRST" &
-       "UVWXYZabcdefghijklmnopqrstuvwxyz0123456789'()+?=:/; charset=UTF-8",
+      ("multipart/form-data; boundary=\"ABCDEFGHIJKLMNOPQRST" &
+       "UVWXYZabcdefghijklmnopqrstuvwxyz0123456789'()+?=:/\"; charset=UTF-8",
        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'()" &
        "+?=:/"),
-      ("multipart/form-data; charset=UTF-8; boundary=ABCDEFGHIJKLMNOPQRST" &
-       "UVWXYZabcdefghijklmnopqrstuvwxyz0123456789'()+_,-.",
+      ("multipart/form-data; charset=UTF-8; boundary=\"ABCDEFGHIJKLMNOPQRST" &
+       "UVWXYZabcdefghijklmnopqrstuvwxyz0123456789'()+_,-.\"",
        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'()" &
        "+_,-."),
-      ("multipart/form-data; charset=UTF-8; boundary=ABCDEFGHIJKLMNOPQRST" &
-       "UVWXYZabcdefghijklmnopqrstuvwxyz0123456789'()+?=:/",
+      ("multipart/form-data; charset=UTF-8; boundary=\"ABCDEFGHIJKLMNOPQRST" &
+       "UVWXYZabcdefghijklmnopqrstuvwxyz0123456789'()+?=:/\"",
        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'()" &
-       "+?=:/")
+       "+?=:/"),
+      ("multipart/form-data; charset=UTF-8; boundary=0123456789ABCDEFGHIJKL" &
+       "MNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz+-",
+       "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz+-"),
+      ("multipart/form-data; boundary=0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZa" &
+       "bcdefghijklmnopqrstuvwxyz+-; charset=UTF-8",
+       "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz+-")
     ]
+    proc performCheck(ch: openArray[string]): HttpResult[string] =
+      let cdata = ? getContentType(ch)
+      if cdata.mediaType != MediaType.init("multipart/form-data"):
+        return err("Invalid media type")
+      getMultipartBoundary(cdata)
 
     for i in 0 ..< 256:
-      let boundary = "multipart/form-data; boundary=" & $char(i)
+      let boundary = "multipart/form-data; boundary=\"" & $char(i) & "\""
       if char(i) in AllowedCharacters:
-        check getMultipartBoundary([boundary]).isOk()
+        check performCheck([boundary]).isOk()
       else:
-        check getMultipartBoundary([boundary]).isErr()
+        check performCheck([boundary]).isErr()
 
     check:
-      getMultipartBoundary([]).isErr()
-      getMultipartBoundary(["multipart/form-data; boundary=A",
-                            "multipart/form-data; boundary=B"]).isErr()
+      performCheck([]).isErr()
+      performCheck(["multipart/form-data; boundary=A",
+                    "multipart/form-data; boundary=B"]).isErr()
     for item in FailureVectors:
-      check getMultipartBoundary([item]).isErr()
+      check performCheck([item]).isErr()
     for item in SuccessVectors:
-      let res = getMultipartBoundary([item[0]])
+      let res = performCheck([item[0]])
       check:
         res.isOk()
         item[1] == res.get()
@@ -855,7 +866,7 @@ suite "HTTP server testing suite":
         table.add(key, value)
       check toString(table) == vector[2]
 
-  test "Preferred Accept handling test":
+  test "preferredContentType() test":
     const
       jsonMediaType = MediaType.init("application/json")
       sszMediaType = MediaType.init("application/octet-stream")
@@ -988,7 +999,8 @@ suite "HTTP server testing suite":
         ]
       ),
       (
-      createRequest("text/plain, application/json;q=0.8, application/octet-stream;q=0.8"),
+      createRequest("text/plain, application/json;q=0.8, " &
+                    "application/octet-stream;q=0.8"),
         @[
           "text/plain",
           "application/json",
@@ -1000,7 +1012,8 @@ suite "HTTP server testing suite":
         ]
       ),
       (
-      createRequest("text/plain, application/json;q=0.8, application/octet-stream;q=0.5"),
+      createRequest("text/plain, application/json;q=0.8, " &
+                    "application/octet-stream;q=0.5"),
         @[
           "text/plain",
           "application/json",
@@ -1012,7 +1025,8 @@ suite "HTTP server testing suite":
         ]
       ),
       (
-       createRequest("text/plain;q=0.8, application/json, application/octet-stream;q=0.8"),
+       createRequest("text/plain;q=0.8, application/json, " &
+                     "application/octet-stream;q=0.8"),
         @[
           "application/json",
           "application/json",
@@ -1024,7 +1038,8 @@ suite "HTTP server testing suite":
         ]
       ),
       (
-      createRequest("text/*, application/json;q=0.8, application/octet-stream;q=0.8"),
+      createRequest("text/*, application/json;q=0.8, " &
+                    "application/octet-stream;q=0.8"),
         @[
           "text/*",
           "application/json",
@@ -1036,7 +1051,8 @@ suite "HTTP server testing suite":
         ]
       ),
       (
-      createRequest("text/*, application/json;q=0.8, application/octet-stream;q=0.5"),
+      createRequest("text/*, application/json;q=0.8, " &
+                    "application/octet-stream;q=0.5"),
         @[
           "text/*",
           "application/json",
@@ -1047,7 +1063,8 @@ suite "HTTP server testing suite":
           "text/plain"
         ]
       ),
-      (createRequest("image/jpg, text/plain, application/octet-stream, application/json"),
+      (createRequest("image/jpg, text/plain, application/octet-stream, " &
+                     "application/json"),
          @[
             "image/jpg",
             "application/json",
@@ -1058,7 +1075,9 @@ suite "HTTP server testing suite":
             "image/jpg"
            ]
         ),
-        (createRequest("image/jpg;q=1, text/plain;q=0.2, application/octet-stream;q=0.2, application/json;q=0.2"),
+        (createRequest("image/jpg;q=1, text/plain;q=0.2, " &
+                       "application/octet-stream;q=0.2, " &
+                       "application/json;q=0.2"),
          @[
             "image/jpg",
             "application/json",
@@ -1070,7 +1089,8 @@ suite "HTTP server testing suite":
            ]
         ),
       (
-      createRequest("*/*, application/json;q=0.8, application/octet-stream;q=0.5"),
+      createRequest("*/*, application/json;q=0.8, " &
+                    "application/octet-stream;q=0.5"),
         @[
           "*/*",
           "application/json",

@@ -9,7 +9,10 @@
 
 ## This module implements various IP network utility procedures.
 
-{.push raises: [Defect].}
+when (NimMajor, NimMinor) < (1, 4):
+  {.push raises: [Defect].}
+else:
+  {.push raises: [].}
 
 import std/strutils
 import stew/endians2
@@ -313,7 +316,7 @@ proc `$`*(mask: IpMask, include0x = false): string =
     var m = host.mask4
     while n > 0:
       n -= 4
-      var c = cast[int]((m shr n) and 0x0F)
+      var c = int((m shr n) and 0x0F)
       if c < 10:
         result.add(chr(ord('0') + c))
       else:
@@ -325,7 +328,7 @@ proc `$`*(mask: IpMask, include0x = false): string =
       var m = host.mask6[i]
       while n > 0:
         n -= 4
-        var c = cast[int]((m shr n) and 0x0F)
+        var c = int((m shr n) and 0x0F)
         if c < 10:
           result.add(chr(ord('0') + c))
         else:
@@ -636,7 +639,7 @@ proc isLoopback*(address: TransportAddress): bool =
   elif address.family == AddressFamily.IPv6:
     var test = 0
     for i in 0..<(len(address.address_v6) - 1):
-      test = test or cast[int](address.address_v6[i])
+      test = test or int(address.address_v6[i])
     result = (test == 0) and (address.address_v6[15] == 1'u8)
 
 proc isAnyLocal*(address: TransportAddress): bool =

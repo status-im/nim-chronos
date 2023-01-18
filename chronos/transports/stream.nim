@@ -7,7 +7,10 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 
-{.push raises: [Defect].}
+when (NimMajor, NimMinor) < (1, 4):
+  {.push raises: [Defect].}
+else:
+  {.push raises: [].}
 
 import std/[net, nativesockets, os, deques]
 import ".."/[asyncloop, handles, selectors2]
@@ -196,8 +199,8 @@ template shiftVectorBuffer(v: var StreamVector, o: untyped) =
   (v).buflen -= int(o)
 
 template shiftVectorFile(v: var StreamVector, o: untyped) =
-  (v).buf = cast[pointer](cast[uint]((v).buf) - cast[uint](o))
-  (v).offset += cast[uint]((o))
+  (v).buf = cast[pointer](cast[uint]((v).buf) - uint(o))
+  (v).offset += uint(o)
 
 proc setupStreamTransportTracker(): StreamTransportTracker {.
      gcsafe, raises: [Defect].}
@@ -1378,7 +1381,7 @@ else:
             let err = osLastError()
             if int(err) == EINTR:
               continue
-            elif int(err) in {ECONNRESET}:
+            elif int(err) == ECONNRESET:
               transp.state.incl({ReadEof, ReadPaused})
               try:
                 transp.fd.removeReader()
@@ -1706,16 +1709,16 @@ else:
                 let errorMsg = osErrorMsg(osLastError())
                 retFuture.fail(getConnectionAbortedError(errorMsg))
             else:
-              let err = int(osLastError())
+              let err = osLastError().int32
               if err == EINTR:
                 continue
               elif err == EAGAIN:
                 # This error appears only when server get closed, while accept()
                 # continuation is already scheduled.
                 retFuture.fail(getServerUseClosedError())
-              elif err in {EMFILE, ENFILE, ENOBUFS, ENOMEM}:
+              elif err in [EMFILE, ENFILE, ENOBUFS, ENOMEM]:
                 retFuture.fail(getTransportTooManyError(err))
-              elif err in {ECONNABORTED, EPERM, ETIMEDOUT}:
+              elif err in [ECONNABORTED, EPERM, ETIMEDOUT]:
                 retFuture.fail(getConnectionAbortedError(err))
               else:
                 retFuture.fail(getTransportOsError(OSErrorCode(err)))
@@ -2116,7 +2119,8 @@ proc write*(transp: StreamTransport, pbytes: pointer,
   transp.resumeWrite()
   return retFuture
 
-proc write*(transp: StreamTransport, msg: string, msglen = -1): Future[int] =
+proc write*(transp: StreamTransport, msg: sink string,
+            msglen = -1): Future[int] =
   ## Write data from string ``msg`` using transport ``transp``.
   var retFuture = newFutureStr[int]("stream.transport.write(string)")
   transp.checkClosed(retFuture)
@@ -2134,12 +2138,17 @@ proc write*(transp: StreamTransport, msg: string, msglen = -1): Future[int] =
   let
     written = nbytes - rbytes # In case fastWrite wrote some
 
-  pbytes = if not(isLiteral(msg)):
-    shallowCopy(retFuture.gcholder, msg)
-    cast[ptr byte](addr retFuture.gcholder[written])
-  else:
-    retFuture.gcholder = msg[written..<nbytes]
-    cast[ptr byte](addr retFuture.gcholder[0])
+  pbytes =
+    when declared(shallowCopy):
+      if not(isLiteral(msg)):
+        shallowCopy(retFuture.gcholder, msg)
+        cast[ptr byte](addr retFuture.gcholder[written])
+      else:
+        retFuture.gcholder = msg[written ..< nbytes]
+        cast[ptr byte](addr retFuture.gcholder[0])
+    else:
+      retFuture.gcholder = msg[written ..< nbytes]
+      cast[ptr byte](addr retFuture.gcholder[0])
 
   var vector = StreamVector(kind: DataBuffer, writer: retFuture,
                             buf: pbytes, buflen: rbytes, size: nbytes)
@@ -2147,7 +2156,8 @@ proc write*(transp: StreamTransport, msg: string, msglen = -1): Future[int] =
   transp.resumeWrite()
   return retFuture
 
-proc write*[T](transp: StreamTransport, msg: seq[T], msglen = -1): Future[int] =
+proc write*[T](transp: StreamTransport, msg: sink seq[T],
+               msglen = -1): Future[int] =
   ## Write sequence ``msg`` using transport ``transp``.
   var retFuture = newFutureSeq[int, T]("stream.transport.write(seq)")
   transp.checkClosed(retFuture)
@@ -2165,12 +2175,17 @@ proc write*[T](transp: StreamTransport, msg: seq[T], msglen = -1): Future[int] =
   let
     written = nbytes - rbytes # In case fastWrite wrote some
 
-  pbytes = if not(isLiteral(msg)):
-    shallowCopy(retFuture.gcholder, msg)
-    cast[ptr byte](addr retFuture.gcholder[written])
-  else:
-    retFuture.gcholder = msg[written..<nbytes]
-    cast[ptr byte](addr retFuture.gcholder[0])
+  pbytes =
+    when declared(shallowCopy):
+      if not(isLiteral(msg)):
+        shallowCopy(retFuture.gcholder, msg)
+        cast[ptr byte](addr retFuture.gcholder[written])
+      else:
+        retFuture.gcholder = msg[written ..< nbytes]
+        cast[ptr byte](addr retFuture.gcholder[0])
+    else:
+      retFuture.gcholder = msg[written ..< nbytes]
+      cast[ptr byte](addr retFuture.gcholder[0])
 
   var vector = StreamVector(kind: DataBuffer, writer: retFuture,
                             buf: pbytes, buflen: rbytes, size: nbytes)

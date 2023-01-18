@@ -9,7 +9,10 @@
 
 # This module implements Linux epoll().
 
-{.push raises: [Defect].}
+when (NimMajor, NimMinor) < (1, 4):
+  {.push raises: [Defect].}
+else:
+  {.push raises: [].}
 
 import posix, times, epoll
 
@@ -430,7 +433,7 @@ proc selectInto*[T](s: Selector[T], timeout: int,
             if posix.read(cint(fdi), addr data,
                           sizeof(SignalFdInfo)) != sizeof(SignalFdInfo):
               raiseIOSelectorsError(osLastError())
-            if cast[int](data.ssi_pid) == pkey.param:
+            if data.ssi_pid == uint32(pkey.param):
               rkey.events.incl(Event.Process)
             else:
               inc(i)

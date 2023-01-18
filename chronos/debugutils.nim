@@ -7,7 +7,10 @@
 #    Apache License, version 2.0, (LICENSE-APACHEv2)
 #                MIT license (LICENSE-MIT)
 
-{.push raises: [Defect].}
+when (NimMajor, NimMinor) < (1, 4):
+  {.push raises: [Defect].}
+else:
+  {.push raises: [].}
 
 import ./asyncloop
 export asyncloop
@@ -31,9 +34,9 @@ proc dumpPendingFutures*(filter = AllFutureStates): string =
   ##    not yet finished).
   ## 2. Future[T] objects with ``FutureState.Finished/Cancelled/Failed`` state
   ##    which callbacks are scheduled, but not yet fully processed.
-  var count = 0'u
-  var res = ""
   when defined(chronosFutureTracking):
+    var count = 0'u
+    var res = ""
     for item in pendingFutures():
       if item.state in filter:
         inc(count)

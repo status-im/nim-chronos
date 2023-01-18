@@ -7,14 +7,16 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 
-{.push raises: [Defect].}
+when (NimMajor, NimMinor) < (1, 4):
+  {.push raises: [Defect].}
+else:
+  {.push raises: [].}
 
 import std/[net, nativesockets]
-import stew/base10
 import ./asyncloop
 
 when defined(windows) or defined(nimdoc):
-  import os, winlean
+  import os, winlean, stew/base10
   const
     asyncInvalidSocket* = AsyncFD(-1)
     TCP_NODELAY* = 1

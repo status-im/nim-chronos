@@ -32,8 +32,8 @@ const
   LocationHeader* = "location"
   AuthorizationHeader* = "authorization"
 
-  UrlEncodedContentType* = "application/x-www-form-urlencoded"
-  MultipartContentType* = "multipart/form-data"
+  UrlEncodedContentType* = MediaType.init("application/x-www-form-urlencoded")
+  MultipartContentType* = MediaType.init("multipart/form-data")
 
 type
   HttpResult*[T] = Result[T, string]
@@ -193,7 +193,7 @@ func getContentEncoding*(ch: openArray[string]): HttpResult[
           return err("Incorrect Content-Encoding value")
     ok(res)
 
-func getContentType*(ch: openArray[string]): HttpResult[string]  {.
+func getContentType*(ch: openArray[string]): HttpResult[ContentTypeData]  {.
      raises: [Defect].} =
   ## Check and prepare value of ``Content-Type`` header.
   if len(ch) == 0:
@@ -201,8 +201,10 @@ func getContentType*(ch: openArray[string]): HttpResult[string]  {.
   elif len(ch) > 1:
     err("Multiple Content-Type values found")
   else:
-    let mparts = ch[0].split(";")
-    ok(strip(mparts[0]).toLowerAscii())
+    let res = getContentType(ch[0])
+    if res.isErr():
+      return err($res.error())
+    ok(res.get())
 
 proc bytesToString*(src: openArray[byte], dst: var openArray[char]) =
   ## Convert array of bytes to array of characters.

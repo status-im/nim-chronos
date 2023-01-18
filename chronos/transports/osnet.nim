@@ -10,7 +10,10 @@
 ## This module implements cross-platform network interfaces list.
 ## Currently supported OSes are Windows, Linux, MacOS, BSD(not tested).
 
-{.push raises: [Defect].}
+when (NimMajor, NimMinor) < (1, 4):
+  {.push raises: [Defect].}
+else:
+  {.push raises: [].}
 
 import std/algorithm
 from std/strutils import toHex
@@ -244,7 +247,7 @@ type
     ifType*: InterfaceType
     name*: string
     desc*: string
-    mtu*: int
+    mtu*: int64
     flags*: uint64
     state*: InterfaceState
     mac*: array[MaxAdapterAddressLength, byte]
@@ -307,7 +310,7 @@ proc `$`*(iface: NetworkInterface): string =
   res.add($iface.ifType)
   res.add(" ")
   if iface.maclen > 0:
-    for i in 0..<iface.maclen:
+    for i in 0 ..< iface.maclen:
       res.add(toHex(iface.mac[i]))
       if i < iface.maclen - 1:
         res.add(":")
@@ -465,18 +468,18 @@ when defined(linux):
       nlmsg_pid: uint32
 
     IfInfoMessage = object
-      ifi_family: cuchar
-      ifi_pad: cuchar
+      ifi_family: byte
+      ifi_pad: byte
       ifi_type: cushort
       ifi_index: cint
       ifi_flags: cuint
       ifi_change: cuint
 
     IfAddrMessage = object
-      ifa_family: cuchar
-      ifa_prefixlen: cuchar
-      ifa_flags: cuchar
-      ifa_scope: cuchar
+      ifa_family: byte
+      ifa_prefixlen: byte
+      ifa_flags: byte
+      ifa_scope: byte
       ifa_index: uint32
 
     RtMessage = object
@@ -644,7 +647,7 @@ when defined(linux):
     req.hdr.nlmsg_pid = cast[uint32](pid)
     req.msg.rtgen_family = byte(AF_PACKET)
     iov.iov_base = cast[pointer](addr req)
-    iov.iov_len = cast[TIovLen](req.hdr.nlmsg_len)
+    iov.iov_len = TIovLen(req.hdr.nlmsg_len)
     rmsg.msg_iov = addr iov
     rmsg.msg_iovlen = 1
     rmsg.msg_name = cast[pointer](addr address)
@@ -692,7 +695,7 @@ when defined(linux):
       req.msg.rtm_dst_len = 16 * 8
 
     iov.iov_base = cast[pointer](addr buffer[0])
-    iov.iov_len = cast[TIovLen](req.hdr.nlmsg_len)
+    iov.iov_len = TIovLen(req.hdr.nlmsg_len)
     rmsg.msg_iov = addr iov
     rmsg.msg_iovlen = 1
     rmsg.msg_name = cast[pointer](addr address)
@@ -732,7 +735,7 @@ when defined(linux):
     var res = NetworkInterface(
       ifType: toInterfaceType(iface.ifi_type),
       ifIndex: iface.ifi_index,
-      flags: cast[uint64](iface.ifi_flags)
+      flags: uint64(iface.ifi_flags)
     )
 
     while RTA_OK(attr, length):
@@ -746,10 +749,10 @@ when defined(linux):
         res.maclen = plen
       elif attr.rta_type == IFLA_MTU:
         var p = cast[ptr uint32](RTA_DATA(attr))
-        res.mtu = cast[int](p[])
+        res.mtu = int64(p[])
       elif attr.rta_type == IFLA_OPERSTATE:
         var p = cast[ptr byte](RTA_DATA(attr))
-        res.state = toInterfaceState(cast[cint](p[]), iface.ifi_flags)
+        res.state = toInterfaceState(cint(p[]), iface.ifi_flags)
       attr = RTA_NEXT(attr, length)
     res
 
@@ -775,8 +778,8 @@ when defined(linux):
 
     attr = IFA_RTA(cast[ptr byte](iaddr))
 
-    let family = cast[int](iaddr.ifa_family)
-    var res = NetworkInterface(ifIndex: cast[int](iaddr.ifa_index))
+    let family = int(iaddr.ifa_family)
+    var res = NetworkInterface(ifIndex: int(iaddr.ifa_index))
 
     var address, local: TransportAddress
 
@@ -790,7 +793,7 @@ when defined(linux):
     if local.family != AddressFamily.None:
       address = local
 
-    let prefixLength = cast[int](iaddr.ifa_prefixlen)
+    let prefixLength = int(iaddr.ifa_prefixlen)
     let ifaddr = InterfaceAddress.init(address, prefixLength)
     res.addresses.add(ifaddr)
     res
@@ -1045,7 +1048,7 @@ elif defined(macosx) or defined(bsd):
                   #include <ifaddrs.h>""".}
 
   proc toInterfaceType(f: byte): InterfaceType =
-    var ft = cast[int](f)
+    var ft = int(f)
     if (ft >= 1 and ft <= 196) or (ft == 237) or (ft == 243) or (ft == 244):
       cast[InterfaceType](ft)
     else:
@@ -1067,8 +1070,8 @@ elif defined(macosx) or defined(bsd):
         var iface: NetworkInterface
         var ifaddress: InterfaceAddress
 
-        iface.name = $ifap.ifa_name
-        iface.flags = cast[uint64](ifap.ifa_flags)
+        iface.name = string($cstring(ifap.ifa_name))
+        iface.flags = uint64(ifap.ifa_flags)
         var i = 0
         while i < len(res):
           if res[i].name == iface.name:
@@ -1078,19 +1081,19 @@ elif defined(macosx) or defined(bsd):
           res.add(iface)
 
         if not isNil(ifap.ifa_addr):
-          let family = cast[int](ifap.ifa_addr.sa_family)
+          let family = int(ifap.ifa_addr.sa_family)
           if family == AF_LINK:
             var data = cast[ptr IfData](ifap.ifa_data)
             var link = cast[ptr Sockaddr_dl](ifap.ifa_addr)
-            res[i].ifIndex = cast[int](link.sdl_index)
-            let nlen = cast[int](link.sdl_nlen)
+            res[i].ifIndex = int(link.sdl_index)
+            let nlen = int(link.sdl_nlen)
             if nlen < len(link.sdl_data):
               let minsize = min(cast[int](link.sdl_alen), len(res[i].mac))
               copyMem(addr res[i].mac[0], addr link.sdl_data[nlen], minsize)
-            res[i].maclen = cast[int](link.sdl_alen)
+            res[i].maclen = int(link.sdl_alen)
             res[i].ifType = toInterfaceType(data.ifi_type)
             res[i].state = toInterfaceState(ifap.ifa_flags)
-            res[i].mtu = cast[int](data.ifi_mtu)
+            res[i].mtu = int(data.ifi_mtu)
           elif family == posix.AF_INET:
             fromSAddr(cast[ptr Sockaddr_storage](ifap.ifa_addr),
                       SockLen(sizeof(Sockaddr_in)), ifaddress.host)
@@ -1099,7 +1102,7 @@ elif defined(macosx) or defined(bsd):
                       SockLen(sizeof(Sockaddr_in6)), ifaddress.host)
         if not isNil(ifap.ifa_netmask):
           var na: TransportAddress
-          var family = cast[cint](ifap.ifa_netmask.sa_family)
+          var family = cint(ifap.ifa_netmask.sa_family)
           if family == posix.AF_INET:
             fromSAddr(cast[ptr Sockaddr_storage](ifap.ifa_netmask),
                       SockLen(sizeof(Sockaddr_in)), na)
@@ -1440,13 +1443,13 @@ elif defined(windows):
         fromSAddr(cast[ptr Sockaddr_storage](prefix.address.lpSockaddr),
                   SockLen(prefix.address.iSockaddrLength), pa)
         if netfamily == prefamily:
-          if ipMatchPrefix(res.host, pa, cast[int](prefix.prefixLength)):
-            prefixLength = max(prefixLength, cast[int](prefix.prefixLength))
+          if ipMatchPrefix(res.host, pa, int(prefix.prefixLength)):
+            prefixLength = max(prefixLength, int(prefix.prefixLength))
         prefix = prefix.next
       if prefixLength >= 0:
         res.net = IpNet.init(res.host, prefixLength)
     else:
-      let prefixLength = cast[int](ifunic.onLinkPrefixLength)
+      let prefixLength = int(ifunic.onLinkPrefixLength)
       if prefixLength >= 0:
         res.net = IpNet.init(res.host, prefixLength)
     res
@@ -1480,14 +1483,14 @@ elif defined(windows):
       var slider = cast[ptr IpAdapterAddressesXp](addr buffer[0])
       while not isNil(slider):
         var iface = NetworkInterface(
-          ifIndex: cast[int](slider.ifIndex),
+          ifIndex: int(slider.ifIndex),
           ifType: toInterfaceType(slider.ifType),
           state: toInterfaceState(slider.operStatus),
           name: $slider.adapterName,
           desc: $slider.description,
-          mtu: cast[int](slider.mtu),
-          maclen: cast[int](slider.physicalAddressLength),
-          flags: cast[uint64](slider.flags)
+          mtu: int(slider.mtu),
+          maclen: int(slider.physicalAddressLength),
+          flags: uint64(slider.flags)
         )
         copyMem(addr iface.mac[0], addr slider.physicalAddress[0],
                 len(iface.mac))
