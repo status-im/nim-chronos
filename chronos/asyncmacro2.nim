@@ -90,8 +90,7 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
       error("Cannot transform " & $prc.kind & " into an async proc." &
             " proc/method definition or lambda node expected.")
 
-  let returnType =
-    cleanupOpenSymChoice(if prc.kind == nnkProcTy: prc[0][0] else: prc.params[0])
+  let returnType = cleanupOpenSymChoice(prc.params2)
   # Verify that the return type is a Future[T]
   var baseType =
     if returnType.kind == nnkBracketExpr:
@@ -170,6 +169,7 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
   prc.addPragma(newIdentNode("gcsafe"))
 
   if foundAsync < 0:
+    # for "manual async", our job is done now
     return prc
 
   if prc.kind in {nnkProcDef, nnkLambda, nnkMethodDef, nnkDo}:
