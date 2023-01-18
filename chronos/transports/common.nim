@@ -643,7 +643,7 @@ template getConnectionAbortedError*(code: int): ref TransportAbortedError =
         "[" & $code & "] Connection has been aborted"
     elif defined(windows):
       case code
-      of 0, WSAECONNABORTED:
+      of 0, osdefs.WSAECONNABORTED:
         "[ECONNABORTED] Connection has been aborted before being accepted"
       of WSAENETDOWN:
         "[ENETDOWN] Network is down"

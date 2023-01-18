@@ -170,17 +170,11 @@ export timer, results
 const
   MaxEventsCount* = 64
 
-when not(defined(windows)):
-  const
-    unixPlatform = defined(macosx) or defined(freebsd) or
-                   defined(netbsd) or defined(openbsd) or
-                   defined(dragonfly) or defined(macos) or
-                   defined(linux) or defined(android) or
-                   defined(solaris)
-
 when defined(windows):
   import sets, hashes
-elif unixPlatform:
+elif defined(macosx) or defined(freebsd) or defined(netbsd) or
+     defined(openbsd) or defined(dragonfly) or defined(macos) or
+     defined(linux) or defined(android) or defined(solaris):
   import ./selectors2
 
 type
@@ -711,7 +705,10 @@ when defined(windows):
     ## Returns ``true`` if ``fd`` is registered in thread's dispatcher.
     fd in disp.handles
 
-elif unixPlatform:
+elif defined(macosx) or defined(freebsd) or defined(netbsd) or
+     defined(openbsd) or defined(dragonfly) or defined(macos) or
+     defined(linux) or defined(android) or defined(solaris):
+
   const
     SIG_IGN = cast[proc(x: cint) {.raises: [], noconv, gcsafe.}](1)
 
