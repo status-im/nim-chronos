@@ -146,14 +146,6 @@ export timer, results
 const
   MaxEventsCount* = 64
 
-when not(defined(windows)):
-  const
-    unixPlatform = defined(macosx) or defined(freebsd) or
-                   defined(netbsd) or defined(openbsd) or
-                   defined(dragonfly) or defined(macos) or
-                   defined(linux) or defined(android) or
-                   defined(solaris)
-
 when defined(windows):
   import std/[sets, hashes]
 elif defined(macosx) or defined(freebsd) or defined(netbsd) or
