@@ -1119,7 +1119,12 @@ when defined(linux) or defined(macos) or defined(macosx) or defined(freebsd) or
 
 when defined(posix):
   when defined(linux):
-    const WNOHANG* = 1
+    const
+      P_PID* = cint(1)
+      WNOHANG* = cint(1)
+      WSTOPPED* = cint(2)
+      WEXITTED* = cint(4)
+      WNOWAIT* = cint(0x01000000)
     template WSTATUS(s: cint): cint =
       s and 0x7F
     template WAITEXITSTATUS*(s: cint): cint =

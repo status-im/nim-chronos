@@ -27,6 +27,8 @@ type
     signalMask: Sigset
     virtualHoles: Deque[uint32]
     virtualId: uint32
+    childrenExited: bool
+    pendingEvents: Deque[ReadyKey]
     count: int
 
   Selector*[T] = ref SelectorImpl[T]
@@ -113,7 +115,9 @@ proc new*(t: typedesc[Selector], T: typedesc): SelectResult[Selector[T]] =
     processes: initTable[uint32, SelectorKey[T]](16),
     signalMask: nmask,
     virtualId: uint32(high(int32)),
-    virtualHoles: initDeque[uint32]()
+    childrenExited: false,
+    virtualHoles: initDeque[uint32](),
+    pendingEvents: initDeque[ReadyKey]()
   )
   ok(selector)
 
@@ -494,6 +498,16 @@ proc unregister2*[T](s: Selector[T], fd: cint): SelectResult[void] =
 
       s.freeProcess(pkey.ident)
 
+      # We need to filter pending events queue for just unregistered process.
+      if len(s.pendingEvents) > 0:
+        s.pendingEvents =
+          block:
+            var res = initDeque[ReadyKey](len(s.pendingEvents))
+            for item in s.pendingEvents.items():
+              if uint32(item.fd) != fdu32:
+                res.addLast(item)
+            res
+
       if len(s.processes) == 0:
         s.pidFd = Opt.none(cint)
         let res = s.unregister2(pidFd)
@@ -557,12 +571,20 @@ proc prepareKey[T](s: Selector[T], event: EpollEvent): Opt[ReadyKey] =
         rkey.events.incl(Event.Signal)
         rkey.fd = skey.ident
       else:
+        # Indicate that SIGCHLD has been seen.
+        s.childrenExited = true
+        # Current signal processing.
         let pidKey = s.processes.getOrDefault(data.ssi_pid, defaultKey)
         if pidKey.ident == InvalidIdent:
           # We do not have any handlers with signal's pid.
           return Opt.none(ReadyKey)
-        rkey.events.incl(Event.Process)
+        rkey.events.incl({Event.Process, Event.Oneshot, Event.Finished})
         rkey.fd = pidKey.ident
+        # Mark process descriptor inside fds table as finished.
+        var fdKey = s.fds.getOrDefault(uint32(pidKey.ident), defaultKey)
+        if fdKey.ident != InvalidIdent:
+          fdkey.events.incl(Event.Finished)
+          s.fds[uint32(pidKey.ident)] = fdKey
 
     elif Event.User in pkey.events:
       var data: uint64
@@ -578,12 +600,7 @@ proc prepareKey[T](s: Selector[T], event: EpollEvent): Opt[ReadyKey] =
         rkey.events.incl(Event.User)
 
   if Event.Oneshot in rkey.events:
-    if Event.Process in rkey.events:
-      rkey.events.incl(Event.Finished)
-      pkey.events.incl(Event.Finished)
-      s.fds[uint32(pkey.ident)] = pkey
-
-    elif Event.Timer in rkey.events:
+    if Event.Timer in rkey.events:
       if epoll_ctl(s.epollFd, EPOLL_CTL_DEL, cint(fdi), nil) != 0:
         rkey.events.incl(Event.Error)
         rkey.errorCode = osLastError()
@@ -598,25 +615,70 @@ proc prepareKey[T](s: Selector[T], event: EpollEvent): Opt[ReadyKey] =
 
   ok(rkey)
 
+proc checkProcesses[T](s: Selector[T]) =
+  # If SIGCHLD has been seen we need to check all processes we are monitoring
+  # for completion, because in Linux SIGCHLD could be masked.
+  # You can get more information in article "Signalfd is useless" -
+  # https://ldpreload.com/blog/signalfd-is-useless?reposted-on-request
+  if s.childrenExited:
+    let
+      defaultKey = SelectorKey[T](ident: InvalidIdent)
+      flags = WNOHANG or WNOWAIT or WSTOPPED or WEXITED
+    s.childrenExited = false
+    for pid, pidKey in s.processes.pairs():
+      var fdKey = s.fds.getOrDefault(uint32(pidKey.ident), defaultKey)
+      if fdKey.ident != InvalidIdent:
+        if Event.Finished notin fdKey.events:
+          var sigInfo = SigInfo()
+          let res = handleEintr(osdefs.waitid(P_PID, Id(pid), sigInfo, flags))
+          if (res == 0) and (cint(sigInfo.si_pid) == cint(pid)):
+            fdKey.events.incl(Event.Finished)
+            let rkey = ReadyKey(fd: pidKey.ident, events: fdKey.events)
+            s.pendingEvents.addLast(rkey)
+            s.fds[uint32(pidKey.ident)] = fdKey
+
 proc selectInto2*[T](s: Selector[T], timeout: int,
                      readyKeys: var openArray[ReadyKey]
                     ): SelectResult[int] =
-  var queueEvents: array[asyncEventsCount, EpollEvent]
+  var
+    queueEvents: array[asyncEventsCount, EpollEvent]
+    k: int = 0
 
   verifySelectParams(timeout, -1, int(high(cint)))
 
   let
-    maxEventsCount = cint(min(asyncEventsCount, len(readyKeys)))
-    eventsCount = handleEintr(epoll_wait(s.epollFd, addr(queueEvents[0]),
-                                         maxEventsCount, cint(timeout)))
-  if eventsCount < 0:
-    return err(osLastError())
+    maxEventsCount = min(len(queueEvents), len(readyKeys))
+    maxPendingEventsCount = min(maxEventsCount, len(s.pendingEvents))
+    maxNewEventsCount = max(maxEventsCount - maxPendingEventsCount, 0)
 
-  var k = 0
+  let
+    eventsCount =
+      if maxNewEventsCount > 0:
+        let res = handleEintr(epoll_wait(s.epollFd, addr(queueEvents[0]),
+                                         cint(maxNewEventsCount),
+                                         cint(timeout)))
+        if res < 0:
+          return err(osLastError())
+        res
+      else:
+        0
+
+  s.childrenExited = false
+
   for i in 0 ..< eventsCount:
     let rkey = s.prepareKey(queueEvents[i]).valueOr: continue
     readyKeys[k] = rkey
     inc(k)
+
+  s.checkProcesses()
+
+  let pendingEventsCount = min(len(readyKeys) - eventsCount,
+                               len(s.pendingEvents))
+
+  for i in 0 ..< pendingEventsCount:
+    readyKeys[k] = s.pendingEvents.popFirst()
+    inc(k)
+
   ok(k)
 
 proc select2*[T](s: Selector[T], timeout: int): SelectResult[seq[ReadyKey]] =
