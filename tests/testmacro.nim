@@ -13,7 +13,7 @@ when defined(nimHasUsed): {.used.}
 
 type
   RetValueType = proc(n: int): Future[int] {.async.}
-  RetVoidType = proc(n: int): Future[void] {.async.}
+  RetVoidType = proc(n: int) {.async.}
 
 proc asyncRetValue(n: int): Future[int] {.async.} =
   await sleepAsync(n.milliseconds)
