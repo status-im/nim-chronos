@@ -146,6 +146,14 @@ export timer, results
 const
   MaxEventsCount* = 64
 
+when not(defined(windows)):
+  const
+    unixPlatform = defined(macosx) or defined(freebsd) or
+                   defined(netbsd) or defined(openbsd) or
+                   defined(dragonfly) or defined(macos) or
+                   defined(linux) or defined(android) or
+                   defined(solaris)
+
 when defined(windows):
   import std/[sets, hashes]
 elif defined(macosx) or defined(freebsd) or defined(netbsd) or
@@ -300,12 +308,6 @@ when defined(windows):
 
     CustomOverlapped* = object of OVERLAPPED
       data*: CompletionData
-
-    OVERLAPPED_ENTRY* = object
-      lpCompletionKey*: ULONG_PTR
-      lpOverlapped*: ptr CustomOverlapped
-      internal: ULONG_PTR
-      dwNumberOfBytesTransferred: DWORD
 
     PDispatcher* = ref object of PDispatcherBase
       ioPort: HANDLE
