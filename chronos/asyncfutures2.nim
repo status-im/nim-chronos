@@ -8,58 +8,12 @@
 #    Apache License, version 2.0, (LICENSE-APACHEv2)
 #                MIT license (LICENSE-MIT)
 
-import std/[os, tables, strutils, heapqueue, deques, sequtils]
+import std/[os, strutils, sequtils]
 import stew/base10
-import ./srcloc
-export srcloc
-
-when defined(nimHasStacktracesModule):
-  import system/stacktraces
-else:
-  const
-    reraisedFromBegin = -10
-    reraisedFromEnd = -100
-
-const
-  LocCreateIndex* = 0
-  LocCompleteIndex* = 1
-
-when defined(chronosStackTrace):
-  type StackTrace = string
+import "."/[config, futures, srcloc]
+export futures, srcloc
 
 type
-  FutureState* {.pure.} = enum
-    Pending, Finished, Cancelled, Failed
-
-  FutureBase* = ref object of RootObj ## Untyped future.
-    location*: array[2, ptr SrcLoc]
-    callbacks: seq[AsyncCallback]
-    cancelcb*: CallbackFunc
-    child*: FutureBase
-    state*: FutureState
-    error*: ref CatchableError ## Stored exception
-    mustCancel*: bool
-    id*: uint
-
-    when defined(chronosStackTrace):
-      errorStackTrace*: StackTrace
-      stackTrace: StackTrace ## For debugging purposes only.
-
-    when defined(chronosFutureTracking):
-      next*: FutureBase
-      prev*: FutureBase
-
-  # ZAH: we have discussed some possible optimizations where
-  # the future can be stored within the caller's stack frame.
-  # How much refactoring is needed to make this a regular non-ref type?
-  # Obviously, it will still be allocated on the heap when necessary.
-  Future*[T] = ref object of FutureBase ## Typed future.
-    when defined(chronosStrictException):
-      closure*: iterator(f: Future[T]): FutureBase {.raises: [Defect, CatchableError], gcsafe.}
-    else:
-      closure*: iterator(f: Future[T]): FutureBase {.raises: [Defect, CatchableError, Exception], gcsafe.}
-    value: T ## Stored value
-
   FutureStr*[T] = ref object of Future[T]
     ## Future to hold GC strings
     gcholder*: string
@@ -68,59 +22,11 @@ type
     ## Future to hold GC seqs
     gcholder*: seq[B]
 
-  FutureDefect* = object of Defect
-    cause*: FutureBase
-
-  FutureError* = object of CatchableError
-
-  CancelledError* = object of FutureError
-
-  FutureList* = object
-    head*: FutureBase
-    tail*: FutureBase
-    count*: uint
-
-var currentID* {.threadvar.}: uint
-currentID = 0'u
-
-when defined(chronosFutureTracking):
-  var futureList* {.threadvar.}: FutureList
-  futureList = FutureList()
-
-template setupFutureBase(loc: ptr SrcLoc) =
-  new(result)
-  currentID.inc()
-  result.state = FutureState.Pending
-  when defined(chronosStackTrace):
-    result.stackTrace = getStackTrace()
-  result.id = currentID
-  result.location[LocCreateIndex] = loc
-
-  when defined(chronosFutureTracking):
-    result.next = nil
-    result.prev = futureList.tail
-    if not(isNil(futureList.tail)):
-      futureList.tail.next = result
-    futureList.tail = result
-    if isNil(futureList.head):
-      futureList.head = result
-    futureList.count.inc()
-
-proc newFutureImpl[T](loc: ptr SrcLoc): Future[T] =
-  setupFutureBase(loc)
-
 proc newFutureSeqImpl[A, B](loc: ptr SrcLoc): FutureSeq[A, B] =
   setupFutureBase(loc)
 
 proc newFutureStrImpl[T](loc: ptr SrcLoc): FutureStr[T] =
   setupFutureBase(loc)
-
-template newFuture*[T](fromProc: static[string] = ""): Future[T] =
-  ## Creates a new future.
-  ##
-  ## Specifying ``fromProc``, which is a string specifying the name of the proc
-  ## that this future belongs to, is a good habit as it helps with debugging.
-  newFutureImpl[T](getSrcLocation(fromProc))
 
 template newFutureSeq*[A, B](fromProc: static[string] = ""): FutureSeq[A, B] =
   ## Create a new future which can hold/preserve GC sequence until future will
@@ -138,29 +44,11 @@ template newFutureStr*[T](fromProc: static[string] = ""): FutureStr[T] =
   ## that this future belongs to, is a good habit as it helps with debugging.
   newFutureStrImpl[T](getSrcLocation(fromProc))
 
-proc finished*(future: FutureBase): bool {.inline.} =
-  ## Determines whether ``future`` has completed, i.e. ``future`` state changed
-  ## from state ``Pending`` to one of the states (``Finished``, ``Cancelled``,
-  ## ``Failed``).
-  result = (future.state != FutureState.Pending)
-
-proc cancelled*(future: FutureBase): bool {.inline.} =
-  ## Determines whether ``future`` has cancelled.
-  (future.state == FutureState.Cancelled)
-
-proc failed*(future: FutureBase): bool {.inline.} =
-  ## Determines whether ``future`` completed with an error.
-  (future.state == FutureState.Failed)
-
-proc completed*(future: FutureBase): bool {.inline.} =
-  ## Determines whether ``future`` completed without an error.
-  (future.state == FutureState.Finished)
-
-proc done*(future: FutureBase): bool {.inline.} =
+proc done*(future: FutureBase): bool {.deprecated: "Use `completed` instead".} =
   ## This is an alias for ``completed(future)`` procedure.
   completed(future)
 
-when defined(chronosFutureTracking):
+when chronosFutureTracking:
   proc futureDestructor(udata: pointer) =
     ## This procedure will be called when Future[T] got finished, cancelled or
     ## failed and all Future[T].callbacks are already scheduled and processed.
@@ -171,8 +59,23 @@ when defined(chronosFutureTracking):
     if not(isNil(future.prev)): future.prev.next = future.next
     futureList.count.dec()
 
-  proc scheduleDestructor(future: FutureBase) {.inline.} =
+  proc scheduleDestructor(future: FutureBase) =
     callSoon(futureDestructor, cast[pointer](future))
+
+proc finish(fut: FutureBase, state: FutureState) =
+  # We do not perform any checks here, because:
+  # 1. `finish()` is a private procedure and `state` is under our control.
+  # 2. `fut.state` is checked by `checkFinished()`.
+  internalState(fut) = state
+  internalCancelcb(fut) = nil # release cancellation callback memory
+  for item in internalCallbacks(fut).mitems():
+    if not(isNil(item.function)):
+      callSoon(item)
+    item = default(AsyncCallback) # release memory as early as possible
+  internalCallbacks(fut) = default(seq[AsyncCallback]) # release seq as well
+
+  when chronosFutureTracking:
+    scheduleDestructor(fut)
 
 proc checkFinished(future: FutureBase, loc: ptr SrcLoc) =
   ## Checks whether `future` is finished. If it is then raises a
@@ -183,44 +86,29 @@ proc checkFinished(future: FutureBase, loc: ptr SrcLoc) =
     msg.add("Details:")
     msg.add("\n  Future ID: " & Base10.toString(future.id))
     msg.add("\n  Creation location:")
-    msg.add("\n    " & $future.location[LocCreateIndex])
+    msg.add("\n    " & $internalLocation(future)[LocCreateIndex])
     msg.add("\n  First completion location:")
-    msg.add("\n    " & $future.location[LocCompleteIndex])
+    msg.add("\n    " & $internalLocation(future)[LocCompleteIndex])
     msg.add("\n  Second completion location:")
     msg.add("\n    " & $loc)
-    when defined(chronosStackTrace):
+    when chronosStackTrace:
       msg.add("\n  Stack trace to moment of creation:")
       msg.add("\n" & indent(future.stackTrace.strip(), 4))
-      msg.add("\n  Stack trace to moment of secondary completion:")
-      msg.add("\n" & indent(getStackTrace().strip(), 4))
+    msg.add("\n  Stack trace to moment of secondary completion:")
+    msg.add("\n" & indent(getStackTrace().strip(), 4))
     msg.add("\n\n")
     var err = newException(FutureDefect, msg)
     err.cause = future
     raise err
   else:
-    future.location[LocCompleteIndex] = loc
-
-proc finish(fut: FutureBase, state: FutureState) =
-  # We do not perform any checks here, because:
-  # 1. `finish()` is a private procedure and `state` is under our control.
-  # 2. `fut.state` is checked by `checkFinished()`.
-  fut.state = state
-  fut.cancelcb = nil # release cancellation callback memory
-  for item in fut.callbacks.mitems():
-    if not(isNil(item.function)):
-      callSoon(item)
-    item = default(AsyncCallback) # release memory as early as possible
-  fut.callbacks = default(seq[AsyncCallback]) # release seq as well
-
-  when defined(chronosFutureTracking):
-    scheduleDestructor(fut)
+    internalLocation(future)[LocCompleteIndex] = loc
 
 proc complete[T](future: Future[T], val: T, loc: ptr SrcLoc) =
   if not(future.cancelled()):
     checkFinished(FutureBase(future), loc)
-    doAssert(isNil(future.error))
+    doAssert(isNil(internalError(future)))
     future.value = val
-    future.finish(FutureState.Finished)
+    future.finish(FutureState.Completed)
 
 template complete*[T](future: Future[T], val: T) =
   ## Completes ``future`` with value ``val``.
@@ -229,8 +117,8 @@ template complete*[T](future: Future[T], val: T) =
 proc complete(future: Future[void], loc: ptr SrcLoc) =
   if not(future.cancelled()):
     checkFinished(FutureBase(future), loc)
-    doAssert(isNil(future.error))
-    future.finish(FutureState.Finished)
+    doAssert(isNil(internalError(future)))
+    future.finish(FutureState.Completed)
 
 template complete*(future: Future[void]) =
   ## Completes a void ``future``.
@@ -239,8 +127,8 @@ template complete*(future: Future[void]) =
 proc fail[T](future: Future[T], error: ref CatchableError, loc: ptr SrcLoc) =
   if not(future.cancelled()):
     checkFinished(FutureBase(future), loc)
-    future.error = error
-    when defined(chronosStackTrace):
+    internalError(future) = error
+    when chronosStackTrace:
       future.errorStackTrace = if getStackTrace(error) == "":
                                  getStackTrace()
                                else:
@@ -257,8 +145,8 @@ template newCancelledError(): ref CancelledError =
 proc cancelAndSchedule(future: FutureBase, loc: ptr SrcLoc) =
   if not(future.finished()):
     checkFinished(future, loc)
-    future.error = newCancelledError()
-    when defined(chronosStackTrace):
+    internalError(future) = newCancelledError()
+    when chronosStackTrace:
       future.errorStackTrace = getStackTrace()
     future.finish(FutureState.Cancelled)
 
@@ -283,16 +171,16 @@ proc cancel(future: FutureBase, loc: ptr SrcLoc): bool =
   if future.finished():
     return false
 
-  if not(isNil(future.child)):
-    if cancel(future.child, getSrcLocation()):
+  if not(isNil(internalChild(future))):
+    if cancel(internalChild(future), getSrcLocation()):
       return true
   else:
-    if not(isNil(future.cancelcb)):
-      future.cancelcb(cast[pointer](future))
-      future.cancelcb = nil
+    if not(isNil(internalCancelcb(future))):
+      internalCancelcb(future)(cast[pointer](future))
+      internalCancelcb(future) = nil
     cancelAndSchedule(future, getSrcLocation())
 
-  future.mustCancel = true
+  internalMustCancel(future) = true
   return true
 
 template cancel*(future: FutureBase) =
@@ -304,7 +192,7 @@ template cancel*[T](future: Future[T]) =
   discard cancel(FutureBase(future), getSrcLocation())
 
 proc clearCallbacks(future: FutureBase) =
-  future.callbacks = default(seq[AsyncCallback])
+  internalCallbacks(future) = default(seq[AsyncCallback])
 
 proc addCallback*(future: FutureBase, cb: CallbackFunc, udata: pointer = nil) =
   ## Adds the callbacks proc to be called when the future completes.
@@ -315,7 +203,7 @@ proc addCallback*(future: FutureBase, cb: CallbackFunc, udata: pointer = nil) =
     callSoon(cb, udata)
   else:
     let acb = AsyncCallback(function: cb, udata: udata)
-    future.callbacks.add acb
+    internalCallbacks(future).add acb
 
 proc addCallback*[T](future: Future[T], cb: CallbackFunc) =
   ## Adds the callbacks proc to be called when the future completes.
@@ -330,7 +218,7 @@ proc removeCallback*(future: FutureBase, cb: CallbackFunc,
   doAssert(not isNil(cb))
   # Make sure to release memory associated with callback, or reference chains
   # may be created!
-  future.callbacks.keepItIf:
+  internalCallbacks(future).keepItIf:
     it.function != cb or it.udata != udata
 
 proc removeCallback*[T](future: Future[T], cb: CallbackFunc) =
@@ -357,7 +245,7 @@ proc `cancelCallback=`*[T](future: Future[T], cb: CallbackFunc) =
   ## Sets the callback procedure to be called when the future is cancelled.
   ##
   ## This callback will be called immediately as ``future.cancel()`` invoked.
-  future.cancelcb = cb
+  internalCancelcb(future) = cb
 
 {.push stackTrace: off.}
 proc internalContinue[T](fut: pointer) {.gcsafe, raises: [Defect].}
@@ -377,7 +265,7 @@ proc futureContinue*[T](fut: Future[T]) {.gcsafe, raises: [Defect].} =
         fut.closure = nil
       if next == nil:
         if not(fut.finished()):
-          raiseAssert "Async procedure (" & ($fut.location[LocCreateIndex]) & ") yielded `nil`, " &
+          raiseAssert "Async procedure (" & ($internalLocation(fut)[LocCreateIndex]) & ") yielded `nil`, " &
                       "are you await'ing a `nil` Future?"
       else:
         GC_ref(fut)
@@ -399,152 +287,17 @@ proc internalContinue[T](fut: pointer) {.gcsafe, raises: [Defect].} =
 
 {.pop.}
 
-template getFilenameProcname(entry: StackTraceEntry): (string, string) =
-  when compiles(entry.filenameStr) and compiles(entry.procnameStr):
-    # We can't rely on "entry.filename" and "entry.procname" still being valid
-    # cstring pointers, because the "string.data" buffers they pointed to might
-    # be already garbage collected (this entry being a non-shallow copy,
-    # "entry.filename" no longer points to "entry.filenameStr.data", but to the
-    # buffer of the original object).
-    (entry.filenameStr, entry.procnameStr)
-  else:
-    ($entry.filename, $entry.procname)
-
-proc getHint(entry: StackTraceEntry): string =
-  ## We try to provide some hints about stack trace entries that the user
-  ## may not be familiar with, in particular calls inside the stdlib.
-
-  let (filename, procname) = getFilenameProcname(entry)
-
-  if procname == "processPendingCallbacks":
-    if cmpIgnoreStyle(filename, "asyncdispatch.nim") == 0:
-      return "Executes pending callbacks"
-  elif procname == "poll":
-    if cmpIgnoreStyle(filename, "asyncdispatch.nim") == 0:
-      return "Processes asynchronous completion events"
-
-  if procname == "internalContinue":
-    if cmpIgnoreStyle(filename, "asyncfutures.nim") == 0:
-      return "Resumes an async procedure"
-
-proc `$`(stackTraceEntries: seq[StackTraceEntry]): string =
-  try:
-    when defined(nimStackTraceOverride) and declared(addDebuggingInfo):
-      let entries = addDebuggingInfo(stackTraceEntries)
-    else:
-      let entries = stackTraceEntries
-
-    # Find longest filename & line number combo for alignment purposes.
-    var longestLeft = 0
-    for entry in entries:
-      let (filename, procname) = getFilenameProcname(entry)
-
-      if procname == "": continue
-
-      let leftLen = filename.len + len($entry.line)
-      if leftLen > longestLeft:
-        longestLeft = leftLen
-
-    var indent = 2
-    # Format the entries.
-    for entry in entries:
-      let (filename, procname) = getFilenameProcname(entry)
-
-      if procname == "":
-        if entry.line == reraisedFromBegin:
-          result.add(spaces(indent) & "#[\n")
-          indent.inc(2)
-        elif entry.line == reraisedFromEnd:
-          indent.dec(2)
-          result.add(spaces(indent) & "]#\n")
-        continue
-
-      let left = "$#($#)" % [filename, $entry.line]
-      result.add((spaces(indent) & "$#$# $#\n") % [
-        left,
-        spaces(longestLeft - left.len + 2),
-        procname
-      ])
-      let hint = getHint(entry)
-      if hint.len > 0:
-        result.add(spaces(indent+2) & "## " & hint & "\n")
-  except ValueError as exc:
-    return exc.msg # Shouldn't actually happen since we set the formatting
-                   # string
-
-when defined(chronosStackTrace):
-  proc injectStacktrace(future: FutureBase) =
-    const header = "\nAsync traceback:\n"
-
-    var exceptionMsg = future.error.msg
-    if header in exceptionMsg:
-      # This is messy: extract the original exception message from the msg
-      # containing the async traceback.
-      let start = exceptionMsg.find(header)
-      exceptionMsg = exceptionMsg[0..<start]
-
-    var newMsg = exceptionMsg & header
-
-    let entries = getStackTraceEntries(future.error)
-    newMsg.add($entries)
-
-    newMsg.add("Exception message: " & exceptionMsg & "\n")
-
-    # # For debugging purposes
-    # newMsg.add("Exception type:")
-    # for entry in getStackTraceEntries(future.error):
-    #   newMsg.add "\n" & $entry
-    future.error.msg = newMsg
-
-proc internalCheckComplete*(fut: FutureBase) {.
-     raises: [Defect, CatchableError].} =
-  # For internal use only. Used in asyncmacro
-  if not(isNil(fut.error)):
-    when defined(chronosStackTrace):
-      injectStacktrace(fut)
-    raise fut.error
-
-proc internalRead*[T](fut: Future[T]): T {.inline.} =
-  # For internal use only. Used in asyncmacro
-  when T isnot void:
-    return fut.value
-
-proc read*[T](future: Future[T] ): T {.
-     raises: [Defect, CatchableError].} =
-  ## Retrieves the value of ``future``. Future must be finished otherwise
-  ## this function will fail with a ``ValueError`` exception.
-  ##
-  ## If the result of the future is an error then that error will be raised.
-  if future.finished():
-    internalCheckComplete(future)
-    internalRead(future)
-  else:
-    # TODO: Make a custom exception type for this?
-    raise newException(ValueError, "Future still in progress.")
-
-proc readError*[T](future: Future[T]): ref CatchableError {.
-     raises: [Defect, ValueError].} =
-  ## Retrieves the exception stored in ``future``.
-  ##
-  ## An ``ValueError`` exception will be thrown if no exception exists
-  ## in the specified Future.
-  if not(isNil(future.error)):
-    return future.error
-  else:
-    # TODO: Make a custom exception type for this?
-    raise newException(ValueError, "No error in future.")
-
 template taskFutureLocation(future: FutureBase): string =
-  let loc = future.location[0]
+  let loc = internalLocation(future)[LocationKind.Create]
   "[" & (
     if len(loc.procedure) == 0: "[unspecified]" else: $loc.procedure & "()"
     ) & " at " & $loc.file & ":" & $(loc.line) & "]"
 
 template taskErrorMessage(future: FutureBase): string =
   "Asynchronous task " & taskFutureLocation(future) &
-  " finished with an exception \"" & $future.error.name &
-  "\"!\nMessage: " & future.error.msg &
-  "\nStack trace: " & future.error.getStackTrace()
+  " finished with an exception \"" & $internalError(future).name &
+  "\"!\nMessage: " & internalError(future).msg &
+  "\nStack trace: " & internalError(future).getStackTrace()
 template taskCancelMessage(future: FutureBase): string =
   "Asynchronous task " & taskFutureLocation(future) & " was cancelled!"
 
@@ -659,7 +412,7 @@ proc `or`*[T, Y](fut1: Future[T], fut2: Future[Y]): Future[void] =
       else:
         fut1.removeCallback(cb)
       if fut.failed():
-        retFuture.fail(fut.error)
+        retFuture.fail(fut.internalError)
       else:
         retFuture.complete()
 
@@ -672,14 +425,14 @@ proc `or`*[T, Y](fut1: Future[T], fut2: Future[Y]): Future[void] =
 
   if fut1.finished():
     if fut1.failed():
-      retFuture.fail(fut1.error)
+      retFuture.fail(fut1.internalError)
     else:
       retFuture.complete()
     return retFuture
 
   if fut2.finished():
     if fut2.failed():
-      retFuture.fail(fut2.error)
+      retFuture.fail(fut2.internalError)
     else:
       retFuture.complete()
     return retFuture

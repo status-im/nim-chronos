@@ -10,7 +10,7 @@ import unittest2
 import ../chronos, ../chronos/apps/http/[httpserver, shttpserver, httpclient]
 import stew/base10
 
-when defined(nimHasUsed): {.used.}
+{.used.}
 
 # To create self-signed certificate and key you can use openssl
 # openssl req -new -x509 -sha256 -newkey rsa:2048 -nodes \

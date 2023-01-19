@@ -32,10 +32,11 @@ proc run(args, path: string) =
 
 task test, "Run all tests":
   for args in [
-      "-d:useSysAssert -d:useGcAssert",
-      "-d:chronosStackTrace -d:chronosStrictException",
+      "-d:debug",
+      "-d:debug -d:chronosv4",
       "-d:release",
-      "-d:release -d:chronosFutureTracking",
+      "-d:release -d:chronosv4",
+      "-d:release -d:useSysAssert -d:useGcAssert",
     ]: run args, "tests/testall"
 
 task test_libbacktrace, "test with libbacktrace":

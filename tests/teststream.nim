@@ -9,7 +9,7 @@ import std/[strutils, os]
 import unittest2
 import ../chronos
 
-when defined(nimHasUsed): {.used.}
+{.used.}
 
 when defined(windows):
   import winlean

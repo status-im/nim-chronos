@@ -13,9 +13,9 @@ when (NimMajor, NimMinor) < (1, 4):
 else:
   {.push raises: [].}
 
-import std/[os, tables, strutils, heapqueue, lists, nativesockets, net,
+import std/[os, tables, strutils, heapqueue, nativesockets, net,
             deques]
-import ./timer
+import "."/[config, futures, timer]
 
 export Port, SocketFlag
 export timer
@@ -188,12 +188,6 @@ elif unixPlatform:
          SIGPIPE, SIGALRM, SIGTERM, SIGPIPE
 
 type
-  CallbackFunc* = proc (arg: pointer) {.gcsafe, raises: [Defect].}
-
-  AsyncCallback* = object
-    function*: CallbackFunc
-    udata*: pointer
-
   AsyncError* = object of CatchableError
     ## Generic async exception
   AsyncTimeoutError* = object of AsyncError
@@ -1139,7 +1133,7 @@ proc wait*[T](fut: Future[T], timeout = InfiniteDuration): Future[T] =
             clearTimer(timer)
 
           if fut.failed():
-            retFuture.fail(fut.error)
+            retFuture.fail(internalError(fut))
           else:
             when T is void:
               retFuture.complete()
@@ -1158,7 +1152,7 @@ proc wait*[T](fut: Future[T], timeout = InfiniteDuration): Future[T] =
 
   if fut.finished():
     if fut.failed():
-      retFuture.fail(fut.error)
+      retFuture.fail(internalError(fut))
     else:
       when T is void:
         retFuture.complete()
@@ -1214,7 +1208,7 @@ proc getTracker*(id: string): TrackerBase =
   let loop = getThreadDispatcher()
   result = loop.trackers.getOrDefault(id, nil)
 
-when defined(chronosFutureTracking):
+when chronosFutureTracking:
   iterator pendingFutures*(): FutureBase =
     ## Iterates over the list of pending Futures (Future[T] objects which not
     ## yet completed, cancelled or failed).

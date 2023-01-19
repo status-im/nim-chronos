@@ -8,7 +8,7 @@
 import unittest2
 import ../chronos
 
-when defined(nimHasUsed): {.used.}
+{.used.}
 
 suite "Future[T] behavior test suite":
   proc testFuture1(): Future[int] {.async.} =
@@ -918,7 +918,7 @@ suite "Future[T] behavior test suite":
 
     var fut = waitProc()
     await cancelAndWait(fut)
-    result = (fut.state == FutureState.Finished) and
+    result = (fut.state == FutureState.Completed) and
              neverFlag1 and neverFlag2 and neverFlag3 and
              waitProc1 and waitProc2
 
@@ -947,7 +947,7 @@ suite "Future[T] behavior test suite":
 
     var fut = withTimeoutProc()
     await cancelAndWait(fut)
-    result = (fut.state == FutureState.Finished) and
+    result = (fut.state == FutureState.Completed) and
              neverFlag1 and neverFlag2 and neverFlag3 and
              waitProc1 and waitProc2
 
@@ -1057,12 +1057,12 @@ suite "Future[T] behavior test suite":
     fut2.complete()
     fut3.complete()
 
-    let loc10 = fut1.location[0]
-    let loc11 = fut1.location[1]
-    let loc20 = fut2.location[0]
-    let loc21 = fut2.location[1]
-    let loc30 = fut3.location[0]
-    let loc31 = fut3.location[1]
+    let loc10 = fut1.location[LocationKind.Create]
+    let loc11 = fut1.location[LocationKind.Complete]
+    let loc20 = fut2.location[LocationKind.Create]
+    let loc21 = fut2.location[LocationKind.Complete]
+    let loc30 = fut3.location[LocationKind.Create]
+    let loc31 = fut3.location[LocationKind.Complete]
 
     proc chk(loc: ptr SrcLoc, file: string, line: int,
              procedure: string): bool =
@@ -1073,7 +1073,7 @@ suite "Future[T] behavior test suite":
         (loc.procedure == procedure)
 
     check:
-      chk(loc10, "testfut.nim", 1041, "macroFuture")
+      chk(loc10, "testfut.nim", 1042, "macroFuture")
       chk(loc11, "testfut.nim", 1042, "")
       chk(loc20, "testfut.nim", 1054, "template")
       chk(loc21, "testfut.nim", 1057, "")
@@ -1282,8 +1282,8 @@ suite "Future[T] behavior test suite":
     var fut2 = race(f31, f21, f11)
 
     check:
-      fut1.done() and fut1.read() == FutureBase(f10)
-      fut2.done() and fut2.read() == FutureBase(f21)
+      fut1.finished() and fut1.read() == FutureBase(f10)
+      fut2.finished() and fut2.read() == FutureBase(f21)
 
   test "race() cancellation test":
     proc client1() {.async.} =

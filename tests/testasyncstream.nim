@@ -9,7 +9,7 @@ import unittest2
 import ../chronos
 import ../chronos/streams/[tlsstream, chunkstream, boundstream]
 
-when defined(nimHasUsed): {.used.}
+{.used.}
 
 # To create self-signed certificate and key you can use openssl
 # openssl req -new -x509 -sha256 -newkey rsa:2048 -nodes \
