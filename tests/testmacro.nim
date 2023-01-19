@@ -34,6 +34,12 @@ proc asyncRetExceptionVoid(n: int) {.async.} =
   if true:
     raise newException(ValueError, "Test exception")
 
+proc asyncImplicitReturn(n: int): Future[int] {.async.} =
+  if n < 10:
+    n * 5
+  else:
+    await asyncRetValue(n)
+
 proc testAwait(): Future[bool] {.async.} =
   var res: int
 
@@ -66,6 +72,14 @@ proc testAwait(): Future[bool] {.async.} =
   block:
     let fn: RetValueType = asyncRetValue
     if (await fn(100)) != 1000:
+      return false
+
+  block:
+    let fn: RetValueType = asyncRetValue
+    if (await asyncImplicitReturn(1)) != 5:
+      return false
+
+    if (await asyncImplicitReturn(10)) != 100:
       return false
 
   return true

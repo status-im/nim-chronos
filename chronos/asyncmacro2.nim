@@ -149,6 +149,18 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
 
         newStmtList(resultTemplate, procBodyBlck, complete)
       else:
+        let resultSym = ident "result"
+        let assigners = quote do:
+          # Implicit return trick based on idea from ire4ever1190
+          # https://github.com/nim-lang/Nim/pull/20933
+          template chronosAssignImplicitResult(x: `baseType`) {.used.} =
+            # If the proc has implicit return then this will get called
+            complete(`castFutureSym`, x)
+          template chronosAssignImplicitResult(x: untyped) {.used.} =
+            # If the proc doesn't have implicit return then this will get called
+            x
+            complete(`castFutureSym`, `resultSym`)
+
         # -> iterator nameIter(chronosInternalRetFuture: Future[T]): FutureBase {.closure.} =
         # ->   {.push warning[resultshadowed]: off.}
         # ->   var result: T
@@ -164,17 +176,17 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
 
           # -> var result: T
           newNimNode(nnkVarSection, prc.body).add(
-            newIdentDefs(newIdentNode("result"), baseType)),
+            newIdentDefs(resultSym, baseType)),
 
           # -> {.pop.})
           newNimNode(nnkPragma).add(
             newIdentNode("pop")),
 
-          procBodyBlck,
+          assigners,
 
-          # -> complete(chronosInternalRetFuture, result)
-          newCall(newIdentNode("complete"),
-            castFutureSym, newIdentNode("result")))
+          # -> chronosAssignImplicitResult(procBodyBlck)
+          newCall(newIdentNode("chronosAssignImplicitResult"),
+            procBodyBlck))
 
       let
         internalFutureParameter = nnkIdentDefs.newTree(internalFutureSym, newIdentNode("FutureBase"), newEmptyNode())
