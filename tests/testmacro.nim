@@ -13,6 +13,7 @@ when defined(nimHasUsed): {.used.}
 
 type
   RetValueType = proc(n: int): Future[int] {.async.}
+  RetImplicitVoidType = proc(n: int) {.async.}
   RetVoidType = proc(n: int): Future[void] {.async.}
 
 proc asyncRetValue(n: int): Future[int] {.async.} =
@@ -58,6 +59,9 @@ proc testAwait(): Future[bool] {.async.} =
 
   block:
     let fn: RetVoidType = asyncRetVoid
+    await fn(100)
+  block:
+    let fn: RetImplicitVoidType = asyncRetVoid
     await fn(100)
   block:
     let fn: RetValueType = asyncRetValue

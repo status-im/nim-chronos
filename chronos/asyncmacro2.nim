@@ -72,6 +72,13 @@ proc verifyReturnType(typeName: string) {.compileTime.} =
 macro unsupported(s: static[string]): untyped =
   error s
 
+proc params2(someProc: NimNode): NimNode =
+  # until https://github.com/nim-lang/Nim/pull/19563 is available
+  if someProc.kind == nnkProcTy:
+    someProc[0]
+  else:
+    params(someProc)
+
 proc cleanupOpenSymChoice(node: NimNode): NimNode {.compileTime.} =
   # Replace every Call -> OpenSymChoice by a Bracket expr
   # ref https://github.com/nim-lang/Nim/issues/11091
@@ -92,21 +99,20 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
       error("Cannot transform " & $prc.kind & " into an async proc." &
             " proc/method definition or lambda node expected.")
 
-  let returnType =
-    cleanupOpenSymChoice(if prc.kind == nnkProcTy: prc[0][0] else: prc.params[0])
-  var baseType: NimNode
-  # Verify that the return type is a Future[T]
-  if returnType.kind == nnkBracketExpr:
-    let fut = repr(returnType[0])
-    verifyReturnType(fut)
-    baseType = returnType[1]
-  elif returnType.kind == nnkEmpty:
-    baseType = returnType
-  else:
-    verifyReturnType(repr(returnType))
+  let returnType = cleanupOpenSymChoice(prc.params2[0])
 
-  let subtypeIsVoid = returnType.kind == nnkEmpty or
-        (baseType.kind == nnkIdent and returnType[1].eqIdent("void"))
+  # Verify that the return type is a Future[T]
+  let baseType =
+    if returnType.kind == nnkBracketExpr:
+      let fut = repr(returnType[0])
+      verifyReturnType(fut)
+      returnType[1]
+    elif returnType.kind == nnkEmpty:
+      ident("void")
+    else:
+      raiseAssert("Unhandled async return type: " & $prc.kind)
+
+  let subtypeIsVoid = baseType.eqIdent("void")
 
   if prc.kind in {nnkProcDef, nnkLambda, nnkMethodDef, nnkDo}:
     let
@@ -260,13 +266,12 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
     # Add discardable pragma.
     if returnType.kind == nnkEmpty:
       # Add Future[void]
-      prc.params[0] =
+      prc.params2[0] =
         newNimNode(nnkBracketExpr, prc)
         .add(newIdentNode("Future"))
         .add(newIdentNode("void"))
 
   prc
-  #echo(treeRepr(result))
 
 template await*[T](f: Future[T]): untyped =
   when declared(chronosInternalRetFuture):
@@ -318,8 +323,8 @@ macro async*(prc: untyped): untyped =
   ## Macro which processes async procedures into the appropriate
   ## iterators and yield statements.
   if prc.kind == nnkStmtList:
+    result = newStmtList()
     for oneProc in prc:
-      result = newStmtList()
       result.add asyncSingleProc(oneProc)
   else:
     result = asyncSingleProc(prc)
