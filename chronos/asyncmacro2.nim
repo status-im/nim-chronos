@@ -190,7 +190,7 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
       #      here the possibility of transporting more specific error types here
       #      for example by casting exceptions coming out of `await`..
       let raises = nnkBracket.newTree()
-      when not defined(chronosStrictException):
+      when not chronosStrictException:
         raises.add(ident "Exception")
       else:
         raises.add(ident "CatchableError")

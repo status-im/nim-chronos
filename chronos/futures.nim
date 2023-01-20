@@ -40,13 +40,22 @@ type
     Pending, Completed, Cancelled, Failed
 
   FutureBase* = ref object of RootObj ## Untyped future.
-    location: array[LocationKind, ptr SrcLoc]
-    callbacks: seq[AsyncCallback]
-    cancelcb: CallbackFunc
-    child: FutureBase
-    state: FutureState
-    error: ref CatchableError ## Stored exception
-    mustCancel: bool
+    when defined(chronosv4):
+      location: array[LocationKind, ptr SrcLoc]
+      callbacks: seq[AsyncCallback]
+      cancelcb: CallbackFunc
+      child: FutureBase
+      state: FutureState
+      error: ref CatchableError ## Stored exception
+      mustCancel: bool
+    else:
+      location*: array[LocationKind, ptr SrcLoc]
+      callbacks*: seq[AsyncCallback]
+      cancelcb*: CallbackFunc
+      child*: FutureBase
+      state*: FutureState
+      error*: ref CatchableError ## Stored exception
+      mustCancel*: bool
 
     when chronosFutureId:
       id*: uint
@@ -320,7 +329,7 @@ template internalValue*[T](fut: Future[T]): T = fut.value
 func location*(fut: FutureBase): array[LocationKind, ptr SrcLoc] = fut.location
 func state*(fut: FutureBase): FutureState = fut.state
 
-when not defined(chronosV4):
+when defined(chronosV4):
   # `error` will change definition when we move to V4
   func error*(fut: FutureBase): ref CatchableError {.
       deprecated: "Use `readError` to access error of future".} = fut.error
