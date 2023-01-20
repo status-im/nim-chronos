@@ -340,7 +340,7 @@ when defined(chronosV4):
     of 1: loc[LocationKind.Complete]
     else: raiseAssert("Unknown source location " & $v)
 
-func read*[T](future: Future[T] ): T {.
+proc read*[T](future: Future[T] ): T {.
      raises: [Defect, CatchableError].} =
   ## Retrieves the value of ``future``. Future must be finished otherwise
   ## this function will fail with a ``ValueError`` exception.
@@ -353,7 +353,7 @@ func read*[T](future: Future[T] ): T {.
   else:
     raise (ref NoValueError)(msg: "Future still in progress.")
 
-func readError*[T](future: Future[T]): ref CatchableError {.
+proc readError*[T](future: Future[T]): ref CatchableError {.
      raises: [Defect, NoErrorError].} =
   ## Retrieves the exception stored in ``future``.
   ##
