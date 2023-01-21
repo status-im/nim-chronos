@@ -1351,3 +1351,24 @@ suite "Future[T] behavior test suite":
       check:
         v1_u == 0'u
         v2_u + 1'u == 0'u
+
+  test "Future constructors":
+    let
+      completed = Future.completed(42)
+      failed = Future[int].failed((ref ValueError)(msg: "msg"))
+      cancelled = Future[int].cancelled()
+
+    check:
+      completed.read() == 42
+    expect(NoErrorError):
+      discard completed.readError()
+
+    check:
+      failed.readError() of ValueError
+    expect(NoValueError):
+      discard failed.read()
+
+    check:
+      cancelled.readError() of CancelledError
+    expect(CancelledError):
+      discard cancelled.read()

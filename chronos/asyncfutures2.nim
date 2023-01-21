@@ -23,10 +23,14 @@ type
     gcholder*: seq[B]
 
 proc newFutureSeqImpl[A, B](loc: ptr SrcLoc): FutureSeq[A, B] =
-  setupFutureBase(loc)
+  let res = FutureSeq[A, B]()
+  setupFutureBase(res, loc)
+  res
 
 proc newFutureStrImpl[T](loc: ptr SrcLoc): FutureStr[T] =
-  setupFutureBase(loc)
+  let res = FutureStr[T]()
+  setupFutureBase(res, loc)
+  res
 
 template newFutureSeq*[A, B](fromProc: static[string] = ""): FutureSeq[A, B] =
   ## Create a new future which can hold/preserve GC sequence until future will

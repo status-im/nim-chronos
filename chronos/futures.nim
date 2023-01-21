@@ -129,31 +129,32 @@ when chronosFutureTracking:
   var futureList* {.threadvar.}: FutureList
   futureList = FutureList()
 
-template setupFutureBase*(loc: ptr SrcLoc) =
-  new(result)
-
-  result.location[LocCreateIndex] = loc
-  result.state = FutureState.Pending
+proc setupFutureBase*(
+    fut: FutureBase,
+    loc: ptr SrcLoc,
+    state = FutureState.Pending
+    ) =
+  fut.state = state
+  fut.location[LocCreateIndex] = loc
+  if state != FutureState.Pending:
+    fut.location[LocCompleteIndex] = loc
 
   when chronosFutureId:
     currentID.inc()
-    result.id = currentID
+    fut.id = currentID
 
   when chronosStackTrace:
-    result.stackTrace = getStackTrace()
+    fut.stackTrace = getStackTrace()
 
   when chronosFutureTracking:
-    result.next = nil
-    result.prev = futureList.tail
+    fut.next = nil
+    fut.prev = futureList.tail
     if not(isNil(futureList.tail)):
-      futureList.tail.next = result
-    futureList.tail = result
+      futureList.tail.next = fut
+    futureList.tail = fut
     if isNil(futureList.head):
-      futureList.head = result
+      futureList.head = fut
     futureList.count.inc()
-
-proc newFutureImpl[T](loc: ptr SrcLoc): Future[T] =
-  setupFutureBase(loc)
 
 template newCancelledError(): ref CancelledError =
   (ref CancelledError)(msg: "Future operation cancelled!")
@@ -163,35 +164,38 @@ template newFuture*[T](fromProc: static[string] = ""): Future[T] =
   ##
   ## Specifying ``fromProc``, which is a string specifying the name of the proc
   ## that this future belongs to, is a good habit as it helps with debugging.
-  newFutureImpl[T](getSrcLocation(fromProc))
+  let res = Future[T]()
+  setupFutureBase(res, getSrcLocation(fromProc))
+  res
 
-template new*(_: type Future, T: type, fromProc: static[string] = ""): Future[T] =
-  ## Initializes a new future.
-  ##
-  ## Specifying ``fromProc``, which is a string specifying the name of the proc
-  ## that this future belongs to, is a good habit as it helps with debugging.
-  newFutureImpl[T](getSrcLocation(fromProc))
-
-template completed*[T: not void](F: type Future[T], value: T, fromProc: static[string]): Future[T] =
+template completed*(
+    F: type Future, fromProc: static[string] = ""): Future[void] =
   ## Create a new completed future
-  let res = newFutureImpl[T](getSrcLocation(fromProc))
-  res.location[LocCompleteIndex] = res.location[LocCreateIndex]
-  res.value = value
-  res.state = FutureState.Completed
+  let res = Future[T]()
+  setupFutureBase(res, getSrcLocation(fromProc), FutureState.Completed)
+  res
 
-template failed*[T](F: type Future[T], error: CatchableError): Future[T] =
+template completed*[T: not void](
+    F: type Future, valueParam: T, fromProc: static[string] = ""): Future[T] =
+  ## Create a new completed future
+  let res = Future[T](value: valueParam)
+  setupFutureBase(res, getSrcLocation(fromProc), FutureState.Completed)
+  res
+
+template failed*[T](
+    F: type Future[T], errorParam: ref CatchableError,
+    fromProc: static[string] = ""): Future[T] =
   ## Create a new failed future
-  let res = newFutureImpl[T](getSrcLocation(fromProc))
-  res.location[LocCompleteIndex] = res.location[LocCreateIndex]
-  res.error = error
-  res.state = FutureState.Failed
+  let res = Future[T](error: errorParam)
+  setupFutureBase(res, getSrcLocation(fromProc), FutureState.Failed)
+  res
 
-template cancelled*[T: not void](F: type Future[T]): Future[T] =
+template cancelled*[T](
+    F: type Future[T], fromProc: static[string] = ""): Future[T] =
   ## Create a new cancelled future
-  let res = newFutureImpl[T](getSrcLocation(fromProc))
-  res.location[LocCompleteIndex] = res.location[LocCreateIndex]
-  res.error = newCancelledError()
-  res.state = FutureState.Cancelled
+  let res = Future[T](error: newCancelledError())
+  setupFutureBase(res, getSrcLocation(fromProc), FutureState.Cancelled)
+  res
 
 func finished*(future: FutureBase): bool {.inline.} =
   ## Determines whether ``future`` has completed, i.e. ``future`` state changed
