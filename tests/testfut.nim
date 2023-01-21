@@ -1360,12 +1360,12 @@ suite "Future[T] behavior test suite":
 
     check:
       completed.read() == 42
-    expect(NoErrorError):
+    expect(FuturePendingError):
       discard completed.readError()
 
     check:
       failed.readError() of ValueError
-    expect(NoValueError):
+    expect(FuturePendingError):
       discard failed.read()
 
     check:

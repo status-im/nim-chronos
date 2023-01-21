@@ -8,7 +8,6 @@
 #    Apache License, version 2.0, (LICENSE-APACHEv2)
 #                MIT license (LICENSE-MIT)
 
-import std/[strutils, sequtils]
 import stew/base10
 import "."/[config, srcloc]
 export srcloc
@@ -40,7 +39,7 @@ type
     Pending, Completed, Cancelled, Failed
 
   FutureBase* = ref object of RootObj ## Untyped future.
-    when defined(chronosv4):
+    when defined(chronosPreviewV4):
       location: array[LocationKind, ptr SrcLoc]
       callbacks: seq[AsyncCallback]
       cancelcb: CallbackFunc
@@ -80,7 +79,9 @@ type
         closure*: iterator(f: Future[T]): FutureBase {.raises: [CatchableError], gcsafe.}
     else:
       closure*: iterator(f: Future[T]): FutureBase {.raises: [Exception], gcsafe.}
-    value*: T ## Stored value
+
+    when T isnot void:
+      value*: T ## Stored value
 
   FutureDefect* = object of Defect
     cause*: FutureBase
@@ -89,20 +90,16 @@ type
 
   CancelledError* = object of FutureError
 
-when defined(chronosV4):
+when defined(chronosPreviewV4):
   type
-    NoValueError* = object of FutureError
-      ## Exception raised when trying to access the value of a future when
-      ## the future is not completed
+    FuturePendingError* = object of FutureError
+      ## Exception raised when trying to access the value or error of a future
+      ## when the future is not finished
 
-    NoErrorError* = object of FutureError
-      ## Exception raised when trying to access the error of a future when
-      ## the future is not failed / cancelled
 else:
   type
     # chronos V3 used `ValueError` when raising these
-    NoValueError* = ValueError
-    NoErrorError* = ValueError
+    FuturePendingError* = ValueError
 
 # Backwards compatibility for old FutureState name
 template Finished* {.deprecated: "Use Completed instead".} = Completed
@@ -216,6 +213,8 @@ func completed*(future: FutureBase): bool {.inline.} =
   future.state == FutureState.Completed
 
 when chronosStackTrace:
+  import std/strutils
+
   template getFilenameProcname(entry: StackTraceEntry): (string, string) =
     when compiles(entry.filenameStr) and compiles(entry.procnameStr):
       # We can't rely on "entry.filename" and "entry.procname" still being valid
@@ -333,7 +332,7 @@ template internalValue*[T](fut: Future[T]): T = fut.value
 func location*(fut: FutureBase): array[LocationKind, ptr SrcLoc] = fut.location
 func state*(fut: FutureBase): FutureState = fut.state
 
-when defined(chronosV4):
+when defined(chronosPreviewV4):
   # `error` will change definition when we move to V4
   func error*(fut: FutureBase): ref CatchableError {.
       deprecated: "Use `readError` to access error of future".} = fut.error
@@ -355,10 +354,10 @@ proc read*[T](future: Future[T] ): T {.
     when T isnot void:
       future.value
   else:
-    raise (ref NoValueError)(msg: "Future still in progress.")
+    raise (ref FuturePendingError)(msg: "Future still in progress.")
 
 proc readError*[T](future: Future[T]): ref CatchableError {.
-     raises: [Defect, NoErrorError].} =
+     raises: [Defect, FuturePendingError].} =
   ## Retrieves the exception stored in ``future``.
   ##
   ## An ``ValueError`` exception will be thrown if no exception exists
@@ -366,4 +365,4 @@ proc readError*[T](future: Future[T]): ref CatchableError {.
   if not(isNil(future.error)):
     return future.error
   else:
-    raise newException(NoErrorError, "No error in future.")
+    raise newException(FuturePendingError, "No error in future.")

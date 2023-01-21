@@ -33,9 +33,9 @@ proc run(args, path: string) =
 task test, "Run all tests":
   for args in [
       "-d:debug",
-      "-d:debug -d:chronosv4",
+      "-d:debug -d:chronosPreviewV4",
       "-d:release",
-      "-d:release -d:chronosv4",
+      "-d:release -d:chronosPreviewV4",
       "-d:release -d:useSysAssert -d:useGcAssert",
     ]: run args, "tests/testall"
 
