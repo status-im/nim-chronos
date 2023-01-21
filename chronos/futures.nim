@@ -186,10 +186,11 @@ template failed*[T](
   ## Create a new failed future
   let res = Future[T](error: errorParam)
   setupFutureBase(res, getSrcLocation(fromProc), FutureState.Failed)
-  res.errorStackTrace = if getStackTrace(res.error) == "":
-                          getStackTrace()
-                        else:
-                          getStackTrace(res.error)
+  when chronosStackTrace:
+    res.errorStackTrace = if getStackTrace(res.error) == "":
+                            getStackTrace()
+                          else:
+                            getStackTrace(res.error)
 
   res
 
@@ -198,6 +199,8 @@ template cancelled*[T](
   ## Create a new cancelled future
   let res = Future[T](error: newCancelledError())
   setupFutureBase(res, getSrcLocation(fromProc), FutureState.Cancelled)
+  when chronosStackTrace:
+    res.errorStackTrace = res.stackTrace
   res
 
 func finished*(future: FutureBase): bool {.inline.} =
