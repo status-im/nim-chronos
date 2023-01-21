@@ -31,7 +31,7 @@ else:
   # 1.2 doesn't support `booldefine` in `when` properly
   const
     chronosStrictException*: bool =
-      defined(chronosPreviewV4) or defined (chronosStrictException)
+      defined(chronosPreviewV4) or defined(chronosStrictException)
     chronosStackTrace*: bool = defined(debug) or defined(chronosStackTrace)
     chronosFutureId*: bool = defined(debug) or defined(chronosFutureId)
     chronosFutureTracking*: bool =
