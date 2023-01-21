@@ -144,14 +144,15 @@ proc setupFutureBase*(
     fut.stackTrace = getStackTrace()
 
   when chronosFutureTracking:
-    fut.next = nil
-    fut.prev = futureList.tail
-    if not(isNil(futureList.tail)):
-      futureList.tail.next = fut
-    futureList.tail = fut
-    if isNil(futureList.head):
-      futureList.head = fut
-    futureList.count.inc()
+    if state == FutureState.Pending:
+      fut.next = nil
+      fut.prev = futureList.tail
+      if not(isNil(futureList.tail)):
+        futureList.tail.next = fut
+      futureList.tail = fut
+      if isNil(futureList.head):
+        futureList.head = fut
+      futureList.count.inc()
 
 template newCancelledError(): ref CancelledError =
   (ref CancelledError)(msg: "Future operation cancelled!")
@@ -185,6 +186,11 @@ template failed*[T](
   ## Create a new failed future
   let res = Future[T](error: errorParam)
   setupFutureBase(res, getSrcLocation(fromProc), FutureState.Failed)
+  res.errorStackTrace = if getStackTrace(res.error) == "":
+                          getStackTrace()
+                        else:
+                          getStackTrace(res.error)
+
   res
 
 template cancelled*[T](
