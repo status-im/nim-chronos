@@ -701,6 +701,8 @@ suite "HTTP client testing suite":
        ("Your browser made it!" in bytesToString(resp.data)):
       return true
     else:
+      echo "RESPONSE STATUS = [", resp.status, "]"
+      echo "RESPONSE = [", bytesToString(resp.data), "]"
       return false
 
   proc testConnectionManagement(address: TransportAddress): Future[bool] {.
