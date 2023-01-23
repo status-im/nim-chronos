@@ -16,29 +16,15 @@ const
   SIG_DFL = cast[proc(x: cint) {.raises: [],noconv,gcsafe.}](0)
   SIG_IGN = cast[proc(x: cint) {.raises: [],noconv,gcsafe.}](1)
 
-when hasThreadSupport:
-  type
-    SelectorImpl[T] = object
-      kqFD: cint
-      numFD: int
-      changes: ptr SharedArray[KEvent]
-      fds: ptr SharedArray[SelectorKey[T]]
-      count: int
-      changesLock: Lock
-      changesSize: int
-      changesLength: int
-      sock: cint
-    Selector*[T] = ptr SelectorImpl[T]
-else:
-  type
-    SelectorImpl[T] = object
-      kqFD: cint
-      numFD: int
-      changes: seq[KEvent]
-      fds: seq[SelectorKey[T]]
-      count: int
-      sock: cint
-    Selector*[T] = ref SelectorImpl[T]
+type
+  SelectorImpl[T] = object
+    kqFD: cint
+    numFD: int
+    changes: seq[KEvent]
+    fds: seq[SelectorKey[T]]
+    count: int
+    sock: cint
+  Selector*[T] = ref SelectorImpl[T]
 
 type
   SelectEventImpl = object
@@ -72,22 +58,9 @@ proc new*(t: typedesc[Selector], T: typedesc): SelectResult[Selector[T]] =
     discard closeFd(kqFD)
     return err(errorCode)
 
-  var selector =
-    when hasThreadSupport:
-      var res = cast[Selector[T]](allocShared0(sizeof(SelectorImpl[T])))
-      res.kqFD = kqFD
-      res.sock = usock
-      res.numFD = asyncInitialSize
-      res.fds = allocSharedArray[SelectorKey[T]](asyncInitialSize)
-      res.changes = allocSharedArray[KEvent](asyncEventsCount)
-      res.changesSize = asyncEventsCount
-      initLock(res.changesLock)
-      res
-    else:
-      Selector[T](kqFD: kqFD, sock: usock, numFD: asyncInitialSize,
-                  fds: newSeq[SelectorKey[T]](asyncInitialSize),
-                  changes: newSeqOfCap[KEvent](asyncEventsCount))
-
+  var selector = Selector[T](kqFD: kqFD, sock: usock, numFD: asyncInitialSize,
+                             fds: newSeq[SelectorKey[T]](asyncInitialSize),
+                             changes: newSeqOfCap[KEvent](asyncEventsCount))
   for i in 0 ..< selector.numFD:
     selector.fds[i].ident = InvalidIdent
   ok(selector)
@@ -96,11 +69,6 @@ proc close2*[T](s: Selector[T]): SelectResult[void] =
   let
     kqFD = s.kqFD
     sockFD = s.sock
-
-  when hasThreadSupport:
-    deinitLock(s.changesLock)
-    deallocSharedArray(s.fds)
-    deallocShared(cast[pointer](s))
 
   if closeFd(sockFD) != 0:
     let errorCode = osLastError()
@@ -169,59 +137,22 @@ proc close2*(ev: SelectEvent): SelectResult[void] =
     else:
       ok()
 
-when hasThreadSupport:
-  template withChangeLock[T](s: Selector[T], body: untyped) =
-    acquire(s.changesLock)
-    {.locks: [s.changesLock].}:
-      try:
-        body
-      finally:
-        release(s.changesLock)
+template modifyKQueue[T](s: Selector[T], nident: uint, nfilter: cshort,
+                         nflags: cushort, nfflags: cuint, ndata: int,
+                         nudata: pointer) =
+  s.changes.add(KEvent(ident: nident,
+                       filter: nfilter, flags: nflags,
+                       fflags: nfflags, data: ndata,
+                       udata: nudata))
 
-  template modifyKQueue[T](s: Selector[T], nident: uint, nfilter: cshort,
-                           nflags: cushort, nfflags: cuint, ndata: int,
-                           nudata: pointer) =
-    mixin withChangeLock
-    s.withChangeLock():
-      if s.changesLength == s.changesSize:
-        # if cache array is full, we allocating new with size * 2
-        let newSize = s.changesSize shl 1
-        let rdata = allocSharedArray[KEvent](newSize)
-        copyMem(rdata, s.changes, s.changesSize * sizeof(KEvent))
-        s.changesSize = newSize
-      s.changes[s.changesLength] = KEvent(ident: nident,
-                                          filter: nfilter, flags: nflags,
-                                          fflags: nfflags, data: ndata,
-                                          udata: nudata)
-      inc(s.changesLength)
-
-  proc flushKQueue[T](s: Selector[T]): SelectResult[void] =
-    mixin withChangeLock
-    s.withChangeLock():
-      if s.changesLength > 0:
-        if handleEintr(kevent(s.kqFD, addr(s.changes[0]), cint(s.changesLength),
-                              nil, 0, nil)) == -1:
-          return err(osLastError())
-        s.changesLength = 0
-    ok()
-
-else:
-  template modifyKQueue[T](s: Selector[T], nident: uint, nfilter: cshort,
-                           nflags: cushort, nfflags: cuint, ndata: int,
-                           nudata: pointer) =
-    s.changes.add(KEvent(ident: nident,
-                         filter: nfilter, flags: nflags,
-                         fflags: nfflags, data: ndata,
-                         udata: nudata))
-
-  proc flushKQueue[T](s: Selector[T]): SelectResult[void] =
-    let length = cint(len(s.changes))
-    if length > 0:
-      if handleEintr(kevent(s.kqFD, addr(s.changes[0]), length, nil,
-                            0, nil)) == -1:
-        return err(osLastError())
-      s.changes.setLen(0)
-    ok()
+proc flushKQueue[T](s: Selector[T]): SelectResult[void] =
+  let length = cint(len(s.changes))
+  if length > 0:
+    if handleEintr(kevent(s.kqFD, addr(s.changes[0]), length, nil,
+                          0, nil)) == -1:
+      return err(osLastError())
+    s.changes.setLen(0)
+  ok()
 
 proc registerHandle2*[T](s: Selector[T], fd: cint, events: set[Event],
                          data: T): Result[void, OSErrorCode] =
@@ -475,7 +406,7 @@ proc selectInto2*[T](s: Selector[T], timeout: int,
     tv: Timespec
     queueEvents: array[asyncEventsCount, KEvent]
 
-  verifySelectParams(timeout)
+  verifySelectParams(timeout, -1, high(int))
 
   let
     ptrTimeout =

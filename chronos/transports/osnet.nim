@@ -1072,7 +1072,7 @@ elif defined(macosx) or defined(macos) or defined(bsd):
         var iface: NetworkInterface
         var ifaddress: InterfaceAddress
 
-        iface.name = string($cstring(ifap.ifa_name))
+        iface.name = $cast[cstring](ifap.ifa_name)
         iface.flags = uint64(ifap.ifa_flags)
         var i = 0
         while i < len(res):
