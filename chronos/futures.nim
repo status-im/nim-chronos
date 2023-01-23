@@ -235,23 +235,6 @@ when chronosStackTrace:
     else:
       ($entry.filename, $entry.procname)
 
-  proc getHint(entry: StackTraceEntry): string =
-    ## We try to provide some hints about stack trace entries that the user
-    ## may not be familiar with, in particular calls inside the stdlib.
-
-    let (filename, procname) = getFilenameProcname(entry)
-
-    if procname == "processPendingCallbacks":
-      if cmpIgnoreStyle(filename, "asyncdispatch.nim") == 0:
-        return "Executes pending callbacks"
-    elif procname == "poll":
-      if cmpIgnoreStyle(filename, "asyncdispatch.nim") == 0:
-        return "Processes asynchronous completion events"
-
-    if procname == "internalContinue":
-      if cmpIgnoreStyle(filename, "asyncfutures.nim") == 0:
-        return "Resumes an async procedure"
-
   proc `$`(stackTraceEntries: seq[StackTraceEntry]): string =
     try:
       when defined(nimStackTraceOverride) and declared(addDebuggingInfo):
@@ -290,9 +273,6 @@ when chronosStackTrace:
           spaces(longestLeft - left.len + 2),
           procname
         ])
-        let hint = getHint(entry)
-        if hint.len > 0:
-          result.add(spaces(indent+2) & "## " & hint & "\n")
     except ValueError as exc:
       return exc.msg # Shouldn't actually happen since we set the formatting
                     # string
