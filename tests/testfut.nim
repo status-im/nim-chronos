@@ -1365,7 +1365,7 @@ suite "Future[T] behavior test suite":
 
     check:
       failed.readError() of ValueError
-    expect(FuturePendingError):
+    expect(ValueError):
       discard failed.read()
 
     check:

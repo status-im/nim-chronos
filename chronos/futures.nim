@@ -96,10 +96,15 @@ when defined(chronosPreviewV4):
       ## Exception raised when trying to access the value or error of a future
       ## when the future is not finished
 
+    FutureCompletedError* = object of FutureError
+      ## Exception raised when trying to access the error of a future that
+      ## completed successfully.
+
 else:
   type
     # chronos V3 used `ValueError` when raising these
     FuturePendingError* = ValueError
+    FutureCompletedError* = ValueError
 
 # Backwards compatibility for old FutureState name
 template Finished* {.deprecated: "Use Completed instead".} = Completed
@@ -335,7 +340,7 @@ when defined(chronosPreviewV4):
 proc read*[T](future: Future[T] ): T {.
      raises: [Defect, CatchableError].} =
   ## Retrieves the value of ``future``. Future must be finished otherwise
-  ## this function will fail with a ``ValueError`` exception.
+  ## this function will fail with a ``FuturePendingError`` exception.
   ##
   ## If the result of the future is an error then that error will be raised.
   if future.finished():
@@ -343,15 +348,18 @@ proc read*[T](future: Future[T] ): T {.
     when T isnot void:
       future.value
   else:
-    raise (ref FuturePendingError)(msg: "Future still in progress.")
+    raise (ref FuturePendingError)(msg: "Future still pending")
 
 proc readError*[T](future: Future[T]): ref CatchableError {.
      raises: [Defect, FuturePendingError].} =
   ## Retrieves the exception stored in ``future``.
   ##
-  ## An ``ValueError`` exception will be thrown if no exception exists
+  ## An ``FuturePendingError`` exception will be thrown if no exception exists
   ## in the specified Future.
-  if not(isNil(future.error)):
-    return future.error
-  else:
-    raise newException(FuturePendingError, "No error in future.")
+  case future.state
+  of FutureState.Pending:
+    raise newException(FuturePendingError, "Future still pending")
+  of FutureState.Completed:
+    raise newException(FutureCompletedError, "Future completed with value")
+  of {FutureState.Failed, FutureState.Cancelled}:
+    future.error
