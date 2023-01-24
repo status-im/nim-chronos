@@ -965,7 +965,6 @@ else:
 
 when not(defined(windows)):
   const
-    TCP_NODELAY* = 1
     IPPROTO_TCP* = 6
 
 when defined(linux) or defined(freebsd) or defined(openbsd) or
