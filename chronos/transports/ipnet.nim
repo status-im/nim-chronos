@@ -14,7 +14,7 @@ when (NimMajor, NimMinor) < (1, 4):
 else:
   {.push raises: [].}
 
-import std/strutils
+import std/[strutils, sequtils]
 import stew/endians2
 import ./common
 export common
@@ -708,3 +708,38 @@ proc isGlobalMulticast*(address: TransportAddress): bool =
   elif address.family == AddressFamily.IPv6:
     result = (address.address_v6[0] == 0xFF'u8) and
              ((address.address_v6[1] and 0x0F'u8) == 0x0E'u8)
+
+const
+  privateV4 = @[IpNet.init("10.0.0.0/8"),
+              IpNet.init("100.64.0.0/10"),
+              IpNet.init("172.16.0.0/12"),
+              IpNet.init("192.168.0.0/16")]
+
+  privateV6 = @[IpNet.init("::1/128"),
+              IpNet.init("fc00::/7"),
+              IpNet.init("fe80::/10")]
+
+  unroutableV4 = @[IpNet.init("0.0.0.0/8"),
+                  IpNet.init("192.0.0.0/26"),
+                  IpNet.init("192.0.2.0/24"),
+                  IpNet.init("192.88.99.0/24"),
+                  IpNet.init("198.18.0.0/15"),
+                  IpNet.init("198.51.100.0/24"),
+                  IpNet.init("203.0.113.0/24"),
+                  IpNet.init("224.0.0.0/4"),
+                  IpNet.init("240.0.0.0/4"),
+                  IpNet.init("255.255.255.255/32")]
+
+  unroutableV6 = @[IpNet.init("ff00::/8")]
+
+proc isPublicAddr*(ta: TransportAddress): bool =
+  return if isLoopback(ta) or isLinkLocal(ta):
+    false
+  else:
+    case ta.family:
+      of AddressFamily.IPv4:
+        not privateV4.anyIt(ta in it) and not unroutableV4.anyIt(ta in it)
+      of AddressFamily.IPv6:
+        not privateV6.anyIt(ta in it) and not unroutableV6.anyIt(ta in it)
+      else:
+        false

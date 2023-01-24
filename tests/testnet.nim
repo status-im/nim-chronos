@@ -497,3 +497,83 @@ suite "Network utilities test suite":
     check:
       ip4 == initTAddress("192.168.1.0:1024")
       ip6 == ip6e
+
+  test "IPv4 address that is not in any of the private or unroutable ranges must be public":
+    var ta = initTAddress("8.8.8.8:0")
+    check ta.isPublicAddr()
+
+  test "IPv6 address that is not in any of the private or unroutable ranges must be public":
+    var ta = initTAddress("2001:0db8:85a3:0000:0000:8a2e:0370:7334:0")
+    check ta.isPublicAddr()
+
+  test "IPv4 address that is in the range of 10.0.0.0/8 must not be public":
+    var ta = initTAddress("10.0.0.1:0")
+    check ta.isPublicAddr() == false
+
+  test "IPv4 address that is in the range of 100.64.0.0/10 must not be public":
+    var ta = initTAddress("100.64.0.1:0")
+    check ta.isPublicAddr() == false
+
+  test "IPv4 address that is in the range of 172.16.0.0/12 must not be public":
+    var ta = initTAddress("172.16.0.1:0")
+    check ta.isPublicAddr() == false
+
+  test "IPv4 address that is in the range of 192.168.0.0/16 must not be public":
+    var ta = initTAddress("192.168.0.1:0")
+    check ta.isPublicAddr() == false
+
+  test "IPv6 address that is in the range of ::1/128 must not be public":
+    var ta = initTAddress("::1:0")
+    check ta.isPublicAddr() == false
+
+  test "IPv6 address that is in the range of fc00::/7 must not be public":
+    var ta = initTAddress("fc00::1:0")
+    check ta.isPublicAddr() == false
+
+  test "IPv6 address that is in the range of fe80::/10 must not be public":
+    var ta = initTAddress("fe80::1:0")
+    check ta.isPublicAddr() == false
+
+  test "Unroutable IPv4 address that is in the range of 0.0.0.0/8 must not be public:":
+    var ta = initTAddress("0.0.0.0:0")
+    check ta.isPublicAddr() == false
+
+  test "Unroutable IPv4 address that is in the range of 192.0.0.0/26 must not be public:":
+    var ta = initTAddress("192.0.0.0:0")
+    check ta.isPublicAddr() == false
+
+  test "Unroutable IPv4 address that is in the range of 192.0.2.0/24 must not be public:":
+    var ta = initTAddress("192.0.2.0:0")
+    check ta.isPublicAddr() == false
+
+  test "Unroutable IPv4 address that is in the range of 192.88.99.0/24 must not be public:":
+    var ta = initTAddress("192.88.99.0:0")
+    check ta.isPublicAddr() == false
+
+  test "Unroutable IPv4 address that is in the range of 198.18.0.0/15 must not be public:":
+    var ta = initTAddress("198.18.0.0:0")
+    check ta.isPublicAddr() == false
+
+  test "Unroutable IPv4 address that is in the range of 198.51.100.0/24 must not be public:":
+    var ta = initTAddress("198.51.100.0:0")
+    check ta.isPublicAddr() == false
+
+  test "Unroutable IPv4 address that is in the range of 203.0.113.0/24 must not be public:":
+    var ta = initTAddress("203.0.113.0:0")
+    check ta.isPublicAddr() == false
+
+  test "Unroutable IPv4 address that is in the range of 224.0.0.0/4 must not be public:":
+    var ta = initTAddress("224.0.0.0:0")
+    check ta.isPublicAddr() == false
+
+  test "Unroutable IPv4 address that is in the range of 240.0.0.0/4 must not be public:":
+    var ta = initTAddress("240.0.0.0:0")
+    check ta.isPublicAddr() == false
+
+  test "Unroutable IPv4 address that is in the range of 255.255.255.255/32 must not be public:":
+    var ta = initTAddress("255.255.255.255:0")
+    check ta.isPublicAddr() == false
+
+  test "Unroutable IPv6 address that is in the range of ff00::/8 must not be public:":
+    var ta = initTAddress("ff00::1:0")
+    check ta.isPublicAddr() == false
