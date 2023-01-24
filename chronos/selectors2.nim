@@ -317,6 +317,32 @@ else:
           err(osLastError())
         else:
           ok()
+  else:
+    when not defined(windows):
+      template setKey(s, pident, pevents, pparam, pdata: untyped) =
+        var skey = addr(s.fds[pident])
+        skey.ident = pident
+        skey.events = pevents
+        skey.param = pparam
+        skey.data = data
+
+      template clearKey(s, pident: untyped, T: typedesc) =
+        var empty: T
+        var skey = addr(s.fds[pident])
+        skey.ident = InvalidIdent
+        skey.events = {}
+        skey.data = empty
+
+      template clearKey[T](key: ptr SelectorKey[T]) =
+        var empty: T
+        key.ident = InvalidIdent
+        key.events = {}
+        key.data = empty
+
+      proc setNonBlocking(fd: cint) {.inline.} =
+        let res = setDescriptorFlags(fd, true, true)
+        if res.isErr():
+          raiseIOSelectorsError(res.error())
 
   template verifySelectParams(timeout, min, max: int) =
     # Timeout of -1 means: wait forever
