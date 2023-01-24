@@ -1509,8 +1509,7 @@ else:
 
     if address.family in {AddressFamily.IPv4, AddressFamily.IPv6}:
       if TransportFlags.TcpNoDelay in flags:
-        if not(setSockOpt(sock, handles.IPPROTO_TCP,
-                          handles.TCP_NODELAY, 1)):
+        if not(setSockOpt(sock, IPPROTO_TCP, TCP_NODELAY, 1)):
           let err = osLastError()
           sock.closeSocket()
           retFuture.fail(getTransportOsError(err))
