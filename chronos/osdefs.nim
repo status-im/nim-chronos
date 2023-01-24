@@ -963,10 +963,6 @@ else:
   var IP_MULTICAST_TTL* {.importc: "IP_MULTICAST_TTL",
                           header: "<netinet/in.h>".}: cint
 
-when not(defined(windows)):
-  const
-    IPPROTO_TCP* = 6
-
 when defined(linux) or defined(freebsd) or defined(openbsd) or
      defined(netbsd) or defined(dragonfly):
 
@@ -981,20 +977,24 @@ when defined(linux):
     SOCK_NONBLOCK* = 0x800
     SOCK_CLOEXEC* = 0x80000
     TCP_NODELAY* = cint(1)
+    IPPROTO_TCP* = 6
 elif defined(freebsd) or defined(netbsd) or defined(dragonfly):
   const
     SOCK_NONBLOCK* = 0x20000000
     SOCK_CLOEXEC* = 0x10000000
     TCP_NODELAY* = cint(1)
+    IPPROTO_TCP* = 6
 elif defined(openbsd):
   const
     SOCK_CLOEXEC* = 0x8000
     SOCK_NONBLOCK* = 0x4000
     TCP_NODELAY* = cint(1)
+    IPPROTO_TCP* = 6
 elif defined(macos) or defined(macosx):
   const
     TCP_NODELAY* = cint(1)
     IP_MULTICAST_TTL* = cint(10)
+    IPPROTO_TCP* = 6
 
 when defined(linux):
   const O_CLOEXEC* = 0x80000
