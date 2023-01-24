@@ -1551,10 +1551,9 @@ else:
   proc connect*(sock: AsyncFD,
                 address: TransportAddress,
                 bufferSize = DefaultStreamBufferSize,
-                child: StreamTransport = nil
-                ): Future[StreamTransport] =
                 child: StreamTransport = nil,
-                flags: set[TransportFlags] = {}): Future[StreamTransport] =
+                flags: set[TransportFlags] = {}
+                ): Future[StreamTransport] =
     ## Open new connection to remote peer with address ``address`` and create
     ## new transport object ``StreamTransport`` for established connection.
     ## ``bufferSize`` - size of internal buffer for transport.
@@ -1572,23 +1571,6 @@ else:
       else:
         retFuture.fail(getTransportOsError(err))
       return retFuture
-
-    if localAddress.isSome():
-      try:
-         # Setting SO_REUSEADDR option we are able to reuse ports using the 0.0.0.0 address (or equivalent)
-        setSockOptInt(SocketHandle(sock), SOL_SOCKET, SO_REUSEADDR, 1)
-      except CatchableError as exc:
-        retFuture.fail(exc)
-        return retFuture
-      var
-        localAddr: Sockaddr_storage
-        localAddrLen: SockLen
-      localAddress.get().toSAddr(localAddr, localAddrLen)
-      if posix.bindSocket(SocketHandle(sock), cast[ptr SockAddr](addr localAddr), localAddrLen) != 0:
-        closeSocket(sock)
-        retFuture.fail(getTransportOsError(osLastError()))
-        return retFuture
-
 
     if address.family in {AddressFamily.IPv4, AddressFamily.IPv6}:
       if TransportFlags.TcpNoDelay in flags:
