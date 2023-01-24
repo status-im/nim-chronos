@@ -351,7 +351,7 @@ proc read*[T](future: Future[T] ): T {.
     raise (ref FuturePendingError)(msg: "Future still pending")
 
 proc readError*[T](future: Future[T]): ref CatchableError {.
-     raises: [Defect, FutureError].} =
+     raises: [Defect, FuturePendingError, FutureCompletedError].} =
   ## Retrieves the exception stored in ``future``.
   ##
   ## An ``FuturePendingError`` exception will be thrown if no exception exists
