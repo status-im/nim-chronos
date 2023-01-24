@@ -865,9 +865,6 @@ elif defined(macos) or defined(macosx):
   proc mach_absolute_time*(): uint64 {.
        importc, header: "<mach/mach_time.h>".}
 
-  var IP_MULTICAST_TTL* {.importc: "IP_MULTICAST_TTL",
-                          header: "<netinet/in.h>".}: cint
-
 elif defined(linux):
   import std/[posix, os]
   export posix, os
@@ -984,14 +981,21 @@ when defined(linux):
   const
     SOCK_NONBLOCK* = 0x800
     SOCK_CLOEXEC* = 0x80000
+    TCP_NODELAY* = cint(1)
 elif defined(freebsd) or defined(netbsd) or defined(dragonfly):
   const
     SOCK_NONBLOCK* = 0x20000000
     SOCK_CLOEXEC* = 0x10000000
+    TCP_NODELAY* = cint(1)
 elif defined(openbsd):
   const
     SOCK_CLOEXEC* = 0x8000
     SOCK_NONBLOCK* = 0x4000
+    TCP_NODELAY* = cint(1)
+elif defined(macos) or defined(macosx):
+  const
+    TCP_NODELAY* = cint(1)
+    IP_MULTICAST_TTL* = cint(10)
 
 when defined(linux):
   const O_CLOEXEC* = 0x80000
