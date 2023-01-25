@@ -5,7 +5,7 @@
 #              Licensed under either of
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
-import std/[strutils, os]
+import std/[strutils, sequtils, os]
 import unittest2
 import ../chronos
 
@@ -719,6 +719,31 @@ suite "Stream Transport test suite":
     await ntransp.closeWait()
     await server.closeWait()
 
+  proc testWriteCancel: Future[bool] {.async.} =
+    var syncFut = newFuture[void]()
+    let size = 5000000
+    proc client(server: StreamServer, transp: StreamTransport) {.async.} =
+      let bigMsg = createBigMessage(size div 10)
+      var futs: seq[Future[int]]
+      for _ in 0..<10:
+        futs.add(transp.write(bigMsg))
+      await allFutures(futs.mapIt(it.cancelAndWait()))
+      await sleepAsync(1.seconds)
+      await transp.closeWait()
+
+    var server = createStreamServer(initTAddress("127.0.0.1:0"), client)
+    server.start()
+    var ntransp = await connect(server.localAddress)
+    let buffer = newSeq[byte](size)
+    result = true
+    expect CatchableError:
+      await ntransp.readExactly(addr buffer[0], size)
+      result = false
+
+    server.stop()
+    await ntransp.closeWait()
+    await server.closeWait()
+
   proc testAnyAddress(): Future[bool] {.async.} =
     var serverRemote, serverLocal: TransportAddress
     var connRemote, connLocal: TransportAddress
@@ -1345,6 +1370,8 @@ suite "Stream Transport test suite":
       check waitFor(testWriteOnClose(addresses[i])) == true
     test prefixes[i] & "read() notification on close() test":
       check waitFor(testReadOnClose(addresses[i])) == true
+  test "[IP] write() cancellation test":
+    check waitFor(testWriteCancel()) == true
   test "[PIPE] readExactly()/write() test":
     check waitFor(testPipe()) == true
   test "Servers leak test":

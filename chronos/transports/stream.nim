@@ -2112,6 +2112,20 @@ template fastWrite(transp: auto, pbytes: var ptr byte, rbytes: var int,
             retFuture.fail(error)
             return retFuture
 
+proc addToWriteQueue(transp: StreamTransport, vector: StreamVector) =
+  transp.queue.addLast(vector)
+
+  proc cancellation(udata: pointer) {.gcsafe, raises: [Defect].} =
+    for item in transp.queue.mitems:
+      if item.writer == vector.writer and item.offset == 0:
+          item.size = 0
+          item.buflen = 0
+
+  if vector.offset == 0:
+    vector.writer.cancelCallback = cancellation
+
+  transp.resumeWrite()
+
 proc write*(transp: StreamTransport, pbytes: pointer,
             nbytes: int): Future[int] =
   ## Write data from buffer ``pbytes`` with size ``nbytes`` using transport
@@ -2128,8 +2142,7 @@ proc write*(transp: StreamTransport, pbytes: pointer,
 
   var vector = StreamVector(kind: DataBuffer, writer: retFuture,
                             buf: pbytes, buflen: rbytes, size: nbytes)
-  transp.queue.addLast(vector)
-  transp.resumeWrite()
+  transp.addToWriteQueue(vector)
   return retFuture
 
 proc write*(transp: StreamTransport, msg: sink string,
@@ -2165,8 +2178,7 @@ proc write*(transp: StreamTransport, msg: sink string,
 
   var vector = StreamVector(kind: DataBuffer, writer: retFuture,
                             buf: pbytes, buflen: rbytes, size: nbytes)
-  transp.queue.addLast(vector)
-  transp.resumeWrite()
+  transp.addToWriteQueue(vector)
   return retFuture
 
 proc write*[T](transp: StreamTransport, msg: sink seq[T],
@@ -2202,8 +2214,7 @@ proc write*[T](transp: StreamTransport, msg: sink seq[T],
 
   var vector = StreamVector(kind: DataBuffer, writer: retFuture,
                             buf: pbytes, buflen: rbytes, size: nbytes)
-  transp.queue.addLast(vector)
-  transp.resumeWrite()
+  transp.addToWriteQueue(vector)
   return retFuture
 
 proc writeFile*(transp: StreamTransport, handle: int,
@@ -2223,8 +2234,7 @@ proc writeFile*(transp: StreamTransport, handle: int,
   var vector = StreamVector(kind: DataFile, writer: retFuture,
                             buf: cast[pointer](size), offset: offset,
                             buflen: handle)
-  transp.queue.addLast(vector)
-  transp.resumeWrite()
+  transp.addToWriteQueue(vector)
   return retFuture
 
 proc atEof*(transp: StreamTransport): bool {.inline.} =
