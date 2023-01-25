@@ -720,24 +720,45 @@ suite "Stream Transport test suite":
     await server.closeWait()
 
   proc testWriteCancel: Future[bool] {.async.} =
-    var syncFut = newFuture[void]()
-    let size = 5000000
+    var
+      syncFut = newFuture[void]()
+      syncFut1 = newFuture[int]()
+      syncFut2 = newFuture[void]()
+    let size = 500000
     proc client(server: StreamServer, transp: StreamTransport) {.async.} =
-      let bigMsg = createBigMessage(size div 10)
+      let bigMsg = createBigMessage(size)
       var futs: seq[Future[int]]
       for _ in 0..<10:
         futs.add(transp.write(bigMsg))
+
+      for f in futs:
+        f.cancel()
+      syncFut.complete()
       await allFutures(futs.mapIt(it.cancelAndWait()))
-      await sleepAsync(1.seconds)
+
+      let cancelledCount = futs.countIt(it.cancelled)
+      doAssert cancelledCount > 0
+      syncFut1.complete(futs.len - cancelledCount)
+      await syncFut2
+      discard await transp.write(bigMsg) # check that we can still write
       await transp.closeWait()
 
     var server = createStreamServer(initTAddress("127.0.0.1:0"), client)
     server.start()
     var ntransp = await connect(server.localAddress)
-    let buffer = newSeq[byte](size)
+
+    await syncFut
+    var buffer = newSeq[byte](size)
+    await ntransp.readExactly(unsafeAddr buffer[0], buffer.len)
+
+    let expectedMsgs = (await syncFut1) - 1
+    buffer.setLen(size * expectedMsgs)
     result = true
+    await ntransp.readExactly(unsafeAddr buffer[0], buffer.len)
+    syncFut2.complete()
+    await ntransp.readExactly(unsafeAddr buffer[0], size)
     expect CatchableError:
-      await ntransp.readExactly(addr buffer[0], size)
+      await ntransp.readExactly(unsafeAddr buffer[0], 1)
       result = false
 
     server.stop()

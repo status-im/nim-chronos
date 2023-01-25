@@ -414,6 +414,10 @@ elif defined(windows):
           if transp.kind == TransportKind.Socket:
             let sock = SocketHandle(transp.fd)
             var vector = transp.queue.popFirst()
+
+            if vector.buflen == 0:
+              # send cancelled
+              continue
             if vector.kind == VectorKind.DataBuffer:
               transp.wovl.zeroOvelappedOffset()
               transp.setWriterWSABuffer(vector)
@@ -1316,6 +1320,10 @@ else:
           failPendingWriteQueue(transp.queue, error)
 
       var vector = transp.queue.popFirst()
+
+      if vector.buflen == 0:
+        # send cancelled
+        continue
       case vector.kind
       of VectorKind.DataBuffer:
         let res =
@@ -2115,14 +2123,20 @@ template fastWrite(transp: auto, pbytes: var ptr byte, rbytes: var int,
 proc addToWriteQueue(transp: StreamTransport, vector: StreamVector) =
   transp.queue.addLast(vector)
 
+  # to catch cancellation
+  let childFut = newFuture[void]()
+  vector.writer.child = childFut
+
   proc cancellation(udata: pointer) {.gcsafe, raises: [Defect].} =
     for item in transp.queue.mitems:
-      if item.writer == vector.writer and item.offset == 0:
-          item.size = 0
-          item.buflen = 0
+      if item.writer == vector.writer and item.buflen == item.size:
+        item.buflen = 0
+        vector.writer.child = nil
+        vector.writer.cancel()
 
-  if vector.offset == 0:
-    vector.writer.cancelCallback = cancellation
+  # For now, cancellation is only supported in this case
+  if vector.buflen == vector.size:
+    childFut.cancelCallback = cancellation
 
   transp.resumeWrite()
 
