@@ -728,7 +728,8 @@ suite "Stream Transport test suite":
     proc client(server: StreamServer, transp: StreamTransport) {.async.} =
       let bigMsg = createBigMessage(size)
       var futs = newSeq[Future[int]]()
-      for _ in 0..<10:
+      discard await transp.write(bigMsg)
+      for _ in 0..<9:
         futs.add(transp.write(bigMsg))
 
       for f in futs:
@@ -751,7 +752,7 @@ suite "Stream Transport test suite":
     var buffer = newSeq[byte](size)
     await ntransp.readExactly(unsafeAddr buffer[0], buffer.len)
 
-    let expectedMsgs = (await syncFut1) - 1
+    let expectedMsgs = await syncFut1
     buffer.setLen(size * expectedMsgs)
     result = true
     await ntransp.readExactly(unsafeAddr buffer[0], buffer.len)

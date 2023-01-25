@@ -329,7 +329,6 @@ elif defined(windows):
     (t).rwsabuf.buf = cast[cstring](
       cast[uint](addr t.buffer[0]) + uint((t).roffset))
     (t).rwsabuf.len = int32(len((t).buffer) - (t).roffset)
-    v.usedInWsa = true
 
   template setWriterWSABuffer(t, v: untyped) =
     (t).wwsabuf.buf = cast[cstring](v.buf)
@@ -2139,7 +2138,7 @@ proc addToWriteQueue(transp: StreamTransport, vector: StreamVector) =
       if item.writer == vector.writer:
         var canCancel = item.buflen == item.size
         when defined(windows):
-          canCancel = canCancel and vector.usedInWsa == false
+          canCancel = canCancel and item.usedInWsa == false
         if canCancel:
           item.buflen = 0
           vector.writer.child = nil
