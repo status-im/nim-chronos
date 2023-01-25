@@ -719,7 +719,7 @@ suite "Stream Transport test suite":
     await ntransp.closeWait()
     await server.closeWait()
 
-  proc testWriteCancel: Future[bool] {.async.} =
+  proc testWriteCancel(address: TransportAddress): Future[bool] {.async.} =
     var
       syncFut = newFuture[void]()
       syncFut1 = newFuture[int]()
@@ -728,31 +728,33 @@ suite "Stream Transport test suite":
     proc client(server: StreamServer, transp: StreamTransport) {.async.} =
       let bigMsg = createBigMessage(size)
       var futs = newSeq[Future[int]]()
-      discard await transp.write(bigMsg)
       for _ in 0..<9:
         futs.add(transp.write(bigMsg))
 
-      for f in futs:
+      for f in futs[2..^1]:
         f.cancel()
-      syncFut.complete()
-      await allFutures(futs)
+      await syncFut
 
       let cancelledCount = futs.countIt(it.cancelled)
       doAssert cancelledCount > 0
       syncFut1.complete(futs.len - cancelledCount)
+
+      await allFutures(futs)
+
       await syncFut2
       discard await transp.write(bigMsg) # check that we can still write
       await transp.closeWait()
 
-    var server = createStreamServer(initTAddress("127.0.0.1:0"), client)
+    var server = createStreamServer(address, client, {ReuseAddr})
     server.start()
+
     var ntransp = await connect(server.localAddress)
 
-    await syncFut
     var buffer = newSeq[byte](size)
     await ntransp.readExactly(unsafeAddr buffer[0], buffer.len)
+    syncFut.complete()
 
-    let expectedMsgs = await syncFut1
+    let expectedMsgs = (await syncFut1) - 1
     buffer.setLen(size * expectedMsgs)
     result = true
     await ntransp.readExactly(unsafeAddr buffer[0], buffer.len)
@@ -1368,6 +1370,8 @@ suite "Stream Transport test suite":
         skip()
     test prefixes[i] & "write() return value test (issue #73)":
       check waitFor(testWriteReturn(addresses[i])) == true
+    test prefixes[i] & "write() cancellation":
+      check waitFor(testWriteCancel(addresses[i])) == true
     test prefixes[i] & "readLine() partial separator test":
       check waitFor(testReadLine(addresses[i])) == true
     test prefixes[i] & "readMessage() test":
@@ -1392,8 +1396,6 @@ suite "Stream Transport test suite":
       check waitFor(testWriteOnClose(addresses[i])) == true
     test prefixes[i] & "read() notification on close() test":
       check waitFor(testReadOnClose(addresses[i])) == true
-  test "[IP] write() cancellation test":
-    check waitFor(testWriteCancel()) == true
   test "[PIPE] readExactly()/write() test":
     check waitFor(testPipe()) == true
   test "Servers leak test":
