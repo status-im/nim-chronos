@@ -1645,7 +1645,8 @@ else:
 
   proc connect*(address: TransportAddress,
                 bufferSize = DefaultStreamBufferSize,
-                child: StreamTransport = nil): Future[StreamTransport] =
+                child: StreamTransport = nil,
+                flags: set[TransportFlags] = {}): Future[StreamTransport] =
     ## Open new connection to remote peer with address ``address`` and create
     ## new transport object ``StreamTransport`` for established connection.
     ## ``bufferSize`` - size of internal buffer for transport.
@@ -1661,7 +1662,7 @@ else:
         var retFuture = newFuture[StreamTransport]("stream.transport.connect")
         retFuture.fail(exc)
         return retFuture
-    return connect(sock, address, bufferSize, child)
+    return connect(sock, address, bufferSize, child, flags)
 
   proc acceptLoop(udata: pointer) =
     if isNil(udata):
