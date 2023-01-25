@@ -727,14 +727,14 @@ suite "Stream Transport test suite":
     let size = 500000
     proc client(server: StreamServer, transp: StreamTransport) {.async.} =
       let bigMsg = createBigMessage(size)
-      var futs: seq[Future[int]]
+      var futs = newSeq[Future[int]]()
       for _ in 0..<10:
         futs.add(transp.write(bigMsg))
 
       for f in futs:
         f.cancel()
       syncFut.complete()
-      await allFutures(futs.mapIt(it.cancelAndWait()))
+      await allFutures(futs)
 
       let cancelledCount = futs.countIt(it.cancelled)
       doAssert cancelledCount > 0
