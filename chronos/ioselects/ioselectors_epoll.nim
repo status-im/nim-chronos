@@ -78,6 +78,11 @@ template getKey[T](s: Selector[T], key: uint32): SelectorKey[T] =
                                        "] is not registered in the selector!")
   pkey
 
+template getKey(key: SocketHandle|int): uint32 =
+  doAssert((int(key) >= int(low(int32))) and (int(key) <= int(high(int32))),
+           "Invalid descriptor [" & $int(key) & "] specified")
+  uint32(int32(key))
+
 proc addSignal[T](s: Selector[T], signal: int, skey: SelectorKey[T]) =
   let fdu32 = uint32(signal)
   if s.signals.hasKeyOrPut(fdu32, skey):
@@ -630,7 +635,8 @@ proc checkProcesses[T](s: Selector[T]) =
       if fdKey.ident != InvalidIdent:
         if Event.Finished notin fdKey.events:
           var sigInfo = SigInfo()
-          let res = handleEintr(osdefs.waitid(P_PID, Id(pid), sigInfo, flags))
+          let res = handleEintr(osdefs.waitid(P_PID, cast[Id](pid),
+                                              sigInfo, flags))
           if (res == 0) and (cint(sigInfo.si_pid) == cint(pid)):
             fdKey.events.incl(Event.Finished)
             let rkey = ReadyKey(fd: pidKey.ident, events: fdKey.events)
@@ -766,11 +772,11 @@ template isEmpty*[T](s: Selector[T]): bool =
   s.count == 0
 
 proc contains*[T](s: Selector[T], fd: SocketHandle|int): bool {.inline.} =
-  let fdu32 = uint32(fd)
+  let fdu32 = getKey(fd)
   s.fds.contains(fdu32)
 
 proc setData*[T](s: Selector[T], fd: SocketHandle|int, data: T): bool =
-  let fdu32 = uint32(fd)
+  let fdu32 = getKey(fd)
   s.fds.withValue(fdu32, skey):
     skey[].data = data
     return true
@@ -779,14 +785,14 @@ proc setData*[T](s: Selector[T], fd: SocketHandle|int, data: T): bool =
 
 template withData*[T](s: Selector[T], fd: SocketHandle|int, value,
                         body: untyped) =
-  let fdu32 = uint32(fd)
+  let fdu32 = getKey(fd)
   s.fds.withValue(fdu32, skey):
     var value = addr(skey[].data)
     body
 
 template withData*[T](s: Selector[T], fd: SocketHandle|int, value, body1,
                         body2: untyped) =
-  let fdu32 = uint32(fd)
+  let fdu32 = getKey(fd)
   s.fds.withValue(fdu32, skey):
     var value = addr(skey[].data)
     body1
