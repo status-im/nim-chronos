@@ -33,6 +33,8 @@ type
     offset: uint                    # Writer vector offset
     size: int                       # Original size
     writer: Future[int]             # Writer vector completion Future
+    when defined(windows):
+      usedInWsa: bool
 
   TransportKind* {.pure.} = enum
     Socket,                         # Socket transport
@@ -327,10 +329,12 @@ elif defined(windows):
     (t).rwsabuf.buf = cast[cstring](
       cast[uint](addr t.buffer[0]) + uint((t).roffset))
     (t).rwsabuf.len = int32(len((t).buffer) - (t).roffset)
+    v.usedInWsa = true
 
   template setWriterWSABuffer(t, v: untyped) =
     (t).wwsabuf.buf = cast[cstring](v.buf)
     (t).wwsabuf.len = cast[int32](v.buflen)
+    v.usedInWsa = true
 
   proc isConnResetError(err: OSErrorCode): bool {.inline.} =
     result = (err == OSErrorCode(common.WSAECONNRESET)) or
@@ -503,6 +507,9 @@ elif defined(windows):
           elif transp.kind == TransportKind.Pipe:
             let pipe = Handle(transp.fd)
             var vector = transp.queue.popFirst()
+            if vector.buflen == 0:
+              # send cancelled
+              continue
             if vector.kind == VectorKind.DataBuffer:
               transp.wovl.zeroOvelappedOffset()
               transp.setWriterWSABuffer(vector)
@@ -2129,10 +2136,14 @@ proc addToWriteQueue(transp: StreamTransport, vector: StreamVector) =
 
   proc cancellation(udata: pointer) {.gcsafe, raises: [Defect].} =
     for item in transp.queue.mitems:
-      if item.writer == vector.writer and item.buflen == item.size:
-        item.buflen = 0
-        vector.writer.child = nil
-        vector.writer.cancel()
+      if item.writer == vector.writer:
+        var canCancel = item.buflen == item.size
+        when defined(windows):
+          canCancel = canCancel and vector.usedInWsa == false
+        if canCancel:
+          item.buflen = 0
+          vector.writer.child = nil
+          vector.writer.cancel()
 
   # For now, cancellation is only supported in this case
   if vector.buflen == vector.size:
