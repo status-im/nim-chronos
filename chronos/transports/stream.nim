@@ -2124,7 +2124,7 @@ proc addToWriteQueue(transp: StreamTransport, vector: StreamVector) =
   transp.queue.addLast(vector)
 
   # to catch cancellation
-  let childFut = newFuture[void]()
+  let childFut = newFuture[void]("stream.transport.write.child")
   vector.writer.child = childFut
 
   proc cancellation(udata: pointer) {.gcsafe, raises: [Defect].} =
@@ -2137,6 +2137,10 @@ proc addToWriteQueue(transp: StreamTransport, vector: StreamVector) =
   # For now, cancellation is only supported in this case
   if vector.buflen == vector.size:
     childFut.cancelCallback = cancellation
+
+  proc completion(udata: pointer) {.gcsafe, raises: [Defect].} =
+    childFut.complete()
+  vector.writer.addCallback(completion)
 
   transp.resumeWrite()
 
