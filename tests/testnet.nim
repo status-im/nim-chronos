@@ -145,11 +145,13 @@ suite "Network utilities test suite":
   test "IPv4 networks test":
     var a: TransportAddress
     check:
-      a.isUnspecified() == true
-      initTAddress("0.0.0.0:0").isUnspecified() == false
+      a.isNone() == true
+      initTAddress("0.0.0.0:0").isUnspecified() == true
+      initTAddress("0.0.0.0:0").isNone() == false
 
       initTAddress("0.0.0.0:0").isZero() == true
       initTAddress("1.0.0.0:0").isZero() == false
+      initTAddress("1.0.0.0:0").isUnspecified() == false
 
       initTAddress("127.0.0.0:0").isLoopback() == true
       initTAddress("127.255.255.255:0").isLoopback() == true
@@ -193,37 +195,195 @@ suite "Network utilities test suite":
       initTAddress("224.0.0.0:0").isGlobalMulticast() == false
       initTAddress("239.0.0.0:0").isGlobalMulticast() == false
 
+      initTAddress("239.255.255.255:0").isReserved() == false
+      initTAddress("240.0.0.0:0").isReserved() == true
+      initTAddress("250.0.0.0:0").isReserved() == true
+      initTAddress("255.254.254.254:0").isReserved() == true
+
+      initTAddress("198.17.255.255:0").isBenchmarking() == false
+      initTAddress("198.18.0.0:0").isBenchmarking() == true
+      initTAddress("198.18.0.1:0").isBenchmarking() == true
+      initTAddress("198.19.0.1:0").isBenchmarking() == true
+      initTAddress("198.19.255.255:0").isBenchmarking() == true
+      initTAddress("198.20.0.0:0").isBenchmarking() == false
+
+      initTAddress("192.0.1.255:0").isDocumentation() == false
+      initTAddress("192.0.2.0:0").isDocumentation() == true
+      initTAddress("192.0.2.255:0").isDocumentation() == true
+      initTAddress("192.0.3.0:0").isDocumentation() == false
+
+      initTAddress("198.51.99.255:0").isDocumentation() == false
+      initTAddress("198.51.100.0:0").isDocumentation() == true
+      initTAddress("198.51.100.255:0").isDocumentation() == true
+      initTAddress("198.51.101.0:0").isDocumentation() == false
+
+      initTAddress("203.0.112.255:0").isDocumentation() == false
+      initTAddress("203.0.113.0:0").isDocumentation() == true
+      initTAddress("203.0.113.255:0").isDocumentation() == true
+      initTAddress("203.0.114.0:0").isDocumentation() == false
+
+      initTAddress("0.0.0.0:0").isBroadcast() == false
+      initTAddress("127.0.0.255:0").isBroadcast() == false
+      initTAddress("127.0.255.255:0").isBroadcast() == false
+      initTAddress("127.255.255.255:0").isBroadcast() == false
+      initTAddress("255.255.255.255:0").isBroadcast() == true
+
+      initTAddress("100.63.255.255:0").isShared() == false
+      initTAddress("100.64.0.0:0").isShared() == true
+      initTAddress("100.64.0.1:0").isShared() == true
+      initTAddress("100.127.255.255:0").isShared() == true
+      initTAddress("100.128.0.0:0").isShared() == false
+
+      a.isGlobal() == false
+      initTAddress("0.0.0.0:0").isGlobal() == false
+      initTAddress("127.0.0.0:0").isGlobal() == false
+      initTAddress("10.0.0.0:0").isGlobal() == false
+      initTAddress("10.255.255.255:0").isGlobal() == false
+      initTAddress("172.16.0.0:0").isGlobal() == false
+      initTAddress("172.31.255.255:0").isGlobal() == false
+      initTAddress("192.168.0.0:0").isGlobal() == false
+      initTAddress("192.168.255.255:0").isGlobal() == false
+      initTAddress("100.64.0.0:0").isGlobal() == false
+      initTAddress("100.64.0.1:0").isGlobal() == false
+      initTAddress("100.127.255.255:0").isGlobal() == false
+      initTAddress("169.254.0.0:0").isGlobal() == false
+      initTAddress("169.254.255.255:0").isGlobal() == false
+      initTAddress("192.0.0.0:0").isGlobal() == false
+      initTAddress("192.0.0.255:0").isGlobal() == false
+      initTAddress("192.0.2.0:0").isGlobal() == false
+      initTAddress("192.0.2.255:0").isGlobal() == false
+      initTAddress("198.51.100.0:0").isGlobal() == false
+      initTAddress("198.51.100.255:0").isGlobal() == false
+      initTAddress("203.0.113.0:0").isGlobal() == false
+      initTAddress("203.0.113.255:0").isGlobal() == false
+      initTAddress("198.18.0.0:0").isGlobal() == false
+      initTAddress("198.18.0.1:0").isGlobal() == false
+      initTAddress("198.19.0.1:0").isGlobal() == false
+      initTAddress("198.19.255.255:0").isGlobal() == false
+      initTAddress("240.0.0.0:0").isGlobal() == false
+      initTAddress("250.0.0.0:0").isGlobal() == false
+      initTAddress("255.254.254.254:0").isGlobal() == false
+      initTAddress("255.255.255.255:0").isGlobal() == false
+
+      initTAddress("1.1.1.1:0").isGlobal() == true
+      initTAddress("8.8.8.8:0").isGlobal() == true
+
   test "IPv6 networks test":
+    var a: TransportAddress
     check:
-      initTAddress("[::]:0").isUnspecified() == false
+      initTAddress("[::]:0").isNone() == false
+      initTAddress("[::]:0").isUnspecified() == true
 
       initTAddress("[::]:0").isZero() == true
       initTAddress("[::1]:0").isZero() == false
+      initTAddress("[::1]:0").isUnspecified() == false
 
       initTAddress("[::1]:0").isLoopback() == true
       initTAddress("[::2]:0").isLoopback() == false
 
       initTAddress("[FF00::]:0").isMulticast() == true
-      initTAddress("[FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]:0").isMulticast() == true
+      initTAddress(
+        "[FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]:0"
+      ).isMulticast() == true
       initTAddress("[F000::]:0").isMulticast() == false
 
       initTAddress("[::]:0").isAnyLocal() == true
       initTAddress("[::1]:0").isAnyLocal() == false
 
       initTAddress("[FE80::]:0").isLinkLocal() == true
-      initTAddress("[FEBF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]:0").isLinkLocal() == true
+      initTAddress(
+        "[FEBF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]:0"
+      ).isLinkLocal() == true
       initTAddress("[FE7F::]:0").isLinkLocal() == false
       initTAddress("[FEC0::]:0").isLinkLocal() == false
 
       initTAddress("[FEC0::]:0").isSiteLocal() == true
-      initTAddress("[FEFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]:0").isSiteLocal() == true
+      initTAddress(
+        "[FEFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]:0"
+      ).isSiteLocal() == true
       initTAddress("[FEBF::]:0").isSiteLocal() == false
       initTAddress("[FF00::]:0").isSiteLocal() == false
 
       initTAddress("[FF0E::]:0").isGlobalMulticast() == true
-      initTAddress("[FFFE:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]:0").isGlobalMulticast() == true
+      initTAddress(
+        "[FFFE:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]:0"
+      ).isGlobalMulticast() == true
       initTAddress("[FF0D::]:0").isGlobalMulticast() == false
       initTAddress("[FFFF::]:0").isGlobalMulticast() == false
+
+      initTAddress(
+        "[FBFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]:0"
+      ).isUniqueLocal() == false
+      initTAddress("[FC00::]:0").isUniqueLocal() == true
+      initTAddress(
+        "[FDFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]:0"
+      ).isUniqueLocal() == true
+      initTAddress("[FE00::]:0").isUniqueLocal() == false
+
+      initTAddress(
+        "[FE7F:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]:0"
+      ).isUnicastLinkLocal() == false
+      initTAddress("[FE80::]:0").isUnicastLinkLocal() == true
+      initTAddress(
+        "[FEBF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]:0"
+      ).isUnicastLinkLocal() == true
+      initTAddress("[FEC0::]:0").isUnicastLinkLocal() == false
+
+      initTAddress(
+        "[2001:0001:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]:0"
+      ).isBenchmarking() == false
+      initTAddress("[2001:0002::]:0").isBenchmarking() == true
+      initTAddress(
+        "[2001:0002:0000:FFFF:FFFF:FFFF:FFFF:FFFF]:0"
+      ).isBenchmarking() == true
+      initTAddress("[2001:0002:0001::]:0").isBenchmarking() == false
+
+      initTAddress(
+        "[2001:0DB7:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]:0"
+      ).isDocumentation() == false
+      initTAddress("[2001:0DB8::]:0").isDocumentation() == true
+      initTAddress(
+        "[2001:0DB8:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]:0"
+      ).isDocumentation() == true
+      initTAddress("[2001:0DB9::]:0").isDocumentation() == false
+
+      a.isGlobal() == false
+      initTAddress("[::]:0").isGlobal() == false
+      initTAddress("[::1]:0").isGlobal() == false
+      initTAddress("[::FFFF:0000:0000]:0").isGlobal() == false
+      initTAddress("[::FFFF:FFFF:FFFF]:0").isGlobal() == false
+      initTAddress("[0064:FF9B:0001::]:0").isGlobal() == false
+      initTAddress(
+        "[0064:FF9B:0001:FFFF:FFFF:FFFF:FFFF:FFFF]:0"
+      ).isGlobal() == false
+      initTAddress("[0100::]:0").isGlobal() == false
+      initTAddress(
+        "[0100:0000:0000:0000:FFFF:FFFF:FFFF:FFFF]:0"
+      ).isGlobal() == false
+      initTAddress("[2001::]:0").isGlobal() == false
+      initTAddress(
+        "[2001:01FF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]:0"
+      ).isGlobal() == false
+      initTAddress("[2001:1::1]:0").isGlobal() == true
+      initTAddress("[2001:1::2]:0").isGlobal() == true
+      initTAddress("[2001:3::]:0").isGlobal() == true
+      initTAddress("[2001:4:112::]:0").isGlobal() == true
+      initTAddress("[2001:20::]:0").isGlobal() == true
+      initTAddress("[2001:0db8::]:0").isGlobal() == false
+      initTAddress(
+        "[2001:0DB8:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]:0"
+      ).isGlobal() == false
+      initTAddress("[FC00::]:0").isGlobal() == false
+      initTAddress(
+        "[FDFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]:0"
+      ).isGlobal() == false
+      initTAddress("[FE80::]:0").isGlobal() == false
+      initTAddress(
+        "[FEBF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]:0"
+      ).isGlobal() == false
+
+      initTAddress("[2606:4700:4700::1111]:0").isGlobal() == true
+      initTAddress("[2606:4700:4700::1001]:0").isGlobal() == true
 
   test "IP masks test":
     check:
@@ -497,3 +657,8 @@ suite "Network utilities test suite":
     check:
       ip4 == initTAddress("192.168.1.0:1024")
       ip6 == ip6e
+    dec(ip4)
+    dec(ip6)
+    check:
+      ip4 == initTAddress("192.168.0.255:1024")
+      ip6 == initTAddress("[0:0:0:1::]:1024")
