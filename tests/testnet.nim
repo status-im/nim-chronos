@@ -641,24 +641,50 @@ suite "Network utilities test suite":
       route.ifIndex != 0
     echo route
 
-  test "TransportAddress arithmetic operations test":
+  test "TransportAddress arithmetic operations test (add)":
+    block:
+      var ip4 = initTAddress("192.168.1.0:1024")
+      var ip6 = initTAddress("[::1]:1024")
+      when sizeof(int) == 8:
+        ip4 = ip4 + uint(0xFFFF_FFFF_FFFF_FFFF'u64)
+        ip6 = ip6 + uint(0xFFFF_FFFF_FFFF_FFFF'u64)
+        var ip6e = initTAddress("[::1:0000:0000:0000:1]:1024")
+      else:
+        ip4 = ip4 + uint(0xFFFF_FFFF'u32)
+        ip6 = ip6 + uint(0xFFFF_FFFF'u32)
+        var ip6e = initTAddress("[::1:0000:1]:1024")
+      inc(ip4)
+      inc(ip6)
+      check:
+        ip4 == initTAddress("192.168.1.0:1024")
+        ip6 == ip6e
+      ip4 = initTAddress("255.255.255.255:0")
+      ip6 = initTAddress("[FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]:0")
+      inc(ip4)
+      inc(ip6)
+      check:
+        ip4 == initTAddress("0.0.0.0:0")
+        ip6 == initTAddress("[::]:0")
+
+  test "TransportAddress arithmetic operations test (sub)":
     var ip4 = initTAddress("192.168.1.0:1024")
-    var ip6 = initTAddress("[::1]:1024")
     when sizeof(int) == 8:
-      ip4 = ip4 + uint(0xFFFF_FFFF_FFFF_FFFF'u64)
-      ip6 = ip6 + uint(0xFFFF_FFFF_FFFF_FFFF'u64)
-      var ip6e = initTAddress("[::1:0000:0000:0000:1]:1024")
+      var ip6 = initTAddress("[::1:0000:0000:0000:0000]:1024")
+      ip4 = ip4 - uint(0xFFFF_FFFF_FFFF_FFFF'u64)
+      ip6 = ip6 - uint(0xFFFF_FFFF_FFFF_FFFF'u64)
     else:
-      ip4 = ip4 + uint(0xFFFF_FFFF'u32)
-      ip6 = ip6 + uint(0xFFFF_FFFF'u32)
-      var ip6e = initTAddress("[::1:0000:1]:1024")
-    inc(ip4)
-    inc(ip6)
-    check:
-      ip4 == initTAddress("192.168.1.0:1024")
-      ip6 == ip6e
+      var ip6 = initTAddress("[::1:0000:0000]:1024")
+      ip4 = ip4 - uint(0xFFFF_FFFF'u32)
+      ip6 = ip6 - uint(0xFFFF_FFFF'u32)
     dec(ip4)
     dec(ip6)
     check:
-      ip4 == initTAddress("192.168.0.255:1024")
-      ip6 == initTAddress("[0:0:0:1::]:1024")
+      ip4 == initTAddress("192.168.1.0:1024")
+      ip6 == initTAddress("[::]:1024")
+    ip4 = initTAddress("0.0.0.0:0")
+    ip6 = initTAddress("[::]:0")
+    dec(ip4)
+    dec(ip6)
+    check:
+      ip4 == initTAddress("255.255.255.255:0")
+      ip6 == initTAddress("[FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]:0")
