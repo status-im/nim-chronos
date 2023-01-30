@@ -1260,6 +1260,44 @@ suite "Stream Transport test suite":
     await allFutures(rtransp.closeWait(), wtransp.closeWait())
     return buffer == message
 
+  proc testConnectReuseLocalPort(): Future[void] {.async.} =
+    let dst1 = initTAddress("127.0.0.1:33335")
+    let dst2 = initTAddress("127.0.0.1:33336")
+    let dst3 = initTAddress("127.0.0.1:33337")
+
+    proc client(server: StreamServer, transp: StreamTransport) {.async.} =
+      await transp.closeWait()
+
+    let servers =
+      [createStreamServer(dst1, client, {ReuseAddr}),
+        createStreamServer(dst2, client, {ReuseAddr}),
+        createStreamServer(dst3, client, {ReuseAddr})]
+
+    for server in servers:
+      server.start()
+
+    let ta = initTAddress("0.0.0.0:35000")
+
+    let sock1 = AsyncFD(createNativeSocket(dst1.getDomain(), SockType.SOCK_STREAM, Protocol.IPPROTO_TCP))
+    bindSocket(sock1, ta, {ReuseAddr})
+    var transp1 = await connect(dst1, sock=sock1)
+
+    let sock2 = AsyncFD(createNativeSocket(dst2.getDomain(), SockType.SOCK_STREAM, Protocol.IPPROTO_TCP))
+    bindSocket(sock2, ta, {ReuseAddr})
+    var transp2 = await connect(dst2, sock=sock2)
+
+    let sock3 = AsyncFD(createNativeSocket(dst3.getDomain(), SockType.SOCK_STREAM, Protocol.IPPROTO_TCP))
+    expect TransportOsError:
+      bindSocket(sock3, ta)
+
+    await transp1.closeWait()
+    await transp2.closeWait()
+    sock3.closeSocket()
+
+    for server in servers:
+      server.stop()
+      await server.closeWait()
+
   markFD = getCurrentFD()
 
   for i in 0..<len(addresses):
@@ -1347,6 +1385,8 @@ suite "Stream Transport test suite":
       check waitFor(testReadOnClose(addresses[i])) == true
   test "[PIPE] readExactly()/write() test":
     check waitFor(testPipe()) == true
+  test "Connect reusing same port in local address":
+    waitFor testConnectReuseLocalPort()
   test "Servers leak test":
     check getTracker("stream.server").isLeaked() == false
   test "Transports leak test":
@@ -1358,48 +1398,6 @@ suite "Stream Transport test suite":
       skip()
     else:
       check getCurrentFD() == markFD
-
-  test "connect reusing same port in local address":
-    let dst1 = initTAddress("127.0.0.1:33335")
-    let dst2 = initTAddress("127.0.0.1:33336")
-    let dst3 = initTAddress("127.0.0.1:33337")
-
-    proc client(server: StreamServer, transp: StreamTransport) {.async.} =
-      waitFor transp.closeWait()
-
-    let servers =
-      [createStreamServer(dst1, client, {ReuseAddr}),
-        createStreamServer(dst2, client, {ReuseAddr}),
-        createStreamServer(dst3, client, {ReuseAddr})]
-
-    for server in servers:
-      server.start()
-
-    let ta = initTAddress("0.0.0.0:35000")
-
-    let sock1 = AsyncFD(createNativeSocket(dst1.getDomain(), SockType.SOCK_STREAM, Protocol.IPPROTO_TCP))
-    bindSocket(sock1, ta, {ReuseAddr})
-    var transp1 = waitFor connect(dst1, sock=sock1)
-
-    let sock2 = AsyncFD(createNativeSocket(dst2.getDomain(), SockType.SOCK_STREAM, Protocol.IPPROTO_TCP))
-    bindSocket(sock2, ta, {ReuseAddr})
-    var transp2 = waitFor connect(dst2, sock=sock2)
-
-    let sock3 = AsyncFD(createNativeSocket(dst3.getDomain(), SockType.SOCK_STREAM, Protocol.IPPROTO_TCP))
-    expect TransportOsError:
-      bindSocket(sock3, ta)
-
-    waitFor transp1.closeWait()
-    waitFor transp2.closeWait()
-    sock3.closeSocket()
-
-    for server in servers:
-      server.stop()
-      waitFor server.closeWait()
-
-    waitFor transp1.closeWait()
-    waitFor transp2.closeWait()
-    sock3.closeSocket()
 
   test "Leaks test":
     proc getTrackerLeaks(tracker: string): bool =
