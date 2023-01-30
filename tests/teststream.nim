@@ -1279,16 +1279,15 @@ suite "Stream Transport test suite":
     let ta = initTAddress("0.0.0.0:35000")
 
     let sock1 = AsyncFD(createNativeSocket(dst1.getDomain(), SockType.SOCK_STREAM, Protocol.IPPROTO_TCP))
-    bindSocket(sock1, ta, {ReuseAddr})
+    check: bindSocket(sock1, ta, {ReuseAddr})
     var transp1 = await connect(dst1, sock=sock1)
 
     let sock2 = AsyncFD(createNativeSocket(dst2.getDomain(), SockType.SOCK_STREAM, Protocol.IPPROTO_TCP))
-    bindSocket(sock2, ta, {ReuseAddr})
+    check: bindSocket(sock2, ta, {ReuseAddr})
     var transp2 = await connect(dst2, sock=sock2)
 
     let sock3 = AsyncFD(createNativeSocket(dst3.getDomain(), SockType.SOCK_STREAM, Protocol.IPPROTO_TCP))
-    expect TransportOsError:
-      bindSocket(sock3, ta)
+    check: false == bindSocket(sock3, ta)
 
     await transp1.closeWait()
     await transp2.closeWait()

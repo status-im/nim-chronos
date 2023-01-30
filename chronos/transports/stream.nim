@@ -297,26 +297,24 @@ proc clean(transp: StreamTransport) {.inline.} =
     transp.future.complete()
     GC_unref(transp)
 
-proc setSockOpt(socket: AsyncFD, level, flag: int) {.
-  raises: [Defect, TransportOsError].} =
-  if not(setSockOpt(socket, level, flag, 1)):
-    let err = osLastError()
-    raiseTransportOsError(err)
-
-proc bindSocket*(sock: AsyncFD, localAddress: TransportAddress, flags: set[ServerFlags] = {}) {.
-  raises: [Defect, OSError, TransportOsError].} =
+proc bindSocket*(sock: AsyncFD, localAddress: TransportAddress, flags: set[ServerFlags] = {}): bool =
+  ## Returns ``true`` on success, ``false`` on error.
   if ServerFlags.ReuseAddr in flags:
-    setSockOpt(sock, SOL_SOCKET, SO_REUSEADDR)
+    if not(setSockOpt(sock, SOL_SOCKET, SO_REUSEADDR, 1)):
+      return false
   if ServerFlags.ReusePort in flags:
-    setSockOpt(sock, SOL_SOCKET, SO_REUSEPORT)
+    if not(setSockOpt(sock, SOL_SOCKET, SO_REUSEPORT, 1)):
+      return false
   if ServerFlags.TcpNoDelay in flags:
-    setSockOpt(sock, handles.IPPROTO_TCP, handles.TCP_NODELAY)
+    if not(setSockOpt(sock, handles.IPPROTO_TCP, handles.TCP_NODELAY, 1)):
+      return false
   var
     localAddr: Sockaddr_storage
     localAddrLen: SockLen
   localAddress.toSAddr(localAddr, localAddrLen)
   if bindSocket(SocketHandle(sock), cast[ptr SockAddr](addr localAddr), localAddrLen) != 0:
-    raiseTransportOsError(osLastError())
+    return false
+  return true
 
 when defined(nimdoc):
   proc pauseAccept(server: StreamServer) {.inline.} = discard
