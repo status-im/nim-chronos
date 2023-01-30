@@ -1036,11 +1036,3 @@ proc race*(futs: varargs[FutureBase]): Future[FutureBase] =
 
   retFuture.cancelCallback = cancellation
   return retFuture
-
-proc finishWith*[T](f1: Future[T], f2: Future[T]) =
-  proc cb(arg: pointer) =
-    if f2.completed():
-      f1.complete(f2.internalRead())
-    else:
-      f1.fail(f2.error)
-  f2.addCallback(cb)

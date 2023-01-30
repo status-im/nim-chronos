@@ -306,7 +306,6 @@ proc setSockOpt(socket: AsyncFD, level, flag: int) {.
 proc bindSocket*(sock: AsyncFD, localAddress: TransportAddress, flags: set[ServerFlags] = {}) {.
   raises: [Defect, OSError, TransportOsError].} =
   if ServerFlags.ReuseAddr in flags:
-    # Setting SO_REUSEADDR option we are able to reuse ports using the 0.0.0.0 address (or equivalent)
     setSockOpt(sock, SOL_SOCKET, SO_REUSEADDR)
   if ServerFlags.ReusePort in flags:
     setSockOpt(sock, SOL_SOCKET, SO_REUSEPORT)
@@ -724,30 +723,6 @@ elif defined(windows):
                   sizeof(saddr).SockLen) != 0'i32:
         result = false
 
-  proc createPipe*(address: TransportAddress): Future[Handle] =
-    var retFuture = newFuture[Handle]("stream.handle")
-    var pipeHandle = INVALID_HANDLE_VALUE
-    var pipeContinuation: proc (udata: pointer) {.gcsafe, raises: [Defect].}
-    pipeContinuation = proc (udata: pointer) {.gcsafe, raises: [Defect].} =
-      # Continue only if `retFuture` is not cancelled.
-      if not(retFuture.finished()):
-        var pipeSuffix = $cast[cstring](unsafeAddr address.address_un[0])
-        var pipeName = newWideCString(r"\\.\pipe\" & pipeSuffix[1 .. ^1])
-        pipeHandle = createFileW(pipeName, GENERIC_READ or GENERIC_WRITE,
-                                 FILE_SHARE_READ or FILE_SHARE_WRITE,
-                                 nil, OPEN_EXISTING,
-                                 FILE_FLAG_OVERLAPPED, Handle(0))
-        if pipeHandle == INVALID_HANDLE_VALUE:
-          let err = osLastError()
-          if int32(err) == ERROR_PIPE_BUSY:
-            discard setTimer(Moment.fromNow(50.milliseconds), pipeContinuation, nil)
-          else:
-            retFuture.fail(getTransportOsError(err))
-        else:
-          retFuture.complete(pipeHandle)
-    pipeContinuation(nil)
-    return retFuture
-
   proc isDomainSet(sock: AsyncFD): bool =
     try:
       discard getSockDomain(SocketHandle(sock))
@@ -755,11 +730,11 @@ elif defined(windows):
     except CatchableError as ex:
       false
 
-  proc connect*(sock: AsyncFD,
-                address: TransportAddress,
+  proc connect*(address: TransportAddress,
                 bufferSize = DefaultStreamBufferSize,
                 child: StreamTransport = nil,
-                flags: set[TransportFlags] = {}): Future[StreamTransport] =
+                flags: set[TransportFlags] = {},
+                sock: AsyncFD = asyncInvalidSocket): Future[StreamTransport] =
     ## Open new connection to remote peer with address ``address`` and create
     ## new transport object ``StreamTransport`` for established connection.
     ## ``bufferSize`` is size of internal buffer for transport.
@@ -771,18 +746,37 @@ elif defined(windows):
       var
         saddr: Sockaddr_storage
         slen: SockLen
+        localSock: AsyncFD
         povl: RefCustomOverlapped
 
       var raddress = windowsAnyAddressFix(address)
       toSAddr(raddress, saddr, slen)
 
       if sock == asyncInvalidSocket:
+        localSock = try: createAsyncSocket(raddress.getDomain(), SockType.SOCK_STREAM,
+                                 Protocol.IPPROTO_TCP)
+        except CatchableError as exc:
+          retFuture.fail(exc)
+          return retFuture
+      else:
+        if not setSocketBlocking(SocketHandle(sock), false):
+          retFuture.fail(getTransportOsError(osLastError()))
+          return retFuture
+        localSock = sock
+        try:
+          register(localSock)
+        except CatchableError as exc:
+          retFuture.fail(exc)
+          return retFuture
+
+      if localSock == asyncInvalidSocket:
         retFuture.fail(getTransportOsError(osLastError()))
         return retFuture
 
-      if not isDomainSet(sock) and not(bindToDomain(sock, raddress.getDomain())):
+      if not isDomainSet(localSock) and not(bindToDomain(localSock, raddress.getDomain())):
         let err = wsaGetLastError()
-        sock.closeSocket()
+        if sock == asyncInvalidSocket:
+          localSock.closeSocket()
         retFuture.fail(getTransportOsError(err))
         return retFuture
 
@@ -790,29 +784,32 @@ elif defined(windows):
         var ovl = cast[RefCustomOverlapped](udata)
         if not(retFuture.finished()):
           if ovl.data.errCode == OSErrorCode(-1):
-            if setsockopt(SocketHandle(sock), cint(SOL_SOCKET),
+            if setsockopt(SocketHandle(localSock), cint(SOL_SOCKET),
                           cint(SO_UPDATE_CONNECT_CONTEXT), nil,
                           SockLen(0)) != 0'i32:
               let err = wsaGetLastError()
-              sock.closeSocket()
+              if sock == asyncInvalidSocket:
+                localSock.closeSocket()
               retFuture.fail(getTransportOsError(err))
             else:
-              let transp = newStreamSocketTransport(sock, bufferSize, child)
+              let transp = newStreamSocketTransport(localSock, bufferSize, child)
               # Start tracking transport
               trackStream(transp)
               retFuture.complete(transp)
           else:
-            sock.closeSocket()
+            if sock == asyncInvalidSocket:
+              localSock.closeSocket()
             retFuture.fail(getTransportOsError(ovl.data.errCode))
         GC_unref(ovl)
 
       proc cancel(udata: pointer) {.gcsafe.} =
-        sock.closeSocket()
+        if sock == asyncInvalidSocket:
+          localSock.closeSocket()
 
       povl = RefCustomOverlapped()
       GC_ref(povl)
       povl.data = CompletionData(cb: socketContinuation)
-      let res = loop.connectEx(SocketHandle(sock),
+      let res = loop.connectEx(SocketHandle(localSock),
                                cast[ptr SockAddr](addr saddr),
                                DWORD(slen), nil, 0, nil,
                                cast[POVERLAPPED](povl))
@@ -821,57 +818,47 @@ elif defined(windows):
         let err = osLastError()
         if int32(err) != ERROR_IO_PENDING:
           GC_unref(povl)
-          sock.closeSocket()
+          if sock == asyncInvalidSocket:
+            localSock.closeSocket()
           retFuture.fail(getTransportOsError(err))
 
       retFuture.cancelCallback = cancel
 
     elif address.family == AddressFamily.Unix:
-      let transp =
-        try:
-          register(sock)
-          newStreamPipeTransport(sock, bufferSize, child)
-        except CatchableError as exc:
-          retFuture.fail(exc)
-          return
-      # Start tracking transport
-      trackStream(transp)
-      retFuture.complete(transp)
-
-    return retFuture
-
-  proc connect*(address: TransportAddress,
-                bufferSize = DefaultStreamBufferSize,
-                child: StreamTransport = nil,
-                flags: set[TransportFlags] = {}): Future[StreamTransport] =
-    ## Open new connection to remote peer with address ``address`` and create
-    ## new transport object ``StreamTransport`` for established connection.
-    ## ``bufferSize`` is size of internal buffer for transport.
-    var retFuture = newFuture[StreamTransport]("stream.transport.connect")
-    var raddress = windowsAnyAddressFix(address)
-    if address.family in {AddressFamily.IPv4, AddressFamily.IPv6}:
-      try:
-        let sock = createAsyncSocket(raddress.getDomain(), SockType.SOCK_STREAM, Protocol.IPPROTO_TCP)
-        retFuture.finishWith(connect(sock, raddress, bufferSize, child, flags))
-      except CatchableError as exc:
-        retFuture.fail(exc)
-    elif address.family == AddressFamily.Unix:
       ## Unix domain socket emulation with Windows Named Pipes.
-      var pipeHandleFut = createPipe(address)
+      var pipeHandle = INVALID_HANDLE_VALUE
       var pipeContinuation: proc (udata: pointer) {.gcsafe, raises: [Defect].}
       pipeContinuation = proc (udata: pointer) {.gcsafe, raises: [Defect].} =
         # Continue only if `retFuture` is not cancelled.
         if not(retFuture.finished()):
-          if pipeHandleFut.finished():
-            let sock =
-              try:
-                AsyncFD(pipeHandleFut.read)
-              except CatchableError as exc:
-                retFuture.fail(exc)
-                return
-            retFuture.finishWith(connect(sock, raddress, bufferSize, child, flags))
+          var pipeSuffix = $cast[cstring](unsafeAddr address.address_un[0])
+          var pipeName = newWideCString(r"\\.\pipe\" & pipeSuffix[1 .. ^1])
+          pipeHandle = createFileW(pipeName, GENERIC_READ or GENERIC_WRITE,
+                                   FILE_SHARE_READ or FILE_SHARE_WRITE,
+                                   nil, OPEN_EXISTING,
+                                   FILE_FLAG_OVERLAPPED, Handle(0))
+          if pipeHandle == INVALID_HANDLE_VALUE:
+            let err = osLastError()
+            if int32(err) == ERROR_PIPE_BUSY:
+              discard setTimer(Moment.fromNow(50.milliseconds),
+                               pipeContinuation, nil)
+            else:
+              retFuture.fail(getTransportOsError(err))
           else:
-            discard setTimer(Moment.fromNow(50.milliseconds), pipeContinuation, nil)
+            try:
+              register(AsyncFD(pipeHandle))
+            except CatchableError as exc:
+              retFuture.fail(exc)
+              return
+
+            let transp = try: newStreamPipeTransport(AsyncFD(pipeHandle),
+                                                bufferSize, child)
+            except CatchableError as exc:
+              retFuture.fail(exc)
+              return
+            # Start tracking transport
+            trackStream(transp)
+            retFuture.complete(transp)
       pipeContinuation(nil)
     else:
       retFuture.fail(newException(TransportAddressError, "Unsupported address family"))
@@ -1548,11 +1535,11 @@ else:
     GC_ref(transp)
     result = transp
 
-  proc connect*(sock: AsyncFD,
-                address: TransportAddress,
+  proc connect*(address: TransportAddress,
                 bufferSize = DefaultStreamBufferSize,
                 child: StreamTransport = nil,
-                flags: set[TransportFlags] = {}
+                flags: set[TransportFlags] = {},
+                sock: AsyncFD = asyncInvalidSocket
                 ): Future[StreamTransport] =
     ## Open new connection to remote peer with address ``address`` and create
     ## new transport object ``StreamTransport`` for established connection.
@@ -1560,11 +1547,36 @@ else:
     var
       saddr: Sockaddr_storage
       slen: SockLen
+      localSock: AsyncFD
 
     var retFuture = newFuture[StreamTransport]("stream.transport.connect")
     address.toSAddr(saddr, slen)
 
     if sock == asyncInvalidSocket:
+      let proto =
+        if address.family == AddressFamily.Unix:
+          # `Protocol` enum is missing `0` value, so we making here cast, until
+          # `Protocol` enum will not support IPPROTO_IP == 0.
+          cast[Protocol](0)
+        else: Protocol.IPPROTO_TCP
+      localSock =
+        try: createAsyncSocket(address.getDomain(), SockType.SOCK_STREAM,
+                              proto)
+        except CatchableError as exc:
+          retFuture.fail(exc)
+          return retFuture
+    else:
+      if not setSocketBlocking(SocketHandle(sock), false):
+        retFuture.fail(getTransportOsError(osLastError()))
+        return retFuture
+      localSock = sock
+      try:
+        register(localSock)
+      except CatchableError as exc:
+        retFuture.fail(exc)
+        return retFuture
+
+    if localSock == asyncInvalidSocket:
       let err = osLastError()
       if int(err) == EMFILE:
         retFuture.fail(getTransportTooManyError())
@@ -1574,10 +1586,11 @@ else:
 
     if address.family in {AddressFamily.IPv4, AddressFamily.IPv6}:
       if TransportFlags.TcpNoDelay in flags:
-        if not(setSockOpt(sock, handles.IPPROTO_TCP,
+        if not(setSockOpt(localSock, handles.IPPROTO_TCP,
                           handles.TCP_NODELAY, 1)):
           let err = osLastError()
-          sock.closeSocket()
+          if sock == asyncInvalidSocket:
+            localSock.closeSocket()
           retFuture.fail(getTransportOsError(err))
           return retFuture
 
@@ -1585,7 +1598,7 @@ else:
       if not(retFuture.finished()):
         var err = 0
         try:
-          sock.removeWriter()
+          localSock.removeWriter()
         except IOSelectorsException as exc:
           retFuture.fail(exc)
           return
@@ -1593,27 +1606,28 @@ else:
           retFuture.fail(exc)
           return
 
-        if not(sock.getSocketError(err)):
-          closeSocket(sock)
+        if not(localSock.getSocketError(err)):
+          closeSocket(localSock)
           retFuture.fail(getTransportOsError(osLastError()))
           return
         if err != 0:
-          closeSocket(sock)
+          closeSocket(localSock)
           retFuture.fail(getTransportOsError(OSErrorCode(err)))
           return
-        let transp = newStreamSocketTransport(sock, bufferSize, child)
+        let transp = newStreamSocketTransport(localSock, bufferSize, child)
         # Start tracking transport
         trackStream(transp)
         retFuture.complete(transp)
 
     proc cancel(udata: pointer) =
-      closeSocket(sock)
+      if sock == asyncInvalidSocket:
+        closeSocket(localSock)
 
     while true:
-      var res = posix.connect(SocketHandle(sock),
+      var res = posix.connect(SocketHandle(localSock),
                               cast[ptr SockAddr](addr saddr), slen)
       if res == 0:
-        let transp = newStreamSocketTransport(sock, bufferSize, child)
+        let transp = newStreamSocketTransport(localSock, bufferSize, child)
         # Start tracking transport
         trackStream(transp)
         retFuture.complete(transp)
@@ -1628,41 +1642,22 @@ else:
         # http://www.madore.org/~david/computers/connect-intr.html
         if int(err) == EINPROGRESS or int(err) == EINTR:
           try:
-            sock.addWriter(continuation)
+            localSock.addWriter(continuation)
           except CatchableError as exc:
-            closeSocket(sock)
+            if sock == asyncInvalidSocket:
+              closeSocket(localSock)
             retFuture.fail(exc)
             return retFuture
 
           retFuture.cancelCallback = cancel
           break
         else:
-          sock.closeSocket()
+          if sock == asyncInvalidSocket:
+            localSock.closeSocket()
 
           retFuture.fail(getTransportOsError(err))
           break
     return retFuture
-
-  proc connect*(address: TransportAddress,
-                bufferSize = DefaultStreamBufferSize,
-                child: StreamTransport = nil,
-                flags: set[TransportFlags] = {}): Future[StreamTransport] =
-    ## Open new connection to remote peer with address ``address`` and create
-    ## new transport object ``StreamTransport`` for established connection.
-    ## ``bufferSize`` - size of internal buffer for transport.
-    let sock =
-      try:
-        var proto = Protocol.IPPROTO_TCP
-        if address.family == AddressFamily.Unix:
-          # `Protocol` enum is missing `0` value, so we making here cast, until
-          # `Protocol` enum will not support IPPROTO_IP == 0.
-          proto = cast[Protocol](0)
-        createAsyncSocket(address.getDomain(), SockType.SOCK_STREAM, proto)
-      except CatchableError as exc:
-        var retFuture = newFuture[StreamTransport]("stream.transport.connect")
-        retFuture.fail(exc)
-        return retFuture
-    return connect(sock, address, bufferSize, child, flags)
 
   proc acceptLoop(udata: pointer) =
     if isNil(udata):

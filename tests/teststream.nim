@@ -5,7 +5,7 @@
 #              Licensed under either of
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
-import std/[strutils, os]
+import std/[strutils, os, nativesockets]
 import unittest2
 import ../chronos
 
@@ -1377,15 +1377,15 @@ suite "Stream Transport test suite":
 
     let ta = initTAddress("0.0.0.0:35000")
 
-    let sock1 = createAsyncSocket(dst1.getDomain(), SockType.SOCK_STREAM, Protocol.IPPROTO_TCP)
+    let sock1 = AsyncFD(createNativeSocket(dst1.getDomain(), SockType.SOCK_STREAM, Protocol.IPPROTO_TCP))
     bindSocket(sock1, ta, {ReuseAddr})
-    var transp1 = waitFor connect(sock1, dst1)
+    var transp1 = waitFor connect(dst1, sock=sock1)
 
-    let sock2 = createAsyncSocket(dst2.getDomain(), SockType.SOCK_STREAM, Protocol.IPPROTO_TCP)
+    let sock2 = AsyncFD(createNativeSocket(dst2.getDomain(), SockType.SOCK_STREAM, Protocol.IPPROTO_TCP))
     bindSocket(sock2, ta, {ReuseAddr})
-    var transp2 = waitFor connect(sock2, dst2)
+    var transp2 = waitFor connect(dst2, sock=sock2)
 
-    let sock3 = createAsyncSocket(dst3.getDomain(), SockType.SOCK_STREAM, Protocol.IPPROTO_TCP)
+    let sock3 = AsyncFD(createNativeSocket(dst3.getDomain(), SockType.SOCK_STREAM, Protocol.IPPROTO_TCP))
     expect TransportOsError:
       bindSocket(sock3, ta)
 
