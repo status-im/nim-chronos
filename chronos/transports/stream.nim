@@ -1607,11 +1607,13 @@ else:
           return
 
         if not(localSock.getSocketError(err)):
-          closeSocket(localSock)
+          if sock == asyncInvalidSocket:
+            closeSocket(localSock)
           retFuture.fail(getTransportOsError(osLastError()))
           return
         if err != 0:
-          closeSocket(localSock)
+          if sock == asyncInvalidSocket:
+            closeSocket(localSock)
           retFuture.fail(getTransportOsError(OSErrorCode(err)))
           return
         let transp = newStreamSocketTransport(localSock, bufferSize, child)
