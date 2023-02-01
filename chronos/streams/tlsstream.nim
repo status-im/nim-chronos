@@ -14,6 +14,7 @@ import
   bearssl/certs/cacert
 import ../asyncloop, ../timer, ../asyncsync
 import asyncstream, ../transports/stream, ../transports/common
+import std/options
 export asyncloop, asyncsync, timer, asyncstream
 
 type
@@ -89,6 +90,7 @@ type
     reader*: TLSStreamReader
     writer*: TLSStreamWriter
     mainLoop*: Future[void]
+    trustAnchors*: Option[seq[X509TrustAnchor]]
 
   SomeTLSStreamType* = TLSStreamReader|TLSStreamWriter|TLSAsyncStream
 
@@ -428,7 +430,9 @@ proc newTLSClientAsyncStream*(rsource: AsyncStreamReader,
                               bufferSize = SSL_BUFSIZE_BIDI,
                               minVersion = TLSVersion.TLS12,
                               maxVersion = TLSVersion.TLS12,
-                              flags: set[TLSFlags] = {}): TLSAsyncStream =
+                              flags: set[TLSFlags] = {},
+                              trustAnchors = none[seq[X509TrustAnchor]](),
+                              ): TLSAsyncStream =
   ## Create new TLS asynchronous stream for outbound (client) connections
   ## using reading stream ``rsource`` and writing stream ``wsource``.
   ##
@@ -445,6 +449,9 @@ proc newTLSClientAsyncStream*(rsource: AsyncStreamReader,
   ## ``minVersion`` of bigger then ``maxVersion`` you will get an error.
   ##
   ## ``flags`` - custom TLS connection flags.
+  ## 
+  ## ``trustAnchors`` - use this if you want to use certificate trust
+  ## anchors other than the default Mozilla trust anchors.
   var res = TLSAsyncStream()
   var reader = TLSStreamReader(
     kind: TLSStreamKind.Client,
@@ -464,9 +471,14 @@ proc newTLSClientAsyncStream*(rsource: AsyncStreamReader,
     x509NoanchorInit(res.xwc, addr res.x509.vtable)
     sslEngineSetX509(res.ccontext.eng, addr res.xwc.vtable)
   else:
+    res.trustAnchors = trustAnchors
+    let (taaddr, talen) = if trustAnchors.isSome:
+        let ta = trustAnchors.get()
+        (unsafeAddr ta[0], len(ta))
+      else:
+        (unsafeAddr MozillaTrustAnchors[0], len(MozillaTrustAnchors))
     sslClientInitFull(res.ccontext, addr res.x509,
-                      unsafeAddr MozillaTrustAnchors[0],
-                      uint(len(MozillaTrustAnchors)))
+                      taaddr, uint(talen))
 
   let size = max(SSL_BUFSIZE_BIDI, bufferSize)
   res.sbuffer = newSeq[byte](size)
