@@ -157,6 +157,9 @@ proc tlsWriteApp(engine: ptr SslEngineContext,
     if item.size > 0:
       var length = 0'u
       var buf = sslEngineSendappBuf(engine[], length)
+      if buf.isNil:
+        # BearSSL is not ready to accept any of the item
+        return TLSResult.Success
       let toWrite = min(int(length), item.size)
       copyOut(buf, item, toWrite)
       if int(length) >= item.size:
