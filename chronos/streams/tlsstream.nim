@@ -14,7 +14,6 @@ import
   bearssl/certs/cacert
 import ../asyncloop, ../timer, ../asyncsync
 import asyncstream, ../transports/stream, ../transports/common
-import std/options
 export asyncloop, asyncsync, timer, asyncstream
 
 type
@@ -60,6 +59,9 @@ type
 
   PEMContext = ref object
     data: seq[byte]
+  
+  TrustAnchorStore* = ref object
+    anchors: seq[X509TrustAnchor]
 
   TLSStreamWriter* = ref object of AsyncStreamWriter
     case kind: TLSStreamKind
@@ -90,7 +92,7 @@ type
     reader*: TLSStreamReader
     writer*: TLSStreamWriter
     mainLoop*: Future[void]
-    trustAnchors*: Option[seq[X509TrustAnchor]]
+    trustAnchors: TrustAnchorStore
 
   SomeTLSStreamType* = TLSStreamReader|TLSStreamWriter|TLSAsyncStream
 
@@ -133,6 +135,12 @@ proc newTLSStreamProtocolError[T](message: T): ref TLSStreamProtocolError =
 
 proc raiseTLSStreamProtocolError[T](message: T) {.noreturn, noinline.} =
   raise newTLSStreamProtocolImpl(message)
+
+proc newTrustAnchorStore*(anchors: openArray[X509TrustAnchor]): TrustAnchorStore =
+  new(result)
+  for anchor in anchors:
+    result.anchors.add(anchor)
+    doAssert(unsafeAddr(anchor) != unsafeAddr(result.anchors[^1]), "Anchors should be copied")
 
 proc tlsWriteRec(engine: ptr SslEngineContext,
                  writer: TLSStreamWriter): Future[TLSResult] {.async.} =
@@ -431,7 +439,7 @@ proc newTLSClientAsyncStream*(rsource: AsyncStreamReader,
                               minVersion = TLSVersion.TLS12,
                               maxVersion = TLSVersion.TLS12,
                               flags: set[TLSFlags] = {},
-                              trustAnchors = none[seq[X509TrustAnchor]](),
+                              trustAnchors: TrustAnchorStore | openArray[X509TrustAnchor] = MozillaTrustAnchors
                               ): TLSAsyncStream =
   ## Create new TLS asynchronous stream for outbound (client) connections
   ## using reading stream ``rsource`` and writing stream ``wsource``.
@@ -452,6 +460,10 @@ proc newTLSClientAsyncStream*(rsource: AsyncStreamReader,
   ## 
   ## ``trustAnchors`` - use this if you want to use certificate trust
   ## anchors other than the default Mozilla trust anchors.
+  when trustAnchors is TrustAnchorStore:
+    doAssert(len(trustAnchors.anchors) > 0, "Empty trust anchor list is invalid")
+  else:
+    doAssert(len(trustAnchors) > 0, "Empty trust anchor list is invalid")
   var res = TLSAsyncStream()
   var reader = TLSStreamReader(
     kind: TLSStreamKind.Client,
@@ -471,14 +483,15 @@ proc newTLSClientAsyncStream*(rsource: AsyncStreamReader,
     x509NoanchorInit(res.xwc, addr res.x509.vtable)
     sslEngineSetX509(res.ccontext.eng, addr res.xwc.vtable)
   else:
-    res.trustAnchors = trustAnchors
-    let (taaddr, talen) = if trustAnchors.isSome:
-        let ta = trustAnchors.get()
-        (unsafeAddr ta[0], len(ta))
-      else:
-        (unsafeAddr MozillaTrustAnchors[0], len(MozillaTrustAnchors))
-    sslClientInitFull(res.ccontext, addr res.x509,
-                      taaddr, uint(talen))
+    when trustAnchors is TrustAnchorStore:
+      res.trustAnchors = trustAnchors
+      sslClientInitFull(res.ccontext, addr res.x509,
+                        unsafeAddr trustAnchors.anchors[0],
+                        uint(len(trustAnchors.anchors)))
+    else:
+      sslClientInitFull(res.ccontext, addr res.x509,
+                        unsafeAddr trustAnchors[0],
+                        uint(len(trustAnchors)))
 
   let size = max(SSL_BUFSIZE_BIDI, bufferSize)
   res.sbuffer = newSeq[byte](size)

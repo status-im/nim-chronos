@@ -5,9 +5,9 @@
 #              Licensed under either of
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
-import std/options
 import unittest2
 import bearssl/[x509]
+# import bearssl/certs/cacert
 import ../chronos
 import ../chronos/streams/[tlsstream, chunkstream, boundstream]
 
@@ -79,6 +79,7 @@ N8r5CwGcIX/XPC3lKazzbZ8baA==
 # 1. Compile `brssl` from BearSSL
 # 2. Run `brssl ta filewithSelfSignedRsaCert.pem`
 # 3. Paste the output in the emit block below
+# 4. Rename `TAs` to `SelfSignedTAs`
 {.emit: """
 static const unsigned char TA0_DN[] = {
 	0x30, 0x5F, 0x31, 0x0B, 0x30, 0x09, 0x06, 0x03, 0x55, 0x04, 0x06, 0x13,
@@ -121,7 +122,7 @@ static const unsigned char TA0_RSA_E[] = {
 	0x01, 0x00, 0x01
 };
 
-static const br_x509_trust_anchor TAs[1] = {
+static const br_x509_trust_anchor SelfSignedTAs[1] = {
 	{
 		{ (unsigned char *)TA0_DN, sizeof TA0_DN },
 		BR_X509_TA_CA,
@@ -135,7 +136,7 @@ static const br_x509_trust_anchor TAs[1] = {
 	}
 };
 """.}
-var SelfSignedTrustAnchors {.importc: "TAs", nodecl.}: array[1, X509TrustAnchor]
+var SelfSignedTrustAnchors {.importc: "SelfSignedTAs", nodecl.}: array[1, X509TrustAnchor]
 
 proc createBigMessage(message: string, size: int): seq[byte] =
   var res = newSeq[byte](size)
@@ -981,44 +982,46 @@ suite "TLSStream test suite":
     check res == true
   
   test "Custom TrustAnchors test":
-    var key = TLSPrivateKey.init(SelfSignedRsaKey)
-    var cert = TLSCertificate.init(SelfSignedRsaCert)
-    var trustAnchor = SelfSignedTrustAnchors[0]
-    let testMessage = "TEST MESSAGE"
-    let address = initTAddress("127.0.0.1:43808")
+    proc checkTrustAnchors(testMessage: string): Future[string] {.async.} =
+      var key = TLSPrivateKey.init(SelfSignedRsaKey)
+      var cert = TLSCertificate.init(SelfSignedRsaCert)
+      let trustAnchors = newTrustAnchorStore(SelfSignedTrustAnchors)
+      let address = initTAddress("127.0.0.1:43808")
 
-    proc serveClient(server: StreamServer,
-                     transp: StreamTransport) {.async.} =
-      var reader = newAsyncStreamReader(transp)
-      var writer = newAsyncStreamWriter(transp)
-      var sstream = newTLSServerAsyncStream(reader, writer, key, cert)
-      await handshake(sstream)
-      await sstream.writer.write(testMessage & "\r\n")
-      await sstream.writer.finish()
-      await sstream.writer.closeWait()
-      await sstream.reader.closeWait()
-      await reader.closeWait()
-      await writer.closeWait()
-      await transp.closeWait()
-      server.stop()
-      server.close()
+      proc serveClient(server: StreamServer,
+                      transp: StreamTransport) {.async.} =
+        var reader = newAsyncStreamReader(transp)
+        var writer = newAsyncStreamWriter(transp)
+        var sstream = newTLSServerAsyncStream(reader, writer, key, cert)
+        await handshake(sstream)
+        await sstream.writer.write(testMessage & "\r\n")
+        await sstream.writer.finish()
+        await sstream.writer.closeWait()
+        await sstream.reader.closeWait()
+        await reader.closeWait()
+        await writer.closeWait()
+        await transp.closeWait()
+        server.stop()
+        server.close()
 
-    var server = createStreamServer(address, serveClient, {ReuseAddr})
-    server.start()
-    var conn = waitFor connect(address)
-    var creader = newAsyncStreamReader(conn)
-    var cwriter = newAsyncStreamWriter(conn)
-    let flags = {NoVerifyServerName}
-    var cstream = newTLSClientAsyncStream(creader, cwriter, "", flags = flags,
-      trustAnchors = some(@[trustAnchor]))
-    let res = waitFor cstream.reader.read()
-    waitFor cstream.reader.closeWait()
-    waitFor cstream.writer.closeWait()
-    waitFor creader.closeWait()
-    waitFor cwriter.closeWait()
-    waitFor conn.closeWait()
-    waitFor server.join()
-    check cast[string](res) == (testMessage & "\r\n")
+      var server = createStreamServer(address, serveClient, {ReuseAddr})
+      server.start()
+      var conn = waitFor connect(address)
+      var creader = newAsyncStreamReader(conn)
+      var cwriter = newAsyncStreamWriter(conn)
+      let flags = {NoVerifyServerName}
+      var cstream = newTLSClientAsyncStream(creader, cwriter, "", flags = flags,
+        trustAnchors = trustAnchors)
+      let res = waitFor cstream.reader.read()
+      await cstream.reader.closeWait()
+      await cstream.writer.closeWait()
+      await creader.closeWait()
+      await cwriter.closeWait()
+      await conn.closeWait()
+      await server.join()
+      return cast[string](res)
+    let res = waitFor checkTrustAnchors("Some message")
+    check res == "Some message\r\n"
     
   test "TLSStream leaks test":
     check:
