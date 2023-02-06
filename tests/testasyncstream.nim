@@ -7,7 +7,6 @@
 #              MIT license (LICENSE-MIT)
 import unittest2
 import bearssl/[x509]
-# import bearssl/certs/cacert
 import ../chronos
 import ../chronos/streams/[tlsstream, chunkstream, boundstream]
 
