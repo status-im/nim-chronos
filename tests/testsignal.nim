@@ -53,7 +53,7 @@ suite "Signal handling test suite":
     return true
 
   when defined(windows):
-    proc testCtrlC(): Future[bool] {.async.} =
+    proc testCtrlC(): Future[bool] {.async, used.} =
       var fut = waitSignal(SIGINT)
       let res = raiseConsoleCtrlSignal()
       if res.isErr():
