@@ -35,7 +35,7 @@ type
     RSA, EC
 
   TLSResult {.pure.} = enum
-    Success, Error, EOF
+    Success, Error, WriteEOF, ReadEOF
 
   TLSPrivateKey* = ref object
     case kind: TLSKeyType
@@ -157,6 +157,9 @@ proc tlsWriteApp(engine: ptr SslEngineContext,
     if item.size > 0:
       var length = 0'u
       var buf = sslEngineSendappBuf(engine[], length)
+      if length == 0:
+        writer.state = AsyncStreamState.Finished
+        return TLSResult.WriteEOF
       let toWrite = min(int(length), item.size)
       copyOut(buf, item, toWrite)
       if int(length) >= item.size:
@@ -191,8 +194,7 @@ proc tlsReadRec(engine: ptr SslEngineContext,
     sslEngineRecvrecAck(engine[], uint(res))
     if res == 0:
       sslEngineClose(engine[])
-
-      return TLSResult.EOF
+      return TLSResult.ReadEOF
     else:
       return TLSResult.Success
   except CancelledError:
@@ -229,7 +231,10 @@ template readAndReset(fut: untyped) =
       if loopState == AsyncStreamState.Running:
         loopState = AsyncStreamState.Error
       break
-    of TLSResult.EOF:
+    of TLSResult.WriteEOF:
+      fut = nil
+      continue
+    of TLSResult.ReadEOF:
       fut = nil
       if loopState == AsyncStreamState.Running:
         loopState = AsyncStreamState.Finished
@@ -301,14 +306,14 @@ proc tlsLoop*(stream: TLSAsyncStream) {.async.} =
 
     if isNil(sendAppFut):
       if (state and SSL_SENDAPP) == SSL_SENDAPP:
-        # Application data can be sent over stream.
-        if not(stream.writer.handshaked):
-          stream.reader.handshaked = true
-          stream.writer.handshaked = true
-          if not(isNil(stream.writer.handshakeFut)):
-            stream.writer.handshakeFut.complete()
-
-        sendAppFut = tlsWriteApp(engine, stream.writer)
+        if stream.writer.state == AsyncStreamState.Running:
+          # Application data can be sent over stream.
+          if not(stream.writer.handshaked):
+            stream.reader.handshaked = true
+            stream.writer.handshaked = true
+            if not(isNil(stream.writer.handshakeFut)):
+              stream.writer.handshakeFut.complete()
+          sendAppFut = tlsWriteApp(engine, stream.writer)
     else:
       sendAppFut.readAndReset()
 
