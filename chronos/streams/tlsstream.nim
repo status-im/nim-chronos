@@ -459,7 +459,9 @@ proc newTLSClientAsyncStream*(rsource: AsyncStreamReader,
   ## ``flags`` - custom TLS connection flags.
   ## 
   ## ``trustAnchors`` - use this if you want to use certificate trust
-  ## anchors other than the default Mozilla trust anchors.
+  ## anchors other than the default Mozilla trust anchors. If you pass
+  ## a ``TrustAnchorStore`` you should reuse the same instance for
+  ## every call to avoid making a copy of the trust anchors per call.
   when trustAnchors is TrustAnchorStore:
     doAssert(len(trustAnchors.anchors) > 0, "Empty trust anchor list is invalid")
   else:

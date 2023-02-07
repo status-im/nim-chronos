@@ -1005,13 +1005,13 @@ suite "TLSStream test suite":
 
       var server = createStreamServer(address, serveClient, {ReuseAddr})
       server.start()
-      var conn = waitFor connect(address)
+      var conn = await connect(address)
       var creader = newAsyncStreamReader(conn)
       var cwriter = newAsyncStreamWriter(conn)
       let flags = {NoVerifyServerName}
       var cstream = newTLSClientAsyncStream(creader, cwriter, "", flags = flags,
         trustAnchors = trustAnchors)
-      let res = waitFor cstream.reader.read()
+      let res = await cstream.reader.read()
       await cstream.reader.closeWait()
       await cstream.writer.closeWait()
       await creader.closeWait()
