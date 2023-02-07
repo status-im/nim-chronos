@@ -544,14 +544,8 @@ when defined(windows):
     proc continuation(udata: pointer) {.gcsafe.} =
       doAssert(not(isNil(udata)))
       doAssert(not(isNil(wh)))
-
-      let
-        ovl = cast[PtrCustomOverlapped](udata)
-        udata = ovl.data.udata
-      # We ignore result here because its not possible to indicate an error.
-      discard closeWaitable(wh)
       discard closeFd(hProcess)
-      cb(udata)
+      cb(wh[].udata)
 
     wh =
       block:

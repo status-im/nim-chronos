@@ -5,6 +5,7 @@
 #              Licensed under either of
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
+import std/os
 import unittest2, stew/[base10, byteutils]
 import ".."/chronos/unittest2/asynctests
 
@@ -73,6 +74,46 @@ suite "Asynchronous process management test suite":
           process.running().tryGet() == false
       finally:
         await process.closeWait()
+
+  asyncTest "addProcess() test":
+    var
+      handlerFut = newFuture[void]("process.handler.future")
+      pidFd = -1
+      processCounter = 0
+      processExitCode = 0
+      process: AsyncProcessRef
+
+    proc processHandler(udata: pointer) {.gcsafe.} =
+      processCounter = cast[int](udata)
+      processExitCode = process.peekExitCode().valueOr:
+        handlerFut.fail(newException(ValueError, osErrorMsg(error)))
+        return
+      let res = removeProcess2(pidFd)
+      if res.isErr():
+        handlerFut.fail(newException(ValueError, osErrorMsg(res.error())))
+      else:
+        handlerFut.complete()
+
+    let
+      options = {AsyncProcessOption.EvalCommand}
+      command = "exit 1"
+
+    process = await startProcess(command, options = options)
+
+    try:
+      pidFd =
+        block:
+          let res = addProcess2(process.pid(), processHandler,
+                                cast[pointer](31337))
+          if res.isErr():
+            raiseAssert osErrorMsg(res.error())
+          res.get()
+      await handlerFut.wait(5.seconds)
+      check:
+        processExitCode == 1
+        processCounter == 31337
+    finally:
+      await process.closeWait()
 
   asyncTest "STDIN stream test":
     let

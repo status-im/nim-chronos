@@ -1318,3 +1318,10 @@ proc execCommandEx*(command: string,
         await process.closeWait()
 
   return res
+
+proc pid*(p: AsyncProcessRef): int =
+  ## Returns process ``p`` identifier.
+  when defined(windows):
+    cast[int](p.processId)
+  else:
+    int(p.processId)
