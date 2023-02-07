@@ -299,7 +299,10 @@ when defined(windows):
 
     POVERLAPPED_COMPLETION_ROUTINE* = proc (para1: DWORD, para2: DWORD,
                                             para3: POVERLAPPED) {.
-                                      stdcall, gcsafe, raises: [].}
+      stdcall, gcsafe, raises: [].}
+
+    PHANDLER_ROUTINE* = proc (dwCtrlType: DWORD): WINBOOL {.
+      stdcall, gcsafe, raises: [].}
 
     OSVERSIONINFO* {.final, pure.} = object
       dwOSVersionInfoSize*: DWORD
@@ -494,6 +497,8 @@ when defined(windows):
       dwMilliseconds: DWORD, fAlertable: WINBOOL): WINBOOL {.
       stdcall, gcsafe, raises: [].}
 
+    WindowsSigHandler = proc (a: cint) {.noconv, raises: [], gcsafe.}
+
   proc getVersionEx*(lpVersionInfo: ptr OSVERSIONINFO): WINBOOL {.
        stdcall, dynlib: "kernel32", importc: "GetVersionExW", sideEffect.}
 
@@ -592,6 +597,9 @@ when defined(windows):
 
   proc getCurrentProcess*(): HANDLE {.
        stdcall, dynlib: "kernel32", importc: "GetCurrentProcess", sideEffect.}
+
+  # proc getCurrentProcessId*(): DWORD {.
+  #      stdcall, dynlib: "kernel32", importc: "GetCurrentProcessId", sideEffect.}
 
   proc getSystemTimeAsFileTime*(lpSystemTimeAsFileTime: var FILETIME) {.
        stdcall, dynlib: "kernel32", importc: "GetSystemTimeAsFileTime",
@@ -710,7 +718,7 @@ when defined(windows):
 
   proc createEvent*(lpEventAttributes: ptr SECURITY_ATTRIBUTES,
                     bManualReset: DWORD, bInitialState: DWORD,
-                    lpName: LPWSTR): HANDLE {.
+                    lpName: ptr WCHAR): HANDLE {.
        stdcall, dynlib: "kernel32", importc: "CreateEventW", sideEffect.}
 
   proc setEvent*(hEvent: HANDLE): WINBOOL {.
@@ -813,6 +821,9 @@ when defined(windows):
 
   proc `==`*(x, y: SocketHandle): bool {.borrow.}
   proc `==`*(x, y: HANDLE): bool {.borrow.}
+
+  proc c_signal*(sign: cint, handler: WindowsSigHandler): WindowsSigHandler {.
+    importc: "signal", header: "<signal.h>", raises: [], sideEffect.}
 
   proc getSecurityAttributes*(inheritHandle = false): SECURITY_ATTRIBUTES =
     SECURITY_ATTRIBUTES(

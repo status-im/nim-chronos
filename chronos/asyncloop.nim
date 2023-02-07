@@ -289,6 +289,7 @@ func toException*(v: OSErrorCode): ref OSError = newOSError(v)
   # Result[T, OSErrorCode] values.
 
 when defined(windows):
+  export SIGINT, SIGQUIT, SIGTERM
   type
     CompletionKey = ULONG_PTR
 
@@ -301,6 +302,9 @@ when defined(windows):
     CustomOverlapped* = object of OVERLAPPED
       data*: CompletionData
 
+    DispatcherFlag* = enum
+      SignalHandlerInstalled
+
     PDispatcher* = ref object of PDispatcherBase
       ioPort: HANDLE
       handles: HashSet[AsyncFD]
@@ -309,6 +313,7 @@ when defined(windows):
       getAcceptExSockAddrs*: WSAPROC_GETACCEPTEXSOCKADDRS
       transmitFile*: WSAPROC_TRANSMITFILE
       getQueuedCompletionStatusEx*: LPFN_GETQUEUEDCOMPLETIONSTATUSEX
+      flags: set[DispatcherFlag]
 
     PtrCustomOverlapped* = ptr CustomOverlapped
 
@@ -438,7 +443,7 @@ when defined(windows):
 
   {.push stackTrace: off.}
   proc waitableCallback(param: pointer, timerOrWaitFired: WINBOOL) {.
-       stdcall, gcsafe.} =
+       stdcall, gcsafe, raises: [].} =
     # This procedure will be executed in `wait thread`, so it must not use
     # GC related objects.
     # We going to ignore callbacks which was spawned when `isNil(param) == true`
@@ -1207,8 +1212,37 @@ when not(defined(windows)):
             retFuture.fail(getSignalException(res.error()))
           Opt.some(res.get())
 
-      retFuture.cancelCallback = cancellation
-      retFuture
+  proc waitSignal*(signal: int): Future[void] {.
+       raises: [Defect].} =
+    var retFuture = newFuture[void]("chronos.waitSignal()")
+    var sigfd: int = -1
+
+    template getSignalException(e: OSErrorCode): untyped =
+      newException(AsyncError, "Could not manipulate signal handler, " &
+                   "reason [" & $int(e) & "]: " & osErrorMsg(e))
+
+    proc continuation(udata: pointer) {.gcsafe.} =
+      if not(retFuture.finished()):
+        if sigfd != -1:
+          let res = removeSignal2(sigfd)
+          if res.isOk():
+            retFuture.complete()
+          else:
+            retFuture.fail(getSignalException(res.error()))
+
+    proc cancellation(udata: pointer) {.gcsafe.} =
+      if not(retFuture.finished()):
+        if sigfd != -1:
+          let res = removeSignal2(sigfd)
+          if res.isErr():
+            retFuture.fail(getSignalException(res.error()))
+
+    sigfd = addSignal2(signal, continuation).valueOr:
+      retFuture.fail(getSignalException(error))
+      return retFuture
+
+    retFuture.cancelCallback = cancellation
+    retFuture
 
 proc sleepAsync*(duration: Duration): Future[void] =
   ## Suspends the execution of the current async procedure for the next
