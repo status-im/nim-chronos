@@ -35,7 +35,7 @@ type
     RSA, EC
 
   TLSResult {.pure.} = enum
-    Success, Error, WriteEOF, ReadEOF
+    Success, Error, WriteEof, ReadEof
 
   TLSPrivateKey* = ref object
     case kind: TLSKeyType
@@ -159,7 +159,7 @@ proc tlsWriteApp(engine: ptr SslEngineContext,
       var buf = sslEngineSendappBuf(engine[], length)
       if length == 0:
         writer.state = AsyncStreamState.Finished
-        return TLSResult.WriteEOF
+        return TLSResult.WriteEof
       let toWrite = min(int(length), item.size)
       copyOut(buf, item, toWrite)
       if int(length) >= item.size:
@@ -194,7 +194,7 @@ proc tlsReadRec(engine: ptr SslEngineContext,
     sslEngineRecvrecAck(engine[], uint(res))
     if res == 0:
       sslEngineClose(engine[])
-      return TLSResult.ReadEOF
+      return TLSResult.ReadEof
     else:
       return TLSResult.Success
   except CancelledError:
@@ -231,10 +231,10 @@ template readAndReset(fut: untyped) =
       if loopState == AsyncStreamState.Running:
         loopState = AsyncStreamState.Error
       break
-    of TLSResult.WriteEOF:
+    of TLSResult.WriteEof:
       fut = nil
       continue
-    of TLSResult.ReadEOF:
+    of TLSResult.ReadEof:
       fut = nil
       if loopState == AsyncStreamState.Running:
         loopState = AsyncStreamState.Finished
