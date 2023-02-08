@@ -163,6 +163,9 @@ proc tlsWriteApp(engine: ptr SslEngineContext,
       var length = 0'u
       var buf = sslEngineSendappBuf(engine[], length)
       if isNil(buf) or (length == 0):
+        # This situation could happen when connection is closing, no
+        # application data can be sent, but some can still be received
+        # (and discarded).
         writer.state = AsyncStreamState.Finished
         return TLSResult.WriteEof
 
