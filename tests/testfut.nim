@@ -1218,8 +1218,8 @@ suite "Future[T] behavior test suite":
   test "location test":
     # WARNING: This test is very sensitive to line numbers and module name.
 
-    proc macroFuture() {.async.} =
-      let someVar {.used.} = 5
+    proc macroFuture() {.async.} =       # LINE POSITION 1
+      let someVar {.used.} = 5           # LINE POSITION 2
       let someOtherVar {.used.} = 4
       if true:
         let otherVar {.used.} = 3
@@ -1228,14 +1228,14 @@ suite "Future[T] behavior test suite":
       newFuture[void]("template")
 
     proc procFuture(): Future[void] =
-      newFuture[void]("procedure")
+      newFuture[void]("procedure")       # LINE POSITION 5
 
     var fut1 = macroFuture()
-    var fut2 = templateFuture()
+    var fut2 = templateFuture()          # LINE POSITION 3
     var fut3 = procFuture()
 
-    fut2.complete()
-    fut3.complete()
+    fut2.complete()                      # LINE POSITION 4
+    fut3.complete()                      # LINE POSITION 6
 
     let loc10 = fut1.location[0]
     let loc11 = fut1.location[1]
@@ -1253,12 +1253,12 @@ suite "Future[T] behavior test suite":
         (loc.procedure == procedure)
 
     check:
-      chk(loc10, "testfut.nim", 1269, "macroFuture")
-      chk(loc11, "testfut.nim", 1270, "")
-      chk(loc20, "testfut.nim", 1282, "template")
-      chk(loc21, "testfut.nim", 1285, "")
-      chk(loc30, "testfut.nim", 1279, "procedure")
-      chk(loc31, "testfut.nim", 1286, "")
+      chk(loc10, "testfut.nim", 1221, "macroFuture")
+      chk(loc11, "testfut.nim", 1222, "")
+      chk(loc20, "testfut.nim", 1234, "template")
+      chk(loc21, "testfut.nim", 1237, "")
+      chk(loc30, "testfut.nim", 1231, "procedure")
+      chk(loc31, "testfut.nim", 1238, "")
 
   asyncTest "withTimeout(fut) should wait cancellation test":
     proc futureNeverEnds(): Future[void] =
