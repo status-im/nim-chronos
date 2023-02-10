@@ -306,8 +306,7 @@ when chronosStackTrace:
     future.error.msg = newMsg
 
 # Internal utilities - these are not part of the stable API
-proc internalCheckComplete*(fut: FutureBase) {.
-     raises: [Defect, CatchableError].} =
+template internalCheckComplete*(fut: FutureBase) =
   # For internal use only. Used in asyncmacro
   if not(isNil(fut.error)):
     when chronosStackTrace:
