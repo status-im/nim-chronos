@@ -75,8 +75,8 @@ proc finish(fut: FutureBase, state: FutureState) =
   for item in internalCallbacks(fut).mitems():
     if not(isNil(item.function)):
       callSoon(item)
-    item = default(AsyncCallback) # release memory as early as possible
-  internalCallbacks(fut) = default(seq[AsyncCallback]) # release seq as well
+    item = default(InternalAsyncCallback) # release memory as early as possible
+  internalCallbacks(fut) = default(seq[InternalAsyncCallback]) # release seq as well
 
   when chronosFutureTracking:
     scheduleDestructor(fut)
@@ -196,7 +196,7 @@ template cancel*[T](future: Future[T]) =
   discard cancel(FutureBase(future), getSrcLocation())
 
 proc clearCallbacks(future: FutureBase) =
-  internalCallbacks(future) = default(seq[AsyncCallback])
+  internalCallbacks(future) = default(seq[InternalAsyncCallback])
 
 proc addCallback*(future: FutureBase, cb: CallbackFunc, udata: pointer = nil) =
   ## Adds the callbacks proc to be called when the future completes.
@@ -206,7 +206,7 @@ proc addCallback*(future: FutureBase, cb: CallbackFunc, udata: pointer = nil) =
   if future.finished():
     callSoon(cb, udata)
   else:
-    let acb = AsyncCallback(function: cb, udata: udata)
+    let acb = InternalAsyncCallback(function: cb, udata: udata)
     internalCallbacks(future).add acb
 
 proc addCallback*[T](future: Future[T], cb: CallbackFunc) =

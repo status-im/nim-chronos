@@ -30,8 +30,8 @@ type
 
   CallbackFunc* = proc (arg: pointer) {.gcsafe, raises: [Defect].}
 
-  # TODO v4: consider removing this type and just use plain `CallbackFunc`
-  AsyncCallback* = object
+  # Internal type, not part of API
+  InternalAsyncCallback* = object
     function*: CallbackFunc
     udata*: pointer
 
@@ -41,7 +41,7 @@ type
   FutureBase* = ref object of RootObj ## Untyped future.
     when defined(chronosPreviewV4):
       location: array[LocationKind, ptr SrcLoc]
-      callbacks: seq[AsyncCallback]
+      callbacks: seq[InternalAsyncCallback]
       cancelcb: CallbackFunc
       child: FutureBase
       state: FutureState
@@ -49,7 +49,7 @@ type
       mustCancel: bool
     else:
       location*: array[LocationKind, ptr SrcLoc]
-      callbacks*: seq[AsyncCallback]
+      callbacks*: seq[InternalAsyncCallback]
       cancelcb*: CallbackFunc
       child*: FutureBase
       state*: FutureState
@@ -315,7 +315,7 @@ proc internalCheckComplete*(fut: FutureBase) {.
     raise fut.error
 
 template internalLocation*(fut: FutureBase): array[LocationKind, ptr SrcLoc] = fut.location
-template internalCallbacks*(fut: FutureBase): seq[AsyncCallback] = fut.callbacks
+template internalCallbacks*(fut: FutureBase): seq[InternalAsyncCallback] = fut.callbacks
 template internalState*(fut: FutureBase): FutureState = fut.state
 template internalChild*(fut: FutureBase): FutureBase = fut.child
 template internalCancelcb*(fut: FutureBase): CallbackFunc = fut.cancelcb

@@ -195,7 +195,7 @@ type
 
   TimerCallback* = ref object
     finishAt*: Moment
-    function*: AsyncCallback
+    function*: InternalAsyncCallback
 
   TrackerBase* = ref object of RootRef
     id*: string
@@ -204,18 +204,18 @@ type
 
   PDispatcherBase = ref object of RootRef
     timers*: HeapQueue[TimerCallback]
-    callbacks*: Deque[AsyncCallback]
-    idlers*: Deque[AsyncCallback]
+    callbacks*: Deque[InternalAsyncCallback]
+    idlers*: Deque[InternalAsyncCallback]
     trackers*: Table[string, TrackerBase]
 
 proc sentinelCallbackImpl(arg: pointer) {.gcsafe, raises: [Defect].} =
   raiseAssert "Sentinel callback MUST not be scheduled"
 
 const
-  SentinelCallback = AsyncCallback(function: sentinelCallbackImpl,
+  SentinelCallback = InternalAsyncCallback(function: sentinelCallbackImpl,
                                    udata: nil)
 
-proc isSentinel(acb: AsyncCallback): bool =
+proc isSentinel(acb: InternalAsyncCallback): bool =
   acb == SentinelCallback
 
 proc `<`(a, b: TimerCallback): bool =
@@ -422,9 +422,9 @@ when defined(windows):
     else:
       # Pre 0.20.0 Nim's stdlib version
       res.timers = newHeapQueue[TimerCallback]()
-    res.callbacks = initDeque[AsyncCallback](64)
+    res.callbacks = initDeque[InternalAsyncCallback](64)
     res.callbacks.addLast(SentinelCallback)
-    res.idlers = initDeque[AsyncCallback]()
+    res.idlers = initDeque[InternalAsyncCallback]()
     res.trackers = initTable[string, TrackerBase]()
     initAPI(res)
     res
@@ -519,7 +519,7 @@ when defined(windows):
           else:
             OSErrorCode(rtlNtStatusToDosError(res))
       customOverlapped.data.bytesCount = events[i].dwNumberOfBytesTransferred
-      let acb = AsyncCallback(function: customOverlapped.data.cb,
+      let acb = InternalAsyncCallback(function: customOverlapped.data.cb,
                               udata: cast[pointer](customOverlapped))
       loop.callbacks.addLast(acb)
 
@@ -545,7 +545,7 @@ when defined(windows):
     loop.handles.excl(fd)
     close(SocketHandle(fd))
     if not isNil(aftercb):
-      var acb = AsyncCallback(function: aftercb)
+      var acb = InternalAsyncCallback(function: aftercb)
       loop.callbacks.addLast(acb)
 
   proc closeHandle*(fd: AsyncFD, aftercb: CallbackFunc = nil) =
@@ -554,7 +554,7 @@ when defined(windows):
     loop.handles.excl(fd)
     discard closeHandle(Handle(fd))
     if not isNil(aftercb):
-      var acb = AsyncCallback(function: aftercb)
+      var acb = InternalAsyncCallback(function: aftercb)
       loop.callbacks.addLast(acb)
 
   proc contains*(disp: PDispatcher, fd: AsyncFD): bool =
@@ -569,8 +569,8 @@ elif unixPlatform:
     AsyncFD* = distinct cint
 
     SelectorData* = object
-      reader*: AsyncCallback
-      writer*: AsyncCallback
+      reader*: InternalAsyncCallback
+      writer*: InternalAsyncCallback
 
     PDispatcher* = ref object of PDispatcherBase
       selector: Selector[SelectorData]
@@ -595,9 +595,9 @@ elif unixPlatform:
     else:
       # Before 0.20.0 Nim's stdlib version
       res.timers.newHeapQueue()
-    res.callbacks = initDeque[AsyncCallback](64)
+    res.callbacks = initDeque[InternalAsyncCallback](64)
     res.callbacks.addLast(SentinelCallback)
-    res.idlers = initDeque[AsyncCallback]()
+    res.idlers = initDeque[InternalAsyncCallback]()
     res.keys = newSeq[ReadyKey](64)
     res.trackers = initTable[string, TrackerBase]()
     initAPI(res)
@@ -633,7 +633,7 @@ elif unixPlatform:
     let loop = getThreadDispatcher()
     var newEvents = {Event.Read}
     withData(loop.selector, int(fd), adata) do:
-      let acb = AsyncCallback(function: cb, udata: udata)
+      let acb = InternalAsyncCallback(function: cb, udata: udata)
       adata.reader = acb
       newEvents.incl(Event.Read)
       if not(isNil(adata.writer.function)):
@@ -649,7 +649,7 @@ elif unixPlatform:
     var newEvents: set[Event]
     withData(loop.selector, int(fd), adata) do:
       # We need to clear `reader` data, because `selectors` don't do it
-      adata.reader = default(AsyncCallback)
+      adata.reader = default(InternalAsyncCallback)
       if not(isNil(adata.writer.function)):
         newEvents.incl(Event.Write)
     do:
@@ -663,7 +663,7 @@ elif unixPlatform:
     let loop = getThreadDispatcher()
     var newEvents = {Event.Write}
     withData(loop.selector, int(fd), adata) do:
-      let acb = AsyncCallback(function: cb, udata: udata)
+      let acb = InternalAsyncCallback(function: cb, udata: udata)
       adata.writer = acb
       newEvents.incl(Event.Write)
       if not(isNil(adata.reader.function)):
@@ -679,7 +679,7 @@ elif unixPlatform:
     var newEvents: set[Event]
     withData(loop.selector, int(fd), adata) do:
       # We need to clear `writer` data, because `selectors` don't do it
-      adata.writer = default(AsyncCallback)
+      adata.writer = default(InternalAsyncCallback)
       if not(isNil(adata.reader.function)):
         newEvents.incl(Event.Read)
     do:
@@ -714,16 +714,16 @@ elif unixPlatform:
 
       if not(isNil(adata.reader.function)):
         loop.callbacks.addLast(adata.reader)
-        adata.reader = default(AsyncCallback)
+        adata.reader = default(InternalAsyncCallback)
 
       if not(isNil(adata.writer.function)):
         loop.callbacks.addLast(adata.writer)
-        adata.writer = default(AsyncCallback)
+        adata.writer = default(InternalAsyncCallback)
 
     # We can't unregister file descriptor from system queue here, because
     # in such case processing queue will stuck on poll() call, because there
     # can be no file descriptors registered in system queue.
-    var acb = AsyncCallback(function: continuation)
+    var acb = InternalAsyncCallback(function: continuation)
     loop.callbacks.addLast(acb)
 
   proc closeHandle*(fd: AsyncFD, aftercb: CallbackFunc = nil) =
@@ -747,7 +747,7 @@ elif unixPlatform:
       var data: SelectorData
       result = loop.selector.registerSignal(signal, data)
       withData(loop.selector, result, adata) do:
-        adata.reader = AsyncCallback(function: cb, udata: udata)
+        adata.reader = InternalAsyncCallback(function: cb, udata: udata)
       do:
         raise newException(ValueError, "File descriptor not registered.")
 
@@ -848,11 +848,11 @@ proc setTimer*(at: Moment, cb: CallbackFunc,
   ## timestamp ``at``. You can also pass ``udata`` to callback.
   let loop = getThreadDispatcher()
   result = TimerCallback(finishAt: at,
-                         function: AsyncCallback(function: cb, udata: udata))
+                         function: InternalAsyncCallback(function: cb, udata: udata))
   loop.timers.push(result)
 
 proc clearTimer*(timer: TimerCallback) {.inline.} =
-  timer.function = default(AsyncCallback)
+  timer.function = default(InternalAsyncCallback)
 
 proc addTimer*(at: Moment, cb: CallbackFunc, udata: pointer = nil) {.
      inline, deprecated: "Use setTimer/clearTimer instead".} =
@@ -890,7 +890,7 @@ proc removeTimer*(at: uint64, cb: CallbackFunc, udata: pointer = nil) {.
      inline, deprecated: "Use removeTimer(Duration, cb, udata)".} =
   removeTimer(Moment.init(int64(at), Millisecond), cb, udata)
 
-proc callSoon*(acb: AsyncCallback) =
+proc callSoon*(acb: InternalAsyncCallback) =
   ## Schedule `cbproc` to be called as soon as possible.
   ## The callback is called when control returns to the event loop.
   getThreadDispatcher().callbacks.addLast(acb)
@@ -900,12 +900,12 @@ proc callSoon*(cbproc: CallbackFunc, data: pointer) {.
   ## Schedule `cbproc` to be called as soon as possible.
   ## The callback is called when control returns to the event loop.
   doAssert(not isNil(cbproc))
-  callSoon(AsyncCallback(function: cbproc, udata: data))
+  callSoon(InternalAsyncCallback(function: cbproc, udata: data))
 
 proc callSoon*(cbproc: CallbackFunc) =
   callSoon(cbproc, nil)
 
-proc callIdle*(acb: AsyncCallback) =
+proc callIdle*(acb: InternalAsyncCallback) =
   ## Schedule ``cbproc`` to be called when there no pending network events
   ## available.
   ##
@@ -922,7 +922,7 @@ proc callIdle*(cbproc: CallbackFunc, data: pointer) =
   ## iteration if there no network events available, not when the loop is
   ## actually "idle".
   doAssert(not isNil(cbproc))
-  callIdle(AsyncCallback(function: cbproc, udata: data))
+  callIdle(InternalAsyncCallback(function: cbproc, udata: data))
 
 proc callIdle*(cbproc: CallbackFunc) =
   callIdle(cbproc, nil)
