@@ -24,12 +24,12 @@ type
 
 proc newFutureSeqImpl[A, B](loc: ptr SrcLoc): FutureSeq[A, B] =
   let res = FutureSeq[A, B]()
-  setupFutureBase(res, loc)
+  internalInitFutureBase(res, loc)
   res
 
 proc newFutureStrImpl[T](loc: ptr SrcLoc): FutureStr[T] =
   let res = FutureStr[T]()
-  setupFutureBase(res, loc)
+  internalInitFutureBase(res, loc)
   res
 
 template newFutureSeq*[A, B](fromProc: static[string] = ""): FutureSeq[A, B] =
@@ -111,7 +111,7 @@ proc complete[T](future: Future[T], val: T, loc: ptr SrcLoc) =
   if not(future.cancelled()):
     checkFinished(FutureBase(future), loc)
     doAssert(isNil(internalError(future)))
-    future.value = val
+    internalValue(future) = val
     future.finish(FutureState.Completed)
 
 template complete*[T](future: Future[T], val: T) =

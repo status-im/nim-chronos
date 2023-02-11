@@ -81,7 +81,10 @@ type
       closure*: iterator(f: Future[T]): FutureBase {.raises: [Exception], gcsafe.}
 
     when T isnot void:
-      value*: T ## Stored value
+      when defined(chronosPreviewV4):
+        value: T ## Stored value
+      else:
+        value*: T ## Stored value
 
   FutureDefect* = object of Defect
     cause*: FutureBase
@@ -129,9 +132,9 @@ when chronosFutureTracking:
       count*: uint
 
   var futureList* {.threadvar.}: FutureList
-  futureList = FutureList()
 
-proc setupFutureBase*(
+# Internal utilities - these are not part of the stable API
+proc internalInitFutureBase*(
     fut: FutureBase,
     loc: ptr SrcLoc,
     state = FutureState.Pending
@@ -158,73 +161,6 @@ proc setupFutureBase*(
       if isNil(futureList.head):
         futureList.head = fut
       futureList.count.inc()
-
-template newCancelledError(): ref CancelledError =
-  (ref CancelledError)(msg: "Future operation cancelled!")
-
-template newFuture*[T](fromProc: static[string] = ""): Future[T] =
-  ## Creates a new future.
-  ##
-  ## Specifying ``fromProc``, which is a string specifying the name of the proc
-  ## that this future belongs to, is a good habit as it helps with debugging.
-  let res = Future[T]()
-  setupFutureBase(res, getSrcLocation(fromProc))
-  res
-
-template completed*(
-    F: type Future, fromProc: static[string] = ""): Future[void] =
-  ## Create a new completed future
-  let res = Future[T]()
-  setupFutureBase(res, getSrcLocation(fromProc), FutureState.Completed)
-  res
-
-template completed*[T: not void](
-    F: type Future, valueParam: T, fromProc: static[string] = ""): Future[T] =
-  ## Create a new completed future
-  let res = Future[T](value: valueParam)
-  setupFutureBase(res, getSrcLocation(fromProc), FutureState.Completed)
-  res
-
-template failed*[T](
-    F: type Future[T], errorParam: ref CatchableError,
-    fromProc: static[string] = ""): Future[T] =
-  ## Create a new failed future
-  let res = Future[T](error: errorParam)
-  setupFutureBase(res, getSrcLocation(fromProc), FutureState.Failed)
-  when chronosStackTrace:
-    res.errorStackTrace = if getStackTrace(res.error) == "":
-                            getStackTrace()
-                          else:
-                            getStackTrace(res.error)
-
-  res
-
-template cancelled*[T](
-    F: type Future[T], fromProc: static[string] = ""): Future[T] =
-  ## Create a new cancelled future
-  let res = Future[T](error: newCancelledError())
-  setupFutureBase(res, getSrcLocation(fromProc), FutureState.Cancelled)
-  when chronosStackTrace:
-    res.errorStackTrace = res.stackTrace
-  res
-
-func finished*(future: FutureBase): bool {.inline.} =
-  ## Determines whether ``future`` has completed, i.e. ``future`` state changed
-  ## from state ``Pending`` to one of the states (``Finished``, ``Cancelled``,
-  ## ``Failed``).
-  future.state != FutureState.Pending
-
-func cancelled*(future: FutureBase): bool {.inline.} =
-  ## Determines whether ``future`` has cancelled.
-  future.state == FutureState.Cancelled
-
-func failed*(future: FutureBase): bool {.inline.} =
-  ## Determines whether ``future`` completed with an error.
-  future.state == FutureState.Failed
-
-func completed*(future: FutureBase): bool {.inline.} =
-  ## Determines whether ``future`` completed without an error.
-  future.state == FutureState.Completed
 
 when chronosStackTrace:
   import std/strutils
@@ -305,7 +241,6 @@ when chronosStackTrace:
     #   newMsg.add "\n" & $entry
     future.error.msg = newMsg
 
-# Internal utilities - these are not part of the stable API
 template internalCheckComplete*(fut: FutureBase) =
   # For internal use only. Used in asyncmacro
   if not(isNil(fut.error)):
@@ -322,22 +257,110 @@ template internalMustCancel*(fut: FutureBase): bool = fut.mustCancel
 template internalError*(fut: FutureBase): ref CatchableError = fut.error
 template internalValue*[T](fut: Future[T]): T = fut.value
 
-func location*(fut: FutureBase): array[LocationKind, ptr SrcLoc] = fut.location
-func state*(fut: FutureBase): FutureState = fut.state
+template newCancelledError(): ref CancelledError =
+  (ref CancelledError)(msg: "Future operation cancelled!")
+
+# Public API
+
+template newFuture*[T](fromProc: static[string] = ""): Future[T] =
+  ## Creates a new future.
+  ##
+  ## Specifying ``fromProc``, which is a string specifying the name of the proc
+  ## that this future belongs to, is a good habit as it helps with debugging.
+  let res = Future[T]()
+  internalInitFutureBase(res, getSrcLocation(fromProc))
+  res
+
+template completed*(
+    F: type Future, fromProc: static[string] = ""): Future[void] =
+  ## Create a new completed future
+  let res = Future[T]()
+  internalInitFutureBase(res, getSrcLocation(fromProc), FutureState.Completed)
+  res
+
+template completed*[T: not void](
+    F: type Future, valueParam: T, fromProc: static[string] = ""): Future[T] =
+  ## Create a new completed future
+  let res = Future[T](value: valueParam)
+  internalInitFutureBase(res, getSrcLocation(fromProc), FutureState.Completed)
+  res
+
+template failed*[T](
+    F: type Future[T], errorParam: ref CatchableError,
+    fromProc: static[string] = ""): Future[T] =
+  ## Create a new failed future
+  let res = Future[T](error: errorParam)
+  internalInitFutureBase(res, getSrcLocation(fromProc), FutureState.Failed)
+  when chronosStackTrace:
+    res.errorStackTrace = if getStackTrace(res.error) == "":
+                            getStackTrace()
+                          else:
+                            getStackTrace(res.error)
+
+  res
+
+template cancelled*[T](
+    F: type Future[T], fromProc: static[string] = ""): Future[T] =
+  ## Create a new cancelled future
+  let res = Future[T](error: newCancelledError())
+  internalInitFutureBase(res, getSrcLocation(fromProc), FutureState.Cancelled)
+  when chronosStackTrace:
+    res.errorStackTrace = res.stackTrace
+  res
+
+func finished*(future: FutureBase): bool {.inline.} =
+  ## Determines whether ``future`` has completed, i.e. ``future`` state changed
+  ## from state ``Pending`` to one of the states (``Finished``, ``Cancelled``,
+  ## ``Failed``).
+  future.state != FutureState.Pending
+
+func cancelled*(future: FutureBase): bool {.inline.} =
+  ## Determines whether ``future`` has cancelled.
+  future.state == FutureState.Cancelled
+
+func failed*(future: FutureBase): bool {.inline.} =
+  ## Determines whether ``future`` completed with an error.
+  future.state == FutureState.Failed
+
+func completed*(future: FutureBase): bool {.inline.} =
+  ## Determines whether ``future`` completed without an error.
+  future.state == FutureState.Completed
+
+func location*(future: FutureBase): array[LocationKind, ptr SrcLoc] =
+  future.location
+func state*(future: FutureBase): FutureState =
+  future.state
 
 when defined(chronosPreviewV4):
-  # `error` will change definition when we move to V4
-  func error*(fut: FutureBase): ref CatchableError {.
-      deprecated: "Use `readError` to access error of future".} = fut.error
+  func get*[T](future: Future[T]): T =
+    ## Return the value in a completed future - raises Defect when
+    ## `fut.completed()` is `false`.
+    ##
+    ## See `read` for a version that raises an catchable error when future
+    ## has not completed.
+    assert future.completed()
 
-  func `[]`*(loc: array[LocationKind, ptr SrcLoc], v: int): ptr SrcLoc =
+    when T isnot void:
+      future.value
+
+  template value*[T](future: Future[T]): T =
+    ## Alias for `fut.get()`
+    future.get()
+
+  func error*(future: FutureBase): ref CatchableError =
+    ## Return the error of `future`, or `nil` if future did not fail.
+    ##
+    ## See `readError` for a version that raises a catchable error when the
+    ## future has not failed.
+    future.error
+
+  func `[]`*(loc: array[LocationKind, ptr SrcLoc], v: int): ptr SrcLoc {.deprecated: "use LocationKind".} =
     case v
     of 0: loc[LocationKind.Create]
     of 1: loc[LocationKind.Complete]
     else: raiseAssert("Unknown source location " & $v)
 
-proc read*[T](future: Future[T] ): T {.
-     raises: [Defect, CatchableError].} =
+proc read*[T](future: Future[T] ): T {.raises: [Defect, CatchableError].} =
   ## Retrieves the value of ``future``. Future must be finished otherwise
   ## this function will fail with a ``FuturePendingError`` exception.
   ##
