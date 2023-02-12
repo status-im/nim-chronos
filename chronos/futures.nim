@@ -358,12 +358,10 @@ when defined(chronosPreviewV4):
     else: raiseAssert("Unknown source location " & $v)
 
 proc read*[T](future: Future[T] ): T {.raises: [Defect, CatchableError].} =
-  ## Retrieves the value of ``future``.
+  ## Retrieves the value of ``future``, or raises the `error` the future failed
+  ## with.
   ##
   ## A `FuturePendingError` will be raised if the future is still pending.
-  ##
-  ## If the future was finished as failed or cancelled, the exception it
-  ## failed with will be raised.
   if future.finished():
     internalCheckComplete(future)
     when T isnot void:
@@ -373,10 +371,10 @@ proc read*[T](future: Future[T] ): T {.raises: [Defect, CatchableError].} =
 
 proc readError*[T](future: Future[T]): ref CatchableError {.
      raises: [Defect, FuturePendingError, FutureCompletedError].} =
-  ## Retrieves the exception stored in ``future``.
+  ## Retrieves the error stored in ``future``.
   ##
   ## A `FuturePendingError` will be raised if the future is still pending.
-  ## A `FutureCompletedError` will be raised if the future holds an error.
+  ## A `FutureCompletedError` will be raised if the future holds a value.
   case future.state
   of FutureState.Pending:
     raise newException(FuturePendingError, "Future still pending")
