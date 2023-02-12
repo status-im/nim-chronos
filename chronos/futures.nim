@@ -257,9 +257,6 @@ template internalMustCancel*(fut: FutureBase): bool = fut.mustCancel
 template internalError*(fut: FutureBase): ref CatchableError = fut.error
 template internalValue*[T](fut: Future[T]): T = fut.value
 
-template newCancelledError(): ref CancelledError =
-  (ref CancelledError)(msg: "Future operation cancelled!")
-
 # Public API
 
 template newFuture*[T](fromProc: static[string] = ""): Future[T] =
@@ -361,10 +358,12 @@ when defined(chronosPreviewV4):
     else: raiseAssert("Unknown source location " & $v)
 
 proc read*[T](future: Future[T] ): T {.raises: [Defect, CatchableError].} =
-  ## Retrieves the value of ``future``. Future must be finished otherwise
-  ## this function will fail with a ``FuturePendingError`` exception.
+  ## Retrieves the value of ``future``.
   ##
-  ## If the result of the future is an error then that error will be raised.
+  ## A `FuturePendingError` will be raised if the future is still pending.
+  ##
+  ## If the future was finished as failed or cancelled, the exception it
+  ## failed with will be raised.
   if future.finished():
     internalCheckComplete(future)
     when T isnot void:
@@ -376,8 +375,8 @@ proc readError*[T](future: Future[T]): ref CatchableError {.
      raises: [Defect, FuturePendingError, FutureCompletedError].} =
   ## Retrieves the exception stored in ``future``.
   ##
-  ## An ``FuturePendingError`` exception will be thrown if no exception exists
-  ## in the specified Future.
+  ## A `FuturePendingError` will be raised if the future is still pending.
+  ## A `FutureCompletedError` will be raised if the future holds an error.
   case future.state
   of FutureState.Pending:
     raise newException(FuturePendingError, "Future still pending")

@@ -129,6 +129,8 @@ template complete*(future: Future[void]) =
   complete(future, getSrcLocation())
 
 proc fail[T](future: Future[T], error: ref CatchableError, loc: ptr SrcLoc) =
+  assert not isNil(error)
+
   if not(future.cancelled()):
     checkFinished(FutureBase(future), loc)
     internalError(future) = error
