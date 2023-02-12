@@ -257,6 +257,9 @@ template internalMustCancel*(fut: FutureBase): bool = fut.mustCancel
 template internalError*(fut: FutureBase): ref CatchableError = fut.error
 template internalValue*[T](fut: Future[T]): T = fut.value
 
+template newCancelledError(): ref CancelledError =
+  (ref CancelledError)(msg: "Future operation cancelled!")
+
 # Public API
 
 template newFuture*[T](fromProc: static[string] = ""): Future[T] =
