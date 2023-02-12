@@ -1542,6 +1542,9 @@ suite "Future[T] behavior test suite":
 
     check:
       completed.read() == 42
+      completed.get() == 42
+      completed.value == 42
+      completed.error == nil
     expect(FutureCompletedError):
       discard completed.readError()
 

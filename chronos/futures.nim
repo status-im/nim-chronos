@@ -331,18 +331,18 @@ func location*(future: FutureBase): array[LocationKind, ptr SrcLoc] =
 func state*(future: FutureBase): FutureState =
   future.state
 
+func get*[T](future: Future[T]): T =
+  ## Return the value in a completed future - raises Defect when
+  ## `fut.completed()` is `false`.
+  ##
+  ## See `read` for a version that raises an catchable error when future
+  ## has not completed.
+  assert future.completed()
+
+  when T isnot void:
+    future.value
+
 when defined(chronosPreviewV4):
-  func get*[T](future: Future[T]): T =
-    ## Return the value in a completed future - raises Defect when
-    ## `fut.completed()` is `false`.
-    ##
-    ## See `read` for a version that raises an catchable error when future
-    ## has not completed.
-    assert future.completed()
-
-    when T isnot void:
-      future.value
-
   template value*[T](future: Future[T]): T =
     ## Alias for `fut.get()`
     future.get()
