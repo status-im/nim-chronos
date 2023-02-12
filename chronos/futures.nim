@@ -380,8 +380,8 @@ proc readError*[T](future: Future[T]): ref CatchableError {.
   ## A `FutureCompletedError` will be raised if the future holds a value.
   case future.state
   of FutureState.Pending:
-    raise newException(FuturePendingError, "Future still pending")
+    raise (ref FuturePendingError)(msg: "Future still pending")
   of FutureState.Completed:
-    raise newException(FutureCompletedError, "Future completed with value")
+    raise (ref FutureCompletedError)(msg: "Future completed with value")
   of {FutureState.Failed, FutureState.Cancelled}:
     future.error
