@@ -262,11 +262,13 @@ await future2.cancelAndWait()
 # Race between futures
 proc retrievePage(uri: string): Future[string] {.async.} =
   # requires to import uri, chronos/apps/http/httpclient, stew/byteutils
-  let
-    httpSession = HttpSessionRef.new()
+  let httpSession = HttpSessionRef.new()
+  try:
     resp = await httpSession.fetch(parseUri(uri))
-  result = string.fromBytes(resp.data)
-  await httpSession.closeWait()
+    result = string.fromBytes(resp.data)
+  finally:
+    # be sure to always close the session
+    await httpSession.closeWait()
 
 let
   futs =
@@ -282,50 +284,27 @@ for fut in futs:
 echo "Result: ", await finishedFut
 ```
 
-This works by throwing a `CancelledError` on the last `await` in
-the Futures call stack:
+When an `await` is cancelled, it will raise a `CancelledError`:
 ```nim
 proc c1 {.async.} =
   echo "Before sleep"
   try:
     await sleepAsync(10.minutes)
-    echo "After sleep" # never reached
+    echo "After sleep" # not reach due to cancellation
   except CancelledError as exc:
     echo "We got cancelled!"
     raise exc
 
 proc c2 {.async.} =
   await c1()
-  echo "Never reached, since the CancelledError bubble up"
+  echo "Never reached, since the CancelledError got re-raised"
 
 let work = c2()
 waitFor(work.cancelAndWait())
 ```
 
 The `CancelledError` will now travel up the stack like any other exception.
-It can be caught and handled (for instance, freeing some resources), or it can
-swallowed if a task must not be cancelled.
-
-Since `CancelledError` inherits from `CatchableError`, be careful to handle it
-appropriately:
-
-```nim
-proc c3 {.async.} =
-  try:
-    await somethingThatCanFail()
-  except CatchableError as exc:
-    echo "Something went wrong: ", exc.msg
-
-proc c4 {.async.} =
-  while true:
-    await c3()
-
-waitFor(c4().wait(10.seconds))
-```
-
-In this example, `c3` swallows cancellations, so `c4` cannot be cancelled
-properly, and the `wait` timeout will not work
-
+It can be caught and handled (for instance, freeing some resources)
 
 ### Multiple async backend support
 
