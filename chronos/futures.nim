@@ -12,6 +12,11 @@ import stew/base10
 import "."/[config, srcloc]
 export srcloc
 
+when (NimMajor, NimMinor) < (1, 4):
+  {.push raises: [Defect].}
+else:
+  {.push raises: [].}
+
 when chronosStackTrace:
   when defined(nimHasStacktracesModule):
     import system/stacktraces
@@ -263,6 +268,14 @@ template newCancelledError(): ref CancelledError =
   (ref CancelledError)(msg: "Future operation cancelled!")
 
 # Public API
+template init*[T](F: type Future[T], fromProc: static[string] = ""): Future[T] =
+  ## Creates a new future.
+  ##
+  ## Specifying ``fromProc``, which is a string specifying the name of the proc
+  ## that this future belongs to, is a good habit as it helps with debugging.
+  let res = Future[T]()
+  internalInitFutureBase(res, getSrcLocation(fromProc))
+  res
 
 template newFuture*[T](fromProc: static[string] = ""): Future[T] =
   ## Creates a new future.
@@ -339,14 +352,16 @@ func get*[T](future: Future[T]): T =
   ##
   ## See `read` for a version that raises an catchable error when future
   ## has not completed.
-  assert future.completed()
+  if not future.completed():
+    raise (ref FutureDefect)(msg: "Future not completed while accessing value")
 
   when T isnot void:
     future.value
 
 when defined(chronosPreviewV4):
   template value*[T](future: Future[T]): T =
-    ## Alias for `fut.get()`
+    ## Alias for `fut.get()` - raises `Defect` when `future.completed` is
+    ## `false`
     future.get()
 
   func error*(future: FutureBase): ref CatchableError =
