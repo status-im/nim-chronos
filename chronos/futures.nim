@@ -218,10 +218,10 @@ when chronosStackTrace:
       return exc.msg # Shouldn't actually happen since we set the formatting
                     # string
 
-  proc injectStacktrace(future: FutureBase) =
+  proc injectStacktrace(error: ref Exception) =
     const header = "\nAsync traceback:\n"
 
-    var exceptionMsg = future.error.msg
+    var exceptionMsg = error.msg
     if header in exceptionMsg:
       # This is messy: extract the original exception message from the msg
       # containing the async traceback.
@@ -230,7 +230,7 @@ when chronosStackTrace:
 
     var newMsg = exceptionMsg & header
 
-    let entries = getStackTraceEntries(future.error)
+    let entries = getStackTraceEntries(error)
     newMsg.add($entries)
 
     newMsg.add("Exception message: " & exceptionMsg & "\n")
@@ -239,14 +239,16 @@ when chronosStackTrace:
     # newMsg.add("Exception type:")
     # for entry in getStackTraceEntries(future.error):
     #   newMsg.add "\n" & $entry
-    future.error.msg = newMsg
+    error.msg = newMsg
+
+template internalRaiseError*(fut: FutureBase) =
+  when chronosStackTrace:
+    injectStacktrace(fut.error)
+  raise fut.error
 
 template internalCheckComplete*(fut: FutureBase) =
-  # For internal use only. Used in asyncmacro
-  if not(isNil(fut.error)):
-    when chronosStackTrace:
-      injectStacktrace(fut)
-    raise fut.error
+  if fut.state in {FutureState.Failed, FutureState.Cancelled}:
+    internalRaiseError(fut)
 
 template internalLocation*(fut: FutureBase): array[LocationKind, ptr SrcLoc] = fut.location
 template internalCallbacks*(fut: FutureBase): seq[InternalAsyncCallback] = fut.callbacks
@@ -365,11 +367,13 @@ proc read*[T](future: Future[T] ): T {.raises: [Defect, CatchableError].} =
   ## with.
   ##
   ## A `FuturePendingError` will be raised if the future is still pending.
-  if future.finished():
-    internalCheckComplete(future)
+  case future.state
+  of FutureState.Completed:
     when T isnot void:
       future.value
-  else:
+  of {FutureState.Failed, FutureState.Cancelled}:
+    future.internalRaiseError()
+  of FutureState.Pending:
     raise (ref FuturePendingError)(msg: "Future still pending")
 
 proc readError*[T](future: Future[T]): ref CatchableError {.
@@ -379,9 +383,10 @@ proc readError*[T](future: Future[T]): ref CatchableError {.
   ## A `FuturePendingError` will be raised if the future is still pending.
   ## A `FutureCompletedError` will be raised if the future holds a value.
   case future.state
+  of {FutureState.Failed, FutureState.Cancelled}:
+    assert future.error != nil
+    future.error
   of FutureState.Pending:
     raise (ref FuturePendingError)(msg: "Future still pending")
   of FutureState.Completed:
     raise (ref FutureCompletedError)(msg: "Future completed with value")
-  of {FutureState.Failed, FutureState.Cancelled}:
-    future.error
