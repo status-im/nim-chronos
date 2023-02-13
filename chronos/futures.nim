@@ -8,14 +8,14 @@
 #    Apache License, version 2.0, (LICENSE-APACHEv2)
 #                MIT license (LICENSE-MIT)
 
-import stew/base10
-import "."/[config, srcloc]
-export srcloc
-
 when (NimMajor, NimMinor) < (1, 4):
   {.push raises: [Defect].}
 else:
   {.push raises: [].}
+
+import stew/base10
+import "."/[config, srcloc]
+export srcloc
 
 when chronosStackTrace:
   when defined(nimHasStacktracesModule):
