@@ -353,7 +353,9 @@ func get*[T](future: Future[T]): T =
   ## See `read` for a version that raises an catchable error when future
   ## has not completed.
   if not future.completed():
-    raise (ref FutureDefect)(msg: "Future not completed while accessing value")
+    raise (ref FutureDefect)(
+      msg: "Future not completed while accessing value",
+      cause: future)
 
   when T isnot void:
     future.value
