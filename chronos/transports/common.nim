@@ -13,7 +13,7 @@ else:
   {.push raises: [].}
 
 import std/[os, strutils, nativesockets, net]
-import stew/base10
+import stew/[base10, endians2, byteutils]
 import ../asyncloop
 export net
 
@@ -137,19 +137,16 @@ var
 proc `==`*(lhs, rhs: TransportAddress): bool =
   ## Compare two transport addresses ``lhs`` and ``rhs``. Return ``true`` if
   ## addresses are equal.
-  if lhs.family != rhs.family:
-    return false
+  if (lhs.family != rhs.family): return false
   case lhs.family
   of AddressFamily.None:
     true
   of AddressFamily.IPv4:
-    equalMem(unsafeAddr lhs.address_v4[0],
-             unsafeAddr rhs.address_v4[0], sizeof(lhs.address_v4)) and
-      (lhs.port == rhs.port)
+    if lhs.port != rhs.port: return false
+    lhs.address_v4 == rhs.address_v4
   of AddressFamily.IPv6:
-    equalMem(unsafeAddr lhs.address_v6[0],
-             unsafeAddr rhs.address_v6[0], sizeof(lhs.address_v6)) and
-      (lhs.port == rhs.port)
+    if lhs.port != rhs.port: return false
+    lhs.address_v6 == rhs.address_v6
   of AddressFamily.Unix:
     equalMem(unsafeAddr lhs.address_un[0],
              unsafeAddr rhs.address_un[0], sizeof(lhs.address_un))
@@ -195,8 +192,20 @@ proc `$`*(address: TransportAddress): string =
       $cast[cstring](addr buffer)
     else:
       "/"
-  else:
-    "Unknown address family: " & $address.family
+  of AddressFamily.None:
+    "None"
+
+proc toHex*(address: TransportAddress): string =
+  ## Returns hexadecimal representation of ``address`.
+  case address.family
+  of AddressFamily.IPv4:
+    "0x" & address.address_v4.toHex()
+  of AddressFamily.IPv6:
+    "0x" & address.address_v6.toHex()
+  of AddressFamily.Unix:
+    "0x" & address.address_un.toHex()
+  of AddressFamily.None:
+    "None"
 
 proc initTAddress*(address: string): TransportAddress {.
     raises: [Defect, TransportAddressError].} =
