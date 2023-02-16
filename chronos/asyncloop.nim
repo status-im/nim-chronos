@@ -421,6 +421,10 @@ when defined(windows):
     ## (Unix) for the specified dispatcher.
     return disp.ioPort
 
+  proc closeIoHandler(disp: PDispatcher) {.raises: [Defect, OSError].} =
+    if disp.ioPort.closeHandle() == 0:
+      raiseOSError(osLastError())
+
   proc register*(fd: AsyncFD) {.raises: [Defect, CatchableError].} =
     ## Register file descriptor ``fd`` in thread's dispatcher.
     let loop = getThreadDispatcher()
@@ -593,6 +597,9 @@ elif unixPlatform:
   proc getIoHandler*(disp: PDispatcher): Selector[SelectorData] =
     ## Returns system specific OS queue.
     return disp.selector
+
+  proc closeIoHandler(disp: PDispatcher) {.raises: [Defect, OSError].} =
+    disp.selector.close()
 
   proc register*(fd: AsyncFD) {.raises: [Defect, CatchableError].} =
     ## Register file descriptor ``fd`` in thread's dispatcher.
@@ -804,7 +811,8 @@ else:
 proc setThreadDispatcher*(disp: PDispatcher) =
   ## Set current thread's dispatcher instance to ``disp``.
   if not gDisp.isNil:
-    doAssert gDisp.callbacks.len == 0
+    # Sentinel can be present
+    doAssert gDisp.callbacks.len <= 1
   gDisp = disp
 
 proc getThreadDispatcher*(): PDispatcher =
@@ -816,6 +824,14 @@ proc getThreadDispatcher*(): PDispatcher =
       raiseAsDefect exc, "Cannot create dispatcher"
   gDisp
 
+proc closeThreadDispatcher*() {.raises: [Defect, CatchableError].} =
+  if gDisp.isNil: return
+  let prevDisp = gDisp
+  while gDisp.callbacks.len > 1:
+    poll()
+  setThreadDispatcher(nil)
+  prevDisp.closeIoHandler()
+
 proc setGlobalDispatcher*(disp: PDispatcher) {.
       gcsafe, deprecated: "Use setThreadDispatcher() instead".} =
   setThreadDispatcher(disp)
@@ -823,6 +839,7 @@ proc setGlobalDispatcher*(disp: PDispatcher) {.
 proc getGlobalDispatcher*(): PDispatcher {.
       gcsafe, deprecated: "Use getThreadDispatcher() instead".} =
   getThreadDispatcher()
+
 
 proc setTimer*(at: Moment, cb: CallbackFunc,
                udata: pointer = nil): TimerCallback =

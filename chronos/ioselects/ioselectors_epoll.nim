@@ -98,13 +98,13 @@ proc newSelector*[T](): Selector[T] {.raises: [Defect, OSError].} =
   for i in 0 ..< numFD:
     result.fds[i].ident = InvalidIdent
 
-proc close*[T](s: Selector[T]) =
+proc close*[T](s: Selector[T]) {.raises: [Defect, OSError].} =
   let res = posix.close(s.epollFD)
   when hasThreadSupport:
     deallocSharedArray(s.fds)
     deallocShared(cast[pointer](s))
   if res != 0:
-    raiseIOSelectorsError(osLastError())
+    raiseOSError(osLastError())
 
 proc newSelectEvent*(): SelectEvent {.raises: [Defect, OSError, IOSelectorsException].} =
   let fdci = eventfd(0, 0)

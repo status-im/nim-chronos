@@ -129,7 +129,7 @@ proc close*[T](s: Selector[T]) =
     deallocSharedArray(s.fds)
     deallocShared(cast[pointer](s))
   if res1 != 0 or res2 != 0:
-    raiseIOSelectorsError(osLastError())
+    raiseOSError(osLastError())
 
 proc newSelectEvent*(): SelectEvent =
   var fds: array[2, cint]
