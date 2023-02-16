@@ -143,13 +143,10 @@ proc `==`*(lhs, rhs: TransportAddress): bool =
     true
   of AddressFamily.IPv4:
     if lhs.port != rhs.port: return false
-    uint32.fromBytes(lhs.address_v4) == uint32.fromBytes(rhs.address_v4)
+    lhs.address_v4 == rhs.address_v4
   of AddressFamily.IPv6:
     if lhs.port != rhs.port: return false
-    (uint64.fromBytes(lhs.address_v6.toOpenArray(0, 7)) ==
-      uint64.fromBytes(rhs.address_v6.toOpenArray(0, 7))) and
-    (uint64.fromBytes(lhs.address_v6.toOpenArray(8, 15)) ==
-      uint64.fromBytes(rhs.address_v6.toOpenArray(8, 15)))
+    lhs.address_v6 == rhs.address_v6
   of AddressFamily.Unix:
     equalMem(unsafeAddr lhs.address_un[0],
              unsafeAddr rhs.address_un[0], sizeof(lhs.address_un))

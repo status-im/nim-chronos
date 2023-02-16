@@ -33,30 +33,6 @@ type
     host*: TransportAddress
     mask*: IpMask
 
-proc toNetworkOrder(mask: IpMask): IpMask {.inline.} =
-  ## Converts ``mask`` from host order (which can be big/little-endian) to
-  ## network order (which is big-endian) representation.
-  case mask.family
-  of AddressFamily.IPv4:
-    IpMask(family: AddressFamily.IPv4, mask4: mask.mask4.toBE())
-  of AddressFamily.IPv6:
-    IpMask(family: AddressFamily.IPv6,
-           mask6: [mask.mask6[0].toBE(), mask.mask6[1].toBE()])
-  else:
-    IpMask(family: mask.family)
-
-proc toHostOrder(mask: IpMask): IpMask {.inline.} =
-  ## Converts ``mask`` from network order (which is big-endian) back to
-  ## host representation (which can be big/little-endian).
-  case mask.family
-  of AddressFamily.IPv4:
-    IpMask(family: AddressFamily.IPv4, mask4: mask.mask4.fromBE())
-  of AddressFamily.IPv6:
-    IpMask(family: AddressFamily.IPv6,
-           mask6: [mask.mask6[0].fromBE(), mask.mask6[1].fromBE()])
-  else:
-    IpMask(family: mask.family)
-
 proc `==`*(m1, m2: IpMask): bool {.inline.} =
   ## Returns ``true`` if masks ``m1`` and ``m2`` are equal in IP family and
   ## by value.
@@ -79,7 +55,7 @@ proc init*(t: typedesc[IpMask], family: AddressFamily, prefix: int): IpMask =
       IpMask(family: AddressFamily.IPv4, mask4: 0'u32)
     elif prefix < 32:
       let mask = 0xFFFF_FFFF'u32 shl (32 - prefix)
-      IpMask(family: AddressFamily.IPv4, mask4: mask).toNetworkOrder()
+      IpMask(family: AddressFamily.IPv4, mask4: mask.toBE())
     else:
       IpMask(family: AddressFamily.IPv4, mask4: 0xFFFF_FFFF'u32)
   of AddressFamily.IPv6:
@@ -92,14 +68,13 @@ proc init*(t: typedesc[IpMask], family: AddressFamily, prefix: int): IpMask =
       if prefix > 64:
         let mask = 0xFFFF_FFFF_FFFF_FFFF'u64 shl (128 - prefix)
         IpMask(family: AddressFamily.IPv6,
-               mask6: [0xFFFF_FFFF_FFFF_FFFF'u64, mask]).toNetworkOrder()
+               mask6: [0xFFFF_FFFF_FFFF_FFFF'u64, mask.toBE()])
       elif prefix == 64:
         IpMask(family: AddressFamily.IPv6,
-               mask6: [0xFFFF_FFFF_FFFF_FFFF'u64, 0'u64]).toNetworkOrder()
+               mask6: [0xFFFF_FFFF_FFFF_FFFF'u64, 0'u64])
       else:
         let mask = 0xFFFF_FFFF_FFFF_FFFF'u64 shl (64 - prefix)
-        IpMask(family: AddressFamily.IPv6,
-               mask6: [mask, 0'u64]).toNetworkOrder()
+        IpMask(family: AddressFamily.IPv6, mask6: [mask.toBE(), 0'u64])
   else:
     IpMask(family: family)
 
@@ -296,37 +271,37 @@ proc prefix*(mask: IpMask): int =
   ##
   ## Procedure returns ``-1`` if mask is not canonical, e.g. has holes with
   ## ``0`` bits between ``1`` bits.
-  let hmask = mask.toHostOrder()
-  case hmask.family
+  case mask.family
   of AddressFamily.IPv4:
     var
       res = 0
-      n = hmask.mask4
+      n = mask.mask4.fromBE()
     while n != 0:
       if (n and 0x8000_0000'u32) == 0'u32: return -1
       n = n shl 1
       inc(res)
     res
   of AddressFamily.IPv6:
+    let mask6 = [mask.mask6[0].fromBE(), mask.mask6[1].fromBE()]
     var res = 0
-    if hmask.mask6[0] == 0xFFFF_FFFF_FFFF_FFFF'u64:
+    if mask6[0] == 0xFFFF_FFFF_FFFF_FFFF'u64:
       res += 64
-      if hmask.mask6[1] == 0xFFFF_FFFF_FFFF_FFFF'u64:
+      if mask6[1] == 0xFFFF_FFFF_FFFF_FFFF'u64:
         res + 64
       else:
-        var n = hmask.mask6[1]
+        var n = mask6[1]
         while n != 0:
           if (n and 0x8000_0000_0000_0000'u64) == 0'u64: return -1
           n = n shl 1
           inc(res)
         res
     else:
-      var n = hmask.mask6[0]
+      var n = mask6[0]
       while n != 0:
         if (n and 0x8000_0000_0000_0000'u64) == 0'u64: return -1
         n = n shl 1
         inc(res)
-      if hmask.mask6[1] != 0x00'u64: return -1
+      if mask6[1] != 0x00'u64: return -1
       res
   else:
     -1
@@ -347,12 +322,11 @@ proc subnetMask*(mask: IpMask): TransportAddress =
 
 proc `$`*(mask: IpMask, include0x = false): string =
   ## Returns hexadecimal string representation of IP mask ``mask``.
-  var host = mask.toHostOrder()
-  case host.family
+  case mask.family
   of AddressFamily.IPv4:
     var res = if include0x: "0x" else: ""
     var n = 32
-    var m = host.mask4
+    var m = mask.mask4.fromBE()
     while n > 0:
       n -= 4
       var c = int((m shr n) and 0x0F)
@@ -362,10 +336,11 @@ proc `$`*(mask: IpMask, include0x = false): string =
         res.add(chr(ord('A') + (c - 10)))
     res
   of AddressFamily.IPv6:
+    let mask6 = [mask.mask6[0].fromBE(), mask.mask6[1].fromBE()]
     var res = if include0x: "0x" else: ""
     for i in 0 .. 1:
       var n = 64
-      var m = host.mask6[i]
+      var m = mask6[i]
       while n > 0:
         n -= 4
         var c = int((m shr n) and 0x0F)
@@ -375,7 +350,7 @@ proc `$`*(mask: IpMask, include0x = false): string =
           res.add(chr(ord('A') + (c - 10)))
     res
   else:
-    "Unknown mask family: " & $host.family
+    "Unknown mask family: " & $mask.family
 
 proc ip*(mask: IpMask): string {.raises: [Defect, ValueError].} =
   ## Returns IP address text representation of IP mask ``mask``.
