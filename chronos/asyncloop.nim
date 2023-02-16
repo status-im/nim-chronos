@@ -22,7 +22,7 @@ export timer
 
 #{.injectStmt: newGcInvariant().}
 
-## AsyncDispatch
+## Chronos
 ## *************
 ##
 ## This module implements asynchronous IO. This includes a dispatcher,
@@ -112,57 +112,33 @@ export timer
 ## ``await socket.send("foobar")``.
 ##
 ## If an awaited future completes with an error, then ``await`` will re-raise
-## this error. To avoid this, you can use the ``yield`` keyword instead of
-## ``await``. The following section shows different ways that you can handle
-## exceptions in async procs.
+## this error.
 ##
 ## Handling Exceptions
-## ~~~~~~~~~~~~~~~~~~~
+## -------------------
 ##
-## The most reliable way to handle exceptions is to use ``yield`` on a future
-## then check the future's ``failed`` property. For example:
-##
-##   .. code-block:: Nim
-##     var future = sock.recv(100)
-##     yield future
-##     if future.failed:
-##       # Handle exception
-##
-## The ``async`` procedures also offer limited support for the try statement.
+## The ``async`` procedures also offer support for the try statement.
 ##
 ##    .. code-block:: Nim
 ##      try:
 ##        let data = await sock.recv(100)
 ##        echo("Received ", data)
-##      except:
-##        # Handle exception
-##
-## Unfortunately the semantics of the try statement may not always be correct,
-## and occasionally the compilation may fail altogether.
-## As such it is better to use the former style when possible.
-##
+##      except CancelledError as exc:
+##        # Handle exc
 ##
 ## Discarding futures
 ## ------------------
 ##
 ## Futures should **never** be discarded. This is because they may contain
 ## errors. If you do not care for the result of a Future then you should
-## use the ``asyncCheck`` procedure instead of the ``discard`` keyword.
-##
-## Examples
-## --------
-##
-## For examples take a look at the documentation for the modules implementing
-## asynchronous IO. A good place to start is the
-## `asyncnet module <asyncnet.html>`_.
+## use the ``asyncSpawn`` procedure instead of the ``discard`` keyword.
+## ``asyncSpawn`` will transform any exception thrown by the called procedure
+## to a Defect
 ##
 ## Limitations/Bugs
 ## ----------------
 ##
 ## * The effect system (``raises: []``) does not work with async procedures.
-## * Can't await in a ``except`` body
-## * Forward declarations for async procs are broken,
-##   link includes workaround: https://github.com/nim-lang/Nim/issues/3182.
 
 # TODO: Check if yielded future is nil and throw a more meaningful exception
 

@@ -1,7 +1,6 @@
 # Chronos - An efficient library for asynchronous programming
 
 [![Github action](https://github.com/status-im/nim-chronos/workflows/nim-chronos%20CI/badge.svg)](https://github.com/status-im/nim-chronos/actions/workflows/ci.yml)
-[![Windows build status (AppVeyor)](https://img.shields.io/appveyor/ci/nimbus/nim-asyncdispatch2/master.svg?label=Windows "Windows build status (Appveyor)")](https://ci.appveyor.com/project/nimbus/nim-asyncdispatch2)
 [![License: Apache](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 ![Stability: experimental](https://img.shields.io/badge/stability-experimental-orange.svg)
@@ -22,7 +21,7 @@ Chronos is an efficient [async/await](https://en.wikipedia.org/wiki/Async/await)
 You can use Nim's official package manager Nimble to install Chronos:
 
 ```text
-nimble install https://github.com/status-im/nim-chronos.git
+nimble install chronos
 ```
 
 or add a dependency to your `.nimble` file:
@@ -244,6 +243,68 @@ In the strict mode, `async` functions are checked such that they only raise
 `CatchableError` and thus must make sure to explicitly specify exception
 effects on forward declarations, callbacks and methods using
 `{.raises: [CatchableError].}` (or more strict) annotations.
+
+### Cancellation support
+
+Any running `Future` can be cancelled. This can be used to launch multiple
+futures, and wait for one of them to finish, and cancel the rest of them,
+to add timeout, or to let the user cancel a running task.
+
+```nim
+# Simple cancellation
+let future = sleepAsync(10.minutes)
+future.cancel()
+
+# Wait for cancellation
+let future2 = sleepAsync(10.minutes)
+await future2.cancelAndWait()
+
+# Race between futures
+proc retrievePage(uri: string): Future[string] {.async.} =
+  # requires to import uri, chronos/apps/http/httpclient, stew/byteutils
+  let httpSession = HttpSessionRef.new()
+  try:
+    resp = await httpSession.fetch(parseUri(uri))
+    result = string.fromBytes(resp.data)
+  finally:
+    # be sure to always close the session
+    await httpSession.closeWait()
+
+let
+  futs =
+    @[
+      retrievePage("https://duckduckgo.com/?q=chronos"),
+      retrievePage("https://www.google.fr/search?q=chronos")
+    ]
+
+let finishedFut = await one(futs)
+for fut in futs:
+  if not fut.finished:
+    fut.cancel()
+echo "Result: ", await finishedFut
+```
+
+When an `await` is cancelled, it will raise a `CancelledError`:
+```nim
+proc c1 {.async.} =
+  echo "Before sleep"
+  try:
+    await sleepAsync(10.minutes)
+    echo "After sleep" # not reach due to cancellation
+  except CancelledError as exc:
+    echo "We got cancelled!"
+    raise exc
+
+proc c2 {.async.} =
+  await c1()
+  echo "Never reached, since the CancelledError got re-raised"
+
+let work = c2()
+waitFor(work.cancelAndWait())
+```
+
+The `CancelledError` will now travel up the stack like any other exception.
+It can be caught and handled (for instance, freeing some resources)
 
 ### Multiple async backend support
 
