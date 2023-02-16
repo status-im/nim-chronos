@@ -235,6 +235,21 @@ proc leakHttpClientResponse(): bool {.gcsafe.} =
   var tracker = getHttpClientResponseTracker()
   tracker.opened != tracker.closed
 
+proc resetHttpClientConnection() {.gcsafe.} =
+  var tracker = getHttpClientConnectionTracker()
+  tracker.opened = 0
+  tracker.closed = 0
+
+proc resetHttpClientRequest() {.gcsafe.} =
+  var tracker = getHttpClientRequestTracker()
+  tracker.opened = 0
+  tracker.closed = 0
+
+proc resetHttpClientResponse() {.gcsafe.} =
+  var tracker = getHttpClientResponseTracker()
+  tracker.opened = 0
+  tracker.closed = 0
+
 proc trackHttpClientConnection(t: HttpClientConnectionRef) {.inline.} =
   inc(getHttpClientConnectionTracker().opened)
 
@@ -256,7 +271,8 @@ proc untrackHttpClientResponse*(t: HttpClientResponseRef) {.inline.}  =
 proc setupHttpClientConnectionTracker(): HttpClientTracker {.gcsafe.} =
   var res = HttpClientTracker(opened: 0, closed: 0,
     dump: dumpHttpClientConnectionTracking,
-    isLeaked: leakHttpClientConnection
+    isLeaked: leakHttpClientConnection,
+    reset: resetHttpClientConnection
   )
   addTracker(HttpClientConnectionTrackerName, res)
   res
@@ -264,7 +280,8 @@ proc setupHttpClientConnectionTracker(): HttpClientTracker {.gcsafe.} =
 proc setupHttpClientRequestTracker(): HttpClientTracker {.gcsafe.} =
   var res = HttpClientTracker(opened: 0, closed: 0,
     dump: dumpHttpClientRequestTracking,
-    isLeaked: leakHttpClientRequest
+    isLeaked: leakHttpClientRequest,
+    reset: resetHttpClientRequest
   )
   addTracker(HttpClientRequestTrackerName, res)
   res
@@ -272,7 +289,8 @@ proc setupHttpClientRequestTracker(): HttpClientTracker {.gcsafe.} =
 proc setupHttpClientResponseTracker(): HttpClientTracker {.gcsafe.} =
   var res = HttpClientTracker(opened: 0, closed: 0,
     dump: dumpHttpClientResponseTracking,
-    isLeaked: leakHttpClientResponse
+    isLeaked: leakHttpClientResponse,
+    reset: resetHttpClientResponse
   )
   addTracker(HttpClientResponseTrackerName, res)
   res
