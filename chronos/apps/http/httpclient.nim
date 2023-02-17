@@ -1039,7 +1039,7 @@ proc send*(request: HttpClientRequestRef): Future[HttpClientResponseRef] {.
   except CancelledError as exc:
     request.setError(newHttpInterruptError())
     raise exc
-  except AsyncStreamError as exc:
+  except AsyncStreamError:
     let error = newHttpWriteError("Could not send request headers")
     request.setError(error)
     raise error
@@ -1084,7 +1084,7 @@ proc open*(request: HttpClientRequestRef): Future[HttpBodyWriter] {.
   except CancelledError as exc:
     request.setError(newHttpInterruptError())
     raise exc
-  except AsyncStreamError as exc:
+  except AsyncStreamError:
     let error = newHttpWriteError("Could not send request headers")
     request.setError(error)
     raise error
@@ -1208,7 +1208,7 @@ proc getBodyBytes*(response: HttpClientResponseRef): Future[seq[byte]] {.
       await reader.closeWait()
     response.setError(newHttpInterruptError())
     raise exc
-  except AsyncStreamError as exc:
+  except AsyncStreamError:
     if not(isNil(reader)):
       await reader.closeWait()
     let error = newHttpReadError("Could not read response")
@@ -1233,7 +1233,7 @@ proc getBodyBytes*(response: HttpClientResponseRef,
       await reader.closeWait()
     response.setError(newHttpInterruptError())
     raise exc
-  except AsyncStreamError as exc:
+  except AsyncStreamError:
     if not(isNil(reader)):
       await reader.closeWait()
     let error = newHttpReadError("Could not read response")
@@ -1256,7 +1256,7 @@ proc consumeBody*(response: HttpClientResponseRef): Future[int] {.async.} =
       await reader.closeWait()
     response.setError(newHttpInterruptError())
     raise exc
-  except AsyncStreamError as exc:
+  except AsyncStreamError:
     if not(isNil(reader)):
       await reader.closeWait()
     let error = newHttpReadError("Could not read response")
