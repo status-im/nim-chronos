@@ -7,8 +7,9 @@
 #    Apache License, version 2.0, (LICENSE-APACHEv2)
 #                MIT license (LICENSE-MIT)
 
-from std/os import osLastError, osErrorMsg, OSErrorCode, raiseOSError
-export osLastError, osErrorMsg, OSError, OSErrorCode, raiseOSError
+from std/os import osLastError, osErrorMsg, OSErrorCode, raiseOSError,
+                   newOSError
+export osLastError, osErrorMsg, OSError, OSErrorCode, raiseOSError, newOSError
 
 when defined(windows):
   from std/winlean import SocketHandle, SockLen, SockAddr, InAddr,
@@ -931,37 +932,6 @@ elif defined(linux):
   proc epoll_wait*(epfd: cint; events: ptr EpollEvent; maxevents: cint;
                    timeout: cint): cint {.
        importc: "epoll_wait", header: "<sys/epoll.h>", sideEffect.}
-
-  type
-    SignalFdInfo* {.importc: "struct signalfd_siginfo",
-                    header: "<sys/signalfd.h>", pure, final.} = object
-      ssi_signo*: uint32
-      ssi_errno*: int32
-      ssi_code*: int32
-      ssi_pid*: uint32
-      ssi_uid*: uint32
-      ssi_fd*: int32
-      ssi_tid*: uint32
-      ssi_band*: uint32
-      ssi_overrun*: uint32
-      ssi_trapno*: uint32
-      ssi_status*: int32
-      ssi_int*: int32
-      ssi_ptr*: uint64
-      ssi_utime*: uint64
-      ssi_stime*: uint64
-      ssi_addr*: uint64
-      pad* {.importc: "__pad".}: array[0..47, uint8]
-
-  proc timerfd_create*(clock_id: ClockId, flags: cint): cint {.
-       cdecl, importc: "timerfd_create", header: "<sys/timerfd.h>".}
-  proc timerfd_settime*(ufd: cint, flags: cint,
-                        utmr: var Itimerspec, otmr: var Itimerspec): cint {.
-       cdecl, importc: "timerfd_settime", header: "<sys/timerfd.h>".}
-  proc eventfd*(count: cuint, flags: cint): cint {.
-       cdecl, importc: "eventfd", header: "<sys/eventfd.h>".}
-  proc signalfd*(fd: cint, mask: var Sigset, flags: cint): cint {.
-       cdecl, importc: "signalfd", header: "<sys/signalfd.h>".}
 
 else:
   import std/[posix, os]

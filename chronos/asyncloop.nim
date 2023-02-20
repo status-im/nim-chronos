@@ -282,6 +282,10 @@ proc raiseOsDefect*(error: OSErrorCode, msg = "") {.noreturn, noinline.} =
   raise (ref Defect)(msg: msg & "\n[" & $int(error) & "] " & osErrorMsg(error) &
                           "\n" & getStackTrace())
 
+func toException*(v: OSErrorCode): ref OSError = newOSError(v)
+  # This helper will allow to use `tryGet()` and raise OSError for
+  # Result[T, OSErrorCode] values.
+
 when defined(windows):
   type
     CompletionKey = ULONG_PTR
@@ -290,9 +294,6 @@ when defined(windows):
       cb*: CallbackFunc
       errCode*: OSErrorCode
       bytesCount*: uint32
-      cell*: ForeignCell # we need this `cell` to protect our `cb` environment,
-                         # when using `RegisterWaitForSingleObject()`, because
-                         # waiting is done in different thread.
       udata*: pointer
 
     CustomOverlapped* = object of OVERLAPPED
@@ -419,8 +420,7 @@ when defined(windows):
 
   proc register*(fd: AsyncFD) {.raises: [Defect, OSError].} =
     ## Register file descriptor ``fd`` in thread's dispatcher.
-    let res = register2(fd)
-    if res.isErr(): raiseOSError(res.error())
+    register2(fd).tryGet()
 
   proc unregister*(fd: AsyncFD) =
     ## Unregisters ``fd``.
@@ -701,37 +701,31 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
 
   proc register*(fd: AsyncFD) {.raises: [Defect, OSError].} =
     ## Register file descriptor ``fd`` in thread's dispatcher.
-    let res = register2(fd)
-    if res.isErr(): raiseOSError(res.error())
+    register2(fd).tryGet()
 
   proc unregister*(fd: AsyncFD) {.raises: [Defect, OSError].} =
     ## Unregister file descriptor ``fd`` from thread's dispatcher.
-    let res = unregister2(fd)
-    if res.isErr(): raiseOSError(res.error())
+    unregister2(fd).tryGet()
 
   proc addReader*(fd: AsyncFD, cb: CallbackFunc, udata: pointer = nil) {.
        raises: [Defect, OSError].} =
     ## Start watching the file descriptor ``fd`` for read availability and then
     ## call the callback ``cb`` with specified argument ``udata``.
-    let res = addReader2(fd, cb, udata)
-    if res.isErr(): raiseOSError(res.error())
+    addReader2(fd, cb, udata).tryGet()
 
   proc removeReader*(fd: AsyncFD) {.raises: [Defect, OSError].} =
     ## Stop watching the file descriptor ``fd`` for read availability.
-    let res = removeReader2(fd)
-    if res.isErr(): raiseOSError(res.error())
+    removeReader2(fd).tryGet()
 
   proc addWriter*(fd: AsyncFD, cb: CallbackFunc, udata: pointer = nil) {.
        raises: [Defect, OSError].} =
     ## Start watching the file descriptor ``fd`` for write availability and then
     ## call the callback ``cb`` with specified argument ``udata``.
-    let res = addWriter2(fd, cb, udata)
-    if res.isErr(): raiseOSError(res.error())
+    addWriter2(fd, cb, udata).tryGet()
 
   proc removeWriter*(fd: AsyncFD) {.raises: [Defect, OSError].} =
     ## Stop watching the file descriptor ``fd`` for write availability.
-    let res = removeWriter2(fd)
-    if res.isErr(): raiseOSError(res.error())
+    removeWriter2(fd).tryGet()
 
   proc unregisterAndCloseFd*(fd: AsyncFD): Result[void, OSErrorCode] =
     ## Unregister from system queue and close asynchronous socket.
