@@ -53,8 +53,8 @@ type
       rovl: CustomOverlapped          # Reader OVERLAPPED structure
       wovl: CustomOverlapped          # Writer OVERLAPPED structure
       rflag: uint32                   # Reader flags storage
-      rwsabuf: WSABuf                 # Reader WSABUF structure
-      wwsabuf: WSABuf                 # Writer WSABUF structure
+      rwsabuf: WSABUF                 # Reader WSABUF structure
+      wwsabuf: WSABUF                 # Writer WSABUF structure
 
   DgramTransportTracker* = ref object of TrackerBase
     opened*: int64
@@ -382,8 +382,8 @@ when defined(windows):
                                       udata: cast[pointer](res))
     res.wovl.data = CompletionData(cb: writeDatagramLoop,
                                       udata: cast[pointer](res))
-    res.rwsabuf = WSABuf(buf: cast[cstring](addr res.buffer[0]),
-                            len: ULONG(len(res.buffer)))
+    res.rwsabuf = WSABUF(buf: cast[cstring](addr res.buffer[0]),
+                         len: ULONG(len(res.buffer)))
     GC_ref(res)
     # Start tracking transport
     trackDgram(res)

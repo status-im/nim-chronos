@@ -81,8 +81,8 @@ when defined(windows):
       queue: Deque[StreamVector]      # Writer queue
       future: Future[void]            # Stream life future
       # Windows specific part
-      rwsabuf: WSABuf                 # Reader WSABUF
-      wwsabuf: WSABuf                 # Writer WSABUF
+      rwsabuf: WSABUF                 # Reader WSABUF
+      wwsabuf: WSABUF                 # Writer WSABUF
       rovl: CustomOverlapped          # Reader OVERLAPPED structure
       wovl: CustomOverlapped          # Writer OVERLAPPED structure
       roffset: int                    # Pending reading offset
@@ -603,7 +603,7 @@ when defined(windows):
                 transp.setReadError(err)
                 transp.completeReader()
           elif transp.kind == TransportKind.Pipe:
-            let pipe = Handle(transp.fd)
+            let pipe = HANDLE(transp.fd)
             transp.roffset = transp.offset
             transp.setReaderWSABuffer()
             let ret = readFile(pipe, cast[pointer](transp.rwsabuf.buf),
@@ -875,7 +875,7 @@ when defined(windows):
             # We should not raise defects in this loop.
             discard disconnectNamedPipe(HANDLE(server.sock))
             discard closeHandle(HANDLE(server.sock))
-            raiseOSDefect(osLastError(), "acceptPipeLoop(): Unable to accept " &
+            raiseOsDefect(osLastError(), "acceptPipeLoop(): Unable to accept " &
                                          "new pipe connection")
         else:
           # Server close happens in callback, and we are not started new
@@ -891,7 +891,7 @@ when defined(windows):
             pipeSuffix = $cast[cstring](addr server.local.address_un)
             pipeAsciiName = PipeHeaderName & pipeSuffix
             pipeName = toWideString(pipeAsciiName).valueOr:
-              raiseOSDefect(error, "acceptPipeLoop(): Unable to create name " &
+              raiseOsDefect(error, "acceptPipeLoop(): Unable to create name " &
                                    "for new pipe connection")
             openMode =
               if FirstPipe notin server.flags:
@@ -909,12 +909,12 @@ when defined(windows):
                                          DWORD(0), nil)
           free(pipeName)
           if pipeHandle == osdefs.INVALID_HANDLE_VALUE:
-            raiseOSDefect(osLastError(), "acceptPipeLoop(): Unable to create " &
+            raiseOsDefect(osLastError(), "acceptPipeLoop(): Unable to create " &
                                          "new pipe")
           server.sock = AsyncFD(pipeHandle)
           let wres = register2(server.sock)
           if wres.isErr():
-            raiseOSDefect(wres.error(), "acceptPipeLoop(): Unable to " &
+            raiseOsDefect(wres.error(), "acceptPipeLoop(): Unable to " &
                                         "register new pipe in dispatcher")
           let res = connectNamedPipe(pipeHandle,
                                      cast[POVERLAPPED](addr server.aovl))
@@ -928,7 +928,7 @@ when defined(windows):
             elif errCode == osdefs.ERROR_PIPE_CONNECTED:
               discard
             else:
-              raiseOSDefect(errCode, "acceptPipeLoop(): Unable to establish " &
+              raiseOsDefect(errCode, "acceptPipeLoop(): Unable to establish " &
                                      "pipe connection")
           break
         else:
@@ -1046,7 +1046,7 @@ when defined(windows):
 
   proc pauseAccept(server: StreamServer): Result[void, OSErrorCode] =
     if server.apending:
-      discard cancelIo(Handle(server.sock))
+      discard cancelIo(HANDLE(server.sock))
     ok()
 
   proc resumeAccept(server: StreamServer): Result[void, OSErrorCode] =
@@ -1778,8 +1778,8 @@ proc close*(server: StreamServer) =
         server.sock.closeSocket(continuation)
       elif server.local.family in {AddressFamily.Unix}:
         if NoPipeFlash notin server.flags:
-          discard flushFileBuffers(Handle(server.sock))
-        discard disconnectNamedPipe(Handle(server.sock))
+          discard flushFileBuffers(HANDLE(server.sock))
+        discard disconnectNamedPipe(HANDLE(server.sock))
         server.sock.closeHandle(continuation)
     else:
       server.sock.closeSocket(continuation)
@@ -2237,7 +2237,7 @@ template readLoop(name, body: untyped): untyped =
         when defined(windows):
           # This assertion could be changed, because at this moment
           # resumeRead() could not return any error.
-          raiseOSDefect(errorCode, "readLoop(): Unable to resume reading")
+          raiseOsDefect(errorCode, "readLoop(): Unable to resume reading")
         else:
           transp.reader.complete()
           if errorCode == ESRCH:

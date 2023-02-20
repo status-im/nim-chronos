@@ -333,7 +333,7 @@ when defined(windows):
     var wsa = WSAData()
     let res = wsaStartup(0x0202'u16, addr wsa)
     if res != 0:
-      raiseOSDefect(osLastError(),
+      raiseOsDefect(osLastError(),
                     "globalInit(): Unable to initialize Windows Sockets API")
 
   proc initAPI(loop: PDispatcher) =
@@ -345,26 +345,26 @@ when defined(windows):
 
     let sock = osdefs.socket(osdefs.AF_INET, 1, 6)
     if sock == osdefs.INVALID_SOCKET:
-      raiseOSDefect(osLastError(), "initAPI(): Unable to create control socket")
+      raiseOsDefect(osLastError(), "initAPI(): Unable to create control socket")
 
     block:
       let res = getFunc(sock, funcPointer, WSAID_CONNECTEX)
       if not(res):
-        raiseOSDefect(osLastError(), "initAPI(): Unable to initialize " &
+        raiseOsDefect(osLastError(), "initAPI(): Unable to initialize " &
                                      "dispatcher's ConnectEx()")
       loop.connectEx = cast[WSAPROC_CONNECTEX](funcPointer)
 
     block:
       let res = getFunc(sock, funcPointer, WSAID_ACCEPTEX)
       if not(res):
-        raiseOSDefect(osLastError(), "initAPI(): Unable to initialize " &
+        raiseOsDefect(osLastError(), "initAPI(): Unable to initialize " &
                                      "dispatcher's AcceptEx()")
       loop.acceptEx = cast[WSAPROC_ACCEPTEX](funcPointer)
 
     block:
       let res = getFunc(sock, funcPointer, WSAID_GETACCEPTEXSOCKADDRS)
       if not(res):
-        raiseOSDefect(osLastError(), "initAPI(): Unable to initialize " &
+        raiseOsDefect(osLastError(), "initAPI(): Unable to initialize " &
                                      "dispatcher's GetAcceptExSockAddrs()")
       loop.getAcceptExSockAddrs =
         cast[WSAPROC_GETACCEPTEXSOCKADDRS](funcPointer)
@@ -372,19 +372,19 @@ when defined(windows):
     block:
       let res = getFunc(sock, funcPointer, WSAID_TRANSMITFILE)
       if not(res):
-        raiseOSDefect(osLastError(), "initAPI(): Unable to initialize " &
+        raiseOsDefect(osLastError(), "initAPI(): Unable to initialize " &
                                      "dispatcher's TransmitFile()")
       loop.transmitFile = cast[WSAPROC_TRANSMITFILE](funcPointer)
 
     if closeFd(sock) != 0:
-      raiseOSDefect(osLastError(), "initAPI(): Unable to close control socket")
+      raiseOsDefect(osLastError(), "initAPI(): Unable to close control socket")
 
   proc newDispatcher*(): PDispatcher =
     ## Creates a new Dispatcher instance.
     let port = createIoCompletionPort(osdefs.INVALID_HANDLE_VALUE,
                                       HANDLE(0), 0, 1)
     if port == osdefs.INVALID_HANDLE_VALUE:
-      raiseOSDefect(osLastError(), "newDispatcher(): Unable to create " &
+      raiseOsDefect(osLastError(), "newDispatcher(): Unable to create " &
                                    "IOCP port")
     var res = PDispatcher(
       ioPort: port,
@@ -479,7 +479,7 @@ when defined(windows):
         if res == FALSE:
           let errCode = osLastError()
           if uint32(errCode) != WAIT_TIMEOUT:
-            raiseOSDefect(errCode, "poll(): Unable to get OS events")
+            raiseOsDefect(errCode, "poll(): Unable to get OS events")
           0
         else:
           int(eventsReceived)
@@ -846,7 +846,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
       try:
         loop.selector.selectInto(curTimeout, loop.keys)
       except IOSelectorsException:
-        raiseOSDefect(osLastError(), "poll(): Unable to get OS events")
+        raiseOsDefect(osLastError(), "poll(): Unable to get OS events")
     for i in 0..<count:
       let fd = loop.keys[i].fd
       let events = loop.keys[i].events
