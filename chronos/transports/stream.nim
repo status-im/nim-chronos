@@ -13,8 +13,6 @@ else:
   {.push raises: [].}
 
 import std/deques
-when not(defined(windows)):
-  import ".."/selectors2
 import ".."/[asyncloop, handles, osdefs, osutils]
 import common
 
@@ -696,7 +694,7 @@ when defined(windows):
         return false
       true
     else:
-      raiseAssert "Incorrect domain"
+      raiseAssert "Unsupported domain"
 
   proc connect*(address: TransportAddress,
                 bufferSize = DefaultStreamBufferSize,
@@ -877,7 +875,8 @@ when defined(windows):
             # We should not raise defects in this loop.
             discard disconnectNamedPipe(HANDLE(server.sock))
             discard closeHandle(HANDLE(server.sock))
-            raiseAssert osErrorMsg(osLastError())
+            raiseOSDefect(osLastError(), "acceptPipeLoop(): Unable to accept " &
+                                         "new pipe connection")
         else:
           # Server close happens in callback, and we are not started new
           # connectNamedPipe session.
@@ -892,7 +891,8 @@ when defined(windows):
             pipeSuffix = $cast[cstring](addr server.local.address_un)
             pipeAsciiName = PipeHeaderName & pipeSuffix
             pipeName = toWideString(pipeAsciiName).valueOr:
-              raiseAssert osErrorMsg(error)
+              raiseOSDefect(error, "acceptPipeLoop(): Unable to create name " &
+                                   "for new pipe connection")
             openMode =
               if FirstPipe notin server.flags:
                 server.flags.incl(FirstPipe)
@@ -909,24 +909,27 @@ when defined(windows):
                                          DWORD(0), nil)
           free(pipeName)
           if pipeHandle == osdefs.INVALID_HANDLE_VALUE:
-            raiseAssert osErrorMsg(osLastError())
+            raiseOSDefect(osLastError(), "acceptPipeLoop(): Unable to create " &
+                                         "new pipe")
           server.sock = AsyncFD(pipeHandle)
           let wres = register2(server.sock)
           if wres.isErr():
-            raiseAssert osErrorMsg(wres.error())
+            raiseOSDefect(wres.error(), "acceptPipeLoop(): Unable to " &
+                                        "register new pipe in dispatcher")
           let res = connectNamedPipe(pipeHandle,
                                      cast[POVERLAPPED](addr server.aovl))
           if res == 0:
-            let err = osLastError()
-            if int32(err) == osdefs.ERROR_OPERATION_ABORTED:
+            let errCode = osLastError()
+            if errCode == osdefs.ERROR_OPERATION_ABORTED:
               server.apending = false
               break
-            elif int32(err) == osdefs.ERROR_IO_PENDING:
+            elif errCode == osdefs.ERROR_IO_PENDING:
               discard
-            elif int32(err) == osdefs.ERROR_PIPE_CONNECTED:
+            elif errCode == osdefs.ERROR_PIPE_CONNECTED:
               discard
             else:
-              raiseAssert osErrorMsg(err)
+              raiseOSDefect(errCode, "acceptPipeLoop(): Unable to establish " &
+                                     "pipe connection")
           break
         else:
           # Server close happens in callback, and we are not started new
@@ -950,9 +953,10 @@ when defined(windows):
                           cint(osdefs.SO_UPDATE_ACCEPT_CONTEXT),
                           addr server.sock,
                           SockLen(sizeof(SocketHandle))) != 0'i32:
-              let err = OSErrorCode(wsaGetLastError())
+              let errCode = OSErrorCode(wsaGetLastError())
               server.asock.closeSocket()
-              raiseAssert osErrorMsg(err)
+              raiseOsDefect(errCode, "acceptLoop(): Unable to set accept " &
+                                     "context for socket")
             else:
               var ntransp: StreamTransport
               if not(isNil(server.init)):
@@ -977,7 +981,8 @@ when defined(windows):
             break
           else:
             server.asock.closeSocket()
-            raiseOsDefect(ovl.data.errCode)
+            raiseOsDefect(ovl.data.errCode, "acceptLoop(): Unable to accept " &
+                                            "new connection")
         else:
           # Server close happens in callback, and we are not started new
           # AcceptEx session.
@@ -1010,14 +1015,15 @@ when defined(windows):
                                   dwRemoteAddressLength, addr dwBytesReceived,
                                   cast[POVERLAPPED](addr server.aovl))
           if res == osdefs.FALSE:
-            let err = osLastError()
-            if int32(err) == osdefs.ERROR_OPERATION_ABORTED:
+            let errCode = osLastError()
+            if errCode == osdefs.ERROR_OPERATION_ABORTED:
               server.apending = false
               break
-            elif int32(err) == osdefs.ERROR_IO_PENDING:
+            elif errCode == osdefs.ERROR_IO_PENDING:
               discard
             else:
-              raiseAssert osErrorMsg(err)
+              raiseOsDefect(errCode, "acceptLoop(): Unable to accept " &
+                                     "connection")
           break
         else:
           # Server close happens in callback, and we are not started new
@@ -1260,16 +1266,6 @@ else:
   proc isConnResetError(err: OSErrorCode): bool {.inline.} =
     (err == OSErrorCode(ECONNRESET)) or (err == OSErrorCode(EPIPE))
 
-  proc removeWriter(transp: StreamTransport) =
-    try:
-      transp.fd.removeWriter()
-      # For debugging, record that we're no longer getting write notifications
-      transp.state.incl WritePaused
-    except IOSelectorsException as exc:
-      raiseAsDefect exc, "removeWriter"
-    except ValueError as exc:
-      raiseAsDefect exc, "removeWriter"
-
   proc writeStreamLoop(udata: pointer) =
     if isNil(udata):
       # TODO this is an if rather than an assert for historical reasons:
@@ -1284,9 +1280,8 @@ else:
 
     if WriteClosed in transp.state:
       if transp.queue.len > 0:
-        transp.removeWriter()
-
         let error = getTransportUseClosedError()
+        discard removeWriter2(transp.fd)
         failPendingWriteQueue(transp.queue, error)
       return
 
@@ -1367,7 +1362,10 @@ else:
           handleError()
 
     # Nothing left in the queue - no need for further write notifications
-    transp.removeWriter()
+    # All writers are already scheduled, so its impossible to notify about an
+    # error.
+    transp.state.incl(WritePaused)
+    discard removeWriter2(transp.fd)
 
   proc readStreamLoop(udata: pointer) =
     if isNil(udata):
@@ -1394,39 +1392,28 @@ else:
             let err = osLastError()
             if int(err) == ECONNRESET:
               transp.state.incl({ReadEof, ReadPaused})
-              try:
-                transp.fd.removeReader()
-              except IOSelectorsException as exc:
-                raiseAsDefect exc, "removeReader"
-              except ValueError as exc:
-                raiseAsDefect exc, "removeReader"
+              let rres = removeReader2(transp.fd)
+              if rres.isErr():
+                transp.state.incl(ReadError)
+                transp.setReadError(rres.error())
             else:
-              transp.state.incl(ReadPaused)
+              transp.state.incl({ReadPaused, ReadError})
               transp.setReadError(err)
-              try:
-                transp.fd.removeReader()
-              except IOSelectorsException as exc:
-                raiseAsDefect exc, "removeReader"
-              except ValueError as exc:
-                raiseAsDefect exc, "removeReader"
+              discard removeReader2(transp.fd)
           elif res == 0:
             transp.state.incl({ReadEof, ReadPaused})
-            try:
-              transp.fd.removeReader()
-            except IOSelectorsException as exc:
-              raiseAsDefect exc, "removeReader"
-            except ValueError as exc:
-              raiseAsDefect exc, "removeReader"
+            let rres = removeReader2(transp.fd)
+            if rres.isErr():
+              transp.state.incl(ReadError)
+              transp.setReadError(rres.error())
           else:
             transp.offset += res
             if transp.offset == len(transp.buffer):
               transp.state.incl(ReadPaused)
-              try:
-                transp.fd.removeReader()
-              except IOSelectorsException as exc:
-                raiseAsDefect exc, "removeReader"
-              except ValueError as exc:
-                raiseAsDefect exc, "removeReader"
+              let rres = removeReader2(transp.fd)
+              if rres.isErr():
+                transp.state.incl(ReadError)
+                transp.setReadError(rres.error())
           transp.completeReader()
           break
       elif transp.kind == TransportKind.Pipe:
@@ -1438,30 +1425,21 @@ else:
             let err = osLastError()
             transp.state.incl(ReadPaused)
             transp.setReadError(err)
-            try:
-              transp.fd.removeReader()
-            except IOSelectorsException as exc:
-              raiseAsDefect exc, "removeReader"
-            except ValueError as exc:
-              raiseAsDefect exc, "removeReader"
+            discard removeReader2(transp.fd)
           elif res == 0:
             transp.state.incl({ReadEof, ReadPaused})
-            try:
-              transp.fd.removeReader()
-            except IOSelectorsException as exc:
-              raiseAsDefect exc, "removeReader"
-            except ValueError as exc:
-              raiseAsDefect exc, "removeReader"
+            let rres = removeReader2(transp.fd)
+            if rres.isErr():
+              transp.state.incl(ReadError)
+              transp.setReadError(rres.error())
           else:
             transp.offset += res
             if transp.offset == len(transp.buffer):
               transp.state.incl(ReadPaused)
-              try:
-                transp.fd.removeReader()
-              except IOSelectorsException as exc:
-                raiseAsDefect exc, "removeReader"
-              except ValueError as exc:
-                raiseAsDefect exc, "removeReader"
+              let rres = removeReader2(transp.fd)
+              if rres.isErr():
+                transp.state.incl(ReadError)
+                transp.setReadError(rres.error())
           transp.completeReader()
           break
 
@@ -1537,39 +1515,21 @@ else:
     proc continuation(udata: pointer) =
       if not(retFuture.finished()):
         var err = 0
+
+        let res = removeWriter2(sock)
+        if res.isErr():
+          discard unregisterAndCloseFd(sock)
+          retFuture.fail(getTransportOsError(res.error()))
+          return
+
         if not(sock.getSocketError(err)):
-          try:
-            sock.removeWriter()
-          except IOSelectorsException as exc:
-            retFuture.fail(exc)
-            return
-          except ValueError as exc:
-            retFuture.fail(exc)
-            return
-          closeSocket(sock)
-          retFuture.fail(getTransportOsError(OSErrorCode(err)))
+          discard unregisterAndCloseFd(sock)
+          retFuture.fail(getTransportOsError(res.error()))
           return
 
         if err != 0:
-          try:
-            sock.removeWriter()
-          except IOSelectorsException as exc:
-            retFuture.fail(exc)
-            return
-          except ValueError as exc:
-            retFuture.fail(exc)
-            return
-          closeSocket(sock)
+          discard unregisterAndCloseFd(sock)
           retFuture.fail(getTransportOsError(OSErrorCode(err)))
-          return
-
-        try:
-          sock.removeWriter()
-        except IOSelectorsException as exc:
-          retFuture.fail(exc)
-          return
-        except ValueError as exc:
-          retFuture.fail(exc)
           return
 
         let transp = newStreamSocketTransport(sock, bufferSize, child)
@@ -1599,17 +1559,15 @@ else:
         #
         # http://www.madore.org/~david/computers/connect-intr.html
         if (errorCode == EINPROGRESS) or (errorCode == EINTR):
-          try:
-            sock.addWriter(continuation)
-          except CatchableError as exc:
-            closeSocket(sock)
-            retFuture.fail(exc)
+          let res = addWriter2(sock, continuation)
+          if res.isErr():
+            discard unregisterAndCloseFd(sock)
+            retFuture.fail(getTransportOsError(res.error()))
             return retFuture
-
           retFuture.cancelCallback = cancel
           break
         else:
-          sock.closeSocket()
+          discard unregisterAndCloseFd(sock)
           retFuture.fail(getTransportOsError(errorCode))
           break
     return retFuture
@@ -1626,46 +1584,35 @@ else:
       saddr: Sockaddr_storage
       slen: SockLen
     let server = cast[StreamServer](udata)
-    while true:
-      if server.status in {ServerStatus.Stopped, ServerStatus.Closed}:
-        return
+    if server.status in {ServerStatus.Stopped, ServerStatus.Closed}:
+      return
 
-      let
-        flags = {DescriptorFlag.CloseOnExec, DescriptorFlag.NonBlock}
-        sres = acceptConn(cint(server.sock), cast[ptr SockAddr](addr saddr),
-                          addr slen, flags)
-      if sres.isOk():
-        let sock = AsyncFD(sres.get())
-
-
-      let res = posix.accept(SocketHandle(server.sock),
-                             cast[ptr SockAddr](addr saddr), addr slen)
-      if int(res) > 0:
-        let sock = try: wrapAsyncSocket(res)
-        except CatchableError as exc:
-          raiseAsDefect exc, "wrapAsyncSocket"
-        if sock != asyncInvalidSocket:
-          var ntransp: StreamTransport
+    let
+      flags = {DescriptorFlag.CloseOnExec, DescriptorFlag.NonBlock}
+      sres = acceptConn(cint(server.sock), cast[ptr SockAddr](addr saddr),
+                        addr slen, flags)
+    if sres.isOk():
+      let sock = AsyncFD(sres.get())
+      let rres = register2(sock)
+      if rres.isOk():
+        let ntransp =
           if not(isNil(server.init)):
             let transp = server.init(server, sock)
-            ntransp = newStreamSocketTransport(sock, server.bufferSize, transp)
+            newStreamSocketTransport(sock, server.bufferSize, transp)
           else:
-            ntransp = newStreamSocketTransport(sock, server.bufferSize, nil)
-          # Start tracking transport
-          trackStream(ntransp)
-          asyncCheck server.function(server, ntransp)
-        break
+            newStreamSocketTransport(sock, server.bufferSize, nil)
+        trackStream(ntransp)
+        asyncSpawn server.function(server, ntransp)
       else:
-        let err = osLastError()
-        if int(err) == EINTR:
-          continue
-        elif int(err) == EAGAIN:
-          # This error appears only when server get closed, while acceptLoop()
-          # reader callback is already scheduled.
-          break
-        else:
-          ## Critical unrecoverable error
-          raiseAssert $err
+        # Client was accepted, so we not going to raise assertion, but
+        # we need to close the socket.
+        discard closeFd(cint(sock))
+    else:
+      let errorCode = sres.error()
+      if errorCode != EAGAIN:
+        # This EAGAIN error appears only when server get closed, while
+        # acceptLoop() reader callback is already scheduled.
+        raiseOsDefect(errorCode, "acceptLoop(): Unable to accept connection")
 
   proc resumeAccept(server: StreamServer): Result[void, OSErrorCode] =
     addReader2(server.sock, acceptLoop, cast[pointer](server))
@@ -1679,7 +1626,7 @@ else:
       transp.state.excl(ReadPaused)
     ok()
 
-  proc resumeWrite(transp: StreamTransport) {.inline.} =
+  proc resumeWrite(transp: StreamTransport): Result[void, OSErrorCode] =
     if transp.queue.len() == 1:
       # writeStreamLoop keeps writing until queue is empty - we should not call
       # resumeWrite under any other condition than when the items are
@@ -1709,72 +1656,60 @@ else:
         if server.status in {ServerStatus.Stopped, ServerStatus.Closed}:
           retFuture.fail(getServerUseClosedError())
         else:
-          while true:
-            let res = posix.accept(SocketHandle(server.sock),
-                                   cast[ptr SockAddr](addr saddr), addr slen)
-            if int(res) > 0:
-              let sock =
-                try:
-                  wrapAsyncSocket(res)
-                except CatchableError as exc:
-                  close(res)
-                  retFuture.fail(getConnectionAbortedError($exc.msg))
-                  return
-
-              if sock != asyncInvalidSocket:
-                var ntransp: StreamTransport
-                if not(isNil(server.init)):
-                  let transp = server.init(server, sock)
-                  ntransp = newStreamSocketTransport(sock, server.bufferSize,
-                                                     transp)
-                else:
-                  ntransp = newStreamSocketTransport(sock, server.bufferSize,
-                                                     nil)
+          let
+            flags = {DescriptorFlag.CloseOnExec, DescriptorFlag.NonBlock}
+            sres = acceptConn(cint(server.sock), cast[ptr SockAddr](addr saddr),
+                              addr slen, flags)
+          if sres.isErr():
+            let errorCode = sres.error()
+            if errorCode == EAGAIN:
+              # This error appears only when server get closed, while accept()
+              # continuation is already scheduled.
+              retFuture.fail(getServerUseClosedError())
+            elif cint(errorCode) in {EMFILE, ENFILE, ENOBUFS, ENOMEM}:
+              retFuture.fail(getTransportTooManyError(cint(errorCode)))
+            elif cint(errorCode) in {ECONNABORTED, EPERM, ETIMEDOUT}:
+              retFuture.fail(getConnectionAbortedError(cint(errorCode)))
+            else:
+              retFuture.fail(getTransportOsError(errorCode))
+            # Error is already happened so we ignore removeReader2() errors.
+            discard removeReader2(server.sock)
+          else:
+            let
+              sock = AsyncFD(sres.get())
+              rres = register2(sock)
+            if rres.isOk():
+              let res = removeReader2(server.sock)
+              if res.isOk():
+                let ntransp =
+                  if not(isNil(server.init)):
+                    let transp = server.init(server, sock)
+                    newStreamSocketTransport(sock, server.bufferSize, transp)
+                  else:
+                    newStreamSocketTransport(sock, server.bufferSize, nil)
                 # Start tracking transport
                 trackStream(ntransp)
                 retFuture.complete(ntransp)
               else:
-                let errorMsg = osErrorMsg(osLastError())
+                discard closeFd(cint(sock))
+                let errorMsg = osErrorMsg(res.error())
                 retFuture.fail(getConnectionAbortedError(errorMsg))
             else:
-              let err = osLastError().int32
-              if err == EINTR:
-                continue
-              elif err == EAGAIN:
-                # This error appears only when server get closed, while accept()
-                # continuation is already scheduled.
-                retFuture.fail(getServerUseClosedError())
-              elif err in [EMFILE, ENFILE, ENOBUFS, ENOMEM]:
-                retFuture.fail(getTransportTooManyError(err))
-              elif err in [ECONNABORTED, EPERM, ETIMEDOUT]:
-                retFuture.fail(getConnectionAbortedError(err))
-              else:
-                retFuture.fail(getTransportOsError(OSErrorCode(err)))
-            break
-
-        try:
-          removeReader(server.sock)
-        except IOSelectorsException as exc:
-          raiseAsDefect exc, "removeReader"
-        except ValueError as exc:
-          raiseAsDefect exc, "removeReader"
+              # Error is already happened so we ignore errors.
+              discard removeReader2(server.sock)
+              discard closeFd(cint(sock))
+              let errorMsg = osErrorMsg(rres.error())
+              retFuture.fail(getConnectionAbortedError(errorMsg))
 
     proc cancellation(udata: pointer) =
-      try:
-        removeReader(server.sock)
-      except IOSelectorsException as exc:
-        raiseAsDefect exc, "removeReader"
-      except ValueError as exc:
-        raiseAsDefect exc, "removeReader"
+      if not(retFuture.finished()):
+        discard removeReader2(server.sock)
 
-    try:
-      addReader(server.sock, continuation, nil)
-    except IOSelectorsException as exc:
-      raiseAsDefect exc, "addReader"
-    except ValueError as exc:
-      raiseAsDefect exc, "addReader"
-
-    retFuture.cancelCallback = cancellation
+    let res = addReader2(server.sock, continuation, nil)
+    if res.isErr():
+      retFuture.fail(getTransportOsError(res.error()))
+    else:
+      retFuture.cancelCallback = cancellation
     return retFuture
 
 proc start2*(server: StreamServer): Result[void, OSErrorCode] =
@@ -1981,8 +1916,8 @@ proc createStreamServer*(host: TransportAddress,
           raiseTransportOsError(err)
       # TCP flags are not useful for Unix domain sockets.
       if ServerFlags.TcpNoDelay in flags:
-        if not(setSockOpt(serverSocket, handles.IPPROTO_TCP,
-                          handles.TCP_NODELAY, 1)):
+        if not(setSockOpt(serverSocket, osdefs.IPPROTO_TCP,
+                          osdefs.TCP_NODELAY, 1)):
           let err = osLastError()
           if sock == asyncInvalidSocket:
             discard unregisterAndCloseFd(serverSocket)

@@ -153,8 +153,8 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
      defined(linux) or defined(android) or defined(solaris):
   import "."/selectors2
   from posix import EINTR, EAGAIN, EINPROGRESS, EWOULDBLOCK, MSG_PEEK,
-                    MSG_NOSIGNAL
-  from posix import SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
+                    MSG_NOSIGNAL,
+                    SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
                     SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV, SIGUSR2,
                     SIGPIPE, SIGALRM, SIGTERM, SIGPIPE
   export SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
@@ -632,7 +632,6 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     withData(loop.selector, int(fd), adata) do:
       let acb = AsyncCallback(function: cb, udata: udata)
       adata.reader = acb
-      newEvents.incl(Event.Read)
       if not(isNil(adata.writer.function)):
         newEvents.incl(Event.Write)
     do:
@@ -671,7 +670,6 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     withData(loop.selector, int(fd), adata) do:
       let acb = AsyncCallback(function: cb, udata: udata)
       adata.writer = acb
-      newEvents.incl(Event.Write)
       if not(isNil(adata.reader.function)):
         newEvents.incl(Event.Read)
     do:
@@ -734,6 +732,19 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     ## Stop watching the file descriptor ``fd`` for write availability.
     let res = removeWriter2(fd)
     if res.isErr(): raiseOSError(res.error())
+
+  proc unregisterAndCloseFd*(fd: AsyncFD): Result[void, OSErrorCode] =
+    ## Unregister from system queue and close asynchronous socket.
+    ##
+    ## NOTE: Use this function to close temporary sockets/pipes only (which
+    ## are not exposed to the public and not supposed to be used/reused).
+    ## Please use closeSocket(AsyncFD) and closeHandle(AsyncFD) instead.
+    doAssert(fd != AsyncFD(osdefs.INVALID_SOCKET))
+    ? unregister2(fd)
+    if closeFd(cint(fd)) != 0:
+      err(osLastError())
+    else:
+      ok()
 
   proc closeSocket*(fd: AsyncFD, aftercb: CallbackFunc = nil) =
     ## Close asynchronous socket.
@@ -831,7 +842,11 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     loop.processTimersGetTimeout(curTimeout)
 
     # Processing IO descriptors and all hardware events.
-    let count = loop.selector.selectInto(curTimeout, loop.keys)
+    let count =
+      try:
+        loop.selector.selectInto(curTimeout, loop.keys)
+      except IOSelectorsException:
+        raiseOSDefect(osLastError(), "poll(): Unable to get OS events")
     for i in 0..<count:
       let fd = loop.keys[i].fd
       let events = loop.keys[i].events

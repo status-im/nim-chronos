@@ -461,13 +461,8 @@ else:
                 vector.writer.fail(getTransportOsError(err))
           break
       else:
-        transp.state.incl(WritePaused)
-        try:
-          transp.fd.removeWriter()
-        except IOSelectorsException as exc:
-          raiseAsDefect exc, "removeWriter"
-        except ValueError as exc:
-          raiseAsDefect exc, "removeWriter"
+        transp.state.incl({WritePaused})
+        discard removeWriter2(transp.fd)
 
   proc resumeWrite(transp: DatagramTransport): Result[void, OSErrorCode] =
     if WritePaused in transp.state:
