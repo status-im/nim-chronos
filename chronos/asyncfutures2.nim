@@ -8,7 +8,7 @@
 #    Apache License, version 2.0, (LICENSE-APACHEv2)
 #                MIT license (LICENSE-MIT)
 
-import std/[os, tables, strutils, heapqueue, deques, sequtils]
+import std/sequtils
 import stew/base10
 import ./srcloc
 export srcloc

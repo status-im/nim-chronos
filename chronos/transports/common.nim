@@ -12,15 +12,10 @@ when (NimMajor, NimMinor) < (1, 4):
 else:
   {.push raises: [].}
 
-import std/[os, strutils, nativesockets, net]
-import stew/[base10, endians2, byteutils]
-import ../asyncloop
+import std/[strutils, nativesockets, net]
+import stew/[base10, byteutils]
+import ".."/[asyncloop, osdefs]
 export net
-
-when defined(windows) or defined(nimdoc):
-  import winlean
-else:
-  import posix
 
 const
   DefaultStreamBufferSize* = 4096    ## Default buffer size for stream
@@ -79,7 +74,7 @@ when defined(windows) or defined(nimdoc):
       errorCode*: OSErrorCode       # Current error code
       abuffer*: array[128, byte]    # Windows AcceptEx() buffer
       when defined(windows):
-        aovl*: CustomOverlapped       # AcceptEx OVERLAPPED structure
+        aovl*: CustomOverlapped     # AcceptEx OVERLAPPED structure
 else:
   type
     SocketServer* = ref object of RootRef
@@ -605,46 +600,6 @@ proc isLiteral*[T](s: seq[T]): bool {.inline.} =
   else:
     (cast[ptr SeqHeader](s).reserved and (1 shl (sizeof(int) * 8 - 2))) != 0
 
-when defined(windows):
-  import winlean
-
-  const
-    ERROR_OPERATION_ABORTED* = 995
-    ERROR_PIPE_CONNECTED* = 535
-    ERROR_PIPE_BUSY* = 231
-    ERROR_SUCCESS* = 0
-    ERROR_CONNECTION_REFUSED* = 1225
-    PIPE_TYPE_BYTE* = 0
-    PIPE_READMODE_BYTE* = 0
-    PIPE_TYPE_MESSAGE* = 0x4
-    PIPE_READMODE_MESSAGE* = 0x2
-    PIPE_WAIT* = 0
-    PIPE_UNLIMITED_INSTANCES* = 255
-    ERROR_BROKEN_PIPE* = 109
-    ERROR_PIPE_NOT_CONNECTED* = 233
-    ERROR_NO_DATA* = 232
-    ERROR_CONNECTION_ABORTED* = 1236
-    ERROR_TOO_MANY_OPEN_FILES* = 4
-    WSAEMFILE* = 10024
-    WSAENETDOWN* = 10050
-    WSAENETRESET* = 10052
-    WSAECONNABORTED* = 10053
-    WSAECONNRESET* = 10054
-    WSAENOBUFS* = 10055
-    WSAETIMEDOUT* = 10060
-
-  proc cancelIo*(hFile: Handle): WINBOOL
-       {.stdcall, dynlib: "kernel32", importc: "CancelIo".}
-  proc connectNamedPipe*(hPipe: Handle, lpOverlapped: ptr OVERLAPPED): WINBOOL
-       {.stdcall, dynlib: "kernel32", importc: "ConnectNamedPipe".}
-  proc disconnectNamedPipe*(hPipe: Handle): WINBOOL
-       {.stdcall, dynlib: "kernel32", importc: "DisconnectNamedPipe".}
-  proc setNamedPipeHandleState*(hPipe: Handle, lpMode, lpMaxCollectionCount,
-                                lpCollectDataTimeout: ptr DWORD): WINBOOL
-       {.stdcall, dynlib: "kernel32", importc: "SetNamedPipeHandleState".}
-  proc resetEvent*(hEvent: Handle): WINBOOL
-       {.stdcall, dynlib: "kernel32", importc: "ResetEvent".}
-
 template getTransportTooManyError*(code: int = 0): ref TransportTooManyError =
   let msg =
     when defined(posix):
@@ -664,11 +619,11 @@ template getTransportTooManyError*(code: int = 0): ref TransportTooManyError =
       case code
       of 0:
         "Too many open transports"
-      of ERROR_TOO_MANY_OPEN_FILES:
+      of osdefs.ERROR_TOO_MANY_OPEN_FILES:
         "[ERROR_TOO_MANY_OPEN_FILES] Too many open files"
-      of WSAENOBUFS:
+      of osdefs.WSAENOBUFS:
         "[WSAENOBUFS] No buffer space available"
-      of WSAEMFILE:
+      of osdefs.WSAEMFILE:
         "[WSAEMFILE] Too many open sockets"
       else:
         "[" & $code & "] Too many open transports"
@@ -697,15 +652,15 @@ template getConnectionAbortedError*(code: int): ref TransportAbortedError =
         "[" & $code & "] Connection has been aborted"
     elif defined(windows):
       case code
-      of 0, WSAECONNABORTED:
+      of 0, osdefs.WSAECONNABORTED:
         "[ECONNABORTED] Connection has been aborted before being accepted"
-      of WSAENETDOWN:
+      of osdefs.WSAENETDOWN:
         "[ENETDOWN] Network is down"
-      of WSAENETRESET:
+      of osdefs.WSAENETRESET:
         "[ENETRESET] Network dropped connection on reset"
-      of WSAECONNRESET:
+      of osdefs.WSAECONNRESET:
         "[ECONNRESET] Connection reset by peer"
-      of WSAETIMEDOUT:
+      of osdefs.WSAETIMEDOUT:
         "[ETIMEDOUT] Connection timed out"
       else:
         "[" & $code & "] Connection has been aborted"

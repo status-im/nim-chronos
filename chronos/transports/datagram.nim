@@ -12,19 +12,10 @@ when (NimMajor, NimMinor) < (1, 4):
 else:
   {.push raises: [].}
 
-import std/[net, nativesockets, os, deques]
-import ".."/[selectors2, asyncloop, handles]
-import ./common
-
-when defined(windows) or defined(nimdoc):
-  import winlean
-else:
-  import posix
-  when (defined(linux) and not defined(android)) and defined(amd64):
-    const IP_MULTICAST_TTL: cint = 33
-  else:
-    var IP_MULTICAST_TTL* {.importc: "IP_MULTICAST_TTL",
-                            header: "<netinet/in.h>".}: cint
+import std/deques
+when not(defined(windows)): import ".."/selectors2
+import ".."/[asyncloop, osdefs, handles]
+import "."/common
 
 type
   VectorKind = enum
@@ -61,9 +52,9 @@ type
     when defined(windows):
       rovl: CustomOverlapped          # Reader OVERLAPPED structure
       wovl: CustomOverlapped          # Writer OVERLAPPED structure
-      rflag: int32                    # Reader flags storage
-      rwsabuf: TWSABuf                # Reader WSABUF structure
-      wwsabuf: TWSABuf                # Writer WSABUF structure
+      rflag: uint32                   # Reader flags storage
+      rwsabuf: WSABuf                 # Reader WSABUF structure
+      wwsabuf: WSABuf                 # Writer WSABUF structure
 
   DgramTransportTracker* = ref object of TrackerBase
     opened*: int64
@@ -82,7 +73,7 @@ proc remoteAddress*(transp: DatagramTransport): TransportAddress {.
                    addr slen) != 0:
       raiseTransportOsError(osLastError())
     fromSAddr(addr saddr, slen, transp.remote)
-  result = transp.remote
+  transp.remote
 
 proc localAddress*(transp: DatagramTransport): TransportAddress {.
     raises: [Defect, TransportOsError].} =
@@ -94,7 +85,7 @@ proc localAddress*(transp: DatagramTransport): TransportAddress {.
                    addr slen) != 0:
       raiseTransportOsError(osLastError())
     fromSAddr(addr saddr, slen, transp.local)
-  result = transp.local
+  transp.local
 
 template setReadError(t, e: untyped) =
   (t).state.incl(ReadError)
@@ -104,18 +95,20 @@ proc setupDgramTransportTracker(): DgramTransportTracker {.
      gcsafe, raises: [Defect].}
 
 proc getDgramTransportTracker(): DgramTransportTracker {.inline.} =
-  result = cast[DgramTransportTracker](getTracker(DgramTransportTrackerName))
-  if isNil(result):
-    result = setupDgramTransportTracker()
+  var res = cast[DgramTransportTracker](getTracker(DgramTransportTrackerName))
+  if isNil(res):
+    res = setupDgramTransportTracker()
+  doAssert(not(isNil(res)))
+  res
 
 proc dumpTransportTracking(): string {.gcsafe.} =
   var tracker = getDgramTransportTracker()
-  result = "Opened transports: " & $tracker.opened & "\n" &
-           "Closed transports: " & $tracker.closed
+  "Opened transports: " & $tracker.opened & "\n" &
+  "Closed transports: " & $tracker.closed
 
 proc leakTransport(): bool {.gcsafe.} =
-  var tracker = getDgramTransportTracker()
-  result = (tracker.opened != tracker.closed)
+  let tracker = getDgramTransportTracker()
+  tracker.opened != tracker.closed
 
 proc trackDgram(t: DatagramTransport) {.inline.} =
   var tracker = getDgramTransportTracker()
@@ -126,45 +119,18 @@ proc untrackDgram(t: DatagramTransport) {.inline.}  =
   inc(tracker.closed)
 
 proc setupDgramTransportTracker(): DgramTransportTracker {.gcsafe.} =
-  result = new DgramTransportTracker
-  result.opened = 0
-  result.closed = 0
-  result.dump = dumpTransportTracking
-  result.isLeaked = leakTransport
-  addTracker(DgramTransportTrackerName, result)
+  let res = DgramTransportTracker(
+    opened: 0, closed: 0, dump: dumpTransportTracking, isLeaked: leakTransport)
+  addTracker(DgramTransportTrackerName, res)
+  res
 
-when defined(nimdoc):
-  proc newDatagramTransportCommon(cbproc: DatagramCallback,
-                                  remote: TransportAddress,
-                                  local: TransportAddress,
-                                  sock: AsyncFD,
-                                  flags: set[ServerFlags],
-                                  udata: pointer,
-                                  child: DatagramTransport,
-                                  bufferSize: int,
-                                  ttl: int): DatagramTransport {.
-      raises: [Defect, CatchableError].} =
-    discard
-
-  proc resumeRead(transp: DatagramTransport) {.inline.} =
-    discard
-
-  proc resumeWrite(transp: DatagramTransport) {.inline.} =
-    discard
-
-elif defined(windows):
+when defined(windows):
   template setWriterWSABuffer(t, v: untyped) =
     (t).wwsabuf.buf = cast[cstring](v.buf)
-    (t).wwsabuf.len = cast[int32](v.buflen)
-
-  const
-    IOC_VENDOR = DWORD(0x18000000)
-    SIO_UDP_CONNRESET = DWORD(winlean.IOC_IN) or IOC_VENDOR or DWORD(12)
-    IPPROTO_IP = DWORD(0)
-    IP_TTL = DWORD(4)
+    (t).wwsabuf.len = cast[ULONG](v.buflen)
 
   proc writeDatagramLoop(udata: pointer) =
-    var bytesCount: int32
+    var bytesCount: uint32
     var ovl = cast[PtrCustomOverlapped](udata)
     var transp = cast[DatagramTransport](ovl.data.udata)
     while len(transp.queue) > 0:
@@ -176,7 +142,7 @@ elif defined(windows):
         if err == OSErrorCode(-1):
           if not(vector.writer.finished()):
             vector.writer.complete()
-        elif int(err) == ERROR_OPERATION_ABORTED:
+        elif int(err) == osdefs.ERROR_OPERATION_ABORTED:
           # CancelIO() interrupt
           transp.state.incl(WritePaused)
           if not(vector.writer.finished()):
@@ -191,26 +157,26 @@ elif defined(windows):
         let fd = SocketHandle(transp.fd)
         var vector = transp.queue.popFirst()
         transp.setWriterWSABuffer(vector)
-        var ret: cint
-        if vector.kind == WithAddress:
-          var fixedAddress = windowsAnyAddressFix(vector.address)
-          toSAddr(fixedAddress, transp.waddr, transp.walen)
-          ret = WSASendTo(fd, addr transp.wwsabuf, DWORD(1), addr bytesCount,
-                          DWORD(0), cast[ptr SockAddr](addr transp.waddr),
-                          cint(transp.walen),
-                          cast[POVERLAPPED](addr transp.wovl), nil)
-        else:
-          ret = WSASend(fd, addr transp.wwsabuf, DWORD(1), addr bytesCount,
-                        DWORD(0), cast[POVERLAPPED](addr transp.wovl), nil)
+        let ret =
+          if vector.kind == WithAddress:
+            var fixedAddress = windowsAnyAddressFix(vector.address)
+            toSAddr(fixedAddress, transp.waddr, transp.walen)
+            wsaSendTo(fd, addr transp.wwsabuf, DWORD(1), addr bytesCount,
+                      DWORD(0), cast[ptr SockAddr](addr transp.waddr),
+                      cint(transp.walen),
+                      cast[POVERLAPPED](addr transp.wovl), nil)
+          else:
+            wsaSend(fd, addr transp.wwsabuf, DWORD(1), addr bytesCount,
+                    DWORD(0), cast[POVERLAPPED](addr transp.wovl), nil)
         if ret != 0:
           let err = osLastError()
-          if int(err) == ERROR_OPERATION_ABORTED:
+          if int(err) == osdefs.ERROR_OPERATION_ABORTED:
             # CancelIO() interrupt
             transp.state.excl(WritePending)
             transp.state.incl(WritePaused)
             if not(vector.writer.finished()):
               vector.writer.complete()
-          elif int(err) == ERROR_IO_PENDING:
+          elif int(err) == osdefs.ERROR_IO_PENDING:
             transp.queue.addFirst(vector)
           else:
             transp.state.excl(WritePending)
@@ -226,7 +192,7 @@ elif defined(windows):
 
   proc readDatagramLoop(udata: pointer) =
     var
-      bytesCount: int32
+      bytesCount: uint32
       raddr: TransportAddress
     var ovl = cast[PtrCustomOverlapped](udata)
     var transp = cast[DatagramTransport](ovl.data.udata)
@@ -240,9 +206,9 @@ elif defined(windows):
           if bytesCount == 0:
             transp.state.incl({ReadEof, ReadPaused})
           fromSAddr(addr transp.raddr, transp.ralen, raddr)
-          transp.buflen = bytesCount
-          asyncCheck transp.function(transp, raddr)
-        elif int(err) == ERROR_OPERATION_ABORTED:
+          transp.buflen = int(bytesCount)
+          asyncSpawn transp.function(transp, raddr)
+        elif int(err) == osdefs.ERROR_OPERATION_ABORTED:
           # CancelIO() interrupt or closeSocket() call.
           transp.state.incl(ReadPaused)
           if ReadClosed in transp.state and not(transp.future.finished()):
@@ -256,7 +222,7 @@ elif defined(windows):
           transp.setReadError(err)
           transp.state.incl(ReadPaused)
           transp.buflen = 0
-          asyncCheck transp.function(transp, raddr)
+          asyncSpawn transp.function(transp, raddr)
       else:
         ## Initiation
         if transp.state * {ReadEof, ReadClosed, ReadError} == {}:
@@ -264,29 +230,29 @@ elif defined(windows):
           let fd = SocketHandle(transp.fd)
           transp.rflag = 0
           transp.ralen = SockLen(sizeof(Sockaddr_storage))
-          let ret = WSARecvFrom(fd, addr transp.rwsabuf, DWORD(1),
+          let ret = wsaRecvFrom(fd, addr transp.rwsabuf, DWORD(1),
                                 addr bytesCount, addr transp.rflag,
                                 cast[ptr SockAddr](addr transp.raddr),
                                 cast[ptr cint](addr transp.ralen),
                                 cast[POVERLAPPED](addr transp.rovl), nil)
           if ret != 0:
             let err = osLastError()
-            if int(err) == ERROR_OPERATION_ABORTED:
+            if int(err) == osdefs.ERROR_OPERATION_ABORTED:
               # CancelIO() interrupt
               transp.state.excl(ReadPending)
               transp.state.incl(ReadPaused)
-            elif int(err) == common.WSAECONNRESET:
+            elif int(err) == osdefs.WSAECONNRESET:
               transp.state.excl(ReadPending)
               transp.state.incl({ReadPaused, ReadEof})
               break
-            elif int(err) == ERROR_IO_PENDING:
+            elif int(err) == osdefs.ERROR_IO_PENDING:
               discard
             else:
               transp.state.excl(ReadPending)
               transp.state.incl(ReadPaused)
               transp.setReadError(err)
               transp.buflen = 0
-              asyncCheck transp.function(transp, raddr)
+              asyncSpawn transp.function(transp, raddr)
         else:
           # Transport closure happens in callback, and we not started new
           # WSARecvFrom session.
@@ -297,13 +263,17 @@ elif defined(windows):
             GC_unref(transp)
         break
 
-  proc resumeRead(transp: DatagramTransport) {.inline.} =
-    transp.state.excl(ReadPaused)
-    readDatagramLoop(cast[pointer](addr transp.rovl))
+  proc resumeRead(transp: DatagramTransport): Result[void, OSErrorCode] =
+    if ReadPaused in transp.state:
+      transp.state.excl(ReadPaused)
+      readDatagramLoop(cast[pointer](addr transp.rovl))
+    ok()
 
-  proc resumeWrite(transp: DatagramTransport) {.inline.} =
-    transp.state.excl(WritePaused)
-    writeDatagramLoop(cast[pointer](addr transp.wovl))
+  proc resumeWrite(transp: DatagramTransport): Result[void, OSErrorCode] =
+    if WritePaused in transp.state:
+      transp.state.excl(WritePaused)
+      writeDatagramLoop(cast[pointer](addr transp.wovl))
+    ok()
 
   proc newDatagramTransportCommon(cbproc: DatagramCallback,
                                   remote: TransportAddress,
@@ -314,16 +284,13 @@ elif defined(windows):
                                   child: DatagramTransport,
                                   bufferSize: int,
                                   ttl: int): DatagramTransport {.
-      raises: [Defect, CatchableError].} =
+      raises: [Defect, TransportOsError].} =
     var localSock: AsyncFD
     doAssert(remote.family == local.family)
     doAssert(not isNil(cbproc))
     doAssert(remote.family in {AddressFamily.IPv4, AddressFamily.IPv6})
 
-    if isNil(child):
-      result = DatagramTransport()
-    else:
-      result = child
+    var res = if isNil(child): DatagramTransport() else: child
 
     if sock == asyncInvalidSocket:
       localSock = createAsyncSocket(local.getDomain(), SockType.SOCK_DGRAM,
@@ -335,25 +302,27 @@ elif defined(windows):
       if not setSocketBlocking(SocketHandle(sock), false):
         raiseTransportOsError(osLastError())
       localSock = sock
-      register(localSock)
+      let bres = register2(localSock)
+      if bres.isErr():
+        raiseTransportOsError(bres.error())
 
     ## Apply ServerFlags here
     if ServerFlags.ReuseAddr in flags:
-      if not setSockOpt(localSock, SOL_SOCKET, SO_REUSEADDR, 1):
+      if not setSockOpt(localSock, osdefs.SOL_SOCKET, osdefs.SO_REUSEADDR, 1):
         let err = osLastError()
         if sock == asyncInvalidSocket:
           closeSocket(localSock)
         raiseTransportOsError(err)
 
     if ServerFlags.Broadcast in flags:
-      if not setSockOpt(localSock, SOL_SOCKET, SO_BROADCAST, 1):
+      if not setSockOpt(localSock, osdefs.SOL_SOCKET, osdefs.SO_BROADCAST, 1):
         let err = osLastError()
         if sock == asyncInvalidSocket:
           closeSocket(localSock)
         raiseTransportOsError(err)
 
       if ttl > 0:
-        if not setSockOpt(localSock, IPPROTO_IP, IP_TTL, DWORD(ttl)):
+        if not setSockOpt(localSock, osdefs.IPPROTO_IP, osdefs.IP_TTL, ttl):
           let err = osLastError()
           if sock == asyncInvalidSocket:
             closeSocket(localSock)
@@ -362,7 +331,7 @@ elif defined(windows):
     ## Fix for Q263823.
     var bytesRet: DWORD
     var bval = WINBOOL(0)
-    if WSAIoctl(SocketHandle(localSock), SIO_UDP_CONNRESET, addr bval,
+    if wsaIoctl(SocketHandle(localSock), osdefs.SIO_UDP_CONNRESET, addr bval,
                 sizeof(WINBOOL).DWORD, nil, DWORD(0),
                 addr bytesRet, nil, nil) != 0:
       raiseTransportOsError(osLastError())
@@ -372,8 +341,8 @@ elif defined(windows):
       var slen: SockLen
       toSAddr(local, saddr, slen)
 
-      if bindAddr(SocketHandle(localSock), cast[ptr SockAddr](addr saddr),
-                  slen) != 0:
+      if bindSocket(SocketHandle(localSock), cast[ptr SockAddr](addr saddr),
+                    slen) != 0:
         let err = osLastError()
         if sock == asyncInvalidSocket:
           closeSocket(localSock)
@@ -382,8 +351,8 @@ elif defined(windows):
       var saddr: Sockaddr_storage
       var slen: SockLen
       saddr.ss_family = type(saddr.ss_family)(local.getDomain())
-      if bindAddr(SocketHandle(localSock), cast[ptr SockAddr](addr saddr),
-                  slen) != 0:
+      if bindSocket(SocketHandle(localSock), cast[ptr SockAddr](addr saddr),
+                    slen) != 0:
         let err = osLastError()
         if sock == asyncInvalidSocket:
           closeSocket(localSock)
@@ -400,28 +369,29 @@ elif defined(windows):
         if sock == asyncInvalidSocket:
           closeSocket(localSock)
         raiseTransportOsError(err)
-      result.remote = fixedAddress
+      res.remote = fixedAddress
 
-    result.fd = localSock
-    result.function = cbproc
-    result.buffer = newSeq[byte](bufferSize)
-    result.queue = initDeque[GramVector]()
-    result.udata = udata
-    result.state = {WritePaused}
-    result.future = newFuture[void]("datagram.transport")
-    result.rovl.data = CompletionData(cb: readDatagramLoop,
-                                      udata: cast[pointer](result))
-    result.wovl.data = CompletionData(cb: writeDatagramLoop,
-                                      udata: cast[pointer](result))
-    result.rwsabuf = TWSABuf(buf: cast[cstring](addr result.buffer[0]),
-                             len: int32(len(result.buffer)))
-    GC_ref(result)
+    res.fd = localSock
+    res.function = cbproc
+    res.buffer = newSeq[byte](bufferSize)
+    res.queue = initDeque[GramVector]()
+    res.udata = udata
+    res.state = {WritePaused}
+    res.future = newFuture[void]("datagram.transport")
+    res.rovl.data = CompletionData(cb: readDatagramLoop,
+                                      udata: cast[pointer](res))
+    res.wovl.data = CompletionData(cb: writeDatagramLoop,
+                                      udata: cast[pointer](res))
+    res.rwsabuf = WSABuf(buf: cast[cstring](addr res.buffer[0]),
+                            len: ULONG(len(res.buffer)))
+    GC_ref(res)
     # Start tracking transport
-    trackDgram(result)
+    trackDgram(res)
     if NoAutoRead notin flags:
-      result.resumeRead()
+      res.resumeRead()
     else:
-      result.state.incl(ReadPaused)
+      res.state.incl(ReadPaused)
+    res
 
 else:
   # Linux/BSD/MacOS part
@@ -440,14 +410,14 @@ else:
     else:
       while true:
         transp.ralen = SockLen(sizeof(Sockaddr_storage))
-        var res = posix.recvfrom(fd, addr transp.buffer[0],
-                                 cint(len(transp.buffer)), cint(0),
-                                 cast[ptr SockAddr](addr transp.raddr),
-                                 addr transp.ralen)
+        var res = osdefs.recvfrom(fd, addr transp.buffer[0],
+                                  cint(len(transp.buffer)), cint(0),
+                                  cast[ptr SockAddr](addr transp.raddr),
+                                  addr transp.ralen)
         if res >= 0:
           fromSAddr(addr transp.raddr, transp.ralen, raddr)
           transp.buflen = res
-          asyncCheck transp.function(transp, raddr)
+          asyncSpawn transp.function(transp, raddr)
         else:
           let err = osLastError()
           if int(err) == EINTR:
@@ -455,7 +425,7 @@ else:
           else:
             transp.buflen = 0
             transp.setReadError(err)
-            asyncCheck transp.function(transp, raddr)
+            asyncSpawn transp.function(transp, raddr)
         break
 
   proc writeDatagramLoop(udata: pointer) =
@@ -475,11 +445,11 @@ else:
         while true:
           if vector.kind == WithAddress:
             toSAddr(vector.address, transp.waddr, transp.walen)
-            res = posix.sendto(fd, vector.buf, vector.buflen, MSG_NOSIGNAL,
-                               cast[ptr SockAddr](addr transp.waddr),
-                               transp.walen)
+            res = osdefs.sendto(fd, vector.buf, vector.buflen, MSG_NOSIGNAL,
+                                cast[ptr SockAddr](addr transp.waddr),
+                                transp.walen)
           elif vector.kind == WithoutAddress:
-            res = posix.send(fd, vector.buf, vector.buflen, MSG_NOSIGNAL)
+            res = osdefs.send(fd, vector.buf, vector.buflen, MSG_NOSIGNAL)
           if res >= 0:
             if not(vector.writer.finished()):
               vector.writer.complete()
@@ -500,23 +470,17 @@ else:
         except ValueError as exc:
           raiseAsDefect exc, "removeWriter"
 
-  proc resumeWrite(transp: DatagramTransport) {.inline.} =
-    transp.state.excl(WritePaused)
-    try:
-      addWriter(transp.fd, writeDatagramLoop, cast[pointer](transp))
-    except IOSelectorsException as exc:
-      raiseAsDefect exc, "addWriter"
-    except ValueError as exc:
-      raiseAsDefect exc, "addWriter"
+  proc resumeWrite(transp: DatagramTransport): Result[void, OSErrorCode] =
+    if WritePaused in transp.state:
+      ? addWriter2(transp.fd, writeDatagramLoop, cast[pointer](transp))
+      transp.state.excl(WritePaused)
+    ok()
 
-  proc resumeRead(transp: DatagramTransport) {.inline.} =
-    transp.state.excl(ReadPaused)
-    try:
-      addReader(transp.fd, readDatagramLoop, cast[pointer](transp))
-    except IOSelectorsException as exc:
-      raiseAsDefect exc, "addReader"
-    except ValueError as exc:
-      raiseAsDefect exc, "addReader"
+  proc resumeRead(transp: DatagramTransport): Result[void, OSErrorCode] =
+    if ReadPaused in transp.state:
+      ? addReader2(transp.fd, readDatagramLoop, cast[pointer](transp))
+      transp.state.excl(ReadPaused)
+    ok()
 
   proc newDatagramTransportCommon(cbproc: DatagramCallback,
                                   remote: TransportAddress,
@@ -527,15 +491,12 @@ else:
                                   child: DatagramTransport,
                                   bufferSize: int,
                                   ttl: int): DatagramTransport {.
-      raises: [Defect, CatchableError].} =
+      raises: [Defect, TransportOsError].} =
     var localSock: AsyncFD
     doAssert(remote.family == local.family)
     doAssert(not isNil(cbproc))
 
-    if isNil(child):
-      result = DatagramTransport()
-    else:
-      result = child
+    var res = if isNil(child): DatagramTransport() else: child
 
     if sock == asyncInvalidSocket:
       var proto = Protocol.IPPROTO_UDP
@@ -551,32 +512,37 @@ else:
       if not setSocketBlocking(SocketHandle(sock), false):
         raiseTransportOsError(osLastError())
       localSock = sock
-      register(localSock)
+      let bres = register2(localSock)
+      if bres.isErr():
+        raiseTransportOsError(bres.error())
 
     ## Apply ServerFlags here
     if ServerFlags.ReuseAddr in flags:
-      if not setSockOpt(localSock, SOL_SOCKET, SO_REUSEADDR, 1):
+      if not setSockOpt(localSock, osdefs.SOL_SOCKET, osdefs.SO_REUSEADDR, 1):
         let err = osLastError()
         if sock == asyncInvalidSocket:
           closeSocket(localSock)
         raiseTransportOsError(err)
 
     if ServerFlags.Broadcast in flags:
-      if not setSockOpt(localSock, SOL_SOCKET, SO_BROADCAST, 1):
+      if not setSockOpt(localSock, osdefs.SOL_SOCKET, osdefs.SO_BROADCAST, 1):
         let err = osLastError()
         if sock == asyncInvalidSocket:
           closeSocket(localSock)
         raiseTransportOsError(err)
 
       if ttl > 0:
-        var res: bool
-        if local.family == AddressFamily.IPv4:
-          res = setSockOpt(localSock, posix.IPPROTO_IP, IP_MULTICAST_TTL,
-                           cint(ttl))
-        elif local.family == AddressFamily.IPv6:
-           res = setSockOpt(localSock, posix.IPPROTO_IP, IPV6_MULTICAST_HOPS,
-                            cint(ttl))
-        if not res:
+        let tres =
+          if local.family == AddressFamily.IPv4:
+            setSockOpt(localSock, osdefs.IPPROTO_IP, osdefs.IP_MULTICAST_TTL,
+                       cint(ttl))
+          elif local.family == AddressFamily.IPv6:
+            setSockOpt(localSock, osdefs.IPPROTO_IP, osdefs.IPV6_MULTICAST_HOPS,
+                       cint(ttl))
+          else:
+            raiseAssert "Unsupported address bound to local socket"
+
+        if not tres:
           let err = osLastError()
           if sock == asyncInvalidSocket:
             closeSocket(localSock)
@@ -586,8 +552,8 @@ else:
       var saddr: Sockaddr_storage
       var slen: SockLen
       toSAddr(local, saddr, slen)
-      if bindAddr(SocketHandle(localSock), cast[ptr SockAddr](addr saddr),
-                  slen) != 0:
+      if bindSocket(SocketHandle(localSock), cast[ptr SockAddr](addr saddr),
+                    slen) != 0:
         let err = osLastError()
         if sock == asyncInvalidSocket:
           closeSocket(localSock)
@@ -603,23 +569,24 @@ else:
         if sock == asyncInvalidSocket:
           closeSocket(localSock)
         raiseTransportOsError(err)
-      result.remote = remote
+      res.remote = remote
 
-    result.fd = localSock
-    result.function = cbproc
-    result.flags = flags
-    result.buffer = newSeq[byte](bufferSize)
-    result.queue = initDeque[GramVector]()
-    result.udata = udata
-    result.state = {WritePaused}
-    result.future = newFuture[void]("datagram.transport")
-    GC_ref(result)
+    res.fd = localSock
+    res.function = cbproc
+    res.flags = flags
+    res.buffer = newSeq[byte](bufferSize)
+    res.queue = initDeque[GramVector]()
+    res.udata = udata
+    res.state = {WritePaused}
+    res.future = newFuture[void]("datagram.transport")
+    GC_ref(res)
     # Start tracking transport
-    trackDgram(result)
+    trackDgram(res)
     if NoAutoRead notin flags:
-      result.resumeRead()
+      res.resumeRead()
     else:
-      result.state.incl(ReadPaused)
+      res.state.incl(ReadPaused)
+    res
 
 proc close*(transp: DatagramTransport) =
   ## Closes and frees resources of transport ``transp``.
@@ -656,7 +623,7 @@ proc newDatagramTransport*(cbproc: DatagramCallback,
                            bufSize: int = DefaultDatagramBufferSize,
                            ttl: int = 0
                            ): DatagramTransport {.
-    raises: [Defect, CatchableError].} =
+    raises: [Defect, TransportOsError].} =
   ## Create new UDP datagram transport (IPv4).
   ##
   ## ``cbproc`` - callback which will be called, when new datagram received.
@@ -669,8 +636,8 @@ proc newDatagramTransport*(cbproc: DatagramCallback,
   ## ``bufSize`` - size of internal buffer.
   ## ``ttl`` - TTL for UDP datagram packet (only usable when flags has
   ## ``Broadcast`` option).
-  result = newDatagramTransportCommon(cbproc, remote, local, sock,
-                                      flags, udata, child, bufSize, ttl)
+  newDatagramTransportCommon(cbproc, remote, local, sock, flags, udata, child,
+                             bufSize, ttl)
 
 proc newDatagramTransport*[T](cbproc: DatagramCallback,
                               udata: ref T,
@@ -682,12 +649,11 @@ proc newDatagramTransport*[T](cbproc: DatagramCallback,
                               bufSize: int = DefaultDatagramBufferSize,
                               ttl: int = 0
                               ): DatagramTransport {.
-    raises: [Defect, CatchableError].} =
+    raises: [Defect, TransportOsError].} =
   var fflags = flags + {GCUserData}
   GC_ref(udata)
-  result = newDatagramTransportCommon(cbproc, remote, local, sock,
-                                      fflags, cast[pointer](udata),
-                                      child, bufSize, ttl)
+  newDatagramTransportCommon(cbproc, remote, local, sock, fflags,
+                             cast[pointer](udata), child, bufSize, ttl)
 
 proc newDatagramTransport6*(cbproc: DatagramCallback,
                             remote: TransportAddress = AnyAddress6,
@@ -699,7 +665,7 @@ proc newDatagramTransport6*(cbproc: DatagramCallback,
                             bufSize: int = DefaultDatagramBufferSize,
                             ttl: int = 0
                             ): DatagramTransport {.
-    raises: [Defect, CatchableError].} =
+    raises: [Defect, TransportOsError].} =
   ## Create new UDP datagram transport (IPv6).
   ##
   ## ``cbproc`` - callback which will be called, when new datagram received.
@@ -712,8 +678,8 @@ proc newDatagramTransport6*(cbproc: DatagramCallback,
   ## ``bufSize`` - size of internal buffer.
   ## ``ttl`` - TTL for UDP datagram packet (only usable when flags has
   ## ``Broadcast`` option).
-  result = newDatagramTransportCommon(cbproc, remote, local, sock,
-                                      flags, udata, child, bufSize, ttl)
+  newDatagramTransportCommon(cbproc, remote, local, sock, flags, udata, child,
+                             bufSize, ttl)
 
 proc newDatagramTransport6*[T](cbproc: DatagramCallback,
                                udata: ref T,
@@ -725,12 +691,11 @@ proc newDatagramTransport6*[T](cbproc: DatagramCallback,
                                bufSize: int = DefaultDatagramBufferSize,
                                ttl: int = 0
                                ): DatagramTransport {.
-    raises: [Defect, CatchableError].} =
+    raises: [Defect, TransportOsError].} =
   var fflags = flags + {GCUserData}
   GC_ref(udata)
-  result = newDatagramTransportCommon(cbproc, remote, local, sock,
-                                      fflags, cast[pointer](udata),
-                                      child, bufSize, ttl)
+  newDatagramTransportCommon(cbproc, remote, local, sock, fflags,
+                             cast[pointer](udata), child, bufSize, ttl)
 
 proc join*(transp: DatagramTransport): Future[void] =
   ## Wait until the transport ``transp`` will be closed.
@@ -753,7 +718,7 @@ proc join*(transp: DatagramTransport): Future[void] =
 proc closeWait*(transp: DatagramTransport): Future[void] =
   ## Close transport ``transp`` and release all resources.
   transp.close()
-  result = transp.join()
+  transp.join()
 
 proc send*(transp: DatagramTransport, pbytes: pointer,
            nbytes: int): Future[void] =
@@ -790,7 +755,9 @@ proc send*(transp: DatagramTransport, msg: sink string,
                           writer: cast[Future[void]](retFuture))
   transp.queue.addLast(vector)
   if WritePaused in transp.state:
-    transp.resumeWrite()
+    let wres = transp.resumeWrite()
+    if wres.isErr():
+      retFuture.fail(getTransportOsError(wres.error()))
   return retFuture
 
 proc send*[T](transp: DatagramTransport, msg: sink seq[T],
@@ -812,7 +779,9 @@ proc send*[T](transp: DatagramTransport, msg: sink seq[T],
                           writer: cast[Future[void]](retFuture))
   transp.queue.addLast(vector)
   if WritePaused in transp.state:
-    transp.resumeWrite()
+    let wres = transp.resumeWrite()
+    if wres.isErr():
+      retFuture.fail(getTransportOsError(wres.error()))
   return retFuture
 
 proc sendTo*(transp: DatagramTransport, remote: TransportAddress,
@@ -825,7 +794,9 @@ proc sendTo*(transp: DatagramTransport, remote: TransportAddress,
                           writer: retFuture, address: remote)
   transp.queue.addLast(vector)
   if WritePaused in transp.state:
-    transp.resumeWrite()
+    let wres = transp.resumeWrite()
+    if wres.isErr():
+      retFuture.fail(getTransportOsError(wres.error()))
   return retFuture
 
 proc sendTo*(transp: DatagramTransport, remote: TransportAddress,
@@ -848,7 +819,9 @@ proc sendTo*(transp: DatagramTransport, remote: TransportAddress,
                           address: remote)
   transp.queue.addLast(vector)
   if WritePaused in transp.state:
-    transp.resumeWrite()
+    let wres = transp.resumeWrite()
+    if wres.isErr():
+      retFuture.fail(getTransportOsError(wres.error()))
   return retFuture
 
 proc sendTo*[T](transp: DatagramTransport, remote: TransportAddress,
@@ -871,7 +844,9 @@ proc sendTo*[T](transp: DatagramTransport, remote: TransportAddress,
                           address: remote)
   transp.queue.addLast(vector)
   if WritePaused in transp.state:
-    transp.resumeWrite()
+    let wres = transp.resumeWrite()
+    if wres.isErr():
+      retFuture.fail(getTransportOsError(wres.error()))
   return retFuture
 
 proc peekMessage*(transp: DatagramTransport, msg: var seq[byte],
@@ -889,17 +864,21 @@ proc peekMessage*(transp: DatagramTransport, msg: var seq[byte],
 proc getMessage*(transp: DatagramTransport): seq[byte] {.
     raises: [Defect, CatchableError].} =
   ## Copy data from internal message buffer and return result.
+  var default: seq[byte]
   if ReadError in transp.state:
     transp.state.excl(ReadError)
     raise transp.getError()
   if transp.buflen > 0:
-    result = newSeq[byte](transp.buflen)
-    copyMem(addr result[0], addr transp.buffer[0], transp.buflen)
+    var res = newSeq[byte](transp.buflen)
+    copyMem(addr res[0], addr transp.buffer[0], transp.buflen)
+    res
+  else:
+    default
 
 proc getUserData*[T](transp: DatagramTransport): T {.inline.} =
   ## Obtain user data stored in ``transp`` object.
-  result = cast[T](transp.udata)
+  cast[T](transp.udata)
 
 proc closed*(transp: DatagramTransport): bool {.inline.} =
   ## Returns ``true`` if transport in closed state.
-  result = ({ReadClosed, WriteClosed} * transp.state != {})
+  {ReadClosed, WriteClosed} * transp.state != {}
