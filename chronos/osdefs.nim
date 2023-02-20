@@ -705,7 +705,8 @@ when defined(windows):
                addrlen: ptr SockLen): SocketHandle {.
        stdcall, dynlib: "ws2_32", importc: "accept", sideEffect.}
 
-  proc bindAddr*(s: SocketHandle, name: ptr SockAddr, namelen: SockLen): cint {.
+  proc bindSocket*(s: SocketHandle, name: ptr SockAddr,
+                   namelen: SockLen): cint {.
        stdcall, dynlib: "ws2_32", importc: "bind", sideEffect.}
 
   proc send*(s: SocketHandle, buf: pointer, len, flags: cint): cint {.

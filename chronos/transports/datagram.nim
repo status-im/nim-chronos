@@ -376,7 +376,7 @@ when defined(windows):
     res.buffer = newSeq[byte](bufferSize)
     res.queue = initDeque[GramVector]()
     res.udata = udata
-    res.state = {WritePaused}
+    res.state = {ReadPaused, WritePaused}
     res.future = newFuture[void]("datagram.transport")
     res.rovl.data = CompletionData(cb: readDatagramLoop,
                                       udata: cast[pointer](res))
@@ -388,9 +388,8 @@ when defined(windows):
     # Start tracking transport
     trackDgram(res)
     if NoAutoRead notin flags:
-      res.resumeRead()
-    else:
-      res.state.incl(ReadPaused)
+      let rres = res.resumeRead()
+      if rres.isErr(): raiseTransportOsError(rres.error())
     res
 
 else:
@@ -577,15 +576,14 @@ else:
     res.buffer = newSeq[byte](bufferSize)
     res.queue = initDeque[GramVector]()
     res.udata = udata
-    res.state = {WritePaused}
+    res.state = {ReadPaused, WritePaused}
     res.future = newFuture[void]("datagram.transport")
     GC_ref(res)
     # Start tracking transport
     trackDgram(res)
     if NoAutoRead notin flags:
-      res.resumeRead()
-    else:
-      res.state.incl(ReadPaused)
+      let rres = res.resumeRead()
+      if rres.isErr(): raiseTransportOsError(rres.error())
     res
 
 proc close*(transp: DatagramTransport) =
@@ -733,7 +731,9 @@ proc send*(transp: DatagramTransport, pbytes: pointer,
                           writer: retFuture)
   transp.queue.addLast(vector)
   if WritePaused in transp.state:
-    transp.resumeWrite()
+    let wres = transp.resumeWrite()
+    if wres.isErr():
+      retFuture.fail(getTransportOsError(wres.error()))
   return retFuture
 
 proc send*(transp: DatagramTransport, msg: sink string,
