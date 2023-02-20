@@ -1286,3 +1286,276 @@ proc `==`*(x: OSErrorCode, y: int): bool =
   int(x) == y
 proc `==`*(x: SocketHandle, y: int): bool =
   x == SocketHandle(y)
+
+when defined(macosx) or defined(macos) or defined(bsd):
+  const
+    AF_LINK* = 18
+    IFF_UP* = 0x01
+    IFF_RUNNING* = 0x40
+
+    PF_ROUTE* = cint(17)
+    RTM_GET* = 0x04'u8
+    RTF_UP* = 0x01
+    RTF_GATEWAY* = 0x02
+    RTM_VERSION* = 5'u8
+
+    RTA_DST* = 0x01
+    RTA_GATEWAY* = 0x02
+
+  type
+    IfAddrs* {.importc: "struct ifaddrs", header: "<ifaddrs.h>",
+               pure, final.} = object
+      ifa_next* {.importc: "ifa_next".}: ptr IfAddrs
+      ifa_name* {.importc: "ifa_name".}: ptr cchar
+      ifa_flags* {.importc: "ifa_flags".}: cuint
+      ifa_addr* {.importc: "ifa_addr".}: ptr SockAddr
+      ifa_netmask* {.importc: "ifa_netmask".}: ptr SockAddr
+      ifa_dstaddr* {.importc: "ifa_dstaddr".}: ptr SockAddr
+      ifa_data* {.importc: "ifa_data".}: pointer
+
+    PIfAddrs* = ptr IfAddrs
+
+    IfData* {.importc: "struct if_data", header: "<net/if.h>",
+              pure, final.} = object
+      ifi_type* {.importc: "ifi_type".}: byte
+      ifi_typelen* {.importc: "ifi_typelen".}: byte
+      ifi_physical* {.importc: "ifi_physical".}: byte
+      ifi_addrlen* {.importc: "ifi_addrlen".}: byte
+      ifi_hdrlen* {.importc: "ifi_hdrlen".}: byte
+      ifi_recvquota* {.importc: "ifi_recvquota".}: byte
+      ifi_xmitquota* {.importc: "ifi_xmitquota".}: byte
+      ifi_unused1* {.importc: "ifi_unused1".}: byte
+      ifi_mtu* {.importc: "ifi_mtu".}: uint32
+      ifi_metric* {.importc: "ifi_metric".}: uint32
+      ifi_baudrate* {.importc: "ifi_baudrate".}: uint32
+      ifi_ipackets* {.importc: "ifi_ipackets".}: uint32
+      ifi_ierrors* {.importc: "ifi_ierrors".}: uint32
+      ifi_opackets* {.importc: "ifi_opackets".}: uint32
+      ifi_oerrors* {.importc: "ifi_oerrors".}: uint32
+      ifi_collisions* {.importc: "ifi_collisions".}: uint32
+      ifi_ibytes* {.importc: "ifi_ibytes".}: uint32
+      ifi_obytes* {.importc: "ifi_obytes".}: uint32
+      ifi_imcasts* {.importc: "ifi_imcasts".}: uint32
+      ifi_omcasts* {.importc: "ifi_omcasts".}: uint32
+      ifi_iqdrops* {.importc: "ifi_iqdrops".}: uint32
+      ifi_noproto* {.importc: "ifi_noproto".}: uint32
+      ifi_recvtiming* {.importc: "ifi_recvtiming".}: uint32
+      ifi_xmittiming* {.importc: "ifi_xmittiming".}: uint32
+      ifi_lastchange* {.importc: "ifi_lastchange".}: Timeval
+      ifi_unused2* {.importc: "ifi_unused2".}: uint32
+      ifi_hwassist* {.importc: "ifi_hwassist".}: uint32
+      ifi_reserved1* {.importc: "ifi_reserved1".}: uint32
+      ifi_reserved2* {.importc: "ifi_reserved2".}: uint32
+
+    Sockaddr_dl* = object
+      sdl_len*: byte
+      sdl_family*: byte
+      sdl_index*: uint16
+      sdl_type*: byte
+      sdl_nlen*: byte
+      sdl_alen*: byte
+      sdl_slen*: byte
+      sdl_data*: array[12, byte]
+
+    RtMetrics* = object
+      rmx_locks*: uint32
+      rmx_mtu*: uint32
+      rmx_hopcount*: uint32
+      rmx_expire*: int32
+      rmx_recvpipe*: uint32
+      rmx_sendpipe*: uint32
+      rmx_ssthresh*: uint32
+      rmx_rtt*: uint32
+      rmx_rttvar*: uint32
+      rmx_pksent*: uint32
+      rmx_state*: uint32
+      rmx_filler*: array[3, uint32]
+
+    RtMsgHeader* = object
+      rtm_msglen*: uint16
+      rtm_version*: byte
+      rtm_type*: byte
+      rtm_index*: uint16
+      rtm_flags*: cint
+      rtm_addrs*: cint
+      rtm_pid*: Pid
+      rtm_seq*: cint
+      rtm_errno*: cint
+      rtm_use*: cint
+      rtm_inits*: uint32
+      rtm_rmx*: RtMetrics
+
+    RtMessage* = object
+      rtm*: RtMsgHeader
+      space*: array[512, byte]
+
+  proc getIfAddrs*(ifap: ptr PIfAddrs): cint {.importc: "getifaddrs",
+       header: """#include <sys/types.h>
+                  #include <sys/socket.h>
+                  #include <ifaddrs.h>""".}
+  proc freeIfAddrs*(ifap: ptr IfAddrs) {.importc: "freeifaddrs",
+       header: """#include <sys/types.h>
+                  #include <sys/socket.h>
+                  #include <ifaddrs.h>""".}
+elif defined(linux):
+  const
+    AF_NETLINK* = cint(16)
+    AF_PACKET* = cint(17)
+    NETLINK_ROUTE* = cint(0)
+    NLMSG_ALIGNTO* = 4'u
+    RTA_ALIGNTO* = 4'u
+    # RTA_UNSPEC* = 0'u16
+    RTA_DST* = 1'u16
+    # RTA_SRC* = 2'u16
+    # RTA_IIF* = 3'u16
+    RTA_OIF* = 4'u16
+    RTA_GATEWAY* = 5'u16
+    # RTA_PRIORITY* = 6'u16
+    RTA_PREFSRC* = 7'u16
+    # RTA_METRICS* = 8'u16
+
+    RTM_F_LOOKUP_TABLE* = 0x1000
+
+    RTM_GETLINK* = 18
+    RTM_GETADDR* = 22
+    RTM_GETROUTE* = 26
+    NLM_F_REQUEST* = 1
+    NLM_F_ROOT* = 0x100
+    NLM_F_MATCH* = 0x200
+    NLM_F_DUMP* = NLM_F_ROOT or NLM_F_MATCH
+    IFLIST_REPLY_BUFFER* = 8192
+    InvalidSocketHandle* = SocketHandle(-1)
+    NLMSG_DONE* = 0x03
+    # NLMSG_MIN_TYPE* = 0x10
+    NLMSG_ERROR* = 0x02
+    # MSG_TRUNC* = 0x20
+
+    IFLA_ADDRESS* = 1
+    IFLA_IFNAME* = 3
+    IFLA_MTU* = 4
+    IFLA_OPERSTATE* = 16
+
+    IFA_ADDRESS* = 1
+    IFA_LOCAL* = 2
+    # IFA_BROADCAST* = 4
+
+    # ARPHRD_NETROM* = 0
+    ARPHRD_ETHER* = 1
+    ARPHRD_EETHER* = 2
+    # ARPHRD_AX25* = 3
+    # ARPHRD_PRONET* = 4
+    # ARPHRD_CHAOS* = 5
+    # ARPHRD_IEEE802* = 6
+    ARPHRD_ARCNET* = 7
+    # ARPHRD_APPLETLK* = 8
+    # ARPHRD_DLCI* = 15
+    ARPHRD_ATM* = 19
+    # ARPHRD_METRICOM* = 23
+    ARPHRD_IEEE1394* = 24
+    # ARPHRD_EUI64* = 27
+    # ARPHRD_INFINIBAND* = 32
+    ARPHRD_SLIP* = 256
+    ARPHRD_CSLIP* = 257
+    ARPHRD_SLIP6* = 258
+    ARPHRD_CSLIP6* = 259
+    # ARPHRD_RSRVD* = 260
+    # ARPHRD_ADAPT* = 264
+    # ARPHRD_ROSE* = 270
+    # ARPHRD_X25* = 271
+    # ARPHRD_HWX25* = 272
+    # ARPHRD_CAN* = 280
+    ARPHRD_PPP* = 512
+    ARPHRD_CISCO* = 513
+    ARPHRD_HDLC* = ARPHRD_CISCO
+    ARPHRD_LAPB* = 516
+    # ARPHRD_DDCMP* = 517
+    # ARPHRD_RAWHDLC* = 518
+    # ARPHRD_TUNNEL* = 768
+    # ARPHRD_TUNNEL6* = 769
+    ARPHRD_FRAD* = 770
+    # ARPHRD_SKIP* = 771
+    ARPHRD_LOOPBACK* = 772
+    # ARPHRD_LOCALTLK* = 773
+    # ARPHRD_FDDI* = 774
+    # ARPHRD_BIF* = 775
+    # ARPHRD_SIT* = 776
+    # ARPHRD_IPDDP* = 777
+    # ARPHRD_IPGRE* = 778
+    # ARPHRD_PIMREG* = 779
+    ARPHRD_HIPPI* = 780
+    # ARPHRD_ASH* = 781
+    # ARPHRD_ECONET* = 782
+    # ARPHRD_IRDA* = 783
+    # ARPHRD_FCPP* = 784
+    # ARPHRD_FCAL* = 785
+    # ARPHRD_FCPL* = 786
+    # ARPHRD_FCFABRIC* = 787
+    # ARPHRD_IEEE802_TR* = 800
+    ARPHRD_IEEE80211* = 801
+    ARPHRD_IEEE80211_PRISM* = 802
+    ARPHRD_IEEE80211_RADIOTAP* = 803
+    # ARPHRD_IEEE802154* = 804
+    # ARPHRD_IEEE802154_MONITOR* = 805
+    # ARPHRD_PHONET* = 820
+    # ARPHRD_PHONET_PIPE* = 821
+    # ARPHRD_CAIF* = 822
+    # ARPHRD_IP6GRE* = 823
+    # ARPHRD_NETLINK* = 824
+    # ARPHRD_6LOWPAN* = 825
+    # ARPHRD_VOID* = 0xFFFF
+    # ARPHRD_NONE* = 0xFFFE
+
+  type
+    Sockaddr_nl* = object
+      family*: cushort
+      pad*: cushort
+      pid*: uint32
+      groups*: uint32
+
+    NlMsgHeader* = object
+      nlmsg_len*: uint32
+      nlmsg_type*: uint16
+      nlmsg_flags*: uint16
+      nlmsg_seq*: uint32
+      nlmsg_pid*: uint32
+
+    IfInfoMessage* = object
+      ifi_family*: byte
+      ifi_pad*: byte
+      ifi_type*: cushort
+      ifi_index*: cint
+      ifi_flags*: cuint
+      ifi_change*: cuint
+
+    IfAddrMessage* = object
+      ifa_family*: byte
+      ifa_prefixlen*: byte
+      ifa_flags*: byte
+      ifa_scope*: byte
+      ifa_index*: uint32
+
+    RtMessage* = object
+      rtm_family*: byte
+      rtm_dst_len*: byte
+      rtm_src_len*: byte
+      rtm_tos*: byte
+      rtm_table*: byte
+      rtm_protocol*: byte
+      rtm_scope*: byte
+      rtm_type*: byte
+      rtm_flags*: cuint
+
+    RtAttr* = object
+      rta_len*: cushort
+      rta_type*: cushort
+
+    RtGenMsg* = object
+      rtgen_family*: byte
+
+    NLReq* = object
+      hdr*: NlMsgHeader
+      msg*: RtGenMsg
+
+    NLRouteReq* = object
+      hdr*: NlMsgHeader
+      msg*: RtMessage
