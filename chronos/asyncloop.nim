@@ -417,7 +417,7 @@ when defined(windows):
     loop.handles.incl(fd)
     ok()
 
-  proc register*(fd: AsyncFD) {.raises: [OSError].} =
+  proc register*(fd: AsyncFD) {.raises: [Defect, OSError].} =
     ## Register file descriptor ``fd`` in thread's dispatcher.
     let res = register2(fd)
     if res.isErr(): raiseOSError(res.error())

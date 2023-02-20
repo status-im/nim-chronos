@@ -6,15 +6,16 @@
 #                Licensed under either of
 #    Apache License, version 2.0, (LICENSE-APACHEv2)
 #                MIT license (LICENSE-MIT)
+
+from std/os import osLastError, osErrorMsg, OSErrorCode, raiseOSError
+export osLastError, osErrorMsg, OSError, OSErrorCode, raiseOSError
+
 when defined(windows):
   from std/winlean import SocketHandle, SockLen, SockAddr, InAddr,
                       In6_addr, Sockaddr_in, Sockaddr_in6, Sockaddr_storage,
                       AddrInfo
-  from std/os import osLastError, osErrorMsg, OSErrorCode, raiseOSError
-
   export SocketHandle, SockLen, SockAddr, InAddr,
          In6_addr, Sockaddr_in, Sockaddr_in6, Sockaddr_storage, AddrInfo
-  export osLastError, osErrorMsg, OSError, OSErrorCode, raiseOSError
 
   # Prerequisites for constants
   template WSAIORW*(x, y): untyped = (IOC_INOUT or x or y)
@@ -872,8 +873,8 @@ elif defined(macos) or defined(macosx):
        importc, header: "<mach/mach_time.h>".}
 
 elif defined(linux):
-  import std/[posix, os]
-  export posix, os
+  import std/[posix]
+  export posix
 
   when not defined(android) and defined(amd64):
     const IP_MULTICAST_TTL*: cint = 33

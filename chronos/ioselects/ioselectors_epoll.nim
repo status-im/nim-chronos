@@ -423,15 +423,17 @@ proc selectInto*[T](s: Selector[T], timeout: int,
               raiseIOSelectorsError(osLastError())
             rkey.events.incl(Event.Timer)
           elif Event.Signal in pkey.events:
-            var data = SignalFdInfo()
+            var data = selectors2.SignalFdInfo()
             if posix.read(cint(fdi), addr data,
-                          sizeof(SignalFdInfo)) != sizeof(SignalFdInfo):
+                          sizeof(selectors2.SignalFdInfo)) !=
+               sizeof(selectors2.SignalFdInfo):
               raiseIOSelectorsError(osLastError())
             rkey.events.incl(Event.Signal)
           elif Event.Process in pkey.events:
-            var data = SignalFdInfo()
+            var data = selectors2.SignalFdInfo()
             if posix.read(cint(fdi), addr data,
-                          sizeof(SignalFdInfo)) != sizeof(SignalFdInfo):
+                          sizeof(selectors2.SignalFdInfo)) !=
+               izeof(selectors2.SignalFdInfo):
               raiseIOSelectorsError(osLastError())
             if data.ssi_pid == uint32(pkey.param):
               rkey.events.incl(Event.Process)
