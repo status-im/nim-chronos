@@ -169,7 +169,7 @@ proc getMaxOpenFiles2*(): Result[int, OSErrorCode] =
     ok(16384)
   else:
     var limits: RLimit
-    if osdefs.getrlimit(posix.RLIMIT_NOFILE, limits) != 0:
+    if osdefs.getrlimit(osdefs.RLIMIT_NOFILE, limits) != 0:
       return err(osLastError())
     ok(int(limits.rlim_cur))
 
@@ -181,10 +181,10 @@ proc setMaxOpenFiles2*(count: int): Result[void, OSErrorCode] =
     ok()
   else:
     var limits: RLimit
-    if getrlimit(posix.RLIMIT_NOFILE, limits) != 0:
+    if getrlimit(osdefs.RLIMIT_NOFILE, limits) != 0:
       return err(osLastError())
     limits.rlim_cur = count
-    if setrlimit(posix.RLIMIT_NOFILE, limits) != 0:
+    if setrlimit(osdefs.RLIMIT_NOFILE, limits) != 0:
       return err(osLastError())
     ok()
 
