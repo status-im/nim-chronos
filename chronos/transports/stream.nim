@@ -700,7 +700,7 @@ when defined(windows):
                 bufferSize = DefaultStreamBufferSize,
                 child: StreamTransport = nil,
                 flags: set[TransportFlags] = {},
-                localAddress: TransportAddress = AnyAddress,
+                localAddress = TransportAddress(),
                 serverFlags: set[ServerFlags] = {}): Future[StreamTransport] =
     ## Open new connection to remote peer with address ``address`` and create
     ## new transport object ``StreamTransport`` for established connection.
@@ -739,7 +739,7 @@ when defined(windows):
           retFuture.fail(getTransportOsError(err))
           return retFuture
 
-      if localAddress != AnyAddress:
+      if localAddress != TransportAddress():
         if localAddress.family != address.family:
           sock.closeSocket()
           retFuture.fail(newException(TransportOsError,
@@ -1509,7 +1509,7 @@ else:
                 bufferSize = DefaultStreamBufferSize,
                 child: StreamTransport = nil,
                 flags: set[TransportFlags] = {},
-                localAddress: TransportAddress = AnyAddress,
+                localAddress = TransportAddress(),
                 serverFlags: set[ServerFlags] = {}): Future[StreamTransport] =
     ## Open new connection to remote peer with address ``address`` and create
     ## new transport object ``StreamTransport`` for established connection.
@@ -1556,7 +1556,7 @@ else:
         retFuture.fail(getTransportOsError(err))
         return retFuture
 
-    if localAddress != AnyAddress:
+    if localAddress != TransportAddress():
       if localAddress.family != address.family:
         sock.closeSocket()
         retFuture.fail(newException(TransportOsError,
