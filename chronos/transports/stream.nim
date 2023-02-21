@@ -745,6 +745,9 @@ when defined(windows):
           retFuture.fail(newException(TransportOsError,
             "connect local address domain is not equal to target address domain"))
           return retFuture
+        var
+          localAddr: Sockaddr_storage
+          localAddrLen: SockLen
         localAddress.toSAddr(localAddr, localAddrLen)
         if bindSocket(SocketHandle(sock),
           cast[ptr SockAddr](addr localAddr), localAddrLen) != 0:
