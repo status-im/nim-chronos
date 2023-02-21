@@ -136,11 +136,12 @@ proc newTLSStreamProtocolError[T](message: T): ref TLSStreamProtocolError =
 proc raiseTLSStreamProtocolError[T](message: T) {.noreturn, noinline.} =
   raise newTLSStreamProtocolImpl(message)
 
-proc newTrustAnchorStore*(anchors: openArray[X509TrustAnchor]): TrustAnchorStore =
-  new(result)
+proc new*(T: typedesc[TrustAnchorStore], anchors: openArray[X509TrustAnchor]): TrustAnchorStore =
+  var res: seq[X509TrustAnchor]
   for anchor in anchors:
-    result.anchors.add(anchor)
-    doAssert(unsafeAddr(anchor) != unsafeAddr(result.anchors[^1]), "Anchors should be copied")
+    res.add(anchor)
+    doAssert(unsafeAddr(anchor) != unsafeAddr(res[^1]), "Anchors should be copied")
+  return TrustAnchorStore(anchors: res)
 
 proc tlsWriteRec(engine: ptr SslEngineContext,
                  writer: TLSStreamWriter): Future[TLSResult] {.async.} =

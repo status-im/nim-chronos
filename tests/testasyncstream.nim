@@ -984,7 +984,7 @@ suite "TLSStream test suite":
     proc checkTrustAnchors(testMessage: string): Future[string] {.async.} =
       var key = TLSPrivateKey.init(SelfSignedRsaKey)
       var cert = TLSCertificate.init(SelfSignedRsaCert)
-      let trustAnchors = newTrustAnchorStore(SelfSignedTrustAnchors)
+      let trustAnchors = TrustAnchorStore.new(SelfSignedTrustAnchors)
       let address = initTAddress("127.0.0.1:43808")
 
       proc serveClient(server: StreamServer,
