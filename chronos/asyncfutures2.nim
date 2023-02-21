@@ -8,7 +8,7 @@
 #    Apache License, version 2.0, (LICENSE-APACHEv2)
 #                MIT license (LICENSE-MIT)
 
-import std/[os, strutils, sequtils]
+import std/[sequtils, strutils]
 import stew/base10
 import "."/[config, futures, srcloc]
 export futures, srcloc

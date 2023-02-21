@@ -7,14 +7,13 @@
 #              MIT license (LICENSE-MIT)
 import std/[strutils, os]
 import unittest2
-import ../chronos
+import ".."/chronos, ".."/chronos/osdefs
 
 {.used.}
 
 when defined(windows):
-  import winlean
-else:
-  import posix
+  proc get_osfhandle*(fd: FileHandle): HANDLE {.
+       importc: "_get_osfhandle", header:"<io.h>".}
 
 suite "Stream Transport test suite":
   const
@@ -1251,7 +1250,7 @@ suite "Stream Transport test suite":
           -1
       return res
 
-    var fut = wtransp.writer()
+    var fut {.used.} = wtransp.writer()
     try:
       await rtransp.readExactly(addr buffer[0], 16384 * 1024)
     except CatchableError:
