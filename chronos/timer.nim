@@ -23,6 +23,7 @@
 ##
 ## You can specify which timer you want to use ``-d:asyncTimer=<system/mono>``.
 import stew/base10
+import "."/osdefs
 
 const asyncTimer* {.strdefine.} = "mono"
 
@@ -33,47 +34,38 @@ else:
 
 when defined(windows):
   when asyncTimer == "system":
-    from winlean import getSystemTimeAsFileTime, FILETIME
-
     proc fastEpochTime*(): uint64 {.
          inline, deprecated: "Use Moment.now()".} =
       ## Timer resolution is millisecond.
       var t: FILETIME
       getSystemTimeAsFileTime(t)
-      ((cast[uint64](t.dwHighDateTime) shl 32) or
-        cast[uint64](t.dwLowDateTime)) div 10_000
+      ((uint64(t.dwHighDateTime) shl 32) or uint64(t.dwLowDateTime)) div 10_000
 
     proc fastEpochTimeNano(): uint64 {.inline.} =
       ## Timer resolution is nanosecond.
       var t: FILETIME
       getSystemTimeAsFileTime(t)
-      ((cast[uint64](t.dwHighDateTime) shl 32) or
-        cast[uint64](t.dwLowDateTime)) * 100
+      ((uint64(t.dwHighDateTime) shl 32) or uint64(t.dwLowDateTime)) * 100
 
   else:
-    proc QueryPerformanceCounter*(res: var uint64) {.
-      importc: "QueryPerformanceCounter", stdcall, dynlib: "kernel32".}
-    proc QueryPerformanceFrequency(res: var uint64) {.
-      importc: "QueryPerformanceFrequency", stdcall, dynlib: "kernel32".}
-
     var queryFrequencyM: uint64
     var queryFrequencyN: uint64
 
     proc fastEpochTimeNano(): uint64 {.inline.} =
       ## Procedure's resolution is nanosecond.
       var res: uint64
-      QueryPerformanceCounter(res)
+      queryPerformanceCounter(res)
       res * queryFrequencyN
 
     proc fastEpochTime*(): uint64 {.inline, deprecated: "Use Moment.now()".} =
       ## Procedure's resolution is millisecond.
       var res: uint64
-      QueryPerformanceCounter(res)
+      queryPerformanceCounter(res)
       res div queryFrequencyM
 
     proc setupQueryFrequence() =
       var freq: uint64
-      QueryPerformanceFrequency(freq)
+      queryPerformanceFrequency(freq)
       if freq < 1000:
         queryFrequencyM = freq
       else:
@@ -85,13 +77,8 @@ when defined(windows):
 elif defined(macosx):
 
   when asyncTimer == "system":
-    from posix import Timeval
 
-    proc posix_gettimeofday(tp: var Timeval, unused: pointer = nil) {.
-      importc: "gettimeofday", header: "<sys/time.h>".}
-
-    proc fastEpochTime*(): uint64 {.
-         inline, deprecated: "Use Moment.now()".} =
+    proc fastEpochTime*(): uint64 {.inline, deprecated: "Use Moment.now()".} =
       ## Procedure's resolution is millisecond.
       var t: Timeval
       posix_gettimeofday(t)
@@ -103,16 +90,6 @@ elif defined(macosx):
       posix_gettimeofday(t)
       uint64(t.tv_sec) * 1_000_000_000 + uint64(t.tv_usec) * 1_000
   else:
-    type
-      MachTimebaseInfo {.importc: "struct mach_timebase_info",
-                          header: "<mach/mach_time.h>", pure, final.} = object
-        numer: uint32
-        denom: uint32
-
-    proc mach_timebase_info(info: var MachTimebaseInfo) {.importc,
-         header: "<mach/mach_time.h>".}
-    proc mach_absolute_time(): uint64 {.importc, header: "<mach/mach_time.h>".}
-
     var queryFrequencyN: uint64
     var queryFrequencyD: uint64
 
@@ -122,8 +99,7 @@ elif defined(macosx):
       queryFrequencyN = info.numer
       queryFrequencyD = info.denom
 
-    proc fastEpochTime*(): uint64 {.
-         inline, deprecated: "Use Moment.now()".} =
+    proc fastEpochTime*(): uint64 {.inline, deprecated: "Use Moment.now()".} =
       ## Procedure's resolution is millisecond.
       let res = (mach_absolute_time() * queryFrequencyN) div queryFrequencyD
       res div 1_000_000
@@ -135,11 +111,8 @@ elif defined(macosx):
     setupQueryFrequence()
 
 elif defined(posix):
-  from posix import clock_gettime, Timespec, CLOCK_REALTIME, CLOCK_MONOTONIC
-
   when asyncTimer == "system":
-    proc fastEpochTime*(): uint64 {.
-         inline, deprecated: "Use Moment.now()".} =
+    proc fastEpochTime*(): uint64 {.inline, deprecated: "Use Moment.now()".} =
       ## Procedure's resolution is millisecond.
       var t: Timespec
       discard clock_gettime(CLOCK_REALTIME, t)
@@ -152,8 +125,7 @@ elif defined(posix):
       uint64(t.tv_sec) * 1_000_000_000'u64 + uint64(t.tv_nsec)
 
   else:
-    proc fastEpochTime*(): uint64 {.
-         inline, deprecated: "Use Moment.now()".} =
+    proc fastEpochTime*(): uint64 {.inline, deprecated: "Use Moment.now()".} =
       ## Procedure's resolution is millisecond.
       var t: Timespec
       discard clock_gettime(CLOCK_MONOTONIC, t)
@@ -166,10 +138,7 @@ elif defined(posix):
       uint64(t.tv_sec) * 1_000_000_000'u64 + uint64(t.tv_nsec)
 
 elif defined(nimdoc):
-
-  proc fastEpochTime*(): uint64 {.deprecated: "Use Moment.now()".}
-    ## Returns system's timer in milliseconds.
-
+  discard
 else:
   error("Sorry, your operation system is not yet supported!")
 
