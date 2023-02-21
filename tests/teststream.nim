@@ -1259,6 +1259,41 @@ suite "Stream Transport test suite":
     await allFutures(rtransp.closeWait(), wtransp.closeWait())
     return buffer == message
 
+  proc testConnectBindLocalAddress() {.async.} =
+    let dst1 = initTAddress("127.0.0.1:33335")
+    let dst2 = initTAddress("127.0.0.1:33336")
+    let dst3 = initTAddress("127.0.0.1:33337")
+
+    proc client(server: StreamServer, transp: StreamTransport) {.async.} =
+      await transp.closeWait()
+
+    let servers =
+      [createStreamServer(dst1, client, {ReuseAddr}),
+       createStreamServer(dst2, client, {ReuseAddr}),
+       createStreamServer(dst3, client, {ReuseAddr})]
+
+    for server in servers:
+      server.start()
+
+    let ta = initTAddress("0.0.0.0:35000")
+
+    var transp1 = await connect(dst1, localAddress = ta, serverFlags = {ReuseAddr})
+
+    var transp2 = await connect(dst2, localAddress = ta, serverFlags = {ReuseAddr})
+
+    expect(TransportOsError):
+      var transp2 = await connect(dst3, localAddress = ta)
+
+    expect(TransportOsError):
+      var transp3 = await connect(dst3, localAddress = initTAddress(":::35000"))
+
+    await transp1.closeWait()
+    await transp2.closeWait()
+
+    for server in servers:
+      server.stop()
+      await server.closeWait()
+
   markFD = getCurrentFD()
 
   for i in 0..<len(addresses):
@@ -1346,6 +1381,8 @@ suite "Stream Transport test suite":
       check waitFor(testReadOnClose(addresses[i])) == true
   test "[PIPE] readExactly()/write() test":
     check waitFor(testPipe()) == true
+  test "[IP] bind connect to local address":
+    waitFor(testConnectBindLocalAddress())
   test "Servers leak test":
     check getTracker("stream.server").isLeaked() == false
   test "Transports leak test":

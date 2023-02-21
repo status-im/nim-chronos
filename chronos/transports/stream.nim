@@ -50,7 +50,7 @@ type
     # get stuck on transport `close()`.
     # Please use this flag only if you are making both client and server in
     # the same thread.
-    TcpNoDelay
+    TcpNoDelay # deprecated: Use ServerFlags.TcpNoDelay
 
 
   StreamTransportTracker* = ref object of TrackerBase
@@ -699,7 +699,9 @@ when defined(windows):
   proc connect*(address: TransportAddress,
                 bufferSize = DefaultStreamBufferSize,
                 child: StreamTransport = nil,
-                flags: set[TransportFlags] = {}): Future[StreamTransport] =
+                flags: set[TransportFlags] = {},
+                localAddress: TransportAddress = AnyAddress,
+                serverFlags: set[ServerFlags] = {}): Future[StreamTransport] =
     ## Open new connection to remote peer with address ``address`` and create
     ## new transport object ``StreamTransport`` for established connection.
     ## ``bufferSize`` is size of internal buffer for transport.
@@ -724,7 +726,32 @@ when defined(windows):
         retFuture.fail(getTransportOsError(osLastError()))
         return retFuture
 
-      if not(bindToDomain(sock, raddress.getDomain())):
+      if ServerFlags.ReuseAddr in serverFlags:
+        if not(setSockOpt(sock, SOL_SOCKET, SO_REUSEADDR, 1)):
+          let err = osLastError()
+          sock.closeSocket()
+          retFuture.fail(getTransportOsError(err))
+          return retFuture
+      if ServerFlags.ReusePort in serverFlags:
+        if not(setSockOpt(sock, SOL_SOCKET, SO_REUSEPORT, 1)):
+          let err = osLastError()
+          sock.closeSocket()
+          retFuture.fail(getTransportOsError(err))
+          return retFuture
+
+      if localAddress != AnyAddress:
+        if localAddress.family != address.family:
+          sock.closeSocket()
+          retFuture.fail(newException(TransportOsError,
+            "connect local address domain is not equal to target address domain"))
+          return retFuture
+        localAddress.toSAddr(localAddr, localAddrLen)
+        if bindSocket(SocketHandle(sock),
+          cast[ptr SockAddr](addr localAddr), localAddrLen) != 0:
+          sock.closeSocket()
+          retFuture.fail(getTransportOsError(osLastError()))
+          return retFuture
+      elif not(bindToDomain(sock, raddress.getDomain())):
         let err = wsaGetLastError()
         sock.closeSocket()
         retFuture.fail(getTransportOsError(err))
@@ -1478,7 +1505,9 @@ else:
   proc connect*(address: TransportAddress,
                 bufferSize = DefaultStreamBufferSize,
                 child: StreamTransport = nil,
-                flags: set[TransportFlags] = {}): Future[StreamTransport] =
+                flags: set[TransportFlags] = {},
+                localAddress: TransportAddress = AnyAddress,
+                serverFlags: set[ServerFlags] = {}): Future[StreamTransport] =
     ## Open new connection to remote peer with address ``address`` and create
     ## new transport object ``StreamTransport`` for established connection.
     ## ``bufferSize`` - size of internal buffer for transport.
@@ -1505,12 +1534,40 @@ else:
       return retFuture
 
     if address.family in {AddressFamily.IPv4, AddressFamily.IPv6}:
-      if TransportFlags.TcpNoDelay in flags:
+      if TransportFlags.TcpNoDelay in flags or ServerFlags.TcpNoDelay in serverFlags:
         if not(setSockOpt(sock, osdefs.IPPROTO_TCP, osdefs.TCP_NODELAY, 1)):
           let err = osLastError()
           sock.closeSocket()
           retFuture.fail(getTransportOsError(err))
           return retFuture
+    if ServerFlags.ReuseAddr in serverFlags:
+      if not(setSockOpt(sock, SOL_SOCKET, SO_REUSEADDR, 1)):
+        let err = osLastError()
+        sock.closeSocket()
+        retFuture.fail(getTransportOsError(err))
+        return retFuture
+    if ServerFlags.ReusePort in serverFlags:
+      if not(setSockOpt(sock, SOL_SOCKET, SO_REUSEPORT, 1)):
+        let err = osLastError()
+        sock.closeSocket()
+        retFuture.fail(getTransportOsError(err))
+        return retFuture
+
+    if localAddress != AnyAddress:
+      if localAddress.family != address.family:
+        sock.closeSocket()
+        retFuture.fail(newException(TransportOsError,
+          "connect local address domain is not equal to target address domain"))
+        return retFuture
+      var
+        localAddr: Sockaddr_storage
+        localAddrLen: SockLen
+      localAddress.toSAddr(localAddr, localAddrLen)
+      if bindSocket(SocketHandle(sock),
+        cast[ptr SockAddr](addr localAddr), localAddrLen) != 0:
+        sock.closeSocket()
+        retFuture.fail(getTransportOsError(osLastError()))
+        return retFuture
 
     proc continuation(udata: pointer) =
       if not(retFuture.finished()):
