@@ -840,12 +840,12 @@ elif defined(macosx) or defined(macos) or defined(bsd):
           if family == osdefs.AF_INET:
             fromSAddr(cast[ptr Sockaddr_storage](ifap.ifa_netmask),
                       SockLen(sizeof(Sockaddr_in)), na)
-            if ifaddress.host.family == osdefs.AF_INET:
+            if cint(ifaddress.host.family) == osdefs.AF_INET:
               ifaddress.net = IpNet.init(ifaddress.host, na)
           elif family == osdefs.AF_INET6:
             fromSAddr(cast[ptr Sockaddr_storage](ifap.ifa_netmask),
                       SockLen(sizeof(Sockaddr_in6)), na)
-            if ifaddress.host.family == osdefs.AF_INET6:
+            if cint(ifaddress.host.family) == osdefs.AF_INET6:
               ifaddress.net = IpNet.init(ifaddress.host, na)
 
         if ifaddress.host.family != AddressFamily.None:
