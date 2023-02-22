@@ -567,24 +567,24 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     # We are ignoring SIGPIPE signal, because we are working with EPIPE.
     posix.signal(cint(SIGPIPE), SIG_IGN)
 
-  proc initAPI(disp: PDispatcher) {.raises: [Defect].} =
+  proc initAPI(disp: PDispatcher) =
     discard
 
-  proc newDispatcher*(): PDispatcher {.raises: [Defect].} =
+  proc newDispatcher*(): PDispatcher =
     ## Create new dispatcher.
     let selector =
-      try:
-        newSelector[SelectorData]()
-      except IOSelectorsException as exc:
-        raiseAsDefect exc, "Could not initialize selector"
-      except CatchableError as exc:
-        raiseAsDefect exc, "Could not initialize selector"
+      block:
+        let res = Selector.new(SelectorData)
+        if res.isErr(): raiseOsDefect(res.error(),
+                                      "Could not initialize selector")
+        res.get()
+
     var res = PDispatcher(
       selector: selector,
       timers: initHeapQueue[TimerCallback](),
-      callbacks: initDeque[AsyncCallback](64),
+      callbacks: initDeque[AsyncCallback](asyncEventsCount),
       idlers: initDeque[AsyncCallback](),
-      keys: newSeq[ReadyKey](64),
+      keys: newSeq[ReadyKey](asyncEventsCount),
       trackers: initTable[string, TrackerBase]()
     )
     res.callbacks.addLast(SentinelCallback)
@@ -600,28 +600,18 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     ## Returns system specific OS queue.
     disp.selector
 
-  proc register2*(fd: AsyncFD): Result[void, OSErrorCode] =
-    ## Register file descriptor ``fd`` in thread's dispatcher.
-    let loop = getThreadDispatcher()
-    try:
-      var data: SelectorData
-      loop.selector.registerHandle(int(fd), {}, data)
-    except CatchableError:
-      return err(osLastError())
-    ok()
-
-  proc unregister2*(fd: AsyncFD): Result[void, OSErrorCode] =
-    ## Unregister file descriptor ``fd`` from thread's dispatcher.
-    let loop = getThreadDispatcher()
-    try:
-      loop.selector.unregister(int(fd))
-    except CatchableError:
-      return err(osLastError())
-    ok()
-
   proc contains*(disp: PDispatcher, fd: AsyncFD): bool {.inline.} =
     ## Returns ``true`` if ``fd`` is registered in thread's dispatcher.
     int(fd) in disp.selector
+
+  proc register2*(fd: AsyncFD): Result[void, OSErrorCode] =
+    ## Register file descriptor ``fd`` in thread's dispatcher.
+    var data: SelectorData
+    getThreadDispatcher().selector.registerHandle2(cint(fd), {}, data)
+
+  proc unregister2*(fd: AsyncFD): Result[void, OSErrorCode] =
+    ## Unregister file descriptor ``fd`` from thread's dispatcher.
+    getThreadDispatcher().selector.unregister2(cint(fd))
 
   proc addReader2*(fd: AsyncFD, cb: CallbackFunc,
                    udata: pointer = nil): Result[void, OSErrorCode] =
@@ -636,12 +626,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
         newEvents.incl(Event.Write)
     do:
       return err(OSErrorCode(osdefs.EBADF))
-
-    try:
-      loop.selector.updateHandle(int(fd), newEvents)
-    except CatchableError:
-      return err(osLastError())
-    ok()
+    loop.selector.updateHandle2(cint(fd), newEvents)
 
   proc removeReader2*(fd: AsyncFD): Result[void, OSErrorCode] =
     ## Stop watching the file descriptor ``fd`` for read availability.
@@ -654,12 +639,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
         newEvents.incl(Event.Write)
     do:
       return err(OSErrorCode(osdefs.EBADF))
-
-    try:
-      loop.selector.updateHandle(int(fd), newEvents)
-    except CatchableError:
-      return err(osLastError())
-    ok()
+    loop.selector.updateHandle2(cint(fd), newEvents)
 
   proc addWriter2*(fd: AsyncFD, cb: CallbackFunc,
                    udata: pointer = nil): Result[void, OSErrorCode] =
@@ -674,12 +654,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
         newEvents.incl(Event.Read)
     do:
       return err(OSErrorCode(osdefs.EBADF))
-
-    try:
-      loop.selector.updateHandle(int(fd), newEvents)
-    except CatchableError:
-      return err(osLastError())
-    ok()
+    loop.selector.updateHandle2(cint(fd), newEvents)
 
   proc removeWriter2*(fd: AsyncFD): Result[void, OSErrorCode] =
     ## Stop watching the file descriptor ``fd`` for write availability.
@@ -692,12 +667,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
         newEvents.incl(Event.Read)
     do:
       return err(OSErrorCode(osdefs.EBADF))
-
-    try:
-      loop.selector.updateHandle(int(fd), newEvents)
-    except CatchableError:
-      return err(osLastError())
-    ok()
+    loop.selector.updateHandle2(cint(fd), newEvents)
 
   proc register*(fd: AsyncFD) {.raises: [Defect, OSError].} =
     ## Register file descriptor ``fd`` in thread's dispatcher.
@@ -796,26 +766,58 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     closeSocket(fd, aftercb)
 
   when ioselSupportedPlatform:
-    proc addSignal*(signal: int, cb: CallbackFunc,
-                    udata: pointer = nil): int {.
-         raises: [Defect, IOSelectorsException, ValueError, OSError].} =
+    proc addSignal2*(signal: int, cb: CallbackFunc,
+                     udata: pointer = nil): Result[int, OSErrorCode] =
       ## Start watching signal ``signal``, and when signal appears, call the
       ## callback ``cb`` with specified argument ``udata``. Returns signal
       ## identifier code, which can be used to remove signal callback
       ## via ``removeSignal``.
       let loop = getThreadDispatcher()
       var data: SelectorData
-      result = loop.selector.registerSignal(signal, data)
-      withData(loop.selector, result, adata) do:
+      let sigfd = ? loop.selector.registerSignal(signal, data)
+      withData(loop.selector, sigfd, adata) do:
         adata.reader = AsyncCallback(function: cb, udata: udata)
       do:
-        raise newException(ValueError, "File descriptor not registered.")
+        return err(OSErrorCode(osdefs.EBADF))
+      ok(sigfd)
 
-    proc removeSignal*(sigfd: int) {.
-         raises: [Defect, IOSelectorsException].} =
-      ## Remove watching signal ``signal``.
+    proc addProcess2*(pid: int, cb: CallbackFunc,
+                      udata: pointer = nil): Result[int, OSErrorCode] =
+      ## Registers callback ``cb`` to be called when process with process
+      ## identifier ``pid`` exited. Returns process' descriptor, which can be
+      ## used to clear process callback via ``removeProcess``.
       let loop = getThreadDispatcher()
-      loop.selector.unregister(sigfd)
+      var data: SelectorData
+      let procfd = ? loop.selector.registerProcess(pid, data)
+      withData(loop.selector, procfd, adata) do:
+        adata.reader = AsyncCallback(function: cb, udata: udata)
+      do:
+        return err(OSErrorCode(osdefs.EBADF))
+      ok(procfd)
+
+    proc removeSignal2*(sigfd: int): Result[void, OSErrorCode] =
+      ## Remove watching signal ``signal``.
+      getThreadDispatcher().selector.unregister2(cint(sigfd))
+
+    proc removeProcess2*(procfd: int): Result[void, OSErrorCode] =
+      ## Remove process' watching using process' descriptor ``procfd``.
+      getThreadDispatcher().selector.unregister2(cint(procfd))
+
+    proc addSignal*(signal: int, cb: CallbackFunc,
+                    udata: pointer = nil): int {.raises: [Defect, OSError].} =
+      ## Start watching signal ``signal``, and when signal appears, call the
+      ## callback ``cb`` with specified argument ``udata``. Returns signal
+      ## identifier code, which can be used to remove signal callback
+      ## via ``removeSignal``.
+      addSignal2(signal, cb, udata).tryGet()
+
+    proc removeSignal*(sigfd: int) {.raises: [Defect, OSError].} =
+      ## Remove watching signal ``signal``.
+      removeSignal2(sigfd).tryGet()
+
+    proc removeProcess*(procfd: int) {.raises: [Defect, OSError].} =
+      ## Remove process' watching using process' descriptor ``procfd``.
+      removeProcess2(procfd).tryGet()
 
   proc poll*() {.gcsafe.} =
     ## Perform single asynchronous step.
@@ -837,10 +839,12 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
 
     # Processing IO descriptors and all hardware events.
     let count =
-      try:
-        loop.selector.selectInto(curTimeout, loop.keys)
-      except IOSelectorsException:
-        raiseOsDefect(osLastError(), "poll(): Unable to get OS events")
+      block:
+        let res = loop.selector.selectInto2(curTimeout, loop.keys)
+        if res.isErr():
+          raiseOsDefect(res.error(), "poll(): Unable to get OS events")
+        res.get()
+
     for i in 0..<count:
       let fd = loop.keys[i].fd
       let events = loop.keys[i].events
@@ -885,17 +889,14 @@ else:
 
 proc setThreadDispatcher*(disp: PDispatcher) =
   ## Set current thread's dispatcher instance to ``disp``.
-  if not gDisp.isNil:
+  if not(gDisp.isNil()):
     doAssert gDisp.callbacks.len == 0
   gDisp = disp
 
 proc getThreadDispatcher*(): PDispatcher =
   ## Returns current thread's dispatcher instance.
-  if gDisp.isNil:
-    try:
-      setThreadDispatcher(newDispatcher())
-    except CatchableError as exc:
-      raiseAsDefect exc, "Cannot create dispatcher"
+  if gDisp.isNil():
+    setThreadDispatcher(newDispatcher())
   gDisp
 
 proc setGlobalDispatcher*(disp: PDispatcher) {.
@@ -995,44 +996,36 @@ include asyncfutures2
 
 when not(defined(windows)):
   when ioselSupportedPlatform:
-    proc waitSignal*(signal: int): Future[void] {.
-         raises: [Defect].} =
+    proc waitSignal*(signal: int): Future[void] {.raises: [Defect].} =
       var retFuture = newFuture[void]("chronos.waitSignal()")
       var sigfd: int = -1
 
-      template getSignalException(e: untyped): untyped =
+      template getSignalException(e: OSErrorCode): untyped =
         newException(AsyncError, "Could not manipulate signal handler, " &
-                     "reason [" & $e.name & "]: " & $e.msg)
+                     "reason [" & $int(e) & "]: " & osErrorMsg(e))
 
       proc continuation(udata: pointer) {.gcsafe.} =
         if not(retFuture.finished()):
           if sigfd != -1:
-            try:
-              removeSignal(sigfd)
+            let res = removeSignal2(sigfd)
+            if res.isErr():
+              retFuture.fail(getSignalException(res.error()))
+            else:
               retFuture.complete()
-            except IOSelectorsException as exc:
-              retFuture.fail(getSignalException(exc))
 
       proc cancellation(udata: pointer) {.gcsafe.} =
         if not(retFuture.finished()):
           if sigfd != -1:
-            try:
-              removeSignal(sigfd)
-            except IOSelectorsException as exc:
-              retFuture.fail(getSignalException(exc))
+            let res = removeSignal2(sigfd)
+            if res.isErr():
+              retFuture.fail(getSignalException(res.error()))
 
       sigfd =
-        try:
-          addSignal(signal, continuation)
-        except IOSelectorsException as exc:
-          retFuture.fail(getSignalException(exc))
-          return retFuture
-        except ValueError as exc:
-          retFuture.fail(getSignalException(exc))
-          return retFuture
-        except OSError as exc:
-          retFuture.fail(getSignalException(exc))
-          return retFuture
+        block:
+          let res = addSignal2(signal, continuation)
+          if res.isErr():
+            retFuture.fail(getSignalException(res.error()))
+          res.get()
 
       retFuture.cancelCallback = cancellation
       retFuture

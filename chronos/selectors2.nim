@@ -31,20 +31,23 @@
 # support - changes could potentially be backported to nim but are not
 # backwards-compatible.
 
-import os, nativesockets
+import stew/results
+import osdefs, osutils
+export results
 
-const hasThreadSupport = compileOption("threads") and defined(threadsafe)
+const
+  hasThreadSupport = compileOption("threads") and defined(threadsafe)
 
-const ioselSupportedPlatform* = defined(macosx) or defined(freebsd) or
-                                defined(netbsd) or defined(openbsd) or
-                                defined(dragonfly) or
-                                (defined(linux) and not defined(android))
-  ## This constant is used to determine whether the destination platform is
-  ## fully supported by ``ioselectors`` module.
+  ioselSupportedPlatform* = defined(macosx) or defined(freebsd) or
+                            defined(netbsd) or defined(openbsd) or
+                            defined(dragonfly) or defined(linux)
+    ## This constant is used to determine whether the destination platform is
+    ## fully supported by ``ioselectors`` module.
 
-const bsdPlatform = defined(macosx) or defined(freebsd) or
-                    defined(netbsd) or defined(openbsd) or
-                    defined(dragonfly)
+  asyncEventsCount* {.intdefine.} = 64
+    ## Number of epoll events retrieved by syscall.
+  asyncInitialSize* {.intdefine.} = 64
+    ## Initial size of Selector[T]'s array of file descriptors.
 
 when defined(nimdoc):
   type
@@ -259,6 +262,7 @@ else:
 
   type
     IOSelectorsException* = object of CatchableError
+    SelectResult*[T] = Result[T, OSErrorCode]
 
     ReadyKey* = object
       fd* : int
@@ -285,50 +289,69 @@ else:
     var err = newException(IOSelectorsException, msg)
     raise err
 
-  proc setNonBlocking(fd: cint) {.inline.} =
-    setBlocking(fd.SocketHandle, false)
-
-  when not defined(windows):
-    import posix
-
-    template setKey(s, pident, pevents, pparam, pdata: untyped) =
-      var skey = addr(s.fds[pident])
-      skey.ident = pident
-      skey.events = pevents
-      skey.param = pparam
-      skey.data = data
-
   when ioselSupportedPlatform:
-    template blockSignals(newmask: var Sigset, oldmask: var Sigset) =
+    proc blockSignals(newmask: var Sigset,
+                      oldmask: var Sigset): Result[void, OSErrorCode] =
       when hasThreadSupport:
-        if posix.pthread_sigmask(SIG_BLOCK, newmask, oldmask) == -1:
-          raiseIOSelectorsError(osLastError())
+        if pthread_sigmask(SIG_BLOCK, newmask, oldmask) == -1:
+          err(osLastError())
+        else:
+          ok()
       else:
-        if posix.sigprocmask(SIG_BLOCK, newmask, oldmask) == -1:
-          raiseIOSelectorsError(osLastError())
+        if sigprocmask(SIG_BLOCK, newmask, oldmask) == -1:
+          err(osLastError())
+        else:
+          ok()
 
-    template unblockSignals(newmask: var Sigset, oldmask: var Sigset) =
+    proc unblockSignals(newmask: var Sigset,
+                        oldmask: var Sigset): Result[void, OSErrorCode] =
       when hasThreadSupport:
-        if posix.pthread_sigmask(SIG_UNBLOCK, newmask, oldmask) == -1:
-          raiseIOSelectorsError(osLastError())
+        if pthread_sigmask(SIG_UNBLOCK, newmask, oldmask) == -1:
+          err(osLastError())
+        else:
+          ok()
       else:
-        if posix.sigprocmask(SIG_UNBLOCK, newmask, oldmask) == -1:
-          raiseIOSelectorsError(osLastError())
+        if sigprocmask(SIG_UNBLOCK, newmask, oldmask) == -1:
+          err(osLastError())
+        else:
+          ok()
+  else:
+    when not defined(windows):
+      template setKey(s, pident, pevents, pparam, pdata: untyped) =
+        var skey = addr(s.fds[pident])
+        skey.ident = pident
+        skey.events = pevents
+        skey.param = pparam
+        skey.data = data
 
-  template clearKey[T](key: ptr SelectorKey[T]) =
-    var empty: T
-    key.ident = InvalidIdent
-    key.events = {}
-    key.data = empty
+      template clearKey(s, pident: untyped, T: typedesc) =
+        var empty: T
+        var skey = addr(s.fds[pident])
+        skey.ident = InvalidIdent
+        skey.events = {}
+        skey.data = empty
 
-  proc verifySelectParams(timeout: int) =
+      template clearKey[T](key: ptr SelectorKey[T]) =
+        var empty: T
+        key.ident = InvalidIdent
+        key.events = {}
+        key.data = empty
+
+      proc setNonBlocking(fd: cint) {.inline.} =
+        let res = setDescriptorFlags(fd, true, true)
+        if res.isErr():
+          raiseIOSelectorsError(res.error())
+
+  template verifySelectParams(timeout, min, max: int) =
     # Timeout of -1 means: wait forever
     # Anything higher is the time to wait in milliseconds.
-    doAssert(timeout >= -1, "Cannot select with a negative value, got " & $timeout)
+    doAssert((timeout >= min) and (timeout <= max),
+             "Cannot select with incorrect timeout value, got " & $timeout)
 
   when defined(linux):
     include ./ioselects/ioselectors_epoll
-  elif bsdPlatform:
+  elif defined(macosx) or defined(freebsd) or defined(netbsd) or
+       defined(openbsd) or defined(dragonfly):
     include ./ioselects/ioselectors_kqueue
   elif defined(windows):
     include ./ioselects/ioselectors_select
@@ -340,23 +363,3 @@ else:
     include ./ioselects/ioselectors_select
   else:
     include ./ioselects/ioselectors_poll
-
-proc register*[T](s: Selector[T], fd: int | SocketHandle,
-                  events: set[Event], data: T) {.deprecated: "use registerHandle instead".} =
-  ## **Deprecated since v0.18.0:** Use ``registerHandle`` instead.
-  s.registerHandle(fd, events, data)
-
-proc setEvent*(ev: SelectEvent) {.deprecated: "use trigger instead",
-    raises: [Defect, IOSelectorsException].} =
-  ## Trigger event ``ev``.
-  ##
-  ## **Deprecated since v0.18.0:** Use ``trigger`` instead.
-  ev.trigger()
-
-proc update*[T](s: Selector[T], fd: int | SocketHandle,
-                events: set[Event]) {.deprecated: "use updateHandle instead".} =
-  ## Update file/socket descriptor ``fd``, registered in selector
-  ## ``s`` with new events set ``event``.
-  ##
-  ## **Deprecated since v0.18.0:** Use ``updateHandle`` instead.
-  s.updateHandle()
