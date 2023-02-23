@@ -814,7 +814,6 @@ elif defined(macosx) or defined(macos) or defined(bsd):
 
         if not isNil(ifap.ifa_addr):
           let family = int(ifap.ifa_addr.sa_family)
-          echo "address family = ", family
           if family == AF_LINK:
             var data = cast[ptr IfData](ifap.ifa_data)
             var link = cast[ptr Sockaddr_dl](ifap.ifa_addr)
@@ -836,7 +835,6 @@ elif defined(macosx) or defined(macos) or defined(bsd):
         if not isNil(ifap.ifa_netmask):
           var na: TransportAddress
           let family = int(ifap.ifa_netmask.sa_family)
-          echo "netmask family = ", family
           if family == osdefs.AF_INET:
             fromSAddr(cast[ptr Sockaddr_storage](ifap.ifa_netmask),
                       SockLen(sizeof(Sockaddr_in)), na)
