@@ -29,10 +29,7 @@ type
   SelectEvent* = ptr SelectEventImpl
 
 proc toString(key: uint32): string =
-  if isVirtualId(key):
-    "V" & Base10.toString(key - uint32(high(cint)))
-  else:
-    Base10.toString(key)
+  Base10.toString(key)
 
 template addKey[T](s: Selector[T], key: cint|uint32, skey: SelectorKey[T]) =
   let fdu32 = when key is uint32: key else: uint32(key)
@@ -57,6 +54,9 @@ template getKey(key: SocketHandle|int): uint32 =
            "Invalid descriptor [" & $int(key) & "] specified")
   uint32(int32(key))
 
+proc freeKey[T](s: Selector[T], ident: uint32) =
+  s.fds.del(ident)
+
 proc new*(t: typedesc[Selector], T: typedesc): SelectResult[Selector[T]] =
   let selector = Selector[T](
     fds: initTable[uint32, SelectorKey[T]](asyncInitialSize)
@@ -71,7 +71,7 @@ proc new*(t: typedesc[SelectEvent]): SelectResult[SelectEvent] =
   let flags = {DescriptorFlag.NonBlock, DescriptorFlag.CloseOnExec}
   let pipes = ? createOsPipe(flags, flags)
   var res = cast[SelectEvent](allocShared0(sizeof(SelectEventImpl)))
-  res.rwd = pipes.read
+  res.rfd = pipes.read
   res.wfd = pipes.write
   ok(res)
 
@@ -100,23 +100,23 @@ proc close2*(event: SelectEvent): SelectResult[void] =
   else:
     ok()
 
-template toPollEvents(events: set[Event]): cshort
+template toPollEvents(events: set[Event]): cshort =
   var res = cshort(0)
   if Event.Read in events: res = res or POLLIN
   if Event.Write in events: res = res or POLLOUT
   res
 
 template pollAdd[T](s: Selector[T], sock: cint, events: set[Event]) =
-  s.pollfds.add(TPollFd(fd: sock, events: events.toPollEvents()))
+  s.pollfds.add(TPollFd(fd: sock, events: toPollEvents(events), revents: 0))
 
 template pollUpdate[T](s: Selector[T], sock: cint, events: set[Event]) =
   var updated = false
   for mitem in s.pollfds.mitems():
     if mitem.fd == sock:
-      mitem.events = events.toPollEvents()
+      mitem.events = toPollEvents(events)
       break
   if not(updated):
-    doAssert("Descriptor [" & $sock & "] is not registered in the queue!")
+    raiseAssert "Descriptor [" & $sock & "] is not registered in the queue!"
 
 template pollRemove[T](s: Selector[T], sock: cint) =
   let index =
@@ -128,7 +128,7 @@ template pollRemove[T](s: Selector[T], sock: cint) =
           break
       res
   if index < 0:
-    doAssert("Descriptor [" & $sock & "] is not registered in the queue!")
+    raiseAssert "Descriptor [" & $sock & "] is not registered in the queue!"
   else:
     s.pollfds.del(index)
 
@@ -138,7 +138,7 @@ proc registerHandle2*[T](s: Selector[T], fd: cint, events: set[Event],
     fdu32 = uint32(fd)
     skey = SelectorKey[T](ident: fd, events: events, param: 0, data: data)
 
-  s.addKey(fd, skey)
+  s.addKey(fdu32, skey)
   if events != {}:
     s.pollAdd(fd, events)
   ok()
@@ -190,19 +190,6 @@ proc unregister2*[T](s: Selector[T], fd: cint): SelectResult[void] =
 proc unregister2*[T](s: Selector[T], event: SelectEvent): SelectResult[void] =
   s.unregister2(event.rfd)
 
-proc selectInto2*[T](s: Selector[T], timeout: int,
-                     readyKeys: var openArray[ReadyKey]
-                    ): SelectResult[int] =
-  var
-    queueEvents: array[asyncEventsCount, Epo]
-
-
-  TPollfd* {.importc: "struct pollfd", pure, final,
-             header: "<poll.h>".} = object ## struct pollfd
-    fd*: cint        ## The following descriptor being polled.
-    events*: cshort  ## The input event flags (see below).
-    revents*: cshort ## The output event flags (see below).
-
 proc prepareKey[T](s: Selector[T], event: var TPollfd): Opt[ReadyKey] =
   let
     defaultKey = SelectorKey[T](ident: InvalidIdent)
@@ -242,25 +229,29 @@ proc prepareKey[T](s: Selector[T], event: var TPollfd): Opt[ReadyKey] =
   ok(rkey)
 
 proc selectInto2*[T](s: Selector[T], timeout: int,
-                    results: var openArray[ReadyKey]): int =
+                     readyKeys: var openArray[ReadyKey]): SelectResult[int] =
   var k = 0
 
   verifySelectParams(timeout, -1, int(high(cint)))
 
-  let eventsCount =
-    if len(s.pollfds) > 0:
-      let res = handleEintr(poll(addr(s.pollfds[0]), Tnfds(len(s.pollfds)),
-                            timeout))
-      if res < 0:
-        return err(osLastError())
-      res
-    else:
-      0
+  let
+    maxEventsCount = min(len(s.pollfds), len(readyKeys))
+    eventsCount =
+      if maxEventsCount > 0:
+        let res = handleEintr(poll(addr(s.pollfds[0]), Tnfds(maxEventsCount),
+                              timeout))
+        if res < 0:
+          return err(osLastError())
+        res
+      else:
+        0
 
-  for i in 0 ..< eventsCount:
-    let rkey = s.prepareKey(s.pollfds[i]).valueOr: continue
-    readyKeys[k] = rkey
-    inc(k)
+  for i in 0 ..< len(s.pollfds):
+    if s.pollfds[i].revents != 0:
+      let rkey = s.prepareKey(s.pollfds[i]).valueOr: continue
+      readyKeys[k] = rkey
+      inc(k)
+      if k == eventsCount: break
 
   ok(k)
 
