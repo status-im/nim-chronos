@@ -78,6 +78,9 @@ template getKey[T](s: Selector[T], key: uint32): SelectorKey[T] =
            "] is not registered in the selector!")
   pkey
 
+template checkKey[T](s: Selector[T], key: uint32): bool =
+  s.fds.contains(key)
+
 template getKey(key: SocketHandle|int): uint32 =
   doAssert((int(key) >= int(low(int32))) and (int(key) <= int(high(int32))),
            "Invalid descriptor [" & $int(key) & "] specified")
@@ -750,8 +753,7 @@ proc select*[T](s: Selector[T], timeout: int): seq[ReadyKey] =
   res.get()
 
 proc contains*[T](s: Selector[T], fd: SocketHandle|int): bool {.inline.} =
-  let fdu32 = getKey(fd)
-  s.checkKey(fdu32)
+  s.checkKey(getKey(fd))
 
 proc setData*[T](s: Selector[T], fd: SocketHandle|int, data: T): bool =
   let fdu32 = getKey(fd)
