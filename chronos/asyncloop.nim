@@ -765,7 +765,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     ## You can execute ``aftercb`` before actual socket close operation.
     closeSocket(fd, aftercb)
 
-  when ioselSupportedPlatform:
+  when asyncEventEngine in ["epoll", "kqueue"]:
     proc addSignal2*(signal: int, cb: CallbackFunc,
                      udata: pointer = nil): Result[int, OSErrorCode] =
       ## Start watching signal ``signal``, and when signal appears, call the
@@ -825,10 +825,6 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     var curTime = Moment.now()
     var curTimeout = 0
 
-    when ioselSupportedPlatform:
-      let customSet = {Event.Timer, Event.Signal, Event.Process,
-                       Event.Vnode}
-
     # On reentrant `poll` calls from `processCallbacks`, e.g., `waitFor`,
     # complete pending work of the outer `processCallbacks` call.
     # On non-reentrant `poll` calls, this only removes sentinel element.
@@ -845,7 +841,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
           raiseOsDefect(res.error(), "poll(): Unable to get OS events")
         res.get()
 
-    for i in 0..<count:
+    for i in 0 ..< count:
       let fd = loop.keys[i].fd
       let events = loop.keys[i].events
 
@@ -862,7 +858,9 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
           if not isNil(adata.reader.function):
             loop.callbacks.addLast(adata.reader)
 
-        when ioselSupportedPlatform:
+        when asyncEventEngine in ["epoll", "kqueue"]:
+          let customSet = {Event.Timer, Event.Signal, Event.Process,
+                           Event.Vnode}
           if customSet * events != {}:
             if not isNil(adata.reader.function):
               loop.callbacks.addLast(adata.reader)
@@ -995,7 +993,7 @@ proc callIdle*(cbproc: CallbackFunc) =
 include asyncfutures2
 
 when not(defined(windows)):
-  when ioselSupportedPlatform:
+  when asyncEventEngine in ["epoll", "kqueue"]:
     proc waitSignal*(signal: int): Future[void] {.raises: [Defect].} =
       var retFuture = newFuture[void]("chronos.waitSignal()")
       var sigfd: int = -1
