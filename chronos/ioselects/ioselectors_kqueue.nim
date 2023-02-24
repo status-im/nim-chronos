@@ -24,7 +24,6 @@ type
     fds: Table[uint32, SelectorKey[T]]
     virtualHoles: Deque[uint32]
     virtualId: uint32
-    count: int
 
   Selector*[T] = ref SelectorImpl[T]
 
@@ -128,7 +127,6 @@ proc close2*[T](s: Selector[T]): SelectResult[void] =
   s.fds.clear()
   s.virtualHoles.clear()
   s.virtualId = uint32(high(int32))
-  s.count = 0
   if closeFd(s.kqFd) != 0:
     err(osLastError())
   else:
@@ -222,7 +220,6 @@ proc registerHandle2*[T](s: Selector[T], fd: cint, events: set[Event],
         s.freeKey(fdu32)
         return err(osLastError())
 
-  inc(s.count)
   ok()
 
 proc updateHandle2*[T](s: Selector[T], fd: cint,
@@ -280,7 +277,6 @@ proc registerTimer*[T](s: Selector[T], timeout: int, oneshot: bool,
     s.freeKey(fdu32)
     return err(osLastError())
 
-  inc(s.count)
   ok(toInt(fdu32))
 
 proc blockSignal(signal: int): SelectResult[void] =
@@ -331,7 +327,6 @@ proc registerSignal*[T](s: Selector[T], signal: int,
     discard unblockSignal(signal)
     return err(errorCode)
 
-  inc(s.count)
   ok(toInt(fdu32))
 
 proc registerProcess*[T](s: Selector[T], pid: int, data: T): SelectResult[int] =
@@ -352,7 +347,6 @@ proc registerProcess*[T](s: Selector[T], pid: int, data: T): SelectResult[int] =
     s.freeKey(fdu32)
     return err(osLastError())
 
-  inc(s.count)
   ok(toInt(fdu32))
 
 proc registerEvent2*[T](s: Selector[T], ev: SelectEvent,
@@ -370,7 +364,6 @@ proc registerEvent2*[T](s: Selector[T], ev: SelectEvent,
     s.freeKey(fdu32)
     return err(osLastError())
 
-  inc(s.count)
   ok(toInt(fdu32))
 
 template processVnodeEvents(events: set[Event]): cuint =
@@ -408,7 +401,6 @@ proc registerVnode2*[T](s: Selector[T], fd: cint, events: set[Event],
     s.freeKey(fdu32)
     return err(osLastError())
 
-  inc(s.count)
   ok(toInt(fdu32))
 
 proc unregister2*[T](s: Selector[T], fd: cint): SelectResult[void] =
@@ -433,7 +425,6 @@ proc unregister2*[T](s: Selector[T], fd: cint): SelectResult[void] =
         if handleEintr(kevent(s.kqFd, addr(changes[0]), cint(k), nil,
                               0, nil)) == -1:
           return err(osLastError())
-      dec(s.count)
 
     elif Event.Timer in pkey.events:
       if Event.Finished notin pkey.events:
@@ -442,7 +433,6 @@ proc unregister2*[T](s: Selector[T], fd: cint): SelectResult[void] =
         if handleEintr(kevent(s.kqFd, addr(changes[0]), cint(1), nil,
                               0, nil)) == -1:
           return err(osLastError())
-        dec(s.count)
 
     elif Event.Signal in pkey.events:
       let sig = cint(pkey.param)
@@ -455,7 +445,6 @@ proc unregister2*[T](s: Selector[T], fd: cint): SelectResult[void] =
         return err(osLastError())
 
       ? unblockSignal(sig)
-      dec(s.count)
 
     elif Event.Process in pkey.events:
       if Event.Finished notin pkey.events:
@@ -464,7 +453,6 @@ proc unregister2*[T](s: Selector[T], fd: cint): SelectResult[void] =
         if handleEintr(kevent(s.kqFd, addr(changes[0]), cint(1), nil,
                               0, nil)) == -1:
           return err(osLastError())
-        dec(s.count)
 
     elif Event.Vnode in pkey.events:
       changes.modifyKQueue(0, uint(fdu32), EVFILT_VNODE, EV_DELETE,
@@ -472,7 +460,6 @@ proc unregister2*[T](s: Selector[T], fd: cint): SelectResult[void] =
       if handleEintr(kevent(s.kqFd, addr(changes[0]), cint(1), nil,
                               0, nil)) == -1:
         return err(osLastError())
-      dec(s.count)
 
     elif Event.User in pkey.events:
       changes.modifyKQueue(0, uint(fdu32), EVFILT_READ, EV_DELETE,
@@ -480,7 +467,6 @@ proc unregister2*[T](s: Selector[T], fd: cint): SelectResult[void] =
       if handleEintr(kevent(s.kqFd, addr(changes[0]), cint(1), nil,
                               0, nil)) == -1:
         return err(osLastError())
-      dec(s.count)
 
   s.freeKey(fdu32)
   ok()
@@ -533,10 +519,6 @@ proc prepareKey[T](s: Selector[T], event: KEvent): Opt[ReadyKey] =
   of EVFILT_TIMER:
     rkey.events.incl(Event.Timer)
     if Event.Oneshot in pkey.events:
-      # we will not clear key until it will be unregistered, so
-      # application can obtain data, but we will decrease counter,
-      # because kqueue is empty.
-      dec(s.count)
       # we are marking key with `Finished` event, to avoid double decrease.
       pkey.events.incl(Event.Finished)
       rkey.events.incl({Event.Oneshot, Event.Finished})
@@ -558,7 +540,6 @@ proc prepareKey[T](s: Selector[T], event: KEvent): Opt[ReadyKey] =
 
   of EVFILT_PROC:
     rkey.events.incl({Event.Process, Event.Oneshot, Event.Finished})
-    dec(s.count)
     rkey.fd = pkey.ident
     pkey.events.incl(Event.Finished)
     s.fds[uint32(pkey.ident)] = pkey
@@ -703,9 +684,6 @@ proc close*[T](s: Selector[T]) {.raises: [Defect, IOSelectorsException].} =
   let res = s.close2()
   if res.isErr():
     raiseIOSelectorsError(res.error())
-
-template isEmpty*[T](s: Selector[T]): bool =
-  (s.count == 0)
 
 proc contains*[T](s: Selector[T], fd: SocketHandle|int): bool {.inline.} =
   let fdu32 = getKey(fd)
