@@ -281,10 +281,11 @@ else:
     var err = newException(IOSelectorsException, msg)
     raise err
 
-  when defined(macosx) or defined(freebsd) or defined(netbsd) or
-       defined(openbsd) or defined(dragonfly) or defined(linux):
+  when asyncEventEngine in ["epoll", "kqueue"]:
     proc blockSignals(newmask: var Sigset,
                       oldmask: var Sigset): Result[void, OSErrorCode] =
+      # `newmask` is `var` argument here because of posix.nim declaration of
+      # pthread_sigmask() call.
       when hasThreadSupport:
         if pthread_sigmask(SIG_BLOCK, newmask, oldmask) == -1:
           err(osLastError())
@@ -298,6 +299,8 @@ else:
 
     proc unblockSignals(newmask: var Sigset,
                         oldmask: var Sigset): Result[void, OSErrorCode] =
+      # `newmask` is `var` argument here because of posix.nim declaration of
+      # pthread_sigmask() call.
       when hasThreadSupport:
         if pthread_sigmask(SIG_UNBLOCK, newmask, oldmask) == -1:
           err(osLastError())
