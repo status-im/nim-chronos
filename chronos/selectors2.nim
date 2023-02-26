@@ -282,32 +282,38 @@ else:
     raise err
 
   when asyncEventEngine in ["epoll", "kqueue"]:
-    proc blockSignals(newmask: var Sigset,
+    proc blockSignals(newmask: Sigset,
                       oldmask: var Sigset): Result[void, OSErrorCode] =
-      # `newmask` is `var` argument here because of posix.nim declaration of
-      # pthread_sigmask() call.
+      var nmask = newmask
+      # We do this trick just because Nim's posix.nim has declaration like
+      # this:
+      # proc pthread_sigmask(a1: cint; a2, a3: var Sigset): cint
+      # proc sigprocmask*(a1: cint, a2, a3: var Sigset): cint
       when hasThreadSupport:
-        if pthread_sigmask(SIG_BLOCK, newmask, oldmask) == -1:
+        if pthread_sigmask(SIG_BLOCK, nmask, oldmask) == -1:
           err(osLastError())
         else:
           ok()
       else:
-        if sigprocmask(SIG_BLOCK, newmask, oldmask) == -1:
+        if sigprocmask(SIG_BLOCK, nmask, oldmask) == -1:
           err(osLastError())
         else:
           ok()
 
-    proc unblockSignals(newmask: var Sigset,
+    proc unblockSignals(newmask: Sigset,
                         oldmask: var Sigset): Result[void, OSErrorCode] =
-      # `newmask` is `var` argument here because of posix.nim declaration of
-      # pthread_sigmask() call.
+      # We do this trick just because Nim's posix.nim has declaration like
+      # this:
+      # proc pthread_sigmask(a1: cint; a2, a3: var Sigset): cint
+      # proc sigprocmask*(a1: cint, a2, a3: var Sigset): cint
+      var nmask = newmask
       when hasThreadSupport:
-        if pthread_sigmask(SIG_UNBLOCK, newmask, oldmask) == -1:
+        if pthread_sigmask(SIG_UNBLOCK, nmask, oldmask) == -1:
           err(osLastError())
         else:
           ok()
       else:
-        if sigprocmask(SIG_UNBLOCK, newmask, oldmask) == -1:
+        if sigprocmask(SIG_UNBLOCK, nmask, oldmask) == -1:
           err(osLastError())
         else:
           ok()
