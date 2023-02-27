@@ -910,7 +910,7 @@ suite "HTTP client testing suite":
         f2.read() == (200, "ok", 0)
         session.connectionsCount == 2
 
-      await sleepAsync(2.seconds)
+      await sleepAsync(1500.milliseconds)
       let resp = await test(session, ha)
       check:
         resp == (200, "ok", 0)
