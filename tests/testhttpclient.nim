@@ -895,7 +895,8 @@ suite "HTTP client testing suite":
 
     var server = createServer(address, process, false)
     server.start()
-    let session = HttpSessionRef.new(idleTimeout = 1000.milliseconds)
+    let session = HttpSessionRef.new(idleTimeout = 1.seconds,
+                                     idlePeriod = 200.milliseconds)
     try:
       var f1 = test(session, ha)
       var f2 = test(session, ha)

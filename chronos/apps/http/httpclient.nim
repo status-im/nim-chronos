@@ -22,9 +22,12 @@ const
     ## Timeout for connecting to host (12 sec)
   HttpHeadersTimeout* = 120.seconds
     ## Timeout for receiving response headers (120 sec)
-  HttpConnectionIdleTimeout* = 120.seconds
+  HttpConnectionIdleTimeout* = 60.seconds
     ## Time after which idle connections are removed from the HttpSession's
     ## connections pool (120 sec)
+  HttpConnectionCheckPeriod* = 10.seconds
+    ## Period of time between idle connections checks in HttpSession's
+    ## connection pool (10 sec)
   HttpMaxRedirections* = 10
     ## Maximum number of Location redirections.
   HttpClientConnectionTrackerName* = "httpclient.connection"
@@ -113,7 +116,9 @@ type
     maxRedirections*: int
     connectTimeout*: Duration
     headersTimeout*: Duration
-    idleTimeout*: Duration
+    idleTimeout: Duration
+    idlePeriod: Duration
+    watcherFut: Future[void]
     connectionBufferSize*: int
     maxConnections*: int
     connectionsCount*: int
@@ -319,6 +324,18 @@ template setDuration(
     reqresp.duration = timestamp - reqresp.timestamp
     reqresp.connection.setTimestamp(timestamp)
 
+template isReady(conn: HttpClientConnectionRef): bool =
+  (conn.state == HttpClientConnectionState.Ready) and
+  (HttpClientConnectionFlag.KeepAlive in conn.flags) and
+  (HttpClientConnectionFlag.Request notin conn.flags) and
+  (HttpClientConnectionFlag.Response notin conn.flags)
+
+template isIdle(conn: HttpClientConnectionRef, timestamp: Moment,
+                timeout: Duration): bool =
+  (timestamp - conn.timestamp) >= timeout
+
+proc sessionWatcher(session: HttpSessionRef) {.async.}
+
 proc new*(t: typedesc[HttpSessionRef],
           flags: HttpClientFlags = {},
           maxRedirections = HttpMaxRedirections,
@@ -326,15 +343,18 @@ proc new*(t: typedesc[HttpSessionRef],
           headersTimeout = HttpHeadersTimeout,
           connectionBufferSize = DefaultStreamBufferSize,
           maxConnections = -1,
-          idleTimeout = HttpConnectionIdleTimeout): HttpSessionRef {.
+          idleTimeout = HttpConnectionIdleTimeout,
+          idlePeriod = HttpConnectionCheckPeriod): HttpSessionRef {.
      raises: [Defect] .} =
   ## Create new HTTP session object.
   ##
   ## ``maxRedirections`` - maximum number of HTTP 3xx redirections
   ## ``connectTimeout`` - timeout for ongoing HTTP connection
   ## ``headersTimeout`` - timeout for receiving HTTP response headers
+  ## ``idleTimeout`` - timeout to consider HTTP connection as idle
+  ## ``idlePeriod`` - period of time to check HTTP connections for inactivity
   doAssert(maxRedirections >= 0, "maxRedirections should not be negative")
-  HttpSessionRef(
+  var res = HttpSessionRef(
     flags: flags,
     maxRedirections: maxRedirections,
     connectTimeout: connectTimeout,
@@ -342,8 +362,11 @@ proc new*(t: typedesc[HttpSessionRef],
     connectionBufferSize: connectionBufferSize,
     maxConnections: maxConnections,
     idleTimeout: idleTimeout,
-    connections: initTable[string, seq[HttpClientConnectionRef]]()
+    idlePeriod: idlePeriod,
+    connections: initTable[string, seq[HttpClientConnectionRef]](),
   )
+  res.watcherFut = sessionWatcher(res)
+  res
 
 proc getTLSFlags(flags: HttpClientFlags): set[TLSFlags] {.raises: [Defect] .} =
   var res: set[TLSFlags]
@@ -620,16 +643,6 @@ proc connect(session: HttpSessionRef,
   # If all attempts to connect to the remote host have failed.
   raiseHttpConnectionError("Could not connect to remote host")
 
-template isReady(conn: HttpClientConnectionRef): bool =
-  (conn.state == HttpClientConnectionState.Ready) and
-  (HttpClientConnectionFlag.KeepAlive in conn.flags) and
-  (HttpClientConnectionFlag.Request notin conn.flags) and
-  (HttpClientConnectionFlag.Response notin conn.flags)
-
-template isIdle(conn: HttpClientConnectionRef, timestamp: Moment,
-                timeout: Duration): bool =
-  (timestamp - conn.timestamp) >= timeout
-
 proc removeConnection(session: HttpSessionRef,
                       conn: HttpClientConnectionRef) {.async.} =
   let removeHost =
@@ -651,62 +664,46 @@ proc acquireConnection(
        flags: set[HttpClientRequestFlag]
      ): Future[HttpClientConnectionRef] {.async.} =
   ## Obtain connection from ``session`` or establish a new one.
+  var default: seq[HttpClientConnectionRef]
   if (HttpClientFlag.NewConnectionAlways in session.flags) or
      (HttpClientRequestFlag.DedicatedConnection in flags):
-    var default: seq[HttpClientConnectionRef]
-    let res =
+    var conn =
       try:
         await session.connect(ha).wait(session.connectTimeout)
       except AsyncTimeoutError:
         raiseHttpConnectionError("Connection timed out")
-    res[].state = HttpClientConnectionState.Acquired
-    session.connections.mgetOrPut(ha.id, default).add(res)
+    conn.state = HttpClientConnectionState.Acquired
+    session.connections.mgetOrPut(ha.id, default).add(conn)
     inc(session.connectionsCount)
-    return res
+    return conn
   else:
-    let conn =
+    var conn =
       block:
-        var idleConnections: seq[HttpClientConnectionRef]
+        var cres: HttpClientConnectionRef = nil
         let
           timestamp = Moment.now()
-          res =
-            block:
-              var cres: HttpClientConnectionRef = nil
-              session.connections.withValue(ha.id, connections):
-                for connection in connections[]:
-                  if connection.isReady():
-                    if connection.isIdle(timestamp, session.idleTimeout):
-                      idleConnections.add(connection)
-                    else:
-                      if isNil(cres): cres = connection
-              cres
+          connections = session.connections.getOrDefault(ha.id, default)
+        # We looking for non-idle connection, all idle connections will be
+        # freed by sessionWatcher().
+        for connection in connections:
+          if connection.isReady() and
+             not(connection.isIdle(timestamp, session.idleTimeout)):
+            cres = connection
+            cres.state = HttpClientConnectionState.Acquired
+            break
+        cres
 
-        if not(isNil(res)):
-          # We mark connection as acquired to avoid race, because we need to
-          # prune idle connections.
-          res.state = HttpClientConnectionState.Acquired
-        if len(idleConnections) > 0:
-          # Closing connections which was idle for`session.idleTimeout`
-          # time.
-          var pending: seq[Future[void]]
-          for connection in idleConnections:
-            pending.add(session.removeConnection(connection))
-          await allFutures(pending)
-        res
+    if not(isNil(conn)): return conn
 
-    if not(isNil(conn)):
-      return conn
-    else:
-      var default: seq[HttpClientConnectionRef]
-      let res =
-        try:
-          await session.connect(ha).wait(session.connectTimeout)
-        except AsyncTimeoutError:
-          raiseHttpConnectionError("Connection timed out")
-      res[].state = HttpClientConnectionState.Acquired
-      session.connections.mgetOrPut(ha.id, default).add(res)
-      inc(session.connectionsCount)
-      return res
+    conn =
+      try:
+        await session.connect(ha).wait(session.connectTimeout)
+      except AsyncTimeoutError:
+        raiseHttpConnectionError("Connection timed out")
+    conn.state = HttpClientConnectionState.Acquired
+    session.connections.mgetOrPut(ha.id, default).add(conn)
+    inc(session.connectionsCount)
+    return conn
 
 proc releaseConnection(session: HttpSessionRef,
                        connection: HttpClientConnectionRef) {.async.} =
@@ -773,10 +770,58 @@ proc closeWait*(session: HttpSessionRef) {.async.} =
   ##
   ## This closes all the connections opened to remote servers.
   var pending: seq[Future[void]]
-  for items in session.connections.values():
-    for item in items:
-      pending.add(closeWait(item))
+  # Closing sessionWatcher to avoid race condition.
+  await cancelAndWait(session.watcherFut)
+  for connections in session.connections.values():
+    for conn in connections:
+      pending.add(closeWait(conn))
   await allFutures(pending)
+
+proc sessionWatcher(session: HttpSessionRef) {.async.} =
+  while true:
+    let firstBreak =
+      try:
+        await sleepAsync(session.idlePeriod)
+        false
+      except CancelledError:
+        true
+
+    if firstBreak:
+      break
+
+    var idleConnections: seq[HttpClientConnectionRef]
+    let timestamp = Moment.now()
+    for peer, connections in session.connections.pairs():
+      if len(connections) > 0:
+        var toClose: seq[HttpClientConnectionRef]
+        var toKeep: seq[HttpClientConnectionRef]
+        for conn in connections.items():
+          doAssert(not(isNil(conn)), "nil connection inside connections pool")
+          if conn.isReady() and conn.isIdle(timestamp, session.idleTimeout):
+            # Idle connection
+            toClose.add(conn)
+          else:
+            # Active connection (currently used) or not idle connection
+            toKeep.add(conn)
+        session.connections[peer] = toKeep
+        idleConnections.add(toClose)
+
+    if len(idleConnections) > 0:
+      dec(session.connectionsCount, len(idleConnections))
+      var pending = newSeqOfCap[Future[void]](len(idleConnections))
+      let secondBreak =
+        try:
+          for connection in idleConnections:
+            pending.add(connection.closeWait())
+          await allFutures(pending)
+          false
+        except CancelledError:
+          # We still want to close connections to avoid socket leaks.
+          await allFutures(pending)
+          true
+
+      if secondBreak:
+        break
 
 proc closeWait*(request: HttpClientRequestRef) {.async.} =
   if request.state notin {HttpReqRespState.Closing, HttpReqRespState.Closed}:
