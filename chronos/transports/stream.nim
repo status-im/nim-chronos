@@ -50,7 +50,12 @@ type
     # get stuck on transport `close()`.
     # Please use this flag only if you are making both client and server in
     # the same thread.
-    TcpNoDelay # deprecated: Use ServerFlags.TcpNoDelay
+    TcpNoDelay # deprecated: Use ClientFlags.TcpNoDelay
+
+  ClientFlags* {.pure.} = enum
+    TcpNoDelay,
+    ReuseAddr,
+    ReusePort
 
 
   StreamTransportTracker* = ref object of TrackerBase
@@ -697,11 +702,11 @@ when defined(windows):
       raiseAssert "Unsupported domain"
 
   proc connect*(address: TransportAddress,
+                flags: set[ClientFlags],
                 bufferSize = DefaultStreamBufferSize,
                 child: StreamTransport = nil,
-                flags: set[TransportFlags] = {},
                 localAddress = TransportAddress(),
-                serverFlags: set[ServerFlags] = {}): Future[StreamTransport] =
+                ): Future[StreamTransport] =
     ## Open new connection to remote peer with address ``address`` and create
     ## new transport object ``StreamTransport`` for established connection.
     ## ``bufferSize`` is size of internal buffer for transport.
@@ -726,13 +731,13 @@ when defined(windows):
         retFuture.fail(getTransportOsError(osLastError()))
         return retFuture
 
-      if ServerFlags.ReuseAddr in serverFlags:
+      if ClientFlags.ReuseAddr in flags:
         if not(setSockOpt(sock, SOL_SOCKET, SO_REUSEADDR, 1)):
           let err = osLastError()
           sock.closeSocket()
           retFuture.fail(getTransportOsError(err))
           return retFuture
-      if ServerFlags.ReusePort in serverFlags:
+      if ClientFlags.ReusePort in flags:
         if not(setSockOpt(sock, SOL_SOCKET, SO_REUSEPORT, 1)):
           let err = osLastError()
           sock.closeSocket()
@@ -1506,11 +1511,11 @@ else:
     transp
 
   proc connect*(address: TransportAddress,
+                flags: set[ClientFlags],
                 bufferSize = DefaultStreamBufferSize,
                 child: StreamTransport = nil,
-                flags: set[TransportFlags] = {},
                 localAddress = TransportAddress(),
-                serverFlags: set[ServerFlags] = {}): Future[StreamTransport] =
+                ): Future[StreamTransport] =
     ## Open new connection to remote peer with address ``address`` and create
     ## new transport object ``StreamTransport`` for established connection.
     ## ``bufferSize`` - size of internal buffer for transport.
@@ -1537,19 +1542,19 @@ else:
       return retFuture
 
     if address.family in {AddressFamily.IPv4, AddressFamily.IPv6}:
-      if TransportFlags.TcpNoDelay in flags or ServerFlags.TcpNoDelay in serverFlags:
+      if ClientFlags.TcpNoDelay in flags:
         if not(setSockOpt(sock, osdefs.IPPROTO_TCP, osdefs.TCP_NODELAY, 1)):
           let err = osLastError()
           sock.closeSocket()
           retFuture.fail(getTransportOsError(err))
           return retFuture
-    if ServerFlags.ReuseAddr in serverFlags:
+    if ClientFlags.ReuseAddr in flags:
       if not(setSockOpt(sock, SOL_SOCKET, SO_REUSEADDR, 1)):
         let err = osLastError()
         sock.closeSocket()
         retFuture.fail(getTransportOsError(err))
         return retFuture
-    if ServerFlags.ReusePort in serverFlags:
+    if ClientFlags.ReusePort in flags:
       if not(setSockOpt(sock, SOL_SOCKET, SO_REUSEPORT, 1)):
         let err = osLastError()
         sock.closeSocket()
@@ -1817,6 +1822,15 @@ proc join*(server: StreamServer): Future[void] =
   else:
     retFuture.complete()
   return retFuture
+
+proc connect*(address: TransportAddress,
+              bufferSize = DefaultStreamBufferSize,
+              child: StreamTransport = nil,
+              flags: set[TransportFlags] = {},
+              localAddress = TransportAddress()): Future[StreamTransport] =
+  var mappedFlags: set[ClientFlags]
+  if TcpNoDelay in flags: mappedFlags.incl(ClientFlags.TcpNoDelay)
+  address.connect(mappedFlags, bufferSize, child, localAddress)
 
 proc close*(server: StreamServer) =
   ## Release ``server`` resources.
