@@ -958,7 +958,7 @@ suite "TLSStream test suite":
     key = TLSPrivateKey.init(pemkey)
     cert = TLSCertificate.init(pemcert)
 
-    var server = createStreamServer(address, serveClient, {ReuseAddr})
+    var server = createStreamServer(address, serveClient, {ServerFlags.ReuseAddr})
     server.start()
     var conn = await connect(address)
     var creader = newAsyncStreamReader(conn)
