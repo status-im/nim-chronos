@@ -702,10 +702,10 @@ when defined(windows):
       raiseAssert "Unsupported domain"
 
   proc connect*(address: TransportAddress,
-                flags: set[ClientFlags],
                 bufferSize = DefaultStreamBufferSize,
                 child: StreamTransport = nil,
                 localAddress = TransportAddress(),
+                flags: set[ClientFlags] = {},
                 ): Future[StreamTransport] =
     ## Open new connection to remote peer with address ``address`` and create
     ## new transport object ``StreamTransport`` for established connection.
@@ -1511,10 +1511,10 @@ else:
     transp
 
   proc connect*(address: TransportAddress,
-                flags: set[ClientFlags],
                 bufferSize = DefaultStreamBufferSize,
                 child: StreamTransport = nil,
                 localAddress = TransportAddress(),
+                flags: set[ClientFlags] = {},
                 ): Future[StreamTransport] =
     ## Open new connection to remote peer with address ``address`` and create
     ## new transport object ``StreamTransport`` for established connection.
@@ -1826,11 +1826,12 @@ proc join*(server: StreamServer): Future[void] =
 proc connect*(address: TransportAddress,
               bufferSize = DefaultStreamBufferSize,
               child: StreamTransport = nil,
-              flags: set[TransportFlags] = {},
+              flags: set[TransportFlags],
               localAddress = TransportAddress()): Future[StreamTransport] =
+  # Retro compatibility with TransportFlags
   var mappedFlags: set[ClientFlags]
   if TcpNoDelay in flags: mappedFlags.incl(ClientFlags.TcpNoDelay)
-  address.connect(mappedFlags, bufferSize, child, localAddress)
+  address.connect(bufferSize, child, localAddress, mappedFlags)
 
 proc close*(server: StreamServer) =
   ## Release ``server`` resources.

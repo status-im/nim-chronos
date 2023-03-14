@@ -1277,9 +1277,8 @@ suite "Stream Transport test suite":
 
     let ta = initTAddress("0.0.0.0:35000")
 
-    var transp1 = await connect(dst1, {ClientFlags.ReuseAddr}, localAddress = ta)
-
-    var transp2 = await connect(dst2, {ClientFlags.ReuseAddr}, localAddress = ta)
+    var transp1 = await connect(dst1, localAddress = ta, flags={ClientFlags.ReuseAddr})
+    var transp2 = await connect(dst2, localAddress = ta, flags={ClientFlags.ReuseAddr})
 
     expect(TransportOsError):
       var transp2 = await connect(dst3, localAddress = ta)
