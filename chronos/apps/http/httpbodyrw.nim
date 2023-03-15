@@ -148,7 +148,7 @@ proc hasOverflow*(bstream: HttpBodyReader): bool {.raises: [Defect].} =
     # ``BoundedStreamReader`` at EOF.
     if bstream.streams[0].atEof():
       for i in 1 ..< len(bstream.streams):
-        if not(bstream.streams[1].atEof()):
+        if not(bstream.streams[i].atEof()):
           return true
       false
     else:
