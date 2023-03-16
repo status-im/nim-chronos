@@ -8,7 +8,7 @@
 import unittest2
 import ../chronos, ../chronos/unittest2/asynctests
 
-when defined(nimHasUsed): {.used.}
+{.used.}
 
 suite "Future[T] behavior test suite":
   proc testFuture1(): Future[int] {.async.} =

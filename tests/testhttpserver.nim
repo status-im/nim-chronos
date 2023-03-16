@@ -11,7 +11,7 @@ import ../chronos, ../chronos/apps/http/httpserver,
        ../chronos/apps/http/httpcommon
 import stew/base10
 
-when defined(nimHasUsed): {.used.}
+{.used.}
 
 suite "HTTP server testing suite":
   type

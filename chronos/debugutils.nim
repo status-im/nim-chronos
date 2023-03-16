@@ -12,10 +12,10 @@ when (NimMajor, NimMinor) < (1, 4):
 else:
   {.push raises: [].}
 
-import ./asyncloop
+import "."/[asyncloop, config]
 export asyncloop
 
-when defined(chronosFutureTracking):
+when chronosFutureTracking:
   import stew/base10
 
 const
@@ -34,7 +34,7 @@ proc dumpPendingFutures*(filter = AllFutureStates): string =
   ##    not yet finished).
   ## 2. Future[T] objects with ``FutureState.Finished/Cancelled/Failed`` state
   ##    which callbacks are scheduled, but not yet fully processed.
-  when defined(chronosFutureTracking):
+  when chronosFutureTracking:
     var count = 0'u
     var res = ""
     for item in pendingFutures():
@@ -62,7 +62,7 @@ proc pendingFuturesCount*(filter: set[FutureState]): uint =
   ##
   ## If ``filter`` is equal to ``AllFutureStates`` Operation's complexity is
   ## O(1), otherwise operation's complexity is O(n).
-  when defined(chronosFutureTracking):
+  when chronosFutureTracking:
     if filter == AllFutureStates:
       pendingFuturesCount()
     else:

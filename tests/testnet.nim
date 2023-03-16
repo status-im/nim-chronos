@@ -8,7 +8,7 @@
 import unittest2
 import ../chronos/transports/[osnet, ipnet]
 
-when defined(nimHasUsed): {.used.}
+{.used.}
 
 suite "Network utilities test suite":
 

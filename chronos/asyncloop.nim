@@ -14,9 +14,9 @@ else:
   {.push raises: [].}
 
 from nativesockets import Port
-import std/[tables, strutils, heapqueue, lists, options, deques]
+import std/[tables, strutils, heapqueue, options, deques]
 import stew/results
-import "."/[osdefs, osutils, timer]
+import "."/[config, osdefs, osutils, timer]
 
 export Port
 export timer, results
@@ -1272,7 +1272,7 @@ proc getTracker*(id: string): TrackerBase =
   let loop = getThreadDispatcher()
   result = loop.trackers.getOrDefault(id, nil)
 
-when defined(chronosFutureTracking):
+when chronosFutureTracking:
   iterator pendingFutures*(): FutureBase =
     ## Iterates over the list of pending Futures (Future[T] objects which not
     ## yet completed, cancelled or failed).

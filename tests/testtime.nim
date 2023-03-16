@@ -9,7 +9,7 @@ import std/os
 import unittest2
 import ../chronos, ../chronos/timer
 
-when defined(nimHasUsed): {.used.}
+{.used.}
 
 static:
   doAssert Moment.high - Moment.low == Duration.high

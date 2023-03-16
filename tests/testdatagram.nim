@@ -9,7 +9,7 @@ import std/[strutils, net]
 import unittest2
 import ../chronos
 
-when defined(nimHasUsed): {.used.}
+{.used.}
 
 suite "Datagram Transport test suite":
   const
