@@ -665,45 +665,27 @@ proc acquireConnection(
      ): Future[HttpClientConnectionRef] {.async.} =
   ## Obtain connection from ``session`` or establish a new one.
   var default: seq[HttpClientConnectionRef]
-  if (HttpClientFlag.NewConnectionAlways in session.flags) or
-     (HttpClientRequestFlag.DedicatedConnection in flags):
-    var conn =
-      try:
-        await session.connect(ha).wait(session.connectTimeout)
-      except AsyncTimeoutError:
-        raiseHttpConnectionError("Connection timed out")
-    conn.state = HttpClientConnectionState.Acquired
-    session.connections.mgetOrPut(ha.id, default).add(conn)
-    inc(session.connectionsCount)
-    return conn
-  else:
-    var conn =
-      block:
-        var cres: HttpClientConnectionRef = nil
-        let
-          timestamp = Moment.now()
-          connections = session.connections.getOrDefault(ha.id, default)
-        # We looking for non-idle connection, all idle connections will be
-        # freed by sessionWatcher().
-        for connection in connections:
-          if connection.isReady() and
-             not(connection.isIdle(timestamp, session.idleTimeout)):
-            cres = connection
-            cres.state = HttpClientConnectionState.Acquired
-            break
-        cres
+  if (HttpClientFlag.NewConnectionAlways notin session.flags) and
+     (HttpClientRequestFlag.DedicatedConnection notin flags):
+    # Trying to reuse existing connection from our connection's pool.
+    let timestamp = Moment.now()
+    # We looking for non-idle connection at `Ready` state, all idle connections
+    # will be freed by sessionWatcher().
+    for connection in session.connections.getOrDefault(ha.id):
+      if connection.isReady() and
+         not(connection.isIdle(timestamp, session.idleTimeout)):
+        connection.state = HttpClientConnectionState.Acquired
+        return connection
 
-    if not(isNil(conn)): return conn
-
-    conn =
-      try:
-        await session.connect(ha).wait(session.connectTimeout)
-      except AsyncTimeoutError:
-        raiseHttpConnectionError("Connection timed out")
-    conn.state = HttpClientConnectionState.Acquired
-    session.connections.mgetOrPut(ha.id, default).add(conn)
-    inc(session.connectionsCount)
-    return conn
+  let connection =
+    try:
+      await session.connect(ha).wait(session.connectTimeout)
+    except AsyncTimeoutError:
+      raiseHttpConnectionError("Connection timed out")
+  connection.state = HttpClientConnectionState.Acquired
+  session.connections.mgetOrPut(ha.id, default).add(connection)
+  inc(session.connectionsCount)
+  return connection
 
 proc releaseConnection(session: HttpSessionRef,
                        connection: HttpClientConnectionRef) {.async.} =
@@ -791,28 +773,24 @@ proc sessionWatcher(session: HttpSessionRef) {.async.} =
 
     var idleConnections: seq[HttpClientConnectionRef]
     let timestamp = Moment.now()
-    for peer, connections in session.connections.pairs():
-      if len(connections) > 0:
-        var toClose: seq[HttpClientConnectionRef]
-        var toKeep: seq[HttpClientConnectionRef]
-        for conn in connections.items():
-          doAssert(not(isNil(conn)), "nil connection inside connections pool")
-          if conn.isReady() and conn.isIdle(timestamp, session.idleTimeout):
-            # Idle connection
-            toClose.add(conn)
+    for _, connections in session.connections.mpairs():
+      connections.keepItIf(
+        if isNil(it):
+          false
+        else:
+          if it.isReady() and it.isIdle(timestamp, session.idleTimeout):
+            idleConnections.add(it)
+            false
           else:
-            # Active connection (currently used) or not idle connection
-            toKeep.add(conn)
-        session.connections[peer] = toKeep
-        idleConnections.add(toClose)
+            true
+        )
 
     if len(idleConnections) > 0:
       dec(session.connectionsCount, len(idleConnections))
-      var pending = newSeqOfCap[Future[void]](len(idleConnections))
+      var pending: seq[Future[void]]
       let secondBreak =
         try:
-          for connection in idleConnections:
-            pending.add(connection.closeWait())
+          pending = idleConnections.mapIt(it.closeWait())
           await allFutures(pending)
           false
         except CancelledError:
@@ -967,8 +945,6 @@ proc getResponse(req: HttpClientRequestRef): Future[HttpClientResponseRef] {.
         await req.connection.reader.readUntil(addr buffer[0],
                                               len(buffer), HeadersMark).wait(
                                               req.session.headersTimeout)
-      except CancelledError as exc:
-        raise exc
       except AsyncTimeoutError:
         raiseHttpReadError("Reading response headers timed out")
       except AsyncStreamError:
