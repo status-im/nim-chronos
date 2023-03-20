@@ -1267,18 +1267,24 @@ suite "Stream Transport test suite":
     proc client(server: StreamServer, transp: StreamTransport) {.async.} =
       await transp.closeWait()
 
+    # We use ReuseAddr here only to be able to reuse the same IP/Port when there's a TIME_WAIT socket. It's useful when
+    # running the test multiple times or if a test ran previously used the same port.
     let servers =
       [createStreamServer(dst1, client, {ReuseAddr}),
        createStreamServer(dst2, client, {ReuseAddr}),
-       createStreamServer(dst3, client, {ReuseAddr})]
+       createStreamServer(dst3, client, {ReusePort})]
 
     for server in servers:
       server.start()
 
     let ta = initTAddress("0.0.0.0:35000")
 
+    # It works cause there's no active listening socket bound to ta and we are using ReuseAddr
     var transp1 = await connect(dst1, localAddress = ta, flags={ClientFlags.ReuseAddr})
     var transp2 = await connect(dst2, localAddress = ta, flags={ClientFlags.ReuseAddr})
+
+    # It works cause even thought there's an active listening socket bound to dst3, we are using ReusePort
+    var transp3 = await connect(dst2, localAddress = dst3, flags={ClientFlags.ReusePort})
 
     expect(TransportOsError):
       var transp2 = await connect(dst3, localAddress = ta)
@@ -1288,6 +1294,7 @@ suite "Stream Transport test suite":
 
     await transp1.closeWait()
     await transp2.closeWait()
+    await transp3.closeWait()
 
     for server in servers:
       server.stop()

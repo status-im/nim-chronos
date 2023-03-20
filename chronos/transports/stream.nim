@@ -1921,6 +1921,13 @@ proc createStreamServer*(host: TransportAddress,
           if sock == asyncInvalidSocket:
             discard closeFd(SocketHandle(serverSocket))
           raiseTransportOsError(err)
+      if ServerFlags.ReusePort in flags:
+        if not(setSockOpt(serverSocket, osdefs.SOL_SOCKET,
+                          osdefs.SO_REUSEPORT, 1)):
+          let err = osLastError()
+          if sock == asyncInvalidSocket:
+            discard closeFd(SocketHandle(serverSocket))
+          raiseTransportOsError(err)
       # TCP flags are not useful for Unix domain sockets.
       if ServerFlags.TcpNoDelay in flags:
         if not(setSockOpt(serverSocket, osdefs.IPPROTO_TCP,
