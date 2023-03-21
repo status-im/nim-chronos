@@ -863,6 +863,65 @@ suite "HTTP client testing suite":
 
     return true
 
+  proc testIdleConnection(address: TransportAddress): Future[bool] {.
+       async.} =
+    let
+      ha = getAddress(address, HttpClientScheme.NonSecure, "/test")
+
+    proc test(
+           session: HttpSessionRef,
+           a: HttpAddress
+         ): Future[TestResponseTuple] {.async.} =
+
+      var
+        data: HttpResponseTuple
+        request = HttpClientRequestRef.new(session, a, version = HttpVersion11)
+      try:
+        data = await request.fetch()
+      finally:
+        await request.closeWait()
+      return (data.status, data.data.bytesToString(), 0)
+
+    proc process(r: RequestFence): Future[HttpResponseRef] {.async.} =
+      if r.isOk():
+        let request = r.get()
+        case request.uri.path
+        of "/test":
+          return await request.respond(Http200, "ok")
+        else:
+          return await request.respond(Http404, "Page not found")
+      else:
+        return dumbResponse()
+
+    var server = createServer(address, process, false)
+    server.start()
+    let session = HttpSessionRef.new(idleTimeout = 1.seconds,
+                                     idlePeriod = 200.milliseconds)
+    try:
+      var f1 = test(session, ha)
+      var f2 = test(session, ha)
+      await allFutures(f1, f2)
+      check:
+        f1.finished()
+        f1.done()
+        f2.finished()
+        f2.done()
+        f1.read() == (200, "ok", 0)
+        f2.read() == (200, "ok", 0)
+        session.connectionsCount == 2
+
+      await sleepAsync(1500.milliseconds)
+      let resp = await test(session, ha)
+      check:
+        resp == (200, "ok", 0)
+        session.connectionsCount == 1
+    finally:
+      await session.closeWait()
+      await server.stop()
+      await server.closeWait()
+
+    return true
+
   test "HTTP all request methods test":
     let address = initTAddress("127.0.0.1:30080")
     check waitFor(testMethods(address, false)) == 18
@@ -933,6 +992,10 @@ suite "HTTP client testing suite":
   test "HTTP client connection management test":
     let address = initTAddress("127.0.0.1:30080")
     check waitFor(testConnectionManagement(address)) == true
+
+  test "HTTP client idle connection test":
+    let address = initTAddress("127.0.0.1:30080")
+    check waitFor(testIdleConnection(address)) == true
 
   test "Leaks test":
     proc getTrackerLeaks(tracker: string): bool =
