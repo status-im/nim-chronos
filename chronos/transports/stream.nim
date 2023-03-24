@@ -50,9 +50,9 @@ type
     # get stuck on transport `close()`.
     # Please use this flag only if you are making both client and server in
     # the same thread.
-    TcpNoDelay # deprecated: Use ClientFlags.TcpNoDelay
+    TcpNoDelay # deprecated: Use SocketFlags.TcpNoDelay
 
-  ClientFlags* {.pure.} = enum
+  SocketFlags* {.pure.} = enum
     TcpNoDelay,
     ReuseAddr,
     ReusePort
@@ -705,7 +705,7 @@ when defined(windows):
                 bufferSize = DefaultStreamBufferSize,
                 child: StreamTransport = nil,
                 localAddress = TransportAddress(),
-                flags: set[ClientFlags] = {},
+                flags: set[SocketFlags] = {},
                 ): Future[StreamTransport] =
     ## Open new connection to remote peer with address ``address`` and create
     ## new transport object ``StreamTransport`` for established connection.
@@ -731,13 +731,13 @@ when defined(windows):
         retFuture.fail(getTransportOsError(osLastError()))
         return retFuture
 
-      if ClientFlags.ReuseAddr in flags:
+      if SocketFlags.ReuseAddr in flags:
         if not(setSockOpt(sock, SOL_SOCKET, SO_REUSEADDR, 1)):
           let err = osLastError()
           sock.closeSocket()
           retFuture.fail(getTransportOsError(err))
           return retFuture
-      if ClientFlags.ReusePort in flags:
+      if SocketFlags.ReusePort in flags:
         if not(setSockOpt(sock, SOL_SOCKET, SO_REUSEPORT, 1)):
           let err = osLastError()
           sock.closeSocket()
@@ -1514,7 +1514,7 @@ else:
                 bufferSize = DefaultStreamBufferSize,
                 child: StreamTransport = nil,
                 localAddress = TransportAddress(),
-                flags: set[ClientFlags] = {},
+                flags: set[SocketFlags] = {},
                 ): Future[StreamTransport] =
     ## Open new connection to remote peer with address ``address`` and create
     ## new transport object ``StreamTransport`` for established connection.
@@ -1542,19 +1542,19 @@ else:
       return retFuture
 
     if address.family in {AddressFamily.IPv4, AddressFamily.IPv6}:
-      if ClientFlags.TcpNoDelay in flags:
+      if SocketFlags.TcpNoDelay in flags:
         if not(setSockOpt(sock, osdefs.IPPROTO_TCP, osdefs.TCP_NODELAY, 1)):
           let err = osLastError()
           sock.closeSocket()
           retFuture.fail(getTransportOsError(err))
           return retFuture
-    if ClientFlags.ReuseAddr in flags:
+    if SocketFlags.ReuseAddr in flags:
       if not(setSockOpt(sock, SOL_SOCKET, SO_REUSEADDR, 1)):
         let err = osLastError()
         sock.closeSocket()
         retFuture.fail(getTransportOsError(err))
         return retFuture
-    if ClientFlags.ReusePort in flags:
+    if SocketFlags.ReusePort in flags:
       if not(setSockOpt(sock, SOL_SOCKET, SO_REUSEPORT, 1)):
         let err = osLastError()
         sock.closeSocket()
@@ -1829,8 +1829,8 @@ proc connect*(address: TransportAddress,
               flags: set[TransportFlags],
               localAddress = TransportAddress()): Future[StreamTransport] =
   # Retro compatibility with TransportFlags
-  var mappedFlags: set[ClientFlags]
-  if TcpNoDelay in flags: mappedFlags.incl(ClientFlags.TcpNoDelay)
+  var mappedFlags: set[SocketFlags]
+  if TcpNoDelay in flags: mappedFlags.incl(SocketFlags.TcpNoDelay)
   address.connect(bufferSize, child, localAddress, mappedFlags)
 
 proc close*(server: StreamServer) =

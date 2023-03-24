@@ -1280,11 +1280,11 @@ suite "Stream Transport test suite":
     let ta = initTAddress("0.0.0.0:35000")
 
     # It works cause there's no active listening socket bound to ta and we are using ReuseAddr
-    var transp1 = await connect(dst1, localAddress = ta, flags={ClientFlags.ReuseAddr})
-    var transp2 = await connect(dst2, localAddress = ta, flags={ClientFlags.ReuseAddr})
+    var transp1 = await connect(dst1, localAddress = ta, flags={SocketFlags.ReuseAddr})
+    var transp2 = await connect(dst2, localAddress = ta, flags={SocketFlags.ReuseAddr})
 
     # It works cause even thought there's an active listening socket bound to dst3, we are using ReusePort
-    var transp3 = await connect(dst2, localAddress = dst3, flags={ClientFlags.ReusePort})
+    var transp3 = await connect(dst2, localAddress = dst3, flags={SocketFlags.ReusePort})
 
     expect(TransportOsError):
       var transp2 = await connect(dst3, localAddress = ta)
