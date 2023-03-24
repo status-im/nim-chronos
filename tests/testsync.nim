@@ -760,6 +760,24 @@ suite "Asynchronous sync primitives test suite":
         expect AsyncEventQueueFullError:
           let res {.used.} = dataFut1.read()
         check len(eventQueue) == 0
+
+        # Once overflowed, forever overflowed...
+        eventQueue.emit(900)
+        check len(eventQueue) == 0
+        let dataFut1a = eventQueue.waitEvents(key1)
+        check dataFut1a.finished() == true
+        expect AsyncEventQueueFullError:
+          let res {.used.} = dataFut1a.read()
+        # ... unless the reader is reset
+        eventQueue.resetRegistration(key1)
+        eventQueue.emit(1000)
+        check len(eventQueue) == 1
+        let dataFut1b = eventQueue.waitEvents(key1)
+        check:
+          dataFut1b.finished() == true
+          dataFut1b.read() == @[1000]
+        check len(eventQueue) == 0
+
         eventQueue.unregister(key1)
         check len(eventQueue) == 0
 
