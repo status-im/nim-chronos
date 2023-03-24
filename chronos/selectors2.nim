@@ -31,22 +31,32 @@
 # support - changes could potentially be backported to nim but are not
 # backwards-compatible.
 
-import os, nativesockets
+import stew/results
+import osdefs, osutils
+export results
 
-const hasThreadSupport = compileOption("threads") and defined(threadsafe)
+const
+  asyncEventsCount* {.intdefine.} = 64
+    ## Number of epoll events retrieved by syscall.
+  asyncInitialSize* {.intdefine.} = 64
+    ## Initial size of Selector[T]'s array of file descriptors.
+  asyncEventEngine* {.strdefine.} =
+    when defined(linux):
+      "epoll"
+    elif defined(macosx) or defined(macos) or defined(ios) or
+         defined(freebsd) or defined(netbsd) or defined(openbsd) or
+         defined(dragonfly):
+      "kqueue"
+    elif defined(posix):
+      "poll"
+    else:
+      ""
+    ## Engine type which is going to be used by module.
 
-const ioselSupportedPlatform* = defined(macosx) or defined(freebsd) or
-                                defined(netbsd) or defined(openbsd) or
-                                defined(dragonfly) or
-                                (defined(linux) and not defined(android))
-  ## This constant is used to determine whether the destination platform is
-  ## fully supported by ``ioselectors`` module.
-
-const bsdPlatform = defined(macosx) or defined(freebsd) or
-                    defined(netbsd) or defined(openbsd) or
-                    defined(dragonfly)
+  hasThreadSupport = compileOption("threads")
 
 when defined(nimdoc):
+
   type
     Selector*[T] = ref object
       ## An object which holds descriptors to be checked for read/write status
@@ -236,29 +246,15 @@ when defined(nimdoc):
     ## For *poll* and *select* selectors ``-1`` is returned.
 
 else:
-  import strutils
-  when hasThreadSupport:
-    import locks
-
-    type
-      SharedArray[T] = UncheckedArray[T]
-
-    proc allocSharedArray[T](nsize: int): ptr SharedArray[T] =
-      result = cast[ptr SharedArray[T]](allocShared0(sizeof(T) * nsize))
-
-    proc reallocSharedArray[T](sa: ptr SharedArray[T], nsize: int): ptr SharedArray[T] =
-      result = cast[ptr SharedArray[T]](reallocShared(sa, sizeof(T) * nsize))
-
-    proc deallocSharedArray[T](sa: ptr SharedArray[T]) =
-      deallocShared(cast[pointer](sa))
   type
+    IOSelectorsException* = object of CatchableError
+
+    SelectResult*[T] = Result[T, OSErrorCode]
+
     Event* {.pure.} = enum
       Read, Write, Timer, Signal, Process, Vnode, User, Error, Oneshot,
       Finished, VnodeWrite, VnodeDelete, VnodeExtend, VnodeAttrib, VnodeLink,
       VnodeRename, VnodeRevoke
-
-  type
-    IOSelectorsException* = object of CatchableError
 
     ReadyKey* = object
       fd* : int
@@ -285,78 +281,54 @@ else:
     var err = newException(IOSelectorsException, msg)
     raise err
 
-  proc setNonBlocking(fd: cint) {.inline.} =
-    setBlocking(fd.SocketHandle, false)
-
-  when not defined(windows):
-    import posix
-
-    template setKey(s, pident, pevents, pparam, pdata: untyped) =
-      var skey = addr(s.fds[pident])
-      skey.ident = pident
-      skey.events = pevents
-      skey.param = pparam
-      skey.data = data
-
-  when ioselSupportedPlatform:
-    template blockSignals(newmask: var Sigset, oldmask: var Sigset) =
+  when asyncEventEngine in ["epoll", "kqueue"]:
+    proc blockSignals(newmask: Sigset,
+                      oldmask: var Sigset): Result[void, OSErrorCode] =
+      var nmask = newmask
+      # We do this trick just because Nim's posix.nim has declaration like
+      # this:
+      # proc pthread_sigmask(a1: cint; a2, a3: var Sigset): cint
+      # proc sigprocmask*(a1: cint, a2, a3: var Sigset): cint
       when hasThreadSupport:
-        if posix.pthread_sigmask(SIG_BLOCK, newmask, oldmask) == -1:
-          raiseIOSelectorsError(osLastError())
+        if pthread_sigmask(SIG_BLOCK, nmask, oldmask) == -1:
+          err(osLastError())
+        else:
+          ok()
       else:
-        if posix.sigprocmask(SIG_BLOCK, newmask, oldmask) == -1:
-          raiseIOSelectorsError(osLastError())
+        if sigprocmask(SIG_BLOCK, nmask, oldmask) == -1:
+          err(osLastError())
+        else:
+          ok()
 
-    template unblockSignals(newmask: var Sigset, oldmask: var Sigset) =
+    proc unblockSignals(newmask: Sigset,
+                        oldmask: var Sigset): Result[void, OSErrorCode] =
+      # We do this trick just because Nim's posix.nim has declaration like
+      # this:
+      # proc pthread_sigmask(a1: cint; a2, a3: var Sigset): cint
+      # proc sigprocmask*(a1: cint, a2, a3: var Sigset): cint
+      var nmask = newmask
       when hasThreadSupport:
-        if posix.pthread_sigmask(SIG_UNBLOCK, newmask, oldmask) == -1:
-          raiseIOSelectorsError(osLastError())
+        if pthread_sigmask(SIG_UNBLOCK, nmask, oldmask) == -1:
+          err(osLastError())
+        else:
+          ok()
       else:
-        if posix.sigprocmask(SIG_UNBLOCK, newmask, oldmask) == -1:
-          raiseIOSelectorsError(osLastError())
+        if sigprocmask(SIG_UNBLOCK, nmask, oldmask) == -1:
+          err(osLastError())
+        else:
+          ok()
 
-  template clearKey[T](key: ptr SelectorKey[T]) =
-    var empty: T
-    key.ident = InvalidIdent
-    key.events = {}
-    key.data = empty
-
-  proc verifySelectParams(timeout: int) =
+  template verifySelectParams(timeout, min, max: int) =
     # Timeout of -1 means: wait forever
     # Anything higher is the time to wait in milliseconds.
-    doAssert(timeout >= -1, "Cannot select with a negative value, got " & $timeout)
+    doAssert((timeout >= min) and (timeout <= max),
+             "Cannot select with incorrect timeout value, got " & $timeout)
 
-  when defined(linux):
-    include ./ioselects/ioselectors_epoll
-  elif bsdPlatform:
-    include ./ioselects/ioselectors_kqueue
-  elif defined(windows):
-    include ./ioselects/ioselectors_select
-  elif defined(solaris):
-    include ./ioselects/ioselectors_poll # need to replace it with event ports
-  elif defined(genode):
-    include ./ioselects/ioselectors_select # TODO: use the native VFS layer
-  elif defined(nintendoswitch):
-    include ./ioselects/ioselectors_select
-  else:
-    include ./ioselects/ioselectors_poll
-
-proc register*[T](s: Selector[T], fd: int | SocketHandle,
-                  events: set[Event], data: T) {.deprecated: "use registerHandle instead".} =
-  ## **Deprecated since v0.18.0:** Use ``registerHandle`` instead.
-  s.registerHandle(fd, events, data)
-
-proc setEvent*(ev: SelectEvent) {.deprecated: "use trigger instead",
-    raises: [Defect, IOSelectorsException].} =
-  ## Trigger event ``ev``.
-  ##
-  ## **Deprecated since v0.18.0:** Use ``trigger`` instead.
-  ev.trigger()
-
-proc update*[T](s: Selector[T], fd: int | SocketHandle,
-                events: set[Event]) {.deprecated: "use updateHandle instead".} =
-  ## Update file/socket descriptor ``fd``, registered in selector
-  ## ``s`` with new events set ``event``.
-  ##
-  ## **Deprecated since v0.18.0:** Use ``updateHandle`` instead.
-  s.updateHandle()
+when asyncEventEngine == "epoll":
+  include ./ioselects/ioselectors_epoll
+elif asyncEventEngine == "kqueue":
+  include ./ioselects/ioselectors_kqueue
+elif asyncEventEngine == "poll":
+  include ./ioselects/ioselectors_poll
+else:
+  {.fatal: "Event engine `" & asyncEventEngine & "` is not supported!".}

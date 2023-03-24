@@ -1,7 +1,7 @@
 mode = ScriptMode.Verbose
 
 packageName   = "chronos"
-version       = "3.0.11"
+version       = "3.1.0"
 author        = "Status Research & Development GmbH"
 description   = "Networking framework with async/await support"
 license       = "MIT or Apache License 2.0"
