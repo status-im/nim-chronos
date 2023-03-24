@@ -18,7 +18,7 @@ else:
 
 type
   SelectorImpl[T] = object
-    fds: Table[uint32, SelectorKey[T]]
+    fds: Table[int32, SelectorKey[T]]
     pollfds: seq[TPollFd]
   Selector*[T] = ref SelectorImpl[T]
 
@@ -28,16 +28,15 @@ type
     wfd: cint
   SelectEvent* = ptr SelectEventImpl
 
-proc toString(key: uint32): string =
-  Base10.toString(key)
+proc toString(key: int32): string =
+  Base10.toString(uint32(key))
 
-template addKey[T](s: Selector[T], key: cint|uint32, skey: SelectorKey[T]) =
-  let fdu32 = when key is uint32: key else: uint32(key)
-  if s.fds.hasKeyOrPut(fdu32, skey):
-    raiseAssert "Descriptor [" & fdu32.toString() &
+template addKey[T](s: Selector[T], key: int32, skey: SelectorKey[T]) =
+  if s.fds.hasKeyOrPut(key, skey):
+    raiseAssert "Descriptor [" & key.toString() &
                 "] is already registered in the selector!"
 
-template getKey[T](s: Selector[T], key: uint32): SelectorKey[T] =
+template getKey[T](s: Selector[T], key: int32): SelectorKey[T] =
   let
     defaultKey = SelectorKey[T](ident: InvalidIdent)
     pkey = s.fds.getOrDefault(key, defaultKey)
@@ -46,20 +45,15 @@ template getKey[T](s: Selector[T], key: uint32): SelectorKey[T] =
            "] is not registered in the selector!")
   pkey
 
-template checkKey[T](s: Selector[T], key: uint32): bool =
+template checkKey[T](s: Selector[T], key: int32): bool =
   s.fds.contains(key)
 
-template getKey(key: SocketHandle|int): uint32 =
-  doAssert((int(key) >= int(low(int32))) and (int(key) <= int(high(int32))),
-           "Invalid descriptor [" & $int(key) & "] specified")
-  uint32(int32(key))
-
-proc freeKey[T](s: Selector[T], ident: uint32) =
-  s.fds.del(ident)
+proc freeKey[T](s: Selector[T], key: int32) =
+  s.fds.del(key)
 
 proc new*(t: typedesc[Selector], T: typedesc): SelectResult[Selector[T]] =
   let selector = Selector[T](
-    fds: initTable[uint32, SelectorKey[T]](asyncInitialSize)
+    fds: initTable[int32, SelectorKey[T]](asyncInitialSize)
   )
   ok(selector)
 
@@ -134,11 +128,9 @@ template pollRemove[T](s: Selector[T], sock: cint) =
 
 proc registerHandle2*[T](s: Selector[T], fd: cint, events: set[Event],
                          data: T): SelectResult[void] =
-  let
-    fdu32 = uint32(fd)
-    skey = SelectorKey[T](ident: fd, events: events, param: 0, data: data)
+  let skey = SelectorKey[T](ident: fd, events: events, param: 0, data: data)
 
-  s.addKey(fdu32, skey)
+  s.addKey(fd, skey)
   if events != {}:
     s.pollAdd(fd, events)
   ok()
@@ -147,10 +139,9 @@ proc updateHandle2*[T](s: Selector[T], fd: cint,
                        events: set[Event]): SelectResult[void] =
   const EventsMask = {Event.Timer, Event.Signal, Event.Process, Event.Vnode,
                       Event.User, Event.Oneshot, Event.Error}
-  let fdu32 = uint32(fd)
-  s.fds.withValue(fdu32, pkey):
+  s.fds.withValue(int32(fd), pkey):
     doAssert(pkey[].events * EventsMask == {},
-             "Descriptor [" & fdu32.toString() & "] could not be updated!")
+             "Descriptor [" & fd.toString() & "] could not be updated!")
     if pkey[].events != events:
       if pkey[].events == {}:
         s.pollAdd(fd, events)
@@ -161,30 +152,27 @@ proc updateHandle2*[T](s: Selector[T], fd: cint,
           s.pollRemove(fd)
       pkey.events = events
   do:
-    raiseAssert "Descriptor [" & fdu32.toString() &
+    raiseAssert "Descriptor [" & fd.toString() &
                 "] is not registered in the selector!"
   ok()
 
 proc registerEvent2*[T](s: Selector[T], ev: SelectEvent,
-                        data: T): SelectResult[int] =
+                        data: T): SelectResult[cint] =
+  doAssert(not(isNil(ev)))
   let
-    fdu32 = uint32(ev.rfd)
     key = SelectorKey[T](ident: ev.rfd, events: {Event.User},
                          param: 0, data: data)
 
-  s.addKey(fdu32, key)
+  s.addKey(ev.rfd, key)
   s.pollAdd(ev.rfd, {Event.Read}.toPollEvents())
-  ok()
+  ok(ev.rfd)
 
 proc unregister2*[T](s: Selector[T], fd: cint): SelectResult[void] =
-  let
-    fdu32 = uint32(fd)
-    pkey = s.getKey(fdu32)
-
+  let pkey = s.getKey(fd)
   if pkey.events != {}:
     if {Event.Read, Event.Write, Event.User} * pkey.events != {}:
       s.pollRemove(fd)
-  s.freeKey(fdu32)
+  s.freeKey(fd)
   ok()
 
 proc unregister2*[T](s: Selector[T], event: SelectEvent): SelectResult[void] =
@@ -193,12 +181,12 @@ proc unregister2*[T](s: Selector[T], event: SelectEvent): SelectResult[void] =
 proc prepareKey[T](s: Selector[T], event: var TPollfd): Opt[ReadyKey] =
   let
     defaultKey = SelectorKey[T](ident: InvalidIdent)
-    fdu32 = uint32(event.fd)
+    fdi32 = int32(event.fd)
     revents = event.revents
 
   var
-    pkey = s.getKey(fdu32)
-    rkey = ReadyKey(fd: int(event.fd))
+    pkey = s.getKey(fdi32)
+    rkey = ReadyKey(fd: event.fd)
 
   # Cleanup all the received events.
   event.revents = 0
@@ -288,19 +276,19 @@ proc close*(event: SelectEvent) {.
   let res = event.close2()
   if res.isErr(): raiseIOSelectorsError(res.error())
 
-proc registerHandle*[T](s: Selector[T], fd: int | SocketHandle,
+proc registerHandle*[T](s: Selector[T], fd: cint | SocketHandle,
                         events: set[Event], data: T) {.
     raises: [Defect, IOSelectorsException].} =
   let res = registerHandle2(s, cint(fd), events, data)
   if res.isErr(): raiseIOSelectorsError(res.error())
 
-proc updateHandle*[T](s: Selector[T], fd: int | SocketHandle,
+proc updateHandle*[T](s: Selector[T], fd: cint | SocketHandle,
                       events: set[Event]) {.
     raises: [Defect, IOSelectorsException].} =
   let res = updateHandle2(s, cint(fd), events)
   if res.isErr(): raiseIOSelectorsError(res.error())
 
-proc unregister*[T](s: Selector[T], fd: int | SocketHandle) {.
+proc unregister*[T](s: Selector[T], fd: cint | SocketHandle) {.
      raises: [Defect, IOSelectorsException].} =
   let res = unregister2(s, cint(fd))
   if res.isErr(): raiseIOSelectorsError(res.error())
@@ -328,29 +316,25 @@ proc select*[T](s: Selector[T], timeout: int): seq[ReadyKey] =
   if res.isErr(): raiseIOSelectorsError(res.error())
   res.get()
 
-proc contains*[T](s: Selector[T], fd: SocketHandle|int): bool {.inline.} =
-  let fdu32 = getKey(fd)
-  s.checkKey(fdu32)
+proc contains*[T](s: Selector[T], fd: SocketHandle|cint): bool {.inline.} =
+  s.checkKey(int32(fd))
 
-proc setData*[T](s: Selector[T], fd: SocketHandle|int, data: T): bool =
-  let fdu32 = getKey(fd)
-  s.fds.withValue(fdu32, skey):
+proc setData*[T](s: Selector[T], fd: SocketHandle|cint, data: T): bool =
+  s.fds.withValue(int32(fd), skey):
     skey[].data = data
     return true
   do:
     return false
 
-template withData*[T](s: Selector[T], fd: SocketHandle|int, value,
+template withData*[T](s: Selector[T], fd: SocketHandle|cint, value,
                         body: untyped) =
-  let fdu32 = getKey(fd)
-  s.fds.withValue(fdu32, skey):
+  s.fds.withValue(int32(fd), skey):
     var value = addr(skey[].data)
     body
 
-template withData*[T](s: Selector[T], fd: SocketHandle|int, value, body1,
+template withData*[T](s: Selector[T], fd: SocketHandle|cint, value, body1,
                         body2: untyped) =
-  let fdu32 = getKey(fd)
-  s.fds.withValue(fdu32, skey):
+  s.fds.withValue(int32(fd), skey):
     var value = addr(skey[].data)
     body1
   do:

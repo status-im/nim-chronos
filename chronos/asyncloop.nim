@@ -602,7 +602,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
 
   proc contains*(disp: PDispatcher, fd: AsyncFD): bool {.inline.} =
     ## Returns ``true`` if ``fd`` is registered in thread's dispatcher.
-    int(fd) in disp.selector
+    cint(fd) in disp.selector
 
   proc register2*(fd: AsyncFD): Result[void, OSErrorCode] =
     ## Register file descriptor ``fd`` in thread's dispatcher.
@@ -619,7 +619,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     ## call the callback ``cb`` with specified argument ``udata``.
     let loop = getThreadDispatcher()
     var newEvents = {Event.Read}
-    withData(loop.selector, int(fd), adata) do:
+    withData(loop.selector, cint(fd), adata) do:
       let acb = AsyncCallback(function: cb, udata: udata)
       adata.reader = acb
       if not(isNil(adata.writer.function)):
@@ -632,7 +632,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     ## Stop watching the file descriptor ``fd`` for read availability.
     let loop = getThreadDispatcher()
     var newEvents: set[Event]
-    withData(loop.selector, int(fd), adata) do:
+    withData(loop.selector, cint(fd), adata) do:
       # We need to clear `reader` data, because `selectors` don't do it
       adata.reader = default(AsyncCallback)
       if not(isNil(adata.writer.function)):
@@ -647,7 +647,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     ## call the callback ``cb`` with specified argument ``udata``.
     let loop = getThreadDispatcher()
     var newEvents = {Event.Write}
-    withData(loop.selector, int(fd), adata) do:
+    withData(loop.selector, cint(fd), adata) do:
       let acb = AsyncCallback(function: cb, udata: udata)
       adata.writer = acb
       if not(isNil(adata.reader.function)):
@@ -660,7 +660,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     ## Stop watching the file descriptor ``fd`` for write availability.
     let loop = getThreadDispatcher()
     var newEvents: set[Event]
-    withData(loop.selector, int(fd), adata) do:
+    withData(loop.selector, cint(fd), adata) do:
       # We need to clear `writer` data, because `selectors` don't do it
       adata.writer = default(AsyncCallback)
       if not(isNil(adata.reader.function)):
@@ -736,7 +736,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
       if not isNil(aftercb):
         aftercb(cast[pointer](param))
 
-    withData(loop.selector, int(fd), adata) do:
+    withData(loop.selector, cint(fd), adata) do:
       # We are scheduling reader and writer callbacks to be called
       # explicitly, so they can get an error and continue work.
       # Callbacks marked as deleted so we don't need to get REAL notifications
@@ -845,7 +845,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
       let fd = loop.keys[i].fd
       let events = loop.keys[i].events
 
-      withData(loop.selector, fd, adata) do:
+      withData(loop.selector, cint(fd), adata) do:
         if (Event.Read in events) or (events == {Event.Error}):
           if not isNil(adata.reader.function):
             loop.callbacks.addLast(adata.reader)
