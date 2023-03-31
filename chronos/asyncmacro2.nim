@@ -193,12 +193,12 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
       #      here the possibility of transporting more specific error types here
       #      for example by casting exceptions coming out of `await`..
       let raises = nnkBracket.newTree()
-      when not defined(chronosStrictException):
-        raises.add(newIdentNode("Exception"))
-      else:
+      when chronosStrictException:
         raises.add(newIdentNode("CatchableError"))
         when (NimMajor, NimMinor) < (1, 4):
           raises.add(newIdentNode("Defect"))
+      else:
+        raises.add(newIdentNode("Exception"))
 
       closureIterator.addPragma(nnkExprColonExpr.newTree(
         newIdentNode("raises"),
@@ -328,5 +328,5 @@ macro async*(prc: untyped): untyped =
       result.add asyncSingleProc(oneProc)
   else:
     result = asyncSingleProc(prc)
-  when defined(nimDumpAsync):
+  when chronosDumpAsync:
     echo repr result

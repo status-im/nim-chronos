@@ -9,7 +9,7 @@ import unittest2
 import macros
 import ../chronos
 
-when defined(nimHasUsed): {.used.}
+{.used.}
 
 type
   RetValueType = proc(n: int): Future[int] {.async.}

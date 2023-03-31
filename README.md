@@ -333,6 +333,12 @@ Known `async` backends include:
 ``none`` can be used when a library supports both a synchronous and
 asynchronous API, to disable the latter.
 
+### Compile-time configuration
+
+`chronos` contains several compile-time [configuration options](./chronos/config.nim) enabling stricter compile-time checks and debugging helpers whose runtime cost may be significant.
+
+Strictness options generally will become default in future chronos releases and allow adapting existing code without changing the new version - see the [`config.nim`](./chronos/config.nim) module for more information.
+
 ## TODO
   * Pipe/Subprocess Transports.
   * Multithreading Stream/Datagram servers

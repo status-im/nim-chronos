@@ -9,7 +9,7 @@ import std/[strutils, os]
 import unittest2
 import ".."/chronos, ".."/chronos/osdefs
 
-when defined(nimHasUsed): {.used.}
+{.used.}
 
 when defined(windows):
   proc get_osfhandle*(fd: FileHandle): HANDLE {.
