@@ -296,6 +296,9 @@ when defined(windows):
       cb*: CallbackFunc
       errCode*: OSErrorCode
       bytesCount*: uint32
+      cell*: ForeignCell # we need this `cell` to protect our `cb` environment,
+                         # when using `RegisterWaitForSingleObject()`, because
+                         # waiting is done in different thread.
       udata*: pointer
 
     CustomOverlapped* = object of OVERLAPPED
@@ -319,6 +322,18 @@ when defined(windows):
     PtrCustomOverlapped* = ptr CustomOverlapped
 
     RefCustomOverlapped* = ref CustomOverlapped
+
+    PostCallbackData = object
+      ioPort: HANDLE
+      handleFd: AsyncFD
+      waitFd: HANDLE
+      udata: pointer
+      ovl: RefCustomOverlapped
+
+    WaitableHandle* = ptr PostCallbackData
+
+    WaitableResult* {.pure.} = enum
+      Ok, Timeout
 
     AsyncFD* = distinct int
 
@@ -427,6 +442,159 @@ when defined(windows):
   proc unregister*(fd: AsyncFD) =
     ## Unregisters ``fd``.
     getThreadDispatcher().handles.excl(fd)
+
+  {.push stackTrace: off.}
+  proc waitableCallback(param: pointer, timerOrWaitFired: WINBOOL) {.
+       stdcall, gcsafe.} =
+    # This procedure will be executed in `wait thread`, so it must not use
+    # GC related objects.
+    # We going to ignore callbacks which was spawned when `isNil(param) == true`
+    # because we unable to indicate this error.
+    if isNil(param):
+      return
+    var wh = cast[WaitableHandle](param)
+    # We ignore result of postQueueCompletionStatus() call because we unable to
+    # indicate error.
+    discard postQueuedCompletionStatus(wh.ioPort, DWORD(timerOrWaitFired),
+                                       ULONG_PTR(wh.handleFd),
+                                       cast[pointer](wh.ovl))
+  {.pop.}
+
+  proc registerWaitable(
+         handle: HANDLE, flags: ULONG,
+         timeout: Duration, cb: CallbackFunc, udata: pointer
+       ): Result[WaitableHandle, OSErrorCode] =
+    ## Register handle of (Change notification, Console input, Event,
+    ## Memory resource notification, Mutex, Process, Semaphore, Thread,
+    ## Waitable timer) for waiting, using specific Windows' ``flags`` and
+    ## ``timeout`` value.
+    ##
+    ## Callback ``cb`` will be scheduled with ``udata`` parameter when
+    ## ``handle`` become signaled.
+    ##
+    ## Result of this procedure call ``WaitableHandle`` should be closed using
+    ## closeWaitable() call.
+    ##
+    ## NOTE: This is private procedure, not supposed to be publicly available,
+    ## please use ``waitForSingleObject()``.
+    let
+      loop = getThreadDispatcher()
+      cell =
+        try:
+          system.protect(rawEnv(cb))
+        except Exception:
+          raiseAssert "Unable to protect callback environment"
+
+    var ovl = RefCustomOverlapped(data: CompletionData(cb: cb, cell: cell))
+    GC_ref(ovl)
+
+    var whandle = cast[WaitableHandle](allocShared0(sizeof(PostCallbackData)))
+    whandle.ioPort = loop.getIoHandler()
+    whandle.handleFd = AsyncFD(handle)
+    whandle.udata = udata
+    whandle.ovl = ovl
+    ovl.data.udata = cast[pointer](whandle)
+
+    let dwordTimeout =
+      if timeout == InfiniteDuration:
+        DWORD(INFINITE)
+      else:
+        DWORD(timeout.milliseconds)
+
+    if registerWaitForSingleObject(addr(whandle.waitFd), handle,
+                                   cast[WAITORTIMERCALLBACK](waitableCallback),
+                                   cast[pointer](whandle),
+                                   dwordTimeout,
+                                   flags) == WINBOOL(0):
+      try:
+        system.dispose(ovl.data.cell)
+      except Exception:
+        raiseAssert "Unable to dispose callback environment"
+      ovl.data.udata = nil
+      GC_unref(ovl)
+      deallocShared(cast[pointer](whandle))
+      return err(osLastError())
+
+    ok(whandle)
+
+  proc closeWaitable(wh: WaitableHandle): Result[void, OSErrorCode] =
+    ## Close waitable handle ``wh`` and clear all the resources. It is safe
+    ## to close this handle, even if wait operation is pending.
+    ##
+    ## NOTE: This is private procedure, not supposed to be publicly available,
+    ## please use ``waitForSingleObject()``.
+    doAssert(not(isNil(wh)))
+
+    let waitFd = wh.waitFd
+
+    try:
+      system.dispose(wh.ovl.data.cell)
+    except Exception:
+      raiseAssert "Unable to dispose callback environment"
+
+    GC_unref(wh.ovl)
+    deallocShared(cast[pointer](wh))
+
+    if unregisterWait(waitFd) == 0:
+      let res = osLastError()
+      if res != ERROR_IO_PENDING:
+        return err(res)
+    ok()
+
+  proc addProcess2*(pid: int, cb: CallbackFunc,
+                    udata: pointer = nil): Result[int, OSErrorCode] =
+    ## Registers callback ``cb`` to be called when process with process
+    ## identifier ``pid`` exited. Returns process identifier, which can be
+    ## used to clear process callback via ``removeProcess``.
+    doAssert(pid > 0, "Process identifier must be positive integer")
+    let
+      hProcess = openProcess(SYNCHRONIZE, WINBOOL(0), DWORD(pid))
+      flags = WT_EXECUTEINWAITTHREAD or WT_EXECUTEONLYONCE
+
+    var wh: WaitableHandle = nil
+
+    if hProcess == HANDLE(0):
+      return err(osLastError())
+
+    proc continuation(udata: pointer) {.gcsafe.} =
+      doAssert(not(isNil(udata)))
+      doAssert(not(isNil(wh)))
+      discard closeFd(hProcess)
+      cb(wh[].udata)
+
+    wh =
+      block:
+        let res = registerWaitable(hProcess, flags, InfiniteDuration,
+                                   continuation, udata)
+        if res.isErr():
+          discard closeFd(hProcess)
+          return err(res.error())
+        res.get()
+    ok(cast[int](wh))
+
+  proc removeProcess2*(procfd: int): Result[void, OSErrorCode] =
+    doAssert(procfd != 0)
+    # WaitableHandle is allocated in shared memory, so it is not managed by GC.
+    let wh = cast[WaitableHandle](procfd)
+    ? closeWaitable(wh)
+    ok()
+
+  proc addProcess*(pid: int, cb: CallbackFunc, udata: pointer = nil): int {.
+       raises: [Defect, ValueError].} =
+    ## Registers callback ``cb`` to be called when process with process
+    ## identifier ``pid`` exited. Returns process identifier, which can be
+    ## used to clear process callback via ``removeProcess``.
+    let res = addProcess2(pid, cb, udata)
+    if res.isErr():
+      raise newException(ValueError, osErrorMsg(res.error()))
+    res.get()
+
+  proc removeProcess*(procfd: int) {.
+       raises: [Defect, ValueError].} =
+    ## Remove process' watching using process' descriptor ``procfd``.
+    let res = removeProcess2(procfd)
+    if res.isErr():
+      raise newException(ValueError, osErrorMsg(res.error()))
 
   proc poll*() =
     ## Perform single asynchronous step, processing timers and completing
@@ -1282,6 +1450,64 @@ when chronosFutureTracking:
     ## Returns number of pending Futures (Future[T] objects which not yet
     ## completed, cancelled or failed).
     futureList.count
+
+when defined(windows):
+  proc waitForSingleObject*(handle: HANDLE,
+                            timeout: Duration): Future[WaitableResult] {.
+       raises: [Defect].} =
+    ## Waits until the specified object is in the signaled state or the
+    ## time-out interval elapses. WaitForSingleObject() for asynchronous world.
+    let flags = WT_EXECUTEONLYONCE
+
+    var
+      retFuture = newFuture[WaitableResult]("chronos.waitForSingleObject()")
+      waitHandle: WaitableHandle = nil
+
+    proc continuation(udata: pointer) {.gcsafe.} =
+      doAssert(not(isNil(waitHandle)))
+      if not(retFuture.finished()):
+        let
+          ovl = cast[PtrCustomOverlapped](udata)
+          returnFlag = WINBOOL(ovl.data.bytesCount)
+          res = closeWaitable(waitHandle)
+        if res.isErr():
+          retFuture.fail(newException(AsyncError, osErrorMsg(res.error())))
+        else:
+          if returnFlag == TRUE:
+            retFuture.complete(WaitableResult.Timeout)
+          else:
+            retFuture.complete(WaitableResult.Ok)
+
+    proc cancellation(udata: pointer) {.gcsafe.} =
+      doAssert(not(isNil(waitHandle)))
+      if not(retFuture.finished()):
+        discard closeWaitable(waitHandle)
+
+    let wres = uint32(waitForSingleObject(handle, DWORD(0)))
+    if wres == WAIT_OBJECT_0:
+      retFuture.complete(WaitableResult.Ok)
+      return retFuture
+    elif wres == WAIT_ABANDONED:
+      retFuture.fail(newException(AsyncError, "Handle was abandoned"))
+      return retFuture
+    elif wres == WAIT_FAILED:
+      retFuture.fail(newException(AsyncError, osErrorMsg(osLastError())))
+      return retFuture
+
+    if timeout == ZeroDuration:
+      retFuture.complete(WaitableResult.Timeout)
+      return retFuture
+
+    waitHandle =
+      block:
+        let res = registerWaitable(handle, flags, timeout, continuation, nil)
+        if res.isErr():
+          retFuture.fail(newException(AsyncError, osErrorMsg(res.error())))
+          return retFuture
+        res.get()
+
+    retFuture.cancelCallback = cancellation
+    return retFuture
 
 # Perform global per-module initialization.
 globalInit()
