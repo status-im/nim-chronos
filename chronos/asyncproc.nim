@@ -11,10 +11,10 @@
 import std/[options, strtabs]
 import "."/[config, asyncloop, handles, osdefs, osutils], streams/asyncstream
 import stew/[results, byteutils]
-from std/os import quoteShell, quoteShellWindows, quoteShellPosix
+from std/os import quoteShell, quoteShellWindows, quoteShellPosix, envPairs
 
 export options, strtabs, results
-export quoteShell, quoteShellWindows, quoteShellPosix
+export quoteShell, quoteShellWindows, quoteShellPosix, envPairs
 
 const
   AsyncProcessTrackerName* = "async.process"
