@@ -1259,6 +1259,47 @@ suite "Stream Transport test suite":
     await allFutures(rtransp.closeWait(), wtransp.closeWait())
     return buffer == message
 
+  proc testConnectBindLocalAddress() {.async.} =
+    let dst1 = initTAddress("127.0.0.1:33335")
+    let dst2 = initTAddress("127.0.0.1:33336")
+    let dst3 = initTAddress("127.0.0.1:33337")
+
+    proc client(server: StreamServer, transp: StreamTransport) {.async.} =
+      await transp.closeWait()
+
+    # We use ReuseAddr here only to be able to reuse the same IP/Port when there's a TIME_WAIT socket. It's useful when
+    # running the test multiple times or if a test ran previously used the same port.
+    let servers =
+      [createStreamServer(dst1, client, {ReuseAddr}),
+       createStreamServer(dst2, client, {ReuseAddr}),
+       createStreamServer(dst3, client, {ReusePort})]
+
+    for server in servers:
+      server.start()
+
+    let ta = initTAddress("0.0.0.0:35000")
+
+    # It works cause there's no active listening socket bound to ta and we are using ReuseAddr
+    var transp1 = await connect(dst1, localAddress = ta, flags={SocketFlags.ReuseAddr})
+    var transp2 = await connect(dst2, localAddress = ta, flags={SocketFlags.ReuseAddr})
+
+    # It works cause even thought there's an active listening socket bound to dst3, we are using ReusePort
+    var transp3 = await connect(dst2, localAddress = dst3, flags={SocketFlags.ReusePort})
+
+    expect(TransportOsError):
+      var transp2 = await connect(dst3, localAddress = ta)
+
+    expect(TransportOsError):
+      var transp3 = await connect(dst3, localAddress = initTAddress(":::35000"))
+
+    await transp1.closeWait()
+    await transp2.closeWait()
+    await transp3.closeWait()
+
+    for server in servers:
+      server.stop()
+      await server.closeWait()
+
   markFD = getCurrentFD()
 
   for i in 0..<len(addresses):
@@ -1346,6 +1387,8 @@ suite "Stream Transport test suite":
       check waitFor(testReadOnClose(addresses[i])) == true
   test "[PIPE] readExactly()/write() test":
     check waitFor(testPipe()) == true
+  test "[IP] bind connect to local address":
+    waitFor(testConnectBindLocalAddress())
   test "Servers leak test":
     check getTracker("stream.server").isLeaked() == false
   test "Transports leak test":
