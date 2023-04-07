@@ -54,6 +54,7 @@ type
   HttpRedirectError* = object of HttpError
   HttpAddressError* = object of HttpError
   HttpUseClosedError* = object of HttpError
+  HttpReadLimitError* = object of HttpReadError
 
   KeyValueTuple* = tuple
     key: string
