@@ -61,7 +61,7 @@ type
     closed*: int64
 
 const
-  DgramTransportTrackerName = "datagram.transport"
+  DgramTransportTrackerName* = "datagram.transport"
 
 proc remoteAddress*(transp: DatagramTransport): TransportAddress {.
     raises: [Defect, TransportOsError].} =
