@@ -71,8 +71,8 @@ type
     gcsafe, raises: [Defect].}
 
 const
-  StreamTransportTrackerName = "stream.transport"
-  StreamServerTrackerName = "stream.server"
+  StreamTransportTrackerName* = "stream.transport"
+  StreamServerTrackerName* = "stream.server"
 
 when defined(windows):
   type
