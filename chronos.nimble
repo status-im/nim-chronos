@@ -36,8 +36,10 @@ task test, "Run all tests":
       "-d:debug -d:chronosPreviewV4",
       "-d:debug -d:chronosDebug -d:useSysAssert -d:useGcAssert",
       "-d:release",
-      "-d:release -d:chronosPreviewV4",
-    ]: run args, "tests/testall"
+      "-d:release -d:chronosPreviewV4"]:
+    run args, "tests/testall"
+    if (NimMajor, NimMinor) > (1, 6):
+      run args & " --mm:refc", "tests/testall"
 
 task test_libbacktrace, "test with libbacktrace":
   var allArgs = @[
