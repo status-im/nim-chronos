@@ -555,3 +555,14 @@ suite "Exceptions tracking":
         await raiseException()
 
     waitFor(callCatchAll())
+
+  test "No poll re-entrancy allowed":
+    proc testReentrancy() {.async.} =
+      await sleepAsync(1.milliseconds)
+      poll()
+
+    let reenter = testReentrancy()
+    expect(Defect):
+      waitFor reenter
+
+    waitFor reenter.cancelAndWait() # avoid pending future leaks
