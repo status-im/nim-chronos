@@ -64,19 +64,22 @@ type
     ticks*: Deque[AsyncCallback]
     trackers*: Table[string, TrackerBase]
     counters*: Table[string, TrackerCounter]
-
-proc sentinelCallbackImpl(arg: pointer) {.gcsafe, noreturn.} =
-  raiseAssert "Sentinel callback MUST not be scheduled"
-
-const
-  SentinelCallback = AsyncCallback(function: sentinelCallbackImpl,
-                                   udata: nil)
-
-proc isSentinel(acb: AsyncCallback): bool =
-  acb == SentinelCallback
+    polling*: bool
+      ## The event loop is currently running
 
 proc `<`(a, b: TimerCallback): bool =
   result = a.finishAt < b.finishAt
+
+template preparePoll(loop: PDispatcherBase) =
+  # If you hit this assert, you've called `poll`, `runForever` or `waitFor`
+  # from within an async function which is not supported due to the difficulty
+  # to control stack depth and event ordering
+  # If you're using `waitFor`, switch to `await` and / or propagate the
+  # up the call stack.
+  doAssert not loop.polling, "The event loop and chronos functions in general are not reentrant"
+
+  loop.polling = true
+  defer: loop.polling = false
 
 func getAsyncTimestamp*(a: Duration): auto {.inline.} =
   ## Return rounded up value of duration with milliseconds resolution.
@@ -142,10 +145,10 @@ template processTicks(loop: untyped) =
     loop.callbacks.addLast(loop.ticks.popFirst())
 
 template processCallbacks(loop: untyped) =
-  while true:
-    let callable = loop.callbacks.popFirst()  # len must be > 0 due to sentinel
-    if isSentinel(callable):
-      break
+  # Process existing callbacks but not those that follow, to allow the network
+  # to regain control regularly
+  for _ in 0..<loop.callbacks.len():
+    let callable = loop.callbacks.popFirst()
     if not(isNil(callable.function)):
       callable.function(callable.udata)
 
@@ -337,7 +340,6 @@ elif defined(windows):
       trackers: initTable[string, TrackerBase](),
       counters: initTable[string, TrackerCounter]()
     )
-    res.callbacks.addLast(SentinelCallback)
     initAPI(res)
     res
 
@@ -585,15 +587,12 @@ elif defined(windows):
 
   proc poll*() =
     let loop = getThreadDispatcher()
+    loop.preparePoll()
+
     var
       curTime = Moment.now()
       curTimeout = DWORD(0)
       events: array[MaxEventsCount, osdefs.OVERLAPPED_ENTRY]
-
-    # On reentrant `poll` calls from `processCallbacks`, e.g., `waitFor`,
-    # complete pending work of the outer `processCallbacks` call.
-    # On non-reentrant `poll` calls, this only removes sentinel element.
-    processCallbacks(loop)
 
     # Moving expired timers to `loop.callbacks` and calculate timeout
     loop.processTimersGetTimeout(curTimeout)
@@ -660,13 +659,9 @@ elif defined(windows):
     # We move tick callbacks to `loop.callbacks` always.
     processTicks(loop)
 
-    # All callbacks which will be added during `processCallbacks` will be
-    # scheduled after the sentinel and are processed on next `poll()` call.
-    loop.callbacks.addLast(SentinelCallback)
+    # Process the callbacks currently scheduled - new callbacks scheduled during
+    # callback execution will run in the next poll iteration
     processCallbacks(loop)
-
-    # All callbacks done, skip `processCallbacks` at start.
-    loop.callbacks.addFirst(SentinelCallback)
 
   proc closeSocket*(fd: AsyncFD, aftercb: CallbackFunc = nil) =
     ## Closes a socket and ensures that it is unregistered.
@@ -758,7 +753,6 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
       trackers: initTable[string, TrackerBase](),
       counters: initTable[string, TrackerCounter]()
     )
-    res.callbacks.addLast(SentinelCallback)
     initAPI(res)
     res
 
@@ -1014,13 +1008,10 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
   proc poll*() {.gcsafe.} =
     ## Perform single asynchronous step.
     let loop = getThreadDispatcher()
+    loop.preparePoll()
+
     var curTime = Moment.now()
     var curTimeout = 0
-
-    # On reentrant `poll` calls from `processCallbacks`, e.g., `waitFor`,
-    # complete pending work of the outer `processCallbacks` call.
-    # On non-reentrant `poll` calls, this only removes sentinel element.
-    processCallbacks(loop)
 
     # Moving expired timers to `loop.callbacks` and calculate timeout.
     loop.processTimersGetTimeout(curTimeout)
@@ -1068,13 +1059,9 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     # We move tick callbacks to `loop.callbacks` always.
     processTicks(loop)
 
-    # All callbacks which will be added during `processCallbacks` will be
-    # scheduled after the sentinel and are processed on next `poll()` call.
-    loop.callbacks.addLast(SentinelCallback)
+    # Process the callbacks currently scheduled - new callbacks scheduled during
+    # callback execution will run in the next poll iteration
     processCallbacks(loop)
-
-    # All callbacks done, skip `processCallbacks` at start.
-    loop.callbacks.addFirst(SentinelCallback)
 
 else:
   proc initAPI() = discard
