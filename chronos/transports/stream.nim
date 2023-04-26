@@ -1744,15 +1744,16 @@ else:
             sres = acceptConn(cint(server.sock), cast[ptr SockAddr](addr saddr),
                               addr slen, flags)
           if sres.isErr():
-            case sres.error()
+            let errorCode = cint(sres.error())
+            case errorCode
             of EAGAIN:
               # This error appears only when server get closed, while accept()
               # continuation is already scheduled.
               retFuture.fail(getServerUseClosedError())
             of EMFILE, ENFILE, ENOBUFS, ENOMEM:
-              retFuture.fail(getTransportTooManyError(cint(errorCode)))
+              retFuture.fail(getTransportTooManyError(errorCode))
             of ECONNABORTED, EPERM, ETIMEDOUT:
-              retFuture.fail(getConnectionAbortedError(cint(errorCode)))
+              retFuture.fail(getConnectionAbortedError(errorCode))
             else:
               retFuture.fail(getTransportOsError(errorCode))
             # Error is already happened so we ignore removeReader2() errors.
