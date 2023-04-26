@@ -58,6 +58,12 @@ proc toString(key: int32|cint|SocketHandle|int): string =
   else:
     Base10.toString(uint32(fdi32))
 
+proc toPointer(data: int32): pointer =
+  when sizeof(int) == 8:
+    cast[pointer](uint64(uint32(data)))
+  else:
+    cast[pointer](uint32(data))
+
 template addKey[T](s: Selector[T], key: int32, skey: SelectorKey[T]) =
   if s.fds.hasKeyOrPut(key, skey):
     raiseAssert "Descriptor [" & key.toString() &
@@ -310,7 +316,7 @@ proc registerSignal*[T](s: Selector[T], signal: int,
   # To be compatible with linux semantic we need to "eat" signals
   signal(cint(signal), SIG_IGN)
   changes.modifyKQueue(0, uint(signal), EVFILT_SIGNAL, EV_ADD, 0, 0,
-                       cast[pointer](uint32(fdi32)))
+                       fdi32.toPointer())
   if handleEintr(kevent(s.kqFd, addr(changes[0]), cint(1), nil, 0, nil)) == -1:
     let errorCode = osLastError()
     s.freeKey(fdi32)
@@ -341,7 +347,7 @@ proc registerProcess*[T](s: Selector[T], pid: int,
   s.addKey(fdi32, selectorKey)
 
   changes.modifyKQueue(0, uint(uint32(pid)), EVFILT_PROC, flags, NOTE_EXIT,
-                       0, cast[pointer](uint32(fdi32)))
+                       0, fdi32.toPointer())
   if handleEintr(kevent(s.kqFd, addr(changes[0]), cint(1), nil, 0, nil)) == -1:
     s.freeKey(fdi32)
     return err(osLastError())

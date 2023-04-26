@@ -496,8 +496,8 @@ when defined(windows):
                                   cast[POVERLAPPED](addr transp.wovl))
               if ret == 0:
                 let err = osLastError()
-                if int(err) in {osdefs.ERROR_OPERATION_ABORTED,
-                                osdefs.ERROR_NO_DATA}:
+                case int(err)
+                of osdefs.ERROR_OPERATION_ABORTED, osdefs.ERROR_NO_DATA:
                   # CancelIO() interrupt
                   transp.state.excl(WritePending)
                   transp.state.incl({WritePaused, WriteEof})
@@ -505,7 +505,7 @@ when defined(windows):
                     vector.writer.complete(0)
                   completePendingWriteQueue(transp.queue, 0)
                   break
-                elif int(err) == osdefs.ERROR_IO_PENDING:
+                of osdefs.ERROR_IO_PENDING:
                   transp.queue.addFirst(vector)
                 else:
                   transp.state.excl(WritePending)
@@ -1744,14 +1744,14 @@ else:
             sres = acceptConn(cint(server.sock), cast[ptr SockAddr](addr saddr),
                               addr slen, flags)
           if sres.isErr():
-            let errorCode = sres.error()
-            if errorCode == EAGAIN:
+            case sres.error()
+            of EAGAIN:
               # This error appears only when server get closed, while accept()
               # continuation is already scheduled.
               retFuture.fail(getServerUseClosedError())
-            elif cint(errorCode) in {EMFILE, ENFILE, ENOBUFS, ENOMEM}:
+            of EMFILE, ENFILE, ENOBUFS, ENOMEM:
               retFuture.fail(getTransportTooManyError(cint(errorCode)))
-            elif cint(errorCode) in {ECONNABORTED, EPERM, ETIMEDOUT}:
+            of ECONNABORTED, EPERM, ETIMEDOUT:
               retFuture.fail(getConnectionAbortedError(cint(errorCode)))
             else:
               retFuture.fail(getTransportOsError(errorCode))
