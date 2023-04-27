@@ -7,9 +7,9 @@
 #    Apache License, version 2.0, (LICENSE-APACHEv2)
 #                MIT license (LICENSE-MIT)
 import stew/results
-import osdefs
+import osdefs, oserrno
 
-export results, osdefs
+export results, osdefs, oserrno
 
 when (NimMajor, NimMinor) < (1, 4):
   {.push raises: [Defect].}
