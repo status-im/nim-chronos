@@ -780,8 +780,8 @@ when defined(windows):
         var ovl = cast[RefCustomOverlapped](udata)
         if not(retFuture.finished()):
           if ovl.data.errCode == OSErrorCode(-1):
-            if setsockopt(SocketHandle(sock), cint(osdefs.SOL_SOCKET),
-                          cint(osdefs.SO_UPDATE_CONNECT_CONTEXT), nil,
+            if setsockopt(SocketHandle(sock), cint(SOL_SOCKET),
+                          cint(SO_UPDATE_CONNECT_CONTEXT), nil,
                           SockLen(0)) != 0'i32:
               let err = wsaGetLastError()
               sock.closeSocket()
@@ -807,7 +807,7 @@ when defined(windows):
                                cint(slen), nil, 0, nil,
                                cast[POVERLAPPED](povl))
       # We will not process immediate completion, to avoid undefined behavior.
-      if res == osdefs.FALSE:
+      if res == FALSE:
         let err = osLastError()
         case err
         of ERROR_IO_PENDING:
@@ -823,7 +823,7 @@ when defined(windows):
       ## Unix domain socket emulation with Windows Named Pipes.
       # For some reason Nim compiler does not detect `pipeHandle` usage in
       # pipeContinuation() procedure, so we marking it as {.used.} here.
-      var pipeHandle {.used.} = osdefs.INVALID_HANDLE_VALUE
+      var pipeHandle {.used.} = INVALID_HANDLE_VALUE
       var pipeContinuation: proc (udata: pointer) {.gcsafe, raises: [Defect].}
 
       pipeContinuation = proc (udata: pointer) {.gcsafe, raises: [Defect].} =
@@ -835,13 +835,13 @@ when defined(windows):
             pipeName = toWideString(pipeAsciiName).valueOr:
               retFuture.fail(getTransportOsError(error))
               return
-            genericFlags = osdefs.GENERIC_READ or osdefs.GENERIC_WRITE
-            shareFlags = osdefs.FILE_SHARE_READ or osdefs.FILE_SHARE_WRITE
+            genericFlags = GENERIC_READ or GENERIC_WRITE
+            shareFlags = FILE_SHARE_READ or FILE_SHARE_WRITE
             pipeHandle = createFile(pipeName, genericFlags, shareFlags,
-                                    nil, osdefs.OPEN_EXISTING,
-                                    osdefs.FILE_FLAG_OVERLAPPED, HANDLE(0))
+                                    nil, OPEN_EXISTING,
+                                    FILE_FLAG_OVERLAPPED, HANDLE(0))
           free(pipeName)
-          if pipeHandle == osdefs.INVALID_HANDLE_VALUE:
+          if pipeHandle == INVALID_HANDLE_VALUE:
             let err = osLastError()
             case err
             of ERROR_PIPE_BUSY:
@@ -871,23 +871,22 @@ when defined(windows):
       openMode =
         if FirstPipe notin server.flags:
           server.flags.incl(FirstPipe)
-          osdefs.PIPE_ACCESS_DUPLEX or osdefs.FILE_FLAG_OVERLAPPED or
-          osdefs.FILE_FLAG_FIRST_PIPE_INSTANCE
+          PIPE_ACCESS_DUPLEX or FILE_FLAG_OVERLAPPED or
+          FILE_FLAG_FIRST_PIPE_INSTANCE
         else:
-          osdefs.PIPE_ACCESS_DUPLEX or osdefs.FILE_FLAG_OVERLAPPED
-      pipeMode = osdefs.PIPE_TYPE_BYTE or osdefs.PIPE_READMODE_BYTE or
-                 osdefs.PIPE_WAIT
+          PIPE_ACCESS_DUPLEX or FILE_FLAG_OVERLAPPED
+      pipeMode = PIPE_TYPE_BYTE or PIPE_READMODE_BYTE or PIPE_WAIT
       pipeHandle = createNamedPipe(pipeName, openMode, pipeMode,
-                                   osdefs.PIPE_UNLIMITED_INSTANCES,
+                                   PIPE_UNLIMITED_INSTANCES,
                                    DWORD(server.bufferSize),
                                    DWORD(server.bufferSize),
                                    DWORD(0), nil)
     free(pipeName)
-    if pipeHandle == osdefs.INVALID_HANDLE_VALUE:
+    if pipeHandle == INVALID_HANDLE_VALUE:
       return err(osLastError())
     let res = register2(AsyncFD(pipeHandle))
     if res.isErr():
-      discard osdefs.closeHandle(pipeHandle)
+      discard closeHandle(pipeHandle)
       return err(res.error())
 
     ok(AsyncFD(pipeHandle))
@@ -947,19 +946,18 @@ when defined(windows):
             openMode =
               if FirstPipe notin server.flags:
                 server.flags.incl(FirstPipe)
-                osdefs.PIPE_ACCESS_DUPLEX or osdefs.FILE_FLAG_OVERLAPPED or
-                osdefs.FILE_FLAG_FIRST_PIPE_INSTANCE
+                PIPE_ACCESS_DUPLEX or FILE_FLAG_OVERLAPPED or
+                FILE_FLAG_FIRST_PIPE_INSTANCE
               else:
-                osdefs.PIPE_ACCESS_DUPLEX or osdefs.FILE_FLAG_OVERLAPPED
-            pipeMode = osdefs.PIPE_TYPE_BYTE or osdefs.PIPE_READMODE_BYTE or
-                       osdefs.PIPE_WAIT
+                PIPE_ACCESS_DUPLEX or FILE_FLAG_OVERLAPPED
+            pipeMode = PIPE_TYPE_BYTE or PIPE_READMODE_BYTE or PIPE_WAIT
             pipeHandle = createNamedPipe(pipeName, openMode, pipeMode,
-                                         osdefs.PIPE_UNLIMITED_INSTANCES,
+                                         PIPE_UNLIMITED_INSTANCES,
                                          DWORD(server.bufferSize),
                                          DWORD(server.bufferSize),
                                          DWORD(0), nil)
           free(pipeName)
-          if pipeHandle == osdefs.INVALID_HANDLE_VALUE:
+          if pipeHandle == INVALID_HANDLE_VALUE:
             raiseOsDefect(osLastError(), "acceptPipeLoop(): Unable to create " &
                                          "new pipe")
           server.sock = AsyncFD(pipeHandle)
@@ -971,12 +969,12 @@ when defined(windows):
                                      cast[POVERLAPPED](addr server.aovl))
           if res == 0:
             let errCode = osLastError()
-            if errCode == osdefs.ERROR_OPERATION_ABORTED:
+            if errCode == ERROR_OPERATION_ABORTED:
               server.apending = false
               break
-            elif errCode == osdefs.ERROR_IO_PENDING:
+            elif errCode == ERROR_IO_PENDING:
               discard
-            elif errCode == osdefs.ERROR_PIPE_CONNECTED:
+            elif errCode == ERROR_PIPE_CONNECTED:
               discard
             else:
               raiseOsDefect(errCode, "acceptPipeLoop(): Unable to establish " &
@@ -1001,8 +999,8 @@ when defined(windows):
         if server.status notin {ServerStatus.Stopped, ServerStatus.Closed}:
           case ovl.data.errCode
           of OSErrorCode(-1):
-            if setsockopt(SocketHandle(server.asock), cint(osdefs.SOL_SOCKET),
-                          cint(osdefs.SO_UPDATE_ACCEPT_CONTEXT),
+            if setsockopt(SocketHandle(server.asock), cint(SOL_SOCKET),
+                          cint(SO_UPDATE_ACCEPT_CONTEXT),
                           addr server.sock,
                           SockLen(sizeof(SocketHandle))) != 0'i32:
               let errCode = OSErrorCode(wsaGetLastError())
@@ -1066,12 +1064,12 @@ when defined(windows):
                                   dwReceiveDataLength, dwLocalAddressLength,
                                   dwRemoteAddressLength, addr dwBytesReceived,
                                   cast[POVERLAPPED](addr server.aovl))
-          if res == osdefs.FALSE:
+          if res == FALSE:
             let errCode = osLastError()
-            if errCode == osdefs.ERROR_OPERATION_ABORTED:
+            if errCode == ERROR_OPERATION_ABORTED:
               server.apending = false
               break
-            elif errCode == osdefs.ERROR_IO_PENDING:
+            elif errCode == ERROR_IO_PENDING:
               discard
             else:
               raiseOsDefect(errCode, "acceptLoop(): Unable to accept " &
@@ -1138,13 +1136,14 @@ when defined(windows):
       else:
         case ovl.data.errCode
         of OSErrorCode(-1):
-          if setsockopt(SocketHandle(server.asock), cint(osdefs.SOL_SOCKET),
-                        cint(osdefs.SO_UPDATE_ACCEPT_CONTEXT),
+          if setsockopt(SocketHandle(server.asock), cint(SOL_SOCKET),
+                        cint(SO_UPDATE_ACCEPT_CONTEXT),
                         addr server.sock,
                         SockLen(sizeof(SocketHandle))) != 0'i32:
             let err = osLastError()
             server.asock.closeSocket()
-            if err == osdefs.WSAENOTSOCK:
+            case err
+            of WSAENOTSOCK:
               # This can be happened when server get closed, but continuation
               # was already scheduled, so we failing it not with OS error.
               retFuture.fail(getServerUseClosedError())
@@ -1271,7 +1270,7 @@ when defined(windows):
                               dwReceiveDataLength, dwLocalAddressLength,
                               dwRemoteAddressLength, addr dwBytesReceived,
                               cast[POVERLAPPED](addr server.aovl))
-      if res == osdefs.FALSE:
+      if res == FALSE:
         let err = osLastError()
         case err
         of ERROR_OPERATION_ABORTED:
@@ -1950,15 +1949,13 @@ proc createStreamServer*(host: TransportAddress,
         serverSocket = sock
       # SO_REUSEADDR is not useful for Unix domain sockets.
       if ServerFlags.ReuseAddr in flags:
-        if not(setSockOpt(serverSocket, osdefs.SOL_SOCKET,
-                          osdefs.SO_REUSEADDR, 1)):
+        if not(setSockOpt(serverSocket, SOL_SOCKET, SO_REUSEADDR, 1)):
           let err = osLastError()
           if sock == asyncInvalidSocket:
             discard closeFd(SocketHandle(serverSocket))
           raiseTransportOsError(err)
       if ServerFlags.ReusePort in flags:
-        if not(setSockOpt(serverSocket, osdefs.SOL_SOCKET,
-                          osdefs.SO_REUSEPORT, 1)):
+        if not(setSockOpt(serverSocket, SOL_SOCKET, SO_REUSEPORT, 1)):
           let err = osLastError()
           if sock == asyncInvalidSocket:
             discard closeFd(SocketHandle(serverSocket))
@@ -1972,8 +1969,8 @@ proc createStreamServer*(host: TransportAddress,
             discard closeFd(SocketHandle(serverSocket))
           raiseTransportOsError(err)
       host.toSAddr(saddr, slen)
-      if osdefs.bindSocket(SocketHandle(serverSocket),
-                           cast[ptr SockAddr](addr saddr), slen) != 0:
+      if bindSocket(SocketHandle(serverSocket),
+                    cast[ptr SockAddr](addr saddr), slen) != 0:
         let err = osLastError()
         if sock == asyncInvalidSocket:
           discard closeFd(SocketHandle(serverSocket))

@@ -12,10 +12,17 @@ when (NimMajor, NimMinor) < (1, 4):
 else:
   {.push raises: [].}
 
-import std/[strutils, nativesockets, net]
+import std/[strutils]
 import stew/[base10, byteutils]
 import ".."/[asyncloop, osdefs]
-export net
+
+from std/net import Domain, `==`, IpAddress, IpAddressFamily, parseIpAddress,
+                    SockType, Protocol, Port, `$`
+from std/nativesockets import toInt, `$`
+
+export Domain, `==`, IpAddress, IpAddressFamily, parseIpAddress, SockType,
+       Protocol, Port, toInt, `$`
+
 
 const
   DefaultStreamBufferSize* = 4096    ## Default buffer size for stream

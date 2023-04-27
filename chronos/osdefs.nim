@@ -10,12 +10,6 @@ import oserrno
 export oserrno
 
 when defined(windows):
-  from std/winlean import SocketHandle, SockLen, SockAddr, InAddr,
-                      In6_addr, Sockaddr_in, Sockaddr_in6, Sockaddr_storage,
-                      AddrInfo
-  export SocketHandle, SockLen, SockAddr, InAddr,
-         In6_addr, Sockaddr_in, Sockaddr_in6, Sockaddr_storage, AddrInfo
-
   # Prerequisites for constants
   template WSAIORW*(x, y): untyped = (IOC_INOUT or x or y)
   template WSAIOW*(x, y): untyped =
@@ -23,6 +17,49 @@ when defined(windows):
     ((clong(sizeof(int32)) and clong(IOCPARM_MASK)) shl 16) or (x shl 8) or y
 
   type
+    Sockaddr_storage* {.final, pure.} = object
+      ss_family*: uint16
+      ss_pad1: array[6, byte]
+      ss_align: int64
+      ss_pad2: array[112, byte]
+
+    InAddr* {.final, pure, union.} = object
+      s_addr*: uint32
+
+    In6Addr* {.final, pure, union.} = object
+      s_addr*: array[16, byte]
+
+    Sockaddr_in* {.final, pure.} = object
+      sin_family*: uint16
+      sin_port*: uint16
+      sin_addr*: InAddr
+      sin_zero*: array[0..7, char]
+
+    Sockaddr_in6* {.final, pure.} = object
+      sin6_family*: uint16
+      sin6_port*: uint16
+      sin6_flowinfo*: uint32
+      sin6_addr*: In6Addr
+      sin6_scope_id*: uint32
+
+    SockLen* = cuint
+
+    SockAddr* {.final, pure.} = object
+      sa_family*: uint16
+      sa_data*: array[14, char]
+
+    AddrInfo* {.final, pure.} = object
+      ai_flags*: cint           ## Input flags.
+      ai_family*: cint          ## Address family of socket.
+      ai_socktype*: cint        ## Socket type.
+      ai_protocol*: cint        ## Protocol of socket.
+      ai_addrlen*: csize_t      ## Length of socket address.
+      ai_canonname*: pointer    ## Canonical name of service location.
+      ai_addr*: ptr SockAddr    ## Socket address of socket.
+      ai_next*: ptr AddrInfo    ## Pointer to next in list.
+
+    SocketHandle* = distinct int
+
     HANDLE* = distinct uint
     GUID* {.final, pure.} = object
       D1*: uint32

@@ -9,7 +9,7 @@
 import stew/results
 import osdefs
 
-export results
+export results, osdefs
 
 when (NimMajor, NimMinor) < (1, 4):
   {.push raises: [Defect].}
