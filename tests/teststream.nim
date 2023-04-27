@@ -7,7 +7,7 @@
 #              MIT license (LICENSE-MIT)
 import std/[strutils, os]
 import unittest2
-import ".."/chronos, ".."/chronos/osdefs
+import ".."/chronos, ".."/chronos/[osdefs, oserrno]
 
 {.used.}
 
