@@ -42,7 +42,7 @@ proc getVirtualId[T](s: Selector[T]): SelectResult[int32] =
     ok(s.virtualHoles.popLast())
   else:
     if s.virtualId == low(int32):
-      err(oserrno.EMFILE)
+      err(osdefs.EMFILE)
     else:
       dec(s.virtualId)
       ok(s.virtualId)
@@ -139,7 +139,7 @@ proc trigger2*(event: SelectEvent): SelectResult[void] =
   if res == -1:
     err(osLastError())
   elif res != sizeof(uint64):
-    err(oserrno.EINVAL)
+    err(osdefs.EINVAL)
   else:
     ok()
 
@@ -521,11 +521,11 @@ proc prepareKey[T](s: Selector[T], event: EpollEvent): Opt[ReadyKey] =
 
   if (event.events and EPOLLERR) != 0:
     rkey.events.incl(Event.Error)
-    rkey.errorCode = oserrno.ECONNRESET
+    rkey.errorCode = osdefs.ECONNRESET
 
   if (event.events and EPOLLHUP) != 0 or (event.events and EPOLLRDHUP) != 0:
     rkey.events.incl(Event.Error)
-    rkey.errorCode = oserrno.ECONNRESET
+    rkey.errorCode = osdefs.ECONNRESET
 
   if (event.events and EPOLLOUT) != 0:
     rkey.events.incl(Event.Write)
@@ -581,7 +581,7 @@ proc prepareKey[T](s: Selector[T], event: EpollEvent): Opt[ReadyKey] =
       if res != sizeof(uint64):
         let errorCode = osLastError()
         case errorCode
-        of oserrno.EAGAIN:
+        of osdefs.EAGAIN:
           return Opt.none(ReadyKey)
         else:
           rkey.events.incl({Event.User, Event.Error})

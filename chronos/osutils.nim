@@ -7,9 +7,9 @@
 #    Apache License, version 2.0, (LICENSE-APACHEv2)
 #                MIT license (LICENSE-MIT)
 import stew/results
-import osdefs, oserrno
+import osdefs
 
-export results, osdefs, oserrno
+export results, osdefs
 
 when (NimMajor, NimMinor) < (1, 4):
   {.push raises: [Defect].}
@@ -215,7 +215,7 @@ else:
     var res = 0
     while true:
       res = body
-      if not((res == -1) and (osLastError() == oserrno.EINTR)):
+      if not((res == -1) and (osLastError() == osdefs.EINTR)):
         break
     res
 
