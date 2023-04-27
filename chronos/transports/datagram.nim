@@ -14,7 +14,7 @@ else:
 
 import std/deques
 when not(defined(windows)): import ".."/selectors2
-import ".."/[asyncloop, osdefs, handles]
+import ".."/[asyncloop, osdefs, oserrno, handles]
 import "."/common
 
 type

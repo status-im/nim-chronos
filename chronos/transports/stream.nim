@@ -13,7 +13,7 @@ else:
   {.push raises: [].}
 
 import std/deques
-import ".."/[asyncloop, handles, osdefs, osutils]
+import ".."/[asyncloop, handles, osdefs, osutils, oserrno]
 import common
 
 type
