@@ -914,8 +914,6 @@ elif defined(macos) or defined(macosx):
       # Socket type not supported
     ENOTSUP* = OSErrorCode(45)
       # Operation not supported
-    EOPNOTSUPP* = ENOTSUP
-      # Operation not supported on socket
     EPFNOSUPPORT* = OSErrorCode(46)
       # Protocol family not supported
     EAFNOSUPPORT* = OSErrorCode(47)

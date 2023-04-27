@@ -160,7 +160,7 @@ proc trigger2*(event: SelectEvent): SelectResult[void] =
   if res == -1:
     err(osLastError())
   elif res != sizeof(uint64):
-    err(OSErrorCode(osdefs.EINVAL))
+    err(oserrno.EINVAL)
   else:
     ok()
 
@@ -496,14 +496,14 @@ proc prepareKey[T](s: Selector[T], event: KEvent): Opt[ReadyKey] =
   of EVFILT_READ:
     if (event.flags and EV_EOF) != 0:
       rkey.events.incl(Event.Error)
-      rkey.errorCode = OSErrorCode(ECONNRESET)
+      rkey.errorCode = oserrno.ECONNRESET
 
     if Event.User in pkey.events:
       var data: uint64 = 0
       if handleEintr(osdefs.read(cint(event.ident), addr data,
                                  sizeof(uint64))) != sizeof(uint64):
         let errorCode = osLastError()
-        if errorCode == EAGAIN:
+        if errorCode == oserrno.EAGAIN:
           # Someone already consumed event data
           return Opt.none(ReadyKey)
         else:
@@ -516,7 +516,7 @@ proc prepareKey[T](s: Selector[T], event: KEvent): Opt[ReadyKey] =
   of EVFILT_WRITE:
     if (event.flags and EV_EOF) != 0:
       rkey.events.incl(Event.Error)
-      rkey.errorCode = OSErrorCode(ECONNRESET)
+      rkey.errorCode = oserrno.ECONNRESET
 
     rkey.events.incl(Event.Write)
 
@@ -583,7 +583,7 @@ proc selectInto2*[T](s: Selector[T], timeout: int,
                        maxEventsCount, ptrTimeout)
           if res < 0:
             let errorCode = osLastError()
-            if errorCode == EINTR:
+            if errorCode == oserrno.EINTR:
               continue
             return err(errorCode)
           else:
