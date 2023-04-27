@@ -600,35 +600,37 @@ proc isLiteral*[T](s: seq[T]): bool {.inline.} =
   else:
     (cast[ptr SeqHeader](s).reserved and (1 shl (sizeof(int) * 8 - 2))) != 0
 
-template getTransportTooManyError*(code: int = 0): ref TransportTooManyError =
+template getTransportTooManyError*(
+           code = OSErrorCode(0)
+         ): ref TransportTooManyError =
   let msg =
     when defined(posix):
-      if code == 0:
+      if code == OSErrorCode(0):
         "Too many open transports"
-      elif code == EMFILE:
+      elif code == oserrno.EMFILE:
         "[EMFILE] Too many open files in the process"
-      elif code == ENFILE:
+      elif code == oserrno.ENFILE:
         "[ENFILE] Too many open files in system"
-      elif code == ENOBUFS:
+      elif code == oserrno.ENOBUFS:
         "[ENOBUFS] No buffer space available"
-      elif code == ENOMEM:
+      elif code == oserrno.ENOMEM:
         "[ENOMEM] Not enough memory availble"
       else:
-        "[" & $code & "] Too many open transports"
+        "[" & $int(code) & "] Too many open transports"
     elif defined(windows):
       case code
-      of 0:
+      of OSErrorCode(0):
         "Too many open transports"
-      of osdefs.ERROR_TOO_MANY_OPEN_FILES:
+      of ERROR_TOO_MANY_OPEN_FILES:
         "[ERROR_TOO_MANY_OPEN_FILES] Too many open files"
-      of osdefs.WSAENOBUFS:
+      of WSAENOBUFS:
         "[WSAENOBUFS] No buffer space available"
-      of osdefs.WSAEMFILE:
+      of WSAEMFILE:
         "[WSAEMFILE] Too many open sockets"
       else:
-        "[" & $code & "] Too many open transports"
+        "[" & $int(code) & "] Too many open transports"
     else:
-      "[" & $code & "] Too many open transports"
+      "[" & $int(code) & "] Too many open transports"
   newException(TransportTooManyError, msg)
 
 template getConnectionAbortedError*(m: string = ""): ref TransportAbortedError =
@@ -639,32 +641,34 @@ template getConnectionAbortedError*(m: string = ""): ref TransportAbortedError =
       "[ECONNABORTED] " & m
   newException(TransportAbortedError, msg)
 
-template getConnectionAbortedError*(code: int): ref TransportAbortedError =
+template getConnectionAbortedError*(
+           code: OSErrorCode
+         ): ref TransportAbortedError =
   let msg =
     when defined(posix):
-      if code == 0:
+      if code == OSErrorCode(0):
         "[ECONNABORTED] Connection has been aborted before being accepted"
-      elif code == EPERM:
+      elif code == oserrno.EPERM:
         "[EPERM] Firewall rules forbid connection"
-      elif code == ETIMEDOUT:
+      elif code == oserrno.ETIMEDOUT:
         "[ETIMEDOUT] Operation has been timed out"
       else:
-        "[" & $code & "] Connection has been aborted"
+        "[" & $int(code) & "] Connection has been aborted"
     elif defined(windows):
       case code
-      of 0, osdefs.WSAECONNABORTED:
+      of OSErrorCode(0), oserrno.WSAECONNABORTED:
         "[ECONNABORTED] Connection has been aborted before being accepted"
-      of osdefs.WSAENETDOWN:
+      of WSAENETDOWN:
         "[ENETDOWN] Network is down"
-      of osdefs.WSAENETRESET:
+      of oserrno.WSAENETRESET:
         "[ENETRESET] Network dropped connection on reset"
-      of osdefs.WSAECONNRESET:
+      of oserrno.WSAECONNRESET:
         "[ECONNRESET] Connection reset by peer"
-      of osdefs.WSAETIMEDOUT:
+      of WSAETIMEDOUT:
         "[ETIMEDOUT] Connection timed out"
       else:
-        "[" & $code & "] Connection has been aborted"
+        "[" & $int(code) & "] Connection has been aborted"
     else:
-      "[" & $code & "] Connection has been aborted"
+      "[" & $int(code) & "] Connection has been aborted"
 
   newException(TransportAbortedError, msg)

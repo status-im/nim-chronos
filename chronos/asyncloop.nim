@@ -152,14 +152,15 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
      defined(openbsd) or defined(dragonfly) or defined(macos) or
      defined(linux) or defined(android) or defined(solaris):
   import "."/selectors2
-  from posix import EINTR, EAGAIN, EINPROGRESS, EWOULDBLOCK, MSG_PEEK,
-                    MSG_NOSIGNAL,
+  import "."/oserrno
+  from posix import MSG_PEEK, MSG_NOSIGNAL,
                     SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
                     SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV, SIGUSR2,
                     SIGPIPE, SIGALRM, SIGTERM, SIGPIPE
   export SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
          SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV, SIGUSR2,
          SIGPIPE, SIGALRM, SIGTERM, SIGPIPE
+  export oserrno
 
 type
   CallbackFunc* = proc (arg: pointer) {.gcsafe, raises: [Defect].}

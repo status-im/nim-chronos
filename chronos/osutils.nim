@@ -187,10 +187,10 @@ when defined(windows):
       let cleanupFlag =
         block:
           let errorCode = osLastError()
-          case int(errorCode)
-          of osdefs.ERROR_PIPE_CONNECTED:
+          case errorCode
+          of ERROR_PIPE_CONNECTED:
             false
-          of osdefs.ERROR_IO_PENDING:
+          of ERROR_IO_PENDING:
             if DescriptorFlag.NonBlock in writeset:
               var bytesRead = 0.DWORD
               if getOverlappedResult(pipeIn, addr ovl, bytesRead, 1) == FALSE:
@@ -215,7 +215,7 @@ else:
     var res = 0
     while true:
       res = body
-      if not((res == -1) and (osLastError() == EINTR)):
+      if not((res == -1) and (osLastError() == oserrno.EINTR)):
         break
     res
 

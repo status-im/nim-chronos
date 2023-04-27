@@ -1047,10 +1047,11 @@ elif defined(windows):
       var addresses = cast[ptr IpAdapterAddressesXp](addr buffer[0])
       gres = getAdaptersAddresses(osdefs.AF_UNSPEC, GAA_FLAG_INCLUDE_PREFIX,
                                   nil, addresses, addr size)
-      if gres == ERROR_SUCCESS:
+      case OSErrorCode(gres)
+      of ERROR_SUCCESS:
         buffer.setLen(size)
         break
-      elif gres == ERROR_BUFFER_OVERFLOW:
+      of ERROR_BUFFER_OVERFLOW:
         discard
       else:
         break
@@ -1058,7 +1059,7 @@ elif defined(windows):
       if tries >= MaxTries:
         break
 
-    if gres == ERROR_SUCCESS:
+    if OSErrorCode(gres) == ERROR_SUCCESS:
       var slider = cast[ptr IpAdapterAddressesXp](addr buffer[0])
       while not isNil(slider):
         var iface = NetworkInterface(

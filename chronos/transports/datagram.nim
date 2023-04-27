@@ -139,10 +139,11 @@ when defined(windows):
         transp.state.excl(WritePending)
         let err = transp.wovl.data.errCode
         let vector = transp.queue.popFirst()
-        if err == OSErrorCode(-1):
+        case err
+        of OSErrorCode(-1):
           if not(vector.writer.finished()):
             vector.writer.complete()
-        elif int(err) == osdefs.ERROR_OPERATION_ABORTED:
+        of ERROR_OPERATION_ABORTED:
           # CancelIO() interrupt
           transp.state.incl(WritePaused)
           if not(vector.writer.finished()):
@@ -170,13 +171,14 @@ when defined(windows):
                     DWORD(0), cast[POVERLAPPED](addr transp.wovl), nil)
         if ret != 0:
           let err = osLastError()
-          if int(err) == osdefs.ERROR_OPERATION_ABORTED:
+          case err
+          of ERROR_OPERATION_ABORTED:
             # CancelIO() interrupt
             transp.state.excl(WritePending)
             transp.state.incl(WritePaused)
             if not(vector.writer.finished()):
               vector.writer.complete()
-          elif int(err) == osdefs.ERROR_IO_PENDING:
+          of ERROR_IO_PENDING:
             transp.queue.addFirst(vector)
           else:
             transp.state.excl(WritePending)
@@ -201,14 +203,15 @@ when defined(windows):
         ## Continuation
         transp.state.excl(ReadPending)
         let err = transp.rovl.data.errCode
-        if err == OSErrorCode(-1):
+        case err
+        of OSErrorCode(-1):
           let bytesCount = transp.rovl.data.bytesCount
           if bytesCount == 0:
             transp.state.incl({ReadEof, ReadPaused})
           fromSAddr(addr transp.raddr, transp.ralen, raddr)
           transp.buflen = int(bytesCount)
           asyncSpawn transp.function(transp, raddr)
-        elif int(err) == osdefs.ERROR_OPERATION_ABORTED:
+        of ERROR_OPERATION_ABORTED:
           # CancelIO() interrupt or closeSocket() call.
           transp.state.incl(ReadPaused)
           if ReadClosed in transp.state and not(transp.future.finished()):
@@ -237,15 +240,16 @@ when defined(windows):
                                 cast[POVERLAPPED](addr transp.rovl), nil)
           if ret != 0:
             let err = osLastError()
-            if int(err) == osdefs.ERROR_OPERATION_ABORTED:
+            case err
+            of ERROR_OPERATION_ABORTED:
               # CancelIO() interrupt
               transp.state.excl(ReadPending)
               transp.state.incl(ReadPaused)
-            elif int(err) == osdefs.WSAECONNRESET:
+            of WSAECONNRESET:
               transp.state.excl(ReadPending)
               transp.state.incl({ReadPaused, ReadEof})
               break
-            elif int(err) == osdefs.ERROR_IO_PENDING:
+            of ERROR_IO_PENDING:
               discard
             else:
               transp.state.excl(ReadPending)
@@ -419,7 +423,8 @@ else:
           asyncSpawn transp.function(transp, raddr)
         else:
           let err = osLastError()
-          if int(err) == EINTR:
+          case err
+          of oserrno.EINTR:
             continue
           else:
             transp.buflen = 0
@@ -454,7 +459,8 @@ else:
               vector.writer.complete()
           else:
             let err = osLastError()
-            if int(err) == EINTR:
+            case err
+            of oserrno.EINTR:
               continue
             else:
               if not(vector.writer.finished()):
