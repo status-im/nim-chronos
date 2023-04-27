@@ -14,7 +14,7 @@ else:
 
 import std/[strutils]
 import stew/[base10, byteutils]
-import ".."/[asyncloop, osdefs]
+import ".."/[asyncloop, osdefs, oserrno]
 
 from std/net import Domain, `==`, IpAddress, IpAddressFamily, parseIpAddress,
                     SockType, Protocol, Port, `$`
