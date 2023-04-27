@@ -32,8 +32,8 @@
 # backwards-compatible.
 
 import stew/results
-import osdefs, osutils
-export results
+import osdefs, osutils, oserrno
+export results, oserrno
 
 const
   asyncEventsCount* {.intdefine.} = 64
