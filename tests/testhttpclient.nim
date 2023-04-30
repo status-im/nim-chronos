@@ -5,7 +5,7 @@
 #              Licensed under either of
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
-import std/[strutils, strutils, sha1]
+import std/[strutils, sha1]
 import unittest2
 import ../chronos, ../chronos/apps/http/[httpserver, shttpserver, httpclient]
 import stew/base10

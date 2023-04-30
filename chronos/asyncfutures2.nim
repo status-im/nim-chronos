@@ -10,7 +10,7 @@
 
 import std/sequtils
 import stew/base10
-import "."/[config, srcloc]
+import "."/srcloc
 export srcloc
 
 when defined(nimHasStacktracesModule):

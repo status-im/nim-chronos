@@ -1286,10 +1286,11 @@ suite "Stream Transport test suite":
     var transp3 = await connect(dst2, localAddress = dst3, flags={SocketFlags.ReusePort})
 
     expect(TransportOsError):
-      var transp2 = await connect(dst3, localAddress = ta)
+      var transp2 {.used.} = await connect(dst3, localAddress = ta)
 
     expect(TransportOsError):
-      var transp3 = await connect(dst3, localAddress = initTAddress(":::35000"))
+      var transp3 {.used.} =
+        await connect(dst3, localAddress = initTAddress(":::35000"))
 
     await transp1.closeWait()
     await transp2.closeWait()
