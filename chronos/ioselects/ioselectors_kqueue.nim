@@ -58,6 +58,12 @@ proc toString(key: int32|cint|SocketHandle|int): string =
   else:
     Base10.toString(uint32(fdi32))
 
+proc toPointer(data: int32): pointer =
+  when sizeof(int) == 8:
+    cast[pointer](uint64(uint32(data)))
+  else:
+    cast[pointer](uint32(data))
+
 template addKey[T](s: Selector[T], key: int32, skey: SelectorKey[T]) =
   if s.fds.hasKeyOrPut(key, skey):
     raiseAssert "Descriptor [" & key.toString() &
@@ -154,7 +160,7 @@ proc trigger2*(event: SelectEvent): SelectResult[void] =
   if res == -1:
     err(osLastError())
   elif res != sizeof(uint64):
-    err(OSErrorCode(osdefs.EINVAL))
+    err(oserrno.EINVAL)
   else:
     ok()
 
@@ -310,7 +316,7 @@ proc registerSignal*[T](s: Selector[T], signal: int,
   # To be compatible with linux semantic we need to "eat" signals
   signal(cint(signal), SIG_IGN)
   changes.modifyKQueue(0, uint(signal), EVFILT_SIGNAL, EV_ADD, 0, 0,
-                       cast[pointer](uint32(fdi32)))
+                       fdi32.toPointer())
   if handleEintr(kevent(s.kqFd, addr(changes[0]), cint(1), nil, 0, nil)) == -1:
     let errorCode = osLastError()
     s.freeKey(fdi32)
@@ -341,7 +347,7 @@ proc registerProcess*[T](s: Selector[T], pid: int,
   s.addKey(fdi32, selectorKey)
 
   changes.modifyKQueue(0, uint(uint32(pid)), EVFILT_PROC, flags, NOTE_EXIT,
-                       0, cast[pointer](uint32(fdi32)))
+                       0, fdi32.toPointer())
   if handleEintr(kevent(s.kqFd, addr(changes[0]), cint(1), nil, 0, nil)) == -1:
     s.freeKey(fdi32)
     return err(osLastError())
@@ -490,14 +496,14 @@ proc prepareKey[T](s: Selector[T], event: KEvent): Opt[ReadyKey] =
   of EVFILT_READ:
     if (event.flags and EV_EOF) != 0:
       rkey.events.incl(Event.Error)
-      rkey.errorCode = OSErrorCode(ECONNRESET)
+      rkey.errorCode = oserrno.ECONNRESET
 
     if Event.User in pkey.events:
       var data: uint64 = 0
       if handleEintr(osdefs.read(cint(event.ident), addr data,
                                  sizeof(uint64))) != sizeof(uint64):
         let errorCode = osLastError()
-        if errorCode == EAGAIN:
+        if errorCode == oserrno.EAGAIN:
           # Someone already consumed event data
           return Opt.none(ReadyKey)
         else:
@@ -510,7 +516,7 @@ proc prepareKey[T](s: Selector[T], event: KEvent): Opt[ReadyKey] =
   of EVFILT_WRITE:
     if (event.flags and EV_EOF) != 0:
       rkey.events.incl(Event.Error)
-      rkey.errorCode = OSErrorCode(ECONNRESET)
+      rkey.errorCode = oserrno.ECONNRESET
 
     rkey.events.incl(Event.Write)
 
@@ -577,7 +583,7 @@ proc selectInto2*[T](s: Selector[T], timeout: int,
                        maxEventsCount, ptrTimeout)
           if res < 0:
             let errorCode = osLastError()
-            if errorCode == EINTR:
+            if errorCode == oserrno.EINTR:
               continue
             return err(errorCode)
           else:

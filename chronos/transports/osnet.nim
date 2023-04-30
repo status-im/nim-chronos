@@ -838,17 +838,15 @@ elif defined(macosx) or defined(macos) or defined(bsd):
           if family == osdefs.AF_INET:
             fromSAddr(cast[ptr Sockaddr_storage](ifap.ifa_netmask),
                       SockLen(sizeof(Sockaddr_in)), na)
-            if cint(ifaddress.host.family) == osdefs.AF_INET:
+            if ifaddress.host.family == AddressFamily.IPv4:
               ifaddress.net = IpNet.init(ifaddress.host, na)
           elif family == osdefs.AF_INET6:
             fromSAddr(cast[ptr Sockaddr_storage](ifap.ifa_netmask),
                       SockLen(sizeof(Sockaddr_in6)), na)
-            if cint(ifaddress.host.family) == osdefs.AF_INET6:
+            if ifaddress.host.family == AddressFamily.IPv6:
               ifaddress.net = IpNet.init(ifaddress.host, na)
 
         if ifaddress.host.family != AddressFamily.None:
-          if len(res[i].addresses) == 0:
-            res[i].addresses = newSeq[InterfaceAddress]()
           res[i].addresses.add(ifaddress)
         ifap = ifap.ifa_next
 
@@ -1047,10 +1045,11 @@ elif defined(windows):
       var addresses = cast[ptr IpAdapterAddressesXp](addr buffer[0])
       gres = getAdaptersAddresses(osdefs.AF_UNSPEC, GAA_FLAG_INCLUDE_PREFIX,
                                   nil, addresses, addr size)
-      if gres == ERROR_SUCCESS:
+      case OSErrorCode(gres)
+      of ERROR_SUCCESS:
         buffer.setLen(size)
         break
-      elif gres == ERROR_BUFFER_OVERFLOW:
+      of ERROR_BUFFER_OVERFLOW:
         discard
       else:
         break
@@ -1058,7 +1057,7 @@ elif defined(windows):
       if tries >= MaxTries:
         break
 
-    if gres == ERROR_SUCCESS:
+    if OSErrorCode(gres) == ERROR_SUCCESS:
       var slider = cast[ptr IpAdapterAddressesXp](addr buffer[0])
       while not isNil(slider):
         var iface = NetworkInterface(

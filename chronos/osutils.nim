@@ -7,9 +7,9 @@
 #    Apache License, version 2.0, (LICENSE-APACHEv2)
 #                MIT license (LICENSE-MIT)
 import stew/results
-import osdefs
+import osdefs, oserrno
 
-export results
+export results, osdefs, oserrno
 
 when (NimMajor, NimMinor) < (1, 4):
   {.push raises: [Defect].}
@@ -187,10 +187,10 @@ when defined(windows):
       let cleanupFlag =
         block:
           let errorCode = osLastError()
-          case int(errorCode)
-          of osdefs.ERROR_PIPE_CONNECTED:
+          case errorCode
+          of ERROR_PIPE_CONNECTED:
             false
-          of osdefs.ERROR_IO_PENDING:
+          of ERROR_IO_PENDING:
             if DescriptorFlag.NonBlock in writeset:
               var bytesRead = 0.DWORD
               if getOverlappedResult(pipeIn, addr ovl, bytesRead, 1) == FALSE:
@@ -215,7 +215,7 @@ else:
     var res = 0
     while true:
       res = body
-      if not((res == -1) and (osLastError() == EINTR)):
+      if not((res == -1) and (osLastError() == oserrno.EINTR)):
         break
     res
 

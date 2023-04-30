@@ -13,7 +13,7 @@ else:
   {.push raises: [].}
 
 import std/deques
-import ".."/[asyncloop, handles, osdefs, osutils]
+import ".."/[asyncloop, handles, osdefs, osutils, oserrno]
 import common
 
 type
@@ -322,10 +322,12 @@ when defined(windows):
     (t).wwsabuf.buf = cast[cstring](v.buf)
     (t).wwsabuf.len = cast[ULONG](v.buflen)
 
-  proc isConnResetError(err: OSErrorCode): bool {.inline.} =
-    result = (err == OSErrorCode(osdefs.WSAECONNRESET)) or
-             (err == OSErrorCode(osdefs.WSAECONNABORTED)) or
-             (err == OSErrorCode(osdefs.ERROR_PIPE_NOT_CONNECTED))
+  func isConnResetError(err: OSErrorCode): bool {.inline.} =
+    case err
+    of WSAECONNRESET, WSAECONNABORTED, ERROR_PIPE_NOT_CONNECTED:
+      true
+    else:
+      false
 
   proc writeStreamLoop(udata: pointer) {.gcsafe, nimcall.} =
     var bytesCount: uint32
@@ -343,7 +345,8 @@ when defined(windows):
           ## Continuation
           transp.state.excl(WritePending)
           let err = transp.wovl.data.errCode
-          if err == OSErrorCode(-1):
+          case err
+          of OSErrorCode(-1):
             bytesCount = transp.wovl.data.bytesCount
             var vector = transp.queue.popFirst()
             if bytesCount == 0:
@@ -377,7 +380,7 @@ when defined(windows):
                       # This conversion to `int` safe, because its impossible
                       # to call write() with size bigger than `int`.
                       vector.writer.complete(int(transp.wwsabuf.len))
-          elif int(err) == osdefs.ERROR_OPERATION_ABORTED:
+          of ERROR_OPERATION_ABORTED:
             # CancelIO() interrupt
             transp.state.incl({WritePaused, WriteEof})
             let vector = transp.queue.popFirst()
@@ -416,7 +419,8 @@ when defined(windows):
                                 cast[POVERLAPPED](addr transp.wovl), nil)
               if ret != 0:
                 let err = osLastError()
-                if int(err) == osdefs.ERROR_OPERATION_ABORTED:
+                case err
+                of ERROR_OPERATION_ABORTED:
                   # CancelIO() interrupt
                   transp.state.excl(WritePending)
                   transp.state.incl({WritePaused, WriteEof})
@@ -424,7 +428,7 @@ when defined(windows):
                     vector.writer.complete(0)
                   completePendingWriteQueue(transp.queue, 0)
                   break
-                elif int(err) == osdefs.ERROR_IO_PENDING:
+                of ERROR_IO_PENDING:
                   transp.queue.addFirst(vector)
                 else:
                   transp.state.excl(WritePending)
@@ -456,7 +460,8 @@ when defined(windows):
                                           nil, 0'u32)
               if ret == 0:
                 let err = osLastError()
-                if int(err) == osdefs.ERROR_OPERATION_ABORTED:
+                case err
+                of ERROR_OPERATION_ABORTED:
                   # CancelIO() interrupt
                   transp.state.excl(WritePending)
                   transp.state.incl({WritePaused, WriteEof})
@@ -464,7 +469,7 @@ when defined(windows):
                     vector.writer.complete(0)
                   completePendingWriteQueue(transp.queue, 0)
                   break
-                elif int(err) == osdefs.ERROR_IO_PENDING:
+                of ERROR_IO_PENDING:
                   transp.queue.addFirst(vector)
                 else:
                   transp.state.excl(WritePending)
@@ -496,8 +501,8 @@ when defined(windows):
                                   cast[POVERLAPPED](addr transp.wovl))
               if ret == 0:
                 let err = osLastError()
-                if int(err) in {osdefs.ERROR_OPERATION_ABORTED,
-                                osdefs.ERROR_NO_DATA}:
+                case err
+                of ERROR_OPERATION_ABORTED, ERROR_NO_DATA:
                   # CancelIO() interrupt
                   transp.state.excl(WritePending)
                   transp.state.incl({WritePaused, WriteEof})
@@ -505,7 +510,7 @@ when defined(windows):
                     vector.writer.complete(0)
                   completePendingWriteQueue(transp.queue, 0)
                   break
-                elif int(err) == osdefs.ERROR_IO_PENDING:
+                of ERROR_IO_PENDING:
                   transp.queue.addFirst(vector)
                 else:
                   transp.state.excl(WritePending)
@@ -539,7 +544,8 @@ when defined(windows):
         ## Continuation
         transp.state.excl(ReadPending)
         let err = transp.rovl.data.errCode
-        if err == OSErrorCode(-1):
+        case err
+        of OSErrorCode(-1):
           let bytesCount = transp.rovl.data.bytesCount
           if bytesCount == 0:
             transp.state.incl({ReadEof, ReadPaused})
@@ -552,19 +558,20 @@ when defined(windows):
             transp.roffset = transp.offset
             if transp.offset == len(transp.buffer):
               transp.state.incl(ReadPaused)
-        elif int(err) in {osdefs.ERROR_OPERATION_ABORTED,
-                          osdefs.ERROR_CONNECTION_ABORTED,
-                          osdefs.ERROR_BROKEN_PIPE,
-                          osdefs.ERROR_NETNAME_DELETED}:
+        of ERROR_OPERATION_ABORTED, ERROR_CONNECTION_ABORTED,
+           ERROR_BROKEN_PIPE:
           # CancelIO() interrupt or closeSocket() call.
           transp.state.incl(ReadPaused)
-        elif transp.kind == TransportKind.Socket and
-             (int(err) in {osdefs.ERROR_NETNAME_DELETED,
-                           osdefs.WSAECONNABORTED}):
-          transp.state.incl({ReadEof, ReadPaused})
-        elif transp.kind == TransportKind.Pipe and
-             (int(err) in {osdefs.ERROR_PIPE_NOT_CONNECTED}):
-          transp.state.incl({ReadEof, ReadPaused})
+        of ERROR_NETNAME_DELETED, WSAECONNABORTED:
+          if transp.kind == TransportKind.Socket:
+            transp.state.incl({ReadEof, ReadPaused})
+          else:
+            transp.setReadError(err)
+        of ERROR_PIPE_NOT_CONNECTED:
+          if transp.kind == TransportKind.Pipe:
+            transp.state.incl({ReadEof, ReadPaused})
+          else:
+            transp.setReadError(err)
         else:
           transp.setReadError(err)
 
@@ -593,16 +600,18 @@ when defined(windows):
                               cast[POVERLAPPED](addr transp.rovl), nil)
             if ret != 0:
               let err = osLastError()
-              if int32(err) == osdefs.ERROR_OPERATION_ABORTED:
+              case err
+              of ERROR_OPERATION_ABORTED:
                 # CancelIO() interrupt
                 transp.state.excl(ReadPending)
                 transp.state.incl(ReadPaused)
-              elif int32(err) in {osdefs.WSAECONNRESET, osdefs.WSAENETRESET,
-                                  osdefs.WSAECONNABORTED}:
+              of WSAECONNRESET, WSAENETRESET, WSAECONNABORTED:
                 transp.state.excl(ReadPending)
                 transp.state.incl({ReadEof, ReadPaused})
                 transp.completeReader()
-              elif int32(err) != osdefs.ERROR_IO_PENDING:
+              of ERROR_IO_PENDING:
+                discard
+              else:
                 transp.state.excl(ReadPending)
                 transp.state.incl(ReadPaused)
                 transp.setReadError(err)
@@ -616,16 +625,18 @@ when defined(windows):
                                cast[POVERLAPPED](addr transp.rovl))
             if ret == 0:
               let err = osLastError()
-              if int32(err) == osdefs.ERROR_OPERATION_ABORTED:
+              case err
+              of ERROR_OPERATION_ABORTED:
                 # CancelIO() interrupt
                 transp.state.excl(ReadPending)
                 transp.state.incl(ReadPaused)
-              elif int32(err) in {osdefs.ERROR_BROKEN_PIPE,
-                                  osdefs.ERROR_PIPE_NOT_CONNECTED}:
+              of ERROR_BROKEN_PIPE, ERROR_PIPE_NOT_CONNECTED:
                 transp.state.excl(ReadPending)
                 transp.state.incl({ReadEof, ReadPaused})
                 transp.completeReader()
-              elif int32(err) != osdefs.ERROR_IO_PENDING:
+              of ERROR_IO_PENDING:
+                discard
+              else:
                 transp.state.excl(ReadPending)
                 transp.state.incl(ReadPaused)
                 transp.setReadError(err)
@@ -769,8 +780,8 @@ when defined(windows):
         var ovl = cast[RefCustomOverlapped](udata)
         if not(retFuture.finished()):
           if ovl.data.errCode == OSErrorCode(-1):
-            if setsockopt(SocketHandle(sock), cint(osdefs.SOL_SOCKET),
-                          cint(osdefs.SO_UPDATE_CONNECT_CONTEXT), nil,
+            if setsockopt(SocketHandle(sock), cint(SOL_SOCKET),
+                          cint(SO_UPDATE_CONNECT_CONTEXT), nil,
                           SockLen(0)) != 0'i32:
               let err = wsaGetLastError()
               sock.closeSocket()
@@ -796,9 +807,12 @@ when defined(windows):
                                cint(slen), nil, 0, nil,
                                cast[POVERLAPPED](povl))
       # We will not process immediate completion, to avoid undefined behavior.
-      if res == osdefs.FALSE:
+      if res == FALSE:
         let err = osLastError()
-        if int32(err) != osdefs.ERROR_IO_PENDING:
+        case err
+        of ERROR_IO_PENDING:
+          discard
+        else:
           GC_unref(povl)
           sock.closeSocket()
           retFuture.fail(getTransportOsError(err))
@@ -809,7 +823,7 @@ when defined(windows):
       ## Unix domain socket emulation with Windows Named Pipes.
       # For some reason Nim compiler does not detect `pipeHandle` usage in
       # pipeContinuation() procedure, so we marking it as {.used.} here.
-      var pipeHandle {.used.} = osdefs.INVALID_HANDLE_VALUE
+      var pipeHandle {.used.} = INVALID_HANDLE_VALUE
       var pipeContinuation: proc (udata: pointer) {.gcsafe, raises: [Defect].}
 
       pipeContinuation = proc (udata: pointer) {.gcsafe, raises: [Defect].} =
@@ -821,15 +835,16 @@ when defined(windows):
             pipeName = toWideString(pipeAsciiName).valueOr:
               retFuture.fail(getTransportOsError(error))
               return
-            genericFlags = osdefs.GENERIC_READ or osdefs.GENERIC_WRITE
-            shareFlags = osdefs.FILE_SHARE_READ or osdefs.FILE_SHARE_WRITE
+            genericFlags = GENERIC_READ or GENERIC_WRITE
+            shareFlags = FILE_SHARE_READ or FILE_SHARE_WRITE
             pipeHandle = createFile(pipeName, genericFlags, shareFlags,
-                                    nil, osdefs.OPEN_EXISTING,
-                                    osdefs.FILE_FLAG_OVERLAPPED, HANDLE(0))
+                                    nil, OPEN_EXISTING,
+                                    FILE_FLAG_OVERLAPPED, HANDLE(0))
           free(pipeName)
-          if pipeHandle == osdefs.INVALID_HANDLE_VALUE:
+          if pipeHandle == INVALID_HANDLE_VALUE:
             let err = osLastError()
-            if int32(err) == osdefs.ERROR_PIPE_BUSY:
+            case err
+            of ERROR_PIPE_BUSY:
               discard setTimer(Moment.fromNow(50.milliseconds),
                                pipeContinuation, nil)
             else:
@@ -856,23 +871,22 @@ when defined(windows):
       openMode =
         if FirstPipe notin server.flags:
           server.flags.incl(FirstPipe)
-          osdefs.PIPE_ACCESS_DUPLEX or osdefs.FILE_FLAG_OVERLAPPED or
-          osdefs.FILE_FLAG_FIRST_PIPE_INSTANCE
+          PIPE_ACCESS_DUPLEX or FILE_FLAG_OVERLAPPED or
+          FILE_FLAG_FIRST_PIPE_INSTANCE
         else:
-          osdefs.PIPE_ACCESS_DUPLEX or osdefs.FILE_FLAG_OVERLAPPED
-      pipeMode = osdefs.PIPE_TYPE_BYTE or osdefs.PIPE_READMODE_BYTE or
-                 osdefs.PIPE_WAIT
+          PIPE_ACCESS_DUPLEX or FILE_FLAG_OVERLAPPED
+      pipeMode = PIPE_TYPE_BYTE or PIPE_READMODE_BYTE or PIPE_WAIT
       pipeHandle = createNamedPipe(pipeName, openMode, pipeMode,
-                                   osdefs.PIPE_UNLIMITED_INSTANCES,
+                                   PIPE_UNLIMITED_INSTANCES,
                                    DWORD(server.bufferSize),
                                    DWORD(server.bufferSize),
                                    DWORD(0), nil)
     free(pipeName)
-    if pipeHandle == osdefs.INVALID_HANDLE_VALUE:
+    if pipeHandle == INVALID_HANDLE_VALUE:
       return err(osLastError())
     let res = register2(AsyncFD(pipeHandle))
     if res.isErr():
-      discard osdefs.closeHandle(pipeHandle)
+      discard closeHandle(pipeHandle)
       return err(res.error())
 
     ok(AsyncFD(pipeHandle))
@@ -886,7 +900,8 @@ when defined(windows):
         ## Continuation
         server.apending = false
         if server.status notin {ServerStatus.Stopped, ServerStatus.Closed}:
-          if ovl.data.errCode == OSErrorCode(-1):
+          case ovl.data.errCode
+          of OSErrorCode(-1):
             var ntransp: StreamTransport
             var flags = {WinServerPipe}
             if NoPipeFlash in server.flags:
@@ -901,7 +916,7 @@ when defined(windows):
             # Start tracking transport
             trackStream(ntransp)
             asyncSpawn server.function(server, ntransp)
-          elif int32(ovl.data.errCode) == osdefs.ERROR_OPERATION_ABORTED:
+          of ERROR_OPERATION_ABORTED:
             # CancelIO() interrupt or close call.
             if server.status in {ServerStatus.Closed, ServerStatus.Stopped}:
               server.clean()
@@ -931,19 +946,18 @@ when defined(windows):
             openMode =
               if FirstPipe notin server.flags:
                 server.flags.incl(FirstPipe)
-                osdefs.PIPE_ACCESS_DUPLEX or osdefs.FILE_FLAG_OVERLAPPED or
-                osdefs.FILE_FLAG_FIRST_PIPE_INSTANCE
+                PIPE_ACCESS_DUPLEX or FILE_FLAG_OVERLAPPED or
+                FILE_FLAG_FIRST_PIPE_INSTANCE
               else:
-                osdefs.PIPE_ACCESS_DUPLEX or osdefs.FILE_FLAG_OVERLAPPED
-            pipeMode = osdefs.PIPE_TYPE_BYTE or osdefs.PIPE_READMODE_BYTE or
-                       osdefs.PIPE_WAIT
+                PIPE_ACCESS_DUPLEX or FILE_FLAG_OVERLAPPED
+            pipeMode = PIPE_TYPE_BYTE or PIPE_READMODE_BYTE or PIPE_WAIT
             pipeHandle = createNamedPipe(pipeName, openMode, pipeMode,
-                                         osdefs.PIPE_UNLIMITED_INSTANCES,
+                                         PIPE_UNLIMITED_INSTANCES,
                                          DWORD(server.bufferSize),
                                          DWORD(server.bufferSize),
                                          DWORD(0), nil)
           free(pipeName)
-          if pipeHandle == osdefs.INVALID_HANDLE_VALUE:
+          if pipeHandle == INVALID_HANDLE_VALUE:
             raiseOsDefect(osLastError(), "acceptPipeLoop(): Unable to create " &
                                          "new pipe")
           server.sock = AsyncFD(pipeHandle)
@@ -955,12 +969,12 @@ when defined(windows):
                                      cast[POVERLAPPED](addr server.aovl))
           if res == 0:
             let errCode = osLastError()
-            if errCode == osdefs.ERROR_OPERATION_ABORTED:
+            if errCode == ERROR_OPERATION_ABORTED:
               server.apending = false
               break
-            elif errCode == osdefs.ERROR_IO_PENDING:
+            elif errCode == ERROR_IO_PENDING:
               discard
-            elif errCode == osdefs.ERROR_PIPE_CONNECTED:
+            elif errCode == ERROR_PIPE_CONNECTED:
               discard
             else:
               raiseOsDefect(errCode, "acceptPipeLoop(): Unable to establish " &
@@ -983,9 +997,10 @@ when defined(windows):
         ## Continuation
         server.apending = false
         if server.status notin {ServerStatus.Stopped, ServerStatus.Closed}:
-          if ovl.data.errCode == OSErrorCode(-1):
-            if setsockopt(SocketHandle(server.asock), cint(osdefs.SOL_SOCKET),
-                          cint(osdefs.SO_UPDATE_ACCEPT_CONTEXT),
+          case ovl.data.errCode
+          of OSErrorCode(-1):
+            if setsockopt(SocketHandle(server.asock), cint(SOL_SOCKET),
+                          cint(SO_UPDATE_ACCEPT_CONTEXT),
                           addr server.sock,
                           SockLen(sizeof(SocketHandle))) != 0'i32:
               let errCode = OSErrorCode(wsaGetLastError())
@@ -1006,7 +1021,7 @@ when defined(windows):
               trackStream(ntransp)
               asyncSpawn server.function(server, ntransp)
 
-          elif int32(ovl.data.errCode) == osdefs.ERROR_OPERATION_ABORTED:
+          of ERROR_OPERATION_ABORTED:
             # CancelIO() interrupt or close.
             server.asock.closeSocket()
             if server.status in {ServerStatus.Closed, ServerStatus.Stopped}:
@@ -1049,12 +1064,12 @@ when defined(windows):
                                   dwReceiveDataLength, dwLocalAddressLength,
                                   dwRemoteAddressLength, addr dwBytesReceived,
                                   cast[POVERLAPPED](addr server.aovl))
-          if res == osdefs.FALSE:
+          if res == FALSE:
             let errCode = osLastError()
-            if errCode == osdefs.ERROR_OPERATION_ABORTED:
+            if errCode == ERROR_OPERATION_ABORTED:
               server.apending = false
               break
-            elif errCode == osdefs.ERROR_IO_PENDING:
+            elif errCode == ERROR_IO_PENDING:
               discard
             else:
               raiseOsDefect(errCode, "acceptLoop(): Unable to accept " &
@@ -1121,13 +1136,14 @@ when defined(windows):
       else:
         case ovl.data.errCode
         of OSErrorCode(-1):
-          if setsockopt(SocketHandle(server.asock), cint(osdefs.SOL_SOCKET),
-                        cint(osdefs.SO_UPDATE_ACCEPT_CONTEXT),
+          if setsockopt(SocketHandle(server.asock), cint(SOL_SOCKET),
+                        cint(SO_UPDATE_ACCEPT_CONTEXT),
                         addr server.sock,
                         SockLen(sizeof(SocketHandle))) != 0'i32:
             let err = osLastError()
             server.asock.closeSocket()
-            if err == osdefs.WSAENOTSOCK:
+            case err
+            of WSAENOTSOCK:
               # This can be happened when server get closed, but continuation
               # was already scheduled, so we failing it not with OS error.
               retFuture.fail(getServerUseClosedError())
@@ -1147,18 +1163,15 @@ when defined(windows):
             # Start tracking transport
             trackStream(ntransp)
             retFuture.complete(ntransp)
-        of OSErrorCode(osdefs.ERROR_OPERATION_ABORTED):
+        of ERROR_OPERATION_ABORTED:
           # CancelIO() interrupt or close.
           server.asock.closeSocket()
           retFuture.fail(getServerUseClosedError())
           server.clean()
-        of OSErrorCode(osdefs.WSAENETDOWN),
-           OSErrorCode(osdefs.WSAENETRESET),
-           OSErrorCode(osdefs.WSAECONNABORTED),
-           OSErrorCode(osdefs.WSAECONNRESET),
-           OSErrorCode(osdefs.WSAETIMEDOUT):
+        of WSAENETDOWN, WSAENETRESET, WSAECONNABORTED, WSAECONNRESET,
+           WSAETIMEDOUT:
           server.asock.closeSocket()
-          retFuture.fail(getConnectionAbortedError(int(ovl.data.errCode)))
+          retFuture.fail(getConnectionAbortedError(ovl.data.errCode))
           server.clean()
         else:
           server.asock.closeSocket()
@@ -1189,7 +1202,8 @@ when defined(windows):
         server.sock.closeHandle()
         server.clean()
       else:
-        if ovl.data.errCode == OSErrorCode(-1):
+        case ovl.data.errCode
+        of OSErrorCode(-1):
           var ntransp: StreamTransport
           var flags = {WinServerPipe}
           if NoPipeFlash in server.flags:
@@ -1210,8 +1224,7 @@ when defined(windows):
           trackStream(ntransp)
           retFuture.complete(ntransp)
 
-        elif int32(ovl.data.errCode) in {osdefs.ERROR_OPERATION_ABORTED,
-                                         osdefs.ERROR_PIPE_NOT_CONNECTED}:
+        of ERROR_OPERATION_ABORTED, ERROR_PIPE_NOT_CONNECTED:
           # CancelIO() interrupt or close call.
           retFuture.fail(getServerUseClosedError())
           server.clean()
@@ -1236,10 +1249,9 @@ when defined(windows):
                                        Protocol.IPPROTO_TCP)
       if server.asock == asyncInvalidSocket:
         let err = osLastError()
-        case int(err)
-        of osdefs.ERROR_TOO_MANY_OPEN_FILES,
-           osdefs.WSAENOBUFS, osdefs.WSAEMFILE:
-          retFuture.fail(getTransportTooManyError(int(err)))
+        case err
+        of ERROR_TOO_MANY_OPEN_FILES, WSAENOBUFS, WSAEMFILE:
+          retFuture.fail(getTransportTooManyError(err))
         else:
           retFuture.fail(getTransportOsError(err))
         return retFuture
@@ -1258,19 +1270,19 @@ when defined(windows):
                               dwReceiveDataLength, dwLocalAddressLength,
                               dwRemoteAddressLength, addr dwBytesReceived,
                               cast[POVERLAPPED](addr server.aovl))
-      if res == osdefs.FALSE:
+      if res == FALSE:
         let err = osLastError()
-        case int(err)
-        of osdefs.ERROR_OPERATION_ABORTED:
+        case err
+        of ERROR_OPERATION_ABORTED:
           server.apending = false
           retFuture.fail(getServerUseClosedError())
           return retFuture
-        of osdefs.ERROR_IO_PENDING:
+        of ERROR_IO_PENDING:
           discard
-        of osdefs.WSAECONNRESET, osdefs.WSAECONNABORTED, osdefs.WSAENETDOWN,
-           osdefs.WSAENETRESET, osdefs.WSAETIMEDOUT:
+        of WSAECONNRESET, WSAECONNABORTED, WSAENETDOWN,
+           WSAENETRESET, WSAETIMEDOUT:
           server.apending = false
-          retFuture.fail(getConnectionAbortedError(int(err)))
+          retFuture.fail(getConnectionAbortedError(err))
           return retFuture
         else:
           server.apending = false
@@ -1284,7 +1296,8 @@ when defined(windows):
       server.apending = true
       if server.sock == asyncInvalidPipe:
         let err = server.errorCode
-        if int32(err) == osdefs.ERROR_TOO_MANY_OPEN_FILES:
+        case err
+        of ERROR_TOO_MANY_OPEN_FILES:
           retFuture.fail(getTransportTooManyError())
         else:
           retFuture.fail(getTransportOsError(err))
@@ -1297,12 +1310,12 @@ when defined(windows):
                                  cast[POVERLAPPED](addr server.aovl))
       if res == 0:
         let err = osLastError()
-        if int32(err) == osdefs.ERROR_OPERATION_ABORTED:
+        case err
+        of ERROR_OPERATION_ABORTED:
           server.apending = false
           retFuture.fail(getServerUseClosedError())
           return retFuture
-        elif int32(err) in {osdefs.ERROR_IO_PENDING,
-                            osdefs.ERROR_PIPE_CONNECTED}:
+        of ERROR_IO_PENDING, ERROR_PIPE_CONNECTED:
           discard
         else:
           server.apending = false
@@ -1317,7 +1330,7 @@ else:
   import ../sendfile
 
   proc isConnResetError(err: OSErrorCode): bool {.inline.} =
-    (err == OSErrorCode(ECONNRESET)) or (err == OSErrorCode(EPIPE))
+    (err == oserrno.ECONNRESET) or (err == oserrno.EPIPE)
 
   proc writeStreamLoop(udata: pointer) =
     if isNil(udata):
@@ -1345,33 +1358,32 @@ else:
     while len(transp.queue) > 0:
       template handleError() =
         let err = osLastError()
-
-        if cint(err) == EINTR:
+        case err
+        of oserrno.EINTR:
           # Signal happened while writing - try again with all data
           transp.queue.addFirst(vector)
           continue
-
-        if cint(err) in [EWOULDBLOCK, EAGAIN]:
+        of oserrno.EWOULDBLOCK:
           # Socket buffer is full - wait until next write notification - in
           # particular, ensure removeWriter is not called
           transp.queue.addFirst(vector)
           return
-
-        # The errors below will clear the write queue, meaning we'll exit the
-        # loop
-        if isConnResetError(err):
-          # Soft error happens which indicates that remote peer got
-          # disconnected, complete all pending writes in queue with 0.
-          transp.state.incl({WriteEof})
-          if not(vector.writer.finished()):
-            vector.writer.complete(0)
-          completePendingWriteQueue(transp.queue, 0)
         else:
-          transp.state.incl({WriteError})
-          let error = getTransportOsError(err)
-          if not(vector.writer.finished()):
-            vector.writer.fail(error)
-          failPendingWriteQueue(transp.queue, error)
+          # The errors below will clear the write queue, meaning we'll exit the
+          # loop
+          if isConnResetError(err):
+            # Soft error happens which indicates that remote peer got
+            # disconnected, complete all pending writes in queue with 0.
+            transp.state.incl({WriteEof})
+            if not(vector.writer.finished()):
+              vector.writer.complete(0)
+            completePendingWriteQueue(transp.queue, 0)
+          else:
+            transp.state.incl({WriteError})
+            let error = getTransportOsError(err)
+            if not(vector.writer.finished()):
+              vector.writer.fail(error)
+            failPendingWriteQueue(transp.queue, error)
 
       var vector = transp.queue.popFirst()
       case vector.kind
@@ -1443,7 +1455,8 @@ else:
                         len(transp.buffer) - transp.offset, cint(0)))
           if res < 0:
             let err = osLastError()
-            if int(err) == ECONNRESET:
+            case err
+            of oserrno.ECONNRESET:
               transp.state.incl({ReadEof, ReadPaused})
               let rres = removeReader2(transp.fd)
               if rres.isErr():
@@ -1553,7 +1566,8 @@ else:
                                  proto)
     if sock == asyncInvalidSocket:
       let err = osLastError()
-      if int(err) == EMFILE:
+      case err
+      of oserrno.EMFILE:
         retFuture.fail(getTransportTooManyError())
       else:
         retFuture.fail(getTransportOsError(err))
@@ -1641,7 +1655,8 @@ else:
         # and the connection shall be established asynchronously.
         #
         # http://www.madore.org/~david/computers/connect-intr.html
-        if (errorCode == EINPROGRESS) or (errorCode == EINTR):
+        case errorCode
+        of oserrno.EINPROGRESS, oserrno.EINTR:
           let res = addWriter2(sock, continuation)
           if res.isErr():
             discard unregisterAndCloseFd(sock)
@@ -1692,7 +1707,7 @@ else:
         discard closeFd(cint(sock))
     else:
       let errorCode = sres.error()
-      if errorCode != EAGAIN:
+      if errorCode != oserrno.EAGAIN:
         # This EAGAIN error appears only when server get closed, while
         # acceptLoop() reader callback is already scheduled.
         raiseOsDefect(errorCode, "acceptLoop(): Unable to accept connection")
@@ -1745,14 +1760,15 @@ else:
                               addr slen, flags)
           if sres.isErr():
             let errorCode = sres.error()
-            if errorCode == EAGAIN:
+            case errorCode
+            of oserrno.EAGAIN:
               # This error appears only when server get closed, while accept()
               # continuation is already scheduled.
               retFuture.fail(getServerUseClosedError())
-            elif cint(errorCode) in {EMFILE, ENFILE, ENOBUFS, ENOMEM}:
-              retFuture.fail(getTransportTooManyError(cint(errorCode)))
-            elif cint(errorCode) in {ECONNABORTED, EPERM, ETIMEDOUT}:
-              retFuture.fail(getConnectionAbortedError(cint(errorCode)))
+            of oserrno.EMFILE, oserrno.ENFILE, oserrno.ENOBUFS, oserrno.ENOMEM:
+              retFuture.fail(getTransportTooManyError(errorCode))
+            of oserrno.ECONNABORTED, oserrno.EPERM, oserrno.ETIMEDOUT:
+              retFuture.fail(getConnectionAbortedError(errorCode))
             else:
               retFuture.fail(getTransportOsError(errorCode))
             # Error is already happened so we ignore removeReader2() errors.
@@ -1933,15 +1949,13 @@ proc createStreamServer*(host: TransportAddress,
         serverSocket = sock
       # SO_REUSEADDR is not useful for Unix domain sockets.
       if ServerFlags.ReuseAddr in flags:
-        if not(setSockOpt(serverSocket, osdefs.SOL_SOCKET,
-                          osdefs.SO_REUSEADDR, 1)):
+        if not(setSockOpt(serverSocket, SOL_SOCKET, SO_REUSEADDR, 1)):
           let err = osLastError()
           if sock == asyncInvalidSocket:
             discard closeFd(SocketHandle(serverSocket))
           raiseTransportOsError(err)
       if ServerFlags.ReusePort in flags:
-        if not(setSockOpt(serverSocket, osdefs.SOL_SOCKET,
-                          osdefs.SO_REUSEPORT, 1)):
+        if not(setSockOpt(serverSocket, SOL_SOCKET, SO_REUSEPORT, 1)):
           let err = osLastError()
           if sock == asyncInvalidSocket:
             discard closeFd(SocketHandle(serverSocket))
@@ -1955,8 +1969,8 @@ proc createStreamServer*(host: TransportAddress,
             discard closeFd(SocketHandle(serverSocket))
           raiseTransportOsError(err)
       host.toSAddr(saddr, slen)
-      if osdefs.bindSocket(SocketHandle(serverSocket),
-                           cast[ptr SockAddr](addr saddr), slen) != 0:
+      if bindSocket(SocketHandle(serverSocket),
+                    cast[ptr SockAddr](addr saddr), slen) != 0:
         let err = osLastError()
         if sock == asyncInvalidSocket:
           discard closeFd(SocketHandle(serverSocket))
@@ -2165,21 +2179,21 @@ template fastWrite(transp: auto, pbytes: var ptr byte, rbytes: var int,
           # Not all bytes written - keep going
         else:
           let err = osLastError()
-          if cint(err) in [EAGAIN, EWOULDBLOCK]:
+          case err
+          of oserrno.EWOULDBLOCK:
             break # No bytes written, add to queue
-
-          if cint(err) == EINTR:
+          of oserrno.EINTR:
             continue
-
-          if isConnResetError(err):
-            transp.state.incl({WriteEof})
-            retFuture.complete(0)
-            return retFuture
           else:
-            transp.state.incl({WriteError})
-            let error = getTransportOsError(err)
-            retFuture.fail(error)
-            return retFuture
+            if isConnResetError(err):
+              transp.state.incl({WriteEof})
+              retFuture.complete(0)
+              return retFuture
+            else:
+              transp.state.incl({WriteError})
+              let error = getTransportOsError(err)
+              retFuture.fail(error)
+              return retFuture
 
 proc write*(transp: StreamTransport, pbytes: pointer,
             nbytes: int): Future[int] =
@@ -2340,7 +2354,7 @@ template readLoop(name, body: untyped): untyped =
           raiseOsDefect(errorCode, "readLoop(): Unable to resume reading")
         else:
           transp.reader.complete()
-          if errorCode == ESRCH:
+          if errorCode == oserrno.ESRCH:
             # ESRCH 3 "No such process"
             # This error could be happened on pipes only, when process which
             # owns and communicates through this pipe (stdin, stdout, stderr) is

@@ -6,18 +6,10 @@
 #                Licensed under either of
 #    Apache License, version 2.0, (LICENSE-APACHEv2)
 #                MIT license (LICENSE-MIT)
-
-from std/os import osLastError, osErrorMsg, OSErrorCode, raiseOSError,
-                   newOSError
-export osLastError, osErrorMsg, OSError, OSErrorCode, raiseOSError, newOSError
+import oserrno
+export oserrno
 
 when defined(windows):
-  from std/winlean import SocketHandle, SockLen, SockAddr, InAddr,
-                      In6_addr, Sockaddr_in, Sockaddr_in6, Sockaddr_storage,
-                      AddrInfo
-  export SocketHandle, SockLen, SockAddr, InAddr,
-         In6_addr, Sockaddr_in, Sockaddr_in6, Sockaddr_storage, AddrInfo
-
   # Prerequisites for constants
   template WSAIORW*(x, y): untyped = (IOC_INOUT or x or y)
   template WSAIOW*(x, y): untyped =
@@ -25,6 +17,49 @@ when defined(windows):
     ((clong(sizeof(int32)) and clong(IOCPARM_MASK)) shl 16) or (x shl 8) or y
 
   type
+    Sockaddr_storage* {.final, pure.} = object
+      ss_family*: uint16
+      ss_pad1: array[6, byte]
+      ss_align: int64
+      ss_pad2: array[112, byte]
+
+    InAddr* {.final, pure, union.} = object
+      s_addr*: uint32
+
+    In6Addr* {.final, pure, union.} = object
+      s_addr*: array[16, byte]
+
+    Sockaddr_in* {.final, pure.} = object
+      sin_family*: uint16
+      sin_port*: uint16
+      sin_addr*: InAddr
+      sin_zero*: array[0..7, char]
+
+    Sockaddr_in6* {.final, pure.} = object
+      sin6_family*: uint16
+      sin6_port*: uint16
+      sin6_flowinfo*: uint32
+      sin6_addr*: In6Addr
+      sin6_scope_id*: uint32
+
+    SockLen* = cuint
+
+    SockAddr* {.final, pure.} = object
+      sa_family*: uint16
+      sa_data*: array[14, char]
+
+    AddrInfo* {.final, pure.} = object
+      ai_flags*: cint           ## Input flags.
+      ai_family*: cint          ## Address family of socket.
+      ai_socktype*: cint        ## Socket type.
+      ai_protocol*: cint        ## Protocol of socket.
+      ai_addrlen*: csize_t      ## Length of socket address.
+      ai_canonname*: pointer    ## Canonical name of service location.
+      ai_addr*: ptr SockAddr    ## Socket address of socket.
+      ai_next*: ptr AddrInfo    ## Pointer to next in list.
+
+    SocketHandle* = distinct int
+
     HANDLE* = distinct uint
     GUID* {.final, pure.} = object
       D1*: uint32
@@ -104,36 +139,6 @@ when defined(windows):
     PIPE_UNLIMITED_INSTANCES* = 255'u32
     DEFAULT_PIPE_SIZE* = 65536'u32
 
-    ERROR_SUCCESS* = 0
-    ERROR_FILE_NOT_FOUND* = 2
-    ERROR_TOO_MANY_OPEN_FILES* = 4
-    ERROR_ACCESS_DENIED* = 5
-    ERROR_BROKEN_PIPE* = 109
-    ERROR_BUFFER_OVERFLOW* = 111
-    ERROR_PIPE_BUSY* = 231
-    ERROR_NO_DATA* = 232
-    ERROR_PIPE_NOT_CONNECTED* = 233
-    ERROR_PIPE_CONNECTED* = 535
-    ERROR_OPERATION_ABORTED* = 995
-    ERROR_IO_PENDING* = 997
-    ERROR_CONNECTION_REFUSED* = 1225
-    ERROR_CONNECTION_ABORTED* = 1236
-
-    WSAEMFILE* = 10024
-    WSAENETDOWN* = 10050
-    WSAENETRESET* = 10052
-    WSAECONNABORTED* = 10053
-    WSAECONNRESET* = 10054
-    WSAENOBUFS* = 10055
-    WSAETIMEDOUT* = 10060
-    WSAEADDRINUSE* = 10048
-    WSAEDISCON* = 10101
-    WSANOTINITIALISED* = 10093
-    WSAENOTSOCK* = 10038
-    WSAEINPROGRESS* = 10036
-    WSAEINTR* = 10004
-    WSAEWOULDBLOCK* = 10035
-    ERROR_NETNAME_DELETED* = 64
     STATUS_PENDING* = 0x103
 
     IOCPARM_MASK* = 0x7f'u32
@@ -1283,8 +1288,6 @@ when defined(posix):
     INVALID_SOCKET* = SocketHandle(-1)
     INVALID_HANDLE_VALUE* = cint(-1)
 
-proc `==`*(x: OSErrorCode, y: int): bool =
-  int(x) == y
 proc `==`*(x: SocketHandle, y: int): bool =
   x == SocketHandle(y)
 

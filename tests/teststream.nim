@@ -7,7 +7,7 @@
 #              MIT license (LICENSE-MIT)
 import std/[strutils, os]
 import unittest2
-import ".."/chronos, ".."/chronos/osdefs
+import ".."/chronos, ".."/chronos/[osdefs, oserrno]
 
 {.used.}
 
@@ -639,12 +639,11 @@ suite "Stream Transport test suite":
       var transp = await connect(address)
       doAssert(isNil(transp))
     except TransportOsError as e:
-      let ecode = int(e.code)
       when defined(windows):
-        result = (ecode == ERROR_FILE_NOT_FOUND) or
-                 (ecode == ERROR_CONNECTION_REFUSED)
+        return (e.code == ERROR_FILE_NOT_FOUND) or
+               (e.code == ERROR_CONNECTION_REFUSED)
       else:
-        result = (ecode == ECONNREFUSED) or (ecode == ENOENT)
+        return (e.code == oserrno.ECONNREFUSED) or (e.code == oserrno.ENOENT)
 
   proc serveClient16(server: StreamServer, transp: StreamTransport) {.async.} =
     var res = await transp.write(BigMessagePattern)
