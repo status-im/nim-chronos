@@ -16,7 +16,6 @@ else:
   {.push raises: [].}
 
 import std/algorithm
-from std/strutils import toHex
 import ".."/osdefs
 import "."/ipnet
 export ipnet
@@ -293,6 +292,9 @@ proc `$`*(ifa: InterfaceAddress): string =
   else:
     "Unknown"
 
+proc hexDigit(x: uint8, lowercase: bool = false): char =
+  char(0x30'u8 + x + (uint32(7) and not((uint32(x) - 10) shr 8)))
+
 proc `$`*(iface: NetworkInterface): string =
   ## Return string representation of network interface ``iface``.
   var res = $iface.ifIndex
@@ -316,7 +318,8 @@ proc `$`*(iface: NetworkInterface): string =
   res.add(" ")
   if iface.maclen > 0:
     for i in 0 ..< iface.maclen:
-      res.add(toHex(iface.mac[i]))
+      res.add(hexDigit(iface.mac[i] shr 4))
+      res.add(hexDigit(iface.mac[i] and 15))
       if i < iface.maclen - 1:
         res.add(":")
   for item in iface.addresses:
