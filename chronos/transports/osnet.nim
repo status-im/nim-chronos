@@ -823,12 +823,12 @@ elif defined(macosx) or defined(macos) or defined(bsd):
             res[i].ifIndex = int(link.sdl_index)
             let nlen = int(link.sdl_nlen)
             if nlen < len(link.sdl_data):
-              let minsize = min(cast[int](link.sdl_alen), len(res[i].mac))
+              let minsize = min(int(link.sdl_alen), len(res[i].mac))
               copyMem(addr res[i].mac[0], addr link.sdl_data[nlen], minsize)
             res[i].maclen = int(link.sdl_alen)
             res[i].ifType = toInterfaceType(data.ifi_type)
             res[i].state = toInterfaceState(ifap.ifa_flags)
-            res[i].mtu = cast[int](data.ifi_mtu)
+            res[i].mtu = int64(data.ifi_mtu)
           elif family == osdefs.AF_INET:
             fromSAddr(cast[ptr Sockaddr_storage](ifap.ifa_addr),
                       SockLen(sizeof(Sockaddr_in)), ifaddress.host)
