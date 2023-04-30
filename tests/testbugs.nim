@@ -117,14 +117,14 @@ suite "Asynchronous issues test suite":
     let inpTransp = await afut
     let bytesSent = await outTransp.write(msg)
     check bytesSent == messageSize
-    var rfut = inpTransp.readExactly(addr buffer[0], messageSize)
+    var rfut {.used.} = inpTransp.readExactly(addr buffer[0], messageSize)
 
     proc waiterProc(udata: pointer) {.raises: [Defect], gcsafe.} =
       try:
         waitFor(sleepAsync(0.milliseconds))
-      except CatchableError as exc:
+      except CatchableError:
         raiseAssert "Unexpected exception happened"
-    let timer = setTimer(Moment.fromNow(0.seconds), waiterProc, nil)
+    let timer {.used.} = setTimer(Moment.fromNow(0.seconds), waiterProc, nil)
     await sleepAsync(100.milliseconds)
 
     await inpTransp.closeWait()
