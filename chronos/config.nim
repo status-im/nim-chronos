@@ -42,6 +42,10 @@ when (NimMajor, NimMinor) >= (1, 4):
         else:
           "/bin/sh"
       ## Default shell binary path.
+      ##
+      ## The shell is used as command for command line when process started
+      ## using `AsyncProcessOption.EvalCommand` and API calls such as
+      ## ``execCommand(command)`` and ``execCommandEx(command)``.
 
 else:
   # 1.2 doesn't support `booldefine` in `when` properly

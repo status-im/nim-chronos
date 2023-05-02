@@ -6,14 +6,18 @@
 #                Licensed under either of
 #    Apache License, version 2.0, (LICENSE-APACHEv2)
 #                MIT license (LICENSE-MIT)
-{.push raises: [Defect].}
 
-import std/[options, strtabs]
+when (NimMajor, NimMinor) < (1, 4):
+  {.push raises: [Defect].}
+else:
+  {.push raises: [].}
+
+import std/strtabs
 import "."/[config, asyncloop, handles, osdefs, osutils], streams/asyncstream
 import stew/[results, byteutils]
 from std/os import quoteShell, quoteShellWindows, quoteShellPosix, envPairs
 
-export options, strtabs, results
+export strtabs, results
 export quoteShell, quoteShellWindows, quoteShellPosix, envPairs
 
 const
@@ -28,7 +32,6 @@ type
   AsyncProcessOption* {.pure.} = enum
     UsePath,
     EvalCommand,
-    EchoCommand,
     StdErrToStdOut,
     ProcessGroup
 
@@ -94,7 +97,7 @@ type
     else:
       processId: Pid
     pipes: AsyncProcessPipes
-    exitStatus: Option[int]
+    exitStatus: Opt[int]
     flags: set[ProcessFlag]
     options: set[AsyncProcessOption]
 
@@ -251,31 +254,39 @@ proc init*(t: typedesc[ProcessStreamHandle],
 proc isEmpty*(handle: ProcessStreamHandle): bool =
   handle.kind == ProcessStreamHandleKind.None
 
-proc suspend*(p: AsyncProcessRef): AsyncProcessResult[void] {.gcsafe.}
+proc suspend*(p: AsyncProcessRef): AsyncProcessResult[void] {.
+     gcsafe, raises: [].}
 
-proc resume*(p: AsyncProcessRef): AsyncProcessResult[void] {.gcsafe.}
+proc resume*(p: AsyncProcessRef): AsyncProcessResult[void] {.
+     gcsafe, raises: [].}
 
-proc terminate*(p: AsyncProcessRef): AsyncProcessResult[void] {.gcsafe.}
+proc terminate*(p: AsyncProcessRef): AsyncProcessResult[void] {.
+     gcsafe, raises: [].}
 
-proc kill*(p: AsyncProcessRef): AsyncProcessResult[void] {.gcsafe.}
+proc kill*(p: AsyncProcessRef): AsyncProcessResult[void] {.
+     gcsafe, raises: [].}
 
-proc running*(p: AsyncProcessRef): AsyncProcessResult[bool] {.gcsafe.}
+proc running*(p: AsyncProcessRef): AsyncProcessResult[bool] {.
+     gcsafe, raises: [].}
 
-proc peekExitCode*(p: AsyncProcessRef): AsyncProcessResult[int] {.gcsafe.}
+proc peekExitCode*(p: AsyncProcessRef): AsyncProcessResult[int] {.
+     gcsafe, raises: [].}
 
 proc preparePipes(options: set[AsyncProcessOption],
                   stdinHandle, stdoutHandle, stderrHandle: ProcessStreamHandle
-                 ): AsyncProcessResult[AsyncProcessPipes] {.gcsafe.}
+                 ): AsyncProcessResult[AsyncProcessPipes] {.
+     gcsafe, raises: [].}
 
 proc closeProcessHandles(pipes: var AsyncProcessPipes,
                          options: set[AsyncProcessOption],
-                         lastError: OSErrorCode): OSErrorCode
+                         lastError: OSErrorCode): OSErrorCode {.raises: [].}
 
 proc closeProcessStreams(pipes: AsyncProcessPipes,
                          options: set[AsyncProcessOption]): Future[void] {.
-     gcsafe.}
+     gcsafe, raises: [].}
 
-proc closeWait(holder: AsyncStreamHolder): Future[void] {.gcsafe.}
+proc closeWait(holder: AsyncStreamHolder): Future[void] {.
+     gcsafe, raises: [].}
 
 template isOk(code: OSErrorCode): bool =
   when defined(windows):
@@ -470,9 +481,6 @@ when defined(windows):
           res
       procInfo = PROCESS_INFORMATION()
 
-    if AsyncProcessOption.EchoCommand in options:
-      echo commandLine
-
     let wideCommandLine = commandLine.toWideString().valueOr:
       raiseAsyncProcessError("Unable to proceed command line", error)
 
@@ -522,7 +530,7 @@ when defined(windows):
     if res == TRUE:
       if wstatus != STILL_ACTIVE:
         let status = cast[int](wstatus)
-        p.exitStatus = some(status)
+        p.exitStatus = Opt.some(status)
         ok(status)
       else:
         ok(-1)
@@ -577,7 +585,7 @@ when defined(windows):
       raiseAsyncProcessError("Unable to peek process exit code", error)
 
     if exitCode >= 0:
-      p.exitStatus = some(exitCode)
+      p.exitStatus = Opt.some(exitCode)
     return exitCode
 
   proc peekExitCode(p: AsyncProcessRef): AsyncProcessResult[int] =
@@ -718,16 +726,29 @@ else:
         return err(OSErrorCode(res))
     ok()
 
+  proc getKeyValueItem(key: string, value: string): cstring =
+    var p = cast[cstring](alloc(len(key) + len(value) + 1 + 1))
+    var offset = 0
+    if len(key) > 0:
+      copyMem(addr p[offset], unsafeAddr(key[0]), len(key))
+      inc(offset, len(key))
+    p[offset] = '='
+    inc(offset)
+    if len(value) > 0:
+      copyMem(addr p[offset], unsafeAddr(value[0]), len(value))
+      inc(offset, len(value))
+    p[offset] = '\x00'
+    p
+
   proc envToCStringArray(t: StringTableRef): cstringArray =
     let itemsCount = len(t)
     var
-      res = cast[cstringArray](alloc0((itemsCount + 1) * sizeof(cstring)))
+      res = cast[cstringArray](alloc((itemsCount + 1) * sizeof(cstring)))
       i = 0
     for key, value in pairs(t):
-      var x = key & "=" & value
-      res[i] = cast[cstring](alloc0(len(x) + 1))
-      copyMem(res[i], addr(x[0]), len(x))
+      res[i] = getKeyValueItem(key, value)
       inc(i)
+    res[i] = nil # Last item in CStringArray should be `nil`.
     res
 
   proc envToCStringArray(): cstringArray =
@@ -737,13 +758,12 @@ else:
         for key, value in envPairs(): inc(res)
         res
     var
-      res = cast[cstringArray](alloc0((itemsCount + 1) * sizeof(cstring)))
+      res = cast[cstringArray](alloc((itemsCount + 1) * sizeof(cstring)))
       i = 0
     for key, value in envPairs():
-      var x = key & "=" & value
-      res[i] = cast[cstring](alloc0(len(x) + 1))
-      copyMem(res[i], addr(x[0]), len(x))
+      res[i] = getKeyValueItem(key, value)
       inc(i)
+    res[i] = nil # Last item in CStringArray should be `nil`.
     res
 
   when defined(macosx) or defined(macos) or defined(ios):
@@ -777,13 +797,14 @@ else:
         var res = 0
         while not(isNil(arguments[res])): inc(res)
         res
-    var res = @[command]
+    var res = newSeqOfCap[string](1 + length)
+    res.add(command)
     if length > 0:
       for index in 1 ..< length:
         res.add($arguments[index])
     res.join(" ")
 
-  template exitStatusLikeShell(status: int): int =
+  func exitStatusLikeShell(status: int): int =
     if WAITIFSIGNALED(cint(status)):
       # like the shell!
       128 + WAITTERMSIG(cint(status))
@@ -877,9 +898,6 @@ else:
         else:
           ""
 
-      if AsyncProcessOption.EchoCommand in options:
-        echo getFullCommand(commandLine, commandArguments)
-
       let res =
         if AsyncProcessOption.UsePath in options:
           posixSpawnp(pid, cstring(commandLine), sa.actions, sa.attrs,
@@ -953,7 +971,7 @@ else:
     if waitRes == p.processId:
       if WAITIFEXITED(wstatus) or WAITIFSIGNALED(wstatus):
         let status = int(wstatus)
-        p.exitStatus = some(status)
+        p.exitStatus = Opt.some(status)
         ok(status)
       else:
         ok(-1)
@@ -1320,4 +1338,4 @@ proc pid*(p: AsyncProcessRef): int =
   else:
     int(p.processId)
 
-template processId*(p: AsyncProcessRef): int = pid()
+template processId*(p: AsyncProcessRef): int = pid(p)

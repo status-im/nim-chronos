@@ -78,7 +78,7 @@ suite "Asynchronous process management test suite":
   asyncTest "addProcess() test":
     var
       handlerFut = newFuture[void]("process.handler.future")
-      pidFd = -1
+      pidFd: ProcessHandle
       processCounter = 0
       processExitCode = 0
       process: AsyncProcessRef

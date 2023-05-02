@@ -14,7 +14,7 @@ else:
   {.push raises: [].}
 
 from nativesockets import Port
-import std/[tables, strutils, heapqueue, options, deques]
+import std/[tables, strutils, heapqueue, deques]
 import stew/results
 import "."/[config, osdefs, oserrno, osutils, timer]
 
@@ -296,9 +296,6 @@ when defined(windows):
       cb*: CallbackFunc
       errCode*: OSErrorCode
       bytesCount*: uint32
-      cell*: ForeignCell # we need this `cell` to protect our `cb` environment,
-                         # when using `RegisterWaitForSingleObject()`, because
-                         # waiting is done in different thread.
       udata*: pointer
 
     CustomOverlapped* = object of OVERLAPPED
@@ -328,9 +325,11 @@ when defined(windows):
       handleFd: AsyncFD
       waitFd: HANDLE
       udata: pointer
-      ovl: RefCustomOverlapped
+      ovlref: RefCustomOverlapped
+      ovl: pointer
 
-    WaitableHandle* = ptr PostCallbackData
+    WaitableHandle* = ref PostCallbackData
+    ProcessHandle* = distinct WaitableHandle
 
     WaitableResult* {.pure.} = enum
       Ok, Timeout
@@ -343,9 +342,9 @@ when defined(windows):
   proc getFunc(s: SocketHandle, fun: var pointer, guid: GUID): bool =
     var bytesRet: DWORD
     fun = nil
-    result = wsaIoctl(s, SIO_GET_EXTENSION_FUNCTION_POINTER, unsafeAddr(guid),
-                      sizeof(GUID).DWORD, addr fun, sizeof(pointer).DWORD,
-                      addr(bytesRet), nil, nil) == 0
+    wsaIoctl(s, SIO_GET_EXTENSION_FUNCTION_POINTER, unsafeAddr(guid),
+             DWORD(sizeof(GUID)), addr fun, DWORD(sizeof(pointer)),
+             addr(bytesRet), nil, nil) == 0
 
   proc globalInit() =
     var wsa = WSAData()
@@ -450,19 +449,21 @@ when defined(windows):
     # GC related objects.
     # We going to ignore callbacks which was spawned when `isNil(param) == true`
     # because we unable to indicate this error.
-    if isNil(param):
-      return
-    var wh = cast[WaitableHandle](param)
+    if isNil(param): return
+    var wh = cast[ptr PostCallbackData](param)
     # We ignore result of postQueueCompletionStatus() call because we unable to
     # indicate error.
-    discard postQueuedCompletionStatus(wh.ioPort, DWORD(timerOrWaitFired),
-                                       ULONG_PTR(wh.handleFd),
-                                       cast[pointer](wh.ovl))
+    discard postQueuedCompletionStatus(wh[].ioPort, DWORD(timerOrWaitFired),
+                                       ULONG_PTR(wh[].handleFd),
+                                       wh[].ovl)
   {.pop.}
 
   proc registerWaitable(
-         handle: HANDLE, flags: ULONG,
-         timeout: Duration, cb: CallbackFunc, udata: pointer
+         handle: HANDLE,
+         flags: ULONG,
+         timeout: Duration,
+         cb: CallbackFunc,
+         udata: pointer
        ): Result[WaitableHandle, OSErrorCode] =
     ## Register handle of (Change notification, Console input, Event,
     ## Memory resource notification, Mutex, Process, Semaphore, Thread,
@@ -477,22 +478,17 @@ when defined(windows):
     ##
     ## NOTE: This is private procedure, not supposed to be publicly available,
     ## please use ``waitForSingleObject()``.
-    let
-      loop = getThreadDispatcher()
-      cell =
-        try:
-          system.protect(rawEnv(cb))
-        except Exception:
-          raiseAssert "Unable to protect callback environment"
+    let loop = getThreadDispatcher()
+    var ovl = RefCustomOverlapped(data: CompletionData(cb: cb))
 
-    var ovl = RefCustomOverlapped(data: CompletionData(cb: cb, cell: cell))
-    GC_ref(ovl)
+    var whandle = (ref PostCallbackData)(
+      ioPort: loop.getIoHandler(),
+      handleFd: AsyncFD(handle),
+      udata: udata,
+      ovlref: ovl,
+      ovl: cast[pointer](ovl)
+    )
 
-    var whandle = cast[WaitableHandle](allocShared0(sizeof(PostCallbackData)))
-    whandle.ioPort = loop.getIoHandler()
-    whandle.handleFd = AsyncFD(handle)
-    whandle.udata = udata
-    whandle.ovl = ovl
     ovl.data.udata = cast[pointer](whandle)
 
     let dwordTimeout =
@@ -501,21 +497,17 @@ when defined(windows):
       else:
         DWORD(timeout.milliseconds)
 
-    if registerWaitForSingleObject(addr(whandle.waitFd), handle,
+    if registerWaitForSingleObject(addr(whandle[].waitFd), handle,
                                    cast[WAITORTIMERCALLBACK](waitableCallback),
                                    cast[pointer](whandle),
                                    dwordTimeout,
                                    flags) == WINBOOL(0):
-      try:
-        system.dispose(ovl.data.cell)
-      except Exception:
-        raiseAssert "Unable to dispose callback environment"
       ovl.data.udata = nil
-      GC_unref(ovl)
-      deallocShared(cast[pointer](whandle))
+      whandle.ovlref = nil
+      whandle.ovl = nil
       return err(osLastError())
 
-    ok(whandle)
+    ok(WaitableHandle(whandle))
 
   proc closeWaitable(wh: WaitableHandle): Result[void, OSErrorCode] =
     ## Close waitable handle ``wh`` and clear all the resources. It is safe
@@ -525,24 +517,17 @@ when defined(windows):
     ## please use ``waitForSingleObject()``.
     doAssert(not(isNil(wh)))
 
-    let waitFd = wh.waitFd
-
-    try:
-      system.dispose(wh.ovl.data.cell)
-    except Exception:
-      raiseAssert "Unable to dispose callback environment"
-
-    GC_unref(wh.ovl)
-    deallocShared(cast[pointer](wh))
-
-    if unregisterWait(waitFd) == 0:
+    let pdata = (ref PostCallbackData)(wh)
+    # We are not going to clear `ref` fields in PostCallbackData object because
+    # it possible that callback is already scheduled.
+    if unregisterWait(pdata.waitFd) == 0:
       let res = osLastError()
       if res != ERROR_IO_PENDING:
         return err(res)
     ok()
 
   proc addProcess2*(pid: int, cb: CallbackFunc,
-                    udata: pointer = nil): Result[int, OSErrorCode] =
+                    udata: pointer = nil): Result[ProcessHandle, OSErrorCode] =
     ## Registers callback ``cb`` to be called when process with process
     ## identifier ``pid`` exited. Returns process identifier, which can be
     ## used to clear process callback via ``removeProcess``.
@@ -570,31 +555,27 @@ when defined(windows):
           discard closeFd(hProcess)
           return err(res.error())
         res.get()
-    ok(cast[int](wh))
+    ok(ProcessHandle(wh))
 
-  proc removeProcess2*(procfd: int): Result[void, OSErrorCode] =
-    doAssert(procfd != 0)
-    # WaitableHandle is allocated in shared memory, so it is not managed by GC.
-    let wh = cast[WaitableHandle](procfd)
-    ? closeWaitable(wh)
+  proc removeProcess2*(procHandle: ProcessHandle): Result[void, OSErrorCode] =
+    ## Remove process' watching using process' descriptor ``procHandle``.
+    let waitableHandle = WaitableHandle(procHandle)
+    doAssert(not(isNil(waitableHandle)))
+    ? closeWaitable(waitableHandle)
     ok()
 
-  proc addProcess*(pid: int, cb: CallbackFunc, udata: pointer = nil): int {.
-       raises: [Defect, ValueError].} =
+  proc addProcess*(pid: int, cb: CallbackFunc,
+                   udata: pointer = nil): ProcessHandle {.
+       raises: [Defect, OSError].} =
     ## Registers callback ``cb`` to be called when process with process
     ## identifier ``pid`` exited. Returns process identifier, which can be
     ## used to clear process callback via ``removeProcess``.
-    let res = addProcess2(pid, cb, udata)
-    if res.isErr():
-      raise newException(ValueError, osErrorMsg(res.error()))
-    res.get()
+    addProcess2(pid, cb, udata).tryGet()
 
-  proc removeProcess*(procfd: int) {.
-       raises: [Defect, ValueError].} =
-    ## Remove process' watching using process' descriptor ``procfd``.
-    let res = removeProcess2(procfd)
-    if res.isErr():
-      raise newException(ValueError, osErrorMsg(res.error()))
+  proc removeProcess*(procHandle: ProcessHandle) {.
+       raises: [Defect, OSError].} =
+    ## Remove process' watching using process' descriptor ``procHandle``.
+    removeProcess2(procHandle).tryGet()
 
   proc poll*() =
     ## Perform single asynchronous step, processing timers and completing
@@ -940,8 +921,15 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     closeSocket(fd, aftercb)
 
   when asyncEventEngine in ["epoll", "kqueue"]:
-    proc addSignal2*(signal: int, cb: CallbackFunc,
-                     udata: pointer = nil): Result[int, OSErrorCode] =
+    type
+      ProcessHandle* = distinct int
+      SignalHandle* = distinct int
+
+    proc addSignal2*(
+           signal: int,
+           cb: CallbackFunc,
+           udata: pointer = nil
+         ): Result[SignalHandle, OSErrorCode] =
       ## Start watching signal ``signal``, and when signal appears, call the
       ## callback ``cb`` with specified argument ``udata``. Returns signal
       ## identifier code, which can be used to remove signal callback
@@ -953,10 +941,13 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
         adata.reader = AsyncCallback(function: cb, udata: udata)
       do:
         return err(osdefs.EBADF)
-      ok(sigfd)
+      ok(SignalHandle(sigfd))
 
-    proc addProcess2*(pid: int, cb: CallbackFunc,
-                      udata: pointer = nil): Result[int, OSErrorCode] =
+    proc addProcess2*(
+           pid: int,
+           cb: CallbackFunc,
+           udata: pointer = nil
+         ): Result[ProcessHandle, OSErrorCode] =
       ## Registers callback ``cb`` to be called when process with process
       ## identifier ``pid`` exited. Returns process' descriptor, which can be
       ## used to clear process callback via ``removeProcess``.
@@ -967,31 +958,42 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
         adata.reader = AsyncCallback(function: cb, udata: udata)
       do:
         return err(osdefs.EBADF)
-      ok(procfd)
+      ok(ProcessHandle(procfd))
 
-    proc removeSignal2*(sigfd: int): Result[void, OSErrorCode] =
+    proc removeSignal2*(signalHandle: SignalHandle): Result[void, OSErrorCode] =
       ## Remove watching signal ``signal``.
-      getThreadDispatcher().selector.unregister2(cint(sigfd))
+      getThreadDispatcher().selector.unregister2(cint(signalHandle))
 
-    proc removeProcess2*(procfd: int): Result[void, OSErrorCode] =
+    proc removeProcess2*(procHandle: ProcessHandle): Result[void, OSErrorCode] =
       ## Remove process' watching using process' descriptor ``procfd``.
-      getThreadDispatcher().selector.unregister2(cint(procfd))
+      getThreadDispatcher().selector.unregister2(cint(procHandle))
 
     proc addSignal*(signal: int, cb: CallbackFunc,
-                    udata: pointer = nil): int {.raises: [Defect, OSError].} =
+                    udata: pointer = nil): SignalHandle {.
+         raises: [Defect, OSError].} =
       ## Start watching signal ``signal``, and when signal appears, call the
       ## callback ``cb`` with specified argument ``udata``. Returns signal
       ## identifier code, which can be used to remove signal callback
       ## via ``removeSignal``.
       addSignal2(signal, cb, udata).tryGet()
 
-    proc removeSignal*(sigfd: int) {.raises: [Defect, OSError].} =
+    proc removeSignal*(signalHandle: SignalHandle) {.
+         raises: [Defect, OSError].} =
       ## Remove watching signal ``signal``.
       removeSignal2(sigfd).tryGet()
 
-    proc removeProcess*(procfd: int) {.raises: [Defect, OSError].} =
-      ## Remove process' watching using process' descriptor ``procfd``.
-      removeProcess2(procfd).tryGet()
+    proc addProcess*(pid: int, cb: CallbackFunc,
+                     udata: pointer = nil): ProcessHandle {.
+         raises: [Defect, OSError].} =
+      ## Registers callback ``cb`` to be called when process with process
+      ## identifier ``pid`` exited. Returns process identifier, which can be
+      ## used to clear process callback via ``removeProcess``.
+      addProcess2(pid, cb, udata).tryGet()
+
+    proc removeProcess*(procHandle: ProcessHandle) {.
+         raises: [Defect, OSError].} =
+      ## Remove process' watching using process' descriptor ``procHandle``.
+      removeProcess2(procHandle).tryGet()
 
   proc poll*() {.gcsafe.} =
     ## Perform single asynchronous step.
@@ -1170,7 +1172,7 @@ when not(defined(windows)):
   when asyncEventEngine in ["epoll", "kqueue"]:
     proc waitSignal*(signal: int): Future[void] {.raises: [Defect].} =
       var retFuture = newFuture[void]("chronos.waitSignal()")
-      var sigfd: int = -1
+      var signalHandle = SignalHandle(-1)
 
       template getSignalException(e: OSErrorCode): untyped =
         newException(AsyncError, "Could not manipulate signal handler, " &
@@ -1178,8 +1180,8 @@ when not(defined(windows)):
 
       proc continuation(udata: pointer) {.gcsafe.} =
         if not(retFuture.finished()):
-          if sigfd != -1:
-            let res = removeSignal2(sigfd)
+          if signalHandle != -1:
+            let res = removeSignal2(signalHandle)
             if res.isErr():
               retFuture.fail(getSignalException(res.error()))
             else:
@@ -1187,12 +1189,12 @@ when not(defined(windows)):
 
       proc cancellation(udata: pointer) {.gcsafe.} =
         if not(retFuture.finished()):
-          if sigfd != -1:
-            let res = removeSignal2(sigfd)
+          if signalHandle != -1:
+            let res = removeSignal2(signalHandle)
             if res.isErr():
               retFuture.fail(getSignalException(res.error()))
 
-      sigfd =
+      signalHandle =
         block:
           let res = addSignal2(signal, continuation)
           if res.isErr():
