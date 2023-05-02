@@ -9,8 +9,10 @@
 
 when (NimMajor, NimMinor) < (1, 4):
   {.push raises: [Defect].}
+  {.pragma: apforward, gcsafe, raises: [Defect].}
 else:
   {.push raises: [].}
+  {.pragma: apforward, gcsafe, raises: [].}
 
 import std/strtabs
 import "."/[config, asyncloop, handles, osdefs, osutils, oserrno],
@@ -24,6 +26,8 @@ export quoteShell, quoteShellWindows, quoteShellPosix, envPairs
 const
   AsyncProcessTrackerName* = "async.process"
     ## AsyncProcess leaks tracker name
+
+
 
 type
   AsyncProcessError* = object of CatchableError
@@ -255,39 +259,22 @@ proc init*(t: typedesc[ProcessStreamHandle],
 proc isEmpty*(handle: ProcessStreamHandle): bool =
   handle.kind == ProcessStreamHandleKind.None
 
-proc suspend*(p: AsyncProcessRef): AsyncProcessResult[void] {.
-     gcsafe, raises: [].}
-
-proc resume*(p: AsyncProcessRef): AsyncProcessResult[void] {.
-     gcsafe, raises: [].}
-
-proc terminate*(p: AsyncProcessRef): AsyncProcessResult[void] {.
-     gcsafe, raises: [].}
-
-proc kill*(p: AsyncProcessRef): AsyncProcessResult[void] {.
-     gcsafe, raises: [].}
-
-proc running*(p: AsyncProcessRef): AsyncProcessResult[bool] {.
-     gcsafe, raises: [].}
-
-proc peekExitCode*(p: AsyncProcessRef): AsyncProcessResult[int] {.
-     gcsafe, raises: [].}
-
+proc suspend*(p: AsyncProcessRef): AsyncProcessResult[void] {.apforward.}
+proc resume*(p: AsyncProcessRef): AsyncProcessResult[void] {.apforward.}
+proc terminate*(p: AsyncProcessRef): AsyncProcessResult[void] {.apforward.}
+proc kill*(p: AsyncProcessRef): AsyncProcessResult[void] {.apforward.}
+proc running*(p: AsyncProcessRef): AsyncProcessResult[bool] {.apforward.}
+proc peekExitCode*(p: AsyncProcessRef): AsyncProcessResult[int] {.apforward.}
 proc preparePipes(options: set[AsyncProcessOption],
                   stdinHandle, stdoutHandle, stderrHandle: ProcessStreamHandle
-                 ): AsyncProcessResult[AsyncProcessPipes] {.
-     gcsafe, raises: [].}
-
+                 ): AsyncProcessResult[AsyncProcessPipes] {.apforward.}
 proc closeProcessHandles(pipes: var AsyncProcessPipes,
                          options: set[AsyncProcessOption],
-                         lastError: OSErrorCode): OSErrorCode {.raises: [].}
-
+                         lastError: OSErrorCode): OSErrorCode {.apforward.}
 proc closeProcessStreams(pipes: AsyncProcessPipes,
                          options: set[AsyncProcessOption]): Future[void] {.
-     gcsafe, raises: [].}
-
-proc closeWait(holder: AsyncStreamHolder): Future[void] {.
-     gcsafe, raises: [].}
+     apforward.}
+proc closeWait(holder: AsyncStreamHolder): Future[void] {.apforward.}
 
 template isOk(code: OSErrorCode): bool =
   when defined(windows):
@@ -391,7 +378,7 @@ when defined(windows):
     while int(slider[]) != 0:
       let pos = wcschr(slider, WCHAR(0x0000))
       let line = slider.toString().valueOr("")
-      slider = cast[LPWSTR](cast[ByteAddress](pos) + sizeof(WCHAR))
+      slider = cast[LPWSTR](cast[uint](pos) + uint(sizeof(WCHAR)))
       if len(line) > 0:
         let delim = line.find('=')
         if delim > 0:
@@ -530,7 +517,7 @@ when defined(windows):
     let res = getExitCodeProcess(p.processHandle, wstatus)
     if res == TRUE:
       if wstatus != STILL_ACTIVE:
-        let status = cast[int](wstatus)
+        let status = int(wstatus)
         p.exitStatus = Opt.some(status)
         ok(status)
       else:
@@ -1319,9 +1306,6 @@ proc execCommandEx*(command: string,
 
 proc pid*(p: AsyncProcessRef): int =
   ## Returns process ``p`` identifier.
-  when defined(windows):
-    cast[int](p.processId)
-  else:
-    int(p.processId)
+  int(p.processId)
 
 template processId*(p: AsyncProcessRef): int = pid(p)
