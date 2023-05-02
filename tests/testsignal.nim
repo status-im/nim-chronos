@@ -17,7 +17,7 @@ suite "Signal handling test suite":
   when not defined(windows):
     var
       signalCounter = 0
-      sigfd = -1
+      sigfd: SignalHandle
 
     proc signalProc(udata: pointer) =
       signalCounter = cast[int](udata)

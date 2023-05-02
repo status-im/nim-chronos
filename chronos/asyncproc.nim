@@ -13,7 +13,8 @@ else:
   {.push raises: [].}
 
 import std/strtabs
-import "."/[config, asyncloop, handles, osdefs, osutils], streams/asyncstream
+import "."/[config, asyncloop, handles, osdefs, osutils, oserrno],
+           streams/asyncstream
 import stew/[results, byteutils]
 from std/os import quoteShell, quoteShellWindows, quoteShellPosix, envPairs
 
@@ -292,7 +293,7 @@ template isOk(code: OSErrorCode): bool =
   when defined(windows):
     code == ERROR_SUCCESS
   else:
-    code == 0
+    code == OSErrorCode(0)
 
 template closePipe(handle: AsyncFD): bool =
   let fd =
@@ -789,21 +790,6 @@ else:
       inc(i)
     res
 
-  proc getFullCommand(command: string, arguments: cstringArray): string =
-    let length =
-      if isNil(arguments):
-        0
-      else:
-        var res = 0
-        while not(isNil(arguments[res])): inc(res)
-        res
-    var res = newSeqOfCap[string](1 + length)
-    res.add(command)
-    if length > 0:
-      for index in 1 ..< length:
-        res.add($arguments[index])
-    res.join(" ")
-
   func exitStatusLikeShell(status: int): int =
     if WAITIFSIGNALED(cint(status)):
       # like the shell!
@@ -827,7 +813,7 @@ else:
         return ok(res)
       else:
         let errorCode = osLastError()
-        if errorCode == osdefs.ERANGE:
+        if errorCode == oserrno.ERANGE:
           bufsize = bufsize shl 1
           doAssert(bufsize >= 0)
           res = newString(bufsize)
@@ -917,14 +903,14 @@ else:
         let cres = getCurrentDirectory()
         if cres.isErr():
           # On error we still try to restore original working directory.
-          if currentError == 0:
+          if currentError.isOk():
             currentError = cres.error()
           discard setCurrentDirectory(currentDir)
         else:
           if cres.get() != currentDir:
             let sres = setCurrentDirectory(currentDir)
             if sres.isErr():
-              if currentError == 0:
+              if currentError.isOk():
                 currentError = sres.error()
 
       # Cleanup allocated memory
@@ -932,7 +918,7 @@ else:
       deallocCStringArray(commandEnv)
 
       # Cleanup posix_spawn attributes and file operations
-      if currentError != 0:
+      if not(currentError.isOk()):
         discard sa.free()
       else:
         let res = sa.free()
@@ -940,7 +926,7 @@ else:
           currentError = res.error()
 
       # If currentError has been set, raising an exception.
-      if currentError != 0:
+      if not(currentError.isOk()):
         raiseAsyncProcessError("Unable to spawn process", currentError)
 
     let process = AsyncProcessRef(
@@ -965,7 +951,7 @@ else:
           var res: cint = 0
           while true:
             res = osdefs.waitpid(p.processId, wstatus, flags)
-            if not((res == -1) and (osLastError() == EINTR)):
+            if not((res == -1) and (osLastError() == oserrno.EINTR)):
               break
           res
     if waitRes == p.processId:
@@ -1015,7 +1001,7 @@ else:
                     timeout = InfiniteDuration): Future[int] =
     var
       retFuture = newFuture[int]("chronos.waitForExit()")
-      processHandle: int = 0
+      processHandle: ProcessHandle
       timer: TimerCallback = nil
 
     if p.exitStatus.isSome():
@@ -1078,7 +1064,7 @@ else:
 
     processHandle = addProcess2(int(p.processId), continuation,
                                 cast[pointer](1)).valueOr:
-      if error == osdefs.ESRCH:
+      if error == oserrno.ESRCH:
         # "zombie death race" problem.
         # If process exited right after `waitpid()` - `kqueue` call
         # could return ESRCH error. So we need to handle it properly and
@@ -1090,7 +1076,7 @@ else:
           # This should not be happens one more time, so we just report
           # original error.
           retFuture.fail(newException(AsyncProcessError,
-                         osErrorMsg(OSErrorCode(osdefs.ESRCH))))
+                         osErrorMsg(oserrno.ESRCH)))
         else:
           retFuture.complete(exitStatusLikeShell(exitCode))
       else:

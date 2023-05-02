@@ -980,7 +980,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     proc removeSignal*(signalHandle: SignalHandle) {.
          raises: [Defect, OSError].} =
       ## Remove watching signal ``signal``.
-      removeSignal2(sigfd).tryGet()
+      removeSignal2(signalHandle).tryGet()
 
     proc addProcess*(pid: int, cb: CallbackFunc,
                      udata: pointer = nil): ProcessHandle {.
@@ -1172,7 +1172,7 @@ when not(defined(windows)):
   when asyncEventEngine in ["epoll", "kqueue"]:
     proc waitSignal*(signal: int): Future[void] {.raises: [Defect].} =
       var retFuture = newFuture[void]("chronos.waitSignal()")
-      var signalHandle = SignalHandle(-1)
+      var signalHandle: Opt[SignalHandle]
 
       template getSignalException(e: OSErrorCode): untyped =
         newException(AsyncError, "Could not manipulate signal handler, " &
@@ -1180,8 +1180,8 @@ when not(defined(windows)):
 
       proc continuation(udata: pointer) {.gcsafe.} =
         if not(retFuture.finished()):
-          if signalHandle != -1:
-            let res = removeSignal2(signalHandle)
+          if signalHandle.isSome():
+            let res = removeSignal2(signalHandle.get())
             if res.isErr():
               retFuture.fail(getSignalException(res.error()))
             else:
@@ -1189,8 +1189,8 @@ when not(defined(windows)):
 
       proc cancellation(udata: pointer) {.gcsafe.} =
         if not(retFuture.finished()):
-          if signalHandle != -1:
-            let res = removeSignal2(signalHandle)
+          if signalHandle.isSome():
+            let res = removeSignal2(signalHandle.get())
             if res.isErr():
               retFuture.fail(getSignalException(res.error()))
 
@@ -1199,7 +1199,7 @@ when not(defined(windows)):
           let res = addSignal2(signal, continuation)
           if res.isErr():
             retFuture.fail(getSignalException(res.error()))
-          res.get()
+          Opt.some(res.get())
 
       retFuture.cancelCallback = cancellation
       retFuture
