@@ -183,7 +183,8 @@ type
     NoInet4Resolution,   ## Do not resolve server hostname to IPv4 addresses
     NoInet6Resolution,   ## Do not resolve server hostname to IPv6 addresses
     NoAutomaticRedirect, ## Do not handle HTTP redirection automatically
-    NewConnectionAlways  ## Always create new connection to HTTP server
+    NewConnectionAlways, ## Always create new connection to HTTP server
+    NoHttp11Pipeline     ## Do not use HTTP/1.1 pipelining
 
   HttpClientFlags* = set[HttpClientFlag]
 
@@ -365,7 +366,11 @@ proc new*(t: typedesc[HttpSessionRef],
     idlePeriod: idlePeriod,
     connections: initTable[string, seq[HttpClientConnectionRef]](),
   )
-  res.watcherFut = sessionWatcher(res)
+  res.watcherFut =
+    if HttpClientFlag.NoHttp11Pipeline notin flags:
+      sessionWatcher(res)
+    else:
+      newFuture[void]("session.watcher.placeholder")
   res
 
 proc getTLSFlags(flags: HttpClientFlags): set[TLSFlags] {.raises: [Defect] .} =
@@ -658,6 +663,12 @@ proc removeConnection(session: HttpSessionRef,
   dec(session.connectionsCount)
   await conn.closeWait()
 
+func connectionPoolEnabled(session: HttpSessionRef,
+                           flags: set[HttpClientRequestFlag]): bool =
+  (HttpClientFlag.NewConnectionAlways notin session.flags) and
+  (HttpClientRequestFlag.DedicatedConnection notin flags) and
+  (HttpClientFlag.NoHttp11Pipeline notin session.flags)
+
 proc acquireConnection(
        session: HttpSessionRef,
        ha: HttpAddress,
@@ -665,8 +676,7 @@ proc acquireConnection(
      ): Future[HttpClientConnectionRef] {.async.} =
   ## Obtain connection from ``session`` or establish a new one.
   var default: seq[HttpClientConnectionRef]
-  if (HttpClientFlag.NewConnectionAlways notin session.flags) and
-     (HttpClientRequestFlag.DedicatedConnection notin flags):
+  if session.connectionPoolEnabled(flags):
     # Trying to reuse existing connection from our connection's pool.
     let timestamp = Moment.now()
     # We looking for non-idle connection at `Ready` state, all idle connections
@@ -691,29 +701,32 @@ proc releaseConnection(session: HttpSessionRef,
                        connection: HttpClientConnectionRef) {.async.} =
   ## Return connection back to the ``session``.
   let removeConnection =
-    case connection.state
-    of HttpClientConnectionState.ResponseBodyReceived:
-      if HttpClientConnectionFlag.KeepAlive in connection.flags:
-        # HTTP response body has been received and "Connection: keep-alive" is
-        # present in response headers.
-        false
-      else:
-        # HTTP response body has been received, but "Connection: keep-alive" is
-        # not present or not supported.
-        true
-    of HttpClientConnectionState.ResponseHeadersReceived:
-      if (HttpClientConnectionFlag.NoBody in connection.flags) and
-         (HttpClientConnectionFlag.KeepAlive in connection.flags):
-        # HTTP response headers received with an empty response body and
-        # "Connection: keep-alive" is present in response headers.
-        false
-      else:
-        # HTTP response body is not received or "Connection: keep-alive" is not
-        # present or not supported.
-        true
-    else:
-      # Connection not in proper state.
+    if HttpClientFlag.NoHttp11Pipeline in session.flags:
       true
+    else:
+      case connection.state
+      of HttpClientConnectionState.ResponseBodyReceived:
+        if HttpClientConnectionFlag.KeepAlive in connection.flags:
+          # HTTP response body has been received and "Connection: keep-alive" is
+          # present in response headers.
+          false
+        else:
+          # HTTP response body has been received, but "Connection: keep-alive"
+          # is not present or not supported.
+          true
+      of HttpClientConnectionState.ResponseHeadersReceived:
+        if (HttpClientConnectionFlag.NoBody in connection.flags) and
+           (HttpClientConnectionFlag.KeepAlive in connection.flags):
+          # HTTP response headers received with an empty response body and
+          # "Connection: keep-alive" is present in response headers.
+          false
+        else:
+          # HTTP response body is not received or "Connection: keep-alive" is
+          # not present or not supported.
+          true
+      else:
+        # Connection not in proper state.
+        true
 
   if removeConnection:
     await session.removeConnection(connection)
@@ -753,7 +766,8 @@ proc closeWait*(session: HttpSessionRef) {.async.} =
   ## This closes all the connections opened to remote servers.
   var pending: seq[Future[void]]
   # Closing sessionWatcher to avoid race condition.
-  await cancelAndWait(session.watcherFut)
+  if not(isNil(session.watcherFut)):
+    await cancelAndWait(session.watcherFut)
   for connections in session.connections.values():
     for conn in connections:
       pending.add(closeWait(conn))
@@ -924,11 +938,15 @@ proc prepareResponse(request: HttpClientRequestRef, data: openArray[byte]
   res.connection.state = HttpClientConnectionState.ResponseHeadersReceived
   if nobodyFlag:
     res.connection.flags.incl(HttpClientConnectionFlag.NoBody)
-  let newConnectionAlways =
-    HttpClientFlag.NewConnectionAlways in request.session.flags
-  let closeConnection =
-    HttpClientRequestFlag.CloseConnection in request.flags
-  if connectionFlag and not(newConnectionAlways) and not(closeConnection):
+  let
+    newConnectionAlways =
+      HttpClientFlag.NewConnectionAlways in request.session.flags
+    noHttpPipeline =
+      HttpClientFlag.NoHttp11Pipeline in request.session.flags
+    closeConnection =
+      HttpClientRequestFlag.CloseConnection in request.flags
+  if connectionFlag and not(newConnectionAlways) and not(closeConnection) and
+    not(noHttpPipeline):
     res.connection.flags.incl(HttpClientConnectionFlag.KeepAlive)
   res.connection.flags.incl(HttpClientConnectionFlag.Response)
   trackHttpClientResponse(res)
@@ -1049,7 +1067,8 @@ proc prepareRequest(request: HttpClientRequestRef): string {.
   discard request.headers.hasKeyOrPut(HostHeader, request.address.hostname)
   # We set `Connection` to value according to flags if its not set.
   if ConnectionHeader notin request.headers:
-    if HttpClientRequestFlag.CloseConnection in request.flags:
+    if (HttpClientRequestFlag.CloseConnection in request.flags) or
+       (HttpClientFlag.NoHttp11Pipeline in request.session.flags):
       request.headers.add(ConnectionHeader, "close")
     else:
       request.headers.add(ConnectionHeader, "keep-alive")

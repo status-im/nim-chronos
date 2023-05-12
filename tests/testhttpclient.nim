@@ -922,6 +922,76 @@ suite "HTTP client testing suite":
 
     return true
 
+  proc testNoPipeline(address: TransportAddress): Future[bool] {.
+       async.} =
+    let
+      ha = getAddress(address, HttpClientScheme.NonSecure, "/test")
+      hb = getAddress(address, HttpClientScheme.NonSecure, "/keep-test")
+
+    proc test(
+           session: HttpSessionRef,
+           a: HttpAddress
+         ): Future[TestResponseTuple] {.async.} =
+
+      var
+        data: HttpResponseTuple
+        request = HttpClientRequestRef.new(session, a, version = HttpVersion11)
+      try:
+        data = await request.fetch()
+      finally:
+        await request.closeWait()
+      return (data.status, data.data.bytesToString(), 0)
+
+    proc process(r: RequestFence): Future[HttpResponseRef] {.async.} =
+      if r.isOk():
+        let request = r.get()
+        case request.uri.path
+        of "/test":
+          return await request.respond(Http200, "ok")
+        of "/keep-test":
+          let headers = HttpTable.init([("Connection", "keep-alive")])
+          return await request.respond(Http200, "not-alive", headers)
+        else:
+          return await request.respond(Http404, "Page not found")
+      else:
+        return dumbResponse()
+
+    var server = createServer(address, process, false)
+    server.start()
+    let session = HttpSessionRef.new(flags = {HttpClientFlag.NoHttp11Pipeline},
+                                     idleTimeout = 100.seconds,
+                                     idlePeriod = 10.milliseconds)
+    try:
+      var f1 = test(session, ha)
+      var f2 = test(session, ha)
+      await allFutures(f1, f2)
+      check:
+        f1.finished()
+        f1.done()
+        f2.finished()
+        f2.done()
+        f1.read() == (200, "ok", 0)
+        f2.read() == (200, "ok", 0)
+        session.connectionsCount == 0
+
+      await sleepAsync(100.milliseconds)
+      block:
+        let resp = await test(session, ha)
+        check:
+          resp == (200, "ok", 0)
+          session.connectionsCount == 0
+      block:
+        let resp = await test(session, hb)
+        check:
+          resp == (200, "not-alive", 0)
+          session.connectionsCount == 0
+    finally:
+      await session.closeWait()
+      await server.stop()
+      await server.closeWait()
+
+    return true
+
   test "HTTP all request methods test":
     let address = initTAddress("127.0.0.1:30080")
     check waitFor(testMethods(address, false)) == 18
@@ -996,6 +1066,10 @@ suite "HTTP client testing suite":
   test "HTTP client idle connection test":
     let address = initTAddress("127.0.0.1:30080")
     check waitFor(testIdleConnection(address)) == true
+
+  test "HTTP client no-pipeline test":
+    let address = initTAddress("127.0.0.1:30080")
+    check waitFor(testNoPipeline(address)) == true
 
   test "Leaks test":
     proc getTrackerLeaks(tracker: string): bool =
