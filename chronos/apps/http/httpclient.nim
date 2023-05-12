@@ -184,7 +184,7 @@ type
     NoInet6Resolution,   ## Do not resolve server hostname to IPv6 addresses
     NoAutomaticRedirect, ## Do not handle HTTP redirection automatically
     NewConnectionAlways, ## Always create new connection to HTTP server
-    NoHttp11Pipeline     ## Do not use HTTP/1.1 pipelining
+    Http11Pipeline       ## Enable HTTP/1.1 pipelining
 
   HttpClientFlags* = set[HttpClientFlag]
 
@@ -367,7 +367,7 @@ proc new*(t: typedesc[HttpSessionRef],
     connections: initTable[string, seq[HttpClientConnectionRef]](),
   )
   res.watcherFut =
-    if HttpClientFlag.NoHttp11Pipeline notin flags:
+    if HttpClientFlag.Http11Pipeline in flags:
       sessionWatcher(res)
     else:
       newFuture[void]("session.watcher.placeholder")
@@ -667,7 +667,7 @@ func connectionPoolEnabled(session: HttpSessionRef,
                            flags: set[HttpClientRequestFlag]): bool =
   (HttpClientFlag.NewConnectionAlways notin session.flags) and
   (HttpClientRequestFlag.DedicatedConnection notin flags) and
-  (HttpClientFlag.NoHttp11Pipeline notin session.flags)
+  (HttpClientFlag.Http11Pipeline in session.flags)
 
 proc acquireConnection(
        session: HttpSessionRef,
@@ -701,7 +701,7 @@ proc releaseConnection(session: HttpSessionRef,
                        connection: HttpClientConnectionRef) {.async.} =
   ## Return connection back to the ``session``.
   let removeConnection =
-    if HttpClientFlag.NoHttp11Pipeline in session.flags:
+    if HttpClientFlag.Http11Pipeline notin session.flags:
       true
     else:
       case connection.state
@@ -941,12 +941,12 @@ proc prepareResponse(request: HttpClientRequestRef, data: openArray[byte]
   let
     newConnectionAlways =
       HttpClientFlag.NewConnectionAlways in request.session.flags
-    noHttpPipeline =
-      HttpClientFlag.NoHttp11Pipeline in request.session.flags
+    httpPipeline =
+      HttpClientFlag.Http11Pipeline in request.session.flags
     closeConnection =
       HttpClientRequestFlag.CloseConnection in request.flags
   if connectionFlag and not(newConnectionAlways) and not(closeConnection) and
-    not(noHttpPipeline):
+     httpPipeline:
     res.connection.flags.incl(HttpClientConnectionFlag.KeepAlive)
   res.connection.flags.incl(HttpClientConnectionFlag.Response)
   trackHttpClientResponse(res)
@@ -1067,8 +1067,8 @@ proc prepareRequest(request: HttpClientRequestRef): string {.
   discard request.headers.hasKeyOrPut(HostHeader, request.address.hostname)
   # We set `Connection` to value according to flags if its not set.
   if ConnectionHeader notin request.headers:
-    if (HttpClientRequestFlag.CloseConnection in request.flags) or
-       (HttpClientFlag.NoHttp11Pipeline in request.session.flags):
+    if (HttpClientFlag.Http11Pipeline notin request.session.flags) or
+       (HttpClientRequestFlag.CloseConnection in request.flags):
       request.headers.add(ConnectionHeader, "close")
     else:
       request.headers.add(ConnectionHeader, "keep-alive")

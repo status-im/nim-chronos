@@ -831,21 +831,30 @@ suite "HTTP client testing suite":
         d8 == @[(200, "ok", 0), (200, "ok", 0)]
 
       let
-        n1 = await test1(keepHa, HttpVersion11, {}, {})
-        n2 = await test2(keepHa, keepHa, HttpVersion11, {}, {})
-        n3 = await test1(dropHa, HttpVersion11, {}, {})
-        n4 = await test2(dropHa, dropHa, HttpVersion11, {}, {})
+        n1 = await test1(keepHa, HttpVersion11,
+                         {HttpClientFlag.Http11Pipeline}, {})
+        n2 = await test2(keepHa, keepHa, HttpVersion11,
+                         {HttpClientFlag.Http11Pipeline}, {})
+        n3 = await test1(dropHa, HttpVersion11,
+                         {HttpClientFlag.Http11Pipeline}, {})
+        n4 = await test2(dropHa, dropHa, HttpVersion11,
+                         {HttpClientFlag.Http11Pipeline}, {})
         n5 = await test1(keepHa, HttpVersion11,
-                         {HttpClientFlag.NewConnectionAlways}, {})
-        n6 = await test1(keepHa, HttpVersion11, {},
+                         {HttpClientFlag.NewConnectionAlways,
+                          HttpClientFlag.Http11Pipeline}, {})
+        n6 = await test1(keepHa, HttpVersion11,
+                         {HttpClientFlag.Http11Pipeline},
                          {HttpClientRequestFlag.DedicatedConnection})
-        n7 = await test1(keepHa, HttpVersion11, {},
+        n7 = await test1(keepHa, HttpVersion11,
+                         {HttpClientFlag.Http11Pipeline},
                          {HttpClientRequestFlag.DedicatedConnection,
                           HttpClientRequestFlag.CloseConnection})
-        n8 = await test1(keepHa, HttpVersion11, {},
+        n8 = await test1(keepHa, HttpVersion11,
+                         {HttpClientFlag.Http11Pipeline},
                          {HttpClientRequestFlag.CloseConnection})
         n9 = await test1(keepHa, HttpVersion11,
-                         {HttpClientFlag.NewConnectionAlways},
+                         {HttpClientFlag.NewConnectionAlways,
+                          HttpClientFlag.Http11Pipeline},
                          {HttpClientRequestFlag.CloseConnection})
       check:
         n1 == (200, "ok", 1)
@@ -895,7 +904,8 @@ suite "HTTP client testing suite":
 
     var server = createServer(address, process, false)
     server.start()
-    let session = HttpSessionRef.new(idleTimeout = 1.seconds,
+    let session = HttpSessionRef.new({HttpClientFlag.Http11Pipeline},
+                                     idleTimeout = 1.seconds,
                                      idlePeriod = 200.milliseconds)
     try:
       var f1 = test(session, ha)
@@ -958,8 +968,7 @@ suite "HTTP client testing suite":
 
     var server = createServer(address, process, false)
     server.start()
-    let session = HttpSessionRef.new(flags = {HttpClientFlag.NoHttp11Pipeline},
-                                     idleTimeout = 100.seconds,
+    let session = HttpSessionRef.new(idleTimeout = 100.seconds,
                                      idlePeriod = 10.milliseconds)
     try:
       var f1 = test(session, ha)
