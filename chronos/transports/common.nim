@@ -21,8 +21,7 @@ from std/net import Domain, `==`, IpAddress, IpAddressFamily, parseIpAddress,
 from std/nativesockets import toInt, `$`
 
 export Domain, `==`, IpAddress, IpAddressFamily, parseIpAddress, SockType,
-       Protocol, Port, toInt, `$`
-
+       Protocol, Port, toInt, `$`, osdefs
 
 const
   DefaultStreamBufferSize* = 4096    ## Default buffer size for stream
