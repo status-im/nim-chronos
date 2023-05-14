@@ -571,7 +571,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
 
   proc globalInit() =
     # We are ignoring SIGPIPE signal, because we are working with EPIPE.
-    posix.signal(cint(SIGPIPE), SIG_IGN)
+    signal(cint(SIGPIPE), SIG_IGN)
 
   proc initAPI(disp: PDispatcher) =
     discard
