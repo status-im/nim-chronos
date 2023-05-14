@@ -16,7 +16,7 @@ else:
 from nativesockets import Port
 import std/[tables, strutils, heapqueue, options, deques]
 import stew/results
-import "."/[config, osdefs, osutils, timer]
+import "."/[config, osdefs, oserrno, osutils, timer]
 
 export Port
 export timer, results
@@ -152,7 +152,6 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
      defined(openbsd) or defined(dragonfly) or defined(macos) or
      defined(linux) or defined(android) or defined(solaris):
   import "."/selectors2
-  import "."/[osdefs, oserrno]
   export SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
          SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV, SIGUSR2,
          SIGPIPE, SIGALRM, SIGTERM, SIGPIPE
@@ -631,7 +630,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
       if not(isNil(adata.writer.function)):
         newEvents.incl(Event.Write)
     do:
-      return err(OSErrorCode(osdefs.EBADF))
+      return err(osdefs.EBADF)
     loop.selector.updateHandle2(cint(fd), newEvents)
 
   proc removeReader2*(fd: AsyncFD): Result[void, OSErrorCode] =
@@ -644,7 +643,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
       if not(isNil(adata.writer.function)):
         newEvents.incl(Event.Write)
     do:
-      return err(OSErrorCode(osdefs.EBADF))
+      return err(osdefs.EBADF)
     loop.selector.updateHandle2(cint(fd), newEvents)
 
   proc addWriter2*(fd: AsyncFD, cb: CallbackFunc,
@@ -659,7 +658,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
       if not(isNil(adata.reader.function)):
         newEvents.incl(Event.Read)
     do:
-      return err(OSErrorCode(osdefs.EBADF))
+      return err(osdefs.EBADF)
     loop.selector.updateHandle2(cint(fd), newEvents)
 
   proc removeWriter2*(fd: AsyncFD): Result[void, OSErrorCode] =
@@ -672,7 +671,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
       if not(isNil(adata.reader.function)):
         newEvents.incl(Event.Read)
     do:
-      return err(OSErrorCode(osdefs.EBADF))
+      return err(osdefs.EBADF)
     loop.selector.updateHandle2(cint(fd), newEvents)
 
   proc register*(fd: AsyncFD) {.raises: [Defect, OSError].} =
@@ -739,7 +738,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
               else:
                 OSErrorCode(0)
           else:
-            OSErrorCode(osdefs.EBADF)
+            osdefs.EBADF
         )
       if not(isNil(aftercb)): aftercb(param)
 
@@ -785,7 +784,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
       withData(loop.selector, sigfd, adata) do:
         adata.reader = AsyncCallback(function: cb, udata: udata)
       do:
-        return err(OSErrorCode(osdefs.EBADF))
+        return err(osdefs.EBADF)
       ok(sigfd)
 
     proc addProcess2*(pid: int, cb: CallbackFunc,
@@ -799,7 +798,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
       withData(loop.selector, procfd, adata) do:
         adata.reader = AsyncCallback(function: cb, udata: udata)
       do:
-        return err(OSErrorCode(osdefs.EBADF))
+        return err(osdefs.EBADF)
       ok(procfd)
 
     proc removeSignal2*(sigfd: int): Result[void, OSErrorCode] =
