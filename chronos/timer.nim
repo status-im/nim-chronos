@@ -454,21 +454,3 @@ func epochNanoSeconds*(moment: Moment): int64 =
 proc fromNow*(t: typedesc[Moment], a: Duration): Moment {.inline.} =
   ## Returns moment in time which is equal to current moment + Duration.
   Moment.now() + a
-
-when defined(posix):
-  from posix import Time, Suseconds, Timeval, Timespec
-
-  func toTimeval*(a: Duration): Timeval =
-    ## Convert Duration ``a`` to ``Timeval`` object.
-    let m = a.value mod Second.value
-    Timeval(
-      tv_sec: Time(a.value div Second.value),
-      tv_usec: Suseconds(m div Microsecond.value)
-    )
-
-  func toTimespec*(a: Duration): Timespec =
-    ## Convert Duration ``a`` to ``Timespec`` object.
-    Timespec(
-      tv_sec: Time(a.value div Second.value),
-      tv_nsec: int(a.value mod Second.value)
-    )

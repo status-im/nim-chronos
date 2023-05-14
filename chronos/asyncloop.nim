@@ -153,7 +153,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
      defined(linux) or defined(android) or defined(solaris):
   import "."/selectors2
   import "."/oserrno
-  from posix import MSG_PEEK, MSG_NOSIGNAL,
+  from posix import signal, MSG_PEEK, MSG_NOSIGNAL,
                     SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
                     SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV, SIGUSR2,
                     SIGPIPE, SIGALRM, SIGTERM, SIGPIPE
