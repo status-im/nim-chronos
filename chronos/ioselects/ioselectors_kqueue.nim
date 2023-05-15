@@ -40,7 +40,7 @@ proc getVirtualId[T](s: Selector[T]): SelectResult[int32] =
     ok(s.virtualHoles.popLast())
   else:
     if s.virtualId == low(int32):
-      err(OSErrorCode(EMFILE))
+      err(EMFILE)
     else:
       dec(s.virtualId)
       ok(s.virtualId)

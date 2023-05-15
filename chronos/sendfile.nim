@@ -88,6 +88,8 @@ elif defined(freebsd) or defined(openbsd) or defined(netbsd) or
       -1
 
 elif defined(macosx):
+  import oserrno
+
   type
     SendfileHeader* {.importc: "struct sf_hdtr",
                       header: """#include <sys/types.h>
@@ -111,6 +113,6 @@ elif defined(macosx):
     else:
       let err = osLastError()
       count =
-        if int(err) == EAGAIN: int(o)
+        if err == EAGAIN: int(o)
         else: 0
       -1
