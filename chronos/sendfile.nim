@@ -59,9 +59,9 @@ elif defined(linux) or defined(android):
 
 elif defined(freebsd) or defined(openbsd) or defined(netbsd) or
      defined(dragonflybsd):
-  import posix, os
+  import oserrno
   type
-    SendfileHeader* {.importc: "sf_hdtr",
+    SendfileHeader* {.importc: "struct sf_hdtr",
                       header: """#include <sys/types.h>
                                  #include <sys/socket.h>
                                  #include <sys/uio.h>""",
@@ -76,20 +76,21 @@ elif defined(freebsd) or defined(openbsd) or defined(netbsd) or
 
   proc sendfile*(outfd, infd: int, offset: int, count: var int): int =
     var o = 0'u
-    let res = osSendFile(cint(infd), cint(outfd), uint(offset), uint(count), nil,
-                        addr o, 0)
+    let res = osSendFile(cint(infd), cint(outfd), uint(offset), uint(count),
+                         nil, addr o, 0)
     if res >= 0:
       count = int(o)
       0
     else:
       let err = osLastError()
       count =
-        if int(err) == EAGAIN: int(o)
+        if err == EAGAIN: int(o)
         else: 0
       -1
 
 elif defined(macosx):
-  import posix, os
+  import oserrno
+
   type
     SendfileHeader* {.importc: "struct sf_hdtr",
                       header: """#include <sys/types.h>
@@ -113,6 +114,6 @@ elif defined(macosx):
     else:
       let err = osLastError()
       count =
-        if int(err) == EAGAIN: int(o)
+        if err == EAGAIN: int(o)
         else: 0
       -1
