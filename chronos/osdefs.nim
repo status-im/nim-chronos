@@ -1080,7 +1080,7 @@ elif defined(freebsd) or defined(openbsd) or defined(netbsd) or
          SIG_BLOCK, SIG_UNBLOCK, CLOCK_MONOTONIC,
          SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
          SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV, SIGUSR2,
-         SIGPIPE, SIGALRM, SIGTERM, SIGPIPE, SIGCHLD,
+         SIGPIPE, SIGALRM, SIGTERM, SIGPIPE, SIGCHLD
 
   var IP_MULTICAST_TTL* {.importc: "IP_MULTICAST_TTL",
                           header: "<netinet/in.h>".}: cint
