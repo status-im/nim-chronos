@@ -59,8 +59,9 @@ elif defined(linux) or defined(android):
 
 elif defined(freebsd) or defined(openbsd) or defined(netbsd) or
      defined(dragonflybsd):
+  import oserrno
   type
-    SendfileHeader* {.importc: "sf_hdtr",
+    SendfileHeader* {.importc: "struct sf_hdtr",
                       header: """#include <sys/types.h>
                                  #include <sys/socket.h>
                                  #include <sys/uio.h>""",
@@ -83,7 +84,7 @@ elif defined(freebsd) or defined(openbsd) or defined(netbsd) or
     else:
       let err = osLastError()
       count =
-        if int(err) == EAGAIN: int(o)
+        if err == EAGAIN: int(o)
         else: 0
       -1
 

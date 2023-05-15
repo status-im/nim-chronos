@@ -1042,7 +1042,46 @@ elif defined(linux):
   proc signalfd*(fd: cint, mask: var Sigset, flags: cint): cint {.
        cdecl, importc: "signalfd", header: "<sys/signalfd.h>".}
 
-else:
+elif defined(freebsd) or defined(openbsd) or defined(netbsd) or
+     defined(dragonfly):
+  from std/posix import close, shutdown, socket, getpeername, getsockname,
+                        recvfrom, sendto, send, bindSocket, recv, connect,
+                        unlink, listen, getaddrinfo, gai_strerror, getrlimit,
+                        setrlimit, getpid, pthread_sigmask, sigemptyset,
+                        sigaddset, sigismember, fcntl, accept, pipe, write,
+                        signal, read, setsockopt, getsockopt, clock_gettime,
+                        Timeval, Timespec, Pid, Mode, Time, Sigset, SockAddr,
+                        SockLen, Sockaddr_storage, Sockaddr_in, Sockaddr_in6,
+                        Sockaddr_un, SocketHandle, AddrInfo, RLimit,
+                        F_GETFL, F_SETFL, F_GETFD, F_SETFD, FD_CLOEXEC,
+                        O_NONBLOCK, SOL_SOCKET, SOCK_RAW, MSG_NOSIGNAL,
+                        AF_INET, AF_INET6, SO_ERROR, SO_REUSEADDR,
+                        SO_REUSEPORT, SO_BROADCAST, IPPROTO_IP,
+                        IPV6_MULTICAST_HOPS, SOCK_DGRAM, RLIMIT_NOFILE,
+                        SIG_BLOCK, SIG_UNBLOCK, CLOCK_MONOTONIC,
+                        SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
+                        SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV, SIGUSR2,
+                        SIGPIPE, SIGALRM, SIGTERM, SIGPIPE, SIGCHLD
+
+  export close, shutdown, socket, getpeername, getsockname,
+         recvfrom, sendto, send, bindSocket, recv, connect,
+         unlink, listen, getaddrinfo, gai_strerror, getrlimit,
+         setrlimit, getpid, pthread_sigmask, sigemptyset,
+         sigaddset, sigismember, fcntl, accept, pipe, write,
+         signal, read, setsockopt, getsockopt, clock_gettime,
+         Timeval, Timespec, Pid, Mode, Time, Sigset, SockAddr,
+         SockLen, Sockaddr_storage, Sockaddr_in, Sockaddr_in6,
+         Sockaddr_un, SocketHandle, AddrInfo, RLimit,
+         F_GETFL, F_SETFL, F_GETFD, F_SETFD, FD_CLOEXEC,
+         O_NONBLOCK, SOL_SOCKET, SOCK_RAW, MSG_NOSIGNAL,
+         AF_INET, AF_INET6, SO_ERROR, SO_REUSEADDR,
+         SO_REUSEPORT, SO_BROADCAST, IPPROTO_IP,
+         IPV6_MULTICAST_HOPS, SOCK_DGRAM, RLIMIT_NOFILE,
+         SIG_BLOCK, SIG_UNBLOCK, CLOCK_MONOTONIC,
+         SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
+         SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV, SIGUSR2,
+         SIGPIPE, SIGALRM, SIGTERM, SIGPIPE, SIGCHLD,
+
   var IP_MULTICAST_TTL* {.importc: "IP_MULTICAST_TTL",
                           header: "<netinet/in.h>".}: cint
 
@@ -1092,9 +1131,6 @@ elif defined(dragonfly):
 
 when defined(linux) or defined(macos) or defined(macosx) or defined(freebsd) or
      defined(openbsd) or defined(netbsd) or defined(dragonfly):
-  export SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
-         SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV, SIGUSR2,
-         SIGPIPE, SIGALRM, SIGTERM, SIGPIPE
 
   const
     POSIX_SPAWN_RESETIDS* = 0x01
