@@ -14,6 +14,7 @@ import httptable, httpcommon, httpagent, httpbodyrw, multipart
 export results, asyncloop, asyncsync, asyncstream, tlsstream, chunkstream,
        boundstream, httptable, httpcommon, httpagent, httpbodyrw, multipart,
        httputils
+export SocketFlags
 
 const
   HttpMaxHeadersSize* = 8192
@@ -122,6 +123,7 @@ type
     connectionBufferSize*: int
     maxConnections*: int
     connectionsCount*: int
+    socketFlags*: set[SocketFlags]
     flags*: HttpClientFlags
 
   HttpAddress* = object
@@ -345,7 +347,8 @@ proc new*(t: typedesc[HttpSessionRef],
           connectionBufferSize = DefaultStreamBufferSize,
           maxConnections = -1,
           idleTimeout = HttpConnectionIdleTimeout,
-          idlePeriod = HttpConnectionCheckPeriod): HttpSessionRef {.
+          idlePeriod = HttpConnectionCheckPeriod,
+          socketFlags: set[SocketFlags] = {}): HttpSessionRef {.
      raises: [Defect] .} =
   ## Create new HTTP session object.
   ##
@@ -365,6 +368,7 @@ proc new*(t: typedesc[HttpSessionRef],
     idleTimeout: idleTimeout,
     idlePeriod: idlePeriod,
     connections: initTable[string, seq[HttpClientConnectionRef]](),
+    socketFlags: socketFlags
   )
   res.watcherFut =
     if HttpClientFlag.Http11Pipeline in flags:
@@ -619,7 +623,8 @@ proc connect(session: HttpSessionRef,
   for address in ha.addresses:
     let transp =
       try:
-        await connect(address, bufferSize = session.connectionBufferSize)
+        await connect(address, bufferSize = session.connectionBufferSize,
+                      flags = session.socketFlags)
       except CancelledError as exc:
         raise exc
       except CatchableError:
