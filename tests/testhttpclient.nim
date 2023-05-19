@@ -1001,6 +1001,188 @@ suite "HTTP client testing suite":
 
     return true
 
+  proc testServerSentEvents(address: TransportAddress,
+                            secure: bool): Future[bool] {.async.} =
+    const
+      SingleGoodTests = [
+        ("/test/single/1", "a:b\r\nc: d\re:f\n:comment\r\ng:\n h: j \n\n",
+         @[("a", "b"), ("c", "d"), ("e", "f"), ("g", ""), (" h", "j ")]),
+        ("/test/single/2", ":comment\r:\nfield1\r\nfield2:\n\n",
+         @[("field1", ""), ("field2", "")]),
+        ("/test/single/3", ":c1\r:c2\nfield1:value1", @[("field1", "value1")]),
+        ("/test/single/4", ":c1\r:c2\nfield1:", @[("field1", "")]),
+        ("/test/single/5", ":c1\r:c2\nfield1", @[("field1", "")]),
+        ("/test/single/6", "a", @[("a", "")]),
+        ("/test/single/7", "b:", @[("b", "")]),
+        ("/test/single/8", "c:d", @[("c", "d")]),
+        ("/test/single/9", ":", @[]),
+        ("/test/single/10", "", @[]),
+        ("/test/single/11", ":c1\n", @[]),
+        ("/test/single/12", ":c1\n:c2\n", @[]),
+        ("/test/single/13", ":c1\n:c2\n:c3\n", @[]),
+        ("/test/single/14", ":c1\n:c2\n:c3\n:c4", @[]),
+        ("/test/single/15", "\r\r", @[("", "")]),
+        ("/test/single/15", "\n\n", @[("", "")]),
+        ("/test/single/17", "\r\n\r\n", @[("", "")]),
+        ("/test/single/18", "\r\n", @[("", "")]),
+        ("/test/single/19", "\r", @[("", "")]),
+        ("/test/single/20", "\n", @[("", "")])
+      ]
+      MultipleGoodTests = [
+        ("/test/multiple/1", "a:b\nc:d\n\ne:f\rg:h\r\ri:j\r\nk:l\r\n\r\n", 3,
+         @[@[("a", "b"), ("c", "d")], @[("e", "f"), ("g", "h")],
+           @[("i", "j"), ("k", "l")]]),
+        ("/test/multiple/2", "a:b\nc:d\n\ne:f\rg:h\r\ri:j\r\nk:l\r\n\r\n\r\n",
+          4, @[@[("a", "b"), ("c", "d")], @[("e", "f"), ("g", "h")],
+             @[("i", "j"), ("k", "l")], @[("", "")]]),
+      ]
+      OverflowTests = [
+        ("/test/overflow/1", ":verylongcomment", 1, false),
+        ("/test/overflow/2", ":verylongcomment\n:anotherone", 1, false),
+        ("/test/overflow/3", "aa\n", 1, true),
+        ("/test/overflow/4", "a:b\n", 2, true)
+      ]
+
+    proc `==`(a: ServerSentEvent, b: tuple[name: string, value: string]): bool =
+      a.name == b.name and a.data == b.value
+
+    proc `==`(a: seq[ServerSentEvent],
+              b: seq[tuple[name: string, value: string]]): bool =
+      if len(a) != len(b):
+        return false
+      for index, value in a.pairs():
+        if value != b[index]:
+          return false
+      true
+
+    proc `==`(a: seq[seq[ServerSentEvent]],
+              b: seq[seq[tuple[name: string, value: string]]]): bool =
+      if len(a) != len(b):
+        return false
+      for index, value in a.pairs():
+        if value != b[index]:
+          return false
+      true
+
+    proc process(r: RequestFence): Future[HttpResponseRef] {.async.} =
+      if r.isOk():
+        let request = r.get()
+        if request.uri.path.startsWith("/test/single/"):
+          let index =
+            block:
+              var res = -1
+              for index, value in SingleGoodTests.pairs():
+                if value[0] == request.uri.path:
+                  res = index
+                  break
+              res
+          if index < 0:
+            return await request.respond(Http404, "Page not found")
+          var response = request.getResponse()
+          response.status = Http200
+          await response.sendBody(SingleGoodTests[index][1])
+          return response
+        elif request.uri.path.startsWith("/test/multiple/"):
+          let index =
+            block:
+              var res = -1
+              for index, value in MultipleGoodTests.pairs():
+                if value[0] == request.uri.path:
+                  res = index
+                  break
+              res
+          if index < 0:
+            return await request.respond(Http404, "Page not found")
+          var response = request.getResponse()
+          response.status = Http200
+          await response.sendBody(MultipleGoodTests[index][1])
+          return response
+        elif request.uri.path.startsWith("/test/overflow/"):
+          let index =
+            block:
+              var res = -1
+              for index, value in OverflowTests.pairs():
+                if value[0] == request.uri.path:
+                  res = index
+                  break
+              res
+          if index < 0:
+            return await request.respond(Http404, "Page not found")
+          var response = request.getResponse()
+          response.status = Http200
+          await response.sendBody(OverflowTests[index][1])
+          return response
+        else:
+          return await request.respond(Http404, "Page not found")
+      else:
+        return dumbResponse()
+
+    var server = createServer(address, process, secure)
+    server.start()
+
+    var session = createSession(secure)
+
+    try:
+      for item in SingleGoodTests:
+        let ha =
+          if secure:
+            getAddress(address, HttpClientScheme.Secure, item[0])
+          else:
+            getAddress(address, HttpClientScheme.NonSecure, item[0])
+        let
+          req = HttpClientRequestRef.new(session, ha, HttpMethod.MethodGet)
+          response = await req.send()
+          events = await response.getServerSentEvents()
+        check events == item[2]
+        await response.closeWait()
+        await req.closeWait()
+
+      for item in MultipleGoodTests:
+        let ha =
+          if secure:
+            getAddress(address, HttpClientScheme.Secure, item[0])
+          else:
+            getAddress(address, HttpClientScheme.NonSecure, item[0])
+        var req = HttpClientRequestRef.new(session, ha, HttpMethod.MethodGet)
+        var response = await send(req)
+        let events =
+          block:
+            var res: seq[seq[ServerSentEvent]]
+            for i in 0 ..< item[2]:
+              let ires = await response.getServerSentEvents()
+              res.add(ires)
+            res
+        check events == item[3]
+        await closeWait(response)
+        await closeWait(req)
+
+      for item in OverflowTests:
+        let ha =
+          if secure:
+            getAddress(address, HttpClientScheme.Secure, item[0])
+          else:
+            getAddress(address, HttpClientScheme.NonSecure, item[0])
+        var req = HttpClientRequestRef.new(session, ha, HttpMethod.MethodGet)
+        var response = await send(req)
+        let error =
+          try:
+            let events {.used.} = await response.getServerSentEvents(item[2])
+            false
+          except HttpReadLimitError:
+            true
+          except CatchableError:
+            false
+        check error == item[3]
+        await closeWait(response)
+        await closeWait(req)
+
+    finally:
+      await closeWait(session)
+      await server.stop()
+      await server.closeWait()
+
+    return true
+
   test "HTTP all request methods test":
     let address = initTAddress("127.0.0.1:30080")
     check waitFor(testMethods(address, false)) == 18
@@ -1079,6 +1261,10 @@ suite "HTTP client testing suite":
   test "HTTP client no-pipeline test":
     let address = initTAddress("127.0.0.1:30080")
     check waitFor(testNoPipeline(address)) == true
+    
+  test "HTTP client server-sent events test":
+    let address = initTAddress("127.0.0.1:30080")
+    check waitFor(testServerSentEvents(address, false)) == true
 
   test "Leaks test":
     proc getTrackerLeaks(tracker: string): bool =

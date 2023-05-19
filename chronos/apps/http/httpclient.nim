@@ -6,8 +6,8 @@
 #              Licensed under either of
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
-import std/[uri, tables, strutils, sequtils]
-import stew/[results, base10, base64], httputils
+import std/[uri, tables, sequtils]
+import stew/[results, base10, base64, byteutils], httputils
 import ../../asyncloop, ../../asyncsync
 import ../../streams/[asyncstream, tlsstream, chunkstream, boundstream]
 import httptable, httpcommon, httpagent, httpbodyrw, multipart
@@ -193,6 +193,10 @@ type
   HttpClientTracker* = ref object of TrackerBase
     opened*: int64
     closed*: int64
+
+  ServerSentEvent* = object
+    name*: string
+    data*: string
 
 # HttpClientRequestRef valid states are:
 # Ready -> Open -> (Finished, Error) -> (Closing, Closed)
@@ -1511,3 +1515,100 @@ proc fetch*(session: HttpSessionRef, url: Uri): Future[HttpResponseTuple] {.
       if not(isNil(request)): await closeWait(request)
       if not(isNil(redirect)): await closeWait(redirect)
       raise exc
+
+proc getServerSentEvents*(
+       response: HttpClientResponseRef,
+       maxEventSize: int = -1
+     ): Future[seq[ServerSentEvent]] {.async.} =
+  ## Read number of server-sent events (SSE) from HTTP response ``response``.
+  ##
+  ## ``maxEventSize`` - maximum size of events chunk in one message, use
+  ## `-1` or `0` to set size to unlimited.
+  ##
+  ## Server-sent events parsing is done according to:
+  ## https://html.spec.whatwg.org/multipage/server-sent-events.html#parsing-an-event-stream
+  ##
+  ## Note: Server-sent event comments are ignored and silently skipped.
+  const
+    CR = byte(0x0D)
+    LF = byte(0x0A)
+    COLON = byte(':')
+    SPACE = byte(' ')
+
+  let reader = response.getBodyReader()
+
+  var
+    error: ref HttpReadError = nil
+    res: seq[ServerSentEvent]
+    buffer: seq[byte]
+
+  proc consumeBuffer() =
+    if len(buffer) == 0: return
+
+    let pos = buffer.find(COLON)
+    if pos == 0:
+      # comment line
+      discard
+    elif pos > 0:
+      # field_name: field_value
+      let
+        name = string.fromBytes(buffer.toOpenArray(0, pos - 1))
+        value =
+          if (pos + 1) < len(buffer):
+            let spos = if buffer[pos + 1] == SPACE: pos + 2 else: pos + 1
+            string.fromBytes(buffer.toOpenArray(spos, len(buffer) - 1))
+          else:
+            ""
+      res.add(ServerSentEvent(name: name, data: value))
+    else:
+      # field_name only
+      let name = string.fromBytes(buffer.toOpenArray(0, len(buffer) - 1))
+      res.add(ServerSentEvent(name: name, data: ""))
+
+    # Reset internal buffer to zero length.
+    buffer.setLen(0)
+
+  proc discardBuffer() =
+    if len(buffer) == 0: return
+    # Reset internal buffer to 1 byte length to keep comment sign.
+    buffer.setLen(1)
+
+  proc predicate(data: openArray[byte]): tuple[consumed: int, done: bool] =
+    var i = 0
+    while i < len(data):
+      if data[i] in {CR, LF}:
+        # CR or LF encountered
+        inc(i)
+        if (data[i - 1] == CR) and ((i < len(data)) and data[i] == LF):
+          # We trying to check for CRLF
+          inc(i)
+
+        if len(buffer) == 0:
+          if len(res) == 0:
+            res.add(ServerSentEvent(name: "", data: ""))
+          return (i, true)
+        consumeBuffer()
+      else:
+        buffer.add(data[i])
+        if (maxEventSize >= 0) and (len(buffer) > maxEventSize):
+          if buffer[0] != COLON:
+            # We only check limits for events and ignore comments size.
+            error = newException(HttpReadLimitError,
+                                 "Size of event exceeded maximum size")
+            return (0, true)
+          discardBuffer()
+
+        inc(i)
+
+    if len(data) == 0:
+      # Stream is at EOF
+      consumeBuffer()
+      return (0, true)
+
+    (i, false)
+
+  await reader.readMessage(predicate)
+  if not isNil(error):
+    raise error
+  else:
+    return res
