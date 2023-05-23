@@ -139,3 +139,20 @@ suite "Closure iterator's exception transformation issues":
         answer.inc(10)
     waitFor(a())
     check answer == 42
+
+  test "raise-only":
+    # https://github.com/status-im/nim-chronos/issues/56
+    proc trySync() {.async.} =
+      return
+
+    proc x() {.async.} =
+      try:
+        await trySync()
+        return
+      except ValueError:
+        discard
+
+      raiseAssert "shouldn't reach"
+
+    waitFor(x())
+
