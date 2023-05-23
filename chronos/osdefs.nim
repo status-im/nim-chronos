@@ -827,7 +827,8 @@ elif defined(macos) or defined(macosx):
                         unlink, listen, getaddrinfo, gai_strerror, getrlimit,
                         setrlimit, getpid, pthread_sigmask, sigprocmask, sigemptyset,
                         sigaddset, sigismember, fcntl, accept, pipe, write,
-                        signal, read, setsockopt, getsockopt,
+                        signal, read, setsockopt, getsockopt, getcwd, chdir,
+                        waitpid, kill,
                         Timeval, Timespec, Pid, Mode, Time, Sigset, SockAddr,
                         SockLen, Sockaddr_storage, Sockaddr_in, Sockaddr_in6,
                         Sockaddr_un, SocketHandle, AddrInfo, RLimit,
@@ -839,14 +840,16 @@ elif defined(macos) or defined(macosx):
                         SIG_BLOCK, SIG_UNBLOCK,
                         SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
                         SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV, SIGUSR2,
-                        SIGPIPE, SIGALRM, SIGTERM, SIGPIPE, SIGCHLD
+                        SIGPIPE, SIGALRM, SIGTERM, SIGPIPE, SIGCHLD, SIGSTOP,
+                        SIGCONT
 
   export close, shutdown, socket, getpeername, getsockname,
          recvfrom, sendto, send, bindSocket, recv, connect,
          unlink, listen, getaddrinfo, gai_strerror, getrlimit,
          setrlimit, getpid, pthread_sigmask, sigprocmask, sigemptyset,
          sigaddset, sigismember, fcntl, accept, pipe, write,
-         signal, read, setsockopt, getsockopt,
+         signal, read, setsockopt, getsockopt, getcwd, chdir,
+         waitpid, kill,
          Timeval, Timespec, Pid, Mode, Time, Sigset, SockAddr,
          SockLen, Sockaddr_storage, Sockaddr_in, Sockaddr_in6,
          Sockaddr_un, SocketHandle, AddrInfo, RLimit,
@@ -858,7 +861,8 @@ elif defined(macos) or defined(macosx):
          SIG_BLOCK, SIG_UNBLOCK,
          SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
          SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV, SIGUSR2,
-         SIGPIPE, SIGALRM, SIGTERM, SIGPIPE, SIGCHLD
+         SIGPIPE, SIGALRM, SIGTERM, SIGPIPE, SIGCHLD, SIGSTOP,
+         SIGCONT
 
   type
     MachTimebaseInfo* {.importc: "struct mach_timebase_info",
@@ -882,7 +886,8 @@ elif defined(linux):
                         getrlimit, setrlimit, getpeername, getsockname,
                         recvfrom, sendto, send, bindSocket, recv, connect,
                         unlink, listen, sendmsg, recvmsg, getpid, fcntl,
-                        pthread_sigmask, clock_gettime, signal,
+                        pthread_sigmask, clock_gettime, signal, getcwd, chdir,
+                        waitpid, kill,
                         ClockId, Itimerspec, Timespec, Sigset, Time, Pid, Mode,
                         SigInfo, Id, Tmsghdr, IOVec, RLimit,
                         SockAddr, SockLen, Sockaddr_storage, Sockaddr_in,
@@ -895,7 +900,8 @@ elif defined(linux):
                         SOCK_DGRAM,
                         SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
                         SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV, SIGUSR2,
-                        SIGPIPE, SIGALRM, SIGTERM, SIGPIPE, SIGCHLD
+                        SIGPIPE, SIGALRM, SIGTERM, SIGPIPE, SIGCHLD, SIGSTOP,
+                        SIGCONT
 
   export close, shutdown, sigemptyset, sigaddset, sigismember,
          sigdelset, write, read, waitid, getaddrinfo,
@@ -903,7 +909,8 @@ elif defined(linux):
          getrlimit, setrlimit, getpeername, getsockname,
          recvfrom, sendto, send, bindSocket, recv, connect,
          unlink, listen, sendmsg, recvmsg, getpid, fcntl,
-         pthread_sigmask, clock_gettime, signal,
+         pthread_sigmask, clock_gettime, signal, getcwd, chdir,
+         waitpid, kill,
          ClockId, Itimerspec, Timespec, Sigset, Time, Pid, Mode,
          SigInfo, Id, Tmsghdr, IOVec, RLimit,
          SockAddr, SockLen, Sockaddr_storage, Sockaddr_in,
@@ -916,7 +923,8 @@ elif defined(linux):
          SOCK_DGRAM,
          SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
          SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV, SIGUSR2,
-         SIGPIPE, SIGALRM, SIGTERM, SIGPIPE, SIGCHLD
+         SIGPIPE, SIGALRM, SIGTERM, SIGPIPE, SIGCHLD, SIGSTOP,
+         SIGCONT
 
   when not defined(android) and defined(amd64):
     const IP_MULTICAST_TTL*: cint = 33
@@ -1012,6 +1020,7 @@ elif defined(freebsd) or defined(openbsd) or defined(netbsd) or
                         setrlimit, getpid, pthread_sigmask, sigemptyset,
                         sigaddset, sigismember, fcntl, accept, pipe, write,
                         signal, read, setsockopt, getsockopt, clock_gettime,
+                        getcwd, chdir, waitpid, kill,
                         Timeval, Timespec, Pid, Mode, Time, Sigset, SockAddr,
                         SockLen, Sockaddr_storage, Sockaddr_in, Sockaddr_in6,
                         Sockaddr_un, SocketHandle, AddrInfo, RLimit,
@@ -1023,7 +1032,8 @@ elif defined(freebsd) or defined(openbsd) or defined(netbsd) or
                         SIG_BLOCK, SIG_UNBLOCK, CLOCK_MONOTONIC,
                         SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
                         SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV, SIGUSR2,
-                        SIGPIPE, SIGALRM, SIGTERM, SIGPIPE, SIGCHLD
+                        SIGPIPE, SIGALRM, SIGTERM, SIGPIPE, SIGCHLD, SIGSTOP,
+                        SIGCONT
 
   export close, shutdown, socket, getpeername, getsockname,
          recvfrom, sendto, send, bindSocket, recv, connect,
@@ -1042,7 +1052,8 @@ elif defined(freebsd) or defined(openbsd) or defined(netbsd) or
          SIG_BLOCK, SIG_UNBLOCK, CLOCK_MONOTONIC,
          SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
          SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV, SIGUSR2,
-         SIGPIPE, SIGALRM, SIGTERM, SIGPIPE, SIGCHLD
+         SIGPIPE, SIGALRM, SIGTERM, SIGPIPE, SIGCHLD, SIGSTOP,
+         SIGCONT
 
   var IP_MULTICAST_TTL* {.importc: "IP_MULTICAST_TTL",
                           header: "<netinet/in.h>".}: cint
@@ -1081,15 +1092,28 @@ elif defined(macos) or defined(macosx):
     IPPROTO_TCP* = 6
 
 when defined(linux):
-  const O_CLOEXEC* = 0x80000
+  const
+    O_CLOEXEC* = 0x80000
+    POSIX_SPAWN_USEVFORK* = 0x40
 elif defined(freebsd):
-  const O_CLOEXEC* = 0x00100000
+  const
+    O_CLOEXEC* = 0x00100000
+    POSIX_SPAWN_USEVFORK* = 0x00
 elif defined(openbsd):
-  const O_CLOEXEC* = 0x10000
+  const
+    O_CLOEXEC* = 0x10000
+    POSIX_SPAWN_USEVFORK* = 0x00
 elif defined(netbsd):
-  const O_CLOEXEC* = 0x00400000
+  const
+    O_CLOEXEC* = 0x00400000
+    POSIX_SPAWN_USEVFORK* = 0x00
 elif defined(dragonfly):
-  const O_CLOEXEC* = 0x00020000
+  const
+    O_CLOEXEC* = 0x00020000
+    POSIX_SPAWN_USEVFORK* = 0x00
+elif defined(macos) or defined(macosx):
+  const
+    POSIX_SPAWN_USEVFORK* = 0x00
 
 when defined(linux) or defined(macos) or defined(macosx) or defined(freebsd) or
      defined(openbsd) or defined(netbsd) or defined(dragonfly):
