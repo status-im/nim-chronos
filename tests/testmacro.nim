@@ -143,7 +143,7 @@ suite "Closure iterator's exception transformation issues":
   test "raise-only":
     # https://github.com/status-im/nim-chronos/issues/56
     proc trySync() {.async.} =
-      raise newException(ValueError, "")
+      return
 
     proc x() {.async.} =
       try:
@@ -151,4 +151,8 @@ suite "Closure iterator's exception transformation issues":
         return
       except ValueError:
         discard
+
+      raiseAssert "shouldn't reach"
+
     waitFor(x())
+
