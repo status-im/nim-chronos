@@ -2,7 +2,7 @@
 #                     Chronos
 #
 #  (c) Copyright 2015 Dominik Picheta
-#  (c) Copyright 2018-2021 Status Research & Development GmbH
+#  (c) Copyright 2018-2023 Status Research & Development GmbH
 #
 #                Licensed under either of
 #    Apache License, version 2.0, (LICENSE-APACHEv2)
@@ -13,23 +13,23 @@ import stew/base10
 import "."/srcloc
 export srcloc
 
-when defined(nimHasStacktracesModule):
-  import system/stacktraces
-else:
-  const
-    reraisedFromBegin = -10
-    reraisedFromEnd = -100
+when chronosStackTrace:
+  when defined(nimHasStacktracesModule):
+    import system/stacktraces
+  else:
+    const
+      reraisedFromBegin = -10
+      reraisedFromEnd = -100
+
+  type StackTrace = string
 
 const
   LocCreateIndex* = 0
   LocCompleteIndex* = 1
 
-when chronosStackTrace:
-  type StackTrace = string
-
 type
   FutureState* {.pure.} = enum
-    Pending, Finished, Cancelled, Failed
+    Pending, Completed, Cancelled, Failed
 
   FutureBase* = ref object of RootObj ## Untyped future.
     location*: array[2, ptr SrcLoc]
@@ -39,7 +39,9 @@ type
     state*: FutureState
     error*: ref CatchableError ## Stored exception
     mustCancel*: bool
-    id*: uint
+
+    when chronosFutureId:
+      id*: uint
 
     when chronosStackTrace:
       errorStackTrace*: StackTrace
@@ -55,10 +57,15 @@ type
   # Obviously, it will still be allocated on the heap when necessary.
   Future*[T] = ref object of FutureBase ## Typed future.
     when chronosStrictException:
-      closure*: iterator(f: Future[T]): FutureBase {.raises: [Defect, CatchableError], gcsafe.}
+      when (NimMajor, NimMinor) < (1, 4):
+        closure*: iterator(f: Future[T]): FutureBase {.raises: [Defect, CatchableError], gcsafe.}
+      else:
+        closure*: iterator(f: Future[T]): FutureBase {.raises: [CatchableError], gcsafe.}
     else:
-      closure*: iterator(f: Future[T]): FutureBase {.raises: [Defect, CatchableError, Exception], gcsafe.}
-    value: T ## Stored value
+      closure*: iterator(f: Future[T]): FutureBase {.raises: [Exception], gcsafe.}
+
+    when T isnot void:
+      value*: T ## Stored value
 
   FutureStr*[T] = ref object of Future[T]
     ## Future to hold GC strings
@@ -80,6 +87,10 @@ type
     tail*: FutureBase
     count*: uint
 
+# Backwards compatibility for old FutureState name
+template Finished* {.deprecated: "Use Completed instead".} = Completed
+template Finished*(T: type FutureState): FutureState {.deprecated: "Use FutureState.Completed instead".} = FutureState.Completed
+
 when chronosFutureId:
   var currentID* {.threadvar.}: uint
 else:
@@ -88,7 +99,6 @@ else:
 
 when chronosFutureTracking:
   var futureList* {.threadvar.}: FutureList
-  futureList = FutureList()
 
 template setupFutureBase(loc: ptr SrcLoc) =
   new(result)
@@ -146,7 +156,7 @@ proc finished*(future: FutureBase): bool {.inline.} =
   ## Determines whether ``future`` has completed, i.e. ``future`` state changed
   ## from state ``Pending`` to one of the states (``Finished``, ``Cancelled``,
   ## ``Failed``).
-  result = (future.state != FutureState.Pending)
+  (future.state != FutureState.Pending)
 
 proc cancelled*(future: FutureBase): bool {.inline.} =
   ## Determines whether ``future`` has cancelled.
@@ -158,9 +168,9 @@ proc failed*(future: FutureBase): bool {.inline.} =
 
 proc completed*(future: FutureBase): bool {.inline.} =
   ## Determines whether ``future`` completed without an error.
-  (future.state == FutureState.Finished)
+  (future.state == FutureState.Completed)
 
-proc done*(future: FutureBase): bool {.inline.} =
+proc done*(future: FutureBase): bool {.deprecated: "Use `completed` instead".} =
   ## This is an alias for ``completed(future)`` procedure.
   completed(future)
 
@@ -224,7 +234,7 @@ proc complete[T](future: Future[T], val: T, loc: ptr SrcLoc) =
     checkFinished(FutureBase(future), loc)
     doAssert(isNil(future.error))
     future.value = val
-    future.finish(FutureState.Finished)
+    future.finish(FutureState.Completed)
 
 template complete*[T](future: Future[T], val: T) =
   ## Completes ``future`` with value ``val``.
@@ -234,7 +244,7 @@ proc complete(future: Future[void], loc: ptr SrcLoc) =
   if not(future.cancelled()):
     checkFinished(FutureBase(future), loc)
     doAssert(isNil(future.error))
-    future.finish(FutureState.Finished)
+    future.finish(FutureState.Completed)
 
 template complete*(future: Future[void]) =
   ## Completes a void ``future``.
@@ -403,84 +413,66 @@ proc internalContinue[T](fut: pointer) {.gcsafe, raises: [Defect].} =
 
 {.pop.}
 
-template getFilenameProcname(entry: StackTraceEntry): (string, string) =
-  when compiles(entry.filenameStr) and compiles(entry.procnameStr):
-    # We can't rely on "entry.filename" and "entry.procname" still being valid
-    # cstring pointers, because the "string.data" buffers they pointed to might
-    # be already garbage collected (this entry being a non-shallow copy,
-    # "entry.filename" no longer points to "entry.filenameStr.data", but to the
-    # buffer of the original object).
-    (entry.filenameStr, entry.procnameStr)
-  else:
-    ($entry.filename, $entry.procname)
-
-proc getHint(entry: StackTraceEntry): string =
-  ## We try to provide some hints about stack trace entries that the user
-  ## may not be familiar with, in particular calls inside the stdlib.
-
-  let (filename, procname) = getFilenameProcname(entry)
-
-  if procname == "processPendingCallbacks":
-    if cmpIgnoreStyle(filename, "asyncdispatch.nim") == 0:
-      return "Executes pending callbacks"
-  elif procname == "poll":
-    if cmpIgnoreStyle(filename, "asyncdispatch.nim") == 0:
-      return "Processes asynchronous completion events"
-
-  if procname == "internalContinue":
-    if cmpIgnoreStyle(filename, "asyncfutures.nim") == 0:
-      return "Resumes an async procedure"
-
-proc `$`(stackTraceEntries: seq[StackTraceEntry]): string =
-  try:
-    when defined(nimStackTraceOverride) and declared(addDebuggingInfo):
-      let entries = addDebuggingInfo(stackTraceEntries)
-    else:
-      let entries = stackTraceEntries
-
-    # Find longest filename & line number combo for alignment purposes.
-    var longestLeft = 0
-    for entry in entries:
-      let (filename, procname) = getFilenameProcname(entry)
-
-      if procname == "": continue
-
-      let leftLen = filename.len + len($entry.line)
-      if leftLen > longestLeft:
-        longestLeft = leftLen
-
-    var indent = 2
-    # Format the entries.
-    for entry in entries:
-      let (filename, procname) = getFilenameProcname(entry)
-
-      if procname == "":
-        if entry.line == reraisedFromBegin:
-          result.add(spaces(indent) & "#[\n")
-          indent.inc(2)
-        elif entry.line == reraisedFromEnd:
-          indent.dec(2)
-          result.add(spaces(indent) & "]#\n")
-        continue
-
-      let left = "$#($#)" % [filename, $entry.line]
-      result.add((spaces(indent) & "$#$# $#\n") % [
-        left,
-        spaces(longestLeft - left.len + 2),
-        procname
-      ])
-      let hint = getHint(entry)
-      if hint.len > 0:
-        result.add(spaces(indent+2) & "## " & hint & "\n")
-  except ValueError as exc:
-    return exc.msg # Shouldn't actually happen since we set the formatting
-                   # string
-
 when chronosStackTrace:
-  proc injectStacktrace(future: FutureBase) =
+  import std/strutils
+
+  template getFilenameProcname(entry: StackTraceEntry): (string, string) =
+    when compiles(entry.filenameStr) and compiles(entry.procnameStr):
+      # We can't rely on "entry.filename" and "entry.procname" still being valid
+      # cstring pointers, because the "string.data" buffers they pointed to might
+      # be already garbage collected (this entry being a non-shallow copy,
+      # "entry.filename" no longer points to "entry.filenameStr.data", but to the
+      # buffer of the original object).
+      (entry.filenameStr, entry.procnameStr)
+    else:
+      ($entry.filename, $entry.procname)
+
+  proc `$`(stackTraceEntries: seq[StackTraceEntry]): string =
+    try:
+      when defined(nimStackTraceOverride) and declared(addDebuggingInfo):
+        let entries = addDebuggingInfo(stackTraceEntries)
+      else:
+        let entries = stackTraceEntries
+
+      # Find longest filename & line number combo for alignment purposes.
+      var longestLeft = 0
+      for entry in entries:
+        let (filename, procname) = getFilenameProcname(entry)
+
+        if procname == "": continue
+
+        let leftLen = filename.len + len($entry.line)
+        if leftLen > longestLeft:
+          longestLeft = leftLen
+
+      var indent = 2
+      # Format the entries.
+      for entry in entries:
+        let (filename, procname) = getFilenameProcname(entry)
+
+        if procname == "":
+          if entry.line == reraisedFromBegin:
+            result.add(spaces(indent) & "#[\n")
+            indent.inc(2)
+          elif entry.line == reraisedFromEnd:
+            indent.dec(2)
+            result.add(spaces(indent) & "]#\n")
+          continue
+
+        let left = "$#($#)" % [filename, $entry.line]
+        result.add((spaces(indent) & "$#$# $#\n") % [
+          left,
+          spaces(longestLeft - left.len + 2),
+          procname
+        ])
+    except ValueError as exc:
+      return exc.msg # Shouldn't actually happen since we set the formatting
+                    # string
+
+  proc injectStacktrace(error: ref Exception) =
     const header = "\nAsync traceback:\n"
 
-    var exceptionMsg = future.error.msg
+    var exceptionMsg = error.msg
     if header in exceptionMsg:
       # This is messy: extract the original exception message from the msg
       # containing the async traceback.
@@ -489,7 +481,7 @@ when chronosStackTrace:
 
     var newMsg = exceptionMsg & header
 
-    let entries = getStackTraceEntries(future.error)
+    let entries = getStackTraceEntries(error)
     newMsg.add($entries)
 
     newMsg.add("Exception message: " & exceptionMsg & "\n")
@@ -498,14 +490,14 @@ when chronosStackTrace:
     # newMsg.add("Exception type:")
     # for entry in getStackTraceEntries(future.error):
     #   newMsg.add "\n" & $entry
-    future.error.msg = newMsg
+    error.msg = newMsg
 
 proc internalCheckComplete*(fut: FutureBase) {.
      raises: [Defect, CatchableError].} =
   # For internal use only. Used in asyncmacro
   if not(isNil(fut.error)):
     when chronosStackTrace:
-      injectStacktrace(fut)
+      injectStacktrace(fut.error)
     raise fut.error
 
 proc internalRead*[T](fut: Future[T]): T {.inline.} =

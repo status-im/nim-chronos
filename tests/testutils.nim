@@ -22,8 +22,8 @@ suite "Asynchronous utilities test suite":
 
   test "Future clean and leaks test":
     when chronosFutureTracking:
-      if pendingFuturesCount(WithoutFinished) == 0'u:
-        if pendingFuturesCount(OnlyFinished) > 0'u:
+      if pendingFuturesCount(WithoutCompleted) == 0'u:
+        if pendingFuturesCount(OnlyCompleted) > 0'u:
           poll()
         check pendingFuturesCount() == 0'u
       else:
