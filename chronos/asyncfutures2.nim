@@ -25,7 +25,8 @@ when chronosStackTrace:
 
 const
   LocCreateIndex* = 0
-  LocCompleteIndex* = 1
+  LocFinishedIndex* = 1
+  LocCompleteIndex* = LocFinishedIndex  ## Deprecated
 
 type
   FutureState* {.pure.} = enum
@@ -153,7 +154,7 @@ template newFutureStr*[T](fromProc: static[string] = ""): FutureStr[T] =
   newFutureStrImpl[T](getSrcLocation(fromProc))
 
 proc finished*(future: FutureBase): bool {.inline.} =
-  ## Determines whether ``future`` has completed, i.e. ``future`` state changed
+  ## Determines whether ``future`` has finished, i.e. ``future`` state changed
   ## from state ``Pending`` to one of the states (``Finished``, ``Cancelled``,
   ## ``Failed``).
   (future.state != FutureState.Pending)
@@ -163,11 +164,11 @@ proc cancelled*(future: FutureBase): bool {.inline.} =
   (future.state == FutureState.Cancelled)
 
 proc failed*(future: FutureBase): bool {.inline.} =
-  ## Determines whether ``future`` completed with an error.
+  ## Determines whether ``future`` finished with an error.
   (future.state == FutureState.Failed)
 
 proc completed*(future: FutureBase): bool {.inline.} =
-  ## Determines whether ``future`` completed without an error.
+  ## Determines whether ``future`` finished with a value.
   (future.state == FutureState.Completed)
 
 proc done*(future: FutureBase): bool {.deprecated: "Use `completed` instead".} =
@@ -176,7 +177,7 @@ proc done*(future: FutureBase): bool {.deprecated: "Use `completed` instead".} =
 
 when chronosFutureTracking:
   proc futureDestructor(udata: pointer) =
-    ## This procedure will be called when Future[T] got finished, cancelled or
+    ## This procedure will be called when Future[T] got completed, cancelled or
     ## failed and all Future[T].callbacks are already scheduled and processed.
     let future = cast[FutureBase](udata)
     if future == futureList.tail: futureList.tail = future.prev
@@ -199,7 +200,7 @@ proc checkFinished(future: FutureBase, loc: ptr SrcLoc) =
     msg.add("\n  Creation location:")
     msg.add("\n    " & $future.location[LocCreateIndex])
     msg.add("\n  First completion location:")
-    msg.add("\n    " & $future.location[LocCompleteIndex])
+    msg.add("\n    " & $future.location[LocFinishedIndex])
     msg.add("\n  Second completion location:")
     msg.add("\n    " & $loc)
     when chronosStackTrace:
@@ -212,7 +213,7 @@ proc checkFinished(future: FutureBase, loc: ptr SrcLoc) =
     err.cause = future
     raise err
   else:
-    future.location[LocCompleteIndex] = loc
+    future.location[LocFinishedIndex] = loc
 
 proc finish(fut: FutureBase, state: FutureState) =
   # We do not perform any checks here, because:
@@ -250,7 +251,7 @@ template complete*(future: Future[void]) =
   ## Completes a void ``future``.
   complete(future, getSrcLocation())
 
-proc fail[T](future: Future[T], error: ref CatchableError, loc: ptr SrcLoc) =
+proc fail(future: FutureBase, error: ref CatchableError, loc: ptr SrcLoc) =
   if not(future.cancelled()):
     checkFinished(FutureBase(future), loc)
     future.error = error
@@ -261,7 +262,7 @@ proc fail[T](future: Future[T], error: ref CatchableError, loc: ptr SrcLoc) =
                                  getStackTrace(error)
     future.finish(FutureState.Failed)
 
-template fail*[T](future: Future[T], error: ref CatchableError) =
+template fail*(future: FutureBase, error: ref CatchableError) =
   ## Completes ``future`` with ``error``.
   fail(future, error, getSrcLocation())
 
@@ -276,7 +277,7 @@ proc cancelAndSchedule(future: FutureBase, loc: ptr SrcLoc) =
       future.errorStackTrace = getStackTrace()
     future.finish(FutureState.Cancelled)
 
-template cancelAndSchedule*[T](future: Future[T]) =
+template cancelAndSchedule*(future: FutureBase) =
   cancelAndSchedule(FutureBase(future), getSrcLocation())
 
 proc cancel(future: FutureBase, loc: ptr SrcLoc): bool =
@@ -313,14 +314,10 @@ template cancel*(future: FutureBase) =
   ## Cancel ``future``.
   discard cancel(future, getSrcLocation())
 
-template cancel*[T](future: Future[T]) =
-  ## Cancel ``future``.
-  discard cancel(FutureBase(future), getSrcLocation())
-
 proc clearCallbacks(future: FutureBase) =
   future.callbacks = default(seq[AsyncCallback])
 
-proc addCallback*(future: FutureBase, cb: CallbackFunc, udata: pointer = nil) =
+proc addCallback*(future: FutureBase, cb: CallbackFunc, udata: pointer) =
   ## Adds the callbacks proc to be called when the future completes.
   ##
   ## If future has already completed then ``cb`` will be called immediately.
@@ -331,14 +328,14 @@ proc addCallback*(future: FutureBase, cb: CallbackFunc, udata: pointer = nil) =
     let acb = AsyncCallback(function: cb, udata: udata)
     future.callbacks.add acb
 
-proc addCallback*[T](future: Future[T], cb: CallbackFunc) =
+proc addCallback*(future: FutureBase, cb: CallbackFunc) =
   ## Adds the callbacks proc to be called when the future completes.
   ##
   ## If future has already completed then ``cb`` will be called immediately.
   future.addCallback(cb, cast[pointer](future))
 
 proc removeCallback*(future: FutureBase, cb: CallbackFunc,
-                     udata: pointer = nil) =
+                     udata: pointer) =
   ## Remove future from list of callbacks - this operation may be slow if there
   ## are many registered callbacks!
   doAssert(not isNil(cb))
@@ -347,10 +344,10 @@ proc removeCallback*(future: FutureBase, cb: CallbackFunc,
   future.callbacks.keepItIf:
     it.function != cb or it.udata != udata
 
-proc removeCallback*[T](future: Future[T], cb: CallbackFunc) =
+proc removeCallback*(future: FutureBase, cb: CallbackFunc) =
   future.removeCallback(cb, cast[pointer](future))
 
-proc `callback=`*(future: FutureBase, cb: CallbackFunc, udata: pointer = nil) =
+proc `callback=`*(future: FutureBase, cb: CallbackFunc, udata: pointer) =
   ## Clears the list of callbacks and sets the callback proc to be called when
   ## the future completes.
   ##
@@ -361,13 +358,13 @@ proc `callback=`*(future: FutureBase, cb: CallbackFunc, udata: pointer = nil) =
   future.clearCallbacks
   future.addCallback(cb, udata)
 
-proc `callback=`*[T](future: Future[T], cb: CallbackFunc) =
+proc `callback=`*(future: FutureBase, cb: CallbackFunc) =
   ## Sets the callback proc to be called when the future completes.
   ##
   ## If future has already completed then ``cb`` will be called immediately.
   `callback=`(future, cb, cast[pointer](future))
 
-proc `cancelCallback=`*[T](future: Future[T], cb: CallbackFunc) =
+proc `cancelCallback=`*(future: FutureBase, cb: CallbackFunc) =
   ## Sets the callback procedure to be called when the future is cancelled.
   ##
   ## This callback will be called immediately as ``future.cancel()`` invoked.
@@ -518,7 +515,7 @@ proc read*[T](future: Future[T] ): T {.
     # TODO: Make a custom exception type for this?
     raise newException(ValueError, "Future still in progress.")
 
-proc readError*[T](future: Future[T]): ref CatchableError {.
+proc readError*(future: FutureBase): ref CatchableError {.
      raises: [Defect, ValueError].} =
   ## Retrieves the exception stored in ``future``.
   ##
@@ -602,7 +599,7 @@ proc asyncDiscard*[T](future: Future[T]) {.
 proc `and`*[T, Y](fut1: Future[T], fut2: Future[Y]): Future[void] {.
   deprecated: "Use allFutures[T](varargs[Future[T]])".} =
   ## Returns a future which will complete once both ``fut1`` and ``fut2``
-  ## complete.
+  ## finish.
   ##
   ## If cancelled, ``fut1`` and ``fut2`` futures WILL NOT BE cancelled.
   var retFuture = newFuture[void]("chronos.`and`")
@@ -634,7 +631,7 @@ proc `and`*[T, Y](fut1: Future[T], fut2: Future[Y]): Future[void] {.
 
 proc `or`*[T, Y](fut1: Future[T], fut2: Future[Y]): Future[void] =
   ## Returns a future which will complete once either ``fut1`` or ``fut2``
-  ## complete.
+  ## finish.
   ##
   ## If ``fut1`` or ``fut2`` future is failed, the result future will also be
   ## failed with an error stored in ``fut1`` or ``fut2`` respectively.
@@ -688,7 +685,7 @@ proc `or`*[T, Y](fut1: Future[T], fut2: Future[Y]): Future[void] =
 
 proc all*[T](futs: varargs[Future[T]]): auto {.
   deprecated: "Use allFutures(varargs[Future[T]])".} =
-  ## Returns a future which will complete once all futures in ``futs`` complete.
+  ## Returns a future which will complete once all futures in ``futs`` finish.
   ## If the argument is empty, the returned future completes immediately.
   ##
   ## If the awaited futures are not ``Future[void]``, the returned future
@@ -788,8 +785,8 @@ proc oneIndex*[T](futs: varargs[Future[T]]): Future[int] {.
 
 proc oneValue*[T](futs: varargs[Future[T]]): Future[T] {.
   deprecated: "Use one[T](varargs[Future[T]])".} =
-  ## Returns a future which will complete once one of the futures in ``futs``
-  ## complete.
+  ## Returns a future which will finish once one of the futures in ``futs``
+  ## finish.
   ##
   ## If the argument is empty, returned future FAILS immediately.
   ##
@@ -857,15 +854,15 @@ proc allFutures*(futs: varargs[FutureBase]): Future[void] =
   ## On cancel all the awaited futures ``futs`` WILL NOT BE cancelled.
   var retFuture = newFuture[void]("chronos.allFutures()")
   let totalFutures = len(futs)
-  var completedFutures = 0
+  var finishedFutures = 0
 
   # Because we can't capture varargs[T] in closures we need to create copy.
   var nfuts = @futs
 
   proc cb(udata: pointer) =
     if not(retFuture.finished()):
-      inc(completedFutures)
-      if completedFutures == totalFutures:
+      inc(finishedFutures)
+      if finishedFutures == totalFutures:
         retFuture.complete()
 
   proc cancellation(udata: pointer) =
@@ -878,10 +875,10 @@ proc allFutures*(futs: varargs[FutureBase]): Future[void] =
     if not(fut.finished()):
       fut.addCallback(cb)
     else:
-      inc(completedFutures)
+      inc(finishedFutures)
 
   retFuture.cancelCallback = cancellation
-  if len(nfuts) == 0 or len(nfuts) == completedFutures:
+  if len(nfuts) == 0 or len(nfuts) == finishedFutures:
     retFuture.complete()
 
   return retFuture
@@ -904,21 +901,21 @@ proc allFinished*[T](futs: varargs[Future[T]]): Future[seq[Future[T]]] =
   ## will be completed, failed or canceled.
   ##
   ## Returned sequence will hold all the Future[T] objects passed to
-  ## ``allCompleted`` with the order preserved.
+  ## ``allFinished`` with the order preserved.
   ##
   ## If the argument is empty, the returned future COMPLETES immediately.
   ##
   ## On cancel all the awaited futures ``futs`` WILL NOT BE cancelled.
   var retFuture = newFuture[seq[Future[T]]]("chronos.allFinished()")
   let totalFutures = len(futs)
-  var completedFutures = 0
+  var finishedFutures = 0
 
   var nfuts = @futs
 
   proc cb(udata: pointer) =
     if not(retFuture.finished()):
-      inc(completedFutures)
-      if completedFutures == totalFutures:
+      inc(finishedFutures)
+      if finishedFutures == totalFutures:
         retFuture.complete(nfuts)
 
   proc cancellation(udata: pointer) =
@@ -931,10 +928,10 @@ proc allFinished*[T](futs: varargs[Future[T]]): Future[seq[Future[T]]] =
     if not(fut.finished()):
       fut.addCallback(cb)
     else:
-      inc(completedFutures)
+      inc(finishedFutures)
 
   retFuture.cancelCallback = cancellation
-  if len(nfuts) == 0 or len(nfuts) == completedFutures:
+  if len(nfuts) == 0 or len(nfuts) == finishedFutures:
     retFuture.complete(nfuts)
 
   return retFuture
@@ -949,6 +946,16 @@ proc one*[T](futs: varargs[Future[T]]): Future[Future[T]] =
   ##
   ## On cancel futures in ``futs`` WILL NOT BE cancelled.
   var retFuture = newFuture[Future[T]]("chronos.one()")
+
+  if len(futs) == 0:
+    retFuture.fail(newException(ValueError, "Empty Future[T] list"))
+    return retFuture
+
+  # If one of the Future[T] already finished we return it as result
+  for fut in futs:
+    if fut.finished():
+      retFuture.complete(fut)
+      return retFuture
 
   # Because we can't capture varargs[T] in closures we need to create copy.
   var nfuts = @futs
@@ -971,17 +978,8 @@ proc one*[T](futs: varargs[Future[T]]): Future[Future[T]] =
       if not(nfuts[i].finished()):
         nfuts[i].removeCallback(cb)
 
-  # If one of the Future[T] already finished we return it as result
-  for fut in nfuts:
-    if fut.finished():
-      retFuture.complete(fut)
-      return retFuture
-
   for fut in nfuts:
     fut.addCallback(cb)
-
-  if len(nfuts) == 0:
-    retFuture.fail(newException(ValueError, "Empty Future[T] list"))
 
   retFuture.cancelCallback = cancellation
   return retFuture
@@ -995,7 +993,17 @@ proc race*(futs: varargs[FutureBase]): Future[FutureBase] =
   ## On success returned Future will hold finished FutureBase.
   ##
   ## On cancel futures in ``futs`` WILL NOT BE cancelled.
-  var retFuture = newFuture[FutureBase]("chronos.race()")
+  let retFuture = newFuture[FutureBase]("chronos.race()")
+
+  if len(futs) == 0:
+    retFuture.fail(newException(ValueError, "Empty Future[T] list"))
+    return retFuture
+
+  # If one of the Future[T] already finished we return it as result
+  for fut in futs:
+    if fut.finished():
+      retFuture.complete(fut)
+      return retFuture
 
   # Because we can't capture varargs[T] in closures we need to create copy.
   var nfuts = @futs
@@ -1018,17 +1026,9 @@ proc race*(futs: varargs[FutureBase]): Future[FutureBase] =
       if not(nfuts[i].finished()):
         nfuts[i].removeCallback(cb)
 
-  # If one of the Future[T] already finished we return it as result
-  for fut in nfuts:
-    if fut.finished():
-      retFuture.complete(fut)
-      return retFuture
-
   for fut in nfuts:
     fut.addCallback(cb, cast[pointer](fut))
 
-  if len(nfuts) == 0:
-    retFuture.fail(newException(ValueError, "Empty Future[T] list"))
-
   retFuture.cancelCallback = cancellation
+
   return retFuture
