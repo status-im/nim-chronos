@@ -35,6 +35,9 @@ import stew/results
 import osdefs, osutils, oserrno
 export results, oserrno
 
+when defined(posix):
+  import std/posix
+
 const
   asyncEventsCount* {.intdefine.} = 64
     ## Number of epoll events retrieved by syscall.
