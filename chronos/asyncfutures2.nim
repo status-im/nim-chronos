@@ -25,8 +25,8 @@ when chronosStackTrace:
 
 const
   LocCreateIndex* = 0
-  LocFinishedIndex* = 1
-  LocCompleteIndex* = LocFinishedIndex  ## Deprecated
+  LocFinishIndex* = 1
+  LocCompleteIndex* = LocFinishIndex  ## Deprecated
 
 type
   FutureState* {.pure.} = enum
@@ -200,7 +200,7 @@ proc checkFinished(future: FutureBase, loc: ptr SrcLoc) =
     msg.add("\n  Creation location:")
     msg.add("\n    " & $future.location[LocCreateIndex])
     msg.add("\n  First completion location:")
-    msg.add("\n    " & $future.location[LocFinishedIndex])
+    msg.add("\n    " & $future.location[LocFinishIndex])
     msg.add("\n  Second completion location:")
     msg.add("\n    " & $loc)
     when chronosStackTrace:
@@ -213,7 +213,7 @@ proc checkFinished(future: FutureBase, loc: ptr SrcLoc) =
     err.cause = future
     raise err
   else:
-    future.location[LocFinishedIndex] = loc
+    future.location[LocFinishIndex] = loc
 
 proc finish(fut: FutureBase, state: FutureState) =
   # We do not perform any checks here, because:
