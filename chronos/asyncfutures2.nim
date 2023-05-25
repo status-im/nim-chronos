@@ -26,7 +26,9 @@ when chronosStackTrace:
 const
   LocCreateIndex* = 0
   LocFinishIndex* = 1
-  LocCompleteIndex* = LocFinishIndex  ## Deprecated
+
+template LocCompleteIndex*: untyped {.deprecated: "LocFinishIndex".} =
+  LocFinishIndex
 
 type
   FutureState* {.pure.} = enum
