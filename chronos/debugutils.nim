@@ -20,11 +20,11 @@ when chronosFutureTracking:
 
 const
   AllFutureStates* = {FutureState.Pending, FutureState.Cancelled,
-                      FutureState.Finished, FutureState.Failed}
-  WithoutFinished* = {FutureState.Pending, FutureState.Cancelled,
+                      FutureState.Completed, FutureState.Failed}
+  WithoutCompleted* = {FutureState.Pending, FutureState.Cancelled,
                       FutureState.Failed}
   OnlyPending* = {FutureState.Pending}
-  OnlyFinished* = {FutureState.Finished}
+  OnlyCompleted* = {FutureState.Completed}
 
 proc dumpPendingFutures*(filter = AllFutureStates): string =
   ## Dump all `pending` Future[T] objects.

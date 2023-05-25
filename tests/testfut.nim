@@ -1098,7 +1098,7 @@ suite "Future[T] behavior test suite":
     var fut = waitProc()
     await cancelAndWait(fut)
     check:
-      fut.state == FutureState.Finished
+      fut.state == FutureState.Completed
       neverFlag1 and neverFlag2 and neverFlag3 and waitProc1 and waitProc2
 
   asyncTest "Cancellation withTimeout() test":
@@ -1129,7 +1129,7 @@ suite "Future[T] behavior test suite":
     var fut = withTimeoutProc()
     await cancelAndWait(fut)
     check:
-      fut.state == FutureState.Finished
+      fut.state == FutureState.Completed
       neverFlag1 and neverFlag2 and neverFlag3 and waitProc1 and waitProc2
 
   asyncTest "Cancellation race test":
@@ -1462,8 +1462,8 @@ suite "Future[T] behavior test suite":
     var fut2 = race(f31, f21, f11)
 
     check:
-      fut1.done() and fut1.read() == FutureBase(f10)
-      fut2.done() and fut2.read() == FutureBase(f21)
+      fut1.completed() and fut1.read() == FutureBase(f10)
+      fut2.completed() and fut2.read() == FutureBase(f21)
 
     await allFutures(f20, f30, f11, f31)
 
