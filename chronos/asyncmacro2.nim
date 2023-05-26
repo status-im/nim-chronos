@@ -123,7 +123,13 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
 
     let
       internalFutureSym = ident "chronosInternalRetFuture"
-      procBody = prc.body.processBody(internalFutureSym, baseTypeIsVoid)
+      internalFutureType =
+        if baseTypeIsVoid:
+          newNimNode(nnkBracketExpr, prc).add(newIdentNode("Future")).add(newIdentNode("void"))
+        else: returnType
+      castFutureSym = quote do:
+        cast[`internalFutureType`](`internalFutureSym`)
+      procBody = prc.body.processBody(castFutureSym, baseTypeIsVoid)
 
     # don't do anything with forward bodies (empty)
     if procBody.kind != nnkEmpty:
@@ -139,7 +145,7 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
                     " a void async proc".}
         # -> complete(chronosInternalRetFuture)
         let complete =
-          newCall(newIdentNode("complete"), internalFutureSym)
+          newCall(newIdentNode("complete"), castFutureSym)
 
         newStmtList(resultTemplate, procBodyBlck, complete)
       else:
@@ -168,14 +174,14 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
 
           # -> complete(chronosInternalRetFuture, result)
           newCall(newIdentNode("complete"),
-            internalFutureSym, newIdentNode("result")))
+            castFutureSym, newIdentNode("result")))
 
       let
         internalFutureType =
           if baseTypeIsVoid:
             newNimNode(nnkBracketExpr, prc).add(newIdentNode("Future")).add(newIdentNode("void"))
           else: returnType
-        internalFutureParameter = nnkIdentDefs.newTree(internalFutureSym, internalFutureType, newEmptyNode())
+        internalFutureParameter = nnkIdentDefs.newTree(internalFutureSym, newIdentNode("FutureBase"), newEmptyNode())
         iteratorNameSym = genSym(nskIterator, $prcName)
         closureIterator = newProc(iteratorNameSym, [newIdentNode("FutureBase"), internalFutureParameter],
                                   closureBody, nnkIteratorDef)
@@ -276,15 +282,10 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
 
 template await*[T](f: Future[T]): untyped =
   when declared(chronosInternalRetFuture):
-    #work around https://github.com/nim-lang/Nim/issues/19193
-    when not declaredInScope(chronosInternalTmpFuture):
-      var chronosInternalTmpFuture {.inject.}: FutureBase = f
-    else:
-      chronosInternalTmpFuture = f
-    chronosInternalRetFuture.child = chronosInternalTmpFuture
+    chronosInternalRetFuture.child = f
 
     # This "yield" is meant for a closure iterator in the caller.
-    yield chronosInternalTmpFuture
+    yield chronosInternalRetFuture.child
 
     # By the time we get control back here, we're guaranteed that the Future we
     # just yielded has been completed (success, failure or cancellation),
@@ -295,28 +296,23 @@ template await*[T](f: Future[T]): untyped =
     # iterator that calls this template is still in that callback's closure
     # environment. That's where control actually gets back to us.
 
-    chronosInternalRetFuture.child = nil
     if chronosInternalRetFuture.mustCancel:
       raise newCancelledError()
-    chronosInternalTmpFuture.internalCheckComplete()
+
+    # `child` released by `futureContinue`
+    chronosInternalRetFuture.child.internalCheckComplete()
     when T isnot void:
-      cast[type(f)](chronosInternalTmpFuture).internalRead()
+      cast[type(f)](chronosInternalRetFuture.child).internalRead()
   else:
     unsupported "await is only available within {.async.}"
 
 template awaitne*[T](f: Future[T]): Future[T] =
   when declared(chronosInternalRetFuture):
-    #work around https://github.com/nim-lang/Nim/issues/19193
-    when not declaredInScope(chronosInternalTmpFuture):
-      var chronosInternalTmpFuture {.inject.}: FutureBase = f
-    else:
-      chronosInternalTmpFuture = f
-    chronosInternalRetFuture.child = chronosInternalTmpFuture
-    yield chronosInternalTmpFuture
-    chronosInternalRetFuture.child = nil
+    chronosInternalRetFuture.child = f
+    yield chronosInternalRetFuture.child
     if chronosInternalRetFuture.mustCancel:
       raise newCancelledError()
-    cast[type(f)](chronosInternalTmpFuture)
+    cast[type(f)](chronosInternalRetFuture.child)
   else:
     unsupported "awaitne is only available within {.async.}"
 

@@ -54,19 +54,15 @@ type
       next*: FutureBase
       prev*: FutureBase
 
-  # ZAH: we have discussed some possible optimizations where
-  # the future can be stored within the caller's stack frame.
-  # How much refactoring is needed to make this a regular non-ref type?
-  # Obviously, it will still be allocated on the heap when necessary.
-  Future*[T] = ref object of FutureBase ## Typed future.
     when chronosStrictException:
       when (NimMajor, NimMinor) < (1, 4):
-        closure*: iterator(f: Future[T]): FutureBase {.raises: [Defect, CatchableError], gcsafe.}
+        closure*: iterator(f: FutureBase): FutureBase {.raises: [Defect, CatchableError], gcsafe.}
       else:
-        closure*: iterator(f: Future[T]): FutureBase {.raises: [CatchableError], gcsafe.}
+        closure*: iterator(f: FutureBase): FutureBase {.raises: [CatchableError], gcsafe.}
     else:
-      closure*: iterator(f: Future[T]): FutureBase {.raises: [Exception], gcsafe.}
+      closure*: iterator(f: FutureBase): FutureBase {.raises: [Exception], gcsafe.}
 
+  Future*[T] = ref object of FutureBase ## Typed future.
     when T isnot void:
       value*: T ## Stored value
 
@@ -234,7 +230,7 @@ proc finish(fut: FutureBase, state: FutureState) =
 
 proc complete[T](future: Future[T], val: T, loc: ptr SrcLoc) =
   if not(future.cancelled()):
-    checkFinished(FutureBase(future), loc)
+    checkFinished(future, loc)
     doAssert(isNil(future.error))
     future.value = val
     future.finish(FutureState.Completed)
@@ -245,7 +241,7 @@ template complete*[T](future: Future[T], val: T) =
 
 proc complete(future: Future[void], loc: ptr SrcLoc) =
   if not(future.cancelled()):
-    checkFinished(FutureBase(future), loc)
+    checkFinished(future, loc)
     doAssert(isNil(future.error))
     future.finish(FutureState.Completed)
 
@@ -255,7 +251,7 @@ template complete*(future: Future[void]) =
 
 proc fail(future: FutureBase, error: ref CatchableError, loc: ptr SrcLoc) =
   if not(future.cancelled()):
-    checkFinished(FutureBase(future), loc)
+    checkFinished(future, loc)
     future.error = error
     when chronosStackTrace:
       future.errorStackTrace = if getStackTrace(error) == "":
@@ -280,7 +276,7 @@ proc cancelAndSchedule(future: FutureBase, loc: ptr SrcLoc) =
     future.finish(FutureState.Cancelled)
 
 template cancelAndSchedule*(future: FutureBase) =
-  cancelAndSchedule(FutureBase(future), getSrcLocation())
+  cancelAndSchedule(future, getSrcLocation())
 
 proc cancel(future: FutureBase, loc: ptr SrcLoc): bool =
   ## Request that Future ``future`` cancel itself.
@@ -303,6 +299,10 @@ proc cancel(future: FutureBase, loc: ptr SrcLoc): bool =
   if not(isNil(future.child)):
     if cancel(future.child, getSrcLocation()):
       return true
+
+    if not(isNil(future.cancelcb)):
+      future.cancelcb(cast[pointer](future))
+      future.cancelcb = nil
   else:
     if not(isNil(future.cancelcb)):
       future.cancelcb(cast[pointer](future))
@@ -373,28 +373,30 @@ proc `cancelCallback=`*(future: FutureBase, cb: CallbackFunc) =
   future.cancelcb = cb
 
 {.push stackTrace: off.}
-proc internalContinue[T](fut: pointer) {.gcsafe, raises: [Defect].}
+proc internalContinue(fut: pointer) {.gcsafe, raises: [Defect].}
 
-proc futureContinue*[T](fut: Future[T]) {.gcsafe, raises: [Defect].} =
+proc futureContinue*(fut: FutureBase) {.gcsafe, raises: [Defect].} =
   # Used internally by async transformation
+  var next: FutureBase
   try:
-    if not(fut.closure.finished()):
+    while true:
       var next = fut.closure(fut)
-      # Continue while the yielded future is already finished.
-      while (not next.isNil()) and next.finished():
-        next = fut.closure(fut)
-        if fut.closure.finished():
-          break
-
+      # `finish` sets closure to nil
       if fut.closure.finished():
-        fut.closure = nil
+        break
+
       if next == nil:
-        if not(fut.finished()):
-          raiseAssert "Async procedure (" & ($fut.location[LocCreateIndex]) & ") yielded `nil`, " &
-                      "are you await'ing a `nil` Future?"
-      else:
+        raiseAssert "Async procedure (" & ($fut.location[LocCreateIndex]) &
+                    ") yielded `nil`, are you await'ing a `nil` Future?"
+
+      if not next.finished():
         GC_ref(fut)
-        next.addCallback(internalContinue[T], cast[pointer](fut))
+        next.addCallback(internalContinue, cast[pointer](fut))
+
+        # return here so that we don't remove the closure below
+        return
+
+      # Continue while the yielded future is already finished.
   except CancelledError:
     fut.cancelAndSchedule()
   except CatchableError as exc:
@@ -404,9 +406,16 @@ proc futureContinue*[T](fut: Future[T]) {.gcsafe, raises: [Defect].} =
       raise (ref Defect)(exc)
 
     fut.fail((ref ValueError)(msg: exc.msg, parent: exc))
+  finally:
+    next = nil # GC hygiene
 
-proc internalContinue[T](fut: pointer) {.gcsafe, raises: [Defect].} =
-  let asFut = cast[Future[T]](fut)
+  # `futureContinue` will not be called any more for this future so we can
+  # clean it up
+  fut.closure = nil
+  fut.child = nil
+
+proc internalContinue(fut: pointer) {.gcsafe, raises: [Defect].} =
+  let asFut = cast[FutureBase](fut)
   GC_unref(asFut)
   futureContinue(asFut)
 
@@ -844,9 +853,6 @@ proc cancelAndWait*(fut: FutureBase): Future[void] =
     fut.cancel()
   return retFuture
 
-proc cancelAndWait*[T](fut: Future[T]): Future[void] =
-  cancelAndWait(FutureBase(fut))
-
 proc allFutures*(futs: varargs[FutureBase]): Future[void] =
   ## Returns a future which will complete only when all futures in ``futs``
   ## will be completed, failed or canceled.
@@ -895,7 +901,7 @@ proc allFutures*[T](futs: varargs[Future[T]]): Future[void] =
   # Because we can't capture varargs[T] in closures we need to create copy.
   var nfuts: seq[FutureBase]
   for future in futs:
-    nfuts.add(FutureBase(future))
+    nfuts.add(future)
   allFutures(nfuts)
 
 proc allFinished*[T](futs: varargs[Future[T]]): Future[seq[Future[T]]] =
