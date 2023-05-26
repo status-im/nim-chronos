@@ -375,9 +375,14 @@ proc `cancelCallback=`*(future: FutureBase, cb: CallbackFunc) =
     future.cancelcb = cb
 
 {.push stackTrace: off.}
-proc internalContinue(fut: pointer) {.gcsafe, raises: [Defect].}
+proc futureContinue*(fut: FutureBase) {.raises: [Defect], gcsafe.}
 
-proc futureContinue*(fut: FutureBase) {.gcsafe, raises: [Defect].} =
+proc internalContinue(fut: pointer) {.raises: [Defect], gcsafe.} =
+  let asFut = cast[FutureBase](fut)
+  GC_unref(asFut)
+  futureContinue(asFut)
+
+proc futureContinue*(fut: FutureBase) {.raises: [Defect], gcsafe.} =
   # Used internally by async transformation
   var next: FutureBase
   try:
@@ -415,11 +420,6 @@ proc futureContinue*(fut: FutureBase) {.gcsafe, raises: [Defect].} =
   # clean it up
   fut.closure = nil
   fut.child = nil
-
-proc internalContinue(fut: pointer) {.gcsafe, raises: [Defect].} =
-  let asFut = cast[FutureBase](fut)
-  GC_unref(asFut)
-  futureContinue(asFut)
 
 {.pop.}
 
