@@ -393,7 +393,7 @@ proc futureContinue*(fut: FutureBase) {.gcsafe, raises: [Defect].} =
 
       if not next.finished():
         GC_ref(fut)
-        next.addCallback(internalContinue, cast[pointer](fut))
+        next.addCallback(CallbackFunc(internalContinue), cast[pointer](fut))
 
         # return here so that we don't remove the closure below
         return
