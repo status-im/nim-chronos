@@ -327,8 +327,7 @@ proc addCallback*(future: FutureBase, cb: CallbackFunc, udata: pointer) =
   if future.finished():
     callSoon(cb, udata)
   else:
-    let acb = AsyncCallback(function: cb, udata: udata)
-    future.callbacks.add acb
+    future.callbacks.add AsyncCallback(function: cb, udata: udata)
 
 proc addCallback*(future: FutureBase, cb: CallbackFunc) =
   ## Adds the callbacks proc to be called when the future completes.
@@ -370,7 +369,10 @@ proc `cancelCallback=`*(future: FutureBase, cb: CallbackFunc) =
   ## Sets the callback procedure to be called when the future is cancelled.
   ##
   ## This callback will be called immediately as ``future.cancel()`` invoked.
-  future.cancelcb = cb
+  if future.cancelled():
+    cb(cast[pointer](future))
+  elif not future.finished():
+    future.cancelcb = cb
 
 {.push stackTrace: off.}
 proc internalContinue(fut: pointer) {.gcsafe, raises: [Defect].}
