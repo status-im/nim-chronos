@@ -30,6 +30,14 @@ const
 template LocCompleteIndex*: untyped {.deprecated: "LocFinishIndex".} =
   LocFinishIndex
 
+when chronosStrictException:
+  when (NimMajor, NimMinor) < (1, 4):
+    {.pragma: closureIter, raises: [Defect, CatchableError], gcsafe.}
+  else:
+    {.pragma: closureIter, raises: [CatchableError], gcsafe.}
+else:
+  {.pragma: closureIter, raises: [Exception], gcsafe.}
+
 type
   FutureState* {.pure.} = enum
     Pending, Completed, Cancelled, Failed
@@ -42,6 +50,7 @@ type
     state*: FutureState
     error*: ref CatchableError ## Stored exception
     mustCancel*: bool
+    closure*: iterator(f: FutureBase): FutureBase {.closureIter.}
 
     when chronosFutureId:
       id*: uint
@@ -53,14 +62,6 @@ type
     when chronosFutureTracking:
       next*: FutureBase
       prev*: FutureBase
-
-    when chronosStrictException:
-      when (NimMajor, NimMinor) < (1, 4):
-        closure*: iterator(f: FutureBase): FutureBase {.raises: [Defect, CatchableError], gcsafe.}
-      else:
-        closure*: iterator(f: FutureBase): FutureBase {.raises: [CatchableError], gcsafe.}
-    else:
-      closure*: iterator(f: FutureBase): FutureBase {.raises: [Exception], gcsafe.}
 
   Future*[T] = ref object of FutureBase ## Typed future.
     when T isnot void:
