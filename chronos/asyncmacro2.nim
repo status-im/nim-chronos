@@ -185,6 +185,8 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
         iteratorNameSym = genSym(nskIterator, $prcName)
         closureIterator = newProc(iteratorNameSym, [newIdentNode("FutureBase"), internalFutureParameter],
                                   closureBody, nnkIteratorDef)
+      iteratorNameSym.copyLineInfo(prc)
+      closureIterator.copyLineInfo(prc)
 
       closureIterator.pragma = newNimNode(nnkPragma, lineInfoFrom=prc.body)
       closureIterator.addPragma(newIdentNode("closure"))
