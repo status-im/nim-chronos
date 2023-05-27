@@ -388,7 +388,7 @@ proc futureContinue*(fut: FutureBase) {.raises: [Defect], gcsafe.} =
   var next: FutureBase
   try:
     while true:
-      var next = fut.closure(fut)
+      next = fut.closure(fut)
       if fut.closure.finished():
         break
 
