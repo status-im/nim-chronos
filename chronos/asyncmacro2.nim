@@ -177,10 +177,6 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
             castFutureSym, newIdentNode("result")))
 
       let
-        internalFutureType =
-          if baseTypeIsVoid:
-            newNimNode(nnkBracketExpr, prc).add(newIdentNode("Future")).add(newIdentNode("void"))
-          else: returnType
         internalFutureParameter = nnkIdentDefs.newTree(internalFutureSym, newIdentNode("FutureBase"), newEmptyNode())
         iteratorNameSym = genSym(nskIterator, $prcName)
         closureIterator = newProc(iteratorNameSym, [newIdentNode("FutureBase"), internalFutureParameter],
@@ -211,6 +207,12 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
         newIdentNode("raises"),
         raises
       ))
+
+      # If proc has an explicit gcsafe pragma, we add it to iterator as well.
+      # TODO if these lines are not here, srcloc tests fail (!)
+      if prc.pragma.findChild(it.kind in {nnkSym, nnkIdent} and
+                              it.strVal == "gcsafe") != nil:
+        closureIterator.addPragma(newIdentNode("gcsafe"))
 
       outerProcBody.add(closureIterator)
 
