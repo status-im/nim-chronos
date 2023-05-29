@@ -301,9 +301,7 @@ proc cancel(future: FutureBase, loc: ptr SrcLoc): bool =
     if cancel(future.child, getSrcLocation()):
       return true
 
-    if not(isNil(future.cancelcb)):
-      future.cancelcb(cast[pointer](future))
-      future.cancelcb = nil
+    # TODO cancelcb does not get called in this case
   else:
     if not(isNil(future.cancelcb)):
       future.cancelcb(cast[pointer](future))
@@ -414,6 +412,7 @@ proc futureContinue*(fut: FutureBase) {.raises: [Defect], gcsafe.} =
 
       # Continue while the yielded future is already finished.
   except CancelledError:
+    # TODO: fut.cancelcb does not get called at att all in this case
     fut.cancelAndSchedule()
   except CatchableError as exc:
     fut.fail(exc)
