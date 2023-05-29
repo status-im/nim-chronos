@@ -368,9 +368,9 @@ proc `cancelCallback=`*(future: FutureBase, cb: CallbackFunc) =
   ## Sets the callback procedure to be called when the future is cancelled.
   ##
   ## This callback will be called immediately as ``future.cancel()`` invoked.
-  if future.cancelled():
-    cb(cast[pointer](future))
-  elif not future.finished():
+
+  # TODO `cb` will not get called if future was _already_ cancelled
+  if not future.finished():
     future.cancelcb = cb
 
 {.push stackTrace: off.}
