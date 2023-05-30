@@ -374,7 +374,7 @@ proc `cancelCallback=`*(future: FutureBase, cb: CallbackFunc) =
   ## must be set before future is finished.
 
   doAssert not future.finished(),
-    "cancellation callback must be set before finished the future"
+    "cancellation callback must be set before finishing the future"
   future.cancelcb = cb
 
 {.push stackTrace: off.}
