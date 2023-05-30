@@ -961,7 +961,7 @@ proc join*(rw: AsyncStreamRW): Future[void] =
 
   if not(rw.future.finished()):
     rw.future.addCallback(continuation, cast[pointer](retFuture))
-    rw.future.cancelCallback = cancellation
+    retFuture.cancelCallback = cancellation
   else:
     retFuture.complete()
 
