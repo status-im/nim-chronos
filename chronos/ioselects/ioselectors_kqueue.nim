@@ -9,8 +9,6 @@
 #  This module implements BSD kqueue().
 
 {.push raises: [Defect].}
-
-{.push raises: [Defect].}
 import std/[kqueue, deques, tables]
 import stew/base10
 

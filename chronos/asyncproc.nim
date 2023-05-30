@@ -27,6 +27,8 @@ const
   AsyncProcessTrackerName* = "async.process"
     ## AsyncProcess leaks tracker name
 
+
+
 type
   AsyncProcessError* = object of CatchableError
 
@@ -869,9 +871,6 @@ else:
         else:
           ""
 
-      if AsyncProcessOption.EchoCommand in options:
-        echo getFullCommand(commandLine, commandArguments)
-
       let res =
         if AsyncProcessOption.UsePath in options:
           posixSpawnp(pid, cstring(commandLine), sa.actions, sa.attrs,
@@ -1010,9 +1009,9 @@ else:
         retFuture.complete(exitStatusLikeShell(exitCode))
         return retFuture
 
-    # if timeout == ZeroDuration:
-    #   retFuture.complete(-1)
-    #   return retFuture
+    if timeout == ZeroDuration:
+      retFuture.complete(-1)
+      return retFuture
 
     proc continuation(udata: pointer) {.gcsafe.} =
       let source = cast[int](udata)

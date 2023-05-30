@@ -664,13 +664,13 @@ template getConnectionAbortedError*(
       case code
       of OSErrorCode(0), oserrno.WSAECONNABORTED:
         "[ECONNABORTED] Connection has been aborted before being accepted"
-      of osdefs.WSAENETDOWN:
+      of WSAENETDOWN:
         "[ENETDOWN] Network is down"
       of oserrno.WSAENETRESET:
         "[ENETRESET] Network dropped connection on reset"
       of oserrno.WSAECONNRESET:
         "[ECONNRESET] Connection reset by peer"
-      of osdefs.WSAETIMEDOUT:
+      of WSAETIMEDOUT:
         "[ETIMEDOUT] Connection timed out"
       else:
         "[" & $int(code) & "] Connection has been aborted"

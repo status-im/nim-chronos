@@ -187,7 +187,6 @@ proc updateHandle2*[T](s: Selector[T], fd: cint,
         if epoll_ctl(s.epollFd, EPOLL_CTL_ADD, fd,
                      unsafeAddr(epollEvents)) != 0:
           return err(osLastError())
-        inc(s.count)
       else:
         if events != {}:
           if epoll_ctl(s.epollFd, EPOLL_CTL_MOD, fd,
@@ -492,16 +491,6 @@ proc unregister2*[T](s: Selector[T], fd: cint): SelectResult[void] =
             var res = initDeque[ReadyKey](len(s.pendingEvents))
             for item in s.pendingEvents.items():
               if item.fd != fdi32:
-                res.addLast(item)
-            res
-
-      # We need to filter pending events queue for just unregistered process.
-      if len(s.pendingEvents) > 0:
-        s.pendingEvents =
-          block:
-            var res = initDeque[ReadyKey](len(s.pendingEvents))
-            for item in s.pendingEvents.items():
-              if uint32(item.fd) != fdu32:
                 res.addLast(item)
             res
 
