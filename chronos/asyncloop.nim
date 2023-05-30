@@ -10,8 +10,10 @@
 
 when (NimMajor, NimMinor) < (1, 4):
   {.push raises: [Defect].}
+  {.pragma: callbackFunc, stdcall, gcsafe, raises: [Defect].}
 else:
   {.push raises: [].}
+  {.pragma: callbackFunc, stdcall, gcsafe, raises: [].}
 
 from nativesockets import Port
 import std/[tables, strutils, heapqueue, deques]
@@ -444,7 +446,7 @@ when defined(windows):
 
   {.push stackTrace: off.}
   proc waitableCallback(param: pointer, timerOrWaitFired: WINBOOL) {.
-       stdcall, gcsafe, raises: [].} =
+       callbackFunc.} =
     # This procedure will be executed in `wait thread`, so it must not use
     # GC related objects.
     # We going to ignore callbacks which was spawned when `isNil(param) == true`
@@ -578,8 +580,7 @@ when defined(windows):
     removeProcess2(procHandle).tryGet()
 
   {.push stackTrace: off.}
-  proc consoleCtrlEventHandler(dwCtrlType: DWORD): uint32 {.
-       stdcall, raises: [].} =
+  proc consoleCtrlEventHandler(dwCtrlType: DWORD): uint32 {.callbackFunc.} =
     ## This procedure will be executed in different thread, so it MUST not use
     ## any GC related features (strings, seqs, echo etc.).
     case dwCtrlType
