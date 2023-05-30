@@ -5,9 +5,8 @@
 #              Licensed under either of
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
-import std/os
 import unittest2
-import ../chronos
+import ../chronos, ../chronos/oserrno
 
 {.used.}
 

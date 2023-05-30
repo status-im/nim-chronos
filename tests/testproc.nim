@@ -12,9 +12,6 @@ import ".."/chronos/unittest2/asynctests
 when defined(posix):
   from ".."/chronos/osdefs import SIGKILL
 
-when defined(posix):
-  from ".."/chronos/osdefs import SIGKILL
-
 when defined(nimHasUsed): {.used.}
 
 suite "Asynchronous process management test suite":
@@ -289,126 +286,6 @@ suite "Asynchronous process management test suite":
       check len(env["SYSTEMROOT"]) > 0
     else:
       check len(env["USER"]) > 0
-
-  asyncTest "Multiple processes waiting test":
-    const ProcessesCount = 50
-
-    let command =
-      when defined(windows):
-        ("tests\\testproc.bat", "timeout2", 2)
-      else:
-        ("tests/testproc.sh", "timeout2", 2)
-
-    var processes: seq[AsyncProcessRef]
-    for n in 0 ..< ProcessesCount:
-      let process = await startProcess(command[0], arguments = @[command[1]])
-      processes.add(process)
-    try:
-      var pending: seq[Future[int]]
-      for process in processes:
-        pending.add(process.waitForExit(10.seconds))
-      await allFutures(pending)
-      for index in 0 ..< ProcessesCount:
-        check pending[index].read() == command[2]
-    finally:
-      var pending: seq[Future[void]]
-      for process in processes:
-        pending.add(process.closeWait())
-      await allFutures(pending)
-
-  asyncTest "Multiple processes exit codes test":
-    const ProcessesCount = 50
-
-    let options = {AsyncProcessOption.EvalCommand}
-
-    var processes: seq[AsyncProcessRef]
-    for n in 0 ..< ProcessesCount:
-      let
-        command = "exit " & Base10.toString(uint64(n))
-        process = await startProcess(command, options = options)
-      processes.add(process)
-    try:
-      var pending: seq[Future[int]]
-      for process in processes:
-        pending.add(process.waitForExit(10.seconds))
-      await allFutures(pending)
-      for index in 0 ..< ProcessesCount:
-        check pending[index].read() == index
-    finally:
-      var pending: seq[Future[void]]
-      for process in processes:
-        pending.add(process.closeWait())
-      await allFutures(pending)
-
-  asyncTest "Multiple processes data capture test":
-    const ProcessesCount = 50
-
-    let options = {AsyncProcessOption.EvalCommand}
-
-    var processes: seq[AsyncProcessRef]
-    for n in 0 ..< ProcessesCount:
-      let command =
-        when defined(windows):
-          "ECHO TEST" & $n
-        else:
-          "echo TEST" & $n
-
-      let process = await startProcess(command, options = options,
-                                       stdoutHandle = AsyncProcess.Pipe)
-      processes.add(process)
-
-    try:
-      var pendingReaders: seq[Future[seq[byte]]]
-      var pendingWaiters: seq[Future[int]]
-      for process in processes:
-        pendingReaders.add(process.stdoutStream.read())
-        pendingWaiters.add(process.waitForExit(10.seconds))
-      await allFutures(pendingReaders)
-      await allFutures(pendingWaiters)
-
-      for index in 0 ..< ProcessesCount:
-        let expect =
-          when defined(windows):
-            "TEST" & $index & "\r\n"
-          else:
-            "TEST" & $index & "\n"
-        check string.fromBytes(pendingReaders[index].read()) == expect
-        check pendingWaiters[index].read() == 0
-    finally:
-      var pending: seq[Future[void]]
-      for process in processes:
-        pending.add(process.closeWait())
-      await allFutures(pending)
-
-  asyncTest "terminate() test":
-    let command =
-      when defined(windows):
-        ("tests\\testproc.bat", "timeout10", 0)
-      else:
-        ("tests/testproc.sh", "timeout10", 143) # 128 + SIGTERM
-    let process = await startProcess(command[0], arguments = @[command[1]])
-    try:
-      let resFut = process.waitForExit(InfiniteDuration)
-      check process.terminate().isOk()
-      let res = await resFut
-      check res == command[2]
-    finally:
-      await process.closeWait()
-
-  asyncTest "kill() test":
-    let command =
-      when defined(windows):
-        ("tests\\testproc.bat", "timeout10", 0)
-      else:
-        ("tests/testproc.sh", "timeout10", 137) # 128 + SIGKILL
-    let process = await startProcess(command[0], arguments = @[command[1]])
-    try:
-      let resFut = process.waitForExit(InfiniteDuration)
-      check process.kill().isOk()
-      let res = await resFut
-      check res == command[2]
-    finally:
-      await process.closeWait()
 
   asyncTest "Multiple processes waiting test":
     const ProcessesCount = 50

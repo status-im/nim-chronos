@@ -207,8 +207,8 @@ proc setMaxOpenFiles*(count: int) {.raises: [Defect, OSError].} =
   if res.isErr():
     raiseOSError(res.error())
 
-proc getInheritable*(fd: AsyncFD): Result[bool, OSErrorCode] {.
-     raises: [Defect].} =
+proc getInheritable*(fd: AsyncFD): Result[bool, OSErrorCode] =
+  ## Returns ``true`` if ``fd`` is inheritable handle.
   when defined(windows):
     var flags = 0'u32
     if getHandleInformation(HANDLE(fd), flags) == FALSE:
