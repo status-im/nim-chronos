@@ -579,7 +579,7 @@ when defined(windows):
 
   {.push stackTrace: off.}
   proc consoleCtrlEventHandler(dwCtrlType: DWORD): uint32 {.
-       stdcall, raises: [Defect].} =
+       stdcall, raises: [].} =
     ## This procedure will be executed in different thread, so it MUST not use
     ## any GC related features (strings, seqs, echo etc.).
     case dwCtrlType
@@ -931,19 +931,6 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
   proc removeWriter*(fd: AsyncFD) {.raises: [Defect, OSError].} =
     ## Stop watching the file descriptor ``fd`` for write availability.
     removeWriter2(fd).tryGet()
-
-  proc unregisterAndCloseFd*(fd: AsyncFD): Result[void, OSErrorCode] =
-    ## Unregister from system queue and close asynchronous socket.
-    ##
-    ## NOTE: Use this function to close temporary sockets/pipes only (which
-    ## are not exposed to the public and not supposed to be used/reused).
-    ## Please use closeSocket(AsyncFD) and closeHandle(AsyncFD) instead.
-    doAssert(fd != AsyncFD(osdefs.INVALID_SOCKET))
-    ? unregister2(fd)
-    if closeFd(cint(fd)) != 0:
-      err(osLastError())
-    else:
-      ok()
 
   proc unregisterAndCloseFd*(fd: AsyncFD): Result[void, OSErrorCode] =
     ## Unregister from system queue and close asynchronous socket.
