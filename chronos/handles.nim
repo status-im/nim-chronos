@@ -15,7 +15,7 @@ else:
 import "."/[asyncloop, osdefs, osutils]
 import stew/results
 from nativesockets import Domain, Protocol, SockType, toInt
-export Domain, Protocol, SockType, results
+export Domain, Protocol, SockType, results, osutils
 
 const
   asyncInvalidSocket* = AsyncFD(osdefs.INVALID_SOCKET)
@@ -206,19 +206,6 @@ proc setMaxOpenFiles*(count: int) {.raises: [Defect, OSError].} =
   let res = setMaxOpenFiles2(count)
   if res.isErr():
     raiseOSError(res.error())
-
-proc getInheritable*(fd: AsyncFD): Result[bool, OSErrorCode] =
-  ## Returns ``true`` if ``fd`` is inheritable handle.
-  when defined(windows):
-    var flags = 0'u32
-    if getHandleInformation(HANDLE(fd), flags) == FALSE:
-      return err(osLastError())
-    ok((flags and HANDLE_FLAG_INHERIT) == HANDLE_FLAG_INHERIT)
-  else:
-    let flags = osdefs.fcntl(cint(fd), osdefs.F_GETFD)
-    if flags == -1:
-      return err(osLastError())
-    ok((flags and osdefs.FD_CLOEXEC) == osdefs.FD_CLOEXEC)
 
 proc getInheritable*(fd: AsyncFD): Result[bool, OSErrorCode] {.
      raises: [Defect].} =

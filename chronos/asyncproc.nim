@@ -27,11 +27,6 @@ const
   AsyncProcessTrackerName* = "async.process"
     ## AsyncProcess leaks tracker name
 
-
-
-  AsyncProcessTrackerName* = "async.process"
-    ## AsyncProcess leaks tracker name
-
 type
   AsyncProcessError* = object of CatchableError
 
@@ -471,9 +466,6 @@ when defined(windows):
             res.hStdError = pipes.getStderrHandle()
           res
       procInfo = PROCESS_INFORMATION()
-
-    let wideCommandLine = commandLine.toWideString().valueOr:
-      raiseAsyncProcessError("Unable to proceed command line", error)
 
     let wideCommandLine = commandLine.toWideString().valueOr:
       raiseAsyncProcessError("Unable to proceed command line", error)
@@ -1101,36 +1093,6 @@ else:
   proc peekExitCode(p: AsyncProcessRef): AsyncProcessResult[int] =
     let res = ? p.peekProcessExitCode()
     ok(exitStatusLikeShell(res))
-
-proc createPipe(kind: StandardKind
-               ): Result[tuple[read: AsyncFD, write: AsyncFD], OSErrorCode] =
-  case kind
-  of StandardKind.Stdin:
-    let pipes =
-      when defined(windows):
-        let
-          readFlags: set[DescriptorFlag] = {DescriptorFlag.NonBlock}
-          writeFlags: set[DescriptorFlag] = {DescriptorFlag.NonBlock}
-        ? createOsPipe(readFlags, writeFlags)
-      else:
-        let
-          readFlags: set[DescriptorFlag] = {}
-          writeFlags: set[DescriptorFlag] = {DescriptorFlag.NonBlock}
-        ? createOsPipe(readFlags, writeFlags)
-    ok((read: AsyncFD(pipes.read), write: AsyncFD(pipes.write)))
-  of StandardKind.Stdout, StandardKind.Stderr:
-    let pipes =
-      when defined(windows):
-        let
-          readFlags: set[DescriptorFlag] = {DescriptorFlag.NonBlock}
-          writeFlags: set[DescriptorFlag] = {DescriptorFlag.NonBlock}
-        ? createOsPipe(readFlags, writeFlags)
-      else:
-        let
-          readFlags: set[DescriptorFlag] = {DescriptorFlag.NonBlock}
-          writeFlags: set[DescriptorFlag] = {}
-        ? createOsPipe(readFlags, writeFlags)
-    ok((read: AsyncFD(pipes.read), write: AsyncFD(pipes.write)))
 
 proc createPipe(kind: StandardKind
                ): Result[tuple[read: AsyncFD, write: AsyncFD], OSErrorCode] =

@@ -18,18 +18,6 @@ else:
 
 when defined(windows) or defined(nimdoc):
   import stew/base10
-  const PipeHeaderName* = r"\\.\pipe\LOCAL\chronos\"
-
-type
-  DescriptorFlag* {.pure.} = enum
-    CloseOnExec, NonBlock
-
-const
-  AsyncDescriptorDefault* = {
-    DescriptorFlag.CloseOnExec, DescriptorFlag.NonBlock}
-
-when defined(windows) or defined(nimdoc):
-  import stew/base10
   const
     PipeHeaderName* = r"\\.\pipe\LOCAL\chronos\"
     SignalPrefixName* = cstring(r"Local\chronos-events-")

@@ -940,7 +940,6 @@ elif defined(macosx) or defined(macos) or defined(bsd):
 elif defined(windows):
   import ".."/osutils
   import dynlib
-  import ".."/osutils
 
   const
     WorkBufferSize = 16384'u32

@@ -536,12 +536,6 @@ suite "Asynchronous process management test suite":
     else:
       check getCurrentFD() == markFD
 
-  test "File descriptors leaks test":
-    when defined(windows):
-      skip()
-    else:
-      check getCurrentFD() == markFD
-
   test "Leaks test":
     proc getTrackerLeaks(tracker: string): bool =
       let tracker = getTracker(tracker)

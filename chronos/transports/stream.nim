@@ -1473,26 +1473,16 @@ else:
               transp.state.incl(ReadError)
               transp.setReadError(rres.error())
           else:
-            transp.state.incl(ReadPaused)
-            transp.setReadError(err)
-            discard removeReader2(transp.fd)
-        elif res == 0:
-          transp.state.incl({ReadEof, ReadPaused})
-          let rres = removeReader2(transp.fd)
-          if rres.isErr():
-            transp.state.incl(ReadPaused)
-            transp.setReadError(rres.error())
-        else:
-          transp.offset += res
-          if transp.offset == len(transp.buffer):
-            transp.state.incl(ReadPaused)
-            let rres = removeReader2(transp.fd)
-            if rres.isErr():
+            transp.offset += res
+            if transp.offset == len(transp.buffer):
               transp.state.incl(ReadPaused)
               let rres = removeReader2(transp.fd)
               if rres.isErr():
-                transp.state.incl(ReadError)
-                transp.setReadError(rres.error())
+                transp.state.incl(ReadPaused)
+                let rres = removeReader2(transp.fd)
+                if rres.isErr():
+                  transp.state.incl(ReadError)
+                  transp.setReadError(rres.error())
           transp.completeReader()
           break
       elif transp.kind == TransportKind.Pipe:

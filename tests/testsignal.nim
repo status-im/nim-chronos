@@ -19,6 +19,7 @@ suite "Signal handling test suite":
     var
       signalCounter = 0
       sigfd: SignalHandle
+      handlerFut = newFuture[void]("signal.handler")
 
     proc signalHandler(udata: pointer) {.gcsafe.} =
       signalCounter = cast[int](udata)

@@ -1315,6 +1315,8 @@ elif defined(windows):
     ERROR_FILE_NOT_FOUND* = OSErrorCode(2)
     ERROR_TOO_MANY_OPEN_FILES* = OSErrorCode(4)
     ERROR_ACCESS_DENIED* = OSErrorCode(5)
+    ERROR_ALREADY_EXISTS* = OSErrorCode(183)
+    ERROR_NOT_SUPPORTED* = OSErrorCode(50)
     ERROR_BROKEN_PIPE* = OSErrorCode(109)
     ERROR_BUFFER_OVERFLOW* = OSErrorCode(111)
     ERROR_PIPE_BUSY* = OSErrorCode(231)
