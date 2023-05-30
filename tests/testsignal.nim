@@ -17,7 +17,7 @@ suite "Signal handling test suite":
   proc testSignal(signal, value: int): Future[bool] {.async.} =
     var
       signalCounter = 0
-      sigfd: SignalHandle
+      sigFd: SignalHandle
       handlerFut = newFuture[void]("signal.handler")
 
     proc signalHandler(udata: pointer) {.gcsafe.} =
