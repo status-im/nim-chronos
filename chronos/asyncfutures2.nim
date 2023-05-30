@@ -298,10 +298,12 @@ proc cancel(future: FutureBase, loc: ptr SrcLoc): bool =
     return false
 
   if not(isNil(future.child)):
+    doAssert future.cancelcb.isNil,
+      "futures using async transformation / await do not use cancelcb"
+
     if cancel(future.child, getSrcLocation()):
       return true
 
-    # TODO cancelcb does not get called in this case
   else:
     if not(isNil(future.cancelcb)):
       future.cancelcb(cast[pointer](future))
@@ -367,11 +369,12 @@ proc `callback=`*(future: FutureBase, cb: CallbackFunc) =
 proc `cancelCallback=`*(future: FutureBase, cb: CallbackFunc) =
   ## Sets the callback procedure to be called when the future is cancelled.
   ##
-  ## This callback will be called immediately as ``future.cancel()`` invoked.
+  ## This callback will be called immediately as ``future.cancel()`` invoked and
+  ## must be set before future is finished.
 
-  # TODO `cb` will not get called if future was _already_ cancelled
-  if not future.finished():
-    future.cancelcb = cb
+  doAssert not future.finished(),
+    "cancellation callback must be set before finished the future"
+  future.cancelcb = cb
 
 {.push stackTrace: off.}
 proc futureContinue*(fut: FutureBase) {.raises: [Defect], gcsafe.}
@@ -412,7 +415,6 @@ proc futureContinue*(fut: FutureBase) {.raises: [Defect], gcsafe.} =
 
       # Continue while the yielded future is already finished.
   except CancelledError:
-    # TODO: fut.cancelcb does not get called at att all in this case
     fut.cancelAndSchedule()
   except CatchableError as exc:
     fut.fail(exc)
