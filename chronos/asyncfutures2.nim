@@ -299,8 +299,10 @@ proc cancel(future: FutureBase, loc: ptr SrcLoc): bool =
     return false
 
   if not(isNil(future.child)):
+    # If you hit this assertion, you should have used the `CancelledError`
+    # mechanism and/or use a regular `addCallback`
     doAssert future.cancelcb.isNil,
-      "futures using async transformation / await do not use cancelcb"
+      "futures returned from `{.async.}` functions must not use `cancelCallback`"
 
     if cancel(future.child, getSrcLocation()):
       return true
