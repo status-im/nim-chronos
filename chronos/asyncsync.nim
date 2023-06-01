@@ -225,8 +225,7 @@ proc wait*(event: AsyncEvent): Future[void] =
   ## then return.
   let retFuture = newFuture[void]("AsyncEvent.wait")
   proc cancellation(udata: pointer) {.gcsafe, raises: [Defect].} =
-    if not(retFuture.finished()):
-      event.waiters.keepItIf(it != retFuture)
+    event.waiters.keepItIf(it != retFuture)
   if not(event.flag):
     retFuture.cancelCallback = cancellation
     event.waiters.add(retFuture)
