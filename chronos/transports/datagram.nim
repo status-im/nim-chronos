@@ -318,6 +318,13 @@ when defined(windows):
           closeSocket(localSock)
         raiseTransportOsError(err)
 
+    if ServerFlags.ReusePort in flags:
+      if not setSockOpt(localSock, osdefs.SOL_SOCKET, osdefs.SO_REUSEPORT, 1):
+        let err = osLastError()
+        if sock == asyncInvalidSocket:
+          closeSocket(localSock)
+        raiseTransportOsError(err)
+
     if ServerFlags.Broadcast in flags:
       if not setSockOpt(localSock, osdefs.SOL_SOCKET, osdefs.SO_BROADCAST, 1):
         let err = osLastError()
@@ -519,6 +526,13 @@ else:
     ## Apply ServerFlags here
     if ServerFlags.ReuseAddr in flags:
       if not setSockOpt(localSock, osdefs.SOL_SOCKET, osdefs.SO_REUSEADDR, 1):
+        let err = osLastError()
+        if sock == asyncInvalidSocket:
+          closeSocket(localSock)
+        raiseTransportOsError(err)
+
+    if ServerFlags.ReusePort in flags:
+      if not setSockOpt(localSock, osdefs.SOL_SOCKET, osdefs.SO_REUSEPORT, 1):
         let err = osLastError()
         if sock == asyncInvalidSocket:
           closeSocket(localSock)
