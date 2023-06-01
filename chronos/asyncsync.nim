@@ -223,12 +223,15 @@ proc wait*(event: AsyncEvent): Future[void] =
   ## If the internal flag is `true` on entry, return immediately. Otherwise,
   ## block until another task calls `fire()` to set the flag to `true`,
   ## then return.
-  var w = newFuture[void]("AsyncEvent.wait")
+  let retFuture = newFuture[void]("AsyncEvent.wait")
+  proc cancellation(udata: pointer) {.gcsafe, raises: [Defect].} =
+    event.waiters.keepItIf(it != retFuture)
   if not(event.flag):
-    event.waiters.add(w)
+    retFuture.cancelCallback = cancellation
+    event.waiters.add(retFuture)
   else:
-    w.complete()
-  w
+    retFuture.complete()
+  retFuture
 
 proc fire*(event: AsyncEvent) =
   ## Set the internal flag of ``event`` to `true`. All tasks waiting for it
