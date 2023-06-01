@@ -18,7 +18,12 @@ else:
 
 when defined(windows) or defined(nimdoc):
   import stew/base10
-  const PipeHeaderName* = r"\\.\pipe\LOCAL\chronos\"
+  const
+    PipeHeaderName* = r"\\.\pipe\LOCAL\chronos\"
+    SignalPrefixName* = cstring(r"Local\chronos-events-")
+    MaxSignalEventLength* = 64
+    MaxSignalSuffixLength* = MaxSignalEventLength -
+      (len(SignalPrefixName) + Base10.maxLen(uint64) + 2)
 
 type
   DescriptorFlag* {.pure.} = enum
@@ -73,6 +78,26 @@ when defined(windows):
 
   proc closeFd*(s: HANDLE): int =
     if osdefs.closeHandle(s) == TRUE: 0 else: -1
+
+  proc toWideBuffer*(s: openArray[char],
+                     d: var openArray[WCHAR]): Result[int, OSErrorCode] =
+    if len(s) == 0: return ok(0)
+    let res = multiByteToWideChar(CP_UTF8, 0'u32, unsafeAddr s[0], cint(-1),
+                                  addr d[0], cint(len(d)))
+    if res == 0:
+      err(osLastError())
+    else:
+      ok(res)
+
+  proc toMultibyteBuffer*(s: openArray[WCHAR],
+                          d: var openArray[char]): Result[int, OSErrorCode] =
+    if len(s) == 0: return ok(0)
+    let res = wideCharToMultiByte(CP_UTF8, 0'u32, unsafeAddr s[0], cint(-1),
+                                  addr d[0], cint(len(d)), nil, nil)
+    if res == 0:
+      err(osLastError())
+    else:
+      ok(res)
 
   proc toWideString*(s: string): Result[LPWSTR, OSErrorCode] =
     if len(s) == 0:
@@ -208,6 +233,96 @@ when defined(windows):
         discard closeFd(pipeOut)
         return err(errorCode)
     ok((read: pipeIn, write: pipeOut))
+
+  proc getSignalName*(signal: int): cstring =
+    ## Convert Windows SIGNAL identifier to string representation.
+    ##
+    ## This procedure supports only SIGINT, SIGTERM and SIGQUIT values.
+    case signal
+    of SIGINT: cstring("sigint")
+    of SIGTERM: cstring("sigterm")
+    of SIGQUIT: cstring("sigquit")
+    else:
+      raiseAssert "Signal is not supported"
+
+  proc getEventPath*(suffix: cstring): array[MaxSignalEventLength, WCHAR] =
+    ## Create Windows' Event object name suffixed by ``suffix``. This name
+    ## is create in local session namespace with name like this:
+    ## ``Local\chronos-events-<process id>-<suffix>``.
+    ##
+    ## This procedure is GC-free, so it could be used in other threads.
+    doAssert(len(suffix) < MaxSignalSuffixLength)
+    var
+      resMc: array[MaxSignalEventLength, char]
+      resWc: array[MaxSignalEventLength, WCHAR]
+
+    var offset = 0
+    let
+      pid = osdefs.getCurrentProcessId()
+      pid10 = Base10.toBytes(uint64(pid))
+    copyMem(addr resMc[offset], SignalPrefixName, len(SignalPrefixName))
+    offset += len(SignalPrefixName)
+    copyMem(addr resMc[offset], unsafeAddr pid10.data[0], pid10.len)
+    offset += pid10.len
+    resMc[offset] = '-'
+    offset += 1
+    copyMem(addr resMc[offset], suffix, len(suffix))
+    offset += len(suffix)
+    resMc[offset] = '\x00'
+    let res = toWideBuffer(resMc, resWc)
+    if res.isErr():
+      raiseAssert "Invalid suffix value, got " & osErrorMsg(res.error())
+    resWc
+
+  proc raiseEvent(suffix: cstring): Result[bool, OSErrorCode] =
+    var sa = getSecurityAttributes()
+    let
+      eventName = getEventPath(suffix)
+      # We going to fire event, so we can try to create it already signaled.
+      event = createEvent(addr sa, FALSE, TRUE, unsafeAddr eventName[0])
+      errorCode = osLastError()
+
+    if event == HANDLE(0):
+      err(errorCode)
+    else:
+      if errorCode == ERROR_ALREADY_EXISTS:
+        let res = setEvent(event)
+        if res == FALSE:
+          err(osLastError())
+        else:
+          ok(true)
+      else:
+        ok(false)
+
+  proc raiseSignal*(signal: cint): Result[bool, OSErrorCode] =
+    ## This is helper procedure which could help to raise Unix signals in
+    ## Windows GUI / Service application. Console applications are handled
+    ## automatically.
+    ##
+    ## This procedure does not use Nim's GC, so it can be placed in any handler
+    ## of your application even in code which is running in different thread.
+    raiseEvent(getSignalName(signal))
+
+  proc raiseConsoleCtrlSignal*(groupId = 0'u32): Result[void, OSErrorCode] =
+    ## Raise CTRL+C event in current console.
+    if generateConsoleCtrlEvent(CTRL_C_EVENT, groupId) == FALSE:
+      err(osLastError())
+    else:
+      ok()
+
+  proc openEvent*(suffix: string): Result[HANDLE, OSErrorCode] =
+    ## Open or create Windows event object with suffix ``suffix``.
+    var sa = getSecurityAttributes()
+    let
+      # We going to wait for created event, so we don't need to create it in
+      # signaled state.
+      eventName = getEventPath(suffix)
+      event = createEvent(addr sa, FALSE, FALSE, unsafeAddr eventName[0])
+    if event == HANDLE(0):
+      let errorCode = osLastError()
+      err(errorCode)
+    else:
+      ok(event)
 
 else:
 

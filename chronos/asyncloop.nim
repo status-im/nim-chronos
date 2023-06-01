@@ -10,8 +10,10 @@
 
 when (NimMajor, NimMinor) < (1, 4):
   {.push raises: [Defect].}
+  {.pragma: callbackFunc, stdcall, gcsafe, raises: [Defect].}
 else:
   {.push raises: [].}
+  {.pragma: callbackFunc, stdcall, gcsafe, raises: [].}
 
 from nativesockets import Port
 import std/[tables, strutils, heapqueue, deques]
@@ -289,6 +291,7 @@ func toException*(v: OSErrorCode): ref OSError = newOSError(v)
   # Result[T, OSErrorCode] values.
 
 when defined(windows):
+  export SIGINT, SIGQUIT, SIGTERM
   type
     CompletionKey = ULONG_PTR
 
@@ -301,11 +304,8 @@ when defined(windows):
     CustomOverlapped* = object of OVERLAPPED
       data*: CompletionData
 
-    OVERLAPPED_ENTRY* = object
-      lpCompletionKey*: ULONG_PTR
-      lpOverlapped*: ptr CustomOverlapped
-      internal: ULONG_PTR
-      dwNumberOfBytesTransferred: DWORD
+    DispatcherFlag* = enum
+      SignalHandlerInstalled
 
     PDispatcher* = ref object of PDispatcherBase
       ioPort: HANDLE
@@ -315,6 +315,7 @@ when defined(windows):
       getAcceptExSockAddrs*: WSAPROC_GETACCEPTEXSOCKADDRS
       transmitFile*: WSAPROC_TRANSMITFILE
       getQueuedCompletionStatusEx*: LPFN_GETQUEUEDCOMPLETIONSTATUSEX
+      flags: set[DispatcherFlag]
 
     PtrCustomOverlapped* = ptr CustomOverlapped
 
@@ -330,6 +331,7 @@ when defined(windows):
 
     WaitableHandle* = ref PostCallbackData
     ProcessHandle* = distinct WaitableHandle
+    SignalHandle* = distinct WaitableHandle
 
     WaitableResult* {.pure.} = enum
       Ok, Timeout
@@ -444,7 +446,7 @@ when defined(windows):
 
   {.push stackTrace: off.}
   proc waitableCallback(param: pointer, timerOrWaitFired: WINBOOL) {.
-       stdcall, gcsafe.} =
+       callbackFunc.} =
     # This procedure will be executed in `wait thread`, so it must not use
     # GC related objects.
     # We going to ignore callbacks which was spawned when `isNil(param) == true`
@@ -576,6 +578,86 @@ when defined(windows):
        raises: [Defect, OSError].} =
     ## Remove process' watching using process' descriptor ``procHandle``.
     removeProcess2(procHandle).tryGet()
+
+  {.push stackTrace: off.}
+  proc consoleCtrlEventHandler(dwCtrlType: DWORD): uint32 {.callbackFunc.} =
+    ## This procedure will be executed in different thread, so it MUST not use
+    ## any GC related features (strings, seqs, echo etc.).
+    case dwCtrlType
+    of CTRL_C_EVENT:
+      return
+        (if raiseSignal(SIGINT).valueOr(false): TRUE else: FALSE)
+    of CTRL_BREAK_EVENT:
+      return
+        (if raiseSignal(SIGINT).valueOr(false): TRUE else: FALSE)
+    of CTRL_CLOSE_EVENT:
+      return
+        (if raiseSignal(SIGTERM).valueOr(false): TRUE else: FALSE)
+    of CTRL_LOGOFF_EVENT:
+      return
+        (if raiseSignal(SIGQUIT).valueOr(false): TRUE else: FALSE)
+    else:
+      FALSE
+  {.pop.}
+
+  proc addSignal2*(signal: int, cb: CallbackFunc,
+                   udata: pointer = nil): Result[SignalHandle, OSErrorCode] =
+    ## Start watching signal ``signal``, and when signal appears, call the
+    ## callback ``cb`` with specified argument ``udata``. Returns signal
+    ## identifier code, which can be used to remove signal callback
+    ## via ``removeSignal``.
+    ##
+    ## NOTE: On Windows only subset of signals are supported: SIGINT, SIGTERM,
+    ##       SIGQUIT
+    const supportedSignals = [SIGINT, SIGTERM, SIGQUIT]
+    doAssert(cint(signal) in supportedSignals, "Signal is not supported")
+    let loop = getThreadDispatcher()
+    var hWait: WaitableHandle = nil
+
+    proc continuation(ucdata: pointer) {.gcsafe.} =
+      doAssert(not(isNil(ucdata)))
+      doAssert(not(isNil(hWait)))
+      cb(hWait[].udata)
+
+    if SignalHandlerInstalled notin loop.flags:
+      if getConsoleCP() != 0'u32:
+        # Console application, we going to cleanup Nim default signal handlers.
+        if setConsoleCtrlHandler(consoleCtrlEventHandler, TRUE) == FALSE:
+          return err(osLastError())
+        loop.flags.incl(SignalHandlerInstalled)
+      else:
+        return err(ERROR_NOT_SUPPORTED)
+
+    let
+      flags = WT_EXECUTEINWAITTHREAD
+      hEvent = ? openEvent($getSignalName(signal))
+
+    hWait = registerWaitable(hEvent, flags, InfiniteDuration,
+                             continuation, udata).valueOr:
+      discard closeFd(hEvent)
+      return err(error)
+    ok(SignalHandle(hWait))
+
+  proc removeSignal2*(signalHandle: SignalHandle): Result[void, OSErrorCode] =
+    ## Remove watching signal ``signal``.
+    ? closeWaitable(WaitableHandle(signalHandle))
+    ok()
+
+  proc addSignal*(signal: int, cb: CallbackFunc,
+                  udata: pointer = nil): SignalHandle {.
+       raises: [Defect, ValueError].} =
+    ## Registers callback ``cb`` to be called when signal ``signal`` will be
+    ## raised. Returns signal identifier, which can be used to clear signal
+    ## callback via ``removeSignal``.
+    addSignal2(signal, cb, udata).valueOr:
+      raise newException(ValueError, osErrorMsg(error))
+
+  proc removeSignal*(signalHandle: SignalHandle) {.
+       raises: [Defect, ValueError].} =
+    ## Remove signal's watching using signal descriptor ``signalfd``.
+    let res = removeSignal2(signalHandle)
+    if res.isErr():
+      raise newException(ValueError, osErrorMsg(res.error()))
 
   proc poll*() =
     ## Perform single asynchronous step, processing timers and completing
@@ -870,7 +952,6 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     ## Please note, that socket is not closed immediately. To avoid bugs with
     ## closing socket, while operation pending, socket will be closed as
     ## soon as all pending operations will be notified.
-    ## You can execute ``aftercb`` before actual socket close operation.
     let loop = getThreadDispatcher()
 
     proc continuation(udata: pointer) =
@@ -1168,41 +1249,44 @@ proc callIdle*(cbproc: CallbackFunc) =
 
 include asyncfutures2
 
-when not(defined(windows)):
-  when asyncEventEngine in ["epoll", "kqueue"]:
-    proc waitSignal*(signal: int): Future[void] {.raises: [Defect].} =
-      var retFuture = newFuture[void]("chronos.waitSignal()")
-      var signalHandle: Opt[SignalHandle]
 
-      template getSignalException(e: OSErrorCode): untyped =
-        newException(AsyncError, "Could not manipulate signal handler, " &
-                     "reason [" & $int(e) & "]: " & osErrorMsg(e))
+when defined(macosx) or defined(macos) or defined(freebsd) or
+     defined(netbsd) or defined(openbsd) or defined(dragonfly) or
+     defined(linux) or defined(windows):
 
-      proc continuation(udata: pointer) {.gcsafe.} =
-        if not(retFuture.finished()):
-          if signalHandle.isSome():
-            let res = removeSignal2(signalHandle.get())
-            if res.isErr():
-              retFuture.fail(getSignalException(res.error()))
-            else:
-              retFuture.complete()
+  proc waitSignal*(signal: int): Future[void] {.raises: [Defect].} =
+    var retFuture = newFuture[void]("chronos.waitSignal()")
+    var signalHandle: Opt[SignalHandle]
 
-      proc cancellation(udata: pointer) {.gcsafe.} =
-        if not(retFuture.finished()):
-          if signalHandle.isSome():
-            let res = removeSignal2(signalHandle.get())
-            if res.isErr():
-              retFuture.fail(getSignalException(res.error()))
+    template getSignalException(e: OSErrorCode): untyped =
+      newException(AsyncError, "Could not manipulate signal handler, " &
+                   "reason [" & $int(e) & "]: " & osErrorMsg(e))
 
-      signalHandle =
-        block:
-          let res = addSignal2(signal, continuation)
+    proc continuation(udata: pointer) {.gcsafe.} =
+      if not(retFuture.finished()):
+        if signalHandle.isSome():
+          let res = removeSignal2(signalHandle.get())
           if res.isErr():
             retFuture.fail(getSignalException(res.error()))
-          Opt.some(res.get())
+          else:
+            retFuture.complete()
 
-      retFuture.cancelCallback = cancellation
-      retFuture
+    proc cancellation(udata: pointer) {.gcsafe.} =
+      if not(retFuture.finished()):
+        if signalHandle.isSome():
+          let res = removeSignal2(signalHandle.get())
+          if res.isErr():
+            retFuture.fail(getSignalException(res.error()))
+
+    signalHandle =
+      block:
+        let res = addSignal2(signal, continuation)
+        if res.isErr():
+          retFuture.fail(getSignalException(res.error()))
+        Opt.some(res.get())
+
+    retFuture.cancelCallback = cancellation
+    retFuture
 
 proc sleepAsync*(duration: Duration): Future[void] =
   ## Suspends the execution of the current async procedure for the next

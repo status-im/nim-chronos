@@ -6,7 +6,7 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 import unittest2
-import ../chronos
+import ../chronos, ../chronos/oserrno
 
 {.used.}
 
@@ -14,57 +14,76 @@ when not defined(windows):
   import posix
 
 suite "Signal handling test suite":
-  when not defined(windows):
+  proc testSignal(signal, value: int): Future[bool] {.async.} =
     var
       signalCounter = 0
-      sigfd: SignalHandle
+      sigFd: SignalHandle
+      handlerFut = newFuture[void]("signal.handler")
 
-    proc signalProc(udata: pointer) =
+    proc signalHandler(udata: pointer) {.gcsafe.} =
       signalCounter = cast[int](udata)
-      try:
-        removeSignal(sigfd)
-      except Exception as exc:
-        raiseAssert exc.msg
+      let res = removeSignal2(sigFd)
+      if res.isErr():
+        handlerFut.fail(newException(ValueError, osErrorMsg(res.error())))
+      else:
+        handlerFut.complete()
 
-    proc asyncProc() {.async.} =
-      await sleepAsync(500.milliseconds)
+    sigFd =
+      block:
+        let res = addSignal2(signal, signalHandler, cast[pointer](value))
+        if res.isErr():
+          raiseAssert osErrorMsg(res.error())
+        res.get()
 
-    proc test(signal, value: int): bool =
-      try:
-        sigfd = addSignal(signal, signalProc, cast[pointer](value))
-      except Exception as exc:
-        raiseAssert exc.msg
-      var fut = asyncProc()
+    when defined(windows):
+      discard raiseSignal(cint(signal))
+    else:
       discard posix.kill(posix.getpid(), cint(signal))
-      waitFor(fut)
-      signalCounter == value
 
-    proc testWait(signal: int): bool =
-      var fut = waitSignal(signal)
+    await handlerFut.wait(5.seconds)
+    return signalCounter == value
+
+  proc testWait(signal: int): Future[bool] {.async.} =
+    var fut = waitSignal(signal)
+    when defined(windows):
+      discard raiseSignal(cint(signal))
+    else:
       discard posix.kill(posix.getpid(), cint(signal))
-      waitFor(fut)
-      true
+    await fut.wait(5.seconds)
+    return true
+
+  when defined(windows):
+    proc testCtrlC(): Future[bool] {.async, used.} =
+      var fut = waitSignal(SIGINT)
+      let res = raiseConsoleCtrlSignal()
+      if res.isErr():
+        raiseAssert osErrorMsg(res.error())
+      await fut.wait(5.seconds)
+      return true
 
   test "SIGINT test":
-    when not defined(windows):
-      check test(SIGINT, 31337) == true
-    else:
-      skip()
+    let res = waitFor testSignal(SIGINT, 31337)
+    check res == true
 
   test "SIGTERM test":
-    when defined(windows):
-      skip()
-    else:
-      check test(SIGTERM, 65537) == true
+    let res = waitFor testSignal(SIGTERM, 65537)
+    check res == true
 
   test "waitSignal(SIGINT) test":
-    when defined(windows):
-      skip()
-    else:
-      check testWait(SIGINT) == true
+    let res = waitFor testWait(SIGINT)
+    check res == true
 
   test "waitSignal(SIGTERM) test":
-    when defined(windows):
-      skip()
-    else:
-      check testWait(SIGTERM) == true
+    let res = waitFor testWait(SIGTERM)
+    check res == true
+
+  # This test doesn't work well in test suite, because it generates CTRL+C
+  # event in Windows console, parent process receives this signal and stops
+  # test suite execution.
+
+  # test "Windows [CTRL+C] test":
+  #   when defined(windows):
+  #     let res = waitFor testCtrlC()
+  #     check res == true
+  #   else:
+  #     skip()

@@ -15,7 +15,7 @@ else:
 import "."/[asyncloop, osdefs, osutils]
 import stew/results
 from nativesockets import Domain, Protocol, SockType, toInt
-export Domain, Protocol, SockType, results
+export Domain, Protocol, SockType, results, osutils
 
 const
   asyncInvalidSocket* = AsyncFD(osdefs.INVALID_SOCKET)

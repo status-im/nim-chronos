@@ -61,6 +61,12 @@ when defined(windows):
     INADDR_BROADCAST* = 0xffff_ffff'u32
     INADDR_NONE* = 0xffff_ffff'u32
 
+    CTRL_C_EVENT* = 0'u32
+    CTRL_BREAK_EVENT* = 1'u32
+    CTRL_CLOSE_EVENT* = 2'u32
+    CTRL_LOGOFF_EVENT* = 5'u32
+    CTRL_SHUTDOWN_EVENT* = 6'u32
+
     WAIT_ABANDONED* = 0x80'u32
     WAIT_OBJECT_0* = 0x00'u32
     WAIT_TIMEOUT* = 0x102'u32
@@ -299,7 +305,10 @@ when defined(windows):
 
     POVERLAPPED_COMPLETION_ROUTINE* = proc (para1: DWORD, para2: DWORD,
                                             para3: POVERLAPPED) {.
-                                      stdcall, gcsafe, raises: [].}
+      stdcall, gcsafe, raises: [].}
+
+    PHANDLER_ROUTINE* = proc (dwCtrlType: DWORD): WINBOOL {.
+      stdcall, gcsafe, raises: [Defect].}
 
     OSVERSIONINFO* {.final, pure.} = object
       dwOSVersionInfoSize*: DWORD
@@ -494,6 +503,8 @@ when defined(windows):
       dwMilliseconds: DWORD, fAlertable: WINBOOL): WINBOOL {.
       stdcall, gcsafe, raises: [].}
 
+    WindowsSigHandler = proc (a: cint) {.noconv, raises: [], gcsafe.}
+
   proc getVersionEx*(lpVersionInfo: ptr OSVERSIONINFO): WINBOOL {.
        stdcall, dynlib: "kernel32", importc: "GetVersionExW", sideEffect.}
 
@@ -592,6 +603,9 @@ when defined(windows):
 
   proc getCurrentProcess*(): HANDLE {.
        stdcall, dynlib: "kernel32", importc: "GetCurrentProcess", sideEffect.}
+
+  proc getCurrentProcessId*(): DWORD {.
+       stdcall, dynlib: "kernel32", importc: "GetCurrentProcessId", sideEffect.}
 
   proc getSystemTimeAsFileTime*(lpSystemTimeAsFileTime: var FILETIME) {.
        stdcall, dynlib: "kernel32", importc: "GetSystemTimeAsFileTime",
@@ -710,7 +724,7 @@ when defined(windows):
 
   proc createEvent*(lpEventAttributes: ptr SECURITY_ATTRIBUTES,
                     bManualReset: DWORD, bInitialState: DWORD,
-                    lpName: LPWSTR): HANDLE {.
+                    lpName: ptr WCHAR): HANDLE {.
        stdcall, dynlib: "kernel32", importc: "CreateEventW", sideEffect.}
 
   proc setEvent*(hEvent: HANDLE): WINBOOL {.
@@ -811,8 +825,36 @@ when defined(windows):
   proc rtlNtStatusToDosError*(code: uint64): ULONG {.
        stdcall, dynlib: "ntdll", importc: "RtlNtStatusToDosError", sideEffect.}
 
+  proc getConsoleCP*(): UINT {.
+       stdcall, dynlib: "kernel32", importc: "GetConsoleCP", sideEffect.}
+
+  proc setConsoleCtrlHandler*(handleRoutine: PHANDLER_ROUTINE,
+                              add: WINBOOL): WINBOOL {.
+       stdcall, dynlib: "kernel32", importc: "SetConsoleCtrlHandler",
+       sideEffect.}
+
+  proc generateConsoleCtrlEvent*(dwCtrlEvent: DWORD,
+                                 dwProcessGroupId: DWORD): WINBOOL {.
+       stdcall, dynlib: "kernel32", importc: "GenerateConsoleCtrlEvent",
+       sideEffect.}
+
   proc `==`*(x, y: SocketHandle): bool {.borrow.}
   proc `==`*(x, y: HANDLE): bool {.borrow.}
+
+  proc c_signal*(sign: cint, handler: WindowsSigHandler): WindowsSigHandler {.
+    importc: "signal", header: "<signal.h>", raises: [], sideEffect.}
+
+  const
+    SIGABRT* = cint(22)
+    SIGINT* = cint(2)
+    SIGQUIT* = cint(3)
+    SIGTERM* = cint(15)
+    SIGFPE* = cint(8)
+    SIGILL* = cint(4)
+    SIGSEGV* = cint(11)
+    SIG_DFL* = cast[WindowsSigHandler](0)
+    SIG_IGN* = cast[WindowsSigHandler](1)
+    SIG_ERR* = cast[WindowsSigHandler](-1)
 
   proc getSecurityAttributes*(inheritHandle = false): SECURITY_ATTRIBUTES =
     SECURITY_ATTRIBUTES(

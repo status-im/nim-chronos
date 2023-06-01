@@ -1896,7 +1896,7 @@ proc close*(server: StreamServer) =
 proc closeWait*(server: StreamServer): Future[void] =
   ## Close server ``server`` and release all resources.
   server.close()
-  result = server.join()
+  server.join()
 
 proc createStreamServer*(host: TransportAddress,
                          cbproc: StreamCallback,
@@ -2055,7 +2055,7 @@ proc createStreamServer*(host: TransportAddress,
                    addr slen) != 0:
       let err = osLastError()
       if sock == asyncInvalidSocket:
-        serverSocket.closeSocket()
+        discard unregisterAndCloseFd(serverSocket)
       raiseTransportOsError(err)
     fromSAddr(addr saddr, slen, localAddress)
 
@@ -2150,7 +2150,7 @@ proc createStreamServer*[T](host: TransportAddress,
 
 proc getUserData*[T](server: StreamServer): T {.inline.} =
   ## Obtain user data stored in ``server`` object.
-  result = cast[T](server.udata)
+  cast[T](server.udata)
 
 template fastWrite(transp: auto, pbytes: var ptr byte, rbytes: var int,
                    nbytes: int) =
