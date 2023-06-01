@@ -16,7 +16,7 @@ else:
 from nativesockets import Port
 import std/[tables, strutils, heapqueue, deques]
 import stew/results
-import "."/[config, osdefs, oserrno, osutils, timer]
+import "."/[config, futures, osdefs, oserrno, osutils, timer]
 
 export Port
 export timer, results
@@ -158,12 +158,6 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
   export oserrno
 
 type
-  CallbackFunc* = proc (arg: pointer) {.gcsafe, raises: [Defect].}
-
-  AsyncCallback* = object
-    function*: CallbackFunc
-    udata*: pointer
-
   AsyncError* = object of CatchableError
     ## Generic async exception
   AsyncTimeoutError* = object of AsyncError
@@ -171,7 +165,7 @@ type
 
   TimerCallback* = ref object
     finishAt*: Moment
-    function*: AsyncCallback
+    function*: InternalAsyncCallback
 
   TrackerBase* = ref object of RootRef
     id*: string
@@ -180,18 +174,18 @@ type
 
   PDispatcherBase = ref object of RootRef
     timers*: HeapQueue[TimerCallback]
-    callbacks*: Deque[AsyncCallback]
-    idlers*: Deque[AsyncCallback]
+    callbacks*: Deque[InternalAsyncCallback]
+    idlers*: Deque[InternalAsyncCallback]
     trackers*: Table[string, TrackerBase]
 
 proc sentinelCallbackImpl(arg: pointer) {.gcsafe.} =
   raiseAssert "Sentinel callback MUST not be scheduled"
 
 const
-  SentinelCallback = AsyncCallback(function: sentinelCallbackImpl,
+  SentinelCallback = InternalAsyncCallback(function: sentinelCallbackImpl,
                                    udata: nil)
 
-proc isSentinel(acb: AsyncCallback): bool =
+proc isSentinel(acb: InternalAsyncCallback): bool =
   acb == SentinelCallback
 
 proc `<`(a, b: TimerCallback): bool =
@@ -407,8 +401,8 @@ when defined(windows):
       ioPort: port,
       handles: initHashSet[AsyncFD](),
       timers: initHeapQueue[TimerCallback](),
-      callbacks: initDeque[AsyncCallback](64),
-      idlers: initDeque[AsyncCallback](),
+      callbacks: initDeque[InternalAsyncCallback](64),
+      idlers: initDeque[InternalAsyncCallback](),
       trackers: initTable[string, TrackerBase]()
     )
     res.callbacks.addLast(SentinelCallback)
@@ -645,7 +639,7 @@ when defined(windows):
           else:
             OSErrorCode(rtlNtStatusToDosError(res))
       customOverlapped.data.bytesCount = events[i].dwNumberOfBytesTransferred
-      let acb = AsyncCallback(function: customOverlapped.data.cb,
+      let acb = InternalAsyncCallback(function: customOverlapped.data.cb,
                               udata: cast[pointer](customOverlapped))
       loop.callbacks.addLast(acb)
 
@@ -677,7 +671,7 @@ when defined(windows):
           osLastError()
       )
     if not(isNil(aftercb)):
-      loop.callbacks.addLast(AsyncCallback(function: aftercb, udata: param))
+      loop.callbacks.addLast(InternalAsyncCallback(function: aftercb, udata: param))
 
   proc closeHandle*(fd: AsyncFD, aftercb: CallbackFunc = nil) =
     ## Closes a (pipe/file) handle and ensures that it is unregistered.
@@ -692,7 +686,7 @@ when defined(windows):
       )
 
     if not(isNil(aftercb)):
-      loop.callbacks.addLast(AsyncCallback(function: aftercb, udata: param))
+      loop.callbacks.addLast(InternalAsyncCallback(function: aftercb, udata: param))
 
   proc contains*(disp: PDispatcher, fd: AsyncFD): bool =
     ## Returns ``true`` if ``fd`` is registered in thread's dispatcher.
@@ -708,8 +702,8 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     AsyncFD* = distinct cint
 
     SelectorData* = object
-      reader*: AsyncCallback
-      writer*: AsyncCallback
+      reader*: InternalAsyncCallback
+      writer*: InternalAsyncCallback
 
     PDispatcher* = ref object of PDispatcherBase
       selector: Selector[SelectorData]
@@ -736,8 +730,8 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     var res = PDispatcher(
       selector: selector,
       timers: initHeapQueue[TimerCallback](),
-      callbacks: initDeque[AsyncCallback](asyncEventsCount),
-      idlers: initDeque[AsyncCallback](),
+      callbacks: initDeque[InternalAsyncCallback](asyncEventsCount),
+      idlers: initDeque[InternalAsyncCallback](),
       keys: newSeq[ReadyKey](asyncEventsCount),
       trackers: initTable[string, TrackerBase]()
     )
@@ -774,7 +768,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     let loop = getThreadDispatcher()
     var newEvents = {Event.Read}
     withData(loop.selector, cint(fd), adata) do:
-      let acb = AsyncCallback(function: cb, udata: udata)
+      let acb = InternalAsyncCallback(function: cb, udata: udata)
       adata.reader = acb
       if not(isNil(adata.writer.function)):
         newEvents.incl(Event.Write)
@@ -788,7 +782,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     var newEvents: set[Event]
     withData(loop.selector, cint(fd), adata) do:
       # We need to clear `reader` data, because `selectors` don't do it
-      adata.reader = default(AsyncCallback)
+      adata.reader = default(InternalAsyncCallback)
       if not(isNil(adata.writer.function)):
         newEvents.incl(Event.Write)
     do:
@@ -802,7 +796,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     let loop = getThreadDispatcher()
     var newEvents = {Event.Write}
     withData(loop.selector, cint(fd), adata) do:
-      let acb = AsyncCallback(function: cb, udata: udata)
+      let acb = InternalAsyncCallback(function: cb, udata: udata)
       adata.writer = acb
       if not(isNil(adata.reader.function)):
         newEvents.incl(Event.Read)
@@ -816,7 +810,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     var newEvents: set[Event]
     withData(loop.selector, cint(fd), adata) do:
       # We need to clear `writer` data, because `selectors` don't do it
-      adata.writer = default(AsyncCallback)
+      adata.writer = default(InternalAsyncCallback)
       if not(isNil(adata.reader.function)):
         newEvents.incl(Event.Read)
     do:
@@ -899,16 +893,16 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
 
       if not(isNil(adata.reader.function)):
         loop.callbacks.addLast(adata.reader)
-        adata.reader = default(AsyncCallback)
+        adata.reader = default(InternalAsyncCallback)
 
       if not(isNil(adata.writer.function)):
         loop.callbacks.addLast(adata.writer)
-        adata.writer = default(AsyncCallback)
+        adata.writer = default(InternalAsyncCallback)
 
     # We can't unregister file descriptor from system queue here, because
     # in such case processing queue will stuck on poll() call, because there
     # can be no file descriptors registered in system queue.
-    var acb = AsyncCallback(function: continuation)
+    var acb = InternalAsyncCallback(function: continuation)
     loop.callbacks.addLast(acb)
 
   proc closeHandle*(fd: AsyncFD, aftercb: CallbackFunc = nil) =
@@ -938,7 +932,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
       var data: SelectorData
       let sigfd = ? loop.selector.registerSignal(signal, data)
       withData(loop.selector, sigfd, adata) do:
-        adata.reader = AsyncCallback(function: cb, udata: udata)
+        adata.reader = InternalAsyncCallback(function: cb, udata: udata)
       do:
         return err(osdefs.EBADF)
       ok(SignalHandle(sigfd))
@@ -955,7 +949,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
       var data: SelectorData
       let procfd = ? loop.selector.registerProcess(pid, data)
       withData(loop.selector, procfd, adata) do:
-        adata.reader = AsyncCallback(function: cb, udata: udata)
+        adata.reader = InternalAsyncCallback(function: cb, udata: udata)
       do:
         return err(osdefs.EBADF)
       ok(ProcessHandle(procfd))
@@ -1087,11 +1081,11 @@ proc setTimer*(at: Moment, cb: CallbackFunc,
   ## timestamp ``at``. You can also pass ``udata`` to callback.
   let loop = getThreadDispatcher()
   result = TimerCallback(finishAt: at,
-                         function: AsyncCallback(function: cb, udata: udata))
+                         function: InternalAsyncCallback(function: cb, udata: udata))
   loop.timers.push(result)
 
 proc clearTimer*(timer: TimerCallback) {.inline.} =
-  timer.function = default(AsyncCallback)
+  timer.function = default(InternalAsyncCallback)
 
 proc addTimer*(at: Moment, cb: CallbackFunc, udata: pointer = nil) {.
      inline, deprecated: "Use setTimer/clearTimer instead".} =
@@ -1129,7 +1123,7 @@ proc removeTimer*(at: uint64, cb: CallbackFunc, udata: pointer = nil) {.
      inline, deprecated: "Use removeTimer(Duration, cb, udata)".} =
   removeTimer(Moment.init(int64(at), Millisecond), cb, udata)
 
-proc callSoon*(acb: AsyncCallback) =
+proc callSoon*(acb: InternalAsyncCallback) =
   ## Schedule `cbproc` to be called as soon as possible.
   ## The callback is called when control returns to the event loop.
   getThreadDispatcher().callbacks.addLast(acb)
@@ -1139,12 +1133,12 @@ proc callSoon*(cbproc: CallbackFunc, data: pointer) {.
   ## Schedule `cbproc` to be called as soon as possible.
   ## The callback is called when control returns to the event loop.
   doAssert(not isNil(cbproc))
-  callSoon(AsyncCallback(function: cbproc, udata: data))
+  callSoon(InternalAsyncCallback(function: cbproc, udata: data))
 
 proc callSoon*(cbproc: CallbackFunc) =
   callSoon(cbproc, nil)
 
-proc callIdle*(acb: AsyncCallback) =
+proc callIdle*(acb: InternalAsyncCallback) =
   ## Schedule ``cbproc`` to be called when there no pending network events
   ## available.
   ##
@@ -1161,7 +1155,7 @@ proc callIdle*(cbproc: CallbackFunc, data: pointer) =
   ## iteration if there no network events available, not when the loop is
   ## actually "idle".
   doAssert(not isNil(cbproc))
-  callIdle(AsyncCallback(function: cbproc, udata: data))
+  callIdle(InternalAsyncCallback(function: cbproc, udata: data))
 
 proc callIdle*(cbproc: CallbackFunc) =
   callIdle(cbproc, nil)
