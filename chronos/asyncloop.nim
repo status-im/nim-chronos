@@ -22,6 +22,7 @@ import "."/[config, osdefs, oserrno, osutils, timer]
 
 export Port
 export timer, results
+export raiseSignal, raiseConsoleCtrlSignal
 
 #{.injectStmt: newGcInvariant().}
 
