@@ -15,7 +15,10 @@ else:
 import "."/[asyncloop, osdefs, osutils]
 import stew/results
 from nativesockets import Domain, Protocol, SockType, toInt
-export Domain, Protocol, SockType, results, osutils
+export Domain, Protocol, SockType, results
+
+when defined(windows):
+  export raiseSignal, raiseConsoleCtrlSignal
 
 const
   asyncInvalidSocket* = AsyncFD(osdefs.INVALID_SOCKET)
