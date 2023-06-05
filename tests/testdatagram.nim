@@ -463,7 +463,7 @@ suite "Datagram Transport test suite":
     try:
       await wait(dgram.join(), 1.seconds)
       result = true
-    except:
+    except CatchableError:
       discard
 
   proc testBroadcast(): Future[int] {.async.} =

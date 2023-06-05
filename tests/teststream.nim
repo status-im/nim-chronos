@@ -689,7 +689,7 @@ suite "Stream Transport test suite":
     try:
       await wait(server.join(), 10.seconds)
       result = 1
-    except:
+    except CatchableError:
       discard
 
   proc testWriteConnReset(address: TransportAddress): Future[int] {.async.} =
@@ -765,7 +765,7 @@ suite "Stream Transport test suite":
     try:
       transp = await connect(address)
       flag = true
-    except:
+    except CatchableError:
       server.stop()
       server.close()
       await server.join()
