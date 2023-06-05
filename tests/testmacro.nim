@@ -123,6 +123,24 @@ suite "Macro transformations test suite":
     macroAsync2(testMacro2, seq, Opt, Result, OpenObject, cstring)
     check waitFor(testMacro2()).len == 0
 
+  test "Future with generics":
+    proc gen(T: typedesc): Future[T] {.async.} =
+      proc testproc(): Future[T] {.async.} =
+        when T is void:
+          return
+        else:
+          return default(T)
+      await testproc()
+
+    waitFor gen(void)
+    discard waitFor gen(int)
+
+  test "Implicit return":
+    proc implicit(): Future[int] {.async.} =
+      42
+    check:
+      waitFor(implicit()) == 42
+
 suite "Closure iterator's exception transformation issues":
   test "Nested defer/finally not called on return":
     # issue #288
