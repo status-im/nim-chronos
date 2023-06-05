@@ -94,6 +94,20 @@ proc testAwaitne(): Future[bool] {.async.} =
 
   return true
 
+proc resultOk(): Future[Result[int, string]] {.async.} =
+  return ok(42)
+
+proc resultErr(): Future[Result[int, string]] {.async.} =
+  return err("string")
+
+proc testResult: Future[Result[int, string]] {.async.} =
+  let
+    x = ? await resultOk()
+
+  if x == 42:
+    let _ = ? await resultErr()
+  return err("not this one")
+
 suite "Macro transformations test suite":
   test "`await` command test":
     check waitFor(testAwait()) == true
@@ -226,3 +240,18 @@ suite "Closure iterator's exception transformation issues":
 
     waitFor(x())
 
+suite "Result integration":
+  test "question mark":
+    # generics are tricky and buggy, test them more!
+    proc someFunc2[T](v: T): Future[Result[T, string]] {.async.} =
+      return ok(v)
+    proc someFunc[T](v: T): Future[Result[T, string]] {.async.} =
+      let tmp = ? await someFunc2(v)
+      return ok(tmp + 2)
+
+    proc caller(v: int): Future[Result[int, string]] {.async.} =
+      return ok(3 + ? await someFunc(v))
+
+    check waitFor(testResult()).error() == "string"
+
+    check waitFor(caller(42))[] == 42 + 2 + 3

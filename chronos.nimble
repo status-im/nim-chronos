@@ -8,7 +8,7 @@ license       = "MIT or Apache License 2.0"
 skipDirs      = @["tests"]
 
 requires "nim >= 1.2.0",
-         "stew",
+         "stew#assign-result",
          "bearssl",
          "httputils",
          "unittest2"

@@ -156,6 +156,13 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
 
       procBody = prc.body.processBody(castFutureSym, baseType)
 
+      # Support `let x = ? await ...`
+      assignResultSym = ident "assignResult?"
+      assignResult = quote do:
+        when declared(Result):
+          template `assignResultSym`(v: Result) {.used.} =
+            complete(`castFutureSym`, v)
+
     # don't do anything with forward bodies (empty)
     if procBody.kind != nnkEmpty:
       let
@@ -185,7 +192,7 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
 
         completeDecl = completeWithNode(castFutureSym, baseType, procBodyBlck)
 
-        closureBody = newStmtList(resultDecl, completeDecl)
+        closureBody = newStmtList(assignResult, resultDecl, completeDecl)
 
         internalFutureParameter = nnkIdentDefs.newTree(
           internalFutureSym, newIdentNode("FutureBase"), newEmptyNode())
