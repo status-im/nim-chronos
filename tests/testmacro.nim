@@ -133,7 +133,8 @@ suite "Macro transformations test suite":
       await testproc()
 
     waitFor gen(void)
-    discard waitFor gen(int)
+    check:
+      waitFor(gen(int)) == default(int)
 
   test "Implicit return":
     proc implicit(): Future[int] {.async.} =
