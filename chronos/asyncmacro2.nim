@@ -33,7 +33,7 @@ proc completeWithResult(fut, baseType: NimNode): NimNode {.compileTime.} =
 proc completeWithNode(fut, baseType, node: NimNode): NimNode {.compileTime.} =
   #   when typeof(`node`) is void:
   #     `node` # statement / explicit return
-  #     complete(fut, result)
+  #     -> completeWithResult(fut, baseType)
   #   else: # expression / implicit return
   #     complete(`fut`, `node`)
   if node.kind == nnkEmpty: # shortcut when known at macro expanstion time
