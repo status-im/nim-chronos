@@ -5,8 +5,8 @@
 #              Licensed under either of
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
+import std/[macros, strutils]
 import unittest2
-import macros
 import ../chronos
 
 {.used.}
@@ -122,6 +122,76 @@ suite "Macro transformations test suite":
 
     macroAsync2(testMacro2, seq, Opt, Result, OpenObject, cstring)
     check waitFor(testMacro2()).len == 0
+
+  test "Future with generics":
+    proc gen(T: typedesc): Future[T] {.async.} =
+      proc testproc(): Future[T] {.async.} =
+        when T is void:
+          return
+        else:
+          return default(T)
+      await testproc()
+
+    waitFor gen(void)
+    check:
+      waitFor(gen(int)) == default(int)
+
+  test "Implicit return":
+    proc implicit(): Future[int] {.async.} =
+      42
+
+    proc implicit2(): Future[int] {.async.} =
+      block:
+        42
+
+    proc implicit3(): Future[int] {.async.} =
+      try:
+        parseInt("error")
+      except ValueError:
+        42
+
+    proc implicit4(v: bool): Future[int] {.async.} =
+      case v
+      of false: 5
+      of true: 42
+
+    proc implicit5(v: bool): Future[int] {.async.} =
+      if v: 42
+      else: 5
+
+    proc implicit6(v: ref int): Future[int] {.async.} =
+      try:
+        parseInt("error")
+      except ValueError:
+        42
+      finally:
+        v[] = 42
+
+    proc implicit7(v: bool): Future[int] {.async.} =
+      case v
+      of false: return 33
+      of true: 42
+
+    proc implicit8(v: bool): Future[int] {.async.} =
+      case v
+      of false: await implicit7(v)
+      of true: 42
+
+    let fin = new int
+    check:
+      waitFor(implicit()) == 42
+      waitFor(implicit2()) == 42
+      waitFor(implicit3()) == 42
+      waitFor(implicit4(true)) == 42
+      waitFor(implicit5(true)) == 42
+      waitFor(implicit5(false)) == 5
+      waitFor(implicit6(fin)) == 42
+      fin[] == 42
+      waitFor(implicit7(true)) == 42
+      waitFor(implicit7(false)) == 33
+
+      waitFor(implicit8(true)) == 42
+      waitFor(implicit8(false)) == 33
 
 suite "Closure iterator's exception transformation issues":
   test "Nested defer/finally not called on return":
