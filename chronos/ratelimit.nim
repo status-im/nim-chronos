@@ -102,10 +102,6 @@ proc consume*(bucket: TokenBucket, tokens: int): Future[void] =
       retFuture.complete()
       return retFuture
 
-  bucket.pendingRequests.add(BucketWaiter(future: retFuture, value: tokens))
-  if isNil(bucket.workFuture) or bucket.workFuture.finished():
-    bucket.workFuture = worker(bucket)
-
   proc cancellation(udata: pointer) =
     for index in 0..<bucket.pendingRequests.len:
       if bucket.pendingRequests[index].future == retFuture:
@@ -115,6 +111,12 @@ proc consume*(bucket: TokenBucket, tokens: int): Future[void] =
           bucket.manuallyReplenished.fire()
         break
   retFuture.cancelCallback = cancellation
+
+  bucket.pendingRequests.add(BucketWaiter(future: retFuture, value: tokens))
+
+  if isNil(bucket.workFuture) or bucket.workFuture.finished():
+    bucket.workFuture = worker(bucket)
+
   return retFuture
 
 proc replenish*(bucket: TokenBucket, tokens: int) =
