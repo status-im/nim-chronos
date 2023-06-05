@@ -395,7 +395,7 @@ proc futureContinue*(fut: FutureBase) {.raises: [Defect], gcsafe.} =
   # Every call to an `{.async.}` proc is redirected to call this function
   # instead with its original body captured in `fut.closure`.
   var next: FutureBase
-  try:
+  template iterate =
     while true:
       # Call closure to make progress on `fut` until it reaches `yield` (inside
       # `await` typically) or completes / fails / is cancelled
@@ -417,17 +417,30 @@ proc futureContinue*(fut: FutureBase) {.raises: [Defect], gcsafe.} =
         return
 
       # Continue while the yielded future is already finished.
-  except CancelledError:
-    fut.cancelAndSchedule()
-  except CatchableError as exc:
-    fut.fail(exc)
-  except Exception as exc:
-    if exc of Defect:
-      raise (ref Defect)(exc)
 
-    fut.fail((ref ValueError)(msg: exc.msg, parent: exc))
-  finally:
-    next = nil # GC hygiene
+  when chronosStrictException:
+    try:
+      iterate
+    except CancelledError:
+      fut.cancelAndSchedule()
+    except CatchableError as exc:
+      fut.fail(exc)
+    finally:
+      next = nil # GC hygiene
+  else:
+    try:
+      iterate
+    except CancelledError:
+      fut.cancelAndSchedule()
+    except CatchableError as exc:
+      fut.fail(exc)
+    except Exception as exc:
+      if exc of Defect:
+        raise (ref Defect)(exc)
+
+      fut.fail((ref ValueError)(msg: exc.msg, parent: exc))
+    finally:
+      next = nil # GC hygiene
 
   # `futureContinue` will not be called any more for this future so we can
   # clean it up

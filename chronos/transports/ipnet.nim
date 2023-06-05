@@ -408,7 +408,7 @@ proc init*(t: typedesc[IpNet], network: string): IpNet {.
     if len(parts) > 1:
       try:
         prefix = parseInt(parts[1])
-      except:
+      except ValueError:
         prefix = -1
       if prefix == -1:
         ipaddr = parseIpAddress(parts[1])
@@ -434,8 +434,8 @@ proc init*(t: typedesc[IpNet], network: string): IpNet {.
       result = t.init(host, mask)
     else:
       result = t.init(host, prefix)
-  except:
-    raise newException(TransportAddressError, "Incorrect network address!")
+  except ValueError as exc:
+    raise newException(TransportAddressError, exc.msg)
 
 proc `==`*(n1, n2: IpNet): bool {.inline.} =
   ## Returns ``true`` if networks ``n1`` and ``n2`` are equal in IP family and

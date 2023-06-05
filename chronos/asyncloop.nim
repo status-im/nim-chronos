@@ -1498,7 +1498,7 @@ proc wait*[T](fut: Future[T], timeout = -1): Future[T] {.
 
 include asyncmacro2
 
-proc runForever*() {.raises: [Defect, CatchableError].} =
+proc runForever*() =
   ## Begins a never ending global dispatcher poll loop.
   ## Raises different exceptions depending on the platform.
   while true:

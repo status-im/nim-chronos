@@ -913,9 +913,9 @@ suite "HTTP client testing suite":
       await allFutures(f1, f2)
       check:
         f1.finished()
-        f1.done()
+        f1.completed()
         f2.finished()
-        f2.done()
+        f2.completed()
         f1.read() == (200, "ok", 0)
         f2.read() == (200, "ok", 0)
         session.connectionsCount == 2
@@ -976,9 +976,9 @@ suite "HTTP client testing suite":
       await allFutures(f1, f2)
       check:
         f1.finished()
-        f1.done()
+        f1.completed()
         f2.finished()
-        f2.done()
+        f2.completed()
         f1.read() == (200, "ok", 0)
         f2.read() == (200, "ok", 0)
         session.connectionsCount == 0
@@ -1261,7 +1261,7 @@ suite "HTTP client testing suite":
   test "HTTP client no-pipeline test":
     let address = initTAddress("127.0.0.1:30080")
     check waitFor(testNoPipeline(address)) == true
-    
+
   test "HTTP client server-sent events test":
     let address = initTAddress("127.0.0.1:30080")
     check waitFor(testServerSentEvents(address, false)) == true
