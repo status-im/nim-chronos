@@ -11,10 +11,7 @@ import osdefs, oserrno
 
 export results
 
-when (NimMajor, NimMinor) < (1, 4):
-  {.push raises: [Defect].}
-else:
-  {.push raises: [].}
+{.push raises: [].}
 
 when defined(windows) or defined(nimdoc):
   import stew/base10

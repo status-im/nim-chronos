@@ -55,12 +55,12 @@ type
 
   HttpProcessCallback* =
     proc(req: RequestFence): Future[HttpResponseRef] {.
-      gcsafe, raises: [Defect, CatchableError].}
+      gcsafe, raises: [].}
 
   HttpConnectionCallback* =
     proc(server: HttpServerRef,
          transp: StreamTransport): Future[HttpConnectionRef] {.
-      gcsafe, raises: [Defect].}
+      gcsafe, raises: [].}
 
   HttpServer* = object of RootObj
     instance*: StreamServer
@@ -133,7 +133,7 @@ type
 
 proc init(htype: typedesc[HttpProcessError], error: HttpServerError,
           exc: ref CatchableError, remote: TransportAddress,
-          code: HttpCode): HttpProcessError {.raises: [Defect].} =
+          code: HttpCode): HttpProcessError {.raises: [].} =
   HttpProcessError(error: error, exc: exc, remote: remote, code: code)
 
 proc createConnection(server: HttpServerRef,
@@ -153,7 +153,7 @@ proc new*(htype: typedesc[HttpServerRef],
           httpHeadersTimeout = 10.seconds,
           maxHeadersSize: int = 8192,
           maxRequestBodySize: int = 1_048_576): HttpResult[HttpServerRef] {.
-     raises: [Defect].} =
+     raises: [].} =
 
   let serverUri =
     if len(serverUri.hostname) > 0:
@@ -198,7 +198,7 @@ proc new*(htype: typedesc[HttpServerRef],
   )
   ok(res)
 
-proc getResponse*(req: HttpRequestRef): HttpResponseRef {.raises: [Defect].} =
+proc getResponse*(req: HttpRequestRef): HttpResponseRef {.raises: [].} =
   if req.response.isNone():
     var resp = HttpResponseRef(
       status: Http200,
@@ -222,7 +222,7 @@ proc getHostname*(server: HttpServerRef): string =
   else:
     server.baseUri.hostname
 
-proc dumbResponse*(): HttpResponseRef {.raises: [Defect].} =
+proc dumbResponse*(): HttpResponseRef {.raises: [].} =
   ## Create an empty response to return when request processor got no request.
   HttpResponseRef(state: HttpResponseState.Dumb, version: HttpVersion11)
 
@@ -233,14 +233,14 @@ proc getId(transp: StreamTransport): Result[string, string]  {.inline.} =
   except TransportOsError as exc:
     err($exc.msg)
 
-proc hasBody*(request: HttpRequestRef): bool {.raises: [Defect].} =
+proc hasBody*(request: HttpRequestRef): bool {.raises: [].} =
   ## Returns ``true`` if request has body.
   request.requestFlags * {HttpRequestFlags.BoundBody,
                           HttpRequestFlags.UnboundBody} != {}
 
 proc prepareRequest(conn: HttpConnectionRef,
                     req: HttpRequestHeader): HttpResultCode[HttpRequestRef] {.
-     raises: [Defect].}=
+     raises: [].}=
   var request = HttpRequestRef(connection: conn, state: HttpState.Alive)
 
   if req.version notin {HttpVersion10, HttpVersion11}:
@@ -678,7 +678,7 @@ proc `keepalive=`*(resp: HttpResponseRef, value: bool) =
   else:
     resp.flags.excl(HttpResponseFlags.KeepAlive)
 
-proc keepalive*(resp: HttpResponseRef): bool {.raises: [Defect].} =
+proc keepalive*(resp: HttpResponseRef): bool {.raises: [].} =
   HttpResponseFlags.KeepAlive in resp.flags
 
 proc processLoop(server: HttpServerRef, transp: StreamTransport,
@@ -882,7 +882,7 @@ proc acceptClientLoop(server: HttpServerRef) {.async.} =
     if breakLoop:
       break
 
-proc state*(server: HttpServerRef): HttpServerState {.raises: [Defect].} =
+proc state*(server: HttpServerRef): HttpServerState {.raises: [].} =
   ## Returns current HTTP server's state.
   if server.lifetime.finished():
     ServerClosed
@@ -944,7 +944,7 @@ proc join*(server: HttpServerRef): Future[void] =
   retFuture
 
 proc getMultipartReader*(req: HttpRequestRef): HttpResult[MultiPartReaderRef] {.
-     raises: [Defect].} =
+     raises: [].} =
   ## Create new MultiPartReader interface for specific request.
   if req.meth in PostMethods:
     if MultipartForm in req.requestFlags:
@@ -1040,30 +1040,30 @@ proc post*(req: HttpRequestRef): Future[HttpTable] {.async.} =
         raiseHttpCriticalError("Unsupported request body")
 
 proc setHeader*(resp: HttpResponseRef, key, value: string) {.
-     raises: [Defect].} =
+     raises: [].} =
   ## Sets value of header ``key`` to ``value``.
   doAssert(resp.state == HttpResponseState.Empty)
   resp.headersTable.set(key, value)
 
 proc setHeaderDefault*(resp: HttpResponseRef, key, value: string) {.
-     raises: [Defect].} =
+     raises: [].} =
   ## Sets value of header ``key`` to ``value``, only if header ``key`` is not
   ## present in the headers table.
   discard resp.headersTable.hasKeyOrPut(key, value)
 
 proc addHeader*(resp: HttpResponseRef, key, value: string) {.
-     raises: [Defect].} =
+     raises: [].} =
   ## Adds value ``value`` to header's ``key`` value.
   doAssert(resp.state == HttpResponseState.Empty)
   resp.headersTable.add(key, value)
 
 proc getHeader*(resp: HttpResponseRef, key: string,
-                default: string = ""): string {.raises: [Defect].} =
+                default: string = ""): string {.raises: [].} =
   ## Returns value of header with name ``name`` or ``default``, if header is
   ## not present in the table.
   resp.headersTable.getString(key, default)
 
-proc hasHeader*(resp: HttpResponseRef, key: string): bool {.raises: [Defect].} =
+proc hasHeader*(resp: HttpResponseRef, key: string): bool {.raises: [].} =
   ## Returns ``true`` if header with name ``key`` present in the headers table.
   key in resp.headersTable
 
@@ -1083,7 +1083,7 @@ func createHeaders(resp: HttpResponseRef): string =
   answer
 
 proc prepareLengthHeaders(resp: HttpResponseRef, length: int): string {.
-     raises: [Defect].}=
+     raises: [].}=
   if not(resp.hasHeader(DateHeader)):
     resp.setHeader(DateHeader, httpDate())
   if length > 0:
@@ -1101,7 +1101,7 @@ proc prepareLengthHeaders(resp: HttpResponseRef, length: int): string {.
   resp.createHeaders()
 
 proc prepareChunkedHeaders(resp: HttpResponseRef): string {.
-     raises: [Defect].} =
+     raises: [].} =
   if not(resp.hasHeader(DateHeader)):
     resp.setHeader(DateHeader, httpDate())
   if not(resp.hasHeader(ContentTypeHeader)):
@@ -1118,7 +1118,7 @@ proc prepareChunkedHeaders(resp: HttpResponseRef): string {.
   resp.createHeaders()
 
 proc prepareServerSideEventHeaders(resp: HttpResponseRef): string {.
-     raises: [Defect].} =
+     raises: [].} =
   if not(resp.hasHeader(DateHeader)):
     resp.setHeader(DateHeader, httpDate())
   if not(resp.hasHeader(ContentTypeHeader)):
@@ -1131,7 +1131,7 @@ proc prepareServerSideEventHeaders(resp: HttpResponseRef): string {.
   resp.createHeaders()
 
 proc preparePlainHeaders(resp: HttpResponseRef): string {.
-     raises: [Defect].} =
+     raises: [].} =
   if not(resp.hasHeader(DateHeader)):
     resp.setHeader(DateHeader, httpDate())
   if not(resp.hasHeader(ServerHeader)):
@@ -1393,7 +1393,7 @@ proc remoteAddress*(request: HttpRequestRef): TransportAddress =
   request.connection.remoteAddress()
 
 proc requestInfo*(req: HttpRequestRef, contentType = "text/text"): string {.
-     raises: [Defect].} =
+     raises: [].} =
   ## Returns comprehensive information about request for specific content
   ## type.
   ##

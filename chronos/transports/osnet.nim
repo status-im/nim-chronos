@@ -10,10 +10,7 @@
 ## This module implements cross-platform network interfaces list.
 ## Currently supported OSes are Windows, Linux, MacOS, BSD(not tested).
 
-when (NimMajor, NimMinor) < (1, 4):
-  {.push raises: [Defect].}
-else:
-  {.push raises: [].}
+{.push raises: [].}
 
 import std/algorithm
 import ".."/osdefs
@@ -753,7 +750,7 @@ when defined(linux):
       if endflag:
         break
 
-  proc getInterfaces*(): seq[NetworkInterface] {.raises: [Defect].} =
+  proc getInterfaces*(): seq[NetworkInterface] {.raises: [].} =
     ## Return list of available interfaces.
     var res: seq[NetworkInterface]
     var pid = osdefs.getpid()
@@ -767,7 +764,7 @@ when defined(linux):
       discard osdefs.close(sock)
       res
 
-  proc getBestRoute*(address: TransportAddress): Route {.raises: [Defect].} =
+  proc getBestRoute*(address: TransportAddress): Route {.raises: [].} =
     ## Return best applicable OS route, which will be used for connecting to
     ## address ``address``.
     var pid = osdefs.getpid()
@@ -795,7 +792,7 @@ elif defined(macosx) or defined(macos) or defined(bsd):
     else:
       StatusDown
 
-  proc getInterfaces*(): seq[NetworkInterface] {.raises: [Defect].} =
+  proc getInterfaces*(): seq[NetworkInterface] {.raises: [].} =
     ## Return list of available interfaces.
     var res: seq[NetworkInterface]
     var ifap: ptr IfAddrs
@@ -867,7 +864,7 @@ elif defined(macosx) or defined(macos) or defined(bsd):
     else:
       0
 
-  proc getBestRoute*(address: TransportAddress): Route {.raises: [Defect].} =
+  proc getBestRoute*(address: TransportAddress): Route {.raises: [].} =
     ## Return best applicable OS route, which will be used for connecting to
     ## address ``address``.
     var sock: cint
@@ -1034,7 +1031,7 @@ elif defined(windows):
         res.net = IpNet.init(res.host, prefixLength)
     res
 
-  proc getInterfaces*(): seq[NetworkInterface] {.raises: [Defect].} =
+  proc getInterfaces*(): seq[NetworkInterface] {.raises: [].} =
     ## Return list of network interfaces.
     var res = newSeq[NetworkInterface]()
     var size = WorkBufferSize
@@ -1086,7 +1083,7 @@ elif defined(windows):
       sort(res, cmp)
     res
 
-  proc getBestRoute*(address: TransportAddress): Route {.raises: [Defect].} =
+  proc getBestRoute*(address: TransportAddress): Route {.raises: [].} =
     ## Return best applicable OS route, which will be used for connecting to
     ## address ``address``.
     var res = Route()

@@ -7,12 +7,8 @@
 #    Apache License, version 2.0, (LICENSE-APACHEv2)
 #                MIT license (LICENSE-MIT)
 
-when (NimMajor, NimMinor) < (1, 4):
-  {.push raises: [Defect].}
-  {.pragma: apforward, gcsafe, raises: [Defect].}
-else:
-  {.push raises: [].}
-  {.pragma: apforward, gcsafe, raises: [].}
+{.push raises: [].}
+{.pragma: apforward, gcsafe, raises: [].}
 
 import std/strtabs
 import "."/[config, asyncloop, handles, osdefs, osutils, oserrno],

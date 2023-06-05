@@ -119,7 +119,7 @@ suite "Asynchronous issues test suite":
     check bytesSent == messageSize
     var rfut {.used.} = inpTransp.readExactly(addr buffer[0], messageSize)
 
-    proc waiterProc(udata: pointer) {.raises: [Defect], gcsafe.} =
+    proc waiterProc(udata: pointer) {.raises: [], gcsafe.} =
       try:
         waitFor(sleepAsync(0.milliseconds))
       except CatchableError:

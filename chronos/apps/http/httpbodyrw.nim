@@ -29,8 +29,8 @@ type
     opened*: int64
     closed*: int64
 
-proc setupHttpBodyWriterTracker(): HttpBodyTracker {.gcsafe, raises: [Defect].}
-proc setupHttpBodyReaderTracker(): HttpBodyTracker {.gcsafe, raises: [Defect].}
+proc setupHttpBodyWriterTracker(): HttpBodyTracker {.gcsafe, raises: [].}
+proc setupHttpBodyReaderTracker(): HttpBodyTracker {.gcsafe, raises: [].}
 
 proc getHttpBodyWriterTracker(): HttpBodyTracker {.inline.} =
   var res = cast[HttpBodyTracker](getTracker(HttpBodyWriterTrackerName))
@@ -138,7 +138,7 @@ proc closeWait*(bstream: HttpBodyWriter) {.async.} =
     bstream.bstate = HttpState.Closed
     untrackHttpBodyWriter(bstream)
 
-proc hasOverflow*(bstream: HttpBodyReader): bool {.raises: [Defect].} =
+proc hasOverflow*(bstream: HttpBodyReader): bool {.raises: [].} =
   if len(bstream.streams) == 1:
     # If HttpBodyReader has only one stream it has ``BoundedStreamReader``, in
     # such case its impossible to get more bytes then expected amount.
@@ -155,5 +155,5 @@ proc hasOverflow*(bstream: HttpBodyReader): bool {.raises: [Defect].} =
       false
 
 proc closed*(bstream: HttpBodyReader | HttpBodyWriter): bool {.
-     raises: [Defect].} =
+     raises: [].} =
   bstream.bstate != HttpState.Alive

@@ -9,10 +9,7 @@
 
 ## This module implements various IP network utility procedures.
 
-when (NimMajor, NimMinor) < (1, 4):
-  {.push raises: [Defect].}
-else:
-  {.push raises: [].}
+{.push raises: [].}
 
 import std/strutils
 import stew/endians2
@@ -352,7 +349,7 @@ proc `$`*(mask: IpMask, include0x = false): string =
   else:
     "Unknown mask family: " & $mask.family
 
-proc ip*(mask: IpMask): string {.raises: [Defect, ValueError].} =
+proc ip*(mask: IpMask): string {.raises: [ValueError].} =
   ## Returns IP address text representation of IP mask ``mask``.
   case mask.family
   of AddressFamily.IPv4:
@@ -387,7 +384,7 @@ proc init*(t: typedesc[IpNet], host: TransportAddress,
   IpNet(mask: mask, host: host)
 
 proc init*(t: typedesc[IpNet], network: string): IpNet {.
-    raises: [Defect, TransportAddressError].} =
+    raises: [TransportAddressError].} =
   ## Initialize IP Network from string representation in format
   ## <address>/<prefix length> or <address>/<netmask address>.
   var parts = network.rsplit("/", maxsplit = 1)

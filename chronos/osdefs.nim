@@ -308,7 +308,7 @@ when defined(windows):
       stdcall, gcsafe, raises: [].}
 
     PHANDLER_ROUTINE* = proc (dwCtrlType: DWORD): WINBOOL {.
-      stdcall, gcsafe, raises: [Defect].}
+      stdcall, gcsafe, raises: [].}
 
     OSVERSIONINFO* {.final, pure.} = object
       dwOSVersionInfoSize*: DWORD

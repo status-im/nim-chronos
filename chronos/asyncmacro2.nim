@@ -211,8 +211,6 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
       let raises = nnkBracket.newTree()
       when chronosStrictException:
         raises.add(newIdentNode("CatchableError"))
-        when (NimMajor, NimMinor) < (1, 4):
-          raises.add(newIdentNode("Defect"))
       else:
         raises.add(newIdentNode("Exception"))
 
@@ -268,12 +266,9 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
   # https://github.com/nim-lang/RFCs/issues/435
   prc.addPragma(newIdentNode("gcsafe"))
 
-  let raises = nnkBracket.newTree()
-  when (NimMajor, NimMinor) < (1, 4):
-    raises.add(newIdentNode("Defect"))
   prc.addPragma(nnkExprColonExpr.newTree(
     newIdentNode("raises"),
-    raises
+    nnkBracket.newTree()
   ))
 
   if baseTypeIsVoid:

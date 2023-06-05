@@ -46,8 +46,8 @@ suite "callSoon() tests suite":
       await sleepAsync(100.milliseconds)
       timeoutsTest1 += 1
 
-  var callbackproc: proc(udata: pointer) {.gcsafe, raises: [Defect].}
-  callbackproc = proc (udata: pointer) {.gcsafe, raises: [Defect].} =
+  var callbackproc: proc(udata: pointer) {.gcsafe, raises: [].}
+  callbackproc = proc (udata: pointer) {.gcsafe, raises: [].} =
     timeoutsTest2 += 1
     {.gcsafe.}:
       callSoon(callbackproc)
