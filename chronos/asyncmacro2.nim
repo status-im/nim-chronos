@@ -21,7 +21,7 @@ proc completeWithResult(fut, baseType: NimNode): NimNode {.compileTime.} =
   else:
     # `baseType` might be generic and resolve to `void`
     nnkWhenStmt.newTree(
-      nnkElIfExpr.newTree(
+      nnkElifExpr.newTree(
         nnkInfix.newTree(ident "is", baseType, ident "void"),
         newCall(ident "complete", fut)
       ),
@@ -43,7 +43,7 @@ proc completeWithNode(fut, baseType, node: NimNode): NimNode {.compileTime.} =
     # macro expansion time, we delegate this choice to a later compilation stage
     # with `when`.
     nnkWhenStmt.newTree(
-      nnkElIfExpr.newTree(
+      nnkElifExpr.newTree(
         nnkInfix.newTree(
           ident "is", nnkTypeOfExpr.newTree(node), ident "void"),
         newStmtList(
@@ -164,7 +164,7 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
 
         resultDecl = nnkWhenStmt.newTree(
           # when `baseType` is void:
-          nnkElIfExpr.newTree(
+          nnkElifExpr.newTree(
             nnkInfix.newTree(ident "is", baseType, ident "void"),
             quote do:
               template result: auto {.used.} =
