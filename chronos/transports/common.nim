@@ -7,10 +7,7 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 
-when (NimMajor, NimMinor) < (1, 4):
-  {.push raises: [Defect].}
-else:
-  {.push raises: [].}
+{.push raises: [].}
 
 import std/[strutils]
 import stew/[base10, byteutils]
@@ -209,7 +206,7 @@ proc toHex*(address: TransportAddress): string =
     "None"
 
 proc initTAddress*(address: string): TransportAddress {.
-    raises: [Defect, TransportAddressError].} =
+    raises: [TransportAddressError].} =
   ## Parses string representation of ``address``. ``address`` can be IPv4, IPv6
   ## or Unix domain address.
   ##
@@ -259,7 +256,7 @@ proc initTAddress*(address: string): TransportAddress {.
     TransportAddress(family: AddressFamily.Unix)
 
 proc initTAddress*(address: string, port: Port): TransportAddress {.
-    raises: [Defect, TransportAddressError].} =
+    raises: [TransportAddressError].} =
   ## Initialize ``TransportAddress`` with IP (IPv4 or IPv6) address ``address``
   ## and port number ``port``.
   let ipaddr =
@@ -277,7 +274,7 @@ proc initTAddress*(address: string, port: Port): TransportAddress {.
                      address_v6: ipaddr.address_v6, port: port)
 
 proc initTAddress*(address: string, port: int): TransportAddress {.
-    raises: [Defect, TransportAddressError].} =
+    raises: [TransportAddressError].} =
   ## Initialize ``TransportAddress`` with IP (IPv4 or IPv6) address ``address``
   ## and port number ``port``.
   if port < 0 or port > 65535:
@@ -298,7 +295,7 @@ proc initTAddress*(address: IpAddress, port: Port): TransportAddress =
 proc getAddrInfo(address: string, port: Port, domain: Domain,
                  sockType: SockType = SockType.SOCK_STREAM,
                  protocol: Protocol = Protocol.IPPROTO_TCP): ptr AddrInfo {.
-    raises: [Defect, TransportAddressError].} =
+    raises: [TransportAddressError].} =
   ## We have this one copy of ``getAddrInfo()`` because of AI_V4MAPPED in
   ## ``net.nim:getAddrInfo()``, which is not cross-platform.
   var hints: AddrInfo
@@ -380,7 +377,7 @@ proc toSAddr*(address: TransportAddress, sa: var Sockaddr_storage,
     discard
 
 proc address*(ta: TransportAddress): IpAddress {.
-     raises: [Defect, ValueError].} =
+     raises: [ValueError].} =
   ## Converts ``TransportAddress`` to ``net.IpAddress`` object.
   ##
   ## Note its impossible to convert ``TransportAddress`` of ``Unix`` family,
@@ -393,7 +390,7 @@ proc address*(ta: TransportAddress): IpAddress {.
   else:
     raise newException(ValueError, "IpAddress supports only IPv4/IPv6!")
 
-proc host*(ta: TransportAddress): string {.raises: [Defect].} =
+proc host*(ta: TransportAddress): string {.raises: [].} =
   ## Returns ``host`` of TransportAddress ``ta``.
   ##
   ## For IPv4 and IPv6 addresses it will return IP address as string, or empty
@@ -410,7 +407,7 @@ proc host*(ta: TransportAddress): string {.raises: [Defect].} =
 
 proc resolveTAddress*(address: string, port: Port,
                       domain: Domain): seq[TransportAddress] {.
-     raises: [Defect, TransportAddressError].} =
+     raises: [TransportAddressError].} =
   var res: seq[TransportAddress]
   let aiList = getAddrInfo(address, port, domain)
   var it = aiList
@@ -426,7 +423,7 @@ proc resolveTAddress*(address: string, port: Port,
   res
 
 proc resolveTAddress*(address: string, domain: Domain): seq[TransportAddress] {.
-     raises: [Defect, TransportAddressError].} =
+     raises: [TransportAddressError].} =
   let parts =
     block:
       let res = address.rsplit(":", maxsplit = 1)
@@ -448,7 +445,7 @@ proc resolveTAddress*(address: string, domain: Domain): seq[TransportAddress] {.
   resolveTAddress(hostname, Port(port), domain)
 
 proc resolveTAddress*(address: string): seq[TransportAddress] {.
-     raises: [Defect, TransportAddressError].} =
+     raises: [TransportAddressError].} =
   ## Resolve string representation of ``address``.
   ##
   ## Supported formats are:
@@ -461,7 +458,7 @@ proc resolveTAddress*(address: string): seq[TransportAddress] {.
   resolveTAddress(address, Domain.AF_UNSPEC)
 
 proc resolveTAddress*(address: string, port: Port): seq[TransportAddress] {.
-     raises: [Defect, TransportAddressError].} =
+     raises: [TransportAddressError].} =
   ## Resolve string representation of ``address``.
   ##
   ## Supported formats are:
@@ -475,7 +472,7 @@ proc resolveTAddress*(address: string, port: Port): seq[TransportAddress] {.
 
 proc resolveTAddress*(address: string,
                       family: AddressFamily): seq[TransportAddress] {.
-    raises: [Defect, TransportAddressError].} =
+    raises: [TransportAddressError].} =
   ## Resolve string representation of ``address``.
   ##
   ## Supported formats are:
@@ -495,7 +492,7 @@ proc resolveTAddress*(address: string,
 
 proc resolveTAddress*(address: string, port: Port,
                       family: AddressFamily): seq[TransportAddress] {.
-    raises: [Defect, TransportAddressError].} =
+    raises: [TransportAddressError].} =
   ## Resolve string representation of ``address``.
   ##
   ## ``address`` could be dot IPv4/IPv6 address or hostname.
@@ -512,7 +509,7 @@ proc resolveTAddress*(address: string, port: Port,
 
 proc resolveTAddress*(address: string,
                       family: IpAddressFamily): seq[TransportAddress] {.
-     deprecated, raises: [Defect, TransportAddressError].} =
+     deprecated, raises: [TransportAddressError].} =
   case family
   of IpAddressFamily.IPv4:
     resolveTAddress(address, AddressFamily.IPv4)
@@ -521,7 +518,7 @@ proc resolveTAddress*(address: string,
 
 proc resolveTAddress*(address: string, port: Port,
                       family: IpAddressFamily): seq[TransportAddress] {.
-     deprecated, raises: [Defect, TransportAddressError].} =
+     deprecated, raises: [TransportAddressError].} =
   case family
   of IpAddressFamily.IPv4:
     resolveTAddress(address, port, AddressFamily.IPv4)
@@ -586,7 +583,7 @@ template getTransportOsError*(err: cint): ref TransportOsError =
   getTransportOsError(OSErrorCode(err))
 
 proc raiseTransportOsError*(err: OSErrorCode) {.
-    raises: [Defect, TransportOsError].} =
+    raises: [TransportOsError].} =
   ## Raises transport specific OS error.
   raise getTransportOsError(err)
 

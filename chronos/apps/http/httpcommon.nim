@@ -118,7 +118,7 @@ template newHttpUseClosedError*(): ref HttpUseClosedError =
 
 iterator queryParams*(query: string,
                       flags: set[QueryParamsFlag] = {}): KeyValueTuple {.
-         raises: [Defect].} =
+         raises: [].} =
   ## Iterate over url-encoded query string.
   for pair in query.split('&'):
     let items = pair.split('=', maxsplit = 1)
@@ -133,7 +133,7 @@ iterator queryParams*(query: string,
 
 func getTransferEncoding*(ch: openArray[string]): HttpResult[
                                                   set[TransferEncodingFlags]] {.
-     raises: [Defect].} =
+     raises: [].} =
   ## Parse value of multiple HTTP headers ``Transfer-Encoding`` and return
   ## it as set of ``TransferEncodingFlags``.
   var res: set[TransferEncodingFlags] = {}
@@ -164,7 +164,7 @@ func getTransferEncoding*(ch: openArray[string]): HttpResult[
 
 func getContentEncoding*(ch: openArray[string]): HttpResult[
                                                    set[ContentEncodingFlags]] {.
-     raises: [Defect].} =
+     raises: [].} =
   ## Parse value of multiple HTTP headers ``Content-Encoding`` and return
   ## it as set of ``ContentEncodingFlags``.
   var res: set[ContentEncodingFlags] = {}
@@ -194,7 +194,7 @@ func getContentEncoding*(ch: openArray[string]): HttpResult[
     ok(res)
 
 func getContentType*(ch: openArray[string]): HttpResult[ContentTypeData]  {.
-     raises: [Defect].} =
+     raises: [].} =
   ## Check and prepare value of ``Content-Type`` header.
   if len(ch) == 0:
     err("No Content-Type values found")

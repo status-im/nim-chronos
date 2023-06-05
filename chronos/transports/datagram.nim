@@ -7,10 +7,7 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 
-when (NimMajor, NimMinor) < (1, 4):
-  {.push raises: [Defect].}
-else:
-  {.push raises: [].}
+{.push raises: [].}
 
 import std/deques
 when not(defined(windows)): import ".."/selectors2
@@ -30,7 +27,7 @@ type
 
   DatagramCallback* = proc(transp: DatagramTransport,
                            remote: TransportAddress): Future[void] {.
-                      gcsafe, raises: [Defect].}
+                      gcsafe, raises: [].}
 
   DatagramTransport* = ref object of RootRef
     fd*: AsyncFD                    # File descriptor
@@ -64,7 +61,7 @@ const
   DgramTransportTrackerName* = "datagram.transport"
 
 proc remoteAddress*(transp: DatagramTransport): TransportAddress {.
-    raises: [Defect, TransportOsError].} =
+    raises: [TransportOsError].} =
   ## Returns ``transp`` remote socket address.
   if transp.remote.family == AddressFamily.None:
     var saddr: Sockaddr_storage
@@ -76,7 +73,7 @@ proc remoteAddress*(transp: DatagramTransport): TransportAddress {.
   transp.remote
 
 proc localAddress*(transp: DatagramTransport): TransportAddress {.
-    raises: [Defect, TransportOsError].} =
+    raises: [TransportOsError].} =
   ## Returns ``transp`` local socket address.
   if transp.local.family == AddressFamily.None:
     var saddr: Sockaddr_storage
@@ -92,7 +89,7 @@ template setReadError(t, e: untyped) =
   (t).error = getTransportOsError(e)
 
 proc setupDgramTransportTracker(): DgramTransportTracker {.
-     gcsafe, raises: [Defect].}
+     gcsafe, raises: [].}
 
 proc getDgramTransportTracker(): DgramTransportTracker {.inline.} =
   var res = cast[DgramTransportTracker](getTracker(DgramTransportTrackerName))
@@ -288,7 +285,7 @@ when defined(windows):
                                   child: DatagramTransport,
                                   bufferSize: int,
                                   ttl: int): DatagramTransport {.
-      raises: [Defect, TransportOsError].} =
+      raises: [TransportOsError].} =
     var localSock: AsyncFD
     doAssert(remote.family == local.family)
     doAssert(not isNil(cbproc))
@@ -406,7 +403,7 @@ when defined(windows):
 else:
   # Linux/BSD/MacOS part
 
-  proc readDatagramLoop(udata: pointer) {.raises: Defect.}=
+  proc readDatagramLoop(udata: pointer) {.raises: [].}=
     var raddr: TransportAddress
     doAssert(not isNil(udata))
     let transp = cast[DatagramTransport](udata)
@@ -498,7 +495,7 @@ else:
                                   child: DatagramTransport,
                                   bufferSize: int,
                                   ttl: int): DatagramTransport {.
-      raises: [Defect, TransportOsError].} =
+      raises: [TransportOsError].} =
     var localSock: AsyncFD
     doAssert(remote.family == local.family)
     doAssert(not isNil(cbproc))
@@ -603,7 +600,7 @@ else:
 
 proc close*(transp: DatagramTransport) =
   ## Closes and frees resources of transport ``transp``.
-  proc continuation(udata: pointer) {.raises: Defect.} =
+  proc continuation(udata: pointer) {.raises: [].} =
     if not(transp.future.finished()):
       # Stop tracking transport
       untrackDgram(transp)
@@ -636,7 +633,7 @@ proc newDatagramTransport*(cbproc: DatagramCallback,
                            bufSize: int = DefaultDatagramBufferSize,
                            ttl: int = 0
                            ): DatagramTransport {.
-    raises: [Defect, TransportOsError].} =
+    raises: [TransportOsError].} =
   ## Create new UDP datagram transport (IPv4).
   ##
   ## ``cbproc`` - callback which will be called, when new datagram received.
@@ -662,7 +659,7 @@ proc newDatagramTransport*[T](cbproc: DatagramCallback,
                               bufSize: int = DefaultDatagramBufferSize,
                               ttl: int = 0
                               ): DatagramTransport {.
-    raises: [Defect, TransportOsError].} =
+    raises: [TransportOsError].} =
   var fflags = flags + {GCUserData}
   GC_ref(udata)
   newDatagramTransportCommon(cbproc, remote, local, sock, fflags,
@@ -678,7 +675,7 @@ proc newDatagramTransport6*(cbproc: DatagramCallback,
                             bufSize: int = DefaultDatagramBufferSize,
                             ttl: int = 0
                             ): DatagramTransport {.
-    raises: [Defect, TransportOsError].} =
+    raises: [TransportOsError].} =
   ## Create new UDP datagram transport (IPv6).
   ##
   ## ``cbproc`` - callback which will be called, when new datagram received.
@@ -704,7 +701,7 @@ proc newDatagramTransport6*[T](cbproc: DatagramCallback,
                                bufSize: int = DefaultDatagramBufferSize,
                                ttl: int = 0
                                ): DatagramTransport {.
-    raises: [Defect, TransportOsError].} =
+    raises: [TransportOsError].} =
   var fflags = flags + {GCUserData}
   GC_ref(udata)
   newDatagramTransportCommon(cbproc, remote, local, sock, fflags,
@@ -865,7 +862,7 @@ proc sendTo*[T](transp: DatagramTransport, remote: TransportAddress,
   return retFuture
 
 proc peekMessage*(transp: DatagramTransport, msg: var seq[byte],
-                  msglen: var int) {.raises: [Defect, CatchableError].} =
+                  msglen: var int) {.raises: [CatchableError].} =
   ## Get access to internal message buffer and length of incoming datagram.
   if ReadError in transp.state:
     transp.state.excl(ReadError)
@@ -877,7 +874,7 @@ proc peekMessage*(transp: DatagramTransport, msg: var seq[byte],
   msglen = transp.buflen
 
 proc getMessage*(transp: DatagramTransport): seq[byte] {.
-    raises: [Defect, CatchableError].} =
+    raises: [CatchableError].} =
   ## Copy data from internal message buffer and return result.
   var default: seq[byte]
   if ReadError in transp.state:

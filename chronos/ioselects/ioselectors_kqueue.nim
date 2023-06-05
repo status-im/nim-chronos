@@ -8,7 +8,8 @@
 #
 #  This module implements BSD kqueue().
 
-{.push raises: [Defect].}
+{.push raises: [].}
+
 import std/[kqueue, deques, tables]
 import stew/base10
 
@@ -606,85 +607,85 @@ proc select2*[T](s: Selector[T],
   ok(res)
 
 proc newSelector*[T](): owned(Selector[T]) {.
-     raises: [Defect, IOSelectorsException].} =
+     raises: [IOSelectorsException].} =
   let res = Selector.new(T)
   if res.isErr():
     raiseIOSelectorsError(res.error())
   res.get()
 
 proc newSelectEvent*(): SelectEvent {.
-     raises: [Defect, IOSelectorsException].} =
+     raises: [IOSelectorsException].} =
   let res = SelectEvent.new()
   if res.isErr():
     raiseIOSelectorsError(res.error())
   res.get()
 
 proc trigger*(ev: SelectEvent) {.
-     raises: [Defect, IOSelectorsException].} =
+     raises: [IOSelectorsException].} =
   let res = ev.trigger2()
   if res.isErr():
     raiseIOSelectorsError(res.error())
 
 proc close*(ev: SelectEvent) {.
-     raises: [Defect, IOSelectorsException].} =
+     raises: [IOSelectorsException].} =
   let res = ev.close2()
   if res.isErr():
     raiseIOSelectorsError(res.error())
 
 proc registerHandle*[T](s: Selector[T], fd: cint | SocketHandle,
                         events: set[Event], data: T) {.
-     raises: [Defect, IOSelectorsException].} =
+     raises: [IOSelectorsException].} =
   let res = registerHandle2(s, cint(fd), events, data)
   if res.isErr():
     raiseIOSelectorsError(res.error())
 
 proc updateHandle*[T](s: Selector[T], fd: cint | SocketHandle,
                       events: set[Event]) {.
-     raises: [Defect, IOSelectorsException].} =
+     raises: [IOSelectorsException].} =
   let res = updateHandle2(s, cint(fd), events)
   if res.isErr():
     raiseIOSelectorsError(res.error())
 
 proc registerEvent*[T](s: Selector[T], ev: SelectEvent, data: T) {.
-     raises: [Defect, IOSelectorsException].} =
+     raises: [IOSelectorsException].} =
   let res = registerEvent2(s, ev, data)
   if res.isErr():
     raiseIOSelectorsError(res.error())
 
 proc registerVnode*[T](s: Selector[T], fd: cint, events: set[Event], data: T) {.
-     raises: [Defect, IOSelectorsException].} =
+     raises: [IOSelectorsException].} =
   let res = registerVnode2(s, fd, events, data)
   if res.isErr():
     raiseIOSelectorsError(res.error())
 
 proc unregister*[T](s: Selector[T], event: SelectEvent) {.
-  raises: [Defect, IOSelectorsException].} =
+  raises: [IOSelectorsException].} =
   let res = unregister2(s, event)
   if res.isErr():
     raiseIOSelectorsError(res.error())
 
 proc unregister*[T](s: Selector[T], fd: cint|SocketHandle) {.
-  raises: [Defect, IOSelectorsException].} =
+  raises: [IOSelectorsException].} =
   let res = unregister2(s, fd)
   if res.isErr():
     raiseIOSelectorsError(res.error())
 
 proc selectInto*[T](s: Selector[T], timeout: int,
                     results: var openArray[ReadyKey]): int {.
-     raises: [Defect, IOSelectorsException].} =
+     raises: [IOSelectorsException].} =
   let res = selectInto2(s, timeout, results)
   if res.isErr():
     raiseIOSelectorsError(res.error())
   res.get()
 
 proc select*[T](s: Selector[T], timeout: int): seq[ReadyKey] {.
-     raises: [Defect, IOSelectorsException].} =
+     raises: [IOSelectorsException].} =
   let res = select2(s, timeout)
   if res.isErr():
     raiseIOSelectorsError(res.error())
   res.get()
 
-proc close*[T](s: Selector[T]) {.raises: [Defect, IOSelectorsException].} =
+proc close*[T](s: Selector[T]) {.raises: [IOSelectorsException].} =
   let res = s.close2()
   if res.isErr():
     raiseIOSelectorsError(res.error())

@@ -70,7 +70,7 @@ proc new*(htype: typedesc[SecureHttpServerRef],
           httpHeadersTimeout = 10.seconds,
           maxHeadersSize: int = 8192,
           maxRequestBodySize: int = 1_048_576
-         ): HttpResult[SecureHttpServerRef] {.raises: [Defect].} =
+         ): HttpResult[SecureHttpServerRef] {.raises: [].} =
 
   doAssert(not(isNil(tlsPrivateKey)), "TLS private key must not be nil!")
   doAssert(not(isNil(tlsCertificate)), "TLS certificate must not be nil!")

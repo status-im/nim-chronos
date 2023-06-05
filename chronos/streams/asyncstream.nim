@@ -7,10 +7,7 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 
-when (NimMajor, NimMinor) < (1, 4):
-  {.push raises: [Defect].}
-else:
-  {.push raises: [].}
+{.push raises: [].}
 
 import ../asyncloop, ../asyncsync
 import ../transports/common, ../transports/stream
@@ -67,10 +64,10 @@ type
     Closed    ## Stream was closed
 
   StreamReaderLoop* = proc (stream: AsyncStreamReader): Future[void] {.
-                        gcsafe, raises: [Defect].}
+                        gcsafe, raises: [].}
     ## Main read loop for read streams.
   StreamWriterLoop* = proc (stream: AsyncStreamWriter): Future[void] {.
-                        gcsafe, raises: [Defect].}
+                        gcsafe, raises: [].}
     ## Main write loop for write streams.
 
   AsyncStreamReader* = ref object of RootRef
@@ -219,15 +216,15 @@ proc newAsyncStreamUseClosedError*(): ref AsyncStreamUseClosedError {.
   newException(AsyncStreamUseClosedError, "Stream is already closed")
 
 proc raiseAsyncStreamUseClosedError*() {.
-     noinline, noreturn, raises: [Defect, AsyncStreamUseClosedError].} =
+     noinline, noreturn, raises: [AsyncStreamUseClosedError].} =
   raise newAsyncStreamUseClosedError()
 
 proc raiseAsyncStreamLimitError*() {.
-     noinline, noreturn, raises: [Defect, AsyncStreamLimitError].} =
+     noinline, noreturn, raises: [AsyncStreamLimitError].} =
   raise newAsyncStreamLimitError()
 
 proc raiseAsyncStreamIncompleteError*() {.
-     noinline, noreturn, raises: [Defect, AsyncStreamIncompleteError].} =
+     noinline, noreturn, raises: [AsyncStreamIncompleteError].} =
   raise newAsyncStreamIncompleteError()
 
 proc raiseEmptyMessageDefect*() {.noinline, noreturn.} =
@@ -235,7 +232,7 @@ proc raiseEmptyMessageDefect*() {.noinline, noreturn.} =
                      "Could not write empty message")
 
 proc raiseAsyncStreamWriteEOFError*() {.
-     noinline, noreturn, raises: [Defect, AsyncStreamWriteEOFError].} =
+     noinline, noreturn, raises: [AsyncStreamWriteEOFError].} =
   raise newException(AsyncStreamWriteEOFError,
                      "Stream finished or remote side dropped connection")
 
@@ -336,9 +333,9 @@ template checkStreamFinished*(t: untyped) =
   if t.atEof(): raiseAsyncStreamWriteEOFError()
 
 proc setupAsyncStreamReaderTracker(): AsyncStreamTracker {.
-     gcsafe, raises: [Defect].}
+     gcsafe, raises: [].}
 proc setupAsyncStreamWriterTracker(): AsyncStreamTracker {.
-     gcsafe, raises: [Defect].}
+     gcsafe, raises: [].}
 
 proc getAsyncStreamReaderTracker(): AsyncStreamTracker {.inline.} =
   var res = cast[AsyncStreamTracker](getTracker(AsyncStreamReaderTrackerName))
@@ -974,7 +971,7 @@ proc close*(rw: AsyncStreamRW) =
   if not(rw.closed()):
     rw.state = AsyncStreamState.Closing
 
-    proc continuation(udata: pointer) {.raises: [Defect].} =
+    proc continuation(udata: pointer) {.raises: [].} =
       if not isNil(rw.udata):
         GC_unref(cast[ref int](rw.udata))
       if not(rw.future.finished()):

@@ -10,10 +10,7 @@
 
 ## This module implements some core synchronization primitives.
 
-when (NimMajor, NimMinor) < (1, 4):
-  {.push raises: [Defect].}
-else:
-  {.push raises: [].}
+{.push raises: [].}
 
 import std/[sequtils, math, deques, tables, typetraits]
 import ./asyncloop
@@ -67,17 +64,17 @@ type
 
   EventBusSubscription*[T] = proc(bus: AsyncEventBus,
                                   payload: EventPayload[T]): Future[void] {.
-                                  gcsafe, raises: [Defect].}
+                                  gcsafe, raises: [].}
     ## EventBus subscription callback type.
 
   EventBusAllSubscription* = proc(bus: AsyncEventBus,
                                   event: AwaitableEvent): Future[void] {.
-                                  gcsafe, raises: [Defect].}
+                                  gcsafe, raises: [].}
     ## EventBus subscription callback type.
 
   EventBusCallback = proc(bus: AsyncEventBus, event: string, key: EventBusKey,
                           data: EventPayloadBase) {.
-                          gcsafe, raises: [Defect].}
+                          gcsafe, raises: [].}
 
   EventBusKey* = object
     ## Unique subscription key.
@@ -186,7 +183,7 @@ proc locked*(lock: AsyncLock): bool =
   ## Return `true` if the lock ``lock`` is acquired, `false` otherwise.
   lock.locked
 
-proc release*(lock: AsyncLock) {.raises: [Defect, AsyncLockError].} =
+proc release*(lock: AsyncLock) {.raises: [AsyncLockError].} =
   ## Release a lock ``lock``.
   ##
   ## When the ``lock`` is locked, reset it to unlocked, and return. If any
@@ -224,7 +221,7 @@ proc wait*(event: AsyncEvent): Future[void] =
   ## block until another task calls `fire()` to set the flag to `true`,
   ## then return.
   let retFuture = newFuture[void]("AsyncEvent.wait")
-  proc cancellation(udata: pointer) {.gcsafe, raises: [Defect].} =
+  proc cancellation(udata: pointer) {.gcsafe, raises: [].} =
     event.waiters.keepItIf(it != retFuture)
   if not(event.flag):
     retFuture.cancelCallback = cancellation
@@ -298,7 +295,7 @@ proc empty*[T](aq: AsyncQueue[T]): bool {.inline.} =
   (len(aq.queue) == 0)
 
 proc addFirstNoWait*[T](aq: AsyncQueue[T], item: T) {.
-    raises: [Defect, AsyncQueueFullError].}=
+    raises: [AsyncQueueFullError].}=
   ## Put an item ``item`` to the beginning of the queue ``aq`` immediately.
   ##
   ## If queue ``aq`` is full, then ``AsyncQueueFullError`` exception raised.
@@ -308,7 +305,7 @@ proc addFirstNoWait*[T](aq: AsyncQueue[T], item: T) {.
   aq.getters.wakeupNext()
 
 proc addLastNoWait*[T](aq: AsyncQueue[T], item: T) {.
-    raises: [Defect, AsyncQueueFullError].}=
+    raises: [AsyncQueueFullError].}=
   ## Put an item ``item`` at the end of the queue ``aq`` immediately.
   ##
   ## If queue ``aq`` is full, then ``AsyncQueueFullError`` exception raised.
@@ -318,7 +315,7 @@ proc addLastNoWait*[T](aq: AsyncQueue[T], item: T) {.
   aq.getters.wakeupNext()
 
 proc popFirstNoWait*[T](aq: AsyncQueue[T]): T {.
-    raises: [Defect, AsyncQueueEmptyError].} =
+    raises: [AsyncQueueEmptyError].} =
   ## Get an item from the beginning of the queue ``aq`` immediately.
   ##
   ## If queue ``aq`` is empty, then ``AsyncQueueEmptyError`` exception raised.
@@ -329,7 +326,7 @@ proc popFirstNoWait*[T](aq: AsyncQueue[T]): T {.
   res
 
 proc popLastNoWait*[T](aq: AsyncQueue[T]): T {.
-    raises: [Defect, AsyncQueueEmptyError].} =
+    raises: [AsyncQueueEmptyError].} =
   ## Get an item from the end of the queue ``aq`` immediately.
   ##
   ## If queue ``aq`` is empty, then ``AsyncQueueEmptyError`` exception raised.
@@ -396,12 +393,12 @@ proc popLast*[T](aq: AsyncQueue[T]): Future[T] {.async.} =
   return aq.popLastNoWait()
 
 proc putNoWait*[T](aq: AsyncQueue[T], item: T) {.
-    raises: [Defect, AsyncQueueFullError].} =
+    raises: [AsyncQueueFullError].} =
   ## Alias of ``addLastNoWait()``.
   aq.addLastNoWait(item)
 
 proc getNoWait*[T](aq: AsyncQueue[T]): T {.
-    raises: [Defect, AsyncQueueEmptyError].} =
+    raises: [AsyncQueueEmptyError].} =
   ## Alias of ``popFirstNoWait()``.
   aq.popFirstNoWait()
 
@@ -514,7 +511,7 @@ proc waitEvent*(bus: AsyncEventBus, T: typedesc, event: string): Future[T] {.
   var default: EventItem
   var retFuture = newFuture[T]("AsyncEventBus.waitEvent")
   let eventKey = generateKey(T.name, event)
-  proc cancellation(udata: pointer) {.gcsafe, raises: [Defect].} =
+  proc cancellation(udata: pointer) {.gcsafe, raises: [].} =
     if not(retFuture.finished()):
       bus.events.withValue(eventKey, item):
         item.waiters.keepItIf(it != cast[FutureBase](retFuture))
@@ -531,7 +528,7 @@ proc waitAllEvents*(bus: AsyncEventBus): Future[AwaitableEvent] {.
   ## Returns ``Future`` which holds helper object. Using this object you can
   ## retrieve event's name and payload.
   var retFuture = newFuture[AwaitableEvent]("AsyncEventBus.waitAllEvents")
-  proc cancellation(udata: pointer) {.gcsafe, raises: [Defect].} =
+  proc cancellation(udata: pointer) {.gcsafe, raises: [].} =
     if not(retFuture.finished()):
       bus.waiters.keepItIf(it != retFuture)
   retFuture.cancelCallback = cancellation
@@ -547,7 +544,7 @@ proc subscribe*[T](bus: AsyncEventBus, event: string,
   ##
   ## Returns key that can be used to unsubscribe.
   proc trampoline(tbus: AsyncEventBus, event: string, key: EventBusKey,
-                  data: EventPayloadBase) {.gcsafe, raises: [Defect].} =
+                  data: EventPayloadBase) {.gcsafe, raises: [].} =
     let payload = cast[EventPayload[T]](data)
     asyncSpawn callback(bus, payload)
 
@@ -571,7 +568,7 @@ proc subscribeAll*(bus: AsyncEventBus,
   ##
   ## Returns key that can be used to unsubscribe.
   proc trampoline(tbus: AsyncEventBus, event: string, key: EventBusKey,
-                  data: EventPayloadBase) {.gcsafe, raises: [Defect].} =
+                  data: EventPayloadBase) {.gcsafe, raises: [].} =
     let event = AwaitableEvent(eventName: event, payload: data)
     asyncSpawn callback(bus, event)
 
@@ -660,7 +657,7 @@ template emitWait*[T](bus: AsyncEventBus, event: string,
 
 proc `==`(a, b: EventQueueKey): bool {.borrow.}
 
-proc compact(ab: AsyncEventQueue) {.raises: [Defect].} =
+proc compact(ab: AsyncEventQueue) {.raises: [].} =
   if len(ab.readers) > 0:
     let minOffset =
       block:
@@ -684,14 +681,14 @@ proc compact(ab: AsyncEventQueue) {.raises: [Defect].} =
     ab.queue.clear()
 
 proc getReaderIndex(ab: AsyncEventQueue, key: EventQueueKey): int {.
-     raises: [Defect].} =
+     raises: [].} =
   for index, value in ab.readers.pairs():
     if value.key == key:
       return index
   -1
 
 proc newAsyncEventQueue*[T](limitSize = 0): AsyncEventQueue[T] {.
-     raises: [Defect].} =
+     raises: [].} =
   ## Creates new ``AsyncEventBus`` maximum size of ``limitSize`` (default is
   ## ``0`` which means that there no limits).
   ##
@@ -709,10 +706,10 @@ proc newAsyncEventQueue*[T](limitSize = 0): AsyncEventQueue[T] {.
       initDeque[T](nextPowerOfTwo(limitSize + 1))
   AsyncEventQueue[T](counter: 0'u64, queue: queue, limit: limitSize)
 
-proc len*(ab: AsyncEventQueue): int {.raises: [Defect].} =
+proc len*(ab: AsyncEventQueue): int {.raises: [].} =
   len(ab.queue)
 
-proc register*(ab: AsyncEventQueue): EventQueueKey {.raises: [Defect].} =
+proc register*(ab: AsyncEventQueue): EventQueueKey {.raises: [].} =
   inc(ab.counter)
   let reader = EventQueueReader(key: EventQueueKey(ab.counter),
                                 offset: ab.offset + len(ab.queue),
@@ -721,7 +718,7 @@ proc register*(ab: AsyncEventQueue): EventQueueKey {.raises: [Defect].} =
   EventQueueKey(ab.counter)
 
 proc unregister*(ab: AsyncEventQueue, key: EventQueueKey) {.
-     raises: [Defect] .} =
+     raises: [] .} =
   let index = ab.getReaderIndex(key)
   if index >= 0:
     let reader = ab.readers[index]
@@ -731,14 +728,14 @@ proc unregister*(ab: AsyncEventQueue, key: EventQueueKey) {.
     ab.readers.delete(index)
     ab.compact()
 
-proc close*(ab: AsyncEventQueue) {.raises: [Defect].} =
+proc close*(ab: AsyncEventQueue) {.raises: [].} =
   for reader in ab.readers.items():
     if not(isNil(reader.waiter)) and not(reader.waiter.finished()):
       reader.waiter.complete()
   ab.readers.reset()
   ab.queue.clear()
 
-proc closeWait*(ab: AsyncEventQueue): Future[void] {.raises: [Defect].} =
+proc closeWait*(ab: AsyncEventQueue): Future[void] {.raises: [].} =
   var retFuture = newFuture[void]("AsyncEventQueue.closeWait()")
   proc continuation(udata: pointer) {.gcsafe.} =
     if not(retFuture.finished()):
@@ -753,7 +750,7 @@ template readerOverflow*(ab: AsyncEventQueue,
                          reader: EventQueueReader): bool =
   ab.limit + (reader.offset - ab.offset) <= len(ab.queue)
 
-proc emit*[T](ab: AsyncEventQueue[T], data: T) {.raises: [Defect].} =
+proc emit*[T](ab: AsyncEventQueue[T], data: T) {.raises: [].} =
   if len(ab.readers) > 0:
     # We enqueue `data` only if there active reader present.
     var changesPresent = false

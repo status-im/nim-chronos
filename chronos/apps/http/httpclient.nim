@@ -205,11 +205,11 @@ type
 # Open -> (Finished, Error) -> (Closing, Closed)
 
 proc setupHttpClientConnectionTracker(): HttpClientTracker {.
-     gcsafe, raises: [Defect].}
+     gcsafe, raises: [].}
 proc setupHttpClientRequestTracker(): HttpClientTracker {.
-     gcsafe, raises: [Defect].}
+     gcsafe, raises: [].}
 proc setupHttpClientResponseTracker(): HttpClientTracker {.
-     gcsafe, raises: [Defect].}
+     gcsafe, raises: [].}
 
 proc getHttpClientConnectionTracker(): HttpClientTracker {.inline.} =
   var res = cast[HttpClientTracker](getTracker(HttpClientConnectionTrackerName))
@@ -353,7 +353,7 @@ proc new*(t: typedesc[HttpSessionRef],
           idleTimeout = HttpConnectionIdleTimeout,
           idlePeriod = HttpConnectionCheckPeriod,
           socketFlags: set[SocketFlags] = {}): HttpSessionRef {.
-     raises: [Defect] .} =
+     raises: [] .} =
   ## Create new HTTP session object.
   ##
   ## ``maxRedirections`` - maximum number of HTTP 3xx redirections
@@ -381,7 +381,7 @@ proc new*(t: typedesc[HttpSessionRef],
       newFuture[void]("session.watcher.placeholder")
   res
 
-proc getTLSFlags(flags: HttpClientFlags): set[TLSFlags] {.raises: [Defect] .} =
+proc getTLSFlags(flags: HttpClientFlags): set[TLSFlags] {.raises: [] .} =
   var res: set[TLSFlags]
   if HttpClientFlag.NoVerifyHost in flags:
     res.incl(TLSFlags.NoVerifyHost)
@@ -390,7 +390,7 @@ proc getTLSFlags(flags: HttpClientFlags): set[TLSFlags] {.raises: [Defect] .} =
   res
 
 proc getAddress*(session: HttpSessionRef, url: Uri): HttpResult[HttpAddress] {.
-     raises: [Defect] .} =
+     raises: [] .} =
   let scheme =
     if len(url.scheme) == 0:
       HttpClientScheme.NonSecure
@@ -454,13 +454,13 @@ proc getAddress*(session: HttpSessionRef, url: Uri): HttpResult[HttpAddress] {.
                  addresses: addresses))
 
 proc getAddress*(session: HttpSessionRef,
-                 url: string): HttpResult[HttpAddress] {.raises: [Defect].} =
+                 url: string): HttpResult[HttpAddress] {.raises: [].} =
   ## Create new HTTP address using URL string ``url`` and .
   session.getAddress(parseUri(url))
 
 proc getAddress*(address: TransportAddress,
                  ctype: HttpClientScheme = HttpClientScheme.NonSecure,
-                 queryString: string = "/"): HttpAddress {.raises: [Defect].} =
+                 queryString: string = "/"): HttpAddress {.raises: [].} =
   ## Create new HTTP address using Transport address ``address``, connection
   ## type ``ctype`` and query string ``queryString``.
   let uri = parseUri(queryString)
@@ -579,7 +579,7 @@ proc new(t: typedesc[HttpClientConnectionRef], session: HttpSessionRef,
     res
 
 proc setError(request: HttpClientRequestRef, error: ref HttpError) {.
-     raises: [Defect] .} =
+     raises: [] .} =
   request.error = error
   request.state = HttpReqRespState.Error
   if not(isNil(request.connection)):
@@ -587,7 +587,7 @@ proc setError(request: HttpClientRequestRef, error: ref HttpError) {.
     request.connection.error = error
 
 proc setError(response: HttpClientResponseRef, error: ref HttpError) {.
-     raises: [Defect] .} =
+     raises: [] .} =
   response.error = error
   response.state = HttpReqRespState.Error
   if not(isNil(response.connection)):
@@ -851,7 +851,7 @@ proc closeWait*(response: HttpClientResponseRef) {.async.} =
     untrackHttpClientResponse(response)
 
 proc prepareResponse(request: HttpClientRequestRef, data: openArray[byte]
-                    ): HttpResult[HttpClientResponseRef] {.raises: [Defect] .} =
+                    ): HttpResult[HttpClientResponseRef] {.raises: [] .} =
   ## Process response headers.
   let resp = parseResponse(data, false)
   if resp.failed():
@@ -990,7 +990,7 @@ proc new*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
           flags: set[HttpClientRequestFlag] = {},
           headers: openArray[HttpHeaderTuple] = [],
           body: openArray[byte] = []): HttpClientRequestRef {.
-     raises: [Defect].} =
+     raises: [].} =
   let res = HttpClientRequestRef(
     state: HttpReqRespState.Ready, session: session, meth: meth,
     version: version, flags: flags, headers: HttpTable.init(headers),
@@ -1005,7 +1005,7 @@ proc new*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
           flags: set[HttpClientRequestFlag] = {},
           headers: openArray[HttpHeaderTuple] = [],
           body: openArray[byte] = []): HttpResult[HttpClientRequestRef] {.
-     raises: [Defect].} =
+     raises: [].} =
   let address = ? session.getAddress(parseUri(url))
   let res = HttpClientRequestRef(
     state: HttpReqRespState.Ready, session: session, meth: meth,
@@ -1019,14 +1019,14 @@ proc get*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
           url: string, version: HttpVersion = HttpVersion11,
           flags: set[HttpClientRequestFlag] = {},
           headers: openArray[HttpHeaderTuple] = []
-         ): HttpResult[HttpClientRequestRef] {.raises: [Defect].} =
+         ): HttpResult[HttpClientRequestRef] {.raises: [].} =
   HttpClientRequestRef.new(session, url, MethodGet, version, flags, headers)
 
 proc get*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
           ha: HttpAddress, version: HttpVersion = HttpVersion11,
           flags: set[HttpClientRequestFlag] = {},
           headers: openArray[HttpHeaderTuple] = []
-         ): HttpClientRequestRef {.raises: [Defect].} =
+         ): HttpClientRequestRef {.raises: [].} =
   HttpClientRequestRef.new(session, ha, MethodGet, version, flags, headers)
 
 proc post*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
@@ -1034,7 +1034,7 @@ proc post*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
            flags: set[HttpClientRequestFlag] = {},
            headers: openArray[HttpHeaderTuple] = [],
            body: openArray[byte] = []
-          ): HttpResult[HttpClientRequestRef] {.raises: [Defect].} =
+          ): HttpResult[HttpClientRequestRef] {.raises: [].} =
   HttpClientRequestRef.new(session, url, MethodPost, version, flags, headers,
                            body)
 
@@ -1043,7 +1043,7 @@ proc post*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
            flags: set[HttpClientRequestFlag] = {},
            headers: openArray[HttpHeaderTuple] = [],
            body: openArray[char] = []): HttpResult[HttpClientRequestRef] {.
-     raises: [Defect].} =
+     raises: [].} =
   HttpClientRequestRef.new(session, url, MethodPost, version, flags, headers,
                            body.toOpenArrayByte(0, len(body) - 1))
 
@@ -1052,7 +1052,7 @@ proc post*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
            flags: set[HttpClientRequestFlag] = {},
            headers: openArray[HttpHeaderTuple] = [],
            body: openArray[byte] = []): HttpClientRequestRef {.
-     raises: [Defect].} =
+     raises: [].} =
   HttpClientRequestRef.new(session, ha, MethodPost, version, flags, headers,
                            body)
 
@@ -1061,12 +1061,12 @@ proc post*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
            flags: set[HttpClientRequestFlag] = {},
            headers: openArray[HttpHeaderTuple] = [],
            body: openArray[char] = []): HttpClientRequestRef {.
-     raises: [Defect].} =
+     raises: [].} =
   HttpClientRequestRef.new(session, ha, MethodPost, version, flags, headers,
                            body.toOpenArrayByte(0, len(body) - 1))
 
 proc prepareRequest(request: HttpClientRequestRef): string {.
-     raises: [Defect].} =
+     raises: [].} =
   template hasChunkedEncoding(request: HttpClientRequestRef): bool =
     toLowerAscii(request.headers.getString(TransferEncodingHeader)) == "chunked"
 

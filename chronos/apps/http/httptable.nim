@@ -10,10 +10,7 @@
 import std/[tables, strutils]
 import stew/base10
 
-when (NimMajor, NimMinor) < (1, 4):
-  {.push raises: [Defect].}
-else:
-  {.push raises: [].}
+{.push raises: [].}
 
 type
   HttpTable* = object

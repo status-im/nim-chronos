@@ -7,10 +7,7 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 
-when (NimMajor, NimMinor) < (1, 4):
-  {.push raises: [Defect].}
-else:
-  {.push raises: [].}
+{.push raises: [].}
 
 import "."/[asyncloop, osdefs, osutils]
 import stew/results
@@ -156,7 +153,7 @@ proc createAsyncSocket*(domain: Domain, sockType: SockType,
     return asyncInvalidSocket
 
 proc wrapAsyncSocket*(sock: cint|SocketHandle): AsyncFD {.
-    raises: [Defect, CatchableError].} =
+    raises: [CatchableError].} =
   ## Wraps socket to asynchronous socket handle.
   ## Return ``asyncInvalidSocket`` on error.
   wrapAsyncSocket2(sock).valueOr:
@@ -191,7 +188,7 @@ proc setMaxOpenFiles2*(count: int): Result[void, OSErrorCode] =
       return err(osLastError())
     ok()
 
-proc getMaxOpenFiles*(): int {.raises: [Defect, OSError].} =
+proc getMaxOpenFiles*(): int {.raises: [OSError].} =
   ## Returns maximum file descriptor number that can be opened by this process.
   ##
   ## Note: On Windows its impossible to obtain such number, so getMaxOpenFiles()
@@ -202,7 +199,7 @@ proc getMaxOpenFiles*(): int {.raises: [Defect, OSError].} =
     raiseOSError(res.error())
   res.get()
 
-proc setMaxOpenFiles*(count: int) {.raises: [Defect, OSError].} =
+proc setMaxOpenFiles*(count: int) {.raises: [OSError].} =
   ## Set maximum file descriptor number that can be opened by this process.
   ##
   ## Note: On Windows its impossible to set this value, so it just a nop call.

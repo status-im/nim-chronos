@@ -11,10 +11,7 @@
 import std/[deques, tables]
 import stew/base10
 
-when (NimMajor, NimMinor) < (1, 4):
-  {.push raises: [Defect].}
-else:
-  {.push raises: [].}
+{.push raises: [].}
 
 type
   SelectorImpl[T] = object
@@ -677,70 +674,70 @@ proc select2*[T](s: Selector[T], timeout: int): SelectResult[seq[ReadyKey]] =
   ok(res)
 
 proc newSelector*[T](): Selector[T] {.
-     raises: [Defect, OSError].} =
+     raises: [OSError].} =
   let res = Selector.new(T)
   if res.isErr(): raiseOSError(res.error())
   res.get()
 
 proc close*[T](s: Selector[T]) {.
-     raises: [Defect, IOSelectorsException].} =
+     raises: [IOSelectorsException].} =
   let res = s.close2()
   if res.isErr(): raiseIOSelectorsError(res.error())
 
 proc newSelectEvent*(): SelectEvent {.
-     raises: [Defect, IOSelectorsException].} =
+     raises: [IOSelectorsException].} =
   let res = SelectEvent.new()
   if res.isErr(): raiseIOSelectorsError(res.error())
   res.get()
 
 proc trigger*(event: SelectEvent) {.
-     raises: [Defect, IOSelectorsException].} =
+     raises: [IOSelectorsException].} =
   let res = event.trigger2()
   if res.isErr(): raiseIOSelectorsError(res.error())
 
 proc close*(event: SelectEvent) {.
-     raises: [Defect, IOSelectorsException].} =
+     raises: [IOSelectorsException].} =
   let res = event.close2()
   if res.isErr(): raiseIOSelectorsError(res.error())
 
 proc registerHandle*[T](s: Selector[T], fd: cint | SocketHandle,
                         events: set[Event], data: T) {.
-    raises: [Defect, IOSelectorsException].} =
+    raises: [IOSelectorsException].} =
   let res = registerHandle2(s, fd, events, data)
   if res.isErr(): raiseIOSelectorsError(res.error())
 
 proc updateHandle*[T](s: Selector[T], fd: cint | SocketHandle,
                       events: set[Event]) {.
-    raises: [Defect, IOSelectorsException].} =
+    raises: [IOSelectorsException].} =
   let res = updateHandle2(s, fd, events)
   if res.isErr(): raiseIOSelectorsError(res.error())
 
 proc unregister*[T](s: Selector[T], fd: cint | SocketHandle) {.
-     raises: [Defect, IOSelectorsException].} =
+     raises: [IOSelectorsException].} =
   let res = unregister2(s, fd)
   if res.isErr(): raiseIOSelectorsError(res.error())
 
 proc unregister*[T](s: Selector[T], event: SelectEvent) {.
-    raises: [Defect, IOSelectorsException].} =
+    raises: [IOSelectorsException].} =
   let res = unregister2(s, event)
   if res.isErr(): raiseIOSelectorsError(res.error())
 
 proc registerTimer*[T](s: Selector[T], timeout: int, oneshot: bool,
                        data: T): cint {.
-    discardable, raises: [Defect, IOSelectorsException].} =
+    discardable, raises: [IOSelectorsException].} =
   let res = registerTimer2(s, timeout, oneshot, data)
   if res.isErr(): raiseIOSelectorsError(res.error())
   res.get()
 
 proc registerEvent*[T](s: Selector[T], event: SelectEvent,
                        data: T) {.
-     raises: [Defect, IOSelectorsException].} =
+     raises: [IOSelectorsException].} =
   let res = registerEvent2(s, event, data)
   if res.isErr(): raiseIOSelectorsError(res.error())
 
 proc selectInto*[T](s: Selector[T], timeout: int,
                     readyKeys: var openArray[ReadyKey]): int {.
-     raises: [Defect, IOSelectorsException].} =
+     raises: [IOSelectorsException].} =
   let res = selectInto2(s, timeout, readyKeys)
   if res.isErr(): raiseIOSelectorsError(res.error())
   res.get()
