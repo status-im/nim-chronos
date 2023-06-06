@@ -143,7 +143,7 @@ proc finish(fut: FutureBase, state: FutureState) =
 proc complete[T](future: Future[T], val: T, loc: ptr SrcLoc) =
   if not(future.cancelled()):
     checkFinished(future, loc)
-    doAssert(isNil(future.error))
+    doAssert(isNil(future.internalError))
     future.internalValue = val
     future.finish(FutureState.Completed)
 
@@ -154,7 +154,7 @@ template complete*[T](future: Future[T], val: T) =
 proc complete(future: Future[void], loc: ptr SrcLoc) =
   if not(future.cancelled()):
     checkFinished(future, loc)
-    doAssert(isNil(future.error))
+    doAssert(isNil(future.internalError))
     future.finish(FutureState.Completed)
 
 template complete*(future: Future[void]) =
@@ -442,15 +442,15 @@ when chronosStackTrace:
 
 proc internalCheckComplete*(fut: FutureBase) {.raises: [CatchableError].} =
   # For internal use only. Used in asyncmacro
-  if not(isNil(fut.error)):
+  if not(isNil(fut.internalError)):
     when chronosStackTrace:
-      injectStacktrace(fut.error)
-    raise fut.error
+      injectStacktrace(fut.internalError)
+    raise fut.internalError
 
 proc internalRead*[T](fut: Future[T]): T {.inline.} =
   # For internal use only. Used in asyncmacro
   when T isnot void:
-    return fut.value
+    return fut.internalValue
 
 proc read*[T](future: Future[T] ): T {.raises: [CatchableError].} =
   ## Retrieves the value of ``future``. Future must be finished otherwise
