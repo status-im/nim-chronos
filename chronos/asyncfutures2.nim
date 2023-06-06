@@ -83,6 +83,10 @@ template newFutureStr*[T](fromProc: static[string] = ""): FutureStr[T] =
   ## that this future belongs to, is a good habit as it helps with debugging.
   newFutureStrImpl[T](getSrcLocation(fromProc))
 
+proc done*(future: FutureBase): bool {.deprecated: "Use `completed` instead".} =
+  ## This is an alias for ``completed(future)`` procedure.
+  completed(future)
+
 when chronosFutureTracking:
   proc futureDestructor(udata: pointer) =
     ## This procedure will be called when Future[T] got completed, cancelled or
