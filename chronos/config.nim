@@ -19,6 +19,8 @@ when (NimMajor, NimMinor) >= (1, 4):
       ## used from within `async` code may need to be be explicitly annotated
       ## with `raises: [CatchableError]` when this mode is enabled.
 
+    chronosStrictFutureAccess* {.booldefine.}: bool = defined(chronosPreviewV4)
+
     chronosStackTrace* {.booldefine.}: bool = defined(chronosDebug)
       ## Include stack traces in futures for creation and completion points
 
@@ -52,6 +54,8 @@ else:
   const
     chronosStrictException*: bool =
       defined(chronosPreviewV4) or defined(chronosStrictException)
+    chronosStrictFutureAccess*: bool =
+      defined(chronosPreviewV4) or defined(chronosStrictFutureAccess)
     chronosStackTrace*: bool = defined(chronosDebug) or defined(chronosStackTrace)
     chronosFutureId*: bool = defined(chronosDebug) or defined(chronosFutureId)
     chronosFutureTracking*: bool =
