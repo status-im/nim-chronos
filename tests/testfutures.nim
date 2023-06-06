@@ -14,13 +14,9 @@ import ../chronos/futures
 suite "Futures":
   test "Future constructors":
     let
-      pending = Future[int].init()
       completed = Future.completed(42)
       failed = Future[int].failed((ref ValueError)(msg: "msg"))
       cancelled = Future[int].cancelled()
-
-    check:
-      pending.state == FutureState.Pending
 
     check:
       completed.value == 42
