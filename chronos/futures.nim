@@ -196,7 +196,7 @@ func completed*(future: FutureBase): bool {.inline.} =
 func location*(future: FutureBase): array[LocationKind, ptr SrcLoc] =
   future.internalLocation
 
-func value*[T](future: Future[T]): T =
+func value*[T](future: Future[T]): lent T =
   ## Return the value in a completed future - raises Defect when
   ## `fut.completed()` is `false`.
   ##
