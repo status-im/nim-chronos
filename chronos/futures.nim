@@ -131,7 +131,7 @@ template init*[T](F: type Future[T], fromProc: static[string] = ""): Future[T] =
   ## Specifying ``fromProc``, which is a string specifying the name of the proc
   ## that this future belongs to, is a good habit as it helps with debugging.
   let res = Future[T]()
-  internalInitFutureBase(res, getSrcLocation(fromProc))
+  internalInitFutureBase(res, getSrcLocation(fromProc), FutureState.Pending)
   res
 
 template completed*(
@@ -155,10 +155,11 @@ template failed*[T](
   let res = Future[T](internalError: errorParam)
   internalInitFutureBase(res, getSrcLocation(fromProc), FutureState.Failed)
   when chronosStackTrace:
-    res.errorStackTrace = if getStackTrace(res.error) == "":
-                            getStackTrace()
-                          else:
-                            getStackTrace(res.error)
+    res.internalErrorStackTrace =
+      if getStackTrace(res.error) == "":
+        getStackTrace()
+      else:
+        getStackTrace(res.error)
 
   res
 
@@ -168,7 +169,7 @@ template cancelled*[T](
   let res = Future[T](internalError: newCancelledError())
   internalInitFutureBase(res, getSrcLocation(fromProc), FutureState.Cancelled)
   when chronosStackTrace:
-    res.errorStackTrace = res.stackTrace
+    res.internalErrorStackTrace = res.stackTrace
   res
 
 func state*(future: FutureBase): FutureState =
