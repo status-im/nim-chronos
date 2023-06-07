@@ -27,8 +27,6 @@ import "."/[osdefs, osutils, oserrno]
 
 const
   TimedOutErrorMessage = "The wait operation timed out"
-  AbandonedErrorMessage = "The wait operation has been abandoned"
-  FailedErrorMessage = "The wait operation has been failed"
 
 type
   ThreadEvent* = object
@@ -104,7 +102,7 @@ when not(defined(windows)):
       tv_usec: Suseconds(m div Microsecond.nanoseconds())
     )
 
-  proc waitReady(fd: AsyncFD, kind: WaitKind,
+  proc waitReady(fd: cint, kind: WaitKind,
                  timeout: Duration): Result[bool, OSErrorCode] =
     var
       tv: Timeval
@@ -164,7 +162,7 @@ proc fireSync*(event: ThreadEventPtr,
           if not(wres.get()):
             return err(osErrorMsg(ETIMEDOUT))
         else:
-          return err(osErrorMsg(error))
+          return err(osErrorMsg(errorCode))
       elif res != sizeof(data):
         return err(osErrorMsg(EINVAL))
       else:
@@ -189,9 +187,9 @@ proc waitSync*(event: ThreadEventPtr,
     elif res == WAIT_TIMEOUT:
       err(TimedOutErrorMessage)
     elif res == WAIT_ABANDONED:
-      err(AbandonedErrorMessage)
+      err("The wait operation has been abandoned")
     else:
-      err(FailedErrorMessage)
+      err("The wait operation has been failed")
   else:
     var
       data = 0'u64
