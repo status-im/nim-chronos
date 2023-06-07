@@ -13,10 +13,10 @@
 from nativesockets import Port
 import std/[tables, strutils, heapqueue, deques]
 import stew/results
-import "."/[config, osdefs, oserrno, osutils, timer]
+import "."/[config, futures, osdefs, oserrno, osutils, timer]
 
 export Port
-export timer, results
+export futures, timer, results
 
 #{.injectStmt: newGcInvariant().}
 
@@ -155,11 +155,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
   export oserrno
 
 type
-  CallbackFunc* = proc (arg: pointer) {.gcsafe, raises: [].}
-
-  AsyncCallback* = object
-    function*: CallbackFunc
-    udata*: pointer
+  AsyncCallback = InternalAsyncCallback
 
   AsyncError* = object of CatchableError
     ## Generic async exception

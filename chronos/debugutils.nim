@@ -37,7 +37,7 @@ proc dumpPendingFutures*(filter = AllFutureStates): string =
     for item in pendingFutures():
       if item.state in filter:
         inc(count)
-        let loc = item.location[LocCreateIndex][]
+        let loc = item.location[LocationKind.Create][]
         let procedure = $loc.procedure
         let filename = $loc.file
         let procname = if len(procedure) == 0:
