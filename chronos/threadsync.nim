@@ -39,7 +39,7 @@ type
 
   ThreadEventPtr* = ptr ThreadEvent
 
-proc new*(t: typedesc[ThreadEvent]): Result[ThreadEventPtr, string] =
+proc new*(t: typedesc[ThreadEventPtr]): Result[ThreadEventPtr, string] =
   ## Create new ThreadEvent object.
   let res = cast[ptr ThreadEvent](allocShared0(sizeof(ThreadEvent)))
   when defined(windows):
@@ -86,7 +86,6 @@ proc close*(event: ThreadEventPtr): Result[void, string] =
       return err(osErrorMsg(res2.error))
   deallocShared(event)
   ok()
-
 
 when not(defined(windows)):
   type
