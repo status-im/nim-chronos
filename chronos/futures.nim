@@ -121,9 +121,6 @@ proc internalInitFutureBase*(
         futureList.head = fut
       futureList.count.inc()
 
-template newCancelledError(): ref CancelledError =
-  (ref CancelledError)(msg: "Future operation cancelled!")
-
 # Public API
 template init*[T](F: type Future[T], fromProc: static[string] = ""): Future[T] =
   ## Creates a new pending future.
@@ -161,15 +158,6 @@ template failed*[T](
       else:
         getStackTrace(res.error)
 
-  res
-
-template cancelled*[T](
-    F: type Future[T], fromProc: static[string] = ""): Future[T] =
-  ## Create a new cancelled future
-  let res = Future[T](internalError: newCancelledError())
-  internalInitFutureBase(res, getSrcLocation(fromProc), FutureState.Cancelled)
-  when chronosStackTrace:
-    res.internalErrorStackTrace = res.stackTrace
   res
 
 func state*(future: FutureBase): FutureState =

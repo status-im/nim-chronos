@@ -16,7 +16,6 @@ suite "Futures":
     let
       completed = Future.completed(42)
       failed = Future[int].failed((ref ValueError)(msg: "msg"))
-      cancelled = Future[int].cancelled()
 
     check:
       completed.value == 42
@@ -25,7 +24,3 @@ suite "Futures":
     check:
       failed.error of ValueError
       failed.state == FutureState.Failed
-
-    check:
-      cancelled.error of CancelledError
-      cancelled.state == FutureState.Cancelled
