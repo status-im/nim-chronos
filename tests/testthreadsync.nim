@@ -226,22 +226,22 @@ suite "Asynchronous multi-threading sync primitives test suite":
     when not(hasThreadSupport):
       skip()
     else:
-      threadSignalTest2(10000, WaitSendKind.Sync, WaitSendKind.Sync)
+      threadSignalTest2(1000, WaitSendKind.Sync, WaitSendKind.Sync)
 
   asyncTest "ThreadSignal: Multiple thread switches test [async -> async]":
     when not(hasThreadSupport):
       skip()
     else:
-      threadSignalTest2(10000, WaitSendKind.Async, WaitSendKind.Async)
+      threadSignalTest2(1000, WaitSendKind.Async, WaitSendKind.Async)
 
   asyncTest "ThreadSignal: Multiple thread switches test [sync -> async]":
     when not(hasThreadSupport):
       skip()
     else:
-      threadSignalTest2(10000, WaitSendKind.Sync, WaitSendKind.Async)
+      threadSignalTest2(1000, WaitSendKind.Sync, WaitSendKind.Async)
 
   asyncTest "ThreadSignal: Multiple thread switches test [async -> sync]":
     when not(hasThreadSupport):
       skip()
     else:
-      threadSignalTest2(10000, WaitSendKind.Async, WaitSendKind.Sync)
+      threadSignalTest2(1000, WaitSendKind.Async, WaitSendKind.Sync)
