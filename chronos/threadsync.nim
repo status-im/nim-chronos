@@ -50,7 +50,7 @@ proc new*(t: typedesc[ThreadSignalPtr]): Result[ThreadSignalPtr, string] =
     if efd == -1:
       deallocShared(res)
       return err(osErrorMsg(osLastError()))
-    res[] = ThreadSignal(efd: efd)
+    res[] = ThreadSignal(efd: AsyncFD(efd))
   else:
     let
       flags = {DescriptorFlag.CloseOnExec, DescriptorFlag.NonBlock}
