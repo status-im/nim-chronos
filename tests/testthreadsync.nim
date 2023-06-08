@@ -9,25 +9,26 @@ import std/[cpuinfo, math]
 import ../chronos/unittest2/asynctests
 import ../chronos/threadsync
 
-when hasThreadSupport:
-  type
-    ThreadResult = object
-      value: int
+{.used.}
 
-    ThreadResultPtr = ptr ThreadResult
+type
+  ThreadResult = object
+    value: int
 
-    ThreadArg = object
-      signal: ThreadSignalPtr
-      retval: ThreadResultPtr
-      index: int
+  ThreadResultPtr = ptr ThreadResult
 
-    ThreadArg2 = object
-      signal1: ThreadSignalPtr
-      signal2: ThreadSignalPtr
-      retval: ThreadResultPtr
+  ThreadArg = object
+    signal: ThreadSignalPtr
+    retval: ThreadResultPtr
+    index: int
 
-    WaitSendKind {.pure.} = enum
-      Sync, Async
+  ThreadArg2 = object
+    signal1: ThreadSignalPtr
+    signal2: ThreadSignalPtr
+    retval: ThreadResultPtr
+
+  WaitSendKind {.pure.} = enum
+    Sync, Async
 
 suite "Asynchronous multi-threading sync primitives test suite":
   proc setResult(thr: ThreadResultPtr, value: int) =
@@ -196,52 +197,28 @@ suite "Asynchronous multi-threading sync primitives test suite":
 
   asyncTest "ThreadSignal: Multiple [" & $numProcs &
             "] threads waiting test [sync -> sync]":
-    when not(hasThreadSupport):
-      skip()
-    else:
-      threadSignalTest(WaitSendKind.Sync, WaitSendKind.Sync)
+    threadSignalTest(WaitSendKind.Sync, WaitSendKind.Sync)
 
   asyncTest "ThreadSignal: Multiple [" & $numProcs &
             "] threads waiting test [async -> async]":
-    when not(hasThreadSupport):
-      skip()
-    else:
-      threadSignalTest(WaitSendKind.Async, WaitSendKind.Async)
+    threadSignalTest(WaitSendKind.Async, WaitSendKind.Async)
 
   asyncTest "ThreadSignal: Multiple [" & $numProcs &
             "] threads waiting test [async -> sync]":
-    when not(hasThreadSupport):
-      skip()
-    else:
-      threadSignalTest(WaitSendKind.Async, WaitSendKind.Sync)
+    threadSignalTest(WaitSendKind.Async, WaitSendKind.Sync)
 
   asyncTest "ThreadSignal: Multiple [" & $numProcs &
             "] threads waiting test [sync -> async]":
-    when not(hasThreadSupport):
-      skip()
-    else:
-      threadSignalTest(WaitSendKind.Sync, WaitSendKind.Async)
+    threadSignalTest(WaitSendKind.Sync, WaitSendKind.Async)
 
   asyncTest "ThreadSignal: Multiple thread switches test [sync -> sync]":
-    when not(hasThreadSupport):
-      skip()
-    else:
-      threadSignalTest2(1000, WaitSendKind.Sync, WaitSendKind.Sync)
+    threadSignalTest2(1000, WaitSendKind.Sync, WaitSendKind.Sync)
 
   asyncTest "ThreadSignal: Multiple thread switches test [async -> async]":
-    when not(hasThreadSupport):
-      skip()
-    else:
-      threadSignalTest2(1000, WaitSendKind.Async, WaitSendKind.Async)
+    threadSignalTest2(1000, WaitSendKind.Async, WaitSendKind.Async)
 
   asyncTest "ThreadSignal: Multiple thread switches test [sync -> async]":
-    when not(hasThreadSupport):
-      skip()
-    else:
-      threadSignalTest2(1000, WaitSendKind.Sync, WaitSendKind.Async)
+    threadSignalTest2(1000, WaitSendKind.Sync, WaitSendKind.Async)
 
   asyncTest "ThreadSignal: Multiple thread switches test [async -> sync]":
-    when not(hasThreadSupport):
-      skip()
-    else:
-      threadSignalTest2(1000, WaitSendKind.Async, WaitSendKind.Sync)
+    threadSignalTest2(1000, WaitSendKind.Async, WaitSendKind.Sync)
