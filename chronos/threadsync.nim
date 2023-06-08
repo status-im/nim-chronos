@@ -22,14 +22,10 @@ const hasThreadSupport* = compileOption("threads")
 when not(hasThreadSupport):
   {.fatal: "Compile this program with threads enabled!".}
 
-# import std/locks
 import "."/[osdefs, osutils, oserrno]
 
-const
-  TimedOutErrorMessage = "The wait operation timed out"
-
 type
-  ThreadEvent* = object
+  ThreadSignal* = object
     when defined(windows):
       event: HANDLE
     elif defined(linux):
@@ -37,59 +33,36 @@ type
     else:
       rfd, wfd: AsyncFD
 
-  ThreadEventPtr* = ptr ThreadEvent
+  ThreadSignalPtr* = ptr ThreadSignal
 
-proc new*(t: typedesc[ThreadEventPtr]): Result[ThreadEventPtr, string] =
-  ## Create new ThreadEvent object.
-  let res = cast[ptr ThreadEvent](allocShared0(sizeof(ThreadEvent)))
+proc new*(t: typedesc[ThreadSignalPtr]): Result[ThreadSignalPtr, string] =
+  ## Create new ThreadSignal object.
+  let res = cast[ptr ThreadSignal](allocShared0(sizeof(ThreadSignal)))
   when defined(windows):
     var sa = getSecurityAttributes()
     let event = osdefs.createEvent(addr sa, DWORD(0), DWORD(0), nil)
     if event == HANDLE(0):
       deallocShared(res)
       return err(osErrorMsg(osLastError()))
-    res[] = ThreadEvent(event: event)
+    res[] = ThreadSignal(event: event)
   elif defined(linux):
     let efd = eventfd(0, EFD_CLOEXEC or EFD_NONBLOCK)
     if efd == -1:
       deallocShared(res)
       return err(osErrorMsg(osLastError()))
-    res[] = ThreadEvent(efd: efd)
+    res[] = ThreadSignal(efd: efd)
   else:
     let
       flags = {DescriptorFlag.CloseOnExec, DescriptorFlag.NonBlock}
       pipes = createOsPipe(flags, flags).valueOr:
         deallocShared(res)
         return err(osErrorMsg(osLastError()))
-    res[] = ThreadEvent(rfd: pipes.read, wfd: pipes.write)
-  ok(ThreadEventPtr(res))
-
-proc close*(event: ThreadEventPtr): Result[void, string] =
-  ## Close AsyncThreadEvent ``event`` and free all the resources.
-  when defined(windows):
-    if closeHandle(event[].event) == 0'u32:
-      deallocShared(event)
-      return err(osErrorMsg(osLastError()))
-  elif defined(linux):
-    let res = unregisterAndCloseFd(event[].efd)
-    if res.isErr():
-      deallocShared(event)
-      return err(osErrorMsg(res.error))
-  else:
-    let res1 = unregisterAndCloseFd(event[].rfd)
-    let res2 = unregisterAndCloseFd(event[].wfd)
-    if res1.isErr():
-      deallocShared(event)
-      return err(osErrorMsg(res1.error))
-    if res2.isErr():
-      deallocShared(event)
-      return err(osErrorMsg(res2.error))
-  deallocShared(event)
-  ok()
+    res[] = ThreadSignal(rfd: AsyncFD(pipes.read), wfd: AsyncFD(pipes.write))
+  ok(ThreadSignalPtr(res))
 
 when not(defined(windows)):
   type
-    WaitKind* {.pure.} = enum
+    WaitKind {.pure.} = enum
       Read, Write
 
   func toTimeval(a: Duration): Timeval =
@@ -134,19 +107,49 @@ when not(defined(windows)):
     else:
       err(osLastError())
 
-proc fireSync*(event: ThreadEventPtr,
-               timeout = InfiniteDuration): Result[void, string] =
-  ## Set state of ThreadEventPtr ``event`` to signaled in blocking way.
+  proc safeUnregisterAndCloseFd(fd: AsyncFD): Result[void, OSErrorCode] =
+    let loop = getThreadDispatcher()
+    if loop.contains(fd):
+      ? unregister2(fd)
+    if closeFd(cint(fd)) != 0:
+      err(osLastError())
+    else:
+      ok()
+
+proc close*(signal: ThreadSignalPtr): Result[void, string] =
+  ## Close ThreadSignal object and free all the resources.
+  defer: deallocShared(signal)
   when defined(windows):
-    if setEvent(event.event) == 0'u32:
+    # We do not need to perform unregistering on Windows, we can only close it.
+    if closeHandle(signal[].event) == 0'u32:
       return err(osErrorMsg(osLastError()))
-    ok()
+  elif defined(linux):
+    let res = safeUnregisterAndCloseFd(signal[].efd)
+    if res.isErr():
+      return err(osErrorMsg(res.error))
+  else:
+    let res1 = safeUnregisterAndCloseFd(signal[].rfd)
+    let res2 = safeUnregisterAndCloseFd(signal[].wfd)
+    if res1.isErr(): return err(osErrorMsg(res1.error))
+    if res2.isErr(): return err(osErrorMsg(res2.error))
+  ok()
+
+proc fireSync*(signal: ThreadSignalPtr,
+               timeout = InfiniteDuration): Result[bool, string] =
+  ## Set state of ``signal`` to signaled state in blocking way.
+  ##
+  ## Returns ``false`` if signal was not signalled in time, and ``true``
+  ## if operation was successful.
+  when defined(windows):
+    if setEvent(signal[].event) == 0'u32:
+      return err(osErrorMsg(osLastError()))
+    ok(true)
   else:
     let eventFd =
       when defined(linux):
-        cint(event[].efd)
+        cint(signal[].efd)
       else:
-        cint(event[].wfd)
+        cint(signal[].wfd)
 
     var data = 1'u64
     while true:
@@ -159,19 +162,19 @@ proc fireSync*(event: ThreadEventPtr,
           if wres.isErr():
             return err(osErrorMsg(wres.error))
           if not(wres.get()):
-            return err(osErrorMsg(ETIMEDOUT))
+            return ok(false)
         else:
           return err(osErrorMsg(errorCode))
       elif res != sizeof(data):
         return err(osErrorMsg(EINVAL))
       else:
-        return ok()
+        return ok(true)
 
-proc waitSync*(event: ThreadEventPtr,
-               timeout = InfiniteDuration): Result[void, string] =
-  ## Wait until the ThreadEventPtr ``event`` become signaled. This procedure is
-  ## ``NOT`` async, so it blocks execution flow, but this procedure do not
-  ## need asynchronous event loop to be present.
+proc waitSync*(signal: ThreadSignalPtr,
+               timeout = InfiniteDuration): Result[bool, string] =
+  ## Wait until the signal become signaled. This procedure is ``NOT`` async,
+  ## so it blocks execution flow, but this procedure do not need asynchronous
+  ## event loop to be present.
   when defined(windows):
     let
       timeoutWin =
@@ -179,42 +182,55 @@ proc waitSync*(event: ThreadEventPtr,
           INFINITE
         else:
           DWORD(timeout.milliseconds())
-      handle = event.event
+      handle = signal[].event
       res = waitForSingleObject(handle, timeoutWin)
     if res == WAIT_OBJECT_0:
-      ok()
+      ok(true)
     elif res == WAIT_TIMEOUT:
-      err(TimedOutErrorMessage)
+      ok(false)
     elif res == WAIT_ABANDONED:
       err("The wait operation has been abandoned")
     else:
       err("The wait operation has been failed")
   else:
-    var
-      data = 0'u64
     let eventFd =
       when defined(linux):
-        cint(event[].efd)
+        cint(signal[].efd)
       else:
-        cint(event[].rfd)
-    let wres = waitReady(eventFd, WaitKind.Read, timeout).valueOr:
-      return err(osErrorMsg(error))
-    if not(wres):
-      return err(TimedOutErrorMessage)
-    let res = handleEintr(read(eventFd, addr data, sizeof(uint64)))
-    if res < 0:
-      let errorCode = osLastError()
-      err(osErrorMsg(errorCode))
-    elif res != sizeof(data):
-      err(osErrorMsg(EINVAL))
-    else:
-      ok()
+        cint(signal[].rfd)
+    var
+      data = 0'u64
+      timer = timeout
+    while true:
+      let wres =
+        block:
+          let
+            start = Moment.now()
+            res = waitReady(eventFd, WaitKind.Read, timer)
+          timer = timer - (Moment.now() - start)
+          res
+      if wres.isErr():
+        return err(osErrorMsg(wres.error))
+      if not(wres.get()):
+        return ok(false)
+      let res = handleEintr(read(eventFd, addr data, sizeof(uint64)))
+      if res < 0:
+        let errorCode = osLastError()
+        # If errorCode == EAGAIN it means that reading operation is already
+        # pending and so some other consumer reading eventfd or pipe end, in
+        # this case we going to ignore error and wait for another event.
+        if errorCode != EAGAIN:
+          return err(osErrorMsg(errorCode))
+      elif res != sizeof(data):
+        return err(osErrorMsg(EINVAL))
+      else:
+        return ok(true)
 
-proc fire*(event: ThreadEventPtr): Future[void] =
-  ## Set state of ThreadEventPtr ``event`` to signaled in asynchronous way.
-  var retFuture = newFuture[void]("asyncthreadevent.fire")
+proc fire*(signal: ThreadSignalPtr): Future[void] =
+  ## Set state of ``signal`` to signaled in asynchronous way.
+  var retFuture = newFuture[void]("asyncthreadsignal.fire")
   when defined(windows):
-    if setEvent(event.event) == 0'u32:
+    if setEvent(signal[].event) == 0'u32:
       retFuture.fail(newException(AsyncError, osErrorMsg(osLastError())))
     else:
       retFuture.complete()
@@ -222,9 +238,9 @@ proc fire*(event: ThreadEventPtr): Future[void] =
     var data = 1'u64
     let eventFd =
       when defined(linux):
-        cint(event[].efd)
+        cint(signal[].efd)
       else:
-        cint(event[].wfd)
+        cint(signal[].wfd)
 
     proc continuation(udata: pointer) {.gcsafe, raises: [].} =
       if not(retFuture.finished()):
@@ -252,15 +268,19 @@ proc fire*(event: ThreadEventPtr): Future[void] =
       let errorCode = osLastError()
       case errorCode
       of EAGAIN:
+        let loop = getThreadDispatcher()
+        if not(loop.contains(AsyncFD(eventFd))):
+          let rres = register2(AsyncFD(eventFd))
+          if rres.isErr():
+            retFuture.fail(newException(AsyncError, osErrorMsg(rres.error)))
+            return retFuture
         let wres = addWriter2(AsyncFD(eventFd), continuation)
         if wres.isErr():
-          retFuture.fail(newException(AsyncError,
-                                      osErrorMsg(wres.error)))
+          retFuture.fail(newException(AsyncError, osErrorMsg(wres.error)))
         else:
           retFuture.cancelCallback = cancellation
       else:
-        retFuture.fail(newException(AsyncError,
-                                    osErrorMsg(osLastError())))
+        retFuture.fail(newException(AsyncError, osErrorMsg(errorCode)))
     elif res != sizeof(data):
       retFuture.fail(newException(AsyncError, osErrorMsg(EINVAL)))
     else:
@@ -269,28 +289,32 @@ proc fire*(event: ThreadEventPtr): Future[void] =
   retFuture
 
 when defined(windows):
-  proc wait*(event: ThreadEventPtr) {.async.} =
-    let handle = event[].event
+  proc wait*(signal: ThreadSignalPtr) {.async.} =
+    let handle = signal[].event
     let res = await waitForSingleObject(handle, InfiniteDuration)
     # There should be no other response, because we use `InfiniteDuration`.
     doAssert(res == WaitableResult.Ok)
 else:
-  proc wait*(event: ThreadEventPtr): Future[void] =
-    var retFuture = newFuture[void]("asyncthreadevent.wait")
+  proc wait*(signal: ThreadSignalPtr): Future[void] =
+    var retFuture = newFuture[void]("asyncthreadsignal.wait")
     var data = 1'u64
     let eventFd =
       when defined(linux):
-        cint(event[].efd)
+        cint(signal[].efd)
       else:
-        cint(event[].rfd)
+        cint(signal[].rfd)
 
     proc continuation(udata: pointer) {.gcsafe, raises: [].} =
       if not(retFuture.finished()):
         let res = handleEintr(read(eventFd, addr data, sizeof(uint64)))
         if res < 0:
           let errorCode = osLastError()
-          discard removeReader2(AsyncFD(eventFd))
-          retFuture.fail(newException(AsyncError, osErrorMsg(errorCode)))
+          # If errorCode == EAGAIN it means that reading operation is already
+          # pending and so some other consumer reading eventfd or pipe end, in
+          # this case we going to ignore error and wait for another event.
+          if errorCode != EAGAIN:
+            discard removeReader2(AsyncFD(eventFd))
+            retFuture.fail(newException(AsyncError, osErrorMsg(errorCode)))
         elif res != sizeof(data):
           discard removeReader2(AsyncFD(eventFd))
           retFuture.fail(newException(AsyncError, osErrorMsg(EINVAL)))
@@ -303,13 +327,18 @@ else:
 
     proc cancellation(udata: pointer) {.gcsafe, raises: [].} =
       if not(retFuture.finished()):
+        # Future is already cancelled so we ignore errors.
         discard removeReader2(AsyncFD(eventFd))
 
-    let rres = addReader2(AsyncFD(eventFd), continuation)
-    if rres.isErr():
-      retFuture.fail(newException(AsyncError,
-                                  osErrorMsg(rres.error)))
-    else:
-      retFuture.cancelCallback = cancellation
-
+    let loop = getThreadDispatcher()
+    if not(loop.contains(AsyncFD(eventFd))):
+      let res = register2(AsyncFD(eventFd))
+      if res.isErr():
+        retFuture.fail(newException(AsyncError, osErrorMsg(res.error)))
+        return retFuture
+    let res = addReader2(AsyncFD(eventFd), continuation)
+    if res.isErr():
+      retFuture.fail(newException(AsyncError, osErrorMsg(res.error)))
+      return retFuture
+    retFuture.cancelCallback = cancellation
     retFuture

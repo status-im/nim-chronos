@@ -15,10 +15,11 @@ when hasThreadSupport:
       value: int
     ThreadResultPtr = ptr ThreadResult
     ThreadArg = object
-      event: ThreadEventPtr
+      signal: ThreadSignalPtr
       retval: ThreadResultPtr
       index: int
-
+    WaitSendKind {.pure.} = enum
+      Sync, Async
 
 suite "Asynchronous multi-threading sync primitives test suite":
   proc setResult(thr: ThreadResultPtr, value: int) =
@@ -33,30 +34,93 @@ suite "Asynchronous multi-threading sync primitives test suite":
     doAssert(not(isNil(thr)))
     deallocShared(thr)
 
-  asyncTest "Multiple threads waiting":
+  let numProcs = countProcessors() * 2
+
+  template threadSignalTest(sendFlag, waitFlag: WaitSendKind) =
+    proc testSyncThread(arg: ThreadArg) {.thread.} =
+      let res = waitSync(arg.signal, 1500.milliseconds)
+      if res.isErr():
+        arg.retval.setResult(1)
+      else:
+        if res.get():
+          arg.retval.setResult(2)
+        else:
+          arg.retval.setResult(3)
+
+    proc testAsyncThread(arg: ThreadArg) {.thread.} =
+      proc testAsyncCode(arg: ThreadArg) {.async.} =
+        try:
+          await wait(arg.signal).wait(1500.milliseconds)
+          arg.retval.setResult(2)
+        except AsyncTimeoutError:
+          arg.retval.setResult(3)
+        except CatchableError:
+          arg.retval.setResult(1)
+
+      waitFor testAsyncCode(arg)
+
+    let signal = ThreadSignalPtr.new().tryGet()
+    var args: seq[ThreadArg]
+    var threads = newSeq[Thread[ThreadArg]](numProcs)
+    for i in 0 ..< numProcs:
+      let
+        res = ThreadResultPtr.new()
+        arg = ThreadArg(signal: signal, retval: res, index: i)
+      args.add(arg)
+      case waitFlag
+      of WaitSendKind.Sync:
+        createThread(threads[i], testSyncThread, arg)
+      of WaitSendKind.Async:
+        createThread(threads[i], testAsyncThread, arg)
+
+    await sleepAsync(500.milliseconds)
+    case sendFlag
+    of WaitSendKind.Sync:
+      check signal.fireSync().isOk()
+    of WaitSendKind.Async:
+      await signal.fire()
+
+    joinThreads(threads)
+
+    var ncheck: array[3, int]
+    for item in args:
+      if item.retval[].value == 1:
+        inc(ncheck[0])
+      elif item.retval[].value == 2:
+        inc(ncheck[1])
+      elif item.retval[].value == 3:
+        inc(ncheck[2])
+      free(item.retval)
+    check:
+      signal.close().isOk()
+      ncheck[0] == 0
+      ncheck[1] == 1
+      ncheck[2] == numProcs - 1
+
+  asyncTest "ThreadSignal: Multiple [" & $numProcs &
+            "] threads waiting test [sync -> sync]":
     when not(hasThreadSupport):
       skip()
     else:
-      proc testSyncThread(arg: ThreadArg) {.thread.} =
-        echo "testSyncThread(", arg.index, ") started"
-        let res = waitSync(arg.event, 10.seconds)
-        if res.isErr():
-          arg.retval.setResult(-1)
-          echo "testSyncThread(", arg.index, ") waiting completed with ERROR"
-        else:
-          echo "testSyncThread(", arg.index, ") waiting completed"
+      threadSignalTest(WaitSendKind.Sync, WaitSendKind.Sync)
 
-      let numProcs = countProcessors() * 2
-      let event = ThreadEventPtr.new().tryGet()
-      var args: seq[ThreadArg]
-      var threads = newSeq[Thread[ThreadArg]](numProcs)
-      for i in 0 ..< numProcs:
-        let
-          res = ThreadResultPtr.new()
-          arg = ThreadArg(event: event, retval: res, index: i)
-        args.add(arg)
-        createThread(threads[i], testSyncThread, arg)
+  asyncTest "ThreadSignal: Multiple [" & $numProcs &
+            "] threads waiting test [async -> async]":
+    when not(hasThreadSupport):
+      skip()
+    else:
+      threadSignalTest(WaitSendKind.Async, WaitSendKind.Async)
 
-      await sleepAsync(2.seconds)
-      check event.fireSync().isOk()
-      joinThreads(threads)
+  asyncTest "ThreadSignal: Multiple [" & $numProcs &
+            "] threads waiting test [async -> sync]":
+    when not(hasThreadSupport):
+      skip()
+    else:
+      threadSignalTest(WaitSendKind.Async, WaitSendKind.Sync)
+
+  asyncTest "ThreadSignal: Multiple [" & $numProcs &
+            "] threads waiting test [sync -> async]":
+    when not(hasThreadSupport):
+      skip()
+    else:
+      threadSignalTest(WaitSendKind.Sync, WaitSendKind.Async)
