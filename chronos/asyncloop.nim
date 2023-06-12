@@ -781,8 +781,14 @@ elif unixPlatform:
     # Moving expired timers to `loop.callbacks` and calculate timeout.
     loop.processTimersGetTimeout(curTimeout)
 
+    let timeout =
+      when asyncTimer == "virtual":
+        0
+      else:
+        curTimeout
+
     # Processing IO descriptors and all hardware events.
-    let count = loop.selector.selectInto(curTimeout, loop.keys)
+    let count = loop.selector.selectInto(timeout, loop.keys)
     for i in 0..<count:
       let fd = loop.keys[i].fd
       let events = loop.keys[i].events
@@ -820,6 +826,10 @@ elif unixPlatform:
 
     # All callbacks done, skip `processCallbacks` at start.
     loop.callbacks.addFirst(SentinelCallback)
+
+    # Advance virtual time in simulation if nothing expected in curTimeout millisec
+    when asyncTimer == "virtual":
+      Moment.advance(curTimeout.milliseconds)
 
 else:
   proc initAPI() = discard

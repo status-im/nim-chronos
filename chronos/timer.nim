@@ -11,9 +11,10 @@
 ## This module implements cross-platform system timer with
 ## milliseconds resolution.
 ##
-## Timer supports two types of clocks:
+## Timer supports three types of clocks:
 ## ``system`` uses the most fast OS primitive to obtain wall clock time.
 ## ``mono`` uses monotonic clock time (default).
+## ``virtual`` is for event-based simulations only.
 ##
 ## ``system`` clock is affected by discontinuous jumps in the system time. This
 ## clock is significantly faster then ``mono`` clock in most of the cases.
@@ -21,7 +22,10 @@
 ## ``mono`` clock is not affected by discontinuous jumps in the system time.
 ## This clock is slower then ``system`` clock.
 ##
-## You can specify which timer you want to use ``-d:asyncTimer=<system/mono>``.
+## ``virtual`` clock is not related to wall clock or system time. It simply
+## jumps through the event queue in time order, counting execution time.
+##
+## You can specify which timer you want to use ``-d:asyncTimer=<system/mono/virtual>``.
 import stew/base10
 
 const asyncTimer* {.strdefine.} = "mono"
@@ -31,7 +35,18 @@ when (NimMajor, NimMinor) < (1, 4):
 else:
   {.push raises: [].}
 
-when defined(windows):
+when asyncTimer == "virtual":
+  var curTime: uint64 = 0
+  proc fastEpochTime*(): uint64 {.
+        inline, deprecated: "Use Moment.now()".} =
+    ## Procedure's resolution is millisecond.
+    curTime div 1_000_000
+
+  proc fastEpochTimeNano(): uint64 {.inline.} =
+    ## Procedure's resolution is nanosecond.
+    curTime
+
+elif defined(windows):
   when asyncTimer == "system":
     from winlean import getSystemTimeAsFileTime, FILETIME
 
@@ -503,3 +518,8 @@ when defined(posix):
       tv_sec: Time(a.value div Second.value),
       tv_nsec: int(a.value mod Second.value)
     )
+
+when asyncTimer == "virtual":
+  proc advance*(t: typedesc[Moment], a: Duration) =
+    ## # Advance virtual time by given duration
+    curTime += a.nanoseconds.uint64
