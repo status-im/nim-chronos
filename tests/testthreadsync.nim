@@ -5,7 +5,7 @@
 #              Licensed under either of
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
-import std/[cpuinfo, math]
+import std/[cpuinfo, math, locks]
 import ../chronos/unittest2/asynctests
 import ../chronos/threadsync
 
@@ -17,6 +17,8 @@ type
 
   ThreadResultPtr = ptr ThreadResult
 
+  LockPtr = ptr Lock
+
   ThreadArg = object
     signal: ThreadSignalPtr
     retval: ThreadResultPtr
@@ -26,6 +28,12 @@ type
     signal1: ThreadSignalPtr
     signal2: ThreadSignalPtr
     retval: ThreadResultPtr
+
+  ThreadArg3 = object
+    lock: LockPtr
+    signal: ThreadSignalPtr
+    retval: ThreadResultPtr
+    index: int
 
   WaitSendKind {.pure.} = enum
     Sync, Async
@@ -112,7 +120,6 @@ suite "Asynchronous multi-threading sync primitives test suite":
       for i in 0 ..< testsCount:
         block:
           let res = waitSync(arg.signal1, 1500.milliseconds)
-          # echo "thread awaited signal1 [", res, "]"
           if res.isErr():
             arg.retval.setResult(-1)
             return
@@ -122,7 +129,6 @@ suite "Asynchronous multi-threading sync primitives test suite":
 
         block:
           let res = arg.signal2.fireSync()
-          # echo "thread signaled signal2 [", res, "]"
           if res.isErr():
             arg.retval.setResult(-3)
             return
@@ -195,6 +201,78 @@ suite "Asynchronous multi-threading sync primitives test suite":
     check:
       arg.retval[].value == testsCount
 
+  template threadSignalTest3(sendFlag, waitFlag: WaitSendKind) =
+    proc testSyncThread(arg: ThreadArg3) {.thread.} =
+      withLock(arg.lock[]):
+        let res = waitSync(arg.signal, 10.milliseconds)
+        if res.isErr():
+          arg.retval.setResult(1)
+        else:
+          if res.get():
+            arg.retval.setResult(2)
+          else:
+            arg.retval.setResult(3)
+
+    proc testAsyncThread(arg: ThreadArg3) {.thread.} =
+      proc testAsyncCode(arg: ThreadArg3) {.async.} =
+        withLock(arg.lock[]):
+          try:
+            await wait(arg.signal).wait(10.milliseconds)
+            arg.retval.setResult(2)
+          except AsyncTimeoutError:
+            arg.retval.setResult(3)
+          except CatchableError:
+            arg.retval.setResult(1)
+
+      waitFor testAsyncCode(arg)
+
+    let signal = ThreadSignalPtr.new().tryGet()
+    var args: seq[ThreadArg3]
+    var threads = newSeq[Thread[ThreadArg3]](numProcs)
+    var lockPtr = cast[LockPtr](allocShared0(sizeof(Lock)))
+    initLock(lockPtr[])
+    acquire(lockPtr[])
+
+    for i in 0 ..< numProcs:
+      let
+        res = ThreadResultPtr.new()
+        arg = ThreadArg3(signal: signal, retval: res, index: i, lock: lockPtr)
+      args.add(arg)
+      case waitFlag
+      of WaitSendKind.Sync:
+        createThread(threads[i], testSyncThread, arg)
+      of WaitSendKind.Async:
+        createThread(threads[i], testAsyncThread, arg)
+
+    await sleepAsync(500.milliseconds)
+    case sendFlag
+    of WaitSendKind.Sync:
+      for i in 0 ..< numProcs:
+        check signal.fireSync().isOk()
+    of WaitSendKind.Async:
+      for i in 0 ..< numProcs:
+        await signal.fire()
+
+    release(lockPtr[])
+    joinThreads(threads)
+    deinitLock(lockPtr[])
+    deallocShared(lockPtr)
+
+    var ncheck: array[3, int]
+    for item in args:
+      if item.retval[].value == 1:
+        inc(ncheck[0])
+      elif item.retval[].value == 2:
+        inc(ncheck[1])
+      elif item.retval[].value == 3:
+        inc(ncheck[2])
+      free(item.retval)
+    check:
+      signal.close().isOk()
+      ncheck[0] == 0
+      ncheck[1] == 1
+      ncheck[2] == numProcs - 1
+
   asyncTest "ThreadSignal: Multiple [" & $numProcs &
             "] threads waiting test [sync -> sync]":
     threadSignalTest(WaitSendKind.Sync, WaitSendKind.Sync)
@@ -222,3 +300,19 @@ suite "Asynchronous multi-threading sync primitives test suite":
 
   asyncTest "ThreadSignal: Multiple thread switches test [async -> sync]":
     threadSignalTest2(1000, WaitSendKind.Async, WaitSendKind.Sync)
+
+  asyncTest "ThreadSignal: Multiple signals [" & $numProcs &
+            "] to multiple threads [" & $numProcs & "] test [sync -> sync]":
+    threadSignalTest3(WaitSendKind.Sync, WaitSendKind.Sync)
+
+  asyncTest "ThreadSignal: Multiple signals [" & $numProcs &
+            "] to multiple threads [" & $numProcs & "] test [async -> async]":
+    threadSignalTest3(WaitSendKind.Async, WaitSendKind.Async)
+
+  asyncTest "ThreadSignal: Multiple signals [" & $numProcs &
+            "] to multiple threads [" & $numProcs & "] test [sync -> async]":
+    threadSignalTest3(WaitSendKind.Sync, WaitSendKind.Async)
+
+  asyncTest "ThreadSignal: Multiple signals [" & $numProcs &
+            "] to multiple threads [" & $numProcs & "] test [async -> sync]":
+    threadSignalTest3(WaitSendKind.Async, WaitSendKind.Sync)

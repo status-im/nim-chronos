@@ -1,5 +1,5 @@
 #
-#            Chronos synchronization primitives
+#       Chronos multithreaded synchronization primitives
 #
 #  (c) Copyright 2023-Present Status Research & Development GmbH
 #
@@ -13,10 +13,7 @@ import "."/[timer, asyncloop]
 
 export results
 
-when (NimMajor, NimMinor) < (1, 4):
-  {.push raises: [Defect].}
-else:
-  {.push raises: [].}
+{.push raises: [].}
 
 const hasThreadSupport* = compileOption("threads")
 when not(hasThreadSupport):
@@ -52,18 +49,46 @@ proc new*(t: typedesc[ThreadSignalPtr]): Result[ThreadSignalPtr, string] =
       return err(osErrorMsg(osLastError()))
     res[] = ThreadSignal(efd: AsyncFD(efd))
   else:
-    let
-      flags = {DescriptorFlag.CloseOnExec, DescriptorFlag.NonBlock}
-      pipes = createOsPipe(flags, flags).valueOr:
+    var sockets: array[2, cint]
+    block:
+      let res = socketpair(AF_UNIX, SOCK_STREAM, 0, sockets)
+      if res < 0:
         deallocShared(res)
         return err(osErrorMsg(osLastError()))
-    res[] = ThreadSignal(rfd: AsyncFD(pipes.read), wfd: AsyncFD(pipes.write))
+    # MacOS do not have SOCK_NONBLOCK and SOCK_CLOEXEC, so we forced to use
+    # setDescriptorFlags() for every socket.
+    block:
+      let res = setDescriptorFlags(sockets[0], true, true)
+      if res.isErr():
+        discard closeFd(sockets[0])
+        discard closeFd(sockets[1])
+        deallocShared(res)
+        return err(osErrorMsg(res.error))
+    block:
+      let res = setDescriptorFlags(sockets[1], true, true)
+      if res.isErr():
+        discard closeFd(sockets[0])
+        discard closeFd(sockets[1])
+        deallocShared(res)
+        return err(osErrorMsg(res.error))
+    res[] = ThreadSignal(rfd: AsyncFD(sockets[0]), wfd: AsyncFD(sockets[1]))
   ok(ThreadSignalPtr(res))
 
 when not(defined(windows)):
   type
     WaitKind {.pure.} = enum
       Read, Write
+
+  when defined(linux):
+    proc checkBusy(fd: cint): bool = false
+  else:
+    proc checkBusy(fd: cint): bool =
+      var data: uint64
+      let res = handleEintr(recv(eventFd, addr data, sizeof(uint64), cint(0)))
+      if res == sizeof(uint64):
+        true
+      else:
+        false
 
   func toTimeval(a: Duration): Timeval =
     ## Convert Duration ``a`` to ``Timeval`` object.
@@ -151,9 +176,17 @@ proc fireSync*(signal: ThreadSignalPtr,
       else:
         cint(signal[].wfd)
 
+    if checkBusy(eventFd):
+      # Signal is already in signalled state
+      return ok(true)
+
     var data = 1'u64
     while true:
-      let res = handleEintr(write(eventFd, addr data, sizeof(uint64)))
+      let res =
+        when defined(linux):
+          handleEintr(write(eventFd, addr data, sizeof(uint64)))
+        else:
+          handleEintr(send(eventFd, addr data, sizeof(uint64), MSG_NOSIGNAL))
       if res < 0:
         let errorCode = osLastError()
         case errorCode
@@ -213,7 +246,11 @@ proc waitSync*(signal: ThreadSignalPtr,
         return err(osErrorMsg(wres.error))
       if not(wres.get()):
         return ok(false)
-      let res = handleEintr(read(eventFd, addr data, sizeof(uint64)))
+      let res =
+        when defined(linux):
+          handleEintr(read(eventFd, addr data, sizeof(uint64)))
+        else:
+          handleEintr(recv(eventFd, addr data, sizeof(uint64), cint(0)))
       if res < 0:
         let errorCode = osLastError()
         # If errorCode == EAGAIN it means that reading operation is already
@@ -244,7 +281,11 @@ proc fire*(signal: ThreadSignalPtr): Future[void] =
 
     proc continuation(udata: pointer) {.gcsafe, raises: [].} =
       if not(retFuture.finished()):
-        let res = handleEintr(write(eventFd, addr data, sizeof(uint64)))
+        let res =
+          when defined(linux):
+            handleEintr(write(eventFd, addr data, sizeof(uint64)))
+          else:
+            handleEintr(send(eventFd, addr data, sizeof(uint64), MSG_NOSIGNAL))
         if res < 0:
           let errorCode = osLastError()
           discard removeWriter2(AsyncFD(eventFd))
@@ -263,7 +304,16 @@ proc fire*(signal: ThreadSignalPtr): Future[void] =
       if not(retFuture.finished()):
         discard removeWriter2(AsyncFD(eventFd))
 
-    let res = handleEintr(write(eventFd, addr data, sizeof(uint64)))
+    if checkBusy(eventFd):
+      # Signal is already in signalled state
+      retFuture.complete()
+      return retFuture
+
+    let res =
+      when defined(linux):
+        handleEintr(write(eventFd, addr data, sizeof(uint64)))
+      else:
+        handleEintr(send(eventFd, addr data, sizeof(uint64), MSG_NOSIGNAL))
     if res < 0:
       let errorCode = osLastError()
       case errorCode
@@ -306,7 +356,11 @@ else:
 
     proc continuation(udata: pointer) {.gcsafe, raises: [].} =
       if not(retFuture.finished()):
-        let res = handleEintr(read(eventFd, addr data, sizeof(uint64)))
+        let res =
+          when defined(linux):
+            handleEintr(read(eventFd, addr data, sizeof(uint64)))
+          else:
+            handleEintr(recv(eventFd, addr data, sizeof(uint64), cint(0)))
         if res < 0:
           let errorCode = osLastError()
           # If errorCode == EAGAIN it means that reading operation is already
