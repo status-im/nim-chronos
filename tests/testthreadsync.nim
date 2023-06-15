@@ -5,7 +5,7 @@
 #              Licensed under either of
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
-import std/[cpuinfo, math, locks]
+import std/[cpuinfo, locks, strutils]
 import ../chronos/unittest2/asynctests
 import ../chronos/threadsync
 
@@ -199,7 +199,8 @@ suite "Asynchronous multi-threading sync primitives test suite":
     let perf = (float64(nanoseconds(1.seconds)) /
       float64(nanoseconds(finish - start))) * float64(testsCount)
     echo "Switches tested: ", testsCount, ", elapsed time: ", (finish - start),
-         ", performance = ", int(round(perf)), " switches/second"
+         ", performance = ", formatFloat(perf, ffDecimal, 4),
+         " switches/second"
 
     check:
       arg.retval[].value == testsCount
@@ -277,6 +278,32 @@ suite "Asynchronous multi-threading sync primitives test suite":
       ncheck[1] == 1
       ncheck[2] == numProcs - 1
 
+  template threadSignalTest4(testsCount: int,
+                             sendFlag, waitFlag: WaitSendKind) =
+    let signal = ThreadSignalPtr.new().tryGet()
+    let start = Moment.now()
+    for i in 0 ..< testsCount:
+      case sendFlag
+      of WaitSendKind.Sync:
+        check signal.fireSync().isOk()
+      of WaitSendKind.Async:
+        await signal.fire()
+
+      case waitFlag
+      of WaitSendKind.Sync:
+        check waitSync(signal).isOk()
+      of WaitSendKind.Async:
+        await wait(signal)
+    let finish = Moment.now()
+    let perf = (float64(nanoseconds(1.seconds)) /
+      float64(nanoseconds(finish - start))) * float64(testsCount)
+    echo "Switches tested: ", testsCount, ", elapsed time: ", (finish - start),
+         ", performance = ", formatFloat(perf, ffDecimal, 4),
+         " switches/second"
+
+    check:
+      signal.close.isOk()
+
   asyncTest "ThreadSignal: Multiple [" & $numProcs &
             "] threads waiting test [sync -> sync]":
     threadSignalTest(WaitSendKind.Sync, WaitSendKind.Sync)
@@ -324,3 +351,19 @@ suite "Asynchronous multi-threading sync primitives test suite":
   asyncTest "ThreadSignal: Multiple signals [" & $TestsCount &
             "] to multiple threads [" & $numProcs & "] test [async -> sync]":
     threadSignalTest3(TestsCount, WaitSendKind.Async, WaitSendKind.Sync)
+
+  asyncTest "ThreadSignal: Single threaded switches [" & $TestsCount &
+            "] test [sync -> sync]":
+    threadSignalTest4(TestsCount, WaitSendKind.Sync, WaitSendKind.Sync)
+
+  asyncTest "ThreadSignal: Single threaded switches [" & $TestsCount &
+            "] test [sync -> sync]":
+    threadSignalTest4(TestsCount, WaitSendKind.Async, WaitSendKind.Async)
+
+  asyncTest "ThreadSignal: Single threaded switches [" & $TestsCount &
+            "] test [sync -> async]":
+    threadSignalTest4(TestsCount, WaitSendKind.Sync, WaitSendKind.Async)
+
+  asyncTest "ThreadSignal: Single threaded switches [" & $TestsCount &
+            "] test [async -> sync]":
+    threadSignalTest4(TestsCount, WaitSendKind.Async, WaitSendKind.Sync)
