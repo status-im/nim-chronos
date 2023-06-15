@@ -51,26 +51,26 @@ proc new*(t: typedesc[ThreadSignalPtr]): Result[ThreadSignalPtr, string] =
   else:
     var sockets: array[2, cint]
     block:
-      let res = socketpair(AF_UNIX, SOCK_STREAM, 0, sockets)
-      if res < 0:
+      let sres = socketpair(AF_UNIX, SOCK_DGRAM, 0, sockets)
+      if sres < 0:
         deallocShared(res)
         return err(osErrorMsg(osLastError()))
     # MacOS do not have SOCK_NONBLOCK and SOCK_CLOEXEC, so we forced to use
     # setDescriptorFlags() for every socket.
     block:
-      let res = setDescriptorFlags(sockets[0], true, true)
-      if res.isErr():
+      let sres = setDescriptorFlags(sockets[0], true, true)
+      if sres.isErr():
         discard closeFd(sockets[0])
         discard closeFd(sockets[1])
         deallocShared(res)
-        return err(osErrorMsg(res.error))
+        return err(osErrorMsg(sres.error))
     block:
-      let res = setDescriptorFlags(sockets[1], true, true)
-      if res.isErr():
+      let sres = setDescriptorFlags(sockets[1], true, true)
+      if sres.isErr():
         discard closeFd(sockets[0])
         discard closeFd(sockets[1])
         deallocShared(res)
-        return err(osErrorMsg(res.error))
+        return err(osErrorMsg(sres.error))
     res[] = ThreadSignal(rfd: AsyncFD(sockets[0]), wfd: AsyncFD(sockets[1]))
   ok(ThreadSignalPtr(res))
 
@@ -83,8 +83,9 @@ when not(defined(windows)):
     proc checkBusy(fd: cint): bool = false
   else:
     proc checkBusy(fd: cint): bool =
-      var data: uint64
-      let res = handleEintr(recv(eventFd, addr data, sizeof(uint64), cint(0)))
+      var data = 0'u64
+      let res = handleEintr(recv(SocketHandle(fd),
+                                 addr data, sizeof(uint64), MSG_PEEK))
       if res == sizeof(uint64):
         true
       else:
@@ -170,13 +171,19 @@ proc fireSync*(signal: ThreadSignalPtr,
       return err(osErrorMsg(osLastError()))
     ok(true)
   else:
-    let eventFd =
-      when defined(linux):
-        cint(signal[].efd)
-      else:
-        cint(signal[].wfd)
+    let
+      eventFd =
+        when defined(linux):
+          cint(signal[].efd)
+        else:
+          cint(signal[].wfd)
+      checkFd =
+        when defined(linux):
+          cint(signal[].efd)
+        else:
+          cint(signal[].rfd)
 
-    if checkBusy(eventFd):
+    if checkBusy(checkFd):
       # Signal is already in signalled state
       return ok(true)
 
@@ -186,7 +193,8 @@ proc fireSync*(signal: ThreadSignalPtr,
         when defined(linux):
           handleEintr(write(eventFd, addr data, sizeof(uint64)))
         else:
-          handleEintr(send(eventFd, addr data, sizeof(uint64), MSG_NOSIGNAL))
+          handleEintr(send(SocketHandle(eventFd), addr data, sizeof(uint64),
+                           MSG_NOSIGNAL))
       if res < 0:
         let errorCode = osLastError()
         case errorCode
@@ -250,7 +258,8 @@ proc waitSync*(signal: ThreadSignalPtr,
         when defined(linux):
           handleEintr(read(eventFd, addr data, sizeof(uint64)))
         else:
-          handleEintr(recv(eventFd, addr data, sizeof(uint64), cint(0)))
+          handleEintr(recv(SocketHandle(eventFd), addr data, sizeof(uint64),
+                           cint(0)))
       if res < 0:
         let errorCode = osLastError()
         # If errorCode == EAGAIN it means that reading operation is already
@@ -273,11 +282,17 @@ proc fire*(signal: ThreadSignalPtr): Future[void] =
       retFuture.complete()
   else:
     var data = 1'u64
-    let eventFd =
-      when defined(linux):
-        cint(signal[].efd)
-      else:
-        cint(signal[].wfd)
+    let
+      eventFd =
+        when defined(linux):
+          cint(signal[].efd)
+        else:
+          cint(signal[].wfd)
+      checkFd =
+        when defined(linux):
+          cint(signal[].efd)
+        else:
+          cint(signal[].rfd)
 
     proc continuation(udata: pointer) {.gcsafe, raises: [].} =
       if not(retFuture.finished()):
@@ -285,7 +300,8 @@ proc fire*(signal: ThreadSignalPtr): Future[void] =
           when defined(linux):
             handleEintr(write(eventFd, addr data, sizeof(uint64)))
           else:
-            handleEintr(send(eventFd, addr data, sizeof(uint64), MSG_NOSIGNAL))
+            handleEintr(send(SocketHandle(eventFd), addr data, sizeof(uint64),
+                             MSG_NOSIGNAL))
         if res < 0:
           let errorCode = osLastError()
           discard removeWriter2(AsyncFD(eventFd))
@@ -304,7 +320,7 @@ proc fire*(signal: ThreadSignalPtr): Future[void] =
       if not(retFuture.finished()):
         discard removeWriter2(AsyncFD(eventFd))
 
-    if checkBusy(eventFd):
+    if checkBusy(checkFd):
       # Signal is already in signalled state
       retFuture.complete()
       return retFuture
@@ -313,7 +329,8 @@ proc fire*(signal: ThreadSignalPtr): Future[void] =
       when defined(linux):
         handleEintr(write(eventFd, addr data, sizeof(uint64)))
       else:
-        handleEintr(send(eventFd, addr data, sizeof(uint64), MSG_NOSIGNAL))
+        handleEintr(send(SocketHandle(eventFd), addr data, sizeof(uint64),
+                         MSG_NOSIGNAL))
     if res < 0:
       let errorCode = osLastError()
       case errorCode
@@ -360,7 +377,8 @@ else:
           when defined(linux):
             handleEintr(read(eventFd, addr data, sizeof(uint64)))
           else:
-            handleEintr(recv(eventFd, addr data, sizeof(uint64), cint(0)))
+            handleEintr(recv(SocketHandle(eventFd), addr data, sizeof(uint64),
+                             cint(0)))
         if res < 0:
           let errorCode = osLastError()
           # If errorCode == EAGAIN it means that reading operation is already

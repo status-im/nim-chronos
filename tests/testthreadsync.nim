@@ -38,6 +38,9 @@ type
   WaitSendKind {.pure.} = enum
     Sync, Async
 
+const
+  TestsCount = 1000
+
 suite "Asynchronous multi-threading sync primitives test suite":
   proc setResult(thr: ThreadResultPtr, value: int) =
     thr[].value = value
@@ -201,7 +204,8 @@ suite "Asynchronous multi-threading sync primitives test suite":
     check:
       arg.retval[].value == testsCount
 
-  template threadSignalTest3(sendFlag, waitFlag: WaitSendKind) =
+  template threadSignalTest3(testsCount: int,
+                             sendFlag, waitFlag: WaitSendKind) =
     proc testSyncThread(arg: ThreadArg3) {.thread.} =
       withLock(arg.lock[]):
         let res = waitSync(arg.signal, 10.milliseconds)
@@ -247,10 +251,10 @@ suite "Asynchronous multi-threading sync primitives test suite":
     await sleepAsync(500.milliseconds)
     case sendFlag
     of WaitSendKind.Sync:
-      for i in 0 ..< numProcs:
+      for i in 0 ..< testsCount:
         check signal.fireSync().isOk()
     of WaitSendKind.Async:
-      for i in 0 ..< numProcs:
+      for i in 0 ..< testsCount:
         await signal.fire()
 
     release(lockPtr[])
@@ -289,30 +293,34 @@ suite "Asynchronous multi-threading sync primitives test suite":
             "] threads waiting test [sync -> async]":
     threadSignalTest(WaitSendKind.Sync, WaitSendKind.Async)
 
-  asyncTest "ThreadSignal: Multiple thread switches test [sync -> sync]":
-    threadSignalTest2(1000, WaitSendKind.Sync, WaitSendKind.Sync)
+  asyncTest "ThreadSignal: Multiple thread switches [" & $TestsCount &
+            "] test [sync -> sync]":
+    threadSignalTest2(TestsCount, WaitSendKind.Sync, WaitSendKind.Sync)
 
-  asyncTest "ThreadSignal: Multiple thread switches test [async -> async]":
-    threadSignalTest2(1000, WaitSendKind.Async, WaitSendKind.Async)
+  asyncTest "ThreadSignal: Multiple thread switches [" & $TestsCount &
+            "] test [async -> async]":
+    threadSignalTest2(TestsCount, WaitSendKind.Async, WaitSendKind.Async)
 
-  asyncTest "ThreadSignal: Multiple thread switches test [sync -> async]":
-    threadSignalTest2(1000, WaitSendKind.Sync, WaitSendKind.Async)
+  asyncTest "ThreadSignal: Multiple thread switches [" & $TestsCount &
+            "] test [sync -> async]":
+    threadSignalTest2(TestsCount, WaitSendKind.Sync, WaitSendKind.Async)
 
-  asyncTest "ThreadSignal: Multiple thread switches test [async -> sync]":
-    threadSignalTest2(1000, WaitSendKind.Async, WaitSendKind.Sync)
+  asyncTest "ThreadSignal: Multiple thread switches [" & $TestsCount &
+            "] test [async -> sync]":
+    threadSignalTest2(TestsCount, WaitSendKind.Async, WaitSendKind.Sync)
 
-  asyncTest "ThreadSignal: Multiple signals [" & $numProcs &
+  asyncTest "ThreadSignal: Multiple signals [" & $TestsCount &
             "] to multiple threads [" & $numProcs & "] test [sync -> sync]":
-    threadSignalTest3(WaitSendKind.Sync, WaitSendKind.Sync)
+    threadSignalTest3(TestsCount, WaitSendKind.Sync, WaitSendKind.Sync)
 
-  asyncTest "ThreadSignal: Multiple signals [" & $numProcs &
+  asyncTest "ThreadSignal: Multiple signals [" & $TestsCount &
             "] to multiple threads [" & $numProcs & "] test [async -> async]":
-    threadSignalTest3(WaitSendKind.Async, WaitSendKind.Async)
+    threadSignalTest3(TestsCount, WaitSendKind.Async, WaitSendKind.Async)
 
-  asyncTest "ThreadSignal: Multiple signals [" & $numProcs &
+  asyncTest "ThreadSignal: Multiple signals [" & $TestsCount &
             "] to multiple threads [" & $numProcs & "] test [sync -> async]":
-    threadSignalTest3(WaitSendKind.Sync, WaitSendKind.Async)
+    threadSignalTest3(TestsCount, WaitSendKind.Sync, WaitSendKind.Async)
 
-  asyncTest "ThreadSignal: Multiple signals [" & $numProcs &
+  asyncTest "ThreadSignal: Multiple signals [" & $TestsCount &
             "] to multiple threads [" & $numProcs & "] test [async -> sync]":
-    threadSignalTest3(WaitSendKind.Async, WaitSendKind.Sync)
+    threadSignalTest3(TestsCount, WaitSendKind.Async, WaitSendKind.Sync)
