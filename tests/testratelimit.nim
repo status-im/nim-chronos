@@ -31,7 +31,7 @@ suite "Token Bucket":
       bucket.tryConsume(100, fullTime) == false
 
   test "Async test":
-    var bucket = TokenBucket.new(1000, 500.milliseconds)
+    var bucket = TokenBucket.new(1000, 1000.milliseconds)
     check: bucket.tryConsume(1000) == true
 
     var toWait = newSeq[Future[void]]()
@@ -42,17 +42,14 @@ suite "Token Bucket":
     waitFor(allFutures(toWait))
     let duration = Moment.now() - start
 
-    check: duration in 700.milliseconds .. 1100.milliseconds
+    check: duration in 1400.milliseconds .. 2200.milliseconds
 
   test "Over budget async":
-    var bucket = TokenBucket.new(100, 10.milliseconds)
+    var bucket = TokenBucket.new(100, 100.milliseconds)
     # Consume 10* the budget cap
     let beforeStart = Moment.now()
-    waitFor(bucket.consume(1000).wait(1.seconds))
-    when not defined(macosx):
-      # CI's macos scheduler is so jittery that this tests sometimes takes >500ms
-      # the test will still fail if it's >1 seconds
-      check Moment.now() - beforeStart in 90.milliseconds .. 150.milliseconds
+    waitFor(bucket.consume(1000).wait(5.seconds))
+    check Moment.now() - beforeStart in 900.milliseconds .. 1500.milliseconds
 
   test "Sync manual replenish":
     var bucket = TokenBucket.new(1000, 0.seconds)
