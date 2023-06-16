@@ -15,19 +15,20 @@ import ../chronos/ratelimit
 suite "Token Bucket":
   test "Sync test":
     var bucket = TokenBucket.new(1000, 1.milliseconds)
+    let
+      start = Moment.now()
+      fullTime = start + 1.milliseconds
     check:
-      bucket.tryConsume(800) == true
-      bucket.tryConsume(200) == true
+      bucket.tryConsume(800, start) == true
+      bucket.tryConsume(200, start) == true
 
       # Out of budget
-      bucket.tryConsume(100) == false
-    waitFor(sleepAsync(10.milliseconds))
-    check:
-      bucket.tryConsume(800) == true
-      bucket.tryConsume(200) == true
+      bucket.tryConsume(100, start) == false
+      bucket.tryConsume(800, fullTime) == true
+      bucket.tryConsume(200, fullTime) == true
 
       # Out of budget
-      bucket.tryConsume(100) == false
+      bucket.tryConsume(100, fullTime) == false
 
   test "Async test":
     var bucket = TokenBucket.new(1000, 500.milliseconds)
@@ -55,14 +56,15 @@ suite "Token Bucket":
 
   test "Sync manual replenish":
     var bucket = TokenBucket.new(1000, 0.seconds)
+    let start = Moment.now()
     check:
-      bucket.tryConsume(1000) == true
-      bucket.tryConsume(1000) == false
+      bucket.tryConsume(1000, start) == true
+      bucket.tryConsume(1000, start) == false
     bucket.replenish(2000)
     check:
-      bucket.tryConsume(1000) == true
+      bucket.tryConsume(1000, start) == true
       # replenish is capped to the bucket max
-      bucket.tryConsume(1000) == false
+      bucket.tryConsume(1000, start) == false
 
   test "Async manual replenish":
     var bucket = TokenBucket.new(10 * 150, 0.seconds)
@@ -102,24 +104,25 @@ suite "Token Bucket":
 
   test "Very long replenish":
     var bucket = TokenBucket.new(7000, 1.hours)
-    check bucket.tryConsume(7000)
-    check bucket.tryConsume(1) == false
+    let start = Moment.now()
+    check bucket.tryConsume(7000, start)
+    check bucket.tryConsume(1, start) == false
 
     # With this setting, it takes 514 milliseconds
     # to tick one. Check that we can eventually
     # consume, even if we update multiple time
     # before that
-    let start = Moment.now()
-    while Moment.now() - start >= 514.milliseconds:
-      check bucket.tryConsume(1) == false
-      waitFor(sleepAsync(10.milliseconds))
+    var fakeNow = start
+    while fakeNow - start < 514.milliseconds:
+      check bucket.tryConsume(1, fakeNow) == false
+      fakeNow += 30.milliseconds
 
-    check bucket.tryConsume(1) == false
+    check bucket.tryConsume(1, fakeNow) == true
 
   test "Short replenish":
     var bucket = TokenBucket.new(15000, 1.milliseconds)
-    check bucket.tryConsume(15000)
-    check bucket.tryConsume(1) == false
+    let start = Moment.now()
+    check bucket.tryConsume(15000, start)
+    check bucket.tryConsume(1, start) == false
 
-    waitFor(sleepAsync(1.milliseconds))
-    check bucket.tryConsume(15000) == true
+    check bucket.tryConsume(15000, start + 1.milliseconds) == true
