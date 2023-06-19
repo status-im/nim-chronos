@@ -141,30 +141,28 @@ type
                                       # transport for new client
 
 proc remoteAddress*(transp: StreamTransport): TransportAddress {.
-    raises: [TransportError].} =
+    raises: [TransportAbortedError, TransportTooManyError, TransportOsError].} =
   ## Returns ``transp`` remote socket address.
-  if transp.kind != TransportKind.Socket:
-    raise newException(TransportError, "Socket required!")
+  doAssert(transp.kind == TransportKind.Socket, "Socket transport required!")
   if transp.remote.family == AddressFamily.None:
     var saddr: Sockaddr_storage
     var slen = SockLen(sizeof(saddr))
     if getpeername(SocketHandle(transp.fd), cast[ptr SockAddr](addr saddr),
                    addr slen) != 0:
-      raiseTransportOsError(osLastError())
+      raiseTransportError(osLastError())
     fromSAddr(addr saddr, slen, transp.remote)
   transp.remote
 
 proc localAddress*(transp: StreamTransport): TransportAddress {.
-    raises: [TransportError].} =
+    raises: [TransportAbortedError, TransportTooManyError, TransportOsError].} =
   ## Returns ``transp`` local socket address.
-  if transp.kind != TransportKind.Socket:
-    raise newException(TransportError, "Socket required!")
+  doAssert(transp.kind == TransportKind.Socket, "Socket transport required!")
   if transp.local.family == AddressFamily.None:
     var saddr: Sockaddr_storage
     var slen = SockLen(sizeof(saddr))
     if getsockname(SocketHandle(transp.fd), cast[ptr SockAddr](addr saddr),
                    addr slen) != 0:
-      raiseTransportOsError(osLastError())
+      raiseTransportError(osLastError())
     fromSAddr(addr saddr, slen, transp.local)
   transp.local
 
