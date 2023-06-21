@@ -33,7 +33,9 @@ proc update(bucket: TokenBucket, currentTime: Moment) =
     bucket.budget = min(bucket.budgetCap, bucket.budget)
     return
 
-  assert currentTime >= bucket.lastUpdate
+  if currentTime < bucket.lastUpdate:
+    return
+
   let
     timeDelta = currentTime - bucket.lastUpdate
     fillPercent = timeDelta.milliseconds.float / bucket.fillDuration.milliseconds.float
