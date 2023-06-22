@@ -8,7 +8,8 @@
 import std/[strutils, algorithm]
 import unittest2
 import ../chronos, ../chronos/apps/http/httpserver,
-       ../chronos/apps/http/httpcommon
+       ../chronos/apps/http/httpcommon,
+       ../chronos/unittest2/asynctests
 import stew/base10
 
 {.used.}
@@ -17,6 +18,9 @@ suite "HTTP server testing suite":
   type
     TooBigTest = enum
       GetBodyTest, ConsumeBodyTest, PostUrlTest, PostMultipartTest
+    TestHttpResponse = object
+      headers: HttpTable
+      data: string
 
   proc httpClient(address: TransportAddress,
                   data: string): Future[string] {.async.} =
@@ -32,6 +36,31 @@ suite "HTTP server testing suite":
     finally:
       if not(isNil(transp)):
         await closeWait(transp)
+
+  proc httpClient2(transp: StreamTransport,
+                   request: string,
+                   length: int): Future[TestHttpResponse] {.async.} =
+    var buffer = newSeq[byte](4096)
+    var sep = @[0x0D'u8, 0x0A'u8, 0x0D'u8, 0x0A'u8]
+    let wres = await transp.write(request)
+    if wres != len(request):
+      raise newException(ValueError, "Unable to write full request")
+    let hres = await transp.readUntil(addr buffer[0], len(buffer), sep)
+    var hdata = @buffer
+    hdata.setLen(hres)
+    zeroMem(addr buffer[0], len(buffer))
+    await transp.readExactly(addr buffer[0], length)
+    let data = bytesToString(buffer.toOpenArray(0, length - 1))
+    let headers =
+      block:
+        let resp = parseResponse(hdata, false)
+        if resp.failed():
+          raise newException(ValueError, "Unable to decode response headers")
+        var res = HttpTable.init()
+        for key, value in resp.headers(hdata):
+          res.add(key, value)
+        res
+    return TestHttpResponse(headers: headers, data: data)
 
   proc testTooBigBodyChunked(address: TransportAddress,
                              operation: TooBigTest): Future[bool] {.async.} =
@@ -1239,6 +1268,82 @@ suite "HTTP server testing suite":
 
     check waitFor(testPostMultipart2(initTAddress("127.0.0.1:30080"))) == true
 
+  asyncTest "HTTP/1.1 pipeline test":
+    const TestMessages = [
+      ("GET / HTTP/1.0\r\n\r\n",
+       {HttpServerFlags.Http11Pipeline}, false, "close"),
+      ("GET / HTTP/1.0\r\nConnection: close\r\n\r\n",
+       {HttpServerFlags.Http11Pipeline}, false, "close"),
+      ("GET / HTTP/1.0\r\nConnection: keep-alive\r\n\r\n",
+       {HttpServerFlags.Http11Pipeline}, false, "close"),
+      ("GET / HTTP/1.0\r\n\r\n",
+       {}, false, "close"),
+      ("GET / HTTP/1.0\r\nConnection: close\r\n\r\n",
+       {}, false, "close"),
+      ("GET / HTTP/1.0\r\nConnection: keep-alive\r\n\r\n",
+       {}, false, "close"),
+      ("GET / HTTP/1.1\r\n\r\n",
+       {HttpServerFlags.Http11Pipeline}, true, "keep-alive"),
+      ("GET / HTTP/1.1\r\nConnection: close\r\n\r\n",
+       {HttpServerFlags.Http11Pipeline}, false, "close"),
+      ("GET / HTTP/1.1\r\nConnection: keep-alive\r\n\r\n",
+       {HttpServerFlags.Http11Pipeline}, true, "keep-alive"),
+      ("GET / HTTP/1.1\r\n\r\n",
+       {}, false, "close"),
+      ("GET / HTTP/1.1\r\nConnection: close\r\n\r\n",
+       {}, false, "close"),
+      ("GET / HTTP/1.1\r\nConnection: keep-alive\r\n\r\n",
+       {}, false, "close")
+    ]
+
+    proc process(r: RequestFence): Future[HttpResponseRef] {.async.} =
+      if r.isOk():
+        let request = r.get()
+        return await request.respond(Http200, "TEST_OK", HttpTable.init())
+      else:
+        return dumbResponse()
+
+    for test in TestMessages:
+      let
+        socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
+        serverFlags = test[1]
+        res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
+                                socketFlags = socketFlags,
+                                serverFlags = serverFlags)
+      check res.isOk()
+
+      let
+        server = res.get()
+        address = server.instance.localAddress()
+
+      server.start()
+      var transp: StreamTransport
+      try:
+        transp = await connect(address)
+        block:
+          let response = await transp.httpClient2(test[0], 7)
+          check:
+            response.data == "TEST_OK"
+            response.headers.getString("connection") == test[3]
+        # We do this sleeping here just because we running both server and
+        # client in single process, so when we received response from server
+        # it does not mean that connection has been immediately closed - it
+        # takes some more calls, so we trying to get this calls happens.
+        await sleepAsync(50.milliseconds)
+        let connectionStillAvailable =
+          try:
+            let response {.used.} = await transp.httpClient2(test[0], 7)
+            true
+          except CatchableError:
+            false
+
+        check connectionStillAvailable == test[2]
+
+      finally:
+        if not(isNil(transp)):
+          await transp.closeWait()
+        await server.stop()
+        await server.closeWait()
 
   test "Leaks test":
     check:

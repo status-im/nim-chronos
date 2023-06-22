@@ -25,6 +25,8 @@ type
     QueryCommaSeparatedArray
       ## Enable usage of comma as an array item delimiter in url-encoded
       ## entities (e.g. query string or POST body).
+    Http11Pipeline
+      ## Enable HTTP/1.1 pipelining.
 
   HttpServerError* {.pure.} = enum
     TimeoutError, CatchableError, RecoverableError, CriticalError,
@@ -198,6 +200,20 @@ proc new*(htype: typedesc[HttpServerRef],
   )
   ok(res)
 
+proc getResponseFlags*(req: HttpRequestRef): set[HttpResponseFlags] =
+  var defaultFlags: set[HttpResponseFlags] = {}
+  case req.version
+  of HttpVersion11:
+    if HttpServerFlags.Http11Pipeline notin req.connection.server.flags:
+      return defaultFlags
+    let header = req.headers.getString(ConnectionHeader, "keep-alive")
+    if header == "keep-alive":
+      {HttpResponseFlags.KeepAlive}
+    else:
+      defaultFlags
+  else:
+    defaultFlags
+
 proc getResponse*(req: HttpRequestRef): HttpResponseRef {.raises: [].} =
   if req.response.isNone():
     var resp = HttpResponseRef(
@@ -206,10 +222,7 @@ proc getResponse*(req: HttpRequestRef): HttpResponseRef {.raises: [].} =
       version: req.version,
       headersTable: HttpTable.init(),
       connection: req.connection,
-      flags: if req.version == HttpVersion11:
-               {HttpResponseFlags.KeepAlive}
-             else:
-               {}
+      flags: req.getResponseFlags()
     )
     req.response = Opt.some(resp)
     resp
@@ -792,7 +805,7 @@ proc processLoop(server: HttpServerRef, transp: StreamTransport,
       break
     else:
       let request = arg.get()
-      var keepConn = if request.version == HttpVersion11: true else: false
+      var keepConn = HttpResponseFlags.KeepAlive in request.getResponseFlags()
       if lastErrorCode.isNone():
         if isNil(resp):
           # Response was `nil`.
