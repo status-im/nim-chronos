@@ -62,8 +62,7 @@ suite "HTTP server testing suite":
         res
     return TestHttpResponse(headers: headers, data: data)
 
-  proc testTooBigBodyChunked(address: TransportAddress,
-                             operation: TooBigTest): Future[bool] {.async.} =
+  proc testTooBigBodyChunked(operation: TooBigTest): Future[bool] {.async.} =
     var serverRes = false
     proc process(r: RequestFence): Future[HttpResponseRef] {.
          async.} =
@@ -88,7 +87,7 @@ suite "HTTP server testing suite":
         return dumbResponse()
 
     let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
-    let res = HttpServerRef.new(address, process,
+    let res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
                                 maxRequestBodySize = 10,
                                 socketFlags = socketFlags)
     if res.isErr():
@@ -96,6 +95,7 @@ suite "HTTP server testing suite":
 
     let server = res.get()
     server.start()
+    let address = server.instance.localAddress()
 
     let request =
       case operation
@@ -126,7 +126,7 @@ suite "HTTP server testing suite":
     return serverRes and (data.startsWith("HTTP/1.1 413"))
 
   test "Request headers timeout test":
-    proc testTimeout(address: TransportAddress): Future[bool] {.async.} =
+    proc testTimeout(): Future[bool] {.async.} =
       var serverRes = false
       proc process(r: RequestFence): Future[HttpResponseRef] {.
            async.} =
@@ -139,23 +139,25 @@ suite "HTTP server testing suite":
           return dumbResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
-      let res = HttpServerRef.new(address, process, socketFlags = socketFlags,
+      let res = HttpServerRef.new(initTAddress("127.0.0.1:0"),
+                                  process, socketFlags = socketFlags,
                                   httpHeadersTimeout = 100.milliseconds)
       if res.isErr():
         return false
 
       let server = res.get()
       server.start()
+      let address = server.instance.localAddress()
 
       let data = await httpClient(address, "")
       await server.stop()
       await server.closeWait()
       return serverRes and (data.startsWith("HTTP/1.1 408"))
 
-    check waitFor(testTimeout(initTAddress("127.0.0.1:30080"))) == true
+    check waitFor(testTimeout()) == true
 
   test "Empty headers test":
-    proc testEmpty(address: TransportAddress): Future[bool] {.async.} =
+    proc testEmpty(): Future[bool] {.async.} =
       var serverRes = false
       proc process(r: RequestFence): Future[HttpResponseRef] {.
            async.} =
@@ -168,22 +170,24 @@ suite "HTTP server testing suite":
           return dumbResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
-      let res = HttpServerRef.new(address, process, socketFlags = socketFlags)
+      let res = HttpServerRef.new(initTAddress("127.0.0.1:0"),
+                                  process, socketFlags = socketFlags)
       if res.isErr():
         return false
 
       let server = res.get()
       server.start()
+      let address = server.instance.localAddress()
 
       let data = await httpClient(address, "\r\n\r\n")
       await server.stop()
       await server.closeWait()
       return serverRes and (data.startsWith("HTTP/1.1 400"))
 
-    check waitFor(testEmpty(initTAddress("127.0.0.1:30080"))) == true
+    check waitFor(testEmpty()) == true
 
   test "Too big headers test":
-    proc testTooBig(address: TransportAddress): Future[bool] {.async.} =
+    proc testTooBig(): Future[bool] {.async.} =
       var serverRes = false
       proc process(r: RequestFence): Future[HttpResponseRef] {.
            async.} =
@@ -196,7 +200,7 @@ suite "HTTP server testing suite":
           return dumbResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
-      let res = HttpServerRef.new(address, process,
+      let res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
                                   maxHeadersSize = 10,
                                   socketFlags = socketFlags)
       if res.isErr():
@@ -204,16 +208,17 @@ suite "HTTP server testing suite":
 
       let server = res.get()
       server.start()
+      let address = server.instance.localAddress()
 
       let data = await httpClient(address, "GET / HTTP/1.1\r\n\r\n")
       await server.stop()
       await server.closeWait()
       return serverRes and (data.startsWith("HTTP/1.1 431"))
 
-    check waitFor(testTooBig(initTAddress("127.0.0.1:30080"))) == true
+    check waitFor(testTooBig()) == true
 
   test "Too big request body test (content-length)":
-    proc testTooBigBody(address: TransportAddress): Future[bool] {.async.} =
+    proc testTooBigBody(): Future[bool] {.async.} =
       var serverRes = false
       proc process(r: RequestFence): Future[HttpResponseRef] {.
            async.} =
@@ -225,7 +230,7 @@ suite "HTTP server testing suite":
           return dumbResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
-      let res = HttpServerRef.new(address, process,
+      let res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
                                   maxRequestBodySize = 10,
                                   socketFlags = socketFlags)
       if res.isErr():
@@ -233,6 +238,7 @@ suite "HTTP server testing suite":
 
       let server = res.get()
       server.start()
+      let address = server.instance.localAddress()
 
       let request = "GET / HTTP/1.1\r\nContent-Length: 20\r\n\r\n"
       let data = await httpClient(address, request)
@@ -240,30 +246,26 @@ suite "HTTP server testing suite":
       await server.closeWait()
       return serverRes and (data.startsWith("HTTP/1.1 413"))
 
-    check waitFor(testTooBigBody(initTAddress("127.0.0.1:30080"))) == true
+    check waitFor(testTooBigBody()) == true
 
   test "Too big request body test (getBody()/chunked encoding)":
     check:
-      waitFor(testTooBigBodyChunked(initTAddress("127.0.0.1:30080"),
-              GetBodyTest)) == true
+      waitFor(testTooBigBodyChunked(GetBodyTest)) == true
 
   test "Too big request body test (consumeBody()/chunked encoding)":
     check:
-      waitFor(testTooBigBodyChunked(initTAddress("127.0.0.1:30080"),
-              ConsumeBodyTest)) == true
+      waitFor(testTooBigBodyChunked(ConsumeBodyTest)) == true
 
   test "Too big request body test (post()/urlencoded/chunked encoding)":
     check:
-      waitFor(testTooBigBodyChunked(initTAddress("127.0.0.1:30080"),
-              PostUrlTest)) == true
+      waitFor(testTooBigBodyChunked(PostUrlTest)) == true
 
   test "Too big request body test (post()/multipart/chunked encoding)":
     check:
-      waitFor(testTooBigBodyChunked(initTAddress("127.0.0.1:30080"),
-              PostMultipartTest)) == true
+      waitFor(testTooBigBodyChunked(PostMultipartTest)) == true
 
   test "Query arguments test":
-    proc testQuery(address: TransportAddress): Future[bool] {.async.} =
+    proc testQuery(): Future[bool] {.async.} =
       var serverRes = false
       proc process(r: RequestFence): Future[HttpResponseRef] {.
            async.} =
@@ -281,13 +283,14 @@ suite "HTTP server testing suite":
           return dumbResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
-      let res = HttpServerRef.new(address, process,
+      let res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
                                   socketFlags = socketFlags)
       if res.isErr():
         return false
 
       let server = res.get()
       server.start()
+      let address = server.instance.localAddress()
 
       let data1 = await httpClient(address,
                                   "GET /?a=1&a=2&b=3&c=4 HTTP/1.0\r\n\r\n")
@@ -300,10 +303,10 @@ suite "HTTP server testing suite":
               (data2.find("TEST_OK:a:П:b:Ц:c:Ю:Ф:Б") >= 0)
       return r
 
-    check waitFor(testQuery(initTAddress("127.0.0.1:30080"))) == true
+    check waitFor(testQuery()) == true
 
   test "Headers test":
-    proc testHeaders(address: TransportAddress): Future[bool] {.async.} =
+    proc testHeaders(): Future[bool] {.async.} =
       var serverRes = false
       proc process(r: RequestFence): Future[HttpResponseRef] {.
            async.} =
@@ -321,13 +324,14 @@ suite "HTTP server testing suite":
           return dumbResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
-      let res = HttpServerRef.new(address, process,
+      let res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
                                   socketFlags = socketFlags)
       if res.isErr():
         return false
 
       let server = res.get()
       server.start()
+      let address = server.instance.localAddress()
 
       let message =
         "GET / HTTP/1.0\r\n" &
@@ -343,10 +347,10 @@ suite "HTTP server testing suite":
       await server.closeWait()
       return serverRes and (data.find(expect) >= 0)
 
-    check waitFor(testHeaders(initTAddress("127.0.0.1:30080"))) == true
+    check waitFor(testHeaders()) == true
 
   test "POST arguments (urlencoded/content-length) test":
-    proc testPostUrl(address: TransportAddress): Future[bool] {.async.} =
+    proc testPostUrl(): Future[bool] {.async.} =
       var serverRes = false
       proc process(r: RequestFence): Future[HttpResponseRef] {.
            async.} =
@@ -366,13 +370,14 @@ suite "HTTP server testing suite":
           return dumbResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
-      let res = HttpServerRef.new(address, process,
+      let res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
                                   socketFlags = socketFlags)
       if res.isErr():
         return false
 
       let server = res.get()
       server.start()
+      let address = server.instance.localAddress()
 
       let message =
         "POST / HTTP/1.0\r\n" &
@@ -386,10 +391,10 @@ suite "HTTP server testing suite":
       await server.closeWait()
       return serverRes and (data.find(expect) >= 0)
 
-    check waitFor(testPostUrl(initTAddress("127.0.0.1:30080"))) == true
+    check waitFor(testPostUrl()) == true
 
   test "POST arguments (urlencoded/chunked encoding) test":
-    proc testPostUrl2(address: TransportAddress): Future[bool] {.async.} =
+    proc testPostUrl2(): Future[bool] {.async.} =
       var serverRes = false
       proc process(r: RequestFence): Future[HttpResponseRef] {.
            async.} =
@@ -409,13 +414,14 @@ suite "HTTP server testing suite":
           return dumbResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
-      let res = HttpServerRef.new(address, process,
+      let res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
                                   socketFlags = socketFlags)
       if res.isErr():
         return false
 
       let server = res.get()
       server.start()
+      let address = server.instance.localAddress()
 
       let message =
         "POST / HTTP/1.0\r\n" &
@@ -430,10 +436,10 @@ suite "HTTP server testing suite":
       await server.closeWait()
       return serverRes and (data.find(expect) >= 0)
 
-    check waitFor(testPostUrl2(initTAddress("127.0.0.1:30080"))) == true
+    check waitFor(testPostUrl2()) == true
 
   test "POST arguments (multipart/content-length) test":
-    proc testPostMultipart(address: TransportAddress): Future[bool] {.async.} =
+    proc testPostMultipart(): Future[bool] {.async.} =
       var serverRes = false
       proc process(r: RequestFence): Future[HttpResponseRef] {.
            async.} =
@@ -453,13 +459,14 @@ suite "HTTP server testing suite":
           return dumbResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
-      let res = HttpServerRef.new(address, process,
+      let res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
                                   socketFlags = socketFlags)
       if res.isErr():
         return false
 
       let server = res.get()
       server.start()
+      let address = server.instance.localAddress()
 
       let message =
         "POST / HTTP/1.0\r\n" &
@@ -485,10 +492,10 @@ suite "HTTP server testing suite":
       await server.closeWait()
       return serverRes and (data.find(expect) >= 0)
 
-    check waitFor(testPostMultipart(initTAddress("127.0.0.1:30080"))) == true
+    check waitFor(testPostMultipart()) == true
 
   test "POST arguments (multipart/chunked encoding) test":
-    proc testPostMultipart2(address: TransportAddress): Future[bool] {.async.} =
+    proc testPostMultipart2(): Future[bool] {.async.} =
       var serverRes = false
       proc process(r: RequestFence): Future[HttpResponseRef] {.
            async.} =
@@ -508,13 +515,14 @@ suite "HTTP server testing suite":
           return dumbResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
-      let res = HttpServerRef.new(address, process,
+      let res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
                                   socketFlags = socketFlags)
       if res.isErr():
         return false
 
       let server = res.get()
       server.start()
+      let address = server.instance.localAddress()
 
       let message =
         "POST / HTTP/1.0\r\n" &
@@ -549,12 +557,12 @@ suite "HTTP server testing suite":
       await server.closeWait()
       return serverRes and (data.find(expect) >= 0)
 
-    check waitFor(testPostMultipart2(initTAddress("127.0.0.1:30080"))) == true
+    check waitFor(testPostMultipart2()) == true
 
   test "drop() connections test":
     const ClientsCount = 10
 
-    proc testHTTPdrop(address: TransportAddress): Future[bool] {.async.} =
+    proc testHTTPdrop(): Future[bool] {.async.} =
       var eventWait = newAsyncEvent()
       var eventContinue = newAsyncEvent()
       var count = 0
@@ -571,7 +579,7 @@ suite "HTTP server testing suite":
           return dumbResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
-      let res = HttpServerRef.new(address, process,
+      let res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
                                   socketFlags = socketFlags,
                                   maxConnections = 100)
       if res.isErr():
@@ -579,6 +587,7 @@ suite "HTTP server testing suite":
 
       let server = res.get()
       server.start()
+      let address = server.instance.localAddress()
 
       var clients: seq[Future[string]]
       let message = "GET / HTTP/1.0\r\nHost: https://127.0.0.1:80\r\n\r\n"
@@ -601,7 +610,7 @@ suite "HTTP server testing suite":
           return false
       return true
 
-    check waitFor(testHTTPdrop(initTAddress("127.0.0.1:30080"))) == true
+    check waitFor(testHTTPdrop()) == true
 
   test "Content-Type multipart boundary test":
     const AllowedCharacters = {
@@ -1219,7 +1228,7 @@ suite "HTTP server testing suite":
         r6.get() == MediaType.init(req[1][6])
 
   test "SSE server-side events stream test":
-    proc testPostMultipart2(address: TransportAddress): Future[bool] {.async.} =
+    proc testPostMultipart2(): Future[bool] {.async.} =
       var serverRes = false
       proc process(r: RequestFence): Future[HttpResponseRef] {.
            async.} =
@@ -1241,13 +1250,14 @@ suite "HTTP server testing suite":
           return dumbResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
-      let res = HttpServerRef.new(address, process,
+      let res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
                                   socketFlags = socketFlags)
       if res.isErr():
         return false
 
       let server = res.get()
       server.start()
+      let address = server.instance.localAddress()
 
       let message =
         "GET / HTTP/1.1\r\n" &
@@ -1266,7 +1276,7 @@ suite "HTTP server testing suite":
       await server.closeWait()
       return serverRes and (data.find(expect) >= 0)
 
-    check waitFor(testPostMultipart2(initTAddress("127.0.0.1:30080"))) == true
+    check waitFor(testPostMultipart2()) == true
 
   asyncTest "HTTP/1.1 pipeline test":
     const TestMessages = [
