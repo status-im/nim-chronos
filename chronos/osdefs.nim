@@ -945,6 +945,8 @@ elif defined(linux):
                         SIGPIPE, SIGALRM, SIGTERM, SIGPIPE, SIGCHLD, SIGSTOP,
                         SIGCONT
 
+  from std/epoll import EpollData, EpollEvent
+
   export close, shutdown, sigemptyset, sigaddset, sigismember,
          sigdelset, write, read, waitid, getaddrinfo,
          gai_strerror, setsockopt, getsockopt, socket,
@@ -957,6 +959,7 @@ elif defined(linux):
          SigInfo, Id, Tmsghdr, IOVec, RLimit,
          SockAddr, SockLen, Sockaddr_storage, Sockaddr_in,
          Sockaddr_in6, Sockaddr_un, AddrInfo, SocketHandle,
+         EpollData, EpollEvent,
          CLOCK_MONOTONIC, F_GETFL, F_SETFL, F_GETFD, F_SETFD,
          FD_CLOEXEC, O_NONBLOCK, SIG_BLOCK, SIG_UNBLOCK,
          SOL_SOCKET, SO_ERROR, RLIMIT_NOFILE, MSG_NOSIGNAL,
@@ -1002,15 +1005,6 @@ elif defined(linux):
     EPOLL_CTL_MOD* = 3
 
   type
-    EpollData* {.importc: "union epoll_data",
-        header: "<sys/epoll.h>", pure, final.} = object
-      u64* {.importc: "u64".}: uint64
-
-    EpollEvent* {.importc: "struct epoll_event", header: "<sys/epoll.h>",
-                  pure, final.} = object
-      events*: uint32 # Epoll events
-      data*: EpollData # User data variable
-
     SignalFdInfo* {.importc: "struct signalfd_siginfo",
                     header: "<sys/signalfd.h>", pure, final.} = object
       ssi_signo*: uint32
