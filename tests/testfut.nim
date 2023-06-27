@@ -1237,12 +1237,14 @@ suite "Future[T] behavior test suite":
     fut2.complete()                      # LINE POSITION 4
     fut3.complete()                      # LINE POSITION 6
 
+    {.push warning[Deprecated]: off.} # testing backwards compatibility interface
     let loc10 = fut1.location[0]
     let loc11 = fut1.location[1]
     let loc20 = fut2.location[0]
     let loc21 = fut2.location[1]
     let loc30 = fut3.location[0]
     let loc31 = fut3.location[1]
+    {.pop.}
 
     proc chk(loc: ptr SrcLoc, file: string, line: int,
              procedure: string): bool =
