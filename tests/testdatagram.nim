@@ -6,8 +6,8 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 import std/[strutils, net]
-import unittest2
-import ../chronos
+import ".."/chronos/unittest2/asynctests
+import ".."/chronos
 
 {.used.}
 
@@ -558,4 +558,4 @@ suite "Datagram Transport test suite":
   test "0.0.0.0/::0 (INADDR_ANY) test":
     check waitFor(testAnyAddress()) == 6
   test "Transports leak test":
-    check getTracker("datagram.transport").isLeaked() == false
+    checkLeaks(DgramTransportTrackerName)

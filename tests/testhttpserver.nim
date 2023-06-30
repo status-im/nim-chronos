@@ -6,10 +6,9 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 import std/[strutils, algorithm]
-import unittest2
-import ../chronos, ../chronos/apps/http/httpserver,
-       ../chronos/apps/http/httpcommon,
-       ../chronos/unittest2/asynctests
+import ".."/chronos/unittest2/asynctests
+import ".."/chronos, ".."/chronos/apps/http/httpserver,
+       ".."/chronos/apps/http/httpcommon
 import stew/base10
 
 {.used.}
@@ -1356,8 +1355,7 @@ suite "HTTP server testing suite":
         await server.closeWait()
 
   test "Leaks test":
-    check:
-      getTracker("async.stream.reader").isLeaked() == false
-      getTracker("async.stream.writer").isLeaked() == false
-      getTracker("stream.server").isLeaked() == false
-      getTracker("stream.transport").isLeaked() == false
+    checkLeaks(AsyncStreamReaderTrackerName)
+    checkLeaks(AsyncStreamWriterTrackerName)
+    checkLeaks(StreamServerTrackerName)
+    checkLeaks(StreamTransportTrackerName)

@@ -6,8 +6,9 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 import std/[strutils, sha1]
-import unittest2
-import ../chronos, ../chronos/apps/http/[httpserver, shttpserver, httpclient]
+import ".."/chronos/unittest2/asynctests
+import ".."/chronos,
+       ".."/chronos/apps/http/[httpserver, shttpserver, httpclient]
 import stew/base10
 
 {.used.}
@@ -1262,17 +1263,13 @@ suite "HTTP client testing suite":
     check waitFor(testServerSentEvents(false)) == true
 
   test "Leaks test":
-    proc getTrackerLeaks(tracker: string): bool =
-      let tracker = getTracker(tracker)
-      if isNil(tracker): false else: tracker.isLeaked()
+    checkLeaks(HttpBodyReaderTrackerName)
+    checkLeaks(HttpBodyWriterTrackerName)
+    checkLeaks(HttpClientConnectionTrackerName)
+    checkLeaks(HttpClientRequestTrackerName)
+    checkLeaks(HttpClientResponseTrackerName)
+    checkLeaks(AsyncStreamReaderTrackerName)
+    checkLeaks(AsyncStreamWriterTrackerName)
+    checkLeaks(StreamServerTrackerName)
+    checkLeaks(StreamTransportTrackerName)
 
-    check:
-      getTrackerLeaks("http.body.reader") == false
-      getTrackerLeaks("http.body.writer") == false
-      getTrackerLeaks("httpclient.connection") == false
-      getTrackerLeaks("httpclient.request") == false
-      getTrackerLeaks("httpclient.response") == false
-      getTrackerLeaks("async.stream.reader") == false
-      getTrackerLeaks("async.stream.writer") == false
-      getTrackerLeaks("stream.server") == false
-      getTrackerLeaks("stream.transport") == false

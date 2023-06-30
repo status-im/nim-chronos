@@ -17,3 +17,7 @@ template asyncTest*(name: string, body: untyped): untyped =
       proc() {.async, gcsafe.} =
         body
     )())
+
+template checkLeaks*(name: string): untyped =
+  let tracker = getTrackerCounter(name)
+  check tracker.opened == tracker.closed
