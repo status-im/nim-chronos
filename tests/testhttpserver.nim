@@ -83,7 +83,7 @@ suite "HTTP server testing suite":
           # Reraising exception, because processor should properly handle it.
           raise exc
       else:
-        return dumbResponse()
+        return defaultResponse()
 
     let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
     let res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
@@ -99,14 +99,14 @@ suite "HTTP server testing suite":
     let request =
       case operation
       of GetBodyTest, ConsumeBodyTest, PostUrlTest:
-        "POST / HTTP/1.0\r\n" &
+        "POST / HTTP/1.1\r\n" &
         "Content-Type: application/x-www-form-urlencoded\r\n" &
         "Transfer-Encoding: chunked\r\n" &
         "Cookie: 2\r\n\r\n" &
         "5\r\na=a&b\r\n5\r\n=b&c=\r\n4\r\nc&d=\r\n4\r\n%D0%\r\n" &
         "2\r\n9F\r\n0\r\n\r\n"
       of PostMultipartTest:
-        "POST / HTTP/1.0\r\n" &
+        "POST / HTTP/1.1\r\n" &
         "Host: 127.0.0.1:30080\r\n" &
         "Transfer-Encoding: chunked\r\n" &
         "Content-Type: multipart/form-data; boundary=f98f0\r\n\r\n" &
@@ -133,9 +133,9 @@ suite "HTTP server testing suite":
           let request = r.get()
           return await request.respond(Http200, "TEST_OK", HttpTable.init())
         else:
-          if r.error().error == HttpServerError.TimeoutError:
+          if r.error.kind == HttpServerError.TimeoutError:
             serverRes = true
-          return dumbResponse()
+          return defaultResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
       let res = HttpServerRef.new(initTAddress("127.0.0.1:0"),
@@ -147,7 +147,6 @@ suite "HTTP server testing suite":
       let server = res.get()
       server.start()
       let address = server.instance.localAddress()
-
       let data = await httpClient(address, "")
       await server.stop()
       await server.closeWait()
@@ -164,9 +163,9 @@ suite "HTTP server testing suite":
           let request = r.get()
           return await request.respond(Http200, "TEST_OK", HttpTable.init())
         else:
-          if r.error().error == HttpServerError.CriticalError:
+          if r.error.kind == HttpServerError.CriticalError:
             serverRes = true
-          return dumbResponse()
+          return defaultResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
       let res = HttpServerRef.new(initTAddress("127.0.0.1:0"),
@@ -194,9 +193,9 @@ suite "HTTP server testing suite":
           let request = r.get()
           return await request.respond(Http200, "TEST_OK", HttpTable.init())
         else:
-          if r.error().error == HttpServerError.CriticalError:
+          if r.error.error == HttpServerError.CriticalError:
             serverRes = true
-          return dumbResponse()
+          return defaultResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
       let res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
@@ -224,9 +223,9 @@ suite "HTTP server testing suite":
         if r.isOk():
           discard
         else:
-          if r.error().error == HttpServerError.CriticalError:
+          if r.error.error == HttpServerError.CriticalError:
             serverRes = true
-          return dumbResponse()
+          return defaultResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
       let res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
@@ -279,7 +278,7 @@ suite "HTTP server testing suite":
                                        HttpTable.init())
         else:
           serverRes = false
-          return dumbResponse()
+          return defaultResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
       let res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
@@ -320,7 +319,7 @@ suite "HTTP server testing suite":
                                        HttpTable.init())
         else:
           serverRes = false
-          return dumbResponse()
+          return defaultResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
       let res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
@@ -366,7 +365,7 @@ suite "HTTP server testing suite":
                                        HttpTable.init())
         else:
           serverRes = false
-          return dumbResponse()
+          return defaultResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
       let res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
@@ -410,7 +409,7 @@ suite "HTTP server testing suite":
                                        HttpTable.init())
         else:
           serverRes = false
-          return dumbResponse()
+          return defaultResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
       let res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
@@ -455,7 +454,7 @@ suite "HTTP server testing suite":
                                        HttpTable.init())
         else:
           serverRes = false
-          return dumbResponse()
+          return defaultResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
       let res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
@@ -511,7 +510,7 @@ suite "HTTP server testing suite":
                                        HttpTable.init())
         else:
           serverRes = false
-          return dumbResponse()
+          return defaultResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
       let res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
@@ -575,7 +574,7 @@ suite "HTTP server testing suite":
           await eventContinue.wait()
           return await request.respond(Http404, "", HttpTable.init())
         else:
-          return dumbResponse()
+          return defaultResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
       let res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
@@ -1246,7 +1245,7 @@ suite "HTTP server testing suite":
           return response
         else:
           serverRes = false
-          return dumbResponse()
+          return defaultResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
       let res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
@@ -1310,7 +1309,7 @@ suite "HTTP server testing suite":
         let request = r.get()
         return await request.respond(Http200, "TEST_OK", HttpTable.init())
       else:
-        return dumbResponse()
+        return defaultResponse()
 
     for test in TestMessages:
       let
@@ -1359,3 +1358,6 @@ suite "HTTP server testing suite":
     checkLeaks(AsyncStreamWriterTrackerName)
     checkLeaks(StreamServerTrackerName)
     checkLeaks(StreamTransportTrackerName)
+    checkLeaks(HttpServerUnsecureConnectionTrackerName)
+    checkLeaks(HttpServerSecureConnectionTrackerName)
+    checkLeaks(HttpServerRequestTrackerName)

@@ -20,4 +20,7 @@ template asyncTest*(name: string, body: untyped): untyped =
 
 template checkLeaks*(name: string): untyped =
   let tracker = getTrackerCounter(name)
+  if tracker.opened != tracker.closed:
+    echo "[" & name & "] opened = ", tracker.opened,
+         ", closed = ", tracker.closed
   check tracker.opened == tracker.closed
