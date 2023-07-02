@@ -558,4 +558,4 @@ suite "Datagram Transport test suite":
   test "0.0.0.0/::0 (INADDR_ANY) test":
     check waitFor(testAnyAddress()) == 6
   test "Transports leak test":
-    checkLeaks(DgramTransportTrackerName)
+    checkLeaks()

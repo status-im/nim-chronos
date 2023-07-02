@@ -6,6 +6,7 @@
 #              Licensed under either of
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
+import std/tables
 import unittest2
 import ../../chronos
 
@@ -24,3 +25,8 @@ template checkLeaks*(name: string): untyped =
     echo "[" & name & "] opened = ", tracker.opened,
          ", closed = ", tracker.closed
   check tracker.opened == tracker.closed
+
+template checkLeaks*(): untyped =
+  let loop = getThreadDispatcher()
+  for key in loop.trackers.keys():
+    checkLeaks(key)

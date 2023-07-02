@@ -414,7 +414,4 @@ suite "Asynchronous process management test suite":
       check getCurrentFD() == markFD
 
   test "Leaks test":
-    checkLeaks(AsyncProcessTrackerName)
-    checkLeaks(AsyncStreamReaderTrackerName)
-    checkLeaks(AsyncStreamWriterTrackerName)
-    checkLeaks(StreamTransportTrackerName)
+    checkLeaks()

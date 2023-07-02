@@ -1354,10 +1354,4 @@ suite "HTTP server testing suite":
         await server.closeWait()
 
   test "Leaks test":
-    checkLeaks(AsyncStreamReaderTrackerName)
-    checkLeaks(AsyncStreamWriterTrackerName)
-    checkLeaks(StreamServerTrackerName)
-    checkLeaks(StreamTransportTrackerName)
-    checkLeaks(HttpServerUnsecureConnectionTrackerName)
-    checkLeaks(HttpServerSecureConnectionTrackerName)
-    checkLeaks(HttpServerRequestTrackerName)
+    checkLeaks()

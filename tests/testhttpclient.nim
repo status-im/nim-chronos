@@ -139,7 +139,7 @@ suite "HTTP client testing suite":
         else:
           return await request.respond(Http404, "Page not found")
       else:
-        return dumbResponse()
+        return defaultResponse()
 
     var server = createServer(initTAddress("127.0.0.1:0"), process, secure)
     server.start()
@@ -242,7 +242,7 @@ suite "HTTP client testing suite":
         else:
           return await request.respond(Http404, "Page not found")
       else:
-        return dumbResponse()
+        return defaultResponse()
 
     var server = createServer(initTAddress("127.0.0.1:0"), process, secure)
     server.start()
@@ -325,7 +325,7 @@ suite "HTTP client testing suite":
         else:
           return await request.respond(Http404, "Page not found")
       else:
-        return dumbResponse()
+        return defaultResponse()
 
     var server = createServer(initTAddress("127.0.0.1:0"), process, secure)
     server.start()
@@ -395,7 +395,7 @@ suite "HTTP client testing suite":
         else:
           return await request.respond(Http404, "Page not found")
       else:
-        return dumbResponse()
+        return defaultResponse()
 
     var server = createServer(initTAddress("127.0.0.1:0"), process, secure)
     server.start()
@@ -471,7 +471,7 @@ suite "HTTP client testing suite":
         else:
           return await request.respond(Http404, "Page not found")
       else:
-        return dumbResponse()
+        return defaultResponse()
 
     var server = createServer(initTAddress("127.0.0.1:0"), process, secure)
     server.start()
@@ -570,7 +570,7 @@ suite "HTTP client testing suite":
         else:
           return await request.respond(Http404, "Page not found")
       else:
-        return dumbResponse()
+        return defaultResponse()
 
     var server = createServer(initTAddress("127.0.0.1:0"), process, secure)
     server.start()
@@ -668,7 +668,7 @@ suite "HTTP client testing suite":
         else:
           return await request.respond(Http404, "Page not found")
       else:
-        return dumbResponse()
+        return defaultResponse()
 
     var server = createServer(initTAddress("127.0.0.1:0"), process, secure)
     server.start()
@@ -779,7 +779,7 @@ suite "HTTP client testing suite":
         else:
           return await request.respond(Http404, "Page not found")
       else:
-        return dumbResponse()
+        return defaultResponse()
 
     var server = createServer(initTAddress("127.0.0.1:0"), process, false)
     server.start()
@@ -910,7 +910,7 @@ suite "HTTP client testing suite":
         else:
           return await request.respond(Http404, "Page not found")
       else:
-        return dumbResponse()
+        return defaultResponse()
 
     var server = createServer(initTAddress("127.0.0.1:0"), process, false)
     server.start()
@@ -972,7 +972,7 @@ suite "HTTP client testing suite":
         else:
           return await request.respond(Http404, "Page not found")
       else:
-        return dumbResponse()
+        return defaultResponse()
 
     var server = createServer(initTAddress("127.0.0.1:0"), process, false)
     server.start()
@@ -1126,7 +1126,7 @@ suite "HTTP client testing suite":
         else:
           return await request.respond(Http404, "Page not found")
       else:
-        return dumbResponse()
+        return defaultResponse()
 
     var server = createServer(initTAddress("127.0.0.1:0"), process, secure)
     server.start()
@@ -1263,13 +1263,4 @@ suite "HTTP client testing suite":
     check waitFor(testServerSentEvents(false)) == true
 
   test "Leaks test":
-    checkLeaks(HttpBodyReaderTrackerName)
-    checkLeaks(HttpBodyWriterTrackerName)
-    checkLeaks(HttpClientConnectionTrackerName)
-    checkLeaks(HttpClientRequestTrackerName)
-    checkLeaks(HttpClientResponseTrackerName)
-    checkLeaks(AsyncStreamReaderTrackerName)
-    checkLeaks(AsyncStreamWriterTrackerName)
-    checkLeaks(StreamServerTrackerName)
-    checkLeaks(StreamTransportTrackerName)
-
+    checkLeaks()

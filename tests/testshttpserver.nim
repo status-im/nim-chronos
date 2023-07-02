@@ -180,10 +180,4 @@ suite "Secure HTTP server testing suite":
     check waitFor(testHTTPS2(initTAddress("127.0.0.1:30080"))) == true
 
   test "Leaks test":
-    checkLeaks(AsyncStreamReaderTrackerName)
-    checkLeaks(AsyncStreamWriterTrackerName)
-    checkLeaks(StreamServerTrackerName)
-    checkLeaks(StreamTransportTrackerName)
-    checkLeaks(HttpServerUnsecureConnectionTrackerName)
-    checkLeaks(HttpServerSecureConnectionTrackerName)
-    checkLeaks(HttpServerRequestTrackerName)
+    checkLeaks()

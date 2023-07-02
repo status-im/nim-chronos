@@ -1389,10 +1389,8 @@ suite "Stream Transport test suite":
     check waitFor(testPipe()) == true
   test "[IP] bind connect to local address":
     waitFor(testConnectBindLocalAddress())
-  test "Servers leak test":
-    checkLeaks(StreamServerTrackerName)
-  test "Transports leak test":
-    checkLeaks(StreamTransportTrackerName)
+  test "Leaks test":
+    checkLeaks()
   test "File descriptors leak test":
     when defined(windows):
       # Windows handle numbers depends on many conditions, so we can't use

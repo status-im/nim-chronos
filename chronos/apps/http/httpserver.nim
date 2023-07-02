@@ -215,11 +215,18 @@ proc new*(htype: typedesc[HttpServerRef],
   )
   ok(res)
 
+proc getServerFlags(req: HttpRequestRef): set[HttpServerFlags] =
+  var defaultFlags: set[HttpServerFlags] = {}
+  if isNil(req): return defaultFlags
+  if isNil(req.connection): return defaultFlags
+  if isNil(req.connection.server): return defaultFlags
+  req.connection.server.flags
+
 proc getResponseFlags(req: HttpRequestRef): set[HttpResponseFlags] =
   var defaultFlags: set[HttpResponseFlags] = {}
   case req.version
   of HttpVersion11:
-    if HttpServerFlags.Http11Pipeline notin req.connection.server.flags:
+    if HttpServerFlags.Http11Pipeline notin req.getServerFlags():
       return defaultFlags
     let header = req.headers.getString(ConnectionHeader, "keep-alive")
     if header == "keep-alive":
