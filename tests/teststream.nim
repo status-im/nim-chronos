@@ -1370,10 +1370,11 @@ suite "Stream Transport test suite":
     test prefixes[i] & "close() while in accept() waiting test":
       check waitFor(testAcceptClose(addresses[i])) == true
     test prefixes[i] & "Intermediate transports leak test #1":
+      checkLeaks()
       when defined(windows):
         skip()
       else:
-        check getTracker("stream.transport").isLeaked() == false
+        checkLeaks(StreamTransportTrackerName)
     test prefixes[i] & "accept() too many file descriptors test":
       when defined(windows):
         skip()
