@@ -176,8 +176,12 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
             newStmtList(
               quote do: {.push warning[resultshadowed]: off.},
               # var result: `baseType`
-              nnkVarSection.newTree(
-                nnkIdentDefs.newTree(ident "result", baseType, newEmptyNode())),
+              nnkVarSection.newTree(nnkIdentDefs.newTree(
+                nnkPragmaExpr.newTree(
+                  ident "result",
+                  nnkPragma.newTree(ident "used")),
+                baseType, newEmptyNode())
+                ),
               quote do: {.pop.},
             )
           )
