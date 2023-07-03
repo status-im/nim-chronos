@@ -197,7 +197,7 @@ suite "Macro transformations test suite":
       waitFor(implicit8(true)) == 42
       waitFor(implicit8(false)) == 33
 
-      waitFor(implicit9()) == 33
+      waitFor(implicit9()) == 42
 
 suite "Closure iterator's exception transformation issues":
   test "Nested defer/finally not called on return":
