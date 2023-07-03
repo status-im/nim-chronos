@@ -175,9 +175,25 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
           nnkElseExpr.newTree(
             newStmtList(
               quote do: {.push warning[resultshadowed]: off.},
-              # var result: `baseType`
-              nnkVarSection.newTree(
-                nnkIdentDefs.newTree(ident "result", baseType, newEmptyNode())),
+              # var result {.used.}: `baseType`
+              # In the proc body, result may or may not end up being used
+              # depending on how the body is written - with implicit returns /
+              # expressions in particular, it is likely but not guaranteed that
+              # it is not used. Ideally, we would avoid emitting it in this
+              # case to avoid the default initializaiton. {.used.} typically
+              # works better than {.push.} which has a tendency to leak out of
+              # scope.
+              # TODO figure out if there's a way to detect `result` usage in
+              #      the proc body _after_ template exapnsion, and therefore
+              #      avoid creating this variable - one option is to create an
+              #      addtional when branch witha fake `result` and check
+              #      `compiles(procBody)` - this is not without cost though
+              nnkVarSection.newTree(nnkIdentDefs.newTree(
+                nnkPragmaExpr.newTree(
+                  ident "result",
+                  nnkPragma.newTree(ident "used")),
+                baseType, newEmptyNode())
+                ),
               quote do: {.pop.},
             )
           )
