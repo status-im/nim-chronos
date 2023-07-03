@@ -6,9 +6,10 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 import std/[strutils, algorithm]
-import ".."/chronos/unittest2/asynctests
-import ".."/chronos, ".."/chronos/apps/http/httpserver,
-       ".."/chronos/apps/http/httpcommon
+import ".."/chronos/unittest2/asynctests,
+       ".."/chronos, ".."/chronos/apps/http/httpserver,
+       ".."/chronos/apps/http/httpcommon,
+       ".."/chronos/apps/http/httpdebug
 import stew/base10
 
 {.used.}
@@ -1352,6 +1353,79 @@ suite "HTTP server testing suite":
           await transp.closeWait()
         await server.stop()
         await server.closeWait()
+
+  asyncTest "HTTP debug tests":
+    const
+      TestsCount = 10
+      TestRequest = "GET / HTTP/1.1\r\nConnection: keep-alive\r\n\r\n"
+
+    proc process(r: RequestFence): Future[HttpResponseRef] {.async.} =
+      if r.isOk():
+        let request = r.get()
+        return await request.respond(Http200, "TEST_OK", HttpTable.init())
+      else:
+        return defaultResponse()
+
+    proc client(address: TransportAddress,
+                data: string): Future[StreamTransport] {.async.} =
+      var transp: StreamTransport
+      var buffer = newSeq[byte](4096)
+      var sep = @[0x0D'u8, 0x0A'u8, 0x0D'u8, 0x0A'u8]
+      try:
+        transp = await connect(address)
+        let wres {.used.} =
+          await transp.write(data)
+        let hres {.used.} =
+          await transp.readUntil(addr buffer[0], len(buffer), sep)
+        transp
+      except CatchableError:
+        if not(isNil(transp)): await transp.closeWait()
+        nil
+
+    let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
+    let res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
+                                serverFlags = {HttpServerFlags.Http11Pipeline},
+                                socketFlags = socketFlags)
+    check res.isOk()
+
+    let server = res.get()
+    server.start()
+    let address = server.instance.localAddress()
+
+    let info = server.getServerInfo()
+
+    check:
+      info.connectionType == ConnectionType.NonSecure
+      info.address == address
+      info.state == HttpServerState.ServerRunning
+      info.flags == {HttpServerFlags.Http11Pipeline}
+      info.socketFlags == socketFlags
+
+    try:
+      var clientFutures: seq[Future[StreamTransport]]
+      for i in 0 ..< TestsCount:
+        clientFutures.add(client(address, TestRequest))
+      await allFutures(clientFutures)
+
+      let connections = server.getConnections()
+      check len(connections) == TestsCount
+      let currentTime = Moment.now()
+      for index, connection in connections.pairs():
+        let transp = clientFutures[index].read()
+        check:
+          connection.remoteAddress.get() == transp.localAddress()
+          connection.localAddress.get() == transp.remoteAddress()
+          connection.connectionType == ConnectionType.NonSecure
+          connection.connectionState == ConnectionState.Alive
+          (currentTime - connection.createMoment.get()) != ZeroDuration
+          (currentTime - connection.acceptMoment) != ZeroDuration
+      var pending: seq[Future[void]]
+      for transpFut in clientFutures:
+        pending.add(closeWait(transpFut.read()))
+      await allFutures(pending)
+    finally:
+      await server.stop()
+      await server.closeWait()
 
   test "Leaks test":
     checkLeaks()

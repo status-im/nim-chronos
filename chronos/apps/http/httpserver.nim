@@ -70,6 +70,16 @@ type
     proc(connection: HttpConnectionRef): Future[void] {.
       gcsafe, raises: [].}
 
+  HttpConnectionHolder* = object of RootObj
+    connection*: HttpConnectionRef
+    server*: HttpServerRef
+    future*: Future[void]
+    transp*: StreamTransport
+    acceptMoment*: Moment
+    connectionId*: string
+
+  HttpConnectionHolderRef* = ref HttpConnectionHolder
+
   HttpServer* = object of RootObj
     instance*: StreamServer
     address*: TransportAddress
@@ -80,7 +90,7 @@ type
     serverIdent*: string
     flags*: set[HttpServerFlags]
     socketFlags*: set[ServerFlags]
-    connections*: Table[string, Future[void]]
+    connections*: OrderedTable[string, HttpConnectionHolderRef]
     acceptLoop*: Future[void]
     lifetime*: Future[void]
     headersTimeout*: Duration
@@ -134,6 +144,7 @@ type
     reader*: AsyncStreamReader
     writer*: AsyncStreamWriter
     closeCb*: HttpCloseConnectionCallback
+    createMoment*: Moment
     buffer: seq[byte]
 
   HttpConnectionRef* = ref HttpConnection
@@ -150,6 +161,13 @@ proc init(htype: typedesc[HttpProcessError],
           error: HttpServerError): HttpProcessError {.
      raises: [].} =
   HttpProcessError(kind: error)
+
+proc new(htype: typedesc[HttpConnectionHolderRef], server: HttpServerRef,
+         transp: StreamTransport,
+         connectionId: string): HttpConnectionHolderRef =
+  HttpConnectionHolderRef(
+    server: server, transp: transp, acceptMoment: Moment.now(),
+    connectionId: connectionId)
 
 proc error*(e: HttpProcessError): HttpServerError = e.kind
 
@@ -191,7 +209,7 @@ proc new*(htype: typedesc[HttpServerRef],
       return err(exc.msg)
 
   var res = HttpServerRef(
-    address: address,
+    address: serverInstance.localAddress(),
     instance: serverInstance,
     processCallback: processCallback,
     createConnCallback: createConnection,
@@ -211,7 +229,7 @@ proc new*(htype: typedesc[HttpServerRef],
     #   else:
     #     nil
     lifetime: newFuture[void]("http.server.lifetime"),
-    connections: initTable[string, Future[void]]()
+    connections: initOrderedTable[string, HttpConnectionHolderRef]()
   )
   ok(res)
 
@@ -776,6 +794,7 @@ proc new(ht: typedesc[HttpConnectionRef], server: HttpServerRef,
   res.reader = res.mainReader
   res.writer = res.mainWriter
   res.closeCb = closeUnsecureConnection
+  res.createMoment = Moment.now()
   trackCounter(HttpServerUnsecureConnectionTrackerName)
   res
 
@@ -947,25 +966,30 @@ proc processRequest(server: HttpServerRef,
   else:
     await connection.sendDefaultResponse(requestFence, responseFence.get())
 
-proc processLoop(server: HttpServerRef, transp: StreamTransport,
-                 connId: string) {.async.} =
-  var runLoop = true
+proc processLoop(holder: HttpConnectionHolderRef) {.async.} =
+  let
+    server = holder.server
+    transp = holder.transp
+    connectionId = holder.connectionId
+    connection =
+      block:
+        let res = await server.getConnectionFence(transp)
+        if res.isErr():
+          if res.error.kind != HttpServerError.InterruptError:
+            discard await server.getResponseFence(res)
+          server.connections.del(connectionId)
+          return
+        res.get()
 
-  let connection =
-    block:
-      let res = await server.getConnectionFence(transp)
-      if res.isErr():
-        if res.error.kind != HttpServerError.InterruptError:
-          discard await server.getResponseFence(res)
-        return
-      res.get()
+  holder.connection = connection
 
   defer:
-    server.connections.del(connId)
+    server.connections.del(connectionId)
     await connection.closeWait()
 
+  var runLoop = true
   while runLoop:
-    runLoop = await server.processRequest(connection, connId)
+    runLoop = await server.processRequest(connection, connectionId)
 
 proc acceptClientLoop(server: HttpServerRef) {.async.} =
   while true:
@@ -981,7 +1005,9 @@ proc acceptClientLoop(server: HttpServerRef) {.async.} =
         break
       else:
         let connId = resId.get()
-        server.connections[connId] = processLoop(server, transp, connId)
+        let holder = HttpConnectionHolderRef.new(server, transp, resId.get())
+        server.connections[connId] = holder
+        holder.future = processLoop(holder)
     except CancelledError:
       # Server was stopped
       break
@@ -1025,11 +1051,11 @@ proc drop*(server: HttpServerRef) {.async.} =
   ## Drop all pending HTTP connections.
   var pending: seq[Future[void]]
   if server.state in {ServerStopped, ServerRunning}:
-    for fut in server.connections.values():
-      if not(fut.finished()):
-        fut.cancel()
-        pending.add(fut)
+    for holder in server.connections.values():
+      if not(isNil(holder.future)) and not(holder.future.finished()):
+        pending.add(holder.future.cancelAndWait())
     await allFutures(pending)
+    server.connections.clear()
 
 proc closeWait*(server: HttpServerRef) {.async.} =
   ## Stop HTTP server and drop all the pending connections.

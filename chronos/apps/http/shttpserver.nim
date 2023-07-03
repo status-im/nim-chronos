@@ -124,7 +124,7 @@ proc new*(htype: typedesc[SecureHttpServerRef],
     createConnCallback: createSecConnection,
     baseUri: serverUri,
     serverIdent: serverIdent,
-    flags: serverFlags,
+    flags: serverFlags + {HttpServerFlags.Secure},
     socketFlags: socketFlags,
     maxConnections: maxConnections,
     bufferSize: bufferSize,
@@ -138,7 +138,7 @@ proc new*(htype: typedesc[SecureHttpServerRef],
     #   else:
     #     nil
     lifetime: newFuture[void]("http.server.lifetime"),
-    connections: initTable[string, Future[void]](),
+    connections: initOrderedTable[string, HttpConnectionHolderRef](),
     tlsCertificate: tlsCertificate,
     tlsPrivateKey: tlsPrivateKey,
     secureFlags: secureFlags
