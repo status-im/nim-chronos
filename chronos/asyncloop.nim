@@ -166,6 +166,11 @@ type
     finishAt*: Moment
     function*: AsyncCallback
 
+  TrackerBase* = ref object of RootRef
+    id*: string
+    dump*: proc(): string {.gcsafe, raises: [].}
+    isLeaked*: proc(): bool {.gcsafe, raises: [].}
+
   TrackerCounter* = object
     opened*: uint64
     closed*: uint64
@@ -174,7 +179,8 @@ type
     timers*: HeapQueue[TimerCallback]
     callbacks*: Deque[AsyncCallback]
     idlers*: Deque[AsyncCallback]
-    trackers*: Table[string, TrackerCounter]
+    trackers*: Table[string, TrackerBase]
+    counters*: Table[string, TrackerCounter]
 
 proc sentinelCallbackImpl(arg: pointer) {.gcsafe.} =
   raiseAssert "Sentinel callback MUST not be scheduled"
@@ -403,7 +409,8 @@ when defined(windows):
       timers: initHeapQueue[TimerCallback](),
       callbacks: initDeque[AsyncCallback](64),
       idlers: initDeque[AsyncCallback](),
-      trackers: initTable[string, TrackerCounter]()
+      trackers: initTable[string, TrackerBase](),
+      counters: initTable[string, TrackerCounter]()
     )
     res.callbacks.addLast(SentinelCallback)
     initAPI(res)
@@ -813,7 +820,8 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
       callbacks: initDeque[AsyncCallback](asyncEventsCount),
       idlers: initDeque[AsyncCallback](),
       keys: newSeq[ReadyKey](asyncEventsCount),
-      trackers: initTable[string, TrackerCounter]()
+      trackers: initTable[string, TrackerBase](),
+      counters: initTable[string, TrackerCounter]()
     )
     res.callbacks.addLast(SentinelCallback)
     initAPI(res)
@@ -1504,26 +1512,37 @@ proc waitFor*[T](fut: Future[T]): T {.raises: [CatchableError].} =
 
   fut.read()
 
+proc addTracker*[T](id: string, tracker: T) {.
+     deprecated: "Please use trackCounter facility instead".} =
+  ## Add new ``tracker`` object to current thread dispatcher with identifier
+  ## ``id``.
+  getThreadDispatcher().trackers[id] = tracker
+
+proc getTracker*(id: string): TrackerBase {.
+     deprecated: "Please use getTrackerCounter() instead".} =
+  ## Get ``tracker`` from current thread dispatcher using identifier ``id``.
+  getThreadDispatcher().trackers.getOrDefault(id, nil)
+
 proc trackCounter*(name: string) {.noinit.} =
   ## Increase tracker counter with name ``name`` by 1.
   let tracker = TrackerCounter(opened: 0'u64, closed: 0'u64)
-  inc(getThreadDispatcher().trackers.mgetOrPut(name, tracker).opened)
+  inc(getThreadDispatcher().counters.mgetOrPut(name, tracker).opened)
 
 proc untrackCounter*(name: string) {.noinit.} =
   ## Decrease tracker counter with name ``name`` by 1.
   let tracker = TrackerCounter(opened: 0'u64, closed: 0'u64)
-  inc(getThreadDispatcher().trackers.mgetOrPut(name, tracker).closed)
+  inc(getThreadDispatcher().counters.mgetOrPut(name, tracker).closed)
 
 proc getTrackerCounter*(name: string): TrackerCounter {.noinit.} =
   ## Return value of counter with name ``name``.
   let tracker = TrackerCounter(opened: 0'u64, closed: 0'u64)
-  getThreadDispatcher().trackers.getOrDefault(name, tracker)
+  getThreadDispatcher().counters.getOrDefault(name, tracker)
 
 proc isCounterLeaked*(name: string): bool {.noinit.} =
   ## Returns ``true`` if leak is detected, number of `opened` not equal to
   ## number of `closed` requests.
   let tracker = TrackerCounter(opened: 0'u64, closed: 0'u64)
-  let res = getThreadDispatcher().trackers.getOrDefault(name, tracker)
+  let res = getThreadDispatcher().counters.getOrDefault(name, tracker)
   res.opened == res.closed
 
 when chronosFutureTracking:
