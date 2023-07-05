@@ -20,13 +20,12 @@ template asyncTest*(name: string, body: untyped): untyped =
     )())
 
 template checkLeaks*(name: string): untyped =
-  let tracker = getTrackerCounter(name)
-  if tracker.opened != tracker.closed:
-    echo "[" & name & "] opened = ", tracker.opened,
-         ", closed = ", tracker.closed
-  check tracker.opened == tracker.closed
+  let counter = getTrackerCounter(name)
+  if counter.opened != counter.closed:
+    echo "[" & name & "] opened = ", counter.opened,
+         ", closed = ", counter.closed
+  check counter.opened == counter.closed
 
 template checkLeaks*(): untyped =
-  let loop = getThreadDispatcher()
-  for key in loop.trackers.keys():
+  for key in getThreadDispatcher().trackerCounterKeys():
     checkLeaks(key)

@@ -1545,6 +1545,22 @@ proc isCounterLeaked*(name: string): bool {.noinit.} =
   let res = getThreadDispatcher().counters.getOrDefault(name, tracker)
   res.opened == res.closed
 
+iterator trackerCounters*(
+           loop: PDispatcher
+         ): tuple[name: string, value: TrackerCounter] =
+  ## Iterates over `loop` thread dispatcher tracker counter table, returns all
+  ## the tracker counter's names and values.
+  doAssert(not(isNil(loop)))
+  for key, value in loop.counters.pairs():
+    yield (key, value)
+
+iterator trackerCounterKeys*(loop: PDispatcher): string =
+  doAssert(not(isNil(loop)))
+  ## Iterates over `loop` thread dispatcher tracker counter table, returns all
+  ## tracker names.
+  for key in loop.counters.keys():
+    yield key
+
 when chronosFutureTracking:
   iterator pendingFutures*(): FutureBase =
     ## Iterates over the list of pending Futures (Future[T] objects which not
