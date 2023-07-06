@@ -1001,13 +1001,22 @@ elif defined(linux):
     EPOLL_CTL_DEL* = 2
     EPOLL_CTL_MOD* = 3
 
+  # https://github.com/torvalds/linux/blob/ff6992735ade75aae3e35d16b17da1008d753d28/include/uapi/linux/eventpoll.h#L77
+  when defined(linux) and defined(amd64):
+    {.pragma: epollPacked, packed.}
+  else:
+    {.pragma: epollPacked.}
+
   type
-    EpollData* {.importc: "union epoll_data",
-        header: "<sys/epoll.h>", pure, final.} = object
+    EpollData* {.importc: "epoll_data_t",
+                 header: "<sys/epoll.h>", pure, final, union.} = object
+      `ptr`* {.importc: "ptr".}: pointer
+      fd* {.importc: "fd".}: cint
+      u32* {.importc: "u32".}: uint32
       u64* {.importc: "u64".}: uint64
 
-    EpollEvent* {.importc: "struct epoll_event", header: "<sys/epoll.h>",
-                  pure, final.} = object
+    EpollEvent* {.importc: "struct epoll_event",
+                  header: "<sys/epoll.h>", pure, final, epollPacked.} = object
       events*: uint32 # Epoll events
       data*: EpollData # User data variable
 
