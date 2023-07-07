@@ -44,8 +44,8 @@ type
     mustCancel*: bool
     id*: uint
     when defined(chronosFutureDuration):
-      startTime*: Moment
-      duration*: Duration
+      startTime: Moment
+      duration: Duration
 
     when defined(chronosStackTrace):
       errorStackTrace*: StackTrace
@@ -1047,3 +1047,8 @@ proc race*(futs: varargs[FutureBase]): Future[FutureBase] =
 
   retFuture.cancelCallback = cancellation
   return retFuture
+
+when defined(chronosFutureDuration):
+  func duration*(future: FutureBase): Duration =
+    ## Duration between future start and finish
+    future.duration
