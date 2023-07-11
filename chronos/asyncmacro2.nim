@@ -62,7 +62,14 @@ proc processBody(node, fut, baseType: NimNode): NimNode {.compileTime.} =
   of nnkReturnStmt:
     let
       res = newNimNode(nnkStmtList, node)
-    res.add completeWithNode(fut, baseType, processBody(node[0], fut, baseType))
+    if node[0].kind != nnkEmpty:
+      res.add nnkWhenStmt.newTree(
+        nnkElifExpr.newTree(
+          nnkInfix.newTree(
+            ident "isnot", nnkTypeOfExpr.newTree(node[0]), ident "void"),
+          newAssignment(ident "result", node[0])
+        )
+      )
     res.add newNimNode(nnkReturnStmt, node).add(newNilLit())
 
     res
@@ -173,29 +180,8 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
           ),
           # else:
           nnkElseExpr.newTree(
-            newStmtList(
-              quote do: {.push warning[resultshadowed]: off.},
-              # var result {.used.}: `baseType`
-              # In the proc body, result may or may not end up being used
-              # depending on how the body is written - with implicit returns /
-              # expressions in particular, it is likely but not guaranteed that
-              # it is not used. Ideally, we would avoid emitting it in this
-              # case to avoid the default initializaiton. {.used.} typically
-              # works better than {.push.} which has a tendency to leak out of
-              # scope.
-              # TODO figure out if there's a way to detect `result` usage in
-              #      the proc body _after_ template exapnsion, and therefore
-              #      avoid creating this variable - one option is to create an
-              #      addtional when branch witha fake `result` and check
-              #      `compiles(procBody)` - this is not without cost though
-              nnkVarSection.newTree(nnkIdentDefs.newTree(
-                nnkPragmaExpr.newTree(
-                  ident "result",
-                  nnkPragma.newTree(ident "used")),
-                baseType, newEmptyNode())
-                ),
-              quote do: {.pop.},
-            )
+            quote do:
+              template result: auto {.used.} = `castFutureSym`.internalValue
           )
         )
 
