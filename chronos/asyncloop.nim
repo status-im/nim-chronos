@@ -769,6 +769,36 @@ elif unixPlatform:
     var curTime = Moment.now()
     var curTimeout = 0
 
+    when asyncTimer == "virtual":
+      # Execute all queued callbacks and at most one timer event at a time.
+      # This is the closest to the one network event at a time semantics we have in other modalities.
+      # Enforcing one timer each poll is useful to make it compatible with original semantics when
+      # network events are replaced by timers for simulation.
+
+      # Execute queued callbacks in order.
+      while loop.callbacks.len > 0:
+        let cb = loop.callbacks.popFirst()
+        if not isSentinel(cb):
+          cb.function(cb.udata)
+
+      # Fill callbacks as needed, consuming at most one timer.
+      if loop.timers.len > 0:
+        let
+          timer = loop.timers.pop()
+          finish = timer.finishAt
+          callable = timer.function
+
+        if not(isNil(callable.function)):
+          loop.callbacks.addFirst(callable)
+
+        # Advance virtual time in simulation until next timer.
+        Moment.advance(finish - Moment.now())
+
+      # Handle idlers here, closest we can get to original definition.
+      else:
+        loop.processIdlers()
+      return
+
     when ioselSupportedPlatform:
       let customSet = {Event.Timer, Event.Signal, Event.Process,
                        Event.Vnode}
@@ -781,14 +811,8 @@ elif unixPlatform:
     # Moving expired timers to `loop.callbacks` and calculate timeout.
     loop.processTimersGetTimeout(curTimeout)
 
-    let timeout =
-      when asyncTimer == "virtual":
-        0
-      else:
-        curTimeout
-
     # Processing IO descriptors and all hardware events.
-    let count = loop.selector.selectInto(timeout, loop.keys)
+    let count = loop.selector.selectInto(curTimeout, loop.keys)
     for i in 0..<count:
       let fd = loop.keys[i].fd
       let events = loop.keys[i].events
@@ -826,10 +850,6 @@ elif unixPlatform:
 
     # All callbacks done, skip `processCallbacks` at start.
     loop.callbacks.addFirst(SentinelCallback)
-
-    # Advance virtual time in simulation if nothing expected in curTimeout millisec
-    when asyncTimer == "virtual":
-      Moment.advance(curTimeout.milliseconds)
 
 else:
   proc initAPI() = discard
