@@ -10,34 +10,13 @@
 import std/[macros]
 
 # `quote do` will ruin line numbers so we avoid it using these helpers
-proc completeWithResult(fut, baseType: NimNode): NimNode {.compileTime.} =
-  # when `baseType` is void:
-  #   complete(`fut`)
-  # else:
-  #   complete(`fut`, result)
-  if baseType.eqIdent("void"):
-    # Shortcut if we know baseType at macro expansion time
-    newCall(ident "complete", fut)
-  else:
-    # `baseType` might be generic and resolve to `void`
-    nnkWhenStmt.newTree(
-      nnkElifExpr.newTree(
-        nnkInfix.newTree(ident "is", baseType, ident "void"),
-        newCall(ident "complete", fut)
-      ),
-      nnkElseExpr.newTree(
-        newCall(ident "complete", fut, ident "result")
-      )
-    )
-
 proc completeWithNode(fut, baseType, node: NimNode): NimNode {.compileTime.} =
   #   when typeof(`node`) is void:
   #     `node` # statement / explicit return
-  #     -> completeWithResult(fut, baseType)
   #   else: # expression / implicit return
-  #     complete(`fut`, `node`)
-  if node.kind == nnkEmpty: # shortcut when known at macro expanstion time
-    completeWithResult(fut, baseType)
+  #     result = `node`
+  if node.kind == nnkEmpty: # shortcut when known at macro expantion time
+    node
   else:
     # Handle both expressions and statements - since the type is not know at
     # macro expansion time, we delegate this choice to a later compilation stage
@@ -48,11 +27,10 @@ proc completeWithNode(fut, baseType, node: NimNode): NimNode {.compileTime.} =
           ident "is", nnkTypeOfExpr.newTree(node), ident "void"),
         newStmtList(
           node,
-          completeWithResult(fut, baseType)
         )
       ),
       nnkElseExpr.newTree(
-        newCall(ident "complete", fut, node)
+        newAssignment(ident "result", node)
       )
     )
 
@@ -60,8 +38,7 @@ proc processBody(node, fut, baseType: NimNode): NimNode {.compileTime.} =
   #echo(node.treeRepr)
   case node.kind
   of nnkReturnStmt:
-    let
-      res = newNimNode(nnkStmtList, node)
+    let res = newNimNode(nnkStmtList, node)
     if node[0].kind != nnkEmpty:
       res.add nnkWhenStmt.newTree(
         nnkElifExpr.newTree(
@@ -186,7 +163,6 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
         )
 
         completeDecl = completeWithNode(castFutureSym, baseType, procBodyBlck)
-
         closureBody = newStmtList(resultDecl, completeDecl)
 
         internalFutureParameter = nnkIdentDefs.newTree(

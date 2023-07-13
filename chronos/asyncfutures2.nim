@@ -317,9 +317,8 @@ proc futureContinue*(fut: FutureBase) {.raises: [], gcsafe.} =
       # `await` typically) or completes / fails / is cancelled
       next = fut.internalClosure(fut)
       if fut.internalClosure.finished(): # Reached the end of the transformed proc
-        if not fut.finished:
-          #TODO hacky
-          fut.finish(FutureState.Completed)
+        #TODO hacky
+        fut.finish(FutureState.Completed)
         break
 
       if next == nil:
