@@ -6,8 +6,9 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 import std/[strutils, sha1]
-import unittest2
-import ../chronos, ../chronos/apps/http/[httpserver, shttpserver, httpclient]
+import ".."/chronos/unittest2/asynctests
+import ".."/chronos,
+       ".."/chronos/apps/http/[httpserver, shttpserver, httpclient]
 import stew/base10
 
 {.used.}
@@ -138,7 +139,7 @@ suite "HTTP client testing suite":
         else:
           return await request.respond(Http404, "Page not found")
       else:
-        return dumbResponse()
+        return defaultResponse()
 
     var server = createServer(initTAddress("127.0.0.1:0"), process, secure)
     server.start()
@@ -241,7 +242,7 @@ suite "HTTP client testing suite":
         else:
           return await request.respond(Http404, "Page not found")
       else:
-        return dumbResponse()
+        return defaultResponse()
 
     var server = createServer(initTAddress("127.0.0.1:0"), process, secure)
     server.start()
@@ -324,7 +325,7 @@ suite "HTTP client testing suite":
         else:
           return await request.respond(Http404, "Page not found")
       else:
-        return dumbResponse()
+        return defaultResponse()
 
     var server = createServer(initTAddress("127.0.0.1:0"), process, secure)
     server.start()
@@ -394,7 +395,7 @@ suite "HTTP client testing suite":
         else:
           return await request.respond(Http404, "Page not found")
       else:
-        return dumbResponse()
+        return defaultResponse()
 
     var server = createServer(initTAddress("127.0.0.1:0"), process, secure)
     server.start()
@@ -470,7 +471,7 @@ suite "HTTP client testing suite":
         else:
           return await request.respond(Http404, "Page not found")
       else:
-        return dumbResponse()
+        return defaultResponse()
 
     var server = createServer(initTAddress("127.0.0.1:0"), process, secure)
     server.start()
@@ -569,7 +570,7 @@ suite "HTTP client testing suite":
         else:
           return await request.respond(Http404, "Page not found")
       else:
-        return dumbResponse()
+        return defaultResponse()
 
     var server = createServer(initTAddress("127.0.0.1:0"), process, secure)
     server.start()
@@ -667,7 +668,7 @@ suite "HTTP client testing suite":
         else:
           return await request.respond(Http404, "Page not found")
       else:
-        return dumbResponse()
+        return defaultResponse()
 
     var server = createServer(initTAddress("127.0.0.1:0"), process, secure)
     server.start()
@@ -778,7 +779,7 @@ suite "HTTP client testing suite":
         else:
           return await request.respond(Http404, "Page not found")
       else:
-        return dumbResponse()
+        return defaultResponse()
 
     var server = createServer(initTAddress("127.0.0.1:0"), process, false)
     server.start()
@@ -909,7 +910,7 @@ suite "HTTP client testing suite":
         else:
           return await request.respond(Http404, "Page not found")
       else:
-        return dumbResponse()
+        return defaultResponse()
 
     var server = createServer(initTAddress("127.0.0.1:0"), process, false)
     server.start()
@@ -971,7 +972,7 @@ suite "HTTP client testing suite":
         else:
           return await request.respond(Http404, "Page not found")
       else:
-        return dumbResponse()
+        return defaultResponse()
 
     var server = createServer(initTAddress("127.0.0.1:0"), process, false)
     server.start()
@@ -1125,7 +1126,7 @@ suite "HTTP client testing suite":
         else:
           return await request.respond(Http404, "Page not found")
       else:
-        return dumbResponse()
+        return defaultResponse()
 
     var server = createServer(initTAddress("127.0.0.1:0"), process, secure)
     server.start()
@@ -1262,17 +1263,4 @@ suite "HTTP client testing suite":
     check waitFor(testServerSentEvents(false)) == true
 
   test "Leaks test":
-    proc getTrackerLeaks(tracker: string): bool =
-      let tracker = getTracker(tracker)
-      if isNil(tracker): false else: tracker.isLeaked()
-
-    check:
-      getTrackerLeaks("http.body.reader") == false
-      getTrackerLeaks("http.body.writer") == false
-      getTrackerLeaks("httpclient.connection") == false
-      getTrackerLeaks("httpclient.request") == false
-      getTrackerLeaks("httpclient.response") == false
-      getTrackerLeaks("async.stream.reader") == false
-      getTrackerLeaks("async.stream.writer") == false
-      getTrackerLeaks("stream.server") == false
-      getTrackerLeaks("stream.transport") == false
+    checkLeaks()

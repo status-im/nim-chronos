@@ -6,7 +6,7 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 import std/os
-import unittest2, stew/[base10, byteutils]
+import stew/[base10, byteutils]
 import ".."/chronos/unittest2/asynctests
 
 when defined(posix):
@@ -414,12 +414,4 @@ suite "Asynchronous process management test suite":
       check getCurrentFD() == markFD
 
   test "Leaks test":
-    proc getTrackerLeaks(tracker: string): bool =
-      let tracker = getTracker(tracker)
-      if isNil(tracker): false else: tracker.isLeaked()
-
-    check:
-      getTrackerLeaks("async.process") == false
-      getTrackerLeaks("async.stream.reader") == false
-      getTrackerLeaks("async.stream.writer") == false
-      getTrackerLeaks("stream.transport") == false
+    checkLeaks()

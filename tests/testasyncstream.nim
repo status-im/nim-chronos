@@ -7,8 +7,8 @@
 #              MIT license (LICENSE-MIT)
 import unittest2
 import bearssl/[x509]
-import ../chronos
-import ../chronos/streams/[tlsstream, chunkstream, boundstream]
+import ".."/chronos/unittest2/asynctests
+import ".."/chronos/streams/[tlsstream, chunkstream, boundstream]
 
 {.used.}
 
@@ -302,11 +302,7 @@ suite "AsyncStream test suite":
     check waitFor(testConsume()) == true
 
   test "AsyncStream(StreamTransport) leaks test":
-    check:
-      getTracker("async.stream.reader").isLeaked() == false
-      getTracker("async.stream.writer").isLeaked() == false
-      getTracker("stream.server").isLeaked() == false
-      getTracker("stream.transport").isLeaked() == false
+    checkLeaks()
 
   test "AsyncStream(AsyncStream) readExactly() test":
     proc testReadExactly2(): Future[bool] {.async.} =
@@ -613,11 +609,7 @@ suite "AsyncStream test suite":
     check waitFor(testWriteEof()) == true
 
   test "AsyncStream(AsyncStream) leaks test":
-    check:
-      getTracker("async.stream.reader").isLeaked() == false
-      getTracker("async.stream.writer").isLeaked() == false
-      getTracker("stream.server").isLeaked() == false
-      getTracker("stream.transport").isLeaked() == false
+    checkLeaks()
 
 suite "ChunkedStream test suite":
   test "ChunkedStream test vectors":
@@ -911,11 +903,7 @@ suite "ChunkedStream test suite":
     check waitFor(testSmallChunk(767309, 4457, 173)) == true
 
   test "ChunkedStream leaks test":
-    check:
-      getTracker("async.stream.reader").isLeaked() == false
-      getTracker("async.stream.writer").isLeaked() == false
-      getTracker("stream.server").isLeaked() == false
-      getTracker("stream.transport").isLeaked() == false
+    checkLeaks()
 
 suite "TLSStream test suite":
   const HttpHeadersMark = @[byte(0x0D), byte(0x0A), byte(0x0D), byte(0x0A)]
@@ -1039,11 +1027,7 @@ suite "TLSStream test suite":
     check res == "Some message\r\n"
     
   test "TLSStream leaks test":
-    check:
-      getTracker("async.stream.reader").isLeaked() == false
-      getTracker("async.stream.writer").isLeaked() == false
-      getTracker("stream.server").isLeaked() == false
-      getTracker("stream.transport").isLeaked() == false
+    checkLeaks()
 
 suite "BoundedStream test suite":
 
@@ -1411,8 +1395,4 @@ suite "BoundedStream test suite":
     check waitFor(checkEmptyStreams()) == true
 
   test "BoundedStream leaks test":
-    check:
-      getTracker("async.stream.reader").isLeaked() == false
-      getTracker("async.stream.writer").isLeaked() == false
-      getTracker("stream.server").isLeaked() == false
-      getTracker("stream.transport").isLeaked() == false
+    checkLeaks()

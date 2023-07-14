@@ -6,10 +6,10 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 import std/[strutils, algorithm]
-import unittest2
-import ../chronos, ../chronos/apps/http/httpserver,
-       ../chronos/apps/http/httpcommon,
-       ../chronos/unittest2/asynctests
+import ".."/chronos/unittest2/asynctests,
+       ".."/chronos, ".."/chronos/apps/http/httpserver,
+       ".."/chronos/apps/http/httpcommon,
+       ".."/chronos/apps/http/httpdebug
 import stew/base10
 
 {.used.}
@@ -84,7 +84,7 @@ suite "HTTP server testing suite":
           # Reraising exception, because processor should properly handle it.
           raise exc
       else:
-        return dumbResponse()
+        return defaultResponse()
 
     let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
     let res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
@@ -100,14 +100,14 @@ suite "HTTP server testing suite":
     let request =
       case operation
       of GetBodyTest, ConsumeBodyTest, PostUrlTest:
-        "POST / HTTP/1.0\r\n" &
+        "POST / HTTP/1.1\r\n" &
         "Content-Type: application/x-www-form-urlencoded\r\n" &
         "Transfer-Encoding: chunked\r\n" &
         "Cookie: 2\r\n\r\n" &
         "5\r\na=a&b\r\n5\r\n=b&c=\r\n4\r\nc&d=\r\n4\r\n%D0%\r\n" &
         "2\r\n9F\r\n0\r\n\r\n"
       of PostMultipartTest:
-        "POST / HTTP/1.0\r\n" &
+        "POST / HTTP/1.1\r\n" &
         "Host: 127.0.0.1:30080\r\n" &
         "Transfer-Encoding: chunked\r\n" &
         "Content-Type: multipart/form-data; boundary=f98f0\r\n\r\n" &
@@ -134,9 +134,9 @@ suite "HTTP server testing suite":
           let request = r.get()
           return await request.respond(Http200, "TEST_OK", HttpTable.init())
         else:
-          if r.error().error == HttpServerError.TimeoutError:
+          if r.error.kind == HttpServerError.TimeoutError:
             serverRes = true
-          return dumbResponse()
+          return defaultResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
       let res = HttpServerRef.new(initTAddress("127.0.0.1:0"),
@@ -148,7 +148,6 @@ suite "HTTP server testing suite":
       let server = res.get()
       server.start()
       let address = server.instance.localAddress()
-
       let data = await httpClient(address, "")
       await server.stop()
       await server.closeWait()
@@ -165,9 +164,9 @@ suite "HTTP server testing suite":
           let request = r.get()
           return await request.respond(Http200, "TEST_OK", HttpTable.init())
         else:
-          if r.error().error == HttpServerError.CriticalError:
+          if r.error.kind == HttpServerError.CriticalError:
             serverRes = true
-          return dumbResponse()
+          return defaultResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
       let res = HttpServerRef.new(initTAddress("127.0.0.1:0"),
@@ -195,9 +194,9 @@ suite "HTTP server testing suite":
           let request = r.get()
           return await request.respond(Http200, "TEST_OK", HttpTable.init())
         else:
-          if r.error().error == HttpServerError.CriticalError:
+          if r.error.error == HttpServerError.CriticalError:
             serverRes = true
-          return dumbResponse()
+          return defaultResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
       let res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
@@ -225,9 +224,9 @@ suite "HTTP server testing suite":
         if r.isOk():
           discard
         else:
-          if r.error().error == HttpServerError.CriticalError:
+          if r.error.error == HttpServerError.CriticalError:
             serverRes = true
-          return dumbResponse()
+          return defaultResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
       let res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
@@ -280,7 +279,7 @@ suite "HTTP server testing suite":
                                        HttpTable.init())
         else:
           serverRes = false
-          return dumbResponse()
+          return defaultResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
       let res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
@@ -321,7 +320,7 @@ suite "HTTP server testing suite":
                                        HttpTable.init())
         else:
           serverRes = false
-          return dumbResponse()
+          return defaultResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
       let res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
@@ -367,7 +366,7 @@ suite "HTTP server testing suite":
                                        HttpTable.init())
         else:
           serverRes = false
-          return dumbResponse()
+          return defaultResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
       let res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
@@ -411,7 +410,7 @@ suite "HTTP server testing suite":
                                        HttpTable.init())
         else:
           serverRes = false
-          return dumbResponse()
+          return defaultResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
       let res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
@@ -456,7 +455,7 @@ suite "HTTP server testing suite":
                                        HttpTable.init())
         else:
           serverRes = false
-          return dumbResponse()
+          return defaultResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
       let res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
@@ -512,7 +511,7 @@ suite "HTTP server testing suite":
                                        HttpTable.init())
         else:
           serverRes = false
-          return dumbResponse()
+          return defaultResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
       let res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
@@ -576,7 +575,7 @@ suite "HTTP server testing suite":
           await eventContinue.wait()
           return await request.respond(Http404, "", HttpTable.init())
         else:
-          return dumbResponse()
+          return defaultResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
       let res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
@@ -1247,7 +1246,7 @@ suite "HTTP server testing suite":
           return response
         else:
           serverRes = false
-          return dumbResponse()
+          return defaultResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
       let res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
@@ -1311,7 +1310,7 @@ suite "HTTP server testing suite":
         let request = r.get()
         return await request.respond(Http200, "TEST_OK", HttpTable.init())
       else:
-        return dumbResponse()
+        return defaultResponse()
 
     for test in TestMessages:
       let
@@ -1355,9 +1354,78 @@ suite "HTTP server testing suite":
         await server.stop()
         await server.closeWait()
 
-  test "Leaks test":
+  asyncTest "HTTP debug tests":
+    const
+      TestsCount = 10
+      TestRequest = "GET / HTTP/1.1\r\nConnection: keep-alive\r\n\r\n"
+
+    proc process(r: RequestFence): Future[HttpResponseRef] {.async.} =
+      if r.isOk():
+        let request = r.get()
+        return await request.respond(Http200, "TEST_OK", HttpTable.init())
+      else:
+        return defaultResponse()
+
+    proc client(address: TransportAddress,
+                data: string): Future[StreamTransport] {.async.} =
+      var transp: StreamTransport
+      var buffer = newSeq[byte](4096)
+      var sep = @[0x0D'u8, 0x0A'u8, 0x0D'u8, 0x0A'u8]
+      try:
+        transp = await connect(address)
+        let wres {.used.} =
+          await transp.write(data)
+        let hres {.used.} =
+          await transp.readUntil(addr buffer[0], len(buffer), sep)
+        transp
+      except CatchableError:
+        if not(isNil(transp)): await transp.closeWait()
+        nil
+
+    let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
+    let res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
+                                serverFlags = {HttpServerFlags.Http11Pipeline},
+                                socketFlags = socketFlags)
+    check res.isOk()
+
+    let server = res.get()
+    server.start()
+    let address = server.instance.localAddress()
+
+    let info = server.getServerInfo()
+
     check:
-      getTracker("async.stream.reader").isLeaked() == false
-      getTracker("async.stream.writer").isLeaked() == false
-      getTracker("stream.server").isLeaked() == false
-      getTracker("stream.transport").isLeaked() == false
+      info.connectionType == ConnectionType.NonSecure
+      info.address == address
+      info.state == HttpServerState.ServerRunning
+      info.flags == {HttpServerFlags.Http11Pipeline}
+      info.socketFlags == socketFlags
+
+    try:
+      var clientFutures: seq[Future[StreamTransport]]
+      for i in 0 ..< TestsCount:
+        clientFutures.add(client(address, TestRequest))
+      await allFutures(clientFutures)
+
+      let connections = server.getConnections()
+      check len(connections) == TestsCount
+      let currentTime = Moment.now()
+      for index, connection in connections.pairs():
+        let transp = clientFutures[index].read()
+        check:
+          connection.remoteAddress.get() == transp.localAddress()
+          connection.localAddress.get() == transp.remoteAddress()
+          connection.connectionType == ConnectionType.NonSecure
+          connection.connectionState == ConnectionState.Alive
+          (currentTime - connection.createMoment.get()) != ZeroDuration
+          (currentTime - connection.acceptMoment) != ZeroDuration
+      var pending: seq[Future[void]]
+      for transpFut in clientFutures:
+        pending.add(closeWait(transpFut.read()))
+      await allFutures(pending)
+    finally:
+      await server.stop()
+      await server.closeWait()
+
+  test "Leaks test":
+    checkLeaks()

@@ -190,10 +190,6 @@ type
 
   HttpClientFlags* = set[HttpClientFlag]
 
-  HttpClientTracker* = ref object of TrackerBase
-    opened*: int64
-    closed*: int64
-
   ServerSentEvent* = object
     name*: string
     data*: string
@@ -203,100 +199,6 @@ type
 #
 # HttpClientResponseRef valid states are
 # Open -> (Finished, Error) -> (Closing, Closed)
-
-proc setupHttpClientConnectionTracker(): HttpClientTracker {.
-     gcsafe, raises: [].}
-proc setupHttpClientRequestTracker(): HttpClientTracker {.
-     gcsafe, raises: [].}
-proc setupHttpClientResponseTracker(): HttpClientTracker {.
-     gcsafe, raises: [].}
-
-proc getHttpClientConnectionTracker(): HttpClientTracker {.inline.} =
-  var res = cast[HttpClientTracker](getTracker(HttpClientConnectionTrackerName))
-  if isNil(res):
-    res = setupHttpClientConnectionTracker()
-  res
-
-proc getHttpClientRequestTracker(): HttpClientTracker {.inline.} =
-  var res = cast[HttpClientTracker](getTracker(HttpClientRequestTrackerName))
-  if isNil(res):
-    res = setupHttpClientRequestTracker()
-  res
-
-proc getHttpClientResponseTracker(): HttpClientTracker {.inline.} =
-  var res = cast[HttpClientTracker](getTracker(HttpClientResponseTrackerName))
-  if isNil(res):
-    res = setupHttpClientResponseTracker()
-  res
-
-proc dumpHttpClientConnectionTracking(): string {.gcsafe.} =
-  let tracker = getHttpClientConnectionTracker()
-  "Opened HTTP client connections: " & $tracker.opened & "\n" &
-  "Closed HTTP client connections: " & $tracker.closed
-
-proc dumpHttpClientRequestTracking(): string {.gcsafe.} =
-  let tracker = getHttpClientRequestTracker()
-  "Opened HTTP client requests: " & $tracker.opened & "\n" &
-  "Closed HTTP client requests: " & $tracker.closed
-
-proc dumpHttpClientResponseTracking(): string {.gcsafe.} =
-  let tracker = getHttpClientResponseTracker()
-  "Opened HTTP client responses: " & $tracker.opened & "\n" &
-  "Closed HTTP client responses: " & $tracker.closed
-
-proc leakHttpClientConnection(): bool {.gcsafe.} =
-  var tracker = getHttpClientConnectionTracker()
-  tracker.opened != tracker.closed
-
-proc leakHttpClientRequest(): bool {.gcsafe.} =
-  var tracker = getHttpClientRequestTracker()
-  tracker.opened != tracker.closed
-
-proc leakHttpClientResponse(): bool {.gcsafe.} =
-  var tracker = getHttpClientResponseTracker()
-  tracker.opened != tracker.closed
-
-proc trackHttpClientConnection(t: HttpClientConnectionRef) {.inline.} =
-  inc(getHttpClientConnectionTracker().opened)
-
-proc untrackHttpClientConnection*(t: HttpClientConnectionRef) {.inline.}  =
-  inc(getHttpClientConnectionTracker().closed)
-
-proc trackHttpClientRequest(t: HttpClientRequestRef) {.inline.} =
-  inc(getHttpClientRequestTracker().opened)
-
-proc untrackHttpClientRequest*(t: HttpClientRequestRef) {.inline.}  =
-  inc(getHttpClientRequestTracker().closed)
-
-proc trackHttpClientResponse(t: HttpClientResponseRef) {.inline.} =
-  inc(getHttpClientResponseTracker().opened)
-
-proc untrackHttpClientResponse*(t: HttpClientResponseRef) {.inline.}  =
-  inc(getHttpClientResponseTracker().closed)
-
-proc setupHttpClientConnectionTracker(): HttpClientTracker {.gcsafe.} =
-  var res = HttpClientTracker(opened: 0, closed: 0,
-    dump: dumpHttpClientConnectionTracking,
-    isLeaked: leakHttpClientConnection
-  )
-  addTracker(HttpClientConnectionTrackerName, res)
-  res
-
-proc setupHttpClientRequestTracker(): HttpClientTracker {.gcsafe.} =
-  var res = HttpClientTracker(opened: 0, closed: 0,
-    dump: dumpHttpClientRequestTracking,
-    isLeaked: leakHttpClientRequest
-  )
-  addTracker(HttpClientRequestTrackerName, res)
-  res
-
-proc setupHttpClientResponseTracker(): HttpClientTracker {.gcsafe.} =
-  var res = HttpClientTracker(opened: 0, closed: 0,
-    dump: dumpHttpClientResponseTracking,
-    isLeaked: leakHttpClientResponse
-  )
-  addTracker(HttpClientResponseTrackerName, res)
-  res
 
 template checkClosed(reqresp: untyped): untyped =
   if reqresp.connection.state in {HttpClientConnectionState.Closing,
@@ -556,7 +458,7 @@ proc new(t: typedesc[HttpClientConnectionRef], session: HttpSessionRef,
       state: HttpClientConnectionState.Connecting,
       remoteHostname: ha.id
     )
-    trackHttpClientConnection(res)
+    trackCounter(HttpClientConnectionTrackerName)
     res
   of HttpClientScheme.Secure:
     let treader = newAsyncStreamReader(transp)
@@ -575,7 +477,7 @@ proc new(t: typedesc[HttpClientConnectionRef], session: HttpSessionRef,
       state: HttpClientConnectionState.Connecting,
       remoteHostname: ha.id
     )
-    trackHttpClientConnection(res)
+    trackCounter(HttpClientConnectionTrackerName)
     res
 
 proc setError(request: HttpClientRequestRef, error: ref HttpError) {.
@@ -615,7 +517,7 @@ proc closeWait(conn: HttpClientConnectionRef) {.async.} =
       discard
     await conn.transp.closeWait()
     conn.state = HttpClientConnectionState.Closed
-    untrackHttpClientConnection(conn)
+    untrackCounter(HttpClientConnectionTrackerName)
 
 proc connect(session: HttpSessionRef,
              ha: HttpAddress): Future[HttpClientConnectionRef] {.async.} =
@@ -835,7 +737,7 @@ proc closeWait*(request: HttpClientRequestRef) {.async.} =
     request.session = nil
     request.error = nil
     request.state = HttpReqRespState.Closed
-    untrackHttpClientRequest(request)
+    untrackCounter(HttpClientRequestTrackerName)
 
 proc closeWait*(response: HttpClientResponseRef) {.async.} =
   if response.state notin {HttpReqRespState.Closing, HttpReqRespState.Closed}:
@@ -848,7 +750,7 @@ proc closeWait*(response: HttpClientResponseRef) {.async.} =
     response.session = nil
     response.error = nil
     response.state = HttpReqRespState.Closed
-    untrackHttpClientResponse(response)
+    untrackCounter(HttpClientResponseTrackerName)
 
 proc prepareResponse(request: HttpClientRequestRef, data: openArray[byte]
                     ): HttpResult[HttpClientResponseRef] {.raises: [] .} =
@@ -958,7 +860,7 @@ proc prepareResponse(request: HttpClientRequestRef, data: openArray[byte]
      httpPipeline:
     res.connection.flags.incl(HttpClientConnectionFlag.KeepAlive)
   res.connection.flags.incl(HttpClientConnectionFlag.Response)
-  trackHttpClientResponse(res)
+  trackCounter(HttpClientResponseTrackerName)
   ok(res)
 
 proc getResponse(req: HttpClientRequestRef): Future[HttpClientResponseRef] {.
@@ -996,7 +898,7 @@ proc new*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
     version: version, flags: flags, headers: HttpTable.init(headers),
     address: ha, bodyFlag: HttpClientBodyFlag.Custom, buffer: @body
   )
-  trackHttpClientRequest(res)
+  trackCounter(HttpClientRequestTrackerName)
   res
 
 proc new*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
@@ -1012,7 +914,7 @@ proc new*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
     version: version, flags: flags, headers: HttpTable.init(headers),
     address: address, bodyFlag: HttpClientBodyFlag.Custom, buffer: @body
   )
-  trackHttpClientRequest(res)
+  trackCounter(HttpClientRequestTrackerName)
   ok(res)
 
 proc get*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,

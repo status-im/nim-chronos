@@ -24,6 +24,28 @@ type
 
   SecureHttpConnectionRef* = ref SecureHttpConnection
 
+proc closeSecConnection(conn: HttpConnectionRef) {.async.} =
+  if conn.state == HttpState.Alive:
+    conn.state = HttpState.Closing
+    var pending: seq[Future[void]]
+    pending.add(conn.writer.closeWait())
+    pending.add(conn.reader.closeWait())
+    try:
+      await allFutures(pending)
+    except CancelledError:
+      await allFutures(pending)
+    # After we going to close everything else.
+    pending.setLen(3)
+    pending[0] = conn.mainReader.closeWait()
+    pending[1] = conn.mainWriter.closeWait()
+    pending[2] = conn.transp.closeWait()
+    try:
+      await allFutures(pending)
+    except CancelledError:
+      await allFutures(pending)
+    untrackCounter(HttpServerSecureConnectionTrackerName)
+    conn.state = HttpState.Closed
+
 proc new*(ht: typedesc[SecureHttpConnectionRef], server: SecureHttpServerRef,
           transp: StreamTransport): SecureHttpConnectionRef =
   var res = SecureHttpConnectionRef()
@@ -37,6 +59,8 @@ proc new*(ht: typedesc[SecureHttpConnectionRef], server: SecureHttpServerRef,
   res.tlsStream = tlsStream
   res.reader = AsyncStreamReader(tlsStream.reader)
   res.writer = AsyncStreamWriter(tlsStream.writer)
+  res.closeCb = closeSecConnection
+  trackCounter(HttpServerSecureConnectionTrackerName)
   res
 
 proc createSecConnection(server: HttpServerRef,
@@ -100,7 +124,7 @@ proc new*(htype: typedesc[SecureHttpServerRef],
     createConnCallback: createSecConnection,
     baseUri: serverUri,
     serverIdent: serverIdent,
-    flags: serverFlags,
+    flags: serverFlags + {HttpServerFlags.Secure},
     socketFlags: socketFlags,
     maxConnections: maxConnections,
     bufferSize: bufferSize,
@@ -114,7 +138,7 @@ proc new*(htype: typedesc[SecureHttpServerRef],
     #   else:
     #     nil
     lifetime: newFuture[void]("http.server.lifetime"),
-    connections: initTable[string, Future[void]](),
+    connections: initOrderedTable[string, HttpConnectionHolderRef](),
     tlsCertificate: tlsCertificate,
     tlsPrivateKey: tlsPrivateKey,
     secureFlags: secureFlags

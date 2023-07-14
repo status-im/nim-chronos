@@ -54,15 +54,6 @@ type
     ReuseAddr,
     ReusePort
 
-
-  StreamTransportTracker* = ref object of TrackerBase
-    opened*: int64
-    closed*: int64
-
-  StreamServerTracker* = ref object of TrackerBase
-    opened*: int64
-    closed*: int64
-
   ReadMessagePredicate* = proc (data: openArray[byte]): tuple[consumed: int,
                                                               done: bool] {.
     gcsafe, raises: [].}
@@ -199,71 +190,6 @@ template shiftVectorFile(v: var StreamVector, o: untyped) =
   (v).buf = cast[pointer](cast[uint]((v).buf) - uint(o))
   (v).offset += uint(o)
 
-proc setupStreamTransportTracker(): StreamTransportTracker {.
-     gcsafe, raises: [].}
-proc setupStreamServerTracker(): StreamServerTracker {.
-     gcsafe, raises: [].}
-
-proc getStreamTransportTracker(): StreamTransportTracker {.inline.} =
-  var res = cast[StreamTransportTracker](getTracker(StreamTransportTrackerName))
-  if isNil(res):
-    res = setupStreamTransportTracker()
-  doAssert(not(isNil(res)))
-  res
-
-proc getStreamServerTracker(): StreamServerTracker {.inline.} =
-  var res = cast[StreamServerTracker](getTracker(StreamServerTrackerName))
-  if isNil(res):
-    res = setupStreamServerTracker()
-  doAssert(not(isNil(res)))
-  res
-
-proc dumpTransportTracking(): string {.gcsafe.} =
-  var tracker = getStreamTransportTracker()
-  "Opened transports: " & $tracker.opened & "\n" &
-  "Closed transports: " & $tracker.closed
-
-proc dumpServerTracking(): string {.gcsafe.} =
-  var tracker = getStreamServerTracker()
-  "Opened servers: " & $tracker.opened & "\n" &
-  "Closed servers: " & $tracker.closed
-
-proc leakTransport(): bool {.gcsafe.} =
-  var tracker = getStreamTransportTracker()
-  tracker.opened != tracker.closed
-
-proc leakServer(): bool {.gcsafe.} =
-  var tracker = getStreamServerTracker()
-  tracker.opened != tracker.closed
-
-proc trackStream(t: StreamTransport) {.inline.} =
-  var tracker = getStreamTransportTracker()
-  inc(tracker.opened)
-
-proc untrackStream(t: StreamTransport) {.inline.}  =
-  var tracker = getStreamTransportTracker()
-  inc(tracker.closed)
-
-proc trackServer(s: StreamServer) {.inline.} =
-  var tracker = getStreamServerTracker()
-  inc(tracker.opened)
-
-proc untrackServer(s: StreamServer) {.inline.}  =
-  var tracker = getStreamServerTracker()
-  inc(tracker.closed)
-
-proc setupStreamTransportTracker(): StreamTransportTracker {.gcsafe.} =
-  let res = StreamTransportTracker(
-    opened: 0, closed: 0, dump: dumpTransportTracking, isLeaked: leakTransport)
-  addTracker(StreamTransportTrackerName, res)
-  res
-
-proc setupStreamServerTracker(): StreamServerTracker {.gcsafe.} =
-  let res = StreamServerTracker(
-    opened: 0, closed: 0, dump: dumpServerTracking, isLeaked: leakServer)
-  addTracker(StreamServerTrackerName, res)
-  res
-
 proc completePendingWriteQueue(queue: var Deque[StreamVector],
                                v: int) {.inline.} =
   while len(queue) > 0:
@@ -280,7 +206,7 @@ proc failPendingWriteQueue(queue: var Deque[StreamVector],
 
 proc clean(server: StreamServer) {.inline.} =
   if not(server.loopFuture.finished()):
-    untrackServer(server)
+    untrackCounter(StreamServerTrackerName)
     server.loopFuture.complete()
     if not(isNil(server.udata)) and (GCUserData in server.flags):
       GC_unref(cast[ref int](server.udata))
@@ -288,7 +214,7 @@ proc clean(server: StreamServer) {.inline.} =
 
 proc clean(transp: StreamTransport) {.inline.} =
   if not(transp.future.finished()):
-    untrackStream(transp)
+    untrackCounter(StreamTransportTrackerName)
     transp.future.complete()
     GC_unref(transp)
 
@@ -784,7 +710,7 @@ when defined(windows):
             else:
               let transp = newStreamSocketTransport(sock, bufferSize, child)
               # Start tracking transport
-              trackStream(transp)
+              trackCounter(StreamTransportTrackerName)
               retFuture.complete(transp)
           else:
             sock.closeSocket()
@@ -853,7 +779,7 @@ when defined(windows):
             let transp = newStreamPipeTransport(AsyncFD(pipeHandle),
                                                 bufferSize, child)
             # Start tracking transport
-            trackStream(transp)
+            trackCounter(StreamTransportTrackerName)
             retFuture.complete(transp)
       pipeContinuation(nil)
 
@@ -909,7 +835,7 @@ when defined(windows):
               ntransp = newStreamPipeTransport(server.sock, server.bufferSize,
                                                nil, flags)
             # Start tracking transport
-            trackStream(ntransp)
+            trackCounter(StreamTransportTrackerName)
             asyncSpawn server.function(server, ntransp)
           of ERROR_OPERATION_ABORTED:
             # CancelIO() interrupt or close call.
@@ -1013,7 +939,7 @@ when defined(windows):
                 ntransp = newStreamSocketTransport(server.asock,
                                                    server.bufferSize, nil)
               # Start tracking transport
-              trackStream(ntransp)
+              trackCounter(StreamTransportTrackerName)
               asyncSpawn server.function(server, ntransp)
 
           of ERROR_OPERATION_ABORTED:
@@ -1156,7 +1082,7 @@ when defined(windows):
               ntransp = newStreamSocketTransport(server.asock,
                                                  server.bufferSize, nil)
             # Start tracking transport
-            trackStream(ntransp)
+            trackCounter(StreamTransportTrackerName)
             retFuture.complete(ntransp)
         of ERROR_OPERATION_ABORTED:
           # CancelIO() interrupt or close.
@@ -1216,7 +1142,7 @@ when defined(windows):
             retFuture.fail(getTransportOsError(error))
             return
 
-          trackStream(ntransp)
+          trackCounter(StreamTransportTrackerName)
           retFuture.complete(ntransp)
 
         of ERROR_OPERATION_ABORTED, ERROR_PIPE_NOT_CONNECTED:
@@ -1626,7 +1552,7 @@ else:
 
         let transp = newStreamSocketTransport(sock, bufferSize, child)
         # Start tracking transport
-        trackStream(transp)
+        trackCounter(StreamTransportTrackerName)
         retFuture.complete(transp)
 
     proc cancel(udata: pointer) =
@@ -1639,7 +1565,7 @@ else:
       if res == 0:
         let transp = newStreamSocketTransport(sock, bufferSize, child)
         # Start tracking transport
-        trackStream(transp)
+        trackCounter(StreamTransportTrackerName)
         retFuture.complete(transp)
         break
       else:
@@ -1694,7 +1620,7 @@ else:
             newStreamSocketTransport(sock, server.bufferSize, transp)
           else:
             newStreamSocketTransport(sock, server.bufferSize, nil)
-        trackStream(ntransp)
+        trackCounter(StreamTransportTrackerName)
         asyncSpawn server.function(server, ntransp)
       else:
         # Client was accepted, so we not going to raise assertion, but
@@ -1782,7 +1708,7 @@ else:
                   else:
                     newStreamSocketTransport(sock, server.bufferSize, nil)
                 # Start tracking transport
-                trackStream(ntransp)
+                trackCounter(StreamTransportTrackerName)
                 retFuture.complete(ntransp)
               else:
                 discard closeFd(cint(sock))
@@ -2098,7 +2024,7 @@ proc createStreamServer*(host: TransportAddress,
     sres.apending = false
 
   # Start tracking server
-  trackServer(sres)
+  trackCounter(StreamServerTrackerName)
   GC_ref(sres)
   sres
 
@@ -2671,7 +2597,7 @@ proc fromPipe2*(fd: AsyncFD, child: StreamTransport = nil,
   ? register2(fd)
   var res = newStreamPipeTransport(fd, bufferSize, child)
   # Start tracking transport
-  trackStream(res)
+  trackCounter(StreamTransportTrackerName)
   ok(res)
 
 proc fromPipe*(fd: AsyncFD, child: StreamTransport = nil,

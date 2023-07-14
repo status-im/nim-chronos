@@ -23,8 +23,6 @@ const
   AsyncProcessTrackerName* = "async.process"
     ## AsyncProcess leaks tracker name
 
-
-
 type
   AsyncProcessError* = object of CatchableError
 
@@ -109,48 +107,8 @@ type
     stdError*: string
     status*: int
 
-  AsyncProcessTracker* = ref object of TrackerBase
-    opened*: int64
-    closed*: int64
-
 template Pipe*(t: typedesc[AsyncProcess]): ProcessStreamHandle =
   ProcessStreamHandle(kind: ProcessStreamHandleKind.Auto)
-
-proc setupAsyncProcessTracker(): AsyncProcessTracker {.gcsafe.}
-
-proc getAsyncProcessTracker(): AsyncProcessTracker {.inline.} =
-  var res = cast[AsyncProcessTracker](getTracker(AsyncProcessTrackerName))
-  if isNil(res):
-    res = setupAsyncProcessTracker()
-  res
-
-proc dumpAsyncProcessTracking(): string {.gcsafe.} =
-  var tracker = getAsyncProcessTracker()
-  let res = "Started async processes: " & $tracker.opened & "\n" &
-            "Closed async processes: " & $tracker.closed
-  res
-
-proc leakAsyncProccessTracker(): bool {.gcsafe.} =
-  var tracker = getAsyncProcessTracker()
-  tracker.opened != tracker.closed
-
-proc trackAsyncProccess(t: AsyncProcessRef) {.inline.} =
-  var tracker = getAsyncProcessTracker()
-  inc(tracker.opened)
-
-proc untrackAsyncProcess(t: AsyncProcessRef) {.inline.}  =
-  var tracker = getAsyncProcessTracker()
-  inc(tracker.closed)
-
-proc setupAsyncProcessTracker(): AsyncProcessTracker {.gcsafe.} =
-  var res = AsyncProcessTracker(
-    opened: 0,
-    closed: 0,
-    dump: dumpAsyncProcessTracking,
-    isLeaked: leakAsyncProccessTracker
-  )
-  addTracker(AsyncProcessTrackerName, res)
-  res
 
 proc init*(t: typedesc[AsyncFD], handle: ProcessStreamHandle): AsyncFD =
   case handle.kind
@@ -502,7 +460,7 @@ when defined(windows):
       flags: pipes.flags
     )
 
-    trackAsyncProccess(process)
+    trackCounter(AsyncProcessTrackerName)
     return process
 
   proc peekProcessExitCode(p: AsyncProcessRef): AsyncProcessResult[int] =
@@ -919,7 +877,7 @@ else:
       flags: pipes.flags
     )
 
-    trackAsyncProccess(process)
+    trackCounter(AsyncProcessTrackerName)
     return process
 
   proc peekProcessExitCode(p: AsyncProcessRef,
@@ -1237,7 +1195,7 @@ proc closeWait*(p: AsyncProcessRef) {.async.} =
   discard closeProcessHandles(p.pipes, p.options, OSErrorCode(0))
   await p.pipes.closeProcessStreams(p.options)
   discard p.closeThreadAndProcessHandle()
-  untrackAsyncProcess(p)
+  untrackCounter(AsyncProcessTrackerName)
 
 proc stdinStream*(p: AsyncProcessRef): AsyncStreamWriter =
   doAssert(p.pipes.stdinHolder.kind == StreamKind.Writer,

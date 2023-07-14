@@ -6,7 +6,7 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 import std/[strutils, os]
-import unittest2
+import ".."/chronos/unittest2/asynctests
 import ".."/chronos, ".."/chronos/[osdefs, oserrno]
 
 {.used.}
@@ -1370,10 +1370,11 @@ suite "Stream Transport test suite":
     test prefixes[i] & "close() while in accept() waiting test":
       check waitFor(testAcceptClose(addresses[i])) == true
     test prefixes[i] & "Intermediate transports leak test #1":
+      checkLeaks()
       when defined(windows):
         skip()
       else:
-        check getTracker("stream.transport").isLeaked() == false
+        checkLeaks(StreamTransportTrackerName)
     test prefixes[i] & "accept() too many file descriptors test":
       when defined(windows):
         skip()
@@ -1389,10 +1390,8 @@ suite "Stream Transport test suite":
     check waitFor(testPipe()) == true
   test "[IP] bind connect to local address":
     waitFor(testConnectBindLocalAddress())
-  test "Servers leak test":
-    check getTracker("stream.server").isLeaked() == false
-  test "Transports leak test":
-    check getTracker("stream.transport").isLeaked() == false
+  test "Leaks test":
+    checkLeaks()
   test "File descriptors leak test":
     when defined(windows):
       # Windows handle numbers depends on many conditions, so we can't use

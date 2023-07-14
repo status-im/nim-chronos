@@ -6,8 +6,8 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 import std/strutils
-import unittest2
-import ../chronos, ../chronos/apps/http/shttpserver
+import ".."/chronos/unittest2/asynctests
+import ".."/chronos, ".."/chronos/apps/http/shttpserver
 import stew/base10
 
 {.used.}
@@ -115,7 +115,7 @@ suite "Secure HTTP server testing suite":
                                        HttpTable.init())
         else:
           serverRes = false
-          return dumbResponse()
+          return defaultResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
       let serverFlags = {Secure}
@@ -154,7 +154,7 @@ suite "Secure HTTP server testing suite":
         else:
           serverRes = true
           testFut.complete()
-          return dumbResponse()
+          return defaultResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
       let serverFlags = {Secure}
@@ -178,3 +178,6 @@ suite "Secure HTTP server testing suite":
       return serverRes and data == "EXCEPTION"
 
     check waitFor(testHTTPS2(initTAddress("127.0.0.1:30080"))) == true
+
+  test "Leaks test":
+    checkLeaks()
