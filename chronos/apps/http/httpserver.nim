@@ -736,8 +736,10 @@ proc sendDefaultResponse(conn: HttpConnectionRef, reqFence: RequestFence,
       of HttpServerError.CatchableError:
         await conn.sendErrorResponse(version, reqFence.error.code, false)
         false
-      of HttpServerError.DisconnectError,
-         HttpServerError.InterruptError:
+      of HttpServerError.DisconnectError:
+        # When `HttpServerFlags.NotifyDisconnect` is set.
+        false
+      of HttpServerError.InterruptError:
         raiseAssert("Unexpected request error: " & $reqFence.error.kind)
   except CancelledError:
     false
