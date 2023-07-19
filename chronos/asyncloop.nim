@@ -313,6 +313,7 @@ when defined(windows):
       getAcceptExSockAddrs*: WSAPROC_GETACCEPTEXSOCKADDRS
       transmitFile*: WSAPROC_TRANSMITFILE
       getQueuedCompletionStatusEx*: LPFN_GETQUEUEDCOMPLETIONSTATUSEX
+      disconnectEx*: WSAPROC_DISCONNECTEX
       flags: set[DispatcherFlag]
 
     PtrCustomOverlapped* = ptr CustomOverlapped
@@ -392,6 +393,13 @@ when defined(windows):
         raiseOsDefect(osLastError(), "initAPI(): Unable to initialize " &
                                      "dispatcher's TransmitFile()")
       loop.transmitFile = cast[WSAPROC_TRANSMITFILE](funcPointer)
+
+    block:
+      let res = getFunc(sock, funcPointer, WSAID_DISCONNECTEX)
+      if not(res):
+        raiseOsDefect(osLastError(), "initAPI(): Unable to initialize " &
+                                     "dispatcher's DisconnectEx()")
+      loop.disconnectEx = cast[WSAPROC_DISCONNECTEX](funcPointer)
 
     if closeFd(sock) != 0:
       raiseOsDefect(osLastError(), "initAPI(): Unable to close control socket")

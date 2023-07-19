@@ -54,6 +54,9 @@ type
   HttpResponseStreamType* {.pure.} = enum
     Plain, SSE, Chunked
 
+  HttpProcessExitType* {.pure.} = enum
+    KeepAlive, Graceful, Immediate
+
   HttpResponseState* {.pure.} = enum
     Empty, Prepared, Sending, Finished, Failed, Cancelled, Default
 
@@ -663,62 +666,83 @@ proc sendErrorResponse(conn: HttpConnectionRef, version: HttpVersion,
     # We ignore errors here, because we indicating error already.
     discard
 
-proc sendErrorResponse(conn: HttpConnectionRef, reqFence: RequestFence,
-                       respError: HttpProcessError): Future[bool] {.async.} =
+proc sendErrorResponse(
+       conn: HttpConnectionRef,
+       reqFence: RequestFence,
+       respError: HttpProcessError
+     ): Future[HttpProcessExitType] {.async.} =
   let version = getResponseVersion(reqFence)
   try:
     if reqFence.isOk():
       case respError.kind
       of HttpServerError.CriticalError:
         await conn.sendErrorResponse(version, respError.code, false)
-        false
+        HttpProcessExitType.Graceful
       of HttpServerError.RecoverableError:
         await conn.sendErrorResponse(version, respError.code, true)
-        true
+        HttpProcessExitType.Graceful
       of HttpServerError.CatchableError:
         await conn.sendErrorResponse(version, respError.code, false)
-        false
+        HttpProcessExitType.Graceful
       of HttpServerError.DisconnectError,
          HttpServerError.InterruptError,
          HttpServerError.TimeoutError:
         raiseAssert("Unexpected response error: " & $respError.kind)
     else:
-      false
+      HttpProcessExitType.Graceful
   except CancelledError:
-    false
+    HttpProcessExitType.Immediate
+  except CatchableError:
+    HttpProcessExitType.Immediate
 
-proc sendDefaultResponse(conn: HttpConnectionRef, reqFence: RequestFence,
-                         response: HttpResponseRef): Future[bool] {.async.} =
+proc sendDefaultResponse(
+       conn: HttpConnectionRef,
+       reqFence: RequestFence,
+       response: HttpResponseRef
+     ): Future[HttpProcessExitType] {.async.} =
   let
     version = getResponseVersion(reqFence)
     keepConnection =
-      if isNil(response):
-        false
+      if isNil(response) or (HttpResponseFlags.KeepAlive notin response.flags):
+        HttpProcessExitType.Graceful
       else:
-        HttpResponseFlags.KeepAlive in response.flags
+        HttpProcessExitType.KeepAlive
+
+  template toBool(hpet: HttpProcessExitType): bool =
+    case hpet
+    of HttpProcessExitType.KeepAlive:
+      true
+    of HttpProcessExitType.Immediate:
+      false
+    of HttpProcessExitType.Graceful:
+      false
+
   try:
     if reqFence.isOk():
       if isNil(response):
-        await conn.sendErrorResponse(version, Http404, keepConnection)
+        await conn.sendErrorResponse(version, Http404, keepConnection.toBool())
         keepConnection
       else:
         case response.state
         of HttpResponseState.Empty:
           # Response was ignored, so we respond with not found.
-          await conn.sendErrorResponse(version, Http404, keepConnection)
+          await conn.sendErrorResponse(version, Http404,
+                                       keepConnection.toBool())
           keepConnection
         of HttpResponseState.Prepared:
           # Response was prepared but not sent, so we can respond with some
           # error code
-          await conn.sendErrorResponse(HttpVersion11, Http409, keepConnection)
+          await conn.sendErrorResponse(HttpVersion11, Http409,
+                                       keepConnection.toBool())
           keepConnection
         of HttpResponseState.Sending, HttpResponseState.Failed,
            HttpResponseState.Cancelled:
           # Just drop connection, because we dont know at what stage we are
-          false
+          HttpProcessExitType.Immediate
         of HttpResponseState.Default:
           # Response was ignored, so we respond with not found.
-          await conn.sendErrorResponse(version, Http404, keepConnection)
+          await conn.sendErrorResponse(version, Http404,
+                                       keepConnection.toBool())
           keepConnection
         of HttpResponseState.Finished:
           keepConnection
@@ -726,23 +750,25 @@ proc sendDefaultResponse(conn: HttpConnectionRef, reqFence: RequestFence,
       case reqFence.error.kind
       of HttpServerError.TimeoutError:
         await conn.sendErrorResponse(version, reqFence.error.code, false)
-        false
+        HttpProcessExitType.Graceful
       of HttpServerError.CriticalError:
         await conn.sendErrorResponse(version, reqFence.error.code, false)
-        false
+        HttpProcessExitType.Graceful
       of HttpServerError.RecoverableError:
-        await conn.sendErrorResponse(version, reqFence.error.code, true)
-        false
+        await conn.sendErrorResponse(version, reqFence.error.code, false)
+        HttpProcessExitType.Graceful
       of HttpServerError.CatchableError:
         await conn.sendErrorResponse(version, reqFence.error.code, false)
-        false
+        HttpProcessExitType.Graceful
       of HttpServerError.DisconnectError:
         # When `HttpServerFlags.NotifyDisconnect` is set.
-        false
+        HttpProcessExitType.Immediate
       of HttpServerError.InterruptError:
         raiseAssert("Unexpected request error: " & $reqFence.error.kind)
   except CancelledError:
-    false
+    HttpProcessExitType.Immediate
+  except CatchableError:
+    HttpProcessExitType.Immediate
 
 proc getRequest(conn: HttpConnectionRef): Future[HttpRequestRef] {.async.} =
   try:
@@ -799,6 +825,10 @@ proc new(ht: typedesc[HttpConnectionRef], server: HttpServerRef,
   res.createMoment = Moment.now()
   trackCounter(HttpServerUnsecureConnectionTrackerName)
   res
+
+proc gracefulCloseWait*(conn: HttpConnectionRef) {.async.} =
+  await conn.transp.shutdownWait()
+  await conn.closeCb(conn)
 
 proc closeWait*(conn: HttpConnectionRef): Future[void] =
   conn.closeCb(conn)
@@ -942,15 +972,15 @@ proc getConnectionFence*(server: HttpServerRef,
 
 proc processRequest(server: HttpServerRef,
                     connection: HttpConnectionRef,
-                    connId: string): Future[bool] {.async.} =
+                    connId: string): Future[HttpProcessExitType] {.async.} =
   let requestFence = await getRequestFence(server, connection)
   if requestFence.isErr():
     case requestFence.error.kind
     of HttpServerError.InterruptError:
-      return false
+      return HttpProcessExitType.Immediate
     of HttpServerError.DisconnectError:
       if HttpServerFlags.NotifyDisconnect notin server.flags:
-        return false
+        return HttpProcessExitType.Immediate
     else:
       discard
 
@@ -961,7 +991,7 @@ proc processRequest(server: HttpServerRef,
   let responseFence = await getResponseFence(connection, requestFence)
   if responseFence.isErr() and
      (responseFence.error.kind == HttpServerError.InterruptError):
-    return false
+    return HttpProcessExitType.Immediate
 
   if responseFence.isErr():
     await connection.sendErrorResponse(requestFence, responseFence.error)
@@ -985,12 +1015,20 @@ proc processLoop(holder: HttpConnectionHolderRef) {.async.} =
 
   holder.connection = connection
 
+  var runLoop = HttpProcessExitType.KeepAlive
+
   defer:
     server.connections.del(connectionId)
-    await connection.closeWait()
+    case runLoop
+    of HttpProcessExitType.KeepAlive:
+      # This could happened only on CancelledError.
+      await connection.closeWait()
+    of HttpProcessExitType.Immediate:
+      await connection.closeWait()
+    of HttpProcessExitType.Graceful:
+      await connection.gracefulCloseWait()
 
-  var runLoop = true
-  while runLoop:
+  while runLoop == HttpProcessExitType.KeepAlive:
     runLoop = await server.processRequest(connection, connectionId)
 
 proc acceptClientLoop(server: HttpServerRef) {.async.} =
