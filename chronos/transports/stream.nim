@@ -2574,14 +2574,12 @@ proc closeWait*(transp: StreamTransport): Future[void] =
 proc shutdownWait*(transp: StreamTransport): Future[void] =
   ## Perform graceful shutdown of TCP connection backed by transport ``transp``.
   doAssert(transp.kind == TransportKind.Socket)
-  let
-    loop = getThreadDispatcher()
-    retFuture = newFuture[void]("stream.transport.shutdown")
-
+  let retFuture = newFuture[void]("stream.transport.shutdown")
   transp.checkClosed(retFuture)
   transp.checkWriteEof(retFuture)
 
   when defined(windows):
+    let loop = getThreadDispatcher()
     proc continuation(udata: pointer) {.gcsafe.} =
       let ovl = cast[RefCustomOverlapped](udata)
       if not(retFuture.finished()):
@@ -2621,7 +2619,7 @@ proc shutdownWait*(transp: StreamTransport): Future[void] =
       retFuture.fail(getTransportOsError(err))
     else:
       transp.state.incl({WriteEof})
-      loop.callbacks.addLast(AsyncCallback(function: continuation, udata: nil))
+      callSoon(continuation, nil)
     retFuture
 
 proc closed*(transp: StreamTransport): bool {.inline.} =

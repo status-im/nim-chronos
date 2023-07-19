@@ -1021,7 +1021,8 @@ proc processLoop(holder: HttpConnectionHolderRef) {.async.} =
     server.connections.del(connectionId)
     case runLoop
     of HttpProcessExitType.KeepAlive:
-      raiseAssert "Unexpected runLoop state!"
+      # This could happened only on CancelledError.
+      await connection.closeWait()
     of HttpProcessExitType.Immediate:
       await connection.closeWait()
     of HttpProcessExitType.Graceful:
