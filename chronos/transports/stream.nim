@@ -2571,6 +2571,59 @@ proc closeWait*(transp: StreamTransport): Future[void] =
   transp.close()
   transp.join()
 
+proc shutdownWait*(transp: StreamTransport): Future[void] =
+  ## Perform graceful shutdown of TCP connection backed by transport ``transp``.
+  doAssert(transp.kind == TransportKind.Socket)
+  let
+    loop = getThreadDispatcher()
+    retFuture = newFuture[void]("stream.transport.shutdown")
+
+  transp.checkClosed(retFuture)
+  transp.checkWriteEof(retFuture)
+
+  when defined(windows):
+    proc continuation(udata: pointer) {.gcsafe.} =
+      let ovl = cast[RefCustomOverlapped](udata)
+      if not(retFuture.finished()):
+        if ovl.data.errCode == OSErrorCode(-1):
+          retFuture.complete()
+        else:
+          transp.state.excl({WriteEof})
+          retFuture.fail(getTransportOsError(ovl.data.errCode))
+        GC_unref(ovl)
+
+    let povl = RefCustomOverlapped(data: CompletionData(cb: continuation))
+    GC_ref(povl)
+
+    let res = loop.disconnectEx(SocketHandle(transp.fd),
+                                cast[POVERLAPPED](povl), 0'u32, 0'u32)
+    if res == FALSE:
+      let err = osLastError()
+      case err
+      of ERROR_IO_PENDING:
+        transp.state.incl({WriteEof})
+      else:
+        GC_unref(povl)
+        retFuture.fail(getTransportOsError(err))
+    else:
+      transp.state.incl({WriteEof})
+      retFuture.complete()
+
+    retFuture
+  else:
+    proc continuation(udata: pointer) {.gcsafe.} =
+      if not(retFuture.finished()):
+        retFuture.complete()
+
+    let res = osdefs.shutdown(SocketHandle(transp.fd), SHUT_WR)
+    if res < 0:
+      let err = osLastError()
+      retFuture.fail(getTransportOsError(err))
+    else:
+      transp.state.incl({WriteEof})
+      loop.callbacks.addLast(AsyncCallback(function: continuation, udata: nil))
+    retFuture
+
 proc closed*(transp: StreamTransport): bool {.inline.} =
   ## Returns ``true`` if transport in closed state.
   ({ReadClosed, WriteClosed} * transp.state != {})

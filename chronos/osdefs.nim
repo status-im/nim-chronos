@@ -237,6 +237,10 @@ when defined(windows):
       GUID(D1: 0xb5367df0'u32, D2: 0xcbac'u16, D3: 0x11cf'u16,
            D4: [0x95'u8, 0xca'u8, 0x00'u8, 0x80'u8,
                 0x5f'u8, 0x48'u8, 0xa1'u8, 0x92'u8])
+    WSAID_DISCONNECTEX* =
+      GUID(D1: 0x7fda2e11'u32, D2: 0x8630'u16, D3: 0x436f'u16,
+           D4: [0xa0'u8, 0x31'u8, 0xf5'u8, 0x36'u8,
+                0xa6'u8, 0xee'u8, 0xc1'u8, 0x57'u8])
 
     GAA_FLAG_INCLUDE_PREFIX* = 0x0010'u32
 
@@ -495,6 +499,11 @@ when defined(windows):
       hSocket: SocketHandle, hFile: HANDLE, nNumberOfBytesToWrite: DWORD,
       nNumberOfBytesPerSend: DWORD, lpOverlapped: POVERLAPPED,
       lpTransmitBuffers: pointer, dwReserved: DWORD): WINBOOL {.
+      stdcall, gcsafe, raises: [].}
+
+    WSAPROC_DISCONNECTEX* = proc (
+      hSocket: SocketHandle, lpOverlapped: POVERLAPPED, dwFlags: DWORD,
+      dwReserved: DWORD): WINBOOL {.
       stdcall, gcsafe, raises: [].}
 
     LPFN_GETQUEUEDCOMPLETIONSTATUSEX* = proc (
@@ -879,7 +888,7 @@ elif defined(macos) or defined(macosx):
                         AF_INET, AF_INET6, SO_ERROR, SO_REUSEADDR,
                         SO_REUSEPORT, SO_BROADCAST, IPPROTO_IP,
                         IPV6_MULTICAST_HOPS, SOCK_DGRAM, RLIMIT_NOFILE,
-                        SIG_BLOCK, SIG_UNBLOCK,
+                        SIG_BLOCK, SIG_UNBLOCK, SHUT_RD, SHUT_WR, SHUT_RDWR,
                         SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
                         SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV, SIGUSR2,
                         SIGPIPE, SIGALRM, SIGTERM, SIGPIPE, SIGCHLD, SIGSTOP,
@@ -900,7 +909,7 @@ elif defined(macos) or defined(macosx):
          AF_INET, AF_INET6, SO_ERROR, SO_REUSEADDR,
          SO_REUSEPORT, SO_BROADCAST, IPPROTO_IP,
          IPV6_MULTICAST_HOPS, SOCK_DGRAM, RLIMIT_NOFILE,
-         SIG_BLOCK, SIG_UNBLOCK,
+         SIG_BLOCK, SIG_UNBLOCK, SHUT_RD, SHUT_WR, SHUT_RDWR,
          SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
          SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV, SIGUSR2,
          SIGPIPE, SIGALRM, SIGTERM, SIGPIPE, SIGCHLD, SIGSTOP,
@@ -939,7 +948,7 @@ elif defined(linux):
                         SOL_SOCKET, SO_ERROR, RLIMIT_NOFILE, MSG_NOSIGNAL,
                         AF_INET, AF_INET6, SO_REUSEADDR, SO_REUSEPORT,
                         SO_BROADCAST, IPPROTO_IP, IPV6_MULTICAST_HOPS,
-                        SOCK_DGRAM,
+                        SOCK_DGRAM, SHUT_RD, SHUT_WR, SHUT_RDWR,
                         SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
                         SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV, SIGUSR2,
                         SIGPIPE, SIGALRM, SIGTERM, SIGPIPE, SIGCHLD, SIGSTOP,
@@ -962,7 +971,7 @@ elif defined(linux):
          SOL_SOCKET, SO_ERROR, RLIMIT_NOFILE, MSG_NOSIGNAL,
          AF_INET, AF_INET6, SO_REUSEADDR, SO_REUSEPORT,
          SO_BROADCAST, IPPROTO_IP, IPV6_MULTICAST_HOPS,
-         SOCK_DGRAM,
+         SOCK_DGRAM, SHUT_RD, SHUT_WR, SHUT_RDWR,
          SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
          SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV, SIGUSR2,
          SIGPIPE, SIGALRM, SIGTERM, SIGPIPE, SIGCHLD, SIGSTOP,
@@ -1081,6 +1090,7 @@ elif defined(freebsd) or defined(openbsd) or defined(netbsd) or
                         SO_REUSEPORT, SO_BROADCAST, IPPROTO_IP,
                         IPV6_MULTICAST_HOPS, SOCK_DGRAM, RLIMIT_NOFILE,
                         SIG_BLOCK, SIG_UNBLOCK, CLOCK_MONOTONIC,
+                        SHUT_RD, SHUT_WR, SHUT_RDWR,
                         SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
                         SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV, SIGUSR2,
                         SIGPIPE, SIGALRM, SIGTERM, SIGPIPE, SIGCHLD, SIGSTOP,
@@ -1101,6 +1111,7 @@ elif defined(freebsd) or defined(openbsd) or defined(netbsd) or
          SO_REUSEPORT, SO_BROADCAST, IPPROTO_IP,
          IPV6_MULTICAST_HOPS, SOCK_DGRAM, RLIMIT_NOFILE,
          SIG_BLOCK, SIG_UNBLOCK, CLOCK_MONOTONIC,
+         SHUT_RD, SHUT_WR, SHUT_RDWR,
          SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
          SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV, SIGUSR2,
          SIGPIPE, SIGALRM, SIGTERM, SIGPIPE, SIGCHLD, SIGSTOP,
