@@ -105,6 +105,7 @@ template pollUpdate[T](s: Selector[T], sock: cint, events: set[Event]) =
   for mitem in s.pollfds.mitems():
     if mitem.fd == sock:
       mitem.events = toPollEvents(events)
+      updated = true
       break
   if not(updated):
     raiseAssert "Descriptor [" & $sock & "] is not registered in the queue!"
