@@ -893,7 +893,6 @@ elif defined(macos) or defined(macosx):
                         SO_REUSEPORT, SO_BROADCAST, IPPROTO_IP,
                         IPV6_MULTICAST_HOPS, SOCK_DGRAM, RLIMIT_NOFILE,
                         SIG_BLOCK, SIG_UNBLOCK, SHUT_RD, SHUT_WR, SHUT_RDWR,
-                        POLLIN, POLLOUT, POLLERR, POLLHUP, POLLNVAL,
                         SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
                         SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV, SIGUSR2,
                         SIGPIPE, SIGALRM, SIGTERM, SIGPIPE, SIGCHLD, SIGSTOP,
@@ -919,7 +918,6 @@ elif defined(macos) or defined(macosx):
          SO_REUSEPORT, SO_BROADCAST, IPPROTO_IP,
          IPV6_MULTICAST_HOPS, SOCK_DGRAM, RLIMIT_NOFILE,
          SIG_BLOCK, SIG_UNBLOCK, SHUT_RD, SHUT_WR, SHUT_RDWR,
-         POLLIN, POLLOUT, POLLERR, POLLHUP, POLLNVAL,
          SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
          SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV, SIGUSR2,
          SIGPIPE, SIGALRM, SIGTERM, SIGPIPE, SIGCHLD, SIGSTOP,
@@ -931,6 +929,21 @@ elif defined(macos) or defined(macosx):
       numer*: uint32
       denom*: uint32
 
+    TPollfd* {.importc: "struct pollfd", pure, final,
+               header: "<poll.h>".} = object
+      fd*: cint
+      events*: cshort
+      revents*: cshort
+
+    Tnfds* {.importc: "nfds_t", header: "<poll.h>".} = cuint
+
+  const
+    POLLIN* = 0x0001
+    POLLOUT* = 0x0004
+    POLLERR* = 0x0008
+    POLLHUP* = 0x0010
+    POLLNVAL* = 0x0020
+
   proc posix_gettimeofday*(tp: var Timeval, unused: pointer = nil) {.
        importc: "gettimeofday", header: "<sys/time.h>".}
 
@@ -939,6 +952,9 @@ elif defined(macos) or defined(macosx):
 
   proc mach_absolute_time*(): uint64 {.
        importc, header: "<mach/mach_time.h>".}
+
+  proc poll*(a1: ptr TPollfd, a2: Tnfds, a3: cint): cint {.
+       importc, header: "<poll.h>", sideEffect.}
 
 elif defined(linux):
   from std/posix import close, shutdown, sigemptyset, sigaddset, sigismember,

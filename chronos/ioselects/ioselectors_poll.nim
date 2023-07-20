@@ -72,7 +72,7 @@ proc trigger2*(event: SelectEvent): SelectResult[void] =
   if res == -1:
     err(osLastError())
   elif res != sizeof(uint64):
-    err(OSErrorCode(osdefs.EINVAL))
+    err(osdefs.EINVAL)
   else:
     ok()
 
@@ -224,7 +224,7 @@ proc selectInto2*[T](s: Selector[T], timeout: int,
     eventsCount =
       if maxEventsCount > 0:
         let res = handleEintr(poll(addr(s.pollfds[0]), Tnfds(maxEventsCount),
-                              timeout))
+                              cint(timeout)))
         if res < 0:
           return err(osLastError())
         res
