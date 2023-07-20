@@ -1009,7 +1009,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     ## You can execute ``aftercb`` before actual socket close operation.
     closeSocket(fd, aftercb)
 
-  when asyncEventEngine in ["epoll", "kqueue"]:
+  when chronosEventEngine in ["epoll", "kqueue"]:
     type
       ProcessHandle* = distinct int
       SignalHandle* = distinct int
@@ -1123,7 +1123,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
           if not isNil(adata.reader.function):
             loop.callbacks.addLast(adata.reader)
 
-        when asyncEventEngine in ["epoll", "kqueue"]:
+        when chronosEventEngine in ["epoll", "kqueue"]:
           let customSet = {Event.Timer, Event.Signal, Event.Process,
                            Event.Vnode}
           if customSet * events != {}:
@@ -1257,10 +1257,7 @@ proc callIdle*(cbproc: CallbackFunc) =
 
 include asyncfutures2
 
-
-when defined(macosx) or defined(macos) or defined(freebsd) or
-     defined(netbsd) or defined(openbsd) or defined(dragonfly) or
-     defined(linux) or defined(windows):
+when (chronosEventEngine in ["epoll", "kqueue"]) or defined(windows):
 
   proc waitSignal*(signal: int): Future[void] {.raises: [].} =
     var retFuture = newFuture[void]("chronos.waitSignal()")

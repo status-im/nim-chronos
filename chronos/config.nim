@@ -49,6 +49,25 @@ when (NimMajor, NimMinor) >= (1, 4):
       ## using `AsyncProcessOption.EvalCommand` and API calls such as
       ## ``execCommand(command)`` and ``execCommandEx(command)``.
 
+    chronosEventsCount* {.intdefine.} = 64
+      ## Number of OS poll events retrieved by syscall (epoll, kqueue, poll).
+
+    chronosInitialSize* {.intdefine.} = 64
+      ## Initial size of Selector[T]'s array of file descriptors.
+
+    chronosEventEngine* {.strdefine.}: string =
+      when defined(linux):
+        "epoll"
+      elif defined(macosx) or defined(macos) or defined(ios) or
+           defined(freebsd) or defined(netbsd) or defined(openbsd) or
+           defined(dragonfly):
+        "kqueue"
+      elif defined(posix):
+        "poll"
+      else:
+        ""
+      ## OS polling engine type which is going to be used by chronos.
+
 else:
   # 1.2 doesn't support `booldefine` in `when` properly
   const
@@ -69,6 +88,19 @@ else:
           "/system/bin/sh"
         else:
           "/bin/sh"
+    chronosEventsCount*: int = 64
+    chronosInitialSize*: int = 64
+    chronosEventEngine* {.strdefine.}: string =
+      when defined(linux):
+        "epoll"
+      elif defined(macosx) or defined(macos) or defined(ios) or
+           defined(freebsd) or defined(netbsd) or defined(openbsd) or
+           defined(dragonfly):
+        "kqueue"
+      elif defined(posix):
+        "poll"
+      else:
+        ""
 
 when defined(debug) or defined(chronosConfig):
   import std/macros
@@ -83,3 +115,6 @@ when defined(debug) or defined(chronosConfig):
     printOption("chronosFutureTracking", chronosFutureTracking)
     printOption("chronosDumpAsync", chronosDumpAsync)
     printOption("chronosProcShell", chronosProcShell)
+    printOption("chronosEventEngine", chronosEventEngine)
+    printOption("chronosEventsCount", chronosEventsCount)
+    printOption("chronosInitialSize", chronosInitialSize)

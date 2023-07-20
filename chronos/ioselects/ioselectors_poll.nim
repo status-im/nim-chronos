@@ -50,7 +50,7 @@ proc freeKey[T](s: Selector[T], key: int32) =
 
 proc new*(t: typedesc[Selector], T: typedesc): SelectResult[Selector[T]] =
   let selector = Selector[T](
-    fds: initTable[int32, SelectorKey[T]](asyncInitialSize)
+    fds: initTable[int32, SelectorKey[T]](chronosInitialSize)
   )
   ok(selector)
 
@@ -177,7 +177,6 @@ proc unregister2*[T](s: Selector[T], event: SelectEvent): SelectResult[void] =
 
 proc prepareKey[T](s: Selector[T], event: var TPollfd): Opt[ReadyKey] =
   let
-    defaultKey = SelectorKey[T](ident: InvalidIdent)
     fdi32 = int32(event.fd)
     revents = event.revents
 
@@ -241,7 +240,7 @@ proc selectInto2*[T](s: Selector[T], timeout: int,
   ok(k)
 
 proc select2*[T](s: Selector[T], timeout: int): SelectResult[seq[ReadyKey]] =
-  var res = newSeq[ReadyKey](asyncEventsCount)
+  var res = newSeq[ReadyKey](chronosEventsCount)
   let count = ? selectInto2(s, timeout, res)
   res.setLen(count)
   ok(res)
