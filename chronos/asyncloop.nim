@@ -825,9 +825,9 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     var res = PDispatcher(
       selector: selector,
       timers: initHeapQueue[TimerCallback](),
-      callbacks: initDeque[AsyncCallback](asyncEventsCount),
+      callbacks: initDeque[AsyncCallback](chronosEventsCount),
       idlers: initDeque[AsyncCallback](),
-      keys: newSeq[ReadyKey](asyncEventsCount),
+      keys: newSeq[ReadyKey](chronosEventsCount),
       trackers: initTable[string, TrackerBase](),
       counters: initTable[string, TrackerCounter]()
     )
