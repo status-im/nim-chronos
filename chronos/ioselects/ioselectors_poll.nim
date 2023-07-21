@@ -16,7 +16,7 @@ import stew/base10
 type
   SelectorImpl[T] = object
     fds: Table[int32, SelectorKey[T]]
-    pollfds: seq[TPollFd]
+    pollfds: seq[TPollfd]
   Selector*[T] = ref SelectorImpl[T]
 
 type
@@ -98,7 +98,7 @@ template toPollEvents(events: set[Event]): cshort =
   res
 
 template pollAdd[T](s: Selector[T], sock: cint, events: set[Event]) =
-  s.pollfds.add(TPollFd(fd: sock, events: toPollEvents(events), revents: 0))
+  s.pollfds.add(TPollfd(fd: sock, events: toPollEvents(events), revents: 0))
 
 template pollUpdate[T](s: Selector[T], sock: cint, events: set[Event]) =
   var updated = false
