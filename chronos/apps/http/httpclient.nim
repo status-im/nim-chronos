@@ -523,7 +523,7 @@ proc connect(session: HttpSessionRef,
              ha: HttpAddress): Future[HttpClientConnectionRef] {.async.} =
   ## Establish new connection with remote server using ``url`` and ``flags``.
   ## On success returns ``HttpClientConnectionRef`` object.
-
+  var lastError = ""
   # Here we trying to connect to every possible remote host address we got after
   # DNS resolution.
   for address in ha.addresses:
@@ -547,9 +547,14 @@ proc connect(session: HttpSessionRef,
             except CancelledError as exc:
               await res.closeWait()
               raise exc
-            except AsyncStreamError:
+            except TLSStreamProtocolError as exc:
               await res.closeWait()
               res.state = HttpClientConnectionState.Error
+              lastError = $exc.msg
+            except AsyncStreamError as exc:
+              await res.closeWait()
+              res.state = HttpClientConnectionState.Error
+              lastError = $exc.msg
           of HttpClientScheme.Nonsecure:
             res.state = HttpClientConnectionState.Ready
           res
@@ -557,7 +562,11 @@ proc connect(session: HttpSessionRef,
         return conn
 
   # If all attempts to connect to the remote host have failed.
-  raiseHttpConnectionError("Could not connect to remote host")
+  if len(lastError) > 0:
+    raiseHttpConnectionError("Could not connect to remote host, reason: " &
+                             lastError)
+  else:
+    raiseHttpConnectionError("Could not connect to remote host")
 
 proc removeConnection(session: HttpSessionRef,
                       conn: HttpClientConnectionRef) {.async.} =
