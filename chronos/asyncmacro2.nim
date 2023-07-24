@@ -43,8 +43,15 @@ proc processBody(node, fut, baseType: NimNode): NimNode {.compileTime.} =
       res.add nnkWhenStmt.newTree(
         nnkElifExpr.newTree(
           nnkInfix.newTree(
-            ident "isnot", nnkTypeOfExpr.newTree(node[0]), ident "void"),
+            ident "isnot", baseType, ident "void"),
           newAssignment(ident "result", node[0])
+        ),
+        nnkElse.newTree(
+          nnkPragma.newTree(
+            nnkExprColonExpr.newTree(
+              newIdentNode("error"),
+              newLit("no async return type declared"))
+          )
         )
       )
     res.add newNimNode(nnkReturnStmt, node).add(newNilLit())
