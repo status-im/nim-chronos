@@ -325,8 +325,8 @@ proc futureContinue*(fut: FutureBase) {.raises: [], gcsafe.} =
       if fut.internalClosure.finished(): # Reached the end of the transformed proc
 
         # The async macro will have filled the value and the location directly
-        # in the future
-        # we just need to switch to completed state
+        # in the future. We just need to switch to completed state after the closure
+        # is _actually_ finished (ie all the `finally`s have been ran)
         fut.completeWithInternalData()
         break
 
