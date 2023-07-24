@@ -36,6 +36,6 @@ proc srcLocImpl(procedure: static string,
   )
   return addr(loc)
 
-template getSrcLocation*(procedure: static string = ""): ptr SrcLoc =
-  srcLocImpl(procedure,
-             instantiationInfo(-2).filename, instantiationInfo(-2).line)
+template getSrcLocation*(procedure: static string = "", level: static int = -2): ptr SrcLoc =
+  const instInfo = instantiationInfo(level)
+  srcLocImpl(procedure, instInfo.filename, instInfo.line)

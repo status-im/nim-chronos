@@ -165,6 +165,12 @@ template complete*(future: Future[void]) =
   ## Completes a void ``future``.
   complete(future, getSrcLocation())
 
+proc completeWithInternalData(future: FutureBase) =
+  if not(future.cancelled()):
+    checkFinished(future, future.internalLocation[LocationKind.Finish])
+    doAssert(isNil(future.internalError))
+    future.finish(FutureState.Completed)
+
 proc fail(future: FutureBase, error: ref CatchableError, loc: ptr SrcLoc) =
   if not(future.cancelled()):
     checkFinished(future, loc)
@@ -317,8 +323,11 @@ proc futureContinue*(fut: FutureBase) {.raises: [], gcsafe.} =
       # `await` typically) or completes / fails / is cancelled
       next = fut.internalClosure(fut)
       if fut.internalClosure.finished(): # Reached the end of the transformed proc
-        #TODO hacky
-        fut.finish(FutureState.Completed)
+
+        # The async macro will have filled the value and the location directly
+        # in the future
+        # we just need to switch to completed state
+        fut.completeWithInternalData()
         break
 
       if next == nil:

@@ -1218,8 +1218,8 @@ suite "Future[T] behavior test suite":
   test "location test":
     # WARNING: This test is very sensitive to line numbers and module name.
 
-    proc macroFuture() {.async.} =       # LINE POSITION 1
-      let someVar {.used.} = 5           # LINE POSITION 2
+    proc macroFuture() {.async.} =       # LINE POSITION 1 & 2
+      let someVar {.used.} = 5
       let someOtherVar {.used.} = 4
       if true:
         let otherVar {.used.} = 3
@@ -1237,12 +1237,12 @@ suite "Future[T] behavior test suite":
     fut2.complete()                      # LINE POSITION 4
     fut3.complete()                      # LINE POSITION 6
 
-    let loc10 = fut1.location[0]
-    let loc11 = fut1.location[1]
-    let loc20 = fut2.location[0]
-    let loc21 = fut2.location[1]
-    let loc30 = fut3.location[0]
-    let loc31 = fut3.location[1]
+    let loc10 = fut1.location[LocationKind.Create]
+    let loc11 = fut1.location[LocationKind.Finish]
+    let loc20 = fut2.location[LocationKind.Create]
+    let loc21 = fut2.location[LocationKind.Finish]
+    let loc30 = fut3.location[LocationKind.Create]
+    let loc31 = fut3.location[LocationKind.Finish]
 
     proc chk(loc: ptr SrcLoc, file: string, line: int,
              procedure: string): bool =
@@ -1254,7 +1254,7 @@ suite "Future[T] behavior test suite":
 
     check:
       chk(loc10, "testfut.nim", 1221, "macroFuture")
-      chk(loc11, "testfut.nim", 1222, "")
+      chk(loc11, "testfut.nim", 1221, "")
       chk(loc20, "testfut.nim", 1234, "template")
       chk(loc21, "testfut.nim", 1237, "")
       chk(loc30, "testfut.nim", 1231, "procedure")

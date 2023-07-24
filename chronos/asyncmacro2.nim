@@ -15,7 +15,7 @@ proc completeWithNode(fut, baseType, node: NimNode): NimNode {.compileTime.} =
   #     `node` # statement / explicit return
   #   else: # expression / implicit return
   #     result = `node`
-  if node.kind == nnkEmpty: # shortcut when known at macro expantion time
+  if node.kind == nnkEmpty: # shortcut when known at macro expansion time
     node
   else:
     # Handle both expressions and statements - since the type is not know at
@@ -225,6 +225,17 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
         newAssignment(
           newDotExpr(retFutureSym, newIdentNode("internalClosure")),
           iteratorNameSym)
+      )
+
+      # -> resultFuture.internalLocation[LocationKind.Finish] = getSrcLocation("", -1)
+      outerProcBody.add(
+        newAssignment(
+          nnkBracketExpr.newTree(
+            newDotExpr(retFutureSym, newIdentNode("internalLocation")),
+            newDotExpr(newIdentNode("LocationKind"), newIdentNode("Finish")),
+          ),
+          newCall("getSrcLocation", newLit("\"\""), newLit(-1))
+        )
       )
 
       # -> futureContinue(resultFuture))
