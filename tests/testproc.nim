@@ -96,7 +96,11 @@ suite "Asynchronous process management test suite":
 
     let
       options = {AsyncProcessOption.EvalCommand}
-      command = "exit 1"
+      command =
+        when defined(windows):
+          "tests\\testproc.bat timeout1"
+        else:
+          "tests/testproc.sh timeout1"
 
     process = await startProcess(command, options = options)
 
