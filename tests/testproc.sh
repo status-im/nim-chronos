@@ -15,6 +15,11 @@ elif [ "$1" == "bigdata" ]; then
   done
 elif [ "$1" == "envtest" ]; then
   echo "$CHRONOSASYNC"
+elif [ "$1" == "noterm" ]; then
+  trap -- '' SIGTERM
+  while true; do
+    sleep 1
+  done
 else
   echo "arguments missing"
 fi

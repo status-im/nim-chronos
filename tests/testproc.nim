@@ -407,6 +407,47 @@ suite "Asynchronous process management test suite":
     finally:
       await process.closeWait()
 
+  asyncTest "killAndWaitForExit() test":
+    let command =
+      when defined(windows):
+        ("tests\\testproc.bat", "timeout10", 0)
+      else:
+        ("tests/testproc.sh", "timeout10", 137) # 128 + SIGKILL
+    let process = await startProcess(command[0], arguments = @[command[1]])
+    try:
+      let exitCode = await process.killAndWaitForExit(10.seconds)
+      check exitCode == command[2]
+    finally:
+      await process.closeWait()
+
+  asyncTest "terminateAndWaitForExit() test":
+    let command =
+      when defined(windows):
+        ("tests\\testproc.bat", "timeout10", 0)
+      else:
+        ("tests/testproc.sh", "timeout10", 137) # 128 + SIGKILL
+    let process = await startProcess(command[0], arguments = @[command[1]])
+    try:
+      let exitCode = await process.terminateAndWaitForExit(10.seconds)
+      check exitCode == command[2]
+    finally:
+      await process.closeWait()
+
+  asyncTest "terminateAndWaitForExit() timeout test":
+    when defined(windows):
+      skip()
+    else:
+      let command =
+        ("tests/testproc.sh", "noterm", 137) # 128 + SIGKILL
+      try:
+        expect AsyncProcessTimeoutError:
+          let exitCode {.used.} = process.terminateAndWaitForExit(1.seconds)
+
+        let exitCode = process.killAndWaitForExit(10.seconds)
+        check exitCode == command[2]
+      finally:
+        await process.closeWait()
+
   test "File descriptors leaks test":
     when defined(windows):
       skip()
