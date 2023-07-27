@@ -440,15 +440,14 @@ suite "Asynchronous process management test suite":
       let
         command = ("tests/testproc.sh", "noterm", 128 + int(SIGKILL))
         process = await startProcess(command[0], arguments = @[command[1]])
-        # We should wait here to allow `bash` execute `trap` command, otherwise
-        # our test script will be killed with SIGTERM. Increase this timeout
-        # if test become flaky.
-        await sleepAsync(1.seconds)
+      # We should wait here to allow `bash` execute `trap` command, otherwise
+      # our test script will be killed with SIGTERM. Increase this timeout
+      # if test become flaky.
+      await sleepAsync(1.seconds)
       try:
         expect AsyncProcessTimeoutError:
           let exitCode {.used.} =
             await process.terminateAndWaitForExit(1.seconds)
-
         let exitCode = await process.killAndWaitForExit(10.seconds)
         check exitCode == command[2]
       finally:
