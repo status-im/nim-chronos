@@ -96,7 +96,11 @@ suite "Asynchronous process management test suite":
 
     let
       options = {AsyncProcessOption.EvalCommand}
-      command = "exit 1"
+      command =
+        when defined(windows):
+          "tests\\testproc.bat timeout1"
+        else:
+          "tests/testproc.sh timeout1"
 
     process = await startProcess(command, options = options)
 
@@ -406,6 +410,52 @@ suite "Asynchronous process management test suite":
       check res == command[2]
     finally:
       await process.closeWait()
+
+  asyncTest "killAndWaitForExit() test":
+    let command =
+      when defined(windows):
+        ("tests\\testproc.bat", "timeout10", 0)
+      else:
+        ("tests/testproc.sh", "timeout10", 128 + int(SIGKILL))
+    let process = await startProcess(command[0], arguments = @[command[1]])
+    try:
+      let exitCode = await process.killAndWaitForExit(10.seconds)
+      check exitCode == command[2]
+    finally:
+      await process.closeWait()
+
+  asyncTest "terminateAndWaitForExit() test":
+    let command =
+      when defined(windows):
+        ("tests\\testproc.bat", "timeout10", 0)
+      else:
+        ("tests/testproc.sh", "timeout10", 128 + int(SIGTERM))
+    let process = await startProcess(command[0], arguments = @[command[1]])
+    try:
+      let exitCode = await process.terminateAndWaitForExit(10.seconds)
+      check exitCode == command[2]
+    finally:
+      await process.closeWait()
+
+  asyncTest "terminateAndWaitForExit() timeout test":
+    when defined(windows):
+      skip()
+    else:
+      let
+        command = ("tests/testproc.sh", "noterm", 128 + int(SIGKILL))
+        process = await startProcess(command[0], arguments = @[command[1]])
+      # We should wait here to allow `bash` execute `trap` command, otherwise
+      # our test script will be killed with SIGTERM. Increase this timeout
+      # if test become flaky.
+      await sleepAsync(1.seconds)
+      try:
+        expect AsyncProcessTimeoutError:
+          let exitCode {.used.} =
+            await process.terminateAndWaitForExit(1.seconds)
+        let exitCode = await process.killAndWaitForExit(10.seconds)
+        check exitCode == command[2]
+      finally:
+        await process.closeWait()
 
   test "File descriptors leaks test":
     when defined(windows):
