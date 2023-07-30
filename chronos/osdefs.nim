@@ -708,7 +708,7 @@ when defined(windows):
                     res: var ptr AddrInfo): cint {.
        stdcall, dynlib: "ws2_32", importc: "getaddrinfo", sideEffect.}
 
-  proc freeaddrinfo*(ai: ptr AddrInfo) {.
+  proc freeAddrInfo*(ai: ptr AddrInfo) {.
        stdcall, dynlib: "ws2_32", importc: "freeaddrinfo", sideEffect.}
 
   proc createIoCompletionPort*(fileHandle: HANDLE,
