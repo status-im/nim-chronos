@@ -108,6 +108,7 @@ type
     remoteHostname*: string
     flags*: set[HttpClientConnectionFlag]
     timestamp*: Moment
+    duration*: Duration
 
   HttpClientConnectionRef* = ref HttpClientConnection
 
@@ -232,6 +233,12 @@ template setDuration(
     let timestamp = Moment.now()
     reqresp.duration = timestamp - reqresp.timestamp
     reqresp.connection.setTimestamp(timestamp)
+
+template setDuration(conn: HttpClientConnectionRef): untyped =
+  if not(isNil(conn)):
+    let timestamp = Moment.now()
+    conn.duration = timestamp - conn.timestamp
+    conn.setTimestamp(timestamp)
 
 template isReady(conn: HttpClientConnectionRef): bool =
   (conn.state == HttpClientConnectionState.Ready) and
@@ -596,9 +603,9 @@ proc acquireConnection(
      ): Future[HttpClientConnectionRef] {.async.} =
   ## Obtain connection from ``session`` or establish a new one.
   var default: seq[HttpClientConnectionRef]
+  let timestamp = Moment.now()
   if session.connectionPoolEnabled(flags):
     # Trying to reuse existing connection from our connection's pool.
-    let timestamp = Moment.now()
     # We looking for non-idle connection at `Ready` state, all idle connections
     # will be freed by sessionWatcher().
     for connection in session.connections.getOrDefault(ha.id):
@@ -615,6 +622,8 @@ proc acquireConnection(
   connection.state = HttpClientConnectionState.Acquired
   session.connections.mgetOrPut(ha.id, default).add(connection)
   inc(session.connectionsCount)
+  connection.setTimestamp(timestamp)
+  connection.setDuration()
   return connection
 
 proc releaseConnection(session: HttpSessionRef,
