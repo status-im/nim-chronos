@@ -708,7 +708,7 @@ when defined(windows):
                     res: var ptr AddrInfo): cint {.
        stdcall, dynlib: "ws2_32", importc: "getaddrinfo", sideEffect.}
 
-  proc freeaddrinfo*(ai: ptr AddrInfo) {.
+  proc freeAddrInfo*(ai: ptr AddrInfo) {.
        stdcall, dynlib: "ws2_32", importc: "freeaddrinfo", sideEffect.}
 
   proc createIoCompletionPort*(fileHandle: HANDLE,
@@ -880,7 +880,7 @@ elif defined(macos) or defined(macosx):
                         sigemptyset, sigaddset, sigismember, fcntl, accept,
                         pipe, write, signal, read, setsockopt, getsockopt,
                         getcwd, chdir, waitpid, kill, select, pselect,
-                        socketpair,
+                        socketpair, freeAddrInfo,
                         Timeval, Timespec, Pid, Mode, Time, Sigset, SockAddr,
                         SockLen, Sockaddr_storage, Sockaddr_in, Sockaddr_in6,
                         Sockaddr_un, SocketHandle, AddrInfo, RLimit, TFdSet,
@@ -905,7 +905,7 @@ elif defined(macos) or defined(macosx):
          sigemptyset, sigaddset, sigismember, fcntl, accept,
          pipe, write, signal, read, setsockopt, getsockopt,
          getcwd, chdir, waitpid, kill, select, pselect,
-         socketpair,
+         socketpair, freeAddrInfo,
          Timeval, Timespec, Pid, Mode, Time, Sigset, SockAddr,
          SockLen, Sockaddr_storage, Sockaddr_in, Sockaddr_in6,
          Sockaddr_un, SocketHandle, AddrInfo, RLimit, TFdSet,
@@ -947,7 +947,7 @@ elif defined(linux):
                         unlink, listen, sendmsg, recvmsg, getpid, fcntl,
                         pthread_sigmask, sigprocmask, clock_gettime, signal,
                         getcwd, chdir, waitpid, kill, select, pselect,
-                        socketpair,
+                        socketpair, freeAddrInfo,
                         ClockId, Itimerspec, Timespec, Sigset, Time, Pid, Mode,
                         SigInfo, Id, Tmsghdr, IOVec, RLimit, Timeval, TFdSet,
                         SockAddr, SockLen, Sockaddr_storage, Sockaddr_in,
@@ -974,7 +974,7 @@ elif defined(linux):
          unlink, listen, sendmsg, recvmsg, getpid, fcntl,
          pthread_sigmask, sigprocmask, clock_gettime, signal,
          getcwd, chdir, waitpid, kill, select, pselect,
-         socketpair,
+         socketpair, freeAddrInfo,
          ClockId, Itimerspec, Timespec, Sigset, Time, Pid, Mode,
          SigInfo, Id, Tmsghdr, IOVec, RLimit, TFdSet, Timeval,
          SockAddr, SockLen, Sockaddr_storage, Sockaddr_in,
@@ -1097,7 +1097,7 @@ elif defined(freebsd) or defined(openbsd) or defined(netbsd) or
                         sigaddset, sigismember, fcntl, accept, pipe, write,
                         signal, read, setsockopt, getsockopt, clock_gettime,
                         getcwd, chdir, waitpid, kill, select, pselect,
-                        socketpair,
+                        socketpair, freeAddrInfo,
                         Timeval, Timespec, Pid, Mode, Time, Sigset, SockAddr,
                         SockLen, Sockaddr_storage, Sockaddr_in, Sockaddr_in6,
                         Sockaddr_un, SocketHandle, AddrInfo, RLimit, TFdSet,
@@ -1123,7 +1123,7 @@ elif defined(freebsd) or defined(openbsd) or defined(netbsd) or
          sigaddset, sigismember, fcntl, accept, pipe, write,
          signal, read, setsockopt, getsockopt, clock_gettime,
          getcwd, chdir, waitpid, kill, select, pselect,
-         socketpair,
+         socketpair, freeAddrInfo,
          Timeval, Timespec, Pid, Mode, Time, Sigset, SockAddr,
          SockLen, Sockaddr_storage, Sockaddr_in, Sockaddr_in6,
          Sockaddr_un, SocketHandle, AddrInfo, RLimit, TFdSet,
