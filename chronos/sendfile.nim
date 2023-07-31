@@ -41,7 +41,7 @@ when defined(nimdoc):
 elif defined(emscripten):
 
   proc sendfile*(outfd, infd: int, offset: int, count: var int): int =
-    discard
+    raiseAssert "sendfile() is not implemented yet"
 
 elif (defined(linux) or defined(android)) and not(defined(emscripten)):
 
