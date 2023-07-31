@@ -90,7 +90,7 @@ proc new*(htype: typedesc[SecureHttpServerRef],
           secureFlags: set[TLSFlags] = {},
           maxConnections: int = -1,
           bufferSize: int = 4096,
-          backlogSize: int = 100,
+          backlogSize: int = DefaultBacklogSize,
           httpHeadersTimeout = 10.seconds,
           maxHeadersSize: int = 8192,
           maxRequestBodySize: int = 1_048_576

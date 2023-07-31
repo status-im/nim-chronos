@@ -61,6 +61,7 @@ type
 const
   StreamTransportTrackerName* = "stream.transport"
   StreamServerTrackerName* = "stream.server"
+  DefaultBacklogSize* = high(int32)
 
 when defined(windows):
   type
@@ -1819,11 +1820,32 @@ proc closeWait*(server: StreamServer): Future[void] =
   server.close()
   server.join()
 
+proc getBacklogSize(backlog: int): cint =
+  doAssert(backlog >= 0 and backlog <= high(int32))
+  when defined(windows):
+    # The maximum length of the queue of pending connections. If set to
+    # SOMAXCONN, the underlying service provider responsible for
+    # socket s will set the backlog to a maximum reasonable value. If set to
+    # SOMAXCONN_HINT(N) (where N is a number), the backlog value will be N,
+    # adjusted to be within the range (200, 65535). Note that SOMAXCONN_HINT
+    # can be used to set the backlog to a larger value than possible with
+    # SOMAXCONN.
+    #
+    # Microsoft SDK values are
+    # #define SOMAXCONN       0x7fffffff
+    # #define SOMAXCONN_HINT(b) (-(b))
+    if backlog != high(int32):
+      cint(-backlog)
+    else:
+      cint(backlog)
+  else:
+    cint(backlog)
+
 proc createStreamServer*(host: TransportAddress,
                          cbproc: StreamCallback,
                          flags: set[ServerFlags] = {},
                          sock: AsyncFD = asyncInvalidSocket,
-                         backlog: int = 100,
+                         backlog: int = DefaultBacklogSize,
                          bufferSize: int = DefaultStreamBufferSize,
                          child: StreamServer = nil,
                          init: TransportInitCallback = nil,
@@ -1906,7 +1928,7 @@ proc createStreamServer*(host: TransportAddress,
         raiseTransportOsError(err)
       fromSAddr(addr saddr, slen, localAddress)
 
-      if listen(SocketHandle(serverSocket), cint(backlog)) != 0:
+      if listen(SocketHandle(serverSocket), getBacklogSize(backlog)) != 0:
         let err = osLastError()
         if sock == asyncInvalidSocket:
           discard closeFd(SocketHandle(serverSocket))
@@ -1980,7 +2002,7 @@ proc createStreamServer*(host: TransportAddress,
       raiseTransportOsError(err)
     fromSAddr(addr saddr, slen, localAddress)
 
-    if listen(SocketHandle(serverSocket), cint(backlog)) != 0:
+    if listen(SocketHandle(serverSocket), getBacklogSize(backlog)) != 0:
       let err = osLastError()
       if sock == asyncInvalidSocket:
         discard unregisterAndCloseFd(serverSocket)
@@ -2031,7 +2053,7 @@ proc createStreamServer*(host: TransportAddress,
 proc createStreamServer*(host: TransportAddress,
                          flags: set[ServerFlags] = {},
                          sock: AsyncFD = asyncInvalidSocket,
-                         backlog: int = 100,
+                         backlog: int = DefaultBacklogSize,
                          bufferSize: int = DefaultStreamBufferSize,
                          child: StreamServer = nil,
                          init: TransportInitCallback = nil,
@@ -2045,7 +2067,7 @@ proc createStreamServer*[T](host: TransportAddress,
                             flags: set[ServerFlags] = {},
                             udata: ref T,
                             sock: AsyncFD = asyncInvalidSocket,
-                            backlog: int = 100,
+                            backlog: int = DefaultBacklogSize,
                             bufferSize: int = DefaultStreamBufferSize,
                             child: StreamServer = nil,
                             init: TransportInitCallback = nil): StreamServer {.
@@ -2059,7 +2081,7 @@ proc createStreamServer*[T](host: TransportAddress,
                             flags: set[ServerFlags] = {},
                             udata: ref T,
                             sock: AsyncFD = asyncInvalidSocket,
-                            backlog: int = 100,
+                            backlog: int = DefaultBacklogSize,
                             bufferSize: int = DefaultStreamBufferSize,
                             child: StreamServer = nil,
                             init: TransportInitCallback = nil): StreamServer {.
