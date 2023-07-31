@@ -93,12 +93,14 @@ else:
     chronosEventsCount*: int = 64
     chronosInitialSize*: int = 64
     chronosEventEngine* {.strdefine.}: string =
-      when defined(linux):
+      when defined(linux) and not(defined(android) or defined(emscripten)):
         "epoll"
       elif defined(macosx) or defined(macos) or defined(ios) or
            defined(freebsd) or defined(netbsd) or defined(openbsd) or
            defined(dragonfly):
         "kqueue"
+      elif defined(android) or defined(emscripten):
+        "poll"
       elif defined(posix):
         "poll"
       else:
