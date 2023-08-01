@@ -1339,7 +1339,10 @@ suite "Stream Transport test suite":
         else:
           skip()
       else:
-        check waitFor(testSendFile(addresses[i])) == FilesCount
+        if defined(emscripten):
+          skip()
+        else:
+          check waitFor(testSendFile(addresses[i])) == FilesCount
     test prefixes[i] & "Connection refused test":
       var address: TransportAddress
       if addresses[i].family == AddressFamily.Unix:

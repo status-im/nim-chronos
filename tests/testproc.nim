@@ -8,6 +8,7 @@
 import std/os
 import stew/[base10, byteutils]
 import ".."/chronos/unittest2/asynctests
+import ".."/chronos/asyncproc
 
 when defined(posix):
   from ".."/chronos/osdefs import SIGKILL

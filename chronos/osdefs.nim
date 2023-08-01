@@ -880,7 +880,7 @@ elif defined(macos) or defined(macosx):
                         sigemptyset, sigaddset, sigismember, fcntl, accept,
                         pipe, write, signal, read, setsockopt, getsockopt,
                         getcwd, chdir, waitpid, kill, select, pselect,
-                        socketpair, freeAddrInfo,
+                        socketpair, poll, freeAddrInfo,
                         Timeval, Timespec, Pid, Mode, Time, Sigset, SockAddr,
                         SockLen, Sockaddr_storage, Sockaddr_in, Sockaddr_in6,
                         Sockaddr_un, SocketHandle, AddrInfo, RLimit, TFdSet,
@@ -905,7 +905,7 @@ elif defined(macos) or defined(macosx):
          sigemptyset, sigaddset, sigismember, fcntl, accept,
          pipe, write, signal, read, setsockopt, getsockopt,
          getcwd, chdir, waitpid, kill, select, pselect,
-         socketpair, freeAddrInfo,
+         socketpair, poll, freeAddrInfo,
          Timeval, Timespec, Pid, Mode, Time, Sigset, SockAddr,
          SockLen, Sockaddr_storage, Sockaddr_in, Sockaddr_in6,
          Sockaddr_un, SocketHandle, AddrInfo, RLimit, TFdSet,
@@ -929,6 +929,21 @@ elif defined(macos) or defined(macosx):
       numer*: uint32
       denom*: uint32
 
+    TPollfd* {.importc: "struct pollfd", pure, final,
+               header: "<poll.h>".} = object
+      fd*: cint
+      events*: cshort
+      revents*: cshort
+
+    Tnfds* {.importc: "nfds_t", header: "<poll.h>".} = cuint
+
+  const
+    POLLIN* = 0x0001
+    POLLOUT* = 0x0004
+    POLLERR* = 0x0008
+    POLLHUP* = 0x0010
+    POLLNVAL* = 0x0020
+
   proc posix_gettimeofday*(tp: var Timeval, unused: pointer = nil) {.
        importc: "gettimeofday", header: "<sys/time.h>".}
 
@@ -937,6 +952,9 @@ elif defined(macos) or defined(macosx):
 
   proc mach_absolute_time*(): uint64 {.
        importc, header: "<mach/mach_time.h>".}
+
+  proc poll*(a1: ptr TPollfd, a2: Tnfds, a3: cint): cint {.
+       importc, header: "<poll.h>", sideEffect.}
 
 elif defined(linux):
   from std/posix import close, shutdown, sigemptyset, sigaddset, sigismember,
@@ -947,12 +965,12 @@ elif defined(linux):
                         unlink, listen, sendmsg, recvmsg, getpid, fcntl,
                         pthread_sigmask, sigprocmask, clock_gettime, signal,
                         getcwd, chdir, waitpid, kill, select, pselect,
-                        socketpair, freeAddrInfo,
+                        socketpair, poll, freeAddrInfo,
                         ClockId, Itimerspec, Timespec, Sigset, Time, Pid, Mode,
                         SigInfo, Id, Tmsghdr, IOVec, RLimit, Timeval, TFdSet,
                         SockAddr, SockLen, Sockaddr_storage, Sockaddr_in,
                         Sockaddr_in6, Sockaddr_un, AddrInfo, SocketHandle,
-                        Suseconds,
+                        Suseconds, TPollfd, Tnfds,
                         FD_CLR, FD_ISSET, FD_SET, FD_ZERO,
                         CLOCK_MONOTONIC, F_GETFL, F_SETFL, F_GETFD, F_SETFD,
                         FD_CLOEXEC, O_NONBLOCK, SIG_BLOCK, SIG_UNBLOCK,
@@ -961,6 +979,7 @@ elif defined(linux):
                         AF_INET, AF_INET6, AF_UNIX, SO_REUSEADDR, SO_REUSEPORT,
                         SO_BROADCAST, IPPROTO_IP, IPV6_MULTICAST_HOPS,
                         SOCK_DGRAM, SOCK_STREAM, SHUT_RD, SHUT_WR, SHUT_RDWR,
+                        POLLIN, POLLOUT, POLLERR, POLLHUP, POLLNVAL,
                         SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
                         SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV, SIGUSR2,
                         SIGPIPE, SIGALRM, SIGTERM, SIGPIPE, SIGCHLD, SIGSTOP,
@@ -974,12 +993,12 @@ elif defined(linux):
          unlink, listen, sendmsg, recvmsg, getpid, fcntl,
          pthread_sigmask, sigprocmask, clock_gettime, signal,
          getcwd, chdir, waitpid, kill, select, pselect,
-         socketpair, freeAddrInfo,
+         socketpair, poll, freeAddrInfo,
          ClockId, Itimerspec, Timespec, Sigset, Time, Pid, Mode,
          SigInfo, Id, Tmsghdr, IOVec, RLimit, TFdSet, Timeval,
          SockAddr, SockLen, Sockaddr_storage, Sockaddr_in,
          Sockaddr_in6, Sockaddr_un, AddrInfo, SocketHandle,
-         Suseconds,
+         Suseconds, TPollfd, Tnfds,
          FD_CLR, FD_ISSET, FD_SET, FD_ZERO,
          CLOCK_MONOTONIC, F_GETFL, F_SETFL, F_GETFD, F_SETFD,
          FD_CLOEXEC, O_NONBLOCK, SIG_BLOCK, SIG_UNBLOCK,
@@ -988,6 +1007,7 @@ elif defined(linux):
          AF_INET, AF_INET6, AF_UNIX, SO_REUSEADDR, SO_REUSEPORT,
          SO_BROADCAST, IPPROTO_IP, IPV6_MULTICAST_HOPS,
          SOCK_DGRAM, SOCK_STREAM, SHUT_RD, SHUT_WR, SHUT_RDWR,
+         POLLIN, POLLOUT, POLLERR, POLLHUP, POLLNVAL,
          SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
          SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV, SIGUSR2,
          SIGPIPE, SIGALRM, SIGTERM, SIGPIPE, SIGCHLD, SIGSTOP,
@@ -1097,11 +1117,11 @@ elif defined(freebsd) or defined(openbsd) or defined(netbsd) or
                         sigaddset, sigismember, fcntl, accept, pipe, write,
                         signal, read, setsockopt, getsockopt, clock_gettime,
                         getcwd, chdir, waitpid, kill, select, pselect,
-                        socketpair, freeAddrInfo,
+                        socketpair, poll, freeAddrInfo,
                         Timeval, Timespec, Pid, Mode, Time, Sigset, SockAddr,
                         SockLen, Sockaddr_storage, Sockaddr_in, Sockaddr_in6,
                         Sockaddr_un, SocketHandle, AddrInfo, RLimit, TFdSet,
-                        Suseconds,
+                        Suseconds, TPollfd, Tnfds,
                         FD_CLR, FD_ISSET, FD_SET, FD_ZERO,
                         F_GETFL, F_SETFL, F_GETFD, F_SETFD, FD_CLOEXEC,
                         O_NONBLOCK, SOL_SOCKET, SOCK_RAW, SOCK_DGRAM,
@@ -1111,6 +1131,7 @@ elif defined(freebsd) or defined(openbsd) or defined(netbsd) or
                         IPV6_MULTICAST_HOPS, SOCK_DGRAM, RLIMIT_NOFILE,
                         SIG_BLOCK, SIG_UNBLOCK, CLOCK_MONOTONIC,
                         SHUT_RD, SHUT_WR, SHUT_RDWR,
+                        POLLIN, POLLOUT, POLLERR, POLLHUP, POLLNVAL,
                         SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
                         SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV, SIGUSR2,
                         SIGPIPE, SIGALRM, SIGTERM, SIGPIPE, SIGCHLD, SIGSTOP,
@@ -1123,11 +1144,11 @@ elif defined(freebsd) or defined(openbsd) or defined(netbsd) or
          sigaddset, sigismember, fcntl, accept, pipe, write,
          signal, read, setsockopt, getsockopt, clock_gettime,
          getcwd, chdir, waitpid, kill, select, pselect,
-         socketpair, freeAddrInfo,
+         socketpair, poll, freeAddrInfo,
          Timeval, Timespec, Pid, Mode, Time, Sigset, SockAddr,
          SockLen, Sockaddr_storage, Sockaddr_in, Sockaddr_in6,
          Sockaddr_un, SocketHandle, AddrInfo, RLimit, TFdSet,
-         Suseconds,
+         Suseconds, TPollfd, Tnfds,
          FD_CLR, FD_ISSET, FD_SET, FD_ZERO,
          F_GETFL, F_SETFL, F_GETFD, F_SETFD, FD_CLOEXEC,
          O_NONBLOCK, SOL_SOCKET, SOCK_RAW, SOCK_DGRAM,
@@ -1137,6 +1158,7 @@ elif defined(freebsd) or defined(openbsd) or defined(netbsd) or
          IPV6_MULTICAST_HOPS, SOCK_DGRAM, RLIMIT_NOFILE,
          SIG_BLOCK, SIG_UNBLOCK, CLOCK_MONOTONIC,
          SHUT_RD, SHUT_WR, SHUT_RDWR,
+         POLLIN, POLLOUT, POLLERR, POLLHUP, POLLNVAL,
          SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
          SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV, SIGUSR2,
          SIGPIPE, SIGALRM, SIGTERM, SIGPIPE, SIGCHLD, SIGSTOP,
