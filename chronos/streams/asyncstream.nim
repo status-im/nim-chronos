@@ -873,10 +873,10 @@ proc join*(rw: AsyncStreamRW): Future[void] =
   else:
     var retFuture = newFuture[void]("async.stream.writer.join")
 
-  proc continuation(udata: pointer) {.gcsafe.} =
+  proc continuation(udata: pointer) {.gcsafe, raises:[].} =
     retFuture.complete()
 
-  proc cancellation(udata: pointer) {.gcsafe.} =
+  proc cancellation(udata: pointer) {.gcsafe, raises:[].} =
     rw.future.removeCallback(continuation, cast[pointer](retFuture))
 
   if not(rw.future.finished()):
