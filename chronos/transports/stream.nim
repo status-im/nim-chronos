@@ -1475,14 +1475,13 @@ else:
     var
       saddr: Sockaddr_storage
       slen: SockLen
-      proto: Protocol
     var retFuture = newFuture[StreamTransport]("stream.transport.connect")
     address.toSAddr(saddr, slen)
-    proto = Protocol.IPPROTO_TCP
-    if address.family == AddressFamily.Unix:
-      # `Protocol` enum is missing `0` value, so we making here cast, until
-      # `Protocol` enum will not support IPPROTO_IP == 0.
-      proto = cast[Protocol](0)
+    let proto =
+      if address.family == AddressFamily.Unix:
+        Protocol.IPPROTO_IP
+      else:
+        Protocol.IPPROTO_TCP
 
     let sock = createAsyncSocket(address.getDomain(), SockType.SOCK_STREAM,
                                  proto)
@@ -1938,11 +1937,10 @@ proc createStreamServer*(host: TransportAddress,
   else:
     # Posix
     if sock == asyncInvalidSocket:
-      var proto = Protocol.IPPROTO_TCP
-      if host.family == AddressFamily.Unix:
-        # `Protocol` enum is missing `0` value, so we making here cast, until
-        # `Protocol` enum will not support IPPROTO_IP == 0.
-        proto = cast[Protocol](0)
+      let proto = if host.family == AddressFamily.Unix:
+        Protocol.IPPROTO_IP
+      else:
+        Protocol.IPPROTO_TCP
       serverSocket = createAsyncSocket(host.getDomain(),
                                        SockType.SOCK_STREAM,
                                        proto)

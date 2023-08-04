@@ -466,11 +466,11 @@ else:
     var res = if isNil(child): DatagramTransport() else: child
 
     if sock == asyncInvalidSocket:
-      var proto = Protocol.IPPROTO_UDP
-      if local.family == AddressFamily.Unix:
-        # `Protocol` enum is missing `0` value, so we making here cast, until
-        # `Protocol` enum will not support IPPROTO_IP == 0.
-        proto = cast[Protocol](0)
+      let proto =
+        if local.family == AddressFamily.Unix:
+          Protocol.IPPROTO_IP
+        else:
+          Protocol.IPPROTO_UDP
       localSock = createAsyncSocket(local.getDomain(), SockType.SOCK_DGRAM,
                                     proto)
       if localSock == asyncInvalidSocket:
