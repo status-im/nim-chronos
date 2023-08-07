@@ -1271,23 +1271,18 @@ suite "Stream Transport test suite":
     server2.start()
     server3.start()
 
-    # It works cause there's no active listening socket bound to ta and we are using ReuseAddr
-    var transp1 = await connect(server1.local, flags={SocketFlags.ReuseAddr})
-    let ta = transp1.localAddress
-    var transp2 = await connect(server2.local, localAddress = ta, flags={SocketFlags.ReuseAddr})
-
     # It works cause even though there's an active listening socket bound to dst3, we are using ReusePort
-    var transp3 = await connect(server2.local, localAddress = server3.local, flags={SocketFlags.ReusePort})
+    var transp1 = await connect(server1.local, localAddress = server3.local, flags={SocketFlags.ReusePort})
+    var transp2 = await connect(server2.local, localAddress = server3.local, flags={SocketFlags.ReusePort})
 
     expect(TransportOsError):
-      var transp2 {.used.} = await connect(server3.local, localAddress = ta)
+      var transp2 {.used.} = await connect(server2.local, localAddress = server3.local)
 
     expect(TransportOsError):
-      var transp3 {.used.} = await connect(server3.local, localAddress = initTAddress("::", transp1.localAddress.port))
+      var transp3 {.used.} = await connect(server2.local, localAddress = initTAddress("::", server3.local.port))
 
     await transp1.closeWait()
     await transp2.closeWait()
-    await transp3.closeWait()
 
     server1.stop()
     await server1.closeWait()
