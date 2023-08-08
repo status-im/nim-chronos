@@ -15,7 +15,7 @@ import std/[tables, strutils, heapqueue, deques]
 import stew/results
 import "."/[config, futures, osdefs, oserrno, osutils, timer]
 
-when defined(chronosEnableCallbackDurationMetric):
+when chronosEnableCallbackDurationMetric:
   import std/monotimes
   import pkg/metrics
 
@@ -266,12 +266,12 @@ template processCallbacks(loop: untyped) =
     if isSentinel(callable):
       break
     if not(isNil(callable.function)):
-      when defined(chronosEnableCallbackDurationMetric):
+      when chronosEnableCallbackDurationMetric:
         let startTime = getMonoTime().ticks
 
       callable.function(callable.udata)
 
-      when defined(chronosEnableCallbackDurationMetric):
+      when chronosEnableCallbackDurationMetric:
         let durationUs = (getMonoTime().ticks - startTime) div 1000
         chronosCallbackDuration.set(durationNs)
 
