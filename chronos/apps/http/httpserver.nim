@@ -1010,8 +1010,6 @@ proc getConnectionFence*(server: HttpServerRef,
 proc processRequest(server: HttpServerRef,
                     connection: HttpConnectionRef,
                     connId: string): Future[HttpProcessExitType] {.async.} =
-  # This procedure is cancellation-safe all the ancestors transforming
-  # CancelledError into appropriate error code.
   let requestFence = await getRequestFence(server, connection)
   if requestFence.isErr():
     case requestFence.error.kind
@@ -1060,12 +1058,17 @@ proc processLoop(holder: HttpConnectionHolderRef) {.async.} =
 
   var runLoop = HttpProcessExitType.KeepAlive
   while runLoop == HttpProcessExitType.KeepAlive:
-    runLoop = await server.processRequest(connection, connectionId)
+    runLoop =
+      try:
+        await server.processRequest(connection, connectionId)
+      except CancelledError:
+        HttpProcessExitType.Immediate
+      except CatchableError as exc:
+        raiseAssert "Unexpected error [" & exc.name & "] happens: " & exc.msg
 
   server.connections.del(connectionId)
   case runLoop
   of HttpProcessExitType.KeepAlive:
-    # This could happened only on CancelledError.
     await connection.closeWait()
   of HttpProcessExitType.Immediate:
     await connection.closeWait()
