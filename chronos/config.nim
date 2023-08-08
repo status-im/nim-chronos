@@ -70,7 +70,7 @@ when (NimMajor, NimMinor) >= (1, 4):
         ""
       ## OS polling engine type which is going to be used by chronos.
 
-    chronosEnableCallbackDurationMetric {.booldefine.} = false
+    chronosEnableCallbackDurationMetric* {.booldefine.} = defined(chronosEnableCallbackDurationMetric)
       ## At the cost of some performance, produce a 'chronosCallbackDuration' metric.
       ## Useful for detecting application stalling/blocking.
 

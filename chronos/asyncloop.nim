@@ -15,7 +15,7 @@ import std/[tables, strutils, heapqueue, deques]
 import stew/results
 import "."/[config, futures, osdefs, oserrno, osutils, timer]
 
-when defined(chronosEnableCallbackDurationMetric):
+when chronosEnableCallbackDurationMetric:
   import std/monotimes
   import pkg/metrics
 
@@ -266,14 +266,14 @@ template processCallbacks(loop: untyped) =
     if isSentinel(callable):
       break
     if not(isNil(callable.function)):
-      when defined(chronosEnableCallbackDurationMetric):
+      when chronosEnableCallbackDurationMetric:
         let startTime = getMonoTime().ticks
 
       callable.function(callable.udata)
 
-      when defined(chronosEnableCallbackDurationMetric):
+      when chronosEnableCallbackDurationMetric:
         let durationUs = (getMonoTime().ticks - startTime) div 1000
-        chronosCallbackDuration.set(durationNs)
+        chronosCallbackDuration.set(durationUs)
 
 proc raiseAsDefect*(exc: ref Exception, msg: string) {.noreturn, noinline.} =
   # Reraise an exception as a Defect, where it's unexpected and can't be handled
