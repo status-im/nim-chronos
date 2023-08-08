@@ -197,3 +197,7 @@ proc toList*(ht: HttpTables, normKey = false): auto =
   for key, value in ht.stringItems(normKey):
     res.add((key, value))
   res
+
+proc clear*(ht: var HttpTables) =
+  ## Resets the HtppTable so that it is empty.
+  ht.table.clear()

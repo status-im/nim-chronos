@@ -148,6 +148,7 @@ type
     writer*: AsyncStreamWriter
     closeCb*: HttpCloseConnectionCallback
     createMoment*: Moment
+    currentRawQuery*: Opt[string]
     buffer: seq[byte]
 
   HttpConnectionRef* = ref HttpConnection
@@ -801,6 +802,15 @@ proc init*(value: var HttpConnection, server: HttpServerRef,
     mainWriter: newAsyncStreamWriter(transp)
   )
 
+proc clean(connection: var HttpConnection) =
+  connection.transp = nil
+  connection.server = nil
+  connection.buffer = default(seq[byte])
+  connection.mainReader = nil
+  connection.mainWriter = nil
+  connection.reader = nil
+  connection.writer = nil
+
 proc closeUnsecureConnection(conn: HttpConnectionRef) {.async.} =
   if conn.state == HttpState.Alive:
     conn.state = HttpState.Closing
@@ -813,6 +823,7 @@ proc closeUnsecureConnection(conn: HttpConnectionRef) {.async.} =
     except CancelledError:
       await allFutures(pending)
     untrackCounter(HttpServerUnsecureConnectionTrackerName)
+    conn[].clean()
     conn.state = HttpState.Closed
 
 proc new(ht: typedesc[HttpConnectionRef], server: HttpServerRef,
@@ -833,6 +844,25 @@ proc gracefulCloseWait*(conn: HttpConnectionRef) {.async.} =
 proc closeWait*(conn: HttpConnectionRef): Future[void] =
   conn.closeCb(conn)
 
+proc clean(response: HttpResponseRef) =
+  response.writer = nil
+  response.connection = nil
+  response.body = default(seq[byte])
+  response.headersTable.clear()
+
+proc clean(request: HttpRequestRef) =
+  request.connection = nil
+  request.headers.clear()
+  request.query.clear()
+  if request.postTable.isSome():
+    request.postTable = Opt.none(HttpTable)
+  request.rawPath = default(string)
+  request.uri = default(Uri)
+  if request.contentTypeData.isSome():
+    request.contentTypeData = Opt.none(ContentTypeData)
+  if request.response.isSome():
+    request.response = Opt.none(HttpResponseRef)
+
 proc closeWait*(req: HttpRequestRef) {.async.} =
   if req.state == HttpState.Alive:
     if req.response.isSome():
@@ -844,7 +874,9 @@ proc closeWait*(req: HttpRequestRef) {.async.} =
           await writer
         except CancelledError:
           await writer
+      resp.clean()
     untrackCounter(HttpServerRequestTrackerName)
+    req.clean()
     req.state = HttpState.Closed
 
 proc createConnection(server: HttpServerRef,
@@ -931,6 +963,7 @@ proc getRequestFence*(server: HttpServerRef,
         await connection.getRequest()
       else:
         await connection.getRequest().wait(server.headersTimeout)
+    connection.currentRawQuery = Opt.some(res.rawPath)
     RequestFence.ok(res)
   except CancelledError:
     RequestFence.err(HttpProcessError.init(HttpServerError.InterruptError))
@@ -962,17 +995,23 @@ proc getConnectionFence*(server: HttpServerRef,
     let res = await server.createConnCallback(server, transp)
     ConnectionFence.ok(res)
   except CancelledError:
-    await transp.closeWait()
     ConnectionFence.err(HttpProcessError.init(HttpServerError.InterruptError))
   except HttpCriticalError as exc:
-    await transp.closeWait()
-    let address = transp.getRemoteAddress()
+    # On error `transp` will be closed by `createConnCallback()` call.
+    let address = Opt.none(TransportAddress)
     ConnectionFence.err(HttpProcessError.init(
       HttpServerError.CriticalError, exc, address, exc.code))
+  except CatchableError as exc:
+    # On error `transp` will be closed by `createConnCallback()` call.
+    let address = Opt.none(TransportAddress)
+    ConnectionFence.err(HttpProcessError.init(
+      HttpServerError.CriticalError, exc, address, Http503))
 
 proc processRequest(server: HttpServerRef,
                     connection: HttpConnectionRef,
                     connId: string): Future[HttpProcessExitType] {.async.} =
+  # This procedure is cancellation-safe all the ancestors transforming
+  # CancelledError into appropriate error code.
   let requestFence = await getRequestFence(server, connection)
   if requestFence.isErr():
     case requestFence.error.kind
@@ -984,19 +1023,23 @@ proc processRequest(server: HttpServerRef,
     else:
       discard
 
-  defer:
-    if requestFence.isOk():
-      await requestFence.get().closeWait()
-
   let responseFence = await getResponseFence(connection, requestFence)
   if responseFence.isErr() and
      (responseFence.error.kind == HttpServerError.InterruptError):
+    if requestFence.isOk():
+      await requestFence.get().closeWait()
     return HttpProcessExitType.Immediate
 
-  if responseFence.isErr():
-    await connection.sendErrorResponse(requestFence, responseFence.error)
-  else:
-    await connection.sendDefaultResponse(requestFence, responseFence.get())
+  let res =
+    if responseFence.isErr():
+      await connection.sendErrorResponse(requestFence, responseFence.error)
+    else:
+      await connection.sendDefaultResponse(requestFence, responseFence.get())
+
+  if requestFence.isOk():
+    await requestFence.get().closeWait()
+
+  res
 
 proc processLoop(holder: HttpConnectionHolderRef) {.async.} =
   let
@@ -1016,20 +1059,18 @@ proc processLoop(holder: HttpConnectionHolderRef) {.async.} =
   holder.connection = connection
 
   var runLoop = HttpProcessExitType.KeepAlive
-
-  defer:
-    server.connections.del(connectionId)
-    case runLoop
-    of HttpProcessExitType.KeepAlive:
-      # This could happened only on CancelledError.
-      await connection.closeWait()
-    of HttpProcessExitType.Immediate:
-      await connection.closeWait()
-    of HttpProcessExitType.Graceful:
-      await connection.gracefulCloseWait()
-
   while runLoop == HttpProcessExitType.KeepAlive:
     runLoop = await server.processRequest(connection, connectionId)
+
+  server.connections.del(connectionId)
+  case runLoop
+  of HttpProcessExitType.KeepAlive:
+    # This could happened only on CancelledError.
+    await connection.closeWait()
+  of HttpProcessExitType.Immediate:
+    await connection.closeWait()
+  of HttpProcessExitType.Graceful:
+    await connection.gracefulCloseWait()
 
 proc acceptClientLoop(server: HttpServerRef) {.async.} =
   while true:
