@@ -15,6 +15,12 @@ import std/[tables, strutils, heapqueue, deques]
 import stew/results
 import "."/[config, futures, osdefs, oserrno, osutils, timer]
 
+when defined(chronosEnableCallbackDurationMetric):
+  import std/monotimes
+  import pkg/metrics
+
+  declareGauge(chronosCallbackDuration, "chronos callback duration")
+
 export Port
 export futures, timer, results
 
@@ -260,7 +266,14 @@ template processCallbacks(loop: untyped) =
     if isSentinel(callable):
       break
     if not(isNil(callable.function)):
+      when defined(chronosEnableCallbackDurationMetric):
+        let startTime = getMonoTime().ticks
+
       callable.function(callable.udata)
+
+      when defined(chronosEnableCallbackDurationMetric):
+        let durationUs = (getMonoTime().ticks - startTime) div 1000
+        chronosCallbackDuration.set(durationNs)
 
 proc raiseAsDefect*(exc: ref Exception, msg: string) {.noreturn, noinline.} =
   # Reraise an exception as a Defect, where it's unexpected and can't be handled

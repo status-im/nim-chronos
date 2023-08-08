@@ -70,6 +70,10 @@ when (NimMajor, NimMinor) >= (1, 4):
         ""
       ## OS polling engine type which is going to be used by chronos.
 
+    chronosEnableCallbackDurationMetric {.booldefine.} = false
+      ## At the cost of some performance, produce a 'chronosCallbackDuration' metric.
+      ## Useful for detecting application stalling/blocking.
+
 else:
   # 1.2 doesn't support `booldefine` in `when` properly
   const
