@@ -1073,7 +1073,8 @@ proc processLoop(holder: HttpConnectionHolderRef) {.async.} =
     await connection.gracefulCloseWait()
 
 proc acceptClientLoop(server: HttpServerRef) {.async.} =
-  while true:
+  var runLoop = true
+  while runLoop:
     try:
       # if server.maxConnections > 0:
       #   await server.semaphore.acquire()
@@ -1083,27 +1084,18 @@ proc acceptClientLoop(server: HttpServerRef) {.async.} =
         # We are unable to identify remote peer, it means that remote peer
         # disconnected before identification.
         await transp.closeWait()
-        break
+        runLoop = false
       else:
         let connId = resId.get()
         let holder = HttpConnectionHolderRef.new(server, transp, resId.get())
         server.connections[connId] = holder
         holder.future = processLoop(holder)
-    except CancelledError:
-      # Server was stopped
-      break
-    except TransportOsError:
-      # This is some critical unrecoverable error.
-      break
-    except TransportTooManyError:
-      # Non critical error
+    except TransportTooManyError, TransportAbortedError:
+      # Non-critical error
       discard
-    except TransportAbortedError:
-      # Non critical error
-      discard
-    except CatchableError:
-      # Unexpected error
-      break
+    except CancelledError, TransportOsError, CatchableError:
+      # Critical, cancellation or unexpected error
+      runLoop = false
 
 proc state*(server: HttpServerRef): HttpServerState {.raises: [].} =
   ## Returns current HTTP server's state.
