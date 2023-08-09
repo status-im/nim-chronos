@@ -19,6 +19,17 @@ when chronosStackTrace:
       reraisedFromBegin = -10
       reraisedFromEnd = -100
 
+when chronosClosureDurationMetric:
+  import std/tables
+  import timer
+
+  type
+    CallbackDurationMetric* = ref object
+      ## Holds average timing information for a given closure
+      closureLoc: ptr SrcLoc
+
+  var callbackDurations {.threadvar.}: TableRef[ptr SrcLoc, CallbackDurationMetric]
+
 template LocCreateIndex*: auto {.deprecated: "LocationKind.Create".} =
     LocationKind.Create
 template LocFinishIndex*: auto {.deprecated: "LocationKind.Finish".} =
@@ -48,6 +59,11 @@ template Finished*(T: type FutureState): FutureState {.deprecated: "Use FutureSt
 proc newFutureImpl[T](loc: ptr SrcLoc): Future[T] =
   let fut = Future[T]()
   internalInitFutureBase(fut, loc, FutureState.Pending)
+  when chronosClosureDurationMetric:
+    if callbackDurations == nil:
+      callbackDurations = newTable[ptr SrcLoc, CallbackDurationMetric]()
+    discard callbackDurations.hasKeyOrPut(fut.location[Create], CallbackDurationMetric())
+
   fut
 
 proc newFutureSeqImpl[A, B](loc: ptr SrcLoc): FutureSeq[A, B] =
@@ -303,12 +319,8 @@ proc internalContinue(fut: pointer) {.raises: [], gcsafe.} =
   GC_unref(asFut)
   futureContinue(asFut)
 
-when chronosEnableCallbackDurationMetric:
-  import std/tables
-  import timer
-  var futureDurations {.threadvar.}: TableRef[uint, tuple[total: Duration, count: int]] ## Global table of durations
-
-  template timeCallback(fut: FutureBase, blk: untyped) =
+when chronosClosureDurationMetric:
+  template timeClosureDuration(fut: FutureBase, cond, blk: untyped) =
       let startTick = Moment.now()
       `blk`
       let stopTick = Moment.now()
@@ -318,7 +330,10 @@ when chronosEnableCallbackDurationMetric:
     let futId = fut.id()
     # futureDurations.mgetOrPut(futId, (ZeroDuration, 0))
 else:
-  template timeCallback(fut: FutureBase, blk: untyped) =
+  template timeClosureDuration(fut: FutureBase, cond, blk: untyped) =
+    when cond:
+      `blk`
+    else:
       `blk`
 
   proc setFutureDuration(fut: FutureBase) {.inline.} =
@@ -337,11 +352,12 @@ proc futureContinue*(fut: FutureBase) {.raises: [], gcsafe.} =
       # Call closure to make progress on `fut` until it reaches `yield` (inside
       # `await` typically) or completes / fails / is cancelled
 
-      timeCallback(fut):
+      timeClosureDuration(fut, chronosClosureDurationMetric):
         next = fut.internalClosure(fut)
 
       if fut.internalClosure.finished(): # Reached the end of the transformed proc
-        fut.setFutureDuration()
+        when chronosClosureDurationMetric:
+          fut.setFutureDuration()
         break
 
       if next == nil:

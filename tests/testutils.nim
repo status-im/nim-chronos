@@ -87,8 +87,12 @@ suite "Asynchronous utilities test suite":
       skip()
 
 
-  test "Future clean and leaks test":
-    when chronosEnableCallbackDurationMetric:
-      check true
+  test "Test Closure During Metrics":
+    when chronosClosureDurationMetric:
+      proc simpleProc() {.async.} =
+        await sleepAsync(10.milliseconds)
+      
+      waitFor(simpleProc())
+
     else:
       skip()
