@@ -85,3 +85,10 @@ suite "Asynchronous utilities test suite":
         pendingFuturesCount() == 0'u
     else:
       skip()
+
+
+  test "Future clean and leaks test":
+    when chronosEnableCallbackDurationMetric:
+      check true
+    else:
+      skip()

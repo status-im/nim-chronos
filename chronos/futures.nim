@@ -12,6 +12,9 @@
 
 import "."/[config, srcloc]
 
+when chronosEnableCallbackDurationMetric:
+  import timer
+
 export srcloc
 
 when chronosStackTrace:
@@ -53,6 +56,9 @@ type
 
     when chronosFutureId:
       internalId*: uint
+
+    when chronosEnableCallbackDurationMetric:
+      internalDuration*: Duration
 
     when chronosStackTrace:
       internalErrorStackTrace*: StackTrace
