@@ -273,7 +273,7 @@ template processCallbacks(loop: untyped) =
 
       when chronosEnableCallbackDurationMetric:
         let durationUs = (getMonoTime().ticks - startTime) div 1000
-        chronosCallbackDuration.set(durationNs)
+        chronosCallbackDuration.set(durationUs)
 
 proc raiseAsDefect*(exc: ref Exception, msg: string) {.noreturn, noinline.} =
   # Reraise an exception as a Defect, where it's unexpected and can't be handled
