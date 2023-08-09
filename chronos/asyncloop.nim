@@ -1548,7 +1548,7 @@ proc isCounterLeaked*(name: string): bool {.noinit.} =
   ## number of `closed` requests.
   let tracker = TrackerCounter(opened: 0'u64, closed: 0'u64)
   let res = getThreadDispatcher().counters.getOrDefault(name, tracker)
-  res.opened == res.closed
+  res.opened != res.closed
 
 iterator trackerCounters*(
            loop: PDispatcher
