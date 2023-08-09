@@ -24,15 +24,6 @@ type
 
   SecureHttpConnectionRef* = ref SecureHttpConnection
 
-proc clean(connection: var SecureHttpConnection) =
-  connection.transp = nil
-  connection.server = nil
-  connection.mainReader = nil
-  connection.mainWriter = nil
-  connection.tlsStream.sbuffer = default(seq[byte])
-  connection.tlsStream.reader = nil
-  connection.tlsStream.writer = nil
-
 proc closeSecConnection(conn: HttpConnectionRef) {.async.} =
   if conn.state == HttpState.Alive:
     conn.state = HttpState.Closing
@@ -52,7 +43,7 @@ proc closeSecConnection(conn: HttpConnectionRef) {.async.} =
       await allFutures(pending)
     except CancelledError:
       await allFutures(pending)
-    cast[SecureHttpConnectionRef](conn)[].clean()
+    reset(cast[SecureHttpConnectionRef](conn)[])
     untrackCounter(HttpServerSecureConnectionTrackerName)
     conn.state = HttpState.Closed
 

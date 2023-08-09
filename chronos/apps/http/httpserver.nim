@@ -802,15 +802,6 @@ proc init*(value: var HttpConnection, server: HttpServerRef,
     mainWriter: newAsyncStreamWriter(transp)
   )
 
-proc clean(connection: var HttpConnection) =
-  connection.transp = nil
-  connection.server = nil
-  connection.buffer = default(seq[byte])
-  connection.mainReader = nil
-  connection.mainWriter = nil
-  connection.reader = nil
-  connection.writer = nil
-
 proc closeUnsecureConnection(conn: HttpConnectionRef) {.async.} =
   if conn.state == HttpState.Alive:
     conn.state = HttpState.Closing
@@ -823,7 +814,7 @@ proc closeUnsecureConnection(conn: HttpConnectionRef) {.async.} =
     except CancelledError:
       await allFutures(pending)
     untrackCounter(HttpServerUnsecureConnectionTrackerName)
-    conn[].clean()
+    reset(conn[])
     conn.state = HttpState.Closed
 
 proc new(ht: typedesc[HttpConnectionRef], server: HttpServerRef,
@@ -844,25 +835,6 @@ proc gracefulCloseWait*(conn: HttpConnectionRef) {.async.} =
 proc closeWait*(conn: HttpConnectionRef): Future[void] =
   conn.closeCb(conn)
 
-proc clean(response: HttpResponseRef) =
-  response.writer = nil
-  response.connection = nil
-  response.body = default(seq[byte])
-  response.headersTable.clear()
-
-proc clean(request: HttpRequestRef) =
-  request.connection = nil
-  request.headers.clear()
-  request.query.clear()
-  if request.postTable.isSome():
-    request.postTable = Opt.none(HttpTable)
-  request.rawPath = default(string)
-  request.uri = default(Uri)
-  if request.contentTypeData.isSome():
-    request.contentTypeData = Opt.none(ContentTypeData)
-  if request.response.isSome():
-    request.response = Opt.none(HttpResponseRef)
-
 proc closeWait*(req: HttpRequestRef) {.async.} =
   if req.state == HttpState.Alive:
     if req.response.isSome():
@@ -874,9 +846,9 @@ proc closeWait*(req: HttpRequestRef) {.async.} =
           await writer
         except CancelledError:
           await writer
-      resp.clean()
+      reset(resp[])
     untrackCounter(HttpServerRequestTrackerName)
-    req.clean()
+    reset(req[])
     req.state = HttpState.Closed
 
 proc createConnection(server: HttpServerRef,
@@ -1064,7 +1036,7 @@ proc processLoop(holder: HttpConnectionHolderRef) {.async.} =
       except CancelledError:
         HttpProcessExitType.Immediate
       except CatchableError as exc:
-        raiseAssert "Unexpected error [" & exc.name & "] happens: " & exc.msg
+        raiseAssert "Unexpected error [" & $exc.name & "] happens: " & $exc.msg
 
   server.connections.del(connectionId)
   case runLoop
