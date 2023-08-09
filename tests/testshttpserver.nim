@@ -7,7 +7,8 @@
 #              MIT license (LICENSE-MIT)
 import std/strutils
 import ".."/chronos/unittest2/asynctests
-import ".."/chronos, ".."/chronos/apps/http/shttpserver
+import ".."/chronos,
+       ".."/chronos/apps/http/shttpserver
 import stew/base10
 
 {.used.}

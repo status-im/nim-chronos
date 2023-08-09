@@ -148,6 +148,7 @@ type
     writer*: AsyncStreamWriter
     closeCb*: HttpCloseConnectionCallback
     createMoment*: Moment
+    currentRawQuery*: Opt[string]
     buffer: seq[byte]
 
   HttpConnectionRef* = ref HttpConnection
@@ -813,6 +814,7 @@ proc closeUnsecureConnection(conn: HttpConnectionRef) {.async.} =
     except CancelledError:
       await allFutures(pending)
     untrackCounter(HttpServerUnsecureConnectionTrackerName)
+    reset(conn[])
     conn.state = HttpState.Closed
 
 proc new(ht: typedesc[HttpConnectionRef], server: HttpServerRef,
@@ -844,7 +846,9 @@ proc closeWait*(req: HttpRequestRef) {.async.} =
           await writer
         except CancelledError:
           await writer
+      reset(resp[])
     untrackCounter(HttpServerRequestTrackerName)
+    reset(req[])
     req.state = HttpState.Closed
 
 proc createConnection(server: HttpServerRef,
@@ -931,6 +935,7 @@ proc getRequestFence*(server: HttpServerRef,
         await connection.getRequest()
       else:
         await connection.getRequest().wait(server.headersTimeout)
+    connection.currentRawQuery = Opt.some(res.rawPath)
     RequestFence.ok(res)
   except CancelledError:
     RequestFence.err(HttpProcessError.init(HttpServerError.InterruptError))
@@ -962,13 +967,17 @@ proc getConnectionFence*(server: HttpServerRef,
     let res = await server.createConnCallback(server, transp)
     ConnectionFence.ok(res)
   except CancelledError:
-    await transp.closeWait()
     ConnectionFence.err(HttpProcessError.init(HttpServerError.InterruptError))
   except HttpCriticalError as exc:
-    await transp.closeWait()
-    let address = transp.getRemoteAddress()
+    # On error `transp` will be closed by `createConnCallback()` call.
+    let address = Opt.none(TransportAddress)
     ConnectionFence.err(HttpProcessError.init(
       HttpServerError.CriticalError, exc, address, exc.code))
+  except CatchableError as exc:
+    # On error `transp` will be closed by `createConnCallback()` call.
+    let address = Opt.none(TransportAddress)
+    ConnectionFence.err(HttpProcessError.init(
+      HttpServerError.CriticalError, exc, address, Http503))
 
 proc processRequest(server: HttpServerRef,
                     connection: HttpConnectionRef,
@@ -984,19 +993,23 @@ proc processRequest(server: HttpServerRef,
     else:
       discard
 
-  defer:
-    if requestFence.isOk():
-      await requestFence.get().closeWait()
-
   let responseFence = await getResponseFence(connection, requestFence)
   if responseFence.isErr() and
      (responseFence.error.kind == HttpServerError.InterruptError):
+    if requestFence.isOk():
+      await requestFence.get().closeWait()
     return HttpProcessExitType.Immediate
 
-  if responseFence.isErr():
-    await connection.sendErrorResponse(requestFence, responseFence.error)
-  else:
-    await connection.sendDefaultResponse(requestFence, responseFence.get())
+  let res =
+    if responseFence.isErr():
+      await connection.sendErrorResponse(requestFence, responseFence.error)
+    else:
+      await connection.sendDefaultResponse(requestFence, responseFence.get())
+
+  if requestFence.isOk():
+    await requestFence.get().closeWait()
+
+  res
 
 proc processLoop(holder: HttpConnectionHolderRef) {.async.} =
   let
@@ -1016,23 +1029,27 @@ proc processLoop(holder: HttpConnectionHolderRef) {.async.} =
   holder.connection = connection
 
   var runLoop = HttpProcessExitType.KeepAlive
-
-  defer:
-    server.connections.del(connectionId)
-    case runLoop
-    of HttpProcessExitType.KeepAlive:
-      # This could happened only on CancelledError.
-      await connection.closeWait()
-    of HttpProcessExitType.Immediate:
-      await connection.closeWait()
-    of HttpProcessExitType.Graceful:
-      await connection.gracefulCloseWait()
-
   while runLoop == HttpProcessExitType.KeepAlive:
-    runLoop = await server.processRequest(connection, connectionId)
+    runLoop =
+      try:
+        await server.processRequest(connection, connectionId)
+      except CancelledError:
+        HttpProcessExitType.Immediate
+      except CatchableError as exc:
+        raiseAssert "Unexpected error [" & $exc.name & "] happens: " & $exc.msg
+
+  server.connections.del(connectionId)
+  case runLoop
+  of HttpProcessExitType.KeepAlive:
+    await connection.closeWait()
+  of HttpProcessExitType.Immediate:
+    await connection.closeWait()
+  of HttpProcessExitType.Graceful:
+    await connection.gracefulCloseWait()
 
 proc acceptClientLoop(server: HttpServerRef) {.async.} =
-  while true:
+  var runLoop = true
+  while runLoop:
     try:
       # if server.maxConnections > 0:
       #   await server.semaphore.acquire()
@@ -1042,27 +1059,18 @@ proc acceptClientLoop(server: HttpServerRef) {.async.} =
         # We are unable to identify remote peer, it means that remote peer
         # disconnected before identification.
         await transp.closeWait()
-        break
+        runLoop = false
       else:
         let connId = resId.get()
         let holder = HttpConnectionHolderRef.new(server, transp, resId.get())
         server.connections[connId] = holder
         holder.future = processLoop(holder)
-    except CancelledError:
-      # Server was stopped
-      break
-    except TransportOsError:
-      # This is some critical unrecoverable error.
-      break
-    except TransportTooManyError:
-      # Non critical error
+    except TransportTooManyError, TransportAbortedError:
+      # Non-critical error
       discard
-    except TransportAbortedError:
-      # Non critical error
-      discard
-    except CatchableError:
-      # Unexpected error
-      break
+    except CancelledError, TransportOsError, CatchableError:
+      # Critical, cancellation or unexpected error
+      runLoop = false
 
 proc state*(server: HttpServerRef): HttpServerState {.raises: [].} =
   ## Returns current HTTP server's state.

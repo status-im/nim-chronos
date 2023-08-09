@@ -7,9 +7,8 @@
 #              MIT license (LICENSE-MIT)
 import std/[strutils, algorithm]
 import ".."/chronos/unittest2/asynctests,
-       ".."/chronos, ".."/chronos/apps/http/httpserver,
-       ".."/chronos/apps/http/httpcommon,
-       ".."/chronos/apps/http/httpdebug
+       ".."/chronos,
+       ".."/chronos/apps/http/[httpserver, httpcommon, httpdebug]
 import stew/base10
 
 {.used.}
@@ -1357,7 +1356,7 @@ suite "HTTP server testing suite":
   asyncTest "HTTP debug tests":
     const
       TestsCount = 10
-      TestRequest = "GET / HTTP/1.1\r\nConnection: keep-alive\r\n\r\n"
+      TestRequest = "GET /httpdebug HTTP/1.1\r\nConnection: keep-alive\r\n\r\n"
 
     proc process(r: RequestFence): Future[HttpResponseRef] {.async.} =
       if r.isOk():
@@ -1417,6 +1416,7 @@ suite "HTTP server testing suite":
           connection.localAddress.get() == transp.remoteAddress()
           connection.connectionType == ConnectionType.NonSecure
           connection.connectionState == ConnectionState.Alive
+          connection.query.get("") == "/httpdebug"
           (currentTime - connection.createMoment.get()) != ZeroDuration
           (currentTime - connection.acceptMoment) != ZeroDuration
       var pending: seq[Future[void]]
