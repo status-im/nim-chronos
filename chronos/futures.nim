@@ -12,10 +12,18 @@
 
 import "."/[config, srcloc]
 
+export srcloc
+
 when chronosClosureDurationMetric:
+  import std/tables
   import timer
 
-export srcloc
+  type
+    CallbackDurationMetric* = ref object
+      ## Holds average timing information for a given closure
+      closureLoc: ptr SrcLoc
+
+  var callbackDurations {.threadvar.}: TableRef[ptr SrcLoc, CallbackDurationMetric]
 
 when chronosStackTrace:
   type StackTrace = string
@@ -126,6 +134,12 @@ proc internalInitFutureBase*(
       if isNil(futureList.head):
         futureList.head = fut
       futureList.count.inc()
+
+  when chronosClosureDurationMetric:
+    if callbackDurations == nil:
+      callbackDurations = newTable[ptr SrcLoc, CallbackDurationMetric]()
+    discard callbackDurations.hasKeyOrPut(loc, CallbackDurationMetric())
+
 
 # Public API
 template init*[T](F: type Future[T], fromProc: static[string] = ""): Future[T] =
