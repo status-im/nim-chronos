@@ -91,7 +91,7 @@ suite "Asynchronous utilities test suite":
   test "Test Closure During Metrics":
     when chronosClosureDurationMetric:
       proc simpleAsync1() {.async.} =
-        os.sleep(100)
+        os.sleep(50)
       
       waitFor(simpleAsync1())
 
@@ -99,15 +99,15 @@ suite "Asynchronous utilities test suite":
       for (k,v) in metrics.pairs():
         let count = v.count
         let totalDuration = v.totalDuration
-        echo ""
-        echo "metric: ", $k
-        echo "count: ", count
-        echo "total: ", totalDuration
-        if count != 0:
+        if count > 0:
+          echo ""
+          echo "metric: ", $k
+          echo "count: ", count
+          echo "total: ", totalDuration
           echo "avg: ", totalDuration div count
         if k.procedure == "simpleAsync1":
-          check v.totalDuration <= 110.milliseconds()
-          check v.totalDuration >= 100.milliseconds()
+          check v.totalDuration <= 60.milliseconds()
+          check v.totalDuration >= 50.milliseconds()
 
     else:
       skip()
@@ -125,11 +125,11 @@ suite "Asynchronous utilities test suite":
       for (k,v) in metrics.pairs():
         let count = v.count
         let totalDuration = v.totalDuration
-        echo ""
-        echo "metric: ", $k
-        echo "count: ", count
-        echo "total: ", totalDuration
-        if count != 0:
+        if count > 0:
+          echo ""
+          echo "metric: ", $k
+          echo "count: ", count
+          echo "total: ", totalDuration
           echo "avg: ", totalDuration div count
         if k.procedure == "simpleAsync2":
           check v.totalDuration <= 120.milliseconds()
