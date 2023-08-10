@@ -10,5 +10,4 @@ when system.fileExists("nimble.paths"):
 switch("define", "nimRawSetjmp")
 
 ## REMOVE BEFORE MERGE!
---d:chronosFutureTracking
 --d:chronosClosureDurationMetric
