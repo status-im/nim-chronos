@@ -143,7 +143,7 @@ proc internalInitFutureBase*(
       futureList.count.inc()
 
   when chronosClosureDurationMetric:
-    discard callbackDurations.hasKeyOrPut(loc, CallbackDurationMetric())
+    discard callbackDurations.hasKeyOrPut(loc, CallbackDurationMetric(minSingleTime: InfiniteDuration))
 
 when chronosClosureDurationMetric:
   proc setFutureDuration*(fut: FutureBase) {.inline.} =
