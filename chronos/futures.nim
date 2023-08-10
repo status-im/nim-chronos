@@ -23,6 +23,8 @@ when chronosClosureDurationMetric:
       ## Holds average timing information for a given closure
       closureLoc*: ptr SrcLoc
       totalDuration*: Duration
+      minSingleTime*: Duration
+      maxSingleTime*: Duration
       count*: int64
 
   var callbackDurations {.threadvar.}: Table[ptr SrcLoc, CallbackDurationMetric]
@@ -150,6 +152,8 @@ when chronosClosureDurationMetric:
     callbackDurations.withValue(loc, metric):
       metric.totalDuration += fut.internalDuration
       metric.count.inc
+      metric.minSingleTime = min(metric.minSingleTime, fut.internalDuration)
+      metric.maxSingleTime = max(metric.maxSingleTime, fut.internalDuration)
       # handle overflow
       if metric.count == metric.count.typeof.high:
         metric.totalDuration = ZeroDuration

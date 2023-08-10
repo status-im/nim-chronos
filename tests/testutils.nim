@@ -130,6 +130,8 @@ suite "Asynchronous utilities test suite":
           echo "metric: ", $k
           echo "count: ", count
           echo "total: ", totalDuration
+          echo "min: ", v.minSingleTime
+          echo "max: ", v.maxSingleTime
           echo "avg: ", totalDuration div count
         if k.procedure == "simpleAsync2":
           check v.totalDuration <= 120.milliseconds()
