@@ -23,7 +23,7 @@ when chronosClosureDurationMetric:
       ## Holds average timing information for a given closure
       closureLoc*: ptr SrcLoc
       totalDuration*: Duration
-      count*: uint
+      count*: int64
 
   var callbackDurations {.threadvar.}: Table[ptr SrcLoc, CallbackDurationMetric]
 

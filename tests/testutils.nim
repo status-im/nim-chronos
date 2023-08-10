@@ -7,6 +7,7 @@
 #              MIT license (LICENSE-MIT)
 import unittest2
 import ../chronos, ../chronos/config
+import std/[tables, os] 
 
 {.used.}
 
@@ -90,9 +91,21 @@ suite "Asynchronous utilities test suite":
   test "Test Closure During Metrics":
     when chronosClosureDurationMetric:
       proc simpleProc() {.async.} =
-        await sleepAsync(10.milliseconds)
+        os.sleep(100)
       
       waitFor(simpleProc())
+
+      let metrics = getCallbackDurations()
+      for (k,v) in metrics.pairs():
+        let name = k.procedure
+        let count = v.count
+        let totalDuration = v.totalDuration
+        echo ""
+        echo "metric: ", $k
+        echo "count: ", count
+        echo "total: ", totalDuration
+        if count != 0:
+          echo "avg: ", totalDuration div count
 
     else:
       skip()
