@@ -12,7 +12,7 @@ import std/[tables, os]
 {.used.}
 
 when chronosFuturesInstrumentation:
-  import std/tables
+  import std/[tables, macros]
   import ../chronos/timer
 
 suite "Asynchronous utilities test suite":
@@ -143,9 +143,13 @@ suite "Asynchronous utilities test suite":
             internalDuration += Moment.now() - start
             f.setFutureDuration(internalDuration)
 
-      proc simpleAsync1() {.async.} =
-        instrumentAsync()
+      macro instrument(prc: untyped) =
+        echo "intrument: ", prc.treeRepr
+        let callSetup = nnkCall.newTree(ident "instrumentAsync")
+        prc.body.insert(0, callSetup)
+        return prc
 
+      proc simpleAsync1() {.instrument, async.} =
         for i in 0..1:
           await sleepAsync(10.milliseconds)
           os.sleep(50)
