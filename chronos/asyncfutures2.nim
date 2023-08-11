@@ -325,7 +325,8 @@ proc futureContinue*(fut: FutureBase) {.raises: [], gcsafe.} =
       # `await` typically) or completes / fails / is cancelled
 
       when chronosFuturesInstrumentation:
-        if not(isNil(fut.onFutureRunning)): fut.onFutureRunning(fut)
+        if not(isNil(fut.onFutureRunning)):
+          fut.onFutureRunning(fut)
       
       next = fut.internalClosure(fut)
 

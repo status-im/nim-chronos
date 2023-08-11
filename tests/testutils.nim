@@ -124,17 +124,22 @@ suite "Asynchronous utilities test suite":
             metric.count = 0
 
       proc simpleAsync1() {.async.} =
-        var start: Moment
+        var start = Moment.now()
         var internalDuration: Duration
 
+        echo "chronosInternalRetFuture: ", chronosInternalRetFuture.id()
         chronosInternalRetFuture.onFutureRunning =
           proc (f: FutureBase) =
+            echo "start future"
             start = Moment.now()
         chronosInternalRetFuture.onFuturePause =
           proc (f, child: FutureBase) =
+            echo "pause future"
             internalDuration += Moment.now() - start
         chronosInternalRetFuture.onFutureStop =
           proc (f: FutureBase) =
+            echo "end future"
+            internalDuration += Moment.now() - start
             f.setFutureDuration(internalDuration)
 
         os.sleep(50)
@@ -152,9 +157,9 @@ suite "Asynchronous utilities test suite":
           echo "count: ", count
           echo "total: ", totalDuration
           echo "avg: ", totalDuration div count
-        # if k.procedure == "simpleAsync1":
-        #   check v.totalDuration <= 60.milliseconds()
-        #   check v.totalDuration >= 50.milliseconds()
+        if k.procedure == "simpleAsync1":
+          check v.totalDuration <= 60.milliseconds()
+          check v.totalDuration >= 50.milliseconds()
       echo ""
 
     else:
