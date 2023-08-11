@@ -92,7 +92,7 @@ suite "Asynchronous utilities test suite":
       skip()
 
 
-  test "Test Closure During Metrics":
+  test "Example of using Future hooks to gather metrics":
 
     when chronosFuturesInstrumentation:
 
