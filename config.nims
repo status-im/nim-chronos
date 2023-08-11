@@ -8,8 +8,3 @@ when system.fileExists("nimble.paths"):
 # Should be removed when https://github.com/status-im/nim-chronos/issues/284
 # will be implemented.
 switch("define", "nimRawSetjmp")
-
-## REMOVE BEFORE MERGE!
-# --d:chronosDumpAsync
-# --d:chronosFutureTracking
---d:chronosFuturesInstrumentation
