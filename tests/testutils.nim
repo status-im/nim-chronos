@@ -126,6 +126,15 @@ suite "Asynchronous utilities test suite":
           metric.totalDuration = ZeroDuration
           metric.count = 0
 
+    template timeClosureDuration(fut: FutureBase, cond, blk: untyped) =
+      when cond:
+        let startTick = Moment.now()
+        `blk`
+        let stopTick = Moment.now()
+        fut.internalDuration += (stopTick - startTick)
+      else:
+        `blk`
+
   test "Test Closure During Metrics await":
     when chronosClosureDurationMetric:
       proc simpleAsync2() {.async.} =

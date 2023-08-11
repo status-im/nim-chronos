@@ -307,14 +307,6 @@ proc internalContinue(fut: pointer) {.raises: [], gcsafe.} =
   GC_unref(asFut)
   futureContinue(asFut)
 
-template timeClosureDuration(fut: FutureBase, cond, blk: untyped) =
-  when cond:
-    let startTick = Moment.now()
-    `blk`
-    let stopTick = Moment.now()
-    fut.internalDuration += (stopTick - startTick)
-  else:
-    `blk`
 
 
 proc futureContinue*(fut: FutureBase) {.raises: [], gcsafe.} =
