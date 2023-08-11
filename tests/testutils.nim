@@ -89,7 +89,7 @@ suite "Asynchronous utilities test suite":
 
 
   test "Test Closure During Metrics":
-    when chronosClosureDurationMetric:
+    when chronosFuturesInstrumentation:
       proc simpleAsync1() {.async.} =
         os.sleep(50)
       
@@ -152,7 +152,7 @@ suite "Asynchronous utilities test suite":
         `blk`
 
   test "Test Closure During Metrics await":
-    when chronosClosureDurationMetric:
+    when chronosFuturesInstrumentation:
       proc simpleAsync2() {.async.} =
         echo repr chronosInternalRetFuture
         os.sleep(50)

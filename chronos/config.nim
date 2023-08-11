@@ -70,7 +70,7 @@ when (NimMajor, NimMinor) >= (1, 4):
         ""
       ## OS polling engine type which is going to be used by chronos.
 
-    chronosClosureDurationMetric* {.booldefine.} = defined(chronosClosureDurationMetric)
+    chronosFuturesInstrumentation* {.booldefine.} = defined(chronosFuturesInstrumentation)
       ## At the cost of some performance, produce a 'chronosCallbackDuration' metric.
       ## Useful for detecting application stalling/blocking.
 
@@ -109,7 +109,7 @@ else:
         "poll"
       else:
         ""
-    chronosClosureDurationMetric* {.booldefine.} = defined(chronosClosureDurationMetric)
+    chronosFuturesInstrumentation* {.booldefine.} = defined(chronosFuturesInstrumentation)
 
 when defined(debug) or defined(chronosConfig):
   import std/macros

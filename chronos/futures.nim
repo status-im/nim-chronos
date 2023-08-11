@@ -54,7 +54,7 @@ type
     when chronosFutureId:
       internalId*: uint
 
-    when chronosClosureDurationMetric:
+    when chronosFuturesInstrumentation:
       onFutureRunning*, onFutureStop*: proc (fut: FutureBase) {.gcsafe, raises: [].}
       onFuturePause*: proc (fut, child: FutureBase) {.gcsafe, raises: [].}
 

@@ -146,7 +146,7 @@ proc finish(fut: FutureBase, state: FutureState) =
 
 proc complete[T](future: Future[T], val: T, loc: ptr SrcLoc) =
 
-  when chronosClosureDurationMetric:
+  when chronosFuturesInstrumentation:
     future.onFutureStop(future)
 
   if not(future.cancelled()):
@@ -322,7 +322,7 @@ proc futureContinue*(fut: FutureBase) {.raises: [], gcsafe.} =
       # Call closure to make progress on `fut` until it reaches `yield` (inside
       # `await` typically) or completes / fails / is cancelled
 
-      when chronosClosureDurationMetric:
+      when chronosFuturesInstrumentation:
         fut.onFutureRunning(fut)
       
       next = fut.internalClosure(fut)
