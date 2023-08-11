@@ -142,7 +142,9 @@ suite "Asynchronous utilities test suite":
             internalDuration += Moment.now() - start
             f.setFutureDuration(internalDuration)
 
-        os.sleep(50)
+        for i in 0..1:
+          await sleepAsync(10.milliseconds)
+          os.sleep(50)
         
       waitFor(simpleAsync1())
 
@@ -158,8 +160,8 @@ suite "Asynchronous utilities test suite":
           echo "total: ", totalDuration
           echo "avg: ", totalDuration div count
         if k.procedure == "simpleAsync1":
-          check v.totalDuration <= 60.milliseconds()
-          check v.totalDuration >= 50.milliseconds()
+          check v.totalDuration <= 120.milliseconds()
+          check v.totalDuration >= 100.milliseconds()
       echo ""
 
     else:
