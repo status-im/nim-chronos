@@ -97,7 +97,7 @@ suite "Asynchronous utilities test suite":
     when chronosFuturesInstrumentation:
 
       type
-        CallbackDurationMetric = ref object
+        CallbackDurationMetric = object
           ## Holds average timing information for a given closure
           closureLoc*: ptr SrcLoc
           totalDuration*: Duration
@@ -109,9 +109,10 @@ suite "Asynchronous utilities test suite":
 
       # if not callbackDurations.hasKey(fut.location[Create])
 
-      proc setFutureDuration(fut: FutureBase, internalDuration: Duration) {.inline.} =
+      proc setFutureDuration(fut: FutureBase, internalDuration: Duration) {.raises: [].} =
         ## used for setting the duration
         let loc = fut.internalLocation[Create]
+        discard callbackDurations.hasKeyOrPut(loc, CallbackDurationMetric(minSingleTime: InfiniteDuration))
         callbackDurations.withValue(loc, metric):
           metric.totalDuration += internalDuration
           metric.count.inc
