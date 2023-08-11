@@ -112,9 +112,24 @@ suite "Asynchronous utilities test suite":
     else:
       skip()
 
+  when false:
+    proc setFutureDuration*(fut: FutureBase) {.inline.} =
+      ## used for setting the duration
+      let loc = fut.internalLocation[Create]
+      callbackDurations.withValue(loc, metric):
+        metric.totalDuration += fut.internalDuration
+        metric.count.inc
+        metric.minSingleTime = min(metric.minSingleTime, fut.internalDuration)
+        metric.maxSingleTime = max(metric.maxSingleTime, fut.internalDuration)
+        # handle overflow
+        if metric.count == metric.count.typeof.high:
+          metric.totalDuration = ZeroDuration
+          metric.count = 0
+
   test "Test Closure During Metrics await":
     when chronosClosureDurationMetric:
       proc simpleAsync2() {.async.} =
+        echo repr chronosInternalRetFuture
         os.sleep(50)
         await sleepAsync(50.milliseconds)
         os.sleep(50)
@@ -136,6 +151,5 @@ suite "Asynchronous utilities test suite":
         if k.procedure == "simpleAsync2":
           check v.totalDuration <= 120.milliseconds()
           check v.totalDuration >= 100.milliseconds()
-
     else:
       skip()

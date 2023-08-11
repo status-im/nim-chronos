@@ -145,6 +145,10 @@ proc finish(fut: FutureBase, state: FutureState) =
     scheduleDestructor(fut)
 
 proc complete[T](future: Future[T], val: T, loc: ptr SrcLoc) =
+
+  when chronosClosureDurationMetric:
+    future.onFutureStop(future)
+
   if not(future.cancelled()):
     checkFinished(future, loc)
     doAssert(isNil(future.internalError))
@@ -326,12 +330,12 @@ proc futureContinue*(fut: FutureBase) {.raises: [], gcsafe.} =
       # Call closure to make progress on `fut` until it reaches `yield` (inside
       # `await` typically) or completes / fails / is cancelled
 
-      timeClosureDuration(fut, chronosClosureDurationMetric):
-        next = fut.internalClosure(fut)
+      when chronosClosureDurationMetric:
+        fut.onFutureRunning(fut)
+      
+      next = fut.internalClosure(fut)
 
       if fut.internalClosure.finished(): # Reached the end of the transformed proc
-        when chronosClosureDurationMetric:
-          fut.setFutureDuration()
         break
 
       if next == nil:
