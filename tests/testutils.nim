@@ -123,7 +123,7 @@ suite "Asynchronous utilities test suite":
             metric.totalDuration = ZeroDuration
             metric.count = 0
 
-      proc simpleAsync1() {.async.} =
+      template instrumentAsync() =
         var start = Moment.now()
         var internalDuration: Duration
 
@@ -135,12 +135,16 @@ suite "Asynchronous utilities test suite":
         chronosInternalRetFuture.onFuturePause =
           proc (f, child: FutureBase) =
             echo "pause future"
+            # echo "future child: ", repr child
             internalDuration += Moment.now() - start
         chronosInternalRetFuture.onFutureStop =
           proc (f: FutureBase) =
             echo "end future"
             internalDuration += Moment.now() - start
             f.setFutureDuration(internalDuration)
+
+      proc simpleAsync1() {.async.} =
+        instrumentAsync()
 
         for i in 0..1:
           await sleepAsync(10.milliseconds)
