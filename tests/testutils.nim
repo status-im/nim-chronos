@@ -113,6 +113,22 @@ suite "Asynchronous utilities test suite":
       skip()
 
   when false:
+
+    when chronosEnableCallbackDurationMetric:
+      import std/tables
+      import timer
+
+      type
+        CallbackDurationMetric* = ref object
+          ## Holds average timing information for a given closure
+          closureLoc: ptr SrcLoc
+
+      var callbackDurations {.threadvar.}: TableRef[ptr SrcLoc, CallbackDurationMetric]
+
+      when chronosEnableCallbackDurationMetric:
+        if not callbackDurations.hasKey(fut.location[Create])
+
+
     proc setFutureDuration*(fut: FutureBase) {.inline.} =
       ## used for setting the duration
       let loc = fut.internalLocation[Create]
