@@ -11,6 +11,10 @@ import std/[tables, os]
 
 {.used.}
 
+when chronosFuturesInstrumentation:
+  import std/tables
+  import ../chronos/timer
+
 suite "Asynchronous utilities test suite":
   when chronosFutureTracking:
     proc getCount(): uint =
@@ -89,13 +93,54 @@ suite "Asynchronous utilities test suite":
 
 
   test "Test Closure During Metrics":
+
     when chronosFuturesInstrumentation:
+
+      type
+        CallbackDurationMetric = ref object
+          ## Holds average timing information for a given closure
+          closureLoc*: ptr SrcLoc
+          totalDuration*: Duration
+          minSingleTime*: Duration
+          maxSingleTime*: Duration
+          count*: int64
+
+      var callbackDurations: Table[ptr SrcLoc, CallbackDurationMetric]
+
+      # if not callbackDurations.hasKey(fut.location[Create])
+
+      proc setFutureDuration(fut: FutureBase, internalDuration: Duration) {.inline.} =
+        ## used for setting the duration
+        let loc = fut.internalLocation[Create]
+        callbackDurations.withValue(loc, metric):
+          metric.totalDuration += internalDuration
+          metric.count.inc
+          metric.minSingleTime = min(metric.minSingleTime, internalDuration)
+          metric.maxSingleTime = max(metric.maxSingleTime, internalDuration)
+          # handle overflow
+          if metric.count == metric.count.typeof.high:
+            metric.totalDuration = ZeroDuration
+            metric.count = 0
+
       proc simpleAsync1() {.async.} =
+        var start: Moment
+        var internalDuration: Duration
+
+        chronosInternalRetFuture.onFutureRunning =
+          proc (f: FutureBase) =
+            start = Moment.now()
+        chronosInternalRetFuture.onFuturePause =
+          proc (f, child: FutureBase) =
+            internalDuration += Moment.now() - start
+        chronosInternalRetFuture.onFutureStop =
+          proc (f: FutureBase) =
+            f.setFutureDuration(internalDuration)
+
         os.sleep(50)
-      
+        
       waitFor(simpleAsync1())
 
-      let metrics = getCallbackDurations()
+      let metrics = callbackDurations
       for (k,v) in metrics.pairs():
         let count = v.count
         let totalDuration = v.totalDuration
@@ -109,72 +154,5 @@ suite "Asynchronous utilities test suite":
           check v.totalDuration <= 60.milliseconds()
           check v.totalDuration >= 50.milliseconds()
 
-    else:
-      skip()
-
-  when false:
-
-    when chronosEnableCallbackDurationMetric:
-      import std/tables
-      import timer
-
-      type
-        CallbackDurationMetric* = ref object
-          ## Holds average timing information for a given closure
-          closureLoc: ptr SrcLoc
-
-      var callbackDurations {.threadvar.}: TableRef[ptr SrcLoc, CallbackDurationMetric]
-
-      when chronosEnableCallbackDurationMetric:
-        if not callbackDurations.hasKey(fut.location[Create])
-
-
-    proc setFutureDuration*(fut: FutureBase) {.inline.} =
-      ## used for setting the duration
-      let loc = fut.internalLocation[Create]
-      callbackDurations.withValue(loc, metric):
-        metric.totalDuration += fut.internalDuration
-        metric.count.inc
-        metric.minSingleTime = min(metric.minSingleTime, fut.internalDuration)
-        metric.maxSingleTime = max(metric.maxSingleTime, fut.internalDuration)
-        # handle overflow
-        if metric.count == metric.count.typeof.high:
-          metric.totalDuration = ZeroDuration
-          metric.count = 0
-
-    template timeClosureDuration(fut: FutureBase, cond, blk: untyped) =
-      when cond:
-        let startTick = Moment.now()
-        `blk`
-        let stopTick = Moment.now()
-        fut.internalDuration += (stopTick - startTick)
-      else:
-        `blk`
-
-  test "Test Closure During Metrics await":
-    when chronosFuturesInstrumentation:
-      proc simpleAsync2() {.async.} =
-        echo repr chronosInternalRetFuture
-        os.sleep(50)
-        await sleepAsync(50.milliseconds)
-        os.sleep(50)
-      
-      waitFor(simpleAsync2())
-
-      let metrics = getCallbackDurations()
-      for (k,v) in metrics.pairs():
-        let count = v.count
-        let totalDuration = v.totalDuration
-        if count > 0:
-          echo ""
-          echo "metric: ", $k
-          echo "count: ", count
-          echo "total: ", totalDuration
-          echo "min: ", v.minSingleTime
-          echo "max: ", v.maxSingleTime
-          echo "avg: ", totalDuration div count
-        if k.procedure == "simpleAsync2":
-          check v.totalDuration <= 120.milliseconds()
-          check v.totalDuration >= 100.milliseconds()
     else:
       skip()
