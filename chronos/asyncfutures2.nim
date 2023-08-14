@@ -27,6 +27,9 @@ const
 when defined(chronosStackTrace):
   type StackTrace = string
 
+when defined(chronosFutureDuration):
+  import ./timer
+
 type
   FutureState* {.pure.} = enum
     Pending, Finished, Cancelled, Failed
@@ -40,6 +43,9 @@ type
     error*: ref CatchableError ## Stored exception
     mustCancel*: bool
     id*: uint
+    when defined(chronosFutureDuration):
+      startTime: Moment
+      duration: Duration
 
     when defined(chronosStackTrace):
       errorStackTrace*: StackTrace
@@ -106,6 +112,9 @@ template setupFutureBase(loc: ptr SrcLoc) =
       futureList.head = result
     futureList.count.inc()
 
+  when defined(chronosFutureDuration):
+    result.startTime = Moment.now()
+
 proc newFutureImpl[T](loc: ptr SrcLoc): Future[T] =
   setupFutureBase(loc)
 
@@ -142,6 +151,8 @@ proc finished*(future: FutureBase): bool {.inline.} =
   ## Determines whether ``future`` has completed, i.e. ``future`` state changed
   ## from state ``Pending`` to one of the states (``Finished``, ``Cancelled``,
   ## ``Failed``).
+  when defined(chronosFutureDuration):
+    future.duration = Moment.now() - future.startTime
   result = (future.state != FutureState.Pending)
 
 proc cancelled*(future: FutureBase): bool {.inline.} =
@@ -1036,3 +1047,8 @@ proc race*(futs: varargs[FutureBase]): Future[FutureBase] =
 
   retFuture.cancelCallback = cancellation
   return retFuture
+
+when defined(chronosFutureDuration):
+  func duration*(future: FutureBase): Duration =
+    ## Duration between future start and finish
+    future.duration
