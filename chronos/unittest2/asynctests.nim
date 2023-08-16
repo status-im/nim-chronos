@@ -21,9 +21,9 @@ template asyncTest*(name: string, body: untyped): untyped =
 
 template checkLeaks*(name: string): untyped =
   let counter = getTrackerCounter(name)
-  if counter.opened != counter.closed:
-    echo "[" & name & "] opened = ", counter.opened,
-         ", closed = ", counter.closed
+  checkpoint:
+    "[" & name & "] opened = " & $counter.opened &
+         ", closed = " & $ counter.closed
   check counter.opened == counter.closed
 
 template checkLeaks*(): untyped =
