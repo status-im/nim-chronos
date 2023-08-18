@@ -179,6 +179,7 @@ type
     timers*: HeapQueue[TimerCallback]
     callbacks*: Deque[AsyncCallback]
     idlers*: Deque[AsyncCallback]
+    ticks*: Deque[AsyncCallback]
     trackers*: Table[string, TrackerBase]
     counters*: Table[string, TrackerCounter]
 
@@ -253,6 +254,10 @@ template processTimers(loop: untyped) =
 template processIdlers(loop: untyped) =
   if len(loop.idlers) > 0:
     loop.callbacks.addLast(loop.idlers.popFirst())
+
+template processTicks(loop: untyped) =
+  while len(loop.ticks) > 0:
+    loop.callbacks.addLast(loop.ticks.popFirst())
 
 template processCallbacks(loop: untyped) =
   while true:
@@ -417,6 +422,7 @@ when defined(windows):
       timers: initHeapQueue[TimerCallback](),
       callbacks: initDeque[AsyncCallback](64),
       idlers: initDeque[AsyncCallback](),
+      ticks: initDeque[AsyncCallback](),
       trackers: initTable[string, TrackerBase](),
       counters: initTable[string, TrackerCounter]()
     )
@@ -745,6 +751,9 @@ when defined(windows):
     # network events.
     if networkEventsCount == 0:
       loop.processIdlers()
+
+    # We move tick callbacks to `loop.callbacks` always.
+    processTicks(loop)
 
     # All callbacks which will be added during `processCallbacks` will be
     # scheduled after the sentinel and are processed on next `poll()` call.
@@ -1138,6 +1147,9 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     if count == 0:
       loop.processIdlers()
 
+    # We move tick callbacks to `loop.callbacks` always.
+    processTicks(loop)
+
     # All callbacks which will be added during `processCallbacks` will be
     # scheduled after the sentinel and are processed on next `poll()` call.
     loop.callbacks.addLast(SentinelCallback)
@@ -1255,6 +1267,20 @@ proc callIdle*(cbproc: CallbackFunc, data: pointer) =
 proc callIdle*(cbproc: CallbackFunc) =
   callIdle(cbproc, nil)
 
+proc callTick*(acb: AsyncCallback) =
+  ## Schedule ``cbproc`` to be called after all scheduled callbacks, but only
+  ## when OS system queue finished processing events.
+  getThreadDispatcher().ticks.addLast(acb)
+
+proc callTick*(cbproc: CallbackFunc, data: pointer) =
+  ## Schedule ``cbproc`` to be called after all scheduled callbacks when
+  ## OS system queue processing is done.
+  doAssert(not isNil(cbproc))
+  callTick(AsyncCallback(function: cbproc, udata: data))
+
+proc callTick*(cbproc: CallbackFunc) =
+  callTick(cbproc, nil)
+
 include asyncfutures2
 
 when (chronosEventEngine in ["epoll", "kqueue"]) or defined(windows):
@@ -1322,10 +1348,7 @@ proc stepsAsync*(number: int): Future[void] =
   ##
   ## This primitive can be useful when you need to create more deterministic
   ## tests and cases.
-  ##
-  ## WARNING! Do not use this primitive to perform switch between tasks, because
-  ## this can lead to 100% CPU load in the moments when there are no I/O
-  ## events. Usually when there no I/O events CPU consumption should be near 0%.
+  doAssert(number > 0, "Number should be positive integer")
   var retFuture = newFuture[void]("chronos.stepsAsync(int)")
   var counter = 0
 
@@ -1334,18 +1357,14 @@ proc stepsAsync*(number: int): Future[void] =
     if not(retFuture.finished()):
       inc(counter)
       if counter < number:
-        callSoon(continuation, nil)
+        callTick(continuation)
       else:
         retFuture.complete()
-
-  proc cancellation(udata: pointer) =
-    discard
 
   if number <= 0:
     retFuture.complete()
   else:
-    retFuture.cancelCallback = cancellation
-    callSoon(continuation, nil)
+    callTick(continuation)
 
   retFuture
 

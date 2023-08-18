@@ -1271,15 +1271,23 @@ suite "Stream Transport test suite":
     server2.start()
     server3.start()
 
-    # It works cause even though there's an active listening socket bound to dst3, we are using ReusePort
-    var transp1 = await connect(server1.local, localAddress = server3.local, flags={SocketFlags.ReusePort})
-    var transp2 = await connect(server2.local, localAddress = server3.local, flags={SocketFlags.ReusePort})
+    # It works cause even though there's an active listening socket bound to
+    # dst3, we are using ReusePort
+    var transp1 = await connect(
+      server1.localAddress(), localAddress = server3.localAddress(),
+      flags = {SocketFlags.ReusePort})
+    var transp2 = await connect(
+      server2.localAddress(), localAddress = server3.localAddress(),
+      flags = {SocketFlags.ReusePort})
 
     expect(TransportOsError):
-      var transp2 {.used.} = await connect(server2.local, localAddress = server3.local)
+      var transp2 {.used.} = await connect(
+        server2.localAddress(), localAddress = server3.localAddress())
 
     expect(TransportOsError):
-      var transp3 {.used.} = await connect(server2.local, localAddress = initTAddress("::", server3.local.port))
+      var transp3 {.used.} = await connect(
+        server2.localAddress(),
+        localAddress = initTAddress("::", server3.localAddress().port))
 
     await transp1.closeWait()
     await transp2.closeWait()
@@ -1292,6 +1300,69 @@ suite "Stream Transport test suite":
 
     server3.stop()
     await server3.closeWait()
+
+  proc testConnectCancelLeaksTest() {.async.} =
+    proc client(server: StreamServer, transp: StreamTransport) {.async.} =
+      await transp.closeWait()
+
+    let
+      server = createStreamServer(initTAddress("127.0.0.1:0"), client)
+      address = server.localAddress()
+
+    var counter = 0
+    while true:
+      let transpFut = connect(address)
+      if counter > 0:
+        await stepsAsync(counter)
+      if not(transpFut.finished()):
+        await cancelAndWait(transpFut)
+        doAssert(cancelled(transpFut),
+                 "Future should be Cancelled at this point")
+        inc(counter)
+      else:
+        let transp = await transpFut
+        await transp.closeWait()
+        break
+    server.stop()
+    await server.closeWait()
+
+  proc testAcceptCancelLeaksTest() {.async.} =
+    var counter = 0
+    while true:
+      let
+        server = createStreamServer(initTAddress("127.0.0.1:0"))
+        address = server.localAddress()
+
+      let
+        transpFut = connect(address)
+        acceptFut = server.accept()
+
+      if counter > 0:
+        await stepsAsync(counter)
+
+      let exitLoop =
+        if not(acceptFut.finished()):
+          await cancelAndWait(acceptFut)
+          doAssert(cancelled(acceptFut),
+                   "Future should be Cancelled at this point")
+          inc(counter)
+          false
+        else:
+          let transp = await acceptFut
+          await transp.closeWait()
+          true
+
+      if not(transpFut.finished()):
+        await transpFut.cancelAndWait()
+      else:
+        let transp = await transpFut
+        await transp.closeWait()
+
+      server.stop()
+      await server.closeWait()
+
+      if exitLoop:
+        break
 
   markFD = getCurrentFD()
 
@@ -1384,8 +1455,12 @@ suite "Stream Transport test suite":
       check waitFor(testReadOnClose(addresses[i])) == true
   test "[PIPE] readExactly()/write() test":
     check waitFor(testPipe()) == true
-  test "[IP] bind connect to local address":
+  test "[IP] bind connect to local address test":
     waitFor(testConnectBindLocalAddress())
+  test "[IP] connect() cancellation leaks test":
+    waitFor(testConnectCancelLeaksTest())
+  test "[IP] accept() cancellation leaks test":
+    waitFor(testAcceptCancelLeaksTest())
   test "Leaks test":
     checkLeaks()
   test "File descriptors leak test":
