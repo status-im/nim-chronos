@@ -889,16 +889,20 @@ proc getResponse(req: HttpClientRequestRef): Future[HttpClientResponseRef] {.
   let
     bytesRead =
       try:
+        echo "readUntil --> response headers"
         await req.connection.reader.readUntil(addr buffer[0],
                                               len(buffer), HeadersMark).wait(
                                               req.session.headersTimeout)
       except AsyncTimeoutError:
+        echo "AsyncTimeoutError"
         raiseHttpReadError("Reading response headers timed out")
       except AsyncStreamError:
+        echo "AsyncStreamError"
         raiseHttpReadError("Could not read response headers")
-
+  echo "Preparing response"
   let response = prepareResponse(req, buffer.toOpenArray(0, bytesRead - 1))
   if response.isErr():
+    echo "response.isErr"
     raiseHttpProtocolError(response.error())
   let res = response.get()
   res.setTimestamp(timestamp)
@@ -1064,6 +1068,7 @@ proc send*(request: HttpClientRequestRef): Future[HttpClientResponseRef] {.
      async.} =
   doAssert(request.state == HttpReqRespState.Ready,
            "Request's state is " & $request.state)
+  echo "acquireConnection"
   let connection =
     try:
       await request.session.acquireConnection(request.address, request.flags)
@@ -1082,10 +1087,12 @@ proc send*(request: HttpClientRequestRef): Future[HttpClientResponseRef] {.
     request.connection.state = HttpClientConnectionState.RequestHeadersSending
     request.state = HttpReqRespState.Open
     request.setTimestamp()
+    echo "write(headers)"
     await request.connection.writer.write(headers)
     request.connection.state = HttpClientConnectionState.RequestHeadersSent
     request.connection.state = HttpClientConnectionState.RequestBodySending
     if len(request.buffer) > 0:
+      echo "write(request.buffer)"
       await request.connection.writer.write(request.buffer)
     request.connection.state = HttpClientConnectionState.RequestBodySent
     request.state = HttpReqRespState.Finished
@@ -1102,13 +1109,17 @@ proc send*(request: HttpClientRequestRef): Future[HttpClientResponseRef] {.
 
   let resp =
     try:
+      echo "getResponse"
       await request.getResponse()
     except CancelledError as exc:
+      echo "getResponse: CancelledError"
       request.setError(newHttpInterruptError())
       raise exc
     except HttpError as exc:
+      echo "getResponse: HttpError"
       request.setError(exc)
       raise exc
+  echo "All good"
   return resp
 
 proc open*(request: HttpClientRequestRef): Future[HttpBodyWriter] {.
