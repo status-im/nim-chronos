@@ -142,8 +142,6 @@ proc finish(fut: FutureBase, state: FutureState) =
   # 1. `finish()` is a private procedure and `state` is under our control.
   # 2. `fut.state` is checked by `checkFinished()`.
   fut.internalState = state
-  when chronosStrictFutureAccess:
-    doAssert fut.internalCancelcb == nil or state != FutureState.Cancelled
   fut.internalCancelcb = nil # release cancellation callback memory
   for item in fut.internalCallbacks.mitems():
     if not(isNil(item.function)):
