@@ -2655,7 +2655,14 @@ proc shutdownWait*(transp: StreamTransport): Future[void] =
     let res = osdefs.shutdown(SocketHandle(transp.fd), SHUT_WR)
     if res < 0:
       let err = osLastError()
-      retFuture.fail(getTransportOsError(err))
+      case err
+      of ENOTCONN:
+        # The specified socket is not connected, it means that our initial
+        # goal is already happened.
+        transp.state.incl({WriteEof})
+        callSoon(continuation, nil)
+      else:
+        retFuture.fail(getTransportOsError(err))
     else:
       transp.state.incl({WriteEof})
       callSoon(continuation, nil)
