@@ -6,9 +6,14 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 import unittest2
+import stew/results
 import ../chronos, ../chronos/unittest2/asynctests
 
 {.used.}
+
+type
+  TestFooConnection* = ref object
+    id*: int
 
 suite "Future[T] behavior test suite":
   proc testFuture1(): Future[int] {.async.} =
@@ -1112,8 +1117,8 @@ suite "Future[T] behavior test suite":
         neverFlag3 = true
       res.addCallback(continuation)
       res.cancelCallback = cancellation
-      result = res
       neverFlag1 = true
+      res
 
     proc withTimeoutProc() {.async.} =
       try:
@@ -1153,8 +1158,8 @@ suite "Future[T] behavior test suite":
     await cancelAndWait(raceFut3)
 
     check:
-      raceFut1.state == FutureState.Cancelled
-      raceFut2.state == FutureState.Cancelled
+      raceFut1.state == FutureState.Completed
+      raceFut2.state == FutureState.Failed
       raceFut3.state == FutureState.Cancelled
 
   asyncTest "asyncSpawn() test":
@@ -1255,12 +1260,12 @@ suite "Future[T] behavior test suite":
         (loc.procedure == procedure)
 
     check:
-      chk(loc10, "testfut.nim", 1221, "macroFuture")
-      chk(loc11, "testfut.nim", 1222, "")
-      chk(loc20, "testfut.nim", 1234, "template")
-      chk(loc21, "testfut.nim", 1237, "")
-      chk(loc30, "testfut.nim", 1231, "procedure")
-      chk(loc31, "testfut.nim", 1238, "")
+      chk(loc10, "testfut.nim", 1226, "macroFuture")
+      chk(loc11, "testfut.nim", 1227, "")
+      chk(loc20, "testfut.nim", 1239, "template")
+      chk(loc21, "testfut.nim", 1242, "")
+      chk(loc30, "testfut.nim", 1236, "procedure")
+      chk(loc31, "testfut.nim", 1243, "")
 
   asyncTest "withTimeout(fut) should wait cancellation test":
     proc futureNeverEnds(): Future[void] =
@@ -1535,3 +1540,361 @@ suite "Future[T] behavior test suite":
       check:
         v1_u == 0'u
         v2_u + 1'u == 0'u
+
+  asyncTest "wait() cancellation undefined behavior test #1":
+    proc testInnerFoo(fooFut: Future[void]): Future[TestFooConnection] {.
+         async.} =
+      await fooFut
+      return TestFooConnection()
+
+    proc testFoo(fooFut: Future[void]) {.async.} =
+      let connection =
+        try:
+          let res = await testInnerFoo(fooFut).wait(10.seconds)
+          Result[TestFooConnection, int].ok(res)
+        except CancelledError:
+          Result[TestFooConnection, int].err(0)
+        except CatchableError:
+          Result[TestFooConnection, int].err(1)
+      check connection.isOk()
+
+    var future = newFuture[void]("last.child.future")
+    var someFut = testFoo(future)
+    future.complete()
+    someFut.cancel()
+    await someFut
+
+  asyncTest "wait() cancellation undefined behavior test #2":
+    proc testInnerFoo(fooFut: Future[void]): Future[TestFooConnection] {.
+         async.} =
+      await fooFut
+      return TestFooConnection()
+
+    proc testMiddleFoo(fooFut: Future[void]): Future[TestFooConnection] {.
+         async.} =
+      await testInnerFoo(fooFut)
+
+    proc testFoo(fooFut: Future[void]) {.async.} =
+      let connection =
+        try:
+          let res = await testMiddleFoo(fooFut).wait(10.seconds)
+          Result[TestFooConnection, int].ok(res)
+        except CancelledError:
+          Result[TestFooConnection, int].err(0)
+        except CatchableError:
+          Result[TestFooConnection, int].err(1)
+      check connection.isOk()
+
+    var future = newFuture[void]("last.child.future")
+    var someFut = testFoo(future)
+    future.complete()
+    someFut.cancel()
+    await someFut
+
+  asyncTest "withTimeout() cancellation undefined behavior test #1":
+    proc testInnerFoo(fooFut: Future[void]): Future[TestFooConnection] {.
+         async.} =
+      await fooFut
+      return TestFooConnection()
+
+    proc testFoo(fooFut: Future[void]) {.async.} =
+      let connection =
+        try:
+          let
+            checkFut = testInnerFoo(fooFut)
+            res = await withTimeout(checkFut, 10.seconds)
+          if res:
+            Result[TestFooConnection, int].ok(checkFut.value)
+          else:
+            Result[TestFooConnection, int].err(0)
+        except CancelledError:
+          Result[TestFooConnection, int].err(1)
+        except CatchableError:
+          Result[TestFooConnection, int].err(2)
+      check connection.isOk()
+
+    var future = newFuture[void]("last.child.future")
+    var someFut = testFoo(future)
+    future.complete()
+    someFut.cancel()
+    await someFut
+
+  asyncTest "withTimeout() cancellation undefined behavior test #2":
+    proc testInnerFoo(fooFut: Future[void]): Future[TestFooConnection] {.
+         async.} =
+      await fooFut
+      return TestFooConnection()
+
+    proc testMiddleFoo(fooFut: Future[void]): Future[TestFooConnection] {.
+         async.} =
+      await testInnerFoo(fooFut)
+
+    proc testFoo(fooFut: Future[void]) {.async.} =
+      let connection =
+        try:
+          let
+            checkFut = testMiddleFoo(fooFut)
+            res = await withTimeout(checkFut, 10.seconds)
+          if res:
+            Result[TestFooConnection, int].ok(checkFut.value)
+          else:
+            Result[TestFooConnection, int].err(0)
+        except CancelledError:
+          Result[TestFooConnection, int].err(1)
+        except CatchableError:
+          Result[TestFooConnection, int].err(2)
+      check connection.isOk()
+
+    var future = newFuture[void]("last.child.future")
+    var someFut = testFoo(future)
+    future.complete()
+    someFut.cancel()
+    await someFut
+
+  asyncTest "Cancellation behavior test":
+    proc testInnerFoo(fooFut: Future[void]) {.async.} =
+      await fooFut
+
+    proc testMiddleFoo(fooFut: Future[void]) {.async.} =
+      await testInnerFoo(fooFut)
+
+    proc testOuterFoo(fooFut: Future[void]) {.async.} =
+      await testMiddleFoo(fooFut)
+
+    block:
+      # Cancellation of pending Future
+      let future = newFuture[void]("last.child.pending.future")
+      let res = await checkedCancelAndWait(future)
+      check:
+        res == true
+        future.cancelled() == true
+
+    block:
+      # Cancellation of completed Future
+      let future = newFuture[void]("last.child.completed.future")
+      future.complete()
+      let res = await checkedCancelAndWait(future)
+      check:
+        res == false
+        future.cancelled() == false
+        future.completed() == true
+
+    block:
+      # Cancellation of failed Future
+      let future = newFuture[void]("last.child.failed.future")
+      future.fail(newException(ValueError, "ABCD"))
+      let res = await checkedCancelAndWait(future)
+      check:
+        res == false
+        future.cancelled() == false
+        future.failed() == true
+
+    block:
+      # Cancellation of already cancelled Future
+      let future = newFuture[void]("last.child.cancelled.future")
+      future.cancelAndSchedule()
+      let res = await checkedCancelAndWait(future)
+      check:
+        res == true
+        future.cancelled() == true
+
+    block:
+      # Cancellation of Pending->Pending->Pending->Pending sequence
+      let future = newFuture[void]("last.child.pending.future")
+      let testFut = testOuterFoo(future)
+      let res = await checkedCancelAndWait(testFut)
+      check:
+        res == true
+        testFut.cancelled() == true
+
+    block:
+      # Cancellation of Pending->Pending->Pending->Completed sequence
+      let future = newFuture[void]("last.child.completed.future")
+      let testFut = testOuterFoo(future)
+      future.complete()
+      let res = await checkedCancelAndWait(testFut)
+      check:
+        res == false
+        testFut.cancelled() == false
+        testFut.completed() == true
+
+    block:
+      # Cancellation of Pending->Pending->Pending->Failed sequence
+      let future = newFuture[void]("last.child.failed.future")
+      let testFut = testOuterFoo(future)
+      future.fail(newException(ValueError, "ABCD"))
+      let res = await checkedCancelAndWait(testFut)
+      check:
+        res == false
+        testFut.cancelled() == false
+        testFut.failed() == true
+
+    block:
+      # Cancellation of Pending->Pending->Pending->Cancelled sequence
+      let future = newFuture[void]("last.child.cancelled.future")
+      let testFut = testOuterFoo(future)
+      future.cancelAndSchedule()
+      let res = await checkedCancelAndWait(testFut)
+      check:
+        res == true
+        testFut.cancelled() == true
+
+    block:
+      # Cancellation of pending Future, when automatic scheduling disabled
+      let future = newFuture[void]("last.child.pending.future",
+                                   {FutureFlag.OwnCancelSchedule})
+      proc cancellation(udata: pointer) {.gcsafe.} =
+        discard
+      future.cancelCallback = cancellation
+      # Note, future will never be finished in such case, until we manually not
+      # finish it
+      let cancelFut = checkedCancelAndWait(future)
+      await sleepAsync(100.milliseconds)
+      check:
+        cancelFut.finished() == false
+        future.cancelled() == false
+      # Now we manually changing Future's state, so `cancelAndWait` could
+      # finish
+      future.complete()
+      let res = await cancelFut
+      check:
+        cancelFut.finished() == true
+        future.cancelled() == false
+        future.finished() == true
+        res == false
+
+    block:
+      # Cancellation of pending Future, which will fail Future on cancellation,
+      # when automatic scheduling disabled
+      let future = newFuture[void]("last.child.completed.future",
+                                   {FutureFlag.OwnCancelSchedule})
+      proc cancellation(udata: pointer) {.gcsafe.} =
+        future.complete()
+      future.cancelCallback = cancellation
+      # Note, future will never be finished in such case, until we manually not
+      # finish it
+      let res = await checkedCancelAndWait(future)
+      check:
+        res == false
+        future.cancelled() == false
+        future.completed() == true
+
+    block:
+      # Cancellation of pending Future, which will fail Future on cancellation,
+      # when automatic scheduling disabled
+      let future = newFuture[void]("last.child.failed.future",
+                                   {FutureFlag.OwnCancelSchedule})
+      proc cancellation(udata: pointer) {.gcsafe.} =
+        future.fail(newException(ValueError, "ABCD"))
+      future.cancelCallback = cancellation
+      # Note, future will never be finished in such case, until we manually not
+      # finish it
+      let res = await checkedCancelAndWait(future)
+      check:
+        res == false
+        future.cancelled() == false
+        future.failed() == true
+
+    block:
+      # Cancellation of pending Future, which will fail Future on cancellation,
+      # when automatic scheduling disabled
+      let future = newFuture[void]("last.child.cancelled.future",
+                                   {FutureFlag.OwnCancelSchedule})
+      proc cancellation(udata: pointer) {.gcsafe.} =
+        future.cancelAndSchedule()
+      future.cancelCallback = cancellation
+      # Note, future will never be finished in such case, until we manually not
+      # finish it
+      let res = await checkedCancelAndWait(future)
+      check:
+        res == true
+        future.cancelled() == true
+
+    block:
+      # Cancellation of pending Pending->Pending->Pending->Pending, when
+      # automatic scheduling disabled and Future do nothing in cancellation
+      # callback
+      let future = newFuture[void]("last.child.pending.future",
+                                   {FutureFlag.OwnCancelSchedule})
+      proc cancellation(udata: pointer) {.gcsafe.} =
+        discard
+      future.cancelCallback = cancellation
+      # Note, future will never be finished in such case, until we manually not
+      # finish it
+      let testFut = testOuterFoo(future)
+      let cancelFut = checkedCancelAndWait(testFut)
+      await sleepAsync(100.milliseconds)
+      check:
+        cancelFut.finished() == false
+        testFut.cancelled() == false
+        future.cancelled() == false
+      # Now we manually changing Future's state, so `cancelAndWait` could
+      # finish
+      future.complete()
+      let res = await cancelFut
+      check:
+        cancelFut.finished() == true
+        future.cancelled() == false
+        future.finished() == true
+        testFut.cancelled() == false
+        testFut.finished() == true
+        res == false
+
+    block:
+      # Cancellation of pending Pending->Pending->Pending->Pending, when
+      # automatic scheduling disabled and Future completes in cancellation
+      # callback
+      let future = newFuture[void]("last.child.pending.future",
+                                   {FutureFlag.OwnCancelSchedule})
+      proc cancellation(udata: pointer) {.gcsafe.} =
+        future.complete()
+      future.cancelCallback = cancellation
+      # Note, future will never be finished in such case, until we manually not
+      # finish it
+      let testFut = testOuterFoo(future)
+      let res = await checkedCancelAndWait(testFut)
+      await sleepAsync(100.milliseconds)
+      check:
+        testFut.cancelled() == false
+        testFut.finished() == true
+        future.cancelled() == false
+        future.finished() == true
+        res == false
+
+    block:
+      # Cancellation of pending Pending->Pending->Pending->Pending, when
+      # automatic scheduling disabled and Future fails in cancellation callback
+      let future = newFuture[void]("last.child.pending.future",
+                                   {FutureFlag.OwnCancelSchedule})
+      proc cancellation(udata: pointer) {.gcsafe.} =
+        future.fail(newException(ValueError, "ABCD"))
+      future.cancelCallback = cancellation
+      # Note, future will never be finished in such case, until we manually not
+      # finish it
+      let testFut = testOuterFoo(future)
+      let res = await checkedCancelAndWait(testFut)
+      await sleepAsync(100.milliseconds)
+      check:
+        testFut.cancelled() == false
+        testFut.failed() == true
+        future.cancelled() == false
+        future.failed() == true
+        res == false
+
+    block:
+      # Cancellation of pending Pending->Pending->Pending->Pending, when
+      # automatic scheduling disabled and Future fails in cancellation callback
+      let future = newFuture[void]("last.child.pending.future",
+                                   {FutureFlag.OwnCancelSchedule})
+      proc cancellation(udata: pointer) {.gcsafe.} =
+        future.cancelAndSchedule()
+      future.cancelCallback = cancellation
+      # Note, future will never be finished in such case, until we manually not
+      # finish it
+      let testFut = testOuterFoo(future)
+      let res = await checkedCancelAndWait(testFut)
+      await sleepAsync(100.milliseconds)
+      check:
+        testFut.cancelled() == true
+        future.cancelled() == true
+        res == true
