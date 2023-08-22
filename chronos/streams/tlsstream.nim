@@ -432,7 +432,7 @@ proc tlsLoop*(stream: TLSAsyncStream) {.async.} =
 proc tlsWriteLoop(stream: AsyncStreamWriter) {.async.} =
   var wstream = TLSStreamWriter(stream)
   wstream.state = AsyncStreamState.Running
-  await stepsAsync(1)
+  await sleepAsync(0.milliseconds)
   if isNil(wstream.stream.mainLoop):
     wstream.stream.mainLoop = tlsLoop(wstream.stream)
   await wstream.stream.mainLoop
@@ -440,7 +440,7 @@ proc tlsWriteLoop(stream: AsyncStreamWriter) {.async.} =
 proc tlsReadLoop(stream: AsyncStreamReader) {.async.} =
   var rstream = TLSStreamReader(stream)
   rstream.state = AsyncStreamState.Running
-  await stepsAsync(1)
+  await sleepAsync(0.milliseconds)
   if isNil(rstream.stream.mainLoop):
     rstream.stream.mainLoop = tlsLoop(rstream.stream)
   await rstream.stream.mainLoop

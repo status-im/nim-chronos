@@ -600,14 +600,12 @@ proc closeWait(conn: HttpClientConnectionRef) {.async.} =
           res.add(conn.reader.closeWait())
         if not(isNil(conn.writer)) and not(conn.writer.closed()):
           res.add(conn.writer.closeWait())
+        if conn.kind == HttpClientScheme.Secure:
+          res.add(conn.treader.closeWait())
+          res.add(conn.twriter.closeWait())
+        res.add(conn.transp.closeWait())
         res
     if len(pending) > 0: await allFutures(pending)
-    case conn.kind
-    of HttpClientScheme.Secure:
-      await allFutures(conn.treader.closeWait(), conn.twriter.closeWait())
-    of HttpClientScheme.NonSecure:
-      discard
-    await conn.transp.closeWait()
     conn.state = HttpClientConnectionState.Closed
     untrackCounter(HttpClientConnectionTrackerName)
 
@@ -631,8 +629,7 @@ proc connect(session: HttpSessionRef,
       let conn =
         block:
           let res = HttpClientConnectionRef.new(session, ha, transp)
-          case res.kind
-          of HttpClientScheme.Secure:
+          if res.kind == HttpClientScheme.Secure:
             try:
               await res.tls.handshake()
               res.state = HttpClientConnectionState.Ready
@@ -647,7 +644,7 @@ proc connect(session: HttpSessionRef,
               await res.closeWait()
               res.state = HttpClientConnectionState.Error
               lastError = $exc.msg
-          of HttpClientScheme.Nonsecure:
+          else:
             res.state = HttpClientConnectionState.Ready
           res
       if conn.state == HttpClientConnectionState.Ready:

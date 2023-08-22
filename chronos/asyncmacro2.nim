@@ -301,11 +301,6 @@ template await*[T](f: Future[T]): untyped =
     # transformation - `yield` gives control back to `futureContinue` which is
     # responsible for resuming execution once the yielded future is finished
     yield chronosInternalRetFuture.internalChild
-
-    # `child` is guaranteed to have been `finished` after the yield
-    if chronosInternalRetFuture.internalMustCancel:
-      raise newCancelledError()
-
     # `child` released by `futureContinue`
     chronosInternalRetFuture.internalChild.internalCheckComplete()
     when T isnot void:
@@ -317,8 +312,6 @@ template awaitne*[T](f: Future[T]): Future[T] =
   when declared(chronosInternalRetFuture):
     chronosInternalRetFuture.internalChild = f
     yield chronosInternalRetFuture.internalChild
-    if chronosInternalRetFuture.internalMustCancel:
-      raise newCancelledError()
     cast[type(f)](chronosInternalRetFuture.internalChild)
   else:
     unsupported "awaitne is only available within {.async.}"

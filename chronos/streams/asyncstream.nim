@@ -926,8 +926,32 @@ proc close*(rw: AsyncStreamRW) =
 
 proc closeWait*(rw: AsyncStreamRW): Future[void] =
   ## Close and frees resources of stream ``rw``.
+  const FutureName =
+    when rw is AsyncStreamReader:
+      "async.stream.reader.closeWait"
+    else:
+      "async.stream.writer.closeWait"
+
+  if rw.closed():
+    return Future.completed(FutureName)
+
+  let retFuture = newFuture[void](FutureName, {FutureFlag.OwnCancelSchedule})
+
+  proc continuation(udata: pointer) {.gcsafe, raises:[].} =
+    retFuture.complete()
+
+  proc cancellation(udata: pointer) {.gcsafe, raises:[].} =
+    # We are not going to change the state of `retFuture` to cancelled, so we
+    # will prevent the entire sequence of Futures from being cancelled.
+    discard
+
   rw.close()
-  rw.join()
+  if rw.future.finished():
+    retFuture.complete()
+  else:
+    rw.future.addCallback(continuation, cast[pointer](retFuture))
+    retFuture.cancelCallback = cancellation
+  retFuture
 
 proc startReader(rstream: AsyncStreamReader) =
   rstream.state = Running

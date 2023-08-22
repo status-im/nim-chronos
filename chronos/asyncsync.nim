@@ -736,10 +736,15 @@ proc close*(ab: AsyncEventQueue) {.raises: [].} =
   ab.queue.clear()
 
 proc closeWait*(ab: AsyncEventQueue): Future[void] {.raises: [].} =
-  var retFuture = newFuture[void]("AsyncEventQueue.closeWait()")
+  let retFuture = newFuture[void]("AsyncEventQueue.closeWait()",
+                                  {FutureFlag.OwnCancelSchedule})
   proc continuation(udata: pointer) {.gcsafe.} =
-    if not(retFuture.finished()):
-      retFuture.complete()
+    retFuture.complete()
+  proc cancellation(udata: pointer) {.gcsafe.} =
+    # We are not going to change the state of `retFuture` to cancelled, so we
+    # will prevent the entire sequence of Futures from being cancelled.
+    discard
+
   ab.close()
   # Schedule `continuation` to be called only after all the `reader`
   # notifications will be scheduled and processed.

@@ -12,6 +12,7 @@ import std/sequtils
 import stew/base10
 
 when chronosStackTrace:
+  import std/strutils
   when defined(nimHasStacktracesModule):
     import system/stacktraces
   else:
@@ -26,7 +27,8 @@ template LocFinishIndex*: auto {.deprecated: "LocationKind.Finish".} =
 template LocCompleteIndex*: untyped {.deprecated: "LocationKind.Finish".} =
   LocationKind.Finish
 
-func `[]`*(loc: array[LocationKind, ptr SrcLoc], v: int): ptr SrcLoc {.deprecated: "use LocationKind".} =
+func `[]`*(loc: array[LocationKind, ptr SrcLoc], v: int): ptr SrcLoc {.
+     deprecated: "use LocationKind".} =
   case v
   of 0: loc[LocationKind.Create]
   of 1: loc[LocationKind.Finish]
@@ -43,29 +45,37 @@ type
 
 # Backwards compatibility for old FutureState name
 template Finished* {.deprecated: "Use Completed instead".} = Completed
-template Finished*(T: type FutureState): FutureState {.deprecated: "Use FutureState.Completed instead".} = FutureState.Completed
+template Finished*(T: type FutureState): FutureState {.
+         deprecated: "Use FutureState.Completed instead".} =
+           FutureState.Completed
 
 proc newFutureImpl[T](loc: ptr SrcLoc): Future[T] =
   let fut = Future[T]()
-  internalInitFutureBase(fut, loc, FutureState.Pending)
+  internalInitFutureBase(fut, loc, FutureState.Pending, {})
+  fut
+
+proc newFutureImpl[T](loc: ptr SrcLoc, flags: FutureFlags): Future[T] =
+  let fut = Future[T]()
+  internalInitFutureBase(fut, loc, FutureState.Pending, flags)
   fut
 
 proc newFutureSeqImpl[A, B](loc: ptr SrcLoc): FutureSeq[A, B] =
   let fut = FutureSeq[A, B]()
-  internalInitFutureBase(fut, loc, FutureState.Pending)
+  internalInitFutureBase(fut, loc, FutureState.Pending, {})
   fut
 
 proc newFutureStrImpl[T](loc: ptr SrcLoc): FutureStr[T] =
   let fut = FutureStr[T]()
-  internalInitFutureBase(fut, loc, FutureState.Pending)
+  internalInitFutureBase(fut, loc, FutureState.Pending, {})
   fut
 
-template newFuture*[T](fromProc: static[string] = ""): Future[T] =
+template newFuture*[T](fromProc: static[string] = "",
+                       flags: static[FutureFlags] = {}): Future[T] =
   ## Creates a new future.
   ##
   ## Specifying ``fromProc``, which is a string specifying the name of the proc
   ## that this future belongs to, is a good habit as it helps with debugging.
-  newFutureImpl[T](getSrcLocation(fromProc))
+  newFutureImpl[T](getSrcLocation(fromProc), flags)
 
 template newFutureSeq*[A, B](fromProc: static[string] = ""): FutureSeq[A, B] =
   ## Create a new future which can hold/preserve GC sequence until future will
@@ -209,6 +219,8 @@ proc cancel(future: FutureBase, loc: ptr SrcLoc): bool =
   ##
   ## Immediately after this procedure is called, ``future.cancelled()`` will
   ## not return ``true`` (unless the Future was already cancelled).
+  if future.cancelled():
+    return true
   if future.finished():
     return false
 
@@ -217,23 +229,28 @@ proc cancel(future: FutureBase, loc: ptr SrcLoc): bool =
     # mechanism and/or use a regular `addCallback`
     when chronosStrictFutureAccess:
       doAssert future.internalCancelcb.isNil,
-        "futures returned from `{.async.}` functions must not use `cancelCallback`"
+        "futures returned from `{.async.}` functions must not use " &
+        "`cancelCallback`"
 
-    if cancel(future.internalChild, getSrcLocation()):
-      return true
-
+    cancel(future.internalChild, loc)
   else:
-    if not(isNil(future.internalCancelcb)):
+    if isNil(future.internalCancelcb):
+      cancelAndSchedule(future, loc)
+      future.cancelled()
+    else:
       future.internalCancelcb(cast[pointer](future))
       future.internalCancelcb = nil
-    cancelAndSchedule(future, getSrcLocation())
-
-  future.internalMustCancel = true
-  return true
+      if FutureFlag.OwnCancelSchedule notin future.internalFlags:
+        cancelAndSchedule(future, loc)
+      future.cancelled()
 
 template cancel*(future: FutureBase) =
   ## Cancel ``future``.
   discard cancel(future, getSrcLocation())
+
+template checkedCancel*(future: FutureBase): bool =
+  ## Cancel ``future`` and return cancellation result.
+  cancel(future, getSrcLocation())
 
 proc clearCallbacks(future: FutureBase) =
   future.internalCallbacks = default(seq[AsyncCallback])
@@ -784,13 +801,18 @@ proc cancelAndWait*(fut: FutureBase): Future[void] =
   ##
   ## If ``fut`` is already finished (completed, failed or cancelled) result
   ## Future[void] object will be returned complete.
-  var retFuture = newFuture[void]("chronos.cancelAndWait(T)")
-  proc continuation(udata: pointer) =
-    if not(retFuture.finished()):
-      retFuture.complete()
-  proc cancellation(udata: pointer) =
-    if not(fut.finished()):
-      fut.removeCallback(continuation)
+  let retFuture = newFuture[void]("chronos.cancelAndWait(FutureBase)",
+                                  {FutureFlag.OwnCancelSchedule})
+
+  proc continuation(udata: pointer) {.gcsafe.} =
+    retFuture.complete()
+
+  proc cancellation(udata: pointer) {.gcsafe.} =
+    # We are not going to change the state of `retFuture` to cancelled, so we
+    # will prevent the entire sequence of Futures from being cancelled one more
+    # time.
+    discard
+
   if fut.finished():
     retFuture.complete()
   else:
@@ -798,7 +820,37 @@ proc cancelAndWait*(fut: FutureBase): Future[void] =
     retFuture.cancelCallback = cancellation
     # Initiate cancellation process.
     fut.cancel()
-  return retFuture
+  retFuture
+
+proc checkedCancelAndWait*(fut: FutureBase): Future[bool] =
+  ## Initiate cancellation process for Future ``fut`` and wait until ``fut`` is
+  ## done e.g. changes its state (become completed, failed or cancelled).
+  ##
+  ## If ``fut`` is already finished (completed, failed or cancelled) result
+  ## Future[void] object will be returned complete.
+  let retFuture = newFuture[bool]("chronos.checkedCancelAndWait(FutureBase)",
+                                  {FutureFlag.OwnCancelSchedule})
+  var res: bool = false
+
+  proc continuation(udata: pointer) {.gcsafe.} =
+    retFuture.complete(res)
+
+  proc cancellation(udata: pointer) {.gcsafe.} =
+    # We are not going to change the state of `retFuture` to cancelled, so we
+    # will prevent the entire sequence of Futures from being cancelled one more
+    # time.
+    discard
+
+  if fut.cancelled():
+    retFuture.complete(true)
+  elif fut.finished():
+    retFuture.complete(false)
+  else:
+    fut.addCallback(continuation)
+    retFuture.cancelCallback = cancellation
+    # Initiate cancellation process.
+    res = fut.checkedCancel()
+  retFuture
 
 proc allFutures*(futs: varargs[FutureBase]): Future[void] =
   ## Returns a future which will complete only when all futures in ``futs``
