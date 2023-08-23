@@ -103,6 +103,8 @@ suite "Asynchronous utilities test suite":
           created*: Moment
           start*: Option[Moment]
           duration*: Duration
+          blocks*: int
+          initDuration*: Duration
           durationChildren*: Duration
 
         CallbackMetric = object
@@ -120,7 +122,7 @@ suite "Asynchronous utilities test suite":
       proc setFutureCreate(fut: FutureBase) {.raises: [].} =
         ## used for setting the duration
         let loc = fut.internalLocation[Create]
-        discard futureDurations.hasKeyOrPut(fut.id, FutureMetric())
+        futureDurations[fut.id] = FutureMetric()
         futureDurations.withValue(fut.id, metric):
           metric.created = Moment.now()
           echo loc, "; future create "
@@ -130,21 +132,34 @@ suite "Asynchronous utilities test suite":
         let loc = fut.internalLocation[Create]
         assert futureDurations.hasKey(fut.id)
         futureDurations.withValue(fut.id, metric):
-          metric.start = some Moment.now()
-          echo loc, "; future start "
+          let ts = Moment.now()
+          metric.start = some ts
+          metric.blocks.inc()
+          echo loc, "; future start: ", metric.initDuration
 
       proc setFuturePause(fut, child: FutureBase) {.raises: [].} =
         ## used for setting the duration
         let loc = fut.internalLocation[Create]
         let childLoc = if child.isNil: nil else: child.internalLocation[Create]
         var durationChildren = ZeroDuration
+        var initDurationChildren = ZeroDuration
         if childLoc != nil:
           futureDurations.withValue(child.id, metric):
-            durationChildren += metric.duration
+            durationChildren = metric.duration
+            initDurationChildren = metric.initDuration
         assert futureDurations.hasKey(fut.id)
         futureDurations.withValue(fut.id, metric):
           if metric.start.isSome:
-            metric.duration += Moment.now() - metric.start.get()
+            let ts = Moment.now()
+            metric.duration += ts - metric.start.get()
+            metric.duration -= initDurationChildren
+            if metric.blocks == 1:
+              metric.initDuration = ts - metric.created # tricky,
+                # the first block of a child iterator also
+                # runs on the parents clock, so we track our first block
+                # time so any parents can get it
+            echo loc, "; child firstBlock time: ", initDurationChildren
+
             metric.durationChildren += durationChildren
             metric.start = none Moment
           echo loc, "; future pause ", if childLoc.isNil: "" else: " child: " & $childLoc
@@ -188,6 +203,7 @@ suite "Asynchronous utilities test suite":
           f.setFutureDuration()
 
       proc simpleAsyncChild() {.async.} =
+        echo "child sleep..."
         os.sleep(25)
       
       proc simpleAsync1() {.async.} =
@@ -214,10 +230,11 @@ suite "Asynchronous utilities test suite":
           echo "avg wallTime:\t", v.totalWallTime div count, "\ttotal: ", v.totalWallTime
           echo "avg runTime:\t", v.totalRunTime div count, "\ttotal: ", v.totalRunTime
         if k.procedure == "simpleAsync1":
-          # check v.totalExecTime <= 160.milliseconds()
-          # check v.totalExecTime >= 140.milliseconds()
-          # check v.totalWallTime <= 120.milliseconds()
-          # check v.totalWallTime >= 100.milliseconds()
+          check v.totalExecTime >= 150.milliseconds()
+          check v.totalExecTime <= 170.milliseconds()
+
+          check v.totalRunTime >= 200.milliseconds()
+          check v.totalRunTime <= 230.milliseconds()
           discard
       echo ""
 
