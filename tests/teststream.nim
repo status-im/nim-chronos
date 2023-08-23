@@ -1327,8 +1327,11 @@ suite "Stream Transport test suite":
     await server.closeWait()
 
   proc testAcceptCancelLeaksTest() {.async.} =
-    var counter = 0
-    while true:
+    var
+      counter = 0
+      exitLoop = false
+
+    while not(exitLoop):
       let
         server = createStreamServer(initTAddress("127.0.0.1:0"))
         address = server.localAddress()
@@ -1341,7 +1344,7 @@ suite "Stream Transport test suite":
         await stepsAsync(counter)
 
       echo "[", counter, "] STEPS AWAITED"
-      let exitLoop =
+      exitLoop =
         if not(acceptFut.finished()):
           echo "CANCELLING ACCEPT"
           await cancelAndWait(acceptFut)
@@ -1356,6 +1359,8 @@ suite "Stream Transport test suite":
           await transp.closeWait()
           echo "ACCEPT TRANSPORT CLOSED"
           true
+
+      echo "EXITLOOP = ", exitLoop
 
       if not(transpFut.finished()):
         echo "CANCELLING CONNECT"
@@ -1374,9 +1379,7 @@ suite "Stream Transport test suite":
       await server.closeWait()
       echo "SERVER CLOSED"
 
-      if exitLoop:
-        echo "EXITING LOOP"
-        break
+    echo "TEST EXITED"
 
   markFD = getCurrentFD()
 

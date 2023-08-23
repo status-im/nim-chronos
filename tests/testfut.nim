@@ -1898,3 +1898,44 @@ suite "Future[T] behavior test suite":
         testFut.cancelled() == true
         future.cancelled() == true
         res == true
+
+  test "Issue #334 test":
+    proc test(): bool =
+      var testres = ""
+
+      proc a() {.async.} =
+        try:
+          await sleepAsync(seconds(1))
+        except CatchableError as exc:
+          testres.add("A")
+          raise exc
+
+      proc b() {.async.} =
+        try:
+          await a()
+        except CatchableError as exc:
+          testres.add("B")
+          raise exc
+
+      proc c() {.async.} =
+        try:
+          echo $(await b().withTimeout(seconds(2)))
+        except CatchableError as exc:
+          testres.add("C")
+          raise exc
+
+      let x = c()
+      x.cancel()
+
+      try:
+        waitFor x
+      except CatchableError:
+        testres.add("D")
+
+      testres.add("E")
+
+      waitFor sleepAsync(milliseconds(100))
+
+      testres == "ABCDE"
+
+    check test() == true
