@@ -97,8 +97,8 @@ when chronosFuturesInstrumentation:
   var
     onFutureCreate* {.threadvar.}: proc (fut: FutureBase) {.gcsafe, raises: [].}
     onFutureRunning* {.threadvar.}: proc (fut: FutureBase) {.gcsafe, raises: [].}
-    onFutureStop* {.threadvar.}: proc (fut: FutureBase) {.gcsafe, raises: [].}
     onFuturePause* {.threadvar.}: proc (fut, child: FutureBase) {.gcsafe, raises: [].}
+    onFutureStop* {.threadvar.}: proc (fut: FutureBase) {.gcsafe, raises: [].}
 
 # Internal utilities - these are not part of the stable API
 proc internalInitFutureBase*(
