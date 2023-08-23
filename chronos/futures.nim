@@ -54,10 +54,6 @@ type
     when chronosFutureId:
       internalId*: uint
 
-    when chronosFuturesInstrumentation:
-      onFutureRunning*, onFutureStop*: proc (fut: FutureBase) {.gcsafe, raises: [].}
-      onFuturePause*: proc (fut, child: FutureBase) {.gcsafe, raises: [].}
-
     when chronosStackTrace:
       internalErrorStackTrace*: StackTrace
       internalStackTrace*: StackTrace ## For debugging purposes only.
@@ -97,6 +93,13 @@ when chronosFutureTracking:
 
   var futureList* {.threadvar.}: FutureList
 
+when chronosFuturesInstrumentation:
+  var
+    onFutureCreate* {.threadvar.}: proc (fut: FutureBase) {.gcsafe, raises: [].}
+    onFutureRunning* {.threadvar.}: proc (fut: FutureBase) {.gcsafe, raises: [].}
+    onFutureStop* {.threadvar.}: proc (fut: FutureBase) {.gcsafe, raises: [].}
+    onFuturePause* {.threadvar.}: proc (fut, child: FutureBase) {.gcsafe, raises: [].}
+
 # Internal utilities - these are not part of the stable API
 proc internalInitFutureBase*(
     fut: FutureBase,
@@ -124,6 +127,9 @@ proc internalInitFutureBase*(
       if isNil(futureList.head):
         futureList.head = fut
       futureList.count.inc()
+
+  when chronosFuturesInstrumentation:
+    onFutureCreate(fut)
 
 
 # Public API

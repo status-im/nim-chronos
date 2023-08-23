@@ -135,8 +135,8 @@ proc finish(fut: FutureBase, state: FutureState) =
   when chronosStrictFutureAccess:
     doAssert fut.internalCancelcb == nil or state != FutureState.Cancelled
   when chronosFuturesInstrumentation:
-    if not(isNil(fut.onFutureStop)):
-      fut.onFutureStop(fut)
+    if not(isNil(onFutureStop)):
+      onFutureStop(fut)
   fut.internalCancelcb = nil # release cancellation callback memory
   for item in fut.internalCallbacks.mitems():
     if not(isNil(item.function)):
@@ -216,7 +216,7 @@ proc cancel(future: FutureBase, loc: ptr SrcLoc): bool =
     return false
 
   when chronosFuturesInstrumentation:
-    if not(isNil(future.onFutureStop)): future.onFutureStop(future)
+    if not(isNil(onFutureStop)): onFutureStop(future)
 
   if not(isNil(future.internalChild)):
     # If you hit this assertion, you should have used the `CancelledError`
@@ -325,8 +325,8 @@ proc futureContinue*(fut: FutureBase) {.raises: [], gcsafe.} =
       # `await` typically) or completes / fails / is cancelled
 
       when chronosFuturesInstrumentation:
-        if not(isNil(fut.onFutureRunning)):
-          fut.onFutureRunning(fut)
+        if not(isNil(onFutureRunning)):
+          onFutureRunning(fut)
       
       next = fut.internalClosure(fut)
 

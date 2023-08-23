@@ -12,7 +12,7 @@ import std/[tables, os]
 {.used.}
 
 when chronosFuturesInstrumentation:
-  import std/[tables, macros]
+  import std/[tables, macros, options]
   import ../chronos/timer
 
 suite "Asynchronous utilities test suite":
@@ -100,76 +100,98 @@ suite "Asynchronous utilities test suite":
         CallbackDurationMetric = object
           ## Holds average timing information for a given closure
           closureLoc*: ptr SrcLoc
-          totalDuration*: Duration
+          created*: Moment
+          start*: Option[Moment]
+          duration*: Duration
+          totalExecTime*: Duration
+          totalWallTime*: Duration
           minSingleTime*: Duration
           maxSingleTime*: Duration
           count*: int64
 
-      var callbackDurations: Table[ptr SrcLoc, CallbackDurationMetric]
+      var
+        callbackDurations: Table[ptr SrcLoc, CallbackDurationMetric]
 
-      # if not callbackDurations.hasKey(fut.location[Create])
-
-      proc setFutureDuration(fut: FutureBase, internalDuration: Duration) {.raises: [].} =
+      proc setFutureCreate(fut: FutureBase) {.raises: [].} =
         ## used for setting the duration
         let loc = fut.internalLocation[Create]
         discard callbackDurations.hasKeyOrPut(loc, CallbackDurationMetric(minSingleTime: InfiniteDuration))
         callbackDurations.withValue(loc, metric):
-          metric.totalDuration += internalDuration
+          metric.created = Moment.now()
+          echo loc, " future create "
+
+      proc setFutureStart(fut: FutureBase) {.raises: [].} =
+        ## used for setting the duration
+        let loc = fut.internalLocation[Create]
+        discard callbackDurations.hasKeyOrPut(loc, CallbackDurationMetric(minSingleTime: InfiniteDuration))
+        callbackDurations.withValue(loc, metric):
+          metric.start = some Moment.now()
+          echo loc, " future start "
+
+      proc setFuturePause(fut: FutureBase) {.raises: [].} =
+        ## used for setting the duration
+        let loc = fut.internalLocation[Create]
+        assert callbackDurations.hasKey(loc)
+        callbackDurations.withValue(loc, metric):
+          if metric.start.isSome:
+            metric.duration += Moment.now() - metric.start.get()
+            metric.start = none Moment
+          echo loc, " future pause "
+
+      proc setFutureDuration(fut: FutureBase) {.raises: [].} =
+        ## used for setting the duration
+        let loc = fut.internalLocation[Create]
+        # assert  "set duration: " & $loc
+        callbackDurations.withValue(loc, metric):
+          echo loc, " set duration: ", callbackDurations.hasKey(loc)
+          metric.totalExecTime += metric.duration
+          metric.totalWallTime += Moment.now() - metric.created
           metric.count.inc
-          metric.minSingleTime = min(metric.minSingleTime, internalDuration)
-          metric.maxSingleTime = max(metric.maxSingleTime, internalDuration)
+          metric.minSingleTime = min(metric.minSingleTime, metric.duration)
+          metric.maxSingleTime = max(metric.maxSingleTime, metric.duration)
           # handle overflow
           if metric.count == metric.count.typeof.high:
-            metric.totalDuration = ZeroDuration
+            metric.totalExecTime = ZeroDuration
             metric.count = 0
 
-      template instrumentAsync() =
-        var start = Moment.now()
-        var internalDuration: Duration
+      onFutureCreate =
+        proc (f: FutureBase) =
+          f.setFutureCreate()
+      onFutureRunning =
+        proc (f: FutureBase) =
+          f.setFutureStart()
+      onFuturePause =
+        proc (f, child: FutureBase) =
+          f.setFuturePause()
+      onFutureStop =
+        proc (f: FutureBase) =
+          f.setFuturePause()
+          f.setFutureDuration()
 
-        echo "chronosInternalRetFuture: ", chronosInternalRetFuture.id()
-        chronosInternalRetFuture.onFutureRunning =
-          proc (f: FutureBase) =
-            echo "start future"
-            start = Moment.now()
-        chronosInternalRetFuture.onFuturePause =
-          proc (f, child: FutureBase) =
-            echo "pause future"
-            # echo "future child: ", repr child
-            internalDuration += Moment.now() - start
-        chronosInternalRetFuture.onFutureStop =
-          proc (f: FutureBase) =
-            echo "end future"
-            internalDuration += Moment.now() - start
-            f.setFutureDuration(internalDuration)
-
-      macro instrument(prc: untyped) =
-        echo "intrument: ", prc.treeRepr
-        let callSetup = nnkCall.newTree(ident "instrumentAsync")
-        prc.body.insert(0, callSetup)
-        return prc
-
-      proc simpleAsync1() {.instrument, async.} =
+      proc simpleAsync1() {.async.} =
         for i in 0..1:
-          await sleepAsync(10.milliseconds)
+          await sleepAsync(40.milliseconds)
+          echo "sleep..."
           os.sleep(50)
         
       waitFor(simpleAsync1())
 
       let metrics = callbackDurations
-      echo "metrics:"
+      echo "\n=== metrics ==="
       for (k,v) in metrics.pairs():
         let count = v.count
-        let totalDuration = v.totalDuration
+        let totalDuration = v.totalExecTime
         if count > 0:
           echo ""
           echo "metric: ", $k
           echo "count: ", count
-          echo "total: ", totalDuration
-          echo "avg: ", totalDuration div count
+          echo "totalExec: ", totalDuration, " avg: ", totalDuration div count
+          echo "wallTime: ", v.totalWallTime, " avg: ", v.totalWallTime div count
         if k.procedure == "simpleAsync1":
-          check v.totalDuration <= 120.milliseconds()
-          check v.totalDuration >= 100.milliseconds()
+          check v.totalExecTime <= 120.milliseconds()
+          check v.totalExecTime >= 100.milliseconds()
+          # check v.totalWallTime <= 120.milliseconds()
+          # check v.totalWallTime >= 100.milliseconds()
       echo ""
 
     else:
