@@ -1340,28 +1340,42 @@ suite "Stream Transport test suite":
       if counter > 0:
         await stepsAsync(counter)
 
+      echo "[", counter, "] STEPS AWAITED"
       let exitLoop =
         if not(acceptFut.finished()):
+          echo "CANCELLING ACCEPT"
           await cancelAndWait(acceptFut)
+          echo "ACCEPT CANCELLED"
           doAssert(cancelled(acceptFut),
                    "Future should be Cancelled at this point")
           inc(counter)
           false
         else:
+          echo "ACCEPT FINISHED CLOSING TRANSPORT"
           let transp = await acceptFut
           await transp.closeWait()
+          echo "ACCEPT TRANSPORT CLOSED"
           true
 
       if not(transpFut.finished()):
+        echo "CANCELLING CONNECT"
         await transpFut.cancelAndWait()
-      else:
-        let transp = await transpFut
-        await transp.closeWait()
+        echo "CONNECT CANCELLED STATE = ", transpFut.state
 
+      if transpFut.finished():
+        let transp = transpFut.value
+        echo "CLOSING CONNECT TRANSPORT"
+        await transp.closeWait()
+        echo "CONNECT TRANSPORT CLOSED"
+
+      echo "STOPPING SERVER"
       server.stop()
+      echo "SERVER STOPPED, CLOSING"
       await server.closeWait()
+      echo "SERVER CLOSED"
 
       if exitLoop:
+        echo "EXITING LOOP"
         break
 
   markFD = getCurrentFD()
