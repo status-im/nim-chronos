@@ -970,7 +970,8 @@ proc getResponse(req: HttpClientRequestRef): Future[HttpClientResponseRef] {.
     bytesRead =
       try:
         await req.connection.reader.readUntil(addr buffer[0],
-                                              len(buffer), HeadersMark).wait(
+                                              len(buffer), HeadersMark,
+                                              withLogs = true).wait(
                                               req.session.headersTimeout)
       except AsyncTimeoutError:
         raiseHttpReadError("Reading response headers timed out")

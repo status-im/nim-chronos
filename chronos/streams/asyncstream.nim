@@ -492,7 +492,7 @@ proc readOnce*(rstream: AsyncStreamReader, pbytes: pointer,
       return count
 
 proc readUntil*(rstream: AsyncStreamReader, pbytes: pointer, nbytes: int,
-                sep: seq[byte]): Future[int] {.async.} =
+                sep: seq[byte], withLogs = false): Future[int] {.async.} =
   ## Read data from the read-only stream ``rstream`` until separator ``sep`` is
   ## found.
   ##
@@ -514,6 +514,9 @@ proc readUntil*(rstream: AsyncStreamReader, pbytes: pointer, nbytes: int,
   if nbytes == 0:
     raise newAsyncStreamLimitError()
 
+  if withLogs:
+    echo "isNil(rstream.rsource) = " & $isNil(rstream.rsource) &
+      "  <-->  isNil(rstream.readerLoop) = " & $isNil(rstream.readerLoop)
   if isNil(rstream.rsource):
     try:
       return await readUntil(rstream.tsource, pbytes, nbytes, sep)
