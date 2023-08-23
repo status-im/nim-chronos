@@ -12,7 +12,7 @@ import std/[tables, os]
 {.used.}
 
 when chronosFuturesInstrumentation:
-  import std/[tables, macros, options]
+  import std/[tables, macros, options, hashes]
   import ../chronos/timer
 
 suite "Asynchronous utilities test suite":
@@ -97,13 +97,15 @@ suite "Asynchronous utilities test suite":
     when chronosFuturesInstrumentation:
 
       type
-        CallbackDurationMetric = object
+        FutureMetric = object
           ## Holds average timing information for a given closure
           closureLoc*: ptr SrcLoc
           created*: Moment
           start*: Option[Moment]
           duration*: Duration
           durationChildren*: Duration
+
+        CallbackMetric = object
           totalExecTime*: Duration
           totalWallTime*: Duration
           totalRunTime*: Duration
@@ -112,23 +114,24 @@ suite "Asynchronous utilities test suite":
           count*: int64
 
       var
-        callbackDurations: Table[ptr SrcLoc, CallbackDurationMetric]
+        futureDurations: Table[uint, FutureMetric]
+        callbackDurations: Table[ptr SrcLoc, CallbackMetric]
 
       proc setFutureCreate(fut: FutureBase) {.raises: [].} =
         ## used for setting the duration
         let loc = fut.internalLocation[Create]
-        discard callbackDurations.hasKeyOrPut(loc, CallbackDurationMetric(minSingleTime: InfiniteDuration))
-        callbackDurations.withValue(loc, metric):
+        discard futureDurations.hasKeyOrPut(fut.id, FutureMetric())
+        futureDurations.withValue(fut.id, metric):
           metric.created = Moment.now()
-          echo loc, " future create "
+          echo loc, "; future create "
 
       proc setFutureStart(fut: FutureBase) {.raises: [].} =
         ## used for setting the duration
         let loc = fut.internalLocation[Create]
-        discard callbackDurations.hasKeyOrPut(loc, CallbackDurationMetric(minSingleTime: InfiniteDuration))
-        callbackDurations.withValue(loc, metric):
+        assert futureDurations.hasKey(fut.id)
+        futureDurations.withValue(fut.id, metric):
           metric.start = some Moment.now()
-          echo loc, " future start "
+          echo loc, "; future start "
 
       proc setFuturePause(fut, child: FutureBase) {.raises: [].} =
         ## used for setting the duration
@@ -136,28 +139,32 @@ suite "Asynchronous utilities test suite":
         let childLoc = if child.isNil: nil else: child.internalLocation[Create]
         var durationChildren = ZeroDuration
         if childLoc != nil:
-          callbackDurations.withValue(childLoc, metric):
+          futureDurations.withValue(child.id, metric):
             durationChildren += metric.duration
-        assert callbackDurations.hasKey(loc)
-        callbackDurations.withValue(loc, metric):
+        assert futureDurations.hasKey(fut.id)
+        futureDurations.withValue(fut.id, metric):
           if metric.start.isSome:
             metric.duration += Moment.now() - metric.start.get()
             metric.durationChildren += durationChildren
             metric.start = none Moment
-          echo loc, " future pause ", if childLoc.isNil: "" else: " child: " & $childLoc
+          echo loc, "; future pause ", if childLoc.isNil: "" else: " child: " & $childLoc
 
       proc setFutureDuration(fut: FutureBase) {.raises: [].} =
         ## used for setting the duration
         let loc = fut.internalLocation[Create]
         # assert  "set duration: " & $loc
+        var fm: FutureMetric
+        assert futureDurations.pop(fut.id, fm)
+
+        discard callbackDurations.hasKeyOrPut(loc, CallbackMetric(minSingleTime: InfiniteDuration))
         callbackDurations.withValue(loc, metric):
           echo loc, " set duration: ", callbackDurations.hasKey(loc)
-          metric.totalExecTime += metric.duration
-          metric.totalWallTime += Moment.now() - metric.created
-          metric.totalRunTime += metric.totalExecTime + metric.durationChildren
+          metric.totalExecTime += fm.duration
+          metric.totalWallTime += Moment.now() - fm.created
+          metric.totalRunTime += metric.totalExecTime + fm.durationChildren
           metric.count.inc
-          metric.minSingleTime = min(metric.minSingleTime, metric.duration)
-          metric.maxSingleTime = max(metric.maxSingleTime, metric.duration)
+          metric.minSingleTime = min(metric.minSingleTime, fm.duration)
+          metric.maxSingleTime = max(metric.maxSingleTime, fm.duration)
           # handle overflow
           if metric.count == metric.count.typeof.high:
             metric.totalExecTime = ZeroDuration
