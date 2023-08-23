@@ -154,7 +154,9 @@ suite "Asynchronous utilities test suite":
         let loc = fut.internalLocation[Create]
         # assert  "set duration: " & $loc
         var fm: FutureMetric
-        assert futureDurations.pop(fut.id, fm)
+        # assert futureDurations.pop(fut.id, fm)
+        futureDurations.withValue(fut.id, metric):
+          fm = metric[]
 
         discard callbackDurations.hasKeyOrPut(loc, CallbackMetric(minSingleTime: InfiniteDuration))
         callbackDurations.withValue(loc, metric):
@@ -162,6 +164,7 @@ suite "Asynchronous utilities test suite":
           metric.totalExecTime += fm.duration
           metric.totalWallTime += Moment.now() - fm.created
           metric.totalRunTime += metric.totalExecTime + fm.durationChildren
+          echo loc, " child duration: ", fm.durationChildren
           metric.count.inc
           metric.minSingleTime = min(metric.minSingleTime, fm.duration)
           metric.maxSingleTime = max(metric.maxSingleTime, fm.duration)
