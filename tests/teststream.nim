@@ -1362,7 +1362,7 @@ suite "Stream Transport test suite":
         await transpFut.cancelAndWait()
         echo "CONNECT CANCELLED STATE = ", transpFut.state
 
-      if transpFut.finished():
+      if transpFut.completed():
         let transp = transpFut.value
         echo "CLOSING CONNECT TRANSPORT"
         await transp.closeWait()
