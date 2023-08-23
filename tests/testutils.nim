@@ -201,6 +201,9 @@ suite "Asynchronous utilities test suite":
 
       let metrics = callbackDurations
       echo "\n=== metrics ==="
+      echo "execTime:\ttime to execute non-async portions of async proc"
+      echo "runTime:\texecution time + execution time of children"
+      echo "wallTime:\twall time elapsed for future's lifetime"
       for (k,v) in metrics.pairs():
         let count = v.count
         if count > 0:
