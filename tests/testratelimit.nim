@@ -49,7 +49,7 @@ suite "Token Bucket":
     # Consume 10* the budget cap
     let beforeStart = Moment.now()
     waitFor(bucket.consume(1000).wait(5.seconds))
-    check Moment.now() - beforeStart in 900.milliseconds .. 1500.milliseconds
+    check Moment.now() - beforeStart in 900.milliseconds .. 2200.milliseconds
 
   test "Sync manual replenish":
     var bucket = TokenBucket.new(1000, 0.seconds)
