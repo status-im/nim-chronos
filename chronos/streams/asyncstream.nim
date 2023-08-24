@@ -519,7 +519,7 @@ proc readUntil*(rstream: AsyncStreamReader, pbytes: pointer, nbytes: int,
       "  <-->  isNil(rstream.readerLoop) = " & $isNil(rstream.readerLoop)
   if isNil(rstream.rsource):
     try:
-      return await readUntil(rstream.tsource, pbytes, nbytes, sep)
+      return await readUntil(rstream.tsource, pbytes, nbytes, sep, withLogs = withLogs)
     except CancelledError as exc:
       raise exc
     except TransportIncompleteError:

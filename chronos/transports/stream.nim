@@ -2412,7 +2412,7 @@ proc readOnce*(transp: StreamTransport, pbytes: pointer,
   return count
 
 proc readUntil*(transp: StreamTransport, pbytes: pointer, nbytes: int,
-                sep: seq[byte]): Future[int] {.async.} =
+                sep: seq[byte], withLogs = false): Future[int] {.async.} =
   ## Read data from the transport ``transp`` until separator ``sep`` is found.
   ##
   ## On success, the data and separator will be removed from the internal
@@ -2459,6 +2459,9 @@ proc readUntil*(transp: StreamTransport, pbytes: pointer, nbytes: int,
       else:
         state = 0
 
+    if withLogs:
+      echo "readUntil: " & $transp.offset & " bytes available (" &
+        $index & ", " & $state & " == " & $len(sep) & ")"
     (index, state == len(sep))
 
   return k
