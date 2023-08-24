@@ -1331,6 +1331,11 @@ suite "Stream Transport test suite":
       counter = 0
       exitLoop = false
 
+    # This timer will help to awake events poll in case its going to stuck
+    # usually happens on MacOS.
+
+    var sleepFut = sleepAsync(1.seconds)
+
     while not(exitLoop):
       let
         server = createStreamServer(initTAddress("127.0.0.1:0"))
@@ -1339,6 +1344,8 @@ suite "Stream Transport test suite":
       let
         transpFut = connect(address)
         acceptFut = server.accept()
+
+      echo "AWAITING FOR [", counter, "] STEPS"
 
       if counter > 0:
         await stepsAsync(counter)
@@ -1378,6 +1385,9 @@ suite "Stream Transport test suite":
       echo "SERVER STOPPED, CLOSING"
       await server.closeWait()
       echo "SERVER CLOSED"
+
+    if not(sleepFut.finished()):
+      await cancelAndWait(sleepFut)
 
     echo "TEST EXITED"
 

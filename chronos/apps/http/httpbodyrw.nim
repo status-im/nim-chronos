@@ -45,8 +45,8 @@ proc closeWait*(bstream: HttpBodyReader) {.async.} =
     # data from stream at position [1].
     for index in countdown((len(bstream.streams) - 1), 0):
       res.add(bstream.streams[index].closeWait())
-    await allFutures(res)
-    await procCall(closeWait(AsyncStreamReader(bstream)))
+    res.add(procCall(closeWait(AsyncStreamReader(bstream))))
+    await noCancelWait(allFutures(res))
     bstream.bstate = HttpState.Closed
     untrackCounter(HttpBodyReaderTrackerName)
 

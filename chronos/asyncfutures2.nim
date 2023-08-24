@@ -850,6 +850,33 @@ proc checkedCancelAndWait*(fut: FutureBase): Future[bool] =
     res = fut.checkedCancel()
   retFuture
 
+proc noCancelWait*[T](future: Future[T]): Future[T] =
+  let retFuture = newFuture[T]("chronos.noCancelWait(T)",
+                               {FutureFlag.OwnCancelSchedule})
+  template completeFuture() =
+    if future.completed():
+      when T is void:
+        retFuture.complete()
+      else:
+        retFuture.complete(future.value)
+    elif future.failed():
+      retFuture.fail(future.error)
+    else:
+      raiseAssert("Unexpected future state [" & $future.state & "]")
+
+  proc continuation(udata: pointer) {.gcsafe.} =
+    completeFuture()
+
+  proc cancellation(udata: pointer) {.gcsafe.} =
+    discard
+
+  if future.finished():
+    completeFuture()
+  else:
+    future.addCallback(continuation)
+    retFuture.cancelCallback = cancellation
+  retFuture
+
 proc allFutures*(futs: varargs[FutureBase]): Future[void] =
   ## Returns a future which will complete only when all futures in ``futs``
   ## will be completed, failed or canceled.
@@ -886,7 +913,7 @@ proc allFutures*(futs: varargs[FutureBase]): Future[void] =
   if len(nfuts) == 0 or len(nfuts) == finishedFutures:
     retFuture.complete()
 
-  return retFuture
+  retFuture
 
 proc allFutures*[T](futs: varargs[Future[T]]): Future[void] =
   ## Returns a future which will complete only when all futures in ``futs``
