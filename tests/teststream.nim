@@ -1333,8 +1333,7 @@ suite "Stream Transport test suite":
 
     # This timer will help to awake events poll in case its going to stuck
     # usually happens on MacOS.
-
-    var sleepFut = sleepAsync(1.seconds)
+    let sleepFut = sleepAsync(1.seconds)
 
     while not(exitLoop):
       let
@@ -1345,51 +1344,33 @@ suite "Stream Transport test suite":
         transpFut = connect(address)
         acceptFut = server.accept()
 
-      echo "AWAITING FOR [", counter, "] STEPS"
-
       if counter > 0:
         await stepsAsync(counter)
 
-      echo "[", counter, "] STEPS AWAITED"
       exitLoop =
         if not(acceptFut.finished()):
-          echo "CANCELLING ACCEPT"
           await cancelAndWait(acceptFut)
-          echo "ACCEPT CANCELLED"
           doAssert(cancelled(acceptFut),
                    "Future should be Cancelled at this point")
           inc(counter)
           false
         else:
-          echo "ACCEPT FINISHED CLOSING TRANSPORT"
           let transp = await acceptFut
           await transp.closeWait()
-          echo "ACCEPT TRANSPORT CLOSED"
           true
 
-      echo "EXITLOOP = ", exitLoop
-
       if not(transpFut.finished()):
-        echo "CANCELLING CONNECT"
         await transpFut.cancelAndWait()
-        echo "CONNECT CANCELLED STATE = ", transpFut.state
 
       if transpFut.completed():
         let transp = transpFut.value
-        echo "CLOSING CONNECT TRANSPORT"
         await transp.closeWait()
-        echo "CONNECT TRANSPORT CLOSED"
 
-      echo "STOPPING SERVER"
       server.stop()
-      echo "SERVER STOPPED, CLOSING"
       await server.closeWait()
-      echo "SERVER CLOSED"
 
     if not(sleepFut.finished()):
       await cancelAndWait(sleepFut)
-
-    echo "TEST EXITED"
 
   markFD = getCurrentFD()
 
