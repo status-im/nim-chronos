@@ -53,10 +53,6 @@ type
       rwsabuf: WSABUF                 # Reader WSABUF structure
       wwsabuf: WSABUF                 # Writer WSABUF structure
 
-  DgramTransportTracker* = ref object of TrackerBase
-    opened*: int64
-    closed*: int64
-
 const
   DgramTransportTrackerName* = "datagram.transport"
 
@@ -87,39 +83,6 @@ proc localAddress*(transp: DatagramTransport): TransportAddress {.
 template setReadError(t, e: untyped) =
   (t).state.incl(ReadError)
   (t).error = getTransportOsError(e)
-
-proc setupDgramTransportTracker(): DgramTransportTracker {.
-     gcsafe, raises: [].}
-
-proc getDgramTransportTracker(): DgramTransportTracker {.inline.} =
-  var res = cast[DgramTransportTracker](getTracker(DgramTransportTrackerName))
-  if isNil(res):
-    res = setupDgramTransportTracker()
-  doAssert(not(isNil(res)))
-  res
-
-proc dumpTransportTracking(): string {.gcsafe.} =
-  var tracker = getDgramTransportTracker()
-  "Opened transports: " & $tracker.opened & "\n" &
-  "Closed transports: " & $tracker.closed
-
-proc leakTransport(): bool {.gcsafe.} =
-  let tracker = getDgramTransportTracker()
-  tracker.opened != tracker.closed
-
-proc trackDgram(t: DatagramTransport) {.inline.} =
-  var tracker = getDgramTransportTracker()
-  inc(tracker.opened)
-
-proc untrackDgram(t: DatagramTransport) {.inline.}  =
-  var tracker = getDgramTransportTracker()
-  inc(tracker.closed)
-
-proc setupDgramTransportTracker(): DgramTransportTracker {.gcsafe.} =
-  let res = DgramTransportTracker(
-    opened: 0, closed: 0, dump: dumpTransportTracking, isLeaked: leakTransport)
-  addTracker(DgramTransportTrackerName, res)
-  res
 
 when defined(windows):
   template setWriterWSABuffer(t, v: untyped) =
@@ -213,7 +176,7 @@ when defined(windows):
           transp.state.incl(ReadPaused)
           if ReadClosed in transp.state and not(transp.future.finished()):
             # Stop tracking transport
-            untrackDgram(transp)
+            untrackCounter(DgramTransportTrackerName)
             # If `ReadClosed` present, then close(transport) was called.
             transp.future.complete()
             GC_unref(transp)
@@ -259,7 +222,7 @@ when defined(windows):
           # WSARecvFrom session.
           if ReadClosed in transp.state and not(transp.future.finished()):
             # Stop tracking transport
-            untrackDgram(transp)
+            untrackCounter(DgramTransportTrackerName)
             transp.future.complete()
             GC_unref(transp)
         break
@@ -394,7 +357,7 @@ when defined(windows):
                          len: ULONG(len(res.buffer)))
     GC_ref(res)
     # Start tracking transport
-    trackDgram(res)
+    trackCounter(DgramTransportTrackerName)
     if NoAutoRead notin flags:
       let rres = res.resumeRead()
       if rres.isErr(): raiseTransportOsError(rres.error())
@@ -503,11 +466,11 @@ else:
     var res = if isNil(child): DatagramTransport() else: child
 
     if sock == asyncInvalidSocket:
-      var proto = Protocol.IPPROTO_UDP
-      if local.family == AddressFamily.Unix:
-        # `Protocol` enum is missing `0` value, so we making here cast, until
-        # `Protocol` enum will not support IPPROTO_IP == 0.
-        proto = cast[Protocol](0)
+      let proto =
+        if local.family == AddressFamily.Unix:
+          Protocol.IPPROTO_IP
+        else:
+          Protocol.IPPROTO_UDP
       localSock = createAsyncSocket(local.getDomain(), SockType.SOCK_DGRAM,
                                     proto)
       if localSock == asyncInvalidSocket:
@@ -592,7 +555,7 @@ else:
     res.future = newFuture[void]("datagram.transport")
     GC_ref(res)
     # Start tracking transport
-    trackDgram(res)
+    trackCounter(DgramTransportTrackerName)
     if NoAutoRead notin flags:
       let rres = res.resumeRead()
       if rres.isErr(): raiseTransportOsError(rres.error())
@@ -603,7 +566,7 @@ proc close*(transp: DatagramTransport) =
   proc continuation(udata: pointer) {.raises: [].} =
     if not(transp.future.finished()):
       # Stop tracking transport
-      untrackDgram(transp)
+      untrackCounter(DgramTransportTrackerName)
       transp.future.complete()
       GC_unref(transp)
 

@@ -171,11 +171,16 @@ type
     dump*: proc(): string {.gcsafe, raises: [].}
     isLeaked*: proc(): bool {.gcsafe, raises: [].}
 
+  TrackerCounter* = object
+    opened*: uint64
+    closed*: uint64
+
   PDispatcherBase = ref object of RootRef
     timers*: HeapQueue[TimerCallback]
     callbacks*: Deque[AsyncCallback]
     idlers*: Deque[AsyncCallback]
     trackers*: Table[string, TrackerBase]
+    counters*: Table[string, TrackerCounter]
 
 proc sentinelCallbackImpl(arg: pointer) {.gcsafe.} =
   raiseAssert "Sentinel callback MUST not be scheduled"
@@ -308,6 +313,7 @@ when defined(windows):
       getAcceptExSockAddrs*: WSAPROC_GETACCEPTEXSOCKADDRS
       transmitFile*: WSAPROC_TRANSMITFILE
       getQueuedCompletionStatusEx*: LPFN_GETQUEUEDCOMPLETIONSTATUSEX
+      disconnectEx*: WSAPROC_DISCONNECTEX
       flags: set[DispatcherFlag]
 
     PtrCustomOverlapped* = ptr CustomOverlapped
@@ -388,6 +394,13 @@ when defined(windows):
                                      "dispatcher's TransmitFile()")
       loop.transmitFile = cast[WSAPROC_TRANSMITFILE](funcPointer)
 
+    block:
+      let res = getFunc(sock, funcPointer, WSAID_DISCONNECTEX)
+      if not(res):
+        raiseOsDefect(osLastError(), "initAPI(): Unable to initialize " &
+                                     "dispatcher's DisconnectEx()")
+      loop.disconnectEx = cast[WSAPROC_DISCONNECTEX](funcPointer)
+
     if closeFd(sock) != 0:
       raiseOsDefect(osLastError(), "initAPI(): Unable to close control socket")
 
@@ -404,7 +417,8 @@ when defined(windows):
       timers: initHeapQueue[TimerCallback](),
       callbacks: initDeque[AsyncCallback](64),
       idlers: initDeque[AsyncCallback](),
-      trackers: initTable[string, TrackerBase]()
+      trackers: initTable[string, TrackerBase](),
+      counters: initTable[string, TrackerCounter]()
     )
     res.callbacks.addLast(SentinelCallback)
     initAPI(res)
@@ -811,10 +825,11 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     var res = PDispatcher(
       selector: selector,
       timers: initHeapQueue[TimerCallback](),
-      callbacks: initDeque[AsyncCallback](asyncEventsCount),
+      callbacks: initDeque[AsyncCallback](chronosEventsCount),
       idlers: initDeque[AsyncCallback](),
-      keys: newSeq[ReadyKey](asyncEventsCount),
-      trackers: initTable[string, TrackerBase]()
+      keys: newSeq[ReadyKey](chronosEventsCount),
+      trackers: initTable[string, TrackerBase](),
+      counters: initTable[string, TrackerCounter]()
     )
     res.callbacks.addLast(SentinelCallback)
     initAPI(res)
@@ -994,7 +1009,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     ## You can execute ``aftercb`` before actual socket close operation.
     closeSocket(fd, aftercb)
 
-  when asyncEventEngine in ["epoll", "kqueue"]:
+  when chronosEventEngine in ["epoll", "kqueue"]:
     type
       ProcessHandle* = distinct int
       SignalHandle* = distinct int
@@ -1108,7 +1123,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
           if not isNil(adata.reader.function):
             loop.callbacks.addLast(adata.reader)
 
-        when asyncEventEngine in ["epoll", "kqueue"]:
+        when chronosEventEngine in ["epoll", "kqueue"]:
           let customSet = {Event.Timer, Event.Signal, Event.Process,
                            Event.Vnode}
           if customSet * events != {}:
@@ -1242,10 +1257,7 @@ proc callIdle*(cbproc: CallbackFunc) =
 
 include asyncfutures2
 
-
-when defined(macosx) or defined(macos) or defined(freebsd) or
-     defined(netbsd) or defined(openbsd) or defined(dragonfly) or
-     defined(linux) or defined(windows):
+when (chronosEventEngine in ["epoll", "kqueue"]) or defined(windows):
 
   proc waitSignal*(signal: int): Future[void] {.raises: [].} =
     var retFuture = newFuture[void]("chronos.waitSignal()")
@@ -1505,16 +1517,54 @@ proc waitFor*[T](fut: Future[T]): T {.raises: [CatchableError].} =
 
   fut.read()
 
-proc addTracker*[T](id: string, tracker: T) =
+proc addTracker*[T](id: string, tracker: T) {.
+     deprecated: "Please use trackCounter facility instead".} =
   ## Add new ``tracker`` object to current thread dispatcher with identifier
   ## ``id``.
-  let loop = getThreadDispatcher()
-  loop.trackers[id] = tracker
+  getThreadDispatcher().trackers[id] = tracker
 
-proc getTracker*(id: string): TrackerBase =
+proc getTracker*(id: string): TrackerBase {.
+     deprecated: "Please use getTrackerCounter() instead".} =
   ## Get ``tracker`` from current thread dispatcher using identifier ``id``.
-  let loop = getThreadDispatcher()
-  result = loop.trackers.getOrDefault(id, nil)
+  getThreadDispatcher().trackers.getOrDefault(id, nil)
+
+proc trackCounter*(name: string) {.noinit.} =
+  ## Increase tracker counter with name ``name`` by 1.
+  let tracker = TrackerCounter(opened: 0'u64, closed: 0'u64)
+  inc(getThreadDispatcher().counters.mgetOrPut(name, tracker).opened)
+
+proc untrackCounter*(name: string) {.noinit.} =
+  ## Decrease tracker counter with name ``name`` by 1.
+  let tracker = TrackerCounter(opened: 0'u64, closed: 0'u64)
+  inc(getThreadDispatcher().counters.mgetOrPut(name, tracker).closed)
+
+proc getTrackerCounter*(name: string): TrackerCounter {.noinit.} =
+  ## Return value of counter with name ``name``.
+  let tracker = TrackerCounter(opened: 0'u64, closed: 0'u64)
+  getThreadDispatcher().counters.getOrDefault(name, tracker)
+
+proc isCounterLeaked*(name: string): bool {.noinit.} =
+  ## Returns ``true`` if leak is detected, number of `opened` not equal to
+  ## number of `closed` requests.
+  let tracker = TrackerCounter(opened: 0'u64, closed: 0'u64)
+  let res = getThreadDispatcher().counters.getOrDefault(name, tracker)
+  res.opened == res.closed
+
+iterator trackerCounters*(
+           loop: PDispatcher
+         ): tuple[name: string, value: TrackerCounter] =
+  ## Iterates over `loop` thread dispatcher tracker counter table, returns all
+  ## the tracker counter's names and values.
+  doAssert(not(isNil(loop)))
+  for key, value in loop.counters.pairs():
+    yield (key, value)
+
+iterator trackerCounterKeys*(loop: PDispatcher): string =
+  doAssert(not(isNil(loop)))
+  ## Iterates over `loop` thread dispatcher tracker counter table, returns all
+  ## tracker names.
+  for key in loop.counters.keys():
+    yield key
 
 when chronosFutureTracking:
   iterator pendingFutures*(): FutureBase =

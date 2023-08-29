@@ -23,10 +23,9 @@ const
   AsyncProcessTrackerName* = "async.process"
     ## AsyncProcess leaks tracker name
 
-
-
 type
-  AsyncProcessError* = object of CatchableError
+  AsyncProcessError* = object of AsyncError
+  AsyncProcessTimeoutError* = object of AsyncProcessError
 
   AsyncProcessResult*[T] = Result[T, OSErrorCode]
 
@@ -109,48 +108,11 @@ type
     stdError*: string
     status*: int
 
-  AsyncProcessTracker* = ref object of TrackerBase
-    opened*: int64
-    closed*: int64
+  WaitOperation {.pure.} = enum
+    Kill, Terminate
 
 template Pipe*(t: typedesc[AsyncProcess]): ProcessStreamHandle =
   ProcessStreamHandle(kind: ProcessStreamHandleKind.Auto)
-
-proc setupAsyncProcessTracker(): AsyncProcessTracker {.gcsafe.}
-
-proc getAsyncProcessTracker(): AsyncProcessTracker {.inline.} =
-  var res = cast[AsyncProcessTracker](getTracker(AsyncProcessTrackerName))
-  if isNil(res):
-    res = setupAsyncProcessTracker()
-  res
-
-proc dumpAsyncProcessTracking(): string {.gcsafe.} =
-  var tracker = getAsyncProcessTracker()
-  let res = "Started async processes: " & $tracker.opened & "\n" &
-            "Closed async processes: " & $tracker.closed
-  res
-
-proc leakAsyncProccessTracker(): bool {.gcsafe.} =
-  var tracker = getAsyncProcessTracker()
-  tracker.opened != tracker.closed
-
-proc trackAsyncProccess(t: AsyncProcessRef) {.inline.} =
-  var tracker = getAsyncProcessTracker()
-  inc(tracker.opened)
-
-proc untrackAsyncProcess(t: AsyncProcessRef) {.inline.}  =
-  var tracker = getAsyncProcessTracker()
-  inc(tracker.closed)
-
-proc setupAsyncProcessTracker(): AsyncProcessTracker {.gcsafe.} =
-  var res = AsyncProcessTracker(
-    opened: 0,
-    closed: 0,
-    dump: dumpAsyncProcessTracking,
-    isLeaked: leakAsyncProccessTracker
-  )
-  addTracker(AsyncProcessTrackerName, res)
-  res
 
 proc init*(t: typedesc[AsyncFD], handle: ProcessStreamHandle): AsyncFD =
   case handle.kind
@@ -336,6 +298,11 @@ proc raiseAsyncProcessError(msg: string, exc: ref CatchableError = nil) {.
       msg & " ([" & $exc.name & "]: " & $exc.msg & ")"
   raise newException(AsyncProcessError, message)
 
+proc raiseAsyncProcessTimeoutError() {.
+     noreturn, noinit, noinline, raises: [AsyncProcessTimeoutError].} =
+  let message = "Operation timed out"
+  raise newException(AsyncProcessTimeoutError, message)
+
 proc raiseAsyncProcessError(msg: string, error: OSErrorCode|cint) {.
      noreturn, noinit, noinline, raises: [AsyncProcessError].} =
   when error is OSErrorCode:
@@ -502,7 +469,7 @@ when defined(windows):
       flags: pipes.flags
     )
 
-    trackAsyncProccess(process)
+    trackCounter(AsyncProcessTrackerName)
     return process
 
   proc peekProcessExitCode(p: AsyncProcessRef): AsyncProcessResult[int] =
@@ -919,7 +886,7 @@ else:
       flags: pipes.flags
     )
 
-    trackAsyncProccess(process)
+    trackCounter(AsyncProcessTrackerName)
     return process
 
   proc peekProcessExitCode(p: AsyncProcessRef,
@@ -1231,13 +1198,52 @@ proc closeProcessStreams(pipes: AsyncProcessPipes,
       res
   allFutures(pending)
 
+proc opAndWaitForExit(p: AsyncProcessRef, op: WaitOperation,
+                      timeout = InfiniteDuration): Future[int] {.async.} =
+  let timerFut =
+    if timeout == InfiniteDuration:
+      newFuture[void]("chronos.killAndwaitForExit")
+    else:
+      sleepAsync(timeout)
+
+  while true:
+    if p.running().get(true):
+      # We ignore operation errors because we going to repeat calling
+      # operation until process will not exit.
+      case op
+      of WaitOperation.Kill:
+        discard p.kill()
+      of WaitOperation.Terminate:
+        discard p.terminate()
+    else:
+      let exitCode = p.peekExitCode().valueOr:
+        raiseAsyncProcessError("Unable to peek process exit code", error)
+      if not(timerFut.finished()):
+        await cancelAndWait(timerFut)
+      return exitCode
+
+    let waitFut = p.waitForExit().wait(100.milliseconds)
+    discard await race(FutureBase(waitFut), FutureBase(timerFut))
+
+    if waitFut.finished() and not(waitFut.failed()):
+      let res = p.peekExitCode()
+      if res.isOk():
+        if not(timerFut.finished()):
+          await cancelAndWait(timerFut)
+        return res.get()
+
+    if timerFut.finished():
+      if not(waitFut.finished()):
+        await waitFut.cancelAndWait()
+      raiseAsyncProcessTimeoutError()
+
 proc closeWait*(p: AsyncProcessRef) {.async.} =
   # Here we ignore all possible errrors, because we do not want to raise
   # exceptions.
   discard closeProcessHandles(p.pipes, p.options, OSErrorCode(0))
   await p.pipes.closeProcessStreams(p.options)
   discard p.closeThreadAndProcessHandle()
-  untrackAsyncProcess(p)
+  untrackCounter(AsyncProcessTrackerName)
 
 proc stdinStream*(p: AsyncProcessRef): AsyncStreamWriter =
   doAssert(p.pipes.stdinHolder.kind == StreamKind.Writer,
@@ -1258,14 +1264,15 @@ proc execCommand*(command: string,
                   options = {AsyncProcessOption.EvalCommand},
                   timeout = InfiniteDuration
                  ): Future[int] {.async.} =
-  let poptions = options + {AsyncProcessOption.EvalCommand}
-  let process = await startProcess(command, options = poptions)
-  let res =
-    try:
-      await process.waitForExit(timeout)
-    finally:
-      await process.closeWait()
-  return res
+  let
+    poptions = options + {AsyncProcessOption.EvalCommand}
+    process = await startProcess(command, options = poptions)
+    res =
+      try:
+        await process.waitForExit(timeout)
+      finally:
+        await process.closeWait()
+  res
 
 proc execCommandEx*(command: string,
                     options = {AsyncProcessOption.EvalCommand},
@@ -1298,10 +1305,43 @@ proc execCommandEx*(command: string,
       finally:
         await process.closeWait()
 
-  return res
+  res
 
 proc pid*(p: AsyncProcessRef): int =
   ## Returns process ``p`` identifier.
   int(p.processId)
 
 template processId*(p: AsyncProcessRef): int = pid(p)
+
+proc killAndWaitForExit*(p: AsyncProcessRef,
+                         timeout = InfiniteDuration): Future[int] =
+  ## Perform continuous attempts to kill the ``p`` process for specified period
+  ## of time ``timeout``.
+  ##
+  ## On Posix systems, killing means sending ``SIGKILL`` to the process ``p``,
+  ## On Windows, it uses ``TerminateProcess`` to kill the process ``p``.
+  ##
+  ## If the process ``p`` fails to be killed within the ``timeout`` time, it
+  ## will raise ``AsyncProcessTimeoutError``.
+  ##
+  ## In case of error this it will raise ``AsyncProcessError``.
+  ##
+  ## Returns process ``p`` exit code.
+  opAndWaitForExit(p, WaitOperation.Kill, timeout)
+
+proc terminateAndWaitForExit*(p: AsyncProcessRef,
+                              timeout = InfiniteDuration): Future[int] =
+  ## Perform continuous attempts to terminate the ``p`` process for specified
+  ## period of time ``timeout``.
+  ##
+  ## On Posix systems, terminating means sending ``SIGTERM`` to the process
+  ## ``p``, on Windows, it uses ``TerminateProcess`` to terminate the process
+  ## ``p``.
+  ##
+  ## If the process ``p`` fails to be terminated within the ``timeout`` time, it
+  ## will raise ``AsyncProcessTimeoutError``.
+  ##
+  ## In case of error this it will raise ``AsyncProcessError``.
+  ##
+  ## Returns process ``p`` exit code.
+  opAndWaitForExit(p, WaitOperation.Terminate, timeout)

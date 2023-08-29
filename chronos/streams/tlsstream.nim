@@ -95,6 +95,7 @@ type
     trustAnchors: TrustAnchorStore
 
   SomeTLSStreamType* = TLSStreamReader|TLSStreamWriter|TLSAsyncStream
+  SomeTrustAnchorType* = TrustAnchorStore | openArray[X509TrustAnchor]
 
   TLSStreamError* = object of AsyncStreamError
   TLSStreamHandshakeError* = object of TLSStreamError
@@ -139,12 +140,14 @@ proc newTLSStreamProtocolError[T](message: T): ref TLSStreamProtocolError =
 proc raiseTLSStreamProtocolError[T](message: T) {.noreturn, noinline.} =
   raise newTLSStreamProtocolImpl(message)
 
-proc new*(T: typedesc[TrustAnchorStore], anchors: openArray[X509TrustAnchor]): TrustAnchorStore =
+proc new*(T: typedesc[TrustAnchorStore],
+          anchors: openArray[X509TrustAnchor]): TrustAnchorStore =
   var res: seq[X509TrustAnchor]
   for anchor in anchors:
     res.add(anchor)
-    doAssert(unsafeAddr(anchor) != unsafeAddr(res[^1]), "Anchors should be copied")
-  return TrustAnchorStore(anchors: res)
+    doAssert(unsafeAddr(anchor) != unsafeAddr(res[^1]),
+             "Anchors should be copied")
+  TrustAnchorStore(anchors: res)
 
 proc tlsWriteRec(engine: ptr SslEngineContext,
                  writer: TLSStreamWriter): Future[TLSResult] {.async.} =
@@ -453,15 +456,16 @@ proc getSignerAlgo(xc: X509Certificate): int =
   else:
     int(x509DecoderGetSignerKeyType(dc))
 
-proc newTLSClientAsyncStream*(rsource: AsyncStreamReader,
-                              wsource: AsyncStreamWriter,
-                              serverName: string,
-                              bufferSize = SSL_BUFSIZE_BIDI,
-                              minVersion = TLSVersion.TLS12,
-                              maxVersion = TLSVersion.TLS12,
-                              flags: set[TLSFlags] = {},
-                              trustAnchors: TrustAnchorStore | openArray[X509TrustAnchor] = MozillaTrustAnchors
-                              ): TLSAsyncStream =
+proc newTLSClientAsyncStream*(
+       rsource: AsyncStreamReader,
+       wsource: AsyncStreamWriter,
+       serverName: string,
+       bufferSize = SSL_BUFSIZE_BIDI,
+       minVersion = TLSVersion.TLS12,
+       maxVersion = TLSVersion.TLS12,
+       flags: set[TLSFlags] = {},
+       trustAnchors: SomeTrustAnchorType = MozillaTrustAnchors
+     ): TLSAsyncStream =
   ## Create new TLS asynchronous stream for outbound (client) connections
   ## using reading stream ``rsource`` and writing stream ``wsource``.
   ##
@@ -484,7 +488,8 @@ proc newTLSClientAsyncStream*(rsource: AsyncStreamReader,
   ## a ``TrustAnchorStore`` you should reuse the same instance for
   ## every call to avoid making a copy of the trust anchors per call.
   when trustAnchors is TrustAnchorStore:
-    doAssert(len(trustAnchors.anchors) > 0, "Empty trust anchor list is invalid")
+    doAssert(len(trustAnchors.anchors) > 0,
+             "Empty trust anchor list is invalid")
   else:
     doAssert(len(trustAnchors) > 0, "Empty trust anchor list is invalid")
   var res = TLSAsyncStream()
@@ -524,7 +529,7 @@ proc newTLSClientAsyncStream*(rsource: AsyncStreamReader,
                        uint16(maxVersion))
 
   if TLSFlags.NoVerifyServerName in flags:
-    let err = sslClientReset(res.ccontext, "", 0)
+    let err = sslClientReset(res.ccontext, nil, 0)
     if err == 0:
       raise newException(TLSStreamInitError, "Could not initialize TLS layer")
   else:

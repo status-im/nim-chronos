@@ -177,6 +177,10 @@ suite "Macro transformations test suite":
       of false: await implicit7(v)
       of true: 42
 
+    proc implicit9(): Future[int] {.async.} =
+      result = 42
+      result
+
     let fin = new int
     check:
       waitFor(implicit()) == 42
@@ -192,6 +196,8 @@ suite "Macro transformations test suite":
 
       waitFor(implicit8(true)) == 42
       waitFor(implicit8(false)) == 33
+
+      waitFor(implicit9()) == 42
 
 suite "Closure iterator's exception transformation issues":
   test "Nested defer/finally not called on return":

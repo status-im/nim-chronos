@@ -13,6 +13,15 @@ import ../../streams/[asyncstream, boundstream]
 export asyncloop, asyncsync, results, httputils, strutils
 
 const
+  HttpServerUnsecureConnectionTrackerName* =
+    "httpserver.unsecure.connection"
+  HttpServerSecureConnectionTrackerName* =
+    "httpserver.secure.connection"
+  HttpServerRequestTrackerName* =
+    "httpserver.request"
+  HttpServerResponseTrackerName* =
+    "httpserver.response"
+
   HeadersMark* = @[0x0d'u8, 0x0a'u8, 0x0d'u8, 0x0a'u8]
   PostMethods* = {MethodPost, MethodPatch, MethodPut, MethodDelete}
 

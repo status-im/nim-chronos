@@ -54,15 +54,6 @@ type
     ReuseAddr,
     ReusePort
 
-
-  StreamTransportTracker* = ref object of TrackerBase
-    opened*: int64
-    closed*: int64
-
-  StreamServerTracker* = ref object of TrackerBase
-    opened*: int64
-    closed*: int64
-
   ReadMessagePredicate* = proc (data: openArray[byte]): tuple[consumed: int,
                                                               done: bool] {.
     gcsafe, raises: [].}
@@ -70,6 +61,7 @@ type
 const
   StreamTransportTrackerName* = "stream.transport"
   StreamServerTrackerName* = "stream.server"
+  DefaultBacklogSize* = high(int32)
 
 when defined(windows):
   type
@@ -141,30 +133,28 @@ type
                                       # transport for new client
 
 proc remoteAddress*(transp: StreamTransport): TransportAddress {.
-    raises: [TransportError].} =
+    raises: [TransportAbortedError, TransportTooManyError, TransportOsError].} =
   ## Returns ``transp`` remote socket address.
-  if transp.kind != TransportKind.Socket:
-    raise newException(TransportError, "Socket required!")
+  doAssert(transp.kind == TransportKind.Socket, "Socket transport required!")
   if transp.remote.family == AddressFamily.None:
     var saddr: Sockaddr_storage
     var slen = SockLen(sizeof(saddr))
     if getpeername(SocketHandle(transp.fd), cast[ptr SockAddr](addr saddr),
                    addr slen) != 0:
-      raiseTransportOsError(osLastError())
+      raiseTransportError(osLastError())
     fromSAddr(addr saddr, slen, transp.remote)
   transp.remote
 
 proc localAddress*(transp: StreamTransport): TransportAddress {.
-    raises: [TransportError].} =
+    raises: [TransportAbortedError, TransportTooManyError, TransportOsError].} =
   ## Returns ``transp`` local socket address.
-  if transp.kind != TransportKind.Socket:
-    raise newException(TransportError, "Socket required!")
+  doAssert(transp.kind == TransportKind.Socket, "Socket transport required!")
   if transp.local.family == AddressFamily.None:
     var saddr: Sockaddr_storage
     var slen = SockLen(sizeof(saddr))
     if getsockname(SocketHandle(transp.fd), cast[ptr SockAddr](addr saddr),
                    addr slen) != 0:
-      raiseTransportOsError(osLastError())
+      raiseTransportError(osLastError())
     fromSAddr(addr saddr, slen, transp.local)
   transp.local
 
@@ -201,71 +191,6 @@ template shiftVectorFile(v: var StreamVector, o: untyped) =
   (v).buf = cast[pointer](cast[uint]((v).buf) - uint(o))
   (v).offset += uint(o)
 
-proc setupStreamTransportTracker(): StreamTransportTracker {.
-     gcsafe, raises: [].}
-proc setupStreamServerTracker(): StreamServerTracker {.
-     gcsafe, raises: [].}
-
-proc getStreamTransportTracker(): StreamTransportTracker {.inline.} =
-  var res = cast[StreamTransportTracker](getTracker(StreamTransportTrackerName))
-  if isNil(res):
-    res = setupStreamTransportTracker()
-  doAssert(not(isNil(res)))
-  res
-
-proc getStreamServerTracker(): StreamServerTracker {.inline.} =
-  var res = cast[StreamServerTracker](getTracker(StreamServerTrackerName))
-  if isNil(res):
-    res = setupStreamServerTracker()
-  doAssert(not(isNil(res)))
-  res
-
-proc dumpTransportTracking(): string {.gcsafe.} =
-  var tracker = getStreamTransportTracker()
-  "Opened transports: " & $tracker.opened & "\n" &
-  "Closed transports: " & $tracker.closed
-
-proc dumpServerTracking(): string {.gcsafe.} =
-  var tracker = getStreamServerTracker()
-  "Opened servers: " & $tracker.opened & "\n" &
-  "Closed servers: " & $tracker.closed
-
-proc leakTransport(): bool {.gcsafe.} =
-  var tracker = getStreamTransportTracker()
-  tracker.opened != tracker.closed
-
-proc leakServer(): bool {.gcsafe.} =
-  var tracker = getStreamServerTracker()
-  tracker.opened != tracker.closed
-
-proc trackStream(t: StreamTransport) {.inline.} =
-  var tracker = getStreamTransportTracker()
-  inc(tracker.opened)
-
-proc untrackStream(t: StreamTransport) {.inline.}  =
-  var tracker = getStreamTransportTracker()
-  inc(tracker.closed)
-
-proc trackServer(s: StreamServer) {.inline.} =
-  var tracker = getStreamServerTracker()
-  inc(tracker.opened)
-
-proc untrackServer(s: StreamServer) {.inline.}  =
-  var tracker = getStreamServerTracker()
-  inc(tracker.closed)
-
-proc setupStreamTransportTracker(): StreamTransportTracker {.gcsafe.} =
-  let res = StreamTransportTracker(
-    opened: 0, closed: 0, dump: dumpTransportTracking, isLeaked: leakTransport)
-  addTracker(StreamTransportTrackerName, res)
-  res
-
-proc setupStreamServerTracker(): StreamServerTracker {.gcsafe.} =
-  let res = StreamServerTracker(
-    opened: 0, closed: 0, dump: dumpServerTracking, isLeaked: leakServer)
-  addTracker(StreamServerTrackerName, res)
-  res
-
 proc completePendingWriteQueue(queue: var Deque[StreamVector],
                                v: int) {.inline.} =
   while len(queue) > 0:
@@ -282,7 +207,7 @@ proc failPendingWriteQueue(queue: var Deque[StreamVector],
 
 proc clean(server: StreamServer) {.inline.} =
   if not(server.loopFuture.finished()):
-    untrackServer(server)
+    untrackCounter(StreamServerTrackerName)
     server.loopFuture.complete()
     if not(isNil(server.udata)) and (GCUserData in server.flags):
       GC_unref(cast[ref int](server.udata))
@@ -290,7 +215,7 @@ proc clean(server: StreamServer) {.inline.} =
 
 proc clean(transp: StreamTransport) {.inline.} =
   if not(transp.future.finished()):
-    untrackStream(transp)
+    untrackCounter(StreamTransportTrackerName)
     transp.future.complete()
     GC_unref(transp)
 
@@ -786,7 +711,7 @@ when defined(windows):
             else:
               let transp = newStreamSocketTransport(sock, bufferSize, child)
               # Start tracking transport
-              trackStream(transp)
+              trackCounter(StreamTransportTrackerName)
               retFuture.complete(transp)
           else:
             sock.closeSocket()
@@ -855,7 +780,7 @@ when defined(windows):
             let transp = newStreamPipeTransport(AsyncFD(pipeHandle),
                                                 bufferSize, child)
             # Start tracking transport
-            trackStream(transp)
+            trackCounter(StreamTransportTrackerName)
             retFuture.complete(transp)
       pipeContinuation(nil)
 
@@ -911,7 +836,7 @@ when defined(windows):
               ntransp = newStreamPipeTransport(server.sock, server.bufferSize,
                                                nil, flags)
             # Start tracking transport
-            trackStream(ntransp)
+            trackCounter(StreamTransportTrackerName)
             asyncSpawn server.function(server, ntransp)
           of ERROR_OPERATION_ABORTED:
             # CancelIO() interrupt or close call.
@@ -1015,7 +940,7 @@ when defined(windows):
                 ntransp = newStreamSocketTransport(server.asock,
                                                    server.bufferSize, nil)
               # Start tracking transport
-              trackStream(ntransp)
+              trackCounter(StreamTransportTrackerName)
               asyncSpawn server.function(server, ntransp)
 
           of ERROR_OPERATION_ABORTED:
@@ -1158,7 +1083,7 @@ when defined(windows):
               ntransp = newStreamSocketTransport(server.asock,
                                                  server.bufferSize, nil)
             # Start tracking transport
-            trackStream(ntransp)
+            trackCounter(StreamTransportTrackerName)
             retFuture.complete(ntransp)
         of ERROR_OPERATION_ABORTED:
           # CancelIO() interrupt or close.
@@ -1218,7 +1143,7 @@ when defined(windows):
             retFuture.fail(getTransportOsError(error))
             return
 
-          trackStream(ntransp)
+          trackCounter(StreamTransportTrackerName)
           retFuture.complete(ntransp)
 
         of ERROR_OPERATION_ABORTED, ERROR_PIPE_NOT_CONNECTED:
@@ -1550,14 +1475,13 @@ else:
     var
       saddr: Sockaddr_storage
       slen: SockLen
-      proto: Protocol
     var retFuture = newFuture[StreamTransport]("stream.transport.connect")
     address.toSAddr(saddr, slen)
-    proto = Protocol.IPPROTO_TCP
-    if address.family == AddressFamily.Unix:
-      # `Protocol` enum is missing `0` value, so we making here cast, until
-      # `Protocol` enum will not support IPPROTO_IP == 0.
-      proto = cast[Protocol](0)
+    let proto =
+      if address.family == AddressFamily.Unix:
+        Protocol.IPPROTO_IP
+      else:
+        Protocol.IPPROTO_TCP
 
     let sock = createAsyncSocket(address.getDomain(), SockType.SOCK_STREAM,
                                  proto)
@@ -1628,7 +1552,7 @@ else:
 
         let transp = newStreamSocketTransport(sock, bufferSize, child)
         # Start tracking transport
-        trackStream(transp)
+        trackCounter(StreamTransportTrackerName)
         retFuture.complete(transp)
 
     proc cancel(udata: pointer) =
@@ -1641,7 +1565,7 @@ else:
       if res == 0:
         let transp = newStreamSocketTransport(sock, bufferSize, child)
         # Start tracking transport
-        trackStream(transp)
+        trackCounter(StreamTransportTrackerName)
         retFuture.complete(transp)
         break
       else:
@@ -1696,7 +1620,7 @@ else:
             newStreamSocketTransport(sock, server.bufferSize, transp)
           else:
             newStreamSocketTransport(sock, server.bufferSize, nil)
-        trackStream(ntransp)
+        trackCounter(StreamTransportTrackerName)
         asyncSpawn server.function(server, ntransp)
       else:
         # Client was accepted, so we not going to raise assertion, but
@@ -1784,7 +1708,7 @@ else:
                   else:
                     newStreamSocketTransport(sock, server.bufferSize, nil)
                 # Start tracking transport
-                trackStream(ntransp)
+                trackCounter(StreamTransportTrackerName)
                 retFuture.complete(ntransp)
               else:
                 discard closeFd(cint(sock))
@@ -1895,11 +1819,32 @@ proc closeWait*(server: StreamServer): Future[void] =
   server.close()
   server.join()
 
+proc getBacklogSize(backlog: int): cint =
+  doAssert(backlog >= 0 and backlog <= high(int32))
+  when defined(windows):
+    # The maximum length of the queue of pending connections. If set to
+    # SOMAXCONN, the underlying service provider responsible for
+    # socket s will set the backlog to a maximum reasonable value. If set to
+    # SOMAXCONN_HINT(N) (where N is a number), the backlog value will be N,
+    # adjusted to be within the range (200, 65535). Note that SOMAXCONN_HINT
+    # can be used to set the backlog to a larger value than possible with
+    # SOMAXCONN.
+    #
+    # Microsoft SDK values are
+    # #define SOMAXCONN       0x7fffffff
+    # #define SOMAXCONN_HINT(b) (-(b))
+    if backlog != high(int32):
+      cint(-backlog)
+    else:
+      cint(backlog)
+  else:
+    cint(backlog)
+
 proc createStreamServer*(host: TransportAddress,
                          cbproc: StreamCallback,
                          flags: set[ServerFlags] = {},
                          sock: AsyncFD = asyncInvalidSocket,
-                         backlog: int = 100,
+                         backlog: int = DefaultBacklogSize,
                          bufferSize: int = DefaultStreamBufferSize,
                          child: StreamServer = nil,
                          init: TransportInitCallback = nil,
@@ -1982,7 +1927,7 @@ proc createStreamServer*(host: TransportAddress,
         raiseTransportOsError(err)
       fromSAddr(addr saddr, slen, localAddress)
 
-      if listen(SocketHandle(serverSocket), cint(backlog)) != 0:
+      if listen(SocketHandle(serverSocket), getBacklogSize(backlog)) != 0:
         let err = osLastError()
         if sock == asyncInvalidSocket:
           discard closeFd(SocketHandle(serverSocket))
@@ -1992,11 +1937,10 @@ proc createStreamServer*(host: TransportAddress,
   else:
     # Posix
     if sock == asyncInvalidSocket:
-      var proto = Protocol.IPPROTO_TCP
-      if host.family == AddressFamily.Unix:
-        # `Protocol` enum is missing `0` value, so we making here cast, until
-        # `Protocol` enum will not support IPPROTO_IP == 0.
-        proto = cast[Protocol](0)
+      let proto = if host.family == AddressFamily.Unix:
+        Protocol.IPPROTO_IP
+      else:
+        Protocol.IPPROTO_TCP
       serverSocket = createAsyncSocket(host.getDomain(),
                                        SockType.SOCK_STREAM,
                                        proto)
@@ -2056,7 +2000,7 @@ proc createStreamServer*(host: TransportAddress,
       raiseTransportOsError(err)
     fromSAddr(addr saddr, slen, localAddress)
 
-    if listen(SocketHandle(serverSocket), cint(backlog)) != 0:
+    if listen(SocketHandle(serverSocket), getBacklogSize(backlog)) != 0:
       let err = osLastError()
       if sock == asyncInvalidSocket:
         discard unregisterAndCloseFd(serverSocket)
@@ -2100,14 +2044,14 @@ proc createStreamServer*(host: TransportAddress,
     sres.apending = false
 
   # Start tracking server
-  trackServer(sres)
+  trackCounter(StreamServerTrackerName)
   GC_ref(sres)
   sres
 
 proc createStreamServer*(host: TransportAddress,
                          flags: set[ServerFlags] = {},
                          sock: AsyncFD = asyncInvalidSocket,
-                         backlog: int = 100,
+                         backlog: int = DefaultBacklogSize,
                          bufferSize: int = DefaultStreamBufferSize,
                          child: StreamServer = nil,
                          init: TransportInitCallback = nil,
@@ -2121,7 +2065,7 @@ proc createStreamServer*[T](host: TransportAddress,
                             flags: set[ServerFlags] = {},
                             udata: ref T,
                             sock: AsyncFD = asyncInvalidSocket,
-                            backlog: int = 100,
+                            backlog: int = DefaultBacklogSize,
                             bufferSize: int = DefaultStreamBufferSize,
                             child: StreamServer = nil,
                             init: TransportInitCallback = nil): StreamServer {.
@@ -2135,7 +2079,7 @@ proc createStreamServer*[T](host: TransportAddress,
                             flags: set[ServerFlags] = {},
                             udata: ref T,
                             sock: AsyncFD = asyncInvalidSocket,
-                            backlog: int = 100,
+                            backlog: int = DefaultBacklogSize,
                             bufferSize: int = DefaultStreamBufferSize,
                             child: StreamServer = nil,
                             init: TransportInitCallback = nil): StreamServer {.
@@ -2650,6 +2594,57 @@ proc closeWait*(transp: StreamTransport): Future[void] =
   transp.close()
   transp.join()
 
+proc shutdownWait*(transp: StreamTransport): Future[void] =
+  ## Perform graceful shutdown of TCP connection backed by transport ``transp``.
+  doAssert(transp.kind == TransportKind.Socket)
+  let retFuture = newFuture[void]("stream.transport.shutdown")
+  transp.checkClosed(retFuture)
+  transp.checkWriteEof(retFuture)
+
+  when defined(windows):
+    let loop = getThreadDispatcher()
+    proc continuation(udata: pointer) {.gcsafe.} =
+      let ovl = cast[RefCustomOverlapped](udata)
+      if not(retFuture.finished()):
+        if ovl.data.errCode == OSErrorCode(-1):
+          retFuture.complete()
+        else:
+          transp.state.excl({WriteEof})
+          retFuture.fail(getTransportOsError(ovl.data.errCode))
+        GC_unref(ovl)
+
+    let povl = RefCustomOverlapped(data: CompletionData(cb: continuation))
+    GC_ref(povl)
+
+    let res = loop.disconnectEx(SocketHandle(transp.fd),
+                                cast[POVERLAPPED](povl), 0'u32, 0'u32)
+    if res == FALSE:
+      let err = osLastError()
+      case err
+      of ERROR_IO_PENDING:
+        transp.state.incl({WriteEof})
+      else:
+        GC_unref(povl)
+        retFuture.fail(getTransportOsError(err))
+    else:
+      transp.state.incl({WriteEof})
+      retFuture.complete()
+
+    retFuture
+  else:
+    proc continuation(udata: pointer) {.gcsafe.} =
+      if not(retFuture.finished()):
+        retFuture.complete()
+
+    let res = osdefs.shutdown(SocketHandle(transp.fd), SHUT_WR)
+    if res < 0:
+      let err = osLastError()
+      retFuture.fail(getTransportOsError(err))
+    else:
+      transp.state.incl({WriteEof})
+      callSoon(continuation, nil)
+    retFuture
+
 proc closed*(transp: StreamTransport): bool {.inline.} =
   ## Returns ``true`` if transport in closed state.
   ({ReadClosed, WriteClosed} * transp.state != {})
@@ -2676,7 +2671,7 @@ proc fromPipe2*(fd: AsyncFD, child: StreamTransport = nil,
   ? register2(fd)
   var res = newStreamPipeTransport(fd, bufferSize, child)
   # Start tracking transport
-  trackStream(res)
+  trackCounter(StreamTransportTrackerName)
   ok(res)
 
 proc fromPipe*(fd: AsyncFD, child: StreamTransport = nil,

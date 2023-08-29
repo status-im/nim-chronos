@@ -6,8 +6,9 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 import std/[strutils, sha1]
-import unittest2
-import ../chronos, ../chronos/apps/http/[httpserver, shttpserver, httpclient]
+import ".."/chronos/unittest2/asynctests
+import ".."/chronos,
+       ".."/chronos/apps/http/[httpserver, shttpserver, httpclient]
 import stew/base10
 
 {.used.}
@@ -85,30 +86,36 @@ suite "HTTP client testing suite":
 
   proc createServer(address: TransportAddress,
                     process: HttpProcessCallback, secure: bool): HttpServerRef =
-    let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
+    let
+      socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
+      serverFlags = {HttpServerFlags.Http11Pipeline}
     if secure:
       let secureKey = TLSPrivateKey.init(HttpsSelfSignedRsaKey)
       let secureCert = TLSCertificate.init(HttpsSelfSignedRsaCert)
       let res = SecureHttpServerRef.new(address, process,
                                         socketFlags = socketFlags,
+                                        serverFlags = serverFlags,
                                         tlsPrivateKey = secureKey,
                                         tlsCertificate = secureCert)
       HttpServerRef(res.get())
     else:
-      let res = HttpServerRef.new(address, process, socketFlags = socketFlags)
+      let res = HttpServerRef.new(address, process,
+                                  socketFlags = socketFlags,
+                                  serverFlags = serverFlags)
       res.get()
 
   proc createSession(secure: bool,
                      maxRedirections = HttpMaxRedirections): HttpSessionRef =
     if secure:
       HttpSessionRef.new({HttpClientFlag.NoVerifyHost,
-                          HttpClientFlag.NoVerifyServerName},
+                          HttpClientFlag.NoVerifyServerName,
+                          HttpClientFlag.Http11Pipeline},
                          maxRedirections = maxRedirections)
     else:
-      HttpSessionRef.new(maxRedirections = maxRedirections)
+      HttpSessionRef.new({HttpClientFlag.Http11Pipeline},
+                         maxRedirections = maxRedirections)
 
-  proc testMethods(address: TransportAddress,
-                   secure: bool): Future[int] {.async.} =
+  proc testMethods(secure: bool): Future[int] {.async.} =
     let RequestTests = [
       (MethodGet, "/test/get"),
       (MethodPost, "/test/post"),
@@ -132,10 +139,11 @@ suite "HTTP client testing suite":
         else:
           return await request.respond(Http404, "Page not found")
       else:
-        return dumbResponse()
+        return defaultResponse()
 
-    var server = createServer(address, process, secure)
+    var server = createServer(initTAddress("127.0.0.1:0"), process, secure)
     server.start()
+    let address = server.instance.localAddress()
     var counter = 0
 
     var session = createSession(secure)
@@ -175,8 +183,7 @@ suite "HTTP client testing suite":
     await server.closeWait()
     return counter
 
-  proc testResponseStreamReadingTest(address: TransportAddress,
-                                     secure: bool): Future[int] {.async.} =
+  proc testResponseStreamReadingTest(secure: bool): Future[int] {.async.} =
     let ResponseTests = [
       (MethodGet, "/test/short_size_response", 65600, 1024,
        "SHORTSIZERESPONSE"),
@@ -235,10 +242,11 @@ suite "HTTP client testing suite":
         else:
           return await request.respond(Http404, "Page not found")
       else:
-        return dumbResponse()
+        return defaultResponse()
 
-    var server = createServer(address, process, secure)
+    var server = createServer(initTAddress("127.0.0.1:0"), process, secure)
     server.start()
+    let address = server.instance.localAddress()
     var counter = 0
 
     var session = createSession(secure)
@@ -297,8 +305,7 @@ suite "HTTP client testing suite":
     await server.closeWait()
     return counter
 
-  proc testRequestSizeStreamWritingTest(address: TransportAddress,
-                                        secure: bool): Future[int] {.async.} =
+  proc testRequestSizeStreamWritingTest(secure: bool): Future[int] {.async.} =
     let RequestTests = [
       (MethodPost, "/test/big_request", 65600),
       (MethodPost, "/test/big_request", 262400)
@@ -318,10 +325,11 @@ suite "HTTP client testing suite":
         else:
           return await request.respond(Http404, "Page not found")
       else:
-        return dumbResponse()
+        return defaultResponse()
 
-    var server = createServer(address, process, secure)
+    var server = createServer(initTAddress("127.0.0.1:0"), process, secure)
     server.start()
+    let address = server.instance.localAddress()
     var counter = 0
 
     var session = createSession(secure)
@@ -366,7 +374,7 @@ suite "HTTP client testing suite":
     await server.closeWait()
     return counter
 
-  proc testRequestChunkedStreamWritingTest(address: TransportAddress,
+  proc testRequestChunkedStreamWritingTest(
                                           secure: bool): Future[int] {.async.} =
     let RequestTests = [
       (MethodPost, "/test/big_chunk_request", 65600),
@@ -387,10 +395,11 @@ suite "HTTP client testing suite":
         else:
           return await request.respond(Http404, "Page not found")
       else:
-        return dumbResponse()
+        return defaultResponse()
 
-    var server = createServer(address, process, secure)
+    var server = createServer(initTAddress("127.0.0.1:0"), process, secure)
     server.start()
+    let address = server.instance.localAddress()
     var counter = 0
 
     var session = createSession(secure)
@@ -435,8 +444,7 @@ suite "HTTP client testing suite":
     await server.closeWait()
     return counter
 
-  proc testRequestPostUrlEncodedTest(address: TransportAddress,
-                                     secure: bool): Future[int] {.async.} =
+  proc testRequestPostUrlEncodedTest(secure: bool): Future[int] {.async.} =
     let PostRequests = [
       ("/test/post/urlencoded_size",
        "field1=value1&field2=value2&field3=value3", "value1:value2:value3"),
@@ -463,10 +471,11 @@ suite "HTTP client testing suite":
         else:
           return await request.respond(Http404, "Page not found")
       else:
-        return dumbResponse()
+        return defaultResponse()
 
-    var server = createServer(address, process, secure)
+    var server = createServer(initTAddress("127.0.0.1:0"), process, secure)
     server.start()
+    let address = server.instance.localAddress()
     var counter = 0
 
     ## Sized url-encoded form
@@ -533,8 +542,7 @@ suite "HTTP client testing suite":
     await server.closeWait()
     return counter
 
-  proc testRequestPostMultipartTest(address: TransportAddress,
-                                    secure: bool): Future[int] {.async.} =
+  proc testRequestPostMultipartTest(secure: bool): Future[int] {.async.} =
     let PostRequests = [
       ("/test/post/multipart_size", "some-part-boundary",
        [("field1", "value1"), ("field2", "value2"), ("field3", "value3")],
@@ -562,10 +570,11 @@ suite "HTTP client testing suite":
         else:
           return await request.respond(Http404, "Page not found")
       else:
-        return dumbResponse()
+        return defaultResponse()
 
-    var server = createServer(address, process, secure)
+    var server = createServer(initTAddress("127.0.0.1:0"), process, secure)
     server.start()
+    let address = server.instance.localAddress()
     var counter = 0
 
     ## Sized multipart form
@@ -635,17 +644,9 @@ suite "HTTP client testing suite":
     await server.closeWait()
     return counter
 
-  proc testRequestRedirectTest(address: TransportAddress,
-                               secure: bool,
+  proc testRequestRedirectTest(secure: bool,
                                max: int): Future[string] {.async.} =
-    var session = createSession(secure, maxRedirections = max)
-
-    let ha =
-      if secure:
-        getAddress(address, HttpClientScheme.Secure, "/")
-      else:
-        getAddress(address, HttpClientScheme.NonSecure, "/")
-    let lastAddress = ha.getUri().combine(parseUri("/final/5"))
+    var lastAddress: Uri
 
     proc process(r: RequestFence): Future[HttpResponseRef] {.
          async.} =
@@ -667,10 +668,22 @@ suite "HTTP client testing suite":
         else:
           return await request.respond(Http404, "Page not found")
       else:
-        return dumbResponse()
+        return defaultResponse()
 
-    var server = createServer(address, process, secure)
+    var server = createServer(initTAddress("127.0.0.1:0"), process, secure)
     server.start()
+    let address = server.instance.localAddress()
+
+    var session = createSession(secure, maxRedirections = max)
+
+    let ha =
+      if secure:
+        getAddress(address, HttpClientScheme.Secure, "/")
+      else:
+        getAddress(address, HttpClientScheme.NonSecure, "/")
+
+    lastAddress = ha.getUri().combine(parseUri("/final/5"))
+
     if session.maxRedirections >= 5:
       let (code, data) = await session.fetch(ha.getUri())
       await session.closeWait()
@@ -691,26 +704,22 @@ suite "HTTP client testing suite":
       await server.closeWait()
       return "redirect-" & $res
 
-  proc testBasicAuthorization(): Future[bool] {.async.} =
-    let session = HttpSessionRef.new({HttpClientFlag.NoVerifyHost},
-                                     maxRedirections = 10)
-    let url = parseUri("https://guest:guest@jigsaw.w3.org/HTTP/Basic/")
-    let resp = await session.fetch(url)
-    await session.closeWait()
-    if (resp.status == 200) and
-       ("Your browser made it!" in bytesToString(resp.data)):
-      return true
-    else:
-      echo "RESPONSE STATUS = [", resp.status, "]"
-      echo "RESPONSE = [", bytesToString(resp.data), "]"
-      return false
+  # proc testBasicAuthorization(): Future[bool] {.async.} =
+  #   let session = HttpSessionRef.new({HttpClientFlag.NoVerifyHost},
+  #                                    maxRedirections = 10)
+  #   let url = parseUri("https://guest:guest@jigsaw.w3.org/HTTP/Basic/")
+  #   let resp = await session.fetch(url)
+  #   await session.closeWait()
+  #   if (resp.status == 200) and
+  #      ("Your browser made it!" in bytesToString(resp.data)):
+  #     return true
+  #   else:
+  #     echo "RESPONSE STATUS = [", resp.status, "]"
+  #     echo "RESPONSE = [", bytesToString(resp.data), "]"
+  #     return false
 
-  proc testConnectionManagement(address: TransportAddress): Future[bool] {.
+  proc testConnectionManagement(): Future[bool] {.
        async.} =
-    let
-      keepHa = getAddress(address, HttpClientScheme.NonSecure, "/keep")
-      dropHa = getAddress(address, HttpClientScheme.NonSecure, "/drop")
-
     proc test1(
            a1: HttpAddress,
            version: HttpVersion,
@@ -770,10 +779,15 @@ suite "HTTP client testing suite":
         else:
           return await request.respond(Http404, "Page not found")
       else:
-        return dumbResponse()
+        return defaultResponse()
 
-    var server = createServer(address, process, false)
+    var server = createServer(initTAddress("127.0.0.1:0"), process, false)
     server.start()
+    let address = server.instance.localAddress()
+
+    let
+      keepHa = getAddress(address, HttpClientScheme.NonSecure, "/keep")
+      dropHa = getAddress(address, HttpClientScheme.NonSecure, "/drop")
 
     try:
       let
@@ -872,11 +886,7 @@ suite "HTTP client testing suite":
 
     return true
 
-  proc testIdleConnection(address: TransportAddress): Future[bool] {.
-       async.} =
-    let
-      ha = getAddress(address, HttpClientScheme.NonSecure, "/test")
-
+  proc testIdleConnection(): Future[bool] {.async.} =
     proc test(
            session: HttpSessionRef,
            a: HttpAddress
@@ -900,13 +910,16 @@ suite "HTTP client testing suite":
         else:
           return await request.respond(Http404, "Page not found")
       else:
-        return dumbResponse()
+        return defaultResponse()
 
-    var server = createServer(address, process, false)
+    var server = createServer(initTAddress("127.0.0.1:0"), process, false)
     server.start()
-    let session = HttpSessionRef.new({HttpClientFlag.Http11Pipeline},
-                                     idleTimeout = 1.seconds,
-                                     idlePeriod = 200.milliseconds)
+    let
+      address = server.instance.localAddress()
+      ha = getAddress(address, HttpClientScheme.NonSecure, "/test")
+      session = HttpSessionRef.new({HttpClientFlag.Http11Pipeline},
+                                   idleTimeout = 1.seconds,
+                                   idlePeriod = 200.milliseconds)
     try:
       var f1 = test(session, ha)
       var f2 = test(session, ha)
@@ -932,12 +945,7 @@ suite "HTTP client testing suite":
 
     return true
 
-  proc testNoPipeline(address: TransportAddress): Future[bool] {.
-       async.} =
-    let
-      ha = getAddress(address, HttpClientScheme.NonSecure, "/test")
-      hb = getAddress(address, HttpClientScheme.NonSecure, "/keep-test")
-
+  proc testNoPipeline(): Future[bool] {.async.} =
     proc test(
            session: HttpSessionRef,
            a: HttpAddress
@@ -964,12 +972,16 @@ suite "HTTP client testing suite":
         else:
           return await request.respond(Http404, "Page not found")
       else:
-        return dumbResponse()
+        return defaultResponse()
 
-    var server = createServer(address, process, false)
+    var server = createServer(initTAddress("127.0.0.1:0"), process, false)
     server.start()
-    let session = HttpSessionRef.new(idleTimeout = 100.seconds,
-                                     idlePeriod = 10.milliseconds)
+    let
+      address = server.instance.localAddress()
+      ha = getAddress(address, HttpClientScheme.NonSecure, "/test")
+      hb = getAddress(address, HttpClientScheme.NonSecure, "/keep-test")
+      session = HttpSessionRef.new(idleTimeout = 100.seconds,
+                                   idlePeriod = 10.milliseconds)
     try:
       var f1 = test(session, ha)
       var f2 = test(session, ha)
@@ -1001,8 +1013,7 @@ suite "HTTP client testing suite":
 
     return true
 
-  proc testServerSentEvents(address: TransportAddress,
-                            secure: bool): Future[bool] {.async.} =
+  proc testServerSentEvents(secure: bool): Future[bool] {.async.} =
     const
       SingleGoodTests = [
         ("/test/single/1", "a:b\r\nc: d\re:f\n:comment\r\ng:\n h: j \n\n",
@@ -1115,10 +1126,11 @@ suite "HTTP client testing suite":
         else:
           return await request.respond(Http404, "Page not found")
       else:
-        return dumbResponse()
+        return defaultResponse()
 
-    var server = createServer(address, process, secure)
+    var server = createServer(initTAddress("127.0.0.1:0"), process, secure)
     server.start()
+    let address = server.instance.localAddress()
 
     var session = createSession(secure)
 
@@ -1184,100 +1196,71 @@ suite "HTTP client testing suite":
     return true
 
   test "HTTP all request methods test":
-    let address = initTAddress("127.0.0.1:30080")
-    check waitFor(testMethods(address, false)) == 18
+    check waitFor(testMethods(false)) == 18
 
   test "HTTP(S) all request methods test":
-    let address = initTAddress("127.0.0.1:30080")
-    check waitFor(testMethods(address, true)) == 18
+    check waitFor(testMethods(true)) == 18
 
   test "HTTP client response streaming test":
-    let address = initTAddress("127.0.0.1:30080")
-    check waitFor(testResponseStreamReadingTest(address, false)) == 8
+    check waitFor(testResponseStreamReadingTest(false)) == 8
 
   test "HTTP(S) client response streaming test":
-    let address = initTAddress("127.0.0.1:30080")
-    check waitFor(testResponseStreamReadingTest(address, true)) == 8
+    check waitFor(testResponseStreamReadingTest(true)) == 8
 
   test "HTTP client (size) request streaming test":
-    let address = initTAddress("127.0.0.1:30080")
-    check waitFor(testRequestSizeStreamWritingTest(address, false)) == 2
+    check waitFor(testRequestSizeStreamWritingTest(false)) == 2
 
   test "HTTP(S) client (size) request streaming test":
-    let address = initTAddress("127.0.0.1:30080")
-    check waitFor(testRequestSizeStreamWritingTest(address, true)) == 2
+    check waitFor(testRequestSizeStreamWritingTest(true)) == 2
 
   test "HTTP client (chunked) request streaming test":
-    let address = initTAddress("127.0.0.1:30080")
-    check waitFor(testRequestChunkedStreamWritingTest(address, false)) == 2
+    check waitFor(testRequestChunkedStreamWritingTest(false)) == 2
 
   test "HTTP(S) client (chunked) request streaming test":
-    let address = initTAddress("127.0.0.1:30080")
-    check waitFor(testRequestChunkedStreamWritingTest(address, true)) == 2
+    check waitFor(testRequestChunkedStreamWritingTest(true)) == 2
 
   test "HTTP client (size + chunked) url-encoded POST test":
-    let address = initTAddress("127.0.0.1:30080")
-    check waitFor(testRequestPostUrlEncodedTest(address, false)) == 2
+    check waitFor(testRequestPostUrlEncodedTest(false)) == 2
 
   test "HTTP(S) client (size + chunked) url-encoded POST test":
-    let address = initTAddress("127.0.0.1:30080")
-    check waitFor(testRequestPostUrlEncodedTest(address, true)) == 2
+    check waitFor(testRequestPostUrlEncodedTest(true)) == 2
 
   test "HTTP client (size + chunked) multipart POST test":
-    let address = initTAddress("127.0.0.1:30080")
-    check waitFor(testRequestPostMultipartTest(address, false)) == 2
+    check waitFor(testRequestPostMultipartTest(false)) == 2
 
   test "HTTP(S) client (size + chunked) multipart POST test":
-    let address = initTAddress("127.0.0.1:30080")
-    check waitFor(testRequestPostMultipartTest(address, true)) == 2
+    check waitFor(testRequestPostMultipartTest(true)) == 2
 
   test "HTTP client redirection test":
-    let address = initTAddress("127.0.0.1:30080")
-    check waitFor(testRequestRedirectTest(address, false, 5)) == "ok-5-200"
+    check waitFor(testRequestRedirectTest(false, 5)) == "ok-5-200"
 
   test "HTTP(S) client redirection test":
-    let address = initTAddress("127.0.0.1:30080")
-    check waitFor(testRequestRedirectTest(address, true, 5)) == "ok-5-200"
+    check waitFor(testRequestRedirectTest(true, 5)) == "ok-5-200"
 
   test "HTTP client maximum redirections test":
-    let address = initTAddress("127.0.0.1:30080")
-    check waitFor(testRequestRedirectTest(address, false, 4)) == "redirect-true"
+    check waitFor(testRequestRedirectTest(false, 4)) == "redirect-true"
 
   test "HTTP(S) client maximum redirections test":
-    let address = initTAddress("127.0.0.1:30080")
-    check waitFor(testRequestRedirectTest(address, true, 4)) == "redirect-true"
+    check waitFor(testRequestRedirectTest(true, 4)) == "redirect-true"
 
   test "HTTPS basic authorization test":
-    check waitFor(testBasicAuthorization()) == true
+    skip()
+    # This test disabled because remote service is pretty flaky and fails pretty
+    # often. As soon as more stable service will be found this test should be
+    # recovered
+    # check waitFor(testBasicAuthorization()) == true
 
   test "HTTP client connection management test":
-    let address = initTAddress("127.0.0.1:30080")
-    check waitFor(testConnectionManagement(address)) == true
+    check waitFor(testConnectionManagement()) == true
 
   test "HTTP client idle connection test":
-    let address = initTAddress("127.0.0.1:30080")
-    check waitFor(testIdleConnection(address)) == true
+    check waitFor(testIdleConnection()) == true
 
   test "HTTP client no-pipeline test":
-    let address = initTAddress("127.0.0.1:30080")
-    check waitFor(testNoPipeline(address)) == true
+    check waitFor(testNoPipeline()) == true
 
   test "HTTP client server-sent events test":
-    let address = initTAddress("127.0.0.1:30080")
-    check waitFor(testServerSentEvents(address, false)) == true
+    check waitFor(testServerSentEvents(false)) == true
 
   test "Leaks test":
-    proc getTrackerLeaks(tracker: string): bool =
-      let tracker = getTracker(tracker)
-      if isNil(tracker): false else: tracker.isLeaked()
-
-    check:
-      getTrackerLeaks("http.body.reader") == false
-      getTrackerLeaks("http.body.writer") == false
-      getTrackerLeaks("httpclient.connection") == false
-      getTrackerLeaks("httpclient.request") == false
-      getTrackerLeaks("httpclient.response") == false
-      getTrackerLeaks("async.stream.reader") == false
-      getTrackerLeaks("async.stream.writer") == false
-      getTrackerLeaks("stream.server") == false
-      getTrackerLeaks("stream.transport") == false
+    checkLeaks()
