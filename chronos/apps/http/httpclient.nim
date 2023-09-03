@@ -298,6 +298,104 @@ proc getTLSFlags(flags: HttpClientFlags): set[TLSFlags] {.raises: [] .} =
     res.incl(TLSFlags.NoVerifyServerName)
   res
 
+proc getHttpAddress*(
+       url: Uri,
+       flags: HttpClientFlags = {}
+     ): HttpAddressResult[HttpAddress] {.raises: [].} =
+  let
+    scheme =
+      if len(url.scheme) == 0:
+        HttpClientScheme.NonSecure
+      else:
+        case toLowerAscii(url.scheme)
+        of "http":
+          HttpClientScheme.NonSecure
+        of "https":
+          HttpClientScheme.Secure
+        else:
+          let error = HttpAdressError.init(
+            HttpAddressErrorType.Critical, "URL scheme not supported")
+          return err(error)
+    port =
+      if len(url.port) == 0:
+        case scheme
+        of HttpClientScheme.NonSecure:
+          80'u16
+        of HttpClientScheme.Secure:
+          443'u16
+      else:
+        let res = Base10.decode(uint16, url.port)
+        if res.isErr():
+          let error = HttpAdressError.init(
+            HttpAddressErrorType.Critical, "Invalid URL port number")
+          return err(error)
+        res.get()
+    hostname =
+      block:
+        if len(url.hostname) == 0:
+          let error = HttpAdressError.init(
+            HttpAddressErrorType.Critical, "Missing URL hostname")
+          return err(error)
+        url.hostname
+    id = hostname & ":" & Base10.toString(port)
+    addresses =
+      if (HttpClientFlag.NoInet4Resolution in flags) and
+         (HttpClientFlag.NoInet6Resolution in flags):
+        # DNS resolution is disabled.
+        try:
+          @[initTAddress(hostname, Port(port))]
+        except TransportAddressError as exc:
+          let error = HttpAdressError.init(
+            HttpAddressErrorType.Critical,
+            "Invalid URL hostname, reason: " & $exc.msg)
+      else:
+        try:
+          if (HttpClientFlag.NoInet4Resolution notin flags) and
+             (HttpClientFlag.NoInet6Resolution notin flags):
+            # DNS resolution for both IPv4 and IPv6 addresses.
+            resolveTAddress(hostname, Port(port))
+          else:
+            if HttpClientFlag.NoInet6Resolution in flags:
+              # DNS resolution only for IPv4 addresses.
+              resolveTAddress(hostname, Port(port), AddressFamily.IPv4)
+            else:
+              # DNS resolution only for IPv6 addresses
+              resolveTAddress(hostname, Port(port), AddressFamily.IPv6)
+        except TransportAddressError as exc:
+          let error = HttpAdressError.init(
+            HttpAddressErrorType.Recoverable,
+            "Could not resolve address of remote server, reason: " & $exc.msg)
+          return err(error)
+
+  if len(addresses) == 0:
+    let error = HttpAdressError.init(
+      HttpAddressErrorType.Recoverable, "No address has been resolved")
+    return err(error)
+
+  ok(HttpAddress(id: id, scheme: scheme, hostname: hostname, port: port,
+                 path: url.path, query: url.query, anchor: url.anchor,
+                 username: url.username, password: url.password,
+                 addresses: addresses))
+
+proc getHttpAddress*(
+       url: string,
+       flags: HttpClientFlags = {}
+     ): HttpAddressResult[HttpAddress] {.raises: [].} =
+  getHttpAddress(parseUri(url), flags)
+
+proc getHttpAddress*(
+       session: HttpSessionRef,
+       url: Uri
+     ): HttpAddressResult[HttpAddress] {.raises: [].} =
+  getHttpAddress(url, session.flags)
+
+proc getHttpAddress*(
+       session: HttpSessionRef,
+       url: string
+     ): HttpAddressResult[HttpAddress] {.raises: [].} =
+  ## Create new HTTP address using URL string ``url`` and .
+  getHttpAddress(parseUri(url), session.flags)
+
 proc getAddress*(session: HttpSessionRef, url: Uri): HttpResult[HttpAddress] {.
      raises: [] .} =
   let scheme =
