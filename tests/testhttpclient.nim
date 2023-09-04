@@ -1268,7 +1268,8 @@ suite "HTTP client testing suite":
       let res = getHttpAddress("ftp://ftp.scene.org")
       check:
         res.isErr()
-        res.error.kind == HttpAddressErrorType.Critical
+        res.error == HttpAddressErrorType.InvalidUrlScheme
+        res.error.isCriticalError()
     block:
       # HTTP URL default ports and custom ports test
       let
@@ -1297,26 +1298,32 @@ suite "HTTP client testing suite":
         res7 = getHttpAddress("https://www.google.com:65536")
         res8 = getHttpAddress("https://www.google.com:65537")
       check:
-        res1.isErr() and res1.error.kind == HttpAddressErrorType.Critical
+        res1.isErr() and res1.error == HttpAddressErrorType.InvalidPortNumber
+        res1.error.isCriticalError()
         res2.isOk()
         res2.get().port == 0
-        res3.isErr() and res3.error.kind == HttpAddressErrorType.Critical
-        res4.isErr() and res4.error.kind == HttpAddressErrorType.Critical
-        res5.isErr() and res5.error.kind == HttpAddressErrorType.Critical
+        res3.isErr() and res3.error == HttpAddressErrorType.InvalidPortNumber
+        res3.error.isCriticalError()
+        res4.isErr() and res4.error == HttpAddressErrorType.InvalidPortNumber
+        res4.error.isCriticalError()
+        res5.isErr() and res5.error == HttpAddressErrorType.InvalidPortNumber
+        res5.error.isCriticalError()
         res6.isOk()
         res6.get().port == 0
-        res7.isErr() and res7.error.kind == HttpAddressErrorType.Critical
-        res8.isErr() and res8.error.kind == HttpAddressErrorType.Critical
+        res7.isErr() and res7.error == HttpAddressErrorType.InvalidPortNumber
+        res7.error.isCriticalError()
+        res8.isErr() and res8.error == HttpAddressErrorType.InvalidPortNumber
+        res8.error.isCriticalError()
     block:
       # HTTP URL missing hostname
       let
         res1 = getHttpAddress("http://")
-        res2 = getHttpAddress("ftp://")
-        res3 = getHttpAddress("mailto:")
+        res2 = getHttpAddress("https://")
       check:
-        res1.isErr() and res1.error.kind == HttpAddressErrorType.Critical
-        res2.isErr() and res2.error.kind == HttpAddressErrorType.Critical
-        res3.isErr() and res3.error.kind == HttpAddressErrorType.Critical
+        res1.isErr() and res1.error == HttpAddressErrorType.MissingHostname
+        res1.error.isCriticalError()
+        res2.isErr() and res2.error == HttpAddressErrorType.MissingHostname
+        res2.error.isCriticalError()
     block:
       # No resolution flags and incorrect URL
       let
@@ -1326,13 +1333,17 @@ suite "HTTP client testing suite":
         res2 = getHttpAddress(
           "http://[FFFFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]", flags)
       check:
-        res1.isErr() and res1.error.kind == HttpAddressErrorType.Critical
-        res2.isErr() and res2.error.kind == HttpAddressErrorType.Critical
+        res1.isErr() and res1.error == HttpAddressErrorType.InvalidIpHostname
+        res1.error.isCriticalError()
+        res2.isErr() and res2.error == HttpAddressErrorType.InvalidIpHostname
+        res2.error.isCriticalError()
     block:
       # Resolution of non-existent hostname
       let res = getHttpAddress("http://eYr6bdBo.com")
       check:
-        res.isErr() and res.error.kind == HttpAddressErrorType.Recoverable
+        res.isErr() and res.error == HttpAddressErrorType.NameLookupFailed
+        res.error.isRecoverableError()
+        not(res.error.isCriticalError())
 
   test "Leaks test":
     checkLeaks()

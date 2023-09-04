@@ -83,15 +83,46 @@ type
     Alive, Closing, Closed
 
   HttpAddressErrorType* {.pure.} = enum
-    Critical, Recoverable
+    InvalidUrlScheme,
+    InvalidPortNumber,
+    MissingHostname,
+    InvalidIpHostname,
+    NameLookupFailed,
+    NoAddressResolved
 
-  HttpAddressResultError* = object
-    kind*: HttpAddressErrorType
-    message*: string
+const
+  CriticalHttpAddressError* = {
+    HttpAddressErrorType.InvalidUrlScheme,
+    HttpAddressErrorType.InvalidPortNumber,
+    HttpAddressErrorType.MissingHostname,
+    HttpAddressErrorType.InvalidIpHostname
+  }
 
-func init*(t: typedesc[HttpAddressResultError], kind: HttpAddressErrorType,
-           message: string = ""): HttpAddressResultError =
-  HttpAddressResultError(kind: kind, message: message)
+  RecoverableHttpAddressError* = {
+    HttpAddressErrorType.NameLookupFailed,
+    HttpAddressErrorType.NoAddressResolved
+  }
+
+func isCriticalError*(error: HttpAddressErrorType): bool =
+  error in CriticalHttpAddressError
+
+func isRecoverableError*(error: HttpAddressErrorType): bool =
+  error in RecoverableHttpAddressError
+
+func toString*(error: HttpAddressErrorType): string =
+  case error
+  of HttpAddressErrorType.InvalidUrlScheme:
+    "URL scheme not supported"
+  of HttpAddressErrorType.InvalidPortNumber:
+    "Invalid URL port number"
+  of HttpAddressErrorType.MissingHostname:
+    "Missing URL hostname"
+  of HttpAddressErrorType.InvalidIpHostname:
+    "Invalid IPv4/IPv6 address in hostname"
+  of HttpAddressErrorType.NameLookupFailed:
+    "Could not resolve remote address"
+  of HttpAddressErrorType.NoAddressResolved:
+    "No address has been resolved"
 
 proc raiseHttpCriticalError*(msg: string,
                              code = Http400) {.noinline, noreturn.} =
