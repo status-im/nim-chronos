@@ -1262,5 +1262,88 @@ suite "HTTP client testing suite":
   test "HTTP client server-sent events test":
     check waitFor(testServerSentEvents(false)) == true
 
+  test "HTTP getHttpAddress() test":
+    block:
+      # HTTP client supports only `http` and `https` schemes in URL.
+      let res = getHttpAddress("ftp://ftp.scene.org")
+      check:
+        res.isErr()
+        res.error == HttpAddressErrorType.InvalidUrlScheme
+        res.error.isCriticalError()
+    block:
+      # HTTP URL default ports and custom ports test
+      let
+        res1 = getHttpAddress("http://www.google.com")
+        res2 = getHttpAddress("https://www.google.com")
+        res3 = getHttpAddress("http://www.google.com:35000")
+        res4 = getHttpAddress("https://www.google.com:25000")
+      check:
+        res1.isOk()
+        res2.isOk()
+        res3.isOk()
+        res4.isOk()
+        res1.get().port == 80
+        res2.get().port == 443
+        res3.get().port == 35000
+        res4.get().port == 25000
+    block:
+      # HTTP URL invalid port values test
+      let
+        res1 = getHttpAddress("http://www.google.com:-80")
+        res2 = getHttpAddress("http://www.google.com:0")
+        res3 = getHttpAddress("http://www.google.com:65536")
+        res4 = getHttpAddress("http://www.google.com:65537")
+        res5 = getHttpAddress("https://www.google.com:-443")
+        res6 = getHttpAddress("https://www.google.com:0")
+        res7 = getHttpAddress("https://www.google.com:65536")
+        res8 = getHttpAddress("https://www.google.com:65537")
+      check:
+        res1.isErr() and res1.error == HttpAddressErrorType.InvalidPortNumber
+        res1.error.isCriticalError()
+        res2.isOk()
+        res2.get().port == 0
+        res3.isErr() and res3.error == HttpAddressErrorType.InvalidPortNumber
+        res3.error.isCriticalError()
+        res4.isErr() and res4.error == HttpAddressErrorType.InvalidPortNumber
+        res4.error.isCriticalError()
+        res5.isErr() and res5.error == HttpAddressErrorType.InvalidPortNumber
+        res5.error.isCriticalError()
+        res6.isOk()
+        res6.get().port == 0
+        res7.isErr() and res7.error == HttpAddressErrorType.InvalidPortNumber
+        res7.error.isCriticalError()
+        res8.isErr() and res8.error == HttpAddressErrorType.InvalidPortNumber
+        res8.error.isCriticalError()
+    block:
+      # HTTP URL missing hostname
+      let
+        res1 = getHttpAddress("http://")
+        res2 = getHttpAddress("https://")
+      check:
+        res1.isErr() and res1.error == HttpAddressErrorType.MissingHostname
+        res1.error.isCriticalError()
+        res2.isErr() and res2.error == HttpAddressErrorType.MissingHostname
+        res2.error.isCriticalError()
+    block:
+      # No resolution flags and incorrect URL
+      let
+        flags = {HttpClientFlag.NoInet4Resolution,
+                 HttpClientFlag.NoInet6Resolution}
+        res1 = getHttpAddress("http://256.256.256.256", flags)
+        res2 = getHttpAddress(
+          "http://[FFFFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]", flags)
+      check:
+        res1.isErr() and res1.error == HttpAddressErrorType.InvalidIpHostname
+        res1.error.isCriticalError()
+        res2.isErr() and res2.error == HttpAddressErrorType.InvalidIpHostname
+        res2.error.isCriticalError()
+    block:
+      # Resolution of non-existent hostname
+      let res = getHttpAddress("http://eYr6bdBo.com")
+      check:
+        res.isErr() and res.error == HttpAddressErrorType.NameLookupFailed
+        res.error.isRecoverableError()
+        not(res.error.isCriticalError())
+
   test "Leaks test":
     checkLeaks()
