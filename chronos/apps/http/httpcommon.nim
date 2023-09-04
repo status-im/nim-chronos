@@ -85,15 +85,13 @@ type
   HttpAddressErrorType* {.pure.} = enum
     Critical, Recoverable
 
-  HttpAddressError* = object
+  HttpAddressResultError* = object
     kind*: HttpAddressErrorType
     message*: string
 
-  HttpAddressResult*[T] = Result[T, HttpAddressError]
-
-func init*(t: typedesc[HttpAddressError], kind: HttpAddressErrorType,
-           message: string = ""): HttpAddressError =
-  HttpAddressError(kind: kind, message: message)
+func init*(t: typedesc[HttpAddressResultError], kind: HttpAddressErrorType,
+           message: string = ""): HttpAddressResultError =
+  HttpAddressResultError(kind: kind, message: message)
 
 proc raiseHttpCriticalError*(msg: string,
                              code = Http400) {.noinline, noreturn.} =
