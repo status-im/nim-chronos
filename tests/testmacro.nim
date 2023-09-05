@@ -136,6 +136,27 @@ suite "Macro transformations test suite":
     check:
       waitFor(gen(int)) == default(int)
 
+  test "Nested return":
+    proc nr: Future[int] {.async.} =
+      return
+        if 1 == 1:
+          return 42
+        else:
+          33
+
+    check waitFor(nr()) == 42
+
+  test "Issue #415 (run closure to completion on return)":
+    var x = 0
+    proc test415 {.async.} =
+      try:
+        return
+      finally:
+        await stepsAsync(1)
+        x = 5
+    waitFor(test415())
+    check: x == 5
+
   test "Implicit return":
     proc implicit(): Future[int] {.async.} =
       42
