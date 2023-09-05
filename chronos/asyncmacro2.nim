@@ -10,7 +10,7 @@
 import std/[macros]
 
 # `quote do` will ruin line numbers so we avoid it using these helpers
-proc completeWithNode(fut, baseType, node: NimNode): NimNode {.compileTime.} =
+proc completeWithNode(node, resultNode: NimNode): NimNode {.compileTime.} =
   #   when typeof(`node`) is void:
   #     `node` # statement / explicit return
   #   else: # expression / implicit return
@@ -30,21 +30,28 @@ proc completeWithNode(fut, baseType, node: NimNode): NimNode {.compileTime.} =
         )
       ),
       nnkElseExpr.newTree(
-        newAssignment(ident "result", node)
+        newAssignment(resultNode, node)
       )
     )
 
-proc processBody(node, fut, baseType: NimNode): NimNode {.compileTime.} =
+proc processBody(node, resultNode, baseType: NimNode): NimNode {.compileTime.} =
+  # Rewrites the returns to fill the future instead
   #echo(node.treeRepr)
   case node.kind
   of nnkReturnStmt:
     let res = newNimNode(nnkStmtList, node)
     if node[0].kind != nnkEmpty:
+      # transforms return to:
+      # when `baseType` isnot void:
+      #   `resultNode` = processBody(node)
+      # else:
+      #   {.error: "no async return type declared".}
+      # return
       res.add nnkWhenStmt.newTree(
         nnkElifExpr.newTree(
           nnkInfix.newTree(
             ident "isnot", baseType, ident "void"),
-          newAssignment(ident "result", node[0])
+          newAssignment(resultNode, processBody(node[0], resultNode, baseType))
         ),
         nnkElse.newTree(
           nnkPragma.newTree(
@@ -65,7 +72,7 @@ proc processBody(node, fut, baseType: NimNode): NimNode {.compileTime.} =
       # We must not transform nested procedures of any form, otherwise
       # `fut` will be used for all nested procedures as their own
       # `retFuture`.
-      node[i] = processBody(node[i], fut, baseType)
+      node[i] = processBody(node[i], resultNode, baseType)
     node
 
 proc getName(node: NimNode): string {.compileTime.} =
@@ -145,13 +152,18 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
         else: returnType
       castFutureSym = nnkCast.newTree(internalFutureType, internalFutureSym)
 
-      procBody = prc.body.processBody(castFutureSym, baseType)
+      resultNode = nnkDotExpr.newTree(castFutureSym, ident"internalValue")
+      procBody = prc.body.processBody(resultNode, baseType)
 
     # don't do anything with forward bodies (empty)
     if procBody.kind != nnkEmpty:
       let
         # fix #13899, `defer` should not escape its original scope
         procBodyBlck = nnkBlockStmt.newTree(newEmptyNode(), procBody)
+
+        # workaround https://github.com/nim-lang/Nim/issues/22645
+        internalFutureTypeSym = genSym(nskType, "internalFutureTypeSym")
+        castFutureSym2 = nnkCast.newTree(internalFutureTypeSym, internalFutureSym)
 
         resultDecl = nnkWhenStmt.newTree(
           # when `baseType` is void:
@@ -164,12 +176,26 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
           ),
           # else:
           nnkElseExpr.newTree(
-            quote do:
-              template result: auto {.used.} = `castFutureSym`.internalValue
+            nnkStmtList.newTree(
+              # type `internalFutureTypeSym` = `internalFutureType` (workaround Nim#22645)
+              nnkTypeSection.newTree(nnkTypeDef.newTree(
+                internalFutureTypeSym, newEmptyNode(), internalFutureType
+              )),
+              # template result(): untyped {.used.} = `castFutureSym2`.internalValue
+              nnkTemplateDef.newTree(
+                ident"result",
+                newEmptyNode(),
+                newEmptyNode(),
+                nnkFormalParams.newTree(ident"untyped"),
+                nnkPragma.newTree(ident"used"),
+                newEmptyNode(),
+                nnkDotExpr.newTree(castFutureSym2, ident"internalValue")
+              )
+            )
           )
         )
 
-        completeDecl = completeWithNode(castFutureSym, baseType, procBodyBlck)
+        completeDecl = completeWithNode(procBodyBlck, resultNode)
         closureBody = newStmtList(resultDecl, completeDecl)
 
         internalFutureParameter = nnkIdentDefs.newTree(
