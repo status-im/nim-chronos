@@ -6,7 +6,7 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 import std/[strutils, os]
-import unittest2
+import ".."/chronos/unittest2/asynctests
 import ".."/chronos, ".."/chronos/[osdefs, oserrno]
 
 {.used.}
@@ -34,7 +34,7 @@ suite "Stream Transport test suite":
     ]
   else:
     let addresses = [
-      initTAddress("127.0.0.1:33335"),
+      initTAddress("127.0.0.1:0"),
       initTAddress(r"/tmp/testpipe")
     ]
 
@@ -43,7 +43,7 @@ suite "Stream Transport test suite":
   var markFD: int
 
   proc getCurrentFD(): int =
-    let local = initTAddress("127.0.0.1:33334")
+    let local = initTAddress("127.0.0.1:0")
     let sock = createAsyncSocket(local.getDomain(), SockType.SOCK_DGRAM,
                                  Protocol.IPPROTO_UDP)
     closeSocket(sock)
@@ -348,7 +348,7 @@ suite "Stream Transport test suite":
   proc test1(address: TransportAddress): Future[int] {.async.} =
     var server = createStreamServer(address, serveClient1, {ReuseAddr})
     server.start()
-    result = await swarmManager1(address)
+    result = await swarmManager1(server.local)
     server.stop()
     server.close()
     await server.join()
@@ -356,7 +356,7 @@ suite "Stream Transport test suite":
   proc test2(address: TransportAddress): Future[int] {.async.} =
     var server = createStreamServer(address, serveClient2, {ReuseAddr})
     server.start()
-    result = await swarmManager2(address)
+    result = await swarmManager2(server.local)
     server.stop()
     server.close()
     await server.join()
@@ -364,7 +364,7 @@ suite "Stream Transport test suite":
   proc test3(address: TransportAddress): Future[int] {.async.} =
     var server = createStreamServer(address, serveClient3, {ReuseAddr})
     server.start()
-    result = await swarmManager3(address)
+    result = await swarmManager3(server.local)
     server.stop()
     server.close()
     await server.join()
@@ -372,7 +372,7 @@ suite "Stream Transport test suite":
   proc testSendFile(address: TransportAddress): Future[int] {.async.} =
     var server = createStreamServer(address, serveClient4, {ReuseAddr})
     server.start()
-    result = await swarmManager4(address)
+    result = await swarmManager4(server.local)
     server.stop()
     server.close()
     await server.join()
@@ -414,7 +414,7 @@ suite "Stream Transport test suite":
 
     var server = createStreamServer(address, serveClient, {ReuseAddr})
     server.start()
-    result = await swarmManager(address)
+    result = await swarmManager(server.local)
     await server.join()
 
   proc testWCR(address: TransportAddress): Future[int] {.async.} =
@@ -456,13 +456,13 @@ suite "Stream Transport test suite":
 
     var server = createStreamServer(address, serveClient, {ReuseAddr})
     server.start()
-    result = await swarmManager(address)
+    result = await swarmManager(server.local)
     await server.join()
 
   proc test7(address: TransportAddress): Future[int] {.async.} =
     var server = createStreamServer(address, serveClient7, {ReuseAddr})
     server.start()
-    result = await swarmWorker7(address)
+    result = await swarmWorker7(server.local)
     server.stop()
     server.close()
     await server.join()
@@ -470,7 +470,7 @@ suite "Stream Transport test suite":
   proc test8(address: TransportAddress): Future[int] {.async.} =
     var server = createStreamServer(address, serveClient8, {ReuseAddr})
     server.start()
-    result = await swarmWorker8(address)
+    result = await swarmWorker8(server.local)
     await server.join()
 
   # proc serveClient9(server: StreamServer, transp: StreamTransport) {.async.} =
@@ -553,7 +553,7 @@ suite "Stream Transport test suite":
   proc test11(address: TransportAddress): Future[int] {.async.} =
     var server = createStreamServer(address, serveClient11, {ReuseAddr})
     server.start()
-    result = await swarmWorker11(address)
+    result = await swarmWorker11(server.local)
     server.stop()
     server.close()
     await server.join()
@@ -579,7 +579,7 @@ suite "Stream Transport test suite":
   proc test12(address: TransportAddress): Future[int] {.async.} =
     var server = createStreamServer(address, serveClient12, {ReuseAddr})
     server.start()
-    result = await swarmWorker12(address)
+    result = await swarmWorker12(server.local)
     server.stop()
     server.close()
     await server.join()
@@ -601,7 +601,7 @@ suite "Stream Transport test suite":
   proc test13(address: TransportAddress): Future[int] {.async.} =
     var server = createStreamServer(address, serveClient13, {ReuseAddr})
     server.start()
-    result = await swarmWorker13(address)
+    result = await swarmWorker13(server.local)
     server.stop()
     server.close()
     await server.join()
@@ -621,7 +621,7 @@ suite "Stream Transport test suite":
         subres = 0
 
     server.start()
-    var transp = await connect(address)
+    var transp = await connect(server.local)
     var fut = swarmWorker(transp)
     # We perfrom shutdown(SHUT_RD/SD_RECEIVE) for the socket, in such way its
     # possible to emulate socket's EOF.
@@ -674,7 +674,7 @@ suite "Stream Transport test suite":
   proc test16(address: TransportAddress): Future[int] {.async.} =
     var server = createStreamServer(address, serveClient16, {ReuseAddr})
     server.start()
-    result = await swarmWorker16(address)
+    result = await swarmWorker16(server.local)
     server.stop()
     server.close()
     await server.join()
@@ -701,7 +701,7 @@ suite "Stream Transport test suite":
     var server = createStreamServer(address, client, {ReuseAddr})
     server.start()
     var msg = "HELLO"
-    var ntransp = await connect(address)
+    var ntransp = await connect(server.local)
     await syncFut
     while true:
       var res = await ntransp.write(msg)
@@ -763,7 +763,7 @@ suite "Stream Transport test suite":
     var transp: StreamTransport
 
     try:
-      transp = await connect(address)
+      transp = await connect(server.local)
       flag = true
     except CatchableError:
       server.stop()
@@ -796,31 +796,31 @@ suite "Stream Transport test suite":
     server.start()
     try:
       var r1, r2, r3, r4, r5: string
-      var t1 = await connect(address)
+      var t1 = await connect(server.local)
       try:
         r1 = await t1.readLine(4)
       finally:
         await t1.closeWait()
 
-      var t2 = await connect(address)
+      var t2 = await connect(server.local)
       try:
         r2 = await t2.readLine(6)
       finally:
         await t2.closeWait()
 
-      var t3 = await connect(address)
+      var t3 = await connect(server.local)
       try:
         r3 = await t3.readLine(8)
       finally:
         await t3.closeWait()
 
-      var t4 = await connect(address)
+      var t4 = await connect(server.local)
       try:
         r4 = await t4.readLine(8)
       finally:
         await t4.closeWait()
 
-      var t5 = await connect(address)
+      var t5 = await connect(server.local)
       try:
         r5 = await t5.readLine()
       finally:
@@ -945,7 +945,7 @@ suite "Stream Transport test suite":
     var server = createStreamServer(address, serveClient, {ReuseAddr})
     server.start()
 
-    var t1 = await connect(address)
+    var t1 = await connect(server.local)
     try:
       discard await t1.readLV(2000)
     except TransportIncompleteError:
@@ -959,7 +959,7 @@ suite "Stream Transport test suite":
       await server.join()
       return false
 
-    var t2 = await connect(address)
+    var t2 = await connect(server.local)
     try:
       var r2 = await t2.readLV(2000)
       c2 = (r2 == @[])
@@ -972,7 +972,7 @@ suite "Stream Transport test suite":
       await server.join()
       return false
 
-    var t3 = await connect(address)
+    var t3 = await connect(server.local)
     try:
       discard await t3.readLV(2000)
     except TransportIncompleteError:
@@ -986,7 +986,7 @@ suite "Stream Transport test suite":
       await server.join()
       return false
 
-    var t4 = await connect(address)
+    var t4 = await connect(server.local)
     try:
       discard await t4.readLV(2000)
     except TransportIncompleteError:
@@ -1000,7 +1000,7 @@ suite "Stream Transport test suite":
       await server.join()
       return false
 
-    var t5 = await connect(address)
+    var t5 = await connect(server.local)
     try:
       discard await t5.readLV(1000)
     except ValueError:
@@ -1014,7 +1014,7 @@ suite "Stream Transport test suite":
       await server.join()
       return false
 
-    var t6 = await connect(address)
+    var t6 = await connect(server.local)
     try:
       var expectMsg = createMessage(1024)
       var r6 = await t6.readLV(2000)
@@ -1029,7 +1029,7 @@ suite "Stream Transport test suite":
       await server.join()
       return false
 
-    var t7 = await connect(address)
+    var t7 = await connect(server.local)
     try:
       var expectMsg = createMessage(1024)
       var expectDone = "DONE"
@@ -1062,7 +1062,7 @@ suite "Stream Transport test suite":
 
     try:
       for i in 0 ..< TestsCount:
-        transp = await connect(address)
+        transp = await connect(server.local)
         await sleepAsync(10.milliseconds)
         await transp.closeWait()
         inc(connected)
@@ -1117,7 +1117,7 @@ suite "Stream Transport test suite":
       try:
         for i in 0 ..< 3:
           try:
-            let transp = await connect(address)
+            let transp = await connect(server.local)
             await sleepAsync(10.milliseconds)
             await transp.closeWait()
           except TransportTooManyError:
@@ -1166,7 +1166,7 @@ suite "Stream Transport test suite":
       await server.closeWait()
 
     var acceptFut = acceptTask(server)
-    var transp = await connect(address)
+    var transp = await connect(server.local)
     await server.join()
     await transp.closeWait()
     await acceptFut
@@ -1187,7 +1187,7 @@ suite "Stream Transport test suite":
       await server.closeWait()
 
     var acceptFut = acceptTask(server)
-    var transp = await connect(address)
+    var transp = await connect(server.local)
     await server.join()
     await transp.closeWait()
     await acceptFut
@@ -1259,46 +1259,39 @@ suite "Stream Transport test suite":
     return buffer == message
 
   proc testConnectBindLocalAddress() {.async.} =
-    let dst1 = initTAddress("127.0.0.1:33335")
-    let dst2 = initTAddress("127.0.0.1:33336")
-    let dst3 = initTAddress("127.0.0.1:33337")
 
     proc client(server: StreamServer, transp: StreamTransport) {.async.} =
       await transp.closeWait()
 
-    # We use ReuseAddr here only to be able to reuse the same IP/Port when there's a TIME_WAIT socket. It's useful when
-    # running the test multiple times or if a test ran previously used the same port.
-    let servers =
-      [createStreamServer(dst1, client, {ReuseAddr}),
-       createStreamServer(dst2, client, {ReuseAddr}),
-       createStreamServer(dst3, client, {ReusePort})]
+    let server1 = createStreamServer(initTAddress("127.0.0.1:0"), client)
+    let server2 = createStreamServer(initTAddress("127.0.0.1:0"), client)
+    let server3 = createStreamServer(initTAddress("127.0.0.1:0"), client, {ReusePort})
 
-    for server in servers:
-      server.start()
+    server1.start()
+    server2.start()
+    server3.start()
 
-    let ta = initTAddress("0.0.0.0:35000")
-
-    # It works cause there's no active listening socket bound to ta and we are using ReuseAddr
-    var transp1 = await connect(dst1, localAddress = ta, flags={SocketFlags.ReuseAddr})
-    var transp2 = await connect(dst2, localAddress = ta, flags={SocketFlags.ReuseAddr})
-
-    # It works cause even thought there's an active listening socket bound to dst3, we are using ReusePort
-    var transp3 = await connect(dst2, localAddress = dst3, flags={SocketFlags.ReusePort})
+    # It works cause even though there's an active listening socket bound to dst3, we are using ReusePort
+    var transp1 = await connect(server1.local, localAddress = server3.local, flags={SocketFlags.ReusePort})
+    var transp2 = await connect(server2.local, localAddress = server3.local, flags={SocketFlags.ReusePort})
 
     expect(TransportOsError):
-      var transp2 {.used.} = await connect(dst3, localAddress = ta)
+      var transp2 {.used.} = await connect(server2.local, localAddress = server3.local)
 
     expect(TransportOsError):
-      var transp3 {.used.} =
-        await connect(dst3, localAddress = initTAddress(":::35000"))
+      var transp3 {.used.} = await connect(server2.local, localAddress = initTAddress("::", server3.local.port))
 
     await transp1.closeWait()
     await transp2.closeWait()
-    await transp3.closeWait()
 
-    for server in servers:
-      server.stop()
-      await server.closeWait()
+    server1.stop()
+    await server1.closeWait()
+
+    server2.stop()
+    await server2.closeWait()
+
+    server3.stop()
+    await server3.closeWait()
 
   markFD = getCurrentFD()
 
@@ -1339,7 +1332,10 @@ suite "Stream Transport test suite":
         else:
           skip()
       else:
-        check waitFor(testSendFile(addresses[i])) == FilesCount
+        if defined(emscripten):
+          skip()
+        else:
+          check waitFor(testSendFile(addresses[i])) == FilesCount
     test prefixes[i] & "Connection refused test":
       var address: TransportAddress
       if addresses[i].family == AddressFamily.Unix:
@@ -1370,10 +1366,11 @@ suite "Stream Transport test suite":
     test prefixes[i] & "close() while in accept() waiting test":
       check waitFor(testAcceptClose(addresses[i])) == true
     test prefixes[i] & "Intermediate transports leak test #1":
+      checkLeaks()
       when defined(windows):
         skip()
       else:
-        check getTracker("stream.transport").isLeaked() == false
+        checkLeaks(StreamTransportTrackerName)
     test prefixes[i] & "accept() too many file descriptors test":
       when defined(windows):
         skip()
@@ -1389,10 +1386,8 @@ suite "Stream Transport test suite":
     check waitFor(testPipe()) == true
   test "[IP] bind connect to local address":
     waitFor(testConnectBindLocalAddress())
-  test "Servers leak test":
-    check getTracker("stream.server").isLeaked() == false
-  test "Transports leak test":
-    check getTracker("stream.transport").isLeaked() == false
+  test "Leaks test":
+    checkLeaks()
   test "File descriptors leak test":
     when defined(windows):
       # Windows handle numbers depends on many conditions, so we can't use

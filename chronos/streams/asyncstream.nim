@@ -96,10 +96,6 @@ type
     reader*: AsyncStreamReader
     writer*: AsyncStreamWriter
 
-  AsyncStreamTracker* = ref object of TrackerBase
-    opened*: int64
-    closed*: int64
-
   AsyncStreamRW* = AsyncStreamReader | AsyncStreamWriter
 
 proc init*(t: typedesc[AsyncBuffer], size: int): AsyncBuffer =
@@ -331,79 +327,6 @@ template checkStreamClosed*(t: untyped) =
 
 template checkStreamFinished*(t: untyped) =
   if t.atEof(): raiseAsyncStreamWriteEOFError()
-
-proc setupAsyncStreamReaderTracker(): AsyncStreamTracker {.
-     gcsafe, raises: [].}
-proc setupAsyncStreamWriterTracker(): AsyncStreamTracker {.
-     gcsafe, raises: [].}
-
-proc getAsyncStreamReaderTracker(): AsyncStreamTracker {.inline.} =
-  var res = cast[AsyncStreamTracker](getTracker(AsyncStreamReaderTrackerName))
-  if isNil(res):
-    res = setupAsyncStreamReaderTracker()
-  res
-
-proc getAsyncStreamWriterTracker(): AsyncStreamTracker {.inline.} =
-  var res = cast[AsyncStreamTracker](getTracker(AsyncStreamWriterTrackerName))
-  if isNil(res):
-    res = setupAsyncStreamWriterTracker()
-  res
-
-proc dumpAsyncStreamReaderTracking(): string {.gcsafe.} =
-  var tracker = getAsyncStreamReaderTracker()
-  let res = "Opened async stream readers: " & $tracker.opened & "\n" &
-            "Closed async stream readers: " & $tracker.closed
-  res
-
-proc dumpAsyncStreamWriterTracking(): string {.gcsafe.} =
-  var tracker = getAsyncStreamWriterTracker()
-  let res = "Opened async stream writers: " & $tracker.opened & "\n" &
-            "Closed async stream writers: " & $tracker.closed
-  res
-
-proc leakAsyncStreamReader(): bool {.gcsafe.} =
-  var tracker = getAsyncStreamReaderTracker()
-  tracker.opened != tracker.closed
-
-proc leakAsyncStreamWriter(): bool {.gcsafe.} =
-  var tracker = getAsyncStreamWriterTracker()
-  tracker.opened != tracker.closed
-
-proc trackAsyncStreamReader(t: AsyncStreamReader) {.inline.} =
-  var tracker = getAsyncStreamReaderTracker()
-  inc(tracker.opened)
-
-proc untrackAsyncStreamReader*(t: AsyncStreamReader) {.inline.}  =
-  var tracker = getAsyncStreamReaderTracker()
-  inc(tracker.closed)
-
-proc trackAsyncStreamWriter(t: AsyncStreamWriter) {.inline.} =
-  var tracker = getAsyncStreamWriterTracker()
-  inc(tracker.opened)
-
-proc untrackAsyncStreamWriter*(t: AsyncStreamWriter) {.inline.}  =
-  var tracker = getAsyncStreamWriterTracker()
-  inc(tracker.closed)
-
-proc setupAsyncStreamReaderTracker(): AsyncStreamTracker {.gcsafe.} =
-  var res = AsyncStreamTracker(
-    opened: 0,
-    closed: 0,
-    dump: dumpAsyncStreamReaderTracking,
-    isLeaked: leakAsyncStreamReader
-  )
-  addTracker(AsyncStreamReaderTrackerName, res)
-  res
-
-proc setupAsyncStreamWriterTracker(): AsyncStreamTracker {.gcsafe.} =
-  var res = AsyncStreamTracker(
-    opened: 0,
-    closed: 0,
-    dump: dumpAsyncStreamWriterTracking,
-    isLeaked: leakAsyncStreamWriter
-  )
-  addTracker(AsyncStreamWriterTrackerName, res)
-  res
 
 template readLoop(body: untyped): untyped =
   while true:
@@ -950,10 +873,10 @@ proc join*(rw: AsyncStreamRW): Future[void] =
   else:
     var retFuture = newFuture[void]("async.stream.writer.join")
 
-  proc continuation(udata: pointer) {.gcsafe.} =
+  proc continuation(udata: pointer) {.gcsafe, raises:[].} =
     retFuture.complete()
 
-  proc cancellation(udata: pointer) {.gcsafe.} =
+  proc cancellation(udata: pointer) {.gcsafe, raises:[].} =
     rw.future.removeCallback(continuation, cast[pointer](retFuture))
 
   if not(rw.future.finished()):
@@ -977,9 +900,9 @@ proc close*(rw: AsyncStreamRW) =
       if not(rw.future.finished()):
         rw.future.complete()
       when rw is AsyncStreamReader:
-        untrackAsyncStreamReader(rw)
+        untrackCounter(AsyncStreamReaderTrackerName)
       elif rw is AsyncStreamWriter:
-        untrackAsyncStreamWriter(rw)
+        untrackCounter(AsyncStreamWriterTrackerName)
       rw.state = AsyncStreamState.Closed
 
     when rw is AsyncStreamReader:
@@ -1028,7 +951,7 @@ proc init*(child, wsource: AsyncStreamWriter, loop: StreamWriterLoop,
   child.wsource = wsource
   child.tsource = wsource.tsource
   child.queue = newAsyncQueue[WriteItem](queueSize)
-  trackAsyncStreamWriter(child)
+  trackCounter(AsyncStreamWriterTrackerName)
   child.startWriter()
 
 proc init*[T](child, wsource: AsyncStreamWriter, loop: StreamWriterLoop,
@@ -1042,7 +965,7 @@ proc init*[T](child, wsource: AsyncStreamWriter, loop: StreamWriterLoop,
   if not isNil(udata):
     GC_ref(udata)
     child.udata = cast[pointer](udata)
-  trackAsyncStreamWriter(child)
+  trackCounter(AsyncStreamWriterTrackerName)
   child.startWriter()
 
 proc init*(child, rsource: AsyncStreamReader, loop: StreamReaderLoop,
@@ -1053,7 +976,7 @@ proc init*(child, rsource: AsyncStreamReader, loop: StreamReaderLoop,
   child.rsource = rsource
   child.tsource = rsource.tsource
   child.buffer = AsyncBuffer.init(bufferSize)
-  trackAsyncStreamReader(child)
+  trackCounter(AsyncStreamReaderTrackerName)
   child.startReader()
 
 proc init*[T](child, rsource: AsyncStreamReader, loop: StreamReaderLoop,
@@ -1068,7 +991,7 @@ proc init*[T](child, rsource: AsyncStreamReader, loop: StreamReaderLoop,
   if not isNil(udata):
     GC_ref(udata)
     child.udata = cast[pointer](udata)
-  trackAsyncStreamReader(child)
+  trackCounter(AsyncStreamReaderTrackerName)
   child.startReader()
 
 proc init*(child: AsyncStreamWriter, tsource: StreamTransport) =
@@ -1077,7 +1000,7 @@ proc init*(child: AsyncStreamWriter, tsource: StreamTransport) =
   child.writerLoop = nil
   child.wsource = nil
   child.tsource = tsource
-  trackAsyncStreamWriter(child)
+  trackCounter(AsyncStreamWriterTrackerName)
   child.startWriter()
 
 proc init*[T](child: AsyncStreamWriter, tsource: StreamTransport,
@@ -1087,7 +1010,7 @@ proc init*[T](child: AsyncStreamWriter, tsource: StreamTransport,
   child.writerLoop = nil
   child.wsource = nil
   child.tsource = tsource
-  trackAsyncStreamWriter(child)
+  trackCounter(AsyncStreamWriterTrackerName)
   child.startWriter()
 
 proc init*(child, wsource: AsyncStreamWriter) =
@@ -1096,7 +1019,7 @@ proc init*(child, wsource: AsyncStreamWriter) =
   child.writerLoop = nil
   child.wsource = wsource
   child.tsource = wsource.tsource
-  trackAsyncStreamWriter(child)
+  trackCounter(AsyncStreamWriterTrackerName)
   child.startWriter()
 
 proc init*[T](child, wsource: AsyncStreamWriter, udata: ref T) =
@@ -1108,7 +1031,7 @@ proc init*[T](child, wsource: AsyncStreamWriter, udata: ref T) =
   if not isNil(udata):
     GC_ref(udata)
     child.udata = cast[pointer](udata)
-  trackAsyncStreamWriter(child)
+  trackCounter(AsyncStreamWriterTrackerName)
   child.startWriter()
 
 proc init*(child: AsyncStreamReader, tsource: StreamTransport) =
@@ -1117,7 +1040,7 @@ proc init*(child: AsyncStreamReader, tsource: StreamTransport) =
   child.readerLoop = nil
   child.rsource = nil
   child.tsource = tsource
-  trackAsyncStreamReader(child)
+  trackCounter(AsyncStreamReaderTrackerName)
   child.startReader()
 
 proc init*[T](child: AsyncStreamReader, tsource: StreamTransport,
@@ -1130,7 +1053,7 @@ proc init*[T](child: AsyncStreamReader, tsource: StreamTransport,
   if not isNil(udata):
     GC_ref(udata)
     child.udata = cast[pointer](udata)
-  trackAsyncStreamReader(child)
+  trackCounter(AsyncStreamReaderTrackerName)
   child.startReader()
 
 proc init*(child, rsource: AsyncStreamReader) =
@@ -1139,7 +1062,7 @@ proc init*(child, rsource: AsyncStreamReader) =
   child.readerLoop = nil
   child.rsource = rsource
   child.tsource = rsource.tsource
-  trackAsyncStreamReader(child)
+  trackCounter(AsyncStreamReaderTrackerName)
   child.startReader()
 
 proc init*[T](child, rsource: AsyncStreamReader, udata: ref T) =
@@ -1151,7 +1074,7 @@ proc init*[T](child, rsource: AsyncStreamReader, udata: ref T) =
   if not isNil(udata):
     GC_ref(udata)
     child.udata = cast[pointer](udata)
-  trackAsyncStreamReader(child)
+  trackCounter(AsyncStreamReaderTrackerName)
   child.startReader()
 
 proc newAsyncStreamReader*[T](rsource: AsyncStreamReader,

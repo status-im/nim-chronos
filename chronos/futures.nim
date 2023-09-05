@@ -184,7 +184,7 @@ func completed*(future: FutureBase): bool {.inline.} =
 func location*(future: FutureBase): array[LocationKind, ptr SrcLoc] =
   future.internalLocation
 
-func value*[T](future: Future[T]): T =
+func value*[T: not void](future: Future[T]): lent T =
   ## Return the value in a completed future - raises Defect when
   ## `fut.completed()` is `false`.
   ##
@@ -196,8 +196,19 @@ func value*[T](future: Future[T]): T =
         msg: "Future not completed while accessing value",
         cause: future)
 
-  when T isnot void:
-    future.internalValue
+  future.internalValue
+
+func value*(future: Future[void]) =
+  ## Return the value in a completed future - raises Defect when
+  ## `fut.completed()` is `false`.
+  ##
+  ## See `read` for a version that raises an catchable error when future
+  ## has not completed.
+  when chronosStrictFutureAccess:
+    if not future.completed():
+      raise (ref FutureDefect)(
+        msg: "Future not completed while accessing value",
+        cause: future)
 
 func error*(future: FutureBase): ref CatchableError =
   ## Return the error of `future`, or `nil` if future did not fail.

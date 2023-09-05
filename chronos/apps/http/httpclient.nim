@@ -108,6 +108,7 @@ type
     remoteHostname*: string
     flags*: set[HttpClientConnectionFlag]
     timestamp*: Moment
+    duration*: Duration
 
   HttpClientConnectionRef* = ref HttpClientConnection
 
@@ -190,113 +191,17 @@ type
 
   HttpClientFlags* = set[HttpClientFlag]
 
-  HttpClientTracker* = ref object of TrackerBase
-    opened*: int64
-    closed*: int64
-
   ServerSentEvent* = object
     name*: string
     data*: string
+
+  HttpAddressResult* = Result[HttpAddress, HttpAddressErrorType]
 
 # HttpClientRequestRef valid states are:
 # Ready -> Open -> (Finished, Error) -> (Closing, Closed)
 #
 # HttpClientResponseRef valid states are
 # Open -> (Finished, Error) -> (Closing, Closed)
-
-proc setupHttpClientConnectionTracker(): HttpClientTracker {.
-     gcsafe, raises: [].}
-proc setupHttpClientRequestTracker(): HttpClientTracker {.
-     gcsafe, raises: [].}
-proc setupHttpClientResponseTracker(): HttpClientTracker {.
-     gcsafe, raises: [].}
-
-proc getHttpClientConnectionTracker(): HttpClientTracker {.inline.} =
-  var res = cast[HttpClientTracker](getTracker(HttpClientConnectionTrackerName))
-  if isNil(res):
-    res = setupHttpClientConnectionTracker()
-  res
-
-proc getHttpClientRequestTracker(): HttpClientTracker {.inline.} =
-  var res = cast[HttpClientTracker](getTracker(HttpClientRequestTrackerName))
-  if isNil(res):
-    res = setupHttpClientRequestTracker()
-  res
-
-proc getHttpClientResponseTracker(): HttpClientTracker {.inline.} =
-  var res = cast[HttpClientTracker](getTracker(HttpClientResponseTrackerName))
-  if isNil(res):
-    res = setupHttpClientResponseTracker()
-  res
-
-proc dumpHttpClientConnectionTracking(): string {.gcsafe.} =
-  let tracker = getHttpClientConnectionTracker()
-  "Opened HTTP client connections: " & $tracker.opened & "\n" &
-  "Closed HTTP client connections: " & $tracker.closed
-
-proc dumpHttpClientRequestTracking(): string {.gcsafe.} =
-  let tracker = getHttpClientRequestTracker()
-  "Opened HTTP client requests: " & $tracker.opened & "\n" &
-  "Closed HTTP client requests: " & $tracker.closed
-
-proc dumpHttpClientResponseTracking(): string {.gcsafe.} =
-  let tracker = getHttpClientResponseTracker()
-  "Opened HTTP client responses: " & $tracker.opened & "\n" &
-  "Closed HTTP client responses: " & $tracker.closed
-
-proc leakHttpClientConnection(): bool {.gcsafe.} =
-  var tracker = getHttpClientConnectionTracker()
-  tracker.opened != tracker.closed
-
-proc leakHttpClientRequest(): bool {.gcsafe.} =
-  var tracker = getHttpClientRequestTracker()
-  tracker.opened != tracker.closed
-
-proc leakHttpClientResponse(): bool {.gcsafe.} =
-  var tracker = getHttpClientResponseTracker()
-  tracker.opened != tracker.closed
-
-proc trackHttpClientConnection(t: HttpClientConnectionRef) {.inline.} =
-  inc(getHttpClientConnectionTracker().opened)
-
-proc untrackHttpClientConnection*(t: HttpClientConnectionRef) {.inline.}  =
-  inc(getHttpClientConnectionTracker().closed)
-
-proc trackHttpClientRequest(t: HttpClientRequestRef) {.inline.} =
-  inc(getHttpClientRequestTracker().opened)
-
-proc untrackHttpClientRequest*(t: HttpClientRequestRef) {.inline.}  =
-  inc(getHttpClientRequestTracker().closed)
-
-proc trackHttpClientResponse(t: HttpClientResponseRef) {.inline.} =
-  inc(getHttpClientResponseTracker().opened)
-
-proc untrackHttpClientResponse*(t: HttpClientResponseRef) {.inline.}  =
-  inc(getHttpClientResponseTracker().closed)
-
-proc setupHttpClientConnectionTracker(): HttpClientTracker {.gcsafe.} =
-  var res = HttpClientTracker(opened: 0, closed: 0,
-    dump: dumpHttpClientConnectionTracking,
-    isLeaked: leakHttpClientConnection
-  )
-  addTracker(HttpClientConnectionTrackerName, res)
-  res
-
-proc setupHttpClientRequestTracker(): HttpClientTracker {.gcsafe.} =
-  var res = HttpClientTracker(opened: 0, closed: 0,
-    dump: dumpHttpClientRequestTracking,
-    isLeaked: leakHttpClientRequest
-  )
-  addTracker(HttpClientRequestTrackerName, res)
-  res
-
-proc setupHttpClientResponseTracker(): HttpClientTracker {.gcsafe.} =
-  var res = HttpClientTracker(opened: 0, closed: 0,
-    dump: dumpHttpClientResponseTracking,
-    isLeaked: leakHttpClientResponse
-  )
-  addTracker(HttpClientResponseTrackerName, res)
-  res
 
 template checkClosed(reqresp: untyped): untyped =
   if reqresp.connection.state in {HttpClientConnectionState.Closing,
@@ -330,6 +235,12 @@ template setDuration(
     let timestamp = Moment.now()
     reqresp.duration = timestamp - reqresp.timestamp
     reqresp.connection.setTimestamp(timestamp)
+
+template setDuration(conn: HttpClientConnectionRef): untyped =
+  if not(isNil(conn)):
+    let timestamp = Moment.now()
+    conn.duration = timestamp - conn.timestamp
+    conn.setTimestamp(timestamp)
 
 template isReady(conn: HttpClientConnectionRef): bool =
   (conn.state == HttpClientConnectionState.Ready) and
@@ -388,6 +299,89 @@ proc getTLSFlags(flags: HttpClientFlags): set[TLSFlags] {.raises: [] .} =
   if HttpClientFlag.NoVerifyServerName in flags:
     res.incl(TLSFlags.NoVerifyServerName)
   res
+
+proc getHttpAddress*(
+       url: Uri,
+       flags: HttpClientFlags = {}
+     ): HttpAddressResult {.raises: [].} =
+  let
+    scheme =
+      if len(url.scheme) == 0:
+        HttpClientScheme.NonSecure
+      else:
+        case toLowerAscii(url.scheme)
+        of "http":
+          HttpClientScheme.NonSecure
+        of "https":
+          HttpClientScheme.Secure
+        else:
+          return err(HttpAddressErrorType.InvalidUrlScheme)
+    port =
+      if len(url.port) == 0:
+        case scheme
+        of HttpClientScheme.NonSecure:
+          80'u16
+        of HttpClientScheme.Secure:
+          443'u16
+      else:
+        Base10.decode(uint16, url.port).valueOr:
+          return err(HttpAddressErrorType.InvalidPortNumber)
+    hostname =
+      block:
+        if len(url.hostname) == 0:
+          return err(HttpAddressErrorType.MissingHostname)
+        url.hostname
+    id = hostname & ":" & Base10.toString(port)
+    addresses =
+      if (HttpClientFlag.NoInet4Resolution in flags) and
+         (HttpClientFlag.NoInet6Resolution in flags):
+        # DNS resolution is disabled.
+        try:
+          @[initTAddress(hostname, Port(port))]
+        except TransportAddressError:
+          return err(HttpAddressErrorType.InvalidIpHostname)
+      else:
+        try:
+          if (HttpClientFlag.NoInet4Resolution notin flags) and
+             (HttpClientFlag.NoInet6Resolution notin flags):
+            # DNS resolution for both IPv4 and IPv6 addresses.
+            resolveTAddress(hostname, Port(port))
+          else:
+            if HttpClientFlag.NoInet6Resolution in flags:
+              # DNS resolution only for IPv4 addresses.
+              resolveTAddress(hostname, Port(port), AddressFamily.IPv4)
+            else:
+              # DNS resolution only for IPv6 addresses
+              resolveTAddress(hostname, Port(port), AddressFamily.IPv6)
+        except TransportAddressError:
+          return err(HttpAddressErrorType.NameLookupFailed)
+
+  if len(addresses) == 0:
+    return err(HttpAddressErrorType.NoAddressResolved)
+
+  ok(HttpAddress(id: id, scheme: scheme, hostname: hostname, port: port,
+                 path: url.path, query: url.query, anchor: url.anchor,
+                 username: url.username, password: url.password,
+                 addresses: addresses))
+
+proc getHttpAddress*(
+       url: string,
+       flags: HttpClientFlags = {}
+     ): HttpAddressResult {.raises: [].} =
+  getHttpAddress(parseUri(url), flags)
+
+proc getHttpAddress*(
+       session: HttpSessionRef,
+       url: Uri
+     ): HttpAddressResult {.raises: [].} =
+  getHttpAddress(url, session.flags)
+
+proc getHttpAddress*(
+       session: HttpSessionRef,
+       url: string
+     ): HttpAddressResult {.raises: [].} =
+  ## Create new HTTP address using URL string ``url`` and .
+  getHttpAddress(parseUri(url), session.flags)
 
 proc getAddress*(session: HttpSessionRef, url: Uri): HttpResult[HttpAddress] {.
      raises: [] .} =
@@ -556,7 +550,7 @@ proc new(t: typedesc[HttpClientConnectionRef], session: HttpSessionRef,
       state: HttpClientConnectionState.Connecting,
       remoteHostname: ha.id
     )
-    trackHttpClientConnection(res)
+    trackCounter(HttpClientConnectionTrackerName)
     res
   of HttpClientScheme.Secure:
     let treader = newAsyncStreamReader(transp)
@@ -575,7 +569,7 @@ proc new(t: typedesc[HttpClientConnectionRef], session: HttpSessionRef,
       state: HttpClientConnectionState.Connecting,
       remoteHostname: ha.id
     )
-    trackHttpClientConnection(res)
+    trackCounter(HttpClientConnectionTrackerName)
     res
 
 proc setError(request: HttpClientRequestRef, error: ref HttpError) {.
@@ -615,13 +609,13 @@ proc closeWait(conn: HttpClientConnectionRef) {.async.} =
       discard
     await conn.transp.closeWait()
     conn.state = HttpClientConnectionState.Closed
-    untrackHttpClientConnection(conn)
+    untrackCounter(HttpClientConnectionTrackerName)
 
 proc connect(session: HttpSessionRef,
              ha: HttpAddress): Future[HttpClientConnectionRef] {.async.} =
   ## Establish new connection with remote server using ``url`` and ``flags``.
   ## On success returns ``HttpClientConnectionRef`` object.
-
+  var lastError = ""
   # Here we trying to connect to every possible remote host address we got after
   # DNS resolution.
   for address in ha.addresses:
@@ -645,9 +639,14 @@ proc connect(session: HttpSessionRef,
             except CancelledError as exc:
               await res.closeWait()
               raise exc
-            except AsyncStreamError:
+            except TLSStreamProtocolError as exc:
               await res.closeWait()
               res.state = HttpClientConnectionState.Error
+              lastError = $exc.msg
+            except AsyncStreamError as exc:
+              await res.closeWait()
+              res.state = HttpClientConnectionState.Error
+              lastError = $exc.msg
           of HttpClientScheme.Nonsecure:
             res.state = HttpClientConnectionState.Ready
           res
@@ -655,7 +654,11 @@ proc connect(session: HttpSessionRef,
         return conn
 
   # If all attempts to connect to the remote host have failed.
-  raiseHttpConnectionError("Could not connect to remote host")
+  if len(lastError) > 0:
+    raiseHttpConnectionError("Could not connect to remote host, reason: " &
+                             lastError)
+  else:
+    raiseHttpConnectionError("Could not connect to remote host")
 
 proc removeConnection(session: HttpSessionRef,
                       conn: HttpClientConnectionRef) {.async.} =
@@ -685,9 +688,9 @@ proc acquireConnection(
      ): Future[HttpClientConnectionRef] {.async.} =
   ## Obtain connection from ``session`` or establish a new one.
   var default: seq[HttpClientConnectionRef]
+  let timestamp = Moment.now()
   if session.connectionPoolEnabled(flags):
     # Trying to reuse existing connection from our connection's pool.
-    let timestamp = Moment.now()
     # We looking for non-idle connection at `Ready` state, all idle connections
     # will be freed by sessionWatcher().
     for connection in session.connections.getOrDefault(ha.id):
@@ -704,6 +707,8 @@ proc acquireConnection(
   connection.state = HttpClientConnectionState.Acquired
   session.connections.mgetOrPut(ha.id, default).add(connection)
   inc(session.connectionsCount)
+  connection.setTimestamp(timestamp)
+  connection.setDuration()
   return connection
 
 proc releaseConnection(session: HttpSessionRef,
@@ -835,7 +840,7 @@ proc closeWait*(request: HttpClientRequestRef) {.async.} =
     request.session = nil
     request.error = nil
     request.state = HttpReqRespState.Closed
-    untrackHttpClientRequest(request)
+    untrackCounter(HttpClientRequestTrackerName)
 
 proc closeWait*(response: HttpClientResponseRef) {.async.} =
   if response.state notin {HttpReqRespState.Closing, HttpReqRespState.Closed}:
@@ -848,7 +853,7 @@ proc closeWait*(response: HttpClientResponseRef) {.async.} =
     response.session = nil
     response.error = nil
     response.state = HttpReqRespState.Closed
-    untrackHttpClientResponse(response)
+    untrackCounter(HttpClientResponseTrackerName)
 
 proc prepareResponse(request: HttpClientRequestRef, data: openArray[byte]
                     ): HttpResult[HttpClientResponseRef] {.raises: [] .} =
@@ -958,7 +963,7 @@ proc prepareResponse(request: HttpClientRequestRef, data: openArray[byte]
      httpPipeline:
     res.connection.flags.incl(HttpClientConnectionFlag.KeepAlive)
   res.connection.flags.incl(HttpClientConnectionFlag.Response)
-  trackHttpClientResponse(res)
+  trackCounter(HttpClientResponseTrackerName)
   ok(res)
 
 proc getResponse(req: HttpClientRequestRef): Future[HttpClientResponseRef] {.
@@ -996,7 +1001,7 @@ proc new*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
     version: version, flags: flags, headers: HttpTable.init(headers),
     address: ha, bodyFlag: HttpClientBodyFlag.Custom, buffer: @body
   )
-  trackHttpClientRequest(res)
+  trackCounter(HttpClientRequestTrackerName)
   res
 
 proc new*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
@@ -1012,7 +1017,7 @@ proc new*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
     version: version, flags: flags, headers: HttpTable.init(headers),
     address: address, bodyFlag: HttpClientBodyFlag.Custom, buffer: @body
   )
-  trackHttpClientRequest(res)
+  trackCounter(HttpClientRequestTrackerName)
   ok(res)
 
 proc get*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,

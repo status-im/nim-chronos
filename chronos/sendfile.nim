@@ -38,8 +38,12 @@ when defined(nimdoc):
     ## be prepared to retry the call if there were unsent bytes.
     ##
     ## On error, ``-1`` is returned.
+elif defined(emscripten):
 
-elif defined(linux) or defined(android):
+  proc sendfile*(outfd, infd: int, offset: int, count: var int): int =
+    raiseAssert "sendfile() is not implemented yet"
+
+elif (defined(linux) or defined(android)) and not(defined(emscripten)):
 
   proc osSendFile*(outfd, infd: cint, offset: ptr int, count: int): int
       {.importc: "sendfile", header: "<sys/sendfile.h>".}

@@ -32,28 +32,8 @@
 # backwards-compatible.
 
 import stew/results
-import osdefs, osutils, oserrno
+import config, osdefs, osutils, oserrno
 export results, oserrno
-
-const
-  asyncEventsCount* {.intdefine.} = 64
-    ## Number of epoll events retrieved by syscall.
-  asyncInitialSize* {.intdefine.} = 64
-    ## Initial size of Selector[T]'s array of file descriptors.
-  asyncEventEngine* {.strdefine.} =
-    when defined(linux):
-      "epoll"
-    elif defined(macosx) or defined(macos) or defined(ios) or
-         defined(freebsd) or defined(netbsd) or defined(openbsd) or
-         defined(dragonfly):
-      "kqueue"
-    elif defined(posix):
-      "poll"
-    else:
-      ""
-    ## Engine type which is going to be used by module.
-
-  hasThreadSupport = compileOption("threads")
 
 when defined(nimdoc):
 
@@ -281,7 +261,9 @@ else:
     var err = newException(IOSelectorsException, msg)
     raise err
 
-  when asyncEventEngine in ["epoll", "kqueue"]:
+  when chronosEventEngine in ["epoll", "kqueue"]:
+    const hasThreadSupport = compileOption("threads")
+
     proc blockSignals(newmask: Sigset,
                       oldmask: var Sigset): Result[void, OSErrorCode] =
       var nmask = newmask
@@ -324,11 +306,11 @@ else:
     doAssert((timeout >= min) and (timeout <= max),
              "Cannot select with incorrect timeout value, got " & $timeout)
 
-when asyncEventEngine == "epoll":
+when chronosEventEngine == "epoll":
   include ./ioselects/ioselectors_epoll
-elif asyncEventEngine == "kqueue":
+elif chronosEventEngine == "kqueue":
   include ./ioselects/ioselectors_kqueue
-elif asyncEventEngine == "poll":
+elif chronosEventEngine == "poll":
   include ./ioselects/ioselectors_poll
 else:
-  {.fatal: "Event engine `" & asyncEventEngine & "` is not supported!".}
+  {.fatal: "Event engine `" & chronosEventEngine & "` is not supported!".}

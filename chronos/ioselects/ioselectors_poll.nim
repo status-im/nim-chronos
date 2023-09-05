@@ -16,7 +16,7 @@ import stew/base10
 type
   SelectorImpl[T] = object
     fds: Table[int32, SelectorKey[T]]
-    pollfds: seq[TPollFd]
+    pollfds: seq[TPollfd]
   Selector*[T] = ref SelectorImpl[T]
 
 type
@@ -50,7 +50,7 @@ proc freeKey[T](s: Selector[T], key: int32) =
 
 proc new*(t: typedesc[Selector], T: typedesc): SelectResult[Selector[T]] =
   let selector = Selector[T](
-    fds: initTable[int32, SelectorKey[T]](asyncInitialSize)
+    fds: initTable[int32, SelectorKey[T]](chronosInitialSize)
   )
   ok(selector)
 
@@ -72,7 +72,7 @@ proc trigger2*(event: SelectEvent): SelectResult[void] =
   if res == -1:
     err(osLastError())
   elif res != sizeof(uint64):
-    err(OSErrorCode(osdefs.EINVAL))
+    err(osdefs.EINVAL)
   else:
     ok()
 
@@ -98,13 +98,14 @@ template toPollEvents(events: set[Event]): cshort =
   res
 
 template pollAdd[T](s: Selector[T], sock: cint, events: set[Event]) =
-  s.pollfds.add(TPollFd(fd: sock, events: toPollEvents(events), revents: 0))
+  s.pollfds.add(TPollfd(fd: sock, events: toPollEvents(events), revents: 0))
 
 template pollUpdate[T](s: Selector[T], sock: cint, events: set[Event]) =
   var updated = false
   for mitem in s.pollfds.mitems():
     if mitem.fd == sock:
       mitem.events = toPollEvents(events)
+      updated = true
       break
   if not(updated):
     raiseAssert "Descriptor [" & $sock & "] is not registered in the queue!"
@@ -177,7 +178,6 @@ proc unregister2*[T](s: Selector[T], event: SelectEvent): SelectResult[void] =
 
 proc prepareKey[T](s: Selector[T], event: var TPollfd): Opt[ReadyKey] =
   let
-    defaultKey = SelectorKey[T](ident: InvalidIdent)
     fdi32 = int32(event.fd)
     revents = event.revents
 
@@ -224,7 +224,7 @@ proc selectInto2*[T](s: Selector[T], timeout: int,
     eventsCount =
       if maxEventsCount > 0:
         let res = handleEintr(poll(addr(s.pollfds[0]), Tnfds(maxEventsCount),
-                              timeout))
+                              cint(timeout)))
         if res < 0:
           return err(osLastError())
         res
@@ -241,7 +241,7 @@ proc selectInto2*[T](s: Selector[T], timeout: int,
   ok(k)
 
 proc select2*[T](s: Selector[T], timeout: int): SelectResult[seq[ReadyKey]] =
-  var res = newSeq[ReadyKey](asyncEventsCount)
+  var res = newSeq[ReadyKey](chronosEventsCount)
   let count = ? selectInto2(s, timeout, res)
   res.setLen(count)
   ok(res)

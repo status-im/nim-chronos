@@ -298,6 +298,9 @@ proc getAddrInfo(address: string, port: Port, domain: Domain,
     raises: [TransportAddressError].} =
   ## We have this one copy of ``getAddrInfo()`` because of AI_V4MAPPED in
   ## ``net.nim:getAddrInfo()``, which is not cross-platform.
+  ##
+  ## Warning: `ptr AddrInfo` returned by `getAddrInfo()` needs to be freed by
+  ## calling `freeAddrInfo()`.
   var hints: AddrInfo
   var res: ptr AddrInfo = nil
   hints.ai_family = toInt(domain)
@@ -420,6 +423,7 @@ proc resolveTAddress*(address: string, port: Port,
     if ta notin res:
       res.add(ta)
     it = it.ai_next
+  freeAddrInfo(aiList)
   res
 
 proc resolveTAddress*(address: string, domain: Domain): seq[TransportAddress] {.

@@ -289,7 +289,7 @@ template await*[T](f: Future[T]): untyped =
     # `child` released by `futureContinue`
     chronosInternalRetFuture.internalChild.internalCheckComplete()
     when T isnot void:
-      cast[type(f)](chronosInternalRetFuture.internalChild).internalRead()
+      cast[type(f)](chronosInternalRetFuture.internalChild).value()
   else:
     unsupported "await is only available within {.async.}"
 

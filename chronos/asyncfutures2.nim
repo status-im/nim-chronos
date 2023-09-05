@@ -462,19 +462,25 @@ proc internalCheckComplete*(fut: FutureBase) {.raises: [CatchableError].} =
       injectStacktrace(fut.internalError)
     raise fut.internalError
 
-proc internalRead*[T](fut: Future[T]): T {.inline.} =
-  # For internal use only. Used in asyncmacro
-  when T isnot void:
-    return fut.internalValue
+proc read*[T: not void](future: Future[T] ): lent T {.raises: [CatchableError].} =
+  ## Retrieves the value of ``future``. Future must be finished otherwise
+  ## this function will fail with a ``ValueError`` exception.
+  ##
+  ## If the result of the future is an error then that error will be raised.
+  if not future.finished():
+    # TODO: Make a custom exception type for this?
+    raise newException(ValueError, "Future still in progress.")
 
-proc read*[T](future: Future[T] ): T {.raises: [CatchableError].} =
+  internalCheckComplete(future)
+  future.internalValue
+
+proc read*(future: Future[void] ) {.raises: [CatchableError].} =
   ## Retrieves the value of ``future``. Future must be finished otherwise
   ## this function will fail with a ``ValueError`` exception.
   ##
   ## If the result of the future is an error then that error will be raised.
   if future.finished():
     internalCheckComplete(future)
-    internalRead(future)
   else:
     # TODO: Make a custom exception type for this?
     raise newException(ValueError, "Future still in progress.")

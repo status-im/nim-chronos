@@ -13,6 +13,15 @@ import ../../streams/[asyncstream, boundstream]
 export asyncloop, asyncsync, results, httputils, strutils
 
 const
+  HttpServerUnsecureConnectionTrackerName* =
+    "httpserver.unsecure.connection"
+  HttpServerSecureConnectionTrackerName* =
+    "httpserver.secure.connection"
+  HttpServerRequestTrackerName* =
+    "httpserver.request"
+  HttpServerResponseTrackerName* =
+    "httpserver.response"
+
   HeadersMark* = @[0x0d'u8, 0x0a'u8, 0x0d'u8, 0x0a'u8]
   PostMethods* = {MethodPost, MethodPatch, MethodPut, MethodDelete}
 
@@ -72,6 +81,48 @@ type
 
   HttpState* {.pure.} = enum
     Alive, Closing, Closed
+
+  HttpAddressErrorType* {.pure.} = enum
+    InvalidUrlScheme,
+    InvalidPortNumber,
+    MissingHostname,
+    InvalidIpHostname,
+    NameLookupFailed,
+    NoAddressResolved
+
+const
+  CriticalHttpAddressError* = {
+    HttpAddressErrorType.InvalidUrlScheme,
+    HttpAddressErrorType.InvalidPortNumber,
+    HttpAddressErrorType.MissingHostname,
+    HttpAddressErrorType.InvalidIpHostname
+  }
+
+  RecoverableHttpAddressError* = {
+    HttpAddressErrorType.NameLookupFailed,
+    HttpAddressErrorType.NoAddressResolved
+  }
+
+func isCriticalError*(error: HttpAddressErrorType): bool =
+  error in CriticalHttpAddressError
+
+func isRecoverableError*(error: HttpAddressErrorType): bool =
+  error in RecoverableHttpAddressError
+
+func toString*(error: HttpAddressErrorType): string =
+  case error
+  of HttpAddressErrorType.InvalidUrlScheme:
+    "URL scheme not supported"
+  of HttpAddressErrorType.InvalidPortNumber:
+    "Invalid URL port number"
+  of HttpAddressErrorType.MissingHostname:
+    "Missing URL hostname"
+  of HttpAddressErrorType.InvalidIpHostname:
+    "Invalid IPv4/IPv6 address in hostname"
+  of HttpAddressErrorType.NameLookupFailed:
+    "Could not resolve remote address"
+  of HttpAddressErrorType.NoAddressResolved:
+    "No address has been resolved"
 
 proc raiseHttpCriticalError*(msg: string,
                              code = Http400) {.noinline, noreturn.} =
