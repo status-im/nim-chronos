@@ -162,7 +162,7 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
         procBodyBlck = nnkBlockStmt.newTree(newEmptyNode(), procBody)
 
         # workaround https://github.com/nim-lang/Nim/issues/22645
-        internalFutureTypeSym = genSym(nskType, "internalFutureTypeSym")
+        internalFutureTypeSym = genSym(nskType, "InternalFutureType")
         castFutureSym2 = nnkCast.newTree(internalFutureTypeSym, internalFutureSym)
 
         resultDecl = nnkWhenStmt.newTree(
