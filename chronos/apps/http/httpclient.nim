@@ -13,7 +13,7 @@ import ../../streams/[asyncstream, tlsstream, chunkstream, boundstream]
 import httptable, httpcommon, httpagent, httpbodyrw, multipart
 export results, asyncloop, asyncsync, asyncstream, tlsstream, chunkstream,
        boundstream, httptable, httpcommon, httpagent, httpbodyrw, multipart,
-       httputils
+       httputils, uri
 export SocketFlags
 
 const
@@ -1420,8 +1420,13 @@ proc redirect*(request: HttpClientRequestRef,
   if redirectCount > request.session.maxRedirections:
     err("Maximum number of redirects exceeded")
   else:
+    let headers =
+      block:
+        var res = request.headers
+        res.set(HostHeader, ha.hostname)
+        res
     var res = HttpClientRequestRef.new(request.session, ha, request.meth,
-      request.version, request.flags, request.headers.toList(), request.buffer)
+      request.version, request.flags, headers.toList(), request.buffer)
     res.redirectCount = redirectCount
     ok(res)
 
@@ -1438,8 +1443,14 @@ proc redirect*(request: HttpClientRequestRef,
     err("Maximum number of redirects exceeded")
   else:
     let address = ? request.session.redirect(request.address, uri)
+    # Update Host header to redirected URL hostname
+    let headers =
+      block:
+        var res = request.headers
+        res.set(HostHeader, address.hostname)
+        res
     var res = HttpClientRequestRef.new(request.session, address, request.meth,
-      request.version, request.flags, request.headers.toList(), request.buffer)
+      request.version, request.flags, headers.toList(), request.buffer)
     res.redirectCount = redirectCount
     ok(res)
 
