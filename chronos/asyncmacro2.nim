@@ -10,7 +10,7 @@
 import std/[macros]
 
 # `quote do` will ruin line numbers so we avoid it using these helpers
-proc completeWithNode(node, resultNode: NimNode): NimNode {.compileTime.} =
+proc assignOrProcessNode(node, resultNode: NimNode): NimNode {.compileTime.} =
   #   when typeof(`node`) is void:
   #     `node` # statement / explicit return
   #   else: # expression / implicit return
@@ -45,7 +45,7 @@ proc processBody(node, resultNode, baseType: NimNode): NimNode {.compileTime.} =
       # when `baseType` isnot void:
       #   `resultNode` = processBody(node)
       # else:
-      #   {.error: "no async return type declared".}
+      #   {.error: "cannot return value in proc returning void".}
       # return
       res.add nnkWhenStmt.newTree(
         nnkElifExpr.newTree(
@@ -57,7 +57,7 @@ proc processBody(node, resultNode, baseType: NimNode): NimNode {.compileTime.} =
           nnkPragma.newTree(
             nnkExprColonExpr.newTree(
               newIdentNode("error"),
-              newLit("no async return type declared"))
+              newLit("cannot return value in proc returning void"))
           )
         )
       )
@@ -162,6 +162,8 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
         procBodyBlck = nnkBlockStmt.newTree(newEmptyNode(), procBody)
 
         # workaround https://github.com/nim-lang/Nim/issues/22645
+        # type InternalFutureType = `internalFutureType`
+        # cast[InternalFutureType](`internalFutureSym`)
         internalFutureTypeSym = genSym(nskType, "InternalFutureType")
         castFutureSym2 = nnkCast.newTree(internalFutureTypeSym, internalFutureSym)
 
@@ -195,7 +197,7 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
           )
         )
 
-        completeDecl = completeWithNode(procBodyBlck, resultNode)
+        completeDecl = assignOrProcessNode(procBodyBlck, resultNode)
         closureBody = newStmtList(resultDecl, completeDecl)
 
         internalFutureParameter = nnkIdentDefs.newTree(

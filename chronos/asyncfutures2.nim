@@ -165,7 +165,7 @@ template complete*(future: Future[void]) =
   ## Completes a void ``future``.
   complete(future, getSrcLocation())
 
-proc completeWithInternalData(future: FutureBase) =
+proc completeWithInternalValue(future: FutureBase) =
   if not(future.cancelled()):
     checkFinished(future, future.internalLocation[LocationKind.Finish])
     doAssert(isNil(future.internalError))
@@ -327,7 +327,7 @@ proc futureContinue*(fut: FutureBase) {.raises: [], gcsafe.} =
         # The async macro will have filled the value and the location directly
         # in the future. We just need to switch to completed state after the closure
         # is _actually_ finished (ie all the `finally`s have been ran)
-        fut.completeWithInternalData()
+        fut.completeWithInternalValue()
         break
 
       if next == nil:

@@ -157,6 +157,30 @@ suite "Macro transformations test suite":
     waitFor(test415())
     check: x == 5
 
+    x = 0
+    proc testDefer {.async.} =
+      defer:
+        await stepsAsync(1)
+        x = 5
+      return
+    waitFor(testDefer())
+    check: x == 5
+
+    x = 0
+    proc testExceptionHandling {.async.} =
+      try:
+        return
+      finally:
+        try:
+          await stepsAsync(1)
+          raise newException(ValueError, "")
+        except ValueError:
+          await stepsAsync(1)
+        await stepsAsync(1)
+        x = 5
+    waitFor(testExceptionHandling())
+    check: x == 5
+
   test "Implicit return":
     proc implicit(): Future[int] {.async.} =
       42
