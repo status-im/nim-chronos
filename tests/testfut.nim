@@ -1939,3 +1939,79 @@ suite "Future[T] behavior test suite":
       testres == "ABCDE"
 
     check test() == true
+
+  asyncTest "cancelAndWait() should be able to cancel test":
+    proc test1() {.async.} =
+      await noCancelWait sleepAsync(100.milliseconds)
+      await noCancelWait sleepAsync(100.milliseconds)
+      await sleepAsync(100.milliseconds)
+
+    proc test2() {.async.} =
+      await noCancelWait sleepAsync(100.milliseconds)
+      await sleepAsync(100.milliseconds)
+      await noCancelWait sleepAsync(100.milliseconds)
+
+    proc test3() {.async.} =
+      await sleepAsync(100.milliseconds)
+      await noCancelWait sleepAsync(100.milliseconds)
+      await noCancelWait sleepAsync(100.milliseconds)
+
+    proc test4() {.async.} =
+      while true:
+        await noCancelWait sleepAsync(50.milliseconds)
+        await sleepAsync(0.milliseconds)
+
+    proc test5() {.async.} =
+      while true:
+        await sleepAsync(0.milliseconds)
+        await noCancelWait sleepAsync(50.milliseconds)
+
+    block:
+      let future1 = test1()
+      await cancelAndWait(future1)
+      let future2 = test1()
+      await sleepAsync(10.milliseconds)
+      await cancelAndWait(future2)
+      check:
+        future1.cancelled() == true
+        future2.cancelled() == true
+
+    block:
+      let future1 = test2()
+      await cancelAndWait(future1)
+      let future2 = test2()
+      await sleepAsync(10.milliseconds)
+      await cancelAndWait(future2)
+      check:
+        future1.cancelled() == true
+        future2.cancelled() == true
+
+    block:
+      let future1 = test3()
+      await cancelAndWait(future1)
+      let future2 = test3()
+      await sleepAsync(10.milliseconds)
+      await cancelAndWait(future2)
+      check:
+        future1.cancelled() == true
+        future2.cancelled() == true
+
+    block:
+      let future1 = test4()
+      await cancelAndWait(future1)
+      let future2 = test4()
+      await sleepAsync(333.milliseconds)
+      await cancelAndWait(future2)
+      check:
+        future1.cancelled() == true
+        future2.cancelled() == true
+
+    block:
+      let future1 = test5()
+      await cancelAndWait(future1)
+      let future2 = test5()
+      await sleepAsync(333.milliseconds)
+      await cancelAndWait(future2)
+      check:
+        future1.cancelled() == true
+        future2.cancelled() == true

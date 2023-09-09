@@ -802,6 +802,17 @@ proc cancelAndWait*(fut: FutureBase): Future[void] =
   let retFuture = newFuture[void]("chronos.cancelAndWait(FutureBase)",
                                   {FutureFlag.OwnCancelSchedule})
 
+  proc checktick(udata: pointer) {.gcsafe.} =
+    # We trying to cancel Future on more time, and if `cancel()` succeeds we
+    # return early.
+    if cancel(fut, getSrcLocation()):
+      return
+    # Cancellation signal was not delivered, so we trying to deliver it one
+    # more time after one tick. But we need to check situation when child
+    # future was finished but our completion callback is not yet invoked.
+    if not(fut.finished()):
+      callTick(checktick, nil)
+
   proc continuation(udata: pointer) {.gcsafe.} =
     retFuture.complete()
 
@@ -817,7 +828,13 @@ proc cancelAndWait*(fut: FutureBase): Future[void] =
     fut.addCallback(continuation)
     retFuture.cancelCallback = cancellation
     # Initiate cancellation process.
-    fut.cancel()
+    if not(cancel(fut, getSrcLocation())):
+      # Cancellation signal was not delivered, so we trying to deliver it one
+      # more time after async tick. But we need to check case, when future was
+      # finished but our completion callback is not yet invoked.
+      if not(fut.finished()):
+        callTick(checktick, nil)
+
   retFuture
 
 proc checkedCancelAndWait*(fut: FutureBase): Future[bool] =
