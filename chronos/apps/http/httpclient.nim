@@ -605,7 +605,7 @@ proc closeWait(conn: HttpClientConnectionRef) {.async.} =
           res.add(conn.twriter.closeWait())
         res.add(conn.transp.closeWait())
         res
-    if len(pending) > 0: await allFutures(pending)
+    if len(pending) > 0: await noCancelWait(allFutures(pending))
     conn.state = HttpClientConnectionState.Closed
     untrackCounter(HttpClientConnectionTrackerName)
 
@@ -782,7 +782,7 @@ proc closeWait*(session: HttpSessionRef) {.async.} =
   for connections in session.connections.values():
     for conn in connections:
       pending.add(closeWait(conn))
-  await allFutures(pending)
+  await noCancelWait(allFutures(pending))
 
 proc sessionWatcher(session: HttpSessionRef) {.async.} =
   while true:

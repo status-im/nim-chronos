@@ -809,10 +809,7 @@ proc closeUnsecureConnection(conn: HttpConnectionRef) {.async.} =
     pending.add(conn.mainReader.closeWait())
     pending.add(conn.mainWriter.closeWait())
     pending.add(conn.transp.closeWait())
-    try:
-      await allFutures(pending)
-    except CancelledError:
-      await allFutures(pending)
+    await noCancelWait(allFutures(pending))
     untrackCounter(HttpServerUnsecureConnectionTrackerName)
     reset(conn[])
     conn.state = HttpState.Closed
@@ -829,7 +826,7 @@ proc new(ht: typedesc[HttpConnectionRef], server: HttpServerRef,
   res
 
 proc gracefulCloseWait*(conn: HttpConnectionRef) {.async.} =
-  await conn.transp.shutdownWait()
+  await noCancelWait(conn.transp.shutdownWait())
   await conn.closeCb(conn)
 
 proc closeWait*(conn: HttpConnectionRef): Future[void] =
@@ -841,11 +838,7 @@ proc closeWait*(req: HttpRequestRef) {.async.} =
       req.state = HttpState.Closing
       let resp = req.response.get()
       if (HttpResponseFlags.Stream in resp.flags) and not(isNil(resp.writer)):
-        var writer = resp.writer.closeWait()
-        try:
-          await writer
-        except CancelledError:
-          await writer
+        await closeWait(resp.writer)
       reset(resp[])
     untrackCounter(HttpServerRequestTrackerName)
     reset(req[])
@@ -1038,7 +1031,6 @@ proc processLoop(holder: HttpConnectionHolderRef) {.async.} =
       except CatchableError as exc:
         raiseAssert "Unexpected error [" & $exc.name & "] happens: " & $exc.msg
 
-  server.connections.del(connectionId)
   case runLoop
   of HttpProcessExitType.KeepAlive:
     await connection.closeWait()
@@ -1046,6 +1038,8 @@ proc processLoop(holder: HttpConnectionHolderRef) {.async.} =
     await connection.closeWait()
   of HttpProcessExitType.Graceful:
     await connection.gracefulCloseWait()
+
+  server.connections.del(connectionId)
 
 proc acceptClientLoop(server: HttpServerRef) {.async.} =
   var runLoop = true
@@ -1102,7 +1096,7 @@ proc drop*(server: HttpServerRef) {.async.} =
     for holder in server.connections.values():
       if not(isNil(holder.future)) and not(holder.future.finished()):
         pending.add(holder.future.cancelAndWait())
-    await allFutures(pending)
+    await noCancelWait(allFutures(pending))
     server.connections.clear()
 
 proc closeWait*(server: HttpServerRef) {.async.} =

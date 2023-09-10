@@ -229,18 +229,13 @@ proc cancel(future: FutureBase, loc: ptr SrcLoc): bool =
       doAssert future.internalCancelcb.isNil,
         "futures returned from `{.async.}` functions must not use " &
         "`cancelCallback`"
-
     cancel(future.internalChild, loc)
   else:
-    if isNil(future.internalCancelcb):
-      cancelAndSchedule(future, loc)
-      future.cancelled()
-    else:
+    if not(isNil(future.internalCancelcb)):
       future.internalCancelcb(cast[pointer](future))
-      future.internalCancelcb = nil
-      if FutureFlag.OwnCancelSchedule notin future.internalFlags:
-        cancelAndSchedule(future, loc)
-      future.cancelled()
+    if FutureFlag.OwnCancelSchedule notin future.internalFlags:
+      cancelAndSchedule(future, loc)
+    future.cancelled()
 
 template cancel*(future: FutureBase) =
   ## Cancel ``future``.
@@ -793,7 +788,7 @@ proc oneValue*[T](futs: varargs[Future[T]]): Future[T] {.
 
   return retFuture
 
-proc cancelAndWait*(fut: FutureBase): Future[void] =
+proc cancelAndWait*(fut: FutureBase, loc: ptr SrcLoc): Future[void] =
   ## Initiate cancellation process for Future ``fut`` and wait until ``fut`` is
   ## done e.g. changes its state (become completed, failed or cancelled).
   ##
@@ -805,7 +800,7 @@ proc cancelAndWait*(fut: FutureBase): Future[void] =
   proc checktick(udata: pointer) {.gcsafe.} =
     # We trying to cancel Future on more time, and if `cancel()` succeeds we
     # return early.
-    if cancel(fut, getSrcLocation()):
+    if cancel(fut, loc):
       return
     # Cancellation signal was not delivered, so we trying to deliver it one
     # more time after one tick. But we need to check situation when child
@@ -828,7 +823,7 @@ proc cancelAndWait*(fut: FutureBase): Future[void] =
     fut.addCallback(continuation)
     retFuture.cancelCallback = cancellation
     # Initiate cancellation process.
-    if not(cancel(fut, getSrcLocation())):
+    if not(cancel(fut, loc)):
       # Cancellation signal was not delivered, so we trying to deliver it one
       # more time after async tick. But we need to check case, when future was
       # finished but our completion callback is not yet invoked.
@@ -836,6 +831,10 @@ proc cancelAndWait*(fut: FutureBase): Future[void] =
         callTick(checktick, nil)
 
   retFuture
+
+template cancelAndWait*(future: FutureBase): Future[void] =
+  ## Cancel ``future``.
+  cancelAndWait(future, getSrcLocation())
 
 proc checkedCancelAndWait*(fut: FutureBase): Future[bool] =
   ## Initiate cancellation process for Future ``fut`` and wait until ``fut`` is
