@@ -913,7 +913,7 @@ proc close*(rw: AsyncStreamRW) =
           callSoon(continuation)
         else:
           rw.future.addCallback(continuation)
-          rw.future.cancel()
+          rw.future.cancelSoon()
     elif rw is AsyncStreamWriter:
       if isNil(rw.wsource) or isNil(rw.writerLoop) or isNil(rw.future):
         callSoon(continuation)
@@ -922,7 +922,7 @@ proc close*(rw: AsyncStreamRW) =
           callSoon(continuation)
         else:
           rw.future.addCallback(continuation)
-          rw.future.cancel()
+          rw.future.cancelSoon()
 
 proc closeWait*(rw: AsyncStreamRW): Future[void] =
   ## Close and frees resources of stream ``rw``.

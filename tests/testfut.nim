@@ -965,7 +965,7 @@ suite "Future[T] behavior test suite":
       let discarded {.used.} = await fut1
       check res
 
-  asyncTest "cancel() async procedure test":
+  asyncTest "tryCancel() async procedure test":
     var completed = 0
 
     proc client1() {.async.} =
@@ -985,7 +985,7 @@ suite "Future[T] behavior test suite":
       inc(completed)
 
     var fut = client4()
-    fut.cancel()
+    discard fut.tryCancel()
 
     # Future must not be cancelled immediately, because it has many nested
     # futures.
@@ -1036,7 +1036,7 @@ suite "Future[T] behavior test suite":
 
     var fut1 = client2()
     var fut2 = client2()
-    fut1.cancel()
+    discard fut1.tryCancel()
     await fut1
     await cancelAndWait(fut2)
     check:
@@ -1059,17 +1059,17 @@ suite "Future[T] behavior test suite":
         if not(retFuture.finished()):
           retFuture.complete()
 
-      proc cancel(udata: pointer) {.gcsafe.} =
+      proc cancellation(udata: pointer) {.gcsafe.} =
         inc(cancelled)
         if not(retFuture.finished()):
           removeTimer(moment, completion, cast[pointer](retFuture))
 
-      retFuture.cancelCallback = cancel
+      retFuture.cancelCallback = cancellation
       discard setTimer(moment, completion, cast[pointer](retFuture))
       return retFuture
 
     var fut = client1(100.milliseconds)
-    fut.cancel()
+    discard fut.tryCancel()
     await sleepAsync(500.milliseconds)
     check:
       fut.cancelled()
@@ -1154,7 +1154,7 @@ suite "Future[T] behavior test suite":
 
     someFut = newFuture[void]()
     var raceFut3 = raceProc()
-    someFut.cancel()
+    discard someFut.tryCancel()
     await cancelAndWait(raceFut3)
 
     check:
@@ -1561,7 +1561,7 @@ suite "Future[T] behavior test suite":
     var future = newFuture[void]("last.child.future")
     var someFut = testFoo(future)
     future.complete()
-    someFut.cancel()
+    discard someFut.tryCancel()
     await someFut
 
   asyncTest "wait() cancellation undefined behavior test #2":
@@ -1588,7 +1588,7 @@ suite "Future[T] behavior test suite":
     var future = newFuture[void]("last.child.future")
     var someFut = testFoo(future)
     future.complete()
-    someFut.cancel()
+    discard someFut.tryCancel()
     await someFut
 
   asyncTest "withTimeout() cancellation undefined behavior test #1":
@@ -1616,7 +1616,7 @@ suite "Future[T] behavior test suite":
     var future = newFuture[void]("last.child.future")
     var someFut = testFoo(future)
     future.complete()
-    someFut.cancel()
+    discard someFut.tryCancel()
     await someFut
 
   asyncTest "withTimeout() cancellation undefined behavior test #2":
@@ -1648,7 +1648,7 @@ suite "Future[T] behavior test suite":
     var future = newFuture[void]("last.child.future")
     var someFut = testFoo(future)
     future.complete()
-    someFut.cancel()
+    discard someFut.tryCancel()
     await someFut
 
   asyncTest "Cancellation behavior test":
@@ -1664,18 +1664,16 @@ suite "Future[T] behavior test suite":
     block:
       # Cancellation of pending Future
       let future = newFuture[void]("last.child.pending.future")
-      let res = await checkedCancelAndWait(future)
+      await cancelAndWait(future)
       check:
-        res == true
         future.cancelled() == true
 
     block:
       # Cancellation of completed Future
       let future = newFuture[void]("last.child.completed.future")
       future.complete()
-      let res = await checkedCancelAndWait(future)
+      await cancelAndWait(future)
       check:
-        res == false
         future.cancelled() == false
         future.completed() == true
 
@@ -1683,9 +1681,8 @@ suite "Future[T] behavior test suite":
       # Cancellation of failed Future
       let future = newFuture[void]("last.child.failed.future")
       future.fail(newException(ValueError, "ABCD"))
-      let res = await checkedCancelAndWait(future)
+      await cancelAndWait(future)
       check:
-        res == false
         future.cancelled() == false
         future.failed() == true
 
@@ -1693,18 +1690,16 @@ suite "Future[T] behavior test suite":
       # Cancellation of already cancelled Future
       let future = newFuture[void]("last.child.cancelled.future")
       future.cancelAndSchedule()
-      let res = await checkedCancelAndWait(future)
+      await cancelAndWait(future)
       check:
-        res == true
         future.cancelled() == true
 
     block:
       # Cancellation of Pending->Pending->Pending->Pending sequence
       let future = newFuture[void]("last.child.pending.future")
       let testFut = testOuterFoo(future)
-      let res = await checkedCancelAndWait(testFut)
+      await cancelAndWait(testFut)
       check:
-        res == true
         testFut.cancelled() == true
 
     block:
@@ -1712,9 +1707,8 @@ suite "Future[T] behavior test suite":
       let future = newFuture[void]("last.child.completed.future")
       let testFut = testOuterFoo(future)
       future.complete()
-      let res = await checkedCancelAndWait(testFut)
+      await cancelAndWait(testFut)
       check:
-        res == false
         testFut.cancelled() == false
         testFut.completed() == true
 
@@ -1723,9 +1717,8 @@ suite "Future[T] behavior test suite":
       let future = newFuture[void]("last.child.failed.future")
       let testFut = testOuterFoo(future)
       future.fail(newException(ValueError, "ABCD"))
-      let res = await checkedCancelAndWait(testFut)
+      await cancelAndWait(testFut)
       check:
-        res == false
         testFut.cancelled() == false
         testFut.failed() == true
 
@@ -1734,9 +1727,8 @@ suite "Future[T] behavior test suite":
       let future = newFuture[void]("last.child.cancelled.future")
       let testFut = testOuterFoo(future)
       future.cancelAndSchedule()
-      let res = await checkedCancelAndWait(testFut)
+      await cancelAndWait(testFut)
       check:
-        res == true
         testFut.cancelled() == true
 
     block:
@@ -1748,7 +1740,7 @@ suite "Future[T] behavior test suite":
       future.cancelCallback = cancellation
       # Note, future will never be finished in such case, until we manually not
       # finish it
-      let cancelFut = checkedCancelAndWait(future)
+      let cancelFut = cancelAndWait(future)
       await sleepAsync(100.milliseconds)
       check:
         cancelFut.finished() == false
@@ -1756,12 +1748,11 @@ suite "Future[T] behavior test suite":
       # Now we manually changing Future's state, so `cancelAndWait` could
       # finish
       future.complete()
-      let res = await cancelFut
+      await cancelFut
       check:
         cancelFut.finished() == true
         future.cancelled() == false
         future.finished() == true
-        res == false
 
     block:
       # Cancellation of pending Future, which will fail Future on cancellation,
@@ -1773,9 +1764,8 @@ suite "Future[T] behavior test suite":
       future.cancelCallback = cancellation
       # Note, future will never be finished in such case, until we manually not
       # finish it
-      let res = await checkedCancelAndWait(future)
+      await cancelAndWait(future)
       check:
-        res == false
         future.cancelled() == false
         future.completed() == true
 
@@ -1789,9 +1779,8 @@ suite "Future[T] behavior test suite":
       future.cancelCallback = cancellation
       # Note, future will never be finished in such case, until we manually not
       # finish it
-      let res = await checkedCancelAndWait(future)
+      await cancelAndWait(future)
       check:
-        res == false
         future.cancelled() == false
         future.failed() == true
 
@@ -1805,9 +1794,8 @@ suite "Future[T] behavior test suite":
       future.cancelCallback = cancellation
       # Note, future will never be finished in such case, until we manually not
       # finish it
-      let res = await checkedCancelAndWait(future)
+      await cancelAndWait(future)
       check:
-        res == true
         future.cancelled() == true
 
     block:
@@ -1822,7 +1810,7 @@ suite "Future[T] behavior test suite":
       # Note, future will never be finished in such case, until we manually not
       # finish it
       let testFut = testOuterFoo(future)
-      let cancelFut = checkedCancelAndWait(testFut)
+      let cancelFut = cancelAndWait(testFut)
       await sleepAsync(100.milliseconds)
       check:
         cancelFut.finished() == false
@@ -1831,14 +1819,13 @@ suite "Future[T] behavior test suite":
       # Now we manually changing Future's state, so `cancelAndWait` could
       # finish
       future.complete()
-      let res = await cancelFut
+      await cancelFut
       check:
         cancelFut.finished() == true
         future.cancelled() == false
         future.finished() == true
         testFut.cancelled() == false
         testFut.finished() == true
-        res == false
 
     block:
       # Cancellation of pending Pending->Pending->Pending->Pending, when
@@ -1852,14 +1839,13 @@ suite "Future[T] behavior test suite":
       # Note, future will never be finished in such case, until we manually not
       # finish it
       let testFut = testOuterFoo(future)
-      let res = await checkedCancelAndWait(testFut)
+      await cancelAndWait(testFut)
       await sleepAsync(100.milliseconds)
       check:
         testFut.cancelled() == false
         testFut.finished() == true
         future.cancelled() == false
         future.finished() == true
-        res == false
 
     block:
       # Cancellation of pending Pending->Pending->Pending->Pending, when
@@ -1872,14 +1858,13 @@ suite "Future[T] behavior test suite":
       # Note, future will never be finished in such case, until we manually not
       # finish it
       let testFut = testOuterFoo(future)
-      let res = await checkedCancelAndWait(testFut)
+      await cancelAndWait(testFut)
       await sleepAsync(100.milliseconds)
       check:
         testFut.cancelled() == false
         testFut.failed() == true
         future.cancelled() == false
         future.failed() == true
-        res == false
 
     block:
       # Cancellation of pending Pending->Pending->Pending->Pending, when
@@ -1892,12 +1877,11 @@ suite "Future[T] behavior test suite":
       # Note, future will never be finished in such case, until we manually not
       # finish it
       let testFut = testOuterFoo(future)
-      let res = await checkedCancelAndWait(testFut)
+      await cancelAndWait(testFut)
       await sleepAsync(100.milliseconds)
       check:
         testFut.cancelled() == true
         future.cancelled() == true
-        res == true
 
   test "Issue #334 test":
     proc test(): bool =
@@ -1925,7 +1909,7 @@ suite "Future[T] behavior test suite":
           raise exc
 
       let x = c()
-      x.cancel()
+      x.cancelSoon()
 
       try:
         waitFor x

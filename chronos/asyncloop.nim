@@ -1417,7 +1417,7 @@ proc withTimeout*[T](fut: Future[T], timeout: Duration): Future[bool] =
         # Timer exceeded first, we going to cancel `fut` and wait until it
         # not completes.
         timeouted = true
-        fut.cancel()
+        fut.cancelSoon()
       else:
         # Future `fut` completed/failed/cancelled first.
         if not(isNil(timer)):
@@ -1430,7 +1430,7 @@ proc withTimeout*[T](fut: Future[T], timeout: Duration): Future[bool] =
     if not(fut.finished()):
       if not isNil(timer):
         clearTimer(timer)
-      fut.cancel()
+      fut.cancelSoon()
     else:
       fut.completeFuture()
 
@@ -1488,7 +1488,7 @@ proc wait*[T](fut: Future[T], timeout = InfiniteDuration): Future[T] =
       if not(fut.finished()):
         # Timer exceeded first.
         timeouted = true
-        fut.cancel()
+        fut.cancelSoon()
       else:
         # Future `fut` completed/failed/cancelled first.
         if not(isNil(timer)):
@@ -1500,7 +1500,7 @@ proc wait*[T](fut: Future[T], timeout = InfiniteDuration): Future[T] =
     if not(fut.finished()):
       if not(isNil(timer)):
         clearTimer(timer)
-      fut.cancel()
+      fut.cancelSoon()
     else:
       fut.completeFuture()
 

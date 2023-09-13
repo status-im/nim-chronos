@@ -267,19 +267,15 @@ template readAndReset(fut: untyped) =
       break
 
 proc cancelAndWait*(a, b, c, d: Future[TLSResult]): Future[void] =
-  var waiting: seq[Future[TLSResult]]
+  var waiting: seq[FutureBase]
   if not(isNil(a)) and not(a.finished()):
-    a.cancel()
-    waiting.add(a)
+    waiting.add(a.cancelAndWait())
   if not(isNil(b)) and not(b.finished()):
-    b.cancel()
-    waiting.add(b)
+    waiting.add(b.cancelAndWait())
   if not(isNil(c)) and not(c.finished()):
-    c.cancel()
-    waiting.add(c)
+    waiting.add(c.cancelAndWait())
   if not(isNil(d)) and not(d.finished()):
-    d.cancel()
-    waiting.add(d)
+    waiting.add(d.cancelAndWait())
   allFutures(waiting)
 
 proc dumpState*(state: cuint): string =

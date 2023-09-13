@@ -96,7 +96,7 @@ suite "Token Bucket":
       futBlocker.finished == false
       fut2.finished == false
 
-    futBlocker.cancel()
+    futBlocker.cancelSoon()
     waitFor(fut2.wait(10.milliseconds))
 
   test "Very long replenish":

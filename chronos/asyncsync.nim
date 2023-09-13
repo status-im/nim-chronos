@@ -748,6 +748,7 @@ proc closeWait*(ab: AsyncEventQueue): Future[void] {.raises: [].} =
   ab.close()
   # Schedule `continuation` to be called only after all the `reader`
   # notifications will be scheduled and processed.
+  retFuture.cancelCallback = cancellation
   callSoon(continuation)
   retFuture
 

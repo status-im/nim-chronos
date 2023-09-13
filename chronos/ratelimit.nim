@@ -88,8 +88,8 @@ proc worker(bucket: TokenBucket) {.async.} =
           #buckets
           sleeper = sleepAsync(milliseconds(timeToTarget))
         await sleeper or eventWaiter
-        sleeper.cancel()
-        eventWaiter.cancel()
+        sleeper.cancelSoon()
+        eventWaiter.cancelSoon()
       else:
         await eventWaiter
 

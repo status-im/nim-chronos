@@ -102,7 +102,7 @@ suite "Asynchronous timers & steps test suite":
 
     # We need `fut` because `stepsAsync` do not power `poll()` anymore.
     block:
-      var fut = sleepAsync(50.milliseconds)
+      var fut {.used.} = sleepAsync(50.milliseconds)
       poll()
 
     check:
@@ -111,7 +111,7 @@ suite "Asynchronous timers & steps test suite":
       fut3.completed() == false
 
     block:
-      var fut = sleepAsync(50.milliseconds)
+      var fut {.used.} = sleepAsync(50.milliseconds)
       poll()
 
     check:
@@ -119,7 +119,7 @@ suite "Asynchronous timers & steps test suite":
       fut3.completed() == false
 
     block:
-      var fut = sleepAsync(50.milliseconds)
+      var fut {.used.} = sleepAsync(50.milliseconds)
       poll()
 
     check:
