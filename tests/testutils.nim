@@ -56,7 +56,7 @@ suite "Asynchronous utilities test suite":
       check:
         getCount() == 1'u
         pendingFuturesCount() == 1'u
-      fut3.cancel()
+      discard fut3.tryCancel()
       poll()
       check:
         getCount() == 0'u
