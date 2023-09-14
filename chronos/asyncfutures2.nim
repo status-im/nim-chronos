@@ -203,14 +203,20 @@ template cancelAndSchedule*(future: FutureBase) =
   cancelAndSchedule(future, getSrcLocation())
 
 proc tryCancel(future: FutureBase, loc: ptr SrcLoc): bool =
-  ## Perform attempt to cancel ``future``.
+  ## Perform an attempt to cancel ``future``.
   ##
-  ## This procedure iterates through all the ``future`` children and tries to
-  ## cancel the latest one. This will propagate CancelledError from latest
-  ## child to the parent ``future``. Procedure returns ``true`` if latest child
-  ## was successfully cancelled (e.g. it was pending before this call) and
-  ## returns ``false`` if latest child is already finished (completed, failed or
-  ## cancelled before this call).
+  ## NOTE: This procedure does not guarantee that cancellation will actually
+  ## happened.
+  ##
+  ## Cancellation is the process which starts from the last ``future``
+  ## descendent and moves step by step to the parent ``future``. To initiate
+  ## this process procedure iterates through all non-finished ``future``
+  ## descendents and tries to find the last one. If last descendent is still
+  ## pending it will become cancelled and process will be initiated. In such
+  ## case this procedure returns ``true``.
+  ##
+  ## If last descendent future is not pending, this procedure will be unable to
+  ## initiate cancellation process and so it returns ``false``.
   if future.cancelled():
     return true
   if future.finished():
@@ -777,19 +783,23 @@ proc oneValue*[T](futs: varargs[Future[T]]): Future[T] {.
 
   return retFuture
 
-proc cancelSoon(fut: FutureBase, aftercb: CallbackFunc, udata: pointer,
+proc cancelSoon(future: FutureBase, aftercb: CallbackFunc, udata: pointer,
                 loc: ptr SrcLoc) =
-  ## Initiate cancellation process for Future ``fut`` and call ``acb`` when
-  ## the ``fut`` become finished (completed, failed or cancelled).
+  ## Perform cancellation ``future`` and call ``aftercb`` callback when
+  ## ``future`` become finished (completed with value, failed or cancelled).
+  ##
+  ## NOTE: Compared to the `tryCancel()` call, this procedure call guarantees
+  ## that ``future``will be finished (completed with value, failed or cancelled)
+  ## as quickly as possible.
   proc checktick(udata: pointer) {.gcsafe.} =
     # We trying to cancel Future on more time, and if `cancel()` succeeds we
     # return early.
-    if tryCancel(fut, loc):
+    if tryCancel(future, loc):
       return
     # Cancellation signal was not delivered, so we trying to deliver it one
     # more time after one tick. But we need to check situation when child
     # future was finished but our completion callback is not yet invoked.
-    if not(fut.finished()):
+    if not(future.finished()):
       internalCallTick(checktick)
 
   proc continuation(udata: pointer) {.gcsafe.} =
@@ -797,7 +807,7 @@ proc cancelSoon(fut: FutureBase, aftercb: CallbackFunc, udata: pointer,
     if not(isNil(aftercb)):
       aftercb(udata)
 
-  if fut.finished():
+  if future.finished():
     # We could not schedule callback directly otherwise we could fall into
     # recursion problem.
     if not(isNil(aftercb)):
@@ -805,13 +815,13 @@ proc cancelSoon(fut: FutureBase, aftercb: CallbackFunc, udata: pointer,
       loop.callbacks.addLast(AsyncCallback(function: aftercb, udata: udata))
     return
 
-  fut.addCallback(continuation)
+  future.addCallback(continuation)
   # Initiate cancellation process.
-  if not(tryCancel(fut, loc)):
+  if not(tryCancel(future, loc)):
     # Cancellation signal was not delivered, so we trying to deliver it one
     # more time after async tick. But we need to check case, when future was
     # finished but our completion callback is not yet invoked.
-    if not(fut.finished()):
+    if not(future.finished()):
       internalCallTick(checktick)
 
 template cancelSoon*(fut: FutureBase, cb: CallbackFunc, udata: pointer) =
@@ -831,12 +841,13 @@ template cancel*(future: FutureBase) {.
   ## Cancel ``future``.
   cancelSoon(future, nil, nil, getSrcLocation())
 
-proc cancelAndWait*(fut: FutureBase, loc: ptr SrcLoc): Future[void] =
-  ## Initiate cancellation process for Future ``fut`` and wait until ``fut`` is
-  ## done e.g. changes its state (become completed, failed or cancelled).
+proc cancelAndWait*(future: FutureBase, loc: ptr SrcLoc): Future[void] =
+  ## Perform cancellation ``future`` return Future which will be completed when
+  ## ``future`` become finished (completed with value, failed or cancelled).
   ##
-  ## If ``fut`` is already finished (completed, failed or cancelled) result
-  ## Future[void] object will be returned complete.
+  ## NOTE: Compared to the `tryCancel()` call, this procedure call guarantees
+  ## that ``future``will be finished (completed with value, failed or cancelled)
+  ## as quickly as possible.
   let retFuture = newFuture[void]("chronos.cancelAndWait(FutureBase)",
                                   {FutureFlag.OwnCancelSchedule})
 
@@ -849,11 +860,11 @@ proc cancelAndWait*(fut: FutureBase, loc: ptr SrcLoc): Future[void] =
     # time.
     discard
 
-  if fut.finished():
+  if future.finished():
     retFuture.complete()
   else:
     retFuture.cancelCallback = cancellation
-    cancelSoon(fut, continuation, cast[pointer](retFuture), loc)
+    cancelSoon(future, continuation, cast[pointer](retFuture), loc)
 
   retFuture
 
@@ -862,6 +873,14 @@ template cancelAndWait*(future: FutureBase): Future[void] =
   cancelAndWait(future, getSrcLocation())
 
 proc noCancelWait*[T](future: Future[T]): Future[T] =
+  ## Create new future which will establish cancellation block for ``future``
+  ## and acts like a proxy for ``future``. This new future will keep same
+  ## value or error when ``future`` will become finished.
+  ##
+  ## This procedure should be used when you need to perform operations which
+  ## should not be cancelled at all cost, for example closing sockets, pipes,
+  ## connections or servers. Usually it become usefull in exception or finally
+  ## blocks.
   let retFuture = newFuture[T]("chronos.noCancelWait(T)",
                                {FutureFlag.OwnCancelSchedule})
   template completeFuture() =
