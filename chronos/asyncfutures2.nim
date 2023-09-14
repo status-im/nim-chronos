@@ -790,7 +790,7 @@ proc cancelSoon(fut: FutureBase, aftercb: CallbackFunc, udata: pointer,
     # more time after one tick. But we need to check situation when child
     # future was finished but our completion callback is not yet invoked.
     if not(fut.finished()):
-      callTick(checktick, nil)
+      internalCallTick(checktick)
 
   proc continuation(udata: pointer) {.gcsafe.} =
     # We do not use `callSoon` here because we was just scheduled from `poll()`.
@@ -812,7 +812,7 @@ proc cancelSoon(fut: FutureBase, aftercb: CallbackFunc, udata: pointer,
     # more time after async tick. But we need to check case, when future was
     # finished but our completion callback is not yet invoked.
     if not(fut.finished()):
-      callTick(checktick, nil)
+      internalCallTick(checktick)
 
 template cancelSoon*(fut: FutureBase, cb: CallbackFunc, udata: pointer) =
   cancelSoon(fut, cb, udata, getSrcLocation())

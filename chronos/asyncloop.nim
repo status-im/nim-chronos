@@ -1267,19 +1267,19 @@ proc callIdle*(cbproc: CallbackFunc, data: pointer) =
 proc callIdle*(cbproc: CallbackFunc) =
   callIdle(cbproc, nil)
 
-proc callTick*(acb: AsyncCallback) =
+proc internalCallTick*(acb: AsyncCallback) =
   ## Schedule ``cbproc`` to be called after all scheduled callbacks, but only
   ## when OS system queue finished processing events.
   getThreadDispatcher().ticks.addLast(acb)
 
-proc callTick*(cbproc: CallbackFunc, data: pointer) =
+proc internalCallTick*(cbproc: CallbackFunc, data: pointer) =
   ## Schedule ``cbproc`` to be called after all scheduled callbacks when
   ## OS system queue processing is done.
   doAssert(not isNil(cbproc))
-  callTick(AsyncCallback(function: cbproc, udata: data))
+  internalCallTick(AsyncCallback(function: cbproc, udata: data))
 
-proc callTick*(cbproc: CallbackFunc) =
-  callTick(cbproc, nil)
+proc internalCallTick*(cbproc: CallbackFunc) =
+  internalCallTick(AsyncCallback(function: cbproc, udata: nil))
 
 include asyncfutures2
 
@@ -1349,22 +1349,23 @@ proc stepsAsync*(number: int): Future[void] =
   ## This primitive can be useful when you need to create more deterministic
   ## tests and cases.
   doAssert(number > 0, "Number should be positive integer")
-  var retFuture = newFuture[void]("chronos.stepsAsync(int)")
-  var counter = 0
+  var
+    retFuture = newFuture[void]("chronos.stepsAsync(int)")
+    counter = 0
+    continuation: proc(data: pointer) {.gcsafe, raises: [].}
 
-  var continuation: proc(data: pointer) {.gcsafe, raises: [].}
   continuation = proc(data: pointer) {.gcsafe, raises: [].} =
     if not(retFuture.finished()):
       inc(counter)
       if counter < number:
-        callTick(continuation)
+        internalCallTick(continuation)
       else:
         retFuture.complete()
 
   if number <= 0:
     retFuture.complete()
   else:
-    callTick(continuation)
+    internalCallTick(continuation)
 
   retFuture
 
