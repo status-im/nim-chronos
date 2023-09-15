@@ -45,8 +45,8 @@ proc closeWait*(bstream: HttpBodyReader) {.async.} =
     # data from stream at position [1].
     for index in countdown((len(bstream.streams) - 1), 0):
       res.add(bstream.streams[index].closeWait())
-    await allFutures(res)
-    await procCall(closeWait(AsyncStreamReader(bstream)))
+    res.add(procCall(closeWait(AsyncStreamReader(bstream))))
+    await noCancel(allFutures(res))
     bstream.bstate = HttpState.Closed
     untrackCounter(HttpBodyReaderTrackerName)
 
@@ -68,7 +68,7 @@ proc closeWait*(bstream: HttpBodyWriter) {.async.} =
     var res = newSeq[Future[void]]()
     for index in countdown(len(bstream.streams) - 1, 0):
       res.add(bstream.streams[index].closeWait())
-    await allFutures(res)
+    await noCancel(allFutures(res))
     await procCall(closeWait(AsyncStreamWriter(bstream)))
     bstream.bstate = HttpState.Closed
     untrackCounter(HttpBodyWriterTrackerName)

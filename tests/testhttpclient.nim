@@ -704,6 +704,107 @@ suite "HTTP client testing suite":
       await server.closeWait()
       return "redirect-" & $res
 
+  proc testSendCancelLeaksTest(secure: bool): Future[bool] {.async.} =
+    proc process(r: RequestFence): Future[HttpResponseRef] {.
+         async.} =
+      return defaultResponse()
+
+    var server = createServer(initTAddress("127.0.0.1:0"), process, secure)
+    server.start()
+    let address = server.instance.localAddress()
+
+    let ha =
+      if secure:
+        getAddress(address, HttpClientScheme.Secure, "/")
+      else:
+        getAddress(address, HttpClientScheme.NonSecure, "/")
+
+    var counter = 0
+    while true:
+      let
+        session = createSession(secure)
+        request = HttpClientRequestRef.new(session, ha, MethodGet)
+        requestFut = request.send()
+
+      if counter > 0:
+        await stepsAsync(counter)
+      let exitLoop =
+        if not(requestFut.finished()):
+          await cancelAndWait(requestFut)
+          doAssert(cancelled(requestFut) or completed(requestFut),
+                   "Future should be Cancelled or Completed at this point")
+          if requestFut.completed():
+            let response = await requestFut
+            await response.closeWait()
+
+          inc(counter)
+          false
+        else:
+          let response = await requestFut
+          await response.closeWait()
+          true
+
+      await request.closeWait()
+      await session.closeWait()
+
+      if exitLoop:
+        break
+
+    await server.stop()
+    await server.closeWait()
+    return true
+
+  proc testOpenCancelLeaksTest(secure: bool): Future[bool] {.async.} =
+    proc process(r: RequestFence): Future[HttpResponseRef] {.
+         async.} =
+      return defaultResponse()
+
+    var server = createServer(initTAddress("127.0.0.1:0"), process, secure)
+    server.start()
+    let address = server.instance.localAddress()
+
+    let ha =
+      if secure:
+        getAddress(address, HttpClientScheme.Secure, "/")
+      else:
+        getAddress(address, HttpClientScheme.NonSecure, "/")
+
+    var counter = 0
+    while true:
+      let
+        session = createSession(secure)
+        request = HttpClientRequestRef.new(session, ha, MethodPost)
+        bodyFut = request.open()
+
+      if counter > 0:
+        await stepsAsync(counter)
+      let exitLoop =
+        if not(bodyFut.finished()):
+          await cancelAndWait(bodyFut)
+          doAssert(cancelled(bodyFut) or completed(bodyFut),
+                   "Future should be Cancelled or Completed at this point")
+
+          if bodyFut.completed():
+            let bodyWriter = await bodyFut
+            await bodyWriter.closeWait()
+
+          inc(counter)
+          false
+        else:
+          let bodyWriter = await bodyFut
+          await bodyWriter.closeWait()
+          true
+
+      await request.closeWait()
+      await session.closeWait()
+
+      if exitLoop:
+        break
+
+    await server.stop()
+    await server.closeWait()
+    return true
+
   # proc testBasicAuthorization(): Future[bool] {.async.} =
   #   let session = HttpSessionRef.new({HttpClientFlag.NoVerifyHost},
   #                                    maxRedirections = 10)
@@ -1242,6 +1343,18 @@ suite "HTTP client testing suite":
 
   test "HTTP(S) client maximum redirections test":
     check waitFor(testRequestRedirectTest(true, 4)) == "redirect-true"
+
+  test "HTTP send() cancellation leaks test":
+    check waitFor(testSendCancelLeaksTest(false)) == true
+
+  test "HTTP(S) send() cancellation leaks test":
+    check waitFor(testSendCancelLeaksTest(true)) == true
+
+  test "HTTP open() cancellation leaks test":
+    check waitFor(testOpenCancelLeaksTest(false)) == true
+
+  test "HTTP(S) open() cancellation leaks test":
+    check waitFor(testOpenCancelLeaksTest(true)) == true
 
   test "HTTPS basic authorization test":
     skip()

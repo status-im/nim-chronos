@@ -1326,32 +1326,31 @@ suite "HTTP server testing suite":
 
       server.start()
       var transp: StreamTransport
-      try:
-        transp = await connect(address)
-        block:
-          let response = await transp.httpClient2(test[0], 7)
-          check:
-            response.data == "TEST_OK"
-            response.headers.getString("connection") == test[3]
-        # We do this sleeping here just because we running both server and
-        # client in single process, so when we received response from server
-        # it does not mean that connection has been immediately closed - it
-        # takes some more calls, so we trying to get this calls happens.
-        await sleepAsync(50.milliseconds)
-        let connectionStillAvailable =
-          try:
-            let response {.used.} = await transp.httpClient2(test[0], 7)
-            true
-          except CatchableError:
-            false
 
-        check connectionStillAvailable == test[2]
+      transp = await connect(address)
+      block:
+        let response = await transp.httpClient2(test[0], 7)
+        check:
+          response.data == "TEST_OK"
+          response.headers.getString("connection") == test[3]
+      # We do this sleeping here just because we running both server and
+      # client in single process, so when we received response from server
+      # it does not mean that connection has been immediately closed - it
+      # takes some more calls, so we trying to get this calls happens.
+      await sleepAsync(50.milliseconds)
+      let connectionStillAvailable =
+        try:
+          let response {.used.} = await transp.httpClient2(test[0], 7)
+          true
+        except CatchableError:
+          false
 
-      finally:
-        if not(isNil(transp)):
-          await transp.closeWait()
-        await server.stop()
-        await server.closeWait()
+      check connectionStillAvailable == test[2]
+
+      if not(isNil(transp)):
+        await transp.closeWait()
+      await server.stop()
+      await server.closeWait()
 
   asyncTest "HTTP debug tests":
     const
@@ -1400,32 +1399,30 @@ suite "HTTP server testing suite":
       info.flags == {HttpServerFlags.Http11Pipeline}
       info.socketFlags == socketFlags
 
-    try:
-      var clientFutures: seq[Future[StreamTransport]]
-      for i in 0 ..< TestsCount:
-        clientFutures.add(client(address, TestRequest))
-      await allFutures(clientFutures)
+    var clientFutures: seq[Future[StreamTransport]]
+    for i in 0 ..< TestsCount:
+      clientFutures.add(client(address, TestRequest))
+    await allFutures(clientFutures)
 
-      let connections = server.getConnections()
-      check len(connections) == TestsCount
-      let currentTime = Moment.now()
-      for index, connection in connections.pairs():
-        let transp = clientFutures[index].read()
-        check:
-          connection.remoteAddress.get() == transp.localAddress()
-          connection.localAddress.get() == transp.remoteAddress()
-          connection.connectionType == ConnectionType.NonSecure
-          connection.connectionState == ConnectionState.Alive
-          connection.query.get("") == "/httpdebug"
-          (currentTime - connection.createMoment.get()) != ZeroDuration
-          (currentTime - connection.acceptMoment) != ZeroDuration
-      var pending: seq[Future[void]]
-      for transpFut in clientFutures:
-        pending.add(closeWait(transpFut.read()))
-      await allFutures(pending)
-    finally:
-      await server.stop()
-      await server.closeWait()
+    let connections = server.getConnections()
+    check len(connections) == TestsCount
+    let currentTime = Moment.now()
+    for index, connection in connections.pairs():
+      let transp = clientFutures[index].read()
+      check:
+        connection.remoteAddress.get() == transp.localAddress()
+        connection.localAddress.get() == transp.remoteAddress()
+        connection.connectionType == ConnectionType.NonSecure
+        connection.connectionState == ConnectionState.Alive
+        connection.query.get("") == "/httpdebug"
+        (currentTime - connection.createMoment.get()) != ZeroDuration
+        (currentTime - connection.acceptMoment) != ZeroDuration
+    var pending: seq[Future[void]]
+    for transpFut in clientFutures:
+      pending.add(closeWait(transpFut.read()))
+    await allFutures(pending)
+    await server.stop()
+    await server.closeWait()
 
   test "Leaks test":
     checkLeaks()

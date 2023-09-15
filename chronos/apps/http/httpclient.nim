@@ -600,14 +600,12 @@ proc closeWait(conn: HttpClientConnectionRef) {.async.} =
           res.add(conn.reader.closeWait())
         if not(isNil(conn.writer)) and not(conn.writer.closed()):
           res.add(conn.writer.closeWait())
+        if conn.kind == HttpClientScheme.Secure:
+          res.add(conn.treader.closeWait())
+          res.add(conn.twriter.closeWait())
+        res.add(conn.transp.closeWait())
         res
-    if len(pending) > 0: await allFutures(pending)
-    case conn.kind
-    of HttpClientScheme.Secure:
-      await allFutures(conn.treader.closeWait(), conn.twriter.closeWait())
-    of HttpClientScheme.NonSecure:
-      discard
-    await conn.transp.closeWait()
+    if len(pending) > 0: await noCancel(allFutures(pending))
     conn.state = HttpClientConnectionState.Closed
     untrackCounter(HttpClientConnectionTrackerName)
 
@@ -631,8 +629,7 @@ proc connect(session: HttpSessionRef,
       let conn =
         block:
           let res = HttpClientConnectionRef.new(session, ha, transp)
-          case res.kind
-          of HttpClientScheme.Secure:
+          if res.kind == HttpClientScheme.Secure:
             try:
               await res.tls.handshake()
               res.state = HttpClientConnectionState.Ready
@@ -647,7 +644,7 @@ proc connect(session: HttpSessionRef,
               await res.closeWait()
               res.state = HttpClientConnectionState.Error
               lastError = $exc.msg
-          of HttpClientScheme.Nonsecure:
+          else:
             res.state = HttpClientConnectionState.Ready
           res
       if conn.state == HttpClientConnectionState.Ready:
@@ -785,7 +782,7 @@ proc closeWait*(session: HttpSessionRef) {.async.} =
   for connections in session.connections.values():
     for conn in connections:
       pending.add(closeWait(conn))
-  await allFutures(pending)
+  await noCancel(allFutures(pending))
 
 proc sessionWatcher(session: HttpSessionRef) {.async.} =
   while true:
@@ -830,26 +827,30 @@ proc sessionWatcher(session: HttpSessionRef) {.async.} =
         break
 
 proc closeWait*(request: HttpClientRequestRef) {.async.} =
+  var pending: seq[FutureBase]
   if request.state notin {HttpReqRespState.Closing, HttpReqRespState.Closed}:
     request.state = HttpReqRespState.Closing
     if not(isNil(request.writer)):
       if not(request.writer.closed()):
-        await request.writer.closeWait()
+        pending.add(FutureBase(request.writer.closeWait()))
       request.writer = nil
-    await request.releaseConnection()
+    pending.add(FutureBase(request.releaseConnection()))
+    await noCancel(allFutures(pending))
     request.session = nil
     request.error = nil
     request.state = HttpReqRespState.Closed
     untrackCounter(HttpClientRequestTrackerName)
 
 proc closeWait*(response: HttpClientResponseRef) {.async.} =
+  var pending: seq[FutureBase]
   if response.state notin {HttpReqRespState.Closing, HttpReqRespState.Closed}:
     response.state = HttpReqRespState.Closing
     if not(isNil(response.reader)):
       if not(response.reader.closed()):
-        await response.reader.closeWait()
+        pending.add(FutureBase(response.reader.closeWait()))
       response.reader = nil
-    await response.releaseConnection()
+    pending.add(FutureBase(response.releaseConnection()))
+    await noCancel(allFutures(pending))
     response.session = nil
     response.error = nil
     response.state = HttpReqRespState.Closed

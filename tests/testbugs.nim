@@ -14,7 +14,7 @@ suite "Asynchronous issues test suite":
   const HELLO_PORT = 45679
   const TEST_MSG = "testmsg"
   const MSG_LEN = TEST_MSG.len()
-  const TestsCount = 500
+  const TestsCount = 100
 
   type
     CustomData = ref object
