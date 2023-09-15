@@ -33,7 +33,7 @@ proc closeSecConnection(conn: HttpConnectionRef) {.async.} =
     pending.add(conn.mainReader.closeWait())
     pending.add(conn.mainWriter.closeWait())
     pending.add(conn.transp.closeWait())
-    await noCancelWait(allFutures(pending))
+    await noCancel(allFutures(pending))
     reset(cast[SecureHttpConnectionRef](conn)[])
     untrackCounter(HttpServerSecureConnectionTrackerName)
     conn.state = HttpState.Closed

@@ -809,7 +809,7 @@ proc closeUnsecureConnection(conn: HttpConnectionRef) {.async.} =
     pending.add(conn.mainReader.closeWait())
     pending.add(conn.mainWriter.closeWait())
     pending.add(conn.transp.closeWait())
-    await noCancelWait(allFutures(pending))
+    await noCancel(allFutures(pending))
     untrackCounter(HttpServerUnsecureConnectionTrackerName)
     reset(conn[])
     conn.state = HttpState.Closed
@@ -826,7 +826,7 @@ proc new(ht: typedesc[HttpConnectionRef], server: HttpServerRef,
   res
 
 proc gracefulCloseWait*(conn: HttpConnectionRef) {.async.} =
-  await noCancelWait(conn.transp.shutdownWait())
+  await noCancel(conn.transp.shutdownWait())
   await conn.closeCb(conn)
 
 proc closeWait*(conn: HttpConnectionRef): Future[void] =
@@ -1096,7 +1096,7 @@ proc drop*(server: HttpServerRef) {.async.} =
     for holder in server.connections.values():
       if not(isNil(holder.future)) and not(holder.future.finished()):
         pending.add(holder.future.cancelAndWait())
-    await noCancelWait(allFutures(pending))
+    await noCancel(allFutures(pending))
     server.connections.clear()
 
 proc closeWait*(server: HttpServerRef) {.async.} =

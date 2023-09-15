@@ -854,16 +854,9 @@ proc cancelAndWait*(future: FutureBase, loc: ptr SrcLoc): Future[void] =
   proc continuation(udata: pointer) {.gcsafe.} =
     retFuture.complete()
 
-  proc cancellation(udata: pointer) {.gcsafe.} =
-    # We are not going to change the state of `retFuture` to cancelled, so we
-    # will prevent the entire sequence of Futures from being cancelled one more
-    # time.
-    discard
-
   if future.finished():
     retFuture.complete()
   else:
-    retFuture.cancelCallback = cancellation
     cancelSoon(future, continuation, cast[pointer](retFuture), loc)
 
   retFuture
@@ -872,16 +865,15 @@ template cancelAndWait*(future: FutureBase): Future[void] =
   ## Cancel ``future``.
   cancelAndWait(future, getSrcLocation())
 
-proc noCancelWait*[T](future: Future[T]): Future[T] =
-  ## Create new future which will establish cancellation block for ``future``
-  ## and acts like a proxy for ``future``. This new future will keep same
-  ## value or error when ``future`` will become finished.
+proc noCancel*[T](future: Future[T]): Future[T] =
+  ## Prevent cancellation requests from propagating to ``future`` while
+  ## forwarding its value or error when it finishes.
   ##
   ## This procedure should be used when you need to perform operations which
   ## should not be cancelled at all cost, for example closing sockets, pipes,
-  ## connections or servers. Usually it become usefull in exception or finally
+  ## connections or servers. Usually it become useful in exception or finally
   ## blocks.
-  let retFuture = newFuture[T]("chronos.noCancelWait(T)",
+  let retFuture = newFuture[T]("chronos.noCancel(T)",
                                {FutureFlag.OwnCancelSchedule})
   template completeFuture() =
     if future.completed():
@@ -897,14 +889,10 @@ proc noCancelWait*[T](future: Future[T]): Future[T] =
   proc continuation(udata: pointer) {.gcsafe.} =
     completeFuture()
 
-  proc cancellation(udata: pointer) {.gcsafe.} =
-    discard
-
   if future.finished():
     completeFuture()
   else:
     future.addCallback(continuation)
-    retFuture.cancelCallback = cancellation
   retFuture
 
 proc allFutures*(futs: varargs[FutureBase]): Future[void] =

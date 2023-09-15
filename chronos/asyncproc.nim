@@ -1241,7 +1241,7 @@ proc closeWait*(p: AsyncProcessRef) {.async.} =
   # Here we ignore all possible errrors, because we do not want to raise
   # exceptions.
   discard closeProcessHandles(p.pipes, p.options, OSErrorCode(0))
-  await noCancelWait(p.pipes.closeProcessStreams(p.options))
+  await noCancel(p.pipes.closeProcessStreams(p.options))
   discard p.closeThreadAndProcessHandle()
   untrackCounter(AsyncProcessTrackerName)
 

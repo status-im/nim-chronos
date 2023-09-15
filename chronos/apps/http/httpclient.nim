@@ -605,7 +605,7 @@ proc closeWait(conn: HttpClientConnectionRef) {.async.} =
           res.add(conn.twriter.closeWait())
         res.add(conn.transp.closeWait())
         res
-    if len(pending) > 0: await noCancelWait(allFutures(pending))
+    if len(pending) > 0: await noCancel(allFutures(pending))
     conn.state = HttpClientConnectionState.Closed
     untrackCounter(HttpClientConnectionTrackerName)
 
@@ -782,7 +782,7 @@ proc closeWait*(session: HttpSessionRef) {.async.} =
   for connections in session.connections.values():
     for conn in connections:
       pending.add(closeWait(conn))
-  await noCancelWait(allFutures(pending))
+  await noCancel(allFutures(pending))
 
 proc sessionWatcher(session: HttpSessionRef) {.async.} =
   while true:
@@ -835,7 +835,7 @@ proc closeWait*(request: HttpClientRequestRef) {.async.} =
         pending.add(FutureBase(request.writer.closeWait()))
       request.writer = nil
     pending.add(FutureBase(request.releaseConnection()))
-    await noCancelWait(allFutures(pending))
+    await noCancel(allFutures(pending))
     request.session = nil
     request.error = nil
     request.state = HttpReqRespState.Closed
@@ -850,7 +850,7 @@ proc closeWait*(response: HttpClientResponseRef) {.async.} =
         pending.add(FutureBase(response.reader.closeWait()))
       response.reader = nil
     pending.add(FutureBase(response.releaseConnection()))
-    await noCancelWait(allFutures(pending))
+    await noCancel(allFutures(pending))
     response.session = nil
     response.error = nil
     response.state = HttpReqRespState.Closed

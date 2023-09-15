@@ -1926,29 +1926,29 @@ suite "Future[T] behavior test suite":
 
   asyncTest "cancelAndWait() should be able to cancel test":
     proc test1() {.async.} =
-      await noCancelWait sleepAsync(100.milliseconds)
-      await noCancelWait sleepAsync(100.milliseconds)
+      await noCancel sleepAsync(100.milliseconds)
+      await noCancel sleepAsync(100.milliseconds)
       await sleepAsync(100.milliseconds)
 
     proc test2() {.async.} =
-      await noCancelWait sleepAsync(100.milliseconds)
+      await noCancel sleepAsync(100.milliseconds)
       await sleepAsync(100.milliseconds)
-      await noCancelWait sleepAsync(100.milliseconds)
+      await noCancel sleepAsync(100.milliseconds)
 
     proc test3() {.async.} =
       await sleepAsync(100.milliseconds)
-      await noCancelWait sleepAsync(100.milliseconds)
-      await noCancelWait sleepAsync(100.milliseconds)
+      await noCancel sleepAsync(100.milliseconds)
+      await noCancel sleepAsync(100.milliseconds)
 
     proc test4() {.async.} =
       while true:
-        await noCancelWait sleepAsync(50.milliseconds)
+        await noCancel sleepAsync(50.milliseconds)
         await sleepAsync(0.milliseconds)
 
     proc test5() {.async.} =
       while true:
         await sleepAsync(0.milliseconds)
-        await noCancelWait sleepAsync(50.milliseconds)
+        await noCancel sleepAsync(50.milliseconds)
 
     block:
       let future1 = test1()
