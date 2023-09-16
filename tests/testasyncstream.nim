@@ -73,8 +73,8 @@ N8r5CwGcIX/XPC3lKazzbZ8baA==
 -----END CERTIFICATE-----
 """
 
+let SelfSignedTrustAnchors {.importc: "SelfSignedTAs".}: array[1, X509TrustAnchor]
 {.compile: "testasyncstream.c".}
-let SelfSignedTrustAnchors {.importc: "SelfSignedTAs", nodecl.}: array[1, X509TrustAnchor]
 
 proc createBigMessage(message: string, size: int): seq[byte] =
   var res = newSeq[byte](size)
