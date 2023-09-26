@@ -246,45 +246,59 @@ effects on forward declarations, callbacks and methods using
 
 ### Cancellation support
 
-Any running `Future` can be cancelled. This can be used to launch multiple
-futures, and wait for one of them to finish, and cancel the rest of them,
-to add timeout, or to let the user cancel a running task.
+Any running `Future` can be cancelled. This can be used for timeouts,
+to let a user cancel a running task, to start multiple futures in parallel
+and cancel them as soon as one finishes, etc.
 
 ```nim
-# Simple cancellation
-let future = sleepAsync(10.minutes)
-future.cancel()
+import uri, chronos/apps/http/httpclient, stew/byteutils
 
-# Wait for cancellation
-let future2 = sleepAsync(10.minutes)
-await future2.cancelAndWait()
+proc cancellationExample() {.async.} =
+  # Simple cancellation
+  let future = sleepAsync(10.minutes)
+  future.cancelSoon()
+  # `cancelSoon` will not wait for the cancellation
+  # to be finished, so the Future could still be
+  # running at this point.
 
-# Race between futures
-proc retrievePage(uri: string): Future[string] {.async.} =
-  # requires to import uri, chronos/apps/http/httpclient, stew/byteutils
-  let httpSession = HttpSessionRef.new()
-  try:
-    resp = await httpSession.fetch(parseUri(uri))
-    result = string.fromBytes(resp.data)
-  finally:
-    # be sure to always close the session
-    await httpSession.closeWait()
+  # Wait for cancellation
+  let future2 = sleepAsync(10.minutes)
+  await future2.cancelAndWait()
+  # Using `cancelAndWait`, we know that future2 isn't
+  # running anymore. However, it could have finished
+  # before cancellation happened (in which case, it
+  # might hold a value)
 
-let
-  futs =
-    @[
-      retrievePage("https://duckduckgo.com/?q=chronos"),
-      retrievePage("https://www.google.fr/search?q=chronos")
-    ]
+  # Race between futures
+  proc retrievePage(uri: string): Future[string] {.async.} =
+    let httpSession = HttpSessionRef.new()
+    try:
+      let resp = await httpSession.fetch(parseUri(uri))
+      return string.fromBytes(resp.data)
+    finally:
+      # be sure to always close the session
+      # finally will be ran even in case of cancellations.
+      # noCancel ensures the closing doesn't get cancelled
+      await noCancel(httpSession.closeWait())
 
-let finishedFut = await one(futs)
-for fut in futs:
-  if not fut.finished:
-    fut.cancel()
-echo "Result: ", await finishedFut
+  let
+    futs =
+      @[
+        retrievePage("https://duckduckgo.com/?q=chronos"),
+        retrievePage("https://www.google.fr/search?q=chronos")
+      ]
+
+  let finishedFut = await one(futs)
+  for fut in futs:
+    if not fut.finished:
+      fut.cancelSoon()
+  echo "Result: ", await finishedFut
+
+waitFor(cancellationExample())
 ```
 
-When an `await` is cancelled, it will raise a `CancelledError`:
+`await` will raise a `CancelledError` if the current future
+is cancelled:
 ```nim
 proc c1 {.async.} =
   echo "Before sleep"
