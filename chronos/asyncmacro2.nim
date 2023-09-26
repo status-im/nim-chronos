@@ -9,35 +9,14 @@
 
 import std/[macros]
 
-# `quote do` will ruin line numbers so we avoid it using these helpers
-proc completeWithResult(fut, baseType: NimNode): NimNode {.compileTime.} =
-  # when `baseType` is void:
-  #   complete(`fut`)
-  # else:
-  #   complete(`fut`, result)
-  if baseType.eqIdent("void"):
-    # Shortcut if we know baseType at macro expansion time
-    newCall(ident "complete", fut)
-  else:
-    # `baseType` might be generic and resolve to `void`
-    nnkWhenStmt.newTree(
-      nnkElifExpr.newTree(
-        nnkInfix.newTree(ident "is", baseType, ident "void"),
-        newCall(ident "complete", fut)
-      ),
-      nnkElseExpr.newTree(
-        newCall(ident "complete", fut, ident "result")
-      )
-    )
-
-proc completeWithNode(fut, baseType, node: NimNode): NimNode {.compileTime.} =
+proc completeWithNode(baseType, node: NimNode): NimNode {.compileTime.} =
   #   when typeof(`node`) is void:
   #     `node` # statement / explicit return
-  #     -> completeWithResult(fut, baseType)
+  #     -> completeWithResult(baseType)
   #   else: # expression / implicit return
-  #     complete(`fut`, `node`)
+  #     result = `node`
   if node.kind == nnkEmpty: # shortcut when known at macro expanstion time
-    completeWithResult(fut, baseType)
+    node
   else:
     # Handle both expressions and statements - since the type is not know at
     # macro expansion time, we delegate this choice to a later compilation stage
@@ -46,23 +25,20 @@ proc completeWithNode(fut, baseType, node: NimNode): NimNode {.compileTime.} =
       nnkElifExpr.newTree(
         nnkInfix.newTree(
           ident "is", nnkTypeOfExpr.newTree(node), ident "void"),
-        newStmtList(
-          node,
-          completeWithResult(fut, baseType)
-        )
+        newStmtList(node)
       ),
       nnkElseExpr.newTree(
-        newCall(ident "complete", fut, node)
+        nnkAsgn.newTree(ident "result", node)
       )
     )
 
-proc processBody(node, fut, baseType: NimNode): NimNode {.compileTime.} =
+proc processBody(node, baseType: NimNode): NimNode {.compileTime.} =
   #echo(node.treeRepr)
   case node.kind
   of nnkReturnStmt:
     let
       res = newNimNode(nnkStmtList, node)
-    res.add completeWithNode(fut, baseType, processBody(node[0], fut, baseType))
+    res.add completeWithNode(baseType, processBody(node[0], baseType))
     res.add newNimNode(nnkReturnStmt, node).add(newNilLit())
 
     res
@@ -71,11 +47,66 @@ proc processBody(node, fut, baseType: NimNode): NimNode {.compileTime.} =
     node
   else:
     for i in 0 ..< node.len:
-      # We must not transform nested procedures of any form, otherwise
-      # `fut` will be used for all nested procedures as their own
-      # `retFuture`.
-      node[i] = processBody(node[i], fut, baseType)
+      # We must not transform nested procedures of any form, since their
+      # returns are not meant for our futures
+      node[i] = processBody(node[i], baseType)
     node
+
+proc wrapInTryFinally(fut, baseType, body: NimNode): NimNode {.compileTime.} =
+  # creates:
+  # try: `completeDecl1`
+  # except CancelledError: `castFutureSym`.cancelAndSchedule()
+  # except CatchableError as exc: `castFutureSym`.fail(exc)
+  # finally:
+  #   if not `castFutureSym`.finished:
+  #     `castFutureSym`.complete(result)
+  var res = nnkTryStmt.newTree(body)
+  res.add nnkExceptBranch.newTree(
+            ident"CancelledError",
+            newCall(ident "cancelAndSchedule", fut)
+          )
+
+  res.add nnkExceptBranch.newTree(
+            nnkInfix.newTree(ident"as", ident"CatchableError", ident"exc"),
+            newCall(ident "fail", fut, ident"exc")
+          )
+
+  when not chronosStrictException:
+    # adds
+    # except Defect as exc: raise exc
+    # except Exception as exc:
+    #   fut.fail((ref ValueError)(msg: exc.msg, parent: exc))
+    res.add nnkExceptBranch.newTree(
+              nnkInfix.newTree(ident"as", ident"Defect", ident"exc"),
+              nnkRaiseStmt.newTree(ident"exc")
+            )
+    let excName = ident"exc"
+    res.add nnkExceptBranch.newTree(
+              nnkInfix.newTree(ident"as", ident"Exception", ident"exc"),
+              newCall(ident "fail", fut,
+                quote do: (ref ValueError)(msg: `excName`.msg, parent: `excName`))
+            )
+
+  res.add nnkFinally.newTree(
+            nnkIfStmt.newTree(
+              nnkElifBranch.newTree(
+                nnkPrefix.newTree(
+                  ident("not"),
+                  newCall("finished", fut)
+                ),
+                nnkWhenStmt.newTree(
+                  nnkElifExpr.newTree(
+                    nnkInfix.newTree(ident "is", baseType, ident "void"),
+                    newCall(ident "complete", fut)
+                  ),
+                  nnkElseExpr.newTree(
+                    newCall(ident "complete", fut, ident "result")
+                  )
+                )
+              )
+            )
+          )
+  return res
 
 proc getName(node: NimNode): string {.compileTime.} =
   case node.kind
@@ -154,7 +185,7 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
         else: returnType
       castFutureSym = nnkCast.newTree(internalFutureType, internalFutureSym)
 
-      procBody = prc.body.processBody(castFutureSym, baseType)
+      procBody = prc.body.processBody(baseType)
 
     # don't do anything with forward bodies (empty)
     if procBody.kind != nnkEmpty:
@@ -199,7 +230,10 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
           )
         )
 
-        completeDecl = completeWithNode(castFutureSym, baseType, procBodyBlck)
+        completeDecl = wrapInTryFinally(
+          castFutureSym, baseType,
+          completeWithNode(baseType, procBodyBlck)
+        )
 
         closureBody = newStmtList(resultDecl, completeDecl)
 
@@ -225,10 +259,6 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
       #      here the possibility of transporting more specific error types here
       #      for example by casting exceptions coming out of `await`..
       let raises = nnkBracket.newTree()
-      when chronosStrictException:
-        raises.add(newIdentNode("CatchableError"))
-      else:
-        raises.add(newIdentNode("Exception"))
 
       closureIterator.addPragma(nnkExprColonExpr.newTree(
         newIdentNode("raises"),

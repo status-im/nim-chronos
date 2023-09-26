@@ -136,6 +136,93 @@ suite "Macro transformations test suite":
     check:
       waitFor(gen(int)) == default(int)
 
+  test "Nested return":
+    proc nr: Future[int] {.async.} =
+      return
+        if 1 == 1:
+          return 42
+        else:
+          33
+
+    check waitFor(nr()) == 42
+
+  test "Issue #415 (run closure to completion on return)":
+    var x = 0
+    proc test415 {.async.} =
+      try:
+        return
+      finally:
+        await sleepAsync(1.milliseconds)
+        x = 5
+    waitFor(test415())
+    check: x == 5
+
+    x = 0
+    proc testDefer {.async.} =
+      defer:
+        await sleepAsync(1.milliseconds)
+        x = 5
+      return
+    waitFor(testDefer())
+    check: x == 5
+
+    x = 0
+    proc testExceptionHandling {.async.} =
+      try:
+        return
+      finally:
+        try:
+          await sleepAsync(1.milliseconds)
+          raise newException(ValueError, "")
+        except ValueError:
+          await sleepAsync(1.milliseconds)
+        await sleepAsync(1.milliseconds)
+        x = 5
+    waitFor(testExceptionHandling())
+    check: x == 5
+
+    proc testWeirdCase: int =
+      try: return 33
+      finally: result = 55
+    proc testWeirdCaseAsync: Future[int] {.async.} =
+      try:
+        await sleepAsync(1.milliseconds)
+        return 33
+      finally: result = 55
+
+    check:
+        testWeirdCase() == waitFor(testWeirdCaseAsync())
+        testWeirdCase() == 55
+
+    proc testGeneric(T: type): Future[T] {.async.} =
+      try:
+        try:
+          await sleepAsync(1.milliseconds)
+          return
+        finally:
+          await sleepAsync(1.milliseconds)
+          await sleepAsync(1.milliseconds)
+          result = 11
+      finally:
+        await sleepAsync(1.milliseconds)
+        await sleepAsync(1.milliseconds)
+        result = 12
+    check waitFor(testGeneric(int)) == 12
+
+    proc testFinallyCallsAsync(T: type): Future[T] {.async.} =
+      try:
+        await sleepAsync(1.milliseconds)
+        return
+      finally:
+        result = await testGeneric(T)
+    check waitFor(testFinallyCallsAsync(int)) == 12
+
+    proc testReturner: Future[int] {.async.} =
+      template returner =
+        result = 5
+      returner
+    check waitFor(testReturner()) == 5
+
   test "Implicit return":
     proc implicit(): Future[int] {.async.} =
       42
