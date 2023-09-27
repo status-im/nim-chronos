@@ -9,7 +9,7 @@ import std/os
 import unittest2
 import ../chronos, ../chronos/timer
 
-when defined(nimHasUsed): {.used.}
+{.used.}
 
 static:
   doAssert Moment.high - Moment.low == Duration.high
@@ -91,26 +91,36 @@ suite "Asynchronous timers & steps test suite":
       $nanoseconds(1_800_000_600) == "1s800ms600ns"
 
   test "Asynchronous steps test":
-    var futn1 = stepsAsync(-1)
-    var fut0 = stepsAsync(0)
     var fut1 = stepsAsync(1)
     var fut2 = stepsAsync(2)
     var fut3 = stepsAsync(3)
+
     check:
-      futn1.completed() == true
-      fut0.completed() == true
       fut1.completed() == false
       fut2.completed() == false
       fut3.completed() == false
-    poll()
+
+    # We need `fut` because `stepsAsync` do not power `poll()` anymore.
+    block:
+      var fut {.used.} = sleepAsync(50.milliseconds)
+      poll()
+
     check:
       fut1.completed() == true
       fut2.completed() == false
       fut3.completed() == false
-    poll()
+
+    block:
+      var fut {.used.} = sleepAsync(50.milliseconds)
+      poll()
+
     check:
       fut2.completed() == true
       fut3.completed() == false
-    poll()
+
+    block:
+      var fut {.used.} = sleepAsync(50.milliseconds)
+      poll()
+
     check:
       fut3.completed() == true

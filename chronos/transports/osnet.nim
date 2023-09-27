@@ -10,18 +10,19 @@
 ## This module implements cross-platform network interfaces list.
 ## Currently supported OSes are Windows, Linux, MacOS, BSD(not tested).
 
-when (NimMajor, NimMinor) < (1, 4):
-  {.push raises: [Defect].}
-else:
-  {.push raises: [].}
+{.push raises: [].}
 
 import std/algorithm
-from std/strutils import toHex
-import ./ipnet
+import ".."/osdefs
+import "."/ipnet
 export ipnet
 
 const
-  MaxAdapterAddressLength* = 8
+  MaxAdapterAddressLength* =
+    when defined(windows):
+      MAX_ADAPTER_ADDRESS_LENGTH
+    else:
+      8
 
 type
   InterfaceType* = enum
@@ -288,6 +289,9 @@ proc `$`*(ifa: InterfaceAddress): string =
   else:
     "Unknown"
 
+proc hexDigit(x: uint8, lowercase: bool = false): char =
+  char(0x30'u8 + x + (uint32(7) and not((uint32(x) - 10) shr 8)))
+
 proc `$`*(iface: NetworkInterface): string =
   ## Return string representation of network interface ``iface``.
   var res = $iface.ifIndex
@@ -311,7 +315,8 @@ proc `$`*(iface: NetworkInterface): string =
   res.add(" ")
   if iface.maclen > 0:
     for i in 0 ..< iface.maclen:
-      res.add(toHex(iface.mac[i]))
+      res.add(hexDigit(iface.mac[i] shr 4))
+      res.add(hexDigit(iface.mac[i] and 15))
       if i < iface.maclen - 1:
         res.add(":")
   for item in iface.addresses:
@@ -344,169 +349,7 @@ proc cmp*(a, b: NetworkInterface): int =
   cmp(a.ifIndex, b.ifIndex)
 
 when defined(linux):
-  import posix
-
-  const
-    AF_NETLINK = cint(16)
-    AF_PACKET = cint(17)
-    NETLINK_ROUTE = cint(0)
-    NLMSG_ALIGNTO = 4'u
-    RTA_ALIGNTO = 4'u
-    # RTA_UNSPEC = 0'u16
-    RTA_DST = 1'u16
-    # RTA_SRC = 2'u16
-    # RTA_IIF = 3'u16
-    RTA_OIF = 4'u16
-    RTA_GATEWAY = 5'u16
-    # RTA_PRIORITY = 6'u16
-    RTA_PREFSRC = 7'u16
-    # RTA_METRICS = 8'u16
-
-    RTM_F_LOOKUP_TABLE = 0x1000
-
-    RTM_GETLINK = 18
-    RTM_GETADDR = 22
-    RTM_GETROUTE = 26
-    NLM_F_REQUEST = 1
-    NLM_F_ROOT = 0x100
-    NLM_F_MATCH = 0x200
-    NLM_F_DUMP = NLM_F_ROOT or NLM_F_MATCH
-    IFLIST_REPLY_BUFFER = 8192
-    InvalidSocketHandle = SocketHandle(-1)
-    NLMSG_DONE = 0x03
-    # NLMSG_MIN_TYPE = 0x10
-    NLMSG_ERROR = 0x02
-    # MSG_TRUNC = 0x20
-
-    IFLA_ADDRESS = 1
-    IFLA_IFNAME = 3
-    IFLA_MTU = 4
-    IFLA_OPERSTATE = 16
-
-    IFA_ADDRESS = 1
-    IFA_LOCAL = 2
-    # IFA_BROADCAST = 4
-
-    # ARPHRD_NETROM = 0
-    ARPHRD_ETHER = 1
-    ARPHRD_EETHER = 2
-    # ARPHRD_AX25 = 3
-    # ARPHRD_PRONET = 4
-    # ARPHRD_CHAOS = 5
-    # ARPHRD_IEEE802 = 6
-    ARPHRD_ARCNET = 7
-    # ARPHRD_APPLETLK = 8
-    # ARPHRD_DLCI = 15
-    ARPHRD_ATM = 19
-    # ARPHRD_METRICOM = 23
-    ARPHRD_IEEE1394 = 24
-    # ARPHRD_EUI64 = 27
-    # ARPHRD_INFINIBAND = 32
-    ARPHRD_SLIP = 256
-    ARPHRD_CSLIP = 257
-    ARPHRD_SLIP6 = 258
-    ARPHRD_CSLIP6 = 259
-    # ARPHRD_RSRVD = 260
-    # ARPHRD_ADAPT = 264
-    # ARPHRD_ROSE = 270
-    # ARPHRD_X25 = 271
-    # ARPHRD_HWX25 = 272
-    # ARPHRD_CAN = 280
-    ARPHRD_PPP = 512
-    ARPHRD_CISCO = 513
-    ARPHRD_HDLC = ARPHRD_CISCO
-    ARPHRD_LAPB = 516
-    # ARPHRD_DDCMP = 517
-    # ARPHRD_RAWHDLC = 518
-    # ARPHRD_TUNNEL = 768
-    # ARPHRD_TUNNEL6 = 769
-    ARPHRD_FRAD = 770
-    # ARPHRD_SKIP = 771
-    ARPHRD_LOOPBACK = 772
-    # ARPHRD_LOCALTLK = 773
-    # ARPHRD_FDDI = 774
-    # ARPHRD_BIF = 775
-    # ARPHRD_SIT = 776
-    # ARPHRD_IPDDP = 777
-    # ARPHRD_IPGRE = 778
-    # ARPHRD_PIMREG = 779
-    ARPHRD_HIPPI = 780
-    # ARPHRD_ASH = 781
-    # ARPHRD_ECONET = 782
-    # ARPHRD_IRDA = 783
-    # ARPHRD_FCPP = 784
-    # ARPHRD_FCAL = 785
-    # ARPHRD_FCPL = 786
-    # ARPHRD_FCFABRIC = 787
-    # ARPHRD_IEEE802_TR = 800
-    ARPHRD_IEEE80211 = 801
-    ARPHRD_IEEE80211_PRISM = 802
-    ARPHRD_IEEE80211_RADIOTAP = 803
-    # ARPHRD_IEEE802154 = 804
-    # ARPHRD_IEEE802154_MONITOR = 805
-    # ARPHRD_PHONET = 820
-    # ARPHRD_PHONET_PIPE = 821
-    # ARPHRD_CAIF = 822
-    # ARPHRD_IP6GRE = 823
-    # ARPHRD_NETLINK = 824
-    # ARPHRD_6LOWPAN = 825
-    # ARPHRD_VOID = 0xFFFF
-    # ARPHRD_NONE = 0xFFFE
-
-  type
-    Sockaddr_nl = object
-      family: cushort
-      pad: cushort
-      pid: uint32
-      groups: uint32
-
-    NlMsgHeader = object
-      nlmsg_len: uint32
-      nlmsg_type: uint16
-      nlmsg_flags: uint16
-      nlmsg_seq: uint32
-      nlmsg_pid: uint32
-
-    IfInfoMessage = object
-      ifi_family: byte
-      ifi_pad: byte
-      ifi_type: cushort
-      ifi_index: cint
-      ifi_flags: cuint
-      ifi_change: cuint
-
-    IfAddrMessage = object
-      ifa_family: byte
-      ifa_prefixlen: byte
-      ifa_flags: byte
-      ifa_scope: byte
-      ifa_index: uint32
-
-    RtMessage = object
-      rtm_family: byte
-      rtm_dst_len: byte
-      rtm_src_len: byte
-      rtm_tos: byte
-      rtm_table: byte
-      rtm_protocol: byte
-      rtm_scope: byte
-      rtm_type: byte
-      rtm_flags: cuint
-
-    RtAttr = object
-      rta_len: cushort
-      rta_type: cushort
-
-    RtGenMsg = object
-      rtgen_family: byte
-
-    NLReq = object
-      hdr: NlMsgHeader
-      msg: RtGenMsg
-
-    NLRouteReq = object
-      hdr: NlMsgHeader
-      msg: RtMessage
+  import ".."/osutils
 
   template NLMSG_ALIGN(length: uint): uint =
     (length + NLMSG_ALIGNTO - 1) and not(NLMSG_ALIGNTO - 1)
@@ -621,11 +464,11 @@ when defined(linux):
     address.family = cushort(AF_NETLINK)
     address.groups = 0
     address.pid = cast[uint32](pid)
-    var res = posix.socket(AF_NETLINK, posix.SOCK_DGRAM, NETLINK_ROUTE)
+    var res = osdefs.socket(AF_NETLINK, osdefs.SOCK_DGRAM, NETLINK_ROUTE)
     if res != SocketHandle(-1):
-      if posix.bindSocket(res, cast[ptr SockAddr](addr address),
+      if osdefs.bindSocket(res, cast[ptr SockAddr](addr address),
                           SockLen(sizeof(Sockaddr_nl))) != 0:
-        discard posix.close(res)
+        discard osdefs.close(res)
         res = SocketHandle(-1)
     res
 
@@ -652,7 +495,7 @@ when defined(linux):
     rmsg.msg_iovlen = 1
     rmsg.msg_name = cast[pointer](addr address)
     rmsg.msg_namelen = SockLen(sizeof(Sockaddr_nl))
-    let res = posix.sendmsg(fd, addr rmsg, 0).TIovLen
+    let res = osdefs.sendmsg(fd, addr rmsg, 0).TIovLen
     (res == iov.iov_len)
 
   proc sendRouteMessage(fd: SocketHandle, pid: Pid, seqno: uint32,
@@ -680,14 +523,14 @@ when defined(linux):
     req.msg.rtm_flags = RTM_F_LOOKUP_TABLE
     attr.rta_type = RTA_DST
     if dest.family == AddressFamily.IPv4:
-      req.msg.rtm_family = byte(posix.AF_INET)
+      req.msg.rtm_family = byte(osdefs.AF_INET)
       attr.rta_len = cast[cushort](RTA_LENGTH(4))
       copyMem(RTA_DATA(attr), cast[ptr byte](unsafeAddr dest.address_v4[0]), 4)
       req.hdr.nlmsg_len = uint32(NLMSG_ALIGN(uint(req.hdr.nlmsg_len)) +
                                  RTA_ALIGN(uint(attr.rta_len)))
       req.msg.rtm_dst_len = 4 * 8
     elif dest.family == AddressFamily.IPv6:
-      req.msg.rtm_family = byte(posix.AF_INET6)
+      req.msg.rtm_family = byte(osdefs.AF_INET6)
       attr.rta_len = cast[cushort](RTA_LENGTH(16))
       copyMem(RTA_DATA(attr), cast[ptr byte](unsafeAddr dest.address_v6[0]), 16)
       req.hdr.nlmsg_len = uint32(NLMSG_ALIGN(uint(req.hdr.nlmsg_len)) +
@@ -700,7 +543,7 @@ when defined(linux):
     rmsg.msg_iovlen = 1
     rmsg.msg_name = cast[pointer](addr address)
     rmsg.msg_namelen = SockLen(sizeof(Sockaddr_nl))
-    let res = posix.sendmsg(fd, addr rmsg, 0).TIovLen
+    let res = osdefs.sendmsg(fd, addr rmsg, 0).TIovLen
     (res == iov.iov_len)
 
   proc readNetlinkMessage(fd: SocketHandle, data: var seq[byte]): bool =
@@ -715,7 +558,7 @@ when defined(linux):
     rmsg.msg_iovlen = 1
     rmsg.msg_name = cast[pointer](addr address)
     rmsg.msg_namelen = SockLen(sizeof(Sockaddr_nl))
-    var length = posix.recvmsg(fd, addr rmsg, 0)
+    var length = osdefs.recvmsg(fd, addr rmsg, 0)
     if length >= 0:
       data.setLen(length)
       true
@@ -757,11 +600,11 @@ when defined(linux):
     res
 
   proc getAddress(f: int, p: pointer): TransportAddress =
-    if f == posix.AF_INET:
+    if f == osdefs.AF_INET:
       var res = TransportAddress(family: AddressFamily.IPv4)
       copyMem(addr res.address_v4[0], p, len(res.address_v4))
       res
-    elif f == posix.AF_INET6:
+    elif f == osdefs.AF_INET6:
       var res = TransportAddress(family: AddressFamily.IPv6)
       copyMem(addr res.address_v6[0], p, len(res.address_v6))
       res
@@ -907,10 +750,10 @@ when defined(linux):
       if endflag:
         break
 
-  proc getInterfaces*(): seq[NetworkInterface] {.raises: [Defect].} =
+  proc getInterfaces*(): seq[NetworkInterface] {.raises: [].} =
     ## Return list of available interfaces.
     var res: seq[NetworkInterface]
-    var pid = posix.getpid()
+    var pid = osdefs.getpid()
     var sock = createNetlinkSocket(pid)
     if sock == InvalidSocketHandle:
       return res
@@ -918,134 +761,23 @@ when defined(linux):
       res = getLinks(sock, pid)
       getAddresses(sock, pid, res)
       sort(res, cmp)
-      discard posix.close(sock)
+      discard osdefs.close(sock)
       res
 
-  proc getBestRoute*(address: TransportAddress): Route {.raises: [Defect].} =
+  proc getBestRoute*(address: TransportAddress): Route {.raises: [].} =
     ## Return best applicable OS route, which will be used for connecting to
     ## address ``address``.
-    var pid = posix.getpid()
+    var pid = osdefs.getpid()
     var res = Route()
     var sock = createNetlinkSocket(pid)
     if sock == InvalidSocketHandle:
       res
     else:
       res = getRoute(sock, pid, address)
-      discard posix.close(sock)
+      discard osdefs.close(sock)
       res
 
-elif defined(macosx) or defined(bsd):
-  import posix
-
-  const
-    AF_LINK = 18
-    IFF_UP = 0x01
-    IFF_RUNNING = 0x40
-
-    PF_ROUTE = cint(17)
-    RTM_GET = 0x04'u8
-    RTF_UP = 0x01
-    RTF_GATEWAY = 0x02
-    RTM_VERSION = 5'u8
-
-    RTA_DST = 0x01
-    RTA_GATEWAY = 0x02
-
-  type
-    IfAddrs {.importc: "struct ifaddrs", header: "<ifaddrs.h>",
-              pure, final.} = object
-      ifa_next {.importc: "ifa_next".}: ptr IfAddrs
-      ifa_name {.importc: "ifa_name".}: ptr cchar
-      ifa_flags {.importc: "ifa_flags".}: cuint
-      ifa_addr {.importc: "ifa_addr".}: ptr SockAddr
-      ifa_netmask {.importc: "ifa_netmask".}: ptr SockAddr
-      ifa_dstaddr {.importc: "ifa_dstaddr".}: ptr SockAddr
-      ifa_data {.importc: "ifa_data".}: pointer
-
-    PIfAddrs = ptr IfAddrs
-
-    IfData {.importc: "struct if_data", header: "<net/if.h>",
-             pure, final.} = object
-      ifi_type {.importc: "ifi_type".}: byte
-      ifi_typelen {.importc: "ifi_typelen".}: byte
-      ifi_physical {.importc: "ifi_physical".}: byte
-      ifi_addrlen {.importc: "ifi_addrlen".}: byte
-      ifi_hdrlen {.importc: "ifi_hdrlen".}: byte
-      ifi_recvquota {.importc: "ifi_recvquota".}: byte
-      ifi_xmitquota {.importc: "ifi_xmitquota".}: byte
-      ifi_unused1 {.importc: "ifi_unused1".}: byte
-      ifi_mtu {.importc: "ifi_mtu".}: uint32
-      ifi_metric {.importc: "ifi_metric".}: uint32
-      ifi_baudrate {.importc: "ifi_baudrate".}: uint32
-      ifi_ipackets {.importc: "ifi_ipackets".}: uint32
-      ifi_ierrors {.importc: "ifi_ierrors".}: uint32
-      ifi_opackets {.importc: "ifi_opackets".}: uint32
-      ifi_oerrors {.importc: "ifi_oerrors".}: uint32
-      ifi_collisions {.importc: "ifi_collisions".}: uint32
-      ifi_ibytes {.importc: "ifi_ibytes".}: uint32
-      ifi_obytes {.importc: "ifi_obytes".}: uint32
-      ifi_imcasts {.importc: "ifi_imcasts".}: uint32
-      ifi_omcasts {.importc: "ifi_omcasts".}: uint32
-      ifi_iqdrops {.importc: "ifi_iqdrops".}: uint32
-      ifi_noproto {.importc: "ifi_noproto".}: uint32
-      ifi_recvtiming {.importc: "ifi_recvtiming".}: uint32
-      ifi_xmittiming {.importc: "ifi_xmittiming".}: uint32
-      ifi_lastchange {.importc: "ifi_lastchange".}: Timeval
-      ifi_unused2 {.importc: "ifi_unused2".}: uint32
-      ifi_hwassist {.importc: "ifi_hwassist".}: uint32
-      ifi_reserved1 {.importc: "ifi_reserved1".}: uint32
-      ifi_reserved2 {.importc: "ifi_reserved2".}: uint32
-
-    Sockaddr_dl = object
-      sdl_len: byte
-      sdl_family: byte
-      sdl_index: uint16
-      sdl_type: byte
-      sdl_nlen: byte
-      sdl_alen: byte
-      sdl_slen: byte
-      sdl_data: array[12, byte]
-
-    RtMetrics = object
-      rmx_locks: uint32
-      rmx_mtu: uint32
-      rmx_hopcount: uint32
-      rmx_expire: int32
-      rmx_recvpipe: uint32
-      rmx_sendpipe: uint32
-      rmx_ssthresh: uint32
-      rmx_rtt: uint32
-      rmx_rttvar: uint32
-      rmx_pksent: uint32
-      rmx_state: uint32
-      rmx_filler: array[3, uint32]
-
-    RtMsgHeader = object
-      rtm_msglen: uint16
-      rtm_version: byte
-      rtm_type: byte
-      rtm_index: uint16
-      rtm_flags: cint
-      rtm_addrs: cint
-      rtm_pid: Pid
-      rtm_seq: cint
-      rtm_errno: cint
-      rtm_use: cint
-      rtm_inits: uint32
-      rtm_rmx: RtMetrics
-
-    RtMessage = object
-      rtm: RtMsgHeader
-      space: array[512, byte]
-
-  proc getIfAddrs(ifap: ptr PIfAddrs): cint {.importc: "getifaddrs",
-       header: """#include <sys/types.h>
-                  #include <sys/socket.h>
-                  #include <ifaddrs.h>""".}
-  proc freeIfAddrs(ifap: ptr IfAddrs) {.importc: "freeifaddrs",
-       header: """#include <sys/types.h>
-                  #include <sys/socket.h>
-                  #include <ifaddrs.h>""".}
+elif defined(macosx) or defined(macos) or defined(bsd):
 
   proc toInterfaceType(f: byte): InterfaceType =
     var ft = int(f)
@@ -1060,7 +792,7 @@ elif defined(macosx) or defined(bsd):
     else:
       StatusDown
 
-  proc getInterfaces*(): seq[NetworkInterface] {.raises: [Defect].} =
+  proc getInterfaces*(): seq[NetworkInterface] {.raises: [].} =
     ## Return list of available interfaces.
     var res: seq[NetworkInterface]
     var ifap: ptr IfAddrs
@@ -1070,7 +802,7 @@ elif defined(macosx) or defined(bsd):
         var iface: NetworkInterface
         var ifaddress: InterfaceAddress
 
-        iface.name = string($cstring(ifap.ifa_name))
+        iface.name = $cast[cstring](ifap.ifa_name)
         iface.flags = uint64(ifap.ifa_flags)
         var i = 0
         while i < len(res):
@@ -1088,32 +820,33 @@ elif defined(macosx) or defined(bsd):
             res[i].ifIndex = int(link.sdl_index)
             let nlen = int(link.sdl_nlen)
             if nlen < len(link.sdl_data):
-              let minsize = min(cast[int](link.sdl_alen), len(res[i].mac))
+              let minsize = min(int(link.sdl_alen), len(res[i].mac))
               copyMem(addr res[i].mac[0], addr link.sdl_data[nlen], minsize)
             res[i].maclen = int(link.sdl_alen)
             res[i].ifType = toInterfaceType(data.ifi_type)
             res[i].state = toInterfaceState(ifap.ifa_flags)
-            res[i].mtu = int(data.ifi_mtu)
-          elif family == posix.AF_INET:
+            res[i].mtu = int64(data.ifi_mtu)
+          elif family == osdefs.AF_INET:
             fromSAddr(cast[ptr Sockaddr_storage](ifap.ifa_addr),
                       SockLen(sizeof(Sockaddr_in)), ifaddress.host)
-          elif family == posix.AF_INET6:
+          elif family == osdefs.AF_INET6:
             fromSAddr(cast[ptr Sockaddr_storage](ifap.ifa_addr),
                       SockLen(sizeof(Sockaddr_in6)), ifaddress.host)
         if not isNil(ifap.ifa_netmask):
           var na: TransportAddress
-          var family = cint(ifap.ifa_netmask.sa_family)
-          if family == posix.AF_INET:
+          let family = int(ifap.ifa_netmask.sa_family)
+          if family == osdefs.AF_INET:
             fromSAddr(cast[ptr Sockaddr_storage](ifap.ifa_netmask),
                       SockLen(sizeof(Sockaddr_in)), na)
-          elif family == posix.AF_INET6:
+            if ifaddress.host.family == AddressFamily.IPv4:
+              ifaddress.net = IpNet.init(ifaddress.host, na)
+          elif family == osdefs.AF_INET6:
             fromSAddr(cast[ptr Sockaddr_storage](ifap.ifa_netmask),
                       SockLen(sizeof(Sockaddr_in6)), na)
-          ifaddress.net = IpNet.init(ifaddress.host, na)
+            if ifaddress.host.family == AddressFamily.IPv6:
+              ifaddress.net = IpNet.init(ifaddress.host, na)
 
         if ifaddress.host.family != AddressFamily.None:
-          if len(res[i].addresses) == 0:
-            res[i].addresses = newSeq[InterfaceAddress]()
           res[i].addresses.add(ifaddress)
         ifap = ifap.ifa_next
 
@@ -1131,21 +864,21 @@ elif defined(macosx) or defined(bsd):
     else:
       0
 
-  proc getBestRoute*(address: TransportAddress): Route {.raises: [Defect].} =
+  proc getBestRoute*(address: TransportAddress): Route {.raises: [].} =
     ## Return best applicable OS route, which will be used for connecting to
     ## address ``address``.
     var sock: cint
     var msg: RtMessage
     var res = Route()
-    var pid = posix.getpid()
+    var pid = osdefs.getpid()
 
     if address.family notin {AddressFamily.IPv4, AddressFamily.IPv6}:
       return
 
     if address.family == AddressFamily.IPv4:
-      sock = cint(posix.socket(PF_ROUTE, posix.SOCK_RAW, posix.AF_INET))
+      sock = cint(osdefs.socket(PF_ROUTE, osdefs.SOCK_RAW, osdefs.AF_INET))
     elif address.family == AddressFamily.IPv6:
-      sock = cint(posix.socket(PF_ROUTE, posix.SOCK_RAW, posix.AF_INET6))
+      sock = cint(osdefs.socket(PF_ROUTE, osdefs.SOCK_RAW, osdefs.AF_INET6))
 
     if sock != -1:
       var sastore: Sockaddr_storage
@@ -1162,13 +895,13 @@ elif defined(macosx) or defined(bsd):
       msg.rtm.rtm_addrs = RTA_DST
       msg.space[0] = cast[byte](salen)
       msg.rtm.rtm_msglen = uint16(sizeof(RtMessage))
-      let wres = posix.write(sock, addr msg, sizeof(RtMessage))
+      let wres = osdefs.write(sock, addr msg, sizeof(RtMessage))
       if wres >= 0:
         let rres =
           block:
             var pres = 0
             while true:
-              pres = posix.read(sock, addr msg, sizeof(RtMessage))
+              pres = osdefs.read(sock, addr msg, sizeof(RtMessage))
               if ((pres >= 0) and (msg.rtm.rtm_pid == pid) and
                  (msg.rtm.rtm_seq == 0xCAFE)) or (pres < 0):
                 break
@@ -1198,141 +931,16 @@ elif defined(macosx) or defined(bsd):
                 if a.host.family == address.family:
                   res.source = a.host
               break
-      discard posix.close(sock)
+      discard osdefs.close(sock)
     res
 
 elif defined(windows):
-  import winlean, dynlib
+  import dynlib
+  import ".."/osutils
 
   const
     WorkBufferSize = 16384'u32
     MaxTries = 3
-
-    AF_UNSPEC = 0x00'u32
-
-    GAA_FLAG_INCLUDE_PREFIX = 0x0010'u32
-
-    CP_UTF8 = 65001'u32
-
-    ERROR_BUFFER_OVERFLOW* = 111'u32
-    ERROR_SUCCESS* = 0'u32
-
-  type
-    WCHAR = distinct uint16
-
-    SocketAddress = object
-      lpSockaddr: ptr SockAddr
-      iSockaddrLength: cint
-
-    IpAdapterUnicastAddressXpLh = object
-      length: uint32
-      flags: uint32
-      next: ptr IpAdapterUnicastAddressXpLh
-      address: SocketAddress
-      prefixOrigin: cint
-      suffixOrigin: cint
-      dadState: cint
-      validLifetime: uint32
-      preferredLifetime: uint32
-      leaseLifetime: uint32
-      onLinkPrefixLength: byte # This field is available only from Vista
-
-    IpAdapterAnycastAddressXp = object
-      length: uint32
-      flags: uint32
-      next: ptr IpAdapterAnycastAddressXp
-      address: SocketAddress
-
-    IpAdapterMulticastAddressXp = object
-      length: uint32
-      flags: uint32
-      next: ptr IpAdapterMulticastAddressXp
-      address: SocketAddress
-
-    IpAdapterDnsServerAddressXp = object
-      length: uint32
-      flags: uint32
-      next: ptr IpAdapterDnsServerAddressXp
-      address: SocketAddress
-
-    IpAdapterPrefixXp = object
-      length: uint32
-      flags: uint32
-      next: ptr IpAdapterPrefixXp
-      address: SocketAddress
-      prefixLength: uint32
-
-    IpAdapterAddressesXp = object
-      length: uint32
-      ifIndex: uint32
-      next: ptr IpAdapterAddressesXp
-      adapterName: cstring
-      unicastAddress: ptr IpAdapterUnicastAddressXpLh
-      anycastAddress: ptr IpAdapterAnycastAddressXp
-      multicastAddress: ptr IpAdapterMulticastAddressXp
-      dnsServerAddress: ptr IpAdapterDnsServerAddressXp
-      dnsSuffix: ptr WCHAR
-      description: ptr WCHAR
-      friendlyName: ptr WCHAR
-      physicalAddress: array[MaxAdapterAddressLength, byte]
-      physicalAddressLength: uint32
-      flags: uint32
-      mtu: uint32
-      ifType: uint32
-      operStatus: cint
-      ipv6IfIndex: uint32
-      zoneIndices: array[16, uint32]
-      firstPrefix: ptr IpAdapterPrefixXp
-
-    MibIpForwardRow = object
-      dwForwardDest: uint32
-      dwForwardMask: uint32
-      dwForwardPolicy: uint32
-      dwForwardNextHop: uint32
-      dwForwardIfIndex: uint32
-      dwForwardType: uint32
-      dwForwardProto: uint32
-      dwForwardAge: uint32
-      dwForwardNextHopAS: uint32
-      dwForwardMetric1: uint32
-      dwForwardMetric2: uint32
-      dwForwardMetric3: uint32
-      dwForwardMetric4: uint32
-      dwForwardMetric5: uint32
-
-    SOCKADDR_INET {.union.} = object
-      ipv4: Sockaddr_in
-      ipv6: Sockaddr_in6
-      si_family: uint16
-
-    IPADDRESS_PREFIX = object
-      prefix: SOCKADDR_INET
-      prefixLength: uint8
-
-    MibIpForwardRow2 = object
-      interfaceLuid: uint64
-      interfaceIndex: uint32
-      destinationPrefix: IPADDRESS_PREFIX
-      nextHop: SOCKADDR_INET
-      sitePrefixLength: byte
-      validLifetime: uint32
-      preferredLifetime: uint32
-      metric: uint32
-      protocol: uint32
-      loopback: bool
-      autoconfigureAddress: bool
-      publish: bool
-      immortal: bool
-      age: uint32
-      origin: uint32
-
-    GETBESTROUTE2 = proc(InterfaceLuid: ptr uint64, InterfaceIndex: uint32,
-                         SourceAddress: ptr SOCKADDR_INET,
-                         DestinationAddress: ptr SOCKADDR_INET,
-                         AddressSortOptions: uint32,
-                         BestRoute: ptr MibIpForwardRow2,
-                         BestSourceAddress: ptr SOCKADDR_INET): DWORD {.
-                    gcsafe, stdcall, raises: [].}
 
   proc toInterfaceType(ft: uint32): InterfaceType {.inline.} =
     if (ft >= 1'u32 and ft <= 196'u32) or
@@ -1347,45 +955,14 @@ elif defined(windows):
     else:
       StatusUnknown
 
-  proc GetAdaptersAddresses(family: uint32, flags: uint32, reserved: pointer,
-                            addresses: ptr IpAdapterAddressesXp,
-                            sizeptr: ptr uint32): uint32 {.
-       stdcall, dynlib: "iphlpapi", importc: "GetAdaptersAddresses",
-       raises: [].}
-
-  proc WideCharToMultiByte(CodePage: uint32, dwFlags: uint32,
-                           lpWideCharStr: ptr WCHAR, cchWideChar: cint,
-                           lpMultiByteStr: ptr char, cbMultiByte: cint,
-                           lpDefaultChar: ptr char,
-                           lpUsedDefaultChar: ptr uint32): cint
-       {.stdcall, dynlib: "kernel32.dll", importc: "WideCharToMultiByte",
-         raises: [].}
-
-  proc getBestRouteXp(dwDestAddr: uint32, dwSourceAddr: uint32,
-                      pBestRoute: ptr MibIpForwardRow): uint32 {.
-       stdcall, dynlib: "iphlpapi", importc: "GetBestRoute",
-       raises: [].}
-
   proc `$`(bstr: ptr WCHAR): string =
-    var buffer: char
-    var count = WideCharToMultiByte(CP_UTF8, 0, bstr, -1, addr(buffer), 0,
-                                    nil, nil)
-    if count > 0:
-      var res = newString(count + 8)
-      let wres = WideCharToMultiByte(CP_UTF8, 0, bstr, -1, addr(res[0]),
-                                     count, nil, nil)
-      if wres > 0:
-        res.setLen(wres - 1)
-      else:
-        res.setLen(0)
-      res
-    else:
-      ""
+    let res = toString(bstr)
+    if res.isErr(): "" else: res.get()
 
   proc isVista(): bool =
     var ver: OSVERSIONINFO
     ver.dwOSVersionInfoSize = DWORD(sizeof(ver))
-    let res = getVersionExW(addr(ver))
+    let res = getVersionEx(addr(ver))
     if res == 0:
       false
     else:
@@ -1454,7 +1031,7 @@ elif defined(windows):
         res.net = IpNet.init(res.host, prefixLength)
     res
 
-  proc getInterfaces*(): seq[NetworkInterface] {.raises: [Defect].} =
+  proc getInterfaces*(): seq[NetworkInterface] {.raises: [].} =
     ## Return list of network interfaces.
     var res = newSeq[NetworkInterface]()
     var size = WorkBufferSize
@@ -1466,12 +1043,13 @@ elif defined(windows):
     while true:
       buffer = newSeq[byte](size)
       var addresses = cast[ptr IpAdapterAddressesXp](addr buffer[0])
-      gres = GetAdaptersAddresses(AF_UNSPEC, GAA_FLAG_INCLUDE_PREFIX, nil,
-                                  addresses, addr size)
-      if gres == ERROR_SUCCESS:
+      gres = getAdaptersAddresses(osdefs.AF_UNSPEC, GAA_FLAG_INCLUDE_PREFIX,
+                                  nil, addresses, addr size)
+      case OSErrorCode(gres)
+      of ERROR_SUCCESS:
         buffer.setLen(size)
         break
-      elif gres == ERROR_BUFFER_OVERFLOW:
+      of ERROR_BUFFER_OVERFLOW:
         discard
       else:
         break
@@ -1479,7 +1057,7 @@ elif defined(windows):
       if tries >= MaxTries:
         break
 
-    if gres == ERROR_SUCCESS:
+    if OSErrorCode(gres) == ERROR_SUCCESS:
       var slider = cast[ptr IpAdapterAddressesXp](addr buffer[0])
       while not isNil(slider):
         var iface = NetworkInterface(
@@ -1505,7 +1083,7 @@ elif defined(windows):
       sort(res, cmp)
     res
 
-  proc getBestRoute*(address: TransportAddress): Route {.raises: [Defect].} =
+  proc getBestRoute*(address: TransportAddress): Route {.raises: [].} =
     ## Return best applicable OS route, which will be used for connecting to
     ## address ``address``.
     var res = Route()
@@ -1525,14 +1103,14 @@ elif defined(windows):
                                 addr bestRoute,
                                 cast[ptr SOCKADDR_INET](addr src))
         if gres == 0:
-          if src.ss_family == winlean.AF_INET:
+          if src.ss_family == osdefs.AF_INET:
             fromSAddr(addr src, SockLen(sizeof(Sockaddr_in)), res.source)
-          elif src.ss_family == winlean.AF_INET6:
+          elif src.ss_family == osdefs.AF_INET6:
             fromSAddr(addr src, SockLen(sizeof(Sockaddr_in6)), res.source)
-          if bestRoute.nextHop.si_family == winlean.AF_INET:
+          if bestRoute.nextHop.si_family == osdefs.AF_INET:
             fromSAddr(cast[ptr Sockaddr_storage](addr bestRoute.nextHop),
                       SockLen(sizeof(Sockaddr_in)), res.gateway)
-          elif bestRoute.nextHop.si_family == winlean.AF_INET6:
+          elif bestRoute.nextHop.si_family == osdefs.AF_INET6:
             fromSAddr(cast[ptr Sockaddr_storage](addr bestRoute.nextHop),
                       SockLen(sizeof(Sockaddr_in6)), res.gateway)
           if res.gateway.isZero():

@@ -6,12 +6,12 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 import unittest2
-import ../chronos
+import ../chronos, ../chronos/config
 
-when defined(nimHasUsed): {.used.}
+{.used.}
 
 suite "Asynchronous utilities test suite":
-  when defined(chronosFutureTracking):
+  when chronosFutureTracking:
     proc getCount(): uint =
       # This procedure counts number of Future[T] in double-linked list via list
       # iteration.
@@ -21,9 +21,9 @@ suite "Asynchronous utilities test suite":
       res
 
   test "Future clean and leaks test":
-    when defined(chronosFutureTracking):
-      if pendingFuturesCount(WithoutFinished) == 0'u:
-        if pendingFuturesCount(OnlyFinished) > 0'u:
+    when chronosFutureTracking:
+      if pendingFuturesCount(WithoutCompleted) == 0'u:
+        if pendingFuturesCount(OnlyCompleted) > 0'u:
           poll()
         check pendingFuturesCount() == 0'u
       else:
@@ -33,7 +33,7 @@ suite "Asynchronous utilities test suite":
       skip()
 
   test "FutureList basics test":
-    when defined(chronosFutureTracking):
+    when chronosFutureTracking:
       var fut1 = newFuture[void]()
       check:
         getCount() == 1'u
@@ -56,7 +56,7 @@ suite "Asynchronous utilities test suite":
       check:
         getCount() == 1'u
         pendingFuturesCount() == 1'u
-      fut3.cancel()
+      discard fut3.tryCancel()
       poll()
       check:
         getCount() == 0'u
@@ -65,7 +65,7 @@ suite "Asynchronous utilities test suite":
       skip()
 
   test "FutureList async procedure test":
-    when defined(chronosFutureTracking):
+    when chronosFutureTracking:
       proc simpleProc() {.async.} =
         await sleepAsync(10.milliseconds)
 

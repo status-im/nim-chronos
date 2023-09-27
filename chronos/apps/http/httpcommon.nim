@@ -7,12 +7,21 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 import std/[strutils, uri]
-import stew/[results, endians2], httputils
+import stew/results, httputils
 import ../../asyncloop, ../../asyncsync
 import ../../streams/[asyncstream, boundstream]
 export asyncloop, asyncsync, results, httputils, strutils
 
 const
+  HttpServerUnsecureConnectionTrackerName* =
+    "httpserver.unsecure.connection"
+  HttpServerSecureConnectionTrackerName* =
+    "httpserver.secure.connection"
+  HttpServerRequestTrackerName* =
+    "httpserver.request"
+  HttpServerResponseTrackerName* =
+    "httpserver.response"
+
   HeadersMark* = @[0x0d'u8, 0x0a'u8, 0x0d'u8, 0x0a'u8]
   PostMethods* = {MethodPost, MethodPatch, MethodPut, MethodDelete}
 
@@ -54,6 +63,7 @@ type
   HttpRedirectError* = object of HttpError
   HttpAddressError* = object of HttpError
   HttpUseClosedError* = object of HttpError
+  HttpReadLimitError* = object of HttpReadError
 
   KeyValueTuple* = tuple
     key: string
@@ -71,6 +81,48 @@ type
 
   HttpState* {.pure.} = enum
     Alive, Closing, Closed
+
+  HttpAddressErrorType* {.pure.} = enum
+    InvalidUrlScheme,
+    InvalidPortNumber,
+    MissingHostname,
+    InvalidIpHostname,
+    NameLookupFailed,
+    NoAddressResolved
+
+const
+  CriticalHttpAddressError* = {
+    HttpAddressErrorType.InvalidUrlScheme,
+    HttpAddressErrorType.InvalidPortNumber,
+    HttpAddressErrorType.MissingHostname,
+    HttpAddressErrorType.InvalidIpHostname
+  }
+
+  RecoverableHttpAddressError* = {
+    HttpAddressErrorType.NameLookupFailed,
+    HttpAddressErrorType.NoAddressResolved
+  }
+
+func isCriticalError*(error: HttpAddressErrorType): bool =
+  error in CriticalHttpAddressError
+
+func isRecoverableError*(error: HttpAddressErrorType): bool =
+  error in RecoverableHttpAddressError
+
+func toString*(error: HttpAddressErrorType): string =
+  case error
+  of HttpAddressErrorType.InvalidUrlScheme:
+    "URL scheme not supported"
+  of HttpAddressErrorType.InvalidPortNumber:
+    "Invalid URL port number"
+  of HttpAddressErrorType.MissingHostname:
+    "Missing URL hostname"
+  of HttpAddressErrorType.InvalidIpHostname:
+    "Invalid IPv4/IPv6 address in hostname"
+  of HttpAddressErrorType.NameLookupFailed:
+    "Could not resolve remote address"
+  of HttpAddressErrorType.NoAddressResolved:
+    "No address has been resolved"
 
 proc raiseHttpCriticalError*(msg: string,
                              code = Http400) {.noinline, noreturn.} =
@@ -117,7 +169,7 @@ template newHttpUseClosedError*(): ref HttpUseClosedError =
 
 iterator queryParams*(query: string,
                       flags: set[QueryParamsFlag] = {}): KeyValueTuple {.
-         raises: [Defect].} =
+         raises: [].} =
   ## Iterate over url-encoded query string.
   for pair in query.split('&'):
     let items = pair.split('=', maxsplit = 1)
@@ -125,15 +177,14 @@ iterator queryParams*(query: string,
     if len(k) > 0:
       let v = if len(items) > 1: items[1] else: ""
       if CommaSeparatedArray in flags:
-        let key = decodeUrl(k)
         for av in decodeUrl(v).split(','):
-          yield (k, av)
+          yield (decodeUrl(k), av)
       else:
         yield (decodeUrl(k), decodeUrl(v))
 
 func getTransferEncoding*(ch: openArray[string]): HttpResult[
                                                   set[TransferEncodingFlags]] {.
-     raises: [Defect].} =
+     raises: [].} =
   ## Parse value of multiple HTTP headers ``Transfer-Encoding`` and return
   ## it as set of ``TransferEncodingFlags``.
   var res: set[TransferEncodingFlags] = {}
@@ -164,7 +215,7 @@ func getTransferEncoding*(ch: openArray[string]): HttpResult[
 
 func getContentEncoding*(ch: openArray[string]): HttpResult[
                                                    set[ContentEncodingFlags]] {.
-     raises: [Defect].} =
+     raises: [].} =
   ## Parse value of multiple HTTP headers ``Content-Encoding`` and return
   ## it as set of ``ContentEncodingFlags``.
   var res: set[ContentEncodingFlags] = {}
@@ -194,7 +245,7 @@ func getContentEncoding*(ch: openArray[string]): HttpResult[
     ok(res)
 
 func getContentType*(ch: openArray[string]): HttpResult[ContentTypeData]  {.
-     raises: [Defect].} =
+     raises: [].} =
   ## Check and prepare value of ``Content-Type`` header.
   if len(ch) == 0:
     err("No Content-Type values found")
@@ -249,48 +300,3 @@ func stringToBytes*(src: openArray[char]): seq[byte] =
     dst
   else:
     default
-
-proc dumpHex*(pbytes: openArray[byte], groupBy = 1, ascii = true): string =
-  ## Get hexadecimal dump of memory for array ``pbytes``.
-  var res = ""
-  var offset = 0
-  var ascii = ""
-
-  while offset < len(pbytes):
-    if (offset mod 16) == 0:
-      res = res & toHex(uint64(offset)) & ":  "
-
-    for k in 0 ..< groupBy:
-      let ch = pbytes[offset + k]
-      ascii.add(if ord(ch) > 31 and ord(ch) < 127: char(ch) else: '.')
-
-    let item =
-      case groupBy:
-      of 1:
-        toHex(pbytes[offset])
-      of 2:
-        toHex(uint16.fromBytes(pbytes.toOpenArray(offset, len(pbytes) - 1)))
-      of 4:
-        toHex(uint32.fromBytes(pbytes.toOpenArray(offset, len(pbytes) - 1)))
-      of 8:
-        toHex(uint64.fromBytes(pbytes.toOpenArray(offset, len(pbytes) - 1)))
-      else:
-        ""
-    res.add(item)
-    res.add(" ")
-    offset = offset + groupBy
-
-    if (offset mod 16) == 0:
-      res.add(" ")
-      res.add(ascii)
-      ascii.setLen(0)
-      res.add("\p")
-
-  if (offset mod 16) != 0:
-    let spacesCount = ((16 - (offset mod 16)) div groupBy) *
-                        (groupBy * 2 + 1) + 1
-    res = res & repeat(' ', spacesCount)
-    res = res & ascii
-
-  res.add("\p")
-  res

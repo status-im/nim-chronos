@@ -8,7 +8,7 @@
 import unittest2
 import ../chronos
 
-when defined(nimHasUsed): {.used.}
+{.used.}
 
 suite "Asynchronous sync primitives test suite":
   var testLockResult {.threadvar.}: string
@@ -150,9 +150,9 @@ suite "Asynchronous sync primitives test suite":
     var fut2 = task(lock, 2, n2)
     var fut3 = task(lock, 3, n3)
     if cancelIndex == 2:
-      fut2.cancel()
+      fut2.cancelSoon()
     else:
-      fut3.cancel()
+      fut3.cancelSoon()
     await allFutures(fut1, fut2, fut3)
     result = stripe
 

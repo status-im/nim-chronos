@@ -7,24 +7,21 @@
 #    Apache License, version 2.0, (LICENSE-APACHEv2)
 #                MIT license (LICENSE-MIT)
 
-when (NimMajor, NimMinor) < (1, 4):
-  {.push raises: [Defect].}
-else:
-  {.push raises: [].}
+{.push raises: [].}
 
-import ./asyncloop
+import "."/[asyncloop, config]
 export asyncloop
 
-when defined(chronosFutureTracking):
+when chronosFutureTracking:
   import stew/base10
 
 const
   AllFutureStates* = {FutureState.Pending, FutureState.Cancelled,
-                      FutureState.Finished, FutureState.Failed}
-  WithoutFinished* = {FutureState.Pending, FutureState.Cancelled,
+                      FutureState.Completed, FutureState.Failed}
+  WithoutCompleted* = {FutureState.Pending, FutureState.Cancelled,
                       FutureState.Failed}
   OnlyPending* = {FutureState.Pending}
-  OnlyFinished* = {FutureState.Finished}
+  OnlyCompleted* = {FutureState.Completed}
 
 proc dumpPendingFutures*(filter = AllFutureStates): string =
   ## Dump all `pending` Future[T] objects.
@@ -34,13 +31,13 @@ proc dumpPendingFutures*(filter = AllFutureStates): string =
   ##    not yet finished).
   ## 2. Future[T] objects with ``FutureState.Finished/Cancelled/Failed`` state
   ##    which callbacks are scheduled, but not yet fully processed.
-  when defined(chronosFutureTracking):
+  when chronosFutureTracking:
     var count = 0'u
     var res = ""
     for item in pendingFutures():
       if item.state in filter:
         inc(count)
-        let loc = item.location[LocCreateIndex][]
+        let loc = item.location[LocationKind.Create][]
         let procedure = $loc.procedure
         let filename = $loc.file
         let procname = if len(procedure) == 0:
@@ -62,7 +59,7 @@ proc pendingFuturesCount*(filter: set[FutureState]): uint =
   ##
   ## If ``filter`` is equal to ``AllFutureStates`` Operation's complexity is
   ## O(1), otherwise operation's complexity is O(n).
-  when defined(chronosFutureTracking):
+  when chronosFutureTracking:
     if filter == AllFutureStates:
       pendingFuturesCount()
     else:

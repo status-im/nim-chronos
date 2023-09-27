@@ -24,6 +24,20 @@ type
 
   SecureHttpConnectionRef* = ref SecureHttpConnection
 
+proc closeSecConnection(conn: HttpConnectionRef) {.async.} =
+  if conn.state == HttpState.Alive:
+    conn.state = HttpState.Closing
+    var pending: seq[Future[void]]
+    pending.add(conn.writer.closeWait())
+    pending.add(conn.reader.closeWait())
+    pending.add(conn.mainReader.closeWait())
+    pending.add(conn.mainWriter.closeWait())
+    pending.add(conn.transp.closeWait())
+    await noCancel(allFutures(pending))
+    reset(cast[SecureHttpConnectionRef](conn)[])
+    untrackCounter(HttpServerSecureConnectionTrackerName)
+    conn.state = HttpState.Closed
+
 proc new*(ht: typedesc[SecureHttpConnectionRef], server: SecureHttpServerRef,
           transp: StreamTransport): SecureHttpConnectionRef =
   var res = SecureHttpConnectionRef()
@@ -37,6 +51,8 @@ proc new*(ht: typedesc[SecureHttpConnectionRef], server: SecureHttpServerRef,
   res.tlsStream = tlsStream
   res.reader = AsyncStreamReader(tlsStream.reader)
   res.writer = AsyncStreamWriter(tlsStream.writer)
+  res.closeCb = closeSecConnection
+  trackCounter(HttpServerSecureConnectionTrackerName)
   res
 
 proc createSecConnection(server: HttpServerRef,
@@ -50,9 +66,16 @@ proc createSecConnection(server: HttpServerRef,
   except CancelledError as exc:
     await HttpConnectionRef(sconn).closeWait()
     raise exc
-  except TLSStreamError:
+  except TLSStreamError as exc:
     await HttpConnectionRef(sconn).closeWait()
-    raiseHttpCriticalError("Unable to establish secure connection")
+    let msg = "Unable to establish secure connection, reason [" &
+              $exc.msg & "]"
+    raiseHttpCriticalError(msg)
+  except CatchableError as exc:
+    await HttpConnectionRef(sconn).closeWait()
+    let msg = "Unexpected error while trying to establish secure connection, " &
+              "reason [" & $exc.msg & "]"
+    raiseHttpCriticalError(msg)
 
 proc new*(htype: typedesc[SecureHttpServerRef],
           address: TransportAddress,
@@ -66,11 +89,11 @@ proc new*(htype: typedesc[SecureHttpServerRef],
           secureFlags: set[TLSFlags] = {},
           maxConnections: int = -1,
           bufferSize: int = 4096,
-          backlogSize: int = 100,
+          backlogSize: int = DefaultBacklogSize,
           httpHeadersTimeout = 10.seconds,
           maxHeadersSize: int = 8192,
           maxRequestBodySize: int = 1_048_576
-         ): HttpResult[SecureHttpServerRef] {.raises: [Defect].} =
+         ): HttpResult[SecureHttpServerRef] {.raises: [].} =
 
   doAssert(not(isNil(tlsPrivateKey)), "TLS private key must not be nil!")
   doAssert(not(isNil(tlsCertificate)), "TLS certificate must not be nil!")
@@ -100,7 +123,7 @@ proc new*(htype: typedesc[SecureHttpServerRef],
     createConnCallback: createSecConnection,
     baseUri: serverUri,
     serverIdent: serverIdent,
-    flags: serverFlags,
+    flags: serverFlags + {HttpServerFlags.Secure},
     socketFlags: socketFlags,
     maxConnections: maxConnections,
     bufferSize: bufferSize,
@@ -114,7 +137,7 @@ proc new*(htype: typedesc[SecureHttpServerRef],
     #   else:
     #     nil
     lifetime: newFuture[void]("http.server.lifetime"),
-    connections: initTable[string, Future[void]](),
+    connections: initOrderedTable[string, HttpConnectionHolderRef](),
     tlsCertificate: tlsCertificate,
     tlsPrivateKey: tlsPrivateKey,
     secureFlags: secureFlags

@@ -35,7 +35,7 @@ type
     RSA, EC
 
   TLSResult {.pure.} = enum
-    Success, Error, EOF
+    Success, Error, Stopped, WriteEof, ReadEof
 
   TLSPrivateKey* = ref object
     case kind: TLSKeyType
@@ -59,6 +59,9 @@ type
 
   PEMContext = ref object
     data: seq[byte]
+  
+  TrustAnchorStore* = ref object
+    anchors: seq[X509TrustAnchor]
 
   TLSStreamWriter* = ref object of AsyncStreamWriter
     case kind: TLSStreamKind
@@ -89,8 +92,10 @@ type
     reader*: TLSStreamReader
     writer*: TLSStreamWriter
     mainLoop*: Future[void]
+    trustAnchors: TrustAnchorStore
 
   SomeTLSStreamType* = TLSStreamReader|TLSStreamWriter|TLSAsyncStream
+  SomeTrustAnchorType* = TrustAnchorStore | openArray[X509TrustAnchor]
 
   TLSStreamError* = object of AsyncStreamError
   TLSStreamHandshakeError* = object of TLSStreamError
@@ -126,11 +131,23 @@ template newTLSStreamProtocolImpl[T](message: T): ref TLSStreamProtocolError =
   err.errCode = code
   err
 
+template newTLSUnexpectedProtocolError(): ref TLSStreamProtocolError =
+  newException(TLSStreamProtocolError, "Unexpected internal error")
+
 proc newTLSStreamProtocolError[T](message: T): ref TLSStreamProtocolError =
   newTLSStreamProtocolImpl(message)
 
 proc raiseTLSStreamProtocolError[T](message: T) {.noreturn, noinline.} =
   raise newTLSStreamProtocolImpl(message)
+
+proc new*(T: typedesc[TrustAnchorStore],
+          anchors: openArray[X509TrustAnchor]): TrustAnchorStore =
+  var res: seq[X509TrustAnchor]
+  for anchor in anchors:
+    res.add(anchor)
+    doAssert(unsafeAddr(anchor) != unsafeAddr(res[^1]),
+             "Anchors should be copied")
+  TrustAnchorStore(anchors: res)
 
 proc tlsWriteRec(engine: ptr SslEngineContext,
                  writer: TLSStreamWriter): Future[TLSResult] {.async.} =
@@ -142,12 +159,14 @@ proc tlsWriteRec(engine: ptr SslEngineContext,
     sslEngineSendrecAck(engine[], length)
     return TLSResult.Success
   except AsyncStreamError as exc:
-    if writer.state == AsyncStreamState.Running:
-      writer.state = AsyncStreamState.Error
-      writer.error = exc
+    writer.state = AsyncStreamState.Error
+    writer.error = exc
+    return TLSResult.Error
   except CancelledError:
     if writer.state == AsyncStreamState.Running:
       writer.state = AsyncStreamState.Stopped
+    return TLSResult.Stopped
+
   return TLSResult.Error
 
 proc tlsWriteApp(engine: ptr SslEngineContext,
@@ -157,6 +176,13 @@ proc tlsWriteApp(engine: ptr SslEngineContext,
     if item.size > 0:
       var length = 0'u
       var buf = sslEngineSendappBuf(engine[], length)
+      if isNil(buf) or (length == 0):
+        # This situation could happen when connection is closing, no
+        # application data can be sent, but some can still be received
+        # (and discarded).
+        writer.state = AsyncStreamState.Finished
+        return TLSResult.WriteEof
+
       let toWrite = min(int(length), item.size)
       copyOut(buf, item, toWrite)
       if int(length) >= item.size:
@@ -180,6 +206,8 @@ proc tlsWriteApp(engine: ptr SslEngineContext,
   except CancelledError:
     if writer.state == AsyncStreamState.Running:
       writer.state = AsyncStreamState.Stopped
+    return TLSResult.Stopped
+
   return TLSResult.Error
 
 proc tlsReadRec(engine: ptr SslEngineContext,
@@ -191,17 +219,18 @@ proc tlsReadRec(engine: ptr SslEngineContext,
     sslEngineRecvrecAck(engine[], uint(res))
     if res == 0:
       sslEngineClose(engine[])
-
-      return TLSResult.EOF
+      return TLSResult.ReadEof
     else:
       return TLSResult.Success
+  except AsyncStreamError as exc:
+    reader.state = AsyncStreamState.Error
+    reader.error = exc
+    return TLSResult.Error
   except CancelledError:
     if reader.state == AsyncStreamState.Running:
       reader.state = AsyncStreamState.Stopped
-  except AsyncStreamError as exc:
-    if reader.state == AsyncStreamState.Running:
-      reader.state = AsyncStreamState.Error
-      reader.error = exc
+    return TLSResult.Stopped
+
   return TLSResult.Error
 
 proc tlsReadApp(engine: ptr SslEngineContext,
@@ -215,13 +244,15 @@ proc tlsReadApp(engine: ptr SslEngineContext,
   except CancelledError:
     if reader.state == AsyncStreamState.Running:
       reader.state = AsyncStreamState.Stopped
+    return TLSResult.Stopped
+
   return TLSResult.Error
 
 template readAndReset(fut: untyped) =
   if fut.finished():
     let res = fut.read()
     case res
-    of TLSResult.Success:
+    of TLSResult.Success, TLSResult.WriteEof, TLSResult.Stopped:
       fut = nil
       continue
     of TLSResult.Error:
@@ -229,26 +260,22 @@ template readAndReset(fut: untyped) =
       if loopState == AsyncStreamState.Running:
         loopState = AsyncStreamState.Error
       break
-    of TLSResult.EOF:
+    of TLSResult.ReadEof:
       fut = nil
       if loopState == AsyncStreamState.Running:
         loopState = AsyncStreamState.Finished
       break
 
 proc cancelAndWait*(a, b, c, d: Future[TLSResult]): Future[void] =
-  var waiting: seq[Future[TLSResult]]
+  var waiting: seq[FutureBase]
   if not(isNil(a)) and not(a.finished()):
-    a.cancel()
-    waiting.add(a)
+    waiting.add(a.cancelAndWait())
   if not(isNil(b)) and not(b.finished()):
-    b.cancel()
-    waiting.add(b)
+    waiting.add(b.cancelAndWait())
   if not(isNil(c)) and not(c.finished()):
-    c.cancel()
-    waiting.add(c)
+    waiting.add(c.cancelAndWait())
   if not(isNil(d)) and not(d.finished()):
-    d.cancel()
-    waiting.add(d)
+    waiting.add(d.cancelAndWait())
   allFutures(waiting)
 
 proc dumpState*(state: cuint): string =
@@ -301,14 +328,14 @@ proc tlsLoop*(stream: TLSAsyncStream) {.async.} =
 
     if isNil(sendAppFut):
       if (state and SSL_SENDAPP) == SSL_SENDAPP:
-        # Application data can be sent over stream.
-        if not(stream.writer.handshaked):
-          stream.reader.handshaked = true
-          stream.writer.handshaked = true
-          if not(isNil(stream.writer.handshakeFut)):
-            stream.writer.handshakeFut.complete()
-
-        sendAppFut = tlsWriteApp(engine, stream.writer)
+        if stream.writer.state == AsyncStreamState.Running:
+          # Application data can be sent over stream.
+          if not(stream.writer.handshaked):
+            stream.reader.handshaked = true
+            stream.writer.handshaked = true
+            if not(isNil(stream.writer.handshakeFut)):
+              stream.writer.handshakeFut.complete()
+          sendAppFut = tlsWriteApp(engine, stream.writer)
     else:
       sendAppFut.readAndReset()
 
@@ -353,8 +380,10 @@ proc tlsLoop*(stream: TLSAsyncStream) {.async.} =
     of AsyncStreamState.Error:
       if not(isNil(stream.writer.error)):
         stream.writer.error
-      else:
+      elif not(isNil(stream.reader.error)):
         newTLSStreamWriteError(stream.reader.error)
+      else:
+        newTLSUnexpectedProtocolError()
     of AsyncStreamState.Finished:
       let err = engine[].sslEngineLastError()
       if err != 0:
@@ -389,7 +418,8 @@ proc tlsLoop*(stream: TLSAsyncStream) {.async.} =
       if not(isNil(stream.writer.handshakeFut)):
         if not(stream.writer.handshakeFut.finished()):
           stream.writer.handshakeFut.fail(
-            newTLSStreamProtocolError("Connection with remote peer lost")
+            newTLSStreamProtocolError(
+              "Connection to the remote peer has been lost")
           )
 
   # Completing readers
@@ -398,7 +428,7 @@ proc tlsLoop*(stream: TLSAsyncStream) {.async.} =
 proc tlsWriteLoop(stream: AsyncStreamWriter) {.async.} =
   var wstream = TLSStreamWriter(stream)
   wstream.state = AsyncStreamState.Running
-  await stepsAsync(1)
+  await sleepAsync(0.milliseconds)
   if isNil(wstream.stream.mainLoop):
     wstream.stream.mainLoop = tlsLoop(wstream.stream)
   await wstream.stream.mainLoop
@@ -406,7 +436,7 @@ proc tlsWriteLoop(stream: AsyncStreamWriter) {.async.} =
 proc tlsReadLoop(stream: AsyncStreamReader) {.async.} =
   var rstream = TLSStreamReader(stream)
   rstream.state = AsyncStreamState.Running
-  await stepsAsync(1)
+  await sleepAsync(0.milliseconds)
   if isNil(rstream.stream.mainLoop):
     rstream.stream.mainLoop = tlsLoop(rstream.stream)
   await rstream.stream.mainLoop
@@ -422,13 +452,16 @@ proc getSignerAlgo(xc: X509Certificate): int =
   else:
     int(x509DecoderGetSignerKeyType(dc))
 
-proc newTLSClientAsyncStream*(rsource: AsyncStreamReader,
-                              wsource: AsyncStreamWriter,
-                              serverName: string,
-                              bufferSize = SSL_BUFSIZE_BIDI,
-                              minVersion = TLSVersion.TLS12,
-                              maxVersion = TLSVersion.TLS12,
-                              flags: set[TLSFlags] = {}): TLSAsyncStream =
+proc newTLSClientAsyncStream*(
+       rsource: AsyncStreamReader,
+       wsource: AsyncStreamWriter,
+       serverName: string,
+       bufferSize = SSL_BUFSIZE_BIDI,
+       minVersion = TLSVersion.TLS12,
+       maxVersion = TLSVersion.TLS12,
+       flags: set[TLSFlags] = {},
+       trustAnchors: SomeTrustAnchorType = MozillaTrustAnchors
+     ): TLSAsyncStream =
   ## Create new TLS asynchronous stream for outbound (client) connections
   ## using reading stream ``rsource`` and writing stream ``wsource``.
   ##
@@ -445,6 +478,16 @@ proc newTLSClientAsyncStream*(rsource: AsyncStreamReader,
   ## ``minVersion`` of bigger then ``maxVersion`` you will get an error.
   ##
   ## ``flags`` - custom TLS connection flags.
+  ## 
+  ## ``trustAnchors`` - use this if you want to use certificate trust
+  ## anchors other than the default Mozilla trust anchors. If you pass
+  ## a ``TrustAnchorStore`` you should reuse the same instance for
+  ## every call to avoid making a copy of the trust anchors per call.
+  when trustAnchors is TrustAnchorStore:
+    doAssert(len(trustAnchors.anchors) > 0,
+             "Empty trust anchor list is invalid")
+  else:
+    doAssert(len(trustAnchors) > 0, "Empty trust anchor list is invalid")
   var res = TLSAsyncStream()
   var reader = TLSStreamReader(
     kind: TLSStreamKind.Client,
@@ -464,9 +507,15 @@ proc newTLSClientAsyncStream*(rsource: AsyncStreamReader,
     x509NoanchorInit(res.xwc, addr res.x509.vtable)
     sslEngineSetX509(res.ccontext.eng, addr res.xwc.vtable)
   else:
-    sslClientInitFull(res.ccontext, addr res.x509,
-                      unsafeAddr MozillaTrustAnchors[0],
-                      uint(len(MozillaTrustAnchors)))
+    when trustAnchors is TrustAnchorStore:
+      res.trustAnchors = trustAnchors
+      sslClientInitFull(res.ccontext, addr res.x509,
+                        unsafeAddr trustAnchors.anchors[0],
+                        uint(len(trustAnchors.anchors)))
+    else:
+      sslClientInitFull(res.ccontext, addr res.x509,
+                        unsafeAddr trustAnchors[0],
+                        uint(len(trustAnchors)))
 
   let size = max(SSL_BUFSIZE_BIDI, bufferSize)
   res.sbuffer = newSeq[byte](size)
@@ -476,7 +525,7 @@ proc newTLSClientAsyncStream*(rsource: AsyncStreamReader,
                        uint16(maxVersion))
 
   if TLSFlags.NoVerifyServerName in flags:
-    let err = sslClientReset(res.ccontext, "", 0)
+    let err = sslClientReset(res.ccontext, nil, 0)
     if err == 0:
       raise newException(TLSStreamInitError, "Could not initialize TLS layer")
   else:

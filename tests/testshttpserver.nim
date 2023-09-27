@@ -5,12 +5,13 @@
 #              Licensed under either of
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
-import std/[strutils, strutils]
-import unittest2
-import ../chronos, ../chronos/apps/http/shttpserver
+import std/strutils
+import ".."/chronos/unittest2/asynctests
+import ".."/chronos,
+       ".."/chronos/apps/http/shttpserver
 import stew/base10
 
-when defined(nimHasUsed): {.used.}
+{.used.}
 
 # To create self-signed certificate and key you can use openssl
 # openssl req -new -x509 -sha256 -newkey rsa:2048 -nodes \
@@ -115,7 +116,7 @@ suite "Secure HTTP server testing suite":
                                        HttpTable.init())
         else:
           serverRes = false
-          return dumbResponse()
+          return defaultResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
       let serverFlags = {Secure}
@@ -154,7 +155,7 @@ suite "Secure HTTP server testing suite":
         else:
           serverRes = true
           testFut.complete()
-          return dumbResponse()
+          return defaultResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
       let serverFlags = {Secure}
@@ -178,3 +179,6 @@ suite "Secure HTTP server testing suite":
       return serverRes and data == "EXCEPTION"
 
     check waitFor(testHTTPS2(initTAddress("127.0.0.1:30080"))) == true
+
+  test "Leaks test":
+    checkLeaks()

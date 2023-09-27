@@ -6,10 +6,11 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 import unittest2
-import ../chronos
-import ../chronos/streams/[tlsstream, chunkstream, boundstream]
+import bearssl/[x509]
+import ".."/chronos/unittest2/asynctests
+import ".."/chronos/streams/[tlsstream, chunkstream, boundstream]
 
-when defined(nimHasUsed): {.used.}
+{.used.}
 
 # To create self-signed certificate and key you can use openssl
 # openssl req -new -x509 -sha256 -newkey rsa:2048 -nodes \
@@ -72,6 +73,70 @@ N8r5CwGcIX/XPC3lKazzbZ8baA==
 -----END CERTIFICATE-----
 """
 
+# This is the X509TrustAnchor for the SelfSignedRsaCert above
+# Generate by doing the following:
+# 1. Compile `brssl` from BearSSL
+# 2. Run `brssl ta filewithSelfSignedRsaCert.pem`
+# 3. Paste the output in the emit block below
+# 4. Rename `TAs` to `SelfSignedTAs`
+{.emit: """
+static const unsigned char TA0_DN[] = {
+	0x30, 0x5F, 0x31, 0x0B, 0x30, 0x09, 0x06, 0x03, 0x55, 0x04, 0x06, 0x13,
+	0x02, 0x41, 0x55, 0x31, 0x13, 0x30, 0x11, 0x06, 0x03, 0x55, 0x04, 0x08,
+	0x0C, 0x0A, 0x53, 0x6F, 0x6D, 0x65, 0x2D, 0x53, 0x74, 0x61, 0x74, 0x65,
+	0x31, 0x21, 0x30, 0x1F, 0x06, 0x03, 0x55, 0x04, 0x0A, 0x0C, 0x18, 0x49,
+	0x6E, 0x74, 0x65, 0x72, 0x6E, 0x65, 0x74, 0x20, 0x57, 0x69, 0x64, 0x67,
+	0x69, 0x74, 0x73, 0x20, 0x50, 0x74, 0x79, 0x20, 0x4C, 0x74, 0x64, 0x31,
+	0x18, 0x30, 0x16, 0x06, 0x03, 0x55, 0x04, 0x03, 0x0C, 0x0F, 0x31, 0x32,
+	0x37, 0x2E, 0x30, 0x2E, 0x30, 0x2E, 0x31, 0x3A, 0x34, 0x33, 0x38, 0x30,
+	0x38
+};
+
+static const unsigned char TA0_RSA_N[] = {
+	0xA7, 0xEE, 0xD5, 0xC6, 0x2C, 0xA3, 0x08, 0x33, 0x33, 0x86, 0xB5, 0x5C,
+	0xD4, 0x8B, 0x16, 0xB1, 0xD7, 0xF7, 0xED, 0x95, 0x22, 0xDC, 0xA4, 0x40,
+	0x24, 0x64, 0xC3, 0x91, 0xBA, 0x20, 0x82, 0x9D, 0x88, 0xED, 0x20, 0x98,
+	0x46, 0x65, 0xDC, 0xD1, 0x15, 0x90, 0xBC, 0x7C, 0x19, 0x5F, 0x00, 0x96,
+	0x69, 0x2C, 0x80, 0x0E, 0x7D, 0x7D, 0x8B, 0xD9, 0xFD, 0x49, 0x66, 0xEC,
+	0x29, 0xC0, 0x39, 0x0E, 0x22, 0xF3, 0x6A, 0x28, 0xC0, 0x6B, 0x97, 0x93,
+	0x2F, 0x92, 0x5E, 0x5A, 0xCC, 0xF4, 0xF4, 0xAE, 0xD9, 0xE3, 0xBB, 0x0A,
+	0xDC, 0xA8, 0xDE, 0x4D, 0x16, 0xD6, 0xE6, 0x64, 0xF2, 0x85, 0x62, 0xF6,
+	0xE3, 0x7B, 0x1D, 0x9A, 0x5C, 0x6A, 0xA3, 0x97, 0x93, 0x16, 0x9D, 0x02,
+	0x2C, 0xFD, 0x90, 0x3E, 0xF8, 0x35, 0x44, 0x5E, 0x66, 0x8D, 0xF6, 0x80,
+	0xF1, 0x71, 0x9B, 0x2F, 0x44, 0xC0, 0xCA, 0x7E, 0xB1, 0x90, 0x7F, 0xD8,
+	0x8B, 0x7A, 0x85, 0x4B, 0xE3, 0xB1, 0xB1, 0xF4, 0xAA, 0x6A, 0x36, 0xA0,
+	0xFF, 0x24, 0xB2, 0x27, 0xE0, 0xBA, 0x62, 0x7A, 0xE9, 0x95, 0xC9, 0x88,
+	0x9D, 0x9B, 0xAB, 0xA4, 0x4C, 0xEA, 0x87, 0x46, 0xFA, 0xD6, 0x9B, 0x7E,
+	0xB2, 0xE9, 0x5B, 0xCA, 0x5B, 0x84, 0xC4, 0xF7, 0xB4, 0xC7, 0x69, 0xC5,
+	0x0B, 0x9A, 0x47, 0x9A, 0x86, 0xD4, 0xDF, 0xF3, 0x30, 0xC9, 0x6D, 0xB8,
+	0x78, 0x10, 0xEF, 0xA0, 0x89, 0xF8, 0x30, 0x80, 0x9D, 0x96, 0x05, 0x44,
+	0xB4, 0xFB, 0x98, 0x4C, 0x71, 0x6B, 0xBC, 0xD7, 0x5D, 0x66, 0x5E, 0x66,
+	0xA7, 0x94, 0xE5, 0x65, 0x72, 0x85, 0xBC, 0x7C, 0x7F, 0x11, 0x98, 0xF8,
+	0xCB, 0xD5, 0xE2, 0xB5, 0x67, 0x78, 0xF7, 0x49, 0x51, 0xC4, 0x7F, 0xBA,
+	0x16, 0x66, 0xD2, 0x15, 0x5B, 0x98, 0x06, 0x03, 0x48, 0xD0, 0x9D, 0xF0,
+	0x38, 0x2B, 0x9D, 0x51
+};
+
+static const unsigned char TA0_RSA_E[] = {
+	0x01, 0x00, 0x01
+};
+
+static const br_x509_trust_anchor SelfSignedTAs[1] = {
+	{
+		{ (unsigned char *)TA0_DN, sizeof TA0_DN },
+		BR_X509_TA_CA,
+		{
+			BR_KEYTYPE_RSA,
+			{ .rsa = {
+				(unsigned char *)TA0_RSA_N, sizeof TA0_RSA_N,
+				(unsigned char *)TA0_RSA_E, sizeof TA0_RSA_E,
+			} }
+		}
+	}
+};
+""".}
+var SelfSignedTrustAnchors {.importc: "SelfSignedTAs", nodecl.}: array[1, X509TrustAnchor]
+
 proc createBigMessage(message: string, size: int): seq[byte] =
   var res = newSeq[byte](size)
   for i in 0 ..< len(res):
@@ -80,7 +145,7 @@ proc createBigMessage(message: string, size: int): seq[byte] =
 
 suite "AsyncStream test suite":
   test "AsyncStream(StreamTransport) readExactly() test":
-    proc testReadExactly(address: TransportAddress): Future[bool] {.async.} =
+    proc testReadExactly(): Future[bool] {.async.} =
       proc serveClient(server: StreamServer,
                        transp: StreamTransport) {.async.} =
         var wstream = newAsyncStreamWriter(transp)
@@ -92,9 +157,10 @@ suite "AsyncStream test suite":
         server.close()
 
       var buffer = newSeq[byte](10)
-      var server = createStreamServer(address, serveClient, {ReuseAddr})
+      var server = createStreamServer(initTAddress("127.0.0.1:0"),
+                                      serveClient, {ReuseAddr})
       server.start()
-      var transp = await connect(address)
+      var transp = await connect(server.localAddress())
       var rstream = newAsyncStreamReader(transp)
       await rstream.readExactly(addr buffer[0], 10)
       check cast[string](buffer) == "0000000000"
@@ -106,9 +172,10 @@ suite "AsyncStream test suite":
       await transp.closeWait()
       await server.join()
       result = true
-    check waitFor(testReadExactly(initTAddress("127.0.0.1:46001"))) == true
+    check waitFor(testReadExactly()) == true
+
   test "AsyncStream(StreamTransport) readUntil() test":
-    proc testReadUntil(address: TransportAddress): Future[bool] {.async.} =
+    proc testReadUntil(): Future[bool] {.async.} =
       proc serveClient(server: StreamServer,
                        transp: StreamTransport) {.async.} =
         var wstream = newAsyncStreamWriter(transp)
@@ -121,9 +188,10 @@ suite "AsyncStream test suite":
 
       var buffer = newSeq[byte](13)
       var sep = @[byte('N'), byte('N'), byte('z')]
-      var server = createStreamServer(address, serveClient, {ReuseAddr})
+      var server = createStreamServer(initTAddress("127.0.0.1:0"),
+                                      serveClient, {ReuseAddr})
       server.start()
-      var transp = await connect(address)
+      var transp = await connect(server.localAddress())
       var rstream = newAsyncStreamReader(transp)
       var r1 = await rstream.readUntil(addr buffer[0], len(buffer), sep)
       check:
@@ -142,9 +210,10 @@ suite "AsyncStream test suite":
       await transp.closeWait()
       await server.join()
       result = true
-    check waitFor(testReadUntil(initTAddress("127.0.0.1:46001"))) == true
+    check waitFor(testReadUntil()) == true
+
   test "AsyncStream(StreamTransport) readLine() test":
-    proc testReadLine(address: TransportAddress): Future[bool] {.async.} =
+    proc testReadLine(): Future[bool] {.async.} =
       proc serveClient(server: StreamServer,
                        transp: StreamTransport) {.async.} =
         var wstream = newAsyncStreamWriter(transp)
@@ -155,9 +224,10 @@ suite "AsyncStream test suite":
         server.stop()
         server.close()
 
-      var server = createStreamServer(address, serveClient, {ReuseAddr})
+      var server = createStreamServer(initTAddress("127.0.0.1:0"),
+                                      serveClient, {ReuseAddr})
       server.start()
-      var transp = await connect(address)
+      var transp = await connect(server.localAddress())
       var rstream = newAsyncStreamReader(transp)
       var r1 = await rstream.readLine()
       check r1 == "0000000000"
@@ -169,9 +239,10 @@ suite "AsyncStream test suite":
       await transp.closeWait()
       await server.join()
       result = true
-    check waitFor(testReadLine(initTAddress("127.0.0.1:46001"))) == true
+    check waitFor(testReadLine()) == true
+
   test "AsyncStream(StreamTransport) read() test":
-    proc testRead(address: TransportAddress): Future[bool] {.async.} =
+    proc testRead(): Future[bool] {.async.} =
       proc serveClient(server: StreamServer,
                        transp: StreamTransport) {.async.} =
         var wstream = newAsyncStreamWriter(transp)
@@ -182,9 +253,10 @@ suite "AsyncStream test suite":
         server.stop()
         server.close()
 
-      var server = createStreamServer(address, serveClient, {ReuseAddr})
+      var server = createStreamServer(initTAddress("127.0.0.1:0"),
+                                      serveClient, {ReuseAddr})
       server.start()
-      var transp = await connect(address)
+      var transp = await connect(server.localAddress())
       var rstream = newAsyncStreamReader(transp)
       var buf1 = await rstream.read(10)
       check cast[string](buf1) == "0000000000"
@@ -194,9 +266,10 @@ suite "AsyncStream test suite":
       await transp.closeWait()
       await server.join()
       result = true
-    check waitFor(testRead(initTAddress("127.0.0.1:46001"))) == true
+    check waitFor(testRead()) == true
+
   test "AsyncStream(StreamTransport) consume() test":
-    proc testConsume(address: TransportAddress): Future[bool] {.async.} =
+    proc testConsume(): Future[bool] {.async.} =
       proc serveClient(server: StreamServer,
                        transp: StreamTransport) {.async.} =
         var wstream = newAsyncStreamWriter(transp)
@@ -207,9 +280,10 @@ suite "AsyncStream test suite":
         server.stop()
         server.close()
 
-      var server = createStreamServer(address, serveClient, {ReuseAddr})
+      var server = createStreamServer(initTAddress("127.0.0.1:0"),
+                                      serveClient, {ReuseAddr})
       server.start()
-      var transp = await connect(address)
+      var transp = await connect(server.localAddress())
       var rstream = newAsyncStreamReader(transp)
       var res1 = await rstream.consume(10)
       check:
@@ -225,16 +299,13 @@ suite "AsyncStream test suite":
       await transp.closeWait()
       await server.join()
       result = true
-    check waitFor(testConsume(initTAddress("127.0.0.1:46001"))) == true
+    check waitFor(testConsume()) == true
+
   test "AsyncStream(StreamTransport) leaks test":
-    check:
-      getTracker("async.stream.reader").isLeaked() == false
-      getTracker("async.stream.writer").isLeaked() == false
-      getTracker("stream.server").isLeaked() == false
-      getTracker("stream.transport").isLeaked() == false
+    checkLeaks()
 
   test "AsyncStream(AsyncStream) readExactly() test":
-    proc testReadExactly2(address: TransportAddress): Future[bool] {.async.} =
+    proc testReadExactly2(): Future[bool] {.async.} =
       proc serveClient(server: StreamServer,
                        transp: StreamTransport) {.async.} =
         var wstream = newAsyncStreamWriter(transp)
@@ -258,9 +329,10 @@ suite "AsyncStream test suite":
         server.close()
 
       var buffer = newSeq[byte](10)
-      var server = createStreamServer(address, serveClient, {ReuseAddr})
+      var server = createStreamServer(initTAddress("127.0.0.1:0"),
+                                      serveClient, {ReuseAddr})
       server.start()
-      var transp = await connect(address)
+      var transp = await connect(server.localAddress())
       var rstream = newAsyncStreamReader(transp)
       var rstream2 = newChunkedStreamReader(rstream)
       await rstream2.readExactly(addr buffer[0], 10)
@@ -282,9 +354,10 @@ suite "AsyncStream test suite":
       await transp.closeWait()
       await server.join()
       result = true
-    check waitFor(testReadExactly2(initTAddress("127.0.0.1:46001"))) == true
+    check waitFor(testReadExactly2()) == true
+
   test "AsyncStream(AsyncStream) readUntil() test":
-    proc testReadUntil2(address: TransportAddress): Future[bool] {.async.} =
+    proc testReadUntil2(): Future[bool] {.async.} =
       proc serveClient(server: StreamServer,
                        transp: StreamTransport) {.async.} =
         var wstream = newAsyncStreamWriter(transp)
@@ -308,9 +381,10 @@ suite "AsyncStream test suite":
 
       var buffer = newSeq[byte](13)
       var sep = @[byte('N'), byte('N'), byte('z')]
-      var server = createStreamServer(address, serveClient, {ReuseAddr})
+      var server = createStreamServer(initTAddress("127.0.0.1:0"),
+                                      serveClient, {ReuseAddr})
       server.start()
-      var transp = await connect(address)
+      var transp = await connect(server.localAddress())
       var rstream = newAsyncStreamReader(transp)
       var rstream2 = newChunkedStreamReader(rstream)
 
@@ -339,9 +413,10 @@ suite "AsyncStream test suite":
       await transp.closeWait()
       await server.join()
       result = true
-    check waitFor(testReadUntil2(initTAddress("127.0.0.1:46001"))) == true
+    check waitFor(testReadUntil2()) == true
+
   test "AsyncStream(AsyncStream) readLine() test":
-    proc testReadLine2(address: TransportAddress): Future[bool] {.async.} =
+    proc testReadLine2(): Future[bool] {.async.} =
       proc serveClient(server: StreamServer,
                        transp: StreamTransport) {.async.} =
         var wstream = newAsyncStreamWriter(transp)
@@ -360,9 +435,10 @@ suite "AsyncStream test suite":
         server.stop()
         server.close()
 
-      var server = createStreamServer(address, serveClient, {ReuseAddr})
+      var server = createStreamServer(initTAddress("127.0.0.1:0"),
+                                      serveClient, {ReuseAddr})
       server.start()
-      var transp = await connect(address)
+      var transp = await connect(server.localAddress())
       var rstream = newAsyncStreamReader(transp)
       var rstream2 = newChunkedStreamReader(rstream)
       var r1 = await rstream2.readLine()
@@ -384,9 +460,10 @@ suite "AsyncStream test suite":
       await transp.closeWait()
       await server.join()
       result = true
-    check waitFor(testReadLine2(initTAddress("127.0.0.1:46001"))) == true
+    check waitFor(testReadLine2()) == true
+
   test "AsyncStream(AsyncStream) read() test":
-    proc testRead2(address: TransportAddress): Future[bool] {.async.} =
+    proc testRead2(): Future[bool] {.async.} =
       proc serveClient(server: StreamServer,
                        transp: StreamTransport) {.async.} =
         var wstream = newAsyncStreamWriter(transp)
@@ -404,9 +481,10 @@ suite "AsyncStream test suite":
         server.stop()
         server.close()
 
-      var server = createStreamServer(address, serveClient, {ReuseAddr})
+      var server = createStreamServer(initTAddress("127.0.0.1:0"),
+                                      serveClient, {ReuseAddr})
       server.start()
-      var transp = await connect(address)
+      var transp = await connect(server.localAddress())
       var rstream = newAsyncStreamReader(transp)
       var rstream2 = newChunkedStreamReader(rstream)
       var buf1 = await rstream2.read(10)
@@ -423,9 +501,10 @@ suite "AsyncStream test suite":
       await transp.closeWait()
       await server.join()
       result = true
-    check waitFor(testRead2(initTAddress("127.0.0.1:46001"))) == true
+    check waitFor(testRead2()) == true
+
   test "AsyncStream(AsyncStream) consume() test":
-    proc testConsume2(address: TransportAddress): Future[bool] {.async.} =
+    proc testConsume2(): Future[bool] {.async.} =
       proc serveClient(server: StreamServer,
                        transp: StreamTransport) {.async.} =
         const
@@ -453,9 +532,10 @@ suite "AsyncStream test suite":
         server.stop()
         server.close()
 
-      var server = createStreamServer(address, serveClient, {ReuseAddr})
+      var server = createStreamServer(initTAddress("127.0.0.1:0"),
+                                      serveClient, {ReuseAddr})
       server.start()
-      var transp = await connect(address)
+      var transp = await connect(server.localAddress())
       var rstream = newAsyncStreamReader(transp)
       var rstream2 = newChunkedStreamReader(rstream)
 
@@ -482,9 +562,10 @@ suite "AsyncStream test suite":
       await transp.closeWait()
       await server.join()
       result = true
-    check waitFor(testConsume2(initTAddress("127.0.0.1:46001"))) == true
+    check waitFor(testConsume2()) == true
+
   test "AsyncStream(AsyncStream) write(eof) test":
-    proc testWriteEof(address: TransportAddress): Future[bool] {.async.} =
+    proc testWriteEof(): Future[bool] {.async.} =
       let
         size = 10240
         message = createBigMessage("ABCDEFGHIJKLMNOP", size)
@@ -513,7 +594,8 @@ suite "AsyncStream test suite":
           await transp.closeWait()
 
       let flags = {ServerFlags.ReuseAddr, ServerFlags.TcpNoDelay}
-      var server = createStreamServer(address, processClient, flags = flags)
+      var server = createStreamServer(initTAddress("127.0.0.1:0"),
+                                      processClient, flags = flags)
       server.start()
       var conn = await connect(server.localAddress())
       try:
@@ -524,13 +606,10 @@ suite "AsyncStream test suite":
         await server.closeWait()
       return true
 
-    check waitFor(testWriteEof(initTAddress("127.0.0.1:46001"))) == true
+    check waitFor(testWriteEof()) == true
+
   test "AsyncStream(AsyncStream) leaks test":
-    check:
-      getTracker("async.stream.reader").isLeaked() == false
-      getTracker("async.stream.writer").isLeaked() == false
-      getTracker("stream.server").isLeaked() == false
-      getTracker("stream.transport").isLeaked() == false
+    checkLeaks()
 
 suite "ChunkedStream test suite":
   test "ChunkedStream test vectors":
@@ -559,8 +638,7 @@ suite "ChunkedStream test suite":
        " in\r\n\r\nchunks.\r\n0;position=4\r\n\r\n",
        "Wikipedia in\r\n\r\nchunks."],
     ]
-    proc checkVector(address: TransportAddress,
-                     inputstr: string): Future[string] {.async.} =
+    proc checkVector(inputstr: string): Future[string] {.async.} =
       proc serveClient(server: StreamServer,
                        transp: StreamTransport) {.async.} =
         var wstream = newAsyncStreamWriter(transp)
@@ -572,9 +650,10 @@ suite "ChunkedStream test suite":
         server.stop()
         server.close()
 
-      var server = createStreamServer(address, serveClient, {ReuseAddr})
+      var server = createStreamServer(initTAddress("127.0.0.1:0"),
+                                      serveClient, {ReuseAddr})
       server.start()
-      var transp = await connect(address)
+      var transp = await connect(server.localAddress())
       var rstream = newAsyncStreamReader(transp)
       var rstream2 = newChunkedStreamReader(rstream)
       var res = await rstream2.read()
@@ -585,15 +664,16 @@ suite "ChunkedStream test suite":
       await server.join()
       result = ress
 
-    proc testVectors(address: TransportAddress): Future[bool] {.async.} =
+    proc testVectors(): Future[bool] {.async.} =
       var res = true
       for i in 0..<len(ChunkedVectors):
-        var r = await checkVector(address, ChunkedVectors[i][0])
+        var r = await checkVector(ChunkedVectors[i][0])
         if r != ChunkedVectors[i][1]:
           res = false
           break
       result = res
-    check waitFor(testVectors(initTAddress("127.0.0.1:46001"))) == true
+    check waitFor(testVectors()) == true
+
   test "ChunkedStream incorrect chunk test":
     const BadVectors = [
       ["10000000;\r\n1"],
@@ -608,8 +688,7 @@ suite "ChunkedStream test suite":
       ["FFFFFFFF ;\r\n1"],
       ["z\r\n1"]
     ]
-    proc checkVector(address: TransportAddress,
-                     inputstr: string): Future[bool] {.async.} =
+    proc checkVector(inputstr: string): Future[bool] {.async.} =
       proc serveClient(server: StreamServer,
                        transp: StreamTransport) {.async.} =
         var wstream = newAsyncStreamWriter(transp)
@@ -622,9 +701,10 @@ suite "ChunkedStream test suite":
         server.close()
 
       var res = false
-      var server = createStreamServer(address, serveClient, {ReuseAddr})
+      var server = createStreamServer(initTAddress("127.0.0.1:0"),
+                                      serveClient, {ReuseAddr})
       server.start()
-      var transp = await connect(address)
+      var transp = await connect(server.localAddress())
       var rstream = newAsyncStreamReader(transp)
       var rstream2 = newChunkedStreamReader(rstream)
       try:
@@ -667,15 +747,15 @@ suite "ChunkedStream test suite":
       await server.join()
       result = res
 
-    proc testVectors2(address: TransportAddress): Future[bool] {.async.} =
+    proc testVectors2(): Future[bool] {.async.} =
       var res = true
       for i in 0..<len(BadVectors):
-        var r = await checkVector(address, BadVectors[i][0])
+        var r = await checkVector(BadVectors[i][0])
         if not(r):
           res = false
           break
       result = res
-    check waitFor(testVectors2(initTAddress("127.0.0.1:46001"))) == true
+    check waitFor(testVectors2()) == true
 
   test "ChunkedStream hex decoding test":
     for i in 0 ..< 256:
@@ -691,8 +771,7 @@ suite "ChunkedStream test suite":
         check hexValue(byte(ch)) == -1
 
   test "ChunkedStream too big chunk header test":
-    proc checkTooBigChunkHeader(address: TransportAddress,
-                                inputstr: seq[byte]): Future[bool] {.async.} =
+    proc checkTooBigChunkHeader(inputstr: seq[byte]): Future[bool] {.async.} =
       proc serveClient(server: StreamServer,
                        transp: StreamTransport) {.async.} =
         var wstream = newAsyncStreamWriter(transp)
@@ -703,9 +782,10 @@ suite "ChunkedStream test suite":
         server.stop()
         server.close()
 
-      var server = createStreamServer(address, serveClient, {ReuseAddr})
+      var server = createStreamServer(initTAddress("127.0.0.1:0"),
+                                      serveClient, {ReuseAddr})
       server.start()
-      var transp = await connect(address)
+      var transp = await connect(server.localAddress())
       var rstream = newAsyncStreamReader(transp)
       var rstream2 = newChunkedStreamReader(rstream)
       let res =
@@ -722,15 +802,13 @@ suite "ChunkedStream test suite":
       await server.join()
       return res
 
-    let address = initTAddress("127.0.0.1:46001")
     var data1 = createBigMessage("REQUESTSTREAMMESSAGE", 65600)
     var data2 = createBigMessage("REQUESTSTREAMMESSAGE", 262400)
-    check waitFor(checkTooBigChunkHeader(address, data1)) == true
-    check waitFor(checkTooBigChunkHeader(address, data2)) == true
+    check waitFor(checkTooBigChunkHeader(data1)) == true
+    check waitFor(checkTooBigChunkHeader(data2)) == true
 
   test "ChunkedStream read/write test":
-    proc checkVector(address: TransportAddress,
-                     inputstr: seq[byte],
+    proc checkVector(inputstr: seq[byte],
                      chunkSize: int): Future[seq[byte]] {.async.} =
       proc serveClient(server: StreamServer,
                        transp: StreamTransport) {.async.} =
@@ -751,9 +829,10 @@ suite "ChunkedStream test suite":
         server.stop()
         server.close()
 
-      var server = createStreamServer(address, serveClient, {ReuseAddr})
+      var server = createStreamServer(initTAddress("127.0.0.1:0"),
+                                      serveClient, {ReuseAddr})
       server.start()
-      var transp = await connect(address)
+      var transp = await connect(server.localAddress())
       var rstream = newAsyncStreamReader(transp)
       var rstream2 = newChunkedStreamReader(rstream)
       var res = await rstream2.read()
@@ -763,20 +842,17 @@ suite "ChunkedStream test suite":
       await server.join()
       return res
 
-    proc testBigData(address: TransportAddress,
-                     datasize: int, chunksize: int): Future[bool] {.async.} =
+    proc testBigData(datasize: int, chunksize: int): Future[bool] {.async.} =
       var data = createBigMessage("REQUESTSTREAMMESSAGE", datasize)
-      var check = await checkVector(address, data, chunksize)
+      var check = await checkVector(data, chunksize)
       return (data == check)
 
-    let address = initTAddress("127.0.0.1:46001")
-    check waitFor(testBigData(address, 65600, 1024)) == true
-    check waitFor(testBigData(address, 262400, 4096)) == true
-    check waitFor(testBigData(address, 767309, 4457)) == true
+    check waitFor(testBigData(65600, 1024)) == true
+    check waitFor(testBigData(262400, 4096)) == true
+    check waitFor(testBigData(767309, 4457)) == true
 
   test "ChunkedStream read small chunks test":
-    proc checkVector(address: TransportAddress,
-                     inputstr: seq[byte],
+    proc checkVector(inputstr: seq[byte],
                      writeChunkSize: int,
                      readChunkSize: int): Future[seq[byte]] {.async.} =
       proc serveClient(server: StreamServer,
@@ -798,9 +874,10 @@ suite "ChunkedStream test suite":
         server.stop()
         server.close()
 
-      var server = createStreamServer(address, serveClient, {ReuseAddr})
+      var server = createStreamServer(initTAddress("127.0.0.1:0"),
+                                      serveClient, {ReuseAddr})
       server.start()
-      var transp = await connect(address)
+      var transp = await connect(server.localAddress())
       var rstream = newAsyncStreamReader(transp)
       var rstream2 = newChunkedStreamReader(rstream)
       var res: seq[byte]
@@ -813,27 +890,20 @@ suite "ChunkedStream test suite":
       await server.join()
       return res
 
-    proc testSmallChunk(address: TransportAddress,
-                        datasize: int,
+    proc testSmallChunk(datasize: int,
                         writeChunkSize: int,
                         readChunkSize: int): Future[bool] {.async.} =
       var data = createBigMessage("REQUESTSTREAMMESSAGE", datasize)
-      var check = await checkVector(address, data, writeChunkSize,
-                                    readChunkSize)
+      var check = await checkVector(data, writeChunkSize, readChunkSize)
       return (data == check)
 
-    let address = initTAddress("127.0.0.1:46001")
-    check waitFor(testSmallChunk(address, 4457, 128, 1)) == true
-    check waitFor(testSmallChunk(address, 65600, 1024, 17)) == true
-    check waitFor(testSmallChunk(address, 262400, 4096, 61)) == true
-    check waitFor(testSmallChunk(address, 767309, 4457, 173)) == true
+    check waitFor(testSmallChunk(4457, 128, 1)) == true
+    check waitFor(testSmallChunk(65600, 1024, 17)) == true
+    check waitFor(testSmallChunk(262400, 4096, 61)) == true
+    check waitFor(testSmallChunk(767309, 4457, 173)) == true
 
   test "ChunkedStream leaks test":
-    check:
-      getTracker("async.stream.reader").isLeaked() == false
-      getTracker("async.stream.writer").isLeaked() == false
-      getTracker("stream.server").isLeaked() == false
-      getTracker("stream.transport").isLeaked() == false
+    checkLeaks()
 
 suite "TLSStream test suite":
   const HttpHeadersMark = @[byte(0x0D), byte(0x0A), byte(0x0D), byte(0x0A)]
@@ -868,8 +938,7 @@ suite "TLSStream test suite":
                       "www.google.com"))
     check res == true
 
-  proc checkSSLServer(address: TransportAddress,
-                        pemkey, pemcert: string): Future[bool] {.async.} =
+  proc checkSSLServer(pemkey, pemcert: string): Future[bool] {.async.} =
     var key: TLSPrivateKey
     var cert: TLSCertificate
     let testMessage = "TEST MESSAGE"
@@ -893,9 +962,10 @@ suite "TLSStream test suite":
     key = TLSPrivateKey.init(pemkey)
     cert = TLSCertificate.init(pemcert)
 
-    var server = createStreamServer(address, serveClient, {ReuseAddr})
+    var server = createStreamServer(initTAddress("127.0.0.1:0"),
+                                    serveClient, {ServerFlags.ReuseAddr})
     server.start()
-    var conn = await connect(address)
+    var conn = await connect(server.localAddress())
     var creader = newAsyncStreamReader(conn)
     var cwriter = newAsyncStreamWriter(conn)
     # We are using self-signed certificate
@@ -911,15 +981,53 @@ suite "TLSStream test suite":
     return cast[string](res) == (testMessage & "\r\n")
 
   test "Simple server with RSA self-signed certificate":
-    let res = waitFor(checkSSLServer(initTAddress("127.0.0.1:43808"),
-                                     SelfSignedRsaKey, SelfSignedRsaCert))
+    let res = waitFor(checkSSLServer(SelfSignedRsaKey, SelfSignedRsaCert))
     check res == true
+  
+  test "Custom TrustAnchors test":
+    proc checkTrustAnchors(testMessage: string): Future[string] {.async.} =
+      var key = TLSPrivateKey.init(SelfSignedRsaKey)
+      var cert = TLSCertificate.init(SelfSignedRsaCert)
+      let trustAnchors = TrustAnchorStore.new(SelfSignedTrustAnchors)
+
+      proc serveClient(server: StreamServer,
+                      transp: StreamTransport) {.async.} =
+        var reader = newAsyncStreamReader(transp)
+        var writer = newAsyncStreamWriter(transp)
+        var sstream = newTLSServerAsyncStream(reader, writer, key, cert)
+        await handshake(sstream)
+        await sstream.writer.write(testMessage & "\r\n")
+        await sstream.writer.finish()
+        await sstream.writer.closeWait()
+        await sstream.reader.closeWait()
+        await reader.closeWait()
+        await writer.closeWait()
+        await transp.closeWait()
+        server.stop()
+        server.close()
+
+      var server = createStreamServer(initTAddress("127.0.0.1:0"),
+                                      serveClient, {ReuseAddr})
+      server.start()
+      var conn = await connect(server.localAddress())
+      var creader = newAsyncStreamReader(conn)
+      var cwriter = newAsyncStreamWriter(conn)
+      let flags = {NoVerifyServerName}
+      var cstream = newTLSClientAsyncStream(creader, cwriter, "", flags = flags,
+        trustAnchors = trustAnchors)
+      let res = await cstream.reader.read()
+      await cstream.reader.closeWait()
+      await cstream.writer.closeWait()
+      await creader.closeWait()
+      await cwriter.closeWait()
+      await conn.closeWait()
+      await server.join()
+      return cast[string](res)
+    let res = waitFor checkTrustAnchors("Some message")
+    check res == "Some message\r\n"
+    
   test "TLSStream leaks test":
-    check:
-      getTracker("async.stream.reader").isLeaked() == false
-      getTracker("async.stream.writer").isLeaked() == false
-      getTracker("stream.server").isLeaked() == false
-      getTracker("stream.transport").isLeaked() == false
+    checkLeaks()
 
 suite "BoundedStream test suite":
 
@@ -933,7 +1041,7 @@ suite "BoundedStream test suite":
   for itemComp in [BoundCmp.Equal, BoundCmp.LessOrEqual]:
     for itemSize in [100, 60000]:
 
-      proc boundaryTest(address: TransportAddress, btest: BoundaryBytesTest,
+      proc boundaryTest(btest: BoundaryBytesTest,
                         size: int, boundary: seq[byte],
                         cmp: BoundCmp): Future[bool] {.async.} =
         var message = createBigMessage("ABCDEFGHIJKLMNOP", size)
@@ -983,7 +1091,8 @@ suite "BoundedStream test suite":
 
         var res = false
         let flags = {ServerFlags.ReuseAddr, ServerFlags.TcpNoDelay}
-        var server = createStreamServer(address, processClient, flags = flags)
+        var server = createStreamServer(initTAddress("127.0.0.1:0"),
+                                        processClient, flags = flags)
         server.start()
         var conn = await connect(server.localAddress())
         var rstream = newAsyncStreamReader(conn)
@@ -1029,7 +1138,7 @@ suite "BoundedStream test suite":
         await server.join()
         return (res and clientRes)
 
-      proc boundedTest(address: TransportAddress, stest: BoundarySizeTest,
+      proc boundedTest(stest: BoundarySizeTest,
                        size: int, cmp: BoundCmp): Future[bool] {.async.} =
         var clientRes = false
         var res = false
@@ -1097,7 +1206,8 @@ suite "BoundedStream test suite":
           server.close()
 
         let flags = {ServerFlags.ReuseAddr, ServerFlags.TcpNoDelay}
-        var server = createStreamServer(address, processClient, flags = flags)
+        var server = createStreamServer(initTAddress("127.0.0.1:0"),
+                                        processClient, flags = flags)
         server.start()
         var conn = await connect(server.localAddress())
         var rstream = newAsyncStreamReader(conn)
@@ -1150,7 +1260,6 @@ suite "BoundedStream test suite":
         await server.join()
         return (res and clientRes)
 
-      let address = initTAddress("127.0.0.1:0")
       let suffix =
         case itemComp
         of BoundCmp.Equal:
@@ -1159,39 +1268,38 @@ suite "BoundedStream test suite":
           "<= " & $itemSize
 
       test "BoundedStream(size) reading/writing test [" & suffix & "]":
-        check waitFor(boundedTest(address, SizeReadWrite, itemSize,
+        check waitFor(boundedTest(SizeReadWrite, itemSize,
                                   itemComp)) == true
       test "BoundedStream(size) overflow test [" & suffix & "]":
-        check waitFor(boundedTest(address, SizeOverflow, itemSize,
+        check waitFor(boundedTest(SizeOverflow, itemSize,
                                   itemComp)) == true
       test "BoundedStream(size) incomplete test [" & suffix & "]":
-        check waitFor(boundedTest(address, SizeIncomplete, itemSize,
+        check waitFor(boundedTest(SizeIncomplete, itemSize,
                                   itemComp)) == true
       test "BoundedStream(size) empty message test [" & suffix & "]":
-        check waitFor(boundedTest(address, SizeEmpty, itemSize,
+        check waitFor(boundedTest(SizeEmpty, itemSize,
                                   itemComp)) == true
       test "BoundedStream(boundary) reading test [" & suffix & "]":
-        check waitFor(boundaryTest(address, BoundaryRead, itemSize,
+        check waitFor(boundaryTest(BoundaryRead, itemSize,
                                    @[0x2D'u8, 0x2D'u8, 0x2D'u8], itemComp))
       test "BoundedStream(boundary) double message test [" & suffix & "]":
-        check waitFor(boundaryTest(address, BoundaryDouble, itemSize,
+        check waitFor(boundaryTest(BoundaryDouble, itemSize,
                                    @[0x2D'u8, 0x2D'u8, 0x2D'u8], itemComp))
       test "BoundedStream(size+boundary) reading size-bound test [" &
            suffix & "]":
-        check waitFor(boundaryTest(address, BoundarySize, itemSize,
+        check waitFor(boundaryTest(BoundarySize, itemSize,
                                    @[0x2D'u8, 0x2D'u8, 0x2D'u8], itemComp))
       test "BoundedStream(boundary) reading incomplete test [" &
            suffix & "]":
-        check waitFor(boundaryTest(address, BoundaryIncomplete, itemSize,
+        check waitFor(boundaryTest(BoundaryIncomplete, itemSize,
                                    @[0x2D'u8, 0x2D'u8, 0x2D'u8], itemComp))
       test "BoundedStream(boundary) empty message test [" &
            suffix & "]":
-        check waitFor(boundaryTest(address, BoundaryEmpty, itemSize,
+        check waitFor(boundaryTest(BoundaryEmpty, itemSize,
                                    @[0x2D'u8, 0x2D'u8, 0x2D'u8], itemComp))
 
   test "BoundedStream read small chunks test":
-    proc checkVector(address: TransportAddress,
-                     inputstr: seq[byte],
+    proc checkVector(inputstr: seq[byte],
                      writeChunkSize: int,
                      readChunkSize: int): Future[seq[byte]] {.async.} =
       proc serveClient(server: StreamServer,
@@ -1213,9 +1321,10 @@ suite "BoundedStream test suite":
         server.stop()
         server.close()
 
-      var server = createStreamServer(address, serveClient, {ReuseAddr})
+      var server = createStreamServer(initTAddress("127.0.0.1:0"),
+                                      serveClient, {ReuseAddr})
       server.start()
-      var transp = await connect(address)
+      var transp = await connect(server.localAddress())
       var rstream = newAsyncStreamReader(transp)
       var rstream2 = newBoundedStreamReader(rstream, 1048576,
                                             comparison = BoundCmp.LessOrEqual)
@@ -1229,23 +1338,19 @@ suite "BoundedStream test suite":
       await server.join()
       return res
 
-    proc testSmallChunk(address: TransportAddress,
-                        datasize: int,
-                        writeChunkSize: int,
+    proc testSmallChunk(datasize: int, writeChunkSize: int,
                         readChunkSize: int): Future[bool] {.async.} =
       var data = createBigMessage("0123456789ABCDEFGHI", datasize)
-      var check = await checkVector(address, data, writeChunkSize,
-                                    readChunkSize)
+      var check = await checkVector(data, writeChunkSize, readChunkSize)
       return (data == check)
 
-    let address = initTAddress("127.0.0.1:46001")
-    check waitFor(testSmallChunk(address, 4457, 128, 1)) == true
-    check waitFor(testSmallChunk(address, 65600, 1024, 17)) == true
-    check waitFor(testSmallChunk(address, 262400, 4096, 61)) == true
-    check waitFor(testSmallChunk(address, 767309, 4457, 173)) == true
+    check waitFor(testSmallChunk(4457, 128, 1)) == true
+    check waitFor(testSmallChunk(65600, 1024, 17)) == true
+    check waitFor(testSmallChunk(262400, 4096, 61)) == true
+    check waitFor(testSmallChunk(767309, 4457, 173)) == true
 
   test "BoundedStream zero-sized streams test":
-    proc checkEmptyStreams(address: TransportAddress): Future[bool] {.async.} =
+    proc checkEmptyStreams(): Future[bool] {.async.} =
       var writer1Res = false
       proc serveClient(server: StreamServer,
                        transp: StreamTransport) {.async.} =
@@ -1260,9 +1365,10 @@ suite "BoundedStream test suite":
         server.close()
         writer1Res = res
 
-      var server = createStreamServer(address, serveClient, {ReuseAddr})
+      var server = createStreamServer(initTAddress("127.0.0.1:0"),
+                                      serveClient, {ReuseAddr})
       server.start()
-      var transp = await connect(address)
+      var transp = await connect(server.localAddress())
       var rstream = newAsyncStreamReader(transp)
       var wstream3 = newAsyncStreamWriter(transp)
       var rstream2 = newBoundedStreamReader(rstream, 0'u64)
@@ -1286,12 +1392,7 @@ suite "BoundedStream test suite":
       await server.join()
       return (writer1Res and writer2Res and readerRes)
 
-    let address = initTAddress("127.0.0.1:46001")
-    check waitFor(checkEmptyStreams(address)) == true
+    check waitFor(checkEmptyStreams()) == true
 
   test "BoundedStream leaks test":
-    check:
-      getTracker("async.stream.reader").isLeaked() == false
-      getTracker("async.stream.writer").isLeaked() == false
-      getTracker("stream.server").isLeaked() == false
-      getTracker("stream.transport").isLeaked() == false
+    checkLeaks()

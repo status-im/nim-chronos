@@ -1,7 +1,6 @@
 # Chronos - An efficient library for asynchronous programming
 
-[![Github action](https://github.com/status-im/nim-chronos/workflows/nim-chronos%20CI/badge.svg)](https://github.com/status-im/nim-chronos/actions/workflows/ci.yml)
-[![Windows build status (AppVeyor)](https://img.shields.io/appveyor/ci/nimbus/nim-asyncdispatch2/master.svg?label=Windows "Windows build status (Appveyor)")](https://ci.appveyor.com/project/nimbus/nim-asyncdispatch2)
+[![Github action](https://github.com/status-im/nim-chronos/workflows/CI/badge.svg)](https://github.com/status-im/nim-chronos/actions/workflows/ci.yml)
 [![License: Apache](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 ![Stability: experimental](https://img.shields.io/badge/stability-experimental-orange.svg)
@@ -22,7 +21,7 @@ Chronos is an efficient [async/await](https://en.wikipedia.org/wiki/Async/await)
 You can use Nim's official package manager Nimble to install Chronos:
 
 ```text
-nimble install https://github.com/status-im/nim-chronos.git
+nimble install chronos
 ```
 
 or add a dependency to your `.nimble` file:
@@ -153,9 +152,9 @@ feet, in a certain section, is to not use `await` in it.
 
 ### Error handling
 
-Exceptions inheriting from `Exception` (or `CatchableError` when
-`-d:chronosStrictException` is enabled) are caught by hidden `try` blocks
-and placed in the `Future.error` field, changing the future status to `Failed`.
+Exceptions inheriting from `CatchableError` are caught by hidden `try` blocks
+and placed in the `Future.error` field, changing the future's status to
+`Failed`.
 
 When a future is awaited, that exception is re-raised, only to be caught again
 by a hidden `try` block in the calling async procedure. That's how these
@@ -213,42 +212,6 @@ originating from tasks on the dispatcher queue. It is however possible that
 `Defect` that happen in tasks bubble up through `poll` as these are not caught
 by the transformation.
 
-#### Checked exceptions
-
-By specifying a `asyncraises` list to an async procedure, you can check which
-exceptions can be thrown by it.
-```nim
-proc p1(): Future[void] {.async, asyncraises: [IOError].} =
-  assert not (compiles do: raise newException(ValueError, "uh-uh"))
-  raise newException(IOError, "works") # Or any child of IOError
-```
-
-Under the hood, the return type of `p1` will be rewritten to another type,
-which will convey raises informations to await.
-
-```nim
-proc p2(): Future[void] {.async, asyncraises: [IOError].} =
-  await p1() # Works, because await knows that p1
-             # can only raise IOError
-```
-
-The hidden type (`RaiseTrackingFuture`) is implicitely convertible into a Future.
-However, it may causes issues when creating callback or methods
-```nim
-proc p3(): Future[void] {.async, asyncraises: [IOError].} =
-  let fut: Future[void] = p1() # works
-  assert not compiles(await fut) # await lost informations about raises,
-                                 # so it can raise anything
-
-  # Callbacks
-  assert not(compiles do: let cb1: proc(): Future[void] = p1) # doesn't work
-  let cb2: proc(): Future[void] {.async, asyncraises: [IOError].} = p1 # works
-  assert not(compiles do:
-    type c = proc(): Future[void] {.async, asyncraises: [IOError, ValueError].}
-    let cb3: c = p1 # doesn't work, the raises must match _exactly_
-  )
-```
-
 ### Platform independence
 
 Several functions in `chronos` are backed by the operating system, such as
@@ -281,6 +244,68 @@ In the strict mode, `async` functions are checked such that they only raise
 effects on forward declarations, callbacks and methods using
 `{.raises: [CatchableError].}` (or more strict) annotations.
 
+### Cancellation support
+
+Any running `Future` can be cancelled. This can be used to launch multiple
+futures, and wait for one of them to finish, and cancel the rest of them,
+to add timeout, or to let the user cancel a running task.
+
+```nim
+# Simple cancellation
+let future = sleepAsync(10.minutes)
+future.cancel()
+
+# Wait for cancellation
+let future2 = sleepAsync(10.minutes)
+await future2.cancelAndWait()
+
+# Race between futures
+proc retrievePage(uri: string): Future[string] {.async.} =
+  # requires to import uri, chronos/apps/http/httpclient, stew/byteutils
+  let httpSession = HttpSessionRef.new()
+  try:
+    resp = await httpSession.fetch(parseUri(uri))
+    result = string.fromBytes(resp.data)
+  finally:
+    # be sure to always close the session
+    await httpSession.closeWait()
+
+let
+  futs =
+    @[
+      retrievePage("https://duckduckgo.com/?q=chronos"),
+      retrievePage("https://www.google.fr/search?q=chronos")
+    ]
+
+let finishedFut = await one(futs)
+for fut in futs:
+  if not fut.finished:
+    fut.cancel()
+echo "Result: ", await finishedFut
+```
+
+When an `await` is cancelled, it will raise a `CancelledError`:
+```nim
+proc c1 {.async.} =
+  echo "Before sleep"
+  try:
+    await sleepAsync(10.minutes)
+    echo "After sleep" # not reach due to cancellation
+  except CancelledError as exc:
+    echo "We got cancelled!"
+    raise exc
+
+proc c2 {.async.} =
+  await c1()
+  echo "Never reached, since the CancelledError got re-raised"
+
+let work = c2()
+waitFor(work.cancelAndWait())
+```
+
+The `CancelledError` will now travel up the stack like any other exception.
+It can be caught and handled (for instance, freeing some resources)
+
 ### Multiple async backend support
 
 Thanks to its powerful macro support, Nim allows `async`/`await` to be
@@ -307,6 +332,12 @@ Known `async` backends include:
 
 ``none`` can be used when a library supports both a synchronous and
 asynchronous API, to disable the latter.
+
+### Compile-time configuration
+
+`chronos` contains several compile-time [configuration options](./chronos/config.nim) enabling stricter compile-time checks and debugging helpers whose runtime cost may be significant.
+
+Strictness options generally will become default in future chronos releases and allow adapting existing code without changing the new version - see the [`config.nim`](./chronos/config.nim) module for more information.
 
 ## TODO
   * Pipe/Subprocess Transports.
