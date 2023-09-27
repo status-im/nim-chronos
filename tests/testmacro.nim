@@ -94,6 +94,11 @@ proc testAwaitne(): Future[bool] {.async.} =
 
   return true
 
+template returner =
+  # can't use `return 5`
+  result = 5
+  return
+
 suite "Macro transformations test suite":
   test "`await` command test":
     check waitFor(testAwait()) == true
@@ -146,7 +151,8 @@ suite "Macro transformations test suite":
 
     check waitFor(nr()) == 42
 
-  test "Issue #415 (run closure to completion on return)":
+suite "Macro transformations - completions":
+  test "Run closure to completion on return": # issue #415
     var x = 0
     proc test415 {.async.} =
       try:
@@ -157,7 +163,8 @@ suite "Macro transformations test suite":
     waitFor(test415())
     check: x == 5
 
-    x = 0
+  test "Run closure to completion on defer":
+    var x = 0
     proc testDefer {.async.} =
       defer:
         await sleepAsync(1.milliseconds)
@@ -166,7 +173,8 @@ suite "Macro transformations test suite":
     waitFor(testDefer())
     check: x == 5
 
-    x = 0
+  test "Run closure to completion with exceptions":
+    var x = 0
     proc testExceptionHandling {.async.} =
       try:
         return
@@ -181,6 +189,7 @@ suite "Macro transformations test suite":
     waitFor(testExceptionHandling())
     check: x == 5
 
+  test "Correct return value when updating result after return":
     proc testWeirdCase: int =
       try: return 33
       finally: result = 55
@@ -194,6 +203,7 @@ suite "Macro transformations test suite":
         testWeirdCase() == waitFor(testWeirdCaseAsync())
         testWeirdCase() == 55
 
+  test "Generic & finally calling async":
     proc testGeneric(T: type): Future[T] {.async.} =
       try:
         try:
@@ -217,12 +227,20 @@ suite "Macro transformations test suite":
         result = await testGeneric(T)
     check waitFor(testFinallyCallsAsync(int)) == 12
 
+  test "templates returning":
     proc testReturner: Future[int] {.async.} =
-      template returner =
-        result = 5
       returner
+      doAssert false
     check waitFor(testReturner()) == 5
 
+    proc testReturner2: Future[int] {.async.} =
+      template returner2 =
+        return 6
+      returner2
+      doAssert false
+    check waitFor(testReturner2()) == 6
+
+suite "Macro transformations - implicit returns":
   test "Implicit return":
     proc implicit(): Future[int] {.async.} =
       42

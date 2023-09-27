@@ -60,6 +60,9 @@ proc wrapInTryFinally(fut, baseType, body: NimNode): NimNode {.compileTime.} =
   # finally:
   #   if not `castFutureSym`.finished:
   #     `castFutureSym`.complete(result)
+
+  # we are completing inside finally to make sure the completion happens even
+  # after a `return`
   var res = nnkTryStmt.newTree(body)
   res.add nnkExceptBranch.newTree(
             ident"CancelledError",
