@@ -249,6 +249,7 @@ suite "Macro transformations - completions":
     let fut = raiser()
     expect(Defect): waitFor(fut)
     check not fut.completed()
+    fut.complete()
 
 suite "Macro transformations - implicit returns":
   test "Implicit return":
