@@ -54,59 +54,64 @@ proc processBody(node, baseType: NimNode): NimNode {.compileTime.} =
 
 proc wrapInTryFinally(fut, baseType, body: NimNode): NimNode {.compileTime.} =
   # creates:
+  # var closureSucceeded = true
   # try: `body`
-  # except CancelledError: `castFutureSym`.cancelAndSchedule()
-  # except CatchableError as exc: `castFutureSym`.fail(exc)
+  # except CancelledError: closureSucceeded = false; `castFutureSym`.cancelAndSchedule()
+  # except CatchableError as exc: closureSucceeded = false; `castFutureSym`.fail(exc)
   # finally:
-  #   if not `castFutureSym`.finished:
+  #   if closureSucceeded:
   #     `castFutureSym`.complete(result)
 
   # we are completing inside finally to make sure the completion happens even
   # after a `return`
-  var res = nnkTryStmt.newTree(body)
-  res.add nnkExceptBranch.newTree(
+  let closureSucceeded = genSym(nskVar, "closureSucceeded")
+  var nTry = nnkTryStmt.newTree(body)
+  nTry.add nnkExceptBranch.newTree(
             ident"CancelledError",
-            newCall(ident "cancelAndSchedule", fut)
+            nnkStmtList.newTree(
+              nnkAsgn.newTree(closureSucceeded, ident"false"),
+              newCall(ident "cancelAndSchedule", fut)
+            )
           )
 
-  res.add nnkExceptBranch.newTree(
+  nTry.add nnkExceptBranch.newTree(
             nnkInfix.newTree(ident"as", ident"CatchableError", ident"exc"),
-            newCall(ident "fail", fut, ident"exc")
+            nnkStmtList.newTree(
+              nnkAsgn.newTree(closureSucceeded, ident"false"),
+              newCall(ident "fail", fut, ident"exc")
+            )
           )
 
   when not chronosStrictException:
     # adds
+    # except Defect as exc:
+    #   closureSucceeded = false
+    #   raise exc
     # except Exception as exc:
+    #   closureSucceeded = false
     #   fut.fail((ref ValueError)(msg: exc.msg, parent: exc))
-    #   if exc of Defect:
-    #     raise (ref Defect)(exc)
+    nTry.add nnkExceptBranch.newTree(
+              nnkInfix.newTree(ident"as", ident"Defect", ident"exc"),
+              nnkStmtList.newTree(
+                nnkAsgn.newTree(closureSucceeded, ident"false"),
+                nnkRaiseStmt.newTree(ident"exc")
+              )
+            )
     let excName = ident"exc"
-    res.add nnkExceptBranch.newTree(
+
+    nTry.add nnkExceptBranch.newTree(
               nnkInfix.newTree(ident"as", ident"Exception", ident"exc"),
               nnkStmtList.newTree(
+                nnkAsgn.newTree(closureSucceeded, ident"false"),
                 newCall(ident "fail", fut,
                   quote do: (ref ValueError)(msg: `excName`.msg, parent: `excName`)),
-                nnkIfStmt.newTree(
-                  nnkElifBranch.newTree(
-                    nnkInfix.newTree(ident"of", excName, ident"Defect"),
-                    nnkRaiseStmt.newTree(
-                      nnkCall.newTree(
-                        nnkRefTy.newTree(ident"Defect"),
-                        excName
-                      )
-                    )
-                  )
-                )
               )
             )
 
-  res.add nnkFinally.newTree(
+  nTry.add nnkFinally.newTree(
             nnkIfStmt.newTree(
               nnkElifBranch.newTree(
-                nnkPrefix.newTree(
-                  ident("not"),
-                  newCall("finished", fut)
-                ),
+                closureSucceeded,
                 nnkWhenStmt.newTree(
                   nnkElifExpr.newTree(
                     nnkInfix.newTree(ident "is", baseType, ident "void"),
@@ -119,7 +124,10 @@ proc wrapInTryFinally(fut, baseType, body: NimNode): NimNode {.compileTime.} =
               )
             )
           )
-  return res
+  return nnkStmtList.newTree(
+      newVarStmt(closureSucceeded, ident"true"),
+      nTry
+  )
 
 proc getName(node: NimNode): string {.compileTime.} =
   case node.kind

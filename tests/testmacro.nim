@@ -8,7 +8,6 @@
 import std/[macros, strutils]
 import unittest2
 import ../chronos
-import ../chronos/config
 
 {.used.}
 
@@ -242,9 +241,6 @@ suite "Macro transformations - completions":
     check waitFor(testReturner2()) == 6
 
   test "raising defects":
-    when chronosStrictException:
-      skip()
-      return
     proc raiser {.async.} =
       # sleeping to make sure our caller is the poll loop
       await sleepAsync(0.milliseconds)
@@ -252,7 +248,7 @@ suite "Macro transformations - completions":
 
     let fut = raiser()
     expect(Defect): waitFor(fut)
-    check fut.failed()
+    check not fut.completed()
 
 suite "Macro transformations - implicit returns":
   test "Implicit return":
