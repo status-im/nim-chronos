@@ -54,7 +54,7 @@ proc processBody(node, baseType: NimNode): NimNode {.compileTime.} =
 
 proc wrapInTryFinally(fut, baseType, body: NimNode): NimNode {.compileTime.} =
   # creates:
-  # try: `completeDecl1`
+  # try: `body`
   # except CancelledError: `castFutureSym`.cancelAndSchedule()
   # except CatchableError as exc: `castFutureSym`.fail(exc)
   # finally:
@@ -76,18 +76,28 @@ proc wrapInTryFinally(fut, baseType, body: NimNode): NimNode {.compileTime.} =
 
   when not chronosStrictException:
     # adds
-    # except Defect as exc: raise exc
     # except Exception as exc:
     #   fut.fail((ref ValueError)(msg: exc.msg, parent: exc))
-    res.add nnkExceptBranch.newTree(
-              nnkInfix.newTree(ident"as", ident"Defect", ident"exc"),
-              nnkRaiseStmt.newTree(ident"exc")
-            )
+    #   if exc of Defect:
+    #     raise (ref Defect)(exc)
     let excName = ident"exc"
     res.add nnkExceptBranch.newTree(
               nnkInfix.newTree(ident"as", ident"Exception", ident"exc"),
-              newCall(ident "fail", fut,
-                quote do: (ref ValueError)(msg: `excName`.msg, parent: `excName`))
+              nnkStmtList.newTree(
+                newCall(ident "fail", fut,
+                  quote do: (ref ValueError)(msg: `excName`.msg, parent: `excName`)),
+                nnkIfStmt.newTree(
+                  nnkElifBranch.newTree(
+                    nnkInfix.newTree(ident"of", excName, ident"Defect"),
+                    nnkRaiseStmt.newTree(
+                      nnkCall.newTree(
+                        nnkRefTy.newTree(ident"Defect"),
+                        excName
+                      )
+                    )
+                  )
+                )
+              )
             )
 
   res.add nnkFinally.newTree(
