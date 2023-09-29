@@ -58,6 +58,9 @@ proc wrapInTryFinally(fut, baseType, body: NimNode): NimNode {.compileTime.} =
   # try: `body`
   # except CancelledError: closureSucceeded = false; `castFutureSym`.cancelAndSchedule()
   # except CatchableError as exc: closureSucceeded = false; `castFutureSym`.fail(exc)
+  # except Defect as exc:
+  #   closureSucceeded = false
+  #   raise exc
   # finally:
   #   if closureSucceeded:
   #     `castFutureSym`.complete(result)
@@ -82,21 +85,19 @@ proc wrapInTryFinally(fut, baseType, body: NimNode): NimNode {.compileTime.} =
             )
           )
 
+  nTry.add nnkExceptBranch.newTree(
+            nnkInfix.newTree(ident"as", ident"Defect", ident"exc"),
+            nnkStmtList.newTree(
+              nnkAsgn.newTree(closureSucceeded, ident"false"),
+              nnkRaiseStmt.newTree(ident"exc")
+            )
+          )
+
   when not chronosStrictException:
     # adds
-    # except Defect as exc:
-    #   closureSucceeded = false
-    #   raise exc
     # except Exception as exc:
     #   closureSucceeded = false
     #   fut.fail((ref ValueError)(msg: exc.msg, parent: exc))
-    nTry.add nnkExceptBranch.newTree(
-              nnkInfix.newTree(ident"as", ident"Defect", ident"exc"),
-              nnkStmtList.newTree(
-                nnkAsgn.newTree(closureSucceeded, ident"false"),
-                nnkRaiseStmt.newTree(ident"exc")
-              )
-            )
     let excName = ident"exc"
 
     nTry.add nnkExceptBranch.newTree(
