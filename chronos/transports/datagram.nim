@@ -270,7 +270,13 @@ when defined(windows):
       if bres.isErr():
         raiseTransportOsError(bres.error())
 
+
     ## Apply ServerFlags here
+
+    # allowing dual-stack socket 
+    if local.family in {AddressFamily.IPv6}:
+      discard setSockOpt(localSock,osdefs.IPPROTO_IPV6,IPV6_V6ONLY,0)
+
     if ServerFlags.ReuseAddr in flags:
       if not setSockOpt(localSock, osdefs.SOL_SOCKET, osdefs.SO_REUSEADDR, 1):
         let err = osLastError()
