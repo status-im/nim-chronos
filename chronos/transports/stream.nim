@@ -1090,6 +1090,8 @@ when defined(windows):
           server.asock.closeSocket()
           retFuture.fail(getServerUseClosedError())
           server.clean()
+        of ERROR_NETNAME_DELETED: 
+            discard # retry
         of WSAENETDOWN, WSAENETRESET, WSAECONNABORTED, WSAECONNRESET,
            WSAETIMEDOUT:
           server.asock.closeSocket()
