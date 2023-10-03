@@ -9,36 +9,14 @@
 
 import std/[macros]
 
-proc completeWithNode(baseType, node: NimNode): NimNode {.compileTime.} =
-  #   when typeof(`node`) is void:
-  #     `node` # statement / explicit return
-  #     -> completeWithResult(baseType)
-  #   else: # expression / implicit return
-  #     result = `node`
-  if node.kind == nnkEmpty: # shortcut when known at macro expanstion time
-    node
-  else:
-    # Handle both expressions and statements - since the type is not know at
-    # macro expansion time, we delegate this choice to a later compilation stage
-    # with `when`.
-    nnkWhenStmt.newTree(
-      nnkElifExpr.newTree(
-        nnkInfix.newTree(
-          ident "is", nnkTypeOfExpr.newTree(node), ident "void"),
-        newStmtList(node)
-      ),
-      nnkElseExpr.newTree(
-        nnkAsgn.newTree(ident "result", node)
-      )
-    )
-
-proc processBody(node, baseType: NimNode): NimNode {.compileTime.} =
+proc processBody(node, setResultSym, baseType: NimNode): NimNode {.compileTime.} =
   #echo(node.treeRepr)
   case node.kind
   of nnkReturnStmt:
     let
       res = newNimNode(nnkStmtList, node)
-    res.add completeWithNode(baseType, processBody(node[0], baseType))
+    if node[0].kind != nnkEmpty:
+      res.add newCall(setResultSym, processBody(node[0], setResultSym, baseType))
     res.add newNimNode(nnkReturnStmt, node).add(newNilLit())
 
     res
@@ -49,7 +27,7 @@ proc processBody(node, baseType: NimNode): NimNode {.compileTime.} =
     for i in 0 ..< node.len:
       # We must not transform nested procedures of any form, since their
       # returns are not meant for our futures
-      node[i] = processBody(node[i], baseType)
+      node[i] = processBody(node[i], setResultSym, baseType)
     node
 
 proc wrapInTryFinally(fut, baseType, body: NimNode): NimNode {.compileTime.} =
@@ -206,8 +184,9 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
         if baseTypeIsVoid: futureVoidType
         else: returnType
       castFutureSym = nnkCast.newTree(internalFutureType, internalFutureSym)
+      setResultSym = genSym(nskTemplate, "setResult")
 
-      procBody = prc.body.processBody(baseType)
+      procBody = prc.body.processBody(setResultSym, baseType)
 
     # don't do anything with forward bodies (empty)
     if procBody.kind != nnkEmpty:
@@ -252,12 +231,44 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
           )
         )
 
+        # generates:
+        # template `setResultSym`(code: untyped) {.used.} =
+        #   when typeof(code) is void: code
+        #   else: result = code
+        #
+        # this is useful to handle implicit returns, but also
+        # to bind the `result` to the one we declare here
+        setResultDecl =
+          nnkTemplateDef.newTree(
+            setResultSym,
+            newEmptyNode(), newEmptyNode(),
+            nnkFormalParams.newTree(
+              newEmptyNode(),
+              nnkIdentDefs.newTree(
+                ident"code",
+                ident"untyped",
+                newEmptyNode(),
+              )
+            ),
+            nnkPragma.newTree(ident"used"),
+            newEmptyNode(),
+            nnkWhenStmt.newTree(
+              nnkElifBranch.newTree(
+                nnkInfix.newTree(ident"is", nnkTypeOfExpr.newTree(ident"code"), ident"void"),
+                ident"code"
+              ),
+              nnkElse.newTree(
+                newAssignment(ident"result", ident"code")
+              )
+            )
+          )
+
         completeDecl = wrapInTryFinally(
           castFutureSym, baseType,
-          completeWithNode(baseType, procBodyBlck)
+          newCall(setResultSym, procBodyBlck)
         )
 
-        closureBody = newStmtList(resultDecl, completeDecl)
+        closureBody = newStmtList(resultDecl, setResultDecl, completeDecl)
 
         internalFutureParameter = nnkIdentDefs.newTree(
           internalFutureSym, newIdentNode("FutureBase"), newEmptyNode())

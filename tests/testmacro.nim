@@ -251,6 +251,20 @@ suite "Macro transformations - completions":
     check not fut.completed()
     fut.complete()
 
+  test "return result":
+    proc returnResult: Future[int] {.async.} =
+      var result: int
+      result = 12
+      return result
+    check waitFor(returnResult()) == 12
+
+  test "async in async":
+    proc asyncInAsync: Future[int] {.async.} =
+      proc a2: Future[int] {.async.} =
+        result = 12
+      result = await a2()
+    check waitFor(asyncInAsync()) == 12
+
 suite "Macro transformations - implicit returns":
   test "Implicit return":
     proc implicit(): Future[int] {.async.} =
