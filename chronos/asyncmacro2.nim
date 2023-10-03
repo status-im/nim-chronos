@@ -184,7 +184,7 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
         if baseTypeIsVoid: futureVoidType
         else: returnType
       castFutureSym = nnkCast.newTree(internalFutureType, internalFutureSym)
-      setResultSym = genSym(nskTemplate, "setResult")
+      setResultSym = ident"setResult"
 
       procBody = prc.body.processBody(setResultSym, baseType)
 
