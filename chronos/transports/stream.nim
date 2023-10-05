@@ -1894,7 +1894,7 @@ proc createStreamServer*(host: TransportAddress,
 
       # allowing dual-stack socket 
       if host.family in {AddressFamily.IPv6}:
-        discard setSockOpt(serverSocket,osdefs.IPPROTO_IPV6,IPV6_V6ONLY,0):  
+        discard setSockOpt(serverSocket,osdefs.IPPROTO_IPV6,IPV6_V6ONLY,0)
 
       # SO_REUSEADDR is not useful for Unix domain sockets.
       if ServerFlags.ReuseAddr in flags:
