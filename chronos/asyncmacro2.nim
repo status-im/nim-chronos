@@ -50,15 +50,53 @@ proc wrapInTryFinally(fut, baseType, body, raisesTuple: NimNode): NimNode {.comp
 
   let excName = ident"exc"
 
-  for exc in raisesTuple:
-    if exc.eqIdent("Exception"):
+  var
+    hasDefect = false
+    hasCancelledError = false
+    hasCatchableError = false
+
+  template addDefect =
+    if not hasDefect:
+      hasDefect = true
+      # When a Defect is raised, the program is in an undefined state and
+      # continuing running other tasks while the Future completion sits on the
+      # callback queue may lead to further damage so we re-raise them eagerly.
       nTry.add nnkExceptBranch.newTree(
-                nnkInfix.newTree(ident"as", ident"Defect", excName),
+            nnkInfix.newTree(ident"as", ident"Defect", excName),
+            nnkStmtList.newTree(
+              nnkAsgn.newTree(closureSucceeded, ident"false"),
+              nnkRaiseStmt.newTree(excName)
+            )
+          )
+  template addCancelledError =
+    if not hasCancelledError:
+      hasCancelledError = true
+      nTry.add nnkExceptBranch.newTree(
+                ident"CancelledError",
                 nnkStmtList.newTree(
                   nnkAsgn.newTree(closureSucceeded, ident"false"),
-                  nnkRaiseStmt.newTree(excName)
+                  newCall(ident "cancelAndSchedule", fut)
                 )
               )
+
+  template addCatchableError =
+    if not hasCatchableError:
+      hasCatchableError = true
+      nTry.add nnkExceptBranch.newTree(
+                nnkInfix.newTree(ident"as", ident"CatchableError", excName),
+                nnkStmtList.newTree(
+                  nnkAsgn.newTree(closureSucceeded, ident"false"),
+                  newCall(ident "fail", fut, excName)
+                ))
+
+  for exc in raisesTuple:
+    if exc.eqIdent("Exception"):
+      addCancelledError
+      addCatchableError
+      addDefect
+
+      # Because we store `CatchableError` in the Future, we cannot re-raise the
+      # original exception
       nTry.add nnkExceptBranch.newTree(
                 nnkInfix.newTree(ident"as", ident"Exception", excName),
                 newCall(ident "fail", fut,
@@ -67,13 +105,12 @@ proc wrapInTryFinally(fut, baseType, body, raisesTuple: NimNode): NimNode {.comp
                   quote do: (ref ValueError)(msg: `excName`.msg, parent: `excName`)))
               )
     elif exc.eqIdent("CancelledError"):
-      nTry.add nnkExceptBranch.newTree(
-                ident"CancelledError",
-                nnkStmtList.newTree(
-                  nnkAsgn.newTree(closureSucceeded, ident"false"),
-                  newCall(ident "cancelAndSchedule", fut)
-                )
-              )
+      addCancelledError
+    elif exc.eqIdent("CatchableError"):
+      # Ensure cancellations are re-routed to the cancellation handler even if
+      # not explicitly specified in the raises list
+      addCancelledError
+      addCatchableError
     else:
       nTry.add nnkExceptBranch.newTree(
                 nnkInfix.newTree(ident"as", exc, excName),
@@ -221,7 +258,8 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
     prc.addPragma(newColonExpr(ident "stackTrace", ident "off"))
 
   # The proc itself doesn't raise
-  prc.addPragma(nnkExprColonExpr.newTree(newIdentNode("raises"), nnkBracket.newTree()))
+  prc.addPragma(
+    nnkExprColonExpr.newTree(newIdentNode("raises"), nnkBracket.newTree()))
 
   # See **Remark 435** in this file.
   # https://github.com/nim-lang/RFCs/issues/435
