@@ -525,7 +525,7 @@ macro internalCheckComplete*(f: InternalRaisesFuture): untyped =
       )
     )
   )
-  debugEcho repr(ifRaise)
+
   nnkPragmaBlock.newTree(
     nnkPragma.newTree(
       nnkCast.newTree(
