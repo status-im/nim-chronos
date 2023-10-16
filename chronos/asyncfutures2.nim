@@ -506,7 +506,7 @@ macro internalCheckComplete*(f: InternalRaisesFuture): untyped =
 
   if types.eqIdent("void"):
     return quote do:
-      if not(isNil(`f`.error)):
+      if not(isNil(`f`.internalError)):
         raiseAssert("Unhandled future exception: " & `f`.error.msg)
 
   expectKind(types, nnkBracketExpr)
@@ -516,16 +516,16 @@ macro internalCheckComplete*(f: InternalRaisesFuture): untyped =
 
   let ifRaise = nnkIfExpr.newTree(
     nnkElifExpr.newTree(
-      quote do: isNil(`f`.error),
+      quote do: isNil(`f`.internalError),
       quote do: discard
     ),
     nnkElseExpr.newTree(
       nnkRaiseStmt.newNimNode(lineInfoFrom=f).add(
-        quote do: (`f`.error)
+        quote do: (`f`.internalError)
       )
     )
   )
-
+  debugEcho repr(ifRaise)
   nnkPragmaBlock.newTree(
     nnkPragma.newTree(
       nnkCast.newTree(
