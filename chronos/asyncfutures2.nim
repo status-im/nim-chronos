@@ -35,9 +35,9 @@ func `[]`*(loc: array[LocationKind, ptr SrcLoc], v: int): ptr SrcLoc {.
   else: raiseAssert("Unknown source location " & $v)
 
 type
-  RaiseTrackingFuture*[T, E] = ref object of Future[T]
+  InternalRaisesFuture*[T, E] = ref object of Future[T]
     ## Future with a tuple of possible exception types
-    ## eg RaiseTrackingFuture[void, (ValueError, OSError)]
+    ## eg InternalRaisesFuture[void, (ValueError, OSError)]
     ## Will be injected by `asyncraises`, should generally
     ## not be used manually
 
@@ -65,8 +65,8 @@ proc newFutureImpl[T](loc: ptr SrcLoc, flags: FutureFlags): Future[T] =
   internalInitFutureBase(fut, loc, FutureState.Pending, flags)
   fut
 
-proc newRaiseTrackingFutureImpl[T, E](loc: ptr SrcLoc): RaiseTrackingFuture[T, E] =
-  let fut = RaiseTrackingFuture[T, E]()
+proc newInternalRaisesFutureImpl[T, E](loc: ptr SrcLoc): InternalRaisesFuture[T, E] =
+  let fut = InternalRaisesFuture[T, E]()
   internalInitFutureBase(fut, loc, FutureState.Pending, {})
   fut
 
@@ -94,12 +94,12 @@ macro getFutureExceptions(T: typedesc): untyped =
   else:
     ident"void"
 
-template newRaiseTrackingFuture*[T](fromProc: static[string] = ""): auto =
+template newInternalRaisesFuture*[T](fromProc: static[string] = ""): auto =
   ## Creates a new future.
   ##
   ## Specifying ``fromProc``, which is a string specifying the name of the proc
   ## that this future belongs to, is a good habit as it helps with debugging.
-  newRaiseTrackingFutureImpl[T, getFutureExceptions(typeof(result))](getSrcLocation(fromProc))
+  newInternalRaisesFutureImpl[T, getFutureExceptions(typeof(result))](getSrcLocation(fromProc))
 
 template newFutureSeq*[A, B](fromProc: static[string] = ""): FutureSeq[A, B] =
   ## Create a new future which can hold/preserve GC sequence until future will
@@ -251,7 +251,7 @@ macro checkFailureType(future, error: typed): untyped =
         raiseAssert(`errorMsg`)
   )
 
-template fail*[T, E](future: RaiseTrackingFuture[T, E], error: ref CatchableError) =
+template fail*[T, E](future: InternalRaisesFuture[T, E], error: ref CatchableError) =
   checkFailureType(future, error)
   fail(future, error, getSrcLocation())
 
@@ -496,8 +496,8 @@ proc internalCheckComplete*(fut: FutureBase) {.raises: [CatchableError].} =
       injectStacktrace(fut.internalError)
     raise fut.internalError
 
-macro internalCheckComplete*(f: RaiseTrackingFuture): untyped =
-  # For RaiseTrackingFuture[void, (ValueError, OSError), will do:
+macro internalCheckComplete*(f: InternalRaisesFuture): untyped =
+  # For InternalRaisesFuture[void, (ValueError, OSError), will do:
   # {.cast(raises: [ValueError, OSError]).}:
   #   if isNil(f.error): discard
   #   else: raise f.error
@@ -566,7 +566,7 @@ proc read*(future: Future[void] ) {.raises: [CatchableError].} =
     # TODO: Make a custom exception type for this?
     raise newException(ValueError, "Future still in progress.")
 
-proc read*[T: not void, E](future: RaiseTrackingFuture[T, E] ): lent T =
+proc read*[T: not void, E](future: InternalRaisesFuture[T, E] ): lent T =
   ## Retrieves the value of ``future``. Future must be finished otherwise
   ## this function will fail with a ``ValueError`` exception.
   ##
@@ -578,7 +578,7 @@ proc read*[T: not void, E](future: RaiseTrackingFuture[T, E] ): lent T =
   internalCheckComplete(future)
   future.internalValue
 
-proc read*[E](future: RaiseTrackingFuture[void, E]) =
+proc read*[E](future: InternalRaisesFuture[void, E]) =
   ## Retrieves the value of ``future``. Future must be finished otherwise
   ## this function will fail with a ``ValueError`` exception.
   ##

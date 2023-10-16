@@ -228,7 +228,7 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
       ident "void"
     elif not (
         returnType.kind == nnkBracketExpr and
-        (eqIdent(returnType[0], "Future") or eqIdent(returnType[0], "RaiseTrackingFuture"))):
+        (eqIdent(returnType[0], "Future") or eqIdent(returnType[0], "InternalRaisesFuture"))):
       error(
         "Expected return type of 'Future' got '" & repr(returnType) & "'", prc)
       return
@@ -241,9 +241,9 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
     (hasRaises, isAsync, raisesTuple) = getAsyncCfg(prc)
 
   if hasRaises:
-    # Rewrite to RaiseTrackingFuture
+    # Rewrite to InternalRaisesFuture
     prc.params2[0] = nnkBracketExpr.newTree(
-      newIdentNode("RaiseTrackingFuture"),
+      newIdentNode("InternalRaisesFuture"),
       baseType,
       raisesTuple
     )
@@ -400,7 +400,7 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
 
       outerProcBody.add(closureIterator)
 
-      # -> let resultFuture = newRaiseTrackingFuture[T]()
+      # -> let resultFuture = newInternalRaisesFuture[T]()
       # declared at the end to be sure that the closure
       # doesn't reference it, avoid cyclic ref (#203)
       let
@@ -411,7 +411,7 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
       outerProcBody.add(
         newLetStmt(
           retFutureSym,
-          newCall(newTree(nnkBracketExpr, ident "newRaiseTrackingFuture", baseType),
+          newCall(newTree(nnkBracketExpr, ident "newInternalRaisesFuture", baseType),
                   newLit(prcName))
         )
       )
