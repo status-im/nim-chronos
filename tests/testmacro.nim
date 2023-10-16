@@ -240,6 +240,31 @@ suite "Macro transformations - completions":
       doAssert false
     check waitFor(testReturner2()) == 6
 
+  test "raising defects":
+    proc raiser {.async.} =
+      # sleeping to make sure our caller is the poll loop
+      await sleepAsync(0.milliseconds)
+      raise newException(Defect, "uh-oh")
+
+    let fut = raiser()
+    expect(Defect): waitFor(fut)
+    check not fut.completed()
+    fut.complete()
+
+  test "return result":
+    proc returnResult: Future[int] {.async.} =
+      var result: int
+      result = 12
+      return result
+    check waitFor(returnResult()) == 12
+
+  test "async in async":
+    proc asyncInAsync: Future[int] {.async.} =
+      proc a2: Future[int] {.async.} =
+        result = 12
+      result = await a2()
+    check waitFor(asyncInAsync()) == 12
+
 suite "Macro transformations - implicit returns":
   test "Implicit return":
     proc implicit(): Future[int] {.async.} =

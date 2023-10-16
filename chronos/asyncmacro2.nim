@@ -9,36 +9,14 @@
 
 import std/[macros, algorithm]
 
-proc completeWithNode(baseType, node: NimNode): NimNode {.compileTime.} =
-  #   when typeof(`node`) is void:
-  #     `node` # statement / explicit return
-  #     -> completeWithResult(baseType)
-  #   else: # expression / implicit return
-  #     result = `node`
-  if node.kind == nnkEmpty: # shortcut when known at macro expanstion time
-    node
-  else:
-    # Handle both expressions and statements - since the type is not know at
-    # macro expansion time, we delegate this choice to a later compilation stage
-    # with `when`.
-    nnkWhenStmt.newTree(
-      nnkElifExpr.newTree(
-        nnkInfix.newTree(
-          ident "is", nnkTypeOfExpr.newTree(node), ident "void"),
-        newStmtList(node)
-      ),
-      nnkElseExpr.newTree(
-        nnkAsgn.newTree(ident "result", node)
-      )
-    )
-
-proc processBody(node, baseType: NimNode): NimNode {.compileTime.} =
+proc processBody(node, setResultSym, baseType: NimNode): NimNode {.compileTime.} =
   #echo(node.treeRepr)
   case node.kind
   of nnkReturnStmt:
     let
       res = newNimNode(nnkStmtList, node)
-    res.add completeWithNode(baseType, processBody(node[0], baseType))
+    if node[0].kind != nnkEmpty:
+      res.add newCall(setResultSym, processBody(node[0], setResultSym, baseType))
     res.add newNimNode(nnkReturnStmt, node).add(newNilLit())
 
     res
@@ -49,52 +27,65 @@ proc processBody(node, baseType: NimNode): NimNode {.compileTime.} =
     for i in 0 ..< node.len:
       # We must not transform nested procedures of any form, since their
       # returns are not meant for our futures
-      node[i] = processBody(node[i], baseType)
+      node[i] = processBody(node[i], setResultSym, baseType)
     node
 
 proc wrapInTryFinally(fut, baseType, body, raisesTuple: NimNode): NimNode {.compileTime.} =
   # creates:
-  # try: `completeDecl1`
-  # [for each raisesTuple]:
-  # except raisesTuple[i] as exc: `castFutureSym`.fail(exc)
+  # var closureSucceeded = true
+  # try: `body`
+  # except CancelledError: closureSucceeded = false; `castFutureSym`.cancelAndSchedule()
+  # except CatchableError as exc: closureSucceeded = false; `castFutureSym`.fail(exc)
+  # except Defect as exc:
+  #   closureSucceeded = false
+  #   raise exc
   # finally:
-  #   if not `castFutureSym`.finished:
+  #   if closureSucceeded:
   #     `castFutureSym`.complete(result)
 
   # we are completing inside finally to make sure the completion happens even
   # after a `return`
-  var res = nnkTryStmt.newTree(body)
+  let closureSucceeded = genSym(nskVar, "closureSucceeded")
+  var nTry = nnkTryStmt.newTree(body)
+
+  let excName = ident"exc"
 
   for exc in raisesTuple:
     if exc.eqIdent("Exception"):
-      res.add nnkExceptBranch.newTree(
-                nnkInfix.newTree(ident"as", ident"Defect", ident"exc"),
-                nnkRaiseStmt.newTree(ident"exc")
+      nTry.add nnkExceptBranch.newTree(
+                nnkInfix.newTree(ident"as", ident"Defect", excName),
+                nnkStmtList.newTree(
+                  nnkAsgn.newTree(closureSucceeded, ident"false"),
+                  nnkRaiseStmt.newTree(excName)
+                )
               )
-      let excName = ident"exc"
-      res.add nnkExceptBranch.newTree(
-                nnkInfix.newTree(ident"as", ident"Exception", ident"exc"),
+      nTry.add nnkExceptBranch.newTree(
+                nnkInfix.newTree(ident"as", ident"Exception", excName),
                 newCall(ident "fail", fut,
-                  quote do: (ref ValueError)(msg: `excName`.msg, parent: `excName`))
+                  nnkStmtList.newTree(
+                    nnkAsgn.newTree(closureSucceeded, ident"false"),
+                  quote do: (ref ValueError)(msg: `excName`.msg, parent: `excName`)))
               )
     elif exc.eqIdent("CancelledError"):
-      res.add nnkExceptBranch.newTree(
+      nTry.add nnkExceptBranch.newTree(
                 ident"CancelledError",
-                newCall(ident "cancelAndSchedule", fut)
+                nnkStmtList.newTree(
+                  nnkAsgn.newTree(closureSucceeded, ident"false"),
+                  newCall(ident "cancelAndSchedule", fut)
+                )
               )
     else:
-      res.add nnkExceptBranch.newTree(
-                nnkInfix.newTree(ident"as", exc, ident"exc"),
-                newCall(ident "fail", fut, ident"exc")
-              )
+      nTry.add nnkExceptBranch.newTree(
+                nnkInfix.newTree(ident"as", exc, excName),
+                nnkStmtList.newTree(
+                  nnkAsgn.newTree(closureSucceeded, ident"false"),
+                  newCall(ident "fail", fut, excName)
+                ))
 
-  res.add nnkFinally.newTree(
+  nTry.add nnkFinally.newTree(
             nnkIfStmt.newTree(
               nnkElifBranch.newTree(
-                nnkPrefix.newTree(
-                  ident("not"),
-                  newCall("finished", fut)
-                ),
+                closureSucceeded,
                 nnkWhenStmt.newTree(
                   nnkElifExpr.newTree(
                     nnkInfix.newTree(ident "is", baseType, ident "void"),
@@ -107,7 +98,10 @@ proc wrapInTryFinally(fut, baseType, body, raisesTuple: NimNode): NimNode {.comp
               )
             )
           )
-  return res
+  return nnkStmtList.newTree(
+      newVarStmt(closureSucceeded, ident"true"),
+      nTry
+  )
 
 proc getName(node: NimNode): string {.compileTime.} =
   case node.kind
@@ -252,8 +246,9 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
         if baseTypeIsVoid: futureVoidType
         else: returnType
       castFutureSym = nnkCast.newTree(internalFutureType, internalFutureSym)
+      setResultSym = ident"setResult"
 
-      procBody = prc.body.processBody(baseType)
+      procBody = prc.body.processBody(setResultSym, baseType)
 
     # don't do anything with forward bodies (empty)
     if procBody.kind != nnkEmpty:
@@ -298,13 +293,45 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
           )
         )
 
+        # generates:
+        # template `setResultSym`(code: untyped) {.used.} =
+        #   when typeof(code) is void: code
+        #   else: result = code
+        #
+        # this is useful to handle implicit returns, but also
+        # to bind the `result` to the one we declare here
+        setResultDecl =
+          nnkTemplateDef.newTree(
+            setResultSym,
+            newEmptyNode(), newEmptyNode(),
+            nnkFormalParams.newTree(
+              newEmptyNode(),
+              nnkIdentDefs.newTree(
+                ident"code",
+                ident"untyped",
+                newEmptyNode(),
+              )
+            ),
+            nnkPragma.newTree(ident"used"),
+            newEmptyNode(),
+            nnkWhenStmt.newTree(
+              nnkElifBranch.newTree(
+                nnkInfix.newTree(ident"is", nnkTypeOfExpr.newTree(ident"code"), ident"void"),
+                ident"code"
+              ),
+              nnkElse.newTree(
+                newAssignment(ident"result", ident"code")
+              )
+            )
+          )
+
         completeDecl = wrapInTryFinally(
           castFutureSym, baseType,
-          completeWithNode(baseType, procBodyBlck),
+          newCall(setResultSym, procBodyBlck),
           raisesTuple
         )
 
-        closureBody = newStmtList(resultDecl, completeDecl)
+        closureBody = newStmtList(resultDecl, setResultDecl, completeDecl)
 
         internalFutureParameter = nnkIdentDefs.newTree(
           internalFutureSym, newIdentNode("FutureBase"), newEmptyNode())
