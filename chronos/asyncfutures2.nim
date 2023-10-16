@@ -496,6 +496,53 @@ proc internalCheckComplete*(fut: FutureBase) {.raises: [CatchableError].} =
       injectStacktrace(fut.internalError)
     raise fut.internalError
 
+macro internalCheckComplete*(f: RaiseTrackingFuture): untyped =
+  # For RaiseTrackingFuture[void, (ValueError, OSError), will do:
+  # {.cast(raises: [ValueError, OSError]).}:
+  #   if isNil(f.error): discard
+  #   else: raise f.error
+  let e = getTypeInst(f)[2]
+  let types = getType(e)
+
+  if types.eqIdent("void"):
+    return quote do:
+      if not(isNil(`f`.error)):
+        raiseAssert("Unhandled future exception: " & `f`.error.msg)
+
+  expectKind(types, nnkBracketExpr)
+  expectKind(types[0], nnkSym)
+  assert types[0].strVal == "tuple"
+  assert types.len > 1
+
+  let ifRaise = nnkIfExpr.newTree(
+    nnkElifExpr.newTree(
+      quote do: isNil(`f`.error),
+      quote do: discard
+    ),
+    nnkElseExpr.newTree(
+      nnkRaiseStmt.newNimNode(lineInfoFrom=f).add(
+        quote do: (`f`.error)
+      )
+    )
+  )
+
+  nnkPragmaBlock.newTree(
+    nnkPragma.newTree(
+      nnkCast.newTree(
+        newEmptyNode(),
+        nnkExprColonExpr.newTree(
+          ident"raises",
+          block:
+            var res = nnkBracket.newTree()
+            for r in types[1..^1]:
+              res.add(r)
+            res
+        )
+      ),
+    ),
+    ifRaise
+  )
+
 proc read*[T: not void](future: Future[T] ): lent T {.raises: [CatchableError].} =
   ## Retrieves the value of ``future``. Future must be finished otherwise
   ## this function will fail with a ``ValueError`` exception.
@@ -509,6 +556,29 @@ proc read*[T: not void](future: Future[T] ): lent T {.raises: [CatchableError].}
   future.internalValue
 
 proc read*(future: Future[void] ) {.raises: [CatchableError].} =
+  ## Retrieves the value of ``future``. Future must be finished otherwise
+  ## this function will fail with a ``ValueError`` exception.
+  ##
+  ## If the result of the future is an error then that error will be raised.
+  if future.finished():
+    internalCheckComplete(future)
+  else:
+    # TODO: Make a custom exception type for this?
+    raise newException(ValueError, "Future still in progress.")
+
+proc read*[T: not void, E](future: RaiseTrackingFuture[T, E] ): lent T =
+  ## Retrieves the value of ``future``. Future must be finished otherwise
+  ## this function will fail with a ``ValueError`` exception.
+  ##
+  ## If the result of the future is an error then that error will be raised.
+  if not future.finished():
+    # TODO: Make a custom exception type for this?
+    raise newException(ValueError, "Future still in progress.")
+
+  internalCheckComplete(future)
+  future.internalValue
+
+proc read*[E](future: RaiseTrackingFuture[void, E]) =
   ## Retrieves the value of ``future``. Future must be finished otherwise
   ## this function will fail with a ``ValueError`` exception.
   ##

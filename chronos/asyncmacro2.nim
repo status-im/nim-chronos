@@ -436,53 +436,6 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
     echo repr prc
   prc
 
-macro checkFutureExceptions*(f, typ: typed): untyped =
-  # For RaiseTrackingFuture[void, (ValueError, OSError), will do:
-  # {.cast(raises: [ValueError, OSError]).}:
-  #   if isNil(f.error): discard
-  #   else: raise f.error
-  let e = getTypeInst(typ)[2]
-  let types = getType(e)
-
-  if types.eqIdent("void"):
-    return quote do:
-      if not(isNil(`f`.error)):
-        raiseAssert("Unhandled future exception: " & `f`.error.msg)
-
-  expectKind(types, nnkBracketExpr)
-  expectKind(types[0], nnkSym)
-  assert types[0].strVal == "tuple"
-  assert types.len > 1
-
-  let ifRaise = nnkIfExpr.newTree(
-    nnkElifExpr.newTree(
-      quote do: isNil(`f`.error),
-      quote do: discard
-    ),
-    nnkElseExpr.newTree(
-      nnkRaiseStmt.newNimNode(lineInfoFrom=typ).add(
-        quote do: (`f`.error)
-      )
-    )
-  )
-
-  nnkPragmaBlock.newTree(
-    nnkPragma.newTree(
-      nnkCast.newTree(
-        newEmptyNode(),
-        nnkExprColonExpr.newTree(
-          ident"raises",
-          block:
-            var res = nnkBracket.newTree()
-            for r in types[1..^1]:
-              res.add(r)
-            res
-        )
-      ),
-    ),
-    ifRaise
-  )
-
 template await*[T](f: Future[T]): untyped =
   when declared(chronosInternalRetFuture):
     chronosInternalRetFuture.internalChild = f
@@ -491,10 +444,7 @@ template await*[T](f: Future[T]): untyped =
     # responsible for resuming execution once the yielded future is finished
     yield chronosInternalRetFuture.internalChild
     # `child` released by `futureContinue`
-    when f is RaiseTrackingFuture:
-      checkFutureExceptions(chronosInternalRetFuture, f)
-    else:
-      chronosInternalRetFuture.internalChild.internalCheckComplete()
+    cast[type(f)](chronosInternalRetFuture.internalChild).internalCheckComplete()
 
     when T isnot void:
       cast[type(f)](chronosInternalRetFuture.internalChild).value()

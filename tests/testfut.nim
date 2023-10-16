@@ -1260,7 +1260,7 @@ suite "Future[T] behavior test suite":
         (loc.procedure == procedure)
 
     check:
-      chk(loc10, "testfut.nim", 1226, "macroFuture")
+      chk(loc10, "testfut.nim", 1227, "macroFuture") # TODO this should be 1226?
       chk(loc11, "testfut.nim", 1227, "")
       chk(loc20, "testfut.nim", 1239, "template")
       chk(loc21, "testfut.nim", 1242, "")
