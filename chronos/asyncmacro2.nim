@@ -45,6 +45,21 @@ proc wrapInTryFinally(fut, baseType, body, raisesTuple: NimNode): NimNode {.comp
 
   # we are completing inside finally to make sure the completion happens even
   # after a `return`
+  let
+    complete = nnkWhenStmt.newTree(
+      nnkElifExpr.newTree(
+        nnkInfix.newTree(ident "is", baseType, ident "void"),
+        newCall(ident "complete", fut)
+      ),
+      nnkElseExpr.newTree(
+        newCall(ident "complete", fut, ident "result")
+      )
+    )
+
+  if raisesTuple.len == 0:
+    # We don't need try/finally for `raises: []`
+    return nnkStmtList.newTree(body, complete)
+
   let closureSucceeded = genSym(nskVar, "closureSucceeded")
   var nTry = nnkTryStmt.newTree(body)
 
@@ -123,15 +138,7 @@ proc wrapInTryFinally(fut, baseType, body, raisesTuple: NimNode): NimNode {.comp
             nnkIfStmt.newTree(
               nnkElifBranch.newTree(
                 closureSucceeded,
-                nnkWhenStmt.newTree(
-                  nnkElifExpr.newTree(
-                    nnkInfix.newTree(ident "is", baseType, ident "void"),
-                    newCall(ident "complete", fut)
-                  ),
-                  nnkElseExpr.newTree(
-                    newCall(ident "complete", fut, ident "result")
-                  )
-                )
+                complete
               )
             )
           )
