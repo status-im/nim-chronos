@@ -411,7 +411,7 @@ proc registerProcess*[T](s: Selector, pid: int, data: T): SelectResult[cint] =
       s.freeKey(fdi32)
       s.freeProcess(int32(pid))
       return err(res.error())
-    s.pidFd = Opt.some(cast[cint](res.get()))
+    s.pidFd = Opt.some(res.get())
 
   ok(cint(fdi32))
 
