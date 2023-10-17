@@ -81,12 +81,15 @@ proc newFutureStrImpl[T](loc: ptr SrcLoc): FutureStr[T] =
   fut
 
 template newFuture*[T](fromProc: static[string] = "",
-                       flags: static[FutureFlags] = {}): Future[T] =
+                       flags: static[FutureFlags] = {}): auto =
   ## Creates a new future.
   ##
   ## Specifying ``fromProc``, which is a string specifying the name of the proc
   ## that this future belongs to, is a good habit as it helps with debugging.
-  newFutureImpl[T](getSrcLocation(fromProc), flags)
+  when declared(InternalRaisesFutureRaises): # injected by `asyncraises`
+    newInternalRaisesFutureImpl[T, InternalRaisesFutureRaises](getSrcLocation(fromProc))
+  else:
+    newFutureImpl[T](getSrcLocation(fromProc), flags)
 
 macro getFutureExceptions(T: typedesc): untyped =
   if getTypeInst(T)[1].len > 2:

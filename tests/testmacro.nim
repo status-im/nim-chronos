@@ -423,12 +423,12 @@ suite "Exceptions tracking":
 
   test "Manual tracking":
     proc test1: Future[int] {.asyncraises: [ValueError].} =
-      result = newInternalRaisesFuture[int]()
+      result = newFuture[int]()
       result.complete(12)
     check waitFor(test1()) == 12
 
     proc test2: Future[int] {.asyncraises: [IOError, OSError].} =
-      result = newInternalRaisesFuture[int]()
+      result = newFuture[int]()
       result.fail(newException(IOError, "fail"))
       result.fail(newException(OSError, "fail"))
       checkNotCompiles:
