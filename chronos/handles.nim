@@ -10,6 +10,7 @@
 {.push raises: [].}
 
 import "."/[asyncloop, osdefs, osutils]
+import ./internal/dispatcher
 import stew/results
 from nativesockets import Domain, Protocol, SockType, toInt
 export Domain, Protocol, SockType, results

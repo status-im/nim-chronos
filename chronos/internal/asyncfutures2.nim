@@ -11,6 +11,9 @@
 import std/[sequtils, macros]
 import stew/base10
 
+import ./dispatcher
+import ../[config, futures]
+
 when chronosStackTrace:
   import std/strutils
   when defined(nimHasStacktracesModule):
@@ -617,6 +620,14 @@ template taskErrorMessage(future: FutureBase): string =
 template taskCancelMessage(future: FutureBase): string =
   "Asynchronous task " & taskFutureLocation(future) & " was cancelled!"
 
+proc waitFor*[T](fut: Future[T]): T {.raises: [CatchableError].} =
+  ## **Blocks** the current thread until the specified future completes.
+  ## There's no way to tell if poll or read raised the exception
+  while not(fut.finished()):
+    poll()
+
+  fut.read()
+
 proc asyncSpawn*(future: Future[void]) =
   ## Spawns a new concurrent async task.
   ##
@@ -904,7 +915,7 @@ proc cancelSoon(future: FutureBase, aftercb: CallbackFunc, udata: pointer,
   ## NOTE: Compared to the `tryCancel()` call, this procedure call guarantees
   ## that ``future``will be finished (completed with value, failed or cancelled)
   ## as quickly as possible.
-  proc checktick(udata: pointer) {.gcsafe.} =
+  proc checktick(udata: pointer) {.gcsafe, raises: [].} =
     # We trying to cancel Future on more time, and if `cancel()` succeeds we
     # return early.
     if tryCancel(future, loc):
@@ -1195,3 +1206,249 @@ proc race*(futs: varargs[FutureBase]): Future[FutureBase] =
   retFuture.cancelCallback = cancellation
 
   return retFuture
+
+when (chronosEventEngine in ["epoll", "kqueue"]) or defined(windows):
+  proc waitSignal*(signal: int): Future[void] {.raises: [].} =
+    var retFuture = newFuture[void]("chronos.waitSignal()")
+    var signalHandle: Opt[SignalHandle]
+
+    template getSignalException(e: OSErrorCode): untyped =
+      newException(AsyncError, "Could not manipulate signal handler, " &
+                   "reason [" & $int(e) & "]: " & osErrorMsg(e))
+
+    proc continuation(udata: pointer) {.gcsafe.} =
+      if not(retFuture.finished()):
+        if signalHandle.isSome():
+          let res = removeSignal2(signalHandle.get())
+          if res.isErr():
+            retFuture.fail(getSignalException(res.error()))
+          else:
+            retFuture.complete()
+
+    proc cancellation(udata: pointer) {.gcsafe.} =
+      if not(retFuture.finished()):
+        if signalHandle.isSome():
+          let res = removeSignal2(signalHandle.get())
+          if res.isErr():
+            retFuture.fail(getSignalException(res.error()))
+
+    signalHandle =
+      block:
+        let res = addSignal2(signal, continuation)
+        if res.isErr():
+          retFuture.fail(getSignalException(res.error()))
+        Opt.some(res.get())
+
+    retFuture.cancelCallback = cancellation
+    retFuture
+
+proc sleepAsync*(duration: Duration): Future[void] =
+  ## Suspends the execution of the current async procedure for the next
+  ## ``duration`` time.
+  var retFuture = newFuture[void]("chronos.sleepAsync(Duration)")
+  let moment = Moment.fromNow(duration)
+  var timer: TimerCallback
+
+  proc completion(data: pointer) {.gcsafe.} =
+    if not(retFuture.finished()):
+      retFuture.complete()
+
+  proc cancellation(udata: pointer) {.gcsafe.} =
+    if not(retFuture.finished()):
+      clearTimer(timer)
+
+  retFuture.cancelCallback = cancellation
+  timer = setTimer(moment, completion, cast[pointer](retFuture))
+  return retFuture
+
+proc sleepAsync*(ms: int): Future[void] {.
+     inline, deprecated: "Use sleepAsync(Duration)".} =
+  result = sleepAsync(ms.milliseconds())
+
+proc stepsAsync*(number: int): Future[void] =
+  ## Suspends the execution of the current async procedure for the next
+  ## ``number`` of asynchronous steps (``poll()`` calls).
+  ##
+  ## This primitive can be useful when you need to create more deterministic
+  ## tests and cases.
+  doAssert(number > 0, "Number should be positive integer")
+  var
+    retFuture = newFuture[void]("chronos.stepsAsync(int)")
+    counter = 0
+    continuation: proc(data: pointer) {.gcsafe, raises: [].}
+
+  continuation = proc(data: pointer) {.gcsafe, raises: [].} =
+    if not(retFuture.finished()):
+      inc(counter)
+      if counter < number:
+        internalCallTick(continuation)
+      else:
+        retFuture.complete()
+
+  if number <= 0:
+    retFuture.complete()
+  else:
+    internalCallTick(continuation)
+
+  retFuture
+
+proc idleAsync*(): Future[void] =
+  ## Suspends the execution of the current asynchronous task until "idle" time.
+  ##
+  ## "idle" time its moment of time, when no network events were processed by
+  ## ``poll()`` call.
+  var retFuture = newFuture[void]("chronos.idleAsync()")
+
+  proc continuation(data: pointer) {.gcsafe.} =
+    if not(retFuture.finished()):
+      retFuture.complete()
+
+  proc cancellation(udata: pointer) {.gcsafe.} =
+    discard
+
+  retFuture.cancelCallback = cancellation
+  callIdle(continuation, nil)
+  retFuture
+
+proc withTimeout*[T](fut: Future[T], timeout: Duration): Future[bool] =
+  ## Returns a future which will complete once ``fut`` completes or after
+  ## ``timeout`` milliseconds has elapsed.
+  ##
+  ## If ``fut`` completes first the returned future will hold true,
+  ## otherwise, if ``timeout`` milliseconds has elapsed first, the returned
+  ## future will hold false.
+  var
+    retFuture = newFuture[bool]("chronos.withTimeout",
+                                {FutureFlag.OwnCancelSchedule})
+    moment: Moment
+    timer: TimerCallback
+    timeouted = false
+
+  template completeFuture(fut: untyped): untyped =
+    if fut.failed() or fut.completed():
+      retFuture.complete(true)
+    else:
+      retFuture.cancelAndSchedule()
+
+  # TODO: raises annotation shouldn't be needed, but likely similar issue as
+  # https://github.com/nim-lang/Nim/issues/17369
+  proc continuation(udata: pointer) {.gcsafe, raises: [].} =
+    if not(retFuture.finished()):
+      if timeouted:
+        retFuture.complete(false)
+        return
+      if not(fut.finished()):
+        # Timer exceeded first, we going to cancel `fut` and wait until it
+        # not completes.
+        timeouted = true
+        fut.cancelSoon()
+      else:
+        # Future `fut` completed/failed/cancelled first.
+        if not(isNil(timer)):
+          clearTimer(timer)
+        fut.completeFuture()
+
+  # TODO: raises annotation shouldn't be needed, but likely similar issue as
+  # https://github.com/nim-lang/Nim/issues/17369
+  proc cancellation(udata: pointer) {.gcsafe, raises: [].} =
+    if not(fut.finished()):
+      if not isNil(timer):
+        clearTimer(timer)
+      fut.cancelSoon()
+    else:
+      fut.completeFuture()
+
+  if fut.finished():
+    retFuture.complete(true)
+  else:
+    if timeout.isZero():
+      retFuture.complete(false)
+    elif timeout.isInfinite():
+      retFuture.cancelCallback = cancellation
+      fut.addCallback(continuation)
+    else:
+      moment = Moment.fromNow(timeout)
+      retFuture.cancelCallback = cancellation
+      timer = setTimer(moment, continuation, nil)
+      fut.addCallback(continuation)
+
+  retFuture
+
+proc withTimeout*[T](fut: Future[T], timeout: int): Future[bool] {.
+     inline, deprecated: "Use withTimeout(Future[T], Duration)".} =
+  withTimeout(fut, timeout.milliseconds())
+
+proc wait*[T](fut: Future[T], timeout = InfiniteDuration): Future[T] =
+  ## Returns a future which will complete once future ``fut`` completes
+  ## or if timeout of ``timeout`` milliseconds has been expired.
+  ##
+  ## If ``timeout`` is ``-1``, then statement ``await wait(fut)`` is
+  ## equal to ``await fut``.
+  ##
+  ## TODO: In case when ``fut`` got cancelled, what result Future[T]
+  ## should return, because it can't be cancelled too.
+  var
+    retFuture = newFuture[T]("chronos.wait()", {FutureFlag.OwnCancelSchedule})
+    moment: Moment
+    timer: TimerCallback
+    timeouted = false
+
+  template completeFuture(fut: untyped): untyped =
+    if fut.failed():
+      retFuture.fail(fut.error)
+    elif fut.cancelled():
+      retFuture.cancelAndSchedule()
+    else:
+      when T is void:
+        retFuture.complete()
+      else:
+        retFuture.complete(fut.value)
+
+  proc continuation(udata: pointer) {.raises: [].} =
+    if not(retFuture.finished()):
+      if timeouted:
+        retFuture.fail(newException(AsyncTimeoutError, "Timeout exceeded!"))
+        return
+      if not(fut.finished()):
+        # Timer exceeded first.
+        timeouted = true
+        fut.cancelSoon()
+      else:
+        # Future `fut` completed/failed/cancelled first.
+        if not(isNil(timer)):
+          clearTimer(timer)
+        fut.completeFuture()
+
+  var cancellation: proc(udata: pointer) {.gcsafe, raises: [].}
+  cancellation = proc(udata: pointer) {.gcsafe, raises: [].} =
+    if not(fut.finished()):
+      if not(isNil(timer)):
+        clearTimer(timer)
+      fut.cancelSoon()
+    else:
+      fut.completeFuture()
+
+  if fut.finished():
+    fut.completeFuture()
+  else:
+    if timeout.isZero():
+      retFuture.fail(newException(AsyncTimeoutError, "Timeout exceeded!"))
+    elif timeout.isInfinite():
+      retFuture.cancelCallback = cancellation
+      fut.addCallback(continuation)
+    else:
+      moment = Moment.fromNow(timeout)
+      retFuture.cancelCallback = cancellation
+      timer = setTimer(moment, continuation, nil)
+      fut.addCallback(continuation)
+
+  retFuture
+
+proc wait*[T](fut: Future[T], timeout = -1): Future[T] {.
+     inline, deprecated: "Use wait(Future[T], Duration)".} =
+  if timeout == -1:
+    wait(fut, InfiniteDuration)
+  elif timeout == 0:
+    wait(fut, ZeroDuration)
+  else:
+    wait(fut, timeout.milliseconds())

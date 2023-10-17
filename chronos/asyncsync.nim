@@ -13,6 +13,7 @@
 {.push raises: [].}
 
 import std/[sequtils, math, deques, tables, typetraits]
+import ./internal/dispatcher
 import ./asyncloop
 export asyncloop
 

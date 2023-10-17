@@ -8,7 +8,9 @@
 #    distribution, for details about the copyright.
 #
 
-import std/algorithm
+import
+  std/[algorithm, macros, sequtils],
+  ../[futures, config]
 
 proc processBody(node, setResultSym, baseType: NimNode): NimNode {.compileTime.} =
   case node.kind
