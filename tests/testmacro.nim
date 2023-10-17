@@ -207,6 +207,21 @@ suite "Macro transformations - completions":
         testWeirdCase() == waitFor(testWeirdCaseAsync())
         testWeirdCase() == 55
 
+  test "Correct return value with result assignment in defer":
+    proc testWeirdCase: int =
+      defer:
+        result = 55
+      result = 33
+    proc testWeirdCaseAsync: Future[int] {.async.} =
+      defer:
+        result = 55
+      await sleepAsync(1.milliseconds)
+      return 33
+
+    check:
+        testWeirdCase() == waitFor(testWeirdCaseAsync())
+        testWeirdCase() == 55
+
   test "Generic & finally calling async":
     proc testGeneric(T: type): Future[T] {.async.} =
       try:

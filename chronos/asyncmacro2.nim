@@ -2,6 +2,7 @@
 #
 #            Nim's Runtime Library
 #        (c) Copyright 2015 Dominik Picheta
+#  (c) Copyright 2018-Present Status Research & Development GmbH
 #
 #    See the file "copying.txt", included in this
 #    distribution, for details about the copyright.
@@ -31,19 +32,16 @@ proc processBody(node, setResultSym, baseType: NimNode): NimNode {.compileTime.}
 
 proc wrapInTryFinally(fut, baseType, body, raisesTuple: NimNode): NimNode {.compileTime.} =
   # creates:
-  # var closureSucceeded = true
   # try: `body`
-  # except CancelledError: closureSucceeded = false; `castFutureSym`.cancelAndSchedule()
-  # except CatchableError as exc: closureSucceeded = false; `castFutureSym`.fail(exc)
-  # except Defect as exc:
-  #   closureSucceeded = false
-  #   raise exc
+  # [for raise in raisesTuple]:
+  #   except `raise`: closureSucceeded = false; `castFutureSym`.fail(exc)
   # finally:
   #   if closureSucceeded:
   #     `castFutureSym`.complete(result)
-
-  # we are completing inside finally to make sure the completion happens even
-  # after a `return`
+  #
+  # Calling `complete` inside `finally` ensures that all success paths
+  # (including early returns and code inside nested finally statements and
+  # defer) are completed with the final contents of `result`
   let
     closureSucceeded = genSym(nskVar, "closureSucceeded")
     nTry = nnkTryStmt.newTree(body)
