@@ -497,6 +497,7 @@ macro async*(prc: untyped): untyped =
 
 macro asyncraises*(possibleExceptions, prc: untyped): untyped =
   # Add back the pragma and let asyncSingleProc handle it
+  # Exerimental / subject to change and/or removal
   if prc.kind == nnkStmtList:
     result = newStmtList()
     for oneProc in prc:
