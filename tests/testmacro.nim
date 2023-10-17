@@ -151,6 +151,10 @@ suite "Macro transformations test suite":
 
     check waitFor(nr()) == 42
 
+# There are a few unreacheable statements to ensure that we don't regress in
+# generated code
+{.push warning[UnreachableCode]: off.}
+
 suite "Macro transformations - completions":
   test "Run closure to completion on return": # issue #415
     var x = 0
@@ -264,6 +268,7 @@ suite "Macro transformations - completions":
         result = 12
       result = await a2()
     check waitFor(asyncInAsync()) == 12
+{.pop.}
 
 suite "Macro transformations - implicit returns":
   test "Implicit return":
@@ -374,12 +379,23 @@ suite "Exceptions tracking":
       else:
         raise newException(IOError, "hey")
 
-    proc test4 {.async, asyncraises: [].} = raise newException(Defect, "hey")
-    proc test5 {.async, asyncraises: [CancelledError].} = await test5()
+    proc test4 {.async, asyncraises: [], used.} = raise newException(Defect, "hey")
+    proc test5 {.async, asyncraises: [].} = discard
+    proc test6 {.async, asyncraises: [].} = await test5()
+
+    expect(ValueError): waitFor test1()
+    expect(ValueError): waitFor test2()
+    expect(IOError): waitFor test3()
+    waitFor test6()
 
   test "Cannot raise invalid exception":
     checkNotCompiles:
       proc test3 {.async, asyncraises: [IOError].} = raise newException(ValueError, "hey")
+
+  test "Explicit return in non-raising proc":
+    proc test(): Future[int] {.async, asyncraises: [].} = return 12
+    check:
+      waitFor(test()) == 12
 
   test "Non-raising compatibility":
     proc test1 {.async, asyncraises: [ValueError].} = raise newException(ValueError, "hey")
