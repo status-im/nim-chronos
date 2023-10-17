@@ -15,12 +15,13 @@ import std/[tables, heapqueue, deques]
 import stew/results
 import ".."/[config, futures, osdefs, oserrno, osutils, timer]
 
-import ./[asyncmacro2, errors]
+import ./[asyncmacro, errors]
 
 export Port
 export deques, errors, futures, timer, results
 
-export asyncmacro2.async, asyncmacro2.await, asyncmacro2.awaitne, asyncraises
+export
+  asyncmacro.async, asyncmacro.await, asyncmacro.awaitne, asyncmacro.asyncraises
 
 const
   MaxEventsCount* = 64

@@ -11,7 +11,7 @@
 import std/[sequtils, macros]
 import stew/base10
 
-import ./dispatcher
+import ./asyncengine
 import ../[config, futures]
 
 when chronosStackTrace:

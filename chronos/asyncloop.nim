@@ -128,7 +128,7 @@
 ##
 ## * The effect system (``raises: []``) does not work with async procedures.
 
-import ./internal/[asyncmacro2, dispatcher, errors, asyncfutures2]
+import ./internal/[asyncengine, asyncfutures, asyncmacro, errors]
 
-export asyncfutures2, dispatcher, errors
-export asyncmacro2.async, asyncmacro2.await, asyncmacro2.awaitne, asyncraises
+export asyncfutures, asyncengine, errors
+export asyncmacro.async, asyncmacro.await, asyncmacro.awaitne, asyncraises
