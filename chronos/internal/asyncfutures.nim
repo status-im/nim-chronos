@@ -1208,6 +1208,8 @@ proc race*(futs: varargs[FutureBase]): Future[FutureBase] =
   return retFuture
 
 when (chronosEventEngine in ["epoll", "kqueue"]) or defined(windows):
+  import std/os
+
   proc waitSignal*(signal: int): Future[void] {.raises: [].} =
     var retFuture = newFuture[void]("chronos.waitSignal()")
     var signalHandle: Opt[SignalHandle]
@@ -1452,3 +1454,64 @@ proc wait*[T](fut: Future[T], timeout = -1): Future[T] {.
     wait(fut, ZeroDuration)
   else:
     wait(fut, timeout.milliseconds())
+
+
+when defined(windows):
+  import ../osdefs
+
+  proc waitForSingleObject*(handle: HANDLE,
+                            timeout: Duration): Future[WaitableResult] {.
+       raises: [].} =
+    ## Waits until the specified object is in the signaled state or the
+    ## time-out interval elapses. WaitForSingleObject() for asynchronous world.
+    let flags = WT_EXECUTEONLYONCE
+
+    var
+      retFuture = newFuture[WaitableResult]("chronos.waitForSingleObject()")
+      waitHandle: WaitableHandle = nil
+
+    proc continuation(udata: pointer) {.gcsafe.} =
+      doAssert(not(isNil(waitHandle)))
+      if not(retFuture.finished()):
+        let
+          ovl = cast[PtrCustomOverlapped](udata)
+          returnFlag = WINBOOL(ovl.data.bytesCount)
+          res = closeWaitable(waitHandle)
+        if res.isErr():
+          retFuture.fail(newException(AsyncError, osErrorMsg(res.error())))
+        else:
+          if returnFlag == TRUE:
+            retFuture.complete(WaitableResult.Timeout)
+          else:
+            retFuture.complete(WaitableResult.Ok)
+
+    proc cancellation(udata: pointer) {.gcsafe.} =
+      doAssert(not(isNil(waitHandle)))
+      if not(retFuture.finished()):
+        discard closeWaitable(waitHandle)
+
+    let wres = uint32(waitForSingleObject(handle, DWORD(0)))
+    if wres == WAIT_OBJECT_0:
+      retFuture.complete(WaitableResult.Ok)
+      return retFuture
+    elif wres == WAIT_ABANDONED:
+      retFuture.fail(newException(AsyncError, "Handle was abandoned"))
+      return retFuture
+    elif wres == WAIT_FAILED:
+      retFuture.fail(newException(AsyncError, osErrorMsg(osLastError())))
+      return retFuture
+
+    if timeout == ZeroDuration:
+      retFuture.complete(WaitableResult.Timeout)
+      return retFuture
+
+    waitHandle =
+      block:
+        let res = registerWaitable(handle, flags, timeout, continuation, nil)
+        if res.isErr():
+          retFuture.fail(newException(AsyncError, osErrorMsg(res.error())))
+          return retFuture
+        res.get()
+
+    retFuture.cancelCallback = cancellation
+    return retFuture
