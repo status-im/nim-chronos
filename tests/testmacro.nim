@@ -151,6 +151,10 @@ suite "Macro transformations test suite":
 
     check waitFor(nr()) == 42
 
+# There are a few unreacheable statements to ensure that we don't regress in
+# generated code
+{.push warning[UnreachableCode]: off.}
+
 suite "Macro transformations - completions":
   test "Run closure to completion on return": # issue #415
     var x = 0
@@ -198,6 +202,21 @@ suite "Macro transformations - completions":
         await sleepAsync(1.milliseconds)
         return 33
       finally: result = 55
+
+    check:
+        testWeirdCase() == waitFor(testWeirdCaseAsync())
+        testWeirdCase() == 55
+
+  test "Correct return value with result assignment in defer":
+    proc testWeirdCase: int =
+      defer:
+        result = 55
+      result = 33
+    proc testWeirdCaseAsync: Future[int] {.async.} =
+      defer:
+        result = 55
+      await sleepAsync(1.milliseconds)
+      return 33
 
     check:
         testWeirdCase() == waitFor(testWeirdCaseAsync())
@@ -264,6 +283,7 @@ suite "Macro transformations - completions":
         result = 12
       result = await a2()
     check waitFor(asyncInAsync()) == 12
+{.pop.}
 
 suite "Macro transformations - implicit returns":
   test "Implicit return":
@@ -362,3 +382,98 @@ suite "Closure iterator's exception transformation issues":
 
     waitFor(x())
 
+suite "Exceptions tracking":
+  template checkNotCompiles(body: untyped) =
+    check (not compiles(body))
+  test "Can raise valid exception":
+    proc test1 {.async.} = raise newException(ValueError, "hey")
+    proc test2 {.async, asyncraises: [ValueError].} = raise newException(ValueError, "hey")
+    proc test3 {.async, asyncraises: [IOError, ValueError].} =
+      if 1 == 2:
+        raise newException(ValueError, "hey")
+      else:
+        raise newException(IOError, "hey")
+
+    proc test4 {.async, asyncraises: [], used.} = raise newException(Defect, "hey")
+    proc test5 {.async, asyncraises: [].} = discard
+    proc test6 {.async, asyncraises: [].} = await test5()
+
+    expect(ValueError): waitFor test1()
+    expect(ValueError): waitFor test2()
+    expect(IOError): waitFor test3()
+    waitFor test6()
+
+  test "Cannot raise invalid exception":
+    checkNotCompiles:
+      proc test3 {.async, asyncraises: [IOError].} = raise newException(ValueError, "hey")
+
+  test "Explicit return in non-raising proc":
+    proc test(): Future[int] {.async, asyncraises: [].} = return 12
+    check:
+      waitFor(test()) == 12
+
+  test "Non-raising compatibility":
+    proc test1 {.async, asyncraises: [ValueError].} = raise newException(ValueError, "hey")
+    let testVar: Future[void] = test1()
+
+    proc test2 {.async.} = raise newException(ValueError, "hey")
+    let testVar2: proc: Future[void] = test2
+
+    # Doesn't work unfortunately
+    #let testVar3: proc: Future[void] = test1
+
+  test "Cannot store invalid future types":
+    proc test1 {.async, asyncraises: [ValueError].} = raise newException(ValueError, "hey")
+    proc test2 {.async, asyncraises: [IOError].} = raise newException(IOError, "hey")
+
+    var a = test1()
+    checkNotCompiles:
+      a = test2()
+
+  test "Await raises the correct types":
+    proc test1 {.async, asyncraises: [ValueError].} = raise newException(ValueError, "hey")
+    proc test2 {.async, asyncraises: [ValueError, CancelledError].} = await test1()
+    checkNotCompiles:
+      proc test3 {.async, asyncraises: [CancelledError].} = await test1()
+
+  test "Can create callbacks":
+    proc test1 {.async, asyncraises: [ValueError].} = raise newException(ValueError, "hey")
+    let callback: proc() {.async, asyncraises: [ValueError].} = test1
+
+  test "Can return values":
+    proc test1: Future[int] {.async, asyncraises: [ValueError].} =
+      if 1 == 0: raise newException(ValueError, "hey")
+      return 12
+    proc test2: Future[int] {.async, asyncraises: [ValueError, IOError, CancelledError].} =
+      return await test1()
+
+    checkNotCompiles:
+      proc test3: Future[int] {.async, asyncraises: [CancelledError].} = await test1()
+
+    check waitFor(test2()) == 12
+
+  test "Manual tracking":
+    proc test1: Future[int] {.asyncraises: [ValueError].} =
+      result = newFuture[int]()
+      result.complete(12)
+    check waitFor(test1()) == 12
+
+    proc test2: Future[int] {.asyncraises: [IOError, OSError].} =
+      result = newFuture[int]()
+      result.fail(newException(IOError, "fail"))
+      result.fail(newException(OSError, "fail"))
+      checkNotCompiles:
+        result.fail(newException(ValueError, "fail"))
+
+    proc test3: Future[void] {.asyncraises: [].} =
+      checkNotCompiles:
+        result.fail(newException(ValueError, "fail"))
+
+    # Inheritance
+    proc test4: Future[void] {.asyncraises: [CatchableError].} =
+      result.fail(newException(IOError, "fail"))
+
+  test "Reversed async, asyncraises":
+    proc test44 {.asyncraises: [ValueError], async.} = raise newException(ValueError, "hey")
+    checkNotCompiles:
+      proc test33 {.asyncraises: [IOError], async.} = raise newException(ValueError, "hey")

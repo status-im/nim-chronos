@@ -8,7 +8,7 @@
 #    Apache License, version 2.0, (LICENSE-APACHEv2)
 #                MIT license (LICENSE-MIT)
 
-import std/sequtils
+import std/[sequtils, macros]
 import stew/base10
 
 when chronosStackTrace:
@@ -35,6 +35,12 @@ func `[]`*(loc: array[LocationKind, ptr SrcLoc], v: int): ptr SrcLoc {.
   else: raiseAssert("Unknown source location " & $v)
 
 type
+  InternalRaisesFuture*[T, E] = ref object of Future[T]
+    ## Future with a tuple of possible exception types
+    ## eg InternalRaisesFuture[void, (ValueError, OSError)]
+    ## Will be injected by `asyncraises`, should generally
+    ## not be used manually
+
   FutureStr*[T] = ref object of Future[T]
     ## Future to hold GC strings
     gcholder*: string
@@ -59,6 +65,11 @@ proc newFutureImpl[T](loc: ptr SrcLoc, flags: FutureFlags): Future[T] =
   internalInitFutureBase(fut, loc, FutureState.Pending, flags)
   fut
 
+proc newInternalRaisesFutureImpl[T, E](loc: ptr SrcLoc): InternalRaisesFuture[T, E] =
+  let fut = InternalRaisesFuture[T, E]()
+  internalInitFutureBase(fut, loc, FutureState.Pending, {})
+  fut
+
 proc newFutureSeqImpl[A, B](loc: ptr SrcLoc): FutureSeq[A, B] =
   let fut = FutureSeq[A, B]()
   internalInitFutureBase(fut, loc, FutureState.Pending, {})
@@ -70,12 +81,28 @@ proc newFutureStrImpl[T](loc: ptr SrcLoc): FutureStr[T] =
   fut
 
 template newFuture*[T](fromProc: static[string] = "",
-                       flags: static[FutureFlags] = {}): Future[T] =
+                       flags: static[FutureFlags] = {}): auto =
   ## Creates a new future.
   ##
   ## Specifying ``fromProc``, which is a string specifying the name of the proc
   ## that this future belongs to, is a good habit as it helps with debugging.
-  newFutureImpl[T](getSrcLocation(fromProc), flags)
+  when declared(InternalRaisesFutureRaises): # injected by `asyncraises`
+    newInternalRaisesFutureImpl[T, InternalRaisesFutureRaises](getSrcLocation(fromProc))
+  else:
+    newFutureImpl[T](getSrcLocation(fromProc), flags)
+
+macro getFutureExceptions(T: typedesc): untyped =
+  if getTypeInst(T)[1].len > 2:
+    getTypeInst(T)[1][2]
+  else:
+    ident"void"
+
+template newInternalRaisesFuture*[T](fromProc: static[string] = ""): auto =
+  ## Creates a new future.
+  ##
+  ## Specifying ``fromProc``, which is a string specifying the name of the proc
+  ## that this future belongs to, is a good habit as it helps with debugging.
+  newInternalRaisesFutureImpl[T, getFutureExceptions(typeof(result))](getSrcLocation(fromProc))
 
 template newFutureSeq*[A, B](fromProc: static[string] = ""): FutureSeq[A, B] =
   ## Create a new future which can hold/preserve GC sequence until future will
@@ -186,6 +213,49 @@ proc fail(future: FutureBase, error: ref CatchableError, loc: ptr SrcLoc) =
 
 template fail*(future: FutureBase, error: ref CatchableError) =
   ## Completes ``future`` with ``error``.
+  fail(future, error, getSrcLocation())
+
+macro checkFailureType(future, error: typed): untyped =
+  let e = getTypeInst(future)[2]
+  let types = getType(e)
+
+  if types.eqIdent("void"):
+    error("Can't raise exceptions on this Future")
+
+  expectKind(types, nnkBracketExpr)
+  expectKind(types[0], nnkSym)
+  assert types[0].strVal == "tuple"
+  assert types.len > 1
+
+  expectKind(getTypeInst(error), nnkRefTy)
+  let toMatch = getTypeInst(error)[0]
+
+  # Can't find a way to check `is` in the macro. (sameType doesn't
+  # work for inherited objects). Dirty hack here, for [IOError, OSError],
+  # this will generate:
+  #
+  # static:
+  #   if not((`toMatch` is IOError) or (`toMatch` is OSError)
+  #     or (`toMatch` is CancelledError) or false):
+  #     raiseAssert("Can't fail with `toMatch`, only [IOError, OSError] is allowed")
+  var typeChecker = ident"false"
+
+  for errorType in types[1..^1]:
+    typeChecker = newCall("or", typeChecker, newCall("is", toMatch, errorType))
+  typeChecker = newCall(
+    "or", typeChecker,
+    newCall("is", toMatch, ident"CancelledError"))
+
+  let errorMsg = "Can't fail with " & repr(toMatch) & ". Only " & repr(types[1..^1]) & " allowed"
+
+  result = nnkStaticStmt.newNimNode(lineInfoFrom=error).add(
+    quote do:
+      if not(`typeChecker`):
+        raiseAssert(`errorMsg`)
+  )
+
+template fail*[T, E](future: InternalRaisesFuture[T, E], error: ref CatchableError) =
+  checkFailureType(future, error)
   fail(future, error, getSrcLocation())
 
 template newCancelledError(): ref CancelledError =
@@ -429,6 +499,53 @@ proc internalCheckComplete*(fut: FutureBase) {.raises: [CatchableError].} =
       injectStacktrace(fut.internalError)
     raise fut.internalError
 
+macro internalCheckComplete*(f: InternalRaisesFuture): untyped =
+  # For InternalRaisesFuture[void, (ValueError, OSError), will do:
+  # {.cast(raises: [ValueError, OSError]).}:
+  #   if isNil(f.error): discard
+  #   else: raise f.error
+  let e = getTypeInst(f)[2]
+  let types = getType(e)
+
+  if types.eqIdent("void"):
+    return quote do:
+      if not(isNil(`f`.internalError)):
+        raiseAssert("Unhandled future exception: " & `f`.error.msg)
+
+  expectKind(types, nnkBracketExpr)
+  expectKind(types[0], nnkSym)
+  assert types[0].strVal == "tuple"
+  assert types.len > 1
+
+  let ifRaise = nnkIfExpr.newTree(
+    nnkElifExpr.newTree(
+      quote do: isNil(`f`.internalError),
+      quote do: discard
+    ),
+    nnkElseExpr.newTree(
+      nnkRaiseStmt.newNimNode(lineInfoFrom=f).add(
+        quote do: (`f`.internalError)
+      )
+    )
+  )
+
+  nnkPragmaBlock.newTree(
+    nnkPragma.newTree(
+      nnkCast.newTree(
+        newEmptyNode(),
+        nnkExprColonExpr.newTree(
+          ident"raises",
+          block:
+            var res = nnkBracket.newTree()
+            for r in types[1..^1]:
+              res.add(r)
+            res
+        )
+      ),
+    ),
+    ifRaise
+  )
+
 proc read*[T: not void](future: Future[T] ): lent T {.raises: [CatchableError].} =
   ## Retrieves the value of ``future``. Future must be finished otherwise
   ## this function will fail with a ``ValueError`` exception.
@@ -442,6 +559,29 @@ proc read*[T: not void](future: Future[T] ): lent T {.raises: [CatchableError].}
   future.internalValue
 
 proc read*(future: Future[void] ) {.raises: [CatchableError].} =
+  ## Retrieves the value of ``future``. Future must be finished otherwise
+  ## this function will fail with a ``ValueError`` exception.
+  ##
+  ## If the result of the future is an error then that error will be raised.
+  if future.finished():
+    internalCheckComplete(future)
+  else:
+    # TODO: Make a custom exception type for this?
+    raise newException(ValueError, "Future still in progress.")
+
+proc read*[T: not void, E](future: InternalRaisesFuture[T, E] ): lent T =
+  ## Retrieves the value of ``future``. Future must be finished otherwise
+  ## this function will fail with a ``ValueError`` exception.
+  ##
+  ## If the result of the future is an error then that error will be raised.
+  if not future.finished():
+    # TODO: Make a custom exception type for this?
+    raise newException(ValueError, "Future still in progress.")
+
+  internalCheckComplete(future)
+  future.internalValue
+
+proc read*[E](future: InternalRaisesFuture[void, E]) =
   ## Retrieves the value of ``future``. Future must be finished otherwise
   ## this function will fail with a ``ValueError`` exception.
   ##
