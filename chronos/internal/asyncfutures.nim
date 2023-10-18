@@ -8,6 +8,8 @@
 #    Apache License, version 2.0, (LICENSE-APACHEv2)
 #                MIT license (LICENSE-MIT)
 
+{.push raises: [].}
+
 import std/[sequtils, macros]
 import stew/base10
 
@@ -52,6 +54,78 @@ type
     ## Future to hold GC seqs
     gcholder*: seq[B]
 
+  SomeFuture = Future|InternalRaisesFuture
+
+macro prepend(tup: typedesc[tuple], typ: varargs[typed]): typedesc =
+  result = nnkTupleConstr.newTree()
+  for err in typ:
+    result.add err
+
+  for err in getType(getTypeInst(tup)[1])[1..^1]:
+    result.add err
+
+macro remove(tup: typedesc[tuple], typ: varargs[typed]): typedesc =
+  result = nnkTupleConstr.newTree()
+  for err in getType(getTypeInst(tup)[1])[1..^1]:
+    var found = false
+    for err2 in typ:
+      if signatureHash(err) == signatureHash(err2):
+        found = true
+    if not found:
+      result.add err
+
+  if result.len == 0:
+    result = ident"void"
+
+macro checkFailureType(future, error: typed, warn: static bool = true): untyped =
+  let e = getTypeInst(future)[2]
+  let types = getType(e)
+
+  if types.eqIdent("void"):
+    error("Can't raise exceptions on this Future")
+
+  expectKind(types, nnkBracketExpr)
+  expectKind(types[0], nnkSym)
+  assert types[0].strVal == "tuple"
+  assert types.len > 1
+
+  expectKind(getTypeInst(error), nnkRefTy)
+  let toMatch = getTypeInst(error)[0]
+
+  # Can't find a way to check `is` in the macro. (sameType doesn't
+  # work for inherited objects). Dirty hack here, for [IOError, OSError],
+  # this will generate:
+  #
+  # static:
+  #   if not((`toMatch` is IOError) or (`toMatch` is OSError)
+  #     or (`toMatch` is CancelledError) or false):
+  #     raiseAssert("Can't fail with `toMatch`, only [IOError, OSError] is allowed")
+  var
+    typeChecker = ident"false"
+    maybeChecker = ident"false"
+    runtimeChecker = ident"false"
+
+  for errorType in types[1..^1]:
+    typeChecker = infix(typeChecker, "or", infix(toMatch, "is", errorType))
+    maybeChecker = infix(maybeChecker, "or", infix(errorType, "is", toMatch))
+    runtimeChecker = infix(runtimeChecker, "or", infix(error, "of", nnkBracketExpr.newTree(ident"typedesc", errorType)))
+
+  let
+    errorMsg = "Can't fail with " & repr(toMatch) & ". Only " & repr(types[1..^1]) & " allowed"
+    warningMsg = "Can't verify `fail` exception type at compile time - expected one of " & repr(types[1..^1]) & ", got " & repr(toMatch)
+    warning = if warn:
+      quote do: {.warning: `warningMsg`.}
+    else: newEmptyNode()
+
+  result = quote do:
+    when not(`typeChecker`):
+      when not(`maybeChecker`):
+        static:
+          raiseAssert(`errorMsg`)
+      else:
+        `warning`
+        assert(`runtimeChecker`)
+
 # Backwards compatibility for old FutureState name
 template Finished* {.deprecated: "Use Completed instead".} = Completed
 template Finished*(T: type FutureState): FutureState {.
@@ -68,9 +142,16 @@ proc newFutureImpl[T](loc: ptr SrcLoc, flags: FutureFlags): Future[T] =
   internalInitFutureBase(fut, loc, FutureState.Pending, flags)
   fut
 
-proc newInternalRaisesFutureImpl[T, E](loc: ptr SrcLoc): InternalRaisesFuture[T, E] =
+proc newInternalRaisesFutureImpl[T, E](
+    loc: ptr SrcLoc): InternalRaisesFuture[T, E] =
   let fut = InternalRaisesFuture[T, E]()
   internalInitFutureBase(fut, loc, FutureState.Pending, {})
+  fut
+
+proc newInternalRaisesFutureImpl[T, E](
+    loc: ptr SrcLoc, flags: FutureFlags): InternalRaisesFuture[T, E] =
+  let fut = InternalRaisesFuture[T, E]()
+  internalInitFutureBase(fut, loc, FutureState.Pending, flags)
   fut
 
 proc newFutureSeqImpl[A, B](loc: ptr SrcLoc): FutureSeq[A, B] =
@@ -90,7 +171,8 @@ template newFuture*[T](fromProc: static[string] = "",
   ## Specifying ``fromProc``, which is a string specifying the name of the proc
   ## that this future belongs to, is a good habit as it helps with debugging.
   when declared(InternalRaisesFutureRaises): # injected by `asyncraises`
-    newInternalRaisesFutureImpl[T, InternalRaisesFutureRaises](getSrcLocation(fromProc))
+    newInternalRaisesFutureImpl[T, InternalRaisesFutureRaises](
+      getSrcLocation(fromProc), flags)
   else:
     newFutureImpl[T](getSrcLocation(fromProc), flags)
 
@@ -214,51 +296,9 @@ proc fail(future: FutureBase, error: ref CatchableError, loc: ptr SrcLoc) =
                                  getStackTrace(error)
     future.finish(FutureState.Failed)
 
-template fail*(future: FutureBase, error: ref CatchableError) =
+template fail*(
+    future: FutureBase, error: ref CatchableError, warn: static bool = false) =
   ## Completes ``future`` with ``error``.
-  fail(future, error, getSrcLocation())
-
-macro checkFailureType(future, error: typed): untyped =
-  let e = getTypeInst(future)[2]
-  let types = getType(e)
-
-  if types.eqIdent("void"):
-    error("Can't raise exceptions on this Future")
-
-  expectKind(types, nnkBracketExpr)
-  expectKind(types[0], nnkSym)
-  assert types[0].strVal == "tuple"
-  assert types.len > 1
-
-  expectKind(getTypeInst(error), nnkRefTy)
-  let toMatch = getTypeInst(error)[0]
-
-  # Can't find a way to check `is` in the macro. (sameType doesn't
-  # work for inherited objects). Dirty hack here, for [IOError, OSError],
-  # this will generate:
-  #
-  # static:
-  #   if not((`toMatch` is IOError) or (`toMatch` is OSError)
-  #     or (`toMatch` is CancelledError) or false):
-  #     raiseAssert("Can't fail with `toMatch`, only [IOError, OSError] is allowed")
-  var typeChecker = ident"false"
-
-  for errorType in types[1..^1]:
-    typeChecker = newCall("or", typeChecker, newCall("is", toMatch, errorType))
-  typeChecker = newCall(
-    "or", typeChecker,
-    newCall("is", toMatch, ident"CancelledError"))
-
-  let errorMsg = "Can't fail with " & repr(toMatch) & ". Only " & repr(types[1..^1]) & " allowed"
-
-  result = nnkStaticStmt.newNimNode(lineInfoFrom=error).add(
-    quote do:
-      if not(`typeChecker`):
-        raiseAssert(`errorMsg`)
-  )
-
-template fail*[T, E](future: InternalRaisesFuture[T, E], error: ref CatchableError) =
-  checkFailureType(future, error)
   fail(future, error, getSrcLocation())
 
 template newCancelledError(): ref CancelledError =
@@ -562,29 +602,6 @@ proc read*[T: not void](future: Future[T] ): lent T {.raises: [CatchableError].}
   future.internalValue
 
 proc read*(future: Future[void] ) {.raises: [CatchableError].} =
-  ## Retrieves the value of ``future``. Future must be finished otherwise
-  ## this function will fail with a ``ValueError`` exception.
-  ##
-  ## If the result of the future is an error then that error will be raised.
-  if future.finished():
-    internalCheckComplete(future)
-  else:
-    # TODO: Make a custom exception type for this?
-    raise newException(ValueError, "Future still in progress.")
-
-proc read*[T: not void, E](future: InternalRaisesFuture[T, E] ): lent T =
-  ## Retrieves the value of ``future``. Future must be finished otherwise
-  ## this function will fail with a ``ValueError`` exception.
-  ##
-  ## If the result of the future is an error then that error will be raised.
-  if not future.finished():
-    # TODO: Make a custom exception type for this?
-    raise newException(ValueError, "Future still in progress.")
-
-  internalCheckComplete(future)
-  future.internalValue
-
-proc read*[E](future: InternalRaisesFuture[void, E]) =
   ## Retrieves the value of ``future``. Future must be finished otherwise
   ## this function will fail with a ``ValueError`` exception.
   ##
@@ -908,7 +925,7 @@ proc oneValue*[T](futs: varargs[Future[T]]): Future[T] {.
   return retFuture
 
 proc cancelSoon(future: FutureBase, aftercb: CallbackFunc, udata: pointer,
-                loc: ptr SrcLoc) =
+                loc: ptr SrcLoc) {.raises: [].} =
   ## Perform cancellation ``future`` and call ``aftercb`` callback when
   ## ``future`` become finished (completed with value, failed or cancelled).
   ##
@@ -965,7 +982,8 @@ template cancel*(future: FutureBase) {.
   ## Cancel ``future``.
   cancelSoon(future, nil, nil, getSrcLocation())
 
-proc cancelAndWait*(future: FutureBase, loc: ptr SrcLoc): Future[void] =
+proc cancelAndWait*(future: FutureBase, loc: ptr SrcLoc): Future[void] {.
+    asyncraises: [CancelledError].} =
   ## Perform cancellation ``future`` return Future which will be completed when
   ## ``future`` become finished (completed with value, failed or cancelled).
   ##
@@ -989,7 +1007,7 @@ template cancelAndWait*(future: FutureBase): Future[void] =
   ## Cancel ``future``.
   cancelAndWait(future, getSrcLocation())
 
-proc noCancel*[T](future: Future[T]): Future[T] =
+proc noCancel*[F: SomeFuture](future: F): auto = # raises: raiseOf(future) - CancelledError
   ## Prevent cancellation requests from propagating to ``future`` while
   ## forwarding its value or error when it finishes.
   ##
@@ -997,16 +1015,25 @@ proc noCancel*[T](future: Future[T]): Future[T] =
   ## should not be cancelled at all cost, for example closing sockets, pipes,
   ## connections or servers. Usually it become useful in exception or finally
   ## blocks.
-  let retFuture = newFuture[T]("chronos.noCancel(T)",
-                               {FutureFlag.OwnCancelSchedule})
+  when F is InternalRaisesFuture:
+    type
+      E = F.E
+      InternalRaisesFutureRaises = E.remove(CancelledError)
+
+  let retFuture = newFuture[F.T]("chronos.noCancel(T)",
+                                {FutureFlag.OwnCancelSchedule})
   template completeFuture() =
     if future.completed():
-      when T is void:
+      when F.T is void:
         retFuture.complete()
       else:
         retFuture.complete(future.value)
     elif future.failed():
-      retFuture.fail(future.error)
+      when F is Future:
+        retFuture.fail(future.error, warn = false)
+      when declared(InternalRaisesFutureRaises):
+        when InternalRaisesFutureRaises isnot void:
+          retFuture.fail(future.error, warn = false)
     else:
       raiseAssert("Unexpected future state [" & $future.state & "]")
 
@@ -1019,7 +1046,8 @@ proc noCancel*[T](future: Future[T]): Future[T] =
     future.addCallback(continuation)
   retFuture
 
-proc allFutures*(futs: varargs[FutureBase]): Future[void] =
+proc allFutures*(futs: varargs[FutureBase]): Future[void] {.
+    asyncraises: [CancelledError].} =
   ## Returns a future which will complete only when all futures in ``futs``
   ## will be completed, failed or canceled.
   ##
@@ -1057,7 +1085,8 @@ proc allFutures*(futs: varargs[FutureBase]): Future[void] =
 
   retFuture
 
-proc allFutures*[T](futs: varargs[Future[T]]): Future[void] =
+proc allFutures*[T](futs: varargs[Future[T]]): Future[void] {.
+    asyncraises: [CancelledError].} =
   ## Returns a future which will complete only when all futures in ``futs``
   ## will be completed, failed or canceled.
   ##
@@ -1070,7 +1099,8 @@ proc allFutures*[T](futs: varargs[Future[T]]): Future[void] =
     nfuts.add(future)
   allFutures(nfuts)
 
-proc allFinished*[T](futs: varargs[Future[T]]): Future[seq[Future[T]]] =
+proc allFinished*[F: SomeFuture](futs: varargs[F]): Future[seq[F]] {.
+    asyncraises: [CancelledError].} =
   ## Returns a future which will complete only when all futures in ``futs``
   ## will be completed, failed or canceled.
   ##
@@ -1080,7 +1110,7 @@ proc allFinished*[T](futs: varargs[Future[T]]): Future[seq[Future[T]]] =
   ## If the argument is empty, the returned future COMPLETES immediately.
   ##
   ## On cancel all the awaited futures ``futs`` WILL NOT BE cancelled.
-  var retFuture = newFuture[seq[Future[T]]]("chronos.allFinished()")
+  var retFuture = newFuture[seq[F]]("chronos.allFinished()")
   let totalFutures = len(futs)
   var finishedFutures = 0
 
@@ -1110,7 +1140,8 @@ proc allFinished*[T](futs: varargs[Future[T]]): Future[seq[Future[T]]] =
 
   return retFuture
 
-proc one*[T](futs: varargs[Future[T]]): Future[Future[T]] =
+proc one*[F: SomeFuture](futs: varargs[F]): Future[F] {.
+    asyncraises: [ValueError, CancelledError].} =
   ## Returns a future which will complete and return completed Future[T] inside,
   ## when one of the futures in ``futs`` will be completed, failed or canceled.
   ##
@@ -1119,7 +1150,7 @@ proc one*[T](futs: varargs[Future[T]]): Future[Future[T]] =
   ## On success returned Future will hold finished Future[T].
   ##
   ## On cancel futures in ``futs`` WILL NOT BE cancelled.
-  var retFuture = newFuture[Future[T]]("chronos.one()")
+  var retFuture = newFuture[F]("chronos.one()")
 
   if len(futs) == 0:
     retFuture.fail(newException(ValueError, "Empty Future[T] list"))
@@ -1137,7 +1168,7 @@ proc one*[T](futs: varargs[Future[T]]): Future[Future[T]] =
   var cb: proc(udata: pointer) {.gcsafe, raises: [].}
   cb = proc(udata: pointer) {.gcsafe, raises: [].} =
     if not(retFuture.finished()):
-      var res: Future[T]
+      var res: F
       var rfut = cast[FutureBase](udata)
       for i in 0..<len(nfuts):
         if cast[FutureBase](nfuts[i]) != rfut:
@@ -1158,7 +1189,8 @@ proc one*[T](futs: varargs[Future[T]]): Future[Future[T]] =
   retFuture.cancelCallback = cancellation
   return retFuture
 
-proc race*(futs: varargs[FutureBase]): Future[FutureBase] =
+proc race*(futs: varargs[FutureBase]): Future[FutureBase] {.
+    asyncraises: [CancelledError].} =
   ## Returns a future which will complete and return completed FutureBase,
   ## when one of the futures in ``futs`` will be completed, failed or canceled.
   ##
@@ -1244,7 +1276,8 @@ when (chronosEventEngine in ["epoll", "kqueue"]) or defined(windows):
     retFuture.cancelCallback = cancellation
     retFuture
 
-proc sleepAsync*(duration: Duration): Future[void] =
+proc sleepAsync*(duration: Duration): Future[void] {.
+    asyncraises: [CancelledError].} =
   ## Suspends the execution of the current async procedure for the next
   ## ``duration`` time.
   var retFuture = newFuture[void]("chronos.sleepAsync(Duration)")
@@ -1264,7 +1297,7 @@ proc sleepAsync*(duration: Duration): Future[void] =
   return retFuture
 
 proc sleepAsync*(ms: int): Future[void] {.
-     inline, deprecated: "Use sleepAsync(Duration)".} =
+     inline, deprecated: "Use sleepAsync(Duration)", asyncraises: [CancelledError].} =
   result = sleepAsync(ms.milliseconds())
 
 proc stepsAsync*(number: int): Future[void] =
@@ -1312,7 +1345,8 @@ proc idleAsync*(): Future[void] =
   callIdle(continuation, nil)
   retFuture
 
-proc withTimeout*[T](fut: Future[T], timeout: Duration): Future[bool] =
+proc withTimeout*[T](fut: Future[T], timeout: Duration): Future[bool] {.
+    asyncraises: [CancelledError].} =
   ## Returns a future which will complete once ``fut`` completes or after
   ## ``timeout`` milliseconds has elapsed.
   ##
@@ -1380,28 +1414,19 @@ proc withTimeout*[T](fut: Future[T], timeout: int): Future[bool] {.
      inline, deprecated: "Use withTimeout(Future[T], Duration)".} =
   withTimeout(fut, timeout.milliseconds())
 
-proc wait*[T](fut: Future[T], timeout = InfiniteDuration): Future[T] =
-  ## Returns a future which will complete once future ``fut`` completes
-  ## or if timeout of ``timeout`` milliseconds has been expired.
-  ##
-  ## If ``timeout`` is ``-1``, then statement ``await wait(fut)`` is
-  ## equal to ``await fut``.
-  ##
-  ## TODO: In case when ``fut`` got cancelled, what result Future[T]
-  ## should return, because it can't be cancelled too.
+proc waitImpl[F: SomeFuture](fut: F, retFuture: auto, timeout: Duration): auto =
   var
-    retFuture = newFuture[T]("chronos.wait()", {FutureFlag.OwnCancelSchedule})
     moment: Moment
     timer: TimerCallback
     timeouted = false
 
   template completeFuture(fut: untyped): untyped =
     if fut.failed():
-      retFuture.fail(fut.error)
+      retFuture.fail(fut.error(), warn = false)
     elif fut.cancelled():
       retFuture.cancelAndSchedule()
     else:
-      when T is void:
+      when type(fut).T is void:
         retFuture.complete()
       else:
         retFuture.complete(fut.value)
@@ -1446,6 +1471,20 @@ proc wait*[T](fut: Future[T], timeout = InfiniteDuration): Future[T] =
 
   retFuture
 
+proc wait*[T](fut: Future[T], timeout = InfiniteDuration): Future[T] =
+  ## Returns a future which will complete once future ``fut`` completes
+  ## or if timeout of ``timeout`` milliseconds has been expired.
+  ##
+  ## If ``timeout`` is ``-1``, then statement ``await wait(fut)`` is
+  ## equal to ``await fut``.
+  ##
+  ## TODO: In case when ``fut`` got cancelled, what result Future[T]
+  ## should return, because it can't be cancelled too.
+  var
+    retFuture = newFuture[T]("chronos.wait()", {FutureFlag.OwnCancelSchedule})
+
+  waitImpl(fut, retFuture, timeout)
+
 proc wait*[T](fut: Future[T], timeout = -1): Future[T] {.
      inline, deprecated: "Use wait(Future[T], Duration)".} =
   if timeout == -1:
@@ -1454,7 +1493,6 @@ proc wait*[T](fut: Future[T], timeout = -1): Future[T] {.
     wait(fut, ZeroDuration)
   else:
     wait(fut, timeout.milliseconds())
-
 
 when defined(windows):
   import ../osdefs
@@ -1515,3 +1553,53 @@ when defined(windows):
 
     retFuture.cancelCallback = cancellation
     return retFuture
+
+{.pop.} # Automatically deduced raises from here onwards
+
+template fail*[T, E](
+    future: InternalRaisesFuture[T, E], error: ref CatchableError,
+    warn: static bool = true) =
+  checkFailureType(future, error, warn)
+  fail(future, error, getSrcLocation())
+
+proc waitFor*[T, E](fut: InternalRaisesFuture[T, E]): T = # {.raises: [E]}
+  ## **Blocks** the current thread until the specified future completes.
+  ## There's no way to tell if poll or read raised the exception
+  while not(fut.finished()):
+    poll()
+
+  fut.read()
+
+proc read*[T: not void, E](future: InternalRaisesFuture[T, E]): lent T =
+  ## Retrieves the value of ``future``. Future must be finished otherwise
+  ## this function will fail with a ``ValueError`` exception.
+  ##
+  ## If the result of the future is an error then that error will be raised.
+  if not future.finished():
+    # TODO: Make a custom exception type for this?
+    raise newException(ValueError, "Future still in progress.")
+
+  internalCheckComplete(future)
+  future.internalValue
+
+proc read*[E](future: InternalRaisesFuture[void, E]) =
+  ## Retrieves the value of ``future``. Future must be finished otherwise
+  ## this function will fail with a ``ValueError`` exception.
+  ##
+  ## If the result of the future is an error then that error will be raised.
+  if future.finished():
+    internalCheckComplete(future)
+  else:
+    # TODO: Make a custom exception type for this?
+    raise newException(ValueError, "Future still in progress.")
+
+proc wait*(fut: InternalRaisesFuture, timeout = InfiniteDuration): auto =
+  type
+    T = type(fut).T
+    E = type(fut).E
+    InternalRaisesFutureRaises = E.prepend(CancelledError, AsyncTimeoutError)
+
+  let
+    retFuture = newFuture[T]("chronos.wait()", {FutureFlag.OwnCancelSchedule})
+
+  waitImpl(fut, retFuture, timeout)

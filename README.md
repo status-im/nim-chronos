@@ -222,8 +222,8 @@ proc p1(): Future[void] {.async, asyncraises: [IOError].} =
   raise newException(IOError, "works") # Or any child of IOError
 ```
 
-Under the hood, the return type of `p1` will be rewritten to another type,
-which will convey raises informations to await.
+Under the hood, the return type of `p1` will be rewritten to an internal type,
+which will convey raises informations to `await`.
 
 ```nim
 proc p2(): Future[void] {.async, asyncraises: [IOError].} =
@@ -231,8 +231,10 @@ proc p2(): Future[void] {.async, asyncraises: [IOError].} =
              # can only raise IOError
 ```
 
-The hidden type (`RaiseTrackingFuture`) is implicitely convertible into a Future.
-However, it may causes issues when creating callback or methods
+Raw functions and callbacks that don't go through the `async` transformation but
+still return a `Future` and interact with the rest of the framework also need to
+be annotated with `asyncraises` to participate in the checked exception scheme:
+
 ```nim
 proc p3(): Future[void] {.async, asyncraises: [IOError].} =
   let fut: Future[void] = p1() # works
@@ -245,6 +247,24 @@ proc p3(): Future[void] {.async, asyncraises: [IOError].} =
     type c = proc(): Future[void] {.async, asyncraises: [IOError, ValueError].}
     let cb3: c = p1 # doesn't work, the raises must match _exactly_
   )
+```
+
+When `chronos` performs the `async` transformation, all code is placed in a
+a special `try/except` clause that re-routes exception handling to the `Future`.
+
+Beacuse of this re-routing, functions that return a `Future` instance manually
+never directly raise exceptions themselves - instead, exceptions are handled
+indirectly via `await` or `Future.read`. When writing raw async functions, they
+too must not raise exceptions - instead, they must store exceptions in the
+future they return:
+
+```nim
+proc p4(): Future[void] {.asyncraises: [ValueError].} =
+  let fut = newFuture[void]
+
+  # Equivalent of `raise (ref ValueError)()` in raw async functions:
+  fut.fail((ref ValueError)(msg: "raising in raw async function"))
+  fut
 ```
 
 ### Platform independence
@@ -268,7 +288,7 @@ Because of this, the effect system thinks no exceptions are "leaking" because in
 fact, exception _handling_ is deferred to when the future is being read.
 
 Effectively, this means that while code can be compiled with
-`{.push raises: [Defect]}`, the intended effect propagation and checking is
+`{.push raises: []}`, the intended effect propagation and checking is
 **disabled** for `async` functions.
 
 To enable checking exception effects in `async` code, enable strict mode with
