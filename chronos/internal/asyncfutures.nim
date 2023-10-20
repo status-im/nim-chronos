@@ -638,8 +638,9 @@ template taskCancelMessage(future: FutureBase): string =
   "Asynchronous task " & taskFutureLocation(future) & " was cancelled!"
 
 proc waitFor*[T](fut: Future[T]): T {.raises: [CatchableError].} =
-  ## **Blocks** the current thread until the specified future completes.
-  ## There's no way to tell if poll or read raised the exception
+  ## **Blocks** the current thread until the specified future finishes and
+  ## reads it, potentially raising an exception if the future failed or was
+  ## cancelled.
   while not(fut.finished()):
     poll()
 
@@ -1007,7 +1008,7 @@ template cancelAndWait*(future: FutureBase): Future[void] =
   ## Cancel ``future``.
   cancelAndWait(future, getSrcLocation())
 
-proc noCancel*[F: SomeFuture](future: F): auto = # raises: raiseOf(future) - CancelledError
+proc noCancel*[F: SomeFuture](future: F): auto = # asyncraises: asyncraiseOf(future) - CancelledError
   ## Prevent cancellation requests from propagating to ``future`` while
   ## forwarding its value or error when it finishes.
   ##
@@ -1242,7 +1243,7 @@ proc race*(futs: varargs[FutureBase]): Future[FutureBase] {.
 when (chronosEventEngine in ["epoll", "kqueue"]) or defined(windows):
   import std/os
 
-  proc waitSignal*(signal: int): Future[void] {.raises: [].} =
+  proc waitSignal*(signal: int): Future[void] {.asyncraises: [AsyncError, CancelledError].} =
     var retFuture = newFuture[void]("chronos.waitSignal()")
     var signalHandle: Opt[SignalHandle]
 
@@ -1300,7 +1301,7 @@ proc sleepAsync*(ms: int): Future[void] {.
      inline, deprecated: "Use sleepAsync(Duration)", asyncraises: [CancelledError].} =
   result = sleepAsync(ms.milliseconds())
 
-proc stepsAsync*(number: int): Future[void] =
+proc stepsAsync*(number: int): Future[void] {.asyncraises: [CancelledError].} =
   ## Suspends the execution of the current async procedure for the next
   ## ``number`` of asynchronous steps (``poll()`` calls).
   ##
@@ -1327,7 +1328,7 @@ proc stepsAsync*(number: int): Future[void] =
 
   retFuture
 
-proc idleAsync*(): Future[void] =
+proc idleAsync*(): Future[void] {.asyncraises: [CancelledError].} =
   ## Suspends the execution of the current asynchronous task until "idle" time.
   ##
   ## "idle" time its moment of time, when no network events were processed by
@@ -1563,14 +1564,15 @@ template fail*[T, E](
   fail(future, error, getSrcLocation())
 
 proc waitFor*[T, E](fut: InternalRaisesFuture[T, E]): T = # {.raises: [E]}
-  ## **Blocks** the current thread until the specified future completes.
-  ## There's no way to tell if poll or read raised the exception
+  ## **Blocks** the current thread until the specified future finishes and
+  ## reads it, potentially raising an exception if the future failed or was
+  ## cancelled.
   while not(fut.finished()):
     poll()
 
   fut.read()
 
-proc read*[T: not void, E](future: InternalRaisesFuture[T, E]): lent T =
+proc read*[T: not void, E](future: InternalRaisesFuture[T, E]): lent T = # {.raises: [E, ValueError].}
   ## Retrieves the value of ``future``. Future must be finished otherwise
   ## this function will fail with a ``ValueError`` exception.
   ##
@@ -1582,7 +1584,7 @@ proc read*[T: not void, E](future: InternalRaisesFuture[T, E]): lent T =
   internalCheckComplete(future)
   future.internalValue
 
-proc read*[E](future: InternalRaisesFuture[void, E]) =
+proc read*[E](future: InternalRaisesFuture[void, E]) = # {.raises: [E, CancelledError].}
   ## Retrieves the value of ``future``. Future must be finished otherwise
   ## this function will fail with a ``ValueError`` exception.
   ##
