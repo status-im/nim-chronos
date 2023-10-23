@@ -195,6 +195,8 @@ type
     name*: string
     data*: string
 
+  HttpAddressResult* = Result[HttpAddress, HttpAddressErrorType]
+
 # HttpClientRequestRef valid states are:
 # Ready -> Open -> (Finished, Error) -> (Closing, Closed)
 #
@@ -297,6 +299,89 @@ proc getTLSFlags(flags: HttpClientFlags): set[TLSFlags] {.raises: [] .} =
   if HttpClientFlag.NoVerifyServerName in flags:
     res.incl(TLSFlags.NoVerifyServerName)
   res
+
+proc getHttpAddress*(
+       url: Uri,
+       flags: HttpClientFlags = {}
+     ): HttpAddressResult {.raises: [].} =
+  let
+    scheme =
+      if len(url.scheme) == 0:
+        HttpClientScheme.NonSecure
+      else:
+        case toLowerAscii(url.scheme)
+        of "http":
+          HttpClientScheme.NonSecure
+        of "https":
+          HttpClientScheme.Secure
+        else:
+          return err(HttpAddressErrorType.InvalidUrlScheme)
+    port =
+      if len(url.port) == 0:
+        case scheme
+        of HttpClientScheme.NonSecure:
+          80'u16
+        of HttpClientScheme.Secure:
+          443'u16
+      else:
+        Base10.decode(uint16, url.port).valueOr:
+          return err(HttpAddressErrorType.InvalidPortNumber)
+    hostname =
+      block:
+        if len(url.hostname) == 0:
+          return err(HttpAddressErrorType.MissingHostname)
+        url.hostname
+    id = hostname & ":" & Base10.toString(port)
+    addresses =
+      if (HttpClientFlag.NoInet4Resolution in flags) and
+         (HttpClientFlag.NoInet6Resolution in flags):
+        # DNS resolution is disabled.
+        try:
+          @[initTAddress(hostname, Port(port))]
+        except TransportAddressError:
+          return err(HttpAddressErrorType.InvalidIpHostname)
+      else:
+        try:
+          if (HttpClientFlag.NoInet4Resolution notin flags) and
+             (HttpClientFlag.NoInet6Resolution notin flags):
+            # DNS resolution for both IPv4 and IPv6 addresses.
+            resolveTAddress(hostname, Port(port))
+          else:
+            if HttpClientFlag.NoInet6Resolution in flags:
+              # DNS resolution only for IPv4 addresses.
+              resolveTAddress(hostname, Port(port), AddressFamily.IPv4)
+            else:
+              # DNS resolution only for IPv6 addresses
+              resolveTAddress(hostname, Port(port), AddressFamily.IPv6)
+        except TransportAddressError:
+          return err(HttpAddressErrorType.NameLookupFailed)
+
+  if len(addresses) == 0:
+    return err(HttpAddressErrorType.NoAddressResolved)
+
+  ok(HttpAddress(id: id, scheme: scheme, hostname: hostname, port: port,
+                 path: url.path, query: url.query, anchor: url.anchor,
+                 username: url.username, password: url.password,
+                 addresses: addresses))
+
+proc getHttpAddress*(
+       url: string,
+       flags: HttpClientFlags = {}
+     ): HttpAddressResult {.raises: [].} =
+  getHttpAddress(parseUri(url), flags)
+
+proc getHttpAddress*(
+       session: HttpSessionRef,
+       url: Uri
+     ): HttpAddressResult {.raises: [].} =
+  getHttpAddress(url, session.flags)
+
+proc getHttpAddress*(
+       session: HttpSessionRef,
+       url: string
+     ): HttpAddressResult {.raises: [].} =
+  ## Create new HTTP address using URL string ``url`` and .
+  getHttpAddress(parseUri(url), session.flags)
 
 proc getAddress*(session: HttpSessionRef, url: Uri): HttpResult[HttpAddress] {.
      raises: [] .} =
@@ -515,14 +600,12 @@ proc closeWait(conn: HttpClientConnectionRef) {.async.} =
           res.add(conn.reader.closeWait())
         if not(isNil(conn.writer)) and not(conn.writer.closed()):
           res.add(conn.writer.closeWait())
+        if conn.kind == HttpClientScheme.Secure:
+          res.add(conn.treader.closeWait())
+          res.add(conn.twriter.closeWait())
+        res.add(conn.transp.closeWait())
         res
-    if len(pending) > 0: await allFutures(pending)
-    case conn.kind
-    of HttpClientScheme.Secure:
-      await allFutures(conn.treader.closeWait(), conn.twriter.closeWait())
-    of HttpClientScheme.NonSecure:
-      discard
-    await conn.transp.closeWait()
+    if len(pending) > 0: await noCancel(allFutures(pending))
     conn.state = HttpClientConnectionState.Closed
     untrackCounter(HttpClientConnectionTrackerName)
 
@@ -546,8 +629,7 @@ proc connect(session: HttpSessionRef,
       let conn =
         block:
           let res = HttpClientConnectionRef.new(session, ha, transp)
-          case res.kind
-          of HttpClientScheme.Secure:
+          if res.kind == HttpClientScheme.Secure:
             try:
               await res.tls.handshake()
               res.state = HttpClientConnectionState.Ready
@@ -562,7 +644,7 @@ proc connect(session: HttpSessionRef,
               await res.closeWait()
               res.state = HttpClientConnectionState.Error
               lastError = $exc.msg
-          of HttpClientScheme.Nonsecure:
+          else:
             res.state = HttpClientConnectionState.Ready
           res
       if conn.state == HttpClientConnectionState.Ready:
@@ -700,7 +782,7 @@ proc closeWait*(session: HttpSessionRef) {.async.} =
   for connections in session.connections.values():
     for conn in connections:
       pending.add(closeWait(conn))
-  await allFutures(pending)
+  await noCancel(allFutures(pending))
 
 proc sessionWatcher(session: HttpSessionRef) {.async.} =
   while true:
@@ -745,26 +827,30 @@ proc sessionWatcher(session: HttpSessionRef) {.async.} =
         break
 
 proc closeWait*(request: HttpClientRequestRef) {.async.} =
+  var pending: seq[FutureBase]
   if request.state notin {HttpReqRespState.Closing, HttpReqRespState.Closed}:
     request.state = HttpReqRespState.Closing
     if not(isNil(request.writer)):
       if not(request.writer.closed()):
-        await request.writer.closeWait()
+        pending.add(FutureBase(request.writer.closeWait()))
       request.writer = nil
-    await request.releaseConnection()
+    pending.add(FutureBase(request.releaseConnection()))
+    await noCancel(allFutures(pending))
     request.session = nil
     request.error = nil
     request.state = HttpReqRespState.Closed
     untrackCounter(HttpClientRequestTrackerName)
 
 proc closeWait*(response: HttpClientResponseRef) {.async.} =
+  var pending: seq[FutureBase]
   if response.state notin {HttpReqRespState.Closing, HttpReqRespState.Closed}:
     response.state = HttpReqRespState.Closing
     if not(isNil(response.reader)):
       if not(response.reader.closed()):
-        await response.reader.closeWait()
+        pending.add(FutureBase(response.reader.closeWait()))
       response.reader = nil
-    await response.releaseConnection()
+    pending.add(FutureBase(response.releaseConnection()))
+    await noCancel(allFutures(pending))
     response.session = nil
     response.error = nil
     response.state = HttpReqRespState.Closed

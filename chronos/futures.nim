@@ -37,6 +37,11 @@ type
   FutureState* {.pure.} = enum
     Pending, Completed, Cancelled, Failed
 
+  FutureFlag* {.pure.} = enum
+    OwnCancelSchedule
+
+  FutureFlags* = set[FutureFlag]
+
   InternalFutureBase* = object of RootObj
     # Internal untyped future representation - the fields are not part of the
     # public API and neither is `InternalFutureBase`, ie the inheritance
@@ -47,8 +52,8 @@ type
     internalCancelcb*: CallbackFunc
     internalChild*: FutureBase
     internalState*: FutureState
+    internalFlags*: FutureFlags
     internalError*: ref CatchableError ## Stored exception
-    internalMustCancel*: bool
     internalClosure*: iterator(f: FutureBase): FutureBase {.closureIter.}
 
     when chronosFutureId:
@@ -94,12 +99,11 @@ when chronosFutureTracking:
   var futureList* {.threadvar.}: FutureList
 
 # Internal utilities - these are not part of the stable API
-proc internalInitFutureBase*(
-    fut: FutureBase,
-    loc: ptr SrcLoc,
-    state: FutureState) =
+proc internalInitFutureBase*(fut: FutureBase, loc: ptr SrcLoc,
+                             state: FutureState, flags: FutureFlags) =
   fut.internalState = state
   fut.internalLocation[LocationKind.Create] = loc
+  fut.internalFlags = flags
   if state != FutureState.Pending:
     fut.internalLocation[LocationKind.Finish] = loc
 
@@ -128,21 +132,34 @@ template init*[T](F: type Future[T], fromProc: static[string] = ""): Future[T] =
   ## Specifying ``fromProc``, which is a string specifying the name of the proc
   ## that this future belongs to, is a good habit as it helps with debugging.
   let res = Future[T]()
-  internalInitFutureBase(res, getSrcLocation(fromProc), FutureState.Pending)
+  internalInitFutureBase(res, getSrcLocation(fromProc), FutureState.Pending, {})
+  res
+
+template init*[T](F: type Future[T], fromProc: static[string] = "",
+                  flags: static[FutureFlags]): Future[T] =
+  ## Creates a new pending future.
+  ##
+  ## Specifying ``fromProc``, which is a string specifying the name of the proc
+  ## that this future belongs to, is a good habit as it helps with debugging.
+  let res = Future[T]()
+  internalInitFutureBase(res, getSrcLocation(fromProc), FutureState.Pending,
+                         flags)
   res
 
 template completed*(
     F: type Future, fromProc: static[string] = ""): Future[void] =
   ## Create a new completed future
-  let res = Future[T]()
-  internalInitFutureBase(res, getSrcLocation(fromProc), FutureState.Completed)
+  let res = Future[void]()
+  internalInitFutureBase(res, getSrcLocation(fromProc), FutureState.Completed,
+                         {})
   res
 
 template completed*[T: not void](
     F: type Future, valueParam: T, fromProc: static[string] = ""): Future[T] =
   ## Create a new completed future
   let res = Future[T](internalValue: valueParam)
-  internalInitFutureBase(res, getSrcLocation(fromProc), FutureState.Completed)
+  internalInitFutureBase(res, getSrcLocation(fromProc), FutureState.Completed,
+                         {})
   res
 
 template failed*[T](
@@ -150,18 +167,20 @@ template failed*[T](
     fromProc: static[string] = ""): Future[T] =
   ## Create a new failed future
   let res = Future[T](internalError: errorParam)
-  internalInitFutureBase(res, getSrcLocation(fromProc), FutureState.Failed)
+  internalInitFutureBase(res, getSrcLocation(fromProc), FutureState.Failed, {})
   when chronosStackTrace:
     res.internalErrorStackTrace =
       if getStackTrace(res.error) == "":
         getStackTrace()
       else:
         getStackTrace(res.error)
-
   res
 
 func state*(future: FutureBase): FutureState =
   future.internalState
+
+func flags*(future: FutureBase): FutureFlags =
+  future.internalFlags
 
 func finished*(future: FutureBase): bool {.inline.} =
   ## Determines whether ``future`` has finished, i.e. ``future`` state changed
@@ -184,7 +203,7 @@ func completed*(future: FutureBase): bool {.inline.} =
 func location*(future: FutureBase): array[LocationKind, ptr SrcLoc] =
   future.internalLocation
 
-func value*[T](future: Future[T]): T =
+func value*[T: not void](future: Future[T]): lent T =
   ## Return the value in a completed future - raises Defect when
   ## `fut.completed()` is `false`.
   ##
@@ -196,8 +215,19 @@ func value*[T](future: Future[T]): T =
         msg: "Future not completed while accessing value",
         cause: future)
 
-  when T isnot void:
-    future.internalValue
+  future.internalValue
+
+func value*(future: Future[void]) =
+  ## Return the value in a completed future - raises Defect when
+  ## `fut.completed()` is `false`.
+  ##
+  ## See `read` for a version that raises an catchable error when future
+  ## has not completed.
+  when chronosStrictFutureAccess:
+    if not future.completed():
+      raise (ref FutureDefect)(
+        msg: "Future not completed while accessing value",
+        cause: future)
 
 func error*(future: FutureBase): ref CatchableError =
   ## Return the error of `future`, or `nil` if future did not fail.

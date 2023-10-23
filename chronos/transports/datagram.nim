@@ -690,8 +690,28 @@ proc join*(transp: DatagramTransport): Future[void] =
 
 proc closeWait*(transp: DatagramTransport): Future[void] =
   ## Close transport ``transp`` and release all resources.
+  const FutureName = "datagram.transport.closeWait"
+
+  if {ReadClosed, WriteClosed} * transp.state != {}:
+    return Future.completed(FutureName)
+
+  let retFuture = newFuture[void](FutureName, {FutureFlag.OwnCancelSchedule})
+
+  proc continuation(udata: pointer) {.gcsafe.} =
+    retFuture.complete()
+
+  proc cancellation(udata: pointer) {.gcsafe.} =
+    # We are not going to change the state of `retFuture` to cancelled, so we
+    # will prevent the entire sequence of Futures from being cancelled.
+    discard
+
   transp.close()
-  transp.join()
+  if transp.future.finished():
+    retFuture.complete()
+  else:
+    transp.future.addCallback(continuation, cast[pointer](retFuture))
+    retFuture.cancelCallback = cancellation
+  retFuture
 
 proc send*(transp: DatagramTransport, pbytes: pointer,
            nbytes: int): Future[void] =

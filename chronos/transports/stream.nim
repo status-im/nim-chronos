@@ -2591,15 +2591,34 @@ proc close*(transp: StreamTransport) =
 
 proc closeWait*(transp: StreamTransport): Future[void] =
   ## Close and frees resources of transport ``transp``.
+  const FutureName = "stream.transport.closeWait"
+
+  if {ReadClosed, WriteClosed} * transp.state != {}:
+    return Future.completed(FutureName)
+
+  let retFuture = newFuture[void](FutureName, {FutureFlag.OwnCancelSchedule})
+
+  proc continuation(udata: pointer) {.gcsafe.} =
+    retFuture.complete()
+
+  proc cancellation(udata: pointer) {.gcsafe.} =
+    # We are not going to change the state of `retFuture` to cancelled, so we
+    # will prevent the entire sequence of Futures from being cancelled.
+    discard
+
   transp.close()
-  transp.join()
+  if transp.future.finished():
+    retFuture.complete()
+  else:
+    transp.future.addCallback(continuation, cast[pointer](retFuture))
+    retFuture.cancelCallback = cancellation
+  retFuture
 
 proc shutdownWait*(transp: StreamTransport): Future[void] =
   ## Perform graceful shutdown of TCP connection backed by transport ``transp``.
   doAssert(transp.kind == TransportKind.Socket)
   let retFuture = newFuture[void]("stream.transport.shutdown")
   transp.checkClosed(retFuture)
-  transp.checkWriteEof(retFuture)
 
   when defined(windows):
     let loop = getThreadDispatcher()
@@ -2639,7 +2658,14 @@ proc shutdownWait*(transp: StreamTransport): Future[void] =
     let res = osdefs.shutdown(SocketHandle(transp.fd), SHUT_WR)
     if res < 0:
       let err = osLastError()
-      retFuture.fail(getTransportOsError(err))
+      case err
+      of ENOTCONN:
+        # The specified socket is not connected, it means that our initial
+        # goal is already happened.
+        transp.state.incl({WriteEof})
+        callSoon(continuation, nil)
+      else:
+        retFuture.fail(getTransportOsError(err))
     else:
       transp.state.incl({WriteEof})
       callSoon(continuation, nil)
