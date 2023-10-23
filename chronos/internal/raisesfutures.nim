@@ -17,11 +17,11 @@ iterator members(tup: NimNode): NimNode =
     for n in getType(getTypeInst(tup)[1])[1..^1]:
       yield n
 
-proc members(tup: NimNode): seq[NimNode] =
+proc members(tup: NimNode): seq[NimNode] {.compileTime.} =
   for t in tup.members():
     result.add(t)
 
-proc containsSignature(members: openArray[NimNode], typ: NimNode): bool {.compiletime.} =
+proc containsSignature(members: openArray[NimNode], typ: NimNode): bool {.compileTime.} =
   let typHash = signatureHash(typ)
 
   for err in members:
@@ -66,7 +66,7 @@ macro union*(tup0: typedesc[tuple], tup1: typedesc[tuple]): typedesc =
   for err2 in getType(getTypeInst(tup1)[1])[1..^1]:
     result.add err2
 
-proc getRaises*(future: NimNode): NimNode =
+proc getRaises*(future: NimNode): NimNode {.compileTime.} =
   # Given InternalRaisesFuture[T, (A, B, C)], returns (A, B, C)
   let types = getType(getTypeInst(future)[2])
   if types.eqIdent("void"):
