@@ -478,6 +478,26 @@ suite "Exceptions tracking":
     checkNotCompiles:
       proc test33 {.asyncraises: [IOError], async.} = raise newException(ValueError, "hey")
 
+  test "or errors":
+    proc testit {.asyncraises: [ValueError], async.} =
+      raise (ref ValueError)()
+
+    proc testit2 {.asyncraises: [IOError], async.} =
+      raise (ref IOError)()
+
+    proc test {.async, asyncraises: [ValueError, IOError].} =
+      await testit() or testit2()
+
+    proc noraises() {.raises: [].} =
+      expect(ValueError):
+        try:
+          let f = test()
+          waitFor(f)
+        except IOError:
+          doAssert false
+
+    noraises()
+
   test "Wait errors":
     proc testit {.asyncraises: [ValueError], async.} = raise newException(ValueError, "hey")
 

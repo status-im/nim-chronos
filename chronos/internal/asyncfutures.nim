@@ -13,8 +13,10 @@
 import std/[sequtils, macros]
 import stew/base10
 
-import ./asyncengine
+import ./[asyncengine, raisesfutures]
 import ../[config, futures]
+
+export raisesfutures.InternalRaisesFuture
 
 when chronosStackTrace:
   import std/strutils
@@ -40,12 +42,6 @@ func `[]`*(loc: array[LocationKind, ptr SrcLoc], v: int): ptr SrcLoc {.
   else: raiseAssert("Unknown source location " & $v)
 
 type
-  InternalRaisesFuture*[T, E] = ref object of Future[T]
-    ## Future with a tuple of possible exception types
-    ## eg InternalRaisesFuture[void, (ValueError, OSError)]
-    ## Will be injected by `asyncraises`, should generally
-    ## not be used manually
-
   FutureStr*[T] = ref object of Future[T]
     ## Future to hold GC strings
     gcholder*: string
@@ -55,76 +51,6 @@ type
     gcholder*: seq[B]
 
   SomeFuture = Future|InternalRaisesFuture
-
-macro prepend(tup: typedesc[tuple], typ: varargs[typed]): typedesc =
-  result = nnkTupleConstr.newTree()
-  for err in typ:
-    result.add err
-
-  for err in getType(getTypeInst(tup)[1])[1..^1]:
-    result.add err
-
-macro remove(tup: typedesc[tuple], typ: varargs[typed]): typedesc =
-  result = nnkTupleConstr.newTree()
-  for err in getType(getTypeInst(tup)[1])[1..^1]:
-    var found = false
-    for err2 in typ:
-      if signatureHash(err) == signatureHash(err2):
-        found = true
-    if not found:
-      result.add err
-
-  if result.len == 0:
-    result = ident"void"
-
-macro checkFailureType(future, error: typed, warn: static bool = true): untyped =
-  let e = getTypeInst(future)[2]
-  let types = getType(e)
-
-  if types.eqIdent("void"):
-    error("Can't raise exceptions on this Future")
-
-  expectKind(types, nnkBracketExpr)
-  expectKind(types[0], nnkSym)
-  assert types[0].strVal == "tuple"
-  assert types.len > 1
-
-  expectKind(getTypeInst(error), nnkRefTy)
-  let toMatch = getTypeInst(error)[0]
-
-  # Can't find a way to check `is` in the macro. (sameType doesn't
-  # work for inherited objects). Dirty hack here, for [IOError, OSError],
-  # this will generate:
-  #
-  # static:
-  #   if not((`toMatch` is IOError) or (`toMatch` is OSError)
-  #     or (`toMatch` is CancelledError) or false):
-  #     raiseAssert("Can't fail with `toMatch`, only [IOError, OSError] is allowed")
-  var
-    typeChecker = ident"false"
-    maybeChecker = ident"false"
-    runtimeChecker = ident"false"
-
-  for errorType in types[1..^1]:
-    typeChecker = infix(typeChecker, "or", infix(toMatch, "is", errorType))
-    maybeChecker = infix(maybeChecker, "or", infix(errorType, "is", toMatch))
-    runtimeChecker = infix(runtimeChecker, "or", infix(error, "of", nnkBracketExpr.newTree(ident"typedesc", errorType)))
-
-  let
-    errorMsg = "Can't fail with " & repr(toMatch) & ". Only " & repr(types[1..^1]) & " allowed"
-    warningMsg = "Can't verify `fail` exception type at compile time - expected one of " & repr(types[1..^1]) & ", got " & repr(toMatch)
-    warning = if warn:
-      quote do: {.warning: `warningMsg`.}
-    else: newEmptyNode()
-
-  result = quote do:
-    when not(`typeChecker`):
-      when not(`maybeChecker`):
-        static:
-          raiseAssert(`errorMsg`)
-      else:
-        `warning`
-        assert(`runtimeChecker`)
 
 # Backwards compatibility for old FutureState name
 template Finished* {.deprecated: "Use Completed instead".} = Completed
@@ -734,6 +660,47 @@ proc `and`*[T, Y](fut1: Future[T], fut2: Future[Y]): Future[void] {.
   retFuture.cancelCallback = cancellation
   return retFuture
 
+template orImpl*[T, Y](fut1: Future[T], fut2: Future[Y]): untyped =
+  var cb: proc(udata: pointer) {.gcsafe, raises: [].}
+  cb = proc(udata: pointer) {.gcsafe, raises: [].} =
+    if not(retFuture.finished()):
+      var fut = cast[FutureBase](udata)
+      if cast[pointer](fut1) == udata:
+        fut2.removeCallback(cb)
+      else:
+        fut1.removeCallback(cb)
+      if fut.failed():
+        retFuture.fail(fut.error, warn = false)
+      else:
+        retFuture.complete()
+
+  proc cancellation(udata: pointer) =
+    # On cancel we remove all our callbacks only.
+    if not(fut1.finished()):
+      fut1.removeCallback(cb)
+    if not(fut2.finished()):
+      fut2.removeCallback(cb)
+
+  if fut1.finished():
+    if fut1.failed():
+      retFuture.fail(fut1.error, warn = false)
+    else:
+      retFuture.complete()
+    return retFuture
+
+  if fut2.finished():
+    if fut2.failed():
+      retFuture.fail(fut2.error, warn = false)
+    else:
+      retFuture.complete()
+    return retFuture
+
+  fut1.addCallback(cb)
+  fut2.addCallback(cb)
+
+  retFuture.cancelCallback = cancellation
+  return retFuture
+
 proc `or`*[T, Y](fut1: Future[T], fut2: Future[Y]): Future[void] =
   ## Returns a future which will complete once either ``fut1`` or ``fut2``
   ## finish.
@@ -748,45 +715,8 @@ proc `or`*[T, Y](fut1: Future[T], fut2: Future[Y]): Future[void] =
   ##
   ## If cancelled, ``fut1`` and ``fut2`` futures WILL NOT BE cancelled.
   var retFuture = newFuture[void]("chronos.or")
-  var cb: proc(udata: pointer) {.gcsafe, raises: [].}
-  cb = proc(udata: pointer) {.gcsafe, raises: [].} =
-    if not(retFuture.finished()):
-      var fut = cast[FutureBase](udata)
-      if cast[pointer](fut1) == udata:
-        fut2.removeCallback(cb)
-      else:
-        fut1.removeCallback(cb)
-      if fut.failed():
-        retFuture.fail(fut.error)
-      else:
-        retFuture.complete()
+  orImpl(fut1, fut2)
 
-  proc cancellation(udata: pointer) =
-    # On cancel we remove all our callbacks only.
-    if not(fut1.finished()):
-      fut1.removeCallback(cb)
-    if not(fut2.finished()):
-      fut2.removeCallback(cb)
-
-  if fut1.finished():
-    if fut1.failed():
-      retFuture.fail(fut1.error)
-    else:
-      retFuture.complete()
-    return retFuture
-
-  if fut2.finished():
-    if fut2.failed():
-      retFuture.fail(fut2.error)
-    else:
-      retFuture.complete()
-    return retFuture
-
-  fut1.addCallback(cb)
-  fut2.addCallback(cb)
-
-  retFuture.cancelCallback = cancellation
-  return retFuture
 
 proc all*[T](futs: varargs[Future[T]]): auto {.
   deprecated: "Use allFutures(varargs[Future[T]])".} =
@@ -1560,7 +1490,7 @@ when defined(windows):
 template fail*[T, E](
     future: InternalRaisesFuture[T, E], error: ref CatchableError,
     warn: static bool = true) =
-  checkFailureType(future, error, warn)
+  checkRaises(future, error, warn)
   fail(future, error, getSrcLocation())
 
 proc waitFor*[T, E](fut: InternalRaisesFuture[T, E]): T = # {.raises: [E]}
@@ -1594,6 +1524,16 @@ proc read*[E](future: InternalRaisesFuture[void, E]) = # {.raises: [E, Cancelled
   else:
     # TODO: Make a custom exception type for this?
     raise newException(ValueError, "Future still in progress.")
+
+proc `or`*[T, Y, E1, E2](
+    fut1: InternalRaisesFuture[T, E1],
+    fut2: InternalRaisesFuture[Y, E2]): auto =
+  type
+    InternalRaisesFutureRaises = union(E1, E2)
+
+  let
+    retFuture = newFuture[void]("chronos.wait()", {FutureFlag.OwnCancelSchedule})
+  orImpl(fut1, fut2)
 
 proc wait*(fut: InternalRaisesFuture, timeout = InfiniteDuration): auto =
   type
