@@ -477,3 +477,63 @@ suite "Exceptions tracking":
     proc test44 {.asyncraises: [ValueError], async.} = raise newException(ValueError, "hey")
     checkNotCompiles:
       proc test33 {.asyncraises: [IOError], async.} = raise newException(ValueError, "hey")
+
+  test "or errors":
+    proc testit {.asyncraises: [ValueError], async.} =
+      raise (ref ValueError)()
+
+    proc testit2 {.asyncraises: [IOError], async.} =
+      raise (ref IOError)()
+
+    proc test {.async, asyncraises: [ValueError, IOError].} =
+      await testit() or testit2()
+
+    proc noraises() {.raises: [].} =
+      expect(ValueError):
+        try:
+          let f = test()
+          waitFor(f)
+        except IOError:
+          doAssert false
+
+    noraises()
+
+  test "Wait errors":
+    proc testit {.asyncraises: [ValueError], async.} = raise newException(ValueError, "hey")
+
+    proc test {.async, asyncraises: [ValueError, AsyncTimeoutError, CancelledError].} =
+      await wait(testit(), 1000.milliseconds)
+
+    proc noraises() {.raises: [].} =
+      try:
+        expect(ValueError): waitFor(test())
+      except CancelledError: doAssert false
+      except AsyncTimeoutError: doAssert false
+
+    noraises()
+
+  test "Nocancel errors":
+    proc testit {.asyncraises: [ValueError, CancelledError], async.} =
+      await sleepAsync(5.milliseconds)
+      raise (ref ValueError)()
+
+    proc test {.async, asyncraises: [ValueError].} =
+      await noCancel testit()
+
+    proc noraises() {.raises: [].} =
+      expect(ValueError):
+        let f = test()
+        waitFor(f.cancelAndWait())
+        waitFor(f)
+
+    noraises()
+
+  test "Defect on wrong exception type at runtime":
+    {.push warning[User]: off}
+    let f = InternalRaisesFuture[void, (ValueError,)]()
+    expect(Defect): f.fail((ref CatchableError)())
+    {.pop.}
+    check: not f.finished()
+
+    expect(Defect): f.fail((ref CatchableError)(), warn = false)
+    check: not f.finished()

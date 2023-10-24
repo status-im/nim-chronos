@@ -283,12 +283,17 @@ proc asyncSingleProc(prc: NimNode): NimNode {.compileTime.} =
   prc.addPragma(newIdentNode("gcsafe"))
 
   if isAsync == false: # `asyncraises` without `async`
-    # type InternalRaisesFutureRaises = `raisesTuple`
+    # type InternalRaisesFutureRaises {.used.} = `raisesTuple`
     # `body`
     prc.body = nnkStmtList.newTree(
       nnkTypeSection.newTree(
         nnkTypeDef.newTree(
-          ident"InternalRaisesFutureRaises",
+          nnkPragmaExpr.newTree(
+            ident"InternalRaisesFutureRaises",
+            nnkPragma.newTree(
+              newIdentNode("used")
+            )
+          ),
           newEmptyNode(),
           raisesTuple
         )
