@@ -131,4 +131,4 @@
 import ./internal/[asyncengine, asyncfutures, asyncmacro, errors]
 
 export asyncfutures, asyncengine, errors
-export asyncmacro.async, asyncmacro.await, asyncmacro.awaitne, asyncraises
+export asyncmacro.async, asyncmacro.await, asyncmacro.awaitne

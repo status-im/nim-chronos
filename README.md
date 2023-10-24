@@ -46,18 +46,18 @@ Submit a PR to add yours!
 
 ### Concepts
 
-Chronos implements the async/await paradigm in a self-contained library, using
-macros, with no specific helpers from the compiler.
+Chronos implements the async/await paradigm in a self-contained library using
+the macro and closure iterator transformation features provided by Nim.
 
-Our event loop is called a "dispatcher" and a single instance per thread is
+The event loop is called a "dispatcher" and a single instance per thread is
 created, as soon as one is needed.
 
 To trigger a dispatcher's processing step, we need to call `poll()` - either
-directly or through a wrapper like `runForever()` or `waitFor()`. This step
+directly or through a wrapper like `runForever()` or `waitFor()`. Each step
 handles any file descriptors, timers and callbacks that are ready to be
 processed.
 
-`Future` objects encapsulate the result of an async procedure, upon successful
+`Future` objects encapsulate the result of an `async` procedure upon successful
 completion, and a list of callbacks to be scheduled after any type of
 completion - be that success, failure or cancellation.
 
@@ -156,7 +156,7 @@ Exceptions inheriting from `CatchableError` are caught by hidden `try` blocks
 and placed in the `Future.error` field, changing the future's status to
 `Failed`.
 
-When a future is awaited, that exception is re-raised, only to be caught again
+When a future is awaited, that exception is re-raised only to be caught again
 by a hidden `try` block in the calling async procedure. That's how these
 exceptions move up the async chain.
 
@@ -214,57 +214,81 @@ by the transformation.
 
 #### Checked exceptions
 
-By specifying a `asyncraises` list to an async procedure, you can check which
-exceptions can be thrown by it.
+By specifying a `raises` list to an async procedure, you can check which
+exceptions can be raised by it:
+
 ```nim
-proc p1(): Future[void] {.async, asyncraises: [IOError].} =
+proc p1(): Future[void] {.async: (raises: [IOError]).} =
   assert not (compiles do: raise newException(ValueError, "uh-uh"))
   raise newException(IOError, "works") # Or any child of IOError
-```
 
-Under the hood, the return type of `p1` will be rewritten to an internal type,
-which will convey raises informations to `await`.
-
-```nim
-proc p2(): Future[void] {.async, asyncraises: [IOError].} =
+proc p2(): Future[void] {.async, (raises: [IOError]).} =
   await p1() # Works, because await knows that p1
              # can only raise IOError
 ```
 
-Raw functions and callbacks that don't go through the `async` transformation but
-still return a `Future` and interact with the rest of the framework also need to
-be annotated with `asyncraises` to participate in the checked exception scheme:
+Under the hood, the return type of `p1` will be rewritten to an internal type
+which will convey raises informations to `await`.
+
+### Raw functions
+
+Raw functions are those that interact with `chronos` via the `Future` type but
+whose body does not go through the async transformation.
+
+Such functions are created by adding `raw: true` to the `async` parameters:
 
 ```nim
-proc p3(): Future[void] {.async, asyncraises: [IOError].} =
-  let fut: Future[void] = p1() # works
-  assert not compiles(await fut) # await lost informations about raises,
-                                 # so it can raise anything
-  # Callbacks
-  assert not(compiles do: let cb1: proc(): Future[void] = p1) # doesn't work
-  let cb2: proc(): Future[void] {.async, asyncraises: [IOError].} = p1 # works
-  assert not(compiles do:
-    type c = proc(): Future[void] {.async, asyncraises: [IOError, ValueError].}
-    let cb3: c = p1 # doesn't work, the raises must match _exactly_
-  )
+proc rawAsync(): Future[void] {.async: (raw: true).} =
+  let future = newFuture[void]("rawAsync")
+  future.complete()
+  return future
 ```
 
-When `chronos` performs the `async` transformation, all code is placed in a
-a special `try/except` clause that re-routes exception handling to the `Future`.
-
-Beacuse of this re-routing, functions that return a `Future` instance manually
-never directly raise exceptions themselves - instead, exceptions are handled
-indirectly via `await` or `Future.read`. When writing raw async functions, they
-too must not raise exceptions - instead, they must store exceptions in the
-future they return:
+Raw functions must not raise exceptions directly - they are implicitly declared
+as `raises: []` - instead they should store exceptions in the returned `Future`:
 
 ```nim
-proc p4(): Future[void] {.asyncraises: [ValueError].} =
-  let fut = newFuture[void]
+proc rawFailure(): Future[void] {.async: (raw: true).} =
+  let future = newFuture[void]("rawAsync")
+  future.fail((ref ValueError)(msg: "Oh no!"))
+  return future
+```
 
-  # Equivalent of `raise (ref ValueError)()` in raw async functions:
-  fut.fail((ref ValueError)(msg: "raising in raw async function"))
-  fut
+Raw functions can also use checked exceptions:
+
+```nim
+proc rawAsyncRaises(): Future[void] {.async: (raw: true, raises: [IOError]).} =
+  let fut = newFuture[void]()
+  assert not (compiles do: fut.fail((ref ValueError)(msg: "uh-uh")))
+  fut.fail((ref IOError)(msg: "IO"))
+  return fut
+```
+
+### Callbacks and closures
+
+Callback/closure types are declared using the `async` annotation as usual:
+
+```nim
+type MyCallback = proc(): Future[void] {.async.}
+
+proc runCallback(cb: MyCallback) {.async: (raises: []).} =
+  try:
+    await cb()
+  except CatchableError:
+    discard # handle errors as usual
+```
+
+When calling a callback, it is important to remember that the given function
+may raise and exceptions need to be handled.
+
+Checked exceptions can be used to limit the exceptions that a callback can
+raise:
+
+```nim
+type MyEasyCallback = proc: Future[void] {.async: (raises: []).}
+
+proc runCallback(cb: MyEasyCallback) {.async: (raises: [])} =
+  await cb()
 ```
 
 ### Platform independence
@@ -278,7 +302,7 @@ annotated as raising `CatchableError` only raise on _some_ platforms - in order
 to work on all platforms, calling code must assume that they will raise even
 when they don't seem to do so on one platform.
 
-### Exception effects
+### Strict exception mode
 
 `chronos` currently offers minimal support for exception effects and `raises`
 annotations. In general, during the `async` transformation, a generic
