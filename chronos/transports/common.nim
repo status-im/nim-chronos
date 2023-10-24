@@ -11,7 +11,7 @@
 
 import std/[strutils]
 import stew/[base10, byteutils]
-import ".."/[asyncloop, osdefs, oserrno]
+import ".."/[asyncloop, osdefs, oserrno, handles]
 
 from std/net import Domain, `==`, IpAddress, IpAddressFamily, parseIpAddress,
                     SockType, Protocol, Port, `$`
@@ -29,7 +29,11 @@ type
   ServerFlags* = enum
     ## Server's flags
     ReuseAddr, ReusePort, TcpNoDelay, NoAutoRead, GCUserData, FirstPipe,
-    NoPipeFlash, Broadcast
+    NoPipeFlash, Broadcast, DualStackAuto, DualStackEnabled, DualStackDisabled,
+    DualStackDefault
+
+  DualStackType* {.pure.} = enum
+    Auto, Enabled, Disabled, Default
 
   AddressFamily* {.pure.} = enum
     None, IPv4, IPv6, Unix
@@ -76,6 +80,7 @@ when defined(windows) or defined(nimdoc):
       asock*: AsyncFD               # Current AcceptEx() socket
       errorCode*: OSErrorCode       # Current error code
       abuffer*: array[128, byte]    # Windows AcceptEx() buffer
+      dualstack*: DualStackType     # IPv4/IPv6 dualstack parameters
       when defined(windows):
         aovl*: CustomOverlapped     # AcceptEx OVERLAPPED structure
 else:
@@ -90,6 +95,7 @@ else:
       bufferSize*: int              # Size of internal transports' buffer
       loopFuture*: Future[void]     # Server's main Future
       errorCode*: OSErrorCode       # Current error code
+      dualstack*: DualStackType     # IPv4/IPv6 dualstack parameters
 
 type
   TransportError* = object of AsyncError
@@ -720,3 +726,21 @@ proc raiseTransportError*(ecode: OSErrorCode) {.
       raise getTransportTooManyError(ecode)
     else:
       raise getTransportOsError(ecode)
+
+proc setDualstack*(socket: AsyncFD,
+                   flag: DualStackType): Result[void, OSErrorCode] =
+  let networkFlags = getThreadDispatcher().networkFlags.get(
+    {NetFlag.IPv4Enabled, NetFlag.IPv6Enabled})
+  echo "setDualstack(", int(socket), ", ", flag, ")"
+  case flag
+  of DualStackType.Auto, DualStackType.Enabled:
+    if NetFlag.IPv6Enabled in networkFlags:
+      ? setDualstack(socket, true)
+    ok()
+  of DualStackType.Disabled:
+    if NetFlag.IPv6Enabled in networkFlags:
+      ? setDualstack(socket, false)
+    ok()
+  of DualStackType.Default:
+    echo "setDualstack(", int(socket), ") is not changed"
+    ok()

@@ -53,6 +53,9 @@ type
     opened*: uint64
     closed*: uint64
 
+  NetFlag* {.pure.} = enum
+    IPv4Enabled, IPv6Enabled
+
   PDispatcherBase = ref object of RootRef
     timers*: HeapQueue[TimerCallback]
     callbacks*: Deque[AsyncCallback]
@@ -60,6 +63,7 @@ type
     ticks*: Deque[AsyncCallback]
     trackers*: Table[string, TrackerBase]
     counters*: Table[string, TrackerCounter]
+    networkFlags*: Opt[set[NetFlag]]
 
 proc sentinelCallbackImpl(arg: pointer) {.gcsafe, noreturn.} =
   raiseAssert "Sentinel callback MUST not be scheduled"

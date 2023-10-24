@@ -48,12 +48,31 @@ proc setSockOpt*(socket: AsyncFD, level, optname, optval: int): bool =
   osdefs.setsockopt(SocketHandle(socket), cint(level), cint(optname),
                     addr(value), SockLen(sizeof(value))) >= cint(0)
 
+proc setSockOpt2*(socket: AsyncFD,
+                  level, optname, optval: int): Result[void, OSErrorCode] =
+  var value = cint(optval)
+  let res = osdefs.setsockopt(SocketHandle(socket), cint(level), cint(optname),
+                              addr(value), SockLen(sizeof(value)))
+  if res == -1:
+    return err(osLastError())
+  ok()
+
 proc setSockOpt*(socket: AsyncFD, level, optname: int, value: pointer,
                  valuelen: int): bool =
   ## `setsockopt()` for custom options (pointer and length).
   ## Returns ``true`` on success, ``false`` on error.
   osdefs.setsockopt(SocketHandle(socket), cint(level), cint(optname), value,
                     SockLen(valuelen)) >= cint(0)
+
+proc setSockOpt2*(socket: AsyncFD, level, optname: int, value: pointer,
+                  valuelen: int): Result[void, OSErrorCode] =
+  ## `setsockopt()` for custom options (pointer and length).
+  ## Returns ``true`` on success, ``false`` on error.
+  let res = osdefs.setsockopt(SocketHandle(socket), cint(level), cint(optname),
+                              value, SockLen(valuelen))
+  if res == -1:
+    return err(osLastError())
+  ok()
 
 proc getSockOpt*(socket: AsyncFD, level, optname: int, value: var int): bool =
   ## `getsockopt()` for integer options.
@@ -78,10 +97,45 @@ proc getSocketError*(socket: AsyncFD, err: var int): bool =
   ## Recover error code associated with socket handle ``socket``.
   getSockOpt(socket, cint(osdefs.SOL_SOCKET), cint(osdefs.SO_ERROR), err)
 
+proc domainCheck(domain: Domain): bool =
+  when defined(windows):
+    let fd = wsaSocket(toInt(domain), toInt(SockType.SOCK_STREAM),
+                       toInt(Protocol.IPPROTO_TCP), nil, GROUP(0), 0'u32)
+    if fd == osdefs.INVALID_SOCKET:
+      return if osLastError() == osdefs.WSAEAFNOSUPPORT: false else: true
+    discard closeFd(fd)
+    true
+  else:
+    let fd = osdefs.socket(toInt(domain), toInt(SockType.SOCK_STREAM),
+                           toInt(Protocol.IPPROTO_TCP))
+    if fd == -1:
+      return if osLastError() == osdefs.EAFNOSUPPORT: false else: true
+    discard closeFd(fd)
+    true
+
+proc isIPv4Available*(): bool =
+  ## Returns `true` if IPv4 family is available.
+  domainCheck(Domain.AF_INET)
+
+proc isIPv6Available*(): bool =
+  ## Returns `true` if IPv6 family is available.
+  domainCheck(Domain.AF_INET6)
+
 proc createAsyncSocket2*(domain: Domain, sockType: SockType,
-                        protocol: Protocol,
-                        inherit = true): Result[AsyncFD, OSErrorCode] =
+                         protocol: Protocol,
+                         inherit = true): Result[AsyncFD, OSErrorCode] =
   ## Creates new asynchronous socket.
+  if domain in [Domain.AF_INET, Domain.AF_INET6]:
+    let loop = getThreadDispatcher()
+    if loop.networkFlags.isNone():
+      let flags =
+        block:
+          var res: set[NetFlag]
+          if isIPv4Available(): res.incl(NetFlag.IPv4Enabled)
+          if isIPv6Available(): res.incl(NetFlag.IPv6Enabled)
+          res
+      loop.networkFlags = Opt.some(flags)
+
   when defined(windows):
     let flags =
       if inherit:
@@ -230,3 +284,26 @@ proc createAsyncPipe*(): tuple[read: AsyncFD, write: AsyncFD] =
   else:
     let pipes = res.get()
     (read: AsyncFD(pipes.read), write: AsyncFD(pipes.write))
+
+proc getDualstack*(fd: AsyncFD): Result[bool, OSErrorCode] =
+  ## Returns `true` if `IPV6_V6ONLY` socket option set to `false`.
+  var
+    flag = cint(0)
+    size = SockLen(sizeof(flag))
+  let res = osdefs.getsockopt(SocketHandle(fd), cint(osdefs.IPPROTO_IPV6),
+                              cint(osdefs.IPV6_V6ONLY), addr(flag), addr(size))
+  if res == -1:
+    return err(osLastError())
+  ok(flag == cint(0))
+
+proc setDualstack*(fd: AsyncFD, value: bool): Result[void, OSErrorCode] =
+  ## Sets `IPV6_V6ONLY` socket option value to `false` if `value == true` and
+  ## to `true` if `value == false`.
+  var
+    flag = cint(if value: 0 else: 1)
+    size = SockLen(sizeof(flag))
+  let res = osdefs.setsockopt(SocketHandle(fd), cint(osdefs.IPPROTO_IPV6),
+                              cint(osdefs.IPV6_V6ONLY), addr(flag), size)
+  if res == -1:
+    return err(osLastError())
+  ok()
