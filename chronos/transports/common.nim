@@ -731,7 +731,6 @@ proc setDualstack*(socket: AsyncFD,
                    flag: DualStackType): Result[void, OSErrorCode] =
   let networkFlags = getThreadDispatcher().networkFlags.get(
     {NetFlag.IPv4Enabled, NetFlag.IPv6Enabled})
-  echo "setDualstack(", int(socket), ", ", flag, ")"
   case flag
   of DualStackType.Auto, DualStackType.Enabled:
     if NetFlag.IPv6Enabled in networkFlags:
@@ -742,5 +741,4 @@ proc setDualstack*(socket: AsyncFD,
       ? setDualstack(socket, false)
     ok()
   of DualStackType.Default:
-    echo "setDualstack(", int(socket), ") is not changed"
     ok()

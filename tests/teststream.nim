@@ -1372,163 +1372,182 @@ suite "Stream Transport test suite":
     if not(sleepFut.finished()):
       await cancelAndWait(sleepFut)
 
-  proc testDualstack() {.async.} =
+  proc performDualstackTest(
+         sstack: DualStackType, saddr: TransportAddress,
+         cstack: DualStackType, caddr: TransportAddress
+       ): Future[bool] {.async.} =
+    let server = createStreamServer(saddr, dualstack = sstack)
+    var address = caddr
+    address.port = server.localAddress().port
+    var acceptFut = server.accept()
+    let
+      clientTransp =
+        try:
+          let res = await connect(address,
+                                  dualstack = cstack).wait(500.milliseconds)
+          Opt.some(res)
+        except CatchableError:
+          Opt.none(StreamTransport)
+      serverTransp =
+        if clientTransp.isSome():
+          let res = await acceptFut
+          Opt.some(res)
+        else:
+          Opt.none(StreamTransport)
 
-    const TestVectors = [
-      (DualStackType.Auto, initTAddress("[::1]:0"),
-       DualStackType.Auto, initTAddress("127.0.0.1:0"), true),
-      (DualStackType.Auto, initTAddress("[::1]:0"),
-       DualStackType.Auto, initTAddress("127.0.0.1:0").toIPv6(), true),
-      (DualStackType.Auto, initTAddress("[::1]:0"),
-       DualStackType.Auto, initTAddress("[::1]:0"), true)
-    ]
-
-    proc performTest(sstack, cstack: DualStackType,
-                     saddr, caddr: TransportAddress): Future[bool] {.async.} =
-      echo "server address = ", saddr
-      let server = createStreamServer(saddr, dualstack = sstack)
-      var address = caddr
-      address.port = server.localAddress().port
-      echo "server local address = ", server.localAddress()
-      echo "SERVER SOCKET DUALSTACK = ", getDualstack(server.sock).tryGet()
-      var acceptFut = server.accept()
-      await sleepAsync(1.minutes)
-      let
-        clientTransp =
-          try:
-            let res = await connect(address,
-                                    dualstack = cstack).wait(5000.milliseconds)
-            echo "OK"
-            Opt.some(res)
-          except CatchableError as exc:
-            echo "ERROR [", exc.name, "] ", exc.msg
-            Opt.none(StreamTransport)
-        serverTransp =
-          if clientTransp.isSome():
-            let res = await acceptFut
-            Opt.some(res)
-          else:
-            Opt.none(StreamTransport)
-
-      let testResult = clientTransp.isSome() and serverTransp.isSome()
-      echo ""
-      echo server.localAddress(), " <= ", address, " result = ", serverTransp.isSome(), ", ", clientTransp.isSome()
-      var pending: seq[FutureBase]
-      if clientTransp.isSome():
-        pending.add(closeWait(clientTransp.get()))
-      if serverTransp.isSome():
-        pending.add(closeWait(serverTransp.get()))
-      else:
-        pending.add(cancelAndWait(acceptFut))
-      await allFutures(pending)
-      server.stop()
-      await server.closeWait()
-      testResult
-
-    for vector in TestVectors:
-      let res = await performTest(vector[0], vector[2], vector[1], vector[3])
-      # doAssert(res == vector[4])
+    let testResult = clientTransp.isSome() and serverTransp.isSome()
+    var pending: seq[FutureBase]
+    if clientTransp.isSome():
+      pending.add(closeWait(clientTransp.get()))
+    if serverTransp.isSome():
+      pending.add(closeWait(serverTransp.get()))
+    else:
+      pending.add(cancelAndWait(acceptFut))
+    await allFutures(pending)
+    server.stop()
+    await server.closeWait()
+    testResult
 
   markFD = getCurrentFD()
 
-  # for i in 0..<len(addresses):
-  #   test prefixes[i] & "close(transport) test":
-  #     check waitFor(testCloseTransport(addresses[i])) == 1
-  #   test prefixes[i] & "readUntil() buffer overflow test":
-  #     check waitFor(test8(addresses[i])) == 1
-  #   test prefixes[i] & "readLine() buffer overflow test":
-  #     check waitFor(test7(addresses[i])) == 1
-  #   test prefixes[i] & "readExactly() unexpected disconnect test":
-  #     check waitFor(test11(addresses[i])) == 1
-  #   test prefixes[i] & "readUntil() unexpected disconnect test":
-  #     check waitFor(test12(addresses[i])) == 1
-  #   test prefixes[i] & "readLine() unexpected disconnect empty string test":
-  #     check waitFor(test13(addresses[i])) == 1
-  #   test prefixes[i] & "Closing socket while operation pending test (issue #8)":
-  #     check waitFor(test14(addresses[i])) == 1
-  #   test prefixes[i] & "readLine() multiple clients with messages (" &
-  #       $ClientsCount & " clients x " & $MessagesCount & " messages)":
-  #     check waitFor(test1(addresses[i])) == ClientsCount * MessagesCount
-  #   test prefixes[i] & "readExactly() multiple clients with messages (" &
-  #       $ClientsCount & " clients x " & $MessagesCount & " messages)":
-  #     check waitFor(test2(addresses[i])) == ClientsCount * MessagesCount
-  #   test prefixes[i] & "readUntil() multiple clients with messages (" &
-  #       $ClientsCount & " clients x " & $MessagesCount & " messages)":
-  #     check waitFor(test3(addresses[i])) == ClientsCount * MessagesCount
-  #   test prefixes[i] & "write(string)/read(int) multiple clients (" &
-  #       $ClientsCount & " clients x " & $MessagesCount & " messages)":
-  #     check waitFor(testWR(addresses[i])) == ClientsCount * MessagesCount
-  #   test prefixes[i] & "write(seq[byte])/consume(int)/read(int) multiple clients (" &
-  #        $ClientsCount & " clients x " & $MessagesCount & " messages)":
-  #     check waitFor(testWCR(addresses[i])) == ClientsCount * MessagesCount
-  #   test prefixes[i] & "writeFile() multiple clients (" & $FilesCount & " files)":
-  #     when defined(windows):
-  #       if addresses[i].family == AddressFamily.IPv4:
-  #         check waitFor(testSendFile(addresses[i])) == FilesCount
-  #       else:
-  #         skip()
-  #     else:
-  #       if defined(emscripten):
-  #         skip()
-  #       else:
-  #         check waitFor(testSendFile(addresses[i])) == FilesCount
-  #   test prefixes[i] & "Connection refused test":
-  #     var address: TransportAddress
-  #     if addresses[i].family == AddressFamily.Unix:
-  #       address = initTAddress("/tmp/notexistingtestpipe")
-  #     else:
-  #       address = initTAddress("127.0.0.1:43335")
-  #     check waitFor(testConnectionRefused(address)) == true
-  #   test prefixes[i] & "readOnce() read until atEof() test":
-  #     check waitFor(test16(addresses[i])) == 1
-  #   test prefixes[i] & "Connection reset test on send() only":
-  #     when defined(macosx):
-  #       skip()
-  #     else:
-  #       check waitFor(testWriteConnReset(addresses[i])) == 1
-  #   test prefixes[i] & "0.0.0.0/::0 (INADDR_ANY) test":
-  #     if addresses[i].family == AddressFamily.IPv4:
-  #       check waitFor(testAnyAddress()) == true
-  #     else:
-  #       skip()
-  #   test prefixes[i] & "write() return value test (issue #73)":
-  #     check waitFor(testWriteReturn(addresses[i])) == true
-  #   test prefixes[i] & "readLine() partial separator test":
-  #     check waitFor(testReadLine(addresses[i])) == true
-  #   test prefixes[i] & "readMessage() test":
-  #     check waitFor(testReadMessage(addresses[i])) == true
-  #   test prefixes[i] & "accept() test":
-  #     check waitFor(testAccept(addresses[i])) == true
-  #   test prefixes[i] & "close() while in accept() waiting test":
-  #     check waitFor(testAcceptClose(addresses[i])) == true
-  #   test prefixes[i] & "Intermediate transports leak test #1":
-  #     checkLeaks()
-  #     when defined(windows):
-  #       skip()
-  #     else:
-  #       checkLeaks(StreamTransportTrackerName)
-  #   test prefixes[i] & "accept() too many file descriptors test":
-  #     when defined(windows):
-  #       skip()
-  #     else:
-  #       check waitFor(testAcceptTooMany(addresses[i])) == true
-  #   test prefixes[i] & "accept() and close() race test":
-  #     check waitFor(testAcceptRace(addresses[i])) == true
-  #   test prefixes[i] & "write() queue notification on close() test":
-  #     check waitFor(testWriteOnClose(addresses[i])) == true
-  #   test prefixes[i] & "read() notification on close() test":
-  #     check waitFor(testReadOnClose(addresses[i])) == true
-  # test "[PIPE] readExactly()/write() test":
-  #   check waitFor(testPipe()) == true
-  # test "[IP] bind connect to local address test":
-  #   waitFor(testConnectBindLocalAddress())
-  # test "[IP] connect() cancellation leaks test":
-  #   waitFor(testConnectCancelLeaksTest())
-  # test "[IP] accept() cancellation leaks test":
-  #   waitFor(testAcceptCancelLeaksTest())
-  test "[IP] dualstack TCP server test":
+  for i in 0..<len(addresses):
+    test prefixes[i] & "close(transport) test":
+      check waitFor(testCloseTransport(addresses[i])) == 1
+    test prefixes[i] & "readUntil() buffer overflow test":
+      check waitFor(test8(addresses[i])) == 1
+    test prefixes[i] & "readLine() buffer overflow test":
+      check waitFor(test7(addresses[i])) == 1
+    test prefixes[i] & "readExactly() unexpected disconnect test":
+      check waitFor(test11(addresses[i])) == 1
+    test prefixes[i] & "readUntil() unexpected disconnect test":
+      check waitFor(test12(addresses[i])) == 1
+    test prefixes[i] & "readLine() unexpected disconnect empty string test":
+      check waitFor(test13(addresses[i])) == 1
+    test prefixes[i] & "Closing socket while operation pending test (issue #8)":
+      check waitFor(test14(addresses[i])) == 1
+    test prefixes[i] & "readLine() multiple clients with messages (" &
+        $ClientsCount & " clients x " & $MessagesCount & " messages)":
+      check waitFor(test1(addresses[i])) == ClientsCount * MessagesCount
+    test prefixes[i] & "readExactly() multiple clients with messages (" &
+        $ClientsCount & " clients x " & $MessagesCount & " messages)":
+      check waitFor(test2(addresses[i])) == ClientsCount * MessagesCount
+    test prefixes[i] & "readUntil() multiple clients with messages (" &
+        $ClientsCount & " clients x " & $MessagesCount & " messages)":
+      check waitFor(test3(addresses[i])) == ClientsCount * MessagesCount
+    test prefixes[i] & "write(string)/read(int) multiple clients (" &
+        $ClientsCount & " clients x " & $MessagesCount & " messages)":
+      check waitFor(testWR(addresses[i])) == ClientsCount * MessagesCount
+    test prefixes[i] & "write(seq[byte])/consume(int)/read(int) multiple clients (" &
+         $ClientsCount & " clients x " & $MessagesCount & " messages)":
+      check waitFor(testWCR(addresses[i])) == ClientsCount * MessagesCount
+    test prefixes[i] & "writeFile() multiple clients (" & $FilesCount & " files)":
+      when defined(windows):
+        if addresses[i].family == AddressFamily.IPv4:
+          check waitFor(testSendFile(addresses[i])) == FilesCount
+        else:
+          skip()
+      else:
+        if defined(emscripten):
+          skip()
+        else:
+          check waitFor(testSendFile(addresses[i])) == FilesCount
+    test prefixes[i] & "Connection refused test":
+      var address: TransportAddress
+      if addresses[i].family == AddressFamily.Unix:
+        address = initTAddress("/tmp/notexistingtestpipe")
+      else:
+        address = initTAddress("127.0.0.1:43335")
+      check waitFor(testConnectionRefused(address)) == true
+    test prefixes[i] & "readOnce() read until atEof() test":
+      check waitFor(test16(addresses[i])) == 1
+    test prefixes[i] & "Connection reset test on send() only":
+      when defined(macosx):
+        skip()
+      else:
+        check waitFor(testWriteConnReset(addresses[i])) == 1
+    test prefixes[i] & "0.0.0.0/::0 (INADDR_ANY) test":
+      if addresses[i].family == AddressFamily.IPv4:
+        check waitFor(testAnyAddress()) == true
+      else:
+        skip()
+    test prefixes[i] & "write() return value test (issue #73)":
+      check waitFor(testWriteReturn(addresses[i])) == true
+    test prefixes[i] & "readLine() partial separator test":
+      check waitFor(testReadLine(addresses[i])) == true
+    test prefixes[i] & "readMessage() test":
+      check waitFor(testReadMessage(addresses[i])) == true
+    test prefixes[i] & "accept() test":
+      check waitFor(testAccept(addresses[i])) == true
+    test prefixes[i] & "close() while in accept() waiting test":
+      check waitFor(testAcceptClose(addresses[i])) == true
+    test prefixes[i] & "Intermediate transports leak test #1":
+      checkLeaks()
+      when defined(windows):
+        skip()
+      else:
+        checkLeaks(StreamTransportTrackerName)
+    test prefixes[i] & "accept() too many file descriptors test":
+      when defined(windows):
+        skip()
+      else:
+        check waitFor(testAcceptTooMany(addresses[i])) == true
+    test prefixes[i] & "accept() and close() race test":
+      check waitFor(testAcceptRace(addresses[i])) == true
+    test prefixes[i] & "write() queue notification on close() test":
+      check waitFor(testWriteOnClose(addresses[i])) == true
+    test prefixes[i] & "read() notification on close() test":
+      check waitFor(testReadOnClose(addresses[i])) == true
+  test "[PIPE] readExactly()/write() test":
+    check waitFor(testPipe()) == true
+  test "[IP] bind connect to local address test":
+    waitFor(testConnectBindLocalAddress())
+  test "[IP] connect() cancellation leaks test":
+    waitFor(testConnectCancelLeaksTest())
+  test "[IP] accept() cancellation leaks test":
+    waitFor(testAcceptCancelLeaksTest())
+  asyncTest "[IP] DualStack [TCP] server [DualStackType.Auto] test":
     if isIPv4Available() and isIPv6Available():
-      waitFor(testDualstack())
+      let serverAddress = initTAddress("[::]:0")
+      check:
+        await performDualstackTest(
+          DualStackType.Auto, serverAddress,
+          DualStackType.Auto, initTAddress("127.0.0.1:0"))
+        await performDualstackTest(
+          DualStackType.Auto, serverAddress,
+          DualStackType.Auto, initTAddress("127.0.0.1:0").toIpV6())
+        await performDualstackTest(
+          DualStackType.Auto, serverAddress,
+          DualStackType.Auto, initTAddress("[::1]:0"))
+    else:
+      skip()
+  asyncTest "[IP] DualStack [TCP] server [DualStackType.Enabled] test":
+    if isIPv4Available() and isIPv6Available():
+      let serverAddress = initTAddress("[::]:0")
+      check:
+        await performDualstackTest(
+          DualStackType.Enabled, serverAddress,
+          DualStackType.Auto, initTAddress("127.0.0.1:0"))
+        await performDualstackTest(
+          DualStackType.Enabled, serverAddress,
+          DualStackType.Auto, initTAddress("127.0.0.1:0").toIpV6())
+        await performDualstackTest(
+          DualStackType.Enabled, serverAddress,
+          DualStackType.Auto, initTAddress("[::1]:0"))
+    else:
+      skip()
+  asyncTest "[IP] DualStack [TCP] server [DualStackType.Disabled] test":
+    if isIPv4Available() and isIPv6Available():
+      let serverAddress = initTAddress("[::]:0")
+      check:
+        (await performDualstackTest(
+           DualStackType.Disabled, serverAddress,
+           DualStackType.Auto, initTAddress("127.0.0.1:0"))) == false
+        (await performDualstackTest(
+          DualStackType.Disabled, serverAddress,
+          DualStackType.Auto, initTAddress("127.0.0.1:0").toIpV6())) == false
+        (await performDualstackTest(
+           DualStackType.Disabled, serverAddress,
+           DualStackType.Auto, initTAddress("[::1]:0"))) == true
     else:
       skip()
   test "Leaks test":
