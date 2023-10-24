@@ -1530,16 +1530,14 @@ else:
 
     proc continuation(udata: pointer) =
       if not(retFuture.finished()):
-        var err = 0
-
         removeWriter2(sock).isOkOr():
           discard unregisterAndCloseFd(sock)
           retFuture.fail(getTransportOsError(error))
           return
 
-        if not(sock.getSocketError(err)):
+        let err = sock.getSocketError().valueOr:
           discard unregisterAndCloseFd(sock)
-          retFuture.fail(getTransportOsError(res.error()))
+          retFuture.fail(getTransportOsError(error))
           return
 
         if err != 0:

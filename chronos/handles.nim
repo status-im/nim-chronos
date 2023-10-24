@@ -86,6 +86,17 @@ proc getSockOpt*(socket: AsyncFD, level, optname: int, value: var int): bool =
   else:
     false
 
+proc getSockOpt2*(socket: AsyncFD,
+                  level, optname: int): Result[cint, OSErrorCode] =
+  var
+    res: cint
+    size = SockLen(sizeof(res))
+  let res = osdefs.getsockopt(SocketHandle(socket), cint(level), cint(optname),
+                              addr(res), addr(size))
+  if res == -1:
+    return err(osLastError())
+  ok(res)
+
 proc getSockOpt*(socket: AsyncFD, level, optname: int, value: pointer,
                  valuelen: var int): bool =
   ## `getsockopt()` for custom options (pointer and length).
@@ -96,6 +107,9 @@ proc getSockOpt*(socket: AsyncFD, level, optname: int, value: pointer,
 proc getSocketError*(socket: AsyncFD, err: var int): bool =
   ## Recover error code associated with socket handle ``socket``.
   getSockOpt(socket, cint(osdefs.SOL_SOCKET), cint(osdefs.SO_ERROR), err)
+
+proc getSocketError2*(socket: AsyncFD): Result[cint, OSErrorCode] =
+  getSockOpt2(socket, cint(osdefs.SOL_SOCKET), cint(osdefs.SO_ERROR))
 
 proc domainCheck(domain: Domain): bool =
   when defined(windows):
