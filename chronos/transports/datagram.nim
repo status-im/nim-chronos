@@ -252,9 +252,9 @@ when defined(windows):
                                  ): DatagramTransport {.
       raises: [TransportOsError].} =
     var localSock: AsyncFD
-    doAssert(remote.family == local.family)
+    # doAssert(remote.family == local.family)
     doAssert(not isNil(cbproc))
-    doAssert(remote.family in {AddressFamily.IPv4, AddressFamily.IPv6})
+    # doAssert(remote.family in {AddressFamily.IPv4, AddressFamily.IPv6})
 
     var res = if isNil(child): DatagramTransport() else: child
 
@@ -268,39 +268,42 @@ when defined(windows):
       if not setSocketBlocking(SocketHandle(sock), false):
         raiseTransportOsError(osLastError())
       localSock = sock
-      register2(localSock).isOkOr():
+      register2(localSock).isOkOr:
         raiseTransportOsError(error)
 
     ## Apply ServerFlags here
     if ServerFlags.ReuseAddr in flags:
-      setSockOpt2(localSock, SOL_SOCKET, SO_REUSEADDR, 1).isOkOr():
+      setSockOpt2(localSock, SOL_SOCKET, SO_REUSEADDR, 1).isOkOr:
         if sock == asyncInvalidSocket:
           closeSocket(localSock)
         raiseTransportOsError(error)
 
     if ServerFlags.ReusePort in flags:
-      setSockOpt2(localSock, SOL_SOCKET, SO_REUSEPORT, 1).isOkOr():
+      setSockOpt2(localSock, SOL_SOCKET, SO_REUSEPORT, 1).isOkOr:
         if sock == asyncInvalidSocket:
           closeSocket(localSock)
         raiseTransportOsError(error)
 
     if ServerFlags.Broadcast in flags:
-      setSockOpt2(localSock, SOL_SOCKET, SO_BROADCAST, 1).isOkOr():
+      setSockOpt2(localSock, SOL_SOCKET, SO_BROADCAST, 1).isOkOr:
         if sock == asyncInvalidSocket:
           closeSocket(localSock)
         raiseTransportOsError(error)
 
       if ttl > 0:
-        setSockOpt2(localSock, osdefs.IPPROTO_IP, osdefs.IP_TTL, ttl).isOkOr():
+        setSockOpt2(localSock, osdefs.IPPROTO_IP, osdefs.IP_TTL, ttl).isOkOr:
           if sock == asyncInvalidSocket:
             closeSocket(localSock)
           raiseTransportOsError(error)
 
     ## IPV6_V6ONLY
-    setDualstack(localSock, dualstack).isOkOr():
-      if sock == asyncInvalidSocket:
+    if sock == asyncInvalidSocket:
+      setDualstack(localSock, local.family, dualstack).isOkOr:
         closeSocket(localSock)
-      raiseTransportOsError(error)
+        raiseTransportOsError(error)
+    else:
+      setDualstack(localSock, dualstack).isOkOr:
+        raiseTransportOsError(error)
 
     ## Fix for Q263823.
     var bytesRet: DWORD
@@ -465,7 +468,7 @@ else:
                                  ): DatagramTransport {.
       raises: [TransportOsError].} =
     var localSock: AsyncFD
-    doAssert(remote.family == local.family)
+    # doAssert(remote.family == local.family)
     doAssert(not isNil(cbproc))
 
     var res = if isNil(child): DatagramTransport() else: child
@@ -484,24 +487,24 @@ else:
       if not setSocketBlocking(SocketHandle(sock), false):
         raiseTransportOsError(osLastError())
       localSock = sock
-      register2(localSock).isOkOr():
+      register2(localSock).isOkOr:
         raiseTransportOsError(error)
 
     ## Apply ServerFlags here
     if ServerFlags.ReuseAddr in flags:
-      setSockOpt2(localSock, SOL_SOCKET, SO_REUSEADDR, 1).isOkOr():
+      setSockOpt2(localSock, SOL_SOCKET, SO_REUSEADDR, 1).isOkOr:
         if sock == asyncInvalidSocket:
           closeSocket(localSock)
         raiseTransportOsError(error)
 
     if ServerFlags.ReusePort in flags:
-      setSockOpt2(localSock, SOL_SOCKET, SO_REUSEPORT, 1).isOkOr():
+      setSockOpt2(localSock, SOL_SOCKET, SO_REUSEPORT, 1).isOkOr:
         if sock == asyncInvalidSocket:
           closeSocket(localSock)
         raiseTransportOsError(error)
 
     if ServerFlags.Broadcast in flags:
-      setSockOpt2(localSock, SOL_SOCKET, SO_BROADCAST, 1).isOkOr():
+      setSockOpt2(localSock, SOL_SOCKET, SO_BROADCAST, 1).isOkOr:
         if sock == asyncInvalidSocket:
           closeSocket(localSock)
         raiseTransportOsError(error)
@@ -509,24 +512,26 @@ else:
       if ttl > 0:
         if local.family == AddressFamily.IPv4:
           setSockOpt2(localSock, osdefs.IPPROTO_IP, osdefs.IP_MULTICAST_TTL,
-                      cint(ttl)).isOkOr():
+                      cint(ttl)).isOkOr:
             if sock == asyncInvalidSocket:
               closeSocket(localSock)
             raiseTransportOsError(error)
         elif local.family == AddressFamily.IPv6:
           setSockOpt2(localSock, osdefs.IPPROTO_IP, osdefs.IPV6_MULTICAST_HOPS,
-                      cint(ttl)).isOkOr():
+                      cint(ttl)).isOkOr:
             if sock == asyncInvalidSocket:
               closeSocket(localSock)
             raiseTransportOsError(error)
         else:
           raiseAssert "Unsupported address bound to local socket"
 
-    if local.family in {AddressFamily.IPv4, AddressFamily.IPv6}:
-      ## IPV6_V6ONLY
-      setDualstack(localSock, dualstack).isOkOr():
-        if sock == asyncInvalidSocket:
-          closeSocket(localSock)
+    ## IPV6_V6ONLY
+    if sock == asyncInvalidSocket:
+      setDualstack(localSock, local.family, dualstack).isOkOr:
+        closeSocket(localSock)
+        raiseTransportOsError(error)
+    else:
+      setDualstack(localSock, dualstack).isOkOr:
         raiseTransportOsError(error)
 
     if local.family != AddressFamily.None:

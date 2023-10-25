@@ -89,13 +89,24 @@ proc getSockOpt*(socket: AsyncFD, level, optname: int, value: var int): bool =
 proc getSockOpt2*(socket: AsyncFD,
                   level, optname: int): Result[cint, OSErrorCode] =
   var
-    res: cint
-    size = SockLen(sizeof(res))
+    value: cint
+    size = SockLen(sizeof(value))
   let res = osdefs.getsockopt(SocketHandle(socket), cint(level), cint(optname),
-                              addr(res), addr(size))
+                              addr(value), addr(size))
   if res == -1:
     return err(osLastError())
-  ok(res)
+  ok(value)
+
+proc getSockOpt2*(socket: AsyncFD, level, optname: int,
+                  T: type): Result[T, OSErrorCode] =
+  var
+    value = default(T)
+    size = SockLen(sizeof(value))
+  let res = osdefs.getsockopt(SocketHandle(socket), cint(level), cint(optname),
+                              cast[ptr byte](addr(value)), addr(size))
+  if res == -1:
+    return err(osLastError())
+  ok(value)
 
 proc getSockOpt*(socket: AsyncFD, level, optname: int, value: pointer,
                  valuelen: var int): bool =

@@ -727,18 +727,56 @@ proc raiseTransportError*(ecode: OSErrorCode) {.
     else:
       raise getTransportOsError(ecode)
 
+proc getDomain*(socket: AsyncFD): Result[AddressFamily, OSErrorCode] =
+  ## Returns address family which is used to create socket ``socket``.
+  ##
+  ## Note: `chronos` supports only `AF_INET`, `AF_INET6` and `AF_UNIX` sockets.
+  ## For all other types of sockets this procedure returns
+  ## `EAFNOSUPPORT/WSAEAFNOSUPPORT` error.
+  when defined(windows):
+    let protocolInfo = ? getSockOpt2(socket, cint(osdefs.SOL_SOCKET),
+                                     cint(osdefs.SO_PROTOCOL_INFOW),
+                                     WSAPROTOCOL_INFO)
+    if protocolInfo.iAddressFamily == toInt(Domain.AF_INET):
+      ok(AddressFamily.IPv4)
+    elif protocolInfo.iAddressFamily == toInt(Domain.AF_INET6):
+      ok(AddressFamily.IPv6)
+    else:
+      err(WSAEAFNOSUPPORT)
+  else:
+    var
+      saddr = Sockaddr_storage()
+      slen = SockLen(sizeof(saddr))
+    if getsockname(SocketHandle(socket), cast[ptr SockAddr](addr saddr),
+                   addr slen) != 0:
+      return err(osLastError())
+    if int(saddr.ss_family) == toInt(Domain.AF_INET):
+      ok(AddressFamily.IPv4)
+    elif int(saddr.ss_family) == toInt(Domain.AF_INET6):
+      ok(AddressFamily.IPv6)
+    elif int(saddr.ss_family) == toInt(Domain.AF_UNIX):
+      ok(AddressFamily.Unix)
+    else:
+      err(EAFNOSUPPORT)
+
+proc setDualstack*(socket: AsyncFD, family: AddressFamily,
+                   flag: DualStackType): Result[void, OSErrorCode] =
+  if family == AddressFamily.IPv6:
+    let flags = getThreadDispatcher().networkFlags.get(
+                  {NetFlag.IPv4Enabled, NetFlag.IPv6Enabled})
+    case flag
+    of DualStackType.Auto, DualStackType.Enabled:
+      if NetFlag.IPv6Enabled in flags: ? setDualstack(socket, true)
+      ok()
+    of DualStackType.Disabled:
+      if NetFlag.IPv6Enabled in flags: ? setDualstack(socket, false)
+      ok()
+    of DualStackType.Default:
+      ok()
+  else:
+    ok()
+
 proc setDualstack*(socket: AsyncFD,
                    flag: DualStackType): Result[void, OSErrorCode] =
-  let networkFlags = getThreadDispatcher().networkFlags.get(
-    {NetFlag.IPv4Enabled, NetFlag.IPv6Enabled})
-  case flag
-  of DualStackType.Auto, DualStackType.Enabled:
-    if NetFlag.IPv6Enabled in networkFlags:
-      ? setDualstack(socket, true)
-    ok()
-  of DualStackType.Disabled:
-    if NetFlag.IPv6Enabled in networkFlags:
-      ? setDualstack(socket, false)
-    ok()
-  of DualStackType.Default:
-    ok()
+  let family = ? getDomain(socket)
+  setDualstack(socket, family, flag)

@@ -1505,6 +1505,37 @@ suite "Stream Transport test suite":
     waitFor(testConnectCancelLeaksTest())
   test "[IP] accept() cancellation leaks test":
     waitFor(testAcceptCancelLeaksTest())
+  asyncTest "[IP] getDomain(socket) [SOCK_STREAM] test":
+    if isIPv4Available() and isIPv6Available():
+      block:
+        let res = createAsyncSocket2(Domain.AF_INET, SockType.SOCK_STREAM,
+                                     Protocol.IPPROTO_TCP)
+        check res.isOk()
+        let fres = getDomain(res.get())
+        check fres.isOk()
+        discard unregisterAndCloseFd(res.get())
+        check fres.get() == AddressFamily.IPv4
+
+      block:
+        let res = createAsyncSocket2(Domain.AF_INET6, SockType.SOCK_STREAM,
+                                     Protocol.IPPROTO_TCP)
+        check res.isOk()
+        let fres = getDomain(res.get())
+        check fres.isOk()
+        discard unregisterAndCloseFd(res.get())
+        check fres.get() == AddressFamily.IPv6
+
+      when not(defined(windows)):
+        block:
+          let res = createAsyncSocket2(Domain.AF_UNIX, SockType.SOCK_STREAM,
+                                       Protocol.IPPROTO_IP)
+          check res.isOk()
+          let fres = getDomain(res.get())
+          check fres.isOk()
+          discard unregisterAndCloseFd(res.get())
+          check fres.get() == AddressFamily.Unix
+    else:
+      skip()
   asyncTest "[IP] DualStack [TCP] server [DualStackType.Auto] test":
     if isIPv4Available() and isIPv6Available():
       let serverAddress = initTAddress("[::]:0")

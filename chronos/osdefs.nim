@@ -122,6 +122,7 @@ when defined(windows):
     SO_UPDATE_ACCEPT_CONTEXT* = 0x700B
     SO_CONNECT_TIME* = 0x700C
     SO_UPDATE_CONNECT_CONTEXT* = 0x7010
+    SO_PROTOCOL_INFOW* = 0x2005
 
     FILE_FLAG_FIRST_PIPE_INSTANCE* = 0x00080000'u32
     FILE_FLAG_OPEN_NO_RECALL* = 0x00100000'u32
@@ -259,6 +260,8 @@ when defined(windows):
 
     HANDLE_FLAG_INHERIT* = 1'u32
     IPV6_V6ONLY* = 27
+    MAX_PROTOCOL_CHAIN* = 7
+    WSAPROTOCOL_LEN* = 255
 
   type
     LONG* = int32
@@ -441,6 +444,32 @@ when defined(windows):
     IPADDRESS_PREFIX* {.final, pure.} = object
       prefix*: SOCKADDR_INET
       prefixLength*: uint8
+
+    WSAPROTOCOLCHAIN* {.final, pure.} = object
+      chainLen*: int32
+      chainEntries*: array[MAX_PROTOCOL_CHAIN, DWORD]
+
+    WSAPROTOCOL_INFO* {.final, pure.} = object
+      dwServiceFlags1*: uint32
+      dwServiceFlags2*: uint32
+      dwServiceFlags3*: uint32
+      dwServiceFlags4*: uint32
+      dwProviderFlags*: uint32
+      providerId*: GUID
+      dwCatalogEntryId*: DWORD
+      protocolChain*: WSAPROTOCOLCHAIN
+      iVersion*: int32
+      iAddressFamily*: int32
+      iMaxSockAddr*: int32
+      iMinSockAddr*: int32
+      iSocketType*: int32
+      iProtocol*: int32
+      iProtocolMaxOffset*: int32
+      iNetworkByteOrder*: int32
+      iSecurityScheme*: int32
+      dwMessageSize*: uint32
+      dwProviderReserved*: uint32
+      szProtocol*: array[WSAPROTOCOL_LEN + 1, WCHAR]
 
     MibIpForwardRow2* {.final, pure.} = object
       interfaceLuid*: uint64
