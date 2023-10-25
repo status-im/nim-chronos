@@ -122,7 +122,7 @@ proc getSocketError*(socket: AsyncFD, err: var int): bool =
 proc getSocketError2*(socket: AsyncFD): Result[cint, OSErrorCode] =
   getSockOpt2(socket, cint(osdefs.SOL_SOCKET), cint(osdefs.SO_ERROR))
 
-proc domainCheck(domain: Domain): bool =
+proc isAvailable*(domain: Domain): bool =
   when defined(windows):
     let fd = wsaSocket(toInt(domain), toInt(SockType.SOCK_STREAM),
                        toInt(Protocol.IPPROTO_TCP), nil, GROUP(0), 0'u32)
@@ -138,29 +138,10 @@ proc domainCheck(domain: Domain): bool =
     discard closeFd(fd)
     true
 
-proc isIPv4Available*(): bool =
-  ## Returns `true` if IPv4 family is available.
-  domainCheck(Domain.AF_INET)
-
-proc isIPv6Available*(): bool =
-  ## Returns `true` if IPv6 family is available.
-  domainCheck(Domain.AF_INET6)
-
 proc createAsyncSocket2*(domain: Domain, sockType: SockType,
                          protocol: Protocol,
                          inherit = true): Result[AsyncFD, OSErrorCode] =
   ## Creates new asynchronous socket.
-  if domain in [Domain.AF_INET, Domain.AF_INET6]:
-    let loop = getThreadDispatcher()
-    if loop.networkFlags.isNone():
-      let flags =
-        block:
-          var res: set[NetFlag]
-          if isIPv4Available(): res.incl(NetFlag.IPv4Enabled)
-          if isIPv6Available(): res.incl(NetFlag.IPv6Enabled)
-          res
-      loop.networkFlags = Opt.some(flags)
-
   when defined(windows):
     let flags =
       if inherit:

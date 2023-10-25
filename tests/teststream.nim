@@ -1506,7 +1506,7 @@ suite "Stream Transport test suite":
   test "[IP] accept() cancellation leaks test":
     waitFor(testAcceptCancelLeaksTest())
   asyncTest "[IP] getDomain(socket) [SOCK_STREAM] test":
-    if isIPv4Available() and isIPv6Available():
+    if isAvailable(AddressFamily.IPv4) and isAvailable(AddressFamily.IPv6):
       block:
         let res = createAsyncSocket2(Domain.AF_INET, SockType.SOCK_STREAM,
                                      Protocol.IPPROTO_TCP)
@@ -1537,7 +1537,7 @@ suite "Stream Transport test suite":
     else:
       skip()
   asyncTest "[IP] DualStack [TCP] server [DualStackType.Auto] test":
-    if isIPv4Available() and isIPv6Available():
+    if isAvailable(AddressFamily.IPv4) and isAvailable(AddressFamily.IPv6):
       let serverAddress = initTAddress("[::]:0")
       check:
         (await performDualstackTest(
@@ -1552,7 +1552,7 @@ suite "Stream Transport test suite":
     else:
       skip()
   asyncTest "[IP] DualStack [TCP] server [DualStackType.Enabled] test":
-    if isIPv4Available() and isIPv6Available():
+    if isAvailable(AddressFamily.IPv4) and isAvailable(AddressFamily.IPv6):
       let serverAddress = initTAddress("[::]:0")
       check:
         (await performDualstackTest(
@@ -1567,7 +1567,7 @@ suite "Stream Transport test suite":
     else:
       skip()
   asyncTest "[IP] DualStack [TCP] server [DualStackType.Disabled] test":
-    if isIPv4Available() and isIPv6Available():
+    if isAvailable(AddressFamily.IPv4) and isAvailable(AddressFamily.IPv6):
       let serverAddress = initTAddress("[::]:0")
       check:
         (await performDualstackTest(

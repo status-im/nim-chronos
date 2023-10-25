@@ -29,8 +29,7 @@ type
   ServerFlags* = enum
     ## Server's flags
     ReuseAddr, ReusePort, TcpNoDelay, NoAutoRead, GCUserData, FirstPipe,
-    NoPipeFlash, Broadcast, DualStackAuto, DualStackEnabled, DualStackDisabled,
-    DualStackDefault
+    NoPipeFlash, Broadcast
 
   DualStackType* {.pure.} = enum
     Auto, Enabled, Disabled, Default
@@ -727,6 +726,17 @@ proc raiseTransportError*(ecode: OSErrorCode) {.
     else:
       raise getTransportOsError(ecode)
 
+proc isAvailable*(family: AddressFamily): bool =
+  case family
+  of AddressFamily.None:
+    raiseAssert "Invalid address family"
+  of AddressFamily.IPv4:
+    isAvailable(Domain.AF_INET)
+  of AddressFamily.IPv6:
+    isAvailable(Domain.AF_INET6)
+  of AddressFamily.Unix:
+    isAvailable(Domain.AF_UNIX)
+
 proc getDomain*(socket: AsyncFD): Result[AddressFamily, OSErrorCode] =
   ## Returns address family which is used to create socket ``socket``.
   ##
@@ -762,14 +772,16 @@ proc getDomain*(socket: AsyncFD): Result[AddressFamily, OSErrorCode] =
 proc setDualstack*(socket: AsyncFD, family: AddressFamily,
                    flag: DualStackType): Result[void, OSErrorCode] =
   if family == AddressFamily.IPv6:
-    let flags = getThreadDispatcher().networkFlags.get(
-                  {NetFlag.IPv4Enabled, NetFlag.IPv6Enabled})
     case flag
-    of DualStackType.Auto, DualStackType.Enabled:
-      if NetFlag.IPv6Enabled in flags: ? setDualstack(socket, true)
+    of DualStackType.Auto:
+      # In case of `Auto` we going to ignore all the errors.
+      discard setDualstack(socket, true)
+      ok()
+    of DualStackType.Enabled:
+      ? setDualstack(socket, true)
       ok()
     of DualStackType.Disabled:
-      if NetFlag.IPv6Enabled in flags: ? setDualstack(socket, false)
+      ? setDualstack(socket, false)
       ok()
     of DualStackType.Default:
       ok()
@@ -778,5 +790,10 @@ proc setDualstack*(socket: AsyncFD, family: AddressFamily,
 
 proc setDualstack*(socket: AsyncFD,
                    flag: DualStackType): Result[void, OSErrorCode] =
-  let family = ? getDomain(socket)
+  let family =
+    case flag
+    of DualStackType.Auto:
+      getDomain(socket).get(AddressFamily.IPv6)
+    else:
+      ? getDomain(socket)
   setDualstack(socket, family, flag)

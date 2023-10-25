@@ -606,7 +606,7 @@ suite "Datagram Transport test suite":
   test "0.0.0.0/::0 (INADDR_ANY) test":
     check waitFor(testAnyAddress()) == 6
   asyncTest "[IP] getDomain(socket) [SOCK_DGRAM] test":
-    if isIPv4Available() and isIPv6Available():
+    if isAvailable(AddressFamily.IPv4) and isAvailable(AddressFamily.IPv6):
       block:
         let res = createAsyncSocket2(Domain.AF_INET, SockType.SOCK_DGRAM,
                                      Protocol.IPPROTO_UDP)
@@ -637,7 +637,7 @@ suite "Datagram Transport test suite":
     else:
       skip()
   asyncTest "[IP] DualStack [UDP] server [DualStackType.Auto] test":
-    if isIPv4Available() and isIPv6Available():
+    if isAvailable(AddressFamily.IPv4) and isAvailable(AddressFamily.IPv6):
       let serverAddress = initTAddress("[::]:0")
       check:
         (await performDualstackTest(
@@ -654,7 +654,7 @@ suite "Datagram Transport test suite":
     else:
       skip()
   asyncTest "[IP] DualStack [UDP] server [DualStackType.Enabled] test":
-    if isIPv4Available() and isIPv6Available():
+    if isAvailable(AddressFamily.IPv4) and isAvailable(AddressFamily.IPv6):
       let serverAddress = initTAddress("[::]:0")
       check:
         (await performDualstackTest(
@@ -669,7 +669,7 @@ suite "Datagram Transport test suite":
     else:
       skip()
   asyncTest "[IP] DualStack [UDP] server [DualStackType.Disabled] test":
-    if isIPv4Available() and isIPv6Available():
+    if isAvailable(AddressFamily.IPv4) and isAvailable(AddressFamily.IPv6):
       let serverAddress = initTAddress("[::]:0")
       check:
         (await performDualstackTest(
