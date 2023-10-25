@@ -251,7 +251,7 @@ to let a user cancel a running task, to start multiple futures in parallel
 and cancel them as soon as one finishes, etc.
 
 ```nim
-import uri, chronos/apps/http/httpclient, stew/byteutils
+import chronos/apps/http/httpclient
 
 proc cancellationExample() {.async.} =
   # Simple cancellation
@@ -259,26 +259,26 @@ proc cancellationExample() {.async.} =
   future.cancelSoon()
   # `cancelSoon` will not wait for the cancellation
   # to be finished, so the Future could still be
-  # running at this point.
+  # pending at this point.
 
   # Wait for cancellation
   let future2 = sleepAsync(10.minutes)
   await future2.cancelAndWait()
   # Using `cancelAndWait`, we know that future2 isn't
-  # running anymore. However, it could have finished
+  # pending anymore. However, it could have completed
   # before cancellation happened (in which case, it
-  # might hold a value)
+  # will hold a value)
 
   # Race between futures
   proc retrievePage(uri: string): Future[string] {.async.} =
     let httpSession = HttpSessionRef.new()
     try:
       let resp = await httpSession.fetch(parseUri(uri))
-      return string.fromBytes(resp.data)
+      return bytesToString(resp.data)
     finally:
       # be sure to always close the session
-      # finally will be ran even in case of cancellations.
-      # noCancel ensures the closing doesn't get cancelled
+      # `finally` will run also during cancellation -
+      # `noCancel` ensures that `closeWait` doesn't get cancelled
       await noCancel(httpSession.closeWait())
 
   let
@@ -297,8 +297,13 @@ proc cancellationExample() {.async.} =
 waitFor(cancellationExample())
 ```
 
-`await` will raise a `CancelledError` if the current future
-is cancelled:
+Even if cancellation is initiated, it is not guaranteed that
+the operation gets cancelled - the future might still be completed
+or fail depending on the ordering of events and the specifics of
+the operation. 
+
+If the future indeed gets cancelled, `await` will raise a 
+`CancelledError` as is likely to happen in the following example:
 ```nim
 proc c1 {.async.} =
   echo "Before sleep"
