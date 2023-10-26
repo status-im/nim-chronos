@@ -664,6 +664,13 @@ when defined(windows):
         retFuture.fail(getTransportOsError(error))
         return retFuture
 
+      if address.family in {AddressFamily.IPv4, AddressFamily.IPv6}:
+        if SocketFlags.TcpNoDelay in flags:
+          setSockOpt2(sock, osdefs.IPPROTO_TCP, osdefs.TCP_NODELAY, 1).isOkOr:
+            sock.closeSocket()
+            retFuture.fail(getTransportOsError(error))
+            return retFuture
+
       if SocketFlags.ReuseAddr in flags:
         setSockOpt2(sock, SOL_SOCKET, SO_REUSEADDR, 1).isOkOr:
           sock.closeSocket()
@@ -1507,10 +1514,10 @@ else:
         retFuture.fail(getTransportOsError(error))
         return retFuture
     # IPV6_V6ONLY.
-      setDualstack(sock, address.family, dualstack).isOkOr:
-        sock.closeSocket()
-        retFuture.fail(getTransportOsError(error))
-        return retFuture
+    setDualstack(sock, address.family, dualstack).isOkOr:
+      sock.closeSocket()
+      retFuture.fail(getTransportOsError(error))
+      return retFuture
 
     if localAddress != TransportAddress():
       if localAddress.family != address.family:
