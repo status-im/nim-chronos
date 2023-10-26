@@ -676,8 +676,8 @@ suite "Datagram Transport test suite":
            DualStackType.Disabled, serverAddress,
            DualStackType.Auto, initTAddress("127.0.0.1:0"))) == false
         (await performDualstackTest(
-          DualStackType.Disabled, serverAddress,
-          DualStackType.Auto, initTAddress("127.0.0.1:0").toIPv6())) == false
+           DualStackType.Disabled, serverAddress,
+           DualStackType.Auto, initTAddress("127.0.0.1:0").toIPv6())) == false
         (await performDualstackTest(
            DualStackType.Disabled, serverAddress,
            DualStackType.Auto, initTAddress("[::1]:0"))) == true

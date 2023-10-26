@@ -11,7 +11,7 @@
 
 import std/deques
 when not(defined(windows)): import ".."/selectors2
-import ".."/[asyncloop, osdefs, oserrno, handles]
+import ".."/[asyncloop, osdefs, oserrno, osutils, handles]
 import "."/common
 
 type
@@ -251,25 +251,27 @@ when defined(windows):
                                   dualstack = DualStackType.Auto
                                  ): DatagramTransport {.
       raises: [TransportOsError].} =
-    var localSock: AsyncFD
-    # doAssert(remote.family == local.family)
     doAssert(not isNil(cbproc))
-    # doAssert(remote.family in {AddressFamily.IPv4, AddressFamily.IPv6})
-
     var res = if isNil(child): DatagramTransport() else: child
 
-    if sock == asyncInvalidSocket:
-      localSock = createAsyncSocket(local.getDomain(), SockType.SOCK_DGRAM,
-                                    Protocol.IPPROTO_UDP)
-
-      if localSock == asyncInvalidSocket:
-        raiseTransportOsError(osLastError())
-    else:
-      if not setSocketBlocking(SocketHandle(sock), false):
-        raiseTransportOsError(osLastError())
-      localSock = sock
-      register2(localSock).isOkOr:
-        raiseTransportOsError(error)
+    let localSock =
+      if sock == asyncInvalidSocket:
+        let proto =
+          if local.family == AddressFamily.Unix:
+            Protocol.IPPROTO_IP
+          else:
+            Protocol.IPPROTO_UDP
+        let res = createAsyncSocket2(local.getDomain(), SockType.SOCK_DGRAM,
+                                     proto)
+        if res.isErr():
+          raiseTransportOsError(res.error)
+        res.get()
+      else:
+        setDescriptorBlocking(SocketHandle(sock), false).isOkOr:
+          raiseTransportOsError(error)
+        register2(sock).isOkOr:
+          raiseTransportOsError(error)
+        sock
 
     ## Apply ServerFlags here
     if ServerFlags.ReuseAddr in flags:
@@ -467,28 +469,27 @@ else:
                                   dualstack = DualStackType.Auto
                                  ): DatagramTransport {.
       raises: [TransportOsError].} =
-    var localSock: AsyncFD
-    # doAssert(remote.family == local.family)
     doAssert(not isNil(cbproc))
-
     var res = if isNil(child): DatagramTransport() else: child
 
-    if sock == asyncInvalidSocket:
-      let proto =
-        if local.family == AddressFamily.Unix:
-          Protocol.IPPROTO_IP
-        else:
-          Protocol.IPPROTO_UDP
-      localSock = createAsyncSocket(local.getDomain(), SockType.SOCK_DGRAM,
-                                    proto)
-      if localSock == asyncInvalidSocket:
-        raiseTransportOsError(osLastError())
-    else:
-      if not setSocketBlocking(SocketHandle(sock), false):
-        raiseTransportOsError(osLastError())
-      localSock = sock
-      register2(localSock).isOkOr:
-        raiseTransportOsError(error)
+    let localSock =
+      if sock == asyncInvalidSocket:
+        let proto =
+          if local.family == AddressFamily.Unix:
+            Protocol.IPPROTO_IP
+          else:
+            Protocol.IPPROTO_UDP
+        let res = createAsyncSocket2(local.getDomain(), SockType.SOCK_DGRAM,
+                                     proto)
+        if res.isErr():
+          raiseTransportOsError(res.error)
+        res.get()
+      else:
+        setDescriptorBlocking(SocketHandle(sock), false).isOkOr:
+          raiseTransportOsError(error)
+        register2(sock).isOkOr:
+          raiseTransportOsError(error)
+        sock
 
     ## Apply ServerFlags here
     if ServerFlags.ReuseAddr in flags:

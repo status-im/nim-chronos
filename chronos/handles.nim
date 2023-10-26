@@ -21,32 +21,12 @@ const
   asyncInvalidSocket* = AsyncFD(osdefs.INVALID_SOCKET)
   asyncInvalidPipe* = asyncInvalidSocket
 
-proc setSocketBlocking*(s: SocketHandle, blocking: bool): bool =
+proc setSocketBlocking*(s: SocketHandle, blocking: bool): bool {.
+     deprecated: "Please use osutils.setDescriptorBlocking() instead".} =
   ## Sets blocking mode on socket.
-  when defined(windows) or defined(nimdoc):
-    var mode = clong(ord(not blocking))
-    if osdefs.ioctlsocket(s, osdefs.FIONBIO, addr(mode)) == -1:
-      false
-    else:
-      true
-  else:
-    let x: int = osdefs.fcntl(s, osdefs.F_GETFL, 0)
-    if x == -1:
-      false
-    else:
-      let mode =
-        if blocking: x and not osdefs.O_NONBLOCK else: x or osdefs.O_NONBLOCK
-      if osdefs.fcntl(s, osdefs.F_SETFL, mode) == -1:
-        false
-      else:
-        true
-
-proc setSockOpt*(socket: AsyncFD, level, optname, optval: int): bool =
-  ## `setsockopt()` for integer options.
-  ## Returns ``true`` on success, ``false`` on error.
-  var value = cint(optval)
-  osdefs.setsockopt(SocketHandle(socket), cint(level), cint(optname),
-                    addr(value), SockLen(sizeof(value))) >= cint(0)
+  setDescriptorBlocking(s, blocking).isOkOr:
+    return false
+  true
 
 proc setSockOpt2*(socket: AsyncFD,
                   level, optname, optval: int): Result[void, OSErrorCode] =
@@ -56,13 +36,6 @@ proc setSockOpt2*(socket: AsyncFD,
   if res == -1:
     return err(osLastError())
   ok()
-
-proc setSockOpt*(socket: AsyncFD, level, optname: int, value: pointer,
-                 valuelen: int): bool =
-  ## `setsockopt()` for custom options (pointer and length).
-  ## Returns ``true`` on success, ``false`` on error.
-  osdefs.setsockopt(SocketHandle(socket), cint(level), cint(optname), value,
-                    SockLen(valuelen)) >= cint(0)
 
 proc setSockOpt2*(socket: AsyncFD, level, optname: int, value: pointer,
                   valuelen: int): Result[void, OSErrorCode] =
@@ -74,17 +47,18 @@ proc setSockOpt2*(socket: AsyncFD, level, optname: int, value: pointer,
     return err(osLastError())
   ok()
 
-proc getSockOpt*(socket: AsyncFD, level, optname: int, value: var int): bool =
-  ## `getsockopt()` for integer options.
+proc setSockOpt*(socket: AsyncFD, level, optname, optval: int): bool {.
+     deprecated: "Please use setSockOpt2() instead".} =
+  ## `setsockopt()` for integer options.
   ## Returns ``true`` on success, ``false`` on error.
-  var res: cint
-  var size = SockLen(sizeof(res))
-  if osdefs.getsockopt(SocketHandle(socket), cint(level), cint(optname),
-                       addr(res), addr(size)) >= cint(0):
-    value = int(res)
-    true
-  else:
-    false
+  setSockOpt2(socket, level, optname, optval).isOk
+
+proc setSockOpt*(socket: AsyncFD, level, optname: int, value: pointer,
+                 valuelen: int): bool {.
+     deprecated: "Please use setSockOpt2() instead".} =
+  ## `setsockopt()` for custom options (pointer and length).
+  ## Returns ``true`` on success, ``false`` on error.
+  setSockOpt2(socket, level, optname, value, valuelen).isOk
 
 proc getSockOpt2*(socket: AsyncFD,
                   level, optname: int): Result[cint, OSErrorCode] =
@@ -108,16 +82,29 @@ proc getSockOpt2*(socket: AsyncFD, level, optname: int,
     return err(osLastError())
   ok(value)
 
-proc getSockOpt*(socket: AsyncFD, level, optname: int, value: pointer,
-                 valuelen: var int): bool =
+proc getSockOpt*(socket: AsyncFD, level, optname: int, value: var int): bool {.
+     deprecated: "Please use getSockOpt2() instead".} =
+  ## `getsockopt()` for integer options.
+  ## Returns ``true`` on success, ``false`` on error.
+  value = getSockOpt2(socket, level, optname).valueOr:
+    return false
+  true
+
+proc getSockOpt*(socket: AsyncFD, level, optname: int, value: var pointer,
+                 valuelen: var int): bool  {.
+     deprecated: "Please use getSockOpt2() instead".} =
   ## `getsockopt()` for custom options (pointer and length).
   ## Returns ``true`` on success, ``false`` on error.
   osdefs.getsockopt(SocketHandle(socket), cint(level), cint(optname),
                     value, cast[ptr SockLen](addr valuelen)) >= cint(0)
 
-proc getSocketError*(socket: AsyncFD, err: var int): bool =
+proc getSocketError*(socket: AsyncFD, err: var int): bool  {.
+     deprecated: "Please use getSocketError() instead".} =
   ## Recover error code associated with socket handle ``socket``.
-  getSockOpt(socket, cint(osdefs.SOL_SOCKET), cint(osdefs.SO_ERROR), err)
+  err = getSockOpt2(socket, cint(osdefs.SOL_SOCKET),
+                    cint(osdefs.SO_ERROR)).valueOr:
+    return false
+  true
 
 proc getSocketError2*(socket: AsyncFD): Result[cint, OSErrorCode] =
   getSockOpt2(socket, cint(osdefs.SOL_SOCKET), cint(osdefs.SO_ERROR))
@@ -153,15 +140,12 @@ proc createAsyncSocket2*(domain: Domain, sockType: SockType,
     if fd == osdefs.INVALID_SOCKET:
       return err(osLastError())
 
-    let bres = setDescriptorBlocking(fd, false)
-    if bres.isErr():
+    setDescriptorBlocking(fd, false).isOkOr:
       discard closeFd(fd)
-      return err(bres.error())
-
-    let res = register2(AsyncFD(fd))
-    if res.isErr():
+      return err(error)
+    register2(AsyncFD(fd)).isOkOr:
       discard closeFd(fd)
-      return err(res.error())
+      return err(error)
 
     ok(AsyncFD(fd))
   else:
@@ -174,23 +158,20 @@ proc createAsyncSocket2*(domain: Domain, sockType: SockType,
       let fd = osdefs.socket(toInt(domain), socketType, toInt(protocol))
       if fd == -1:
         return err(osLastError())
-      let res = register2(AsyncFD(fd))
-      if res.isErr():
+      register2(AsyncFD(fd)).isOkOr:
         discard closeFd(fd)
-        return err(res.error())
+        return err(error)
       ok(AsyncFD(fd))
     else:
       let fd = osdefs.socket(toInt(domain), toInt(sockType), toInt(protocol))
       if fd == -1:
         return err(osLastError())
-      let bres = setDescriptorFlags(cint(fd), true, true)
-      if bres.isErr():
+      setDescriptorFlags(cint(fd), true, true).isOkOr:
         discard closeFd(fd)
-        return err(bres.error())
-      let res = register2(AsyncFD(fd))
-      if res.isErr():
+        return err(error)
+      register2(AsyncFD(fd)).isOkOr:
         discard closeFd(fd)
-        return err(bres.error())
+        return err(error)
       ok(AsyncFD(fd))
 
 proc wrapAsyncSocket2*(sock: cint|SocketHandle): Result[AsyncFD, OSErrorCode] =
