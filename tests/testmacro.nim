@@ -533,3 +533,14 @@ suite "Exceptions tracking":
 
     expect(Defect): f.fail((ref CatchableError)(), warn = false)
     check: not f.finished()
+
+  test "handleException behavior":
+    proc raiseException() {.
+        async: (handleException: true, raises: [AsyncExceptionError]).} =
+      raise (ref Exception)(msg: "Raising Exception is UB and support for it may change in the future")
+
+    proc callCatchAll() {.async: (raises: []).} =
+      expect(AsyncExceptionError):
+        await raiseException()
+
+    waitFor(callCatchAll())

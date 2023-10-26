@@ -33,7 +33,9 @@ proc processBody(node, setResultSym, baseType: NimNode): NimNode {.compileTime.}
       node[i] = processBody(node[i], setResultSym, baseType)
     node
 
-proc wrapInTryFinally(fut, baseType, body, raises: NimNode): NimNode {.compileTime.} =
+proc wrapInTryFinally(
+  fut, baseType, body, raises: NimNode,
+  handleException: bool): NimNode {.compileTime.} =
   # creates:
   # try: `body`
   # [for raise in raises]:
@@ -92,15 +94,15 @@ proc wrapInTryFinally(fut, baseType, body, raises: NimNode): NimNode {.compileTi
                   newCall(ident "fail", fut, excName)
                 ))
 
-  let raises = if raises == nil:
-    const defaultException =
-      when defined(chronosStrictException): "CatchableError"
-      else: "Exception"
-    nnkTupleConstr.newTree(ident(defaultException))
+  var raises = if raises == nil:
+    nnkTupleConstr.newTree(ident"CatchableError")
   elif isNoRaises(raises):
     nnkTupleConstr.newTree()
   else:
-    raises
+    raises.copyNimTree()
+
+  if handleException:
+    raises.add(ident"Exception")
 
   for exc in raises:
     if exc.eqIdent("Exception"):
@@ -115,7 +117,9 @@ proc wrapInTryFinally(fut, baseType, body, raises: NimNode): NimNode {.compileTi
                 newCall(ident "fail", fut,
                   nnkStmtList.newTree(
                     nnkAsgn.newTree(closureSucceeded, ident"false"),
-                  quote do: (ref ValueError)(msg: `excName`.msg, parent: `excName`)))
+                  quote do:
+                    (ref AsyncExceptionError)(
+                      msg: `excName`.msg, parent: `excName`)))
               )
     elif exc.eqIdent("CancelledError"):
       addCancelledError
@@ -131,6 +135,8 @@ proc wrapInTryFinally(fut, baseType, body, raises: NimNode): NimNode {.compileTi
                   nnkAsgn.newTree(closureSucceeded, ident"false"),
                   newCall(ident "fail", fut, excName)
                 ))
+
+  addDefect # Must not complete future on defect
 
   nTry.add nnkFinally.newTree(
     nnkIfStmt.newTree(
@@ -193,7 +199,13 @@ proc cleanupOpenSymChoice(node: NimNode): NimNode {.compileTime.} =
     for child in node:
       result.add(cleanupOpenSymChoice(child))
 
-proc decodeParams(params: NimNode): tuple[raw: bool, raises: NimNode] =
+type
+  AsyncParams = tuple
+    raw: bool
+    raises: NimNode
+    handleException: bool
+
+proc decodeParams(params: NimNode): AsyncParams =
   # decodes the parameter tuple given in `async: (name: value, ...)` to its
   # recognised parts
   params.expectKind(nnkTupleConstr)
@@ -201,6 +213,7 @@ proc decodeParams(params: NimNode): tuple[raw: bool, raises: NimNode] =
   var
     raw = false
     raises: NimNode = nil
+    handleException = chronosHandleException
 
   for param in params:
     param.expectKind(nnkExprColonExpr)
@@ -216,10 +229,12 @@ proc decodeParams(params: NimNode): tuple[raw: bool, raises: NimNode] =
     elif param[0].eqIdent("raw"):
       # boolVal doesn't work in untyped macros it seems..
       raw = param[1].eqIdent("true")
+    elif param[0].eqIdent("handleException"):
+      handleException = param[1].eqIdent("true")
     else:
       warning("Unrecognised async parameter: " & repr(param[0]), param)
 
-  (raw, raises)
+  (raw, raises, handleException)
 
 proc isEmpty(n: NimNode): bool {.compileTime.} =
   # true iff node recursively contains only comments or empties
@@ -261,7 +276,7 @@ proc asyncSingleProc(prc, params: NimNode): NimNode {.compileTime.} =
 
   let
     baseTypeIsVoid = baseType.eqIdent("void")
-    (raw, raises) = decodeParams(params)
+    (raw, raises, handleException) = decodeParams(params)
     internalFutureType =
       if baseTypeIsVoid:
         newNimNode(nnkBracketExpr, prc).
@@ -406,7 +421,8 @@ proc asyncSingleProc(prc, params: NimNode): NimNode {.compileTime.} =
         castFutureSym, baseType,
         if baseTypeIsVoid: procBody # shortcut for non-generic `void`
         else: newCall(setResultSym, procBody),
-        raises
+        raises,
+        handleException
       )
 
       closureBody = newStmtList(resultDecl, setResultDecl, completeDecl)
