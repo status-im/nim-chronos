@@ -22,7 +22,7 @@ const
   asyncInvalidPipe* = asyncInvalidSocket
 
 proc setSocketBlocking*(s: SocketHandle, blocking: bool): bool {.
-     deprecated: "Please use osutils.setDescriptorBlocking() instead".} =
+     deprecated: "Please use setDescriptorBlocking() instead".} =
   ## Sets blocking mode on socket.
   setDescriptorBlocking(s, blocking).isOkOr:
     return false
