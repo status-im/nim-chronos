@@ -638,9 +638,8 @@ when defined(windows):
                 bufferSize = DefaultStreamBufferSize,
                 child: StreamTransport = nil,
                 localAddress = TransportAddress(),
-                flags: set[SocketFlags] = {},
-                dualstack = DualStackType.Auto
-                ): Future[StreamTransport] =
+                flags: set[SocketFlags] = {}
+               ): Future[StreamTransport] =
     ## Open new connection to remote peer with address ``address`` and create
     ## new transport object ``StreamTransport`` for established connection.
     ## ``bufferSize`` is size of internal buffer for transport.
@@ -674,11 +673,6 @@ when defined(windows):
           sock.closeSocket()
           retFuture.fail(getTransportOsError(error))
           return retFuture
-      # IPV6_V6ONLY.
-      setDualstack(sock, address.family, dualstack).isOkOr:
-        sock.closeSocket()
-        retFuture.fail(getTransportOsError(error))
-        return retFuture
 
       if localAddress != TransportAddress():
         if localAddress.family != address.family:
@@ -1463,9 +1457,8 @@ else:
                 bufferSize = DefaultStreamBufferSize,
                 child: StreamTransport = nil,
                 localAddress = TransportAddress(),
-                flags: set[SocketFlags] = {},
-                dualstack = DualStackType.Auto
-                ): Future[StreamTransport] =
+                flags: set[SocketFlags] = {}
+               ): Future[StreamTransport] =
     ## Open new connection to remote peer with address ``address`` and create
     ## new transport object ``StreamTransport`` for established connection.
     ## ``bufferSize`` - size of internal buffer for transport.
@@ -1495,11 +1488,6 @@ else:
           sock.closeSocket()
           retFuture.fail(getTransportOsError(error))
           return retFuture
-      # IPV6_V6ONLY.
-      setDualstack(sock, address.family, dualstack).isOkOr:
-        sock.closeSocket()
-        retFuture.fail(getTransportOsError(error))
-        return retFuture
 
     if SocketFlags.ReuseAddr in flags:
       setSockOpt2(sock, SOL_SOCKET, SO_REUSEADDR, 1).isOkOr:
@@ -1776,12 +1764,12 @@ proc connect*(address: TransportAddress,
               bufferSize = DefaultStreamBufferSize,
               child: StreamTransport = nil,
               flags: set[TransportFlags],
-              localAddress = TransportAddress(),
-              dualstack = DualStackType.Auto): Future[StreamTransport] =
+              localAddress = TransportAddress()
+             ): Future[StreamTransport] =
   # Retro compatibility with TransportFlags
   var mappedFlags: set[SocketFlags]
   if TcpNoDelay in flags: mappedFlags.incl(SocketFlags.TcpNoDelay)
-  connect(address, bufferSize, child, localAddress, mappedFlags, dualstack)
+  connect(address, bufferSize, child, localAddress, mappedFlags)
 
 proc close*(server: StreamServer) =
   ## Release ``server`` resources.

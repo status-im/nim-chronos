@@ -1374,7 +1374,7 @@ suite "Stream Transport test suite":
 
   proc performDualstackTest(
          sstack: DualStackType, saddr: TransportAddress,
-         cstack: DualStackType, caddr: TransportAddress
+         caddr: TransportAddress
        ): Future[bool] {.async.} =
     let server = createStreamServer(saddr, dualstack = sstack)
     var address = caddr
@@ -1383,10 +1383,10 @@ suite "Stream Transport test suite":
     let
       clientTransp =
         try:
-          let res = await connect(address,
-                                  dualstack = cstack).wait(500.milliseconds)
+          let res = await connect(address).wait(500.milliseconds)
           Opt.some(res)
-        except CatchableError:
+        except CatchableError as exc:
+          echo exc.name, " - ", exc.msg
           Opt.none(StreamTransport)
       serverTransp =
         if clientTransp.isSome():
@@ -1542,13 +1542,13 @@ suite "Stream Transport test suite":
       check:
         (await performDualstackTest(
            DualStackType.Auto, serverAddress,
-           DualStackType.Auto, initTAddress("127.0.0.1:0"))) == true
+           initTAddress("127.0.0.1:0"))) == true
         (await performDualstackTest(
            DualStackType.Auto, serverAddress,
-           DualStackType.Auto, initTAddress("127.0.0.1:0").toIPv6())) == true
+           initTAddress("127.0.0.1:0").toIPv6())) == true
         (await performDualstackTest(
            DualStackType.Auto, serverAddress,
-           DualStackType.Auto, initTAddress("[::1]:0"))) == true
+           initTAddress("[::1]:0"))) == true
     else:
       skip()
   asyncTest "[IP] DualStack [TCP] server [DualStackType.Enabled] test":
@@ -1557,13 +1557,13 @@ suite "Stream Transport test suite":
       check:
         (await performDualstackTest(
            DualStackType.Enabled, serverAddress,
-           DualStackType.Auto, initTAddress("127.0.0.1:0"))) == true
+           initTAddress("127.0.0.1:0"))) == true
         (await performDualstackTest(
            DualStackType.Enabled, serverAddress,
-           DualStackType.Auto, initTAddress("127.0.0.1:0").toIPv6())) == true
+           initTAddress("127.0.0.1:0").toIPv6())) == true
         (await performDualstackTest(
            DualStackType.Enabled, serverAddress,
-           DualStackType.Auto, initTAddress("[::1]:0"))) == true
+           initTAddress("[::1]:0"))) == true
     else:
       skip()
   asyncTest "[IP] DualStack [TCP] server [DualStackType.Disabled] test":
@@ -1572,13 +1572,13 @@ suite "Stream Transport test suite":
       check:
         (await performDualstackTest(
            DualStackType.Disabled, serverAddress,
-           DualStackType.Auto, initTAddress("127.0.0.1:0"))) == false
-        (await performDualstackTest(
-          DualStackType.Disabled, serverAddress,
-          DualStackType.Auto, initTAddress("127.0.0.1:0").toIPv6())) == false
+           initTAddress("127.0.0.1:0"))) == false
         (await performDualstackTest(
            DualStackType.Disabled, serverAddress,
-           DualStackType.Auto, initTAddress("[::1]:0"))) == true
+           initTAddress("127.0.0.1:0").toIPv6())) == false
+        (await performDualstackTest(
+           DualStackType.Disabled, serverAddress,
+           initTAddress("[::1]:0"))) == true
     else:
       skip()
   test "Leaks test":
