@@ -1096,7 +1096,7 @@ when defined(windows):
           retFuture.fail(getServerUseClosedError())
           server.clean()
         of WSAENETDOWN, WSAENETRESET, WSAECONNABORTED, WSAECONNRESET,
-           WSAETIMEDOUT:
+           WSAETIMEDOUT, ERROR_NETNAME_DELETED:
           server.asock.closeSocket()
           retFuture.fail(getConnectionAbortedError(ovl.data.errCode))
           server.clean()
