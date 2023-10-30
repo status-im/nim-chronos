@@ -670,6 +670,19 @@ when defined(windows):
     if not(isNil(aftercb)):
       loop.callbacks.addLast(AsyncCallback(function: aftercb, udata: param))
 
+  proc unregisterAndCloseFd*(fd: AsyncFD): Result[void, OSErrorCode] =
+    ## Unregister from system queue and close asynchronous socket.
+    ##
+    ## NOTE: Use this function to close temporary sockets/pipes only (which
+    ## are not exposed to the public and not supposed to be used/reused).
+    ## Please use closeSocket(AsyncFD) and closeHandle(AsyncFD) instead.
+    doAssert(fd != AsyncFD(osdefs.INVALID_SOCKET))
+    unregister(fd)
+    if closeFd(SocketHandle(fd)) != 0:
+      err(osLastError())
+    else:
+      ok()
+
   proc contains*(disp: PDispatcher, fd: AsyncFD): bool =
     ## Returns ``true`` if ``fd`` is registered in thread's dispatcher.
     fd in disp.handles

@@ -346,6 +346,10 @@ else:
         return err(osLastError())
     ok()
 
+  proc setDescriptorBlocking*(s: SocketHandle,
+                              value: bool): Result[void, OSErrorCode] =
+    setDescriptorBlocking(cint(s), value)
+
   proc setDescriptorInheritance*(s: cint,
                                  value: bool): Result[void, OSErrorCode] =
     let flags = handleEintr(osdefs.fcntl(s, osdefs.F_GETFD))
