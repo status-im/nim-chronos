@@ -151,96 +151,92 @@ proc new*(T: typedesc[TrustAnchorStore],
 
 proc tlsWriteRec(engine: ptr SslEngineContext,
                  writer: TLSStreamWriter): Future[TLSResult] {.async.} =
-  return
-    try:
-      var length = 0'u
-      var buf = sslEngineSendrecBuf(engine[], length)
-      doAssert(length != 0 and not isNil(buf))
-      await writer.wsource.write(buf, int(length))
-      sslEngineSendrecAck(engine[], length)
-      TLSResult.Success
-    except AsyncStreamError as exc:
-      writer.state = AsyncStreamState.Error
-      writer.error = exc
-      TLSResult.Error
-    except CancelledError:
-      if writer.state == AsyncStreamState.Running:
-        writer.state = AsyncStreamState.Stopped
-      TLSResult.Stopped
+  try:
+    var length = 0'u
+    var buf = sslEngineSendrecBuf(engine[], length)
+    doAssert(length != 0 and not isNil(buf))
+    await writer.wsource.write(buf, int(length))
+    sslEngineSendrecAck(engine[], length)
+    TLSResult.Success
+  except AsyncStreamError as exc:
+    writer.state = AsyncStreamState.Error
+    writer.error = exc
+    TLSResult.Error
+  except CancelledError:
+    if writer.state == AsyncStreamState.Running:
+      writer.state = AsyncStreamState.Stopped
+    TLSResult.Stopped
 
 proc tlsWriteApp(engine: ptr SslEngineContext,
                  writer: TLSStreamWriter): Future[TLSResult] {.async.} =
-  return
-    try:
-      var item = await writer.queue.get()
-      if item.size > 0:
-        var length = 0'u
-        var buf = sslEngineSendappBuf(engine[], length)
-        if isNil(buf) or (length == 0):
-          # This situation could happen when connection is closing, no
-          # application data can be sent, but some can still be received
-          # (and discarded).
-          writer.state = AsyncStreamState.Finished
-          return TLSResult.WriteEof
-        let toWrite = min(int(length), item.size)
-        copyOut(buf, item, toWrite)
-        if int(length) >= item.size:
-          # BearSSL is ready to accept whole item size.
-          sslEngineSendappAck(engine[], uint(item.size))
-          sslEngineFlush(engine[], 0)
-          item.future.complete()
-        else:
-          # BearSSL is not ready to accept whole item, so we will send
-          # only part of item and adjust offset.
-          item.offset = item.offset + int(length)
-          item.size = item.size - int(length)
-          writer.queue.addFirstNoWait(item)
-          sslEngineSendappAck(engine[], length)
-        TLSResult.Success
-      else:
-        sslEngineClose(engine[])
+  try:
+    var item = await writer.queue.get()
+    if item.size > 0:
+      var length = 0'u
+      var buf = sslEngineSendappBuf(engine[], length)
+      if isNil(buf) or (length == 0):
+        # This situation could happen when connection is closing, no
+        # application data can be sent, but some can still be received
+        # (and discarded).
+        writer.state = AsyncStreamState.Finished
+        return TLSResult.WriteEof
+      let toWrite = min(int(length), item.size)
+      copyOut(buf, item, toWrite)
+      if int(length) >= item.size:
+        # BearSSL is ready to accept whole item size.
+        sslEngineSendappAck(engine[], uint(item.size))
+        sslEngineFlush(engine[], 0)
         item.future.complete()
-        TLSResult.Success
-    except CancelledError:
-      if writer.state == AsyncStreamState.Running:
-        writer.state = AsyncStreamState.Stopped
-      TLSResult.Stopped
+      else:
+        # BearSSL is not ready to accept whole item, so we will send
+        # only part of item and adjust offset.
+        item.offset = item.offset + int(length)
+        item.size = item.size - int(length)
+        writer.queue.addFirstNoWait(item)
+        sslEngineSendappAck(engine[], length)
+      TLSResult.Success
+    else:
+      sslEngineClose(engine[])
+      item.future.complete()
+      TLSResult.Success
+  except CancelledError:
+    if writer.state == AsyncStreamState.Running:
+      writer.state = AsyncStreamState.Stopped
+    TLSResult.Stopped
 
 proc tlsReadRec(engine: ptr SslEngineContext,
                 reader: TLSStreamReader): Future[TLSResult] {.async.} =
-  return
-    try:
-      var length = 0'u
-      var buf = sslEngineRecvrecBuf(engine[], length)
-      let res = await reader.rsource.readOnce(buf, int(length))
-      sslEngineRecvrecAck(engine[], uint(res))
-      if res == 0:
-        sslEngineClose(engine[])
-        TLSResult.ReadEof
-      else:
-        TLSResult.Success
-    except AsyncStreamError as exc:
-      reader.state = AsyncStreamState.Error
-      reader.error = exc
-      TLSResult.Error
-    except CancelledError:
-      if reader.state == AsyncStreamState.Running:
-        reader.state = AsyncStreamState.Stopped
-      TLSResult.Stopped
+  try:
+    var length = 0'u
+    var buf = sslEngineRecvrecBuf(engine[], length)
+    let res = await reader.rsource.readOnce(buf, int(length))
+    sslEngineRecvrecAck(engine[], uint(res))
+    if res == 0:
+      sslEngineClose(engine[])
+      TLSResult.ReadEof
+    else:
+      TLSResult.Success
+  except AsyncStreamError as exc:
+    reader.state = AsyncStreamState.Error
+    reader.error = exc
+    TLSResult.Error
+  except CancelledError:
+    if reader.state == AsyncStreamState.Running:
+      reader.state = AsyncStreamState.Stopped
+    TLSResult.Stopped
 
 proc tlsReadApp(engine: ptr SslEngineContext,
                 reader: TLSStreamReader): Future[TLSResult] {.async.} =
-  return
-    try:
-      var length = 0'u
-      var buf = sslEngineRecvappBuf(engine[], length)
-      await upload(addr reader.buffer, buf, int(length))
-      sslEngineRecvappAck(engine[], length)
-      TLSResult.Success
-    except CancelledError:
-      if reader.state == AsyncStreamState.Running:
-        reader.state = AsyncStreamState.Stopped
-      TLSResult.Stopped
+  try:
+    var length = 0'u
+    var buf = sslEngineRecvappBuf(engine[], length)
+    await upload(addr reader.buffer, buf, int(length))
+    sslEngineRecvappAck(engine[], length)
+    TLSResult.Success
+  except CancelledError:
+    if reader.state == AsyncStreamState.Running:
+      reader.state = AsyncStreamState.Stopped
+    TLSResult.Stopped
 
 template readAndReset(fut: untyped) =
   if fut.finished():
