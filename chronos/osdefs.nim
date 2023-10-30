@@ -1617,6 +1617,8 @@ elif defined(linux):
     # RTA_PRIORITY* = 6'u16
     RTA_PREFSRC* = 7'u16
     # RTA_METRICS* = 8'u16
+    RTM_NEWLINK* = 16'u16
+    RTM_NEWROUTE* = 24'u16
 
     RTM_F_LOOKUP_TABLE* = 0x1000
 

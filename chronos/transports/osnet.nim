@@ -677,10 +677,10 @@ when defined(linux):
       var msg = cast[ptr NlMsgHeader](addr data[0])
       var endflag = false
       while NLMSG_OK(msg, length):
-        if msg.nlmsg_type == NLMSG_ERROR:
+        if msg.nlmsg_type in [uint16(NLMSG_DONE), uint16(NLMSG_ERROR)]:
           endflag = true
           break
-        else:
+        elif msg.nlmsg_type == RTM_NEWROUTE:
           res = processRoute(msg)
           endflag = true
           break
