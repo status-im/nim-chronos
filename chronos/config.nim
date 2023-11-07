@@ -77,10 +77,11 @@ const
       ""
     ## OS polling engine type which is going to be used by chronos.
 
-  chronosStrictException* = true # {.deprecated: "see chronosHandleException".}
-    ## In chronos v3, this setting was used as the opposite of
-    ## `chronosHandleException` - the setting is deprecated to encourage
-    ## migration to the new mode.
+when defined(chronosStrictException):
+  {.warning: "-d:chronosStrictException has been deprecated in favor of handleException".}
+  # In chronos v3, this setting was used as the opposite of
+  # `chronosHandleException` - the setting is deprecated to encourage
+  # migration to the new mode.
 
 when defined(debug) or defined(chronosConfig):
   import std/macros
