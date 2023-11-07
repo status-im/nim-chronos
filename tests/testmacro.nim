@@ -387,16 +387,16 @@ suite "Exceptions tracking":
     check (not compiles(body))
   test "Can raise valid exception":
     proc test1 {.async.} = raise newException(ValueError, "hey")
-    proc test2 {.async, asyncraises: [ValueError].} = raise newException(ValueError, "hey")
-    proc test3 {.async, asyncraises: [IOError, ValueError].} =
+    proc test2 {.async: (raises: [ValueError]).} = raise newException(ValueError, "hey")
+    proc test3 {.async: (raises: [IOError, ValueError]).} =
       if 1 == 2:
         raise newException(ValueError, "hey")
       else:
         raise newException(IOError, "hey")
 
-    proc test4 {.async, asyncraises: [], used.} = raise newException(Defect, "hey")
-    proc test5 {.async, asyncraises: [].} = discard
-    proc test6 {.async, asyncraises: [].} = await test5()
+    proc test4 {.async: (raises: []), used.} = raise newException(Defect, "hey")
+    proc test5 {.async: (raises: []).} = discard
+    proc test6 {.async: (raises: []).} = await test5()
 
     expect(ValueError): waitFor test1()
     expect(ValueError): waitFor test2()
@@ -405,15 +405,15 @@ suite "Exceptions tracking":
 
   test "Cannot raise invalid exception":
     checkNotCompiles:
-      proc test3 {.async, asyncraises: [IOError].} = raise newException(ValueError, "hey")
+      proc test3 {.async: (raises: [IOError]).} = raise newException(ValueError, "hey")
 
   test "Explicit return in non-raising proc":
-    proc test(): Future[int] {.async, asyncraises: [].} = return 12
+    proc test(): Future[int] {.async: (raises: []).} = return 12
     check:
       waitFor(test()) == 12
 
   test "Non-raising compatibility":
-    proc test1 {.async, asyncraises: [ValueError].} = raise newException(ValueError, "hey")
+    proc test1 {.async: (raises: [ValueError]).} = raise newException(ValueError, "hey")
     let testVar: Future[void] = test1()
 
     proc test2 {.async.} = raise newException(ValueError, "hey")
@@ -423,69 +423,64 @@ suite "Exceptions tracking":
     #let testVar3: proc: Future[void] = test1
 
   test "Cannot store invalid future types":
-    proc test1 {.async, asyncraises: [ValueError].} = raise newException(ValueError, "hey")
-    proc test2 {.async, asyncraises: [IOError].} = raise newException(IOError, "hey")
+    proc test1 {.async: (raises: [ValueError]).} = raise newException(ValueError, "hey")
+    proc test2 {.async: (raises: [IOError]).} = raise newException(IOError, "hey")
 
     var a = test1()
     checkNotCompiles:
       a = test2()
 
   test "Await raises the correct types":
-    proc test1 {.async, asyncraises: [ValueError].} = raise newException(ValueError, "hey")
-    proc test2 {.async, asyncraises: [ValueError, CancelledError].} = await test1()
+    proc test1 {.async: (raises: [ValueError]).} = raise newException(ValueError, "hey")
+    proc test2 {.async: (raises: [ValueError, CancelledError]).} = await test1()
     checkNotCompiles:
-      proc test3 {.async, asyncraises: [CancelledError].} = await test1()
+      proc test3 {.async: (raises: [CancelledError]).} = await test1()
 
   test "Can create callbacks":
-    proc test1 {.async, asyncraises: [ValueError].} = raise newException(ValueError, "hey")
-    let callback: proc() {.async, asyncraises: [ValueError].} = test1
+    proc test1 {.async: (raises: [ValueError]).} = raise newException(ValueError, "hey")
+    let callback: proc() {.async: (raises: [ValueError]).} = test1
 
   test "Can return values":
-    proc test1: Future[int] {.async, asyncraises: [ValueError].} =
+    proc test1: Future[int] {.async: (raises: [ValueError]).} =
       if 1 == 0: raise newException(ValueError, "hey")
       return 12
-    proc test2: Future[int] {.async, asyncraises: [ValueError, IOError, CancelledError].} =
+    proc test2: Future[int] {.async: (raises: [ValueError, IOError, CancelledError]).} =
       return await test1()
 
     checkNotCompiles:
-      proc test3: Future[int] {.async, asyncraises: [CancelledError].} = await test1()
+      proc test3: Future[int] {.async: (raises: [CancelledError]).} = await test1()
 
     check waitFor(test2()) == 12
 
   test "Manual tracking":
-    proc test1: Future[int] {.asyncraises: [ValueError].} =
+    proc test1: Future[int] {.async: (raw: true, raises: [ValueError]).} =
       result = newFuture[int]()
       result.complete(12)
     check waitFor(test1()) == 12
 
-    proc test2: Future[int] {.asyncraises: [IOError, OSError].} =
+    proc test2: Future[int] {.async: (raw: true, raises: [IOError, OSError]).} =
       result = newFuture[int]()
       result.fail(newException(IOError, "fail"))
       result.fail(newException(OSError, "fail"))
       checkNotCompiles:
         result.fail(newException(ValueError, "fail"))
 
-    proc test3: Future[void] {.asyncraises: [].} =
+    proc test3: Future[void] {.async: (raw: true, raises: []).} =
       checkNotCompiles:
         result.fail(newException(ValueError, "fail"))
 
     # Inheritance
-    proc test4: Future[void] {.asyncraises: [CatchableError].} =
+    proc test4: Future[void] {.async: (raw: true, raises: [CatchableError]).} =
       result.fail(newException(IOError, "fail"))
 
-  test "Reversed async, asyncraises":
-    proc test44 {.asyncraises: [ValueError], async.} = raise newException(ValueError, "hey")
-    checkNotCompiles:
-      proc test33 {.asyncraises: [IOError], async.} = raise newException(ValueError, "hey")
-
   test "or errors":
-    proc testit {.asyncraises: [ValueError], async.} =
+    proc testit {.async: (raises: [ValueError]).} =
       raise (ref ValueError)()
 
-    proc testit2 {.asyncraises: [IOError], async.} =
+    proc testit2 {.async: (raises: [IOError]).} =
       raise (ref IOError)()
 
-    proc test {.async, asyncraises: [ValueError, IOError].} =
+    proc test {.async: (raises: [ValueError, IOError]).} =
       await testit() or testit2()
 
     proc noraises() {.raises: [].} =
@@ -499,9 +494,10 @@ suite "Exceptions tracking":
     noraises()
 
   test "Wait errors":
-    proc testit {.asyncraises: [ValueError], async.} = raise newException(ValueError, "hey")
+    proc testit {.async: (raises: [ValueError]).} =
+      raise newException(ValueError, "hey")
 
-    proc test {.async, asyncraises: [ValueError, AsyncTimeoutError, CancelledError].} =
+    proc test {.async: (raises: [ValueError, AsyncTimeoutError, CancelledError]).} =
       await wait(testit(), 1000.milliseconds)
 
     proc noraises() {.raises: [].} =
@@ -513,11 +509,11 @@ suite "Exceptions tracking":
     noraises()
 
   test "Nocancel errors":
-    proc testit {.asyncraises: [ValueError, CancelledError], async.} =
+    proc testit {.async: (raises: [ValueError, CancelledError]).} =
       await sleepAsync(5.milliseconds)
       raise (ref ValueError)()
 
-    proc test {.async, asyncraises: [ValueError].} =
+    proc test {.async: (raises: [ValueError]).} =
       await noCancel testit()
 
     proc noraises() {.raises: [].} =

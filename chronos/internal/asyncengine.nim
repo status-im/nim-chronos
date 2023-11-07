@@ -21,7 +21,7 @@ export Port
 export deques, errors, futures, timer, results
 
 export
-  asyncmacro.async, asyncmacro.await, asyncmacro.awaitne, asyncmacro.asyncraises
+  asyncmacro.async, asyncmacro.await, asyncmacro.awaitne
 
 const
   MaxEventsCount* = 64

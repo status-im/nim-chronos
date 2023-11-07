@@ -102,18 +102,12 @@ template newFuture*[T](fromProc: static[string] = "",
   else:
     newFutureImpl[T](getSrcLocation(fromProc), flags)
 
-macro getFutureExceptions(T: typedesc): untyped =
-  if getTypeInst(T)[1].len > 2:
-    getTypeInst(T)[1][2]
-  else:
-    ident"void"
-
-template newInternalRaisesFuture*[T](fromProc: static[string] = ""): auto =
+template newInternalRaisesFuture*[T, E](fromProc: static[string] = ""): auto =
   ## Creates a new future.
   ##
   ## Specifying ``fromProc``, which is a string specifying the name of the proc
   ## that this future belongs to, is a good habit as it helps with debugging.
-  newInternalRaisesFutureImpl[T, getFutureExceptions(typeof(result))](getSrcLocation(fromProc))
+  newInternalRaisesFutureImpl[T, E](getSrcLocation(fromProc))
 
 template newFutureSeq*[A, B](fromProc: static[string] = ""): FutureSeq[A, B] =
   ## Create a new future which can hold/preserve GC sequence until future will
@@ -476,7 +470,7 @@ macro internalCheckComplete*(f: InternalRaisesFuture): untyped =
   let e = getTypeInst(f)[2]
   let types = getType(e)
 
-  if types.eqIdent("void"):
+  if isNoRaises(types):
     return quote do:
       if not(isNil(`f`.internalError)):
         raiseAssert("Unhandled future exception: " & `f`.error.msg)
@@ -484,7 +478,6 @@ macro internalCheckComplete*(f: InternalRaisesFuture): untyped =
   expectKind(types, nnkBracketExpr)
   expectKind(types[0], nnkSym)
   assert types[0].strVal == "tuple"
-  assert types.len > 1
 
   let ifRaise = nnkIfExpr.newTree(
     nnkElifExpr.newTree(
@@ -914,7 +907,7 @@ template cancel*(future: FutureBase) {.
   cancelSoon(future, nil, nil, getSrcLocation())
 
 proc cancelAndWait*(future: FutureBase, loc: ptr SrcLoc): Future[void] {.
-    asyncraises: [CancelledError].} =
+    async: (raw: true, raises: [CancelledError]).} =
   ## Perform cancellation ``future`` return Future which will be completed when
   ## ``future`` become finished (completed with value, failed or cancelled).
   ##
@@ -938,7 +931,7 @@ template cancelAndWait*(future: FutureBase): Future[void] =
   ## Cancel ``future``.
   cancelAndWait(future, getSrcLocation())
 
-proc noCancel*[F: SomeFuture](future: F): auto = # asyncraises: asyncraiseOf(future) - CancelledError
+proc noCancel*[F: SomeFuture](future: F): auto = # async: (raw: true, raises: asyncraiseOf(future) - CancelledError
   ## Prevent cancellation requests from propagating to ``future`` while
   ## forwarding its value or error when it finishes.
   ##
@@ -978,7 +971,7 @@ proc noCancel*[F: SomeFuture](future: F): auto = # asyncraises: asyncraiseOf(fut
   retFuture
 
 proc allFutures*(futs: varargs[FutureBase]): Future[void] {.
-    asyncraises: [CancelledError].} =
+    async: (raw: true, raises: [CancelledError]).} =
   ## Returns a future which will complete only when all futures in ``futs``
   ## will be completed, failed or canceled.
   ##
@@ -1017,7 +1010,7 @@ proc allFutures*(futs: varargs[FutureBase]): Future[void] {.
   retFuture
 
 proc allFutures*[T](futs: varargs[Future[T]]): Future[void] {.
-    asyncraises: [CancelledError].} =
+    async: (raw: true, raises: [CancelledError]).} =
   ## Returns a future which will complete only when all futures in ``futs``
   ## will be completed, failed or canceled.
   ##
@@ -1031,7 +1024,7 @@ proc allFutures*[T](futs: varargs[Future[T]]): Future[void] {.
   allFutures(nfuts)
 
 proc allFinished*[F: SomeFuture](futs: varargs[F]): Future[seq[F]] {.
-    asyncraises: [CancelledError].} =
+    async: (raw: true, raises: [CancelledError]).} =
   ## Returns a future which will complete only when all futures in ``futs``
   ## will be completed, failed or canceled.
   ##
@@ -1072,7 +1065,7 @@ proc allFinished*[F: SomeFuture](futs: varargs[F]): Future[seq[F]] {.
   return retFuture
 
 proc one*[F: SomeFuture](futs: varargs[F]): Future[F] {.
-    asyncraises: [ValueError, CancelledError].} =
+    async: (raw: true, raises: [ValueError, CancelledError]).} =
   ## Returns a future which will complete and return completed Future[T] inside,
   ## when one of the futures in ``futs`` will be completed, failed or canceled.
   ##
@@ -1121,7 +1114,7 @@ proc one*[F: SomeFuture](futs: varargs[F]): Future[F] {.
   return retFuture
 
 proc race*(futs: varargs[FutureBase]): Future[FutureBase] {.
-    asyncraises: [CancelledError].} =
+    async: (raw: true, raises: [CancelledError]).} =
   ## Returns a future which will complete and return completed FutureBase,
   ## when one of the futures in ``futs`` will be completed, failed or canceled.
   ##
@@ -1173,7 +1166,8 @@ proc race*(futs: varargs[FutureBase]): Future[FutureBase] {.
 when (chronosEventEngine in ["epoll", "kqueue"]) or defined(windows):
   import std/os
 
-  proc waitSignal*(signal: int): Future[void] {.asyncraises: [AsyncError, CancelledError].} =
+  proc waitSignal*(signal: int): Future[void] {.
+      async: (raw: true, raises: [AsyncError, CancelledError]).} =
     var retFuture = newFuture[void]("chronos.waitSignal()")
     var signalHandle: Opt[SignalHandle]
 
@@ -1208,7 +1202,7 @@ when (chronosEventEngine in ["epoll", "kqueue"]) or defined(windows):
     retFuture
 
 proc sleepAsync*(duration: Duration): Future[void] {.
-    asyncraises: [CancelledError].} =
+    async: (raw: true, raises: [CancelledError]).} =
   ## Suspends the execution of the current async procedure for the next
   ## ``duration`` time.
   var retFuture = newFuture[void]("chronos.sleepAsync(Duration)")
@@ -1228,10 +1222,12 @@ proc sleepAsync*(duration: Duration): Future[void] {.
   return retFuture
 
 proc sleepAsync*(ms: int): Future[void] {.
-     inline, deprecated: "Use sleepAsync(Duration)", asyncraises: [CancelledError].} =
+     inline, deprecated: "Use sleepAsync(Duration)",
+     async: (raw: true, raises: [CancelledError]).} =
   result = sleepAsync(ms.milliseconds())
 
-proc stepsAsync*(number: int): Future[void] {.asyncraises: [CancelledError].} =
+proc stepsAsync*(number: int): Future[void] {.
+    async: (raw: true, raises: [CancelledError]).} =
   ## Suspends the execution of the current async procedure for the next
   ## ``number`` of asynchronous steps (``poll()`` calls).
   ##
@@ -1258,7 +1254,8 @@ proc stepsAsync*(number: int): Future[void] {.asyncraises: [CancelledError].} =
 
   retFuture
 
-proc idleAsync*(): Future[void] {.asyncraises: [CancelledError].} =
+proc idleAsync*(): Future[void] {.
+    async: (raw: true, raises: [CancelledError]).} =
   ## Suspends the execution of the current asynchronous task until "idle" time.
   ##
   ## "idle" time its moment of time, when no network events were processed by
@@ -1277,7 +1274,7 @@ proc idleAsync*(): Future[void] {.asyncraises: [CancelledError].} =
   retFuture
 
 proc withTimeout*[T](fut: Future[T], timeout: Duration): Future[bool] {.
-    asyncraises: [CancelledError].} =
+    async: (raw: true, raises: [CancelledError]).} =
   ## Returns a future which will complete once ``fut`` completes or after
   ## ``timeout`` milliseconds has elapsed.
   ##

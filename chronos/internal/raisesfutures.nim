@@ -7,13 +7,23 @@ type
     ## Future with a tuple of possible exception types
     ## eg InternalRaisesFuture[void, (ValueError, OSError)]
     ##
-    ## This type gets injected by `asyncraises` and similar utilities and
-    ## should not be used manually as the internal exception representation is
-    ## subject to change in future chronos versions.
+    ## This type gets injected by `async: (raises: ...)` and similar utilities
+    ## and should not be used manually as the internal exception representation
+    ## is subject to change in future chronos versions.
+
+proc makeNoRaises*(): NimNode {.compileTime.} =
+  # An empty tuple would have been easier but...
+  # https://github.com/nim-lang/Nim/issues/22863
+  # https://github.com/nim-lang/Nim/issues/22865
+
+  ident"void"
+
+proc isNoRaises*(n: NimNode): bool {.compileTime.} =
+  n.eqIdent("void")
 
 iterator members(tup: NimNode): NimNode =
   # Given a typedesc[tuple] = (A, B, C), yields the tuple members (A, B C)
-  if not tup.eqIdent("void"):
+  if not isNoRaises(tup):
     for n in getType(getTypeInst(tup)[1])[1..^1]:
       yield n
 
@@ -40,7 +50,7 @@ macro prepend*(tup: typedesc[tuple], typs: varargs[typed]): typedesc =
     result.add err
 
   if result.len == 0:
-    result = ident"void"
+    result = makeNoRaises()
 
 macro remove*(tup: typedesc[tuple], typs: varargs[typed]): typedesc =
   result = nnkTupleConstr.newTree()
@@ -49,7 +59,7 @@ macro remove*(tup: typedesc[tuple], typs: varargs[typed]): typedesc =
       result.add err
 
   if result.len == 0:
-    result = ident"void"
+    result = makeNoRaises()
 
 macro union*(tup0: typedesc[tuple], tup1: typedesc[tuple]): typedesc =
   ## Join the types of the two tuples deduplicating the entries
@@ -65,11 +75,13 @@ macro union*(tup0: typedesc[tuple], tup1: typedesc[tuple]): typedesc =
 
   for err2 in getType(getTypeInst(tup1)[1])[1..^1]:
     result.add err2
+  if result.len == 0:
+    result = makeNoRaises()
 
 proc getRaises*(future: NimNode): NimNode {.compileTime.} =
   # Given InternalRaisesFuture[T, (A, B, C)], returns (A, B, C)
   let types = getType(getTypeInst(future)[2])
-  if types.eqIdent("void"):
+  if isNoRaises(types):
     nnkBracketExpr.newTree(newEmptyNode())
   else:
     expectKind(types, nnkBracketExpr)
@@ -106,7 +118,7 @@ macro checkRaises*[T: CatchableError](
       infix(error, "of", nnkBracketExpr.newTree(ident"typedesc", errorType)))
 
   let
-    errorMsg = "`fail`: `" & repr(toMatch) & "` incompatible with `asyncraises: " & repr(raises[1..^1]) & "`"
+    errorMsg = "`fail`: `" & repr(toMatch) & "` incompatible with `raises: " & repr(raises[1..^1]) & "`"
     warningMsg = "Can't verify `fail` exception type at compile time - expected one of " & repr(raises[1..^1]) & ", got `" & repr(toMatch) & "`"
     # A warning from this line means exception type will be verified at runtime
     warning = if warn:
