@@ -9,12 +9,12 @@
 
 Chronos is an efficient [async/await](https://en.wikipedia.org/wiki/Async/await) framework for Nim. Features include:
 
-* Efficient dispatch pipeline for asynchronous execution
+* Asynchronous socket and process I/O
 * HTTP server with SSL/TLS support out of the box (no OpenSSL needed)
-* Cancellation support
 * Synchronization primitivies like queues, events and locks
-* FIFO processing order of dispatch queue
-* Minimal exception effect support (see [exception effects](#exception-effects))
+* Cancellation
+* Efficient dispatch pipeline with excellent multi-platform support
+* Exception effect support (see [exception effects](#exception-effects))
 
 ## Installation
 
@@ -152,16 +152,13 @@ feet, in a certain section, is to not use `await` in it.
 
 ### Error handling
 
-Exceptions inheriting from `CatchableError` are caught by hidden `try` blocks
-and placed in the `Future.error` field, changing the future's status to
-`Failed`.
+Exceptions inheriting from [`CatchableError`](https://nim-lang.org/docs/system.html#CatchableError)
+interrupt execution of the `async` procedure. The exception is placed in the
+`Future.error` field while changing the status of the `Future` to `Failed`
+and callbacks are scheduled.
 
-When a future is awaited, that exception is re-raised only to be caught again
-by a hidden `try` block in the calling async procedure. That's how these
-exceptions move up the async chain.
-
-A failed future's callbacks will still be scheduled, but it's not possible to
-resume execution from the point an exception was raised.
+When a future is awaited, the exception is re-raised, traversing the `async`
+execution chain until handled.
 
 ```nim
 proc p1() {.async.} =
@@ -206,11 +203,11 @@ proc p3() {.async.} =
   await fut2
 ```
 
-Chronos does not allow that future continuations and other callbacks raise
-`CatchableError` - as such, calls to `poll` will never raise exceptions caused
-originating from tasks on the dispatcher queue. It is however possible that
-`Defect` that happen in tasks bubble up through `poll` as these are not caught
-by the transformation.
+Because `chronos` ensures that all exceptions are re-routed to the `Future`,
+`poll` will not itself raise exceptions.
+
+`poll` may still panic / raise `Defect` if such are raised in user code due to
+undefined behavior.
 
 #### Checked exceptions
 
@@ -229,6 +226,53 @@ proc p2(): Future[void] {.async, (raises: [IOError]).} =
 
 Under the hood, the return type of `p1` will be rewritten to an internal type
 which will convey raises informations to `await`.
+
+#### The `Exception` type
+
+Exceptions deriving from `Exception` are not caught by default as these may
+include `Defect` and other forms undefined or uncatchable behavior.
+
+Because exception effect tracking is turned on for `async` functions, this may
+sometimes lead to compile errors around forward declarations, methods and
+closures as Nim conservatively asssumes that any `Exception` might be raised
+from those.
+
+Make sure to excplicitly annotate these with `{.raises.}`:
+
+```nim
+# Forward declarations need to explicitly include a raises list:
+proc myfunction() {.raises: [ValueError].}
+
+# ... as do `proc` types
+type MyClosure = proc() {.raises: [ValueError].}
+
+proc myfunction() =
+  raise (ref ValueError)(msg: "Implementation here")
+
+let closure: MyClosure = myfunction
+```
+
+For compatibility, `async` functions can be instructed to handle `Exception` as
+well, specifying `handleException: true`. `Exception` that is not a `Defect` and
+not a `CatchableError` will then be caught and remapped to
+`AsyncExceptionError`:
+
+```nim
+proc raiseException() {.async: (handleException: true, raises: [AsyncExceptionError]).} =
+  raise (ref Exception)(msg: "Raising Exception is UB")
+
+proc callRaiseException() {.async: (raises: []).} =
+  try:
+    raiseException()
+  except AsyncExceptionError as exc:
+    # The original Exception is available from the `parent` field
+    echo exc.parent.msg
+```
+
+This mode can be enabled globally with `-d:chronosHandleException` as a help
+when porting code to `chronos` but should generally be avoided as global
+configuration settings may interfere with libraries that use `chronos` leading
+to unexpected behavior.
 
 ### Raw functions
 
@@ -302,27 +346,6 @@ annotated as raising `CatchableError` only raise on _some_ platforms - in order
 to work on all platforms, calling code must assume that they will raise even
 when they don't seem to do so on one platform.
 
-### Strict exception mode
-
-`chronos` currently offers minimal support for exception effects and `raises`
-annotations. In general, during the `async` transformation, a generic
-`except CatchableError` handler is added around the entire function being
-transformed, in order to catch any exceptions and transfer them to the `Future`.
-Because of this, the effect system thinks no exceptions are "leaking" because in
-fact, exception _handling_ is deferred to when the future is being read.
-
-Effectively, this means that while code can be compiled with
-`{.push raises: []}`, the intended effect propagation and checking is
-**disabled** for `async` functions.
-
-To enable checking exception effects in `async` code, enable strict mode with
-`-d:chronosStrictException`.
-
-In the strict mode, `async` functions are checked such that they only raise
-`CatchableError` and thus must make sure to explicitly specify exception
-effects on forward declarations, callbacks and methods using
-`{.raises: [CatchableError].}` (or more strict) annotations.
-
 ### Cancellation support
 
 Any running `Future` can be cancelled. This can be used for timeouts,
@@ -379,9 +402,9 @@ waitFor(cancellationExample())
 Even if cancellation is initiated, it is not guaranteed that
 the operation gets cancelled - the future might still be completed
 or fail depending on the ordering of events and the specifics of
-the operation. 
+the operation.
 
-If the future indeed gets cancelled, `await` will raise a 
+If the future indeed gets cancelled, `await` will raise a
 `CancelledError` as is likely to happen in the following example:
 ```nim
 proc c1 {.async.} =
