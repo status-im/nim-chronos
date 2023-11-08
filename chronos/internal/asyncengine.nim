@@ -169,7 +169,36 @@ func toException*(v: OSErrorCode): ref OSError = newOSError(v)
   # This helper will allow to use `tryGet()` and raise OSError for
   # Result[T, OSErrorCode] values.
 
-when defined(windows):
+when defined(nimdoc):
+  type
+    PDispatcher* = ref object of PDispatcherBase
+    AsyncFD* = distinct cint
+
+  var gDisp {.threadvar.}: PDispatcher
+
+  proc newDispatcher*(): PDispatcher = discard
+  proc poll*() = discard
+    ## Perform single asynchronous step, processing timers and completing
+    ## tasks. Blocks until at least one event has completed.
+    ##
+    ## Exceptions raised during `async` task exection are stored as outcome
+    ## in the corresponding `Future` - `poll` itself does not raise.
+
+  proc register2*(fd: AsyncFD): Result[void, OSErrorCode] = discard
+  proc unregister2*(fd: AsyncFD): Result[void, OSErrorCode] = discard
+  proc addReader2*(fd: AsyncFD, cb: CallbackFunc,
+                   udata: pointer = nil): Result[void, OSErrorCode] = discard
+  proc removeReader2*(fd: AsyncFD): Result[void, OSErrorCode] = discard
+  proc addWriter2*(fd: AsyncFD, cb: CallbackFunc,
+                   udata: pointer = nil): Result[void, OSErrorCode] = discard
+  proc removeWriter2*(fd: AsyncFD): Result[void, OSErrorCode] = discard
+  proc closeHandle*(fd: AsyncFD, aftercb: CallbackFunc = nil) = discard
+  proc closeSocket*(fd: AsyncFD, aftercb: CallbackFunc = nil) = discard
+  proc unregisterAndCloseFd*(fd: AsyncFD): Result[void, OSErrorCode] = discard
+
+  proc `==`*(x: AsyncFD, y: AsyncFD): bool {.borrow, gcsafe.}
+
+elif defined(windows):
   {.pragma: stdcallbackFunc, stdcall, gcsafe, raises: [].}
 
   export SIGINT, SIGQUIT, SIGTERM
@@ -551,12 +580,6 @@ when defined(windows):
       raise newException(ValueError, osErrorMsg(res.error()))
 
   proc poll*() =
-    ## Perform single asynchronous step, processing timers and completing
-    ## tasks. Blocks until at least one event has completed.
-    ##
-    ## Exceptions raised here indicate that waiting for tasks to be unblocked
-    ## failed - exceptions from within tasks are instead propagated through
-    ## their respective futures and not allowed to interrrupt the poll call.
     let loop = getThreadDispatcher()
     var
       curTime = Moment.now()
@@ -1241,5 +1264,6 @@ when chronosFutureTracking:
     ## completed, cancelled or failed).
     futureList.count
 
-# Perform global per-module initialization.
-globalInit()
+when not defined(nimdoc):
+  # Perform global per-module initialization.
+  globalInit()

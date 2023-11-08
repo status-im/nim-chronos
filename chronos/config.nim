@@ -63,7 +63,9 @@ const
     ## Initial size of Selector[T]'s array of file descriptors.
 
   chronosEventEngine* {.strdefine.}: string =
-    when defined(linux) and not(defined(android) or defined(emscripten)):
+    when defined(nimdoc):
+      ""
+    elif defined(linux) and not(defined(android) or defined(emscripten)):
       "epoll"
     elif defined(macosx) or defined(macos) or defined(ios) or
           defined(freebsd) or defined(netbsd) or defined(openbsd) or

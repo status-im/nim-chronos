@@ -199,7 +199,7 @@ proc `$`*(address: TransportAddress): string =
     "None"
 
 proc toHex*(address: TransportAddress): string =
-  ## Returns hexadecimal representation of ``address`.
+  ## Returns hexadecimal representation of ``address``.
   case address.family
   of AddressFamily.IPv4:
     "0x" & address.address_v4.toHex()

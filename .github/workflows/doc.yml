@@ -15,13 +15,13 @@ jobs:
     continue-on-error: true
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           submodules: true
 
       - uses: jiro4989/setup-nim-action@v1
         with:
-          nim-version: '1.6.6'
+          nim-version: '1.6.16'
 
       - name: Generate doc
         run: |
@@ -35,7 +35,7 @@ jobs:
           ls docs
 
       - name: Clone the gh-pages branch
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           repository: status-im/nim-chronos
           ref: gh-pages
