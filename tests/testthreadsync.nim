@@ -39,7 +39,7 @@ type
     Sync, Async
 
 const
-  TestsCount = 100
+  TestsCount = 1000
 
 suite "Asynchronous multi-threading sync primitives test suite":
   proc setResult(thr: ThreadResultPtr, value: int) =
