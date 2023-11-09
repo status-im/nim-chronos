@@ -15,5 +15,5 @@ requires "chronos"
 and start using it:
 
 ```nim
-{{#include examples/getfile.nim}}
+{{#include examples/httpget.nim}}
 ```
