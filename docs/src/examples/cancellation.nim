@@ -4,19 +4,16 @@ proc cancellationExample() {.async.} =
   # Simple cancellation
   let future = sleepAsync(10.minutes)
   future.cancelSoon()
-  # `cancelSoon` will not wait for the cancellation
-  # to be finished, so the Future could still be
-  # pending at this point.
+  # `cancelSoon` will not wait for cancellation to finish, so the `Future` could
+  # still be pending at this point.
 
   # Wait for cancellation
   let future2 = sleepAsync(10.minutes)
   await future2.cancelAndWait()
-  # Using `cancelAndWait`, we know that future2 isn't
-  # pending anymore. However, it could have completed
-  # before cancellation happened (in which case, it
+  # Using `cancelAndWait`, we know that future2 isn't pending anymore. However,
+  # it could have completed before cancellation happened (in which case, it
   # will hold a value)
 
-  # Race between futures
   proc retrievePage(uri: string): Future[string] {.async.} =
     let httpSession = HttpSessionRef.new()
     try:
@@ -29,12 +26,13 @@ proc cancellationExample() {.async.} =
       await noCancel(httpSession.closeWait())
 
   let
-    futs =
-      @[
-        retrievePage("https://duckduckgo.com/?q=chronos"),
-        retrievePage("https://www.google.fr/search?q=chronos")
-      ]
+    futs = @[
+      # Both pages will start downloading concurrently...
+      retrievePage("https://duckduckgo.com/?q=chronos"),
+      retrievePage("https://www.google.fr/search?q=chronos")
+    ]
 
+  # ..but we only care about the one that finishes first!
   let finishedFut = await one(futs)
   for fut in futs:
     if not fut.finished:

@@ -2,6 +2,8 @@
 
 <!-- toc -->
 
+## The dispatcher
+
 Chronos implements the async/await paradigm in a self-contained library using
 the macro and closure iterator transformation features provided by Nim.
 

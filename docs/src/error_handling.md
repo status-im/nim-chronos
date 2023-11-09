@@ -1,4 +1,4 @@
-# Error handling
+# Errors and exceptions
 
 <!-- toc -->
 
@@ -61,7 +61,7 @@ Because `chronos` ensures that all exceptions are re-routed to the `Future`,
 `poll` may still panic / raise `Defect` if such are raised in user code due to
 undefined behavior.
 
-### Checked exceptions
+## Checked exceptions
 
 By specifying a `raises` list to an async procedure, you can check which
 exceptions can be raised by it:
@@ -79,7 +79,7 @@ proc p2(): Future[void] {.async, (raises: [IOError]).} =
 Under the hood, the return type of `p1` will be rewritten to an internal type
 which will convey raises informations to `await`.
 
-### The `Exception` type
+## The `Exception` type
 
 Exceptions deriving from `Exception` are not caught by default as these may
 include `Defect` and other forms undefined or uncatchable behavior.

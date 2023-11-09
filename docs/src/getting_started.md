@@ -1,6 +1,6 @@
 ## Getting started
 
-You can use Nim's official package manager Nimble to install Chronos:
+Install `chronos` using `nimble`:
 
 ```text
 nimble install chronos
