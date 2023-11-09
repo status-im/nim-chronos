@@ -1,0 +1,20 @@
+[book]
+authors = ["Jacek Sieka"]
+language = "en"
+multilingual = false
+src = "src"
+title = "Chronos"
+
+[preprocessor.toc]
+command = "mdbook-toc"
+renderer = ["html"]
+max-level = 2
+
+[preprocessor.open-on-gh]
+command = "mdbook-open-on-gh"
+renderer = ["html"]
+
+[output.html]
+git-repository-url = "https://github.com/status-im/nim-chronos/"
+git-branch = "master"
+additional-css = ["open-in.css"]

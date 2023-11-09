@@ -49,11 +49,17 @@ proc run(args, path: string) =
   build args, path
   exec "build/" & path.splitPath[1]
 
+task examples, "Build examples":
+  # Build book examples
+  build "", "docs/src/cancellation"
+  build "", "docs/src/getfile"
+
 task test, "Run all tests":
   for args in testArguments:
     run args, "tests/testall"
     if (NimMajor, NimMinor) > (1, 6):
       run args & " --mm:refc", "tests/testall"
+
 
 task test_libbacktrace, "test with libbacktrace":
   var allArgs = @[
@@ -62,3 +68,7 @@ task test_libbacktrace, "test with libbacktrace":
 
   for args in allArgs:
     run args, "tests/testall"
+
+task docs, "Generate API documentation":
+  exec "mdbook build docs"
+  exec nimc & " doc " & "--git.url:https://github.com/status-im/nim-chronos --git.commit:master --outdir:docs/book/api --project chronos"
