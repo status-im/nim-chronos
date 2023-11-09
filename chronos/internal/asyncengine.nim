@@ -1125,14 +1125,18 @@ proc addTimer*(at: uint64, cb: CallbackFunc, udata: pointer = nil) {.
 proc removeTimer*(at: Moment, cb: CallbackFunc, udata: pointer = nil) =
   ## Remove timer callback ``cb`` with absolute timestamp ``at`` from waiting
   ## queue.
-  let loop = getThreadDispatcher()
-  var list = cast[seq[TimerCallback]](loop.timers)
-  var index = -1
-  for i in 0..<len(list):
-    if list[i].finishAt == at and list[i].function.function == cb and
-       list[i].function.udata == udata:
-      index = i
-      break
+  let
+    loop = getThreadDispatcher()
+    index =
+      block:
+        var res = -1
+        for i in 0 ..< len(loop.timers):
+          if (loop.timers[i].finishAt == at) and
+             (loop.timers[i].function.function == cb) and
+             (loop.timers[i].function.udata == udata):
+            res = i
+            break
+        res
   if index != -1:
     loop.timers.del(index)
 

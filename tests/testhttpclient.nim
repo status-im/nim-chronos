@@ -10,6 +10,7 @@ import ".."/chronos/unittest2/asynctests
 import ".."/chronos,
        ".."/chronos/apps/http/[httpserver, shttpserver, httpclient]
 import stew/base10
+import testhelpers
 
 {.used.}
 
@@ -157,7 +158,7 @@ suite "HTTP client testing suite":
       var req = HttpClientRequestRef.new(session, ha, item[0])
       let response = await fetch(req)
       if response.status == 200:
-        let data = cast[string](response.data)
+        let data = response.data.toString()
         if data == item[1]:
           inc(counter)
       await req.closeWait()
@@ -173,7 +174,7 @@ suite "HTTP client testing suite":
       var req = HttpClientRequestRef.new(session, ha, item[0])
       let response = await fetch(req)
       if response.status == 200:
-        let data = cast[string](response.data)
+        let data = response.data.toString()
         if data == item[1]:
           inc(counter)
       await req.closeWait()
@@ -318,7 +319,7 @@ suite "HTTP client testing suite":
         of "/test/big_request":
           if request.hasBody():
             let body = await request.getBody()
-            let digest = $secureHash(cast[string](body))
+            let digest = $secureHash(body.toString())
             return await request.respond(Http200, digest)
           else:
             return await request.respond(Http400, "Missing content body")
@@ -348,7 +349,7 @@ suite "HTTP client testing suite":
         session, ha, item[0], headers = headers
       )
 
-      var expectDigest = $secureHash(cast[string](data))
+      var expectDigest = $secureHash(data.toString())
       # Sending big request by 1024bytes long chunks
       var writer = await open(request)
       var offset = 0
@@ -364,7 +365,7 @@ suite "HTTP client testing suite":
 
       if response.status == 200:
         var res = await response.getBodyBytes()
-        if cast[string](res) == expectDigest:
+        if res.toString() == expectDigest:
           inc(counter)
       await response.closeWait()
       await request.closeWait()
@@ -388,7 +389,7 @@ suite "HTTP client testing suite":
         of "/test/big_chunk_request":
           if request.hasBody():
             let body = await request.getBody()
-            let digest = $secureHash(cast[string](body))
+            let digest = $secureHash(body.toString())
             return await request.respond(Http200, digest)
           else:
             return await request.respond(Http400, "Missing content body")
@@ -418,7 +419,7 @@ suite "HTTP client testing suite":
         session, ha, item[0], headers = headers
       )
 
-      var expectDigest = $secureHash(cast[string](data))
+      var expectDigest = $secureHash(data.toString())
       # Sending big request by 1024bytes long chunks
       var writer = await open(request)
       var offset = 0
@@ -434,7 +435,7 @@ suite "HTTP client testing suite":
 
       if response.status == 200:
         var res = await response.getBodyBytes()
-        if cast[string](res) == expectDigest:
+        if res.toString() == expectDigest:
           inc(counter)
       await response.closeWait()
       await request.closeWait()
@@ -491,12 +492,12 @@ suite "HTTP client testing suite":
       ]
       var request = HttpClientRequestRef.new(
         session, ha, MethodPost, headers = headers,
-        body = cast[seq[byte]](PostRequests[0][1]))
+        body = PostRequests[0][1].toBytes())
       var response = await send(request)
 
       if response.status == 200:
         var res = await response.getBodyBytes()
-        if cast[string](res) == PostRequests[0][2]:
+        if res.toString() == PostRequests[0][2]:
           inc(counter)
       await response.closeWait()
       await request.closeWait()
@@ -532,7 +533,7 @@ suite "HTTP client testing suite":
       var response = await request.finish()
       if response.status == 200:
         var res = await response.getBodyBytes()
-        if cast[string](res) == PostRequests[1][2]:
+        if res.toString() == PostRequests[1][2]:
           inc(counter)
       await response.closeWait()
       await request.closeWait()
@@ -601,7 +602,7 @@ suite "HTTP client testing suite":
       var response = await send(request)
       if response.status == 200:
         var res = await response.getBodyBytes()
-        if cast[string](res) == PostRequests[0][3]:
+        if res.toString() == PostRequests[0][3]:
           inc(counter)
       await response.closeWait()
       await request.closeWait()
@@ -634,7 +635,7 @@ suite "HTTP client testing suite":
       let response = await request.finish()
       if response.status == 200:
         var res = await response.getBodyBytes()
-        if cast[string](res) == PostRequests[1][3]:
+        if res.toString() == PostRequests[1][3]:
           inc(counter)
       await response.closeWait()
       await request.closeWait()
