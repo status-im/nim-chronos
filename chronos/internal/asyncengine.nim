@@ -12,7 +12,7 @@
 
 from nativesockets import Port
 import std/[tables, heapqueue, deques]
-import stew/results
+import results
 import ".."/[config, futures, osdefs, oserrno, osutils, timer]
 
 import ./[asyncmacro, errors]

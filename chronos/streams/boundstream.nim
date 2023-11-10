@@ -14,7 +14,7 @@
 ##
 ## For stream writing it means that you should write exactly bounded size
 ## of bytes.
-import stew/results
+import results
 import ../asyncloop, ../timer
 import asyncstream, ../transports/stream, ../transports/common
 export asyncloop, asyncstream, stream, timer, common

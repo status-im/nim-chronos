@@ -7,7 +7,7 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 import std/tables
-import stew/results
+import results
 import ../../timer
 import httpserver, shttpserver
 from httpclient import HttpClientScheme

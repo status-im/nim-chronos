@@ -10,7 +10,7 @@
 ## This module implements HTTP/1.1 chunked-encoded stream reading and writing.
 import ../asyncloop, ../timer
 import asyncstream, ../transports/stream, ../transports/common
-import stew/results
+import results
 export asyncloop, asyncstream, stream, timer, common, results
 
 const
