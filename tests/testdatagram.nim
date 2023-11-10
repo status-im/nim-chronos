@@ -6,9 +6,9 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 import std/[strutils, net]
+import stew/byteutils
 import ".."/chronos/unittest2/asynctests
 import ".."/chronos
-import testhelpers
 
 {.used.}
 
@@ -475,7 +475,7 @@ suite "Datagram Transport test suite":
     proc clientMark(transp: DatagramTransport,
                      raddr: TransportAddress): Future[void] {.async.} =
       var bmsg = transp.getMessage()
-      var smsg = bmsg.toString()
+      var smsg = string.fromBytes(bmsg)
       if smsg == expectMessage:
         inc(res)
       transp.close()
@@ -495,7 +495,7 @@ suite "Datagram Transport test suite":
     proc clientMark1(transp: DatagramTransport,
                      raddr: TransportAddress): Future[void] {.async.} =
       var bmsg = transp.getMessage()
-      var smsg = bmsg.toString()
+      var smsg = string.fromBytes(bmsg)
       if smsg == expectStr:
         inc(res)
       event.fire()
@@ -546,7 +546,7 @@ suite "Datagram Transport test suite":
     proc process1(transp: DatagramTransport,
                   raddr: TransportAddress): Future[void] {.async.} =
       var bmsg = transp.getMessage()
-      var smsg = bmsg.toString()
+      var smsg = string.fromBytes(bmsg)
       if smsg == expectStr:
         inc(res)
       event.fire()

@@ -7,9 +7,9 @@
 #              MIT license (LICENSE-MIT)
 import unittest2
 import bearssl/[x509]
+import stew/byteutils
 import ".."/chronos/unittest2/asynctests
 import ".."/chronos/streams/[tlsstream, chunkstream, boundstream]
-import testhelpers
 
 {.used.}
 
@@ -103,11 +103,11 @@ suite "AsyncStream test suite":
       var transp = await connect(server.localAddress())
       var rstream = newAsyncStreamReader(transp)
       await rstream.readExactly(addr buffer[0], 10)
-      check buffer.toString() == "0000000000"
+      check string.fromBytes(buffer) == "0000000000"
       await rstream.readExactly(addr buffer[0], 10)
-      check buffer.toString() == "1111111111"
+      check string.fromBytes(buffer) == "1111111111"
       await rstream.readExactly(addr buffer[0], 10)
-      check buffer.toString() == "2222222222"
+      check string.fromBytes(buffer) == "2222222222"
       await rstream.closeWait()
       await transp.closeWait()
       await server.join()
@@ -136,15 +136,15 @@ suite "AsyncStream test suite":
       var r1 = await rstream.readUntil(addr buffer[0], len(buffer), sep)
       check:
         r1 == 13
-        buffer.toString() == "0000000000NNz"
+        string.fromBytes(buffer) == "0000000000NNz"
       var r2 = await rstream.readUntil(addr buffer[0], len(buffer), sep)
       check:
         r2 == 13
-        buffer.toString() == "1111111111NNz"
+        string.fromBytes(buffer) == "1111111111NNz"
       var r3 = await rstream.readUntil(addr buffer[0], len(buffer), sep)
       check:
         r3 == 13
-        buffer.toString() == "2222222222NNz"
+        string.fromBytes(buffer) == "2222222222NNz"
 
       await rstream.closeWait()
       await transp.closeWait()
@@ -199,9 +199,9 @@ suite "AsyncStream test suite":
       var transp = await connect(server.localAddress())
       var rstream = newAsyncStreamReader(transp)
       var buf1 = await rstream.read(10)
-      check buf1.toString() == "0000000000"
+      check string.fromBytes(buf1) == "0000000000"
       var buf2 = await rstream.read()
-      check buf2.toString() == "11111111112222222222"
+      check string.fromBytes(buf2) == "11111111112222222222"
       await rstream.closeWait()
       await transp.closeWait()
       await server.join()
@@ -229,12 +229,12 @@ suite "AsyncStream test suite":
       check:
         res1 == 10
       var buf1 = await rstream.read(10)
-      check buf1.toString() == "1111111111"
+      check string.fromBytes(buf1) == "1111111111"
       var res2 = await rstream.consume(10)
       check:
         res2 == 10
       var buf2 = await rstream.read(10)
-      check buf2.toString() == "3333333333"
+      check string.fromBytes(buf2) == "3333333333"
       await rstream.closeWait()
       await transp.closeWait()
       await server.join()
@@ -276,11 +276,11 @@ suite "AsyncStream test suite":
       var rstream = newAsyncStreamReader(transp)
       var rstream2 = newChunkedStreamReader(rstream)
       await rstream2.readExactly(addr buffer[0], 10)
-      check buffer.toString() == "0000000000"
+      check string.fromBytes(buffer) == "0000000000"
       await rstream2.readExactly(addr buffer[0], 10)
-      check buffer.toString() == "1111111111"
+      check string.fromBytes(buffer) == "1111111111"
       await rstream2.readExactly(addr buffer[0], 10)
-      check buffer.toString() == "2222222222"
+      check string.fromBytes(buffer) == "2222222222"
 
       # We need to consume all the stream with finish markers, but there will
       # be no actual data.
@@ -331,15 +331,15 @@ suite "AsyncStream test suite":
       var r1 = await rstream2.readUntil(addr buffer[0], len(buffer), sep)
       check:
         r1 == 13
-        buffer.toString() == "0000000000NNz"
+        string.fromBytes(buffer) == "0000000000NNz"
       var r2 = await rstream2.readUntil(addr buffer[0], len(buffer), sep)
       check:
         r2 == 13
-        buffer.toString() == "1111111111NNz"
+        string.fromBytes(buffer) == "1111111111NNz"
       var r3 = await rstream2.readUntil(addr buffer[0], len(buffer), sep)
       check:
         r3 == 13
-        buffer.toString() == "2222222222NNz"
+        string.fromBytes(buffer) == "2222222222NNz"
 
       # We need to consume all the stream with finish markers, but there will
       # be no actual data.
@@ -428,9 +428,9 @@ suite "AsyncStream test suite":
       var rstream = newAsyncStreamReader(transp)
       var rstream2 = newChunkedStreamReader(rstream)
       var buf1 = await rstream2.read(10)
-      check buf1.toString() == "0000000000"
+      check string.fromBytes(buf1) == "0000000000"
       var buf2 = await rstream2.read()
-      check buf2.toString() == "11111111112222222222"
+      check string.fromBytes(buf2) == "11111111112222222222"
 
       # read() call will consume all the bytes and finish markers too, so
       # we just check stream for EOF.
@@ -483,12 +483,12 @@ suite "AsyncStream test suite":
       check:
         res1 == 10
       var buf1 = await rstream2.read(10)
-      check buf1.toString() == "1111111111"
+      check string.fromBytes(buf1) == "1111111111"
       var res2 = await rstream2.consume(10)
       check:
         res2 == 10
       var buf2 = await rstream2.read(10)
-      check buf2.toString() == "3333333333"
+      check string.fromBytes(buf2) == "3333333333"
 
       # We need to consume all the stream with finish markers, but there will
       # be no actual data.
@@ -597,7 +597,7 @@ suite "ChunkedStream test suite":
       var rstream = newAsyncStreamReader(transp)
       var rstream2 = newChunkedStreamReader(rstream)
       var res = await rstream2.read()
-      var ress = res.toString()
+      var ress = string.fromBytes(res)
       await rstream2.closeWait()
       await rstream.closeWait()
       await transp.closeWait()
@@ -918,7 +918,7 @@ suite "TLSStream test suite":
     await cwriter.closeWait()
     await conn.closeWait()
     await server.join()
-    return res.toString() == (testMessage & "\r\n")
+    return string.fromBytes(res) == (testMessage & "\r\n")
 
   test "Simple server with RSA self-signed certificate":
     let res = waitFor(checkSSLServer(SelfSignedRsaKey, SelfSignedRsaCert))
@@ -962,7 +962,7 @@ suite "TLSStream test suite":
       await cwriter.closeWait()
       await conn.closeWait()
       await server.join()
-      return res.toString()
+      return string.fromBytes(res)
     let res = waitFor checkTrustAnchors("Some message")
     check res == "Some message\r\n"
 
