@@ -560,9 +560,12 @@ proc waitFor*[T](fut: Future[T]): T {.raises: [CatchableError].} =
   ## **Blocks** the current thread until the specified future finishes and
   ## reads it, potentially raising an exception if the future failed or was
   ## cancelled.
-  while not(fut.finished()):
-    poll()
-
+  var finished = false
+  proc continuation(udata: pointer) {.gcsafe.} = finished = true
+  if not(fut.finished()):
+    fut.addCallback(continuation)
+    while not(finished):
+      poll()
   fut.read()
 
 proc asyncSpawn*(future: Future[void]) =
