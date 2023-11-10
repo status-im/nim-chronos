@@ -5,14 +5,14 @@
 To prevent a single task from taking too long, `withTimeout` can be used:
 
 ```nim
-{{#include examples/timeoutsimple.nim}}
+{{#include ../examples/timeoutsimple.nim}}
 ```
 
 When several tasks should share a single timeout, a common timer can be created
 with `sleepAsync`:
 
 ```nim
-{{#include examples/timeouttcomposed.nim}}
+{{#include ../examples/timeoutcomposed.nim}}
 ```
 
 ## `discard`
@@ -30,5 +30,5 @@ crash if any exceptions leak out of it - use
 problem.
 
 ```nim
-{{#include examples/discards.nim}}
+{{#include ../examples/discards.nim}}
 ```

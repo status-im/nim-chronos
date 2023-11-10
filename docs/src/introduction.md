@@ -11,7 +11,7 @@ Chronos is an efficient [async/await](https://en.wikipedia.org/wiki/Async/await)
 
 ## Examples
 
-Several examples are available from the [examples](./examples/) folder.
+Examples are available in the [`docs/examples/`](https://github.com/status-im/nim-chronos/docs/examples) folder.
 
 ## API documentation
 

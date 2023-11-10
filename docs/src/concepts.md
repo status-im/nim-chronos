@@ -78,7 +78,7 @@ to let a user cancel a running task, to start multiple futures in parallel
 and cancel them as soon as one finishes, etc.
 
 ```nim
-{{#inlcude examples/cancellation.nim}}
+{{#inlcude ../examples/cancellation.nim}}
 ```
 
 Even if cancellation is initiated, it is not guaranteed that
