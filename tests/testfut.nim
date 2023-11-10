@@ -54,7 +54,6 @@ suite "Future[T] behavior test suite":
     fut.addCallback proc(udata: pointer) =
       testResult &= "5"
     discard waitFor(fut)
-    poll()
 
     check:
       fut.finished
@@ -80,7 +79,6 @@ suite "Future[T] behavior test suite":
     fut.addCallback cb5
     fut.removeCallback cb3
     discard waitFor(fut)
-    poll()
     check:
       fut.finished
       testResult == "1245"
@@ -1260,12 +1258,12 @@ suite "Future[T] behavior test suite":
         (loc.procedure == procedure)
 
     check:
-      chk(loc10, "testfut.nim", 1227, "macroFuture")
-      chk(loc11, "testfut.nim", 1230, "")
-      chk(loc20, "testfut.nim", 1239, "template")
-      chk(loc21, "testfut.nim", 1242, "")
-      chk(loc30, "testfut.nim", 1236, "procedure")
-      chk(loc31, "testfut.nim", 1243, "")
+      chk(loc10, "testfut.nim", 1225, "macroFuture")
+      chk(loc11, "testfut.nim", 1228, "")
+      chk(loc20, "testfut.nim", 1237, "template")
+      chk(loc21, "testfut.nim", 1240, "")
+      chk(loc30, "testfut.nim", 1234, "procedure")
+      chk(loc31, "testfut.nim", 1241, "")
 
   asyncTest "withTimeout(fut) should wait cancellation test":
     proc futureNeverEnds(): Future[void] =
