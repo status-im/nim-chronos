@@ -561,6 +561,7 @@ proc waitFor*[T](fut: Future[T]): T {.raises: [CatchableError].} =
   ## reads it, potentially raising an exception if the future failed or was
   ## cancelled.
   var finished = false
+  # Ensure that callbacks currently scheduled on the future run before returning
   proc continuation(udata: pointer) {.gcsafe.} = finished = true
   if not(fut.finished()):
     fut.addCallback(continuation)
