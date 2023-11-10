@@ -13,7 +13,7 @@ requires "nim >= 1.6.0",
          "httputils",
          "unittest2"
 
-import os
+import os, strutils
 
 let nimc = getEnv("NIMC", "nim") # Which nim compiler to use
 let lang = getEnv("NIMLANG", "c") # Which backend (c/cpp/js)
@@ -51,8 +51,9 @@ proc run(args, path: string) =
 
 task examples, "Build examples":
   # Build book examples
-  build "", "docs/src/cancellation"
-  build "", "docs/src/getfile"
+  for file in listFiles("docs/src/examples"):
+    if file.endsWith(".nim"):
+      build "", file
 
 task test, "Run all tests":
   for args in testArguments:
