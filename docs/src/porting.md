@@ -19,6 +19,7 @@ several differences to be aware of:
   you're using or file descript leaks and other
 * cancellation support means that `CancelledError` may be raised from most
   `{.async.}` functions
+* Calling `yield` directly in tasks is not supported - instead, use `awaitne`.
 
 ## Supporting multiple backends
 
