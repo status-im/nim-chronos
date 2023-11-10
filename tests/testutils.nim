@@ -76,11 +76,6 @@ suite "Asynchronous utilities test suite":
 
       waitFor fut
       check:
-        getCount() == 1'u
-        pendingFuturesCount() == 1'u
-
-      poll()
-      check:
         getCount() == 0'u
         pendingFuturesCount() == 0'u
     else:

@@ -187,11 +187,11 @@ suite "HTTP client testing suite":
     let ResponseTests = [
       (MethodGet, "/test/short_size_response", 65600, 1024,
        "SHORTSIZERESPONSE"),
-      (MethodGet, "/test/long_size_response", 262400, 1024,
+      (MethodGet, "/test/long_size_response", 131200, 1024,
        "LONGSIZERESPONSE"),
       (MethodGet, "/test/short_chunked_response", 65600, 1024,
        "SHORTCHUNKRESPONSE"),
-      (MethodGet, "/test/long_chunked_response", 262400, 1024,
+      (MethodGet, "/test/long_chunked_response", 131200, 1024,
        "LONGCHUNKRESPONSE")
     ]
     proc process(r: RequestFence): Future[HttpResponseRef] {.

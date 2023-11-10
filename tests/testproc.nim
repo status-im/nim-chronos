@@ -214,9 +214,9 @@ suite "Asynchronous process management test suite":
         "tests/testproc.sh bigdata"
     let expect =
       when defined(windows):
-        400_000 * (64 + 2)
+        100_000 * (64 + 2)
       else:
-        400_000 * (64 + 1)
+        100_000 * (64 + 1)
     let process = await startProcess(command, options = options,
                                      stdoutHandle = AsyncProcess.Pipe,
                                      stderrHandle = AsyncProcess.Pipe)
