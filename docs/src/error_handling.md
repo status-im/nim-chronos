@@ -5,12 +5,12 @@
 ## Exceptions
 
 Exceptions inheriting from [`CatchableError`](https://nim-lang.org/docs/system.html#CatchableError)
-interrupt execution of the `async` procedure. The exception is placed in the
+interrupt execution of an `async` procedure. The exception is placed in the
 `Future.error` field while changing the status of the `Future` to `Failed`
 and callbacks are scheduled.
 
-When a future is awaited, the exception is re-raised, traversing the `async`
-execution chain until handled.
+When a future is read or awaited the exception is re-raised, traversing the
+`async` execution chain until handled.
 
 ```nim
 proc p1() {.async.} =
@@ -78,6 +78,12 @@ proc p2(): Future[void] {.async, (raises: [IOError]).} =
 
 Under the hood, the return type of `p1` will be rewritten to an internal type
 which will convey raises informations to `await`.
+
+```admonition note
+Most `async` include `CancelledError` in the list of `raises`, indicating that
+the operation they implement might get cancelled resulting in neither value nor
+error!
+```
 
 ## The `Exception` type
 

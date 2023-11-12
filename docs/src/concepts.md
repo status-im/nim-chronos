@@ -4,39 +4,40 @@
 
 ## The dispatcher
 
-Chronos implements the async/await paradigm in a self-contained library using
-the macro and closure iterator transformation features provided by Nim.
+Async/await programming relies on cooperative multitasking to coordinate the
+concurrent execution of procedures, using event notifications from the operating system to resume execution.
 
-Async/await programming relies on cooperative concurrency to make progress on
-a series of tasks scheduled by the program. The tasks are run by an event loop
-that is responsible for making progress on all tasks that are ready to be
-executed then wait for OS events indicating that further progress is possible.
+The event handler loop is called a "dispatcher" and a single instance per
+thread is created, as soon as one is needed.
 
-The event loop is called a "dispatcher" and a single instance per thread is
-created, as soon as one is needed.
+Scheduling is done by calling [async procedures](./async_procs.md) that return
+`Future` objects - each time a procedure is unable to make further
+progress, for example because it's waiting for some data to arrive, it hands
+control back to the dispatcher which ensures that the procedure is resumed when
+ready.
 
 ## The `Future` type
 
-`Future` objects encapsulate the result of an `async` procedure upon successful
-completion, and a list of callbacks to be scheduled after any type of
-completion - be that success, failure or cancellation.
+`Future` objects encapsulate the outcome of executing an `async` procedure. The
+`Future` may be `pending` meaning that the outcome is not yet known or
+`finished` meaning that the return value is available, the operation failed
+with an exception or was cancelled.
 
-[Async procedures](./async_functions.md) return `Future` objects.
+Inside an async procedure, you can `await` the outcome of another async
+procedure - if the `Future` representing that operation is still `pending`, a
+callback representing where to resume execution will be added to it and the
+dispatcher will be given back control to deal with other tasks.
 
-Inside an async procedure, you can `await` the future returned by another async
-procedure. At this point, control will be handled to the event loop until that
-future is completed.
-
-A `Future` remains in the `pending` state until its associated task is
-`finished`, either by being `completed`, `failed` or `cancelled`.
+When a `Future` is `finished`, all its callbacks are scheduled to be run by
+the dispatcher, thus continuing any operations that were waiting for an outcome.
 
 ## The `poll` call
 
 To trigger the processing step of the dispatcher, we need to call `poll()` -
 either directly or through a wrapper like `runForever()` or `waitFor()`.
 
-Each step handles any file descriptors, timers and callbacks that are ready to
-be processed.
+Each call to poll handles any file descriptors, timers and callbacks that are
+ready to be processed.
 
 Using `waitFor`, the result of a single asynchronous operation can be obtained:
 
@@ -68,26 +69,26 @@ structured this way.
 Both `waitFor` and `runForever` call `poll` which offers fine-grained
 control over the event loop steps.
 
-Nested calls to `poll`, `waitFor` and `runForever` are not supported.
+Nested calls to `poll`, `waitFor` and `runForever` are not allowed.
 ```
 
 ## Cancellation
 
-Any running `Future` can be cancelled. This can be used for timeouts,
-to let a user cancel a running task, to start multiple futures in parallel
-and cancel them as soon as one finishes, etc.
+Any pending `Future` can be cancelled. This can be used for timeouts, to start
+multiple operations in parallel and cancel the rest as soon as one finishes,
+to initiate the orderely shutdown of an application etc.
 
 ```nim
-{{#inlcude ../examples/cancellation.nim}}
+{{#include ../examples/cancellation.nim}}
 ```
 
-Even if cancellation is initiated, it is not guaranteed that
-the operation gets cancelled - the future might still be completed
-or fail depending on the ordering of events and the specifics of
-the operation.
+Even if cancellation is initiated, it is not guaranteed that the operation gets
+cancelled - the future might still be completed or fail depending on the
+order of events in the dispatcher and the specifics of the operation.
 
 If the future indeed gets cancelled, `await` will raise a
 `CancelledError` as is likely to happen in the following example:
+
 ```nim
 proc c1 {.async.} =
   echo "Before sleep"
@@ -96,6 +97,8 @@ proc c1 {.async.} =
     echo "After sleep" # not reach due to cancellation
   except CancelledError as exc:
     echo "We got cancelled!"
+    # `CancelledError` is typically re-raised to notify the caller that the
+    # operation is being cancelled
     raise exc
 
 proc c2 {.async.} =
@@ -108,6 +111,13 @@ waitFor(work.cancelAndWait())
 
 The `CancelledError` will now travel up the stack like any other exception.
 It can be caught and handled (for instance, freeing some resources)
+
+Cancelling an already-finished `Future` has no effect, as the following example
+of downloading two web pages concurrently shows:
+
+```nim
+{{#include ../examples/twogets.nim}}
+```
 
 ## Compile-time configuration
 

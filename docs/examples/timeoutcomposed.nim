@@ -1,3 +1,4 @@
+## Single timeout for several operations
 import chronos
 
 proc shortTask {.async.} =

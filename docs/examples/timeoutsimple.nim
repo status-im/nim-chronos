@@ -1,3 +1,4 @@
+## Simple timeouts
 import chronos
 
 proc longTask {.async.} =

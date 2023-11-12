@@ -1,3 +1,4 @@
+## The peculiarities of `discard` in `async` procedures
 import chronos
 
 proc failingOperation() {.async.} =

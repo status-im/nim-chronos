@@ -10,13 +10,15 @@
 
 {.push raises: [].}
 
-## This module implements the core asynchronos engine / dispatcher.
+## This module implements the core asynchronous engine / dispatcher.
 ##
-## The dispatcher acts as a kind of event loop. You must call ``poll`` on it
-## (or a function which does so for you such as ``waitFor`` or ``runForever``)
-## in order to poll for any outstanding events. The underlying implementation
-## is based on epoll on Linux, IO Completion Ports on Windows and select on
-## other operating systems.
+## The dispatcher acts as a kind of loop that wires events coming from the
+## operating system to tasks scheduled by the program. You must call
+## ``poll`` on it (or a function which does so for you such as ``waitFor`` or
+## ``runForever``) in order to poll for any outstanding events.
+##
+## The underlying implementation is based on epoll on Linux, IO Completion Ports
+## on Windows and select on other operating systems.
 ##
 ## The ``poll`` function will not, on its own, return any events. Instead
 ## an appropriate ``Future`` object will be completed. A ``Future`` is a

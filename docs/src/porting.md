@@ -1,4 +1,4 @@
-# Porting code to `chronos`
+# Porting code to `chronos` v4
 
 <!-- toc -->
 
@@ -6,6 +6,16 @@ Thanks to its macro support, Nim allows `async`/`await` to be implemented in
 libraries with only minimal support from the language - as such, multiple
 `async` libraries exist, including `chronos` and `asyncdispatch`, and more may
 come to be developed in the futures.
+
+## Chronos v3
+
+Chronos v4 introduces new features for IPv6, exception effects, a stand-alone
+`Future` type as well as several other changes - when upgrading from chronos v3,
+here are several things to consider:
+
+* Exception handling is now strict by default - see the [error handling](./error_handling.md)
+  chapter for how to deal with `raises` effects
+* `AsyncEventBus` was removed - use `AsyncEventQueue` instead
 
 ## `asyncdispatch`
 

@@ -1,6 +1,10 @@
 # Introduction
 
-Chronos is an efficient [async/await](https://en.wikipedia.org/wiki/Async/await) framework for Nim. Features include:
+Chronos implements the [async/await](https://en.wikipedia.org/wiki/Async/await)
+paradigm in a self-contained library using macro and closure iterator
+transformation features provided by Nim.
+
+Features include:
 
 * Asynchronous socket and process I/O
 * HTTP server with SSL/TLS support out of the box (no OpenSSL needed)

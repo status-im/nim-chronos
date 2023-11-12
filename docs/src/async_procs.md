@@ -1,12 +1,12 @@
-# Async functions
+# Async procedures
 
 <!-- toc -->
 
 ## The `async` pragma
 
 The `{.async.}` pragma will transform a procedure (or a method) returning a
-specialised `Future` type into a closure iterator. If there is no return type
-specified, a `Future[void]` is returned.
+`Future` into a closure iterator. If there is no return type specified,
+`Future[void]` is returned.
 
 ```nim
 proc p() {.async.} =
@@ -17,9 +17,9 @@ echo p().type # prints "Future[system.void]"
 
 ## `await` keyword
 
-Whenever `await` is encountered inside an async procedure, control is passed
+Whenever `await` is encountered inside an async procedure, control is given
 back to the dispatcher for as many steps as it's necessary for the awaited
-future to complete successfully, fail or be cancelled. `await` calls the
+future to complete, fail or be cancelled. `await` calls the
 equivalent of `Future.read()` on the completed future and returns the
 encapsulated value.
 
@@ -35,7 +35,7 @@ proc p3() {.async.} =
     fut1 = p1()
     fut2 = p2()
   # Just by executing the async procs, both resulting futures entered the
-  # dispatcher's queue and their "clocks" started ticking.
+  # dispatcher queue and their "clocks" started ticking.
   await fut1
   await fut2
   # Only one second passed while awaiting them both, not two.
@@ -43,10 +43,13 @@ proc p3() {.async.} =
 waitFor p3()
 ```
 
-Don't let `await`'s behaviour of giving back control to the dispatcher surprise
-you. If an async procedure modifies global state, and you can't predict when it
-will start executing, the only way to avoid that state changing underneath your
-feet, in a certain section, is to not use `await` in it.
+```admonition warning
+Because `async` procedures are executed concurrently, they are subject to many
+of the same risks that typically accompany multithreaded programming
+
+In particular, if two `async` procedures have access to the same mutable state,
+the value before and after `await` might not be the same as the order of execution is not guaranteed!
+```
 
 ## Raw functions
 
@@ -57,9 +60,9 @@ Such functions are created by adding `raw: true` to the `async` parameters:
 
 ```nim
 proc rawAsync(): Future[void] {.async: (raw: true).} =
-  let future = newFuture[void]("rawAsync")
-  future.complete()
-  return future
+  let fut = newFuture[void]("rawAsync")
+  fut.complete()
+  fut
 ```
 
 Raw functions must not raise exceptions directly - they are implicitly declared
@@ -67,9 +70,9 @@ as `raises: []` - instead they should store exceptions in the returned `Future`:
 
 ```nim
 proc rawFailure(): Future[void] {.async: (raw: true).} =
-  let future = newFuture[void]("rawAsync")
-  future.fail((ref ValueError)(msg: "Oh no!"))
-  return future
+  let fut = newFuture[void]("rawAsync")
+  fut.fail((ref ValueError)(msg: "Oh no!"))
+  fut
 ```
 
 Raw functions can also use checked exceptions:
@@ -79,7 +82,7 @@ proc rawAsyncRaises(): Future[void] {.async: (raw: true, raises: [IOError]).} =
   let fut = newFuture[void]()
   assert not (compiles do: fut.fail((ref ValueError)(msg: "uh-uh")))
   fut.fail((ref IOError)(msg: "IO"))
-  return fut
+  fut
 ```
 
 ## Callbacks and closures
@@ -96,14 +99,13 @@ proc runCallback(cb: MyCallback) {.async: (raises: []).} =
     discard # handle errors as usual
 ```
 
-When calling a callback, it is important to remember that the given function
-may raise and exceptions need to be handled.
+When calling a callback, it is important to remember that it may raise exceptions that need to be handled.
 
 Checked exceptions can be used to limit the exceptions that a callback can
 raise:
 
 ```nim
-type MyEasyCallback = proc: Future[void] {.async: (raises: []).}
+type MyEasyCallback = proc(): Future[void] {.async: (raises: []).}
 
 proc runCallback(cb: MyEasyCallback) {.async: (raises: [])} =
   await cb()

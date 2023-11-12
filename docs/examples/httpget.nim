@@ -1,6 +1,6 @@
 import chronos/apps/http/httpclient
 
-proc retrievePage(uri: string): Future[string] {.async.} =
+proc retrievePage*(uri: string): Future[string] {.async.} =
   # Create a new HTTP session
   let httpSession = HttpSessionRef.new()
   try:

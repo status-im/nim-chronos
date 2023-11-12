@@ -1,42 +1,21 @@
-import chronos/apps/http/httpclient
+## Simple cancellation example
+
+import chronos
+
+proc someTask() {.async.} = await sleepAsync(10.minutes)
 
 proc cancellationExample() {.async.} =
-  # Simple cancellation
-  let future = sleepAsync(10.minutes)
+  # Start a task but don't wait for it to finish
+  let future = someTask()
   future.cancelSoon()
-  # `cancelSoon` will not wait for cancellation to finish, so the `Future` could
-  # still be pending at this point.
+  # `cancelSoon` schedules but does not wait for the future to get cancelled -
+  # it might still be pending here
 
-  # Wait for cancellation
-  let future2 = sleepAsync(10.minutes)
+  let future2 = someTask() # Start another task concurrently
   await future2.cancelAndWait()
-  # Using `cancelAndWait`, we know that future2 isn't pending anymore. However,
-  # it could have completed before cancellation happened (in which case, it
-  # will hold a value)
-
-  proc retrievePage(uri: string): Future[string] {.async.} =
-    let httpSession = HttpSessionRef.new()
-    try:
-      let resp = await httpSession.fetch(parseUri(uri))
-      return bytesToString(resp.data)
-    finally:
-      # be sure to always close the session
-      # `finally` will run also during cancellation -
-      # `noCancel` ensures that `closeWait` doesn't get cancelled
-      await noCancel(httpSession.closeWait())
-
-  let
-    futs = @[
-      # Both pages will start downloading concurrently...
-      retrievePage("https://duckduckgo.com/?q=chronos"),
-      retrievePage("https://www.google.fr/search?q=chronos")
-    ]
-
-  # ..but we only care about the one that finishes first!
-  let finishedFut = await one(futs)
-  for fut in futs:
-    if not fut.finished:
-      fut.cancelSoon()
-  echo "Result: ", await finishedFut
+  # Using `cancelAndWait`, we can be sure that `future2` is either
+  # complete, failed or cancelled at this point. `future` could still be
+  # pending!
+  assert future2.finished()
 
 waitFor(cancellationExample())
