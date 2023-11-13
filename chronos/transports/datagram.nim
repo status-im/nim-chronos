@@ -27,7 +27,10 @@ type
 
   DatagramCallback* = proc(transp: DatagramTransport,
                            remote: TransportAddress): Future[void] {.
-                      gcsafe, raises: [].}
+                           async: (raises: []).}
+
+  UnsafeDatagramCallback* = proc(transp: DatagramTransport,
+                           remote: TransportAddress): Future[void] {.async.}
 
   DatagramTransport* = ref object of RootRef
     fd*: AsyncFD                    # File descriptor
@@ -35,7 +38,7 @@ type
     flags: set[ServerFlags]         # Flags
     buffer: seq[byte]               # Reading buffer
     buflen: int                     # Reading buffer effective size
-    error: ref CatchableError       # Current error
+    error: ref TransportError       # Current error
     queue: Deque[GramVector]        # Writer queue
     local: TransportAddress         # Local address
     remote: TransportAddress        # Remote address
@@ -599,6 +602,41 @@ proc close*(transp: DatagramTransport) =
       transp.state.incl({WriteClosed, ReadClosed})
       closeSocket(transp.fd, continuation)
 
+proc newDatagramTransportCommon(cbproc: UnsafeDatagramCallback,
+                                remote: TransportAddress,
+                                local: TransportAddress,
+                                sock: AsyncFD,
+                                flags: set[ServerFlags],
+                                udata: pointer,
+                                child: DatagramTransport,
+                                bufferSize: int,
+                                ttl: int,
+                                dualstack = DualStackType.Auto
+                          ): DatagramTransport {.
+    raises: [TransportOsError].} =
+  ## Create new UDP datagram transport (IPv4).
+  ##
+  ## ``cbproc`` - callback which will be called, when new datagram received.
+  ## ``remote`` - bind transport to remote address (optional).
+  ## ``local`` - bind transport to local address (to serving incoming
+  ## datagrams, optional)
+  ## ``sock`` - application-driven socket to use.
+  ## ``flags`` - flags that will be applied to socket.
+  ## ``udata`` - custom argument which will be passed to ``cbproc``.
+  ## ``bufSize`` - size of internal buffer.
+  ## ``ttl`` - TTL for UDP datagram packet (only usable when flags has
+  ## ``Broadcast`` option).
+
+  proc wrap(transp: DatagramTransport,
+            remote: TransportAddress) {.async: (raises: []).} =
+    try:
+      cbproc(transp, remote)
+    except CatchableError as exc:
+      raiseAssert "Unexpected exception from stream server cbproc: " & exc.msg
+
+  newDatagramTransportCommon(wrap, remote, local, sock, flags, udata, child,
+                             bufferSize, ttl, dualstack)
+
 proc newDatagramTransport*(cbproc: DatagramCallback,
                            remote: TransportAddress = AnyAddress,
                            local: TransportAddress = AnyAddress,
@@ -689,7 +727,102 @@ proc newDatagramTransport6*[T](cbproc: DatagramCallback,
                              cast[pointer](udata), child, bufSize, ttl,
                              dualstack)
 
-proc join*(transp: DatagramTransport): Future[void] =
+proc newDatagramTransport*(cbproc: UnsafeDatagramCallback,
+                           remote: TransportAddress = AnyAddress,
+                           local: TransportAddress = AnyAddress,
+                           sock: AsyncFD = asyncInvalidSocket,
+                           flags: set[ServerFlags] = {},
+                           udata: pointer = nil,
+                           child: DatagramTransport = nil,
+                           bufSize: int = DefaultDatagramBufferSize,
+                           ttl: int = 0,
+                           dualstack = DualStackType.Auto
+                          ): DatagramTransport {.
+    raises: [TransportOsError],
+    deprecated: "Callback must not raise exceptions, annotate with {.async: (raises: []).}".} =
+  ## Create new UDP datagram transport (IPv4).
+  ##
+  ## ``cbproc`` - callback which will be called, when new datagram received.
+  ## ``remote`` - bind transport to remote address (optional).
+  ## ``local`` - bind transport to local address (to serving incoming
+  ## datagrams, optional)
+  ## ``sock`` - application-driven socket to use.
+  ## ``flags`` - flags that will be applied to socket.
+  ## ``udata`` - custom argument which will be passed to ``cbproc``.
+  ## ``bufSize`` - size of internal buffer.
+  ## ``ttl`` - TTL for UDP datagram packet (only usable when flags has
+  ## ``Broadcast`` option).
+  newDatagramTransportCommon(cbproc, remote, local, sock, flags, udata, child,
+                             bufSize, ttl, dualstack)
+
+proc newDatagramTransport*[T](cbproc: UnsafeDatagramCallback,
+                              udata: ref T,
+                              remote: TransportAddress = AnyAddress,
+                              local: TransportAddress = AnyAddress,
+                              sock: AsyncFD = asyncInvalidSocket,
+                              flags: set[ServerFlags] = {},
+                              child: DatagramTransport = nil,
+                              bufSize: int = DefaultDatagramBufferSize,
+                              ttl: int = 0,
+                              dualstack = DualStackType.Auto
+                             ): DatagramTransport {.
+    raises: [TransportOsError],
+    deprecated: "Callback must not raise exceptions, annotate with {.async: (raises: []).}".} =
+  var fflags = flags + {GCUserData}
+  GC_ref(udata)
+  newDatagramTransportCommon(cbproc, remote, local, sock, fflags,
+                             cast[pointer](udata), child, bufSize, ttl,
+                             dualstack)
+
+proc newDatagramTransport6*(cbproc: UnsafeDatagramCallback,
+                            remote: TransportAddress = AnyAddress6,
+                            local: TransportAddress = AnyAddress6,
+                            sock: AsyncFD = asyncInvalidSocket,
+                            flags: set[ServerFlags] = {},
+                            udata: pointer = nil,
+                            child: DatagramTransport = nil,
+                            bufSize: int = DefaultDatagramBufferSize,
+                            ttl: int = 0,
+                            dualstack = DualStackType.Auto
+                           ): DatagramTransport {.
+    raises: [TransportOsError],
+    deprecated: "Callback must not raise exceptions, annotate with {.async: (raises: []).}".} =
+  ## Create new UDP datagram transport (IPv6).
+  ##
+  ## ``cbproc`` - callback which will be called, when new datagram received.
+  ## ``remote`` - bind transport to remote address (optional).
+  ## ``local`` - bind transport to local address (to serving incoming
+  ## datagrams, optional)
+  ## ``sock`` - application-driven socket to use.
+  ## ``flags`` - flags that will be applied to socket.
+  ## ``udata`` - custom argument which will be passed to ``cbproc``.
+  ## ``bufSize`` - size of internal buffer.
+  ## ``ttl`` - TTL for UDP datagram packet (only usable when flags has
+  ## ``Broadcast`` option).
+  newDatagramTransportCommon(cbproc, remote, local, sock, flags, udata, child,
+                             bufSize, ttl, dualstack)
+
+proc newDatagramTransport6*[T](cbproc: UnsafeDatagramCallback,
+                               udata: ref T,
+                               remote: TransportAddress = AnyAddress6,
+                               local: TransportAddress = AnyAddress6,
+                               sock: AsyncFD = asyncInvalidSocket,
+                               flags: set[ServerFlags] = {},
+                               child: DatagramTransport = nil,
+                               bufSize: int = DefaultDatagramBufferSize,
+                               ttl: int = 0,
+                               dualstack = DualStackType.Auto
+                              ): DatagramTransport {.
+    raises: [TransportOsError],
+    deprecated: "Callback must not raise exceptions, annotate with {.async: (raises: []).}".} =
+  var fflags = flags + {GCUserData}
+  GC_ref(udata)
+  newDatagramTransportCommon(cbproc, remote, local, sock, fflags,
+                             cast[pointer](udata), child, bufSize, ttl,
+                             dualstack)
+
+proc join*(transp: DatagramTransport): Future[void] {.
+    async: (raw: true, raises: [CancelledError]).} =
   ## Wait until the transport ``transp`` will be closed.
   var retFuture = newFuture[void]("datagram.transport.join")
 
@@ -707,14 +840,15 @@ proc join*(transp: DatagramTransport): Future[void] =
 
   return retFuture
 
-proc closeWait*(transp: DatagramTransport): Future[void] =
+proc closeWait*(transp: DatagramTransport): Future[void] {.
+    async: (raw: true, raises: [CancelledError]).} =
   ## Close transport ``transp`` and release all resources.
-  const FutureName = "datagram.transport.closeWait"
+  let retFuture = newFuture[void](
+    "datagram.transport.closeWait", {FutureFlag.OwnCancelSchedule})
 
   if {ReadClosed, WriteClosed} * transp.state != {}:
-    return Future.completed(FutureName)
-
-  let retFuture = newFuture[void](FutureName, {FutureFlag.OwnCancelSchedule})
+    retFuture.complete()
+    return retFuture
 
   proc continuation(udata: pointer) {.gcsafe.} =
     retFuture.complete()
@@ -733,7 +867,8 @@ proc closeWait*(transp: DatagramTransport): Future[void] =
   retFuture
 
 proc send*(transp: DatagramTransport, pbytes: pointer,
-           nbytes: int): Future[void] =
+           nbytes: int): Future[void] {.
+           async: (raw: true, raises: [TransportError, CancelledError]).} =
   ## Send buffer with pointer ``pbytes`` and size ``nbytes`` using transport
   ## ``transp`` to remote destination address which was bounded on transport.
   var retFuture = newFuture[void]("datagram.transport.send(pointer)")
@@ -751,22 +886,21 @@ proc send*(transp: DatagramTransport, pbytes: pointer,
   return retFuture
 
 proc send*(transp: DatagramTransport, msg: sink string,
-           msglen = -1): Future[void] =
+           msglen = -1): Future[void] {.
+           async: (raw: true, raises: [TransportError, CancelledError]).} =
   ## Send string ``msg`` using transport ``transp`` to remote destination
   ## address which was bounded on transport.
-  var retFuture = newFutureStr[void]("datagram.transport.send(string)")
+  var retFuture = newFuture[void]("datagram.transport.send(string)")
   transp.checkClosed(retFuture)
-  when declared(shallowCopy):
-    if not(isLiteral(msg)):
-      shallowCopy(retFuture.gcholder, msg)
-    else:
-      retFuture.gcholder = msg
-  else:
-    retFuture.gcholder = msg
+
   let length = if msglen <= 0: len(msg) else: msglen
-  let vector = GramVector(kind: WithoutAddress, buf: addr retFuture.gcholder[0],
+  var localCopy = msg
+  retFuture.addCallback(proc(_: pointer) = reset(localCopy))
+
+  let vector = GramVector(kind: WithoutAddress, buf: addr localCopy[0],
                           buflen: length,
-                          writer: cast[Future[void]](retFuture))
+                          writer: retFuture)
+
   transp.queue.addLast(vector)
   if WritePaused in transp.state:
     let wres = transp.resumeWrite()
@@ -775,22 +909,20 @@ proc send*(transp: DatagramTransport, msg: sink string,
   return retFuture
 
 proc send*[T](transp: DatagramTransport, msg: sink seq[T],
-              msglen = -1): Future[void] =
+              msglen = -1): Future[void] {.
+              async: (raw: true, raises: [TransportError, CancelledError]).} =
   ## Send string ``msg`` using transport ``transp`` to remote destination
   ## address which was bounded on transport.
-  var retFuture = newFutureSeq[void, T]("datagram.transport.send(seq)")
+  var retFuture = newFuture[void]("datagram.transport.send(seq)")
   transp.checkClosed(retFuture)
-  when declared(shallowCopy):
-    if not(isLiteral(msg)):
-      shallowCopy(retFuture.gcholder, msg)
-    else:
-      retFuture.gcholder = msg
-  else:
-    retFuture.gcholder = msg
+
   let length = if msglen <= 0: (len(msg) * sizeof(T)) else: (msglen * sizeof(T))
-  let vector = GramVector(kind: WithoutAddress, buf: addr retFuture.gcholder[0],
+  var localCopy = msg
+  retFuture.addCallback(proc(_: pointer) = reset(localCopy))
+
+  let vector = GramVector(kind: WithoutAddress, buf: addr localCopy[0],
                           buflen: length,
-                          writer: cast[Future[void]](retFuture))
+                          writer: retFuture)
   transp.queue.addLast(vector)
   if WritePaused in transp.state:
     let wres = transp.resumeWrite()
@@ -799,7 +931,8 @@ proc send*[T](transp: DatagramTransport, msg: sink seq[T],
   return retFuture
 
 proc sendTo*(transp: DatagramTransport, remote: TransportAddress,
-             pbytes: pointer, nbytes: int): Future[void] =
+             pbytes: pointer, nbytes: int): Future[void] {.
+             async: (raw: true, raises: [TransportError, CancelledError]).} =
   ## Send buffer with pointer ``pbytes`` and size ``nbytes`` using transport
   ## ``transp`` to remote destination address ``remote``.
   var retFuture = newFuture[void]("datagram.transport.sendTo(pointer)")
@@ -814,22 +947,20 @@ proc sendTo*(transp: DatagramTransport, remote: TransportAddress,
   return retFuture
 
 proc sendTo*(transp: DatagramTransport, remote: TransportAddress,
-             msg: sink string, msglen = -1): Future[void] =
+             msg: sink string, msglen = -1): Future[void] {.
+             async: (raw: true, raises: [TransportError, CancelledError]).} =
   ## Send string ``msg`` using transport ``transp`` to remote destination
   ## address ``remote``.
-  var retFuture = newFutureStr[void]("datagram.transport.sendTo(string)")
+  var retFuture = newFuture[void]("datagram.transport.sendTo(string)")
   transp.checkClosed(retFuture)
-  when declared(shallowCopy):
-    if not(isLiteral(msg)):
-      shallowCopy(retFuture.gcholder, msg)
-    else:
-      retFuture.gcholder = msg
-  else:
-    retFuture.gcholder = msg
+
   let length = if msglen <= 0: len(msg) else: msglen
-  let vector = GramVector(kind: WithAddress, buf: addr retFuture.gcholder[0],
+  var localCopy = msg
+  retFuture.addCallback(proc(_: pointer) = reset(localCopy))
+
+  let vector = GramVector(kind: WithAddress, buf: addr localCopy[0],
                           buflen: length,
-                          writer: cast[Future[void]](retFuture),
+                          writer: retFuture,
                           address: remote)
   transp.queue.addLast(vector)
   if WritePaused in transp.state:
@@ -839,20 +970,17 @@ proc sendTo*(transp: DatagramTransport, remote: TransportAddress,
   return retFuture
 
 proc sendTo*[T](transp: DatagramTransport, remote: TransportAddress,
-                msg: sink seq[T], msglen = -1): Future[void] =
+                msg: sink seq[T], msglen = -1): Future[void] {.
+                async: (raw: true, raises: [TransportError, CancelledError]).} =
   ## Send sequence ``msg`` using transport ``transp`` to remote destination
   ## address ``remote``.
-  var retFuture = newFutureSeq[void, T]("datagram.transport.sendTo(seq)")
+  var retFuture = newFuture[void]("datagram.transport.sendTo(seq)")
   transp.checkClosed(retFuture)
-  when declared(shallowCopy):
-    if not(isLiteral(msg)):
-      shallowCopy(retFuture.gcholder, msg)
-    else:
-      retFuture.gcholder = msg
-  else:
-    retFuture.gcholder = msg
   let length = if msglen <= 0: (len(msg) * sizeof(T)) else: (msglen * sizeof(T))
-  let vector = GramVector(kind: WithAddress, buf: addr retFuture.gcholder[0],
+  var localCopy = msg
+  retFuture.addCallback(proc(_: pointer) = reset(localCopy))
+
+  let vector = GramVector(kind: WithAddress, buf: addr localCopy[0],
                           buflen: length,
                           writer: cast[Future[void]](retFuture),
                           address: remote)
@@ -864,7 +992,7 @@ proc sendTo*[T](transp: DatagramTransport, remote: TransportAddress,
   return retFuture
 
 proc peekMessage*(transp: DatagramTransport, msg: var seq[byte],
-                  msglen: var int) {.raises: [CatchableError].} =
+                  msglen: var int) {.raises: [TransportError].} =
   ## Get access to internal message buffer and length of incoming datagram.
   if ReadError in transp.state:
     transp.state.excl(ReadError)
@@ -876,7 +1004,7 @@ proc peekMessage*(transp: DatagramTransport, msg: var seq[byte],
   msglen = transp.buflen
 
 proc getMessage*(transp: DatagramTransport): seq[byte] {.
-    raises: [CatchableError].} =
+    raises: [TransportError].} =
   ## Copy data from internal message buffer and return result.
   var default: seq[byte]
   if ReadError in transp.state:

@@ -377,8 +377,6 @@ proc futureContinue*(fut: FutureBase) {.raises: [], gcsafe.} =
 {.pop.}
 
 when chronosStackTrace:
-  import std/strutils
-
   template getFilenameProcname(entry: StackTraceEntry): (string, string) =
     when compiles(entry.filenameStr) and compiles(entry.procnameStr):
       # We can't rely on "entry.filename" and "entry.procname" still being valid
