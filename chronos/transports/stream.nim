@@ -2160,7 +2160,7 @@ proc createStreamServer*[T](host: TransportAddress,
     raises: [TransportOsError].} =
   var fflags = flags + {GCUserData}
   GC_ref(udata)
-  createStreamServer(host, nil, fflags, sock, backlog, bufferSize,
+  createStreamServer(host, StreamCallback(nil), fflags, sock, backlog, bufferSize,
                      child, init, cast[pointer](udata), dualstack)
 
 proc getUserData*[T](server: StreamServer): T {.inline.} =
@@ -2662,7 +2662,7 @@ proc close*(transp: StreamTransport) =
         closeSocket(transp.fd, continuation)
 
 proc closeWait*(transp: StreamTransport): Future[void] {.
-    async: (raw: true, raises: [CancelledError]).} =
+    async: (raw: true, raises: []).} =
   ## Close and frees resources of transport ``transp``.
   let retFuture = newFuture[void](
     "stream.transport.closeWait", {FutureFlag.OwnCancelSchedule})

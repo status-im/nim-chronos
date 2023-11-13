@@ -841,7 +841,7 @@ proc join*(transp: DatagramTransport): Future[void] {.
   return retFuture
 
 proc closeWait*(transp: DatagramTransport): Future[void] {.
-    async: (raw: true, raises: [CancelledError]).} =
+    async: (raw: true, raises: []).} =
   ## Close transport ``transp`` and release all resources.
   let retFuture = newFuture[void](
     "datagram.transport.closeWait", {FutureFlag.OwnCancelSchedule})
