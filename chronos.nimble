@@ -23,24 +23,20 @@ let testArguments =
   when defined(windows):
     [
       "-d:debug -d:chronosDebug -d:useSysAssert -d:useGcAssert",
-      "-d:debug -d:chronosPreviewV4",
       "-d:release",
-      "-d:release -d:chronosPreviewV4"
     ]
   else:
     [
       "-d:debug -d:chronosDebug -d:useSysAssert -d:useGcAssert",
-      "-d:debug -d:chronosPreviewV4",
       "-d:debug -d:chronosDebug -d:chronosEventEngine=poll -d:useSysAssert -d:useGcAssert",
       "-d:release",
-      "-d:release -d:chronosPreviewV4"
     ]
 
-let styleCheckStyle = if (NimMajor, NimMinor) < (1, 6): "hint" else: "error"
 let cfg =
-  " --styleCheck:usages --styleCheck:" & styleCheckStyle &
+  " --styleCheck:usages --styleCheck:error" &
   (if verbose: "" else: " --verbosity:0 --hints:off") &
-  " --skipParentCfg --skipUserCfg --outdir:build --nimcache:build/nimcache -f"
+  " --skipParentCfg --skipUserCfg --outdir:build " &
+  quoteShell("--nimcache:build/nimcache/$projectName")
 
 proc build(args, path: string) =
   exec nimc & " " & lang & " " & cfg & " " & flags & " " & args & " " & path
