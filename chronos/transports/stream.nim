@@ -648,7 +648,7 @@ when defined(windows):
                 flags: set[SocketFlags] = {},
                 dualstack = DualStackType.Auto
                ): Future[StreamTransport] {.
-               async: (raw: true, raises: [TransportError]).} =
+               async: (raw: true, raises: [TransportError, CancelledError]).} =
     ## Open new connection to remote peer with address ``address`` and create
     ## new transport object ``StreamTransport`` for established connection.
     ## ``bufferSize`` is size of internal buffer for transport.
