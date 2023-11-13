@@ -35,7 +35,7 @@ let testArguments =
 let cfg =
   " --styleCheck:usages --styleCheck:error" &
   (if verbose: "" else: " --verbosity:0 --hints:off") &
-  " --skipParentCfg --skipUserCfg --outdir:build" &
+  " --skipParentCfg --skipUserCfg --outdir:build " &
   quoteShell("--nimcache:build/nimcache/$projectName")
 
 proc build(args, path: string) =
