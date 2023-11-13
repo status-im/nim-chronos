@@ -8,7 +8,7 @@
 #                MIT license (LICENSE-MIT)
 
 ## This module implements some core async thread synchronization primitives.
-import stew/results
+import results
 import "."/[timer, asyncloop]
 
 export results

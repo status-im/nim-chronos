@@ -6,8 +6,8 @@
 #                Licensed under either of
 #    Apache License, version 2.0, (LICENSE-APACHEv2)
 #                MIT license (LICENSE-MIT)
-import stew/results
-import osdefs, oserrno
+import results
+import "."/[osdefs, oserrno]
 
 export results
 

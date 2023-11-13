@@ -7,13 +7,13 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 import std/[uri, tables, sequtils]
-import stew/[results, base10, base64, byteutils], httputils
+import stew/[base10, base64, byteutils], httputils, results
 import ../../asyncloop, ../../asyncsync
 import ../../streams/[asyncstream, tlsstream, chunkstream, boundstream]
 import httptable, httpcommon, httpagent, httpbodyrw, multipart
 export results, asyncloop, asyncsync, asyncstream, tlsstream, chunkstream,
        boundstream, httptable, httpcommon, httpagent, httpbodyrw, multipart,
-       httputils, uri
+       httputils, uri, results
 export SocketFlags
 
 const

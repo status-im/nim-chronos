@@ -7,10 +7,10 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 import std/[tables, uri, strutils]
-import stew/[results, base10], httputils
+import stew/[base10], httputils, results
 import ../../asyncloop, ../../asyncsync
 import ../../streams/[asyncstream, boundstream, chunkstream]
-import httptable, httpcommon, multipart
+import "."/[httptable, httpcommon, multipart]
 export asyncloop, asyncsync, httptable, httpcommon, httputils, multipart,
        asyncstream, boundstream, chunkstream, uri, tables, results
 
