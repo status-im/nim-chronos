@@ -134,3 +134,15 @@ macro checkRaises*[T: CatchableError](
       else:
         `warning`
         assert(`runtimeChecker`, `errorMsg`)
+
+proc error*[T](future: InternalRaisesFuture[T, void]): ref CatchableError {.
+    raises: [].} =
+  static:
+    warning("No exceptions possible with this operation, `error` always returns nil")
+  nil
+
+proc readError*[T](future: InternalRaisesFuture[T, void]): ref CatchableError {.
+    raises: [ValueError].} =
+  static:
+    warning("No exceptions possible with this operation, `readError` always raises")
+  raise newException(ValueError, "No error in future.")

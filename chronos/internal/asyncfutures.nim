@@ -109,7 +109,7 @@ template newInternalRaisesFuture*[T, E](fromProc: static[string] = ""): auto =
   ## that this future belongs to, is a good habit as it helps with debugging.
   newInternalRaisesFutureImpl[T, E](getSrcLocation(fromProc))
 
-template newFutureSeq*[A, B](fromProc: static[string] = ""): FutureSeq[A, B] =
+template newFutureSeq*[A, B](fromProc: static[string] = ""): FutureSeq[A, B] {.deprecated.} =
   ## Create a new future which can hold/preserve GC sequence until future will
   ## not be completed.
   ##
@@ -117,7 +117,7 @@ template newFutureSeq*[A, B](fromProc: static[string] = ""): FutureSeq[A, B] =
   ## that this future belongs to, is a good habit as it helps with debugging.
   newFutureSeqImpl[A, B](getSrcLocation(fromProc))
 
-template newFutureStr*[T](fromProc: static[string] = ""): FutureStr[T] =
+template newFutureStr*[T](fromProc: static[string] = ""): FutureStr[T] {.deprecated.} =
   ## Create a new future which can hold/preserve GC string until future will
   ## not be completed.
   ##
@@ -471,7 +471,7 @@ macro internalCheckComplete*(f: InternalRaisesFuture): untyped =
   if isNoRaises(types):
     return quote do:
       if not(isNil(`f`.internalError)):
-        raiseAssert("Unhandled future exception: " & `f`.error.msg)
+        raiseAssert("Unhandled future exception: " & `f`.internalError.msg)
 
   expectKind(types, nnkBracketExpr)
   expectKind(types[0], nnkSym)
