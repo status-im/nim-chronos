@@ -6,6 +6,7 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 import std/[strutils, net]
+import stew/byteutils
 import ".."/chronos/unittest2/asynctests
 import ".."/chronos
 
@@ -474,7 +475,7 @@ suite "Datagram Transport test suite":
     proc clientMark(transp: DatagramTransport,
                      raddr: TransportAddress): Future[void] {.async.} =
       var bmsg = transp.getMessage()
-      var smsg = cast[string](bmsg)
+      var smsg = string.fromBytes(bmsg)
       if smsg == expectMessage:
         inc(res)
       transp.close()
@@ -486,7 +487,7 @@ suite "Datagram Transport test suite":
 
   proc testAnyAddress(): Future[int] {.async.} =
     var expectStr = "ANYADDRESS MESSAGE"
-    var expectSeq = cast[seq[byte]](expectStr)
+    var expectSeq = expectStr.toBytes()
     let ta = initTAddress("0.0.0.0:0")
     var res = 0
     var event = newAsyncEvent()
@@ -494,7 +495,7 @@ suite "Datagram Transport test suite":
     proc clientMark1(transp: DatagramTransport,
                      raddr: TransportAddress): Future[void] {.async.} =
       var bmsg = transp.getMessage()
-      var smsg = cast[string](bmsg)
+      var smsg = string.fromBytes(bmsg)
       if smsg == expectStr:
         inc(res)
       event.fire()
@@ -545,7 +546,7 @@ suite "Datagram Transport test suite":
     proc process1(transp: DatagramTransport,
                   raddr: TransportAddress): Future[void] {.async.} =
       var bmsg = transp.getMessage()
-      var smsg = cast[string](bmsg)
+      var smsg = string.fromBytes(bmsg)
       if smsg == expectStr:
         inc(res)
       event.fire()
