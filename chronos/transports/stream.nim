@@ -58,6 +58,8 @@ type
                                                               done: bool] {.
     gcsafe, raises: [].}
 
+  ReaderFuture = Future[void].Raising([TransportError, CancelledError])
+
 const
   StreamTransportTrackerName* = "stream.transport"
   StreamServerTrackerName* = "stream.server"
@@ -68,8 +70,7 @@ when defined(windows):
     StreamTransport* = ref object of RootRef
       fd*: AsyncFD                    # File descriptor
       state: set[TransportState]      # Current Transport state
-      reader: InternalRaisesFuture[void, (TransportError, CancelledError)]
-        # Current reader Future
+      reader: ReaderFuture            # Current reader Future
       buffer: seq[byte]               # Reading buffer
       offset: int                     # Reading buffer offset
       error: ref TransportError       # Current error
@@ -96,8 +97,7 @@ else:
     StreamTransport* = ref object of RootRef
       fd*: AsyncFD                    # File descriptor
       state: set[TransportState]      # Current Transport state
-      reader: InternalRaisesFuture[void, (TransportError, CancelledError)]
-        # Current reader Future
+      reader: ReaderFuture            # Current reader Future
       buffer: seq[byte]               # Reading buffer
       offset: int                     # Reading buffer offset
       error: ref TransportError       # Current error
@@ -2348,8 +2348,7 @@ template readLoop(name, body: untyped): untyped =
       break
     else:
       checkPending(transp)
-      let fut = newInternalRaisesFuture[void, (TransportError, CancelledError)](
-        name)
+      let fut = ReaderFuture.init(name)
       transp.reader = fut
       let res = resumeRead(transp)
       if res.isErr():

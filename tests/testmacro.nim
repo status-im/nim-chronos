@@ -459,19 +459,30 @@ suite "Exceptions tracking":
     check waitFor(test1()) == 12
 
     proc test2: Future[int] {.async: (raw: true, raises: [IOError, OSError]).} =
+      checkNotCompiles:
+        result.fail(newException(ValueError, "fail"))
+
       result = newFuture[int]()
       result.fail(newException(IOError, "fail"))
-      result.fail(newException(OSError, "fail"))
-      checkNotCompiles:
-        result.fail(newException(ValueError, "fail"))
 
     proc test3: Future[void] {.async: (raw: true, raises: []).} =
+      result = newFuture[void]()
       checkNotCompiles:
         result.fail(newException(ValueError, "fail"))
-
+      result.complete()
     # Inheritance
     proc test4: Future[void] {.async: (raw: true, raises: [CatchableError]).} =
+      result = newFuture[void]()
       result.fail(newException(IOError, "fail"))
+
+    check:
+      waitFor(test1()) == 12
+    expect(IOError):
+      discard waitFor(test2())
+
+    waitFor(test3())
+    expect(IOError):
+      waitFor(test4())
 
   test "or errors":
     proc testit {.async: (raises: [ValueError]).} =
