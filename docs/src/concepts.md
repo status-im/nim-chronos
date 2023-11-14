@@ -124,14 +124,3 @@ of downloading two web pages concurrently shows:
 `chronos` contains several compile-time [configuration options](./chronos/config.nim) enabling stricter compile-time checks and debugging helpers whose runtime cost may be significant.
 
 Strictness options generally will become default in future chronos releases and allow adapting existing code without changing the new version - see the [`config.nim`](./chronos/config.nim) module for more information.
-
-## Platform independence
-
-Several functions in `chronos` are backed by the operating system, such as
-waiting for network events, creating files and sockets etc. The specific
-exceptions that are raised by the OS is platform-dependent, thus such functions
-are declared as raising `CatchableError` but will in general raise something
-more specific. In particular, it's possible that some functions that are
-annotated as raising `CatchableError` only raise on _some_ platforms - in order
-to work on all platforms, calling code must assume that they will raise even
-when they don't seem to do so on one platform.

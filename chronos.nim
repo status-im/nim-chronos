@@ -6,7 +6,7 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 
-## Chronos `async`/`await` framework
+## `async`/`await` framework for [Nim](https://nim-lang.org)
 ##
 ## See https://status-im.github.io/nim-chronos/ for documentation
 

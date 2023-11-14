@@ -13,6 +13,15 @@ Features include:
 * Efficient dispatch pipeline with excellent multi-platform support
 * Exception [effect support](./guide.md#error-handling)
 
+## Platform support
+
+Several platforms are supported, with different backend [options](./concepts.md#compile-time-configuration):
+
+* Windows: [`IOCP`](https://learn.microsoft.com/en-us/windows/win32/fileio/i-o-completion-ports)
+* Linux: [`epoll`](https://en.wikipedia.org/wiki/Epoll) / `poll`
+* OSX / BSD: [`kqueue`](https://en.wikipedia.org/wiki/Kqueue) / `poll`
+* Android / Emscripten / posix: `poll`
+
 ## Examples
 
 Examples are available in the [`docs/examples/`](https://github.com/status-im/nim-chronos/docs/examples) folder.
