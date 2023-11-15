@@ -1,5 +1,5 @@
 import
-  std/macros,
+  std/[macros, sequtils],
   ../futures
 
 type
@@ -17,6 +17,45 @@ proc makeNoRaises*(): NimNode {.compileTime.} =
   # https://github.com/nim-lang/Nim/issues/22865
 
   ident"void"
+
+macro Raising*[T](F: typedesc[Future[T]], E: varargs[typedesc]): untyped =
+  ## Given a Future type instance, return a type storing `{.raises.}`
+  ## information
+  ##
+  ## Note; this type may change in the future
+  E.expectKind(nnkBracket)
+
+  let raises = if E.len == 0:
+    makeNoRaises()
+  else:
+    nnkTupleConstr.newTree(E.mapIt(it))
+  nnkBracketExpr.newTree(
+    ident "InternalRaisesFuture",
+    nnkDotExpr.newTree(F, ident"T"),
+    raises
+  )
+
+template init*[T, E](
+    F: type InternalRaisesFuture[T, E], fromProc: static[string] = ""): F =
+  ## Creates a new pending future.
+  ##
+  ## Specifying ``fromProc``, which is a string specifying the name of the proc
+  ## that this future belongs to, is a good habit as it helps with debugging.
+  let res = F()
+  internalInitFutureBase(res, getSrcLocation(fromProc), FutureState.Pending, {})
+  res
+
+template init*[T, E](
+    F: type InternalRaisesFuture[T, E], fromProc: static[string] = "",
+    flags: static[FutureFlags]): F =
+  ## Creates a new pending future.
+  ##
+  ## Specifying ``fromProc``, which is a string specifying the name of the proc
+  ## that this future belongs to, is a good habit as it helps with debugging.
+  let res = F()
+  internalInitFutureBase(
+    res, getSrcLocation(fromProc), FutureState.Pending, flags)
+  res
 
 proc isNoRaises*(n: NimNode): bool {.compileTime.} =
   n.eqIdent("void")
@@ -78,21 +117,15 @@ macro union*(tup0: typedesc[tuple], tup1: typedesc[tuple]): typedesc =
   if result.len == 0:
     result = makeNoRaises()
 
-proc getRaises*(future: NimNode): NimNode {.compileTime.} =
-  # Given InternalRaisesFuture[T, (A, B, C)], returns (A, B, C)
-  let types = getType(getTypeInst(future)[2])
-  if isNoRaises(types):
-    nnkBracketExpr.newTree(newEmptyNode())
-  else:
-    expectKind(types, nnkBracketExpr)
-    expectKind(types[0], nnkSym)
-    assert types[0].strVal == "tuple"
-    assert types.len >= 1
-
-    types
+proc getRaisesTypes*(raises: NimNode): NimNode =
+  let typ = getType(raises)
+  case typ.typeKind
+  of ntyTypeDesc: typ[1]
+  else: typ
 
 macro checkRaises*[T: CatchableError](
-    future: InternalRaisesFuture, error: ref T, warn: static bool = true): untyped =
+    future: InternalRaisesFuture, raises: typed, error: ref T,
+    warn: static bool = true): untyped =
   ## Generate code that checks that the given error is compatible with the
   ## raises restrictions of `future`.
   ##
@@ -100,10 +133,17 @@ macro checkRaises*[T: CatchableError](
   ## information available at compile time - in particular, if the raises
   ## inherit from `error`, we end up with the equivalent of a downcast which
   ## raises a Defect if it fails.
-  let raises = getRaises(future)
+  let
+    raises = getRaisesTypes(raises)
 
   expectKind(getTypeInst(error), nnkRefTy)
   let toMatch = getTypeInst(error)[0]
+
+
+  if isNoRaises(raises):
+    error(
+      "`fail`: `" & repr(toMatch) & "` incompatible with `raises: []`", future)
+    return
 
   var
     typeChecker = ident"false"
@@ -134,3 +174,15 @@ macro checkRaises*[T: CatchableError](
       else:
         `warning`
         assert(`runtimeChecker`, `errorMsg`)
+
+proc error*[T](future: InternalRaisesFuture[T, void]): ref CatchableError {.
+    raises: [].} =
+  static:
+    warning("No exceptions possible with this operation, `error` always returns nil")
+  nil
+
+proc readError*[T](future: InternalRaisesFuture[T, void]): ref CatchableError {.
+    raises: [ValueError].} =
+  static:
+    warning("No exceptions possible with this operation, `readError` always raises")
+  raise newException(ValueError, "No error in future.")

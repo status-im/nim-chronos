@@ -28,7 +28,7 @@ type
     ## is blocked in ``acquire()`` is being processed.
     locked: bool
     acquired: bool
-    waiters: seq[Future[void]]
+    waiters: seq[Future[void].Raising([CancelledError])]
 
   AsyncEvent* = ref object of RootRef
     ## A primitive event object.
@@ -41,7 +41,7 @@ type
     ## state to be signaled, when event get fired, then all coroutines
     ## continue proceeds in order, they have entered waiting state.
     flag: bool
-    waiters: seq[Future[void]]
+    waiters: seq[Future[void].Raising([CancelledError])]
 
   AsyncQueue*[T] = ref object of RootRef
     ## A queue, useful for coordinating producer and consumer coroutines.
@@ -50,8 +50,8 @@ type
     ## infinite. If it is an integer greater than ``0``, then "await put()"
     ## will block when the queue reaches ``maxsize``, until an item is
     ## removed by "await get()".
-    getters: seq[Future[void]]
-    putters: seq[Future[void]]
+    getters: seq[Future[void].Raising([CancelledError])]
+    putters: seq[Future[void].Raising([CancelledError])]
     queue: Deque[T]
     maxsize: int
 
@@ -69,7 +69,7 @@ type
   EventQueueReader* = object
     key: EventQueueKey
     offset: int
-    waiter: Future[void]
+    waiter: Future[void].Raising([CancelledError])
     overflow: bool
 
   AsyncEventQueue*[T] = ref object of RootObj
@@ -90,17 +90,14 @@ proc newAsyncLock*(): AsyncLock =
   ## The ``release()`` procedure changes the state to unlocked and returns
   ## immediately.
 
-  # Workaround for callSoon() not worked correctly before
-  # getThreadDispatcher() call.
-  discard getThreadDispatcher()
-  AsyncLock(waiters: newSeq[Future[void]](), locked: false, acquired: false)
+  AsyncLock()
 
 proc wakeUpFirst(lock: AsyncLock): bool {.inline.} =
   ## Wake up the first waiter if it isn't done.
   var i = 0
   var res = false
   while i < len(lock.waiters):
-    var waiter = lock.waiters[i]
+    let waiter = lock.waiters[i]
     inc(i)
     if not(waiter.finished()):
       waiter.complete()
@@ -120,7 +117,7 @@ proc checkAll(lock: AsyncLock): bool {.inline.} =
       return false
   return true
 
-proc acquire*(lock: AsyncLock) {.async.} =
+proc acquire*(lock: AsyncLock) {.async: (raises: [CancelledError]).} =
   ## Acquire a lock ``lock``.
   ##
   ## This procedure blocks until the lock ``lock`` is unlocked, then sets it
@@ -129,7 +126,7 @@ proc acquire*(lock: AsyncLock) {.async.} =
     lock.acquired = true
     lock.locked = true
   else:
-    var w = newFuture[void]("AsyncLock.acquire")
+    let w = Future[void].Raising([CancelledError]).init("AsyncLock.acquire")
     lock.waiters.add(w)
     await w
     lock.acquired = true
@@ -165,13 +162,10 @@ proc newAsyncEvent*(): AsyncEvent =
   ## procedure and reset to `false` with the `clear()` procedure.
   ## The `wait()` procedure blocks until the flag is `true`. The flag is
   ## initially `false`.
+  AsyncEvent()
 
-  # Workaround for callSoon() not worked correctly before
-  # getThreadDispatcher() call.
-  discard getThreadDispatcher()
-  AsyncEvent(waiters: newSeq[Future[void]](), flag: false)
-
-proc wait*(event: AsyncEvent): Future[void] =
+proc wait*(event: AsyncEvent): Future[void] {.
+    async: (raw: true, raises: [CancelledError]).} =
   ## Block until the internal flag of ``event`` is `true`.
   ## If the internal flag is `true` on entry, return immediately. Otherwise,
   ## block until another task calls `fire()` to set the flag to `true`,
@@ -210,20 +204,15 @@ proc isSet*(event: AsyncEvent): bool =
 proc newAsyncQueue*[T](maxsize: int = 0): AsyncQueue[T] =
   ## Creates a new asynchronous queue ``AsyncQueue``.
 
-  # Workaround for callSoon() not worked correctly before
-  # getThreadDispatcher() call.
-  discard getThreadDispatcher()
   AsyncQueue[T](
-    getters: newSeq[Future[void]](),
-    putters: newSeq[Future[void]](),
     queue: initDeque[T](),
     maxsize: maxsize
   )
 
-proc wakeupNext(waiters: var seq[Future[void]]) {.inline.} =
+proc wakeupNext(waiters: var seq) {.inline.} =
   var i = 0
   while i < len(waiters):
-    var waiter = waiters[i]
+    let waiter = waiters[i]
     inc(i)
 
     if not(waiter.finished()):
@@ -250,6 +239,24 @@ proc empty*[T](aq: AsyncQueue[T]): bool {.inline.} =
   ## Return ``true`` if the queue is empty, ``false`` otherwise.
   (len(aq.queue) == 0)
 
+proc addFirstImpl[T](aq: AsyncQueue[T], item: T) =
+  aq.queue.addFirst(item)
+  aq.getters.wakeupNext()
+
+proc addLastImpl[T](aq: AsyncQueue[T], item: T) =
+  aq.queue.addLast(item)
+  aq.getters.wakeupNext()
+
+proc popFirstImpl[T](aq: AsyncQueue[T]): T =
+  let res = aq.queue.popFirst()
+  aq.putters.wakeupNext()
+  res
+
+proc popLastImpl[T](aq: AsyncQueue[T]): T =
+  let res = aq.queue.popLast()
+  aq.putters.wakeupNext()
+  res
+
 proc addFirstNoWait*[T](aq: AsyncQueue[T], item: T) {.
     raises: [AsyncQueueFullError].}=
   ## Put an item ``item`` to the beginning of the queue ``aq`` immediately.
@@ -257,8 +264,7 @@ proc addFirstNoWait*[T](aq: AsyncQueue[T], item: T) {.
   ## If queue ``aq`` is full, then ``AsyncQueueFullError`` exception raised.
   if aq.full():
     raise newException(AsyncQueueFullError, "AsyncQueue is full!")
-  aq.queue.addFirst(item)
-  aq.getters.wakeupNext()
+  aq.addFirstImpl(item)
 
 proc addLastNoWait*[T](aq: AsyncQueue[T], item: T) {.
     raises: [AsyncQueueFullError].}=
@@ -267,8 +273,7 @@ proc addLastNoWait*[T](aq: AsyncQueue[T], item: T) {.
   ## If queue ``aq`` is full, then ``AsyncQueueFullError`` exception raised.
   if aq.full():
     raise newException(AsyncQueueFullError, "AsyncQueue is full!")
-  aq.queue.addLast(item)
-  aq.getters.wakeupNext()
+  aq.addLastImpl(item)
 
 proc popFirstNoWait*[T](aq: AsyncQueue[T]): T {.
     raises: [AsyncQueueEmptyError].} =
@@ -277,9 +282,7 @@ proc popFirstNoWait*[T](aq: AsyncQueue[T]): T {.
   ## If queue ``aq`` is empty, then ``AsyncQueueEmptyError`` exception raised.
   if aq.empty():
     raise newException(AsyncQueueEmptyError, "AsyncQueue is empty!")
-  let res = aq.queue.popFirst()
-  aq.putters.wakeupNext()
-  res
+  aq.popFirstImpl()
 
 proc popLastNoWait*[T](aq: AsyncQueue[T]): T {.
     raises: [AsyncQueueEmptyError].} =
@@ -288,65 +291,63 @@ proc popLastNoWait*[T](aq: AsyncQueue[T]): T {.
   ## If queue ``aq`` is empty, then ``AsyncQueueEmptyError`` exception raised.
   if aq.empty():
     raise newException(AsyncQueueEmptyError, "AsyncQueue is empty!")
-  let res = aq.queue.popLast()
-  aq.putters.wakeupNext()
-  res
+  aq.popLastImpl()
 
-proc addFirst*[T](aq: AsyncQueue[T], item: T) {.async.} =
+proc addFirst*[T](aq: AsyncQueue[T], item: T) {.async: (raises: [CancelledError]).} =
   ## Put an ``item`` to the beginning of the queue ``aq``. If the queue is full,
   ## wait until a free slot is available before adding item.
   while aq.full():
-    var putter = newFuture[void]("AsyncQueue.addFirst")
+    let putter = Future[void].Raising([CancelledError]).init("AsyncQueue.addFirst")
     aq.putters.add(putter)
     try:
       await putter
-    except CatchableError as exc:
+    except CancelledError as exc:
       if not(aq.full()) and not(putter.cancelled()):
         aq.putters.wakeupNext()
       raise exc
-  aq.addFirstNoWait(item)
+  aq.addFirstImpl(item)
 
-proc addLast*[T](aq: AsyncQueue[T], item: T) {.async.} =
+proc addLast*[T](aq: AsyncQueue[T], item: T) {.async: (raises: [CancelledError]).} =
   ## Put an ``item`` to the end of the queue ``aq``. If the queue is full,
   ## wait until a free slot is available before adding item.
   while aq.full():
-    var putter = newFuture[void]("AsyncQueue.addLast")
+    let putter = Future[void].Raising([CancelledError]).init("AsyncQueue.addLast")
     aq.putters.add(putter)
     try:
       await putter
-    except CatchableError as exc:
+    except CancelledError as exc:
       if not(aq.full()) and not(putter.cancelled()):
         aq.putters.wakeupNext()
       raise exc
-  aq.addLastNoWait(item)
+  aq.addLastImpl(item)
 
-proc popFirst*[T](aq: AsyncQueue[T]): Future[T] {.async.} =
+proc popFirst*[T](aq: AsyncQueue[T]): Future[T] {.async: (raises: [CancelledError]).} =
   ## Remove and return an ``item`` from the beginning of the queue ``aq``.
   ## If the queue is empty, wait until an item is available.
   while aq.empty():
-    var getter = newFuture[void]("AsyncQueue.popFirst")
+    let getter = Future[void].Raising([CancelledError]).init("AsyncQueue.popFirst")
     aq.getters.add(getter)
     try:
       await getter
-    except CatchableError as exc:
+    except CancelledError as exc:
       if not(aq.empty()) and not(getter.cancelled()):
         aq.getters.wakeupNext()
       raise exc
-  return aq.popFirstNoWait()
+  aq.popFirstImpl()
 
-proc popLast*[T](aq: AsyncQueue[T]): Future[T] {.async.} =
+proc popLast*[T](aq: AsyncQueue[T]): Future[T] {.async: (raises: [CancelledError]).} =
   ## Remove and return an ``item`` from the end of the queue ``aq``.
   ## If the queue is empty, wait until an item is available.
   while aq.empty():
-    var getter = newFuture[void]("AsyncQueue.popLast")
+    let getter = Future[void].Raising([CancelledError]).init("AsyncQueue.popLast")
     aq.getters.add(getter)
     try:
       await getter
-    except CatchableError as exc:
+    except CancelledError as exc:
       if not(aq.empty()) and not(getter.cancelled()):
         aq.getters.wakeupNext()
       raise exc
-  return aq.popLastNoWait()
+  aq.popLastImpl()
 
 proc putNoWait*[T](aq: AsyncQueue[T], item: T) {.
     raises: [AsyncQueueFullError].} =
@@ -358,11 +359,13 @@ proc getNoWait*[T](aq: AsyncQueue[T]): T {.
   ## Alias of ``popFirstNoWait()``.
   aq.popFirstNoWait()
 
-proc put*[T](aq: AsyncQueue[T], item: T): Future[void] {.inline.} =
+proc put*[T](aq: AsyncQueue[T], item: T): Future[void] {.
+    async: (raw: true, raises: [CancelledError]).} =
   ## Alias of ``addLast()``.
   aq.addLast(item)
 
-proc get*[T](aq: AsyncQueue[T]): Future[T] {.inline.} =
+proc get*[T](aq: AsyncQueue[T]): Future[T] {.
+    async: (raw: true, raises: [CancelledError]).} =
   ## Alias of ``popFirst()``.
   aq.popFirst()
 
@@ -416,7 +419,7 @@ proc contains*[T](aq: AsyncQueue[T], item: T): bool {.inline.} =
   ## via the ``in`` operator.
   for e in aq.queue.items():
     if e == item: return true
-  return false
+  false
 
 proc `$`*[T](aq: AsyncQueue[T]): string =
   ## Turn an async queue ``aq`` into its string representation.
@@ -452,8 +455,7 @@ proc compact(ab: AsyncEventQueue) {.raises: [].} =
   else:
     ab.queue.clear()
 
-proc getReaderIndex(ab: AsyncEventQueue, key: EventQueueKey): int {.
-     raises: [].} =
+proc getReaderIndex(ab: AsyncEventQueue, key: EventQueueKey): int =
   for index, value in ab.readers.pairs():
     if value.key == key:
       return index
@@ -507,7 +509,7 @@ proc close*(ab: AsyncEventQueue) {.raises: [].} =
   ab.readers.reset()
   ab.queue.clear()
 
-proc closeWait*(ab: AsyncEventQueue): Future[void] {.raises: [].} =
+proc closeWait*(ab: AsyncEventQueue): Future[void] {.async: (raw: true, raises: []).} =
   let retFuture = newFuture[void]("AsyncEventQueue.closeWait()",
                                   {FutureFlag.OwnCancelSchedule})
   proc continuation(udata: pointer) {.gcsafe.} =
@@ -528,7 +530,7 @@ template readerOverflow*(ab: AsyncEventQueue,
                          reader: EventQueueReader): bool =
   ab.limit + (reader.offset - ab.offset) <= len(ab.queue)
 
-proc emit*[T](ab: AsyncEventQueue[T], data: T) {.raises: [].} =
+proc emit*[T](ab: AsyncEventQueue[T], data: T) =
   if len(ab.readers) > 0:
     # We enqueue `data` only if there active reader present.
     var changesPresent = false
@@ -565,7 +567,8 @@ proc emit*[T](ab: AsyncEventQueue[T], data: T) {.raises: [].} =
 
 proc waitEvents*[T](ab: AsyncEventQueue[T],
                     key: EventQueueKey,
-                    eventsCount = -1): Future[seq[T]] {.async.} =
+                    eventsCount = -1): Future[seq[T]] {.
+                    async: (raises: [AsyncEventQueueFullError, CancelledError]).} =
   ## Wait for events
   var
     events: seq[T]
@@ -595,7 +598,8 @@ proc waitEvents*[T](ab: AsyncEventQueue[T],
     doAssert(length >= ab.readers[index].offset)
     if length == ab.readers[index].offset:
       # We are at the end of queue, it means that we should wait for new events.
-      let waitFuture = newFuture[void]("AsyncEventQueue.waitEvents")
+      let waitFuture = Future[void].Raising([CancelledError]).init(
+        "AsyncEventQueue.waitEvents")
       ab.readers[index].waiter = waitFuture
       resetFuture = true
       await waitFuture
@@ -626,4 +630,4 @@ proc waitEvents*[T](ab: AsyncEventQueue[T],
       if (eventsCount <= 0) or (len(events) == eventsCount):
         break
 
-  return events
+  events

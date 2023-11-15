@@ -27,29 +27,36 @@ suite "Server's test suite":
     checkLeaks()
 
   proc serveStreamClient(server: StreamServer,
-                         transp: StreamTransport) {.async.} =
+                         transp: StreamTransport) {.async: (raises: []).} =
     discard
 
   proc serveCustomStreamClient(server: StreamServer,
-                               transp: StreamTransport) {.async.} =
-    var cserver = cast[CustomServer](server)
-    var ctransp = cast[CustomTransport](transp)
-    cserver.test1 = "CONNECTION"
-    cserver.test2 = ctransp.test
-    cserver.test3 = await transp.readLine()
-    var answer = "ANSWER\r\n"
-    discard await transp.write(answer)
-    transp.close()
-    await transp.join()
+                               transp: StreamTransport) {.async: (raises: []).} =
+    try:
+      var cserver = cast[CustomServer](server)
+      var ctransp = cast[CustomTransport](transp)
+      cserver.test1 = "CONNECTION"
+      cserver.test2 = ctransp.test
+      cserver.test3 = await transp.readLine()
+      var answer = "ANSWER\r\n"
+      discard await transp.write(answer)
+      transp.close()
+      await transp.join()
+    except CatchableError as exc:
+      raiseAssert exc.msg
+
 
   proc serveUdataStreamClient(server: StreamServer,
-                              transp: StreamTransport) {.async.} =
-    var udata = getUserData[CustomData](server)
-    var line = await transp.readLine()
-    var msg = line & udata.test & "\r\n"
-    discard await transp.write(msg)
-    transp.close()
-    await transp.join()
+                              transp: StreamTransport) {.async: (raises: []).} =
+    try:
+      var udata = getUserData[CustomData](server)
+      var line = await transp.readLine()
+      var msg = line & udata.test & "\r\n"
+      discard await transp.write(msg)
+      transp.close()
+      await transp.join()
+    except CatchableError as exc:
+      raiseAssert exc.msg
 
   proc customServerTransport(server: StreamServer,
                              fd: AsyncFD): StreamTransport =

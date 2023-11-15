@@ -16,7 +16,9 @@ import stew/base10
 import ./[asyncengine, raisesfutures]
 import ../[config, futures]
 
-export raisesfutures.InternalRaisesFuture
+export
+  raisesfutures.Raising, raisesfutures.InternalRaisesFuture,
+  raisesfutures.init, raisesfutures.error, raisesfutures.readError
 
 when chronosStackTrace:
   import std/strutils
@@ -109,7 +111,7 @@ template newInternalRaisesFuture*[T, E](fromProc: static[string] = ""): auto =
   ## that this future belongs to, is a good habit as it helps with debugging.
   newInternalRaisesFutureImpl[T, E](getSrcLocation(fromProc))
 
-template newFutureSeq*[A, B](fromProc: static[string] = ""): FutureSeq[A, B] =
+template newFutureSeq*[A, B](fromProc: static[string] = ""): FutureSeq[A, B] {.deprecated.} =
   ## Create a new future which can hold/preserve GC sequence until future will
   ## not be completed.
   ##
@@ -117,7 +119,7 @@ template newFutureSeq*[A, B](fromProc: static[string] = ""): FutureSeq[A, B] =
   ## that this future belongs to, is a good habit as it helps with debugging.
   newFutureSeqImpl[A, B](getSrcLocation(fromProc))
 
-template newFutureStr*[T](fromProc: static[string] = ""): FutureStr[T] =
+template newFutureStr*[T](fromProc: static[string] = ""): FutureStr[T] {.deprecated.} =
   ## Create a new future which can hold/preserve GC string until future will
   ## not be completed.
   ##
@@ -205,7 +207,8 @@ template complete*(future: Future[void]) =
   ## Completes a void ``future``.
   complete(future, getSrcLocation())
 
-proc fail(future: FutureBase, error: ref CatchableError, loc: ptr SrcLoc) =
+proc failImpl(
+    future: FutureBase, error: ref CatchableError, loc: ptr SrcLoc) =
   if not(future.cancelled()):
     checkFinished(future, loc)
     future.internalError = error
@@ -216,10 +219,16 @@ proc fail(future: FutureBase, error: ref CatchableError, loc: ptr SrcLoc) =
                                  getStackTrace(error)
     future.finish(FutureState.Failed)
 
-template fail*(
-    future: FutureBase, error: ref CatchableError, warn: static bool = false) =
+template fail*[T](
+    future: Future[T], error: ref CatchableError, warn: static bool = false) =
   ## Completes ``future`` with ``error``.
-  fail(future, error, getSrcLocation())
+  failImpl(future, error, getSrcLocation())
+
+template fail*[T, E](
+    future: InternalRaisesFuture[T, E], error: ref CatchableError,
+    warn: static bool = true) =
+  checkRaises(future, E, error, warn)
+  failImpl(future, error, getSrcLocation())
 
 template newCancelledError(): ref CancelledError =
   (ref CancelledError)(msg: "Future operation cancelled!")
@@ -377,8 +386,6 @@ proc futureContinue*(fut: FutureBase) {.raises: [], gcsafe.} =
 {.pop.}
 
 when chronosStackTrace:
-  import std/strutils
-
   template getFilenameProcname(entry: StackTraceEntry): (string, string) =
     when compiles(entry.filenameStr) and compiles(entry.procnameStr):
       # We can't rely on "entry.filename" and "entry.procname" still being valid
@@ -462,31 +469,36 @@ proc internalCheckComplete*(fut: FutureBase) {.raises: [CatchableError].} =
       injectStacktrace(fut.internalError)
     raise fut.internalError
 
-macro internalCheckComplete*(f: InternalRaisesFuture): untyped =
+macro internalCheckComplete*(fut: InternalRaisesFuture, raises: typed) =
   # For InternalRaisesFuture[void, (ValueError, OSError), will do:
   # {.cast(raises: [ValueError, OSError]).}:
   #   if isNil(f.error): discard
   #   else: raise f.error
-  let e = getTypeInst(f)[2]
-  let types = getType(e)
+  # TODO https://github.com/nim-lang/Nim/issues/22937
+  #      we cannot `getTypeInst` on the `fut` - when aliases are involved, the
+  #      generics are lost - so instead, we pass the raises list explicitly
 
+  let types = getRaisesTypes(raises)
   if isNoRaises(types):
     return quote do:
-      if not(isNil(`f`.internalError)):
-        raiseAssert("Unhandled future exception: " & `f`.error.msg)
+      if not(isNil(`fut`.internalError)):
+        # This would indicate a bug in which `error` was set via the non-raising
+        # base type
+        raiseAssert("Error set on a non-raising future: " & `fut`.internalError.msg)
 
   expectKind(types, nnkBracketExpr)
   expectKind(types[0], nnkSym)
+
   assert types[0].strVal == "tuple"
 
   let ifRaise = nnkIfExpr.newTree(
     nnkElifExpr.newTree(
-      quote do: isNil(`f`.internalError),
+      quote do: isNil(`fut`.internalError),
       quote do: discard
     ),
     nnkElseExpr.newTree(
-      nnkRaiseStmt.newNimNode(lineInfoFrom=f).add(
-        quote do: (`f`.internalError)
+      nnkRaiseStmt.newNimNode(lineInfoFrom=fut).add(
+        quote do: (`fut`.internalError)
       )
     )
   )
@@ -1118,7 +1130,7 @@ proc one*[F: SomeFuture](futs: varargs[F]): Future[F] {.
   return retFuture
 
 proc race*(futs: varargs[FutureBase]): Future[FutureBase] {.
-    async: (raw: true, raises: [CancelledError]).} =
+    async: (raw: true, raises: [ValueError, CancelledError]).} =
   ## Returns a future which will complete and return completed FutureBase,
   ## when one of the futures in ``futs`` will be completed, failed or canceled.
   ##
@@ -1488,12 +1500,6 @@ when defined(windows):
 
 {.pop.} # Automatically deduced raises from here onwards
 
-template fail*[T, E](
-    future: InternalRaisesFuture[T, E], error: ref CatchableError,
-    warn: static bool = true) =
-  checkRaises(future, error, warn)
-  fail(future, error, getSrcLocation())
-
 proc waitFor*[T, E](fut: InternalRaisesFuture[T, E]): T = # {.raises: [E]}
   ## **Blocks** the current thread until the specified future finishes and
   ## reads it, potentially raising an exception if the future failed or was
@@ -1512,7 +1518,7 @@ proc read*[T: not void, E](future: InternalRaisesFuture[T, E]): lent T = # {.rai
     # TODO: Make a custom exception type for this?
     raise newException(ValueError, "Future still in progress.")
 
-  internalCheckComplete(future)
+  internalCheckComplete(future, E)
   future.internalValue
 
 proc read*[E](future: InternalRaisesFuture[void, E]) = # {.raises: [E, CancelledError].}

@@ -21,16 +21,19 @@ suite "Asynchronous issues test suite":
       test: string
 
   proc udp4DataAvailable(transp: DatagramTransport,
-                         remote: TransportAddress) {.async, gcsafe.} =
-    var udata = getUserData[CustomData](transp)
-    var expect = TEST_MSG
-    var data: seq[byte]
-    var datalen: int
-    transp.peekMessage(data, datalen)
-    if udata.test == "CHECK" and datalen == MSG_LEN and
-       equalMem(addr data[0], addr expect[0], datalen):
-      udata.test = "OK"
-    transp.close()
+                         remote: TransportAddress) {.async: (raises: []).} =
+    try:
+      var udata = getUserData[CustomData](transp)
+      var expect = TEST_MSG
+      var data: seq[byte]
+      var datalen: int
+      transp.peekMessage(data, datalen)
+      if udata.test == "CHECK" and datalen == MSG_LEN and
+        equalMem(addr data[0], addr expect[0], datalen):
+        udata.test = "OK"
+      transp.close()
+    except CatchableError as exc:
+      raiseAssert exc.msg
 
   proc issue6(): Future[bool] {.async.} =
     var myself = initTAddress("127.0.0.1:" & $HELLO_PORT)

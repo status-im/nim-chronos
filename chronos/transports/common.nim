@@ -113,6 +113,8 @@ type
     ## Transport's capability not supported exception
   TransportUseClosedError* = object of TransportError
     ## Usage after transport close exception
+  TransportUseEofError* = object of TransportError
+    ## Usage after transport half-close exception
   TransportTooManyError* = object of TransportError
     ## Too many open file descriptors exception
   TransportAbortedError* = object of TransportError
@@ -567,11 +569,11 @@ template checkClosed*(t: untyped, future: untyped) =
 
 template checkWriteEof*(t: untyped, future: untyped) =
   if (WriteEof in (t).state):
-    future.fail(newException(TransportError,
+    future.fail(newException(TransportUseEofError,
                              "Transport connection is already dropped!"))
     return future
 
-template getError*(t: untyped): ref CatchableError =
+template getError*(t: untyped): ref TransportError =
   var err = (t).error
   (t).error = nil
   err
