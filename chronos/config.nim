@@ -4,10 +4,6 @@
 ## in transition periods leading up to a breaking release that starts enforcing
 ## them and removes the option.
 ##
-## `chronosPreviewV4` is a preview flag to enable v4 semantics - in particular,
-## it enables strict exception checking and disables parts of the deprecated
-## API and other changes being prepared for the upcoming release
-##
 ## `chronosDebug` can be defined to enable several debugging helpers that come
 ## with a runtime cost - it is recommeneded to not enable these in production
 ## code.
@@ -25,8 +21,6 @@ const
     ## `handleException` parameter which has precedence over this global setting.
     ##
     ## `Exception` handling may be removed in future chronos versions.
-
-  chronosStrictFutureAccess* {.booldefine.}: bool = defined(chronosPreviewV4)
 
   chronosStackTrace* {.booldefine.}: bool = defined(chronosDebug)
     ## Include stack traces in futures for creation and completion points
