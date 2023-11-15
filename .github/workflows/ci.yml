@@ -165,3 +165,4 @@ jobs:
           nimble install -y libbacktrace
           nimble test
           nimble test_libbacktrace
+          nimble examples

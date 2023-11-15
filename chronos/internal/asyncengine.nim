@@ -10,6 +10,10 @@
 
 {.push raises: [].}
 
+## This module implements the core asynchronous engine / dispatcher.
+##
+## For more information, see the `Concepts` chapter of the guide.
+
 from nativesockets import Port
 import std/[tables, heapqueue, deques]
 import results
