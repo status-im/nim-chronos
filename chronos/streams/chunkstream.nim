@@ -8,6 +8,9 @@
 #              MIT license (LICENSE-MIT)
 
 ## This module implements HTTP/1.1 chunked-encoded stream reading and writing.
+
+{.push raises: [].}
+
 import ../asyncloop, ../timer
 import asyncstream, ../transports/stream, ../transports/common
 import results
@@ -95,7 +98,8 @@ proc setChunkSize(buffer: var openArray[byte], length: int64): int =
     buffer[c + 1] = byte(0x0A)
     (c + 2)
 
-proc chunkedReadLoop(stream: AsyncStreamReader) {.async.} =
+proc chunkedReadLoop(stream: AsyncStreamReader) {.
+     async: (raises: [CancelledError, AsyncStreamError]).} =
   var rstream = ChunkedStreamReader(stream)
   var buffer = newSeq[byte](MaxChunkHeaderSize)
   rstream.state = AsyncStreamState.Running
@@ -163,7 +167,8 @@ proc chunkedReadLoop(stream: AsyncStreamReader) {.async.} =
       rstream.buffer.forget()
       break
 
-proc chunkedWriteLoop(stream: AsyncStreamWriter) {.async.} =
+proc chunkedWriteLoop(stream: AsyncStreamWriter) {.
+     async: (raises: [CancelledError, AsyncStreamError]).} =
   var wstream = ChunkedStreamWriter(stream)
   var buffer: array[16, byte]
   var error: ref AsyncStreamError
@@ -220,7 +225,7 @@ proc chunkedWriteLoop(stream: AsyncStreamWriter) {.async.} =
           if not(item.future.finished()):
             item.future.fail(error)
       while not(wstream.queue.empty()):
-        let pitem = wstream.queue.popFirstNoWait()
+        let pitem = wstream.queue.popFirstNoWaitSafe()
         if not(pitem.future.finished()):
           pitem.future.fail(error)
       break
