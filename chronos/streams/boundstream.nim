@@ -14,6 +14,9 @@
 ##
 ## For stream writing it means that you should write exactly bounded size
 ## of bytes.
+
+{.push raises: [].}
+
 import results
 import ../asyncloop, ../timer
 import asyncstream, ../transports/stream, ../transports/common
@@ -52,7 +55,8 @@ template newBoundedStreamOverflowError(): ref BoundedStreamOverflowError =
   newException(BoundedStreamOverflowError, "Stream boundary exceeded")
 
 proc readUntilBoundary(rstream: AsyncStreamReader, pbytes: pointer,
-                       nbytes: int, sep: seq[byte]): Future[int] {.async.} =
+                       nbytes: int, sep: seq[byte]): Future[int] {.
+     async: (raises: [CancelledError, AsyncStreamError]).} =
   doAssert(not(isNil(pbytes)), "pbytes must not be nil")
   doAssert(nbytes >= 0, "nbytes must be non-negative value")
   checkStreamClosed(rstream)
@@ -96,7 +100,8 @@ func endsWith(s, suffix: openArray[byte]): bool =
     inc(i)
   if i >= len(suffix): return true
 
-proc boundedReadLoop(stream: AsyncStreamReader) {.async.} =
+proc boundedReadLoop(stream: AsyncStreamReader) {.
+     async: (raises: [CancelledError, AsyncStreamError]).} =
   var rstream = BoundedStreamReader(stream)
   rstream.state = AsyncStreamState.Running
   var buffer = newSeq[byte](rstream.buffer.bufferLen())
@@ -191,7 +196,8 @@ proc boundedReadLoop(stream: AsyncStreamReader) {.async.} =
     of AsyncStreamState.Closing, AsyncStreamState.Closed:
       break
 
-proc boundedWriteLoop(stream: AsyncStreamWriter) {.async.} =
+proc boundedWriteLoop(stream: AsyncStreamWriter) {.
+     async: (raises: [CancelledError, AsyncStreamError]).} =
   var error: ref AsyncStreamError
   var wstream = BoundedStreamWriter(stream)
 
@@ -255,7 +261,7 @@ proc boundedWriteLoop(stream: AsyncStreamWriter) {.async.} =
 
   doAssert(not(isNil(error)))
   while not(wstream.queue.empty()):
-    let item = wstream.queue.popFirstNoWait()
+    let item = wstream.queue.popFirstNoWaitSafe()
     if not(item.future.finished()):
       item.future.fail(error)
 
