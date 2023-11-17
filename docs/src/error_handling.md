@@ -85,6 +85,21 @@ the operation they implement might get cancelled resulting in neither value nor
 error!
 ```
 
+When using checked exceptions, the `Future` type is modified to include
+`raises` information - it can be constructed with the `Raising` helper:
+
+```nim
+# Create a variable of the type that will be returned by a an async function
+# raising `[CancelledError]`:
+var fut: Future[int].Raising([CancelledError])
+```
+
+```admonition note
+`Raising` creates a specialization of `InternalRaisesFuture` type - as the name
+suggests, this is an internal type whose implementation details are likely to
+change in future `chronos` versions.
+```
+
 ## The `Exception` type
 
 Exceptions deriving from `Exception` are not caught by default as these may

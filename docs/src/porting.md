@@ -16,20 +16,25 @@ here are several things to consider:
 * Exception handling is now strict by default - see the [error handling](./error_handling.md)
   chapter for how to deal with `raises` effects
 * `AsyncEventBus` was removed - use `AsyncEventQueue` instead
+* `Future.value` and `Future.error` panic when accessed in the wrong state
+* `Future.read` and `Future.readError` raise `FutureError` instead of
+  `ValueError` when accessed in the wrong state
 
 ## `asyncdispatch`
 
-Projects written for `asyncdispatch` and `chronos` look similar but there are
+Code written for `asyncdispatch` and `chronos` looks similar but there are
 several differences to be aware of:
 
 * `chronos` has its own dispatch loop - you can typically not mix `chronos` and
   `asyncdispatch` in the same thread
 * `import chronos` instead of `import asyncdispatch`
 * cleanup is important - make sure to use `closeWait` to release any resources
-  you're using or file descript leaks and other
+  you're using or file descriptor and other leaks will ensue
 * cancellation support means that `CancelledError` may be raised from most
   `{.async.}` functions
 * Calling `yield` directly in tasks is not supported - instead, use `awaitne`.
+* `asyncSpawn` is used instead of `asyncCheck` - note that exceptions raised
+  in tasks that are `asyncSpawn`:ed cause panic
 
 ## Supporting multiple backends
 

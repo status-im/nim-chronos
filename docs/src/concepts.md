@@ -1,11 +1,12 @@
 # Concepts
 
+Async/await is a programming model that relies on cooperative multitasking to
+coordinate the concurrent execution of procedures, using event notifications
+from the operating system or other treads to resume execution.
+
 <!-- toc -->
 
 ## The dispatcher
-
-Async/await programming relies on cooperative multitasking to coordinate the
-concurrent execution of procedures, using event notifications from the operating system to resume execution.
 
 The event handler loop is called a "dispatcher" and a single instance per
 thread is created, as soon as one is needed.
@@ -15,6 +16,9 @@ Scheduling is done by calling [async procedures](./async_procs.md) that return
 progress, for example because it's waiting for some data to arrive, it hands
 control back to the dispatcher which ensures that the procedure is resumed when
 ready.
+
+A single thread, and thus a single dispatcher, is typically able to handle
+thousands of concurrent in-progress requests.
 
 ## The `Future` type
 
@@ -69,13 +73,14 @@ structured this way.
 Both `waitFor` and `runForever` call `poll` which offers fine-grained
 control over the event loop steps.
 
-Nested calls to `poll`, `waitFor` and `runForever` are not allowed.
+Nested calls to `poll` - directly or indirectly via `waitFor` and `runForever`
+are not allowed.
 ```
 
 ## Cancellation
 
 Any pending `Future` can be cancelled. This can be used for timeouts, to start
-multiple operations in parallel and cancel the rest as soon as one finishes,
+multiple parallel operations and cancel the rest as soon as one finishes,
 to initiate the orderely shutdown of an application etc.
 
 ```nim
@@ -110,7 +115,10 @@ waitFor(work.cancelAndWait())
 ```
 
 The `CancelledError` will now travel up the stack like any other exception.
-It can be caught and handled (for instance, freeing some resources)
+It can be caught for instance to free some resources and is then typically
+re-raised for the whole chain operations to get cancelled.
+
+Alternatively, the cancellation request can be translated to a regular outcome of the operation - for example, a `read` operation might return an empty result.
 
 Cancelling an already-finished `Future` has no effect, as the following example
 of downloading two web pages concurrently shows:

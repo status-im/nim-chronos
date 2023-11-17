@@ -1,5 +1,13 @@
 # Async procedures
 
+Async procedures are those that interact with `chronos` to cooperatively
+suspend and resume their execution depending on the completion of other
+async procedures which themselves may be waiting for I/O to complete, timers to
+expire or tasks running on other threads to complete.
+
+Async procedures are marked with the `{.async.}` pragma and return a `Future`
+indicating the state of the operation.
+
 <!-- toc -->
 
 ## The `async` pragma
@@ -20,8 +28,8 @@ echo p().type # prints "Future[system.void]"
 Whenever `await` is encountered inside an async procedure, control is given
 back to the dispatcher for as many steps as it's necessary for the awaited
 future to complete, fail or be cancelled. `await` calls the
-equivalent of `Future.read()` on the completed future and returns the
-encapsulated value.
+equivalent of `Future.read()` on the completed future to return the
+encapsulated value when the operation finishes.
 
 ```nim
 proc p1() {.async.} =
@@ -51,10 +59,10 @@ In particular, if two `async` procedures have access to the same mutable state,
 the value before and after `await` might not be the same as the order of execution is not guaranteed!
 ```
 
-## Raw functions
+## Raw procedures
 
-Raw functions are those that interact with `chronos` via the `Future` type but
-whose body does not go through the async transformation.
+Raw async procedures are those that interact with `chronos` via the `Future`
+type but whose body does not go through the async transformation.
 
 Such functions are created by adding `raw: true` to the `async` parameters:
 

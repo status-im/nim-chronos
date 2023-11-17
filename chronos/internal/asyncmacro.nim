@@ -13,14 +13,14 @@ import
   ../[futures, config],
   ./raisesfutures
 
-proc processBody(node, setResultSym, baseType: NimNode): NimNode {.compileTime.} =
+proc processBody(node, setResultSym: NimNode): NimNode {.compileTime.} =
   case node.kind
   of nnkReturnStmt:
     # `return ...` -> `setResult(...); return`
     let
       res = newNimNode(nnkStmtList, node)
     if node[0].kind != nnkEmpty:
-      res.add newCall(setResultSym, processBody(node[0], setResultSym, baseType))
+      res.add newCall(setResultSym, processBody(node[0], setResultSym))
     res.add newNimNode(nnkReturnStmt, node).add(newEmptyNode())
 
     res
@@ -29,8 +29,14 @@ proc processBody(node, setResultSym, baseType: NimNode): NimNode {.compileTime.}
     # the Future we inject
     node
   else:
+    if node.kind == nnkYieldStmt:
+      # asyncdispatch allows `yield` but this breaks cancellation
+      warning(
+        "`yield` in async procedures not supported - use `awaitne` instead",
+        node)
+
     for i in 0 ..< node.len:
-      node[i] = processBody(node[i], setResultSym, baseType)
+      node[i] = processBody(node[i], setResultSym)
     node
 
 proc wrapInTryFinally(
@@ -179,7 +185,7 @@ proc getName(node: NimNode): string {.compileTime.} =
 macro unsupported(s: static[string]): untyped =
   error s
 
-proc params2(someProc: NimNode): NimNode =
+proc params2(someProc: NimNode): NimNode {.compileTime.} =
   # until https://github.com/nim-lang/Nim/pull/19563 is available
   if someProc.kind == nnkProcTy:
     someProc[0]
@@ -275,6 +281,10 @@ proc asyncSingleProc(prc, params: NimNode): NimNode {.compileTime.} =
       returnType[1]
 
   let
+    # When the base type is known to be void (and not generic), we can simplify
+    # code generation - however, in the case of generic async procedures it
+    # could still end up being void, meaning void detection needs to happen
+    # post-macro-expansion.
     baseTypeIsVoid = baseType.eqIdent("void")
     (raw, raises, handleException) = decodeParams(params)
     internalFutureType =
@@ -295,7 +305,7 @@ proc asyncSingleProc(prc, params: NimNode): NimNode {.compileTime.} =
 
   prc.params2[0] = internalReturnType
 
-  if prc.kind notin {nnkProcTy, nnkLambda}: # TODO: Nim bug?
+  if prc.kind notin {nnkProcTy, nnkLambda}:
     prc.addPragma(newColonExpr(ident "stackTrace", ident "off"))
 
   # The proc itself doesn't raise
@@ -326,63 +336,57 @@ proc asyncSingleProc(prc, params: NimNode): NimNode {.compileTime.} =
         prc.body
       )
 
-    when chronosDumpAsync:
-      echo repr prc
-
-    return prc
-
-  if prc.kind in {nnkProcDef, nnkLambda, nnkMethodDef, nnkDo} and
+  elif prc.kind in {nnkProcDef, nnkLambda, nnkMethodDef, nnkDo} and
       not isEmpty(prc.body):
-    # don't do anything with forward bodies (empty)
     let
-      prcName = prc.name.getName
       setResultSym = ident "setResult"
-      procBody = prc.body.processBody(setResultSym, baseType)
-      internalFutureSym = ident "chronosInternalRetFuture"
-      castFutureSym = nnkCast.newTree(internalFutureType, internalFutureSym)
+      procBody = prc.body.processBody(setResultSym)
       resultIdent = ident "result"
-
-      resultDecl = nnkWhenStmt.newTree(
-        # when `baseType` is void:
-        nnkElifExpr.newTree(
-          nnkInfix.newTree(ident "is", baseType, ident "void"),
-          quote do:
-            template result: auto {.used.} =
-              {.fatal: "You should not reference the `result` variable inside" &
-                      " a void async proc".}
-        ),
-        # else:
-        nnkElseExpr.newTree(
-          newStmtList(
-            quote do: {.push warning[resultshadowed]: off.},
-            # var result {.used.}: `baseType`
-            # In the proc body, result may or may not end up being used
-            # depending on how the body is written - with implicit returns /
-            # expressions in particular, it is likely but not guaranteed that
-            # it is not used. Ideally, we would avoid emitting it in this
-            # case to avoid the default initializaiton. {.used.} typically
-            # works better than {.push.} which has a tendency to leak out of
-            # scope.
-            # TODO figure out if there's a way to detect `result` usage in
-            #      the proc body _after_ template exapnsion, and therefore
-            #      avoid creating this variable - one option is to create an
-            #      addtional when branch witha fake `result` and check
-            #      `compiles(procBody)` - this is not without cost though
-            nnkVarSection.newTree(nnkIdentDefs.newTree(
-              nnkPragmaExpr.newTree(
-                resultIdent,
-                nnkPragma.newTree(ident "used")),
-              baseType, newEmptyNode())
-              ),
-            quote do: {.pop.},
+      fakeResult = quote do:
+        template result: auto {.used.} =
+          {.fatal: "You should not reference the `result` variable inside" &
+                  " a void async proc".}
+      resultDecl =
+        if baseTypeIsVoid: fakeResult
+        else: nnkWhenStmt.newTree(
+          # when `baseType` is void:
+          nnkElifExpr.newTree(
+            nnkInfix.newTree(ident "is", baseType, ident "void"),
+            fakeResult
+          ),
+          # else:
+          nnkElseExpr.newTree(
+            newStmtList(
+              quote do: {.push warning[resultshadowed]: off.},
+              # var result {.used.}: `baseType`
+              # In the proc body, result may or may not end up being used
+              # depending on how the body is written - with implicit returns /
+              # expressions in particular, it is likely but not guaranteed that
+              # it is not used. Ideally, we would avoid emitting it in this
+              # case to avoid the default initializaiton. {.used.} typically
+              # works better than {.push.} which has a tendency to leak out of
+              # scope.
+              # TODO figure out if there's a way to detect `result` usage in
+              #      the proc body _after_ template exapnsion, and therefore
+              #      avoid creating this variable - one option is to create an
+              #      addtional when branch witha fake `result` and check
+              #      `compiles(procBody)` - this is not without cost though
+              nnkVarSection.newTree(nnkIdentDefs.newTree(
+                nnkPragmaExpr.newTree(
+                  resultIdent,
+                  nnkPragma.newTree(ident "used")),
+                baseType, newEmptyNode())
+                ),
+              quote do: {.pop.},
+            )
           )
         )
-      )
 
-      # generates:
+      # ```nim
       # template `setResultSym`(code: untyped) {.used.} =
       #   when typeof(code) is void: code
       #   else: `resultIdent` = code
+      # ```
       #
       # this is useful to handle implicit returns, but also
       # to bind the `result` to the one we declare here
@@ -415,6 +419,8 @@ proc asyncSingleProc(prc, params: NimNode): NimNode {.compileTime.} =
             )
           )
 
+      internalFutureSym = ident "chronosInternalRetFuture"
+      castFutureSym = nnkCast.newTree(internalFutureType, internalFutureSym)
       # Wrapping in try/finally ensures that early returns are handled properly
       # and that `defer` is processed in the right scope
       completeDecl = wrapInTryFinally(
@@ -429,17 +435,12 @@ proc asyncSingleProc(prc, params: NimNode): NimNode {.compileTime.} =
 
       internalFutureParameter = nnkIdentDefs.newTree(
         internalFutureSym, newIdentNode("FutureBase"), newEmptyNode())
+      prcName = prc.name.getName
       iteratorNameSym = genSym(nskIterator, $prcName)
       closureIterator = newProc(
         iteratorNameSym,
         [newIdentNode("FutureBase"), internalFutureParameter],
         closureBody, nnkIteratorDef)
-
-      outerProcBody = newNimNode(nnkStmtList, prc.body)
-
-    # Copy comment for nimdoc
-    if prc.body.len > 0 and prc.body[0].kind == nnkCommentStmt:
-      outerProcBody.add(prc.body[0])
 
     iteratorNameSym.copyLineInfo(prc)
 
@@ -455,39 +456,56 @@ proc asyncSingleProc(prc, params: NimNode): NimNode {.compileTime.} =
       nnkBracket.newTree()
     ))
 
+    # The body of the original procedure (now moved to the iterator) is replaced
+    # with:
+    #
+    # ```nim
+    # let resultFuture = newFuture[T]()
+    # resultFuture.internalClosure = `iteratorNameSym`
+    # futureContinue(resultFuture)
+    # return resultFuture
+    # ```
+    #
+    # Declared at the end to be sure that the closure doesn't reference it,
+    # avoid cyclic ref (#203)
+    #
+    # Do not change this code to `quote do` version because `instantiationInfo`
+    # will be broken for `newFuture()` call.
+
+    let
+      outerProcBody = newNimNode(nnkStmtList, prc.body)
+
+    # Copy comment for nimdoc
+    if prc.body.len > 0 and prc.body[0].kind == nnkCommentStmt:
+      outerProcBody.add(prc.body[0])
+
     outerProcBody.add(closureIterator)
 
-    # -> let resultFuture = newInternalRaisesFuture[T, E]()
-    # declared at the end to be sure that the closure
-    # doesn't reference it, avoid cyclic ref (#203)
     let
       retFutureSym = ident "resultFuture"
       newFutProc = if raises == nil:
-        newTree(nnkBracketExpr, ident "newFuture", baseType)
+        nnkBracketExpr.newTree(ident "newFuture", baseType)
       else:
-        newTree(nnkBracketExpr, ident "newInternalRaisesFuture", baseType, raises)
+        nnkBracketExpr.newTree(ident "newInternalRaisesFuture", baseType, raises)
+
     retFutureSym.copyLineInfo(prc)
-    # Do not change this code to `quote do` version because `instantiationInfo`
-    # will be broken for `newFuture()` call.
     outerProcBody.add(
       newLetStmt(
         retFutureSym,
         newCall(newFutProc, newLit(prcName))
       )
     )
-    # -> resultFuture.internalClosure = iterator
+
     outerProcBody.add(
       newAssignment(
         newDotExpr(retFutureSym, newIdentNode("internalClosure")),
         iteratorNameSym)
     )
 
-    # -> futureContinue(resultFuture))
     outerProcBody.add(
         newCall(newIdentNode("futureContinue"), retFutureSym)
     )
 
-    # -> return resultFuture
     outerProcBody.add newNimNode(nnkReturnStmt, prc.body[^1]).add(retFutureSym)
 
     prc.body = outerProcBody
@@ -498,6 +516,13 @@ proc asyncSingleProc(prc, params: NimNode): NimNode {.compileTime.} =
   prc
 
 template await*[T](f: Future[T]): T =
+  ## Ensure that the given `Future` is finished, then return its value.
+  ##
+  ## If the `Future` failed or was cancelled, the corresponding exception will
+  ## be raised instead.
+  ##
+  ## If the `Future` is pending, execution of the current `async` procedure
+  ## will be suspended until the `Future` is finished.
   when declared(chronosInternalRetFuture):
     chronosInternalRetFuture.internalChild = f
     # `futureContinue` calls the iterator generated by the `async`
@@ -512,18 +537,26 @@ template await*[T](f: Future[T]): T =
   else:
     unsupported "await is only available within {.async.}"
 
-template await*[T, E](f: InternalRaisesFuture[T, E]): T =
+template await*[T, E](fut: InternalRaisesFuture[T, E]): T =
+  ## Ensure that the given `Future` is finished, then return its value.
+  ##
+  ## If the `Future` failed or was cancelled, the corresponding exception will
+  ## be raised instead.
+  ##
+  ## If the `Future` is pending, execution of the current `async` procedure
+  ## will be suspended until the `Future` is finished.
   when declared(chronosInternalRetFuture):
-    chronosInternalRetFuture.internalChild = f
+    chronosInternalRetFuture.internalChild = fut
     # `futureContinue` calls the iterator generated by the `async`
     # transformation - `yield` gives control back to `futureContinue` which is
     # responsible for resuming execution once the yielded future is finished
     yield chronosInternalRetFuture.internalChild
     # `child` released by `futureContinue`
-    cast[type(f)](chronosInternalRetFuture.internalChild).internalCheckComplete(E)
+    cast[type(fut)](
+      chronosInternalRetFuture.internalChild).internalCheckComplete(E)
 
     when T isnot void:
-      cast[type(f)](chronosInternalRetFuture.internalChild).value()
+      cast[type(fut)](chronosInternalRetFuture.internalChild).value()
   else:
     unsupported "await is only available within {.async.}"
 
