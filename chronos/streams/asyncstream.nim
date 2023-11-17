@@ -771,7 +771,7 @@ proc write*(wstream: AsyncStreamWriter, sbytes: sink seq[byte],
       wstream.bytesCount = wstream.bytesCount + uint64(length)
     else:
       let item = WriteItem(
-        kind: Sequence, dataSeq: sbytes, size: length,
+        kind: Sequence, dataSeq: move(sbytes), size: length,
         future: Future[void].Raising([CancelledError, AsyncStreamError])
                   .init("async.stream.write(seq)"))
       await wstream.queue.put(item)
@@ -812,7 +812,7 @@ proc write*(wstream: AsyncStreamWriter, sbytes: sink string,
       wstream.bytesCount = wstream.bytesCount + uint64(length)
     else:
       let item = WriteItem(
-        kind: String, dataStr: sbytes, size: length,
+        kind: String, dataStr: move(sbytes), size: length,
         future: Future[void].Raising([CancelledError, AsyncStreamError])
                   .init("async.stream.write(string)"))
       await wstream.queue.put(item)
