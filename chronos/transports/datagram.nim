@@ -11,7 +11,7 @@
 
 import std/deques
 when not(defined(windows)): import ".."/selectors2
-import ".."/[asyncloop, osdefs, oserrno, osutils, handles]
+import ".."/[asyncloop, config, osdefs, oserrno, osutils, handles]
 import "."/common
 
 type
@@ -894,7 +894,7 @@ proc send*(transp: DatagramTransport, msg: sink string,
   transp.checkClosed(retFuture)
 
   let length = if msglen <= 0: len(msg) else: msglen
-  var localCopy = msg
+  var localCopy = chronosMoveSink(msg)
   retFuture.addCallback(proc(_: pointer) = reset(localCopy))
 
   let vector = GramVector(kind: WithoutAddress, buf: addr localCopy[0],
@@ -917,7 +917,7 @@ proc send*[T](transp: DatagramTransport, msg: sink seq[T],
   transp.checkClosed(retFuture)
 
   let length = if msglen <= 0: (len(msg) * sizeof(T)) else: (msglen * sizeof(T))
-  var localCopy = msg
+  var localCopy = chronosMoveSink(msg)
   retFuture.addCallback(proc(_: pointer) = reset(localCopy))
 
   let vector = GramVector(kind: WithoutAddress, buf: addr localCopy[0],
@@ -955,7 +955,7 @@ proc sendTo*(transp: DatagramTransport, remote: TransportAddress,
   transp.checkClosed(retFuture)
 
   let length = if msglen <= 0: len(msg) else: msglen
-  var localCopy = msg
+  var localCopy = chronosMoveSink(msg)
   retFuture.addCallback(proc(_: pointer) = reset(localCopy))
 
   let vector = GramVector(kind: WithAddress, buf: addr localCopy[0],
@@ -977,7 +977,7 @@ proc sendTo*[T](transp: DatagramTransport, remote: TransportAddress,
   var retFuture = newFuture[void]("datagram.transport.sendTo(seq)")
   transp.checkClosed(retFuture)
   let length = if msglen <= 0: (len(msg) * sizeof(T)) else: (msglen * sizeof(T))
-  var localCopy = msg
+  var localCopy = chronosMoveSink(msg)
   retFuture.addCallback(proc(_: pointer) = reset(localCopy))
 
   let vector = GramVector(kind: WithAddress, buf: addr localCopy[0],

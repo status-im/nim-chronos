@@ -10,8 +10,9 @@
 {.push raises: [].}
 
 import std/deques
-import ".."/[asyncloop, handles, osdefs, osutils, oserrno]
-import common
+import stew/ptrops
+import ".."/[asyncloop, config, handles, osdefs, osutils, oserrno]
+import ./common
 
 type
   VectorKind = enum
@@ -770,7 +771,7 @@ when defined(windows):
         # Continue only if `retFuture` is not cancelled.
         if not(retFuture.finished()):
           let
-            pipeSuffix = $cast[cstring](unsafeAddr address.address_un[0])
+            pipeSuffix = $cast[cstring](baseAddr address.address_un)
             pipeAsciiName = PipeHeaderName & pipeSuffix[1 .. ^1]
             pipeName = toWideString(pipeAsciiName).valueOr:
               retFuture.fail(getTransportOsError(error))
@@ -806,7 +807,7 @@ when defined(windows):
 
   proc createAcceptPipe(server: StreamServer): Result[AsyncFD, OSErrorCode] =
     let
-      pipeSuffix = $cast[cstring](addr server.local.address_un)
+      pipeSuffix = $cast[cstring](baseAddr server.local.address_un)
       pipeName = ? toWideString(PipeHeaderName & pipeSuffix)
       openMode =
         if FirstPipe notin server.flags:
@@ -878,7 +879,7 @@ when defined(windows):
         if server.status notin {ServerStatus.Stopped, ServerStatus.Closed}:
           server.apending = true
           let
-            pipeSuffix = $cast[cstring](addr server.local.address_un)
+            pipeSuffix = $cast[cstring](baseAddr server.local.address_un)
             pipeAsciiName = PipeHeaderName & pipeSuffix
             pipeName = toWideString(pipeAsciiName).valueOr:
               raiseOsDefect(error, "acceptPipeLoop(): Unable to create name " &
@@ -2011,7 +2012,7 @@ proc createStreamServer*(host: TransportAddress,
     elif host.family in {AddressFamily.Unix}:
       # We do not care about result here, because if file cannot be removed,
       # `bindSocket` will return EADDRINUSE.
-      discard osdefs.unlink(cast[cstring](unsafeAddr host.address_un[0]))
+      discard osdefs.unlink(cast[cstring](baseAddr host.address_un))
 
     host.toSAddr(saddr, slen)
     if osdefs.bindSocket(SocketHandle(serverSocket),
@@ -2240,12 +2241,11 @@ proc write*(transp: StreamTransport, msg: sink string,
   var retFuture = newFuture[int]("stream.transport.write(string)")
   transp.checkClosed(retFuture)
   transp.checkWriteEof(retFuture)
-
   let
     nbytes = if msglen <= 0: len(msg) else: msglen
 
   var
-    pbytes = cast[ptr byte](unsafeAddr msg[0])
+    pbytes = cast[ptr byte](baseAddr msg)
     rbytes = nbytes
 
   fastWrite(transp, pbytes, rbytes, nbytes)
@@ -2253,7 +2253,7 @@ proc write*(transp: StreamTransport, msg: sink string,
   let
     written = nbytes - rbytes # In case fastWrite wrote some
 
-  var localCopy = msg
+  var localCopy = chronosMoveSink(msg)
   retFuture.addCallback(proc(_: pointer) = reset(localCopy))
 
   pbytes = cast[ptr byte](addr localCopy[written])
@@ -2278,7 +2278,7 @@ proc write*[T](transp: StreamTransport, msg: sink seq[T],
     nbytes = if msglen <= 0: (len(msg) * sizeof(T)) else: (msglen * sizeof(T))
 
   var
-    pbytes = cast[ptr byte](unsafeAddr msg[0])
+    pbytes = cast[ptr byte](baseAddr msg)
     rbytes = nbytes
 
   fastWrite(transp, pbytes, rbytes, nbytes)
@@ -2286,7 +2286,7 @@ proc write*[T](transp: StreamTransport, msg: sink seq[T],
   let
     written = nbytes - rbytes # In case fastWrite wrote some
 
-  var localCopy = msg
+  var localCopy = chronosMoveSink(msg)
   retFuture.addCallback(proc(_: pointer) = reset(localCopy))
 
   pbytes = cast[ptr byte](addr localCopy[written])

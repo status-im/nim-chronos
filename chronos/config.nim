@@ -101,3 +101,40 @@ when defined(debug) or defined(chronosConfig):
     printOption("chronosEventEngine", chronosEventEngine)
     printOption("chronosEventsCount", chronosEventsCount)
     printOption("chronosInitialSize", chronosInitialSize)
+
+
+# In nim 1.6, `sink` + local variable + `move` generates the best code for
+# moving a proc parameter into a closure - this only works for closure
+# procedures however - in closure iterators, the parameter is always copied
+# into the closure (!) meaning that non-raw `{.async.}` functions always carry
+# this overhead, sink or no. See usages of chronosMoveSink for examples.
+# In addition, we need to work around https://github.com/nim-lang/Nim/issues/22175
+# which has not been backported to 1.6.
+# Long story short, the workaround is not needed in non-raw {.async.} because
+# a copy of the literal is always made.
+# TODO review the above for 2.0 / 2.0+refc
+type
+  SeqHeader = object
+    length, reserved: int
+
+proc isLiteral(s: string): bool {.inline.} =
+  when defined(gcOrc) or defined(gcArc):
+    false
+  else:
+    s.len > 0 and (cast[ptr SeqHeader](s).reserved and (1 shl (sizeof(int) * 8 - 2))) != 0
+
+proc isLiteral[T](s: seq[T]): bool {.inline.} =
+  when defined(gcOrc) or defined(gcArc):
+    false
+  else:
+    s.len > 0 and (cast[ptr SeqHeader](s).reserved and (1 shl (sizeof(int) * 8 - 2))) != 0
+
+template chronosMoveSink*(val: auto): untyped =
+  bind isLiteral
+  when not (defined(gcOrc) or defined(gcArc)) and val is seq|string:
+    if isLiteral(val):
+      val
+    else:
+      move(val)
+  else:
+    move(val)
