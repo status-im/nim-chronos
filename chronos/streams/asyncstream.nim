@@ -755,7 +755,7 @@ proc write*(wstream: AsyncStreamWriter, sbytes: sink seq[byte],
   if isNil(wstream.wsource):
     var res: int
     try:
-      res = await write(wstream.tsource, sbytes, length)
+      res = await write(wstream.tsource, move(sbytes), length)
     except CancelledError as exc:
       raise exc
     except CatchableError as exc:
@@ -765,17 +765,11 @@ proc write*(wstream: AsyncStreamWriter, sbytes: sink seq[byte],
     wstream.bytesCount = wstream.bytesCount + uint64(length)
   else:
     if isNil(wstream.writerLoop):
-      await write(wstream.wsource, sbytes, length)
+      await write(wstream.wsource, move(sbytes), length)
       wstream.bytesCount = wstream.bytesCount + uint64(length)
     else:
       var item = WriteItem(kind: Sequence)
-      when declared(shallowCopy):
-        if not(isLiteral(sbytes)):
-          shallowCopy(item.dataSeq, sbytes)
-        else:
-          item.dataSeq = sbytes
-      else:
-        item.dataSeq = sbytes
+      item.dataSeq = move(sbytes)
       item.size = length
       item.future = newFuture[void]("async.stream.write(seq)")
       try:
@@ -808,7 +802,7 @@ proc write*(wstream: AsyncStreamWriter, sbytes: sink string,
   if isNil(wstream.wsource):
     var res: int
     try:
-      res = await write(wstream.tsource, sbytes, length)
+      res = await write(wstream.tsource, move(sbytes), length)
     except CancelledError as exc:
       raise exc
     except CatchableError as exc:
@@ -818,17 +812,11 @@ proc write*(wstream: AsyncStreamWriter, sbytes: sink string,
     wstream.bytesCount = wstream.bytesCount + uint64(length)
   else:
     if isNil(wstream.writerLoop):
-      await write(wstream.wsource, sbytes, length)
+      await write(wstream.wsource, move(sbytes), length)
       wstream.bytesCount = wstream.bytesCount + uint64(length)
     else:
       var item = WriteItem(kind: String)
-      when declared(shallowCopy):
-        if not(isLiteral(sbytes)):
-          shallowCopy(item.dataStr, sbytes)
-        else:
-          item.dataStr = sbytes
-      else:
-        item.dataStr = sbytes
+      item.dataStr = move(sbytes)
       item.size = length
       item.future = newFuture[void]("async.stream.write(string)")
       try:

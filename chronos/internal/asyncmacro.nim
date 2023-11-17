@@ -157,7 +157,7 @@ proc wrapInTryFinally(
               newCall(ident "complete", fut)
             ),
             nnkElseExpr.newTree(
-              newCall(ident "complete", fut, ident "result")
+              newCall(ident "complete", fut, newCall(ident "move", ident "result"))
             )
           )
         )
