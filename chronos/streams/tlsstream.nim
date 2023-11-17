@@ -74,7 +74,7 @@ type
       scontext: ptr SslServerContext
     stream*: TLSAsyncStream
     handshaked*: bool
-    handshakeFut*: Future[void]
+    handshakeFut*: Future[void].Raising([CancelledError, AsyncStreamError])
 
   TLSStreamReader* = ref object of AsyncStreamReader
     case kind: TLSStreamKind
@@ -84,7 +84,7 @@ type
       scontext: ptr SslServerContext
     stream*: TLSAsyncStream
     handshaked*: bool
-    handshakeFut*: Future[void]
+    handshakeFut*: Future[void].Raising([CancelledError, AsyncStreamError])
 
   TLSAsyncStream* = ref object of RootRef
     xwc*: X509NoanchorContext
@@ -94,7 +94,7 @@ type
     x509*: X509MinimalContext
     reader*: TLSStreamReader
     writer*: TLSStreamWriter
-    mainLoop*: Future[void].Raising([CancelledError, AsyncStreamError])
+    mainLoop*: Future[void].Raising([])
     trustAnchors: TrustAnchorStore
 
   SomeTLSStreamType* = TLSStreamReader|TLSStreamWriter|TLSAsyncStream
@@ -198,7 +198,10 @@ proc tlsWriteApp(engine: ptr SslEngineContext,
         # only part of item and adjust offset.
         item.offset = item.offset + int(length)
         item.size = item.size - int(length)
-        writer.queue.addFirstNoWaitSafe(item)
+        try:
+          writer.queue.addFirstNoWait(item)
+        except AsyncQueueFullError:
+          raiseAssert "AsyncQueue should not be full at this moment"
         sslEngineSendappAck(engine[], length)
       TLSResult.Success
     else:
@@ -264,19 +267,6 @@ template readAndReset(fut: untyped) =
         loopState = AsyncStreamState.Finished
       break
 
-proc cancelAndWait*(a, b, c, d: Future[TLSResult]): Future[void] {.
-     async: (raw: true, raises: [CancelledError]).} =
-  var waiting: seq[FutureBase]
-  if not(isNil(a)) and not(a.finished()):
-    waiting.add(a.cancelAndWait())
-  if not(isNil(b)) and not(b.finished()):
-    waiting.add(b.cancelAndWait())
-  if not(isNil(c)) and not(c.finished()):
-    waiting.add(c.cancelAndWait())
-  if not(isNil(d)) and not(d.finished()):
-    waiting.add(d.cancelAndWait())
-  allFutures(waiting)
-
 proc dumpState*(state: cuint): string =
   var res = ""
   if (state and SSL_CLOSED) == SSL_CLOSED:
@@ -296,8 +286,7 @@ proc dumpState*(state: cuint): string =
     res.add("SSL_RECVAPP")
   "{" & res & "}"
 
-proc tlsLoop*(stream: TLSAsyncStream) {.
-     async: (raises: [CancelledError, AsyncStreamError]).} =
+proc tlsLoop*(stream: TLSAsyncStream) {.async: (raises: []).} =
   var
     sendRecFut, sendAppFut: Future[TLSResult].Raising([])
     recvRecFut, recvAppFut: Future[TLSResult].Raising([])
@@ -372,8 +361,18 @@ proc tlsLoop*(stream: TLSAsyncStream) {.
     if loopState != AsyncStreamState.Running:
       break
 
-  # Cancelling and waiting all the pending operations
-  await cancelAndWait(sendRecFut, sendAppFut, recvRecFut, recvAppFut)
+  # Cancelling and waiting and all the pending operations
+  var pending: seq[FutureBase]
+  if not(isNil(sendRecFut)) and not(sendRecFut.finished()):
+    pending.add(sendRecFut.cancelAndWait())
+  if not(isNil(sendAppFut)) and not(sendAppFut.finished()):
+    pending.add(sendAppFut.cancelAndWait())
+  if not(isNil(recvRecFut)) and not(recvRecFut.finished()):
+    pending.add(recvRecFut.cancelAndWait())
+  if not(isNil(recvAppFut)) and not(recvAppFut.finished()):
+    pending.add(recvAppFut.cancelAndWait())
+  await noCancel(allFutures(pending))
+
   # Calculating error
   let error =
     case loopState
@@ -407,7 +406,11 @@ proc tlsLoop*(stream: TLSAsyncStream) {.
   if not(isNil(error)):
     # Completing all pending writes
     while(not(stream.writer.queue.empty())):
-      let item = stream.writer.queue.popFirstNoWaitSafe()
+      let item =
+        try:
+          stream.writer.queue.popFirstNoWait()
+        except AsyncQueueEmptyError:
+          raiseAssert "AsyncQueue should not be empty at this moment"
       if not(item.future.finished()):
         item.future.fail(error)
     # Completing handshake
@@ -427,20 +430,18 @@ proc tlsLoop*(stream: TLSAsyncStream) {.
   # Completing readers
   stream.reader.buffer.forget()
 
-proc tlsWriteLoop(stream: AsyncStreamWriter) {.
-     async: (raises: [CancelledError, AsyncStreamError]).} =
+proc tlsWriteLoop(stream: AsyncStreamWriter) {.async: (raises: []).} =
   var wstream = TLSStreamWriter(stream)
   wstream.state = AsyncStreamState.Running
-  await sleepAsync(0.milliseconds)
+  await noCancel(sleepAsync(0.milliseconds))
   if isNil(wstream.stream.mainLoop):
     wstream.stream.mainLoop = tlsLoop(wstream.stream)
   await wstream.stream.mainLoop
 
-proc tlsReadLoop(stream: AsyncStreamReader) {.
-     async: (raises: [CancelledError, AsyncStreamError]).} =
+proc tlsReadLoop(stream: AsyncStreamReader) {.async: (raises: []).} =
   var rstream = TLSStreamReader(stream)
   rstream.state = AsyncStreamState.Running
-  await sleepAsync(0.milliseconds)
+  await noCancel(sleepAsync(0.milliseconds))
   if isNil(rstream.stream.mainLoop):
     rstream.stream.mainLoop = tlsLoop(rstream.stream)
   await rstream.stream.mainLoop
@@ -624,10 +625,8 @@ proc newTLSServerAsyncStream*(rsource: AsyncStreamReader,
   if err == 0:
     raise newException(TLSStreamInitError, "Could not initialize TLS layer")
 
-  init(AsyncStreamWriter(res.writer), wsource, tlsWriteLoop,
-       bufferSize)
-  init(AsyncStreamReader(res.reader), rsource, tlsReadLoop,
-       bufferSize)
+  init(AsyncStreamWriter(res.writer), wsource, tlsWriteLoop, bufferSize)
+  init(AsyncStreamReader(res.reader), rsource, tlsReadLoop, bufferSize)
   res
 
 proc copyKey(src: RsaPrivateKey): TLSPrivateKey =
@@ -789,9 +788,11 @@ proc init*(tt: typedesc[TLSSessionCache], size: int = 4096): TLSSessionCache =
   sslSessionCacheLruInit(addr res.context, addr res.storage[0], rsize)
   res
 
-proc handshake*(rws: SomeTLSStreamType): Future[void] =
+proc handshake*(rws: SomeTLSStreamType): Future[void] {.
+     async: (raw: true, raises: [CancelledError, AsyncStreamError]).} =
   ## Wait until initial TLS handshake will be successfully performed.
-  var retFuture = newFuture[void]("tlsstream.handshake")
+  let retFuture = Future[void].Raising([CancelledError, AsyncStreamError])
+                    .init("tlsstream.handshake")
   when rws is TLSStreamReader:
     if rws.handshaked:
       retFuture.complete()

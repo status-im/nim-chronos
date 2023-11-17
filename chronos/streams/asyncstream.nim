@@ -24,15 +24,15 @@ const
     ## AsyncStreamWriter leaks tracker name
 
 type
-  AsyncStreamError* = object of TransportError
+  AsyncStreamError* = object of AsyncError
   AsyncStreamIncorrectDefect* = object of Defect
   AsyncStreamIncompleteError* = object of AsyncStreamError
   AsyncStreamLimitError* = object of AsyncStreamError
   AsyncStreamUseClosedError* = object of AsyncStreamError
   AsyncStreamReadError* = object of AsyncStreamError
-    par*: ref TransportError
+    par*: ref AsyncError
   AsyncStreamWriteError* = object of AsyncStreamError
-    par*: ref TransportError
+    par*: ref AsyncError
   AsyncStreamWriteEOFError* = object of AsyncStreamWriteError
 
   AsyncBuffer* = object
@@ -64,10 +64,10 @@ type
     Closed    ## Stream was closed
 
   StreamReaderLoop* = proc (stream: AsyncStreamReader): Future[void] {.
-    async: (raises: [CancelledError, AsyncStreamError]).}
+    async: (raises: []).}
     ## Main read loop for read streams.
   StreamWriterLoop* = proc (stream: AsyncStreamWriter): Future[void] {.
-    async: (raises: [CancelledError, AsyncStreamError]).}
+    async: (raises: []).}
     ## Main write loop for write streams.
 
   AsyncStreamReader* = ref object of RootRef
@@ -734,16 +734,9 @@ proc write*(wstream: AsyncStreamWriter, pbytes: pointer,
         kind: Pointer, dataPtr: pbytes, size: nbytes,
         future: Future[void].Raising([CancelledError, AsyncStreamError])
                   .init("async.stream.write(pointer)"))
-      try:
-        await wstream.queue.put(item)
-        await item.future
-        wstream.bytesCount = wstream.bytesCount + uint64(item.size)
-      except CancelledError as exc:
-        raise exc
-      except AsyncStreamError as exc:
-        raise exc
-      except TransportError as exc:
-        raise newAsyncStreamWriteError(exc)
+      await wstream.queue.put(item)
+      await item.future
+      wstream.bytesCount = wstream.bytesCount + uint64(item.size)
 
 proc write*(wstream: AsyncStreamWriter, sbytes: sink seq[byte],
             msglen = -1) {.
@@ -783,16 +776,9 @@ proc write*(wstream: AsyncStreamWriter, sbytes: sink seq[byte],
         kind: Sequence, dataSeq: sbytes, size: length,
         future: Future[void].Raising([CancelledError, AsyncStreamError])
                   .init("async.stream.write(seq)"))
-      try:
-        await wstream.queue.put(item)
-        await item.future
-        wstream.bytesCount = wstream.bytesCount + uint64(item.size)
-      except CancelledError as exc:
-        raise exc
-      except AsyncStreamError as exc:
-        raise exc
-      except TransportError as exc:
-        raise newAsyncStreamWriteError(exc)
+      await wstream.queue.put(item)
+      await item.future
+      wstream.bytesCount = wstream.bytesCount + uint64(item.size)
 
 proc write*(wstream: AsyncStreamWriter, sbytes: sink string,
             msglen = -1) {.
@@ -831,16 +817,9 @@ proc write*(wstream: AsyncStreamWriter, sbytes: sink string,
         kind: String, dataStr: sbytes, size: length,
         future: Future[void].Raising([CancelledError, AsyncStreamError])
                   .init("async.stream.write(string)"))
-      try:
-        await wstream.queue.put(item)
-        await item.future
-        wstream.bytesCount = wstream.bytesCount + uint64(item.size)
-      except CancelledError as exc:
-        raise exc
-      except AsyncStreamError as exc:
-        raise exc
-      except TransportError as exc:
-        raise newAsyncStreamWriteError(exc)
+      await wstream.queue.put(item)
+      await item.future
+      wstream.bytesCount = wstream.bytesCount + uint64(item.size)
 
 proc finish*(wstream: AsyncStreamWriter) {.
      async: (raises: [CancelledError, AsyncStreamError]).} =
@@ -857,15 +836,8 @@ proc finish*(wstream: AsyncStreamWriter) {.
           kind: Pointer, size: 0,
           future: Future[void].Raising([CancelledError, AsyncStreamError])
                     .init("async.stream.finish"))
-        try:
-          await wstream.queue.put(item)
-          await item.future
-        except CancelledError as exc:
-          raise exc
-        except AsyncStreamError as exc:
-          raise exc
-        except TransportError as exc:
-          raise newAsyncStreamWriteError(exc)
+        await wstream.queue.put(item)
+        await item.future
 
 proc join*(rw: AsyncStreamRW): Future[void] {.
      async: (raw: true, raises: [CancelledError]).} =

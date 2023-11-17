@@ -275,22 +275,6 @@ proc addLastNoWait*[T](aq: AsyncQueue[T], item: T) {.
     raise newException(AsyncQueueFullError, "AsyncQueue is full!")
   aq.addLastImpl(item)
 
-proc addFirstNoWaitSafe*[T](aq: AsyncQueue[T], item: T) {.
-     raises: [].} =
-  ## Put an item ``item`` to the beginning of the queue ``aq`` immediately.
-  ##
-  ## If queue ``aq`` is full, then ``Defect`` exception raised.
-  doAssert(not(aq.full()), "AsyncQueue is full!")
-  aq.addFirstImpl(item)
-
-proc addLastNoWaitSafe*[T](aq: AsyncQueue[T], item: T) {.
-     raises: [].} =
-  ## Put an item ``item`` at the end of the queue ``aq`` immediately.
-  ##
-  ## If queue ``aq`` is full, then ``Defect`` exception raised.
-  doAssert(not(aq.full()), "AsyncQueue is full!")
-  aq.addLastImpl(item)
-
 proc popFirstNoWait*[T](aq: AsyncQueue[T]): T {.
      raises: [AsyncQueueEmptyError].} =
   ## Get an item from the beginning of the queue ``aq`` immediately.
@@ -307,22 +291,6 @@ proc popLastNoWait*[T](aq: AsyncQueue[T]): T {.
   ## If queue ``aq`` is empty, then ``AsyncQueueEmptyError`` exception raised.
   if aq.empty():
     raise newException(AsyncQueueEmptyError, "AsyncQueue is empty!")
-  aq.popLastImpl()
-
-proc popFirstNoWaitSafe*[T](aq: AsyncQueue[T]): T {.
-     raises: [].} =
-  ## Get an item from the beginning of the queue ``aq`` immediately.
-  ##
-  ## If queue ``aq`` is empty, then ``Defect`` raised.
-  doAssert(not(aq.empty()), "AsyncQueue is empty!")
-  aq.popLastImpl()
-
-proc popLastNoWaitSafe*[T](aq: AsyncQueue[T]): T {.
-     raises: [].} =
-  ## Get an item from the end of the queue ``aq`` immediately.
-  ##
-  ## If queue ``aq`` is empty, then ``Defect`` exception raised.
-  doAssert(not(aq.empty()), "AsyncQueue is empty!")
   aq.popLastImpl()
 
 proc addFirst*[T](aq: AsyncQueue[T], item: T) {.
