@@ -52,7 +52,7 @@ type
   HttpResultCode*[T] = Result[T, HttpCode]
 
   HttpDefect* = object of Defect
-  HttpError* = object of CatchableError
+  HttpError* = object of AsyncError
   HttpCriticalError* = object of HttpError
     code*: HttpCode
   HttpRecoverableError* = object of HttpError
