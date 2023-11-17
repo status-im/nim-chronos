@@ -104,9 +104,7 @@ type
   TLSStreamHandshakeError* = object of TLSStreamError
   TLSStreamInitError* = object of TLSStreamError
   TLSStreamReadError* = object of TLSStreamError
-    par*: ref AsyncStreamError
   TLSStreamWriteError* = object of TLSStreamError
-    par*: ref AsyncStreamError
   TLSStreamProtocolError* = object of TLSStreamError
     errCode*: int
 
@@ -114,7 +112,7 @@ proc newTLSStreamWriteError(p: ref AsyncStreamError): ref TLSStreamWriteError {.
      noinline.} =
   var w = newException(TLSStreamWriteError, "Write stream failed")
   w.msg = w.msg & ", originated from [" & $p.name & "] " & p.msg
-  w.par = p
+  w.parent = p
   w
 
 template newTLSStreamProtocolImpl[T](message: T): ref TLSStreamProtocolError =
