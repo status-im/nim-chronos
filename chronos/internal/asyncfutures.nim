@@ -600,13 +600,13 @@ template taskErrorMessage(future: FutureBase): string =
 template taskCancelMessage(future: FutureBase): string =
   "Asynchronous task " & taskFutureLocation(future) & " was cancelled!"
 
-proc pollFor*[F: Future | InternalRaisesFuture](fut: F): F {.raises: [].} =
-  ## Blocks the current thread of execution until `fut` has finished, returning
-  ## the given future.
-  ##
-  ## Must not be called recursively (from inside `async` procedures).
-  ##
-  ## See alse `awaitne`.
+proc pollFor[F: Future | InternalRaisesFuture](fut: F): F {.raises: [].} =
+  # Blocks the current thread of execution until `fut` has finished, returning
+  # the given future.
+  #
+  # Must not be called recursively (from inside `async` procedures).
+  #
+  # See alse `awaitne`.
   if not(fut.finished()):
     var finished = false
     # Ensure that callbacks currently scheduled on the future run before returning

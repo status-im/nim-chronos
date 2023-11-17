@@ -561,15 +561,6 @@ template await*[T, E](fut: InternalRaisesFuture[T, E]): T =
     unsupported "await is only available within {.async.}"
 
 template awaitne*[T](f: Future[T]): Future[T] =
-  ## Ensure that the given `Future` is finished, returning itself.
-  ##
-  ## Unlike `await`, exceptions will not be raised even if the Future failed or
-  ## was cancelled.
-  ##
-  ## If the `Future` is pending, execution of the current `async` procedure
-  ## will be suspended until the `Future` is finished.
-  ##
-  ## See also `Future.read`
   when declared(chronosInternalRetFuture):
     chronosInternalRetFuture.internalChild = f
     yield chronosInternalRetFuture.internalChild
