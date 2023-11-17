@@ -30,9 +30,7 @@ type
   AsyncStreamLimitError* = object of AsyncStreamError
   AsyncStreamUseClosedError* = object of AsyncStreamError
   AsyncStreamReadError* = object of AsyncStreamError
-    par*: ref AsyncError
   AsyncStreamWriteError* = object of AsyncStreamError
-    par*: ref AsyncError
   AsyncStreamWriteEOFError* = object of AsyncStreamWriteError
 
   AsyncBuffer* = object
@@ -192,7 +190,7 @@ proc newAsyncStreamReadError(
      ): ref AsyncStreamReadError {.noinline.} =
   var w = newException(AsyncStreamReadError, "Read stream failed")
   w.msg = w.msg & ", originated from [" & $p.name & "] " & p.msg
-  w.par = p
+  w.parent = p
   w
 
 proc newAsyncStreamWriteError(
@@ -200,7 +198,7 @@ proc newAsyncStreamWriteError(
      ): ref AsyncStreamWriteError {.noinline.} =
   var w = newException(AsyncStreamWriteError, "Write stream failed")
   w.msg = w.msg & ", originated from [" & $p.name & "] " & p.msg
-  w.par = p
+  w.parent = p
   w
 
 proc newAsyncStreamIncompleteError*(): ref AsyncStreamIncompleteError {.
