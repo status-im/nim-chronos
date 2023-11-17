@@ -943,7 +943,7 @@ proc cancelAndWait*(future: FutureBase, loc: ptr SrcLoc): Future[void] {.
 
   retFuture
 
-template cancelAndWait*(future: FutureBase): Future[void] =
+template cancelAndWait*(future: FutureBase): Future[void].Raising([]) =
   ## Cancel ``future``.
   cancelAndWait(future, getSrcLocation())
 
