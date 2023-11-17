@@ -943,7 +943,7 @@ proc cancelAndWait*(future: FutureBase, loc: ptr SrcLoc): Future[void] {.
 
   retFuture
 
-template cancelAndWait*(future: FutureBase): Future[void].Raising([]) =
+template cancelAndWait*(future: FutureBase): Future[void].Raising([CancelledError]) =
   ## Cancel ``future``.
   cancelAndWait(future, getSrcLocation())
 
@@ -1500,15 +1500,6 @@ when defined(windows):
 
 {.pop.} # Automatically deduced raises from here onwards
 
-proc waitFor*[T, E](fut: InternalRaisesFuture[T, E]): T = # {.raises: [E]}
-  ## **Blocks** the current thread until the specified future finishes and
-  ## reads it, potentially raising an exception if the future failed or was
-  ## cancelled.
-  while not(fut.finished()):
-    poll()
-
-  fut.read()
-
 proc read*[T: not void, E](future: InternalRaisesFuture[T, E]): lent T = # {.raises: [E, ValueError].}
   ## Retrieves the value of ``future``. Future must be finished otherwise
   ## this function will fail with a ``ValueError`` exception.
@@ -1531,6 +1522,15 @@ proc read*[E](future: InternalRaisesFuture[void, E]) = # {.raises: [E, Cancelled
   else:
     # TODO: Make a custom exception type for this?
     raise newException(ValueError, "Future still in progress.")
+
+proc waitFor*[T, E](fut: InternalRaisesFuture[T, E]): T = # {.raises: [E]}
+  ## **Blocks** the current thread until the specified future finishes and
+  ## reads it, potentially raising an exception if the future failed or was
+  ## cancelled.
+  while not(fut.finished()):
+    poll()
+
+  fut.read()
 
 proc `or`*[T, Y, E1, E2](
     fut1: InternalRaisesFuture[T, E1],
