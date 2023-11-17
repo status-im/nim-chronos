@@ -140,7 +140,7 @@ type
                                       # transport for new client
 
 proc remoteAddress*(transp: StreamTransport): TransportAddress {.
-    raises: [TransportAbortedError, TransportTooManyError, TransportOsError].} =
+    raises: [TransportOsError].} =
   ## Returns ``transp`` remote socket address.
   doAssert(transp.kind == TransportKind.Socket, "Socket transport required!")
   if transp.remote.family == AddressFamily.None:
@@ -148,12 +148,12 @@ proc remoteAddress*(transp: StreamTransport): TransportAddress {.
     var slen = SockLen(sizeof(saddr))
     if getpeername(SocketHandle(transp.fd), cast[ptr SockAddr](addr saddr),
                    addr slen) != 0:
-      raiseTransportError(osLastError())
+      raiseTransportOsError(osLastError())
     fromSAddr(addr saddr, slen, transp.remote)
   transp.remote
 
 proc localAddress*(transp: StreamTransport): TransportAddress {.
-    raises: [TransportAbortedError, TransportTooManyError, TransportOsError].} =
+    raises: [TransportOsError].} =
   ## Returns ``transp`` local socket address.
   doAssert(transp.kind == TransportKind.Socket, "Socket transport required!")
   if transp.local.family == AddressFamily.None:
@@ -161,7 +161,7 @@ proc localAddress*(transp: StreamTransport): TransportAddress {.
     var slen = SockLen(sizeof(saddr))
     if getsockname(SocketHandle(transp.fd), cast[ptr SockAddr](addr saddr),
                    addr slen) != 0:
-      raiseTransportError(osLastError())
+      raiseTransportOsError(osLastError())
     fromSAddr(addr saddr, slen, transp.local)
   transp.local
 
