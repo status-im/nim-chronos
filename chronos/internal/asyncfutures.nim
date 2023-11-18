@@ -983,7 +983,7 @@ template cancel*(future: FutureBase) {.
   cancelSoon(future, nil, nil, getSrcLocation())
 
 proc cancelAndWait*(future: FutureBase, loc: ptr SrcLoc): Future[void] {.
-    async: (raw: true, raises: [CancelledError]).} =
+    async: (raw: true, raises: []).} =
   ## Perform cancellation ``future`` return Future which will be completed when
   ## ``future`` become finished (completed with value, failed or cancelled).
   ##
@@ -1003,7 +1003,7 @@ proc cancelAndWait*(future: FutureBase, loc: ptr SrcLoc): Future[void] {.
 
   retFuture
 
-template cancelAndWait*(future: FutureBase): Future[void].Raising([CancelledError]) =
+template cancelAndWait*(future: FutureBase): Future[void].Raising([]) =
   ## Cancel ``future``.
   cancelAndWait(future, getSrcLocation())
 
