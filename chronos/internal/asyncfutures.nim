@@ -1094,10 +1094,18 @@ proc allFutures*[T](futs: varargs[Future[T]]): Future[void] {.
   ##
   ## On cancel all the awaited futures ``futs`` WILL NOT BE cancelled.
   # Because we can't capture varargs[T] in closures we need to create copy.
-  var nfuts: seq[FutureBase]
-  for future in futs:
-    nfuts.add(future)
-  allFutures(nfuts)
+  allFutures(futs.mapIt(FutureBase(it)))
+
+proc allFutures*[T, E](futs: varargs[InternalRaisesFuture[T, E]]): Future[void] {.
+    async: (raw: true, raises: [CancelledError]).} =
+  ## Returns a future which will complete only when all futures in ``futs``
+  ## will be completed, failed or canceled.
+  ##
+  ## If the argument is empty, the returned future COMPLETES immediately.
+  ##
+  ## On cancel all the awaited futures ``futs`` WILL NOT BE cancelled.
+  # Because we can't capture varargs[T] in closures we need to create copy.
+  allFutures(futs.mapIt(FutureBase(it)))
 
 proc allFinished*[F: SomeFuture](futs: varargs[F]): Future[seq[F]] {.
     async: (raw: true, raises: [CancelledError]).} =
@@ -1238,6 +1246,28 @@ proc race*(futs: varargs[FutureBase]): Future[FutureBase] {.
   retFuture.cancelCallback = cancellation
 
   return retFuture
+
+proc race*[T](futs: varargs[Future[T]]): Future[FutureBase] {.
+    async: (raw: true, raises: [ValueError, CancelledError]).} =
+  ## Returns a future which will complete only when all futures in ``futs``
+  ## will be completed, failed or canceled.
+  ##
+  ## If the argument is empty, the returned future COMPLETES immediately.
+  ##
+  ## On cancel all the awaited futures ``futs`` WILL NOT BE cancelled.
+  # Because we can't capture varargs[T] in closures we need to create copy.
+  race(futs.mapIt(FutureBase(it)))
+
+proc race*[T, E](futs: varargs[InternalRaisesFuture[T, E]]): Future[FutureBase] {.
+    async: (raw: true, raises: [ValueError, CancelledError]).} =
+  ## Returns a future which will complete only when all futures in ``futs``
+  ## will be completed, failed or canceled.
+  ##
+  ## If the argument is empty, the returned future COMPLETES immediately.
+  ##
+  ## On cancel all the awaited futures ``futs`` WILL NOT BE cancelled.
+  # Because we can't capture varargs[T] in closures we need to create copy.
+  race(futs.mapIt(FutureBase(it)))
 
 when (chronosEventEngine in ["epoll", "kqueue"]) or defined(windows):
   import std/os
