@@ -1997,3 +1997,9 @@ suite "Future[T] behavior test suite":
       check:
         future1.cancelled() == true
         future2.cancelled() == true
+  test "Sink with literals":
+    # https://github.com/nim-lang/Nim/issues/22175
+    let fut = newFuture[string]()
+    fut.complete("test")
+    check:
+      fut.value() == "test"

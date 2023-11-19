@@ -15,7 +15,7 @@
 import
   bearssl/[brssl, ec, errors, pem, rsa, ssl, x509],
   bearssl/certs/cacert
-import ../asyncloop, ../timer, ../asyncsync
+import ".."/[asyncloop, asyncsync, config, timer]
 import asyncstream, ../transports/stream, ../transports/common
 export asyncloop, asyncsync, timer, asyncstream
 
@@ -62,7 +62,7 @@ type
 
   PEMContext = ref object
     data: seq[byte]
-  
+
   TrustAnchorStore* = ref object
     anchors: seq[X509TrustAnchor]
 
@@ -158,7 +158,7 @@ proc tlsWriteRec(engine: ptr SslEngineContext,
     var length = 0'u
     var buf = sslEngineSendrecBuf(engine[], length)
     doAssert(length != 0 and not isNil(buf))
-    await writer.wsource.write(buf, int(length))
+    await writer.wsource.write(chronosMoveSink(buf), int(length))
     sslEngineSendrecAck(engine[], length)
     TLSResult.Success
   except AsyncStreamError as exc:
@@ -481,7 +481,7 @@ proc newTLSClientAsyncStream*(
   ## ``minVersion`` of bigger then ``maxVersion`` you will get an error.
   ##
   ## ``flags`` - custom TLS connection flags.
-  ## 
+  ##
   ## ``trustAnchors`` - use this if you want to use certificate trust
   ## anchors other than the default Mozilla trust anchors. If you pass
   ## a ``TrustAnchorStore`` you should reuse the same instance for

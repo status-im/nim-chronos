@@ -596,22 +596,6 @@ proc raiseTransportOsError*(err: OSErrorCode) {.
   ## Raises transport specific OS error.
   raise getTransportOsError(err)
 
-type
-  SeqHeader = object
-    length, reserved: int
-
-proc isLiteral*(s: string): bool {.inline.} =
-  when defined(gcOrc) or defined(gcArc):
-    false
-  else:
-    (cast[ptr SeqHeader](s).reserved and (1 shl (sizeof(int) * 8 - 2))) != 0
-
-proc isLiteral*[T](s: seq[T]): bool {.inline.} =
-  when defined(gcOrc) or defined(gcArc):
-    false
-  else:
-    (cast[ptr SeqHeader](s).reserved and (1 shl (sizeof(int) * 8 - 2))) != 0
-
 template getTransportTooManyError*(
            code = OSErrorCode(0)
          ): ref TransportTooManyError =
