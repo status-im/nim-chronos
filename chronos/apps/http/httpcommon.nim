@@ -53,10 +53,10 @@ type
 
   HttpDefect* = object of Defect
   HttpError* = object of AsyncError
-  HttpCriticalError* = object of HttpError
+  HttpResponseError* = object of HttpError
     code*: HttpCode
-  HttpRecoverableError* = object of HttpError
-    code*: HttpCode
+  HttpCriticalError* = object of HttpResponseError
+  HttpRecoverableError* = object of HttpResponseError
   HttpDisconnectError* = object of HttpError
   HttpConnectionError* = object of HttpError
   HttpInterruptError* = object of HttpError

@@ -128,7 +128,7 @@ suite "HTTP client testing suite":
       (MethodPatch, "/test/patch")
     ]
     proc process(r: RequestFence): Future[HttpResponseRef] {.
-         async.} =
+         async: (raises: [CancelledError, HttpResponseError]).} =
       if r.isOk():
         let request = r.get()
         case request.uri.path
@@ -195,7 +195,7 @@ suite "HTTP client testing suite":
        "LONGCHUNKRESPONSE")
     ]
     proc process(r: RequestFence): Future[HttpResponseRef] {.
-         async.} =
+         async: (raises: [CancelledError, HttpResponseError]).} =
       if r.isOk():
         let request = r.get()
         case request.uri.path
@@ -311,7 +311,7 @@ suite "HTTP client testing suite":
       (MethodPost, "/test/big_request", 262400)
     ]
     proc process(r: RequestFence): Future[HttpResponseRef] {.
-         async.} =
+         async: (raises: [CancelledError, HttpResponseError]).} =
       if r.isOk():
         let request = r.get()
         case request.uri.path
@@ -381,7 +381,7 @@ suite "HTTP client testing suite":
       (MethodPost, "/test/big_chunk_request", 262400)
     ]
     proc process(r: RequestFence): Future[HttpResponseRef] {.
-         async.} =
+         async: (raises: [CancelledError, HttpResponseError]).} =
       if r.isOk():
         let request = r.get()
         case request.uri.path
@@ -455,7 +455,7 @@ suite "HTTP client testing suite":
     ]
 
     proc process(r: RequestFence): Future[HttpResponseRef] {.
-         async.} =
+         async: (raises: [CancelledError, HttpResponseError]).} =
       if r.isOk():
         let request = r.get()
         case request.uri.path
@@ -554,7 +554,7 @@ suite "HTTP client testing suite":
     ]
 
     proc process(r: RequestFence): Future[HttpResponseRef] {.
-         async.} =
+         async: (raises: [CancelledError, HttpResponseError]).} =
       if r.isOk():
         let request = r.get()
         case request.uri.path
@@ -649,7 +649,7 @@ suite "HTTP client testing suite":
     var lastAddress: Uri
 
     proc process(r: RequestFence): Future[HttpResponseRef] {.
-         async.} =
+         async: (raises: [CancelledError, HttpResponseError]).} =
       if r.isOk():
         let request = r.get()
         case request.uri.path
@@ -706,7 +706,7 @@ suite "HTTP client testing suite":
 
   proc testSendCancelLeaksTest(secure: bool): Future[bool] {.async.} =
     proc process(r: RequestFence): Future[HttpResponseRef] {.
-         async.} =
+         async: (raises: [CancelledError, HttpResponseError]).} =
       return defaultResponse()
 
     var server = createServer(initTAddress("127.0.0.1:0"), process, secure)
@@ -756,7 +756,7 @@ suite "HTTP client testing suite":
 
   proc testOpenCancelLeaksTest(secure: bool): Future[bool] {.async.} =
     proc process(r: RequestFence): Future[HttpResponseRef] {.
-         async.} =
+         async: (raises: [CancelledError, HttpResponseError]).} =
       return defaultResponse()
 
     var server = createServer(initTAddress("127.0.0.1:0"), process, secure)
@@ -867,7 +867,8 @@ suite "HTTP client testing suite":
       return @[(data1.status, data1.data.bytesToString(), count),
                (data2.status, data2.data.bytesToString(), count)]
 
-    proc process(r: RequestFence): Future[HttpResponseRef] {.async.} =
+    proc process(r: RequestFence): Future[HttpResponseRef] {.
+         async: (raises: [CancelledError, HttpResponseError]).} =
       if r.isOk():
         let request = r.get()
         case request.uri.path
@@ -1002,7 +1003,8 @@ suite "HTTP client testing suite":
         await request.closeWait()
       return (data.status, data.data.bytesToString(), 0)
 
-    proc process(r: RequestFence): Future[HttpResponseRef] {.async.} =
+    proc process(r: RequestFence): Future[HttpResponseRef] {.
+         async: (raises: [CancelledError, HttpResponseError]).} =
       if r.isOk():
         let request = r.get()
         case request.uri.path
@@ -1061,7 +1063,8 @@ suite "HTTP client testing suite":
         await request.closeWait()
       return (data.status, data.data.bytesToString(), 0)
 
-    proc process(r: RequestFence): Future[HttpResponseRef] {.async.} =
+    proc process(r: RequestFence): Future[HttpResponseRef] {.
+         async: (raises: [CancelledError, HttpResponseError]).} =
       if r.isOk():
         let request = r.get()
         case request.uri.path
@@ -1176,7 +1179,8 @@ suite "HTTP client testing suite":
           return false
       true
 
-    proc process(r: RequestFence): Future[HttpResponseRef] {.async.} =
+    proc process(r: RequestFence): Future[HttpResponseRef] {.
+         async: (raises: [CancelledError, HttpResponseError]).} =
       if r.isOk():
         let request = r.get()
         if request.uri.path.startsWith("/test/single/"):

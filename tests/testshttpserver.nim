@@ -108,7 +108,7 @@ suite "Secure HTTP server testing suite":
     proc testHTTPS(address: TransportAddress): Future[bool] {.async.} =
       var serverRes = false
       proc process(r: RequestFence): Future[HttpResponseRef] {.
-           async.} =
+           async: (raises: [CancelledError, HttpResponseError]).} =
         if r.isOk():
           let request = r.get()
           serverRes = true
@@ -146,7 +146,7 @@ suite "Secure HTTP server testing suite":
       var serverRes = false
       var testFut = newFuture[void]()
       proc process(r: RequestFence): Future[HttpResponseRef] {.
-           async.} =
+           async: (raises: [CancelledError, HttpResponseError]).} =
         if r.isOk():
           let request = r.get()
           serverRes = false
