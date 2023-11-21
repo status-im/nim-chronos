@@ -57,8 +57,25 @@ template init*[T, E](
     res, getSrcLocation(fromProc), FutureState.Pending, flags)
   res
 
+proc dig(n: NimNode): NimNode {.compileTime.} =
+  # Dig through the layers of type to find the raises list
+  if n.eqIdent("void"):
+    n
+  elif n.kind == nnkBracketExpr:
+    if n[0].eqIdent("tuple"):
+      n
+    elif n[0].eqIdent("typeDesc"):
+      dig(getType(n[1]))
+    else:
+      echo astGenRepr(n)
+      raiseAssert "Unkown bracket"
+  elif n.kind == nnkTupleConstr:
+    n
+  else:
+    dig(getType(getTypeInst(n)))
+
 proc isNoRaises*(n: NimNode): bool {.compileTime.} =
-  n.eqIdent("void")
+  dig(n).eqIdent("void")
 
 iterator members(tup: NimNode): NimNode =
   # Given a typedesc[tuple] = (A, B, C), yields the tuple members (A, B C)
@@ -79,7 +96,7 @@ proc containsSignature(members: openArray[NimNode], typ: NimNode): bool {.compil
   false
 
 # Utilities for working with the E part of InternalRaisesFuture - unstable
-macro prepend*(tup: typedesc[tuple], typs: varargs[typed]): typedesc =
+macro prepend*(tup: typedesc, typs: varargs[typed]): typedesc =
   result = nnkTupleConstr.newTree()
   for err in typs:
     if not tup.members().containsSignature(err):
@@ -91,7 +108,7 @@ macro prepend*(tup: typedesc[tuple], typs: varargs[typed]): typedesc =
   if result.len == 0:
     result = makeNoRaises()
 
-macro remove*(tup: typedesc[tuple], typs: varargs[typed]): typedesc =
+macro remove*(tup: typedesc, typs: varargs[typed]): typedesc =
   result = nnkTupleConstr.newTree()
   for err in tup.members():
     if not typs[0..^1].containsSignature(err):
@@ -100,7 +117,7 @@ macro remove*(tup: typedesc[tuple], typs: varargs[typed]): typedesc =
   if result.len == 0:
     result = makeNoRaises()
 
-macro union*(tup0: typedesc[tuple], tup1: typedesc[tuple]): typedesc =
+macro union*(tup0: typedesc, tup1: typedesc): typedesc =
   ## Join the types of the two tuples deduplicating the entries
   result = nnkTupleConstr.newTree()
 
