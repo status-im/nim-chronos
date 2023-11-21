@@ -1832,10 +1832,21 @@ proc close*(server: StreamServer) =
       server.sock.closeSocket(continuation)
 
 proc closeWait*(server: StreamServer): Future[void] {.
-    async: (raw: true, raises: [CancelledError]).} =
+     async: (raw: true, raises: []).} =
   ## Close server ``server`` and release all resources.
+  let retFuture = newFuture[void](
+    "stream.server.closeWait", {FutureFlag.OwnCancelSchedule})
+
+  proc continuation(udata: pointer) =
+    retFuture.complete()
+
   server.close()
-  server.join()
+
+  if not(server.loopFuture.finished()):
+    server.loopFuture.addCallback(continuation, cast[pointer](retFuture))
+  else:
+    retFuture.complete()
+  retFuture
 
 proc getBacklogSize(backlog: int): cint =
   doAssert(backlog >= 0 and backlog <= high(int32))

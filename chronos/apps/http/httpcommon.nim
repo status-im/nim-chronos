@@ -6,6 +6,9 @@
 #              Licensed under either of
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
+
+{.push raises: [].}
+
 import std/[strutils, uri]
 import results, httputils
 import ../../asyncloop, ../../asyncsync
@@ -49,7 +52,7 @@ type
   HttpResultCode*[T] = Result[T, HttpCode]
 
   HttpDefect* = object of Defect
-  HttpError* = object of CatchableError
+  HttpError* = object of AsyncError
   HttpCriticalError* = object of HttpError
     code*: HttpCode
   HttpRecoverableError* = object of HttpError
@@ -124,35 +127,43 @@ func toString*(error: HttpAddressErrorType): string =
   of HttpAddressErrorType.NoAddressResolved:
     "No address has been resolved"
 
-proc raiseHttpCriticalError*(msg: string,
-                             code = Http400) {.noinline, noreturn.} =
+proc raiseHttpCriticalError*(msg: string, code = Http400) {.
+     noinline, noreturn, raises: [HttpCriticalError].} =
   raise (ref HttpCriticalError)(code: code, msg: msg)
 
-proc raiseHttpDisconnectError*() {.noinline, noreturn.} =
+proc raiseHttpDisconnectError*() {.
+     noinline, noreturn, raises: [HttpDisconnectError].} =
   raise (ref HttpDisconnectError)(msg: "Remote peer disconnected")
 
 proc raiseHttpDefect*(msg: string) {.noinline, noreturn.} =
   raise (ref HttpDefect)(msg: msg)
 
-proc raiseHttpConnectionError*(msg: string) {.noinline, noreturn.} =
+proc raiseHttpConnectionError*(msg: string) {.
+     noinline, noreturn, raises: [HttpConnectionError].} =
   raise (ref HttpConnectionError)(msg: msg)
 
-proc raiseHttpInterruptError*() {.noinline, noreturn.} =
+proc raiseHttpInterruptError*() {.
+     noinline, noreturn, raises: [HttpInterruptError].} =
   raise (ref HttpInterruptError)(msg: "Connection was interrupted")
 
-proc raiseHttpReadError*(msg: string) {.noinline, noreturn.} =
+proc raiseHttpReadError*(msg: string) {.
+     noinline, noreturn, raises: [HttpReadError].} =
   raise (ref HttpReadError)(msg: msg)
 
-proc raiseHttpProtocolError*(msg: string) {.noinline, noreturn.} =
+proc raiseHttpProtocolError*(msg: string) {.
+     noinline, noreturn, raises: [HttpProtocolError].} =
   raise (ref HttpProtocolError)(msg: msg)
 
-proc raiseHttpWriteError*(msg: string) {.noinline, noreturn.} =
+proc raiseHttpWriteError*(msg: string) {.
+     noinline, noreturn, raises: [HttpWriteError].} =
   raise (ref HttpWriteError)(msg: msg)
 
-proc raiseHttpRedirectError*(msg: string) {.noinline, noreturn.} =
+proc raiseHttpRedirectError*(msg: string) {.
+     noinline, noreturn, raises: [HttpRedirectError].} =
   raise (ref HttpRedirectError)(msg: msg)
 
-proc raiseHttpAddressError*(msg: string) {.noinline, noreturn.} =
+proc raiseHttpAddressError*(msg: string) {.
+     noinline, noreturn, raises: [HttpAddressError].} =
   raise (ref HttpAddressError)(msg: msg)
 
 template newHttpInterruptError*(): ref HttpInterruptError =
@@ -168,8 +179,7 @@ template newHttpUseClosedError*(): ref HttpUseClosedError =
   newException(HttpUseClosedError, "Connection was already closed")
 
 iterator queryParams*(query: string,
-                      flags: set[QueryParamsFlag] = {}): KeyValueTuple {.
-         raises: [].} =
+                      flags: set[QueryParamsFlag] = {}): KeyValueTuple =
   ## Iterate over url-encoded query string.
   for pair in query.split('&'):
     let items = pair.split('=', maxsplit = 1)
@@ -182,9 +192,9 @@ iterator queryParams*(query: string,
       else:
         yield (decodeUrl(k), decodeUrl(v))
 
-func getTransferEncoding*(ch: openArray[string]): HttpResult[
-                                                  set[TransferEncodingFlags]] {.
-     raises: [].} =
+func getTransferEncoding*(
+       ch: openArray[string]
+     ): HttpResult[set[TransferEncodingFlags]] =
   ## Parse value of multiple HTTP headers ``Transfer-Encoding`` and return
   ## it as set of ``TransferEncodingFlags``.
   var res: set[TransferEncodingFlags] = {}
@@ -213,9 +223,9 @@ func getTransferEncoding*(ch: openArray[string]): HttpResult[
           return err("Incorrect Transfer-Encoding value")
     ok(res)
 
-func getContentEncoding*(ch: openArray[string]): HttpResult[
-                                                   set[ContentEncodingFlags]] {.
-     raises: [].} =
+func getContentEncoding*(
+       ch: openArray[string]
+     ): HttpResult[set[ContentEncodingFlags]] =
   ## Parse value of multiple HTTP headers ``Content-Encoding`` and return
   ## it as set of ``ContentEncodingFlags``.
   var res: set[ContentEncodingFlags] = {}
@@ -244,8 +254,7 @@ func getContentEncoding*(ch: openArray[string]): HttpResult[
           return err("Incorrect Content-Encoding value")
     ok(res)
 
-func getContentType*(ch: openArray[string]): HttpResult[ContentTypeData]  {.
-     raises: [].} =
+func getContentType*(ch: openArray[string]): HttpResult[ContentTypeData] =
   ## Check and prepare value of ``Content-Type`` header.
   if len(ch) == 0:
     err("No Content-Type values found")
