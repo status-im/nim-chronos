@@ -64,7 +64,7 @@ suite "HTTP server testing suite":
   proc testTooBigBodyChunked(operation: TooBigTest): Future[bool] {.async.} =
     var serverRes = false
     proc process(r: RequestFence): Future[HttpResponseRef] {.
-         async.} =
+         async: (raises: [CancelledError, HttpResponseError]).} =
       if r.isOk():
         let request = r.get()
         try:
@@ -128,7 +128,7 @@ suite "HTTP server testing suite":
     proc testTimeout(): Future[bool] {.async.} =
       var serverRes = false
       proc process(r: RequestFence): Future[HttpResponseRef] {.
-           async.} =
+           async: (raises: [CancelledError, HttpResponseError]).} =
         if r.isOk():
           let request = r.get()
           return await request.respond(Http200, "TEST_OK", HttpTable.init())
@@ -158,7 +158,7 @@ suite "HTTP server testing suite":
     proc testEmpty(): Future[bool] {.async.} =
       var serverRes = false
       proc process(r: RequestFence): Future[HttpResponseRef] {.
-           async.} =
+           async: (raises: [CancelledError, HttpResponseError]).} =
         if r.isOk():
           let request = r.get()
           return await request.respond(Http200, "TEST_OK", HttpTable.init())
@@ -188,7 +188,7 @@ suite "HTTP server testing suite":
     proc testTooBig(): Future[bool] {.async.} =
       var serverRes = false
       proc process(r: RequestFence): Future[HttpResponseRef] {.
-           async.} =
+           async: (raises: [CancelledError, HttpResponseError]).} =
         if r.isOk():
           let request = r.get()
           return await request.respond(Http200, "TEST_OK", HttpTable.init())
@@ -219,7 +219,7 @@ suite "HTTP server testing suite":
     proc testTooBigBody(): Future[bool] {.async.} =
       var serverRes = false
       proc process(r: RequestFence): Future[HttpResponseRef] {.
-           async.} =
+           async: (raises: [CancelledError, HttpResponseError]).} =
         if r.isOk():
           discard
         else:
@@ -266,7 +266,7 @@ suite "HTTP server testing suite":
     proc testQuery(): Future[bool] {.async.} =
       var serverRes = false
       proc process(r: RequestFence): Future[HttpResponseRef] {.
-           async.} =
+           async: (raises: [CancelledError, HttpResponseError]).} =
         if r.isOk():
           let request = r.get()
           var kres = newSeq[string]()
@@ -307,7 +307,7 @@ suite "HTTP server testing suite":
     proc testHeaders(): Future[bool] {.async.} =
       var serverRes = false
       proc process(r: RequestFence): Future[HttpResponseRef] {.
-           async.} =
+           async: (raises: [CancelledError, HttpResponseError]).} =
         if r.isOk():
           let request = r.get()
           var kres = newSeq[string]()
@@ -351,7 +351,7 @@ suite "HTTP server testing suite":
     proc testPostUrl(): Future[bool] {.async.} =
       var serverRes = false
       proc process(r: RequestFence): Future[HttpResponseRef] {.
-           async.} =
+           async: (raises: [CancelledError, HttpResponseError]).} =
         if r.isOk():
           var kres = newSeq[string]()
           let request = r.get()
@@ -395,7 +395,7 @@ suite "HTTP server testing suite":
     proc testPostUrl2(): Future[bool] {.async.} =
       var serverRes = false
       proc process(r: RequestFence): Future[HttpResponseRef] {.
-           async.} =
+           async: (raises: [CancelledError, HttpResponseError]).} =
         if r.isOk():
           var kres = newSeq[string]()
           let request = r.get()
@@ -440,7 +440,7 @@ suite "HTTP server testing suite":
     proc testPostMultipart(): Future[bool] {.async.} =
       var serverRes = false
       proc process(r: RequestFence): Future[HttpResponseRef] {.
-           async.} =
+           async: (raises: [CancelledError, HttpResponseError]).} =
         if r.isOk():
           var kres = newSeq[string]()
           let request = r.get()
@@ -496,7 +496,7 @@ suite "HTTP server testing suite":
     proc testPostMultipart2(): Future[bool] {.async.} =
       var serverRes = false
       proc process(r: RequestFence): Future[HttpResponseRef] {.
-           async.} =
+           async: (raises: [CancelledError, HttpResponseError]).} =
         if r.isOk():
           var kres = newSeq[string]()
           let request = r.get()
@@ -565,7 +565,8 @@ suite "HTTP server testing suite":
       var eventContinue = newAsyncEvent()
       var count = 0
 
-      proc process(r: RequestFence): Future[HttpResponseRef] {.async.} =
+      proc process(r: RequestFence): Future[HttpResponseRef] {.
+           async: (raises: [CancelledError, HttpResponseError]).} =
         if r.isOk():
           let request = r.get()
           inc(count)
@@ -1229,7 +1230,7 @@ suite "HTTP server testing suite":
     proc testPostMultipart2(): Future[bool] {.async.} =
       var serverRes = false
       proc process(r: RequestFence): Future[HttpResponseRef] {.
-           async.} =
+           async: (raises: [CancelledError, HttpResponseError]).} =
         if r.isOk():
           let request = r.get()
           let response = request.getResponse()
@@ -1304,7 +1305,8 @@ suite "HTTP server testing suite":
        {}, false, "close")
     ]
 
-    proc process(r: RequestFence): Future[HttpResponseRef] {.async.} =
+    proc process(r: RequestFence): Future[HttpResponseRef] {.
+         async: (raises: [CancelledError, HttpResponseError]).} =
       if r.isOk():
         let request = r.get()
         return await request.respond(Http200, "TEST_OK", HttpTable.init())
@@ -1357,7 +1359,8 @@ suite "HTTP server testing suite":
       TestsCount = 10
       TestRequest = "GET /httpdebug HTTP/1.1\r\nConnection: keep-alive\r\n\r\n"
 
-    proc process(r: RequestFence): Future[HttpResponseRef] {.async.} =
+    proc process(r: RequestFence): Future[HttpResponseRef] {.
+         async: (raises: [CancelledError, HttpResponseError]).} =
       if r.isOk():
         let request = r.get()
         return await request.respond(Http200, "TEST_OK", HttpTable.init())
