@@ -22,7 +22,7 @@ jobs:
         with:
           crate: mdbook
           use-tool-cache: true
-          version: "0.4.35"
+          version: "0.4.36"
       - uses: actions-rs/install@v0.1
         with:
           crate: mdbook-toc
@@ -37,7 +37,7 @@ jobs:
         with:
           crate: mdbook-admonish
           use-tool-cache: true
-          version: "1.13.1"
+          version: "1.14.0"
 
       - uses: jiro4989/setup-nim-action@v1
         with:

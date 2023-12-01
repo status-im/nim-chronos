@@ -1,5 +1,5 @@
 - [Introduction](./introduction.md)
-- [Getting started](./getting_started.md)
+- [Examples](./examples.md)
 
 # User guide
 
@@ -8,3 +8,7 @@
 - [Errors and exceptions](./error_handling.md)
 - [Tips, tricks and best practices](./tips.md)
 - [Porting code to `chronos`](./porting.md)
+
+# Developer guide
+
+- [Updating this book](./book.md)
