@@ -63,18 +63,22 @@ type
   HttpResponseState* {.pure.} = enum
     Empty, Prepared, Sending, Finished, Failed, Cancelled, Default
 
-  HttpProcessCallback* =
+  # TODO Evaluate naming of raises-annotated callbacks
+  HttpProcessCallback2* =
     proc(req: RequestFence): Future[HttpResponseRef] {.
-      async: (raises: [CancelledError, HttpResponseError]), gcsafe.}
+      async: (raises: [CancelledError, HttpResponseError]).}
+
+  HttpProcessCallback* {.deprecated.} =
+    proc(req: RequestFence): Future[HttpResponseRef] {.async.}
 
   HttpConnectionCallback* =
     proc(server: HttpServerRef,
          transp: StreamTransport): Future[HttpConnectionRef] {.
-      async: (raises: [CancelledError, HttpConnectionError]), gcsafe.}
+      async: (raises: [CancelledError, HttpConnectionError]).}
 
   HttpCloseConnectionCallback* =
     proc(connection: HttpConnectionRef): Future[void] {.
-      async: (raises: []), gcsafe.}
+      async: (raises: []).}
 
   HttpConnectionHolder* = object of RootObj
     connection*: HttpConnectionRef
@@ -103,7 +107,7 @@ type
     bufferSize*: int
     maxHeadersSize*: int
     maxRequestBodySize*: int
-    processCallback*: HttpProcessCallback
+    processCallback*: HttpProcessCallback2
     createConnCallback*: HttpConnectionCallback
 
   HttpServerRef* = ref HttpServer
@@ -182,7 +186,7 @@ proc createConnection(server: HttpServerRef,
 
 proc new*(htype: typedesc[HttpServerRef],
           address: TransportAddress,
-          processCallback: HttpProcessCallback,
+          processCallback: HttpProcessCallback2,
           serverFlags: set[HttpServerFlags] = {},
           socketFlags: set[ServerFlags] = {ReuseAddr},
           serverUri = Uri(),
@@ -235,6 +239,49 @@ proc new*(htype: typedesc[HttpServerRef],
     connections: initOrderedTable[string, HttpConnectionHolderRef]()
   )
   ok(res)
+
+proc new*(htype: typedesc[HttpServerRef],
+          address: TransportAddress,
+          processCallback: HttpProcessCallback,
+          serverFlags: set[HttpServerFlags] = {},
+          socketFlags: set[ServerFlags] = {ReuseAddr},
+          serverUri = Uri(),
+          serverIdent = "",
+          maxConnections: int = -1,
+          bufferSize: int = 4096,
+          backlogSize: int = DefaultBacklogSize,
+          httpHeadersTimeout = 10.seconds,
+          maxHeadersSize: int = 8192,
+          maxRequestBodySize: int = 1_048_576,
+          dualstack = DualStackType.Auto): HttpResult[HttpServerRef] {.
+          deprecated: "raises missing from process callback".} =
+
+  proc processCallback2(req: RequestFence): Future[HttpResponseRef] {.
+      async: (raises: [CancelledError, HttpResponseError]).} =
+      try:
+        await processCallback(req)
+      except CancelledError as exc:
+        raise exc
+      except HttpResponseError as exc:
+        raise exc
+      except CatchableError as exc:
+        # Emulate 3.x behavior
+        raise (ref HttpCriticalError)(msg: exc.msg, code: Http503)
+
+  HttpServerRef.new(
+    address = address,
+    processCallback = processCallback2,
+    serverFlags = serverFlags,
+    socketFlags = socketFlags,
+    serverUri = serverUri,
+    serverIdent = serverIdent,
+    maxConnections = maxConnections,
+    bufferSize = bufferSize,
+    backlogSize = backlogSize,
+    httpHeadersTimeout = httpHeadersTimeout,
+    maxHeadersSize = maxHeadersSize,
+    maxRequestBodySize = maxRequestBodySize,
+    dualstack = dualstack)
 
 proc getServerFlags(req: HttpRequestRef): set[HttpServerFlags] =
   var defaultFlags: set[HttpServerFlags] = {}
