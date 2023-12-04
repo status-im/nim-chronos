@@ -253,7 +253,8 @@ proc new*(htype: typedesc[HttpServerRef],
           httpHeadersTimeout = 10.seconds,
           maxHeadersSize: int = 8192,
           maxRequestBodySize: int = 1_048_576,
-          dualstack = DualStackType.Auto): HttpResult[HttpServerRef] {.deprecated.} =
+          dualstack = DualStackType.Auto): HttpResult[HttpServerRef] {.
+          deprecated: "raises missing from process callback".} =
 
   proc processCallback2(req: RequestFence): Future[HttpResponseRef] {.
       async: (raises: [CancelledError, HttpResponseError]).} =

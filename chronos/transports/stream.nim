@@ -2125,7 +2125,7 @@ proc createStreamServer*(host: TransportAddress,
                          udata: pointer = nil,
                          dualstack = DualStackType.Auto): StreamServer {.
     raises: [TransportOsError].} =
-  createStreamServer(host, StreamCallback(nil), flags, sock, backlog, bufferSize,
+  createStreamServer(host, StreamCallback2(nil), flags, sock, backlog, bufferSize,
                      child, init, cast[pointer](udata), dualstack)
 
 proc createStreamServer*[T](host: TransportAddress,
