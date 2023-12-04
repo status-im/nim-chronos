@@ -115,14 +115,15 @@ else:
         discard
 
 type
-  StreamCallback* = proc(server: StreamServer,
-                         client: StreamTransport) {.async: (raises: []).}
+  # TODO evaluate naming of raises-annotated callbacks
+  StreamCallback2* = proc(server: StreamServer,
+                          client: StreamTransport) {.async: (raises: []).}
     ## New remote client connection callback
     ## ``server`` - StreamServer object.
     ## ``client`` - accepted client transport.
 
-  UnsafeStreamCallback* = proc(server: StreamServer,
-                               client: StreamTransport) {.async.}
+  StreamCallback* = proc(server: StreamServer,
+                         client: StreamTransport) {.async.}
     ## Connection callback that doesn't check for exceptions at compile time
     ## ``server`` - StreamServer object.
     ## ``client`` - accepted client transport.
@@ -135,7 +136,7 @@ type
 
   StreamServer* = ref object of SocketServer
     ## StreamServer object
-    function*: StreamCallback         # callback which will be called after new
+    function*: StreamCallback2         # callback which will be called after new
                                       # client accepted
     init*: TransportInitCallback      # callback which will be called before
                                       # transport for new client
@@ -1870,7 +1871,7 @@ proc getBacklogSize(backlog: int): cint =
     cint(backlog)
 
 proc createStreamServer*(host: TransportAddress,
-                         cbproc: StreamCallback,
+                         cbproc: StreamCallback2,
                          flags: set[ServerFlags] = {},
                          sock: AsyncFD = asyncInvalidSocket,
                          backlog: int = DefaultBacklogSize,
@@ -2092,7 +2093,7 @@ proc createStreamServer*(host: TransportAddress,
   sres
 
 proc createStreamServer*(host: TransportAddress,
-                         cbproc: UnsafeStreamCallback,
+                         cbproc: StreamCallback,
                          flags: set[ServerFlags] = {},
                          sock: AsyncFD = asyncInvalidSocket,
                          backlog: int = DefaultBacklogSize,
@@ -2128,7 +2129,7 @@ proc createStreamServer*(host: TransportAddress,
                      child, init, cast[pointer](udata), dualstack)
 
 proc createStreamServer*[T](host: TransportAddress,
-                            cbproc: StreamCallback,
+                            cbproc: StreamCallback2,
                             flags: set[ServerFlags] = {},
                             udata: ref T,
                             sock: AsyncFD = asyncInvalidSocket,
@@ -2144,7 +2145,7 @@ proc createStreamServer*[T](host: TransportAddress,
                      child, init, cast[pointer](udata), dualstack)
 
 proc createStreamServer*[T](host: TransportAddress,
-                            cbproc: UnsafeStreamCallback,
+                            cbproc: StreamCallback,
                             flags: set[ServerFlags] = {},
                             udata: ref T,
                             sock: AsyncFD = asyncInvalidSocket,
@@ -2172,7 +2173,7 @@ proc createStreamServer*[T](host: TransportAddress,
     raises: [TransportOsError].} =
   var fflags = flags + {GCUserData}
   GC_ref(udata)
-  createStreamServer(host, StreamCallback(nil), fflags, sock, backlog, bufferSize,
+  createStreamServer(host, StreamCallback2(nil), fflags, sock, backlog, bufferSize,
                      child, init, cast[pointer](udata), dualstack)
 
 proc getUserData*[T](server: StreamServer): T {.inline.} =
