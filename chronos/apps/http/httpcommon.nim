@@ -150,9 +150,9 @@ proc raiseHttpRequestBodyTooLargeError*() {.
   raise (ref HttpRequestBodyTooLargeError)(
     code: Http413, msg: MaximumBodySizeError)
 
-# proc raiseHttpCriticalError*(msg: string, code = Http400) {.
-#      noinline, noreturn, raises: [HttpCriticalError].} =
-#   raise (ref HttpCriticalError)(code: code, msg: msg)
+proc raiseHttpCriticalError*(msg: string, code = Http400) {.
+     noinline, noreturn, raises: [HttpCriticalError].} =
+  raise (ref HttpCriticalError)(code: code, msg: msg)
 
 proc raiseHttpDisconnectError*() {.
      noinline, noreturn, raises: [HttpDisconnectError].} =
