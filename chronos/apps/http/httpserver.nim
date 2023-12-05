@@ -44,7 +44,6 @@ type
     remote*: Opt[TransportAddress]
 
   ConnectionFence* = Result[HttpConnectionRef, HttpProcessError]
-  ResponseFence* = Result[HttpResponseRef, HttpProcessError]
   RequestFence* = Result[HttpRequestRef, HttpProcessError]
 
   HttpRequestFlags* {.pure.} = enum
@@ -951,17 +950,6 @@ proc processRequest(server: HttpServerRef,
   finally:
     if requestFence.isOk():
       await requestFence.get().closeWait()
-
-proc getResponseFence*(server: HttpServerRef,
-                       connFence: ConnectionFence): Future[ResponseFence] {.
-     async: (raises: []).} =
-  doAssert(connFence.isErr())
-  try:
-    let res = await server.processCallback(RequestFence.err(connFence.error))
-    ResponseFence.ok(res)
-  except CancelledError:
-    ResponseFence.err(HttpProcessError.init(
-      HttpServerError.InterruptError))
 
 proc processLoop(holder: HttpConnectionHolderRef) {.async: (raises: []).} =
   let
