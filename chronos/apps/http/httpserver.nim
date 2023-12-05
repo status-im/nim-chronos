@@ -105,7 +105,7 @@ type
     bufferSize*: int
     maxHeadersSize*: int
     maxRequestBodySize*: int
-    processCallback*: HttpProcessCallback
+    processCallback*: HttpProcessCallback2
     createConnCallback*: HttpConnectionCallback
 
   HttpServerRef* = ref HttpServer
