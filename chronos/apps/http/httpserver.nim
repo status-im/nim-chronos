@@ -63,11 +63,11 @@ type
 
   HttpProcessCallback* =
     proc(req: RequestFence): Future[HttpResponseRef] {.
-      async: (raises: [CancelledError]), gcsafe.}
-
-  UnsafeHttpProcessCallback* =
-    proc(req: RequestFence): Future[HttpResponseRef] {.
       gcsafe, raises: [].}
+
+  HttpProcessCallback2* =
+    proc(req: RequestFence): Future[HttpResponseRef] {.
+      async: (raises: [CancelledError]).}
 
   HttpConnectionCallback* =
     proc(server: HttpServerRef,
@@ -190,7 +190,7 @@ proc createConnection(server: HttpServerRef,
 
 proc new*(htype: typedesc[HttpServerRef],
           address: TransportAddress,
-          processCallback: HttpProcessCallback,
+          processCallback: HttpProcessCallback2,
           serverFlags: set[HttpServerFlags] = {},
           socketFlags: set[ServerFlags] = {ReuseAddr},
           serverUri = Uri(),
@@ -246,7 +246,7 @@ proc new*(htype: typedesc[HttpServerRef],
 
 proc new*(htype: typedesc[HttpServerRef],
           address: TransportAddress,
-          processCallback: UnsafeHttpProcessCallback,
+          processCallback: HttpProcessCallback,
           serverFlags: set[HttpServerFlags] = {},
           socketFlags: set[ServerFlags] = {ReuseAddr},
           serverUri = Uri(),
