@@ -108,15 +108,18 @@ suite "Secure HTTP server testing suite":
     proc testHTTPS(address: TransportAddress): Future[bool] {.async.} =
       var serverRes = false
       proc process(r: RequestFence): Future[HttpResponseRef] {.
-           async: (raises: [CancelledError, HttpResponseError]).} =
+           async: (raises: [CancelledError]).} =
         if r.isOk():
           let request = r.get()
           serverRes = true
-          return await request.respond(Http200, "TEST_OK:" & $request.meth,
-                                       HttpTable.init())
+          try:
+            await request.respond(Http200, "TEST_OK:" & $request.meth,
+                                  HttpTable.init())
+          except HttpWriteError as exc:
+            serverRes = false
+            defaultResponse(exc)
         else:
-          serverRes = false
-          return defaultResponse()
+          defaultResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
       let serverFlags = {Secure}
@@ -146,16 +149,18 @@ suite "Secure HTTP server testing suite":
       var serverRes = false
       var testFut = newFuture[void]()
       proc process(r: RequestFence): Future[HttpResponseRef] {.
-           async: (raises: [CancelledError, HttpResponseError]).} =
+           async: (raises: [CancelledError]).} =
         if r.isOk():
           let request = r.get()
-          serverRes = false
-          return await request.respond(Http200, "TEST_OK:" & $request.meth,
-                                       HttpTable.init())
+          try:
+            await request.respond(Http200, "TEST_OK:" & $request.meth,
+                                  HttpTable.init())
+          except HttpWriteError as exc:
+            defaultResponse(exc)
         else:
           serverRes = true
           testFut.complete()
-          return defaultResponse()
+          defaultResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
       let serverFlags = {Secure}

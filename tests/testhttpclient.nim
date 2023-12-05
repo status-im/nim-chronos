@@ -85,7 +85,7 @@ suite "HTTP client testing suite":
     res
 
   proc createServer(address: TransportAddress,
-                    process: HttpProcessCallback2, secure: bool): HttpServerRef =
+                    process: HttpProcessCallback, secure: bool): HttpServerRef =
     let
       socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
       serverFlags = {HttpServerFlags.Http11Pipeline}

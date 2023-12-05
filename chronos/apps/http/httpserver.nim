@@ -106,7 +106,7 @@ type
     bufferSize*: int
     maxHeadersSize*: int
     maxRequestBodySize*: int
-    processCallback*: HttpProcessCallback2
+    processCallback*: HttpProcessCallback
     createConnCallback*: HttpConnectionCallback
 
   HttpServerRef* = ref HttpServer
@@ -191,7 +191,7 @@ proc createConnection(server: HttpServerRef,
 
 proc new*(htype: typedesc[HttpServerRef],
           address: TransportAddress,
-          processCallback: HttpProcessCallback2,
+          processCallback: HttpProcessCallback,
           serverFlags: set[HttpServerFlags] = {},
           socketFlags: set[ServerFlags] = {ReuseAddr},
           serverUri = Uri(),

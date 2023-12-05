@@ -82,7 +82,7 @@ proc createSecConnection(server: HttpServerRef,
 
 proc new*(htype: typedesc[SecureHttpServerRef],
           address: TransportAddress,
-          processCallback: HttpProcessCallback2,
+          processCallback: HttpProcessCallback,
           tlsPrivateKey: TLSPrivateKey,
           tlsCertificate: TLSCertificate,
           serverFlags: set[HttpServerFlags] = {},
@@ -148,7 +148,7 @@ proc new*(htype: typedesc[SecureHttpServerRef],
 
 proc new*(htype: typedesc[SecureHttpServerRef],
           address: TransportAddress,
-          processCallback: HttpProcessCallback,
+          processCallback: UnsafeHttpProcessCallback,
           tlsPrivateKey: TLSPrivateKey,
           tlsCertificate: TLSCertificate,
           serverFlags: set[HttpServerFlags] = {},
@@ -164,22 +164,21 @@ proc new*(htype: typedesc[SecureHttpServerRef],
           maxRequestBodySize: int = 1_048_576,
           dualstack = DualStackType.Auto
          ): HttpResult[SecureHttpServerRef] {.
-         deprecated: "raises missing from process callback".} =
-  proc processCallback2(req: RequestFence): Future[HttpResponseRef] {.
-      async: (raises: [CancelledError, HttpResponseError]).} =
-      try:
-        await processCallback(req)
-      except CancelledError as exc:
-        raise exc
-      except HttpResponseError as exc:
-        raise exc
-      except CatchableError as exc:
-        # Emulate 3.x behavior
-        raise (ref HttpCriticalError)(msg: exc.msg, code: Http503)
+     deprecated: "Callback could raise only CancelledError, annotate with " &
+                 "{.async: (raises: [CancelledError]).}".} =
+
+  proc wrap(req: RequestFence): Future[HttpResponseRef] {.
+       async: (raises: [CancelledError]).} =
+    try:
+      await processCallback(req)
+    except CancelledError as exc:
+      raise exc
+    except CatchableError as exc:
+      defaultResponse(exc)
 
   SecureHttpServerRef.new(
     address = address,
-    processCallback = processCallback2,
+    processCallback = wrap,
     tlsPrivateKey = tlsPrivateKey,
     tlsCertificate = tlsCertificate,
     serverFlags = serverFlags,
