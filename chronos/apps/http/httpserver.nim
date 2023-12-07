@@ -136,7 +136,7 @@ type
     headersTable: HttpTable
     body: seq[byte]
     flags: set[HttpResponseFlags]
-    state: HttpResponseState
+    state*: HttpResponseState # TODO (cheatfate): Make this field private
     connection*: HttpConnectionRef
     streamType*: HttpResponseStreamType
     writer: AsyncStreamWriter
