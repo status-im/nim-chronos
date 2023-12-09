@@ -43,30 +43,48 @@ const
   ServerHeader* = "server"
   LocationHeader* = "location"
   AuthorizationHeader* = "authorization"
+  ContentDispositionHeader* = "content-disposition"
 
   UrlEncodedContentType* = MediaType.init("application/x-www-form-urlencoded")
   MultipartContentType* = MediaType.init("multipart/form-data")
 
 type
+  HttpMessage* = object
+    code*: HttpCode
+    contentType*: MediaType
+    message*: string
+
   HttpResult*[T] = Result[T, string]
   HttpResultCode*[T] = Result[T, HttpCode]
+  HttpResultMessage*[T] = Result[T, HttpMessage]
 
-  HttpDefect* = object of Defect
   HttpError* = object of AsyncError
-  HttpResponseError* = object of HttpError
-    code*: HttpCode
-  HttpCriticalError* = object of HttpResponseError
-  HttpRecoverableError* = object of HttpResponseError
-  HttpDisconnectError* = object of HttpError
-  HttpConnectionError* = object of HttpError
   HttpInterruptError* = object of HttpError
-  HttpReadError* = object of HttpError
-  HttpWriteError* = object of HttpError
-  HttpProtocolError* = object of HttpError
-  HttpRedirectError* = object of HttpError
-  HttpAddressError* = object of HttpError
-  HttpUseClosedError* = object of HttpError
+
+  HttpTransportError* = object of HttpError
+  HttpAddressError* = object of HttpTransportError
+  HttpRedirectError* = object of HttpTransportError
+  HttpConnectionError* = object of HttpTransportError
+  HttpReadError* = object of HttpTransportError
   HttpReadLimitError* = object of HttpReadError
+  HttpDisconnectError* = object of HttpReadError
+  HttpWriteError* = object of HttpTransportError
+
+  HttpProtocolError* = object of HttpError
+    code*: HttpCode
+
+  HttpCriticalError* = object of HttpProtocolError # deprecated
+  HttpRecoverableError* = object of HttpProtocolError # deprecated
+
+  HttpRequestError* = object of HttpProtocolError
+  HttpRequestHeadersError* = object of HttpRequestError
+  HttpRequestBodyError* = object of HttpRequestError
+  HttpRequestHeadersTooLargeError* = object of HttpRequestHeadersError
+  HttpRequestBodyTooLargeError* = object of HttpRequestBodyError
+  HttpResponseError* = object of HttpProtocolError
+
+  HttpInvalidUsageError* = object of HttpError
+  HttpUseClosedError* = object of HttpInvalidUsageError
 
   KeyValueTuple* = tuple
     key: string
@@ -127,6 +145,11 @@ func toString*(error: HttpAddressErrorType): string =
   of HttpAddressErrorType.NoAddressResolved:
     "No address has been resolved"
 
+proc raiseHttpRequestBodyTooLargeError*() {.
+     noinline, noreturn, raises: [HttpRequestBodyTooLargeError].} =
+  raise (ref HttpRequestBodyTooLargeError)(
+    code: Http413, msg: MaximumBodySizeError)
+
 proc raiseHttpCriticalError*(msg: string, code = Http400) {.
      noinline, noreturn, raises: [HttpCriticalError].} =
   raise (ref HttpCriticalError)(code: code, msg: msg)
@@ -134,9 +157,6 @@ proc raiseHttpCriticalError*(msg: string, code = Http400) {.
 proc raiseHttpDisconnectError*() {.
      noinline, noreturn, raises: [HttpDisconnectError].} =
   raise (ref HttpDisconnectError)(msg: "Remote peer disconnected")
-
-proc raiseHttpDefect*(msg: string) {.noinline, noreturn.} =
-  raise (ref HttpDefect)(msg: msg)
 
 proc raiseHttpConnectionError*(msg: string) {.
      noinline, noreturn, raises: [HttpConnectionError].} =
@@ -152,7 +172,15 @@ proc raiseHttpReadError*(msg: string) {.
 
 proc raiseHttpProtocolError*(msg: string) {.
      noinline, noreturn, raises: [HttpProtocolError].} =
-  raise (ref HttpProtocolError)(msg: msg)
+  raise (ref HttpProtocolError)(code: Http400, msg: msg)
+
+proc raiseHttpProtocolError*(code: HttpCode, msg: string) {.
+     noinline, noreturn, raises: [HttpProtocolError].} =
+  raise (ref HttpProtocolError)(code: code, msg: msg)
+
+proc raiseHttpProtocolError*(msg: HttpMessage) {.
+     noinline, noreturn, raises: [HttpProtocolError].} =
+  raise (ref HttpProtocolError)(code: msg.code, msg: msg.message)
 
 proc raiseHttpWriteError*(msg: string) {.
      noinline, noreturn, raises: [HttpWriteError].} =
@@ -177,6 +205,23 @@ template newHttpWriteError*(message: string): ref HttpWriteError =
 
 template newHttpUseClosedError*(): ref HttpUseClosedError =
   newException(HttpUseClosedError, "Connection was already closed")
+
+func init*(t: typedesc[HttpMessage], code: HttpCode, message: string,
+           contentType: MediaType): HttpMessage =
+  HttpMessage(code: code, message: message, contentType: contentType)
+
+func init*(t: typedesc[HttpMessage], code: HttpCode, message: string,
+           contentType: string): HttpMessage =
+  HttpMessage(code: code, message: message,
+              contentType: MediaType.init(contentType))
+
+func init*(t: typedesc[HttpMessage], code: HttpCode,
+           message: string): HttpMessage =
+  HttpMessage(code: code, message: message,
+              contentType: MediaType.init("text/plain"))
+
+func init*(t: typedesc[HttpMessage], code: HttpCode): HttpMessage =
+  HttpMessage(code: code)
 
 iterator queryParams*(query: string,
                       flags: set[QueryParamsFlag] = {}): KeyValueTuple =
