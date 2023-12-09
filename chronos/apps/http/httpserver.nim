@@ -107,6 +107,7 @@ type
     maxRequestBodySize*: int
     processCallback*: HttpProcessCallback2
     createConnCallback*: HttpConnectionCallback
+    middlewares: seq[HttpProcessCallback2]
 
   HttpServerRef* = ref HttpServer
 
@@ -158,6 +159,16 @@ type
 
   HttpConnectionRef* = ref HttpConnection
 
+  MiddlewareHandleCallback* = proc(
+    middleware: HttpServerMiddlewareRef, request: RequestFence,
+    handler: HttpProcessCallback2): Future[HttpResponseRef] {.
+      async: (raises: [CancelledError]).}
+
+  HttpServerMiddleware* = object of RootObj
+    handler*: MiddlewareHandleCallback
+
+  HttpServerMiddlewareRef* = ref HttpServerMiddleware
+
   ByteChar* = string | seq[byte]
 
 proc init(htype: typedesc[HttpProcessError], error: HttpServerError,
@@ -188,20 +199,54 @@ proc createConnection(server: HttpServerRef,
                       transp: StreamTransport): Future[HttpConnectionRef] {.
      async: (raises: [CancelledError, HttpConnectionError]).}
 
-proc new*(htype: typedesc[HttpServerRef],
-          address: TransportAddress,
-          processCallback: HttpProcessCallback2,
-          serverFlags: set[HttpServerFlags] = {},
-          socketFlags: set[ServerFlags] = {ReuseAddr},
-          serverUri = Uri(),
-          serverIdent = "",
-          maxConnections: int = -1,
-          bufferSize: int = 4096,
-          backlogSize: int = DefaultBacklogSize,
-          httpHeadersTimeout = 10.seconds,
-          maxHeadersSize: int = 8192,
-          maxRequestBodySize: int = 1_048_576,
-          dualstack = DualStackType.Auto): HttpResult[HttpServerRef] =
+proc prepareMiddlewares(
+       requestProcessCallback: HttpProcessCallback2,
+       middlewares: openArray[HttpServerMiddlewareRef]
+     ): seq[HttpProcessCallback2] =
+  var
+    handlers: seq[HttpProcessCallback2]
+    currentHandler = requestProcessCallback
+
+  if len(middlewares) == 0:
+    return handlers
+
+  let mws = @middlewares
+  handlers = newSeq[HttpProcessCallback2](len(mws))
+
+  for index in countdown(len(mws) - 1, 0):
+    let processor =
+      block:
+        var res: HttpProcessCallback2
+        closureScope:
+          let
+            middleware = mws[index]
+            realHandler = currentHandler
+          res =
+            proc(request: RequestFence): Future[HttpResponseRef] {.
+              async: (raises: [CancelledError]).} =
+              await middleware.handler(middleware, request, realHandler)
+        res
+    handlers[index] = processor
+    currentHandler = processor
+  handlers
+
+proc new*(
+       htype: typedesc[HttpServerRef],
+       address: TransportAddress,
+       processCallback: HttpProcessCallback2,
+       serverFlags: set[HttpServerFlags] = {},
+       socketFlags: set[ServerFlags] = {ReuseAddr},
+       serverUri = Uri(),
+       serverIdent = "",
+       maxConnections: int = -1,
+       bufferSize: int = 4096,
+       backlogSize: int = DefaultBacklogSize,
+       httpHeadersTimeout = 10.seconds,
+       maxHeadersSize: int = 8192,
+       maxRequestBodySize: int = 1_048_576,
+       dualstack = DualStackType.Auto,
+       middlewares: openArray[HttpServerMiddlewareRef] = []
+     ): HttpResult[HttpServerRef] =
 
   let serverUri =
     if len(serverUri.hostname) > 0:
@@ -240,24 +285,28 @@ proc new*(htype: typedesc[HttpServerRef],
     #   else:
     #     nil
     lifetime: newFuture[void]("http.server.lifetime"),
-    connections: initOrderedTable[string, HttpConnectionHolderRef]()
+    connections: initOrderedTable[string, HttpConnectionHolderRef](),
+    middlewares: prepareMiddlewares(processCallback, middlewares)
   )
   ok(res)
 
-proc new*(htype: typedesc[HttpServerRef],
-          address: TransportAddress,
-          processCallback: HttpProcessCallback,
-          serverFlags: set[HttpServerFlags] = {},
-          socketFlags: set[ServerFlags] = {ReuseAddr},
-          serverUri = Uri(),
-          serverIdent = "",
-          maxConnections: int = -1,
-          bufferSize: int = 4096,
-          backlogSize: int = DefaultBacklogSize,
-          httpHeadersTimeout = 10.seconds,
-          maxHeadersSize: int = 8192,
-          maxRequestBodySize: int = 1_048_576,
-          dualstack = DualStackType.Auto): HttpResult[HttpServerRef] {.
+proc new*(
+       htype: typedesc[HttpServerRef],
+       address: TransportAddress,
+       processCallback: HttpProcessCallback,
+       serverFlags: set[HttpServerFlags] = {},
+       socketFlags: set[ServerFlags] = {ReuseAddr},
+       serverUri = Uri(),
+       serverIdent = "",
+       maxConnections: int = -1,
+       bufferSize: int = 4096,
+       backlogSize: int = DefaultBacklogSize,
+       httpHeadersTimeout = 10.seconds,
+       maxHeadersSize: int = 8192,
+       maxRequestBodySize: int = 1_048_576,
+       dualstack = DualStackType.Auto,
+       middlewares: openArray[HttpServerMiddlewareRef] = []
+     ): HttpResult[HttpServerRef] {.
      deprecated: "Callback could raise only CancelledError, annotate with " &
                  "{.async: (raises: [CancelledError]).}".} =
 
@@ -273,7 +322,7 @@ proc new*(htype: typedesc[HttpServerRef],
   HttpServerRef.new(address, wrap, serverFlags, socketFlags, serverUri,
                     serverIdent, maxConnections, bufferSize, backlogSize,
                     httpHeadersTimeout, maxHeadersSize, maxRequestBodySize,
-                    dualstack)
+                    dualstack, middlewares)
 
 proc getServerFlags(req: HttpRequestRef): set[HttpServerFlags] =
   var defaultFlags: set[HttpServerFlags] = {}
@@ -736,16 +785,19 @@ proc sendDefaultResponse(
           # Response was ignored, so we respond with not found.
           await conn.sendErrorResponse(version, Http404,
                                        keepConnection.toBool())
+          response.setResponseState(HttpResponseState.Finished)
           keepConnection
         of HttpResponseState.Prepared:
           # Response was prepared but not sent, so we can respond with some
           # error code
           await conn.sendErrorResponse(HttpVersion11, Http409,
                                        keepConnection.toBool())
+          response.setResponseState(HttpResponseState.Finished)
           keepConnection
         of HttpResponseState.ErrorCode:
           # Response with error code
           await conn.sendErrorResponse(version, response.status, false)
+          response.setResponseState(HttpResponseState.Finished)
           HttpProcessExitType.Immediate
         of HttpResponseState.Sending, HttpResponseState.Failed,
            HttpResponseState.Cancelled:
@@ -755,6 +807,7 @@ proc sendDefaultResponse(
           # Response was ignored, so we respond with not found.
           await conn.sendErrorResponse(version, Http404,
                                        keepConnection.toBool())
+          response.setResponseState(HttpResponseState.Finished)
           keepConnection
         of HttpResponseState.Finished:
           keepConnection
@@ -920,6 +973,14 @@ proc getConnectionFence*(server: HttpServerRef,
     ConnectionFence.err(HttpProcessError.init(
       HttpServerError.DisconnectError, exc, address, Http400))
 
+proc invokeProcessCallback(server: HttpServerRef,
+                           req: RequestFence): Future[HttpResponseRef] {.
+     async: (raw: true, raises: [CancelledError]).} =
+  if len(server.middlewares) > 0:
+    server.middlewares[0](req)
+  else:
+    server.processCallback(req)
+
 proc processRequest(server: HttpServerRef,
                     connection: HttpConnectionRef,
                     connId: string): Future[HttpProcessExitType] {.
@@ -941,7 +1002,7 @@ proc processRequest(server: HttpServerRef,
   try:
     let response =
       try:
-        await connection.server.processCallback(requestFence)
+        await invokeProcessCallback(connection.server, requestFence)
       except CancelledError:
         # Cancelled, exiting
         return HttpProcessExitType.Immediate
@@ -962,7 +1023,7 @@ proc processLoop(holder: HttpConnectionHolderRef) {.async: (raises: []).} =
         if res.isErr():
           if res.error.kind != HttpServerError.InterruptError:
             discard await noCancel(
-              server.processCallback(RequestFence.err(res.error)))
+              invokeProcessCallback(server, RequestFence.err(res.error)))
           server.connections.del(connectionId)
           return
         res.get()
@@ -1160,31 +1221,6 @@ proc post*(req: HttpRequestRef): Future[HttpTable] {.
     elif HttpRequestFlags.UnboundBody in req.requestFlags:
       raiseHttpProtocolError(Http400, "Unsupported request body")
 
-proc setHeader*(resp: HttpResponseRef, key, value: string) =
-  ## Sets value of header ``key`` to ``value``.
-  doAssert(resp.getResponseState() == HttpResponseState.Empty)
-  resp.headersTable.set(key, value)
-
-proc setHeaderDefault*(resp: HttpResponseRef, key, value: string) =
-  ## Sets value of header ``key`` to ``value``, only if header ``key`` is not
-  ## present in the headers table.
-  discard resp.headersTable.hasKeyOrPut(key, value)
-
-proc addHeader*(resp: HttpResponseRef, key, value: string) =
-  ## Adds value ``value`` to header's ``key`` value.
-  doAssert(resp.getResponseState() == HttpResponseState.Empty)
-  resp.headersTable.add(key, value)
-
-proc getHeader*(resp: HttpResponseRef, key: string,
-                default: string = ""): string =
-  ## Returns value of header with name ``name`` or ``default``, if header is
-  ## not present in the table.
-  resp.headersTable.getString(key, default)
-
-proc hasHeader*(resp: HttpResponseRef, key: string): bool =
-  ## Returns ``true`` if header with name ``key`` present in the headers table.
-  key in resp.headersTable
-
 template checkPending(t: untyped) =
   let currentState = t.getResponseState()
   doAssert(currentState == HttpResponseState.Empty,
@@ -1199,9 +1235,40 @@ template checkStreamResponseState(t: untyped) =
            {HttpResponseState.Prepared, HttpResponseState.Sending},
            "Response is in the wrong state")
 
+template checkResponseCanBeModified(t: untyped) =
+  doAssert(t.getResponseState() in
+           {HttpResponseState.Empty, HttpResponseState.ErrorCode},
+           "Response could not be modified at this stage")
+
 template checkPointerLength(t1, t2: untyped) =
   doAssert(not(isNil(t1)), "pbytes must not be nil")
   doAssert(t2 >= 0, "nbytes should be bigger or equal to zero")
+
+proc setHeader*(resp: HttpResponseRef, key, value: string) =
+  ## Sets value of header ``key`` to ``value``.
+  checkResponseCanBeModified(resp)
+  resp.headersTable.set(key, value)
+
+proc setHeaderDefault*(resp: HttpResponseRef, key, value: string) =
+  ## Sets value of header ``key`` to ``value``, only if header ``key`` is not
+  ## present in the headers table.
+  checkResponseCanBeModified(resp)
+  discard resp.headersTable.hasKeyOrPut(key, value)
+
+proc addHeader*(resp: HttpResponseRef, key, value: string) =
+  ## Adds value ``value`` to header's ``key`` value.
+  checkResponseCanBeModified(resp)
+  resp.headersTable.add(key, value)
+
+proc getHeader*(resp: HttpResponseRef, key: string,
+                default: string = ""): string =
+  ## Returns value of header with name ``name`` or ``default``, if header is
+  ## not present in the table.
+  resp.headersTable.getString(key, default)
+
+proc hasHeader*(resp: HttpResponseRef, key: string): bool =
+  ## Returns ``true`` if header with name ``key`` present in the headers table.
+  key in resp.headersTable
 
 func createHeaders(resp: HttpResponseRef): string =
   var answer = $(resp.version) & " " & $(resp.status) & "\r\n"

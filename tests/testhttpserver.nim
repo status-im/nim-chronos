@@ -18,8 +18,15 @@ suite "HTTP server testing suite":
     TooBigTest = enum
       GetBodyTest, ConsumeBodyTest, PostUrlTest, PostMultipartTest
     TestHttpResponse = object
+      status: int
       headers: HttpTable
       data: string
+
+    FirstMiddlewareRef = ref object of HttpServerMiddlewareRef
+      someInteger: int
+
+    SecondMiddlewareRef = ref object of HttpServerMiddlewareRef
+      someString: string
 
   proc httpClient(address: TransportAddress,
                   data: string): Future[string] {.async.} =
@@ -50,7 +57,7 @@ suite "HTTP server testing suite":
     zeroMem(addr buffer[0], len(buffer))
     await transp.readExactly(addr buffer[0], length)
     let data = bytesToString(buffer.toOpenArray(0, length - 1))
-    let headers =
+    let (status, headers) =
       block:
         let resp = parseResponse(hdata, false)
         if resp.failed():
@@ -58,8 +65,38 @@ suite "HTTP server testing suite":
         var res = HttpTable.init()
         for key, value in resp.headers(hdata):
           res.add(key, value)
-        res
-    return TestHttpResponse(headers: headers, data: data)
+        (resp.code, res)
+    TestHttpResponse(status: status, headers: headers, data: data)
+
+  proc httpClient3(address: TransportAddress,
+                   data: string): Future[TestHttpResponse] {.async.} =
+    var
+      transp: StreamTransport
+      buffer = newSeq[byte](4096)
+      sep = @[0x0D'u8, 0x0A'u8, 0x0D'u8, 0x0A'u8]
+    try:
+      transp = await connect(address)
+      if len(data) > 0:
+        let wres = await transp.write(data)
+        if wres != len(data):
+          raise newException(ValueError, "Unable to write full request")
+      let hres = await transp.readUntil(addr buffer[0], len(buffer), sep)
+      var hdata = @buffer
+      hdata.setLen(hres)
+      var rres = bytesToString(await transp.read())
+      let (status, headers) =
+        block:
+          let resp = parseResponse(hdata, false)
+          if resp.failed():
+            raise newException(ValueError, "Unable to decode response headers")
+          var res = HttpTable.init()
+          for key, value in resp.headers(hdata):
+            res.add(key, value)
+          (resp.code, res)
+      TestHttpResponse(status: status, headers: headers, data: rres)
+    finally:
+      if not(isNil(transp)):
+        await closeWait(transp)
 
   proc testTooBigBodyChunked(operation: TooBigTest): Future[bool] {.async.} =
     var serverRes = false
@@ -1487,6 +1524,97 @@ suite "HTTP server testing suite":
     for transpFut in clientFutures:
       pending.add(closeWait(transpFut.read()))
     await allFutures(pending)
+    await server.stop()
+    await server.closeWait()
+
+  asyncTest "HTTP middleware request filtering test":
+    proc init(t: typedesc[FirstMiddlewareRef],
+              data: int): HttpServerMiddlewareRef =
+      proc shandler(middleware: HttpServerMiddlewareRef, reqfence: RequestFence,
+                    handler: HttpProcessCallback2): Future[HttpResponseRef] {.
+           async: (raises: [CancelledError]).} =
+        var mw = FirstMiddlewareRef(middleware)
+        if reqfence.isErr():
+          return await handler(reqfence)
+
+        let request = reqfence.get()
+        if request.uri.path == "/first":
+          try:
+            await request.respond(Http200, $mw.someInteger)
+          except HttpWriteError as exc:
+            defaultResponse(exc)
+        else:
+          await handler(reqfence)
+
+      HttpServerMiddlewareRef(
+        FirstMiddlewareRef(someInteger: data, handler: shandler))
+
+    proc init(t: typedesc[SecondMiddlewareRef],
+              data: string): HttpServerMiddlewareRef =
+      proc shandler(middleware: HttpServerMiddlewareRef, reqfence: RequestFence,
+                    handler: HttpProcessCallback2): Future[HttpResponseRef] {.
+           async: (raises: [CancelledError]).} =
+        var mw = SecondMiddlewareRef(middleware)
+        if reqfence.isErr():
+          return await handler(reqfence)
+
+        let request = reqfence.get()
+        if request.uri.path == "/second":
+          try:
+            await request.respond(Http200, mw.someString)
+          except HttpWriteError as exc:
+            defaultResponse(exc)
+        else:
+          await handler(reqfence)
+
+      HttpServerMiddlewareRef(
+        SecondMiddlewareRef(someString: data, handler: shandler))
+
+    proc process(r: RequestFence): Future[HttpResponseRef] {.
+         async: (raises: [CancelledError]).} =
+      if r.isOk():
+        let request = r.get()
+        if request.uri.path == "/test":
+          try:
+            await request.respond(Http200, "ORIGIN")
+          except HttpWriteError as exc:
+            defaultResponse(exc)
+        else:
+          defaultResponse()
+      else:
+        defaultResponse()
+
+    let middlewares = [FirstMiddlewareRef.init(655370),
+                       SecondMiddlewareRef.init("SECOND")]
+
+    let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
+    let res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
+                                socketFlags = socketFlags,
+                                middlewares = middlewares)
+    check res.isOk()
+
+    let server = res.get()
+    server.start()
+    let
+      address = server.instance.localAddress()
+      req1 = "GET /test HTTP/1.1\r\n\r\n"
+      req2 = "GET /first HTTP/1.1\r\n\r\n"
+      req3 = "GET /second HTTP/1.1\r\n\r\n"
+      req4 = "GET /noway HTTP/1.1\r\n\r\n"
+      resp1 = await httpClient3(address, req1)
+      resp2 = await httpClient3(address, req2)
+      resp3 = await httpClient3(address, req3)
+      resp4 = await httpClient3(address, req4)
+
+    check:
+      resp1.status == 200
+      resp1.data == "ORIGIN"
+      resp2.status == 200
+      resp2.data == "655370"
+      resp3.status == 200
+      resp3.data == "SECOND"
+      resp4.status == 404
+
     await server.stop()
     await server.closeWait()
 
