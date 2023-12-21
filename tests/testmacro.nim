@@ -555,3 +555,27 @@ suite "Exceptions tracking":
         await raiseException()
 
     waitFor(callCatchAll())
+
+  test "Results compatibility":
+    proc returnOk(): Future[Result[int, string]] {.async: (raises: []).} =
+      ok(42)
+
+    proc returnErr(): Future[Result[int, string]] {.async: (raises: []).} =
+      err("failed")
+
+    proc testit(): Future[Result[void, string]] {.async: (raises: []).} =
+      let
+        v = await returnOk()
+
+      check:
+        v.isOk() and v.value() == 42
+
+      let
+        vok = ?v
+      check:
+        vok == 42
+
+      discard ?await returnErr()
+
+    check:
+      waitFor(testit()).error() == "failed"
