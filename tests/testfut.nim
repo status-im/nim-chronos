@@ -1223,11 +1223,11 @@ suite "Future[T] behavior test suite":
   test "location test":
     # WARNING: This test is very sensitive to line numbers and module name.
 
-    proc macroFuture() {.async.} =       # LINE POSITION 1
-      let someVar {.used.} = 5           # LINE POSITION 2
+    proc macroFuture() {.async.} =
+      let someVar {.used.} = 5           # LINE POSITION 1
       let someOtherVar {.used.} = 4
       if true:
-        let otherVar {.used.} = 3
+        let otherVar {.used.} = 3        # LINE POSITION 2
 
     template templateFuture(): untyped =
       newFuture[void]("template")
@@ -1260,8 +1260,8 @@ suite "Future[T] behavior test suite":
         (loc.procedure == procedure)
 
     check:
-      chk(loc10, "testfut.nim", 1226, "macroFuture")
-      chk(loc11, "testfut.nim", 1227, "")
+      chk(loc10, "testfut.nim", 1227, "macroFuture")
+      chk(loc11, "testfut.nim", 1230, "")
       chk(loc20, "testfut.nim", 1239, "template")
       chk(loc21, "testfut.nim", 1242, "")
       chk(loc30, "testfut.nim", 1236, "procedure")

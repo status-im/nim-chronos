@@ -17,11 +17,6 @@ export srcloc
 when chronosStackTrace:
   type StackTrace = string
 
-when chronosStrictException:
-  {.pragma: closureIter, raises: [CatchableError], gcsafe.}
-else:
-  {.pragma: closureIter, raises: [Exception], gcsafe.}
-
 type
   LocationKind* {.pure.} = enum
     Create
@@ -54,7 +49,7 @@ type
     internalState*: FutureState
     internalFlags*: FutureFlags
     internalError*: ref CatchableError ## Stored exception
-    internalClosure*: iterator(f: FutureBase): FutureBase {.closureIter.}
+    internalClosure*: iterator(f: FutureBase): FutureBase {.raises: [], gcsafe.}
 
     when chronosFutureId:
       internalId*: uint

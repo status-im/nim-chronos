@@ -92,7 +92,8 @@ proc new*(htype: typedesc[SecureHttpServerRef],
           backlogSize: int = DefaultBacklogSize,
           httpHeadersTimeout = 10.seconds,
           maxHeadersSize: int = 8192,
-          maxRequestBodySize: int = 1_048_576
+          maxRequestBodySize: int = 1_048_576,
+          dualstack = DualStackType.Auto
          ): HttpResult[SecureHttpServerRef] {.raises: [].} =
 
   doAssert(not(isNil(tlsPrivateKey)), "TLS private key must not be nil!")
@@ -110,7 +111,7 @@ proc new*(htype: typedesc[SecureHttpServerRef],
   let serverInstance =
     try:
       createStreamServer(address, flags = socketFlags, bufferSize = bufferSize,
-                         backlog = backlogSize)
+                         backlog = backlogSize, dualstack = dualstack)
     except TransportOsError as exc:
       return err(exc.msg)
     except CatchableError as exc:

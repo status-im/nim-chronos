@@ -212,6 +212,61 @@ originating from tasks on the dispatcher queue. It is however possible that
 `Defect` that happen in tasks bubble up through `poll` as these are not caught
 by the transformation.
 
+#### Checked exceptions
+
+By specifying a `asyncraises` list to an async procedure, you can check which
+exceptions can be thrown by it.
+```nim
+proc p1(): Future[void] {.async, asyncraises: [IOError].} =
+  assert not (compiles do: raise newException(ValueError, "uh-uh"))
+  raise newException(IOError, "works") # Or any child of IOError
+```
+
+Under the hood, the return type of `p1` will be rewritten to an internal type,
+which will convey raises informations to `await`.
+
+```nim
+proc p2(): Future[void] {.async, asyncraises: [IOError].} =
+  await p1() # Works, because await knows that p1
+             # can only raise IOError
+```
+
+Raw functions and callbacks that don't go through the `async` transformation but
+still return a `Future` and interact with the rest of the framework also need to
+be annotated with `asyncraises` to participate in the checked exception scheme:
+
+```nim
+proc p3(): Future[void] {.async, asyncraises: [IOError].} =
+  let fut: Future[void] = p1() # works
+  assert not compiles(await fut) # await lost informations about raises,
+                                 # so it can raise anything
+  # Callbacks
+  assert not(compiles do: let cb1: proc(): Future[void] = p1) # doesn't work
+  let cb2: proc(): Future[void] {.async, asyncraises: [IOError].} = p1 # works
+  assert not(compiles do:
+    type c = proc(): Future[void] {.async, asyncraises: [IOError, ValueError].}
+    let cb3: c = p1 # doesn't work, the raises must match _exactly_
+  )
+```
+
+When `chronos` performs the `async` transformation, all code is placed in a
+a special `try/except` clause that re-routes exception handling to the `Future`.
+
+Beacuse of this re-routing, functions that return a `Future` instance manually
+never directly raise exceptions themselves - instead, exceptions are handled
+indirectly via `await` or `Future.read`. When writing raw async functions, they
+too must not raise exceptions - instead, they must store exceptions in the
+future they return:
+
+```nim
+proc p4(): Future[void] {.asyncraises: [ValueError].} =
+  let fut = newFuture[void]
+
+  # Equivalent of `raise (ref ValueError)()` in raw async functions:
+  fut.fail((ref ValueError)(msg: "raising in raw async function"))
+  fut
+```
+
 ### Platform independence
 
 Several functions in `chronos` are backed by the operating system, such as
@@ -233,7 +288,7 @@ Because of this, the effect system thinks no exceptions are "leaking" because in
 fact, exception _handling_ is deferred to when the future is being read.
 
 Effectively, this means that while code can be compiled with
-`{.push raises: [Defect]}`, the intended effect propagation and checking is
+`{.push raises: []}`, the intended effect propagation and checking is
 **disabled** for `async` functions.
 
 To enable checking exception effects in `async` code, enable strict mode with
@@ -246,45 +301,64 @@ effects on forward declarations, callbacks and methods using
 
 ### Cancellation support
 
-Any running `Future` can be cancelled. This can be used to launch multiple
-futures, and wait for one of them to finish, and cancel the rest of them,
-to add timeout, or to let the user cancel a running task.
+Any running `Future` can be cancelled. This can be used for timeouts,
+to let a user cancel a running task, to start multiple futures in parallel
+and cancel them as soon as one finishes, etc.
 
 ```nim
-# Simple cancellation
-let future = sleepAsync(10.minutes)
-future.cancel()
+import chronos/apps/http/httpclient
 
-# Wait for cancellation
-let future2 = sleepAsync(10.minutes)
-await future2.cancelAndWait()
+proc cancellationExample() {.async.} =
+  # Simple cancellation
+  let future = sleepAsync(10.minutes)
+  future.cancelSoon()
+  # `cancelSoon` will not wait for the cancellation
+  # to be finished, so the Future could still be
+  # pending at this point.
 
-# Race between futures
-proc retrievePage(uri: string): Future[string] {.async.} =
-  # requires to import uri, chronos/apps/http/httpclient, stew/byteutils
-  let httpSession = HttpSessionRef.new()
-  try:
-    resp = await httpSession.fetch(parseUri(uri))
-    result = string.fromBytes(resp.data)
-  finally:
-    # be sure to always close the session
-    await httpSession.closeWait()
+  # Wait for cancellation
+  let future2 = sleepAsync(10.minutes)
+  await future2.cancelAndWait()
+  # Using `cancelAndWait`, we know that future2 isn't
+  # pending anymore. However, it could have completed
+  # before cancellation happened (in which case, it
+  # will hold a value)
 
-let
-  futs =
-    @[
-      retrievePage("https://duckduckgo.com/?q=chronos"),
-      retrievePage("https://www.google.fr/search?q=chronos")
-    ]
+  # Race between futures
+  proc retrievePage(uri: string): Future[string] {.async.} =
+    let httpSession = HttpSessionRef.new()
+    try:
+      let resp = await httpSession.fetch(parseUri(uri))
+      return bytesToString(resp.data)
+    finally:
+      # be sure to always close the session
+      # `finally` will run also during cancellation -
+      # `noCancel` ensures that `closeWait` doesn't get cancelled
+      await noCancel(httpSession.closeWait())
 
-let finishedFut = await one(futs)
-for fut in futs:
-  if not fut.finished:
-    fut.cancel()
-echo "Result: ", await finishedFut
+  let
+    futs =
+      @[
+        retrievePage("https://duckduckgo.com/?q=chronos"),
+        retrievePage("https://www.google.fr/search?q=chronos")
+      ]
+
+  let finishedFut = await one(futs)
+  for fut in futs:
+    if not fut.finished:
+      fut.cancelSoon()
+  echo "Result: ", await finishedFut
+
+waitFor(cancellationExample())
 ```
 
-When an `await` is cancelled, it will raise a `CancelledError`:
+Even if cancellation is initiated, it is not guaranteed that
+the operation gets cancelled - the future might still be completed
+or fail depending on the ordering of events and the specifics of
+the operation. 
+
+If the future indeed gets cancelled, `await` will raise a 
+`CancelledError` as is likely to happen in the following example:
 ```nim
 proc c1 {.async.} =
   echo "Before sleep"

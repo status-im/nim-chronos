@@ -157,17 +157,15 @@ proc tlsWriteRec(engine: ptr SslEngineContext,
     doAssert(length != 0 and not isNil(buf))
     await writer.wsource.write(buf, int(length))
     sslEngineSendrecAck(engine[], length)
-    return TLSResult.Success
+    TLSResult.Success
   except AsyncStreamError as exc:
     writer.state = AsyncStreamState.Error
     writer.error = exc
-    return TLSResult.Error
+    TLSResult.Error
   except CancelledError:
     if writer.state == AsyncStreamState.Running:
       writer.state = AsyncStreamState.Stopped
-    return TLSResult.Stopped
-
-  return TLSResult.Error
+    TLSResult.Stopped
 
 proc tlsWriteApp(engine: ptr SslEngineContext,
                  writer: TLSStreamWriter): Future[TLSResult] {.async.} =
@@ -182,7 +180,6 @@ proc tlsWriteApp(engine: ptr SslEngineContext,
         # (and discarded).
         writer.state = AsyncStreamState.Finished
         return TLSResult.WriteEof
-
       let toWrite = min(int(length), item.size)
       copyOut(buf, item, toWrite)
       if int(length) >= item.size:
@@ -190,7 +187,6 @@ proc tlsWriteApp(engine: ptr SslEngineContext,
         sslEngineSendappAck(engine[], uint(item.size))
         sslEngineFlush(engine[], 0)
         item.future.complete()
-        return TLSResult.Success
       else:
         # BearSSL is not ready to accept whole item, so we will send
         # only part of item and adjust offset.
@@ -198,17 +194,15 @@ proc tlsWriteApp(engine: ptr SslEngineContext,
         item.size = item.size - int(length)
         writer.queue.addFirstNoWait(item)
         sslEngineSendappAck(engine[], length)
-        return TLSResult.Success
+      TLSResult.Success
     else:
       sslEngineClose(engine[])
       item.future.complete()
-      return TLSResult.Success
+      TLSResult.Success
   except CancelledError:
     if writer.state == AsyncStreamState.Running:
       writer.state = AsyncStreamState.Stopped
-    return TLSResult.Stopped
-
-  return TLSResult.Error
+    TLSResult.Stopped
 
 proc tlsReadRec(engine: ptr SslEngineContext,
                 reader: TLSStreamReader): Future[TLSResult] {.async.} =
@@ -219,19 +213,17 @@ proc tlsReadRec(engine: ptr SslEngineContext,
     sslEngineRecvrecAck(engine[], uint(res))
     if res == 0:
       sslEngineClose(engine[])
-      return TLSResult.ReadEof
+      TLSResult.ReadEof
     else:
-      return TLSResult.Success
+      TLSResult.Success
   except AsyncStreamError as exc:
     reader.state = AsyncStreamState.Error
     reader.error = exc
-    return TLSResult.Error
+    TLSResult.Error
   except CancelledError:
     if reader.state == AsyncStreamState.Running:
       reader.state = AsyncStreamState.Stopped
-    return TLSResult.Stopped
-
-  return TLSResult.Error
+    TLSResult.Stopped
 
 proc tlsReadApp(engine: ptr SslEngineContext,
                 reader: TLSStreamReader): Future[TLSResult] {.async.} =
@@ -240,13 +232,11 @@ proc tlsReadApp(engine: ptr SslEngineContext,
     var buf = sslEngineRecvappBuf(engine[], length)
     await upload(addr reader.buffer, buf, int(length))
     sslEngineRecvappAck(engine[], length)
-    return TLSResult.Success
+    TLSResult.Success
   except CancelledError:
     if reader.state == AsyncStreamState.Running:
       reader.state = AsyncStreamState.Stopped
-    return TLSResult.Stopped
-
-  return TLSResult.Error
+    TLSResult.Stopped
 
 template readAndReset(fut: untyped) =
   if fut.finished():

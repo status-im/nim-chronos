@@ -1372,6 +1372,42 @@ suite "Stream Transport test suite":
     if not(sleepFut.finished()):
       await cancelAndWait(sleepFut)
 
+  proc performDualstackTest(
+         sstack: DualStackType, saddr: TransportAddress,
+         cstack: DualStackType, caddr: TransportAddress
+       ): Future[bool] {.async.} =
+    let server = createStreamServer(saddr, dualstack = sstack)
+    var address = caddr
+    address.port = server.localAddress().port
+    var acceptFut = server.accept()
+    let
+      clientTransp =
+        try:
+          let res = await connect(address,
+                                  dualstack = cstack).wait(500.milliseconds)
+          Opt.some(res)
+        except CatchableError:
+          Opt.none(StreamTransport)
+      serverTransp =
+        if clientTransp.isSome():
+          let res = await acceptFut
+          Opt.some(res)
+        else:
+          Opt.none(StreamTransport)
+
+    let testResult = clientTransp.isSome() and serverTransp.isSome()
+    var pending: seq[FutureBase]
+    if clientTransp.isSome():
+      pending.add(closeWait(clientTransp.get()))
+    if serverTransp.isSome():
+      pending.add(closeWait(serverTransp.get()))
+    else:
+      pending.add(cancelAndWait(acceptFut))
+    await allFutures(pending)
+    server.stop()
+    await server.closeWait()
+    testResult
+
   markFD = getCurrentFD()
 
   for i in 0..<len(addresses):
@@ -1469,6 +1505,97 @@ suite "Stream Transport test suite":
     waitFor(testConnectCancelLeaksTest())
   test "[IP] accept() cancellation leaks test":
     waitFor(testAcceptCancelLeaksTest())
+  asyncTest "[IP] getDomain(socket) [SOCK_STREAM] test":
+    if isAvailable(AddressFamily.IPv4) and isAvailable(AddressFamily.IPv6):
+      block:
+        let res = createAsyncSocket2(Domain.AF_INET, SockType.SOCK_STREAM,
+                                     Protocol.IPPROTO_TCP)
+        check res.isOk()
+        let fres = getDomain(res.get())
+        check fres.isOk()
+        discard unregisterAndCloseFd(res.get())
+        check fres.get() == AddressFamily.IPv4
+
+      block:
+        let res = createAsyncSocket2(Domain.AF_INET6, SockType.SOCK_STREAM,
+                                     Protocol.IPPROTO_TCP)
+        check res.isOk()
+        let fres = getDomain(res.get())
+        check fres.isOk()
+        discard unregisterAndCloseFd(res.get())
+        check fres.get() == AddressFamily.IPv6
+
+      when not(defined(windows)):
+        block:
+          let res = createAsyncSocket2(Domain.AF_UNIX, SockType.SOCK_STREAM,
+                                       Protocol.IPPROTO_IP)
+          check res.isOk()
+          let fres = getDomain(res.get())
+          check fres.isOk()
+          discard unregisterAndCloseFd(res.get())
+          check fres.get() == AddressFamily.Unix
+    else:
+      skip()
+  asyncTest "[IP] DualStack [TCP] server [DualStackType.Auto] test":
+    if isAvailable(AddressFamily.IPv4) and isAvailable(AddressFamily.IPv6):
+      let serverAddress = initTAddress("[::]:0")
+      check:
+        (await performDualstackTest(
+           DualStackType.Auto, serverAddress,
+           DualStackType.Auto, initTAddress("127.0.0.1:0"))) == true
+        (await performDualstackTest(
+           DualStackType.Auto, serverAddress,
+           DualStackType.Auto, initTAddress("127.0.0.1:0").toIPv6())) == true
+        (await performDualstackTest(
+           DualStackType.Auto, serverAddress,
+           DualStackType.Auto, initTAddress("[::1]:0"))) == true
+    else:
+      skip()
+  asyncTest "[IP] DualStack [TCP] server [DualStackType.Enabled] test":
+    if isAvailable(AddressFamily.IPv4) and isAvailable(AddressFamily.IPv6):
+      let serverAddress = initTAddress("[::]:0")
+      check:
+        (await performDualstackTest(
+           DualStackType.Enabled, serverAddress,
+           DualStackType.Auto, initTAddress("127.0.0.1:0"))) == true
+        (await performDualstackTest(
+           DualStackType.Enabled, serverAddress,
+           DualStackType.Auto, initTAddress("127.0.0.1:0").toIPv6())) == true
+        (await performDualstackTest(
+           DualStackType.Enabled, serverAddress,
+           DualStackType.Auto, initTAddress("[::1]:0"))) == true
+    else:
+      skip()
+  asyncTest "[IP] DualStack [TCP] server [DualStackType.Disabled] test":
+    if isAvailable(AddressFamily.IPv4) and isAvailable(AddressFamily.IPv6):
+      let serverAddress = initTAddress("[::]:0")
+      check:
+        (await performDualstackTest(
+           DualStackType.Disabled, serverAddress,
+           DualStackType.Auto, initTAddress("127.0.0.1:0"))) == false
+        (await performDualstackTest(
+           DualStackType.Disabled, serverAddress,
+           DualStackType.Auto, initTAddress("127.0.0.1:0").toIPv6())) == false
+        (await performDualstackTest(
+           DualStackType.Disabled, serverAddress,
+           DualStackType.Auto, initTAddress("[::1]:0"))) == true
+    else:
+      skip()
+  asyncTest "[IP] DualStack [TCP] connect [IPv4 mapped address] test":
+    if isAvailable(AddressFamily.IPv4) and isAvailable(AddressFamily.IPv6):
+      let serverAddress = initTAddress("[::]:0")
+      check:
+        (await performDualstackTest(
+           DualStackType.Auto, serverAddress,
+           DualStackType.Disabled, initTAddress("127.0.0.1:0"))) == true
+        (await performDualstackTest(
+           DualStackType.Auto, serverAddress,
+           DualStackType.Disabled, initTAddress("127.0.0.1:0").toIPv6())) == false
+        (await performDualstackTest(
+           DualStackType.Auto, serverAddress,
+           DualStackType.Disabled, initTAddress("[::1]:0"))) == true
+    else:
+      skip()
   test "Leaks test":
     checkLeaks()
   test "File descriptors leak test":

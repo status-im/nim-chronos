@@ -191,7 +191,8 @@ proc new*(htype: typedesc[HttpServerRef],
           backlogSize: int = DefaultBacklogSize,
           httpHeadersTimeout = 10.seconds,
           maxHeadersSize: int = 8192,
-          maxRequestBodySize: int = 1_048_576): HttpResult[HttpServerRef] {.
+          maxRequestBodySize: int = 1_048_576,
+          dualstack = DualStackType.Auto): HttpResult[HttpServerRef] {.
      raises: [].} =
 
   let serverUri =
@@ -206,7 +207,7 @@ proc new*(htype: typedesc[HttpServerRef],
   let serverInstance =
     try:
       createStreamServer(address, flags = socketFlags, bufferSize = bufferSize,
-                         backlog = backlogSize)
+                         backlog = backlogSize, dualstack = dualstack)
     except TransportOsError as exc:
       return err(exc.msg)
     except CatchableError as exc:
