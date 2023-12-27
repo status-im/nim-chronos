@@ -478,14 +478,26 @@ when chronosStackTrace:
     #   newMsg.add "\n" & $entry
     error.msg = newMsg
 
-proc internalCheckComplete*(fut: FutureBase) {.raises: [CatchableError].} =
-  # For internal use only. Used in asyncmacro
-  if not(isNil(fut.internalError)):
-    when chronosStackTrace:
-      injectStacktrace(fut.internalError)
-    raise fut.internalError
+proc deepLineInfo(n: NimNode, p: LineInfo) =
+  n.setLineInfo(p)
+  for i in 0..<n.len:
+    deepLineInfo(n[i], p)
 
-macro internalCheckComplete*(fut: InternalRaisesFuture, raises: typed) =
+macro internalRaiseIfError*(fut: FutureBase, info: typed) =
+  # Check the error field of the given future and raise if it's set to non-nil.
+  # This is a macro so we can capture the line info from the original call and
+  # report the correct line number on exception effect violation
+  let
+    info = info.lineInfoObj()
+    res = quote do:
+      if not(isNil(`fut`.internalError)):
+        when chronosStackTrace:
+          injectStacktrace(`fut`.internalError)
+        raise `fut`.internalError
+  res.deepLineInfo(info)
+  res
+
+macro internalRaiseIfError*(fut: InternalRaisesFuture, raises, info: typed) =
   # For InternalRaisesFuture[void, (ValueError, OSError), will do:
   # {.cast(raises: [ValueError, OSError]).}:
   #   if isNil(f.error): discard
@@ -494,10 +506,9 @@ macro internalCheckComplete*(fut: InternalRaisesFuture, raises: typed) =
   #      we cannot `getTypeInst` on the `fut` - when aliases are involved, the
   #      generics are lost - so instead, we pass the raises list explicitly
 
-  let types = getRaisesTypes(raises)
-  types.copyLineInfo(raises)
-  for t in types:
-    t.copyLineInfo(raises)
+  let
+    info = info.lineInfoObj()
+    types = getRaisesTypes(raises)
 
   if isNoRaises(types):
     return quote do:
@@ -511,40 +522,43 @@ macro internalCheckComplete*(fut: InternalRaisesFuture, raises: typed) =
 
   assert types[0].strVal == "tuple"
 
-  let ifRaise = nnkIfExpr.newTree(
-    nnkElifExpr.newTree(
-      quote do: isNil(`fut`.internalError),
-      quote do: discard
-    ),
-    nnkElseExpr.newTree(
-      nnkRaiseStmt.newTree(
-        nnkDotExpr.newTree(fut, ident "internalError")
+  let
+    internalError = nnkDotExpr.newTree(fut, ident "internalError")
+
+    ifRaise = nnkIfExpr.newTree(
+      nnkElifExpr.newTree(
+        nnkCall.newTree(ident"isNil", internalError),
+        nnkDiscardStmt.newTree(newEmptyNode())
+      ),
+      nnkElseExpr.newTree(
+        nnkRaiseStmt.newTree(internalError)
       )
     )
-  )
 
-  nnkPragmaBlock.newTree(
-    nnkPragma.newTree(
-      nnkCast.newTree(
-        newEmptyNode(),
-        nnkExprColonExpr.newTree(
-          ident"raises",
-          block:
-            var res = nnkBracket.newTree()
-            for r in types[1..^1]:
-              res.add(r)
-            res
-        )
+    res = nnkPragmaBlock.newTree(
+      nnkPragma.newTree(
+        nnkCast.newTree(
+          newEmptyNode(),
+          nnkExprColonExpr.newTree(
+            ident"raises",
+            block:
+              var res = nnkBracket.newTree()
+              for r in types[1..^1]:
+                res.add(r)
+              res
+          )
+        ),
       ),
-    ),
-    ifRaise
-  )
+      ifRaise
+    )
+  res.deepLineInfo(info)
+  res
 
 proc readFinished[T: not void](fut: Future[T]): lent T {.
     raises: [CatchableError].} =
   # Read a future that is known to be finished, avoiding the extra exception
   # effect.
-  internalCheckComplete(fut)
+  internalRaiseIfError(fut, fut)
   fut.internalValue
 
 proc read*[T: not void](fut: Future[T] ): lent T {.raises: [CatchableError].} =
@@ -569,7 +583,7 @@ proc read*(fut: Future[void]) {.raises: [CatchableError].} =
   if not fut.finished():
     raiseFuturePendingError(fut)
 
-  internalCheckComplete(fut)
+  internalRaiseIfError(fut, fut)
 
 proc readError*(fut: FutureBase): ref CatchableError {.raises: [FutureError].} =
   ## Retrieves the exception of the failed or cancelled `fut`.
@@ -639,7 +653,7 @@ proc waitFor*(fut: Future[void]) {.raises: [CatchableError].} =
   ## Must not be called recursively (from inside `async` procedures).
   ##
   ## See also `await`, `Future.read`
-  pollFor(fut).internalCheckComplete()
+  pollFor(fut).internalRaiseIfError(fut)
 
 proc asyncSpawn*(future: Future[void]) =
   ## Spawns a new concurrent async task.
@@ -1591,7 +1605,7 @@ when defined(windows):
 {.pop.} # Automatically deduced raises from here onwards
 
 proc readFinished[T: not void; E](fut: InternalRaisesFuture[T, E]): lent T =
-  internalCheckComplete(fut, E)
+  internalRaiseIfError(fut, E, fut)
   fut.internalValue
 
 proc read*[T: not void, E](fut: InternalRaisesFuture[T, E]): lent T = # {.raises: [E, FuturePendingError].}
@@ -1616,7 +1630,7 @@ proc read*[E](fut: InternalRaisesFuture[void, E]) = # {.raises: [E].}
   if not fut.finished():
     raiseFuturePendingError(fut)
 
-  internalCheckComplete(fut, E)
+  internalRaiseIfError(fut, E, fut)
 
 proc waitFor*[T: not void; E](fut: InternalRaisesFuture[T, E]): lent T = # {.raises: [E]}
   ## Blocks the current thread of execution until `fut` has finished, returning
@@ -1639,7 +1653,7 @@ proc waitFor*[E](fut: InternalRaisesFuture[void, E]) = # {.raises: [E]}
   ## Must not be called recursively (from inside `async` procedures).
   ##
   ## See also `await`, `Future.read`
-  pollFor(fut).internalCheckComplete(E)
+  pollFor(fut).internalRaiseIfError(E, fut)
 
 proc `or`*[T, Y, E1, E2](
     fut1: InternalRaisesFuture[T, E1],

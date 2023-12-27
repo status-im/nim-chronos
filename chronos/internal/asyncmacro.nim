@@ -530,7 +530,7 @@ template await*[T](f: Future[T]): T =
     # responsible for resuming execution once the yielded future is finished
     yield chronosInternalRetFuture.internalChild
     # `child` released by `futureContinue`
-    cast[type(f)](chronosInternalRetFuture.internalChild).internalCheckComplete()
+    cast[type(f)](chronosInternalRetFuture.internalChild).internalRaiseIfError(f)
 
     when T isnot void:
       cast[type(f)](chronosInternalRetFuture.internalChild).value()
@@ -553,7 +553,7 @@ template await*[T, E](fut: InternalRaisesFuture[T, E]): T =
     yield chronosInternalRetFuture.internalChild
     # `child` released by `futureContinue`
     cast[type(fut)](
-      chronosInternalRetFuture.internalChild).internalCheckComplete(E)
+      chronosInternalRetFuture.internalChild).internalRaiseIfError(E, fut)
 
     when T isnot void:
       cast[type(fut)](chronosInternalRetFuture.internalChild).value()
