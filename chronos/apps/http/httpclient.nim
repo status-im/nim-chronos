@@ -294,7 +294,7 @@ proc new*(t: typedesc[HttpSessionRef],
     if HttpClientFlag.Http11Pipeline in flags:
       sessionWatcher(res)
     else:
-      Future[void].Raising([]).init("session.watcher.placeholder")
+      nil
   res
 
 proc getTLSFlags(flags: HttpClientFlags): set[TLSFlags] =
@@ -607,7 +607,7 @@ proc closeWait(conn: HttpClientConnectionRef) {.async: (raises: []).} =
     conn.state = HttpClientConnectionState.Closing
     let pending =
       block:
-        var res: seq[Future[void]]
+        var res: seq[Future[void].Raising([])]
         if not(isNil(conn.reader)) and not(conn.reader.closed()):
           res.add(conn.reader.closeWait())
         if not(isNil(conn.writer)) and not(conn.writer.closed()):
@@ -847,14 +847,14 @@ proc sessionWatcher(session: HttpSessionRef) {.async: (raises: []).} =
         break
 
 proc closeWait*(request: HttpClientRequestRef) {.async: (raises: []).} =
-  var pending: seq[FutureBase]
+  var pending: seq[Future[void].Raising([])]
   if request.state notin {HttpReqRespState.Closing, HttpReqRespState.Closed}:
     request.state = HttpReqRespState.Closing
     if not(isNil(request.writer)):
       if not(request.writer.closed()):
-        pending.add(FutureBase(request.writer.closeWait()))
+        pending.add(request.writer.closeWait())
       request.writer = nil
-    pending.add(FutureBase(request.releaseConnection()))
+    pending.add(request.releaseConnection())
     await noCancel(allFutures(pending))
     request.session = nil
     request.error = nil
@@ -862,14 +862,14 @@ proc closeWait*(request: HttpClientRequestRef) {.async: (raises: []).} =
     untrackCounter(HttpClientRequestTrackerName)
 
 proc closeWait*(response: HttpClientResponseRef) {.async: (raises: []).} =
-  var pending: seq[FutureBase]
+  var pending: seq[Future[void].Raising([])]
   if response.state notin {HttpReqRespState.Closing, HttpReqRespState.Closed}:
     response.state = HttpReqRespState.Closing
     if not(isNil(response.reader)):
       if not(response.reader.closed()):
-        pending.add(FutureBase(response.reader.closeWait()))
+        pending.add(response.reader.closeWait())
       response.reader = nil
-    pending.add(FutureBase(response.releaseConnection()))
+    pending.add(response.releaseConnection())
     await noCancel(allFutures(pending))
     response.session = nil
     response.error = nil

@@ -77,7 +77,7 @@ type
     udata: pointer
     error*: ref AsyncStreamError
     bytesCount*: uint64
-    future: Future[void]
+    future: Future[void].Raising([])
 
   AsyncStreamWriter* = ref object of RootRef
     wsource*: AsyncStreamWriter
@@ -88,7 +88,7 @@ type
     error*: ref AsyncStreamError
     udata: pointer
     bytesCount*: uint64
-    future: Future[void]
+    future: Future[void].Raising([])
 
   AsyncStream* = object of RootObj
     reader*: AsyncStreamReader
@@ -897,44 +897,27 @@ proc close*(rw: AsyncStreamRW) =
           rw.future.addCallback(continuation)
           rw.future.cancelSoon()
 
-proc closeWait*(rw: AsyncStreamRW): Future[void] {.
-     async: (raw: true, raises: []).} =
+proc closeWait*(rw: AsyncStreamRW): Future[void] {.async: (raises: []).} =
   ## Close and frees resources of stream ``rw``.
-  const FutureName =
-    when rw is AsyncStreamReader:
-      "async.stream.reader.closeWait"
-    else:
-      "async.stream.writer.closeWait"
-
-  let retFuture = Future[void].Raising([]).init(FutureName)
-
-  if rw.closed():
-    retFuture.complete()
-    return retFuture
-
-  proc continuation(udata: pointer) {.gcsafe, raises:[].} =
-    retFuture.complete()
-
-  rw.close()
-  if rw.future.finished():
-    retFuture.complete()
-  else:
-    rw.future.addCallback(continuation, cast[pointer](retFuture))
-  retFuture
+  if not rw.closed():
+    rw.close()
+    await noCancel rw.future
 
 proc startReader(rstream: AsyncStreamReader) =
   rstream.state = Running
   if not isNil(rstream.readerLoop):
     rstream.future = rstream.readerLoop(rstream)
   else:
-    rstream.future = newFuture[void]("async.stream.empty.reader")
+    rstream.future = Future[void].Raising([]).init(
+      "async.stream.empty.reader")
 
 proc startWriter(wstream: AsyncStreamWriter) =
   wstream.state = Running
   if not isNil(wstream.writerLoop):
     wstream.future = wstream.writerLoop(wstream)
   else:
-    wstream.future = newFuture[void]("async.stream.empty.writer")
+    wstream.future = Future[void].Raising([]).init(
+      "async.stream.empty.writer")
 
 proc init*(child, wsource: AsyncStreamWriter, loop: StreamWriterLoop,
            queueSize = AsyncStreamDefaultQueueSize) =
