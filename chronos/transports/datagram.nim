@@ -359,7 +359,8 @@ when defined(windows):
     res.queue = initDeque[GramVector]()
     res.udata = udata
     res.state = {ReadPaused, WritePaused}
-    res.future = newFuture[void]("datagram.transport")
+    res.future = Future[void].Raising([CancelledError]).init(
+      "datagram.transport")
     res.rovl.data = CompletionData(cb: readDatagramLoop,
                                       udata: cast[pointer](res))
     res.wovl.data = CompletionData(cb: writeDatagramLoop,
