@@ -598,7 +598,8 @@ when defined(windows):
     transp.buffer = newSeq[byte](bufsize)
     transp.state = {ReadPaused, WritePaused}
     transp.queue = initDeque[StreamVector]()
-    transp.future = Future[void].Raising([]).init("stream.socket.transport")
+    transp.future = Future[void].Raising([CancelledError]).init(
+      "stream.socket.transport")
     GC_ref(transp)
     transp
 
@@ -619,7 +620,8 @@ when defined(windows):
     transp.flags = flags
     transp.state = {ReadPaused, WritePaused}
     transp.queue = initDeque[StreamVector]()
-    transp.future = Future[void].Raising([]).init("stream.pipe.transport")
+    transp.future = Future[void].Raising([CancelledError]).init(
+      "stream.pipe.transport")
     GC_ref(transp)
     transp
 
