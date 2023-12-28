@@ -901,6 +901,8 @@ proc closeWait*(rw: AsyncStreamRW): Future[void] {.async: (raises: []).} =
   ## Close and frees resources of stream ``rw``.
   if not rw.closed():
     rw.close()
+    # noCancel needed here to prevent cancellation from reaching rw.future -
+    # see assert on init
     await noCancel rw.future
 
 proc startReader(rstream: AsyncStreamReader) =
@@ -909,7 +911,9 @@ proc startReader(rstream: AsyncStreamReader) =
     rstream.future = rstream.readerLoop(rstream)
   else:
     rstream.future = Future[void].Raising([]).init(
-      "async.stream.empty.reader")
+      "async.stream.empty.reader", {FutureFlag.OwnCancelSchedule})
+    rstream.future.cancelCallback = proc(_: pointer) =
+      raiseAssert "this future should not be cancelled"
 
 proc startWriter(wstream: AsyncStreamWriter) =
   wstream.state = Running
@@ -917,7 +921,9 @@ proc startWriter(wstream: AsyncStreamWriter) =
     wstream.future = wstream.writerLoop(wstream)
   else:
     wstream.future = Future[void].Raising([]).init(
-      "async.stream.empty.writer")
+      "async.stream.empty.writer", {FutureFlag.OwnCancelSchedule})
+    wstream.future.cancelCallback = proc(_: pointer) =
+      raiseAssert "this future should not be cancelled"
 
 proc init*(child, wsource: AsyncStreamWriter, loop: StreamWriterLoop,
            queueSize = AsyncStreamDefaultQueueSize) =
