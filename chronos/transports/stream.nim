@@ -76,7 +76,7 @@ when defined(windows):
       offset: int                     # Reading buffer offset
       error: ref TransportError       # Current error
       queue: Deque[StreamVector]      # Writer queue
-      future: Future[void]            # Stream life future
+      future: Future[void].Raising([CancelledError]) # Stream life future
       # Windows specific part
       rwsabuf: WSABUF                 # Reader WSABUF
       wwsabuf: WSABUF                 # Writer WSABUF
@@ -598,7 +598,7 @@ when defined(windows):
     transp.buffer = newSeq[byte](bufsize)
     transp.state = {ReadPaused, WritePaused}
     transp.queue = initDeque[StreamVector]()
-    transp.future = newFuture[void]("stream.socket.transport")
+    transp.future = Future[void].Raising([]).init("stream.socket.transport")
     GC_ref(transp)
     transp
 
@@ -619,7 +619,7 @@ when defined(windows):
     transp.flags = flags
     transp.state = {ReadPaused, WritePaused}
     transp.queue = initDeque[StreamVector]()
-    transp.future = newFuture[void]("stream.pipe.transport")
+    transp.future = Future[void].Raising([]).init("stream.pipe.transport")
     GC_ref(transp)
     transp
 
