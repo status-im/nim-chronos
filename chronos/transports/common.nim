@@ -73,7 +73,7 @@ when defined(windows) or defined(nimdoc):
       udata*: pointer               # User-defined pointer
       flags*: set[ServerFlags]      # Flags
       bufferSize*: int              # Size of internal transports' buffer
-      loopFuture*: Future[void].Raising([CancelledError])     # Server's main Future
+      loopFuture*: Future[void].Raising([])     # Server's main Future
       domain*: Domain               # Current server domain (IPv4 or IPv6)
       apending*: bool
       asock*: AsyncFD               # Current AcceptEx() socket
@@ -92,7 +92,7 @@ else:
       udata*: pointer               # User-defined pointer
       flags*: set[ServerFlags]      # Flags
       bufferSize*: int              # Size of internal transports' buffer
-      loopFuture*: Future[void].Raising([CancelledError]) # Server's main Future
+      loopFuture*: Future[void].Raising([]) # Server's main Future
       errorCode*: OSErrorCode       # Current error code
       dualstack*: DualStackType     # IPv4/IPv6 dualstack parameters
 

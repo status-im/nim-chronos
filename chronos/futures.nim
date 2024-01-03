@@ -34,6 +34,13 @@ type
 
   FutureFlag* {.pure.} = enum
     OwnCancelSchedule
+      ## This future does not participate in the automatic cancellation chain -
+      ## the owner of the future must set a `cancelCallback` - if cancellation
+      ## requests should be ignored, `cancelCallback` can be set to `nil`.
+      ##
+      ## Failure to set `cancellCallback` will result in a `Defect` if `cancel`
+      ## is called on the future - such futures must thus never participate
+      ## in `await` without `noCancel` or an equivalent mechanism.
 
   FutureFlags* = set[FutureFlag]
 
@@ -104,6 +111,12 @@ proc internalInitFutureBase*(fut: FutureBase, loc: ptr SrcLoc,
   fut.internalState = state
   fut.internalLocation[LocationKind.Create] = loc
   fut.internalFlags = flags
+  if FutureFlag.OwnCancelSchedule in flags:
+    # Owners must replace `cancelCallback` with `nil` if they want to ignore
+    # cancellations
+    fut.internalCancelcb = proc(_: pointer) =
+      raiseAssert "Cancellation request for non-cancellable future"
+
   if state != FutureState.Pending:
     fut.internalLocation[LocationKind.Finish] = loc
 

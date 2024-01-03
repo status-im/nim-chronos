@@ -76,7 +76,7 @@ when defined(windows):
       offset: int                     # Reading buffer offset
       error: ref TransportError       # Current error
       queue: Deque[StreamVector]      # Writer queue
-      future: Future[void].Raising([CancelledError]) # Stream life future
+      future: Future[void].Raising([]) # Stream life future
       # Windows specific part
       rwsabuf: WSABUF                 # Reader WSABUF
       wwsabuf: WSABUF                 # Writer WSABUF
@@ -103,7 +103,7 @@ else:
       offset: int                     # Reading buffer offset
       error: ref TransportError       # Current error
       queue: Deque[StreamVector]      # Writer queue
-      future: Future[void].Raising([CancelledError]) # Stream life future
+      future: Future[void].Raising([]) # Stream life future
       case kind*: TransportKind
       of TransportKind.Socket:
         domain: Domain                # Socket transport domain (IPv4/IPv6)
@@ -598,8 +598,8 @@ when defined(windows):
     transp.buffer = newSeq[byte](bufsize)
     transp.state = {ReadPaused, WritePaused}
     transp.queue = initDeque[StreamVector]()
-    transp.future = Future[void].Raising([CancelledError]).init(
-      "stream.socket.transport")
+    transp.future = Future[void].Raising([]).init(
+      "stream.socket.transport", {FutureFlag.OwnCancelSchedule})
     GC_ref(transp)
     transp
 
@@ -620,8 +620,8 @@ when defined(windows):
     transp.flags = flags
     transp.state = {ReadPaused, WritePaused}
     transp.queue = initDeque[StreamVector]()
-    transp.future = Future[void].Raising([CancelledError]).init(
-      "stream.pipe.transport")
+    transp.future = Future[void].Raising([]).init(
+      "stream.pipe.transport", {FutureFlag.OwnCancelSchedule})
     GC_ref(transp)
     transp
 
@@ -1459,8 +1459,8 @@ else:
     transp.buffer = newSeq[byte](bufsize)
     transp.state = {ReadPaused, WritePaused}
     transp.queue = initDeque[StreamVector]()
-    transp.future = Future[void].Raising([CancelledError]).init(
-      "socket.stream.transport")
+    transp.future = Future[void].Raising([]).init(
+      "socket.stream.transport", {FutureFlag.OwnCancelSchedule})
     GC_ref(transp)
     transp
 
@@ -1476,8 +1476,8 @@ else:
     transp.buffer = newSeq[byte](bufsize)
     transp.state = {ReadPaused, WritePaused}
     transp.queue = initDeque[StreamVector]()
-    transp.future = Future[void].Raising([CancelledError]).init(
-      "pipe.stream.transport")
+    transp.future = Future[void].Raising([]).init(
+      "pipe.stream.transport", {FutureFlag.OwnCancelSchedule})
     GC_ref(transp)
     transp
 
@@ -1843,7 +1843,7 @@ proc closeWait*(server: StreamServer): Future[void] {.async: (raises: []).} =
   ## Close server ``server`` and release all resources.
   if not server.closed():
     server.close()
-    await noCancel(server.loopFuture)
+    await noCancel(server.join())
 
 proc getBacklogSize(backlog: int): cint =
   doAssert(backlog >= 0 and backlog <= high(int32))
@@ -2055,8 +2055,8 @@ proc createStreamServer*(host: TransportAddress,
   sres.bufferSize = bufferSize
   sres.status = Starting
   sres.loopFuture = asyncloop.init(
-    Future[void].Raising([CancelledError]),
-    "stream.transport.server")
+    Future[void].Raising([]), "stream.transport.server",
+    {FutureFlag.OwnCancelSchedule})
   sres.udata = udata
   sres.dualstack = dualstack
   if localAddress.family == AddressFamily.None:
@@ -2691,7 +2691,7 @@ proc closeWait*(transp: StreamTransport): Future[void] {.async: (raises: []).} =
   ## Close and frees resources of transport ``transp``.
   if not transp.closed():
     transp.close()
-    await noCancel(transp.future)
+    await noCancel(transp.join())
 
 proc shutdownWait*(transp: StreamTransport): Future[void] {.
     async: (raw: true, raises: [TransportError, CancelledError]).} =

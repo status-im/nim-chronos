@@ -44,7 +44,7 @@ type
     remote: TransportAddress        # Remote address
     udata*: pointer                 # User-driven pointer
     function: DatagramCallback      # Receive data callback
-    future: Future[void].Raising([CancelledError]) # Transport's life future
+    future: Future[void].Raising([]) # Transport's life future
     raddr: Sockaddr_storage         # Reader address storage
     ralen: SockLen                  # Reader address length
     waddr: Sockaddr_storage         # Writer address storage
@@ -359,8 +359,8 @@ when defined(windows):
     res.queue = initDeque[GramVector]()
     res.udata = udata
     res.state = {ReadPaused, WritePaused}
-    res.future = Future[void].Raising([CancelledError]).init(
-      "datagram.transport")
+    res.future = Future[void].Raising([]).init(
+      "datagram.transport", {FutureFlag.OwnCancelSchedule})
     res.rovl.data = CompletionData(cb: readDatagramLoop,
                                       udata: cast[pointer](res))
     res.wovl.data = CompletionData(cb: writeDatagramLoop,
@@ -569,8 +569,8 @@ else:
     res.queue = initDeque[GramVector]()
     res.udata = udata
     res.state = {ReadPaused, WritePaused}
-    res.future = Future[void].Raising([CancelledError]).init(
-      "datagram.transport")
+    res.future = Future[void].Raising([]).init(
+      "datagram.transport", {FutureFlag.OwnCancelSchedule})
     GC_ref(res)
     # Start tracking transport
     trackCounter(DgramTransportTrackerName)
@@ -851,7 +851,7 @@ proc closeWait*(transp: DatagramTransport): Future[void] {.
   ## Close transport ``transp`` and release all resources.
   if not transp.closed():
     transp.close()
-    await noCancel(transp.future)
+    await noCancel(transp.join())
 
 proc send*(transp: DatagramTransport, pbytes: pointer,
            nbytes: int): Future[void] {.

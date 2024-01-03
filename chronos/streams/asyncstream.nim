@@ -912,8 +912,6 @@ proc startReader(rstream: AsyncStreamReader) =
   else:
     rstream.future = Future[void].Raising([]).init(
       "async.stream.empty.reader", {FutureFlag.OwnCancelSchedule})
-    rstream.future.cancelCallback = proc(_: pointer) =
-      raiseAssert "this future should not be cancelled"
 
 proc startWriter(wstream: AsyncStreamWriter) =
   wstream.state = Running
@@ -922,8 +920,6 @@ proc startWriter(wstream: AsyncStreamWriter) =
   else:
     wstream.future = Future[void].Raising([]).init(
       "async.stream.empty.writer", {FutureFlag.OwnCancelSchedule})
-    wstream.future.cancelCallback = proc(_: pointer) =
-      raiseAssert "this future should not be cancelled"
 
 proc init*(child, wsource: AsyncStreamWriter, loop: StreamWriterLoop,
            queueSize = AsyncStreamDefaultQueueSize) =

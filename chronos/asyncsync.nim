@@ -524,6 +524,9 @@ proc closeWait*(ab: AsyncEventQueue): Future[void] {.
   proc continuation(udata: pointer) {.gcsafe.} =
     retFuture.complete()
 
+  # Ignore cancellation requests - we'll complete the future soon enough
+  retFuture.cancelCallback = nil
+
   ab.close()
   # Schedule `continuation` to be called only after all the `reader`
   # notifications will be scheduled and processed.
