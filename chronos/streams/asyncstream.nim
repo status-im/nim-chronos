@@ -901,9 +901,7 @@ proc closeWait*(rw: AsyncStreamRW): Future[void] {.async: (raises: []).} =
   ## Close and frees resources of stream ``rw``.
   if not rw.closed():
     rw.close()
-    # noCancel needed here to prevent cancellation from reaching rw.future -
-    # see assert on init
-    await noCancel rw.future
+    await noCancel(rw.join())
 
 proc startReader(rstream: AsyncStreamReader) =
   rstream.state = Running
