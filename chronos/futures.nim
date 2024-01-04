@@ -34,13 +34,19 @@ type
 
   FutureFlag* {.pure.} = enum
     OwnCancelSchedule
-      ## This future does not participate in the automatic cancellation chain -
-      ## the owner of the future must set a `cancelCallback` - if cancellation
-      ## requests should be ignored, `cancelCallback` can be set to `nil`.
+      ## When OwnCancelSchedule is set, the owner of the future is responsible
+      ## for implementing cancellation in one of 3 ways:
       ##
-      ## Failure to set `cancellCallback` will result in a `Defect` if `cancel`
-      ## is called on the future - such futures must thus never participate
-      ## in `await` without `noCancel` or an equivalent mechanism.
+      ## * ensure that cancellation requests never reach the future by means of
+      ##   not exposing it to user code, `await` and `tryCancel`
+      ## * set `cancelCallback` to `nil` to stop cancellation propagation - this
+      ##   is appropriate when it is expected that the future will be completed
+      ##   in a regular way "soon"
+      ## * set `cancelCallback` to a handler that implements cancellation in an
+      ##   operation-specific way
+      ##
+      ## If `cancelCallback` is not set and the future gets cancelled, a
+      ## `Defect` will be raised.
 
   FutureFlags* = set[FutureFlag]
 
