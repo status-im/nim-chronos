@@ -44,7 +44,7 @@ type
     remote: TransportAddress        # Remote address
     udata*: pointer                 # User-driven pointer
     function: DatagramCallback      # Receive data callback
-    future: Future[void]            # Transport's life future
+    future: Future[void].Raising([]) # Transport's life future
     raddr: Sockaddr_storage         # Reader address storage
     ralen: SockLen                  # Reader address length
     waddr: Sockaddr_storage         # Writer address storage
@@ -359,7 +359,8 @@ when defined(windows):
     res.queue = initDeque[GramVector]()
     res.udata = udata
     res.state = {ReadPaused, WritePaused}
-    res.future = newFuture[void]("datagram.transport")
+    res.future = Future[void].Raising([]).init(
+      "datagram.transport", {FutureFlag.OwnCancelSchedule})
     res.rovl.data = CompletionData(cb: readDatagramLoop,
                                       udata: cast[pointer](res))
     res.wovl.data = CompletionData(cb: writeDatagramLoop,
@@ -568,7 +569,8 @@ else:
     res.queue = initDeque[GramVector]()
     res.udata = udata
     res.state = {ReadPaused, WritePaused}
-    res.future = newFuture[void]("datagram.transport")
+    res.future = Future[void].Raising([]).init(
+      "datagram.transport", {FutureFlag.OwnCancelSchedule})
     GC_ref(res)
     # Start tracking transport
     trackCounter(DgramTransportTrackerName)
@@ -840,31 +842,16 @@ proc join*(transp: DatagramTransport): Future[void] {.
 
   return retFuture
 
+proc closed*(transp: DatagramTransport): bool {.inline.} =
+  ## Returns ``true`` if transport in closed state.
+  {ReadClosed, WriteClosed} * transp.state != {}
+
 proc closeWait*(transp: DatagramTransport): Future[void] {.
-    async: (raw: true, raises: []).} =
+    async: (raises: []).} =
   ## Close transport ``transp`` and release all resources.
-  let retFuture = newFuture[void](
-    "datagram.transport.closeWait", {FutureFlag.OwnCancelSchedule})
-
-  if {ReadClosed, WriteClosed} * transp.state != {}:
-    retFuture.complete()
-    return retFuture
-
-  proc continuation(udata: pointer) {.gcsafe.} =
-    retFuture.complete()
-
-  proc cancellation(udata: pointer) {.gcsafe.} =
-    # We are not going to change the state of `retFuture` to cancelled, so we
-    # will prevent the entire sequence of Futures from being cancelled.
-    discard
-
-  transp.close()
-  if transp.future.finished():
-    retFuture.complete()
-  else:
-    transp.future.addCallback(continuation, cast[pointer](retFuture))
-    retFuture.cancelCallback = cancellation
-  retFuture
+  if not transp.closed():
+    transp.close()
+    await noCancel(transp.join())
 
 proc send*(transp: DatagramTransport, pbytes: pointer,
            nbytes: int): Future[void] {.
@@ -1020,7 +1007,3 @@ proc getMessage*(transp: DatagramTransport): seq[byte] {.
 proc getUserData*[T](transp: DatagramTransport): T {.inline.} =
   ## Obtain user data stored in ``transp`` object.
   cast[T](transp.udata)
-
-proc closed*(transp: DatagramTransport): bool {.inline.} =
-  ## Returns ``true`` if transport in closed state.
-  {ReadClosed, WriteClosed} * transp.state != {}

@@ -1013,6 +1013,7 @@ proc cancelAndWait*(future: FutureBase, loc: ptr SrcLoc): Future[void] {.
   if future.finished():
     retFuture.complete()
   else:
+    retFuture.cancelCallback = nil
     cancelSoon(future, continuation, cast[pointer](retFuture), loc)
 
   retFuture
@@ -1057,6 +1058,7 @@ proc noCancel*[F: SomeFuture](future: F): auto = # async: (raw: true, raises: as
   if future.finished():
     completeFuture()
   else:
+    retFuture.cancelCallback = nil
     future.addCallback(continuation)
   retFuture
 

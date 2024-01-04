@@ -523,15 +523,13 @@ proc closeWait*(ab: AsyncEventQueue): Future[void] {.
                                   {FutureFlag.OwnCancelSchedule})
   proc continuation(udata: pointer) {.gcsafe.} =
     retFuture.complete()
-  proc cancellation(udata: pointer) {.gcsafe.} =
-    # We are not going to change the state of `retFuture` to cancelled, so we
-    # will prevent the entire sequence of Futures from being cancelled.
-    discard
+
+  # Ignore cancellation requests - we'll complete the future soon enough
+  retFuture.cancelCallback = nil
 
   ab.close()
   # Schedule `continuation` to be called only after all the `reader`
   # notifications will be scheduled and processed.
-  retFuture.cancelCallback = cancellation
   callSoon(continuation)
   retFuture
 

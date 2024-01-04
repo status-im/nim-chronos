@@ -76,7 +76,7 @@ when defined(windows):
       offset: int                     # Reading buffer offset
       error: ref TransportError       # Current error
       queue: Deque[StreamVector]      # Writer queue
-      future: Future[void]            # Stream life future
+      future: Future[void].Raising([]) # Stream life future
       # Windows specific part
       rwsabuf: WSABUF                 # Reader WSABUF
       wwsabuf: WSABUF                 # Writer WSABUF
@@ -103,7 +103,7 @@ else:
       offset: int                     # Reading buffer offset
       error: ref TransportError       # Current error
       queue: Deque[StreamVector]      # Writer queue
-      future: Future[void]            # Stream life future
+      future: Future[void].Raising([]) # Stream life future
       case kind*: TransportKind
       of TransportKind.Socket:
         domain: Domain                # Socket transport domain (IPv4/IPv6)
@@ -598,7 +598,8 @@ when defined(windows):
     transp.buffer = newSeq[byte](bufsize)
     transp.state = {ReadPaused, WritePaused}
     transp.queue = initDeque[StreamVector]()
-    transp.future = newFuture[void]("stream.socket.transport")
+    transp.future = Future[void].Raising([]).init(
+      "stream.socket.transport", {FutureFlag.OwnCancelSchedule})
     GC_ref(transp)
     transp
 
@@ -619,7 +620,8 @@ when defined(windows):
     transp.flags = flags
     transp.state = {ReadPaused, WritePaused}
     transp.queue = initDeque[StreamVector]()
-    transp.future = newFuture[void]("stream.pipe.transport")
+    transp.future = Future[void].Raising([]).init(
+      "stream.pipe.transport", {FutureFlag.OwnCancelSchedule})
     GC_ref(transp)
     transp
 
@@ -1457,7 +1459,8 @@ else:
     transp.buffer = newSeq[byte](bufsize)
     transp.state = {ReadPaused, WritePaused}
     transp.queue = initDeque[StreamVector]()
-    transp.future = newFuture[void]("socket.stream.transport")
+    transp.future = Future[void].Raising([]).init(
+      "socket.stream.transport", {FutureFlag.OwnCancelSchedule})
     GC_ref(transp)
     transp
 
@@ -1473,7 +1476,8 @@ else:
     transp.buffer = newSeq[byte](bufsize)
     transp.state = {ReadPaused, WritePaused}
     transp.queue = initDeque[StreamVector]()
-    transp.future = newFuture[void]("pipe.stream.transport")
+    transp.future = Future[void].Raising([]).init(
+      "pipe.stream.transport", {FutureFlag.OwnCancelSchedule})
     GC_ref(transp)
     transp
 
@@ -1806,6 +1810,9 @@ proc connect*(address: TransportAddress,
   if TcpNoDelay in flags: mappedFlags.incl(SocketFlags.TcpNoDelay)
   connect(address, bufferSize, child, localAddress, mappedFlags, dualstack)
 
+proc closed*(server: StreamServer): bool =
+  server.status == ServerStatus.Closed
+
 proc close*(server: StreamServer) =
   ## Release ``server`` resources.
   ##
@@ -1832,22 +1839,11 @@ proc close*(server: StreamServer) =
     else:
       server.sock.closeSocket(continuation)
 
-proc closeWait*(server: StreamServer): Future[void] {.
-     async: (raw: true, raises: []).} =
+proc closeWait*(server: StreamServer): Future[void] {.async: (raises: []).} =
   ## Close server ``server`` and release all resources.
-  let retFuture = newFuture[void](
-    "stream.server.closeWait", {FutureFlag.OwnCancelSchedule})
-
-  proc continuation(udata: pointer) =
-    retFuture.complete()
-
-  server.close()
-
-  if not(server.loopFuture.finished()):
-    server.loopFuture.addCallback(continuation, cast[pointer](retFuture))
-  else:
-    retFuture.complete()
-  retFuture
+  if not server.closed():
+    server.close()
+    await noCancel(server.join())
 
 proc getBacklogSize(backlog: int): cint =
   doAssert(backlog >= 0 and backlog <= high(int32))
@@ -2058,7 +2054,9 @@ proc createStreamServer*(host: TransportAddress,
   sres.init = init
   sres.bufferSize = bufferSize
   sres.status = Starting
-  sres.loopFuture = newFuture[void]("stream.transport.server")
+  sres.loopFuture = asyncloop.init(
+    Future[void].Raising([]), "stream.transport.server",
+    {FutureFlag.OwnCancelSchedule})
   sres.udata = udata
   sres.dualstack = dualstack
   if localAddress.family == AddressFamily.None:
@@ -2630,6 +2628,23 @@ proc join*(transp: StreamTransport): Future[void] {.
     retFuture.complete()
   return retFuture
 
+proc closed*(transp: StreamTransport): bool {.inline.} =
+  ## Returns ``true`` if transport in closed state.
+  ({ReadClosed, WriteClosed} * transp.state != {})
+
+proc finished*(transp: StreamTransport): bool {.inline.} =
+  ## Returns ``true`` if transport in finished (EOF) state.
+  ({ReadEof, WriteEof} * transp.state != {})
+
+proc failed*(transp: StreamTransport): bool {.inline.} =
+  ## Returns ``true`` if transport in error state.
+  ({ReadError, WriteError} * transp.state != {})
+
+proc running*(transp: StreamTransport): bool {.inline.} =
+  ## Returns ``true`` if transport is still pending.
+  ({ReadClosed, ReadEof, ReadError,
+    WriteClosed, WriteEof, WriteError} * transp.state == {})
+
 proc close*(transp: StreamTransport) =
   ## Closes and frees resources of transport ``transp``.
   ##
@@ -2672,31 +2687,11 @@ proc close*(transp: StreamTransport) =
       elif transp.kind == TransportKind.Socket:
         closeSocket(transp.fd, continuation)
 
-proc closeWait*(transp: StreamTransport): Future[void] {.
-    async: (raw: true, raises: []).} =
+proc closeWait*(transp: StreamTransport): Future[void] {.async: (raises: []).} =
   ## Close and frees resources of transport ``transp``.
-  let retFuture = newFuture[void](
-    "stream.transport.closeWait", {FutureFlag.OwnCancelSchedule})
-
-  if {ReadClosed, WriteClosed} * transp.state != {}:
-    retFuture.complete()
-    return retFuture
-
-  proc continuation(udata: pointer) {.gcsafe.} =
-    retFuture.complete()
-
-  proc cancellation(udata: pointer) {.gcsafe.} =
-    # We are not going to change the state of `retFuture` to cancelled, so we
-    # will prevent the entire sequence of Futures from being cancelled.
-    discard
-
-  transp.close()
-  if transp.future.finished():
-    retFuture.complete()
-  else:
-    transp.future.addCallback(continuation, cast[pointer](retFuture))
-    retFuture.cancelCallback = cancellation
-  retFuture
+  if not transp.closed():
+    transp.close()
+    await noCancel(transp.join())
 
 proc shutdownWait*(transp: StreamTransport): Future[void] {.
     async: (raw: true, raises: [TransportError, CancelledError]).} =
@@ -2755,23 +2750,6 @@ proc shutdownWait*(transp: StreamTransport): Future[void] {.
       transp.state.incl({WriteEof})
       callSoon(continuation, nil)
     retFuture
-
-proc closed*(transp: StreamTransport): bool {.inline.} =
-  ## Returns ``true`` if transport in closed state.
-  ({ReadClosed, WriteClosed} * transp.state != {})
-
-proc finished*(transp: StreamTransport): bool {.inline.} =
-  ## Returns ``true`` if transport in finished (EOF) state.
-  ({ReadEof, WriteEof} * transp.state != {})
-
-proc failed*(transp: StreamTransport): bool {.inline.} =
-  ## Returns ``true`` if transport in error state.
-  ({ReadError, WriteError} * transp.state != {})
-
-proc running*(transp: StreamTransport): bool {.inline.} =
-  ## Returns ``true`` if transport is still pending.
-  ({ReadClosed, ReadEof, ReadError,
-    WriteClosed, WriteEof, WriteError} * transp.state == {})
 
 proc fromPipe2*(fd: AsyncFD, child: StreamTransport = nil,
                 bufferSize = DefaultStreamBufferSize
