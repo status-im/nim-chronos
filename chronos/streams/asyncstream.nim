@@ -9,7 +9,7 @@
 
 {.push raises: [].}
 
-import ../[config, asyncloop, asyncsync]
+import ../[config, asyncloop, asyncsync, bipbuffer]
 import ../transports/[common, stream]
 export asyncloop, asyncsync, stream, common
 
@@ -34,9 +34,10 @@ type
   AsyncStreamWriteEOFError* = object of AsyncStreamWriteError
 
   AsyncBuffer* = object
-    offset*: int
-    buffer*: seq[byte]
+    backend*: BipBuffer
     events*: array[2, AsyncEvent]
+
+  AsyncBufferRef* = ref AsyncBuffer
 
   WriteType* = enum
     Pointer, Sequence, String
@@ -73,7 +74,7 @@ type
     tsource*: StreamTransport
     readerLoop*: StreamReaderLoop
     state*: AsyncStreamState
-    buffer*: AsyncBuffer
+    buffer*: AsyncBufferRef
     udata: pointer
     error*: ref AsyncStreamError
     bytesCount*: uint64
@@ -96,85 +97,51 @@ type
 
   AsyncStreamRW* = AsyncStreamReader | AsyncStreamWriter
 
-proc init*(t: typedesc[AsyncBuffer], size: int): AsyncBuffer =
-  AsyncBuffer(
-    buffer: newSeq[byte](size),
-    events: [newAsyncEvent(), newAsyncEvent()],
-    offset: 0
+proc new*(t: typedesc[AsyncBufferRef], size: int): AsyncBufferRef =
+  AsyncBufferRef(
+    backend: BipBuffer.init(size),
+    events: [newAsyncEvent(), newAsyncEvent()]
   )
 
-proc getBuffer*(sb: AsyncBuffer): pointer {.inline.} =
-  unsafeAddr sb.buffer[sb.offset]
-
-proc bufferLen*(sb: AsyncBuffer): int {.inline.} =
-  len(sb.buffer) - sb.offset
-
-proc getData*(sb: AsyncBuffer): pointer {.inline.} =
-  unsafeAddr sb.buffer[0]
-
-template dataLen*(sb: AsyncBuffer): int =
-  sb.offset
-
-proc `[]`*(sb: AsyncBuffer, index: int): byte {.inline.} =
-  doAssert(index < sb.offset)
-  sb.buffer[index]
-
-proc update*(sb: var AsyncBuffer, size: int) {.inline.} =
-  sb.offset += size
-
-template wait*(sb: var AsyncBuffer): untyped =
+template wait*(sb: AsyncBufferRef): untyped =
   sb.events[0].clear()
   sb.events[1].fire()
   sb.events[0].wait()
 
-template transfer*(sb: var AsyncBuffer): untyped =
+template transfer*(sb: AsyncBufferRef): untyped =
   sb.events[1].clear()
   sb.events[0].fire()
   sb.events[1].wait()
 
-proc forget*(sb: var AsyncBuffer) {.inline.} =
+proc forget*(sb: AsyncBufferRef) {.inline.} =
   sb.events[1].clear()
   sb.events[0].fire()
 
-proc shift*(sb: var AsyncBuffer, size: int) {.inline.} =
-  if sb.offset > size:
-    moveMem(addr sb.buffer[0], addr sb.buffer[size], sb.offset - size)
-    sb.offset = sb.offset - size
-  else:
-    sb.offset = 0
-
-proc copyData*(sb: AsyncBuffer, dest: pointer, offset, length: int) {.inline.} =
-  copyMem(cast[pointer](cast[uint](dest) + cast[uint](offset)),
-          unsafeAddr sb.buffer[0], length)
-
-proc upload*(sb: ptr AsyncBuffer, pbytes: ptr byte,
+proc upload*(sb: AsyncBufferRef, pbytes: ptr byte,
              nbytes: int): Future[void] {.
      async: (raises: [CancelledError]).} =
   ## You can upload any amount of bytes to the buffer. If size of internal
   ## buffer is not enough to fit all the data at once, data will be uploaded
   ## via chunks of size up to internal buffer size.
-  var length = nbytes
-  var srcBuffer = cast[ptr UncheckedArray[byte]](pbytes)
-  var srcOffset = 0
+  var
+    length = nbytes
+    srcBuffer = cast[ptr UncheckedArray[byte]](pbytes)
+    offset = 0
+
   while length > 0:
-    let size = min(length, sb[].bufferLen())
+    let size = min(length, sb.backend.availSpace())
     if size == 0:
-      # Internal buffer is full, we need to transfer data to consumer.
-      await sb[].transfer()
+      # Internal buffer is full, we need to notify consumer.
+      await sb.transfer()
     else:
+      let (data, _) = sb.backend.reserve(pointer, int)
       # Copy data from `pbytes` to internal buffer.
-      copyMem(addr sb[].buffer[sb.offset], addr srcBuffer[srcOffset], size)
-      sb[].offset = sb[].offset + size
-      srcOffset = srcOffset + size
+      copyMem(data, addr srcBuffer[offset], size)
+      sb.backend.commit(size)
+      offset = offset + size
       length = length - size
   # We notify consumers that new data is available.
-  sb[].forget()
-
-template toDataOpenArray*(sb: AsyncBuffer): auto =
-  toOpenArray(sb.buffer, 0, sb.offset - 1)
-
-template toBufferOpenArray*(sb: AsyncBuffer): auto =
-  toOpenArray(sb.buffer, sb.offset, len(sb.buffer) - 1)
+  sb.forget()
 
 template copyOut*(dest: pointer, item: WriteItem, length: int) =
   if item.kind == Pointer:
@@ -243,7 +210,7 @@ proc atEof*(rstream: AsyncStreamReader): bool =
       rstream.rsource.atEof()
   else:
     (rstream.state != AsyncStreamState.Running) and
-      (rstream.buffer.dataLen() == 0)
+      (rstream.buffer.backend.usedSpace() == 0)
 
 proc atEof*(wstream: AsyncStreamWriter): bool =
   ## Returns ``true`` is writing stream ``wstream`` closed or finished.
@@ -331,12 +298,12 @@ template checkStreamFinished*(t: untyped) =
 
 template readLoop(body: untyped): untyped =
   while true:
-    if rstream.buffer.dataLen() == 0:
+    if rstream.buffer.backend.usedSpace() == 0:
       if rstream.state == AsyncStreamState.Error:
         raise rstream.error
 
     let (consumed, done) = body
-    rstream.buffer.shift(consumed)
+    discard rstream.buffer.backend.consume(consumed)
     rstream.bytesCount = rstream.bytesCount + uint64(consumed)
     if done:
       break
@@ -373,17 +340,23 @@ proc readExactly*(rstream: AsyncStreamReader, pbytes: pointer,
     if isNil(rstream.readerLoop):
       await readExactly(rstream.rsource, pbytes, nbytes)
     else:
-      var index = 0
-      var pbuffer = cast[ptr UncheckedArray[byte]](pbytes)
+      var
+        index = 0
+        pbuffer = cast[ptr UncheckedArray[byte]](pbytes)
       readLoop():
-        if rstream.buffer.dataLen() == 0:
+        if rstream.buffer.backend.usedSpace() == 0:
           if rstream.atEof():
             raise newAsyncStreamIncompleteError()
-        let count = min(nbytes - index, rstream.buffer.dataLen())
-        if count > 0:
-          rstream.buffer.copyData(addr pbuffer[index], 0, count)
-          index += count
-        (consumed: count, done: index == nbytes)
+        var readed = 0
+        for (region, rsize) in rstream.buffer.backend.regions(pointer, int):
+          let count = min(nbytes - index, rsize)
+          readed += count
+          if count > 0:
+            copyMem(addr pbuffer[index], region, count)
+            index += count
+          if index == nbytes:
+            break
+        (consumed: readed, done: index == nbytes)
 
 proc readOnce*(rstream: AsyncStreamReader, pbytes: pointer,
                nbytes: int): Future[int] {.
@@ -407,15 +380,21 @@ proc readOnce*(rstream: AsyncStreamReader, pbytes: pointer,
     if isNil(rstream.readerLoop):
       return await readOnce(rstream.rsource, pbytes, nbytes)
     else:
-      var count = 0
+      var
+        pbuffer = cast[ptr UncheckedArray[byte]](pbytes)
+        index = 0
       readLoop():
-        if rstream.buffer.dataLen() == 0:
+        if rstream.buffer.backend.usedSpace() == 0:
           (0, rstream.atEof())
         else:
-          count = min(rstream.buffer.dataLen(), nbytes)
-          rstream.buffer.copyData(pbytes, 0, count)
-          (count, true)
-      return count
+          for (region, rsize) in rstream.buffer.backend.regions(pointer, int):
+            let size = min(rsize, nbytes - index)
+            copyMem(addr pbuffer[index], region, size)
+            index += size
+            if index >= nbytes:
+              break
+          (index, true)
+      index
 
 proc readUntil*(rstream: AsyncStreamReader, pbytes: pointer, nbytes: int,
                 sep: seq[byte]): Future[int] {.
@@ -456,28 +435,32 @@ proc readUntil*(rstream: AsyncStreamReader, pbytes: pointer, nbytes: int,
     if isNil(rstream.readerLoop):
       return await readUntil(rstream.rsource, pbytes, nbytes, sep)
     else:
-      var pbuffer = cast[ptr UncheckedArray[byte]](pbytes)
-      var state = 0
-      var k = 0
+      var
+        pbuffer = cast[ptr UncheckedArray[byte]](pbytes)
+        state = 0
+        k = 0
       readLoop():
         if rstream.atEof():
           raise newAsyncStreamIncompleteError()
+
         var index = 0
-        while index < rstream.buffer.dataLen():
+        for ch in rstream.buffer.backend.bytes():
           if k >= nbytes:
             raise newAsyncStreamLimitError()
-          let ch = rstream.buffer[index]
+
           inc(index)
           pbuffer[k] = ch
           inc(k)
+
           if sep[state] == ch:
             inc(state)
             if state == len(sep):
               break
           else:
             state = 0
+
         (index, state == len(sep))
-      return k
+      k
 
 proc readLine*(rstream: AsyncStreamReader, limit = 0,
                sep = "\r\n"): Future[string] {.
@@ -507,18 +490,19 @@ proc readLine*(rstream: AsyncStreamReader, limit = 0,
       return await readLine(rstream.rsource, limit, sep)
     else:
       let lim = if limit <= 0: -1 else: limit
-      var state = 0
-      var res = ""
+      var
+        state = 0
+        res = ""
+
       readLoop():
         if rstream.atEof():
           (0, true)
         else:
           var index = 0
-          while index < rstream.buffer.dataLen():
-            let ch = char(rstream.buffer[index])
+          for ch in rstream.buffer.backend.bytes():
             inc(index)
 
-            if sep[state] == ch:
+            if sep[state] == char(ch):
               inc(state)
               if state == len(sep):
                 break
@@ -529,11 +513,14 @@ proc readLine*(rstream: AsyncStreamReader, limit = 0,
                   res.add(sep[0 ..< missing])
                 else:
                   res.add(sep[0 ..< state])
-              res.add(ch)
+                state = 0
+
+              res.add(char(ch))
               if len(res) == lim:
                 break
+
           (index, (state == len(sep)) or (lim == len(res)))
-      return res
+      res
 
 proc read*(rstream: AsyncStreamReader): Future[seq[byte]] {.
      async: (raises: [CancelledError, AsyncStreamError]).} =
@@ -555,15 +542,18 @@ proc read*(rstream: AsyncStreamReader): Future[seq[byte]] {.
     if isNil(rstream.readerLoop):
       return await read(rstream.rsource)
     else:
-      var res = newSeq[byte]()
+      var res: seq[byte]
       readLoop():
         if rstream.atEof():
           (0, true)
         else:
-          let count = rstream.buffer.dataLen()
-          res.add(rstream.buffer.buffer.toOpenArray(0, count - 1))
-          (count, false)
-      return res
+          var readed = 0
+          for (region, rsize) in
+              rstream.buffer.backend.regions(UncheckedByteArray, int):
+            readed += rsize
+            res.add(region.toOpenArray(0, rsize - 1))
+          (readed, false)
+      res
 
 proc read*(rstream: AsyncStreamReader, n: int): Future[seq[byte]] {.
      async: (raises: [CancelledError, AsyncStreamError]).} =
@@ -592,10 +582,14 @@ proc read*(rstream: AsyncStreamReader, n: int): Future[seq[byte]] {.
           if rstream.atEof():
             (0, true)
           else:
-            let count = min(rstream.buffer.dataLen(), n - len(res))
-            res.add(rstream.buffer.buffer.toOpenArray(0, count - 1))
-            (count, len(res) == n)
-        return res
+            var readed = 0
+            for (region, rsize) in
+                rstream.buffer.backend.regions(UncheckedByteArray, int):
+              let count = min(rsize, n - len(res))
+              readed += count
+              res.add(region.toOpenArray(0, count - 1))
+            (readed, len(res) == n)
+        res
 
 proc consume*(rstream: AsyncStreamReader): Future[int] {.
      async: (raises: [CancelledError, AsyncStreamError]).} =
@@ -622,9 +616,10 @@ proc consume*(rstream: AsyncStreamReader): Future[int] {.
         if rstream.atEof():
           (0, true)
         else:
-          res += rstream.buffer.dataLen()
-          (rstream.buffer.dataLen(), false)
-      return res
+          let used = rstream.buffer.backend.usedSpace()
+          res += used
+          (used, false)
+      res
 
 proc consume*(rstream: AsyncStreamReader, n: int): Future[int] {.
      async: (raises: [CancelledError, AsyncStreamError]).} =
@@ -652,13 +647,12 @@ proc consume*(rstream: AsyncStreamReader, n: int): Future[int] {.
       else:
         var res = 0
         readLoop():
-          if rstream.atEof():
-            (0, true)
-          else:
-            let count = min(rstream.buffer.dataLen(), n - res)
-            res += count
-            (count, res == n)
-        return res
+          let
+            used = rstream.buffer.backend.usedSpace()
+            count = min(used, n - res)
+          res += count
+          (count, res == n)
+        res
 
 proc readMessage*(rstream: AsyncStreamReader, pred: ReadMessagePredicate) {.
      async: (raises: [CancelledError, AsyncStreamError]).} =
@@ -689,15 +683,19 @@ proc readMessage*(rstream: AsyncStreamReader, pred: ReadMessagePredicate) {.
       await readMessage(rstream.rsource, pred)
     else:
       readLoop():
-        let count = rstream.buffer.dataLen()
-        if count == 0:
+        if rstream.buffer.backend.usedSpace() == 0:
           if rstream.atEof():
             pred([])
           else:
             # Case, when transport's buffer is not yet filled with data.
             (0, false)
         else:
-          pred(rstream.buffer.buffer.toOpenArray(0, count - 1))
+          var res: tuple[consumed: int, done: bool]
+          for (region, rsize) in
+              rstream.buffer.backend.regions(UncheckedByteArray, int):
+            res = pred(region.toOpenArray(0, rsize - 1))
+            break
+          res
 
 proc write*(wstream: AsyncStreamWriter, pbytes: pointer,
             nbytes: int) {.
@@ -951,7 +949,7 @@ proc init*(child, rsource: AsyncStreamReader, loop: StreamReaderLoop,
   child.readerLoop = loop
   child.rsource = rsource
   child.tsource = rsource.tsource
-  child.buffer = AsyncBuffer.init(bufferSize)
+  child.buffer = AsyncBufferRef.new(bufferSize)
   trackCounter(AsyncStreamReaderTrackerName)
   child.startReader()
 
@@ -963,7 +961,7 @@ proc init*[T](child, rsource: AsyncStreamReader, loop: StreamReaderLoop,
   child.readerLoop = loop
   child.rsource = rsource
   child.tsource = rsource.tsource
-  child.buffer = AsyncBuffer.init(bufferSize)
+  child.buffer = AsyncBufferRef.new(bufferSize)
   if not isNil(udata):
     GC_ref(udata)
     child.udata = cast[pointer](udata)

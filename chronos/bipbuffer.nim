@@ -132,7 +132,7 @@ proc commit*(bp: var BipBuffer, size: Natural) =
     bp.b.finish += toCommit
   bp.r.zero()
 
-proc decommit*(bp: var BipBuffer, size: Natural): Natural =
+proc consume*(bp: var BipBuffer, size: Natural): Natural =
   ## The procedure removes/frees `size` bytes from the buffer.
   ## Returns number of bytes actually removed.
   var currentSize = size

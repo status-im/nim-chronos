@@ -61,7 +61,7 @@ type
 
   ReaderFuture = Future[void].Raising([TransportError, CancelledError])
 
-  UncheckedByteArray = ptr UncheckedArray[byte]
+  UncheckedByteArray* = ptr UncheckedArray[byte]
 
 const
   StreamTransportTrackerName* = "stream.transport"
@@ -2348,7 +2348,7 @@ template readLoop(name, body: untyped): untyped =
         raise transp.getError()
 
     let (consumed, done) = body
-    discard transp.buffer.decommit(consumed)
+    discard transp.buffer.consume(consumed)
     if done:
       break
 
