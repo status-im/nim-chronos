@@ -555,14 +555,16 @@ proc consumeBody*(request: HttpRequestRef): Future[void] {.
   finally:
     await reader.closeWait()
 
-proc getAcceptInfo*(request: HttpRequestRef): Result[AcceptInfo, cstring] =
+proc getAcceptInfo*(request: HttpRequestRef): Result[AcceptInfo, cstring] {.
+     raises: [ref ValueError].} =
   ## Returns value of `Accept` header as `AcceptInfo` object.
   ##
   ## If ``Accept`` header is missing in request headers, ``*/*`` content
   ## type will be returned.
   getAcceptInfo(request.headers.getString(AcceptHeaderName))
 
-proc preferredContentMediaType*(acceptHeader: string): MediaType =
+proc preferredContentMediaType*(acceptHeader: string): MediaType {.
+     raises: [ref ValueError].} =
   ## Returns preferred content-type using ``Accept`` header value specified by
   ## string ``acceptHeader``.
   let res = getAcceptInfo(acceptHeader)
@@ -578,7 +580,8 @@ proc preferredContentMediaType*(acceptHeader: string): MediaType =
 
 proc preferredContentType*(acceptHeader: string,
                            types: varargs[MediaType]
-                          ): Result[MediaType, cstring] =
+                          ): Result[MediaType, cstring] {.
+     raises: [ref ValueError].} =
   ## Match or obtain preferred content type using ``Accept`` header specified by
   ## string ``acceptHeader`` and server preferred content types ``types``.
   ##
@@ -657,14 +660,16 @@ proc preferredContentType*(acceptHeader: string,
         else:
           ok(currentType)
 
-proc preferredContentMediaType*(request: HttpRequestRef): MediaType =
+proc preferredContentMediaType*(request: HttpRequestRef): MediaType{.
+     raises: [ValueError].} =
   ## Returns preferred content-type using ``Accept`` header specified by
   ## client in request ``request``.
   preferredContentMediaType(request.headers.getString(AcceptHeaderName))
 
 proc preferredContentType*(request: HttpRequestRef,
                            types: varargs[MediaType]
-                          ): Result[MediaType, cstring] =
+                          ): Result[MediaType, cstring] {.
+     raises: [ref ValueError].} =
   ## Match or obtain preferred content-type using ``Accept`` header specified by
   ## client in request ``request``.
   preferredContentType(request.headers.getString(AcceptHeaderName), types)
