@@ -11,11 +11,14 @@
 
 import std/[tables, uri, strutils]
 import stew/[base10], httputils, results
-import ../../asyncloop, ../../asyncsync
+import ../../[asyncloop, asyncsync]
 import ../../streams/[asyncstream, boundstream, chunkstream]
 import "."/[httptable, httpcommon, multipart]
+from ../../transports/common import TransportAddress, ServerFlags, `$`, `==`
+
 export asyncloop, asyncsync, httptable, httpcommon, httputils, multipart,
        asyncstream, boundstream, chunkstream, uri, tables, results
+export TransportAddress, ServerFlags, `$`, `==`
 
 type
   HttpServerFlags* {.pure.} = enum
@@ -185,6 +188,8 @@ proc init(htype: typedesc[HttpProcessError],
   HttpProcessError(kind: error)
 
 proc defaultResponse*(exc: ref CatchableError): HttpResponseRef
+
+proc defaultResponse*(msg: HttpMessage): HttpResponseRef
 
 proc new(htype: typedesc[HttpConnectionHolderRef], server: HttpServerRef,
          transp: StreamTransport,
@@ -394,6 +399,18 @@ proc defaultResponse*(exc: ref CatchableError): HttpResponseRef =
   else:
     HttpResponseRef(state: HttpResponseState.ErrorCode, status: Http503)
 
+proc defaultResponse*(msg: HttpMessage): HttpResponseRef =
+  HttpResponseRef(state: HttpResponseState.ErrorCode, status: msg.code)
+
+proc defaultResponse*(err: HttpProcessError): HttpResponseRef =
+  HttpResponseRef(state: HttpResponseState.ErrorCode, status: err.code)
+
+proc dropResponse*(): HttpResponseRef =
+  HttpResponseRef(state: HttpResponseState.Failed)
+
+proc codeResponse*(status: HttpCode): HttpResponseRef =
+  HttpResponseRef(state: HttpResponseState.ErrorCode, status: status)
+
 proc dumbResponse*(): HttpResponseRef {.
      deprecated: "Please use defaultResponse() instead".} =
   ## Create an empty response to return when request processor got no request.
@@ -411,29 +428,21 @@ proc hasBody*(request: HttpRequestRef): bool =
   request.requestFlags * {HttpRequestFlags.BoundBody,
                           HttpRequestFlags.UnboundBody} != {}
 
-proc prepareRequest(conn: HttpConnectionRef,
-                    req: HttpRequestHeader): HttpResultMessage[HttpRequestRef] =
-  var request = HttpRequestRef(connection: conn, state: HttpState.Alive)
+func new(t: typedesc[HttpRequestRef], conn: HttpConnectionRef): HttpRequestRef =
+  HttpRequestRef(connection: conn, state: HttpState.Alive)
 
-  if req.version notin {HttpVersion10, HttpVersion11}:
-    return err(HttpMessage.init(Http505, "Unsupported HTTP protocol version"))
+proc updateRequest*(request: HttpRequestRef, scheme: string, meth: HttpMethod,
+                    version: HttpVersion, requestUri: string,
+                    headers: HttpTable): HttpResultMessage[void] =
+  ## Update HTTP request object using base request object with new properties.
 
-  request.scheme =
-    if HttpServerFlags.Secure in conn.server.flags:
-      "https"
-    else:
-      "http"
+  # Store request version and call method.
+  request.scheme = scheme
+  request.version = version
+  request.meth = meth
 
-  request.version = req.version
-  request.meth = req.meth
-
-  request.rawPath =
-    block:
-      let res = req.uri()
-      if len(res) == 0:
-        return err(HttpMessage.init(Http400, "Invalid request URI"))
-      res
-
+  # Processing request's URI
+  request.rawPath = requestUri
   request.uri =
     if request.rawPath != "*":
       let uri = parseUri(request.rawPath)
@@ -445,10 +454,11 @@ proc prepareRequest(conn: HttpConnectionRef,
       uri.path = "*"
       uri
 
+  # Conversion of request query string to HttpTable.
   request.query =
     block:
       let queryFlags =
-        if QueryCommaSeparatedArray in conn.server.flags:
+        if QueryCommaSeparatedArray in request.connection.server.flags:
           {QueryParamsFlag.CommaSeparatedArray}
         else:
           {}
@@ -457,22 +467,8 @@ proc prepareRequest(conn: HttpConnectionRef,
         table.add(key, value)
       table
 
-  request.headers =
-    block:
-      var table = HttpTable.init()
-      # Retrieve headers and values
-      for key, value in req.headers():
-        table.add(key, value)
-      # Validating HTTP request headers
-      # Some of the headers must be present only once.
-      if table.count(ContentTypeHeader) > 1:
-        return err(HttpMessage.init(Http400, "Multiple Content-Type headers"))
-      if table.count(ContentLengthHeader) > 1:
-        return err(HttpMessage.init(Http400, "Multiple Content-Length headers"))
-      if table.count(TransferEncodingHeader) > 1:
-        return err(HttpMessage.init(Http400,
-                                    "Multuple Transfer-Encoding headers"))
-      table
+  # Store request headers
+  request.headers = headers
 
   # Preprocessing "Content-Encoding" header.
   request.contentEncoding =
@@ -492,15 +488,17 @@ proc prepareRequest(conn: HttpConnectionRef,
   # steps to reveal information about body.
   request.contentLength =
     if ContentLengthHeader in request.headers:
+      # Request headers has `Content-Length` header present.
       let length = request.headers.getInt(ContentLengthHeader)
       if length != 0:
         if request.meth == MethodTrace:
           let msg = "TRACE requests could not have request body"
           return err(HttpMessage.init(Http400, msg))
-        # Because of coversion to `int` we should avoid unexpected OverflowError.
+        # Because of coversion to `int` we should avoid unexpected
+        # OverflowError.
         if length > uint64(high(int)):
           return err(HttpMessage.init(Http413, "Unsupported content length"))
-        if length > uint64(conn.server.maxRequestBodySize):
+        if length > uint64(request.connection.server.maxRequestBodySize):
           return err(HttpMessage.init(Http413, "Content length exceeds limits"))
         request.requestFlags.incl(HttpRequestFlags.BoundBody)
         int(length)
@@ -508,6 +506,7 @@ proc prepareRequest(conn: HttpConnectionRef,
         0
     else:
       if TransferEncodingFlags.Chunked in request.transferEncoding:
+        # Request headers has "Transfer-Encoding: chunked" header present.
         if request.meth == MethodTrace:
           let msg = "TRACE requests could not have request body"
           return err(HttpMessage.init(Http400, msg))
@@ -515,8 +514,9 @@ proc prepareRequest(conn: HttpConnectionRef,
       0
 
   if request.hasBody():
-    # If request has body, we going to understand how its encoded.
+    # If the request has a body, we will determine how it is encoded.
     if ContentTypeHeader in request.headers:
+      # Request headers has "Content-Type" header present.
       let contentType =
         getContentType(request.headers.getList(ContentTypeHeader)).valueOr:
           let msg = "Incorrect or missing Content-Type header"
@@ -526,12 +526,67 @@ proc prepareRequest(conn: HttpConnectionRef,
       elif contentType == MultipartContentType:
         request.requestFlags.incl(HttpRequestFlags.MultipartForm)
       request.contentTypeData = Opt.some(contentType)
-
+    # If `Expect` header is present, we will handle expectation procedure.
     if ExpectHeader in request.headers:
       let expectHeader = request.headers.getString(ExpectHeader)
       if strip(expectHeader).toLowerAscii() == "100-continue":
         request.requestFlags.incl(HttpRequestFlags.ClientExpect)
 
+  ok()
+
+proc updateRequest*(request: HttpRequestRef, meth: HttpMethod,
+                    requestUri: string,
+                    headers: HttpTable): HttpResultMessage[void] =
+  ## Update HTTP request object using base request object with new properties.
+  updateRequest(request, request.scheme, meth, request.version, requestUri,
+                headers)
+
+proc updateRequest*(request: HttpRequestRef, requestUri: string,
+                    headers: HttpTable): HttpResultMessage[void] =
+  ## Update HTTP request object using base request object with new properties.
+  updateRequest(request, request.scheme, request.meth, request.version,
+                requestUri, headers)
+
+proc updateRequest*(request: HttpRequestRef,
+                    requestUri: string): HttpResultMessage[void] =
+  ## Update HTTP request object using base request object with new properties.
+  updateRequest(request, request.scheme, request.meth, request.version,
+                requestUri, request.headers)
+
+proc updateRequest*(request: HttpRequestRef,
+                    headers: HttpTable): HttpResultMessage[void] =
+  ## Update HTTP request object using base request object with new properties.
+  updateRequest(request, request.scheme, request.meth, request.version,
+                request.rawPath, headers)
+
+proc prepareRequest(conn: HttpConnectionRef,
+                    req: HttpRequestHeader): HttpResultMessage[HttpRequestRef] =
+  let
+    request = HttpRequestRef.new(conn)
+    scheme =
+      if HttpServerFlags.Secure in conn.server.flags:
+        "https"
+      else:
+        "http"
+    headers =
+      block:
+        var table = HttpTable.init()
+        # Retrieve headers and values
+        for key, value in req.headers():
+          table.add(key, value)
+        # Validating HTTP request headers
+        # Some of the headers must be present only once.
+        if table.count(ContentTypeHeader) > 1:
+          return err(HttpMessage.init(Http400,
+                                      "Multiple Content-Type headers"))
+        if table.count(ContentLengthHeader) > 1:
+          return err(HttpMessage.init(Http400,
+                                      "Multiple Content-Length headers"))
+        if table.count(TransferEncodingHeader) > 1:
+          return err(HttpMessage.init(Http400,
+                                      "Multuple Transfer-Encoding headers"))
+        table
+  ? updateRequest(request, scheme, req.meth, req.version, req.uri(), headers)
   trackCounter(HttpServerRequestTrackerName)
   ok(request)
 
@@ -930,6 +985,25 @@ proc getRemoteAddress(transp: StreamTransport): Opt[TransportAddress] =
 proc getRemoteAddress(connection: HttpConnectionRef): Opt[TransportAddress] =
   if isNil(connection): return Opt.none(TransportAddress)
   getRemoteAddress(connection.transp)
+
+proc getLocalAddress(transp: StreamTransport): Opt[TransportAddress] =
+  if isNil(transp): return Opt.none(TransportAddress)
+  try:
+    Opt.some(transp.localAddress())
+  except TransportOsError:
+    Opt.none(TransportAddress)
+
+proc getLocalAddress(connection: HttpConnectionRef): Opt[TransportAddress] =
+  if isNil(connection): return Opt.none(TransportAddress)
+  getLocalAddress(connection.transp)
+
+proc remote*(request: HttpRequestRef): Opt[TransportAddress] =
+  ## Returns remote address of HTTP request's connection.
+  request.connection.getRemoteAddress()
+
+proc local*(request: HttpRequestRef): Opt[TransportAddress] =
+  ## Returns local address of HTTP request's connection.
+  request.connection.getLocalAddress()
 
 proc getRequestFence*(server: HttpServerRef,
                       connection: HttpConnectionRef): Future[RequestFence] {.
