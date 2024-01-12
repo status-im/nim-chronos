@@ -16,5 +16,4 @@ Examples are available in the [`docs/examples/`](https://github.com/status-im/ni
 
 * [httpget](https://github.com/status-im/nim-chronos/tree/master/docs/examples/httpget.nim) - Downloading a web page using the http client
 * [twogets](https://github.com/status-im/nim-chronos/tree/master/docs/examples/twogets.nim) - Download two pages concurrently
-* [middleware](https://github.com/status-im/nim-chronos/tree/master/docs/examples/middleware.nim)
-- Deploy multiple HTTP server middlewares
+* [middleware](https://github.com/status-im/nim-chronos/tree/master/docs/examples/middleware.nim) - Deploy multiple HTTP server middlewares
