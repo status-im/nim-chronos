@@ -228,8 +228,8 @@ proc prepareMiddlewares(
             realHandler = currentHandler
           res =
             proc(request: RequestFence): Future[HttpResponseRef] {.
-              async: (raises: [CancelledError]).} =
-              await middleware.handler(middleware, request, realHandler)
+              async: (raises: [CancelledError], raw: true).} =
+              middleware.handler(middleware, request, realHandler)
         res
     handlers[index] = processor
     currentHandler = processor
