@@ -8,6 +8,7 @@
 - [Errors and exceptions](./error_handling.md)
 - [Tips, tricks and best practices](./tips.md)
 - [Porting code to `chronos`](./porting.md)
+- [HTTP server middleware](./http_server_middleware.md)
 
 # Developer guide
 

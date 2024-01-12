@@ -18,8 +18,15 @@ suite "HTTP server testing suite":
     TooBigTest = enum
       GetBodyTest, ConsumeBodyTest, PostUrlTest, PostMultipartTest
     TestHttpResponse = object
+      status: int
       headers: HttpTable
       data: string
+
+    FirstMiddlewareRef = ref object of HttpServerMiddlewareRef
+      someInteger: int
+
+    SecondMiddlewareRef = ref object of HttpServerMiddlewareRef
+      someString: string
 
   proc httpClient(address: TransportAddress,
                   data: string): Future[string] {.async.} =
@@ -50,7 +57,7 @@ suite "HTTP server testing suite":
     zeroMem(addr buffer[0], len(buffer))
     await transp.readExactly(addr buffer[0], length)
     let data = bytesToString(buffer.toOpenArray(0, length - 1))
-    let headers =
+    let (status, headers) =
       block:
         let resp = parseResponse(hdata, false)
         if resp.failed():
@@ -58,8 +65,38 @@ suite "HTTP server testing suite":
         var res = HttpTable.init()
         for key, value in resp.headers(hdata):
           res.add(key, value)
-        res
-    return TestHttpResponse(headers: headers, data: data)
+        (resp.code, res)
+    TestHttpResponse(status: status, headers: headers, data: data)
+
+  proc httpClient3(address: TransportAddress,
+                   data: string): Future[TestHttpResponse] {.async.} =
+    var
+      transp: StreamTransport
+      buffer = newSeq[byte](4096)
+      sep = @[0x0D'u8, 0x0A'u8, 0x0D'u8, 0x0A'u8]
+    try:
+      transp = await connect(address)
+      if len(data) > 0:
+        let wres = await transp.write(data)
+        if wres != len(data):
+          raise newException(ValueError, "Unable to write full request")
+      let hres = await transp.readUntil(addr buffer[0], len(buffer), sep)
+      var hdata = @buffer
+      hdata.setLen(hres)
+      var rres = bytesToString(await transp.read())
+      let (status, headers) =
+        block:
+          let resp = parseResponse(hdata, false)
+          if resp.failed():
+            raise newException(ValueError, "Unable to decode response headers")
+          var res = HttpTable.init()
+          for key, value in resp.headers(hdata):
+            res.add(key, value)
+          (resp.code, res)
+      TestHttpResponse(status: status, headers: headers, data: rres)
+    finally:
+      if not(isNil(transp)):
+        await closeWait(transp)
 
   proc testTooBigBodyChunked(operation: TooBigTest): Future[bool] {.async.} =
     var serverRes = false
@@ -1487,6 +1524,262 @@ suite "HTTP server testing suite":
     for transpFut in clientFutures:
       pending.add(closeWait(transpFut.read()))
     await allFutures(pending)
+    await server.stop()
+    await server.closeWait()
+
+  asyncTest "HTTP middleware request filtering test":
+    proc init(t: typedesc[FirstMiddlewareRef],
+              data: int): HttpServerMiddlewareRef =
+      proc shandler(
+          middleware: HttpServerMiddlewareRef,
+          reqfence: RequestFence,
+          nextHandler: HttpProcessCallback2
+      ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
+        let mw = FirstMiddlewareRef(middleware)
+        if reqfence.isErr():
+          # Our handler is not supposed to handle request errors, so we
+          # call next handler in sequence which could process errors.
+          return await nextHandler(reqfence)
+
+        let request = reqfence.get()
+        if request.uri.path == "/first":
+          # This is request we are waiting for, so we going to process it.
+          try:
+            await request.respond(Http200, $mw.someInteger)
+          except HttpWriteError as exc:
+            defaultResponse(exc)
+        else:
+          # We know nothing about request's URI, so we pass this request to the
+          # next handler which could process such request.
+          await nextHandler(reqfence)
+
+      HttpServerMiddlewareRef(
+        FirstMiddlewareRef(someInteger: data, handler: shandler))
+
+    proc init(t: typedesc[SecondMiddlewareRef],
+              data: string): HttpServerMiddlewareRef =
+      proc shandler(
+          middleware: HttpServerMiddlewareRef,
+          reqfence: RequestFence,
+          nextHandler: HttpProcessCallback2
+      ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
+        let mw = SecondMiddlewareRef(middleware)
+        if reqfence.isErr():
+          # Our handler is not supposed to handle request errors, so we
+          # call next handler in sequence which could process errors.
+          return await nextHandler(reqfence)
+
+        let request = reqfence.get()
+
+        if request.uri.path == "/second":
+          # This is request we are waiting for, so we going to process it.
+          try:
+            await request.respond(Http200, mw.someString)
+          except HttpWriteError as exc:
+            defaultResponse(exc)
+        else:
+          # We know nothing about request's URI, so we pass this request to the
+          # next handler which could process such request.
+          await nextHandler(reqfence)
+
+      HttpServerMiddlewareRef(
+        SecondMiddlewareRef(someString: data, handler: shandler))
+
+    proc process(r: RequestFence): Future[HttpResponseRef] {.
+         async: (raises: [CancelledError]).} =
+      if r.isOk():
+        let request = r.get()
+        if request.uri.path == "/test":
+          try:
+            await request.respond(Http200, "ORIGIN")
+          except HttpWriteError as exc:
+            defaultResponse(exc)
+        else:
+          defaultResponse()
+      else:
+        defaultResponse()
+
+    let
+      middlewares = [FirstMiddlewareRef.init(655370),
+                     SecondMiddlewareRef.init("SECOND")]
+      socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
+      res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
+                              socketFlags = socketFlags,
+                              middlewares = middlewares)
+    check res.isOk()
+
+    let server = res.get()
+    server.start()
+    let
+      address = server.instance.localAddress()
+      req1 = "GET /test HTTP/1.1\r\n\r\n"
+      req2 = "GET /first HTTP/1.1\r\n\r\n"
+      req3 = "GET /second HTTP/1.1\r\n\r\n"
+      req4 = "GET /noway HTTP/1.1\r\n\r\n"
+      resp1 = await httpClient3(address, req1)
+      resp2 = await httpClient3(address, req2)
+      resp3 = await httpClient3(address, req3)
+      resp4 = await httpClient3(address, req4)
+
+    check:
+      resp1.status == 200
+      resp1.data == "ORIGIN"
+      resp2.status == 200
+      resp2.data == "655370"
+      resp3.status == 200
+      resp3.data == "SECOND"
+      resp4.status == 404
+
+    await server.stop()
+    await server.closeWait()
+
+  asyncTest "HTTP middleware request modification test":
+    proc init(t: typedesc[FirstMiddlewareRef],
+              data: int): HttpServerMiddlewareRef =
+      proc shandler(
+          middleware: HttpServerMiddlewareRef,
+          reqfence: RequestFence,
+          nextHandler: HttpProcessCallback2
+      ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
+        let mw = FirstMiddlewareRef(middleware)
+        if reqfence.isErr():
+          # Our handler is not supposed to handle request errors, so we
+          # call next handler in sequence which could process errors.
+          return await nextHandler(reqfence)
+
+        let
+          request = reqfence.get()
+          modifiedUri = "/modified/" & $mw.someInteger & request.rawPath
+        var modifiedHeaders = request.headers
+        modifiedHeaders.add("X-Modified", "test-value")
+
+        let res = request.updateRequest(modifiedUri, modifiedHeaders)
+        if res.isErr():
+          return defaultResponse(res.error)
+
+        # We sending modified request to the next handler.
+        await nextHandler(reqfence)
+
+      HttpServerMiddlewareRef(
+        FirstMiddlewareRef(someInteger: data, handler: shandler))
+
+    proc process(r: RequestFence): Future[HttpResponseRef] {.
+         async: (raises: [CancelledError]).} =
+      if r.isOk():
+        let request = r.get()
+        try:
+          await request.respond(Http200, request.rawPath & ":" &
+                                request.headers.getString("x-modified"))
+        except HttpWriteError as exc:
+          defaultResponse(exc)
+      else:
+        defaultResponse()
+
+    let
+      middlewares = [FirstMiddlewareRef.init(655370)]
+      socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
+      res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
+                              socketFlags = socketFlags,
+                              middlewares = middlewares)
+    check res.isOk()
+
+    let server = res.get()
+    server.start()
+    let
+      address = server.instance.localAddress()
+      req1 = "GET /test HTTP/1.1\r\n\r\n"
+      req2 = "GET /first HTTP/1.1\r\n\r\n"
+      req3 = "GET /second HTTP/1.1\r\n\r\n"
+      req4 = "GET /noway HTTP/1.1\r\n\r\n"
+      resp1 = await httpClient3(address, req1)
+      resp2 = await httpClient3(address, req2)
+      resp3 = await httpClient3(address, req3)
+      resp4 = await httpClient3(address, req4)
+
+    check:
+      resp1.status == 200
+      resp1.data == "/modified/655370/test:test-value"
+      resp2.status == 200
+      resp2.data == "/modified/655370/first:test-value"
+      resp3.status == 200
+      resp3.data == "/modified/655370/second:test-value"
+      resp4.status == 200
+      resp4.data == "/modified/655370/noway:test-value"
+
+    await server.stop()
+    await server.closeWait()
+
+  asyncTest "HTTP middleware request blocking test":
+    proc init(t: typedesc[FirstMiddlewareRef],
+              data: int): HttpServerMiddlewareRef =
+      proc shandler(
+          middleware: HttpServerMiddlewareRef,
+          reqfence: RequestFence,
+          nextHandler: HttpProcessCallback2
+      ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
+        if reqfence.isErr():
+          # Our handler is not supposed to handle request errors, so we
+          # call next handler in sequence which could process errors.
+          return await nextHandler(reqfence)
+
+        let request = reqfence.get()
+        if request.uri.path == "/first":
+          # Blocking request by disconnecting remote peer.
+          dropResponse()
+        elif request.uri.path == "/second":
+          # Blocking request by sending HTTP error message with 401 code.
+          codeResponse(Http401)
+        else:
+          # Allow all other requests to be processed by next handler.
+          await nextHandler(reqfence)
+
+      HttpServerMiddlewareRef(
+        FirstMiddlewareRef(someInteger: data, handler: shandler))
+
+    proc process(r: RequestFence): Future[HttpResponseRef] {.
+         async: (raises: [CancelledError]).} =
+      if r.isOk():
+        let request = r.get()
+        try:
+          await request.respond(Http200, "ORIGIN")
+        except HttpWriteError as exc:
+          defaultResponse(exc)
+      else:
+        defaultResponse()
+
+    let
+      middlewares = [FirstMiddlewareRef.init(655370)]
+      socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
+      res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
+                              socketFlags = socketFlags,
+                              middlewares = middlewares)
+    check res.isOk()
+
+    let server = res.get()
+    server.start()
+    let
+      address = server.instance.localAddress()
+      req1 = "GET /test HTTP/1.1\r\n\r\n"
+      req2 = "GET /first HTTP/1.1\r\n\r\n"
+      req3 = "GET /second HTTP/1.1\r\n\r\n"
+      resp1 = await httpClient3(address, req1)
+      resp3 = await httpClient3(address, req3)
+
+    check:
+      resp1.status == 200
+      resp1.data == "ORIGIN"
+      resp3.status == 401
+
+    let checked =
+      try:
+        let res {.used.} = await httpClient3(address, req2)
+        false
+      except TransportIncompleteError:
+        true
+
+    check:
+      checked == true
+
     await server.stop()
     await server.closeWait()
 
