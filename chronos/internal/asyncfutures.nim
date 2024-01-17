@@ -330,7 +330,8 @@ proc removeCallback*(future: FutureBase, cb: CallbackFunc,
 proc removeCallback*(future: FutureBase, cb: CallbackFunc) =
   future.removeCallback(cb, cast[pointer](future))
 
-proc `callback=`*(future: FutureBase, cb: CallbackFunc, udata: pointer) =
+proc `callback=`*(future: FutureBase, cb: CallbackFunc, udata: pointer) {.
+    deprecated: "use addCallback/removeCallback/clearCallbacks to manage the callback list".} =
   ## Clears the list of callbacks and sets the callback proc to be called when
   ## the future completes.
   ##
@@ -341,7 +342,8 @@ proc `callback=`*(future: FutureBase, cb: CallbackFunc, udata: pointer) =
   future.clearCallbacks
   future.addCallback(cb, udata)
 
-proc `callback=`*(future: FutureBase, cb: CallbackFunc) =
+proc `callback=`*(future: FutureBase, cb: CallbackFunc) {.
+    deprecated: "use addCallback/removeCallback/clearCallbacks instead to manage the callback list".} =
   ## Sets the callback proc to be called when the future completes.
   ##
   ## If future has already completed then ``cb`` will be called immediately.
