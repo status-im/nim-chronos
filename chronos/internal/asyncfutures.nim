@@ -347,7 +347,9 @@ proc `callback=`*(future: FutureBase, cb: CallbackFunc) {.
   ## Sets the callback proc to be called when the future completes.
   ##
   ## If future has already completed then ``cb`` will be called immediately.
+  {.push warning[Deprecated]: off.}
   `callback=`(future, cb, cast[pointer](future))
+  {.pop.}
 
 proc `cancelCallback=`*(future: FutureBase, cb: CallbackFunc) =
   ## Sets the callback procedure to be called when the future is cancelled.

@@ -1002,7 +1002,7 @@ proc getMessage*(transp: DatagramTransport): seq[byte] {.
     copyMem(addr res[0], addr transp.buffer[0], transp.buflen)
     res
   else:
-    @[]
+    default(seq[byte])
 
 proc getUserData*[T](transp: DatagramTransport): T {.inline.} =
   ## Obtain user data stored in ``transp`` object.
