@@ -1,13 +1,13 @@
 mode = ScriptMode.Verbose
 
 packageName   = "chronos"
-version       = "3.2.0"
+version       = "4.0.0"
 author        = "Status Research & Development GmbH"
 description   = "Networking framework with async/await support"
 license       = "MIT or Apache License 2.0"
 skipDirs      = @["tests"]
 
-requires "nim >= 1.6.0",
+requires "nim >= 1.6.16",
          "results",
          "stew",
          "bearssl",
