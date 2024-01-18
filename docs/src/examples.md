@@ -8,6 +8,10 @@ Examples are available in the [`docs/examples/`](https://github.com/status-im/ni
 * [timeoutsimple](https://github.com/status-im/nim-chronos/tree/master/docs/examples/timeoutsimple.nim) - Simple timeouts
 * [timeoutcomposed](https://github.com/status-im/nim-chronos/tree/master/docs/examples/examples/timeoutcomposed.nim) - Shared timeout of multiple tasks
 
+## Threads
+
+* [signalling](https://github.com/status-im/nim-chronos/tree/master/docs/examples/cancellation.nim) - Cross-thread signalling
+
 ## TCP
 
 * [tcpserver](https://github.com/status-im/nim-chronos/tree/master/docs/examples/tcpserver.nim) - Simple TCP/IP v4/v6 echo server
