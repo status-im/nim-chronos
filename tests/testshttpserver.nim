@@ -75,6 +75,8 @@ N8r5CwGcIX/XPC3lKazzbZ8baA==
 
 
 suite "Secure HTTP server testing suite":
+  teardown:
+    checkLeaks()
 
   proc httpsClient(address: TransportAddress,
                    data: string, flags = {NoVerifyHost, NoVerifyServerName}
@@ -184,6 +186,3 @@ suite "Secure HTTP server testing suite":
       return serverRes and data == "EXCEPTION"
 
     check waitFor(testHTTPS2(initTAddress("127.0.0.1:30080"))) == true
-
-  test "Leaks test":
-    checkLeaks()

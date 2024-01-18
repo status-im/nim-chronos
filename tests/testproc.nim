@@ -16,6 +16,9 @@ when defined(posix):
 when defined(nimHasUsed): {.used.}
 
 suite "Asynchronous process management test suite":
+  teardown:
+    checkLeaks()
+
   const OutputTests =
     when defined(windows):
       [
@@ -463,6 +466,3 @@ suite "Asynchronous process management test suite":
       skip()
     else:
       check getCurrentFD() == markFD
-
-  test "Leaks test":
-    checkLeaks()
