@@ -84,6 +84,9 @@ proc createBigMessage(message: string, size: int): seq[byte] =
   res
 
 suite "AsyncStream test suite":
+  teardown:
+    checkLeaks()
+
   test "AsyncStream(StreamTransport) readExactly() test":
     proc testReadExactly(): Future[bool] {.async.} =
       proc serveClient(server: StreamServer,
@@ -255,9 +258,6 @@ suite "AsyncStream test suite":
       await server.join()
       result = true
     check waitFor(testConsume()) == true
-
-  test "AsyncStream(StreamTransport) leaks test":
-    checkLeaks()
 
   test "AsyncStream(AsyncStream) readExactly() test":
     proc testReadExactly2(): Future[bool] {.async.} =
@@ -581,10 +581,10 @@ suite "AsyncStream test suite":
 
     check waitFor(testWriteEof()) == true
 
-  test "AsyncStream(AsyncStream) leaks test":
+suite "ChunkedStream test suite":
+  teardown:
     checkLeaks()
 
-suite "ChunkedStream test suite":
   test "ChunkedStream test vectors":
     const ChunkedVectors = [
       ["4\r\nWiki\r\n5\r\npedia\r\nE\r\n in\r\n\r\nchunks.\r\n0\r\n\r\n",
@@ -890,10 +890,10 @@ suite "ChunkedStream test suite":
     check waitFor(testSmallChunk(262400, 4096, 61)) == true
     check waitFor(testSmallChunk(767309, 4457, 173)) == true
 
-  test "ChunkedStream leaks test":
+suite "TLSStream test suite":
+  teardown:
     checkLeaks()
 
-suite "TLSStream test suite":
   const HttpHeadersMark = @[byte(0x0D), byte(0x0A), byte(0x0D), byte(0x0A)]
   test "Simple HTTPS connection":
     proc headerClient(address: TransportAddress,
@@ -1023,10 +1023,9 @@ suite "TLSStream test suite":
     let res = waitFor checkTrustAnchors("Some message")
     check res == "Some message\r\n"
 
-  test "TLSStream leaks test":
-    checkLeaks()
-
 suite "BoundedStream test suite":
+  teardown:
+    checkLeaks()
 
   type
     BoundarySizeTest = enum
@@ -1402,6 +1401,3 @@ suite "BoundedStream test suite":
       return (writer1Res and writer2Res and readerRes)
 
     check waitFor(checkEmptyStreams()) == true
-
-  test "BoundedStream leaks test":
-    checkLeaks()

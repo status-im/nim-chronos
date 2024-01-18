@@ -13,6 +13,9 @@ import ".."/chronos
 {.used.}
 
 suite "Datagram Transport test suite":
+  teardown:
+    checkLeaks()
+
   const
     TestsCount = 2000
     ClientsCount = 20
@@ -727,5 +730,3 @@ suite "Datagram Transport test suite":
            DualStackType.Auto, initTAddress("[::1]:0"))) == true
     else:
       skip()
-  test "Transports leak test":
-    checkLeaks()

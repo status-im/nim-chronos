@@ -14,6 +14,9 @@ import stew/base10
 {.used.}
 
 suite "HTTP server testing suite":
+  teardown:
+    checkLeaks()
+
   type
     TooBigTest = enum
       GetBodyTest, ConsumeBodyTest, PostUrlTest, PostMultipartTest
@@ -1782,6 +1785,3 @@ suite "HTTP server testing suite":
 
     await server.stop()
     await server.closeWait()
-
-  test "Leaks test":
-    checkLeaks()

@@ -74,6 +74,8 @@ N8r5CwGcIX/XPC3lKazzbZ8baA==
 """
 
 suite "HTTP client testing suite":
+  teardown:
+    checkLeaks()
 
   type
     TestResponseTuple = tuple[status: int, data: string, count: int]
@@ -1516,6 +1518,3 @@ suite "HTTP client testing suite":
         res.isErr() and res.error == HttpAddressErrorType.NameLookupFailed
         res.error.isRecoverableError()
         not(res.error.isCriticalError())
-
-  test "Leaks test":
-    checkLeaks()

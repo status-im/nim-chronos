@@ -16,6 +16,9 @@ when defined(windows):
        importc: "_get_osfhandle", header:"<io.h>".}
 
 suite "Stream Transport test suite":
+  teardown:
+    checkLeaks()
+
   const
     ConstantMessage = "SOMEDATA"
     BigMessagePattern = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -1555,12 +1558,6 @@ suite "Stream Transport test suite":
       check waitFor(testAccept(addresses[i])) == true
     test prefixes[i] & "close() while in accept() waiting test":
       check waitFor(testAcceptClose(addresses[i])) == true
-    test prefixes[i] & "Intermediate transports leak test #1":
-      checkLeaks()
-      when defined(windows):
-        skip()
-      else:
-        checkLeaks(StreamTransportTrackerName)
     test prefixes[i] & "accept() too many file descriptors test":
       when defined(windows):
         skip()
@@ -1671,8 +1668,6 @@ suite "Stream Transport test suite":
            DualStackType.Disabled, initTAddress("[::1]:0"))) == true
     else:
       skip()
-  test "Leaks test":
-    checkLeaks()
   test "File descriptors leak test":
     when defined(windows):
       # Windows handle numbers depends on many conditions, so we can't use
