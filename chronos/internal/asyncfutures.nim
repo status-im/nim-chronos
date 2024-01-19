@@ -1549,7 +1549,7 @@ when defined(windows):
 
   proc waitForSingleObject*(handle: HANDLE,
                             timeout: Duration): Future[WaitableResult] {.
-       async: (raises: CancelledError, raw: true).} =
+       async: (raises: [CancelledError], raw: true).} =
     ## Waits until the specified object is in the signaled state or the
     ## time-out interval elapses. WaitForSingleObject() for asynchronous world.
     let flags = WT_EXECUTEONLYONCE
