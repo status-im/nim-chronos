@@ -10,7 +10,7 @@ Examples are available in the [`docs/examples/`](https://github.com/status-im/ni
 
 ## Threads
 
-* [signalling](https://github.com/status-im/nim-chronos/tree/master/docs/examples/cancellation.nim) - Cross-thread signalling
+* [signalling](https://github.com/status-im/nim-chronos/tree/master/docs/examples/signalling.nim) - Cross-thread signalling
 
 ## TCP
 

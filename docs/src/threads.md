@@ -14,5 +14,5 @@ module) is used - both to wait for notifications coming from other threads and
 to notify other threads of progress from within an async procedure.
 
 ```nim
-{{#include ../examples/twogets.nim}}
+{{#include ../examples/signalling.nim}}
 ```
