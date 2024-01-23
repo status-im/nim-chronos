@@ -954,7 +954,9 @@ else:
       ok(false)
 
   proc waitForExit*(p: AsyncProcessRef,
-                    timeout = InfiniteDuration): Future[int] =
+                    timeout = InfiniteDuration): Future[int] {.
+       async: (raw: true, raises: [
+               AsyncProcessError, AsyncProcessTimeoutError, CancelledError]).} =
     var
       retFuture = newFuture[int]("chronos.waitForExit()")
       processHandle: ProcessHandle
