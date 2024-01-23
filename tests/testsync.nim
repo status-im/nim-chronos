@@ -192,7 +192,8 @@ suite "Asynchronous sync primitives test suite":
     var queue = newAsyncQueue[int](1)
     discard task1(queue)
     discard task2(queue)
-    ## There must be exactly 2 poll() calls
+    ## There must be exactly 3 poll() calls
+    poll()
     poll()
     poll()
     result = testQueue1Result
@@ -230,6 +231,7 @@ suite "Asynchronous sync primitives test suite":
     var queue = newAsyncQueue[int](3)
     discard task51(queue)
     discard task52(queue)
+    poll()
     poll()
     poll()
     result = testQueue3Result
