@@ -31,12 +31,11 @@
 # support - changes could potentially be backported to nim but are not
 # backwards-compatible.
 
-import stew/results
-import config, osdefs, osutils, oserrno
+import results
+import "."/[config, osdefs, osutils, oserrno]
 export results, oserrno
 
 when defined(nimdoc):
-
   type
     Selector*[T] = ref object
       ## An object which holds descriptors to be checked for read/write status
@@ -306,11 +305,11 @@ else:
     doAssert((timeout >= min) and (timeout <= max),
              "Cannot select with incorrect timeout value, got " & $timeout)
 
-when chronosEventEngine == "epoll":
-  include ./ioselects/ioselectors_epoll
-elif chronosEventEngine == "kqueue":
-  include ./ioselects/ioselectors_kqueue
-elif chronosEventEngine == "poll":
-  include ./ioselects/ioselectors_poll
-else:
-  {.fatal: "Event engine `" & chronosEventEngine & "` is not supported!".}
+  when chronosEventEngine == "epoll":
+    include ./ioselects/ioselectors_epoll
+  elif chronosEventEngine == "kqueue":
+    include ./ioselects/ioselectors_kqueue
+  elif chronosEventEngine == "poll":
+    include ./ioselects/ioselectors_poll
+  else:
+    {.fatal: "Event engine `" & chronosEventEngine & "` is not supported!".}

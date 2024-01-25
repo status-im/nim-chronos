@@ -73,7 +73,7 @@ when defined(windows) or defined(nimdoc):
       udata*: pointer               # User-defined pointer
       flags*: set[ServerFlags]      # Flags
       bufferSize*: int              # Size of internal transports' buffer
-      loopFuture*: Future[void]     # Server's main Future
+      loopFuture*: Future[void].Raising([])     # Server's main Future
       domain*: Domain               # Current server domain (IPv4 or IPv6)
       apending*: bool
       asock*: AsyncFD               # Current AcceptEx() socket
@@ -92,7 +92,7 @@ else:
       udata*: pointer               # User-defined pointer
       flags*: set[ServerFlags]      # Flags
       bufferSize*: int              # Size of internal transports' buffer
-      loopFuture*: Future[void]     # Server's main Future
+      loopFuture*: Future[void].Raising([]) # Server's main Future
       errorCode*: OSErrorCode       # Current error code
       dualstack*: DualStackType     # IPv4/IPv6 dualstack parameters
 
@@ -113,6 +113,8 @@ type
     ## Transport's capability not supported exception
   TransportUseClosedError* = object of TransportError
     ## Usage after transport close exception
+  TransportUseEofError* = object of TransportError
+    ## Usage after transport half-close exception
   TransportTooManyError* = object of TransportError
     ## Too many open file descriptors exception
   TransportAbortedError* = object of TransportError
@@ -199,7 +201,7 @@ proc `$`*(address: TransportAddress): string =
     "None"
 
 proc toHex*(address: TransportAddress): string =
-  ## Returns hexadecimal representation of ``address`.
+  ## Returns hexadecimal representation of ``address``.
   case address.family
   of AddressFamily.IPv4:
     "0x" & address.address_v4.toHex()
@@ -567,11 +569,11 @@ template checkClosed*(t: untyped, future: untyped) =
 
 template checkWriteEof*(t: untyped, future: untyped) =
   if (WriteEof in (t).state):
-    future.fail(newException(TransportError,
+    future.fail(newException(TransportUseEofError,
                              "Transport connection is already dropped!"))
     return future
 
-template getError*(t: untyped): ref CatchableError =
+template getError*(t: untyped): ref TransportError =
   var err = (t).error
   (t).error = nil
   err
@@ -593,22 +595,6 @@ proc raiseTransportOsError*(err: OSErrorCode) {.
     raises: [TransportOsError].} =
   ## Raises transport specific OS error.
   raise getTransportOsError(err)
-
-type
-  SeqHeader = object
-    length, reserved: int
-
-proc isLiteral*(s: string): bool {.inline.} =
-  when defined(gcOrc) or defined(gcArc):
-    false
-  else:
-    (cast[ptr SeqHeader](s).reserved and (1 shl (sizeof(int) * 8 - 2))) != 0
-
-proc isLiteral*[T](s: seq[T]): bool {.inline.} =
-  when defined(gcOrc) or defined(gcArc):
-    false
-  else:
-    (cast[ptr SeqHeader](s).reserved and (1 shl (sizeof(int) * 8 - 2))) != 0
 
 template getTransportTooManyError*(
            code = OSErrorCode(0)

@@ -8,7 +8,7 @@
 #                MIT license (LICENSE-MIT)
 
 ## This module implements some core async thread synchronization primitives.
-import stew/results
+import results
 import "."/[timer, asyncloop]
 
 export results
@@ -272,7 +272,8 @@ proc waitSync*(signal: ThreadSignalPtr,
       else:
         return ok(true)
 
-proc fire*(signal: ThreadSignalPtr): Future[void] =
+proc fire*(signal: ThreadSignalPtr): Future[void] {.
+    async: (raises: [AsyncError, CancelledError], raw: true).} =
   ## Set state of ``signal`` to signaled in asynchronous way.
   var retFuture = newFuture[void]("asyncthreadsignal.fire")
   when defined(windows):
@@ -356,14 +357,17 @@ proc fire*(signal: ThreadSignalPtr): Future[void] =
   retFuture
 
 when defined(windows):
-  proc wait*(signal: ThreadSignalPtr) {.async.} =
+  proc wait*(signal: ThreadSignalPtr) {.
+      async: (raises: [AsyncError, CancelledError]).} =
     let handle = signal[].event
     let res = await waitForSingleObject(handle, InfiniteDuration)
     # There should be no other response, because we use `InfiniteDuration`.
     doAssert(res == WaitableResult.Ok)
 else:
-  proc wait*(signal: ThreadSignalPtr): Future[void] =
-    var retFuture = newFuture[void]("asyncthreadsignal.wait")
+  proc wait*(signal: ThreadSignalPtr): Future[void] {.
+      async: (raises: [AsyncError, CancelledError], raw: true).} =
+    let retFuture = Future[void].Raising([AsyncError, CancelledError]).init(
+      "asyncthreadsignal.wait")
     var data = 1'u64
     let eventFd =
       when defined(linux):

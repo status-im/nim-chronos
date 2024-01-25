@@ -6,12 +6,16 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 import std/[strutils, net]
+import stew/byteutils
 import ".."/chronos/unittest2/asynctests
 import ".."/chronos
 
 {.used.}
 
 suite "Datagram Transport test suite":
+  teardown:
+    checkLeaks()
+
   const
     TestsCount = 2000
     ClientsCount = 20
@@ -29,286 +33,319 @@ suite "Datagram Transport test suite":
          " clients x " & $MessagesCount & " messages)"
 
   proc client1(transp: DatagramTransport,
-               raddr: TransportAddress): Future[void] {.async.} =
-    var pbytes = transp.getMessage()
-    var nbytes = len(pbytes)
-    if nbytes > 0:
-      var data = newString(nbytes + 1)
-      copyMem(addr data[0], addr pbytes[0], nbytes)
-      data.setLen(nbytes)
-      if data.startsWith("REQUEST"):
-        var numstr = data[7..^1]
-        var num = parseInt(numstr)
-        var ans = "ANSWER" & $num
-        await transp.sendTo(raddr, addr ans[0], len(ans))
+               raddr: TransportAddress): Future[void] {.async: (raises: []).} =
+    try:
+      var pbytes = transp.getMessage()
+      var nbytes = len(pbytes)
+      if nbytes > 0:
+        var data = newString(nbytes + 1)
+        copyMem(addr data[0], addr pbytes[0], nbytes)
+        data.setLen(nbytes)
+        if data.startsWith("REQUEST"):
+          var numstr = data[7..^1]
+          var num = parseInt(numstr)
+          var ans = "ANSWER" & $num
+          await transp.sendTo(raddr, addr ans[0], len(ans))
+        else:
+          var err = "ERROR"
+          await transp.sendTo(raddr, addr err[0], len(err))
       else:
-        var err = "ERROR"
-        await transp.sendTo(raddr, addr err[0], len(err))
-    else:
-      var counterPtr = cast[ptr int](transp.udata)
-      counterPtr[] = -1
-      transp.close()
+        var counterPtr = cast[ptr int](transp.udata)
+        counterPtr[] = -1
+        transp.close()
+    except CatchableError as exc:
+      raiseAssert exc.msg
 
   proc client2(transp: DatagramTransport,
-               raddr: TransportAddress): Future[void] {.async.} =
-    var pbytes = transp.getMessage()
-    var nbytes = len(pbytes)
-    if nbytes > 0:
-      var data = newString(nbytes + 1)
-      copyMem(addr data[0], addr pbytes[0], nbytes)
-      data.setLen(nbytes)
-      if data.startsWith("ANSWER"):
-        var counterPtr = cast[ptr int](transp.udata)
-        counterPtr[] = counterPtr[] + 1
-        if counterPtr[] == TestsCount:
-          transp.close()
+               raddr: TransportAddress): Future[void] {.async: (raises: []).} =
+    try:
+      var pbytes = transp.getMessage()
+      var nbytes = len(pbytes)
+      if nbytes > 0:
+        var data = newString(nbytes + 1)
+        copyMem(addr data[0], addr pbytes[0], nbytes)
+        data.setLen(nbytes)
+        if data.startsWith("ANSWER"):
+          var counterPtr = cast[ptr int](transp.udata)
+          counterPtr[] = counterPtr[] + 1
+          if counterPtr[] == TestsCount:
+            transp.close()
+          else:
+            var ta = initTAddress("127.0.0.1:33336")
+            var req = "REQUEST" & $counterPtr[]
+            await transp.sendTo(ta, addr req[0], len(req))
         else:
-          var ta = initTAddress("127.0.0.1:33336")
-          var req = "REQUEST" & $counterPtr[]
-          await transp.sendTo(ta, addr req[0], len(req))
+          var counterPtr = cast[ptr int](transp.udata)
+          counterPtr[] = -1
+          transp.close()
       else:
+        ## Read operation failed with error
         var counterPtr = cast[ptr int](transp.udata)
         counterPtr[] = -1
         transp.close()
-    else:
-      ## Read operation failed with error
-      var counterPtr = cast[ptr int](transp.udata)
-      counterPtr[] = -1
-      transp.close()
+    except CatchableError as exc:
+      raiseAssert exc.msg
 
   proc client3(transp: DatagramTransport,
-               raddr: TransportAddress): Future[void] {.async.} =
-    var pbytes = transp.getMessage()
-    var nbytes = len(pbytes)
-    if nbytes > 0:
-      var data = newString(nbytes + 1)
-      copyMem(addr data[0], addr pbytes[0], nbytes)
-      data.setLen(nbytes)
-      if data.startsWith("ANSWER"):
-        var counterPtr = cast[ptr int](transp.udata)
-        counterPtr[] = counterPtr[] + 1
-        if counterPtr[] == TestsCount:
-          transp.close()
+               raddr: TransportAddress): Future[void] {.async: (raises: []).} =
+    try:
+      var pbytes = transp.getMessage()
+      var nbytes = len(pbytes)
+      if nbytes > 0:
+        var data = newString(nbytes + 1)
+        copyMem(addr data[0], addr pbytes[0], nbytes)
+        data.setLen(nbytes)
+        if data.startsWith("ANSWER"):
+          var counterPtr = cast[ptr int](transp.udata)
+          counterPtr[] = counterPtr[] + 1
+          if counterPtr[] == TestsCount:
+            transp.close()
+          else:
+            var req = "REQUEST" & $counterPtr[]
+            await transp.send(addr req[0], len(req))
         else:
-          var req = "REQUEST" & $counterPtr[]
-          await transp.send(addr req[0], len(req))
+          var counterPtr = cast[ptr int](transp.udata)
+          counterPtr[] = -1
+          transp.close()
       else:
+        ## Read operation failed with error
         var counterPtr = cast[ptr int](transp.udata)
         counterPtr[] = -1
         transp.close()
-    else:
-      ## Read operation failed with error
-      var counterPtr = cast[ptr int](transp.udata)
-      counterPtr[] = -1
-      transp.close()
+    except CatchableError as exc:
+      raiseAssert exc.msg
 
   proc client4(transp: DatagramTransport,
-               raddr: TransportAddress): Future[void] {.async.} =
-    var pbytes = transp.getMessage()
-    var nbytes = len(pbytes)
-    if nbytes > 0:
-      var data = newString(nbytes + 1)
-      copyMem(addr data[0], addr pbytes[0], nbytes)
-      data.setLen(nbytes)
-      if data.startsWith("ANSWER"):
-        var counterPtr = cast[ptr int](transp.udata)
-        counterPtr[] = counterPtr[] + 1
-        if counterPtr[] == MessagesCount:
-          transp.close()
+               raddr: TransportAddress): Future[void] {.async: (raises: []).} =
+    try:
+      var pbytes = transp.getMessage()
+      var nbytes = len(pbytes)
+      if nbytes > 0:
+        var data = newString(nbytes + 1)
+        copyMem(addr data[0], addr pbytes[0], nbytes)
+        data.setLen(nbytes)
+        if data.startsWith("ANSWER"):
+          var counterPtr = cast[ptr int](transp.udata)
+          counterPtr[] = counterPtr[] + 1
+          if counterPtr[] == MessagesCount:
+            transp.close()
+          else:
+            var req = "REQUEST" & $counterPtr[]
+            await transp.send(addr req[0], len(req))
         else:
-          var req = "REQUEST" & $counterPtr[]
-          await transp.send(addr req[0], len(req))
+          var counterPtr = cast[ptr int](transp.udata)
+          counterPtr[] = -1
+          transp.close()
       else:
+        ## Read operation failed with error
         var counterPtr = cast[ptr int](transp.udata)
         counterPtr[] = -1
         transp.close()
-    else:
-      ## Read operation failed with error
-      var counterPtr = cast[ptr int](transp.udata)
-      counterPtr[] = -1
-      transp.close()
+    except CatchableError as exc:
+      raiseAssert exc.msg
 
   proc client5(transp: DatagramTransport,
-               raddr: TransportAddress): Future[void] {.async.} =
-    var pbytes = transp.getMessage()
-    var nbytes = len(pbytes)
-    if nbytes > 0:
-      var data = newString(nbytes + 1)
-      copyMem(addr data[0], addr pbytes[0], nbytes)
-      data.setLen(nbytes)
-      if data.startsWith("ANSWER"):
-        var counterPtr = cast[ptr int](transp.udata)
-        counterPtr[] = counterPtr[] + 1
-        if counterPtr[] == MessagesCount:
-          transp.close()
+               raddr: TransportAddress): Future[void] {.async: (raises: []).} =
+    try:
+      var pbytes = transp.getMessage()
+      var nbytes = len(pbytes)
+      if nbytes > 0:
+        var data = newString(nbytes + 1)
+        copyMem(addr data[0], addr pbytes[0], nbytes)
+        data.setLen(nbytes)
+        if data.startsWith("ANSWER"):
+          var counterPtr = cast[ptr int](transp.udata)
+          counterPtr[] = counterPtr[] + 1
+          if counterPtr[] == MessagesCount:
+            transp.close()
+          else:
+            var req = "REQUEST" & $counterPtr[]
+            await transp.sendTo(raddr, addr req[0], len(req))
         else:
-          var req = "REQUEST" & $counterPtr[]
-          await transp.sendTo(raddr, addr req[0], len(req))
+          var counterPtr = cast[ptr int](transp.udata)
+          counterPtr[] = -1
+          transp.close()
       else:
+        ## Read operation failed with error
         var counterPtr = cast[ptr int](transp.udata)
         counterPtr[] = -1
         transp.close()
-    else:
-      ## Read operation failed with error
-      var counterPtr = cast[ptr int](transp.udata)
-      counterPtr[] = -1
-      transp.close()
+    except CatchableError as exc:
+      raiseAssert exc.msg
 
   proc client6(transp: DatagramTransport,
-               raddr: TransportAddress): Future[void] {.async.} =
-    var pbytes = transp.getMessage()
-    var nbytes = len(pbytes)
-    if nbytes > 0:
-      var data = newString(nbytes + 1)
-      copyMem(addr data[0], addr pbytes[0], nbytes)
-      data.setLen(nbytes)
-      if data.startsWith("REQUEST"):
-        var numstr = data[7..^1]
-        var num = parseInt(numstr)
-        var ans = "ANSWER" & $num
-        await transp.sendTo(raddr, ans)
+               raddr: TransportAddress): Future[void] {.async: (raises: []).} =
+    try:
+      var pbytes = transp.getMessage()
+      var nbytes = len(pbytes)
+      if nbytes > 0:
+        var data = newString(nbytes + 1)
+        copyMem(addr data[0], addr pbytes[0], nbytes)
+        data.setLen(nbytes)
+        if data.startsWith("REQUEST"):
+          var numstr = data[7..^1]
+          var num = parseInt(numstr)
+          var ans = "ANSWER" & $num
+          await transp.sendTo(raddr, ans)
+        else:
+          var err = "ERROR"
+          await transp.sendTo(raddr, err)
       else:
-        var err = "ERROR"
-        await transp.sendTo(raddr, err)
-    else:
-      ## Read operation failed with error
-      var counterPtr = cast[ptr int](transp.udata)
-      counterPtr[] = -1
-      transp.close()
+        ## Read operation failed with error
+        var counterPtr = cast[ptr int](transp.udata)
+        counterPtr[] = -1
+        transp.close()
+    except CatchableError as exc:
+      raiseAssert exc.msg
 
   proc client7(transp: DatagramTransport,
-               raddr: TransportAddress): Future[void] {.async.} =
-    var pbytes = transp.getMessage()
-    var nbytes = len(pbytes)
-    if nbytes > 0:
-      var data = newString(nbytes + 1)
-      copyMem(addr data[0], addr pbytes[0], nbytes)
-      data.setLen(nbytes)
-      if data.startsWith("ANSWER"):
-        var counterPtr = cast[ptr int](transp.udata)
-        counterPtr[] = counterPtr[] + 1
-        if counterPtr[] == TestsCount:
-          transp.close()
+               raddr: TransportAddress): Future[void] {.async: (raises: []).} =
+    try:
+      var pbytes = transp.getMessage()
+      var nbytes = len(pbytes)
+      if nbytes > 0:
+        var data = newString(nbytes + 1)
+        copyMem(addr data[0], addr pbytes[0], nbytes)
+        data.setLen(nbytes)
+        if data.startsWith("ANSWER"):
+          var counterPtr = cast[ptr int](transp.udata)
+          counterPtr[] = counterPtr[] + 1
+          if counterPtr[] == TestsCount:
+            transp.close()
+          else:
+            var req = "REQUEST" & $counterPtr[]
+            await transp.sendTo(raddr, req)
         else:
-          var req = "REQUEST" & $counterPtr[]
-          await transp.sendTo(raddr, req)
+          var counterPtr = cast[ptr int](transp.udata)
+          counterPtr[] = -1
+          transp.close()
       else:
+        ## Read operation failed with error
         var counterPtr = cast[ptr int](transp.udata)
         counterPtr[] = -1
         transp.close()
-    else:
-      ## Read operation failed with error
-      var counterPtr = cast[ptr int](transp.udata)
-      counterPtr[] = -1
-      transp.close()
+    except CatchableError as exc:
+      raiseAssert exc.msg
 
   proc client8(transp: DatagramTransport,
-               raddr: TransportAddress): Future[void] {.async.} =
-    var pbytes = transp.getMessage()
-    var nbytes = len(pbytes)
-    if nbytes > 0:
-      var data = newString(nbytes + 1)
-      copyMem(addr data[0], addr pbytes[0], nbytes)
-      data.setLen(nbytes)
-      if data.startsWith("ANSWER"):
-        var counterPtr = cast[ptr int](transp.udata)
-        counterPtr[] = counterPtr[] + 1
-        if counterPtr[] == TestsCount:
-          transp.close()
+               raddr: TransportAddress): Future[void] {.async: (raises: []).} =
+    try:
+      var pbytes = transp.getMessage()
+      var nbytes = len(pbytes)
+      if nbytes > 0:
+        var data = newString(nbytes + 1)
+        copyMem(addr data[0], addr pbytes[0], nbytes)
+        data.setLen(nbytes)
+        if data.startsWith("ANSWER"):
+          var counterPtr = cast[ptr int](transp.udata)
+          counterPtr[] = counterPtr[] + 1
+          if counterPtr[] == TestsCount:
+            transp.close()
+          else:
+            var req = "REQUEST" & $counterPtr[]
+            await transp.send(req)
         else:
-          var req = "REQUEST" & $counterPtr[]
-          await transp.send(req)
+          var counterPtr = cast[ptr int](transp.udata)
+          counterPtr[] = -1
+          transp.close()
       else:
+        ## Read operation failed with error
         var counterPtr = cast[ptr int](transp.udata)
         counterPtr[] = -1
         transp.close()
-    else:
-      ## Read operation failed with error
-      var counterPtr = cast[ptr int](transp.udata)
-      counterPtr[] = -1
-      transp.close()
+    except CatchableError as exc:
+      raiseAssert exc.msg
 
   proc client9(transp: DatagramTransport,
-               raddr: TransportAddress): Future[void] {.async.} =
-    var pbytes = transp.getMessage()
-    var nbytes = len(pbytes)
-    if nbytes > 0:
-      var data = newString(nbytes + 1)
-      copyMem(addr data[0], addr pbytes[0], nbytes)
-      data.setLen(nbytes)
-      if data.startsWith("REQUEST"):
-        var numstr = data[7..^1]
-        var num = parseInt(numstr)
-        var ans = "ANSWER" & $num
-        var ansseq = newSeq[byte](len(ans))
-        copyMem(addr ansseq[0], addr ans[0], len(ans))
-        await transp.sendTo(raddr, ansseq)
+               raddr: TransportAddress): Future[void] {.async: (raises: []).} =
+    try:
+      var pbytes = transp.getMessage()
+      var nbytes = len(pbytes)
+      if nbytes > 0:
+        var data = newString(nbytes + 1)
+        copyMem(addr data[0], addr pbytes[0], nbytes)
+        data.setLen(nbytes)
+        if data.startsWith("REQUEST"):
+          var numstr = data[7..^1]
+          var num = parseInt(numstr)
+          var ans = "ANSWER" & $num
+          var ansseq = newSeq[byte](len(ans))
+          copyMem(addr ansseq[0], addr ans[0], len(ans))
+          await transp.sendTo(raddr, ansseq)
+        else:
+          var err = "ERROR"
+          var errseq = newSeq[byte](len(err))
+          copyMem(addr errseq[0], addr err[0], len(err))
+          await transp.sendTo(raddr, errseq)
       else:
-        var err = "ERROR"
-        var errseq = newSeq[byte](len(err))
-        copyMem(addr errseq[0], addr err[0], len(err))
-        await transp.sendTo(raddr, errseq)
-    else:
-      ## Read operation failed with error
-      var counterPtr = cast[ptr int](transp.udata)
-      counterPtr[] = -1
-      transp.close()
+        ## Read operation failed with error
+        var counterPtr = cast[ptr int](transp.udata)
+        counterPtr[] = -1
+        transp.close()
+    except CatchableError as exc:
+      raiseAssert exc.msg
 
   proc client10(transp: DatagramTransport,
-                raddr: TransportAddress): Future[void] {.async.} =
-    var pbytes = transp.getMessage()
-    var nbytes = len(pbytes)
-    if nbytes > 0:
-      var data = newString(nbytes + 1)
-      copyMem(addr data[0], addr pbytes[0], nbytes)
-      data.setLen(nbytes)
-      if data.startsWith("ANSWER"):
-        var counterPtr = cast[ptr int](transp.udata)
-        counterPtr[] = counterPtr[] + 1
-        if counterPtr[] == TestsCount:
-          transp.close()
+                raddr: TransportAddress): Future[void] {.async: (raises: []).} =
+    try:
+      var pbytes = transp.getMessage()
+      var nbytes = len(pbytes)
+      if nbytes > 0:
+        var data = newString(nbytes + 1)
+        copyMem(addr data[0], addr pbytes[0], nbytes)
+        data.setLen(nbytes)
+        if data.startsWith("ANSWER"):
+          var counterPtr = cast[ptr int](transp.udata)
+          counterPtr[] = counterPtr[] + 1
+          if counterPtr[] == TestsCount:
+            transp.close()
+          else:
+            var req = "REQUEST" & $counterPtr[]
+            var reqseq = newSeq[byte](len(req))
+            copyMem(addr reqseq[0], addr req[0], len(req))
+            await transp.sendTo(raddr, reqseq)
         else:
-          var req = "REQUEST" & $counterPtr[]
-          var reqseq = newSeq[byte](len(req))
-          copyMem(addr reqseq[0], addr req[0], len(req))
-          await transp.sendTo(raddr, reqseq)
+          var counterPtr = cast[ptr int](transp.udata)
+          counterPtr[] = -1
+          transp.close()
       else:
+        ## Read operation failed with error
         var counterPtr = cast[ptr int](transp.udata)
         counterPtr[] = -1
         transp.close()
-    else:
-      ## Read operation failed with error
-      var counterPtr = cast[ptr int](transp.udata)
-      counterPtr[] = -1
-      transp.close()
+    except CatchableError as exc:
+      raiseAssert exc.msg
 
   proc client11(transp: DatagramTransport,
-                raddr: TransportAddress): Future[void] {.async.} =
-    var pbytes = transp.getMessage()
-    var nbytes = len(pbytes)
-    if nbytes > 0:
-      var data = newString(nbytes + 1)
-      copyMem(addr data[0], addr pbytes[0], nbytes)
-      data.setLen(nbytes)
-      if data.startsWith("ANSWER"):
-        var counterPtr = cast[ptr int](transp.udata)
-        counterPtr[] = counterPtr[] + 1
-        if counterPtr[] == TestsCount:
-          transp.close()
+                raddr: TransportAddress): Future[void] {.async: (raises: []).} =
+    try:
+      var pbytes = transp.getMessage()
+      var nbytes = len(pbytes)
+      if nbytes > 0:
+        var data = newString(nbytes + 1)
+        copyMem(addr data[0], addr pbytes[0], nbytes)
+        data.setLen(nbytes)
+        if data.startsWith("ANSWER"):
+          var counterPtr = cast[ptr int](transp.udata)
+          counterPtr[] = counterPtr[] + 1
+          if counterPtr[] == TestsCount:
+            transp.close()
+          else:
+            var req = "REQUEST" & $counterPtr[]
+            var reqseq = newSeq[byte](len(req))
+            copyMem(addr reqseq[0], addr req[0], len(req))
+            await transp.send(reqseq)
         else:
-          var req = "REQUEST" & $counterPtr[]
-          var reqseq = newSeq[byte](len(req))
-          copyMem(addr reqseq[0], addr req[0], len(req))
-          await transp.send(reqseq)
+          var counterPtr = cast[ptr int](transp.udata)
+          counterPtr[] = -1
+          transp.close()
       else:
+        ## Read operation failed with error
         var counterPtr = cast[ptr int](transp.udata)
         counterPtr[] = -1
         transp.close()
-    else:
-      ## Read operation failed with error
-      var counterPtr = cast[ptr int](transp.udata)
-      counterPtr[] = -1
-      transp.close()
+    except CatchableError as exc:
+      raiseAssert exc.msg
 
   proc testPointerSendTo(): Future[int] {.async.} =
     ## sendTo(pointer) test
@@ -438,7 +475,7 @@ suite "Datagram Transport test suite":
     var ta = initTAddress("127.0.0.1:0")
     var counter = 0
     proc clientMark(transp: DatagramTransport,
-                    raddr: TransportAddress): Future[void] {.async.} =
+                    raddr: TransportAddress): Future[void] {.async: (raises: []).} =
       counter = 1
       transp.close()
     var dgram1 = newDatagramTransport(client1, local = ta)
@@ -456,7 +493,7 @@ suite "Datagram Transport test suite":
   proc testTransportClose(): Future[bool] {.async.} =
     var ta = initTAddress("127.0.0.1:45000")
     proc clientMark(transp: DatagramTransport,
-                    raddr: TransportAddress): Future[void] {.async.} =
+                    raddr: TransportAddress): Future[void] {.async: (raises: []).} =
       discard
     var dgram = newDatagramTransport(clientMark, local = ta)
     dgram.close()
@@ -472,12 +509,15 @@ suite "Datagram Transport test suite":
     var bta = initTAddress("255.255.255.255:45010")
     var res = 0
     proc clientMark(transp: DatagramTransport,
-                     raddr: TransportAddress): Future[void] {.async.} =
-      var bmsg = transp.getMessage()
-      var smsg = cast[string](bmsg)
-      if smsg == expectMessage:
-        inc(res)
-      transp.close()
+                     raddr: TransportAddress): Future[void] {.async: (raises: []).} =
+      try:
+        var bmsg = transp.getMessage()
+        var smsg = string.fromBytes(bmsg)
+        if smsg == expectMessage:
+          inc(res)
+        transp.close()
+      except CatchableError as exc:
+        raiseAssert exc.msg
     var dgram1 = newDatagramTransport(clientMark, local = ta1,
                                       flags = {Broadcast}, ttl = 2)
     await dgram1.sendTo(bta, expectMessage)
@@ -486,21 +526,25 @@ suite "Datagram Transport test suite":
 
   proc testAnyAddress(): Future[int] {.async.} =
     var expectStr = "ANYADDRESS MESSAGE"
-    var expectSeq = cast[seq[byte]](expectStr)
+    var expectSeq = expectStr.toBytes()
     let ta = initTAddress("0.0.0.0:0")
     var res = 0
     var event = newAsyncEvent()
 
     proc clientMark1(transp: DatagramTransport,
-                     raddr: TransportAddress): Future[void] {.async.} =
-      var bmsg = transp.getMessage()
-      var smsg = cast[string](bmsg)
-      if smsg == expectStr:
-        inc(res)
-      event.fire()
+                     raddr: TransportAddress): Future[void] {.async: (raises: []).} =
+      try:
+        var bmsg = transp.getMessage()
+        var smsg = string.fromBytes(bmsg)
+        if smsg == expectStr:
+          inc(res)
+        event.fire()
+      except CatchableError as exc:
+        raiseAssert exc.msg
+
 
     proc clientMark2(transp: DatagramTransport,
-                     raddr: TransportAddress): Future[void] {.async.} =
+                     raddr: TransportAddress): Future[void] {.async: (raises: []).} =
       discard
 
     var dgram1 = newDatagramTransport(clientMark1, local = ta)
@@ -543,15 +587,18 @@ suite "Datagram Transport test suite":
       res = 0
 
     proc process1(transp: DatagramTransport,
-                  raddr: TransportAddress): Future[void] {.async.} =
-      var bmsg = transp.getMessage()
-      var smsg = cast[string](bmsg)
-      if smsg == expectStr:
-        inc(res)
-      event.fire()
+                  raddr: TransportAddress): Future[void] {.async: (raises: []).} =
+      try:
+        var bmsg = transp.getMessage()
+        var smsg = string.fromBytes(bmsg)
+        if smsg == expectStr:
+          inc(res)
+        event.fire()
+      except CatchableError as exc:
+        raiseAssert exc.msg
 
     proc process2(transp: DatagramTransport,
-                  raddr: TransportAddress): Future[void] {.async.} =
+                  raddr: TransportAddress): Future[void] {.async: (raises: []).} =
       discard
 
     let
@@ -683,5 +730,3 @@ suite "Datagram Transport test suite":
            DualStackType.Auto, initTAddress("[::1]:0"))) == true
     else:
       skip()
-  test "Transports leak test":
-    checkLeaks()

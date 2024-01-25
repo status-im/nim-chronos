@@ -6,8 +6,11 @@
 #              Licensed under either of
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
+
+{.push raises: [].}
+
 import std/tables
-import stew/results
+import results
 import ../../timer
 import httpserver, shttpserver
 from httpclient import HttpClientScheme
@@ -15,8 +18,6 @@ from httpcommon import HttpState
 from ../../osdefs import SocketHandle
 from ../../transports/common import TransportAddress, ServerFlags
 export HttpClientScheme, SocketHandle, TransportAddress, ServerFlags, HttpState
-
-{.push raises: [].}
 
 type
   ConnectionType* {.pure.} = enum

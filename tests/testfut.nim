@@ -54,7 +54,6 @@ suite "Future[T] behavior test suite":
     fut.addCallback proc(udata: pointer) =
       testResult &= "5"
     discard waitFor(fut)
-    poll()
 
     check:
       fut.finished
@@ -80,7 +79,6 @@ suite "Future[T] behavior test suite":
     fut.addCallback cb5
     fut.removeCallback cb3
     discard waitFor(fut)
-    poll()
     check:
       fut.finished
       testResult == "1245"
@@ -1260,12 +1258,12 @@ suite "Future[T] behavior test suite":
         (loc.procedure == procedure)
 
     check:
-      chk(loc10, "testfut.nim", 1227, "macroFuture")
-      chk(loc11, "testfut.nim", 1230, "")
-      chk(loc20, "testfut.nim", 1239, "template")
-      chk(loc21, "testfut.nim", 1242, "")
-      chk(loc30, "testfut.nim", 1236, "procedure")
-      chk(loc31, "testfut.nim", 1243, "")
+      chk(loc10, "testfut.nim", 1225, "macroFuture")
+      chk(loc11, "testfut.nim", 1228, "")
+      chk(loc20, "testfut.nim", 1237, "template")
+      chk(loc21, "testfut.nim", 1240, "")
+      chk(loc30, "testfut.nim", 1234, "procedure")
+      chk(loc31, "testfut.nim", 1241, "")
 
   asyncTest "withTimeout(fut) should wait cancellation test":
     proc futureNeverEnds(): Future[void] =
@@ -1316,12 +1314,17 @@ suite "Future[T] behavior test suite":
   test "race(zero) test":
     var tseq = newSeq[FutureBase]()
     var fut1 = race(tseq)
-    var fut2 = race()
-    var fut3 = race([])
+    check:
+      # https://github.com/nim-lang/Nim/issues/22964
+      not compiles(block:
+        var fut2 = race())
+      not compiles(block:
+        var fut3 = race([]))
+
     check:
       fut1.failed()
-      fut2.failed()
-      fut3.failed()
+      # fut2.failed()
+      # fut3.failed()
 
   asyncTest "race(varargs) test":
     proc vlient1() {.async.} =
@@ -1999,3 +2002,9 @@ suite "Future[T] behavior test suite":
       check:
         future1.cancelled() == true
         future2.cancelled() == true
+  test "Sink with literals":
+    # https://github.com/nim-lang/Nim/issues/22175
+    let fut = newFuture[string]()
+    fut.complete("test")
+    check:
+      fut.value() == "test"

@@ -10,8 +10,9 @@
 {.push raises: [].}
 
 import std/deques
-import ".."/[asyncloop, handles, osdefs, osutils, oserrno]
-import common
+import stew/ptrops
+import ".."/[asyncloop, config, handles, osdefs, osutils, oserrno]
+import ./common
 
 type
   VectorKind = enum
@@ -58,6 +59,8 @@ type
                                                               done: bool] {.
     gcsafe, raises: [].}
 
+  ReaderFuture = Future[void].Raising([TransportError, CancelledError])
+
 const
   StreamTransportTrackerName* = "stream.transport"
   StreamServerTrackerName* = "stream.server"
@@ -68,12 +71,12 @@ when defined(windows):
     StreamTransport* = ref object of RootRef
       fd*: AsyncFD                    # File descriptor
       state: set[TransportState]      # Current Transport state
-      reader: Future[void]            # Current reader Future
+      reader: ReaderFuture            # Current reader Future
       buffer: seq[byte]               # Reading buffer
       offset: int                     # Reading buffer offset
-      error: ref CatchableError       # Current error
+      error: ref TransportError       # Current error
       queue: Deque[StreamVector]      # Writer queue
-      future: Future[void]            # Stream life future
+      future: Future[void].Raising([]) # Stream life future
       # Windows specific part
       rwsabuf: WSABUF                 # Reader WSABUF
       wwsabuf: WSABUF                 # Writer WSABUF
@@ -87,35 +90,41 @@ when defined(windows):
         local: TransportAddress       # Local address
         remote: TransportAddress      # Remote address
       of TransportKind.Pipe:
-        todo1: int
+        discard
       of TransportKind.File:
-        todo2: int
+        discard
 else:
   type
     StreamTransport* = ref object of RootRef
       fd*: AsyncFD                    # File descriptor
       state: set[TransportState]      # Current Transport state
-      reader: Future[void]            # Current reader Future
+      reader: ReaderFuture            # Current reader Future
       buffer: seq[byte]               # Reading buffer
       offset: int                     # Reading buffer offset
-      error: ref CatchableError       # Current error
+      error: ref TransportError       # Current error
       queue: Deque[StreamVector]      # Writer queue
-      future: Future[void]            # Stream life future
+      future: Future[void].Raising([]) # Stream life future
       case kind*: TransportKind
       of TransportKind.Socket:
         domain: Domain                # Socket transport domain (IPv4/IPv6)
         local: TransportAddress       # Local address
         remote: TransportAddress      # Remote address
       of TransportKind.Pipe:
-        todo1: int
+        discard
       of TransportKind.File:
-        todo2: int
+        discard
 
 type
-  StreamCallback* = proc(server: StreamServer,
-                         client: StreamTransport): Future[void] {.
-                         gcsafe, raises: [].}
+  # TODO evaluate naming of raises-annotated callbacks
+  StreamCallback2* = proc(server: StreamServer,
+                          client: StreamTransport) {.async: (raises: []).}
     ## New remote client connection callback
+    ## ``server`` - StreamServer object.
+    ## ``client`` - accepted client transport.
+
+  StreamCallback* = proc(server: StreamServer,
+                         client: StreamTransport) {.async.}
+    ## Connection callback that doesn't check for exceptions at compile time
     ## ``server`` - StreamServer object.
     ## ``client`` - accepted client transport.
 
@@ -127,13 +136,13 @@ type
 
   StreamServer* = ref object of SocketServer
     ## StreamServer object
-    function*: StreamCallback         # callback which will be called after new
+    function*: StreamCallback2         # callback which will be called after new
                                       # client accepted
     init*: TransportInitCallback      # callback which will be called before
                                       # transport for new client
 
 proc remoteAddress*(transp: StreamTransport): TransportAddress {.
-    raises: [TransportAbortedError, TransportTooManyError, TransportOsError].} =
+    raises: [TransportOsError].} =
   ## Returns ``transp`` remote socket address.
   doAssert(transp.kind == TransportKind.Socket, "Socket transport required!")
   if transp.remote.family == AddressFamily.None:
@@ -141,12 +150,12 @@ proc remoteAddress*(transp: StreamTransport): TransportAddress {.
     var slen = SockLen(sizeof(saddr))
     if getpeername(SocketHandle(transp.fd), cast[ptr SockAddr](addr saddr),
                    addr slen) != 0:
-      raiseTransportError(osLastError())
+      raiseTransportOsError(osLastError())
     fromSAddr(addr saddr, slen, transp.remote)
   transp.remote
 
 proc localAddress*(transp: StreamTransport): TransportAddress {.
-    raises: [TransportAbortedError, TransportTooManyError, TransportOsError].} =
+    raises: [TransportOsError].} =
   ## Returns ``transp`` local socket address.
   doAssert(transp.kind == TransportKind.Socket, "Socket transport required!")
   if transp.local.family == AddressFamily.None:
@@ -154,7 +163,7 @@ proc localAddress*(transp: StreamTransport): TransportAddress {.
     var slen = SockLen(sizeof(saddr))
     if getsockname(SocketHandle(transp.fd), cast[ptr SockAddr](addr saddr),
                    addr slen) != 0:
-      raiseTransportError(osLastError())
+      raiseTransportOsError(osLastError())
     fromSAddr(addr saddr, slen, transp.local)
   transp.local
 
@@ -199,7 +208,7 @@ proc completePendingWriteQueue(queue: var Deque[StreamVector],
       vector.writer.complete(v)
 
 proc failPendingWriteQueue(queue: var Deque[StreamVector],
-                           error: ref CatchableError) {.inline.} =
+                           error: ref TransportError) {.inline.} =
   while len(queue) > 0:
     var vector = queue.popFirst()
     if not(vector.writer.finished()):
@@ -589,7 +598,8 @@ when defined(windows):
     transp.buffer = newSeq[byte](bufsize)
     transp.state = {ReadPaused, WritePaused}
     transp.queue = initDeque[StreamVector]()
-    transp.future = newFuture[void]("stream.socket.transport")
+    transp.future = Future[void].Raising([]).init(
+      "stream.socket.transport", {FutureFlag.OwnCancelSchedule})
     GC_ref(transp)
     transp
 
@@ -610,7 +620,8 @@ when defined(windows):
     transp.flags = flags
     transp.state = {ReadPaused, WritePaused}
     transp.queue = initDeque[StreamVector]()
-    transp.future = newFuture[void]("stream.pipe.transport")
+    transp.future = Future[void].Raising([]).init(
+      "stream.pipe.transport", {FutureFlag.OwnCancelSchedule})
     GC_ref(transp)
     transp
 
@@ -640,7 +651,8 @@ when defined(windows):
                 localAddress = TransportAddress(),
                 flags: set[SocketFlags] = {},
                 dualstack = DualStackType.Auto
-               ): Future[StreamTransport] =
+               ): Future[StreamTransport] {.
+               async: (raw: true, raises: [TransportError, CancelledError]).} =
     ## Open new connection to remote peer with address ``address`` and create
     ## new transport object ``StreamTransport`` for established connection.
     ## ``bufferSize`` is size of internal buffer for transport.
@@ -762,7 +774,7 @@ when defined(windows):
         # Continue only if `retFuture` is not cancelled.
         if not(retFuture.finished()):
           let
-            pipeSuffix = $cast[cstring](unsafeAddr address.address_un[0])
+            pipeSuffix = $cast[cstring](baseAddr address.address_un)
             pipeAsciiName = PipeHeaderName & pipeSuffix[1 .. ^1]
             pipeName = toWideString(pipeAsciiName).valueOr:
               retFuture.fail(getTransportOsError(error))
@@ -798,7 +810,7 @@ when defined(windows):
 
   proc createAcceptPipe(server: StreamServer): Result[AsyncFD, OSErrorCode] =
     let
-      pipeSuffix = $cast[cstring](addr server.local.address_un)
+      pipeSuffix = $cast[cstring](baseAddr server.local.address_un)
       pipeName = ? toWideString(PipeHeaderName & pipeSuffix)
       openMode =
         if FirstPipe notin server.flags:
@@ -870,7 +882,7 @@ when defined(windows):
         if server.status notin {ServerStatus.Stopped, ServerStatus.Closed}:
           server.apending = true
           let
-            pipeSuffix = $cast[cstring](addr server.local.address_un)
+            pipeSuffix = $cast[cstring](baseAddr server.local.address_un)
             pipeAsciiName = PipeHeaderName & pipeSuffix
             pipeName = toWideString(pipeAsciiName).valueOr:
               raiseOsDefect(error, "acceptPipeLoop(): Unable to create name " &
@@ -1031,7 +1043,8 @@ when defined(windows):
       server.aovl.data.cb(addr server.aovl)
     ok()
 
-  proc accept*(server: StreamServer): Future[StreamTransport] =
+  proc accept*(server: StreamServer): Future[StreamTransport] {.
+      async: (raw: true, raises: [TransportError, CancelledError]).} =
     var retFuture = newFuture[StreamTransport]("stream.server.accept")
 
     doAssert(server.status != ServerStatus.Running,
@@ -1446,7 +1459,8 @@ else:
     transp.buffer = newSeq[byte](bufsize)
     transp.state = {ReadPaused, WritePaused}
     transp.queue = initDeque[StreamVector]()
-    transp.future = newFuture[void]("socket.stream.transport")
+    transp.future = Future[void].Raising([]).init(
+      "socket.stream.transport", {FutureFlag.OwnCancelSchedule})
     GC_ref(transp)
     transp
 
@@ -1462,7 +1476,8 @@ else:
     transp.buffer = newSeq[byte](bufsize)
     transp.state = {ReadPaused, WritePaused}
     transp.queue = initDeque[StreamVector]()
-    transp.future = newFuture[void]("pipe.stream.transport")
+    transp.future = Future[void].Raising([]).init(
+      "pipe.stream.transport", {FutureFlag.OwnCancelSchedule})
     GC_ref(transp)
     transp
 
@@ -1472,7 +1487,8 @@ else:
                 localAddress = TransportAddress(),
                 flags: set[SocketFlags] = {},
                 dualstack = DualStackType.Auto,
-               ): Future[StreamTransport] =
+               ): Future[StreamTransport] {.
+               async: (raw: true, raises: [TransportError, CancelledError]).} =
     ## Open new connection to remote peer with address ``address`` and create
     ## new transport object ``StreamTransport`` for established connection.
     ## ``bufferSize`` - size of internal buffer for transport.
@@ -1658,7 +1674,8 @@ else:
       transp.state.excl(WritePaused)
     ok()
 
-  proc accept*(server: StreamServer): Future[StreamTransport] =
+  proc accept*(server: StreamServer): Future[StreamTransport] {.
+      async: (raw: true, raises: [TransportError, CancelledError]).} =
     var retFuture = newFuture[StreamTransport]("stream.server.accept")
 
     doAssert(server.status != ServerStatus.Running,
@@ -1762,7 +1779,8 @@ proc stop*(server: StreamServer) {.raises: [TransportOsError].} =
   let res = stop2(server)
   if res.isErr(): raiseTransportOsError(res.error())
 
-proc join*(server: StreamServer): Future[void] =
+proc join*(server: StreamServer): Future[void] {.
+    async: (raw: true, raises: [CancelledError]).} =
   ## Waits until ``server`` is not closed.
   var retFuture = newFuture[void]("stream.transport.server.join")
 
@@ -1785,11 +1803,15 @@ proc connect*(address: TransportAddress,
               flags: set[TransportFlags],
               localAddress = TransportAddress(),
               dualstack = DualStackType.Auto
-             ): Future[StreamTransport] =
+             ): Future[StreamTransport] {.
+             async: (raw: true, raises: [TransportError, CancelledError]).} =
   # Retro compatibility with TransportFlags
   var mappedFlags: set[SocketFlags]
   if TcpNoDelay in flags: mappedFlags.incl(SocketFlags.TcpNoDelay)
   connect(address, bufferSize, child, localAddress, mappedFlags, dualstack)
+
+proc closed*(server: StreamServer): bool =
+  server.status == ServerStatus.Closed
 
 proc close*(server: StreamServer) =
   ## Release ``server`` resources.
@@ -1817,10 +1839,11 @@ proc close*(server: StreamServer) =
     else:
       server.sock.closeSocket(continuation)
 
-proc closeWait*(server: StreamServer): Future[void] =
+proc closeWait*(server: StreamServer): Future[void] {.async: (raises: []).} =
   ## Close server ``server`` and release all resources.
-  server.close()
-  server.join()
+  if not server.closed():
+    server.close()
+    await noCancel(server.join())
 
 proc getBacklogSize(backlog: int): cint =
   doAssert(backlog >= 0 and backlog <= high(int32))
@@ -1844,7 +1867,7 @@ proc getBacklogSize(backlog: int): cint =
     cint(backlog)
 
 proc createStreamServer*(host: TransportAddress,
-                         cbproc: StreamCallback,
+                         cbproc: StreamCallback2,
                          flags: set[ServerFlags] = {},
                          sock: AsyncFD = asyncInvalidSocket,
                          backlog: int = DefaultBacklogSize,
@@ -1997,7 +2020,7 @@ proc createStreamServer*(host: TransportAddress,
     elif host.family in {AddressFamily.Unix}:
       # We do not care about result here, because if file cannot be removed,
       # `bindSocket` will return EADDRINUSE.
-      discard osdefs.unlink(cast[cstring](unsafeAddr host.address_un[0]))
+      discard osdefs.unlink(cast[cstring](baseAddr host.address_un))
 
     host.toSAddr(saddr, slen)
     if osdefs.bindSocket(SocketHandle(serverSocket),
@@ -2031,7 +2054,9 @@ proc createStreamServer*(host: TransportAddress,
   sres.init = init
   sres.bufferSize = bufferSize
   sres.status = Starting
-  sres.loopFuture = newFuture[void]("stream.transport.server")
+  sres.loopFuture = asyncloop.init(
+    Future[void].Raising([]), "stream.transport.server",
+    {FutureFlag.OwnCancelSchedule})
   sres.udata = udata
   sres.dualstack = dualstack
   if localAddress.family == AddressFamily.None:
@@ -2066,6 +2091,7 @@ proc createStreamServer*(host: TransportAddress,
   sres
 
 proc createStreamServer*(host: TransportAddress,
+                         cbproc: StreamCallback,
                          flags: set[ServerFlags] = {},
                          sock: AsyncFD = asyncInvalidSocket,
                          backlog: int = DefaultBacklogSize,
@@ -2074,8 +2100,46 @@ proc createStreamServer*(host: TransportAddress,
                          init: TransportInitCallback = nil,
                          udata: pointer = nil,
                          dualstack = DualStackType.Auto): StreamServer {.
-    raises: [CatchableError].} =
-  createStreamServer(host, nil, flags, sock, backlog, bufferSize,
+    raises: [TransportOsError],
+    deprecated: "Callback must not raise exceptions, annotate with {.async: (raises: []).}".} =
+  proc wrap(server: StreamServer,
+            client: StreamTransport) {.async: (raises: []).} =
+    try:
+      cbproc(server, client)
+    except CatchableError as exc:
+      raiseAssert "Unexpected exception from stream server cbproc: " & exc.msg
+
+  createStreamServer(
+    host, wrap, flags, sock, backlog, bufferSize, child, init, udata,
+    dualstack)
+
+proc createStreamServer*(host: TransportAddress,
+                         flags: set[ServerFlags] = {},
+                         sock: AsyncFD = asyncInvalidSocket,
+                         backlog: int = DefaultBacklogSize,
+                         bufferSize: int = DefaultStreamBufferSize,
+                         child: StreamServer = nil,
+                         init: TransportInitCallback = nil,
+                         udata: pointer = nil,
+                         dualstack = DualStackType.Auto): StreamServer {.
+    raises: [TransportOsError].} =
+  createStreamServer(host, StreamCallback2(nil), flags, sock, backlog, bufferSize,
+                     child, init, cast[pointer](udata), dualstack)
+
+proc createStreamServer*[T](host: TransportAddress,
+                            cbproc: StreamCallback2,
+                            flags: set[ServerFlags] = {},
+                            udata: ref T,
+                            sock: AsyncFD = asyncInvalidSocket,
+                            backlog: int = DefaultBacklogSize,
+                            bufferSize: int = DefaultStreamBufferSize,
+                            child: StreamServer = nil,
+                            init: TransportInitCallback = nil,
+                            dualstack = DualStackType.Auto): StreamServer {.
+    raises: [TransportOsError].} =
+  var fflags = flags + {GCUserData}
+  GC_ref(udata)
+  createStreamServer(host, cbproc, fflags, sock, backlog, bufferSize,
                      child, init, cast[pointer](udata), dualstack)
 
 proc createStreamServer*[T](host: TransportAddress,
@@ -2088,7 +2152,8 @@ proc createStreamServer*[T](host: TransportAddress,
                             child: StreamServer = nil,
                             init: TransportInitCallback = nil,
                             dualstack = DualStackType.Auto): StreamServer {.
-    raises: [CatchableError].} =
+    raises: [TransportOsError],
+    deprecated: "Callback must not raise exceptions, annotate with {.async: (raises: []).}".} =
   var fflags = flags + {GCUserData}
   GC_ref(udata)
   createStreamServer(host, cbproc, fflags, sock, backlog, bufferSize,
@@ -2103,10 +2168,10 @@ proc createStreamServer*[T](host: TransportAddress,
                             child: StreamServer = nil,
                             init: TransportInitCallback = nil,
                             dualstack = DualStackType.Auto): StreamServer {.
-    raises: [CatchableError].} =
+    raises: [TransportOsError].} =
   var fflags = flags + {GCUserData}
   GC_ref(udata)
-  createStreamServer(host, nil, fflags, sock, backlog, bufferSize,
+  createStreamServer(host, StreamCallback2(nil), fflags, sock, backlog, bufferSize,
                      child, init, cast[pointer](udata), dualstack)
 
 proc getUserData*[T](server: StreamServer): T {.inline.} =
@@ -2157,7 +2222,8 @@ template fastWrite(transp: auto, pbytes: var ptr byte, rbytes: var int,
               return retFuture
 
 proc write*(transp: StreamTransport, pbytes: pointer,
-            nbytes: int): Future[int] =
+            nbytes: int): Future[int] {.
+            async: (raw: true, raises: [TransportError, CancelledError]).} =
   ## Write data from buffer ``pbytes`` with size ``nbytes`` using transport
   ## ``transp``.
   var retFuture = newFuture[int]("stream.transport.write(pointer)")
@@ -2179,17 +2245,17 @@ proc write*(transp: StreamTransport, pbytes: pointer,
   return retFuture
 
 proc write*(transp: StreamTransport, msg: sink string,
-            msglen = -1): Future[int] =
+            msglen = -1): Future[int] {.
+            async: (raw: true, raises: [TransportError, CancelledError]).} =
   ## Write data from string ``msg`` using transport ``transp``.
-  var retFuture = newFutureStr[int]("stream.transport.write(string)")
+  var retFuture = newFuture[int]("stream.transport.write(string)")
   transp.checkClosed(retFuture)
   transp.checkWriteEof(retFuture)
-
   let
     nbytes = if msglen <= 0: len(msg) else: msglen
 
   var
-    pbytes = cast[ptr byte](unsafeAddr msg[0])
+    pbytes = cast[ptr byte](baseAddr msg)
     rbytes = nbytes
 
   fastWrite(transp, pbytes, rbytes, nbytes)
@@ -2197,17 +2263,10 @@ proc write*(transp: StreamTransport, msg: sink string,
   let
     written = nbytes - rbytes # In case fastWrite wrote some
 
-  pbytes =
-    when declared(shallowCopy):
-      if not(isLiteral(msg)):
-        shallowCopy(retFuture.gcholder, msg)
-        cast[ptr byte](addr retFuture.gcholder[written])
-      else:
-        retFuture.gcholder = msg[written ..< nbytes]
-        cast[ptr byte](addr retFuture.gcholder[0])
-    else:
-      retFuture.gcholder = msg[written ..< nbytes]
-      cast[ptr byte](addr retFuture.gcholder[0])
+  var localCopy = chronosMoveSink(msg)
+  retFuture.addCallback(proc(_: pointer) = reset(localCopy))
+
+  pbytes = cast[ptr byte](addr localCopy[written])
 
   var vector = StreamVector(kind: DataBuffer, writer: retFuture,
                             buf: pbytes, buflen: rbytes, size: nbytes)
@@ -2218,9 +2277,10 @@ proc write*(transp: StreamTransport, msg: sink string,
   return retFuture
 
 proc write*[T](transp: StreamTransport, msg: sink seq[T],
-               msglen = -1): Future[int] =
+               msglen = -1): Future[int] {.
+               async: (raw: true, raises: [TransportError, CancelledError]).} =
   ## Write sequence ``msg`` using transport ``transp``.
-  var retFuture = newFutureSeq[int, T]("stream.transport.write(seq)")
+  var retFuture = newFuture[int]("stream.transport.write(seq)")
   transp.checkClosed(retFuture)
   transp.checkWriteEof(retFuture)
 
@@ -2228,7 +2288,7 @@ proc write*[T](transp: StreamTransport, msg: sink seq[T],
     nbytes = if msglen <= 0: (len(msg) * sizeof(T)) else: (msglen * sizeof(T))
 
   var
-    pbytes = cast[ptr byte](unsafeAddr msg[0])
+    pbytes = cast[ptr byte](baseAddr msg)
     rbytes = nbytes
 
   fastWrite(transp, pbytes, rbytes, nbytes)
@@ -2236,17 +2296,10 @@ proc write*[T](transp: StreamTransport, msg: sink seq[T],
   let
     written = nbytes - rbytes # In case fastWrite wrote some
 
-  pbytes =
-    when declared(shallowCopy):
-      if not(isLiteral(msg)):
-        shallowCopy(retFuture.gcholder, msg)
-        cast[ptr byte](addr retFuture.gcholder[written])
-      else:
-        retFuture.gcholder = msg[written ..< nbytes]
-        cast[ptr byte](addr retFuture.gcholder[0])
-    else:
-      retFuture.gcholder = msg[written ..< nbytes]
-      cast[ptr byte](addr retFuture.gcholder[0])
+  var localCopy = chronosMoveSink(msg)
+  retFuture.addCallback(proc(_: pointer) = reset(localCopy))
+
+  pbytes = cast[ptr byte](addr localCopy[written])
 
   var vector = StreamVector(kind: DataBuffer, writer: retFuture,
                             buf: pbytes, buflen: rbytes, size: nbytes)
@@ -2257,7 +2310,8 @@ proc write*[T](transp: StreamTransport, msg: sink seq[T],
   return retFuture
 
 proc writeFile*(transp: StreamTransport, handle: int,
-                offset: uint = 0, size: int = 0): Future[int] =
+                offset: uint = 0, size: int = 0): Future[int] {.
+                async: (raw: true, raises: [TransportError, CancelledError]).} =
   ## Write data from file descriptor ``handle`` to transport ``transp``.
   ##
   ## You can specify starting ``offset`` in opened file and number of bytes
@@ -2304,7 +2358,7 @@ template readLoop(name, body: untyped): untyped =
       break
     else:
       checkPending(transp)
-      var fut = newFuture[void](name)
+      let fut = ReaderFuture.init(name)
       transp.reader = fut
       let res = resumeRead(transp)
       if res.isErr():
@@ -2328,7 +2382,8 @@ template readLoop(name, body: untyped): untyped =
         await fut
 
 proc readExactly*(transp: StreamTransport, pbytes: pointer,
-                  nbytes: int) {.async.} =
+                  nbytes: int) {.
+                  async: (raises: [TransportError, CancelledError]).} =
   ## Read exactly ``nbytes`` bytes from transport ``transp`` and store it to
   ## ``pbytes``. ``pbytes`` must not be ``nil`` pointer and ``nbytes`` should
   ## be Natural.
@@ -2357,7 +2412,8 @@ proc readExactly*(transp: StreamTransport, pbytes: pointer,
     (consumed: count, done: index == nbytes)
 
 proc readOnce*(transp: StreamTransport, pbytes: pointer,
-               nbytes: int): Future[int] {.async.} =
+               nbytes: int): Future[int] {.
+               async: (raises: [TransportError, CancelledError]).} =
   ## Perform one read operation on transport ``transp``.
   ##
   ## If internal buffer is not empty, ``nbytes`` bytes will be transferred from
@@ -2376,7 +2432,8 @@ proc readOnce*(transp: StreamTransport, pbytes: pointer,
   return count
 
 proc readUntil*(transp: StreamTransport, pbytes: pointer, nbytes: int,
-                sep: seq[byte], withLogs = false): Future[int] {.async.} =
+                sep: seq[byte], withLogs = false): Future[int] {.
+                async: (raises: [TransportError, CancelledError]).} =
   ## Read data from the transport ``transp`` until separator ``sep`` is found.
   ##
   ## On success, the data and separator will be removed from the internal
@@ -2431,7 +2488,8 @@ proc readUntil*(transp: StreamTransport, pbytes: pointer, nbytes: int,
   return k
 
 proc readLine*(transp: StreamTransport, limit = 0,
-               sep = "\r\n"): Future[string] {.async.} =
+               sep = "\r\n"): Future[string] {.
+               async: (raises: [TransportError, CancelledError]).} =
   ## Read one line from transport ``transp``, where "line" is a sequence of
   ## bytes ending with ``sep`` (default is "\r\n").
   ##
@@ -2473,7 +2531,8 @@ proc readLine*(transp: StreamTransport, limit = 0,
 
       (index, (state == len(sep)) or (lim == len(result)))
 
-proc read*(transp: StreamTransport): Future[seq[byte]] {.async.} =
+proc read*(transp: StreamTransport): Future[seq[byte]] {.
+    async: (raises: [TransportError, CancelledError]).} =
   ## Read all bytes from transport ``transp``.
   ##
   ## This procedure allocates buffer seq[byte] and return it as result.
@@ -2484,7 +2543,8 @@ proc read*(transp: StreamTransport): Future[seq[byte]] {.async.} =
       result.add(transp.buffer.toOpenArray(0, transp.offset - 1))
       (transp.offset, false)
 
-proc read*(transp: StreamTransport, n: int): Future[seq[byte]] {.async.} =
+proc read*(transp: StreamTransport, n: int): Future[seq[byte]] {.
+    async: (raises: [TransportError, CancelledError]).} =
   ## Read all bytes (n <= 0) or exactly `n` bytes from transport ``transp``.
   ##
   ## This procedure allocates buffer seq[byte] and return it as result.
@@ -2499,7 +2559,8 @@ proc read*(transp: StreamTransport, n: int): Future[seq[byte]] {.async.} =
         result.add(transp.buffer.toOpenArray(0, count - 1))
         (count, len(result) == n)
 
-proc consume*(transp: StreamTransport): Future[int] {.async.} =
+proc consume*(transp: StreamTransport): Future[int] {.
+    async: (raises: [TransportError, CancelledError]).} =
   ## Consume all bytes from transport ``transp`` and discard it.
   ##
   ## Return number of bytes actually consumed and discarded.
@@ -2510,7 +2571,8 @@ proc consume*(transp: StreamTransport): Future[int] {.async.} =
       result += transp.offset
       (transp.offset, false)
 
-proc consume*(transp: StreamTransport, n: int): Future[int] {.async.} =
+proc consume*(transp: StreamTransport, n: int): Future[int] {.
+    async: (raises: [TransportError, CancelledError]).} =
   ## Consume all bytes (n <= 0) or ``n`` bytes from transport ``transp`` and
   ## discard it.
   ##
@@ -2527,7 +2589,8 @@ proc consume*(transp: StreamTransport, n: int): Future[int] {.async.} =
         (count, result == n)
 
 proc readMessage*(transp: StreamTransport,
-                  predicate: ReadMessagePredicate) {.async.} =
+                  predicate: ReadMessagePredicate) {.
+                  async: (raises: [TransportError, CancelledError]).} =
   ## Read all bytes from transport ``transp`` until ``predicate`` callback
   ## will not be satisfied.
   ##
@@ -2550,7 +2613,8 @@ proc readMessage*(transp: StreamTransport,
     else:
       predicate(transp.buffer.toOpenArray(0, transp.offset - 1))
 
-proc join*(transp: StreamTransport): Future[void] =
+proc join*(transp: StreamTransport): Future[void] {.
+    async: (raw: true, raises: [CancelledError]).} =
   ## Wait until ``transp`` will not be closed.
   var retFuture = newFuture[void]("stream.transport.join")
 
@@ -2566,6 +2630,23 @@ proc join*(transp: StreamTransport): Future[void] =
   else:
     retFuture.complete()
   return retFuture
+
+proc closed*(transp: StreamTransport): bool {.inline.} =
+  ## Returns ``true`` if transport in closed state.
+  ({ReadClosed, WriteClosed} * transp.state != {})
+
+proc finished*(transp: StreamTransport): bool {.inline.} =
+  ## Returns ``true`` if transport in finished (EOF) state.
+  ({ReadEof, WriteEof} * transp.state != {})
+
+proc failed*(transp: StreamTransport): bool {.inline.} =
+  ## Returns ``true`` if transport in error state.
+  ({ReadError, WriteError} * transp.state != {})
+
+proc running*(transp: StreamTransport): bool {.inline.} =
+  ## Returns ``true`` if transport is still pending.
+  ({ReadClosed, ReadEof, ReadError,
+    WriteClosed, WriteEof, WriteError} * transp.state == {})
 
 proc close*(transp: StreamTransport) =
   ## Closes and frees resources of transport ``transp``.
@@ -2609,32 +2690,14 @@ proc close*(transp: StreamTransport) =
       elif transp.kind == TransportKind.Socket:
         closeSocket(transp.fd, continuation)
 
-proc closeWait*(transp: StreamTransport): Future[void] =
+proc closeWait*(transp: StreamTransport): Future[void] {.async: (raises: []).} =
   ## Close and frees resources of transport ``transp``.
-  const FutureName = "stream.transport.closeWait"
+  if not transp.closed():
+    transp.close()
+    await noCancel(transp.join())
 
-  if {ReadClosed, WriteClosed} * transp.state != {}:
-    return Future.completed(FutureName)
-
-  let retFuture = newFuture[void](FutureName, {FutureFlag.OwnCancelSchedule})
-
-  proc continuation(udata: pointer) {.gcsafe.} =
-    retFuture.complete()
-
-  proc cancellation(udata: pointer) {.gcsafe.} =
-    # We are not going to change the state of `retFuture` to cancelled, so we
-    # will prevent the entire sequence of Futures from being cancelled.
-    discard
-
-  transp.close()
-  if transp.future.finished():
-    retFuture.complete()
-  else:
-    transp.future.addCallback(continuation, cast[pointer](retFuture))
-    retFuture.cancelCallback = cancellation
-  retFuture
-
-proc shutdownWait*(transp: StreamTransport): Future[void] =
+proc shutdownWait*(transp: StreamTransport): Future[void] {.
+    async: (raw: true, raises: [TransportError, CancelledError]).} =
   ## Perform graceful shutdown of TCP connection backed by transport ``transp``.
   doAssert(transp.kind == TransportKind.Socket)
   let retFuture = newFuture[void]("stream.transport.shutdown")
@@ -2690,23 +2753,6 @@ proc shutdownWait*(transp: StreamTransport): Future[void] =
       transp.state.incl({WriteEof})
       callSoon(continuation, nil)
     retFuture
-
-proc closed*(transp: StreamTransport): bool {.inline.} =
-  ## Returns ``true`` if transport in closed state.
-  ({ReadClosed, WriteClosed} * transp.state != {})
-
-proc finished*(transp: StreamTransport): bool {.inline.} =
-  ## Returns ``true`` if transport in finished (EOF) state.
-  ({ReadEof, WriteEof} * transp.state != {})
-
-proc failed*(transp: StreamTransport): bool {.inline.} =
-  ## Returns ``true`` if transport in error state.
-  ({ReadError, WriteError} * transp.state != {})
-
-proc running*(transp: StreamTransport): bool {.inline.} =
-  ## Returns ``true`` if transport is still pending.
-  ({ReadClosed, ReadEof, ReadError,
-    WriteClosed, WriteEof, WriteError} * transp.state == {})
 
 proc fromPipe2*(fd: AsyncFD, child: StreamTransport = nil,
                 bufferSize = DefaultStreamBufferSize

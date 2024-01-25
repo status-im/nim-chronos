@@ -26,6 +26,7 @@ template checkLeaks*(name: string): untyped =
          ", closed = " & $ counter.closed
   check counter.opened == counter.closed
 
-template checkLeaks*(): untyped =
+proc checkLeaks*() =
   for key in getThreadDispatcher().trackerCounterKeys():
     checkLeaks(key)
+  GC_fullCollect()

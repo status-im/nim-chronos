@@ -10,9 +10,13 @@
 
 {.push raises: [].}
 
+## This module implements the core asynchronous engine / dispatcher.
+##
+## For more information, see the `Concepts` chapter of the guide.
+
 from nativesockets import Port
 import std/[tables, heapqueue, deques]
-import stew/results
+import results
 import ".."/[config, futures, osdefs, oserrno, osutils, timer]
 
 import ./[asyncmacro, errors]
@@ -21,7 +25,7 @@ export Port
 export deques, errors, futures, timer, results
 
 export
-  asyncmacro.async, asyncmacro.await, asyncmacro.awaitne, asyncmacro.asyncraises
+  asyncmacro.async, asyncmacro.await, asyncmacro.awaitne
 
 const
   MaxEventsCount* = 64
@@ -169,7 +173,36 @@ func toException*(v: OSErrorCode): ref OSError = newOSError(v)
   # This helper will allow to use `tryGet()` and raise OSError for
   # Result[T, OSErrorCode] values.
 
-when defined(windows):
+when defined(nimdoc):
+  type
+    PDispatcher* = ref object of PDispatcherBase
+    AsyncFD* = distinct cint
+
+  var gDisp {.threadvar.}: PDispatcher
+
+  proc newDispatcher*(): PDispatcher = discard
+  proc poll*() = discard
+    ## Perform single asynchronous step, processing timers and completing
+    ## tasks. Blocks until at least one event has completed.
+    ##
+    ## Exceptions raised during `async` task exection are stored as outcome
+    ## in the corresponding `Future` - `poll` itself does not raise.
+
+  proc register2*(fd: AsyncFD): Result[void, OSErrorCode] = discard
+  proc unregister2*(fd: AsyncFD): Result[void, OSErrorCode] = discard
+  proc addReader2*(fd: AsyncFD, cb: CallbackFunc,
+                   udata: pointer = nil): Result[void, OSErrorCode] = discard
+  proc removeReader2*(fd: AsyncFD): Result[void, OSErrorCode] = discard
+  proc addWriter2*(fd: AsyncFD, cb: CallbackFunc,
+                   udata: pointer = nil): Result[void, OSErrorCode] = discard
+  proc removeWriter2*(fd: AsyncFD): Result[void, OSErrorCode] = discard
+  proc closeHandle*(fd: AsyncFD, aftercb: CallbackFunc = nil) = discard
+  proc closeSocket*(fd: AsyncFD, aftercb: CallbackFunc = nil) = discard
+  proc unregisterAndCloseFd*(fd: AsyncFD): Result[void, OSErrorCode] = discard
+
+  proc `==`*(x: AsyncFD, y: AsyncFD): bool {.borrow, gcsafe.}
+
+elif defined(windows):
   {.pragma: stdcallbackFunc, stdcall, gcsafe, raises: [].}
 
   export SIGINT, SIGQUIT, SIGTERM
@@ -551,12 +584,6 @@ when defined(windows):
       raise newException(ValueError, osErrorMsg(res.error()))
 
   proc poll*() =
-    ## Perform single asynchronous step, processing timers and completing
-    ## tasks. Blocks until at least one event has completed.
-    ##
-    ## Exceptions raised here indicate that waiting for tasks to be unblocked
-    ## failed - exceptions from within tasks are instead propagated through
-    ## their respective futures and not allowed to interrrupt the poll call.
     let loop = getThreadDispatcher()
     var
       curTime = Moment.now()
@@ -1102,14 +1129,18 @@ proc addTimer*(at: uint64, cb: CallbackFunc, udata: pointer = nil) {.
 proc removeTimer*(at: Moment, cb: CallbackFunc, udata: pointer = nil) =
   ## Remove timer callback ``cb`` with absolute timestamp ``at`` from waiting
   ## queue.
-  let loop = getThreadDispatcher()
-  var list = cast[seq[TimerCallback]](loop.timers)
-  var index = -1
-  for i in 0..<len(list):
-    if list[i].finishAt == at and list[i].function.function == cb and
-       list[i].function.udata == udata:
-      index = i
-      break
+  let
+    loop = getThreadDispatcher()
+    index =
+      block:
+        var res = -1
+        for i in 0 ..< len(loop.timers):
+          if (loop.timers[i].finishAt == at) and
+             (loop.timers[i].function.function == cb) and
+             (loop.timers[i].function.udata == udata):
+            res = i
+            break
+        res
   if index != -1:
     loop.timers.del(index)
 
@@ -1241,5 +1272,6 @@ when chronosFutureTracking:
     ## completed, cancelled or failed).
     futureList.count
 
-# Perform global per-module initialization.
-globalInit()
+when not defined(nimdoc):
+  # Perform global per-module initialization.
+  globalInit()

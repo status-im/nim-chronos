@@ -16,6 +16,9 @@ when defined(windows):
        importc: "_get_osfhandle", header:"<io.h>".}
 
 suite "Stream Transport test suite":
+  teardown:
+    checkLeaks()
+
   const
     ConstantMessage = "SOMEDATA"
     BigMessagePattern = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -55,124 +58,148 @@ suite "Stream Transport test suite":
     for i in 0 ..< len(result):
       result[i] = byte(message[i mod len(message)])
 
-  proc serveClient1(server: StreamServer, transp: StreamTransport) {.async.} =
-    while not transp.atEof():
-      var data = await transp.readLine()
-      if len(data) == 0:
-        doAssert(transp.atEof())
-        break
-      doAssert(data.startsWith("REQUEST"))
-      var numstr = data[7..^1]
-      var num = parseInt(numstr)
-      var ans = "ANSWER" & $num & "\r\n"
-      var res = await transp.write(cast[pointer](addr ans[0]), len(ans))
-      doAssert(res == len(ans))
-    transp.close()
-    await transp.join()
+  proc serveClient1(server: StreamServer, transp: StreamTransport) {.
+      async: (raises: []).} =
+    try:
+      while not transp.atEof():
+        var data = await transp.readLine()
+        if len(data) == 0:
+          doAssert(transp.atEof())
+          break
+        doAssert(data.startsWith("REQUEST"))
+        var numstr = data[7..^1]
+        var num = parseInt(numstr)
+        var ans = "ANSWER" & $num & "\r\n"
+        var res = await transp.write(cast[pointer](addr ans[0]), len(ans))
+        doAssert(res == len(ans))
+      transp.close()
+      await transp.join()
+    except CatchableError as exc:
+      raiseAssert exc.msg
 
-  proc serveClient2(server: StreamServer, transp: StreamTransport) {.async.} =
-    var buffer: array[20, char]
-    var check = "REQUEST"
-    while not transp.atEof():
-      zeroMem(addr buffer[0], MessageSize)
-      try:
-        await transp.readExactly(addr buffer[0], MessageSize)
-      except TransportIncompleteError:
-        break
-      doAssert(equalMem(addr buffer[0], addr check[0], len(check)))
-      var numstr = ""
-      var i = 7
-      while i < MessageSize and (buffer[i] in {'0'..'9'}):
-        numstr.add(buffer[i])
-        inc(i)
-      var num = parseInt(numstr)
-      var ans = "ANSWER" & $num
-      zeroMem(addr buffer[0], MessageSize)
-      copyMem(addr buffer[0], addr ans[0], len(ans))
-      var res = await transp.write(cast[pointer](addr buffer[0]), MessageSize)
-      doAssert(res == MessageSize)
-    transp.close()
-    await transp.join()
+  proc serveClient2(server: StreamServer, transp: StreamTransport) {.
+      async: (raises: []).} =
+    try:
+      var buffer: array[20, char]
+      var check = "REQUEST"
+      while not transp.atEof():
+        zeroMem(addr buffer[0], MessageSize)
+        try:
+          await transp.readExactly(addr buffer[0], MessageSize)
+        except TransportIncompleteError:
+          break
+        doAssert(equalMem(addr buffer[0], addr check[0], len(check)))
+        var numstr = ""
+        var i = 7
+        while i < MessageSize and (buffer[i] in {'0'..'9'}):
+          numstr.add(buffer[i])
+          inc(i)
+        var num = parseInt(numstr)
+        var ans = "ANSWER" & $num
+        zeroMem(addr buffer[0], MessageSize)
+        copyMem(addr buffer[0], addr ans[0], len(ans))
+        var res = await transp.write(cast[pointer](addr buffer[0]), MessageSize)
+        doAssert(res == MessageSize)
+      transp.close()
+      await transp.join()
+    except CatchableError as exc:
+      raiseAssert exc.msg
 
-  proc serveClient3(server: StreamServer, transp: StreamTransport) {.async.} =
-    var buffer: array[20, char]
-    var check = "REQUEST"
-    var suffixStr = "SUFFIX"
-    var suffix = newSeq[byte](6)
-    copyMem(addr suffix[0], addr suffixStr[0], len(suffixStr))
-    var counter = MessagesCount
-    while counter > 0:
-      zeroMem(addr buffer[0], MessageSize)
-      var res = await transp.readUntil(addr buffer[0], MessageSize, suffix)
-      doAssert(equalMem(addr buffer[0], addr check[0], len(check)))
-      var numstr = ""
-      var i = 7
-      while i < MessageSize and (buffer[i] in {'0'..'9'}):
-        numstr.add(buffer[i])
-        inc(i)
-      var num = parseInt(numstr)
-      doAssert(len(numstr) < 8)
-      var ans = "ANSWER" & $num & "SUFFIX"
-      zeroMem(addr buffer[0], MessageSize)
-      copyMem(addr buffer[0], addr ans[0], len(ans))
-      res = await transp.write(cast[pointer](addr buffer[0]), len(ans))
-      doAssert(res == len(ans))
-      dec(counter)
-    transp.close()
-    await transp.join()
+  proc serveClient3(server: StreamServer, transp: StreamTransport) {.
+      async: (raises: []).} =
+    try:
+      var buffer: array[20, char]
+      var check = "REQUEST"
+      var suffixStr = "SUFFIX"
+      var suffix = newSeq[byte](6)
+      copyMem(addr suffix[0], addr suffixStr[0], len(suffixStr))
+      var counter = MessagesCount
+      while counter > 0:
+        zeroMem(addr buffer[0], MessageSize)
+        var res = await transp.readUntil(addr buffer[0], MessageSize, suffix)
+        doAssert(equalMem(addr buffer[0], addr check[0], len(check)))
+        var numstr = ""
+        var i = 7
+        while i < MessageSize and (buffer[i] in {'0'..'9'}):
+          numstr.add(buffer[i])
+          inc(i)
+        var num = parseInt(numstr)
+        doAssert(len(numstr) < 8)
+        var ans = "ANSWER" & $num & "SUFFIX"
+        zeroMem(addr buffer[0], MessageSize)
+        copyMem(addr buffer[0], addr ans[0], len(ans))
+        res = await transp.write(cast[pointer](addr buffer[0]), len(ans))
+        doAssert(res == len(ans))
+        dec(counter)
+      transp.close()
+      await transp.join()
+    except CatchableError as exc:
+      raiseAssert exc.msg
 
-  proc serveClient4(server: StreamServer, transp: StreamTransport) {.async.} =
-    var pathname = await transp.readLine()
-    var size = await transp.readLine()
-    var sizeNum = parseInt(size)
-    doAssert(sizeNum >= 0)
-    var rbuffer = newSeq[byte](sizeNum)
-    await transp.readExactly(addr rbuffer[0], sizeNum)
-    var lbuffer = readFile(pathname)
-    doAssert(len(lbuffer) == sizeNum)
-    doAssert(equalMem(addr rbuffer[0], addr lbuffer[0], sizeNum))
-    var answer = "OK\r\n"
-    var res = await transp.write(cast[pointer](addr answer[0]), len(answer))
-    doAssert(res == len(answer))
-    transp.close()
-    await transp.join()
+  proc serveClient4(server: StreamServer, transp: StreamTransport) {.
+      async: (raises: []).} =
+    try:
+      var pathname = await transp.readLine()
+      var size = await transp.readLine()
+      var sizeNum = parseInt(size)
+      doAssert(sizeNum >= 0)
+      var rbuffer = newSeq[byte](sizeNum)
+      await transp.readExactly(addr rbuffer[0], sizeNum)
+      var lbuffer = readFile(pathname)
+      doAssert(len(lbuffer) == sizeNum)
+      doAssert(equalMem(addr rbuffer[0], addr lbuffer[0], sizeNum))
+      var answer = "OK\r\n"
+      var res = await transp.write(cast[pointer](addr answer[0]), len(answer))
+      doAssert(res == len(answer))
+      transp.close()
+      await transp.join()
+    except CatchableError as exc:
+      raiseAssert exc.msg
 
-  proc serveClient7(server: StreamServer, transp: StreamTransport) {.async.} =
-    var answer = "DONE\r\n"
-    var expect = ""
-    var line = await transp.readLine()
-    doAssert(len(line) == BigMessageCount * len(BigMessagePattern))
-    for i in 0..<BigMessageCount:
-      expect.add(BigMessagePattern)
-    doAssert(line == expect)
-    var res = await transp.write(answer)
-    doAssert(res == len(answer))
-    transp.close()
-    await transp.join()
-    server.stop()
-    server.close()
+  proc serveClient7(server: StreamServer, transp: StreamTransport) {.
+      async: (raises: []).} =
+    try:
+      var answer = "DONE\r\n"
+      var expect = ""
+      var line = await transp.readLine()
+      doAssert(len(line) == BigMessageCount * len(BigMessagePattern))
+      for i in 0..<BigMessageCount:
+        expect.add(BigMessagePattern)
+      doAssert(line == expect)
+      var res = await transp.write(answer)
+      doAssert(res == len(answer))
+      transp.close()
+      await transp.join()
+      server.stop()
+      server.close()
+    except CatchableError as exc:
+      raiseAssert exc.msg
 
-  proc serveClient8(server: StreamServer, transp: StreamTransport) {.async.} =
-    var answer = "DONE\r\n"
-    var strpattern = BigMessagePattern
-    var pattern = newSeq[byte](len(BigMessagePattern))
-    var expect = newSeq[byte]()
-    var data = newSeq[byte]((BigMessageCount + 1) * len(BigMessagePattern))
-    var sep = @[0x0D'u8, 0x0A'u8]
-    copyMem(addr pattern[0], addr strpattern[0], len(BigMessagePattern))
-    var count = await transp.readUntil(addr data[0], len(data), sep = sep)
-    doAssert(count == BigMessageCount * len(BigMessagePattern) + 2)
-    for i in 0..<BigMessageCount:
-      expect.add(pattern)
-    expect.add(sep)
-    data.setLen(count)
-    doAssert(expect == data)
-    var res = await transp.write(answer)
-    doAssert(res == len(answer))
-    transp.close()
-    await transp.join()
-    server.stop()
-    server.close()
+  proc serveClient8(server: StreamServer, transp: StreamTransport) {.
+      async: (raises: []).} =
+    try:
+      var answer = "DONE\r\n"
+      var strpattern = BigMessagePattern
+      var pattern = newSeq[byte](len(BigMessagePattern))
+      var expect = newSeq[byte]()
+      var data = newSeq[byte]((BigMessageCount + 1) * len(BigMessagePattern))
+      var sep = @[0x0D'u8, 0x0A'u8]
+      copyMem(addr pattern[0], addr strpattern[0], len(BigMessagePattern))
+      var count = await transp.readUntil(addr data[0], len(data), sep = sep)
+      doAssert(count == BigMessageCount * len(BigMessagePattern) + 2)
+      for i in 0..<BigMessageCount:
+        expect.add(pattern)
+      expect.add(sep)
+      data.setLen(count)
+      doAssert(expect == data)
+      var res = await transp.write(answer)
+      doAssert(res == len(answer))
+      transp.close()
+      await transp.join()
+      server.stop()
+      server.close()
+    except CatchableError as exc:
+      raiseAssert exc.msg
 
   proc swarmWorker1(address: TransportAddress): Future[int] {.async.} =
     var transp = await connect(address)
@@ -399,18 +426,22 @@ suite "Stream Transport test suite":
         var res = workers[i].read()
         result += res
 
-    proc serveClient(server: StreamServer, transp: StreamTransport) {.async.} =
-      var data = await transp.read()
-      doAssert(len(data) == len(ConstantMessage) * MessagesCount)
-      transp.close()
-      var expect = ""
-      for i in 0..<MessagesCount:
-        expect.add(ConstantMessage)
-      doAssert(equalMem(addr expect[0], addr data[0], len(data)))
-      dec(counter)
-      if counter == 0:
-        server.stop()
-        server.close()
+    proc serveClient(server: StreamServer, transp: StreamTransport) {.
+        async: (raises: []).} =
+      try:
+        var data = await transp.read()
+        doAssert(len(data) == len(ConstantMessage) * MessagesCount)
+        transp.close()
+        var expect = ""
+        for i in 0..<MessagesCount:
+          expect.add(ConstantMessage)
+        doAssert(equalMem(addr expect[0], addr data[0], len(data)))
+        dec(counter)
+        if counter == 0:
+          server.stop()
+          server.close()
+      except CatchableError as exc:
+        raiseAssert exc.msg
 
     var server = createStreamServer(address, serveClient, {ReuseAddr})
     server.start()
@@ -420,18 +451,22 @@ suite "Stream Transport test suite":
   proc testWCR(address: TransportAddress): Future[int] {.async.} =
     var counter = ClientsCount
 
-    proc serveClient(server: StreamServer, transp: StreamTransport) {.async.} =
-      var expect = ConstantMessage
-      var skip = await transp.consume(len(ConstantMessage) * (MessagesCount - 1))
-      doAssert(skip == len(ConstantMessage) * (MessagesCount - 1))
-      var data = await transp.read()
-      doAssert(len(data) == len(ConstantMessage))
-      transp.close()
-      doAssert(equalMem(addr data[0], addr expect[0], len(expect)))
-      dec(counter)
-      if counter == 0:
-        server.stop()
-        server.close()
+    proc serveClient(server: StreamServer, transp: StreamTransport) {.
+        async: (raises: []).} =
+      try:
+        var expect = ConstantMessage
+        var skip = await transp.consume(len(ConstantMessage) * (MessagesCount - 1))
+        doAssert(skip == len(ConstantMessage) * (MessagesCount - 1))
+        var data = await transp.read()
+        doAssert(len(data) == len(ConstantMessage))
+        transp.close()
+        doAssert(equalMem(addr data[0], addr expect[0], len(expect)))
+        dec(counter)
+        if counter == 0:
+          server.stop()
+          server.close()
+      except CatchableError as exc:
+        raiseAssert exc.msg
 
     proc swarmWorker(address: TransportAddress): Future[int] {.async.} =
       var transp = await connect(address)
@@ -534,11 +569,15 @@ suite "Stream Transport test suite":
   #   server.close()
   #   await server.join()
 
-  proc serveClient11(server: StreamServer, transp: StreamTransport) {.async.} =
-    var res = await transp.write(BigMessagePattern)
-    doAssert(res == len(BigMessagePattern))
-    transp.close()
-    await transp.join()
+  proc serveClient11(server: StreamServer, transp: StreamTransport) {.
+      async: (raises: []).} =
+    try:
+      var res = await transp.write(BigMessagePattern)
+      doAssert(res == len(BigMessagePattern))
+      transp.close()
+      await transp.join()
+    except CatchableError as exc:
+      raiseAssert exc.msg
 
   proc swarmWorker11(address: TransportAddress): Future[int] {.async.} =
     var buffer: array[len(BigMessagePattern) + 1, byte]
@@ -558,11 +597,15 @@ suite "Stream Transport test suite":
     server.close()
     await server.join()
 
-  proc serveClient12(server: StreamServer, transp: StreamTransport) {.async.} =
-    var res = await transp.write(BigMessagePattern)
-    doAssert(res == len(BigMessagePattern))
-    transp.close()
-    await transp.join()
+  proc serveClient12(server: StreamServer, transp: StreamTransport) {.
+      async: (raises: []).} =
+    try:
+      var res = await transp.write(BigMessagePattern)
+      doAssert(res == len(BigMessagePattern))
+      transp.close()
+      await transp.join()
+    except CatchableError as exc:
+      raiseAssert exc.msg
 
   proc swarmWorker12(address: TransportAddress): Future[int] {.async.} =
     var buffer: array[len(BigMessagePattern), byte]
@@ -584,9 +627,13 @@ suite "Stream Transport test suite":
     server.close()
     await server.join()
 
-  proc serveClient13(server: StreamServer, transp: StreamTransport) {.async.} =
-    transp.close()
-    await transp.join()
+  proc serveClient13(server: StreamServer, transp: StreamTransport) {.
+      async: (raises: []).} =
+    try:
+      transp.close()
+      await transp.join()
+    except CatchableError as exc:
+      raiseAssert exc.msg
 
   proc swarmWorker13(address: TransportAddress): Future[int] {.async.} =
     var transp = await connect(address)
@@ -645,11 +692,15 @@ suite "Stream Transport test suite":
       else:
         return (e.code == oserrno.ECONNREFUSED) or (e.code == oserrno.ENOENT)
 
-  proc serveClient16(server: StreamServer, transp: StreamTransport) {.async.} =
-    var res = await transp.write(BigMessagePattern)
-    doAssert(res == len(BigMessagePattern))
-    transp.close()
-    await transp.join()
+  proc serveClient16(server: StreamServer, transp: StreamTransport) {.
+      async: (raises: []).} =
+    try:
+      var res = await transp.write(BigMessagePattern)
+      doAssert(res == len(BigMessagePattern))
+      transp.close()
+      await transp.join()
+    except CatchableError as exc:
+      raiseAssert exc.msg
 
   proc swarmWorker16(address: TransportAddress): Future[int] {.async.} =
     var buffer = newString(5)
@@ -680,7 +731,8 @@ suite "Stream Transport test suite":
     await server.join()
 
   proc testCloseTransport(address: TransportAddress): Future[int] {.async.} =
-    proc client(server: StreamServer, transp: StreamTransport) {.async.} =
+    proc client(server: StreamServer, transp: StreamTransport) {.
+        async: (raises: []).} =
       discard
     var server = createStreamServer(address, client, {ReuseAddr})
     server.start()
@@ -694,9 +746,12 @@ suite "Stream Transport test suite":
 
   proc testWriteConnReset(address: TransportAddress): Future[int] {.async.} =
     var syncFut = newFuture[void]()
-    proc client(server: StreamServer, transp: StreamTransport) {.async.} =
-      await transp.closeWait()
-      syncFut.complete()
+    proc client(server: StreamServer, transp: StreamTransport) {.async: (raises: []).} =
+      try:
+        await transp.closeWait()
+        syncFut.complete()
+      except CatchableError as exc:
+        raiseAssert exc.msg
     var n = 10
     var server = createStreamServer(address, client, {ReuseAddr})
     server.start()
@@ -721,12 +776,16 @@ suite "Stream Transport test suite":
     var serverRemote, serverLocal: TransportAddress
     var connRemote, connLocal: TransportAddress
 
-    proc serveClient(server: StreamServer, transp: StreamTransport) {.async.} =
-      serverRemote = transp.remoteAddress()
-      serverLocal = transp.localAddress()
-      await transp.closeWait()
-      server.stop()
-      server.close()
+    proc serveClient(server: StreamServer, transp: StreamTransport) {.
+        async: (raises: []).} =
+      try:
+        serverRemote = transp.remoteAddress()
+        serverLocal = transp.localAddress()
+        await transp.closeWait()
+        server.stop()
+        server.close()
+      except CatchableError as exc:
+        raiseAssert exc.msg
 
     var ta = initTAddress("0.0.0.0:0")
     var server = createStreamServer(ta, serveClient, {ReuseAddr})
@@ -748,13 +807,17 @@ suite "Stream Transport test suite":
     var bigMessageSize = 10 * 1024 * 1024 - 1
     var finishMessage = "DONE"
     var cdata = newSeqOfCap[byte](bigMessageSize)
-    proc serveClient(server: StreamServer, transp: StreamTransport) {.async.} =
-      cdata = await transp.read(bigMessageSize)
-      var size = await transp.write(finishMessage)
-      doAssert(size == len(finishMessage))
-      await transp.closeWait()
-      server.stop()
-      server.close()
+    proc serveClient(server: StreamServer, transp: StreamTransport) {.
+        async: (raises: []).} =
+      try:
+        cdata = await transp.read(bigMessageSize)
+        var size = await transp.write(finishMessage)
+        doAssert(size == len(finishMessage))
+        await transp.closeWait()
+        server.stop()
+        server.close()
+      except CatchableError as exc:
+        raiseAssert exc.msg
 
     var flag = false
     var server = createStreamServer(address, serveClient, {ReuseAddr})
@@ -787,10 +850,15 @@ suite "Stream Transport test suite":
     result = flag
 
   proc testReadLine(address: TransportAddress): Future[bool] {.async.} =
-    proc serveClient(server: StreamServer, transp: StreamTransport) {.async.} =
-      discard await transp.write("DATA\r\r\r\r\r\n")
-      transp.close()
-      await transp.join()
+    proc serveClient(server: StreamServer, transp: StreamTransport) {.
+        async: (raises: []).} =
+      try:
+        discard await transp.write("DATA\r\r\r\r\r\n")
+        transp.close()
+        await transp.join()
+      except CatchableError as exc:
+        raiseAssert exc.msg
+
 
     var server = createStreamServer(address, serveClient, {ReuseAddr})
     server.start()
@@ -895,52 +963,56 @@ suite "Stream Transport test suite":
     var state = 0
     var c1, c2, c3, c4, c5, c6, c7: bool
 
-    proc serveClient(server: StreamServer, transp: StreamTransport) {.async.} =
-      if state == 0:
-        # EOF from the beginning.
-        state = 1
-        await transp.closeWait()
-      elif state == 1:
-        # Message has only zero-size header.
-        var message = createLVMessage(0'u32)
-        discard await transp.write(message)
-        state = 2
-        await transp.closeWait()
-      elif state == 2:
-        # Message has header, but do not have any data at all.
-        var message = createLVMessage(4'u32)
-        message.setLen(4)
-        discard await transp.write(message)
-        state = 3
-        await transp.closeWait()
-      elif state == 3:
-        # Message do not have enough data for specified size in header.
-        var message = createLVMessage(1024'u32)
-        message.setLen(1024)
-        discard await transp.write(message)
-        state = 4
-        await transp.closeWait()
-      elif state == 4:
-        # Good encoded message with oversize.
-        var message = createLVMessage(1024'u32)
-        discard await transp.write(message)
-        state = 5
-        await transp.closeWait()
-      elif state == 5:
-        # Good encoded message.
-        var message = createLVMessage(1024'u32)
-        discard await transp.write(message)
-        state = 6
-        await transp.closeWait()
-      elif state == 6:
-        # Good encoded message with additional data.
-        var message = createLVMessage(1024'u32)
-        discard await transp.write(message)
-        discard await transp.write("DONE")
-        state = 7
-        await transp.closeWait()
-      else:
-        doAssert(false)
+    proc serveClient(server: StreamServer, transp: StreamTransport) {.
+        async: (raises: []).} =
+      try:
+        if state == 0:
+          # EOF from the beginning.
+          state = 1
+          await transp.closeWait()
+        elif state == 1:
+          # Message has only zero-size header.
+          var message = createLVMessage(0'u32)
+          discard await transp.write(message)
+          state = 2
+          await transp.closeWait()
+        elif state == 2:
+          # Message has header, but do not have any data at all.
+          var message = createLVMessage(4'u32)
+          message.setLen(4)
+          discard await transp.write(message)
+          state = 3
+          await transp.closeWait()
+        elif state == 3:
+          # Message do not have enough data for specified size in header.
+          var message = createLVMessage(1024'u32)
+          message.setLen(1024)
+          discard await transp.write(message)
+          state = 4
+          await transp.closeWait()
+        elif state == 4:
+          # Good encoded message with oversize.
+          var message = createLVMessage(1024'u32)
+          discard await transp.write(message)
+          state = 5
+          await transp.closeWait()
+        elif state == 5:
+          # Good encoded message.
+          var message = createLVMessage(1024'u32)
+          discard await transp.write(message)
+          state = 6
+          await transp.closeWait()
+        elif state == 6:
+          # Good encoded message with additional data.
+          var message = createLVMessage(1024'u32)
+          discard await transp.write(message)
+          discard await transp.write("DONE")
+          state = 7
+          await transp.closeWait()
+        else:
+          doAssert(false)
+      except CatchableError as exc:
+        raiseAssert exc.msg
 
     var server = createStreamServer(address, serveClient, {ReuseAddr})
     server.start()
@@ -1260,8 +1332,11 @@ suite "Stream Transport test suite":
 
   proc testConnectBindLocalAddress() {.async.} =
 
-    proc client(server: StreamServer, transp: StreamTransport) {.async.} =
-      await transp.closeWait()
+    proc client(server: StreamServer, transp: StreamTransport) {.async: (raises: []).} =
+      try:
+        await transp.closeWait()
+      except CatchableError as exc:
+        raiseAssert exc.msg
 
     let server1 = createStreamServer(initTAddress("127.0.0.1:0"), client)
     let server2 = createStreamServer(initTAddress("127.0.0.1:0"), client)
@@ -1302,8 +1377,11 @@ suite "Stream Transport test suite":
     await server3.closeWait()
 
   proc testConnectCancelLeaksTest() {.async.} =
-    proc client(server: StreamServer, transp: StreamTransport) {.async.} =
-      await transp.closeWait()
+    proc client(server: StreamServer, transp: StreamTransport) {.async: (raises: []).} =
+      try:
+        await transp.closeWait()
+      except CatchableError as exc:
+        raiseAssert exc.msg
 
     let
       server = createStreamServer(initTAddress("127.0.0.1:0"), client)
@@ -1480,12 +1558,6 @@ suite "Stream Transport test suite":
       check waitFor(testAccept(addresses[i])) == true
     test prefixes[i] & "close() while in accept() waiting test":
       check waitFor(testAcceptClose(addresses[i])) == true
-    test prefixes[i] & "Intermediate transports leak test #1":
-      checkLeaks()
-      when defined(windows):
-        skip()
-      else:
-        checkLeaks(StreamTransportTrackerName)
     test prefixes[i] & "accept() too many file descriptors test":
       when defined(windows):
         skip()
@@ -1596,8 +1668,6 @@ suite "Stream Transport test suite":
            DualStackType.Disabled, initTAddress("[::1]:0"))) == true
     else:
       skip()
-  test "Leaks test":
-    checkLeaks()
   test "File descriptors leak test":
     when defined(windows):
       # Windows handle numbers depends on many conditions, so we can't use

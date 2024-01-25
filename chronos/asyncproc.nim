@@ -13,7 +13,7 @@
 import std/strtabs
 import "."/[config, asyncloop, handles, osdefs, osutils, oserrno],
            streams/asyncstream
-import stew/[results, byteutils]
+import stew/[byteutils], results
 from std/os import quoteShell, quoteShellWindows, quoteShellPosix, envPairs
 
 export strtabs, results

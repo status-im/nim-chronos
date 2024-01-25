@@ -75,6 +75,8 @@ N8r5CwGcIX/XPC3lKazzbZ8baA==
 
 
 suite "Secure HTTP server testing suite":
+  teardown:
+    checkLeaks()
 
   proc httpsClient(address: TransportAddress,
                    data: string, flags = {NoVerifyHost, NoVerifyServerName}
@@ -108,15 +110,18 @@ suite "Secure HTTP server testing suite":
     proc testHTTPS(address: TransportAddress): Future[bool] {.async.} =
       var serverRes = false
       proc process(r: RequestFence): Future[HttpResponseRef] {.
-           async.} =
+           async: (raises: [CancelledError]).} =
         if r.isOk():
           let request = r.get()
           serverRes = true
-          return await request.respond(Http200, "TEST_OK:" & $request.meth,
-                                       HttpTable.init())
+          try:
+            await request.respond(Http200, "TEST_OK:" & $request.meth,
+                                  HttpTable.init())
+          except HttpWriteError as exc:
+            serverRes = false
+            defaultResponse(exc)
         else:
-          serverRes = false
-          return defaultResponse()
+          defaultResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
       let serverFlags = {Secure}
@@ -146,16 +151,18 @@ suite "Secure HTTP server testing suite":
       var serverRes = false
       var testFut = newFuture[void]()
       proc process(r: RequestFence): Future[HttpResponseRef] {.
-           async.} =
+           async: (raises: [CancelledError]).} =
         if r.isOk():
           let request = r.get()
-          serverRes = false
-          return await request.respond(Http200, "TEST_OK:" & $request.meth,
-                                       HttpTable.init())
+          try:
+            await request.respond(Http200, "TEST_OK:" & $request.meth,
+                                  HttpTable.init())
+          except HttpWriteError as exc:
+            defaultResponse(exc)
         else:
           serverRes = true
           testFut.complete()
-          return defaultResponse()
+          defaultResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
       let serverFlags = {Secure}
@@ -179,6 +186,3 @@ suite "Secure HTTP server testing suite":
       return serverRes and data == "EXCEPTION"
 
     check waitFor(testHTTPS2(initTAddress("127.0.0.1:30080"))) == true
-
-  test "Leaks test":
-    checkLeaks()
