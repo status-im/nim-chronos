@@ -39,11 +39,10 @@ proc update(bucket: TokenBucket, currentTime: Moment) =
   let
     timeDelta = currentTime - bucket.lastUpdate
     fillPercent = timeDelta.milliseconds.float / bucket.fillDuration.milliseconds.float
-    replenished =
-      int(bucket.budgetCap.float * fillPercent)
-    deltaFromReplenished =
-      int(bucket.fillDuration.milliseconds.float *
-      replenished.float / bucket.budgetCap.float)
+    replenished = int(bucket.budgetCap.float * fillPercent)
+    deltaFromReplenished = int(
+      bucket.fillDuration.milliseconds.float * replenished.float / bucket.budgetCap.float
+    )
 
   bucket.lastUpdate += milliseconds(deltaFromReplenished)
   bucket.budget = min(bucket.budgetCap, bucket.budget + replenished)
@@ -67,7 +66,8 @@ proc tryConsume*(bucket: TokenBucket, tokens: int, now = Moment.now()): bool =
 proc worker(bucket: TokenBucket) {.async.} =
   while bucket.pendingRequests.len > 0:
     bucket.manuallyReplenished.clear()
-    template waiter: untyped = bucket.pendingRequests[0]
+    template waiter(): untyped =
+      bucket.pendingRequests[0]
 
     if bucket.tryConsume(waiter.value):
       waiter.future.complete()
@@ -105,13 +105,14 @@ proc consume*(bucket: TokenBucket, tokens: int, now = Moment.now()): Future[void
       return retFuture
 
   proc cancellation(udata: pointer) =
-    for index in 0..<bucket.pendingRequests.len:
+    for index in 0 ..< bucket.pendingRequests.len:
       if bucket.pendingRequests[index].future == retFuture:
         bucket.budget += bucket.pendingRequests[index].alreadyConsumed
         bucket.pendingRequests.delete(index)
         if index == 0:
           bucket.manuallyReplenished.fire()
         break
+
   retFuture.cancelCallback = cancellation
 
   bucket.pendingRequests.add(BucketWaiter(future: retFuture, value: tokens))
@@ -127,16 +128,12 @@ proc replenish*(bucket: TokenBucket, tokens: int, now = Moment.now()) =
   bucket.update(now)
   bucket.manuallyReplenished.fire()
 
-proc new*(
-  T: type[TokenBucket],
-  budgetCap: int,
-  fillDuration: Duration = 1.seconds): T =
-
+proc new*(T: type[TokenBucket], budgetCap: int, fillDuration: Duration = 1.seconds): T =
   ## Create a TokenBucket
   T(
     budget: budgetCap,
     budgetCap: budgetCap,
     fillDuration: fillDuration,
     lastUpdate: Moment.now(),
-    manuallyReplenished: newAsyncEvent()
+    manuallyReplenished: newAsyncEvent(),
   )

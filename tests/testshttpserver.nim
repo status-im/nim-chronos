@@ -7,8 +7,7 @@
 #              MIT license (LICENSE-MIT)
 import std/strutils
 import ".."/chronos/unittest2/asynctests
-import ".."/chronos,
-       ".."/chronos/apps/http/shttpserver
+import ".."/chronos, ".."/chronos/apps/http/shttpserver
 import stew/base10
 
 {.used.}
@@ -16,7 +15,8 @@ import stew/base10
 # To create self-signed certificate and key you can use openssl
 # openssl req -new -x509 -sha256 -newkey rsa:2048 -nodes \
 # -keyout example-com.key.pem -days 3650 -out example-com.cert.pem
-const HttpsSelfSignedRsaKey = """
+const HttpsSelfSignedRsaKey =
+  """
 -----BEGIN PRIVATE KEY-----
 MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQCn7tXGLKMIMzOG
 tVzUixax1/ftlSLcpEAkZMORuiCCnYjtIJhGZdzRFZC8fBlfAJZpLIAOfX2L2f1J
@@ -48,7 +48,8 @@ IgaD04WhoL9EX0Qo3DC1+0kG
 """
 
 # This SSL certificate will expire 13 October 2030.
-const HttpsSelfSignedRsaCert = """
+const HttpsSelfSignedRsaCert =
+  """
 -----BEGIN CERTIFICATE-----
 MIIDnzCCAoegAwIBAgIUUdcusjDd3XQi3FPM8urdFG3qI+8wDQYJKoZIhvcNAQEL
 BQAwXzELMAkGA1UEBhMCQVUxEzARBgNVBAgMClNvbWUtU3RhdGUxITAfBgNVBAoM
@@ -73,14 +74,15 @@ N8r5CwGcIX/XPC3lKazzbZ8baA==
 -----END CERTIFICATE-----
 """
 
-
 suite "Secure HTTP server testing suite":
   teardown:
     checkLeaks()
 
-  proc httpsClient(address: TransportAddress,
-                   data: string, flags = {NoVerifyHost, NoVerifyServerName}
-                  ): Future[string] {.async.} =
+  proc httpsClient(
+      address: TransportAddress,
+      data: string,
+      flags = {NoVerifyHost, NoVerifyServerName},
+  ): Future[string] {.async.} =
     var
       transp: StreamTransport
       tlsstream: TLSAsyncStream
@@ -99,24 +101,22 @@ suite "Secure HTTP server testing suite":
     except CatchableError:
       return "EXCEPTION"
     finally:
-      if not(isNil(tlsstream)):
-        await allFutures(tlsstream.reader.closeWait(),
-                         tlsstream.writer.closeWait())
-      if not(isNil(reader)):
-        await allFutures(reader.closeWait(), writer.closeWait(),
-                         transp.closeWait())
+      if not (isNil(tlsstream)):
+        await allFutures(tlsstream.reader.closeWait(), tlsstream.writer.closeWait())
+      if not (isNil(reader)):
+        await allFutures(reader.closeWait(), writer.closeWait(), transp.closeWait())
 
   test "HTTPS server (successful handshake) test":
     proc testHTTPS(address: TransportAddress): Future[bool] {.async.} =
       var serverRes = false
-      proc process(r: RequestFence): Future[HttpResponseRef] {.
-           async: (raises: [CancelledError]).} =
+      proc process(
+          r: RequestFence
+      ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
         if r.isOk():
           let request = r.get()
           serverRes = true
           try:
-            await request.respond(Http200, "TEST_OK:" & $request.meth,
-                                  HttpTable.init())
+            await request.respond(Http200, "TEST_OK:" & $request.meth, HttpTable.init())
           except HttpWriteError as exc:
             serverRes = false
             defaultResponse(exc)
@@ -127,11 +127,14 @@ suite "Secure HTTP server testing suite":
       let serverFlags = {Secure}
       let secureKey = TLSPrivateKey.init(HttpsSelfSignedRsaKey)
       let secureCert = TLSCertificate.init(HttpsSelfSignedRsaCert)
-      let res = SecureHttpServerRef.new(address, process,
-                                        socketFlags = socketFlags,
-                                        serverFlags = serverFlags,
-                                        tlsPrivateKey = secureKey,
-                                        tlsCertificate = secureCert)
+      let res = SecureHttpServerRef.new(
+        address,
+        process,
+        socketFlags = socketFlags,
+        serverFlags = serverFlags,
+        tlsPrivateKey = secureKey,
+        tlsCertificate = secureCert,
+      )
       if res.isErr():
         return false
 
@@ -150,13 +153,13 @@ suite "Secure HTTP server testing suite":
     proc testHTTPS2(address: TransportAddress): Future[bool] {.async.} =
       var serverRes = false
       var testFut = newFuture[void]()
-      proc process(r: RequestFence): Future[HttpResponseRef] {.
-           async: (raises: [CancelledError]).} =
+      proc process(
+          r: RequestFence
+      ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
         if r.isOk():
           let request = r.get()
           try:
-            await request.respond(Http200, "TEST_OK:" & $request.meth,
-                                  HttpTable.init())
+            await request.respond(Http200, "TEST_OK:" & $request.meth, HttpTable.init())
           except HttpWriteError as exc:
             defaultResponse(exc)
         else:
@@ -168,11 +171,14 @@ suite "Secure HTTP server testing suite":
       let serverFlags = {Secure}
       let secureKey = TLSPrivateKey.init(HttpsSelfSignedRsaKey)
       let secureCert = TLSCertificate.init(HttpsSelfSignedRsaCert)
-      let res = SecureHttpServerRef.new(address, process,
-                                        socketFlags = socketFlags,
-                                        serverFlags = serverFlags,
-                                        tlsPrivateKey = secureKey,
-                                        tlsCertificate = secureCert)
+      let res = SecureHttpServerRef.new(
+        address,
+        process,
+        socketFlags = socketFlags,
+        serverFlags = serverFlags,
+        tlsPrivateKey = secureKey,
+        tlsCertificate = secureCert,
+      )
       if res.isErr():
         return false
 

@@ -6,9 +6,10 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 import std/[strutils, algorithm]
-import ".."/chronos/unittest2/asynctests,
-       ".."/chronos,
-       ".."/chronos/apps/http/[httpserver, httpcommon, httpdebug]
+import
+  ".."/chronos/unittest2/asynctests,
+  ".."/chronos,
+  ".."/chronos/apps/http/[httpserver, httpcommon, httpdebug]
 import stew/base10
 
 {.used.}
@@ -19,7 +20,11 @@ suite "HTTP server testing suite":
 
   type
     TooBigTest = enum
-      GetBodyTest, ConsumeBodyTest, PostUrlTest, PostMultipartTest
+      GetBodyTest
+      ConsumeBodyTest
+      PostUrlTest
+      PostMultipartTest
+
     TestHttpResponse = object
       status: int
       headers: HttpTable
@@ -31,8 +36,7 @@ suite "HTTP server testing suite":
     SecondMiddlewareRef = ref object of HttpServerMiddlewareRef
       someString: string
 
-  proc httpClient(address: TransportAddress,
-                  data: string): Future[string] {.async.} =
+  proc httpClient(address: TransportAddress, data: string): Future[string] {.async.} =
     var transp: StreamTransport
     try:
       transp = await connect(address)
@@ -43,12 +47,12 @@ suite "HTTP server testing suite":
     except CatchableError:
       return "EXCEPTION"
     finally:
-      if not(isNil(transp)):
+      if not (isNil(transp)):
         await closeWait(transp)
 
-  proc httpClient2(transp: StreamTransport,
-                   request: string,
-                   length: int): Future[TestHttpResponse] {.async.} =
+  proc httpClient2(
+      transp: StreamTransport, request: string, length: int
+  ): Future[TestHttpResponse] {.async.} =
     var buffer = newSeq[byte](4096)
     var sep = @[0x0D'u8, 0x0A'u8, 0x0D'u8, 0x0A'u8]
     let wres = await transp.write(request)
@@ -60,19 +64,19 @@ suite "HTTP server testing suite":
     zeroMem(addr buffer[0], len(buffer))
     await transp.readExactly(addr buffer[0], length)
     let data = bytesToString(buffer.toOpenArray(0, length - 1))
-    let (status, headers) =
-      block:
-        let resp = parseResponse(hdata, false)
-        if resp.failed():
-          raise newException(ValueError, "Unable to decode response headers")
-        var res = HttpTable.init()
-        for key, value in resp.headers(hdata):
-          res.add(key, value)
-        (resp.code, res)
+    let (status, headers) = block:
+      let resp = parseResponse(hdata, false)
+      if resp.failed():
+        raise newException(ValueError, "Unable to decode response headers")
+      var res = HttpTable.init()
+      for key, value in resp.headers(hdata):
+        res.add(key, value)
+      (resp.code, res)
     TestHttpResponse(status: status, headers: headers, data: data)
 
-  proc httpClient3(address: TransportAddress,
-                   data: string): Future[TestHttpResponse] {.async.} =
+  proc httpClient3(
+      address: TransportAddress, data: string
+  ): Future[TestHttpResponse] {.async.} =
     var
       transp: StreamTransport
       buffer = newSeq[byte](4096)
@@ -87,24 +91,24 @@ suite "HTTP server testing suite":
       var hdata = @buffer
       hdata.setLen(hres)
       var rres = bytesToString(await transp.read())
-      let (status, headers) =
-        block:
-          let resp = parseResponse(hdata, false)
-          if resp.failed():
-            raise newException(ValueError, "Unable to decode response headers")
-          var res = HttpTable.init()
-          for key, value in resp.headers(hdata):
-            res.add(key, value)
-          (resp.code, res)
+      let (status, headers) = block:
+        let resp = parseResponse(hdata, false)
+        if resp.failed():
+          raise newException(ValueError, "Unable to decode response headers")
+        var res = HttpTable.init()
+        for key, value in resp.headers(hdata):
+          res.add(key, value)
+        (resp.code, res)
       TestHttpResponse(status: status, headers: headers, data: rres)
     finally:
-      if not(isNil(transp)):
+      if not (isNil(transp)):
         await closeWait(transp)
 
   proc testTooBigBodyChunked(operation: TooBigTest): Future[bool] {.async.} =
     var serverRes = false
-    proc process(r: RequestFence): Future[HttpResponseRef] {.
-         async: (raises: [CancelledError]).} =
+    proc process(
+        r: RequestFence
+    ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
       if r.isOk():
         let request = r.get()
         try:
@@ -128,9 +132,12 @@ suite "HTTP server testing suite":
         defaultResponse()
 
     let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
-    let res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
-                                maxRequestBodySize = 10,
-                                socketFlags = socketFlags)
+    let res = HttpServerRef.new(
+      initTAddress("127.0.0.1:0"),
+      process,
+      maxRequestBodySize = 10,
+      socketFlags = socketFlags,
+    )
     if res.isErr():
       return false
 
@@ -141,25 +148,20 @@ suite "HTTP server testing suite":
     let request =
       case operation
       of GetBodyTest, ConsumeBodyTest, PostUrlTest:
-        "POST / HTTP/1.1\r\n" &
-        "Content-Type: application/x-www-form-urlencoded\r\n" &
-        "Transfer-Encoding: chunked\r\n" &
-        "Cookie: 2\r\n\r\n" &
-        "5\r\na=a&b\r\n5\r\n=b&c=\r\n4\r\nc&d=\r\n4\r\n%D0%\r\n" &
-        "2\r\n9F\r\n0\r\n\r\n"
+        "POST / HTTP/1.1\r\n" & "Content-Type: application/x-www-form-urlencoded\r\n" &
+          "Transfer-Encoding: chunked\r\n" & "Cookie: 2\r\n\r\n" &
+          "5\r\na=a&b\r\n5\r\n=b&c=\r\n4\r\nc&d=\r\n4\r\n%D0%\r\n" &
+          "2\r\n9F\r\n0\r\n\r\n"
       of PostMultipartTest:
-        "POST / HTTP/1.1\r\n" &
-        "Host: 127.0.0.1:30080\r\n" &
-        "Transfer-Encoding: chunked\r\n" &
-        "Content-Type: multipart/form-data; boundary=f98f0\r\n\r\n" &
-        "3b\r\n--f98f0\r\nContent-Disposition: form-data; name=\"key1\"" &
-        "\r\n\r\nA\r\n\r\n" &
-        "3b\r\n--f98f0\r\nContent-Disposition: form-data; name=\"key2\"" &
-        "\r\n\r\nB\r\n\r\n" &
-        "3b\r\n--f98f0\r\nContent-Disposition: form-data; name=\"key3\"" &
-        "\r\n\r\nC\r\n\r\n" &
-        "b\r\n--f98f0--\r\n\r\n" &
-        "0\r\n\r\n"
+        "POST / HTTP/1.1\r\n" & "Host: 127.0.0.1:30080\r\n" &
+          "Transfer-Encoding: chunked\r\n" &
+          "Content-Type: multipart/form-data; boundary=f98f0\r\n\r\n" &
+          "3b\r\n--f98f0\r\nContent-Disposition: form-data; name=\"key1\"" &
+          "\r\n\r\nA\r\n\r\n" &
+          "3b\r\n--f98f0\r\nContent-Disposition: form-data; name=\"key2\"" &
+          "\r\n\r\nB\r\n\r\n" &
+          "3b\r\n--f98f0\r\nContent-Disposition: form-data; name=\"key3\"" &
+          "\r\n\r\nC\r\n\r\n" & "b\r\n--f98f0--\r\n\r\n" & "0\r\n\r\n"
 
     let data = await httpClient(address, request)
     await server.stop()
@@ -169,8 +171,9 @@ suite "HTTP server testing suite":
   test "Request headers timeout test":
     proc testTimeout(): Future[bool] {.async.} =
       var serverRes = false
-      proc process(r: RequestFence): Future[HttpResponseRef] {.
-           async: (raises: [CancelledError]).} =
+      proc process(
+          r: RequestFence
+      ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
         if r.isOk():
           let request = r.get()
           try:
@@ -183,9 +186,12 @@ suite "HTTP server testing suite":
           defaultResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
-      let res = HttpServerRef.new(initTAddress("127.0.0.1:0"),
-                                  process, socketFlags = socketFlags,
-                                  httpHeadersTimeout = 100.milliseconds)
+      let res = HttpServerRef.new(
+        initTAddress("127.0.0.1:0"),
+        process,
+        socketFlags = socketFlags,
+        httpHeadersTimeout = 100.milliseconds,
+      )
       if res.isErr():
         return false
 
@@ -202,8 +208,9 @@ suite "HTTP server testing suite":
   test "Empty headers test":
     proc testEmpty(): Future[bool] {.async.} =
       var serverRes = false
-      proc process(r: RequestFence): Future[HttpResponseRef] {.
-           async: (raises: [CancelledError]).} =
+      proc process(
+          r: RequestFence
+      ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
         if r.isOk():
           let request = r.get()
           try:
@@ -216,8 +223,9 @@ suite "HTTP server testing suite":
           defaultResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
-      let res = HttpServerRef.new(initTAddress("127.0.0.1:0"),
-                                  process, socketFlags = socketFlags)
+      let res = HttpServerRef.new(
+        initTAddress("127.0.0.1:0"), process, socketFlags = socketFlags
+      )
       if res.isErr():
         return false
 
@@ -235,8 +243,9 @@ suite "HTTP server testing suite":
   test "Too big headers test":
     proc testTooBig(): Future[bool] {.async.} =
       var serverRes = false
-      proc process(r: RequestFence): Future[HttpResponseRef] {.
-           async: (raises: [CancelledError]).} =
+      proc process(
+          r: RequestFence
+      ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
         if r.isOk():
           let request = r.get()
           try:
@@ -249,9 +258,12 @@ suite "HTTP server testing suite":
           defaultResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
-      let res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
-                                  maxHeadersSize = 10,
-                                  socketFlags = socketFlags)
+      let res = HttpServerRef.new(
+        initTAddress("127.0.0.1:0"),
+        process,
+        maxHeadersSize = 10,
+        socketFlags = socketFlags,
+      )
       if res.isErr():
         return false
 
@@ -269,17 +281,21 @@ suite "HTTP server testing suite":
   test "Too big request body test (content-length)":
     proc testTooBigBody(): Future[bool] {.async.} =
       var serverRes = false
-      proc process(r: RequestFence): Future[HttpResponseRef] {.
-           async: (raises: [CancelledError]).} =
+      proc process(
+          r: RequestFence
+      ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
         if r.isErr():
           if r.error.error == HttpServerError.ProtocolError:
             serverRes = true
         defaultResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
-      let res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
-                                  maxRequestBodySize = 10,
-                                  socketFlags = socketFlags)
+      let res = HttpServerRef.new(
+        initTAddress("127.0.0.1:0"),
+        process,
+        maxRequestBodySize = 10,
+        socketFlags = socketFlags,
+      )
       if res.isErr():
         return false
 
@@ -314,8 +330,9 @@ suite "HTTP server testing suite":
   test "Query arguments test":
     proc testQuery(): Future[bool] {.async.} =
       var serverRes = false
-      proc process(r: RequestFence): Future[HttpResponseRef] {.
-           async: (raises: [CancelledError]).} =
+      proc process(
+          r: RequestFence
+      ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
         if r.isOk():
           let request = r.get()
           var kres = newSeq[string]()
@@ -324,8 +341,9 @@ suite "HTTP server testing suite":
           sort(kres)
           serverRes = true
           try:
-            await request.respond(Http200, "TEST_OK:" & kres.join(":"),
-                                  HttpTable.init())
+            await request.respond(
+              Http200, "TEST_OK:" & kres.join(":"), HttpTable.init()
+            )
           except HttpWriteError as exc:
             serverRes = false
             defaultResponse(exc)
@@ -333,8 +351,9 @@ suite "HTTP server testing suite":
           defaultResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
-      let res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
-                                  socketFlags = socketFlags)
+      let res = HttpServerRef.new(
+        initTAddress("127.0.0.1:0"), process, socketFlags = socketFlags
+      )
       if res.isErr():
         return false
 
@@ -342,14 +361,13 @@ suite "HTTP server testing suite":
       server.start()
       let address = server.instance.localAddress()
 
-      let data1 = await httpClient(address,
-                                  "GET /?a=1&a=2&b=3&c=4 HTTP/1.0\r\n\r\n")
-      let data2 = await httpClient(address,
-              "GET /?a=%D0%9F&%D0%A4=%D0%91&b=%D0%A6&c=%D0%AE HTTP/1.0\r\n\r\n")
+      let data1 = await httpClient(address, "GET /?a=1&a=2&b=3&c=4 HTTP/1.0\r\n\r\n")
+      let data2 = await httpClient(
+        address, "GET /?a=%D0%9F&%D0%A4=%D0%91&b=%D0%A6&c=%D0%AE HTTP/1.0\r\n\r\n"
+      )
       await server.stop()
       await server.closeWait()
-      serverRes and
-        (data1.find("TEST_OK:a:1:a:2:b:3:c:4") >= 0) and
+      serverRes and (data1.find("TEST_OK:a:1:a:2:b:3:c:4") >= 0) and
         (data2.find("TEST_OK:a:П:b:Ц:c:Ю:Ф:Б") >= 0)
 
     check waitFor(testQuery()) == true
@@ -357,8 +375,9 @@ suite "HTTP server testing suite":
   test "Headers test":
     proc testHeaders(): Future[bool] {.async.} =
       var serverRes = false
-      proc process(r: RequestFence): Future[HttpResponseRef] {.
-           async: (raises: [CancelledError]).} =
+      proc process(
+          r: RequestFence
+      ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
         if r.isOk():
           let request = r.get()
           var kres = newSeq[string]()
@@ -367,8 +386,9 @@ suite "HTTP server testing suite":
           sort(kres)
           serverRes = true
           try:
-            await request.respond(Http200, "TEST_OK:" & kres.join(":"),
-                                  HttpTable.init())
+            await request.respond(
+              Http200, "TEST_OK:" & kres.join(":"), HttpTable.init()
+            )
           except HttpWriteError as exc:
             serverRes = false
             defaultResponse(exc)
@@ -376,8 +396,9 @@ suite "HTTP server testing suite":
           defaultResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
-      let res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
-                                  socketFlags = socketFlags)
+      let res = HttpServerRef.new(
+        initTAddress("127.0.0.1:0"), process, socketFlags = socketFlags
+      )
       if res.isErr():
         return false
 
@@ -386,14 +407,11 @@ suite "HTTP server testing suite":
       let address = server.instance.localAddress()
 
       let message =
-        "GET / HTTP/1.0\r\n" &
-        "Host: www.google.com\r\n" &
-        "Content-Type: text/html\r\n" &
-        "Expect: 100-continue\r\n" &
-        "Cookie: 1\r\n" &
-        "Cookie: 2\r\n\r\n"
-      let expect = "TEST_OK:content-type:text/html:cookie:1:cookie:2" &
-                   ":expect:100-continue:host:www.google.com"
+        "GET / HTTP/1.0\r\n" & "Host: www.google.com\r\n" & "Content-Type: text/html\r\n" &
+        "Expect: 100-continue\r\n" & "Cookie: 1\r\n" & "Cookie: 2\r\n\r\n"
+      let expect =
+        "TEST_OK:content-type:text/html:cookie:1:cookie:2" &
+        ":expect:100-continue:host:www.google.com"
       let data = await httpClient(address, message)
       await server.stop()
       await server.closeWait()
@@ -404,8 +422,9 @@ suite "HTTP server testing suite":
   test "POST arguments (urlencoded/content-length) test":
     proc testPostUrl(): Future[bool] {.async.} =
       var serverRes = false
-      proc process(r: RequestFence): Future[HttpResponseRef] {.
-           async: (raises: [CancelledError]).} =
+      proc process(
+          r: RequestFence
+      ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
         if r.isOk():
           var kres = newSeq[string]()
           let request = r.get()
@@ -422,8 +441,9 @@ suite "HTTP server testing suite":
             sort(kres)
           serverRes = true
           try:
-            await request.respond(Http200, "TEST_OK:" & kres.join(":"),
-                                  HttpTable.init())
+            await request.respond(
+              Http200, "TEST_OK:" & kres.join(":"), HttpTable.init()
+            )
           except HttpWriteError as exc:
             serverRes = false
             defaultResponse(exc)
@@ -431,8 +451,9 @@ suite "HTTP server testing suite":
           defaultResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
-      let res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
-                                  socketFlags = socketFlags)
+      let res = HttpServerRef.new(
+        initTAddress("127.0.0.1:0"), process, socketFlags = socketFlags
+      )
       if res.isErr():
         return false
 
@@ -441,11 +462,8 @@ suite "HTTP server testing suite":
       let address = server.instance.localAddress()
 
       let message =
-        "POST / HTTP/1.0\r\n" &
-        "Content-Type: application/x-www-form-urlencoded\r\n" &
-        "Content-Length: 20\r\n" &
-        "Cookie: 2\r\n\r\n" &
-        "a=a&b=b&c=c&d=%D0%9F"
+        "POST / HTTP/1.0\r\n" & "Content-Type: application/x-www-form-urlencoded\r\n" &
+        "Content-Length: 20\r\n" & "Cookie: 2\r\n\r\n" & "a=a&b=b&c=c&d=%D0%9F"
       let data = await httpClient(address, message)
       let expect = "TEST_OK:a:a:b:b:c:c:d:П"
       await server.stop()
@@ -457,8 +475,9 @@ suite "HTTP server testing suite":
   test "POST arguments (urlencoded/chunked encoding) test":
     proc testPostUrl2(): Future[bool] {.async.} =
       var serverRes = false
-      proc process(r: RequestFence): Future[HttpResponseRef] {.
-           async: (raises: [CancelledError]).} =
+      proc process(
+          r: RequestFence
+      ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
         if r.isOk():
           var kres = newSeq[string]()
           let request = r.get()
@@ -475,8 +494,9 @@ suite "HTTP server testing suite":
             sort(kres)
           serverRes = true
           try:
-            await request.respond(Http200, "TEST_OK:" & kres.join(":"),
-                                  HttpTable.init())
+            await request.respond(
+              Http200, "TEST_OK:" & kres.join(":"), HttpTable.init()
+            )
           except HttpWriteError as exc:
             serverRes = false
             defaultResponse(exc)
@@ -484,8 +504,9 @@ suite "HTTP server testing suite":
           defaultResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
-      let res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
-                                  socketFlags = socketFlags)
+      let res = HttpServerRef.new(
+        initTAddress("127.0.0.1:0"), process, socketFlags = socketFlags
+      )
       if res.isErr():
         return false
 
@@ -494,12 +515,9 @@ suite "HTTP server testing suite":
       let address = server.instance.localAddress()
 
       let message =
-        "POST / HTTP/1.0\r\n" &
-        "Content-Type: application/x-www-form-urlencoded\r\n" &
-        "Transfer-Encoding: chunked\r\n" &
-        "Cookie: 2\r\n\r\n" &
-        "5\r\na=a&b\r\n5\r\n=b&c=\r\n4\r\nc&d=\r\n4\r\n%D0%\r\n" &
-        "2\r\n9F\r\n0\r\n\r\n"
+        "POST / HTTP/1.0\r\n" & "Content-Type: application/x-www-form-urlencoded\r\n" &
+        "Transfer-Encoding: chunked\r\n" & "Cookie: 2\r\n\r\n" &
+        "5\r\na=a&b\r\n5\r\n=b&c=\r\n4\r\nc&d=\r\n4\r\n%D0%\r\n" & "2\r\n9F\r\n0\r\n\r\n"
       let data = await httpClient(address, message)
       let expect = "TEST_OK:a:a:b:b:c:c:d:П"
       await server.stop()
@@ -511,8 +529,9 @@ suite "HTTP server testing suite":
   test "POST arguments (multipart/content-length) test":
     proc testPostMultipart(): Future[bool] {.async.} =
       var serverRes = false
-      proc process(r: RequestFence): Future[HttpResponseRef] {.
-           async: (raises: [CancelledError]).} =
+      proc process(
+          r: RequestFence
+      ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
         if r.isOk():
           var kres = newSeq[string]()
           let request = r.get()
@@ -529,8 +548,9 @@ suite "HTTP server testing suite":
             sort(kres)
           serverRes = true
           try:
-            await request.respond(Http200, "TEST_OK:" & kres.join(":"),
-                                  HttpTable.init())
+            await request.respond(
+              Http200, "TEST_OK:" & kres.join(":"), HttpTable.init()
+            )
           except HttpWriteError as exc:
             serverRes = false
             defaultResponse(exc)
@@ -538,8 +558,9 @@ suite "HTTP server testing suite":
           defaultResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
-      let res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
-                                  socketFlags = socketFlags)
+      let res = HttpServerRef.new(
+        initTAddress("127.0.0.1:0"), process, socketFlags = socketFlags
+      )
       if res.isErr():
         return false
 
@@ -548,22 +569,16 @@ suite "HTTP server testing suite":
       let address = server.instance.localAddress()
 
       let message =
-        "POST / HTTP/1.0\r\n" &
-        "Host: 127.0.0.1:30080\r\n" &
-        "User-Agent: curl/7.55.1\r\n" &
-        "Accept: */*\r\n" &
-        "Content-Length: 343\r\n" &
+        "POST / HTTP/1.0\r\n" & "Host: 127.0.0.1:30080\r\n" &
+        "User-Agent: curl/7.55.1\r\n" & "Accept: */*\r\n" & "Content-Length: 343\r\n" &
         "Content-Type: multipart/form-data; " &
         "boundary=------------------------ab5706ba6f80b795\r\n\r\n" &
         "--------------------------ab5706ba6f80b795\r\n" &
-        "Content-Disposition: form-data; name=\"key1\"\r\n\r\n" &
-        "value1\r\n" &
+        "Content-Disposition: form-data; name=\"key1\"\r\n\r\n" & "value1\r\n" &
         "--------------------------ab5706ba6f80b795\r\n" &
-        "Content-Disposition: form-data; name=\"key2\"\r\n\r\n" &
-        "value2\r\n" &
+        "Content-Disposition: form-data; name=\"key2\"\r\n\r\n" & "value2\r\n" &
         "--------------------------ab5706ba6f80b795\r\n" &
-        "Content-Disposition: form-data; name=\"key2\"\r\n\r\n" &
-        "value4\r\n" &
+        "Content-Disposition: form-data; name=\"key2\"\r\n\r\n" & "value4\r\n" &
         "--------------------------ab5706ba6f80b795--\r\n"
       let data = await httpClient(address, message)
       let expect = "TEST_OK:key1:value1:key2:value2:key2:value4"
@@ -576,8 +591,9 @@ suite "HTTP server testing suite":
   test "POST arguments (multipart/chunked encoding) test":
     proc testPostMultipart2(): Future[bool] {.async.} =
       var serverRes = false
-      proc process(r: RequestFence): Future[HttpResponseRef] {.
-           async: (raises: [CancelledError]).} =
+      proc process(
+          r: RequestFence
+      ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
         if r.isOk():
           var kres = newSeq[string]()
           let request = r.get()
@@ -594,8 +610,9 @@ suite "HTTP server testing suite":
             sort(kres)
           serverRes = true
           try:
-            await request.respond(Http200, "TEST_OK:" & kres.join(":"),
-                                  HttpTable.init())
+            await request.respond(
+              Http200, "TEST_OK:" & kres.join(":"), HttpTable.init()
+            )
           except HttpWriteError as exc:
             serverRes = false
             defaultResponse(exc)
@@ -604,8 +621,9 @@ suite "HTTP server testing suite":
           defaultResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
-      let res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
-                                  socketFlags = socketFlags)
+      let res = HttpServerRef.new(
+        initTAddress("127.0.0.1:0"), process, socketFlags = socketFlags
+      )
       if res.isErr():
         return false
 
@@ -614,12 +632,10 @@ suite "HTTP server testing suite":
       let address = server.instance.localAddress()
 
       let message =
-        "POST / HTTP/1.0\r\n" &
-        "Host: 127.0.0.1:30080\r\n" &
+        "POST / HTTP/1.0\r\n" & "Host: 127.0.0.1:30080\r\n" &
         "Transfer-Encoding: chunked\r\n" &
         "Content-Type: multipart/form-data; boundary=---" &
-        "---------------------f98f0e32c55fa2ae\r\n\r\n" &
-        "271\r\n" &
+        "---------------------f98f0e32c55fa2ae\r\n\r\n" & "271\r\n" &
         "--------------------------f98f0e32c55fa2ae\r\n" &
         "Content-Disposition: form-data; name=\"key1\"\r\n\r\n" &
         "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" &
@@ -632,16 +648,16 @@ suite "HTTP server testing suite":
         "Content-Disposition: form-data; name=\"key2\"\r\n\r\n" &
         "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC" &
         "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC\r\n" &
-        "--------------------------f98f0e32c55fa2ae--\r\n" &
-        "\r\n0\r\n\r\n"
+        "--------------------------f98f0e32c55fa2ae--\r\n" & "\r\n0\r\n\r\n"
 
       let data = await httpClient(address, message)
-      let expect = "TEST_OK:key1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" &
-                   "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" &
-                   "AAAAA:key2:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB" &
-                   "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB" &
-                   "BBB:key2:CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC" &
-                   "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC"
+      let expect =
+        "TEST_OK:key1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" &
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" &
+        "AAAAA:key2:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB" &
+        "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB" &
+        "BBB:key2:CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC" &
+        "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC"
       await server.stop()
       await server.closeWait()
       return serverRes and (data.find(expect) >= 0)
@@ -656,8 +672,9 @@ suite "HTTP server testing suite":
       var eventContinue = newAsyncEvent()
       var count = 0
 
-      proc process(r: RequestFence): Future[HttpResponseRef] {.
-           async: (raises: [CancelledError]).} =
+      proc process(
+          r: RequestFence
+      ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
         if r.isOk():
           let request = r.get()
           inc(count)
@@ -672,9 +689,12 @@ suite "HTTP server testing suite":
           defaultResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
-      let res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
-                                  socketFlags = socketFlags,
-                                  maxConnections = 100)
+      let res = HttpServerRef.new(
+        initTAddress("127.0.0.1:0"),
+        process,
+        socketFlags = socketFlags,
+        maxConnections = 100,
+      )
       if res.isErr():
         return false
 
@@ -707,8 +727,21 @@ suite "HTTP server testing suite":
 
   test "Content-Type multipart boundary test":
     const AllowedCharacters = {
-      'a' .. 'z', 'A' .. 'Z', '0' .. '9',
-      '\'', '(', ')', '+', '_', ',', '-', '.' ,'/', ':', '=', '?'
+      'a' .. 'z',
+      'A' .. 'Z',
+      '0' .. '9',
+      '\'',
+      '(',
+      ')',
+      '+',
+      '_',
+      ',',
+      '-',
+      '.',
+      '/',
+      ':',
+      '=',
+      '?'
     }
 
     const FailureVectors = [
@@ -725,47 +758,60 @@ suite "HTTP server testing suite":
       "multipart/form-data; charset=UTF-8; boundaryMore=",
       "multipart/form-data; charset=UTF-8; boundaryMore=A",
       "multipart/form-data; charset=UTF-8; boundaryMore=AAAAAAAAAAAAAAAAAAAA" &
-      "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
     ]
 
     const SuccessVectors = [
       ("multipart/form-data; boundary=A", "A"),
       ("multipart/form-data; charset=UTF-8; boundary=B", "B"),
-      ("multipart/form-data; charset=UTF-8; boundary=--------------------" &
-       "--------------------------------------------------", "-----------" &
-       "-----------------------------------------------------------"),
-      ("multipart/form-data; boundary=--------------------" &
-       "--------------------------------------------------", "-----------" &
-       "-----------------------------------------------------------"),
-      ("multipart/form-data; boundary=--------------------" &
-       "--------------------------------------------------; charset=UTF-8",
-       "-----------------------------------------------------------------" &
-       "-----"),
-      ("multipart/form-data; boundary=\"ABCDEFGHIJKLMNOPQRST" &
-       "UVWXYZabcdefghijklmnopqrstuvwxyz0123456789'()+_,-.\"; charset=UTF-8",
-       "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'()" &
-       "+_,-."),
-      ("multipart/form-data; boundary=\"ABCDEFGHIJKLMNOPQRST" &
-       "UVWXYZabcdefghijklmnopqrstuvwxyz0123456789'()+?=:/\"; charset=UTF-8",
-       "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'()" &
-       "+?=:/"),
-      ("multipart/form-data; charset=UTF-8; boundary=\"ABCDEFGHIJKLMNOPQRST" &
-       "UVWXYZabcdefghijklmnopqrstuvwxyz0123456789'()+_,-.\"",
-       "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'()" &
-       "+_,-."),
-      ("multipart/form-data; charset=UTF-8; boundary=\"ABCDEFGHIJKLMNOPQRST" &
-       "UVWXYZabcdefghijklmnopqrstuvwxyz0123456789'()+?=:/\"",
-       "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'()" &
-       "+?=:/"),
-      ("multipart/form-data; charset=UTF-8; boundary=0123456789ABCDEFGHIJKL" &
-       "MNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz+-",
-       "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz+-"),
-      ("multipart/form-data; boundary=0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZa" &
-       "bcdefghijklmnopqrstuvwxyz+-; charset=UTF-8",
-       "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz+-")
+      (
+        "multipart/form-data; charset=UTF-8; boundary=--------------------" &
+          "--------------------------------------------------",
+        "-----------" & "-----------------------------------------------------------",
+      ),
+      (
+        "multipart/form-data; boundary=--------------------" &
+          "--------------------------------------------------",
+        "-----------" & "-----------------------------------------------------------",
+      ),
+      (
+        "multipart/form-data; boundary=--------------------" &
+          "--------------------------------------------------; charset=UTF-8",
+        "-----------------------------------------------------------------" & "-----",
+      ),
+      (
+        "multipart/form-data; boundary=\"ABCDEFGHIJKLMNOPQRST" &
+          "UVWXYZabcdefghijklmnopqrstuvwxyz0123456789'()+_,-.\"; charset=UTF-8",
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'()" & "+_,-.",
+      ),
+      (
+        "multipart/form-data; boundary=\"ABCDEFGHIJKLMNOPQRST" &
+          "UVWXYZabcdefghijklmnopqrstuvwxyz0123456789'()+?=:/\"; charset=UTF-8",
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'()" & "+?=:/",
+      ),
+      (
+        "multipart/form-data; charset=UTF-8; boundary=\"ABCDEFGHIJKLMNOPQRST" &
+          "UVWXYZabcdefghijklmnopqrstuvwxyz0123456789'()+_,-.\"",
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'()" & "+_,-.",
+      ),
+      (
+        "multipart/form-data; charset=UTF-8; boundary=\"ABCDEFGHIJKLMNOPQRST" &
+          "UVWXYZabcdefghijklmnopqrstuvwxyz0123456789'()+?=:/\"",
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'()" & "+?=:/",
+      ),
+      (
+        "multipart/form-data; charset=UTF-8; boundary=0123456789ABCDEFGHIJKL" &
+          "MNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz+-",
+        "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz+-",
+      ),
+      (
+        "multipart/form-data; boundary=0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZa" &
+          "bcdefghijklmnopqrstuvwxyz+-; charset=UTF-8",
+        "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz+-",
+      )
     ]
     proc performCheck(ch: openArray[string]): HttpResult[string] =
-      let cdata = ? getContentType(ch)
+      let cdata = ?getContentType(ch)
       if cdata.mediaType != MediaType.init("multipart/form-data"):
         return err("Invalid media type")
       getMultipartBoundary(cdata)
@@ -779,8 +825,11 @@ suite "HTTP server testing suite":
 
     check:
       performCheck([]).isErr()
-      performCheck(["multipart/form-data; boundary=A",
-                    "multipart/form-data; boundary=B"]).isErr()
+
+      performCheck(
+        ["multipart/form-data; boundary=A", "multipart/form-data; boundary=B"]
+      )
+      .isErr()
     for item in FailureVectors:
       check performCheck([item]).isErr()
     for item in SuccessVectors:
@@ -791,8 +840,13 @@ suite "HTTP server testing suite":
 
   test "HttpTable integer parser test":
     const TestVectors = [
-      ("", 0'u64), ("0", 0'u64), ("-0", 0'u64), ("0-", 0'u64),
-      ("01", 1'u64), ("001", 1'u64), ("0000000000001", 1'u64),
+      ("", 0'u64),
+      ("0", 0'u64),
+      ("-0", 0'u64),
+      ("0-", 0'u64),
+      ("01", 1'u64),
+      ("001", 1'u64),
+      ("0000000000001", 1'u64),
       ("18446744073709551615", 0xFFFF_FFFF_FFFF_FFFF'u64),
       ("18446744073709551616", 0'u64),
       ("99999999999999999999", 0'u64),
@@ -847,10 +901,8 @@ suite "HTTP server testing suite":
       data2.add((key, value))
 
     check:
-      data1 == @[("Header2", "value2"), ("Header2", "VALUE3"),
-                 ("Header1", "value1")]
-      data2 == @[("Header2", @["value2", "VALUE3"]),
-                 ("Header1", @["value1"])]
+      data1 == @[("Header2", "value2"), ("Header2", "VALUE3"), ("Header1", "value1")]
+      data2 == @[("Header2", @["value2", "VALUE3"]), ("Header1", @["value1"])]
 
     table1.set("header2", "value4")
     check:
@@ -860,9 +912,7 @@ suite "HTTP server testing suite":
       table1.getLastString("header2") == "value4"
 
   test "getTransferEncoding() test":
-    var encodings = [
-      "chunked", "compress", "deflate", "gzip", "identity", "x-gzip"
-    ]
+    var encodings = ["chunked", "compress", "deflate", "gzip", "identity", "x-gzip"]
 
     const FlagsVectors = [
       {
@@ -878,10 +928,10 @@ suite "HTTP server testing suite":
         TransferEncodingFlags.Identity, TransferEncodingFlags.Deflate,
         TransferEncodingFlags.Gzip
       },
-      { TransferEncodingFlags.Identity, TransferEncodingFlags.Gzip },
-      { TransferEncodingFlags.Identity, TransferEncodingFlags.Gzip },
-      { TransferEncodingFlags.Gzip },
-      { TransferEncodingFlags.Identity }
+      {TransferEncodingFlags.Identity, TransferEncodingFlags.Gzip},
+      {TransferEncodingFlags.Identity, TransferEncodingFlags.Gzip},
+      {TransferEncodingFlags.Gzip},
+      {TransferEncodingFlags.Identity}
     ]
 
     for i in 0 ..< 7:
@@ -907,14 +957,11 @@ suite "HTTP server testing suite":
           res5.get() == FlagsVectors[i]
 
     check:
-      getTransferEncoding([]).tryGet() == { TransferEncodingFlags.Identity }
-      getTransferEncoding(["", ""]).tryGet() ==
-        { TransferEncodingFlags.Identity }
+      getTransferEncoding([]).tryGet() == {TransferEncodingFlags.Identity}
+      getTransferEncoding(["", ""]).tryGet() == {TransferEncodingFlags.Identity}
 
   test "getContentEncoding() test":
-    var encodings = [
-      "br", "compress", "deflate", "gzip", "identity", "x-gzip"
-    ]
+    var encodings = ["br", "compress", "deflate", "gzip", "identity", "x-gzip"]
 
     const FlagsVectors = [
       {
@@ -930,10 +977,10 @@ suite "HTTP server testing suite":
         ContentEncodingFlags.Identity, ContentEncodingFlags.Deflate,
         ContentEncodingFlags.Gzip
       },
-      { ContentEncodingFlags.Identity, ContentEncodingFlags.Gzip },
-      { ContentEncodingFlags.Identity, ContentEncodingFlags.Gzip },
-      { ContentEncodingFlags.Gzip },
-      { ContentEncodingFlags.Identity }
+      {ContentEncodingFlags.Identity, ContentEncodingFlags.Gzip},
+      {ContentEncodingFlags.Identity, ContentEncodingFlags.Gzip},
+      {ContentEncodingFlags.Gzip},
+      {ContentEncodingFlags.Identity}
     ]
 
     for i in 0 ..< 7:
@@ -959,8 +1006,8 @@ suite "HTTP server testing suite":
           res5.get() == FlagsVectors[i]
 
     check:
-      getContentEncoding([]).tryGet() == { ContentEncodingFlags.Identity }
-      getContentEncoding(["", ""]).tryGet() == { ContentEncodingFlags.Identity }
+      getContentEncoding([]).tryGet() == {ContentEncodingFlags.Identity}
+      getContentEncoding(["", ""]).tryGet() == {ContentEncodingFlags.Identity}
 
   test "queryParams() test":
     const Vectors = [
@@ -969,19 +1016,22 @@ suite "HTTP server testing suite":
       ("id=1%2C2%2C3%2C4", {}, "id:1,2,3,4"),
       ("id=", {}, "id:"),
       ("id=&id=", {}, "id:,id:"),
-      ("id=1&id=2&id=3&id=4", {QueryParamsFlag.CommaSeparatedArray},
-       "id:1,id:2,id:3,id:4"),
-      ("id=1,2,3,4", {QueryParamsFlag.CommaSeparatedArray},
-       "id:1,id:2,id:3,id:4"),
-      ("id=1%2C2%2C3%2C4", {QueryParamsFlag.CommaSeparatedArray},
-       "id:1,id:2,id:3,id:4"),
+      (
+        "id=1&id=2&id=3&id=4",
+        {QueryParamsFlag.CommaSeparatedArray},
+        "id:1,id:2,id:3,id:4",
+      ),
+      ("id=1,2,3,4", {QueryParamsFlag.CommaSeparatedArray}, "id:1,id:2,id:3,id:4"),
+      ("id=1%2C2%2C3%2C4", {QueryParamsFlag.CommaSeparatedArray}, "id:1,id:2,id:3,id:4"),
       ("id=", {QueryParamsFlag.CommaSeparatedArray}, "id:"),
       ("id=&id=", {QueryParamsFlag.CommaSeparatedArray}, "id:,id:"),
       ("id=,", {QueryParamsFlag.CommaSeparatedArray}, "id:,id:"),
       ("id=,,", {QueryParamsFlag.CommaSeparatedArray}, "id:,id:,id:"),
-      ("id=1&id=2&id=3,4,5,6&id=7%2C8%2C9%2C10",
-       {QueryParamsFlag.CommaSeparatedArray},
-       "id:1,id:2,id:3,id:4,id:5,id:6,id:7,id:8,id:9,id:10")
+      (
+        "id=1&id=2&id=3,4,5,6&id=7%2C8%2C9%2C10",
+        {QueryParamsFlag.CommaSeparatedArray},
+        "id:1,id:2,id:3,id:4,id:5,id:6,id:7,id:8,id:9,id:10",
+      )
     ]
 
     proc toString(ht: HttpTable): string =
@@ -1011,269 +1061,185 @@ suite "HTTP server testing suite":
     proc createRequest(): HttpRequestRef =
       HttpRequestRef(headers: HttpTable.init())
 
-    var singleHeader = @[
-      (
-        createRequest("application/json"),
-        @[
-          "application/json"
-        ]
-      )
-    ]
+    var singleHeader = @[(createRequest("application/json"), @["application/json"])]
 
-    var complexHeaders = @[
-      (
-        createRequest(),
-        @[
-          "*/*",
-          "application/json",
-          "application/octet-stream",
-          "application/json",
-          "application/octet-stream",
-          "application/json",
-          "image/jpg"
-        ]
-      ),
-      (
-        createRequest(""),
-        @[
-          "*/*",
-          "application/json",
-          "application/octet-stream",
-          "application/json",
-          "application/octet-stream",
-          "application/json",
-          "image/jpg"
-        ]
-      ),
-      (
-        createRequest("application/json, application/octet-stream"),
-        @[
-          "application/json",
-          "application/json",
-          "application/octet-stream",
-          "application/json",
-          "application/octet-stream",
-          "application/json",
-          "application/json"
-        ]
-      ),
-      (
-        createRequest("application/octet-stream, application/json"),
-        @[
-          "application/octet-stream",
-          "application/json",
-          "application/octet-stream",
-          "application/json",
-          "application/octet-stream",
-          "application/json",
-          "application/json"
-        ]
-      ),
-      (
-        createRequest("application/json;q=0.9, application/octet-stream"),
-        @[
-          "application/octet-stream",
-          "application/json",
-          "application/octet-stream",
-          "application/octet-stream",
-          "application/octet-stream",
-          "application/octet-stream",
-          "application/octet-stream"
-        ]
-      ),
-      (
-        createRequest("application/json, application/octet-stream;q=0.9"),
-        @[
-          "application/json",
-          "application/json",
-          "application/octet-stream",
-          "application/json",
-          "application/json",
-          "application/json",
-          "application/json"
-        ]
-      ),
-      (
-        createRequest("application/json;q=0.9, application/octet-stream;q=0.8"),
-        @[
-          "application/json",
-          "application/json",
-          "application/octet-stream",
-          "application/json",
-          "application/json",
-          "application/json",
-          "application/json"
-        ]
-      ),
-       (
-        createRequest("application/json;q=0.8, application/octet-stream;q=0.9"),
-        @[
-          "application/octet-stream",
-          "application/json",
-          "application/octet-stream",
-          "application/octet-stream",
-          "application/octet-stream",
-          "application/octet-stream",
-          "application/octet-stream"
-        ]
-      ),
-      (
-      createRequest("text/plain, application/octet-stream, application/json"),
-        @[
-          "text/plain",
-          "application/json",
-          "application/octet-stream",
-          "application/json",
-          "application/octet-stream",
-          "application/json",
-          "application/json"
-        ]
-      ),
-      (
-      createRequest("text/plain, application/json;q=0.8, " &
-                    "application/octet-stream;q=0.8"),
-        @[
-          "text/plain",
-          "application/json",
-          "application/octet-stream",
-          "application/json",
-          "application/octet-stream",
-          "text/plain",
-          "text/plain"
-        ]
-      ),
-      (
-      createRequest("text/plain, application/json;q=0.8, " &
-                    "application/octet-stream;q=0.5"),
-        @[
-          "text/plain",
-          "application/json",
-          "application/octet-stream",
-          "application/json",
-          "application/json",
-          "text/plain",
-          "text/plain"
-        ]
-      ),
-      (
-       createRequest("text/plain;q=0.8, application/json, " &
-                     "application/octet-stream;q=0.8"),
-        @[
-          "application/json",
-          "application/json",
-          "application/octet-stream",
-          "application/json",
-          "application/json",
-          "application/json",
-          "application/json"
-        ]
-      ),
-      (
-      createRequest("text/*, application/json;q=0.8, " &
-                    "application/octet-stream;q=0.8"),
-        @[
-          "text/*",
-          "application/json",
-          "application/octet-stream",
-          "application/json",
-          "application/octet-stream",
-          "text/plain",
-          "text/plain"
-        ]
-      ),
-      (
-      createRequest("text/*, application/json;q=0.8, " &
-                    "application/octet-stream;q=0.5"),
-        @[
-          "text/*",
-          "application/json",
-          "application/octet-stream",
-          "application/json",
-          "application/json",
-          "text/plain",
-          "text/plain"
-        ]
-      ),
-      (createRequest("image/jpg, text/plain, application/octet-stream, " &
-                     "application/json"),
-         @[
-            "image/jpg",
-            "application/json",
-            "application/octet-stream",
-            "application/json",
-            "application/octet-stream",
-            "application/json",
-            "image/jpg"
-           ]
+    var complexHeaders =
+      @[
+        (
+          createRequest(),
+          @[
+            "*/*", "application/json", "application/octet-stream", "application/json",
+            "application/octet-stream", "application/json", "image/jpg"
+          ],
         ),
-        (createRequest("image/jpg;q=1, text/plain;q=0.2, " &
-                       "application/octet-stream;q=0.2, " &
-                       "application/json;q=0.2"),
-         @[
-            "image/jpg",
-            "application/json",
-            "application/octet-stream",
-            "application/json",
-            "application/octet-stream",
-            "application/json",
-            "image/jpg"
-           ]
+        (
+          createRequest(""),
+          @[
+            "*/*", "application/json", "application/octet-stream", "application/json",
+            "application/octet-stream", "application/json", "image/jpg"
+          ],
         ),
-      (
-      createRequest("*/*, application/json;q=0.8, " &
-                    "application/octet-stream;q=0.5"),
-        @[
-          "*/*",
-          "application/json",
-          "application/octet-stream",
-          "application/json",
-          "application/octet-stream",
-          "application/json",
-          "image/jpg"
-        ]
-      ),
-      (
-        createRequest("*/*"),
-        @[
-          "*/*",
-          "application/json",
-          "application/octet-stream",
-          "application/json",
-          "application/octet-stream",
-          "application/json",
-          "image/jpg"
-        ]
-      ),
-      (
-        createRequest("application/*"),
-        @[
-          "application/*",
-          "application/json",
-          "application/octet-stream",
-          "application/json",
-          "application/octet-stream",
-          "application/json",
-          "application/json"
-        ]
-      )
-    ]
+        (
+          createRequest("application/json, application/octet-stream"),
+          @[
+            "application/json", "application/json", "application/octet-stream",
+            "application/json", "application/octet-stream", "application/json",
+            "application/json"
+          ],
+        ),
+        (
+          createRequest("application/octet-stream, application/json"),
+          @[
+            "application/octet-stream", "application/json", "application/octet-stream",
+            "application/json", "application/octet-stream", "application/json",
+            "application/json"
+          ],
+        ),
+        (
+          createRequest("application/json;q=0.9, application/octet-stream"),
+          @[
+            "application/octet-stream", "application/json", "application/octet-stream",
+            "application/octet-stream", "application/octet-stream",
+            "application/octet-stream", "application/octet-stream"
+          ],
+        ),
+        (
+          createRequest("application/json, application/octet-stream;q=0.9"),
+          @[
+            "application/json", "application/json", "application/octet-stream",
+            "application/json", "application/json", "application/json",
+            "application/json"
+          ],
+        ),
+        (
+          createRequest("application/json;q=0.9, application/octet-stream;q=0.8"),
+          @[
+            "application/json", "application/json", "application/octet-stream",
+            "application/json", "application/json", "application/json",
+            "application/json"
+          ],
+        ),
+        (
+          createRequest("application/json;q=0.8, application/octet-stream;q=0.9"),
+          @[
+            "application/octet-stream", "application/json", "application/octet-stream",
+            "application/octet-stream", "application/octet-stream",
+            "application/octet-stream", "application/octet-stream"
+          ],
+        ),
+        (
+          createRequest("text/plain, application/octet-stream, application/json"),
+          @[
+            "text/plain", "application/json", "application/octet-stream",
+            "application/json", "application/octet-stream", "application/json",
+            "application/json"
+          ],
+        ),
+        (
+          createRequest(
+            "text/plain, application/json;q=0.8, " & "application/octet-stream;q=0.8"
+          ),
+          @[
+            "text/plain", "application/json", "application/octet-stream",
+            "application/json", "application/octet-stream", "text/plain", "text/plain"
+          ],
+        ),
+        (
+          createRequest(
+            "text/plain, application/json;q=0.8, " & "application/octet-stream;q=0.5"
+          ),
+          @[
+            "text/plain", "application/json", "application/octet-stream",
+            "application/json", "application/json", "text/plain", "text/plain"
+          ],
+        ),
+        (
+          createRequest(
+            "text/plain;q=0.8, application/json, " & "application/octet-stream;q=0.8"
+          ),
+          @[
+            "application/json", "application/json", "application/octet-stream",
+            "application/json", "application/json", "application/json",
+            "application/json"
+          ],
+        ),
+        (
+          createRequest(
+            "text/*, application/json;q=0.8, " & "application/octet-stream;q=0.8"
+          ),
+          @[
+            "text/*", "application/json", "application/octet-stream",
+            "application/json", "application/octet-stream", "text/plain", "text/plain"
+          ],
+        ),
+        (
+          createRequest(
+            "text/*, application/json;q=0.8, " & "application/octet-stream;q=0.5"
+          ),
+          @[
+            "text/*", "application/json", "application/octet-stream",
+            "application/json", "application/json", "text/plain", "text/plain"
+          ],
+        ),
+        (
+          createRequest(
+            "image/jpg, text/plain, application/octet-stream, " & "application/json"
+          ),
+          @[
+            "image/jpg", "application/json", "application/octet-stream",
+            "application/json", "application/octet-stream", "application/json",
+            "image/jpg"
+          ],
+        ),
+        (
+          createRequest(
+            "image/jpg;q=1, text/plain;q=0.2, " & "application/octet-stream;q=0.2, " &
+              "application/json;q=0.2"
+          ),
+          @[
+            "image/jpg", "application/json", "application/octet-stream",
+            "application/json", "application/octet-stream", "application/json",
+            "image/jpg"
+          ],
+        ),
+        (
+          createRequest(
+            "*/*, application/json;q=0.8, " & "application/octet-stream;q=0.5"
+          ),
+          @[
+            "*/*", "application/json", "application/octet-stream", "application/json",
+            "application/octet-stream", "application/json", "image/jpg"
+          ],
+        ),
+        (
+          createRequest("*/*"),
+          @[
+            "*/*", "application/json", "application/octet-stream", "application/json",
+            "application/octet-stream", "application/json", "image/jpg"
+          ],
+        ),
+        (
+          createRequest("application/*"),
+          @[
+            "application/*", "application/json", "application/octet-stream",
+            "application/json", "application/octet-stream", "application/json",
+            "application/json"
+          ],
+        )
+      ]
 
     for req in singleHeader:
       check $req[0].preferredContentMediaType() == req[1][0]
       let r0 = req[0].preferredContentType()
       let r1 = req[0].preferredContentType(jsonMediaType)
       let r2 = req[0].preferredContentType(sszMediaType)
-      let r3 = req[0].preferredContentType(jsonMediaType,
-                                           sszMediaType)
-      let r4 = req[0].preferredContentType(sszMediaType,
-                                           jsonMediaType)
-      let r5 = req[0].preferredContentType(jsonMediaType,
-                                           sszMediaType,
-                                           plainTextMediaType)
-      let r6 = req[0].preferredContentType(imageMediaType,
-                                           jsonMediaType,
-                                           sszMediaType,
-                                           plainTextMediaType)
+      let r3 = req[0].preferredContentType(jsonMediaType, sszMediaType)
+      let r4 = req[0].preferredContentType(sszMediaType, jsonMediaType)
+      let r5 =
+        req[0].preferredContentType(jsonMediaType, sszMediaType, plainTextMediaType)
+      let r6 = req[0].preferredContentType(
+        imageMediaType, jsonMediaType, sszMediaType, plainTextMediaType
+      )
       check:
         r0.isOk() == true
         r1.isOk() == true
@@ -1293,17 +1259,13 @@ suite "HTTP server testing suite":
       let r0 = req[0].preferredContentType()
       let r1 = req[0].preferredContentType(jsonMediaType)
       let r2 = req[0].preferredContentType(sszMediaType)
-      let r3 = req[0].preferredContentType(jsonMediaType,
-                                           sszMediaType)
-      let r4 = req[0].preferredContentType(sszMediaType,
-                                           jsonMediaType)
-      let r5 = req[0].preferredContentType(jsonMediaType,
-                                           sszMediaType,
-                                           plainTextMediaType)
-      let r6 = req[0].preferredContentType(imageMediaType,
-                                           jsonMediaType,
-                                           sszMediaType,
-                                           plainTextMediaType)
+      let r3 = req[0].preferredContentType(jsonMediaType, sszMediaType)
+      let r4 = req[0].preferredContentType(sszMediaType, jsonMediaType)
+      let r5 =
+        req[0].preferredContentType(jsonMediaType, sszMediaType, plainTextMediaType)
+      let r6 = req[0].preferredContentType(
+        imageMediaType, jsonMediaType, sszMediaType, plainTextMediaType
+      )
       check:
         r0.isOk() == true
         r1.isOk() == true
@@ -1323,8 +1285,9 @@ suite "HTTP server testing suite":
   test "SSE server-side events stream test":
     proc testPostMultipart2(): Future[bool] {.async.} =
       var serverRes = false
-      proc process(r: RequestFence): Future[HttpResponseRef] {.
-           async: (raises: [CancelledError]).} =
+      proc process(
+          r: RequestFence
+      ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
         if r.isOk():
           let request = r.get()
           let response = request.getResponse()
@@ -1346,8 +1309,9 @@ suite "HTTP server testing suite":
           defaultResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
-      let res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
-                                  socketFlags = socketFlags)
+      let res = HttpServerRef.new(
+        initTAddress("127.0.0.1:0"), process, socketFlags = socketFlags
+      )
       if res.isErr():
         return false
 
@@ -1356,18 +1320,14 @@ suite "HTTP server testing suite":
       let address = server.instance.localAddress()
 
       let message =
-        "GET / HTTP/1.1\r\n" &
-        "Host: 127.0.0.1:30080\r\n" &
-        "Accept: text/event-stream\r\n" &
-        "\r\n"
+        "GET / HTTP/1.1\r\n" & "Host: 127.0.0.1:30080\r\n" &
+        "Accept: text/event-stream\r\n" & "\r\n"
 
       let data = await httpClient(address, message)
-      let expect = "event: event1\r\ndata: data1\r\n\r\n" &
-                   "event: event2\r\ndata: data2\r\n\r\n" &
-                   "event: event3\r\ndata: data3\r\n\r\n" &
-                   "event: event4\r\ndata: data4\r\n\r\n" &
-                   "data: data5\r\n\r\n" &
-                   "data: data6\r\n\r\n"
+      let expect =
+        "event: event1\r\ndata: data1\r\n\r\n" & "event: event2\r\ndata: data2\r\n\r\n" &
+        "event: event3\r\ndata: data3\r\n\r\n" & "event: event4\r\ndata: data4\r\n\r\n" &
+        "data: data5\r\n\r\n" & "data: data6\r\n\r\n"
       await server.stop()
       await server.closeWait()
       return serverRes and (data.find(expect) >= 0)
@@ -1376,34 +1336,43 @@ suite "HTTP server testing suite":
 
   asyncTest "HTTP/1.1 pipeline test":
     const TestMessages = [
-      ("GET / HTTP/1.0\r\n\r\n",
-       {HttpServerFlags.Http11Pipeline}, false, "close"),
-      ("GET / HTTP/1.0\r\nConnection: close\r\n\r\n",
-       {HttpServerFlags.Http11Pipeline}, false, "close"),
-      ("GET / HTTP/1.0\r\nConnection: keep-alive\r\n\r\n",
-       {HttpServerFlags.Http11Pipeline}, false, "close"),
-      ("GET / HTTP/1.0\r\n\r\n",
-       {}, false, "close"),
-      ("GET / HTTP/1.0\r\nConnection: close\r\n\r\n",
-       {}, false, "close"),
-      ("GET / HTTP/1.0\r\nConnection: keep-alive\r\n\r\n",
-       {}, false, "close"),
-      ("GET / HTTP/1.1\r\n\r\n",
-       {HttpServerFlags.Http11Pipeline}, true, "keep-alive"),
-      ("GET / HTTP/1.1\r\nConnection: close\r\n\r\n",
-       {HttpServerFlags.Http11Pipeline}, false, "close"),
-      ("GET / HTTP/1.1\r\nConnection: keep-alive\r\n\r\n",
-       {HttpServerFlags.Http11Pipeline}, true, "keep-alive"),
-      ("GET / HTTP/1.1\r\n\r\n",
-       {}, false, "close"),
-      ("GET / HTTP/1.1\r\nConnection: close\r\n\r\n",
-       {}, false, "close"),
-      ("GET / HTTP/1.1\r\nConnection: keep-alive\r\n\r\n",
-       {}, false, "close")
+      ("GET / HTTP/1.0\r\n\r\n", {HttpServerFlags.Http11Pipeline}, false, "close"),
+      (
+        "GET / HTTP/1.0\r\nConnection: close\r\n\r\n",
+        {HttpServerFlags.Http11Pipeline},
+        false,
+        "close",
+      ),
+      (
+        "GET / HTTP/1.0\r\nConnection: keep-alive\r\n\r\n",
+        {HttpServerFlags.Http11Pipeline},
+        false,
+        "close",
+      ),
+      ("GET / HTTP/1.0\r\n\r\n", {}, false, "close"),
+      ("GET / HTTP/1.0\r\nConnection: close\r\n\r\n", {}, false, "close"),
+      ("GET / HTTP/1.0\r\nConnection: keep-alive\r\n\r\n", {}, false, "close"),
+      ("GET / HTTP/1.1\r\n\r\n", {HttpServerFlags.Http11Pipeline}, true, "keep-alive"),
+      (
+        "GET / HTTP/1.1\r\nConnection: close\r\n\r\n",
+        {HttpServerFlags.Http11Pipeline},
+        false,
+        "close",
+      ),
+      (
+        "GET / HTTP/1.1\r\nConnection: keep-alive\r\n\r\n",
+        {HttpServerFlags.Http11Pipeline},
+        true,
+        "keep-alive",
+      ),
+      ("GET / HTTP/1.1\r\n\r\n", {}, false, "close"),
+      ("GET / HTTP/1.1\r\nConnection: close\r\n\r\n", {}, false, "close"),
+      ("GET / HTTP/1.1\r\nConnection: keep-alive\r\n\r\n", {}, false, "close")
     ]
 
-    proc process(r: RequestFence): Future[HttpResponseRef] {.
-         async: (raises: [CancelledError]).} =
+    proc process(
+        r: RequestFence
+    ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
       if r.isOk():
         let request = r.get()
         try:
@@ -1417,9 +1386,12 @@ suite "HTTP server testing suite":
       let
         socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
         serverFlags = test[1]
-        res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
-                                socketFlags = socketFlags,
-                                serverFlags = serverFlags)
+        res = HttpServerRef.new(
+          initTAddress("127.0.0.1:0"),
+          process,
+          socketFlags = socketFlags,
+          serverFlags = serverFlags,
+        )
       check res.isOk()
 
       let
@@ -1449,7 +1421,7 @@ suite "HTTP server testing suite":
 
       check connectionStillAvailable == test[2]
 
-      if not(isNil(transp)):
+      if not (isNil(transp)):
         await transp.closeWait()
       await server.stop()
       await server.closeWait()
@@ -1459,8 +1431,9 @@ suite "HTTP server testing suite":
       TestsCount = 10
       TestRequest = "GET /httpdebug HTTP/1.1\r\nConnection: keep-alive\r\n\r\n"
 
-    proc process(r: RequestFence): Future[HttpResponseRef] {.
-         async: (raises: [CancelledError]).} =
+    proc process(
+        r: RequestFence
+    ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
       if r.isOk():
         let request = r.get()
         try:
@@ -1470,26 +1443,29 @@ suite "HTTP server testing suite":
       else:
         defaultResponse()
 
-    proc client(address: TransportAddress,
-                data: string): Future[StreamTransport] {.async.} =
+    proc client(
+        address: TransportAddress, data: string
+    ): Future[StreamTransport] {.async.} =
       var transp: StreamTransport
       var buffer = newSeq[byte](4096)
       var sep = @[0x0D'u8, 0x0A'u8, 0x0D'u8, 0x0A'u8]
       try:
         transp = await connect(address)
-        let wres {.used.} =
-          await transp.write(data)
-        let hres {.used.} =
-          await transp.readUntil(addr buffer[0], len(buffer), sep)
+        let wres {.used.} = await transp.write(data)
+        let hres {.used.} = await transp.readUntil(addr buffer[0], len(buffer), sep)
         transp
       except CatchableError:
-        if not(isNil(transp)): await transp.closeWait()
+        if not (isNil(transp)):
+          await transp.closeWait()
         nil
 
     let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
-    let res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
-                                serverFlags = {HttpServerFlags.Http11Pipeline},
-                                socketFlags = socketFlags)
+    let res = HttpServerRef.new(
+      initTAddress("127.0.0.1:0"),
+      process,
+      serverFlags = {HttpServerFlags.Http11Pipeline},
+      socketFlags = socketFlags,
+    )
     check res.isOk()
 
     let server = res.get()
@@ -1531,12 +1507,11 @@ suite "HTTP server testing suite":
     await server.closeWait()
 
   asyncTest "HTTP middleware request filtering test":
-    proc init(t: typedesc[FirstMiddlewareRef],
-              data: int): HttpServerMiddlewareRef =
+    proc init(t: typedesc[FirstMiddlewareRef], data: int): HttpServerMiddlewareRef =
       proc shandler(
           middleware: HttpServerMiddlewareRef,
           reqfence: RequestFence,
-          nextHandler: HttpProcessCallback2
+          nextHandler: HttpProcessCallback2,
       ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
         let mw = FirstMiddlewareRef(middleware)
         if reqfence.isErr():
@@ -1556,15 +1531,13 @@ suite "HTTP server testing suite":
           # next handler which could process such request.
           await nextHandler(reqfence)
 
-      HttpServerMiddlewareRef(
-        FirstMiddlewareRef(someInteger: data, handler: shandler))
+      HttpServerMiddlewareRef(FirstMiddlewareRef(someInteger: data, handler: shandler))
 
-    proc init(t: typedesc[SecondMiddlewareRef],
-              data: string): HttpServerMiddlewareRef =
+    proc init(t: typedesc[SecondMiddlewareRef], data: string): HttpServerMiddlewareRef =
       proc shandler(
           middleware: HttpServerMiddlewareRef,
           reqfence: RequestFence,
-          nextHandler: HttpProcessCallback2
+          nextHandler: HttpProcessCallback2,
       ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
         let mw = SecondMiddlewareRef(middleware)
         if reqfence.isErr():
@@ -1585,11 +1558,11 @@ suite "HTTP server testing suite":
           # next handler which could process such request.
           await nextHandler(reqfence)
 
-      HttpServerMiddlewareRef(
-        SecondMiddlewareRef(someString: data, handler: shandler))
+      HttpServerMiddlewareRef(SecondMiddlewareRef(someString: data, handler: shandler))
 
-    proc process(r: RequestFence): Future[HttpResponseRef] {.
-         async: (raises: [CancelledError]).} =
+    proc process(
+        r: RequestFence
+    ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
       if r.isOk():
         let request = r.get()
         if request.uri.path == "/test":
@@ -1603,12 +1576,16 @@ suite "HTTP server testing suite":
         defaultResponse()
 
     let
-      middlewares = [FirstMiddlewareRef.init(655370),
-                     SecondMiddlewareRef.init("SECOND")]
+      middlewares = [
+        FirstMiddlewareRef.init(655370), SecondMiddlewareRef.init("SECOND")
+      ]
       socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
-      res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
-                              socketFlags = socketFlags,
-                              middlewares = middlewares)
+      res = HttpServerRef.new(
+        initTAddress("127.0.0.1:0"),
+        process,
+        socketFlags = socketFlags,
+        middlewares = middlewares,
+      )
     check res.isOk()
 
     let server = res.get()
@@ -1637,12 +1614,11 @@ suite "HTTP server testing suite":
     await server.closeWait()
 
   asyncTest "HTTP middleware request modification test":
-    proc init(t: typedesc[FirstMiddlewareRef],
-              data: int): HttpServerMiddlewareRef =
+    proc init(t: typedesc[FirstMiddlewareRef], data: int): HttpServerMiddlewareRef =
       proc shandler(
           middleware: HttpServerMiddlewareRef,
           reqfence: RequestFence,
-          nextHandler: HttpProcessCallback2
+          nextHandler: HttpProcessCallback2,
       ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
         let mw = FirstMiddlewareRef(middleware)
         if reqfence.isErr():
@@ -1663,16 +1639,17 @@ suite "HTTP server testing suite":
         # We sending modified request to the next handler.
         await nextHandler(reqfence)
 
-      HttpServerMiddlewareRef(
-        FirstMiddlewareRef(someInteger: data, handler: shandler))
+      HttpServerMiddlewareRef(FirstMiddlewareRef(someInteger: data, handler: shandler))
 
-    proc process(r: RequestFence): Future[HttpResponseRef] {.
-         async: (raises: [CancelledError]).} =
+    proc process(
+        r: RequestFence
+    ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
       if r.isOk():
         let request = r.get()
         try:
-          await request.respond(Http200, request.rawPath & ":" &
-                                request.headers.getString("x-modified"))
+          await request.respond(
+            Http200, request.rawPath & ":" & request.headers.getString("x-modified")
+          )
         except HttpWriteError as exc:
           defaultResponse(exc)
       else:
@@ -1681,9 +1658,12 @@ suite "HTTP server testing suite":
     let
       middlewares = [FirstMiddlewareRef.init(655370)]
       socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
-      res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
-                              socketFlags = socketFlags,
-                              middlewares = middlewares)
+      res = HttpServerRef.new(
+        initTAddress("127.0.0.1:0"),
+        process,
+        socketFlags = socketFlags,
+        middlewares = middlewares,
+      )
     check res.isOk()
 
     let server = res.get()
@@ -1713,12 +1693,11 @@ suite "HTTP server testing suite":
     await server.closeWait()
 
   asyncTest "HTTP middleware request blocking test":
-    proc init(t: typedesc[FirstMiddlewareRef],
-              data: int): HttpServerMiddlewareRef =
+    proc init(t: typedesc[FirstMiddlewareRef], data: int): HttpServerMiddlewareRef =
       proc shandler(
           middleware: HttpServerMiddlewareRef,
           reqfence: RequestFence,
-          nextHandler: HttpProcessCallback2
+          nextHandler: HttpProcessCallback2,
       ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
         if reqfence.isErr():
           # Our handler is not supposed to handle request errors, so we
@@ -1736,11 +1715,11 @@ suite "HTTP server testing suite":
           # Allow all other requests to be processed by next handler.
           await nextHandler(reqfence)
 
-      HttpServerMiddlewareRef(
-        FirstMiddlewareRef(someInteger: data, handler: shandler))
+      HttpServerMiddlewareRef(FirstMiddlewareRef(someInteger: data, handler: shandler))
 
-    proc process(r: RequestFence): Future[HttpResponseRef] {.
-         async: (raises: [CancelledError]).} =
+    proc process(
+        r: RequestFence
+    ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
       if r.isOk():
         let request = r.get()
         try:
@@ -1753,9 +1732,12 @@ suite "HTTP server testing suite":
     let
       middlewares = [FirstMiddlewareRef.init(655370)]
       socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
-      res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
-                              socketFlags = socketFlags,
-                              middlewares = middlewares)
+      res = HttpServerRef.new(
+        initTAddress("127.0.0.1:0"),
+        process,
+        socketFlags = socketFlags,
+        middlewares = middlewares,
+      )
     check res.isOk()
 
     let server = res.get()

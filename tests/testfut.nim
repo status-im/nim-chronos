@@ -11,9 +11,8 @@ import ../chronos, ../chronos/unittest2/asynctests
 
 {.used.}
 
-type
-  TestFooConnection* = ref object
-    id*: int
+type TestFooConnection* = ref object
+  id*: int
 
 suite "Future[T] behavior test suite":
   proc testFuture1(): Future[int] {.async.} =
@@ -34,11 +33,13 @@ suite "Future[T] behavior test suite":
     poll()
     if not fut.finished:
       poll()
-    check: fut.finished
+    check:
+      fut.finished
 
   test "Immediately completed asynchronous procedure test":
     var fut = testFuture3()
-    check: fut.finished
+    check:
+      fut.finished
 
   test "Future[T] callbacks are invoked in reverse order (#7197) test":
     var testResult = ""
@@ -64,14 +65,19 @@ suite "Future[T] behavior test suite":
     var fut = testFuture1()
     proc cb1(udata: pointer) =
       testResult &= "1"
+
     proc cb2(udata: pointer) =
       testResult &= "2"
+
     proc cb3(udata: pointer) =
       testResult &= "3"
+
     proc cb4(udata: pointer) =
       testResult &= "4"
+
     proc cb5(udata: pointer) =
       testResult &= "5"
+
     fut.addCallback cb1
     fut.addCallback cb2
     fut.addCallback cb3
@@ -332,8 +338,18 @@ suite "Future[T] behavior test suite":
 
     completedFutures = 0
 
-    await allFutures(vlient1(), vlient1f(), vlient2(), vlient2f(), vlient3(),
-                     vlient3f(), vlient4(), vlient4f(), vlient5(), vlient5f())
+    await allFutures(
+      vlient1(),
+      vlient1f(),
+      vlient2(),
+      vlient2f(),
+      vlient3(),
+      vlient3f(),
+      vlient4(),
+      vlient4f(),
+      vlient5(),
+      vlient5f(),
+    )
     check completedFutures == 10
 
     completedFutures = 0
@@ -343,8 +359,18 @@ suite "Future[T] behavior test suite":
 
     completedFutures = 0
 
-    await allFutures(client1(), client1f(), client2(), client2f(), client3(),
-                     client3f(), client4(), client4f(), client5(), client5f())
+    await allFutures(
+      client1(),
+      client1f(),
+      client2(),
+      client2f(),
+      client3(),
+      client3f(),
+      client4(),
+      client4f(),
+      client5(),
+      client5f(),
+    )
     check completedFutures == 10
 
   asyncTest "allFutures(varargs) test":
@@ -458,7 +484,7 @@ suite "Future[T] behavior test suite":
         raise newException(ValueError, "")
 
     vfutures.setLen(0)
-    for i in 0..<10:
+    for i in 0 ..< 10:
       vfutures.add(vlient1())
       vfutures.add(vlient2())
       vfutures.add(vlient3())
@@ -471,7 +497,7 @@ suite "Future[T] behavior test suite":
 
     completedFutures = 0
     vfutures.setLen(0)
-    for i in 0..<10:
+    for i in 0 ..< 10:
       vfutures.add(vlient1())
       vfutures.add(vlient1f())
       vfutures.add(vlient2())
@@ -489,7 +515,7 @@ suite "Future[T] behavior test suite":
 
     completedFutures = 0
     nfutures.setLen(0)
-    for i in 0..<10:
+    for i in 0 ..< 10:
       nfutures.add(client1())
       nfutures.add(client2())
       nfutures.add(client3())
@@ -502,7 +528,7 @@ suite "Future[T] behavior test suite":
 
     completedFutures = 0
     nfutures.setLen(0)
-    for i in 0..<10:
+    for i in 0 ..< 10:
       nfutures.add(client1())
       nfutures.add(client1f())
       nfutures.add(client2())
@@ -530,7 +556,7 @@ suite "Future[T] behavior test suite":
     var fut = allFutures(client1(), client2())
     check:
       fut.finished()
-      not(fut.failed())
+      not (fut.failed())
 
   test "allFinished() already completed test":
     proc client1(): Future[int] {.async.} =
@@ -543,13 +569,14 @@ suite "Future[T] behavior test suite":
     var fut = allFinished(client1(), client2())
     check:
       fut.finished()
-      not(fut.failed())
+      not (fut.failed())
       len(fut.read()) == 2
 
   test "one(zero) test":
     var tseq = newSeq[Future[int]]()
     var fut = one(tseq)
-    check: fut.finished and fut.failed
+    check:
+      fut.finished and fut.failed
 
   asyncTest "one(varargs) test":
     proc vlient1() {.async.} =
@@ -698,10 +725,10 @@ suite "Future[T] behavior test suite":
 
     check:
       fut1.finished()
-      not(fut1.failed())
+      not (fut1.failed())
       fut1.read() == f10
       fut2.finished()
-      not(fut2.failed())
+      not (fut2.failed())
       fut2.read() == f21
 
   asyncTest "or() test":
@@ -878,9 +905,11 @@ suite "Future[T] behavior test suite":
   asyncTest "or() already completed test":
     proc client1(): Future[int] {.async.} =
       result = 1
+
     proc client2(): Future[int] {.async.} =
       if true:
         raise newException(ValueError, "")
+
     proc client3(): Future[int] {.async.} =
       await sleepAsync(100.milliseconds)
       result = 3
@@ -1054,12 +1083,12 @@ suite "Future[T] behavior test suite":
 
       proc completion(data: pointer) {.gcsafe.} =
         inc(completed)
-        if not(retFuture.finished()):
+        if not (retFuture.finished()):
           retFuture.complete()
 
       proc cancellation(udata: pointer) {.gcsafe.} =
         inc(cancelled)
-        if not(retFuture.finished()):
+        if not (retFuture.finished()):
           removeTimer(moment, completion, cast[pointer](retFuture))
 
       retFuture.cancelCallback = cancellation
@@ -1081,8 +1110,10 @@ suite "Future[T] behavior test suite":
       var res = newFuture[void]()
       proc continuation(udata: pointer) {.gcsafe.} =
         neverFlag2 = true
+
       proc cancellation(udata: pointer) {.gcsafe.} =
         neverFlag3 = true
+
       res.addCallback(continuation)
       res.cancelCallback = cancellation
       result = res
@@ -1111,8 +1142,10 @@ suite "Future[T] behavior test suite":
       var res = newFuture[void]()
       proc continuation(udata: pointer) {.gcsafe.} =
         neverFlag2 = true
+
       proc cancellation(udata: pointer) {.gcsafe.} =
         neverFlag3 = true
+
       res.addCallback(continuation)
       res.cancelCallback = cancellation
       neverFlag1 = true
@@ -1182,11 +1215,10 @@ suite "Future[T] behavior test suite":
           asyncSpawn fut1
           asyncSpawn fut2
           await sleepAsync(200.milliseconds)
-          if not(fut1.finished()) or not(fut2.finished()):
+          if not (fut1.finished()) or not (fut2.finished()):
             false
           else:
-            if fut1.failed() or fut1.cancelled() or fut2.failed() or
-               fut2.cancelled():
+            if fut1.failed() or fut1.cancelled() or fut2.failed() or fut2.cancelled():
               false
             else:
               true
@@ -1222,23 +1254,23 @@ suite "Future[T] behavior test suite":
     # WARNING: This test is very sensitive to line numbers and module name.
 
     proc macroFuture() {.async.} =
-      let someVar {.used.} = 5           # LINE POSITION 1
+      let someVar {.used.} = 5 # LINE POSITION 1
       let someOtherVar {.used.} = 4
       if true:
-        let otherVar {.used.} = 3        # LINE POSITION 2
+        let otherVar {.used.} = 3 # LINE POSITION 2
 
     template templateFuture(): untyped =
       newFuture[void]("template")
 
     proc procFuture(): Future[void] =
-      newFuture[void]("procedure")       # LINE POSITION 5
+      newFuture[void]("procedure") # LINE POSITION 5
 
     var fut1 = macroFuture()
-    var fut2 = templateFuture()          # LINE POSITION 3
+    var fut2 = templateFuture() # LINE POSITION 3
     var fut3 = procFuture()
 
-    fut2.complete()                      # LINE POSITION 4
-    fut3.complete()                      # LINE POSITION 6
+    fut2.complete() # LINE POSITION 4
+    fut3.complete() # LINE POSITION 6
 
     {.push warning[Deprecated]: off.} # testing backwards compatibility interface
     let loc10 = fut1.location[0]
@@ -1249,13 +1281,11 @@ suite "Future[T] behavior test suite":
     let loc31 = fut3.location[1]
     {.pop.}
 
-    proc chk(loc: ptr SrcLoc, file: string, line: int,
-             procedure: string): bool =
+    proc chk(loc: ptr SrcLoc, file: string, line: int, procedure: string): bool =
       if len(procedure) == 0:
-        (loc.line == line) and ($loc.file  == file)
+        (loc.line == line) and ($loc.file == file)
       else:
-        (loc.line == line) and ($loc.file  == file) and
-        (loc.procedure == procedure)
+        (loc.line == line) and ($loc.file == file) and (loc.procedure == procedure)
 
     check:
       chk(loc10, "testfut.nim", 1225, "macroFuture")
@@ -1272,19 +1302,15 @@ suite "Future[T] behavior test suite":
     proc futureOneLevelMore() {.async.} =
       await futureNeverEnds()
 
-    let res =
-      block:
-        var fut = futureOneLevelMore()
-        try:
-          let res = await withTimeout(fut, 100.milliseconds)
-          # Because `fut` is never-ending Future[T], `withTimeout` should return
-          # `false` but it also has to wait until `fut` is cancelled.
-          if not(res) and fut.cancelled():
-            true
-          else:
-            false
-        except CatchableError:
-          false
+    let res = block:
+      var fut = futureOneLevelMore()
+      try:
+        let res = await withTimeout(fut, 100.milliseconds)
+        # Because `fut` is never-ending Future[T], `withTimeout` should return
+        # `false` but it also has to wait until `fut` is cancelled.
+        if not (res) and fut.cancelled(): true else: false
+      except CatchableError:
+        false
     check res
 
   asyncTest "wait(fut) should wait cancellation test":
@@ -1302,10 +1328,7 @@ suite "Future[T] behavior test suite":
       except AsyncTimeoutError:
         # Because `fut` is never-ending Future[T], `wait` should raise
         # `AsyncTimeoutError`, but only after `fut` is cancelled.
-        if fut.cancelled():
-          true
-        else:
-          false
+        if fut.cancelled(): true else: false
       except CatchableError:
         false
 
@@ -1316,10 +1339,14 @@ suite "Future[T] behavior test suite":
     var fut1 = race(tseq)
     check:
       # https://github.com/nim-lang/Nim/issues/22964
-      not compiles(block:
-        var fut2 = race())
-      not compiles(block:
-        var fut3 = race([]))
+      not compiles(
+        block:
+          var fut2 = race()
+      )
+      not compiles(
+        block:
+          var fut3 = race([])
+      )
 
     check:
       fut1.failed()
@@ -1496,9 +1523,9 @@ suite "Future[T] behavior test suite":
     await cancelAndWait(fut)
 
     check:
-      not(f1.finished())
-      not(f2.finished())
-      not(f3.finished())
+      not (f1.finished())
+      not (f2.finished())
+      not (f3.finished())
 
     await sleepAsync(500.milliseconds)
 
@@ -1545,8 +1572,7 @@ suite "Future[T] behavior test suite":
         v2_u + 1'u == 0'u
 
   asyncTest "wait() cancellation undefined behavior test #1":
-    proc testInnerFoo(fooFut: Future[void]): Future[TestFooConnection] {.
-         async.} =
+    proc testInnerFoo(fooFut: Future[void]): Future[TestFooConnection] {.async.} =
       await fooFut
       return TestFooConnection()
 
@@ -1568,13 +1594,11 @@ suite "Future[T] behavior test suite":
     await someFut
 
   asyncTest "wait() cancellation undefined behavior test #2":
-    proc testInnerFoo(fooFut: Future[void]): Future[TestFooConnection] {.
-         async.} =
+    proc testInnerFoo(fooFut: Future[void]): Future[TestFooConnection] {.async.} =
       await fooFut
       return TestFooConnection()
 
-    proc testMiddleFoo(fooFut: Future[void]): Future[TestFooConnection] {.
-         async.} =
+    proc testMiddleFoo(fooFut: Future[void]): Future[TestFooConnection] {.async.} =
       await testInnerFoo(fooFut)
 
     proc testFoo(fooFut: Future[void]) {.async.} =
@@ -1595,8 +1619,7 @@ suite "Future[T] behavior test suite":
     await someFut
 
   asyncTest "withTimeout() cancellation undefined behavior test #1":
-    proc testInnerFoo(fooFut: Future[void]): Future[TestFooConnection] {.
-         async.} =
+    proc testInnerFoo(fooFut: Future[void]): Future[TestFooConnection] {.async.} =
       await fooFut
       return TestFooConnection()
 
@@ -1623,13 +1646,11 @@ suite "Future[T] behavior test suite":
     await someFut
 
   asyncTest "withTimeout() cancellation undefined behavior test #2":
-    proc testInnerFoo(fooFut: Future[void]): Future[TestFooConnection] {.
-         async.} =
+    proc testInnerFoo(fooFut: Future[void]): Future[TestFooConnection] {.async.} =
       await fooFut
       return TestFooConnection()
 
-    proc testMiddleFoo(fooFut: Future[void]): Future[TestFooConnection] {.
-         async.} =
+    proc testMiddleFoo(fooFut: Future[void]): Future[TestFooConnection] {.async.} =
       await testInnerFoo(fooFut)
 
     proc testFoo(fooFut: Future[void]) {.async.} =
@@ -1736,10 +1757,11 @@ suite "Future[T] behavior test suite":
 
     block:
       # Cancellation of pending Future, when automatic scheduling disabled
-      let future = newFuture[void]("last.child.pending.future",
-                                   {FutureFlag.OwnCancelSchedule})
+      let future =
+        newFuture[void]("last.child.pending.future", {FutureFlag.OwnCancelSchedule})
       proc cancellation(udata: pointer) {.gcsafe.} =
         discard
+
       future.cancelCallback = cancellation
       # Note, future will never be finished in such case, until we manually not
       # finish it
@@ -1760,10 +1782,11 @@ suite "Future[T] behavior test suite":
     block:
       # Cancellation of pending Future, which will fail Future on cancellation,
       # when automatic scheduling disabled
-      let future = newFuture[void]("last.child.completed.future",
-                                   {FutureFlag.OwnCancelSchedule})
+      let future =
+        newFuture[void]("last.child.completed.future", {FutureFlag.OwnCancelSchedule})
       proc cancellation(udata: pointer) {.gcsafe.} =
         future.complete()
+
       future.cancelCallback = cancellation
       # Note, future will never be finished in such case, until we manually not
       # finish it
@@ -1775,10 +1798,11 @@ suite "Future[T] behavior test suite":
     block:
       # Cancellation of pending Future, which will fail Future on cancellation,
       # when automatic scheduling disabled
-      let future = newFuture[void]("last.child.failed.future",
-                                   {FutureFlag.OwnCancelSchedule})
+      let future =
+        newFuture[void]("last.child.failed.future", {FutureFlag.OwnCancelSchedule})
       proc cancellation(udata: pointer) {.gcsafe.} =
         future.fail(newException(ValueError, "ABCD"))
+
       future.cancelCallback = cancellation
       # Note, future will never be finished in such case, until we manually not
       # finish it
@@ -1790,10 +1814,11 @@ suite "Future[T] behavior test suite":
     block:
       # Cancellation of pending Future, which will fail Future on cancellation,
       # when automatic scheduling disabled
-      let future = newFuture[void]("last.child.cancelled.future",
-                                   {FutureFlag.OwnCancelSchedule})
+      let future =
+        newFuture[void]("last.child.cancelled.future", {FutureFlag.OwnCancelSchedule})
       proc cancellation(udata: pointer) {.gcsafe.} =
         future.cancelAndSchedule()
+
       future.cancelCallback = cancellation
       # Note, future will never be finished in such case, until we manually not
       # finish it
@@ -1805,10 +1830,11 @@ suite "Future[T] behavior test suite":
       # Cancellation of pending Pending->Pending->Pending->Pending, when
       # automatic scheduling disabled and Future do nothing in cancellation
       # callback
-      let future = newFuture[void]("last.child.pending.future",
-                                   {FutureFlag.OwnCancelSchedule})
+      let future =
+        newFuture[void]("last.child.pending.future", {FutureFlag.OwnCancelSchedule})
       proc cancellation(udata: pointer) {.gcsafe.} =
         discard
+
       future.cancelCallback = cancellation
       # Note, future will never be finished in such case, until we manually not
       # finish it
@@ -1834,10 +1860,11 @@ suite "Future[T] behavior test suite":
       # Cancellation of pending Pending->Pending->Pending->Pending, when
       # automatic scheduling disabled and Future completes in cancellation
       # callback
-      let future = newFuture[void]("last.child.pending.future",
-                                   {FutureFlag.OwnCancelSchedule})
+      let future =
+        newFuture[void]("last.child.pending.future", {FutureFlag.OwnCancelSchedule})
       proc cancellation(udata: pointer) {.gcsafe.} =
         future.complete()
+
       future.cancelCallback = cancellation
       # Note, future will never be finished in such case, until we manually not
       # finish it
@@ -1853,10 +1880,11 @@ suite "Future[T] behavior test suite":
     block:
       # Cancellation of pending Pending->Pending->Pending->Pending, when
       # automatic scheduling disabled and Future fails in cancellation callback
-      let future = newFuture[void]("last.child.pending.future",
-                                   {FutureFlag.OwnCancelSchedule})
+      let future =
+        newFuture[void]("last.child.pending.future", {FutureFlag.OwnCancelSchedule})
       proc cancellation(udata: pointer) {.gcsafe.} =
         future.fail(newException(ValueError, "ABCD"))
+
       future.cancelCallback = cancellation
       # Note, future will never be finished in such case, until we manually not
       # finish it
@@ -1872,10 +1900,11 @@ suite "Future[T] behavior test suite":
     block:
       # Cancellation of pending Pending->Pending->Pending->Pending, when
       # automatic scheduling disabled and Future fails in cancellation callback
-      let future = newFuture[void]("last.child.pending.future",
-                                   {FutureFlag.OwnCancelSchedule})
+      let future =
+        newFuture[void]("last.child.pending.future", {FutureFlag.OwnCancelSchedule})
       proc cancellation(udata: pointer) {.gcsafe.} =
         future.cancelAndSchedule()
+
       future.cancelCallback = cancellation
       # Note, future will never be finished in such case, until we manually not
       # finish it

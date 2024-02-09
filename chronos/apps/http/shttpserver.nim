@@ -41,17 +41,23 @@ proc closeSecConnection(conn: HttpConnectionRef) {.async: (raises: []).} =
     untrackCounter(HttpServerSecureConnectionTrackerName)
     conn.state = HttpState.Closed
 
-proc new(ht: typedesc[SecureHttpConnectionRef], server: SecureHttpServerRef,
-         transp: StreamTransport): Result[SecureHttpConnectionRef, string] =
+proc new(
+    ht: typedesc[SecureHttpConnectionRef],
+    server: SecureHttpServerRef,
+    transp: StreamTransport,
+): Result[SecureHttpConnectionRef, string] =
   var res = SecureHttpConnectionRef()
   HttpConnection(res[]).init(HttpServerRef(server), transp)
   let tlsStream =
     try:
-      newTLSServerAsyncStream(res.mainReader, res.mainWriter,
-                              server.tlsPrivateKey,
-                              server.tlsCertificate,
-                              minVersion = TLSVersion.TLS12,
-                              flags = server.secureFlags)
+      newTLSServerAsyncStream(
+        res.mainReader,
+        res.mainWriter,
+        server.tlsPrivateKey,
+        server.tlsCertificate,
+        minVersion = TLSVersion.TLS12,
+        flags = server.secureFlags,
+      )
     except TLSStreamError as exc:
       return err(exc.msg)
   res.tlsStream = tlsStream
@@ -61,13 +67,14 @@ proc new(ht: typedesc[SecureHttpConnectionRef], server: SecureHttpServerRef,
   trackCounter(HttpServerSecureConnectionTrackerName)
   ok(res)
 
-proc createSecConnection(server: HttpServerRef,
-                         transp: StreamTransport): Future[HttpConnectionRef] {.
-     async: (raises: [CancelledError, HttpConnectionError]).} =
+proc createSecConnection(
+    server: HttpServerRef, transp: StreamTransport
+): Future[HttpConnectionRef] {.async: (raises: [CancelledError, HttpConnectionError]).} =
   let
     secureServ = cast[SecureHttpServerRef](server)
-    sconn = SecureHttpConnectionRef.new(secureServ, transp).valueOr:
-      raiseHttpConnectionError(error)
+    sconn =
+      SecureHttpConnectionRef.new(secureServ, transp).valueOr:
+        raiseHttpConnectionError(error)
 
   try:
     await handshake(sconn.tlsStream)
@@ -80,27 +87,27 @@ proc createSecConnection(server: HttpServerRef,
     let msg = "Unable to establish secure connection, reason: " & $exc.msg
     raiseHttpConnectionError(msg)
 
-proc new*(htype: typedesc[SecureHttpServerRef],
-          address: TransportAddress,
-          processCallback: HttpProcessCallback2,
-          tlsPrivateKey: TLSPrivateKey,
-          tlsCertificate: TLSCertificate,
-          serverFlags: set[HttpServerFlags] = {},
-          socketFlags: set[ServerFlags] = {ReuseAddr},
-          serverUri = Uri(),
-          serverIdent = "",
-          secureFlags: set[TLSFlags] = {},
-          maxConnections: int = -1,
-          bufferSize: int = 4096,
-          backlogSize: int = DefaultBacklogSize,
-          httpHeadersTimeout = 10.seconds,
-          maxHeadersSize: int = 8192,
-          maxRequestBodySize: int = 1_048_576,
-          dualstack = DualStackType.Auto
-         ): HttpResult[SecureHttpServerRef] =
-
-  doAssert(not(isNil(tlsPrivateKey)), "TLS private key must not be nil!")
-  doAssert(not(isNil(tlsCertificate)), "TLS certificate must not be nil!")
+proc new*(
+    htype: typedesc[SecureHttpServerRef],
+    address: TransportAddress,
+    processCallback: HttpProcessCallback2,
+    tlsPrivateKey: TLSPrivateKey,
+    tlsCertificate: TLSCertificate,
+    serverFlags: set[HttpServerFlags] = {},
+    socketFlags: set[ServerFlags] = {ReuseAddr},
+    serverUri = Uri(),
+    serverIdent = "",
+    secureFlags: set[TLSFlags] = {},
+    maxConnections: int = -1,
+    bufferSize: int = 4096,
+    backlogSize: int = DefaultBacklogSize,
+    httpHeadersTimeout = 10.seconds,
+    maxHeadersSize: int = 8192,
+    maxRequestBodySize: int = 1_048_576,
+    dualstack = DualStackType.Auto,
+): HttpResult[SecureHttpServerRef] =
+  doAssert(not (isNil(tlsPrivateKey)), "TLS private key must not be nil!")
+  doAssert(not (isNil(tlsCertificate)), "TLS certificate must not be nil!")
 
   let serverUri =
     if len(serverUri.hostname) > 0:
@@ -113,8 +120,13 @@ proc new*(htype: typedesc[SecureHttpServerRef],
 
   let serverInstance =
     try:
-      createStreamServer(address, flags = socketFlags, bufferSize = bufferSize,
-                         backlog = backlogSize, dualstack = dualstack)
+      createStreamServer(
+        address,
+        flags = socketFlags,
+        bufferSize = bufferSize,
+        backlog = backlogSize,
+        dualstack = dualstack,
+      )
     except TransportOsError as exc:
       return err(exc.msg)
 
@@ -142,33 +154,36 @@ proc new*(htype: typedesc[SecureHttpServerRef],
     connections: initOrderedTable[string, HttpConnectionHolderRef](),
     tlsCertificate: tlsCertificate,
     tlsPrivateKey: tlsPrivateKey,
-    secureFlags: secureFlags
+    secureFlags: secureFlags,
   )
   ok(res)
 
-proc new*(htype: typedesc[SecureHttpServerRef],
-          address: TransportAddress,
-          processCallback: HttpProcessCallback,
-          tlsPrivateKey: TLSPrivateKey,
-          tlsCertificate: TLSCertificate,
-          serverFlags: set[HttpServerFlags] = {},
-          socketFlags: set[ServerFlags] = {ReuseAddr},
-          serverUri = Uri(),
-          serverIdent = "",
-          secureFlags: set[TLSFlags] = {},
-          maxConnections: int = -1,
-          bufferSize: int = 4096,
-          backlogSize: int = DefaultBacklogSize,
-          httpHeadersTimeout = 10.seconds,
-          maxHeadersSize: int = 8192,
-          maxRequestBodySize: int = 1_048_576,
-          dualstack = DualStackType.Auto
-         ): HttpResult[SecureHttpServerRef] {.
-     deprecated: "Callback could raise only CancelledError, annotate with " &
-                 "{.async: (raises: [CancelledError]).}".} =
-
-  proc wrap(req: RequestFence): Future[HttpResponseRef] {.
-       async: (raises: [CancelledError]).} =
+proc new*(
+    htype: typedesc[SecureHttpServerRef],
+    address: TransportAddress,
+    processCallback: HttpProcessCallback,
+    tlsPrivateKey: TLSPrivateKey,
+    tlsCertificate: TLSCertificate,
+    serverFlags: set[HttpServerFlags] = {},
+    socketFlags: set[ServerFlags] = {ReuseAddr},
+    serverUri = Uri(),
+    serverIdent = "",
+    secureFlags: set[TLSFlags] = {},
+    maxConnections: int = -1,
+    bufferSize: int = 4096,
+    backlogSize: int = DefaultBacklogSize,
+    httpHeadersTimeout = 10.seconds,
+    maxHeadersSize: int = 8192,
+    maxRequestBodySize: int = 1_048_576,
+    dualstack = DualStackType.Auto,
+): HttpResult[SecureHttpServerRef] {.
+    deprecated:
+      "Callback could raise only CancelledError, annotate with " &
+      "{.async: (raises: [CancelledError]).}"
+.} =
+  proc wrap(
+      req: RequestFence
+  ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
     try:
       await processCallback(req)
     except CancelledError as exc:
@@ -189,8 +204,8 @@ proc new*(htype: typedesc[SecureHttpServerRef],
     maxConnections = maxConnections,
     bufferSize = bufferSize,
     backlogSize = backlogSize,
-    httpHeadersTimeout =  httpHeadersTimeout,
+    httpHeadersTimeout = httpHeadersTimeout,
     maxHeadersSize = maxHeadersSize,
     maxRequestBodySize = maxRequestBodySize,
-    dualstack = dualstack
+    dualstack = dualstack,
   )

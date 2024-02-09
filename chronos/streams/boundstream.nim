@@ -24,7 +24,8 @@ export asyncloop, asyncstream, stream, timer, common
 
 type
   BoundCmp* {.pure.} = enum
-    Equal, LessOrEqual
+    Equal
+    LessOrEqual
 
   BoundedStreamReader* = ref object of AsyncStreamReader
     boundSize: Opt[uint64]
@@ -48,16 +49,15 @@ const
   BoundarySizeDefectMessage = "Boundary must not be empty array"
 
 template newBoundedStreamIncompleteError(): ref BoundedStreamError =
-  newException(BoundedStreamIncompleteError,
-               "Stream boundary is not reached yet")
+  newException(BoundedStreamIncompleteError, "Stream boundary is not reached yet")
 
 template newBoundedStreamOverflowError(): ref BoundedStreamOverflowError =
   newException(BoundedStreamOverflowError, "Stream boundary exceeded")
 
-proc readUntilBoundary(rstream: AsyncStreamReader, pbytes: pointer,
-                       nbytes: int, sep: seq[byte]): Future[int] {.
-     async: (raises: [CancelledError, AsyncStreamError]).} =
-  doAssert(not(isNil(pbytes)), "pbytes must not be nil")
+proc readUntilBoundary(
+    rstream: AsyncStreamReader, pbytes: pointer, nbytes: int, sep: seq[byte]
+): Future[int] {.async: (raises: [CancelledError, AsyncStreamError]).} =
+  doAssert(not (isNil(pbytes)), "pbytes must not be nil")
   doAssert(nbytes >= 0, "nbytes must be non-negative value")
   checkStreamClosed(rstream)
 
@@ -96,9 +96,11 @@ func endsWith(s, suffix: openArray[byte]): bool =
   var i = 0
   var j = len(s) - len(suffix)
   while i + j >= 0 and i + j < len(s):
-    if s[i + j] != suffix[i]: return false
+    if s[i + j] != suffix[i]:
+      return false
     inc(i)
-  if i >= len(suffix): return true
+  if i >= len(suffix):
+    return true
 
 proc boundedReadLoop(stream: AsyncStreamReader) {.async: (raises: []).} =
   var rstream = BoundedStreamReader(stream)
@@ -117,8 +119,9 @@ proc boundedReadLoop(stream: AsyncStreamReader) {.async: (raises: []).} =
         if rstream.state == AsyncStreamState.Running:
           rstream.state = AsyncStreamState.Finished
       else:
-        let res = await readUntilBoundary(rstream.rsource, addr buffer[0],
-                                          toRead, rstream.boundary)
+        let res = await readUntilBoundary(
+          rstream.rsource, addr buffer[0], toRead, rstream.boundary
+        )
         if res > 0:
           if len(rstream.boundary) > 0:
             if endsWith(buffer.toOpenArray(0, res - 1), rstream.boundary):
@@ -171,7 +174,6 @@ proc boundedReadLoop(stream: AsyncStreamReader) {.async: (raises: []).} =
           of BoundCmp.LessOrEqual:
             if rstream.state == AsyncStreamState.Running:
               rstream.state = AsyncStreamState.Finished
-
     except AsyncStreamError as exc:
       if rstream.state == AsyncStreamState.Running:
         rstream.state = AsyncStreamState.Error
@@ -252,23 +254,22 @@ proc boundedWriteLoop(stream: AsyncStreamWriter) {.async: (raises: []).} =
     of AsyncStreamState.Running:
       discard
     of AsyncStreamState.Error, AsyncStreamState.Stopped:
-      if not(isNil(item.future)):
-        if not(item.future.finished()):
+      if not (isNil(item.future)):
+        if not (item.future.finished()):
           item.future.fail(error)
       break
-    of AsyncStreamState.Finished, AsyncStreamState.Closing,
-       AsyncStreamState.Closed:
+    of AsyncStreamState.Finished, AsyncStreamState.Closing, AsyncStreamState.Closed:
       error = newAsyncStreamUseClosedError()
       break
 
-  doAssert(not(isNil(error)))
-  while not(wstream.queue.empty()):
+  doAssert(not (isNil(error)))
+  while not (wstream.queue.empty()):
     let item =
       try:
         wstream.queue.popFirstNoWait()
       except AsyncQueueEmptyError:
         raiseAssert "AsyncQueue should not be empty at this moment"
-    if not(item.future.finished()):
+    if not (item.future.finished()):
       item.future.fail(error)
 
 proc bytesLeft*(stream: BoundedStreamRW): uint64 =
@@ -278,63 +279,90 @@ proc bytesLeft*(stream: BoundedStreamRW): uint64 =
   else:
     0'u64
 
-proc init*[T](child: BoundedStreamReader, rsource: AsyncStreamReader,
-              boundSize: uint64, comparison = BoundCmp.Equal,
-              bufferSize = BoundedBufferSize, udata: ref T) =
+proc init*[T](
+    child: BoundedStreamReader,
+    rsource: AsyncStreamReader,
+    boundSize: uint64,
+    comparison = BoundCmp.Equal,
+    bufferSize = BoundedBufferSize,
+    udata: ref T,
+) =
   child.boundSize = some(boundSize)
   child.cmpop = comparison
-  init(AsyncStreamReader(child), rsource, boundedReadLoop, bufferSize,
-       udata)
+  init(AsyncStreamReader(child), rsource, boundedReadLoop, bufferSize, udata)
 
-proc init*[T](child: BoundedStreamReader, rsource: AsyncStreamReader,
-              boundary: openArray[byte], comparison = BoundCmp.Equal,
-              bufferSize = BoundedBufferSize, udata: ref T) =
+proc init*[T](
+    child: BoundedStreamReader,
+    rsource: AsyncStreamReader,
+    boundary: openArray[byte],
+    comparison = BoundCmp.Equal,
+    bufferSize = BoundedBufferSize,
+    udata: ref T,
+) =
   doAssert(len(boundary) > 0, BoundarySizeDefectMessage)
   child.boundary = @boundary
   child.cmpop = comparison
-  init(AsyncStreamReader(child), rsource, boundedReadLoop, bufferSize,
-       udata)
+  init(AsyncStreamReader(child), rsource, boundedReadLoop, bufferSize, udata)
 
-proc init*[T](child: BoundedStreamReader, rsource: AsyncStreamReader,
-              boundSize: uint64, boundary: openArray[byte],
-              comparison = BoundCmp.Equal,
-              bufferSize = BoundedBufferSize, udata: ref T) =
-  doAssert(len(boundary) > 0, BoundarySizeDefectMessage)
-  child.boundSize = Opt.some(boundSize)
-  child.boundary = @boundary
-  child.cmpop = comparison
-  init(AsyncStreamReader(child), rsource, boundedReadLoop, bufferSize,
-       udata)
-
-proc init*(child: BoundedStreamReader, rsource: AsyncStreamReader,
-           boundSize: uint64, comparison = BoundCmp.Equal,
-           bufferSize = BoundedBufferSize) =
-  child.boundSize = Opt.some(boundSize)
-  child.cmpop = comparison
-  init(AsyncStreamReader(child), rsource, boundedReadLoop, bufferSize)
-
-proc init*(child: BoundedStreamReader, rsource: AsyncStreamReader,
-           boundary: openArray[byte], comparison = BoundCmp.Equal,
-           bufferSize = BoundedBufferSize) =
-  doAssert(len(boundary) > 0, BoundarySizeDefectMessage)
-  child.boundary = @boundary
-  child.cmpop = comparison
-  init(AsyncStreamReader(child), rsource, boundedReadLoop, bufferSize)
-
-proc init*(child: BoundedStreamReader, rsource: AsyncStreamReader,
-           boundSize: uint64, boundary: openArray[byte],
-           comparison = BoundCmp.Equal, bufferSize = BoundedBufferSize) =
+proc init*[T](
+    child: BoundedStreamReader,
+    rsource: AsyncStreamReader,
+    boundSize: uint64,
+    boundary: openArray[byte],
+    comparison = BoundCmp.Equal,
+    bufferSize = BoundedBufferSize,
+    udata: ref T,
+) =
   doAssert(len(boundary) > 0, BoundarySizeDefectMessage)
   child.boundSize = Opt.some(boundSize)
   child.boundary = @boundary
   child.cmpop = comparison
+  init(AsyncStreamReader(child), rsource, boundedReadLoop, bufferSize, udata)
+
+proc init*(
+    child: BoundedStreamReader,
+    rsource: AsyncStreamReader,
+    boundSize: uint64,
+    comparison = BoundCmp.Equal,
+    bufferSize = BoundedBufferSize,
+) =
+  child.boundSize = Opt.some(boundSize)
+  child.cmpop = comparison
   init(AsyncStreamReader(child), rsource, boundedReadLoop, bufferSize)
 
-proc newBoundedStreamReader*[T](rsource: AsyncStreamReader,
-                                boundSize: uint64,
-                                comparison = BoundCmp.Equal,
-                                bufferSize = BoundedBufferSize,
-                                udata: ref T): BoundedStreamReader =
+proc init*(
+    child: BoundedStreamReader,
+    rsource: AsyncStreamReader,
+    boundary: openArray[byte],
+    comparison = BoundCmp.Equal,
+    bufferSize = BoundedBufferSize,
+) =
+  doAssert(len(boundary) > 0, BoundarySizeDefectMessage)
+  child.boundary = @boundary
+  child.cmpop = comparison
+  init(AsyncStreamReader(child), rsource, boundedReadLoop, bufferSize)
+
+proc init*(
+    child: BoundedStreamReader,
+    rsource: AsyncStreamReader,
+    boundSize: uint64,
+    boundary: openArray[byte],
+    comparison = BoundCmp.Equal,
+    bufferSize = BoundedBufferSize,
+) =
+  doAssert(len(boundary) > 0, BoundarySizeDefectMessage)
+  child.boundSize = Opt.some(boundSize)
+  child.boundary = @boundary
+  child.cmpop = comparison
+  init(AsyncStreamReader(child), rsource, boundedReadLoop, bufferSize)
+
+proc newBoundedStreamReader*[T](
+    rsource: AsyncStreamReader,
+    boundSize: uint64,
+    comparison = BoundCmp.Equal,
+    bufferSize = BoundedBufferSize,
+    udata: ref T,
+): BoundedStreamReader =
   ## Create new stream reader which will be limited by size ``boundSize``. When
   ## number of bytes readed by consumer reaches ``boundSize``,
   ## BoundedStreamReader will enter EOF state (no more bytes will be returned
@@ -349,11 +377,13 @@ proc newBoundedStreamReader*[T](rsource: AsyncStreamReader,
   res.init(rsource, boundSize, comparison, bufferSize, udata)
   res
 
-proc newBoundedStreamReader*[T](rsource: AsyncStreamReader,
-                                boundary: openArray[byte],
-                                comparison = BoundCmp.Equal,
-                                bufferSize = BoundedBufferSize,
-                                udata: ref T): BoundedStreamReader =
+proc newBoundedStreamReader*[T](
+    rsource: AsyncStreamReader,
+    boundary: openArray[byte],
+    comparison = BoundCmp.Equal,
+    bufferSize = BoundedBufferSize,
+    udata: ref T,
+): BoundedStreamReader =
   ## Create new stream reader which will be limited by binary boundary
   ## ``boundary``. As soon as reader reaches ``boundary`` BoundedStreamReader
   ## will enter EOF state (no more bytes will be returned to the consumer).
@@ -367,12 +397,14 @@ proc newBoundedStreamReader*[T](rsource: AsyncStreamReader,
   res.init(rsource, boundary, comparison, bufferSize, udata)
   res
 
-proc newBoundedStreamReader*[T](rsource: AsyncStreamReader,
-                                boundSize: uint64,
-                                boundary: openArray[byte],
-                                comparison = BoundCmp.Equal,
-                                bufferSize = BoundedBufferSize,
-                                udata: ref T): BoundedStreamReader =
+proc newBoundedStreamReader*[T](
+    rsource: AsyncStreamReader,
+    boundSize: uint64,
+    boundary: openArray[byte],
+    comparison = BoundCmp.Equal,
+    bufferSize = BoundedBufferSize,
+    udata: ref T,
+): BoundedStreamReader =
   ## Create new stream reader which will be limited by size ``boundSize`` or
   ## boundary ``boundary``. As soon as reader reaches ``boundary`` ``OR`` number
   ## of bytes readed from source stream reader ``rsource`` reaches ``boundSize``
@@ -388,11 +420,12 @@ proc newBoundedStreamReader*[T](rsource: AsyncStreamReader,
   res.init(rsource, boundSize, boundary, comparison, bufferSize, udata)
   res
 
-proc newBoundedStreamReader*(rsource: AsyncStreamReader,
-                             boundSize: uint64,
-                             comparison = BoundCmp.Equal,
-                             bufferSize = BoundedBufferSize,
-                            ): BoundedStreamReader =
+proc newBoundedStreamReader*(
+    rsource: AsyncStreamReader,
+    boundSize: uint64,
+    comparison = BoundCmp.Equal,
+    bufferSize = BoundedBufferSize,
+): BoundedStreamReader =
   ## Create new stream reader which will be limited by size ``boundSize``. When
   ## number of bytes readed by consumer reaches ``boundSize``,
   ## BoundedStreamReader will enter EOF state (no more bytes will be returned
@@ -407,11 +440,12 @@ proc newBoundedStreamReader*(rsource: AsyncStreamReader,
   res.init(rsource, boundSize, comparison, bufferSize)
   res
 
-proc newBoundedStreamReader*(rsource: AsyncStreamReader,
-                             boundary: openArray[byte],
-                             comparison = BoundCmp.Equal,
-                             bufferSize = BoundedBufferSize,
-                            ): BoundedStreamReader =
+proc newBoundedStreamReader*(
+    rsource: AsyncStreamReader,
+    boundary: openArray[byte],
+    comparison = BoundCmp.Equal,
+    bufferSize = BoundedBufferSize,
+): BoundedStreamReader =
   ## Create new stream reader which will be limited by binary boundary
   ## ``boundary``. As soon as reader reaches ``boundary`` BoundedStreamReader
   ## will enter EOF state (no more bytes will be returned to the consumer).
@@ -425,12 +459,13 @@ proc newBoundedStreamReader*(rsource: AsyncStreamReader,
   res.init(rsource, boundary, comparison, bufferSize)
   res
 
-proc newBoundedStreamReader*(rsource: AsyncStreamReader,
-                             boundSize: uint64,
-                             boundary: openArray[byte],
-                             comparison = BoundCmp.Equal,
-                             bufferSize = BoundedBufferSize,
-                            ): BoundedStreamReader =
+proc newBoundedStreamReader*(
+    rsource: AsyncStreamReader,
+    boundSize: uint64,
+    boundary: openArray[byte],
+    comparison = BoundCmp.Equal,
+    bufferSize = BoundedBufferSize,
+): BoundedStreamReader =
   ## Create new stream reader which will be limited by size ``boundSize`` or
   ## boundary ``boundary``. As soon as reader reaches ``boundary`` ``OR`` number
   ## of bytes readed from source stream reader ``rsource`` reaches ``boundSize``
@@ -446,26 +481,36 @@ proc newBoundedStreamReader*(rsource: AsyncStreamReader,
   res.init(rsource, boundSize, boundary, comparison, bufferSize)
   res
 
-proc init*[T](child: BoundedStreamWriter, wsource: AsyncStreamWriter,
-              boundSize: uint64, comparison = BoundCmp.Equal,
-              queueSize = AsyncStreamDefaultQueueSize, udata: ref T) =
+proc init*[T](
+    child: BoundedStreamWriter,
+    wsource: AsyncStreamWriter,
+    boundSize: uint64,
+    comparison = BoundCmp.Equal,
+    queueSize = AsyncStreamDefaultQueueSize,
+    udata: ref T,
+) =
   child.boundSize = boundSize
   child.cmpop = comparison
-  init(AsyncStreamWriter(child), wsource, boundedWriteLoop, queueSize,
-       udata)
+  init(AsyncStreamWriter(child), wsource, boundedWriteLoop, queueSize, udata)
 
-proc init*(child: BoundedStreamWriter, wsource: AsyncStreamWriter,
-           boundSize: uint64, comparison = BoundCmp.Equal,
-           queueSize = AsyncStreamDefaultQueueSize) =
+proc init*(
+    child: BoundedStreamWriter,
+    wsource: AsyncStreamWriter,
+    boundSize: uint64,
+    comparison = BoundCmp.Equal,
+    queueSize = AsyncStreamDefaultQueueSize,
+) =
   child.boundSize = boundSize
   child.cmpop = comparison
   init(AsyncStreamWriter(child), wsource, boundedWriteLoop, queueSize)
 
-proc newBoundedStreamWriter*[T](wsource: AsyncStreamWriter,
-                                boundSize: uint64,
-                                comparison = BoundCmp.Equal,
-                                queueSize = AsyncStreamDefaultQueueSize,
-                                udata: ref T): BoundedStreamWriter =
+proc newBoundedStreamWriter*[T](
+    wsource: AsyncStreamWriter,
+    boundSize: uint64,
+    comparison = BoundCmp.Equal,
+    queueSize = AsyncStreamDefaultQueueSize,
+    udata: ref T,
+): BoundedStreamWriter =
   ## Create new stream writer which will be limited by size ``boundSize``. As
   ## soon as number of bytes written to the destination stream ``wsource``
   ## reaches ``boundSize`` stream will enter EOF state (no more bytes will be
@@ -484,11 +529,12 @@ proc newBoundedStreamWriter*[T](wsource: AsyncStreamWriter,
   res.init(wsource, boundSize, comparison, queueSize, udata)
   res
 
-proc newBoundedStreamWriter*(wsource: AsyncStreamWriter,
-                             boundSize: uint64,
-                             comparison = BoundCmp.Equal,
-                             queueSize = AsyncStreamDefaultQueueSize,
-                             ): BoundedStreamWriter =
+proc newBoundedStreamWriter*(
+    wsource: AsyncStreamWriter,
+    boundSize: uint64,
+    comparison = BoundCmp.Equal,
+    queueSize = AsyncStreamDefaultQueueSize,
+): BoundedStreamWriter =
   ## Create new stream writer which will be limited by size ``boundSize``. As
   ## soon as number of bytes written to the destination stream ``wsource``
   ## reaches ``boundSize`` stream will enter EOF state (no more bytes will be

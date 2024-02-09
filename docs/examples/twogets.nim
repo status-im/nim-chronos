@@ -4,8 +4,8 @@ import chronos
 import ./httpget
 
 proc twoGets() {.async.} =
-  let
-    futs = @[
+  let futs =
+    @[
       # Both pages will start downloading concurrently...
       httpget.retrievePage("https://duckduckgo.com/?q=chronos"),
       httpget.retrievePage("https://www.google.fr/search?q=chronos")

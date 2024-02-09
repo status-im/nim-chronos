@@ -22,7 +22,7 @@ type
     Create
     Finish
 
-  CallbackFunc* = proc (arg: pointer) {.gcsafe, raises: [].}
+  CallbackFunc* = proc(arg: pointer) {.gcsafe, raises: [].}
 
   # Internal type, not part of API
   InternalAsyncCallback* = object
@@ -30,7 +30,10 @@ type
     udata*: pointer
 
   FutureState* {.pure.} = enum
-    Pending, Completed, Cancelled, Failed
+    Pending
+    Completed
+    Cancelled
+    Failed
 
   FutureFlag* {.pure.} = enum
     OwnCancelSchedule
@@ -54,7 +57,6 @@ type
     # Internal untyped future representation - the fields are not part of the
     # public API and neither is `InternalFutureBase`, ie the inheritance
     # structure may change in the future (haha)
-
     internalLocation*: array[LocationKind, ptr SrcLoc]
     internalCallbacks*: seq[InternalAsyncCallback]
     internalCancelcb*: CallbackFunc
@@ -62,7 +64,7 @@ type
     internalState*: FutureState
     internalFlags*: FutureFlags
     internalError*: ref CatchableError ## Stored exception
-    internalClosure*: iterator(f: FutureBase): FutureBase {.raises: [], gcsafe.}
+    internalClosure*: iterator (f: FutureBase): FutureBase {.raises: [], gcsafe.}
 
     when chronosFutureId:
       internalId*: uint
@@ -75,8 +77,7 @@ type
       internalNext*: FutureBase
       internalPrev*: FutureBase
 
-  FutureBase* = ref object of InternalFutureBase
-    ## Untyped Future
+  FutureBase* = ref object of InternalFutureBase ## Untyped Future
 
   Future*[T] = ref object of FutureBase ## Typed future.
     when T isnot void:
@@ -91,29 +92,30 @@ type
   CancelledError* = object of FutureError
     ## Exception raised when accessing the value of a cancelled future
 
-func raiseFutureDefect(msg: static string, fut: FutureBase) {.
-    noinline, noreturn.} =
+func raiseFutureDefect(msg: static string, fut: FutureBase) {.noinline, noreturn.} =
   raise (ref FutureDefect)(msg: msg, cause: fut)
 
 when chronosFutureId:
   var currentID* {.threadvar.}: uint
-  template id*(fut: FutureBase): uint = fut.internalId
+  template id*(fut: FutureBase): uint =
+    fut.internalId
+
 else:
   template id*(fut: FutureBase): uint =
     cast[uint](addr fut[])
 
 when chronosFutureTracking:
-  type
-    FutureList* = object
-      head*: FutureBase
-      tail*: FutureBase
-      count*: uint
+  type FutureList* = object
+    head*: FutureBase
+    tail*: FutureBase
+    count*: uint
 
   var futureList* {.threadvar.}: FutureList
 
 # Internal utilities - these are not part of the stable API
-proc internalInitFutureBase*(fut: FutureBase, loc: ptr SrcLoc,
-                             state: FutureState, flags: FutureFlags) =
+proc internalInitFutureBase*(
+    fut: FutureBase, loc: ptr SrcLoc, state: FutureState, flags: FutureFlags
+) =
   fut.internalState = state
   fut.internalLocation[LocationKind.Create] = loc
   fut.internalFlags = flags
@@ -137,7 +139,7 @@ proc internalInitFutureBase*(fut: FutureBase, loc: ptr SrcLoc,
     if state == FutureState.Pending:
       fut.internalNext = nil
       fut.internalPrev = futureList.tail
-      if not(isNil(futureList.tail)):
+      if not (isNil(futureList.tail)):
         futureList.tail.internalNext = fut
       futureList.tail = fut
       if isNil(futureList.head):
@@ -154,36 +156,34 @@ template init*[T](F: type Future[T], fromProc: static[string] = ""): Future[T] =
   internalInitFutureBase(res, getSrcLocation(fromProc), FutureState.Pending, {})
   res
 
-template init*[T](F: type Future[T], fromProc: static[string] = "",
-                  flags: static[FutureFlags]): Future[T] =
+template init*[T](
+    F: type Future[T], fromProc: static[string] = "", flags: static[FutureFlags]
+): Future[T] =
   ## Creates a new pending future.
   ##
   ## Specifying ``fromProc``, which is a string specifying the name of the proc
   ## that this future belongs to, is a good habit as it helps with debugging.
   let res = Future[T]()
-  internalInitFutureBase(res, getSrcLocation(fromProc), FutureState.Pending,
-                         flags)
+  internalInitFutureBase(res, getSrcLocation(fromProc), FutureState.Pending, flags)
   res
 
-template completed*(
-    F: type Future, fromProc: static[string] = ""): Future[void] =
+template completed*(F: type Future, fromProc: static[string] = ""): Future[void] =
   ## Create a new completed future
   let res = Future[void]()
-  internalInitFutureBase(res, getSrcLocation(fromProc), FutureState.Completed,
-                         {})
+  internalInitFutureBase(res, getSrcLocation(fromProc), FutureState.Completed, {})
   res
 
 template completed*[T: not void](
-    F: type Future, valueParam: T, fromProc: static[string] = ""): Future[T] =
+    F: type Future, valueParam: T, fromProc: static[string] = ""
+): Future[T] =
   ## Create a new completed future
   let res = Future[T](internalValue: valueParam)
-  internalInitFutureBase(res, getSrcLocation(fromProc), FutureState.Completed,
-                         {})
+  internalInitFutureBase(res, getSrcLocation(fromProc), FutureState.Completed, {})
   res
 
 template failed*[T](
-    F: type Future[T], errorParam: ref CatchableError,
-    fromProc: static[string] = ""): Future[T] =
+    F: type Future[T], errorParam: ref CatchableError, fromProc: static[string] = ""
+): Future[T] =
   ## Create a new failed future
   let res = Future[T](internalError: errorParam)
   internalInitFutureBase(res, getSrcLocation(fromProc), FutureState.Failed, {})
@@ -251,15 +251,18 @@ func error*(future: FutureBase): ref CatchableError =
   ## future has not failed.
   when chronosStrictFutureAccess:
     if not future.failed() and not future.cancelled():
-      raiseFutureDefect(
-        "Future not failed/cancelled while accessing error", future)
+      raiseFutureDefect("Future not failed/cancelled while accessing error", future)
 
   future.internalError
 
 when chronosFutureTracking:
-  func next*(fut: FutureBase): FutureBase = fut.internalNext
-  func prev*(fut: FutureBase): FutureBase = fut.internalPrev
+  func next*(fut: FutureBase): FutureBase =
+    fut.internalNext
+  func prev*(fut: FutureBase): FutureBase =
+    fut.internalPrev
 
 when chronosStackTrace:
-  func errorStackTrace*(fut: FutureBase): StackTrace = fut.internalErrorStackTrace
-  func stackTrace*(fut: FutureBase): StackTrace = fut.internalStackTrace
+  func errorStackTrace*(fut: FutureBase): StackTrace =
+    fut.internalErrorStackTrace
+  func stackTrace*(fut: FutureBase): StackTrace =
+    fut.internalStackTrace

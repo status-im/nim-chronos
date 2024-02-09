@@ -7,8 +7,7 @@
 #              MIT license (LICENSE-MIT)
 import std/[strutils, sha1]
 import ".."/chronos/unittest2/asynctests
-import ".."/chronos,
-       ".."/chronos/apps/http/[httpserver, shttpserver, httpclient]
+import ".."/chronos, ".."/chronos/apps/http/[httpserver, shttpserver, httpclient]
 import stew/[byteutils, base10]
 
 {.used.}
@@ -16,7 +15,8 @@ import stew/[byteutils, base10]
 # To create self-signed certificate and key you can use openssl
 # openssl req -new -x509 -sha256 -newkey rsa:2048 -nodes \
 # -keyout example-com.key.pem -days 3650 -out example-com.cert.pem
-const HttpsSelfSignedRsaKey = """
+const HttpsSelfSignedRsaKey =
+  """
 -----BEGIN PRIVATE KEY-----
 MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQCn7tXGLKMIMzOG
 tVzUixax1/ftlSLcpEAkZMORuiCCnYjtIJhGZdzRFZC8fBlfAJZpLIAOfX2L2f1J
@@ -48,7 +48,8 @@ IgaD04WhoL9EX0Qo3DC1+0kG
 """
 
 # This SSL certificate will expire 13 October 2030.
-const HttpsSelfSignedRsaCert = """
+const HttpsSelfSignedRsaCert =
+  """
 -----BEGIN CERTIFICATE-----
 MIIDnzCCAoegAwIBAgIUUdcusjDd3XQi3FPM8urdFG3qI+8wDQYJKoZIhvcNAQEL
 BQAwXzELMAkGA1UEBhMCQVUxEzARBgNVBAgMClNvbWUtU3RhdGUxITAfBgNVBAoM
@@ -77,8 +78,7 @@ suite "HTTP client testing suite":
   teardown:
     checkLeaks()
 
-  type
-    TestResponseTuple = tuple[status: int, data: string, count: int]
+  type TestResponseTuple = tuple[status: int, data: string, count: int]
 
   proc createBigMessage(message: string, size: int): seq[byte] =
     var res = newSeq[byte](size)
@@ -86,37 +86,45 @@ suite "HTTP client testing suite":
       res[i] = byte(message[i mod len(message)])
     res
 
-  proc createServer(address: TransportAddress,
-                    process: HttpProcessCallback2,
-                    secure: bool): HttpServerRef =
+  proc createServer(
+      address: TransportAddress, process: HttpProcessCallback2, secure: bool
+  ): HttpServerRef =
     let
       socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
       serverFlags = {HttpServerFlags.Http11Pipeline}
     if secure:
       let secureKey = TLSPrivateKey.init(HttpsSelfSignedRsaKey)
       let secureCert = TLSCertificate.init(HttpsSelfSignedRsaCert)
-      let res = SecureHttpServerRef.new(address, process,
-                                        socketFlags = socketFlags,
-                                        serverFlags = serverFlags,
-                                        tlsPrivateKey = secureKey,
-                                        tlsCertificate = secureCert)
+      let res = SecureHttpServerRef.new(
+        address,
+        process,
+        socketFlags = socketFlags,
+        serverFlags = serverFlags,
+        tlsPrivateKey = secureKey,
+        tlsCertificate = secureCert,
+      )
       HttpServerRef(res.get())
     else:
-      let res = HttpServerRef.new(address, process,
-                                  socketFlags = socketFlags,
-                                  serverFlags = serverFlags)
+      let res = HttpServerRef.new(
+        address, process, socketFlags = socketFlags, serverFlags = serverFlags
+      )
       res.get()
 
-  proc createSession(secure: bool,
-                     maxRedirections = HttpMaxRedirections): HttpSessionRef =
+  proc createSession(
+      secure: bool, maxRedirections = HttpMaxRedirections
+  ): HttpSessionRef =
     if secure:
-      HttpSessionRef.new({HttpClientFlag.NoVerifyHost,
-                          HttpClientFlag.NoVerifyServerName,
-                          HttpClientFlag.Http11Pipeline},
-                         maxRedirections = maxRedirections)
+      HttpSessionRef.new(
+        {
+          HttpClientFlag.NoVerifyHost, HttpClientFlag.NoVerifyServerName,
+          HttpClientFlag.Http11Pipeline
+        },
+        maxRedirections = maxRedirections,
+      )
     else:
-      HttpSessionRef.new({HttpClientFlag.Http11Pipeline},
-                         maxRedirections = maxRedirections)
+      HttpSessionRef.new(
+        {HttpClientFlag.Http11Pipeline}, maxRedirections = maxRedirections
+      )
 
   proc testMethods(secure: bool): Future[int] {.async.} =
     let RequestTests = [
@@ -130,14 +138,15 @@ suite "HTTP client testing suite":
       (MethodConnect, "/test/connect"),
       (MethodPatch, "/test/patch")
     ]
-    proc process(r: RequestFence): Future[HttpResponseRef] {.
-         async: (raises: [CancelledError]).} =
+    proc process(
+        r: RequestFence
+    ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
       if r.isOk():
         let request = r.get()
         case request.uri.path
-        of "/test/get", "/test/post", "/test/head", "/test/put",
-           "/test/delete", "/test/trace", "/test/options", "/test/connect",
-           "/test/patch", "/test/error":
+        of "/test/get", "/test/post", "/test/head", "/test/put", "/test/delete",
+            "/test/trace", "/test/options", "/test/connect", "/test/patch",
+            "/test/error":
           try:
             await request.respond(Http200, request.uri.path)
           except HttpWriteError as exc:
@@ -194,17 +203,14 @@ suite "HTTP client testing suite":
 
   proc testResponseStreamReadingTest(secure: bool): Future[int] {.async.} =
     let ResponseTests = [
-      (MethodGet, "/test/short_size_response", 65600, 1024,
-       "SHORTSIZERESPONSE"),
-      (MethodGet, "/test/long_size_response", 131200, 1024,
-       "LONGSIZERESPONSE"),
-      (MethodGet, "/test/short_chunked_response", 65600, 1024,
-       "SHORTCHUNKRESPONSE"),
-      (MethodGet, "/test/long_chunked_response", 131200, 1024,
-       "LONGCHUNKRESPONSE")
+      (MethodGet, "/test/short_size_response", 65600, 1024, "SHORTSIZERESPONSE"),
+      (MethodGet, "/test/long_size_response", 131200, 1024, "LONGSIZERESPONSE"),
+      (MethodGet, "/test/short_chunked_response", 65600, 1024, "SHORTCHUNKRESPONSE"),
+      (MethodGet, "/test/long_chunked_response", 131200, 1024, "LONGCHUNKRESPONSE")
     ]
-    proc process(r: RequestFence): Future[HttpResponseRef] {.
-         async: (raises: [CancelledError]).} =
+    proc process(
+        r: RequestFence
+    ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
       if r.isOk():
         let request = r.get()
         case request.uri.path
@@ -331,8 +337,9 @@ suite "HTTP client testing suite":
       (MethodPost, "/test/big_request", 65600),
       (MethodPost, "/test/big_request", 262400)
     ]
-    proc process(r: RequestFence): Future[HttpResponseRef] {.
-         async: (raises: [CancelledError]).} =
+    proc process(
+        r: RequestFence
+    ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
       if r.isOk():
         let request = r.get()
         case request.uri.path
@@ -370,9 +377,7 @@ suite "HTTP client testing suite":
         ("Content-Type", "application/octet-stream"),
         ("Content-Length", Base10.toString(uint64(len(data))))
       ]
-      var request = HttpClientRequestRef.new(
-        session, ha, item[0], headers = headers
-      )
+      var request = HttpClientRequestRef.new(session, ha, item[0], headers = headers)
 
       var expectDigest = $secureHash(string.fromBytes(data))
       # Sending big request by 1024bytes long chunks
@@ -400,14 +405,14 @@ suite "HTTP client testing suite":
     await server.closeWait()
     return counter
 
-  proc testRequestChunkedStreamWritingTest(
-                                          secure: bool): Future[int] {.async.} =
+  proc testRequestChunkedStreamWritingTest(secure: bool): Future[int] {.async.} =
     let RequestTests = [
       (MethodPost, "/test/big_chunk_request", 65600),
       (MethodPost, "/test/big_chunk_request", 262400)
     ]
-    proc process(r: RequestFence): Future[HttpResponseRef] {.
-         async: (raises: [CancelledError]).} =
+    proc process(
+        r: RequestFence
+    ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
       if r.isOk():
         let request = r.get()
         case request.uri.path
@@ -443,12 +448,9 @@ suite "HTTP client testing suite":
           getAddress(address, HttpClientScheme.NonSecure, item[1])
       var data = createBigMessage("REQUESTSTREAMMESSAGE", item[2])
       let headers = [
-        ("Content-Type", "application/octet-stream"),
-        ("Transfer-Encoding", "chunked")
+        ("Content-Type", "application/octet-stream"), ("Transfer-Encoding", "chunked")
       ]
-      var request = HttpClientRequestRef.new(
-        session, ha, item[0], headers = headers
-      )
+      var request = HttpClientRequestRef.new(session, ha, item[0], headers = headers)
 
       var expectDigest = $secureHash(string.fromBytes(data))
       # Sending big request by 1024bytes long chunks
@@ -478,16 +480,21 @@ suite "HTTP client testing suite":
 
   proc testRequestPostUrlEncodedTest(secure: bool): Future[int] {.async.} =
     let PostRequests = [
-      ("/test/post/urlencoded_size",
-       "field1=value1&field2=value2&field3=value3", "value1:value2:value3"),
-      ("/test/post/urlencoded_chunked",
-       "field1=longlonglongvalue1&field2=longlonglongvalue2&" &
-       "field3=longlonglongvalue3", "longlonglongvalue1:longlonglongvalue2:" &
-       "longlonglongvalue3")
+      (
+        "/test/post/urlencoded_size", "field1=value1&field2=value2&field3=value3",
+        "value1:value2:value3"
+      ),
+      (
+        "/test/post/urlencoded_chunked",
+        "field1=longlonglongvalue1&field2=longlonglongvalue2&" &
+          "field3=longlonglongvalue3",
+        "longlonglongvalue1:longlonglongvalue2:" & "longlonglongvalue3",
+      )
     ]
 
-    proc process(r: RequestFence): Future[HttpResponseRef] {.
-         async: (raises: [CancelledError]).} =
+    proc process(
+        r: RequestFence
+    ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
       if r.isOk():
         let request = r.get()
         case request.uri.path
@@ -495,9 +502,9 @@ suite "HTTP client testing suite":
           try:
             if request.hasBody():
               var postTable = await request.post()
-              let body = postTable.getString("field1") & ":" &
-                         postTable.getString("field2") & ":" &
-                         postTable.getString("field3")
+              let body =
+                postTable.getString("field1") & ":" & postTable.getString("field2") & ":" &
+                postTable.getString("field3")
               await request.respond(Http200, body)
             else:
               await request.respond(Http400, "Missing content body")
@@ -523,12 +530,10 @@ suite "HTTP client testing suite":
           getAddress(address, HttpClientScheme.Secure, PostRequests[0][0])
         else:
           getAddress(address, HttpClientScheme.NonSecure, PostRequests[0][0])
-      let headers = [
-        ("Content-Type", "application/x-www-form-urlencoded"),
-      ]
+      let headers = [("Content-Type", "application/x-www-form-urlencoded")]
       var request = HttpClientRequestRef.new(
-        session, ha, MethodPost, headers = headers,
-        body = PostRequests[0][1].toBytes())
+        session, ha, MethodPost, headers = headers, body = PostRequests[0][1].toBytes()
+      )
       var response = await send(request)
 
       if response.status == 200:
@@ -551,8 +556,7 @@ suite "HTTP client testing suite":
         ("Content-Type", "application/x-www-form-urlencoded"),
         ("Transfer-Encoding", "chunked")
       ]
-      var request = HttpClientRequestRef.new(
-        session, ha, MethodPost, headers = headers)
+      var request = HttpClientRequestRef.new(session, ha, MethodPost, headers = headers)
 
       var data = PostRequests[1][1]
 
@@ -581,17 +585,27 @@ suite "HTTP client testing suite":
 
   proc testRequestPostMultipartTest(secure: bool): Future[int] {.async.} =
     let PostRequests = [
-      ("/test/post/multipart_size", "some-part-boundary",
-       [("field1", "value1"), ("field2", "value2"), ("field3", "value3")],
-       "value1:value2:value3"),
-      ("/test/post/multipart_chunked", "some-part-boundary",
-       [("field1", "longlonglongvalue1"), ("field2", "longlonglongvalue2"),
-        ("field3", "longlonglongvalue3")],
-       "longlonglongvalue1:longlonglongvalue2:longlonglongvalue3")
+      (
+        "/test/post/multipart_size",
+        "some-part-boundary",
+        [("field1", "value1"), ("field2", "value2"), ("field3", "value3")],
+        "value1:value2:value3",
+      ),
+      (
+        "/test/post/multipart_chunked",
+        "some-part-boundary",
+        [
+          ("field1", "longlonglongvalue1"),
+          ("field2", "longlonglongvalue2"),
+          ("field3", "longlonglongvalue3")
+        ],
+        "longlonglongvalue1:longlonglongvalue2:longlonglongvalue3",
+      )
     ]
 
-    proc process(r: RequestFence): Future[HttpResponseRef] {.
-         async: (raises: [CancelledError]).} =
+    proc process(
+        r: RequestFence
+    ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
       if r.isOk():
         let request = r.get()
         case request.uri.path
@@ -599,9 +613,9 @@ suite "HTTP client testing suite":
           try:
             if request.hasBody():
               var postTable = await request.post()
-              let body = postTable.getString("field1") & ":" &
-                         postTable.getString("field2") & ":" &
-                         postTable.getString("field3")
+              let body =
+                postTable.getString("field1") & ":" & postTable.getString("field2") & ":" &
+                postTable.getString("field3")
               await request.respond(Http200, body)
             else:
               await request.respond(Http400, "Missing content body")
@@ -636,10 +650,11 @@ suite "HTTP client testing suite":
         else:
           getAddress(address, HttpClientScheme.NonSecure, PostRequests[0][0])
       let headers = [
-        ("Content-Type", "multipart/form-data; boundary=" & PostRequests[0][1]),
+        ("Content-Type", "multipart/form-data; boundary=" & PostRequests[0][1])
       ]
       var request = HttpClientRequestRef.new(
-        session, ha, MethodPost, headers = headers, body = data)
+        session, ha, MethodPost, headers = headers, body = data
+      )
       var response = await send(request)
       if response.status == 200:
         var res = await response.getBodyBytes()
@@ -661,8 +676,7 @@ suite "HTTP client testing suite":
         ("Content-Type", "multipart/form-data; boundary=" & PostRequests[1][1]),
         ("Transfer-Encoding", "chunked")
       ]
-      var request = HttpClientRequestRef.new(
-        session, ha, MethodPost, headers = headers)
+      var request = HttpClientRequestRef.new(session, ha, MethodPost, headers = headers)
       var writer = await open(request)
       var mpw = MultiPartWriterRef.new(writer, PostRequests[1][1])
       await mpw.begin()
@@ -686,12 +700,12 @@ suite "HTTP client testing suite":
     await server.closeWait()
     return counter
 
-  proc testRequestRedirectTest(secure: bool,
-                               max: int): Future[string] {.async.} =
+  proc testRequestRedirectTest(secure: bool, max: int): Future[string] {.async.} =
     var lastAddress: Uri
 
-    proc process(r: RequestFence): Future[HttpResponseRef] {.
-         async: (raises: [CancelledError]).} =
+    proc process(
+        r: RequestFence
+    ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
       if r.isOk():
         let request = r.get()
         try:
@@ -750,8 +764,9 @@ suite "HTTP client testing suite":
       return "redirect-" & $res
 
   proc testSendCancelLeaksTest(secure: bool): Future[bool] {.async.} =
-    proc process(r: RequestFence): Future[HttpResponseRef] {.
-         async: (raises: [CancelledError]).} =
+    proc process(
+        r: RequestFence
+    ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
       defaultResponse()
 
     var server = createServer(initTAddress("127.0.0.1:0"), process, secure)
@@ -774,10 +789,12 @@ suite "HTTP client testing suite":
       if counter > 0:
         await stepsAsync(counter)
       let exitLoop =
-        if not(requestFut.finished()):
+        if not (requestFut.finished()):
           await cancelAndWait(requestFut)
-          doAssert(cancelled(requestFut) or completed(requestFut),
-                   "Future should be Cancelled or Completed at this point")
+          doAssert(
+            cancelled(requestFut) or completed(requestFut),
+            "Future should be Cancelled or Completed at this point",
+          )
           if requestFut.completed():
             let response = await requestFut
             await response.closeWait()
@@ -800,8 +817,9 @@ suite "HTTP client testing suite":
     return true
 
   proc testOpenCancelLeaksTest(secure: bool): Future[bool] {.async.} =
-    proc process(r: RequestFence): Future[HttpResponseRef] {.
-         async: (raises: [CancelledError]).} =
+    proc process(
+        r: RequestFence
+    ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
       defaultResponse()
 
     var server = createServer(initTAddress("127.0.0.1:0"), process, secure)
@@ -824,10 +842,12 @@ suite "HTTP client testing suite":
       if counter > 0:
         await stepsAsync(counter)
       let exitLoop =
-        if not(bodyFut.finished()):
+        if not (bodyFut.finished()):
           await cancelAndWait(bodyFut)
-          doAssert(cancelled(bodyFut) or completed(bodyFut),
-                   "Future should be Cancelled or Completed at this point")
+          doAssert(
+            cancelled(bodyFut) or completed(bodyFut),
+            "Future should be Cancelled or Completed at this point",
+          )
 
           if bodyFut.completed():
             let bodyWriter = await bodyFut
@@ -864,20 +884,19 @@ suite "HTTP client testing suite":
   #     echo "RESPONSE = [", bytesToString(resp.data), "]"
   #     return false
 
-  proc testConnectionManagement(): Future[bool] {.
-       async.} =
+  proc testConnectionManagement(): Future[bool] {.async.} =
     proc test1(
-           a1: HttpAddress,
-           version: HttpVersion,
-           sessionFlags: set[HttpClientFlag],
-           requestFlags: set[HttpClientRequestFlag]
-         ): Future[TestResponseTuple] {.async.} =
+        a1: HttpAddress,
+        version: HttpVersion,
+        sessionFlags: set[HttpClientFlag],
+        requestFlags: set[HttpClientRequestFlag],
+    ): Future[TestResponseTuple] {.async.} =
       let session = HttpSessionRef.new(flags = sessionFlags)
       var
         data: HttpResponseTuple
         count = -1
-        request = HttpClientRequestRef.new(session, a1, version = version,
-                                           flags = requestFlags)
+        request =
+          HttpClientRequestRef.new(session, a1, version = version, flags = requestFlags)
       try:
         data = await request.fetch()
         await request.closeWait()
@@ -887,20 +906,20 @@ suite "HTTP client testing suite":
       return (data.status, data.data.bytesToString(), count)
 
     proc test2(
-           a1, a2: HttpAddress,
-           version: HttpVersion,
-           sessionFlags: set[HttpClientFlag],
-           requestFlags: set[HttpClientRequestFlag]
-         ): Future[seq[TestResponseTuple]] {.async.} =
+        a1, a2: HttpAddress,
+        version: HttpVersion,
+        sessionFlags: set[HttpClientFlag],
+        requestFlags: set[HttpClientRequestFlag],
+    ): Future[seq[TestResponseTuple]] {.async.} =
       let session = HttpSessionRef.new(flags = sessionFlags)
       var
         data1: HttpResponseTuple
         data2: HttpResponseTuple
         count: int = -1
-        request1 = HttpClientRequestRef.new(session, a1, version = version,
-                                            flags = requestFlags)
-        request2 = HttpClientRequestRef.new(session, a2, version = version,
-                                            flags = requestFlags)
+        request1 =
+          HttpClientRequestRef.new(session, a1, version = version, flags = requestFlags)
+        request2 =
+          HttpClientRequestRef.new(session, a2, version = version, flags = requestFlags)
       try:
         data1 = await request1.fetch()
         data2 = await request2.fetch()
@@ -909,11 +928,15 @@ suite "HTTP client testing suite":
         count = session.connectionsCount
       finally:
         await session.closeWait()
-      return @[(data1.status, data1.data.bytesToString(), count),
-               (data2.status, data2.data.bytesToString(), count)]
+      return
+        @[
+          (data1.status, data1.data.bytesToString(), count),
+          (data2.status, data2.data.bytesToString(), count)
+        ]
 
-    proc process(r: RequestFence): Future[HttpResponseRef] {.
-         async: (raises: [CancelledError]).} =
+    proc process(
+        r: RequestFence
+    ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
       if r.isOk():
         let request = r.get()
         try:
@@ -942,21 +965,35 @@ suite "HTTP client testing suite":
     try:
       let
         r1 = await test1(keepHa, HttpVersion10, {}, {})
-        r2 = await test1(keepHa, HttpVersion10,
-                         {HttpClientFlag.NewConnectionAlways}, {})
-        r3 = await test1(keepHa, HttpVersion10, {},
-                         {HttpClientRequestFlag.DedicatedConnection})
-        r4 = await test1(keepHa, HttpVersion10, {},
-                         {HttpClientRequestFlag.DedicatedConnection,
-                          HttpClientRequestFlag.CloseConnection})
+        r2 =
+          await test1(keepHa, HttpVersion10, {HttpClientFlag.NewConnectionAlways}, {})
+        r3 = await test1(
+          keepHa, HttpVersion10, {}, {HttpClientRequestFlag.DedicatedConnection}
+        )
+        r4 = await test1(
+          keepHa,
+          HttpVersion10,
+          {},
+          {
+            HttpClientRequestFlag.DedicatedConnection,
+            HttpClientRequestFlag.CloseConnection
+          },
+        )
         r5 = await test1(dropHa, HttpVersion10, {}, {})
-        r6 = await test1(dropHa, HttpVersion10,
-                         {HttpClientFlag.NewConnectionAlways}, {})
-        r7 = await test1(dropHa, HttpVersion10, {},
-                         {HttpClientRequestFlag.DedicatedConnection})
-        r8 = await test1(dropHa, HttpVersion10, {},
-                         {HttpClientRequestFlag.DedicatedConnection,
-                          HttpClientRequestFlag.CloseConnection})
+        r6 =
+          await test1(dropHa, HttpVersion10, {HttpClientFlag.NewConnectionAlways}, {})
+        r7 = await test1(
+          dropHa, HttpVersion10, {}, {HttpClientRequestFlag.DedicatedConnection}
+        )
+        r8 = await test1(
+          dropHa,
+          HttpVersion10,
+          {},
+          {
+            HttpClientRequestFlag.DedicatedConnection,
+            HttpClientRequestFlag.CloseConnection
+          },
+        )
       check:
         r1 == (200, "ok", 0)
         r2 == (200, "ok", 0)
@@ -969,21 +1006,39 @@ suite "HTTP client testing suite":
 
       let
         d1 = await test2(keepHa, dropHa, HttpVersion10, {}, {})
-        d2 = await test2(keepHa, dropHa, HttpVersion10,
-                         {HttpClientFlag.NewConnectionAlways}, {})
-        d3 = await test2(keepHa, dropHa, HttpVersion10, {},
-                         {HttpClientRequestFlag.DedicatedConnection})
-        d4 = await test2(keepHa, dropHa, HttpVersion10, {},
-                         {HttpClientRequestFlag.DedicatedConnection,
-                          HttpClientRequestFlag.CloseConnection})
+        d2 = await test2(
+          keepHa, dropHa, HttpVersion10, {HttpClientFlag.NewConnectionAlways}, {}
+        )
+        d3 = await test2(
+          keepHa, dropHa, HttpVersion10, {}, {HttpClientRequestFlag.DedicatedConnection}
+        )
+        d4 = await test2(
+          keepHa,
+          dropHa,
+          HttpVersion10,
+          {},
+          {
+            HttpClientRequestFlag.DedicatedConnection,
+            HttpClientRequestFlag.CloseConnection
+          },
+        )
         d5 = await test2(dropHa, keepHa, HttpVersion10, {}, {})
-        d6 = await test2(dropHa, keepHa, HttpVersion10,
-                         {HttpClientFlag.NewConnectionAlways}, {})
-        d7 = await test2(dropHa, keepHa, HttpVersion10, {},
-                         {HttpClientRequestFlag.DedicatedConnection})
-        d8 = await test2(dropHa, keepHa, HttpVersion10, {},
-                         {HttpClientRequestFlag.DedicatedConnection,
-                          HttpClientRequestFlag.CloseConnection})
+        d6 = await test2(
+          dropHa, keepHa, HttpVersion10, {HttpClientFlag.NewConnectionAlways}, {}
+        )
+        d7 = await test2(
+          dropHa, keepHa, HttpVersion10, {}, {HttpClientRequestFlag.DedicatedConnection}
+        )
+        d8 = await test2(
+          dropHa,
+          keepHa,
+          HttpVersion10,
+          {},
+          {
+            HttpClientRequestFlag.DedicatedConnection,
+            HttpClientRequestFlag.CloseConnection
+          },
+        )
       check:
         d1 == @[(200, "ok", 0), (200, "ok", 0)]
         d2 == @[(200, "ok", 0), (200, "ok", 0)]
@@ -995,31 +1050,47 @@ suite "HTTP client testing suite":
         d8 == @[(200, "ok", 0), (200, "ok", 0)]
 
       let
-        n1 = await test1(keepHa, HttpVersion11,
-                         {HttpClientFlag.Http11Pipeline}, {})
-        n2 = await test2(keepHa, keepHa, HttpVersion11,
-                         {HttpClientFlag.Http11Pipeline}, {})
-        n3 = await test1(dropHa, HttpVersion11,
-                         {HttpClientFlag.Http11Pipeline}, {})
-        n4 = await test2(dropHa, dropHa, HttpVersion11,
-                         {HttpClientFlag.Http11Pipeline}, {})
-        n5 = await test1(keepHa, HttpVersion11,
-                         {HttpClientFlag.NewConnectionAlways,
-                          HttpClientFlag.Http11Pipeline}, {})
-        n6 = await test1(keepHa, HttpVersion11,
-                         {HttpClientFlag.Http11Pipeline},
-                         {HttpClientRequestFlag.DedicatedConnection})
-        n7 = await test1(keepHa, HttpVersion11,
-                         {HttpClientFlag.Http11Pipeline},
-                         {HttpClientRequestFlag.DedicatedConnection,
-                          HttpClientRequestFlag.CloseConnection})
-        n8 = await test1(keepHa, HttpVersion11,
-                         {HttpClientFlag.Http11Pipeline},
-                         {HttpClientRequestFlag.CloseConnection})
-        n9 = await test1(keepHa, HttpVersion11,
-                         {HttpClientFlag.NewConnectionAlways,
-                          HttpClientFlag.Http11Pipeline},
-                         {HttpClientRequestFlag.CloseConnection})
+        n1 = await test1(keepHa, HttpVersion11, {HttpClientFlag.Http11Pipeline}, {})
+        n2 = await test2(
+          keepHa, keepHa, HttpVersion11, {HttpClientFlag.Http11Pipeline}, {}
+        )
+        n3 = await test1(dropHa, HttpVersion11, {HttpClientFlag.Http11Pipeline}, {})
+        n4 = await test2(
+          dropHa, dropHa, HttpVersion11, {HttpClientFlag.Http11Pipeline}, {}
+        )
+        n5 = await test1(
+          keepHa,
+          HttpVersion11,
+          {HttpClientFlag.NewConnectionAlways, HttpClientFlag.Http11Pipeline},
+          {},
+        )
+        n6 = await test1(
+          keepHa,
+          HttpVersion11,
+          {HttpClientFlag.Http11Pipeline},
+          {HttpClientRequestFlag.DedicatedConnection},
+        )
+        n7 = await test1(
+          keepHa,
+          HttpVersion11,
+          {HttpClientFlag.Http11Pipeline},
+          {
+            HttpClientRequestFlag.DedicatedConnection,
+            HttpClientRequestFlag.CloseConnection
+          },
+        )
+        n8 = await test1(
+          keepHa,
+          HttpVersion11,
+          {HttpClientFlag.Http11Pipeline},
+          {HttpClientRequestFlag.CloseConnection},
+        )
+        n9 = await test1(
+          keepHa,
+          HttpVersion11,
+          {HttpClientFlag.NewConnectionAlways, HttpClientFlag.Http11Pipeline},
+          {HttpClientRequestFlag.CloseConnection},
+        )
       check:
         n1 == (200, "ok", 1)
         n2 == @[(200, "ok", 2), (200, "ok", 2)]
@@ -1038,10 +1109,8 @@ suite "HTTP client testing suite":
 
   proc testIdleConnection(): Future[bool] {.async.} =
     proc test(
-           session: HttpSessionRef,
-           a: HttpAddress
-         ): Future[TestResponseTuple] {.async.} =
-
+        session: HttpSessionRef, a: HttpAddress
+    ): Future[TestResponseTuple] {.async.} =
       var
         data: HttpResponseTuple
         request = HttpClientRequestRef.new(session, a, version = HttpVersion11)
@@ -1051,8 +1120,9 @@ suite "HTTP client testing suite":
         await request.closeWait()
       return (data.status, data.data.bytesToString(), 0)
 
-    proc process(r: RequestFence): Future[HttpResponseRef] {.
-         async: (raises: [CancelledError]).} =
+    proc process(
+        r: RequestFence
+    ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
       if r.isOk():
         let request = r.get()
         try:
@@ -1071,9 +1141,11 @@ suite "HTTP client testing suite":
     let
       address = server.instance.localAddress()
       ha = getAddress(address, HttpClientScheme.NonSecure, "/test")
-      session = HttpSessionRef.new({HttpClientFlag.Http11Pipeline},
-                                   idleTimeout = 1.seconds,
-                                   idlePeriod = 200.milliseconds)
+      session = HttpSessionRef.new(
+        {HttpClientFlag.Http11Pipeline},
+        idleTimeout = 1.seconds,
+        idlePeriod = 200.milliseconds,
+      )
     try:
       var f1 = test(session, ha)
       var f2 = test(session, ha)
@@ -1101,10 +1173,8 @@ suite "HTTP client testing suite":
 
   proc testNoPipeline(): Future[bool] {.async.} =
     proc test(
-           session: HttpSessionRef,
-           a: HttpAddress
-         ): Future[TestResponseTuple] {.async.} =
-
+        session: HttpSessionRef, a: HttpAddress
+    ): Future[TestResponseTuple] {.async.} =
       var
         data: HttpResponseTuple
         request = HttpClientRequestRef.new(session, a, version = HttpVersion11)
@@ -1114,8 +1184,9 @@ suite "HTTP client testing suite":
         await request.closeWait()
       return (data.status, data.data.bytesToString(), 0)
 
-    proc process(r: RequestFence): Future[HttpResponseRef] {.
-         async: (raises: [CancelledError]).} =
+    proc process(
+        r: RequestFence
+    ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
       if r.isOk():
         let request = r.get()
         try:
@@ -1138,8 +1209,8 @@ suite "HTTP client testing suite":
       address = server.instance.localAddress()
       ha = getAddress(address, HttpClientScheme.NonSecure, "/test")
       hb = getAddress(address, HttpClientScheme.NonSecure, "/keep-test")
-      session = HttpSessionRef.new(idleTimeout = 100.seconds,
-                                   idlePeriod = 10.milliseconds)
+      session =
+        HttpSessionRef.new(idleTimeout = 100.seconds, idlePeriod = 10.milliseconds)
     try:
       var f1 = test(session, ha)
       var f2 = test(session, ha)
@@ -1174,10 +1245,16 @@ suite "HTTP client testing suite":
   proc testServerSentEvents(secure: bool): Future[bool] {.async.} =
     const
       SingleGoodTests = [
-        ("/test/single/1", "a:b\r\nc: d\re:f\n:comment\r\ng:\n h: j \n\n",
-         @[("a", "b"), ("c", "d"), ("e", "f"), ("g", ""), (" h", "j ")]),
-        ("/test/single/2", ":comment\r:\nfield1\r\nfield2:\n\n",
-         @[("field1", ""), ("field2", "")]),
+        (
+          "/test/single/1",
+          "a:b\r\nc: d\re:f\n:comment\r\ng:\n h: j \n\n",
+          @[("a", "b"), ("c", "d"), ("e", "f"), ("g", ""), (" h", "j ")],
+        ),
+        (
+          "/test/single/2",
+          ":comment\r:\nfield1\r\nfield2:\n\n",
+          @[("field1", ""), ("field2", "")],
+        ),
         ("/test/single/3", ":c1\r:c2\nfield1:value1", @[("field1", "value1")]),
         ("/test/single/4", ":c1\r:c2\nfield1:", @[("field1", "")]),
         ("/test/single/5", ":c1\r:c2\nfield1", @[("field1", "")]),
@@ -1198,12 +1275,27 @@ suite "HTTP client testing suite":
         ("/test/single/20", "\n", @[("", "")])
       ]
       MultipleGoodTests = [
-        ("/test/multiple/1", "a:b\nc:d\n\ne:f\rg:h\r\ri:j\r\nk:l\r\n\r\n", 3,
-         @[@[("a", "b"), ("c", "d")], @[("e", "f"), ("g", "h")],
-           @[("i", "j"), ("k", "l")]]),
-        ("/test/multiple/2", "a:b\nc:d\n\ne:f\rg:h\r\ri:j\r\nk:l\r\n\r\n\r\n",
-          4, @[@[("a", "b"), ("c", "d")], @[("e", "f"), ("g", "h")],
-             @[("i", "j"), ("k", "l")], @[("", "")]]),
+        (
+          "/test/multiple/1",
+          "a:b\nc:d\n\ne:f\rg:h\r\ri:j\r\nk:l\r\n\r\n",
+          3,
+          @[
+            @[("a", "b"), ("c", "d")],
+            @[("e", "f"), ("g", "h")],
+            @[("i", "j"), ("k", "l")]
+          ],
+        ),
+        (
+          "/test/multiple/2",
+          "a:b\nc:d\n\ne:f\rg:h\r\ri:j\r\nk:l\r\n\r\n\r\n",
+          4,
+          @[
+            @[("a", "b"), ("c", "d")],
+            @[("e", "f"), ("g", "h")],
+            @[("i", "j"), ("k", "l")],
+            @[("", "")]
+          ],
+        )
       ]
       OverflowTests = [
         ("/test/overflow/1", ":verylongcomment", 1, false),
@@ -1215,8 +1307,7 @@ suite "HTTP client testing suite":
     proc `==`(a: ServerSentEvent, b: tuple[name: string, value: string]): bool =
       a.name == b.name and a.data == b.value
 
-    proc `==`(a: seq[ServerSentEvent],
-              b: seq[tuple[name: string, value: string]]): bool =
+    proc `==`(a: seq[ServerSentEvent], b: seq[tuple[name: string, value: string]]): bool =
       if len(a) != len(b):
         return false
       for index, value in a.pairs():
@@ -1224,8 +1315,9 @@ suite "HTTP client testing suite":
           return false
       true
 
-    proc `==`(a: seq[seq[ServerSentEvent]],
-              b: seq[seq[tuple[name: string, value: string]]]): bool =
+    proc `==`(
+        a: seq[seq[ServerSentEvent]], b: seq[seq[tuple[name: string, value: string]]]
+    ): bool =
       if len(a) != len(b):
         return false
       for index, value in a.pairs():
@@ -1233,20 +1325,20 @@ suite "HTTP client testing suite":
           return false
       true
 
-    proc process(r: RequestFence): Future[HttpResponseRef] {.
-         async: (raises: [CancelledError]).} =
+    proc process(
+        r: RequestFence
+    ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
       if r.isOk():
         let request = r.get()
         try:
           if request.uri.path.startsWith("/test/single/"):
-            let index =
-              block:
-                var res = -1
-                for index, value in SingleGoodTests.pairs():
-                  if value[0] == request.uri.path:
-                    res = index
-                    break
-                res
+            let index = block:
+              var res = -1
+              for index, value in SingleGoodTests.pairs():
+                if value[0] == request.uri.path:
+                  res = index
+                  break
+              res
             if index < 0:
               return await request.respond(Http404, "Page not found")
             var response = request.getResponse()
@@ -1254,14 +1346,13 @@ suite "HTTP client testing suite":
             await response.sendBody(SingleGoodTests[index][1])
             response
           elif request.uri.path.startsWith("/test/multiple/"):
-            let index =
-              block:
-                var res = -1
-                for index, value in MultipleGoodTests.pairs():
-                  if value[0] == request.uri.path:
-                    res = index
-                    break
-                res
+            let index = block:
+              var res = -1
+              for index, value in MultipleGoodTests.pairs():
+                if value[0] == request.uri.path:
+                  res = index
+                  break
+              res
             if index < 0:
               return await request.respond(Http404, "Page not found")
             var response = request.getResponse()
@@ -1269,14 +1360,13 @@ suite "HTTP client testing suite":
             await response.sendBody(MultipleGoodTests[index][1])
             response
           elif request.uri.path.startsWith("/test/overflow/"):
-            let index =
-              block:
-                var res = -1
-                for index, value in OverflowTests.pairs():
-                  if value[0] == request.uri.path:
-                    res = index
-                    break
-                res
+            let index = block:
+              var res = -1
+              for index, value in OverflowTests.pairs():
+                if value[0] == request.uri.path:
+                  res = index
+                  break
+              res
             if index < 0:
               return await request.respond(Http404, "Page not found")
             var response = request.getResponse()
@@ -1319,13 +1409,12 @@ suite "HTTP client testing suite":
             getAddress(address, HttpClientScheme.NonSecure, item[0])
         var req = HttpClientRequestRef.new(session, ha, HttpMethod.MethodGet)
         var response = await send(req)
-        let events =
-          block:
-            var res: seq[seq[ServerSentEvent]]
-            for i in 0 ..< item[2]:
-              let ires = await response.getServerSentEvents()
-              res.add(ires)
-            res
+        let events = block:
+          var res: seq[seq[ServerSentEvent]]
+          for i in 0 ..< item[2]:
+            let ires = await response.getServerSentEvents()
+            res.add(ires)
+          res
         check events == item[3]
         await closeWait(response)
         await closeWait(req)
@@ -1349,7 +1438,6 @@ suite "HTTP client testing suite":
         check error == item[3]
         await closeWait(response)
         await closeWait(req)
-
     finally:
       await closeWait(session)
       await server.stop()
@@ -1501,11 +1589,10 @@ suite "HTTP client testing suite":
     block:
       # No resolution flags and incorrect URL
       let
-        flags = {HttpClientFlag.NoInet4Resolution,
-                 HttpClientFlag.NoInet6Resolution}
+        flags = {HttpClientFlag.NoInet4Resolution, HttpClientFlag.NoInet6Resolution}
         res1 = getHttpAddress("http://256.256.256.256", flags)
-        res2 = getHttpAddress(
-          "http://[FFFFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]", flags)
+        res2 =
+          getHttpAddress("http://[FFFFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]", flags)
       check:
         res1.isErr() and res1.error == HttpAddressErrorType.InvalidIpHostname
         res1.error.isCriticalError()
@@ -1517,4 +1604,4 @@ suite "HTTP client testing suite":
       check:
         res.isErr() and res.error == HttpAddressErrorType.NameLookupFailed
         res.error.isRecoverableError()
-        not(res.error.isCriticalError())
+        not (res.error.isCriticalError())
