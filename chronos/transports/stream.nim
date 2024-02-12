@@ -1044,7 +1044,9 @@ when defined(windows):
     ok()
 
   proc accept*(server: StreamServer): Future[StreamTransport] {.
-      async: (raw: true, raises: [TransportError, CancelledError]).} =
+      async: (raw: true, raises: [TransportUseClosedError,
+              TransportTooManyError, TransportAbortedError, TransportOsError,
+              CancelledError]).} =
     var retFuture = newFuture[StreamTransport]("stream.server.accept")
 
     doAssert(server.status != ServerStatus.Running,
@@ -1675,7 +1677,9 @@ else:
     ok()
 
   proc accept*(server: StreamServer): Future[StreamTransport] {.
-      async: (raw: true, raises: [TransportError, CancelledError]).} =
+      async: (raw: true, raises: [TransportUseClosedError,
+              TransportTooManyError, TransportAbortedError, TransportOsError,
+              CancelledError]).} =
     var retFuture = newFuture[StreamTransport]("stream.server.accept")
 
     doAssert(server.status != ServerStatus.Running,
