@@ -1106,29 +1106,42 @@ proc processLoop(holder: HttpConnectionHolderRef) {.async: (raises: []).} =
   server.connections.del(connectionId)
 
 proc acceptClientLoop(server: HttpServerRef) {.async: (raises: []).} =
-  var runLoop = true
-  while runLoop:
-    try:
-      # if server.maxConnections > 0:
-      #   await server.semaphore.acquire()
-      let transp = await server.instance.accept()
-      let resId = transp.getId()
-      if resId.isErr():
-        # We are unable to identify remote peer, it means that remote peer
-        # disconnected before identification.
-        await transp.closeWait()
-        runLoop = false
-      else:
-        let connId = resId.get()
-        let holder = HttpConnectionHolderRef.new(server, transp, resId.get())
-        server.connections[connId] = holder
+  block mainLoop:
+    while true:
+      block clientLoop:
+        # if server.maxConnections > 0:
+        #   await server.semaphore.acquire()
+        let transp =
+          try:
+            await server.instance.accept()
+          except TransportTooManyError:
+            # Too many FDs used by process
+            break clientLoop
+          except TransportAbortedError:
+            # Remote peer disconnected
+            break clientLoop
+          except TransportUseClosedError:
+            # accept() call invoked when server is stopped
+            break mainLoop
+          except TransportOsError:
+            # Critical OS error
+            break mainLoop
+          except CancelledError:
+            # Server being closed, exiting
+            break mainLoop
+
+        doAssert(not(isNil(transp)), "Stream transport should be present!")
+
+        let
+          connectionId = transp.getId().valueOr:
+            # We are unable to identify remote peer, it means that remote peer
+            # disconnected before.
+            await transp.closeWait()
+            break clientLoop
+          holder = HttpConnectionHolderRef.new(server, transp, connectionId)
+
+        server.connections[connectionId] = holder
         holder.future = processLoop(holder)
-    except TransportTooManyError, TransportAbortedError:
-      # Non-critical error
-      discard
-    except CancelledError, TransportOsError, TransportUseClosedError:
-      # Critical, cancellation or unexpected error
-      runLoop = false
 
 proc state*(server: HttpServerRef): HttpServerState =
   ## Returns current HTTP server's state.
