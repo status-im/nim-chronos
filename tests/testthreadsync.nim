@@ -43,6 +43,7 @@ const
 
 suite "Asynchronous multi-threading sync primitives test suite":
   teardown:
+    echo GC_getStatistics()
     checkLeaks()
 
   proc setResult(thr: ThreadResultPtr, value: int) =
