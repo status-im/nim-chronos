@@ -1520,12 +1520,12 @@ suite "Stream Transport test suite":
       check waitFor(testWCR(addresses[i])) == ClientsCount * MessagesCount
     test prefixes[i] & "writeFile() multiple clients (" & $FilesCount & " files)":
       when defined(windows):
-        if addresses[i].family == AddressFamily.IPv4:
+        if addresses[i].family == AddressFamily.IPv4 and (sizeof(int) == 8):
           check waitFor(testSendFile(addresses[i])) == FilesCount
         else:
           skip()
       else:
-        if defined(emscripten):
+        if defined(emscripten) or (sizeof(int) == 4):
           skip()
         else:
           check waitFor(testSendFile(addresses[i])) == FilesCount

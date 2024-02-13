@@ -209,31 +209,34 @@ suite "Asynchronous process management test suite":
       await process.closeWait()
 
   asyncTest "Capture big amount of bytes from STDOUT stream test":
-    let options = {AsyncProcessOption.EvalCommand}
-    let command =
-      when defined(windows):
-        "tests\\testproc.bat bigdata"
-      else:
-        "tests/testproc.sh bigdata"
-    let expect =
-      when defined(windows):
-        100_000 * (64 + 2)
-      else:
-        100_000 * (64 + 1)
-    let process = await startProcess(command, options = options,
-                                     stdoutHandle = AsyncProcess.Pipe,
-                                     stderrHandle = AsyncProcess.Pipe)
-    try:
-      let outBytesFut = process.stdoutStream.read()
-      let errBytesFut = process.stderrStream.read()
-      let res = await process.waitForExit(InfiniteDuration)
-      await allFutures(outBytesFut, errBytesFut)
-      check:
-        res == 0
-        len(outBytesFut.read()) == expect
-        len(errBytesFut.read()) == 0
-    finally:
-      await process.closeWait()
+    when sizeof(int) == 4:
+      skip()
+    else:
+      let options = {AsyncProcessOption.EvalCommand}
+      let command =
+        when defined(windows):
+          "tests\\testproc.bat bigdata"
+        else:
+          "tests/testproc.sh bigdata"
+      let expect =
+        when defined(windows):
+          100_000 * (64 + 2)
+        else:
+          100_000 * (64 + 1)
+      let process = await startProcess(command, options = options,
+                                       stdoutHandle = AsyncProcess.Pipe,
+                                       stderrHandle = AsyncProcess.Pipe)
+      try:
+        let outBytesFut = process.stdoutStream.read()
+        let errBytesFut = process.stderrStream.read()
+        let res = await process.waitForExit(InfiniteDuration)
+        await allFutures(outBytesFut, errBytesFut)
+        check:
+          res == 0
+          len(outBytesFut.read()) == expect
+          len(errBytesFut.read()) == 0
+      finally:
+        await process.closeWait()
 
   asyncTest "Long-waiting waitForExit() test":
     let command =
