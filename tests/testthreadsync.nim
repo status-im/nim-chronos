@@ -39,9 +39,12 @@ type
     Sync, Async
 
 const
-  TestsCount = 1000
+  TestsCount = when sizeof(int) == 8: 1000 else: 100
 
 suite "Asynchronous multi-threading sync primitives test suite":
+  teardown:
+    checkLeaks()
+
   proc setResult(thr: ThreadResultPtr, value: int) =
     thr[].value = value
 
