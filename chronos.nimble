@@ -66,6 +66,8 @@ task test_libbacktrace, "test with libbacktrace":
 
   for args in allArgs:
     run args, "tests/testall"
+    if (NimMajor, NimMinor) > (1, 6):
+      run args & " --mm:refc", "tests/testall"
 
 task docs, "Generate API documentation":
   exec "mdbook build docs"
