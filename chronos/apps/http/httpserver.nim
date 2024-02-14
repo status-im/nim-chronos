@@ -833,45 +833,33 @@ proc sendDefaultResponse(
     if reqFence.isOk():
       if isNil(response):
         await conn.sendErrorResponse(version, Http404, keepConnection.toBool())
+        return keepConnection
+
+      case response.state
+      of HttpResponseState.Empty, HttpResponseState.Default:
+        # Response was ignored, so we respond with not found.
+        await conn.sendErrorResponse(version, Http404,
+                                     keepConnection.toBool())
         keepConnection
-      else:
-        case response.state
-        of HttpResponseState.Empty:
-          # Response was ignored, so we respond with not found.
-          await conn.sendErrorResponse(version, Http404,
-                                       keepConnection.toBool())
-          response.setResponseState(HttpResponseState.Finished)
-          keepConnection
-        of HttpResponseState.Prepared:
-          # Response was prepared but not sent, so we can respond with some
-          # error code
-          await conn.sendErrorResponse(HttpVersion11, Http409,
-                                       keepConnection.toBool())
-          response.setResponseState(HttpResponseState.Finished)
-          keepConnection
-        of HttpResponseState.ErrorCode:
-          # Response with error code
-          await conn.sendErrorResponse(version, response.status, false)
-          response.setResponseState(HttpResponseState.Finished)
-          HttpProcessExitType.Immediate
-        of HttpResponseState.Sending, HttpResponseState.Failed,
-           HttpResponseState.Cancelled:
-          # Just drop connection, because we dont know at what stage we are
-          HttpProcessExitType.Immediate
-        of HttpResponseState.Default:
-          # Response was ignored, so we respond with not found.
-          await conn.sendErrorResponse(version, Http404,
-                                       keepConnection.toBool())
-          response.setResponseState(HttpResponseState.Finished)
-          keepConnection
-        of HttpResponseState.Finished:
-          keepConnection
+      of HttpResponseState.Prepared:
+        # Response was prepared but not sent, so we can respond with some
+        # error code
+        await conn.sendErrorResponse(version, Http409,
+                                     keepConnection.toBool())
+        keepConnection
+      of HttpResponseState.ErrorCode:
+        # Response with error code
+        await conn.sendErrorResponse(version, response.status, false)
+        HttpProcessExitType.Immediate
+      of HttpResponseState.Sending, HttpResponseState.Failed,
+         HttpResponseState.Cancelled:
+        # Just drop connection, because we dont know at what stage we are
+        HttpProcessExitType.Immediate
+      of HttpResponseState.Finished:
+        keepConnection
     else:
       case reqFence.error.kind
-      of HttpServerError.TimeoutError:
-        await conn.sendErrorResponse(version, reqFence.error.code, false)
-        HttpProcessExitType.Graceful
-      of HttpServerError.ProtocolError:
+      of HttpServerError.TimeoutError, HttpServerError.ProtocolError:
         await conn.sendErrorResponse(version, reqFence.error.code, false)
         HttpProcessExitType.Graceful
       of HttpServerError.DisconnectError:
@@ -1017,8 +1005,7 @@ proc getRequestFence*(server: HttpServerRef,
     connection.currentRawQuery = Opt.some(res.rawPath)
     RequestFence.ok(res)
   except CancelledError:
-    RequestFence.err(
-      HttpProcessError.init(HttpServerError.InterruptError))
+    RequestFence.err(HttpProcessError.init(HttpServerError.InterruptError))
   except AsyncTimeoutError:
     let address = connection.getRemoteAddress()
     RequestFence.err(
@@ -1073,18 +1060,19 @@ proc processRequest(server: HttpServerRef,
       # Request is incorrect or unsupported, sending notification
       discard
 
-  try:
-    let response =
-      try:
-        await invokeProcessCallback(connection.server, requestFence)
-      except CancelledError:
-        # Cancelled, exiting
-        return HttpProcessExitType.Immediate
+  let response =
+    try:
+      await invokeProcessCallback(connection.server, requestFence)
+    except CancelledError:
+      # Cancelled, exiting
+      if requestFence.isOk():
+        await requestFence.get().closeWait()
+      return HttpProcessExitType.Immediate
 
-    await connection.sendDefaultResponse(requestFence, response)
-  finally:
-    if requestFence.isOk():
-      await requestFence.get().closeWait()
+  let res = await connection.sendDefaultResponse(requestFence, response)
+  if requestFence.isOk():
+    await requestFence.get().closeWait()
+  res
 
 proc processLoop(holder: HttpConnectionHolderRef) {.async: (raises: []).} =
   let
@@ -1118,29 +1106,42 @@ proc processLoop(holder: HttpConnectionHolderRef) {.async: (raises: []).} =
   server.connections.del(connectionId)
 
 proc acceptClientLoop(server: HttpServerRef) {.async: (raises: []).} =
-  var runLoop = true
-  while runLoop:
-    try:
-      # if server.maxConnections > 0:
-      #   await server.semaphore.acquire()
-      let transp = await server.instance.accept()
-      let resId = transp.getId()
-      if resId.isErr():
-        # We are unable to identify remote peer, it means that remote peer
-        # disconnected before identification.
-        await transp.closeWait()
-        runLoop = false
-      else:
-        let connId = resId.get()
-        let holder = HttpConnectionHolderRef.new(server, transp, resId.get())
-        server.connections[connId] = holder
+  block mainLoop:
+    while true:
+      block clientLoop:
+        # if server.maxConnections > 0:
+        #   await server.semaphore.acquire()
+        let transp =
+          try:
+            await server.instance.accept()
+          except TransportTooManyError:
+            # Too many FDs used by process
+            break clientLoop
+          except TransportAbortedError:
+            # Remote peer disconnected
+            break clientLoop
+          except TransportUseClosedError:
+            # accept() call invoked when server is stopped
+            break mainLoop
+          except TransportOsError:
+            # Critical OS error
+            break mainLoop
+          except CancelledError:
+            # Server being closed, exiting
+            break mainLoop
+
+        doAssert(not(isNil(transp)), "Stream transport should be present!")
+
+        let
+          connectionId = transp.getId().valueOr:
+            # We are unable to identify remote peer, it means that remote peer
+            # disconnected before.
+            await transp.closeWait()
+            break clientLoop
+          holder = HttpConnectionHolderRef.new(server, transp, connectionId)
+
+        server.connections[connectionId] = holder
         holder.future = processLoop(holder)
-    except TransportTooManyError, TransportAbortedError:
-      # Non-critical error
-      discard
-    except CancelledError, TransportOsError, CatchableError:
-      # Critical, cancellation or unexpected error
-      runLoop = false
 
 proc state*(server: HttpServerRef): HttpServerState =
   ## Returns current HTTP server's state.
@@ -1429,7 +1430,7 @@ proc sendBody*(resp: HttpResponseRef, pbytes: pointer, nbytes: int) {.
     raise exc
   except AsyncStreamError as exc:
     resp.setResponseState(HttpResponseState.Failed)
-    raiseHttpWriteError("Unable to send response, reason: " & $exc.msg)
+    raiseHttpWriteError("Unable to send response body, reason: " & $exc.msg)
 
 proc sendBody*(resp: HttpResponseRef, data: ByteChar) {.
      async: (raises: [CancelledError, HttpWriteError]).} =
@@ -1448,7 +1449,7 @@ proc sendBody*(resp: HttpResponseRef, data: ByteChar) {.
     raise exc
   except AsyncStreamError as exc:
     resp.setResponseState(HttpResponseState.Failed)
-    raiseHttpWriteError("Unable to send response, reason: " & $exc.msg)
+    raiseHttpWriteError("Unable to send response body, reason: " & $exc.msg)
 
 proc sendError*(resp: HttpResponseRef, code: HttpCode, body = "") {.
      async: (raises: [CancelledError, HttpWriteError]).} =
@@ -1468,7 +1469,8 @@ proc sendError*(resp: HttpResponseRef, code: HttpCode, body = "") {.
     raise exc
   except AsyncStreamError as exc:
     resp.setResponseState(HttpResponseState.Failed)
-    raiseHttpWriteError("Unable to send response, reason: " & $exc.msg)
+    raiseHttpWriteError(
+      "Unable to send error response body, reason: " & $exc.msg)
 
 proc prepare*(resp: HttpResponseRef,
               streamType = HttpResponseStreamType.Chunked) {.
@@ -1501,7 +1503,7 @@ proc prepare*(resp: HttpResponseRef,
     raise exc
   except AsyncStreamError as exc:
     resp.setResponseState(HttpResponseState.Failed)
-    raiseHttpWriteError("Unable to send response, reason: " & $exc.msg)
+    raiseHttpWriteError("Unable to send response headers, reason: " & $exc.msg)
 
 proc prepareChunked*(resp: HttpResponseRef): Future[void] {.
      async: (raw: true, raises: [CancelledError, HttpWriteError]).} =
@@ -1536,7 +1538,7 @@ proc send*(resp: HttpResponseRef, pbytes: pointer, nbytes: int) {.
     raise exc
   except AsyncStreamError as exc:
     resp.setResponseState(HttpResponseState.Failed)
-    raiseHttpWriteError("Unable to send response, reason: " & $exc.msg)
+    raiseHttpWriteError("Unable to send response data, reason: " & $exc.msg)
 
 proc send*(resp: HttpResponseRef, data: ByteChar) {.
      async: (raises: [CancelledError, HttpWriteError]).} =
@@ -1551,7 +1553,7 @@ proc send*(resp: HttpResponseRef, data: ByteChar) {.
     raise exc
   except AsyncStreamError as exc:
     resp.setResponseState(HttpResponseState.Failed)
-    raiseHttpWriteError("Unable to send response, reason: " & $exc.msg)
+    raiseHttpWriteError("Unable to send response data, reason: " & $exc.msg)
 
 proc sendChunk*(resp: HttpResponseRef, pbytes: pointer,
                 nbytes: int): Future[void] {.
@@ -1591,7 +1593,7 @@ proc finish*(resp: HttpResponseRef) {.
     raise exc
   except AsyncStreamError as exc:
     resp.setResponseState(HttpResponseState.Failed)
-    raiseHttpWriteError("Unable to send response, reason: " & $exc.msg)
+    raiseHttpWriteError("Unable to finish response data, reason: " & $exc.msg)
 
 proc respond*(req: HttpRequestRef, code: HttpCode, content: ByteChar,
               headers: HttpTable): Future[HttpResponseRef] {.
@@ -1673,7 +1675,7 @@ proc remoteAddress*(request: HttpRequestRef): TransportAddress {.
   ## Returns address of the remote host that made request ``request``.
   request.connection.remoteAddress()
 
-proc requestInfo*(req: HttpRequestRef, contentType = "text/text"): string =
+proc requestInfo*(req: HttpRequestRef, contentType = "text/plain"): string =
   ## Returns comprehensive information about request for specific content
   ## type.
   ##

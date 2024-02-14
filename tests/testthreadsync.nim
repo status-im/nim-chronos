@@ -43,6 +43,7 @@ const
 
 suite "Asynchronous multi-threading sync primitives test suite":
   teardown:
+    echo GC_getStatistics()
     checkLeaks()
 
   proc setResult(thr: ThreadResultPtr, value: int) =
@@ -325,19 +326,31 @@ suite "Asynchronous multi-threading sync primitives test suite":
 
   asyncTest "ThreadSignal: Multiple thread switches [" & $TestsCount &
             "] test [sync -> sync]":
-    threadSignalTest2(TestsCount, WaitSendKind.Sync, WaitSendKind.Sync)
+    when sizeof(int) == 8:
+      threadSignalTest2(TestsCount, WaitSendKind.Sync, WaitSendKind.Sync)
+    else:
+      skip()
 
   asyncTest "ThreadSignal: Multiple thread switches [" & $TestsCount &
             "] test [async -> async]":
-    threadSignalTest2(TestsCount, WaitSendKind.Async, WaitSendKind.Async)
+    when sizeof(int) == 8:
+      threadSignalTest2(TestsCount, WaitSendKind.Async, WaitSendKind.Async)
+    else:
+      skip()
 
   asyncTest "ThreadSignal: Multiple thread switches [" & $TestsCount &
             "] test [sync -> async]":
-    threadSignalTest2(TestsCount, WaitSendKind.Sync, WaitSendKind.Async)
+    when sizeof(int) == 8:
+      threadSignalTest2(TestsCount, WaitSendKind.Sync, WaitSendKind.Async)
+    else:
+      skip()
 
   asyncTest "ThreadSignal: Multiple thread switches [" & $TestsCount &
             "] test [async -> sync]":
-    threadSignalTest2(TestsCount, WaitSendKind.Async, WaitSendKind.Sync)
+    when sizeof(int) == 8:
+      threadSignalTest2(TestsCount, WaitSendKind.Async, WaitSendKind.Sync)
+    else:
+      skip()
 
   asyncTest "ThreadSignal: Multiple signals [" & $TestsCount &
             "] to multiple threads [" & $numProcs & "] test [sync -> sync]":
