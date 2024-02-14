@@ -9,12 +9,12 @@
 
 {.push raises: [].}
 
-import ../asyncloop, ../asyncsync
-import ../transports/common, ../transports/stream
+import ../[config, asyncloop, asyncsync]
+import ../transports/[common, stream]
 export asyncloop, asyncsync, stream, common
 
 const
-  AsyncStreamDefaultBufferSize* = 4096
+  AsyncStreamDefaultBufferSize* = chronosStreamDefaultBufferSize
     ## Default reading stream internal buffer size.
   AsyncStreamDefaultQueueSize* = 0
     ## Default writing stream internal queue size.

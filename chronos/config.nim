@@ -91,6 +91,12 @@ const
   chronosHasRaises* = 0
     ## raises effect support via `async: (raises: [])`
 
+  chronosTransportDefaultBufferSize* {.intdefine.} = 16384
+    ## Default size of chronos transport internal buffer.
+
+  chronosStreamDefaultBufferSize* {.intdefine.} = 16384
+    ## Default size of chronos async stream internal buffer.
+
 when defined(chronosStrictException):
   {.warning: "-d:chronosStrictException has been deprecated in favor of handleException".}
   # In chronos v3, this setting was used as the opposite of
@@ -113,7 +119,10 @@ when defined(debug) or defined(chronosConfig):
     printOption("chronosEventEngine", chronosEventEngine)
     printOption("chronosEventsCount", chronosEventsCount)
     printOption("chronosInitialSize", chronosInitialSize)
-
+    printOption("chronosTransportDefaultBufferSize",
+      chronosTransportDefaultBufferSize)
+    printOption("chronosStreamDefaultBufferSize",
+      chronosStreamDefaultBufferSize)
 
 # In nim 1.6, `sink` + local variable + `move` generates the best code for
 # moving a proc parameter into a closure - this only works for closure

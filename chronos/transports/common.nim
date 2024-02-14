@@ -11,7 +11,7 @@
 
 import std/[strutils]
 import stew/[base10, byteutils]
-import ".."/[asyncloop, osdefs, oserrno, handles]
+import ".."/[config, asyncloop, osdefs, oserrno, handles]
 
 from std/net import Domain, `==`, IpAddress, IpAddressFamily, parseIpAddress,
                     SockType, Protocol, Port, `$`
@@ -21,10 +21,10 @@ export Domain, `==`, IpAddress, IpAddressFamily, parseIpAddress, SockType,
        Protocol, Port, toInt, `$`
 
 const
-  DefaultStreamBufferSize* = 4096    ## Default buffer size for stream
-                                     ## transports
-  DefaultDatagramBufferSize* = 65536 ## Default buffer size for datagram
-                                     ## transports
+  DefaultStreamBufferSize* = chronosTransportDefaultBufferSize
+    ## Default buffer size for stream transports
+  DefaultDatagramBufferSize* = 65536
+    ## Default buffer size for datagram transports
 type
   ServerFlags* = enum
     ## Server's flags
