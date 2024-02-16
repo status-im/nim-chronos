@@ -2372,7 +2372,7 @@ template readLoop(name, body: untyped): untyped =
           # resumeRead() could not return any error.
           raiseOsDefect(errorCode, "readLoop(): Unable to resume reading")
         else:
-          transp.reader.complete()
+          transp.completeReader()
           if errorCode == oserrno.ESRCH:
             # ESRCH 3 "No such process"
             # This error could be happened on pipes only, when process which
