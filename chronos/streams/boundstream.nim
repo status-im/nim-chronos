@@ -193,7 +193,7 @@ proc boundedReadLoop(stream: AsyncStreamReader) {.async: (raises: []).} =
       try:
         await rstream.buffer.transfer()
       except CancelledError:
-        if rstream.state == AsyncStreamState.Running:
+        if rstream.state == AsyncStreamState.Finished:
           rstream.state = AsyncStreamState.Error
           rstream.error = newBoundedStreamIncompleteError()
       break
