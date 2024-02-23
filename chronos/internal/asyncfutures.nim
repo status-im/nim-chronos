@@ -1338,13 +1338,15 @@ proc sleepAsync*(duration: Duration): Future[void] {.
   proc completion(data: pointer) {.gcsafe.} =
     if not(retFuture.finished()):
       retFuture.complete()
+    timer = nil # Release circular reference (for gc:arc)
 
   proc cancellation(udata: pointer) {.gcsafe.} =
-    if not(retFuture.finished()):
+    if not isNil(timer):
       clearTimer(timer)
+    timer = nil # Release circular reference (for gc:arc)
 
   retFuture.cancelCallback = cancellation
-  timer = setTimer(moment, completion, cast[pointer](retFuture))
+  timer = setTimer(moment, completion)
   return retFuture
 
 proc sleepAsync*(ms: int): Future[void] {.
@@ -1437,6 +1439,7 @@ proc withTimeout*[T](fut: Future[T], timeout: Duration): Future[bool] {.
         if not(isNil(timer)):
           clearTimer(timer)
         fut.completeFuture()
+    timer = nil
 
   # TODO: raises annotation shouldn't be needed, but likely similar issue as
   # https://github.com/nim-lang/Nim/issues/17369
@@ -1447,6 +1450,7 @@ proc withTimeout*[T](fut: Future[T], timeout: Duration): Future[bool] {.
       fut.cancelSoon()
     else:
       fut.completeFuture()
+    timer = nil
 
   if fut.finished():
     retFuture.complete(true)
@@ -1499,6 +1503,7 @@ proc waitImpl[F: SomeFuture](fut: F, retFuture: auto, timeout: Duration): auto =
         if not(isNil(timer)):
           clearTimer(timer)
         fut.completeFuture()
+    timer = nil
 
   var cancellation: proc(udata: pointer) {.gcsafe, raises: [].}
   cancellation = proc(udata: pointer) {.gcsafe, raises: [].} =
@@ -1508,6 +1513,8 @@ proc waitImpl[F: SomeFuture](fut: F, retFuture: auto, timeout: Duration): auto =
       fut.cancelSoon()
     else:
       fut.completeFuture()
+
+    timer = nil
 
   if fut.finished():
     fut.completeFuture()

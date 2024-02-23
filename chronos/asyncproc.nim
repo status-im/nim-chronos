@@ -1010,12 +1010,14 @@ else:
             retFuture.fail(newException(AsyncProcessError,
                                         osErrorMsg(res.error())))
 
+      timer = nil
+
     proc cancellation(udata: pointer) {.gcsafe.} =
-      if not(retFuture.finished()):
-        if not(isNil(timer)):
-          clearTimer(timer)
-        # Ignore any errors because of cancellation.
-        discard removeProcess2(processHandle)
+      if not(isNil(timer)):
+        clearTimer(timer)
+        timer = nil
+      # Ignore any errors because of cancellation.
+      discard removeProcess2(processHandle)
 
     if timeout != InfiniteDuration:
       timer = setTimer(Moment.fromNow(timeout), continuation, cast[pointer](2))
