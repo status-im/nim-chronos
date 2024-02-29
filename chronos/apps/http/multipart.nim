@@ -20,6 +20,7 @@ export asyncloop, httptable, httpcommon, httpbodyrw, asyncstream, httputils
 const
   UnableToReadMultipartBody = "Unable to read multipart message body, reason: "
   UnableToSendMultipartMessage = "Unable to send multipart message, reason: "
+  MaxMultipartHeaderSize = 4096
 
 type
   MultiPartSource* {.pure.} = enum
@@ -142,10 +143,11 @@ proc init*[A: BChar, B: BChar](mpt: typedesc[MultiPartReader],
   MultiPartReader(kind: MultiPartSource.Buffer,
                   buffer: buf, offset: 0, boundary: fboundary)
 
-proc new*[B: BChar](mpt: typedesc[MultiPartReaderRef],
-                    stream: HttpBodyReader,
-                    boundary: openArray[B],
-                    partHeadersMaxSize = 4096): MultiPartReaderRef =
+proc new*[B: BChar](
+    mpt: typedesc[MultiPartReaderRef],
+    stream: HttpBodyReader,
+    boundary: openArray[B],
+    partHeadersMaxSize = MaxMultipartHeaderSize): MultiPartReaderRef =
   ## Create new MultiPartReader instance with `stream` interface.
   ##
   ## ``stream`` is stream used to read data.

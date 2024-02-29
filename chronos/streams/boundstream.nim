@@ -18,8 +18,8 @@
 {.push raises: [].}
 
 import results
-import ../asyncloop, ../timer
-import asyncstream, ../transports/stream, ../transports/common
+import ../[asyncloop, timer, config]
+import asyncstream, ../transports/[stream, common]
 export asyncloop, asyncstream, stream, timer, common
 
 type
@@ -44,7 +44,7 @@ type
   BoundedStreamRW* = BoundedStreamReader | BoundedStreamWriter
 
 const
-  BoundedBufferSize* = 4096
+  BoundedBufferSize* = chronosStreamDefaultBufferSize
   BoundarySizeDefectMessage = "Boundary must not be empty array"
 
 template newBoundedStreamIncompleteError(): ref BoundedStreamError =

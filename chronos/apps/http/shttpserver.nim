@@ -10,7 +10,7 @@
 {.push raises: [].}
 
 import httpserver
-import ../../asyncloop, ../../asyncsync
+import ../../[asyncloop, asyncsync, config]
 import ../../streams/[asyncstream, tlsstream]
 export asyncloop, asyncsync, httpserver, asyncstream, tlsstream
 
@@ -91,7 +91,7 @@ proc new*(htype: typedesc[SecureHttpServerRef],
           serverIdent = "",
           secureFlags: set[TLSFlags] = {},
           maxConnections: int = -1,
-          bufferSize: int = 4096,
+          bufferSize: int = chronosTransportDefaultBufferSize,
           backlogSize: int = DefaultBacklogSize,
           httpHeadersTimeout = 10.seconds,
           maxHeadersSize: int = 8192,
@@ -157,7 +157,7 @@ proc new*(htype: typedesc[SecureHttpServerRef],
           serverIdent = "",
           secureFlags: set[TLSFlags] = {},
           maxConnections: int = -1,
-          bufferSize: int = 4096,
+          bufferSize: int = chronosTransportDefaultBufferSize,
           backlogSize: int = DefaultBacklogSize,
           httpHeadersTimeout = 10.seconds,
           maxHeadersSize: int = 8192,

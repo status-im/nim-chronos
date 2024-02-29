@@ -11,13 +11,13 @@
 
 {.push raises: [].}
 
-import ../asyncloop, ../timer
-import asyncstream, ../transports/stream, ../transports/common
+import ../[asyncloop, timer, config]
+import asyncstream, ../transports/[stream, common]
 import results
 export asyncloop, asyncstream, stream, timer, common, results
 
 const
-  ChunkBufferSize = 4096
+  ChunkBufferSize = chronosStreamDefaultBufferSize
   MaxChunkHeaderSize = 1024
   ChunkHeaderValueSize = 8
     # This is limit for chunk size to 8 hexadecimal digits, so maximum
