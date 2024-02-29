@@ -824,6 +824,37 @@ proc newDatagramTransport6*[T](cbproc: UnsafeDatagramCallback,
                              cast[pointer](udata), child, bufSize, ttl,
                              dualstack)
 
+proc newAutoDatagramTransport*(cbproc: DatagramCallback,
+                               flags: set[ServerFlags] = {},
+                               udata: pointer = nil,
+                               child: DatagramTransport = nil,
+                               bufSize: int = DefaultDatagramBufferSize,
+                               ttl: int = 0,
+                               dualstack = DualStackType.Auto
+                              ): DatagramTransport {.
+     raises: [TransportOsError].} =
+  let host = getAutoAddress()
+  newDatagramTransportCommon(cbproc, host, host, asyncInvalidSocket, flags,
+                             cast[pointer](udata), child, bufSize, ttl,
+                             dualstack)
+
+proc newAutoDatagramTransport*[T](cbproc: DatagramCallback,
+                                  flags: set[ServerFlags] = {},
+                                  udata: ref T,
+                                  child: DatagramTransport = nil,
+                                  bufSize: int = DefaultDatagramBufferSize,
+                                  ttl: int = 0,
+                                  dualstack = DualStackType.Auto
+                                 ): DatagramTransport {.
+     raises: [TransportOsError].} =
+  let
+    host = getAutoAddress()
+    fflags = flags + {GCUserData}
+  GC_ref(udata)
+  newDatagramTransportCommon(cbproc, host, host, asyncInvalidSocket, fflags,
+                             cast[pointer](udata), child, bufSize, ttl,
+                             dualstack)
+
 proc join*(transp: DatagramTransport): Future[void] {.
     async: (raw: true, raises: [CancelledError]).} =
   ## Wait until the transport ``transp`` will be closed.

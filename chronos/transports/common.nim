@@ -783,3 +783,9 @@ proc setDualstack*(socket: AsyncFD,
     else:
       ? getDomain(socket)
   setDualstack(socket, family, flag)
+
+proc getAutoAddress*(): TransportAddress =
+  if isAvailable(AddressFamily.IPv6):
+    AnyAddress6
+  else:
+    AnyAddress
