@@ -43,7 +43,7 @@ proc init*(t: typedesc[BipBuffer], size: int): BipBuffer =
 template len(pos: BipPos): Natural =
   pos.finish - pos.start
 
-template zero(pos: var BipPos) =
+template reset(pos: var BipPos) =
   pos = BipPos()
 
 func init(t: typedesc[BipPos], start, finish: Natural): BipPos =
@@ -59,22 +59,12 @@ func calcReserve(bp: BipBuffer): tuple[space: Natural, start: Natural] =
     else:
       (bp.a.start, Natural(0))
 
-func freeSpace*(bp: BipBuffer): Natural =
-  ## Returns amount of free space in buffer `bp`.
-  var sum: Natural
-  if len(bp.b) > 0:
-    sum += (bp.a.start - bp.b.finish)
-  else:
-    sum += bp.a.start
-  sum += Natural(len(bp.data)) - bp.a.finish
-  sum
-
 func availSpace*(bp: BipBuffer): Natural =
   ## Returns amount of space available for reserve in buffer `bp`.
   let (res, _) = bp.calcReserve()
   res
 
-func usedSpace*(bp: BipBuffer): Natural =
+func len*(bp: BipBuffer): Natural =
   ## Returns amount of used space in buffer `bp`.
   len(bp.b) + len(bp.a)
 
@@ -109,17 +99,12 @@ proc reserve*(bp: var BipBuffer,
   bp.r = BipPos.init(reserveStart, Natural(reserveStart + availableSpace))
   (cast[pt](addr bp.data[bp.r.start]), cast[st](len(bp.r)))
 
-func getReserve*(bp: var BipBuffer,
-                 pt: typedesc, st: typedesc): tuple[data: pointer, size: cint] =
-  ## Returns current reserved range as pointer + size tuple.
-  (cast[pt](addr bp.data[bp.r.start]), st(len(bp.r)))
-
 proc commit*(bp: var BipBuffer, size: Natural) =
   ## Updates structure's pointers when new data inserted into buffer.
   doAssert(len(bp.r) >= size,
     "Committed size could not be larger than the previously reserved one")
   if size == 0:
-    bp.r.zero()
+    bp.r.reset()
     return
 
   let toCommit = min(size, len(bp.r))
@@ -130,7 +115,7 @@ proc commit*(bp: var BipBuffer, size: Natural) =
     bp.a.finish += toCommit
   else:
     bp.b.finish += toCommit
-  bp.r.zero()
+  bp.r.reset()
 
 proc consume*(bp: var BipBuffer, size: Natural): Natural =
   ## The procedure removes/frees `size` bytes from the buffer.
@@ -139,10 +124,10 @@ proc consume*(bp: var BipBuffer, size: Natural): Natural =
   if currentSize >= len(bp.a):
     currentSize -= len(bp.a)
     bp.a = bp.b
-    bp.b.zero()
+    bp.b.reset()
     if currentSize >= len(bp.a):
       currentSize -= len(bp.a)
-      bp.a.zero()
+      bp.a.reset()
       size - currentSize
     else:
       bp.a.start += currentSize
@@ -151,7 +136,7 @@ proc consume*(bp: var BipBuffer, size: Natural): Natural =
     bp.a.start += currentSize
     size
 
-iterator bytes*(bp: BipBuffer): byte =
+iterator items*(bp: BipBuffer): byte =
   ## Iterates over all the bytes in the buffer.
   for index in bp.a.start ..< bp.a.finish:
     yield bp.data[index]

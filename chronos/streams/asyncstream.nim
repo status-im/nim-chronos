@@ -210,7 +210,7 @@ proc atEof*(rstream: AsyncStreamReader): bool =
       rstream.rsource.atEof()
   else:
     (rstream.state != AsyncStreamState.Running) and
-      (rstream.buffer.backend.usedSpace() == 0)
+      (len(rstream.buffer.backend) == 0)
 
 proc atEof*(wstream: AsyncStreamWriter): bool =
   ## Returns ``true`` is writing stream ``wstream`` closed or finished.
@@ -298,7 +298,7 @@ template checkStreamFinished*(t: untyped) =
 
 template readLoop(body: untyped): untyped =
   while true:
-    if rstream.buffer.backend.usedSpace() == 0:
+    if len(rstream.buffer.backend) == 0:
       if rstream.state == AsyncStreamState.Error:
         raise rstream.error
 
@@ -344,7 +344,7 @@ proc readExactly*(rstream: AsyncStreamReader, pbytes: pointer,
         index = 0
         pbuffer = cast[ptr UncheckedArray[byte]](pbytes)
       readLoop():
-        if rstream.buffer.backend.usedSpace() == 0:
+        if len(rstream.buffer.backend) == 0:
           if rstream.atEof():
             raise newAsyncStreamIncompleteError()
         var readed = 0
@@ -384,7 +384,7 @@ proc readOnce*(rstream: AsyncStreamReader, pbytes: pointer,
         pbuffer = cast[ptr UncheckedArray[byte]](pbytes)
         index = 0
       readLoop():
-        if rstream.buffer.backend.usedSpace() == 0:
+        if len(rstream.buffer.backend) == 0:
           (0, rstream.atEof())
         else:
           for (region, rsize) in rstream.buffer.backend.regions(pointer, int):
@@ -444,7 +444,7 @@ proc readUntil*(rstream: AsyncStreamReader, pbytes: pointer, nbytes: int,
           raise newAsyncStreamIncompleteError()
 
         var index = 0
-        for ch in rstream.buffer.backend.bytes():
+        for ch in rstream.buffer.backend:
           if k >= nbytes:
             raise newAsyncStreamLimitError()
 
@@ -499,7 +499,7 @@ proc readLine*(rstream: AsyncStreamReader, limit = 0,
           (0, true)
         else:
           var index = 0
-          for ch in rstream.buffer.backend.bytes():
+          for ch in rstream.buffer.backend:
             inc(index)
 
             if sep[state] == char(ch):
@@ -616,7 +616,7 @@ proc consume*(rstream: AsyncStreamReader): Future[int] {.
         if rstream.atEof():
           (0, true)
         else:
-          let used = rstream.buffer.backend.usedSpace()
+          let used = len(rstream.buffer.backend)
           res += used
           (used, false)
       res
@@ -648,7 +648,7 @@ proc consume*(rstream: AsyncStreamReader, n: int): Future[int] {.
         var res = 0
         readLoop():
           let
-            used = rstream.buffer.backend.usedSpace()
+            used = len(rstream.buffer.backend)
             count = min(used, n - res)
           res += count
           (count, res == n)
@@ -683,7 +683,7 @@ proc readMessage*(rstream: AsyncStreamReader, pred: ReadMessagePredicate) {.
       await readMessage(rstream.rsource, pred)
     else:
       readLoop():
-        if rstream.buffer.backend.usedSpace() == 0:
+        if len(rstream.buffer.backend) == 0:
           if rstream.atEof():
             pred([])
           else:

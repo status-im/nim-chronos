@@ -2330,7 +2330,7 @@ proc writeFile*(transp: StreamTransport, handle: int,
 
 proc atEof*(transp: StreamTransport): bool {.inline.} =
   ## Returns ``true`` if ``transp`` is at EOF.
-  (transp.buffer.usedSpace() == 0) and (ReadEof in transp.state) and
+  (len(transp.buffer) == 0) and (ReadEof in transp.state) and
   (ReadPaused in transp.state)
 
 template readLoop(name, body: untyped): untyped =
@@ -2342,7 +2342,7 @@ template readLoop(name, body: untyped): untyped =
     if ReadClosed in transp.state:
       raise newException(TransportUseClosedError,
                          "Attempt to read data from closed stream")
-    if transp.buffer.usedSpace() == 0:
+    if len(transp.buffer) == 0:
       # We going to raise an error, only if transport buffer is empty.
       if ReadError in transp.state:
         raise transp.getError()
@@ -2352,7 +2352,7 @@ template readLoop(name, body: untyped): untyped =
     if done:
       break
 
-    if transp.buffer.usedSpace() == 0:
+    if len(transp.buffer) == 0:
       checkPending(transp)
       let fut = ReaderFuture.init(name)
       transp.reader = fut
@@ -2399,7 +2399,7 @@ proc readExactly*(transp: StreamTransport, pbytes: pointer,
     index = 0
     pbuffer = cast[ptr UncheckedArray[byte]](pbytes)
   readLoop("stream.transport.readExactly"):
-    if transp.buffer.usedSpace() == 0:
+    if len(transp.buffer) == 0:
       if transp.atEof():
         raise newException(TransportIncompleteError, "Data incomplete!")
     var readed = 0
@@ -2427,7 +2427,7 @@ proc readOnce*(transp: StreamTransport, pbytes: pointer,
     pbuffer = cast[ptr UncheckedArray[byte]](pbytes)
     index = 0
   readLoop("stream.transport.readOnce"):
-    if transp.buffer.usedSpace() == 0:
+    if len(transp.buffer) == 0:
       (0, transp.atEof())
     else:
       for (region, rsize) in transp.buffer.regions(pointer, int):
@@ -2470,7 +2470,7 @@ proc readUntil*(transp: StreamTransport, pbytes: pointer, nbytes: int,
       raise newException(TransportIncompleteError, "Data incomplete!")
 
     var index = 0
-    for ch in transp.buffer.bytes():
+    for ch in transp.buffer:
       if k >= nbytes:
         raise newException(TransportLimitError, "Limit reached!")
 
@@ -2510,7 +2510,7 @@ proc readLine*(transp: StreamTransport, limit = 0,
       (0, true)
     else:
       var index = 0
-      for ch in transp.buffer.bytes():
+      for ch in transp.buffer:
         inc(index)
 
         if sep[state] == char(ch):
@@ -2581,7 +2581,7 @@ proc consume*(transp: StreamTransport): Future[int] {.
     if transp.atEof():
       (0, true)
     else:
-      let used = transp.buffer.usedSpace()
+      let used = len(transp.buffer)
       res += used
       (used, false)
   res
@@ -2601,7 +2601,7 @@ proc consume*(transp: StreamTransport, n: int): Future[int] {.
         (0, true)
       else:
         let
-          used = transp.buffer.usedSpace()
+          used = len(transp.buffer)
           count = min(used, n - res)
         res += count
         (count, res == n)
@@ -2623,7 +2623,7 @@ proc readMessage*(transp: StreamTransport,
   ## ``predicate`` callback will receive (zero-length) openArray, if transport
   ## is at EOF.
   readLoop("stream.transport.readMessage"):
-    if transp.buffer.usedSpace() == 0:
+    if len(transp.buffer) == 0:
       if transp.atEof():
         predicate([])
       else:
