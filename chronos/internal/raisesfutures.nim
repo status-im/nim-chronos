@@ -139,10 +139,11 @@ macro union*(tup0: typedesc, tup1: typedesc): typedesc =
     for err2 in tup1.members():
       if signatureHash(err) == signatureHash(err2):
         found = true
+        break
     if not found:
       result.add err
 
-  for err2 in getType(getTypeInst(tup1)[1])[1..^1]:
+  for err2 in tup1.members():
     result.add err2
   if result.len == 0:
     result = makeNoRaises()
