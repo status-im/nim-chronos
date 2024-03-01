@@ -68,36 +68,31 @@ func len*(bp: BipBuffer): Natural =
   ## Returns amount of used space in buffer `bp`.
   len(bp.b) + len(bp.a)
 
-proc reserve*(bp: var BipBuffer, size: Natural): Result[Natural, cstring] =
-  ## Reserve `size` bytes in buffer. Returns number of bytes reserved.
+proc reserve*(bp: var BipBuffer, pt, st: typedesc,
+              size: Natural = 0): Result[tuple[data: pt, size: st], cstring] =
+  ## Reserve `size` bytes in buffer.
+  ##
+  ## If `size == 0` (default) reserve all available space from buffer.
+  ##
+  ## If there is not enough space in buffer for resevation - error will be
+  ## returned.
+  ##
+  ## Returns current reserved range as pointer of type `pt` and size of
+  ## type `st`.
+  const ErrorMessage = "Not enough space available"
   doAssert(size <= len(bp.data))
   let (availableSpace, reserveStart) = bp.calcReserve()
   if availableSpace == 0:
-    return err("Not enough space available")
-  let reserveLength = min(availableSpace, size)
+    return err(ErrorMessage)
+  let reserveLength =
+    if size == 0:
+      availableSpace
+    else:
+      if size < availableSpace:
+        return err(ErrorMessage)
+      size
   bp.r = BipPos.init(reserveStart, Natural(reserveStart + reserveLength))
-  ok(availableSpace)
-
-proc reserve*(bp: var BipBuffer): Natural =
-  ## Reserve all available free space in buffer. Returns number of bytes
-  ## reserved.
-  ##
-  ## Note, this procedure will raise Defect if there is no free space available.
-  let (availableSpace, reserveStart) = bp.calcReserve()
-  doAssert(availableSpace > 0, "Not enough space available")
-  bp.r = BipPos.init(reserveStart, Natural(reserveStart + availableSpace))
-  availableSpace
-
-proc reserve*(bp: var BipBuffer,
-              pt, st: typedesc): tuple[data: pt, size: st] =
-  ## Reserve all available free space in buffer. Returns current reserved range
-  ## as pointer of type `pt` and size of type `st`.
-  ##
-  ## Note, this procedure will raise Defect if there is no free space available.
-  let (availableSpace, reserveStart) = bp.calcReserve()
-  doAssert(availableSpace > 0, "Not enough space available")
-  bp.r = BipPos.init(reserveStart, Natural(reserveStart + availableSpace))
-  (cast[pt](addr bp.data[bp.r.start]), cast[st](len(bp.r)))
+  ok((cast[pt](addr bp.data[bp.r.start]), cast[st](len(bp.r))))
 
 proc commit*(bp: var BipBuffer, size: Natural) =
   ## Updates structure's pointers when new data inserted into buffer.

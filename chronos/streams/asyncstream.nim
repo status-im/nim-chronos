@@ -134,7 +134,9 @@ proc upload*(sb: AsyncBufferRef, pbytes: ptr byte,
       # Internal buffer is full, we need to notify consumer.
       await sb.transfer()
     else:
-      let (data, _) = sb.backend.reserve(pointer, int)
+      let (data, _) =
+        sb.backend.reserve(pointer, int)
+          .expect("AsyncStream: free bytes expected")
       # Copy data from `pbytes` to internal buffer.
       copyMem(data, addr srcBuffer[offset], size)
       sb.backend.commit(size)

@@ -236,7 +236,9 @@ when defined(windows):
     cast[HANDLE]((v).buflen)
 
   template setReaderWSABuffer(t: untyped) =
-    ((t).rwsabuf.buf, (t).rwsabuf.len) = (t).buffer.reserve(cstring, ULONG)
+    ((t).rwsabuf.buf, (t).rwsabuf.len) =
+      (t).buffer.reserve(cstring, ULONG)
+        .expect("StreamTransport: free bytes expected")
 
   template setWriterWSABuffer(t, v: untyped) =
     (t).wwsabuf.buf = cast[cstring](v.buf)
@@ -1378,7 +1380,9 @@ else:
       if transp.kind == TransportKind.Socket:
         while true:
           let
-            (data, size) = transp.buffer.reserve(pointer, cint)
+            (data, size) =
+              transp.buffer.reserve(pointer, cint)
+                .expect("StreamTransport: free bytes expected")
             res = handleEintr(osdefs.recv(fd, data, size, cint(0)))
           if res < 0:
             let err = osLastError()
@@ -1414,7 +1418,9 @@ else:
       elif transp.kind == TransportKind.Pipe:
         while true:
           let
-            (data, size) = transp.buffer.reserve(pointer, cint)
+            (data, size) =
+              transp.buffer.reserve(pointer, cint)
+                .expect("StreamTransport: free bytes expected")
             res = handleEintr(osdefs.read(cint(fd), data, size))
           if res < 0:
             let err = osLastError()
