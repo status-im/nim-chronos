@@ -786,7 +786,7 @@ template orImpl*[T, Y](fut1: Future[T], fut2: Future[Y]): untyped =
   fut2.addCallback(cb)
 
   retFuture.cancelCallback = cancellation
-  return retFuture
+  retFuture
 
 proc `or`*[T, Y](fut1: Future[T], fut2: Future[Y]): Future[void] =
   ## Returns a future which will complete once either ``fut1`` or ``fut2``
@@ -801,7 +801,7 @@ proc `or`*[T, Y](fut1: Future[T], fut2: Future[Y]): Future[void] =
   ## completed, the result future will also be completed.
   ##
   ## If cancelled, ``fut1`` and ``fut2`` futures WILL NOT BE cancelled.
-  var retFuture = newFuture[void]("chronos.or")
+  var retFuture = newFuture[void]("chronos.or()")
   orImpl(fut1, fut2)
 
 
@@ -1667,8 +1667,7 @@ proc `or`*[T, Y, E1, E2](
   type
     InternalRaisesFutureRaises = union(E1, E2)
 
-  let
-    retFuture = newFuture[void]("chronos.wait()", {FutureFlag.OwnCancelSchedule})
+  let retFuture = newFuture[void]("chronos.or()", {})
   orImpl(fut1, fut2)
 
 proc wait*(fut: InternalRaisesFuture, timeout = InfiniteDuration): auto =
