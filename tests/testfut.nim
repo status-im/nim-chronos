@@ -1594,6 +1594,19 @@ suite "Future[T] behavior test suite":
     discard someFut.tryCancel()
     await someFut
 
+  asyncTest "wait() should allow cancellation test (depends on race())":
+    proc testFoo(): Future[bool] {.async.} =
+      let
+        resFut = sleepAsync(2.seconds).wait(3.seconds)
+        timeFut = sleepAsync(1.seconds)
+        cancelFut = cancelAndWait(resFut)
+      discard await race(cancelFut, timeFut)
+      if cancelFut.finished():
+        return (resFut.cancelled() and cancelFut.completed())
+      false
+
+    check (await testFoo()) == true
+
   asyncTest "withTimeout() cancellation undefined behavior test #1":
     proc testInnerFoo(fooFut: Future[void]): Future[TestFooConnection] {.
          async.} =
@@ -1653,6 +1666,19 @@ suite "Future[T] behavior test suite":
     future.complete()
     discard someFut.tryCancel()
     await someFut
+
+  asyncTest "withTimeout() should allow cancellation test (depends on race())":
+    proc testFoo(): Future[bool] {.async.} =
+      let
+        resFut = sleepAsync(2.seconds).withTimeout(3.seconds)
+        timeFut = sleepAsync(1.seconds)
+        cancelFut = cancelAndWait(resFut)
+      discard await race(cancelFut, timeFut)
+      if cancelFut.finished():
+        return (resFut.cancelled() and cancelFut.completed())
+      false
+
+    check (await testFoo()) == true
 
   asyncTest "Cancellation behavior test":
     proc testInnerFoo(fooFut: Future[void]) {.async.} =

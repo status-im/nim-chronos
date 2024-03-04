@@ -1410,6 +1410,8 @@ proc withTimeout*[T](fut: Future[T], timeout: Duration): Future[bool] {.
   var
     retFuture = newFuture[bool]("chronos.withTimeout",
                                 {FutureFlag.OwnCancelSchedule})
+      # We set `OwnCancelSchedule` flag, because we going to cancel `retFuture`
+      # manually at proper time.
     moment: Moment
     timer: TimerCallback
     timeouted = false
@@ -1536,6 +1538,8 @@ proc wait*[T](fut: Future[T], timeout = InfiniteDuration): Future[T] =
   ## should return, because it can't be cancelled too.
   var
     retFuture = newFuture[T]("chronos.wait()", {FutureFlag.OwnCancelSchedule})
+      # We set `OwnCancelSchedule` flag, because we going to cancel `retFuture`
+      # manually at proper time.
 
   waitImpl(fut, retFuture, timeout)
 
@@ -1678,6 +1682,8 @@ proc wait*(fut: InternalRaisesFuture, timeout = InfiniteDuration): auto =
     InternalRaisesFutureRaises = E.prepend(CancelledError, AsyncTimeoutError)
 
   let
-    retFuture = newFuture[T]("chronos.wait()", {FutureFlag.OwnCancelSchedule})
+    retFuture = newFuture[T]("chronos.wait()", {OwnCancelSchedule})
+      # We set `OwnCancelSchedule` flag, because we going to cancel `retFuture`
+      # manually at proper time.
 
   waitImpl(fut, retFuture, timeout)
