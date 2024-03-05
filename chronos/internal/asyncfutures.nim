@@ -1665,7 +1665,7 @@ proc `or`*[T, Y, E1, E2](
     fut1: InternalRaisesFuture[T, E1],
     fut2: InternalRaisesFuture[Y, E2]): auto =
   type
-    InternalRaisesFutureRaises = union(E1, E2)
+    InternalRaisesFutureRaises = union(E1, E2).union((CancelledError,))
 
   let retFuture = newFuture[void]("chronos.or()", {})
   orImpl(fut1, fut2)
