@@ -786,7 +786,7 @@ template orImpl*[T, Y](fut1: Future[T], fut2: Future[Y]): untyped =
   fut2.addCallback(cb)
 
   retFuture.cancelCallback = cancellation
-  return retFuture
+  retFuture
 
 proc `or`*[T, Y](fut1: Future[T], fut2: Future[Y]): Future[void] =
   ## Returns a future which will complete once either ``fut1`` or ``fut2``
@@ -801,7 +801,7 @@ proc `or`*[T, Y](fut1: Future[T], fut2: Future[Y]): Future[void] =
   ## completed, the result future will also be completed.
   ##
   ## If cancelled, ``fut1`` and ``fut2`` futures WILL NOT BE cancelled.
-  var retFuture = newFuture[void]("chronos.or")
+  var retFuture = newFuture[void]("chronos.or()")
   orImpl(fut1, fut2)
 
 
@@ -1410,6 +1410,8 @@ proc withTimeout*[T](fut: Future[T], timeout: Duration): Future[bool] {.
   var
     retFuture = newFuture[bool]("chronos.withTimeout",
                                 {FutureFlag.OwnCancelSchedule})
+      # We set `OwnCancelSchedule` flag, because we going to cancel `retFuture`
+      # manually at proper time.
     moment: Moment
     timer: TimerCallback
     timeouted = false
@@ -1536,6 +1538,8 @@ proc wait*[T](fut: Future[T], timeout = InfiniteDuration): Future[T] =
   ## should return, because it can't be cancelled too.
   var
     retFuture = newFuture[T]("chronos.wait()", {FutureFlag.OwnCancelSchedule})
+      # We set `OwnCancelSchedule` flag, because we going to cancel `retFuture`
+      # manually at proper time.
 
   waitImpl(fut, retFuture, timeout)
 
@@ -1665,10 +1669,9 @@ proc `or`*[T, Y, E1, E2](
     fut1: InternalRaisesFuture[T, E1],
     fut2: InternalRaisesFuture[Y, E2]): auto =
   type
-    InternalRaisesFutureRaises = union(E1, E2)
+    InternalRaisesFutureRaises = union(E1, E2).union((CancelledError,))
 
-  let
-    retFuture = newFuture[void]("chronos.wait()", {FutureFlag.OwnCancelSchedule})
+  let retFuture = newFuture[void]("chronos.or()", {})
   orImpl(fut1, fut2)
 
 proc wait*(fut: InternalRaisesFuture, timeout = InfiniteDuration): auto =
@@ -1678,6 +1681,8 @@ proc wait*(fut: InternalRaisesFuture, timeout = InfiniteDuration): auto =
     InternalRaisesFutureRaises = E.prepend(CancelledError, AsyncTimeoutError)
 
   let
-    retFuture = newFuture[T]("chronos.wait()", {FutureFlag.OwnCancelSchedule})
+    retFuture = newFuture[T]("chronos.wait()", {OwnCancelSchedule})
+      # We set `OwnCancelSchedule` flag, because we going to cancel `retFuture`
+      # manually at proper time.
 
   waitImpl(fut, retFuture, timeout)
