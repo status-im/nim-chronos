@@ -135,6 +135,16 @@ suite "Asynchronous issues test suite":
     await server.closeWait()
     return true
 
+  proc testOrDeadlock(): Future[bool] {.async.} =
+    proc f(): Future[void] {.async.} =
+      await sleepAsync(2.seconds) or sleepAsync(1.seconds)
+    let fx = f()
+    try:
+      await fx.cancelAndWait().wait(2.seconds)
+    except AsyncTimeoutError:
+      return false
+    true
+
   test "Issue #6":
     check waitFor(issue6()) == true
 
@@ -152,3 +162,6 @@ suite "Asynchronous issues test suite":
 
   test "IndexError crash test":
     check waitFor(testIndexError()) == true
+
+  test "`or` deadlock [#516] test":
+    check waitFor(testOrDeadlock()) == true
