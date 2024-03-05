@@ -704,6 +704,14 @@ suite "Future[T] behavior test suite":
       not(fut2.failed())
       fut2.read() == f21
 
+  asyncTest "one() exception effect":
+    proc checkraises() {.async: (raises: [CancelledError]).} =
+      let f = Future[void].Raising([CancelledError]).init()
+      f.complete()
+      one(f).cancelSoon()
+
+    await checkraises()
+
   asyncTest "or() test":
     proc client1() {.async.} =
       await sleepAsync(200.milliseconds)
@@ -1220,7 +1228,10 @@ suite "Future[T] behavior test suite":
 
   test "location test":
     # WARNING: This test is very sensitive to line numbers and module name.
+    template start(): int =
+      instantiationInfo().line
 
+    const first = start()
     proc macroFuture() {.async.} =
       let someVar {.used.} = 5           # LINE POSITION 1
       let someOtherVar {.used.} = 4
@@ -1258,12 +1269,12 @@ suite "Future[T] behavior test suite":
         (loc.procedure == procedure)
 
     check:
-      chk(loc10, "testfut.nim", 1225, "macroFuture")
-      chk(loc11, "testfut.nim", 1228, "")
-      chk(loc20, "testfut.nim", 1237, "template")
-      chk(loc21, "testfut.nim", 1240, "")
-      chk(loc30, "testfut.nim", 1234, "procedure")
-      chk(loc31, "testfut.nim", 1241, "")
+      chk(loc10, "testfut.nim", first + 2, "macroFuture")
+      chk(loc11, "testfut.nim", first + 5, "")
+      chk(loc20, "testfut.nim", first + 14, "template")
+      chk(loc21, "testfut.nim", first + 17, "")
+      chk(loc30, "testfut.nim", first + 11, "procedure")
+      chk(loc31, "testfut.nim", first + 18, "")
 
   asyncTest "withTimeout(fut) should wait cancellation test":
     proc futureNeverEnds(): Future[void] =
@@ -1506,6 +1517,14 @@ suite "Future[T] behavior test suite":
       f1.finished()
       f2.finished()
       f3.finished()
+
+  asyncTest "race() exception effect":
+    proc checkraises() {.async: (raises: [CancelledError]).} =
+      let f = Future[void].Raising([CancelledError]).init()
+      f.complete()
+      race(f).cancelSoon()
+
+    await checkraises()
 
   test "Unsigned integer overflow test":
     check:
