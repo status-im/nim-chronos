@@ -16,8 +16,11 @@ import
   bearssl/[brssl, ec, errors, pem, rsa, ssl, x509],
   bearssl/certs/cacert
 import ".."/[asyncloop, asyncsync, config, timer]
-import asyncstream, ../transports/stream, ../transports/common
+import asyncstream, ../transports/[stream, common]
 export asyncloop, asyncsync, timer, asyncstream
+
+const
+  TLSSessionCacheBufferSize* = chronosTLSSessionCacheBufferSize
 
 type
   TLSStreamKind {.pure.} = enum
@@ -777,11 +780,12 @@ proc init*(tt: typedesc[TLSCertificate],
     raiseTLSStreamProtocolError("Could not find any certificates")
   res
 
-proc init*(tt: typedesc[TLSSessionCache], size: int = 4096): TLSSessionCache =
+proc init*(tt: typedesc[TLSSessionCache],
+           size: int = TLSSessionCacheBufferSize): TLSSessionCache =
   ## Create new TLS session cache with size ``size``.
   ##
   ## One cached item is near 100 bytes size.
-  var rsize = min(size, 4096)
+  let rsize = min(size, 4096)
   var res = TLSSessionCache(storage: newSeq[byte](rsize))
   sslSessionCacheLruInit(addr res.context, addr res.storage[0], rsize)
   res

@@ -11,7 +11,7 @@
 
 import std/[tables, uri, strutils]
 import stew/[base10], httputils, results
-import ../../[asyncloop, asyncsync]
+import ../../[asyncloop, asyncsync, config]
 import ../../streams/[asyncstream, boundstream, chunkstream]
 import "."/[httptable, httpcommon, multipart]
 from ../../transports/common import TransportAddress, ServerFlags, `$`, `==`
@@ -244,7 +244,7 @@ proc new*(
        serverUri = Uri(),
        serverIdent = "",
        maxConnections: int = -1,
-       bufferSize: int = 4096,
+       bufferSize: int = chronosTransportDefaultBufferSize,
        backlogSize: int = DefaultBacklogSize,
        httpHeadersTimeout = 10.seconds,
        maxHeadersSize: int = 8192,
@@ -304,7 +304,7 @@ proc new*(
        serverUri = Uri(),
        serverIdent = "",
        maxConnections: int = -1,
-       bufferSize: int = 4096,
+       bufferSize: int = chronosTransportDefaultBufferSize,
        backlogSize: int = DefaultBacklogSize,
        httpHeadersTimeout = 10.seconds,
        maxHeadersSize: int = 8192,
