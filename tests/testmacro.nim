@@ -491,7 +491,7 @@ suite "Exceptions tracking":
     proc testit2 {.async: (raises: [IOError]).} =
       raise (ref IOError)()
 
-    proc test {.async: (raises: [ValueError, IOError]).} =
+    proc test {.async: (raises: [CancelledError, ValueError, IOError]).} =
       await testit() or testit2()
 
     proc noraises() {.raises: [].} =
