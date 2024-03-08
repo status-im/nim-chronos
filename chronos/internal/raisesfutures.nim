@@ -2,6 +2,8 @@ import
   std/[macros, sequtils],
   ../futures
 
+{.push raises: [].}
+
 type
   InternalRaisesFuture*[T, E] = ref object of Future[T]
     ## Future with a tuple of possible exception types
@@ -205,13 +207,20 @@ macro checkRaises*[T: CatchableError](
         `warning`
         assert(`runtimeChecker`, `errorMsg`)
 
-proc error*[T](future: InternalRaisesFuture[T, void]): ref CatchableError {.
+func failed*[T](future: InternalRaisesFuture[T, void]): bool {.inline.} =
+  ## Determines whether ``future`` finished with an error.
+  static:
+    warning("No exceptions possible with this operation, `failed` always returns false")
+
+  false
+
+func error*[T](future: InternalRaisesFuture[T, void]): ref CatchableError {.
     raises: [].} =
   static:
     warning("No exceptions possible with this operation, `error` always returns nil")
   nil
 
-proc readError*[T](future: InternalRaisesFuture[T, void]): ref CatchableError {.
+func readError*[T](future: InternalRaisesFuture[T, void]): ref CatchableError {.
     raises: [ValueError].} =
   static:
     warning("No exceptions possible with this operation, `readError` always raises")
