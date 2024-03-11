@@ -2130,22 +2130,7 @@ proc createStreamServer*(host: TransportAddress,
   createStreamServer(host, StreamCallback2(nil), flags, sock, backlog, bufferSize,
                      child, init, cast[pointer](udata), dualstack)
 
-proc createStreamServer*(flags: set[ServerFlags] = {},
-                         sock: AsyncFD = asyncInvalidSocket,
-                         backlog: int = DefaultBacklogSize,
-                         bufferSize: int = DefaultStreamBufferSize,
-                         child: StreamServer = nil,
-                         init: TransportInitCallback = nil,
-                         udata: pointer = nil,
-                         dualstack = DualStackType.Auto): StreamServer {.
-    raises: [TransportOsError].} =
-  ## Create stream server which will be bound to IPv6 address `::`, if IPv6
-  ## available, and bound to IPv4 address `0.0.0.0`, if IPv6 is not available.
-  createStreamServer(getAutoAddress(), StreamCallback2(nil), flags, sock,
-                     backlog, bufferSize, child, init, cast[pointer](udata),
-                     dualstack)
-
-proc createStreamServer*(cbproc: StreamCallback2,
+proc createStreamServer*(port = Port(0),
                          flags: set[ServerFlags] = {},
                          sock: AsyncFD = asyncInvalidSocket,
                          backlog: int = DefaultBacklogSize,
@@ -2157,8 +2142,25 @@ proc createStreamServer*(cbproc: StreamCallback2,
     raises: [TransportOsError].} =
   ## Create stream server which will be bound to IPv6 address `::`, if IPv6
   ## available, and bound to IPv4 address `0.0.0.0`, if IPv6 is not available.
-  createStreamServer(getAutoAddress(), cbproc, flags, sock, backlog, bufferSize,
-                     child, init, cast[pointer](udata), dualstack)
+  createStreamServer(getAutoAddress(port), StreamCallback2(nil), flags, sock,
+                     backlog, bufferSize, child, init, cast[pointer](udata),
+                     dualstack)
+
+proc createStreamServer*(cbproc: StreamCallback2,
+                         port = Port(0),
+                         flags: set[ServerFlags] = {},
+                         sock: AsyncFD = asyncInvalidSocket,
+                         backlog: int = DefaultBacklogSize,
+                         bufferSize: int = DefaultStreamBufferSize,
+                         child: StreamServer = nil,
+                         init: TransportInitCallback = nil,
+                         udata: pointer = nil,
+                         dualstack = DualStackType.Auto): StreamServer {.
+    raises: [TransportOsError].} =
+  ## Create stream server which will be bound to IPv6 address `::`, if IPv6
+  ## available, and bound to IPv4 address `0.0.0.0`, if IPv6 is not available.
+  createStreamServer(getAutoAddress(port), cbproc, flags, sock, backlog,
+                     bufferSize, child, init, cast[pointer](udata), dualstack)
 
 proc createStreamServer*[T](host: TransportAddress,
                             cbproc: StreamCallback2,
@@ -2209,6 +2211,7 @@ proc createStreamServer*[T](host: TransportAddress,
                      child, init, cast[pointer](udata), dualstack)
 
 proc createStreamServer*[T](cbproc: StreamCallback2,
+                            port: Port,
                             flags: set[ServerFlags] = {},
                             udata: ref T,
                             sock: AsyncFD = asyncInvalidSocket,
@@ -2222,10 +2225,11 @@ proc createStreamServer*[T](cbproc: StreamCallback2,
   ## available, and bound to IPv4 address `0.0.0.0`, if IPv6 is not available.
   let fflags = flags + {GCUserData}
   GC_ref(udata)
-  createStreamServer(getAutoAddress(), cbproc, fflags, sock, backlog,
+  createStreamServer(getAutoAddress(port), cbproc, fflags, sock, backlog,
                      bufferSize, child, init, cast[pointer](udata), dualstack)
 
-proc createStreamServer*[T](flags: set[ServerFlags] = {},
+proc createStreamServer*[T](port: Port,
+                            flags: set[ServerFlags] = {},
                             udata: ref T,
                             sock: AsyncFD = asyncInvalidSocket,
                             backlog: int = DefaultBacklogSize,
@@ -2238,7 +2242,7 @@ proc createStreamServer*[T](flags: set[ServerFlags] = {},
   ## available, and bound to IPv4 address `0.0.0.0`, if IPv6 is not available.
   let fflags = flags + {GCUserData}
   GC_ref(udata)
-  createStreamServer(getAutoAddress(), StreamCallback2(nil), fflags, sock,
+  createStreamServer(getAutoAddress(port), StreamCallback2(nil), fflags, sock,
                      backlog, bufferSize, child, init, cast[pointer](udata),
                      dualstack)
 

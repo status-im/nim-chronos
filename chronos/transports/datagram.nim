@@ -824,31 +824,46 @@ proc newDatagramTransport6*[T](cbproc: UnsafeDatagramCallback,
                              cast[pointer](udata), child, bufSize, ttl,
                              dualstack)
 
-proc newAutoDatagramTransport*(cbproc: DatagramCallback,
-                               flags: set[ServerFlags] = {},
-                               udata: pointer = nil,
-                               child: DatagramTransport = nil,
-                               bufSize: int = DefaultDatagramBufferSize,
-                               ttl: int = 0,
-                               dualstack = DualStackType.Auto
-                              ): DatagramTransport {.
+proc newDatagramTransport*(cbproc: DatagramCallback,
+                           port: Port,
+                           flags: set[ServerFlags] = {},
+                           udata: pointer = nil,
+                           child: DatagramTransport = nil,
+                           bufSize: int = DefaultDatagramBufferSize,
+                           ttl: int = 0,
+                           dualstack = DualStackType.Auto
+                          ): DatagramTransport {.
      raises: [TransportOsError].} =
-  let host = getAutoAddress()
+  ## Create new UDP datagram transport (IPv6) and bind it to ANY_ADDRESS.
+  ## Depending on OS settings procedure perform an attempt to create transport
+  ## using IPv6 ANY_ADDRESS, if its not available it will try to bind transport
+  ## to IPv4 ANY_ADDRESS.
+  ##
+  ## ``cbproc`` - callback which will be called, when new datagram received.
+  ## ``port`` - port number.
+  ## ``sock`` - application-driven socket to use.
+  ## ``flags`` - flags that will be applied to socket.
+  ## ``udata`` - custom argument which will be passed to ``cbproc``.
+  ## ``bufSize`` - size of internal buffer.
+  ## ``ttl`` - TTL for UDP datagram packet (only usable when flags has
+  ## ``Broadcast`` option).
+  let host = getAutoAddress(port)
   newDatagramTransportCommon(cbproc, host, host, asyncInvalidSocket, flags,
                              cast[pointer](udata), child, bufSize, ttl,
                              dualstack)
 
-proc newAutoDatagramTransport*[T](cbproc: DatagramCallback,
-                                  flags: set[ServerFlags] = {},
-                                  udata: ref T,
-                                  child: DatagramTransport = nil,
-                                  bufSize: int = DefaultDatagramBufferSize,
-                                  ttl: int = 0,
-                                  dualstack = DualStackType.Auto
-                                 ): DatagramTransport {.
+proc newDatagramTransport*[T](cbproc: DatagramCallback,
+                              port: Port,
+                              flags: set[ServerFlags] = {},
+                              udata: ref T,
+                              child: DatagramTransport = nil,
+                              bufSize: int = DefaultDatagramBufferSize,
+                              ttl: int = 0,
+                              dualstack = DualStackType.Auto
+                             ): DatagramTransport {.
      raises: [TransportOsError].} =
   let
-    host = getAutoAddress()
+    host = getAutoAddress(port)
     fflags = flags + {GCUserData}
   GC_ref(udata)
   newDatagramTransportCommon(cbproc, host, host, asyncInvalidSocket, fflags,
