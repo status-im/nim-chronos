@@ -628,7 +628,7 @@ suite "Datagram Transport test suite":
     await allFutures(sdgram.closeWait(), cdgram.closeWait())
     res == 1
 
-  proc performAutoAddressTest(ra: TransportAddress): Future[bool] {.async.} =
+  proc performAutoAddressTest(family: AddressFamily): Future[bool] {.async.} =
     var
       expectStr = "AUTO MESSAGE"
       event = newAsyncEvent()
@@ -653,14 +653,29 @@ suite "Datagram Transport test suite":
          async: (raises: []).} =
       discard
 
+    let sdgram = newDatagramTransport(process1, Port(0))
+
+    var
+      address =
+        case family
+        of AddressFamily.IPv4:
+          initTAddress("127.0.0.1:0")
+        of AddressFamily.IPv6:
+          initTAddress("::1:0")
+        of AddressFamily.Unix, AddressFamily.None:
+          raiseAssert "Not allowed"
+
     let
-      sdgram = newAutoDatagramTransport(process1)
-      cdgram = newAutoDatagramTransport(process2)
+      cdgram =
+        case family
+        of AddressFamily.IPv4:
+          newDatagramTransport(process2, local = address)
+        of AddressFamily.IPv6:
+          newDatagramTransport6(process2, local = address)
+        of AddressFamily.Unix, AddressFamily.None:
+          raiseAssert "Not allowed"
 
-    var address = ra
     address.port = sdgram.localAddress().port
-
-    echo address
 
     try:
       await noCancel cdgram.sendTo(address, addr expectStr[0], len(expectStr))
@@ -668,7 +683,7 @@ suite "Datagram Transport test suite":
       discard
 
     try:
-      await event.wait().wait(50000.milliseconds)
+      await event.wait().wait(1.seconds)
     except CatchableError:
       discard
 
@@ -780,19 +795,17 @@ suite "Datagram Transport test suite":
   asyncTest "[IP] Auto-address constructor test":
     if isAvailable(AddressFamily.IPv6):
       check:
-        (await performAutoAddressTest(initTAddress("::1:0"))) == true
+        (await performAutoAddressTest(AddressFamily.IPv6)) == true
       # If IPv6 is available newAutoDatagramTransport should bind to `::` - this
       # means that we should be able to connect to it via IPV4_MAPPED address,
       # but only when IPv4 is also available.
       if isAvailable(AddressFamily.IPv4):
         check:
-          (await performAutoAddressTest(
-            initTAddress("127.0.0.1:0").toIPv6())) == true
+          (await performAutoAddressTest(AddressFamily.IPv4)) == true
     else:
       # If IPv6 is not available newAutoDatagramTransport should bind to
       # `0.0.0.0` - this means we should be able to connect to it via IPv4
       # address.
       if isAvailable(AddressFamily.IPv4):
         check:
-          (await performAutoAddressTest(
-            initTAddress("127.0.0.1:0"))) == true
+          (await performAutoAddressTest(AddressFamily.IPv4)) == true
