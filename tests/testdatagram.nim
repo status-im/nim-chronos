@@ -630,7 +630,8 @@ suite "Datagram Transport test suite":
 
   proc performAutoAddressTest(family: AddressFamily): Future[bool] {.async.} =
     var
-      expectStr = "AUTO MESSAGE"
+      expectRequest = "AUTO REQUEST"
+      expectResponse = "AUTO RESPONSE"
       event = newAsyncEvent()
       res = 0
 
@@ -638,11 +639,13 @@ suite "Datagram Transport test suite":
                   raddr: TransportAddress): Future[void] {.
          async: (raises: []).} =
       try:
-        var bmsg = transp.getMessage()
-        var smsg = string.fromBytes(bmsg)
-        if smsg == expectStr:
+        var
+          bmsg = transp.getMessage()
+          smsg = string.fromBytes(bmsg)
+        if smsg == expectRequest:
           inc(res)
-        event.fire()
+        await noCancel transp.sendTo(
+          raddr, addr expectResponse[0], len(expectResponse))
       except TransportError as exc:
         raiseAssert exc.msg
       except CancelledError as exc:
@@ -651,7 +654,17 @@ suite "Datagram Transport test suite":
     proc process2(transp: DatagramTransport,
                   raddr: TransportAddress): Future[void] {.
          async: (raises: []).} =
-      discard
+      try:
+        var
+          bmsg = transp.getMessage()
+          smsg = string.fromBytes(bmsg)
+        if smsg == expectResponse:
+          inc(res)
+        event.fire()
+      except TransportError as exc:
+        raiseAssert exc.msg
+      except CancelledError as exc:
+        raiseAssert exc.msg
 
     let sdgram = newDatagramTransport(process1, Port(0))
 
@@ -678,7 +691,8 @@ suite "Datagram Transport test suite":
     address.port = sdgram.localAddress().port
 
     try:
-      await noCancel cdgram.sendTo(address, addr expectStr[0], len(expectStr))
+      await noCancel cdgram.sendTo(
+        address, addr expectRequest[0], len(expectRequest))
     except TransportError:
       discard
 
@@ -688,7 +702,7 @@ suite "Datagram Transport test suite":
       discard
 
     await allFutures(sdgram.closeWait(), cdgram.closeWait())
-    res == 1
+    res == 2
 
   test "close(transport) test":
     check waitFor(testTransportClose()) == true
