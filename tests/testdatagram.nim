@@ -667,7 +667,23 @@ suite "Datagram Transport test suite":
       except CancelledError as exc:
         raiseAssert exc.msg
 
-    let sdgram = newDatagramTransport(process1, port)
+    let sdgram =
+      block:
+        var res: DatagramTransport
+        var currentPort = port
+        for i in 0 ..< 10:
+          res =
+            try:
+              newDatagramTransport(process1, currentPort,
+                                   flags = {ServerFlags.ReusePort})
+            except TransportOsError:
+              echo "Unable to create transport on port ", currentPort
+              currentPort = Port(uint16(currentPort) + 1'u16)
+              nil
+          if not(isNil(res)):
+            break
+        doAssert(not(isNil(res)), "Unable to create transport, giving up")
+        res
 
     var
       address =
@@ -824,16 +840,16 @@ suite "Datagram Transport test suite":
       if isAvailable(AddressFamily.IPv4):
         check:
           (await performAutoAddressTest(Port(0), AddressFamily.IPv4)) == true
-  asyncTest "[IP] Auto-address constructor test (*:60436)":
+  asyncTest "[IP] Auto-address constructor test (*:30231)":
     if isAvailable(AddressFamily.IPv6):
       check:
-        (await performAutoAddressTest(Port(60436), AddressFamily.IPv6)) == true
+        (await performAutoAddressTest(Port(30231), AddressFamily.IPv6)) == true
       # If IPv6 is available newAutoDatagramTransport should bind to `::` - this
       # means that we should be able to connect to it via IPV4_MAPPED address,
       # but only when IPv4 is also available.
       if isAvailable(AddressFamily.IPv4):
         check:
-          (await performAutoAddressTest(Port(60436), AddressFamily.IPv4)) ==
+          (await performAutoAddressTest(Port(30231), AddressFamily.IPv4)) ==
             true
     else:
       # If IPv6 is not available newAutoDatagramTransport should bind to
@@ -841,5 +857,5 @@ suite "Datagram Transport test suite":
       # address.
       if isAvailable(AddressFamily.IPv4):
         check:
-          (await performAutoAddressTest(Port(60436), AddressFamily.IPv4)) ==
+          (await performAutoAddressTest(Port(30231), AddressFamily.IPv4)) ==
             true
