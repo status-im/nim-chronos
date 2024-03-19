@@ -847,9 +847,11 @@ proc newDatagramTransport*(cbproc: DatagramCallback,
   ## ``bufSize`` - size of internal buffer.
   ## ``ttl`` - TTL for UDP datagram packet (only usable when flags has
   ## ``Broadcast`` option).
-  let host = getAutoAddress(port)
-  newDatagramTransportCommon(cbproc, host, host, asyncInvalidSocket, flags,
-                             cast[pointer](udata), child, bufSize, ttl,
+  let
+    localHost = getAutoAddress(port)
+    remoteHost = getAutoAddress(Port(0))
+  newDatagramTransportCommon(cbproc, remoteHost, localHost, asyncInvalidSocket,
+                             flags, cast[pointer](udata), child, bufSize, ttl,
                              dualstack)
 
 proc newDatagramTransport*[T](cbproc: DatagramCallback,
@@ -863,11 +865,12 @@ proc newDatagramTransport*[T](cbproc: DatagramCallback,
                              ): DatagramTransport {.
      raises: [TransportOsError].} =
   let
-    host = getAutoAddress(port)
+    localHost = getAutoAddress(port)
+    remoteHost = getAutoAddress(Port(0))
     fflags = flags + {GCUserData}
   GC_ref(udata)
-  newDatagramTransportCommon(cbproc, host, host, asyncInvalidSocket, fflags,
-                             cast[pointer](udata), child, bufSize, ttl,
+  newDatagramTransportCommon(cbproc, remoteHost, localHost, asyncInvalidSocket,
+                             fflags, cast[pointer](udata), child, bufSize, ttl,
                              dualstack)
 
 proc join*(transp: DatagramTransport): Future[void] {.

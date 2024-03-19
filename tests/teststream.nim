@@ -1486,11 +1486,12 @@ suite "Stream Transport test suite":
     await server.closeWait()
     testResult
 
-  proc performAutoAddressTest(family: AddressFamily): Future[bool] {.
+  proc performAutoAddressTest(port: Port,
+                              family: AddressFamily): Future[bool] {.
        async: (raises: []).} =
     let server =
       try:
-        createStreamServer(Port(0))
+        createStreamServer(port)
       except TransportOsError as exc:
         raiseAssert exc.msg
 
@@ -1728,22 +1729,41 @@ suite "Stream Transport test suite":
            DualStackType.Disabled, initTAddress("[::1]:0"))) == true
     else:
       skip()
-  asyncTest "[IP] Auto-address constructor test":
+  asyncTest "[IP] Auto-address constructor test (*:0)":
     if isAvailable(AddressFamily.IPv6):
       check:
-        (await performAutoAddressTest(AddressFamily.IPv6)) == true
+        (await performAutoAddressTest(Port(0), AddressFamily.IPv6)) == true
       # If IPv6 is available createStreamServer should bind to `::` this means
       # that we should be able to connect to it via IPV4_MAPPED address, but
       # only when IPv4 is also available.
       if isAvailable(AddressFamily.IPv4):
         check:
-          (await performAutoAddressTest(AddressFamily.IPv4)) == true
+          (await performAutoAddressTest(Port(0), AddressFamily.IPv4)) == true
     else:
       # If IPv6 is not available createStreamServer should bind to `0.0.0.0`
       # this means we should be able to connect to it via IPV4 address.
       if isAvailable(AddressFamily.IPv4):
         check:
-          (await performAutoAddressTest(AddressFamily.IPv4)) == true
+          (await performAutoAddressTest(Port(0), AddressFamily.IPv4)) == true
+
+  asyncTest "[IP] Auto-address constructor test (*:60436)":
+    if isAvailable(AddressFamily.IPv6):
+      check:
+        (await performAutoAddressTest(Port(60436), AddressFamily.IPv6)) == true
+      # If IPv6 is available createStreamServer should bind to `::` this means
+      # that we should be able to connect to it via IPV4_MAPPED address, but
+      # only when IPv4 is also available.
+      if isAvailable(AddressFamily.IPv4):
+        check:
+          (await performAutoAddressTest(Port(60436), AddressFamily.IPv4)) ==
+            true
+    else:
+      # If IPv6 is not available createStreamServer should bind to `0.0.0.0`
+      # this means we should be able to connect to it via IPV4 address.
+      if isAvailable(AddressFamily.IPv4):
+        check:
+          (await performAutoAddressTest(Port(60436), AddressFamily.IPv4)) ==
+            true
 
   test "File descriptors leak test":
     when defined(windows):
