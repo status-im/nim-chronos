@@ -34,7 +34,7 @@ jobs:
             shell: bash
           - target:
               os: macos
-            builder: macos-11
+            builder: macos-12
             shell: bash
           - target:
               os: windows
