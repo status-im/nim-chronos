@@ -1490,10 +1490,21 @@ suite "Stream Transport test suite":
                               family: AddressFamily): Future[bool] {.
        async: (raises: []).} =
     let server =
-      try:
-        createStreamServer(port)
-      except TransportOsError as exc:
-        raiseAssert exc.msg
+      block:
+        var currentPort = port
+        var res: StreamServer
+        for i in 0 ..< 10:
+          res =
+            try:
+              createStreamServer(port)
+            except TransportOsError:
+              echo "Unable to create server on port ", currentPort
+              currentPort = Port(uint16(currentPort) + 1'u16)
+              nil
+          if not(isNil(res)):
+            break
+        doAssert(not(isNil(res)), "Unable to create server, giving up")
+        res
 
     var
       address =
@@ -1746,23 +1757,23 @@ suite "Stream Transport test suite":
         check:
           (await performAutoAddressTest(Port(0), AddressFamily.IPv4)) == true
 
-  asyncTest "[IP] Auto-address constructor test (*:60436)":
+  asyncTest "[IP] Auto-address constructor test (*:30232)":
     if isAvailable(AddressFamily.IPv6):
       check:
-        (await performAutoAddressTest(Port(60436), AddressFamily.IPv6)) == true
+        (await performAutoAddressTest(Port(30232), AddressFamily.IPv6)) == true
       # If IPv6 is available createStreamServer should bind to `::` this means
       # that we should be able to connect to it via IPV4_MAPPED address, but
       # only when IPv4 is also available.
       if isAvailable(AddressFamily.IPv4):
         check:
-          (await performAutoAddressTest(Port(60436), AddressFamily.IPv4)) ==
+          (await performAutoAddressTest(Port(30232), AddressFamily.IPv4)) ==
             true
     else:
       # If IPv6 is not available createStreamServer should bind to `0.0.0.0`
       # this means we should be able to connect to it via IPV4 address.
       if isAvailable(AddressFamily.IPv4):
         check:
-          (await performAutoAddressTest(Port(60436), AddressFamily.IPv4)) ==
+          (await performAutoAddressTest(Port(30232), AddressFamily.IPv4)) ==
             true
 
   test "File descriptors leak test":
