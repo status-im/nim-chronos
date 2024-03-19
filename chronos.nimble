@@ -61,7 +61,7 @@ task test, "Run all tests":
     run args, "tests/testall"
 
 task test_libbacktrace, "test with libbacktrace":
-  if platform != "X86":
+  if platform != "x86":
     let allArgs = @[
       "-d:release --debugger:native -d:chronosStackTrace -d:nimStackTraceOverride --import:libbacktrace",
     ]
