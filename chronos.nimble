@@ -20,6 +20,7 @@ let nimc = getEnv("NIMC", "nim") # Which nim compiler to use
 let lang = getEnv("NIMLANG", "c") # Which backend (c/cpp/js)
 let flags = getEnv("NIMFLAGS", "") # Extra flags for the compiler
 let verbose = getEnv("V", "") notin ["", "0"]
+let platform = getEnv("PLATFORM", "")
 let testArguments =
   when defined(windows):
     [
@@ -60,15 +61,16 @@ task test, "Run all tests":
     run args, "tests/testall"
 
 task test_libbacktrace, "test with libbacktrace":
-  let allArgs = @[
-    "-d:release --debugger:native -d:chronosStackTrace -d:nimStackTraceOverride --import:libbacktrace",
-  ]
+  if platform != "x86":
+    let allArgs = @[
+      "-d:release --debugger:native -d:chronosStackTrace -d:nimStackTraceOverride --import:libbacktrace",
+    ]
 
-  for args in allArgs:
-    if (NimMajor, NimMinor) > (1, 6):
-      # First run tests with `refc` memory manager.
-      run args & " --mm:refc", "tests/testall"
-    run args, "tests/testall"
+    for args in allArgs:
+      if (NimMajor, NimMinor) > (1, 6):
+        # First run tests with `refc` memory manager.
+        run args & " --mm:refc", "tests/testall"
+      run args, "tests/testall"
 
 task docs, "Generate API documentation":
   exec "mdbook build docs"
