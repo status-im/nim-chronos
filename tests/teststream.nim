@@ -1496,9 +1496,10 @@ suite "Stream Transport test suite":
         for i in 0 ..< 10:
           res =
             try:
-              createStreamServer(port)
-            except TransportOsError:
-              echo "Unable to create server on port ", currentPort
+              createStreamServer(port, flags = {ServerFlags.ReuseAddr})
+            except TransportOsError as exc:
+              echo "Unable to create server on port ", currentPort,
+                   " with error: ", exc.msg
               currentPort = Port(uint16(currentPort) + 1'u16)
               nil
           if not(isNil(res)):
@@ -1757,23 +1758,23 @@ suite "Stream Transport test suite":
         check:
           (await performAutoAddressTest(Port(0), AddressFamily.IPv4)) == true
 
-  asyncTest "[IP] Auto-address constructor test (*:30232)":
+  asyncTest "[IP] Auto-address constructor test (*:30532)":
     if isAvailable(AddressFamily.IPv6):
       check:
-        (await performAutoAddressTest(Port(30232), AddressFamily.IPv6)) == true
+        (await performAutoAddressTest(Port(30532), AddressFamily.IPv6)) == true
       # If IPv6 is available createStreamServer should bind to `::` this means
       # that we should be able to connect to it via IPV4_MAPPED address, but
       # only when IPv4 is also available.
       if isAvailable(AddressFamily.IPv4):
         check:
-          (await performAutoAddressTest(Port(30232), AddressFamily.IPv4)) ==
+          (await performAutoAddressTest(Port(30532), AddressFamily.IPv4)) ==
             true
     else:
       # If IPv6 is not available createStreamServer should bind to `0.0.0.0`
       # this means we should be able to connect to it via IPV4 address.
       if isAvailable(AddressFamily.IPv4):
         check:
-          (await performAutoAddressTest(Port(30232), AddressFamily.IPv4)) ==
+          (await performAutoAddressTest(Port(30532), AddressFamily.IPv4)) ==
             true
 
   test "File descriptors leak test":
