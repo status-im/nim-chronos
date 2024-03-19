@@ -873,7 +873,7 @@ proc send*(transp: DatagramTransport, pbytes: pointer,
       retFuture.fail(getTransportOsError(wres.error()))
   return retFuture
 
-proc send*(transp: DatagramTransport, msg: sink string,
+proc send*(transp: DatagramTransport, msg: string,
            msglen = -1): Future[void] {.
            async: (raw: true, raises: [TransportError, CancelledError]).} =
   ## Send string ``msg`` using transport ``transp`` to remote destination
@@ -882,7 +882,7 @@ proc send*(transp: DatagramTransport, msg: sink string,
   transp.checkClosed(retFuture)
 
   let length = if msglen <= 0: len(msg) else: msglen
-  var localCopy = chronosMoveSink(msg)
+  var localCopy = msg
   retFuture.addCallback(proc(_: pointer) = reset(localCopy))
 
   let vector = GramVector(kind: WithoutAddress, buf: baseAddr localCopy,
@@ -896,16 +896,16 @@ proc send*(transp: DatagramTransport, msg: sink string,
       retFuture.fail(getTransportOsError(wres.error()))
   return retFuture
 
-proc send*[T](transp: DatagramTransport, msg: sink seq[T],
+proc send*[T](transp: DatagramTransport, msg: seq[T],
               msglen = -1): Future[void] {.
-              async: (raw: true, raises: [TransportError, CancelledError]).} =
+     async: (raw: true, raises: [TransportError, CancelledError]).} =
   ## Send string ``msg`` using transport ``transp`` to remote destination
   ## address which was bounded on transport.
   let retFuture = newFuture[void]("datagram.transport.send(seq)")
   transp.checkClosed(retFuture)
 
   let length = if msglen <= 0: (len(msg) * sizeof(T)) else: (msglen * sizeof(T))
-  var localCopy = chronosMoveSink(msg)
+  var localCopy = msg
   retFuture.addCallback(proc(_: pointer) = reset(localCopy))
 
   let vector = GramVector(kind: WithoutAddress, buf: baseAddr localCopy,
@@ -935,7 +935,7 @@ proc sendTo*(transp: DatagramTransport, remote: TransportAddress,
   return retFuture
 
 proc sendTo*(transp: DatagramTransport, remote: TransportAddress,
-             msg: sink string, msglen = -1): Future[void] {.
+             msg: string, msglen = -1): Future[void] {.
              async: (raw: true, raises: [TransportError, CancelledError]).} =
   ## Send string ``msg`` using transport ``transp`` to remote destination
   ## address ``remote``.
@@ -943,7 +943,7 @@ proc sendTo*(transp: DatagramTransport, remote: TransportAddress,
   transp.checkClosed(retFuture)
 
   let length = if msglen <= 0: len(msg) else: msglen
-  var localCopy = chronosMoveSink(msg)
+  var localCopy = msg
   retFuture.addCallback(proc(_: pointer) = reset(localCopy))
 
   let vector = GramVector(kind: WithAddress, buf: baseAddr localCopy,
@@ -958,14 +958,14 @@ proc sendTo*(transp: DatagramTransport, remote: TransportAddress,
   return retFuture
 
 proc sendTo*[T](transp: DatagramTransport, remote: TransportAddress,
-                msg: sink seq[T], msglen = -1): Future[void] {.
+                msg: seq[T], msglen = -1): Future[void] {.
                 async: (raw: true, raises: [TransportError, CancelledError]).} =
   ## Send sequence ``msg`` using transport ``transp`` to remote destination
   ## address ``remote``.
   let retFuture = newFuture[void]("datagram.transport.sendTo(seq)")
   transp.checkClosed(retFuture)
   let length = if msglen <= 0: (len(msg) * sizeof(T)) else: (msglen * sizeof(T))
-  var localCopy = chronosMoveSink(msg)
+  var localCopy = msg
   retFuture.addCallback(proc(_: pointer) = reset(localCopy))
 
   let vector = GramVector(kind: WithAddress, buf: baseAddr localCopy,

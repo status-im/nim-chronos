@@ -2248,7 +2248,7 @@ proc write*(transp: StreamTransport, pbytes: pointer,
     retFuture.fail(getTransportOsError(wres.error()))
   return retFuture
 
-proc write*(transp: StreamTransport, msg: sink string,
+proc write*(transp: StreamTransport, msg: string,
             msglen = -1): Future[int] {.
             async: (raw: true, raises: [TransportError, CancelledError]).} =
   ## Write data from string ``msg`` using transport ``transp``.
@@ -2267,7 +2267,7 @@ proc write*(transp: StreamTransport, msg: sink string,
   let
     written = nbytes - rbytes # In case fastWrite wrote some
 
-  var localCopy = chronosMoveSink(msg)
+  var localCopy = msg
   retFuture.addCallback(proc(_: pointer) = reset(localCopy))
 
   pbytes = cast[ptr byte](addr localCopy[written])
@@ -2280,7 +2280,7 @@ proc write*(transp: StreamTransport, msg: sink string,
     retFuture.fail(getTransportOsError(wres.error()))
   return retFuture
 
-proc write*[T](transp: StreamTransport, msg: sink seq[T],
+proc write*[T](transp: StreamTransport, msg: seq[T],
                msglen = -1): Future[int] {.
                async: (raw: true, raises: [TransportError, CancelledError]).} =
   ## Write sequence ``msg`` using transport ``transp``.
@@ -2300,7 +2300,7 @@ proc write*[T](transp: StreamTransport, msg: sink seq[T],
   let
     written = nbytes - rbytes # In case fastWrite wrote some
 
-  var localCopy = chronosMoveSink(msg)
+  var localCopy = msg
   retFuture.addCallback(proc(_: pointer) = reset(localCopy))
 
   pbytes = cast[ptr byte](addr localCopy[written])

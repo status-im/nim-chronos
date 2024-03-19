@@ -736,7 +736,7 @@ proc write*(wstream: AsyncStreamWriter, pbytes: pointer,
       await item.future
       wstream.bytesCount = wstream.bytesCount + uint64(item.size)
 
-proc write*(wstream: AsyncStreamWriter, sbytes: sink seq[byte],
+proc write*(wstream: AsyncStreamWriter, sbytes: seq[byte],
             msglen = -1) {.
      async: (raises: [CancelledError, AsyncStreamError]).} =
   ## Write sequence of bytes ``sbytes`` of length ``msglen`` to writer
@@ -771,14 +771,14 @@ proc write*(wstream: AsyncStreamWriter, sbytes: sink seq[byte],
       wstream.bytesCount = wstream.bytesCount + uint64(length)
     else:
       let item = WriteItem(
-        kind: Sequence, dataSeq: move(sbytes), size: length,
+        kind: Sequence, dataSeq: sbytes, size: length,
         future: Future[void].Raising([CancelledError, AsyncStreamError])
                   .init("async.stream.write(seq)"))
       await wstream.queue.put(item)
       await item.future
       wstream.bytesCount = wstream.bytesCount + uint64(item.size)
 
-proc write*(wstream: AsyncStreamWriter, sbytes: sink string,
+proc write*(wstream: AsyncStreamWriter, sbytes: string,
             msglen = -1) {.
      async: (raises: [CancelledError, AsyncStreamError]).} =
   ## Write string ``sbytes`` of length ``msglen`` to writer stream ``wstream``.
@@ -812,7 +812,7 @@ proc write*(wstream: AsyncStreamWriter, sbytes: sink string,
       wstream.bytesCount = wstream.bytesCount + uint64(length)
     else:
       let item = WriteItem(
-        kind: String, dataStr: move(sbytes), size: length,
+        kind: String, dataStr: sbytes, size: length,
         future: Future[void].Raising([CancelledError, AsyncStreamError])
                   .init("async.stream.write(string)"))
       await wstream.queue.put(item)
