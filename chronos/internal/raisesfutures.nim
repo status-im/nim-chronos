@@ -12,6 +12,12 @@ type
     ## This type gets injected by `async: (raises: ...)` and similar utilities
     ## and should not be used manually as the internal exception representation
     ## is subject to change in future chronos versions.
+    # TODO https://github.com/nim-lang/Nim/issues/23418
+    # TODO https://github.com/nim-lang/Nim/issues/23419
+    when E is void:
+      dummy: E
+    else:
+      dummy: array[0, E]
 
 proc makeNoRaises*(): NimNode {.compileTime.} =
   # An empty tuple would have been easier but...
