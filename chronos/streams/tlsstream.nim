@@ -161,7 +161,7 @@ proc tlsWriteRec(engine: ptr SslEngineContext,
     var length = 0'u
     var buf = sslEngineSendrecBuf(engine[], length)
     doAssert(length != 0 and not isNil(buf))
-    await writer.wsource.write(chronosMoveSink(buf), int(length))
+    await writer.wsource.write(buf, int(length))
     sslEngineSendrecAck(engine[], length)
     TLSResult.Success
   except AsyncStreamError as exc:
