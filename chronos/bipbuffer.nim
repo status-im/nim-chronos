@@ -25,8 +25,6 @@
 
 {.push raises: [].}
 
-import results
-
 type
   BipPos = object
     start: Natural
