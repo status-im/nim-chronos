@@ -11,7 +11,7 @@
 
 import std/deques
 when not(defined(windows)): import ".."/selectors2
-import ".."/[asyncloop, config, osdefs, oserrno, osutils, handles]
+import ".."/[asyncloop, osdefs, oserrno, osutils, handles]
 import "."/common
 import stew/ptrops
 

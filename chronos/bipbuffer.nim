@@ -68,8 +68,8 @@ func len*(bp: BipBuffer): Natural =
   ## Returns amount of used space in buffer `bp`.
   len(bp.b) + len(bp.a)
 
-proc reserve*(bp: var BipBuffer, pt, st: typedesc,
-              size: Natural = 0): Result[tuple[data: pt, size: st], cstring] =
+proc reserve*(bp: var BipBuffer,
+              size: Natural = 0): tuple[data: ptr byte, size: int] =
   ## Reserve `size` bytes in buffer.
   ##
   ## If `size == 0` (default) reserve all available space from buffer.
@@ -83,16 +83,16 @@ proc reserve*(bp: var BipBuffer, pt, st: typedesc,
   doAssert(size <= len(bp.data))
   let (availableSpace, reserveStart) = bp.calcReserve()
   if availableSpace == 0:
-    return err(ErrorMessage)
+    raiseAssert ErrorMessage
   let reserveLength =
     if size == 0:
       availableSpace
     else:
       if size < availableSpace:
-        return err(ErrorMessage)
+        raiseAssert ErrorMessage
       size
   bp.r = BipPos.init(reserveStart, Natural(reserveStart + reserveLength))
-  ok((cast[pt](addr bp.data[bp.r.start]), cast[st](len(bp.r))))
+  (cast[ptr byte](addr bp.data[bp.r.start]), len(bp.r))
 
 proc commit*(bp: var BipBuffer, size: Natural) =
   ## Updates structure's pointers when new data inserted into buffer.
@@ -112,7 +112,7 @@ proc commit*(bp: var BipBuffer, size: Natural) =
     bp.b.finish += toCommit
   bp.r.reset()
 
-proc consume*(bp: var BipBuffer, size: Natural): Natural =
+proc consume*(bp: var BipBuffer, size: Natural) =
   ## The procedure removes/frees `size` bytes from the buffer.
   ## Returns number of bytes actually removed.
   var currentSize = size
@@ -123,13 +123,10 @@ proc consume*(bp: var BipBuffer, size: Natural): Natural =
     if currentSize >= len(bp.a):
       currentSize -= len(bp.a)
       bp.a.reset()
-      size - currentSize
     else:
       bp.a.start += currentSize
-      size
   else:
     bp.a.start += currentSize
-    size
 
 iterator items*(bp: BipBuffer): byte =
   ## Iterates over all the bytes in the buffer.
@@ -138,10 +135,9 @@ iterator items*(bp: BipBuffer): byte =
   for index in bp.b.start ..< bp.b.finish:
     yield bp.data[index]
 
-iterator regions*(bp: var BipBuffer,
-                  pt, st: typedesc): tuple[data: pt, size: st] =
+iterator regions*(bp: var BipBuffer): tuple[data: ptr byte, size: int] =
   ## Iterates over all the regions (`a` and `b`) in the buffer.
   if len(bp.a) > 0:
-    yield (cast[pt](addr bp.data[bp.a.start]), cast[st](len(bp.a)))
+    yield (cast[ptr byte](addr bp.data[bp.a.start]), len(bp.a))
   if len(bp.b) > 0:
-    yield (cast[pt](addr bp.data[bp.b.start]), cast[st](len(bp.b)))
+    yield (cast[ptr byte](addr bp.data[bp.b.start]), len(bp.b))

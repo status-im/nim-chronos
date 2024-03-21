@@ -125,7 +125,7 @@ proc upload*(sb: AsyncBufferRef, pbytes: ptr byte,
   ## via chunks of size up to internal buffer size.
   var
     length = nbytes
-    srcBuffer = cast[ptr UncheckedArray[byte]](pbytes)
+    srcBuffer = pbytes.toUnchecked()
     offset = 0
 
   while length > 0:
@@ -134,9 +134,7 @@ proc upload*(sb: AsyncBufferRef, pbytes: ptr byte,
       # Internal buffer is full, we need to notify consumer.
       await sb.transfer()
     else:
-      let (data, _) =
-        sb.backend.reserve(pointer, int)
-          .expect("AsyncStream: free bytes expected")
+      let (data, _) = sb.backend.reserve()
       # Copy data from `pbytes` to internal buffer.
       copyMem(data, addr srcBuffer[offset], size)
       sb.backend.commit(size)
@@ -305,7 +303,7 @@ template readLoop(body: untyped): untyped =
         raise rstream.error
 
     let (consumed, done) = body
-    discard rstream.buffer.backend.consume(consumed)
+    rstream.buffer.backend.consume(consumed)
     rstream.bytesCount = rstream.bytesCount + uint64(consumed)
     if done:
       break
@@ -344,13 +342,13 @@ proc readExactly*(rstream: AsyncStreamReader, pbytes: pointer,
     else:
       var
         index = 0
-        pbuffer = cast[ptr UncheckedArray[byte]](pbytes)
+        pbuffer = pbytes.toUnchecked()
       readLoop():
         if len(rstream.buffer.backend) == 0:
           if rstream.atEof():
             raise newAsyncStreamIncompleteError()
         var readed = 0
-        for (region, rsize) in rstream.buffer.backend.regions(pointer, int):
+        for (region, rsize) in rstream.buffer.backend.regions():
           let count = min(nbytes - index, rsize)
           readed += count
           if count > 0:
@@ -383,13 +381,13 @@ proc readOnce*(rstream: AsyncStreamReader, pbytes: pointer,
       return await readOnce(rstream.rsource, pbytes, nbytes)
     else:
       var
-        pbuffer = cast[ptr UncheckedArray[byte]](pbytes)
+        pbuffer = pbytes.toUnchecked()
         index = 0
       readLoop():
         if len(rstream.buffer.backend) == 0:
           (0, rstream.atEof())
         else:
-          for (region, rsize) in rstream.buffer.backend.regions(pointer, int):
+          for (region, rsize) in rstream.buffer.backend.regions():
             let size = min(rsize, nbytes - index)
             copyMem(addr pbuffer[index], region, size)
             index += size
@@ -438,7 +436,7 @@ proc readUntil*(rstream: AsyncStreamReader, pbytes: pointer, nbytes: int,
       return await readUntil(rstream.rsource, pbytes, nbytes, sep)
     else:
       var
-        pbuffer = cast[ptr UncheckedArray[byte]](pbytes)
+        pbuffer = pbytes.toUnchecked()
         state = 0
         k = 0
       readLoop():
@@ -550,10 +548,9 @@ proc read*(rstream: AsyncStreamReader): Future[seq[byte]] {.
           (0, true)
         else:
           var readed = 0
-          for (region, rsize) in
-              rstream.buffer.backend.regions(UncheckedByteArray, int):
+          for (region, rsize) in rstream.buffer.backend.regions():
             readed += rsize
-            res.add(region.toOpenArray(0, rsize - 1))
+            res.add(region.toUnchecked().toOpenArray(0, rsize - 1))
           (readed, false)
       res
 
@@ -585,11 +582,10 @@ proc read*(rstream: AsyncStreamReader, n: int): Future[seq[byte]] {.
             (0, true)
           else:
             var readed = 0
-            for (region, rsize) in
-                rstream.buffer.backend.regions(UncheckedByteArray, int):
+            for (region, rsize) in rstream.buffer.backend.regions():
               let count = min(rsize, n - len(res))
               readed += count
-              res.add(region.toOpenArray(0, count - 1))
+              res.add(region.toUnchecked().toOpenArray(0, count - 1))
             (readed, len(res) == n)
         res
 
@@ -693,9 +689,8 @@ proc readMessage*(rstream: AsyncStreamReader, pred: ReadMessagePredicate) {.
             (0, false)
         else:
           var res: tuple[consumed: int, done: bool]
-          for (region, rsize) in
-              rstream.buffer.backend.regions(UncheckedByteArray, int):
-            res = pred(region.toOpenArray(0, rsize - 1))
+          for (region, rsize) in rstream.buffer.backend.regions():
+            res = pred(region.toUnchecked().toOpenArray(0, rsize - 1))
             break
           res
 

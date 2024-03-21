@@ -119,9 +119,7 @@ proc chunkedReadLoop(stream: AsyncStreamReader) {.async: (raises: []).} =
         if chunksize > 0'u64:
           while chunksize > 0'u64:
             let
-              (data, rsize) =
-                rstream.buffer.backend.reserve(pointer, int)
-                  .expect("ChunkedStream: free bytes expected")
+              (data, rsize) = rstream.buffer.backend.reserve()
               toRead = int(min(chunksize, uint64(rsize)))
             await rstream.rsource.readExactly(data, toRead)
             rstream.buffer.backend.commit(toRead)

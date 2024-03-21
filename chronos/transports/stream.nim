@@ -61,8 +61,6 @@ type
 
   ReaderFuture = Future[void].Raising([TransportError, CancelledError])
 
-  UncheckedByteArray* = ptr UncheckedArray[byte]
-
 const
   StreamTransportTrackerName* = "stream.transport"
   StreamServerTrackerName* = "stream.server"
@@ -219,6 +217,9 @@ proc clean(transp: StreamTransport) {.inline.} =
     transp.future.complete()
     GC_unref(transp)
 
+template toUnchecked*(a: untyped): untyped =
+  cast[ptr UncheckedArray[byte]](a)
+
 when defined(windows):
 
   template zeroOvelappedOffset(t: untyped) =
@@ -236,9 +237,9 @@ when defined(windows):
     cast[HANDLE]((v).buflen)
 
   template setReaderWSABuffer(t: untyped) =
-    ((t).rwsabuf.buf, (t).rwsabuf.len) =
-      (t).buffer.reserve(cstring, ULONG)
-        .expect("StreamTransport: free bytes expected")
+    let res = (t).buffer.reserve()
+    (t).rwsabuf.buf = cast[cstring](res.data)
+    (t).rwsabuf.len = uint32(res.size)
 
   template setWriterWSABuffer(t, v: untyped) =
     (t).wwsabuf.buf = cast[cstring](v.buf)
@@ -1380,9 +1381,7 @@ else:
       if transp.kind == TransportKind.Socket:
         while true:
           let
-            (data, size) =
-              transp.buffer.reserve(pointer, cint)
-                .expect("StreamTransport: free bytes expected")
+            (data, size) = transp.buffer.reserve()
             res = handleEintr(osdefs.recv(fd, data, size, cint(0)))
           if res < 0:
             let err = osLastError()
@@ -1418,9 +1417,7 @@ else:
       elif transp.kind == TransportKind.Pipe:
         while true:
           let
-            (data, size) =
-              transp.buffer.reserve(pointer, cint)
-                .expect("StreamTransport: free bytes expected")
+            (data, size) = transp.buffer.reserve()
             res = handleEintr(osdefs.read(cint(fd), data, size))
           if res < 0:
             let err = osLastError()
@@ -2354,7 +2351,7 @@ template readLoop(name, body: untyped): untyped =
         raise transp.getError()
 
     let (consumed, done) = body
-    discard transp.buffer.consume(consumed)
+    transp.buffer.consume(consumed)
     if done:
       break
 
@@ -2403,13 +2400,13 @@ proc readExactly*(transp: StreamTransport, pbytes: pointer,
 
   var
     index = 0
-    pbuffer = cast[ptr UncheckedArray[byte]](pbytes)
+    pbuffer = pbytes.toUnchecked()
   readLoop("stream.transport.readExactly"):
     if len(transp.buffer) == 0:
       if transp.atEof():
         raise newException(TransportIncompleteError, "Data incomplete!")
     var readed = 0
-    for (region, rsize) in transp.buffer.regions(pointer, int):
+    for (region, rsize) in transp.buffer.regions():
       let count = min(nbytes - index, rsize)
       readed += count
       if count > 0:
@@ -2430,13 +2427,13 @@ proc readOnce*(transp: StreamTransport, pbytes: pointer,
   doAssert(nbytes > 0, "nbytes must be positive integer")
 
   var
-    pbuffer = cast[ptr UncheckedArray[byte]](pbytes)
+    pbuffer = pbytes.toUnchecked()
     index = 0
   readLoop("stream.transport.readOnce"):
     if len(transp.buffer) == 0:
       (0, transp.atEof())
     else:
-      for (region, rsize) in transp.buffer.regions(pointer, int):
+      for (region, rsize) in transp.buffer.regions():
         let size = min(rsize, nbytes - index)
         copyMem(addr pbuffer[index], region, size)
         index += size
@@ -2467,7 +2464,7 @@ proc readUntil*(transp: StreamTransport, pbytes: pointer, nbytes: int,
   if nbytes == 0:
     raise newException(TransportLimitError, "Limit reached!")
 
-  var pbuffer = cast[ptr UncheckedArray[byte]](pbytes)
+  var pbuffer = pbytes.toUnchecked()
   var state = 0
   var k = 0
 
@@ -2550,9 +2547,9 @@ proc read*(transp: StreamTransport): Future[seq[byte]] {.
       (0, true)
     else:
       var readed = 0
-      for (region, rsize) in transp.buffer.regions(UncheckedByteArray, int):
+      for (region, rsize) in transp.buffer.regions():
         readed += rsize
-        res.add(region.toOpenArray(0, rsize - 1))
+        res.add(region.toUnchecked().toOpenArray(0, rsize - 1))
       (readed, false)
   res
 
@@ -2570,10 +2567,10 @@ proc read*(transp: StreamTransport, n: int): Future[seq[byte]] {.
         (0, true)
       else:
         var readed = 0
-        for (region, rsize) in transp.buffer.regions(UncheckedByteArray, int):
+        for (region, rsize) in transp.buffer.regions():
           let count = min(rsize, n - len(res))
           readed += count
-          res.add(region.toOpenArray(0, count - 1))
+          res.add(region.toUnchecked().toOpenArray(0, count - 1))
         (readed, len(res) == n)
     res
 
@@ -2637,8 +2634,8 @@ proc readMessage*(transp: StreamTransport,
         (0, false)
     else:
       var res: tuple[consumed: int, done: bool]
-      for (region, rsize) in transp.buffer.regions(UncheckedByteArray, int):
-        res = predicate(region.toOpenArray(0, rsize - 1))
+      for (region, rsize) in transp.buffer.regions():
+        res = predicate(region.toUnchecked().toOpenArray(0, rsize - 1))
         break
       res
 
