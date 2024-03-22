@@ -2047,9 +2047,27 @@ suite "Future[T] behavior test suite":
       check:
         future1.cancelled() == true
         future2.cancelled() == true
+
   test "Sink with literals":
     # https://github.com/nim-lang/Nim/issues/22175
     let fut = newFuture[string]()
     fut.complete("test")
     check:
       fut.value() == "test"
+
+  test "Raising type matching":
+    type X[E] = Future[void].Raising(E)
+
+    proc f(x: X) = discard
+
+    var v: Future[void].Raising([ValueError])
+    f(v)
+
+    type Object = object
+      field: Future[void].Raising([ValueError])
+
+    discard Object(field: v)
+
+    check:
+      not compiles(Future[void].Raising([42]))
+      not compiles(Future[void].Raising(42))
