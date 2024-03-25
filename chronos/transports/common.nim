@@ -200,6 +200,15 @@ proc `$`*(address: TransportAddress): string =
   of AddressFamily.None:
     "None"
 
+proc toIpAddress*(address: TransportAddress): IpAddress =
+  case address.family
+  of AddressFamily.IPv4:
+    IpAddress(family: IpAddressFamily.IPv4, address_v4: address.address_v4)
+  of AddressFamily.IPv6:
+    IpAddress(family: IpAddressFamily.IPv6, address_v6: address.address_v6)
+  else:
+    raiseAssert "IpAddress do not support address family " & $address.family
+
 proc toHex*(address: TransportAddress): string =
   ## Returns hexadecimal representation of ``address``.
   case address.family
@@ -783,3 +792,12 @@ proc setDualstack*(socket: AsyncFD,
     else:
       ? getDomain(socket)
   setDualstack(socket, family, flag)
+
+proc getAutoAddress*(port: Port): TransportAddress =
+  var res =
+    if isAvailable(AddressFamily.IPv6):
+      AnyAddress6
+    else:
+      AnyAddress
+  res.port = port
+  res

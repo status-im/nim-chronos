@@ -628,6 +628,99 @@ suite "Datagram Transport test suite":
     await allFutures(sdgram.closeWait(), cdgram.closeWait())
     res == 1
 
+  proc performAutoAddressTest(port: Port,
+                              family: AddressFamily): Future[bool] {.async.} =
+    var
+      expectRequest = "AUTO REQUEST"
+      expectResponse = "AUTO RESPONSE"
+      event = newAsyncEvent()
+      res = 0
+
+    proc process1(transp: DatagramTransport,
+                  raddr: TransportAddress): Future[void] {.
+         async: (raises: []).} =
+      try:
+        var
+          bmsg = transp.getMessage()
+          smsg = string.fromBytes(bmsg)
+        if smsg == expectRequest:
+          inc(res)
+        await noCancel transp.sendTo(
+          raddr, addr expectResponse[0], len(expectResponse))
+      except TransportError as exc:
+        raiseAssert exc.msg
+      except CancelledError as exc:
+        raiseAssert exc.msg
+
+    proc process2(transp: DatagramTransport,
+                  raddr: TransportAddress): Future[void] {.
+         async: (raises: []).} =
+      try:
+        var
+          bmsg = transp.getMessage()
+          smsg = string.fromBytes(bmsg)
+        if smsg == expectResponse:
+          inc(res)
+        event.fire()
+      except TransportError as exc:
+        raiseAssert exc.msg
+      except CancelledError as exc:
+        raiseAssert exc.msg
+
+    let sdgram =
+      block:
+        var res: DatagramTransport
+        var currentPort = port
+        for i in 0 ..< 10:
+          res =
+            try:
+              newDatagramTransport(process1, currentPort,
+                                   flags = {ServerFlags.ReusePort})
+            except TransportOsError:
+              echo "Unable to create transport on port ", currentPort
+              currentPort = Port(uint16(currentPort) + 1'u16)
+              nil
+          if not(isNil(res)):
+            break
+        doAssert(not(isNil(res)), "Unable to create transport, giving up")
+        res
+
+    var
+      address =
+        case family
+        of AddressFamily.IPv4:
+          initTAddress("127.0.0.1:0")
+        of AddressFamily.IPv6:
+          initTAddress("::1:0")
+        of AddressFamily.Unix, AddressFamily.None:
+          raiseAssert "Not allowed"
+
+    let
+      cdgram =
+        case family
+        of AddressFamily.IPv4:
+          newDatagramTransport(process2, local = address)
+        of AddressFamily.IPv6:
+          newDatagramTransport6(process2, local = address)
+        of AddressFamily.Unix, AddressFamily.None:
+          raiseAssert "Not allowed"
+
+    address.port = sdgram.localAddress().port
+
+    try:
+      await noCancel cdgram.sendTo(
+        address, addr expectRequest[0], len(expectRequest))
+    except TransportError:
+      discard
+
+    try:
+      await event.wait().wait(1.seconds)
+    except CatchableError:
+      discard
+
+    await allFutures(sdgram.closeWait(), cdgram.closeWait())
+    res == 2
+
   test "close(transport) test":
     check waitFor(testTransportClose()) == true
   test m1:
@@ -730,3 +823,39 @@ suite "Datagram Transport test suite":
            DualStackType.Auto, initTAddress("[::1]:0"))) == true
     else:
       skip()
+  asyncTest "[IP] Auto-address constructor test (*:0)":
+    if isAvailable(AddressFamily.IPv6):
+      check:
+        (await performAutoAddressTest(Port(0), AddressFamily.IPv6)) == true
+      # If IPv6 is available newAutoDatagramTransport should bind to `::` - this
+      # means that we should be able to connect to it via IPV4_MAPPED address,
+      # but only when IPv4 is also available.
+      if isAvailable(AddressFamily.IPv4):
+        check:
+          (await performAutoAddressTest(Port(0), AddressFamily.IPv4)) == true
+    else:
+      # If IPv6 is not available newAutoDatagramTransport should bind to
+      # `0.0.0.0` - this means we should be able to connect to it via IPv4
+      # address.
+      if isAvailable(AddressFamily.IPv4):
+        check:
+          (await performAutoAddressTest(Port(0), AddressFamily.IPv4)) == true
+  asyncTest "[IP] Auto-address constructor test (*:30231)":
+    if isAvailable(AddressFamily.IPv6):
+      check:
+        (await performAutoAddressTest(Port(30231), AddressFamily.IPv6)) == true
+      # If IPv6 is available newAutoDatagramTransport should bind to `::` - this
+      # means that we should be able to connect to it via IPV4_MAPPED address,
+      # but only when IPv4 is also available.
+      if isAvailable(AddressFamily.IPv4):
+        check:
+          (await performAutoAddressTest(Port(30231), AddressFamily.IPv4)) ==
+            true
+    else:
+      # If IPv6 is not available newAutoDatagramTransport should bind to
+      # `0.0.0.0` - this means we should be able to connect to it via IPv4
+      # address.
+      if isAvailable(AddressFamily.IPv4):
+        check:
+          (await performAutoAddressTest(Port(30231), AddressFamily.IPv4)) ==
+            true

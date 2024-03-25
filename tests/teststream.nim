@@ -1486,6 +1486,79 @@ suite "Stream Transport test suite":
     await server.closeWait()
     testResult
 
+  proc performAutoAddressTest(port: Port,
+                              family: AddressFamily): Future[bool] {.
+       async: (raises: []).} =
+    let server =
+      block:
+        var currentPort = port
+        var res: StreamServer
+        for i in 0 ..< 10:
+          res =
+            try:
+              createStreamServer(port, flags = {ServerFlags.ReuseAddr})
+            except TransportOsError as exc:
+              echo "Unable to create server on port ", currentPort,
+                   " with error: ", exc.msg
+              currentPort = Port(uint16(currentPort) + 1'u16)
+              nil
+          if not(isNil(res)):
+            break
+        doAssert(not(isNil(res)), "Unable to create server, giving up")
+        res
+
+    var
+      address =
+        case family
+        of AddressFamily.IPv4:
+          try:
+            initTAddress("127.0.0.1:0")
+          except TransportAddressError as exc:
+            raiseAssert exc.msg
+        of AddressFamily.IPv6:
+          try:
+            initTAddress("::1:0")
+          except TransportAddressError as exc:
+            raiseAssert exc.msg
+        of AddressFamily.Unix, AddressFamily.None:
+          raiseAssert "Not allowed"
+
+    address.port = server.localAddress().port
+    var acceptFut = server.accept()
+    let
+      clientTransp =
+        try:
+          let res = await connect(address).wait(2.seconds)
+          Opt.some(res)
+        except CatchableError:
+          Opt.none(StreamTransport)
+      serverTransp =
+        if clientTransp.isSome():
+          let res =
+            try:
+              await noCancel acceptFut
+            except TransportError as exc:
+              raiseAssert exc.msg
+          Opt.some(res)
+        else:
+          Opt.none(StreamTransport)
+
+    let testResult = clientTransp.isSome() and serverTransp.isSome()
+    var pending: seq[FutureBase]
+    if clientTransp.isSome():
+      pending.add(closeWait(clientTransp.get()))
+    if serverTransp.isSome():
+      pending.add(closeWait(serverTransp.get()))
+    else:
+      pending.add(cancelAndWait(acceptFut))
+    await noCancel allFutures(pending)
+    try:
+      server.stop()
+    except TransportError as exc:
+      raiseAssert exc.msg
+    await server.closeWait()
+    testResult
+
   markFD = getCurrentFD()
 
   for i in 0..<len(addresses):
@@ -1668,6 +1741,42 @@ suite "Stream Transport test suite":
            DualStackType.Disabled, initTAddress("[::1]:0"))) == true
     else:
       skip()
+  asyncTest "[IP] Auto-address constructor test (*:0)":
+    if isAvailable(AddressFamily.IPv6):
+      check:
+        (await performAutoAddressTest(Port(0), AddressFamily.IPv6)) == true
+      # If IPv6 is available createStreamServer should bind to `::` this means
+      # that we should be able to connect to it via IPV4_MAPPED address, but
+      # only when IPv4 is also available.
+      if isAvailable(AddressFamily.IPv4):
+        check:
+          (await performAutoAddressTest(Port(0), AddressFamily.IPv4)) == true
+    else:
+      # If IPv6 is not available createStreamServer should bind to `0.0.0.0`
+      # this means we should be able to connect to it via IPV4 address.
+      if isAvailable(AddressFamily.IPv4):
+        check:
+          (await performAutoAddressTest(Port(0), AddressFamily.IPv4)) == true
+
+  asyncTest "[IP] Auto-address constructor test (*:30532)":
+    if isAvailable(AddressFamily.IPv6):
+      check:
+        (await performAutoAddressTest(Port(30532), AddressFamily.IPv6)) == true
+      # If IPv6 is available createStreamServer should bind to `::` this means
+      # that we should be able to connect to it via IPV4_MAPPED address, but
+      # only when IPv4 is also available.
+      if isAvailable(AddressFamily.IPv4):
+        check:
+          (await performAutoAddressTest(Port(30532), AddressFamily.IPv4)) ==
+            true
+    else:
+      # If IPv6 is not available createStreamServer should bind to `0.0.0.0`
+      # this means we should be able to connect to it via IPV4 address.
+      if isAvailable(AddressFamily.IPv4):
+        check:
+          (await performAutoAddressTest(Port(30532), AddressFamily.IPv4)) ==
+            true
+
   test "File descriptors leak test":
     when defined(windows):
       # Windows handle numbers depends on many conditions, so we can't use
