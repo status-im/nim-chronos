@@ -2064,8 +2064,8 @@ suite "Future[T] behavior test suite":
     f(v)
 
     type Object = object
-      field: Future[void].Raising([ValueError])
       # TODO cannot use X[[ValueError]] here..
+      field: Future[void].Raising([ValueError])
     discard Object(field: v)
 
     check:
