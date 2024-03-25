@@ -59,17 +59,32 @@ proc members(tup: NimNode): seq[NimNode] {.compileTime.} =
 macro hasException(raises: typedesc, ident: static string): bool =
   newLit(raises.members.anyIt(it.eqIdent(ident)))
 
-macro Raising*[T](F: typedesc[Future[T]], E: varargs[typedesc]): untyped =
+macro Raising*[T](F: typedesc[Future[T]], E: typed): untyped =
   ## Given a Future type instance, return a type storing `{.raises.}`
   ## information
   ##
   ## Note; this type may change in the future
-  E.expectKind(nnkBracket)
 
-  let raises = if E.len == 0:
+  # An earlier version used `E: varargs[typedesc]` here but this is buggyt/no
+  # longer supported in 2.0 in certain cases:
+  # https://github.com/nim-lang/Nim/issues/23432
+  let
+    e =
+      case E.getTypeInst().typeKind()
+      of ntyTypeDesc: @[E]
+      of ntyArray:
+        for x in E:
+          if x.getTypeInst().typeKind != ntyTypeDesc:
+            error("Expected typedesc, got " & repr(x), x)
+        E.mapIt(it)
+      else:
+        error("Expected typedesc, got " & repr(E), E)
+        @[]
+
+  let raises = if e.len == 0:
     makeNoRaises()
   else:
-    nnkTupleConstr.newTree(E.mapIt(it))
+    nnkTupleConstr.newTree(e)
   nnkBracketExpr.newTree(
     ident "InternalRaisesFuture",
     nnkDotExpr.newTree(F, ident"T"),
