@@ -1,0 +1,86 @@
+DefaultStreamBufferSize	chronos/transports/common.html#DefaultStreamBufferSize	common: DefaultStreamBufferSize	
+DefaultDatagramBufferSize	chronos/transports/common.html#DefaultDatagramBufferSize	common: DefaultDatagramBufferSize	
+ReuseAddr	chronos/transports/common.html#ReuseAddr	ServerFlags.ReuseAddr	
+ReusePort	chronos/transports/common.html#ReusePort	ServerFlags.ReusePort	
+TcpNoDelay	chronos/transports/common.html#TcpNoDelay	ServerFlags.TcpNoDelay	
+NoAutoRead	chronos/transports/common.html#NoAutoRead	ServerFlags.NoAutoRead	
+GCUserData	chronos/transports/common.html#GCUserData	ServerFlags.GCUserData	
+FirstPipe	chronos/transports/common.html#FirstPipe	ServerFlags.FirstPipe	
+NoPipeFlash	chronos/transports/common.html#NoPipeFlash	ServerFlags.NoPipeFlash	
+Broadcast	chronos/transports/common.html#Broadcast	ServerFlags.Broadcast	
+ServerFlags	chronos/transports/common.html#ServerFlags	common: ServerFlags	
+DualStackType	chronos/transports/common.html#DualStackType	common: DualStackType	
+AddressFamily	chronos/transports/common.html#AddressFamily	common: AddressFamily	
+TransportAddress	chronos/transports/common.html#TransportAddress	common: TransportAddress	
+Start	chronos/transports/common.html#Start	ServerCommand.Start	
+Pause	chronos/transports/common.html#Pause	ServerCommand.Pause	
+Stop	chronos/transports/common.html#Stop	ServerCommand.Stop	
+ServerCommand	chronos/transports/common.html#ServerCommand	common: ServerCommand	
+Starting	chronos/transports/common.html#Starting	ServerStatus.Starting	
+Stopped	chronos/transports/common.html#Stopped	ServerStatus.Stopped	
+Running	chronos/transports/common.html#Running	ServerStatus.Running	
+Closed	chronos/transports/common.html#Closed	ServerStatus.Closed	
+ServerStatus	chronos/transports/common.html#ServerStatus	common: ServerStatus	
+SocketServer	chronos/transports/common.html#SocketServer	common: SocketServer	
+TransportError	chronos/transports/common.html#TransportError	common: TransportError	
+TransportOsError	chronos/transports/common.html#TransportOsError	common: TransportOsError	
+TransportIncompleteError	chronos/transports/common.html#TransportIncompleteError	common: TransportIncompleteError	
+TransportLimitError	chronos/transports/common.html#TransportLimitError	common: TransportLimitError	
+TransportAddressError	chronos/transports/common.html#TransportAddressError	common: TransportAddressError	
+TransportNoSupport	chronos/transports/common.html#TransportNoSupport	common: TransportNoSupport	
+TransportUseClosedError	chronos/transports/common.html#TransportUseClosedError	common: TransportUseClosedError	
+TransportUseEofError	chronos/transports/common.html#TransportUseEofError	common: TransportUseEofError	
+TransportTooManyError	chronos/transports/common.html#TransportTooManyError	common: TransportTooManyError	
+TransportAbortedError	chronos/transports/common.html#TransportAbortedError	common: TransportAbortedError	
+ReadPending	chronos/transports/common.html#ReadPending	TransportState.ReadPending	
+ReadPaused	chronos/transports/common.html#ReadPaused	TransportState.ReadPaused	
+ReadClosed	chronos/transports/common.html#ReadClosed	TransportState.ReadClosed	
+ReadEof	chronos/transports/common.html#ReadEof	TransportState.ReadEof	
+ReadError	chronos/transports/common.html#ReadError	TransportState.ReadError	
+WritePending	chronos/transports/common.html#WritePending	TransportState.WritePending	
+WritePaused	chronos/transports/common.html#WritePaused	TransportState.WritePaused	
+WriteClosed	chronos/transports/common.html#WriteClosed	TransportState.WriteClosed	
+WriteEof	chronos/transports/common.html#WriteEof	TransportState.WriteEof	
+WriteError	chronos/transports/common.html#WriteError	TransportState.WriteError	
+TransportState	chronos/transports/common.html#TransportState	common: TransportState	
+AnyAddress	chronos/transports/common.html#AnyAddress	common: AnyAddress	
+AnyAddress6	chronos/transports/common.html#AnyAddress6	common: AnyAddress6	
+`==`	chronos/transports/common.html#==,TransportAddress,TransportAddress	common: `==`(lhs, rhs: TransportAddress): bool	
+getDomain	chronos/transports/common.html#getDomain,TransportAddress	common: getDomain(address: TransportAddress): Domain	
+`$`	chronos/transports/common.html#$,TransportAddress	common: `$`(address: TransportAddress): string	
+toHex	chronos/transports/common.html#toHex,TransportAddress	common: toHex(address: TransportAddress): string	
+initTAddress	chronos/transports/common.html#initTAddress,string	common: initTAddress(address: string): TransportAddress	
+initTAddress	chronos/transports/common.html#initTAddress,string,Port	common: initTAddress(address: string; port: Port): TransportAddress	
+initTAddress	chronos/transports/common.html#initTAddress,string,int	common: initTAddress(address: string; port: int): TransportAddress	
+initTAddress	chronos/transports/common.html#initTAddress,IpAddress,Port	common: initTAddress(address: IpAddress; port: Port): TransportAddress	
+fromSAddr	chronos/transports/common.html#fromSAddr,ptr.Sockaddr_storage,SockLen,TransportAddress	common: fromSAddr(sa: ptr Sockaddr_storage; sl: SockLen; address: var TransportAddress)	
+toSAddr	chronos/transports/common.html#toSAddr,TransportAddress,Sockaddr_storage,SockLen	common: toSAddr(address: TransportAddress; sa: var Sockaddr_storage; sl: var SockLen)	
+address	chronos/transports/common.html#address,TransportAddress	common: address(ta: TransportAddress): IpAddress	
+host	chronos/transports/common.html#host,TransportAddress	common: host(ta: TransportAddress): string	
+resolveTAddress	chronos/transports/common.html#resolveTAddress,string,Port,Domain	common: resolveTAddress(address: string; port: Port; domain: Domain): seq[\n    TransportAddress]	
+resolveTAddress	chronos/transports/common.html#resolveTAddress,string,Domain	common: resolveTAddress(address: string; domain: Domain): seq[TransportAddress]	
+resolveTAddress	chronos/transports/common.html#resolveTAddress,string	common: resolveTAddress(address: string): seq[TransportAddress]	
+resolveTAddress	chronos/transports/common.html#resolveTAddress,string,Port	common: resolveTAddress(address: string; port: Port): seq[TransportAddress]	
+resolveTAddress	chronos/transports/common.html#resolveTAddress,string,AddressFamily	common: resolveTAddress(address: string; family: AddressFamily): seq[TransportAddress]	
+resolveTAddress	chronos/transports/common.html#resolveTAddress,string,Port,AddressFamily	common: resolveTAddress(address: string; port: Port; family: AddressFamily): seq[\n    TransportAddress]	
+resolveTAddress	chronos/transports/common.html#resolveTAddress,string,IpAddressFamily	common: resolveTAddress(address: string; family: IpAddressFamily): seq[TransportAddress]	
+resolveTAddress	chronos/transports/common.html#resolveTAddress,string,Port,IpAddressFamily	common: resolveTAddress(address: string; port: Port; family: IpAddressFamily): seq[\n    TransportAddress]	
+windowsAnyAddressFix	chronos/transports/common.html#windowsAnyAddressFix,TransportAddress	common: windowsAnyAddressFix(a: TransportAddress): TransportAddress	
+checkClosed	chronos/transports/common.html#checkClosed.t,untyped	common: checkClosed(t: untyped)	
+checkClosed	chronos/transports/common.html#checkClosed.t,untyped,untyped	common: checkClosed(t: untyped; future: untyped)	
+checkWriteEof	chronos/transports/common.html#checkWriteEof.t,untyped,untyped	common: checkWriteEof(t: untyped; future: untyped)	
+getError	chronos/transports/common.html#getError.t,untyped	common: getError(t: untyped): ref TransportError	
+getServerUseClosedError	chronos/transports/common.html#getServerUseClosedError.t	common: getServerUseClosedError(): ref TransportUseClosedError	
+getTransportUseClosedError	chronos/transports/common.html#getTransportUseClosedError.t	common: getTransportUseClosedError(): ref TransportUseClosedError	
+getTransportOsError	chronos/transports/common.html#getTransportOsError.t,OSErrorCode	common: getTransportOsError(err: OSErrorCode): ref TransportOsError	
+getTransportOsError	chronos/transports/common.html#getTransportOsError.t,cint	common: getTransportOsError(err: cint): ref TransportOsError	
+raiseTransportOsError	chronos/transports/common.html#raiseTransportOsError,OSErrorCode	common: raiseTransportOsError(err: OSErrorCode)	
+getTransportTooManyError	chronos/transports/common.html#getTransportTooManyError.t	common: getTransportTooManyError(code = OSErrorCode(0)): ref TransportTooManyError	
+getConnectionAbortedError	chronos/transports/common.html#getConnectionAbortedError.t,string	common: getConnectionAbortedError(m: string = &quot;&quot;): ref TransportAbortedError	
+getConnectionAbortedError	chronos/transports/common.html#getConnectionAbortedError.t,OSErrorCode	common: getConnectionAbortedError(code: OSErrorCode): ref TransportAbortedError	
+getTransportError	chronos/transports/common.html#getTransportError.t,OSErrorCode	common: getTransportError(ecode: OSErrorCode): untyped	
+raiseTransportError	chronos/transports/common.html#raiseTransportError,OSErrorCode	common: raiseTransportError(ecode: OSErrorCode)	
+isAvailable	chronos/transports/common.html#isAvailable,AddressFamily	common: isAvailable(family: AddressFamily): bool	
+getDomain	chronos/transports/common.html#getDomain,AsyncFD	common: getDomain(socket: AsyncFD): Result[AddressFamily, OSErrorCode]	
+setDualstack	chronos/transports/common.html#setDualstack,AsyncFD,AddressFamily,DualStackType	common: setDualstack(socket: AsyncFD; family: AddressFamily; flag: DualStackType): Result[\n    void, OSErrorCode]	
+setDualstack	chronos/transports/common.html#setDualstack,AsyncFD,DualStackType	common: setDualstack(socket: AsyncFD; flag: DualStackType): Result[void, OSErrorCode]	

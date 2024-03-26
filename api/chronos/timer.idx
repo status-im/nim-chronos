@@ -1,0 +1,75 @@
+asyncTimer	chronos/timer.html#asyncTimer	timer: asyncTimer	
+fastEpochTime	chronos/timer.html#fastEpochTime	timer: fastEpochTime(): uint64	
+Moment	chronos/timer.html#Moment	timer: Moment	
+Duration	chronos/timer.html#Duration	timer: Duration	
+SomeIntegerI64	chronos/timer.html#SomeIntegerI64	timer: SomeIntegerI64	
+`+`	chronos/timer.html#+,Duration,Duration	timer: `+`(a: Duration; b: Duration): Duration	
+`+`	chronos/timer.html#+,Duration,Moment	timer: `+`(a: Duration; b: Moment): Moment	
+`+`	chronos/timer.html#+,Moment,Duration	timer: `+`(a: Moment; b: Duration): Moment	
+`+=`	chronos/timer.html#+=,Moment,Duration	timer: `+=`(a: var Moment; b: Duration)	
+`+=`	chronos/timer.html#+=,Duration,Duration	timer: `+=`(a: var Duration; b: Duration)	
+`-`	chronos/timer.html#-,Moment,Moment	timer: `-`(a, b: Moment): Duration	
+`-`	chronos/timer.html#-,Moment,Duration	timer: `-`(a: Moment; b: Duration): Moment	
+`-`	chronos/timer.html#-,Duration,Duration	timer: `-`(a: Duration; b: Duration): Duration	
+`-=`	chronos/timer.html#-=,Duration,Duration	timer: `-=`(a: var Duration; b: Duration)	
+`-=`	chronos/timer.html#-=,Moment,Duration	timer: `-=`(a: var Moment; b: Duration)	
+`==`	chronos/timer.html#==,Duration,Duration	timer: `==`(a, b: Duration): bool	
+`==`	chronos/timer.html#==,Moment,Moment	timer: `==`(a, b: Moment): bool	
+`&lt;`	chronos/timer.html#<,Duration,Duration	timer: `&lt;`(a, b: Duration): bool	
+`&lt;`	chronos/timer.html#<,Moment,Moment	timer: `&lt;`(a, b: Moment): bool	
+`&lt;=`	chronos/timer.html#<=,Duration,Duration	timer: `&lt;=`(a, b: Duration): bool	
+`&lt;=`	chronos/timer.html#<=,Moment,Moment	timer: `&lt;=`(a, b: Moment): bool	
+`&gt;`	chronos/timer.html#>,Duration,Duration	timer: `&gt;`(a, b: Duration): bool	
+`&gt;`	chronos/timer.html#>,Moment,Moment	timer: `&gt;`(a, b: Moment): bool	
+`&gt;=`	chronos/timer.html#>=,Duration,Duration	timer: `&gt;=`(a, b: Duration): bool	
+`&gt;=`	chronos/timer.html#>=,Moment,Moment	timer: `&gt;=`(a, b: Moment): bool	
+`*`	chronos/timer.html#*,Duration,SomeIntegerI64	timer: `*`(a: Duration; b: SomeIntegerI64): Duration	
+`*`	chronos/timer.html#*,SomeIntegerI64,Duration	timer: `*`(a: SomeIntegerI64; b: Duration): Duration	
+`div`	chronos/timer.html#div,Duration,SomeIntegerI64	timer: `div`(a: Duration; b: SomeIntegerI64): Duration	
+Nanosecond	chronos/timer.html#Nanosecond	timer: Nanosecond	
+Microsecond	chronos/timer.html#Microsecond	timer: Microsecond	
+Millisecond	chronos/timer.html#Millisecond	timer: Millisecond	
+Second	chronos/timer.html#Second	timer: Second	
+Minute	chronos/timer.html#Minute	timer: Minute	
+Hour	chronos/timer.html#Hour	timer: Hour	
+Day	chronos/timer.html#Day	timer: Day	
+Week	chronos/timer.html#Week	timer: Week	
+ZeroDuration	chronos/timer.html#ZeroDuration	timer: ZeroDuration	
+InfiniteDuration	chronos/timer.html#InfiniteDuration	timer: InfiniteDuration	
+high	chronos/timer.html#high.t,typedesc[Moment]	timer: high(T: typedesc[Moment]): Moment	
+low	chronos/timer.html#low.t,typedesc[Moment]	timer: low(T: typedesc[Moment]): Moment	
+high	chronos/timer.html#high.t,typedesc[Duration]	timer: high(T: typedesc[Duration]): Duration	
+low	chronos/timer.html#low.t,typedesc[Duration]	timer: low(T: typedesc[Duration]): Duration	
+nanoseconds	chronos/timer.html#nanoseconds,SomeIntegerI64	timer: nanoseconds(v: SomeIntegerI64): Duration	
+microseconds	chronos/timer.html#microseconds,SomeIntegerI64	timer: microseconds(v: SomeIntegerI64): Duration	
+milliseconds	chronos/timer.html#milliseconds,SomeIntegerI64	timer: milliseconds(v: SomeIntegerI64): Duration	
+seconds	chronos/timer.html#seconds,SomeIntegerI64	timer: seconds(v: SomeIntegerI64): Duration	
+minutes	chronos/timer.html#minutes,SomeIntegerI64	timer: minutes(v: SomeIntegerI64): Duration	
+hours	chronos/timer.html#hours,SomeIntegerI64	timer: hours(v: SomeIntegerI64): Duration	
+days	chronos/timer.html#days,SomeIntegerI64	timer: days(v: SomeIntegerI64): Duration	
+weeks	chronos/timer.html#weeks,SomeIntegerI64	timer: weeks(v: SomeIntegerI64): Duration	
+nanoseconds	chronos/timer.html#nanoseconds,Duration	timer: nanoseconds(v: Duration): int64	
+microseconds	chronos/timer.html#microseconds,Duration	timer: microseconds(v: Duration): int64	
+milliseconds	chronos/timer.html#milliseconds,Duration	timer: milliseconds(v: Duration): int64	
+seconds	chronos/timer.html#seconds,Duration	timer: seconds(v: Duration): int64	
+minutes	chronos/timer.html#minutes,Duration	timer: minutes(v: Duration): int64	
+hours	chronos/timer.html#hours,Duration	timer: hours(v: Duration): int64	
+days	chronos/timer.html#days,Duration	timer: days(v: Duration): int64	
+weeks	chronos/timer.html#weeks,Duration	timer: weeks(v: Duration): int64	
+nanos	chronos/timer.html#nanos,SomeIntegerI64	timer: nanos(v: SomeIntegerI64): Duration	
+micros	chronos/timer.html#micros,SomeIntegerI64	timer: micros(v: SomeIntegerI64): Duration	
+millis	chronos/timer.html#millis,SomeIntegerI64	timer: millis(v: SomeIntegerI64): Duration	
+secs	chronos/timer.html#secs,SomeIntegerI64	timer: secs(v: SomeIntegerI64): Duration	
+nanos	chronos/timer.html#nanos,Duration	timer: nanos(v: Duration): int64	
+micros	chronos/timer.html#micros,Duration	timer: micros(v: Duration): int64	
+millis	chronos/timer.html#millis,Duration	timer: millis(v: Duration): int64	
+secs	chronos/timer.html#secs,Duration	timer: secs(v: Duration): int64	
+`$`	chronos/timer.html#$,Duration	timer: `$`(a: Duration): string	
+`$`	chronos/timer.html#$,Moment	timer: `$`(a: Moment): string	
+isZero	chronos/timer.html#isZero,Duration	timer: isZero(a: Duration): bool	
+isInfinite	chronos/timer.html#isInfinite,Duration	timer: isInfinite(a: Duration): bool	
+now	chronos/timer.html#now,typedesc[Moment]	timer: now(t: typedesc[Moment]): Moment	
+init	chronos/timer.html#init,typedesc[Moment],int64,Duration	timer: init(t: typedesc[Moment]; value: int64; precision: Duration): Moment	
+epochSeconds	chronos/timer.html#epochSeconds,Moment	timer: epochSeconds(moment: Moment): int64	
+epochNanoSeconds	chronos/timer.html#epochNanoSeconds,Moment	timer: epochNanoSeconds(moment: Moment): int64	
+fromNow	chronos/timer.html#fromNow,typedesc[Moment],Duration	timer: fromNow(t: typedesc[Moment]; a: Duration): Moment	
