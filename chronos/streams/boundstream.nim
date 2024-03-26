@@ -18,7 +18,7 @@
 {.push raises: [].}
 
 import results
-import ../[asyncloop, timer, config]
+import ../[asyncloop, timer, bipbuffer, config]
 import asyncstream, ../transports/[stream, common]
 export asyncloop, asyncstream, stream, timer, common
 
@@ -103,7 +103,7 @@ func endsWith(s, suffix: openArray[byte]): bool =
 proc boundedReadLoop(stream: AsyncStreamReader) {.async: (raises: []).} =
   var rstream = BoundedStreamReader(stream)
   rstream.state = AsyncStreamState.Running
-  var buffer = newSeq[byte](rstream.buffer.bufferLen())
+  var buffer = newSeq[byte](rstream.buffer.backend.availSpace())
   while true:
     let toRead =
       if rstream.boundSize.isNone():
@@ -127,7 +127,7 @@ proc boundedReadLoop(stream: AsyncStreamReader) {.async: (raises: []).} =
               # There should be one step between transferring last bytes to the
               # consumer and declaring stream EOF. Otherwise could not be
               # consumed.
-              await upload(addr rstream.buffer, addr buffer[0], length)
+              await upload(rstream.buffer, addr buffer[0], length)
               if rstream.state == AsyncStreamState.Running:
                 rstream.state = AsyncStreamState.Finished
             else:
@@ -135,7 +135,7 @@ proc boundedReadLoop(stream: AsyncStreamReader) {.async: (raises: []).} =
               # There should be one step between transferring last bytes to the
               # consumer and declaring stream EOF. Otherwise could not be
               # consumed.
-              await upload(addr rstream.buffer, addr buffer[0], res)
+              await upload(rstream.buffer, addr buffer[0], res)
 
               if (res < toRead) and rstream.rsource.atEof():
                 case rstream.cmpop
@@ -151,7 +151,7 @@ proc boundedReadLoop(stream: AsyncStreamReader) {.async: (raises: []).} =
             # There should be one step between transferring last bytes to the
             # consumer and declaring stream EOF. Otherwise could not be
             # consumed.
-            await upload(addr rstream.buffer, addr buffer[0], res)
+            await upload(rstream.buffer, addr buffer[0], res)
 
             if (res < toRead) and rstream.rsource.atEof():
               case rstream.cmpop

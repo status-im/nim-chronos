@@ -242,7 +242,7 @@ proc tlsReadApp(engine: ptr SslEngineContext,
   try:
     var length = 0'u
     var buf = sslEngineRecvappBuf(engine[], length)
-    await upload(addr reader.buffer, buf, int(length))
+    await upload(reader.buffer, buf, int(length))
     sslEngineRecvappAck(engine[], length)
     TLSResult.Success
   except CancelledError:

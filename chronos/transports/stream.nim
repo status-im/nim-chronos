@@ -11,7 +11,7 @@
 
 import std/deques
 import stew/ptrops
-import ".."/[asyncloop, config, handles, osdefs, osutils, oserrno]
+import ".."/[asyncloop, config, handles, bipbuffer, osdefs, osutils, oserrno]
 import ./common
 
 type
@@ -72,8 +72,7 @@ when defined(windows):
       fd*: AsyncFD                    # File descriptor
       state: set[TransportState]      # Current Transport state
       reader: ReaderFuture            # Current reader Future
-      buffer: seq[byte]               # Reading buffer
-      offset: int                     # Reading buffer offset
+      buffer: BipBuffer               # Reading buffer
       error: ref TransportError       # Current error
       queue: Deque[StreamVector]      # Writer queue
       future: Future[void].Raising([]) # Stream life future
@@ -82,7 +81,6 @@ when defined(windows):
       wwsabuf: WSABUF                 # Writer WSABUF
       rovl: CustomOverlapped          # Reader OVERLAPPED structure
       wovl: CustomOverlapped          # Writer OVERLAPPED structure
-      roffset: int                    # Pending reading offset
       flags: set[TransportFlags]      # Internal flags
       case kind*: TransportKind
       of TransportKind.Socket:
@@ -99,8 +97,7 @@ else:
       fd*: AsyncFD                    # File descriptor
       state: set[TransportState]      # Current Transport state
       reader: ReaderFuture            # Current reader Future
-      buffer: seq[byte]               # Reading buffer
-      offset: int                     # Reading buffer offset
+      buffer: BipBuffer               # Reading buffer
       error: ref TransportError       # Current error
       queue: Deque[StreamVector]      # Writer queue
       future: Future[void].Raising([]) # Stream life future
@@ -184,14 +181,6 @@ template checkPending(t: untyped) =
   if not(isNil((t).reader)):
     raise newException(TransportError, "Read operation already pending!")
 
-template shiftBuffer(t, c: untyped) =
-  if (t).offset > c:
-    if c > 0:
-      moveMem(addr((t).buffer[0]), addr((t).buffer[(c)]), (t).offset - (c))
-      (t).offset = (t).offset - (c)
-  else:
-    (t).offset = 0
-
 template shiftVectorBuffer(v: var StreamVector, o: untyped) =
   (v).buf = cast[pointer](cast[uint]((v).buf) + uint(o))
   (v).buflen -= int(o)
@@ -228,6 +217,9 @@ proc clean(transp: StreamTransport) {.inline.} =
     transp.future.complete()
     GC_unref(transp)
 
+template toUnchecked*(a: untyped): untyped =
+  cast[ptr UncheckedArray[byte]](a)
+
 when defined(windows):
 
   template zeroOvelappedOffset(t: untyped) =
@@ -245,9 +237,9 @@ when defined(windows):
     cast[HANDLE]((v).buflen)
 
   template setReaderWSABuffer(t: untyped) =
-    (t).rwsabuf.buf = cast[cstring](
-      cast[uint](addr t.buffer[0]) + uint((t).roffset))
-    (t).rwsabuf.len = ULONG(len((t).buffer) - (t).roffset)
+    let res = (t).buffer.reserve()
+    (t).rwsabuf.buf = cast[cstring](res.data)
+    (t).rwsabuf.len = uint32(res.size)
 
   template setWriterWSABuffer(t, v: untyped) =
     (t).wwsabuf.buf = cast[cstring](v.buf)
@@ -381,8 +373,9 @@ when defined(windows):
               else:
                 transp.queue.addFirst(vector)
             else:
-              let loop = getThreadDispatcher()
-              let size = min(uint32(getFileSize(vector)), 2_147_483_646'u32)
+              let
+                loop = getThreadDispatcher()
+                size = min(uint32(getFileSize(vector)), 2_147_483_646'u32)
 
               transp.wovl.setOverlappedOffset(vector.offset)
               var ret = loop.transmitFile(sock, getFileHandle(vector), size,
@@ -481,29 +474,28 @@ when defined(windows):
           if bytesCount == 0:
             transp.state.incl({ReadEof, ReadPaused})
           else:
-            if transp.offset != transp.roffset:
-              moveMem(addr transp.buffer[transp.offset],
-                      addr transp.buffer[transp.roffset],
-                      bytesCount)
-            transp.offset += int(bytesCount)
-            transp.roffset = transp.offset
-            if transp.offset == len(transp.buffer):
+            transp.buffer.commit(bytesCount)
+            if transp.buffer.availSpace() == 0:
               transp.state.incl(ReadPaused)
         of ERROR_OPERATION_ABORTED, ERROR_CONNECTION_ABORTED,
            ERROR_BROKEN_PIPE:
           # CancelIO() interrupt or closeSocket() call.
+          transp.buffer.commit(0)
           transp.state.incl(ReadPaused)
         of ERROR_NETNAME_DELETED, WSAECONNABORTED:
+          transp.buffer.commit(0)
           if transp.kind == TransportKind.Socket:
             transp.state.incl({ReadEof, ReadPaused})
           else:
             transp.setReadError(err)
         of ERROR_PIPE_NOT_CONNECTED:
+          transp.buffer.commit(0)
           if transp.kind == TransportKind.Pipe:
             transp.state.incl({ReadEof, ReadPaused})
           else:
             transp.setReadError(err)
         else:
+          transp.buffer.commit(0)
           transp.setReadError(err)
 
         transp.completeReader()
@@ -524,7 +516,6 @@ when defined(windows):
           transp.state.incl(ReadPending)
           if transp.kind == TransportKind.Socket:
             let sock = SocketHandle(transp.fd)
-            transp.roffset = transp.offset
             transp.setReaderWSABuffer()
             let ret = wsaRecv(sock, addr transp.rwsabuf, 1,
                               addr bytesCount, addr flags,
@@ -549,7 +540,6 @@ when defined(windows):
                 transp.completeReader()
           elif transp.kind == TransportKind.Pipe:
             let pipe = HANDLE(transp.fd)
-            transp.roffset = transp.offset
             transp.setReaderWSABuffer()
             let ret = readFile(pipe, cast[pointer](transp.rwsabuf.buf),
                                DWORD(transp.rwsabuf.len), addr bytesCount,
@@ -595,7 +585,7 @@ when defined(windows):
                                       udata: cast[pointer](transp))
     transp.wovl.data = CompletionData(cb: writeStreamLoop,
                                       udata: cast[pointer](transp))
-    transp.buffer = newSeq[byte](bufsize)
+    transp.buffer = BipBuffer.init(bufsize)
     transp.state = {ReadPaused, WritePaused}
     transp.queue = initDeque[StreamVector]()
     transp.future = Future[void].Raising([]).init(
@@ -616,7 +606,7 @@ when defined(windows):
                                       udata: cast[pointer](transp))
     transp.wovl.data = CompletionData(cb: writeStreamLoop,
                                       udata: cast[pointer](transp))
-    transp.buffer = newSeq[byte](bufsize)
+    transp.buffer = BipBuffer.init(bufsize)
     transp.flags = flags
     transp.state = {ReadPaused, WritePaused}
     transp.queue = initDeque[StreamVector]()
@@ -1390,11 +1380,12 @@ else:
     else:
       if transp.kind == TransportKind.Socket:
         while true:
-          let res = handleEintr(
-            osdefs.recv(fd, addr transp.buffer[transp.offset],
-                        len(transp.buffer) - transp.offset, cint(0)))
+          let
+            (data, size) = transp.buffer.reserve()
+            res = handleEintr(osdefs.recv(fd, data, size, cint(0)))
           if res < 0:
             let err = osLastError()
+            transp.buffer.commit(0)
             case err
             of oserrno.ECONNRESET:
               transp.state.incl({ReadEof, ReadPaused})
@@ -1408,13 +1399,14 @@ else:
               discard removeReader2(transp.fd)
           elif res == 0:
             transp.state.incl({ReadEof, ReadPaused})
+            transp.buffer.commit(0)
             let rres = removeReader2(transp.fd)
             if rres.isErr():
               transp.state.incl(ReadError)
               transp.setReadError(rres.error())
           else:
-            transp.offset += res
-            if transp.offset == len(transp.buffer):
+            transp.buffer.commit(res)
+            if transp.buffer.availSpace() == 0:
               transp.state.incl(ReadPaused)
               let rres = removeReader2(transp.fd)
               if rres.isErr():
@@ -1424,23 +1416,25 @@ else:
           break
       elif transp.kind == TransportKind.Pipe:
         while true:
-          let res = handleEintr(
-            osdefs.read(cint(fd), addr transp.buffer[transp.offset],
-                        len(transp.buffer) - transp.offset))
+          let
+            (data, size) = transp.buffer.reserve()
+            res = handleEintr(osdefs.read(cint(fd), data, size))
           if res < 0:
             let err = osLastError()
+            transp.buffer.commit(0)
             transp.state.incl(ReadPaused)
             transp.setReadError(err)
             discard removeReader2(transp.fd)
           elif res == 0:
             transp.state.incl({ReadEof, ReadPaused})
+            transp.buffer.commit(0)
             let rres = removeReader2(transp.fd)
             if rres.isErr():
               transp.state.incl(ReadError)
               transp.setReadError(rres.error())
           else:
-            transp.offset += res
-            if transp.offset == len(transp.buffer):
+            transp.buffer.commit(res)
+            if transp.buffer.availSpace() == 0:
               transp.state.incl(ReadPaused)
               let rres = removeReader2(transp.fd)
               if rres.isErr():
@@ -1458,7 +1452,7 @@ else:
       transp = StreamTransport(kind: TransportKind.Socket)
 
     transp.fd = sock
-    transp.buffer = newSeq[byte](bufsize)
+    transp.buffer = BipBuffer.init(bufsize)
     transp.state = {ReadPaused, WritePaused}
     transp.queue = initDeque[StreamVector]()
     transp.future = Future[void].Raising([]).init(
@@ -1475,7 +1469,7 @@ else:
       transp = StreamTransport(kind: TransportKind.Pipe)
 
     transp.fd = fd
-    transp.buffer = newSeq[byte](bufsize)
+    transp.buffer = BipBuffer.init(bufsize)
     transp.state = {ReadPaused, WritePaused}
     transp.queue = initDeque[StreamVector]()
     transp.future = Future[void].Raising([]).init(
@@ -2339,7 +2333,7 @@ proc writeFile*(transp: StreamTransport, handle: int,
 
 proc atEof*(transp: StreamTransport): bool {.inline.} =
   ## Returns ``true`` if ``transp`` is at EOF.
-  (transp.offset == 0) and (ReadEof in transp.state) and
+  (len(transp.buffer) == 0) and (ReadEof in transp.state) and
   (ReadPaused in transp.state)
 
 template readLoop(name, body: untyped): untyped =
@@ -2351,16 +2345,17 @@ template readLoop(name, body: untyped): untyped =
     if ReadClosed in transp.state:
       raise newException(TransportUseClosedError,
                          "Attempt to read data from closed stream")
-    if transp.offset == 0:
+    if len(transp.buffer) == 0:
       # We going to raise an error, only if transport buffer is empty.
       if ReadError in transp.state:
         raise transp.getError()
 
     let (consumed, done) = body
-    transp.shiftBuffer(consumed)
+    transp.buffer.consume(consumed)
     if done:
       break
-    else:
+
+    if len(transp.buffer) == 0:
       checkPending(transp)
       let fut = ReaderFuture.init(name)
       transp.reader = fut
@@ -2403,17 +2398,23 @@ proc readExactly*(transp: StreamTransport, pbytes: pointer,
   if nbytes == 0:
     return
 
-  var index = 0
-  var pbuffer = cast[ptr UncheckedArray[byte]](pbytes)
+  var
+    index = 0
+    pbuffer = pbytes.toUnchecked()
   readLoop("stream.transport.readExactly"):
-    if transp.offset == 0:
+    if len(transp.buffer) == 0:
       if transp.atEof():
         raise newException(TransportIncompleteError, "Data incomplete!")
-    let count = min(nbytes - index, transp.offset)
-    if count > 0:
-      copyMem(addr pbuffer[index], addr(transp.buffer[0]), count)
-      index += count
-    (consumed: count, done: index == nbytes)
+    var readed = 0
+    for (region, rsize) in transp.buffer.regions():
+      let count = min(nbytes - index, rsize)
+      readed += count
+      if count > 0:
+        copyMem(addr pbuffer[index], region, count)
+        index += count
+      if index == nbytes:
+        break
+    (consumed: readed, done: index == nbytes)
 
 proc readOnce*(transp: StreamTransport, pbytes: pointer,
                nbytes: int): Future[int] {.
@@ -2425,15 +2426,21 @@ proc readOnce*(transp: StreamTransport, pbytes: pointer,
   doAssert(not(isNil(pbytes)), "pbytes must not be nil")
   doAssert(nbytes > 0, "nbytes must be positive integer")
 
-  var count = 0
+  var
+    pbuffer = pbytes.toUnchecked()
+    index = 0
   readLoop("stream.transport.readOnce"):
-    if transp.offset == 0:
+    if len(transp.buffer) == 0:
       (0, transp.atEof())
     else:
-      count = min(transp.offset, nbytes)
-      copyMem(pbytes, addr(transp.buffer[0]), count)
-      (count, true)
-  return count
+      for (region, rsize) in transp.buffer.regions():
+        let size = min(rsize, nbytes - index)
+        copyMem(addr pbuffer[index], region, size)
+        index += size
+        if index >= nbytes:
+          break
+      (index, true)
+  index
 
 proc readUntil*(transp: StreamTransport, pbytes: pointer, nbytes: int,
                 sep: seq[byte]): Future[int] {.
@@ -2457,7 +2464,7 @@ proc readUntil*(transp: StreamTransport, pbytes: pointer, nbytes: int,
   if nbytes == 0:
     raise newException(TransportLimitError, "Limit reached!")
 
-  var pbuffer = cast[ptr UncheckedArray[byte]](pbytes)
+  var pbuffer = pbytes.toUnchecked()
   var state = 0
   var k = 0
 
@@ -2466,14 +2473,11 @@ proc readUntil*(transp: StreamTransport, pbytes: pointer, nbytes: int,
       raise newException(TransportIncompleteError, "Data incomplete!")
 
     var index = 0
-
-    while index < transp.offset:
+    for ch in transp.buffer:
       if k >= nbytes:
         raise newException(TransportLimitError, "Limit reached!")
 
-      let ch = transp.buffer[index]
       inc(index)
-
       pbuffer[k] = ch
       inc(k)
 
@@ -2485,8 +2489,7 @@ proc readUntil*(transp: StreamTransport, pbytes: pointer, nbytes: int,
         state = 0
 
     (index, state == len(sep))
-
-  return k
+  k
 
 proc readLine*(transp: StreamTransport, limit = 0,
                sep = "\r\n"): Future[string] {.
@@ -2503,46 +2506,52 @@ proc readLine*(transp: StreamTransport, limit = 0,
   ## If ``limit`` more then 0, then read is limited to ``limit`` bytes.
   let lim = if limit <= 0: -1 else: limit
   var state = 0
+  var res: string
 
   readLoop("stream.transport.readLine"):
     if transp.atEof():
       (0, true)
     else:
       var index = 0
-      while index < transp.offset:
-        let ch = char(transp.buffer[index])
-        index += 1
+      for ch in transp.buffer:
+        inc(index)
 
-        if sep[state] == ch:
+        if sep[state] == char(ch):
           inc(state)
           if state == len(sep):
             break
         else:
           if state != 0:
             if limit > 0:
-              let missing = min(state, lim - len(result) - 1)
-              result.add(sep[0 ..< missing])
+              let missing = min(state, lim - len(res) - 1)
+              res.add(sep[0 ..< missing])
             else:
-              result.add(sep[0 ..< state])
+              res.add(sep[0 ..< state])
             state = 0
 
-          result.add(ch)
-          if len(result) == lim:
+          res.add(char(ch))
+          if len(res) == lim:
             break
 
-      (index, (state == len(sep)) or (lim == len(result)))
+      (index, (state == len(sep)) or (lim == len(res)))
+  res
 
 proc read*(transp: StreamTransport): Future[seq[byte]] {.
     async: (raises: [TransportError, CancelledError]).} =
   ## Read all bytes from transport ``transp``.
   ##
   ## This procedure allocates buffer seq[byte] and return it as result.
+  var res: seq[byte]
   readLoop("stream.transport.read"):
     if transp.atEof():
       (0, true)
     else:
-      result.add(transp.buffer.toOpenArray(0, transp.offset - 1))
-      (transp.offset, false)
+      var readed = 0
+      for (region, rsize) in transp.buffer.regions():
+        readed += rsize
+        res.add(region.toUnchecked().toOpenArray(0, rsize - 1))
+      (readed, false)
+  res
 
 proc read*(transp: StreamTransport, n: int): Future[seq[byte]] {.
     async: (raises: [TransportError, CancelledError]).} =
@@ -2550,27 +2559,35 @@ proc read*(transp: StreamTransport, n: int): Future[seq[byte]] {.
   ##
   ## This procedure allocates buffer seq[byte] and return it as result.
   if n <= 0:
-    return await transp.read()
+    await transp.read()
   else:
+    var res: seq[byte]
     readLoop("stream.transport.read"):
       if transp.atEof():
         (0, true)
       else:
-        let count = min(transp.offset, n - len(result))
-        result.add(transp.buffer.toOpenArray(0, count - 1))
-        (count, len(result) == n)
+        var readed = 0
+        for (region, rsize) in transp.buffer.regions():
+          let count = min(rsize, n - len(res))
+          readed += count
+          res.add(region.toUnchecked().toOpenArray(0, count - 1))
+        (readed, len(res) == n)
+    res
 
 proc consume*(transp: StreamTransport): Future[int] {.
     async: (raises: [TransportError, CancelledError]).} =
   ## Consume all bytes from transport ``transp`` and discard it.
   ##
   ## Return number of bytes actually consumed and discarded.
+  var res = 0
   readLoop("stream.transport.consume"):
     if transp.atEof():
       (0, true)
     else:
-      result += transp.offset
-      (transp.offset, false)
+      let used = len(transp.buffer)
+      res += used
+      (used, false)
+  res
 
 proc consume*(transp: StreamTransport, n: int): Future[int] {.
     async: (raises: [TransportError, CancelledError]).} =
@@ -2579,15 +2596,19 @@ proc consume*(transp: StreamTransport, n: int): Future[int] {.
   ##
   ## Return number of bytes actually consumed and discarded.
   if n <= 0:
-    return await transp.consume()
+    await transp.consume()
   else:
+    var res = 0
     readLoop("stream.transport.consume"):
       if transp.atEof():
         (0, true)
       else:
-        let count = min(transp.offset, n - result)
-        result += count
-        (count, result == n)
+        let
+          used = len(transp.buffer)
+          count = min(used, n - res)
+        res += count
+        (count, res == n)
+    res
 
 proc readMessage*(transp: StreamTransport,
                   predicate: ReadMessagePredicate) {.
@@ -2605,14 +2626,18 @@ proc readMessage*(transp: StreamTransport,
   ## ``predicate`` callback will receive (zero-length) openArray, if transport
   ## is at EOF.
   readLoop("stream.transport.readMessage"):
-    if transp.offset == 0:
+    if len(transp.buffer) == 0:
       if transp.atEof():
         predicate([])
       else:
         # Case, when transport's buffer is not yet filled with data.
         (0, false)
     else:
-      predicate(transp.buffer.toOpenArray(0, transp.offset - 1))
+      var res: tuple[consumed: int, done: bool]
+      for (region, rsize) in transp.buffer.regions():
+        res = predicate(region.toUnchecked().toOpenArray(0, rsize - 1))
+        break
+      res
 
 proc join*(transp: StreamTransport): Future[void] {.
     async: (raw: true, raises: [CancelledError]).} =
@@ -2630,7 +2655,7 @@ proc join*(transp: StreamTransport): Future[void] {.
     retFuture.cancelCallback = cancel
   else:
     retFuture.complete()
-  return retFuture
+  retFuture
 
 proc closed*(transp: StreamTransport): bool {.inline.} =
   ## Returns ``true`` if transport in closed state.
