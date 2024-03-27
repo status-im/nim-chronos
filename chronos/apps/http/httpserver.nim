@@ -1187,23 +1187,7 @@ proc closeWait*(server: HttpServerRef) {.async: (raises: []).} =
 proc join*(server: HttpServerRef): Future[void] {.
      async: (raw: true, raises: [CancelledError]).} =
   ## Wait until HTTP server will not be closed.
-  var retFuture = newFuture[void]("http.server.join")
-
-  proc continuation(udata: pointer) {.gcsafe.} =
-    if not(retFuture.finished()):
-      retFuture.complete()
-
-  proc cancellation(udata: pointer) {.gcsafe.} =
-    if not(retFuture.finished()):
-      server.lifetime.removeCallback(continuation, cast[pointer](retFuture))
-
-  if server.state == ServerClosed:
-    retFuture.complete()
-  else:
-    server.lifetime.addCallback(continuation, cast[pointer](retFuture))
-    retFuture.cancelCallback = cancellation
-
-  retFuture
+  server.lifetime.join()
 
 proc getMultipartReader*(req: HttpRequestRef): HttpResult[MultiPartReaderRef] =
   ## Create new MultiPartReader interface for specific request.
