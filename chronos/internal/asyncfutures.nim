@@ -1607,6 +1607,39 @@ proc wait*[T](fut: Future[T], timeout = -1): Future[T] {.
   else:
     wait(fut, timeout.milliseconds())
 
+proc join*(future: FutureBase): Future[void] {.
+     async: (raw: true, raises: [CancelledError]).} =
+  ## Returns a future which will complete once future ``future`` completes.
+  ##
+  ## This primitive helps to carefully monitor ``future`` state, in case of
+  ## cancellation ``join`` operation it will not going to cancel ``future``.
+  ##
+  ## If ``future`` is already completed - ``join`` will return completed
+  ## future immediately.
+  let retFuture = newFuture[void]("chronos.join()")
+
+  proc continuation(udata: pointer) {.gcsafe.} =
+    retFuture.complete()
+
+  proc cancellation(udata: pointer) {.gcsafe.} =
+    future.removeCallback(continuation, cast[pointer](retFuture))
+
+  if not(future.finished()):
+    future.addCallback(continuation, cast[pointer](retFuture))
+    retFuture.cancelCallback = cancellation
+  else:
+    retFuture.complete()
+
+  retFuture
+
+proc join*(future: SomeFuture): Future[void] {.
+     async: (raw: true, raises: [CancelledError]).} =
+  ## Returns a future which will complete once future ``future`` completes.
+  ##
+  ## This primitive helps to carefully monitor ``future`` state, in case of
+  ## cancellation ``join`` operation it will not going to cancel ``future``.
+  join(FutureBase(future))
+
 when defined(windows):
   import ../osdefs
 

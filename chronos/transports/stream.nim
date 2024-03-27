@@ -1780,20 +1780,7 @@ proc stop*(server: StreamServer) {.raises: [TransportOsError].} =
 proc join*(server: StreamServer): Future[void] {.
     async: (raw: true, raises: [CancelledError]).} =
   ## Waits until ``server`` is not closed.
-  var retFuture = newFuture[void]("stream.transport.server.join")
-
-  proc continuation(udata: pointer) =
-    retFuture.complete()
-
-  proc cancel(udata: pointer) =
-    server.loopFuture.removeCallback(continuation, cast[pointer](retFuture))
-
-  if not(server.loopFuture.finished()):
-    server.loopFuture.addCallback(continuation, cast[pointer](retFuture))
-    retFuture.cancelCallback = cancel
-  else:
-    retFuture.complete()
-  return retFuture
+  server.loopFuture.join()
 
 proc connect*(address: TransportAddress,
               bufferSize = DefaultStreamBufferSize,

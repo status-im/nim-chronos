@@ -827,21 +827,7 @@ proc newDatagramTransport6*[T](cbproc: UnsafeDatagramCallback,
 proc join*(transp: DatagramTransport): Future[void] {.
     async: (raw: true, raises: [CancelledError]).} =
   ## Wait until the transport ``transp`` will be closed.
-  let retFuture = newFuture[void]("datagram.transport.join")
-
-  proc continuation(udata: pointer) {.gcsafe.} =
-    retFuture.complete()
-
-  proc cancel(udata: pointer) {.gcsafe.} =
-    transp.future.removeCallback(continuation, cast[pointer](retFuture))
-
-  if not(transp.future.finished()):
-    transp.future.addCallback(continuation, cast[pointer](retFuture))
-    retFuture.cancelCallback = cancel
-  else:
-    retFuture.complete()
-
-  return retFuture
+  transp.future.join()
 
 proc closed*(transp: DatagramTransport): bool {.inline.} =
   ## Returns ``true`` if transport in closed state.
