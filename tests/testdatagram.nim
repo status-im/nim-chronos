@@ -631,9 +631,12 @@ suite "Datagram Transport test suite":
   proc performAutoAddressTest(port: Port,
                               family: AddressFamily): Future[bool] {.async.} =
     var
-      expectRequest = "AUTO REQUEST"
+      expectRequest1 = "AUTO REQUEST1"
+      expectRequest2 = "AUTO REQUEST2"
       expectResponse = "AUTO RESPONSE"
+      mappedResponse = "MAPPED RESPONSE"
       event = newAsyncEvent()
+      event2 = newAsyncEvent()
       res = 0
 
     proc process1(transp: DatagramTransport,
@@ -643,10 +646,14 @@ suite "Datagram Transport test suite":
         var
           bmsg = transp.getMessage()
           smsg = string.fromBytes(bmsg)
-        if smsg == expectRequest:
+        if smsg == expectRequest1:
           inc(res)
-        await noCancel transp.sendTo(
-          raddr, addr expectResponse[0], len(expectResponse))
+          await noCancel transp.sendTo(
+            raddr, addr expectResponse[0], len(expectResponse))
+        elif smsg == expectRequest2:
+          inc(res)
+          await noCancel transp.sendTo(
+            raddr, addr mappedResponse[0], len(mappedResponse))
       except TransportError as exc:
         raiseAssert exc.msg
       except CancelledError as exc:
@@ -662,6 +669,21 @@ suite "Datagram Transport test suite":
         if smsg == expectResponse:
           inc(res)
         event.fire()
+      except TransportError as exc:
+        raiseAssert exc.msg
+      except CancelledError as exc:
+        raiseAssert exc.msg
+
+    proc process3(transp: DatagramTransport,
+                  raddr: TransportAddress): Future[void] {.
+         async: (raises: []).} =
+      try:
+        var
+          bmsg = transp.getMessage()
+          smsg = string.fromBytes(bmsg)
+        if smsg == mappedResponse:
+          inc(res)
+        event2.fire()
       except TransportError as exc:
         raiseAssert exc.msg
       except CancelledError as exc:
@@ -709,9 +731,27 @@ suite "Datagram Transport test suite":
 
     try:
       await noCancel cdgram.sendTo(
-        address, addr expectRequest[0], len(expectRequest))
+        address, addr expectRequest1[0], len(expectRequest1))
     except TransportError:
       discard
+
+    if family == AddressFamily.IPv6:
+      var remote = initTAddress("127.0.0.1:0")
+      remote.port = sdgram.localAddress().port
+      let wtransp =
+        newDatagramTransport(process3, local = initTAddress("0.0.0.0:0"))
+      try:
+        await noCancel wtransp.sendTo(
+          remote, addr expectRequest2[0], len(expectRequest2))
+      except TransportError as exc:
+        raiseAssert "Got transport error, reason = " & $exc.msg
+
+      try:
+        await event2.wait().wait(1.seconds)
+      except CatchableError:
+        discard
+
+      await wtransp.closeWait()
 
     try:
       await event.wait().wait(1.seconds)
@@ -719,7 +759,11 @@ suite "Datagram Transport test suite":
       discard
 
     await allFutures(sdgram.closeWait(), cdgram.closeWait())
-    res == 2
+
+    if family == AddressFamily.IPv4:
+      res == 2
+    else:
+      res == 4
 
   test "close(transport) test":
     check waitFor(testTransportClose()) == true

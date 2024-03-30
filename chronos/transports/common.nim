@@ -29,7 +29,7 @@ type
   ServerFlags* = enum
     ## Server's flags
     ReuseAddr, ReusePort, TcpNoDelay, NoAutoRead, GCUserData, FirstPipe,
-    NoPipeFlash, Broadcast
+    NoPipeFlash, Broadcast, V4Mapped
 
   DualStackType* {.pure.} = enum
     Auto, Enabled, Disabled, Default
