@@ -891,8 +891,10 @@ proc newDatagramTransport6*[T](cbproc: UnsafeDatagramCallback,
                              dualstack)
 
 proc newDatagramTransport*(cbproc: DatagramCallback,
-                           port: Port,
+                           localPort: Port,
+                           remotePort: Port,
                            local: Opt[IpAddress] = Opt.none(IpAddress),
+                           remote: Opt[IpAddress] = Opt.none(IpAddress),
                            flags: set[ServerFlags] = {},
                            udata: pointer = nil,
                            child: DatagramTransport = nil,
@@ -907,7 +909,10 @@ proc newDatagramTransport*(cbproc: DatagramCallback,
   ## to IPv4 ANY_ADDRESS.
   ##
   ## ``cbproc`` - callback which will be called, when new datagram received.
-  ## ``port`` - port number.
+  ## ``localPort`` - local peer's port number.
+  ## ``remotePort`` - remote peer's port number.
+  ## ``local`` - optional local peer's IPv4/IPv6 address.
+  ## ``remote`` - optional remote peer's IPv4/IPv6 address.
   ## ``sock`` - application-driven socket to use.
   ## ``flags`` - flags that will be applied to socket.
   ## ``udata`` - custom argument which will be passed to ``cbproc``.
@@ -918,21 +923,36 @@ proc newDatagramTransport*(cbproc: DatagramCallback,
     (localHost, remoteHost) =
       block:
         let
+          (localAuto, remoteAuto) = getAutoAddresses(localPort, remotePort)
           lres =
             if local.isSome():
-              initTAddress(local.get(), port)
+              initTAddress(local.get(), localPort)
             else:
-              getAutoAddress(port)
+              localAuto
           rres =
-            if lres.family == AddressFamily.IPv4:
-              AnyAddress
+            if remote.isSome():
+              initTAddress(remote.get(), remotePort)
             else:
-              AnyAddress6
+              remoteAuto
         (lres, rres)
 
   newDatagramTransportCommon(cbproc, remoteHost, localHost, asyncInvalidSocket,
                              flags, cast[pointer](udata), child, bufSize,
                              ttl, dualstack)
+
+proc newDatagramTransport*(cbproc: DatagramCallback,
+                           localPort: Port,
+                           local: Opt[IpAddress] = Opt.none(IpAddress),
+                           flags: set[ServerFlags] = {},
+                           udata: pointer = nil,
+                           child: DatagramTransport = nil,
+                           bufSize: int = DefaultDatagramBufferSize,
+                           ttl: int = 0,
+                           dualstack = DualStackType.Auto
+                          ): DatagramTransport {.
+     raises: [TransportOsError].} =
+  newDatagramTransport(cbproc, localPort, Port(0), local, Opt.none(IpAddress),
+                       flags, udata, child, bufSize, ttl, dualstack)
 
 proc newDatagramTransport*[T](cbproc: DatagramCallback,
                               port: Port,

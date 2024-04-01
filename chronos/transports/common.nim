@@ -801,3 +801,16 @@ proc getAutoAddress*(port: Port): TransportAddress =
       AnyAddress
   res.port = port
   res
+
+proc getAutoAddresses*(
+    localPort: Port,
+    remotePort: Port
+): tuple[local: TransportAddress, remote: TransportAddress] =
+  var (local, remote) =
+    if isAvailable(AddressFamily.IPv6):
+      (AnyAddress6, AnyAddress6)
+    else:
+      (AnyAddress, AnyAddress)
+  local.port = localPort
+  remote.port = remotePort
+  (local, remote)
