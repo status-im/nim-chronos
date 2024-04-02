@@ -1012,48 +1012,63 @@ suite "Datagram Transport test suite":
     for portNumber in [Port(0), Port(30231)]:
       asyncTest "[IP] IPv6 mapping test (" & $socketType &
                 "/auto-auto:" & $int(portNumber) & ")":
-        let
-          address1 = Opt.none(IpAddress)
-          address2 = Opt.none(IpAddress)
+        if isAvailable(AddressFamily.IPv6):
+          let
+            address1 = Opt.none(IpAddress)
+            address2 = Opt.none(IpAddress)
 
-        check:
-          (await performAutoAddressTest2(
-            address1, address2, portNumber, AddressFamily.IPv4, socketType))
-          (await performAutoAddressTest2(
-            address1, address2, portNumber, AddressFamily.IPv6, socketType))
+          check:
+            (await performAutoAddressTest2(
+              address1, address2, portNumber, AddressFamily.IPv4, socketType))
+            (await performAutoAddressTest2(
+              address1, address2, portNumber, AddressFamily.IPv6, socketType))
+        else:
+          skip()
 
       asyncTest "[IP] IPv6 mapping test (" & $socketType &
                 "/auto-ipv6:" & $int(portNumber) & ")":
-        let
-          address1 = Opt.none(IpAddress)
-          address2 = Opt.some(initTAddress("[::1]:0").toIpAddress())
-        check:
-          (await performAutoAddressTest2(
-            address1, address2, portNumber, AddressFamily.IPv6, socketType))
+        if isAvailable(AddressFamily.IPv6):
+          let
+            address1 = Opt.none(IpAddress)
+            address2 = Opt.some(initTAddress("[::1]:0").toIpAddress())
+          check:
+            (await performAutoAddressTest2(
+              address1, address2, portNumber, AddressFamily.IPv6, socketType))
+        else:
+          skip()
 
       asyncTest "[IP] IPv6 mapping test (" & $socketType &
                 "/auto-ipv4:" & $int(portNumber) & ")":
-        let
-          address1 = Opt.none(IpAddress)
-          address2 = Opt.some(initTAddress("127.0.0.1:0").toIpAddress())
-        check:
-          (await performAutoAddressTest2(address1, address2, portNumber,
-                                         AddressFamily.IPv4, socketType))
+        if isAvailable(AddressFamily.IPv6):
+          let
+            address1 = Opt.none(IpAddress)
+            address2 = Opt.some(initTAddress("127.0.0.1:0").toIpAddress())
+          check:
+            (await performAutoAddressTest2(address1, address2, portNumber,
+                                           AddressFamily.IPv4, socketType))
+        else:
+          skip()
 
       asyncTest "[IP] IPv6 mapping test (" & $socketType &
                 "/ipv6-auto:" & $int(portNumber) & ")":
-        let
-          address1 = Opt.some(initTAddress("[::1]:0").toIpAddress())
-          address2 = Opt.none(IpAddress)
-        check:
-          (await performAutoAddressTest2(address1, address2, portNumber,
-                                         AddressFamily.IPv6, socketType))
+        if isAvailable(AddressFamily.IPv6):
+          let
+            address1 = Opt.some(initTAddress("[::1]:0").toIpAddress())
+            address2 = Opt.none(IpAddress)
+          check:
+            (await performAutoAddressTest2(address1, address2, portNumber,
+                                           AddressFamily.IPv6, socketType))
+        else:
+          skip()
 
       asyncTest "[IP] IPv6 mapping test (" & $socketType &
                 "/ipv4-auto:" & $int(portNumber) & ")":
-        let
-          address1 = Opt.some(initTAddress("127.0.0.1:0").toIpAddress())
-          address2 = Opt.none(IpAddress)
-        check:
-          (await performAutoAddressTest2(address1, address2, portNumber,
-                                         AddressFamily.IPv4, socketType))
+        if isAvailable(AddressFamily.IPv6):
+          let
+            address1 = Opt.some(initTAddress("127.0.0.1:0").toIpAddress())
+            address2 = Opt.none(IpAddress)
+          check:
+            (await performAutoAddressTest2(address1, address2, portNumber,
+                                           AddressFamily.IPv4, socketType))
+        else:
+          skip()

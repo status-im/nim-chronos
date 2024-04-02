@@ -1559,6 +1559,96 @@ suite "Stream Transport test suite":
     await server.closeWait()
     testResult
 
+  proc performAutoAddressTest2(
+    address1: Opt[IpAddress],
+    address2: Opt[IpAddress],
+    port: Port,
+    sendType: AddressFamily
+  ): Future[bool] {.async: (raises: []).} =
+    let
+      server =
+        block:
+          var
+            currentPort = port
+            res: StreamServer
+          for i in 0 ..< 10:
+            res =
+              try:
+                createStreamServer(port, host = address1,
+                                   flags = {ServerFlags.ReuseAddr})
+              except TransportOsError as exc:
+                echo "Unable to create server on port ", currentPort,
+                     " with error: ", exc.msg
+                currentPort = Port(uint16(currentPort) + 1'u16)
+                nil
+            if not(isNil(res)):
+              break
+          doAssert(not(isNil(res)), "Unable to create server, giving up")
+          res
+      serverAddr = server.localAddress()
+      serverPort = serverAddr.port
+      remoteAddress =
+        try:
+          case sendType
+          of AddressFamily.IPv4:
+            var res = initTAddress("127.0.0.1:0")
+            res.port = serverPort
+            res
+          of AddressFamily.IPv6:
+            var res = initTAddress("[::1]:0")
+            res.port = serverPort
+            res
+          else:
+            raiseAssert "Incorrect sending type"
+        except TransportAddressError as exc:
+          raiseAssert "Unable to initialize transport address, " &
+                      "reason = " & exc.msg
+      acceptFut = server.accept()
+
+    let
+      clientTransp =
+        try:
+          if address2.isSome():
+            let
+              laddr = initTAddress(address2.get(), Port(0))
+              res = await connect(remoteAddress, localAddress = laddr).
+                      wait(2.seconds)
+            Opt.some(res)
+
+          else:
+            let res = await connect(remoteAddress).wait(2.seconds)
+            Opt.some(res)
+        except CatchableError:
+          Opt.none(StreamTransport)
+      serverTransp =
+        if clientTransp.isSome():
+          let res =
+            try:
+              await noCancel acceptFut
+            except TransportError as exc:
+              raiseAssert exc.msg
+          Opt.some(res)
+        else:
+          Opt.none(StreamTransport)
+      testResult =
+        clientTransp.isSome() and serverTransp.isSome() and
+          (serverTransp.get().remoteAddress2().get().family == sendType)
+    var pending: seq[FutureBase]
+    if clientTransp.isSome():
+      pending.add(closeWait(clientTransp.get()))
+    if serverTransp.isSome():
+      pending.add(closeWait(serverTransp.get()))
+    else:
+      pending.add(cancelAndWait(acceptFut))
+    await noCancel allFutures(pending)
+    try:
+      server.stop()
+    except TransportError as exc:
+      raiseAssert exc.msg
+    await server.closeWait()
+
+    testResult
+
   markFD = getCurrentFD()
 
   for i in 0..<len(addresses):
@@ -1776,6 +1866,60 @@ suite "Stream Transport test suite":
         check:
           (await performAutoAddressTest(Port(30532), AddressFamily.IPv4)) ==
             true
+
+  for portNumber in [Port(0), Port(30231)]:
+    asyncTest "[IP] IPv6 mapping test (auto-auto:" & $int(portNumber) & ")":
+      if isAvailable(AddressFamily.IPv6):
+        let
+          address1 = Opt.none(IpAddress)
+          address2 = Opt.none(IpAddress)
+        check:
+          (await performAutoAddressTest2(
+            address1, address2, portNumber, AddressFamily.IPv4))
+          (await performAutoAddressTest2(
+            address1, address2, portNumber, AddressFamily.IPv6))
+      else:
+        skip()
+    asyncTest "[IP] IPv6 mapping test (auto-ipv6:" & $int(portNumber) & ")":
+      if isAvailable(AddressFamily.IPv6):
+        let
+          address1 = Opt.none(IpAddress)
+          address2 = Opt.some(initTAddress("[::1]:0").toIpAddress())
+        check:
+          (await performAutoAddressTest2(
+            address1, address2, portNumber, AddressFamily.IPv6))
+      else:
+        skip()
+    asyncTest "[IP] IPv6 mapping test (auto-ipv4:" & $int(portNumber) & ")":
+      if isAvailable(AddressFamily.IPv6):
+        let
+          address1 = Opt.none(IpAddress)
+          address2 = Opt.some(initTAddress("127.0.0.1:0").toIpAddress())
+        check:
+          (await performAutoAddressTest2(
+            address1, address2, portNumber, AddressFamily.IPv4))
+      else:
+        skip()
+    asyncTest "[IP] IPv6 mapping test (ipv6-auto:" & $int(portNumber) & ")":
+      if isAvailable(AddressFamily.IPv6):
+        let
+          address1 = Opt.some(initTAddress("[::1]:0").toIpAddress())
+          address2 = Opt.none(IpAddress)
+        check:
+          (await performAutoAddressTest2(
+            address1, address2, portNumber, AddressFamily.IPv6))
+      else:
+        skip()
+    asyncTest "[IP] IPv6 mapping test (ipv4-auto:" & $int(portNumber) & ")":
+      if isAvailable(AddressFamily.IPv6):
+        let
+          address1 = Opt.some(initTAddress("127.0.0.1:0").toIpAddress())
+          address2 = Opt.none(IpAddress)
+        check:
+          (await performAutoAddressTest2(
+            address1, address2, portNumber, AddressFamily.IPv4))
+      else:
+        skip()
 
   test "File descriptors leak test":
     when defined(windows):

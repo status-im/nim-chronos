@@ -10,6 +10,7 @@
 {.push raises: [].}
 
 import std/[strutils]
+import results
 import stew/[base10, byteutils]
 import ".."/[config, asyncloop, osdefs, oserrno, handles]
 
@@ -18,7 +19,7 @@ from std/net import Domain, `==`, IpAddress, IpAddressFamily, parseIpAddress,
 from std/nativesockets import toInt, `$`
 
 export Domain, `==`, IpAddress, IpAddressFamily, parseIpAddress, SockType,
-       Protocol, Port, toInt, `$`
+       Protocol, Port, toInt, `$`, results
 
 const
   DefaultStreamBufferSize* = chronosTransportDefaultBufferSize
