@@ -674,6 +674,24 @@ proc close*(transp: DatagramTransport) =
       transp.state.incl({WriteClosed, ReadClosed})
       closeSocket(transp.fd, continuation)
 
+proc getTransportAddresses(
+    local, remote: Opt[IpAddress],
+    localPort, remotePort: Port
+): tuple[local: TransportAddress, remote: TransportAddress] =
+  let
+    (localAuto, remoteAuto) = getAutoAddresses(localPort, remotePort)
+    lres =
+      if local.isSome():
+        initTAddress(local.get(), localPort)
+      else:
+        localAuto
+    rres =
+      if remote.isSome():
+        initTAddress(remote.get(), remotePort)
+      else:
+        remoteAuto
+  (lres, rres)
+
 proc newDatagramTransportCommon(cbproc: UnsafeDatagramCallback,
                                 remote: TransportAddress,
                                 local: TransportAddress,
@@ -924,21 +942,7 @@ proc newDatagramTransport*(cbproc: DatagramCallback,
   ## ``Broadcast`` option).
   let
     (localHost, remoteHost) =
-      block:
-        let
-          (localAuto, remoteAuto) = getAutoAddresses(localPort, remotePort)
-          lres =
-            if local.isSome():
-              initTAddress(local.get(), localPort)
-            else:
-              localAuto
-          rres =
-            if remote.isSome():
-              initTAddress(remote.get(), remotePort)
-            else:
-              remoteAuto
-        (lres, rres)
-
+      getTransportAddresses(local, remote, localPort, remotePort)
   newDatagramTransportCommon(cbproc, remoteHost, localHost, asyncInvalidSocket,
                              flags, cast[pointer](udata), child, bufSize,
                              ttl, dualstack)
@@ -972,20 +976,7 @@ proc newDatagramTransport*[T](cbproc: DatagramCallback,
      raises: [TransportOsError].} =
   let
     (localHost, remoteHost) =
-      block:
-        let
-          (localAuto, remoteAuto) = getAutoAddresses(localPort, remotePort)
-          lres =
-            if local.isSome():
-              initTAddress(local.get(), localPort)
-            else:
-              localAuto
-          rres =
-            if remote.isSome():
-              initTAddress(remote.get(), remotePort)
-            else:
-              remoteAuto
-        (lres, rres)
+      getTransportAddresses(local, remote, localPort, remotePort)
     fflags = flags + {GCUserData}
   GC_ref(udata)
   newDatagramTransportCommon(cbproc, remoteHost, localHost, asyncInvalidSocket,
