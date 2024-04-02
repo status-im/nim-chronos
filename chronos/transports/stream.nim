@@ -1953,7 +1953,7 @@ proc createStreamServer*(host: TransportAddress,
         var
           saddr: Sockaddr_storage
           slen: SockLen
-          localAddress: TransportAddress
+          laddress: TransportAddress
 
         let sockres =
           if sock == asyncInvalidSocket:
@@ -2023,7 +2023,7 @@ proc createStreamServer*(host: TransportAddress,
             discard closeFd(SocketHandle(sockres))
           raiseTransportOsError(err)
 
-        fromSAddr(addr saddr, slen, localAddress)
+        fromSAddr(addr saddr, slen, laddress)
 
         if listen(SocketHandle(sockres), getBacklogSize(backlog)) != 0:
           let err = osLastError()
@@ -2031,7 +2031,7 @@ proc createStreamServer*(host: TransportAddress,
             discard closeFd(SocketHandle(sockres))
           raiseTransportOsError(err)
 
-        (sockres, localAddress, flagres)
+        (sockres, laddress, flagres)
       elif host.family == AddressFamily.Unix:
         (AsyncFD(0), host, flags)
       else:
@@ -2041,7 +2041,7 @@ proc createStreamServer*(host: TransportAddress,
       var
         saddr: Sockaddr_storage
         slen: SockLen
-        localAddress: TransportAddress
+        laddress: TransportAddress
 
       let sockres =
         if sock == asyncInvalidSocket:
@@ -2122,7 +2122,7 @@ proc createStreamServer*(host: TransportAddress,
           discard unregisterAndCloseFd(sockres)
         raiseTransportOsError(err)
 
-      fromSAddr(addr saddr, slen, localAddress)
+      fromSAddr(addr saddr, slen, laddress)
 
       if listen(SocketHandle(sockres), getBacklogSize(backlog)) != 0:
         let err = osLastError()
@@ -2130,7 +2130,7 @@ proc createStreamServer*(host: TransportAddress,
           discard unregisterAndCloseFd(sockres)
         raiseTransportOsError(err)
 
-      (sockres, localAddress, flagres)
+      (sockres, laddress, flagres)
 
   var sres = if not(isNil(child)): child else: StreamServer()
 
