@@ -105,6 +105,7 @@ else:
       error: ref TransportError       # Current error
       queue: Deque[StreamVector]      # Writer queue
       future: Future[void].Raising([]) # Stream life future
+      flags: set[TransportFlags]      # Internal flags
       case kind*: TransportKind
       of TransportKind.Socket:
         domain: Domain                # Socket transport domain (IPv4/IPv6)
@@ -1586,21 +1587,30 @@ else:
       retFuture.fail(getTransportOsError(error))
       return retFuture
 
-    if localAddress != TransportAddress():
-      if localAddress.family != address.family:
-        sock.closeSocket()
-        retFuture.fail(newException(TransportOsError,
-          "connect local address domain is not equal to target address domain"))
-        return retFuture
+    let transportFlags =
+      block:
+        # Add `V4Mapped` flag when `::` address is used and dualstack is
+        # set to enabled or auto.
+        var res: set[TransportFlags]
+        if (localAddress.family == AddressFamily.IPv6) and
+           localAddress.isAnyLocal():
+          if dualstack != DualStackType.Disabled:
+            res.incl(TransportFlags.V4Mapped)
+        res
+
+    case localAddress.family
+    of AddressFamily.IPv4, AddressFamily.IPv6, AddressFamily.Unix:
       var
-        localAddr: Sockaddr_storage
-        localAddrLen: SockLen
-      localAddress.toSAddr(localAddr, localAddrLen)
+        lsaddr: Sockaddr_storage
+        lslen: SockLen
+      toSAddr(localAddress, lsaddr, lslen)
       if bindSocket(SocketHandle(sock),
-        cast[ptr SockAddr](addr localAddr), localAddrLen) != 0:
+        cast[ptr SockAddr](addr lsaddr), lslen) != 0:
         sock.closeSocket()
         retFuture.fail(getTransportOsError(osLastError()))
         return retFuture
+    of AddressFamily.None:
+      discard
 
     proc continuation(udata: pointer) =
       if not(retFuture.finished()):
@@ -1619,7 +1629,8 @@ else:
           retFuture.fail(getTransportOsError(OSErrorCode(err)))
           return
 
-        let transp = newStreamSocketTransport(sock, bufferSize, child)
+        let transp = newStreamSocketTransport(sock, bufferSize, child,
+                                              transportFlags)
         # Start tracking transport
         trackCounter(StreamTransportTrackerName)
         retFuture.complete(transp)
@@ -1632,7 +1643,8 @@ else:
       let res = osdefs.connect(SocketHandle(sock),
                                cast[ptr SockAddr](addr saddr), slen)
       if res == 0:
-        let transp = newStreamSocketTransport(sock, bufferSize, child)
+        let transp = newStreamSocketTransport(sock, bufferSize, child,
+                                              transportFlags)
         # Start tracking transport
         trackCounter(StreamTransportTrackerName)
         retFuture.complete(transp)
