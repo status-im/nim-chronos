@@ -247,6 +247,12 @@ proc clean(transp: StreamTransport) {.inline.} =
 template toUnchecked*(a: untyped): untyped =
   cast[ptr UncheckedArray[byte]](a)
 
+func getTransportFlags(server: StreamServer): set[TransportFlags] =
+  if ServerFlags.V4Mapped in server.flags:
+    {TransportFlags.V4Mapped}
+  else:
+    {}
+
 when defined(windows):
 
   template zeroOvelappedOffset(t: untyped) =
@@ -278,12 +284,6 @@ when defined(windows):
       true
     else:
       false
-
-  func getTransportFlags(server: StreamServer): set[TransportFlags] =
-    if ServerFlags.V4Mapped in server.flags:
-      {TransportFlags.V4Mapped}
-    else:
-      {}
 
   proc writeStreamLoop(udata: pointer) {.gcsafe, nimcall.} =
     var bytesCount: uint32
