@@ -958,8 +958,10 @@ proc newDatagramTransport*(cbproc: DatagramCallback,
                        flags, udata, child, bufSize, ttl, dualstack)
 
 proc newDatagramTransport*[T](cbproc: DatagramCallback,
-                              port: Port,
+                              localPort: Port,
+                              remotePort: Port,
                               local: Opt[IpAddress] = Opt.none(IpAddress),
+                              remote: Opt[IpAddress] = Opt.none(IpAddress),
                               flags: set[ServerFlags] = {},
                               udata: ref T,
                               child: DatagramTransport = nil,
@@ -972,19 +974,37 @@ proc newDatagramTransport*[T](cbproc: DatagramCallback,
     (localHost, remoteHost) =
       block:
         let
-          lres = local.valueOr:
-            getAutoAddress(port)
-          rres =
-            if lres.family == AddressFamily.IPv4:
-              AnyAddress
+          (localAuto, remoteAuto) = getAutoAddresses(localPort, remotePort)
+          lres =
+            if local.isSome():
+              initTAddress(local.get(), localPort)
             else:
-              AnyAddress6
+              localAuto
+          rres =
+            if remote.isSome():
+              initTAddress(remote.get(), remotePort)
+            else:
+              remoteAuto
         (lres, rres)
     fflags = flags + {GCUserData}
   GC_ref(udata)
   newDatagramTransportCommon(cbproc, remoteHost, localHost, asyncInvalidSocket,
                              fflags, cast[pointer](udata), child, bufSize, ttl,
                              dualstack)
+
+proc newDatagramTransport*[T](cbproc: DatagramCallback,
+                              localPort: Port,
+                              local: Opt[IpAddress] = Opt.none(IpAddress),
+                              flags: set[ServerFlags] = {},
+                              udata: ref T,
+                              child: DatagramTransport = nil,
+                              bufSize: int = DefaultDatagramBufferSize,
+                              ttl: int = 0,
+                              dualstack = DualStackType.Auto
+                             ): DatagramTransport {.
+     raises: [TransportOsError].} =
+  newDatagramTransport(cbproc, localPort, Port(0), local, Opt.none(IpAddress),
+                       flags, udata, child, bufSize, ttl, dualstack)
 
 proc join*(transp: DatagramTransport): Future[void] {.
     async: (raw: true, raises: [CancelledError]).} =
