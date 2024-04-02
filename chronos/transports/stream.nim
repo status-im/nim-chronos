@@ -181,6 +181,12 @@ proc localAddress2*(
     fromSAddr(addr saddr, slen, transp.local)
   ok(transp.local)
 
+# TODO(cheatfate): This function should not be public, but for some weird
+# reason if we will make it non-public it start generate
+# Hint: 'toException' is declared but not used [XDeclaredButNotUsed]
+func toException*(v: OSErrorCode): ref TransportOsError =
+  getTransportOsError(v)
+
 proc remoteAddress*(transp: StreamTransport): TransportAddress {.
     raises: [TransportOsError].} =
   ## Returns ``transp`` remote socket address.
