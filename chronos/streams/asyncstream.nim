@@ -836,24 +836,7 @@ proc join*(rw: AsyncStreamRW): Future[void] {.
      async: (raw: true, raises: [CancelledError]).} =
   ## Get Future[void] which will be completed when stream become finished or
   ## closed.
-  when rw is AsyncStreamReader:
-    var retFuture = newFuture[void]("async.stream.reader.join")
-  else:
-    var retFuture = newFuture[void]("async.stream.writer.join")
-
-  proc continuation(udata: pointer) {.gcsafe, raises:[].} =
-    retFuture.complete()
-
-  proc cancellation(udata: pointer) {.gcsafe, raises:[].} =
-    rw.future.removeCallback(continuation, cast[pointer](retFuture))
-
-  if not(rw.future.finished()):
-    rw.future.addCallback(continuation, cast[pointer](retFuture))
-    retFuture.cancelCallback = cancellation
-  else:
-    retFuture.complete()
-
-  return retFuture
+  rw.future.join()
 
 proc close*(rw: AsyncStreamRW) =
   ## Close and frees resources of stream ``rw``.
