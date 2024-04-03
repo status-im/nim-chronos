@@ -1632,7 +1632,8 @@ suite "Stream Transport test suite":
           Opt.none(StreamTransport)
       testResult =
         clientTransp.isSome() and serverTransp.isSome() and
-          (serverTransp.get().remoteAddress2().get().family == sendType)
+          (serverTransp.get().remoteAddress2().get().family == sendType) and
+            (clientTransp.get().remoteAddress2().get().family == sendType)
     var pending: seq[FutureBase]
     if clientTransp.isSome():
       pending.add(closeWait(clientTransp.get()))
