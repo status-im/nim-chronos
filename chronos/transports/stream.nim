@@ -585,7 +585,8 @@ when defined(windows):
                                       udata: cast[pointer](transp))
     transp.wovl.data = CompletionData(cb: writeStreamLoop,
                                       udata: cast[pointer](transp))
-    transp.buffer = BipBuffer.init(bufsize)
+    let size = max(bufsize, DefaultStreamBufferSize)
+    transp.buffer = BipBuffer.init(size)
     transp.state = {ReadPaused, WritePaused}
     transp.queue = initDeque[StreamVector]()
     transp.future = Future[void].Raising([]).init(
@@ -606,7 +607,8 @@ when defined(windows):
                                       udata: cast[pointer](transp))
     transp.wovl.data = CompletionData(cb: writeStreamLoop,
                                       udata: cast[pointer](transp))
-    transp.buffer = BipBuffer.init(bufsize)
+    let size = max(bufsize, DefaultStreamBufferSize)
+    transp.buffer = BipBuffer.init(size)
     transp.flags = flags
     transp.state = {ReadPaused, WritePaused}
     transp.queue = initDeque[StreamVector]()
@@ -1452,7 +1454,8 @@ else:
       transp = StreamTransport(kind: TransportKind.Socket)
 
     transp.fd = sock
-    transp.buffer = BipBuffer.init(bufsize)
+    let size = max(bufsize, DefaultStreamBufferSize)
+    transp.buffer = BipBuffer.init(size)
     transp.state = {ReadPaused, WritePaused}
     transp.queue = initDeque[StreamVector]()
     transp.future = Future[void].Raising([]).init(
@@ -1469,7 +1472,8 @@ else:
       transp = StreamTransport(kind: TransportKind.Pipe)
 
     transp.fd = fd
-    transp.buffer = BipBuffer.init(bufsize)
+    let size = max(bufsize, DefaultStreamBufferSize)
+    transp.buffer = BipBuffer.init(size)
     transp.state = {ReadPaused, WritePaused}
     transp.queue = initDeque[StreamVector]()
     transp.future = Future[void].Raising([]).init(
