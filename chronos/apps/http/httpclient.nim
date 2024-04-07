@@ -567,7 +567,8 @@ proc new(
       tls =
         try:
           newTLSClientAsyncStream(treader, twriter, ha.hostname,
-                                  flags = session.flags.getTLSFlags())
+                                  flags = session.flags.getTLSFlags(),
+                                  bufferSize = session.connectionBufferSize)
         except TLSStreamInitError as exc:
           return err(exc.msg)
 
@@ -1327,13 +1328,18 @@ proc getBodyReader*(response: HttpClientResponseRef): HttpBodyReader {.
     let reader =
       case response.bodyFlag
       of HttpClientBodyFlag.Sized:
-        let bstream = newBoundedStreamReader(response.connection.reader,
-                                             response.contentLength)
-        newHttpBodyReader(bstream)
+        newHttpBodyReader(
+          newBoundedStreamReader(
+            response.connection.reader, response.contentLength,
+            bufferSize = response.session.connectionBufferSize))
       of HttpClientBodyFlag.Chunked:
-        newHttpBodyReader(newChunkedStreamReader(response.connection.reader))
+        newHttpBodyReader(
+          newChunkedStreamReader(
+            response.connection.reader,
+            bufferSize = response.session.connectionBufferSize))
       of HttpClientBodyFlag.Custom:
-        newHttpBodyReader(newAsyncStreamReader(response.connection.reader))
+        newHttpBodyReader(
+          newAsyncStreamReader(response.connection.reader))
     response.connection.state = HttpClientConnectionState.ResponseBodyReceiving
     response.reader = reader
   response.reader

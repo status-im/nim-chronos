@@ -929,7 +929,8 @@ proc init*(child, rsource: AsyncStreamReader, loop: StreamReaderLoop,
   child.readerLoop = loop
   child.rsource = rsource
   child.tsource = rsource.tsource
-  child.buffer = AsyncBufferRef.new(bufferSize)
+  let size = max(AsyncStreamDefaultBufferSize, bufferSize)
+  child.buffer = AsyncBufferRef.new(size)
   trackCounter(AsyncStreamReaderTrackerName)
   child.startReader()
 
@@ -941,7 +942,8 @@ proc init*[T](child, rsource: AsyncStreamReader, loop: StreamReaderLoop,
   child.readerLoop = loop
   child.rsource = rsource
   child.tsource = rsource.tsource
-  child.buffer = AsyncBufferRef.new(bufferSize)
+  let size = max(AsyncStreamDefaultBufferSize, bufferSize)
+  child.buffer = AsyncBufferRef.new(size)
   if not isNil(udata):
     GC_ref(udata)
     child.udata = cast[pointer](udata)
