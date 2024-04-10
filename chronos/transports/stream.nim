@@ -1513,6 +1513,7 @@ else:
       transp = StreamTransport(kind: TransportKind.Socket)
 
     transp.fd = sock
+    transp.flags = flags
     let size = max(bufsize, DefaultStreamBufferSize)
     transp.buffer = BipBuffer.init(size)
     transp.state = {ReadPaused, WritePaused}
