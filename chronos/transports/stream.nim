@@ -621,6 +621,7 @@ when defined(windows):
     else:
       transp = StreamTransport(kind: TransportKind.Socket)
     transp.fd = sock
+    transp.flags = flags
     transp.rovl.data = CompletionData(cb: readStreamLoop,
                                       udata: cast[pointer](transp))
     transp.wovl.data = CompletionData(cb: writeStreamLoop,
