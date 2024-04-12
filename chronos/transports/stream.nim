@@ -2218,7 +2218,7 @@ proc createStreamServer*(host: TransportAddress,
   createStreamServer(host, StreamCallback2(nil), flags, sock, backlog, bufferSize,
                      child, init, cast[pointer](udata), dualstack)
 
-proc createStreamServer*(port = Port(0),
+proc createStreamServer*(port: Port,
                          host: Opt[IpAddress] = Opt.none(IpAddress),
                          flags: set[ServerFlags] = {},
                          sock: AsyncFD = asyncInvalidSocket,
@@ -2229,8 +2229,9 @@ proc createStreamServer*(port = Port(0),
                          udata: pointer = nil,
                          dualstack = DualStackType.Auto): StreamServer {.
     raises: [TransportOsError].} =
-  ## Create stream server which will be bound to IPv6 address `::`, if IPv6
-  ## available, and bound to IPv4 address `0.0.0.0`, if IPv6 is not available.
+  ## Create stream server which will be bound to:
+  ## 1. IPv6 address `::`, if IPv6 is available
+  ## 2. IPv4 address `0.0.0.0`, if IPv6 is not available.
   let hostname =
     if host.isSome():
       initTAddress(host.get(), port)
@@ -2241,7 +2242,7 @@ proc createStreamServer*(port = Port(0),
                      dualstack)
 
 proc createStreamServer*(cbproc: StreamCallback2,
-                         port = Port(0),
+                         port: Port,
                          host: Opt[IpAddress] = Opt.none(IpAddress),
                          flags: set[ServerFlags] = {},
                          sock: AsyncFD = asyncInvalidSocket,
@@ -2252,8 +2253,9 @@ proc createStreamServer*(cbproc: StreamCallback2,
                          udata: pointer = nil,
                          dualstack = DualStackType.Auto): StreamServer {.
     raises: [TransportOsError].} =
-  ## Create stream server which will be bound to IPv6 address `::`, if IPv6
-  ## available, and bound to IPv4 address `0.0.0.0`, if IPv6 is not available.
+  ## Create stream server which will be bound to:
+  ## 1. IPv6 address `::`, if IPv6 is available
+  ## 2. IPv4 address `0.0.0.0`, if IPv6 is not available.
   let hostname =
     if host.isSome():
       initTAddress(host.get(), port)
@@ -2311,7 +2313,7 @@ proc createStreamServer*[T](host: TransportAddress,
                      child, init, cast[pointer](udata), dualstack)
 
 proc createStreamServer*[T](cbproc: StreamCallback2,
-                            port: Port = Port(0),
+                            port: Port,
                             host: Opt[IpAddress] = Opt.none(IpAddress),
                             flags: set[ServerFlags] = {},
                             udata: ref T,
@@ -2322,8 +2324,9 @@ proc createStreamServer*[T](cbproc: StreamCallback2,
                             init: TransportInitCallback = nil,
                             dualstack = DualStackType.Auto): StreamServer {.
     raises: [TransportOsError].} =
-  ## Create stream server which will be bound to IPv6 address `::`, if IPv6
-  ## available, and bound to IPv4 address `0.0.0.0`, if IPv6 is not available.
+  ## Create stream server which will be bound to:
+  ## 1. IPv6 address `::`, if IPv6 is available
+  ## 2. IPv4 address `0.0.0.0`, if IPv6 is not available.
   let fflags = flags + {GCUserData}
   GC_ref(udata)
   let hostname =
@@ -2334,7 +2337,7 @@ proc createStreamServer*[T](cbproc: StreamCallback2,
   createStreamServer(hostname, cbproc, fflags, sock, backlog,
                      bufferSize, child, init, cast[pointer](udata), dualstack)
 
-proc createStreamServer*[T](port: Port = Port(0),
+proc createStreamServer*[T](port: Port,
                             host: Opt[IpAddress] = Opt.none(IpAddress),
                             flags: set[ServerFlags] = {},
                             udata: ref T,
@@ -2345,8 +2348,9 @@ proc createStreamServer*[T](port: Port = Port(0),
                             init: TransportInitCallback = nil,
                             dualstack = DualStackType.Auto): StreamServer {.
     raises: [TransportOsError].} =
-  ## Create stream server which will be bound to IPv6 address `::`, if IPv6
-  ## available, and bound to IPv4 address `0.0.0.0`, if IPv6 is not available.
+  ## Create stream server which will be bound to:
+  ## 1. IPv6 address `::`, if IPv6 is available
+  ## 2. IPv4 address `0.0.0.0`, if IPv6 is not available.
   let fflags = flags + {GCUserData}
   GC_ref(udata)
   let hostname =
