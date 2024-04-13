@@ -32,6 +32,10 @@ suite "Datagram Transport test suite":
     m8 = "Bounded multiple clients with messages (" & $ClientsCount &
          " clients x " & $MessagesCount & " messages)"
 
+  type
+    DatagramSocketType {.pure.} = enum
+      Bound, Unbound
+
   proc client1(transp: DatagramTransport,
                raddr: TransportAddress): Future[void] {.async: (raises: []).} =
     try:
@@ -628,6 +632,243 @@ suite "Datagram Transport test suite":
     await allFutures(sdgram.closeWait(), cdgram.closeWait())
     res == 1
 
+  proc performAutoAddressTest(port: Port,
+                              family: AddressFamily): Future[bool] {.async.} =
+    var
+      expectRequest1 = "AUTO REQUEST1"
+      expectRequest2 = "AUTO REQUEST2"
+      expectResponse = "AUTO RESPONSE"
+      mappedResponse = "MAPPED RESPONSE"
+      event = newAsyncEvent()
+      event2 = newAsyncEvent()
+      res = 0
+
+    proc process1(transp: DatagramTransport,
+                  raddr: TransportAddress): Future[void] {.
+         async: (raises: []).} =
+      try:
+        var
+          bmsg = transp.getMessage()
+          smsg = string.fromBytes(bmsg)
+        if smsg == expectRequest1:
+          inc(res)
+          await noCancel transp.sendTo(
+            raddr, addr expectResponse[0], len(expectResponse))
+        elif smsg == expectRequest2:
+          inc(res)
+          await noCancel transp.sendTo(
+            raddr, addr mappedResponse[0], len(mappedResponse))
+      except TransportError as exc:
+        raiseAssert exc.msg
+      except CancelledError as exc:
+        raiseAssert exc.msg
+
+    proc process2(transp: DatagramTransport,
+                  raddr: TransportAddress): Future[void] {.
+         async: (raises: []).} =
+      try:
+        var
+          bmsg = transp.getMessage()
+          smsg = string.fromBytes(bmsg)
+        if smsg == expectResponse:
+          inc(res)
+        event.fire()
+      except TransportError as exc:
+        raiseAssert exc.msg
+      except CancelledError as exc:
+        raiseAssert exc.msg
+
+    proc process3(transp: DatagramTransport,
+                  raddr: TransportAddress): Future[void] {.
+         async: (raises: []).} =
+      try:
+        var
+          bmsg = transp.getMessage()
+          smsg = string.fromBytes(bmsg)
+        if smsg == mappedResponse:
+          inc(res)
+        event2.fire()
+      except TransportError as exc:
+        raiseAssert exc.msg
+      except CancelledError as exc:
+        raiseAssert exc.msg
+
+    let sdgram =
+      block:
+        var res: DatagramTransport
+        var currentPort = port
+        for i in 0 ..< 10:
+          res =
+            try:
+              newDatagramTransport(process1, currentPort,
+                                   flags = {ServerFlags.ReusePort})
+            except TransportOsError:
+              echo "Unable to create transport on port ", currentPort
+              currentPort = Port(uint16(currentPort) + 1'u16)
+              nil
+          if not(isNil(res)):
+            break
+        doAssert(not(isNil(res)), "Unable to create transport, giving up")
+        res
+
+    var
+      address =
+        case family
+        of AddressFamily.IPv4:
+          initTAddress("127.0.0.1:0")
+        of AddressFamily.IPv6:
+          initTAddress("::1:0")
+        of AddressFamily.Unix, AddressFamily.None:
+          raiseAssert "Not allowed"
+
+    let
+      cdgram =
+        case family
+        of AddressFamily.IPv4:
+          newDatagramTransport(process2, local = address)
+        of AddressFamily.IPv6:
+          newDatagramTransport6(process2, local = address)
+        of AddressFamily.Unix, AddressFamily.None:
+          raiseAssert "Not allowed"
+
+    address.port = sdgram.localAddress().port
+
+    try:
+      await noCancel cdgram.sendTo(
+        address, addr expectRequest1[0], len(expectRequest1))
+    except TransportError:
+      discard
+
+    if family == AddressFamily.IPv6:
+      var remote = initTAddress("127.0.0.1:0")
+      remote.port = sdgram.localAddress().port
+      let wtransp =
+        newDatagramTransport(process3, local = initTAddress("0.0.0.0:0"))
+      try:
+        await noCancel wtransp.sendTo(
+          remote, addr expectRequest2[0], len(expectRequest2))
+      except TransportError as exc:
+        raiseAssert "Got transport error, reason = " & $exc.msg
+
+      try:
+        await event2.wait().wait(1.seconds)
+      except CatchableError:
+        discard
+
+      await wtransp.closeWait()
+
+    try:
+      await event.wait().wait(1.seconds)
+    except CatchableError:
+      discard
+
+    await allFutures(sdgram.closeWait(), cdgram.closeWait())
+
+    if family == AddressFamily.IPv4:
+      res == 2
+    else:
+      res == 4
+
+  proc performAutoAddressTest2(
+    address1: Opt[IpAddress],
+    address2: Opt[IpAddress],
+    port: Port,
+    sendType: AddressFamily,
+    boundType: DatagramSocketType
+  ): Future[bool] {.async.} =
+    let
+      expectRequest = "TEST REQUEST"
+      expectResponse = "TEST RESPONSE"
+      event = newAsyncEvent()
+    var res = 0
+
+    proc process1(transp: DatagramTransport,
+                  raddr: TransportAddress): Future[void] {.
+         async: (raises: []).} =
+      if raddr.family != sendType:
+        raiseAssert "Incorrect address family received [" & $raddr &
+                    "], expected [" & $sendType & "]"
+      try:
+        let
+          bmsg = transp.getMessage()
+          smsg = string.fromBytes(bmsg)
+        if smsg == expectRequest:
+          inc(res)
+        await noCancel transp.sendTo(
+          raddr, unsafeAddr expectResponse[0], len(expectResponse))
+      except TransportError as exc:
+        raiseAssert exc.msg
+      except CancelledError as exc:
+        raiseAssert exc.msg
+
+    proc process2(transp: DatagramTransport,
+                  raddr: TransportAddress): Future[void] {.
+         async: (raises: []).} =
+      if raddr.family != sendType:
+        raiseAssert "Incorrect address family received [" & $raddr &
+                    "], expected [" & $sendType & "]"
+      try:
+        let
+          bmsg = transp.getMessage()
+          smsg = string.fromBytes(bmsg)
+        if smsg == expectResponse:
+          inc(res)
+        event.fire()
+      except TransportError as exc:
+        raiseAssert exc.msg
+      except CancelledError as exc:
+        raiseAssert exc.msg
+
+    let
+      serverFlags = {ServerFlags.ReuseAddr}
+      server = newDatagramTransport(process1, flags = serverFlags,
+                                    local = address1, localPort = port)
+      serverAddr = server.localAddress()
+      serverPort = serverAddr.port
+      remoteAddress =
+        case sendType
+        of AddressFamily.IPv4:
+          var res = initTAddress("127.0.0.1:0")
+          res.port = serverPort
+          res
+        of AddressFamily.IPv6:
+          var res = initTAddress("[::1]:0")
+          res.port = serverPort
+          res
+        else:
+          raiseAssert "Incorrect sending type"
+      remoteIpAddress = Opt.some(remoteAddress.toIpAddress())
+      client =
+        case boundType
+        of DatagramSocketType.Bound:
+          newDatagramTransport(process2,
+                               localPort = Port(0), remotePort = serverPort,
+                               local = address2, remote = remoteIpAddress)
+        of DatagramSocketType.Unbound:
+          newDatagramTransport(process2,
+                               localPort = Port(0), remotePort = Port(0),
+                               local = address2)
+
+    try:
+      case boundType
+      of DatagramSocketType.Bound:
+        await noCancel client.send(
+          unsafeAddr expectRequest[0], len(expectRequest))
+      of DatagramSocketType.Unbound:
+        await noCancel client.sendTo(remoteAddress,
+          unsafeAddr expectRequest[0], len(expectRequest))
+    except TransportError as exc:
+      raiseAssert "Could not send datagram to remote peer, reason = " & $exc.msg
+
+    try:
+      await event.wait().wait(1.seconds)
+    except CatchableError:
+      discard
+
+    await allFutures(server.closeWait(), client.closeWait())
+
+    res == 2
+
   test "close(transport) test":
     check waitFor(testTransportClose()) == true
   test m1:
@@ -730,3 +971,104 @@ suite "Datagram Transport test suite":
            DualStackType.Auto, initTAddress("[::1]:0"))) == true
     else:
       skip()
+  asyncTest "[IP] Auto-address constructor test (*:0)":
+    if isAvailable(AddressFamily.IPv6):
+      check:
+        (await performAutoAddressTest(Port(0), AddressFamily.IPv6)) == true
+      # If IPv6 is available newAutoDatagramTransport should bind to `::` - this
+      # means that we should be able to connect to it via IPV4_MAPPED address,
+      # but only when IPv4 is also available.
+      if isAvailable(AddressFamily.IPv4):
+        check:
+          (await performAutoAddressTest(Port(0), AddressFamily.IPv4)) == true
+    else:
+      # If IPv6 is not available newAutoDatagramTransport should bind to
+      # `0.0.0.0` - this means we should be able to connect to it via IPv4
+      # address.
+      if isAvailable(AddressFamily.IPv4):
+        check:
+          (await performAutoAddressTest(Port(0), AddressFamily.IPv4)) == true
+  asyncTest "[IP] Auto-address constructor test (*:30231)":
+    if isAvailable(AddressFamily.IPv6):
+      check:
+        (await performAutoAddressTest(Port(30231), AddressFamily.IPv6)) == true
+      # If IPv6 is available newAutoDatagramTransport should bind to `::` - this
+      # means that we should be able to connect to it via IPV4_MAPPED address,
+      # but only when IPv4 is also available.
+      if isAvailable(AddressFamily.IPv4):
+        check:
+          (await performAutoAddressTest(Port(30231), AddressFamily.IPv4)) ==
+            true
+    else:
+      # If IPv6 is not available newAutoDatagramTransport should bind to
+      # `0.0.0.0` - this means we should be able to connect to it via IPv4
+      # address.
+      if isAvailable(AddressFamily.IPv4):
+        check:
+          (await performAutoAddressTest(Port(30231), AddressFamily.IPv4)) ==
+            true
+
+  for socketType in DatagramSocketType:
+    for portNumber in [Port(0), Port(30231)]:
+      asyncTest "[IP] IPv6 mapping test (" & $socketType &
+                "/auto-auto:" & $int(portNumber) & ")":
+        if isAvailable(AddressFamily.IPv6):
+          let
+            address1 = Opt.none(IpAddress)
+            address2 = Opt.none(IpAddress)
+
+          check:
+            (await performAutoAddressTest2(
+              address1, address2, portNumber, AddressFamily.IPv4, socketType))
+            (await performAutoAddressTest2(
+              address1, address2, portNumber, AddressFamily.IPv6, socketType))
+        else:
+          skip()
+
+      asyncTest "[IP] IPv6 mapping test (" & $socketType &
+                "/auto-ipv6:" & $int(portNumber) & ")":
+        if isAvailable(AddressFamily.IPv6):
+          let
+            address1 = Opt.none(IpAddress)
+            address2 = Opt.some(initTAddress("[::1]:0").toIpAddress())
+          check:
+            (await performAutoAddressTest2(
+              address1, address2, portNumber, AddressFamily.IPv6, socketType))
+        else:
+          skip()
+
+      asyncTest "[IP] IPv6 mapping test (" & $socketType &
+                "/auto-ipv4:" & $int(portNumber) & ")":
+        if isAvailable(AddressFamily.IPv6):
+          let
+            address1 = Opt.none(IpAddress)
+            address2 = Opt.some(initTAddress("127.0.0.1:0").toIpAddress())
+          check:
+            (await performAutoAddressTest2(address1, address2, portNumber,
+                                           AddressFamily.IPv4, socketType))
+        else:
+          skip()
+
+      asyncTest "[IP] IPv6 mapping test (" & $socketType &
+                "/ipv6-auto:" & $int(portNumber) & ")":
+        if isAvailable(AddressFamily.IPv6):
+          let
+            address1 = Opt.some(initTAddress("[::1]:0").toIpAddress())
+            address2 = Opt.none(IpAddress)
+          check:
+            (await performAutoAddressTest2(address1, address2, portNumber,
+                                           AddressFamily.IPv6, socketType))
+        else:
+          skip()
+
+      asyncTest "[IP] IPv6 mapping test (" & $socketType &
+                "/ipv4-auto:" & $int(portNumber) & ")":
+        if isAvailable(AddressFamily.IPv6):
+          let
+            address1 = Opt.some(initTAddress("127.0.0.1:0").toIpAddress())
+            address2 = Opt.none(IpAddress)
+          check:
+            (await performAutoAddressTest2(address1, address2, portNumber,
+                                           AddressFamily.IPv4, socketType))
+        else:
+          skip()

@@ -10,6 +10,7 @@
 {.push raises: [].}
 
 import std/[strutils]
+import results
 import stew/[base10, byteutils]
 import ".."/[config, asyncloop, osdefs, oserrno, handles]
 
@@ -18,7 +19,7 @@ from std/net import Domain, `==`, IpAddress, IpAddressFamily, parseIpAddress,
 from std/nativesockets import toInt, `$`
 
 export Domain, `==`, IpAddress, IpAddressFamily, parseIpAddress, SockType,
-       Protocol, Port, toInt, `$`
+       Protocol, Port, toInt, `$`, results
 
 const
   DefaultStreamBufferSize* = chronosTransportDefaultBufferSize
@@ -29,7 +30,7 @@ type
   ServerFlags* = enum
     ## Server's flags
     ReuseAddr, ReusePort, TcpNoDelay, NoAutoRead, GCUserData, FirstPipe,
-    NoPipeFlash, Broadcast
+    NoPipeFlash, Broadcast, V4Mapped
 
   DualStackType* {.pure.} = enum
     Auto, Enabled, Disabled, Default
@@ -199,6 +200,15 @@ proc `$`*(address: TransportAddress): string =
       "/"
   of AddressFamily.None:
     "None"
+
+proc toIpAddress*(address: TransportAddress): IpAddress =
+  case address.family
+  of AddressFamily.IPv4:
+    IpAddress(family: IpAddressFamily.IPv4, address_v4: address.address_v4)
+  of AddressFamily.IPv6:
+    IpAddress(family: IpAddressFamily.IPv6, address_v6: address.address_v6)
+  else:
+    raiseAssert "IpAddress do not support address family " & $address.family
 
 proc toHex*(address: TransportAddress): string =
   ## Returns hexadecimal representation of ``address``.
@@ -783,3 +793,25 @@ proc setDualstack*(socket: AsyncFD,
     else:
       ? getDomain(socket)
   setDualstack(socket, family, flag)
+
+proc getAutoAddress*(port: Port): TransportAddress =
+  var res =
+    if isAvailable(AddressFamily.IPv6):
+      AnyAddress6
+    else:
+      AnyAddress
+  res.port = port
+  res
+
+proc getAutoAddresses*(
+    localPort: Port,
+    remotePort: Port
+): tuple[local: TransportAddress, remote: TransportAddress] =
+  var (local, remote) =
+    if isAvailable(AddressFamily.IPv6):
+      (AnyAddress6, AnyAddress6)
+    else:
+      (AnyAddress, AnyAddress)
+  local.port = localPort
+  remote.port = remotePort
+  (local, remote)
