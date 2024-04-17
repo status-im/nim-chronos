@@ -1518,3 +1518,63 @@ suite "HTTP client testing suite":
         res.isErr() and res.error == HttpAddressErrorType.NameLookupFailed
         res.error.isRecoverableError()
         not(res.error.isCriticalError())
+
+  asyncTest "HTTPS response headers buffer size test":
+    const HeadersSize = HttpMaxHeadersSize
+    let expectValue =
+      string.fromBytes(createBigMessage("HEADERSTEST", HeadersSize))
+    proc process(r: RequestFence): Future[HttpResponseRef] {.
+         async: (raises: [CancelledError]).} =
+      if r.isOk():
+        let request = r.get()
+        try:
+          case request.uri.path
+          of "/test":
+            let headers = HttpTable.init([("big-header", expectValue)])
+            await request.respond(Http200, "ok", headers)
+          else:
+            await request.respond(Http404, "Page not found")
+        except HttpWriteError as exc:
+          defaultResponse(exc)
+      else:
+        defaultResponse()
+
+    var server = createServer(initTAddress("127.0.0.1:0"), process, false)
+    server.start()
+    let
+      address = server.instance.localAddress()
+      ha = getAddress(address, HttpClientScheme.NonSecure, "/test")
+      session = HttpSessionRef.new()
+    let
+      req1 = HttpClientRequestRef.new(session, ha)
+      req2 =
+        HttpClientRequestRef.new(session, ha,
+          maxResponseHeadersSize = HttpMaxHeadersSize * 2)
+      res1 =
+        try:
+          let res {.used.} = await send(req1)
+          await closeWait(req1)
+          await closeWait(res)
+          false
+        except HttpReadError:
+          true
+        except HttpError:
+          await closeWait(req1)
+          false
+        except CancelledError:
+          await closeWait(req1)
+          false
+
+      res2 = await send(req2)
+
+    check:
+      res1 == true
+      res2.status == 200
+      res2.headers.getString("big-header") == expectValue
+
+    await req1.closeWait()
+    await req2.closeWait()
+    await res2.closeWait()
+    await session.closeWait()
+    await server.stop()
+    await server.closeWait()
