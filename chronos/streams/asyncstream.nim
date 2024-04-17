@@ -1082,6 +1082,22 @@ proc newAsyncStreamReader*(tsource: StreamTransport): AsyncStreamReader =
   res.init(tsource)
   res
 
+proc newAsyncStreamReader*[T](rsource: AsyncStreamReader,
+                              udata: ref T): AsyncStreamReader =
+  ## Create copy of AsyncStreamReader object ``rsource``.
+  ##
+  ## ``udata`` - user object which will be associated with new AsyncStreamReader
+  ## object.
+  var res = AsyncStreamReader()
+  res.init(rsource, udata)
+  res
+
+proc newAsyncStreamReader*(rsource: AsyncStreamReader): AsyncStreamReader =
+  ## Create copy of AsyncStreamReader object ``rsource``.
+  var res = AsyncStreamReader()
+  res.init(rsource)
+  res
+
 proc newAsyncStreamWriter*[T](wsource: AsyncStreamWriter,
                               loop: StreamWriterLoop,
                               queueSize = AsyncStreamDefaultQueueSize,
@@ -1145,22 +1161,6 @@ proc newAsyncStreamWriter*(wsource: AsyncStreamWriter): AsyncStreamWriter =
   ## Create copy of AsyncStreamWriter object ``wsource``.
   var res = AsyncStreamWriter()
   res.init(wsource)
-  res
-
-proc newAsyncStreamReader*[T](rsource: AsyncStreamWriter,
-                              udata: ref T): AsyncStreamWriter =
-  ## Create copy of AsyncStreamReader object ``rsource``.
-  ##
-  ## ``udata`` - user object which will be associated with new AsyncStreamReader
-  ## object.
-  var res = AsyncStreamReader()
-  res.init(rsource, udata)
-  res
-
-proc newAsyncStreamReader*(rsource: AsyncStreamReader): AsyncStreamReader =
-  ## Create copy of AsyncStreamReader object ``rsource``.
-  var res = AsyncStreamReader()
-  res.init(rsource)
   res
 
 proc getUserData*[T](rw: AsyncStreamRW): T {.inline.} =
