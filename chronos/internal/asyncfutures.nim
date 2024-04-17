@@ -1529,6 +1529,52 @@ proc withTimeout*[T](fut: Future[T], timeout: int): Future[bool] {.
      inline, deprecated: "Use withTimeout(Future[T], Duration)".} =
   withTimeout(fut, timeout.milliseconds())
 
+proc waitUntilImpl[F: SomeFuture](fut: F, retFuture: auto,
+                                  deadline: auto): auto =
+  var timeouted = false
+
+  template completeFuture(fut: untyped): untyped =
+    if fut.failed():
+      retFuture.fail(fut.error(), warn = false)
+    elif fut.cancelled():
+      retFuture.cancelAndSchedule()
+    else:
+      when type(fut).T is void:
+        retFuture.complete()
+      else:
+        retFuture.complete(fut.value)
+
+  proc continuation(udata: pointer) {.raises: [].} =
+    if not(retFuture.finished()):
+      if timeouted:
+        retFuture.fail(newException(AsyncTimeoutError, "Timeout exceeded!"))
+        return
+
+      if not(fut.finished()):
+        timeouted = true
+        fut.cancelSoon()
+      else:
+        fut.completeFuture()
+
+  var cancellation: proc(udata: pointer) {.gcsafe, raises: [].}
+  cancellation = proc(udata: pointer) {.gcsafe, raises: [].} =
+    deadline.removeCallback(continuation)
+    if not(fut.finished()):
+      fut.cancelSoon()
+    else:
+      fut.completeFuture()
+
+  if fut.finished():
+    fut.completeFuture()
+  else:
+    if deadline.finished():
+      retFuture.fail(newException(AsyncTimeoutError, "Timeout exceeded!"))
+    else:
+      retFuture.cancelCallback = cancellation
+      fut.addCallback(continuation)
+      deadline.addCallback(continuation)
+  retFuture
+
 proc waitImpl[F: SomeFuture](fut: F, retFuture: auto, timeout: Duration): auto =
   var
     moment: Moment
@@ -1621,6 +1667,23 @@ proc wait*[T](fut: Future[T], timeout = -1): Future[T] {.
   else:
     wait(fut, timeout.milliseconds())
 
+proc waitUntil*[T](fut: Future[T], deadline: auto): Future[T] =
+  ## Returns a future which will complete once future ``fut`` completes
+  ## or if ``deadline`` future completes.
+  ##
+  ## If ``deadline`` future completes before future ``fut`` -
+  ## `AsyncTimeoutError` exception will be raised.
+  ##
+  ## Note that ``deadline`` future will not be cancelled and/or failed.
+  static:
+    doAssert deadline is SomeFuture
+  var
+    retFuture = newFuture[T]("chronos.waitUntil()",
+                             {FutureFlag.OwnCancelSchedule})
+      # We set `OwnCancelSchedule` flag, because we going to cancel `retFuture`
+      # manually at proper time.
+  waitUntilImpl(fut, retFuture, deadline)
+  
 proc join*(future: FutureBase): Future[void] {.
      async: (raw: true, raises: [CancelledError]).} =
   ## Returns a future which will complete once future ``future`` completes.
@@ -1788,3 +1851,17 @@ proc wait*(fut: InternalRaisesFuture, timeout = InfiniteDuration): auto =
       # manually at proper time.
 
   waitImpl(fut, retFuture, timeout)
+
+proc waitUntil*(fut: InternalRaisesFuture,
+                deadline: InternalRaisesFuture): auto =
+  type
+    T = type(fut).T
+    E = type(fut).E
+    InternalRaisesFutureRaises = E.prepend(CancelledError, AsyncTimeoutError)
+
+  let
+    retFuture = newFuture[T]("chronos.waitUntil()", {OwnCancelSchedule})
+      # We set `OwnCancelSchedule` flag, because we going to cancel `retFuture`
+      # manually at proper time.
+
+  waitUntilImpl(fut, retFuture, deadline)
