@@ -317,7 +317,7 @@ proc readExactly*(rstream: AsyncStreamReader, pbytes: pointer,
   ## Read exactly ``nbytes`` bytes from read-only stream ``rstream`` and store
   ## it to ``pbytes``.
   ##
-  ## If EOF is received and ``nbytes`` is not yet readed, the procedure
+  ## If EOF is received and ``nbytes`` is not yet read, the procedure
   ## will raise ``AsyncStreamIncompleteError``.
   doAssert(not(isNil(pbytes)), "pbytes must not be nil")
   doAssert(nbytes >= 0, "nbytes must be non-negative integer")
@@ -347,16 +347,16 @@ proc readExactly*(rstream: AsyncStreamReader, pbytes: pointer,
         if len(rstream.buffer.backend) == 0:
           if rstream.atEof():
             raise newAsyncStreamIncompleteError()
-        var readed = 0
+        var bytesRead = 0
         for (region, rsize) in rstream.buffer.backend.regions():
           let count = min(nbytes - index, rsize)
-          readed += count
+          bytesRead += count
           if count > 0:
             copyMem(addr pbuffer[index], region, count)
             index += count
           if index == nbytes:
             break
-        (consumed: readed, done: index == nbytes)
+        (consumed: bytesRead, done: index == nbytes)
 
 proc readOnce*(rstream: AsyncStreamReader, pbytes: pointer,
                nbytes: int): Future[int] {.
@@ -547,11 +547,11 @@ proc read*(rstream: AsyncStreamReader): Future[seq[byte]] {.
         if rstream.atEof():
           (0, true)
         else:
-          var readed = 0
+          var bytesRead = 0
           for (region, rsize) in rstream.buffer.backend.regions():
-            readed += rsize
+            bytesRead += rsize
             res.add(region.toUnchecked().toOpenArray(0, rsize - 1))
-          (readed, false)
+          (bytesRead, false)
       res
 
 proc read*(rstream: AsyncStreamReader, n: int): Future[seq[byte]] {.
@@ -581,12 +581,12 @@ proc read*(rstream: AsyncStreamReader, n: int): Future[seq[byte]] {.
           if rstream.atEof():
             (0, true)
           else:
-            var readed = 0
+            var bytesRead = 0
             for (region, rsize) in rstream.buffer.backend.regions():
               let count = min(rsize, n - len(res))
-              readed += count
+              bytesRead += count
               res.add(region.toUnchecked().toOpenArray(0, count - 1))
-            (readed, len(res) == n)
+            (bytesRead, len(res) == n)
         res
 
 proc consume*(rstream: AsyncStreamReader): Future[int] {.

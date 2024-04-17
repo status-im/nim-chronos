@@ -2579,7 +2579,7 @@ proc readExactly*(transp: StreamTransport, pbytes: pointer,
   ##
   ## If ``nbytes == 0`` this operation will return immediately.
   ##
-  ## If EOF is received and ``nbytes`` is not yet readed, the procedure
+  ## If EOF is received and ``nbytes`` is not yet read, the procedure
   ## will raise ``TransportIncompleteError``, potentially with some bytes
   ## already written.
   doAssert(not(isNil(pbytes)), "pbytes must not be nil")
@@ -2595,16 +2595,16 @@ proc readExactly*(transp: StreamTransport, pbytes: pointer,
     if len(transp.buffer) == 0:
       if transp.atEof():
         raise newException(TransportIncompleteError, "Data incomplete!")
-    var readed = 0
+    var bytesRead = 0
     for (region, rsize) in transp.buffer.regions():
       let count = min(nbytes - index, rsize)
-      readed += count
+      bytesRead += count
       if count > 0:
         copyMem(addr pbuffer[index], region, count)
         index += count
       if index == nbytes:
         break
-    (consumed: readed, done: index == nbytes)
+    (consumed: bytesRead, done: index == nbytes)
 
 proc readOnce*(transp: StreamTransport, pbytes: pointer,
                nbytes: int): Future[int] {.
@@ -2736,11 +2736,11 @@ proc read*(transp: StreamTransport): Future[seq[byte]] {.
     if transp.atEof():
       (0, true)
     else:
-      var readed = 0
+      var bytesRead = 0
       for (region, rsize) in transp.buffer.regions():
-        readed += rsize
+        bytesRead += rsize
         res.add(region.toUnchecked().toOpenArray(0, rsize - 1))
-      (readed, false)
+      (bytesRead, false)
   res
 
 proc read*(transp: StreamTransport, n: int): Future[seq[byte]] {.
@@ -2756,12 +2756,12 @@ proc read*(transp: StreamTransport, n: int): Future[seq[byte]] {.
       if transp.atEof():
         (0, true)
       else:
-        var readed = 0
+        var bytesRead = 0
         for (region, rsize) in transp.buffer.regions():
           let count = min(rsize, n - len(res))
-          readed += count
+          bytesRead += count
           res.add(region.toUnchecked().toOpenArray(0, count - 1))
-        (readed, len(res) == n)
+        (bytesRead, len(res) == n)
     res
 
 proc consume*(transp: StreamTransport): Future[int] {.
