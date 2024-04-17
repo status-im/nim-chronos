@@ -273,9 +273,13 @@ suite "Future[T] behavior test suite":
     proc deepTest1(future: Future[void]) {.async.} =
       await deepTest2(future)
 
-    var monitorFuture = newFuture[void]()
-    var deadlineFuture = newFuture[void]()
+    let
+
+      deadlineFuture = newFuture[void]()
+
     block:
+      # Cancellation should affect `testFuture` because it is in pending state.
+      let monitorFuture = newFuture[void]()
       var testFuture = deepTest1(monitorFuture)
       let waitFut = waitUntil(testFuture, deadlineFuture)
       await cancelAndWait(waitFut)
@@ -285,7 +289,39 @@ suite "Future[T] behavior test suite":
         waitFut.cancelled() == true
         deadlineFuture.finished() == false
 
+    block:
+      # Cancellation should not affect `testFuture` because it is completed.
+      let monitorFuture = newFuture[void]()
+      var testFuture = deepTest1(monitorFuture)
+      let waitFut = waitUntil(testFuture, deadlineFuture)
+      monitorFuture.complete()
+      await cancelAndWait(waitFut)
+      check:
+        monitorFuture.completed() == true
+        monitorFuture.cancelled() == false
+        testFuture.completed() == true
+        waitFut.completed() == true
+        deadlineFuture.finished() == false
 
+    block:
+      # Cancellation should not affect `testFuture` because it is failed.
+      let monitorFuture = newFuture[void]()
+      var testFuture = deepTest1(monitorFuture)
+      let waitFut = waitUntil(testFuture, deadlineFuture)
+      monitorFuture.fail(newException(ValueError, "TEST"))
+      await cancelAndWait(waitFut)
+      check:
+        monitorFuture.failed() == true
+        monitorFuture.cancelled() == false
+        testFuture.failed() == true
+        testFuture.cancelled() == false
+        waitFut.failed() == true
+        testFuture.cancelled() == false
+        deadlineFuture.finished() == false
+
+    await cancelAndWait(deadlineFuture)
+
+    check deadlineFuture.finished() == true
 
   asyncTest "Discarded result Future[T] test":
     var completedFutures = 0
