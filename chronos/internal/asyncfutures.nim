@@ -1533,11 +1533,17 @@ proc waitUntilImpl[F: SomeFuture](fut: F, retFuture: auto,
                                   deadline: auto): auto =
   var timeouted = false
 
-  template completeFuture(fut: untyped): untyped =
+  template completeFuture(fut: untyped, timeout: bool): untyped =
     if fut.failed():
       retFuture.fail(fut.error(), warn = false)
     elif fut.cancelled():
-      retFuture.cancelAndSchedule()
+      if timeout:
+        # Its possible that `future` could be cancelled in some other place. In
+        # such case we can't detect if it was our cancellation due to timeout,
+        # or some other cancellation.
+        retFuture.fail(newException(AsyncTimeoutError, "Timeout exceeded!"))
+      else:
+        retFuture.cancelAndSchedule()
     else:
       when type(fut).T is void:
         retFuture.complete()
@@ -1547,14 +1553,16 @@ proc waitUntilImpl[F: SomeFuture](fut: F, retFuture: auto,
   proc continuation(udata: pointer) {.raises: [].} =
     if not(retFuture.finished()):
       if timeouted:
-        retFuture.fail(newException(AsyncTimeoutError, "Timeout exceeded!"))
+        # When timeout is exceeded and we cancelled future via cancelSoon(),
+        # its possible that future at this moment already has value
+        # and/or error.
+        fut.completeFuture(timeouted)
         return
-
       if not(fut.finished()):
         timeouted = true
         fut.cancelSoon()
       else:
-        fut.completeFuture()
+        fut.completeFuture(false)
 
   var cancellation: proc(udata: pointer) {.gcsafe, raises: [].}
   cancellation = proc(udata: pointer) {.gcsafe, raises: [].} =
@@ -1562,10 +1570,10 @@ proc waitUntilImpl[F: SomeFuture](fut: F, retFuture: auto,
     if not(fut.finished()):
       fut.cancelSoon()
     else:
-      fut.completeFuture()
+      fut.completeFuture(false)
 
   if fut.finished():
-    fut.completeFuture()
+    fut.completeFuture(false)
   else:
     if deadline.finished():
       retFuture.fail(newException(AsyncTimeoutError, "Timeout exceeded!"))
@@ -1671,10 +1679,17 @@ proc waitUntil*[T](fut: Future[T], deadline: auto): Future[T] =
   ## Returns a future which will complete once future ``fut`` completes
   ## or if ``deadline`` future completes.
   ##
-  ## If ``deadline`` future completes before future ``fut`` -
+  ## If `deadline` future completes before future `fut` -
   ## `AsyncTimeoutError` exception will be raised.
   ##
-  ## Note that ``deadline`` future will not be cancelled and/or failed.
+  ## Note: `deadline` future will not be cancelled and/or failed.
+  ##
+  ## Note: While `waitUntil(future)` operation is pending, please avoid any
+  ## attempts to cancel future `fut`. If it happens `waitUntil()` could
+  ## introduce undefined behavior - it could raise`CancelledError` or
+  ## `AsyncTimeoutError`.
+  ##
+  ## If you need to cancel `future` - cancel `waitUntil(future)` instead.
   static:
     doAssert deadline is SomeFuture
   var

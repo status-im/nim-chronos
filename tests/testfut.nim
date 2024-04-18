@@ -2556,6 +2556,83 @@ suite "Future[T] behavior test suite":
     await raceTest(int, 1)
     await raceTest(int, 2)
 
+  asyncTest "Timeout/cancellation race waitUntil() test":
+    proc raceTest(T: typedesc, itype: int) {.async.} =
+      let monitorFuture = newFuture[T]()
+
+      proc raceProc0(future: Future[T]): Future[T] {.async.} =
+        await future
+      proc raceProc1(future: Future[T]): Future[T] {.async.} =
+        await raceProc0(future)
+      proc raceProc2(future: Future[T]): Future[T] {.async.} =
+        await raceProc1(future)
+
+      proc continuation(udata: pointer) {.gcsafe.} =
+        if itype == 0:
+          when T is void:
+            monitorFuture.complete()
+          elif T is int:
+            monitorFuture.complete(100)
+        elif itype == 1:
+          monitorFuture.fail(newException(ValueError, "test"))
+        else:
+          monitorFuture.cancelAndSchedule()
+
+      let deadlineFuture = newFuture[void]()
+      deadlineFuture.addCallback continuation
+
+      let
+        testFut = raceProc2(monitorFuture)
+        waitFut = waitUntil(testFut, deadlineFuture)
+
+      deadlineFuture.complete()
+
+      when T is void:
+        let waitRes =
+          try:
+            await waitFut
+            if itype == 0:
+              true
+            else:
+              false
+          except CancelledError:
+            false
+          except CatchableError:
+            if itype != 0:
+              true
+            else:
+              false
+        check waitRes == true
+      elif T is int:
+        let waitRes =
+          try:
+            let res = await waitFut
+            if itype == 0:
+              (true, res)
+            else:
+              (false, -1)
+          except CancelledError:
+            (false, -1)
+          except CatchableError:
+            if itype != 0:
+              (true, 0)
+            else:
+              (false, -1)
+        if itype == 0:
+          check:
+            waitRes[0] == true
+            waitRes[1] == 100
+        else:
+          check:
+            waitRes[0] == true
+
+    await raceTest(void, 0)
+    await raceTest(void, 1)
+    await raceTest(void, 2)
+    await raceTest(int, 0)
+    await raceTest(int, 1)
+    await raceTest(int, 2)
+
   asyncTest "Timeout/cancellation race withTimeout() test":
     proc raceTest(T: typedesc, itype: int) {.async.} =
       let monitorFuture = newFuture[T]("monitor",
