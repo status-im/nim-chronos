@@ -1466,18 +1466,25 @@ proc withTimeout*[T](fut: Future[T], timeout: Duration): Future[bool] {.
     timer: TimerCallback
     timeouted = false
 
-  template completeFuture(fut: untyped): untyped =
+  template completeFuture(fut: untyped, timeout: bool): untyped =
     if fut.failed() or fut.completed():
       retFuture.complete(true)
     else:
-      retFuture.cancelAndSchedule()
+      if timeout:
+        retFuture.complete(false)
+      else:
+        retFuture.cancelAndSchedule()
 
   # TODO: raises annotation shouldn't be needed, but likely similar issue as
   # https://github.com/nim-lang/Nim/issues/17369
   proc continuation(udata: pointer) {.gcsafe, raises: [].} =
     if not(retFuture.finished()):
       if timeouted:
-        retFuture.complete(false)
+        # We should not unconditionally complete result future with `false`.
+        # Initiated by timeout handler cancellation could fail, in this case
+        # we could get `fut` in complete or in failed state, so we should
+        # complete result future with `true` instead of `false` here.
+        fut.completeFuture(timeouted)
         return
       if not(fut.finished()):
         # Timer exceeded first, we going to cancel `fut` and wait until it
@@ -1488,7 +1495,7 @@ proc withTimeout*[T](fut: Future[T], timeout: Duration): Future[bool] {.
         # Future `fut` completed/failed/cancelled first.
         if not(isNil(timer)):
           clearTimer(timer)
-        fut.completeFuture()
+        fut.completeFuture(false)
     timer = nil
 
   # TODO: raises annotation shouldn't be needed, but likely similar issue as
@@ -1499,7 +1506,7 @@ proc withTimeout*[T](fut: Future[T], timeout: Duration): Future[bool] {.
         clearTimer(timer)
       fut.cancelSoon()
     else:
-      fut.completeFuture()
+      fut.completeFuture(false)
     timer = nil
 
   if fut.finished():
@@ -1528,11 +1535,14 @@ proc waitImpl[F: SomeFuture](fut: F, retFuture: auto, timeout: Duration): auto =
     timer: TimerCallback
     timeouted = false
 
-  template completeFuture(fut: untyped): untyped =
+  template completeFuture(fut: untyped, timeout: bool): untyped =
     if fut.failed():
       retFuture.fail(fut.error(), warn = false)
     elif fut.cancelled():
-      retFuture.cancelAndSchedule()
+      if timeout:
+        retFuture.fail(newException(AsyncTimeoutError, "Timeout exceeded!"))
+      else:
+        retFuture.cancelAndSchedule()
     else:
       when type(fut).T is void:
         retFuture.complete()
@@ -1542,7 +1552,11 @@ proc waitImpl[F: SomeFuture](fut: F, retFuture: auto, timeout: Duration): auto =
   proc continuation(udata: pointer) {.raises: [].} =
     if not(retFuture.finished()):
       if timeouted:
-        retFuture.fail(newException(AsyncTimeoutError, "Timeout exceeded!"))
+        # We should not unconditionally fail `retFuture` with
+        # `AsyncTimeoutError`. Initiated by timeout handler cancellation
+        # could fail, in this case we could get `fut` in complete or in failed
+        # state, so we should return error/value instead of `AsyncTimeoutError`.
+        fut.completeFuture(timeouted)
         return
       if not(fut.finished()):
         # Timer exceeded first.
@@ -1552,7 +1566,7 @@ proc waitImpl[F: SomeFuture](fut: F, retFuture: auto, timeout: Duration): auto =
         # Future `fut` completed/failed/cancelled first.
         if not(isNil(timer)):
           clearTimer(timer)
-        fut.completeFuture()
+        fut.completeFuture(false)
     timer = nil
 
   var cancellation: proc(udata: pointer) {.gcsafe, raises: [].}
@@ -1562,12 +1576,12 @@ proc waitImpl[F: SomeFuture](fut: F, retFuture: auto, timeout: Duration): auto =
         clearTimer(timer)
       fut.cancelSoon()
     else:
-      fut.completeFuture()
+      fut.completeFuture(false)
 
     timer = nil
 
   if fut.finished():
-    fut.completeFuture()
+    fut.completeFuture(false)
   else:
     if timeout.isZero():
       retFuture.fail(newException(AsyncTimeoutError, "Timeout exceeded!"))
