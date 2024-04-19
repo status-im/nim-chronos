@@ -1660,7 +1660,8 @@ proc wait*[T](fut: Future[T], timeout = InfiniteDuration): Future[T] =
   ## TODO: In case when ``fut`` got cancelled, what result Future[T]
   ## should return, because it can't be cancelled too.
   var
-    retFuture = newFuture[T]("chronos.wait()", {FutureFlag.OwnCancelSchedule})
+    retFuture = newFuture[T]("chronos.wait(duration)",
+                             {FutureFlag.OwnCancelSchedule})
       # We set `OwnCancelSchedule` flag, because we going to cancel `retFuture`
       # manually at proper time.
 
@@ -1675,7 +1676,7 @@ proc wait*[T](fut: Future[T], timeout = -1): Future[T] {.
   else:
     wait(fut, timeout.milliseconds())
 
-proc waitUntil*[T](fut: Future[T], deadline: auto): Future[T] =
+proc wait*[T](fut: Future[T], deadline: SomeFuture): Future[T] =
   ## Returns a future which will complete once future ``fut`` completes
   ## or if ``deadline`` future completes.
   ##
@@ -1690,10 +1691,8 @@ proc waitUntil*[T](fut: Future[T], deadline: auto): Future[T] =
   ## `AsyncTimeoutError`.
   ##
   ## If you need to cancel `future` - cancel `waitUntil(future)` instead.
-  static:
-    doAssert deadline is SomeFuture
   var
-    retFuture = newFuture[T]("chronos.waitUntil()",
+    retFuture = newFuture[T]("chronos.wait(future)",
                              {FutureFlag.OwnCancelSchedule})
       # We set `OwnCancelSchedule` flag, because we going to cancel `retFuture`
       # manually at proper time.
@@ -1861,21 +1860,20 @@ proc wait*(fut: InternalRaisesFuture, timeout = InfiniteDuration): auto =
     InternalRaisesFutureRaises = E.prepend(CancelledError, AsyncTimeoutError)
 
   let
-    retFuture = newFuture[T]("chronos.wait()", {OwnCancelSchedule})
+    retFuture = newFuture[T]("chronos.wait(duration)", {OwnCancelSchedule})
       # We set `OwnCancelSchedule` flag, because we going to cancel `retFuture`
       # manually at proper time.
 
   waitImpl(fut, retFuture, timeout)
 
-proc waitUntil*(fut: InternalRaisesFuture,
-                deadline: InternalRaisesFuture): auto =
+proc wait*(fut: InternalRaisesFuture, deadline: InternalRaisesFuture): auto =
   type
     T = type(fut).T
     E = type(fut).E
     InternalRaisesFutureRaises = E.prepend(CancelledError, AsyncTimeoutError)
 
   let
-    retFuture = newFuture[T]("chronos.waitUntil()", {OwnCancelSchedule})
+    retFuture = newFuture[T]("chronos.wait(future)", {OwnCancelSchedule})
       # We set `OwnCancelSchedule` flag, because we going to cancel `retFuture`
       # manually at proper time.
 

@@ -83,7 +83,7 @@ suite "Future[T] behavior test suite":
       fut.finished
       testResult == "1245"
 
-  asyncTest "wait[T]() test":
+  asyncTest "wait(duration) test":
     block:
       ## Test for not immediately completed future and timeout = -1
       let res =
@@ -146,7 +146,7 @@ suite "Future[T] behavior test suite":
           false
       check res
 
-  asyncTest "waitUntil[T]() test":
+  asyncTest "wait(future) test":
     block:
       ## Test for not immediately completed future and deadline which is not
       ## going to be finished
@@ -155,7 +155,7 @@ suite "Future[T] behavior test suite":
         future1 = testFuture1()
       let res =
         try:
-          discard await waitUntil(future1, deadline)
+          discard await wait(future1, deadline)
           true
         except CatchableError:
           false
@@ -174,7 +174,7 @@ suite "Future[T] behavior test suite":
         future2 = testFuture2()
       let res =
         try:
-          discard await waitUntil(future2, deadline)
+          discard await wait(future2, deadline)
           true
         except CatchableError:
           false
@@ -194,7 +194,7 @@ suite "Future[T] behavior test suite":
       deadline.complete()
       let res =
         try:
-          discard await waitUntil(future1, deadline)
+          discard await wait(future1, deadline)
           false
         except AsyncTimeoutError:
           true
@@ -213,7 +213,7 @@ suite "Future[T] behavior test suite":
       deadline.complete()
       let (res1, res2) =
         try:
-          let res = await waitUntil(future2, deadline)
+          let res = await wait(future2, deadline)
           (true, res)
         except CatchableError:
           (false, -1)
@@ -230,7 +230,7 @@ suite "Future[T] behavior test suite":
         future100 = testFuture100()
       let res =
         try:
-          discard await waitUntil(future100, deadline)
+          discard await wait(future100, deadline)
           false
         except AsyncTimeoutError:
           true
@@ -250,7 +250,7 @@ suite "Future[T] behavior test suite":
         future100 = testFuture100()
       let (res1, res2) =
         try:
-          let res = await waitUntil(future100, deadline)
+          let res = await wait(future100, deadline)
           (true, res)
         except CatchableError:
           (false, -1)
@@ -263,7 +263,7 @@ suite "Future[T] behavior test suite":
       check:
         deadline.finished() == true
 
-  asyncTest "waitUntil(T) cancellation behavior test":
+  asyncTest "wait(future) cancellation behavior test":
     proc deepTest3(future: Future[void]) {.async.} =
       await future
 
@@ -281,7 +281,7 @@ suite "Future[T] behavior test suite":
       # Cancellation should affect `testFuture` because it is in pending state.
       let monitorFuture = newFuture[void]()
       var testFuture = deepTest1(monitorFuture)
-      let waitFut = waitUntil(testFuture, deadlineFuture)
+      let waitFut = wait(testFuture, deadlineFuture)
       await cancelAndWait(waitFut)
       check:
         monitorFuture.cancelled() == true
@@ -293,7 +293,7 @@ suite "Future[T] behavior test suite":
       # Cancellation should not affect `testFuture` because it is completed.
       let monitorFuture = newFuture[void]()
       var testFuture = deepTest1(monitorFuture)
-      let waitFut = waitUntil(testFuture, deadlineFuture)
+      let waitFut = wait(testFuture, deadlineFuture)
       monitorFuture.complete()
       await cancelAndWait(waitFut)
       check:
@@ -307,7 +307,7 @@ suite "Future[T] behavior test suite":
       # Cancellation should not affect `testFuture` because it is failed.
       let monitorFuture = newFuture[void]()
       var testFuture = deepTest1(monitorFuture)
-      let waitFut = waitUntil(testFuture, deadlineFuture)
+      let waitFut = wait(testFuture, deadlineFuture)
       monitorFuture.fail(newException(ValueError, "TEST"))
       await cancelAndWait(waitFut)
       check:
@@ -1259,7 +1259,7 @@ suite "Future[T] behavior test suite":
       completed == 0
       cancelled == 1
 
-  asyncTest "Cancellation wait() test":
+  asyncTest "Cancellation wait(duration) test":
     var neverFlag1, neverFlag2, neverFlag3: bool
     var waitProc1, waitProc2: bool
     proc neverEndingProc(): Future[void] =
@@ -1320,7 +1320,7 @@ suite "Future[T] behavior test suite":
       fut.state == FutureState.Completed
       neverFlag1 and neverFlag2 and neverFlag3 and waitProc1 and waitProc2
 
-  asyncTest "Cancellation waitUntil() test":
+  asyncTest "Cancellation wait(future) test":
     var neverFlag1, neverFlag2, neverFlag3: bool
     var waitProc1, waitProc2: bool
     proc neverEndingProc(): Future[void] =
@@ -1337,7 +1337,7 @@ suite "Future[T] behavior test suite":
     proc waitProc() {.async.} =
       let deadline = sleepAsync(100.milliseconds)
       try:
-        await waitUntil(neverEndingProc(), deadline)
+        await wait(neverEndingProc(), deadline)
       except CancelledError:
         waitProc1 = true
       except CatchableError:
@@ -1507,7 +1507,7 @@ suite "Future[T] behavior test suite":
           false
     check res
 
-  asyncTest "wait(fut) should wait cancellation test":
+  asyncTest "wait(future) should wait cancellation test":
     proc futureNeverEnds(): Future[void] =
       newFuture[void]("neverending.future")
 
@@ -1531,7 +1531,7 @@ suite "Future[T] behavior test suite":
 
     check res
 
-  asyncTest "waitUntil(fut) should wait cancellation test":
+  asyncTest "wait(future) should wait cancellation test":
     proc futureNeverEnds(): Future[void] =
       newFuture[void]("neverending.future")
 
@@ -1541,7 +1541,7 @@ suite "Future[T] behavior test suite":
     var fut = futureOneLevelMore()
     let res =
       try:
-        await waitUntil(fut, sleepAsync(100.milliseconds))
+        await wait(fut, sleepAsync(100.milliseconds))
         false
       except AsyncTimeoutError:
         # Because `fut` is never-ending Future[T], `wait` should raise
@@ -1795,7 +1795,7 @@ suite "Future[T] behavior test suite":
         v1_u == 0'u
         v2_u + 1'u == 0'u
 
-  asyncTest "wait() cancellation undefined behavior test #1":
+  asyncTest "wait(duration) cancellation undefined behavior test #1":
     proc testInnerFoo(fooFut: Future[void]): Future[TestFooConnection] {.
          async.} =
       await fooFut
@@ -1818,7 +1818,7 @@ suite "Future[T] behavior test suite":
     discard someFut.tryCancel()
     await someFut
 
-  asyncTest "wait() cancellation undefined behavior test #2":
+  asyncTest "wait(duration) cancellation undefined behavior test #2":
     proc testInnerFoo(fooFut: Future[void]): Future[TestFooConnection] {.
          async.} =
       await fooFut
@@ -1845,7 +1845,7 @@ suite "Future[T] behavior test suite":
     discard someFut.tryCancel()
     await someFut
 
-  asyncTest "wait() should allow cancellation test (depends on race())":
+  asyncTest "wait(duration) should allow cancellation test (depends on race())":
     proc testFoo(): Future[bool] {.async.} =
       let
         resFut = sleepAsync(2.seconds).wait(3.seconds)
@@ -1931,7 +1931,7 @@ suite "Future[T] behavior test suite":
 
     check (await testFoo()) == true
 
-  asyncTest "waitUntil() cancellation undefined behavior test #1":
+  asyncTest "wait(future) cancellation undefined behavior test #1":
     proc testInnerFoo(fooFut: Future[void]): Future[TestFooConnection] {.
          async.} =
       await fooFut
@@ -1941,7 +1941,7 @@ suite "Future[T] behavior test suite":
       let deadline = sleepAsync(10.seconds)
       let connection =
         try:
-          let res = await testInnerFoo(fooFut).waitUntil(deadline)
+          let res = await testInnerFoo(fooFut).wait(deadline)
           Result[TestFooConnection, int].ok(res)
         except CancelledError:
           Result[TestFooConnection, int].err(0)
@@ -1958,7 +1958,7 @@ suite "Future[T] behavior test suite":
     discard someFut.tryCancel()
     await someFut
 
-  asyncTest "waitUntil() cancellation undefined behavior test #2":
+  asyncTest "wait(future) cancellation undefined behavior test #2":
     proc testInnerFoo(fooFut: Future[void]): Future[TestFooConnection] {.
          async.} =
       await fooFut
@@ -1972,7 +1972,7 @@ suite "Future[T] behavior test suite":
       let deadline = sleepAsync(10.seconds)
       let connection =
         try:
-          let res = await testMiddleFoo(fooFut).waitUntil(deadline)
+          let res = await testMiddleFoo(fooFut).wait(deadline)
           Result[TestFooConnection, int].ok(res)
         except CancelledError:
           Result[TestFooConnection, int].err(0)
@@ -1988,11 +1988,11 @@ suite "Future[T] behavior test suite":
     discard someFut.tryCancel()
     await someFut
 
-  asyncTest "waitUntil() should allow cancellation test (depends on race())":
+  asyncTest "wait(future) should allow cancellation test (depends on race())":
     proc testFoo(): Future[bool] {.async.} =
       let
         deadline = sleepAsync(3.seconds)
-        resFut = sleepAsync(2.seconds).waitUntil(deadline)
+        resFut = sleepAsync(2.seconds).wait(deadline)
         timeFut = sleepAsync(1.seconds)
         cancelFut = cancelAndWait(resFut)
       discard await race(cancelFut, timeFut)
@@ -2482,7 +2482,7 @@ suite "Future[T] behavior test suite":
       not compiles(Future[void].Raising([42]))
       not compiles(Future[void].Raising(42))
 
-  asyncTest "Timeout/cancellation race wait() test":
+  asyncTest "Timeout/cancellation race wait(duration) test":
     proc raceTest(T: typedesc, itype: int) {.async.} =
       let monitorFuture = newFuture[T]("monitor",
                                        {FutureFlag.OwnCancelSchedule})
@@ -2556,7 +2556,7 @@ suite "Future[T] behavior test suite":
     await raceTest(int, 1)
     await raceTest(int, 2)
 
-  asyncTest "Timeout/cancellation race waitUntil() test":
+  asyncTest "Timeout/cancellation race wait(future) test":
     proc raceTest(T: typedesc, itype: int) {.async.} =
       let monitorFuture = newFuture[T]()
 
@@ -2583,7 +2583,7 @@ suite "Future[T] behavior test suite":
 
       let
         testFut = raceProc2(monitorFuture)
-        waitFut = waitUntil(testFut, deadlineFuture)
+        waitFut = wait(testFut, deadlineFuture)
 
       deadlineFuture.complete()
 
