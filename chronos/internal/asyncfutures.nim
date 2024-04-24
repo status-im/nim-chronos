@@ -1866,7 +1866,7 @@ proc wait*(fut: InternalRaisesFuture, timeout = InfiniteDuration): auto =
 
   waitImpl(fut, retFuture, timeout)
 
-proc wait*(fut: InternalRaisesFuture, deadline: InternalRaisesFuture): auto =
+proc wait*(fut: InternalRaisesFuture, deadline: SomeFuture): auto =
   type
     T = type(fut).T
     E = type(fut).E
