@@ -220,7 +220,10 @@ proc selectInto2*[T](s: Selector[T], timeout: int,
   verifySelectParams(timeout, -1, int(high(cint)))
 
   let
-    maxEventsCount = min(len(s.pollfds), len(readyKeys))
+    maxEventsCount = cint(min(len(s.pollfds), len(readyKeys)))
+      # Without `cint` conversion, this code could fail with RangeError defect,
+      # on explicit Tnfds(integer) conversion (probably related to
+      # combination of nim+clang (android toolchain)).
     eventsCount =
       if maxEventsCount > 0:
         let res = handleEintr(poll(addr(s.pollfds[0]), Tnfds(maxEventsCount),
