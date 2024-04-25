@@ -965,7 +965,7 @@ elif defined(macos) or defined(macosx):
       events*: cshort
       revents*: cshort
 
-    Tnfds* {.importc: "nfds_t", header: "<poll.h>".} = cuint
+    Tnfds* {.importc: "nfds_t", header: "<poll.h>".} = culong
 
   const
     POLLIN* = 0x0001
