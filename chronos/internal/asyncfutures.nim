@@ -76,20 +76,9 @@ template Finished*(T: type FutureState): FutureState {.
          deprecated: "Use FutureState.Completed instead".} =
            FutureState.Completed
 
-proc newFutureImpl[T](loc: ptr SrcLoc): Future[T] =
-  let fut = Future[T]()
-  internalInitFutureBase(fut, loc, FutureState.Pending, {})
-  fut
-
 proc newFutureImpl[T](loc: ptr SrcLoc, flags: FutureFlags): Future[T] =
   let fut = Future[T]()
   internalInitFutureBase(fut, loc, FutureState.Pending, flags)
-  fut
-
-proc newInternalRaisesFutureImpl[T, E](
-    loc: ptr SrcLoc): InternalRaisesFuture[T, E] =
-  let fut = InternalRaisesFuture[T, E]()
-  internalInitFutureBase(fut, loc, FutureState.Pending, {})
   fut
 
 proc newInternalRaisesFutureImpl[T, E](
@@ -125,7 +114,7 @@ template newInternalRaisesFuture*[T, E](fromProc: static[string] = ""): auto =
   ##
   ## Specifying ``fromProc``, which is a string specifying the name of the proc
   ## that this future belongs to, is a good habit as it helps with debugging.
-  newInternalRaisesFutureImpl[T, E](getSrcLocation(fromProc))
+  newInternalRaisesFutureImpl[T, E](getSrcLocation(fromProc), {})
 
 template newFutureSeq*[A, B](fromProc: static[string] = ""): FutureSeq[A, B] {.deprecated.} =
   ## Create a new future which can hold/preserve GC sequence until future will
@@ -1697,7 +1686,7 @@ proc wait*[T](fut: Future[T], deadline: SomeFuture): Future[T] =
       # We set `OwnCancelSchedule` flag, because we going to cancel `retFuture`
       # manually at proper time.
   waitUntilImpl(fut, retFuture, deadline)
-  
+
 proc join*(future: FutureBase): Future[void] {.
      async: (raw: true, raises: [CancelledError]).} =
   ## Returns a future which will complete once future ``future`` completes.
