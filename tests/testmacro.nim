@@ -519,7 +519,7 @@ suite "Exceptions tracking":
 
     noraises()
 
-  test "Nocancel errors":
+  test "Nocancel errors with raises":
     proc testit {.async: (raises: [ValueError, CancelledError]).} =
       await sleepAsync(5.milliseconds)
       raise (ref ValueError)()
@@ -528,6 +528,36 @@ suite "Exceptions tracking":
       await noCancel testit()
 
     proc noraises() {.raises: [].} =
+      expect(ValueError):
+        let f = test()
+        waitFor(f.cancelAndWait())
+        waitFor(f)
+
+    noraises()
+
+  test "Nocancel with no errors":
+    proc testit {.async: (raises: [CancelledError]).} =
+      await sleepAsync(5.milliseconds)
+
+    proc test {.async: (raises: []).} =
+      await noCancel testit()
+
+    proc noraises() {.raises: [].} =
+      let f = test()
+      waitFor(f.cancelAndWait())
+      waitFor(f)
+
+    noraises()
+
+  test "Nocancel errors without raises":
+    proc testit {.async.} =
+      await sleepAsync(5.milliseconds)
+      raise (ref ValueError)()
+
+    proc test {.async.} =
+      await noCancel testit()
+
+    proc noraises() =
       expect(ValueError):
         let f = test()
         waitFor(f.cancelAndWait())

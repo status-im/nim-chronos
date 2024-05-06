@@ -1031,19 +1031,24 @@ proc noCancel*[F: SomeFuture](future: F): auto = # async: (raw: true, raises: as
   let retFuture = newFuture[F.T]("chronos.noCancel(T)",
                                 {FutureFlag.OwnCancelSchedule})
   template completeFuture() =
+    const canFail = when declared(InternalRaisesFutureRaises):
+      InternalRaisesFutureRaises isnot void
+    else:
+      true
+
     if future.completed():
       when F.T is void:
         retFuture.complete()
       else:
         retFuture.complete(future.value)
-    elif future.failed():
-      when F is Future:
-        retFuture.fail(future.error, warn = false)
-      when declared(InternalRaisesFutureRaises):
-        when InternalRaisesFutureRaises isnot void:
-          retFuture.fail(future.error, warn = false)
     else:
-      raiseAssert("Unexpected future state [" & $future.state & "]")
+      when canFail: # Avoid calling `failed` on non-failing raises futures
+        if future.failed():
+          retFuture.fail(future.error, warn = false)
+        else:
+          raiseAssert("Unexpected future state [" & $future.state & "]")
+      else:
+        raiseAssert("Unexpected future state [" & $future.state & "]")
 
   proc continuation(udata: pointer) {.gcsafe.} =
     completeFuture()
