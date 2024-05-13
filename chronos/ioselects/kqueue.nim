@@ -8,6 +8,9 @@
 ## This module provides ``kqueue`` constants, types and helpers for MacOS,
 ## FreeBSD, OpenBSD, NetBSD and DragonflyBSD.
 
+from ".."/osdefs import Time, Timespec
+export Time, Timespec
+
 when defined(macos) or defined(macosx):
   const
     EVFILT_READ* = -1
@@ -81,94 +84,94 @@ when defined(macos) or defined(macosx):
     EV_POLL* = EV_FLAG0
     EV_OOBAND* = EV_FLAG1
 
-    NOTE_TRIGGER* = 0x01000000
-    NOTE_FFNOP* = 0x00000000
+    NOTE_TRIGGER* = 0x01000000'u32
+    NOTE_FFNOP* = 0x00000000'u32
       ## ignore input fflags
-    NOTE_FFAND* = 0x40000000
+    NOTE_FFAND* = 0x40000000'u32
       ## and fflags
-    NOTE_FFOR* = 0x80000000
+    NOTE_FFOR* = 0x80000000'u32
       ## or fflags
-    NOTE_FFCOPY* = 0xc0000000
+    NOTE_FFCOPY* = 0xc0000000'u32
       ## copy fflags
-    NOTE_FFCTRLMASK* = 0xc0000000
+    NOTE_FFCTRLMASK* = 0xc0000000'u32
       ## mask for operations
-    NOTE_FFLAGSMASK* = 0x00ffffff
+    NOTE_FFLAGSMASK* = 0x00ffffff'u32
 
-    NOTE_LOWAT* = 0x00000001
+    NOTE_LOWAT* = 0x00000001'u32
       ## low water mark
 
-    NOTE_OOB* = 0x00000002
+    NOTE_OOB* = 0x00000002'u32
       ## OOB data
 
-    NOTE_DELETE* = 0x00000001
+    NOTE_DELETE* = 0x00000001'u32
       ## vnode was removed
-    NOTE_WRITE* = 0x00000002
+    NOTE_WRITE* = 0x00000002'u32
       ## data contents changed
-    NOTE_EXTEND* = 0x00000004
+    NOTE_EXTEND* = 0x00000004'u32
       ## size increased
-    NOTE_ATTRIB* = 0x00000008
+    NOTE_ATTRIB* = 0x00000008'u32
       ## attributes changed
-    NOTE_LINK* = 0x00000010
+    NOTE_LINK* = 0x00000010'u32
       ## link count changed
-    NOTE_RENAME* = 0x00000020
+    NOTE_RENAME* = 0x00000020'u32
       ## vnode was renamed
-    NOTE_REVOKE* = 0x00000040
+    NOTE_REVOKE* = 0x00000040'u32
       ## vnode access was revoked
-    NOTE_NONE* = 0x00000080
+    NOTE_NONE* = 0x00000080'u32
       ## No specific vnode event: to test for EVFILT_READ activation
-    NOTE_FUNLOCK* = 0x00000100
+    NOTE_FUNLOCK* = 0x00000100'u32
       ## vnode was unlocked by flock(2)
-    NOTE_LEASE_DOWNGRADE* = 0x00000200
+    NOTE_LEASE_DOWNGRADE* = 0x00000200'u32
       ## lease downgrade requested
-    NOTE_LEASE_RELEASE* = 0x00000400
+    NOTE_LEASE_RELEASE* = 0x00000400'u32
       ## lease release requested
 
-    NOTE_EXIT* = 0x80000000
+    NOTE_EXIT* = 0x80000000'u32
       ## process exited
-    NOTE_FORK* = 0x40000000
+    NOTE_FORK* = 0x40000000'u32
       ## process forked
-    NOTE_EXEC* = 0x20000000
+    NOTE_EXEC* = 0x20000000'u32
       ## process exec'd
-    NOTE_SIGNAL* = 0x08000000
+    NOTE_SIGNAL* = 0x08000000'u32
       ## shared with EVFILT_SIGNAL
-    NOTE_EXITSTATUS* = 0x04000000
+    NOTE_EXITSTATUS* = 0x04000000'u32
       ## exit status to be returned, valid for child process or when allowed to
       ## signal target pid
-    NOTE_EXIT_DETAIL* = 0x02000000
+    NOTE_EXIT_DETAIL* = 0x02000000'u32
       ## provide details on reasons for exit
-    NOTE_PDATAMASK* = 0x000fffff
+    NOTE_PDATAMASK* = 0x000fffff'u32
       ## mask for signal & exit status
     NOTE_PCTRLMASK* = not(NOTE_PDATAMASK)
-    NOTE_EXIT_DETAIL_MASK* = 0x00070000
-    NOTE_EXIT_DECRYPTFAIL* = 0x00010000
-    NOTE_EXIT_MEMORY* = 0x00020000
-    NOTE_EXIT_CSERROR* = 0x00040000
+    NOTE_EXIT_DETAIL_MASK* = 0x00070000'u32
+    NOTE_EXIT_DECRYPTFAIL* = 0x00010000'u32
+    NOTE_EXIT_MEMORY* = 0x00020000'u32
+    NOTE_EXIT_CSERROR* = 0x00040000'u32
 
-    NOTE_VM_PRESSURE* = 0x80000000
+    NOTE_VM_PRESSURE* = 0x80000000'u32
       ## will react on memory pressure
-    NOTE_VM_PRESSURE_TERMINATE* = 0x40000000
+    NOTE_VM_PRESSURE_TERMINATE* = 0x40000000'u32
       ## will quit on memory pressure, possibly after cleaning up dirty state
-    NOTE_VM_PRESSURE_SUDDEN_TERMINATE* = 0x20000000
+    NOTE_VM_PRESSURE_SUDDEN_TERMINATE* = 0x20000000'u32
       ## will quit immediately on memory pressure
-    NOTE_VM_ERROR* = 0x10000000
+    NOTE_VM_ERROR* = 0x10000000'u32
       ## there was an error
 
-    NOTE_SECONDS* = 0x00000001
+    NOTE_SECONDS* = 0x00000001'u32
       ## data is seconds
-    NOTE_USECONDS* = 0x00000002
+    NOTE_USECONDS* = 0x00000002'u32
       ## data is microseconds
-    NOTE_NSECONDS* = 0x00000004
+    NOTE_NSECONDS* = 0x00000004'u32
       ## data is nanoseconds
-    NOTE_ABSOLUTE* = 0x00000008
+    NOTE_ABSOLUTE* = 0x00000008'u32
       ## absolute timeout
-    NOTE_LEEWAY* = 0x00000010
+    NOTE_LEEWAY* = 0x00000010'u32
       ## ext[1] holds leeway for power aware timers
-    NOTE_CRITICAL* = 0x00000020
+    NOTE_CRITICAL* = 0x00000020'u32
       ## system does minimal timer coalescing
-    NOTE_BACKGROUND* = 0x00000040
+    NOTE_BACKGROUND* = 0x00000040'u32
       ## system does maximum timer coalescing
-    NOTE_MACH_CONTINUOUS_TIME* = 0x00000080
-    NOTE_MACHTIME* = 0x00000100
+    NOTE_MACH_CONTINUOUS_TIME* = 0x00000080'u32
+    NOTE_MACHTIME* = 0x00000100'u32
       ## data is mach absolute time units
 
   type
@@ -302,76 +305,76 @@ elif defined(freebsd):
     EV_ERROR* = 0x4000
       ## error, data contains errno
 
-    NOTE_FFNOP* = 0x00000000
+    NOTE_FFNOP* = 0x00000000'u32
       ## ignore input fflags
-    NOTE_FFAND* = 0x40000000
+    NOTE_FFAND* = 0x40000000'u32
       ## AND fflags
-    NOTE_FFOR* = 0x80000000
+    NOTE_FFOR* = 0x80000000'u32
       ## OR fflags
-    NOTE_FFCOPY* = 0xc0000000
+    NOTE_FFCOPY* = 0xc0000000'u32
       ## copy fflags
-    NOTE_FFCTRLMASK* = 0xc0000000
+    NOTE_FFCTRLMASK* = 0xc0000000'u32
       ## masks for operations
-    NOTE_FFLAGSMASK* = 0x00ffffff
+    NOTE_FFLAGSMASK* = 0x00ffffff'u32
 
-    NOTE_TRIGGER* = 0x01000000
+    NOTE_TRIGGER* = 0x01000000'u32
       ## Cause the event to be triggered for output.
 
-    NOTE_LOWAT* = 0x0001
+    NOTE_LOWAT* = 0x0001'u32
       ## low water mark
-    NOTE_FILE_POLL* = 0x0002
+    NOTE_FILE_POLL* = 0x0002'u32
       ## behave like poll()
 
-    NOTE_DELETE* = 0x0001
+    NOTE_DELETE* = 0x0001'u32
       ## vnode was removed
-    NOTE_WRITE* = 0x0002
+    NOTE_WRITE* = 0x0002'u32
       ## data contents changed
-    NOTE_EXTEND* = 0x0004
+    NOTE_EXTEND* = 0x0004'u32
       ## size increased
-    NOTE_ATTRIB* = 0x0008
+    NOTE_ATTRIB* = 0x0008'u32
       ## attributes changed
-    NOTE_LINK* = 0x0010
+    NOTE_LINK* = 0x0010'u32
       ## link count changed
-    NOTE_RENAME* = 0x0020
+    NOTE_RENAME* = 0x0020'u32
       ## vnode was renamed
-    NOTE_REVOKE* = 0x0040
+    NOTE_REVOKE* = 0x0040'u32
       ## vnode access was revoked
-    NOTE_OPEN* = 0x0080
+    NOTE_OPEN* = 0x0080'u32
       ## vnode was opened
-    NOTE_CLOSE* = 0x0100
+    NOTE_CLOSE* = 0x0100'u32
       ## file closed, fd did not allowed write
-    NOTE_CLOSE_WRITE* = 0x0200
+    NOTE_CLOSE_WRITE* = 0x0200'u32
       ## file closed, fd did allowed write
-    NOTE_READ* = 0x0400
+    NOTE_READ* = 0x0400'u32
       ## file was read
 
-    NOTE_EXIT* = 0x80000000
+    NOTE_EXIT* = 0x80000000'u32
       ## process exited
-    NOTE_FORK* = 0x40000000
+    NOTE_FORK* = 0x40000000'u32
       ## process forked
-    NOTE_EXEC* = 0x20000000
+    NOTE_EXEC* = 0x20000000'u32
       ## process exec'd
-    NOTE_PCTRLMASK* = 0xf0000000
+    NOTE_PCTRLMASK* = 0xf0000000'u32
       ## mask for hint bits
-    NOTE_PDATAMASK* = 0x000fffff
+    NOTE_PDATAMASK* = 0x000fffff'u32
       ## mask for pid
 
-    NOTE_TRACK* = 0x00000001
+    NOTE_TRACK* = 0x00000001'u32
       ## follow across forks
-    NOTE_TRACKERR* = 0x00000002
+    NOTE_TRACKERR* = 0x00000002'u32
       ## could not track child
-    NOTE_CHILD* = 0x00000004
+    NOTE_CHILD* = 0x00000004'u32
       ## am a child process
 
-    NOTE_SECONDS* = 0x00000001
+    NOTE_SECONDS* = 0x00000001'u32
       ## data is seconds
-    NOTE_MSECONDS* = 0x00000002
+    NOTE_MSECONDS* = 0x00000002'u32
       ## data is milliseconds
-    NOTE_USECONDS* = 0x00000004
+    NOTE_USECONDS* = 0x00000004'u32
       ## data is microseconds
-    NOTE_NSECONDS* = 0x00000008
+    NOTE_NSECONDS* = 0x00000008'u32
       ## data is nanoseconds
-    NOTE_ABSTIME* = 0x00000010
+    NOTE_ABSTIME* = 0x00000010'u32
       ## timeout is absolute
 
     KQUEUE_CLOEXEC* = 0x00000001
@@ -477,50 +480,50 @@ elif defined(openbsd):
     EV_ERROR* = 0x4000
       ## error, data contains errno
 
-    NOTE_LOWAT* = 0x0001
+    NOTE_LOWAT* = 0x0001'u32
       ## low water mark
-    NOTE_EOF* = 0x0002
+    NOTE_EOF* = 0x0002'u32
       ## return on EOF
 
-    NOTE_OOB* = 0x0004
+    NOTE_OOB* = 0x0004'u32
       ## OOB data on a socket
 
-    NOTE_DELETE* = 0x0001
+    NOTE_DELETE* = 0x0001'u32
       ## vnode was removed
-    NOTE_WRITE* = 0x0002
+    NOTE_WRITE* = 0x0002'u32
       ## data contents changed
-    NOTE_EXTEND* = 0x0004
+    NOTE_EXTEND* = 0x0004'u32
       ## size increased
-    NOTE_ATTRIB* = 0x0008
+    NOTE_ATTRIB* = 0x0008'u32
       ## attributes changed
-    NOTE_LINK* = 0x0010
+    NOTE_LINK* = 0x0010'u32
       ## link count changed
-    NOTE_RENAME* = 0x0020
+    NOTE_RENAME* = 0x0020'u32
       ## vnode was renamed
-    NOTE_REVOKE* = 0x0040
+    NOTE_REVOKE* = 0x0040'u32
       ## vnode access was revoked
-    NOTE_TRUNCATE* = 0x0080
+    NOTE_TRUNCATE* = 0x0080'u32
       ## vnode was truncated
 
-    NOTE_EXIT* = 0x80000000
+    NOTE_EXIT* = 0x80000000'u32
       ## process exited
-    NOTE_FORK* = 0x40000000
+    NOTE_FORK* = 0x40000000'u32
       ## process forked
-    NOTE_EXEC* = 0x20000000
+    NOTE_EXEC* = 0x20000000'u32
       ## process exec'd
-    NOTE_PCTRLMASK* = 0xf0000000
+    NOTE_PCTRLMASK* = 0xf0000000'u32
       ## mask for hint bits
-    NOTE_PDATAMASK* = 0x000fffff
+    NOTE_PDATAMASK* = 0x000fffff'u32
       ## mask for pid
 
-    NOTE_TRACK* = 0x00000001
+    NOTE_TRACK* = 0x00000001'u32
       ## follow across forks
-    NOTE_TRACKERR* = 0x00000002
+    NOTE_TRACKERR* = 0x00000002'u32
       ## could not track child
-    NOTE_CHILD* = 0x00000004
+    NOTE_CHILD* = 0x00000004'u32
       ## am a child process
 
-    NOTE_CHANGE* = 0x00000001
+    NOTE_CHANGE* = 0x00000001'u32
       ## device change event
 
   type
@@ -556,7 +559,7 @@ elif defined(openbsd):
     KEvent(ident: ident, filter: filter, flags: flags, fflags: fflags,
            data: int64(data), udata: udata)
 
-  func init*(typedesc[KEvent], ident: uint, filter: cshort, flags: cushort,
+  func init*(t: typedesc[KEvent], ident: uint, filter: cshort, flags: cushort,
              fflags: cuint, data: int, udata: uint): KEvent {.noinit.} =
     KEvent(ident: ident, filter: filter, flags: flags, fflags: fflags,
            data: int64(data), udata: cast[pointer](udata))
@@ -609,74 +612,74 @@ elif defined(netbsd):
     EV_ERROR* = 0x4000
       ## error, data contains errno
 
-    NOTE_FFNOP* = 0x00000000
+    NOTE_FFNOP* = 0x00000000'u32
       ## ignore input fflags
-    NOTE_FFAND* = 0x40000000
+    NOTE_FFAND* = 0x40000000'u32
       ## AND fflags
-    NOTE_FFOR* = 0x80000000
+    NOTE_FFOR* = 0x80000000'u32
       ## OR fflags
-    NOTE_FFCOPY* = 0xc0000000
+    NOTE_FFCOPY* = 0xc0000000'u32
       ## copy fflags
 
-    NOTE_FFCTRLMASK* = 0xc0000000
+    NOTE_FFCTRLMASK* = 0xc0000000'u32
       ## masks for operations
-    NOTE_FFLAGSMASK* = 0x00ffffff
-    NOTE_TRIGGER* = 0x01000000
+    NOTE_FFLAGSMASK* = 0x00ffffff'u32
+    NOTE_TRIGGER* = 0x01000000'u32
       ## Cause the event to be triggered for output.
 
-    NOTE_LOWAT* = 0x0001U
+    NOTE_LOWAT* = 0x0001'u32
       ## low water mark */
 
-    NOTE_DELETE* = 0x0001
+    NOTE_DELETE* = 0x0001'u32
       ## vnode was removed
-    NOTE_WRITE* = 0x0002
+    NOTE_WRITE* = 0x0002'u32
       ## data contents changed
-    NOTE_EXTEND* = 0x0004
+    NOTE_EXTEND* = 0x0004'u32
       ## size increased
-    NOTE_ATTRIB* = 0x0008
+    NOTE_ATTRIB* = 0x0008'u32
       ## attributes changed
-    NOTE_LINK* = 0x0010
+    NOTE_LINK* = 0x0010'u32
       ## link count changed
-    NOTE_RENAME* = 0x0020
+    NOTE_RENAME* = 0x0020'u32
       ## vnode was renamed
-    NOTE_REVOKE* = 0x0040
+    NOTE_REVOKE* = 0x0040'u32
       ## vnode access was revoked
-    NOTE_OPEN* = 0x0080
+    NOTE_OPEN* = 0x0080'u32
       ## vnode was opened
-    NOTE_CLOSE* = 0x0100
+    NOTE_CLOSE* = 0x0100'u32
       ## file closed (no FWRITE)
-    NOTE_CLOSE_WRITE* = 0x0200
+    NOTE_CLOSE_WRITE* = 0x0200'u32
       ## file closed (FWRITE)
-    NOTE_READ* = 0x0400
+    NOTE_READ* = 0x0400'u32
       ## file was read
 
-    NOTE_EXIT* = 0x80000000
+    NOTE_EXIT* = 0x80000000'u32
       ## process exited
-    NOTE_FORK* = 0x40000000
+    NOTE_FORK* = 0x40000000'u32
       ## process forked
-    NOTE_EXEC* = 0x20000000
+    NOTE_EXEC* = 0x20000000'u32
       ## process exec'd
-    NOTE_PCTRLMASK* = 0xf0000000
+    NOTE_PCTRLMASK* = 0xf0000000'u32
       ## mask for hint bits
-    NOTE_PDATAMASK* = 0x000fffff
+    NOTE_PDATAMASK* = 0x000fffff'u32
       ## mask for pid
 
-    NOTE_TRACK* = 0x00000001
+    NOTE_TRACK* = 0x00000001'u32
       ## follow across forks
-    NOTE_TRACKERR* = 0x00000002
+    NOTE_TRACKERR* = 0x00000002'u32
       ## could not track child
-    NOTE_CHILD* = 0x00000004
+    NOTE_CHILD* = 0x00000004'u32
       ## am a child process
 
-    NOTE_MSECONDS* = 0x00000000
+    NOTE_MSECONDS* = 0x00000000'u32
       ## data is milliseconds
-    NOTE_SECONDS* = 0x00000001
+    NOTE_SECONDS* = 0x00000001'u32
       ## data is seconds
-    NOTE_USECONDS* = 0x00000002
+    NOTE_USECONDS* = 0x00000002'u32
       ## data is microseconds
-    NOTE_NSECONDS* = 0x00000003
+    NOTE_NSECONDS* = 0x00000003'u32
       ## data is nanoseconds
-    NOTE_ABSTIME* = 0x00000010
+    NOTE_ABSTIME* = 0x00000010'u32
       ## timeout is absolute
 
   type
@@ -782,57 +785,57 @@ elif defined(dragonflybsd):
     EV_NODATA* = 0x1000
       ## EOF and no more data
 
-    NOTE_FFNOP* = 0x00000000
+    NOTE_FFNOP* = 0x00000000'u32
       ## ignore input fflags
-    NOTE_FFAND* = 0x40000000
+    NOTE_FFAND* = 0x40000000'u32
       ## AND fflags
-    NOTE_FFOR* = 0x80000000
+    NOTE_FFOR* = 0x80000000'u32
       ## OR fflags
-    NOTE_FFCOPY* = 0xc0000000
+    NOTE_FFCOPY* = 0xc0000000'u32
       ## copy fflags
-    NOTE_FFCTRLMASK* = 0xc0000000
+    NOTE_FFCTRLMASK* = 0xc0000000'u32
       ## masks for operations
-    NOTE_FFLAGSMASK* = 0x00ffffff
-    NOTE_TRIGGER* = 0x01000000
+    NOTE_FFLAGSMASK* = 0x00ffffff'u32
+    NOTE_TRIGGER* = 0x01000000'u32
       ## trigger for output
 
-    NOTE_LOWAT* = 0x0001
+    NOTE_LOWAT* = 0x0001'u32
       ## low water mark
 
-    NOTE_OOB* = 0x0002
+    NOTE_OOB* = 0x0002'u32
       ## OOB data on a socket
 
-    NOTE_DELETE* = 0x0001
+    NOTE_DELETE* = 0x0001'u32
       ## vnode was removed
-    NOTE_WRITE* =  0x0002
+    NOTE_WRITE* =  0x0002'u32
       ## data contents changed
-    NOTE_EXTEND* = 0x0004
+    NOTE_EXTEND* = 0x0004'u32
       ## size increased
-    NOTE_ATTRIB* = 0x0008
+    NOTE_ATTRIB* = 0x0008'u32
       ## attributes changed
-    NOTE_LINK* = 0x0010
+    NOTE_LINK* = 0x0010'u32
       ## link count changed
-    NOTE_RENAME* = 0x0020
+    NOTE_RENAME* = 0x0020'u32
       ## vnode was renamed
-    NOTE_REVOKE* = 0x0040
+    NOTE_REVOKE* = 0x0040'u32
       ## vnode access was revoked
 
-    NOTE_EXIT* = 0x80000000
+    NOTE_EXIT* = 0x80000000'u32
       ## process exited
-    NOTE_FORK* = 0x40000000
+    NOTE_FORK* = 0x40000000'u32
       ## process forked
-    NOTE_EXEC* = 0x20000000
+    NOTE_EXEC* = 0x20000000'u32
       ## process exec'd
-    NOTE_PCTRLMASK* = 0xf0000000
+    NOTE_PCTRLMASK* = 0xf0000000'u32
       ## mask for hint bits
-    NOTE_PDATAMASK* = 0x000fffff
+    NOTE_PDATAMASK* = 0x000fffff'u32
       ## mask for pid
 
-    NOTE_TRACK* = 0x00000001
+    NOTE_TRACK* = 0x00000001'u32
       ## follow across forks
-    NOTE_TRACKERR* = 0x00000002
+    NOTE_TRACKERR* = 0x00000002'u32
       ## could not track child
-    NOTE_CHILD* = 0x00000004
+    NOTE_CHILD* = 0x00000004'u32
       ## am a child process
 
   type
