@@ -10,7 +10,8 @@
 
 {.push raises: [].}
 
-import std/[kqueue, deques, tables]
+import "."/kqueue
+import std/[deques, tables]
 import stew/base10
 
 const
