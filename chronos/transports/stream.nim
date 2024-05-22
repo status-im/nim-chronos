@@ -2197,7 +2197,7 @@ proc createStreamServer*(host: TransportAddress,
   proc wrap(server: StreamServer,
             client: StreamTransport) {.async: (raises: []).} =
     try:
-      cbproc(server, client)
+      await cbproc(server, client)
     except CatchableError as exc:
       raiseAssert "Unexpected exception from stream server cbproc: " & exc.msg
 
