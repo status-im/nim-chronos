@@ -220,6 +220,7 @@ proc decodeParams(params: NimNode): AsyncParams =
     raw = false
     raises: NimNode = nil
     handleException = false
+    handleExceptionOverridden = false
 
   for param in params:
     param.expectKind(nnkExprColonExpr)
@@ -237,11 +238,12 @@ proc decodeParams(params: NimNode): AsyncParams =
       raw = param[1].eqIdent("true")
     elif param[0].eqIdent("handleException"):
       handleException = param[1].eqIdent("true")
+      handleExceptionOverridden = true
     else:
       warning("Unrecognised async parameter: " & repr(param[0]), param)
 
   # Only overrides with global default if there are no local annotations.
-  if (not handleException) and isNil(raises):
+  if (not handleExceptionOverridden) and isNil(raises):
     handleException = chronosHandleException
 
   (raw, raises, handleException)

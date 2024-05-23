@@ -598,7 +598,7 @@ suite "Exceptions tracking":
 
       checkNotCompiles:
         proc noHandleException() {.async: (handleException: false).} =
-          raise (ref CatchableError)()
+          raise (ref Exception)()
     else:
       skip()
 
