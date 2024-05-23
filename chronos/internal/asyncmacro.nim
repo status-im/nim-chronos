@@ -220,12 +220,13 @@ proc decodeParams(params: NimNode): AsyncParams =
     raw = false
     raises: NimNode = nil
     handleException = false
-    handleExceptionOverridden = false
+    hasLocalAnnotations = false
 
   for param in params:
     param.expectKind(nnkExprColonExpr)
 
     if param[0].eqIdent("raises"):
+      hasLocalAnnotations = true
       param[1].expectKind(nnkBracket)
       if param[1].len == 0:
         raises = makeNoRaises()
@@ -237,13 +238,12 @@ proc decodeParams(params: NimNode): AsyncParams =
       # boolVal doesn't work in untyped macros it seems..
       raw = param[1].eqIdent("true")
     elif param[0].eqIdent("handleException"):
+      hasLocalAnnotations = true
       handleException = param[1].eqIdent("true")
-      handleExceptionOverridden = true
     else:
       warning("Unrecognised async parameter: " & repr(param[0]), param)
 
-  # Only overrides with global default if there are no local annotations.
-  if (not handleExceptionOverridden) and isNil(raises):
+  if not hasLocalAnnotations:
     handleException = chronosHandleException
 
   (raw, raises, handleException)
