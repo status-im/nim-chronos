@@ -404,10 +404,9 @@ suite "Exceptions tracking":
     expect(IOError): waitFor test3()
     waitFor test6()
 
-  when not chronosHandleException:
-    test "Cannot raise invalid exception":
-      checkNotCompiles:
-        proc test3 {.async: (raises: [IOError]).} = raise newException(ValueError, "hey")
+  test "Cannot raise invalid exception":
+    checkNotCompiles:
+      proc test3 {.async: (raises: [IOError]).} = raise newException(ValueError, "hey")
 
   test "Explicit return in non-raising proc":
     proc test(): Future[int] {.async: (raises: []).} = return 12
@@ -432,12 +431,11 @@ suite "Exceptions tracking":
     checkNotCompiles:
       a = test2()
 
-  when not chronosHandleException:
-    test "Await raises the correct types":
-      proc test1 {.async: (raises: [ValueError]).} = raise newException(ValueError, "hey")
-      proc test2 {.async: (raises: [ValueError, CancelledError]).} = await test1()
-      checkNotCompiles:
-        proc test3 {.async: (raises: [CancelledError]).} = await test1()
+  test "Await raises the correct types":
+    proc test1 {.async: (raises: [ValueError]).} = raise newException(ValueError, "hey")
+    proc test2 {.async: (raises: [ValueError, CancelledError]).} = await test1()
+    checkNotCompiles:
+      proc test3 {.async: (raises: [CancelledError]).} = await test1()
 
   test "Can create callbacks":
     proc test1 {.async: (raises: [ValueError]).} = raise newException(ValueError, "hey")
@@ -589,6 +587,20 @@ suite "Exceptions tracking":
         await raiseException()
 
     waitFor(callCatchAll())
+
+  test "Global handleException does not override local annotations":
+    when chronosHandleException:
+      proc unnanotated() {.async.} = raise (ref CatchableError)()
+
+      checkNotCompiles:
+        proc annotated() {.async: (raises: [ValueError]).} = 
+          raise (ref CatchableError)()
+
+      checkNotCompiles:
+        proc noHandleException() {.async: (handleException: false).} =
+          raise (ref CatchableError)()
+    else:
+      skip()
 
   test "Results compatibility":
     proc returnOk(): Future[Result[int, string]] {.async: (raises: []).} =
