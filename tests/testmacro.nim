@@ -448,9 +448,8 @@ suite "Exceptions tracking":
     proc test2: Future[int] {.async: (raises: [ValueError, IOError, CancelledError]).} =
       return await test1()
 
-    when not chronosHandleException:
-      checkNotCompiles:
-        proc test3: Future[int] {.async: (raises: [CancelledError]).} = await test1()
+    checkNotCompiles:
+      proc test3: Future[int] {.async: (raises: [CancelledError]).} = await test1()
 
     check waitFor(test2()) == 12
 
