@@ -110,7 +110,7 @@ sometimes lead to compile errors around forward declarations, methods and
 closures as Nim conservatively asssumes that any `Exception` might be raised
 from those.
 
-Make sure to excplicitly annotate these with `{.raises.}`:
+Make sure to explicitly annotate these with `{.raises.}`:
 
 ```nim
 # Forward declarations need to explicitly include a raises list:
@@ -124,11 +124,12 @@ proc myfunction() =
 
 let closure: MyClosure = myfunction
 ```
+## Compatibility modes
 
-For compatibility, `async` functions can be instructed to handle `Exception` as
-well, specifying `handleException: true`. `Exception` that is not a `Defect` and
-not a `CatchableError` will then be caught and remapped to
-`AsyncExceptionError`:
+**Individual functions.** For compatibility, `async` functions can be instructed
+to handle `Exception` as well, specifying `handleException: true`. Any
+`Exception` that is not a `Defect` and not a `CatchableError` will then be
+caught and remapped to `AsyncExceptionError`:
 
 ```nim
 proc raiseException() {.async: (handleException: true, raises: [AsyncExceptionError]).} =
@@ -136,14 +137,31 @@ proc raiseException() {.async: (handleException: true, raises: [AsyncExceptionEr
 
 proc callRaiseException() {.async: (raises: []).} =
   try:
-    raiseException()
+    await raiseException()
   except AsyncExceptionError as exc:
     # The original Exception is available from the `parent` field
     echo exc.parent.msg
 ```
 
-This mode can be enabled globally with `-d:chronosHandleException` as a help
-when porting code to `chronos` but should generally be avoided as global
-configuration settings may interfere with libraries that use `chronos` leading
-to unexpected behavior.
+**Global flag.**  This mode can be enabled globally with
+`-d:chronosHandleException` as a help when porting code to `chronos`. The
+behavior in this case will be that:
 
+1. old-style functions annotated with plain `async` will behave as if they had
+   been annotated with `async: (handleException: true)`.
+
+   This is functionally to equivalent
+   `async: (handleException: true, raises: [CatchableError])` and will, as
+   before, remap any `Exception` that is not `Defect` into
+   `AsyncExceptionError`, while also allowing any `CatchableError` (including `AsyncExceptionError`) to get through without compilation errors.
+
+2. New-style functions with `async: (raises: [...])` annotations or their own
+   `handleException` annotations will not be affected.
+
+The rationale here is to allow one to incrementally introduce exception
+annotations and get compiler feedback while not requiring that every bit of
+legacy code is updated at once.
+
+This should be used sparingly and with care, however, as global configuration
+settings may interfere with libraries that use `chronos` leading to unexpected
+behavior.
