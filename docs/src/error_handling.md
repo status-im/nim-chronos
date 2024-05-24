@@ -150,7 +150,7 @@ behavior in this case will be that:
 1. old-style functions annotated with plain `async` will behave as if they had
    been annotated with `async: (handleException: true)`.
 
-   This is functionally to equivalent
+   This is functionally equivalent to
    `async: (handleException: true, raises: [CatchableError])` and will, as
    before, remap any `Exception` that is not `Defect` into
    `AsyncExceptionError`, while also allowing any `CatchableError` (including
