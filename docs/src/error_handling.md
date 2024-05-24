@@ -153,7 +153,8 @@ behavior in this case will be that:
    This is functionally to equivalent
    `async: (handleException: true, raises: [CatchableError])` and will, as
    before, remap any `Exception` that is not `Defect` into
-   `AsyncExceptionError`, while also allowing any `CatchableError` (including `AsyncExceptionError`) to get through without compilation errors.
+   `AsyncExceptionError`, while also allowing any `CatchableError` (including
+   `AsyncExceptionError`) to get through without compilation errors.
 
 2. New-style functions with `async: (raises: [...])` annotations or their own
    `handleException` annotations will not be affected.
