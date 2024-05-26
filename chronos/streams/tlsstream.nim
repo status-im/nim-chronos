@@ -611,7 +611,8 @@ proc newTLSServerAsyncStream*(rsource: AsyncStreamReader,
                        uint16(maxVersion))
 
   if not isNil(cache):
-    sslServerSetCache(res.scontext, addr cache.context.vtable)
+    sslServerSetCache(
+      res.scontext, SslSessionCacheClassPointerConst(addr cache.context.vtable))
 
   if TLSFlags.EnforceServerPref in flags:
     sslEngineAddFlags(res.scontext.eng, OPT_ENFORCE_SERVER_PREFERENCES)
