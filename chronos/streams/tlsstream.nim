@@ -511,7 +511,7 @@ proc newTLSClientAsyncStream*(
   if TLSFlags.NoVerifyHost in flags:
     sslClientInitFull(res.ccontext, addr res.x509, nil, 0)
     x509NoanchorInit(res.xwc, addr res.x509.vtable)
-    sslEngineSetX509(res.ccontext.eng, addr res.xwc.vtable)
+    sslEngineSetX509(res.ccontext.eng, X509ClassPointerConst(addr res.xwc.vtable))
   else:
     when trustAnchors is TrustAnchorStore:
       res.trustAnchors = trustAnchors
