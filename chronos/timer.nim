@@ -401,7 +401,7 @@ func pretty*(a: timer.Duration, parts = int.high): string =
 
 func `$`*(a: Duration): string {.inline.} =
   ## Returns string representation of Duration ``a``.
-  a.toPretty()
+  a.pretty()
 
 func `$`*(a: Moment): string {.inline.} =
   ## Returns string representation of Moment ``a`` as nanoseconds value.
