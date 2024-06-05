@@ -6,7 +6,7 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 import unittest2
-import stew/results
+import results
 import ../chronos, ../chronos/unittest2/asynctests
 
 {.used.}
