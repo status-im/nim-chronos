@@ -58,6 +58,7 @@ task test, "Run all tests":
     if (NimMajor, NimMinor) > (1, 6):
       # First run tests with `refc` memory manager.
       run args & " --mm:refc", "tests/testall"
+      run args & " -d:useMalloc", "tests/testall"
     run args, "tests/testall"
 
 task test_v3_compat, "Run all tests in v3 compatibility mode":
