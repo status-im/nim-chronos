@@ -8,6 +8,7 @@
 import std/[macros, strutils]
 import unittest2
 import ../chronos
+import ../chronos/config
 
 {.used.}
 
@@ -585,6 +586,20 @@ suite "Exceptions tracking":
         await raiseException()
 
     waitFor(callCatchAll())
+
+  test "Global handleException does not override local annotations":
+    when chronosHandleException:
+      proc unnanotated() {.async.} = raise (ref CatchableError)()
+
+      checkNotCompiles:
+        proc annotated() {.async: (raises: [ValueError]).} = 
+          raise (ref CatchableError)()
+
+      checkNotCompiles:
+        proc noHandleException() {.async: (handleException: false).} =
+          raise (ref Exception)()
+    else:
+      skip()
 
   test "Results compatibility":
     proc returnOk(): Future[Result[int, string]] {.async: (raises: []).} =

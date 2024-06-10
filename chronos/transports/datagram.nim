@@ -720,7 +720,7 @@ proc newDatagramTransportCommon(cbproc: UnsafeDatagramCallback,
   proc wrap(transp: DatagramTransport,
             remote: TransportAddress) {.async: (raises: []).} =
     try:
-      cbproc(transp, remote)
+      await cbproc(transp, remote)
     except CatchableError as exc:
       raiseAssert "Unexpected exception from stream server cbproc: " & exc.msg
 
