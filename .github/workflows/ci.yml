@@ -161,6 +161,7 @@ jobs:
         run: |
           nim --version
           nimble --version
+          gcc --version
           nimble install -y --depsOnly
           nimble install -y libbacktrace
           nimble test
