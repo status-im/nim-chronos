@@ -370,22 +370,25 @@ template add(a: var string, b: Base10Buf[uint64]) =
   for index in 0 ..< b.len:
     a.add(char(b.data[index]))
 
-func pretty*(a: timer.Duration, parts = int.high): string =
+func toString*(a: timer.Duration, parts = int.high): string =
   ## Returns a pretty string representation of Duration ``a`` - the
   ## number of parts returned can be limited thus truncating the output to
   ## an approximation that grows more precise as the duration becomes smaller
   var
-    res = ""
+    res = newStringOfCap(32)
     v = a.nanoseconds()
     parts = parts
 
   template f(n: string, T: Duration) =
+    if parts <= 0:
+      return res
+
     if v >= T.nanoseconds():
-      res.add($(uint64(v div T.nanoseconds())))
+      res.add(Base10.toBytes(uint64(v div T.nanoseconds())))
       res.add(n)
       v = v mod T.nanoseconds()
       dec parts
-      if v == 0 or parts <= 0:
+      if v == 0:
         return res
 
   f("w", Week)
@@ -401,7 +404,7 @@ func pretty*(a: timer.Duration, parts = int.high): string =
 
 func `$`*(a: Duration): string {.inline.} =
   ## Returns string representation of Duration ``a``.
-  a.pretty()
+  a.toString()
 
 func `$`*(a: Moment): string {.inline.} =
   ## Returns string representation of Moment ``a`` as nanoseconds value.
