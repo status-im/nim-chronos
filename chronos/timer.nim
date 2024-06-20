@@ -370,52 +370,41 @@ template add(a: var string, b: Base10Buf[uint64]) =
   for index in 0 ..< b.len:
     a.add(char(b.data[index]))
 
-func `$`*(a: Duration): string {.inline.} =
-  ## Returns string representation of Duration ``a`` as nanoseconds value.
-  var res = ""
-  var v = a.value
+func toString*(a: timer.Duration, parts = int.high): string =
+  ## Returns a pretty string representation of Duration ``a`` - the
+  ## number of parts returned can be limited thus truncating the output to
+  ## an approximation that grows more precise as the duration becomes smaller
+  var
+    res = newStringOfCap(32)
+    v = a.nanoseconds()
+    parts = parts
 
-  if v >= Week.value:
-    res.add(Base10.toBytes(uint64(v div Week.value)))
-    res.add('w')
-    v = v mod Week.value
-  if v == 0: return res
-  if v >= Day.value:
-    res.add(Base10.toBytes(uint64(v div Day.value)))
-    res.add('d')
-    v = v mod Day.value
-  if v == 0: return res
-  if v >= Hour.value:
-    res.add(Base10.toBytes(uint64(v div Hour.value)))
-    res.add('h')
-    v = v mod Hour.value
-  if v == 0: return res
-  if v >= Minute.value:
-    res.add(Base10.toBytes(uint64(v div Minute.value)))
-    res.add('m')
-    v = v mod Minute.value
-  if v == 0: return res
-  if v >= Second.value:
-    res.add(Base10.toBytes(uint64(v div Second.value)))
-    res.add('s')
-    v = v mod Second.value
-  if v == 0: return res
-  if v >= Millisecond.value:
-    res.add(Base10.toBytes(uint64(v div Millisecond.value)))
-    res.add('m')
-    res.add('s')
-    v = v mod Millisecond.value
-  if v == 0: return res
-  if v >= Microsecond.value:
-    res.add(Base10.toBytes(uint64(v div Microsecond.value)))
-    res.add('u')
-    res.add('s')
-    v = v mod Microsecond.value
-  if v == 0: return res
-  res.add(Base10.toBytes(uint64(v div Nanosecond.value)))
-  res.add('n')
-  res.add('s')
+  template f(n: string, T: Duration) =
+    if parts <= 0:
+      return res
+
+    if v >= T.nanoseconds():
+      res.add(Base10.toBytes(uint64(v div T.nanoseconds())))
+      res.add(n)
+      v = v mod T.nanoseconds()
+      dec parts
+      if v == 0:
+        return res
+
+  f("w", Week)
+  f("d", Day)
+  f("h", Hour)
+  f("m", Minute)
+  f("s", Second)
+  f("ms", Millisecond)
+  f("us", Microsecond)
+  f("ns", Nanosecond)
+
   res
+
+func `$`*(a: Duration): string {.inline.} =
+  ## Returns string representation of Duration ``a``.
+  a.toString()
 
 func `$`*(a: Moment): string {.inline.} =
   ## Returns string representation of Moment ``a`` as nanoseconds value.
