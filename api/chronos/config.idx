@@ -1,0 +1,15 @@
+chronosHandleException	chronos/config.html#chronosHandleException	config: chronosHandleException	
+chronosStrictFutureAccess	chronos/config.html#chronosStrictFutureAccess	config: chronosStrictFutureAccess	
+chronosStackTrace	chronos/config.html#chronosStackTrace	config: chronosStackTrace	
+chronosFutureId	chronos/config.html#chronosFutureId	config: chronosFutureId	
+chronosFutureTracking	chronos/config.html#chronosFutureTracking	config: chronosFutureTracking	
+chronosDumpAsync	chronos/config.html#chronosDumpAsync	config: chronosDumpAsync	
+chronosProcShell	chronos/config.html#chronosProcShell	config: chronosProcShell	
+chronosEventsCount	chronos/config.html#chronosEventsCount	config: chronosEventsCount	
+chronosInitialSize	chronos/config.html#chronosInitialSize	config: chronosInitialSize	
+chronosEventEngine	chronos/config.html#chronosEventEngine	config: chronosEventEngine	
+chronosHasRaises	chronos/config.html#chronosHasRaises	config: chronosHasRaises	
+chronosTransportDefaultBufferSize	chronos/config.html#chronosTransportDefaultBufferSize	config: chronosTransportDefaultBufferSize	
+chronosStreamDefaultBufferSize	chronos/config.html#chronosStreamDefaultBufferSize	config: chronosStreamDefaultBufferSize	
+chronosTLSSessionCacheBufferSize	chronos/config.html#chronosTLSSessionCacheBufferSize	config: chronosTLSSessionCacheBufferSize	
+chronosMoveSink	chronos/config.html#chronosMoveSink.t,auto	config: chronosMoveSink(val: auto): untyped	

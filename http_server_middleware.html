@@ -1,0 +1,312 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>HTTP server middleware - Chronos</title>
+
+
+        <!-- Custom HTML head -->
+        
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon.svg">
+        <link rel="shortcut icon" href="favicon.png">
+        <link rel="stylesheet" href="css/variables.css">
+        <link rel="stylesheet" href="css/general.css">
+        <link rel="stylesheet" href="css/chrome.css">
+        <link rel="stylesheet" href="css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="highlight.css">
+        <link rel="stylesheet" href="tomorrow-night.css">
+        <link rel="stylesheet" href="ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+        <link rel="stylesheet" href="open-in.css">
+
+    </head>
+    <body class="sidebar-visible no-js">
+    <div id="body-container">
+        <!-- Provide site root to javascript -->
+        <script>
+            var path_to_root = "";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
+        </script>
+
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            var html = document.querySelector('html');
+            html.classList.remove('light')
+            html.classList.add(theme);
+            var body = document.querySelector('body');
+            body.classList.remove('no-js')
+            body.classList.add('js');
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            var body = document.querySelector('body');
+            var sidebar = null;
+            var sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+            }
+            sidebar_toggle.checked = sidebar === 'visible';
+            body.classList.remove('sidebar-visible');
+            body.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <div class="sidebar-scrollbox">
+                <ol class="chapter"><li class="chapter-item expanded "><a href="introduction.html"><strong aria-hidden="true">1.</strong> Introduction</a></li><li class="chapter-item expanded "><a href="examples.html"><strong aria-hidden="true">2.</strong> Examples</a></li><li class="chapter-item expanded affix "><li class="part-title">User guide</li><li class="chapter-item expanded "><a href="concepts.html"><strong aria-hidden="true">3.</strong> Core concepts</a></li><li class="chapter-item expanded "><a href="async_procs.html"><strong aria-hidden="true">4.</strong> async functions</a></li><li class="chapter-item expanded "><a href="error_handling.html"><strong aria-hidden="true">5.</strong> Errors and exceptions</a></li><li class="chapter-item expanded "><a href="threads.html"><strong aria-hidden="true">6.</strong> Threads</a></li><li class="chapter-item expanded "><a href="tips.html"><strong aria-hidden="true">7.</strong> Tips, tricks and best practices</a></li><li class="chapter-item expanded "><a href="porting.html"><strong aria-hidden="true">8.</strong> Porting code to chronos</a></li><li class="chapter-item expanded "><a href="http_server_middleware.html" class="active"><strong aria-hidden="true">9.</strong> HTTP server middleware</a></li><li class="chapter-item expanded affix "><li class="part-title">Developer guide</li><li class="chapter-item expanded "><a href="book.html"><strong aria-hidden="true">10.</strong> Updating this book</a></li></ol>
+            </div>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <!-- Track and set sidebar scroll position -->
+        <script>
+            var sidebarScrollbox = document.querySelector('#sidebar .sidebar-scrollbox');
+            sidebarScrollbox.addEventListener('click', function(e) {
+                if (e.target.tagName === 'A') {
+                    sessionStorage.setItem('sidebar-scroll', sidebarScrollbox.scrollTop);
+                }
+            }, { passive: true });
+            var sidebarScrollTop = sessionStorage.getItem('sidebar-scroll');
+            sessionStorage.removeItem('sidebar-scroll');
+            if (sidebarScrollTop) {
+                // preserve sidebar scroll position when navigating via links within sidebar
+                sidebarScrollbox.scrollTop = sidebarScrollTop;
+            } else {
+                // scroll sidebar to current active section when navigating via "next/previous chapter" buttons
+                var activeSection = document.querySelector('#sidebar .active');
+                if (activeSection) {
+                    activeSection.scrollIntoView({ block: 'center' });
+                }
+            }
+        </script>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Chronos</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/status-im/nim-chronos/" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h2 id="http-server-middleware"><a class="header" href="#http-server-middleware">HTTP server middleware</a></h2>
+<p>Chronos provides a powerful mechanism for customizing HTTP request handlers via
+middlewares.</p>
+<p>A middleware is a coroutine that can modify, block or filter HTTP request.</p>
+<p>Single HTTP server could support unlimited number of middlewares, but you need to consider that each request in worst case could go through all the middlewares, and therefore a huge number of middlewares can have a significant impact on HTTP server performance.</p>
+<p>Order of middlewares is also important: right after HTTP server has received request, it will be sent to the first middleware in list, and each middleware will be responsible for passing control to other middlewares. Therefore, when building a list, it would be a good idea to place the request handlers at the end of the list, while keeping the middleware that could block or modify the request at the beginning of the list.</p>
+<p>Middleware could also modify HTTP server request, and these changes will be visible to all handlers (either middlewares or the original request handler). This can be done using the following helpers:</p>
+<pre><code class="language-nim">  proc updateRequest*(request: HttpRequestRef, scheme: string, meth: HttpMethod,
+                      version: HttpVersion, requestUri: string,
+                      headers: HttpTable): HttpResultMessage[void]
+
+  proc updateRequest*(request: HttpRequestRef, meth: HttpMethod,
+                      requestUri: string,
+                      headers: HttpTable): HttpResultMessage[void]
+
+  proc updateRequest*(request: HttpRequestRef, requestUri: string,
+                      headers: HttpTable): HttpResultMessage[void]
+
+  proc updateRequest*(request: HttpRequestRef,
+                      requestUri: string): HttpResultMessage[void]
+
+  proc updateRequest*(request: HttpRequestRef,
+                      headers: HttpTable): HttpResultMessage[void]
+</code></pre>
+<p>As you can see all the HTTP request parameters could be modified: request method, version, request path and request headers.</p>
+<p>Middleware could also use helpers to obtain more information about remote and local addresses of request's connection (this could be helpful when you need to do some IP address filtering).</p>
+<pre><code class="language-nim">  proc remote*(request: HttpRequestRef): Opt[TransportAddress]
+    ## Returns remote address of HTTP request's connection.
+  proc local*(request: HttpRequestRef): Opt[TransportAddress] =
+    ## Returns local address of HTTP request's connection.
+</code></pre>
+<p>Every middleware is the coroutine which looks like this:</p>
+<pre><code class="language-nim">  proc middlewareHandler(
+      middleware: HttpServerMiddlewareRef,
+      reqfence: RequestFence,
+      nextHandler: HttpProcessCallback2
+  ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
+</code></pre>
+<p>Where <code>middleware</code> argument is the object which could hold some specific values, <code>reqfence</code> is HTTP request which is enclosed with HTTP server error information and <code>nextHandler</code> is reference to next request handler, it could be either middleware handler or the original request processing callback handler.</p>
+<pre><code class="language-nim">  await nextHandler(reqfence)
+</code></pre>
+<p>You should perform await for the response from the <code>nextHandler(reqfence)</code>. Usually you should call next handler when you dont want to handle request or you dont know how to handle it, for example:</p>
+<pre><code class="language-nim">  proc middlewareHandler(
+      middleware: HttpServerMiddlewareRef,
+      reqfence: RequestFence,
+      nextHandler: HttpProcessCallback2
+  ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
+  if reqfence.isErr():
+    # We dont know or do not want to handle failed requests, so we call next handler.
+    return await nextHandler(reqfence)
+  let request = reqfence.get()
+  if request.uri.path == &quot;/path/we/able/to/respond&quot;:
+    try:
+      # Sending some response.
+      await request.respond(Http200, &quot;TEST&quot;)
+    except HttpWriteError as exc:
+      # We could also return default response for exception or other types of error.
+      defaultResponse(exc)
+  elif request.uri.path == &quot;/path/for/rewrite&quot;:
+    # We going to modify request object for this request, next handler will receive it with different request path.
+    let res = request.updateRequest(&quot;/path/to/new/location&quot;)
+    if res.isErr():
+      return defaultResponse(res.error)
+    await nextHandler(reqfence)
+  elif request.uri.path == &quot;/restricted/path&quot;:
+    if request.remote().isNone():
+      # We can't obtain remote address, so we force HTTP server to respond with `401 Unauthorized` status code.
+      return codeResponse(Http401)
+    if $(request.remote().get()).startsWith(&quot;127.0.0.1&quot;):
+      # Remote peer's address starts with &quot;127.0.0.1&quot;, sending proper response.
+      await request.respond(Http200, &quot;AUTHORIZED&quot;)
+    else:
+      # Force HTTP server to respond with `403 Forbidden` status code.
+      codeResponse(Http403)
+  elif request.uri.path == &quot;/blackhole&quot;:
+    # Force HTTP server to drop connection with remote peer.
+    dropResponse()
+  else:
+    # All other requests should be handled by somebody else.
+    await nextHandler(reqfence)
+</code></pre>
+<footer id="open-on-gh">Found a bug? <a href="https://github.com/status-im/nim-chronos//edit/master/docs/src/http_server_middleware.md">Edit this page on GitHub.</a></footer>
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="porting.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next prefetch" href="book.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="porting.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next prefetch" href="book.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr.min.js"></script>
+        <script src="mark.min.js"></script>
+        <script src="searcher.js"></script>
+
+        <script src="clipboard.min.js"></script>
+        <script src="highlight.js"></script>
+        <script src="book.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+    </div>
+    </body>
+</html>

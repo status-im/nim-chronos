@@ -1,0 +1,80 @@
+LocCreateIndex	chronos/internal/asyncfutures.html#LocCreateIndex.t	asyncfutures: LocCreateIndex(): auto	
+LocFinishIndex	chronos/internal/asyncfutures.html#LocFinishIndex.t	asyncfutures: LocFinishIndex(): auto	
+LocCompleteIndex	chronos/internal/asyncfutures.html#LocCompleteIndex.t	asyncfutures: LocCompleteIndex(): untyped	
+`[]`	chronos/internal/asyncfutures.html#[],array[LocationKind,ptr.SrcLoc],int	asyncfutures: `[]`(loc: array[LocationKind, ptr SrcLoc]; v: int): ptr SrcLoc	
+FutureStr	chronos/internal/asyncfutures.html#FutureStr	asyncfutures: FutureStr	
+FutureSeq	chronos/internal/asyncfutures.html#FutureSeq	asyncfutures: FutureSeq	
+FuturePendingError	chronos/internal/asyncfutures.html#FuturePendingError	asyncfutures: FuturePendingError	
+FutureCompletedError	chronos/internal/asyncfutures.html#FutureCompletedError	asyncfutures: FutureCompletedError	
+Finished	chronos/internal/asyncfutures.html#Finished.t	asyncfutures: Finished()	
+Finished	chronos/internal/asyncfutures.html#Finished.t,typeFutureState	asyncfutures: Finished(T: type FutureState): FutureState	
+newFuture	chronos/internal/asyncfutures.html#newFuture.t,static[string],static[FutureFlags]	asyncfutures: newFuture[T](fromProc: static[string] = &quot;&quot;; flags: static[FutureFlags] = {}): auto	
+newInternalRaisesFuture	chronos/internal/asyncfutures.html#newInternalRaisesFuture.t,static[string]	asyncfutures: newInternalRaisesFuture[T, E](fromProc: static[string] = &quot;&quot;): auto	
+newFutureSeq	chronos/internal/asyncfutures.html#newFutureSeq.t,static[string]	asyncfutures: newFutureSeq[A, B](fromProc: static[string] = &quot;&quot;): FutureSeq[A, B]	
+newFutureStr	chronos/internal/asyncfutures.html#newFutureStr.t,static[string]	asyncfutures: newFutureStr[T](fromProc: static[string] = &quot;&quot;): FutureStr[T]	
+done	chronos/internal/asyncfutures.html#done,FutureBase	asyncfutures: done(future: FutureBase): bool	
+complete	chronos/internal/asyncfutures.html#complete.t,Future[T],T	asyncfutures: complete[T](future: Future[T]; val: T)	
+complete	chronos/internal/asyncfutures.html#complete.t,Future[void]	asyncfutures: complete(future: Future[void])	
+fail	chronos/internal/asyncfutures.html#fail.t,Future[T],ref.CatchableError,staticbool	asyncfutures: fail[T](future: Future[T]; error: ref CatchableError; warn: static bool = false)	
+fail	chronos/internal/asyncfutures.html#fail.t,InternalRaisesFuture[T,E],ref.CatchableError,staticbool	asyncfutures: fail[T, E](future: InternalRaisesFuture[T, E]; error: ref CatchableError;\n           warn: static bool = true)	
+cancelAndSchedule	chronos/internal/asyncfutures.html#cancelAndSchedule.t,FutureBase	asyncfutures: cancelAndSchedule(future: FutureBase)	
+tryCancel	chronos/internal/asyncfutures.html#tryCancel.t,FutureBase	asyncfutures: tryCancel(future: FutureBase): bool	
+addCallback	chronos/internal/asyncfutures.html#addCallback,FutureBase,CallbackFunc,pointer	asyncfutures: addCallback(future: FutureBase; cb: CallbackFunc; udata: pointer)	
+addCallback	chronos/internal/asyncfutures.html#addCallback,FutureBase,CallbackFunc	asyncfutures: addCallback(future: FutureBase; cb: CallbackFunc)	
+removeCallback	chronos/internal/asyncfutures.html#removeCallback,FutureBase,CallbackFunc,pointer	asyncfutures: removeCallback(future: FutureBase; cb: CallbackFunc; udata: pointer)	
+removeCallback	chronos/internal/asyncfutures.html#removeCallback,FutureBase,CallbackFunc	asyncfutures: removeCallback(future: FutureBase; cb: CallbackFunc)	
+callback=	chronos/internal/asyncfutures.html#callback=,FutureBase,CallbackFunc,pointer	asyncfutures: callback=(future: FutureBase; cb: CallbackFunc; udata: pointer)	
+callback=	chronos/internal/asyncfutures.html#callback=,FutureBase,CallbackFunc	asyncfutures: callback=(future: FutureBase; cb: CallbackFunc)	
+cancelCallback=	chronos/internal/asyncfutures.html#cancelCallback=,FutureBase,CallbackFunc	asyncfutures: cancelCallback=(future: FutureBase; cb: CallbackFunc)	
+futureContinue	chronos/internal/asyncfutures.html#futureContinue,FutureBase	asyncfutures: futureContinue(fut: FutureBase)	
+internalRaiseIfError	chronos/internal/asyncfutures.html#internalRaiseIfError.m,FutureBase,typed	asyncfutures: internalRaiseIfError(fut: FutureBase; info: typed)	
+internalRaiseIfError	chronos/internal/asyncfutures.html#internalRaiseIfError.m,InternalRaisesFuture,typed,typed	asyncfutures: internalRaiseIfError(fut: InternalRaisesFuture; raises, info: typed)	
+read	chronos/internal/asyncfutures.html#read,Future[T: not void]	asyncfutures: read[T: not void](fut: Future[T]): lent T	
+read	chronos/internal/asyncfutures.html#read,Future[void]	asyncfutures: read(fut: Future[void])	
+readError	chronos/internal/asyncfutures.html#readError,FutureBase	asyncfutures: readError(fut: FutureBase): ref CatchableError	
+waitFor	chronos/internal/asyncfutures.html#waitFor,Future[T: not void]	asyncfutures: waitFor[T: not void](fut: Future[T]): lent T	
+waitFor	chronos/internal/asyncfutures.html#waitFor,Future[void]	asyncfutures: waitFor(fut: Future[void])	
+asyncSpawn	chronos/internal/asyncfutures.html#asyncSpawn,Future[void]	asyncfutures: asyncSpawn(future: Future[void])	
+asyncCheck	chronos/internal/asyncfutures.html#asyncCheck,Future[T]	asyncfutures: asyncCheck[T](future: Future[T])	
+asyncDiscard	chronos/internal/asyncfutures.html#asyncDiscard,Future[T]	asyncfutures: asyncDiscard[T](future: Future[T])	
+`and`	chronos/internal/asyncfutures.html#and,Future[T],Future[Y]	asyncfutures: `and`[T, Y](fut1: Future[T]; fut2: Future[Y]): Future[void]	
+orImpl	chronos/internal/asyncfutures.html#orImpl.t,Future[T],Future[Y]	asyncfutures: orImpl[T, Y](fut1: Future[T]; fut2: Future[Y]): untyped	
+`or`	chronos/internal/asyncfutures.html#or,Future[T],Future[Y]	asyncfutures: `or`[T, Y](fut1: Future[T]; fut2: Future[Y]): Future[void]	
+all	chronos/internal/asyncfutures.html#all,varargs[Future[T]]	asyncfutures: all[T](futs: varargs[Future[T]]): auto	
+oneIndex	chronos/internal/asyncfutures.html#oneIndex,varargs[Future[T]]	asyncfutures: oneIndex[T](futs: varargs[Future[T]]): Future[int]	
+oneValue	chronos/internal/asyncfutures.html#oneValue,varargs[Future[T]]	asyncfutures: oneValue[T](futs: varargs[Future[T]]): Future[T]	
+cancelSoon	chronos/internal/asyncfutures.html#cancelSoon.t,FutureBase,CallbackFunc,pointer	asyncfutures: cancelSoon(fut: FutureBase; cb: CallbackFunc; udata: pointer)	
+cancelSoon	chronos/internal/asyncfutures.html#cancelSoon.t,FutureBase,CallbackFunc	asyncfutures: cancelSoon(fut: FutureBase; cb: CallbackFunc)	
+cancelSoon	chronos/internal/asyncfutures.html#cancelSoon.t,FutureBase,InternalAsyncCallback	asyncfutures: cancelSoon(fut: FutureBase; acb: AsyncCallback)	
+cancelSoon	chronos/internal/asyncfutures.html#cancelSoon.t,FutureBase	asyncfutures: cancelSoon(fut: FutureBase)	
+cancel	chronos/internal/asyncfutures.html#cancel.t,FutureBase	asyncfutures: cancel(future: FutureBase)	
+cancelAndWait	chronos/internal/asyncfutures.html#cancelAndWait,FutureBase,ptr.SrcLoc	asyncfutures: cancelAndWait(future: FutureBase; loc: ptr SrcLoc): InternalRaisesFuture[void,\n    void]	
+cancelAndWait	chronos/internal/asyncfutures.html#cancelAndWait.t,FutureBase	asyncfutures: cancelAndWait(future: FutureBase): Future[void].Raising([])	
+noCancel	chronos/internal/asyncfutures.html#noCancel,F	asyncfutures: noCancel[F: SomeFuture](future: F): auto	
+allFutures	chronos/internal/asyncfutures.html#allFutures,varargs[FutureBase]	asyncfutures: allFutures(futs: varargs[FutureBase]): InternalRaisesFuture[void,\n    (CancelledError,)]	
+allFutures	chronos/internal/asyncfutures.html#allFutures,varargs[Future[T]]	asyncfutures: allFutures[T](futs: varargs[Future[T]]): InternalRaisesFuture[void,\n    (CancelledError,)]	
+allFutures	chronos/internal/asyncfutures.html#allFutures,varargs[InternalRaisesFuture[T,E]]	asyncfutures: allFutures[T, E](futs: varargs[InternalRaisesFuture[T, E]]): InternalRaisesFuture[\n    void, (CancelledError,)]	
+allFinished	chronos/internal/asyncfutures.html#allFinished,varargs[F]	asyncfutures: allFinished[F: SomeFuture](futs: varargs[F]): InternalRaisesFuture[seq[F],\n    (CancelledError,)]	
+one	chronos/internal/asyncfutures.html#one,F,varargs[F]	asyncfutures: one[F: SomeFuture](fut0: F; futs: varargs[F]): InternalRaisesFuture[F,\n    (CancelledError,)]	
+one	chronos/internal/asyncfutures.html#one,openArray[F]	asyncfutures: one[F: SomeFuture](futs: openArray[F]): InternalRaisesFuture[F,\n    (ValueError, CancelledError)]	
+race	chronos/internal/asyncfutures.html#race,FutureBase,varargs[FutureBase]	asyncfutures: race(fut0: FutureBase; futs: varargs[FutureBase]): InternalRaisesFuture[\n    FutureBase, (CancelledError,)]	
+race	chronos/internal/asyncfutures.html#race,openArray[FutureBase]	asyncfutures: race(futs: openArray[FutureBase]): InternalRaisesFuture[FutureBase,\n    (ValueError, CancelledError)]	
+race	chronos/internal/asyncfutures.html#race,openArray[SomeFuture]	asyncfutures: race(futs: openArray[SomeFuture]): InternalRaisesFuture[FutureBase,\n    (ValueError, CancelledError)]	
+sleepAsync	chronos/internal/asyncfutures.html#sleepAsync,Duration	asyncfutures: sleepAsync(duration: Duration): InternalRaisesFuture[void, (CancelledError,)]	
+sleepAsync	chronos/internal/asyncfutures.html#sleepAsync,int	asyncfutures: sleepAsync(ms: int): InternalRaisesFuture[void, (CancelledError,)]	
+stepsAsync	chronos/internal/asyncfutures.html#stepsAsync,int	asyncfutures: stepsAsync(number: int): InternalRaisesFuture[void, (CancelledError,)]	
+idleAsync	chronos/internal/asyncfutures.html#idleAsync	asyncfutures: idleAsync(): InternalRaisesFuture[void, (CancelledError,)]	
+withTimeout	chronos/internal/asyncfutures.html#withTimeout,Future[T],Duration	asyncfutures: withTimeout[T](fut: Future[T]; timeout: Duration): InternalRaisesFuture[bool,\n    (CancelledError,)]	
+withTimeout	chronos/internal/asyncfutures.html#withTimeout,Future[T],int	asyncfutures: withTimeout[T](fut: Future[T]; timeout: int): Future[bool]	
+wait	chronos/internal/asyncfutures.html#wait,Future[T]	asyncfutures: wait[T](fut: Future[T]; timeout = InfiniteDuration): Future[T]	
+wait	chronos/internal/asyncfutures.html#wait,Future[T],int	asyncfutures: wait[T](fut: Future[T]; timeout = -1): Future[T]	
+wait	chronos/internal/asyncfutures.html#wait,Future[T],SomeFuture	asyncfutures: wait[T](fut: Future[T]; deadline: SomeFuture): Future[T]	
+join	chronos/internal/asyncfutures.html#join,FutureBase	asyncfutures: join(future: FutureBase): InternalRaisesFuture[void, (CancelledError,)]	
+join	chronos/internal/asyncfutures.html#join,SomeFuture	asyncfutures: join(future: SomeFuture): InternalRaisesFuture[void, (CancelledError,)]	
+read	chronos/internal/asyncfutures.html#read,InternalRaisesFuture[T: not void,E]	asyncfutures: read[T: not void; E](fut: InternalRaisesFuture[T, E]): lent T	
+read	chronos/internal/asyncfutures.html#read,InternalRaisesFuture[void,E]	asyncfutures: read[E](fut: InternalRaisesFuture[void, E])	
+waitFor	chronos/internal/asyncfutures.html#waitFor,InternalRaisesFuture[T: not void,E]	asyncfutures: waitFor[T: not void; E](fut: InternalRaisesFuture[T, E]): lent T	
+waitFor	chronos/internal/asyncfutures.html#waitFor,InternalRaisesFuture[void,E]	asyncfutures: waitFor[E](fut: InternalRaisesFuture[void, E])	
+`or`	chronos/internal/asyncfutures.html#or,InternalRaisesFuture[T,E1],InternalRaisesFuture[Y,E2]	asyncfutures: `or`[T, Y, E1, E2](fut1: InternalRaisesFuture[T, E1];\n                   fut2: InternalRaisesFuture[Y, E2]): auto	
+wait	chronos/internal/asyncfutures.html#wait,InternalRaisesFuture	asyncfutures: wait(fut: InternalRaisesFuture; timeout = InfiniteDuration): auto	
+wait	chronos/internal/asyncfutures.html#wait,InternalRaisesFuture,SomeFuture	asyncfutures: wait(fut: InternalRaisesFuture; deadline: SomeFuture): auto	
