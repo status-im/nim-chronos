@@ -22,6 +22,8 @@ jobs:
             cpu: i386
           - os: macos
             cpu: amd64
+          - os: macos
+            cpu: arm64
           - os: windows
             cpu: amd64
         branch: [version-1-6, version-2-0, devel]
@@ -32,6 +34,12 @@ jobs:
             shell: bash
           - target:
               os: macos
+              cpu: amd64
+            builder: macos-13
+            shell: bash
+          - target:
+              os: macos
+              cpu: arm64
             builder: macos-latest
             shell: bash
           - target:
@@ -124,6 +132,8 @@ jobs:
         run: |
           if [[ '${{ matrix.target.cpu }}' == 'amd64' ]]; then
             PLATFORM=x64
+          elif [[ '${{ matrix.target.cpu }}' == 'arm64' ]]; then
+            PLATFORM=arm64
           else
             PLATFORM=x86
           fi
