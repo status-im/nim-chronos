@@ -55,10 +55,10 @@ task examples, "Build examples":
 
 task test, "Run all tests":
   for args in testArguments:
+    # First run tests with `refc` memory manager.
+    run args & " --mm:refc", "tests/testall"
     if (NimMajor, NimMinor) > (1, 6):
-      # First run tests with `refc` memory manager.
-      run args & " --mm:refc", "tests/testall"
-    run args, "tests/testall"
+      run args & " --mm:orc", "tests/testall"
 
 task test_v3_compat, "Run all tests in v3 compatibility mode":
   for args in testArguments:
@@ -75,10 +75,10 @@ task test_libbacktrace, "test with libbacktrace":
     ]
 
     for args in allArgs:
+      # First run tests with `refc` memory manager.
+      run args & " --mm:refc", "tests/testall"
       if (NimMajor, NimMinor) > (1, 6):
-        # First run tests with `refc` memory manager.
-        run args & " --mm:refc", "tests/testall"
-      run args, "tests/testall"
+        run args & " --mm:orc", "tests/testall"
 
 task docs, "Generate API documentation":
   exec "mdbook build docs"
