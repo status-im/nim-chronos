@@ -10,13 +10,9 @@
 ## This module implements cross-platform network interfaces list.
 ## Currently supported OSes are Windows, Linux, MacOS, BSD(not tested).
 
-when (NimMajor, NimMinor) < (1, 4):
-  {.push raises: [Defect].}
-else:
-  {.push raises: [].}
+{.push raises: [].}
 
 import std/algorithm
-from std/strutils import toHex
 import ".."/osdefs
 import "."/ipnet
 export ipnet
@@ -293,6 +289,9 @@ proc `$`*(ifa: InterfaceAddress): string =
   else:
     "Unknown"
 
+proc hexDigit(x: uint8, lowercase: bool = false): char =
+  char(0x30'u8 + x + (uint32(7) and not((uint32(x) - 10) shr 8)))
+
 proc `$`*(iface: NetworkInterface): string =
   ## Return string representation of network interface ``iface``.
   var res = $iface.ifIndex
@@ -316,7 +315,8 @@ proc `$`*(iface: NetworkInterface): string =
   res.add(" ")
   if iface.maclen > 0:
     for i in 0 ..< iface.maclen:
-      res.add(toHex(iface.mac[i]))
+      res.add(hexDigit(iface.mac[i] shr 4))
+      res.add(hexDigit(iface.mac[i] and 15))
       if i < iface.maclen - 1:
         res.add(":")
   for item in iface.addresses:
@@ -677,10 +677,10 @@ when defined(linux):
       var msg = cast[ptr NlMsgHeader](addr data[0])
       var endflag = false
       while NLMSG_OK(msg, length):
-        if msg.nlmsg_type == NLMSG_ERROR:
+        if msg.nlmsg_type in [uint16(NLMSG_DONE), uint16(NLMSG_ERROR)]:
           endflag = true
           break
-        else:
+        elif msg.nlmsg_type == RTM_NEWROUTE:
           res = processRoute(msg)
           endflag = true
           break
@@ -750,7 +750,7 @@ when defined(linux):
       if endflag:
         break
 
-  proc getInterfaces*(): seq[NetworkInterface] {.raises: [Defect].} =
+  proc getInterfaces*(): seq[NetworkInterface] {.raises: [].} =
     ## Return list of available interfaces.
     var res: seq[NetworkInterface]
     var pid = osdefs.getpid()
@@ -764,7 +764,7 @@ when defined(linux):
       discard osdefs.close(sock)
       res
 
-  proc getBestRoute*(address: TransportAddress): Route {.raises: [Defect].} =
+  proc getBestRoute*(address: TransportAddress): Route {.raises: [].} =
     ## Return best applicable OS route, which will be used for connecting to
     ## address ``address``.
     var pid = osdefs.getpid()
@@ -792,7 +792,7 @@ elif defined(macosx) or defined(macos) or defined(bsd):
     else:
       StatusDown
 
-  proc getInterfaces*(): seq[NetworkInterface] {.raises: [Defect].} =
+  proc getInterfaces*(): seq[NetworkInterface] {.raises: [].} =
     ## Return list of available interfaces.
     var res: seq[NetworkInterface]
     var ifap: ptr IfAddrs
@@ -820,12 +820,12 @@ elif defined(macosx) or defined(macos) or defined(bsd):
             res[i].ifIndex = int(link.sdl_index)
             let nlen = int(link.sdl_nlen)
             if nlen < len(link.sdl_data):
-              let minsize = min(cast[int](link.sdl_alen), len(res[i].mac))
+              let minsize = min(int(link.sdl_alen), len(res[i].mac))
               copyMem(addr res[i].mac[0], addr link.sdl_data[nlen], minsize)
             res[i].maclen = int(link.sdl_alen)
             res[i].ifType = toInterfaceType(data.ifi_type)
             res[i].state = toInterfaceState(ifap.ifa_flags)
-            res[i].mtu = cast[int](data.ifi_mtu)
+            res[i].mtu = int64(data.ifi_mtu)
           elif family == osdefs.AF_INET:
             fromSAddr(cast[ptr Sockaddr_storage](ifap.ifa_addr),
                       SockLen(sizeof(Sockaddr_in)), ifaddress.host)
@@ -838,17 +838,15 @@ elif defined(macosx) or defined(macos) or defined(bsd):
           if family == osdefs.AF_INET:
             fromSAddr(cast[ptr Sockaddr_storage](ifap.ifa_netmask),
                       SockLen(sizeof(Sockaddr_in)), na)
-            if cint(ifaddress.host.family) == osdefs.AF_INET:
+            if ifaddress.host.family == AddressFamily.IPv4:
               ifaddress.net = IpNet.init(ifaddress.host, na)
           elif family == osdefs.AF_INET6:
             fromSAddr(cast[ptr Sockaddr_storage](ifap.ifa_netmask),
                       SockLen(sizeof(Sockaddr_in6)), na)
-            if cint(ifaddress.host.family) == osdefs.AF_INET6:
+            if ifaddress.host.family == AddressFamily.IPv6:
               ifaddress.net = IpNet.init(ifaddress.host, na)
 
         if ifaddress.host.family != AddressFamily.None:
-          if len(res[i].addresses) == 0:
-            res[i].addresses = newSeq[InterfaceAddress]()
           res[i].addresses.add(ifaddress)
         ifap = ifap.ifa_next
 
@@ -866,7 +864,7 @@ elif defined(macosx) or defined(macos) or defined(bsd):
     else:
       0
 
-  proc getBestRoute*(address: TransportAddress): Route {.raises: [Defect].} =
+  proc getBestRoute*(address: TransportAddress): Route {.raises: [].} =
     ## Return best applicable OS route, which will be used for connecting to
     ## address ``address``.
     var sock: cint
@@ -1033,7 +1031,7 @@ elif defined(windows):
         res.net = IpNet.init(res.host, prefixLength)
     res
 
-  proc getInterfaces*(): seq[NetworkInterface] {.raises: [Defect].} =
+  proc getInterfaces*(): seq[NetworkInterface] {.raises: [].} =
     ## Return list of network interfaces.
     var res = newSeq[NetworkInterface]()
     var size = WorkBufferSize
@@ -1047,10 +1045,11 @@ elif defined(windows):
       var addresses = cast[ptr IpAdapterAddressesXp](addr buffer[0])
       gres = getAdaptersAddresses(osdefs.AF_UNSPEC, GAA_FLAG_INCLUDE_PREFIX,
                                   nil, addresses, addr size)
-      if gres == ERROR_SUCCESS:
+      case OSErrorCode(gres)
+      of ERROR_SUCCESS:
         buffer.setLen(size)
         break
-      elif gres == ERROR_BUFFER_OVERFLOW:
+      of ERROR_BUFFER_OVERFLOW:
         discard
       else:
         break
@@ -1058,7 +1057,7 @@ elif defined(windows):
       if tries >= MaxTries:
         break
 
-    if gres == ERROR_SUCCESS:
+    if OSErrorCode(gres) == ERROR_SUCCESS:
       var slider = cast[ptr IpAdapterAddressesXp](addr buffer[0])
       while not isNil(slider):
         var iface = NetworkInterface(
@@ -1084,7 +1083,7 @@ elif defined(windows):
       sort(res, cmp)
     res
 
-  proc getBestRoute*(address: TransportAddress): Route {.raises: [Defect].} =
+  proc getBestRoute*(address: TransportAddress): Route {.raises: [].} =
     ## Return best applicable OS route, which will be used for connecting to
     ## address ``address``.
     var res = Route()

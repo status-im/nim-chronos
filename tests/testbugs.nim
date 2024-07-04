@@ -8,29 +8,32 @@
 import unittest2
 import ../chronos
 
-when defined(nimHasUsed): {.used.}
+{.used.}
 
 suite "Asynchronous issues test suite":
   const HELLO_PORT = 45679
   const TEST_MSG = "testmsg"
   const MSG_LEN = TEST_MSG.len()
-  const TestsCount = 500
+  const TestsCount = 100
 
   type
     CustomData = ref object
       test: string
 
   proc udp4DataAvailable(transp: DatagramTransport,
-                         remote: TransportAddress) {.async, gcsafe.} =
-    var udata = getUserData[CustomData](transp)
-    var expect = TEST_MSG
-    var data: seq[byte]
-    var datalen: int
-    transp.peekMessage(data, datalen)
-    if udata.test == "CHECK" and datalen == MSG_LEN and
-       equalMem(addr data[0], addr expect[0], datalen):
-      udata.test = "OK"
-    transp.close()
+                         remote: TransportAddress) {.async: (raises: []).} =
+    try:
+      var udata = getUserData[CustomData](transp)
+      var expect = TEST_MSG
+      var data: seq[byte]
+      var datalen: int
+      transp.peekMessage(data, datalen)
+      if udata.test == "CHECK" and datalen == MSG_LEN and
+        equalMem(addr data[0], addr expect[0], datalen):
+        udata.test = "OK"
+      transp.close()
+    except CatchableError as exc:
+      raiseAssert exc.msg
 
   proc issue6(): Future[bool] {.async.} =
     var myself = initTAddress("127.0.0.1:" & $HELLO_PORT)
@@ -117,20 +120,30 @@ suite "Asynchronous issues test suite":
     let inpTransp = await afut
     let bytesSent = await outTransp.write(msg)
     check bytesSent == messageSize
-    var rfut = inpTransp.readExactly(addr buffer[0], messageSize)
+    var rfut {.used.} = inpTransp.readExactly(addr buffer[0], messageSize)
 
-    proc waiterProc(udata: pointer) {.raises: [Defect], gcsafe.} =
+    proc waiterProc(udata: pointer) {.raises: [], gcsafe.} =
       try:
         waitFor(sleepAsync(0.milliseconds))
-      except CatchableError as exc:
+      except CatchableError:
         raiseAssert "Unexpected exception happened"
-    let timer = setTimer(Moment.fromNow(0.seconds), waiterProc, nil)
+    let timer {.used.} = setTimer(Moment.fromNow(0.seconds), waiterProc, nil)
     await sleepAsync(100.milliseconds)
 
     await inpTransp.closeWait()
     await outTransp.closeWait()
     await server.closeWait()
     return true
+
+  proc testOrDeadlock(): Future[bool] {.async.} =
+    proc f(): Future[void] {.async.} =
+      await sleepAsync(2.seconds) or sleepAsync(1.seconds)
+    let fx = f()
+    try:
+      await fx.cancelAndWait().wait(2.seconds)
+    except AsyncTimeoutError:
+      return false
+    true
 
   test "Issue #6":
     check waitFor(issue6()) == true
@@ -149,3 +162,6 @@ suite "Asynchronous issues test suite":
 
   test "IndexError crash test":
     check waitFor(testIndexError()) == true
+
+  test "`or` deadlock [#516] test":
+    check waitFor(testOrDeadlock()) == true

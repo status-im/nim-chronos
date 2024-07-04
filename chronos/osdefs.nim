@@ -6,18 +6,15 @@
 #                Licensed under either of
 #    Apache License, version 2.0, (LICENSE-APACHEv2)
 #                MIT license (LICENSE-MIT)
-
-from std/os import osLastError, osErrorMsg, OSErrorCode, raiseOSError,
-                   newOSError
-export osLastError, osErrorMsg, OSError, OSErrorCode, raiseOSError, newOSError
+import oserrno
+export oserrno
 
 when defined(windows):
-  from std/winlean import SocketHandle, SockLen, SockAddr, InAddr,
-                      In6_addr, Sockaddr_in, Sockaddr_in6, Sockaddr_storage,
-                      AddrInfo
-  export SocketHandle, SockLen, SockAddr, InAddr,
-         In6_addr, Sockaddr_in, Sockaddr_in6, Sockaddr_storage, AddrInfo
-
+  from std/winlean import Sockaddr_storage, InAddr, In6Addr, Sockaddr_in,
+                          Sockaddr_in6, SockLen, SockAddr, AddrInfo,
+                          SocketHandle
+  export Sockaddr_storage, InAddr, In6Addr, Sockaddr_in, Sockaddr_in6, SockLen,
+         SockAddr, AddrInfo, SocketHandle
   # Prerequisites for constants
   template WSAIORW*(x, y): untyped = (IOC_INOUT or x or y)
   template WSAIOW*(x, y): untyped =
@@ -64,6 +61,12 @@ when defined(windows):
     INADDR_BROADCAST* = 0xffff_ffff'u32
     INADDR_NONE* = 0xffff_ffff'u32
 
+    CTRL_C_EVENT* = 0'u32
+    CTRL_BREAK_EVENT* = 1'u32
+    CTRL_CLOSE_EVENT* = 2'u32
+    CTRL_LOGOFF_EVENT* = 5'u32
+    CTRL_SHUTDOWN_EVENT* = 6'u32
+
     WAIT_ABANDONED* = 0x80'u32
     WAIT_OBJECT_0* = 0x00'u32
     WAIT_TIMEOUT* = 0x102'u32
@@ -104,36 +107,6 @@ when defined(windows):
     PIPE_UNLIMITED_INSTANCES* = 255'u32
     DEFAULT_PIPE_SIZE* = 65536'u32
 
-    ERROR_SUCCESS* = 0
-    ERROR_FILE_NOT_FOUND* = 2
-    ERROR_TOO_MANY_OPEN_FILES* = 4
-    ERROR_ACCESS_DENIED* = 5
-    ERROR_BROKEN_PIPE* = 109
-    ERROR_BUFFER_OVERFLOW* = 111
-    ERROR_PIPE_BUSY* = 231
-    ERROR_NO_DATA* = 232
-    ERROR_PIPE_NOT_CONNECTED* = 233
-    ERROR_PIPE_CONNECTED* = 535
-    ERROR_OPERATION_ABORTED* = 995
-    ERROR_IO_PENDING* = 997
-    ERROR_CONNECTION_REFUSED* = 1225
-    ERROR_CONNECTION_ABORTED* = 1236
-
-    WSAEMFILE* = 10024
-    WSAENETDOWN* = 10050
-    WSAENETRESET* = 10052
-    WSAECONNABORTED* = 10053
-    WSAECONNRESET* = 10054
-    WSAENOBUFS* = 10055
-    WSAETIMEDOUT* = 10060
-    WSAEADDRINUSE* = 10048
-    WSAEDISCON* = 10101
-    WSANOTINITIALISED* = 10093
-    WSAENOTSOCK* = 10038
-    WSAEINPROGRESS* = 10036
-    WSAEINTR* = 10004
-    WSAEWOULDBLOCK* = 10035
-    ERROR_NETNAME_DELETED* = 64
     STATUS_PENDING* = 0x103
 
     IOCPARM_MASK* = 0x7f'u32
@@ -149,6 +122,7 @@ when defined(windows):
     SO_UPDATE_ACCEPT_CONTEXT* = 0x700B
     SO_CONNECT_TIME* = 0x700C
     SO_UPDATE_CONNECT_CONTEXT* = 0x7010
+    SO_PROTOCOL_INFOW* = 0x2005
 
     FILE_FLAG_FIRST_PIPE_INSTANCE* = 0x00080000'u32
     FILE_FLAG_OPEN_NO_RECALL* = 0x00100000'u32
@@ -264,6 +238,10 @@ when defined(windows):
       GUID(D1: 0xb5367df0'u32, D2: 0xcbac'u16, D3: 0x11cf'u16,
            D4: [0x95'u8, 0xca'u8, 0x00'u8, 0x80'u8,
                 0x5f'u8, 0x48'u8, 0xa1'u8, 0x92'u8])
+    WSAID_DISCONNECTEX* =
+      GUID(D1: 0x7fda2e11'u32, D2: 0x8630'u16, D3: 0x436f'u16,
+           D4: [0xa0'u8, 0x31'u8, 0xf5'u8, 0x36'u8,
+                0xa6'u8, 0xee'u8, 0xc1'u8, 0x57'u8])
 
     GAA_FLAG_INCLUDE_PREFIX* = 0x0010'u32
 
@@ -281,6 +259,9 @@ when defined(windows):
     FIONBIO* = WSAIOW(102, 126)
 
     HANDLE_FLAG_INHERIT* = 1'u32
+    IPV6_V6ONLY* = 27
+    MAX_PROTOCOL_CHAIN* = 7
+    WSAPROTOCOL_LEN* = 255
 
   type
     LONG* = int32
@@ -332,7 +313,10 @@ when defined(windows):
 
     POVERLAPPED_COMPLETION_ROUTINE* = proc (para1: DWORD, para2: DWORD,
                                             para3: POVERLAPPED) {.
-                                      stdcall, gcsafe, raises: [].}
+      stdcall, gcsafe, raises: [].}
+
+    PHANDLER_ROUTINE* = proc (dwCtrlType: DWORD): WINBOOL {.
+      stdcall, gcsafe, raises: [].}
 
     OSVERSIONINFO* {.final, pure.} = object
       dwOSVersionInfoSize*: DWORD
@@ -461,6 +445,32 @@ when defined(windows):
       prefix*: SOCKADDR_INET
       prefixLength*: uint8
 
+    WSAPROTOCOLCHAIN* {.final, pure.} = object
+      chainLen*: int32
+      chainEntries*: array[MAX_PROTOCOL_CHAIN, DWORD]
+
+    WSAPROTOCOL_INFO* {.final, pure.} = object
+      dwServiceFlags1*: uint32
+      dwServiceFlags2*: uint32
+      dwServiceFlags3*: uint32
+      dwServiceFlags4*: uint32
+      dwProviderFlags*: uint32
+      providerId*: GUID
+      dwCatalogEntryId*: DWORD
+      protocolChain*: WSAPROTOCOLCHAIN
+      iVersion*: int32
+      iAddressFamily*: int32
+      iMaxSockAddr*: int32
+      iMinSockAddr*: int32
+      iSocketType*: int32
+      iProtocol*: int32
+      iProtocolMaxOffset*: int32
+      iNetworkByteOrder*: int32
+      iSecurityScheme*: int32
+      dwMessageSize*: uint32
+      dwProviderReserved*: uint32
+      szProtocol*: array[WSAPROTOCOL_LEN + 1, WCHAR]
+
     MibIpForwardRow2* {.final, pure.} = object
       interfaceLuid*: uint64
       interfaceIndex*: uint32
@@ -521,11 +531,18 @@ when defined(windows):
       lpTransmitBuffers: pointer, dwReserved: DWORD): WINBOOL {.
       stdcall, gcsafe, raises: [].}
 
+    WSAPROC_DISCONNECTEX* = proc (
+      hSocket: SocketHandle, lpOverlapped: POVERLAPPED, dwFlags: DWORD,
+      dwReserved: DWORD): WINBOOL {.
+      stdcall, gcsafe, raises: [].}
+
     LPFN_GETQUEUEDCOMPLETIONSTATUSEX* = proc (
       completionPort: HANDLE, lpPortEntries: ptr OVERLAPPED_ENTRY,
       ulCount: ULONG, ulEntriesRemoved: var ULONG,
       dwMilliseconds: DWORD, fAlertable: WINBOOL): WINBOOL {.
       stdcall, gcsafe, raises: [].}
+
+    WindowsSigHandler = proc (a: cint) {.noconv, raises: [], gcsafe.}
 
   proc getVersionEx*(lpVersionInfo: ptr OSVERSIONINFO): WINBOOL {.
        stdcall, dynlib: "kernel32", importc: "GetVersionExW", sideEffect.}
@@ -626,6 +643,9 @@ when defined(windows):
   proc getCurrentProcess*(): HANDLE {.
        stdcall, dynlib: "kernel32", importc: "GetCurrentProcess", sideEffect.}
 
+  proc getCurrentProcessId*(): DWORD {.
+       stdcall, dynlib: "kernel32", importc: "GetCurrentProcessId", sideEffect.}
+
   proc getSystemTimeAsFileTime*(lpSystemTimeAsFileTime: var FILETIME) {.
        stdcall, dynlib: "kernel32", importc: "GetSystemTimeAsFileTime",
        sideEffect.}
@@ -718,7 +738,7 @@ when defined(windows):
                     res: var ptr AddrInfo): cint {.
        stdcall, dynlib: "ws2_32", importc: "getaddrinfo", sideEffect.}
 
-  proc freeaddrinfo*(ai: ptr AddrInfo) {.
+  proc freeAddrInfo*(ai: ptr AddrInfo) {.
        stdcall, dynlib: "ws2_32", importc: "freeaddrinfo", sideEffect.}
 
   proc createIoCompletionPort*(fileHandle: HANDLE,
@@ -743,7 +763,7 @@ when defined(windows):
 
   proc createEvent*(lpEventAttributes: ptr SECURITY_ATTRIBUTES,
                     bManualReset: DWORD, bInitialState: DWORD,
-                    lpName: LPWSTR): HANDLE {.
+                    lpName: ptr WCHAR): HANDLE {.
        stdcall, dynlib: "kernel32", importc: "CreateEventW", sideEffect.}
 
   proc setEvent*(hEvent: HANDLE): WINBOOL {.
@@ -844,8 +864,36 @@ when defined(windows):
   proc rtlNtStatusToDosError*(code: uint64): ULONG {.
        stdcall, dynlib: "ntdll", importc: "RtlNtStatusToDosError", sideEffect.}
 
+  proc getConsoleCP*(): UINT {.
+       stdcall, dynlib: "kernel32", importc: "GetConsoleCP", sideEffect.}
+
+  proc setConsoleCtrlHandler*(handleRoutine: PHANDLER_ROUTINE,
+                              add: WINBOOL): WINBOOL {.
+       stdcall, dynlib: "kernel32", importc: "SetConsoleCtrlHandler",
+       sideEffect.}
+
+  proc generateConsoleCtrlEvent*(dwCtrlEvent: DWORD,
+                                 dwProcessGroupId: DWORD): WINBOOL {.
+       stdcall, dynlib: "kernel32", importc: "GenerateConsoleCtrlEvent",
+       sideEffect.}
+
   proc `==`*(x, y: SocketHandle): bool {.borrow.}
   proc `==`*(x, y: HANDLE): bool {.borrow.}
+
+  proc c_signal*(sign: cint, handler: WindowsSigHandler): WindowsSigHandler {.
+    importc: "signal", header: "<signal.h>", raises: [], sideEffect.}
+
+  const
+    SIGABRT* = cint(22)
+    SIGINT* = cint(2)
+    SIGQUIT* = cint(3)
+    SIGTERM* = cint(15)
+    SIGFPE* = cint(8)
+    SIGILL* = cint(4)
+    SIGSEGV* = cint(11)
+    SIG_DFL* = cast[WindowsSigHandler](0)
+    SIG_IGN* = cast[WindowsSigHandler](1)
+    SIG_ERR* = cast[WindowsSigHandler](-1)
 
   proc getSecurityAttributes*(inheritHandle = false): SECURITY_ATTRIBUTES =
     SECURITY_ATTRIBUTES(
@@ -855,14 +903,76 @@ when defined(windows):
     )
 
 elif defined(macos) or defined(macosx):
-  import std/posix
-  export posix
+  from std/posix import close, shutdown, socket, getpeername, getsockname,
+                        recvfrom, sendto, send, bindSocket, recv, connect,
+                        unlink, listen, getaddrinfo, gai_strerror, getrlimit,
+                        setrlimit, getpid, pthread_sigmask, sigprocmask,
+                        sigemptyset, sigaddset, sigismember, fcntl, accept,
+                        pipe, write, signal, read, setsockopt, getsockopt,
+                        getcwd, chdir, waitpid, kill, select, pselect,
+                        socketpair, poll, freeAddrInfo,
+                        Timeval, Timespec, Pid, Mode, Time, Sigset, SockAddr,
+                        SockLen, Sockaddr_storage, Sockaddr_in, Sockaddr_in6,
+                        Sockaddr_un, SocketHandle, AddrInfo, RLimit, TFdSet,
+                        Suseconds,
+                        FD_CLR, FD_ISSET, FD_SET, FD_ZERO,
+                        F_GETFL, F_SETFL, F_GETFD, F_SETFD, FD_CLOEXEC,
+                        O_NONBLOCK, SOL_SOCKET, SOCK_RAW, SOCK_DGRAM,
+                        SOCK_STREAM, MSG_NOSIGNAL, MSG_PEEK,
+                        AF_INET, AF_INET6, AF_UNIX, SO_ERROR, SO_REUSEADDR,
+                        SO_REUSEPORT, SO_BROADCAST, IPPROTO_IP, IPPROTO_IPV6,
+                        IPV6_MULTICAST_HOPS, SOCK_DGRAM, RLIMIT_NOFILE,
+                        SIG_BLOCK, SIG_UNBLOCK, SHUT_RD, SHUT_WR, SHUT_RDWR,
+                        SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
+                        SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV, SIGUSR2,
+                        SIGPIPE, SIGALRM, SIGTERM, SIGPIPE, SIGCHLD, SIGSTOP,
+                        SIGCONT
+
+  export close, shutdown, socket, getpeername, getsockname,
+         recvfrom, sendto, send, bindSocket, recv, connect,
+         unlink, listen, getaddrinfo, gai_strerror, getrlimit,
+         setrlimit, getpid, pthread_sigmask, sigprocmask,
+         sigemptyset, sigaddset, sigismember, fcntl, accept,
+         pipe, write, signal, read, setsockopt, getsockopt,
+         getcwd, chdir, waitpid, kill, select, pselect,
+         socketpair, poll, freeAddrInfo,
+         Timeval, Timespec, Pid, Mode, Time, Sigset, SockAddr,
+         SockLen, Sockaddr_storage, Sockaddr_in, Sockaddr_in6,
+         Sockaddr_un, SocketHandle, AddrInfo, RLimit, TFdSet,
+         Suseconds,
+         FD_CLR, FD_ISSET, FD_SET, FD_ZERO,
+         F_GETFL, F_SETFL, F_GETFD, F_SETFD, FD_CLOEXEC,
+         O_NONBLOCK, SOL_SOCKET, SOCK_RAW, SOCK_DGRAM,
+         SOCK_STREAM, MSG_NOSIGNAL, MSG_PEEK,
+         AF_INET, AF_INET6, AF_UNIX, SO_ERROR, SO_REUSEADDR,
+         SO_REUSEPORT, SO_BROADCAST, IPPROTO_IP, IPPROTO_IPV6,
+         IPV6_MULTICAST_HOPS, SOCK_DGRAM, RLIMIT_NOFILE,
+         SIG_BLOCK, SIG_UNBLOCK, SHUT_RD, SHUT_WR, SHUT_RDWR,
+         SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
+         SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV, SIGUSR2,
+         SIGPIPE, SIGALRM, SIGTERM, SIGPIPE, SIGCHLD, SIGSTOP,
+         SIGCONT
 
   type
     MachTimebaseInfo* {.importc: "struct mach_timebase_info",
                         header: "<mach/mach_time.h>", pure, final.} = object
       numer*: uint32
       denom*: uint32
+
+    TPollfd* {.importc: "struct pollfd", pure, final,
+               header: "<poll.h>".} = object
+      fd*: cint
+      events*: cshort
+      revents*: cshort
+
+    Tnfds* {.importc: "nfds_t", header: "<poll.h>".} = culong
+
+  const
+    POLLIN* = 0x0001
+    POLLOUT* = 0x0004
+    POLLERR* = 0x0008
+    POLLHUP* = 0x0010
+    POLLNVAL* = 0x0020
 
   proc posix_gettimeofday*(tp: var Timeval, unused: pointer = nil) {.
        importc: "gettimeofday", header: "<sys/time.h>".}
@@ -873,9 +983,66 @@ elif defined(macos) or defined(macosx):
   proc mach_absolute_time*(): uint64 {.
        importc, header: "<mach/mach_time.h>".}
 
+  proc poll*(a1: ptr TPollfd, a2: Tnfds, a3: cint): cint {.
+       importc, header: "<poll.h>", sideEffect.}
+
 elif defined(linux):
-  import std/[posix]
-  export posix
+  from std/posix import close, shutdown, sigemptyset, sigaddset, sigismember,
+                        sigdelset, write, read, waitid, getaddrinfo,
+                        gai_strerror, setsockopt, getsockopt, socket,
+                        getrlimit, setrlimit, getpeername, getsockname,
+                        recvfrom, sendto, send, bindSocket, recv, connect,
+                        unlink, listen, sendmsg, recvmsg, getpid, fcntl,
+                        pthread_sigmask, sigprocmask, clock_gettime, signal,
+                        getcwd, chdir, waitpid, kill, select, pselect,
+                        socketpair, poll, freeAddrInfo,
+                        ClockId, Itimerspec, Timespec, Sigset, Time, Pid, Mode,
+                        SigInfo, Id, Tmsghdr, IOVec, RLimit, Timeval, TFdSet,
+                        SockAddr, SockLen, Sockaddr_storage, Sockaddr_in,
+                        Sockaddr_in6, Sockaddr_un, AddrInfo, SocketHandle,
+                        Suseconds, TPollfd, Tnfds,
+                        FD_CLR, FD_ISSET, FD_SET, FD_ZERO,
+                        CLOCK_MONOTONIC, F_GETFL, F_SETFL, F_GETFD, F_SETFD,
+                        FD_CLOEXEC, O_NONBLOCK, SIG_BLOCK, SIG_UNBLOCK,
+                        SOL_SOCKET, SO_ERROR, RLIMIT_NOFILE, MSG_NOSIGNAL,
+                        MSG_PEEK,
+                        AF_INET, AF_INET6, AF_UNIX, SO_REUSEADDR, SO_REUSEPORT,
+                        SO_BROADCAST, IPPROTO_IP, IPPROTO_IPV6,
+                        IPV6_MULTICAST_HOPS,
+                        SOCK_DGRAM, SOCK_STREAM, SHUT_RD, SHUT_WR, SHUT_RDWR,
+                        POLLIN, POLLOUT, POLLERR, POLLHUP, POLLNVAL,
+                        SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
+                        SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV, SIGUSR2,
+                        SIGPIPE, SIGALRM, SIGTERM, SIGPIPE, SIGCHLD, SIGSTOP,
+                        SIGCONT
+
+  export close, shutdown, sigemptyset, sigaddset, sigismember,
+         sigdelset, write, read, waitid, getaddrinfo,
+         gai_strerror, setsockopt, getsockopt, socket,
+         getrlimit, setrlimit, getpeername, getsockname,
+         recvfrom, sendto, send, bindSocket, recv, connect,
+         unlink, listen, sendmsg, recvmsg, getpid, fcntl,
+         pthread_sigmask, sigprocmask, clock_gettime, signal,
+         getcwd, chdir, waitpid, kill, select, pselect,
+         socketpair, poll, freeAddrInfo,
+         ClockId, Itimerspec, Timespec, Sigset, Time, Pid, Mode,
+         SigInfo, Id, Tmsghdr, IOVec, RLimit, TFdSet, Timeval,
+         SockAddr, SockLen, Sockaddr_storage, Sockaddr_in,
+         Sockaddr_in6, Sockaddr_un, AddrInfo, SocketHandle,
+         Suseconds, TPollfd, Tnfds,
+         FD_CLR, FD_ISSET, FD_SET, FD_ZERO,
+         CLOCK_MONOTONIC, F_GETFL, F_SETFL, F_GETFD, F_SETFD,
+         FD_CLOEXEC, O_NONBLOCK, SIG_BLOCK, SIG_UNBLOCK,
+         SOL_SOCKET, SO_ERROR, RLIMIT_NOFILE, MSG_NOSIGNAL,
+         MSG_PEEK,
+         AF_INET, AF_INET6, AF_UNIX, SO_REUSEADDR, SO_REUSEPORT,
+         SO_BROADCAST, IPPROTO_IP, IPPROTO_IPV6, IPV6_MULTICAST_HOPS,
+         SOCK_DGRAM, SOCK_STREAM, SHUT_RD, SHUT_WR, SHUT_RDWR,
+         POLLIN, POLLOUT, POLLERR, POLLHUP, POLLNVAL,
+         SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
+         SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV, SIGUSR2,
+         SIGPIPE, SIGALRM, SIGTERM, SIGPIPE, SIGCHLD, SIGSTOP,
+         SIGCONT
 
   when not defined(android) and defined(amd64):
     const IP_MULTICAST_TTL*: cint = 33
@@ -910,15 +1077,44 @@ elif defined(linux):
     EPOLL_CTL_DEL* = 2
     EPOLL_CTL_MOD* = 3
 
+  # https://github.com/torvalds/linux/blob/ff6992735ade75aae3e35d16b17da1008d753d28/include/uapi/linux/eventpoll.h#L77
+  when defined(linux) and defined(amd64):
+    {.pragma: epollPacked, packed.}
+  else:
+    {.pragma: epollPacked.}
+
   type
-    EpollData* {.importc: "union epoll_data",
-        header: "<sys/epoll.h>", pure, final.} = object
+    EpollData* {.importc: "epoll_data_t",
+                 header: "<sys/epoll.h>", pure, final, union.} = object
+      `ptr`* {.importc: "ptr".}: pointer
+      fd* {.importc: "fd".}: cint
+      u32* {.importc: "u32".}: uint32
       u64* {.importc: "u64".}: uint64
 
-    EpollEvent* {.importc: "struct epoll_event", header: "<sys/epoll.h>",
-                  pure, final.} = object
+    EpollEvent* {.importc: "struct epoll_event",
+                  header: "<sys/epoll.h>", pure, final, epollPacked.} = object
       events*: uint32 # Epoll events
       data*: EpollData # User data variable
+
+    SignalFdInfo* {.importc: "struct signalfd_siginfo",
+                    header: "<sys/signalfd.h>", pure, final.} = object
+      ssi_signo*: uint32
+      ssi_errno*: int32
+      ssi_code*: int32
+      ssi_pid*: uint32
+      ssi_uid*: uint32
+      ssi_fd*: int32
+      ssi_tid*: uint32
+      ssi_band*: uint32
+      ssi_overrun*: uint32
+      ssi_trapno*: uint32
+      ssi_status*: int32
+      ssi_int*: int32
+      ssi_ptr*: uint64
+      ssi_utime*: uint64
+      ssi_stime*: uint64
+      ssi_addr*: uint64
+      pad* {.importc: "__pad".}: array[0..47, uint8]
 
   proc epoll_create*(size: cint): cint {.importc: "epoll_create",
        header: "<sys/epoll.h>", sideEffect.}
@@ -933,9 +1129,71 @@ elif defined(linux):
                    timeout: cint): cint {.
        importc: "epoll_wait", header: "<sys/epoll.h>", sideEffect.}
 
-else:
-  import std/[posix, os]
-  export posix, os
+  proc timerfd_create*(clock_id: ClockId, flags: cint): cint {.
+       cdecl, importc: "timerfd_create", header: "<sys/timerfd.h>".}
+  proc timerfd_settime*(ufd: cint, flags: cint,
+                        utmr: var Itimerspec, otmr: var Itimerspec): cint {.
+       cdecl, importc: "timerfd_settime", header: "<sys/timerfd.h>".}
+  proc eventfd*(count: cuint, flags: cint): cint {.
+       cdecl, importc: "eventfd", header: "<sys/eventfd.h>".}
+  proc signalfd*(fd: cint, mask: var Sigset, flags: cint): cint {.
+       cdecl, importc: "signalfd", header: "<sys/signalfd.h>".}
+
+elif defined(freebsd) or defined(openbsd) or defined(netbsd) or
+     defined(dragonfly):
+  from std/posix import close, shutdown, socket, getpeername, getsockname,
+                        recvfrom, sendto, send, bindSocket, recv, connect,
+                        unlink, listen, getaddrinfo, gai_strerror, getrlimit,
+                        setrlimit, getpid, pthread_sigmask, sigemptyset,
+                        sigaddset, sigismember, fcntl, accept, pipe, write,
+                        signal, read, setsockopt, getsockopt, clock_gettime,
+                        getcwd, chdir, waitpid, kill, select, pselect,
+                        socketpair, poll, freeAddrInfo,
+                        Timeval, Timespec, Pid, Mode, Time, Sigset, SockAddr,
+                        SockLen, Sockaddr_storage, Sockaddr_in, Sockaddr_in6,
+                        Sockaddr_un, SocketHandle, AddrInfo, RLimit, TFdSet,
+                        Suseconds, TPollfd, Tnfds,
+                        FD_CLR, FD_ISSET, FD_SET, FD_ZERO,
+                        F_GETFL, F_SETFL, F_GETFD, F_SETFD, FD_CLOEXEC,
+                        O_NONBLOCK, SOL_SOCKET, SOCK_RAW, SOCK_DGRAM,
+                        SOCK_STREAM, MSG_NOSIGNAL, MSG_PEEK,
+                        AF_INET, AF_INET6, AF_UNIX, SO_ERROR, SO_REUSEADDR,
+                        SO_REUSEPORT, SO_BROADCAST, IPPROTO_IP, IPPROTO_IPV6,
+                        IPV6_MULTICAST_HOPS, SOCK_DGRAM, RLIMIT_NOFILE,
+                        SIG_BLOCK, SIG_UNBLOCK, CLOCK_MONOTONIC,
+                        SHUT_RD, SHUT_WR, SHUT_RDWR,
+                        POLLIN, POLLOUT, POLLERR, POLLHUP, POLLNVAL,
+                        SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
+                        SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV, SIGUSR2,
+                        SIGPIPE, SIGALRM, SIGTERM, SIGPIPE, SIGCHLD, SIGSTOP,
+                        SIGCONT
+
+  export close, shutdown, socket, getpeername, getsockname,
+         recvfrom, sendto, send, bindSocket, recv, connect,
+         unlink, listen, getaddrinfo, gai_strerror, getrlimit,
+         setrlimit, getpid, pthread_sigmask, sigemptyset,
+         sigaddset, sigismember, fcntl, accept, pipe, write,
+         signal, read, setsockopt, getsockopt, clock_gettime,
+         getcwd, chdir, waitpid, kill, select, pselect,
+         socketpair, poll, freeAddrInfo,
+         Timeval, Timespec, Pid, Mode, Time, Sigset, SockAddr,
+         SockLen, Sockaddr_storage, Sockaddr_in, Sockaddr_in6,
+         Sockaddr_un, SocketHandle, AddrInfo, RLimit, TFdSet,
+         Suseconds, TPollfd, Tnfds,
+         FD_CLR, FD_ISSET, FD_SET, FD_ZERO,
+         F_GETFL, F_SETFL, F_GETFD, F_SETFD, FD_CLOEXEC,
+         O_NONBLOCK, SOL_SOCKET, SOCK_RAW, SOCK_DGRAM,
+         SOCK_STREAM, MSG_NOSIGNAL, MSG_PEEK,
+         AF_INET, AF_INET6, AF_UNIX, SO_ERROR, SO_REUSEADDR,
+         SO_REUSEPORT, SO_BROADCAST, IPPROTO_IP, IPPROTO_IPV6,
+         IPV6_MULTICAST_HOPS, SOCK_DGRAM, RLIMIT_NOFILE,
+         SIG_BLOCK, SIG_UNBLOCK, CLOCK_MONOTONIC,
+         SHUT_RD, SHUT_WR, SHUT_RDWR,
+         POLLIN, POLLOUT, POLLERR, POLLHUP, POLLNVAL,
+         SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
+         SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV, SIGUSR2,
+         SIGPIPE, SIGALRM, SIGTERM, SIGPIPE, SIGCHLD, SIGSTOP,
+         SIGCONT
 
   var IP_MULTICAST_TTL* {.importc: "IP_MULTICAST_TTL",
                           header: "<netinet/in.h>".}: cint
@@ -955,40 +1213,55 @@ when defined(linux):
     SOCK_CLOEXEC* = 0x80000
     TCP_NODELAY* = cint(1)
     IPPROTO_TCP* = 6
-elif defined(freebsd) or defined(netbsd) or defined(dragonfly):
+    O_CLOEXEC* = 0x80000
+    POSIX_SPAWN_USEVFORK* = 0x40
+    IPV6_V6ONLY* = 26
+elif defined(freebsd):
   const
     SOCK_NONBLOCK* = 0x20000000
     SOCK_CLOEXEC* = 0x10000000
     TCP_NODELAY* = cint(1)
     IPPROTO_TCP* = 6
+    O_CLOEXEC* = 0x00100000
+    POSIX_SPAWN_USEVFORK* = 0x00
+    IPV6_V6ONLY* = 27
+elif defined(netbsd):
+  const
+    SOCK_NONBLOCK* = 0x20000000
+    SOCK_CLOEXEC* = 0x10000000
+    TCP_NODELAY* = cint(1)
+    IPPROTO_TCP* = 6
+    O_CLOEXEC* = 0x00400000
+    POSIX_SPAWN_USEVFORK* = 0x00
+    IPV6_V6ONLY* = 27
+elif defined(dragonfly):
+  const
+    SOCK_NONBLOCK* = 0x20000000
+    SOCK_CLOEXEC* = 0x10000000
+    TCP_NODELAY* = cint(1)
+    IPPROTO_TCP* = 6
+    O_CLOEXEC* = 0x00020000
+    POSIX_SPAWN_USEVFORK* = 0x00
+    IPV6_V6ONLY* = 27
 elif defined(openbsd):
   const
     SOCK_CLOEXEC* = 0x8000
     SOCK_NONBLOCK* = 0x4000
     TCP_NODELAY* = cint(1)
     IPPROTO_TCP* = 6
+    O_CLOEXEC* = 0x10000
+    POSIX_SPAWN_USEVFORK* = 0x00
+    IPV6_V6ONLY* = 27
 elif defined(macos) or defined(macosx):
   const
     TCP_NODELAY* = cint(1)
     IP_MULTICAST_TTL* = cint(10)
     IPPROTO_TCP* = 6
-
-when defined(linux):
-  const O_CLOEXEC* = 0x80000
-elif defined(freebsd):
-  const O_CLOEXEC* = 0x00100000
-elif defined(openbsd):
-  const O_CLOEXEC* = 0x10000
-elif defined(netbsd):
-  const O_CLOEXEC* = 0x00400000
-elif defined(dragonfly):
-  const O_CLOEXEC* = 0x00020000
+    POSIX_SPAWN_USEVFORK* = 0x00
+    IPV6_V6ONLY* = 27
 
 when defined(linux) or defined(macos) or defined(macosx) or defined(freebsd) or
      defined(openbsd) or defined(netbsd) or defined(dragonfly):
-  export SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
-         SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV, SIGUSR2,
-         SIGPIPE, SIGALRM, SIGTERM, SIGPIPE
 
   const
     POSIX_SPAWN_RESETIDS* = 0x01
@@ -1109,154 +1382,152 @@ when defined(linux) or defined(macos) or defined(macosx) or defined(freebsd) or
        importc: "posix_spawnattr_setsigmask", header: "<spawn.h>",
        sideEffect.}
 
-when defined(posix):
-  when defined(linux):
-    const
-      P_PID* = cint(1)
-      WNOHANG* = cint(1)
-      WSTOPPED* = cint(2)
-      WEXITTED* = cint(4)
-      WNOWAIT* = cint(0x01000000)
-    template WSTATUS(s: cint): cint =
-      s and 0x7F
-    template WAITEXITSTATUS*(s: cint): cint =
-      (s and 0xFF00) shr 8
-    template WAITTERMSIG*(s: cint): cint =
-      WSTATUS(s)
-    template WAITSTOPSIG*(s: cint): cint =
-      WAITEXITSTATUS(s)
-    template WAITIFEXITED*(s: cint): bool =
-      WSTATUS(s) == 0
-    template WAITIFSIGNALED*(s: cint): bool =
-      (cast[int8](WSTATUS(s) + 1) shr 1) > 0
-    template WAITIFSTOPPED*(s: cint): bool =
-      (s and 0xFF) == 0x7F
-    template WAITIFCONTINUED*(s: cint): bool =
-      s == 0xFFFF
-  elif defined(openbsd):
-    const WNOHANG* = 1
-    template WSTATUS(s: cint): cint =
-      s and 0x7F
-    template WAITEXITSTATUS*(s: cint): cint =
-      (s shr 8) and 0xFF
-    template WAITTERMSIG*(s: cint): cint =
-      WSTATUS(s)
-    template WAITSTOPSIG*(s: cint): cint =
-      WAITEXITSTATUS(s)
-    template WAITIFEXITED*(s: cint): bool =
-      WSTATUS(s) == 0
-    template WAITIFSIGNALED*(s: cint): bool =
-      (WAITTERMSIG(s) != 0x7F) and (WSTATUS(s) != 0)
-    template WAITIFSTOPPED*(s: cint): bool =
-      WSTATUS(s) == 0x7F
-    template WAITIFCONTINUED*(s: cint): bool =
-      s == 0xFFFF
-  elif defined(dragonfly):
-    const WNOHANG* = 1
-    template WSTATUS(s: cint): cint =
-      s and 0x7F
-    template WAITEXITSTATUS*(s: cint): cint =
-      (s shr 8)
-    template WAITTERMSIG*(s: cint): cint =
-      WSTATUS(s)
-    template WAITSTOPSIG*(s: cint): cint =
-      WAITEXITSTATUS(s)
-    template WAITIFEXITED*(s: cint): bool =
-      WSTATUS(s) == 0
-    template WAITIFSIGNALED*(s: cint): bool =
-      (WAITTERMSIG(s) != 0x7F) and (WSTATUS(s) != 0)
-    template WAITIFSTOPPED*(s: cint): bool =
-      WSTATUS(s) == 0x7F
-    template WAITIFCONTINUED*(s: cint): bool =
-      s == 19
-  elif defined(netbsd):
-    const WNOHANG* = 1
-    template WSTATUS(s: cint): cint =
-      s and 0x7F
-    template WAITEXITSTATUS*(s: cint): cint =
-      (s shr 8) and 0xFF
-    template WAITTERMSIG*(s: cint): cint =
-      WSTATUS(s)
-    template WAITSTOPSIG*(s: cint): cint =
-      WAITEXITSTATUS(s)
-    template WAITIFEXITED*(s: cint): bool =
-      WSTATUS(s) == 0
-    template WAITIFSIGNALED*(s: cint): bool =
-      not(WAITIFSTOPPED(s)) and not(WAITIFCONTINUED(s)) and not(WAITIFEXITED(s))
-    template WAITIFSTOPPED*(s: cint): bool =
-      (WSTATUS(s) == 0x7F) and not(WAITIFCONTINUED(s))
-    template WAITIFCONTINUED*(s: cint): bool =
-      s == 0xFFFF
-  elif defined(freebsd):
-    const WNOHANG* = 1
-    template WSTATUS(s: cint): cint =
-      s and 0x7F
-    template WAITEXITSTATUS*(s: cint): cint =
-      s shr 8
-    template WAITTERMSIG*(s: cint): cint =
-      WSTATUS(s)
-    template WAITSTOPSIG*(s: cint): cint =
-      s shr 8
-    template WAITIFEXITED*(s: cint): bool =
-      WSTATUS(s) == 0
-    template WAITIFSIGNALED*(s: cint): bool =
-      let wstatus = WSTATUS(s)
-      (wstatus != 0x7F) and (wstatus != 0) and (s != 0x13)
-    template WAITIFSTOPPED*(s: cint): bool =
-      WSTATUS(s) == 0x7F
-    template WAITIFCONTINUED*(s: cint): bool =
-      x == 0x13
-  elif defined(macos) or defined(macosx):
-    const WNOHANG* = 1
-    template WSTATUS(s: cint): cint =
-      s and 0x7F
-    template WAITEXITSTATUS*(s: cint): cint =
-      (s shr 8) and 0xFF
-    template WAITTERMSIG*(s: cint): cint =
-      WSTATUS(s)
-    template WAITSTOPSIG*(s: cint): cint =
-      s shr 8
-    template WAITIFEXITED*(s: cint): bool =
-      WSTATUS(s) == 0
-    template WAITIFSIGNALED*(s: cint): bool =
-      let wstatus = WSTATUS(s)
-      (wstatus != 0x7F) and (wstatus != 0)
-    template WAITIFSTOPPED*(s: cint): bool =
-      (WSTATUS(s) == 0x7F) and (WAITSTOPSIG(s) != 0x13)
-    template WAITIFCONTINUED*(s: cint): bool =
-      (WSTATUS(s) == 0x7F) and (WAITSTOPSIG(s) == 0x13)
-  else:
-    proc WAITEXITSTATUS*(s: cint): cint {.
-         importc: "WEXITSTATUS", header: "<sys/wait.h>".}
-      ## Exit code, iff WIFEXITED(s)
-    proc WAITTERMSIG*(s: cint): cint {.
-         importc: "WTERMSIG", header: "<sys/wait.h>".}
-      ## Termination signal, iff WIFSIGNALED(s)
-    proc WAITSTOPSIG*(s: cint): cint {.
-         importc: "WSTOPSIG", header: "<sys/wait.h>".}
-      ## Stop signal, iff WIFSTOPPED(s)
-    proc WAITIFEXITED*(s: cint): bool {.
-         importc: "WIFEXITED", header: "<sys/wait.h>".}
-      ## True if child exited normally.
-    proc WAITIFSIGNALED*(s: cint): bool {.
-         importc: "WIFSIGNALED", header: "<sys/wait.h>".}
-      ## True if child exited due to uncaught signal.
-    proc WAITIFSTOPPED*(s: cint): bool {.
-         importc: "WIFSTOPPED", header: "<sys/wait.h>".}
-      ## True if child is currently stopped.
-    proc WAITIFCONTINUED*(s: cint): bool {.
-         importc: "WIFCONTINUED", header: "<sys/wait.h>".}
-      ## True if child has been continued.
+when defined(linux):
+  const
+    P_PID* = cint(1)
+    WNOHANG* = cint(1)
+    WSTOPPED* = cint(2)
+    WEXITED* = cint(4)
+    WNOWAIT* = cint(0x01000000)
+  template WSTATUS(s: cint): cint =
+    s and 0x7F
+  template WAITEXITSTATUS*(s: cint): cint =
+    (s and 0xFF00) shr 8
+  template WAITTERMSIG*(s: cint): cint =
+    WSTATUS(s)
+  template WAITSTOPSIG*(s: cint): cint =
+    WAITEXITSTATUS(s)
+  template WAITIFEXITED*(s: cint): bool =
+    WSTATUS(s) == 0
+  template WAITIFSIGNALED*(s: cint): bool =
+    (cast[int8](WSTATUS(s) + 1) shr 1) > 0
+  template WAITIFSTOPPED*(s: cint): bool =
+    (s and 0xFF) == 0x7F
+  template WAITIFCONTINUED*(s: cint): bool =
+    s == 0xFFFF
+elif defined(openbsd):
+  const WNOHANG* = 1
+  template WSTATUS(s: cint): cint =
+    s and 0x7F
+  template WAITEXITSTATUS*(s: cint): cint =
+    (s shr 8) and 0xFF
+  template WAITTERMSIG*(s: cint): cint =
+    WSTATUS(s)
+  template WAITSTOPSIG*(s: cint): cint =
+    WAITEXITSTATUS(s)
+  template WAITIFEXITED*(s: cint): bool =
+    WSTATUS(s) == 0
+  template WAITIFSIGNALED*(s: cint): bool =
+    (WAITTERMSIG(s) != 0x7F) and (WSTATUS(s) != 0)
+  template WAITIFSTOPPED*(s: cint): bool =
+    WSTATUS(s) == 0x7F
+  template WAITIFCONTINUED*(s: cint): bool =
+    s == 0xFFFF
+elif defined(dragonfly):
+  const WNOHANG* = 1
+  template WSTATUS(s: cint): cint =
+    s and 0x7F
+  template WAITEXITSTATUS*(s: cint): cint =
+    (s shr 8)
+  template WAITTERMSIG*(s: cint): cint =
+    WSTATUS(s)
+  template WAITSTOPSIG*(s: cint): cint =
+    WAITEXITSTATUS(s)
+  template WAITIFEXITED*(s: cint): bool =
+    WSTATUS(s) == 0
+  template WAITIFSIGNALED*(s: cint): bool =
+    (WAITTERMSIG(s) != 0x7F) and (WSTATUS(s) != 0)
+  template WAITIFSTOPPED*(s: cint): bool =
+    WSTATUS(s) == 0x7F
+  template WAITIFCONTINUED*(s: cint): bool =
+    s == 19
+elif defined(netbsd):
+  const WNOHANG* = 1
+  template WSTATUS(s: cint): cint =
+    s and 0x7F
+  template WAITEXITSTATUS*(s: cint): cint =
+    (s shr 8) and 0xFF
+  template WAITTERMSIG*(s: cint): cint =
+    WSTATUS(s)
+  template WAITSTOPSIG*(s: cint): cint =
+    WAITEXITSTATUS(s)
+  template WAITIFEXITED*(s: cint): bool =
+    WSTATUS(s) == 0
+  template WAITIFSIGNALED*(s: cint): bool =
+    not(WAITIFSTOPPED(s)) and not(WAITIFCONTINUED(s)) and not(WAITIFEXITED(s))
+  template WAITIFSTOPPED*(s: cint): bool =
+    (WSTATUS(s) == 0x7F) and not(WAITIFCONTINUED(s))
+  template WAITIFCONTINUED*(s: cint): bool =
+    s == 0xFFFF
+elif defined(freebsd):
+  const WNOHANG* = 1
+  template WSTATUS(s: cint): cint =
+    s and 0x7F
+  template WAITEXITSTATUS*(s: cint): cint =
+    s shr 8
+  template WAITTERMSIG*(s: cint): cint =
+    WSTATUS(s)
+  template WAITSTOPSIG*(s: cint): cint =
+    s shr 8
+  template WAITIFEXITED*(s: cint): bool =
+    WSTATUS(s) == 0
+  template WAITIFSIGNALED*(s: cint): bool =
+    let wstatus = WSTATUS(s)
+    (wstatus != 0x7F) and (wstatus != 0) and (s != 0x13)
+  template WAITIFSTOPPED*(s: cint): bool =
+    WSTATUS(s) == 0x7F
+  template WAITIFCONTINUED*(s: cint): bool =
+    x == 0x13
+elif defined(macos) or defined(macosx):
+  const WNOHANG* = 1
+  template WSTATUS(s: cint): cint =
+    s and 0x7F
+  template WAITEXITSTATUS*(s: cint): cint =
+    (s shr 8) and 0xFF
+  template WAITTERMSIG*(s: cint): cint =
+    WSTATUS(s)
+  template WAITSTOPSIG*(s: cint): cint =
+    s shr 8
+  template WAITIFEXITED*(s: cint): bool =
+    WSTATUS(s) == 0
+  template WAITIFSIGNALED*(s: cint): bool =
+    let wstatus = WSTATUS(s)
+    (wstatus != 0x7F) and (wstatus != 0)
+  template WAITIFSTOPPED*(s: cint): bool =
+    (WSTATUS(s) == 0x7F) and (WAITSTOPSIG(s) != 0x13)
+  template WAITIFCONTINUED*(s: cint): bool =
+    (WSTATUS(s) == 0x7F) and (WAITSTOPSIG(s) == 0x13)
+elif defined(posix):
+  proc WAITEXITSTATUS*(s: cint): cint {.
+       importc: "WEXITSTATUS", header: "<sys/wait.h>".}
+    ## Exit code, iff WIFEXITED(s)
+  proc WAITTERMSIG*(s: cint): cint {.
+       importc: "WTERMSIG", header: "<sys/wait.h>".}
+    ## Termination signal, iff WIFSIGNALED(s)
+  proc WAITSTOPSIG*(s: cint): cint {.
+       importc: "WSTOPSIG", header: "<sys/wait.h>".}
+    ## Stop signal, iff WIFSTOPPED(s)
+  proc WAITIFEXITED*(s: cint): bool {.
+       importc: "WIFEXITED", header: "<sys/wait.h>".}
+    ## True if child exited normally.
+  proc WAITIFSIGNALED*(s: cint): bool {.
+       importc: "WIFSIGNALED", header: "<sys/wait.h>".}
+    ## True if child exited due to uncaught signal.
+  proc WAITIFSTOPPED*(s: cint): bool {.
+       importc: "WIFSTOPPED", header: "<sys/wait.h>".}
+    ## True if child is currently stopped.
+  proc WAITIFCONTINUED*(s: cint): bool {.
+       importc: "WIFCONTINUED", header: "<sys/wait.h>".}
+    ## True if child has been continued.
 
 when defined(posix):
   const
     INVALID_SOCKET* = SocketHandle(-1)
     INVALID_HANDLE_VALUE* = cint(-1)
 
-proc `==`*(x: OSErrorCode, y: int): bool =
-  int(x) == y
-proc `==`*(x: SocketHandle, y: int): bool =
-  x == SocketHandle(y)
+proc `==`*(x: SocketHandle, y: int): bool = int(x) == y
+when defined(nimdoc):
+  proc `==`*(x: SocketHandle, y: SocketHandle): bool {.borrow.}
 
 when defined(macosx) or defined(macos) or defined(bsd):
   const
@@ -1384,6 +1655,8 @@ elif defined(linux):
     # RTA_PRIORITY* = 6'u16
     RTA_PREFSRC* = 7'u16
     # RTA_METRICS* = 8'u16
+    RTM_NEWLINK* = 16'u16
+    RTM_NEWROUTE* = 24'u16
 
     RTM_F_LOOKUP_TABLE* = 0x1000
 

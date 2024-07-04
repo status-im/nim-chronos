@@ -6,7 +6,7 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 
-{.push raises: [Defect].}
+{.push raises: [].}
 
 import ../chronos
 import timer
@@ -28,13 +28,15 @@ type
     pendingRequests: seq[BucketWaiter]
     manuallyReplenished: AsyncEvent
 
-proc update(bucket: TokenBucket) =
+proc update(bucket: TokenBucket, currentTime: Moment) =
   if bucket.fillDuration == default(Duration):
     bucket.budget = min(bucket.budgetCap, bucket.budget)
     return
 
+  if currentTime < bucket.lastUpdate:
+    return
+
   let
-    currentTime = Moment.now()
     timeDelta = currentTime - bucket.lastUpdate
     fillPercent = timeDelta.milliseconds.float / bucket.fillDuration.milliseconds.float
     replenished =
@@ -46,7 +48,7 @@ proc update(bucket: TokenBucket) =
   bucket.lastUpdate += milliseconds(deltaFromReplenished)
   bucket.budget = min(bucket.budgetCap, bucket.budget + replenished)
 
-proc tryConsume*(bucket: TokenBucket, tokens: int): bool =
+proc tryConsume*(bucket: TokenBucket, tokens: int, now = Moment.now()): bool =
   ## If `tokens` are available, consume them,
   ## Otherwhise, return false.
 
@@ -54,7 +56,7 @@ proc tryConsume*(bucket: TokenBucket, tokens: int): bool =
     bucket.budget -= tokens
     return true
 
-  bucket.update()
+  bucket.update(now)
 
   if bucket.budget >= tokens:
     bucket.budget -= tokens
@@ -86,25 +88,21 @@ proc worker(bucket: TokenBucket) {.async.} =
           #buckets
           sleeper = sleepAsync(milliseconds(timeToTarget))
         await sleeper or eventWaiter
-        sleeper.cancel()
-        eventWaiter.cancel()
+        sleeper.cancelSoon()
+        eventWaiter.cancelSoon()
       else:
         await eventWaiter
 
   bucket.workFuture = nil
 
-proc consume*(bucket: TokenBucket, tokens: int): Future[void] =
+proc consume*(bucket: TokenBucket, tokens: int, now = Moment.now()): Future[void] =
   ## Wait for `tokens` to be available, and consume them.
 
   let retFuture = newFuture[void]("TokenBucket.consume")
   if isNil(bucket.workFuture) or bucket.workFuture.finished():
-    if bucket.tryConsume(tokens):
+    if bucket.tryConsume(tokens, now):
       retFuture.complete()
       return retFuture
-
-  bucket.pendingRequests.add(BucketWaiter(future: retFuture, value: tokens))
-  if isNil(bucket.workFuture) or bucket.workFuture.finished():
-    bucket.workFuture = worker(bucket)
 
   proc cancellation(udata: pointer) =
     for index in 0..<bucket.pendingRequests.len:
@@ -115,12 +113,18 @@ proc consume*(bucket: TokenBucket, tokens: int): Future[void] =
           bucket.manuallyReplenished.fire()
         break
   retFuture.cancelCallback = cancellation
+
+  bucket.pendingRequests.add(BucketWaiter(future: retFuture, value: tokens))
+
+  if isNil(bucket.workFuture) or bucket.workFuture.finished():
+    bucket.workFuture = worker(bucket)
+
   return retFuture
 
-proc replenish*(bucket: TokenBucket, tokens: int) =
+proc replenish*(bucket: TokenBucket, tokens: int, now = Moment.now()) =
   ## Add `tokens` to the budget (capped to the bucket capacity)
   bucket.budget += tokens
-  bucket.update()
+  bucket.update(now)
   bucket.manuallyReplenished.fire()
 
 proc new*(

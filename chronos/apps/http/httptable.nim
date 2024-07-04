@@ -10,10 +10,7 @@
 import std/[tables, strutils]
 import stew/base10
 
-when (NimMajor, NimMinor) < (1, 4):
-  {.push raises: [Defect].}
-else:
-  {.push raises: [].}
+{.push raises: [].}
 
 type
   HttpTable* = object
@@ -200,3 +197,7 @@ proc toList*(ht: HttpTables, normKey = false): auto =
   for key, value in ht.stringItems(normKey):
     res.add((key, value))
   res
+
+proc clear*(ht: var HttpTables) =
+  ## Resets the HtppTable so that it is empty.
+  ht.table.clear()

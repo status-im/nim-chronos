@@ -9,7 +9,7 @@ import std/os
 import unittest2
 import ../chronos, ../chronos/timer
 
-when defined(nimHasUsed): {.used.}
+{.used.}
 
 static:
   doAssert Moment.high - Moment.low == Duration.high
@@ -89,28 +89,41 @@ suite "Asynchronous timers & steps test suite":
       $nanoseconds(1_000_000_900) == "1s900ns"
       $nanoseconds(1_800_700_000) == "1s800ms700us"
       $nanoseconds(1_800_000_600) == "1s800ms600ns"
+      nanoseconds(1_800_000_600).toString(0) == ""
+      nanoseconds(1_800_000_600).toString(1) == "1s"
+      nanoseconds(1_800_000_600).toString(2) == "1s800ms"
 
   test "Asynchronous steps test":
-    var futn1 = stepsAsync(-1)
-    var fut0 = stepsAsync(0)
     var fut1 = stepsAsync(1)
     var fut2 = stepsAsync(2)
     var fut3 = stepsAsync(3)
+
     check:
-      futn1.completed() == true
-      fut0.completed() == true
       fut1.completed() == false
       fut2.completed() == false
       fut3.completed() == false
-    poll()
+
+    # We need `fut` because `stepsAsync` do not power `poll()` anymore.
+    block:
+      var fut {.used.} = sleepAsync(50.milliseconds)
+      poll()
+
     check:
       fut1.completed() == true
       fut2.completed() == false
       fut3.completed() == false
-    poll()
+
+    block:
+      var fut {.used.} = sleepAsync(50.milliseconds)
+      poll()
+
     check:
       fut2.completed() == true
       fut3.completed() == false
-    poll()
+
+    block:
+      var fut {.used.} = sleepAsync(50.milliseconds)
+      poll()
+
     check:
       fut3.completed() == true

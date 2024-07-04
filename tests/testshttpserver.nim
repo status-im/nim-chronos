@@ -5,12 +5,13 @@
 #              Licensed under either of
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
-import std/[strutils, strutils]
-import unittest2
-import ../chronos, ../chronos/apps/http/shttpserver
+import std/strutils
+import ".."/chronos/unittest2/asynctests
+import ".."/chronos,
+       ".."/chronos/apps/http/shttpserver
 import stew/base10
 
-when defined(nimHasUsed): {.used.}
+{.used.}
 
 # To create self-signed certificate and key you can use openssl
 # openssl req -new -x509 -sha256 -newkey rsa:2048 -nodes \
@@ -74,6 +75,8 @@ N8r5CwGcIX/XPC3lKazzbZ8baA==
 
 
 suite "Secure HTTP server testing suite":
+  teardown:
+    checkLeaks()
 
   proc httpsClient(address: TransportAddress,
                    data: string, flags = {NoVerifyHost, NoVerifyServerName}
@@ -107,15 +110,18 @@ suite "Secure HTTP server testing suite":
     proc testHTTPS(address: TransportAddress): Future[bool] {.async.} =
       var serverRes = false
       proc process(r: RequestFence): Future[HttpResponseRef] {.
-           async.} =
+           async: (raises: [CancelledError]).} =
         if r.isOk():
           let request = r.get()
           serverRes = true
-          return await request.respond(Http200, "TEST_OK:" & $request.meth,
-                                       HttpTable.init())
+          try:
+            await request.respond(Http200, "TEST_OK:" & $request.meth,
+                                  HttpTable.init())
+          except HttpWriteError as exc:
+            serverRes = false
+            defaultResponse(exc)
         else:
-          serverRes = false
-          return dumbResponse()
+          defaultResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
       let serverFlags = {Secure}
@@ -145,16 +151,18 @@ suite "Secure HTTP server testing suite":
       var serverRes = false
       var testFut = newFuture[void]()
       proc process(r: RequestFence): Future[HttpResponseRef] {.
-           async.} =
+           async: (raises: [CancelledError]).} =
         if r.isOk():
           let request = r.get()
-          serverRes = false
-          return await request.respond(Http200, "TEST_OK:" & $request.meth,
-                                       HttpTable.init())
+          try:
+            await request.respond(Http200, "TEST_OK:" & $request.meth,
+                                  HttpTable.init())
+          except HttpWriteError as exc:
+            defaultResponse(exc)
         else:
           serverRes = true
           testFut.complete()
-          return dumbResponse()
+          defaultResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
       let serverFlags = {Secure}

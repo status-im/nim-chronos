@@ -8,7 +8,7 @@
 import unittest2
 import ../chronos/transports/[osnet, ipnet]
 
-when defined(nimHasUsed): {.used.}
+{.used.}
 
 suite "Network utilities test suite":
 
@@ -575,7 +575,7 @@ suite "Network utilities test suite":
       try:
         inet = IpNet.init(item[0])
         res = true
-      except:
+      except TransportAddressError:
         res = false
       check:
         $res == item[1]

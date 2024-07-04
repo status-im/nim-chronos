@@ -14,9 +14,12 @@
 ##
 ## For stream writing it means that you should write exactly bounded size
 ## of bytes.
-import stew/results
-import ../asyncloop, ../timer
-import asyncstream, ../transports/stream, ../transports/common
+
+{.push raises: [].}
+
+import results
+import ../[asyncloop, timer, bipbuffer, config]
+import asyncstream, ../transports/[stream, common]
 export asyncloop, asyncstream, stream, timer, common
 
 type
@@ -41,7 +44,7 @@ type
   BoundedStreamRW* = BoundedStreamReader | BoundedStreamWriter
 
 const
-  BoundedBufferSize* = 4096
+  BoundedBufferSize* = chronosStreamDefaultBufferSize
   BoundarySizeDefectMessage = "Boundary must not be empty array"
 
 template newBoundedStreamIncompleteError(): ref BoundedStreamError =
@@ -52,7 +55,8 @@ template newBoundedStreamOverflowError(): ref BoundedStreamOverflowError =
   newException(BoundedStreamOverflowError, "Stream boundary exceeded")
 
 proc readUntilBoundary(rstream: AsyncStreamReader, pbytes: pointer,
-                       nbytes: int, sep: seq[byte]): Future[int] {.async.} =
+                       nbytes: int, sep: seq[byte]): Future[int] {.
+     async: (raises: [CancelledError, AsyncStreamError]).} =
   doAssert(not(isNil(pbytes)), "pbytes must not be nil")
   doAssert(nbytes >= 0, "nbytes must be non-negative value")
   checkStreamClosed(rstream)
@@ -96,10 +100,10 @@ func endsWith(s, suffix: openArray[byte]): bool =
     inc(i)
   if i >= len(suffix): return true
 
-proc boundedReadLoop(stream: AsyncStreamReader) {.async.} =
+proc boundedReadLoop(stream: AsyncStreamReader) {.async: (raises: []).} =
   var rstream = BoundedStreamReader(stream)
   rstream.state = AsyncStreamState.Running
-  var buffer = newSeq[byte](rstream.buffer.bufferLen())
+  var buffer = newSeq[byte](rstream.buffer.backend.availSpace())
   while true:
     let toRead =
       if rstream.boundSize.isNone():
@@ -123,7 +127,7 @@ proc boundedReadLoop(stream: AsyncStreamReader) {.async.} =
               # There should be one step between transferring last bytes to the
               # consumer and declaring stream EOF. Otherwise could not be
               # consumed.
-              await upload(addr rstream.buffer, addr buffer[0], length)
+              await upload(rstream.buffer, addr buffer[0], length)
               if rstream.state == AsyncStreamState.Running:
                 rstream.state = AsyncStreamState.Finished
             else:
@@ -131,7 +135,7 @@ proc boundedReadLoop(stream: AsyncStreamReader) {.async.} =
               # There should be one step between transferring last bytes to the
               # consumer and declaring stream EOF. Otherwise could not be
               # consumed.
-              await upload(addr rstream.buffer, addr buffer[0], res)
+              await upload(rstream.buffer, addr buffer[0], res)
 
               if (res < toRead) and rstream.rsource.atEof():
                 case rstream.cmpop
@@ -147,7 +151,7 @@ proc boundedReadLoop(stream: AsyncStreamReader) {.async.} =
             # There should be one step between transferring last bytes to the
             # consumer and declaring stream EOF. Otherwise could not be
             # consumed.
-            await upload(addr rstream.buffer, addr buffer[0], res)
+            await upload(rstream.buffer, addr buffer[0], res)
 
             if (res < toRead) and rstream.rsource.atEof():
               case rstream.cmpop
@@ -186,12 +190,16 @@ proc boundedReadLoop(stream: AsyncStreamReader) {.async.} =
       break
     of AsyncStreamState.Finished:
       # Send `EOF` state to the consumer and wait until it will be received.
-      await rstream.buffer.transfer()
+      try:
+        await rstream.buffer.transfer()
+      except CancelledError:
+        rstream.state = AsyncStreamState.Error
+        rstream.error = newBoundedStreamIncompleteError()
       break
     of AsyncStreamState.Closing, AsyncStreamState.Closed:
       break
 
-proc boundedWriteLoop(stream: AsyncStreamWriter) {.async.} =
+proc boundedWriteLoop(stream: AsyncStreamWriter) {.async: (raises: []).} =
   var error: ref AsyncStreamError
   var wstream = BoundedStreamWriter(stream)
 
@@ -255,7 +263,11 @@ proc boundedWriteLoop(stream: AsyncStreamWriter) {.async.} =
 
   doAssert(not(isNil(error)))
   while not(wstream.queue.empty()):
-    let item = wstream.queue.popFirstNoWait()
+    let item =
+      try:
+        wstream.queue.popFirstNoWait()
+      except AsyncQueueEmptyError:
+        raiseAssert "AsyncQueue should not be empty at this moment"
     if not(item.future.finished()):
       item.future.fail(error)
 

@@ -9,10 +9,7 @@
 
 ## This module provides cross-platform wrapper for ``sendfile()`` syscall.
 
-when (NimMajor, NimMinor) < (1, 4):
-  {.push raises: [Defect].}
-else:
-  {.push raises: [].}
+{.push raises: [].}
 
 when defined(nimdoc):
   proc sendfile*(outfd, infd: int, offset: int, count: var int): int =
@@ -41,8 +38,12 @@ when defined(nimdoc):
     ## be prepared to retry the call if there were unsent bytes.
     ##
     ## On error, ``-1`` is returned.
+elif defined(emscripten):
 
-elif defined(linux) or defined(android):
+  proc sendfile*(outfd, infd: int, offset: int, count: var int): int =
+    raiseAssert "sendfile() is not implemented yet"
+
+elif (defined(linux) or defined(android)) and not(defined(emscripten)):
 
   proc osSendFile*(outfd, infd: cint, offset: ptr int, count: int): int
       {.importc: "sendfile", header: "<sys/sendfile.h>".}
@@ -59,9 +60,9 @@ elif defined(linux) or defined(android):
 
 elif defined(freebsd) or defined(openbsd) or defined(netbsd) or
      defined(dragonflybsd):
-  import posix, os
+  import oserrno
   type
-    SendfileHeader* {.importc: "sf_hdtr",
+    SendfileHeader* {.importc: "struct sf_hdtr",
                       header: """#include <sys/types.h>
                                  #include <sys/socket.h>
                                  #include <sys/uio.h>""",
@@ -76,20 +77,21 @@ elif defined(freebsd) or defined(openbsd) or defined(netbsd) or
 
   proc sendfile*(outfd, infd: int, offset: int, count: var int): int =
     var o = 0'u
-    let res = osSendFile(cint(infd), cint(outfd), uint(offset), uint(count), nil,
-                        addr o, 0)
+    let res = osSendFile(cint(infd), cint(outfd), uint(offset), uint(count),
+                         nil, addr o, 0)
     if res >= 0:
       count = int(o)
       0
     else:
       let err = osLastError()
       count =
-        if int(err) == EAGAIN: int(o)
+        if err == EAGAIN: int(o)
         else: 0
       -1
 
 elif defined(macosx):
-  import posix, os
+  import oserrno
+
   type
     SendfileHeader* {.importc: "struct sf_hdtr",
                       header: """#include <sys/types.h>
@@ -113,6 +115,6 @@ elif defined(macosx):
     else:
       let err = osLastError()
       count =
-        if int(err) == EAGAIN: int(o)
+        if err == EAGAIN: int(o)
         else: 0
       -1

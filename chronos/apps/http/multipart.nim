@@ -7,15 +7,20 @@
 #              Licensed under either of
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
+
+{.push raises: [].}
+
 import std/[monotimes, strutils]
-import stew/results, httputils
+import results, httputils
 import ../../asyncloop
 import ../../streams/[asyncstream, boundstream, chunkstream]
-import httptable, httpcommon, httpbodyrw
+import "."/[httptable, httpcommon, httpbodyrw]
 export asyncloop, httptable, httpcommon, httpbodyrw, asyncstream, httputils
 
 const
-  UnableToReadMultipartBody = "Unable to read multipart message body"
+  UnableToReadMultipartBody = "Unable to read multipart message body, reason: "
+  UnableToSendMultipartMessage = "Unable to send multipart message, reason: "
+  MaxMultipartHeaderSize = 4096
 
 type
   MultiPartSource* {.pure.} = enum
@@ -66,13 +71,12 @@ type
     name*: string
     filename*: string
 
-  MultipartError* = object of HttpCriticalError
+  MultipartError* = object of HttpProtocolError
   MultipartEOMError* = object of MultipartError
 
   BChar* = byte | char
 
-proc startsWith(s, prefix: openArray[byte]): bool {.
-     raises: [Defect].} =
+proc startsWith(s, prefix: openArray[byte]): bool =
   # This procedure is copy of strutils.startsWith() procedure, however,
   # it is intended to work with arrays of bytes, but not with strings.
   var i = 0
@@ -81,8 +85,7 @@ proc startsWith(s, prefix: openArray[byte]): bool {.
     if i >= len(s) or s[i] != prefix[i]: return false
     inc(i)
 
-proc parseUntil(s, until: openArray[byte]): int {.
-     raises: [Defect].} =
+proc parseUntil(s, until: openArray[byte]): int =
   # This procedure is copy of parseutils.parseUntil() procedure, however,
   # it is intended to work with arrays of bytes, but not with strings.
   var i = 0
@@ -95,8 +98,7 @@ proc parseUntil(s, until: openArray[byte]): int {.
     inc(i)
   -1
 
-func setPartNames(part: var MultiPart): HttpResult[void] {.
-     raises: [Defect].} =
+func setPartNames(part: var MultiPart): HttpResult[void] =
   if part.headers.count("content-disposition") != 1:
     return err("Content-Disposition header is incorrect")
   var header = part.headers.getString("content-disposition")
@@ -105,7 +107,7 @@ func setPartNames(part: var MultiPart): HttpResult[void] {.
     return err("Content-Disposition header value is incorrect")
   let dtype = disp.dispositionType(header.toOpenArrayByte(0, len(header) - 1))
   if dtype.toLowerAscii() != "form-data":
-    return err("Content-Disposition type is incorrect")
+    return err("Content-Disposition header type is incorrect")
   for k, v in disp.fields(header.toOpenArrayByte(0, len(header) - 1)):
     case k.toLowerAscii()
     of "name":
@@ -120,8 +122,7 @@ func setPartNames(part: var MultiPart): HttpResult[void] {.
 
 proc init*[A: BChar, B: BChar](mpt: typedesc[MultiPartReader],
                                buffer: openArray[A],
-                               boundary: openArray[B]): MultiPartReader {.
-     raises: [Defect].} =
+                               boundary: openArray[B]): MultiPartReader =
   ## Create new MultiPartReader instance with `buffer` interface.
   ##
   ## ``buffer`` - is buffer which will be used to read data.
@@ -142,11 +143,11 @@ proc init*[A: BChar, B: BChar](mpt: typedesc[MultiPartReader],
   MultiPartReader(kind: MultiPartSource.Buffer,
                   buffer: buf, offset: 0, boundary: fboundary)
 
-proc new*[B: BChar](mpt: typedesc[MultiPartReaderRef],
-                    stream: HttpBodyReader,
-                    boundary: openArray[B],
-                    partHeadersMaxSize = 4096): MultiPartReaderRef {.
-     raises: [Defect].} =
+proc new*[B: BChar](
+    mpt: typedesc[MultiPartReaderRef],
+    stream: HttpBodyReader,
+    boundary: openArray[B],
+    partHeadersMaxSize = MaxMultipartHeaderSize): MultiPartReaderRef =
   ## Create new MultiPartReader instance with `stream` interface.
   ##
   ## ``stream`` is stream used to read data.
@@ -173,7 +174,17 @@ proc new*[B: BChar](mpt: typedesc[MultiPartReaderRef],
                      stream: stream, offset: 0, boundary: fboundary,
                      buffer: newSeq[byte](partHeadersMaxSize))
 
-proc readPart*(mpr: MultiPartReaderRef): Future[MultiPart] {.async.} =
+template handleAsyncStreamReaderError(targ, excarg: untyped) =
+  if targ.hasOverflow():
+    raiseHttpRequestBodyTooLargeError()
+  raiseHttpReadError(UnableToReadMultipartBody & $excarg.msg)
+
+template handleAsyncStreamWriterError(targ, excarg: untyped) =
+  targ.state = MultiPartWriterState.MessageFailure
+  raiseHttpWriteError(UnableToSendMultipartMessage & $excarg.msg)
+
+proc readPart*(mpr: MultiPartReaderRef): Future[MultiPart] {.
+     async: (raises: [CancelledError, HttpReadError, HttpProtocolError]).} =
   doAssert(mpr.kind == MultiPartSource.Stream)
   if mpr.firstTime:
     try:
@@ -182,14 +193,11 @@ proc readPart*(mpr: MultiPartReaderRef): Future[MultiPart] {.async.} =
       mpr.firstTime = false
       if not(startsWith(mpr.buffer.toOpenArray(0, len(mpr.boundary) - 3),
                         mpr.boundary.toOpenArray(2, len(mpr.boundary) - 1))):
-        raiseHttpCriticalError("Unexpected boundary encountered")
+        raiseHttpProtocolError(Http400, "Unexpected boundary encountered")
     except CancelledError as exc:
       raise exc
-    except AsyncStreamError:
-      if mpr.stream.hasOverflow():
-        raiseHttpCriticalError(MaximumBodySizeError, Http413)
-      else:
-        raiseHttpCriticalError(UnableToReadMultipartBody)
+    except AsyncStreamError as exc:
+      handleAsyncStreamReaderError(mpr.stream, exc)
 
   # Reading part's headers
   try:
@@ -203,9 +211,9 @@ proc readPart*(mpr: MultiPartReaderRef): Future[MultiPart] {.async.} =
         raise newException(MultipartEOMError,
                            "End of multipart message")
       else:
-        raiseHttpCriticalError("Incorrect multipart header found")
+        raiseHttpProtocolError(Http400, "Incorrect multipart header found")
     if mpr.buffer[0] != 0x0D'u8 or mpr.buffer[1] != 0x0A'u8:
-      raiseHttpCriticalError("Incorrect multipart boundary found")
+      raiseHttpProtocolError(Http400, "Incorrect multipart boundary found")
 
     # If two bytes are CRLF we are at the part beginning.
     # Reading part's headers
@@ -213,7 +221,7 @@ proc readPart*(mpr: MultiPartReaderRef): Future[MultiPart] {.async.} =
                                          HeadersMark)
     var headersList = parseHeaders(mpr.buffer.toOpenArray(0, res - 1), false)
     if headersList.failed():
-      raiseHttpCriticalError("Incorrect multipart's headers found")
+      raiseHttpProtocolError(Http400, "Incorrect multipart's headers found")
     inc(mpr.counter)
 
     var part = MultiPart(
@@ -229,48 +237,39 @@ proc readPart*(mpr: MultiPartReaderRef): Future[MultiPart] {.async.} =
 
     let sres = part.setPartNames()
     if sres.isErr():
-      raiseHttpCriticalError($sres.error)
+      raiseHttpProtocolError(Http400, $sres.error)
     return part
 
   except CancelledError as exc:
     raise exc
-  except AsyncStreamError:
-    if mpr.stream.hasOverflow():
-      raiseHttpCriticalError(MaximumBodySizeError, Http413)
-    else:
-      raiseHttpCriticalError(UnableToReadMultipartBody)
+  except AsyncStreamError as exc:
+    handleAsyncStreamReaderError(mpr.stream, exc)
 
-proc getBody*(mp: MultiPart): Future[seq[byte]] {.async.} =
+proc getBody*(mp: MultiPart): Future[seq[byte]] {.
+     async: (raises: [CancelledError, HttpReadError, HttpProtocolError]).} =
   ## Get multipart's ``mp`` value as sequence of bytes.
   case mp.kind
   of MultiPartSource.Stream:
     try:
-      let res = await mp.stream.read()
-      return res
-    except AsyncStreamError:
-      if mp.breader.hasOverflow():
-        raiseHttpCriticalError(MaximumBodySizeError, Http413)
-      else:
-        raiseHttpCriticalError(UnableToReadMultipartBody)
+      await mp.stream.read()
+    except AsyncStreamError as exc:
+      handleAsyncStreamReaderError(mp.breader, exc)
   of MultiPartSource.Buffer:
-    return mp.buffer
+    mp.buffer
 
-proc consumeBody*(mp: MultiPart) {.async.} =
+proc consumeBody*(mp: MultiPart) {.
+     async: (raises: [CancelledError, HttpReadError, HttpProtocolError]).} =
   ## Discard multipart's ``mp`` value.
   case mp.kind
   of MultiPartSource.Stream:
     try:
       discard await mp.stream.consume()
-    except AsyncStreamError:
-      if mp.breader.hasOverflow():
-        raiseHttpCriticalError(MaximumBodySizeError, Http413)
-      else:
-        raiseHttpCriticalError(UnableToReadMultipartBody)
+    except AsyncStreamError as exc:
+      handleAsyncStreamReaderError(mp.breader, exc)
   of MultiPartSource.Buffer:
     discard
 
-proc getBodyStream*(mp: MultiPart): HttpResult[AsyncStreamReader] {.
-     raises: [Defect].} =
+proc getBodyStream*(mp: MultiPart): HttpResult[AsyncStreamReader] =
   ## Get multipart's ``mp`` stream, which can be used to obtain value of the
   ## part.
   case mp.kind
@@ -279,7 +278,7 @@ proc getBodyStream*(mp: MultiPart): HttpResult[AsyncStreamReader] {.
   else:
     err("Could not obtain stream from buffer-like part")
 
-proc closeWait*(mp: MultiPart) {.async.} =
+proc closeWait*(mp: MultiPart) {.async: (raises: []).} =
   ## Close and release MultiPart's ``mp`` stream and resources.
   case mp.kind
   of MultiPartSource.Stream:
@@ -287,7 +286,7 @@ proc closeWait*(mp: MultiPart) {.async.} =
   else:
     discard
 
-proc closeWait*(mpr: MultiPartReaderRef) {.async.} =
+proc closeWait*(mpr: MultiPartReaderRef) {.async: (raises: []).} =
   ## Close and release MultiPartReader's ``mpr`` stream and resources.
   case mpr.kind
   of MultiPartSource.Stream:
@@ -295,7 +294,7 @@ proc closeWait*(mpr: MultiPartReaderRef) {.async.} =
   else:
     discard
 
-proc getBytes*(mp: MultiPart): seq[byte] {.raises: [Defect].} =
+proc getBytes*(mp: MultiPart): seq[byte] =
   ## Returns value for MultiPart ``mp`` as sequence of bytes.
   case mp.kind
   of MultiPartSource.Buffer:
@@ -304,7 +303,7 @@ proc getBytes*(mp: MultiPart): seq[byte] {.raises: [Defect].} =
     doAssert(not(mp.stream.atEof()), "Value is not obtained yet")
     mp.buffer
 
-proc getString*(mp: MultiPart): string {.raises: [Defect].} =
+proc getString*(mp: MultiPart): string =
   ## Returns value for MultiPart ``mp`` as string.
   case mp.kind
   of MultiPartSource.Buffer:
@@ -313,7 +312,7 @@ proc getString*(mp: MultiPart): string {.raises: [Defect].} =
     doAssert(not(mp.stream.atEof()), "Value is not obtained yet")
     bytesToString(mp.buffer)
 
-proc atEoM*(mpr: var MultiPartReader): bool {.raises: [Defect].} =
+proc atEoM*(mpr: var MultiPartReader): bool =
   ## Procedure returns ``true`` if MultiPartReader has reached the end of
   ## multipart message.
   case mpr.kind
@@ -322,7 +321,7 @@ proc atEoM*(mpr: var MultiPartReader): bool {.raises: [Defect].} =
   of MultiPartSource.Stream:
     mpr.stream.atEof()
 
-proc atEoM*(mpr: MultiPartReaderRef): bool {.raises: [Defect].} =
+proc atEoM*(mpr: MultiPartReaderRef): bool =
   ## Procedure returns ``true`` if MultiPartReader has reached the end of
   ## multipart message.
   case mpr.kind
@@ -331,8 +330,7 @@ proc atEoM*(mpr: MultiPartReaderRef): bool {.raises: [Defect].} =
   of MultiPartSource.Stream:
     mpr.stream.atEof()
 
-proc getPart*(mpr: var MultiPartReader): Result[MultiPart, string] {.
-     raises: [Defect].} =
+proc getPart*(mpr: var MultiPartReader): Result[MultiPart, string] =
   ## Get multipart part from MultiPartReader instance.
   ##
   ## This procedure will work only for MultiPartReader with buffer source.
@@ -422,8 +420,7 @@ proc getPart*(mpr: var MultiPartReader): Result[MultiPart, string] {.
   else:
     err("Incorrect multipart form")
 
-func isEmpty*(mp: MultiPart): bool {.
-     raises: [Defect].} =
+func isEmpty*(mp: MultiPart): bool =
   ## Returns ``true`` is multipart ``mp`` is not initialized/filled yet.
   mp.counter == 0
 
@@ -439,8 +436,7 @@ func validateBoundary[B: BChar](boundary: openArray[B]): HttpResult[void] =
         return err("Content-Type boundary alphabet incorrect")
     ok()
 
-func getMultipartBoundary*(contentData: ContentTypeData): HttpResult[string] {.
-     raises: [Defect].} =
+func getMultipartBoundary*(contentData: ContentTypeData): HttpResult[string] =
   ## Returns ``multipart/form-data`` boundary value from ``Content-Type``
   ## header.
   ##
@@ -480,8 +476,7 @@ proc quoteCheck(name: string): HttpResult[string] =
     ok(name)
 
 proc init*[B: BChar](mpt: typedesc[MultiPartWriter],
-                     boundary: openArray[B]): MultiPartWriter {.
-     raises: [Defect].} =
+                     boundary: openArray[B]): MultiPartWriter =
   ## Create new MultiPartWriter instance with `buffer` interface.
   ##
   ## ``boundary`` - is multipart boundary, this value must not be empty.
@@ -510,8 +505,7 @@ proc init*[B: BChar](mpt: typedesc[MultiPartWriter],
 
 proc new*[B: BChar](mpt: typedesc[MultiPartWriterRef],
                     stream: HttpBodyWriter,
-                    boundary: openArray[B]): MultiPartWriterRef {.
-     raises: [Defect].} =
+                    boundary: openArray[B]): MultiPartWriterRef =
   doAssert(validateBoundary(boundary).isOk())
   doAssert(not(isNil(stream)))
 
@@ -538,7 +532,7 @@ proc new*[B: BChar](mpt: typedesc[MultiPartWriterRef],
 
 proc prepareHeaders(partMark: openArray[byte], name: string, filename: string,
                     headers: HttpTable): string =
-  const ContentDisposition = "Content-Disposition"
+  const ContentDispositionHeader = "Content-Disposition"
   let qname =
     block:
       let res = quoteCheck(name)
@@ -551,10 +545,10 @@ proc prepareHeaders(partMark: openArray[byte], name: string, filename: string,
       res.get()
   var buffer = newString(len(partMark))
   copyMem(addr buffer[0], unsafeAddr partMark[0], len(partMark))
-  buffer.add(ContentDisposition)
+  buffer.add(ContentDispositionHeader)
   buffer.add(": ")
-  if ContentDisposition in headers:
-    buffer.add(headers.getString(ContentDisposition))
+  if ContentDispositionHeader in headers:
+    buffer.add(headers.getString(ContentDispositionHeader))
     buffer.add("\r\n")
   else:
     buffer.add("form-data; name=\"")
@@ -567,7 +561,7 @@ proc prepareHeaders(partMark: openArray[byte], name: string, filename: string,
     buffer.add("\r\n")
 
   for k, v in headers.stringItems():
-    if k != toLowerAscii(ContentDisposition):
+    if k != ContentDispositionHeader:
       if len(v) > 0:
         buffer.add(k)
         buffer.add(": ")
@@ -576,7 +570,8 @@ proc prepareHeaders(partMark: openArray[byte], name: string, filename: string,
   buffer.add("\r\n")
   buffer
 
-proc begin*(mpw: MultiPartWriterRef) {.async.} =
+proc begin*(mpw: MultiPartWriterRef) {.
+     async: (raises: [CancelledError, HttpWriteError]).} =
   ## Starts multipart message form and write approprate markers to output
   ## stream.
   doAssert(mpw.kind == MultiPartSource.Stream)
@@ -584,10 +579,9 @@ proc begin*(mpw: MultiPartWriterRef) {.async.} =
   # write "--"
   try:
     await mpw.stream.write(mpw.beginMark)
-  except AsyncStreamError:
-    mpw.state = MultiPartWriterState.MessageFailure
-    raiseHttpCriticalError("Unable to start multipart message")
-  mpw.state = MultiPartWriterState.MessageStarted
+    mpw.state = MultiPartWriterState.MessageStarted
+  except AsyncStreamError as exc:
+    handleAsyncStreamWriterError(mpw, exc)
 
 proc begin*(mpw: var MultiPartWriter) =
   ## Starts multipart message form and write approprate markers to output
@@ -599,7 +593,8 @@ proc begin*(mpw: var MultiPartWriter) =
   mpw.state = MultiPartWriterState.MessageStarted
 
 proc beginPart*(mpw: MultiPartWriterRef, name: string,
-                filename: string, headers: HttpTable) {.async.} =
+                filename: string, headers: HttpTable) {.
+     async: (raises: [CancelledError, HttpWriteError]).} =
   ## Starts part of multipart message and write appropriate ``headers`` to the
   ## output stream.
   ##
@@ -614,9 +609,8 @@ proc beginPart*(mpw: MultiPartWriterRef, name: string,
   try:
     await mpw.stream.write(buffer)
     mpw.state = MultiPartWriterState.PartStarted
-  except AsyncStreamError:
-    mpw.state = MultiPartWriterState.MessageFailure
-    raiseHttpCriticalError("Unable to start multipart part")
+  except AsyncStreamError as exc:
+    handleAsyncStreamWriterError(mpw, exc)
 
 proc beginPart*(mpw: var MultiPartWriter, name: string,
                 filename: string, headers: HttpTable) =
@@ -634,38 +628,38 @@ proc beginPart*(mpw: var MultiPartWriter, name: string,
   mpw.buffer.add(buffer.toOpenArrayByte(0, len(buffer) - 1))
   mpw.state = MultiPartWriterState.PartStarted
 
-proc write*(mpw: MultiPartWriterRef, pbytes: pointer, nbytes: int) {.async.} =
+proc write*(mpw: MultiPartWriterRef, pbytes: pointer, nbytes: int) {.
+     async: (raises: [CancelledError, HttpWriteError]).} =
   ## Write part's data ``data`` to the output stream.
   doAssert(mpw.kind == MultiPartSource.Stream)
   doAssert(mpw.state == MultiPartWriterState.PartStarted)
   try:
     # write <chunk> of data
     await mpw.stream.write(pbytes, nbytes)
-  except AsyncStreamError:
-    mpw.state = MultiPartWriterState.MessageFailure
-    raiseHttpCriticalError("Unable to write multipart data")
+  except AsyncStreamError as exc:
+    handleAsyncStreamWriterError(mpw, exc)
 
-proc write*(mpw: MultiPartWriterRef, data: seq[byte]) {.async.} =
+proc write*(mpw: MultiPartWriterRef, data: seq[byte]) {.
+     async: (raises: [CancelledError, HttpWriteError]).} =
   ## Write part's data ``data`` to the output stream.
   doAssert(mpw.kind == MultiPartSource.Stream)
   doAssert(mpw.state == MultiPartWriterState.PartStarted)
   try:
     # write <chunk> of data
     await mpw.stream.write(data)
-  except AsyncStreamError:
-    mpw.state = MultiPartWriterState.MessageFailure
-    raiseHttpCriticalError("Unable to write multipart data")
+  except AsyncStreamError as exc:
+    handleAsyncStreamWriterError(mpw, exc)
 
-proc write*(mpw: MultiPartWriterRef, data: string) {.async.} =
+proc write*(mpw: MultiPartWriterRef, data: string) {.
+     async: (raises: [CancelledError, HttpWriteError]).} =
   ## Write part's data ``data`` to the output stream.
   doAssert(mpw.kind == MultiPartSource.Stream)
   doAssert(mpw.state == MultiPartWriterState.PartStarted)
   try:
     # write <chunk> of data
     await mpw.stream.write(data)
-  except AsyncStreamError:
-    mpw.state = MultiPartWriterState.MessageFailure
-    raiseHttpCriticalError("Unable to write multipart data")
+  except AsyncStreamError as exc:
+    handleAsyncStreamWriterError(mpw, exc)
 
 proc write*(mpw: var MultiPartWriter, pbytes: pointer, nbytes: int) =
   ## Write part's data ``data`` to the output stream.
@@ -688,16 +682,16 @@ proc write*(mpw: var MultiPartWriter, data: openArray[char]) =
   doAssert(mpw.state == MultiPartWriterState.PartStarted)
   mpw.buffer.add(data.toOpenArrayByte(0, len(data) - 1))
 
-proc finishPart*(mpw: MultiPartWriterRef) {.async.} =
+proc finishPart*(mpw: MultiPartWriterRef) {.
+     async: (raises: [CancelledError, HttpWriteError]).} =
   ## Finish multipart's message part and send proper markers to output stream.
   doAssert(mpw.state == MultiPartWriterState.PartStarted)
   try:
     # write "<CR><LF>--"
     await mpw.stream.write(mpw.finishPartMark)
     mpw.state = MultiPartWriterState.PartFinished
-  except AsyncStreamError:
-    mpw.state = MultiPartWriterState.MessageFailure
-    raiseHttpCriticalError("Unable to finish multipart message part")
+  except AsyncStreamError as exc:
+    handleAsyncStreamWriterError(mpw, exc)
 
 proc finishPart*(mpw: var MultiPartWriter) =
   ## Finish multipart's message part and send proper markers to output stream.
@@ -707,7 +701,8 @@ proc finishPart*(mpw: var MultiPartWriter) =
   mpw.buffer.add(mpw.finishPartMark)
   mpw.state = MultiPartWriterState.PartFinished
 
-proc finish*(mpw: MultiPartWriterRef) {.async.} =
+proc finish*(mpw: MultiPartWriterRef) {.
+     async: (raises: [CancelledError, HttpWriteError]).} =
   ## Finish multipart's message form and send finishing markers to the output
   ## stream.
   doAssert(mpw.kind == MultiPartSource.Stream)
@@ -716,9 +711,8 @@ proc finish*(mpw: MultiPartWriterRef) {.async.} =
     # write "<boundary>--"
     await mpw.stream.write(mpw.finishMark)
     mpw.state = MultiPartWriterState.MessageFinished
-  except AsyncStreamError:
-    mpw.state = MultiPartWriterState.MessageFailure
-    raiseHttpCriticalError("Unable to finish multipart message")
+  except AsyncStreamError as exc:
+    handleAsyncStreamWriterError(mpw, exc)
 
 proc finish*(mpw: var MultiPartWriter): seq[byte] =
   ## Finish multipart's message form and send finishing markers to the output

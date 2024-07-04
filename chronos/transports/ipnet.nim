@@ -9,10 +9,7 @@
 
 ## This module implements various IP network utility procedures.
 
-when (NimMajor, NimMinor) < (1, 4):
-  {.push raises: [Defect].}
-else:
-  {.push raises: [].}
+{.push raises: [].}
 
 import std/strutils
 import stew/endians2
@@ -352,7 +349,7 @@ proc `$`*(mask: IpMask, include0x = false): string =
   else:
     "Unknown mask family: " & $mask.family
 
-proc ip*(mask: IpMask): string {.raises: [Defect, ValueError].} =
+proc ip*(mask: IpMask): string {.raises: [ValueError].} =
   ## Returns IP address text representation of IP mask ``mask``.
   case mask.family
   of AddressFamily.IPv4:
@@ -387,7 +384,7 @@ proc init*(t: typedesc[IpNet], host: TransportAddress,
   IpNet(mask: mask, host: host)
 
 proc init*(t: typedesc[IpNet], network: string): IpNet {.
-    raises: [Defect, TransportAddressError].} =
+    raises: [TransportAddressError].} =
   ## Initialize IP Network from string representation in format
   ## <address>/<prefix length> or <address>/<netmask address>.
   var parts = network.rsplit("/", maxsplit = 1)
@@ -408,7 +405,7 @@ proc init*(t: typedesc[IpNet], network: string): IpNet {.
     if len(parts) > 1:
       try:
         prefix = parseInt(parts[1])
-      except:
+      except ValueError:
         prefix = -1
       if prefix == -1:
         ipaddr = parseIpAddress(parts[1])
@@ -434,8 +431,8 @@ proc init*(t: typedesc[IpNet], network: string): IpNet {.
       result = t.init(host, mask)
     else:
       result = t.init(host, prefix)
-  except:
-    raise newException(TransportAddressError, "Incorrect network address!")
+  except ValueError as exc:
+    raise newException(TransportAddressError, exc.msg)
 
 proc `==`*(n1, n2: IpNet): bool {.inline.} =
   ## Returns ``true`` if networks ``n1`` and ``n2`` are equal in IP family and
