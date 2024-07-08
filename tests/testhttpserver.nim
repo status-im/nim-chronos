@@ -847,6 +847,7 @@ suite "HTTP server testing suite":
       data2.add((key, value))
 
     proc `<`(a, b: (string, seq[string])): bool = a[0] < b[0]
+    proc `<`(x, y: seq[string]): bool = x.len < y.len
     check:  # .sorted to not depend upon hash(key)-order
       data1.sorted == sorted(@[("Header2", "value2"), ("Header2", "VALUE3"),
                                ("Header1", "value1")])
