@@ -13,6 +13,11 @@ import stew/base10
 
 {.used.}
 
+# Trouble finding this if defined near its use for `data2.sorted`, etc. likely
+# related to "generic sandwich" issues.  If any test ever wants to `sort` a
+# `seq[(string, seq[string]]` differently, they may need to re-work that test.
+proc `<`(a, b: (string, seq[string])): bool = a[0] < b[0]
+
 suite "HTTP server testing suite":
   teardown:
     checkLeaks()
@@ -846,8 +851,6 @@ suite "HTTP server testing suite":
     for key, value in table1.items(true):
       data2.add((key, value))
 
-    proc `<`(a, b: (string, seq[string])): bool = a[0] < b[0]
-    proc `<`[T](x, y: seq[T]): bool = x.len < y.len
     check:  # .sorted to not depend upon hash(key)-order
       data1.sorted == sorted(@[("Header2", "value2"), ("Header2", "VALUE3"),
                                ("Header1", "value1")])
