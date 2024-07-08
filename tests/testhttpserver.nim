@@ -846,12 +846,12 @@ suite "HTTP server testing suite":
     for key, value in table1.items(true):
       data2.add((key, value))
 
-    proc `<`(a, b: (string, string)): bool = a[0] < b[0]
+    proc `<`(a, b: (string, seq[string])): bool = a[0] < b[0]
     check:  # .sorted to not depend upon hash(key)-order
-      data1.sorted == @[("Header2", "value2"), ("Header2", "VALUE3"),
-                        ("Header1", "value1")].sorted
-      data2.sorted == @[("Header2", @["value2", "VALUE3"]),
-                        ("Header1", @["value1"])].sorted
+      data1.sorted == sorted(@[("Header2", "value2"), ("Header2", "VALUE3"),
+                               ("Header1", "value1")])
+      data2.sorted == sorted(@[("Header2", @["value2", "VALUE3"]),
+                               ("Header1", @["value1"])])
 
     table1.set("header2", "value4")
     check:
