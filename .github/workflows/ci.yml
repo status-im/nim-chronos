@@ -18,6 +18,8 @@ jobs:
         target:
           - os: linux
             cpu: amd64
+          - os: linux-ubuntu-24
+            cpu: amd64
           - os: linux
             cpu: i386
           - os: macos
@@ -31,6 +33,10 @@ jobs:
           - target:
               os: linux
             builder: ubuntu-latest
+            shell: bash
+          - target:
+              os: linux-ubuntu-24 # this must be removed when latest is 24.04
+            builder: ubuntu-24.04
             shell: bash
           - target:
               os: macos
@@ -164,6 +170,15 @@ jobs:
             QUICK_AND_DIRTY_COMPILER=1 QUICK_AND_DIRTY_NIMBLE=1 CC=gcc \
             bash build_nim.sh nim csources dist/nimble NimBinaries
           echo '${{ github.workspace }}/nim/bin' >> $GITHUB_PATH
+
+      - name: Use gcc 14
+        if : ${{ matrix.target.os == 'linux-ubuntu-24' }}
+        run: |
+          # Add GCC-14 to alternatives
+          sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-14 14
+      
+          # Set GCC-14 as the default
+          sudo update-alternatives --set gcc /usr/bin/gcc-14
 
       - name: Run tests
         run: |
