@@ -18,7 +18,7 @@ jobs:
         target:
           - os: linux
             cpu: amd64
-          - os: linux-ubuntu-24
+          - os: linux-gcc-14 # this is to use ubuntu 24 and install gcc 14. Must be removed when ubuntu-latest is 24.04
             cpu: amd64
           - os: linux
             cpu: i386
@@ -35,7 +35,7 @@ jobs:
             builder: ubuntu-latest
             shell: bash
           - target:
-              os: linux-ubuntu-24 # this must be removed when latest is 24.04
+              os: linux-gcc-14 # this is to use ubuntu 24 and install gcc 14. Must be removed when ubuntu-latest is 24.04
             builder: ubuntu-24.04
             shell: bash
           - target:
@@ -171,8 +171,8 @@ jobs:
             bash build_nim.sh nim csources dist/nimble NimBinaries
           echo '${{ github.workspace }}/nim/bin' >> $GITHUB_PATH
 
-      - name: Use gcc 14
-        if : ${{ matrix.target.os == 'linux-ubuntu-24' }}
+      - name: Use gcc 14 # Must be removed when ubuntu-latest is 24.04 and gcc 14 is the default
+        if : ${{ matrix.target.os == 'linux-gcc-14' }}
         run: |
           # Add GCC-14 to alternatives
           sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-14 14
