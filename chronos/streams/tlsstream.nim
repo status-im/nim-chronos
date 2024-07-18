@@ -510,7 +510,8 @@ proc newTLSClientAsyncStream*(
 
   if TLSFlags.NoVerifyHost in flags:
     sslClientInitFull(res.ccontext, addr res.x509, nil, 0)
-    x509NoanchorInit(res.xwc, addr res.x509.vtable)
+    x509NoanchorInit(res.xwc,
+                     X509ClassPointerConst(addr res.x509.vtable))
     sslEngineSetX509(res.ccontext.eng,
                      X509ClassPointerConst(addr res.xwc.vtable))
   else:
