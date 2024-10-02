@@ -397,7 +397,9 @@ proc peakFirst*[T](aq: AsyncQueue[T]): Future[T] {.
       if not(aq.empty()) and not(getter.cancelled()):
         aq.getters.wakeupNext()
       raise exc
-  aq.peakFirstImpl()
+  let res = aq.peakFirstImpl()
+  aq.getters.wakeupNext()
+  res
 
 proc peakLast*[T](aq: AsyncQueue[T]): Future[T] {.
      async: (raises: [CancelledError]).} =
@@ -413,7 +415,9 @@ proc peakLast*[T](aq: AsyncQueue[T]): Future[T] {.
       if not(aq.empty()) and not(getter.cancelled()):
         aq.getters.wakeupNext()
       raise exc
-  aq.peakLastImpl()
+  let res = aq.peakLastImpl()
+  aq.getters.wakeupNext()
+  res
 
 proc putNoWait*[T](aq: AsyncQueue[T], item: T) {.
      raises: [AsyncQueueFullError].} =
