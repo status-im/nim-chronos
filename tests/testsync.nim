@@ -353,6 +353,19 @@ suite "Asynchronous sync primitives test suite":
   test "AsyncQueue() contains test":
     check test9() == true
 
+  test "AsyncQueue() peak test":
+    let q = newAsyncQueue[int]()
+    q.putNoWait(1)
+    q.putNoWait(2)
+
+    check:
+      q.peakNoWait() == 1
+      q.peakFirstNoWait() == 1
+      q.peakLastNoWait() == 2
+      (waitFor q.peak()) == 1
+      (waitFor q.peakFirst()) == 1
+      (waitFor q.peakLast()) == 2
+
   test "AsyncEventQueue() behavior test":
     let eventQueue = newAsyncEventQueue[int]()
     let key = eventQueue.register()
