@@ -52,7 +52,7 @@ proc init*(t: typedesc[IpMask], family: AddressFamily, prefix: int): IpMask =
       IpMask(family: AddressFamily.IPv4, mask4: 0'u32)
     elif prefix < 32:
       let mask = 0xFFFF_FFFF'u32 shl (32 - prefix)
-      IpMask(family: AddressFamily.IPv4, mask4: mask.toBE())
+      IpMask(family: AddressFamily.IPv4, mask4: mask)
     else:
       IpMask(family: AddressFamily.IPv4, mask4: 0xFFFF_FFFF'u32)
   of AddressFamily.IPv6:
@@ -65,13 +65,13 @@ proc init*(t: typedesc[IpMask], family: AddressFamily, prefix: int): IpMask =
       if prefix > 64:
         let mask = 0xFFFF_FFFF_FFFF_FFFF'u64 shl (128 - prefix)
         IpMask(family: AddressFamily.IPv6,
-               mask6: [0xFFFF_FFFF_FFFF_FFFF'u64, mask.toBE()])
+               mask6: [0xFFFF_FFFF_FFFF_FFFF'u64, mask])
       elif prefix == 64:
         IpMask(family: AddressFamily.IPv6,
                mask6: [0xFFFF_FFFF_FFFF_FFFF'u64, 0'u64])
       else:
         let mask = 0xFFFF_FFFF_FFFF_FFFF'u64 shl (64 - prefix)
-        IpMask(family: AddressFamily.IPv6, mask6: [mask.toBE(), 0'u64])
+        IpMask(family: AddressFamily.IPv6, mask6: [mask, 0'u64])
   else:
     IpMask(family: family)
 
@@ -80,11 +80,12 @@ proc init*(t: typedesc[IpMask], netmask: TransportAddress): IpMask =
   case netmask.family
   of AddressFamily.IPv4:
     IpMask(family: AddressFamily.IPv4,
-           mask4: uint32.fromBytes(netmask.address_v4))
+           mask4: uint32.fromBytesBE(netmask.address_v4))
   of AddressFamily.IPv6:
     IpMask(family: AddressFamily.IPv6,
-           mask6: [uint64.fromBytes(netmask.address_v6.toOpenArray(0, 7)),
-                   uint64.fromBytes(netmask.address_v6.toOpenArray(8, 15))])
+           mask6: [
+             uint64.fromBytesBE(netmask.address_v6.toOpenArray(0, 7)),
+             uint64.fromBytesBE(netmask.address_v6.toOpenArray(8, 15))])
   else:
     IpMask(family: netmask.family)
 
@@ -95,8 +96,7 @@ proc initIp*(t: typedesc[IpMask], netmask: string): IpMask =
   ## If ``netmask`` address string is invalid, result IpMask.family will be
   ## set to ``AddressFamily.None``.
   try:
-    var ip = parseIpAddress(netmask)
-    var tip = initTAddress(ip, Port(0))
+    let tip = initTAddress(parseIpAddress(netmask), Port(0))
     t.init(tip)
   except ValueError:
     IpMask(family: AddressFamily.None)
@@ -129,7 +129,7 @@ proc init*(t: typedesc[IpMask], netmask: string): IpMask =
       else:
         return
       r = (r shl 4) or v
-    res.mask4 = r.toBE()
+    res.mask4 = r
     res
   elif length == 32 or length == (2 + 32):
     ## IPv6 mask
@@ -150,7 +150,7 @@ proc init*(t: typedesc[IpMask], netmask: string): IpMask =
           return
         r = (r shl 4) or v
       offset += 16
-      res.mask6[i] = r.toBE()
+      res.mask6[i] = r
     res
   else:
     IpMask(family: AddressFamily.None)
@@ -167,8 +167,8 @@ proc toIPv6*(address: TransportAddress): TransportAddress =
     var address6: array[16, uint8]
     address6[10] = 0xFF'u8
     address6[11] = 0xFF'u8
-    let ip4 = uint32.fromBytes(address.address_v4)
-    address6[12 .. 15] = ip4.toBytes()
+    let ip4 = uint32.fromBytesBE(address.address_v4)
+    address6[12 .. 15] = ip4.toBytesBE()
     TransportAddress(family: AddressFamily.IPv6, port: address.port,
                      address_v6: address6)
   of AddressFamily.IPv6:
@@ -183,9 +183,9 @@ proc isV4Mapped*(address: TransportAddress): bool =
   ## Procedure returns ``false`` if ``address`` family is IPv4.
   case address.family
   of AddressFamily.IPv6:
-    let data0 = uint64.fromBytes(address.address_v6.toOpenArray(0, 7))
-    let data1 = uint16.fromBytes(address.address_v6.toOpenArray(8, 9))
-    let data2 = uint16.fromBytes(address.address_v6.toOpenArray(10, 11))
+    let data0 = uint64.fromBytesBE(address.address_v6.toOpenArray(0, 7))
+    let data1 = uint16.fromBytesBE(address.address_v6.toOpenArray(8, 9))
+    let data2 = uint16.fromBytesBE(address.address_v6.toOpenArray(10, 11))
     (data0 == 0x00'u64) and (data1 == 0x00'u16) and (data2 == 0xFFFF'u16)
   else:
     false
@@ -202,9 +202,9 @@ proc toIPv4*(address: TransportAddress): TransportAddress =
     address
   of AddressFamily.IPv6:
     if isV4Mapped(address):
-      let data = uint32.fromBytes(address.address_v6.toOpenArray(12, 15))
+      let data = uint32.fromBytesBE(address.address_v6.toOpenArray(12, 15))
       TransportAddress(family: AddressFamily.IPv4, port: address.port,
-                       address_v4: data.toBytes())
+                       address_v4: data.toBytesBE())
     else:
       TransportAddress(family: AddressFamily.None)
   else:
@@ -230,34 +230,34 @@ proc mask*(a: TransportAddress, m: IpMask): TransportAddress =
   ## In all other cases returned address will have ``AddressFamily.None``.
   if (a.family == AddressFamily.IPv4) and (m.family == AddressFamily.IPv6):
     if (m.mask6[0] == 0xFFFF_FFFF_FFFF_FFFF'u64) and
-       (m.mask6[1] and 0xFFFF_FFFF'u64) == 0xFFFF_FFFF'u64:
+       (m.mask6[1] and 0xFFFF_FFFF_0000_0000'u64) == 0xFFFF_FFFF_0000_0000'u64:
       let
-        mask = uint32((m.mask6[1] shr 32) and 0xFFFF_FFFF'u64)
-        data = uint32.fromBytes(a.address_v4)
+        mask = uint32(m.mask6[1] and 0xFFFF_FFFF'u64)
+        data = uint32.fromBytesBE(a.address_v4)
       TransportAddress(family: AddressFamily.IPv4, port: a.port,
-                       address_v4: (data and mask).toBytes())
+                       address_v4: (data and mask).toBytesBE())
     else:
       TransportAddress(family: AddressFamily.None)
   elif (a.family == AddressFamily.IPv6) and (m.family == AddressFamily.IPv4):
     var ip = a.toIPv4()
     if ip.family != AddressFamily.IPv4:
       return TransportAddress(family: AddressFamily.None)
-    let data = uint32.fromBytes(ip.address_v4)
-    ip.address_v4[0 .. 3] = (data and m.mask4).toBytes()
+    let data = uint32.fromBytesBE(ip.address_v4)
+    ip.address_v4[0 .. 3] = (data and m.mask4).toBytesBE()
     var res = ip.toIPv6()
     res.port = a.port
     res
   elif a.family == AddressFamily.IPv4 and m.family == AddressFamily.IPv4:
-    let data = uint32.fromBytes(a.address_v4)
+    let data = uint32.fromBytesBE(a.address_v4)
     TransportAddress(family: AddressFamily.IPv4, port: a.port,
-                     address_v4: (data and m.mask4).toBytes())
+                     address_v4: (data and m.mask4).toBytesBE())
   elif a.family == AddressFamily.IPv6 and m.family == AddressFamily.IPv6:
     var address6: array[16, uint8]
     let
-      data0 = uint64.fromBytes(a.address_v6.toOpenArray(0, 7))
-      data1 = uint64.fromBytes(a.address_v6.toOpenArray(8, 15))
-    address6[0 .. 7] = (data0 and m.mask6[0]).toBytes()
-    address6[8 .. 15] = (data1 and m.mask6[1]).toBytes()
+      data0 = uint64.fromBytesBE(a.address_v6.toOpenArray(0, 7))
+      data1 = uint64.fromBytesBE(a.address_v6.toOpenArray(8, 15))
+    address6[0 .. 7] = (data0 and m.mask6[0]).toBytesBE()
+    address6[8 .. 15] = (data1 and m.mask6[1]).toBytesBE()
     TransportAddress(family: AddressFamily.IPv6, port: a.port,
                      address_v6: address6)
   else:
@@ -272,14 +272,14 @@ proc prefix*(mask: IpMask): int =
   of AddressFamily.IPv4:
     var
       res = 0
-      n = mask.mask4.fromBE()
+      n = mask.mask4
     while n != 0:
       if (n and 0x8000_0000'u32) == 0'u32: return -1
       n = n shl 1
       inc(res)
     res
   of AddressFamily.IPv6:
-    let mask6 = [mask.mask6[0].fromBE(), mask.mask6[1].fromBE()]
+    let mask6 = [mask.mask6[0], mask.mask6[1]]
     var res = 0
     if mask6[0] == 0xFFFF_FFFF_FFFF_FFFF'u64:
       res += 64
@@ -308,11 +308,11 @@ proc subnetMask*(mask: IpMask): TransportAddress =
   case mask.family
   of AddressFamily.IPv4:
     TransportAddress(family: AddressFamily.IPv4,
-                     address_v4: mask.mask4.toBytes())
+                     address_v4: mask.mask4.toBytesBE())
   of AddressFamily.IPv6:
     var address6: array[16, uint8]
-    address6[0 .. 7] = mask.mask6[0].toBytes()
-    address6[8 .. 15] = mask.mask6[1].toBytes()
+    address6[0 .. 7] = mask.mask6[0].toBytesBE()
+    address6[8 .. 15] = mask.mask6[1].toBytesBE()
     TransportAddress(family: AddressFamily.IPv6, address_v6: address6)
   else:
     TransportAddress(family: mask.family)
@@ -321,9 +321,10 @@ proc `$`*(mask: IpMask, include0x = false): string =
   ## Returns hexadecimal string representation of IP mask ``mask``.
   case mask.family
   of AddressFamily.IPv4:
-    var res = if include0x: "0x" else: ""
-    var n = 32
-    var m = mask.mask4.fromBE()
+    var
+      res = if include0x: "0x" else: ""
+      n = 32
+      m = mask.mask4
     while n > 0:
       n -= 4
       var c = int((m shr n) and 0x0F)
@@ -333,7 +334,7 @@ proc `$`*(mask: IpMask, include0x = false): string =
         res.add(chr(ord('A') + (c - 10)))
     res
   of AddressFamily.IPv6:
-    let mask6 = [mask.mask6[0].fromBE(), mask.mask6[1].fromBE()]
+    let mask6 = [mask.mask6[0], mask.mask6[1]]
     var res = if include0x: "0x" else: ""
     for i in 0 .. 1:
       var n = 64
@@ -353,12 +354,11 @@ proc ip*(mask: IpMask): string {.raises: [ValueError].} =
   ## Returns IP address text representation of IP mask ``mask``.
   case mask.family
   of AddressFamily.IPv4:
-    var address4: array[4, uint8]
-    copyMem(addr address4[0], unsafeAddr mask.mask4, sizeof(uint32))
-    $IpAddress(family: IpAddressFamily.IPv4, address_v4: address4)
+    $IpAddress(family: IpAddressFamily.IPv4, address_v4: mask.mask4.toBytesBE())
   of AddressFamily.Ipv6:
     var address6: array[16, uint8]
-    copyMem(addr address6[0], unsafeAddr mask.mask6[0], 16)
+    address6[0 .. 7] = mask.mask6[0].toBytesBE()
+    address6[8 .. 15] = mask.mask6[1].toBytesBE()
     $IpAddress(family: IpAddressFamily.IPv6, address_v6: address6)
   else:
     raise newException(ValueError, "Invalid mask family type")
@@ -461,19 +461,19 @@ proc broadcast*(net: IpNet): TransportAddress =
   case net.host.family
   of AddressFamily.IPv4:
     let
-      host = uint32.fromBytes(net.host.address_v4)
+      host = uint32.fromBytesBE(net.host.address_v4)
       mask = net.mask.mask4
     TransportAddress(family: AddressFamily.IPv4,
-                     address_v4: (host or (not(mask))).toBytes())
+                     address_v4: (host or (not(mask))).toBytesBE())
   of AddressFamily.IPv6:
     var address6: array[16, uint8]
     let
-      host0 = uint64.fromBytes(net.host.address_v6.toOpenArray(0, 7))
-      host1 = uint64.fromBytes(net.host.address_v6.toOpenArray(8, 15))
+      host0 = uint64.fromBytesBE(net.host.address_v6.toOpenArray(0, 7))
+      host1 = uint64.fromBytesBE(net.host.address_v6.toOpenArray(8, 15))
       data0 = net.mask.mask6[0]
       data1 = net.mask.mask6[1]
-    address6[0 .. 7] = (host0 or (not(data0))).toBytes()
-    address6[8 .. 15] = (host1 or (not(data1))).toBytes()
+    address6[0 .. 7] = (host0 or (not(data0))).toBytesBE()
+    address6[8 .. 15] = (host1 or (not(data1))).toBytesBE()
     TransportAddress(family: AddressFamily.IPv6, address_v6: address6)
   else:
     TransportAddress(family: AddressFamily.None)
@@ -496,19 +496,19 @@ proc `and`*(address1, address2: TransportAddress): TransportAddress =
   case address1.family
   of AddressFamily.IPv4:
     let
-      data1 = uint32.fromBytes(address1.address_v4)
-      data2 = uint32.fromBytes(address2.address_v4)
+      data1 = uint32.fromBytesBE(address1.address_v4)
+      data2 = uint32.fromBytesBE(address2.address_v4)
     TransportAddress(family: AddressFamily.IPv4,
-                     address_v4: (data1 and data2).toBytes())
+                     address_v4: (data1 and data2).toBytesBE())
   of AddressFamily.IPv6:
     var address6: array[16, uint8]
     let
-      data1 = uint64.fromBytes(address1.address_v6.toOpenArray(0, 7))
-      data2 = uint64.fromBytes(address1.address_v6.toOpenArray(8, 15))
-      data3 = uint64.fromBytes(address2.address_v6.toOpenArray(0, 7))
-      data4 = uint64.fromBytes(address2.address_v6.toOpenArray(8, 15))
-    address6[0 .. 7] = (data1 and data3).toBytes()
-    address6[8 .. 15] = (data2 and data4).toBytes()
+      data1 = uint64.fromBytesBE(address1.address_v6.toOpenArray(0, 7))
+      data2 = uint64.fromBytesBE(address1.address_v6.toOpenArray(8, 15))
+      data3 = uint64.fromBytesBE(address2.address_v6.toOpenArray(0, 7))
+      data4 = uint64.fromBytesBE(address2.address_v6.toOpenArray(8, 15))
+    address6[0 .. 7] = (data1 and data3).toBytesBE()
+    address6[8 .. 15] = (data2 and data4).toBytesBE()
     TransportAddress(family: AddressFamily.IPv6, address_v6: address6)
   else:
     raiseAssert "Invalid address family type"
@@ -522,19 +522,19 @@ proc `or`*(address1, address2: TransportAddress): TransportAddress =
   case address1.family
   of AddressFamily.IPv4:
     let
-      data1 = uint32.fromBytes(address1.address_v4)
-      data2 = uint32.fromBytes(address2.address_v4)
+      data1 = uint32.fromBytesBE(address1.address_v4)
+      data2 = uint32.fromBytesBE(address2.address_v4)
     TransportAddress(family: AddressFamily.IPv4,
-                     address_v4: (data1 or data2).toBytes())
+                     address_v4: (data1 or data2).toBytesBE())
   of AddressFamily.IPv6:
     var address6: array[16, uint8]
     let
-      data1 = uint64.fromBytes(address1.address_v6.toOpenArray(0, 7))
-      data2 = uint64.fromBytes(address1.address_v6.toOpenArray(8, 15))
-      data3 = uint64.fromBytes(address2.address_v6.toOpenArray(0, 7))
-      data4 = uint64.fromBytes(address2.address_v6.toOpenArray(8, 15))
-    address6[0 .. 7] = (data1 or data3).toBytes()
-    address6[8 .. 15] = (data2 or data4).toBytes()
+      data1 = uint64.fromBytesBE(address1.address_v6.toOpenArray(0, 7))
+      data2 = uint64.fromBytesBE(address1.address_v6.toOpenArray(8, 15))
+      data3 = uint64.fromBytesBE(address2.address_v6.toOpenArray(0, 7))
+      data4 = uint64.fromBytesBE(address2.address_v6.toOpenArray(8, 15))
+    address6[0 .. 7] = (data1 or data3).toBytesBE()
+    address6[8 .. 15] = (data2 or data4).toBytesBE()
     TransportAddress(family: AddressFamily.IPv6, address_v6: address6)
   else:
     raiseAssert "Invalid address family type"
@@ -543,15 +543,15 @@ proc `not`*(address: TransportAddress): TransportAddress =
   ## Bitwise ``not`` operation for ``address``.
   case address.family
   of AddressFamily.IPv4:
-    let data = not(uint32.fromBytes(address.address_v4))
-    TransportAddress(family: AddressFamily.IPv4, address_v4: data.toBytes())
+    let data = not(uint32.fromBytesBE(address.address_v4))
+    TransportAddress(family: AddressFamily.IPv4, address_v4: data.toBytesBE())
   of AddressFamily.IPv6:
     var address6: array[16, uint8]
     let
-      data1 = not(uint64.fromBytes(address.address_v6.toOpenArray(0, 7)))
-      data2 = not(uint64.fromBytes(address.address_v6.toOpenArray(8, 15)))
-    address6[0 .. 7] = data1.toBytes()
-    address6[8 .. 15] = data2.toBytes()
+      data1 = not(uint64.fromBytesBE(address.address_v6.toOpenArray(0, 7)))
+      data2 = not(uint64.fromBytesBE(address.address_v6.toOpenArray(8, 15)))
+    address6[0 .. 7] = data1.toBytesBE()
+    address6[8 .. 15] = data2.toBytesBE()
     TransportAddress(family: AddressFamily.IPv6, address_v6: address6)
   else:
     address
@@ -702,10 +702,10 @@ proc isZero*(address: TransportAddress): bool {.inline.} =
   ## not ``AddressFamily.None``.
   case address.family
   of AddressFamily.IPv4:
-    uint32.fromBytes(a4()) == 0'u32
+    uint32.fromBytesBE(a4()) == 0'u32
   of AddressFamily.IPv6:
-    (uint64.fromBytes(a6.toOpenArray(0, 7)) == 0'u64) and
-    (uint64.fromBytes(a6.toOpenArray(8, 15)) == 0'u64)
+    (uint64.fromBytesBE(a6.toOpenArray(0, 7)) == 0'u64) and
+    (uint64.fromBytesBE(a6.toOpenArray(8, 15)) == 0'u64)
   of AddressFamily.Unix:
     len($cast[cstring](unsafeAddr address.address_un[0])) == 0
   else:
@@ -804,7 +804,7 @@ proc isLoopback*(address: TransportAddress): bool =
   of AddressFamily.IPv4:
     a4[0] == 127'u8
   of AddressFamily.IPv6:
-    (uint64.fromBytes(a6.toOpenArray(0, 7)) == 0x00'u64) and
+    (uint64.fromBytesBE(a6.toOpenArray(0, 7)) == 0x00'u64) and
     (uint64.fromBytesBE(a6.toOpenArray(8, 15)) == 0x01'u64)
   else:
     false
@@ -817,10 +817,10 @@ proc isAnyLocal*(address: TransportAddress): bool =
   ## ``IPv6``: ::
   case address.family
   of AddressFamily.IPv4:
-    uint32.fromBytes(a4) == 0'u32
+    uint32.fromBytesBE(a4) == 0'u32
   of AddressFamily.IPv6:
-    (uint64.fromBytes(a6.toOpenArray(0, 7)) == 0x00'u64) and
-    (uint64.fromBytes(a6.toOpenArray(8, 15)) == 0x00'u64)
+    (uint64.fromBytesBE(a6.toOpenArray(0, 7)) == 0x00'u64) and
+    (uint64.fromBytesBE(a6.toOpenArray(8, 15)) == 0x00'u64)
   else:
     false
 
@@ -895,7 +895,7 @@ proc isBroadcast*(address: TransportAddress): bool =
   ## ``IPv4``: 255.255.255.255
   case address.family
   of AddressFamily.IPv4:
-    uint32.fromBytes(a4) == 0xFFFF_FFFF'u32
+    uint32.fromBytesBE(a4) == 0xFFFF_FFFF'u32
   of AddressFamily.IPv6:
     false
   else:
@@ -916,7 +916,7 @@ proc isBenchmarking*(address: TransportAddress): bool =
   of AddressFamily.IPv6:
     (uint16.fromBytesBE(a6.toOpenArray(0, 1)) == 0x2001'u16) and
     (uint16.fromBytesBE(a6.toOpenArray(2, 3)) == 0x02'u16) and
-    (uint16.fromBytes(a6.toOpenArray(4, 5)) == 0x00'u16)
+    (uint16.fromBytesBE(a6.toOpenArray(4, 5)) == 0x00'u16)
   else:
     false
 
@@ -980,9 +980,9 @@ proc isGlobal*(address: TransportAddress): bool =
       address.isLoopback() or
       (
         # IPv4-Mapped `::FFFF:0:0/96`
-        (uint64.fromBytes(a6.toOpenArray(0, 7)) == 0x00'u64) and
-        (uint16.fromBytes(a6.toOpenArray(8, 9)) == 0x00'u16) and
-        (uint16.fromBytes(a6.toOpenArray(10, 11)) == 0xFFFF'u16)
+        (uint64.fromBytesBE(a6.toOpenArray(0, 7)) == 0x00'u64) and
+        (uint16.fromBytesBE(a6.toOpenArray(8, 9)) == 0x00'u16) and
+        (uint16.fromBytesBE(a6.toOpenArray(10, 11)) == 0xFFFF'u16)
       ) or
       (
         # IPv4-IPv6 Translation `64:FF9B:1::/48`
@@ -993,8 +993,8 @@ proc isGlobal*(address: TransportAddress): bool =
       (
         # Discard-Only Address Block `100::/64`
         (uint16.fromBytesBE(a6.toOpenArray(0, 1)) == 0x100'u16) and
-        (uint32.fromBytes(a6.toOpenArray(2, 5)) == 0x00'u32) and
-        (uint16.fromBytes(a6.toOpenArray(6, 7)) == 0x00'u16)
+        (uint32.fromBytesBE(a6.toOpenArray(2, 5)) == 0x00'u32) and
+        (uint16.fromBytesBE(a6.toOpenArray(6, 7)) == 0x00'u16)
       ) or
       (
         # IETF Protocol Assignments `2001::/23`
@@ -1004,15 +1004,15 @@ proc isGlobal*(address: TransportAddress): bool =
           (
             # Port Control Protocol Anycast `2001:1::1`
             (uint32.fromBytesBE(a6.toOpenArray(0, 3)) == 0x20010001'u32) and
-            (uint32.fromBytes(a6.toOpenArray(4, 7)) == 0x00'u32) and
-            (uint32.fromBytes(a6.toOpenArray(8, 11)) == 0x00'u32) and
+            (uint32.fromBytesBE(a6.toOpenArray(4, 7)) == 0x00'u32) and
+            (uint32.fromBytesBE(a6.toOpenArray(8, 11)) == 0x00'u32) and
             (uint32.fromBytesBE(a6.toOpenArray(12, 15)) == 0x01'u32)
           ) or
           (
             # Traversal Using Relays around NAT Anycast `2001:1::2`
             (uint32.fromBytesBE(a6.toOpenArray(0, 3)) == 0x20010001'u32) and
-            (uint32.fromBytes(a6.toOpenArray(4, 7)) == 0x00'u32) and
-            (uint32.fromBytes(a6.toOpenArray(8, 11)) == 0x00'u32) and
+            (uint32.fromBytesBE(a6.toOpenArray(4, 7)) == 0x00'u32) and
+            (uint32.fromBytesBE(a6.toOpenArray(8, 11)) == 0x00'u32) and
             (uint32.fromBytesBE(a6.toOpenArray(12, 15)) == 0x02'u32)
           ) or
           (
@@ -1025,7 +1025,7 @@ proc isGlobal*(address: TransportAddress): bool =
             (uint16.fromBytesBE(a6.toOpenArray(0, 1)) == 0x2001'u16) and
             (uint16.fromBytesBE(a6.toOpenArray(2, 3)) == 0x04'u16) and
             (uint16.fromBytesBE(a6.toOpenArray(4, 5)) == 0x112'u16) and
-            (uint16.fromBytes(a6.toOpenArray(6, 7)) == 0x00'u16)
+            (uint16.fromBytesBE(a6.toOpenArray(6, 7)) == 0x00'u16)
           ) or
           (
             # ORCHIDv2 `2001:20::/28`
