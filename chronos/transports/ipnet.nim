@@ -127,7 +127,7 @@ proc init*(t: typedesc[IpMask], netmask: string): IpMask =
       elif netmask[offset + i] in hexLowers:
         v = uint32(ord(netmask[offset + i]) - ord('a') + 10)
       else:
-        return
+        return IpMask(family: AddressFamily.None)
       r = (r shl 4) or v
     res.mask4 = r
     res
@@ -147,7 +147,7 @@ proc init*(t: typedesc[IpMask], netmask: string): IpMask =
         elif netmask[offset + i] in hexLowers:
           v = uint64(ord(netmask[offset + i]) - ord('a') + 10)
         else:
-          return
+          return IpMask(family: AddressFamily.None)
         r = (r shl 4) or v
       offset += 16
       res.mask6[i] = r
@@ -167,8 +167,7 @@ proc toIPv6*(address: TransportAddress): TransportAddress =
     var address6: array[16, uint8]
     address6[10] = 0xFF'u8
     address6[11] = 0xFF'u8
-    let ip4 = uint32.fromBytesBE(address.address_v4)
-    address6[12 .. 15] = ip4.toBytesBE()
+    address6[12 .. 15] = toBytesBE(uint32.fromBytesBE(address.address_v4))
     TransportAddress(family: AddressFamily.IPv6, port: address.port,
                      address_v6: address6)
   of AddressFamily.IPv6:
@@ -183,9 +182,10 @@ proc isV4Mapped*(address: TransportAddress): bool =
   ## Procedure returns ``false`` if ``address`` family is IPv4.
   case address.family
   of AddressFamily.IPv6:
-    let data0 = uint64.fromBytesBE(address.address_v6.toOpenArray(0, 7))
-    let data1 = uint16.fromBytesBE(address.address_v6.toOpenArray(8, 9))
-    let data2 = uint16.fromBytesBE(address.address_v6.toOpenArray(10, 11))
+    let
+      data0 = uint64.fromBytesBE(address.address_v6.toOpenArray(0, 7))
+      data1 = uint16.fromBytesBE(address.address_v6.toOpenArray(8, 9))
+      data2 = uint16.fromBytesBE(address.address_v6.toOpenArray(10, 11))
     (data0 == 0x00'u64) and (data1 == 0x00'u16) and (data2 == 0xFFFF'u16)
   else:
     false
@@ -387,11 +387,12 @@ proc init*(t: typedesc[IpNet], network: string): IpNet {.
     raises: [TransportAddressError].} =
   ## Initialize IP Network from string representation in format
   ## <address>/<prefix length> or <address>/<netmask address>.
-  var parts = network.rsplit("/", maxsplit = 1)
-  var host, mhost: TransportAddress
-  var ipaddr: IpAddress
-  var mask: IpMask
-  var prefix: int
+  var
+    parts = network.rsplit("/", maxsplit = 1)
+    host, mhost: TransportAddress
+    ipaddr: IpAddress
+    mask: IpMask
+    prefix: int
   try:
     ipaddr = parseIpAddress(parts[0])
     if ipaddr.family == IpAddressFamily.IPv4:
@@ -428,9 +429,9 @@ proc init*(t: typedesc[IpNet], network: string): IpNet {.
           raise newException(TransportAddressError,
                              "Incorrect network address!")
     if prefix == -1:
-      result = t.init(host, mask)
+      t.init(host, mask)
     else:
-      result = t.init(host, prefix)
+      t.init(host, prefix)
   except ValueError as exc:
     raise newException(TransportAddressError, exc.msg)
 
