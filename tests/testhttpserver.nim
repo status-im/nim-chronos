@@ -1790,3 +1790,40 @@ suite "HTTP server testing suite":
 
     await server.stop()
     await server.closeWait()
+
+  asyncTest "HTTP server - baseUri value test":
+    proc process(r: RequestFence): Future[HttpResponseRef] {.
+         async: (raises: [CancelledError]).} =
+      defaultResponse()
+
+    let
+      expectUri2 = "http://www.chronos-test.com/"
+      address = initTAddress("127.0.0.1:0")
+      socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
+      res1 = HttpServerRef.new(address, process,
+                               socketFlags = socketFlags)
+      res2 = HttpServerRef.new(address, process,
+                               socketFlags = socketFlags,
+                               serverUri = parseUri(expectUri2))
+    check:
+      res1.isOk == true
+      res2.isOk == true
+
+    let
+      server1 = res1.get()
+      server2 = res2.get()
+
+    try:
+      server1.start()
+      server2.start()
+      let
+        localAddress = server1.instance.localAddress()
+        expectUri1 = "http://127.0.0.1:" & $localAddress.port & "/"
+      check:
+        server1.baseUri == parseUri(expectUri1)
+        server2.baseUri == parseUri(expectUri2)
+    finally:
+      await server1.stop()
+      await server1.closeWait()
+      await server2.stop()
+      await server2.closeWait()

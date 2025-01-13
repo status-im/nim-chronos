@@ -98,52 +98,47 @@ proc new*(htype: typedesc[SecureHttpServerRef],
           maxRequestBodySize: int = 1_048_576,
           dualstack = DualStackType.Auto
          ): HttpResult[SecureHttpServerRef] =
-
   doAssert(not(isNil(tlsPrivateKey)), "TLS private key must not be nil!")
   doAssert(not(isNil(tlsCertificate)), "TLS certificate must not be nil!")
-
-  let serverUri =
-    if len(serverUri.hostname) > 0:
-      serverUri
-    else:
+  let
+    serverInstance =
       try:
-        parseUri("https://" & $address & "/")
-      except TransportAddressError as exc:
+        createStreamServer(address, flags = socketFlags,
+                           bufferSize = bufferSize,
+                           backlog = backlogSize, dualstack = dualstack)
+      except TransportOsError as exc:
         return err(exc.msg)
-
-  let serverInstance =
-    try:
-      createStreamServer(address, flags = socketFlags, bufferSize = bufferSize,
-                         backlog = backlogSize, dualstack = dualstack)
-    except TransportOsError as exc:
-      return err(exc.msg)
-
-  let res = SecureHttpServerRef(
-    address: address,
-    instance: serverInstance,
-    processCallback: processCallback,
-    createConnCallback: createSecConnection,
-    baseUri: serverUri,
-    serverIdent: serverIdent,
-    flags: serverFlags + {HttpServerFlags.Secure},
-    socketFlags: socketFlags,
-    maxConnections: maxConnections,
-    bufferSize: bufferSize,
-    backlogSize: backlogSize,
-    headersTimeout: httpHeadersTimeout,
-    maxHeadersSize: maxHeadersSize,
-    maxRequestBodySize: maxRequestBodySize,
-    # semaphore:
-    #   if maxConnections > 0:
-    #     newAsyncSemaphore(maxConnections)
-    #   else:
-    #     nil
-    lifetime: newFuture[void]("http.server.lifetime"),
-    connections: initOrderedTable[string, HttpConnectionHolderRef](),
-    tlsCertificate: tlsCertificate,
-    tlsPrivateKey: tlsPrivateKey,
-    secureFlags: secureFlags
-  )
+    serverUri =
+      if len(serverUri.hostname) > 0:
+        serverUri
+      else:
+        parseUri("https://" & $serverInstance.localAddress() & "/")
+    res = SecureHttpServerRef(
+      address: serverInstance.localAddress(),
+      instance: serverInstance,
+      processCallback: processCallback,
+      createConnCallback: createSecConnection,
+      baseUri: serverUri,
+      serverIdent: serverIdent,
+      flags: serverFlags + {HttpServerFlags.Secure},
+      socketFlags: socketFlags,
+      maxConnections: maxConnections,
+      bufferSize: bufferSize,
+      backlogSize: backlogSize,
+      headersTimeout: httpHeadersTimeout,
+      maxHeadersSize: maxHeadersSize,
+      maxRequestBodySize: maxRequestBodySize,
+      # semaphore:
+      #   if maxConnections > 0:
+      #     newAsyncSemaphore(maxConnections)
+      #   else:
+      #     nil
+      lifetime: newFuture[void]("http.server.lifetime"),
+      connections: initOrderedTable[string, HttpConnectionHolderRef](),
+      tlsCertificate: tlsCertificate,
+      tlsPrivateKey: tlsPrivateKey,
+      secureFlags: secureFlags
+    )
   ok(res)
 
 proc new*(htype: typedesc[SecureHttpServerRef],
