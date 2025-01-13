@@ -252,47 +252,42 @@ proc new*(
        dualstack = DualStackType.Auto,
        middlewares: openArray[HttpServerMiddlewareRef] = []
      ): HttpResult[HttpServerRef] =
-
-  let serverUri =
-    if len(serverUri.hostname) > 0:
-      serverUri
-    else:
+  let
+    serverInstance =
       try:
-        parseUri("http://" & $address & "/")
-      except TransportAddressError as exc:
+        createStreamServer(address, flags = socketFlags, bufferSize = bufferSize,
+                           backlog = backlogSize, dualstack = dualstack)
+      except TransportOsError as exc:
         return err(exc.msg)
-
-  let serverInstance =
-    try:
-      createStreamServer(address, flags = socketFlags, bufferSize = bufferSize,
-                         backlog = backlogSize, dualstack = dualstack)
-    except TransportOsError as exc:
-      return err(exc.msg)
-
-  var res = HttpServerRef(
-    address: serverInstance.localAddress(),
-    instance: serverInstance,
-    processCallback: processCallback,
-    createConnCallback: createConnection,
-    baseUri: serverUri,
-    serverIdent: serverIdent,
-    flags: serverFlags,
-    socketFlags: socketFlags,
-    maxConnections: maxConnections,
-    bufferSize: bufferSize,
-    backlogSize: backlogSize,
-    headersTimeout: httpHeadersTimeout,
-    maxHeadersSize: maxHeadersSize,
-    maxRequestBodySize: maxRequestBodySize,
-    # semaphore:
-    #   if maxConnections > 0:
-    #     newAsyncSemaphore(maxConnections)
-    #   else:
-    #     nil
-    lifetime: newFuture[void]("http.server.lifetime"),
-    connections: initOrderedTable[string, HttpConnectionHolderRef](),
-    middlewares: prepareMiddlewares(processCallback, middlewares)
-  )
+    serverUri =
+      if len(serverUri.hostname) > 0:
+        serverUri
+      else:
+        parseUri("http://" & $serverInstance.localAddress() & "/")
+    res = HttpServerRef(
+      address: serverInstance.localAddress(),
+      instance: serverInstance,
+      processCallback: processCallback,
+      createConnCallback: createConnection,
+      baseUri: serverUri,
+      serverIdent: serverIdent,
+      flags: serverFlags,
+      socketFlags: socketFlags,
+      maxConnections: maxConnections,
+      bufferSize: bufferSize,
+      backlogSize: backlogSize,
+      headersTimeout: httpHeadersTimeout,
+      maxHeadersSize: maxHeadersSize,
+      maxRequestBodySize: maxRequestBodySize,
+      # semaphore:
+      #   if maxConnections > 0:
+      #     newAsyncSemaphore(maxConnections)
+      #   else:
+      #     nil
+      lifetime: newFuture[void]("http.server.lifetime"),
+      connections: initOrderedTable[string, HttpConnectionHolderRef](),
+      middlewares: prepareMiddlewares(processCallback, middlewares)
+    )
   ok(res)
 
 proc new*(
