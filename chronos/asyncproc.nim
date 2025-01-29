@@ -907,6 +907,7 @@ else:
           var res: cint = 0
           while true:
             res = osdefs.waitpid(p.processId, wstatus, flags)
+            if res == 0: continue
             if not((res == -1) and (osLastError() == oserrno.EINTR)):
               break
           res
