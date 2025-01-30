@@ -917,10 +917,8 @@ else:
         p.exitStatus = Opt.some(status)
         ok(status)
       else:
-        echo "==== peekProcessExitCode() wstatus == ", int(wstatus)
         ok(-1)
     elif waitRes == 0:
-      echo "==== peekProcessExitCode() waitRes == 0"
       ok(-1)
     else:
       err(osLastError())
@@ -999,7 +997,7 @@ else:
             return
           if not(isNil(timer)):
             clearTimer(timer)
-          let exitCode = p.peekProcessExitCode().valueOr:
+          let exitCode = p.peekProcessExitCode(reap = true).valueOr:
             retFuture.fail(newException(AsyncProcessError, osErrorMsg(error)))
             return
           if exitCode == -1:
