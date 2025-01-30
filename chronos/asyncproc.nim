@@ -996,7 +996,7 @@ else:
             return
           if not(isNil(timer)):
             clearTimer(timer)
-          let exitCode = p.peekProcessExitCode().valueOr:
+          let exitCode = p.peekProcessExitCode(reap = true).valueOr:
             retFuture.fail(newException(AsyncProcessError, osErrorMsg(error)))
             return
           if exitCode == -1:
