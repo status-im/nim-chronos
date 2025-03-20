@@ -2352,6 +2352,139 @@ suite "Future[T] behavior test suite":
         future1.cancelled() == true
         future2.cancelled() == true
 
+  asyncTest "cancelAndWait(varargs) should be able to cancel test":
+    proc test01() {.async.} =
+      await noCancel sleepAsync(100.milliseconds)
+      await noCancel sleepAsync(100.milliseconds)
+      await sleepAsync(100.milliseconds)
+
+    proc test02() {.async.} =
+      await noCancel sleepAsync(100.milliseconds)
+      await sleepAsync(100.milliseconds)
+      await noCancel sleepAsync(100.milliseconds)
+
+    proc test03() {.async.} =
+      await sleepAsync(100.milliseconds)
+      await noCancel sleepAsync(100.milliseconds)
+      await noCancel sleepAsync(100.milliseconds)
+
+    proc test04() {.async.} =
+      while true:
+        await noCancel sleepAsync(50.milliseconds)
+        await sleepAsync(0.milliseconds)
+
+    proc test05() {.async.} =
+      while true:
+        await sleepAsync(0.milliseconds)
+        await noCancel sleepAsync(50.milliseconds)
+
+    proc test11() {.async: (raises: [CancelledError]).} =
+      await noCancel sleepAsync(100.milliseconds)
+      await noCancel sleepAsync(100.milliseconds)
+      await sleepAsync(100.milliseconds)
+
+    proc test12() {.async: (raises: [CancelledError]).} =
+      await noCancel sleepAsync(100.milliseconds)
+      await sleepAsync(100.milliseconds)
+      await noCancel sleepAsync(100.milliseconds)
+
+    proc test13() {.async: (raises: [CancelledError]).} =
+      await sleepAsync(100.milliseconds)
+      await noCancel sleepAsync(100.milliseconds)
+      await noCancel sleepAsync(100.milliseconds)
+
+    proc test14() {.async: (raises: [CancelledError]).} =
+      while true:
+        await noCancel sleepAsync(50.milliseconds)
+        await sleepAsync(0.milliseconds)
+
+    proc test15() {.async: (raises: [CancelledError]).} =
+      while true:
+        await sleepAsync(0.milliseconds)
+        await noCancel sleepAsync(50.milliseconds)
+
+    template runTest(N1, N2, N3: untyped) =
+      let
+        future01 = `test N2 N1`()
+        future02 = `test N2 N1`()
+        future03 = `test N2 N1`()
+        future04 = `test N2 N1`()
+        future05 = `test N2 N1`()
+        future06 = `test N2 N1`()
+        future07 = `test N2 N1`()
+        future08 = `test N2 N1`()
+        future09 = `test N2 N1`()
+        future10 = `test N2 N1`()
+        future11 = `test N2 N1`()
+        future12 = `test N2 N1`()
+
+      await cancelAndWait(future01, future02)
+      await cancelAndWait(FutureBase(future03), FutureBase(future04))
+      await cancelAndWait([future05, future06])
+      await cancelAndWait([FutureBase(future07), FutureBase(future08)])
+      await cancelAndWait(@[future09, future10])
+      await cancelAndWait(@[FutureBase(future11), FutureBase(future12)])
+
+      let
+        future21 = `test N2 N1`()
+        future22 = `test N2 N1`()
+        future23 = `test N2 N1`()
+        future24 = `test N2 N1`()
+        future25 = `test N2 N1`()
+        future26 = `test N2 N1`()
+        future27 = `test N2 N1`()
+        future28 = `test N2 N1`()
+        future29 = `test N2 N1`()
+        future30 = `test N2 N1`()
+        future31 = `test N2 N1`()
+        future32 = `test N2 N1`()
+
+      await sleepAsync(`N3`)
+
+      await cancelAndWait(future21, future22)
+      await cancelAndWait(FutureBase(future23), FutureBase(future24))
+      await cancelAndWait([future25, future26])
+      await cancelAndWait([FutureBase(future27), FutureBase(future28)])
+      await cancelAndWait(@[future29, future30])
+      await cancelAndWait(@[FutureBase(future31), FutureBase(future32)])
+
+      check:
+        future01.cancelled() == true
+        future02.cancelled() == true
+        future03.cancelled() == true
+        future04.cancelled() == true
+        future05.cancelled() == true
+        future06.cancelled() == true
+        future07.cancelled() == true
+        future08.cancelled() == true
+        future09.cancelled() == true
+        future10.cancelled() == true
+        future11.cancelled() == true
+        future12.cancelled() == true
+        future21.cancelled() == true
+        future22.cancelled() == true
+        future23.cancelled() == true
+        future24.cancelled() == true
+        future25.cancelled() == true
+        future26.cancelled() == true
+        future27.cancelled() == true
+        future28.cancelled() == true
+        future29.cancelled() == true
+        future30.cancelled() == true
+        future31.cancelled() == true
+        future32.cancelled() == true
+
+    runTest(1, 0, 10.milliseconds)
+    runTest(1, 1, 10.milliseconds)
+    runTest(2, 0, 10.milliseconds)
+    runTest(2, 1, 10.milliseconds)
+    runTest(3, 0, 10.milliseconds)
+    runTest(3, 1, 10.milliseconds)
+    runTest(4, 0, 333.milliseconds)
+    runTest(4, 1, 333.milliseconds)
+    runTest(5, 0, 333.milliseconds)
+    runTest(5, 1, 333.milliseconds)
+
   asyncTest "join() test":
     proc joinFoo0(future: FutureBase) {.async.} =
       await join(future)
