@@ -2485,6 +2485,89 @@ suite "Future[T] behavior test suite":
     runTest(5, 0, 333.milliseconds)
     runTest(5, 1, 333.milliseconds)
 
+  asyncTest "cancelAndWait([]) on empty set should return Future test":
+    var
+      a0: array[0, Future[void]]
+      a1: array[0, Future[void].Raising([CancelledError])]
+      a2: seq[Future[void].Raising([CancelledError])]
+      a3: seq[Future[void]]
+
+    let
+      future1 = cancelAndWait()
+      future2 = cancelAndWait(a0)
+      future3 = cancelAndWait(a1)
+      future4 = cancelAndWait(a2)
+      future5 = cancelAndWait(a3)
+
+    check:
+      future1.finished() == true
+      future2.finished() == true
+      future3.finished() == true
+      future4.finished() == true
+      future5.finished() == true
+
+  asyncTest "cancelAndWait([]) should ignore finished futures test":
+    let
+      future0 =
+        Future[void].Raising([]).init("future0", {OwnCancelSchedule})
+      future1 =
+        Future[void].Raising([CancelledError]).init("future1")
+      future2 =
+        Future[void].Raising([CancelledError, ValueError]).init("future2")
+      future3 =
+        Future[string].Raising([]).init("future3", {OwnCancelSchedule})
+      future4 =
+        Future[string].Raising([CancelledError]).init("future4")
+      future5 =
+        Future[string].Raising([CancelledError, ValueError]).init("future5")
+      future6 =
+        newFuture[void]("future6")
+      future7 =
+        newFuture[void]("future7")
+      future8 =
+        newFuture[void]("future8")
+      future9 =
+        newFuture[string]("future9")
+      future10 =
+        newFuture[string]("future10")
+      future11 =
+        newFuture[string]("future11")
+
+    future0.complete()
+    check future1.tryCancel() == true
+    future2.fail(newException(ValueError, "Test Error"))
+    future3.complete("test")
+    check future4.tryCancel() == true
+    future5.fail(newException(ValueError, "Test Error"))
+    future6.complete()
+    check future7.tryCancel() == true
+    future8.fail(newException(ValueError, "Test Error"))
+    future9.complete("test")
+    check future10.tryCancel() == true
+    future11.fail(newException(ValueError, "Test Error"))
+
+    check:
+      cancelAndWait(future0, future1, future2).finished() == true
+      cancelAndWait(future3, future4, future5).finished() == true
+      cancelAndWait(future6, future7, future8).finished() == true
+      cancelAndWait(future9, future10, future11).finished() == true
+      cancelAndWait(future0, future1, future2,
+                    future3, future4, future5,
+                    future5, future7, future8,
+                    future9, future10, future11).finished() == true
+
+      cancelAndWait([future0, future1, future2]).finished() == true
+      cancelAndWait([future3, future4]).finished() == true
+      cancelAndWait([future5]).finished() == true
+      cancelAndWait([future6, future7, future8]).finished() == true
+      cancelAndWait([future9, future10, future11]).finished() == true
+
+      cancelAndWait(@[future0, future1, future2]).finished() == true
+      cancelAndWait(@[future3, future4]).finished() == true
+      cancelAndWait(@[future5]).finished() == true
+      cancelAndWait(@[future6, future7, future8]).finished() == true
+      cancelAndWait(@[future9, future10, future11]).finished() == true
+
   asyncTest "join() test":
     proc joinFoo0(future: FutureBase) {.async.} =
       await join(future)
