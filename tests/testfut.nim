@@ -2485,7 +2485,7 @@ suite "Future[T] behavior test suite":
     runTest(5, 0, 333.milliseconds)
     runTest(5, 1, 333.milliseconds)
 
-  asyncTest "cancelAndWait([]) on empty set should return Future test":
+  asyncTest "cancelAndWait([]) on empty set returns completed Future test":
     var
       a0: array[0, Future[void]]
       a1: array[0, Future[void].Raising([CancelledError])]
