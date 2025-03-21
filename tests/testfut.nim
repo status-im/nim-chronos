@@ -2418,12 +2418,14 @@ suite "Future[T] behavior test suite":
         future11 = `test N2 N1`()
         future12 = `test N2 N1`()
 
-      await cancelAndWait(future01, future02)
-      await cancelAndWait(FutureBase(future03), FutureBase(future04))
-      await cancelAndWait([future05, future06])
-      await cancelAndWait([FutureBase(future07), FutureBase(future08)])
-      await cancelAndWait(@[future09, future10])
-      await cancelAndWait(@[FutureBase(future11), FutureBase(future12)])
+      await allFutures(
+        cancelAndWait(future01, future02),
+        cancelAndWait(FutureBase(future03), FutureBase(future04)),
+        cancelAndWait([future05, future06]),
+        cancelAndWait([FutureBase(future07), FutureBase(future08)]),
+        cancelAndWait(@[future09, future10]),
+        cancelAndWait(@[FutureBase(future11), FutureBase(future12)])
+      )
 
       let
         future21 = `test N2 N1`()
@@ -2441,38 +2443,40 @@ suite "Future[T] behavior test suite":
 
       await sleepAsync(`N3`)
 
-      await cancelAndWait(future21, future22)
-      await cancelAndWait(FutureBase(future23), FutureBase(future24))
-      await cancelAndWait([future25, future26])
-      await cancelAndWait([FutureBase(future27), FutureBase(future28)])
-      await cancelAndWait(@[future29, future30])
-      await cancelAndWait(@[FutureBase(future31), FutureBase(future32)])
+      await allFutures(
+        cancelAndWait(future21, future22),
+        cancelAndWait(FutureBase(future23), FutureBase(future24)),
+        cancelAndWait([future25, future26]),
+        cancelAndWait([FutureBase(future27), FutureBase(future28)]),
+        cancelAndWait(@[future29, future30]),
+        cancelAndWait(@[FutureBase(future31), FutureBase(future32)])
+      )
 
       check:
-        future01.cancelled() == true
-        future02.cancelled() == true
-        future03.cancelled() == true
-        future04.cancelled() == true
-        future05.cancelled() == true
-        future06.cancelled() == true
-        future07.cancelled() == true
-        future08.cancelled() == true
-        future09.cancelled() == true
-        future10.cancelled() == true
-        future11.cancelled() == true
-        future12.cancelled() == true
-        future21.cancelled() == true
-        future22.cancelled() == true
-        future23.cancelled() == true
-        future24.cancelled() == true
-        future25.cancelled() == true
-        future26.cancelled() == true
-        future27.cancelled() == true
-        future28.cancelled() == true
-        future29.cancelled() == true
-        future30.cancelled() == true
-        future31.cancelled() == true
-        future32.cancelled() == true
+        future01.state == FutureState.Cancelled
+        future02.state == FutureState.Cancelled
+        future03.state == FutureState.Cancelled
+        future04.state == FutureState.Cancelled
+        future05.state == FutureState.Cancelled
+        future06.state == FutureState.Cancelled
+        future07.state == FutureState.Cancelled
+        future08.state == FutureState.Cancelled
+        future09.state == FutureState.Cancelled
+        future10.state == FutureState.Cancelled
+        future11.state == FutureState.Cancelled
+        future12.state == FutureState.Cancelled
+        future21.state == FutureState.Cancelled
+        future22.state == FutureState.Cancelled
+        future23.state == FutureState.Cancelled
+        future24.state == FutureState.Cancelled
+        future25.state == FutureState.Cancelled
+        future26.state == FutureState.Cancelled
+        future27.state == FutureState.Cancelled
+        future28.state == FutureState.Cancelled
+        future29.state == FutureState.Cancelled
+        future30.state == FutureState.Cancelled
+        future31.state == FutureState.Cancelled
+        future32.state == FutureState.Cancelled
 
     runTest(1, 0, 10.milliseconds)
     runTest(1, 1, 10.milliseconds)
