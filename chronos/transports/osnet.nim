@@ -668,7 +668,7 @@ when defined(linux):
     if not sendRouteMessage(netfd, pid, 1, RTM_GETROUTE,
                             NLM_F_REQUEST, address):
       return Route()
-    var data = newSeq[byte]()
+    var data = newSeqUninitialized[byte](0)
     var res = Route()
     while true:
       if not readNetlinkMessage(netfd, data):
@@ -694,7 +694,7 @@ when defined(linux):
     if not sendLinkMessage(netfd, pid, 1, RTM_GETLINK,
                            NLM_F_REQUEST or NLM_F_DUMP):
       return res
-    var data = newSeq[byte]()
+    var data = newSeqUninitialized[byte](0)
     res = newSeq[NetworkInterface]()
     while true:
       if not readNetlinkMessage(netfd, data):
@@ -724,7 +724,7 @@ when defined(linux):
     if not sendLinkMessage(netfd, pid, 2, RTM_GETADDR,
                            NLM_F_REQUEST or NLM_F_DUMP):
       return
-    var data = newSeq[byte]()
+    var data = newSeqUninitialized[byte](0)
     while true:
       if not readNetlinkMessage(netfd, data):
         break
@@ -1041,7 +1041,7 @@ elif defined(windows):
     var vista = isVista()
 
     while true:
-      buffer = newSeq[byte](size)
+      buffer = newSeqUninitialized[byte](size)
       var addresses = cast[ptr IpAdapterAddressesXp](addr buffer[0])
       gres = getAdaptersAddresses(osdefs.AF_UNSPEC, GAA_FLAG_INCLUDE_PREFIX,
                                   nil, addresses, addr size)
