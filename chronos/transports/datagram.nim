@@ -417,7 +417,7 @@ when defined(windows):
 
     res.fd = localSock
     res.function = cbproc
-    res.buffer = newSeq[byte](bufferSize)
+    res.buffer = newSeqUninitialized[byte](bufferSize)
     res.queue = initDeque[GramVector]()
     res.udata = udata
     res.state = {ReadPaused, WritePaused}
@@ -635,7 +635,7 @@ else:
 
     res.fd = localSock
     res.function = cbproc
-    res.buffer = newSeq[byte](bufferSize)
+    res.buffer = newSeqUninitialized[byte](bufferSize)
     res.queue = initDeque[GramVector]()
     res.udata = udata
     res.state = {ReadPaused, WritePaused}
@@ -1157,7 +1157,7 @@ proc getMessage*(transp: DatagramTransport): seq[byte] {.
     transp.state.excl(ReadError)
     raise transp.getError()
   if transp.buflen > 0:
-    var res = newSeq[byte](transp.buflen)
+    var res = newSeqUninitialized[byte](transp.buflen)
     copyMem(addr res[0], addr transp.buffer[0], transp.buflen)
     res
   else:

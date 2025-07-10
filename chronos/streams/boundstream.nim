@@ -103,7 +103,7 @@ func endsWith(s, suffix: openArray[byte]): bool =
 proc boundedReadLoop(stream: AsyncStreamReader) {.async: (raises: []).} =
   var rstream = BoundedStreamReader(stream)
   rstream.state = AsyncStreamState.Running
-  var buffer = newSeq[byte](rstream.buffer.backend.availSpace())
+  var buffer = newSeqUninitialized[byte](rstream.buffer.backend.availSpace())
   while true:
     let toRead =
       if rstream.boundSize.isNone():

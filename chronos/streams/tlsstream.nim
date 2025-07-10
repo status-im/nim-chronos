@@ -526,7 +526,7 @@ proc newTLSClientAsyncStream*(
                         uint(len(trustAnchors)))
 
   let size = max(SSL_BUFSIZE_BIDI, bufferSize)
-  res.sbuffer = newSeq[byte](size)
+  res.sbuffer = newSeqUninitialized[byte](size)
   sslEngineSetBuffer(res.ccontext.eng, addr res.sbuffer[0],
                      uint(len(res.sbuffer)), 1)
   sslEngineSetVersions(res.ccontext.eng, uint16(minVersion),
@@ -606,7 +606,7 @@ proc newTLSServerAsyncStream*(rsource: AsyncStreamReader,
                          uint(len(certificate.certs)), addr privateKey.rsakey)
 
   let size = max(SSL_BUFSIZE_BIDI, bufferSize)
-  res.sbuffer = newSeq[byte](size)
+  res.sbuffer = newSeqUninitialized[byte](size)
   sslEngineSetBuffer(res.scontext.eng, addr res.sbuffer[0],
                      uint(len(res.sbuffer)), 1)
   sslEngineSetVersions(res.scontext.eng, uint16(minVersion),
@@ -637,7 +637,7 @@ proc copyKey(src: RsaPrivateKey): TLSPrivateKey =
   ## Creates copy of RsaPrivateKey ``src``.
   var offset = 0'u
   let keySize = src.plen + src.qlen + src.dplen + src.dqlen + src.iqlen
-  var res = TLSPrivateKey(kind: TLSKeyType.RSA, storage: newSeq[byte](keySize))
+  var res = TLSPrivateKey(kind: TLSKeyType.RSA, storage: newSeqUninitialized[byte](keySize))
   copyMem(addr res.storage[offset], src.p, src.plen)
   res.rsakey.p = addr res.storage[offset]
   res.rsakey.plen = src.plen
@@ -664,7 +664,7 @@ proc copyKey(src: EcPrivateKey): TLSPrivateKey =
   ## Creates copy of EcPrivateKey ``src``.
   var offset = 0
   let keySize = src.xlen
-  var res = TLSPrivateKey(kind: TLSKeyType.EC, storage: newSeq[byte](keySize))
+  var res = TLSPrivateKey(kind: TLSKeyType.EC, storage: newSeqUninitialized[byte](keySize))
   copyMem(addr res.storage[offset], src.x, src.xlen)
   res.eckey.x = addr res.storage[offset]
   res.eckey.xlen = src.xlen
@@ -789,7 +789,7 @@ proc init*(tt: typedesc[TLSSessionCache],
   ##
   ## One cached item is near 100 bytes size.
   let rsize = min(size, 4096)
-  var res = TLSSessionCache(storage: newSeq[byte](rsize))
+  var res = TLSSessionCache(storage: newSeqUninitialized[byte](rsize))
   sslSessionCacheLruInit(addr res.context, addr res.storage[0], rsize)
   res
 

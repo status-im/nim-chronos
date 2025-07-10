@@ -1027,7 +1027,7 @@ proc new*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
     state: HttpReqRespState.Ready, session: session, meth: meth,
     version: version, flags: flags, headers: HttpTable.init(headers),
     address: ha, bodyFlag: HttpClientBodyFlag.Custom, buffer: @body,
-    headersBuffer: newSeq[byte](max(maxResponseHeadersSize, HttpMaxHeadersSize))
+    headersBuffer: newSeqUninitialized[byte](max(maxResponseHeadersSize, HttpMaxHeadersSize))
   )
   trackCounter(HttpClientRequestTrackerName)
   res
@@ -1044,7 +1044,7 @@ proc new*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
     state: HttpReqRespState.Ready, session: session, meth: meth,
     version: version, flags: flags, headers: HttpTable.init(headers),
     address: address, bodyFlag: HttpClientBodyFlag.Custom, buffer: @body,
-    headersBuffer: newSeq[byte](max(maxResponseHeadersSize, HttpMaxHeadersSize))
+    headersBuffer: newSeqUninitialized[byte](max(maxResponseHeadersSize, HttpMaxHeadersSize))
   )
   trackCounter(HttpClientRequestTrackerName)
   ok(res)

@@ -100,7 +100,7 @@ proc setChunkSize(buffer: var openArray[byte], length: int64): int =
 
 proc chunkedReadLoop(stream: AsyncStreamReader) {.async: (raises: []).} =
   var rstream = ChunkedStreamReader(stream)
-  var buffer = newSeq[byte](MaxChunkHeaderSize)
+  var buffer = newSeqUninitialized[byte](MaxChunkHeaderSize)
   rstream.state = AsyncStreamState.Running
 
   while true:

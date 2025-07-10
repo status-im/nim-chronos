@@ -130,14 +130,14 @@ proc init*[A: BChar, B: BChar](mpt: typedesc[MultiPartReader],
   doAssert(len(boundary) > 0)
   # Our internal boundary has format `<CR><LF><-><-><boundary>`, so we can
   # reuse different parts of this sequence for processing.
-  var fboundary = newSeq[byte](len(boundary) + 4)
+  var fboundary = newSeqUninitialized[byte](len(boundary) + 4)
   fboundary[0] = 0x0D'u8
   fboundary[1] = 0x0A'u8
   fboundary[2] = byte('-')
   fboundary[3] = byte('-')
   copyMem(addr fboundary[4], unsafeAddr boundary[0], len(boundary))
   # Make copy of buffer, because all the returned parts depending on it.
-  var buf = newSeq[byte](len(buffer))
+  var buf = newSeqUninitialized[byte](len(buffer))
   if len(buf) > 0:
     copyMem(addr buf[0], unsafeAddr buffer[0], len(buffer))
   MultiPartReader(kind: MultiPartSource.Buffer,
@@ -164,7 +164,7 @@ proc new*[B: BChar](
   doAssert(partHeadersMaxSize >= 256)
   # Our internal boundary has format `<CR><LF><-><-><boundary>`, so we can
   # reuse different parts of this sequence for processing.
-  var fboundary = newSeq[byte](len(boundary) + 4)
+  var fboundary = newSeqUninitialized[byte](len(boundary) + 4)
   fboundary[0] = 0x0D'u8
   fboundary[1] = 0x0A'u8
   fboundary[2] = byte('-')
@@ -172,7 +172,7 @@ proc new*[B: BChar](
   copyMem(addr fboundary[4], unsafeAddr boundary[0], len(boundary))
   MultiPartReaderRef(kind: MultiPartSource.Stream, firstTime: true,
                      stream: stream, offset: 0, boundary: fboundary,
-                     buffer: newSeq[byte](partHeadersMaxSize))
+                     buffer: newSeqUninitialized[byte](partHeadersMaxSize))
 
 template handleAsyncStreamReaderError(targ, excarg: untyped) =
   if targ.hasOverflow():

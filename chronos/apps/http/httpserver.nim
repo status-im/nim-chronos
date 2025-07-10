@@ -890,7 +890,7 @@ proc init*(value: var HttpConnection, server: HttpServerRef,
     state: HttpState.Alive,
     server: server,
     transp: transp,
-    buffer: newSeq[byte](server.maxHeadersSize),
+    buffer: newSeqUninitialized[byte](server.maxHeadersSize),
     mainReader: newAsyncStreamReader(transp),
     mainWriter: newAsyncStreamWriter(transp)
   )

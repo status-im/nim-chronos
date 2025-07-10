@@ -349,7 +349,7 @@ func stringToBytes*(src: openArray[char]): seq[byte] =
   ## If this equation is not correct this procedures MUST not be used.
   var default: seq[byte]
   if len(src) > 0:
-    var dst = newSeq[byte](len(src))
+    var dst = newSeqUninitialized[byte](len(src))
     stringToBytes(src, dst)
     dst
   else:

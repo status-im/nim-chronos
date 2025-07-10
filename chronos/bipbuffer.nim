@@ -36,7 +36,7 @@ type
 
 proc init*(t: typedesc[BipBuffer], size: int): BipBuffer =
   ## Creates new Bip Buffer with size `size`.
-  BipBuffer(data: newSeq[byte](size))
+  BipBuffer(data: newSeqUninitialized[byte](size))
 
 template len(pos: BipPos): Natural =
   pos.finish - pos.start
