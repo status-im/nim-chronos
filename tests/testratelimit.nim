@@ -176,7 +176,26 @@ suite "Token Bucket":
     let t0 = Moment.now()
     # Spend a portion (from full) -> lastUpdate = t0, budget 4
     check bucket.tryConsume(9, t0) == true # leaves 1
+
+    var cap = bucket.getAvailableCapacity(t0)
+    check cap.budget == 1
+    check cap.lastUpdate == t0
+    check cap.budgetCap == 10
+
     let mid = t0 + 50.milliseconds
+
+    cap = bucket.getAvailableCapacity(mid)
+    check cap.budget == 1
+    check cap.lastUpdate == t0
+    check cap.budgetCap == 10
+
     check bucket.tryConsume(2, mid) == false  # budget 1
+
     let boundary = t0 + 100.milliseconds
+
+    cap = bucket.getAvailableCapacity(boundary)
+    check cap.budget == 10
+    check cap.lastUpdate == boundary
+    check cap.budgetCap == 10
+
     check bucket.tryConsume(2, boundary) == true  # leaves 8

@@ -36,24 +36,21 @@ type
 func fullPeriodElapsed(bucket: TokenBucket, currentTime: Moment): bool =
   return currentTime - bucket.lastUpdate >= bucket.fillDuration
 
-proc updateStrict(bucket: TokenBucket, currentTime: Moment) =
+proc calcUpdateStrict(bucket: TokenBucket, currentTime: Moment): tuple[budget: int, lastUpdate: Moment] =
   if bucket.fillDuration == default(Duration):
-    bucket.budget = min(bucket.budgetCap, bucket.budget)
-    return
+    return (min(bucket.budgetCap, bucket.budget), bucket.lastUpdate)
 
   if not fullPeriodElapsed(bucket, currentTime):
-    return
+    return (bucket.budget, bucket.lastUpdate)
 
-  bucket.budget = bucket.budgetCap
-  bucket.lastUpdate = currentTime
+  return (bucket.budgetCap, currentTime)
 
-proc updateBallanced(bucket: TokenBucket, currentTime: Moment) =
+proc calcUpdateBallanced(bucket: TokenBucket, currentTime: Moment): tuple[budget: int, lastUpdate: Moment]  =
   if bucket.fillDuration == default(Duration):
-    bucket.budget = min(bucket.budgetCap, bucket.budget)
-    return
+    return (min(bucket.budgetCap, bucket.budget), bucket.lastUpdate)
 
   if currentTime <= bucket.lastUpdate:
-    return
+    return (bucket.budget, bucket.lastUpdate)
 
   let timeDelta = currentTime - bucket.lastUpdate
   let cap = bucket.budgetCap
@@ -63,33 +60,37 @@ proc updateBallanced(bucket: TokenBucket, currentTime: Moment) =
   # How many whole tokens could be produced by the elapsed time.
   let possibleTokens = int((deltaNs * cap.int64) div periodNs)
   if possibleTokens <= 0:
-    return
+    return (bucket.budget, bucket.lastUpdate)
 
   let budgetLeft = cap - bucket.budget
   if budgetLeft <= 0:
     # Bucket already full the entire elapsed time: burn the elapsed time
-    # so we do not accumulate implicit credit.
-    bucket.lastUpdate = currentTime
-    bucket.budget = cap # do not let over budgeting
-    return
+    # so we do not accumulate implicit credit and do not allow over budgeting
+    return (cap, currentTime)
 
   let toAdd = min(possibleTokens, budgetLeft)
 
   # Advance lastUpdate only by the fraction of time actually “spent” to mint toAdd tokens.
   # (toAdd / cap) * period = time used
   let usedNs = (periodNs * toAdd.int64) div cap.int64
-  bucket.budget += toAdd
+  let newbudget = bucket.budget + toAdd
+  var newLastUpdate = bucket.lastUpdate + nanoseconds(usedNs)
   if toAdd == budgetLeft and possibleTokens > budgetLeft:
     # We hit the cap; discard leftover elapsed time to prevent multi-call burst inflation
-    bucket.lastUpdate = currentTime
+    newLastUpdate = currentTime
+
+  return (newbudget, newLastUpdate)
+
+proc calcUpdate(bucket: TokenBucket, currentTime: Moment): tuple[budget: int, lastUpdate: Moment] =
+  if bucket.replenishMode == ReplenishMode.Strict:
+    return bucket.calcUpdateStrict(currentTime)
   else:
-    bucket.lastUpdate += nanoseconds(usedNs)
+    return bucket.calcUpdateBallanced(currentTime)
 
 proc update(bucket: TokenBucket, currentTime: Moment) =
-  if bucket.replenishMode == ReplenishMode.Strict:
-    updateStrict(bucket, currentTime)
-  else:
-    updateBallanced(bucket, currentTime)
+  let (newBudget, newLastUpdate) = bucket.calcUpdate(currentTime)
+  bucket.budget = newBudget
+  bucket.lastUpdate = newLastUpdate
 
 proc tryConsume*(bucket: TokenBucket, tokens: int, now = Moment.now()): bool =
   ## If `tokens` are available, consume them,
@@ -173,6 +174,12 @@ proc replenish*(bucket: TokenBucket, tokens: int, now = Moment.now()) =
   bucket.update(now)
   bucket.manuallyReplenished.fire()
 
+proc getAvailableCapacity*(
+    bucket: TokenBucket, currentTime: Moment = Moment.now()
+): tuple[budget: int, budgetCap: int, lastUpdate: Moment] =
+  let (assumedBudget, assumedLastUpdate) = bucket.calcUpdate(currentTime)
+  return (assumedBudget, bucket.budgetCap, assumedLastUpdate)
+
 proc new*(
   T: type[TokenBucket],
   budgetCap: int,
@@ -188,3 +195,12 @@ proc new*(
     manuallyReplenished: newAsyncEvent(),
     replenishMode: replenishMode
   )
+
+proc setState*(bucket: TokenBucket, budget: int, lastUpdate: Moment) =
+  bucket.budget = budget
+  bucket.lastUpdate = lastUpdate
+
+func `$`*(b: TokenBucket): string {.inline.} =
+  if isNil(b):
+    return "nil"
+  return $b.budgetCap & "/" & $b.fillDuration
