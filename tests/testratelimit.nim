@@ -170,3 +170,13 @@ suite "Token Bucket":
     # A subsequent call at the same timestamp may mint remaining fractional time credit (fair catch-up)
     # so a small consume can still succeed.
     check bucket.tryConsume(1, late) == true
+
+  test "Strict replenish mode does not refill before period elapsed":
+    var bucket = TokenBucket.new(10, 100.milliseconds, ReplenishMode.Strict)
+    let t0 = Moment.now()
+    # Spend a portion (from full) -> lastUpdate = t0, budget 4
+    check bucket.tryConsume(9, t0) == true # leaves 1
+    let mid = t0 + 50.milliseconds
+    check bucket.tryConsume(2, mid) == false  # budget 1
+    let boundary = t0 + 100.milliseconds
+    check bucket.tryConsume(2, boundary) == true  # leaves 8

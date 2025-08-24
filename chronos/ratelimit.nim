@@ -14,6 +14,10 @@ import timer
 export timer
 
 type
+  ReplenishMode* = enum
+    Strict
+    Ballanced
+
   BucketWaiter = object
     future: Future[void]
     value: int
@@ -27,8 +31,23 @@ type
     workFuture: Future[void]
     pendingRequests: seq[BucketWaiter]
     manuallyReplenished: AsyncEvent
+    replenishMode: ReplenishMode
 
-proc update(bucket: TokenBucket, currentTime: Moment) =
+func fullPeriodElapsed(bucket: TokenBucket, currentTime: Moment): bool =
+  return currentTime - bucket.lastUpdate >= bucket.fillDuration
+
+proc updateStrict(bucket: TokenBucket, currentTime: Moment) =
+  if bucket.fillDuration == default(Duration):
+    bucket.budget = min(bucket.budgetCap, bucket.budget)
+    return
+
+  if not fullPeriodElapsed(bucket, currentTime):
+    return
+
+  bucket.budget = bucket.budgetCap
+  bucket.lastUpdate = currentTime
+
+proc updateBallanced(bucket: TokenBucket, currentTime: Moment) =
   if bucket.fillDuration == default(Duration):
     bucket.budget = min(bucket.budgetCap, bucket.budget)
     return
@@ -65,6 +84,12 @@ proc update(bucket: TokenBucket, currentTime: Moment) =
     bucket.lastUpdate = currentTime
   else:
     bucket.lastUpdate += nanoseconds(usedNs)
+
+proc update(bucket: TokenBucket, currentTime: Moment) =
+  if bucket.replenishMode == ReplenishMode.Strict:
+    updateStrict(bucket, currentTime)
+  else:
+    updateBallanced(bucket, currentTime)
 
 proc tryConsume*(bucket: TokenBucket, tokens: int, now = Moment.now()): bool =
   ## If `tokens` are available, consume them,
@@ -151,7 +176,8 @@ proc replenish*(bucket: TokenBucket, tokens: int, now = Moment.now()) =
 proc new*(
   T: type[TokenBucket],
   budgetCap: int,
-  fillDuration: Duration = 1.seconds): T =
+  fillDuration: Duration = 1.seconds,
+  replenishMode: ReplenishMode = ReplenishMode.Ballanced): T =
 
   ## Create a TokenBucket
   T(
@@ -159,5 +185,6 @@ proc new*(
     budgetCap: budgetCap,
     fillDuration: fillDuration,
     lastUpdate: Moment.now(),
-    manuallyReplenished: newAsyncEvent()
+    manuallyReplenished: newAsyncEvent(),
+    replenishMode: replenishMode
   )
