@@ -117,14 +117,56 @@ suite "Token Bucket":
     check bucket.tryConsume(1, fakeNow) == true
 
   test "Short replenish":
-    skip()
+    # skip()
     # TODO (cheatfate): This test was disabled, because it continuosly fails in
     # Github Actions Windows x64 CI when using Nim 1.6.14 version.
     # Unable to reproduce failure locally.
 
-    # var bucket = TokenBucket.new(15000, 1.milliseconds)
-    # let start = Moment.now()
-    # check bucket.tryConsume(15000, start)
-    # check bucket.tryConsume(1, start) == false
+    var bucket = TokenBucket.new(15000, 1.milliseconds)
+    let start = Moment.now()
+    check bucket.tryConsume(15000, start)
+    check bucket.tryConsume(1, start) == false
 
-    # check bucket.tryConsume(15000, start + 1.milliseconds) == true
+    check bucket.tryConsume(15000, start + 1.milliseconds) == true
+
+  # Edge-case: ensure only one refill can occur for the same timestamp even if
+  # multiple tryConsume calls are made that would otherwise appear to have large
+  # elapsed time credit. This prevents multi-call burst inflation at a single time.
+  test "No double refill at same timestamp":
+    var bucket = TokenBucket.new(10, 100.milliseconds)
+    let t0 = Moment.now()
+    # Consume from full so lastUpdate is stamped at t0
+    check bucket.tryConsume(5, t0) == true  # budget now 5
+    # Long idle period (simulate large elapsed time)
+    let idle = t0 + 5.seconds
+    # First large request triggers an update + refill limited by space (5)
+    check bucket.tryConsume(6, idle) == true  # budget after = 4 (5 minted -> 10 then -6)
+    # Second request at the SAME timestamp cannot refill again
+    check bucket.tryConsume(5, idle) == false
+    # Prove only 4 remain: consuming 4 succeeds, then 1 more fails at same timestamp
+    check bucket.tryConsume(4, idle) == true
+    check bucket.tryConsume(1, idle) == false
+
+  # Edge-case fairness: partial usage should only mint up to available space, not
+  # more than cap, and leftover elapsed time is burned once cap is reached.
+  test "Refill limited by available space":
+    var bucket = TokenBucket.new(10, 100.milliseconds)
+    let t0 = Moment.now()
+    # Spend a portion (from full) -> lastUpdate = t0, budget 4
+    check bucket.tryConsume(6, t0) == true
+    # Mid-period small consume without triggering update (still before refill point)
+    let mid = t0 + 50.milliseconds
+    check bucket.tryConsume(1, mid) == true  # budget 3
+    # At the 100ms boundary request more than remaining budget to force update
+    let boundary = t0 + 100.milliseconds
+    # Space is 7; even though 100ms elapsed corresponds to 10 possible tokens,
+    # only 7 are minted and leftover elapsed time credit is discarded.
+    check bucket.tryConsume(6, boundary) == true  # leaves 4
+    # A second consume at identical boundary timestamp cannot mint more than residual
+    check bucket.tryConsume(5, boundary) == false
+    # After another 40ms, at most floor(40/100 * 10)=4 tokens accrue; request 4 succeeds
+    let late = boundary + 40.milliseconds
+    check bucket.tryConsume(4, late) == true  # should deplete
+    # A subsequent call at the same timestamp may mint remaining fractional time credit (fair catch-up)
+    # so a small consume can still succeed.
+    check bucket.tryConsume(1, late) == true

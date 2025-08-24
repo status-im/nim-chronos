@@ -33,26 +33,47 @@ proc update(bucket: TokenBucket, currentTime: Moment) =
     bucket.budget = min(bucket.budgetCap, bucket.budget)
     return
 
-  if currentTime < bucket.lastUpdate:
+  if currentTime <= bucket.lastUpdate:
     return
 
-  let
-    timeDelta = currentTime - bucket.lastUpdate
-    fillPercent = timeDelta.milliseconds.float / bucket.fillDuration.milliseconds.float
-    replenished =
-      int(bucket.budgetCap.float * fillPercent)
-    deltaFromReplenished =
-      int(bucket.fillDuration.milliseconds.float *
-      replenished.float / bucket.budgetCap.float)
+  let timeDelta = currentTime - bucket.lastUpdate
+  let cap = bucket.budgetCap
+  let periodNs = bucket.fillDuration.nanoseconds.int64
+  let deltaNs = timeDelta.nanoseconds.int64
 
-  bucket.lastUpdate += milliseconds(deltaFromReplenished)
-  bucket.budget = min(bucket.budgetCap, bucket.budget + replenished)
+  # How many whole tokens could be produced by the elapsed time.
+  let possibleTokens = int((deltaNs * cap.int64) div periodNs)
+  if possibleTokens <= 0:
+    return
+
+  let budgetLeft = cap - bucket.budget
+  if budgetLeft <= 0:
+    # Bucket already full the entire elapsed time: burn the elapsed time
+    # so we do not accumulate implicit credit.
+    bucket.lastUpdate = currentTime
+    bucket.budget = cap # do not let over budgeting
+    return
+
+  let toAdd = min(possibleTokens, budgetLeft)
+
+  # Advance lastUpdate only by the fraction of time actually “spent” to mint toAdd tokens.
+  # (toAdd / cap) * period = time used
+  let usedNs = (periodNs * toAdd.int64) div cap.int64
+  bucket.budget += toAdd
+  if toAdd == budgetLeft and possibleTokens > budgetLeft:
+    # We hit the cap; discard leftover elapsed time to prevent multi-call burst inflation
+    bucket.lastUpdate = currentTime
+  else:
+    bucket.lastUpdate += nanoseconds(usedNs)
 
 proc tryConsume*(bucket: TokenBucket, tokens: int, now = Moment.now()): bool =
   ## If `tokens` are available, consume them,
-  ## Otherwhise, return false.
+  ## Otherwise, return false.
 
   if bucket.budget >= tokens:
+    # If bucket was full, burn elapsed time to avoid immediate refill + flake.
+    if bucket.budget == bucket.budgetCap:
+      bucket.lastUpdate = now
     bucket.budget -= tokens
     return true
 
@@ -60,9 +81,9 @@ proc tryConsume*(bucket: TokenBucket, tokens: int, now = Moment.now()): bool =
 
   if bucket.budget >= tokens:
     bucket.budget -= tokens
-    true
+    return true
   else:
-    false
+    return false
 
 proc worker(bucket: TokenBucket) {.async.} =
   while bucket.pendingRequests.len > 0:
