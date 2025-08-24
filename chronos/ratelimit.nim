@@ -97,7 +97,7 @@ proc tryConsume*(bucket: TokenBucket, tokens: int, now = Moment.now()): bool =
   ## Otherwise, return false.
 
   if bucket.budget >= tokens:
-    # If bucket was full, burn elapsed time to avoid immediate refill + flake.
+    # If bucket is full, consider this point as period start, drop silent periods before
     if bucket.budget == bucket.budgetCap:
       bucket.lastUpdate = now
     bucket.budget -= tokens

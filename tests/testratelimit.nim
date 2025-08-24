@@ -117,11 +117,6 @@ suite "Token Bucket":
     check bucket.tryConsume(1, fakeNow) == true
 
   test "Short replenish":
-    # skip()
-    # TODO (cheatfate): This test was disabled, because it continuosly fails in
-    # Github Actions Windows x64 CI when using Nim 1.6.14 version.
-    # Unable to reproduce failure locally.
-
     var bucket = TokenBucket.new(15000, 1.milliseconds)
     let start = Moment.now()
     check bucket.tryConsume(15000, start)
@@ -174,7 +169,7 @@ suite "Token Bucket":
   test "Strict replenish mode does not refill before period elapsed":
     var bucket = TokenBucket.new(10, 100.milliseconds, ReplenishMode.Strict)
     let t0 = Moment.now()
-    # Spend a portion (from full) -> lastUpdate = t0, budget 4
+    # Spend a portion (from full) -> lastUpdate = t0, budget 10
     check bucket.tryConsume(9, t0) == true # leaves 1
 
     var cap = bucket.getAvailableCapacity(t0)
@@ -189,7 +184,7 @@ suite "Token Bucket":
     check cap.lastUpdate == t0
     check cap.budgetCap == 10
 
-    check bucket.tryConsume(2, mid) == false  # budget 1
+    check bucket.tryConsume(2, mid) == false  # no update before period boundary passed, budget 1
 
     let boundary = t0 + 100.milliseconds
 
@@ -198,4 +193,4 @@ suite "Token Bucket":
     check cap.lastUpdate == boundary
     check cap.budgetCap == 10
 
-    check bucket.tryConsume(2, boundary) == true  # leaves 8
+    check bucket.tryConsume(2, boundary) == true  # ok, we passed the period boundary now, leaves 8
