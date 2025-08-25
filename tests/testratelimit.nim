@@ -175,14 +175,14 @@ suite "Token Bucket":
     var cap = bucket.getAvailableCapacity(t0)
     check cap.budget == 1
     check cap.lastUpdate == t0
-    check cap.budgetCap == 10
+    check cap.budgetCapacity == 10
 
     let mid = t0 + 50.milliseconds
 
     cap = bucket.getAvailableCapacity(mid)
     check cap.budget == 1
     check cap.lastUpdate == t0
-    check cap.budgetCap == 10
+    check cap.budgetCapacity == 10
 
     check bucket.tryConsume(2, mid) == false  # no update before period boundary passed, budget 1
 
@@ -191,6 +191,6 @@ suite "Token Bucket":
     cap = bucket.getAvailableCapacity(boundary)
     check cap.budget == 10
     check cap.lastUpdate == boundary
-    check cap.budgetCap == 10
+    check cap.budgetCapacity == 10
 
     check bucket.tryConsume(2, boundary) == true  # ok, we passed the period boundary now, leaves 8
