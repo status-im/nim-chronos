@@ -1068,36 +1068,33 @@ proc allFutures*(futs: varargs[FutureBase]): Future[void] {.
   ## If the argument is empty, the returned future COMPLETES immediately.
   ##
   ## On cancel all the awaited futures ``futs`` WILL NOT BE cancelled.
-  var retFuture = newFuture[void]("chronos.allFutures()")
-  let totalFutures = len(futs)
+  let retFuture = newFuture[void]("chronos.allFutures()")
+
+  var pending = futs.filterIt(not retFuture.finished())
+
+  if pending.len == 0:
+    retFuture.complete()
+    return
+
   var finishedFutures = 0
-
-  # Because we can't capture varargs[T] in closures we need to create copy.
-  var nfuts = @futs
-
   proc cb(udata: pointer) =
     if not(retFuture.finished()):
       inc(finishedFutures)
-      if finishedFutures == totalFutures:
+      if finishedFutures == pending.len:
         retFuture.complete()
-        reset(nfuts)
+        reset(pending)
 
   proc cancellation(udata: pointer) =
     # On cancel we remove all our callbacks only.
-    for i in 0..<len(nfuts):
-      if not(nfuts[i].finished()):
-        nfuts[i].removeCallback(cb)
-    reset(nfuts)
+    for fut in pending:
+      if not(fut.finished()):
+        fut.removeCallback(cb)
+    reset(pending)
 
-  for fut in nfuts:
-    if not(fut.finished()):
-      fut.addCallback(cb)
-    else:
-      inc(finishedFutures)
+  for fut in pending:
+    fut.addCallback(cb)
 
   retFuture.cancelCallback = cancellation
-  if len(nfuts) == 0 or len(nfuts) == finishedFutures:
-    retFuture.complete()
 
   retFuture
 
@@ -1161,7 +1158,7 @@ proc allFinished*[F: SomeFuture](futs: varargs[F]): Future[seq[F]] {.
 
   retFuture.cancelCallback = cancellation
   if len(nfuts) == 0 or len(nfuts) == finishedFutures:
-    retFuture.complete(nfuts)
+    retFuture.complete(move(nfuts))
 
   return retFuture
 
