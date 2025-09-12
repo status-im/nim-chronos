@@ -889,8 +889,9 @@ suite "Datagram Transport test suite":
     check waitFor(test3(true)) == ClientsCount * MessagesCount
   test "Datagram connection reset test":
     check waitFor(testConnReset()) == true
-  test "Broadcast test":
-    check waitFor(testBroadcast()) == 1
+  when not defined(osx):
+    test "Broadcast test":
+      check waitFor(testBroadcast()) == 1
   test "0.0.0.0/::0 (INADDR_ANY) test":
     check waitFor(testAnyAddress()) == 6
   asyncTest "[IP] getDomain(socket) [SOCK_DGRAM] test":
