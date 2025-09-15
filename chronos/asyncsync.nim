@@ -711,16 +711,13 @@ proc release*(s: AsyncSemaphore) =
   ## internal resource count
   ##
 
-  doAssert(s.availableSlots <= s.size)
+  doAssert(s.availableSlots < s.size)
 
-  if s.availableSlots < s.size:
-    s.availableSlots.inc
-    while s.queue.len > 0:
-      var fut = s.queue[0]
-      s.queue.delete(0)
-      if not fut.finished():
-        s.availableSlots.dec
-        fut.complete()
-        break
-
-    return
+  s.availableSlots.inc
+  while s.queue.len > 0:
+    var fut = s.queue[0]
+    s.queue.delete(0)
+    if not fut.finished():
+      s.availableSlots.dec
+      fut.complete()
+      break

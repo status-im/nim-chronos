@@ -14,13 +14,24 @@ suite "AsyncSemaphore":
   teardown:
     checkLeaks()
 
+  asyncTest "default size":
+    let sema = newAsyncSemaphore()
+    check sema.count == 1
+
+  asyncTest "custom size":
+    let sema = newAsyncSemaphore(3)
+    check sema.count == 3
+
+  asyncTest "invalid size":
+    expect AssertionDefect:
+      discard newAsyncSemaphore(0)
+
   asyncTest "should acquire":
     let sema = newAsyncSemaphore(3)
 
     await sema.acquire()
     await sema.acquire()
     await sema.acquire()
-
     check sema.count == 0
 
   asyncTest "should release":
@@ -29,12 +40,25 @@ suite "AsyncSemaphore":
     await sema.acquire()
     await sema.acquire()
     await sema.acquire()
-
     check sema.count == 0
+    
     sema.release()
     sema.release()
     sema.release()
     check sema.count == 3
+
+  asyncTest "double release":
+    let sema = newAsyncSemaphore(3)
+
+    await sema.acquire()
+    check sema.count == 2
+
+    sema.release()
+    check sema.count == 3
+    
+    expect AssertionDefect: 
+      # should not release - all slots available
+      sema.release() 
 
   asyncTest "should queue acquire":
     let sema = newAsyncSemaphore(1)
@@ -45,17 +69,9 @@ suite "AsyncSemaphore":
     check sema.count == 0
     sema.release()
     sema.release()
-    check sema.count == 1
 
-    await sleepAsync(10.millis)
+    await fut
     check fut.finished()
-
-  asyncTest "should keep count == size":
-    let sema = newAsyncSemaphore(1)
-    sema.release()
-    sema.release()
-    sema.release()
-    check sema.count == 1
 
   asyncTest "should tryAcquire":
     let sema = newAsyncSemaphore(1)
