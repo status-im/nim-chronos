@@ -1070,7 +1070,7 @@ proc allFutures*(futs: varargs[FutureBase]): Future[void] {.
   ## On cancel all the awaited futures ``futs`` WILL NOT BE cancelled.
   let retFuture = newFuture[void]("chronos.allFutures()")
 
-  var pending = futs.filterIt(not retFuture.finished())
+  var pending = futs.filterIt(not it.finished())
 
   if pending.len == 0:
     retFuture.complete()
