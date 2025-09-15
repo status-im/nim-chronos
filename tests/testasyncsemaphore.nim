@@ -11,6 +11,9 @@ import ../chronos, ../chronos/unittest2/asynctests
 {.used.}
 
 suite "AsyncSemaphore":
+  teardown:
+    checkLeaks()
+
   asyncTest "should acquire":
     let sema = newAsyncSemaphore(3)
 
@@ -175,3 +178,7 @@ suite "AsyncSemaphore":
       fut3.finished()
       fut4.finished()
       not fut5.finished()
+    
+    sema.release()
+    check:
+      fut5.finished()
