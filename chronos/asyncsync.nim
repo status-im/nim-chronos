@@ -668,7 +668,7 @@ proc tryAcquire*(s: AsyncSemaphore): bool =
   ## returns true, otherwise false
   ##
 
-  if s.availableSlots > 0 and s.queue.len == 0:
+  if s.availableSlots > 0:
     s.availableSlots.dec
     return true
 
