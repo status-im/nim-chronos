@@ -687,9 +687,7 @@ proc acquire*(
     return fut
 
   proc cancellation(udata: pointer) {.gcsafe.} =
-    fut.cancelCallback = nil
-    if not fut.finished:
-      s.queue.keepItIf(it != fut)
+    s.queue.keepItIf(it != fut)
 
   fut.cancelCallback = cancellation
 
