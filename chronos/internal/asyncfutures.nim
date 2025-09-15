@@ -1074,7 +1074,7 @@ proc allFutures*(futs: varargs[FutureBase]): Future[void] {.
 
   if pending.len == 0:
     retFuture.complete()
-    return
+    return retFuture
 
   var finishedFutures = 0
   proc cb(udata: pointer) =
