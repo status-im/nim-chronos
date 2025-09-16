@@ -89,7 +89,7 @@ type
     ## counter; it defaults to ``1``. If the value given is less than 1,
     ## ``AssertionError`` is raised.
     size*: int
-    availableSlots: int
+    availableSlots*: int
     queue: seq[Future[void]]
 
 
@@ -659,9 +659,6 @@ proc newAsyncSemaphore*(size: int = 1): AsyncSemaphore =
   ## internal available slots set to ``size``.
   doAssert(size > 0, "AsyncSemaphore initial size must be bigger then 0")
   AsyncSemaphore(size: size, availableSlots: size)
-
-proc `count`*(s: AsyncSemaphore): int =
-  s.availableSlots
 
 proc tryAcquire*(s: AsyncSemaphore): bool =
   ## Attempts to acquire a resource, if successful returns true, otherwise false.

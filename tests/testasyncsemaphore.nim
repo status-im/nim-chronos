@@ -16,11 +16,11 @@ suite "AsyncSemaphore":
 
   asyncTest "default size":
     let sema = newAsyncSemaphore()
-    check sema.count == 1
+    check sema.availableSlots == 1
 
   asyncTest "custom size":
     let sema = newAsyncSemaphore(3)
-    check sema.count == 3
+    check sema.availableSlots == 3
 
   asyncTest "invalid size":
     expect AssertionDefect:
@@ -32,7 +32,7 @@ suite "AsyncSemaphore":
     await sema.acquire()
     await sema.acquire()
     await sema.acquire()
-    check sema.count == 0
+    check sema.availableSlots == 0
 
   asyncTest "should release":
     let sema = newAsyncSemaphore(3)
@@ -40,21 +40,21 @@ suite "AsyncSemaphore":
     await sema.acquire()
     await sema.acquire()
     await sema.acquire()
-    check sema.count == 0
+    check sema.availableSlots == 0
     
     sema.release()
     sema.release()
     sema.release()
-    check sema.count == 3
+    check sema.availableSlots == 3
 
   asyncTest "double release":
     let sema = newAsyncSemaphore(3)
 
     await sema.acquire()
-    check sema.count == 2
+    check sema.availableSlots == 2
 
     sema.release()
-    check sema.count == 3
+    check sema.availableSlots == 3
     
     expect AssertionDefect: 
       # should not release - all slots available
@@ -66,7 +66,7 @@ suite "AsyncSemaphore":
     await sema.acquire()
     let fut = sema.acquire()
 
-    check sema.count == 0
+    check sema.availableSlots == 0
     sema.release()
     sema.release()
 
@@ -84,11 +84,11 @@ suite "AsyncSemaphore":
     check sema.tryAcquire() == true
     check sema.tryAcquire() == true
     check sema.tryAcquire() == true
-    check sema.count == 0
+    check sema.availableSlots == 0
 
     let fut = sema.acquire()
     check fut.finished == false
-    check sema.count == 0
+    check sema.availableSlots == 0
 
     sema.release()
     sema.release()
@@ -97,7 +97,7 @@ suite "AsyncSemaphore":
     sema.release()
 
     check fut.finished == true
-    check sema.count == 4
+    check sema.availableSlots == 4
 
   asyncTest "should cancel sequential semaphore slot":
     let sema = newAsyncSemaphore(1)
