@@ -890,7 +890,12 @@ suite "Datagram Transport test suite":
   test "Datagram connection reset test":
     check waitFor(testConnReset()) == true
   test "Broadcast test":
-    check waitFor(testBroadcast()) == 1
+    when defined(macos) or defined(macosx) or defined(ios):
+      # Github Actions does not support broadcast operation on macos workers,
+      # fails with `No route to host`.
+      skip()
+    else:
+      check waitFor(testBroadcast()) == 1
   test "0.0.0.0/::0 (INADDR_ANY) test":
     check waitFor(testAnyAddress()) == 6
   asyncTest "[IP] getDomain(socket) [SOCK_DGRAM] test":
