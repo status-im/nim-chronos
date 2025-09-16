@@ -8,7 +8,7 @@ on:
 
 jobs:
   build:
-    uses: status-im/nimbus-common-workflow/.github/workflows/common.yml@main
+    uses: status-im/nimbus-common-workflow/.github/workflows/common.yml@fix-env-vars
     with:
       test-command: |
         nimble install -y libbacktrace
