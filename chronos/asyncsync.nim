@@ -664,9 +664,7 @@ proc `count`*(s: AsyncSemaphore): int =
   s.availableSlots
 
 proc tryAcquire*(s: AsyncSemaphore): bool =
-  ## Attempts to acquire a resource, if successful
-  ## returns true, otherwise false
-  ##
+  ## Attempts to acquire a resource, if successful returns true, otherwise false.
 
   if s.availableSlots > 0:
     s.availableSlots.dec
@@ -675,11 +673,9 @@ proc tryAcquire*(s: AsyncSemaphore): bool =
 proc acquire*(
     s: AsyncSemaphore
 ): Future[void] {.async: (raises: [CancelledError], raw: true).} =
-  ## Acquire a resource and decrement the resource
-  ## counter. If no more resources are available,
-  ## the returned future will not complete until
-  ## the resource count goes above 0.
-  ##
+  ## Acquire a resource and decrement the resource counter. 
+  ## If no more resources are available, the returned future 
+  ## will not complete until the resource count goes above 0.
 
   let fut = newFuture[void]("AsyncSemaphore.acquire")
   if s.tryAcquire():
@@ -695,19 +691,11 @@ proc acquire*(
 
   return fut
 
-proc forceAcquire*(s: AsyncSemaphore) =
-  ## ForceAcquire will always succeed,
-  ## creating a temporary slot if required.
-  ## This temporary slot will stay usable until
-  ## there is less `acquire`s than `release`s
-  s.availableSlots.dec
-
 proc release*(s: AsyncSemaphore) =
   ## Release a resource from the semaphore,
   ## by picking the first future from the queue
   ## and completing it and incrementing the
-  ## internal resource count
-  ##
+  ## internal resource count.
 
   doAssert(s.availableSlots < s.size)
 

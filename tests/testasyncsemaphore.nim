@@ -154,47 +154,4 @@ suite "AsyncSemaphore":
     sema.release()
 
     check await sema.acquire().withTimeout(10.millis)
-
-  asyncTest "should handle forceAcquire properly":
-    let sema = newAsyncSemaphore(1)
-
-    await sema.acquire()
-    check not (await sema.acquire().withTimeout(1.millis))
-      # should not acquire but cancel
-
-    let
-      fut1 = sema.acquire()
-      fut2 = sema.acquire()
-
-    sema.forceAcquire()
-    sema.release()
-
-    await fut1 or fut2 or sleepAsync(1.millis)
-    check:
-      fut1.finished()
-      not fut2.finished()
-
-    sema.release()
-    await fut1 or fut2 or sleepAsync(1.millis)
-    check:
-      fut1.finished()
-      fut2.finished()
-
-    sema.forceAcquire()
-    sema.forceAcquire()
-
-    let
-      fut3 = sema.acquire()
-      fut4 = sema.acquire()
-      fut5 = sema.acquire()
-    sema.release()
-    sema.release()
-    await sleepAsync(1.millis)
-    check:
-      fut3.finished()
-      fut4.finished()
-      not fut5.finished()
     
-    sema.release()
-    check:
-      fut5.finished()
