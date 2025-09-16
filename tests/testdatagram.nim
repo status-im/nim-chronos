@@ -889,8 +889,12 @@ suite "Datagram Transport test suite":
     check waitFor(test3(true)) == ClientsCount * MessagesCount
   test "Datagram connection reset test":
     check waitFor(testConnReset()) == true
-  when not defined(osx):
-    test "Broadcast test":
+  test "Broadcast test":
+    when defined(osx):
+      # Github Actions does not support broadcast operation on macos workers,
+      # fails with `No route to host`.
+      skip()
+    else:
       check waitFor(testBroadcast()) == 1
   test "0.0.0.0/::0 (INADDR_ANY) test":
     check waitFor(testAnyAddress()) == 6
