@@ -989,31 +989,87 @@ template cancel*(future: FutureBase) {.
   ## Cancel ``future``.
   cancelSoon(future, nil, nil, getSrcLocation())
 
-proc cancelAndWait*(future: FutureBase, loc: ptr SrcLoc): Future[void] {.
-    async: (raw: true, raises: []).} =
+proc cancelAndWait(
+    loc: ptr SrcLoc,
+    futs: varargs[FutureBase]
+): Future[void] {.async: (raw: true, raises: []).} =
+  let
+    retFuture =
+      Future[void].Raising([]).init(
+        "chronos.cancelAndWait(varargs[FutureBase])",
+        {FutureFlag.OwnCancelSchedule})
+  var count = 0
+
+  proc continuation(udata: pointer) {.gcsafe.} =
+    dec(count)
+    if count == 0:
+      retFuture.complete()
+
+  retFuture.cancelCallback = nil
+
+  for futn in futs:
+    if not(futn.finished()):
+      inc(count)
+      cancelSoon(futn, continuation, cast[pointer](futn), loc)
+
+  if count == 0:
+    retFuture.complete()
+
+  retFuture
+
+proc cancelAndWait(
+    loc: ptr SrcLoc,
+    futs: openArray[SomeFuture]
+): Future[void] {.async: (raw: true, raises: []).} =
+  cancelAndWait(loc, futs.mapIt(FutureBase(it)))
+
+template cancelAndWait*(future: FutureBase): Future[void].Raising([]) =
   ## Perform cancellation ``future`` return Future which will be completed when
   ## ``future`` become finished (completed with value, failed or cancelled).
   ##
   ## NOTE: Compared to the `tryCancel()` call, this procedure call guarantees
   ## that ``future``will be finished (completed with value, failed or cancelled)
   ## as quickly as possible.
-  let retFuture = newFuture[void]("chronos.cancelAndWait(FutureBase)",
-                                  {FutureFlag.OwnCancelSchedule})
+  cancelAndWait(getSrcLocation(), future)
 
-  proc continuation(udata: pointer) {.gcsafe.} =
-    retFuture.complete()
+template cancelAndWait*(future: SomeFuture): Future[void].Raising([]) =
+  ## Perform cancellation ``future`` return Future which will be completed when
+  ## ``future`` become finished (completed with value, failed or cancelled).
+  ##
+  ## NOTE: Compared to the `tryCancel()` call, this procedure call guarantees
+  ## that ``future``will be finished (completed with value, failed or cancelled)
+  ## as quickly as possible.
+  cancelAndWait(getSrcLocation(), FutureBase(future))
 
-  if future.finished():
-    retFuture.complete()
-  else:
-    retFuture.cancelCallback = nil
-    cancelSoon(future, continuation, cast[pointer](retFuture), loc)
+template cancelAndWait*(futs: varargs[FutureBase]): Future[void].Raising([]) =
+  ## Perform cancellation of all the ``futs``. Returns Future which will be
+  ## completed when all the ``futs`` become finished (completed with value,
+  ## failed or cancelled).
+  ##
+  ## NOTE: Compared to the `tryCancel()` call, this procedure call guarantees
+  ## that all the ``futs``will be finished (completed with value, failed or
+  ## cancelled) as quickly as possible.
+  ##
+  ## NOTE: It is safe to pass finished futures in ``futs`` (completed with
+  ## value, failed or cancelled).
+  ##
+  ## NOTE: If ``futs`` is an empty array, procedure returns completed Future.
+  cancelAndWait(getSrcLocation(), futs)
 
-  retFuture
-
-template cancelAndWait*(future: FutureBase): Future[void].Raising([]) =
-  ## Cancel ``future``.
-  cancelAndWait(future, getSrcLocation())
+template cancelAndWait*(futs: openArray[SomeFuture]): Future[void].Raising([]) =
+  ## Perform cancellation of all the ``futs``. Returns Future which will be
+  ## completed when all the ``futs`` become finished (completed with value,
+  ## failed or cancelled).
+  ##
+  ## NOTE: Compared to the `tryCancel()` call, this procedure call guarantees
+  ## that all the ``futs``will be finished (completed with value, failed or
+  ## cancelled) as quickly as possible.
+  ##
+  ## NOTE: It is safe to pass finished futures in ``futs`` (completed with
+  ## value, failed or cancelled).
+  ##
+  ## NOTE: If ``futs`` is an empty array, procedure returns completed Future.
+  cancelAndWait(getSrcLocation(), futs)
 
 proc noCancel*[F: SomeFuture](future: F): auto = # async: (raw: true, raises: asyncraiseOf(future) - CancelledError
   ## Prevent cancellation requests from propagating to ``future`` while
