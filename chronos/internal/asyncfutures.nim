@@ -182,6 +182,10 @@ proc finish(fut: FutureBase, state: FutureState) =
   # 2. `fut.state` is checked by `checkFinished()`.
   fut.internalState = state
   fut.internalCancelcb = nil # release cancellation callback memory
+
+  if not fut.internalCallback.function.isNil:
+    callSoon(move(fut.internalCallback))
+
   for item in fut.internalCallbacks.mitems():
     if not(isNil(item.function)):
       callSoon(item)
@@ -288,7 +292,8 @@ template tryCancel*(future: FutureBase): bool =
   tryCancel(future, getSrcLocation())
 
 proc clearCallbacks(future: FutureBase) =
-  future.internalCallbacks = default(seq[AsyncCallback])
+  future.internalCallback.reset()
+  future.internalCallbacks.reset()
 
 proc addCallback*(future: FutureBase, cb: CallbackFunc, udata: pointer) =
   ## Adds the callbacks proc to be called when the future completes.
@@ -298,7 +303,10 @@ proc addCallback*(future: FutureBase, cb: CallbackFunc, udata: pointer) =
   if future.finished():
     callSoon(cb, udata)
   else:
-    future.internalCallbacks.add AsyncCallback(function: cb, udata: udata)
+    if future.internalCallback.function.isNil:
+      future.internalCallback = AsyncCallback(function: cb, udata: udata)
+    else:
+      future.internalCallbacks.add AsyncCallback(function: cb, udata: udata)
 
 proc addCallback*(future: FutureBase, cb: CallbackFunc) =
   ## Adds the callbacks proc to be called when the future completes.
@@ -313,6 +321,9 @@ proc removeCallback*(future: FutureBase, cb: CallbackFunc,
   doAssert(not isNil(cb))
   # Make sure to release memory associated with callback, or reference chains
   # may be created!
+  if future.internalCallback.function == cb and future.internalCallback.udata == udata:
+    future.internalCallback.reset()
+
   future.internalCallbacks.keepItIf:
     it.function != cb or it.udata != udata
 
