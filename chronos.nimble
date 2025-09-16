@@ -69,6 +69,7 @@ task test_v3_compat, "Run all tests in v3 compatibility mode":
     run args & " -d:chronosHandleException", "tests/testall"
 
 task test_libbacktrace, "test with libbacktrace":
+  echo "NIMSCRIPT PLATFORM = [", platform, "]"
   if platform != "x86":
     let allArgs = @[
       "-d:release --debugger:native -d:chronosStackTrace -d:nimStackTraceOverride --import:libbacktrace",
