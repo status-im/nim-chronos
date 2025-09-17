@@ -30,7 +30,9 @@ suite "AsyncSemaphore":
     let sema = newAsyncSemaphore(3)
 
     await sema.acquire()
+    check sema.availableSlots == 2
     await sema.acquire()
+    check sema.availableSlots == 1
     await sema.acquire()
     check sema.availableSlots == 0
 
@@ -40,24 +42,26 @@ suite "AsyncSemaphore":
     await sema.acquire()
     await sema.acquire()
     await sema.acquire()
-    check sema.availableSlots == 0
     
     sema.release()
+    check sema.availableSlots == 1
     sema.release()
+    check sema.availableSlots == 2
     sema.release()
     check sema.availableSlots == 3
+
+  asyncTest "initial release":
+    let sema = newAsyncSemaphore(3)
+
+    expect AssertionDefect: # should not release
+      sema.release() 
 
   asyncTest "double release":
     let sema = newAsyncSemaphore(3)
-
-    await sema.acquire()
-    check sema.availableSlots == 2
-
-    sema.release()
-    check sema.availableSlots == 3
     
-    expect AssertionDefect: 
-      # should not release - all slots available
+    await sema.acquire()
+    sema.release()
+    expect AssertionDefect:  # should not release
       sema.release() 
 
   asyncTest "should queue acquire":
