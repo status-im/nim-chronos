@@ -228,31 +228,27 @@ func value*[T: not void](future: Future[T]): lent T =
   ##
   ## See `read` for a version that raises a catchable error when future
   ## has not completed.
-  when chronosStrictFutureAccess:
-    if not future.completed():
-      raiseFutureDefect("Future not completed while accessing value", future)
+  if not future.completed():
+    raiseFutureDefect("Future not completed while accessing value", future)
 
   future.internalValue
 
 func value*(future: Future[void]) =
-  ## Return the value in a completed future - raises Defect when
-  ## `fut.completed()` is `false`.
+  ## Raises Defect when `fut.completed()` is `false`.
   ##
   ## See `read` for a version that raises a catchable error when future
   ## has not completed.
-  when chronosStrictFutureAccess:
-    if not future.completed():
-      raiseFutureDefect("Future not completed while accessing value", future)
+  if not future.completed():
+    raiseFutureDefect("Future not completed while accessing value", future)
 
 func error*(future: FutureBase): ref CatchableError =
   ## Return the error of `future`, or `nil` if future did not fail.
   ##
   ## See `readError` for a version that raises a catchable error when the
   ## future has not failed.
-  when chronosStrictFutureAccess:
-    if not future.failed() and not future.cancelled():
-      raiseFutureDefect(
-        "Future not failed/cancelled while accessing error", future)
+  if not future.failed() and not future.cancelled():
+    raiseFutureDefect(
+      "Future not failed/cancelled while accessing error", future)
 
   future.internalError
 
