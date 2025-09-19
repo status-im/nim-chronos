@@ -194,3 +194,231 @@ suite "Token Bucket":
     check cap.budgetCapacity == 10
 
     check bucket.tryConsume(2, boundary) == true  # ok, we passed the period boundary now, leaves 8
+
+  test "Balanced high-rate single-token 10/10ms over 40ms":
+    # Capacity 10, fillDuration 10ms (1 token/ms). Only 1-token requests are made
+    # at specific timestamps within 0–40ms (4 full periods). We verify that no
+    # more than 50 tokens can be consumed in total and that per-batch accept/reject
+    # counts and lastUpdate values match expectations.
+    var bucket = TokenBucket.new(10, 10.milliseconds)
+    let t0 = Moment.now()
+    let t5 = t0 + 5.milliseconds
+    let t10 = t0 + 10.milliseconds
+    let t12 = t0 + 12.milliseconds
+    let t20 = t0 + 20.milliseconds
+    let t30 = t0 + 30.milliseconds
+    let t31 = t0 + 31.milliseconds
+    let t40 = t0 + 40.milliseconds
+
+    proc attempt(count: int, now: Moment): tuple[accepted, rejected: int] =
+      var acc = 0
+      var rej = 0
+      for _ in 0..<count:
+        if bucket.tryConsume(1, now):
+          inc acc
+        else:
+          inc rej
+      (acc, rej)
+
+    # 0ms: 12 attempts -> accept 10, reject 2; budget ends 0; LU=0ms (consume-from-full)
+    var r = attempt(12, t0)
+    check r.accepted == 10
+    check r.rejected == 2
+    var cap = bucket.getAvailableCapacity(t0)
+    check cap.budget == 0
+    check cap.lastUpdate == t0
+
+    # 5ms: 7 attempts -> mint 5 then accept 5, reject 2; budget 0; LU=5ms
+    r = attempt(7, t5)
+    check r.accepted == 5
+    check r.rejected == 2
+    cap = bucket.getAvailableCapacity(t5)
+    check cap.budget == 0
+    check cap.lastUpdate == t5
+
+    # 10ms: 15 attempts -> mint 5 then accept 5, reject 10; budget 0; LU=10ms
+    r = attempt(15, t10)
+    check r.accepted == 5
+    check r.rejected == 10
+    cap = bucket.getAvailableCapacity(t10)
+    check cap.budget == 0
+    check cap.lastUpdate == t10
+
+    # 12ms: 3 attempts -> mint 2 then accept 2, reject 1; budget 0; LU=12ms
+    r = attempt(3, t12)
+    check r.accepted == 2
+    check r.rejected == 1
+    cap = bucket.getAvailableCapacity(t12)
+    check cap.budget == 0
+    check cap.lastUpdate == t12
+
+    # 20ms: 25 attempts -> mint 8 then accept 8, reject 17; budget 0; LU=20ms
+    r = attempt(25, t20)
+    check r.accepted == 8
+    check r.rejected == 17
+    cap = bucket.getAvailableCapacity(t20)
+    check cap.budget == 0
+    check cap.lastUpdate == t20
+
+    # 30ms: 9 attempts -> mint 10 then accept 9, budget ends 1; LU=30ms
+    r = attempt(9, t30)
+    check r.accepted == 9
+    check r.rejected == 0
+    cap = bucket.getAvailableCapacity(t30)
+    check cap.budget == 1
+    check cap.lastUpdate == t30
+
+    # 31ms: 3 attempts -> mint 1 then accept 2, reject 1; budget 0; LU=31ms
+    r = attempt(3, t31)
+    check r.accepted == 2
+    check r.rejected == 1
+    cap = bucket.getAvailableCapacity(t31)
+    check cap.budget == 0
+    check cap.lastUpdate == t31
+
+    # 40ms: 20 attempts -> mint 9 then accept 9, reject 11; budget 0; LU=40ms
+    r = attempt(20, t40)
+    check r.accepted == 9
+    check r.rejected == 11
+    cap = bucket.getAvailableCapacity(t40)
+    check cap.budget == 0
+    check cap.lastUpdate == t40
+
+    # Totals across 0–40ms window
+    let totalAccepted = 10 + 5 + 5 + 2 + 8 + 9 + 2 + 9
+    let totalRejected = 2 + 2 + 10 + 1 + 17 + 0 + 1 + 11
+    check totalAccepted == 50
+    check totalRejected == 44
+
+  test "Balanced high-rate single-token 10/10ms over 40ms (advancing time)":
+    # Variant of the high-rate test where each tryConsume occurs at a timestamp that
+    # advances by ~1ms when possible, simulating a more realistic stream of requests.
+    # We still demand more than can be provided to ensure rejections, and we verify
+    # that across 0–40ms only 50 tokens can be accepted.
+    var bucket = TokenBucket.new(10, 10.milliseconds)
+    let t0 = Moment.now()
+
+    var accepted = 0
+    var rejected = 0
+    # Perform 94 attempts; for the first 41 attempts we increase the timestamp by 1ms
+    # per attempt (up to t0+40ms). After that, we keep attempting at t0+40ms to
+    # simulate concurrent bursts at the end of the window.
+    for i in 0..<94:
+      let ts = t0 + min(i, 40).milliseconds
+      if bucket.tryConsume(1, ts):
+        inc accepted
+      else:
+        inc rejected
+
+    # At most 10 (initial) + 40 (minted over 40ms) can be accepted
+    check accepted == 50
+    check rejected == 44
+
+    let t40 = t0 + 40.milliseconds
+    let cap = bucket.getAvailableCapacity(t40)
+    # All available tokens within the window should have been consumed by our attempts
+    check cap.budget == 0
+
+  # Balanced-mode scenario reproductions and timeline validation
+  test "Balanced Scenario 1 timeline":
+    # Capacity 10, fillDuration 1s, per-token time 100ms
+    var bucket = TokenBucket.new(10, 1.seconds)
+
+    let t0 = Moment.now()
+    let t200 = t0 + 200.milliseconds
+    let t600 = t0 + 600.milliseconds
+    let t650 = t0 + 650.milliseconds
+    let t1000 = t0 + 1000.milliseconds
+    let t1200 = t0 + 1200.milliseconds
+    let t1800 = t0 + 1800.milliseconds
+    let t2100 = t0 + 2100.milliseconds
+    let t2600 = t0 + 2600.milliseconds
+    let t3000 = t0 + 3000.milliseconds
+
+    # 1) t=0ms: consume 7 from full -> LU set to t0, budget 3
+    check bucket.tryConsume(7, t0) == true
+    var cap = bucket.getAvailableCapacity(t0)
+    check cap.budget == 3
+    check cap.lastUpdate == t0
+
+    # 2) t=200ms: request 5 -> mint 2, then consume -> budget 0, LU=200ms
+    check bucket.tryConsume(5, t200) == true
+    cap = bucket.getAvailableCapacity(t200)
+    check cap.budget == 0
+    check cap.lastUpdate == t200
+
+    # 3) t=650ms: request 3 -> mint 4 (to t600), then consume -> budget 1, LU=600ms
+    check bucket.tryConsume(3, t650) == true
+    cap = bucket.getAvailableCapacity(t600)
+    check cap.budget == 1
+    check cap.lastUpdate == t600
+
+    # 4) t=1000ms: availability check only (does not mutate); expected 4 minted -> budget 5, LU=1000ms
+    cap = bucket.getAvailableCapacity(t1000)
+    check cap.budget == 5
+    check cap.lastUpdate == t1000
+
+    # 5) t=1200ms: request 6 -> net minted since LU to here totals 6 -> budget ends 1, LU=1200ms
+    check bucket.tryConsume(6, t1200) == true
+    cap = bucket.getAvailableCapacity(t1200)
+    check cap.budget == 1
+    check cap.lastUpdate == t1200
+
+    # 6) t=1800ms: request 5 -> mint 6 then consume -> budget 2, LU=1800ms
+    check bucket.tryConsume(5, t1800) == true
+    cap = bucket.getAvailableCapacity(t1800)
+    check cap.budget == 2
+    check cap.lastUpdate == t1800
+
+    # 7) t=2100ms: request 10 -> mint 3 to reach 5, still insufficient -> false, LU=2100ms
+    check bucket.tryConsume(10, t2100) == false
+    cap = bucket.getAvailableCapacity(t2100)
+    check cap.budget == 5
+    check cap.lastUpdate == t2100
+
+    # 8) t=2600ms: enough time for 5 more -> reach full and then consume 10 -> budget 0, LU=2600ms
+    check bucket.tryConsume(10, t2600) == true
+    cap = bucket.getAvailableCapacity(t2600)
+    check cap.budget == 0
+    check cap.lastUpdate == t2600
+
+    # 9) t=3000ms: availability check -> mint 4 -> budget 4, LU=3000ms
+    cap = bucket.getAvailableCapacity(t3000)
+    check cap.budget == 4
+    check cap.lastUpdate == t3000
+
+  test "Balanced: idle while full burns time":
+    # Capacity 5, fillDuration 1s, per-token time 200ms
+    var bucket = TokenBucket.new(5, 1.seconds)
+    let t0 = Moment.now()
+    let t2_5 = t0 + 2500.milliseconds
+    # Consume 1 after long idle at full -> LU set to now
+    check bucket.tryConsume(1, t2_5) == true
+    var cap = bucket.getAvailableCapacity(t2_5)
+    check cap.budget == 4
+    check cap.lastUpdate == t2_5
+    # 100ms later is below per-token time -> no mint
+    let t2_6 = t0 + 2600.milliseconds
+    cap = bucket.getAvailableCapacity(t2_6)
+    check cap.budget == 4
+    check cap.lastUpdate == t2_5
+
+  test "Balanced: large jump clamps to capacity and LU=now when capped":
+    # Capacity 8, fillDuration 4s, per-token time 0.5s
+    var bucket = TokenBucket.new(8, 4.seconds)
+    let t0 = Moment.now()
+    # Spend 6 from full so LU = t0, budget = 2
+    check bucket.tryConsume(6, t0) == true
+
+    let t5 = t0 + 5.seconds
+    # Availability check: should reach cap and set LU to t5 (hit-cap path burns leftover time)
+    var cap2 = bucket.getAvailableCapacity(t5)
+    check cap2.budget == 8
+    check cap2.lastUpdate == t5
+
+    # Consume 3 slightly later; update will also clamp and set LU to now, then consume from full
+    let t5_2 = t0 + 5200.milliseconds
+    check bucket.tryConsume(3, t5_2) == true
+    cap2 = bucket.getAvailableCapacity(t5_2)
+    check cap2.budget == 5
+    check cap2.lastUpdate == t5_2
