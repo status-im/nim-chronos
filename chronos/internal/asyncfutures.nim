@@ -183,7 +183,7 @@ proc finish(fut: FutureBase, state: FutureState) =
   fut.internalState = state
   fut.internalCancelcb = nil # release cancellation callback memory
 
-  if not fut.internalCallback.function.isNil:
+  if not(isNil(fut.internalCallback.function)):
     callSoon(move(fut.internalCallback))
 
   for item in fut.internalCallbacks.mitems():
@@ -277,7 +277,7 @@ proc tryCancel(future: FutureBase, loc: ptr SrcLoc): bool =
     # If you hit this assertion, you should have used the `CancelledError`
     # mechanism and/or use a regular `addCallback`
     when chronosStrictFutureAccess:
-      doAssert future.internalCancelcb.isNil,
+      doAssert isNil(future.internalCancelcb),
         "futures returned from `{.async.}` functions must not use " &
         "`cancelCallback`"
     tryCancel(future.internalChild, loc)
@@ -303,7 +303,7 @@ proc addCallback*(future: FutureBase, cb: CallbackFunc, udata: pointer) =
   if future.finished():
     callSoon(cb, udata)
   else:
-    if future.internalCallback.function.isNil:
+    if isNil(future.internalCallback.function):
       future.internalCallback = AsyncCallback(function: cb, udata: udata)
     else:
       future.internalCallbacks.add AsyncCallback(function: cb, udata: udata)
