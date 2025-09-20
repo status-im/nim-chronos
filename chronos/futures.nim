@@ -59,9 +59,9 @@ type
     internalCallback*: InternalAsyncCallback
       ## The vast majority of futures track a single callback only (the one
       ## installed by `await`) - to avoid allocating a seq (which involves
-      ## making a separate allocation with space several callbacks), we keep a
-      ## spot in each future for that first one - the seq below will stay empty
-      ## until a second callback is added
+      ## making a separate allocation with space for several callbacks), we keep
+      ## a spot in each future for that first one - the seq below will stay
+      ## empty until a second callback is added
     internalCallbacks*: seq[InternalAsyncCallback]
     internalCancelcb*: CallbackFunc
     internalChild*: FutureBase
