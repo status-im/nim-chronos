@@ -109,6 +109,8 @@ elif defined(macosx):
 
 elif defined(posix):
   when asyncTimer == "system":
+    from std/posix import CLOCK_REALTIME
+
     proc fastEpochTime*(): uint64 {.inline, deprecated: "Use Moment.now()".} =
       ## Procedure's resolution is millisecond.
       var t: Timespec
