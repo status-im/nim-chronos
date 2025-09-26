@@ -2,7 +2,7 @@
 #                     Chronos
 #
 #  (c) Copyright 2015 Dominik Picheta
-#  (c) Copyright 2018-2023 Status Research & Development GmbH
+#  (c) Copyright 2018-2025 Status Research & Development GmbH
 #
 #                Licensed under either of
 #    Apache License, version 2.0, (LICENSE-APACHEv2)
@@ -10,7 +10,7 @@
 
 {.push raises: [].}
 
-import "."/[config, srcloc]
+import ./[config, srcloc]
 
 export srcloc
 
@@ -56,6 +56,12 @@ type
     # structure may change in the future (haha)
 
     internalLocation*: array[LocationKind, ptr SrcLoc]
+    internalCallback*: InternalAsyncCallback
+      ## The vast majority of futures track a single callback only (the one
+      ## installed by `await`) - to avoid allocating a seq (which involves
+      ## making a separate allocation with space for several callbacks), we keep
+      ## a spot in each future for that first one - the seq below will stay
+      ## empty until a second callback is added
     internalCallbacks*: seq[InternalAsyncCallback]
     internalCancelcb*: CallbackFunc
     internalChild*: FutureBase
