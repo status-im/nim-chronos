@@ -83,7 +83,7 @@ type
     ## A synchronization primitive that waits for a collection of 
     ## asynchronous tasks to finish.
     count: int
-    fut: Future[void]
+    fut: Future[void].Raising([CancelledError])
 
 proc newAsyncLock*(): AsyncLock =
   ## Creates new asynchronous lock ``AsyncLock``.
@@ -647,13 +647,13 @@ proc waitEvents*[T](ab: AsyncEventQueue[T],
 
 proc newWaitGroup*(count: int): WaitGroup =
   doAssert(count >= 0, "WaitGroup count must be non negative number")
-  let fut = newFuture[void]("WaitGroup")
+  let fut = Future[void].Raising([CancelledError]).init("WaitGroup")
   if count == 0:
     fut.complete()
   WaitGroup(count: count, fut: fut)
 
-proc wait*(wg: WaitGroup): Future[void] =
-  wg.fut
+proc wait*(wg: WaitGroup): Future[void].Raising([CancelledError]) =
+  return wg.fut.join()
 
 proc done*(wg: WaitGroup) =
   if wg.count == 0:
