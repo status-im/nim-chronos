@@ -22,14 +22,14 @@ suite "WaitGroup":
     let wg = newWaitGroup(0)
     check wg.wait().finished
 
-  asyncTest "zero count - done no effect":
+  asyncTest "zero count - done() has no effect":
     let wg = newWaitGroup(0)
     check wg.wait().finished
     
     wg.done()
     check wg.wait().finished
 
-  asyncTest "count down to finish":
+  asyncTest "countdown to finish":
     let wg = newWaitGroup(3)
     
     wg.done()
@@ -39,7 +39,7 @@ suite "WaitGroup":
     wg.done()
     check wg.wait().finished
 
-  asyncTest "async count down to finish":
+  asyncTest "async countdown to finish":
     const count = 30
     let wg = newWaitGroup(count)
     
@@ -51,3 +51,9 @@ suite "WaitGroup":
 
     check not wg.wait().finished
     check await wg.wait().withTimeout(15.millis)
+
+  asyncTest "cancel wait() does not cancel underlying future":
+    let wg = newWaitGroup(1)
+    discard await wg.wait().withTimeout(1.millis)
+
+    check not wg.wait().finished
