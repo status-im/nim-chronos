@@ -52,7 +52,7 @@ suite "WaitGroup":
     check not wg.wait().finished
     check await wg.wait().withTimeout(15.millis)
 
-  asyncTest "cancel wait() does not cancel underlying future":
+  asyncTest "canceling wait() does not cancel underlying future":
     let wg = newWaitGroup(1)
     discard await wg.wait().withTimeout(1.millis)
 
