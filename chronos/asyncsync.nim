@@ -656,9 +656,9 @@ proc wait*(wg: WaitGroup): Future[void].Raising([CancelledError]) =
   return wg.fut.join()
 
 proc done*(wg: WaitGroup) =
-  if wg.count == 0:
+  if wg.fut.finished:
     return
 
   dec(wg.count)
-  if wg.count == 0 and not wg.fut.finished:
+  if wg.count == 0:
     wg.fut.complete()
