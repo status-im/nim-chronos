@@ -83,7 +83,7 @@ type
     ## A synchronization primitive that waits for a collection of 
     ## asynchronous tasks to finish.
     count: int
-    fut: Future[void].Raising([CancelledError])
+    fut: Future[void].Raising([])
 
 proc newAsyncLock*(): AsyncLock =
   ## Creates new asynchronous lock ``AsyncLock``.
@@ -647,7 +647,7 @@ proc waitEvents*[T](ab: AsyncEventQueue[T],
 
 proc newWaitGroup*(count: int): WaitGroup =
   doAssert(count >= 0, "WaitGroup count must be non negative number")
-  let fut = Future[void].Raising([CancelledError]).init("WaitGroup")
+  let fut = Future[void].Raising([]).init("WaitGroup", {FutureFlag.OwnCancelSchedule})
   if count == 0:
     fut.complete()
   WaitGroup(count: count, fut: fut)
