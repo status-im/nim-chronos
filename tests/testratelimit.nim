@@ -166,8 +166,8 @@ suite "Token Bucket":
     # so a small consume can still succeed.
     check bucket.tryConsume(1, late) == true
 
-  test "Strict replenish mode does not refill before period elapsed":
-    var bucket = TokenBucket.new(10, 100.milliseconds, ReplenishMode.Strict)
+  test "Discrete replenish mode does not refill before period elapsed":
+    var bucket = TokenBucket.new(10, 100.milliseconds, ReplenishMode.Discrete)
     let t0 = Moment.now()
     # Spend a portion (from full) -> lastUpdate = t0, budget 10
     check bucket.tryConsume(9, t0) == true # leaves 1
@@ -175,14 +175,14 @@ suite "Token Bucket":
     var cap = bucket.getAvailableCapacity(t0)
     check cap.budget == 1
     check cap.lastUpdate == t0
-    check cap.budgetCapacity == 10
+    check cap.capacity == 10
 
     let mid = t0 + 50.milliseconds
 
     cap = bucket.getAvailableCapacity(mid)
     check cap.budget == 1
     check cap.lastUpdate == t0
-    check cap.budgetCapacity == 10
+    check cap.capacity == 10
 
     check bucket.tryConsume(2, mid) == false  # no update before period boundary passed, budget 1
 
@@ -191,11 +191,11 @@ suite "Token Bucket":
     cap = bucket.getAvailableCapacity(boundary)
     check cap.budget == 10
     check cap.lastUpdate == boundary
-    check cap.budgetCapacity == 10
+    check cap.capacity == 10
 
     check bucket.tryConsume(2, boundary) == true  # ok, we passed the period boundary now, leaves 8
 
-  test "Balanced high-rate single-token 10/10ms over 40ms":
+  test "Continuous high-rate single-token 10/10ms over 40ms":
     # Capacity 10, fillDuration 10ms (1 token/ms). Only 1-token requests are made
     # at specific timestamps within 0–40ms (4 full periods). We verify that no
     # more than 50 tokens can be consumed in total and that per-batch accept/reject
@@ -290,7 +290,7 @@ suite "Token Bucket":
     check totalAccepted == 50
     check totalRejected == 44
 
-  test "Balanced high-rate single-token 10/10ms over 40ms (advancing time)":
+  test "Continuous high-rate single-token 10/10ms over 40ms (advancing time)":
     # Variant of the high-rate test where each tryConsume occurs at a timestamp that
     # advances by ~1ms when possible, simulating a more realistic stream of requests.
     # We still demand more than can be provided to ensure rejections, and we verify
@@ -319,8 +319,8 @@ suite "Token Bucket":
     # All available tokens within the window should have been consumed by our attempts
     check cap.budget == 0
 
-  # Balanced-mode scenario reproductions and timeline validation
-  test "Balanced Scenario 1 timeline":
+  # Continuous-mode scenario reproductions and timeline validation
+  test "Continuous Scenario 1 timeline":
     # Capacity 10, fillDuration 1s, per-token time 100ms
     var bucket = TokenBucket.new(10, 1.seconds)
 
@@ -387,7 +387,7 @@ suite "Token Bucket":
     check cap.budget == 4
     check cap.lastUpdate == t3000
 
-  test "Balanced: idle while full burns time":
+  test "Continuous: idle while full burns time":
     # Capacity 5, fillDuration 1s, per-token time 200ms
     var bucket = TokenBucket.new(5, 1.seconds)
     let t0 = Moment.now()
@@ -403,7 +403,7 @@ suite "Token Bucket":
     check cap.budget == 4
     check cap.lastUpdate == t2_5
 
-  test "Balanced: large jump clamps to capacity and LU=now when capped":
+  test "Continuous: large jump clamps to capacity and LU=now when capped":
     # Capacity 8, fillDuration 4s, per-token time 0.5s
     var bucket = TokenBucket.new(8, 4.seconds)
     let t0 = Moment.now()
