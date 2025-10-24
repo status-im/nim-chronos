@@ -36,11 +36,10 @@ type
     replenishMode: ReplenishMode
 
 func periodDistance(bucket: TokenBucket, currentTime: Moment): float =
-  if currentTime <= bucket.lastUpdate:
+  if currentTime <= bucket.lastUpdate or bucket.fillDuration == default(Duration):
     return 0.0
 
-  return nanoseconds(currentTime - bucket.lastUpdate).float / 
-    nanoseconds(bucket.fillDuration).float
+  nanoseconds(currentTime - bucket.lastUpdate).float / nanoseconds(bucket.fillDuration).float
 
 proc calcUpdateDiscrete(bucket: TokenBucket, currentTime: Moment): tuple[budget: int, lastUpdate: Moment] =
   if bucket.fillDuration == default(Duration):
@@ -51,7 +50,7 @@ proc calcUpdateDiscrete(bucket: TokenBucket, currentTime: Moment): tuple[budget:
   if distance < 1.0:
     return (bucket.budget, bucket.lastUpdate)
 
-  return (bucket.capacity, bucket.lastUpdate + (bucket.fillDuration * int(distance)))
+  (bucket.capacity, bucket.lastUpdate + (bucket.fillDuration * int(distance)))
 
 proc calcUpdateContinuous(bucket: TokenBucket, currentTime: Moment): tuple[budget: int, lastUpdate: Moment]  =
   if bucket.fillDuration == default(Duration):
@@ -89,7 +88,7 @@ proc calcUpdateContinuous(bucket: TokenBucket, currentTime: Moment): tuple[budge
     # We hit the capacity; discard leftover elapsed time to prevent multi-call burst inflation
     newLastUpdate = currentTime
 
-  return (newbudget, newLastUpdate)
+  (newbudget, newLastUpdate)
 
 proc calcUpdate(bucket: TokenBucket, currentTime: Moment): tuple[budget: int, lastUpdate: Moment] =
   if bucket.replenishMode == ReplenishMode.Discrete:
@@ -176,7 +175,7 @@ proc consume*(bucket: TokenBucket, tokens: int, now = Moment.now()): Future[void
   if isNil(bucket.workFuture) or bucket.workFuture.finished():
     bucket.workFuture = worker(bucket)
 
-  return retFuture
+  retFuture
 
 proc replenish*(bucket: TokenBucket, tokens: int, now = Moment.now()) =
   ## Add `tokens` to the budget (capped to the bucket capacity)
@@ -188,7 +187,7 @@ proc getAvailableCapacity*(
     bucket: TokenBucket, currentTime: Moment = Moment.now()
 ): tuple[budget: int, capacity: int, lastUpdate: Moment] =
   let (assumedBudget, assumedLastUpdate) = bucket.calcUpdate(currentTime)
-  return (assumedBudget, bucket.capacity, assumedLastUpdate)
+  (assumedBudget, bucket.capacity, assumedLastUpdate)
 
 proc new*(
   T: type[TokenBucket],
@@ -213,4 +212,4 @@ proc setState*(bucket: TokenBucket, budget: int, lastUpdate: Moment) =
 func `$`*(b: TokenBucket): string {.inline.} =
   if isNil(b):
     return "nil"
-  return $b.capacity & "/" & $b.fillDuration
+  $b.capacity & "/" & $b.fillDuration
