@@ -1813,10 +1813,10 @@ when defined(windows):
         if res.isErr():
           retFuture.fail(newException(AsyncError, osErrorMsg(res.error())))
         else:
-          if returnFlag == TRUE:
-            retFuture.complete(WaitableResult.Timeout)
-          else:
+          if returnFlag == FALSE:
             retFuture.complete(WaitableResult.Ok)
+          else:
+            retFuture.complete(WaitableResult.Timeout)
 
     proc cancellation(udata: pointer) {.gcsafe.} =
       doAssert(not(isNil(waitHandle)))
