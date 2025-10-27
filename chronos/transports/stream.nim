@@ -702,7 +702,7 @@ when defined(windows):
         povl: RefCustomOverlapped
         proto: Protocol
 
-      var raddress = windowsAnyAddressFix(address)
+      var raddress = anyAddressFix(address)
 
       toSAddr(raddress, saddr, slen)
       proto = Protocol.IPPROTO_TCP
@@ -1556,14 +1556,18 @@ else:
       saddr: Sockaddr_storage
       slen: SockLen
     var retFuture = newFuture[StreamTransport]("stream.transport.connect")
-    address.toSAddr(saddr, slen)
+
+    var raddress = anyAddressFix(address)
+    toSAddr(raddress, saddr, slen)
+    raddress.toSAddr(saddr, slen)
+
     let proto =
-      if address.family == AddressFamily.Unix:
+      if raddress.family == AddressFamily.Unix:
         Protocol.IPPROTO_IP
       else:
         Protocol.IPPROTO_TCP
 
-    let sock = createAsyncSocket2(address.getDomain(), SockType.SOCK_STREAM,
+    let sock = createAsyncSocket2(raddress.getDomain(), SockType.SOCK_STREAM,
                                   proto).valueOr:
       case error
       of oserrno.EMFILE:
@@ -1572,7 +1576,7 @@ else:
         retFuture.fail(getTransportOsError(error))
       return retFuture
 
-    if address.family in {AddressFamily.IPv4, AddressFamily.IPv6}:
+    if raddress.family in {AddressFamily.IPv4, AddressFamily.IPv6}:
       if SocketFlags.TcpNoDelay in flags:
         setSockOpt2(sock, osdefs.IPPROTO_TCP, osdefs.TCP_NODELAY, 1).isOkOr:
           sock.closeSocket()
@@ -1590,7 +1594,7 @@ else:
         retFuture.fail(getTransportOsError(error))
         return retFuture
     # IPV6_V6ONLY.
-    setDualstack(sock, address.family, dualstack).isOkOr:
+    setDualstack(sock, raddress.family, dualstack).isOkOr:
       sock.closeSocket()
       retFuture.fail(getTransportOsError(error))
       return retFuture

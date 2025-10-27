@@ -264,6 +264,7 @@ when defined(windows):
     WSAPROTOCOL_LEN* = 255
 
   type
+    BYTE* = uint8
     LONG* = int32
     ULONG* = uint32
     PULONG* = ptr uint32
@@ -502,7 +503,7 @@ when defined(windows):
       gcsafe, stdcall, raises: [].}
 
     WAITORTIMERCALLBACK* = proc (
-      p1: pointer, p2: DWORD): void {.
+      p1: pointer, p2: BYTE): void {.
       gcsafe, stdcall, raises: [].}
 
     WSAPROC_ACCEPTEX* = proc (

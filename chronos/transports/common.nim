@@ -546,10 +546,10 @@ proc resolveTAddress*(address: string, port: Port,
   of IpAddressFamily.IPv6:
     resolveTAddress(address, port, AddressFamily.IPv6)
 
-proc windowsAnyAddressFix*(a: TransportAddress): TransportAddress =
+proc anyAddressFix*(a: TransportAddress): TransportAddress =
   ## BSD Sockets on \*nix systems are able to perform connections to
   ## `0.0.0.0` or `::0` which are equal to `127.0.0.1` or `::1`.
-  when defined(windows):
+  when defined(windows) or defined(macosx) or defined(macos):
     if (a.family == AddressFamily.IPv4 and
         a.address_v4 == AnyAddress.address_v4):
       try:
