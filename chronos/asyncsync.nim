@@ -92,6 +92,7 @@ type
     availableSlots: int
     queue: Deque[Future[void]]
 
+  AsyncSemaphoreError* = object of AsyncError
 
 proc newAsyncLock*(): AsyncLock =
   ## Creates new asynchronous lock ``AsyncLock``.
@@ -700,13 +701,14 @@ proc acquire*(
 
   return fut
 
-proc release*(s: AsyncSemaphore) =
+proc release*(s: AsyncSemaphore) {.raises: [AsyncSemaphoreError].} =
   ## Release a resource from the semaphore,
   ## by picking the first future from the queue
   ## and completing it and incrementing the
   ## internal resource count.
 
-  doAssert(s.availableSlots < s.size)
+  if s.availableSlots == s.size:
+    raise newException(AsyncSemaphoreError, "release called without acquire")
 
   s.availableSlots.inc
   while s.queue.len > 0:

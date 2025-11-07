@@ -53,7 +53,7 @@ suite "AsyncSemaphore":
   asyncTest "initial release":
     let sema = newAsyncSemaphore(3)
 
-    expect AssertionDefect: # should not release
+    expect AsyncSemaphoreError: # should not release
       sema.release() 
 
   asyncTest "double release":
@@ -61,7 +61,7 @@ suite "AsyncSemaphore":
     
     await sema.acquire()
     sema.release()
-    expect AssertionDefect:  # should not release
+    expect AsyncSemaphoreError: # should not release
       sema.release() 
 
   asyncTest "should queue acquire":
