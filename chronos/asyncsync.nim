@@ -676,7 +676,7 @@ proc tryAcquire*(s: AsyncSemaphore): bool =
 
 proc acquire*(
     s: AsyncSemaphore
-): Future[void] {.async: (raises: [CancelledError], raw: true).} =
+): Future[void] =
   ## Acquire a resource and decrement the resource counter. 
   ## If no more resources are available, the returned future 
   ## will not complete until the resource count goes above 0.
