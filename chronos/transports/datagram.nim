@@ -80,8 +80,8 @@ proc setRemoteAddress(transp: DatagramTransport,
                       address: TransportAddress): TransportAddress =
   let
     fixedAddress =
-      when defined(windows):
-        windowsAnyAddressFix(address)
+      when defined(windows) or defined(macos) or defined(macosx):
+        anyAddressFix(address)
       else:
         address
     remoteAddress =

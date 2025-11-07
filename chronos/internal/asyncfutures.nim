@@ -182,6 +182,10 @@ proc finish(fut: FutureBase, state: FutureState) =
   # 2. `fut.state` is checked by `checkFinished()`.
   fut.internalState = state
   fut.internalCancelcb = nil # release cancellation callback memory
+
+  if not(isNil(fut.internalCallback.function)):
+    callSoon(move(fut.internalCallback))
+
   for item in fut.internalCallbacks.mitems():
     if not(isNil(item.function)):
       callSoon(item)
@@ -273,7 +277,7 @@ proc tryCancel(future: FutureBase, loc: ptr SrcLoc): bool =
     # If you hit this assertion, you should have used the `CancelledError`
     # mechanism and/or use a regular `addCallback`
     when chronosStrictFutureAccess:
-      doAssert future.internalCancelcb.isNil,
+      doAssert isNil(future.internalCancelcb),
         "futures returned from `{.async.}` functions must not use " &
         "`cancelCallback`"
     tryCancel(future.internalChild, loc)
@@ -288,7 +292,8 @@ template tryCancel*(future: FutureBase): bool =
   tryCancel(future, getSrcLocation())
 
 proc clearCallbacks(future: FutureBase) =
-  future.internalCallbacks = default(seq[AsyncCallback])
+  future.internalCallback.reset()
+  future.internalCallbacks.reset()
 
 proc addCallback*(future: FutureBase, cb: CallbackFunc, udata: pointer) =
   ## Adds the callbacks proc to be called when the future completes.
@@ -298,7 +303,10 @@ proc addCallback*(future: FutureBase, cb: CallbackFunc, udata: pointer) =
   if future.finished():
     callSoon(cb, udata)
   else:
-    future.internalCallbacks.add AsyncCallback(function: cb, udata: udata)
+    if isNil(future.internalCallback.function):
+      future.internalCallback = AsyncCallback(function: cb, udata: udata)
+    else:
+      future.internalCallbacks.add AsyncCallback(function: cb, udata: udata)
 
 proc addCallback*(future: FutureBase, cb: CallbackFunc) =
   ## Adds the callbacks proc to be called when the future completes.
@@ -313,6 +321,9 @@ proc removeCallback*(future: FutureBase, cb: CallbackFunc,
   doAssert(not isNil(cb))
   # Make sure to release memory associated with callback, or reference chains
   # may be created!
+  if future.internalCallback.function == cb and future.internalCallback.udata == udata:
+    future.internalCallback.reset()
+
   future.internalCallbacks.keepItIf:
     it.function != cb or it.udata != udata
 
@@ -1802,10 +1813,10 @@ when defined(windows):
         if res.isErr():
           retFuture.fail(newException(AsyncError, osErrorMsg(res.error())))
         else:
-          if returnFlag == TRUE:
-            retFuture.complete(WaitableResult.Timeout)
-          else:
+          if returnFlag == FALSE:
             retFuture.complete(WaitableResult.Ok)
+          else:
+            retFuture.complete(WaitableResult.Timeout)
 
     proc cancellation(udata: pointer) {.gcsafe.} =
       doAssert(not(isNil(waitHandle)))
