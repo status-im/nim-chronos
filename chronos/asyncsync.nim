@@ -88,9 +88,9 @@ type
     ## The ``size`` argument gives the initial value for the available slots
     ## counter; it defaults to ``1``. If the value given is less than 1,
     ## ``AssertionError`` is raised.
-    size*: int
-    availableSlots*: int
-    queue: seq[Future[void]]
+    size: int
+    availableSlots: int
+    queue: Deque[Future[void]]
 
 
 proc newAsyncLock*(): AsyncLock =
@@ -658,7 +658,14 @@ proc newAsyncSemaphore*(size: int = 1): AsyncSemaphore =
   ## Creates a new asynchronous bounded semaphore ``AsyncSemaphore`` with
   ## internal available slots set to ``size``.
   doAssert(size > 0, "AsyncSemaphore initial size must be bigger then 0")
-  AsyncSemaphore(size: size, availableSlots: size)
+  AsyncSemaphore(
+    size: size,
+    availableSlots: size, 
+    queue: initDeque[Future[void]](),
+  )
+
+proc availableSlots*(s: AsyncSemaphore): int =
+  return s.availableSlots
 
 proc tryAcquire*(s: AsyncSemaphore): bool =
   ## Attempts to acquire a resource, if successful returns true, otherwise false.
@@ -680,11 +687,16 @@ proc acquire*(
     return fut
 
   proc cancellation(udata: pointer) {.gcsafe.} =
-    s.queue.keepItIf(it != fut)
+    var filtered = initDeque[Future[void]](s.queue.len)
+    for i in 0 ..< s.queue.len:
+      let x = s.queue[i]
+      if x != fut:
+        filtered.addLast(x)
+    s.queue = filtered
 
   fut.cancelCallback = cancellation
 
-  s.queue.add(fut)
+  s.queue.addLast(fut)
 
   return fut
 
@@ -698,8 +710,7 @@ proc release*(s: AsyncSemaphore) =
 
   s.availableSlots.inc
   while s.queue.len > 0:
-    var fut = s.queue[0]
-    s.queue.delete(0)
+    var fut = s.queue.popFirst()
     if not fut.finished():
       s.availableSlots.dec
       fut.complete()
