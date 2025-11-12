@@ -1,0 +1,55 @@
+AsyncLock	chronos/asyncsync.html#AsyncLock	asyncsync: AsyncLock	
+AsyncEvent	chronos/asyncsync.html#AsyncEvent	asyncsync: AsyncEvent	
+AsyncQueue	chronos/asyncsync.html#AsyncQueue	asyncsync: AsyncQueue	
+AsyncQueueEmptyError	chronos/asyncsync.html#AsyncQueueEmptyError	asyncsync: AsyncQueueEmptyError	
+AsyncQueueFullError	chronos/asyncsync.html#AsyncQueueFullError	asyncsync: AsyncQueueFullError	
+AsyncLockError	chronos/asyncsync.html#AsyncLockError	asyncsync: AsyncLockError	
+AsyncEventQueueFullError	chronos/asyncsync.html#AsyncEventQueueFullError	asyncsync: AsyncEventQueueFullError	
+EventQueueKey	chronos/asyncsync.html#EventQueueKey	asyncsync: EventQueueKey	
+EventQueueReader	chronos/asyncsync.html#EventQueueReader	asyncsync: EventQueueReader	
+AsyncEventQueue	chronos/asyncsync.html#AsyncEventQueue	asyncsync: AsyncEventQueue	
+newAsyncLock	chronos/asyncsync.html#newAsyncLock	asyncsync: newAsyncLock(): AsyncLock	
+acquire	chronos/asyncsync.html#acquire,AsyncLock	asyncsync: acquire(lock: AsyncLock): InternalRaisesFuture[void, (CancelledError,)]	
+locked	chronos/asyncsync.html#locked,AsyncLock	asyncsync: locked(lock: AsyncLock): bool	
+release	chronos/asyncsync.html#release,AsyncLock	asyncsync: release(lock: AsyncLock)	
+newAsyncEvent	chronos/asyncsync.html#newAsyncEvent	asyncsync: newAsyncEvent(): AsyncEvent	
+wait	chronos/asyncsync.html#wait,AsyncEvent	asyncsync: wait(event: AsyncEvent): InternalRaisesFuture[void, (CancelledError,)]	
+fire	chronos/asyncsync.html#fire,AsyncEvent	asyncsync: fire(event: AsyncEvent)	
+clear	chronos/asyncsync.html#clear,AsyncEvent	asyncsync: clear(event: AsyncEvent)	
+isSet	chronos/asyncsync.html#isSet,AsyncEvent	asyncsync: isSet(event: AsyncEvent): bool	
+newAsyncQueue	chronos/asyncsync.html#newAsyncQueue,int	asyncsync: newAsyncQueue[T](maxsize: int = 0): AsyncQueue[T]	
+full	chronos/asyncsync.html#full,AsyncQueue[T]	asyncsync: full[T](aq: AsyncQueue[T]): bool	
+empty	chronos/asyncsync.html#empty,AsyncQueue[T]	asyncsync: empty[T](aq: AsyncQueue[T]): bool	
+addFirstNoWait	chronos/asyncsync.html#addFirstNoWait,AsyncQueue[T],T	asyncsync: addFirstNoWait[T](aq: AsyncQueue[T]; item: T)	
+addLastNoWait	chronos/asyncsync.html#addLastNoWait,AsyncQueue[T],T	asyncsync: addLastNoWait[T](aq: AsyncQueue[T]; item: T)	
+popFirstNoWait	chronos/asyncsync.html#popFirstNoWait,AsyncQueue[T]	asyncsync: popFirstNoWait[T](aq: AsyncQueue[T]): T	
+popLastNoWait	chronos/asyncsync.html#popLastNoWait,AsyncQueue[T]	asyncsync: popLastNoWait[T](aq: AsyncQueue[T]): T	
+addFirst	chronos/asyncsync.html#addFirst,AsyncQueue[T],T	asyncsync: addFirst[T](aq: AsyncQueue[T]; item: T): InternalRaisesFuture[void,\n    (CancelledError,)]	
+addLast	chronos/asyncsync.html#addLast,AsyncQueue[T],T	asyncsync: addLast[T](aq: AsyncQueue[T]; item: T): InternalRaisesFuture[void,\n    (CancelledError,)]	
+popFirst	chronos/asyncsync.html#popFirst,AsyncQueue[T]	asyncsync: popFirst[T](aq: AsyncQueue[T]): InternalRaisesFuture[T, (CancelledError,)]	
+popLast	chronos/asyncsync.html#popLast,AsyncQueue[T]	asyncsync: popLast[T](aq: AsyncQueue[T]): InternalRaisesFuture[T, (CancelledError,)]	
+putNoWait	chronos/asyncsync.html#putNoWait,AsyncQueue[T],T	asyncsync: putNoWait[T](aq: AsyncQueue[T]; item: T)	
+getNoWait	chronos/asyncsync.html#getNoWait,AsyncQueue[T]	asyncsync: getNoWait[T](aq: AsyncQueue[T]): T	
+put	chronos/asyncsync.html#put,AsyncQueue[T],T	asyncsync: put[T](aq: AsyncQueue[T]; item: T): InternalRaisesFuture[void, (CancelledError,)]	
+get	chronos/asyncsync.html#get,AsyncQueue[T]	asyncsync: get[T](aq: AsyncQueue[T]): InternalRaisesFuture[T, (CancelledError,)]	
+clear	chronos/asyncsync.html#clear,AsyncQueue[T]	asyncsync: clear[T](aq: AsyncQueue[T])	
+len	chronos/asyncsync.html#len,AsyncQueue[T]	asyncsync: len[T](aq: AsyncQueue[T]): int	
+size	chronos/asyncsync.html#size,AsyncQueue[T]	asyncsync: size[T](aq: AsyncQueue[T]): int	
+`[]`	chronos/asyncsync.html#[],AsyncQueue[T],Natural	asyncsync: `[]`[T](aq: AsyncQueue[T]; i: Natural): T	
+`[]`	chronos/asyncsync.html#[],AsyncQueue[T],BackwardsIndex	asyncsync: `[]`[T](aq: AsyncQueue[T]; i: BackwardsIndex): T	
+`[]=`	chronos/asyncsync.html#[]=,AsyncQueue[T],Natural,T	asyncsync: `[]=`[T](aq: AsyncQueue[T]; i: Natural; item: T)	
+`[]=`	chronos/asyncsync.html#[]=,AsyncQueue[T],BackwardsIndex,T	asyncsync: `[]=`[T](aq: AsyncQueue[T]; i: BackwardsIndex; item: T)	
+items	chronos/asyncsync.html#items.i,AsyncQueue[T]	asyncsync: items[T](aq: AsyncQueue[T]): T	
+mitems	chronos/asyncsync.html#mitems.i,AsyncQueue[T]	asyncsync: mitems[T](aq: AsyncQueue[T]): var T	
+pairs	chronos/asyncsync.html#pairs.i,AsyncQueue[T]	asyncsync: pairs[T](aq: AsyncQueue[T]): tuple[key: int, val: T]	
+contains	chronos/asyncsync.html#contains,AsyncQueue[T],T	asyncsync: contains[T](aq: AsyncQueue[T]; item: T): bool	
+`$`	chronos/asyncsync.html#$,AsyncQueue[T]	asyncsync: `$`[T](aq: AsyncQueue[T]): string	
+newAsyncEventQueue	chronos/asyncsync.html#newAsyncEventQueue,int	asyncsync: newAsyncEventQueue[T](limitSize = 0): AsyncEventQueue[T]	
+len	chronos/asyncsync.html#len,AsyncEventQueue	asyncsync: len(ab: AsyncEventQueue): int	
+register	chronos/asyncsync.html#register,AsyncEventQueue	asyncsync: register(ab: AsyncEventQueue): EventQueueKey	
+unregister	chronos/asyncsync.html#unregister,AsyncEventQueue,EventQueueKey	asyncsync: unregister(ab: AsyncEventQueue; key: EventQueueKey)	
+close	chronos/asyncsync.html#close,AsyncEventQueue	asyncsync: close(ab: AsyncEventQueue)	
+closeWait	chronos/asyncsync.html#closeWait,AsyncEventQueue	asyncsync: closeWait(ab: AsyncEventQueue): InternalRaisesFuture[void, void]	
+readerOverflow	chronos/asyncsync.html#readerOverflow.t,AsyncEventQueue,EventQueueReader	asyncsync: readerOverflow(ab: AsyncEventQueue; reader: EventQueueReader): bool	
+emit	chronos/asyncsync.html#emit,AsyncEventQueue[T],T	asyncsync: emit[T](ab: AsyncEventQueue[T]; data: T)	
+waitEvents	chronos/asyncsync.html#waitEvents,AsyncEventQueue[T],EventQueueKey,int	asyncsync: waitEvents[T](ab: AsyncEventQueue[T]; key: EventQueueKey; eventsCount = -1): InternalRaisesFuture[\n    seq[T], (AsyncEventQueueFullError, CancelledError)]	
