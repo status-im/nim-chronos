@@ -637,8 +637,6 @@ proc connect(session: HttpSessionRef,
         await connect(address, bufferSize = session.connectionBufferSize,
                       flags = session.socketFlags,
                       dualstack = session.dualstack)
-      except CancelledError as exc:
-        raise exc
       except TransportError:
         nil
     if not(isNil(transp)):
@@ -1680,8 +1678,6 @@ proc getServerSentEvents*(
 
   try:
     await reader.readMessage(predicate)
-  except CancelledError as exc:
-    raise exc
   except AsyncStreamError as exc:
     raiseHttpReadError($exc.msg)
 
