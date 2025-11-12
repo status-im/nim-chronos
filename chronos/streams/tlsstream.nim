@@ -218,14 +218,14 @@ proc tlsReadRec(engine: ptr SslEngineContext,
                 reader: TLSStreamReader): Future[TLSResult] {.
      async: (raises: []).} =
   try:
-    var length = 0'u
-    var buf = sslEngineRecvrecBuf(engine[], length)
-    let res = await reader.rsource.readOnce(buf, int(length))
-    sslEngineRecvrecAck(engine[], uint(res))
-    if res == 0:
-      sslEngineClose(engine[])
-      TLSResult.ReadEof
-    else:
+    # var length = 0'u
+    # var buf = sslEngineRecvrecBuf(engine[], length)
+    # let res = await reader.rsource.readOnce(buf, int(length))
+    # sslEngineRecvrecAck(engine[], uint(res))
+    # if res == 0:
+    #   sslEngineClose(engine[])
+    #   TLSResult.ReadEof
+    # else:
       TLSResult.Success
   except AsyncStreamError as exc:
     reader.state = AsyncStreamState.Error
@@ -630,7 +630,7 @@ proc newTLSServerAsyncStream*(rsource: AsyncStreamReader,
     raise newException(TLSStreamInitError, "Could not initialize TLS layer")
 
   init(AsyncStreamWriter(res.writer), wsource, tlsWriteLoop, bufferSize)
-  init(AsyncStreamReader(res.reader), rsource, tlsReadLoop, bufferSize)
+  #init(AsyncStreamReader(res.reader), rsource, tlsReadLoop, bufferSize)
   res
 
 proc copyKey(src: RsaPrivateKey): TLSPrivateKey =

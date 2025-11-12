@@ -103,72 +103,72 @@ proc chunkedReadLoop(stream: AsyncStreamReader) {.async: (raises: []).} =
   var buffer = newSeq[byte](MaxChunkHeaderSize)
   rstream.state = AsyncStreamState.Running
 
-  while true:
-    try:
-      # Reading chunk size
-      let res = await rstream.rsource.readUntil(addr buffer[0], len(buffer),
-                                                CRLF)
-      let cres = getChunkSize(buffer.toOpenArray(0, res - len(CRLF) - 1))
+  # while true:
+  #   try:
+  #     # Reading chunk size
+  #     let res = await rstream.rsource.readUntil(addr buffer[0], len(buffer),
+  #                                               CRLF)
+  #     let cres = getChunkSize(buffer.toOpenArray(0, res - len(CRLF) - 1))
 
-      if cres.isErr():
-        if rstream.state == AsyncStreamState.Running:
-          rstream.error = newException(ChunkedStreamProtocolError, $cres.error)
-          rstream.state = AsyncStreamState.Error
-      else:
-        var chunksize = cres.get()
-        if chunksize > 0'u64:
-          while chunksize > 0'u64:
-            let
-              (data, rsize) = rstream.buffer.backend.reserve()
-              toRead = int(min(chunksize, uint64(rsize)))
-            await rstream.rsource.readExactly(data, toRead)
-            rstream.buffer.backend.commit(toRead)
-            await rstream.buffer.transfer()
-            chunksize = chunksize - uint64(toRead)
+  #     if cres.isErr():
+  #       if rstream.state == AsyncStreamState.Running:
+  #         rstream.error = newException(ChunkedStreamProtocolError, $cres.error)
+  #         rstream.state = AsyncStreamState.Error
+  #     else:
+  #       var chunksize = cres.get()
+  #       if chunksize > 0'u64:
+  #         while chunksize > 0'u64:
+  #           let
+  #             (data, rsize) = rstream.buffer.backend.reserve()
+  #             toRead = int(min(chunksize, uint64(rsize)))
+  #           await rstream.rsource.readExactly(data, toRead)
+  #           rstream.buffer.backend.commit(toRead)
+  #           await rstream.buffer.transfer()
+  #           chunksize = chunksize - uint64(toRead)
 
-          if rstream.state == AsyncStreamState.Running:
-            # Reading chunk trailing CRLF
-            await rstream.rsource.readExactly(addr buffer[0], 2)
+  #         if rstream.state == AsyncStreamState.Running:
+  #           # Reading chunk trailing CRLF
+  #           await rstream.rsource.readExactly(addr buffer[0], 2)
 
-            if buffer[0] != CRLF[0] or buffer[1] != CRLF[1]:
-              if rstream.state == AsyncStreamState.Running:
-                rstream.error = newException(ChunkedStreamProtocolError,
-                                             "Unexpected trailing bytes")
-                rstream.state = AsyncStreamState.Error
-        else:
-          # Reading trailing line for last chunk
-          discard await rstream.rsource.readUntil(addr buffer[0],
-                                                  len(buffer), CRLF)
-          if rstream.state == AsyncStreamState.Running:
-            rstream.state = AsyncStreamState.Finished
-            await rstream.buffer.transfer()
-    except CancelledError:
-      if rstream.state == AsyncStreamState.Running:
-        rstream.state = AsyncStreamState.Stopped
-    except AsyncStreamLimitError:
-      if rstream.state == AsyncStreamState.Running:
-        rstream.state = AsyncStreamState.Error
-        rstream.error = newException(ChunkedStreamProtocolError,
-                                     "Chunk header exceeds maximum size")
-    except AsyncStreamIncompleteError:
-      if rstream.state == AsyncStreamState.Running:
-        rstream.state = AsyncStreamState.Error
-        rstream.error = newException(ChunkedStreamIncompleteError,
-                                     "Incomplete chunk received")
-    except AsyncStreamReadError as exc:
-      if rstream.state == AsyncStreamState.Running:
-        rstream.state = AsyncStreamState.Error
-        rstream.error = exc
-    except AsyncStreamError as exc:
-      if rstream.state == AsyncStreamState.Running:
-        rstream.state = AsyncStreamState.Error
-        rstream.error = exc
+  #           if buffer[0] != CRLF[0] or buffer[1] != CRLF[1]:
+  #             if rstream.state == AsyncStreamState.Running:
+  #               rstream.error = newException(ChunkedStreamProtocolError,
+  #                                            "Unexpected trailing bytes")
+  #               rstream.state = AsyncStreamState.Error
+  #       else:
+  #         # Reading trailing line for last chunk
+  #         discard await rstream.rsource.readUntil(addr buffer[0],
+  #                                                 len(buffer), CRLF)
+  #         if rstream.state == AsyncStreamState.Running:
+  #           rstream.state = AsyncStreamState.Finished
+  #           await rstream.buffer.transfer()
+  #   except CancelledError:
+  #     if rstream.state == AsyncStreamState.Running:
+  #       rstream.state = AsyncStreamState.Stopped
+  #   except AsyncStreamLimitError:
+  #     if rstream.state == AsyncStreamState.Running:
+  #       rstream.state = AsyncStreamState.Error
+  #       rstream.error = newException(ChunkedStreamProtocolError,
+  #                                    "Chunk header exceeds maximum size")
+  #   except AsyncStreamIncompleteError:
+  #     if rstream.state == AsyncStreamState.Running:
+  #       rstream.state = AsyncStreamState.Error
+  #       rstream.error = newException(ChunkedStreamIncompleteError,
+  #                                    "Incomplete chunk received")
+  #   except AsyncStreamReadError as exc:
+  #     if rstream.state == AsyncStreamState.Running:
+  #       rstream.state = AsyncStreamState.Error
+  #       rstream.error = exc
+  #   except AsyncStreamError as exc:
+  #     if rstream.state == AsyncStreamState.Running:
+  #       rstream.state = AsyncStreamState.Error
+  #       rstream.error = exc
 
-    if rstream.state != AsyncStreamState.Running:
-      # We need to notify consumer about error/close, but we do not care about
-      # incoming data anymore.
-      rstream.buffer.forget()
-      break
+  #   if rstream.state != AsyncStreamState.Running:
+  #     # We need to notify consumer about error/close, but we do not care about
+  #     # incoming data anymore.
+  #     rstream.buffer.forget()
+  #     break
 
 proc chunkedWriteLoop(stream: AsyncStreamWriter) {.async: (raises: []).} =
   var wstream = ChunkedStreamWriter(stream)
@@ -236,28 +236,28 @@ proc chunkedWriteLoop(stream: AsyncStreamWriter) {.async: (raises: []).} =
           pitem.future.fail(error)
       break
 
-proc init*[T](child: ChunkedStreamReader, rsource: AsyncStreamReader,
-              bufferSize = ChunkBufferSize, udata: ref T) =
-  init(AsyncStreamReader(child), rsource, chunkedReadLoop, bufferSize,
-       udata)
+# proc init*[T](child: ChunkedStreamReader, rsource: AsyncStreamReader,
+#               bufferSize = ChunkBufferSize, udata: ref T) =
+#   init(AsyncStreamReader(child), rsource, chunkedReadLoop, bufferSize,
+#        udata)
 
-proc init*(child: ChunkedStreamReader, rsource: AsyncStreamReader,
-           bufferSize = ChunkBufferSize) =
-  init(AsyncStreamReader(child), rsource, chunkedReadLoop, bufferSize)
+# proc init*(child: ChunkedStreamReader, rsource: AsyncStreamReader,
+#            bufferSize = ChunkBufferSize) =
+#   init(AsyncStreamReader(child), rsource, chunkedReadLoop, bufferSize)
 
-proc newChunkedStreamReader*[T](rsource: AsyncStreamReader,
-                                bufferSize = AsyncStreamDefaultBufferSize,
-                                udata: ref T): ChunkedStreamReader =
-  var res = ChunkedStreamReader()
-  res.init(rsource, bufferSize, udata)
-  res
+# proc newChunkedStreamReader*[T](rsource: AsyncStreamReader,
+#                                 bufferSize = AsyncStreamDefaultBufferSize,
+#                                 udata: ref T): ChunkedStreamReader =
+#   var res = ChunkedStreamReader()
+#   res.init(rsource, bufferSize, udata)
+#   res
 
-proc newChunkedStreamReader*(rsource: AsyncStreamReader,
-                             bufferSize = AsyncStreamDefaultBufferSize,
-                            ): ChunkedStreamReader =
-  var res = ChunkedStreamReader()
-  res.init(rsource, bufferSize)
-  res
+# proc newChunkedStreamReader*(rsource: AsyncStreamReader,
+#                              bufferSize = AsyncStreamDefaultBufferSize,
+#                             ): ChunkedStreamReader =
+#   var res = ChunkedStreamReader()
+#   res.init(rsource, bufferSize)
+#   res
 
 proc init*[T](child: ChunkedStreamWriter, wsource: AsyncStreamWriter,
               queueSize = AsyncStreamDefaultQueueSize, udata: ref T) =

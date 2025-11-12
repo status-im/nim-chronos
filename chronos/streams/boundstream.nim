@@ -89,7 +89,7 @@ proc readUntilBoundary(rstream: AsyncStreamReader, pbytes: pointer,
             state = 0
       (index, (state == len(sep)) or (k == nbytes))
 
-  await rstream.readMessage(predicate)
+  #await rstream.readMessage(predicate)
   return k
 
 func endsWith(s, suffix: openArray[byte]): bool =
@@ -104,100 +104,100 @@ proc boundedReadLoop(stream: AsyncStreamReader) {.async: (raises: []).} =
   var rstream = BoundedStreamReader(stream)
   rstream.state = AsyncStreamState.Running
   var buffer = newSeq[byte](rstream.buffer.backend.availSpace())
-  while true:
-    let toRead =
-      if rstream.boundSize.isNone():
-        len(buffer)
-      else:
-        int(min(rstream.boundSize.get() - rstream.offset, uint64(len(buffer))))
-    try:
-      if toRead == 0:
-        # When ``rstream.boundSize`` is set and we already readed
-        # ``rstream.boundSize`` bytes.
-        if rstream.state == AsyncStreamState.Running:
-          rstream.state = AsyncStreamState.Finished
-      else:
-        let res = await readUntilBoundary(rstream.rsource, addr buffer[0],
-                                          toRead, rstream.boundary)
-        if res > 0:
-          if len(rstream.boundary) > 0:
-            if endsWith(buffer.toOpenArray(0, res - 1), rstream.boundary):
-              let length = res - len(rstream.boundary)
-              rstream.offset = rstream.offset + uint64(length)
-              # There should be one step between transferring last bytes to the
-              # consumer and declaring stream EOF. Otherwise could not be
-              # consumed.
-              await upload(rstream.buffer, addr buffer[0], length)
-              if rstream.state == AsyncStreamState.Running:
-                rstream.state = AsyncStreamState.Finished
-            else:
-              rstream.offset = rstream.offset + uint64(res)
-              # There should be one step between transferring last bytes to the
-              # consumer and declaring stream EOF. Otherwise could not be
-              # consumed.
-              await upload(rstream.buffer, addr buffer[0], res)
+  # while true:
+  #   let toRead =
+  #     if rstream.boundSize.isNone():
+  #       len(buffer)
+  #     else:
+  #       int(min(rstream.boundSize.get() - rstream.offset, uint64(len(buffer))))
+  #   try:
+  #     if toRead == 0:
+  #       # When ``rstream.boundSize`` is set and we already readed
+  #       # ``rstream.boundSize`` bytes.
+  #       if rstream.state == AsyncStreamState.Running:
+  #         rstream.state = AsyncStreamState.Finished
+  #     else:
+  #       let res = await readUntilBoundary(rstream.rsource, addr buffer[0],
+  #                                         toRead, rstream.boundary)
+  #       if res > 0:
+  #         if len(rstream.boundary) > 0:
+  #           if endsWith(buffer.toOpenArray(0, res - 1), rstream.boundary):
+  #             let length = res - len(rstream.boundary)
+  #             rstream.offset = rstream.offset + uint64(length)
+  #             # There should be one step between transferring last bytes to the
+  #             # consumer and declaring stream EOF. Otherwise could not be
+  #             # consumed.
+  #             await upload(rstream.buffer, addr buffer[0], length)
+  #             if rstream.state == AsyncStreamState.Running:
+  #               rstream.state = AsyncStreamState.Finished
+  #           else:
+  #             rstream.offset = rstream.offset + uint64(res)
+  #             # There should be one step between transferring last bytes to the
+  #             # consumer and declaring stream EOF. Otherwise could not be
+  #             # consumed.
+  #             await upload(rstream.buffer, addr buffer[0], res)
 
-              if (res < toRead) and rstream.rsource.atEof():
-                case rstream.cmpop
-                of BoundCmp.Equal:
-                  if rstream.state == AsyncStreamState.Running:
-                    rstream.state = AsyncStreamState.Error
-                    rstream.error = newBoundedStreamIncompleteError()
-                of BoundCmp.LessOrEqual:
-                  if rstream.state == AsyncStreamState.Running:
-                    rstream.state = AsyncStreamState.Finished
-          else:
-            rstream.offset = rstream.offset + uint64(res)
-            # There should be one step between transferring last bytes to the
-            # consumer and declaring stream EOF. Otherwise could not be
-            # consumed.
-            await upload(rstream.buffer, addr buffer[0], res)
+  #             if (res < toRead) and rstream.rsource.atEof():
+  #               case rstream.cmpop
+  #               of BoundCmp.Equal:
+  #                 if rstream.state == AsyncStreamState.Running:
+  #                   rstream.state = AsyncStreamState.Error
+  #                   rstream.error = newBoundedStreamIncompleteError()
+  #               of BoundCmp.LessOrEqual:
+  #                 if rstream.state == AsyncStreamState.Running:
+  #                   rstream.state = AsyncStreamState.Finished
+  #         else:
+  #           rstream.offset = rstream.offset + uint64(res)
+  #           # There should be one step between transferring last bytes to the
+  #           # consumer and declaring stream EOF. Otherwise could not be
+  #           # consumed.
+  #           await upload(rstream.buffer, addr buffer[0], res)
 
-            if (res < toRead) and rstream.rsource.atEof():
-              case rstream.cmpop
-              of BoundCmp.Equal:
-                if rstream.state == AsyncStreamState.Running:
-                  rstream.state = AsyncStreamState.Error
-                  rstream.error = newBoundedStreamIncompleteError()
-              of BoundCmp.LessOrEqual:
-                if rstream.state == AsyncStreamState.Running:
-                  rstream.state = AsyncStreamState.Finished
-        else:
-          case rstream.cmpop
-          of BoundCmp.Equal:
-            if rstream.state == AsyncStreamState.Running:
-              rstream.state = AsyncStreamState.Error
-              rstream.error = newBoundedStreamIncompleteError()
-          of BoundCmp.LessOrEqual:
-            if rstream.state == AsyncStreamState.Running:
-              rstream.state = AsyncStreamState.Finished
+  #           if (res < toRead) and rstream.rsource.atEof():
+  #             case rstream.cmpop
+  #             of BoundCmp.Equal:
+  #               if rstream.state == AsyncStreamState.Running:
+  #                 rstream.state = AsyncStreamState.Error
+  #                 rstream.error = newBoundedStreamIncompleteError()
+  #             of BoundCmp.LessOrEqual:
+  #               if rstream.state == AsyncStreamState.Running:
+  #                 rstream.state = AsyncStreamState.Finished
+  #       else:
+  #         case rstream.cmpop
+  #         of BoundCmp.Equal:
+  #           if rstream.state == AsyncStreamState.Running:
+  #             rstream.state = AsyncStreamState.Error
+  #             rstream.error = newBoundedStreamIncompleteError()
+  #         of BoundCmp.LessOrEqual:
+  #           if rstream.state == AsyncStreamState.Running:
+  #             rstream.state = AsyncStreamState.Finished
 
-    except AsyncStreamError as exc:
-      if rstream.state == AsyncStreamState.Running:
-        rstream.state = AsyncStreamState.Error
-        rstream.error = exc
-    except CancelledError:
-      if rstream.state == AsyncStreamState.Running:
-        rstream.state = AsyncStreamState.Error
-        rstream.error = newAsyncStreamUseClosedError()
+  #   except AsyncStreamError as exc:
+  #     if rstream.state == AsyncStreamState.Running:
+  #       rstream.state = AsyncStreamState.Error
+  #       rstream.error = exc
+  #   except CancelledError:
+  #     if rstream.state == AsyncStreamState.Running:
+  #       rstream.state = AsyncStreamState.Error
+  #       rstream.error = newAsyncStreamUseClosedError()
 
-    case rstream.state
-    of AsyncStreamState.Running:
-      discard
-    of AsyncStreamState.Error, AsyncStreamState.Stopped:
-      # Send `Error` or `Stopped` state to the consumer without waiting.
-      rstream.buffer.forget()
-      break
-    of AsyncStreamState.Finished:
-      # Send `EOF` state to the consumer and wait until it will be received.
-      try:
-        await rstream.buffer.transfer()
-      except CancelledError:
-        rstream.state = AsyncStreamState.Error
-        rstream.error = newBoundedStreamIncompleteError()
-      break
-    of AsyncStreamState.Closing, AsyncStreamState.Closed:
-      break
+  #   case rstream.state
+  #   of AsyncStreamState.Running:
+  #     discard
+  #   of AsyncStreamState.Error, AsyncStreamState.Stopped:
+  #     # Send `Error` or `Stopped` state to the consumer without waiting.
+  #     rstream.buffer.forget()
+  #     break
+  #   of AsyncStreamState.Finished:
+  #     # Send `EOF` state to the consumer and wait until it will be received.
+  #     try:
+  #       await rstream.buffer.transfer()
+  #     except CancelledError:
+  #       rstream.state = AsyncStreamState.Error
+  #       rstream.error = newBoundedStreamIncompleteError()
+  #     break
+  #   of AsyncStreamState.Closing, AsyncStreamState.Closed:
+  #     break
 
 proc boundedWriteLoop(stream: AsyncStreamWriter) {.async: (raises: []).} =
   var error: ref AsyncStreamError
@@ -306,145 +306,145 @@ proc init*[T](child: BoundedStreamReader, rsource: AsyncStreamReader,
   init(AsyncStreamReader(child), rsource, boundedReadLoop, bufferSize,
        udata)
 
-proc init*(child: BoundedStreamReader, rsource: AsyncStreamReader,
-           boundSize: uint64, comparison = BoundCmp.Equal,
-           bufferSize = BoundedBufferSize) =
-  child.boundSize = Opt.some(boundSize)
-  child.cmpop = comparison
-  init(AsyncStreamReader(child), rsource, boundedReadLoop, bufferSize)
+# proc init*(child: BoundedStreamReader, rsource: AsyncStreamReader,
+#            boundSize: uint64, comparison = BoundCmp.Equal,
+#            bufferSize = BoundedBufferSize) =
+#   child.boundSize = Opt.some(boundSize)
+#   child.cmpop = comparison
+#   init(AsyncStreamReader(child), rsource, boundedReadLoop, bufferSize)
 
-proc init*(child: BoundedStreamReader, rsource: AsyncStreamReader,
-           boundary: openArray[byte], comparison = BoundCmp.Equal,
-           bufferSize = BoundedBufferSize) =
-  doAssert(len(boundary) > 0, BoundarySizeDefectMessage)
-  child.boundary = @boundary
-  child.cmpop = comparison
-  init(AsyncStreamReader(child), rsource, boundedReadLoop, bufferSize)
+# proc init*(child: BoundedStreamReader, rsource: AsyncStreamReader,
+#            boundary: openArray[byte], comparison = BoundCmp.Equal,
+#            bufferSize = BoundedBufferSize) =
+#   doAssert(len(boundary) > 0, BoundarySizeDefectMessage)
+#   child.boundary = @boundary
+#   child.cmpop = comparison
+#   init(AsyncStreamReader(child), rsource, boundedReadLoop, bufferSize)
 
-proc init*(child: BoundedStreamReader, rsource: AsyncStreamReader,
-           boundSize: uint64, boundary: openArray[byte],
-           comparison = BoundCmp.Equal, bufferSize = BoundedBufferSize) =
-  doAssert(len(boundary) > 0, BoundarySizeDefectMessage)
-  child.boundSize = Opt.some(boundSize)
-  child.boundary = @boundary
-  child.cmpop = comparison
-  init(AsyncStreamReader(child), rsource, boundedReadLoop, bufferSize)
+# proc init*(child: BoundedStreamReader, rsource: AsyncStreamReader,
+#            boundSize: uint64, boundary: openArray[byte],
+#            comparison = BoundCmp.Equal, bufferSize = BoundedBufferSize) =
+#   doAssert(len(boundary) > 0, BoundarySizeDefectMessage)
+#   child.boundSize = Opt.some(boundSize)
+#   child.boundary = @boundary
+#   child.cmpop = comparison
+#   init(AsyncStreamReader(child), rsource, boundedReadLoop, bufferSize)
 
-proc newBoundedStreamReader*[T](rsource: AsyncStreamReader,
-                                boundSize: uint64,
-                                comparison = BoundCmp.Equal,
-                                bufferSize = BoundedBufferSize,
-                                udata: ref T): BoundedStreamReader =
-  ## Create new stream reader which will be limited by size ``boundSize``. When
-  ## number of bytes readed by consumer reaches ``boundSize``,
-  ## BoundedStreamReader will enter EOF state (no more bytes will be returned
-  ## to the consumer).
-  ##
-  ## If ``comparison`` operator is ``BoundCmp.Equal`` and number of bytes readed
-  ## from source stream reader ``rsource`` is less than ``boundSize`` -
-  ## ``BoundedStreamIncompleteError`` will be raised. But comparison operator
-  ## ``BoundCmp.LessOrEqual`` allows to consume less bytes without
-  ## ``BoundedStreamIncompleteError`` exception.
-  var res = BoundedStreamReader()
-  res.init(rsource, boundSize, comparison, bufferSize, udata)
-  res
+# proc newBoundedStreamReader*[T](rsource: AsyncStreamReader,
+#                                 boundSize: uint64,
+#                                 comparison = BoundCmp.Equal,
+#                                 bufferSize = BoundedBufferSize,
+#                                 udata: ref T): BoundedStreamReader =
+#   ## Create new stream reader which will be limited by size ``boundSize``. When
+#   ## number of bytes readed by consumer reaches ``boundSize``,
+#   ## BoundedStreamReader will enter EOF state (no more bytes will be returned
+#   ## to the consumer).
+#   ##
+#   ## If ``comparison`` operator is ``BoundCmp.Equal`` and number of bytes readed
+#   ## from source stream reader ``rsource`` is less than ``boundSize`` -
+#   ## ``BoundedStreamIncompleteError`` will be raised. But comparison operator
+#   ## ``BoundCmp.LessOrEqual`` allows to consume less bytes without
+#   ## ``BoundedStreamIncompleteError`` exception.
+#   var res = BoundedStreamReader()
+#   res.init(rsource, boundSize, comparison, bufferSize, udata)
+#   res
 
-proc newBoundedStreamReader*[T](rsource: AsyncStreamReader,
-                                boundary: openArray[byte],
-                                comparison = BoundCmp.Equal,
-                                bufferSize = BoundedBufferSize,
-                                udata: ref T): BoundedStreamReader =
-  ## Create new stream reader which will be limited by binary boundary
-  ## ``boundary``. As soon as reader reaches ``boundary`` BoundedStreamReader
-  ## will enter EOF state (no more bytes will be returned to the consumer).
-  ##
-  ## If ``comparison`` operator is ``BoundCmp.Equal`` and number of bytes readed
-  ## from source stream reader ``rsource`` is less than ``boundSize`` -
-  ## ``BoundedStreamIncompleteError`` will be raised. But comparison operator
-  ## ``BoundCmp.LessOrEqual`` allows to consume less bytes without
-  ## ``BoundedStreamIncompleteError`` exception.
-  var res = BoundedStreamReader()
-  res.init(rsource, boundary, comparison, bufferSize, udata)
-  res
+# proc newBoundedStreamReader*[T](rsource: AsyncStreamReader,
+#                                 boundary: openArray[byte],
+#                                 comparison = BoundCmp.Equal,
+#                                 bufferSize = BoundedBufferSize,
+#                                 udata: ref T): BoundedStreamReader =
+#   ## Create new stream reader which will be limited by binary boundary
+#   ## ``boundary``. As soon as reader reaches ``boundary`` BoundedStreamReader
+#   ## will enter EOF state (no more bytes will be returned to the consumer).
+#   ##
+#   ## If ``comparison`` operator is ``BoundCmp.Equal`` and number of bytes readed
+#   ## from source stream reader ``rsource`` is less than ``boundSize`` -
+#   ## ``BoundedStreamIncompleteError`` will be raised. But comparison operator
+#   ## ``BoundCmp.LessOrEqual`` allows to consume less bytes without
+#   ## ``BoundedStreamIncompleteError`` exception.
+#   var res = BoundedStreamReader()
+#   res.init(rsource, boundary, comparison, bufferSize, udata)
+#   res
 
-proc newBoundedStreamReader*[T](rsource: AsyncStreamReader,
-                                boundSize: uint64,
-                                boundary: openArray[byte],
-                                comparison = BoundCmp.Equal,
-                                bufferSize = BoundedBufferSize,
-                                udata: ref T): BoundedStreamReader =
-  ## Create new stream reader which will be limited by size ``boundSize`` or
-  ## boundary ``boundary``. As soon as reader reaches ``boundary`` ``OR`` number
-  ## of bytes readed from source stream reader ``rsource`` reaches ``boundSize``
-  ## BoundStreamReader will enter EOF state (no more bytes will be returned to
-  ## the consumer).
-  ##
-  ## If ``comparison`` operator is ``BoundCmp.Equal`` and number of bytes readed
-  ## from source stream reader ``rsource`` is less than ``boundSize`` -
-  ## ``BoundedStreamIncompleteError`` will be raised. But comparison operator
-  ## ``BoundCmp.LessOrEqual`` allows to consume less bytes without
-  ## ``BoundedStreamIncompleteError`` exception.
-  var res = BoundedStreamReader()
-  res.init(rsource, boundSize, boundary, comparison, bufferSize, udata)
-  res
+# proc newBoundedStreamReader*[T](rsource: AsyncStreamReader,
+#                                 boundSize: uint64,
+#                                 boundary: openArray[byte],
+#                                 comparison = BoundCmp.Equal,
+#                                 bufferSize = BoundedBufferSize,
+#                                 udata: ref T): BoundedStreamReader =
+#   ## Create new stream reader which will be limited by size ``boundSize`` or
+#   ## boundary ``boundary``. As soon as reader reaches ``boundary`` ``OR`` number
+#   ## of bytes readed from source stream reader ``rsource`` reaches ``boundSize``
+#   ## BoundStreamReader will enter EOF state (no more bytes will be returned to
+#   ## the consumer).
+#   ##
+#   ## If ``comparison`` operator is ``BoundCmp.Equal`` and number of bytes readed
+#   ## from source stream reader ``rsource`` is less than ``boundSize`` -
+#   ## ``BoundedStreamIncompleteError`` will be raised. But comparison operator
+#   ## ``BoundCmp.LessOrEqual`` allows to consume less bytes without
+#   ## ``BoundedStreamIncompleteError`` exception.
+#   var res = BoundedStreamReader()
+#   res.init(rsource, boundSize, boundary, comparison, bufferSize, udata)
+#   res
 
-proc newBoundedStreamReader*(rsource: AsyncStreamReader,
-                             boundSize: uint64,
-                             comparison = BoundCmp.Equal,
-                             bufferSize = BoundedBufferSize,
-                            ): BoundedStreamReader =
-  ## Create new stream reader which will be limited by size ``boundSize``. When
-  ## number of bytes readed by consumer reaches ``boundSize``,
-  ## BoundedStreamReader will enter EOF state (no more bytes will be returned
-  ## to the consumer).
-  ##
-  ## If ``comparison`` operator is ``BoundCmp.Equal`` and number of bytes readed
-  ## from source stream reader ``rsource`` is less than ``boundSize`` -
-  ## ``BoundedStreamIncompleteError`` will be raised. But comparison operator
-  ## ``BoundCmp.LessOrEqual`` allows to consume less bytes without
-  ## ``BoundedStreamIncompleteError`` exception.
-  var res = BoundedStreamReader()
-  res.init(rsource, boundSize, comparison, bufferSize)
-  res
+# proc newBoundedStreamReader*(rsource: AsyncStreamReader,
+#                              boundSize: uint64,
+#                              comparison = BoundCmp.Equal,
+#                              bufferSize = BoundedBufferSize,
+#                             ): BoundedStreamReader =
+#   ## Create new stream reader which will be limited by size ``boundSize``. When
+#   ## number of bytes readed by consumer reaches ``boundSize``,
+#   ## BoundedStreamReader will enter EOF state (no more bytes will be returned
+#   ## to the consumer).
+#   ##
+#   ## If ``comparison`` operator is ``BoundCmp.Equal`` and number of bytes readed
+#   ## from source stream reader ``rsource`` is less than ``boundSize`` -
+#   ## ``BoundedStreamIncompleteError`` will be raised. But comparison operator
+#   ## ``BoundCmp.LessOrEqual`` allows to consume less bytes without
+#   ## ``BoundedStreamIncompleteError`` exception.
+#   var res = BoundedStreamReader()
+#   res.init(rsource, boundSize, comparison, bufferSize)
+#   res
 
-proc newBoundedStreamReader*(rsource: AsyncStreamReader,
-                             boundary: openArray[byte],
-                             comparison = BoundCmp.Equal,
-                             bufferSize = BoundedBufferSize,
-                            ): BoundedStreamReader =
-  ## Create new stream reader which will be limited by binary boundary
-  ## ``boundary``. As soon as reader reaches ``boundary`` BoundedStreamReader
-  ## will enter EOF state (no more bytes will be returned to the consumer).
-  ##
-  ## If ``comparison`` operator is ``BoundCmp.Equal`` and number of bytes readed
-  ## from source stream reader ``rsource`` is less than ``boundSize`` -
-  ## ``BoundedStreamIncompleteError`` will be raised. But comparison operator
-  ## ``BoundCmp.LessOrEqual`` allows to consume less bytes without
-  ## ``BoundedStreamIncompleteError`` exception.
-  var res = BoundedStreamReader()
-  res.init(rsource, boundary, comparison, bufferSize)
-  res
+# proc newBoundedStreamReader*(rsource: AsyncStreamReader,
+#                              boundary: openArray[byte],
+#                              comparison = BoundCmp.Equal,
+#                              bufferSize = BoundedBufferSize,
+#                             ): BoundedStreamReader =
+#   ## Create new stream reader which will be limited by binary boundary
+#   ## ``boundary``. As soon as reader reaches ``boundary`` BoundedStreamReader
+#   ## will enter EOF state (no more bytes will be returned to the consumer).
+#   ##
+#   ## If ``comparison`` operator is ``BoundCmp.Equal`` and number of bytes readed
+#   ## from source stream reader ``rsource`` is less than ``boundSize`` -
+#   ## ``BoundedStreamIncompleteError`` will be raised. But comparison operator
+#   ## ``BoundCmp.LessOrEqual`` allows to consume less bytes without
+#   ## ``BoundedStreamIncompleteError`` exception.
+#   var res = BoundedStreamReader()
+#   res.init(rsource, boundary, comparison, bufferSize)
+#   res
 
-proc newBoundedStreamReader*(rsource: AsyncStreamReader,
-                             boundSize: uint64,
-                             boundary: openArray[byte],
-                             comparison = BoundCmp.Equal,
-                             bufferSize = BoundedBufferSize,
-                            ): BoundedStreamReader =
-  ## Create new stream reader which will be limited by size ``boundSize`` or
-  ## boundary ``boundary``. As soon as reader reaches ``boundary`` ``OR`` number
-  ## of bytes readed from source stream reader ``rsource`` reaches ``boundSize``
-  ## BoundStreamReader will enter EOF state (no more bytes will be returned to
-  ## the consumer).
-  ##
-  ## If ``comparison`` operator is ``BoundCmp.Equal`` and number of bytes readed
-  ## from source stream reader ``rsource`` is less than ``boundSize`` -
-  ## ``BoundedStreamIncompleteError`` will be raised. But comparison operator
-  ## ``BoundCmp.LessOrEqual`` allows to consume less bytes without
-  ## ``BoundedStreamIncompleteError`` exception.
-  var res = BoundedStreamReader()
-  res.init(rsource, boundSize, boundary, comparison, bufferSize)
-  res
+# proc newBoundedStreamReader*(rsource: AsyncStreamReader,
+#                              boundSize: uint64,
+#                              boundary: openArray[byte],
+#                              comparison = BoundCmp.Equal,
+#                              bufferSize = BoundedBufferSize,
+#                             ): BoundedStreamReader =
+#   ## Create new stream reader which will be limited by size ``boundSize`` or
+#   ## boundary ``boundary``. As soon as reader reaches ``boundary`` ``OR`` number
+#   ## of bytes readed from source stream reader ``rsource`` reaches ``boundSize``
+#   ## BoundStreamReader will enter EOF state (no more bytes will be returned to
+#   ## the consumer).
+#   ##
+#   ## If ``comparison`` operator is ``BoundCmp.Equal`` and number of bytes readed
+#   ## from source stream reader ``rsource`` is less than ``boundSize`` -
+#   ## ``BoundedStreamIncompleteError`` will be raised. But comparison operator
+#   ## ``BoundCmp.LessOrEqual`` allows to consume less bytes without
+#   ## ``BoundedStreamIncompleteError`` exception.
+#   var res = BoundedStreamReader()
+#   res.init(rsource, boundSize, boundary, comparison, bufferSize)
+#   res
 
 proc init*[T](child: BoundedStreamWriter, wsource: AsyncStreamWriter,
               boundSize: uint64, comparison = BoundCmp.Equal,
