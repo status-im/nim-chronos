@@ -673,8 +673,9 @@ proc tryAcquire*(s: AsyncSemaphore): bool =
 
   if s.availableSlots > 0:
     s.availableSlots.dec
-    return true
-
+    true
+  else:
+    false
 proc acquire*(
     s: AsyncSemaphore
 ): Future[void] =
