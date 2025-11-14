@@ -78,6 +78,21 @@ type
     counter: uint64
     limit: int
     offset: int
+  
+  AsyncSemaphore* = ref object of RootObj
+    ## A semaphore manages an internal number of available slots which is decremented 
+    ## by each ``acquire()`` call and incremented by each ``release()`` call. 
+    ## The available slots can never go below zero; when ``acquire()`` finds that it is
+    ## zero, it blocks, waiting until some other task calls ``release()``.
+    ##
+    ## The ``size`` argument gives the initial value for the available slots
+    ## counter; it defaults to ``1``. If the value given is less than 1,
+    ## ``AssertionError`` is raised.
+    size: int
+    availableSlots: int
+    queue: Deque[Future[void]]
+
+  AsyncSemaphoreError* = object of AsyncError
 
 proc newAsyncLock*(): AsyncLock =
   ## Creates new asynchronous lock ``AsyncLock``.
@@ -638,3 +653,68 @@ proc waitEvents*[T](ab: AsyncEventQueue[T],
         break
 
   events
+
+
+proc newAsyncSemaphore*(size: int = 1): AsyncSemaphore =
+  ## Creates a new asynchronous bounded semaphore ``AsyncSemaphore`` with
+  ## internal available slots set to ``size``.
+  doAssert(size > 0, "AsyncSemaphore initial size must be bigger then 0")
+  AsyncSemaphore(
+    size: size,
+    availableSlots: size, 
+    queue: initDeque[Future[void]](),
+  )
+
+proc availableSlots*(s: AsyncSemaphore): int =
+  return s.availableSlots
+
+proc tryAcquire*(s: AsyncSemaphore): bool =
+  ## Attempts to acquire a resource, if successful returns true, otherwise false.
+
+  if s.availableSlots > 0:
+    s.availableSlots.dec
+    true
+  else:
+    false
+proc acquire*(
+    s: AsyncSemaphore
+): Future[void] {.async: (raises: [CancelledError], raw: true).} =
+  ## Acquire a resource and decrement the resource counter. 
+  ## If no more resources are available, the returned future 
+  ## will not complete until the resource count goes above 0.
+
+  let fut = newFuture[void]("AsyncSemaphore.acquire")
+  if s.tryAcquire():
+    fut.complete()
+    return fut
+
+  proc cancellation(udata: pointer) {.gcsafe.} =
+    var filtered = initDeque[Future[void]](s.queue.len)
+    for i in 0 ..< s.queue.len:
+      let x = s.queue[i]
+      if x != fut:
+        filtered.addLast(x)
+    s.queue = filtered
+
+  fut.cancelCallback = cancellation
+
+  s.queue.addLast(fut)
+
+  return fut
+
+proc release*(s: AsyncSemaphore) {.raises: [AsyncSemaphoreError].} =
+  ## Release a resource from the semaphore,
+  ## by picking the first future from the queue
+  ## and completing it and incrementing the
+  ## internal resource count.
+
+  if s.availableSlots == s.size:
+    raise newException(AsyncSemaphoreError, "release called without acquire")
+
+  s.availableSlots.inc
+  while s.queue.len > 0:
+    var fut = s.queue.popFirst()
+    if not fut.finished():
+      s.availableSlots.dec
+      fut.complete()
+      break
