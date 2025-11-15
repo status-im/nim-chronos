@@ -638,3 +638,30 @@ proc waitEvents*[T](ab: AsyncEventQueue[T],
         break
 
   events
+
+
+type 
+  ManyQueue*[T] = ref object of RootRef
+    data: seq[T]
+    getter: Future[seq[T]]
+
+proc get*[T](q: ManyQueue[T]): Future[seq[T]] =
+  let fut = newFuture[seq[T]]()
+  if q.data.len == 0:
+    q.getter = fut
+    return fut
+
+  fut.complete(move q.data)
+  q.data.setLen(0)
+  q.getter = nil
+
+  return fut
+
+proc put*[T](q: ManyQueue[T], e: T) =
+  q.data.add(e)
+  if isNil(q.getter):
+    return
+  
+  q.getter.complete(move q.data)
+  q.data.setLen(0)
+  q.getter = nil

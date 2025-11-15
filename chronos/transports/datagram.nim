@@ -1138,6 +1138,37 @@ proc sendTo*[T](transp: DatagramTransport, remote: TransportAddress,
       retFuture.fail(getTransportOsError(wres.error()))
   return retFuture
 
+proc sendTo*[T](transp: DatagramTransport, msgs: seq[(TransportAddress, seq[T])]) : Future[void] {.
+                async: (raw: true, raises: [TransportError, CancelledError]).} =
+  
+  let retFuture = newFuture[void]("datagram.transport.sendToMany(seq)")
+  transp.checkClosed(retFuture)
+
+  for i in 0 ..< msgs.len:
+    let req = msgs[i]
+    let writerFut = 
+      if i == msgs.len - 1: 
+        retFuture 
+      else: 
+        let tempFut = newFuture[void]("datagram.transport.sendToMany(seq)")
+        transp.checkClosed(tempFut)
+        tempFut
+
+    let length = len(req[1]) * sizeof(T)
+
+    let vector = GramVector(kind: WithAddress, buf: baseAddr req[1],
+                            buflen: length,
+                            writer: writerFut,
+                            address: req[0])
+    transp.queue.addLast(vector)
+  
+  if WritePaused in transp.state:
+    let wres = transp.resumeWrite()
+    if wres.isErr():
+      retFuture.fail(getTransportOsError(wres.error()))
+  return retFuture
+
+
 proc peekMessage*(transp: DatagramTransport, msg: var seq[byte],
                   msglen: var int) {.raises: [TransportError].} =
   ## Get access to internal message buffer and length of incoming datagram.
