@@ -224,10 +224,7 @@ when defined(windows):
           remoteAddress = transp.getRemoteAddress()
         case err
         of OSErrorCode(-1):
-          let bytesCount = transp.rovl.data.bytesCount
-          if bytesCount == 0:
-            transp.state.incl({ReadEof, ReadPaused})
-          transp.buflen = int(bytesCount)
+          transp.buflen = int(transp.rovl.data.bytesCount)
           asyncSpawn transp.function(transp, remoteAddress)
         of ERROR_OPERATION_ABORTED:
           # CancelIO() interrupt or closeSocket() call.

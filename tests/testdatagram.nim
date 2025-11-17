@@ -869,6 +869,89 @@ suite "Datagram Transport test suite":
 
     res == 2
 
+  proc performPacketSizeTest(size: int): Future[bool] {.async: (raises: []).} =
+    var
+      pcheck1 = true
+      pcheck2 = false
+
+    var
+      counter0 = 100
+      counter1 = 0
+      counterN = 100
+      counterM = 0
+
+    proc generateData(size: int): seq[byte] =
+      if size > 0:
+        var data = newSeq[byte](size)
+        for i in 0 ..< len(data):
+          data[i] = byte('0')
+        data
+      else:
+        default(seq[byte])
+
+    proc processor1(
+        transp: DatagramTransport,
+        raddr: TransportAddress
+    ): Future[void] {.async: (raises: []).} =
+      try:
+        var message = transp.getMessage()
+        if len(message) == 0:
+          inc(counter1)
+        else:
+          if len(message) == size:
+            inc(counterM)
+        await transp.sendTo(raddr, message)
+      except CancelledError:
+        pcheck1 = false
+        return
+      except TransportError:
+        pcheck1 = false
+        return
+
+    proc processor2(
+        transp: DatagramTransport,
+        raddr: TransportAddress
+    ): Future[void] {.async: (raises: []).} =
+      try:
+        var message = transp.getMessage()
+        if len(message) == 0:
+          if counter0 > 0:
+            await transp.sendTo(raddr, default(seq[byte]))
+            dec(counter0)
+          else:
+            await transp.sendTo(raddr, generateData(size))
+        else:
+          dec(counterN)
+          if counterN == 0:
+            pcheck2 = true
+            await transp.closeWait()
+            return
+          else:
+            await transp.sendTo(raddr, message)
+      except CancelledError:
+        pcheck2 = false
+        return
+      except TransportError:
+        pcheck2 = false
+        return
+
+    try:
+      let
+        ta = initTAddress("127.0.0.1:0")
+        dgram1 = newDatagramTransport(processor1, local = ta)
+        dgram2 = newDatagramTransport(processor2, local = ta)
+        lta2 = dgram2.localAddress()
+
+      await dgram1.sendTo(lta2, default(seq[byte]))
+      await dgram2.join()
+      await dgram1.closeWait()
+    except CancelledError:
+      return false
+    except TransportError:
+      return false
+
+    pcheck1 and pcheck2 and (counterM == 100) and (counter1 == 100)
+
   test "close(transport) test":
     check waitFor(testTransportClose()) == true
   test m1:
@@ -1012,6 +1095,9 @@ suite "Datagram Transport test suite":
         check:
           (await performAutoAddressTest(Port(30231), AddressFamily.IPv4)) ==
             true
+
+  asyncTest "[IP] 0-size UDP datagram size test":
+    check (await performPacketSizeTest(576)) == true
 
   for socketType in DatagramSocketType:
     for portNumber in [Port(0), Port(30231)]:
