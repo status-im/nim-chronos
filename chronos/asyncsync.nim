@@ -654,7 +654,6 @@ proc waitEvents*[T](ab: AsyncEventQueue[T],
 
   events
 
-
 proc newAsyncSemaphore*(size: int = 1): AsyncSemaphore =
   ## Creates a new asynchronous bounded semaphore ``AsyncSemaphore`` with
   ## internal available slots set to ``size``.
@@ -676,6 +675,7 @@ proc tryAcquire*(s: AsyncSemaphore): bool =
     true
   else:
     false
+
 proc acquire*(
     s: AsyncSemaphore
 ): Future[void] {.async: (raises: [CancelledError], raw: true).} =
@@ -687,16 +687,6 @@ proc acquire*(
   if s.tryAcquire():
     fut.complete()
     return fut
-
-  proc cancellation(udata: pointer) {.gcsafe.} =
-    var filtered = initDeque[Future[void]](s.queue.len)
-    for i in 0 ..< s.queue.len:
-      let x = s.queue[i]
-      if x != fut:
-        filtered.addLast(x)
-    s.queue = filtered
-
-  fut.cancelCallback = cancellation
 
   s.queue.addLast(fut)
 
