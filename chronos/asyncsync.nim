@@ -90,7 +90,7 @@ type
     ## ``AssertionError`` is raised.
     size: int
     availableSlots: int
-    queue: Deque[Future[void]]
+    waiters: Deque[Future[void].Raising([CancelledError])]
 
   AsyncSemaphoreError* = object of AsyncError
 
@@ -661,7 +661,7 @@ proc newAsyncSemaphore*(size: int = 1): AsyncSemaphore =
   AsyncSemaphore(
     size: size,
     availableSlots: size, 
-    queue: initDeque[Future[void]](),
+    waiters: initDeque[Future[void].Raising([CancelledError])](),
   )
 
 proc availableSlots*(s: AsyncSemaphore): int =
@@ -688,13 +688,13 @@ proc acquire*(
     fut.complete()
     return fut
 
-  s.queue.addLast(fut)
+  s.waiters.addLast(fut)
 
   return fut
 
 proc release*(s: AsyncSemaphore) {.raises: [AsyncSemaphoreError].} =
   ## Release a resource from the semaphore,
-  ## by picking the first future from the queue
+  ## by picking the first future from waiters queue
   ## and completing it and incrementing the
   ## internal resource count.
 
@@ -702,8 +702,8 @@ proc release*(s: AsyncSemaphore) {.raises: [AsyncSemaphoreError].} =
     raise newException(AsyncSemaphoreError, "release called without acquire")
 
   s.availableSlots.inc
-  while s.queue.len > 0:
-    var fut = s.queue.popFirst()
+  while s.waiters.len > 0:
+    var fut = s.waiters.popFirst()
     if not fut.finished():
       s.availableSlots.dec
       fut.complete()
