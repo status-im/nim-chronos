@@ -506,9 +506,8 @@ when defined(windows):
     if terminateProcess(p.processHandle, 0) != 0'u32:
       ok()
     else:
-      let reason = osLastError()
       if peekProcessExitCode(p).isErr():
-        err(reason)
+        err(osLastError())
       else:
         ok()
 
