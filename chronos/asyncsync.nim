@@ -87,7 +87,7 @@ type
     ##
     ## The ``size`` argument gives the initial value for the available slots
     ## counter; it defaults to ``1``. If the value given is less than 1,
-    ## ``AssertionError`` is raised.
+    ## ``AssertionDefect`` is raised.
     size: int
     availableSlots: int
     waiters: Deque[Future[void].Raising([CancelledError])]
