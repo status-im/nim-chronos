@@ -28,7 +28,7 @@ type
     ## is blocked in ``acquire()`` is being processed.
     locked: bool
     acquired: bool
-    waiters: seq[Future[void].Raising([CancelledError])]
+    waiters: Deque[Future[void].Raising([CancelledError])]
 
   AsyncEvent* = ref object of RootRef
     ## A primitive event object.
@@ -108,41 +108,33 @@ proc newAsyncLock*(): AsyncLock =
   AsyncLock()
 
 proc wakeUpFirst(lock: AsyncLock): bool {.inline.} =
-  ## Wake up the first waiter if it isn't done.
-  var i = 0
-  var res = false
-  while i < len(lock.waiters):
-    let waiter = lock.waiters[i]
-    inc(i)
-    if not(waiter.finished()):
+  ## Wake up the first waiter that wasn't cancelled.
+  while lock.waiters.len > 0:
+    let waiter = lock.waiters.popFirst()
+    if not(waiter.cancelled()):
       waiter.complete()
-      res = true
-      break
-  if i > 0:
-    when compiles(lock.waiters.delete(0 .. (i - 1))):
-      lock.waiters.delete(0 .. (i - 1))
-    else:
-      lock.waiters.delete(0, i - 1)
-  res
+      return true
+  false
 
-proc checkAll(lock: AsyncLock): bool {.inline.} =
-  ## Returns ``true`` if waiters array is empty or full of cancelled futures.
-  for fut in lock.waiters.mitems():
-    if not(fut.cancelled()):
-      return false
-  return true
+proc hasWaiters(lock: AsyncLock): bool {.inline.} =
+  ## Returns ``true`` if there are waiters that haven't been cancelled.
+  while lock.waiters.len > 0:
+    if not(lock.waiters.peekFirst().cancelled()):
+      return true
+    discard lock.waiters.popFirst()
+  false
 
 proc acquire*(lock: AsyncLock) {.async: (raises: [CancelledError]).} =
   ## Acquire a lock ``lock``.
   ##
   ## This procedure blocks until the lock ``lock`` is unlocked, then sets it
   ## to locked and returns.
-  if not(lock.locked) and lock.checkAll():
+  if not(lock.locked) and not(lock.hasWaiters()):
     lock.acquired = true
     lock.locked = true
   else:
     let w = Future[void].Raising([CancelledError]).init("AsyncLock.acquire")
-    lock.waiters.add(w)
+    lock.waiters.addLast(w)
     await w
     lock.acquired = true
     lock.locked = true
