@@ -1,0 +1,29 @@
+LocationKind	chronos/futures.html#LocationKind	futures: LocationKind	
+CallbackFunc	chronos/futures.html#CallbackFunc	futures: CallbackFunc	
+InternalAsyncCallback	chronos/futures.html#InternalAsyncCallback	futures: InternalAsyncCallback	
+FutureState	chronos/futures.html#FutureState	futures: FutureState	
+FutureFlag	chronos/futures.html#FutureFlag	futures: FutureFlag	
+FutureFlags	chronos/futures.html#FutureFlags	futures: FutureFlags	
+InternalFutureBase	chronos/futures.html#InternalFutureBase	futures: InternalFutureBase	
+FutureBase	chronos/futures.html#FutureBase	futures: FutureBase	
+Future	chronos/futures.html#Future	futures: Future	
+FutureDefect	chronos/futures.html#FutureDefect	futures: FutureDefect	
+FutureError	chronos/futures.html#FutureError	futures: FutureError	
+CancelledError	chronos/futures.html#CancelledError	futures: CancelledError	
+id	chronos/futures.html#id.t,FutureBase	futures: id(fut: FutureBase): uint	
+internalInitFutureBase	chronos/futures.html#internalInitFutureBase,FutureBase,ptr.SrcLoc,FutureState,FutureFlags	futures: internalInitFutureBase(fut: FutureBase; loc: ptr SrcLoc; state: FutureState;\n                       flags: FutureFlags)	
+init	chronos/futures.html#init.t,typeFuture[T],static[string]	futures: init[T](F: type Future[T]; fromProc: static[string] = &quot;&quot;): Future[T]	
+init	chronos/futures.html#init.t,typeFuture[T],static[string],static[FutureFlags]	futures: init[T](F: type Future[T]; fromProc: static[string] = &quot;&quot;;\n        flags: static[FutureFlags]): Future[T]	
+completed	chronos/futures.html#completed.t,typeFuture,static[string]	futures: completed(F: type Future; fromProc: static[string] = &quot;&quot;): Future[void]	
+completed	chronos/futures.html#completed.t,typeFuture,T,static[string]	futures: completed[T: not void](F: type Future; valueParam: T;\n                       fromProc: static[string] = &quot;&quot;): Future[T]	
+failed	chronos/futures.html#failed.t,typeFuture[T],ref.CatchableError,static[string]	futures: failed[T](F: type Future[T]; errorParam: ref CatchableError;\n          fromProc: static[string] = &quot;&quot;): Future[T]	
+state	chronos/futures.html#state,FutureBase	futures: state(future: FutureBase): FutureState	
+flags	chronos/futures.html#flags,FutureBase	futures: flags(future: FutureBase): FutureFlags	
+finished	chronos/futures.html#finished,FutureBase	futures: finished(future: FutureBase): bool	
+cancelled	chronos/futures.html#cancelled,FutureBase	futures: cancelled(future: FutureBase): bool	
+failed	chronos/futures.html#failed,FutureBase	futures: failed(future: FutureBase): bool	
+completed	chronos/futures.html#completed,FutureBase	futures: completed(future: FutureBase): bool	
+location	chronos/futures.html#location,FutureBase	futures: location(future: FutureBase): array[LocationKind, ptr SrcLoc]	
+value	chronos/futures.html#value,Future[T: not void]	futures: value[T: not void](future: Future[T]): lent T	
+value	chronos/futures.html#value,Future[void]	futures: value(future: Future[void])	
+error	chronos/futures.html#error,FutureBase	futures: error(future: FutureBase): ref CatchableError	

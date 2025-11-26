@@ -1,0 +1,1020 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Chronos</title>
+        <meta name="robots" content="noindex">
+
+
+        <!-- Custom HTML head -->
+        
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon.svg">
+        <link rel="shortcut icon" href="favicon.png">
+        <link rel="stylesheet" href="css/variables.css">
+        <link rel="stylesheet" href="css/general.css">
+        <link rel="stylesheet" href="css/chrome.css">
+        <link rel="stylesheet" href="css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="highlight.css">
+        <link rel="stylesheet" href="tomorrow-night.css">
+        <link rel="stylesheet" href="ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+        <link rel="stylesheet" href="open-in.css">
+
+    </head>
+    <body class="sidebar-visible no-js">
+    <div id="body-container">
+        <!-- Provide site root to javascript -->
+        <script>
+            var path_to_root = "";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
+        </script>
+
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            var html = document.querySelector('html');
+            html.classList.remove('light')
+            html.classList.add(theme);
+            var body = document.querySelector('body');
+            body.classList.remove('no-js')
+            body.classList.add('js');
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            var body = document.querySelector('body');
+            var sidebar = null;
+            var sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+            }
+            sidebar_toggle.checked = sidebar === 'visible';
+            body.classList.remove('sidebar-visible');
+            body.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <div class="sidebar-scrollbox">
+                <ol class="chapter"><li class="chapter-item expanded "><a href="introduction.html"><strong aria-hidden="true">1.</strong> Introduction</a></li><li class="chapter-item expanded "><a href="examples.html"><strong aria-hidden="true">2.</strong> Examples</a></li><li class="chapter-item expanded affix "><li class="part-title">User guide</li><li class="chapter-item expanded "><a href="concepts.html"><strong aria-hidden="true">3.</strong> Core concepts</a></li><li class="chapter-item expanded "><a href="async_procs.html"><strong aria-hidden="true">4.</strong> async functions</a></li><li class="chapter-item expanded "><a href="error_handling.html"><strong aria-hidden="true">5.</strong> Errors and exceptions</a></li><li class="chapter-item expanded "><a href="threads.html"><strong aria-hidden="true">6.</strong> Threads</a></li><li class="chapter-item expanded "><a href="tips.html"><strong aria-hidden="true">7.</strong> Tips, tricks and best practices</a></li><li class="chapter-item expanded "><a href="porting.html"><strong aria-hidden="true">8.</strong> Porting code to chronos</a></li><li class="chapter-item expanded "><a href="http_server_middleware.html"><strong aria-hidden="true">9.</strong> HTTP server middleware</a></li><li class="chapter-item expanded affix "><li class="part-title">Developer guide</li><li class="chapter-item expanded "><a href="book.html"><strong aria-hidden="true">10.</strong> Updating this book</a></li></ol>
+            </div>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <!-- Track and set sidebar scroll position -->
+        <script>
+            var sidebarScrollbox = document.querySelector('#sidebar .sidebar-scrollbox');
+            sidebarScrollbox.addEventListener('click', function(e) {
+                if (e.target.tagName === 'A') {
+                    sessionStorage.setItem('sidebar-scroll', sidebarScrollbox.scrollTop);
+                }
+            }, { passive: true });
+            var sidebarScrollTop = sessionStorage.getItem('sidebar-scroll');
+            sessionStorage.removeItem('sidebar-scroll');
+            if (sidebarScrollTop) {
+                // preserve sidebar scroll position when navigating via links within sidebar
+                sidebarScrollbox.scrollTop = sidebarScrollTop;
+            } else {
+                // scroll sidebar to current active section when navigating via "next/previous chapter" buttons
+                var activeSection = document.querySelector('#sidebar .active');
+                if (activeSection) {
+                    activeSection.scrollIntoView({ block: 'center' });
+                }
+            }
+        </script>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Chronos</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/status-im/nim-chronos/" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="introduction"><a class="header" href="#introduction">Introduction</a></h1>
+<p>Chronos implements the <a href="https://en.wikipedia.org/wiki/Async/await">async/await</a>
+paradigm in a self-contained library using macro and closure iterator
+transformation features provided by Nim.</p>
+<p>Features include:</p>
+<ul>
+<li>Asynchronous socket and process I/O</li>
+<li>HTTP client / server with SSL/TLS support out of the box (no OpenSSL needed)</li>
+<li>Synchronization primitivies like queues, events and locks</li>
+<li><a href="./concepts.html#cancellation">Cancellation</a></li>
+<li>Efficient dispatch pipeline with excellent multi-platform support</li>
+<li>Exception <a href="./guide.html#error-handling">effect support</a></li>
+</ul>
+<h2 id="installation"><a class="header" href="#installation">Installation</a></h2>
+<p>Install <code>chronos</code> using <code>nimble</code>:</p>
+<pre><code class="language-text">nimble install chronos
+</code></pre>
+<p>or add a dependency to your <code>.nimble</code> file:</p>
+<pre><code class="language-text">requires &quot;chronos&quot;
+</code></pre>
+<p>and start using it:</p>
+<pre><code class="language-nim">import chronos/apps/http/httpclient
+
+proc retrievePage*(uri: string): Future[string] {.async.} =
+  # Create a new HTTP session
+  let httpSession = HttpSessionRef.new()
+  try:
+    # Fetch page contents
+    let resp = await httpSession.fetch(parseUri(uri))
+    # Convert response to a string, assuming its encoding matches the terminal!
+    bytesToString(resp.data)
+  finally: # Close the session
+    await noCancel(httpSession.closeWait())
+
+echo waitFor retrievePage(
+  &quot;https://raw.githubusercontent.com/status-im/nim-chronos/master/README.md&quot;)
+</code></pre>
+<p>There are more <a href="./examples.html">examples</a> throughout the manual!</p>
+<h2 id="platform-support"><a class="header" href="#platform-support">Platform support</a></h2>
+<p>Several platforms are supported, with different backend <a href="./concepts.html#compile-time-configuration">options</a>:</p>
+<ul>
+<li>Windows: <a href="https://learn.microsoft.com/en-us/windows/win32/fileio/i-o-completion-ports"><code>IOCP</code></a></li>
+<li>Linux: <a href="https://en.wikipedia.org/wiki/Epoll"><code>epoll</code></a> / <code>poll</code></li>
+<li>OSX / BSD: <a href="https://en.wikipedia.org/wiki/Kqueue"><code>kqueue</code></a> / <code>poll</code></li>
+<li>Android / Emscripten / posix: <code>poll</code></li>
+</ul>
+<h2 id="api-documentation"><a class="header" href="#api-documentation">API documentation</a></h2>
+<p>This guide covers basic usage of chronos - for details, see the
+<a href="./api/chronos.html">API reference</a>.</p>
+<footer id="open-on-gh">Found a bug? <a href="https://github.com/status-im/nim-chronos//edit/master/docs/src/introduction.md">Edit this page on GitHub.</a></footer><div style="break-before: page; page-break-before: always;"></div><h1 id="examples"><a class="header" href="#examples">Examples</a></h1>
+<p>Examples are available in the <a href="https://github.com/status-im/nim-chronos/tree/master/docs/examples/"><code>docs/examples/</code></a> folder.</p>
+<h2 id="basic-concepts"><a class="header" href="#basic-concepts">Basic concepts</a></h2>
+<ul>
+<li><a href="https://github.com/status-im/nim-chronos/tree/master/docs/examples/cancellation.nim">cancellation</a> - Cancellation primer</li>
+<li><a href="https://github.com/status-im/nim-chronos/tree/master/docs/examples/timeoutsimple.nim">timeoutsimple</a> - Simple timeouts</li>
+<li><a href="https://github.com/status-im/nim-chronos/tree/master/docs/examples/examples/timeoutcomposed.nim">timeoutcomposed</a> - Shared timeout of multiple tasks</li>
+</ul>
+<h2 id="threads"><a class="header" href="#threads">Threads</a></h2>
+<ul>
+<li><a href="https://github.com/status-im/nim-chronos/tree/master/docs/examples/signalling.nim">signalling</a> - Cross-thread signalling</li>
+</ul>
+<h2 id="tcp"><a class="header" href="#tcp">TCP</a></h2>
+<ul>
+<li><a href="https://github.com/status-im/nim-chronos/tree/master/docs/examples/tcpserver.nim">tcpserver</a> - Simple TCP/IP v4/v6 echo server</li>
+</ul>
+<h2 id="http"><a class="header" href="#http">HTTP</a></h2>
+<ul>
+<li><a href="https://github.com/status-im/nim-chronos/tree/master/docs/examples/httpget.nim">httpget</a> - Downloading a web page using the http client</li>
+<li><a href="https://github.com/status-im/nim-chronos/tree/master/docs/examples/twogets.nim">twogets</a> - Download two pages concurrently</li>
+<li><a href="https://github.com/status-im/nim-chronos/tree/master/docs/examples/middleware.nim">middleware</a> - Deploy multiple HTTP server middlewares</li>
+</ul>
+<footer id="open-on-gh">Found a bug? <a href="https://github.com/status-im/nim-chronos//edit/master/docs/src/examples.md">Edit this page on GitHub.</a></footer><div style="break-before: page; page-break-before: always;"></div><h1 id="concepts"><a class="header" href="#concepts">Concepts</a></h1>
+<p>Async/await is a programming model that relies on cooperative multitasking to
+coordinate the concurrent execution of procedures, using event notifications
+from the operating system or other treads to resume execution.</p>
+<p>Code execution happens in a loop that alternates between making progress on
+tasks and handling events.</p>
+<ul>
+<li><a href="concepts.html#the-dispatcher">The dispatcher</a></li>
+<li><a href="concepts.html#the-future-type">The <code>Future</code> type</a></li>
+<li><a href="concepts.html#the-poll-call">The <code>poll</code> call</a></li>
+<li><a href="concepts.html#cancellation">Cancellation</a></li>
+<li><a href="concepts.html#compile-time-configuration">Compile-time configuration</a></li>
+</ul>
+<h2 id="the-dispatcher"><a class="header" href="#the-dispatcher">The dispatcher</a></h2>
+<p>The event handler loop is called a &quot;dispatcher&quot; and a single instance per
+thread is created, as soon as one is needed.</p>
+<p>Scheduling is done by calling <a href="./async_procs.html">async procedures</a> that return
+<code>Future</code> objects - each time a procedure is unable to make further
+progress, for example because it's waiting for some data to arrive, it hands
+control back to the dispatcher which ensures that the procedure is resumed when
+ready.</p>
+<p>A single thread, and thus a single dispatcher, is typically able to handle
+thousands of concurrent in-progress requests.</p>
+<h2 id="the-future-type"><a class="header" href="#the-future-type">The <code>Future</code> type</a></h2>
+<p><code>Future</code> objects encapsulate the outcome of executing an <code>async</code> procedure. The
+<code>Future</code> may be <code>pending</code> meaning that the outcome is not yet known or
+<code>finished</code> meaning that the return value is available, the operation failed
+with an exception or was cancelled.</p>
+<p>Inside an async procedure, you can <code>await</code> the outcome of another async
+procedure - if the <code>Future</code> representing that operation is still <code>pending</code>, a
+callback representing where to resume execution will be added to it and the
+dispatcher will be given back control to deal with other tasks.</p>
+<p>When a <code>Future</code> is <code>finished</code>, all its callbacks are scheduled to be run by
+the dispatcher, thus continuing any operations that were waiting for an outcome.</p>
+<h2 id="the-poll-call"><a class="header" href="#the-poll-call">The <code>poll</code> call</a></h2>
+<p>To trigger the processing step of the dispatcher, we need to call <code>poll()</code> -
+either directly or through a wrapper like <code>runForever()</code> or <code>waitFor()</code>.</p>
+<p>Each call to poll handles any file descriptors, timers and callbacks that are
+ready to be processed.</p>
+<p>Using <code>waitFor</code>, the result of a single asynchronous operation can be obtained:</p>
+<pre><code class="language-nim">proc myApp() {.async.} =
+  echo &quot;Waiting for a second...&quot;
+  await sleepAsync(1.seconds)
+  echo &quot;done!&quot;
+
+waitFor myApp()
+</code></pre>
+<p>It is also possible to keep running the event loop forever using <code>runForever</code>:</p>
+<pre><code class="language-nim">proc myApp() {.async.} =
+  while true:
+    await sleepAsync(1.seconds)
+    echo &quot;A bit more than a second passed!&quot;
+
+let future = myApp()
+runForever()
+</code></pre>
+<p>Such an application never terminates, thus it is rare that applications are
+structured this way.</p>
+<pre><code class="language-admonish warning">Both `waitFor` and `runForever` call `poll` which offers fine-grained
+control over the event loop steps.
+
+Nested calls to `poll` - directly or indirectly via `waitFor` and `runForever`
+are not allowed.
+</code></pre>
+<h2 id="cancellation"><a class="header" href="#cancellation">Cancellation</a></h2>
+<p>Any pending <code>Future</code> can be cancelled. This can be used for timeouts, to start
+multiple parallel operations and cancel the rest as soon as one finishes,
+to initiate the orderely shutdown of an application etc.</p>
+<pre><code class="language-nim">## Simple cancellation example
+
+import chronos
+
+proc someTask() {.async.} = await sleepAsync(10.minutes)
+
+proc cancellationExample() {.async.} =
+  # Start a task but don't wait for it to finish
+  let future = someTask()
+  future.cancelSoon()
+  # `cancelSoon` schedules but does not wait for the future to get cancelled -
+  # it might still be pending here
+
+  let future2 = someTask() # Start another task concurrently
+  await future2.cancelAndWait()
+  # Using `cancelAndWait`, we can be sure that `future2` is either
+  # complete, failed or cancelled at this point. `future` could still be
+  # pending!
+  assert future2.finished()
+
+waitFor(cancellationExample())
+</code></pre>
+<p>Even if cancellation is initiated, it is not guaranteed that the operation gets
+cancelled - the future might still be completed or fail depending on the
+order of events in the dispatcher and the specifics of the operation.</p>
+<p>If the future indeed gets cancelled, <code>await</code> will raise a
+<code>CancelledError</code> as is likely to happen in the following example:</p>
+<pre><code class="language-nim">proc c1 {.async.} =
+  echo &quot;Before sleep&quot;
+  try:
+    await sleepAsync(10.minutes)
+    echo &quot;After sleep&quot; # not reach due to cancellation
+  except CancelledError as exc:
+    echo &quot;We got cancelled!&quot;
+    # `CancelledError` is typically re-raised to notify the caller that the
+    # operation is being cancelled
+    raise exc
+
+proc c2 {.async.} =
+  await c1()
+  echo &quot;Never reached, since the CancelledError got re-raised&quot;
+
+let work = c2()
+waitFor(work.cancelAndWait())
+</code></pre>
+<p>The <code>CancelledError</code> will now travel up the stack like any other exception.
+It can be caught for instance to free some resources and is then typically
+re-raised for the whole chain operations to get cancelled.</p>
+<p>Alternatively, the cancellation request can be translated to a regular outcome
+of the operation - for example, a <code>read</code> operation might return an empty result.</p>
+<p>Cancelling an already-finished <code>Future</code> has no effect, as the following example
+of downloading two web pages concurrently shows:</p>
+<pre><code class="language-nim">## Make two http requests concurrently and output the one that wins
+
+import chronos
+import ./httpget
+
+proc twoGets() {.async.} =
+  let
+    futs = @[
+      # Both pages will start downloading concurrently...
+      httpget.retrievePage(&quot;https://duckduckgo.com/?q=chronos&quot;),
+      httpget.retrievePage(&quot;https://www.google.fr/search?q=chronos&quot;)
+    ]
+
+  # Wait for at least one request to finish..
+  let winner = await one(futs)
+  # ..and cancel the others since we won't need them
+  for fut in futs:
+    # Trying to cancel an already-finished future is harmless
+    fut.cancelSoon()
+
+  # An exception could be raised here if the winning request failed!
+  echo &quot;Result: &quot;, winner.read()
+
+waitFor(twoGets())
+</code></pre>
+<h3 id="ownership"><a class="header" href="#ownership">Ownership</a></h3>
+<p>When calling a procedure that returns a <code>Future</code>, ownership of that <code>Future</code> is
+shared between the callee that created it and the caller that waits for it to be
+finished.</p>
+<p>The <code>Future</code> can be thought of as a single-item channel between a producer and a
+consumer. The producer creates the <code>Future</code> and is responsible for completing or
+failing it while the caller waits for completion and may <code>cancel</code> it.</p>
+<p>Although it is technically possible, callers must not <code>complete</code> or <code>fail</code>
+futures and callees or other intermediate observers must not <code>cancel</code> them as
+this may lead to panics and shutdown (ie if the future is completed twice or a
+cancalletion is not handled by the original caller).</p>
+<h3 id="nocancel"><a class="header" href="#nocancel"><code>noCancel</code></a></h3>
+<p>Certain operations must not be cancelled for semantic reasons. Common scenarios
+include <code>closeWait</code> that releases a resources irrevocably and composed
+operations whose individual steps should be performed together or not at all.</p>
+<p>In such cases, the <code>noCancel</code> modifier to <code>await</code> can be used to temporarily
+disable cancellation propagation, allowing the operation to complete even if
+the caller initiates a cancellation request:</p>
+<pre><code class="language-nim">proc deepSleep(dur: Duration) {.async.} =
+  # `noCancel` prevents any cancellation request by the caller of `deepSleep`
+  # from reaching `sleepAsync` - even if `deepSleep` is cancelled, its future
+  # will not complete until the sleep finishes.
+  await noCancel sleepAsync(dur)
+
+let future = deepSleep(10.minutes)
+
+# This will take ~10 minutes even if we try to cancel the call to `deepSleep`!
+await cancelAndWait(future)
+</code></pre>
+<h3 id="join"><a class="header" href="#join"><code>join</code></a></h3>
+<p>The <code>join</code> modifier to <code>await</code> allows cancelling an <code>async</code> procedure without
+propagating the cancellation to the awaited operation. This is useful when
+<code>await</code>:ing a <code>Future</code> for monitoring purposes, ie when a procedure is not the
+owner of the future that's being <code>await</code>:ed.</p>
+<p>One situation where this happens is when implementing the &quot;observer&quot; pattern,
+where a helper monitors an operation it did not initiate:</p>
+<pre><code class="language-nim">var tick: Future[void]
+proc ticker() {.async.} =
+  while true:
+    tick = sleepAsync(1.second)
+    await tick
+    echo &quot;tick!&quot;
+
+proc tocker() {.async.} =
+  # This operation does not own or implement the operation behind `tick`,
+  # so it should not cancel it when `tocker` is cancelled
+  await join tick
+  echo &quot;tock!&quot;
+
+let
+  fut = ticker() # `ticker` is now looping and most likely waiting for `tick`
+  fut2 = tocker() # both `ticker` and `tocker` are waiting for `tick`
+
+# We don't want `tocker` to cancel a future that was created in `ticker`
+waitFor fut2.cancelAndWait()
+
+waitFor fut # keeps printing `tick!` every second.
+</code></pre>
+<h2 id="compile-time-configuration"><a class="header" href="#compile-time-configuration">Compile-time configuration</a></h2>
+<p><code>chronos</code> contains several compile-time
+<a href="./chronos/config.nim">configuration options</a> enabling stricter compile-time
+checks and debugging helpers whose runtime cost may be significant.</p>
+<p>Strictness options generally will become default in future chronos releases and
+allow adapting existing code without changing the new version - see the
+<a href="./chronos/config.nim"><code>config.nim</code></a> module for more information.</p>
+<footer id="open-on-gh">Found a bug? <a href="https://github.com/status-im/nim-chronos//edit/master/docs/src/concepts.md">Edit this page on GitHub.</a></footer><div style="break-before: page; page-break-before: always;"></div><h1 id="async-procedures"><a class="header" href="#async-procedures">Async procedures</a></h1>
+<p>Async procedures are those that interact with <code>chronos</code> to cooperatively
+suspend and resume their execution depending on the completion of other
+async procedures, timers, tasks on other threads or asynchronous I/O scheduled
+with the operating system.</p>
+<p>Async procedures are marked with the <code>{.async.}</code> pragma and return a <code>Future</code>
+indicating the state of the operation.</p>
+<ul>
+<li><a href="async_procs.html#the-async-pragma">The <code>async</code> pragma</a></li>
+<li><a href="async_procs.html#await-keyword"><code>await</code> keyword</a></li>
+<li><a href="async_procs.html#raw-async-procedures">Raw async procedures</a></li>
+<li><a href="async_procs.html#callbacks-and-closures">Callbacks and closures</a></li>
+</ul>
+<h2 id="the-async-pragma"><a class="header" href="#the-async-pragma">The <code>async</code> pragma</a></h2>
+<p>The <code>{.async.}</code> pragma will transform a procedure (or a method) returning a
+<code>Future</code> into a closure iterator. If there is no return type specified,
+<code>Future[void]</code> is returned.</p>
+<pre><code class="language-nim">proc p() {.async.} =
+  await sleepAsync(100.milliseconds)
+
+echo p().type # prints &quot;Future[system.void]&quot;
+</code></pre>
+<h2 id="await-keyword"><a class="header" href="#await-keyword"><code>await</code> keyword</a></h2>
+<p>The <code>await</code> keyword operates on <code>Future</code> instances typically returned from an
+<code>async</code> procedure.</p>
+<p>Whenever <code>await</code> is encountered inside an async procedure, control is given
+back to the dispatcher for as many steps as it's necessary for the awaited
+future to complete, fail or be cancelled. <code>await</code> calls the
+equivalent of <code>Future.read()</code> on the completed future to return the
+encapsulated value when the operation finishes.</p>
+<pre><code class="language-nim">proc p1() {.async.} =
+  await sleepAsync(1.seconds)
+
+proc p2() {.async.} =
+  await sleepAsync(1.seconds)
+
+proc p3() {.async.} =
+  let
+    fut1 = p1()
+    fut2 = p2()
+  # Just by executing the async procs, both resulting futures entered the
+  # dispatcher queue and their &quot;clocks&quot; started ticking.
+  await fut1
+  await fut2
+  # Only one second passed while awaiting them both, not two.
+
+waitFor p3()
+</code></pre>
+<pre><code class="language-admonition warning">Because `async` procedures are executed concurrently, they are subject to many
+of the same risks that typically accompany multithreaded programming.
+
+In particular, if two `async` procedures have access to the same mutable state,
+the value before and after `await` might not be the same as the order of execution is not guaranteed!
+</code></pre>
+<h2 id="raw-async-procedures"><a class="header" href="#raw-async-procedures">Raw async procedures</a></h2>
+<p>Raw async procedures are those that interact with <code>chronos</code> via the <code>Future</code>
+type but whose body does not go through the async transformation.</p>
+<p>Such functions are created by adding <code>raw: true</code> to the <code>async</code> parameters:</p>
+<pre><code class="language-nim">proc rawAsync(): Future[void] {.async: (raw: true).} =
+  let fut = newFuture[void](&quot;rawAsync&quot;)
+  fut.complete()
+  fut
+</code></pre>
+<p>Raw functions must not raise exceptions directly - they are implicitly declared
+as <code>raises: []</code> - instead they should store exceptions in the returned <code>Future</code>:</p>
+<pre><code class="language-nim">proc rawFailure(): Future[void] {.async: (raw: true).} =
+  let fut = newFuture[void](&quot;rawAsync&quot;)
+  fut.fail((ref ValueError)(msg: &quot;Oh no!&quot;))
+  fut
+</code></pre>
+<p>Raw procedures can also use checked exceptions:</p>
+<pre><code class="language-nim">proc rawAsyncRaises(): Future[void] {.async: (raw: true, raises: [IOError]).} =
+  let fut = newFuture[void]()
+  assert not (compiles do: fut.fail((ref ValueError)(msg: &quot;uh-uh&quot;)))
+  fut.fail((ref IOError)(msg: &quot;IO&quot;))
+  fut
+</code></pre>
+<h2 id="callbacks-and-closures"><a class="header" href="#callbacks-and-closures">Callbacks and closures</a></h2>
+<p>Callback/closure types are declared using the <code>async</code> annotation as usual:</p>
+<pre><code class="language-nim">type MyCallback = proc(): Future[void] {.async.}
+
+proc runCallback(cb: MyCallback) {.async: (raises: []).} =
+  try:
+    await cb()
+  except CatchableError:
+    discard # handle errors as usual
+</code></pre>
+<p>When calling a callback, it is important to remember that it may raise exceptions that need to be handled.</p>
+<p>Checked exceptions can be used to limit the exceptions that a callback can
+raise:</p>
+<pre><code class="language-nim">type MyEasyCallback = proc(): Future[void] {.async: (raises: []).}
+
+proc runCallback(cb: MyEasyCallback) {.async: (raises: [])} =
+  await cb()
+</code></pre>
+<footer id="open-on-gh">Found a bug? <a href="https://github.com/status-im/nim-chronos//edit/master/docs/src/async_procs.md">Edit this page on GitHub.</a></footer><div style="break-before: page; page-break-before: always;"></div><h1 id="errors-and-exceptions"><a class="header" href="#errors-and-exceptions">Errors and exceptions</a></h1>
+<ul>
+<li><a href="error_handling.html#exceptions">Exceptions</a></li>
+<li><a href="error_handling.html#checked-exceptions">Checked exceptions</a></li>
+<li><a href="error_handling.html#the-exception-type">The <code>Exception</code> type</a></li>
+<li><a href="error_handling.html#compatibility-modes">Compatibility modes</a></li>
+</ul>
+<h2 id="exceptions"><a class="header" href="#exceptions">Exceptions</a></h2>
+<p>Exceptions inheriting from <a href="https://nim-lang.org/docs/system.html#CatchableError"><code>CatchableError</code></a>
+interrupt execution of an <code>async</code> procedure. The exception is placed in the
+<code>Future.error</code> field while changing the status of the <code>Future</code> to <code>Failed</code>
+and callbacks are scheduled.</p>
+<p>When a future is read or awaited the exception is re-raised, traversing the
+<code>async</code> execution chain until handled.</p>
+<pre><code class="language-nim">proc p1() {.async.} =
+  await sleepAsync(1.seconds)
+  raise newException(ValueError, &quot;ValueError inherits from CatchableError&quot;)
+
+proc p2() {.async.} =
+  await sleepAsync(1.seconds)
+
+proc p3() {.async.} =
+  let
+    fut1 = p1()
+    fut2 = p2()
+  await fut1
+  echo &quot;unreachable code here&quot;
+  await fut2
+
+# `waitFor()` would call `Future.read()` unconditionally, which would raise the
+# exception in `Future.error`.
+let fut3 = p3()
+while not(fut3.finished()):
+  poll()
+
+echo &quot;fut3.state = &quot;, fut3.state # &quot;Failed&quot;
+if fut3.failed():
+  echo &quot;p3() failed: &quot;, fut3.error.name, &quot;: &quot;, fut3.error.msg
+  # prints &quot;p3() failed: ValueError: ValueError inherits from CatchableError&quot;
+</code></pre>
+<p>You can put the <code>await</code> in a <code>try</code> block, to deal with that exception sooner:</p>
+<pre><code class="language-nim">proc p3() {.async.} =
+  let
+    fut1 = p1()
+    fut2 = p2()
+  try:
+    await fut1
+  except CachableError:
+    echo &quot;p1() failed: &quot;, fut1.error.name, &quot;: &quot;, fut1.error.msg
+  echo &quot;reachable code here&quot;
+  await fut2
+</code></pre>
+<p>Because <code>chronos</code> ensures that all exceptions are re-routed to the <code>Future</code>,
+<code>poll</code> will not itself raise exceptions.</p>
+<p><code>poll</code> may still panic / raise <code>Defect</code> if such are raised in user code due to
+undefined behavior.</p>
+<h2 id="checked-exceptions"><a class="header" href="#checked-exceptions">Checked exceptions</a></h2>
+<p>By specifying a <code>raises</code> list to an async procedure, you can check which
+exceptions can be raised by it:</p>
+<pre><code class="language-nim">proc p1(): Future[void] {.async: (raises: [IOError]).} =
+  assert not (compiles do: raise newException(ValueError, &quot;uh-uh&quot;))
+  raise newException(IOError, &quot;works&quot;) # Or any child of IOError
+
+proc p2(): Future[void] {.async, (raises: [IOError]).} =
+  await p1() # Works, because await knows that p1
+             # can only raise IOError
+</code></pre>
+<p>Under the hood, the return type of <code>p1</code> will be rewritten to an internal type
+which will convey raises informations to <code>await</code>.</p>
+<pre><code class="language-admonition note">Most `async` include `CancelledError` in the list of `raises`, indicating that
+the operation they implement might get cancelled resulting in neither value nor
+error!
+</code></pre>
+<p>When using checked exceptions, the <code>Future</code> type is modified to include
+<code>raises</code> information - it can be constructed with the <code>Raising</code> helper:</p>
+<pre><code class="language-nim"># Create a variable of the type that will be returned by a an async function
+# raising `[CancelledError]`:
+var fut: Future[int].Raising([CancelledError])
+</code></pre>
+<pre><code class="language-admonition note">`Raising` creates a specialization of `InternalRaisesFuture` type - as the name
+suggests, this is an internal type whose implementation details are likely to
+change in future `chronos` versions.
+</code></pre>
+<h2 id="the-exception-type"><a class="header" href="#the-exception-type">The <code>Exception</code> type</a></h2>
+<p>Exceptions deriving from <code>Exception</code> are not caught by default as these may
+include <code>Defect</code> and other forms undefined or uncatchable behavior.</p>
+<p>Because exception effect tracking is turned on for <code>async</code> functions, this may
+sometimes lead to compile errors around forward declarations, methods and
+closures as Nim conservatively asssumes that any <code>Exception</code> might be raised
+from those.</p>
+<p>Make sure to explicitly annotate these with <code>{.raises.}</code>:</p>
+<pre><code class="language-nim"># Forward declarations need to explicitly include a raises list:
+proc myfunction() {.raises: [ValueError].}
+
+# ... as do `proc` types
+type MyClosure = proc() {.raises: [ValueError].}
+
+proc myfunction() =
+  raise (ref ValueError)(msg: &quot;Implementation here&quot;)
+
+let closure: MyClosure = myfunction
+</code></pre>
+<h2 id="compatibility-modes"><a class="header" href="#compatibility-modes">Compatibility modes</a></h2>
+<p><strong>Individual functions.</strong> For compatibility, <code>async</code> functions can be instructed
+to handle <code>Exception</code> as well, specifying <code>handleException: true</code>. Any
+<code>Exception</code> that is not a <code>Defect</code> and not a <code>CatchableError</code> will then be
+caught and remapped to <code>AsyncExceptionError</code>:</p>
+<pre><code class="language-nim">proc raiseException() {.async: (handleException: true, raises: [AsyncExceptionError]).} =
+  raise (ref Exception)(msg: &quot;Raising Exception is UB&quot;)
+
+proc callRaiseException() {.async: (raises: []).} =
+  try:
+    await raiseException()
+  except AsyncExceptionError as exc:
+    # The original Exception is available from the `parent` field
+    echo exc.parent.msg
+</code></pre>
+<p><strong>Global flag.</strong>  This mode can be enabled globally with
+<code>-d:chronosHandleException</code> as a help when porting code to <code>chronos</code>. The
+behavior in this case will be that:</p>
+<ol>
+<li>
+<p>old-style functions annotated with plain <code>async</code> will behave as if they had
+been annotated with <code>async: (handleException: true)</code>.</p>
+<p>This is functionally equivalent to
+<code>async: (handleException: true, raises: [CatchableError])</code> and will, as
+before, remap any <code>Exception</code> that is not <code>Defect</code> into
+<code>AsyncExceptionError</code>, while also allowing any <code>CatchableError</code> (including
+<code>AsyncExceptionError</code>) to get through without compilation errors.</p>
+</li>
+<li>
+<p>New-style functions with <code>async: (raises: [...])</code> annotations or their own
+<code>handleException</code> annotations will not be affected.</p>
+</li>
+</ol>
+<p>The rationale here is to allow one to incrementally introduce exception
+annotations and get compiler feedback while not requiring that every bit of
+legacy code is updated at once.</p>
+<p>This should be used sparingly and with care, however, as global configuration
+settings may interfere with libraries that use <code>chronos</code> leading to unexpected
+behavior.</p>
+<footer id="open-on-gh">Found a bug? <a href="https://github.com/status-im/nim-chronos//edit/master/docs/src/error_handling.md">Edit this page on GitHub.</a></footer><div style="break-before: page; page-break-before: always;"></div><h1 id="threads-1"><a class="header" href="#threads-1">Threads</a></h1>
+<p>While the cooperative <a href="./concepts.html"><code>async</code></a> model offers an efficient model
+for dealing with many tasks that often are blocked on I/O, it is not suitable
+for long-running computations that would prevent concurrent tasks from progressing.</p>
+<p>Multithreading offers a way to offload heavy computations to be executed in
+parallel with the async work, or, in cases where a single event loop gets
+overloaded, to manage multiple event loops in parallel.</p>
+<p>For interaction between threads, the <code>ThreadSignalPtr</code> type (found in the
+(<code>chronos/threadsync</code>)(https://github.com/status-im/nim-chronos/blob/master/chronos/threadsync.nim)
+module) is used - both to wait for notifications coming from other threads and
+to notify other threads of progress from within an async procedure.</p>
+<pre><code class="language-nim">import chronos, chronos/threadsync
+import os
+
+type
+  Context = object
+    # Context allocated by `createShared` should contain no garbage-collected
+    # types!
+    signal: ThreadSignalPtr
+    value: int
+
+proc myThread(ctx: ptr Context) {.thread.} =
+  echo &quot;Doing some work in a thread&quot;
+  sleep(3000)
+  ctx.value = 42
+  echo &quot;Done, firing the signal&quot;
+  discard ctx.signal.fireSync().expect(&quot;correctly initialized signal should not fail&quot;)
+
+proc main() {.async.} =
+  let
+    signal = ThreadSignalPtr.new().expect(&quot;free file descriptor for signal&quot;)
+    context = createShared(Context)
+  context.signal = signal
+
+  var thread: Thread[ptr Context]
+
+  echo &quot;Starting thread&quot;
+  createThread(thread, myThread, context)
+
+  await signal.wait()
+
+  echo &quot;Work done: &quot;, context.value
+
+  joinThread(thread)
+
+  signal.close().expect(&quot;closing once works&quot;)
+  deallocShared(context)
+
+waitFor main()
+</code></pre>
+<footer id="open-on-gh">Found a bug? <a href="https://github.com/status-im/nim-chronos//edit/master/docs/src/threads.md">Edit this page on GitHub.</a></footer><div style="break-before: page; page-break-before: always;"></div><h1 id="tips-tricks-and-best-practices"><a class="header" href="#tips-tricks-and-best-practices">Tips, tricks and best practices</a></h1>
+<h2 id="timeouts"><a class="header" href="#timeouts">Timeouts</a></h2>
+<p>To prevent a single task from taking too long, <code>withTimeout</code> can be used:</p>
+<pre><code class="language-nim">## Simple timeouts
+import chronos
+
+proc longTask {.async.} =
+  try:
+    await sleepAsync(10.minutes)
+  except CancelledError as exc:
+    echo &quot;Long task was cancelled!&quot;
+    raise exc # Propagate cancellation to the next operation
+
+proc simpleTimeout() {.async.} =
+  let
+    task = longTask() # Start a task but don't `await` it
+
+  if not await task.withTimeout(1.seconds):
+    echo &quot;Timeout reached - withTimeout should have cancelled the task&quot;
+  else:
+    echo &quot;Task completed&quot;
+
+waitFor simpleTimeout()
+</code></pre>
+<p>When several tasks should share a single timeout, a common timer can be created
+with <code>sleepAsync</code>:</p>
+<pre><code class="language-nim">## Single timeout for several operations
+import chronos
+
+proc shortTask {.async.} =
+  try:
+    await sleepAsync(1.seconds)
+  except CancelledError as exc:
+    echo &quot;Short task was cancelled!&quot;
+    raise exc # Propagate cancellation to the next operation
+
+proc composedTimeout()  {.async.} =
+  let
+    # Common timout for several sub-tasks
+    timeout = sleepAsync(10.seconds)
+
+  while not timeout.finished():
+    let task = shortTask() # Start a task but don't `await` it
+    if (await race(task, timeout)) == task:
+      echo &quot;Ran one more task&quot;
+    else:
+      # This cancellation may or may not happen as task might have finished
+      # right at the timeout!
+      task.cancelSoon()
+
+waitFor composedTimeout()
+</code></pre>
+<h2 id="discard"><a class="header" href="#discard"><code>discard</code></a></h2>
+<p>When calling an asynchronous procedure without <code>await</code>, the operation is started
+but its result is not processed until corresponding <code>Future</code> is <code>read</code>.</p>
+<p>It is therefore important to never <code>discard</code> futures directly - instead, one
+can discard the result of awaiting the future or use <code>asyncSpawn</code> to monitor
+the outcome of the future as if it were running in a separate thread.</p>
+<p>Similar to threads, tasks managed by <code>asyncSpawn</code> may causes the application to
+crash if any exceptions leak out of it - use
+<a href="./error_handling.html#checked-exceptions">checked exceptions</a> to avoid this
+problem.</p>
+<pre><code class="language-nim">## The peculiarities of `discard` in `async` procedures
+import chronos
+
+proc failingOperation() {.async.} =
+  echo &quot;Raising!&quot;
+  raise (ref ValueError)(msg: &quot;My error&quot;)
+
+proc myApp() {.async.} =
+  # This style of discard causes the `ValueError` to be discarded, hiding the
+  # failure of the operation - avoid!
+  discard failingOperation()
+
+  proc runAsTask(fut: Future[void]): Future[void] {.async: (raises: []).} =
+    # runAsTask uses `raises: []` to ensure at compile-time that no exceptions
+    # escape it!
+    try:
+      await fut
+    except CatchableError as exc:
+      echo &quot;The task failed! &quot;, exc.msg
+
+  # asyncSpawn ensures that errors don't leak unnoticed from tasks without
+  # blocking:
+  asyncSpawn runAsTask(failingOperation())
+
+  # If we didn't catch the exception with `runAsTask`, the program will crash:
+  asyncSpawn failingOperation()
+
+waitFor myApp()
+</code></pre>
+<footer id="open-on-gh">Found a bug? <a href="https://github.com/status-im/nim-chronos//edit/master/docs/src/tips.md">Edit this page on GitHub.</a></footer><div style="break-before: page; page-break-before: always;"></div><h1 id="porting-code-to-chronos-v4"><a class="header" href="#porting-code-to-chronos-v4">Porting code to <code>chronos</code> v4</a></h1>
+<ul>
+<li><a href="porting.html#chronos-v3">Chronos v3</a></li>
+<li><a href="porting.html#asyncdispatch"><code>asyncdispatch</code></a></li>
+<li><a href="porting.html#supporting-multiple-backends">Supporting multiple backends</a></li>
+</ul>
+<p>Thanks to its macro support, Nim allows <code>async</code>/<code>await</code> to be implemented in
+libraries with only minimal support from the language - as such, multiple
+<code>async</code> libraries exist, including <code>chronos</code> and <code>asyncdispatch</code>, and more may
+come to be developed in the futures.</p>
+<h2 id="chronos-v3"><a class="header" href="#chronos-v3">Chronos v3</a></h2>
+<p>Chronos v4 introduces new features for IPv6, exception effects, a stand-alone
+<code>Future</code> type as well as several other changes - when upgrading from chronos v3,
+here are several things to consider:</p>
+<ul>
+<li>Exception handling is now strict by default - see the <a href="./error_handling.html">error handling</a>
+chapter for how to deal with <code>raises</code> effects</li>
+<li><code>AsyncEventBus</code> was removed - use <code>AsyncEventQueue</code> instead</li>
+<li><code>Future.value</code> and <code>Future.error</code> panic when accessed in the wrong state</li>
+<li><code>Future.read</code> and <code>Future.readError</code> raise <code>FutureError</code> instead of
+<code>ValueError</code> when accessed in the wrong state</li>
+</ul>
+<h2 id="asyncdispatch"><a class="header" href="#asyncdispatch"><code>asyncdispatch</code></a></h2>
+<p>Code written for <code>asyncdispatch</code> and <code>chronos</code> looks similar but there are
+several differences to be aware of:</p>
+<ul>
+<li><code>chronos</code> has its own dispatch loop - you can typically not mix <code>chronos</code> and
+<code>asyncdispatch</code> in the same thread</li>
+<li><code>import chronos</code> instead of <code>import asyncdispatch</code></li>
+<li>cleanup is important - make sure to use <code>closeWait</code> to release any resources
+you're using or file descriptor and other leaks will ensue</li>
+<li>cancellation support means that <code>CancelledError</code> may be raised from most
+<code>{.async.}</code> functions</li>
+<li>Calling <code>yield</code> directly in tasks is not supported - instead, use <code>awaitne</code>.</li>
+<li><code>asyncSpawn</code> is used instead of <code>asyncCheck</code> - note that exceptions raised
+in tasks that are <code>asyncSpawn</code>:ed cause panic</li>
+</ul>
+<h2 id="supporting-multiple-backends"><a class="header" href="#supporting-multiple-backends">Supporting multiple backends</a></h2>
+<p>Libraries built on top of <code>async</code>/<code>await</code> may wish to support multiple async
+backends - the best way to do so is to create separate modules for each backend
+that may be imported side-by-side - see <a href="https://github.com/status-im/nim-metrics/blob/master/metrics/">nim-metrics</a>
+for an example.</p>
+<p>An alternative way is to select backend using a global compile flag - this
+method makes it diffucult to compose applications that use both backends as may
+happen with transitive dependencies, but may be appropriate in some cases -
+libraries choosing this path should call the flag <code>asyncBackend</code>, allowing
+applications to choose the backend with <code>-d:asyncBackend=&lt;backend_name&gt;</code>.</p>
+<p>Known <code>async</code> backends include:</p>
+<ul>
+<li><code>chronos</code> - this library (<code>-d:asyncBackend=chronos</code>)</li>
+<li><code>asyncdispatch</code> the standard library <code>asyncdispatch</code> <a href="https://nim-lang.org/docs/asyncdispatch.html">module</a> (<code>-d:asyncBackend=asyncdispatch</code>)</li>
+<li><code>none</code> - <code>-d:asyncBackend=none</code> - disable <code>async</code> support completely</li>
+</ul>
+<p><code>none</code> can be used when a library supports both a synchronous and
+asynchronous API, to disable the latter.</p>
+<footer id="open-on-gh">Found a bug? <a href="https://github.com/status-im/nim-chronos//edit/master/docs/src/porting.md">Edit this page on GitHub.</a></footer><div style="break-before: page; page-break-before: always;"></div><h2 id="http-server-middleware"><a class="header" href="#http-server-middleware">HTTP server middleware</a></h2>
+<p>Chronos provides a powerful mechanism for customizing HTTP request handlers via
+middlewares.</p>
+<p>A middleware is a coroutine that can modify, block or filter HTTP request.</p>
+<p>Single HTTP server could support unlimited number of middlewares, but you need to consider that each request in worst case could go through all the middlewares, and therefore a huge number of middlewares can have a significant impact on HTTP server performance.</p>
+<p>Order of middlewares is also important: right after HTTP server has received request, it will be sent to the first middleware in list, and each middleware will be responsible for passing control to other middlewares. Therefore, when building a list, it would be a good idea to place the request handlers at the end of the list, while keeping the middleware that could block or modify the request at the beginning of the list.</p>
+<p>Middleware could also modify HTTP server request, and these changes will be visible to all handlers (either middlewares or the original request handler). This can be done using the following helpers:</p>
+<pre><code class="language-nim">  proc updateRequest*(request: HttpRequestRef, scheme: string, meth: HttpMethod,
+                      version: HttpVersion, requestUri: string,
+                      headers: HttpTable): HttpResultMessage[void]
+
+  proc updateRequest*(request: HttpRequestRef, meth: HttpMethod,
+                      requestUri: string,
+                      headers: HttpTable): HttpResultMessage[void]
+
+  proc updateRequest*(request: HttpRequestRef, requestUri: string,
+                      headers: HttpTable): HttpResultMessage[void]
+
+  proc updateRequest*(request: HttpRequestRef,
+                      requestUri: string): HttpResultMessage[void]
+
+  proc updateRequest*(request: HttpRequestRef,
+                      headers: HttpTable): HttpResultMessage[void]
+</code></pre>
+<p>As you can see all the HTTP request parameters could be modified: request method, version, request path and request headers.</p>
+<p>Middleware could also use helpers to obtain more information about remote and local addresses of request's connection (this could be helpful when you need to do some IP address filtering).</p>
+<pre><code class="language-nim">  proc remote*(request: HttpRequestRef): Opt[TransportAddress]
+    ## Returns remote address of HTTP request's connection.
+  proc local*(request: HttpRequestRef): Opt[TransportAddress] =
+    ## Returns local address of HTTP request's connection.
+</code></pre>
+<p>Every middleware is the coroutine which looks like this:</p>
+<pre><code class="language-nim">  proc middlewareHandler(
+      middleware: HttpServerMiddlewareRef,
+      reqfence: RequestFence,
+      nextHandler: HttpProcessCallback2
+  ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
+</code></pre>
+<p>Where <code>middleware</code> argument is the object which could hold some specific values, <code>reqfence</code> is HTTP request which is enclosed with HTTP server error information and <code>nextHandler</code> is reference to next request handler, it could be either middleware handler or the original request processing callback handler.</p>
+<pre><code class="language-nim">  await nextHandler(reqfence)
+</code></pre>
+<p>You should perform await for the response from the <code>nextHandler(reqfence)</code>. Usually you should call next handler when you dont want to handle request or you dont know how to handle it, for example:</p>
+<pre><code class="language-nim">  proc middlewareHandler(
+      middleware: HttpServerMiddlewareRef,
+      reqfence: RequestFence,
+      nextHandler: HttpProcessCallback2
+  ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
+  if reqfence.isErr():
+    # We dont know or do not want to handle failed requests, so we call next handler.
+    return await nextHandler(reqfence)
+  let request = reqfence.get()
+  if request.uri.path == &quot;/path/we/able/to/respond&quot;:
+    try:
+      # Sending some response.
+      await request.respond(Http200, &quot;TEST&quot;)
+    except HttpWriteError as exc:
+      # We could also return default response for exception or other types of error.
+      defaultResponse(exc)
+  elif request.uri.path == &quot;/path/for/rewrite&quot;:
+    # We going to modify request object for this request, next handler will receive it with different request path.
+    let res = request.updateRequest(&quot;/path/to/new/location&quot;)
+    if res.isErr():
+      return defaultResponse(res.error)
+    await nextHandler(reqfence)
+  elif request.uri.path == &quot;/restricted/path&quot;:
+    if request.remote().isNone():
+      # We can't obtain remote address, so we force HTTP server to respond with `401 Unauthorized` status code.
+      return codeResponse(Http401)
+    if $(request.remote().get()).startsWith(&quot;127.0.0.1&quot;):
+      # Remote peer's address starts with &quot;127.0.0.1&quot;, sending proper response.
+      await request.respond(Http200, &quot;AUTHORIZED&quot;)
+    else:
+      # Force HTTP server to respond with `403 Forbidden` status code.
+      codeResponse(Http403)
+  elif request.uri.path == &quot;/blackhole&quot;:
+    # Force HTTP server to drop connection with remote peer.
+    dropResponse()
+  else:
+    # All other requests should be handled by somebody else.
+    await nextHandler(reqfence)
+</code></pre>
+<footer id="open-on-gh">Found a bug? <a href="https://github.com/status-im/nim-chronos//edit/master/docs/src/http_server_middleware.md">Edit this page on GitHub.</a></footer><div style="break-before: page; page-break-before: always;"></div><h1 id="updating-this-book"><a class="header" href="#updating-this-book">Updating this book</a></h1>
+<footer id="open-on-gh">Found a bug? <a href="https://github.com/status-im/nim-chronos//edit/master/docs/src/book.md">Edit this page on GitHub.</a></footer>
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+
+            </nav>
+
+        </div>
+
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr.min.js"></script>
+        <script src="mark.min.js"></script>
+        <script src="searcher.js"></script>
+
+        <script src="clipboard.min.js"></script>
+        <script src="highlight.js"></script>
+        <script src="book.js"></script>
+
+        <!-- Custom JS scripts -->
+
+        <script>
+        window.addEventListener('load', function() {
+            window.setTimeout(window.print, 100);
+        });
+        </script>
+
+    </div>
+    </body>
+</html>
