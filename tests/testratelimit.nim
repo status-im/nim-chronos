@@ -99,6 +99,36 @@ suite "Token Bucket":
     futBlocker.cancelSoon()
     waitFor(fut2.wait(10.milliseconds))
 
+  test "Async reset":
+    var bucket = TokenBucket.new(100, 0.seconds)
+    let
+      futBlocker = bucket.consume(1000)
+      fut1 = bucket.consume(20)
+      fut2 = bucket.consume(20)
+
+    waitFor(sleepAsync(10.milliseconds))
+    check:
+      futBlocker.finished == false
+      fut1.finished == false
+      fut2.finished == false
+
+    let t0 = Moment.now()
+    check bucket.resetState(10000, t0) == true
+    check:
+      futBlocker.cancelled == true
+      fut1.cancelled == true
+      fut2.cancelled == true
+    var cap = bucket.getAvailableCapacity()
+    check: 
+      cap.budget == 100
+      cap.lastUpdate == t0
+      cap.capacity == 100
+
+    let fut3 = bucket.consume(50)
+    waitFor(fut3.wait(10.milliseconds))
+    check: fut3.completed == true
+
+
   test "Very long replenish":
     var bucket = TokenBucket.new(7000, 1.hours)
     let start = Moment.now()

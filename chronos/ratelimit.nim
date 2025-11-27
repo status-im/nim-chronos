@@ -205,9 +205,30 @@ proc new*(
     replenishMode: replenishMode
   )
 
-proc setState*(bucket: TokenBucket, budget: int, lastUpdate: Moment) =
+proc cancelAllPending(bucket: TokenBucket): bool =
+  var futs: seq[Future[void]]
+  for request in bucket.pendingRequests:
+    if not request.future.finished:
+      futs.add(request.future)
+  
+  for fut in futs:
+      fut.cancelSoon()
+      
+  let r = catch:
+    waitFor allFutures(futs)
+  
+  if r.isErr():
+    return false
+
+  true
+
+  
+proc resetState*(bucket: TokenBucket, budget: int, lastUpdate: Moment): bool =
+  if not cancelAllPending(bucket):
+    return false
   bucket.budget = budget
   bucket.lastUpdate = lastUpdate
+  true
 
 func `$`*(b: TokenBucket): string {.inline.} =
   if isNil(b):
