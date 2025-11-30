@@ -12,7 +12,7 @@
 
 {.push raises: [].}
 
-import std/[sequtils, math, deques, tables, typetraits]
+import std/[sequtils, math, deques, tables]
 import ./asyncloop
 export asyncloop
 
