@@ -9,7 +9,7 @@
 
 {.push raises: [].}
 
-import std/[deques, strutils]
+import std/deques
 import stew/[ptrops, shims/sequninit]
 import results
 import ".."/[asyncloop, config, handles, bipbuffer, osdefs, osutils, oserrno]
@@ -2692,31 +2692,23 @@ proc readUntil*(transp: StreamTransport, pbytes: pointer, nbytes: int,
   if nbytes == 0:
     raise newException(TransportLimitError, "Limit reached!")
 
-  var pbuffer = pbytes.toUnchecked()
-  var state = 0
-  var k = 0
+  var
+    pbuffer = pbytes.toUnchecked()
+    state = 0
+    k = 0
 
   readLoop("stream.transport.readUntil"):
     if transp.atEof():
       raise newException(TransportIncompleteError, "Data incomplete!")
 
-    var index = 0
-    for ch in transp.buffer:
-      if k >= nbytes:
-        raise newException(TransportLimitError, "Limit reached!")
+    if k == nbytes:
+      raise newException(TransportLimitError, "Limit reached!")
 
-      inc(index)
-      pbuffer[k] = ch
-      inc(k)
+    let (consumed, done) =
+      transp.buffer.copyUntil(pbuffer.toOpenArray(k, nbytes - 1), state, sep)
+    k += consumed
 
-      if sep[state] == ch:
-        inc(state)
-        if state == len(sep):
-          break
-      else:
-        state = 0
-
-    (index, state == len(sep))
+    (consumed, done)
   k
 
 proc readLine*(transp: StreamTransport, limit = 0,
@@ -2732,29 +2724,16 @@ proc readLine*(transp: StreamTransport, limit = 0,
   ## empty string.
   ##
   ## If ``limit`` more then 0, then read is limited to ``limit`` bytes.
-  var res: string
+  var
+    res: string
+    state: int
 
   readLoop("stream.transport.readLine"):
     if transp.atEof():
       (0, true)
     else:
-      var
-        consumed = 0
-        done = false
-      for ch in transp.buffer:
-        res.add char(ch)
-        consumed += 1
+      transp.buffer.addLineInto(res, state, limit, sep)
 
-        if res.endsWith(sep):
-          res.setLen(res.len - sep.len)
-          done = true
-          break
-
-        if limit > 0 and res.len == limit:
-          done = true
-          break
-
-      (consumed, done)
   res
 
 proc read*(transp: StreamTransport): Future[seq[byte]] {.
