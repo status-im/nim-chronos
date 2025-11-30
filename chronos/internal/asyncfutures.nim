@@ -1279,7 +1279,7 @@ proc one*(fut0: SomeFuture, futs: varargs[SomeFuture]): Future[SomeFuture] {.
     async: (raw: true, raises: [CancelledError]).} =
   ## Waits for one of the given futures to finish and returns it.
   ##
-  ## If any of futures is already finished, returns immediately.
+  ## If any of the futures is already finished, returns immediately.
   ##
   ## On success returned Future will hold the finished Future[T].
   ##
@@ -1294,7 +1294,7 @@ proc one*(futs: openArray[SomeFuture]): Future[SomeFuture] {.
     async: (raw: true, raises: [ValueError, CancelledError]).} =
   ## Waits for one of the given futures to finish and returns it.
   ##
-  ## If any of futures is already finished, returns immediately.
+  ## If any of the futures is already finished, returns immediately.
   ##
   ## If the argument is empty, a `ValueError` is raised.
   ##
@@ -1315,7 +1315,7 @@ proc race*(fut0: FutureBase, futs: varargs[FutureBase]): Future[FutureBase] {.
     async: (raw: true, raises: [CancelledError]).} =
   ## Waits for one of the given futures to finish and returns it.
   ##
-  ## If any of futures is already finished, returns immediately.
+  ## If any of the futures is already finished, returns immediately.
   ##
   ## On success returned Future will hold the finished FutureBase.
   ##
@@ -1328,7 +1328,7 @@ proc race*(futs: openArray[FutureBase]): Future[FutureBase] {.
     async: (raw: true, raises: [ValueError, CancelledError]).} =
   ## Waits for one of the given futures to finish and returns it.
   ##
-  ## If any of futures is already finished, returns immediately.
+  ## If any of the futures is already finished, returns immediately.
   ##
   ## If the argument is empty, a `ValueError` is raised.
   ##
@@ -1347,7 +1347,7 @@ proc race*(fut0: SomeFuture, futs: openArray[SomeFuture]): Future[SomeFuture] {.
     async: (raw: true, raises: [CancelledError]).} =
   ## Waits for one of the given futures to finish and returns it.
   ##
-  ## If any of futures is already finished, returns immediately.
+  ## If any of the futures is already finished, returns immediately.
   ##
   ## On success returned Future will hold the finished Future[T].
   ##
@@ -1360,7 +1360,7 @@ proc race*(futs: openArray[SomeFuture]): Future[SomeFuture] {.
     async: (raw: true, raises: [ValueError, CancelledError]).} =
   ## Waits for one of the given futures to finish and returns it.
   ##
-  ## If any of futures is already finished, returns immediately.
+  ## If any of the futures is already finished, returns immediately.
   ##
   ## If the argument is empty, a `ValueError` is raised.
   ##
