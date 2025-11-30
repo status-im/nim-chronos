@@ -149,3 +149,64 @@ proc copyInto*(bp: var BipBuffer, tgt: var openArray[byte]): Natural =
   for (region, rsize) in bp.regions():
     n += tgt.toOpenArray(n, tgt.high()).copyFrom(region.makeOpenArray(rsize))
   n
+
+proc copyUntil*[T: byte|char](
+    bp: BipBuffer, tgt: var openArray[T], state: var int, sep: openArray[T]
+): tuple[n: Natural, found: bool] =
+  ## Bulk-copies the available bytes
+  var
+    n = Natural(0)
+    found = false
+
+  for ch in bp:
+    tgt[n] = T(ch)
+    n += 1
+
+    if sep.len == 0:
+      found = true
+      break
+
+    if T(ch) == sep[state]:
+      state += 1
+    else:
+      state = 0
+
+    if state == sep.len:
+      found = true
+      break
+
+    if n == tgt.len:
+      break
+
+  (n, found)
+
+proc addLineInto*(
+    bp: BipBuffer, tgt: var string, state: var int, limit: int, sep: openArray[char]
+): tuple[n: Natural, done: bool] =
+  ## Add bytes from buffer until sep found, limit is hit or buffer ends - sep is
+  ## removed from the tgt if found.
+  var
+    n = Natural(0)
+    done = false
+
+  for ch in bp:
+    tgt.add char(ch)
+    n += 1
+
+    if sep.len == 0:
+      done = true
+      break
+
+    if char(ch) == sep[state]:
+      state += 1
+
+    if state == sep.len:
+      tgt.setLen(tgt.len - sep.len)
+      done = true
+      break
+
+    if limit > 0 and tgt.len == limit:
+      done = true
+      break
+
+  (n, done)
