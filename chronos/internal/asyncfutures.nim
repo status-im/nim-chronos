@@ -1251,13 +1251,11 @@ template oneImpl: untyped =
   var cb: proc(udata: pointer) {.gcsafe, raises: [].}
   cb = proc(udata: pointer) {.gcsafe, raises: [].} =
     if not(retFuture.finished()):
-      var res: typeof(retFuture).T
       for fut in nfuts.mitems():
-        if cast[pointer](fut) != udata:
-          fut.removeCallback(cb)
+        if cast[pointer](fut) == udata:
+          resFuture.complete(move(fut))
         else:
-          res = move(fut)
-      retFuture.complete(res)
+          fut.removeCallback(cb)
       reset(nfuts)
       reset(cb)
 
