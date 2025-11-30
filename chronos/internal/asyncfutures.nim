@@ -1253,7 +1253,7 @@ template oneImpl: untyped =
     if not(retFuture.finished()):
       for fut in nfuts.mitems():
         if cast[pointer](fut) == udata:
-          resFuture.complete(move(fut))
+          retFuture.complete(move(fut))
         else:
           fut.removeCallback(cb)
       reset(nfuts)
