@@ -44,7 +44,7 @@ test "recursion":
   proc recursion(i: int) {.async.} =
     if i == 5:
       err()
-    await sleepAsync(1.milliseconds)
+    await sleepAsync(100.milliseconds)
     await recursion(i + 1)
 
   proc main() {.async.} =
@@ -80,7 +80,7 @@ test "simple":
     baz()
 
   proc foo() {.async.} =
-    await sleepAsync(1.milliseconds)
+    await sleepAsync(100.milliseconds)
     bar()
 
   proc main() {.async.} =
@@ -110,15 +110,15 @@ test "simple":
 
 test "async work":
   proc baz() {.async.} =
-    await sleepAsync(1.milliseconds)
+    await sleepAsync(100.milliseconds)
     raise newException(ValueError, "the_error_msg")
 
   proc bar() {.async.} =
-    await sleepAsync(1.milliseconds)
+    await sleepAsync(100.milliseconds)
     await baz()
 
   proc foo() {.async.} =
-    await sleepAsync(1.milliseconds)
+    await sleepAsync(100.milliseconds)
     await bar()
 
   proc main() {.async.} =
@@ -149,15 +149,15 @@ test "async work":
 
 test "interleaved async work":
   proc baz() {.async.} =
-    await sleepAsync(1.milliseconds)
+    await sleepAsync(100.milliseconds)
     raise newException(ValueError, "the_error_msg")
 
   proc bar() {.async.} =
-    #await sleepAsync(1.milliseconds)
+    #await sleepAsync(100.milliseconds)
     await baz()
 
   proc foo() {.async.} =
-    await sleepAsync(1.milliseconds)
+    await sleepAsync(100.milliseconds)
     await bar()
 
   proc main() {.async.} =

@@ -437,6 +437,7 @@ proc isInternal(entry: StackTraceEntry): bool =
     "asyncengine.nim",
     "asyncfutures.nim",
     # TODO: https://github.com/nim-lang/Nim/issues/24670
+    #"excpt.nim",
     "system.nim",
     "threadimpl.nim"
   ]
