@@ -382,3 +382,15 @@ suite "Asynchronous multi-threading sync primitives test suite":
   asyncTest "ThreadSignal: Single threaded switches [" & $TestsCount &
             "] test [async -> sync]":
     threadSignalTest4(TestsCount, WaitSendKind.Async, WaitSendKind.Sync)
+
+  asyncTest "ThreadSignal: single wait should resolve many fire calls":
+    let tsp = ThreadSignalPtr.new().expect("working ptr")
+    defer:
+      discard tsp.close()
+
+    for i in 0..<1024*1024:
+      discard tsp.fireSync(0.seconds).expect("ok")
+
+    check:
+      tsp.waitSync(0.seconds).expect("ok")
+      not tsp.waitSync(0.seconds).expect("ok")
