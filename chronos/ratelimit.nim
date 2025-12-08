@@ -189,20 +189,39 @@ proc getAvailableCapacity*(
   let (assumedBudget, assumedLastUpdate) = bucket.calcUpdate(currentTime)
   (assumedBudget, bucket.capacity, assumedLastUpdate)
 
+# Backward compatibility ctor
 proc new*(
   T: type[TokenBucket],
   capacity: int,
-  fillDuration: Duration = 1.seconds,
-  replenishMode: ReplenishMode = ReplenishMode.Continuous): T =
+  fillDuration: Duration = 1.seconds): T =
 
-  ## Create a TokenBucket
   T(
     budget: capacity,
     capacity: capacity,
     fillDuration: fillDuration,
     lastUpdate: Moment.now(),
     manuallyReplenished: newAsyncEvent(),
-    replenishMode: replenishMode
+    replenishMode: ReplenishMode.Continuous
+  )
+
+proc newContinuous*(
+  T: type[TokenBucket],
+  capacity: int,
+  fillDuration: Duration = 1.seconds): T =
+  T.new(capacity, fillDuration)
+
+proc newDiscrete*(
+  T: type[TokenBucket],
+  capacity: int,
+  fillDuration: Duration,
+  startTime: Moment): T =
+  T(
+    budget: capacity,
+    capacity: capacity,
+    fillDuration: fillDuration,
+    lastUpdate: startTime,
+    manuallyReplenished: newAsyncEvent(),
+    replenishMode: ReplenishMode.Discrete
   )
 
 proc cancelAllPending(bucket: TokenBucket): bool =
@@ -220,14 +239,6 @@ proc cancelAllPending(bucket: TokenBucket): bool =
   if r.isErr():
     return false
 
-  true
-
-  
-proc resetState*(bucket: TokenBucket, budget: int, lastUpdate: Moment): bool =
-  if not cancelAllPending(bucket):
-    return false
-  bucket.budget = budget
-  bucket.lastUpdate = lastUpdate
   true
 
 func `$`*(b: TokenBucket): string {.inline.} =
