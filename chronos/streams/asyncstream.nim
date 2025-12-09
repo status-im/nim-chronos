@@ -330,8 +330,6 @@ proc readExactly*(rstream: AsyncStreamReader, pbytes: pointer,
   if isNil(rstream.rsource):
     try:
       await readExactly(rstream.tsource, pbytes, nbytes)
-    except CancelledError as exc:
-      raise exc
     except TransportIncompleteError:
       raise newAsyncStreamIncompleteError()
     except TransportError as exc:
@@ -372,8 +370,6 @@ proc readOnce*(rstream: AsyncStreamReader, pbytes: pointer,
   if isNil(rstream.rsource):
     try:
       return await readOnce(rstream.tsource, pbytes, nbytes)
-    except CancelledError as exc:
-      raise exc
     except TransportError as exc:
       raise newAsyncStreamReadError(exc)
   else:
@@ -423,8 +419,6 @@ proc readUntil*(rstream: AsyncStreamReader, pbytes: pointer, nbytes: int,
   if isNil(rstream.rsource):
     try:
       return await readUntil(rstream.tsource, pbytes, nbytes, sep)
-    except CancelledError as exc:
-      raise exc
     except TransportIncompleteError:
       raise newAsyncStreamIncompleteError()
     except TransportLimitError:
@@ -481,8 +475,6 @@ proc readLine*(rstream: AsyncStreamReader, limit = 0,
   if isNil(rstream.rsource):
     try:
       return await readLine(rstream.tsource, limit, sep)
-    except CancelledError as exc:
-      raise exc
     except TransportError as exc:
       raise newAsyncStreamReadError(exc)
   else:
@@ -532,8 +524,6 @@ proc read*(rstream: AsyncStreamReader): Future[seq[byte]] {.
   if isNil(rstream.rsource):
     try:
       return await read(rstream.tsource)
-    except CancelledError as exc:
-      raise exc
     except TransportLimitError:
       raise newAsyncStreamLimitError()
     except TransportError as exc:
@@ -565,8 +555,6 @@ proc read*(rstream: AsyncStreamReader, n: int): Future[seq[byte]] {.
   if isNil(rstream.rsource):
     try:
       return await read(rstream.tsource, n)
-    except CancelledError as exc:
-      raise exc
     except TransportError as exc:
       raise newAsyncStreamReadError(exc)
   else:
@@ -599,8 +587,6 @@ proc consume*(rstream: AsyncStreamReader): Future[int] {.
   if isNil(rstream.rsource):
     try:
       return await consume(rstream.tsource)
-    except CancelledError as exc:
-      raise exc
     except TransportLimitError:
       raise newAsyncStreamLimitError()
     except TransportError as exc:
@@ -630,8 +616,6 @@ proc consume*(rstream: AsyncStreamReader, n: int): Future[int] {.
   if isNil(rstream.rsource):
     try:
       return await consume(rstream.tsource, n)
-    except CancelledError as exc:
-      raise exc
     except TransportLimitError:
       raise newAsyncStreamLimitError()
     except TransportError as exc:
@@ -672,8 +656,6 @@ proc readMessage*(rstream: AsyncStreamReader, pred: ReadMessagePredicate) {.
   if isNil(rstream.rsource):
     try:
       await readMessage(rstream.tsource, pred)
-    except CancelledError as exc:
-      raise exc
     except TransportError as exc:
       raise newAsyncStreamReadError(exc)
   else:
@@ -711,8 +693,6 @@ proc write*(wstream: AsyncStreamWriter, pbytes: pointer,
     var res: int
     try:
       res = await write(wstream.tsource, pbytes, nbytes)
-    except CancelledError as exc:
-      raise exc
     except TransportError as exc:
       raise newAsyncStreamWriteError(exc)
     if res != nbytes:
@@ -753,8 +733,6 @@ proc write*(wstream: AsyncStreamWriter, sbytes: seq[byte],
     var res: int
     try:
       res = await write(wstream.tsource, sbytes, length)
-    except CancelledError as exc:
-      raise exc
     except TransportError as exc:
       raise newAsyncStreamWriteError(exc)
     if res != length:
@@ -794,8 +772,6 @@ proc write*(wstream: AsyncStreamWriter, sbytes: string,
     var res: int
     try:
       res = await write(wstream.tsource, sbytes, length)
-    except CancelledError as exc:
-      raise exc
     except TransportError as exc:
       raise newAsyncStreamWriteError(exc)
     if res != length:
