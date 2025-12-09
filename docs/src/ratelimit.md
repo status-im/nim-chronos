@@ -12,6 +12,7 @@ TokenBucket provides several usage modes and patterns depending on how you want 
 	- Replenishes only after a full `fillDuration` has elapsed (step-like refill behavior).
 	- Before the period boundary, budget does not increase; after the boundary, budget jumps to capacity.
 	- Use when you need hard period boundaries rather than proportional accrual.
+	- If you need exact start time for period alignment, set `startTime` argument of `new` constructor.
 
 - Manual-only replenish (fillDuration = 0):
 	- Disables automatic minting; tokens can only be added via `replenish(tokens)`.

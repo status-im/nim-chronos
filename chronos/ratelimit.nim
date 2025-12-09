@@ -193,35 +193,17 @@ proc getAvailableCapacity*(
 proc new*(
   T: type[TokenBucket],
   capacity: int,
-  fillDuration: Duration = 1.seconds): T =
+  fillDuration: Duration = 1.seconds,
+  startTime: Moment = Moment.now(),
+  mode: static[ReplenishMode] = Continuous): T =
 
-  T(
-    budget: capacity,
-    capacity: capacity,
-    fillDuration: fillDuration,
-    lastUpdate: Moment.now(),
-    manuallyReplenished: newAsyncEvent(),
-    replenishMode: ReplenishMode.Continuous
-  )
-
-proc newContinuous*(
-  T: type[TokenBucket],
-  capacity: int,
-  fillDuration: Duration = 1.seconds): T =
-  T.new(capacity, fillDuration)
-
-proc newDiscrete*(
-  T: type[TokenBucket],
-  capacity: int,
-  fillDuration: Duration,
-  startTime: Moment): T =
   T(
     budget: capacity,
     capacity: capacity,
     fillDuration: fillDuration,
     lastUpdate: startTime,
     manuallyReplenished: newAsyncEvent(),
-    replenishMode: ReplenishMode.Discrete
+    replenishMode: mode
   )
 
 proc cancelAllPending(bucket: TokenBucket): bool =

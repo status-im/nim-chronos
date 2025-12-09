@@ -168,7 +168,7 @@ suite "Token Bucket":
 
   test "Discrete replenish mode does not refill before period elapsed":
     let t0 = Moment.now()
-    var bucket = TokenBucket.newDiscrete(10, 100.milliseconds, t0)
+    var bucket = TokenBucket.new(10, 100.milliseconds, t0, ReplenishMode.Discrete)
     # Spend a portion (from full) -> lastUpdate = t0, budget 10
     check bucket.tryConsume(9, t0) == true # leaves 1
 
