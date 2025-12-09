@@ -209,6 +209,64 @@ suite "Token Bucket":
 
     check bucket.tryConsume(2, boundary) == true  # ok, we passed the period boundary now, leaves 8
 
+  test "Discrete replenish does not drift time window":
+    let t0 = Moment.now()
+    let period = 100.milliseconds
+    var bucket = TokenBucket.new(10, period, t0, ReplenishMode.Discrete)
+
+    let t1 = t0 + 50.milliseconds     # Spend a portion (from full) -> lastUpdate = t0, budget 10
+    check bucket.tryConsume(9, t1) == true # leaves 1
+    var cap = bucket.getAvailableCapacity(t1)
+    check cap == 1
+
+    let t2 = t1 + 49.milliseconds
+    cap = bucket.getAvailableCapacity(t2)
+    check cap == 1
+
+    let t3 = t2 + 2.milliseconds
+    cap = bucket.getAvailableCapacity(t3)
+    check cap == 10
+
+    check bucket.tryConsume(2, t3) == true  
+    cap = bucket.getAvailableCapacity(t3)
+    check cap == 8
+
+    let t4 = t1 + 101.milliseconds # equals t0 + 151ms
+    cap = bucket.getAvailableCapacity(t4)
+    check cap == 8
+
+    # check bucket refilled only at time window boundaries
+    let t5 = t0 + 201.milliseconds
+    cap = bucket.getAvailableCapacity(t5)
+    check cap == 10
+
+  test "Discrete mode manual replenish does not drift time window":
+    let t0 = Moment.now()
+    let period = 100.milliseconds
+    var bucket = TokenBucket.new(10, period, t0, ReplenishMode.Discrete)
+
+    let t1 = t0 + 50.milliseconds     # Spend a portion (from full) -> lastUpdate = t0, budget 10
+    check bucket.tryConsume(9, t1) == true # leaves 1
+    var cap = bucket.getAvailableCapacity(t1)
+    check cap == 1
+
+    bucket.replenish(2, t1)
+
+    let t2 = t0 + 99.milliseconds
+    cap = bucket.getAvailableCapacity(t2)
+    check cap == 3
+
+    let t3 = t0 + 101.milliseconds
+    cap = bucket.getAvailableCapacity(t3)
+    check cap == 10
+
+    check bucket.tryConsume(9, t3) == true # leaves 1
+
+    # check if boundary not drifted by manual replenish
+    let t4 = t0 + 151.milliseconds
+    cap = bucket.getAvailableCapacity(t4)
+    check cap == 1
+
   test "Continuous high-rate single-token 10/10ms over 40ms":
     # Capacity 10, fillDuration 10ms (1 token/ms). Only 1-token requests are made
     # at specific timestamps within 0–40ms (4 full periods). We verify that no

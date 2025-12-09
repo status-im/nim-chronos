@@ -230,7 +230,8 @@ proc consume*(
 proc replenish*(bucket: TokenBucket, tokens: int, now = Moment.now()) =
   ## Add `tokens` to the budget (capped to the bucket capacity)
   bucket.refill(tokens)
-  bucket.lastUpdate = now
+  if bucket.replenishMode == ReplenishMode.Continuous:
+    bucket.lastUpdate = now
 
   bucket.manuallyReplenished.fire()
 
