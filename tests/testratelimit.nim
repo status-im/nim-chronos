@@ -74,14 +74,34 @@ suite "Token Bucket":
 
     let lastOne = bucket.consume(10)
 
-    # Test cap as well
-    bucket.replenish(1000000)
+    # Replenish should finish all futures
+    bucket.replenish(150 * 10)
     waitFor(allFutures(toWait).wait(10.milliseconds))
 
     check: not lastOne.finished()
 
     bucket.replenish(10)
     waitFor(lastOne.wait(10.milliseconds))
+
+    let another = bucket.consume(20)
+    check:
+      not another.finished
+      not bucket.tryConsume(10)
+
+    bucket.replenish(10)
+    check:
+      not another.finished
+      not bucket.tryConsume(10)
+
+    bucket.replenish(10)
+    check:
+      another.finished
+      not bucket.tryConsume(10)
+
+    bucket.replenish(10)
+    check:
+      another.finished
+      bucket.tryConsume(10)
 
   test "Async cancellation":
     var bucket = TokenBucket.new(100, 0.seconds)
@@ -173,25 +193,19 @@ suite "Token Bucket":
     check bucket.tryConsume(9, t0) == true # leaves 1
 
     var cap = bucket.getAvailableCapacity(t0)
-    check cap.budget == 1
-    check cap.lastUpdate == t0
-    check cap.capacity == 10
+    check cap == 1
 
     let mid = t0 + 50.milliseconds
 
     cap = bucket.getAvailableCapacity(mid)
-    check cap.budget == 1
-    check cap.lastUpdate == t0
-    check cap.capacity == 10
+    check cap == 1
 
     check bucket.tryConsume(2, mid) == false  # no update before period boundary passed, budget 1
 
     let boundary = t0 + 100.milliseconds
 
     cap = bucket.getAvailableCapacity(boundary)
-    check cap.budget == 10
-    check cap.lastUpdate == boundary
-    check cap.capacity == 10
+    check cap == 10
 
     check bucket.tryConsume(2, boundary) == true  # ok, we passed the period boundary now, leaves 8
 
@@ -225,64 +239,56 @@ suite "Token Bucket":
     check r.accepted == 10
     check r.rejected == 2
     var cap = bucket.getAvailableCapacity(t0)
-    check cap.budget == 0
-    check cap.lastUpdate == t0
+    check cap == 0
 
     # 5ms: 7 attempts -> mint 5 then accept 5, reject 2; budget 0; LU=5ms
     r = attempt(7, t5)
     check r.accepted == 5
     check r.rejected == 2
     cap = bucket.getAvailableCapacity(t5)
-    check cap.budget == 0
-    check cap.lastUpdate == t5
+    check cap == 0
 
     # 10ms: 15 attempts -> mint 5 then accept 5, reject 10; budget 0; LU=10ms
     r = attempt(15, t10)
     check r.accepted == 5
     check r.rejected == 10
     cap = bucket.getAvailableCapacity(t10)
-    check cap.budget == 0
-    check cap.lastUpdate == t10
+    check cap == 0
 
     # 12ms: 3 attempts -> mint 2 then accept 2, reject 1; budget 0; LU=12ms
     r = attempt(3, t12)
     check r.accepted == 2
     check r.rejected == 1
     cap = bucket.getAvailableCapacity(t12)
-    check cap.budget == 0
-    check cap.lastUpdate == t12
+    check cap == 0
 
     # 20ms: 25 attempts -> mint 8 then accept 8, reject 17; budget 0; LU=20ms
     r = attempt(25, t20)
     check r.accepted == 8
     check r.rejected == 17
     cap = bucket.getAvailableCapacity(t20)
-    check cap.budget == 0
-    check cap.lastUpdate == t20
+    check cap == 0
 
     # 30ms: 9 attempts -> mint 10 then accept 9, budget ends 1; LU=30ms
     r = attempt(9, t30)
     check r.accepted == 9
     check r.rejected == 0
     cap = bucket.getAvailableCapacity(t30)
-    check cap.budget == 1
-    check cap.lastUpdate == t30
+    check cap == 1
 
     # 31ms: 3 attempts -> mint 1 then accept 2, reject 1; budget 0; LU=31ms
     r = attempt(3, t31)
     check r.accepted == 2
     check r.rejected == 1
     cap = bucket.getAvailableCapacity(t31)
-    check cap.budget == 0
-    check cap.lastUpdate == t31
+    check cap == 0
 
     # 40ms: 20 attempts -> mint 9 then accept 9, reject 11; budget 0; LU=40ms
     r = attempt(20, t40)
     check r.accepted == 9
     check r.rejected == 11
     cap = bucket.getAvailableCapacity(t40)
-    check cap.budget == 0
-    check cap.lastUpdate == t40
+    check cap == 0
 
     # Totals across 0–40ms window
     let totalAccepted = 10 + 5 + 5 + 2 + 8 + 9 + 2 + 9
@@ -317,7 +323,7 @@ suite "Token Bucket":
     let t40 = t0 + 40.milliseconds
     let cap = bucket.getAvailableCapacity(t40)
     # All available tokens within the window should have been consumed by our attempts
-    check cap.budget == 0
+    check cap == 0
 
   # Continuous-mode scenario reproductions and timeline validation
   test "Continuous Scenario 1 timeline":
@@ -338,54 +344,45 @@ suite "Token Bucket":
     # 1) t=0ms: consume 7 from full -> LU set to t0, budget 3
     check bucket.tryConsume(7, t0) == true
     var cap = bucket.getAvailableCapacity(t0)
-    check cap.budget == 3
-    check cap.lastUpdate == t0
+    check cap == 3
 
     # 2) t=200ms: request 5 -> mint 2, then consume -> budget 0, LU=200ms
     check bucket.tryConsume(5, t200) == true
     cap = bucket.getAvailableCapacity(t200)
-    check cap.budget == 0
-    check cap.lastUpdate == t200
+    check cap == 0
 
     # 3) t=650ms: request 3 -> mint 4 (to t600), then consume -> budget 1, LU=600ms
     check bucket.tryConsume(3, t650) == true
     cap = bucket.getAvailableCapacity(t600)
-    check cap.budget == 1
-    check cap.lastUpdate == t600
+    check cap == 1
 
     # 4) t=1000ms: availability check only (does not mutate); expected 4 minted -> budget 5, LU=1000ms
     cap = bucket.getAvailableCapacity(t1000)
-    check cap.budget == 5
-    check cap.lastUpdate == t1000
+    check cap == 5
 
     # 5) t=1200ms: request 6 -> net minted since LU to here totals 6 -> budget ends 1, LU=1200ms
     check bucket.tryConsume(6, t1200) == true
     cap = bucket.getAvailableCapacity(t1200)
-    check cap.budget == 1
-    check cap.lastUpdate == t1200
+    check cap == 1
 
     # 6) t=1800ms: request 5 -> mint 6 then consume -> budget 2, LU=1800ms
     check bucket.tryConsume(5, t1800) == true
     cap = bucket.getAvailableCapacity(t1800)
-    check cap.budget == 2
-    check cap.lastUpdate == t1800
+    check cap == 2
 
     # 7) t=2100ms: request 10 -> mint 3 to reach 5, still insufficient -> false, LU=2100ms
     check bucket.tryConsume(10, t2100) == false
     cap = bucket.getAvailableCapacity(t2100)
-    check cap.budget == 5
-    check cap.lastUpdate == t2100
+    check cap == 5
 
     # 8) t=2600ms: enough time for 5 more -> reach full and then consume 10 -> budget 0, LU=2600ms
     check bucket.tryConsume(10, t2600) == true
     cap = bucket.getAvailableCapacity(t2600)
-    check cap.budget == 0
-    check cap.lastUpdate == t2600
+    check cap == 0
 
     # 9) t=3000ms: availability check -> mint 4 -> budget 4, LU=3000ms
     cap = bucket.getAvailableCapacity(t3000)
-    check cap.budget == 4
-    check cap.lastUpdate == t3000
+    check cap == 4
 
   test "Continuous: idle while full burns time":
     # Capacity 5, fillDuration 1s, per-token time 200ms
@@ -395,13 +392,13 @@ suite "Token Bucket":
     # Consume 1 after long idle at full -> LU set to now
     check bucket.tryConsume(1, t2_5) == true
     var cap = bucket.getAvailableCapacity(t2_5)
-    check cap.budget == 4
-    check cap.lastUpdate == t2_5
-    # 100ms later is below per-token time -> no mint
+    check cap == 4
+
+    # Last token wa, after error correction, minted at 2400 - at 2600 we will
+    # have one new token
     let t2_6 = t0 + 2600.milliseconds
     cap = bucket.getAvailableCapacity(t2_6)
-    check cap.budget == 4
-    check cap.lastUpdate == t2_5
+    check cap == 5
 
   test "Continuous: large jump clamps to capacity and LU=now when capped":
     # Capacity 8, fillDuration 4s, per-token time 0.5s
@@ -413,12 +410,10 @@ suite "Token Bucket":
     let t5 = t0 + 5.seconds
     # Availability check: should reach cap and set LU to t5 (hit-cap path burns leftover time)
     var cap2 = bucket.getAvailableCapacity(t5)
-    check cap2.budget == 8
-    check cap2.lastUpdate == t5
+    check cap2 == 8
 
     # Consume 3 slightly later; update will also clamp and set LU to now, then consume from full
     let t5_2 = t0 + 5200.milliseconds
     check bucket.tryConsume(3, t5_2) == true
     cap2 = bucket.getAvailableCapacity(t5_2)
-    check cap2.budget == 5
-    check cap2.lastUpdate == t5_2
+    check cap2 == 5
