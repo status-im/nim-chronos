@@ -92,9 +92,9 @@ proc calcUpdateContinuous(bucket: TokenBucket, currentTime: Moment): tuple[budge
 
 proc calcUpdate(bucket: TokenBucket, currentTime: Moment): tuple[budget: int, lastUpdate: Moment] =
   if bucket.replenishMode == ReplenishMode.Discrete:
-    return bucket.calcUpdateDiscrete(currentTime)
+    bucket.calcUpdateDiscrete(currentTime)
   else:
-    return bucket.calcUpdateContinuous(currentTime)
+    bucket.calcUpdateContinuous(currentTime)
 
 proc update(bucket: TokenBucket, currentTime: Moment) =
   let (newBudget, newLastUpdate) = bucket.calcUpdate(currentTime)
@@ -189,7 +189,6 @@ proc getAvailableCapacity*(
   let (assumedBudget, assumedLastUpdate) = bucket.calcUpdate(currentTime)
   (assumedBudget, bucket.capacity, assumedLastUpdate)
 
-# Backward compatibility ctor
 proc new*(
   T: type[TokenBucket],
   capacity: int,
@@ -205,23 +204,6 @@ proc new*(
     manuallyReplenished: newAsyncEvent(),
     replenishMode: mode
   )
-
-proc cancelAllPending(bucket: TokenBucket): bool =
-  var futs: seq[Future[void]]
-  for request in bucket.pendingRequests:
-    if not request.future.finished:
-      futs.add(request.future)
-  
-  for fut in futs:
-      fut.cancelSoon()
-      
-  let r = catch:
-    waitFor allFutures(futs)
-  
-  if r.isErr():
-    return false
-
-  true
 
 func `$`*(b: TokenBucket): string {.inline.} =
   if isNil(b):
