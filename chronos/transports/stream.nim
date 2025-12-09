@@ -9,7 +9,7 @@
 
 {.push raises: [].}
 
-import std/deques
+import std/[deques, strutils]
 import stew/ptrops
 import results
 import ".."/[asyncloop, config, handles, bipbuffer, osdefs, osutils, oserrno]
@@ -2694,36 +2694,29 @@ proc readLine*(transp: StreamTransport, limit = 0,
   ## empty string.
   ##
   ## If ``limit`` more then 0, then read is limited to ``limit`` bytes.
-  let lim = if limit <= 0: -1 else: limit
-  var state = 0
   var res: string
 
   readLoop("stream.transport.readLine"):
     if transp.atEof():
       (0, true)
     else:
-      var index = 0
+      var
+        consumed = 0
+        done = false
       for ch in transp.buffer:
-        inc(index)
+        res.add char(ch)
+        consumed += 1
 
-        if sep[state] == char(ch):
-          inc(state)
-          if state == len(sep):
-            break
-        else:
-          if state != 0:
-            if limit > 0:
-              let missing = min(state, lim - len(res) - 1)
-              res.add(sep[0 ..< missing])
-            else:
-              res.add(sep[0 ..< state])
-            state = 0
+        if res.endsWith(sep):
+          res.setLen(res.len - sep.len)
+          done = true
+          break
 
-          res.add(char(ch))
-          if len(res) == lim:
-            break
+        if limit > 0 and res.len == limit:
+          done = true
+          break
 
-      (index, (state == len(sep)) or (lim == len(res)))
+      (consumed, done)
   res
 
 proc read*(transp: StreamTransport): Future[seq[byte]] {.

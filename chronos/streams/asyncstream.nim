@@ -9,6 +9,7 @@
 
 {.push raises: [].}
 
+import std/strutils
 import ../[config, asyncloop, asyncsync, bipbuffer]
 import ../transports/[common, stream]
 export asyncloop, asyncsync, stream, common
@@ -489,37 +490,29 @@ proc readLine*(rstream: AsyncStreamReader, limit = 0,
     if isNil(rstream.readerLoop):
       return await readLine(rstream.rsource, limit, sep)
     else:
-      let lim = if limit <= 0: -1 else: limit
-      var
-        state = 0
-        res = ""
+      var res = ""
 
       readLoop():
         if rstream.atEof():
           (0, true)
         else:
-          var index = 0
+          var
+            consumed = 0
+            done = false
           for ch in rstream.buffer.backend:
-            inc(index)
+            res.add char(ch)
+            consumed += 1
 
-            if sep[state] == char(ch):
-              inc(state)
-              if state == len(sep):
-                break
-            else:
-              if state != 0:
-                if limit > 0:
-                  let missing = min(state, lim - len(res) - 1)
-                  res.add(sep[0 ..< missing])
-                else:
-                  res.add(sep[0 ..< state])
-                state = 0
+            if res.endsWith(sep):
+              res.setLen(res.len - sep.len)
+              done = true
+              break
 
-              res.add(char(ch))
-              if len(res) == lim:
-                break
+            if limit > 0 and res.len == limit:
+              done = true
+              break
 
-          (index, (state == len(sep)) or (lim == len(res)))
+          (consumed, done)
       res
 
 proc read*(rstream: AsyncStreamReader): Future[seq[byte]] {.
