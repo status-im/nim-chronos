@@ -109,7 +109,7 @@ proc mint(bucket: TokenBucket, currentTime: Moment): int =
 
       # Update the last update time based on the actual number of tokens that
       # were minted so that rounding error does not accumulate across mints
-      bucket.lastUpdate = bucket.lastUpdate + nanoseconds(int(tokenTime))
+      bucket.lastUpdate = bucket.lastUpdate + nanoseconds(int64(tokenTime))
       tokens
     of ReplenishMode.Discrete:
       # How many full periods passed?
@@ -166,9 +166,9 @@ proc worker(bucket: TokenBucket) {.async: (raises: [CancelledError]).} =
       waitTime =
         case bucket.replenishMode
         of ReplenishMode.Continuous:
-          nanoseconds(int(periods * bucket.fillDuration.nanoseconds.float))
+          nanoseconds(int64(periods * bucket.fillDuration.nanoseconds.float))
         of ReplenishMode.Discrete:
-          nanoseconds(int(ceil(periods) * bucket.fillDuration.nanoseconds.float))
+          nanoseconds(int64(ceil(periods) * bucket.fillDuration.nanoseconds.float))
 
       sleeper = sleepAsync(bucket.lastUpdate + waitTime - now)
       waiter = bucket.manuallyReplenished.wait()
