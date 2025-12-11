@@ -173,9 +173,7 @@ proc worker(bucket: TokenBucket) {.async: (raises: [CancelledError]).} =
       sleeper = sleepAsync(bucket.lastUpdate + waitTime - now)
       waiter = bucket.manuallyReplenished.wait()
     await sleeper or waiter
-
-    sleeper.cancelSoon()
-    waiter.cancelSoon()
+    await cancelAndWait(sleeper, waiter)
 
   bucket.workFuture = nil
 
