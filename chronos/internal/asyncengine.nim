@@ -1080,6 +1080,14 @@ else:
   proc initAPI() = discard
   proc globalInit() = discard
 
+proc closeSelector*(): Result[void, string] =
+  ## Close selector associated with current thread's dispatcher.
+  try:
+    getThreadDispatcher().selector.close()
+  except IOSelectorsException as e:
+    return err("Exception in closeSelector: " & e.msg)
+  return ok()
+
 proc setThreadDispatcher*(disp: PDispatcher) =
   ## Set current thread's dispatcher instance to ``disp``.
   if not(gDisp.isNil()):
