@@ -17,7 +17,7 @@
 from nativesockets import Port
 import std/[tables, heapqueue, deques]
 import results
-import ".."/[config, futures, osdefs, oserrno, osutils, timer]
+import ".."/[config, futures, osdefs, oserrno, osutils, timer, shutdown]
 
 import ./[asyncmacro, errors]
 
@@ -185,7 +185,7 @@ when defined(nimdoc):
     ## Perform single asynchronous step, processing timers and completing
     ## tasks. Blocks until at least one event has completed.
     ##
-    ## Exceptions raised during `async` task exection are stored as outcome
+    ## Exceptions raised during `async` task exception are stored as outcome
     ## in the corresponding `Future` - `poll` itself does not raise.
 
   proc register2*(fd: AsyncFD): Result[void, OSErrorCode] = discard
@@ -327,6 +327,9 @@ elif defined(windows):
     if port == osdefs.INVALID_HANDLE_VALUE:
       raiseOsDefect(osLastError(), "newDispatcher(): Unable to create " &
                                    "IOCP port")
+
+    initShutdownInProgressToFalse() ## defined in shutdown.nim
+
     var res = PDispatcher(
       ioPort: port,
       handles: initHashSet[AsyncFD](),
@@ -353,6 +356,8 @@ elif defined(windows):
 
   proc register2*(fd: AsyncFD): Result[void, OSErrorCode] =
     ## Register file descriptor ``fd`` in thread's dispatcher.
+    checkShutdownInProgress()
+
     let loop = getThreadDispatcher()
     if createIoCompletionPort(HANDLE(fd), loop.ioPort, cast[CompletionKey](fd),
                               1) == osdefs.INVALID_HANDLE_VALUE:
@@ -404,6 +409,9 @@ elif defined(windows):
     ##
     ## NOTE: This is private procedure, not supposed to be publicly available,
     ## please use ``waitForSingleObject()``.
+
+    checkShutdownInProgress()
+
     let loop = getThreadDispatcher()
     var ovl = RefCustomOverlapped(data: CompletionData(cb: cb))
 
@@ -457,7 +465,11 @@ elif defined(windows):
     ## Registers callback ``cb`` to be called when process with process
     ## identifier ``pid`` exited. Returns process identifier, which can be
     ## used to clear process callback via ``removeProcess``.
+
+    checkShutdownInProgress()
+
     doAssert(pid > 0, "Process identifier must be positive integer")
+
     let
       hProcess = openProcess(SYNCHRONIZE, WINBOOL(0), DWORD(pid))
       flags = WT_EXECUTEINWAITTHREAD or WT_EXECUTEONLYONCE
@@ -533,6 +545,9 @@ elif defined(windows):
     ##
     ## NOTE: On Windows only subset of signals are supported: SIGINT, SIGTERM,
     ##       SIGQUIT
+
+    checkShutdownInProgress()
+
     const supportedSignals = [SIGINT, SIGTERM, SIGQUIT]
     doAssert(cint(signal) in supportedSignals, "Signal is not supported")
     let loop = getThreadDispatcher()
@@ -749,6 +764,8 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
                                       "Could not initialize selector")
         res.get()
 
+    initShutdownInProgressToFalse() ## defined in shutdown.nim
+
     var res = PDispatcher(
       selector: selector,
       timers: initHeapQueue[TimerCallback](),
@@ -777,6 +794,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
 
   proc register2*(fd: AsyncFD): Result[void, OSErrorCode] =
     ## Register file descriptor ``fd`` in thread's dispatcher.
+    checkShutdownInProgress()
     var data: SelectorData
     getThreadDispatcher().selector.registerHandle2(cint(fd), {}, data)
 
@@ -788,6 +806,8 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
                    udata: pointer = nil): Result[void, OSErrorCode] =
     ## Start watching the file descriptor ``fd`` for read availability and then
     ## call the callback ``cb`` with specified argument ``udata``.
+    checkShutdownInProgress()
+
     let loop = getThreadDispatcher()
     var newEvents = {Event.Read}
     withData(loop.selector, cint(fd), adata) do:
@@ -816,6 +836,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
                    udata: pointer = nil): Result[void, OSErrorCode] =
     ## Start watching the file descriptor ``fd`` for write availability and then
     ## call the callback ``cb`` with specified argument ``udata``.
+    checkShutdownInProgress()
     let loop = getThreadDispatcher()
     var newEvents = {Event.Write}
     withData(loop.selector, cint(fd), adata) do:
@@ -950,6 +971,8 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
       ## callback ``cb`` with specified argument ``udata``. Returns signal
       ## identifier code, which can be used to remove signal callback
       ## via ``removeSignal``.
+      checkShutdownInProgress()
+
       let loop = getThreadDispatcher()
       var data: SelectorData
       let sigfd = ? loop.selector.registerSignal(signal, data)
@@ -967,6 +990,8 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
       ## Registers callback ``cb`` to be called when process with process
       ## identifier ``pid`` exited. Returns process' descriptor, which can be
       ## used to clear process callback via ``removeProcess``.
+      checkShutdownInProgress()
+
       let loop = getThreadDispatcher()
       var data: SelectorData
       let procfd = ? loop.selector.registerProcess(pid, data)
