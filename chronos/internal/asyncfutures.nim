@@ -231,11 +231,16 @@ proc failImpl(
 template fail*[T](
     future: Future[T], error: ref CatchableError, warn: static bool = false) =
   ## Completes ``future`` with ``error``.
+  when error is CancelledError:
+    {.error: "Only use `cancel` to set `CancelledError` on a future".}
   failImpl(future, error, getSrcLocation())
 
 template fail*[T, E](
     future: InternalRaisesFuture[T, E], error: ref CatchableError,
     warn: static bool = true) =
+  when error is CancelledError:
+    {.error: "Only use `cancel` to set `CancelledError` on a future".}
+
   checkRaises(future, E, error, warn)
   failImpl(future, error, getSrcLocation())
 
@@ -1813,10 +1818,10 @@ when defined(windows):
         if res.isErr():
           retFuture.fail(newException(AsyncError, osErrorMsg(res.error())))
         else:
-          if returnFlag == TRUE:
-            retFuture.complete(WaitableResult.Timeout)
-          else:
+          if returnFlag == FALSE:
             retFuture.complete(WaitableResult.Ok)
+          else:
+            retFuture.complete(WaitableResult.Timeout)
 
     proc cancellation(udata: pointer) {.gcsafe.} =
       doAssert(not(isNil(waitHandle)))

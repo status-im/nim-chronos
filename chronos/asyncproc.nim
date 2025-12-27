@@ -506,7 +506,11 @@ when defined(windows):
     if terminateProcess(p.processHandle, 0) != 0'u32:
       ok()
     else:
-      err(osLastError())
+      let reason = osLastError()
+      if peekProcessExitCode(p).isErr():
+        err(reason)
+      else:
+        ok()
 
   proc kill(p: AsyncProcessRef): AsyncProcessResult[void] =
     p.terminate()

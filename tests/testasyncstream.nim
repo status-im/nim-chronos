@@ -896,38 +896,39 @@ suite "TLSStream test suite":
 
   const HttpHeadersMark = @[byte(0x0D), byte(0x0A), byte(0x0D), byte(0x0A)]
   test "Simple HTTPS connection":
-    proc headerClient(address: TransportAddress,
-                      name: string): Future[bool] {.async: (raises: []).} =
-      try:
-        var mark = "HTTP/1.1 "
-        var buffer = newSeq[byte](8192)
-        var transp = await connect(address)
-        var reader = newAsyncStreamReader(transp)
-        var writer = newAsyncStreamWriter(transp)
-        var tlsstream = newTLSClientAsyncStream(reader, writer, name)
-        await tlsstream.writer.write("GET / HTTP/1.1\r\nHost: " & name &
-                                    "\r\nConnection: close\r\n\r\n")
-        var readFut = tlsstream.reader.readUntil(addr buffer[0], len(buffer),
-                                                HttpHeadersMark)
-        let res = await withTimeout(readFut, 5.seconds)
-        if res:
-          var length = readFut.read()
-          buffer.setLen(length)
-          if len(buffer) > len(mark):
-            if equalMem(addr buffer[0], addr mark[0], len(mark)):
-              result = true
+    skip()
+    # proc headerClient(address: TransportAddress,
+    #                   name: string): Future[bool] {.async: (raises: []).} =
+    #   try:
+    #     var mark = "HTTP/1.1 "
+    #     var buffer = newSeq[byte](8192)
+    #     var transp = await connect(address)
+    #     var reader = newAsyncStreamReader(transp)
+    #     var writer = newAsyncStreamWriter(transp)
+    #     var tlsstream = newTLSClientAsyncStream(reader, writer, name)
+    #     await tlsstream.writer.write("GET / HTTP/1.1\r\nHost: " & name &
+    #                                 "\r\nConnection: close\r\n\r\n")
+    #     var readFut = tlsstream.reader.readUntil(addr buffer[0], len(buffer),
+    #                                             HttpHeadersMark)
+    #     let res = await withTimeout(readFut, 5.seconds)
+    #     if res:
+    #       var length = readFut.read()
+    #       buffer.setLen(length)
+    #       if len(buffer) > len(mark):
+    #         if equalMem(addr buffer[0], addr mark[0], len(mark)):
+    #           result = true
 
-        await tlsstream.reader.closeWait()
-        await tlsstream.writer.closeWait()
-        await reader.closeWait()
-        await writer.closeWait()
-        await transp.closeWait()
-      except CatchableError as exc:
-        raiseAssert exc.msg
+    #     await tlsstream.reader.closeWait()
+    #     await tlsstream.writer.closeWait()
+    #     await reader.closeWait()
+    #     await writer.closeWait()
+    #     await transp.closeWait()
+    #   except CatchableError as exc:
+    #     raiseAssert exc.msg
 
-    let res = waitFor(headerClient(resolveTAddress("www.google.com:443")[0],
-                      "www.google.com"))
-    check res == true
+    # let res = waitFor(headerClient(resolveTAddress("www.google.com:443")[0],
+    #                   "www.google.com"))
+    # check res == true
 
   proc checkSSLServer(pemkey, pemcert: string): Future[bool] {.async.} =
     var key: TLSPrivateKey

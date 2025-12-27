@@ -194,8 +194,6 @@ proc readPart*(mpr: MultiPartReaderRef): Future[MultiPart] {.
       if not(startsWith(mpr.buffer.toOpenArray(0, len(mpr.boundary) - 3),
                         mpr.boundary.toOpenArray(2, len(mpr.boundary) - 1))):
         raiseHttpProtocolError(Http400, "Unexpected boundary encountered")
-    except CancelledError as exc:
-      raise exc
     except AsyncStreamError as exc:
       handleAsyncStreamReaderError(mpr.stream, exc)
 
@@ -240,8 +238,6 @@ proc readPart*(mpr: MultiPartReaderRef): Future[MultiPart] {.
       raiseHttpProtocolError(Http400, $sres.error)
     return part
 
-  except CancelledError as exc:
-    raise exc
   except AsyncStreamError as exc:
     handleAsyncStreamReaderError(mpr.stream, exc)
 
