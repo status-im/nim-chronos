@@ -14,10 +14,9 @@ import ../chronos/ratelimit
 
 suite "Token Bucket":
   test "Sync test":
-    var bucket = TokenBucket.new(1000, 1.milliseconds)
-    let
-      start = Moment.now()
-      fullTime = start + 1.milliseconds
+    let start = Moment.now()
+    let fullTime = start + 1.milliseconds
+    var bucket = TokenBucket.new(1000, 1.milliseconds, startTime = start)
     check:
       bucket.tryConsume(800, start) == true
       bucket.tryConsume(200, start) == true
@@ -45,15 +44,15 @@ suite "Token Bucket":
     check: duration in 1400.milliseconds .. 2200.milliseconds
 
   test "Over budget async":
-    var bucket = TokenBucket.new(100, 100.milliseconds)
+    let start = Moment.now()
+    var bucket = TokenBucket.new(100, 100.milliseconds, startTime = start)
     # Consume 10* the budget cap
-    let beforeStart = Moment.now()
     waitFor(bucket.consume(1000).wait(5.seconds))
-    check Moment.now() - beforeStart in 900.milliseconds .. 2200.milliseconds
+    check Moment.now() - start in 900.milliseconds .. 2200.milliseconds
 
   test "Sync manual replenish":
-    var bucket = TokenBucket.new(1000, 0.seconds)
     let start = Moment.now()
+    var bucket = TokenBucket.new(1000, 0.seconds, startTime = start)
     check:
       bucket.tryConsume(1000, start) == true
       bucket.tryConsume(1000, start) == false
@@ -120,8 +119,8 @@ suite "Token Bucket":
     waitFor(fut2.wait(10.milliseconds))
 
   test "Very long replenish":
-    var bucket = TokenBucket.new(7000, 1.hours)
     let start = Moment.now()
+    var bucket = TokenBucket.new(7000, 1.hours, startTime = start)
     check bucket.tryConsume(7000, start)
     check bucket.tryConsume(1, start) == false
 
@@ -137,8 +136,8 @@ suite "Token Bucket":
     check bucket.tryConsume(1, fakeNow) == true
 
   test "Short replenish":
-    var bucket = TokenBucket.new(15000, 1.milliseconds)
     let start = Moment.now()
+    var bucket = TokenBucket.new(15000, 1.milliseconds, startTime = start)
     check bucket.tryConsume(15000, start)
     check bucket.tryConsume(1, start) == false
 
