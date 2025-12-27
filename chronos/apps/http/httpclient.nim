@@ -637,8 +637,6 @@ proc connect(session: HttpSessionRef,
         await connect(address, bufferSize = session.connectionBufferSize,
                       flags = session.socketFlags,
                       dualstack = session.dualstack)
-      except CancelledError as exc:
-        raise exc
       except TransportError:
         nil
     if not(isNil(transp)):
@@ -1206,7 +1204,7 @@ proc send*(request: HttpClientRequestRef): Future[HttpClientResponseRef] {.
     request.connection.state = HttpClientConnectionState.RequestHeadersSent
     request.connection.state = HttpClientConnectionState.RequestBodySending
     if len(request.buffer) > 0:
-      await request.connection.writer.write(request.buffer)
+      await request.connection.writer.write(move(request.buffer))
     request.connection.state = HttpClientConnectionState.RequestBodySent
     request.state = HttpReqRespState.Finished
     request.setDuration()
@@ -1680,8 +1678,6 @@ proc getServerSentEvents*(
 
   try:
     await reader.readMessage(predicate)
-  except CancelledError as exc:
-    raise exc
   except AsyncStreamError as exc:
     raiseHttpReadError($exc.msg)
 
