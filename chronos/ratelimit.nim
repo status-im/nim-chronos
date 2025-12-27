@@ -25,7 +25,7 @@ type
       # period, there are `capacity` tokens available
 
   BucketWaiter = object
-    future: Future[void]
+    future: Future[void].Raising([CancelledError])
     needed, consumed: int
 
   TokenBucket* = ref object
