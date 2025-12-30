@@ -1129,8 +1129,13 @@ proc setTimer*(at: Moment, cb: CallbackFunc,
                udata: pointer = nil): TimerCallback =
   ## Arrange for the callback ``cb`` to be called at the given absolute
   ## timestamp ``at``. You can also pass ``udata`` to callback.
+  let finishAt = if isShutdownInProgress():
+                   ## Schedule timer to now so it will be executed ASAP.
+                   Moment.now()
+                 else:
+                   at
   let loop = getThreadDispatcher()
-  result = TimerCallback(finishAt: at,
+  result = TimerCallback(finishAt: finishAt,
                          function: AsyncCallback(function: cb, udata: udata))
   loop.timers.push(result)
 
