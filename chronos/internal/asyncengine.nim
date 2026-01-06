@@ -714,8 +714,6 @@ elif defined(windows):
       loop.callbacks.addLast(AsyncCallback(function: aftercb, udata: param))
 
   proc safeCloseHandle(h: HANDLE): Result[void, string] =
-    if h.isNil():
-      return ok()
     let res = closeHandle(h)
     if res == 0:  # WINBOOL FALSE
       let errCode = osLastError()
