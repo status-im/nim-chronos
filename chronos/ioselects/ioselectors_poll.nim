@@ -58,7 +58,7 @@ proc new*(t: typedesc[Selector], T: typedesc): SelectResult[Selector[T]] =
 
 proc close2*[T](s: Selector[T]): SelectResult[void] =
   s.fds.clear()
-  s.pollfds.clear()
+  s.pollfds.setLen(0)
 
 proc new*(t: typedesc[SelectEvent]): SelectResult[SelectEvent] =
   checkShutdownInProgress()
