@@ -130,8 +130,7 @@ proc createAsyncSocket2*(domain: Domain, sockType: SockType,
                          inherit = true): Result[AsyncFD, OSErrorCode] =
   ## Creates new asynchronous socket.
 
-  if isShutdownInProgress():
-    return err(ESHUTDOWN)
+  checkShutdownInProgress()
 
   when defined(windows):
     let flags =
