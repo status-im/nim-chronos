@@ -713,8 +713,18 @@ elif defined(windows):
     if not(isNil(aftercb)):
       loop.callbacks.addLast(AsyncCallback(function: aftercb, udata: param))
 
+  proc safeCloseHandle(h: HANDLE): Result[void, string] =
+    if h.isNil():
+      return ok()
+    let res = closeHandle(h)
+    if res == 0:  # WINBOOL FALSE
+      let errCode = osLastError()
+      return err("Failed to close handle error code: " & $errCode)
+
+    ok()
+
   proc closeDispatcher*(loop: PDispatcher): Result[void, string] =
-    closeHandle(loop.ioPort)
+    ? safeCloseHandle(loop.ioPort)
     for i in loop.handles.items:
       closeHandle(i)
     loop.handles.clear()
