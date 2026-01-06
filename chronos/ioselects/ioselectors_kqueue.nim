@@ -12,6 +12,7 @@
 
 import std/[kqueue, deques, tables]
 import stew/base10
+import ../shutdown
 
 const
   # SIG_IGN and SIG_DFL declared in posix.nim as variables, but we need them
@@ -101,6 +102,7 @@ template getUdata(event: KEvent): int32 =
   cast[int32](uint32(udata))
 
 proc new*(t: typedesc[Selector], T: typedesc): SelectResult[Selector[T]] =
+  checkShutdownInProgress()
   let kqFd =
     block:
       let res = handleEintr(kqueue())
@@ -126,6 +128,7 @@ proc close2*[T](s: Selector[T]): SelectResult[void] =
     ok()
 
 proc new*(t: typedesc[SelectEvent]): SelectResult[SelectEvent] =
+  checkShutdownInProgress()
   var fds: array[2, cint]
   when declared(pipe2):
     if osdefs.pipe2(fds, osdefs.O_NONBLOCK or osdefs.O_CLOEXEC) == -1:
@@ -156,6 +159,7 @@ proc new*(t: typedesc[SelectEvent]): SelectResult[SelectEvent] =
     ok(res)
 
 proc trigger2*(event: SelectEvent): SelectResult[void] =
+  checkShutdownInProgress()
   var data: uint64 = 1
   let res = handleEintr(osdefs.write(event.wfd, addr data, sizeof(uint64)))
   if res == -1:
@@ -190,6 +194,7 @@ template modifyKQueue(changes: var openArray[KEvent], index: int, nident: uint,
 
 proc registerHandle2*[T](s: Selector[T], fd: cint, events: set[Event],
                          data: T): SelectResult[void] =
+  checkShutdownInProgress()
   let selectorKey = SelectorKey[T](ident: fd, events: events,
                                    param: 0, data: data)
   s.addKey(fd, selectorKey)
@@ -298,6 +303,7 @@ template checkSignal(signal: int) =
 
 proc registerSignal*[T](s: Selector[T], signal: int,
                         data: T): SelectResult[cint] =
+  checkShutdownInProgress()
   checkSignal(signal)
 
   let
@@ -336,6 +342,7 @@ template checkPid(pid: int) =
 
 proc registerProcess*[T](s: Selector[T], pid: int,
                          data: T): SelectResult[cint] =
+  checkShutdownInProgress()
   checkPid(pid)
 
   let
@@ -357,6 +364,7 @@ proc registerProcess*[T](s: Selector[T], pid: int,
 
 proc registerEvent2*[T](s: Selector[T], ev: SelectEvent,
                         data: T): SelectResult[cint] =
+  checkShutdownInProgress()
   doAssert(not(isNil(ev)))
   let
     selectorKey = SelectorKey[T](ident: ev.rfd, events: {Event.User},
@@ -391,6 +399,7 @@ template processVnodeEvents(events: set[Event]): cuint =
 
 proc registerVnode2*[T](s: Selector[T], fd: cint, events: set[Event],
                         data: T): SelectResult[cint] =
+  checkShutdownInProgress()
   let
     events = {Event.Vnode} + events
     fflags = processVnodeEvents(events)
@@ -557,6 +566,7 @@ proc prepareKey[T](s: Selector[T], event: KEvent): Opt[ReadyKey] =
 proc selectInto2*[T](s: Selector[T], timeout: int,
                      readyKeys: var openArray[ReadyKey]
                      ): SelectResult[int] =
+  checkShutdownInProgress()
   var
     tv: Timespec
     queueEvents: array[chronosEventsCount, KEvent]
@@ -601,6 +611,7 @@ proc selectInto2*[T](s: Selector[T], timeout: int,
 
 proc select2*[T](s: Selector[T],
                  timeout: int): Result[seq[ReadyKey], OSErrorCode] =
+  checkShutdownInProgress()
   var res = newSeq[ReadyKey](chronosEventsCount)
   let count = ? selectInto2(s, timeout, res)
   res.setLen(count)

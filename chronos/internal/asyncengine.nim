@@ -17,7 +17,7 @@
 from nativesockets import Port
 import std/[tables, heapqueue, deques]
 import results
-import ".."/[config, futures, osdefs, oserrno, osutils, timer]
+import ".."/[config, futures, osdefs, oserrno, osutils, timer, shutdown]
 
 import ./[asyncmacro, errors]
 
@@ -64,6 +64,7 @@ type
     ticks*: Deque[AsyncCallback]
     trackers*: Table[string, TrackerBase]
     counters*: Table[string, TrackerCounter]
+    networkEventsCount*: int
 
 proc sentinelCallbackImpl(arg: pointer) {.gcsafe, noreturn.} =
   raiseAssert "Sentinel callback MUST not be scheduled"
@@ -185,7 +186,7 @@ when defined(nimdoc):
     ## Perform single asynchronous step, processing timers and completing
     ## tasks. Blocks until at least one event has completed.
     ##
-    ## Exceptions raised during `async` task exection are stored as outcome
+    ## Exceptions raised during `async` task exception are stored as outcome
     ## in the corresponding `Future` - `poll` itself does not raise.
 
   proc register2*(fd: AsyncFD): Result[void, OSErrorCode] = discard
@@ -327,6 +328,9 @@ elif defined(windows):
     if port == osdefs.INVALID_HANDLE_VALUE:
       raiseOsDefect(osLastError(), "newDispatcher(): Unable to create " &
                                    "IOCP port")
+
+    initShutdownInProgressToFalse() ## defined in shutdown.nim
+
     var res = PDispatcher(
       ioPort: port,
       handles: initHashSet[AsyncFD](),
@@ -353,6 +357,8 @@ elif defined(windows):
 
   proc register2*(fd: AsyncFD): Result[void, OSErrorCode] =
     ## Register file descriptor ``fd`` in thread's dispatcher.
+    checkShutdownInProgress()
+
     let loop = getThreadDispatcher()
     if createIoCompletionPort(HANDLE(fd), loop.ioPort, cast[CompletionKey](fd),
                               1) == osdefs.INVALID_HANDLE_VALUE:
@@ -404,6 +410,9 @@ elif defined(windows):
     ##
     ## NOTE: This is private procedure, not supposed to be publicly available,
     ## please use ``waitForSingleObject()``.
+
+    checkShutdownInProgress()
+
     let loop = getThreadDispatcher()
     var ovl = RefCustomOverlapped(data: CompletionData(cb: cb))
 
@@ -457,7 +466,11 @@ elif defined(windows):
     ## Registers callback ``cb`` to be called when process with process
     ## identifier ``pid`` exited. Returns process identifier, which can be
     ## used to clear process callback via ``removeProcess``.
+
+    checkShutdownInProgress()
+
     doAssert(pid > 0, "Process identifier must be positive integer")
+
     let
       hProcess = openProcess(SYNCHRONIZE, WINBOOL(0), DWORD(pid))
       flags = WT_EXECUTEINWAITTHREAD or WT_EXECUTEONLYONCE
@@ -533,6 +546,9 @@ elif defined(windows):
     ##
     ## NOTE: On Windows only subset of signals are supported: SIGINT, SIGTERM,
     ##       SIGQUIT
+
+    checkShutdownInProgress()
+
     const supportedSignals = [SIGINT, SIGTERM, SIGQUIT]
     doAssert(cint(signal) in supportedSignals, "Signal is not supported")
     let loop = getThreadDispatcher()
@@ -598,7 +614,7 @@ elif defined(windows):
     # Moving expired timers to `loop.callbacks` and calculate timeout
     loop.processTimersGetTimeout(curTimeout)
 
-    let networkEventsCount =
+    loop.networkEventsCount =
       if isNil(loop.getQueuedCompletionStatusEx):
         let res = getQueuedCompletionStatus(
           loop.ioPort,
@@ -635,7 +651,7 @@ elif defined(windows):
         else:
           int(eventsReceived)
 
-    for i in 0 ..< networkEventsCount:
+    for i in 0 ..< loop.networkEventsCount:
       var customOverlapped = PtrCustomOverlapped(events[i].lpOverlapped)
       customOverlapped.data.errCode =
         block:
@@ -654,7 +670,7 @@ elif defined(windows):
 
     # We move idle callbacks to `loop.callbacks` only if there no pending
     # network events.
-    if networkEventsCount == 0:
+    if loop.networkEventsCount == 0:
       loop.processIdlers()
 
     # We move tick callbacks to `loop.callbacks` always.
@@ -696,6 +712,19 @@ elif defined(windows):
 
     if not(isNil(aftercb)):
       loop.callbacks.addLast(AsyncCallback(function: aftercb, udata: param))
+
+  proc safeCloseHandle(h: HANDLE): Result[void, string] =
+    let res = closeHandle(h)
+    if res == 0:  # WINBOOL FALSE
+      return err("Failed to close handle error code: " & osErrorMsg(osLastError()))
+    ok()
+
+  proc closeDispatcher*(loop: PDispatcher): Result[void, string] =
+    ? safeCloseHandle(loop.ioPort)
+    for i in loop.handles.items:
+      closeHandle(i)
+    loop.handles.clear()
+    ok()
 
   proc unregisterAndCloseFd*(fd: AsyncFD): Result[void, OSErrorCode] =
     ## Unregister from system queue and close asynchronous socket.
@@ -749,6 +778,8 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
                                       "Could not initialize selector")
         res.get()
 
+    initShutdownInProgressToFalse() ## defined in shutdown.nim
+
     var res = PDispatcher(
       selector: selector,
       timers: initHeapQueue[TimerCallback](),
@@ -777,6 +808,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
 
   proc register2*(fd: AsyncFD): Result[void, OSErrorCode] =
     ## Register file descriptor ``fd`` in thread's dispatcher.
+    checkShutdownInProgress()
     var data: SelectorData
     getThreadDispatcher().selector.registerHandle2(cint(fd), {}, data)
 
@@ -788,6 +820,8 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
                    udata: pointer = nil): Result[void, OSErrorCode] =
     ## Start watching the file descriptor ``fd`` for read availability and then
     ## call the callback ``cb`` with specified argument ``udata``.
+    checkShutdownInProgress()
+
     let loop = getThreadDispatcher()
     var newEvents = {Event.Read}
     withData(loop.selector, cint(fd), adata) do:
@@ -816,6 +850,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
                    udata: pointer = nil): Result[void, OSErrorCode] =
     ## Start watching the file descriptor ``fd`` for write availability and then
     ## call the callback ``cb`` with specified argument ``udata``.
+    checkShutdownInProgress()
     let loop = getThreadDispatcher()
     var newEvents = {Event.Write}
     withData(loop.selector, cint(fd), adata) do:
@@ -936,6 +971,14 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     ## You can execute ``aftercb`` before actual socket close operation.
     closeSocket(fd, aftercb)
 
+  proc closeDispatcher*(loop: PDispatcher): Result[void, string] =
+    ## Close selector associated with current thread's dispatcher.
+    try:
+      loop.selector.close()
+    except IOSelectorsException as e:
+      return err("Exception in closeDispatcher: " & e.msg)
+    ok()
+
   when chronosEventEngine in ["epoll", "kqueue"]:
     type
       ProcessHandle* = distinct int
@@ -950,6 +993,8 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
       ## callback ``cb`` with specified argument ``udata``. Returns signal
       ## identifier code, which can be used to remove signal callback
       ## via ``removeSignal``.
+      checkShutdownInProgress()
+
       let loop = getThreadDispatcher()
       var data: SelectorData
       let sigfd = ? loop.selector.registerSignal(signal, data)
@@ -967,6 +1012,8 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
       ## Registers callback ``cb`` to be called when process with process
       ## identifier ``pid`` exited. Returns process' descriptor, which can be
       ## used to clear process callback via ``removeProcess``.
+      checkShutdownInProgress()
+
       let loop = getThreadDispatcher()
       var data: SelectorData
       let procfd = ? loop.selector.registerProcess(pid, data)
@@ -1026,14 +1073,14 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     loop.processTimersGetTimeout(curTimeout)
 
     # Processing IO descriptors and all hardware events.
-    let count =
+    loop.networkEventsCount =
       block:
         let res = loop.selector.selectInto2(curTimeout, loop.keys)
         if res.isErr():
           raiseOsDefect(res.error(), "poll(): Unable to get OS events")
         res.get()
 
-    for i in 0 ..< count:
+    for i in 0 ..< loop.networkEventsCount:
       let fd = loop.keys[i].fd
       let events = loop.keys[i].events
 
@@ -1062,7 +1109,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
 
     # We move idle callbacks to `loop.callbacks` only if there no pending
     # network events.
-    if count == 0:
+    if loop.networkEventsCount == 0:
       loop.processIdlers()
 
     # We move tick callbacks to `loop.callbacks` always.
@@ -1104,8 +1151,13 @@ proc setTimer*(at: Moment, cb: CallbackFunc,
                udata: pointer = nil): TimerCallback =
   ## Arrange for the callback ``cb`` to be called at the given absolute
   ## timestamp ``at``. You can also pass ``udata`` to callback.
+  let finishAt = if isShutdownInProgress():
+                   ## Schedule timer to now so it will be executed ASAP.
+                   Moment.now()
+                 else:
+                   at
   let loop = getThreadDispatcher()
-  result = TimerCallback(finishAt: at,
+  result = TimerCallback(finishAt: finishAt,
                          function: AsyncCallback(function: cb, udata: udata))
   loop.timers.push(result)
 
@@ -1206,6 +1258,7 @@ proc internalCallTick*(cbproc: CallbackFunc) =
 proc runForever*() =
   ## Begins a never ending global dispatcher poll loop.
   ## Raises different exceptions depending on the platform.
+  ## It is expected to run for the entire lifetime of the process.
   while true:
     poll()
 

@@ -13,7 +13,7 @@
 {.push raises: [].}
 
 import std/[sequtils, math, deques, tables, typetraits]
-import ./asyncloop
+import ./asyncloop, ./shutdown
 export asyncloop
 
 type
@@ -247,12 +247,14 @@ proc empty*[T](aq: AsyncQueue[T]): bool {.inline.} =
   (len(aq.queue) == 0)
 
 proc addFirstImpl[T](aq: AsyncQueue[T], item: T) =
-  aq.queue.addFirst(item)
-  aq.getters.wakeupNext()
+  if not isShutdownInProgress():
+    aq.queue.addFirst(item)
+    aq.getters.wakeupNext()
 
 proc addLastImpl[T](aq: AsyncQueue[T], item: T) =
-  aq.queue.addLast(item)
-  aq.getters.wakeupNext()
+  if not isShutdownInProgress():
+    aq.queue.addLast(item)
+    aq.getters.wakeupNext()
 
 proc popFirstImpl[T](aq: AsyncQueue[T]): T =
   let res = aq.queue.popFirst()

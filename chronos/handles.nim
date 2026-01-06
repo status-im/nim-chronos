@@ -9,7 +9,7 @@
 
 {.push raises: [].}
 
-import "."/[asyncloop, osdefs, osutils]
+import "."/[asyncloop, osdefs, osutils, shutdown]
 import results
 from nativesockets import Domain, Protocol, SockType, toInt
 export Domain, Protocol, SockType, results
@@ -129,6 +129,9 @@ proc createAsyncSocket2*(domain: Domain, sockType: SockType,
                          protocol: Protocol,
                          inherit = true): Result[AsyncFD, OSErrorCode] =
   ## Creates new asynchronous socket.
+
+  checkShutdownInProgress()
+
   when defined(windows):
     let flags =
       if inherit:

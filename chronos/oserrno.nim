@@ -1334,6 +1334,7 @@ elif defined(windows):
     WSAECONNABORTED* = OSErrorCode(10053)
     WSAECONNRESET* = OSErrorCode(10054)
     WSAENOBUFS* = OSErrorCode(10055)
+    WSAESHUTDOWN* = OSErrorCode(10058)
     WSAETIMEDOUT* = OSErrorCode(10060)
     WSAEADDRINUSE* = OSErrorCode(10048)
     WSAEDISCON* = OSErrorCode(10101)
