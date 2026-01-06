@@ -642,16 +642,21 @@ proc pollFor[F: Future | InternalRaisesFuture](fut: F): F {.raises: [].} =
     while not(finished):
       poll()
 
-    # Clean up the dispatcher's resources after the loop completes.
-    setShutdownInProgress()
-    let disp = getThreadDispatcher()
-    while disp.networkEventsCount > 0:
-      poll()
-
-    # Assume all streams are closed at this point.
-    disp.closeDispatcher()
-
   fut
+
+proc gracefulShutdown*() {.raises: [].} =
+  ## Continues polling the dispatcher until shutdown completion, then
+  ## performs final cleanup of all dispatcher resources.
+  ##
+  ## This routine shall be called only after `pollFor` has completed. Upon
+  ## invocation, all streams are assumed to have been closed.
+
+  setShutdownInProgress()
+  let disp = getThreadDispatcher()
+  while disp.networkEventsCount > 0:
+    poll()
+
+  disp.closeDispatcher()
 
 proc waitFor*[T: not void](fut: Future[T]): lent T {.raises: [CatchableError].} =
   ## Blocks the current thread of execution until `fut` has finished, returning
