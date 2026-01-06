@@ -10,6 +10,7 @@
 # This module implements Posix poll().
 import std/tables
 import stew/base10
+import ../shutdown
 
 {.push raises: [].}
 
@@ -49,6 +50,7 @@ proc freeKey[T](s: Selector[T], key: int32) =
   s.fds.del(key)
 
 proc new*(t: typedesc[Selector], T: typedesc): SelectResult[Selector[T]] =
+  checkShutdownInProgress()
   let selector = Selector[T](
     fds: initTable[int32, SelectorKey[T]](chronosInitialSize)
   )
@@ -59,6 +61,7 @@ proc close2*[T](s: Selector[T]): SelectResult[void] =
   s.pollfds.clear()
 
 proc new*(t: typedesc[SelectEvent]): SelectResult[SelectEvent] =
+  checkShutdownInProgress()
   let flags = {DescriptorFlag.NonBlock, DescriptorFlag.CloseOnExec}
   let pipes = ? createOsPipe(flags, flags)
   var res = cast[SelectEvent](allocShared0(sizeof(SelectEventImpl)))
@@ -67,6 +70,7 @@ proc new*(t: typedesc[SelectEvent]): SelectResult[SelectEvent] =
   ok(res)
 
 proc trigger2*(event: SelectEvent): SelectResult[void] =
+  checkShutdownInProgress()
   var data: uint64 = 1
   let res = handleEintr(osdefs.write(event.wfd, addr data, sizeof(uint64)))
   if res == -1:
@@ -126,6 +130,7 @@ template pollRemove[T](s: Selector[T], sock: cint) =
 
 proc registerHandle2*[T](s: Selector[T], fd: cint, events: set[Event],
                          data: T): SelectResult[void] =
+  checkShutdownInProgress()
   let skey = SelectorKey[T](ident: fd, events: events, param: 0, data: data)
 
   s.addKey(fd, skey)
@@ -156,6 +161,7 @@ proc updateHandle2*[T](s: Selector[T], fd: cint,
 
 proc registerEvent2*[T](s: Selector[T], ev: SelectEvent,
                         data: T): SelectResult[cint] =
+  checkShutdownInProgress()
   doAssert(not(isNil(ev)))
   let
     key = SelectorKey[T](ident: ev.rfd, events: {Event.User},
@@ -215,6 +221,7 @@ proc prepareKey[T](s: Selector[T], event: var TPollfd): Opt[ReadyKey] =
 
 proc selectInto2*[T](s: Selector[T], timeout: int,
                      readyKeys: var openArray[ReadyKey]): SelectResult[int] =
+  checkShutdownInProgress()
   var k = 0
 
   verifySelectParams(timeout, -1, int(high(cint)))
@@ -244,6 +251,7 @@ proc selectInto2*[T](s: Selector[T], timeout: int,
   ok(k)
 
 proc select2*[T](s: Selector[T], timeout: int): SelectResult[seq[ReadyKey]] =
+  checkShutdownInProgress()
   var res = newSeq[ReadyKey](chronosEventsCount)
   let count = ? selectInto2(s, timeout, res)
   res.setLen(count)

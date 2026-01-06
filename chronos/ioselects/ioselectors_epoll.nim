@@ -10,6 +10,7 @@
 # This module implements Linux epoll().
 import std/[deques, tables]
 import stew/base10
+import ../shutdown
 
 {.push raises: [].}
 
@@ -94,6 +95,7 @@ proc freeProcess[T](s: Selector[T], ident: int32) =
   s.processes.del(ident)
 
 proc new*(t: typedesc[Selector], T: typedesc): SelectResult[Selector[T]] =
+  checkShutdownInProgress()
   var nmask: Sigset
   if sigemptyset(nmask) < 0:
     return err(osLastError())
@@ -123,6 +125,7 @@ proc close2*[T](s: Selector[T]): SelectResult[void] =
     ok()
 
 proc new*(t: typedesc[SelectEvent]): SelectResult[SelectEvent] =
+  checkShutdownInProgress()
   let eFd = eventfd(0, EFD_CLOEXEC or EFD_NONBLOCK)
   if eFd == -1:
     return err(osLastError())
@@ -131,6 +134,7 @@ proc new*(t: typedesc[SelectEvent]): SelectResult[SelectEvent] =
   ok(res)
 
 proc trigger2*(event: SelectEvent): SelectResult[void] =
+  checkShutdownInProgress()
   var data: uint64 = 1
   let res = handleEintr(osdefs.write(event.efd, addr data, sizeof(uint64)))
   if res == -1:
@@ -160,6 +164,7 @@ proc init(t: typedesc[EpollEvent], fdi: cint, events: set[Event]): EpollEvent =
 
 proc registerHandle2*[T](s: Selector[T], fd: cint, events: set[Event],
                          data: T): SelectResult[void] =
+  checkShutdownInProgress()
   let skey = SelectorKey[T](ident: fd, events: events, param: 0, data: data)
 
   s.addKey(fd, skey)
@@ -316,6 +321,7 @@ proc registerSignal*[T](s: Selector[T], signal: int,
 
 proc registerTimer2*[T](s: Selector[T], timeout: int, oneshot: bool,
                         data: T): SelectResult[cint] =
+  checkShutdownInProgress()
   let timerFd = timerfd_create(CLOCK_MONOTONIC, TFD_CLOEXEC or TFD_NONBLOCK)
   if timerFd == -1:
     return err(osLastError())
@@ -369,6 +375,7 @@ proc registerTimer2*[T](s: Selector[T], timeout: int, oneshot: bool,
 
 proc registerEvent2*[T](s: Selector[T], ev: SelectEvent,
                         data: T): SelectResult[cint] =
+  checkShutdownInProgress()
   doAssert(not(isNil(ev)))
   let
     key = SelectorKey[T](ident: ev.efd, events: {Event.User},
@@ -392,6 +399,7 @@ template checkPid(pid: int) =
              "Invalid process idientified (pid) value")
 
 proc registerProcess*[T](s: Selector, pid: int, data: T): SelectResult[cint] =
+  checkShutdownInProgress()
   checkPid(pid)
 
   let
@@ -626,6 +634,7 @@ proc checkProcesses[T](s: Selector[T]) =
 proc selectInto2*[T](s: Selector[T], timeout: int,
                      readyKeys: var openArray[ReadyKey]
                     ): SelectResult[int] =
+  checkShutdownInProgress()
   var
     queueEvents: array[chronosEventsCount, EpollEvent]
     k: int = 0
@@ -668,6 +677,7 @@ proc selectInto2*[T](s: Selector[T], timeout: int,
   ok(k)
 
 proc select2*[T](s: Selector[T], timeout: int): SelectResult[seq[ReadyKey]] =
+  checkShutdownInProgress()
   var res = newSeq[ReadyKey](chronosEventsCount)
   let count = ? selectInto2(s, timeout, res)
   res.setLen(count)
