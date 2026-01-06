@@ -16,7 +16,7 @@
 
 from nativesockets import Port
 import std/[tables, heapqueue, deques]
-import results, chronicles
+import results
 import ".."/[config, futures, osdefs, oserrno, osutils, timer, shutdown]
 
 import ./[asyncmacro, errors]
@@ -713,11 +713,12 @@ elif defined(windows):
     if not(isNil(aftercb)):
       loop.callbacks.addLast(AsyncCallback(function: aftercb, udata: param))
 
-  proc closeDispatcher*(loop: PDispatcher) =
+  proc closeDispatcher*(loop: PDispatcher): Result[void, string] =
     closeHandle(loop.ioPort)
     for i in loop.handles.items:
       closeHandle(i)
     loop.handles.clear()
+    ok()
 
   proc unregisterAndCloseFd*(fd: AsyncFD): Result[void, OSErrorCode] =
     ## Unregister from system queue and close asynchronous socket.
@@ -964,12 +965,13 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     ## You can execute ``aftercb`` before actual socket close operation.
     closeSocket(fd, aftercb)
 
-  proc closeDispatcher*(loop: PDispatcher) =
+  proc closeDispatcher*(loop: PDispatcher): Result[void, string] =
     ## Close selector associated with current thread's dispatcher.
     try:
       loop.selector.close()
     except IOSelectorsException as e:
-      error "Exception in closeDispatcher", error = e.msg
+      return err("Exception in closeDispatcher: " & e.msg)
+    ok()
 
   when chronosEventEngine in ["epoll", "kqueue"]:
     type

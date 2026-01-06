@@ -644,7 +644,7 @@ proc pollFor[F: Future | InternalRaisesFuture](fut: F): F {.raises: [].} =
 
   fut
 
-proc gracefulShutdown*() {.raises: [].} =
+proc gracefulShutdown*(): Result[void, string] {.raises: [].} =
   ## Continues polling the dispatcher until shutdown completion, then
   ## performs final cleanup of all dispatcher resources.
   ##
@@ -656,7 +656,7 @@ proc gracefulShutdown*() {.raises: [].} =
   while disp.networkEventsCount > 0:
     poll()
 
-  disp.closeDispatcher()
+  ? disp.closeDispatcher()
 
 proc waitFor*[T: not void](fut: Future[T]): lent T {.raises: [CatchableError].} =
   ## Blocks the current thread of execution until `fut` has finished, returning
