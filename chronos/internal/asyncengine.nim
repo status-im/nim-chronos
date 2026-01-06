@@ -716,9 +716,7 @@ elif defined(windows):
   proc safeCloseHandle(h: HANDLE): Result[void, string] =
     let res = closeHandle(h)
     if res == 0:  # WINBOOL FALSE
-      let errCode = osLastError()
-      return err("Failed to close handle error code: " & $errCode)
-
+      return err("Failed to close handle error code: " & osErrorMsg(osLastError()))
     ok()
 
   proc closeDispatcher*(loop: PDispatcher): Result[void, string] =
