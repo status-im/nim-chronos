@@ -17,7 +17,7 @@ import std/[sequtils, macros]
 import stew/base10
 
 import ./[asyncengine, raisesfutures]
-import ../[config, futures]
+import ../[config, futures, shutdown]
 
 export
   raisesfutures.Raising, raisesfutures.InternalRaisesFuture,
@@ -629,7 +629,10 @@ proc pollFor[F: Future | InternalRaisesFuture](fut: F): F {.raises: [].} =
   #
   # Must not be called recursively (from inside `async` procedures).
   #
-  # See alse `awaitne`.
+  # The process may eventually start another thread after this loop's completion.
+  # Therefore, the dispatcher's resources are cleaned up in the end.
+  #
+  # See also `awaitne`.
   if not(fut.finished()):
     var finished = false
     # Ensure that callbacks currently scheduled on the future run before returning
@@ -638,6 +641,15 @@ proc pollFor[F: Future | InternalRaisesFuture](fut: F): F {.raises: [].} =
 
     while not(finished):
       poll()
+
+    # Clean up the dispatcher's resources after the loop completes.
+    setShutdownInProgress()
+    let disp = getThreadDispatcher()
+    while disp.networkEventsCount > 0:
+      poll()
+
+    # Assume all streams are closed at this point.
+    disp.closeDispatcher()
 
   fut
 

@@ -16,7 +16,7 @@
 
 from nativesockets import Port
 import std/[tables, heapqueue, deques]
-import results
+import results, chronicles
 import ".."/[config, futures, osdefs, oserrno, osutils, timer, shutdown]
 
 import ./[asyncmacro, errors]
@@ -64,6 +64,7 @@ type
     ticks*: Deque[AsyncCallback]
     trackers*: Table[string, TrackerBase]
     counters*: Table[string, TrackerCounter]
+    networkEventsCount*: int
 
 proc sentinelCallbackImpl(arg: pointer) {.gcsafe, noreturn.} =
   raiseAssert "Sentinel callback MUST not be scheduled"
@@ -613,7 +614,7 @@ elif defined(windows):
     # Moving expired timers to `loop.callbacks` and calculate timeout
     loop.processTimersGetTimeout(curTimeout)
 
-    let networkEventsCount =
+    loop.networkEventsCount =
       if isNil(loop.getQueuedCompletionStatusEx):
         let res = getQueuedCompletionStatus(
           loop.ioPort,
@@ -650,7 +651,7 @@ elif defined(windows):
         else:
           int(eventsReceived)
 
-    for i in 0 ..< networkEventsCount:
+    for i in 0 ..< loop.networkEventsCount:
       var customOverlapped = PtrCustomOverlapped(events[i].lpOverlapped)
       customOverlapped.data.errCode =
         block:
@@ -669,7 +670,7 @@ elif defined(windows):
 
     # We move idle callbacks to `loop.callbacks` only if there no pending
     # network events.
-    if networkEventsCount == 0:
+    if loop.networkEventsCount == 0:
       loop.processIdlers()
 
     # We move tick callbacks to `loop.callbacks` always.
@@ -711,6 +712,12 @@ elif defined(windows):
 
     if not(isNil(aftercb)):
       loop.callbacks.addLast(AsyncCallback(function: aftercb, udata: param))
+
+  proc closeDispatcher*(loop: PDispatcher) =
+    closeHandle(loop.ioPort)
+    for i in loop.handles.items:
+      closeHandle(i)
+    loop.handles.clear()
 
   proc unregisterAndCloseFd*(fd: AsyncFD): Result[void, OSErrorCode] =
     ## Unregister from system queue and close asynchronous socket.
@@ -957,6 +964,13 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     ## You can execute ``aftercb`` before actual socket close operation.
     closeSocket(fd, aftercb)
 
+  proc closeDispatcher*(loop: PDispatcher) =
+    ## Close selector associated with current thread's dispatcher.
+    try:
+      loop.selector.close()
+    except IOSelectorsException as e:
+      error "Exception in closeDispatcher", error = e.msg
+
   when chronosEventEngine in ["epoll", "kqueue"]:
     type
       ProcessHandle* = distinct int
@@ -1051,14 +1065,14 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     loop.processTimersGetTimeout(curTimeout)
 
     # Processing IO descriptors and all hardware events.
-    let count =
+    loop.networkEventsCount =
       block:
         let res = loop.selector.selectInto2(curTimeout, loop.keys)
         if res.isErr():
           raiseOsDefect(res.error(), "poll(): Unable to get OS events")
         res.get()
 
-    for i in 0 ..< count:
+    for i in 0 ..< loop.networkEventsCount:
       let fd = loop.keys[i].fd
       let events = loop.keys[i].events
 
@@ -1087,7 +1101,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
 
     # We move idle callbacks to `loop.callbacks` only if there no pending
     # network events.
-    if count == 0:
+    if loop.networkEventsCount == 0:
       loop.processIdlers()
 
     # We move tick callbacks to `loop.callbacks` always.
@@ -1236,6 +1250,7 @@ proc internalCallTick*(cbproc: CallbackFunc) =
 proc runForever*() =
   ## Begins a never ending global dispatcher poll loop.
   ## Raises different exceptions depending on the platform.
+  ## It is expected to run for the entire lifetime of the process.
   while true:
     poll()
 
