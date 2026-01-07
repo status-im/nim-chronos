@@ -60,7 +60,7 @@ type
   FutureCompletedError* = object of FutureError
     ## Error raised when trying access the error of a completed Future
 
-  SomeFuture = Future|InternalRaisesFuture
+  SomeFuture* = Future|InternalRaisesFuture
 
 func raiseFuturePendingError(fut: FutureBase) {.
     noinline, noreturn, raises: FuturePendingError.} =
