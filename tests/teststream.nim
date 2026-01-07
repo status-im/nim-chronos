@@ -850,10 +850,11 @@ suite "Stream Transport test suite":
     result = flag
 
   proc testReadLine(address: TransportAddress): Future[bool] {.async.} =
+    var message = "DATA\r\r\r\r\r\n"
     proc serveClient(server: StreamServer, transp: StreamTransport) {.
         async: (raises: []).} =
       try:
-        discard await transp.write("DATA\r\r\r\r\r\n")
+        discard await transp.write(message)
         transp.close()
         await transp.join()
       except CatchableError as exc:
@@ -863,7 +864,13 @@ suite "Stream Transport test suite":
     var server = createStreamServer(address, serveClient, {ReuseAddr})
     server.start()
     try:
-      var r1, r2, r3, r4, r5: string
+      var r0, r1, r2, r3, r4, r5, r6: string
+      var t0 = await connect(server.local)
+      try:
+        r0 = await t0.readLine(sep = "")
+      finally:
+        await t0.closeWait()
+
       var t1 = await connect(server.local)
       try:
         r1 = await t1.readLine(4)
@@ -894,11 +901,20 @@ suite "Stream Transport test suite":
       finally:
         await t5.closeWait()
 
+      message = "DATA\r\r\r\r\n"
+      var t6 = await connect(server.local)
+      try:
+        r6 = await t6.readLine()
+      finally:
+        await t6.closeWait()
+
+      doAssert(r0 == "D")
       doAssert(r1 == "DATA")
       doAssert(r2 == "DATA\r\r")
       doAssert(r3 == "DATA\r\r\r\r")
       doAssert(r4 == "DATA\r\r\r\r")
       doAssert(r5 == "DATA\r\r\r\r")
+      doAssert(r6 == "DATA\r\r\r")
 
       result = true
     finally:
