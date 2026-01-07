@@ -14,20 +14,21 @@ suite "AsyncSemaphore":
   teardown:
     checkLeaks()
 
-  asyncTest "default size":
+  asyncTest "create default size":
     let sema = newAsyncSemaphore()
     check sema.availableSlots == 1
 
-  asyncTest "custom size":
+  asyncTest "create custom size":
     let sema = newAsyncSemaphore(3)
     check sema.availableSlots == 3
 
-  asyncTest "invalid size":
+  asyncTest "create invalid size":
     expect AssertionDefect:
       discard newAsyncSemaphore(0)
 
   asyncTest "should acquire":
     let sema = newAsyncSemaphore(3)
+    check sema.size() == 3
 
     await sema.acquire()
     check sema.availableSlots == 2
@@ -35,6 +36,8 @@ suite "AsyncSemaphore":
     check sema.availableSlots == 1
     await sema.acquire()
     check sema.availableSlots == 0
+    
+    check sema.size() == 3 # size is unchanged
 
   asyncTest "should release":
     let sema = newAsyncSemaphore(3)

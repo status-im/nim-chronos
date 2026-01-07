@@ -656,6 +656,9 @@ proc newAsyncSemaphore*(size: int = 1): AsyncSemaphore =
     waiters: initDeque[Future[void].Raising([CancelledError])](),
   )
 
+proc size*(s: AsyncSemaphore): int =
+  return s.size
+
 proc availableSlots*(s: AsyncSemaphore): int =
   return s.availableSlots
 
