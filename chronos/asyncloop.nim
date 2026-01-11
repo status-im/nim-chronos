@@ -10,7 +10,7 @@
 
 {.push raises: [].}
 
-import ./internal/[asyncengine, asyncfutures, asyncmacro, errors]
+import ./internal/[asyncengine, asyncengine_types, owned_asyncengine, asyncfutures, asyncmacro, errors]
 
-export asyncfutures, asyncengine, errors
+export asyncfutures, asyncengine, asyncengine_types, owned_asyncengine, errors
 export asyncmacro.async, asyncmacro.await, asyncmacro.awaitne

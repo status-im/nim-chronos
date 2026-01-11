@@ -16,7 +16,7 @@
 import std/[sequtils, macros]
 import stew/base10
 
-import ./[asyncengine, raisesfutures]
+import ./[asyncengine, owned_asyncengine, asyncengine_types, raisesfutures]
 import ../[config, futures]
 
 export
@@ -975,7 +975,7 @@ proc cancelSoon(future: FutureBase, aftercb: CallbackFunc, udata: pointer,
     # We could not schedule callback directly otherwise we could fall into
     # recursion problem.
     if not(isNil(aftercb)):
-      let loop = getThreadDispatcher()
+      let loop = owned_asyncengine.getThreadDispatcher()
       loop.callbacks.addLast(AsyncCallback(function: aftercb, udata: udata))
     return
 

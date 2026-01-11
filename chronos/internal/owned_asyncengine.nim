@@ -22,7 +22,7 @@ import std/[tables, heapqueue, deques]
 import results
 import ".."/[config, futures, osdefs, oserrno, osutils, timer]
 
-import ./[asyncmacro, errors]
+import ./[asyncmacro, errors, asyncengine_types]
 
 export Port
 export deques, errors, futures, timer, results
@@ -43,30 +43,6 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
          SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV, SIGUSR2,
          SIGPIPE, SIGALRM, SIGTERM, SIGPIPE
   export oserrno
-
-type
-  AsyncCallback* = InternalAsyncCallback
-
-  TimerCallback* = ref object
-    finishAt*: Moment
-    function*: AsyncCallback
-
-  TrackerBase* = ref object of RootRef
-    id*: string
-    dump*: proc(): string {.gcsafe, raises: [].}
-    isLeaked*: proc(): bool {.gcsafe, raises: [].}
-
-  TrackerCounter* = object
-    opened*: uint64
-    closed*: uint64
-
-  PDispatcherBase = ref object of RootRef
-    timers*: HeapQueue[TimerCallback]
-    callbacks*: Deque[AsyncCallback]
-    idlers*: Deque[AsyncCallback]
-    ticks*: Deque[AsyncCallback]
-    trackers*: Table[string, TrackerBase]
-    counters*: Table[string, TrackerCounter]
 
 proc sentinelCallbackImpl(arg: pointer) {.gcsafe, noreturn.} =
   raiseAssert "Sentinel callback MUST not be scheduled"
@@ -159,13 +135,6 @@ proc raiseAsDefect*(exc: ref Exception, msg: string) {.noreturn, noinline.} =
   raise (ref Defect)(
     msg: msg & "\n" & exc.msg & "\n" & exc.getStackTrace(), parent: exc)
 
-proc raiseOsDefect*(error: OSErrorCode, msg = "") {.noreturn, noinline.} =
-  # Reraise OS error code as a Defect, where it's unexpected and can't be
-  # handled. We include the stack trace in the message because otherwise,
-  # it's easily lost.
-  raise (ref Defect)(msg: msg & "\n[" & $int(error) & "] " & osErrorMsg(error) &
-                          "\n" & getStackTrace())
-
 func toPointer(error: OSErrorCode): pointer =
   when sizeof(int) == 8:
     cast[pointer](uint64(uint32(error)))
@@ -177,10 +146,6 @@ func toException*(v: OSErrorCode): ref OSError = newOSError(v)
   # Result[T, OSErrorCode] values.
 
 when defined(nimdoc):
-  type
-    PDispatcher* = ref object of PDispatcherBase
-    AsyncFD* = distinct cint
-
   proc poll*(disp: PDispatcher) = discard
     ## Perform single asynchronous step, processing timers and completing
     ## tasks. Blocks until at least one event has completed.
@@ -206,52 +171,6 @@ elif defined(windows):
   {.pragma: stdcallbackFunc, stdcall, gcsafe, raises: [].}
 
   export SIGINT, SIGQUIT, SIGTERM
-  type
-    CompletionKey = ULONG_PTR
-
-    CompletionData* = object
-      cb*: CallbackFunc
-      errCode*: OSErrorCode
-      bytesCount*: uint32
-      udata*: pointer
-
-    CustomOverlapped* = object of OVERLAPPED
-      data*: CompletionData
-
-    DispatcherFlag* = enum
-      SignalHandlerInstalled
-
-    PDispatcher* = ref object of PDispatcherBase
-      ioPort: HANDLE
-      handles: HashSet[AsyncFD]
-      connectEx*: WSAPROC_CONNECTEX
-      acceptEx*: WSAPROC_ACCEPTEX
-      getAcceptExSockAddrs*: WSAPROC_GETACCEPTEXSOCKADDRS
-      transmitFile*: WSAPROC_TRANSMITFILE
-      getQueuedCompletionStatusEx*: LPFN_GETQUEUEDCOMPLETIONSTATUSEX
-      disconnectEx*: WSAPROC_DISCONNECTEX
-      flags: set[DispatcherFlag]
-
-    PtrCustomOverlapped* = ptr CustomOverlapped
-
-    RefCustomOverlapped* = ref CustomOverlapped
-
-    PostCallbackData = object
-      ioPort: HANDLE
-      handleFd: AsyncFD
-      waitFd: HANDLE
-      udata: pointer
-      ovlref: RefCustomOverlapped
-      ovl: pointer
-
-    WaitableHandle* = ref PostCallbackData
-    ProcessHandle* = distinct WaitableHandle
-    SignalHandle* = distinct WaitableHandle
-
-    WaitableResult* {.pure.} = enum
-      Ok, Timeout
-
-    AsyncFD* = distinct int
 
   proc hash(x: AsyncFD): Hash {.borrow.}
   proc `==`*(x: AsyncFD, y: AsyncFD): bool {.borrow, gcsafe.}
@@ -269,56 +188,6 @@ elif defined(windows):
     if res != 0:
       raiseOsDefect(osLastError(),
                     "globalInit(): Unable to initialize Windows Sockets API")
-
-  proc initAPI(disp: PDispatcher) =
-    var funcPointer: pointer = nil
-
-    let kernel32 = getModuleHandle(newWideCString("kernel32.dll"))
-    disp.getQueuedCompletionStatusEx = cast[LPFN_GETQUEUEDCOMPLETIONSTATUSEX](
-      getProcAddress(kernel32, "GetQueuedCompletionStatusEx"))
-
-    let sock = osdefs.socket(osdefs.AF_INET, 1, 6)
-    if sock == osdefs.INVALID_SOCKET:
-      raiseOsDefect(osLastError(), "initAPI(): Unable to create control socket")
-
-    block:
-      let res = getFunc(sock, funcPointer, WSAID_CONNECTEX)
-      if not(res):
-        raiseOsDefect(osLastError(), "initAPI(): Unable to initialize " &
-                                     "dispatcher's ConnectEx()")
-      disp.connectEx = cast[WSAPROC_CONNECTEX](funcPointer)
-
-    block:
-      let res = getFunc(sock, funcPointer, WSAID_ACCEPTEX)
-      if not(res):
-        raiseOsDefect(osLastError(), "initAPI(): Unable to initialize " &
-                                     "dispatcher's AcceptEx()")
-      disp.acceptEx = cast[WSAPROC_ACCEPTEX](funcPointer)
-
-    block:
-      let res = getFunc(sock, funcPointer, WSAID_GETACCEPTEXSOCKADDRS)
-      if not(res):
-        raiseOsDefect(osLastError(), "initAPI(): Unable to initialize " &
-                                     "dispatcher's GetAcceptExSockAddrs()")
-      disp.getAcceptExSockAddrs =
-        cast[WSAPROC_GETACCEPTEXSOCKADDRS](funcPointer)
-
-    block:
-      let res = getFunc(sock, funcPointer, WSAID_TRANSMITFILE)
-      if not(res):
-        raiseOsDefect(osLastError(), "initAPI(): Unable to initialize " &
-                                     "dispatcher's TransmitFile()")
-      disp.transmitFile = cast[WSAPROC_TRANSMITFILE](funcPointer)
-
-    block:
-      let res = getFunc(sock, funcPointer, WSAID_DISCONNECTEX)
-      if not(res):
-        raiseOsDefect(osLastError(), "initAPI(): Unable to initialize " &
-                                     "dispatcher's DisconnectEx()")
-      disp.disconnectEx = cast[WSAPROC_DISCONNECTEX](funcPointer)
-
-    if closeFd(sock) != 0:
-      raiseOsDefect(osLastError(), "initAPI(): Unable to close control socket")
 
   proc newDispatcher*(): PDispatcher =
     ## Creates a new Dispatcher instance.
@@ -449,7 +318,7 @@ elif defined(windows):
         return err(res)
     ok()
 
-  proc addProcess2*(pid: int, cb: CallbackFunc,
+  proc addProcess2*(disp: PDispatcher, pid: int, cb: CallbackFunc,
                     udata: pointer = nil): Result[ProcessHandle, OSErrorCode] =
     ## Registers callback ``cb`` to be called when process with process
     ## identifier ``pid`` exited. Returns process identifier, which can be
@@ -487,13 +356,13 @@ elif defined(windows):
     ? closeWaitable(waitableHandle)
     ok()
 
-  proc addProcess*(pid: int, cb: CallbackFunc,
+  proc addProcess*(disp: PDispatcher, pid: int, cb: CallbackFunc,
                    udata: pointer = nil): ProcessHandle {.
        raises: [OSError].} =
     ## Registers callback ``cb`` to be called when process with process
     ## identifier ``pid`` exited. Returns process identifier, which can be
     ## used to clear process callback via ``removeProcess``.
-    addProcess2(pid, cb, udata).tryGet()
+    disp.addProcess2(pid, cb, udata).tryGet()
 
   proc removeProcess*(procHandle: ProcessHandle) {.
        raises: [ OSError].} =
@@ -713,17 +582,6 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
   const
     SIG_IGN = cast[proc(x: cint) {.raises: [], noconv, gcsafe.}](1)
 
-  type
-    AsyncFD* = distinct cint
-
-    SelectorData* = object
-      reader*: AsyncCallback
-      writer*: AsyncCallback
-
-    PDispatcher* = ref object of PDispatcherBase
-      selector: Selector[SelectorData]
-      keys: seq[ReadyKey]
-
   proc `==`*(x, y: AsyncFD): bool {.borrow, gcsafe.}
 
   proc globalInit() =
@@ -732,28 +590,6 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
 
   proc initAPI(disp: PDispatcher) =
     discard
-
-  proc newDispatcher*(): PDispatcher =
-    ## Create new dispatcher.
-    let selector =
-      block:
-        let res = Selector.new(SelectorData)
-        if res.isErr(): raiseOsDefect(res.error(),
-                                      "Could not initialize selector")
-        res.get()
-
-    var res = PDispatcher(
-      selector: selector,
-      timers: initHeapQueue[TimerCallback](),
-      callbacks: initDeque[AsyncCallback](chronosEventsCount),
-      idlers: initDeque[AsyncCallback](),
-      keys: newSeq[ReadyKey](chronosEventsCount),
-      trackers: initTable[string, TrackerBase](),
-      counters: initTable[string, TrackerCounter]()
-    )
-    res.callbacks.addLast(SentinelCallback)
-    initAPI(res)
-    res
 
   var gDisp{.threadvar.}: PDispatcher ## Global dispatcher
 
@@ -857,14 +693,14 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     ## Stop watching the file descriptor ``fd`` for write availability.
     removeWriter2(disp, fd).tryGet()
 
-  proc unregisterAndCloseFd*(fd: AsyncFD): Result[void, OSErrorCode] =
+  proc unregisterAndCloseFd*(disp: PDispatcher, fd: AsyncFD): Result[void, OSErrorCode] =
     ## Unregister from system queue and close asynchronous socket.
     ##
     ## NOTE: Use this function to close temporary sockets/pipes only (which
     ## are not exposed to the public and not supposed to be used/reused).
     ## Please use closeSocket(AsyncFD) and closeHandle(AsyncFD) instead.
     doAssert(fd != AsyncFD(osdefs.INVALID_SOCKET))
-    ? unregister2(fd)
+    ? disp.unregister2(fd)
     if closeFd(cint(fd)) != 0:
       err(osLastError())
     else:
@@ -880,7 +716,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
       let
         param = toPointer(
           if SocketHandle(fd) in disp.selector:
-            let ures = unregister2(fd)
+            let ures = disp.unregister2(fd)
             if ures.isErr():
               discard closeFd(cint(fd))
               ures.error()
@@ -914,20 +750,16 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     var acb = AsyncCallback(function: continuation)
     disp.callbacks.addLast(acb)
 
-  proc closeHandle*(fd: AsyncFD, aftercb: CallbackFunc = nil) =
+  proc closeHandle*(disp: PDispatcher,fd: AsyncFD, aftercb: CallbackFunc = nil) =
     ## Close asynchronous file/pipe handle.
     ##
     ## Please note, that socket is not closed immediately. To avoid bugs with
     ## closing socket, while operation pending, socket will be closed as
     ## soon as all pending operations will be notified.
     ## You can execute ``aftercb`` before actual socket close operation.
-    closeSocket(fd, aftercb)
+    disp.closeSocket(fd, aftercb)
 
   when chronosEventEngine in ["epoll", "kqueue"]:
-    type
-      ProcessHandle* = distinct int
-      SignalHandle* = distinct int
-
     proc addSignal2*(
            disp: PDispatcher,
            signal: int,
@@ -985,18 +817,18 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
       ## Remove watching signal ``signal``.
       removeSignal2(disp, signalHandle).tryGet()
 
-    proc addProcess*(pid: int, cb: CallbackFunc,
+    proc addProcess*(disp: PDispatcher,pid: int, cb: CallbackFunc,
                      udata: pointer = nil): ProcessHandle {.
          raises: [OSError].} =
       ## Registers callback ``cb`` to be called when process with process
       ## identifier ``pid`` exited. Returns process identifier, which can be
       ## used to clear process callback via ``removeProcess``.
-      addProcess2(pid, cb, udata).tryGet()
+      disp.addProcess2(pid, cb, udata).tryGet()
 
-    proc removeProcess*(procHandle: ProcessHandle) {.
+    proc removeProcess*(disp: PDispatcher,procHandle: ProcessHandle) {.
          raises: [OSError].} =
       ## Remove process' watching using process' descriptor ``procHandle``.
-      removeProcess2(procHandle).tryGet()
+      disp.removeProcess2(procHandle).tryGet()
 
   proc poll*(disp: PDispatcher) {.gcsafe.} =
     ## Perform single asynchronous step.
@@ -1086,9 +918,6 @@ proc setTimer*(disp: PDispatcher, at: Moment, cb: CallbackFunc,
                          function: AsyncCallback(function: cb, udata: udata))
   disp.timers.push(result)
 
-proc clearTimer*(timer: TimerCallback) {.inline.} =
-  timer.function = default(AsyncCallback)
-
 proc addTimer*(disp: PDispatcher, at: Moment, cb: CallbackFunc, udata: pointer = nil) {.
      inline, deprecated: "Use setTimer/clearTimer instead".} =
   ## Arrange for the callback ``cb`` to be called at the given absolute
@@ -1120,13 +949,13 @@ proc removeTimer*(disp: PDispatcher, at: Moment, cb: CallbackFunc, udata: pointe
   if index != -1:
     disp.timers.del(index)
 
-proc removeTimer*(at: int64, cb: CallbackFunc, udata: pointer = nil) {.
+proc removeTimer*(disp: PDispatcher, at: int64, cb: CallbackFunc, udata: pointer = nil) {.
      inline, deprecated: "Use removeTimer(Duration, cb, udata)".} =
-  removeTimer(Moment.init(at, Millisecond), cb, udata)
+  removeTimer(disp, Moment.init(at, Millisecond), cb, udata)
 
-proc removeTimer*(at: uint64, cb: CallbackFunc, udata: pointer = nil) {.
+proc removeTimer*(disp: PDispatcher, at: uint64, cb: CallbackFunc, udata: pointer = nil) {.
      inline, deprecated: "Use removeTimer(Duration, cb, udata)".} =
-  removeTimer(Moment.init(int64(at), Millisecond), cb, udata)
+  removeTimer(disp, Moment.init(int64(at), Millisecond), cb, udata)
 
 proc callSoon*(disp: PDispatcher, acb: AsyncCallback) =
   ## Schedule `cbproc` to be called as soon as possible.
@@ -1138,10 +967,10 @@ proc callSoon*(disp: PDispatcher, cbproc: CallbackFunc, data: pointer) {.
   ## Schedule `cbproc` to be called as soon as possible.
   ## The callback is called when control returns to the event disp.
   doAssert(not isNil(cbproc))
-  callSoon(AsyncCallback(function: cbproc, udata: data))
+  disp.callSoon(AsyncCallback(function: cbproc, udata: data))
 
 proc callSoon*(disp: PDispatcher, cbproc: CallbackFunc) =
-  callSoon(disp, cbproc, nil)
+  disp.callSoon(cbproc, nil)
 
 proc callIdle*(disp: PDispatcher, acb: AsyncCallback) =
   ## Schedule ``cbproc`` to be called when there no pending network events
@@ -1160,7 +989,7 @@ proc callIdle*(disp: PDispatcher, cbproc: CallbackFunc, data: pointer) =
   ## iteration if there no network events available, not when the disp is
   ## actually "idle".
   doAssert(not isNil(cbproc))
-  callIdle(disp, AsyncCallback(function: cbproc, udata: data))
+  disp.callIdle(AsyncCallback(function: cbproc, udata: data))
 
 proc callIdle*(disp: PDispatcher, cbproc: CallbackFunc) =
   callIdle(disp, cbproc, nil)
@@ -1176,8 +1005,8 @@ proc internalCallTick*(disp: PDispatcher, cbproc: CallbackFunc, data: pointer) =
   doAssert(not isNil(cbproc))
   internalCallTick(disp, AsyncCallback(function: cbproc, udata: data))
 
-proc internalCallTick*(cbproc: CallbackFunc) =
-  internalCallTick(AsyncCallback(function: cbproc, udata: nil))
+proc internalCallTick*(disp: PDispatcher, cbproc: CallbackFunc) =
+  internalCallTick(disp, AsyncCallback(function: cbproc, udata: nil))
 
 proc runForever*(disp: PDispatcher) =
   ## Begins a never ending global dispatcher poll disp.
