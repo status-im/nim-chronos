@@ -2,7 +2,8 @@
 
 import chronos
 
-proc someTask() {.async.} = await sleepAsync(10.minutes)
+proc someTask() {.async.} =
+  await sleepAsync(10.minutes)
 
 proc cancellationExample() {.async.} =
   # Start a task but don't wait for it to finish

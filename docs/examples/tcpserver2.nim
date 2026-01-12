@@ -46,7 +46,8 @@ proc handleConn(
     # The main loop is notifying us that it's time to shut down - cancellations
     # should not be interrupted, so we use `noCancel` and a timeout to ensure
     # that we end the read loop in a timely manner
-    discard await noCancel transport.write("Shutting down\r\n\r\n").withTimeout(1.seconds)
+    discard
+      await noCancel transport.write("Shutting down\r\n\r\n").withTimeout(1.seconds)
   finally:
     # Connections must always be closed to avoid resource leaks
     await transport.closeWait()

@@ -12,4 +12,5 @@ proc retrievePage*(uri: string): Future[string] {.async.} =
     await noCancel(httpSession.closeWait())
 
 echo waitFor retrievePage(
-  "https://raw.githubusercontent.com/status-im/nim-chronos/master/README.md")
+  "https://raw.githubusercontent.com/status-im/nim-chronos/master/README.md"
+)
