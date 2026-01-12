@@ -51,7 +51,7 @@ task examples, "Build examples":
   # Build book examples
   for file in listFiles("docs/examples"):
     if file.endsWith(".nim"):
-      build "", file
+      build "--threads:on", file
 
 task test, "Run all tests":
   for args in testArguments:
