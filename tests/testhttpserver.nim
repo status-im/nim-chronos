@@ -13,13 +13,28 @@ import stew/base10
 
 {.used.}
 
+# Trouble finding this if defined near its use for `data2.sorted`, etc. likely
+# related to "generic sandwich" issues.  If any test ever wants to `sort` a
+# `seq[(string, seq[string]]` differently, they may need to re-work that test.
+proc `<`(a, b: (string, seq[string])): bool = a[0] < b[0]
+
 suite "HTTP server testing suite":
+  teardown:
+    checkLeaks()
+
   type
     TooBigTest = enum
       GetBodyTest, ConsumeBodyTest, PostUrlTest, PostMultipartTest
     TestHttpResponse = object
+      status: int
       headers: HttpTable
       data: string
+
+    FirstMiddlewareRef = ref object of HttpServerMiddlewareRef
+      someInteger: int
+
+    SecondMiddlewareRef = ref object of HttpServerMiddlewareRef
+      someString: string
 
   proc httpClient(address: TransportAddress,
                   data: string): Future[string] {.async.} =
@@ -50,7 +65,7 @@ suite "HTTP server testing suite":
     zeroMem(addr buffer[0], len(buffer))
     await transp.readExactly(addr buffer[0], length)
     let data = bytesToString(buffer.toOpenArray(0, length - 1))
-    let headers =
+    let (status, headers) =
       block:
         let resp = parseResponse(hdata, false)
         if resp.failed():
@@ -58,13 +73,43 @@ suite "HTTP server testing suite":
         var res = HttpTable.init()
         for key, value in resp.headers(hdata):
           res.add(key, value)
-        res
-    return TestHttpResponse(headers: headers, data: data)
+        (resp.code, res)
+    TestHttpResponse(status: status, headers: headers, data: data)
+
+  proc httpClient3(address: TransportAddress,
+                   data: string): Future[TestHttpResponse] {.async.} =
+    var
+      transp: StreamTransport
+      buffer = newSeq[byte](4096)
+      sep = @[0x0D'u8, 0x0A'u8, 0x0D'u8, 0x0A'u8]
+    try:
+      transp = await connect(address)
+      if len(data) > 0:
+        let wres = await transp.write(data)
+        if wres != len(data):
+          raise newException(ValueError, "Unable to write full request")
+      let hres = await transp.readUntil(addr buffer[0], len(buffer), sep)
+      var hdata = @buffer
+      hdata.setLen(hres)
+      var rres = bytesToString(await transp.read())
+      let (status, headers) =
+        block:
+          let resp = parseResponse(hdata, false)
+          if resp.failed():
+            raise newException(ValueError, "Unable to decode response headers")
+          var res = HttpTable.init()
+          for key, value in resp.headers(hdata):
+            res.add(key, value)
+          (resp.code, res)
+      TestHttpResponse(status: status, headers: headers, data: rres)
+    finally:
+      if not(isNil(transp)):
+        await closeWait(transp)
 
   proc testTooBigBodyChunked(operation: TooBigTest): Future[bool] {.async.} =
     var serverRes = false
     proc process(r: RequestFence): Future[HttpResponseRef] {.
-         async: (raises: [CancelledError, HttpResponseError]).} =
+         async: (raises: [CancelledError]).} =
       if r.isOk():
         let request = r.get()
         try:
@@ -77,13 +122,15 @@ suite "HTTP server testing suite":
             let ptable {.used.} = await request.post()
           of PostMultipartTest:
             let ptable {.used.} = await request.post()
-        except HttpCriticalError as exc:
+          defaultResponse()
+        except HttpTransportError as exc:
+          defaultResponse(exc)
+        except HttpProtocolError as exc:
           if exc.code == Http413:
             serverRes = true
-          # Reraising exception, because processor should properly handle it.
-          raise exc
+          defaultResponse(exc)
       else:
-        return defaultResponse()
+        defaultResponse()
 
     let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
     let res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
@@ -128,14 +175,17 @@ suite "HTTP server testing suite":
     proc testTimeout(): Future[bool] {.async.} =
       var serverRes = false
       proc process(r: RequestFence): Future[HttpResponseRef] {.
-           async: (raises: [CancelledError, HttpResponseError]).} =
+           async: (raises: [CancelledError]).} =
         if r.isOk():
           let request = r.get()
-          return await request.respond(Http200, "TEST_OK", HttpTable.init())
+          try:
+            await request.respond(Http200, "TEST_OK", HttpTable.init())
+          except HttpWriteError as exc:
+            defaultResponse(exc)
         else:
           if r.error.kind == HttpServerError.TimeoutError:
             serverRes = true
-          return defaultResponse()
+          defaultResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
       let res = HttpServerRef.new(initTAddress("127.0.0.1:0"),
@@ -158,14 +208,17 @@ suite "HTTP server testing suite":
     proc testEmpty(): Future[bool] {.async.} =
       var serverRes = false
       proc process(r: RequestFence): Future[HttpResponseRef] {.
-           async: (raises: [CancelledError, HttpResponseError]).} =
+           async: (raises: [CancelledError]).} =
         if r.isOk():
           let request = r.get()
-          return await request.respond(Http200, "TEST_OK", HttpTable.init())
+          try:
+            await request.respond(Http200, "TEST_OK", HttpTable.init())
+          except HttpWriteError as exc:
+            defaultResponse(exc)
         else:
-          if r.error.kind == HttpServerError.CriticalError:
+          if r.error.kind == HttpServerError.ProtocolError:
             serverRes = true
-          return defaultResponse()
+          defaultResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
       let res = HttpServerRef.new(initTAddress("127.0.0.1:0"),
@@ -188,14 +241,17 @@ suite "HTTP server testing suite":
     proc testTooBig(): Future[bool] {.async.} =
       var serverRes = false
       proc process(r: RequestFence): Future[HttpResponseRef] {.
-           async: (raises: [CancelledError, HttpResponseError]).} =
+           async: (raises: [CancelledError]).} =
         if r.isOk():
           let request = r.get()
-          return await request.respond(Http200, "TEST_OK", HttpTable.init())
+          try:
+            await request.respond(Http200, "TEST_OK", HttpTable.init())
+          except HttpWriteError as exc:
+            defaultResponse(exc)
         else:
-          if r.error.error == HttpServerError.CriticalError:
+          if r.error.error == HttpServerError.ProtocolError:
             serverRes = true
-          return defaultResponse()
+          defaultResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
       let res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
@@ -219,13 +275,11 @@ suite "HTTP server testing suite":
     proc testTooBigBody(): Future[bool] {.async.} =
       var serverRes = false
       proc process(r: RequestFence): Future[HttpResponseRef] {.
-           async: (raises: [CancelledError, HttpResponseError]).} =
-        if r.isOk():
-          discard
-        else:
-          if r.error.error == HttpServerError.CriticalError:
+           async: (raises: [CancelledError]).} =
+        if r.isErr():
+          if r.error.error == HttpServerError.ProtocolError:
             serverRes = true
-          return defaultResponse()
+        defaultResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
       let res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
@@ -266,7 +320,7 @@ suite "HTTP server testing suite":
     proc testQuery(): Future[bool] {.async.} =
       var serverRes = false
       proc process(r: RequestFence): Future[HttpResponseRef] {.
-           async: (raises: [CancelledError, HttpResponseError]).} =
+           async: (raises: [CancelledError]).} =
         if r.isOk():
           let request = r.get()
           var kres = newSeq[string]()
@@ -274,11 +328,14 @@ suite "HTTP server testing suite":
             kres.add(k & ":" & v)
           sort(kres)
           serverRes = true
-          return await request.respond(Http200, "TEST_OK:" & kres.join(":"),
-                                       HttpTable.init())
+          try:
+            await request.respond(Http200, "TEST_OK:" & kres.join(":"),
+                                  HttpTable.init())
+          except HttpWriteError as exc:
+            serverRes = false
+            defaultResponse(exc)
         else:
-          serverRes = false
-          return defaultResponse()
+          defaultResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
       let res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
@@ -296,10 +353,9 @@ suite "HTTP server testing suite":
               "GET /?a=%D0%9F&%D0%A4=%D0%91&b=%D0%A6&c=%D0%AE HTTP/1.0\r\n\r\n")
       await server.stop()
       await server.closeWait()
-      let r = serverRes and
-              (data1.find("TEST_OK:a:1:a:2:b:3:c:4") >= 0) and
-              (data2.find("TEST_OK:a:П:b:Ц:c:Ю:Ф:Б") >= 0)
-      return r
+      serverRes and
+        (data1.find("TEST_OK:a:1:a:2:b:3:c:4") >= 0) and
+        (data2.find("TEST_OK:a:П:b:Ц:c:Ю:Ф:Б") >= 0)
 
     check waitFor(testQuery()) == true
 
@@ -307,7 +363,7 @@ suite "HTTP server testing suite":
     proc testHeaders(): Future[bool] {.async.} =
       var serverRes = false
       proc process(r: RequestFence): Future[HttpResponseRef] {.
-           async: (raises: [CancelledError, HttpResponseError]).} =
+           async: (raises: [CancelledError]).} =
         if r.isOk():
           let request = r.get()
           var kres = newSeq[string]()
@@ -315,11 +371,14 @@ suite "HTTP server testing suite":
             kres.add(k & ":" & v)
           sort(kres)
           serverRes = true
-          return await request.respond(Http200, "TEST_OK:" & kres.join(":"),
-                                       HttpTable.init())
+          try:
+            await request.respond(Http200, "TEST_OK:" & kres.join(":"),
+                                  HttpTable.init())
+          except HttpWriteError as exc:
+            serverRes = false
+            defaultResponse(exc)
         else:
-          serverRes = false
-          return defaultResponse()
+          defaultResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
       let res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
@@ -351,21 +410,30 @@ suite "HTTP server testing suite":
     proc testPostUrl(): Future[bool] {.async.} =
       var serverRes = false
       proc process(r: RequestFence): Future[HttpResponseRef] {.
-           async: (raises: [CancelledError, HttpResponseError]).} =
+           async: (raises: [CancelledError]).} =
         if r.isOk():
           var kres = newSeq[string]()
           let request = r.get()
           if request.meth in PostMethods:
-            let post = await request.post()
+            let post =
+              try:
+                await request.post()
+              except HttpProtocolError as exc:
+                return defaultResponse(exc)
+              except HttpTransportError as exc:
+                return defaultResponse(exc)
             for k, v in post.stringItems():
               kres.add(k & ":" & v)
             sort(kres)
-            serverRes = true
-          return await request.respond(Http200, "TEST_OK:" & kres.join(":"),
-                                       HttpTable.init())
+          serverRes = true
+          try:
+            await request.respond(Http200, "TEST_OK:" & kres.join(":"),
+                                  HttpTable.init())
+          except HttpWriteError as exc:
+            serverRes = false
+            defaultResponse(exc)
         else:
-          serverRes = false
-          return defaultResponse()
+          defaultResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
       let res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
@@ -395,21 +463,30 @@ suite "HTTP server testing suite":
     proc testPostUrl2(): Future[bool] {.async.} =
       var serverRes = false
       proc process(r: RequestFence): Future[HttpResponseRef] {.
-           async: (raises: [CancelledError, HttpResponseError]).} =
+           async: (raises: [CancelledError]).} =
         if r.isOk():
           var kres = newSeq[string]()
           let request = r.get()
           if request.meth in PostMethods:
-            let post = await request.post()
+            let post =
+              try:
+                await request.post()
+              except HttpProtocolError as exc:
+                return defaultResponse(exc)
+              except HttpTransportError as exc:
+                return defaultResponse(exc)
             for k, v in post.stringItems():
               kres.add(k & ":" & v)
             sort(kres)
-            serverRes = true
-          return await request.respond(Http200, "TEST_OK:" & kres.join(":"),
-                                       HttpTable.init())
+          serverRes = true
+          try:
+            await request.respond(Http200, "TEST_OK:" & kres.join(":"),
+                                  HttpTable.init())
+          except HttpWriteError as exc:
+            serverRes = false
+            defaultResponse(exc)
         else:
-          serverRes = false
-          return defaultResponse()
+          defaultResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
       let res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
@@ -440,21 +517,30 @@ suite "HTTP server testing suite":
     proc testPostMultipart(): Future[bool] {.async.} =
       var serverRes = false
       proc process(r: RequestFence): Future[HttpResponseRef] {.
-           async: (raises: [CancelledError, HttpResponseError]).} =
+           async: (raises: [CancelledError]).} =
         if r.isOk():
           var kres = newSeq[string]()
           let request = r.get()
           if request.meth in PostMethods:
-            let post = await request.post()
+            let post =
+              try:
+                await request.post()
+              except HttpProtocolError as exc:
+                return defaultResponse(exc)
+              except HttpTransportError as exc:
+                return defaultResponse(exc)
             for k, v in post.stringItems():
               kres.add(k & ":" & v)
             sort(kres)
-            serverRes = true
-          return await request.respond(Http200, "TEST_OK:" & kres.join(":"),
-                                       HttpTable.init())
+          serverRes = true
+          try:
+            await request.respond(Http200, "TEST_OK:" & kres.join(":"),
+                                  HttpTable.init())
+          except HttpWriteError as exc:
+            serverRes = false
+            defaultResponse(exc)
         else:
-          serverRes = false
-          return defaultResponse()
+          defaultResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
       let res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
@@ -496,21 +582,31 @@ suite "HTTP server testing suite":
     proc testPostMultipart2(): Future[bool] {.async.} =
       var serverRes = false
       proc process(r: RequestFence): Future[HttpResponseRef] {.
-           async: (raises: [CancelledError, HttpResponseError]).} =
+           async: (raises: [CancelledError]).} =
         if r.isOk():
           var kres = newSeq[string]()
           let request = r.get()
           if request.meth in PostMethods:
-            let post = await request.post()
+            let post =
+              try:
+                await request.post()
+              except HttpProtocolError as exc:
+                return defaultResponse(exc)
+              except HttpTransportError as exc:
+                return defaultResponse(exc)
             for k, v in post.stringItems():
               kres.add(k & ":" & v)
             sort(kres)
           serverRes = true
-          return await request.respond(Http200, "TEST_OK:" & kres.join(":"),
-                                       HttpTable.init())
+          try:
+            await request.respond(Http200, "TEST_OK:" & kres.join(":"),
+                                  HttpTable.init())
+          except HttpWriteError as exc:
+            serverRes = false
+            defaultResponse(exc)
         else:
           serverRes = false
-          return defaultResponse()
+          defaultResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
       let res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
@@ -566,16 +662,19 @@ suite "HTTP server testing suite":
       var count = 0
 
       proc process(r: RequestFence): Future[HttpResponseRef] {.
-           async: (raises: [CancelledError, HttpResponseError]).} =
+           async: (raises: [CancelledError]).} =
         if r.isOk():
           let request = r.get()
           inc(count)
           if count == ClientsCount:
             eventWait.fire()
           await eventContinue.wait()
-          return await request.respond(Http404, "", HttpTable.init())
+          try:
+            await request.respond(Http404, "", HttpTable.init())
+          except HttpWriteError as exc:
+            defaultResponse(exc)
         else:
-          return defaultResponse()
+          defaultResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
       let res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
@@ -752,11 +851,11 @@ suite "HTTP server testing suite":
     for key, value in table1.items(true):
       data2.add((key, value))
 
-    check:
-      data1 == @[("Header2", "value2"), ("Header2", "VALUE3"),
-                 ("Header1", "value1")]
-      data2 == @[("Header2", @["value2", "VALUE3"]),
-                 ("Header1", @["value1"])]
+    check:  # .sorted to not depend upon hash(key)-order
+      data1.sorted == sorted(@[("Header2", "value2"), ("Header2", "VALUE3"),
+                               ("Header1", "value1")])
+      data2.sorted == sorted(@[("Header2", @["value2", "VALUE3"]),
+                               ("Header1", @["value1"])])
 
     table1.set("header2", "value4")
     check:
@@ -1230,23 +1329,26 @@ suite "HTTP server testing suite":
     proc testPostMultipart2(): Future[bool] {.async.} =
       var serverRes = false
       proc process(r: RequestFence): Future[HttpResponseRef] {.
-           async: (raises: [CancelledError, HttpResponseError]).} =
+           async: (raises: [CancelledError]).} =
         if r.isOk():
           let request = r.get()
           let response = request.getResponse()
-          await response.prepareSSE()
-          await response.send("event: event1\r\ndata: data1\r\n\r\n")
-          await response.send("event: event2\r\ndata: data2\r\n\r\n")
-          await response.sendEvent("event3", "data3")
-          await response.sendEvent("event4", "data4")
-          await response.send("data: data5\r\n\r\n")
-          await response.sendEvent("", "data6")
-          await response.finish()
-          serverRes = true
-          return response
+          try:
+            await response.prepareSSE()
+            await response.send("event: event1\r\ndata: data1\r\n\r\n")
+            await response.send("event: event2\r\ndata: data2\r\n\r\n")
+            await response.sendEvent("event3", "data3")
+            await response.sendEvent("event4", "data4")
+            await response.send("data: data5\r\n\r\n")
+            await response.sendEvent("", "data6")
+            await response.finish()
+            serverRes = true
+            response
+          except HttpWriteError as exc:
+            serverRes = false
+            defaultResponse(exc)
         else:
-          serverRes = false
-          return defaultResponse()
+          defaultResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
       let res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
@@ -1306,12 +1408,15 @@ suite "HTTP server testing suite":
     ]
 
     proc process(r: RequestFence): Future[HttpResponseRef] {.
-         async: (raises: [CancelledError, HttpResponseError]).} =
+         async: (raises: [CancelledError]).} =
       if r.isOk():
         let request = r.get()
-        return await request.respond(Http200, "TEST_OK", HttpTable.init())
+        try:
+          await request.respond(Http200, "TEST_OK", HttpTable.init())
+        except HttpWriteError as exc:
+          defaultResponse(exc)
       else:
-        return defaultResponse()
+        defaultResponse()
 
     for test in TestMessages:
       let
@@ -1360,12 +1465,15 @@ suite "HTTP server testing suite":
       TestRequest = "GET /httpdebug HTTP/1.1\r\nConnection: keep-alive\r\n\r\n"
 
     proc process(r: RequestFence): Future[HttpResponseRef] {.
-         async: (raises: [CancelledError, HttpResponseError]).} =
+         async: (raises: [CancelledError]).} =
       if r.isOk():
         let request = r.get()
-        return await request.respond(Http200, "TEST_OK", HttpTable.init())
+        try:
+          await request.respond(Http200, "TEST_OK", HttpTable.init())
+        except HttpWriteError as exc:
+          defaultResponse(exc)
       else:
-        return defaultResponse()
+        defaultResponse()
 
     proc client(address: TransportAddress,
                 data: string): Future[StreamTransport] {.async.} =
@@ -1427,5 +1535,295 @@ suite "HTTP server testing suite":
     await server.stop()
     await server.closeWait()
 
-  test "Leaks test":
-    checkLeaks()
+  asyncTest "HTTP middleware request filtering test":
+    proc init(t: typedesc[FirstMiddlewareRef],
+              data: int): HttpServerMiddlewareRef =
+      proc shandler(
+          middleware: HttpServerMiddlewareRef,
+          reqfence: RequestFence,
+          nextHandler: HttpProcessCallback2
+      ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
+        let mw = FirstMiddlewareRef(middleware)
+        if reqfence.isErr():
+          # Our handler is not supposed to handle request errors, so we
+          # call next handler in sequence which could process errors.
+          return await nextHandler(reqfence)
+
+        let request = reqfence.get()
+        if request.uri.path == "/first":
+          # This is request we are waiting for, so we going to process it.
+          try:
+            await request.respond(Http200, $mw.someInteger)
+          except HttpWriteError as exc:
+            defaultResponse(exc)
+        else:
+          # We know nothing about request's URI, so we pass this request to the
+          # next handler which could process such request.
+          await nextHandler(reqfence)
+
+      HttpServerMiddlewareRef(
+        FirstMiddlewareRef(someInteger: data, handler: shandler))
+
+    proc init(t: typedesc[SecondMiddlewareRef],
+              data: string): HttpServerMiddlewareRef =
+      proc shandler(
+          middleware: HttpServerMiddlewareRef,
+          reqfence: RequestFence,
+          nextHandler: HttpProcessCallback2
+      ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
+        let mw = SecondMiddlewareRef(middleware)
+        if reqfence.isErr():
+          # Our handler is not supposed to handle request errors, so we
+          # call next handler in sequence which could process errors.
+          return await nextHandler(reqfence)
+
+        let request = reqfence.get()
+
+        if request.uri.path == "/second":
+          # This is request we are waiting for, so we going to process it.
+          try:
+            await request.respond(Http200, mw.someString)
+          except HttpWriteError as exc:
+            defaultResponse(exc)
+        else:
+          # We know nothing about request's URI, so we pass this request to the
+          # next handler which could process such request.
+          await nextHandler(reqfence)
+
+      HttpServerMiddlewareRef(
+        SecondMiddlewareRef(someString: data, handler: shandler))
+
+    proc process(r: RequestFence): Future[HttpResponseRef] {.
+         async: (raises: [CancelledError]).} =
+      if r.isOk():
+        let request = r.get()
+        if request.uri.path == "/test":
+          try:
+            await request.respond(Http200, "ORIGIN")
+          except HttpWriteError as exc:
+            defaultResponse(exc)
+        else:
+          defaultResponse()
+      else:
+        defaultResponse()
+
+    let
+      middlewares = [FirstMiddlewareRef.init(655370),
+                     SecondMiddlewareRef.init("SECOND")]
+      socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
+      res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
+                              socketFlags = socketFlags,
+                              middlewares = middlewares)
+    check res.isOk()
+
+    let server = res.get()
+    server.start()
+    let
+      address = server.instance.localAddress()
+      req1 = "GET /test HTTP/1.1\r\n\r\n"
+      req2 = "GET /first HTTP/1.1\r\n\r\n"
+      req3 = "GET /second HTTP/1.1\r\n\r\n"
+      req4 = "GET /noway HTTP/1.1\r\n\r\n"
+      resp1 = await httpClient3(address, req1)
+      resp2 = await httpClient3(address, req2)
+      resp3 = await httpClient3(address, req3)
+      resp4 = await httpClient3(address, req4)
+
+    check:
+      resp1.status == 200
+      resp1.data == "ORIGIN"
+      resp2.status == 200
+      resp2.data == "655370"
+      resp3.status == 200
+      resp3.data == "SECOND"
+      resp4.status == 404
+
+    await server.stop()
+    await server.closeWait()
+
+  asyncTest "HTTP middleware request modification test":
+    proc init(t: typedesc[FirstMiddlewareRef],
+              data: int): HttpServerMiddlewareRef =
+      proc shandler(
+          middleware: HttpServerMiddlewareRef,
+          reqfence: RequestFence,
+          nextHandler: HttpProcessCallback2
+      ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
+        let mw = FirstMiddlewareRef(middleware)
+        if reqfence.isErr():
+          # Our handler is not supposed to handle request errors, so we
+          # call next handler in sequence which could process errors.
+          return await nextHandler(reqfence)
+
+        let
+          request = reqfence.get()
+          modifiedUri = "/modified/" & $mw.someInteger & request.rawPath
+        var modifiedHeaders = request.headers
+        modifiedHeaders.add("X-Modified", "test-value")
+
+        let res = request.updateRequest(modifiedUri, modifiedHeaders)
+        if res.isErr():
+          return defaultResponse(res.error)
+
+        # We sending modified request to the next handler.
+        await nextHandler(reqfence)
+
+      HttpServerMiddlewareRef(
+        FirstMiddlewareRef(someInteger: data, handler: shandler))
+
+    proc process(r: RequestFence): Future[HttpResponseRef] {.
+         async: (raises: [CancelledError]).} =
+      if r.isOk():
+        let request = r.get()
+        try:
+          await request.respond(Http200, request.rawPath & ":" &
+                                request.headers.getString("x-modified"))
+        except HttpWriteError as exc:
+          defaultResponse(exc)
+      else:
+        defaultResponse()
+
+    let
+      middlewares = [FirstMiddlewareRef.init(655370)]
+      socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
+      res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
+                              socketFlags = socketFlags,
+                              middlewares = middlewares)
+    check res.isOk()
+
+    let server = res.get()
+    server.start()
+    let
+      address = server.instance.localAddress()
+      req1 = "GET /test HTTP/1.1\r\n\r\n"
+      req2 = "GET /first HTTP/1.1\r\n\r\n"
+      req3 = "GET /second HTTP/1.1\r\n\r\n"
+      req4 = "GET /noway HTTP/1.1\r\n\r\n"
+      resp1 = await httpClient3(address, req1)
+      resp2 = await httpClient3(address, req2)
+      resp3 = await httpClient3(address, req3)
+      resp4 = await httpClient3(address, req4)
+
+    check:
+      resp1.status == 200
+      resp1.data == "/modified/655370/test:test-value"
+      resp2.status == 200
+      resp2.data == "/modified/655370/first:test-value"
+      resp3.status == 200
+      resp3.data == "/modified/655370/second:test-value"
+      resp4.status == 200
+      resp4.data == "/modified/655370/noway:test-value"
+
+    await server.stop()
+    await server.closeWait()
+
+  asyncTest "HTTP middleware request blocking test":
+    proc init(t: typedesc[FirstMiddlewareRef],
+              data: int): HttpServerMiddlewareRef =
+      proc shandler(
+          middleware: HttpServerMiddlewareRef,
+          reqfence: RequestFence,
+          nextHandler: HttpProcessCallback2
+      ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
+        if reqfence.isErr():
+          # Our handler is not supposed to handle request errors, so we
+          # call next handler in sequence which could process errors.
+          return await nextHandler(reqfence)
+
+        let request = reqfence.get()
+        if request.uri.path == "/first":
+          # Blocking request by disconnecting remote peer.
+          dropResponse()
+        elif request.uri.path == "/second":
+          # Blocking request by sending HTTP error message with 401 code.
+          codeResponse(Http401)
+        else:
+          # Allow all other requests to be processed by next handler.
+          await nextHandler(reqfence)
+
+      HttpServerMiddlewareRef(
+        FirstMiddlewareRef(someInteger: data, handler: shandler))
+
+    proc process(r: RequestFence): Future[HttpResponseRef] {.
+         async: (raises: [CancelledError]).} =
+      if r.isOk():
+        let request = r.get()
+        try:
+          await request.respond(Http200, "ORIGIN")
+        except HttpWriteError as exc:
+          defaultResponse(exc)
+      else:
+        defaultResponse()
+
+    let
+      middlewares = [FirstMiddlewareRef.init(655370)]
+      socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
+      res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
+                              socketFlags = socketFlags,
+                              middlewares = middlewares)
+    check res.isOk()
+
+    let server = res.get()
+    server.start()
+    let
+      address = server.instance.localAddress()
+      req1 = "GET /test HTTP/1.1\r\n\r\n"
+      req2 = "GET /first HTTP/1.1\r\n\r\n"
+      req3 = "GET /second HTTP/1.1\r\n\r\n"
+      resp1 = await httpClient3(address, req1)
+      resp3 = await httpClient3(address, req3)
+
+    check:
+      resp1.status == 200
+      resp1.data == "ORIGIN"
+      resp3.status == 401
+
+    let checked =
+      try:
+        let res {.used.} = await httpClient3(address, req2)
+        false
+      except TransportIncompleteError:
+        true
+
+    check:
+      checked == true
+
+    await server.stop()
+    await server.closeWait()
+
+  asyncTest "HTTP server - baseUri value test":
+    proc process(r: RequestFence): Future[HttpResponseRef] {.
+         async: (raises: [CancelledError]).} =
+      defaultResponse()
+
+    let
+      expectUri2 = "http://www.chronos-test.com/"
+      address = initTAddress("127.0.0.1:0")
+      socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
+      res1 = HttpServerRef.new(address, process,
+                               socketFlags = socketFlags)
+      res2 = HttpServerRef.new(address, process,
+                               socketFlags = socketFlags,
+                               serverUri = parseUri(expectUri2))
+    check:
+      res1.isOk == true
+      res2.isOk == true
+
+    let
+      server1 = res1.get()
+      server2 = res2.get()
+
+    try:
+      server1.start()
+      server2.start()
+      let
+        localAddress = server1.instance.localAddress()
+        expectUri1 = "http://127.0.0.1:" & $localAddress.port & "/"
+      check:
+        server1.baseUri == parseUri(expectUri1)
+        server2.baseUri == parseUri(expectUri2)
+    finally:
+      await server1.stop()
+      await server1.closeWait()
+      await server2.stop()
+      await server2.closeWait()

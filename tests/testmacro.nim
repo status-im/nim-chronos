@@ -8,6 +8,7 @@
 import std/[macros, strutils]
 import unittest2
 import ../chronos
+import ../chronos/config
 
 {.used.}
 
@@ -491,7 +492,7 @@ suite "Exceptions tracking":
     proc testit2 {.async: (raises: [IOError]).} =
       raise (ref IOError)()
 
-    proc test {.async: (raises: [ValueError, IOError]).} =
+    proc test {.async: (raises: [CancelledError, ValueError, IOError]).} =
       await testit() or testit2()
 
     proc noraises() {.raises: [].} =
@@ -519,7 +520,7 @@ suite "Exceptions tracking":
 
     noraises()
 
-  test "Nocancel errors":
+  test "Nocancel errors with raises":
     proc testit {.async: (raises: [ValueError, CancelledError]).} =
       await sleepAsync(5.milliseconds)
       raise (ref ValueError)()
@@ -528,6 +529,36 @@ suite "Exceptions tracking":
       await noCancel testit()
 
     proc noraises() {.raises: [].} =
+      expect(ValueError):
+        let f = test()
+        waitFor(f.cancelAndWait())
+        waitFor(f)
+
+    noraises()
+
+  test "Nocancel with no errors":
+    proc testit {.async: (raises: [CancelledError]).} =
+      await sleepAsync(5.milliseconds)
+
+    proc test {.async: (raises: []).} =
+      await noCancel testit()
+
+    proc noraises() {.raises: [].} =
+      let f = test()
+      waitFor(f.cancelAndWait())
+      waitFor(f)
+
+    noraises()
+
+  test "Nocancel errors without raises":
+    proc testit {.async.} =
+      await sleepAsync(5.milliseconds)
+      raise (ref ValueError)()
+
+    proc test {.async.} =
+      await noCancel testit()
+
+    proc noraises() =
       expect(ValueError):
         let f = test()
         waitFor(f.cancelAndWait())
@@ -555,3 +586,41 @@ suite "Exceptions tracking":
         await raiseException()
 
     waitFor(callCatchAll())
+
+  test "Global handleException does not override local annotations":
+    when chronosHandleException:
+      proc unnanotated() {.async.} = raise (ref CatchableError)()
+
+      checkNotCompiles:
+        proc annotated() {.async: (raises: [ValueError]).} = 
+          raise (ref CatchableError)()
+
+      checkNotCompiles:
+        proc noHandleException() {.async: (handleException: false).} =
+          raise (ref Exception)()
+    else:
+      skip()
+
+  test "Results compatibility":
+    proc returnOk(): Future[Result[int, string]] {.async: (raises: []).} =
+      ok(42)
+
+    proc returnErr(): Future[Result[int, string]] {.async: (raises: []).} =
+      err("failed")
+
+    proc testit(): Future[Result[void, string]] {.async: (raises: []).} =
+      let
+        v = await returnOk()
+
+      check:
+        v.isOk() and v.value() == 42
+
+      let
+        vok = ?v
+      check:
+        vok == 42
+
+      discard ?await returnErr()
+
+    check:
+      waitFor(testit()).error() == "failed"

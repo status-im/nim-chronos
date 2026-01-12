@@ -89,6 +89,9 @@ suite "Asynchronous timers & steps test suite":
       $nanoseconds(1_000_000_900) == "1s900ns"
       $nanoseconds(1_800_700_000) == "1s800ms700us"
       $nanoseconds(1_800_000_600) == "1s800ms600ns"
+      nanoseconds(1_800_000_600).toString(0) == ""
+      nanoseconds(1_800_000_600).toString(1) == "1s"
+      nanoseconds(1_800_000_600).toString(2) == "1s800ms"
 
   test "Asynchronous steps test":
     var fut1 = stepsAsync(1)

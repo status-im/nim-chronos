@@ -11,13 +11,13 @@
 
 {.push raises: [].}
 
-import ../asyncloop, ../timer
-import asyncstream, ../transports/stream, ../transports/common
+import ../[asyncloop, timer, bipbuffer, config]
+import asyncstream, ../transports/[stream, common]
 import results
 export asyncloop, asyncstream, stream, timer, common, results
 
 const
-  ChunkBufferSize = 4096
+  ChunkBufferSize = chronosStreamDefaultBufferSize
   MaxChunkHeaderSize = 1024
   ChunkHeaderValueSize = 8
     # This is limit for chunk size to 8 hexadecimal digits, so maximum
@@ -118,11 +118,11 @@ proc chunkedReadLoop(stream: AsyncStreamReader) {.async: (raises: []).} =
         var chunksize = cres.get()
         if chunksize > 0'u64:
           while chunksize > 0'u64:
-            let toRead = int(min(chunksize,
-                                 uint64(rstream.buffer.bufferLen())))
-            await rstream.rsource.readExactly(rstream.buffer.getBuffer(),
-                                              toRead)
-            rstream.buffer.update(toRead)
+            let
+              (data, rsize) = rstream.buffer.backend.reserve()
+              toRead = int(min(chunksize, uint64(rsize)))
+            await rstream.rsource.readExactly(data, toRead)
+            rstream.buffer.backend.commit(toRead)
             await rstream.buffer.transfer()
             chunksize = chunksize - uint64(toRead)
 

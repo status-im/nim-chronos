@@ -75,6 +75,8 @@ N8r5CwGcIX/XPC3lKazzbZ8baA==
 
 
 suite "Secure HTTP server testing suite":
+  teardown:
+    checkLeaks()
 
   proc httpsClient(address: TransportAddress,
                    data: string, flags = {NoVerifyHost, NoVerifyServerName}
@@ -108,15 +110,18 @@ suite "Secure HTTP server testing suite":
     proc testHTTPS(address: TransportAddress): Future[bool] {.async.} =
       var serverRes = false
       proc process(r: RequestFence): Future[HttpResponseRef] {.
-           async: (raises: [CancelledError, HttpResponseError]).} =
+           async: (raises: [CancelledError]).} =
         if r.isOk():
           let request = r.get()
           serverRes = true
-          return await request.respond(Http200, "TEST_OK:" & $request.meth,
-                                       HttpTable.init())
+          try:
+            await request.respond(Http200, "TEST_OK:" & $request.meth,
+                                  HttpTable.init())
+          except HttpWriteError as exc:
+            serverRes = false
+            defaultResponse(exc)
         else:
-          serverRes = false
-          return defaultResponse()
+          defaultResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
       let serverFlags = {Secure}
@@ -146,16 +151,18 @@ suite "Secure HTTP server testing suite":
       var serverRes = false
       var testFut = newFuture[void]()
       proc process(r: RequestFence): Future[HttpResponseRef] {.
-           async: (raises: [CancelledError, HttpResponseError]).} =
+           async: (raises: [CancelledError]).} =
         if r.isOk():
           let request = r.get()
-          serverRes = false
-          return await request.respond(Http200, "TEST_OK:" & $request.meth,
-                                       HttpTable.init())
+          try:
+            await request.respond(Http200, "TEST_OK:" & $request.meth,
+                                  HttpTable.init())
+          except HttpWriteError as exc:
+            defaultResponse(exc)
         else:
           serverRes = true
           testFut.complete()
-          return defaultResponse()
+          defaultResponse()
 
       let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
       let serverFlags = {Secure}
@@ -180,5 +187,48 @@ suite "Secure HTTP server testing suite":
 
     check waitFor(testHTTPS2(initTAddress("127.0.0.1:30080"))) == true
 
-  test "Leaks test":
-    checkLeaks()
+  asyncTest "HTTPS server - baseUri value test":
+    proc process(r: RequestFence): Future[HttpResponseRef] {.
+         async: (raises: [CancelledError]).} =
+      defaultResponse()
+
+    let
+      expectUri2 = "https://www.chronos-test.com/"
+      address = initTAddress("127.0.0.1:0")
+      socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
+      serverFlags = {Secure}
+      secureKey = TLSPrivateKey.init(HttpsSelfSignedRsaKey)
+      secureCert = TLSCertificate.init(HttpsSelfSignedRsaCert)
+      res1 = SecureHttpServerRef.new(address, process,
+                                     socketFlags = socketFlags,
+                                     serverFlags = serverFlags,
+                                     tlsPrivateKey = secureKey,
+                                     tlsCertificate = secureCert)
+      res2 = SecureHttpServerRef.new(address, process,
+                                     socketFlags = socketFlags,
+                                     serverFlags = serverFlags,
+                                     serverUri = parseUri(expectUri2),
+                                     tlsPrivateKey = secureKey,
+                                     tlsCertificate = secureCert)
+    check:
+      res1.isOk == true
+      res2.isOk == true
+
+    let
+      server1 = res1.get()
+      server2 = res2.get()
+
+    try:
+      server1.start()
+      server2.start()
+      let
+        localAddress = server1.instance.localAddress()
+        expectUri1 = "https://127.0.0.1:" & $localAddress.port & "/"
+      check:
+        server1.baseUri == parseUri(expectUri1)
+        server2.baseUri == parseUri(expectUri2)
+    finally:
+      await server1.stop()
+      await server1.closeWait()
+      await server2.stop()
+      await server2.closeWait()

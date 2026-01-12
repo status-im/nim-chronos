@@ -1,16 +1,16 @@
 mode = ScriptMode.Verbose
 
 packageName   = "chronos"
-version       = "3.2.0"
+version       = "4.0.4"
 author        = "Status Research & Development GmbH"
 description   = "Networking framework with async/await support"
 license       = "MIT or Apache License 2.0"
 skipDirs      = @["tests"]
 
-requires "nim >= 1.6.0",
+requires "nim >= 1.6.16",
          "results",
          "stew",
-         "bearssl",
+         "bearssl >= 0.2.5",
          "httputils",
          "unittest2"
 
@@ -20,6 +20,7 @@ let nimc = getEnv("NIMC", "nim") # Which nim compiler to use
 let lang = getEnv("NIMLANG", "c") # Which backend (c/cpp/js)
 let flags = getEnv("NIMFLAGS", "") # Extra flags for the compiler
 let verbose = getEnv("V", "") notin ["", "0"]
+let platform = getEnv("PLATFORM", "")
 let testArguments =
   when defined(windows):
     [
@@ -54,18 +55,30 @@ task examples, "Build examples":
 
 task test, "Run all tests":
   for args in testArguments:
-    run args, "tests/testall"
+    # First run tests with `refc` memory manager.
+    run args & " --mm:refc", "tests/testall"
     if (NimMajor, NimMinor) > (1, 6):
-      run args & " --mm:refc", "tests/testall"
+      run args & " --mm:orc", "tests/testall"
 
+task test_v3_compat, "Run all tests in v3 compatibility mode":
+  for args in testArguments:
+    if (NimMajor, NimMinor) > (1, 6):
+      # First run tests with `refc` memory manager.
+      run args & " --mm:refc -d:chronosHandleException", "tests/testall"
+
+    run args & " -d:chronosHandleException", "tests/testall"
 
 task test_libbacktrace, "test with libbacktrace":
-  var allArgs = @[
+  if platform != "x86":
+    let allArgs = @[
       "-d:release --debugger:native -d:chronosStackTrace -d:nimStackTraceOverride --import:libbacktrace",
     ]
 
-  for args in allArgs:
-    run args, "tests/testall"
+    for args in allArgs:
+      # First run tests with `refc` memory manager.
+      run args & " --mm:refc", "tests/testall"
+      if (NimMajor, NimMinor) > (1, 6):
+        run args & " --mm:orc", "tests/testall"
 
 task docs, "Generate API documentation":
   exec "mdbook build docs"

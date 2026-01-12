@@ -9,10 +9,13 @@
 
 {.push raises: [].}
 
-import std/deques
+import std/[deques, strutils]
 import stew/ptrops
-import ".."/[asyncloop, config, handles, osdefs, osutils, oserrno]
-import ./common
+import results
+import ".."/[asyncloop, config, handles, bipbuffer, osdefs, osutils, oserrno]
+import ./[common, ipnet]
+
+export results
 
 type
   VectorKind = enum
@@ -48,7 +51,8 @@ type
     # get stuck on transport `close()`.
     # Please use this flag only if you are making both client and server in
     # the same thread.
-    TcpNoDelay # deprecated: Use SocketFlags.TcpNoDelay
+    TcpNoDelay, # deprecated: Use SocketFlags.TcpNoDelay
+    V4Mapped
 
   SocketFlags* {.pure.} = enum
     TcpNoDelay,
@@ -72,17 +76,15 @@ when defined(windows):
       fd*: AsyncFD                    # File descriptor
       state: set[TransportState]      # Current Transport state
       reader: ReaderFuture            # Current reader Future
-      buffer: seq[byte]               # Reading buffer
-      offset: int                     # Reading buffer offset
+      buffer: BipBuffer               # Reading buffer
       error: ref TransportError       # Current error
       queue: Deque[StreamVector]      # Writer queue
-      future: Future[void]            # Stream life future
+      future: Future[void].Raising([]) # Stream life future
       # Windows specific part
       rwsabuf: WSABUF                 # Reader WSABUF
       wwsabuf: WSABUF                 # Writer WSABUF
       rovl: CustomOverlapped          # Reader OVERLAPPED structure
       wovl: CustomOverlapped          # Writer OVERLAPPED structure
-      roffset: int                    # Pending reading offset
       flags: set[TransportFlags]      # Internal flags
       case kind*: TransportKind
       of TransportKind.Socket:
@@ -99,11 +101,11 @@ else:
       fd*: AsyncFD                    # File descriptor
       state: set[TransportState]      # Current Transport state
       reader: ReaderFuture            # Current reader Future
-      buffer: seq[byte]               # Reading buffer
-      offset: int                     # Reading buffer offset
+      buffer: BipBuffer               # Reading buffer
       error: ref TransportError       # Current error
       queue: Deque[StreamVector]      # Writer queue
-      future: Future[void]            # Stream life future
+      future: Future[void].Raising([]) # Stream life future
+      flags: set[TransportFlags]      # Internal flags
       case kind*: TransportKind
       of TransportKind.Socket:
         domain: Domain                # Socket transport domain (IPv4/IPv6)
@@ -115,14 +117,15 @@ else:
         discard
 
 type
-  StreamCallback* = proc(server: StreamServer,
-                         client: StreamTransport) {.async: (raises: []).}
+  # TODO evaluate naming of raises-annotated callbacks
+  StreamCallback2* = proc(server: StreamServer,
+                          client: StreamTransport) {.async: (raises: []).}
     ## New remote client connection callback
     ## ``server`` - StreamServer object.
     ## ``client`` - accepted client transport.
 
-  UnsafeStreamCallback* = proc(server: StreamServer,
-                               client: StreamTransport) {.async.}
+  StreamCallback* = proc(server: StreamServer,
+                         client: StreamTransport) {.async.}
     ## Connection callback that doesn't check for exceptions at compile time
     ## ``server`` - StreamServer object.
     ## ``client`` - accepted client transport.
@@ -135,36 +138,64 @@ type
 
   StreamServer* = ref object of SocketServer
     ## StreamServer object
-    function*: StreamCallback         # callback which will be called after new
+    function*: StreamCallback2         # callback which will be called after new
                                       # client accepted
     init*: TransportInitCallback      # callback which will be called before
                                       # transport for new client
 
+proc getRemoteAddress(transp: StreamTransport,
+                      address: Sockaddr_storage, length: SockLen,
+                     ): TransportAddress =
+  var raddr: TransportAddress
+  fromSAddr(unsafeAddr address, length, raddr)
+  if TransportFlags.V4Mapped in transp.flags:
+    if raddr.isV4Mapped(): raddr.toIPv4() else: raddr
+  else:
+    raddr
+
+proc remoteAddress2*(
+    transp: StreamTransport
+): Result[TransportAddress, OSErrorCode] =
+  ## Returns ``transp`` remote socket address.
+  if transp.remote.family == AddressFamily.None:
+    var
+      saddr: Sockaddr_storage
+      slen = SockLen(sizeof(saddr))
+    if getpeername(SocketHandle(transp.fd), cast[ptr SockAddr](addr saddr),
+                   addr slen) != 0:
+      return err(osLastError())
+    transp.remote = transp.getRemoteAddress(saddr, slen)
+  ok(transp.remote)
+
+proc localAddress2*(
+    transp: StreamTransport
+): Result[TransportAddress, OSErrorCode] =
+  ## Returns ``transp`` local socket address.
+  if transp.local.family == AddressFamily.None:
+    var
+      saddr: Sockaddr_storage
+      slen = SockLen(sizeof(saddr))
+    if getsockname(SocketHandle(transp.fd), cast[ptr SockAddr](addr saddr),
+                   addr slen) != 0:
+      return err(osLastError())
+    fromSAddr(addr saddr, slen, transp.local)
+  ok(transp.local)
+
+# TODO(cheatfate): This function should not be public, but for some weird
+# reason if we will make it non-public it start generate
+# Hint: 'toException' is declared but not used [XDeclaredButNotUsed]
+func toException*(v: OSErrorCode): ref TransportOsError =
+  getTransportOsError(v)
+
 proc remoteAddress*(transp: StreamTransport): TransportAddress {.
     raises: [TransportOsError].} =
   ## Returns ``transp`` remote socket address.
-  doAssert(transp.kind == TransportKind.Socket, "Socket transport required!")
-  if transp.remote.family == AddressFamily.None:
-    var saddr: Sockaddr_storage
-    var slen = SockLen(sizeof(saddr))
-    if getpeername(SocketHandle(transp.fd), cast[ptr SockAddr](addr saddr),
-                   addr slen) != 0:
-      raiseTransportOsError(osLastError())
-    fromSAddr(addr saddr, slen, transp.remote)
-  transp.remote
+  remoteAddress2(transp).tryGet()
 
 proc localAddress*(transp: StreamTransport): TransportAddress {.
     raises: [TransportOsError].} =
-  ## Returns ``transp`` local socket address.
-  doAssert(transp.kind == TransportKind.Socket, "Socket transport required!")
-  if transp.local.family == AddressFamily.None:
-    var saddr: Sockaddr_storage
-    var slen = SockLen(sizeof(saddr))
-    if getsockname(SocketHandle(transp.fd), cast[ptr SockAddr](addr saddr),
-                   addr slen) != 0:
-      raiseTransportOsError(osLastError())
-    fromSAddr(addr saddr, slen, transp.local)
-  transp.local
+  ## Returns ``transp`` remote socket address.
+  localAddress2(transp).tryGet()
 
 proc localAddress*(server: StreamServer): TransportAddress =
   ## Returns ``server`` bound local socket address.
@@ -182,14 +213,6 @@ template setReadError(t, e: untyped) =
 template checkPending(t: untyped) =
   if not(isNil((t).reader)):
     raise newException(TransportError, "Read operation already pending!")
-
-template shiftBuffer(t, c: untyped) =
-  if (t).offset > c:
-    if c > 0:
-      moveMem(addr((t).buffer[0]), addr((t).buffer[(c)]), (t).offset - (c))
-      (t).offset = (t).offset - (c)
-  else:
-    (t).offset = 0
 
 template shiftVectorBuffer(v: var StreamVector, o: untyped) =
   (v).buf = cast[pointer](cast[uint]((v).buf) + uint(o))
@@ -227,6 +250,15 @@ proc clean(transp: StreamTransport) {.inline.} =
     transp.future.complete()
     GC_unref(transp)
 
+template toUnchecked*(a: untyped): untyped =
+  cast[ptr UncheckedArray[byte]](a)
+
+func getTransportFlags(server: StreamServer): set[TransportFlags] =
+  if ServerFlags.V4Mapped in server.flags:
+    {TransportFlags.V4Mapped}
+  else:
+    {}
+
 when defined(windows):
 
   template zeroOvelappedOffset(t: untyped) =
@@ -244,9 +276,9 @@ when defined(windows):
     cast[HANDLE]((v).buflen)
 
   template setReaderWSABuffer(t: untyped) =
-    (t).rwsabuf.buf = cast[cstring](
-      cast[uint](addr t.buffer[0]) + uint((t).roffset))
-    (t).rwsabuf.len = ULONG(len((t).buffer) - (t).roffset)
+    let res = (t).buffer.reserve()
+    (t).rwsabuf.buf = cast[cstring](res.data)
+    (t).rwsabuf.len = uint32(res.size)
 
   template setWriterWSABuffer(t, v: untyped) =
     (t).wwsabuf.buf = cast[cstring](v.buf)
@@ -380,8 +412,9 @@ when defined(windows):
               else:
                 transp.queue.addFirst(vector)
             else:
-              let loop = getThreadDispatcher()
-              let size = min(uint32(getFileSize(vector)), 2_147_483_646'u32)
+              let
+                loop = getThreadDispatcher()
+                size = min(uint32(getFileSize(vector)), 2_147_483_646'u32)
 
               transp.wovl.setOverlappedOffset(vector.offset)
               var ret = loop.transmitFile(sock, getFileHandle(vector), size,
@@ -480,29 +513,28 @@ when defined(windows):
           if bytesCount == 0:
             transp.state.incl({ReadEof, ReadPaused})
           else:
-            if transp.offset != transp.roffset:
-              moveMem(addr transp.buffer[transp.offset],
-                      addr transp.buffer[transp.roffset],
-                      bytesCount)
-            transp.offset += int(bytesCount)
-            transp.roffset = transp.offset
-            if transp.offset == len(transp.buffer):
+            transp.buffer.commit(bytesCount)
+            if transp.buffer.availSpace() == 0:
               transp.state.incl(ReadPaused)
         of ERROR_OPERATION_ABORTED, ERROR_CONNECTION_ABORTED,
            ERROR_BROKEN_PIPE:
           # CancelIO() interrupt or closeSocket() call.
+          transp.buffer.commit(0)
           transp.state.incl(ReadPaused)
         of ERROR_NETNAME_DELETED, WSAECONNABORTED:
+          transp.buffer.commit(0)
           if transp.kind == TransportKind.Socket:
             transp.state.incl({ReadEof, ReadPaused})
           else:
             transp.setReadError(err)
         of ERROR_PIPE_NOT_CONNECTED:
+          transp.buffer.commit(0)
           if transp.kind == TransportKind.Pipe:
             transp.state.incl({ReadEof, ReadPaused})
           else:
             transp.setReadError(err)
         else:
+          transp.buffer.commit(0)
           transp.setReadError(err)
 
         transp.completeReader()
@@ -523,7 +555,6 @@ when defined(windows):
           transp.state.incl(ReadPending)
           if transp.kind == TransportKind.Socket:
             let sock = SocketHandle(transp.fd)
-            transp.roffset = transp.offset
             transp.setReaderWSABuffer()
             let ret = wsaRecv(sock, addr transp.rwsabuf, 1,
                               addr bytesCount, addr flags,
@@ -548,7 +579,6 @@ when defined(windows):
                 transp.completeReader()
           elif transp.kind == TransportKind.Pipe:
             let pipe = HANDLE(transp.fd)
-            transp.roffset = transp.offset
             transp.setReaderWSABuffer()
             let ret = readFile(pipe, cast[pointer](transp.rwsabuf.buf),
                                DWORD(transp.rwsabuf.len), addr bytesCount,
@@ -583,21 +613,25 @@ when defined(windows):
         break
 
   proc newStreamSocketTransport(sock: AsyncFD, bufsize: int,
-                                child: StreamTransport): StreamTransport =
+                                child: StreamTransport,
+                                flags: set[TransportFlags]): StreamTransport =
     var transp: StreamTransport
     if not(isNil(child)):
       transp = child
     else:
       transp = StreamTransport(kind: TransportKind.Socket)
     transp.fd = sock
+    transp.flags = flags
     transp.rovl.data = CompletionData(cb: readStreamLoop,
                                       udata: cast[pointer](transp))
     transp.wovl.data = CompletionData(cb: writeStreamLoop,
                                       udata: cast[pointer](transp))
-    transp.buffer = newSeq[byte](bufsize)
+    let size = max(bufsize, DefaultStreamBufferSize)
+    transp.buffer = BipBuffer.init(size)
     transp.state = {ReadPaused, WritePaused}
     transp.queue = initDeque[StreamVector]()
-    transp.future = newFuture[void]("stream.socket.transport")
+    transp.future = Future[void].Raising([]).init(
+      "stream.socket.transport", {FutureFlag.OwnCancelSchedule})
     GC_ref(transp)
     transp
 
@@ -614,33 +648,37 @@ when defined(windows):
                                       udata: cast[pointer](transp))
     transp.wovl.data = CompletionData(cb: writeStreamLoop,
                                       udata: cast[pointer](transp))
-    transp.buffer = newSeq[byte](bufsize)
+    let size = max(bufsize, DefaultStreamBufferSize)
+    transp.buffer = BipBuffer.init(size)
     transp.flags = flags
     transp.state = {ReadPaused, WritePaused}
     transp.queue = initDeque[StreamVector]()
-    transp.future = newFuture[void]("stream.pipe.transport")
+    transp.future = Future[void].Raising([]).init(
+      "stream.pipe.transport", {FutureFlag.OwnCancelSchedule})
     GC_ref(transp)
     transp
 
-  proc bindToDomain(handle: AsyncFD, domain: Domain): bool =
-    if domain == Domain.AF_INET6:
+  proc bindToDomain(handle: AsyncFD,
+                    family: AddressFamily): Result[void, OSErrorCode] =
+    case family
+    of AddressFamily.IPv6:
       var saddr: Sockaddr_in6
       saddr.sin6_family = type(saddr.sin6_family)(osdefs.AF_INET6)
       if osdefs.bindSocket(SocketHandle(handle),
                            cast[ptr SockAddr](addr(saddr)),
                            sizeof(saddr).SockLen) != 0'i32:
-        return false
-      true
-    elif domain == Domain.AF_INET:
+        return err(osLastError())
+      ok()
+    of AddressFamily.IPv4:
       var saddr: Sockaddr_in
       saddr.sin_family = type(saddr.sin_family)(osdefs.AF_INET)
       if osdefs.bindSocket(SocketHandle(handle),
                            cast[ptr SockAddr](addr(saddr)),
                            sizeof(saddr).SockLen) != 0'i32:
-        return false
-      true
+        return err(osLastError())
+      ok()
     else:
-      raiseAssert "Unsupported domain"
+      raiseAssert "Unsupported family"
 
   proc connect*(address: TransportAddress,
                 bufferSize = DefaultStreamBufferSize,
@@ -664,7 +702,7 @@ when defined(windows):
         povl: RefCustomOverlapped
         proto: Protocol
 
-      var raddress = windowsAnyAddressFix(address)
+      var raddress = anyAddressFix(address)
 
       toSAddr(raddress, saddr, slen)
       proto = Protocol.IPPROTO_TCP
@@ -696,26 +734,36 @@ when defined(windows):
         retFuture.fail(getTransportOsError(error))
         return retFuture
 
-      if localAddress != TransportAddress():
-        if localAddress.family != address.family:
-          sock.closeSocket()
-          retFuture.fail(newException(TransportOsError,
-            "connect local address domain is not equal to target address domain"))
-          return retFuture
+      let transportFlags =
+        block:
+          # Add `V4Mapped` flag when `::` address is used and dualstack is
+          # set to enabled or auto.
+          var res: set[TransportFlags]
+          if (localAddress.family == AddressFamily.IPv6) and
+             localAddress.isAnyLocal():
+            if dualstack in {DualStackType.Enabled, DualStackType.Auto}:
+              res.incl(TransportFlags.V4Mapped)
+          res
+
+      case localAddress.family
+      of AddressFamily.IPv4, AddressFamily.IPv6:
         var
-          localAddr: Sockaddr_storage
-          localAddrLen: SockLen
-        localAddress.toSAddr(localAddr, localAddrLen)
+          saddr: Sockaddr_storage
+          slen: SockLen
+        toSAddr(localAddress, saddr, slen)
         if bindSocket(SocketHandle(sock),
-          cast[ptr SockAddr](addr localAddr), localAddrLen) != 0:
+          cast[ptr SockAddr](addr saddr), slen) != 0:
           sock.closeSocket()
           retFuture.fail(getTransportOsError(osLastError()))
           return retFuture
-      elif not(bindToDomain(sock, raddress.getDomain())):
-        let err = wsaGetLastError()
-        sock.closeSocket()
-        retFuture.fail(getTransportOsError(err))
-        return retFuture
+      of AddressFamily.Unix:
+        raiseAssert "Unsupported local address family"
+      of AddressFamily.None:
+        let res = bindToDomain(sock, raddress.family)
+        if res.isErr():
+          sock.closeSocket()
+          retFuture.fail(getTransportOsError(res.error))
+          return retFuture
 
       proc socketContinuation(udata: pointer) {.gcsafe.} =
         var ovl = cast[RefCustomOverlapped](udata)
@@ -728,7 +776,8 @@ when defined(windows):
               sock.closeSocket()
               retFuture.fail(getTransportOsError(err))
             else:
-              let transp = newStreamSocketTransport(sock, bufferSize, child)
+              let transp = newStreamSocketTransport(sock, bufferSize, child,
+                                                    transportFlags)
               # Start tracking transport
               trackCounter(StreamTransportTrackerName)
               retFuture.complete(transp)
@@ -954,10 +1003,12 @@ when defined(windows):
                 let transp = server.init(server, server.asock)
                 ntransp = newStreamSocketTransport(server.asock,
                                                    server.bufferSize,
-                                                   transp)
+                                                   transp,
+                                                   server.getTransportFlags())
               else:
                 ntransp = newStreamSocketTransport(server.asock,
-                                                   server.bufferSize, nil)
+                                                   server.bufferSize, nil,
+                                                   server.getTransportFlags())
               # Start tracking transport
               trackCounter(StreamTransportTrackerName)
               asyncSpawn server.function(server, ntransp)
@@ -1041,7 +1092,9 @@ when defined(windows):
     ok()
 
   proc accept*(server: StreamServer): Future[StreamTransport] {.
-      async: (raw: true, raises: [TransportError, CancelledError]).} =
+      async: (raw: true, raises: [TransportUseClosedError,
+              TransportTooManyError, TransportAbortedError, TransportOsError,
+              CancelledError]).} =
     var retFuture = newFuture[StreamTransport]("stream.server.accept")
 
     doAssert(server.status != ServerStatus.Running,
@@ -1093,10 +1146,12 @@ when defined(windows):
               let transp = server.init(server, server.asock)
               ntransp = newStreamSocketTransport(server.asock,
                                                  server.bufferSize,
-                                                 transp)
+                                                 transp,
+                                                 server.getTransportFlags())
             else:
               ntransp = newStreamSocketTransport(server.asock,
-                                                 server.bufferSize, nil)
+                                                 server.bufferSize, nil,
+                                                 server.getTransportFlags())
             # Start tracking transport
             trackCounter(StreamTransportTrackerName)
             retFuture.complete(ntransp)
@@ -1385,11 +1440,12 @@ else:
     else:
       if transp.kind == TransportKind.Socket:
         while true:
-          let res = handleEintr(
-            osdefs.recv(fd, addr transp.buffer[transp.offset],
-                        len(transp.buffer) - transp.offset, cint(0)))
+          let
+            (data, size) = transp.buffer.reserve()
+            res = handleEintr(osdefs.recv(fd, data, size, cint(0)))
           if res < 0:
             let err = osLastError()
+            transp.buffer.commit(0)
             case err
             of oserrno.ECONNRESET:
               transp.state.incl({ReadEof, ReadPaused})
@@ -1403,13 +1459,14 @@ else:
               discard removeReader2(transp.fd)
           elif res == 0:
             transp.state.incl({ReadEof, ReadPaused})
+            transp.buffer.commit(0)
             let rres = removeReader2(transp.fd)
             if rres.isErr():
               transp.state.incl(ReadError)
               transp.setReadError(rres.error())
           else:
-            transp.offset += res
-            if transp.offset == len(transp.buffer):
+            transp.buffer.commit(res)
+            if transp.buffer.availSpace() == 0:
               transp.state.incl(ReadPaused)
               let rres = removeReader2(transp.fd)
               if rres.isErr():
@@ -1419,23 +1476,25 @@ else:
           break
       elif transp.kind == TransportKind.Pipe:
         while true:
-          let res = handleEintr(
-            osdefs.read(cint(fd), addr transp.buffer[transp.offset],
-                        len(transp.buffer) - transp.offset))
+          let
+            (data, size) = transp.buffer.reserve()
+            res = handleEintr(osdefs.read(cint(fd), data, size))
           if res < 0:
             let err = osLastError()
+            transp.buffer.commit(0)
             transp.state.incl(ReadPaused)
             transp.setReadError(err)
             discard removeReader2(transp.fd)
           elif res == 0:
             transp.state.incl({ReadEof, ReadPaused})
+            transp.buffer.commit(0)
             let rres = removeReader2(transp.fd)
             if rres.isErr():
               transp.state.incl(ReadError)
               transp.setReadError(rres.error())
           else:
-            transp.offset += res
-            if transp.offset == len(transp.buffer):
+            transp.buffer.commit(res)
+            if transp.buffer.availSpace() == 0:
               transp.state.incl(ReadPaused)
               let rres = removeReader2(transp.fd)
               if rres.isErr():
@@ -1445,7 +1504,8 @@ else:
           break
 
   proc newStreamSocketTransport(sock: AsyncFD, bufsize: int,
-                                child: StreamTransport): StreamTransport =
+                                child: StreamTransport,
+                                flags: set[TransportFlags]): StreamTransport =
     var transp: StreamTransport
     if not(isNil(child)):
       transp = child
@@ -1453,10 +1513,13 @@ else:
       transp = StreamTransport(kind: TransportKind.Socket)
 
     transp.fd = sock
-    transp.buffer = newSeq[byte](bufsize)
+    transp.flags = flags
+    let size = max(bufsize, DefaultStreamBufferSize)
+    transp.buffer = BipBuffer.init(size)
     transp.state = {ReadPaused, WritePaused}
     transp.queue = initDeque[StreamVector]()
-    transp.future = newFuture[void]("socket.stream.transport")
+    transp.future = Future[void].Raising([]).init(
+      "socket.stream.transport", {FutureFlag.OwnCancelSchedule})
     GC_ref(transp)
     transp
 
@@ -1469,10 +1532,12 @@ else:
       transp = StreamTransport(kind: TransportKind.Pipe)
 
     transp.fd = fd
-    transp.buffer = newSeq[byte](bufsize)
+    let size = max(bufsize, DefaultStreamBufferSize)
+    transp.buffer = BipBuffer.init(size)
     transp.state = {ReadPaused, WritePaused}
     transp.queue = initDeque[StreamVector]()
-    transp.future = newFuture[void]("pipe.stream.transport")
+    transp.future = Future[void].Raising([]).init(
+      "pipe.stream.transport", {FutureFlag.OwnCancelSchedule})
     GC_ref(transp)
     transp
 
@@ -1491,14 +1556,18 @@ else:
       saddr: Sockaddr_storage
       slen: SockLen
     var retFuture = newFuture[StreamTransport]("stream.transport.connect")
-    address.toSAddr(saddr, slen)
+
+    var raddress = anyAddressFix(address)
+    toSAddr(raddress, saddr, slen)
+    raddress.toSAddr(saddr, slen)
+
     let proto =
-      if address.family == AddressFamily.Unix:
+      if raddress.family == AddressFamily.Unix:
         Protocol.IPPROTO_IP
       else:
         Protocol.IPPROTO_TCP
 
-    let sock = createAsyncSocket2(address.getDomain(), SockType.SOCK_STREAM,
+    let sock = createAsyncSocket2(raddress.getDomain(), SockType.SOCK_STREAM,
                                   proto).valueOr:
       case error
       of oserrno.EMFILE:
@@ -1507,7 +1576,7 @@ else:
         retFuture.fail(getTransportOsError(error))
       return retFuture
 
-    if address.family in {AddressFamily.IPv4, AddressFamily.IPv6}:
+    if raddress.family in {AddressFamily.IPv4, AddressFamily.IPv6}:
       if SocketFlags.TcpNoDelay in flags:
         setSockOpt2(sock, osdefs.IPPROTO_TCP, osdefs.TCP_NODELAY, 1).isOkOr:
           sock.closeSocket()
@@ -1525,26 +1594,35 @@ else:
         retFuture.fail(getTransportOsError(error))
         return retFuture
     # IPV6_V6ONLY.
-    setDualstack(sock, address.family, dualstack).isOkOr:
+    setDualstack(sock, raddress.family, dualstack).isOkOr:
       sock.closeSocket()
       retFuture.fail(getTransportOsError(error))
       return retFuture
 
-    if localAddress != TransportAddress():
-      if localAddress.family != address.family:
-        sock.closeSocket()
-        retFuture.fail(newException(TransportOsError,
-          "connect local address domain is not equal to target address domain"))
-        return retFuture
+    let transportFlags =
+      block:
+        # Add `V4Mapped` flag when `::` address is used and dualstack is
+        # set to enabled or auto.
+        var res: set[TransportFlags]
+        if (localAddress.family == AddressFamily.IPv6) and
+           localAddress.isAnyLocal():
+          if dualstack != DualStackType.Disabled:
+            res.incl(TransportFlags.V4Mapped)
+        res
+
+    case localAddress.family
+    of AddressFamily.IPv4, AddressFamily.IPv6, AddressFamily.Unix:
       var
-        localAddr: Sockaddr_storage
-        localAddrLen: SockLen
-      localAddress.toSAddr(localAddr, localAddrLen)
+        lsaddr: Sockaddr_storage
+        lslen: SockLen
+      toSAddr(localAddress, lsaddr, lslen)
       if bindSocket(SocketHandle(sock),
-        cast[ptr SockAddr](addr localAddr), localAddrLen) != 0:
+        cast[ptr SockAddr](addr lsaddr), lslen) != 0:
         sock.closeSocket()
         retFuture.fail(getTransportOsError(osLastError()))
         return retFuture
+    of AddressFamily.None:
+      discard
 
     proc continuation(udata: pointer) =
       if not(retFuture.finished()):
@@ -1563,7 +1641,8 @@ else:
           retFuture.fail(getTransportOsError(OSErrorCode(err)))
           return
 
-        let transp = newStreamSocketTransport(sock, bufferSize, child)
+        let transp = newStreamSocketTransport(sock, bufferSize, child,
+                                              transportFlags)
         # Start tracking transport
         trackCounter(StreamTransportTrackerName)
         retFuture.complete(transp)
@@ -1576,7 +1655,8 @@ else:
       let res = osdefs.connect(SocketHandle(sock),
                                cast[ptr SockAddr](addr saddr), slen)
       if res == 0:
-        let transp = newStreamSocketTransport(sock, bufferSize, child)
+        let transp = newStreamSocketTransport(sock, bufferSize, child,
+                                              transportFlags)
         # Start tracking transport
         trackCounter(StreamTransportTrackerName)
         retFuture.complete(transp)
@@ -1629,9 +1709,11 @@ else:
         let ntransp =
           if not(isNil(server.init)):
             let transp = server.init(server, sock)
-            newStreamSocketTransport(sock, server.bufferSize, transp)
+            newStreamSocketTransport(sock, server.bufferSize, transp,
+                                     server.getTransportFlags())
           else:
-            newStreamSocketTransport(sock, server.bufferSize, nil)
+            newStreamSocketTransport(sock, server.bufferSize, nil,
+                                     server.getTransportFlags())
         trackCounter(StreamTransportTrackerName)
         asyncSpawn server.function(server, ntransp)
       else:
@@ -1670,7 +1752,9 @@ else:
     ok()
 
   proc accept*(server: StreamServer): Future[StreamTransport] {.
-      async: (raw: true, raises: [TransportError, CancelledError]).} =
+      async: (raw: true, raises: [TransportUseClosedError,
+              TransportTooManyError, TransportAbortedError, TransportOsError,
+              CancelledError]).} =
     var retFuture = newFuture[StreamTransport]("stream.server.accept")
 
     doAssert(server.status != ServerStatus.Running,
@@ -1717,9 +1801,11 @@ else:
                 let ntransp =
                   if not(isNil(server.init)):
                     let transp = server.init(server, sock)
-                    newStreamSocketTransport(sock, server.bufferSize, transp)
+                    newStreamSocketTransport(sock, server.bufferSize, transp,
+                                             server.getTransportFlags())
                   else:
-                    newStreamSocketTransport(sock, server.bufferSize, nil)
+                    newStreamSocketTransport(sock, server.bufferSize, nil,
+                                             server.getTransportFlags())
                 # Start tracking transport
                 trackCounter(StreamTransportTrackerName)
                 retFuture.complete(ntransp)
@@ -1777,20 +1863,7 @@ proc stop*(server: StreamServer) {.raises: [TransportOsError].} =
 proc join*(server: StreamServer): Future[void] {.
     async: (raw: true, raises: [CancelledError]).} =
   ## Waits until ``server`` is not closed.
-  var retFuture = newFuture[void]("stream.transport.server.join")
-
-  proc continuation(udata: pointer) =
-    retFuture.complete()
-
-  proc cancel(udata: pointer) =
-    server.loopFuture.removeCallback(continuation, cast[pointer](retFuture))
-
-  if not(server.loopFuture.finished()):
-    server.loopFuture.addCallback(continuation, cast[pointer](retFuture))
-    retFuture.cancelCallback = cancel
-  else:
-    retFuture.complete()
-  return retFuture
+  server.loopFuture.join()
 
 proc connect*(address: TransportAddress,
               bufferSize = DefaultStreamBufferSize,
@@ -1804,6 +1877,9 @@ proc connect*(address: TransportAddress,
   var mappedFlags: set[SocketFlags]
   if TcpNoDelay in flags: mappedFlags.incl(SocketFlags.TcpNoDelay)
   connect(address, bufferSize, child, localAddress, mappedFlags, dualstack)
+
+proc closed*(server: StreamServer): bool =
+  server.status == ServerStatus.Closed
 
 proc close*(server: StreamServer) =
   ## Release ``server`` resources.
@@ -1831,22 +1907,11 @@ proc close*(server: StreamServer) =
     else:
       server.sock.closeSocket(continuation)
 
-proc closeWait*(server: StreamServer): Future[void] {.
-     async: (raw: true, raises: []).} =
+proc closeWait*(server: StreamServer): Future[void] {.async: (raises: []).} =
   ## Close server ``server`` and release all resources.
-  let retFuture = newFuture[void](
-    "stream.server.closeWait", {FutureFlag.OwnCancelSchedule})
-
-  proc continuation(udata: pointer) =
-    retFuture.complete()
-
-  server.close()
-
-  if not(server.loopFuture.finished()):
-    server.loopFuture.addCallback(continuation, cast[pointer](retFuture))
-  else:
-    retFuture.complete()
-  retFuture
+  if not server.closed():
+    server.close()
+    await noCancel(server.join())
 
 proc getBacklogSize(backlog: int): cint =
   doAssert(backlog >= 0 and backlog <= high(int32))
@@ -1870,7 +1935,7 @@ proc getBacklogSize(backlog: int): cint =
     cint(backlog)
 
 proc createStreamServer*(host: TransportAddress,
-                         cbproc: StreamCallback,
+                         cbproc: StreamCallback2,
                          flags: set[ServerFlags] = {},
                          sock: AsyncFD = asyncInvalidSocket,
                          backlog: int = DefaultBacklogSize,
@@ -1893,176 +1958,206 @@ proc createStreamServer*(host: TransportAddress,
   ## ``child`` - existing object ``StreamServer``object to initialize, can be
   ## used to initalize ``StreamServer`` inherited objects.
   ## ``udata`` - user-defined pointer.
-  var
-    saddr: Sockaddr_storage
-    slen: SockLen
-    serverSocket: AsyncFD
-    localAddress: TransportAddress
+  let (serverSocket, localAddress, serverFlags) =
+    when defined(windows):
+      # Windows
+      if host.family in {AddressFamily.IPv4, AddressFamily.IPv6}:
+        var
+          saddr: Sockaddr_storage
+          slen: SockLen
+          laddress: TransportAddress
 
-  when defined(nimdoc):
-    discard
-  elif defined(windows):
-    # Windows
-    if host.family in {AddressFamily.IPv4, AddressFamily.IPv6}:
-      serverSocket =
+        let sockres =
+          if sock == asyncInvalidSocket:
+            # TODO (cheatfate): `valueOr` generates weird compile error.
+            let res = createAsyncSocket2(host.getDomain(), SockType.SOCK_STREAM,
+                                         Protocol.IPPROTO_TCP)
+            if res.isErr():
+              raiseTransportOsError(res.error())
+            res.get()
+          else:
+            setDescriptorBlocking(SocketHandle(sock), false).isOkOr:
+              raiseTransportOsError(error)
+            register2(sock).isOkOr:
+              raiseTransportOsError(error)
+            sock
+        # SO_REUSEADDR
+        if ServerFlags.ReuseAddr in flags:
+          setSockOpt2(sockres, SOL_SOCKET, SO_REUSEADDR, 1).isOkOr:
+            if sock == asyncInvalidSocket:
+              discard closeFd(SocketHandle(sockres))
+            raiseTransportOsError(error)
+        # SO_REUSEPORT
+        if ServerFlags.ReusePort in flags:
+          setSockOpt2(sockres, SOL_SOCKET, SO_REUSEPORT, 1).isOkOr:
+            if sock == asyncInvalidSocket:
+              discard closeFd(SocketHandle(sockres))
+            raiseTransportOsError(error)
+        # TCP_NODELAY
+        if ServerFlags.TcpNoDelay in flags:
+          setSockOpt2(sockres, osdefs.IPPROTO_TCP,
+                      osdefs.TCP_NODELAY, 1).isOkOr:
+            if sock == asyncInvalidSocket:
+              discard closeFd(SocketHandle(sockres))
+            raiseTransportOsError(error)
+        # IPV6_V6ONLY.
         if sock == asyncInvalidSocket:
+          setDualstack(sockres, host.family, dualstack).isOkOr:
+            discard closeFd(SocketHandle(sockres))
+            raiseTransportOsError(error)
+        else:
+          setDualstack(sockres, dualstack).isOkOr:
+            raiseTransportOsError(error)
+
+        let flagres =
+          block:
+            var res = flags
+            if (host.family == AddressFamily.IPv6) and host.isAnyLocal():
+              if dualstack in {DualStackType.Enabled, DualStackType.Auto}:
+                res.incl(ServerFlags.V4Mapped)
+            res
+
+        host.toSAddr(saddr, slen)
+
+        if bindSocket(SocketHandle(sockres),
+                      cast[ptr SockAddr](addr saddr), slen) != 0:
+          let err = osLastError()
+          if sock == asyncInvalidSocket:
+            discard closeFd(SocketHandle(sockres))
+          raiseTransportOsError(err)
+
+        slen = SockLen(sizeof(saddr))
+
+        if getsockname(SocketHandle(sockres), cast[ptr SockAddr](addr saddr),
+                       addr slen) != 0:
+          let err = osLastError()
+          if sock == asyncInvalidSocket:
+            discard closeFd(SocketHandle(sockres))
+          raiseTransportOsError(err)
+
+        fromSAddr(addr saddr, slen, laddress)
+
+        if listen(SocketHandle(sockres), getBacklogSize(backlog)) != 0:
+          let err = osLastError()
+          if sock == asyncInvalidSocket:
+            discard closeFd(SocketHandle(sockres))
+          raiseTransportOsError(err)
+
+        (sockres, laddress, flagres)
+      elif host.family == AddressFamily.Unix:
+        (AsyncFD(0), host, flags)
+      else:
+        raiseAssert "Incorrect host address family"
+    else:
+      # Posix
+      var
+        saddr: Sockaddr_storage
+        slen: SockLen
+        laddress: TransportAddress
+
+      let sockres =
+        if sock == asyncInvalidSocket:
+          let proto = if host.family == AddressFamily.Unix:
+            Protocol.IPPROTO_IP
+          else:
+            Protocol.IPPROTO_TCP
           # TODO (cheatfate): `valueOr` generates weird compile error.
           let res = createAsyncSocket2(host.getDomain(), SockType.SOCK_STREAM,
-                                       Protocol.IPPROTO_TCP)
+                                       proto)
           if res.isErr():
             raiseTransportOsError(res.error())
           res.get()
         else:
-          setDescriptorBlocking(SocketHandle(sock), false).isOkOr:
+          setDescriptorFlags(cint(sock), true, true).isOkOr:
             raiseTransportOsError(error)
           register2(sock).isOkOr:
             raiseTransportOsError(error)
           sock
-      # SO_REUSEADDR
-      if ServerFlags.ReuseAddr in flags:
-        setSockOpt2(serverSocket, SOL_SOCKET, SO_REUSEADDR, 1).isOkOr:
-          if sock == asyncInvalidSocket:
-            discard closeFd(SocketHandle(serverSocket))
-          raiseTransportOsError(error)
-      # SO_REUSEPORT
-      if ServerFlags.ReusePort in flags:
-        setSockOpt2(serverSocket, SOL_SOCKET, SO_REUSEPORT, 1).isOkOr:
-          if sock == asyncInvalidSocket:
-            discard closeFd(SocketHandle(serverSocket))
-          raiseTransportOsError(error)
-      # TCP_NODELAY
-      if ServerFlags.TcpNoDelay in flags:
-        setSockOpt2(serverSocket, osdefs.IPPROTO_TCP,
-                    osdefs.TCP_NODELAY, 1).isOkOr:
-          if sock == asyncInvalidSocket:
-            discard closeFd(SocketHandle(serverSocket))
-          raiseTransportOsError(error)
-      # IPV6_V6ONLY.
-      if sock == asyncInvalidSocket:
-        setDualstack(serverSocket, host.family, dualstack).isOkOr:
-          discard closeFd(SocketHandle(serverSocket))
-          raiseTransportOsError(error)
-      else:
-        setDualstack(serverSocket, dualstack).isOkOr:
-          raiseTransportOsError(error)
+
+      if host.family in {AddressFamily.IPv4, AddressFamily.IPv6}:
+        # SO_REUSEADDR
+        if ServerFlags.ReuseAddr in flags:
+          setSockOpt2(sockres, SOL_SOCKET, SO_REUSEADDR, 1).isOkOr:
+            if sock == asyncInvalidSocket:
+              discard unregisterAndCloseFd(sockres)
+            raiseTransportOsError(error)
+        # SO_REUSEPORT
+        if ServerFlags.ReusePort in flags:
+          setSockOpt2(sockres, SOL_SOCKET, SO_REUSEPORT, 1).isOkOr:
+            if sock == asyncInvalidSocket:
+              discard unregisterAndCloseFd(sockres)
+            raiseTransportOsError(error)
+        # TCP_NODELAY
+        if ServerFlags.TcpNoDelay in flags:
+          setSockOpt2(sockres, osdefs.IPPROTO_TCP,
+                      osdefs.TCP_NODELAY, 1).isOkOr:
+            if sock == asyncInvalidSocket:
+              discard unregisterAndCloseFd(sockres)
+            raiseTransportOsError(error)
+        # IPV6_V6ONLY
+        if sock == asyncInvalidSocket:
+          setDualstack(sockres, host.family, dualstack).isOkOr:
+            discard closeFd(SocketHandle(sockres))
+            raiseTransportOsError(error)
+        else:
+          setDualstack(sockres, dualstack).isOkOr:
+            raiseTransportOsError(error)
+
+      elif host.family in {AddressFamily.Unix}:
+        # We do not care about result here, because if file cannot be removed,
+        # `bindSocket` will return EADDRINUSE.
+        discard osdefs.unlink(cast[cstring](baseAddr host.address_un))
+
+      let flagres =
+        block:
+          var res = flags
+          if (host.family == AddressFamily.IPv6) and host.isAnyLocal():
+            if dualstack != DualStackType.Disabled:
+              res.incl(ServerFlags.V4Mapped)
+          res
 
       host.toSAddr(saddr, slen)
-      if bindSocket(SocketHandle(serverSocket),
-                    cast[ptr SockAddr](addr saddr), slen) != 0:
+
+      if osdefs.bindSocket(SocketHandle(sockres),
+                           cast[ptr SockAddr](addr saddr), slen) != 0:
         let err = osLastError()
         if sock == asyncInvalidSocket:
-          discard closeFd(SocketHandle(serverSocket))
+          discard unregisterAndCloseFd(sockres)
         raiseTransportOsError(err)
 
+      # Obtain real address
       slen = SockLen(sizeof(saddr))
-      if getsockname(SocketHandle(serverSocket), cast[ptr SockAddr](addr saddr),
+      if getsockname(SocketHandle(sockres), cast[ptr SockAddr](addr saddr),
                      addr slen) != 0:
         let err = osLastError()
         if sock == asyncInvalidSocket:
-          discard closeFd(SocketHandle(serverSocket))
+          discard unregisterAndCloseFd(sockres)
         raiseTransportOsError(err)
-      fromSAddr(addr saddr, slen, localAddress)
 
-      if listen(SocketHandle(serverSocket), getBacklogSize(backlog)) != 0:
+      fromSAddr(addr saddr, slen, laddress)
+
+      if listen(SocketHandle(sockres), getBacklogSize(backlog)) != 0:
         let err = osLastError()
         if sock == asyncInvalidSocket:
-          discard closeFd(SocketHandle(serverSocket))
+          discard unregisterAndCloseFd(sockres)
         raiseTransportOsError(err)
-    elif host.family == AddressFamily.Unix:
-      serverSocket = AsyncFD(0)
-  else:
-    # Posix
-    serverSocket =
-      if sock == asyncInvalidSocket:
-        let proto = if host.family == AddressFamily.Unix:
-          Protocol.IPPROTO_IP
-        else:
-          Protocol.IPPROTO_TCP
-        # TODO (cheatfate): `valueOr` generates weird compile error.
-        let res = createAsyncSocket2(host.getDomain(), SockType.SOCK_STREAM,
-                                     proto)
-        if res.isErr():
-          raiseTransportOsError(res.error())
-        res.get()
-      else:
-        setDescriptorFlags(cint(sock), true, true).isOkOr:
-          raiseTransportOsError(error)
-        register2(sock).isOkOr:
-          raiseTransportOsError(error)
-        sock
 
-    if host.family in {AddressFamily.IPv4, AddressFamily.IPv6}:
-      # SO_REUSEADDR
-      if ServerFlags.ReuseAddr in flags:
-        setSockOpt2(serverSocket, SOL_SOCKET, SO_REUSEADDR, 1).isOkOr:
-          if sock == asyncInvalidSocket:
-            discard unregisterAndCloseFd(serverSocket)
-          raiseTransportOsError(error)
-      # SO_REUSEPORT
-      if ServerFlags.ReusePort in flags:
-        setSockOpt2(serverSocket, SOL_SOCKET, SO_REUSEPORT, 1).isOkOr:
-          if sock == asyncInvalidSocket:
-            discard unregisterAndCloseFd(serverSocket)
-          raiseTransportOsError(error)
-      # TCP_NODELAY
-      if ServerFlags.TcpNoDelay in flags:
-        setSockOpt2(serverSocket, osdefs.IPPROTO_TCP,
-                    osdefs.TCP_NODELAY, 1).isOkOr:
-          if sock == asyncInvalidSocket:
-            discard unregisterAndCloseFd(serverSocket)
-          raiseTransportOsError(error)
-      # IPV6_V6ONLY
-      if sock == asyncInvalidSocket:
-        setDualstack(serverSocket, host.family, dualstack).isOkOr:
-          discard closeFd(SocketHandle(serverSocket))
-          raiseTransportOsError(error)
-      else:
-        setDualstack(serverSocket, dualstack).isOkOr:
-          raiseTransportOsError(error)
-
-    elif host.family in {AddressFamily.Unix}:
-      # We do not care about result here, because if file cannot be removed,
-      # `bindSocket` will return EADDRINUSE.
-      discard osdefs.unlink(cast[cstring](baseAddr host.address_un))
-
-    host.toSAddr(saddr, slen)
-    if osdefs.bindSocket(SocketHandle(serverSocket),
-                         cast[ptr SockAddr](addr saddr), slen) != 0:
-      let err = osLastError()
-      if sock == asyncInvalidSocket:
-        discard unregisterAndCloseFd(serverSocket)
-      raiseTransportOsError(err)
-
-    # Obtain real address
-    slen = SockLen(sizeof(saddr))
-    if getsockname(SocketHandle(serverSocket), cast[ptr SockAddr](addr saddr),
-                   addr slen) != 0:
-      let err = osLastError()
-      if sock == asyncInvalidSocket:
-        discard unregisterAndCloseFd(serverSocket)
-      raiseTransportOsError(err)
-    fromSAddr(addr saddr, slen, localAddress)
-
-    if listen(SocketHandle(serverSocket), getBacklogSize(backlog)) != 0:
-      let err = osLastError()
-      if sock == asyncInvalidSocket:
-        discard unregisterAndCloseFd(serverSocket)
-      raiseTransportOsError(err)
+      (sockres, laddress, flagres)
 
   var sres = if not(isNil(child)): child else: StreamServer()
 
   sres.sock = serverSocket
-  sres.flags = flags
+  sres.flags = serverFlags
   sres.function = cbproc
   sres.init = init
   sres.bufferSize = bufferSize
   sres.status = Starting
-  sres.loopFuture = newFuture[void]("stream.transport.server")
+  sres.loopFuture = asyncloop.init(
+    Future[void].Raising([]), "stream.transport.server",
+    {FutureFlag.OwnCancelSchedule})
   sres.udata = udata
   sres.dualstack = dualstack
-  if localAddress.family == AddressFamily.None:
-    sres.local = host
-  else:
+  if localAddress.family != AddressFamily.None:
     sres.local = localAddress
 
   when defined(windows):
@@ -2092,7 +2187,7 @@ proc createStreamServer*(host: TransportAddress,
   sres
 
 proc createStreamServer*(host: TransportAddress,
-                         cbproc: UnsafeStreamCallback,
+                         cbproc: StreamCallback,
                          flags: set[ServerFlags] = {},
                          sock: AsyncFD = asyncInvalidSocket,
                          backlog: int = DefaultBacklogSize,
@@ -2106,7 +2201,7 @@ proc createStreamServer*(host: TransportAddress,
   proc wrap(server: StreamServer,
             client: StreamTransport) {.async: (raises: []).} =
     try:
-      cbproc(server, client)
+      await cbproc(server, client)
     except CatchableError as exc:
       raiseAssert "Unexpected exception from stream server cbproc: " & exc.msg
 
@@ -2124,11 +2219,57 @@ proc createStreamServer*(host: TransportAddress,
                          udata: pointer = nil,
                          dualstack = DualStackType.Auto): StreamServer {.
     raises: [TransportOsError].} =
-  createStreamServer(host, StreamCallback(nil), flags, sock, backlog, bufferSize,
+  createStreamServer(host, StreamCallback2(nil), flags, sock, backlog, bufferSize,
                      child, init, cast[pointer](udata), dualstack)
 
+proc createStreamServer*(port: Port,
+                         host: Opt[IpAddress] = Opt.none(IpAddress),
+                         flags: set[ServerFlags] = {},
+                         sock: AsyncFD = asyncInvalidSocket,
+                         backlog: int = DefaultBacklogSize,
+                         bufferSize: int = DefaultStreamBufferSize,
+                         child: StreamServer = nil,
+                         init: TransportInitCallback = nil,
+                         udata: pointer = nil,
+                         dualstack = DualStackType.Auto): StreamServer {.
+    raises: [TransportOsError].} =
+  ## Create stream server which will be bound to:
+  ## 1. IPv6 address `::`, if IPv6 is available
+  ## 2. IPv4 address `0.0.0.0`, if IPv6 is not available.
+  let hostname =
+    if host.isSome():
+      initTAddress(host.get(), port)
+    else:
+      getAutoAddress(port)
+  createStreamServer(hostname, StreamCallback2(nil), flags, sock,
+                     backlog, bufferSize, child, init, cast[pointer](udata),
+                     dualstack)
+
+proc createStreamServer*(cbproc: StreamCallback2,
+                         port: Port,
+                         host: Opt[IpAddress] = Opt.none(IpAddress),
+                         flags: set[ServerFlags] = {},
+                         sock: AsyncFD = asyncInvalidSocket,
+                         backlog: int = DefaultBacklogSize,
+                         bufferSize: int = DefaultStreamBufferSize,
+                         child: StreamServer = nil,
+                         init: TransportInitCallback = nil,
+                         udata: pointer = nil,
+                         dualstack = DualStackType.Auto): StreamServer {.
+    raises: [TransportOsError].} =
+  ## Create stream server which will be bound to:
+  ## 1. IPv6 address `::`, if IPv6 is available
+  ## 2. IPv4 address `0.0.0.0`, if IPv6 is not available.
+  let hostname =
+    if host.isSome():
+      initTAddress(host.get(), port)
+    else:
+      getAutoAddress(port)
+  createStreamServer(hostname, cbproc, flags, sock, backlog,
+                     bufferSize, child, init, cast[pointer](udata), dualstack)
+
 proc createStreamServer*[T](host: TransportAddress,
-                            cbproc: StreamCallback,
+                            cbproc: StreamCallback2,
                             flags: set[ServerFlags] = {},
                             udata: ref T,
                             sock: AsyncFD = asyncInvalidSocket,
@@ -2144,7 +2285,7 @@ proc createStreamServer*[T](host: TransportAddress,
                      child, init, cast[pointer](udata), dualstack)
 
 proc createStreamServer*[T](host: TransportAddress,
-                            cbproc: UnsafeStreamCallback,
+                            cbproc: StreamCallback,
                             flags: set[ServerFlags] = {},
                             udata: ref T,
                             sock: AsyncFD = asyncInvalidSocket,
@@ -2172,8 +2313,58 @@ proc createStreamServer*[T](host: TransportAddress,
     raises: [TransportOsError].} =
   var fflags = flags + {GCUserData}
   GC_ref(udata)
-  createStreamServer(host, StreamCallback(nil), fflags, sock, backlog, bufferSize,
+  createStreamServer(host, StreamCallback2(nil), fflags, sock, backlog, bufferSize,
                      child, init, cast[pointer](udata), dualstack)
+
+proc createStreamServer*[T](cbproc: StreamCallback2,
+                            port: Port,
+                            host: Opt[IpAddress] = Opt.none(IpAddress),
+                            flags: set[ServerFlags] = {},
+                            udata: ref T,
+                            sock: AsyncFD = asyncInvalidSocket,
+                            backlog: int = DefaultBacklogSize,
+                            bufferSize: int = DefaultStreamBufferSize,
+                            child: StreamServer = nil,
+                            init: TransportInitCallback = nil,
+                            dualstack = DualStackType.Auto): StreamServer {.
+    raises: [TransportOsError].} =
+  ## Create stream server which will be bound to:
+  ## 1. IPv6 address `::`, if IPv6 is available
+  ## 2. IPv4 address `0.0.0.0`, if IPv6 is not available.
+  let fflags = flags + {GCUserData}
+  GC_ref(udata)
+  let hostname =
+    if host.isSome():
+      initTAddress(host.get(), port)
+    else:
+      getAutoAddress(port)
+  createStreamServer(hostname, cbproc, fflags, sock, backlog,
+                     bufferSize, child, init, cast[pointer](udata), dualstack)
+
+proc createStreamServer*[T](port: Port,
+                            host: Opt[IpAddress] = Opt.none(IpAddress),
+                            flags: set[ServerFlags] = {},
+                            udata: ref T,
+                            sock: AsyncFD = asyncInvalidSocket,
+                            backlog: int = DefaultBacklogSize,
+                            bufferSize: int = DefaultStreamBufferSize,
+                            child: StreamServer = nil,
+                            init: TransportInitCallback = nil,
+                            dualstack = DualStackType.Auto): StreamServer {.
+    raises: [TransportOsError].} =
+  ## Create stream server which will be bound to:
+  ## 1. IPv6 address `::`, if IPv6 is available
+  ## 2. IPv4 address `0.0.0.0`, if IPv6 is not available.
+  let fflags = flags + {GCUserData}
+  GC_ref(udata)
+  let hostname =
+    if host.isSome():
+      initTAddress(host.get(), port)
+    else:
+      getAutoAddress(port)
+  createStreamServer(hostname, StreamCallback2(nil), fflags, sock,
+                     backlog, bufferSize, child, init, cast[pointer](udata),
+                     dualstack)
 
 proc getUserData*[T](server: StreamServer): T {.inline.} =
   ## Obtain user data stored in ``server`` object.
@@ -2245,7 +2436,7 @@ proc write*(transp: StreamTransport, pbytes: pointer,
     retFuture.fail(getTransportOsError(wres.error()))
   return retFuture
 
-proc write*(transp: StreamTransport, msg: sink string,
+proc write*(transp: StreamTransport, msg: string,
             msglen = -1): Future[int] {.
             async: (raw: true, raises: [TransportError, CancelledError]).} =
   ## Write data from string ``msg`` using transport ``transp``.
@@ -2264,7 +2455,7 @@ proc write*(transp: StreamTransport, msg: sink string,
   let
     written = nbytes - rbytes # In case fastWrite wrote some
 
-  var localCopy = chronosMoveSink(msg)
+  var localCopy = msg
   retFuture.addCallback(proc(_: pointer) = reset(localCopy))
 
   pbytes = cast[ptr byte](addr localCopy[written])
@@ -2277,7 +2468,7 @@ proc write*(transp: StreamTransport, msg: sink string,
     retFuture.fail(getTransportOsError(wres.error()))
   return retFuture
 
-proc write*[T](transp: StreamTransport, msg: sink seq[T],
+proc write*[T](transp: StreamTransport, msg: seq[T],
                msglen = -1): Future[int] {.
                async: (raw: true, raises: [TransportError, CancelledError]).} =
   ## Write sequence ``msg`` using transport ``transp``.
@@ -2297,7 +2488,7 @@ proc write*[T](transp: StreamTransport, msg: sink seq[T],
   let
     written = nbytes - rbytes # In case fastWrite wrote some
 
-  var localCopy = chronosMoveSink(msg)
+  var localCopy = msg
   retFuture.addCallback(proc(_: pointer) = reset(localCopy))
 
   pbytes = cast[ptr byte](addr localCopy[written])
@@ -2336,7 +2527,7 @@ proc writeFile*(transp: StreamTransport, handle: int,
 
 proc atEof*(transp: StreamTransport): bool {.inline.} =
   ## Returns ``true`` if ``transp`` is at EOF.
-  (transp.offset == 0) and (ReadEof in transp.state) and
+  (len(transp.buffer) == 0) and (ReadEof in transp.state) and
   (ReadPaused in transp.state)
 
 template readLoop(name, body: untyped): untyped =
@@ -2348,16 +2539,17 @@ template readLoop(name, body: untyped): untyped =
     if ReadClosed in transp.state:
       raise newException(TransportUseClosedError,
                          "Attempt to read data from closed stream")
-    if transp.offset == 0:
+    if len(transp.buffer) == 0:
       # We going to raise an error, only if transport buffer is empty.
       if ReadError in transp.state:
         raise transp.getError()
 
     let (consumed, done) = body
-    transp.shiftBuffer(consumed)
+    transp.buffer.consume(consumed)
     if done:
       break
-    else:
+
+    if len(transp.buffer) == 0:
       checkPending(transp)
       let fut = ReaderFuture.init(name)
       transp.reader = fut
@@ -2369,7 +2561,7 @@ template readLoop(name, body: untyped): untyped =
           # resumeRead() could not return any error.
           raiseOsDefect(errorCode, "readLoop(): Unable to resume reading")
         else:
-          transp.reader.complete()
+          transp.completeReader()
           if errorCode == oserrno.ESRCH:
             # ESRCH 3 "No such process"
             # This error could be happened on pipes only, when process which
@@ -2391,7 +2583,7 @@ proc readExactly*(transp: StreamTransport, pbytes: pointer,
   ##
   ## If ``nbytes == 0`` this operation will return immediately.
   ##
-  ## If EOF is received and ``nbytes`` is not yet readed, the procedure
+  ## If EOF is received and ``nbytes`` is not yet read, the procedure
   ## will raise ``TransportIncompleteError``, potentially with some bytes
   ## already written.
   doAssert(not(isNil(pbytes)), "pbytes must not be nil")
@@ -2400,17 +2592,23 @@ proc readExactly*(transp: StreamTransport, pbytes: pointer,
   if nbytes == 0:
     return
 
-  var index = 0
-  var pbuffer = cast[ptr UncheckedArray[byte]](pbytes)
+  var
+    index = 0
+    pbuffer = pbytes.toUnchecked()
   readLoop("stream.transport.readExactly"):
-    if transp.offset == 0:
+    if len(transp.buffer) == 0:
       if transp.atEof():
         raise newException(TransportIncompleteError, "Data incomplete!")
-    let count = min(nbytes - index, transp.offset)
-    if count > 0:
-      copyMem(addr pbuffer[index], addr(transp.buffer[0]), count)
-      index += count
-    (consumed: count, done: index == nbytes)
+    var bytesRead = 0
+    for (region, rsize) in transp.buffer.regions():
+      let count = min(nbytes - index, rsize)
+      bytesRead += count
+      if count > 0:
+        copyMem(addr pbuffer[index], region, count)
+        index += count
+      if index == nbytes:
+        break
+    (consumed: bytesRead, done: index == nbytes)
 
 proc readOnce*(transp: StreamTransport, pbytes: pointer,
                nbytes: int): Future[int] {.
@@ -2422,15 +2620,21 @@ proc readOnce*(transp: StreamTransport, pbytes: pointer,
   doAssert(not(isNil(pbytes)), "pbytes must not be nil")
   doAssert(nbytes > 0, "nbytes must be positive integer")
 
-  var count = 0
+  var
+    pbuffer = pbytes.toUnchecked()
+    index = 0
   readLoop("stream.transport.readOnce"):
-    if transp.offset == 0:
+    if len(transp.buffer) == 0:
       (0, transp.atEof())
     else:
-      count = min(transp.offset, nbytes)
-      copyMem(pbytes, addr(transp.buffer[0]), count)
-      (count, true)
-  return count
+      for (region, rsize) in transp.buffer.regions():
+        let size = min(rsize, nbytes - index)
+        copyMem(addr pbuffer[index], region, size)
+        index += size
+        if index >= nbytes:
+          break
+      (index, true)
+  index
 
 proc readUntil*(transp: StreamTransport, pbytes: pointer, nbytes: int,
                 sep: seq[byte]): Future[int] {.
@@ -2454,7 +2658,7 @@ proc readUntil*(transp: StreamTransport, pbytes: pointer, nbytes: int,
   if nbytes == 0:
     raise newException(TransportLimitError, "Limit reached!")
 
-  var pbuffer = cast[ptr UncheckedArray[byte]](pbytes)
+  var pbuffer = pbytes.toUnchecked()
   var state = 0
   var k = 0
 
@@ -2463,14 +2667,11 @@ proc readUntil*(transp: StreamTransport, pbytes: pointer, nbytes: int,
       raise newException(TransportIncompleteError, "Data incomplete!")
 
     var index = 0
-
-    while index < transp.offset:
+    for ch in transp.buffer:
       if k >= nbytes:
         raise newException(TransportLimitError, "Limit reached!")
 
-      let ch = transp.buffer[index]
       inc(index)
-
       pbuffer[k] = ch
       inc(k)
 
@@ -2482,8 +2683,7 @@ proc readUntil*(transp: StreamTransport, pbytes: pointer, nbytes: int,
         state = 0
 
     (index, state == len(sep))
-
-  return k
+  k
 
 proc readLine*(transp: StreamTransport, limit = 0,
                sep = "\r\n"): Future[string] {.
@@ -2498,48 +2698,47 @@ proc readLine*(transp: StreamTransport, limit = 0,
   ## empty string.
   ##
   ## If ``limit`` more then 0, then read is limited to ``limit`` bytes.
-  let lim = if limit <= 0: -1 else: limit
-  var state = 0
+  var res: string
 
   readLoop("stream.transport.readLine"):
     if transp.atEof():
       (0, true)
     else:
-      var index = 0
-      while index < transp.offset:
-        let ch = char(transp.buffer[index])
-        index += 1
+      var
+        consumed = 0
+        done = false
+      for ch in transp.buffer:
+        res.add char(ch)
+        consumed += 1
 
-        if sep[state] == ch:
-          inc(state)
-          if state == len(sep):
-            break
-        else:
-          if state != 0:
-            if limit > 0:
-              let missing = min(state, lim - len(result) - 1)
-              result.add(sep[0 ..< missing])
-            else:
-              result.add(sep[0 ..< state])
-            state = 0
+        if res.endsWith(sep):
+          res.setLen(res.len - sep.len)
+          done = true
+          break
 
-          result.add(ch)
-          if len(result) == lim:
-            break
+        if limit > 0 and res.len == limit:
+          done = true
+          break
 
-      (index, (state == len(sep)) or (lim == len(result)))
+      (consumed, done)
+  res
 
 proc read*(transp: StreamTransport): Future[seq[byte]] {.
     async: (raises: [TransportError, CancelledError]).} =
   ## Read all bytes from transport ``transp``.
   ##
   ## This procedure allocates buffer seq[byte] and return it as result.
+  var res: seq[byte]
   readLoop("stream.transport.read"):
     if transp.atEof():
       (0, true)
     else:
-      result.add(transp.buffer.toOpenArray(0, transp.offset - 1))
-      (transp.offset, false)
+      var bytesRead = 0
+      for (region, rsize) in transp.buffer.regions():
+        bytesRead += rsize
+        res.add(region.toUnchecked().toOpenArray(0, rsize - 1))
+      (bytesRead, false)
+  res
 
 proc read*(transp: StreamTransport, n: int): Future[seq[byte]] {.
     async: (raises: [TransportError, CancelledError]).} =
@@ -2547,27 +2746,35 @@ proc read*(transp: StreamTransport, n: int): Future[seq[byte]] {.
   ##
   ## This procedure allocates buffer seq[byte] and return it as result.
   if n <= 0:
-    return await transp.read()
+    await transp.read()
   else:
+    var res: seq[byte]
     readLoop("stream.transport.read"):
       if transp.atEof():
         (0, true)
       else:
-        let count = min(transp.offset, n - len(result))
-        result.add(transp.buffer.toOpenArray(0, count - 1))
-        (count, len(result) == n)
+        var bytesRead = 0
+        for (region, rsize) in transp.buffer.regions():
+          let count = min(rsize, n - len(res))
+          bytesRead += count
+          res.add(region.toUnchecked().toOpenArray(0, count - 1))
+        (bytesRead, len(res) == n)
+    res
 
 proc consume*(transp: StreamTransport): Future[int] {.
     async: (raises: [TransportError, CancelledError]).} =
   ## Consume all bytes from transport ``transp`` and discard it.
   ##
   ## Return number of bytes actually consumed and discarded.
+  var res = 0
   readLoop("stream.transport.consume"):
     if transp.atEof():
       (0, true)
     else:
-      result += transp.offset
-      (transp.offset, false)
+      let used = len(transp.buffer)
+      res += used
+      (used, false)
+  res
 
 proc consume*(transp: StreamTransport, n: int): Future[int] {.
     async: (raises: [TransportError, CancelledError]).} =
@@ -2576,15 +2783,19 @@ proc consume*(transp: StreamTransport, n: int): Future[int] {.
   ##
   ## Return number of bytes actually consumed and discarded.
   if n <= 0:
-    return await transp.consume()
+    await transp.consume()
   else:
+    var res = 0
     readLoop("stream.transport.consume"):
       if transp.atEof():
         (0, true)
       else:
-        let count = min(transp.offset, n - result)
-        result += count
-        (count, result == n)
+        let
+          used = len(transp.buffer)
+          count = min(used, n - res)
+        res += count
+        (count, res == n)
+    res
 
 proc readMessage*(transp: StreamTransport,
                   predicate: ReadMessagePredicate) {.
@@ -2602,14 +2813,18 @@ proc readMessage*(transp: StreamTransport,
   ## ``predicate`` callback will receive (zero-length) openArray, if transport
   ## is at EOF.
   readLoop("stream.transport.readMessage"):
-    if transp.offset == 0:
+    if len(transp.buffer) == 0:
       if transp.atEof():
         predicate([])
       else:
         # Case, when transport's buffer is not yet filled with data.
         (0, false)
     else:
-      predicate(transp.buffer.toOpenArray(0, transp.offset - 1))
+      var res: tuple[consumed: int, done: bool]
+      for (region, rsize) in transp.buffer.regions():
+        res = predicate(region.toUnchecked().toOpenArray(0, rsize - 1))
+        break
+      res
 
 proc join*(transp: StreamTransport): Future[void] {.
     async: (raw: true, raises: [CancelledError]).} =
@@ -2627,7 +2842,24 @@ proc join*(transp: StreamTransport): Future[void] {.
     retFuture.cancelCallback = cancel
   else:
     retFuture.complete()
-  return retFuture
+  retFuture
+
+proc closed*(transp: StreamTransport): bool {.inline.} =
+  ## Returns ``true`` if transport in closed state.
+  ({ReadClosed, WriteClosed} * transp.state != {})
+
+proc finished*(transp: StreamTransport): bool {.inline.} =
+  ## Returns ``true`` if transport in finished (EOF) state.
+  ({ReadEof, WriteEof} * transp.state != {})
+
+proc failed*(transp: StreamTransport): bool {.inline.} =
+  ## Returns ``true`` if transport in error state.
+  ({ReadError, WriteError} * transp.state != {})
+
+proc running*(transp: StreamTransport): bool {.inline.} =
+  ## Returns ``true`` if transport is still pending.
+  ({ReadClosed, ReadEof, ReadError,
+    WriteClosed, WriteEof, WriteError} * transp.state == {})
 
 proc close*(transp: StreamTransport) =
   ## Closes and frees resources of transport ``transp``.
@@ -2671,31 +2903,11 @@ proc close*(transp: StreamTransport) =
       elif transp.kind == TransportKind.Socket:
         closeSocket(transp.fd, continuation)
 
-proc closeWait*(transp: StreamTransport): Future[void] {.
-    async: (raw: true, raises: []).} =
+proc closeWait*(transp: StreamTransport): Future[void] {.async: (raises: []).} =
   ## Close and frees resources of transport ``transp``.
-  let retFuture = newFuture[void](
-    "stream.transport.closeWait", {FutureFlag.OwnCancelSchedule})
-
-  if {ReadClosed, WriteClosed} * transp.state != {}:
-    retFuture.complete()
-    return retFuture
-
-  proc continuation(udata: pointer) {.gcsafe.} =
-    retFuture.complete()
-
-  proc cancellation(udata: pointer) {.gcsafe.} =
-    # We are not going to change the state of `retFuture` to cancelled, so we
-    # will prevent the entire sequence of Futures from being cancelled.
-    discard
-
-  transp.close()
-  if transp.future.finished():
-    retFuture.complete()
-  else:
-    transp.future.addCallback(continuation, cast[pointer](retFuture))
-    retFuture.cancelCallback = cancellation
-  retFuture
+  if not transp.closed():
+    transp.close()
+    await noCancel(transp.join())
 
 proc shutdownWait*(transp: StreamTransport): Future[void] {.
     async: (raw: true, raises: [TransportError, CancelledError]).} =
@@ -2754,23 +2966,6 @@ proc shutdownWait*(transp: StreamTransport): Future[void] {.
       transp.state.incl({WriteEof})
       callSoon(continuation, nil)
     retFuture
-
-proc closed*(transp: StreamTransport): bool {.inline.} =
-  ## Returns ``true`` if transport in closed state.
-  ({ReadClosed, WriteClosed} * transp.state != {})
-
-proc finished*(transp: StreamTransport): bool {.inline.} =
-  ## Returns ``true`` if transport in finished (EOF) state.
-  ({ReadEof, WriteEof} * transp.state != {})
-
-proc failed*(transp: StreamTransport): bool {.inline.} =
-  ## Returns ``true`` if transport in error state.
-  ({ReadError, WriteError} * transp.state != {})
-
-proc running*(transp: StreamTransport): bool {.inline.} =
-  ## Returns ``true`` if transport is still pending.
-  ({ReadClosed, ReadEof, ReadError,
-    WriteClosed, WriteEof, WriteError} * transp.state == {})
 
 proc fromPipe2*(fd: AsyncFD, child: StreamTransport = nil,
                 bufferSize = DefaultStreamBufferSize

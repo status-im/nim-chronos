@@ -10,26 +10,27 @@
 {.push raises: [].}
 
 import std/[strutils]
+import results
 import stew/[base10, byteutils]
-import ".."/[asyncloop, osdefs, oserrno, handles]
+import ".."/[config, asyncloop, osdefs, oserrno, handles]
 
 from std/net import Domain, `==`, IpAddress, IpAddressFamily, parseIpAddress,
                     SockType, Protocol, Port, `$`
 from std/nativesockets import toInt, `$`
 
 export Domain, `==`, IpAddress, IpAddressFamily, parseIpAddress, SockType,
-       Protocol, Port, toInt, `$`
+       Protocol, Port, toInt, `$`, results
 
 const
-  DefaultStreamBufferSize* = 4096    ## Default buffer size for stream
-                                     ## transports
-  DefaultDatagramBufferSize* = 65536 ## Default buffer size for datagram
-                                     ## transports
+  DefaultStreamBufferSize* = chronosTransportDefaultBufferSize
+    ## Default buffer size for stream transports
+  DefaultDatagramBufferSize* = 65536
+    ## Default buffer size for datagram transports
 type
   ServerFlags* = enum
     ## Server's flags
     ReuseAddr, ReusePort, TcpNoDelay, NoAutoRead, GCUserData, FirstPipe,
-    NoPipeFlash, Broadcast
+    NoPipeFlash, Broadcast, V4Mapped
 
   DualStackType* {.pure.} = enum
     Auto, Enabled, Disabled, Default
@@ -73,7 +74,7 @@ when defined(windows) or defined(nimdoc):
       udata*: pointer               # User-defined pointer
       flags*: set[ServerFlags]      # Flags
       bufferSize*: int              # Size of internal transports' buffer
-      loopFuture*: Future[void]     # Server's main Future
+      loopFuture*: Future[void].Raising([])     # Server's main Future
       domain*: Domain               # Current server domain (IPv4 or IPv6)
       apending*: bool
       asock*: AsyncFD               # Current AcceptEx() socket
@@ -92,7 +93,7 @@ else:
       udata*: pointer               # User-defined pointer
       flags*: set[ServerFlags]      # Flags
       bufferSize*: int              # Size of internal transports' buffer
-      loopFuture*: Future[void]     # Server's main Future
+      loopFuture*: Future[void].Raising([]) # Server's main Future
       errorCode*: OSErrorCode       # Current error code
       dualstack*: DualStackType     # IPv4/IPv6 dualstack parameters
 
@@ -199,6 +200,15 @@ proc `$`*(address: TransportAddress): string =
       "/"
   of AddressFamily.None:
     "None"
+
+proc toIpAddress*(address: TransportAddress): IpAddress =
+  case address.family
+  of AddressFamily.IPv4:
+    IpAddress(family: IpAddressFamily.IPv4, address_v4: address.address_v4)
+  of AddressFamily.IPv6:
+    IpAddress(family: IpAddressFamily.IPv6, address_v6: address.address_v6)
+  else:
+    raiseAssert "IpAddress do not support address family " & $address.family
 
 proc toHex*(address: TransportAddress): string =
   ## Returns hexadecimal representation of ``address``.
@@ -536,10 +546,10 @@ proc resolveTAddress*(address: string, port: Port,
   of IpAddressFamily.IPv6:
     resolveTAddress(address, port, AddressFamily.IPv6)
 
-proc windowsAnyAddressFix*(a: TransportAddress): TransportAddress =
+proc anyAddressFix*(a: TransportAddress): TransportAddress =
   ## BSD Sockets on \*nix systems are able to perform connections to
   ## `0.0.0.0` or `::0` which are equal to `127.0.0.1` or `::1`.
-  when defined(windows):
+  when defined(windows) or defined(macosx) or defined(macos):
     if (a.family == AddressFamily.IPv4 and
         a.address_v4 == AnyAddress.address_v4):
       try:
@@ -783,3 +793,25 @@ proc setDualstack*(socket: AsyncFD,
     else:
       ? getDomain(socket)
   setDualstack(socket, family, flag)
+
+proc getAutoAddress*(port: Port): TransportAddress =
+  var res =
+    if isAvailable(AddressFamily.IPv6):
+      AnyAddress6
+    else:
+      AnyAddress
+  res.port = port
+  res
+
+proc getAutoAddresses*(
+    localPort: Port,
+    remotePort: Port
+): tuple[local: TransportAddress, remote: TransportAddress] =
+  var (local, remote) =
+    if isAvailable(AddressFamily.IPv6):
+      (AnyAddress6, AnyAddress6)
+    else:
+      (AnyAddress, AnyAddress)
+  local.port = localPort
+  remote.port = remotePort
+  (local, remote)

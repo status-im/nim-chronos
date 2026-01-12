@@ -11,6 +11,15 @@
 ## `chronosDebug` can be defined to enable several debugging helpers that come
 ## with a runtime cost - it is recommeneded to not enable these in production
 ## code.
+##
+## In this file we also declare feature flags starting with `chronosHas...` -
+## these constants are declared when a feature exists in a particular release -
+## each flag is declared as an integer starting at 0 during experimental
+## development, 1 when feature complete and higher numbers when significant
+## functionality has been added. If a feature ends up being removed (or changed
+## in a backwards-incompatible way), the feature flag will be removed or renamed
+## also - you can use `when declared(chronosHasXxx): when chronosHasXxx >= N:`
+## to require a particular version.
 const
   chronosHandleException* {.booldefine.}: bool = false
     ## Remap `Exception` to `AsyncExceptionError` for all `async` functions.
@@ -79,6 +88,18 @@ const
       ""
     ## OS polling engine type which is going to be used by chronos.
 
+  chronosHasRaises* = 0
+    ## raises effect support via `async: (raises: [])`
+
+  chronosTransportDefaultBufferSize* {.intdefine.} = 16384
+    ## Default size of chronos transport internal buffer.
+
+  chronosStreamDefaultBufferSize* {.intdefine.} = 16384
+    ## Default size of chronos async stream internal buffer.
+
+  chronosTLSSessionCacheBufferSize* {.intdefine.} = 4096
+    ## Default size of chronos TLS Session cache's internal buffer.
+
 when defined(chronosStrictException):
   {.warning: "-d:chronosStrictException has been deprecated in favor of handleException".}
   # In chronos v3, this setting was used as the opposite of
@@ -101,7 +122,12 @@ when defined(debug) or defined(chronosConfig):
     printOption("chronosEventEngine", chronosEventEngine)
     printOption("chronosEventsCount", chronosEventsCount)
     printOption("chronosInitialSize", chronosInitialSize)
-
+    printOption("chronosTransportDefaultBufferSize",
+      chronosTransportDefaultBufferSize)
+    printOption("chronosStreamDefaultBufferSize",
+      chronosStreamDefaultBufferSize)
+    printOption("chronosTLSSessionCacheBufferSize",
+      chronosTLSSessionCacheBufferSize)
 
 # In nim 1.6, `sink` + local variable + `move` generates the best code for
 # moving a proc parameter into a closure - this only works for closure

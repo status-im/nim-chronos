@@ -16,8 +16,11 @@ import
   bearssl/[brssl, ec, errors, pem, rsa, ssl, x509],
   bearssl/certs/cacert
 import ".."/[asyncloop, asyncsync, config, timer]
-import asyncstream, ../transports/stream, ../transports/common
+import asyncstream, ../transports/[stream, common]
 export asyncloop, asyncsync, timer, asyncstream
+
+const
+  TLSSessionCacheBufferSize* = chronosTLSSessionCacheBufferSize
 
 type
   TLSStreamKind {.pure.} = enum
@@ -158,7 +161,7 @@ proc tlsWriteRec(engine: ptr SslEngineContext,
     var length = 0'u
     var buf = sslEngineSendrecBuf(engine[], length)
     doAssert(length != 0 and not isNil(buf))
-    await writer.wsource.write(chronosMoveSink(buf), int(length))
+    await writer.wsource.write(buf, int(length))
     sslEngineSendrecAck(engine[], length)
     TLSResult.Success
   except AsyncStreamError as exc:
@@ -239,7 +242,7 @@ proc tlsReadApp(engine: ptr SslEngineContext,
   try:
     var length = 0'u
     var buf = sslEngineRecvappBuf(engine[], length)
-    await upload(addr reader.buffer, buf, int(length))
+    await upload(reader.buffer, buf, int(length))
     sslEngineRecvappAck(engine[], length)
     TLSResult.Success
   except CancelledError:
@@ -507,8 +510,10 @@ proc newTLSClientAsyncStream*(
 
   if TLSFlags.NoVerifyHost in flags:
     sslClientInitFull(res.ccontext, addr res.x509, nil, 0)
-    x509NoanchorInit(res.xwc, addr res.x509.vtable)
-    sslEngineSetX509(res.ccontext.eng, addr res.xwc.vtable)
+    x509NoanchorInit(res.xwc,
+                     X509ClassPointerConst(addr res.x509.vtable))
+    sslEngineSetX509(res.ccontext.eng,
+                     X509ClassPointerConst(addr res.xwc.vtable))
   else:
     when trustAnchors is TrustAnchorStore:
       res.trustAnchors = trustAnchors
@@ -608,7 +613,8 @@ proc newTLSServerAsyncStream*(rsource: AsyncStreamReader,
                        uint16(maxVersion))
 
   if not isNil(cache):
-    sslServerSetCache(res.scontext, addr cache.context.vtable)
+    sslServerSetCache(
+      res.scontext, SslSessionCacheClassPointerConst(addr cache.context.vtable))
 
   if TLSFlags.EnforceServerPref in flags:
     sslEngineAddFlags(res.scontext.eng, OPT_ENFORCE_SERVER_PREFERENCES)
@@ -777,11 +783,12 @@ proc init*(tt: typedesc[TLSCertificate],
     raiseTLSStreamProtocolError("Could not find any certificates")
   res
 
-proc init*(tt: typedesc[TLSSessionCache], size: int = 4096): TLSSessionCache =
+proc init*(tt: typedesc[TLSSessionCache],
+           size: int = TLSSessionCacheBufferSize): TLSSessionCache =
   ## Create new TLS session cache with size ``size``.
   ##
   ## One cached item is near 100 bytes size.
-  var rsize = min(size, 4096)
+  let rsize = min(size, 4096)
   var res = TLSSessionCache(storage: newSeq[byte](rsize))
   sslSessionCacheLruInit(addr res.context, addr res.storage[0], rsize)
   res

@@ -219,12 +219,14 @@ proc decodeParams(params: NimNode): AsyncParams =
   var
     raw = false
     raises: NimNode = nil
-    handleException = chronosHandleException
+    handleException = false
+    hasLocalAnnotations = false
 
   for param in params:
     param.expectKind(nnkExprColonExpr)
 
     if param[0].eqIdent("raises"):
+      hasLocalAnnotations = true
       param[1].expectKind(nnkBracket)
       if param[1].len == 0:
         raises = makeNoRaises()
@@ -236,9 +238,13 @@ proc decodeParams(params: NimNode): AsyncParams =
       # boolVal doesn't work in untyped macros it seems..
       raw = param[1].eqIdent("true")
     elif param[0].eqIdent("handleException"):
+      hasLocalAnnotations = true
       handleException = param[1].eqIdent("true")
     else:
       warning("Unrecognised async parameter: " & repr(param[0]), param)
+
+  if not hasLocalAnnotations:
+    handleException = chronosHandleException
 
   (raw, raises, handleException)
 
@@ -530,7 +536,7 @@ template await*[T](f: Future[T]): T =
     # responsible for resuming execution once the yielded future is finished
     yield chronosInternalRetFuture.internalChild
     # `child` released by `futureContinue`
-    cast[type(f)](chronosInternalRetFuture.internalChild).internalCheckComplete()
+    cast[type(f)](chronosInternalRetFuture.internalChild).internalRaiseIfError(f)
 
     when T isnot void:
       cast[type(f)](chronosInternalRetFuture.internalChild).value()
@@ -553,7 +559,7 @@ template await*[T, E](fut: InternalRaisesFuture[T, E]): T =
     yield chronosInternalRetFuture.internalChild
     # `child` released by `futureContinue`
     cast[type(fut)](
-      chronosInternalRetFuture.internalChild).internalCheckComplete(E)
+      chronosInternalRetFuture.internalChild).internalRaiseIfError(E, fut)
 
     when T isnot void:
       cast[type(fut)](chronosInternalRetFuture.internalChild).value()

@@ -369,7 +369,7 @@ elif defined(windows):
     getThreadDispatcher().handles.excl(fd)
 
   {.push stackTrace: off.}
-  proc waitableCallback(param: pointer, timerOrWaitFired: WINBOOL) {.
+  proc waitableCallback(param: pointer, timerOrWaitFired: BYTE) {.
        stdcallbackFunc.} =
     # This procedure will be executed in `wait thread`, so it must not use
     # GC related objects.
@@ -379,9 +379,9 @@ elif defined(windows):
     var wh = cast[ptr PostCallbackData](param)
     # We ignore result of postQueueCompletionStatus() call because we unable to
     # indicate error.
-    discard postQueuedCompletionStatus(wh[].ioPort, DWORD(timerOrWaitFired),
-                                       ULONG_PTR(wh[].handleFd),
-                                       wh[].ovl)
+    discard postQueuedCompletionStatus(
+      wh[].ioPort, DWORD(timerOrWaitFired and 0xFF'u8),
+      ULONG_PTR(wh[].handleFd), wh[].ovl)
   {.pop.}
 
   proc registerWaitable*(

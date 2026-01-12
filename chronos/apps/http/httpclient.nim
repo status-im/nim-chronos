@@ -159,6 +159,7 @@ type
     redirectCount: int
     timestamp*: Moment
     duration*: Duration
+    headersBuffer: seq[byte]
 
   HttpClientRequestRef* = ref HttpClientRequest
 
@@ -294,7 +295,7 @@ proc new*(t: typedesc[HttpSessionRef],
     if HttpClientFlag.Http11Pipeline in flags:
       sessionWatcher(res)
     else:
-      Future[void].Raising([]).init("session.watcher.placeholder")
+      nil
   res
 
 proc getTLSFlags(flags: HttpClientFlags): set[TLSFlags] =
@@ -567,7 +568,8 @@ proc new(
       tls =
         try:
           newTLSClientAsyncStream(treader, twriter, ha.hostname,
-                                  flags = session.flags.getTLSFlags())
+                                  flags = session.flags.getTLSFlags(),
+                                  bufferSize = session.connectionBufferSize)
         except TLSStreamInitError as exc:
           return err(exc.msg)
 
@@ -607,7 +609,7 @@ proc closeWait(conn: HttpClientConnectionRef) {.async: (raises: []).} =
     conn.state = HttpClientConnectionState.Closing
     let pending =
       block:
-        var res: seq[Future[void]]
+        var res: seq[Future[void].Raising([])]
         if not(isNil(conn.reader)) and not(conn.reader.closed()):
           res.add(conn.reader.closeWait())
         if not(isNil(conn.writer)) and not(conn.writer.closed()):
@@ -635,8 +637,6 @@ proc connect(session: HttpSessionRef,
         await connect(address, bufferSize = session.connectionBufferSize,
                       flags = session.socketFlags,
                       dualstack = session.dualstack)
-      except CancelledError as exc:
-        raise exc
       except TransportError:
         nil
     if not(isNil(transp)):
@@ -847,29 +847,30 @@ proc sessionWatcher(session: HttpSessionRef) {.async: (raises: []).} =
         break
 
 proc closeWait*(request: HttpClientRequestRef) {.async: (raises: []).} =
-  var pending: seq[FutureBase]
+  var pending: seq[Future[void].Raising([])]
   if request.state notin {HttpReqRespState.Closing, HttpReqRespState.Closed}:
     request.state = HttpReqRespState.Closing
     if not(isNil(request.writer)):
       if not(request.writer.closed()):
-        pending.add(FutureBase(request.writer.closeWait()))
+        pending.add(request.writer.closeWait())
       request.writer = nil
-    pending.add(FutureBase(request.releaseConnection()))
+    pending.add(request.releaseConnection())
     await noCancel(allFutures(pending))
     request.session = nil
     request.error = nil
+    request.headersBuffer.reset()
     request.state = HttpReqRespState.Closed
     untrackCounter(HttpClientRequestTrackerName)
 
 proc closeWait*(response: HttpClientResponseRef) {.async: (raises: []).} =
-  var pending: seq[FutureBase]
+  var pending: seq[Future[void].Raising([])]
   if response.state notin {HttpReqRespState.Closing, HttpReqRespState.Closed}:
     response.state = HttpReqRespState.Closing
     if not(isNil(response.reader)):
       if not(response.reader.closed()):
-        pending.add(FutureBase(response.reader.closeWait()))
+        pending.add(response.reader.closeWait())
       response.reader = nil
-    pending.add(FutureBase(response.releaseConnection()))
+    pending.add(response.releaseConnection())
     await noCancel(allFutures(pending))
     response.session = nil
     response.error = nil
@@ -991,14 +992,14 @@ proc prepareResponse(
 
 proc getResponse(req: HttpClientRequestRef): Future[HttpClientResponseRef] {.
      async: (raises: [CancelledError, HttpError]).} =
-  var buffer: array[HttpMaxHeadersSize, byte]
   let timestamp = Moment.now()
   req.connection.setTimestamp(timestamp)
   let
     bytesRead =
       try:
-        await req.connection.reader.readUntil(addr buffer[0],
-                                              len(buffer), HeadersMark).wait(
+        await req.connection.reader.readUntil(addr req.headersBuffer[0],
+                                              len(req.headersBuffer),
+                                              HeadersMark).wait(
                                               req.session.headersTimeout)
       except AsyncTimeoutError:
         raiseHttpReadError("Reading response headers timed out")
@@ -1006,23 +1007,25 @@ proc getResponse(req: HttpClientRequestRef): Future[HttpClientResponseRef] {.
         raiseHttpReadError(
           "Could not read response headers, reason: " & $exc.msg)
 
-  let response = prepareResponse(req, buffer.toOpenArray(0, bytesRead - 1))
-  if response.isErr():
-    raiseHttpProtocolError(response.error())
-  let res = response.get()
-  res.setTimestamp(timestamp)
-  return res
+  let response =
+    prepareResponse(req,
+                    req.headersBuffer.toOpenArray(0, bytesRead - 1)).valueOr:
+      raiseHttpProtocolError(error)
+  response.setTimestamp(timestamp)
+  response
 
 proc new*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
           ha: HttpAddress, meth: HttpMethod = MethodGet,
           version: HttpVersion = HttpVersion11,
           flags: set[HttpClientRequestFlag] = {},
+          maxResponseHeadersSize: int = HttpMaxHeadersSize,
           headers: openArray[HttpHeaderTuple] = [],
           body: openArray[byte] = []): HttpClientRequestRef =
   let res = HttpClientRequestRef(
     state: HttpReqRespState.Ready, session: session, meth: meth,
     version: version, flags: flags, headers: HttpTable.init(headers),
-    address: ha, bodyFlag: HttpClientBodyFlag.Custom, buffer: @body
+    address: ha, bodyFlag: HttpClientBodyFlag.Custom, buffer: @body,
+    headersBuffer: newSeq[byte](max(maxResponseHeadersSize, HttpMaxHeadersSize))
   )
   trackCounter(HttpClientRequestTrackerName)
   res
@@ -1031,13 +1034,15 @@ proc new*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
           url: string, meth: HttpMethod = MethodGet,
           version: HttpVersion = HttpVersion11,
           flags: set[HttpClientRequestFlag] = {},
+          maxResponseHeadersSize: int = HttpMaxHeadersSize,
           headers: openArray[HttpHeaderTuple] = [],
           body: openArray[byte] = []): HttpResult[HttpClientRequestRef] =
   let address = ? session.getAddress(parseUri(url))
   let res = HttpClientRequestRef(
     state: HttpReqRespState.Ready, session: session, meth: meth,
     version: version, flags: flags, headers: HttpTable.init(headers),
-    address: address, bodyFlag: HttpClientBodyFlag.Custom, buffer: @body
+    address: address, bodyFlag: HttpClientBodyFlag.Custom, buffer: @body,
+    headersBuffer: newSeq[byte](max(maxResponseHeadersSize, HttpMaxHeadersSize))
   )
   trackCounter(HttpClientRequestTrackerName)
   ok(res)
@@ -1045,48 +1050,58 @@ proc new*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
 proc get*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
           url: string, version: HttpVersion = HttpVersion11,
           flags: set[HttpClientRequestFlag] = {},
+          maxResponseHeadersSize: int = HttpMaxHeadersSize,
           headers: openArray[HttpHeaderTuple] = []
          ): HttpResult[HttpClientRequestRef] =
-  HttpClientRequestRef.new(session, url, MethodGet, version, flags, headers)
+  HttpClientRequestRef.new(session, url, MethodGet, version, flags,
+                           maxResponseHeadersSize, headers)
 
 proc get*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
           ha: HttpAddress, version: HttpVersion = HttpVersion11,
           flags: set[HttpClientRequestFlag] = {},
+          maxResponseHeadersSize: int = HttpMaxHeadersSize,
           headers: openArray[HttpHeaderTuple] = []
          ): HttpClientRequestRef =
-  HttpClientRequestRef.new(session, ha, MethodGet, version, flags, headers)
+  HttpClientRequestRef.new(session, ha, MethodGet, version, flags,
+                           maxResponseHeadersSize, headers)
 
 proc post*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
            url: string, version: HttpVersion = HttpVersion11,
            flags: set[HttpClientRequestFlag] = {},
+           maxResponseHeadersSize: int = HttpMaxHeadersSize,
            headers: openArray[HttpHeaderTuple] = [],
            body: openArray[byte] = []
           ): HttpResult[HttpClientRequestRef] =
-  HttpClientRequestRef.new(session, url, MethodPost, version, flags, headers,
-                           body)
+  HttpClientRequestRef.new(session, url, MethodPost, version, flags,
+                           maxResponseHeadersSize, headers, body)
 
 proc post*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
            url: string, version: HttpVersion = HttpVersion11,
            flags: set[HttpClientRequestFlag] = {},
+           maxResponseHeadersSize: int = HttpMaxHeadersSize,
            headers: openArray[HttpHeaderTuple] = [],
            body: openArray[char] = []): HttpResult[HttpClientRequestRef] =
-  HttpClientRequestRef.new(session, url, MethodPost, version, flags, headers,
+  HttpClientRequestRef.new(session, url, MethodPost, version, flags,
+                           maxResponseHeadersSize, headers,
                            body.toOpenArrayByte(0, len(body) - 1))
 
 proc post*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
            ha: HttpAddress, version: HttpVersion = HttpVersion11,
            flags: set[HttpClientRequestFlag] = {},
+           maxResponseHeadersSize: int = HttpMaxHeadersSize,
            headers: openArray[HttpHeaderTuple] = [],
            body: openArray[byte] = []): HttpClientRequestRef =
-  HttpClientRequestRef.new(session, ha, MethodPost, version, flags, headers,
-                           body)
+  HttpClientRequestRef.new(session, ha, MethodPost, version, flags,
+                           maxResponseHeadersSize, headers, body)
 
 proc post*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
            ha: HttpAddress, version: HttpVersion = HttpVersion11,
            flags: set[HttpClientRequestFlag] = {},
+           maxResponseHeadersSize: int = HttpMaxHeadersSize,
            headers: openArray[HttpHeaderTuple] = [],
            body: openArray[char] = []): HttpClientRequestRef =
-  HttpClientRequestRef.new(session, ha, MethodPost, version, flags, headers,
+  HttpClientRequestRef.new(session, ha, MethodPost, version, flags,
+                           maxResponseHeadersSize, headers,
                            body.toOpenArrayByte(0, len(body) - 1))
 
 proc prepareRequest(request: HttpClientRequestRef): string =
@@ -1189,7 +1204,7 @@ proc send*(request: HttpClientRequestRef): Future[HttpClientResponseRef] {.
     request.connection.state = HttpClientConnectionState.RequestHeadersSent
     request.connection.state = HttpClientConnectionState.RequestBodySending
     if len(request.buffer) > 0:
-      await request.connection.writer.write(request.buffer)
+      await request.connection.writer.write(move(request.buffer))
     request.connection.state = HttpClientConnectionState.RequestBodySent
     request.state = HttpReqRespState.Finished
     request.setDuration()
@@ -1327,13 +1342,18 @@ proc getBodyReader*(response: HttpClientResponseRef): HttpBodyReader {.
     let reader =
       case response.bodyFlag
       of HttpClientBodyFlag.Sized:
-        let bstream = newBoundedStreamReader(response.connection.reader,
-                                             response.contentLength)
-        newHttpBodyReader(bstream)
+        newHttpBodyReader(
+          newBoundedStreamReader(
+            response.connection.reader, response.contentLength,
+            bufferSize = response.session.connectionBufferSize))
       of HttpClientBodyFlag.Chunked:
-        newHttpBodyReader(newChunkedStreamReader(response.connection.reader))
+        newHttpBodyReader(
+          newChunkedStreamReader(
+            response.connection.reader,
+            bufferSize = response.session.connectionBufferSize))
       of HttpClientBodyFlag.Custom:
-        newHttpBodyReader(newAsyncStreamReader(response.connection.reader))
+        newHttpBodyReader(
+          newAsyncStreamReader(response.connection.reader))
     response.connection.state = HttpClientConnectionState.ResponseBodyReceiving
     response.reader = reader
   response.reader
@@ -1448,8 +1468,10 @@ proc redirect*(request: HttpClientRequestRef,
         var res = request.headers
         res.set(HostHeader, ha.hostname)
         res
-    var res = HttpClientRequestRef.new(request.session, ha, request.meth,
-      request.version, request.flags, headers.toList(), request.buffer)
+    var res =
+      HttpClientRequestRef.new(request.session, ha, request.meth,
+        request.version, request.flags, headers = headers.toList(),
+        body = request.buffer)
     res.redirectCount = redirectCount
     ok(res)
 
@@ -1472,8 +1494,10 @@ proc redirect*(request: HttpClientRequestRef,
         var res = request.headers
         res.set(HostHeader, address.hostname)
         res
-    var res = HttpClientRequestRef.new(request.session, address, request.meth,
-      request.version, request.flags, headers.toList(), request.buffer)
+    var res =
+      HttpClientRequestRef.new(request.session, address, request.meth,
+        request.version, request.flags, headers = headers.toList(),
+        body = request.buffer)
     res.redirectCount = redirectCount
     ok(res)
 
@@ -1654,8 +1678,6 @@ proc getServerSentEvents*(
 
   try:
     await reader.readMessage(predicate)
-  except CancelledError as exc:
-    raise exc
   except AsyncStreamError as exc:
     raiseHttpReadError($exc.msg)
 

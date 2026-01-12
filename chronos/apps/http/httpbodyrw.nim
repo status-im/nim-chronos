@@ -43,7 +43,7 @@ proc closeWait*(bstream: HttpBodyReader) {.async: (raises: []).} =
   ## Close and free resource allocated by body reader.
   if bstream.bstate == HttpState.Alive:
     bstream.bstate = HttpState.Closing
-    var res = newSeq[Future[void]]()
+    var res = newSeq[Future[void].Raising([])]()
     # We closing streams in reversed order because stream at position [0], uses
     # data from stream at position [1].
     for index in countdown((len(bstream.streams) - 1), 0):
@@ -68,7 +68,7 @@ proc closeWait*(bstream: HttpBodyWriter) {.async: (raises: []).} =
   ## Close and free all the resources allocated by body writer.
   if bstream.bstate == HttpState.Alive:
     bstream.bstate = HttpState.Closing
-    var res = newSeq[Future[void]]()
+    var res = newSeq[Future[void].Raising([])]()
     for index in countdown(len(bstream.streams) - 1, 0):
       res.add(bstream.streams[index].closeWait())
     await noCancel(allFutures(res))

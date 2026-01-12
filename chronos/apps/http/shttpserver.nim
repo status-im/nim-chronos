@@ -10,7 +10,7 @@
 {.push raises: [].}
 
 import httpserver
-import ../../asyncloop, ../../asyncsync
+import ../../[asyncloop, asyncsync, config]
 import ../../streams/[asyncstream, tlsstream]
 export asyncloop, asyncsync, httpserver, asyncstream, tlsstream
 
@@ -82,6 +82,67 @@ proc createSecConnection(server: HttpServerRef,
 
 proc new*(htype: typedesc[SecureHttpServerRef],
           address: TransportAddress,
+          processCallback: HttpProcessCallback2,
+          tlsPrivateKey: TLSPrivateKey,
+          tlsCertificate: TLSCertificate,
+          serverFlags: set[HttpServerFlags] = {},
+          socketFlags: set[ServerFlags] = {ReuseAddr},
+          serverUri = Uri(),
+          serverIdent = "",
+          secureFlags: set[TLSFlags] = {},
+          maxConnections: int = -1,
+          bufferSize: int = chronosTransportDefaultBufferSize,
+          backlogSize: int = DefaultBacklogSize,
+          httpHeadersTimeout = 10.seconds,
+          maxHeadersSize: int = 8192,
+          maxRequestBodySize: int = 1_048_576,
+          dualstack = DualStackType.Auto
+         ): HttpResult[SecureHttpServerRef] =
+  doAssert(not(isNil(tlsPrivateKey)), "TLS private key must not be nil!")
+  doAssert(not(isNil(tlsCertificate)), "TLS certificate must not be nil!")
+  let
+    serverInstance =
+      try:
+        createStreamServer(address, flags = socketFlags,
+                           bufferSize = bufferSize,
+                           backlog = backlogSize, dualstack = dualstack)
+      except TransportOsError as exc:
+        return err(exc.msg)
+    serverUri =
+      if len(serverUri.hostname) > 0:
+        serverUri
+      else:
+        parseUri("https://" & $serverInstance.localAddress() & "/")
+    res = SecureHttpServerRef(
+      address: serverInstance.localAddress(),
+      instance: serverInstance,
+      processCallback: processCallback,
+      createConnCallback: createSecConnection,
+      baseUri: serverUri,
+      serverIdent: serverIdent,
+      flags: serverFlags + {HttpServerFlags.Secure},
+      socketFlags: socketFlags,
+      maxConnections: maxConnections,
+      bufferSize: bufferSize,
+      backlogSize: backlogSize,
+      headersTimeout: httpHeadersTimeout,
+      maxHeadersSize: maxHeadersSize,
+      maxRequestBodySize: maxRequestBodySize,
+      # semaphore:
+      #   if maxConnections > 0:
+      #     newAsyncSemaphore(maxConnections)
+      #   else:
+      #     nil
+      lifetime: newFuture[void]("http.server.lifetime"),
+      connections: initOrderedTable[string, HttpConnectionHolderRef](),
+      tlsCertificate: tlsCertificate,
+      tlsPrivateKey: tlsPrivateKey,
+      secureFlags: secureFlags
+    )
+  ok(res)
+
+proc new*(htype: typedesc[SecureHttpServerRef],
+          address: TransportAddress,
           processCallback: HttpProcessCallback,
           tlsPrivateKey: TLSPrivateKey,
           tlsCertificate: TLSCertificate,
@@ -91,57 +152,40 @@ proc new*(htype: typedesc[SecureHttpServerRef],
           serverIdent = "",
           secureFlags: set[TLSFlags] = {},
           maxConnections: int = -1,
-          bufferSize: int = 4096,
+          bufferSize: int = chronosTransportDefaultBufferSize,
           backlogSize: int = DefaultBacklogSize,
           httpHeadersTimeout = 10.seconds,
           maxHeadersSize: int = 8192,
           maxRequestBodySize: int = 1_048_576,
           dualstack = DualStackType.Auto
-         ): HttpResult[SecureHttpServerRef] =
+         ): HttpResult[SecureHttpServerRef] {.
+     deprecated: "Callback could raise only CancelledError, annotate with " &
+                 "{.async: (raises: [CancelledError]).}".} =
 
-  doAssert(not(isNil(tlsPrivateKey)), "TLS private key must not be nil!")
-  doAssert(not(isNil(tlsCertificate)), "TLS certificate must not be nil!")
-
-  let serverUri =
-    if len(serverUri.hostname) > 0:
-      serverUri
-    else:
-      try:
-        parseUri("https://" & $address & "/")
-      except TransportAddressError as exc:
-        return err(exc.msg)
-
-  let serverInstance =
+  proc wrap(req: RequestFence): Future[HttpResponseRef] {.
+       async: (raises: [CancelledError]).} =
     try:
-      createStreamServer(address, flags = socketFlags, bufferSize = bufferSize,
-                         backlog = backlogSize, dualstack = dualstack)
-    except TransportOsError as exc:
-      return err(exc.msg)
+      await processCallback(req)
+    except CancelledError as exc:
+      raise exc
+    except CatchableError as exc:
+      defaultResponse(exc)
 
-  let res = SecureHttpServerRef(
-    address: address,
-    instance: serverInstance,
-    processCallback: processCallback,
-    createConnCallback: createSecConnection,
-    baseUri: serverUri,
-    serverIdent: serverIdent,
-    flags: serverFlags + {HttpServerFlags.Secure},
-    socketFlags: socketFlags,
-    maxConnections: maxConnections,
-    bufferSize: bufferSize,
-    backlogSize: backlogSize,
-    headersTimeout: httpHeadersTimeout,
-    maxHeadersSize: maxHeadersSize,
-    maxRequestBodySize: maxRequestBodySize,
-    # semaphore:
-    #   if maxConnections > 0:
-    #     newAsyncSemaphore(maxConnections)
-    #   else:
-    #     nil
-    lifetime: newFuture[void]("http.server.lifetime"),
-    connections: initOrderedTable[string, HttpConnectionHolderRef](),
-    tlsCertificate: tlsCertificate,
-    tlsPrivateKey: tlsPrivateKey,
-    secureFlags: secureFlags
+  SecureHttpServerRef.new(
+    address = address,
+    processCallback = wrap,
+    tlsPrivateKey = tlsPrivateKey,
+    tlsCertificate = tlsCertificate,
+    serverFlags = serverFlags,
+    socketFlags = socketFlags,
+    serverUri = serverUri,
+    serverIdent = serverIdent,
+    secureFlags = secureFlags,
+    maxConnections = maxConnections,
+    bufferSize = bufferSize,
+    backlogSize = backlogSize,
+    httpHeadersTimeout =  httpHeadersTimeout,
+    maxHeadersSize = maxHeadersSize,
+    maxRequestBodySize = maxRequestBodySize,
+    dualstack = dualstack
   )
-  ok(res)
