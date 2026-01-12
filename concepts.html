@@ -1,0 +1,441 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Core concepts - Chronos</title>
+
+
+        <!-- Custom HTML head -->
+        
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon.svg">
+        <link rel="shortcut icon" href="favicon.png">
+        <link rel="stylesheet" href="css/variables.css">
+        <link rel="stylesheet" href="css/general.css">
+        <link rel="stylesheet" href="css/chrome.css">
+        <link rel="stylesheet" href="css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="highlight.css">
+        <link rel="stylesheet" href="tomorrow-night.css">
+        <link rel="stylesheet" href="ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+        <link rel="stylesheet" href="open-in.css">
+
+    </head>
+    <body class="sidebar-visible no-js">
+    <div id="body-container">
+        <!-- Provide site root to javascript -->
+        <script>
+            var path_to_root = "";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
+        </script>
+
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            var html = document.querySelector('html');
+            html.classList.remove('light')
+            html.classList.add(theme);
+            var body = document.querySelector('body');
+            body.classList.remove('no-js')
+            body.classList.add('js');
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            var body = document.querySelector('body');
+            var sidebar = null;
+            var sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+            }
+            sidebar_toggle.checked = sidebar === 'visible';
+            body.classList.remove('sidebar-visible');
+            body.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <div class="sidebar-scrollbox">
+                <ol class="chapter"><li class="chapter-item expanded "><a href="introduction.html"><strong aria-hidden="true">1.</strong> Introduction</a></li><li class="chapter-item expanded "><a href="examples.html"><strong aria-hidden="true">2.</strong> Examples</a></li><li class="chapter-item expanded affix "><li class="part-title">User guide</li><li class="chapter-item expanded "><a href="concepts.html" class="active"><strong aria-hidden="true">3.</strong> Core concepts</a></li><li class="chapter-item expanded "><a href="async_procs.html"><strong aria-hidden="true">4.</strong> async functions</a></li><li class="chapter-item expanded "><a href="error_handling.html"><strong aria-hidden="true">5.</strong> Errors and exceptions</a></li><li class="chapter-item expanded "><a href="threads.html"><strong aria-hidden="true">6.</strong> Threads</a></li><li class="chapter-item expanded "><a href="tips.html"><strong aria-hidden="true">7.</strong> Tips, tricks and best practices</a></li><li class="chapter-item expanded "><a href="porting.html"><strong aria-hidden="true">8.</strong> Porting code to chronos</a></li><li class="chapter-item expanded "><a href="http_server_middleware.html"><strong aria-hidden="true">9.</strong> HTTP server middleware</a></li><li class="chapter-item expanded affix "><li class="part-title">Developer guide</li><li class="chapter-item expanded "><a href="book.html"><strong aria-hidden="true">10.</strong> Updating this book</a></li></ol>
+            </div>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <!-- Track and set sidebar scroll position -->
+        <script>
+            var sidebarScrollbox = document.querySelector('#sidebar .sidebar-scrollbox');
+            sidebarScrollbox.addEventListener('click', function(e) {
+                if (e.target.tagName === 'A') {
+                    sessionStorage.setItem('sidebar-scroll', sidebarScrollbox.scrollTop);
+                }
+            }, { passive: true });
+            var sidebarScrollTop = sessionStorage.getItem('sidebar-scroll');
+            sessionStorage.removeItem('sidebar-scroll');
+            if (sidebarScrollTop) {
+                // preserve sidebar scroll position when navigating via links within sidebar
+                sidebarScrollbox.scrollTop = sidebarScrollTop;
+            } else {
+                // scroll sidebar to current active section when navigating via "next/previous chapter" buttons
+                var activeSection = document.querySelector('#sidebar .active');
+                if (activeSection) {
+                    activeSection.scrollIntoView({ block: 'center' });
+                }
+            }
+        </script>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Chronos</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/status-im/nim-chronos/" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="concepts"><a class="header" href="#concepts">Concepts</a></h1>
+<p>Async/await is a programming model that relies on cooperative multitasking to
+coordinate the concurrent execution of procedures, using event notifications
+from the operating system or other treads to resume execution.</p>
+<p>Code execution happens in a loop that alternates between making progress on
+tasks and handling events.</p>
+<ul>
+<li><a href="#the-dispatcher">The dispatcher</a></li>
+<li><a href="#the-future-type">The <code>Future</code> type</a></li>
+<li><a href="#the-poll-call">The <code>poll</code> call</a></li>
+<li><a href="#cancellation">Cancellation</a></li>
+<li><a href="#compile-time-configuration">Compile-time configuration</a></li>
+</ul>
+<h2 id="the-dispatcher"><a class="header" href="#the-dispatcher">The dispatcher</a></h2>
+<p>The event handler loop is called a &quot;dispatcher&quot; and a single instance per
+thread is created, as soon as one is needed.</p>
+<p>Scheduling is done by calling <a href="./async_procs.html">async procedures</a> that return
+<code>Future</code> objects - each time a procedure is unable to make further
+progress, for example because it's waiting for some data to arrive, it hands
+control back to the dispatcher which ensures that the procedure is resumed when
+ready.</p>
+<p>A single thread, and thus a single dispatcher, is typically able to handle
+thousands of concurrent in-progress requests.</p>
+<h2 id="the-future-type"><a class="header" href="#the-future-type">The <code>Future</code> type</a></h2>
+<p><code>Future</code> objects encapsulate the outcome of executing an <code>async</code> procedure. The
+<code>Future</code> may be <code>pending</code> meaning that the outcome is not yet known or
+<code>finished</code> meaning that the return value is available, the operation failed
+with an exception or was cancelled.</p>
+<p>Inside an async procedure, you can <code>await</code> the outcome of another async
+procedure - if the <code>Future</code> representing that operation is still <code>pending</code>, a
+callback representing where to resume execution will be added to it and the
+dispatcher will be given back control to deal with other tasks.</p>
+<p>When a <code>Future</code> is <code>finished</code>, all its callbacks are scheduled to be run by
+the dispatcher, thus continuing any operations that were waiting for an outcome.</p>
+<h2 id="the-poll-call"><a class="header" href="#the-poll-call">The <code>poll</code> call</a></h2>
+<p>To trigger the processing step of the dispatcher, we need to call <code>poll()</code> -
+either directly or through a wrapper like <code>runForever()</code> or <code>waitFor()</code>.</p>
+<p>Each call to poll handles any file descriptors, timers and callbacks that are
+ready to be processed.</p>
+<p>Using <code>waitFor</code>, the result of a single asynchronous operation can be obtained:</p>
+<pre><code class="language-nim">proc myApp() {.async.} =
+  echo &quot;Waiting for a second...&quot;
+  await sleepAsync(1.seconds)
+  echo &quot;done!&quot;
+
+waitFor myApp()
+</code></pre>
+<p>It is also possible to keep running the event loop forever using <code>runForever</code>:</p>
+<pre><code class="language-nim">proc myApp() {.async.} =
+  while true:
+    await sleepAsync(1.seconds)
+    echo &quot;A bit more than a second passed!&quot;
+
+let future = myApp()
+runForever()
+</code></pre>
+<p>Such an application never terminates, thus it is rare that applications are
+structured this way.</p>
+<pre><code class="language-admonish warning">Both `waitFor` and `runForever` call `poll` which offers fine-grained
+control over the event loop steps.
+
+Nested calls to `poll` - directly or indirectly via `waitFor` and `runForever`
+are not allowed.
+</code></pre>
+<h2 id="cancellation"><a class="header" href="#cancellation">Cancellation</a></h2>
+<p>Any pending <code>Future</code> can be cancelled. This can be used for timeouts, to start
+multiple parallel operations and cancel the rest as soon as one finishes,
+to initiate the orderely shutdown of an application etc.</p>
+<pre><code class="language-nim">## Simple cancellation example
+
+import chronos
+
+proc someTask() {.async.} = await sleepAsync(10.minutes)
+
+proc cancellationExample() {.async.} =
+  # Start a task but don't wait for it to finish
+  let future = someTask()
+  future.cancelSoon()
+  # `cancelSoon` schedules but does not wait for the future to get cancelled -
+  # it might still be pending here
+
+  let future2 = someTask() # Start another task concurrently
+  await future2.cancelAndWait()
+  # Using `cancelAndWait`, we can be sure that `future2` is either
+  # complete, failed or cancelled at this point. `future` could still be
+  # pending!
+  assert future2.finished()
+
+waitFor(cancellationExample())
+</code></pre>
+<p>Even if cancellation is initiated, it is not guaranteed that the operation gets
+cancelled - the future might still be completed or fail depending on the
+order of events in the dispatcher and the specifics of the operation.</p>
+<p>If the future indeed gets cancelled, <code>await</code> will raise a
+<code>CancelledError</code> as is likely to happen in the following example:</p>
+<pre><code class="language-nim">proc c1 {.async.} =
+  echo &quot;Before sleep&quot;
+  try:
+    await sleepAsync(10.minutes)
+    echo &quot;After sleep&quot; # not reach due to cancellation
+  except CancelledError as exc:
+    echo &quot;We got cancelled!&quot;
+    # `CancelledError` is typically re-raised to notify the caller that the
+    # operation is being cancelled
+    raise exc
+
+proc c2 {.async.} =
+  await c1()
+  echo &quot;Never reached, since the CancelledError got re-raised&quot;
+
+let work = c2()
+waitFor(work.cancelAndWait())
+</code></pre>
+<p>The <code>CancelledError</code> will now travel up the stack like any other exception.
+It can be caught for instance to free some resources and is then typically
+re-raised for the whole chain operations to get cancelled.</p>
+<p>Alternatively, the cancellation request can be translated to a regular outcome
+of the operation - for example, a <code>read</code> operation might return an empty result.</p>
+<p>Cancelling an already-finished <code>Future</code> has no effect, as the following example
+of downloading two web pages concurrently shows:</p>
+<pre><code class="language-nim">## Make two http requests concurrently and output the one that wins
+
+import chronos
+import ./httpget
+
+proc twoGets() {.async.} =
+  let
+    futs = @[
+      # Both pages will start downloading concurrently...
+      httpget.retrievePage(&quot;https://duckduckgo.com/?q=chronos&quot;),
+      httpget.retrievePage(&quot;https://www.google.fr/search?q=chronos&quot;)
+    ]
+
+  # Wait for at least one request to finish..
+  let winner = await one(futs)
+  # ..and cancel the others since we won't need them
+  for fut in futs:
+    # Trying to cancel an already-finished future is harmless
+    fut.cancelSoon()
+
+  # An exception could be raised here if the winning request failed!
+  echo &quot;Result: &quot;, winner.read()
+
+waitFor(twoGets())
+</code></pre>
+<h3 id="ownership"><a class="header" href="#ownership">Ownership</a></h3>
+<p>When calling a procedure that returns a <code>Future</code>, ownership of that <code>Future</code> is
+shared between the callee that created it and the caller that waits for it to be
+finished.</p>
+<p>The <code>Future</code> can be thought of as a single-item channel between a producer and a
+consumer. The producer creates the <code>Future</code> and is responsible for completing or
+failing it while the caller waits for completion and may <code>cancel</code> it.</p>
+<p>Although it is technically possible, callers must not <code>complete</code> or <code>fail</code>
+futures and callees or other intermediate observers must not <code>cancel</code> them as
+this may lead to panics and shutdown (ie if the future is completed twice or a
+cancalletion is not handled by the original caller).</p>
+<h3 id="nocancel"><a class="header" href="#nocancel"><code>noCancel</code></a></h3>
+<p>Certain operations must not be cancelled for semantic reasons. Common scenarios
+include <code>closeWait</code> that releases a resources irrevocably and composed
+operations whose individual steps should be performed together or not at all.</p>
+<p>In such cases, the <code>noCancel</code> modifier to <code>await</code> can be used to temporarily
+disable cancellation propagation, allowing the operation to complete even if
+the caller initiates a cancellation request:</p>
+<pre><code class="language-nim">proc deepSleep(dur: Duration) {.async.} =
+  # `noCancel` prevents any cancellation request by the caller of `deepSleep`
+  # from reaching `sleepAsync` - even if `deepSleep` is cancelled, its future
+  # will not complete until the sleep finishes.
+  await noCancel sleepAsync(dur)
+
+let future = deepSleep(10.minutes)
+
+# This will take ~10 minutes even if we try to cancel the call to `deepSleep`!
+await cancelAndWait(future)
+</code></pre>
+<h3 id="join"><a class="header" href="#join"><code>join</code></a></h3>
+<p>The <code>join</code> modifier to <code>await</code> allows cancelling an <code>async</code> procedure without
+propagating the cancellation to the awaited operation. This is useful when
+<code>await</code>:ing a <code>Future</code> for monitoring purposes, ie when a procedure is not the
+owner of the future that's being <code>await</code>:ed.</p>
+<p>One situation where this happens is when implementing the &quot;observer&quot; pattern,
+where a helper monitors an operation it did not initiate:</p>
+<pre><code class="language-nim">var tick: Future[void]
+proc ticker() {.async.} =
+  while true:
+    tick = sleepAsync(1.second)
+    await tick
+    echo &quot;tick!&quot;
+
+proc tocker() {.async.} =
+  # This operation does not own or implement the operation behind `tick`,
+  # so it should not cancel it when `tocker` is cancelled
+  await join tick
+  echo &quot;tock!&quot;
+
+let
+  fut = ticker() # `ticker` is now looping and most likely waiting for `tick`
+  fut2 = tocker() # both `ticker` and `tocker` are waiting for `tick`
+
+# We don't want `tocker` to cancel a future that was created in `ticker`
+waitFor fut2.cancelAndWait()
+
+waitFor fut # keeps printing `tick!` every second.
+</code></pre>
+<h2 id="compile-time-configuration"><a class="header" href="#compile-time-configuration">Compile-time configuration</a></h2>
+<p><code>chronos</code> contains several compile-time
+<a href="./chronos/config.nim">configuration options</a> enabling stricter compile-time
+checks and debugging helpers whose runtime cost may be significant.</p>
+<p>Strictness options generally will become default in future chronos releases and
+allow adapting existing code without changing the new version - see the
+<a href="./chronos/config.nim"><code>config.nim</code></a> module for more information.</p>
+<footer id="open-on-gh">Found a bug? <a href="https://github.com/status-im/nim-chronos//edit/master/docs/src/concepts.md">Edit this page on GitHub.</a></footer>
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="examples.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next prefetch" href="async_procs.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="examples.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next prefetch" href="async_procs.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr.min.js"></script>
+        <script src="mark.min.js"></script>
+        <script src="searcher.js"></script>
+
+        <script src="clipboard.min.js"></script>
+        <script src="highlight.js"></script>
+        <script src="book.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+    </div>
+    </body>
+</html>
