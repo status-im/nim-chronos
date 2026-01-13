@@ -15,6 +15,8 @@ Examples are available in the [`docs/examples/`](https://github.com/status-im/ni
 ## TCP
 
 * [tcpserver](https://github.com/status-im/nim-chronos/tree/master/docs/examples/tcpserver.nim) - Simple TCP/IP v4/v6 echo server
+* [tcpserver2](https://github.com/status-im/nim-chronos/tree/master/docs/examples/tcpserver.nim) - TCP/IP v4/6 echo server with graceful shutdown
+* [tcpclient](https://github.com/status-im/nim-chronos/tree/master/docs/examples/tcpserver.nim) - Simple multi-connection echo client
 
 ## HTTP
 
