@@ -185,7 +185,7 @@ when defined(nimdoc):
     ## Perform single asynchronous step, processing timers and completing
     ## tasks. Blocks until at least one event has completed.
     ##
-    ## Exceptions raised during `async` task exection are stored as outcome
+    ## Exceptions raised during `async` task exception are stored as outcome
     ## in the corresponding `Future` - `poll` itself does not raise.
 
   proc register2*(fd: AsyncFD): Result[void, OSErrorCode] = discard
@@ -697,6 +697,19 @@ elif defined(windows):
     if not(isNil(aftercb)):
       loop.callbacks.addLast(AsyncCallback(function: aftercb, udata: param))
 
+  proc safeCloseHandle(h: HANDLE): Result[void, string] =
+    let res = closeHandle(h)
+    if res == 0:  # WINBOOL FALSE
+      return err("Failed to close handle error code: " & osErrorMsg(osLastError()))
+    ok()
+
+  proc closeDispatcher*(loop: PDispatcher): Result[void, string] =
+    ? safeCloseHandle(loop.ioPort)
+    for i in loop.handles.items:
+      closeHandle(i)
+    loop.handles.clear()
+    ok()
+
   proc unregisterAndCloseFd*(fd: AsyncFD): Result[void, OSErrorCode] =
     ## Unregister from system queue and close asynchronous socket.
     ##
@@ -935,6 +948,14 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     ## soon as all pending operations will be notified.
     ## You can execute ``aftercb`` before actual socket close operation.
     closeSocket(fd, aftercb)
+
+  proc closeDispatcher*(loop: PDispatcher): Result[void, string] =
+    ## Close selector associated with current thread's dispatcher.
+    try:
+      loop.selector.close()
+    except IOSelectorsException as e:
+      return err("Exception in closeDispatcher: " & e.msg)
+    ok()
 
   when chronosEventEngine in ["epoll", "kqueue"]:
     type
