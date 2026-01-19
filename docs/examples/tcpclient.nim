@@ -42,7 +42,7 @@ proc main() {.async.} =
 
   var clients: seq[Future[void]]
   for i in 0 ..< 3:
-    echo "Connecting to ", server, ":", port, ", ", i
+    echo &"Connecting to {server}:{port}, {i}"
     let client = await connect(initTAddress(server, port))
     clients.add handleConnection(client, i)
     await sleepAsync(300.milliseconds)

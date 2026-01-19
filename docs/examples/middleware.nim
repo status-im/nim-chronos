@@ -123,4 +123,4 @@ proc middlewareExample() {.async: (raises: []).} =
     await server.closeWait()
 
 when isMainModule:
-  waitFor(middlewareExample())
+  waitFor middlewareExample()
