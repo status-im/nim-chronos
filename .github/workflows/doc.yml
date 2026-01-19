@@ -18,26 +18,16 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: true
-      - uses: actions-rs/install@v0.1
-        with:
-          crate: mdbook
-          use-tool-cache: true
-          version: "0.4.36"
-      - uses: actions-rs/install@v0.1
-        with:
-          crate: mdbook-toc
-          use-tool-cache: true
-          version: "0.14.1"
-      - uses: actions-rs/install@v0.1
-        with:
-          crate: mdbook-open-on-gh
-          use-tool-cache: true
-          version: "2.4.1"
-      - uses: actions-rs/install@v0.1
-        with:
-          crate: mdbook-admonish
-          use-tool-cache: true
-          version: "1.14.0"
+
+      - name: Setup cargo-binstall
+        uses: cargo-bins/cargo-binstall@main
+
+      - name: Install mdBook and preprocessors
+        run: |
+          cargo binstall mdbook@0.4.36 \
+            mdbook-toc@0.14.1 \
+            mdbook-open-on-gh@2.4.1 \
+            mdbook-admonish@1.14.0
 
       - uses: jiro4989/setup-nim-action@v1
         with:
