@@ -651,6 +651,7 @@ proc shutdown*(): Result[void, string] {.raises: [].} =
 
   let disp = getThreadDispatcher()
   ? disp.closeDispatcher()
+  ok()
 
 proc waitFor*[T: not void](fut: Future[T]): lent T {.raises: [CatchableError].} =
   ## Blocks the current thread of execution until `fut` has finished, returning
