@@ -642,8 +642,7 @@ proc pollFor[F: Future | InternalRaisesFuture](fut: F): F {.raises: [].} =
   fut
 
 proc shutdown*(): Result[void, string] {.raises: [].} =
-  ## Continues polling the dispatcher until shutdown completion, then
-  ## performs final cleanup of all dispatcher resources.
+  ## Performs the shutdown and cleanup of all dispatcher resources.
   ## Notice that this should be called only when sure that no new async tasks will be scheduled.
   ##
   ## This routine shall be called only after `pollFor` has completed. Upon
