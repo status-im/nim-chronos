@@ -641,6 +641,17 @@ proc pollFor[F: Future | InternalRaisesFuture](fut: F): F {.raises: [].} =
 
   fut
 
+proc shutdown*(): Result[void, string] {.raises: [].} =
+  ## Performs the shutdown and cleanup of all dispatcher resources.
+  ## Notice that this should be called only when sure that no new async tasks will be scheduled.
+  ##
+  ## This routine shall be called only after `pollFor` has completed. Upon
+  ## invocation, all streams are assumed to have been closed.
+
+  let disp = getThreadDispatcher()
+  ? disp.closeDispatcher()
+  ok()
+
 proc waitFor*[T: not void](fut: Future[T]): lent T {.raises: [CatchableError].} =
   ## Blocks the current thread of execution until `fut` has finished, returning
   ## its value.
