@@ -56,7 +56,7 @@ proc new*(t: typedesc[Selector], T: typedesc): SelectResult[Selector[T]] =
 
 proc close2*[T](s: Selector[T]): SelectResult[void] =
   s.fds.clear()
-  s.pollfds.setLen(0)
+  s.pollfds.reset()
 
 proc new*(t: typedesc[SelectEvent]): SelectResult[SelectEvent] =
   let flags = {DescriptorFlag.NonBlock, DescriptorFlag.CloseOnExec}
