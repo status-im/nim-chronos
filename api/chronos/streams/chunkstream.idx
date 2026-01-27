@@ -1,0 +1,14 @@
+ChunkedStreamReader	chronos/streams/chunkstream.html#ChunkedStreamReader	chunkstream: ChunkedStreamReader	
+ChunkedStreamWriter	chronos/streams/chunkstream.html#ChunkedStreamWriter	chunkstream: ChunkedStreamWriter	
+ChunkedStreamError	chronos/streams/chunkstream.html#ChunkedStreamError	chunkstream: ChunkedStreamError	
+ChunkedStreamProtocolError	chronos/streams/chunkstream.html#ChunkedStreamProtocolError	chunkstream: ChunkedStreamProtocolError	
+ChunkedStreamIncompleteError	chronos/streams/chunkstream.html#ChunkedStreamIncompleteError	chunkstream: ChunkedStreamIncompleteError	
+hexValue	chronos/streams/chunkstream.html#hexValue,byte	chunkstream: hexValue(c: byte): int	
+init	chronos/streams/chunkstream.html#init,ChunkedStreamReader,AsyncStreamReader,ref.T	chunkstream: init[T](child: ChunkedStreamReader; rsource: AsyncStreamReader;\n        bufferSize = ChunkBufferSize; udata: ref T)	
+init	chronos/streams/chunkstream.html#init,ChunkedStreamReader,AsyncStreamReader	chunkstream: init(child: ChunkedStreamReader; rsource: AsyncStreamReader;\n     bufferSize = ChunkBufferSize)	
+newChunkedStreamReader	chronos/streams/chunkstream.html#newChunkedStreamReader,AsyncStreamReader,ref.T	chunkstream: newChunkedStreamReader[T](rsource: AsyncStreamReader;\n                          bufferSize = AsyncStreamDefaultBufferSize;\n                          udata: ref T): ChunkedStreamReader	
+newChunkedStreamReader	chronos/streams/chunkstream.html#newChunkedStreamReader,AsyncStreamReader	chunkstream: newChunkedStreamReader(rsource: AsyncStreamReader;\n                       bufferSize = AsyncStreamDefaultBufferSize): ChunkedStreamReader	
+init	chronos/streams/chunkstream.html#init,ChunkedStreamWriter,AsyncStreamWriter,ref.T	chunkstream: init[T](child: ChunkedStreamWriter; wsource: AsyncStreamWriter;\n        queueSize = AsyncStreamDefaultQueueSize; udata: ref T)	
+init	chronos/streams/chunkstream.html#init,ChunkedStreamWriter,AsyncStreamWriter	chunkstream: init(child: ChunkedStreamWriter; wsource: AsyncStreamWriter;\n     queueSize = AsyncStreamDefaultQueueSize)	
+newChunkedStreamWriter	chronos/streams/chunkstream.html#newChunkedStreamWriter,AsyncStreamWriter,ref.T	chunkstream: newChunkedStreamWriter[T](wsource: AsyncStreamWriter;\n                          queueSize = AsyncStreamDefaultQueueSize; udata: ref T): ChunkedStreamWriter	
+newChunkedStreamWriter	chronos/streams/chunkstream.html#newChunkedStreamWriter,AsyncStreamWriter	chunkstream: newChunkedStreamWriter(wsource: AsyncStreamWriter;\n                       queueSize = AsyncStreamDefaultQueueSize): ChunkedStreamWriter	

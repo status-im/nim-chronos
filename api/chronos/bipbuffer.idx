@@ -1,0 +1,9 @@
+BipBuffer	chronos/bipbuffer.html#BipBuffer	bipbuffer: BipBuffer	
+init	chronos/bipbuffer.html#init,typedesc[BipBuffer],int	bipbuffer: init(t: typedesc[BipBuffer]; size: int): BipBuffer	
+availSpace	chronos/bipbuffer.html#availSpace,BipBuffer	bipbuffer: availSpace(bp: BipBuffer): Natural	
+len	chronos/bipbuffer.html#len,BipBuffer	bipbuffer: len(bp: BipBuffer): Natural	
+reserve	chronos/bipbuffer.html#reserve,BipBuffer,Natural	bipbuffer: reserve(bp: var BipBuffer; size: Natural = 0): tuple[data: ptr byte,\n    size: Natural]	
+commit	chronos/bipbuffer.html#commit,BipBuffer,Natural	bipbuffer: commit(bp: var BipBuffer; size: Natural)	
+consume	chronos/bipbuffer.html#consume,BipBuffer,Natural	bipbuffer: consume(bp: var BipBuffer; size: Natural)	
+items	chronos/bipbuffer.html#items.i,BipBuffer	bipbuffer: items(bp: BipBuffer): byte	
+regions	chronos/bipbuffer.html#regions.i,BipBuffer	bipbuffer: regions(bp: var BipBuffer): tuple[data: ptr byte, size: Natural]	
