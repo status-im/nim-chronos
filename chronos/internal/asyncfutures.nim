@@ -13,7 +13,7 @@
 
 {.push raises: [].}
 
-import std/[sequtils, macros]
+import std/[sequtils, sets, macros]
 import stew/base10
 
 import ./[asyncengine, raisesfutures]
@@ -25,12 +25,13 @@ export
 
 when chronosStackTrace:
   import std/strutils
-  when defined(nimHasStacktracesModule):
-    import system/stacktraces
-  else:
-    const
-      reraisedFromBegin = -10
-      reraisedFromEnd = -100
+
+when defined(nimHasStacktracesModule):
+  import system/stacktraces
+else:
+  const
+    reraisedFromBegin = -10
+    reraisedFromEnd = -100
 
 template LocCreateIndex*: auto {.deprecated: "LocationKind.Create".} =
     LocationKind.Create
@@ -410,60 +411,73 @@ proc futureContinue*(fut: FutureBase) {.raises: [], gcsafe.} =
 
 {.pop.}
 
+template getFilenameProcname(entry: StackTraceEntry): (string, string) =
+  when compiles(entry.filenameStr) and compiles(entry.procnameStr):
+    # We can't rely on "entry.filename" and "entry.procname" still being valid
+    # cstring pointers, because the "string.data" buffers they pointed to might
+    # be already garbage collected (this entry being a non-shallow copy,
+    # "entry.filename" no longer points to "entry.filenameStr.data", but to the
+    # buffer of the original object).
+    (entry.filenameStr, entry.procnameStr)
+  else:
+    ($entry.filename, $entry.procname)
+
+proc format(entry: StackTraceEntry): string =
+  let (filename, procname) = getFilenameProcname(entry)
+  result = filename
+  result.add '('
+  result.add $entry.line
+  result.add ')'
+  result.add ' '
+  result.add procname
+  result.add '\n'
+
+proc isInternal(entry: StackTraceEntry): bool =
+  template endsWith(a, b: string): bool =
+    let start = max(0, a.len - b.len)
+    toOpenArray(a, start, a.len - 1) == toOpenArray(b, 0, b.len - 1)
+
+  # --excessiveStackTrace:off
+  const internals = [
+    "asyncengine.nim",
+    "asyncfutures.nim",
+    # TODO: https://github.com/nim-lang/Nim/issues/24670
+    #"excpt.nim",
+    "system.nim",
+    "threadimpl.nim"
+  ]
+  let (filename, procname) = getFilenameProcname(entry)
+  for line in internals:
+    if filename.endsWith line:
+      return true
+  false
+
+proc getAsyncStackTrace*(ex: ref Exception): string =
+  ## Returns `ex` stack trace.
+  result = ""
+  when defined(nimStackTraceOverride) and declared(addDebuggingInfo):
+    let entries = addDebuggingInfo(ex.getStackTraceEntries())
+  else:
+    let entries = ex.getStackTraceEntries()
+  var seenEntries = initHashSet[StackTraceEntry]()
+  let L = entries.len-1
+  var i = L
+  var j = 0
+  while i >= 0:
+    if entries[i].line == reraisedFromBegin or i == 0:
+      j = i + int(i != 0)
+      while j < L:
+        if entries[j].line == reraisedFromBegin:
+          break
+        if entries[j].line >= 0 and not isInternal(entries[j]):
+          # this skips recursive calls sadly
+          if entries[j] notin seenEntries:
+            result.add format(entries[j])
+            seenEntries.incl entries[j]
+        inc j
+    dec i
+
 when chronosStackTrace:
-  template getFilenameProcname(entry: StackTraceEntry): (string, string) =
-    when compiles(entry.filenameStr) and compiles(entry.procnameStr):
-      # We can't rely on "entry.filename" and "entry.procname" still being valid
-      # cstring pointers, because the "string.data" buffers they pointed to might
-      # be already garbage collected (this entry being a non-shallow copy,
-      # "entry.filename" no longer points to "entry.filenameStr.data", but to the
-      # buffer of the original object).
-      (entry.filenameStr, entry.procnameStr)
-    else:
-      ($entry.filename, $entry.procname)
-
-  proc `$`(stackTraceEntries: seq[StackTraceEntry]): string =
-    try:
-      when defined(nimStackTraceOverride) and declared(addDebuggingInfo):
-        let entries = addDebuggingInfo(stackTraceEntries)
-      else:
-        let entries = stackTraceEntries
-
-      # Find longest filename & line number combo for alignment purposes.
-      var longestLeft = 0
-      for entry in entries:
-        let (filename, procname) = getFilenameProcname(entry)
-
-        if procname == "": continue
-
-        let leftLen = filename.len + len($entry.line)
-        if leftLen > longestLeft:
-          longestLeft = leftLen
-
-      var indent = 2
-      # Format the entries.
-      for entry in entries:
-        let (filename, procname) = getFilenameProcname(entry)
-
-        if procname == "":
-          if entry.line == reraisedFromBegin:
-            result.add(spaces(indent) & "#[\n")
-            indent.inc(2)
-          elif entry.line == reraisedFromEnd:
-            indent.dec(2)
-            result.add(spaces(indent) & "]#\n")
-          continue
-
-        let left = "$#($#)" % [filename, $entry.line]
-        result.add((spaces(indent) & "$#$# $#\n") % [
-          left,
-          spaces(longestLeft - left.len + 2),
-          procname
-        ])
-    except ValueError as exc:
-      return exc.msg # Shouldn't actually happen since we set the formatting
-                    # string
-
   proc injectStacktrace(error: ref Exception) =
     const header = "\nAsync traceback:\n"
 
@@ -476,8 +490,7 @@ when chronosStackTrace:
 
     var newMsg = exceptionMsg & header
 
-    let entries = getStackTraceEntries(error)
-    newMsg.add($entries)
+    newMsg.add error.getAsyncStackTrace()
 
     newMsg.add("Exception message: " & exceptionMsg & "\n")
 

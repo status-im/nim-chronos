@@ -38,6 +38,8 @@ echo "fut3.state = ", fut3.state # "Failed"
 if fut3.failed():
   echo "p3() failed: ", fut3.error.name, ": ", fut3.error.msg
   # prints "p3() failed: ValueError: ValueError inherits from CatchableError"
+  echo "stack trace: \n", fut3.error.getAsyncStackTrace()
+  # prints a pretty version of the full stack trace
 ```
 
 You can put the `await` in a `try` block, to deal with that exception sooner:
