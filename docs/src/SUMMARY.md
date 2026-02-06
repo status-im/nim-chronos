@@ -1,6 +1,13 @@
 - [Introduction](./introduction.md)
 - [Examples](./examples.md)
 
+# Tutorials
+
+## Uptime Monitor
+
+- [Uptime Monitor](./tutorials/uptimemon/intro.md)
+  - [Chapter 1. Making an HTTP Request with Chronos](./tutorials/uptimemon/chapter1.md)
+
 # User guide
 
 - [Core concepts](./concepts.md)
