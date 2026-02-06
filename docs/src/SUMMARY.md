@@ -7,6 +7,7 @@
 
 - [Uptime Monitor](./tutorials/uptimemon/intro.md)
   - [Chapter 1. Making an HTTP Request with Chronos](./tutorials/uptimemon/chapter1.md)
+  - [Chapter 2. Chapter 2. Making Many Requests Concurrently](./tutorials/uptimemon/chapter2.md)
 
 # User guide
 

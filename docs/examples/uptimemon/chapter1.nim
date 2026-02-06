@@ -1,21 +1,19 @@
-import std/strformat
+import chronos/apps/http/httpclient
 
-import chronos, chronos/apps/http/httpclient
-
-proc checkUrl(url: string) {.async.} =
+proc check(uri: string) {.async.} =
   let session = HttpSessionRef.new()
 
   try:
-    let response = await session.fetch(parseUri(url))
+    let response = await session.fetch(parseUri(uri))
 
     if response.status == 200:
-      echo fmt"[OK] {url}"
+      echo "[OK] " & uri
     else:
-      echo fmt"[NOK] {url} returned status: {response.status}"
+      echo "[NOK] " & uri & ": " & $response.status
   except CatchableError:
-    echo fmt"[ERR] Connection to {url} failed: {getCurrentExceptionMsg()}"
+    echo "[ERR] " & uri & ": " & getCurrentExceptionMsg()
   finally:
     await noCancel(session.closeWait())
 
 when isMainModule:
-  waitFor checkUrl("https://google.com")
+  waitFor check("https://google.com")
