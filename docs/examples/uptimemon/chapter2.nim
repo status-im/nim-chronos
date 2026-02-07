@@ -18,12 +18,12 @@ proc check(session: HttpSessionRef, uri: string) {.async.} =
 
 proc check(uris: seq[string]) {.async.} =
   let session = HttpSessionRef.new()
-  var futs: seq[Future[void]]
+  var futures: seq[Future[void]]
 
   for uri in uris:
-    futs.add(session.check(uri))
+    futures.add(session.check(uri))
 
-  await allFutures(futs)
+  await allFutures(futures)
   await noCancel(session.closeWait())
 
 when isMainModule:

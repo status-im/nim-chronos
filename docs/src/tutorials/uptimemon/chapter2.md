@@ -6,7 +6,7 @@ OK, we have a working app that can check one URI at a time, which is not that mu
 
 We'll take a somewhat unusual approach and **start with the wrong solution** before revealing the proper way of solving this problem. By highlighting the common mistakes, we'll help you avoid them in the future.
 
-## Wrong Solution: Synchronous Loop
+## Wrong Solution: Naive Loop
 
 The most obvious to check multiple URIs instead of one would be to just call `check` in a loop:
 
@@ -36,9 +36,6 @@ proc check(uri: string) {.async.} =
     await noCancel(session.closeWait())
 
 when isMainModule:
-  # Create one session to be used with all requests
-  let session = HttpSessionRef.new()
-
   # Loop over the URIs
   for uri in uris:
     waitFor check(uri)
@@ -50,9 +47,16 @@ So, why is it the wrong solution? Because we check URIs in a blocking, synchrono
 
 With this kind of solution, your app checks URIs one by one and the total time is the sum of the time spent getting a response for every single URI. This is hardly usable if you have as few as 20 URIs to check.
 
-## Correct Solution: Asynchronous Loop
+## Correct Solution: Asynchronous Bulk Requests
 
-We want Chronos to start all the requests at the same time and report on their results as soon as they are available.
+We want Chronos to start all the requests at the same time and each other's result as soon as it's available.
+
+To achive that, we will:
+1. Introduce a new async function that will schedule the checks. We can't do that outside if a function because async calls are allowed only in async functions.
+2. Create one HTTP session for all requests instead of creting a new session for each request.
+3. Store all `Future`s that correspond to pending HTTP requests and await them all at once with Chronos's `allFutures` helper.
+
+Here's the code:
 
 ```nim
 import chronos/apps/http/httpclient
@@ -75,14 +79,67 @@ proc check(session: HttpSessionRef, uri: string) {.async.} =
 
 proc check(uris: seq[string]) {.async.} =
   let session = HttpSessionRef.new()
-  var futs: seq[Future[void]]
+  var futures: seq[Future[void]]
 
   for uri in uris:
-    futs.add(session.check(uri))
+    futures.add(session.check(uri))
 
-  await allFutures(futs)
+  await allFutures(futures)
   await noCancel(session.closeWait())
 
 when isMainModule:
   waitFor check(uris)
 ```
+
+Run this code and notice two things:
+1. The order of responses of different from the order of the URIs. That's because our requests are now asynchronous.
+2. The execution time has improved. Now, the program runs roughly as long as the its longest request, not as the sum of all requests.
+
+Let's see what changed since the previous version.
+
+```nim
+const uris =
+  @[
+    "https://duckduckgo.com/?q=chronos", "https://www.google.fr/search?q=chronos",
+    "https://status.im", "http://123.456.78.90",
+  ]
+```
+
+We define a list of URIs to check. We've put a diverse group to see different responses: DuckDuckGo and Google should respond with 200, Status should detect a bot visit and return 403, and the last one is a non-existant location visiting which should raise an error.
+
+```nim
+proc check(session: HttpSessionRef, uri: string) {.async.} =
+  try:
+    let response = await session.fetch(parseUri(uri))
+    if response.status == 200:
+      echo "[OK] " & uri
+    else:
+      echo "[NOK] " & uri & ": " & $response.status
+  except CatchableError:
+    echo "[ERR] " & uri & ": " & getCurrentExceptionMsg()
+```
+
+We add a new argument to our `check` function and remove the session closing part—session creation and destruction now happen in the caller function.
+
+```nim
+proc check(uris: seq[string]) {.async.} =
+  let session = HttpSessionRef.new()
+  var futures: seq[Future[void]]
+
+  for uri in uris:
+    futures.add(session.check(uri))
+
+  await allFutures(futures)
+  await noCancel(session.closeWait())
+```
+
+We add another `check` function but this ones takes a list of URIs, not one URI. In this function, we create a session (and close it at the end), and populate a list of `Future`s by creating one for each URI.
+
+Then, we use `allFutures` to await all those `Future`s as if they were a single `Future` (in fact, `allFutures` does exactly that—it wraps all `Future`s passed to it with one `Future`).
+
+```nim
+when isMainModule:
+  waitFor check(uris)
+```
+
+Finally, we `waitFor` the `check` to complete for all URIs.
