@@ -3,7 +3,7 @@ import chronos/apps/http/httpclient
 const uris =
   @[
     "https://duckduckgo.com/?q=chronos", "https://www.google.fr/search?q=chronos",
-    "https://status.im", "http://123.456.78.90",
+    "https://mock.codes/403", "http://123.456.78.90",
   ]
 
 proc check(session: HttpSessionRef, uri: string) {.async.} =

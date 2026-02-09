@@ -1,6 +1,6 @@
 # Chapter 2. Making Many Requests Concurrently
 
-**Goal:** Learn how to make arbitrarily many HTTP requests in an efficient way.
+**Goal:** Learn how to make arbitrarily many HTTP requests asynchronously.
 
 OK, we have a working app that can check one URI at a time, which is not that much impressive. Let's update our app to do what Chronos was made for—concurrency!
 
@@ -17,7 +17,7 @@ import chronos/apps/http/httpclient
 const uris =
   @[
     "https://duckduckgo.com/?q=chronos", "https://www.google.fr/search?q=chronos",
-    "https://status.im", "http://123.456.78.90",
+    "https://mock.codes/403", "http://123.456.78.90",
   ]
 
 proc check(uri: string) {.async.} =
@@ -64,7 +64,7 @@ import chronos/apps/http/httpclient
 const uris =
   @[
     "https://duckduckgo.com/?q=chronos", "https://www.google.fr/search?q=chronos",
-    "https://status.im", "http://123.456.78.90",
+    "https://mock.codes/403", "http://123.456.78.90",
   ]
 
 proc check(session: HttpSessionRef, uri: string) {.async.} =
@@ -91,21 +91,40 @@ when isMainModule:
   waitFor check(uris)
 ```
 
-Run this code and notice two things:
-1. The order of responses of different from the order of the URIs. That's because our requests are now asynchronous.
-2. The execution time has improved. Now, the program runs roughly as long as the its longest request, not as the sum of all requests.
+Run this code with `nim r chapter2.nim`, you should see something like this (the order of messages may be different):
 
-Let's see what changed since the previous version.
+```shell
+[ERR] http://123.456.78.90: Could not resolve address of remote server
+[OK] https://www.google.fr/search?q=chronos
+[NOK] https://mock.codes/403: 403
+[OK] https://duckduckgo.com/?q=chronos
+```
+
+Notice that:
+1. The order of responses of different from the order of the URIs in the source code. That's because our requests are now asynchronous, as they should be.
+2. The execution time has improved. Now, the program runs roughly as long as the its longest request, not as the sum of all requests.
+You can measure the program's execution time to see the difference more clearly:
+
+```shell
+# Compile the program in release mode first:
+$ nim c -d:release chapter2.nim
+# bash, zsh:
+$ time {./chapter2}
+# PowerShell:
+$ Measure-Command {./chapter2.exe | Out-Default}
+```
+
+Let's examine the changes since the previous version.
 
 ```nim
 const uris =
   @[
     "https://duckduckgo.com/?q=chronos", "https://www.google.fr/search?q=chronos",
-    "https://status.im", "http://123.456.78.90",
+    "https://mock.codes/403", "http://123.456.78.90",
   ]
 ```
 
-We define a list of URIs to check. We've put a diverse group to see different responses: DuckDuckGo and Google should respond with 200, Status should detect a bot visit and return 403, and the last one is a non-existant location visiting which should raise an error.
+We define a list of URIs to check. We've put a diverse group to see different responses: DuckDuckGo and Google should respond with 200, Mock returns a 403 status, and the last one is a non-existant location visiting which should raise an error.
 
 ```nim
 proc check(session: HttpSessionRef, uri: string) {.async.} =
