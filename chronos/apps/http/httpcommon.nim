@@ -16,14 +16,10 @@ import ../../streams/[asyncstream, boundstream]
 export asyncloop, asyncsync, results, httputils, strutils
 
 const
-  HttpServerUnsecureConnectionTrackerName* =
-    "httpserver.unsecure.connection"
-  HttpServerSecureConnectionTrackerName* =
-    "httpserver.secure.connection"
-  HttpServerRequestTrackerName* =
-    "httpserver.request"
-  HttpServerResponseTrackerName* =
-    "httpserver.response"
+  HttpServerUnsecureConnectionTrackerName* = "httpserver.unsecure.connection"
+  HttpServerSecureConnectionTrackerName* = "httpserver.secure.connection"
+  HttpServerRequestTrackerName* = "httpserver.request"
+  HttpServerResponseTrackerName* = "httpserver.response"
 
   HeadersMark* = @[0x0d'u8, 0x0a'u8, 0x0d'u8, 0x0a'u8]
   PostMethods* = {MethodPost, MethodPatch, MethodPut, MethodDelete}
@@ -86,43 +82,48 @@ type
   HttpInvalidUsageError* = object of HttpError
   HttpUseClosedError* = object of HttpInvalidUsageError
 
-  KeyValueTuple* = tuple
-    key: string
-    value: string
+  KeyValueTuple* = tuple[key: string, value: string]
 
   TransferEncodingFlags* {.pure.} = enum
-    Identity, Chunked, Compress, Deflate, Gzip
+    Identity
+    Chunked
+    Compress
+    Deflate
+    Gzip
 
   ContentEncodingFlags* {.pure.} = enum
-    Identity, Br, Compress, Deflate, Gzip
+    Identity
+    Br
+    Compress
+    Deflate
+    Gzip
 
   QueryParamsFlag* {.pure.} = enum
-    CommaSeparatedArray ## Enable usage of comma symbol as separator of array
-                        ## items
+    CommaSeparatedArray
+      ## Enable usage of comma symbol as separator of array
+      ## items
 
   HttpState* {.pure.} = enum
-    Alive, Closing, Closed
+    Alive
+    Closing
+    Closed
 
   HttpAddressErrorType* {.pure.} = enum
-    InvalidUrlScheme,
-    InvalidPortNumber,
-    MissingHostname,
-    InvalidIpHostname,
-    NameLookupFailed,
+    InvalidUrlScheme
+    InvalidPortNumber
+    MissingHostname
+    InvalidIpHostname
+    NameLookupFailed
     NoAddressResolved
 
 const
   CriticalHttpAddressError* = {
-    HttpAddressErrorType.InvalidUrlScheme,
-    HttpAddressErrorType.InvalidPortNumber,
-    HttpAddressErrorType.MissingHostname,
-    HttpAddressErrorType.InvalidIpHostname
+    HttpAddressErrorType.InvalidUrlScheme, HttpAddressErrorType.InvalidPortNumber,
+    HttpAddressErrorType.MissingHostname, HttpAddressErrorType.InvalidIpHostname,
   }
 
-  RecoverableHttpAddressError* = {
-    HttpAddressErrorType.NameLookupFailed,
-    HttpAddressErrorType.NoAddressResolved
-  }
+  RecoverableHttpAddressError* =
+    {HttpAddressErrorType.NameLookupFailed, HttpAddressErrorType.NoAddressResolved}
 
 func isCriticalError*(error: HttpAddressErrorType): bool =
   error in CriticalHttpAddressError
@@ -132,66 +133,65 @@ func isRecoverableError*(error: HttpAddressErrorType): bool =
 
 func toString*(error: HttpAddressErrorType): string =
   case error
-  of HttpAddressErrorType.InvalidUrlScheme:
-    "URL scheme not supported"
-  of HttpAddressErrorType.InvalidPortNumber:
-    "Invalid URL port number"
-  of HttpAddressErrorType.MissingHostname:
-    "Missing URL hostname"
-  of HttpAddressErrorType.InvalidIpHostname:
-    "Invalid IPv4/IPv6 address in hostname"
-  of HttpAddressErrorType.NameLookupFailed:
-    "Could not resolve remote address"
-  of HttpAddressErrorType.NoAddressResolved:
-    "No address has been resolved"
+  of HttpAddressErrorType.InvalidUrlScheme: "URL scheme not supported"
+  of HttpAddressErrorType.InvalidPortNumber: "Invalid URL port number"
+  of HttpAddressErrorType.MissingHostname: "Missing URL hostname"
+  of HttpAddressErrorType.InvalidIpHostname: "Invalid IPv4/IPv6 address in hostname"
+  of HttpAddressErrorType.NameLookupFailed: "Could not resolve remote address"
+  of HttpAddressErrorType.NoAddressResolved: "No address has been resolved"
 
 proc raiseHttpRequestBodyTooLargeError*() {.
-     noinline, noreturn, raises: [HttpRequestBodyTooLargeError].} =
-  raise (ref HttpRequestBodyTooLargeError)(
-    code: Http413, msg: MaximumBodySizeError)
+    noinline, noreturn, raises: [HttpRequestBodyTooLargeError]
+.} =
+  raise (ref HttpRequestBodyTooLargeError)(code: Http413, msg: MaximumBodySizeError)
 
-proc raiseHttpCriticalError*(msg: string, code = Http400) {.
-     noinline, noreturn, raises: [HttpCriticalError].} =
+proc raiseHttpCriticalError*(
+    msg: string, code = Http400
+) {.noinline, noreturn, raises: [HttpCriticalError].} =
   raise (ref HttpCriticalError)(code: code, msg: msg)
 
-proc raiseHttpDisconnectError*() {.
-     noinline, noreturn, raises: [HttpDisconnectError].} =
+proc raiseHttpDisconnectError*() {.noinline, noreturn, raises: [HttpDisconnectError].} =
   raise (ref HttpDisconnectError)(msg: "Remote peer disconnected")
 
-proc raiseHttpConnectionError*(msg: string) {.
-     noinline, noreturn, raises: [HttpConnectionError].} =
+proc raiseHttpConnectionError*(
+    msg: string
+) {.noinline, noreturn, raises: [HttpConnectionError].} =
   raise (ref HttpConnectionError)(msg: msg)
 
-proc raiseHttpInterruptError*() {.
-     noinline, noreturn, raises: [HttpInterruptError].} =
+proc raiseHttpInterruptError*() {.noinline, noreturn, raises: [HttpInterruptError].} =
   raise (ref HttpInterruptError)(msg: "Connection was interrupted")
 
-proc raiseHttpReadError*(msg: string) {.
-     noinline, noreturn, raises: [HttpReadError].} =
+proc raiseHttpReadError*(msg: string) {.noinline, noreturn, raises: [HttpReadError].} =
   raise (ref HttpReadError)(msg: msg)
 
-proc raiseHttpProtocolError*(msg: string) {.
-     noinline, noreturn, raises: [HttpProtocolError].} =
+proc raiseHttpProtocolError*(
+    msg: string
+) {.noinline, noreturn, raises: [HttpProtocolError].} =
   raise (ref HttpProtocolError)(code: Http400, msg: msg)
 
-proc raiseHttpProtocolError*(code: HttpCode, msg: string) {.
-     noinline, noreturn, raises: [HttpProtocolError].} =
+proc raiseHttpProtocolError*(
+    code: HttpCode, msg: string
+) {.noinline, noreturn, raises: [HttpProtocolError].} =
   raise (ref HttpProtocolError)(code: code, msg: msg)
 
-proc raiseHttpProtocolError*(msg: HttpMessage) {.
-     noinline, noreturn, raises: [HttpProtocolError].} =
+proc raiseHttpProtocolError*(
+    msg: HttpMessage
+) {.noinline, noreturn, raises: [HttpProtocolError].} =
   raise (ref HttpProtocolError)(code: msg.code, msg: msg.message)
 
-proc raiseHttpWriteError*(msg: string) {.
-     noinline, noreturn, raises: [HttpWriteError].} =
+proc raiseHttpWriteError*(
+    msg: string
+) {.noinline, noreturn, raises: [HttpWriteError].} =
   raise (ref HttpWriteError)(msg: msg)
 
-proc raiseHttpRedirectError*(msg: string) {.
-     noinline, noreturn, raises: [HttpRedirectError].} =
+proc raiseHttpRedirectError*(
+    msg: string
+) {.noinline, noreturn, raises: [HttpRedirectError].} =
   raise (ref HttpRedirectError)(msg: msg)
 
-proc raiseHttpAddressError*(msg: string) {.
-     noinline, noreturn, raises: [HttpAddressError].} =
+proc raiseHttpAddressError*(
+    msg: string
+) {.noinline, noreturn, raises: [HttpAddressError].} =
   raise (ref HttpAddressError)(msg: msg)
 
 template newHttpInterruptError*(): ref HttpInterruptError =
@@ -206,31 +206,33 @@ template newHttpWriteError*(message: string): ref HttpWriteError =
 template newHttpUseClosedError*(): ref HttpUseClosedError =
   newException(HttpUseClosedError, "Connection was already closed")
 
-func init*(t: typedesc[HttpMessage], code: HttpCode, message: string,
-           contentType: MediaType): HttpMessage =
+func init*(
+    t: typedesc[HttpMessage], code: HttpCode, message: string, contentType: MediaType
+): HttpMessage =
   HttpMessage(code: code, message: message, contentType: contentType)
 
-func init*(t: typedesc[HttpMessage], code: HttpCode, message: string,
-           contentType: string): HttpMessage =
-  HttpMessage(code: code, message: message,
-              contentType: MediaType.init(contentType))
+func init*(
+    t: typedesc[HttpMessage], code: HttpCode, message: string, contentType: string
+): HttpMessage =
+  HttpMessage(code: code, message: message, contentType: MediaType.init(contentType))
 
-func init*(t: typedesc[HttpMessage], code: HttpCode,
-           message: string): HttpMessage =
-  HttpMessage(code: code, message: message,
-              contentType: MediaType.init("text/plain"))
+func init*(t: typedesc[HttpMessage], code: HttpCode, message: string): HttpMessage =
+  HttpMessage(code: code, message: message, contentType: MediaType.init("text/plain"))
 
 func init*(t: typedesc[HttpMessage], code: HttpCode): HttpMessage =
   HttpMessage(code: code)
 
-iterator queryParams*(query: string,
-                      flags: set[QueryParamsFlag] = {}): KeyValueTuple =
+iterator queryParams*(query: string, flags: set[QueryParamsFlag] = {}): KeyValueTuple =
   ## Iterate over url-encoded query string.
   for pair in query.split('&'):
     let items = pair.split('=', maxsplit = 1)
     let k = items[0]
     if len(k) > 0:
-      let v = if len(items) > 1: items[1] else: ""
+      let v =
+        if len(items) > 1:
+          items[1]
+        else:
+          ""
       if CommaSeparatedArray in flags:
         for av in decodeUrl(v).split(','):
           yield (decodeUrl(k), av)
@@ -238,8 +240,8 @@ iterator queryParams*(query: string,
         yield (decodeUrl(k), decodeUrl(v))
 
 func getTransferEncoding*(
-       ch: openArray[string]
-     ): HttpResult[set[TransferEncodingFlags]] =
+    ch: openArray[string]
+): HttpResult[set[TransferEncodingFlags]] =
   ## Parse value of multiple HTTP headers ``Transfer-Encoding`` and return
   ## it as set of ``TransferEncodingFlags``.
   var res: set[TransferEncodingFlags] = {}
@@ -268,9 +270,7 @@ func getTransferEncoding*(
           return err("Incorrect Transfer-Encoding value")
     ok(res)
 
-func getContentEncoding*(
-       ch: openArray[string]
-     ): HttpResult[set[ContentEncodingFlags]] =
+func getContentEncoding*(ch: openArray[string]): HttpResult[set[ContentEncodingFlags]] =
   ## Parse value of multiple HTTP headers ``Content-Encoding`` and return
   ## it as set of ``ContentEncodingFlags``.
   var res: set[ContentEncodingFlags] = {}
@@ -280,7 +280,7 @@ func getContentEncoding*(
   else:
     for header in ch:
       for item in header.split(","):
-        case strip(item.toLowerAscii()):
+        case strip(item.toLowerAscii())
         of "identity":
           res.incl(ContentEncodingFlags.Identity)
         of "br":

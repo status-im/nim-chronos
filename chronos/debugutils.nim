@@ -16,10 +16,11 @@ when chronosFutureTracking:
   import stew/base10
 
 const
-  AllFutureStates* = {FutureState.Pending, FutureState.Cancelled,
-                      FutureState.Completed, FutureState.Failed}
-  WithoutCompleted* = {FutureState.Pending, FutureState.Cancelled,
-                      FutureState.Failed}
+  AllFutureStates* = {
+    FutureState.Pending, FutureState.Cancelled, FutureState.Completed,
+    FutureState.Failed,
+  }
+  WithoutCompleted* = {FutureState.Pending, FutureState.Cancelled, FutureState.Failed}
   OnlyPending* = {FutureState.Pending}
   OnlyCompleted* = {FutureState.Completed}
 
@@ -40,14 +41,15 @@ proc dumpPendingFutures*(filter = AllFutureStates): string =
         let loc = item.location[LocationKind.Create][]
         let procedure = $loc.procedure
         let filename = $loc.file
-        let procname = if len(procedure) == 0:
-          "\"unspecified\""
-        else:
-          "\"" & procedure & "\""
-        let item = "Future[" & Base10.toString(item.id) & "] with name " &
-                   $procname & " created at " & "<" & filename & ":" &
-                   Base10.toString(uint(loc.line)) & ">" &
-                   " and state = " & $item.state & "\n"
+        let procname =
+          if len(procedure) == 0:
+            "\"unspecified\""
+          else:
+            "\"" & procedure & "\""
+        let item =
+          "Future[" & Base10.toString(item.id) & "] with name " & $procname &
+          " created at " & "<" & filename & ":" & Base10.toString(uint(loc.line)) & ">" &
+          " and state = " & $item.state & "\n"
         res.add(item)
     Base10.toString(count) & " pending Future[T] objects found:\n" & $res
   else:

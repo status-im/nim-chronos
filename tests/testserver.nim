@@ -26,12 +26,14 @@ suite "Server's test suite":
   teardown:
     checkLeaks()
 
-  proc serveStreamClient(server: StreamServer,
-                         transp: StreamTransport) {.async: (raises: []).} =
+  proc serveStreamClient(
+      server: StreamServer, transp: StreamTransport
+  ) {.async: (raises: []).} =
     discard
 
-  proc serveCustomStreamClient(server: StreamServer,
-                               transp: StreamTransport) {.async: (raises: []).} =
+  proc serveCustomStreamClient(
+      server: StreamServer, transp: StreamTransport
+  ) {.async: (raises: []).} =
     try:
       var cserver = cast[CustomServer](server)
       var ctransp = cast[CustomTransport](transp)
@@ -45,9 +47,9 @@ suite "Server's test suite":
     except CatchableError as exc:
       raiseAssert exc.msg
 
-
-  proc serveUdataStreamClient(server: StreamServer,
-                              transp: StreamTransport) {.async: (raises: []).} =
+  proc serveUdataStreamClient(
+      server: StreamServer, transp: StreamTransport
+  ) {.async: (raises: []).} =
     try:
       var udata = getUserData[CustomData](server)
       var line = await transp.readLine()
@@ -58,8 +60,7 @@ suite "Server's test suite":
     except CatchableError as exc:
       raiseAssert exc.msg
 
-  proc customServerTransport(server: StreamServer,
-                             fd: AsyncFD): StreamTransport =
+  proc customServerTransport(server: StreamServer, fd: AsyncFD): StreamTransport =
     var transp = CustomTransport()
     transp.test = "CUSTOM"
     result = cast[StreamTransport](transp)
@@ -95,9 +96,13 @@ suite "Server's test suite":
     var server = CustomServer()
     server.test1 = "TEST"
     var ta = initTAddress("127.0.0.1:0")
-    var pserver = createStreamServer(ta, serveCustomStreamClient, {ReuseAddr},
-                                     child = server,
-                                     init = customServerTransport)
+    var pserver = createStreamServer(
+      ta,
+      serveCustomStreamClient,
+      {ReuseAddr},
+      child = server,
+      init = customServerTransport,
+    )
     check:
       pserver == server
 
@@ -124,8 +129,7 @@ suite "Server's test suite":
     var co = CustomData()
     co.test = "CUSTOMDATA"
     var ta = initTAddress("127.0.0.1:0")
-    var server = createStreamServer(ta, serveUdataStreamClient, {ReuseAddr},
-                                    udata = co)
+    var server = createStreamServer(ta, serveUdataStreamClient, {ReuseAddr}, udata = co)
 
     server.start()
     var transp = await connect(server.localAddress())
@@ -145,7 +149,7 @@ suite "Server's test suite":
     ta = server1.localAddress()
 
     var clients: seq[Future[StreamTransport]]
-    for i in 0..<10:
+    for i in 0 ..< 10:
       clients.add(connect(server1.localAddress))
 
     # Check for leaks in cancellation / connect when server is not accepting

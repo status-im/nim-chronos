@@ -16,12 +16,12 @@ suite "Asynchronous issues test suite":
   const MSG_LEN = TEST_MSG.len()
   const TestsCount = 100
 
-  type
-    CustomData = ref object
-      test: string
+  type CustomData = ref object
+    test: string
 
-  proc udp4DataAvailable(transp: DatagramTransport,
-                         remote: TransportAddress) {.async: (raises: []).} =
+  proc udp4DataAvailable(
+      transp: DatagramTransport, remote: TransportAddress
+  ) {.async: (raises: []).} =
     try:
       var udata = getUserData[CustomData](transp)
       var expect = TEST_MSG
@@ -29,7 +29,7 @@ suite "Asynchronous issues test suite":
       var datalen: int
       transp.peekMessage(data, datalen)
       if udata.test == "CHECK" and datalen == MSG_LEN and
-        equalMem(addr data[0], addr expect[0], datalen):
+          equalMem(addr data[0], addr expect[0], datalen):
         udata.test = "OK"
       transp.close()
     except CatchableError as exc:
@@ -39,8 +39,7 @@ suite "Asynchronous issues test suite":
     var myself = initTAddress("127.0.0.1:" & $HELLO_PORT)
     var data = CustomData()
     data.test = "CHECK"
-    var dsock4 = newDatagramTransport(udp4DataAvailable, udata = data,
-                                      local = myself)
+    var dsock4 = newDatagramTransport(udp4DataAvailable, udata = data, local = myself)
     await dsock4.sendTo(myself, TEST_MSG, MSG_LEN)
     await dsock4.join()
     if data.test == "OK":
@@ -109,8 +108,7 @@ suite "Asynchronous issues test suite":
     res
 
   proc testIndexError(): Future[bool] {.async.} =
-    var server = createStreamServer(initTAddress("127.0.0.1:0"),
-                                    flags = {ReuseAddr})
+    var server = createStreamServer(initTAddress("127.0.0.1:0"), flags = {ReuseAddr})
     let messageSize = DefaultStreamBufferSize * 4
     var buffer = newSeq[byte](messageSize)
     let msg = createBigMessage(messageSize)
@@ -127,6 +125,7 @@ suite "Asynchronous issues test suite":
         waitFor(sleepAsync(0.milliseconds))
       except CatchableError:
         raiseAssert "Unexpected exception happened"
+
     let timer {.used.} = setTimer(Moment.fromNow(0.seconds), waiterProc, nil)
     await sleepAsync(100.milliseconds)
 
@@ -138,6 +137,7 @@ suite "Asynchronous issues test suite":
   proc testOrDeadlock(): Future[bool] {.async.} =
     proc f(): Future[void] {.async.} =
       await sleepAsync(2.seconds) or sleepAsync(1.seconds)
+
     let fx = f()
     try:
       await fx.cancelAndWait().wait(2.seconds)

@@ -31,8 +31,7 @@ const asyncTimer* {.strdefine.} = "mono"
 
 when defined(windows):
   when asyncTimer == "system":
-    proc fastEpochTime*(): uint64 {.
-         inline, deprecated: "Use Moment.now()".} =
+    proc fastEpochTime*(): uint64 {.inline, deprecated: "Use Moment.now()".} =
       ## Timer resolution is millisecond.
       var t: FILETIME
       getSystemTimeAsFileTime(t)
@@ -70,11 +69,8 @@ when defined(windows):
       queryFrequencyN = 1_000_000_000'u64 div freq
 
     setupQueryFrequence()
-
 elif defined(macosx):
-
   when asyncTimer == "system":
-
     proc fastEpochTime*(): uint64 {.inline, deprecated: "Use Moment.now()".} =
       ## Procedure's resolution is millisecond.
       var t: Timeval
@@ -86,6 +82,7 @@ elif defined(macosx):
       var t: Timeval
       posix_gettimeofday(t)
       uint64(t.tv_sec) * 1_000_000_000 + uint64(t.tv_usec) * 1_000
+
   else:
     var queryFrequencyN: uint64
     var queryFrequencyD: uint64
@@ -106,7 +103,6 @@ elif defined(macosx):
       (mach_absolute_time() * queryFrequencyN) div queryFrequencyD
 
     setupQueryFrequence()
-
 elif defined(posix):
   when asyncTimer == "system":
     proc fastEpochTime*(): uint64 {.inline, deprecated: "Use Moment.now()".} =
@@ -146,14 +142,13 @@ type
     ## non-decreasing clock (by default).
     value: int64
 
-  Duration* = object
-    ## A Duration is the interval between to points in time.
+  Duration* = object ## A Duration is the interval between to points in time.
     value: int64
 
 when sizeof(int) == 4:
-  type SomeIntegerI64* = SomeSignedInt|uint|uint8|uint16|uint32
+  type SomeIntegerI64* = SomeSignedInt | uint | uint8 | uint16 | uint32
 else:
-  type SomeIntegerI64* = SomeSignedInt|uint8|uint16|uint32
+  type SomeIntegerI64* = SomeSignedInt | uint8 | uint16 | uint32
 
 func `+`*(a: Duration, b: Duration): Duration {.inline.} =
   ## Duration + Duration = Duration
@@ -179,7 +174,13 @@ func `-`*(a, b: Moment): Duration {.inline.} =
   ## Moment - Moment = Duration
   ##
   ## Note: Duration can't be negative.
-  Duration(value: if a.value >= b.value: a.value - b.value else: 0'i64)
+  Duration(
+    value:
+      if a.value >= b.value:
+        a.value - b.value
+      else:
+        0'i64
+  )
 
 func `-`*(a: Moment, b: Duration): Moment {.inline.} =
   ## Moment - Duration = Moment
@@ -191,11 +192,21 @@ func `-`*(a: Duration, b: Duration): Duration {.inline.} =
   ## Duration - Duration = Duration
   ##
   ## Note: Duration can't be negative.
-  Duration(value: if a.value >= b.value: a.value - b.value else: 0'i64)
+  Duration(
+    value:
+      if a.value >= b.value:
+        a.value - b.value
+      else:
+        0'i64
+  )
 
 func `-=`*(a: var Duration, b: Duration) {.inline.} =
   ## Duration -= Duration
-  a.value = if a.value >= b.value: a.value - b.value else: 0'i64
+  a.value =
+    if a.value >= b.value:
+      a.value - b.value
+    else:
+      0'i64
 
 func `-=`*(a: var Moment, b: Duration) {.inline.} =
   ## Moment -= Duration

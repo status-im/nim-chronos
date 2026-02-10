@@ -66,8 +66,9 @@ func len*(bp: BipBuffer): Natural =
   ## Returns amount of used space in buffer `bp`.
   len(bp.b) + len(bp.a)
 
-proc reserve*(bp: var BipBuffer,
-              size: Natural = 0): tuple[data: ptr byte, size: Natural] =
+proc reserve*(
+    bp: var BipBuffer, size: Natural = 0
+): tuple[data: ptr byte, size: Natural] =
   ## Reserve `size` bytes in buffer.
   ##
   ## If `size == 0` (default) reserve all available space from buffer.
@@ -94,8 +95,10 @@ proc reserve*(bp: var BipBuffer,
 
 proc commit*(bp: var BipBuffer, size: Natural) =
   ## Updates structure's pointers when new data inserted into buffer.
-  doAssert(len(bp.r) >= size,
-    "Committed size could not be larger than the previously reserved one")
+  doAssert(
+    len(bp.r) >= size,
+    "Committed size could not be larger than the previously reserved one",
+  )
   if size == 0:
     bp.r.reset()
     return

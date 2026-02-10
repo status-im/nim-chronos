@@ -16,7 +16,7 @@ export results
 {.push raises: [].}
 
 const hasThreadSupport* = compileOption("threads")
-when not(hasThreadSupport):
+when not (hasThreadSupport):
   {.fatal: "Compile this program with threads enabled!".}
 
 import "."/[osdefs, osutils, oserrno]
@@ -74,22 +74,20 @@ proc new*(t: typedesc[ThreadSignalPtr]): Result[ThreadSignalPtr, string] =
     res[] = ThreadSignal(rfd: AsyncFD(sockets[0]), wfd: AsyncFD(sockets[1]))
   ok(ThreadSignalPtr(res))
 
-when not(defined(windows)):
-  type
-    WaitKind {.pure.} = enum
-      Read, Write
+when not (defined(windows)):
+  type WaitKind {.pure.} = enum
+    Read
+    Write
 
   when defined(linux):
-    proc checkBusy(fd: cint): bool = false
+    proc checkBusy(fd: cint): bool =
+      false
+
   else:
     proc checkBusy(fd: cint): bool =
       var data = 0'u64
-      let res = handleEintr(recv(SocketHandle(fd),
-                                 addr data, sizeof(uint64), MSG_PEEK))
-      if res == sizeof(uint64):
-        true
-      else:
-        false
+      let res = handleEintr(recv(SocketHandle(fd), addr data, sizeof(uint64), MSG_PEEK))
+      if res == sizeof(uint64): true else: false
 
   func toTimeval(a: Duration): Timeval =
     ## Convert Duration ``a`` to ``Timeval`` object.
@@ -97,23 +95,23 @@ when not(defined(windows)):
     let m = nanos mod Second.nanoseconds()
     Timeval(
       tv_sec: Time(nanos div Second.nanoseconds()),
-      tv_usec: Suseconds(m div Microsecond.nanoseconds())
+      tv_usec: Suseconds(m div Microsecond.nanoseconds()),
     )
 
-  proc waitReady(fd: cint, kind: WaitKind,
-                 timeout: Duration): Result[bool, OSErrorCode] =
+  proc waitReady(
+      fd: cint, kind: WaitKind, timeout: Duration
+  ): Result[bool, OSErrorCode] =
     var
       tv: Timeval
-      fdset =
-        block:
-          var res: TFdSet
-          FD_ZERO(res)
-          FD_SET(SocketHandle(fd), res)
-          res
+      fdset = block:
+        var res: TFdSet
+        FD_ZERO(res)
+        FD_SET(SocketHandle(fd), res)
+        res
 
     let
       ptv =
-        if not(timeout.isInfinite()):
+        if not (timeout.isInfinite()):
           tv = timeout.toTimeval()
           addr tv
         else:
@@ -136,7 +134,7 @@ when not(defined(windows)):
   proc safeUnregisterAndCloseFd(fd: AsyncFD): Result[void, OSErrorCode] =
     let loop = getThreadDispatcher()
     if loop.contains(fd):
-      ? unregister2(fd)
+      ?unregister2(fd)
     if closeFd(cint(fd)) != 0:
       err(osLastError())
     else:
@@ -144,7 +142,8 @@ when not(defined(windows)):
 
 proc close*(signal: ThreadSignalPtr): Result[void, string] =
   ## Close ThreadSignal object and free all the resources.
-  defer: deallocShared(signal)
+  defer:
+    deallocShared(signal)
   when defined(windows):
     # We do not need to perform unregistering on Windows, we can only close it.
     if closeHandle(signal[].event) == 0'u32:
@@ -156,12 +155,15 @@ proc close*(signal: ThreadSignalPtr): Result[void, string] =
   else:
     let res1 = safeUnregisterAndCloseFd(signal[].rfd)
     let res2 = safeUnregisterAndCloseFd(signal[].wfd)
-    if res1.isErr(): return err(osErrorMsg(res1.error))
-    if res2.isErr(): return err(osErrorMsg(res2.error))
+    if res1.isErr():
+      return err(osErrorMsg(res1.error))
+    if res2.isErr():
+      return err(osErrorMsg(res2.error))
   ok()
 
-proc fireSync*(signal: ThreadSignalPtr,
-               timeout = InfiniteDuration): Result[bool, string] =
+proc fireSync*(
+    signal: ThreadSignalPtr, timeout = InfiniteDuration
+): Result[bool, string] =
   ## Set state of ``signal`` to signaled state in blocking way.
   ##
   ## Returns ``false`` if signal was not signalled in time, and ``true``
@@ -193,8 +195,9 @@ proc fireSync*(signal: ThreadSignalPtr,
         when defined(linux):
           handleEintr(write(eventFd, addr data, sizeof(uint64)))
         else:
-          handleEintr(send(SocketHandle(eventFd), addr data, sizeof(uint64),
-                           MSG_NOSIGNAL))
+          handleEintr(
+            send(SocketHandle(eventFd), addr data, sizeof(uint64), MSG_NOSIGNAL)
+          )
       if res < 0:
         let errorCode = osLastError()
         case errorCode
@@ -202,7 +205,7 @@ proc fireSync*(signal: ThreadSignalPtr,
           let wres = waitReady(eventFd, WaitKind.Write, timeout)
           if wres.isErr():
             return err(osErrorMsg(wres.error))
-          if not(wres.get()):
+          if not (wres.get()):
             return ok(false)
         else:
           return err(osErrorMsg(errorCode))
@@ -211,8 +214,9 @@ proc fireSync*(signal: ThreadSignalPtr,
       else:
         return ok(true)
 
-proc waitSync*(signal: ThreadSignalPtr,
-               timeout = InfiniteDuration): Result[bool, string] =
+proc waitSync*(
+    signal: ThreadSignalPtr, timeout = InfiniteDuration
+): Result[bool, string] =
   ## Wait until the signal become signaled. This procedure is ``NOT`` async,
   ## so it blocks execution flow, but this procedure do not need asynchronous
   ## event loop to be present.
@@ -243,23 +247,21 @@ proc waitSync*(signal: ThreadSignalPtr,
       data = 0'u64
       timer = timeout
     while true:
-      let wres =
-        block:
-          let
-            start = Moment.now()
-            res = waitReady(eventFd, WaitKind.Read, timer)
-          timer = timer - (Moment.now() - start)
-          res
+      let wres = block:
+        let
+          start = Moment.now()
+          res = waitReady(eventFd, WaitKind.Read, timer)
+        timer = timer - (Moment.now() - start)
+        res
       if wres.isErr():
         return err(osErrorMsg(wres.error))
-      if not(wres.get()):
+      if not (wres.get()):
         return ok(false)
       let res =
         when defined(linux):
           handleEintr(read(eventFd, addr data, sizeof(uint64)))
         else:
-          handleEintr(recv(SocketHandle(eventFd), addr data, sizeof(uint64),
-                           cint(0)))
+          handleEintr(recv(SocketHandle(eventFd), addr data, sizeof(uint64), cint(0)))
       if res < 0:
         let errorCode = osLastError()
         # If errorCode == EAGAIN it means that reading operation is already
@@ -272,8 +274,9 @@ proc waitSync*(signal: ThreadSignalPtr,
       else:
         return ok(true)
 
-proc fire*(signal: ThreadSignalPtr): Future[void] {.
-    async: (raises: [AsyncError, CancelledError], raw: true).} =
+proc fire*(
+    signal: ThreadSignalPtr
+): Future[void] {.async: (raises: [AsyncError, CancelledError], raw: true).} =
   ## Set state of ``signal`` to signaled in asynchronous way.
   var retFuture = newFuture[void]("asyncthreadsignal.fire")
   when defined(windows):
@@ -296,13 +299,14 @@ proc fire*(signal: ThreadSignalPtr): Future[void] {.
           cint(signal[].rfd)
 
     proc continuation(udata: pointer) {.gcsafe, raises: [].} =
-      if not(retFuture.finished()):
+      if not (retFuture.finished()):
         let res =
           when defined(linux):
             handleEintr(write(eventFd, addr data, sizeof(uint64)))
           else:
-            handleEintr(send(SocketHandle(eventFd), addr data, sizeof(uint64),
-                             MSG_NOSIGNAL))
+            handleEintr(
+              send(SocketHandle(eventFd), addr data, sizeof(uint64), MSG_NOSIGNAL)
+            )
         if res < 0:
           let errorCode = osLastError()
           discard removeWriter2(AsyncFD(eventFd))
@@ -318,7 +322,7 @@ proc fire*(signal: ThreadSignalPtr): Future[void] {.
             retFuture.complete()
 
     proc cancellation(udata: pointer) {.gcsafe, raises: [].} =
-      if not(retFuture.finished()):
+      if not (retFuture.finished()):
         discard removeWriter2(AsyncFD(eventFd))
 
     if checkBusy(checkFd):
@@ -330,14 +334,15 @@ proc fire*(signal: ThreadSignalPtr): Future[void] {.
       when defined(linux):
         handleEintr(write(eventFd, addr data, sizeof(uint64)))
       else:
-        handleEintr(send(SocketHandle(eventFd), addr data, sizeof(uint64),
-                         MSG_NOSIGNAL))
+        handleEintr(
+          send(SocketHandle(eventFd), addr data, sizeof(uint64), MSG_NOSIGNAL)
+        )
     if res < 0:
       let errorCode = osLastError()
       case errorCode
       of EAGAIN:
         let loop = getThreadDispatcher()
-        if not(loop.contains(AsyncFD(eventFd))):
+        if not (loop.contains(AsyncFD(eventFd))):
           let rres = register2(AsyncFD(eventFd))
           if rres.isErr():
             retFuture.fail(newException(AsyncError, osErrorMsg(rres.error)))
@@ -357,17 +362,20 @@ proc fire*(signal: ThreadSignalPtr): Future[void] {.
   retFuture
 
 when defined(windows):
-  proc wait*(signal: ThreadSignalPtr) {.
-      async: (raises: [AsyncError, CancelledError]).} =
+  proc wait*(
+      signal: ThreadSignalPtr
+  ) {.async: (raises: [AsyncError, CancelledError]).} =
     let handle = signal[].event
     let res = await waitForSingleObject(handle, InfiniteDuration)
     # There should be no other response, because we use `InfiniteDuration`.
     doAssert(res == WaitableResult.Ok)
+
 else:
-  proc wait*(signal: ThreadSignalPtr): Future[void] {.
-      async: (raises: [AsyncError, CancelledError], raw: true).} =
-    let retFuture = Future[void].Raising([AsyncError, CancelledError]).init(
-      "asyncthreadsignal.wait")
+  proc wait*(
+      signal: ThreadSignalPtr
+  ): Future[void] {.async: (raises: [AsyncError, CancelledError], raw: true).} =
+    let retFuture =
+      Future[void].Raising([AsyncError, CancelledError]).init("asyncthreadsignal.wait")
     var data = 1'u64
     let eventFd =
       when defined(linux):
@@ -376,13 +384,12 @@ else:
         cint(signal[].rfd)
 
     proc continuation(udata: pointer) {.gcsafe, raises: [].} =
-      if not(retFuture.finished()):
+      if not (retFuture.finished()):
         let res =
           when defined(linux):
             handleEintr(read(eventFd, addr data, sizeof(uint64)))
           else:
-            handleEintr(recv(SocketHandle(eventFd), addr data, sizeof(uint64),
-                             cint(0)))
+            handleEintr(recv(SocketHandle(eventFd), addr data, sizeof(uint64), cint(0)))
         if res < 0:
           let errorCode = osLastError()
           # If errorCode == EAGAIN it means that reading operation is already
@@ -402,12 +409,12 @@ else:
             retFuture.complete()
 
     proc cancellation(udata: pointer) {.gcsafe, raises: [].} =
-      if not(retFuture.finished()):
+      if not (retFuture.finished()):
         # Future is already cancelled so we ignore errors.
         discard removeReader2(AsyncFD(eventFd))
 
     let loop = getThreadDispatcher()
-    if not(loop.contains(AsyncFD(eventFd))):
+    if not (loop.contains(AsyncFD(eventFd))):
       let res = register2(AsyncFD(eventFd))
       if res.isErr():
         retFuture.fail(newException(AsyncError, osErrorMsg(res.error)))

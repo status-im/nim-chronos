@@ -21,88 +21,110 @@ const
   asyncInvalidSocket* = AsyncFD(osdefs.INVALID_SOCKET)
   asyncInvalidPipe* = asyncInvalidSocket
 
-proc setSocketBlocking*(s: SocketHandle, blocking: bool): bool {.
-     deprecated: "Please use setDescriptorBlocking() instead".} =
+proc setSocketBlocking*(
+    s: SocketHandle, blocking: bool
+): bool {.deprecated: "Please use setDescriptorBlocking() instead".} =
   ## Sets blocking mode on socket.
   setDescriptorBlocking(s, blocking).isOkOr:
     return false
   true
 
-proc setSockOpt2*(socket: AsyncFD,
-                  level, optname, optval: int): Result[void, OSErrorCode] =
+proc setSockOpt2*(
+    socket: AsyncFD, level, optname, optval: int
+): Result[void, OSErrorCode] =
   var value = cint(optval)
-  let res = osdefs.setsockopt(SocketHandle(socket), cint(level), cint(optname),
-                              addr(value), SockLen(sizeof(value)))
+  let res = osdefs.setsockopt(
+    SocketHandle(socket),
+    cint(level),
+    cint(optname),
+    addr(value),
+    SockLen(sizeof(value)),
+  )
   if res == -1:
     return err(osLastError())
   ok()
 
-proc setSockOpt2*(socket: AsyncFD, level, optname: int, value: pointer,
-                  valuelen: int): Result[void, OSErrorCode] =
+proc setSockOpt2*(
+    socket: AsyncFD, level, optname: int, value: pointer, valuelen: int
+): Result[void, OSErrorCode] =
   ## `setsockopt()` for custom options (pointer and length).
   ## Returns ``true`` on success, ``false`` on error.
-  let res = osdefs.setsockopt(SocketHandle(socket), cint(level), cint(optname),
-                              value, SockLen(valuelen))
+  let res = osdefs.setsockopt(
+    SocketHandle(socket), cint(level), cint(optname), value, SockLen(valuelen)
+  )
   if res == -1:
     return err(osLastError())
   ok()
 
-proc setSockOpt*(socket: AsyncFD, level, optname, optval: int): bool {.
-     deprecated: "Please use setSockOpt2() instead".} =
+proc setSockOpt*(
+    socket: AsyncFD, level, optname, optval: int
+): bool {.deprecated: "Please use setSockOpt2() instead".} =
   ## `setsockopt()` for integer options.
   ## Returns ``true`` on success, ``false`` on error.
   setSockOpt2(socket, level, optname, optval).isOk
 
-proc setSockOpt*(socket: AsyncFD, level, optname: int, value: pointer,
-                 valuelen: int): bool {.
-     deprecated: "Please use setSockOpt2() instead".} =
+proc setSockOpt*(
+    socket: AsyncFD, level, optname: int, value: pointer, valuelen: int
+): bool {.deprecated: "Please use setSockOpt2() instead".} =
   ## `setsockopt()` for custom options (pointer and length).
   ## Returns ``true`` on success, ``false`` on error.
   setSockOpt2(socket, level, optname, value, valuelen).isOk
 
-proc getSockOpt2*(socket: AsyncFD,
-                  level, optname: int): Result[cint, OSErrorCode] =
+proc getSockOpt2*(socket: AsyncFD, level, optname: int): Result[cint, OSErrorCode] =
   var
     value: cint
     size = SockLen(sizeof(value))
-  let res = osdefs.getsockopt(SocketHandle(socket), cint(level), cint(optname),
-                              addr(value), addr(size))
+  let res = osdefs.getsockopt(
+    SocketHandle(socket), cint(level), cint(optname), addr(value), addr(size)
+  )
   if res == -1:
     return err(osLastError())
   ok(value)
 
-proc getSockOpt2*(socket: AsyncFD, level, optname: int,
-                  T: type): Result[T, OSErrorCode] =
+proc getSockOpt2*(
+    socket: AsyncFD, level, optname: int, T: type
+): Result[T, OSErrorCode] =
   var
     value = default(T)
     size = SockLen(sizeof(value))
-  let res = osdefs.getsockopt(SocketHandle(socket), cint(level), cint(optname),
-                              cast[ptr byte](addr(value)), addr(size))
+  let res = osdefs.getsockopt(
+    SocketHandle(socket),
+    cint(level),
+    cint(optname),
+    cast[ptr byte](addr(value)),
+    addr(size),
+  )
   if res == -1:
     return err(osLastError())
   ok(value)
 
-proc getSockOpt*(socket: AsyncFD, level, optname: int, value: var int): bool {.
-     deprecated: "Please use getSockOpt2() instead".} =
+proc getSockOpt*(
+    socket: AsyncFD, level, optname: int, value: var int
+): bool {.deprecated: "Please use getSockOpt2() instead".} =
   ## `getsockopt()` for integer options.
   ## Returns ``true`` on success, ``false`` on error.
   value = getSockOpt2(socket, level, optname).valueOr:
     return false
   true
 
-proc getSockOpt*(socket: AsyncFD, level, optname: int, value: var pointer,
-                 valuelen: var int): bool  {.
-     deprecated: "Please use getSockOpt2() instead".} =
+proc getSockOpt*(
+    socket: AsyncFD, level, optname: int, value: var pointer, valuelen: var int
+): bool {.deprecated: "Please use getSockOpt2() instead".} =
   ## `getsockopt()` for custom options (pointer and length).
   ## Returns ``true`` on success, ``false`` on error.
-  osdefs.getsockopt(SocketHandle(socket), cint(level), cint(optname),
-                    value, cast[ptr SockLen](addr valuelen)) >= cint(0)
+  osdefs.getsockopt(
+    SocketHandle(socket),
+    cint(level),
+    cint(optname),
+    value,
+    cast[ptr SockLen](addr valuelen),
+  ) >= cint(0)
 
-proc getSocketError*(socket: AsyncFD, err: var int): bool  {.
-     deprecated: "Please use getSocketError() instead".} =
+proc getSocketError*(
+    socket: AsyncFD, err: var int
+): bool {.deprecated: "Please use getSocketError() instead".} =
   ## Recover error code associated with socket handle ``socket``.
-  err = getSockOpt2(socket, cint(osdefs.SOL_SOCKET),
-                    cint(osdefs.SO_ERROR)).valueOr:
+  err = getSockOpt2(socket, cint(osdefs.SOL_SOCKET), cint(osdefs.SO_ERROR)).valueOr:
     return false
   true
 
@@ -111,23 +133,30 @@ proc getSocketError2*(socket: AsyncFD): Result[cint, OSErrorCode] =
 
 proc isAvailable*(domain: Domain): bool =
   when defined(windows):
-    let fd = wsaSocket(toInt(domain), toInt(SockType.SOCK_STREAM),
-                       toInt(Protocol.IPPROTO_TCP), nil, GROUP(0), 0'u32)
+    let fd = wsaSocket(
+      toInt(domain),
+      toInt(SockType.SOCK_STREAM),
+      toInt(Protocol.IPPROTO_TCP),
+      nil,
+      GROUP(0),
+      0'u32,
+    )
     if fd == osdefs.INVALID_SOCKET:
       return if osLastError() == osdefs.WSAEAFNOSUPPORT: false else: true
     discard closeFd(fd)
     true
   else:
-    let fd = osdefs.socket(toInt(domain), toInt(SockType.SOCK_STREAM),
-                           toInt(Protocol.IPPROTO_TCP))
+    let fd = osdefs.socket(
+      toInt(domain), toInt(SockType.SOCK_STREAM), toInt(Protocol.IPPROTO_TCP)
+    )
     if fd == -1:
       return if osLastError() == osdefs.EAFNOSUPPORT: false else: true
     discard closeFd(fd)
     true
 
-proc createAsyncSocket2*(domain: Domain, sockType: SockType,
-                         protocol: Protocol,
-                         inherit = true): Result[AsyncFD, OSErrorCode] =
+proc createAsyncSocket2*(
+    domain: Domain, sockType: SockType, protocol: Protocol, inherit = true
+): Result[AsyncFD, OSErrorCode] =
   ## Creates new asynchronous socket.
   when defined(windows):
     let flags =
@@ -135,8 +164,8 @@ proc createAsyncSocket2*(domain: Domain, sockType: SockType,
         osdefs.WSA_FLAG_OVERLAPPED
       else:
         osdefs.WSA_FLAG_OVERLAPPED or osdefs.WSA_FLAG_NO_HANDLE_INHERIT
-    let fd = wsaSocket(toInt(domain), toInt(sockType), toInt(protocol),
-                       nil, GROUP(0), flags)
+    let fd =
+      wsaSocket(toInt(domain), toInt(sockType), toInt(protocol), nil, GROUP(0), flags)
     if fd == osdefs.INVALID_SOCKET:
       return err(osLastError())
 
@@ -174,27 +203,29 @@ proc createAsyncSocket2*(domain: Domain, sockType: SockType,
         return err(error)
       ok(AsyncFD(fd))
 
-proc wrapAsyncSocket2*(sock: cint|SocketHandle): Result[AsyncFD, OSErrorCode] =
+proc wrapAsyncSocket2*(sock: cint | SocketHandle): Result[AsyncFD, OSErrorCode] =
   ## Wraps socket to asynchronous socket handle.
   let fd =
     when defined(windows):
       sock
     else:
-      when sock is cint: sock else: cint(sock)
-  ? setDescriptorFlags(fd, true, true)
-  ? register2(AsyncFD(fd))
+      when sock is cint:
+        sock
+      else:
+        cint(sock)
+  ?setDescriptorFlags(fd, true, true)
+  ?register2(AsyncFD(fd))
   ok(AsyncFD(fd))
 
-proc createAsyncSocket*(domain: Domain, sockType: SockType,
-                        protocol: Protocol,
-                        inherit = true): AsyncFD =
+proc createAsyncSocket*(
+    domain: Domain, sockType: SockType, protocol: Protocol, inherit = true
+): AsyncFD =
   ## Creates new asynchronous socket.
   ## Returns ``asyncInvalidSocket`` on error.
   createAsyncSocket2(domain, sockType, protocol, inherit).valueOr:
     return asyncInvalidSocket
 
-proc wrapAsyncSocket*(sock: cint|SocketHandle): AsyncFD {.
-    raises: [CatchableError].} =
+proc wrapAsyncSocket*(sock: cint | SocketHandle): AsyncFD {.raises: [CatchableError].} =
   ## Wraps socket to asynchronous socket handle.
   ## Return ``asyncInvalidSocket`` on error.
   wrapAsyncSocket2(sock).valueOr:
@@ -277,8 +308,13 @@ proc getDualstack*(fd: AsyncFD): Result[bool, OSErrorCode] =
   var
     flag = cint(0)
     size = SockLen(sizeof(flag))
-  let res = osdefs.getsockopt(SocketHandle(fd), cint(osdefs.IPPROTO_IPV6),
-                              cint(osdefs.IPV6_V6ONLY), addr(flag), addr(size))
+  let res = osdefs.getsockopt(
+    SocketHandle(fd),
+    cint(osdefs.IPPROTO_IPV6),
+    cint(osdefs.IPV6_V6ONLY),
+    addr(flag),
+    addr(size),
+  )
   if res == -1:
     return err(osLastError())
   ok(flag == cint(0))
@@ -289,8 +325,13 @@ proc setDualstack*(fd: AsyncFD, value: bool): Result[void, OSErrorCode] =
   var
     flag = cint(if value: 0 else: 1)
     size = SockLen(sizeof(flag))
-  let res = osdefs.setsockopt(SocketHandle(fd), cint(osdefs.IPPROTO_IPV6),
-                              cint(osdefs.IPV6_V6ONLY), addr(flag), size)
+  let res = osdefs.setsockopt(
+    SocketHandle(fd),
+    cint(osdefs.IPPROTO_IPV6),
+    cint(osdefs.IPV6_V6ONLY),
+    addr(flag),
+    size,
+  )
   if res == -1:
     return err(osLastError())
   ok()

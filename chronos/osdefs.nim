@@ -10,16 +10,19 @@ import oserrno
 export oserrno
 
 when defined(windows):
-  from std/winlean import Sockaddr_storage, InAddr, In6Addr, Sockaddr_in,
-                          Sockaddr_in6, SockLen, SockAddr, AddrInfo,
-                          SocketHandle
-  export Sockaddr_storage, InAddr, In6Addr, Sockaddr_in, Sockaddr_in6, SockLen,
-         SockAddr, AddrInfo, SocketHandle
+  from std/winlean import
+    Sockaddr_storage, InAddr, In6Addr, Sockaddr_in, Sockaddr_in6, SockLen, SockAddr,
+    AddrInfo, SocketHandle
+  export
+    Sockaddr_storage, InAddr, In6Addr, Sockaddr_in, Sockaddr_in6, SockLen, SockAddr,
+    AddrInfo, SocketHandle
   # Prerequisites for constants
-  template WSAIORW*(x, y): untyped = (IOC_INOUT or x or y)
+  template WSAIORW*(x, y): untyped =
+    (IOC_INOUT or x or y)
+
   template WSAIOW*(x, y): untyped =
-    clong(-2147483648) or
-    ((clong(sizeof(int32)) and clong(IOCPARM_MASK)) shl 16) or (x shl 8) or y
+    clong(-2147483648) or ((clong(sizeof(int32)) and clong(IOCPARM_MASK)) shl 16) or
+      (x shl 8) or y
 
   type
     HANDLE* = distinct uint
@@ -27,7 +30,7 @@ when defined(windows):
       D1*: uint32
       D2*: uint16
       D3*: uint16
-      D4*: array[0..7, byte]
+      D4*: array[0 .. 7, byte]
 
   const
     WSADESCRIPTION_LEN* = 256
@@ -111,12 +114,12 @@ when defined(windows):
 
     IOCPARM_MASK* = 0x7f'u32
     IOC_OUT* = 0x40000000'u32
-    IOC_IN*  = 0x80000000'u32
+    IOC_IN* = 0x80000000'u32
     IOC_WS2* = 0x08000000'u32
     IOC_INOUT* = IOC_IN or IOC_OUT
 
     INVALID_SOCKET* = SocketHandle(-1)
-    INVALID_HANDLE_VALUE* = HANDLE(uint(not(0'u)))
+    INVALID_HANDLE_VALUE* = HANDLE(uint(not (0'u)))
 
     SIO_GET_EXTENSION_FUNCTION_POINTER* = uint32(WSAIORW(IOC_WS2, 6))
     SO_UPDATE_ACCEPT_CONTEXT* = 0x700B
@@ -157,8 +160,8 @@ when defined(windows):
     SO_USELOOPBACK* = 0x0040
     SO_LINGER* = 0x0080
     SO_OOBINLINE* = 0x0100
-    SO_DONTLINGER* = not(SO_LINGER)
-    SO_EXCLUSIVEADDRUSE* = not(SO_REUSEADDR)
+    SO_DONTLINGER* = not (SO_LINGER)
+    SO_EXCLUSIVEADDRUSE* = not (SO_REUSEADDR)
     SO_SNDBUF* = 0x1001
     SO_RCVBUF* = 0x1002
     SO_SNDLOWAT* = 0x1003
@@ -222,26 +225,36 @@ when defined(windows):
 
     STILL_ACTIVE* = 0x00000103'u32
 
-    WSAID_CONNECTEX* =
-      GUID(D1: 0x25a207b9'u32, D2: 0xddf3'u16, D3: 0x4660'u16,
-           D4: [0x8e'u8, 0xe9'u8, 0x76'u8, 0xe5'u8,
-                0x8c'u8, 0x74'u8, 0x06'u8, 0x3e'u8])
-    WSAID_ACCEPTEX* =
-      GUID(D1: 0xb5367df1'u32, D2: 0xcbac'u16, D3: 0x11cf'u16,
-           D4: [0x95'u8, 0xca'u8, 0x00'u8, 0x80'u8,
-                0x5f'u8, 0x48'u8, 0xa1'u8, 0x92'u8])
-    WSAID_GETACCEPTEXSOCKADDRS* =
-      GUID(D1: 0xb5367df2'u32, D2: 0xcbac'u16, D3: 0x11cf'u16,
-           D4: [0x95'u8, 0xca'u8, 0x00'u8, 0x80'u8,
-                0x5f'u8, 0x48'u8, 0xa1'u8, 0x92'u8])
-    WSAID_TRANSMITFILE* =
-      GUID(D1: 0xb5367df0'u32, D2: 0xcbac'u16, D3: 0x11cf'u16,
-           D4: [0x95'u8, 0xca'u8, 0x00'u8, 0x80'u8,
-                0x5f'u8, 0x48'u8, 0xa1'u8, 0x92'u8])
-    WSAID_DISCONNECTEX* =
-      GUID(D1: 0x7fda2e11'u32, D2: 0x8630'u16, D3: 0x436f'u16,
-           D4: [0xa0'u8, 0x31'u8, 0xf5'u8, 0x36'u8,
-                0xa6'u8, 0xee'u8, 0xc1'u8, 0x57'u8])
+    WSAID_CONNECTEX* = GUID(
+      D1: 0x25a207b9'u32,
+      D2: 0xddf3'u16,
+      D3: 0x4660'u16,
+      D4: [0x8e'u8, 0xe9'u8, 0x76'u8, 0xe5'u8, 0x8c'u8, 0x74'u8, 0x06'u8, 0x3e'u8],
+    )
+    WSAID_ACCEPTEX* = GUID(
+      D1: 0xb5367df1'u32,
+      D2: 0xcbac'u16,
+      D3: 0x11cf'u16,
+      D4: [0x95'u8, 0xca'u8, 0x00'u8, 0x80'u8, 0x5f'u8, 0x48'u8, 0xa1'u8, 0x92'u8],
+    )
+    WSAID_GETACCEPTEXSOCKADDRS* = GUID(
+      D1: 0xb5367df2'u32,
+      D2: 0xcbac'u16,
+      D3: 0x11cf'u16,
+      D4: [0x95'u8, 0xca'u8, 0x00'u8, 0x80'u8, 0x5f'u8, 0x48'u8, 0xa1'u8, 0x92'u8],
+    )
+    WSAID_TRANSMITFILE* = GUID(
+      D1: 0xb5367df0'u32,
+      D2: 0xcbac'u16,
+      D3: 0x11cf'u16,
+      D4: [0x95'u8, 0xca'u8, 0x00'u8, 0x80'u8, 0x5f'u8, 0x48'u8, 0xa1'u8, 0x92'u8],
+    )
+    WSAID_DISCONNECTEX* = GUID(
+      D1: 0x7fda2e11'u32,
+      D2: 0x8630'u16,
+      D3: 0x436f'u16,
+      D4: [0xa0'u8, 0x31'u8, 0xf5'u8, 0x36'u8, 0xa6'u8, 0xee'u8, 0xc1'u8, 0x57'u8],
+    )
 
     GAA_FLAG_INCLUDE_PREFIX* = 0x0010'u32
 
@@ -311,12 +324,11 @@ when defined(windows):
 
     POVERLAPPED* = ptr OVERLAPPED
 
-    POVERLAPPED_COMPLETION_ROUTINE* = proc (para1: DWORD, para2: DWORD,
-                                            para3: POVERLAPPED) {.
-      stdcall, gcsafe, raises: [].}
+    POVERLAPPED_COMPLETION_ROUTINE* = proc(
+      para1: DWORD, para2: DWORD, para3: POVERLAPPED
+    ) {.stdcall, gcsafe, raises: [].}
 
-    PHANDLER_ROUTINE* = proc (dwCtrlType: DWORD): WINBOOL {.
-      stdcall, gcsafe, raises: [].}
+    PHANDLER_ROUTINE* = proc(dwCtrlType: DWORD): WINBOOL {.stdcall, gcsafe, raises: [].}
 
     OSVERSIONINFO* {.final, pure.} = object
       dwOSVersionInfoSize*: DWORD
@@ -324,7 +336,7 @@ when defined(windows):
       dwMinorVersion*: DWORD
       dwBuildNumber*: DWORD
       dwPlatformId*: DWORD
-      szCSDVersion*: array[0..127, WORD]
+      szCSDVersion*: array[0 .. 127, WORD]
 
     STARTUPINFO* {.final, pure.} = object
       cb*: DWORD
@@ -494,394 +506,526 @@ when defined(windows):
       internal*: ULONG_PTR
       dwNumberOfBytesTransferred*: DWORD
 
-    GETBESTROUTE2* = proc (
-      interfaceLuid: ptr uint64, interfaceIndex: uint32,
-      sourceAddress: ptr SOCKADDR_INET, destinationAddress: ptr SOCKADDR_INET,
-      addressSortOptions: uint32, bestRoute: ptr MibIpForwardRow2,
-      bestSourceAddress: ptr SOCKADDR_INET): DWORD {.
-      gcsafe, stdcall, raises: [].}
+    GETBESTROUTE2* = proc(
+      interfaceLuid: ptr uint64,
+      interfaceIndex: uint32,
+      sourceAddress: ptr SOCKADDR_INET,
+      destinationAddress: ptr SOCKADDR_INET,
+      addressSortOptions: uint32,
+      bestRoute: ptr MibIpForwardRow2,
+      bestSourceAddress: ptr SOCKADDR_INET,
+    ): DWORD {.gcsafe, stdcall, raises: [].}
 
-    WAITORTIMERCALLBACK* = proc (
-      p1: pointer, p2: DWORD): void {.
-      gcsafe, stdcall, raises: [].}
+    WAITORTIMERCALLBACK* =
+      proc(p1: pointer, p2: DWORD): void {.gcsafe, stdcall, raises: [].}
 
-    WSAPROC_ACCEPTEX* = proc (
-      sListenSocket: SocketHandle, sAcceptSocket: SocketHandle,
-      lpOutputBuffer: pointer, dwReceiveDataLength: DWORD,
-      dwLocalAddressLength: DWORD, dwRemoteAddressLength: DWORD,
-      lpdwBytesReceived: ptr DWORD, lpOverlapped: POVERLAPPED): WINBOOL {.
-      stdcall, gcsafe, raises: [].}
+    WSAPROC_ACCEPTEX* = proc(
+      sListenSocket: SocketHandle,
+      sAcceptSocket: SocketHandle,
+      lpOutputBuffer: pointer,
+      dwReceiveDataLength: DWORD,
+      dwLocalAddressLength: DWORD,
+      dwRemoteAddressLength: DWORD,
+      lpdwBytesReceived: ptr DWORD,
+      lpOverlapped: POVERLAPPED,
+    ): WINBOOL {.stdcall, gcsafe, raises: [].}
 
-    WSAPROC_CONNECTEX* = proc (
-      s: SocketHandle, name: ptr SockAddr, namelen: cint, lpSendBuffer: pointer,
-      dwSendDataLength: DWORD, lpdwBytesSent: ptr DWORD,
-      lpOverlapped: POVERLAPPED): WINBOOL {.
-      stdcall, gcsafe, raises: [].}
+    WSAPROC_CONNECTEX* = proc(
+      s: SocketHandle,
+      name: ptr SockAddr,
+      namelen: cint,
+      lpSendBuffer: pointer,
+      dwSendDataLength: DWORD,
+      lpdwBytesSent: ptr DWORD,
+      lpOverlapped: POVERLAPPED,
+    ): WINBOOL {.stdcall, gcsafe, raises: [].}
 
-    WSAPROC_GETACCEPTEXSOCKADDRS* = proc (
-      lpOutputBuffer: pointer, dwReceiveDataLength: DWORD,
-      dwLocalAddressLength: DWORD, dwRemoteAddressLength: DWORD,
-      localSockaddr: ptr ptr SockAddr, localSockaddrLength: LPINT,
-      remoteSockaddr: ptr ptr SockAddr, remoteSockaddrLength: LPINT) {.
-      stdcall, gcsafe, raises: [].}
+    WSAPROC_GETACCEPTEXSOCKADDRS* = proc(
+      lpOutputBuffer: pointer,
+      dwReceiveDataLength: DWORD,
+      dwLocalAddressLength: DWORD,
+      dwRemoteAddressLength: DWORD,
+      localSockaddr: ptr ptr SockAddr,
+      localSockaddrLength: LPINT,
+      remoteSockaddr: ptr ptr SockAddr,
+      remoteSockaddrLength: LPINT,
+    ) {.stdcall, gcsafe, raises: [].}
 
-    WSAPROC_TRANSMITFILE* = proc (
-      hSocket: SocketHandle, hFile: HANDLE, nNumberOfBytesToWrite: DWORD,
-      nNumberOfBytesPerSend: DWORD, lpOverlapped: POVERLAPPED,
-      lpTransmitBuffers: pointer, dwReserved: DWORD): WINBOOL {.
-      stdcall, gcsafe, raises: [].}
+    WSAPROC_TRANSMITFILE* = proc(
+      hSocket: SocketHandle,
+      hFile: HANDLE,
+      nNumberOfBytesToWrite: DWORD,
+      nNumberOfBytesPerSend: DWORD,
+      lpOverlapped: POVERLAPPED,
+      lpTransmitBuffers: pointer,
+      dwReserved: DWORD,
+    ): WINBOOL {.stdcall, gcsafe, raises: [].}
 
-    WSAPROC_DISCONNECTEX* = proc (
-      hSocket: SocketHandle, lpOverlapped: POVERLAPPED, dwFlags: DWORD,
-      dwReserved: DWORD): WINBOOL {.
-      stdcall, gcsafe, raises: [].}
+    WSAPROC_DISCONNECTEX* = proc(
+      hSocket: SocketHandle,
+      lpOverlapped: POVERLAPPED,
+      dwFlags: DWORD,
+      dwReserved: DWORD,
+    ): WINBOOL {.stdcall, gcsafe, raises: [].}
 
-    LPFN_GETQUEUEDCOMPLETIONSTATUSEX* = proc (
-      completionPort: HANDLE, lpPortEntries: ptr OVERLAPPED_ENTRY,
-      ulCount: ULONG, ulEntriesRemoved: var ULONG,
-      dwMilliseconds: DWORD, fAlertable: WINBOOL): WINBOOL {.
-      stdcall, gcsafe, raises: [].}
+    LPFN_GETQUEUEDCOMPLETIONSTATUSEX* = proc(
+      completionPort: HANDLE,
+      lpPortEntries: ptr OVERLAPPED_ENTRY,
+      ulCount: ULONG,
+      ulEntriesRemoved: var ULONG,
+      dwMilliseconds: DWORD,
+      fAlertable: WINBOOL,
+    ): WINBOOL {.stdcall, gcsafe, raises: [].}
 
-    WindowsSigHandler = proc (a: cint) {.noconv, raises: [], gcsafe.}
+    WindowsSigHandler = proc(a: cint) {.noconv, raises: [], gcsafe.}
 
-  proc getVersionEx*(lpVersionInfo: ptr OSVERSIONINFO): WINBOOL {.
-       stdcall, dynlib: "kernel32", importc: "GetVersionExW", sideEffect.}
+  proc getVersionEx*(
+    lpVersionInfo: ptr OSVERSIONINFO
+  ): WINBOOL {.stdcall, dynlib: "kernel32", importc: "GetVersionExW", sideEffect.}
 
-  proc createProcess*(lpApplicationName, lpCommandLine: LPWSTR,
-                      lpProcessAttributes: ptr SECURITY_ATTRIBUTES,
-                      lpThreadAttributes: ptr SECURITY_ATTRIBUTES,
-                      bInheritHandles: WINBOOL, dwCreationFlags: DWORD,
-                      lpEnvironment, lpCurrentDirectory: LPWSTR,
-                      lpStartupInfo: var STARTUPINFO,
-                      lpProcessInformation: var PROCESS_INFORMATION): WINBOOL {.
-       stdcall, dynlib: "kernel32", importc: "CreateProcessW", sideEffect.}
+  proc createProcess*(
+    lpApplicationName, lpCommandLine: LPWSTR,
+    lpProcessAttributes: ptr SECURITY_ATTRIBUTES,
+    lpThreadAttributes: ptr SECURITY_ATTRIBUTES,
+    bInheritHandles: WINBOOL,
+    dwCreationFlags: DWORD,
+    lpEnvironment, lpCurrentDirectory: LPWSTR,
+    lpStartupInfo: var STARTUPINFO,
+    lpProcessInformation: var PROCESS_INFORMATION,
+  ): WINBOOL {.stdcall, dynlib: "kernel32", importc: "CreateProcessW", sideEffect.}
 
-  proc terminateProcess*(hProcess: HANDLE, uExitCode: UINT): WINBOOL {.
-       stdcall, dynlib: "kernel32", importc: "TerminateProcess", sideEffect.}
+  proc terminateProcess*(
+    hProcess: HANDLE, uExitCode: UINT
+  ): WINBOOL {.stdcall, dynlib: "kernel32", importc: "TerminateProcess", sideEffect.}
 
-  proc getExitCodeProcess*(hProcess: HANDLE, lpExitCode: var DWORD): WINBOOL {.
-       stdcall, dynlib: "kernel32", importc: "GetExitCodeProcess", sideEffect.}
+  proc getExitCodeProcess*(
+    hProcess: HANDLE, lpExitCode: var DWORD
+  ): WINBOOL {.stdcall, dynlib: "kernel32", importc: "GetExitCodeProcess", sideEffect.}
 
-  proc getStdHandle*(nStdHandle: DWORD): HANDLE {.
-       stdcall, dynlib: "kernel32", importc: "GetStdHandle", sideEffect.}
+  proc getStdHandle*(
+    nStdHandle: DWORD
+  ): HANDLE {.stdcall, dynlib: "kernel32", importc: "GetStdHandle", sideEffect.}
 
-  proc setStdHandle*(nStdHandle: DWORD, hHandle: HANDLE): WINBOOL {.
-       stdcall, dynlib: "kernel32", importc: "SetStdHandle", sideEffect.}
+  proc setStdHandle*(
+    nStdHandle: DWORD, hHandle: HANDLE
+  ): WINBOOL {.stdcall, dynlib: "kernel32", importc: "SetStdHandle", sideEffect.}
 
-  proc suspendThread*(hThread: HANDLE): DWORD {.
-      stdcall, dynlib: "kernel32", importc: "SuspendThread", sideEffect.}
+  proc suspendThread*(
+    hThread: HANDLE
+  ): DWORD {.stdcall, dynlib: "kernel32", importc: "SuspendThread", sideEffect.}
 
-  proc resumeThread*(hThread: HANDLE): DWORD {.
-       stdcall, dynlib: "kernel32", importc: "ResumeThread", sideEffect.}
+  proc resumeThread*(
+    hThread: HANDLE
+  ): DWORD {.stdcall, dynlib: "kernel32", importc: "ResumeThread", sideEffect.}
 
-  proc closeHandle*(hObject: HANDLE): WINBOOL {.
-       stdcall, dynlib: "kernel32", importc: "CloseHandle", sideEffect.}
+  proc closeHandle*(
+    hObject: HANDLE
+  ): WINBOOL {.stdcall, dynlib: "kernel32", importc: "CloseHandle", sideEffect.}
 
-  proc flushFileBuffers*(hFile: HANDLE): WINBOOL {.
-       stdcall, dynlib: "kernel32", importc: "FlushFileBuffers", sideEffect.}
+  proc flushFileBuffers*(
+    hFile: HANDLE
+  ): WINBOOL {.stdcall, dynlib: "kernel32", importc: "FlushFileBuffers", sideEffect.}
 
-  proc getCurrentDirectory*(nBufferLength: DWORD,
-                            lpBuffer: LPWSTR): DWORD {.
-       stdcall, dynlib: "kernel32", importc: "GetCurrentDirectoryW",
-       sideEffect.}
+  proc getCurrentDirectory*(
+    nBufferLength: DWORD, lpBuffer: LPWSTR
+  ): DWORD {.stdcall, dynlib: "kernel32", importc: "GetCurrentDirectoryW", sideEffect.}
 
-  proc setCurrentDirectory*(lpPathName: LPWSTR): DWORD {.
-       stdcall, dynlib: "kernel32", importc: "SetCurrentDirectoryW",
-       sideEffect.}
+  proc setCurrentDirectory*(
+    lpPathName: LPWSTR
+  ): DWORD {.stdcall, dynlib: "kernel32", importc: "SetCurrentDirectoryW", sideEffect.}
 
-  proc setEnvironmentVariable*(lpName, lpValue: LPWSTR): DWORD {.
-       stdcall, dynlib: "kernel32", importc: "SetEnvironmentVariableW",
-       sideEffect.}
+  proc setEnvironmentVariable*(
+    lpName, lpValue: LPWSTR
+  ): DWORD {.
+    stdcall, dynlib: "kernel32", importc: "SetEnvironmentVariableW", sideEffect
+  .}
 
-  proc getModuleFileName*(handle: HANDLE, buf: LPWSTR,
-                          size: DWORD): DWORD {.
-       stdcall, dynlib: "kernel32", importc: "GetModuleFileNameW", sideEffect.}
+  proc getModuleFileName*(
+    handle: HANDLE, buf: LPWSTR, size: DWORD
+  ): DWORD {.stdcall, dynlib: "kernel32", importc: "GetModuleFileNameW", sideEffect.}
 
-  proc postQueuedCompletionStatus*(completionPort: HANDLE,
-                                   dwNumberOfBytesTransferred: DWORD,
-                                   dwCompletionKey: ULONG_PTR,
-                                   lpOverlapped: pointer): WINBOOL {.
-       stdcall, dynlib: "kernel32", importc: "PostQueuedCompletionStatus",
-       sideEffect.}
+  proc postQueuedCompletionStatus*(
+    completionPort: HANDLE,
+    dwNumberOfBytesTransferred: DWORD,
+    dwCompletionKey: ULONG_PTR,
+    lpOverlapped: pointer,
+  ): WINBOOL {.
+    stdcall, dynlib: "kernel32", importc: "PostQueuedCompletionStatus", sideEffect
+  .}
 
-  proc registerWaitForSingleObject*(phNewWaitObject: ptr HANDLE,
-                                    hObject: HANDLE,
-                                    callback: WAITORTIMERCALLBACK,
-                                    context: pointer,
-                                    dwMilliseconds: ULONG,
-                                    dwFlags: ULONG): WINBOOL {.
-       stdcall, dynlib: "kernel32", importc: "RegisterWaitForSingleObject",
-       sideEffect.}
+  proc registerWaitForSingleObject*(
+    phNewWaitObject: ptr HANDLE,
+    hObject: HANDLE,
+    callback: WAITORTIMERCALLBACK,
+    context: pointer,
+    dwMilliseconds: ULONG,
+    dwFlags: ULONG,
+  ): WINBOOL {.
+    stdcall, dynlib: "kernel32", importc: "RegisterWaitForSingleObject", sideEffect
+  .}
 
-  proc waitForSingleObject*(hHandle: HANDLE, dwMilliseconds: DWORD): DWORD {.
-       stdcall, dynlib: "kernel32", importc: "WaitForSingleObject",
-       sideEffect.}
+  proc waitForSingleObject*(
+    hHandle: HANDLE, dwMilliseconds: DWORD
+  ): DWORD {.stdcall, dynlib: "kernel32", importc: "WaitForSingleObject", sideEffect.}
 
-  proc unregisterWait*(waitHandle: HANDLE): DWORD {.
-       stdcall, dynlib: "kernel32", importc: "UnregisterWait", sideEffect.}
+  proc unregisterWait*(
+    waitHandle: HANDLE
+  ): DWORD {.stdcall, dynlib: "kernel32", importc: "UnregisterWait", sideEffect.}
 
-  proc openProcess*(dwDesiredAccess: DWORD, bInheritHandle: WINBOOL,
-                    dwProcessId: DWORD): HANDLE {.
-       stdcall, dynlib: "kernel32", importc: "OpenProcess", sideEffect.}
+  proc openProcess*(
+    dwDesiredAccess: DWORD, bInheritHandle: WINBOOL, dwProcessId: DWORD
+  ): HANDLE {.stdcall, dynlib: "kernel32", importc: "OpenProcess", sideEffect.}
 
-  proc duplicateHandle*(hSourceProcessHandle: HANDLE, hSourceHandle: HANDLE,
-                        hTargetProcessHandle: HANDLE,
-                        lpTargetHandle: ptr HANDLE,
-                        dwDesiredAccess: DWORD, bInheritHandle: WINBOOL,
-                        dwOptions: DWORD): WINBOOL {.
-       stdcall, dynlib: "kernel32", importc: "DuplicateHandle", sideEffect.}
+  proc duplicateHandle*(
+    hSourceProcessHandle: HANDLE,
+    hSourceHandle: HANDLE,
+    hTargetProcessHandle: HANDLE,
+    lpTargetHandle: ptr HANDLE,
+    dwDesiredAccess: DWORD,
+    bInheritHandle: WINBOOL,
+    dwOptions: DWORD,
+  ): WINBOOL {.stdcall, dynlib: "kernel32", importc: "DuplicateHandle", sideEffect.}
 
-  proc setHandleInformation*(hObject: HANDLE, dwMask: DWORD,
-                             dwFlags: DWORD): WINBOOL {.
-       stdcall, dynlib: "kernel32", importc: "SetHandleInformation",
-       sideEffect.}
+  proc setHandleInformation*(
+    hObject: HANDLE, dwMask: DWORD, dwFlags: DWORD
+  ): WINBOOL {.
+    stdcall, dynlib: "kernel32", importc: "SetHandleInformation", sideEffect
+  .}
 
-  proc getHandleInformation*(hObject: HANDLE, lpdwFlags: var DWORD): WINBOOL {.
-       stdcall, dynlib: "kernel32", importc: "GetHandleInformation",
-       sideEffect.}
+  proc getHandleInformation*(
+    hObject: HANDLE, lpdwFlags: var DWORD
+  ): WINBOOL {.
+    stdcall, dynlib: "kernel32", importc: "GetHandleInformation", sideEffect
+  .}
 
   proc getCurrentProcess*(): HANDLE {.
-       stdcall, dynlib: "kernel32", importc: "GetCurrentProcess", sideEffect.}
+    stdcall, dynlib: "kernel32", importc: "GetCurrentProcess", sideEffect
+  .}
 
   proc getCurrentProcessId*(): DWORD {.
-       stdcall, dynlib: "kernel32", importc: "GetCurrentProcessId", sideEffect.}
+    stdcall, dynlib: "kernel32", importc: "GetCurrentProcessId", sideEffect
+  .}
 
-  proc getSystemTimeAsFileTime*(lpSystemTimeAsFileTime: var FILETIME) {.
-       stdcall, dynlib: "kernel32", importc: "GetSystemTimeAsFileTime",
-       sideEffect.}
+  proc getSystemTimeAsFileTime*(
+    lpSystemTimeAsFileTime: var FILETIME
+  ) {.stdcall, dynlib: "kernel32", importc: "GetSystemTimeAsFileTime", sideEffect.}
 
-  proc wsaIoctl*(s: SocketHandle, dwIoControlCode: DWORD, lpvInBuffer: pointer,
-                 cbInBuffer: DWORD, lpvOutBuffer: pointer, cbOutBuffer: DWORD,
-                 lpcbBytesReturned: PDWORD, lpOverlapped: POVERLAPPED,
-                 lpCompletionRoutine: POVERLAPPED_COMPLETION_ROUTINE): cint {.
-       stdcall, dynlib: "ws2_32", importc: "WSAIoctl", sideEffect.}
+  proc wsaIoctl*(
+    s: SocketHandle,
+    dwIoControlCode: DWORD,
+    lpvInBuffer: pointer,
+    cbInBuffer: DWORD,
+    lpvOutBuffer: pointer,
+    cbOutBuffer: DWORD,
+    lpcbBytesReturned: PDWORD,
+    lpOverlapped: POVERLAPPED,
+    lpCompletionRoutine: POVERLAPPED_COMPLETION_ROUTINE,
+  ): cint {.stdcall, dynlib: "ws2_32", importc: "WSAIoctl", sideEffect.}
 
-  proc wsaStartup*(wVersionRequired: WORD, WSData: ptr WSAData): cint {.
-       stdcall, dynlib: "ws2_32", importc: "WSAStartup", sideEffect.}
+  proc wsaStartup*(
+    wVersionRequired: WORD, WSData: ptr WSAData
+  ): cint {.stdcall, dynlib: "ws2_32", importc: "WSAStartup", sideEffect.}
 
-  proc wsaRecv*(s: SocketHandle, buf: ptr WSABUF, bufCount: DWORD,
-                bytesReceived, flags: PDWORD, lpOverlapped: POVERLAPPED,
-                completionProc: POVERLAPPED_COMPLETION_ROUTINE): cint {.
-       stdcall, dynlib: "ws2_32", importc: "WSARecv", sideEffect.}
+  proc wsaRecv*(
+    s: SocketHandle,
+    buf: ptr WSABUF,
+    bufCount: DWORD,
+    bytesReceived, flags: PDWORD,
+    lpOverlapped: POVERLAPPED,
+    completionProc: POVERLAPPED_COMPLETION_ROUTINE,
+  ): cint {.stdcall, dynlib: "ws2_32", importc: "WSARecv", sideEffect.}
 
-  proc wsaRecvFrom*(s: SocketHandle, buf: ptr WSABUF, bufCount: DWORD,
-                    bytesReceived: PDWORD, flags: PDWORD, name: ptr SockAddr,
-                    namelen: ptr cint, lpOverlapped: POVERLAPPED,
-                    completionProc: POVERLAPPED_COMPLETION_ROUTINE): cint {.
-       stdcall, dynlib: "ws2_32", importc: "WSARecvFrom", sideEffect.}
+  proc wsaRecvFrom*(
+    s: SocketHandle,
+    buf: ptr WSABUF,
+    bufCount: DWORD,
+    bytesReceived: PDWORD,
+    flags: PDWORD,
+    name: ptr SockAddr,
+    namelen: ptr cint,
+    lpOverlapped: POVERLAPPED,
+    completionProc: POVERLAPPED_COMPLETION_ROUTINE,
+  ): cint {.stdcall, dynlib: "ws2_32", importc: "WSARecvFrom", sideEffect.}
 
-  proc wsaSend*(s: SocketHandle, buf: ptr WSABUF, bufCount: DWORD,
-                bytesSent: PDWORD, flags: DWORD, lpOverlapped: POVERLAPPED,
-                completionProc: POVERLAPPED_COMPLETION_ROUTINE): cint {.
-       stdcall, dynlib: "ws2_32", importc: "WSASend", sideEffect.}
+  proc wsaSend*(
+    s: SocketHandle,
+    buf: ptr WSABUF,
+    bufCount: DWORD,
+    bytesSent: PDWORD,
+    flags: DWORD,
+    lpOverlapped: POVERLAPPED,
+    completionProc: POVERLAPPED_COMPLETION_ROUTINE,
+  ): cint {.stdcall, dynlib: "ws2_32", importc: "WSASend", sideEffect.}
 
-  proc wsaSendTo*(s: SocketHandle, buf: ptr WSABUF, bufCount: DWORD,
-                  bytesSent: PDWORD, flags: DWORD, name: ptr SockAddr,
-                  namelen: cint, lpOverlapped: POVERLAPPED,
-                  completionProc: POVERLAPPED_COMPLETION_ROUTINE): cint {.
-       stdcall, dynlib: "ws2_32", importc: "WSASendTo", sideEffect.}
+  proc wsaSendTo*(
+    s: SocketHandle,
+    buf: ptr WSABUF,
+    bufCount: DWORD,
+    bytesSent: PDWORD,
+    flags: DWORD,
+    name: ptr SockAddr,
+    namelen: cint,
+    lpOverlapped: POVERLAPPED,
+    completionProc: POVERLAPPED_COMPLETION_ROUTINE,
+  ): cint {.stdcall, dynlib: "ws2_32", importc: "WSASendTo", sideEffect.}
 
   proc wsaGetLastError*(): cint {.
-       stdcall, dynlib: "ws2_32", importc: "WSAGetLastError", sideEffect.}
+    stdcall, dynlib: "ws2_32", importc: "WSAGetLastError", sideEffect
+  .}
 
-  proc wsaSocket*(af: cint, stype: cint, protocol: cint,
-                  lpProtocolInfo: pointer, g: GROUP,
-                  dwFlags: DWORD): SocketHandle {.
-       stdcall, dynlib: "ws2_32", importc: "WSASocketW", sideEffect.}
+  proc wsaSocket*(
+    af: cint,
+    stype: cint,
+    protocol: cint,
+    lpProtocolInfo: pointer,
+    g: GROUP,
+    dwFlags: DWORD,
+  ): SocketHandle {.stdcall, dynlib: "ws2_32", importc: "WSASocketW", sideEffect.}
 
-  proc socket*(af, typ, protocol: cint): SocketHandle {.
-       stdcall, dynlib: "ws2_32", importc: "socket", sideEffect.}
+  proc socket*(
+    af, typ, protocol: cint
+  ): SocketHandle {.stdcall, dynlib: "ws2_32", importc: "socket", sideEffect.}
 
-  proc closesocket*(s: SocketHandle): cint {.
-       stdcall, dynlib: "ws2_32", importc: "closesocket", sideEffect.}
+  proc closesocket*(
+    s: SocketHandle
+  ): cint {.stdcall, dynlib: "ws2_32", importc: "closesocket", sideEffect.}
 
-  proc shutdown*(s: SocketHandle, how: cint): cint {.
-       stdcall, dynlib: "ws2_32", importc: "shutdown", sideEffect.}
+  proc shutdown*(
+    s: SocketHandle, how: cint
+  ): cint {.stdcall, dynlib: "ws2_32", importc: "shutdown", sideEffect.}
 
-  proc getsockopt*(s: SocketHandle, level, optname: cint, optval: pointer,
-                   optlen: ptr SockLen): cint {.
-       stdcall, dynlib: "ws2_32", importc: "getsockopt", sideEffect.}
+  proc getsockopt*(
+    s: SocketHandle, level, optname: cint, optval: pointer, optlen: ptr SockLen
+  ): cint {.stdcall, dynlib: "ws2_32", importc: "getsockopt", sideEffect.}
 
-  proc setsockopt*(s: SocketHandle, level, optname: cint, optval: pointer,
-                   optlen: SockLen): cint {.
-       stdcall, dynlib: "ws2_32", importc: "setsockopt", sideEffect.}
+  proc setsockopt*(
+    s: SocketHandle, level, optname: cint, optval: pointer, optlen: SockLen
+  ): cint {.stdcall, dynlib: "ws2_32", importc: "setsockopt", sideEffect.}
 
-  proc getsockname*(s: SocketHandle, name: ptr SockAddr,
-                    namelen: ptr SockLen): cint {.
-       stdcall, dynlib: "ws2_32", importc: "getsockname", sideEffect.}
+  proc getsockname*(
+    s: SocketHandle, name: ptr SockAddr, namelen: ptr SockLen
+  ): cint {.stdcall, dynlib: "ws2_32", importc: "getsockname", sideEffect.}
 
-  proc getpeername*(s: SocketHandle, name: ptr SockAddr,
-                    namelen: ptr SockLen): cint {.
-       stdcall, dynlib: "ws2_32", importc: "getpeername", sideEffect.}
+  proc getpeername*(
+    s: SocketHandle, name: ptr SockAddr, namelen: ptr SockLen
+  ): cint {.stdcall, dynlib: "ws2_32", importc: "getpeername", sideEffect.}
 
-  proc ioctlsocket*(s: SocketHandle, cmd: clong, argp: ptr clong): cint {.
-       stdcall, dynlib: "ws2_32", importc: "ioctlsocket", sideEffect.}
+  proc ioctlsocket*(
+    s: SocketHandle, cmd: clong, argp: ptr clong
+  ): cint {.stdcall, dynlib: "ws2_32", importc: "ioctlsocket", sideEffect.}
 
-  proc listen*(s: SocketHandle, backlog: cint): cint {.
-       stdcall, dynlib: "ws2_32", importc: "listen", sideEffect.}
+  proc listen*(
+    s: SocketHandle, backlog: cint
+  ): cint {.stdcall, dynlib: "ws2_32", importc: "listen", sideEffect.}
 
-  proc connect*(s: SocketHandle, name: ptr SockAddr, namelen: SockLen): cint {.
-       stdcall, dynlib: "ws2_32", importc: "connect", sideEffect.}
+  proc connect*(
+    s: SocketHandle, name: ptr SockAddr, namelen: SockLen
+  ): cint {.stdcall, dynlib: "ws2_32", importc: "connect", sideEffect.}
 
-  proc accept*(s: SocketHandle, a: ptr SockAddr,
-               addrlen: ptr SockLen): SocketHandle {.
-       stdcall, dynlib: "ws2_32", importc: "accept", sideEffect.}
+  proc accept*(
+    s: SocketHandle, a: ptr SockAddr, addrlen: ptr SockLen
+  ): SocketHandle {.stdcall, dynlib: "ws2_32", importc: "accept", sideEffect.}
 
-  proc bindSocket*(s: SocketHandle, name: ptr SockAddr,
-                   namelen: SockLen): cint {.
-       stdcall, dynlib: "ws2_32", importc: "bind", sideEffect.}
+  proc bindSocket*(
+    s: SocketHandle, name: ptr SockAddr, namelen: SockLen
+  ): cint {.stdcall, dynlib: "ws2_32", importc: "bind", sideEffect.}
 
-  proc send*(s: SocketHandle, buf: pointer, len, flags: cint): cint {.
-       stdcall, dynlib: "ws2_32", importc: "send", sideEffect.}
+  proc send*(
+    s: SocketHandle, buf: pointer, len, flags: cint
+  ): cint {.stdcall, dynlib: "ws2_32", importc: "send", sideEffect.}
 
-  proc getaddrinfo*(nodename, servname: cstring, hints: ptr AddrInfo,
-                    res: var ptr AddrInfo): cint {.
-       stdcall, dynlib: "ws2_32", importc: "getaddrinfo", sideEffect.}
+  proc getaddrinfo*(
+    nodename, servname: cstring, hints: ptr AddrInfo, res: var ptr AddrInfo
+  ): cint {.stdcall, dynlib: "ws2_32", importc: "getaddrinfo", sideEffect.}
 
-  proc freeAddrInfo*(ai: ptr AddrInfo) {.
-       stdcall, dynlib: "ws2_32", importc: "freeaddrinfo", sideEffect.}
+  proc freeAddrInfo*(
+    ai: ptr AddrInfo
+  ) {.stdcall, dynlib: "ws2_32", importc: "freeaddrinfo", sideEffect.}
 
-  proc createIoCompletionPort*(fileHandle: HANDLE,
-                               existingCompletionPort: HANDLE,
-                               completionKey: ULONG_PTR,
-                               numberOfConcurrentThreads: DWORD): HANDLE {.
-       stdcall, dynlib: "kernel32", importc: "CreateIoCompletionPort",
-       sideEffect.}
+  proc createIoCompletionPort*(
+    fileHandle: HANDLE,
+    existingCompletionPort: HANDLE,
+    completionKey: ULONG_PTR,
+    numberOfConcurrentThreads: DWORD,
+  ): HANDLE {.
+    stdcall, dynlib: "kernel32", importc: "CreateIoCompletionPort", sideEffect
+  .}
 
-  proc getQueuedCompletionStatus*(completionPort: HANDLE,
-                                  lpNumberOfBytesTransferred: PDWORD,
-                                  lpCompletionKey: PULONG_PTR,
-                                  lpOverlapped: ptr POVERLAPPED,
-                                  dwMilliseconds: DWORD): WINBOOL {.
-       stdcall, dynlib: "kernel32", importc: "GetQueuedCompletionStatus",
-       sideEffect.}
+  proc getQueuedCompletionStatus*(
+    completionPort: HANDLE,
+    lpNumberOfBytesTransferred: PDWORD,
+    lpCompletionKey: PULONG_PTR,
+    lpOverlapped: ptr POVERLAPPED,
+    dwMilliseconds: DWORD,
+  ): WINBOOL {.
+    stdcall, dynlib: "kernel32", importc: "GetQueuedCompletionStatus", sideEffect
+  .}
 
-  proc getOverlappedResult*(hFile: HANDLE, lpOverlapped: POVERLAPPED,
-                            lpNumberOfBytesTransferred: var DWORD,
-                            bWait: WINBOOL): WINBOOL {.
-       stdcall, dynlib: "kernel32", importc: "GetOverlappedResult", sideEffect.}
+  proc getOverlappedResult*(
+    hFile: HANDLE,
+    lpOverlapped: POVERLAPPED,
+    lpNumberOfBytesTransferred: var DWORD,
+    bWait: WINBOOL,
+  ): WINBOOL {.stdcall, dynlib: "kernel32", importc: "GetOverlappedResult", sideEffect.}
 
-  proc createEvent*(lpEventAttributes: ptr SECURITY_ATTRIBUTES,
-                    bManualReset: DWORD, bInitialState: DWORD,
-                    lpName: ptr WCHAR): HANDLE {.
-       stdcall, dynlib: "kernel32", importc: "CreateEventW", sideEffect.}
+  proc createEvent*(
+    lpEventAttributes: ptr SECURITY_ATTRIBUTES,
+    bManualReset: DWORD,
+    bInitialState: DWORD,
+    lpName: ptr WCHAR,
+  ): HANDLE {.stdcall, dynlib: "kernel32", importc: "CreateEventW", sideEffect.}
 
-  proc setEvent*(hEvent: HANDLE): WINBOOL {.
-       stdcall, dynlib: "kernel32", importc: "SetEvent", sideEffect.}
+  proc setEvent*(
+    hEvent: HANDLE
+  ): WINBOOL {.stdcall, dynlib: "kernel32", importc: "SetEvent", sideEffect.}
 
-  proc createNamedPipe*(lpName: LPWSTR,
-                        dwOpenMode, dwPipeMode, nMaxInstances, nOutBufferSize,
-                        nInBufferSize, nDefaultTimeOut: DWORD,
-                        lpSecurityAttributes: ptr SECURITY_ATTRIBUTES
-                       ): HANDLE {.
-       stdcall, dynlib: "kernel32", importc: "CreateNamedPipeW", sideEffect.}
+  proc createNamedPipe*(
+    lpName: LPWSTR,
+    dwOpenMode, dwPipeMode, nMaxInstances, nOutBufferSize, nInBufferSize,
+      nDefaultTimeOut: DWORD,
+    lpSecurityAttributes: ptr SECURITY_ATTRIBUTES,
+  ): HANDLE {.stdcall, dynlib: "kernel32", importc: "CreateNamedPipeW", sideEffect.}
 
-  proc createFile*(lpFileName: LPWSTR, dwDesiredAccess, dwShareMode: DWORD,
-                   lpSecurityAttributes: pointer,
-                   dwCreationDisposition, dwFlagsAndAttributes: DWORD,
-                   hTemplateFile: HANDLE): HANDLE {.
-       stdcall, dynlib: "kernel32", importc: "CreateFileW", sideEffect.}
+  proc createFile*(
+    lpFileName: LPWSTR,
+    dwDesiredAccess, dwShareMode: DWORD,
+    lpSecurityAttributes: pointer,
+    dwCreationDisposition, dwFlagsAndAttributes: DWORD,
+    hTemplateFile: HANDLE,
+  ): HANDLE {.stdcall, dynlib: "kernel32", importc: "CreateFileW", sideEffect.}
 
-  proc reOpenFile*(hOriginalFile: HANDLE, dwDesiredAccess, dwShareMode,
-                   dwFlagsAndAttributes: DWORD): HANDLE {.
-       stdcall, dynlib: "kernel32", importc: "ReOpenFile", sideEffect.}
+  proc reOpenFile*(
+    hOriginalFile: HANDLE, dwDesiredAccess, dwShareMode, dwFlagsAndAttributes: DWORD
+  ): HANDLE {.stdcall, dynlib: "kernel32", importc: "ReOpenFile", sideEffect.}
 
-  proc writeFile*(hFile: HANDLE, buffer: pointer, nNumberOfBytesToWrite: DWORD,
-                lpNumberOfBytesWritten: ptr DWORD,
-                lpOverlapped: pointer): WINBOOL {.
-       stdcall, dynlib: "kernel32", importc: "WriteFile", sideEffect.}
+  proc writeFile*(
+    hFile: HANDLE,
+    buffer: pointer,
+    nNumberOfBytesToWrite: DWORD,
+    lpNumberOfBytesWritten: ptr DWORD,
+    lpOverlapped: pointer,
+  ): WINBOOL {.stdcall, dynlib: "kernel32", importc: "WriteFile", sideEffect.}
 
-  proc readFile*(hFile: HANDLE, buffer: pointer, nNumberOfBytesToRead: DWORD,
-                 lpNumberOfBytesRead: ptr DWORD,
-                 lpOverlapped: pointer): WINBOOL {.
-       stdcall, dynlib: "kernel32", importc: "ReadFile", sideEffect.}
+  proc readFile*(
+    hFile: HANDLE,
+    buffer: pointer,
+    nNumberOfBytesToRead: DWORD,
+    lpNumberOfBytesRead: ptr DWORD,
+    lpOverlapped: pointer,
+  ): WINBOOL {.stdcall, dynlib: "kernel32", importc: "ReadFile", sideEffect.}
 
-  proc cancelIo*(hFile: HANDLE): WINBOOL {.
-       stdcall, dynlib: "kernel32", importc: "CancelIo", sideEffect.}
+  proc cancelIo*(
+    hFile: HANDLE
+  ): WINBOOL {.stdcall, dynlib: "kernel32", importc: "CancelIo", sideEffect.}
 
-  proc connectNamedPipe*(hPipe: HANDLE,
-                         lpOverlapped: ptr OVERLAPPED): WINBOOL {.
-       stdcall, dynlib: "kernel32", importc: "ConnectNamedPipe", sideEffect.}
+  proc connectNamedPipe*(
+    hPipe: HANDLE, lpOverlapped: ptr OVERLAPPED
+  ): WINBOOL {.stdcall, dynlib: "kernel32", importc: "ConnectNamedPipe", sideEffect.}
 
-  proc disconnectNamedPipe*(hPipe: HANDLE): WINBOOL {.
-       stdcall, dynlib: "kernel32", importc: "DisconnectNamedPipe", sideEffect.}
+  proc disconnectNamedPipe*(
+    hPipe: HANDLE
+  ): WINBOOL {.stdcall, dynlib: "kernel32", importc: "DisconnectNamedPipe", sideEffect.}
 
-  proc setNamedPipeHandleState*(hPipe: HANDLE, lpMode, lpMaxCollectionCount,
-                                lpCollectDataTimeout: ptr DWORD): WINBOOL {.
-       stdcall, dynlib: "kernel32", importc: "SetNamedPipeHandleState",
-       sideEffect.}
+  proc setNamedPipeHandleState*(
+    hPipe: HANDLE, lpMode, lpMaxCollectionCount, lpCollectDataTimeout: ptr DWORD
+  ): WINBOOL {.
+    stdcall, dynlib: "kernel32", importc: "SetNamedPipeHandleState", sideEffect
+  .}
 
-  proc resetEvent*(hEvent: HANDLE): WINBOOL {.
-       stdcall, dynlib: "kernel32", importc: "ResetEvent", sideEffect.}
+  proc resetEvent*(
+    hEvent: HANDLE
+  ): WINBOOL {.stdcall, dynlib: "kernel32", importc: "ResetEvent", sideEffect.}
 
-  proc getAdaptersAddresses*(family: uint32, flags: uint32, reserved: pointer,
-                             addresses: ptr IpAdapterAddressesXp,
-                             sizeptr: ptr uint32): uint32 {.
-       stdcall, dynlib: "iphlpapi", importc: "GetAdaptersAddresses",
-       sideEffect.}
+  proc getAdaptersAddresses*(
+    family: uint32,
+    flags: uint32,
+    reserved: pointer,
+    addresses: ptr IpAdapterAddressesXp,
+    sizeptr: ptr uint32,
+  ): uint32 {.stdcall, dynlib: "iphlpapi", importc: "GetAdaptersAddresses", sideEffect.}
 
-  proc wideCharToMultiByte*(codePage: uint32, dwFlags: uint32,
-                            lpWideCharStr: LPWSTR, cchWideChar: cint,
-                            lpMultiByteStr: ptr char, cbMultiByte: cint,
-                            lpDefaultChar: ptr char,
-                            lpUsedDefaultChar: ptr uint32): cint {.
-       stdcall, dynlib: "kernel32", importc: "WideCharToMultiByte", sideEffect.}
+  proc wideCharToMultiByte*(
+    codePage: uint32,
+    dwFlags: uint32,
+    lpWideCharStr: LPWSTR,
+    cchWideChar: cint,
+    lpMultiByteStr: ptr char,
+    cbMultiByte: cint,
+    lpDefaultChar: ptr char,
+    lpUsedDefaultChar: ptr uint32,
+  ): cint {.stdcall, dynlib: "kernel32", importc: "WideCharToMultiByte", sideEffect.}
 
-  proc multiByteToWideChar*(codePage: uint32, dwFlags: uint32,
-                            lpMultiByteStr: ptr char, cbMultiByte: cint,
-                            lpWideCharStr: LPWSTR, cchWideChar: cint): cint {.
-       stdcall, dynlib: "kernel32", importc: "MultiByteToWideChar", sideEffect.}
+  proc multiByteToWideChar*(
+    codePage: uint32,
+    dwFlags: uint32,
+    lpMultiByteStr: ptr char,
+    cbMultiByte: cint,
+    lpWideCharStr: LPWSTR,
+    cchWideChar: cint,
+  ): cint {.stdcall, dynlib: "kernel32", importc: "MultiByteToWideChar", sideEffect.}
 
-  proc getBestRouteXp*(dwDestAddr: uint32, dwSourceAddr: uint32,
-                       pBestRoute: ptr MibIpForwardRow): uint32 {.
-       stdcall, dynlib: "iphlpapi", importc: "GetBestRoute", sideEffect.}
+  proc getBestRouteXp*(
+    dwDestAddr: uint32, dwSourceAddr: uint32, pBestRoute: ptr MibIpForwardRow
+  ): uint32 {.stdcall, dynlib: "iphlpapi", importc: "GetBestRoute", sideEffect.}
 
-  proc queryPerformanceCounter*(res: var uint64) {.
-       stdcall, dynlib: "kernel32", importc: "QueryPerformanceCounter",
-       sideEffect.}
+  proc queryPerformanceCounter*(
+    res: var uint64
+  ) {.stdcall, dynlib: "kernel32", importc: "QueryPerformanceCounter", sideEffect.}
 
-  proc queryPerformanceFrequency*(res: var uint64) {.
-       stdcall, dynlib: "kernel32", importc: "QueryPerformanceFrequency",
-       sideEffect.}
+  proc queryPerformanceFrequency*(
+    res: var uint64
+  ) {.stdcall, dynlib: "kernel32", importc: "QueryPerformanceFrequency", sideEffect.}
 
   proc getEnvironmentStringsW*(): LPWSTR {.
-       stdcall, dynlib: "kernel32", importc: "GetEnvironmentStringsW",
-       sideEffect.}
+    stdcall, dynlib: "kernel32", importc: "GetEnvironmentStringsW", sideEffect
+  .}
 
-  proc freeEnvironmentStringsW*(penv: LPWSTR): WINBOOL {.
-       stdcall, dynlib: "kernel32", importc: "FreeEnvironmentStringsW",
-       sideEffect.}
+  proc freeEnvironmentStringsW*(
+    penv: LPWSTR
+  ): WINBOOL {.
+    stdcall, dynlib: "kernel32", importc: "FreeEnvironmentStringsW", sideEffect
+  .}
 
-  proc wcschr*(ws: LPWSTR, wc: WCHAR): LPWSTR {.
-       stdcall, dynlib: "ntdll", importc: "wcschr", sideEffect.}
+  proc wcschr*(
+    ws: LPWSTR, wc: WCHAR
+  ): LPWSTR {.stdcall, dynlib: "ntdll", importc: "wcschr", sideEffect.}
 
-  proc getModuleHandle*(lpModuleName: WideCString): HANDLE {.
-       stdcall, dynlib: "kernel32", importc: "GetModuleHandleW", sideEffect.}
+  proc getModuleHandle*(
+    lpModuleName: WideCString
+  ): HANDLE {.stdcall, dynlib: "kernel32", importc: "GetModuleHandleW", sideEffect.}
 
-  proc getProcAddress*(hModule: HANDLE, lpProcName: cstring): pointer {.
-       stdcall, dynlib: "kernel32", importc: "GetProcAddress", sideEffect.}
+  proc getProcAddress*(
+    hModule: HANDLE, lpProcName: cstring
+  ): pointer {.stdcall, dynlib: "kernel32", importc: "GetProcAddress", sideEffect.}
 
-  proc rtlNtStatusToDosError*(code: uint64): ULONG {.
-       stdcall, dynlib: "ntdll", importc: "RtlNtStatusToDosError", sideEffect.}
+  proc rtlNtStatusToDosError*(
+    code: uint64
+  ): ULONG {.stdcall, dynlib: "ntdll", importc: "RtlNtStatusToDosError", sideEffect.}
 
   proc getConsoleCP*(): UINT {.
-       stdcall, dynlib: "kernel32", importc: "GetConsoleCP", sideEffect.}
+    stdcall, dynlib: "kernel32", importc: "GetConsoleCP", sideEffect
+  .}
 
-  proc setConsoleCtrlHandler*(handleRoutine: PHANDLER_ROUTINE,
-                              add: WINBOOL): WINBOOL {.
-       stdcall, dynlib: "kernel32", importc: "SetConsoleCtrlHandler",
-       sideEffect.}
+  proc setConsoleCtrlHandler*(
+    handleRoutine: PHANDLER_ROUTINE, add: WINBOOL
+  ): WINBOOL {.
+    stdcall, dynlib: "kernel32", importc: "SetConsoleCtrlHandler", sideEffect
+  .}
 
-  proc generateConsoleCtrlEvent*(dwCtrlEvent: DWORD,
-                                 dwProcessGroupId: DWORD): WINBOOL {.
-       stdcall, dynlib: "kernel32", importc: "GenerateConsoleCtrlEvent",
-       sideEffect.}
+  proc generateConsoleCtrlEvent*(
+    dwCtrlEvent: DWORD, dwProcessGroupId: DWORD
+  ): WINBOOL {.
+    stdcall, dynlib: "kernel32", importc: "GenerateConsoleCtrlEvent", sideEffect
+  .}
 
   proc `==`*(x, y: SocketHandle): bool {.borrow.}
   proc `==`*(x, y: HANDLE): bool {.borrow.}
 
-  proc c_signal*(sign: cint, handler: WindowsSigHandler): WindowsSigHandler {.
-    importc: "signal", header: "<signal.h>", raises: [], sideEffect.}
+  proc c_signal*(
+    sign: cint, handler: WindowsSigHandler
+  ): WindowsSigHandler {.
+    importc: "signal", header: "<signal.h>", raises: [], sideEffect
+  .}
 
   const
     SIGABRT* = cint(22)
@@ -899,68 +1043,50 @@ when defined(windows):
     SECURITY_ATTRIBUTES(
       nLength: DWORD(sizeof(SECURITY_ATTRIBUTES)),
       lpSecurityDescriptor: nil,
-      bInheritHandle: if inheritHandle: TRUE else: FALSE
+      bInheritHandle: if inheritHandle: TRUE else: FALSE,
     )
 
 elif defined(macos) or defined(macosx):
-  from std/posix import close, shutdown, socket, getpeername, getsockname,
-                        recvfrom, sendto, send, bindSocket, recv, connect,
-                        unlink, listen, getaddrinfo, gai_strerror, getrlimit,
-                        setrlimit, getpid, pthread_sigmask, sigprocmask,
-                        sigemptyset, sigaddset, sigismember, fcntl, accept,
-                        pipe, write, signal, read, setsockopt, getsockopt,
-                        getcwd, chdir, waitpid, kill, select, pselect,
-                        socketpair, poll, freeAddrInfo,
-                        Timeval, Timespec, Pid, Mode, Time, Sigset, SockAddr,
-                        SockLen, Sockaddr_storage, Sockaddr_in, Sockaddr_in6,
-                        Sockaddr_un, SocketHandle, AddrInfo, RLimit, TFdSet,
-                        Suseconds,
-                        FD_CLR, FD_ISSET, FD_SET, FD_ZERO,
-                        F_GETFL, F_SETFL, F_GETFD, F_SETFD, FD_CLOEXEC,
-                        O_NONBLOCK, SOL_SOCKET, SOCK_RAW, SOCK_DGRAM,
-                        SOCK_STREAM, MSG_NOSIGNAL, MSG_PEEK,
-                        AF_INET, AF_INET6, AF_UNIX, SO_ERROR, SO_REUSEADDR,
-                        SO_REUSEPORT, SO_BROADCAST, IPPROTO_IP, IPPROTO_IPV6,
-                        IPV6_MULTICAST_HOPS, SOCK_DGRAM, RLIMIT_NOFILE,
-                        SIG_BLOCK, SIG_UNBLOCK, SHUT_RD, SHUT_WR, SHUT_RDWR,
-                        SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
-                        SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV, SIGUSR2,
-                        SIGPIPE, SIGALRM, SIGTERM, SIGPIPE, SIGCHLD, SIGSTOP,
-                        SIGCONT
+  from std/posix import
+    close, shutdown, socket, getpeername, getsockname, recvfrom, sendto, send,
+    bindSocket, recv, connect, unlink, listen, getaddrinfo, gai_strerror, getrlimit,
+    setrlimit, getpid, pthread_sigmask, sigprocmask, sigemptyset, sigaddset,
+    sigismember, fcntl, accept, pipe, write, signal, read, setsockopt, getsockopt,
+    getcwd, chdir, waitpid, kill, select, pselect, socketpair, poll, freeAddrInfo,
+    Timeval, Timespec, Pid, Mode, Time, Sigset, SockAddr, SockLen, Sockaddr_storage,
+    Sockaddr_in, Sockaddr_in6, Sockaddr_un, SocketHandle, AddrInfo, RLimit, TFdSet,
+    Suseconds, FD_CLR, FD_ISSET, FD_SET, FD_ZERO, F_GETFL, F_SETFL, F_GETFD, F_SETFD,
+    FD_CLOEXEC, O_NONBLOCK, SOL_SOCKET, SOCK_RAW, SOCK_DGRAM, SOCK_STREAM, MSG_NOSIGNAL,
+    MSG_PEEK, AF_INET, AF_INET6, AF_UNIX, SO_ERROR, SO_REUSEADDR, SO_REUSEPORT,
+    SO_BROADCAST, IPPROTO_IP, IPPROTO_IPV6, IPV6_MULTICAST_HOPS, SOCK_DGRAM,
+    RLIMIT_NOFILE, SIG_BLOCK, SIG_UNBLOCK, SHUT_RD, SHUT_WR, SHUT_RDWR, SIGHUP, SIGINT,
+    SIGQUIT, SIGILL, SIGTRAP, SIGABRT, SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV,
+    SIGUSR2, SIGPIPE, SIGALRM, SIGTERM, SIGPIPE, SIGCHLD, SIGSTOP, SIGCONT
 
-  export close, shutdown, socket, getpeername, getsockname,
-         recvfrom, sendto, send, bindSocket, recv, connect,
-         unlink, listen, getaddrinfo, gai_strerror, getrlimit,
-         setrlimit, getpid, pthread_sigmask, sigprocmask,
-         sigemptyset, sigaddset, sigismember, fcntl, accept,
-         pipe, write, signal, read, setsockopt, getsockopt,
-         getcwd, chdir, waitpid, kill, select, pselect,
-         socketpair, poll, freeAddrInfo,
-         Timeval, Timespec, Pid, Mode, Time, Sigset, SockAddr,
-         SockLen, Sockaddr_storage, Sockaddr_in, Sockaddr_in6,
-         Sockaddr_un, SocketHandle, AddrInfo, RLimit, TFdSet,
-         Suseconds,
-         FD_CLR, FD_ISSET, FD_SET, FD_ZERO,
-         F_GETFL, F_SETFL, F_GETFD, F_SETFD, FD_CLOEXEC,
-         O_NONBLOCK, SOL_SOCKET, SOCK_RAW, SOCK_DGRAM,
-         SOCK_STREAM, MSG_NOSIGNAL, MSG_PEEK,
-         AF_INET, AF_INET6, AF_UNIX, SO_ERROR, SO_REUSEADDR,
-         SO_REUSEPORT, SO_BROADCAST, IPPROTO_IP, IPPROTO_IPV6,
-         IPV6_MULTICAST_HOPS, SOCK_DGRAM, RLIMIT_NOFILE,
-         SIG_BLOCK, SIG_UNBLOCK, SHUT_RD, SHUT_WR, SHUT_RDWR,
-         SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
-         SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV, SIGUSR2,
-         SIGPIPE, SIGALRM, SIGTERM, SIGPIPE, SIGCHLD, SIGSTOP,
-         SIGCONT
+  export
+    close, shutdown, socket, getpeername, getsockname, recvfrom, sendto, send,
+    bindSocket, recv, connect, unlink, listen, getaddrinfo, gai_strerror, getrlimit,
+    setrlimit, getpid, pthread_sigmask, sigprocmask, sigemptyset, sigaddset,
+    sigismember, fcntl, accept, pipe, write, signal, read, setsockopt, getsockopt,
+    getcwd, chdir, waitpid, kill, select, pselect, socketpair, poll, freeAddrInfo,
+    Timeval, Timespec, Pid, Mode, Time, Sigset, SockAddr, SockLen, Sockaddr_storage,
+    Sockaddr_in, Sockaddr_in6, Sockaddr_un, SocketHandle, AddrInfo, RLimit, TFdSet,
+    Suseconds, FD_CLR, FD_ISSET, FD_SET, FD_ZERO, F_GETFL, F_SETFL, F_GETFD, F_SETFD,
+    FD_CLOEXEC, O_NONBLOCK, SOL_SOCKET, SOCK_RAW, SOCK_DGRAM, SOCK_STREAM, MSG_NOSIGNAL,
+    MSG_PEEK, AF_INET, AF_INET6, AF_UNIX, SO_ERROR, SO_REUSEADDR, SO_REUSEPORT,
+    SO_BROADCAST, IPPROTO_IP, IPPROTO_IPV6, IPV6_MULTICAST_HOPS, SOCK_DGRAM,
+    RLIMIT_NOFILE, SIG_BLOCK, SIG_UNBLOCK, SHUT_RD, SHUT_WR, SHUT_RDWR, SIGHUP, SIGINT,
+    SIGQUIT, SIGILL, SIGTRAP, SIGABRT, SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV,
+    SIGUSR2, SIGPIPE, SIGALRM, SIGTERM, SIGPIPE, SIGCHLD, SIGSTOP, SIGCONT
 
   type
-    MachTimebaseInfo* {.importc: "struct mach_timebase_info",
-                        header: "<mach/mach_time.h>", pure, final.} = object
+    MachTimebaseInfo* {.
+      importc: "struct mach_timebase_info", header: "<mach/mach_time.h>", pure, final
+    .} = object
       numer*: uint32
       denom*: uint32
 
-    TPollfd* {.importc: "struct pollfd", pure, final,
-               header: "<poll.h>".} = object
+    TPollfd* {.importc: "struct pollfd", pure, final, header: "<poll.h>".} = object
       fd*: cint
       events*: cshort
       revents*: cshort
@@ -974,81 +1100,62 @@ elif defined(macos) or defined(macosx):
     POLLHUP* = 0x0010
     POLLNVAL* = 0x0020
 
-  proc posix_gettimeofday*(tp: var Timeval, unused: pointer = nil) {.
-       importc: "gettimeofday", header: "<sys/time.h>".}
+  proc posix_gettimeofday*(
+    tp: var Timeval, unused: pointer = nil
+  ) {.importc: "gettimeofday", header: "<sys/time.h>".}
 
-  proc mach_timebase_info*(info: var MachTimebaseInfo) {.
-       importc, header: "<mach/mach_time.h>".}
+  proc mach_timebase_info*(
+    info: var MachTimebaseInfo
+  ) {.importc, header: "<mach/mach_time.h>".}
 
-  proc mach_absolute_time*(): uint64 {.
-       importc, header: "<mach/mach_time.h>".}
+  proc mach_absolute_time*(): uint64 {.importc, header: "<mach/mach_time.h>".}
 
-  proc poll*(a1: ptr TPollfd, a2: Tnfds, a3: cint): cint {.
-       importc, header: "<poll.h>", sideEffect.}
+  proc poll*(
+    a1: ptr TPollfd, a2: Tnfds, a3: cint
+  ): cint {.importc, header: "<poll.h>", sideEffect.}
 
 elif defined(linux):
-  from std/posix import close, shutdown, sigemptyset, sigaddset, sigismember,
-                        sigdelset, write, read, waitid, getaddrinfo,
-                        gai_strerror, setsockopt, getsockopt, socket,
-                        getrlimit, setrlimit, getpeername, getsockname,
-                        recvfrom, sendto, send, bindSocket, recv, connect,
-                        unlink, listen, sendmsg, recvmsg, getpid, fcntl,
-                        pthread_sigmask, sigprocmask, clock_gettime, signal,
-                        getcwd, chdir, waitpid, kill, select, pselect,
-                        socketpair, poll, freeAddrInfo,
-                        ClockId, Itimerspec, Timespec, Sigset, Time, Pid, Mode,
-                        SigInfo, Id, Tmsghdr, IOVec, RLimit, Timeval, TFdSet,
-                        SockAddr, SockLen, Sockaddr_storage, Sockaddr_in,
-                        Sockaddr_in6, Sockaddr_un, AddrInfo, SocketHandle,
-                        Suseconds, TPollfd, Tnfds,
-                        FD_CLR, FD_ISSET, FD_SET, FD_ZERO,
-                        CLOCK_MONOTONIC, F_GETFL, F_SETFL, F_GETFD, F_SETFD,
-                        FD_CLOEXEC, O_NONBLOCK, SIG_BLOCK, SIG_UNBLOCK,
-                        SOL_SOCKET, SO_ERROR, RLIMIT_NOFILE, MSG_NOSIGNAL,
-                        MSG_PEEK,
-                        AF_INET, AF_INET6, AF_UNIX, SO_REUSEADDR, SO_REUSEPORT,
-                        SO_BROADCAST, IPPROTO_IP, IPPROTO_IPV6,
-                        IPV6_MULTICAST_HOPS,
-                        SOCK_DGRAM, SOCK_STREAM, SHUT_RD, SHUT_WR, SHUT_RDWR,
-                        POLLIN, POLLOUT, POLLERR, POLLHUP, POLLNVAL,
-                        SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
-                        SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV, SIGUSR2,
-                        SIGPIPE, SIGALRM, SIGTERM, SIGPIPE, SIGCHLD, SIGSTOP,
-                        SIGCONT
+  from std/posix import
+    close, shutdown, sigemptyset, sigaddset, sigismember, sigdelset, write, read,
+    waitid, getaddrinfo, gai_strerror, setsockopt, getsockopt, socket, getrlimit,
+    setrlimit, getpeername, getsockname, recvfrom, sendto, send, bindSocket, recv,
+    connect, unlink, listen, sendmsg, recvmsg, getpid, fcntl, pthread_sigmask,
+    sigprocmask, clock_gettime, signal, getcwd, chdir, waitpid, kill, select, pselect,
+    socketpair, poll, freeAddrInfo, ClockId, Itimerspec, Timespec, Sigset, Time, Pid,
+    Mode, SigInfo, Id, Tmsghdr, IOVec, RLimit, Timeval, TFdSet, SockAddr, SockLen,
+    Sockaddr_storage, Sockaddr_in, Sockaddr_in6, Sockaddr_un, AddrInfo, SocketHandle,
+    Suseconds, TPollfd, Tnfds, FD_CLR, FD_ISSET, FD_SET, FD_ZERO, CLOCK_MONOTONIC,
+    F_GETFL, F_SETFL, F_GETFD, F_SETFD, FD_CLOEXEC, O_NONBLOCK, SIG_BLOCK, SIG_UNBLOCK,
+    SOL_SOCKET, SO_ERROR, RLIMIT_NOFILE, MSG_NOSIGNAL, MSG_PEEK, AF_INET, AF_INET6,
+    AF_UNIX, SO_REUSEADDR, SO_REUSEPORT, SO_BROADCAST, IPPROTO_IP, IPPROTO_IPV6,
+    IPV6_MULTICAST_HOPS, SOCK_DGRAM, SOCK_STREAM, SHUT_RD, SHUT_WR, SHUT_RDWR, POLLIN,
+    POLLOUT, POLLERR, POLLHUP, POLLNVAL, SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP,
+    SIGABRT, SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV, SIGUSR2, SIGPIPE, SIGALRM,
+    SIGTERM, SIGPIPE, SIGCHLD, SIGSTOP, SIGCONT
 
-  export close, shutdown, sigemptyset, sigaddset, sigismember,
-         sigdelset, write, read, waitid, getaddrinfo,
-         gai_strerror, setsockopt, getsockopt, socket,
-         getrlimit, setrlimit, getpeername, getsockname,
-         recvfrom, sendto, send, bindSocket, recv, connect,
-         unlink, listen, sendmsg, recvmsg, getpid, fcntl,
-         pthread_sigmask, sigprocmask, clock_gettime, signal,
-         getcwd, chdir, waitpid, kill, select, pselect,
-         socketpair, poll, freeAddrInfo,
-         ClockId, Itimerspec, Timespec, Sigset, Time, Pid, Mode,
-         SigInfo, Id, Tmsghdr, IOVec, RLimit, TFdSet, Timeval,
-         SockAddr, SockLen, Sockaddr_storage, Sockaddr_in,
-         Sockaddr_in6, Sockaddr_un, AddrInfo, SocketHandle,
-         Suseconds, TPollfd, Tnfds,
-         FD_CLR, FD_ISSET, FD_SET, FD_ZERO,
-         CLOCK_MONOTONIC, F_GETFL, F_SETFL, F_GETFD, F_SETFD,
-         FD_CLOEXEC, O_NONBLOCK, SIG_BLOCK, SIG_UNBLOCK,
-         SOL_SOCKET, SO_ERROR, RLIMIT_NOFILE, MSG_NOSIGNAL,
-         MSG_PEEK,
-         AF_INET, AF_INET6, AF_UNIX, SO_REUSEADDR, SO_REUSEPORT,
-         SO_BROADCAST, IPPROTO_IP, IPPROTO_IPV6, IPV6_MULTICAST_HOPS,
-         SOCK_DGRAM, SOCK_STREAM, SHUT_RD, SHUT_WR, SHUT_RDWR,
-         POLLIN, POLLOUT, POLLERR, POLLHUP, POLLNVAL,
-         SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
-         SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV, SIGUSR2,
-         SIGPIPE, SIGALRM, SIGTERM, SIGPIPE, SIGCHLD, SIGSTOP,
-         SIGCONT
+  export
+    close, shutdown, sigemptyset, sigaddset, sigismember, sigdelset, write, read,
+    waitid, getaddrinfo, gai_strerror, setsockopt, getsockopt, socket, getrlimit,
+    setrlimit, getpeername, getsockname, recvfrom, sendto, send, bindSocket, recv,
+    connect, unlink, listen, sendmsg, recvmsg, getpid, fcntl, pthread_sigmask,
+    sigprocmask, clock_gettime, signal, getcwd, chdir, waitpid, kill, select, pselect,
+    socketpair, poll, freeAddrInfo, ClockId, Itimerspec, Timespec, Sigset, Time, Pid,
+    Mode, SigInfo, Id, Tmsghdr, IOVec, RLimit, TFdSet, Timeval, SockAddr, SockLen,
+    Sockaddr_storage, Sockaddr_in, Sockaddr_in6, Sockaddr_un, AddrInfo, SocketHandle,
+    Suseconds, TPollfd, Tnfds, FD_CLR, FD_ISSET, FD_SET, FD_ZERO, CLOCK_MONOTONIC,
+    F_GETFL, F_SETFL, F_GETFD, F_SETFD, FD_CLOEXEC, O_NONBLOCK, SIG_BLOCK, SIG_UNBLOCK,
+    SOL_SOCKET, SO_ERROR, RLIMIT_NOFILE, MSG_NOSIGNAL, MSG_PEEK, AF_INET, AF_INET6,
+    AF_UNIX, SO_REUSEADDR, SO_REUSEPORT, SO_BROADCAST, IPPROTO_IP, IPPROTO_IPV6,
+    IPV6_MULTICAST_HOPS, SOCK_DGRAM, SOCK_STREAM, SHUT_RD, SHUT_WR, SHUT_RDWR, POLLIN,
+    POLLOUT, POLLERR, POLLHUP, POLLNVAL, SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP,
+    SIGABRT, SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV, SIGUSR2, SIGPIPE, SIGALRM,
+    SIGTERM, SIGPIPE, SIGCHLD, SIGSTOP, SIGCONT
 
   when not defined(android) and defined(amd64):
     const IP_MULTICAST_TTL*: cint = 33
   else:
-    var IP_MULTICAST_TTL* {.importc: "IP_MULTICAST_TTL",
-                            header: "<netinet/in.h>".}: cint
+    var IP_MULTICAST_TTL* {.importc: "IP_MULTICAST_TTL", header: "<netinet/in.h>".}:
+      cint
   const
     EPOLLIN* = 0x00000001
     EPOLLPRI* = 0x00000002
@@ -1084,20 +1191,21 @@ elif defined(linux):
     {.pragma: epollPacked.}
 
   type
-    EpollData* {.importc: "epoll_data_t",
-                 header: "<sys/epoll.h>", pure, final, union.} = object
+    EpollData* {.importc: "epoll_data_t", header: "<sys/epoll.h>", pure, final, union.} = object
       `ptr`* {.importc: "ptr".}: pointer
       fd* {.importc: "fd".}: cint
       u32* {.importc: "u32".}: uint32
       u64* {.importc: "u64".}: uint64
 
-    EpollEvent* {.importc: "struct epoll_event",
-                  header: "<sys/epoll.h>", pure, final, epollPacked.} = object
+    EpollEvent* {.
+      importc: "struct epoll_event", header: "<sys/epoll.h>", pure, final, epollPacked
+    .} = object
       events*: uint32 # Epoll events
       data*: EpollData # User data variable
 
-    SignalFdInfo* {.importc: "struct signalfd_siginfo",
-                    header: "<sys/signalfd.h>", pure, final.} = object
+    SignalFdInfo* {.
+      importc: "struct signalfd_siginfo", header: "<sys/signalfd.h>", pure, final
+    .} = object
       ssi_signo*: uint32
       ssi_errno*: int32
       ssi_code*: int32
@@ -1114,98 +1222,86 @@ elif defined(linux):
       ssi_utime*: uint64
       ssi_stime*: uint64
       ssi_addr*: uint64
-      pad* {.importc: "__pad".}: array[0..47, uint8]
+      pad* {.importc: "__pad".}: array[0 .. 47, uint8]
 
-  proc epoll_create*(size: cint): cint {.importc: "epoll_create",
-       header: "<sys/epoll.h>", sideEffect.}
+  proc epoll_create*(
+    size: cint
+  ): cint {.importc: "epoll_create", header: "<sys/epoll.h>", sideEffect.}
 
-  proc epoll_create1*(flags: cint): cint {.importc: "epoll_create1",
-       header: "<sys/epoll.h>", sideEffect.}
+  proc epoll_create1*(
+    flags: cint
+  ): cint {.importc: "epoll_create1", header: "<sys/epoll.h>", sideEffect.}
 
-  proc epoll_ctl*(epfd: cint; op: cint; fd: cint; event: ptr EpollEvent): cint {.
-       importc: "epoll_ctl", header: "<sys/epoll.h>", sideEffect.}
+  proc epoll_ctl*(
+    epfd: cint, op: cint, fd: cint, event: ptr EpollEvent
+  ): cint {.importc: "epoll_ctl", header: "<sys/epoll.h>", sideEffect.}
 
-  proc epoll_wait*(epfd: cint; events: ptr EpollEvent; maxevents: cint;
-                   timeout: cint): cint {.
-       importc: "epoll_wait", header: "<sys/epoll.h>", sideEffect.}
+  proc epoll_wait*(
+    epfd: cint, events: ptr EpollEvent, maxevents: cint, timeout: cint
+  ): cint {.importc: "epoll_wait", header: "<sys/epoll.h>", sideEffect.}
 
-  proc timerfd_create*(clock_id: ClockId, flags: cint): cint {.
-       cdecl, importc: "timerfd_create", header: "<sys/timerfd.h>".}
-  proc timerfd_settime*(ufd: cint, flags: cint,
-                        utmr: var Itimerspec, otmr: var Itimerspec): cint {.
-       cdecl, importc: "timerfd_settime", header: "<sys/timerfd.h>".}
-  proc eventfd*(count: cuint, flags: cint): cint {.
-       cdecl, importc: "eventfd", header: "<sys/eventfd.h>".}
-  proc signalfd*(fd: cint, mask: var Sigset, flags: cint): cint {.
-       cdecl, importc: "signalfd", header: "<sys/signalfd.h>".}
+  proc timerfd_create*(
+    clock_id: ClockId, flags: cint
+  ): cint {.cdecl, importc: "timerfd_create", header: "<sys/timerfd.h>".}
 
-elif defined(freebsd) or defined(openbsd) or defined(netbsd) or
-     defined(dragonfly):
-  from std/posix import close, shutdown, socket, getpeername, getsockname,
-                        recvfrom, sendto, send, bindSocket, recv, connect,
-                        unlink, listen, getaddrinfo, gai_strerror, getrlimit,
-                        setrlimit, getpid, pthread_sigmask, sigemptyset,
-                        sigaddset, sigismember, fcntl, accept, pipe, write,
-                        signal, read, setsockopt, getsockopt, clock_gettime,
-                        getcwd, chdir, waitpid, kill, select, pselect,
-                        socketpair, poll, freeAddrInfo,
-                        Timeval, Timespec, Pid, Mode, Time, Sigset, SockAddr,
-                        SockLen, Sockaddr_storage, Sockaddr_in, Sockaddr_in6,
-                        Sockaddr_un, SocketHandle, AddrInfo, RLimit, TFdSet,
-                        Suseconds, TPollfd, Tnfds,
-                        FD_CLR, FD_ISSET, FD_SET, FD_ZERO,
-                        F_GETFL, F_SETFL, F_GETFD, F_SETFD, FD_CLOEXEC,
-                        O_NONBLOCK, SOL_SOCKET, SOCK_RAW, SOCK_DGRAM,
-                        SOCK_STREAM, MSG_NOSIGNAL, MSG_PEEK,
-                        AF_INET, AF_INET6, AF_UNIX, SO_ERROR, SO_REUSEADDR,
-                        SO_REUSEPORT, SO_BROADCAST, IPPROTO_IP, IPPROTO_IPV6,
-                        IPV6_MULTICAST_HOPS, SOCK_DGRAM, RLIMIT_NOFILE,
-                        SIG_BLOCK, SIG_UNBLOCK, CLOCK_MONOTONIC,
-                        SHUT_RD, SHUT_WR, SHUT_RDWR,
-                        POLLIN, POLLOUT, POLLERR, POLLHUP, POLLNVAL,
-                        SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
-                        SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV, SIGUSR2,
-                        SIGPIPE, SIGALRM, SIGTERM, SIGPIPE, SIGCHLD, SIGSTOP,
-                        SIGCONT
+  proc timerfd_settime*(
+    ufd: cint, flags: cint, utmr: var Itimerspec, otmr: var Itimerspec
+  ): cint {.cdecl, importc: "timerfd_settime", header: "<sys/timerfd.h>".}
 
-  export close, shutdown, socket, getpeername, getsockname,
-         recvfrom, sendto, send, bindSocket, recv, connect,
-         unlink, listen, getaddrinfo, gai_strerror, getrlimit,
-         setrlimit, getpid, pthread_sigmask, sigemptyset,
-         sigaddset, sigismember, fcntl, accept, pipe, write,
-         signal, read, setsockopt, getsockopt, clock_gettime,
-         getcwd, chdir, waitpid, kill, select, pselect,
-         socketpair, poll, freeAddrInfo,
-         Timeval, Timespec, Pid, Mode, Time, Sigset, SockAddr,
-         SockLen, Sockaddr_storage, Sockaddr_in, Sockaddr_in6,
-         Sockaddr_un, SocketHandle, AddrInfo, RLimit, TFdSet,
-         Suseconds, TPollfd, Tnfds,
-         FD_CLR, FD_ISSET, FD_SET, FD_ZERO,
-         F_GETFL, F_SETFL, F_GETFD, F_SETFD, FD_CLOEXEC,
-         O_NONBLOCK, SOL_SOCKET, SOCK_RAW, SOCK_DGRAM,
-         SOCK_STREAM, MSG_NOSIGNAL, MSG_PEEK,
-         AF_INET, AF_INET6, AF_UNIX, SO_ERROR, SO_REUSEADDR,
-         SO_REUSEPORT, SO_BROADCAST, IPPROTO_IP, IPPROTO_IPV6,
-         IPV6_MULTICAST_HOPS, SOCK_DGRAM, RLIMIT_NOFILE,
-         SIG_BLOCK, SIG_UNBLOCK, CLOCK_MONOTONIC,
-         SHUT_RD, SHUT_WR, SHUT_RDWR,
-         POLLIN, POLLOUT, POLLERR, POLLHUP, POLLNVAL,
-         SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
-         SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV, SIGUSR2,
-         SIGPIPE, SIGALRM, SIGTERM, SIGPIPE, SIGCHLD, SIGSTOP,
-         SIGCONT
+  proc eventfd*(
+    count: cuint, flags: cint
+  ): cint {.cdecl, importc: "eventfd", header: "<sys/eventfd.h>".}
 
-  var IP_MULTICAST_TTL* {.importc: "IP_MULTICAST_TTL",
-                          header: "<netinet/in.h>".}: cint
+  proc signalfd*(
+    fd: cint, mask: var Sigset, flags: cint
+  ): cint {.cdecl, importc: "signalfd", header: "<sys/signalfd.h>".}
 
-when defined(linux) or defined(freebsd) or defined(openbsd) or
-     defined(netbsd) or defined(dragonfly):
+elif defined(freebsd) or defined(openbsd) or defined(netbsd) or defined(dragonfly):
+  from std/posix import
+    close, shutdown, socket, getpeername, getsockname, recvfrom, sendto, send,
+    bindSocket, recv, connect, unlink, listen, getaddrinfo, gai_strerror, getrlimit,
+    setrlimit, getpid, pthread_sigmask, sigemptyset, sigaddset, sigismember, fcntl,
+    accept, pipe, write, signal, read, setsockopt, getsockopt, clock_gettime, getcwd,
+    chdir, waitpid, kill, select, pselect, socketpair, poll, freeAddrInfo, Timeval,
+    Timespec, Pid, Mode, Time, Sigset, SockAddr, SockLen, Sockaddr_storage, Sockaddr_in,
+    Sockaddr_in6, Sockaddr_un, SocketHandle, AddrInfo, RLimit, TFdSet, Suseconds,
+    TPollfd, Tnfds, FD_CLR, FD_ISSET, FD_SET, FD_ZERO, F_GETFL, F_SETFL, F_GETFD,
+    F_SETFD, FD_CLOEXEC, O_NONBLOCK, SOL_SOCKET, SOCK_RAW, SOCK_DGRAM, SOCK_STREAM,
+    MSG_NOSIGNAL, MSG_PEEK, AF_INET, AF_INET6, AF_UNIX, SO_ERROR, SO_REUSEADDR,
+    SO_REUSEPORT, SO_BROADCAST, IPPROTO_IP, IPPROTO_IPV6, IPV6_MULTICAST_HOPS,
+    SOCK_DGRAM, RLIMIT_NOFILE, SIG_BLOCK, SIG_UNBLOCK, CLOCK_MONOTONIC, SHUT_RD,
+    SHUT_WR, SHUT_RDWR, POLLIN, POLLOUT, POLLERR, POLLHUP, POLLNVAL, SIGHUP, SIGINT,
+    SIGQUIT, SIGILL, SIGTRAP, SIGABRT, SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV,
+    SIGUSR2, SIGPIPE, SIGALRM, SIGTERM, SIGPIPE, SIGCHLD, SIGSTOP, SIGCONT
 
-  proc pipe2*(a: array[0..1, cint], flags: cint): cint {.
-       importc, header: "<unistd.h>", sideEffect.}
+  export
+    close, shutdown, socket, getpeername, getsockname, recvfrom, sendto, send,
+    bindSocket, recv, connect, unlink, listen, getaddrinfo, gai_strerror, getrlimit,
+    setrlimit, getpid, pthread_sigmask, sigemptyset, sigaddset, sigismember, fcntl,
+    accept, pipe, write, signal, read, setsockopt, getsockopt, clock_gettime, getcwd,
+    chdir, waitpid, kill, select, pselect, socketpair, poll, freeAddrInfo, Timeval,
+    Timespec, Pid, Mode, Time, Sigset, SockAddr, SockLen, Sockaddr_storage, Sockaddr_in,
+    Sockaddr_in6, Sockaddr_un, SocketHandle, AddrInfo, RLimit, TFdSet, Suseconds,
+    TPollfd, Tnfds, FD_CLR, FD_ISSET, FD_SET, FD_ZERO, F_GETFL, F_SETFL, F_GETFD,
+    F_SETFD, FD_CLOEXEC, O_NONBLOCK, SOL_SOCKET, SOCK_RAW, SOCK_DGRAM, SOCK_STREAM,
+    MSG_NOSIGNAL, MSG_PEEK, AF_INET, AF_INET6, AF_UNIX, SO_ERROR, SO_REUSEADDR,
+    SO_REUSEPORT, SO_BROADCAST, IPPROTO_IP, IPPROTO_IPV6, IPV6_MULTICAST_HOPS,
+    SOCK_DGRAM, RLIMIT_NOFILE, SIG_BLOCK, SIG_UNBLOCK, CLOCK_MONOTONIC, SHUT_RD,
+    SHUT_WR, SHUT_RDWR, POLLIN, POLLOUT, POLLERR, POLLHUP, POLLNVAL, SIGHUP, SIGINT,
+    SIGQUIT, SIGILL, SIGTRAP, SIGABRT, SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV,
+    SIGUSR2, SIGPIPE, SIGALRM, SIGTERM, SIGPIPE, SIGCHLD, SIGSTOP, SIGCONT
 
-  proc accept4*(a1: cint, a2: ptr SockAddr, a3: ptr SockLen, a4: cint): cint {.
-       importc, header: "<sys/socket.h>", sideEffect.}
+  var IP_MULTICAST_TTL* {.importc: "IP_MULTICAST_TTL", header: "<netinet/in.h>".}: cint
+
+when defined(linux) or defined(freebsd) or defined(openbsd) or defined(netbsd) or
+    defined(dragonfly):
+  proc pipe2*(
+    a: array[0 .. 1, cint], flags: cint
+  ): cint {.importc, header: "<unistd.h>", sideEffect.}
+
+  proc accept4*(
+    a1: cint, a2: ptr SockAddr, a3: ptr SockLen, a4: cint
+  ): cint {.importc, header: "<sys/socket.h>", sideEffect.}
 
 when defined(linux):
   const
@@ -1261,8 +1357,7 @@ elif defined(macos) or defined(macosx):
     IPV6_V6ONLY* = 27
 
 when defined(linux) or defined(macos) or defined(macosx) or defined(freebsd) or
-     defined(openbsd) or defined(netbsd) or defined(dragonfly):
-
+    defined(openbsd) or defined(netbsd) or defined(dragonfly):
   const
     POSIX_SPAWN_RESETIDS* = 0x01
     POSIX_SPAWN_SETPGROUP* = 0x02
@@ -1272,19 +1367,21 @@ when defined(linux) or defined(macos) or defined(macosx) or defined(freebsd) or
     POSIX_SPAWN_SETSIGMASK* = 0x20
 
   type
-    SchedParam* {.importc: "struct sched_param", header: "<sched.h>",
-                  final, pure.} = object ## struct sched_param
+    SchedParam* {.importc: "struct sched_param", header: "<sched.h>", final, pure.} = object
+      ## struct sched_param
       sched_priority*: cint
-      sched_ss_low_priority*: cint     ## Low scheduling priority for
-                                       ## sporadic server.
-      sched_ss_repl_period*: Timespec  ## Replenishment period for
-                                       ## sporadic server.
-      sched_ss_init_budget*: Timespec  ## Initial budget for sporadic server.
-      sched_ss_max_repl*: cint         ## Maximum pending replenishments for
-                                       ## sporadic server.
+      sched_ss_low_priority*: cint
+        ## Low scheduling priority for
+        ## sporadic server.
+      sched_ss_repl_period*: Timespec
+        ## Replenishment period for
+        ## sporadic server.
+      sched_ss_init_budget*: Timespec ## Initial budget for sporadic server.
+      sched_ss_max_repl*: cint
+        ## Maximum pending replenishments for
+        ## sporadic server.
 
-    PosixSpawnAttr* {.importc: "posix_spawnattr_t",
-                      header: "<spawn.h>", final, pure.} = object
+    PosixSpawnAttr* {.importc: "posix_spawnattr_t", header: "<spawn.h>", final, pure.} = object
       flags*: cshort
       pgrp*: Pid
       sd*: Sigset
@@ -1293,94 +1390,113 @@ when defined(linux) or defined(macos) or defined(macosx) or defined(freebsd) or
       policy*: cint
       pad*: array[16, cint]
 
-    PosixSpawnFileActions* {.importc: "posix_spawn_file_actions_t",
-                             header: "<spawn.h>", final, pure.} = object
+    PosixSpawnFileActions* {.
+      importc: "posix_spawn_file_actions_t", header: "<spawn.h>", final, pure
+    .} = object
       allocated*: cint
       used*: cint
       actions*: pointer
       pad*: array[16, cint]
 
-  proc posixSpawn*(a1: var Pid, a2: cstring, a3: var PosixSpawnFileActions,
-                   a4: var PosixSpawnAttr, a5, a6: cstringArray): cint {.
-       importc: "posix_spawn", header: "<spawn.h>", sideEffect.}
-  proc posixSpawnp*(a1: var Pid, a2: cstring, a3: var PosixSpawnFileActions,
-                    a4: var PosixSpawnAttr, a5, a6: cstringArray): cint {.
-       importc: "posix_spawnp", header: "<spawn.h>", sideEffect.}
+  proc posixSpawn*(
+    a1: var Pid,
+    a2: cstring,
+    a3: var PosixSpawnFileActions,
+    a4: var PosixSpawnAttr,
+    a5, a6: cstringArray,
+  ): cint {.importc: "posix_spawn", header: "<spawn.h>", sideEffect.}
 
-  proc posixSpawnFileActionsInit*(a1: var PosixSpawnFileActions): cint {.
-       importc: "posix_spawn_file_actions_init", header: "<spawn.h>",
-       sideEffect.}
-  proc posixSpawnFileActionsDestroy*(a1: var PosixSpawnFileActions): cint {.
-       importc: "posix_spawn_file_actions_destroy", header: "<spawn.h>",
-       sideEffect.}
+  proc posixSpawnp*(
+    a1: var Pid,
+    a2: cstring,
+    a3: var PosixSpawnFileActions,
+    a4: var PosixSpawnAttr,
+    a5, a6: cstringArray,
+  ): cint {.importc: "posix_spawnp", header: "<spawn.h>", sideEffect.}
 
-  proc posixSpawnFileActionsAddClose*(a1: var PosixSpawnFileActions,
-                                      a2: cint): cint {.
-       importc: "posix_spawn_file_actions_addclose", header: "<spawn.h>",
-       sideEffect.}
-  proc posixSpawnFileActionsAddDup2*(a1: var PosixSpawnFileActions,
-                                     a2, a3: cint): cint {.
-       importc: "posix_spawn_file_actions_adddup2", header: "<spawn.h>",
-       sideEffect.}
-  proc posixSpawnFileActionsAddOpen*(a1: var PosixSpawnFileActions,
-                                     a2: cint, a3: cstring, a4: cint,
-                                     a5: Mode): cint {.
-       importc: "posix_spawn_file_actions_addopen", header: "<spawn.h>",
-       sideEffect.}
+  proc posixSpawnFileActionsInit*(
+    a1: var PosixSpawnFileActions
+  ): cint {.importc: "posix_spawn_file_actions_init", header: "<spawn.h>", sideEffect.}
 
-  proc posixSpawnAttrInit*(a1: var PosixSpawnAttr): cint {.
-       importc: "posix_spawnattr_init", header: "<spawn.h>",
-       sideEffect.}
-  proc posixSpawnAttrDestroy*(a1: var PosixSpawnAttr): cint {.
-       importc: "posix_spawnattr_destroy", header: "<spawn.h>",
-       sideEffect.}
+  proc posixSpawnFileActionsDestroy*(
+    a1: var PosixSpawnFileActions
+  ): cint {.
+    importc: "posix_spawn_file_actions_destroy", header: "<spawn.h>", sideEffect
+  .}
 
-  proc posixSpawnAttrGetSigDefault*(a1: var PosixSpawnAttr,
-                                    a2: var Sigset): cint {.
-       importc: "posix_spawnattr_getsigdefault", header: "<spawn.h>",
-       sideEffect.}
-  proc posixSpawnAttrSetSigDefault*(a1: var PosixSpawnAttr,
-                                    a2: var Sigset): cint {.
-       importc: "posix_spawnattr_setsigdefault", header: "<spawn.h>",
-       sideEffect.}
-  proc posixSpawnAttrGetFlags*(a1: var PosixSpawnAttr,
-                               a2: var cshort): cint {.
-       importc: "posix_spawnattr_getflags", header: "<spawn.h>",
-       sideEffect.}
-  proc posixSpawnAttrSetFlags*(a1: var PosixSpawnAttr, a2: cint): cint {.
-       importc: "posix_spawnattr_setflags", header: "<spawn.h>",
-       sideEffect.}
-  proc posixSpawnAttrGetPgroup*(a1: var PosixSpawnAttr,
-                                a2: var Pid): cint {.
-       importc: "posix_spawnattr_getpgroup", header: "<spawn.h>",
-       sideEffect.}
-  proc posixSpawnAttrSetPgroup*(a1: var PosixSpawnAttr, a2: Pid): cint {.
-       importc: "posix_spawnattr_setpgroup", header: "<spawn.h>",
-       sideEffect.}
-  proc posixSpawnAttrGetSchedParam*(a1: var PosixSpawnAttr,
-                                    a2: var SchedParam): cint {.
-       importc: "posix_spawnattr_getschedparam", header: "<spawn.h>",
-       sideEffect.}
-  proc posixSpawnAttrSetSchedParam*(a1: var PosixSpawnAttr,
-                                    a2: var SchedParam): cint {.
-       importc: "posix_spawnattr_setschedparam", header: "<spawn.h>",
-       sideEffect.}
-  proc posixSpawnAttrGetSchedPolicy*(a1: var PosixSpawnAttr,
-                                     a2: var cint): cint {.
-       importc: "posix_spawnattr_getschedpolicy", header: "<spawn.h>",
-       sideEffect.}
-  proc posixSpawnAttrSetSchedPolicy*(a1: var PosixSpawnAttr,
-                                     a2: cint): cint {.
-       importc: "posix_spawnattr_setschedpolicy", header: "<spawn.h>",
-       sideEffect.}
-  proc posixSpawnAttrGetSigMask*(a1: var PosixSpawnAttr,
-                                 a2: var Sigset): cint {.
-       importc: "posix_spawnattr_getsigmask", header: "<spawn.h>",
-       sideEffect.}
-  proc posixSpawnAttrSetSigMask*(a1: var PosixSpawnAttr,
-                                 a2: var Sigset): cint {.
-       importc: "posix_spawnattr_setsigmask", header: "<spawn.h>",
-       sideEffect.}
+  proc posixSpawnFileActionsAddClose*(
+    a1: var PosixSpawnFileActions, a2: cint
+  ): cint {.
+    importc: "posix_spawn_file_actions_addclose", header: "<spawn.h>", sideEffect
+  .}
+
+  proc posixSpawnFileActionsAddDup2*(
+    a1: var PosixSpawnFileActions, a2, a3: cint
+  ): cint {.
+    importc: "posix_spawn_file_actions_adddup2", header: "<spawn.h>", sideEffect
+  .}
+
+  proc posixSpawnFileActionsAddOpen*(
+    a1: var PosixSpawnFileActions, a2: cint, a3: cstring, a4: cint, a5: Mode
+  ): cint {.
+    importc: "posix_spawn_file_actions_addopen", header: "<spawn.h>", sideEffect
+  .}
+
+  proc posixSpawnAttrInit*(
+    a1: var PosixSpawnAttr
+  ): cint {.importc: "posix_spawnattr_init", header: "<spawn.h>", sideEffect.}
+
+  proc posixSpawnAttrDestroy*(
+    a1: var PosixSpawnAttr
+  ): cint {.importc: "posix_spawnattr_destroy", header: "<spawn.h>", sideEffect.}
+
+  proc posixSpawnAttrGetSigDefault*(
+    a1: var PosixSpawnAttr, a2: var Sigset
+  ): cint {.importc: "posix_spawnattr_getsigdefault", header: "<spawn.h>", sideEffect.}
+
+  proc posixSpawnAttrSetSigDefault*(
+    a1: var PosixSpawnAttr, a2: var Sigset
+  ): cint {.importc: "posix_spawnattr_setsigdefault", header: "<spawn.h>", sideEffect.}
+
+  proc posixSpawnAttrGetFlags*(
+    a1: var PosixSpawnAttr, a2: var cshort
+  ): cint {.importc: "posix_spawnattr_getflags", header: "<spawn.h>", sideEffect.}
+
+  proc posixSpawnAttrSetFlags*(
+    a1: var PosixSpawnAttr, a2: cint
+  ): cint {.importc: "posix_spawnattr_setflags", header: "<spawn.h>", sideEffect.}
+
+  proc posixSpawnAttrGetPgroup*(
+    a1: var PosixSpawnAttr, a2: var Pid
+  ): cint {.importc: "posix_spawnattr_getpgroup", header: "<spawn.h>", sideEffect.}
+
+  proc posixSpawnAttrSetPgroup*(
+    a1: var PosixSpawnAttr, a2: Pid
+  ): cint {.importc: "posix_spawnattr_setpgroup", header: "<spawn.h>", sideEffect.}
+
+  proc posixSpawnAttrGetSchedParam*(
+    a1: var PosixSpawnAttr, a2: var SchedParam
+  ): cint {.importc: "posix_spawnattr_getschedparam", header: "<spawn.h>", sideEffect.}
+
+  proc posixSpawnAttrSetSchedParam*(
+    a1: var PosixSpawnAttr, a2: var SchedParam
+  ): cint {.importc: "posix_spawnattr_setschedparam", header: "<spawn.h>", sideEffect.}
+
+  proc posixSpawnAttrGetSchedPolicy*(
+    a1: var PosixSpawnAttr, a2: var cint
+  ): cint {.importc: "posix_spawnattr_getschedpolicy", header: "<spawn.h>", sideEffect.}
+
+  proc posixSpawnAttrSetSchedPolicy*(
+    a1: var PosixSpawnAttr, a2: cint
+  ): cint {.importc: "posix_spawnattr_setschedpolicy", header: "<spawn.h>", sideEffect.}
+
+  proc posixSpawnAttrGetSigMask*(
+    a1: var PosixSpawnAttr, a2: var Sigset
+  ): cint {.importc: "posix_spawnattr_getsigmask", header: "<spawn.h>", sideEffect.}
+
+  proc posixSpawnAttrSetSigMask*(
+    a1: var PosixSpawnAttr, a2: var Sigset
+  ): cint {.importc: "posix_spawnattr_setsigmask", header: "<spawn.h>", sideEffect.}
 
 when defined(linux):
   const
@@ -1391,133 +1507,182 @@ when defined(linux):
     WNOWAIT* = cint(0x01000000)
   template WSTATUS(s: cint): cint =
     s and 0x7F
+
   template WAITEXITSTATUS*(s: cint): cint =
     (s and 0xFF00) shr 8
+
   template WAITTERMSIG*(s: cint): cint =
     WSTATUS(s)
+
   template WAITSTOPSIG*(s: cint): cint =
     WAITEXITSTATUS(s)
+
   template WAITIFEXITED*(s: cint): bool =
     WSTATUS(s) == 0
+
   template WAITIFSIGNALED*(s: cint): bool =
     (cast[int8](WSTATUS(s) + 1) shr 1) > 0
+
   template WAITIFSTOPPED*(s: cint): bool =
     (s and 0xFF) == 0x7F
+
   template WAITIFCONTINUED*(s: cint): bool =
     s == 0xFFFF
+
 elif defined(openbsd):
   const WNOHANG* = 1
   template WSTATUS(s: cint): cint =
     s and 0x7F
+
   template WAITEXITSTATUS*(s: cint): cint =
     (s shr 8) and 0xFF
+
   template WAITTERMSIG*(s: cint): cint =
     WSTATUS(s)
+
   template WAITSTOPSIG*(s: cint): cint =
     WAITEXITSTATUS(s)
+
   template WAITIFEXITED*(s: cint): bool =
     WSTATUS(s) == 0
+
   template WAITIFSIGNALED*(s: cint): bool =
     (WAITTERMSIG(s) != 0x7F) and (WSTATUS(s) != 0)
+
   template WAITIFSTOPPED*(s: cint): bool =
     WSTATUS(s) == 0x7F
+
   template WAITIFCONTINUED*(s: cint): bool =
     s == 0xFFFF
+
 elif defined(dragonfly):
   const WNOHANG* = 1
   template WSTATUS(s: cint): cint =
     s and 0x7F
+
   template WAITEXITSTATUS*(s: cint): cint =
     (s shr 8)
+
   template WAITTERMSIG*(s: cint): cint =
     WSTATUS(s)
+
   template WAITSTOPSIG*(s: cint): cint =
     WAITEXITSTATUS(s)
+
   template WAITIFEXITED*(s: cint): bool =
     WSTATUS(s) == 0
+
   template WAITIFSIGNALED*(s: cint): bool =
     (WAITTERMSIG(s) != 0x7F) and (WSTATUS(s) != 0)
+
   template WAITIFSTOPPED*(s: cint): bool =
     WSTATUS(s) == 0x7F
+
   template WAITIFCONTINUED*(s: cint): bool =
     s == 19
+
 elif defined(netbsd):
   const WNOHANG* = 1
   template WSTATUS(s: cint): cint =
     s and 0x7F
+
   template WAITEXITSTATUS*(s: cint): cint =
     (s shr 8) and 0xFF
+
   template WAITTERMSIG*(s: cint): cint =
     WSTATUS(s)
+
   template WAITSTOPSIG*(s: cint): cint =
     WAITEXITSTATUS(s)
+
   template WAITIFEXITED*(s: cint): bool =
     WSTATUS(s) == 0
+
   template WAITIFSIGNALED*(s: cint): bool =
-    not(WAITIFSTOPPED(s)) and not(WAITIFCONTINUED(s)) and not(WAITIFEXITED(s))
+    not (WAITIFSTOPPED(s)) and not (WAITIFCONTINUED(s)) and not (WAITIFEXITED(s))
+
   template WAITIFSTOPPED*(s: cint): bool =
-    (WSTATUS(s) == 0x7F) and not(WAITIFCONTINUED(s))
+    (WSTATUS(s) == 0x7F) and not (WAITIFCONTINUED(s))
+
   template WAITIFCONTINUED*(s: cint): bool =
     s == 0xFFFF
+
 elif defined(freebsd):
   const WNOHANG* = 1
   template WSTATUS(s: cint): cint =
     s and 0x7F
+
   template WAITEXITSTATUS*(s: cint): cint =
     s shr 8
+
   template WAITTERMSIG*(s: cint): cint =
     WSTATUS(s)
+
   template WAITSTOPSIG*(s: cint): cint =
     s shr 8
+
   template WAITIFEXITED*(s: cint): bool =
     WSTATUS(s) == 0
+
   template WAITIFSIGNALED*(s: cint): bool =
     let wstatus = WSTATUS(s)
     (wstatus != 0x7F) and (wstatus != 0) and (s != 0x13)
+
   template WAITIFSTOPPED*(s: cint): bool =
     WSTATUS(s) == 0x7F
+
   template WAITIFCONTINUED*(s: cint): bool =
     x == 0x13
+
 elif defined(macos) or defined(macosx):
   const WNOHANG* = 1
   template WSTATUS(s: cint): cint =
     s and 0x7F
+
   template WAITEXITSTATUS*(s: cint): cint =
     (s shr 8) and 0xFF
+
   template WAITTERMSIG*(s: cint): cint =
     WSTATUS(s)
+
   template WAITSTOPSIG*(s: cint): cint =
     s shr 8
+
   template WAITIFEXITED*(s: cint): bool =
     WSTATUS(s) == 0
+
   template WAITIFSIGNALED*(s: cint): bool =
     let wstatus = WSTATUS(s)
     (wstatus != 0x7F) and (wstatus != 0)
+
   template WAITIFSTOPPED*(s: cint): bool =
     (WSTATUS(s) == 0x7F) and (WAITSTOPSIG(s) != 0x13)
+
   template WAITIFCONTINUED*(s: cint): bool =
     (WSTATUS(s) == 0x7F) and (WAITSTOPSIG(s) == 0x13)
+
 elif defined(posix):
-  proc WAITEXITSTATUS*(s: cint): cint {.
-       importc: "WEXITSTATUS", header: "<sys/wait.h>".}
+  proc WAITEXITSTATUS*(s: cint): cint {.importc: "WEXITSTATUS", header: "<sys/wait.h>".}
     ## Exit code, iff WIFEXITED(s)
-  proc WAITTERMSIG*(s: cint): cint {.
-       importc: "WTERMSIG", header: "<sys/wait.h>".}
+
+  proc WAITTERMSIG*(s: cint): cint {.importc: "WTERMSIG", header: "<sys/wait.h>".}
     ## Termination signal, iff WIFSIGNALED(s)
-  proc WAITSTOPSIG*(s: cint): cint {.
-       importc: "WSTOPSIG", header: "<sys/wait.h>".}
+
+  proc WAITSTOPSIG*(s: cint): cint {.importc: "WSTOPSIG", header: "<sys/wait.h>".}
     ## Stop signal, iff WIFSTOPPED(s)
-  proc WAITIFEXITED*(s: cint): bool {.
-       importc: "WIFEXITED", header: "<sys/wait.h>".}
+
+  proc WAITIFEXITED*(s: cint): bool {.importc: "WIFEXITED", header: "<sys/wait.h>".}
     ## True if child exited normally.
-  proc WAITIFSIGNALED*(s: cint): bool {.
-       importc: "WIFSIGNALED", header: "<sys/wait.h>".}
+
+  proc WAITIFSIGNALED*(s: cint): bool {.importc: "WIFSIGNALED", header: "<sys/wait.h>".}
     ## True if child exited due to uncaught signal.
-  proc WAITIFSTOPPED*(s: cint): bool {.
-       importc: "WIFSTOPPED", header: "<sys/wait.h>".}
+
+  proc WAITIFSTOPPED*(s: cint): bool {.importc: "WIFSTOPPED", header: "<sys/wait.h>".}
     ## True if child is currently stopped.
-  proc WAITIFCONTINUED*(s: cint): bool {.
-       importc: "WIFCONTINUED", header: "<sys/wait.h>".}
+
+  proc WAITIFCONTINUED*(
+    s: cint
+  ): bool {.importc: "WIFCONTINUED", header: "<sys/wait.h>".}
     ## True if child has been continued.
 
 when defined(posix):
@@ -1525,7 +1690,9 @@ when defined(posix):
     INVALID_SOCKET* = SocketHandle(-1)
     INVALID_HANDLE_VALUE* = cint(-1)
 
-proc `==`*(x: SocketHandle, y: int): bool = int(x) == y
+proc `==`*(x: SocketHandle, y: int): bool =
+  int(x) == y
+
 when defined(nimdoc):
   proc `==`*(x: SocketHandle, y: SocketHandle): bool {.borrow.}
 
@@ -1545,8 +1712,7 @@ when defined(macosx) or defined(macos) or defined(bsd):
     RTA_GATEWAY* = 0x02
 
   type
-    IfAddrs* {.importc: "struct ifaddrs", header: "<ifaddrs.h>",
-               pure, final.} = object
+    IfAddrs* {.importc: "struct ifaddrs", header: "<ifaddrs.h>", pure, final.} = object
       ifa_next* {.importc: "ifa_next".}: ptr IfAddrs
       ifa_name* {.importc: "ifa_name".}: ptr cchar
       ifa_flags* {.importc: "ifa_flags".}: cuint
@@ -1557,8 +1723,7 @@ when defined(macosx) or defined(macos) or defined(bsd):
 
     PIfAddrs* = ptr IfAddrs
 
-    IfData* {.importc: "struct if_data", header: "<net/if.h>",
-              pure, final.} = object
+    IfData* {.importc: "struct if_data", header: "<net/if.h>", pure, final.} = object
       ifi_type* {.importc: "ifi_type".}: byte
       ifi_typelen* {.importc: "ifi_typelen".}: byte
       ifi_physical* {.importc: "ifi_physical".}: byte
@@ -1631,14 +1796,24 @@ when defined(macosx) or defined(macos) or defined(bsd):
       rtm*: RtMsgHeader
       space*: array[512, byte]
 
-  proc getIfAddrs*(ifap: ptr PIfAddrs): cint {.importc: "getifaddrs",
-       header: """#include <sys/types.h>
+  proc getIfAddrs*(
+    ifap: ptr PIfAddrs
+  ): cint {.
+    importc: "getifaddrs",
+    header: """#include <sys/types.h>
                   #include <sys/socket.h>
-                  #include <ifaddrs.h>""".}
-  proc freeIfAddrs*(ifap: ptr IfAddrs) {.importc: "freeifaddrs",
-       header: """#include <sys/types.h>
+                  #include <ifaddrs.h>"""
+  .}
+
+  proc freeIfAddrs*(
+    ifap: ptr IfAddrs
+  ) {.
+    importc: "freeifaddrs",
+    header: """#include <sys/types.h>
                   #include <sys/socket.h>
-                  #include <ifaddrs.h>""".}
+                  #include <ifaddrs.h>"""
+  .}
+
 elif defined(linux):
   const
     AF_NETLINK* = cint(16)
@@ -1673,7 +1848,6 @@ elif defined(linux):
     # NLMSG_MIN_TYPE* = 0x10
     NLMSG_ERROR* = 0x02
     # MSG_TRUNC* = 0x20
-
     IFLA_ADDRESS* = 1
     IFLA_IFNAME* = 3
     IFLA_MTU* = 4

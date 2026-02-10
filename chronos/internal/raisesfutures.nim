@@ -1,23 +1,20 @@
-import
-  std/[macros, sequtils],
-  ../futures
+import std/[macros, sequtils], ../futures
 
 {.push raises: [].}
 
-type
-  InternalRaisesFuture*[T, E] = ref object of Future[T]
-    ## Future with a tuple of possible exception types
-    ## eg InternalRaisesFuture[void, (ValueError, OSError)]
-    ##
-    ## This type gets injected by `async: (raises: ...)` and similar utilities
-    ## and should not be used manually as the internal exception representation
-    ## is subject to change in future chronos versions.
-    # TODO https://github.com/nim-lang/Nim/issues/23418
-    # TODO https://github.com/nim-lang/Nim/issues/23419
-    when E is void:
-      dummy: E
-    else:
-      dummy: array[0, E]
+type InternalRaisesFuture*[T, E] = ref object of Future[T]
+  ## Future with a tuple of possible exception types
+  ## eg InternalRaisesFuture[void, (ValueError, OSError)]
+  ##
+  ## This type gets injected by `async: (raises: ...)` and similar utilities
+  ## and should not be used manually as the internal exception representation
+  ## is subject to change in future chronos versions.
+  # TODO https://github.com/nim-lang/Nim/issues/23418
+  # TODO https://github.com/nim-lang/Nim/issues/23419
+  when E is void:
+    dummy: E
+  else:
+    dummy: array[0, E]
 
 proc makeNoRaises*(): NimNode {.compileTime.} =
   # An empty tuple would have been easier but...
@@ -49,7 +46,7 @@ proc isNoRaises*(n: NimNode): bool {.compileTime.} =
 iterator members(tup: NimNode): NimNode =
   # Given a typedesc[tuple] = (A, B, C), yields the tuple members (A, B C)
   if not isNoRaises(tup):
-    for n in getType(getTypeInst(tup)[1])[1..^1]:
+    for n in getType(getTypeInst(tup)[1])[1 ..^ 1]:
       yield n
 
 proc members(tup: NimNode): seq[NimNode] {.compileTime.} =
@@ -68,31 +65,31 @@ macro Raising*[T](F: typedesc[Future[T]], E: typed): untyped =
   # An earlier version used `E: varargs[typedesc]` here but this is buggyt/no
   # longer supported in 2.0 in certain cases:
   # https://github.com/nim-lang/Nim/issues/23432
-  let
-    e =
-      case E.getTypeInst().typeKind()
-      of ntyTypeDesc: @[E]
-      of ntyArray:
-        for x in E:
-          if x.getTypeInst().typeKind != ntyTypeDesc:
-            error("Expected typedesc, got " & repr(x), x)
-        E.mapIt(it)
-      else:
-        error("Expected typedesc, got " & repr(E), E)
-        @[]
+  let e =
+    case E.getTypeInst().typeKind()
+    of ntyTypeDesc:
+      @[E]
+    of ntyArray:
+      for x in E:
+        if x.getTypeInst().typeKind != ntyTypeDesc:
+          error("Expected typedesc, got " & repr(x), x)
+      E.mapIt(it)
+    else:
+      error("Expected typedesc, got " & repr(E), E)
+      @[]
 
-  let raises = if e.len == 0:
-    makeNoRaises()
-  else:
-    nnkTupleConstr.newTree(e)
+  let raises =
+    if e.len == 0:
+      makeNoRaises()
+    else:
+      nnkTupleConstr.newTree(e)
   nnkBracketExpr.newTree(
-    ident "InternalRaisesFuture",
-    nnkDotExpr.newTree(F, ident"T"),
-    raises
+    ident "InternalRaisesFuture", nnkDotExpr.newTree(F, ident"T"), raises
   )
 
 template init*[T, E](
-    F: type InternalRaisesFuture[T, E], fromProc: static[string] = ""): F =
+    F: type InternalRaisesFuture[T, E], fromProc: static[string] = ""
+): F =
   ## Creates a new pending future.
   ##
   ## Specifying ``fromProc``, which is a string specifying the name of the proc
@@ -101,14 +98,15 @@ template init*[T, E](
     static:
       raiseAssert "Manually created futures must either own cancellation schedule or raise CancelledError"
 
-
   let res = F()
   internalInitFutureBase(res, getSrcLocation(fromProc), FutureState.Pending, {})
   res
 
 template init*[T, E](
-    F: type InternalRaisesFuture[T, E], fromProc: static[string] = "",
-    flags: static[FutureFlags]): F =
+    F: type InternalRaisesFuture[T, E],
+    fromProc: static[string] = "",
+    flags: static[FutureFlags],
+): F =
   ## Creates a new pending future.
   ##
   ## Specifying ``fromProc``, which is a string specifying the name of the proc
@@ -119,11 +117,12 @@ template init*[T, E](
       doAssert FutureFlag.OwnCancelSchedule in flags,
         "Manually created futures must either own cancellation schedule or raise CancelledError"
 
-  internalInitFutureBase(
-    res, getSrcLocation(fromProc), FutureState.Pending, flags)
+  internalInitFutureBase(res, getSrcLocation(fromProc), FutureState.Pending, flags)
   res
 
-proc containsSignature(members: openArray[NimNode], typ: NimNode): bool {.compileTime.} =
+proc containsSignature(
+    members: openArray[NimNode], typ: NimNode
+): bool {.compileTime.} =
   let typHash = signatureHash(typ)
 
   for err in members:
@@ -147,7 +146,7 @@ macro prepend*(tup: typedesc, typs: varargs[typed]): typedesc =
 macro remove*(tup: typedesc, typs: varargs[typed]): typedesc =
   result = nnkTupleConstr.newTree()
   for err in tup.members():
-    if not typs[0..^1].containsSignature(err):
+    if not typs[0 ..^ 1].containsSignature(err):
       result.add err
 
   if result.len == 0:
@@ -173,12 +172,14 @@ macro union*(tup0: typedesc, tup1: typedesc): typedesc =
 proc getRaisesTypes*(raises: NimNode): NimNode =
   let typ = getType(raises)
   case typ.typeKind
-  of ntyTypeDesc: typ[1]
-  else: typ
+  of ntyTypeDesc:
+    typ[1]
+  else:
+    typ
 
 macro checkRaises*[T: CatchableError](
-    future: InternalRaisesFuture, raises: typed, error: ref T,
-    warn: static bool = true): untyped =
+    future: InternalRaisesFuture, raises: typed, error: ref T, warn: static bool = true
+): untyped =
   ## Generate code that checks that the given error is compatible with the
   ## raises restrictions of `future`.
   ##
@@ -186,16 +187,13 @@ macro checkRaises*[T: CatchableError](
   ## information available at compile time - in particular, if the raises
   ## inherit from `error`, we end up with the equivalent of a downcast which
   ## raises a Defect if it fails.
-  let
-    raises = getRaisesTypes(raises)
+  let raises = getRaisesTypes(raises)
 
   expectKind(getTypeInst(error), nnkRefTy)
   let toMatch = getTypeInst(error)[0]
 
-
   if isNoRaises(raises):
-    error(
-      "`fail`: `" & repr(toMatch) & "` incompatible with `raises: []`", future)
+    error("`fail`: `" & repr(toMatch) & "` incompatible with `raises: []`", future)
     return
 
   var
@@ -203,25 +201,34 @@ macro checkRaises*[T: CatchableError](
     maybeChecker = ident"false"
     runtimeChecker = ident"false"
 
-  for errorType in raises[1..^1]:
+  for errorType in raises[1 ..^ 1]:
     typeChecker = infix(typeChecker, "or", infix(toMatch, "is", errorType))
     maybeChecker = infix(maybeChecker, "or", infix(errorType, "is", toMatch))
     runtimeChecker = infix(
-      runtimeChecker, "or",
-      infix(error, "of", nnkBracketExpr.newTree(ident"typedesc", errorType)))
+      runtimeChecker,
+      "or",
+      infix(error, "of", nnkBracketExpr.newTree(ident"typedesc", errorType)),
+    )
 
   let
-    errorMsg = "`fail`: `" & repr(toMatch) & "` incompatible with `raises: " & repr(raises[1..^1]) & "`"
-    warningMsg = "Can't verify `fail` exception type at compile time - expected one of " & repr(raises[1..^1]) & ", got `" & repr(toMatch) & "`"
+    errorMsg =
+      "`fail`: `" & repr(toMatch) & "` incompatible with `raises: " &
+      repr(raises[1 ..^ 1]) & "`"
+    warningMsg =
+      "Can't verify `fail` exception type at compile time - expected one of " &
+      repr(raises[1 ..^ 1]) & ", got `" & repr(toMatch) & "`"
     # A warning from this line means exception type will be verified at runtime
-    warning = if warn:
-      quote do: {.warning: `warningMsg`.}
-    else: newEmptyNode()
+    warning =
+      if warn:
+        quote:
+          {.warning: `warningMsg`.}
+      else:
+        newEmptyNode()
 
   # Cannot check inhertance in macro so we let `static` do the heavy lifting
-  quote do:
-    when not(`typeChecker`):
-      when not(`maybeChecker`):
+  quote:
+    when not (`typeChecker`):
+      when not (`maybeChecker`):
         static:
           {.error: `errorMsg`.}
       else:
@@ -235,14 +242,16 @@ func failed*[T](future: InternalRaisesFuture[T, void]): bool {.inline.} =
 
   false
 
-func error*[T](future: InternalRaisesFuture[T, void]): ref CatchableError {.
-    raises: [].} =
+func error*[T](
+    future: InternalRaisesFuture[T, void]
+): ref CatchableError {.raises: [].} =
   static:
     warning("No exceptions possible with this operation, `error` always returns nil")
   nil
 
-func readError*[T](future: InternalRaisesFuture[T, void]): ref CatchableError {.
-    raises: [ValueError].} =
+func readError*[T](
+    future: InternalRaisesFuture[T, void]
+): ref CatchableError {.raises: [ValueError].} =
   static:
     warning("No exceptions possible with this operation, `readError` always raises")
   raise newException(ValueError, "No error in future.")

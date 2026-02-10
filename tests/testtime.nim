@@ -32,17 +32,18 @@ suite "Asynchronous timers & steps test suite":
       dec(counter)
       if counter == 0:
         retFuture.complete()
+
     for fut in futs:
       fut.addCallback(cb)
     return retFuture
 
   proc test(timeout: Duration): Future[Duration] {.async.} =
     var workers = newSeq[Future[Duration]](TimersCount)
-    for i in 0..<TimersCount:
+    for i in 0 ..< TimersCount:
       workers[i] = timeWorker(timeout)
     await waitAll(workers)
     var sum: Duration
-    for i in 0..<TimersCount:
+    for i in 0 ..< TimersCount:
       var time = workers[i].read()
       sum = sum + time
     result = sum div 10'i64

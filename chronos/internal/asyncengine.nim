@@ -24,21 +24,19 @@ import ./[asyncmacro, errors]
 export Port
 export deques, errors, futures, timer, results
 
-export
-  asyncmacro.async, asyncmacro.await, asyncmacro.awaitne
+export asyncmacro.async, asyncmacro.await, asyncmacro.awaitne
 
-const
-  MaxEventsCount* = 64
+const MaxEventsCount* = 64
 
 when defined(windows):
   import std/[sets, hashes]
-elif defined(macosx) or defined(freebsd) or defined(netbsd) or
-     defined(openbsd) or defined(dragonfly) or defined(macos) or
-     defined(linux) or defined(android) or defined(solaris):
+elif defined(macosx) or defined(freebsd) or defined(netbsd) or defined(openbsd) or
+    defined(dragonfly) or defined(macos) or defined(linux) or defined(android) or
+    defined(solaris):
   import ../selectors2
-  export SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
-         SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV, SIGUSR2,
-         SIGPIPE, SIGALRM, SIGTERM, SIGPIPE
+  export
+    SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT, SIGBUS, SIGFPE, SIGKILL, SIGUSR1,
+    SIGSEGV, SIGUSR2, SIGPIPE, SIGALRM, SIGTERM, SIGPIPE
   export oserrno
 
 type
@@ -68,9 +66,7 @@ type
 proc sentinelCallbackImpl(arg: pointer) {.gcsafe, noreturn.} =
   raiseAssert "Sentinel callback MUST not be scheduled"
 
-const
-  SentinelCallback = AsyncCallback(function: sentinelCallbackImpl,
-                                   udata: nil)
+const SentinelCallback = AsyncCallback(function: sentinelCallbackImpl, udata: nil)
 
 proc isSentinel(acb: AsyncCallback): bool =
   acb == SentinelCallback
@@ -143,25 +139,26 @@ template processTicks(loop: untyped) =
 
 template processCallbacks(loop: untyped) =
   while true:
-    let callable = loop.callbacks.popFirst()  # len must be > 0 due to sentinel
+    let callable = loop.callbacks.popFirst() # len must be > 0 due to sentinel
     if isSentinel(callable):
       break
-    if not(isNil(callable.function)):
+    if not (isNil(callable.function)):
       callable.function(callable.udata)
 
 proc raiseAsDefect*(exc: ref Exception, msg: string) {.noreturn, noinline.} =
   # Reraise an exception as a Defect, where it's unexpected and can't be handled
   # We include the stack trace in the message because otherwise, it's easily
   # lost - Nim doesn't print it for `parent` exceptions for example (!)
-  raise (ref Defect)(
-    msg: msg & "\n" & exc.msg & "\n" & exc.getStackTrace(), parent: exc)
+  raise
+    (ref Defect)(msg: msg & "\n" & exc.msg & "\n" & exc.getStackTrace(), parent: exc)
 
 proc raiseOsDefect*(error: OSErrorCode, msg = "") {.noreturn, noinline.} =
   # Reraise OS error code as a Defect, where it's unexpected and can't be
   # handled. We include the stack trace in the message because otherwise,
   # it's easily lost.
-  raise (ref Defect)(msg: msg & "\n[" & $int(error) & "] " & osErrorMsg(error) &
-                          "\n" & getStackTrace())
+  raise (ref Defect)(
+    msg: msg & "\n[" & $int(error) & "] " & osErrorMsg(error) & "\n" & getStackTrace()
+  )
 
 func toPointer(error: OSErrorCode): pointer =
   when sizeof(int) == 8:
@@ -169,7 +166,8 @@ func toPointer(error: OSErrorCode): pointer =
   else:
     cast[pointer](uint32(error))
 
-func toException*(v: OSErrorCode): ref OSError = newOSError(v)
+func toException*(v: OSErrorCode): ref OSError =
+  newOSError(v)
   # This helper will allow to use `tryGet()` and raise OSError for
   # Result[T, OSErrorCode] values.
 
@@ -180,28 +178,49 @@ when defined(nimdoc):
 
   var gDisp {.threadvar.}: PDispatcher
 
-  proc newDispatcher*(): PDispatcher = discard
-  proc poll*() = discard
+  proc newDispatcher*(): PDispatcher =
+    discard
+
+  proc poll*() =
     ## Perform single asynchronous step, processing timers and completing
     ## tasks. Blocks until at least one event has completed.
     ##
     ## Exceptions raised during `async` task exection are stored as outcome
     ## in the corresponding `Future` - `poll` itself does not raise.
+    discard
 
-  proc register2*(fd: AsyncFD): Result[void, OSErrorCode] = discard
-  proc unregister2*(fd: AsyncFD): Result[void, OSErrorCode] = discard
-  proc addReader2*(fd: AsyncFD, cb: CallbackFunc,
-                   udata: pointer = nil): Result[void, OSErrorCode] = discard
-  proc removeReader2*(fd: AsyncFD): Result[void, OSErrorCode] = discard
-  proc addWriter2*(fd: AsyncFD, cb: CallbackFunc,
-                   udata: pointer = nil): Result[void, OSErrorCode] = discard
-  proc removeWriter2*(fd: AsyncFD): Result[void, OSErrorCode] = discard
-  proc closeHandle*(fd: AsyncFD, aftercb: CallbackFunc = nil) = discard
-  proc closeSocket*(fd: AsyncFD, aftercb: CallbackFunc = nil) = discard
-  proc unregisterAndCloseFd*(fd: AsyncFD): Result[void, OSErrorCode] = discard
+  proc register2*(fd: AsyncFD): Result[void, OSErrorCode] =
+    discard
+
+  proc unregister2*(fd: AsyncFD): Result[void, OSErrorCode] =
+    discard
+
+  proc addReader2*(
+      fd: AsyncFD, cb: CallbackFunc, udata: pointer = nil
+  ): Result[void, OSErrorCode] =
+    discard
+
+  proc removeReader2*(fd: AsyncFD): Result[void, OSErrorCode] =
+    discard
+
+  proc addWriter2*(
+      fd: AsyncFD, cb: CallbackFunc, udata: pointer = nil
+  ): Result[void, OSErrorCode] =
+    discard
+
+  proc removeWriter2*(fd: AsyncFD): Result[void, OSErrorCode] =
+    discard
+
+  proc closeHandle*(fd: AsyncFD, aftercb: CallbackFunc = nil) =
+    discard
+
+  proc closeSocket*(fd: AsyncFD, aftercb: CallbackFunc = nil) =
+    discard
+
+  proc unregisterAndCloseFd*(fd: AsyncFD): Result[void, OSErrorCode] =
+    discard
 
   proc `==`*(x: AsyncFD, y: AsyncFD): bool {.borrow, gcsafe.}
-
 elif defined(windows):
   {.pragma: stdcallbackFunc, stdcall, gcsafe, raises: [].}
 
@@ -249,7 +268,8 @@ elif defined(windows):
     SignalHandle* = distinct WaitableHandle
 
     WaitableResult* {.pure.} = enum
-      Ok, Timeout
+      Ok
+      Timeout
 
     AsyncFD* = distinct int
 
@@ -259,23 +279,33 @@ elif defined(windows):
   proc getFunc(s: SocketHandle, fun: var pointer, guid: GUID): bool =
     var bytesRet: DWORD
     fun = nil
-    wsaIoctl(s, SIO_GET_EXTENSION_FUNCTION_POINTER, unsafeAddr(guid),
-             DWORD(sizeof(GUID)), addr fun, DWORD(sizeof(pointer)),
-             addr(bytesRet), nil, nil) == 0
+    wsaIoctl(
+      s,
+      SIO_GET_EXTENSION_FUNCTION_POINTER,
+      unsafeAddr(guid),
+      DWORD(sizeof(GUID)),
+      addr fun,
+      DWORD(sizeof(pointer)),
+      addr(bytesRet),
+      nil,
+      nil,
+    ) == 0
 
   proc globalInit() =
     var wsa = WSAData()
     let res = wsaStartup(0x0202'u16, addr wsa)
     if res != 0:
-      raiseOsDefect(osLastError(),
-                    "globalInit(): Unable to initialize Windows Sockets API")
+      raiseOsDefect(
+        osLastError(), "globalInit(): Unable to initialize Windows Sockets API"
+      )
 
   proc initAPI(loop: PDispatcher) =
     var funcPointer: pointer = nil
 
     let kernel32 = getModuleHandle(newWideCString("kernel32.dll"))
-    loop.getQueuedCompletionStatusEx = cast[LPFN_GETQUEUEDCOMPLETIONSTATUSEX](
-      getProcAddress(kernel32, "GetQueuedCompletionStatusEx"))
+    loop.getQueuedCompletionStatusEx = cast[LPFN_GETQUEUEDCOMPLETIONSTATUSEX](getProcAddress(
+      kernel32, "GetQueuedCompletionStatusEx"
+    ))
 
     let sock = osdefs.socket(osdefs.AF_INET, 1, 6)
     if sock == osdefs.INVALID_SOCKET:
@@ -283,38 +313,45 @@ elif defined(windows):
 
     block:
       let res = getFunc(sock, funcPointer, WSAID_CONNECTEX)
-      if not(res):
-        raiseOsDefect(osLastError(), "initAPI(): Unable to initialize " &
-                                     "dispatcher's ConnectEx()")
+      if not (res):
+        raiseOsDefect(
+          osLastError(), "initAPI(): Unable to initialize " & "dispatcher's ConnectEx()"
+        )
       loop.connectEx = cast[WSAPROC_CONNECTEX](funcPointer)
 
     block:
       let res = getFunc(sock, funcPointer, WSAID_ACCEPTEX)
-      if not(res):
-        raiseOsDefect(osLastError(), "initAPI(): Unable to initialize " &
-                                     "dispatcher's AcceptEx()")
+      if not (res):
+        raiseOsDefect(
+          osLastError(), "initAPI(): Unable to initialize " & "dispatcher's AcceptEx()"
+        )
       loop.acceptEx = cast[WSAPROC_ACCEPTEX](funcPointer)
 
     block:
       let res = getFunc(sock, funcPointer, WSAID_GETACCEPTEXSOCKADDRS)
-      if not(res):
-        raiseOsDefect(osLastError(), "initAPI(): Unable to initialize " &
-                                     "dispatcher's GetAcceptExSockAddrs()")
-      loop.getAcceptExSockAddrs =
-        cast[WSAPROC_GETACCEPTEXSOCKADDRS](funcPointer)
+      if not (res):
+        raiseOsDefect(
+          osLastError(),
+          "initAPI(): Unable to initialize " & "dispatcher's GetAcceptExSockAddrs()",
+        )
+      loop.getAcceptExSockAddrs = cast[WSAPROC_GETACCEPTEXSOCKADDRS](funcPointer)
 
     block:
       let res = getFunc(sock, funcPointer, WSAID_TRANSMITFILE)
-      if not(res):
-        raiseOsDefect(osLastError(), "initAPI(): Unable to initialize " &
-                                     "dispatcher's TransmitFile()")
+      if not (res):
+        raiseOsDefect(
+          osLastError(),
+          "initAPI(): Unable to initialize " & "dispatcher's TransmitFile()",
+        )
       loop.transmitFile = cast[WSAPROC_TRANSMITFILE](funcPointer)
 
     block:
       let res = getFunc(sock, funcPointer, WSAID_DISCONNECTEX)
-      if not(res):
-        raiseOsDefect(osLastError(), "initAPI(): Unable to initialize " &
-                                     "dispatcher's DisconnectEx()")
+      if not (res):
+        raiseOsDefect(
+          osLastError(),
+          "initAPI(): Unable to initialize " & "dispatcher's DisconnectEx()",
+        )
       loop.disconnectEx = cast[WSAPROC_DISCONNECTEX](funcPointer)
 
     if closeFd(sock) != 0:
@@ -322,11 +359,9 @@ elif defined(windows):
 
   proc newDispatcher*(): PDispatcher =
     ## Creates a new Dispatcher instance.
-    let port = createIoCompletionPort(osdefs.INVALID_HANDLE_VALUE,
-                                      HANDLE(0), 0, 1)
+    let port = createIoCompletionPort(osdefs.INVALID_HANDLE_VALUE, HANDLE(0), 0, 1)
     if port == osdefs.INVALID_HANDLE_VALUE:
-      raiseOsDefect(osLastError(), "newDispatcher(): Unable to create " &
-                                   "IOCP port")
+      raiseOsDefect(osLastError(), "newDispatcher(): Unable to create " & "IOCP port")
     var res = PDispatcher(
       ioPort: port,
       handles: initHashSet[AsyncFD](),
@@ -335,13 +370,13 @@ elif defined(windows):
       idlers: initDeque[AsyncCallback](),
       ticks: initDeque[AsyncCallback](),
       trackers: initTable[string, TrackerBase](),
-      counters: initTable[string, TrackerCounter]()
+      counters: initTable[string, TrackerCounter](),
     )
     res.callbacks.addLast(SentinelCallback)
     initAPI(res)
     res
 
-  var gDisp{.threadvar.}: PDispatcher ## Global dispatcher
+  var gDisp {.threadvar.}: PDispatcher ## Global dispatcher
 
   proc setThreadDispatcher*(disp: PDispatcher) {.gcsafe, raises: [].}
   proc getThreadDispatcher*(): PDispatcher {.gcsafe, raises: [].}
@@ -354,8 +389,8 @@ elif defined(windows):
   proc register2*(fd: AsyncFD): Result[void, OSErrorCode] =
     ## Register file descriptor ``fd`` in thread's dispatcher.
     let loop = getThreadDispatcher()
-    if createIoCompletionPort(HANDLE(fd), loop.ioPort, cast[CompletionKey](fd),
-                              1) == osdefs.INVALID_HANDLE_VALUE:
+    if createIoCompletionPort(HANDLE(fd), loop.ioPort, cast[CompletionKey](fd), 1) ==
+        osdefs.INVALID_HANDLE_VALUE:
       return err(osLastError())
     loop.handles.incl(fd)
     ok()
@@ -369,28 +404,25 @@ elif defined(windows):
     getThreadDispatcher().handles.excl(fd)
 
   {.push stackTrace: off.}
-  proc waitableCallback(param: pointer, timerOrWaitFired: WINBOOL) {.
-       stdcallbackFunc.} =
+  proc waitableCallback(param: pointer, timerOrWaitFired: WINBOOL) {.stdcallbackFunc.} =
     # This procedure will be executed in `wait thread`, so it must not use
     # GC related objects.
     # We going to ignore callbacks which was spawned when `isNil(param) == true`
     # because we unable to indicate this error.
-    if isNil(param): return
+    if isNil(param):
+      return
     var wh = cast[ptr PostCallbackData](param)
     # We ignore result of postQueueCompletionStatus() call because we unable to
     # indicate error.
-    discard postQueuedCompletionStatus(wh[].ioPort, DWORD(timerOrWaitFired),
-                                       ULONG_PTR(wh[].handleFd),
-                                       wh[].ovl)
+    discard postQueuedCompletionStatus(
+      wh[].ioPort, DWORD(timerOrWaitFired), ULONG_PTR(wh[].handleFd), wh[].ovl
+    )
+
   {.pop.}
 
   proc registerWaitable*(
-         handle: HANDLE,
-         flags: ULONG,
-         timeout: Duration,
-         cb: CallbackFunc,
-         udata: pointer
-       ): Result[WaitableHandle, OSErrorCode] =
+      handle: HANDLE, flags: ULONG, timeout: Duration, cb: CallbackFunc, udata: pointer
+  ): Result[WaitableHandle, OSErrorCode] =
     ## Register handle of (Change notification, Console input, Event,
     ## Memory resource notification, Mutex, Process, Semaphore, Thread,
     ## Waitable timer) for waiting, using specific Windows' ``flags`` and
@@ -412,7 +444,7 @@ elif defined(windows):
       handleFd: AsyncFD(handle),
       udata: udata,
       ovlref: ovl,
-      ovl: cast[pointer](ovl)
+      ovl: cast[pointer](ovl),
     )
 
     ovl.data.udata = cast[pointer](whandle)
@@ -423,11 +455,14 @@ elif defined(windows):
       else:
         DWORD(timeout.milliseconds)
 
-    if registerWaitForSingleObject(addr(whandle[].waitFd), handle,
-                                   cast[WAITORTIMERCALLBACK](waitableCallback),
-                                   cast[pointer](whandle),
-                                   dwordTimeout,
-                                   flags) == WINBOOL(0):
+    if registerWaitForSingleObject(
+      addr(whandle[].waitFd),
+      handle,
+      cast[WAITORTIMERCALLBACK](waitableCallback),
+      cast[pointer](whandle),
+      dwordTimeout,
+      flags,
+    ) == WINBOOL(0):
       ovl.data.udata = nil
       whandle.ovlref = nil
       whandle.ovl = nil
@@ -441,7 +476,7 @@ elif defined(windows):
     ##
     ## NOTE: This is private procedure, not supposed to be publicly available,
     ## please use ``waitForSingleObject()``.
-    doAssert(not(isNil(wh)))
+    doAssert(not (isNil(wh)))
 
     let pdata = (ref PostCallbackData)(wh)
     # We are not going to clear `ref` fields in PostCallbackData object because
@@ -452,8 +487,9 @@ elif defined(windows):
         return err(res)
     ok()
 
-  proc addProcess2*(pid: int, cb: CallbackFunc,
-                    udata: pointer = nil): Result[ProcessHandle, OSErrorCode] =
+  proc addProcess2*(
+      pid: int, cb: CallbackFunc, udata: pointer = nil
+  ): Result[ProcessHandle, OSErrorCode] =
     ## Registers callback ``cb`` to be called when process with process
     ## identifier ``pid`` exited. Returns process identifier, which can be
     ## used to clear process callback via ``removeProcess``.
@@ -468,38 +504,35 @@ elif defined(windows):
       return err(osLastError())
 
     proc continuation(udata: pointer) {.gcsafe.} =
-      doAssert(not(isNil(udata)))
-      doAssert(not(isNil(wh)))
+      doAssert(not (isNil(udata)))
+      doAssert(not (isNil(wh)))
       discard closeFd(hProcess)
       cb(wh[].udata)
 
-    wh =
-      block:
-        let res = registerWaitable(hProcess, flags, InfiniteDuration,
-                                   continuation, udata)
-        if res.isErr():
-          discard closeFd(hProcess)
-          return err(res.error())
-        res.get()
+    wh = block:
+      let res = registerWaitable(hProcess, flags, InfiniteDuration, continuation, udata)
+      if res.isErr():
+        discard closeFd(hProcess)
+        return err(res.error())
+      res.get()
     ok(ProcessHandle(wh))
 
   proc removeProcess2*(procHandle: ProcessHandle): Result[void, OSErrorCode] =
     ## Remove process' watching using process' descriptor ``procHandle``.
     let waitableHandle = WaitableHandle(procHandle)
-    doAssert(not(isNil(waitableHandle)))
-    ? closeWaitable(waitableHandle)
+    doAssert(not (isNil(waitableHandle)))
+    ?closeWaitable(waitableHandle)
     ok()
 
-  proc addProcess*(pid: int, cb: CallbackFunc,
-                   udata: pointer = nil): ProcessHandle {.
-       raises: [OSError].} =
+  proc addProcess*(
+      pid: int, cb: CallbackFunc, udata: pointer = nil
+  ): ProcessHandle {.raises: [OSError].} =
     ## Registers callback ``cb`` to be called when process with process
     ## identifier ``pid`` exited. Returns process identifier, which can be
     ## used to clear process callback via ``removeProcess``.
     addProcess2(pid, cb, udata).tryGet()
 
-  proc removeProcess*(procHandle: ProcessHandle) {.
-       raises: [ OSError].} =
+  proc removeProcess*(procHandle: ProcessHandle) {.raises: [OSError].} =
     ## Remove process' watching using process' descriptor ``procHandle``.
     removeProcess2(procHandle).tryGet()
 
@@ -509,23 +542,21 @@ elif defined(windows):
     ## any GC related features (strings, seqs, echo etc.).
     case dwCtrlType
     of CTRL_C_EVENT:
-      return
-        (if raiseSignal(SIGINT).valueOr(false): TRUE else: FALSE)
+      return (if raiseSignal(SIGINT).valueOr(false): TRUE else: FALSE)
     of CTRL_BREAK_EVENT:
-      return
-        (if raiseSignal(SIGINT).valueOr(false): TRUE else: FALSE)
+      return (if raiseSignal(SIGINT).valueOr(false): TRUE else: FALSE)
     of CTRL_CLOSE_EVENT:
-      return
-        (if raiseSignal(SIGTERM).valueOr(false): TRUE else: FALSE)
+      return (if raiseSignal(SIGTERM).valueOr(false): TRUE else: FALSE)
     of CTRL_LOGOFF_EVENT:
-      return
-        (if raiseSignal(SIGQUIT).valueOr(false): TRUE else: FALSE)
+      return (if raiseSignal(SIGQUIT).valueOr(false): TRUE else: FALSE)
     else:
       FALSE
+
   {.pop.}
 
-  proc addSignal2*(signal: int, cb: CallbackFunc,
-                   udata: pointer = nil): Result[SignalHandle, OSErrorCode] =
+  proc addSignal2*(
+      signal: int, cb: CallbackFunc, udata: pointer = nil
+  ): Result[SignalHandle, OSErrorCode] =
     ## Start watching signal ``signal``, and when signal appears, call the
     ## callback ``cb`` with specified argument ``udata``. Returns signal
     ## identifier code, which can be used to remove signal callback
@@ -539,8 +570,8 @@ elif defined(windows):
     var hWait: WaitableHandle = nil
 
     proc continuation(ucdata: pointer) {.gcsafe.} =
-      doAssert(not(isNil(ucdata)))
-      doAssert(not(isNil(hWait)))
+      doAssert(not (isNil(ucdata)))
+      doAssert(not (isNil(hWait)))
       cb(hWait[].udata)
 
     if SignalHandlerInstalled notin loop.flags:
@@ -554,30 +585,28 @@ elif defined(windows):
 
     let
       flags = WT_EXECUTEINWAITTHREAD
-      hEvent = ? openEvent($getSignalName(signal))
+      hEvent = ?openEvent($getSignalName(signal))
 
-    hWait = registerWaitable(hEvent, flags, InfiniteDuration,
-                             continuation, udata).valueOr:
+    hWait = registerWaitable(hEvent, flags, InfiniteDuration, continuation, udata).valueOr:
       discard closeFd(hEvent)
       return err(error)
     ok(SignalHandle(hWait))
 
   proc removeSignal2*(signalHandle: SignalHandle): Result[void, OSErrorCode] =
     ## Remove watching signal ``signal``.
-    ? closeWaitable(WaitableHandle(signalHandle))
+    ?closeWaitable(WaitableHandle(signalHandle))
     ok()
 
-  proc addSignal*(signal: int, cb: CallbackFunc,
-                  udata: pointer = nil): SignalHandle {.
-       raises: [ValueError].} =
+  proc addSignal*(
+      signal: int, cb: CallbackFunc, udata: pointer = nil
+  ): SignalHandle {.raises: [ValueError].} =
     ## Registers callback ``cb`` to be called when signal ``signal`` will be
     ## raised. Returns signal identifier, which can be used to clear signal
     ## callback via ``removeSignal``.
     addSignal2(signal, cb, udata).valueOr:
       raise newException(ValueError, osErrorMsg(error))
 
-  proc removeSignal*(signalHandle: SignalHandle) {.
-       raises: [ValueError].} =
+  proc removeSignal*(signalHandle: SignalHandle) {.raises: [ValueError].} =
     ## Remove signal's watching using signal descriptor ``signalfd``.
     let res = removeSignal2(signalHandle)
     if res.isErr():
@@ -605,11 +634,11 @@ elif defined(windows):
           addr events[0].dwNumberOfBytesTransferred,
           addr events[0].lpCompletionKey,
           cast[ptr POVERLAPPED](addr events[0].lpOverlapped),
-          curTimeout
+          curTimeout,
         )
         if res == FALSE:
           let errCode = osLastError()
-          if not(isNil(events[0].lpOverlapped)):
+          if not (isNil(events[0].lpOverlapped)):
             1
           else:
             if uint32(errCode) != WAIT_TIMEOUT:
@@ -625,7 +654,7 @@ elif defined(windows):
           ULONG(len(events)),
           eventsReceived,
           curTimeout,
-          WINBOOL(0)
+          WINBOOL(0),
         )
         if res == FALSE:
           let errCode = osLastError()
@@ -637,16 +666,16 @@ elif defined(windows):
 
     for i in 0 ..< networkEventsCount:
       var customOverlapped = PtrCustomOverlapped(events[i].lpOverlapped)
-      customOverlapped.data.errCode =
-        block:
-          let res = cast[uint64](customOverlapped.internal)
-          if res == 0'u64:
-            OSErrorCode(-1)
-          else:
-            OSErrorCode(rtlNtStatusToDosError(res))
+      customOverlapped.data.errCode = block:
+        let res = cast[uint64](customOverlapped.internal)
+        if res == 0'u64:
+          OSErrorCode(-1)
+        else:
+          OSErrorCode(rtlNtStatusToDosError(res))
       customOverlapped.data.bytesCount = events[i].dwNumberOfBytesTransferred
-      let acb = AsyncCallback(function: customOverlapped.data.cb,
-                              udata: cast[pointer](customOverlapped))
+      let acb = AsyncCallback(
+        function: customOverlapped.data.cb, udata: cast[pointer](customOverlapped)
+      )
       loop.callbacks.addLast(acb)
 
     # Moving expired timers to `loop.callbacks`.
@@ -672,29 +701,27 @@ elif defined(windows):
     ## Closes a socket and ensures that it is unregistered.
     let loop = getThreadDispatcher()
     loop.handles.excl(fd)
-    let
-      param = toPointer(
-        if closeFd(SocketHandle(fd)) == 0:
-          OSErrorCode(0)
-        else:
-          osLastError()
-      )
-    if not(isNil(aftercb)):
+    let param = toPointer(
+      if closeFd(SocketHandle(fd)) == 0:
+        OSErrorCode(0)
+      else:
+        osLastError()
+    )
+    if not (isNil(aftercb)):
       loop.callbacks.addLast(AsyncCallback(function: aftercb, udata: param))
 
   proc closeHandle*(fd: AsyncFD, aftercb: CallbackFunc = nil) =
     ## Closes a (pipe/file) handle and ensures that it is unregistered.
     let loop = getThreadDispatcher()
     loop.handles.excl(fd)
-    let
-      param = toPointer(
-        if closeFd(HANDLE(fd)) == 0:
-          OSErrorCode(0)
-        else:
-          osLastError()
-      )
+    let param = toPointer(
+      if closeFd(HANDLE(fd)) == 0:
+        OSErrorCode(0)
+      else:
+        osLastError()
+    )
 
-    if not(isNil(aftercb)):
+    if not (isNil(aftercb)):
       loop.callbacks.addLast(AsyncCallback(function: aftercb, udata: param))
 
   proc unregisterAndCloseFd*(fd: AsyncFD): Result[void, OSErrorCode] =
@@ -714,11 +741,10 @@ elif defined(windows):
     ## Returns ``true`` if ``fd`` is registered in thread's dispatcher.
     fd in disp.handles
 
-elif defined(macosx) or defined(freebsd) or defined(netbsd) or
-     defined(openbsd) or defined(dragonfly) or defined(macos) or
-     defined(linux) or defined(android) or defined(solaris):
-  const
-    SIG_IGN = cast[proc(x: cint) {.raises: [], noconv, gcsafe.}](1)
+elif defined(macosx) or defined(freebsd) or defined(netbsd) or defined(openbsd) or
+    defined(dragonfly) or defined(macos) or defined(linux) or defined(android) or
+    defined(solaris):
+  const SIG_IGN = cast[proc(x: cint) {.raises: [], noconv, gcsafe.}](1)
 
   type
     AsyncFD* = distinct cint
@@ -742,12 +768,11 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
 
   proc newDispatcher*(): PDispatcher =
     ## Create new dispatcher.
-    let selector =
-      block:
-        let res = Selector.new(SelectorData)
-        if res.isErr(): raiseOsDefect(res.error(),
-                                      "Could not initialize selector")
-        res.get()
+    let selector = block:
+      let res = Selector.new(SelectorData)
+      if res.isErr():
+        raiseOsDefect(res.error(), "Could not initialize selector")
+      res.get()
 
     var res = PDispatcher(
       selector: selector,
@@ -756,13 +781,13 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
       idlers: initDeque[AsyncCallback](),
       keys: newSeq[ReadyKey](chronosEventsCount),
       trackers: initTable[string, TrackerBase](),
-      counters: initTable[string, TrackerCounter]()
+      counters: initTable[string, TrackerCounter](),
     )
     res.callbacks.addLast(SentinelCallback)
     initAPI(res)
     res
 
-  var gDisp{.threadvar.}: PDispatcher ## Global dispatcher
+  var gDisp {.threadvar.}: PDispatcher ## Global dispatcher
 
   proc setThreadDispatcher*(disp: PDispatcher) {.gcsafe, raises: [].}
   proc getThreadDispatcher*(): PDispatcher {.gcsafe, raises: [].}
@@ -784,16 +809,17 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     ## Unregister file descriptor ``fd`` from thread's dispatcher.
     getThreadDispatcher().selector.unregister2(cint(fd))
 
-  proc addReader2*(fd: AsyncFD, cb: CallbackFunc,
-                   udata: pointer = nil): Result[void, OSErrorCode] =
+  proc addReader2*(
+      fd: AsyncFD, cb: CallbackFunc, udata: pointer = nil
+  ): Result[void, OSErrorCode] =
     ## Start watching the file descriptor ``fd`` for read availability and then
     ## call the callback ``cb`` with specified argument ``udata``.
     let loop = getThreadDispatcher()
     var newEvents = {Event.Read}
-    withData(loop.selector, cint(fd), adata) do:
+    withData(loop.selector, cint(fd), adata):
       let acb = AsyncCallback(function: cb, udata: udata)
       adata.reader = acb
-      if not(isNil(adata.writer.function)):
+      if not (isNil(adata.writer.function)):
         newEvents.incl(Event.Write)
     do:
       return err(osdefs.EBADF)
@@ -803,25 +829,26 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     ## Stop watching the file descriptor ``fd`` for read availability.
     let loop = getThreadDispatcher()
     var newEvents: set[Event]
-    withData(loop.selector, cint(fd), adata) do:
+    withData(loop.selector, cint(fd), adata):
       # We need to clear `reader` data, because `selectors` don't do it
       adata.reader = default(AsyncCallback)
-      if not(isNil(adata.writer.function)):
+      if not (isNil(adata.writer.function)):
         newEvents.incl(Event.Write)
     do:
       return err(osdefs.EBADF)
     loop.selector.updateHandle2(cint(fd), newEvents)
 
-  proc addWriter2*(fd: AsyncFD, cb: CallbackFunc,
-                   udata: pointer = nil): Result[void, OSErrorCode] =
+  proc addWriter2*(
+      fd: AsyncFD, cb: CallbackFunc, udata: pointer = nil
+  ): Result[void, OSErrorCode] =
     ## Start watching the file descriptor ``fd`` for write availability and then
     ## call the callback ``cb`` with specified argument ``udata``.
     let loop = getThreadDispatcher()
     var newEvents = {Event.Write}
-    withData(loop.selector, cint(fd), adata) do:
+    withData(loop.selector, cint(fd), adata):
       let acb = AsyncCallback(function: cb, udata: udata)
       adata.writer = acb
-      if not(isNil(adata.reader.function)):
+      if not (isNil(adata.reader.function)):
         newEvents.incl(Event.Read)
     do:
       return err(osdefs.EBADF)
@@ -831,10 +858,10 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     ## Stop watching the file descriptor ``fd`` for write availability.
     let loop = getThreadDispatcher()
     var newEvents: set[Event]
-    withData(loop.selector, cint(fd), adata) do:
+    withData(loop.selector, cint(fd), adata):
       # We need to clear `writer` data, because `selectors` don't do it
       adata.writer = default(AsyncCallback)
-      if not(isNil(adata.reader.function)):
+      if not (isNil(adata.reader.function)):
         newEvents.incl(Event.Read)
     do:
       return err(osdefs.EBADF)
@@ -848,8 +875,9 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     ## Unregister file descriptor ``fd`` from thread's dispatcher.
     unregister2(fd).tryGet()
 
-  proc addReader*(fd: AsyncFD, cb: CallbackFunc, udata: pointer = nil) {.
-       raises: [OSError].} =
+  proc addReader*(
+      fd: AsyncFD, cb: CallbackFunc, udata: pointer = nil
+  ) {.raises: [OSError].} =
     ## Start watching the file descriptor ``fd`` for read availability and then
     ## call the callback ``cb`` with specified argument ``udata``.
     addReader2(fd, cb, udata).tryGet()
@@ -858,8 +886,9 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     ## Stop watching the file descriptor ``fd`` for read availability.
     removeReader2(fd).tryGet()
 
-  proc addWriter*(fd: AsyncFD, cb: CallbackFunc, udata: pointer = nil) {.
-       raises: [OSError].} =
+  proc addWriter*(
+      fd: AsyncFD, cb: CallbackFunc, udata: pointer = nil
+  ) {.raises: [OSError].} =
     ## Start watching the file descriptor ``fd`` for write availability and then
     ## call the callback ``cb`` with specified argument ``udata``.
     addWriter2(fd, cb, udata).tryGet()
@@ -875,7 +904,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     ## are not exposed to the public and not supposed to be used/reused).
     ## Please use closeSocket(AsyncFD) and closeHandle(AsyncFD) instead.
     doAssert(fd != AsyncFD(osdefs.INVALID_SOCKET))
-    ? unregister2(fd)
+    ?unregister2(fd)
     if closeFd(cint(fd)) != 0:
       err(osLastError())
     else:
@@ -890,34 +919,34 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     let loop = getThreadDispatcher()
 
     proc continuation(udata: pointer) =
-      let
-        param = toPointer(
-          if SocketHandle(fd) in loop.selector:
-            let ures = unregister2(fd)
-            if ures.isErr():
-              discard closeFd(cint(fd))
-              ures.error()
-            else:
-              if closeFd(cint(fd)) != 0:
-                osLastError()
-              else:
-                OSErrorCode(0)
+      let param = toPointer(
+        if SocketHandle(fd) in loop.selector:
+          let ures = unregister2(fd)
+          if ures.isErr():
+            discard closeFd(cint(fd))
+            ures.error()
           else:
-            osdefs.EBADF
-        )
-      if not(isNil(aftercb)): aftercb(param)
+            if closeFd(cint(fd)) != 0:
+              osLastError()
+            else:
+              OSErrorCode(0)
+        else:
+          osdefs.EBADF
+      )
+      if not (isNil(aftercb)):
+        aftercb(param)
 
-    withData(loop.selector, cint(fd), adata) do:
+    withData(loop.selector, cint(fd), adata):
       # We are scheduling reader and writer callbacks to be called
       # explicitly, so they can get an error and continue work.
       # Callbacks marked as deleted so we don't need to get REAL notifications
       # from system queue for this reader and writer.
 
-      if not(isNil(adata.reader.function)):
+      if not (isNil(adata.reader.function)):
         loop.callbacks.addLast(adata.reader)
         adata.reader = default(AsyncCallback)
 
-      if not(isNil(adata.writer.function)):
+      if not (isNil(adata.writer.function)):
         loop.callbacks.addLast(adata.writer)
         adata.writer = default(AsyncCallback)
 
@@ -942,35 +971,31 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
       SignalHandle* = distinct int
 
     proc addSignal2*(
-           signal: int,
-           cb: CallbackFunc,
-           udata: pointer = nil
-         ): Result[SignalHandle, OSErrorCode] =
+        signal: int, cb: CallbackFunc, udata: pointer = nil
+    ): Result[SignalHandle, OSErrorCode] =
       ## Start watching signal ``signal``, and when signal appears, call the
       ## callback ``cb`` with specified argument ``udata``. Returns signal
       ## identifier code, which can be used to remove signal callback
       ## via ``removeSignal``.
       let loop = getThreadDispatcher()
       var data: SelectorData
-      let sigfd = ? loop.selector.registerSignal(signal, data)
-      withData(loop.selector, sigfd, adata) do:
+      let sigfd = ?loop.selector.registerSignal(signal, data)
+      withData(loop.selector, sigfd, adata):
         adata.reader = AsyncCallback(function: cb, udata: udata)
       do:
         return err(osdefs.EBADF)
       ok(SignalHandle(sigfd))
 
     proc addProcess2*(
-           pid: int,
-           cb: CallbackFunc,
-           udata: pointer = nil
-         ): Result[ProcessHandle, OSErrorCode] =
+        pid: int, cb: CallbackFunc, udata: pointer = nil
+    ): Result[ProcessHandle, OSErrorCode] =
       ## Registers callback ``cb`` to be called when process with process
       ## identifier ``pid`` exited. Returns process' descriptor, which can be
       ## used to clear process callback via ``removeProcess``.
       let loop = getThreadDispatcher()
       var data: SelectorData
-      let procfd = ? loop.selector.registerProcess(pid, data)
-      withData(loop.selector, procfd, adata) do:
+      let procfd = ?loop.selector.registerProcess(pid, data)
+      withData(loop.selector, procfd, adata):
         adata.reader = AsyncCallback(function: cb, udata: udata)
       do:
         return err(osdefs.EBADF)
@@ -984,30 +1009,28 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
       ## Remove process' watching using process' descriptor ``procfd``.
       getThreadDispatcher().selector.unregister2(cint(procHandle))
 
-    proc addSignal*(signal: int, cb: CallbackFunc,
-                    udata: pointer = nil): SignalHandle {.
-         raises: [OSError].} =
+    proc addSignal*(
+        signal: int, cb: CallbackFunc, udata: pointer = nil
+    ): SignalHandle {.raises: [OSError].} =
       ## Start watching signal ``signal``, and when signal appears, call the
       ## callback ``cb`` with specified argument ``udata``. Returns signal
       ## identifier code, which can be used to remove signal callback
       ## via ``removeSignal``.
       addSignal2(signal, cb, udata).tryGet()
 
-    proc removeSignal*(signalHandle: SignalHandle) {.
-         raises: [OSError].} =
+    proc removeSignal*(signalHandle: SignalHandle) {.raises: [OSError].} =
       ## Remove watching signal ``signal``.
       removeSignal2(signalHandle).tryGet()
 
-    proc addProcess*(pid: int, cb: CallbackFunc,
-                     udata: pointer = nil): ProcessHandle {.
-         raises: [OSError].} =
+    proc addProcess*(
+        pid: int, cb: CallbackFunc, udata: pointer = nil
+    ): ProcessHandle {.raises: [OSError].} =
       ## Registers callback ``cb`` to be called when process with process
       ## identifier ``pid`` exited. Returns process identifier, which can be
       ## used to clear process callback via ``removeProcess``.
       addProcess2(pid, cb, udata).tryGet()
 
-    proc removeProcess*(procHandle: ProcessHandle) {.
-         raises: [OSError].} =
+    proc removeProcess*(procHandle: ProcessHandle) {.raises: [OSError].} =
       ## Remove process' watching using process' descriptor ``procHandle``.
       removeProcess2(procHandle).tryGet()
 
@@ -1026,18 +1049,17 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     loop.processTimersGetTimeout(curTimeout)
 
     # Processing IO descriptors and all hardware events.
-    let count =
-      block:
-        let res = loop.selector.selectInto2(curTimeout, loop.keys)
-        if res.isErr():
-          raiseOsDefect(res.error(), "poll(): Unable to get OS events")
-        res.get()
+    let count = block:
+      let res = loop.selector.selectInto2(curTimeout, loop.keys)
+      if res.isErr():
+        raiseOsDefect(res.error(), "poll(): Unable to get OS events")
+      res.get()
 
     for i in 0 ..< count:
       let fd = loop.keys[i].fd
       let events = loop.keys[i].events
 
-      withData(loop.selector, cint(fd), adata) do:
+      withData(loop.selector, cint(fd), adata):
         if (Event.Read in events) or (events == {Event.Error}):
           if not isNil(adata.reader.function):
             loop.callbacks.addLast(adata.reader)
@@ -1051,8 +1073,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
             loop.callbacks.addLast(adata.reader)
 
         when chronosEventEngine in ["epoll", "kqueue"]:
-          let customSet = {Event.Timer, Event.Signal, Event.Process,
-                           Event.Vnode}
+          let customSet = {Event.Timer, Event.Signal, Event.Process, Event.Vnode}
           if customSet * events != {}:
             if not isNil(adata.reader.function):
               loop.callbacks.addLast(adata.reader)
@@ -1077,12 +1098,15 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     loop.callbacks.addFirst(SentinelCallback)
 
 else:
-  proc initAPI() = discard
-  proc globalInit() = discard
+  proc initAPI() =
+    discard
+
+  proc globalInit() =
+    discard
 
 proc setThreadDispatcher*(disp: PDispatcher) =
   ## Set current thread's dispatcher instance to ``disp``.
-  if not(gDisp.isNil()):
+  if not (gDisp.isNil()):
     doAssert gDisp.callbacks.len == 0
   gDisp = disp
 
@@ -1092,38 +1116,42 @@ proc getThreadDispatcher*(): PDispatcher =
     setThreadDispatcher(newDispatcher())
   gDisp
 
-proc setGlobalDispatcher*(disp: PDispatcher) {.
-      gcsafe, deprecated: "Use setThreadDispatcher() instead".} =
+proc setGlobalDispatcher*(
+    disp: PDispatcher
+) {.gcsafe, deprecated: "Use setThreadDispatcher() instead".} =
   setThreadDispatcher(disp)
 
 proc getGlobalDispatcher*(): PDispatcher {.
-      gcsafe, deprecated: "Use getThreadDispatcher() instead".} =
+    gcsafe, deprecated: "Use getThreadDispatcher() instead"
+.} =
   getThreadDispatcher()
 
-proc setTimer*(at: Moment, cb: CallbackFunc,
-               udata: pointer = nil): TimerCallback =
+proc setTimer*(at: Moment, cb: CallbackFunc, udata: pointer = nil): TimerCallback =
   ## Arrange for the callback ``cb`` to be called at the given absolute
   ## timestamp ``at``. You can also pass ``udata`` to callback.
   let loop = getThreadDispatcher()
-  result = TimerCallback(finishAt: at,
-                         function: AsyncCallback(function: cb, udata: udata))
+  result =
+    TimerCallback(finishAt: at, function: AsyncCallback(function: cb, udata: udata))
   loop.timers.push(result)
 
 proc clearTimer*(timer: TimerCallback) {.inline.} =
   timer.function = default(AsyncCallback)
 
-proc addTimer*(at: Moment, cb: CallbackFunc, udata: pointer = nil) {.
-     inline, deprecated: "Use setTimer/clearTimer instead".} =
+proc addTimer*(
+    at: Moment, cb: CallbackFunc, udata: pointer = nil
+) {.inline, deprecated: "Use setTimer/clearTimer instead".} =
   ## Arrange for the callback ``cb`` to be called at the given absolute
   ## timestamp ``at``. You can also pass ``udata`` to callback.
   discard setTimer(at, cb, udata)
 
-proc addTimer*(at: int64, cb: CallbackFunc, udata: pointer = nil) {.
-     inline, deprecated: "Use addTimer(Duration, cb, udata)".} =
+proc addTimer*(
+    at: int64, cb: CallbackFunc, udata: pointer = nil
+) {.inline, deprecated: "Use addTimer(Duration, cb, udata)".} =
   discard setTimer(Moment.init(at, Millisecond), cb, udata)
 
-proc addTimer*(at: uint64, cb: CallbackFunc, udata: pointer = nil) {.
-     inline, deprecated: "Use addTimer(Duration, cb, udata)".} =
+proc addTimer*(
+    at: uint64, cb: CallbackFunc, udata: pointer = nil
+) {.inline, deprecated: "Use addTimer(Duration, cb, udata)".} =
   discard setTimer(Moment.init(int64(at), Millisecond), cb, udata)
 
 proc removeTimer*(at: Moment, cb: CallbackFunc, udata: pointer = nil) =
@@ -1131,25 +1159,25 @@ proc removeTimer*(at: Moment, cb: CallbackFunc, udata: pointer = nil) =
   ## queue.
   let
     loop = getThreadDispatcher()
-    index =
-      block:
-        var res = -1
-        for i in 0 ..< len(loop.timers):
-          if (loop.timers[i].finishAt == at) and
-             (loop.timers[i].function.function == cb) and
-             (loop.timers[i].function.udata == udata):
-            res = i
-            break
-        res
+    index = block:
+      var res = -1
+      for i in 0 ..< len(loop.timers):
+        if (loop.timers[i].finishAt == at) and (loop.timers[i].function.function == cb) and
+            (loop.timers[i].function.udata == udata):
+          res = i
+          break
+      res
   if index != -1:
     loop.timers.del(index)
 
-proc removeTimer*(at: int64, cb: CallbackFunc, udata: pointer = nil) {.
-     inline, deprecated: "Use removeTimer(Duration, cb, udata)".} =
+proc removeTimer*(
+    at: int64, cb: CallbackFunc, udata: pointer = nil
+) {.inline, deprecated: "Use removeTimer(Duration, cb, udata)".} =
   removeTimer(Moment.init(at, Millisecond), cb, udata)
 
-proc removeTimer*(at: uint64, cb: CallbackFunc, udata: pointer = nil) {.
-     inline, deprecated: "Use removeTimer(Duration, cb, udata)".} =
+proc removeTimer*(
+    at: uint64, cb: CallbackFunc, udata: pointer = nil
+) {.inline, deprecated: "Use removeTimer(Duration, cb, udata)".} =
   removeTimer(Moment.init(int64(at), Millisecond), cb, udata)
 
 proc callSoon*(acb: AsyncCallback) =
@@ -1157,8 +1185,7 @@ proc callSoon*(acb: AsyncCallback) =
   ## The callback is called when control returns to the event loop.
   getThreadDispatcher().callbacks.addLast(acb)
 
-proc callSoon*(cbproc: CallbackFunc, data: pointer) {.
-     gcsafe.} =
+proc callSoon*(cbproc: CallbackFunc, data: pointer) {.gcsafe.} =
   ## Schedule `cbproc` to be called as soon as possible.
   ## The callback is called when control returns to the event loop.
   doAssert(not isNil(cbproc))
@@ -1209,14 +1236,16 @@ proc runForever*() =
   while true:
     poll()
 
-proc addTracker*[T](id: string, tracker: T) {.
-     deprecated: "Please use trackCounter facility instead".} =
+proc addTracker*[T](
+    id: string, tracker: T
+) {.deprecated: "Please use trackCounter facility instead".} =
   ## Add new ``tracker`` object to current thread dispatcher with identifier
   ## ``id``.
   getThreadDispatcher().trackers[id] = tracker
 
-proc getTracker*(id: string): TrackerBase {.
-     deprecated: "Please use getTrackerCounter() instead".} =
+proc getTracker*(
+    id: string
+): TrackerBase {.deprecated: "Please use getTrackerCounter() instead".} =
   ## Get ``tracker`` from current thread dispatcher using identifier ``id``.
   getThreadDispatcher().trackers.getOrDefault(id, nil)
 
@@ -1243,16 +1272,16 @@ proc isCounterLeaked*(name: string): bool {.noinit.} =
   res.opened != res.closed
 
 iterator trackerCounters*(
-           loop: PDispatcher
-         ): tuple[name: string, value: TrackerCounter] =
+    loop: PDispatcher
+): tuple[name: string, value: TrackerCounter] =
   ## Iterates over `loop` thread dispatcher tracker counter table, returns all
   ## the tracker counter's names and values.
-  doAssert(not(isNil(loop)))
+  doAssert(not (isNil(loop)))
   for key, value in loop.counters.pairs():
     yield (key, value)
 
 iterator trackerCounterKeys*(loop: PDispatcher): string =
-  doAssert(not(isNil(loop)))
+  doAssert(not (isNil(loop)))
   ## Iterates over `loop` thread dispatcher tracker counter table, returns all
   ## tracker names.
   for key in loop.counters.keys():
@@ -1263,7 +1292,7 @@ when chronosFutureTracking:
     ## Iterates over the list of pending Futures (Future[T] objects which not
     ## yet completed, cancelled or failed).
     var slider = futureList.head
-    while not(isNil(slider)):
+    while not (isNil(slider)):
       yield slider
       slider = slider.next
 

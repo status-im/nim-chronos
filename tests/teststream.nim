@@ -12,8 +12,9 @@ import ".."/chronos, ".."/chronos/[osdefs, oserrno]
 {.used.}
 
 when defined(windows):
-  proc get_osfhandle*(fd: FileHandle): HANDLE {.
-       importc: "_get_osfhandle", header:"<io.h>".}
+  proc get_osfhandle*(
+    fd: FileHandle
+  ): HANDLE {.importc: "_get_osfhandle", header: "<io.h>".}
 
 suite "Stream Transport test suite":
   teardown:
@@ -31,15 +32,9 @@ suite "Stream Transport test suite":
     TestsCount = 100
 
   when defined(windows):
-    let addresses = [
-      initTAddress("127.0.0.1:33335"),
-      initTAddress(r"/LOCAL\testpipe")
-    ]
+    let addresses = [initTAddress("127.0.0.1:33335"), initTAddress(r"/LOCAL\testpipe")]
   else:
-    let addresses = [
-      initTAddress("127.0.0.1:0"),
-      initTAddress(r"/tmp/testpipe")
-    ]
+    let addresses = [initTAddress("127.0.0.1:0"), initTAddress(r"/tmp/testpipe")]
 
   let prefixes = ["[IP] ", "[UNIX] "]
 
@@ -47,8 +42,8 @@ suite "Stream Transport test suite":
 
   proc getCurrentFD(): int =
     let local = initTAddress("127.0.0.1:0")
-    let sock = createAsyncSocket(local.getDomain(), SockType.SOCK_DGRAM,
-                                 Protocol.IPPROTO_UDP)
+    let sock =
+      createAsyncSocket(local.getDomain(), SockType.SOCK_DGRAM, Protocol.IPPROTO_UDP)
     closeSocket(sock)
     return int(sock)
 
@@ -58,8 +53,9 @@ suite "Stream Transport test suite":
     for i in 0 ..< len(result):
       result[i] = byte(message[i mod len(message)])
 
-  proc serveClient1(server: StreamServer, transp: StreamTransport) {.
-      async: (raises: []).} =
+  proc serveClient1(
+      server: StreamServer, transp: StreamTransport
+  ) {.async: (raises: []).} =
     try:
       while not transp.atEof():
         var data = await transp.readLine()
@@ -67,7 +63,7 @@ suite "Stream Transport test suite":
           doAssert(transp.atEof())
           break
         doAssert(data.startsWith("REQUEST"))
-        var numstr = data[7..^1]
+        var numstr = data[7 ..^ 1]
         var num = parseInt(numstr)
         var ans = "ANSWER" & $num & "\r\n"
         var res = await transp.write(cast[pointer](addr ans[0]), len(ans))
@@ -77,8 +73,9 @@ suite "Stream Transport test suite":
     except CatchableError as exc:
       raiseAssert exc.msg
 
-  proc serveClient2(server: StreamServer, transp: StreamTransport) {.
-      async: (raises: []).} =
+  proc serveClient2(
+      server: StreamServer, transp: StreamTransport
+  ) {.async: (raises: []).} =
     try:
       var buffer: array[20, char]
       var check = "REQUEST"
@@ -91,7 +88,7 @@ suite "Stream Transport test suite":
         doAssert(equalMem(addr buffer[0], addr check[0], len(check)))
         var numstr = ""
         var i = 7
-        while i < MessageSize and (buffer[i] in {'0'..'9'}):
+        while i < MessageSize and (buffer[i] in {'0' .. '9'}):
           numstr.add(buffer[i])
           inc(i)
         var num = parseInt(numstr)
@@ -105,8 +102,9 @@ suite "Stream Transport test suite":
     except CatchableError as exc:
       raiseAssert exc.msg
 
-  proc serveClient3(server: StreamServer, transp: StreamTransport) {.
-      async: (raises: []).} =
+  proc serveClient3(
+      server: StreamServer, transp: StreamTransport
+  ) {.async: (raises: []).} =
     try:
       var buffer: array[20, char]
       var check = "REQUEST"
@@ -120,7 +118,7 @@ suite "Stream Transport test suite":
         doAssert(equalMem(addr buffer[0], addr check[0], len(check)))
         var numstr = ""
         var i = 7
-        while i < MessageSize and (buffer[i] in {'0'..'9'}):
+        while i < MessageSize and (buffer[i] in {'0' .. '9'}):
           numstr.add(buffer[i])
           inc(i)
         var num = parseInt(numstr)
@@ -136,8 +134,9 @@ suite "Stream Transport test suite":
     except CatchableError as exc:
       raiseAssert exc.msg
 
-  proc serveClient4(server: StreamServer, transp: StreamTransport) {.
-      async: (raises: []).} =
+  proc serveClient4(
+      server: StreamServer, transp: StreamTransport
+  ) {.async: (raises: []).} =
     try:
       var pathname = await transp.readLine()
       var size = await transp.readLine()
@@ -156,14 +155,15 @@ suite "Stream Transport test suite":
     except CatchableError as exc:
       raiseAssert exc.msg
 
-  proc serveClient7(server: StreamServer, transp: StreamTransport) {.
-      async: (raises: []).} =
+  proc serveClient7(
+      server: StreamServer, transp: StreamTransport
+  ) {.async: (raises: []).} =
     try:
       var answer = "DONE\r\n"
       var expect = ""
       var line = await transp.readLine()
       doAssert(len(line) == BigMessageCount * len(BigMessagePattern))
-      for i in 0..<BigMessageCount:
+      for i in 0 ..< BigMessageCount:
         expect.add(BigMessagePattern)
       doAssert(line == expect)
       var res = await transp.write(answer)
@@ -175,8 +175,9 @@ suite "Stream Transport test suite":
     except CatchableError as exc:
       raiseAssert exc.msg
 
-  proc serveClient8(server: StreamServer, transp: StreamTransport) {.
-      async: (raises: []).} =
+  proc serveClient8(
+      server: StreamServer, transp: StreamTransport
+  ) {.async: (raises: []).} =
     try:
       var answer = "DONE\r\n"
       var strpattern = BigMessagePattern
@@ -187,7 +188,7 @@ suite "Stream Transport test suite":
       copyMem(addr pattern[0], addr strpattern[0], len(BigMessagePattern))
       var count = await transp.readUntil(addr data[0], len(data), sep = sep)
       doAssert(count == BigMessageCount * len(BigMessagePattern) + 2)
-      for i in 0..<BigMessageCount:
+      for i in 0 ..< BigMessageCount:
         expect.add(pattern)
       expect.add(sep)
       data.setLen(count)
@@ -203,13 +204,13 @@ suite "Stream Transport test suite":
 
   proc swarmWorker1(address: TransportAddress): Future[int] {.async.} =
     var transp = await connect(address)
-    for i in 0..<MessagesCount:
+    for i in 0 ..< MessagesCount:
       var data = "REQUEST" & $i & "\r\n"
       var res = await transp.write(cast[pointer](addr data[0]), len(data))
       doAssert(res == len(data))
       var ans = await transp.readLine()
       doAssert(ans.startsWith("ANSWER"))
-      var numstr = ans[6..^1]
+      var numstr = ans[6 ..^ 1]
       var num = parseInt(numstr)
       doAssert(num == i)
       inc(result)
@@ -220,7 +221,7 @@ suite "Stream Transport test suite":
     var transp = await connect(address)
     var buffer: array[MessageSize, char]
     var check = "ANSWER"
-    for i in 0..<MessagesCount:
+    for i in 0 ..< MessagesCount:
       var data = "REQUEST" & $i & "\r\n"
       zeroMem(addr buffer[0], MessageSize)
       copyMem(addr buffer[0], addr data[0], min(MessageSize, len(data)))
@@ -231,7 +232,7 @@ suite "Stream Transport test suite":
       doAssert(equalMem(addr buffer[0], addr check[0], len(check)))
       var numstr = ""
       var k = 6
-      while k < MessageSize and (buffer[k] in {'0'..'9'}):
+      while k < MessageSize and (buffer[k] in {'0' .. '9'}):
         numstr.add(buffer[k])
         inc(k)
       var num = parseInt(numstr)
@@ -247,7 +248,7 @@ suite "Stream Transport test suite":
     var suffixStr = "SUFFIX"
     var suffix = newSeq[byte](6)
     copyMem(addr suffix[0], addr suffixStr[0], len(suffixStr))
-    for i in 0..<MessagesCount:
+    for i in 0 ..< MessagesCount:
       var data = "REQUEST" & $i & "SUFFIX"
       doAssert(len(data) <= MessageSize)
       zeroMem(addr buffer[0], MessageSize)
@@ -259,7 +260,7 @@ suite "Stream Transport test suite":
       doAssert(equalMem(addr buffer[0], addr check[0], len(check)))
       var numstr = ""
       var k = 6
-      while k < MessageSize and (buffer[k] in {'0'..'9'}):
+      while k < MessageSize and (buffer[k] in {'0' .. '9'}):
         numstr.add(buffer[k])
         inc(k)
       var num = parseInt(numstr)
@@ -299,7 +300,7 @@ suite "Stream Transport test suite":
     var transp = await connect(address)
     var data = BigMessagePattern
     var crlf = "\r\n"
-    for i in 0..<BigMessageCount:
+    for i in 0 ..< BigMessageCount:
       var res = await transp.write(data)
       doAssert(res == len(data))
     var res = await transp.write(crlf)
@@ -314,7 +315,7 @@ suite "Stream Transport test suite":
     var transp = await connect(address)
     var data = BigMessagePattern
     var crlf = "\r\n"
-    for i in 0..<BigMessageCount:
+    for i in 0 ..< BigMessageCount:
       var res = await transp.write(data)
       doAssert(res == len(data))
     var res = await transp.write(crlf)
@@ -332,43 +333,44 @@ suite "Stream Transport test suite":
       dec(counter)
       if counter == 0:
         retFuture.complete()
+
     for fut in futs:
       fut.addCallback(cb)
     return retFuture
 
   proc swarmManager1(address: TransportAddress): Future[int] {.async.} =
     var workers = newSeq[Future[int]](ClientsCount)
-    for i in 0..<ClientsCount:
+    for i in 0 ..< ClientsCount:
       workers[i] = swarmWorker1(address)
     await waitAll(workers)
-    for i in 0..<ClientsCount:
+    for i in 0 ..< ClientsCount:
       var res = workers[i].read()
       result += res
 
   proc swarmManager2(address: TransportAddress): Future[int] {.async.} =
     var workers = newSeq[Future[int]](ClientsCount)
-    for i in 0..<ClientsCount:
+    for i in 0 ..< ClientsCount:
       workers[i] = swarmWorker2(address)
     await waitAll(workers)
-    for i in 0..<ClientsCount:
+    for i in 0 ..< ClientsCount:
       var res = workers[i].read()
       result += res
 
   proc swarmManager3(address: TransportAddress): Future[int] {.async.} =
     var workers = newSeq[Future[int]](ClientsCount)
-    for i in 0..<ClientsCount:
+    for i in 0 ..< ClientsCount:
       workers[i] = swarmWorker3(address)
     await waitAll(workers)
-    for i in 0..<ClientsCount:
+    for i in 0 ..< ClientsCount:
       var res = workers[i].read()
       result += res
 
   proc swarmManager4(address: TransportAddress): Future[int] {.async.} =
     var workers = newSeq[Future[int]](FilesCount)
-    for i in 0..<FilesCount:
+    for i in 0 ..< FilesCount:
       workers[i] = swarmWorker4(address)
     await waitAll(workers)
-    for i in 0..<FilesCount:
+    for i in 0 ..< FilesCount:
       var res = workers[i].read()
       result += res
 
@@ -410,7 +412,7 @@ suite "Stream Transport test suite":
     proc swarmWorker(address: TransportAddress): Future[int] {.async.} =
       var transp = await connect(address)
       var data = ConstantMessage
-      for i in 0..<MessagesCount:
+      for i in 0 ..< MessagesCount:
         var res = await transp.write(data)
         doAssert(res == len(data))
       result = MessagesCount
@@ -419,21 +421,22 @@ suite "Stream Transport test suite":
 
     proc swarmManager(address: TransportAddress): Future[int] {.async.} =
       var workers = newSeq[Future[int]](ClientsCount)
-      for i in 0..<ClientsCount:
+      for i in 0 ..< ClientsCount:
         workers[i] = swarmWorker(address)
       await waitAll(workers)
-      for i in 0..<ClientsCount:
+      for i in 0 ..< ClientsCount:
         var res = workers[i].read()
         result += res
 
-    proc serveClient(server: StreamServer, transp: StreamTransport) {.
-        async: (raises: []).} =
+    proc serveClient(
+        server: StreamServer, transp: StreamTransport
+    ) {.async: (raises: []).} =
       try:
         var data = await transp.read()
         doAssert(len(data) == len(ConstantMessage) * MessagesCount)
         transp.close()
         var expect = ""
-        for i in 0..<MessagesCount:
+        for i in 0 ..< MessagesCount:
           expect.add(ConstantMessage)
         doAssert(equalMem(addr expect[0], addr data[0], len(data)))
         dec(counter)
@@ -451,8 +454,9 @@ suite "Stream Transport test suite":
   proc testWCR(address: TransportAddress): Future[int] {.async.} =
     var counter = ClientsCount
 
-    proc serveClient(server: StreamServer, transp: StreamTransport) {.
-        async: (raises: []).} =
+    proc serveClient(
+        server: StreamServer, transp: StreamTransport
+    ) {.async: (raises: []).} =
       try:
         var expect = ConstantMessage
         var skip = await transp.consume(len(ConstantMessage) * (MessagesCount - 1))
@@ -473,7 +477,7 @@ suite "Stream Transport test suite":
       var data = ConstantMessage
       var seqdata = newSeq[byte](len(data))
       copyMem(addr seqdata[0], addr data[0], len(data))
-      for i in 0..<MessagesCount:
+      for i in 0 ..< MessagesCount:
         var res = await transp.write(seqdata)
         doAssert(res == len(seqdata))
       result = MessagesCount
@@ -482,10 +486,10 @@ suite "Stream Transport test suite":
 
     proc swarmManager(address: TransportAddress): Future[int] {.async.} =
       var workers = newSeq[Future[int]](ClientsCount)
-      for i in 0..<ClientsCount:
+      for i in 0 ..< ClientsCount:
         workers[i] = swarmWorker(address)
       await waitAll(workers)
-      for i in 0..<ClientsCount:
+      for i in 0 ..< ClientsCount:
         var res = workers[i].read()
         result += res
 
@@ -569,8 +573,9 @@ suite "Stream Transport test suite":
   #   server.close()
   #   await server.join()
 
-  proc serveClient11(server: StreamServer, transp: StreamTransport) {.
-      async: (raises: []).} =
+  proc serveClient11(
+      server: StreamServer, transp: StreamTransport
+  ) {.async: (raises: []).} =
     try:
       var res = await transp.write(BigMessagePattern)
       doAssert(res == len(BigMessagePattern))
@@ -597,8 +602,9 @@ suite "Stream Transport test suite":
     server.close()
     await server.join()
 
-  proc serveClient12(server: StreamServer, transp: StreamTransport) {.
-      async: (raises: []).} =
+  proc serveClient12(
+      server: StreamServer, transp: StreamTransport
+  ) {.async: (raises: []).} =
     try:
       var res = await transp.write(BigMessagePattern)
       doAssert(res == len(BigMessagePattern))
@@ -627,8 +633,9 @@ suite "Stream Transport test suite":
     server.close()
     await server.join()
 
-  proc serveClient13(server: StreamServer, transp: StreamTransport) {.
-      async: (raises: []).} =
+  proc serveClient13(
+      server: StreamServer, transp: StreamTransport
+  ) {.async: (raises: []).} =
     try:
       transp.close()
       await transp.join()
@@ -687,13 +694,13 @@ suite "Stream Transport test suite":
       doAssert(isNil(transp))
     except TransportOsError as e:
       when defined(windows):
-        return (e.code == ERROR_FILE_NOT_FOUND) or
-               (e.code == ERROR_CONNECTION_REFUSED)
+        return (e.code == ERROR_FILE_NOT_FOUND) or (e.code == ERROR_CONNECTION_REFUSED)
       else:
         return (e.code == oserrno.ECONNREFUSED) or (e.code == oserrno.ENOENT)
 
-  proc serveClient16(server: StreamServer, transp: StreamTransport) {.
-      async: (raises: []).} =
+  proc serveClient16(
+      server: StreamServer, transp: StreamTransport
+  ) {.async: (raises: []).} =
     try:
       var res = await transp.write(BigMessagePattern)
       doAssert(res == len(BigMessagePattern))
@@ -731,9 +738,9 @@ suite "Stream Transport test suite":
     await server.join()
 
   proc testCloseTransport(address: TransportAddress): Future[int] {.async.} =
-    proc client(server: StreamServer, transp: StreamTransport) {.
-        async: (raises: []).} =
+    proc client(server: StreamServer, transp: StreamTransport) {.async: (raises: []).} =
       discard
+
     var server = createStreamServer(address, client, {ReuseAddr})
     server.start()
     server.stop
@@ -752,6 +759,7 @@ suite "Stream Transport test suite":
         syncFut.complete()
       except CatchableError as exc:
         raiseAssert exc.msg
+
     var n = 10
     var server = createStreamServer(address, client, {ReuseAddr})
     server.start()
@@ -776,8 +784,9 @@ suite "Stream Transport test suite":
     var serverRemote, serverLocal: TransportAddress
     var connRemote, connLocal: TransportAddress
 
-    proc serveClient(server: StreamServer, transp: StreamTransport) {.
-        async: (raises: []).} =
+    proc serveClient(
+        server: StreamServer, transp: StreamTransport
+    ) {.async: (raises: []).} =
       try:
         serverRemote = transp.remoteAddress()
         serverLocal = transp.localAddress()
@@ -807,8 +816,9 @@ suite "Stream Transport test suite":
     var bigMessageSize = 10 * 1024 * 1024 - 1
     var finishMessage = "DONE"
     var cdata = newSeqOfCap[byte](bigMessageSize)
-    proc serveClient(server: StreamServer, transp: StreamTransport) {.
-        async: (raises: []).} =
+    proc serveClient(
+        server: StreamServer, transp: StreamTransport
+    ) {.async: (raises: []).} =
       try:
         cdata = await transp.read(bigMessageSize)
         var size = await transp.write(finishMessage)
@@ -850,15 +860,15 @@ suite "Stream Transport test suite":
     result = flag
 
   proc testReadLine(address: TransportAddress): Future[bool] {.async.} =
-    proc serveClient(server: StreamServer, transp: StreamTransport) {.
-        async: (raises: []).} =
+    proc serveClient(
+        server: StreamServer, transp: StreamTransport
+    ) {.async: (raises: []).} =
       try:
         discard await transp.write("DATA\r\r\r\r\r\n")
         transp.close()
         await transp.join()
       except CatchableError as exc:
         raiseAssert exc.msg
-
 
     var server = createStreamServer(address, serveClient, {ReuseAddr})
     server.start()
@@ -905,8 +915,8 @@ suite "Stream Transport test suite":
       server.stop()
       server.close()
       await server.join()
-  proc readLV(transp: StreamTransport,
-              maxLen: int): Future[seq[byte]] {.async.} =
+
+  proc readLV(transp: StreamTransport, maxLen: int): Future[seq[byte]] {.async.} =
     # Read length-prefixed value where length is a 32-bit integer in native
     # endian (don't do this at home)
     var
@@ -963,8 +973,9 @@ suite "Stream Transport test suite":
     var state = 0
     var c1, c2, c3, c4, c5, c6, c7: bool
 
-    proc serveClient(server: StreamServer, transp: StreamTransport) {.
-        async: (raises: []).} =
+    proc serveClient(
+        server: StreamServer, transp: StreamTransport
+    ) {.async: (raises: []).} =
       try:
         if state == 0:
           # EOF from the beginning.
@@ -1139,11 +1150,11 @@ suite "Stream Transport test suite":
         await transp.closeWait()
         inc(connected)
       if await withTimeout(acceptFut, 5.seconds):
-        if acceptFut.finished() and not(acceptFut.failed()):
+        if acceptFut.finished() and not (acceptFut.failed()):
           result = (connected == TestsCount) and (connected == accepted)
     finally:
       await server.closeWait()
-      if not(isNil(transp)):
+      if not (isNil(transp)):
         await transp.closeWait()
 
   proc testAcceptClose(address: TransportAddress): Future[bool] {.async.} =
@@ -1163,7 +1174,7 @@ suite "Stream Transport test suite":
     else:
       result = false
 
-  when not(defined(windows)):
+  when not (defined(windows)):
     proc testAcceptTooMany(address: TransportAddress): Future[bool] {.async.} =
       let maxFiles = getMaxOpenFiles()
       var server = createStreamServer(address, flags = {ReuseAddr})
@@ -1195,7 +1206,7 @@ suite "Stream Transport test suite":
           except TransportTooManyError:
             break
         if await withTimeout(acceptFut, 5.seconds):
-          if acceptFut.finished() and not(acceptFut.failed()):
+          if acceptFut.finished() and not (acceptFut.failed()):
             if acceptFut.read() == true:
               result = true
       finally:
@@ -1221,7 +1232,7 @@ suite "Stream Transport test suite":
           futs.add(fut)
         else:
           tries += 1
-          if tries > 65*1024:
+          if tries > 65 * 1024:
             # We've queued 64mb on the socket and it still allows writing,
             # something is wrong - we'll break here which will cause the test
             # to fail
@@ -1310,8 +1321,7 @@ suite "Stream Transport test suite":
       message = createBigMessage(16384 * 1024)
       rtransp = fromPipe(rfd)
       wtransp = fromPipe(wfd)
-    var
-      buffer = newSeq[byte](16384 * 1024)
+    var buffer = newSeq[byte](16384 * 1024)
 
     proc writer(transp: StreamTransport): Future[int] {.async.} =
       let res =
@@ -1331,7 +1341,6 @@ suite "Stream Transport test suite":
     return buffer == message
 
   proc testConnectBindLocalAddress() {.async.} =
-
     proc client(server: StreamServer, transp: StreamTransport) {.async: (raises: []).} =
       try:
         await transp.closeWait()
@@ -1349,20 +1358,25 @@ suite "Stream Transport test suite":
     # It works cause even though there's an active listening socket bound to
     # dst3, we are using ReusePort
     var transp1 = await connect(
-      server1.localAddress(), localAddress = server3.localAddress(),
-      flags = {SocketFlags.ReusePort})
+      server1.localAddress(),
+      localAddress = server3.localAddress(),
+      flags = {SocketFlags.ReusePort},
+    )
     var transp2 = await connect(
-      server2.localAddress(), localAddress = server3.localAddress(),
-      flags = {SocketFlags.ReusePort})
+      server2.localAddress(),
+      localAddress = server3.localAddress(),
+      flags = {SocketFlags.ReusePort},
+    )
 
     expect(TransportOsError):
-      var transp2 {.used.} = await connect(
-        server2.localAddress(), localAddress = server3.localAddress())
+      var transp2 {.used.} =
+        await connect(server2.localAddress(), localAddress = server3.localAddress())
 
     expect(TransportOsError):
       var transp3 {.used.} = await connect(
         server2.localAddress(),
-        localAddress = initTAddress("::", server3.localAddress().port))
+        localAddress = initTAddress("::", server3.localAddress().port),
+      )
 
     await transp1.closeWait()
     await transp2.closeWait()
@@ -1392,10 +1406,9 @@ suite "Stream Transport test suite":
       let transpFut = connect(address)
       if counter > 0:
         await stepsAsync(counter)
-      if not(transpFut.finished()):
+      if not (transpFut.finished()):
         await cancelAndWait(transpFut)
-        doAssert(cancelled(transpFut),
-                 "Future should be Cancelled at this point")
+        doAssert(cancelled(transpFut), "Future should be Cancelled at this point")
         inc(counter)
       else:
         let transp = await transpFut
@@ -1413,7 +1426,7 @@ suite "Stream Transport test suite":
     # usually happens on MacOS.
     let sleepFut = sleepAsync(1.seconds)
 
-    while not(exitLoop):
+    while not (exitLoop):
       let
         server = createStreamServer(initTAddress("127.0.0.1:0"))
         address = server.localAddress()
@@ -1426,10 +1439,9 @@ suite "Stream Transport test suite":
         await stepsAsync(counter)
 
       exitLoop =
-        if not(acceptFut.finished()):
+        if not (acceptFut.finished()):
           await cancelAndWait(acceptFut)
-          doAssert(cancelled(acceptFut),
-                   "Future should be Cancelled at this point")
+          doAssert(cancelled(acceptFut), "Future should be Cancelled at this point")
           inc(counter)
           false
         else:
@@ -1437,7 +1449,7 @@ suite "Stream Transport test suite":
           await transp.closeWait()
           true
 
-      if not(transpFut.finished()):
+      if not (transpFut.finished()):
         await transpFut.cancelAndWait()
 
       if transpFut.completed():
@@ -1447,13 +1459,15 @@ suite "Stream Transport test suite":
       server.stop()
       await server.closeWait()
 
-    if not(sleepFut.finished()):
+    if not (sleepFut.finished()):
       await cancelAndWait(sleepFut)
 
   proc performDualstackTest(
-         sstack: DualStackType, saddr: TransportAddress,
-         cstack: DualStackType, caddr: TransportAddress
-       ): Future[bool] {.async.} =
+      sstack: DualStackType,
+      saddr: TransportAddress,
+      cstack: DualStackType,
+      caddr: TransportAddress,
+  ): Future[bool] {.async.} =
     let server = createStreamServer(saddr, dualstack = sstack)
     var address = caddr
     address.port = server.localAddress().port
@@ -1461,8 +1475,7 @@ suite "Stream Transport test suite":
     let
       clientTransp =
         try:
-          let res = await connect(address,
-                                  dualstack = cstack).wait(500.milliseconds)
+          let res = await connect(address, dualstack = cstack).wait(500.milliseconds)
           Opt.some(res)
         except CatchableError:
           Opt.none(StreamTransport)
@@ -1486,42 +1499,40 @@ suite "Stream Transport test suite":
     await server.closeWait()
     testResult
 
-  proc performAutoAddressTest(port: Port,
-                              family: AddressFamily): Future[bool] {.
-       async: (raises: []).} =
-    let server =
-      block:
-        var currentPort = port
-        var res: StreamServer
-        for i in 0 ..< 10:
-          res =
-            try:
-              createStreamServer(port, flags = {ServerFlags.ReuseAddr})
-            except TransportOsError as exc:
-              echo "Unable to create server on port ", currentPort,
-                   " with error: ", exc.msg
-              currentPort = Port(uint16(currentPort) + 1'u16)
-              nil
-          if not(isNil(res)):
-            break
-        doAssert(not(isNil(res)), "Unable to create server, giving up")
-        res
+  proc performAutoAddressTest(
+      port: Port, family: AddressFamily
+  ): Future[bool] {.async: (raises: []).} =
+    let server = block:
+      var currentPort = port
+      var res: StreamServer
+      for i in 0 ..< 10:
+        res =
+          try:
+            createStreamServer(port, flags = {ServerFlags.ReuseAddr})
+          except TransportOsError as exc:
+            echo "Unable to create server on port ",
+              currentPort, " with error: ", exc.msg
+            currentPort = Port(uint16(currentPort) + 1'u16)
+            nil
+        if not (isNil(res)):
+          break
+      doAssert(not (isNil(res)), "Unable to create server, giving up")
+      res
 
-    var
-      address =
-        case family
-        of AddressFamily.IPv4:
-          try:
-            initTAddress("127.0.0.1:0")
-          except TransportAddressError as exc:
-            raiseAssert exc.msg
-        of AddressFamily.IPv6:
-          try:
-            initTAddress("::1:0")
-          except TransportAddressError as exc:
-            raiseAssert exc.msg
-        of AddressFamily.Unix, AddressFamily.None:
-          raiseAssert "Not allowed"
+    var address =
+      case family
+      of AddressFamily.IPv4:
+        try:
+          initTAddress("127.0.0.1:0")
+        except TransportAddressError as exc:
+          raiseAssert exc.msg
+      of AddressFamily.IPv6:
+        try:
+          initTAddress("::1:0")
+        except TransportAddressError as exc:
+          raiseAssert exc.msg
+      of AddressFamily.Unix, AddressFamily.None:
+        raiseAssert "Not allowed"
 
     address.port = server.localAddress().port
     var acceptFut = server.accept()
@@ -1560,31 +1571,29 @@ suite "Stream Transport test suite":
     testResult
 
   proc performAutoAddressTest2(
-    address1: Opt[IpAddress],
-    address2: Opt[IpAddress],
-    port: Port,
-    sendType: AddressFamily
+      address1: Opt[IpAddress],
+      address2: Opt[IpAddress],
+      port: Port,
+      sendType: AddressFamily,
   ): Future[bool] {.async: (raises: []).} =
     let
-      server =
-        block:
-          var
-            currentPort = port
-            res: StreamServer
-          for i in 0 ..< 10:
-            res =
-              try:
-                createStreamServer(port, host = address1,
-                                   flags = {ServerFlags.ReuseAddr})
-              except TransportOsError as exc:
-                echo "Unable to create server on port ", currentPort,
-                     " with error: ", exc.msg
-                currentPort = Port(uint16(currentPort) + 1'u16)
-                nil
-            if not(isNil(res)):
-              break
-          doAssert(not(isNil(res)), "Unable to create server, giving up")
-          res
+      server = block:
+        var
+          currentPort = port
+          res: StreamServer
+        for i in 0 ..< 10:
+          res =
+            try:
+              createStreamServer(port, host = address1, flags = {ServerFlags.ReuseAddr})
+            except TransportOsError as exc:
+              echo "Unable to create server on port ",
+                currentPort, " with error: ", exc.msg
+              currentPort = Port(uint16(currentPort) + 1'u16)
+              nil
+          if not (isNil(res)):
+            break
+        doAssert(not (isNil(res)), "Unable to create server, giving up")
+        res
       serverAddr = server.localAddress()
       serverPort = serverAddr.port
       remoteAddress =
@@ -1601,8 +1610,7 @@ suite "Stream Transport test suite":
           else:
             raiseAssert "Incorrect sending type"
         except TransportAddressError as exc:
-          raiseAssert "Unable to initialize transport address, " &
-                      "reason = " & exc.msg
+          raiseAssert "Unable to initialize transport address, " & "reason = " & exc.msg
       acceptFut = server.accept()
 
     let
@@ -1611,10 +1619,8 @@ suite "Stream Transport test suite":
           if address2.isSome():
             let
               laddr = initTAddress(address2.get(), Port(0))
-              res = await connect(remoteAddress, localAddress = laddr).
-                      wait(2.seconds)
+              res = await connect(remoteAddress, localAddress = laddr).wait(2.seconds)
             Opt.some(res)
-
           else:
             let res = await connect(remoteAddress).wait(2.seconds)
             Opt.some(res)
@@ -1632,8 +1638,8 @@ suite "Stream Transport test suite":
           Opt.none(StreamTransport)
       testResult =
         clientTransp.isSome() and serverTransp.isSome() and
-          (serverTransp.get().remoteAddress2().get().family == sendType) and
-            (clientTransp.get().remoteAddress2().get().family == sendType)
+        (serverTransp.get().remoteAddress2().get().family == sendType) and
+        (clientTransp.get().remoteAddress2().get().family == sendType)
     var pending: seq[FutureBase]
     if clientTransp.isSome():
       pending.add(closeWait(clientTransp.get()))
@@ -1652,7 +1658,7 @@ suite "Stream Transport test suite":
 
   markFD = getCurrentFD()
 
-  for i in 0..<len(addresses):
+  for i in 0 ..< len(addresses):
     test prefixes[i] & "close(transport) test":
       check waitFor(testCloseTransport(addresses[i])) == 1
     test prefixes[i] & "readUntil() buffer overflow test":
@@ -1667,20 +1673,20 @@ suite "Stream Transport test suite":
       check waitFor(test13(addresses[i])) == 1
     test prefixes[i] & "Closing socket while operation pending test (issue #8)":
       check waitFor(test14(addresses[i])) == 1
-    test prefixes[i] & "readLine() multiple clients with messages (" &
-        $ClientsCount & " clients x " & $MessagesCount & " messages)":
+    test prefixes[i] & "readLine() multiple clients with messages (" & $ClientsCount &
+      " clients x " & $MessagesCount & " messages)":
       check waitFor(test1(addresses[i])) == ClientsCount * MessagesCount
-    test prefixes[i] & "readExactly() multiple clients with messages (" &
-        $ClientsCount & " clients x " & $MessagesCount & " messages)":
+    test prefixes[i] & "readExactly() multiple clients with messages (" & $ClientsCount &
+      " clients x " & $MessagesCount & " messages)":
       check waitFor(test2(addresses[i])) == ClientsCount * MessagesCount
-    test prefixes[i] & "readUntil() multiple clients with messages (" &
-        $ClientsCount & " clients x " & $MessagesCount & " messages)":
+    test prefixes[i] & "readUntil() multiple clients with messages (" & $ClientsCount &
+      " clients x " & $MessagesCount & " messages)":
       check waitFor(test3(addresses[i])) == ClientsCount * MessagesCount
-    test prefixes[i] & "write(string)/read(int) multiple clients (" &
-        $ClientsCount & " clients x " & $MessagesCount & " messages)":
+    test prefixes[i] & "write(string)/read(int) multiple clients (" & $ClientsCount &
+      " clients x " & $MessagesCount & " messages)":
       check waitFor(testWR(addresses[i])) == ClientsCount * MessagesCount
     test prefixes[i] & "write(seq[byte])/consume(int)/read(int) multiple clients (" &
-         $ClientsCount & " clients x " & $MessagesCount & " messages)":
+      $ClientsCount & " clients x " & $MessagesCount & " messages)":
       check waitFor(testWCR(addresses[i])) == ClientsCount * MessagesCount
     test prefixes[i] & "writeFile() multiple clients (" & $FilesCount & " files)":
       when defined(windows):
@@ -1744,8 +1750,8 @@ suite "Stream Transport test suite":
   asyncTest "[IP] getDomain(socket) [SOCK_STREAM] test":
     if isAvailable(AddressFamily.IPv4) and isAvailable(AddressFamily.IPv6):
       block:
-        let res = createAsyncSocket2(Domain.AF_INET, SockType.SOCK_STREAM,
-                                     Protocol.IPPROTO_TCP)
+        let res =
+          createAsyncSocket2(Domain.AF_INET, SockType.SOCK_STREAM, Protocol.IPPROTO_TCP)
         check res.isOk()
         let fres = getDomain(res.get())
         check fres.isOk()
@@ -1753,18 +1759,20 @@ suite "Stream Transport test suite":
         check fres.get() == AddressFamily.IPv4
 
       block:
-        let res = createAsyncSocket2(Domain.AF_INET6, SockType.SOCK_STREAM,
-                                     Protocol.IPPROTO_TCP)
+        let res = createAsyncSocket2(
+          Domain.AF_INET6, SockType.SOCK_STREAM, Protocol.IPPROTO_TCP
+        )
         check res.isOk()
         let fres = getDomain(res.get())
         check fres.isOk()
         discard unregisterAndCloseFd(res.get())
         check fres.get() == AddressFamily.IPv6
 
-      when not(defined(windows)):
+      when not (defined(windows)):
         block:
-          let res = createAsyncSocket2(Domain.AF_UNIX, SockType.SOCK_STREAM,
-                                       Protocol.IPPROTO_IP)
+          let res = createAsyncSocket2(
+            Domain.AF_UNIX, SockType.SOCK_STREAM, Protocol.IPPROTO_IP
+          )
           check res.isOk()
           let fres = getDomain(res.get())
           check fres.isOk()
@@ -1776,60 +1784,120 @@ suite "Stream Transport test suite":
     if isAvailable(AddressFamily.IPv4) and isAvailable(AddressFamily.IPv6):
       let serverAddress = initTAddress("[::]:0")
       check:
-        (await performDualstackTest(
-           DualStackType.Auto, serverAddress,
-           DualStackType.Auto, initTAddress("127.0.0.1:0"))) == true
-        (await performDualstackTest(
-           DualStackType.Auto, serverAddress,
-           DualStackType.Auto, initTAddress("127.0.0.1:0").toIPv6())) == true
-        (await performDualstackTest(
-           DualStackType.Auto, serverAddress,
-           DualStackType.Auto, initTAddress("[::1]:0"))) == true
+        (
+          await performDualstackTest(
+            DualStackType.Auto,
+            serverAddress,
+            DualStackType.Auto,
+            initTAddress("127.0.0.1:0"),
+          )
+        ) == true
+        (
+          await performDualstackTest(
+            DualStackType.Auto,
+            serverAddress,
+            DualStackType.Auto,
+            initTAddress("127.0.0.1:0").toIPv6(),
+          )
+        ) == true
+        (
+          await performDualstackTest(
+            DualStackType.Auto,
+            serverAddress,
+            DualStackType.Auto,
+            initTAddress("[::1]:0"),
+          )
+        ) == true
     else:
       skip()
   asyncTest "[IP] DualStack [TCP] server [DualStackType.Enabled] test":
     if isAvailable(AddressFamily.IPv4) and isAvailable(AddressFamily.IPv6):
       let serverAddress = initTAddress("[::]:0")
       check:
-        (await performDualstackTest(
-           DualStackType.Enabled, serverAddress,
-           DualStackType.Auto, initTAddress("127.0.0.1:0"))) == true
-        (await performDualstackTest(
-           DualStackType.Enabled, serverAddress,
-           DualStackType.Auto, initTAddress("127.0.0.1:0").toIPv6())) == true
-        (await performDualstackTest(
-           DualStackType.Enabled, serverAddress,
-           DualStackType.Auto, initTAddress("[::1]:0"))) == true
+        (
+          await performDualstackTest(
+            DualStackType.Enabled,
+            serverAddress,
+            DualStackType.Auto,
+            initTAddress("127.0.0.1:0"),
+          )
+        ) == true
+        (
+          await performDualstackTest(
+            DualStackType.Enabled,
+            serverAddress,
+            DualStackType.Auto,
+            initTAddress("127.0.0.1:0").toIPv6(),
+          )
+        ) == true
+        (
+          await performDualstackTest(
+            DualStackType.Enabled,
+            serverAddress,
+            DualStackType.Auto,
+            initTAddress("[::1]:0"),
+          )
+        ) == true
     else:
       skip()
   asyncTest "[IP] DualStack [TCP] server [DualStackType.Disabled] test":
     if isAvailable(AddressFamily.IPv4) and isAvailable(AddressFamily.IPv6):
       let serverAddress = initTAddress("[::]:0")
       check:
-        (await performDualstackTest(
-           DualStackType.Disabled, serverAddress,
-           DualStackType.Auto, initTAddress("127.0.0.1:0"))) == false
-        (await performDualstackTest(
-           DualStackType.Disabled, serverAddress,
-           DualStackType.Auto, initTAddress("127.0.0.1:0").toIPv6())) == false
-        (await performDualstackTest(
-           DualStackType.Disabled, serverAddress,
-           DualStackType.Auto, initTAddress("[::1]:0"))) == true
+        (
+          await performDualstackTest(
+            DualStackType.Disabled,
+            serverAddress,
+            DualStackType.Auto,
+            initTAddress("127.0.0.1:0"),
+          )
+        ) == false
+        (
+          await performDualstackTest(
+            DualStackType.Disabled,
+            serverAddress,
+            DualStackType.Auto,
+            initTAddress("127.0.0.1:0").toIPv6(),
+          )
+        ) == false
+        (
+          await performDualstackTest(
+            DualStackType.Disabled,
+            serverAddress,
+            DualStackType.Auto,
+            initTAddress("[::1]:0"),
+          )
+        ) == true
     else:
       skip()
   asyncTest "[IP] DualStack [TCP] connect [IPv4 mapped address] test":
     if isAvailable(AddressFamily.IPv4) and isAvailable(AddressFamily.IPv6):
       let serverAddress = initTAddress("[::]:0")
       check:
-        (await performDualstackTest(
-           DualStackType.Auto, serverAddress,
-           DualStackType.Disabled, initTAddress("127.0.0.1:0"))) == true
-        (await performDualstackTest(
-           DualStackType.Auto, serverAddress,
-           DualStackType.Disabled, initTAddress("127.0.0.1:0").toIPv6())) == false
-        (await performDualstackTest(
-           DualStackType.Auto, serverAddress,
-           DualStackType.Disabled, initTAddress("[::1]:0"))) == true
+        (
+          await performDualstackTest(
+            DualStackType.Auto,
+            serverAddress,
+            DualStackType.Disabled,
+            initTAddress("127.0.0.1:0"),
+          )
+        ) == true
+        (
+          await performDualstackTest(
+            DualStackType.Auto,
+            serverAddress,
+            DualStackType.Disabled,
+            initTAddress("127.0.0.1:0").toIPv6(),
+          )
+        ) == false
+        (
+          await performDualstackTest(
+            DualStackType.Auto,
+            serverAddress,
+            DualStackType.Disabled,
+            initTAddress("[::1]:0"),
+          )
+        ) == true
     else:
       skip()
   asyncTest "[IP] Auto-address constructor test (*:0)":
@@ -1858,15 +1926,13 @@ suite "Stream Transport test suite":
       # only when IPv4 is also available.
       if isAvailable(AddressFamily.IPv4):
         check:
-          (await performAutoAddressTest(Port(30532), AddressFamily.IPv4)) ==
-            true
+          (await performAutoAddressTest(Port(30532), AddressFamily.IPv4)) == true
     else:
       # If IPv6 is not available createStreamServer should bind to `0.0.0.0`
       # this means we should be able to connect to it via IPV4 address.
       if isAvailable(AddressFamily.IPv4):
         check:
-          (await performAutoAddressTest(Port(30532), AddressFamily.IPv4)) ==
-            true
+          (await performAutoAddressTest(Port(30532), AddressFamily.IPv4)) == true
 
   for portNumber in [Port(0), Port(30231)]:
     asyncTest "[IP] IPv6 mapping test (auto-auto:" & $int(portNumber) & ")":
@@ -1875,10 +1941,16 @@ suite "Stream Transport test suite":
           address1 = Opt.none(IpAddress)
           address2 = Opt.none(IpAddress)
         check:
-          (await performAutoAddressTest2(
-            address1, address2, portNumber, AddressFamily.IPv4))
-          (await performAutoAddressTest2(
-            address1, address2, portNumber, AddressFamily.IPv6))
+          (
+            await performAutoAddressTest2(
+              address1, address2, portNumber, AddressFamily.IPv4
+            )
+          )
+          (
+            await performAutoAddressTest2(
+              address1, address2, portNumber, AddressFamily.IPv6
+            )
+          )
       else:
         skip()
     asyncTest "[IP] IPv6 mapping test (auto-ipv6:" & $int(portNumber) & ")":
@@ -1887,8 +1959,11 @@ suite "Stream Transport test suite":
           address1 = Opt.none(IpAddress)
           address2 = Opt.some(initTAddress("[::1]:0").toIpAddress())
         check:
-          (await performAutoAddressTest2(
-            address1, address2, portNumber, AddressFamily.IPv6))
+          (
+            await performAutoAddressTest2(
+              address1, address2, portNumber, AddressFamily.IPv6
+            )
+          )
       else:
         skip()
     asyncTest "[IP] IPv6 mapping test (auto-ipv4:" & $int(portNumber) & ")":
@@ -1897,8 +1972,11 @@ suite "Stream Transport test suite":
           address1 = Opt.none(IpAddress)
           address2 = Opt.some(initTAddress("127.0.0.1:0").toIpAddress())
         check:
-          (await performAutoAddressTest2(
-            address1, address2, portNumber, AddressFamily.IPv4))
+          (
+            await performAutoAddressTest2(
+              address1, address2, portNumber, AddressFamily.IPv4
+            )
+          )
       else:
         skip()
     asyncTest "[IP] IPv6 mapping test (ipv6-auto:" & $int(portNumber) & ")":
@@ -1907,8 +1985,11 @@ suite "Stream Transport test suite":
           address1 = Opt.some(initTAddress("[::1]:0").toIpAddress())
           address2 = Opt.none(IpAddress)
         check:
-          (await performAutoAddressTest2(
-            address1, address2, portNumber, AddressFamily.IPv6))
+          (
+            await performAutoAddressTest2(
+              address1, address2, portNumber, AddressFamily.IPv6
+            )
+          )
       else:
         skip()
     asyncTest "[IP] IPv6 mapping test (ipv4-auto:" & $int(portNumber) & ")":
@@ -1917,8 +1998,11 @@ suite "Stream Transport test suite":
           address1 = Opt.some(initTAddress("127.0.0.1:0").toIpAddress())
           address2 = Opt.none(IpAddress)
         check:
-          (await performAutoAddressTest2(
-            address1, address2, portNumber, AddressFamily.IPv4))
+          (
+            await performAutoAddressTest2(
+              address1, address2, portNumber, AddressFamily.IPv4
+            )
+          )
       else:
         skip()
 

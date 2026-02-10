@@ -43,14 +43,14 @@ proc contains*(ht: HttpTables, key: string): bool =
   ## Returns ``true`` if header with name ``key`` is present in HttpTable/Ref.
   ht.table.contains(key.toLowerAscii())
 
-proc getList*(ht: HttpTables, key: string,
-              default: openArray[string] = []): seq[string] =
+proc getList*(
+    ht: HttpTables, key: string, default: openArray[string] = []
+): seq[string] =
   ## Returns sequence of headers with key ``key``.
   var defseq = @default
   ht.table.getOrDefault(key.toLowerAscii(), defseq)
 
-proc getString*(ht: HttpTables, key: string,
-                default: string = ""): string =
+proc getString*(ht: HttpTables, key: string, default: string = ""): string =
   ## Returns concatenated value of headers with key ``key``.
   ##
   ## If there multiple headers with the same name ``key`` the result value will
@@ -116,16 +116,18 @@ proc new*(htt: typedesc[HttpTableRef]): HttpTableRef =
   ## Create empty HttpTableRef.
   HttpTableRef(table: initTable[string, seq[string]]())
 
-proc init*(htt: typedesc[HttpTable],
-           data: openArray[tuple[key: string, value: string]]): HttpTable =
+proc init*(
+    htt: typedesc[HttpTable], data: openArray[tuple[key: string, value: string]]
+): HttpTable =
   ## Create HttpTable using array of tuples with header names and values.
   var res = HttpTable.init()
   for item in data:
     res.add(item.key, item.value)
   res
 
-proc new*(htt: typedesc[HttpTableRef],
-          data: openArray[tuple[key: string, value: string]]): HttpTableRef =
+proc new*(
+    htt: typedesc[HttpTableRef], data: openArray[tuple[key: string, value: string]]
+): HttpTableRef =
   ## Create HttpTableRef using array of tuples with header names and values.
   var res = HttpTableRef.new()
   for item in data:
@@ -159,25 +161,35 @@ proc normalizeHeaderName*(value: string): string =
         inc(k, 1)
   res
 
-iterator stringItems*(ht: HttpTables,
-                      normKey = false): tuple[key: string, value: string] =
+iterator stringItems*(
+    ht: HttpTables, normKey = false
+): tuple[key: string, value: string] =
   ## Iterate over HttpTable/Ref values.
   ##
   ## If ``normKey`` is true, key name value will be normalized using
   ## normalizeHeaderName() procedure.
   for k, v in ht.table.pairs():
-    let key = if normKey: normalizeHeaderName(k) else: k
+    let key =
+      if normKey:
+        normalizeHeaderName(k)
+      else:
+        k
     for item in v:
       yield (key, item)
 
-iterator items*(ht: HttpTables,
-                normKey = false): tuple[key: string, value: seq[string]] =
+iterator items*(
+    ht: HttpTables, normKey = false
+): tuple[key: string, value: seq[string]] =
   ## Iterate over HttpTable/Ref values.
   ##
   ## If ``normKey`` is true, key name value will be normalized using
   ## normalizeHeaderName() procedure.
   for k, v in ht.table.pairs():
-    let key = if normKey: normalizeHeaderName(k) else: k
+    let key =
+      if normKey:
+        normalizeHeaderName(k)
+      else:
+        k
     yield (key, v)
 
 proc `$`*(ht: HttpTables): string =

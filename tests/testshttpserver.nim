@@ -7,8 +7,7 @@
 #              MIT license (LICENSE-MIT)
 import std/strutils
 import ".."/chronos/unittest2/asynctests
-import ".."/chronos,
-       ".."/chronos/apps/http/shttpserver
+import ".."/chronos, ".."/chronos/apps/http/shttpserver
 import stew/base10
 
 {.used.}
@@ -73,14 +72,15 @@ N8r5CwGcIX/XPC3lKazzbZ8baA==
 -----END CERTIFICATE-----
 """
 
-
 suite "Secure HTTP server testing suite":
   teardown:
     checkLeaks()
 
-  proc httpsClient(address: TransportAddress,
-                   data: string, flags = {NoVerifyHost, NoVerifyServerName}
-                  ): Future[string] {.async.} =
+  proc httpsClient(
+      address: TransportAddress,
+      data: string,
+      flags = {NoVerifyHost, NoVerifyServerName},
+  ): Future[string] {.async.} =
     var
       transp: StreamTransport
       tlsstream: TLSAsyncStream
@@ -99,24 +99,22 @@ suite "Secure HTTP server testing suite":
     except CatchableError:
       return "EXCEPTION"
     finally:
-      if not(isNil(tlsstream)):
-        await allFutures(tlsstream.reader.closeWait(),
-                         tlsstream.writer.closeWait())
-      if not(isNil(reader)):
-        await allFutures(reader.closeWait(), writer.closeWait(),
-                         transp.closeWait())
+      if not (isNil(tlsstream)):
+        await allFutures(tlsstream.reader.closeWait(), tlsstream.writer.closeWait())
+      if not (isNil(reader)):
+        await allFutures(reader.closeWait(), writer.closeWait(), transp.closeWait())
 
   test "HTTPS server (successful handshake) test":
     proc testHTTPS(address: TransportAddress): Future[bool] {.async.} =
       var serverRes = false
-      proc process(r: RequestFence): Future[HttpResponseRef] {.
-           async: (raises: [CancelledError]).} =
+      proc process(
+          r: RequestFence
+      ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
         if r.isOk():
           let request = r.get()
           serverRes = true
           try:
-            await request.respond(Http200, "TEST_OK:" & $request.meth,
-                                  HttpTable.init())
+            await request.respond(Http200, "TEST_OK:" & $request.meth, HttpTable.init())
           except HttpWriteError as exc:
             serverRes = false
             defaultResponse(exc)
@@ -127,11 +125,14 @@ suite "Secure HTTP server testing suite":
       let serverFlags = {Secure}
       let secureKey = TLSPrivateKey.init(HttpsSelfSignedRsaKey)
       let secureCert = TLSCertificate.init(HttpsSelfSignedRsaCert)
-      let res = SecureHttpServerRef.new(address, process,
-                                        socketFlags = socketFlags,
-                                        serverFlags = serverFlags,
-                                        tlsPrivateKey = secureKey,
-                                        tlsCertificate = secureCert)
+      let res = SecureHttpServerRef.new(
+        address,
+        process,
+        socketFlags = socketFlags,
+        serverFlags = serverFlags,
+        tlsPrivateKey = secureKey,
+        tlsCertificate = secureCert,
+      )
       if res.isErr():
         return false
 
@@ -150,13 +151,13 @@ suite "Secure HTTP server testing suite":
     proc testHTTPS2(address: TransportAddress): Future[bool] {.async.} =
       var serverRes = false
       var testFut = newFuture[void]()
-      proc process(r: RequestFence): Future[HttpResponseRef] {.
-           async: (raises: [CancelledError]).} =
+      proc process(
+          r: RequestFence
+      ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
         if r.isOk():
           let request = r.get()
           try:
-            await request.respond(Http200, "TEST_OK:" & $request.meth,
-                                  HttpTable.init())
+            await request.respond(Http200, "TEST_OK:" & $request.meth, HttpTable.init())
           except HttpWriteError as exc:
             defaultResponse(exc)
         else:
@@ -168,11 +169,14 @@ suite "Secure HTTP server testing suite":
       let serverFlags = {Secure}
       let secureKey = TLSPrivateKey.init(HttpsSelfSignedRsaKey)
       let secureCert = TLSCertificate.init(HttpsSelfSignedRsaCert)
-      let res = SecureHttpServerRef.new(address, process,
-                                        socketFlags = socketFlags,
-                                        serverFlags = serverFlags,
-                                        tlsPrivateKey = secureKey,
-                                        tlsCertificate = secureCert)
+      let res = SecureHttpServerRef.new(
+        address,
+        process,
+        socketFlags = socketFlags,
+        serverFlags = serverFlags,
+        tlsPrivateKey = secureKey,
+        tlsCertificate = secureCert,
+      )
       if res.isErr():
         return false
 
@@ -188,8 +192,9 @@ suite "Secure HTTP server testing suite":
     check waitFor(testHTTPS2(initTAddress("127.0.0.1:30080"))) == true
 
   asyncTest "HTTPS server - baseUri value test":
-    proc process(r: RequestFence): Future[HttpResponseRef] {.
-         async: (raises: [CancelledError]).} =
+    proc process(
+        r: RequestFence
+    ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
       defaultResponse()
 
     let
@@ -199,17 +204,23 @@ suite "Secure HTTP server testing suite":
       serverFlags = {Secure}
       secureKey = TLSPrivateKey.init(HttpsSelfSignedRsaKey)
       secureCert = TLSCertificate.init(HttpsSelfSignedRsaCert)
-      res1 = SecureHttpServerRef.new(address, process,
-                                     socketFlags = socketFlags,
-                                     serverFlags = serverFlags,
-                                     tlsPrivateKey = secureKey,
-                                     tlsCertificate = secureCert)
-      res2 = SecureHttpServerRef.new(address, process,
-                                     socketFlags = socketFlags,
-                                     serverFlags = serverFlags,
-                                     serverUri = parseUri(expectUri2),
-                                     tlsPrivateKey = secureKey,
-                                     tlsCertificate = secureCert)
+      res1 = SecureHttpServerRef.new(
+        address,
+        process,
+        socketFlags = socketFlags,
+        serverFlags = serverFlags,
+        tlsPrivateKey = secureKey,
+        tlsCertificate = secureCert,
+      )
+      res2 = SecureHttpServerRef.new(
+        address,
+        process,
+        socketFlags = socketFlags,
+        serverFlags = serverFlags,
+        serverUri = parseUri(expectUri2),
+        tlsPrivateKey = secureKey,
+        tlsCertificate = secureCert,
+      )
     check:
       res1.isOk == true
       res2.isOk == true

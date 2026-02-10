@@ -32,17 +32,19 @@ suite "Token Bucket":
 
   test "Async test":
     var bucket = TokenBucket.new(1000, 1000.milliseconds)
-    check: bucket.tryConsume(1000) == true
+    check:
+      bucket.tryConsume(1000) == true
 
     var toWait = newSeq[Future[void]]()
-    for _ in 0..<15:
+    for _ in 0 ..< 15:
       toWait.add(bucket.consume(100))
 
     let start = Moment.now()
     waitFor(allFutures(toWait))
     let duration = Moment.now() - start
 
-    check: duration in 1400.milliseconds .. 2200.milliseconds
+    check:
+      duration in 1400.milliseconds .. 2200.milliseconds
 
   test "Over budget async":
     var bucket = TokenBucket.new(100, 100.milliseconds)
@@ -69,7 +71,7 @@ suite "Token Bucket":
       bucket.tryConsume(10 * 150) == true
       bucket.tryConsume(1000) == false
     var toWait = newSeq[Future[void]]()
-    for _ in 0..<150:
+    for _ in 0 ..< 150:
       toWait.add(bucket.consume(10))
 
     let lastOne = bucket.consume(10)
@@ -78,7 +80,8 @@ suite "Token Bucket":
     bucket.replenish(1000000)
     waitFor(allFutures(toWait).wait(10.milliseconds))
 
-    check: not lastOne.finished()
+    check:
+      not lastOne.finished()
 
     bucket.replenish(10)
     waitFor(lastOne.wait(10.milliseconds))

@@ -28,12 +28,11 @@ suite "Signal handling test suite":
       else:
         handlerFut.complete()
 
-    sigFd =
-      block:
-        let res = addSignal2(signal, signalHandler, cast[pointer](value))
-        if res.isErr():
-          raiseAssert osErrorMsg(res.error())
-        res.get()
+    sigFd = block:
+      let res = addSignal2(signal, signalHandler, cast[pointer](value))
+      if res.isErr():
+        raiseAssert osErrorMsg(res.error())
+      res.get()
 
     when defined(windows):
       discard raiseSignal(cint(signal))

@@ -37,7 +37,7 @@ suite "Asynchronous sync primitives test suite":
     discard testLock(9, lock)
     lock.release()
     ## There must be exactly 20 poll() calls
-    for i in 0..<20:
+    for i in 0 ..< 20:
       poll()
     result = testLockResult
 
@@ -50,39 +50,38 @@ suite "Asynchronous sync primitives test suite":
     futs[3] = lock.acquire()
 
     proc checkFlags(b0, b1, b2, b3, b4: bool): bool =
-      (lock.locked == b0) and
-        (futs[0].finished == b1) and (futs[1].finished == b2) and
+      (lock.locked == b0) and (futs[0].finished == b1) and (futs[1].finished == b2) and
         (futs[2].finished == b3) and (futs[3].finished == b4)
 
-    if not(checkFlags(true, true, false, false ,false)):
+    if not (checkFlags(true, true, false, false, false)):
       return false
 
     lock.release()
-    if not(checkFlags(true, true, false, false, false)):
+    if not (checkFlags(true, true, false, false, false)):
       return false
     await sleepAsync(10.milliseconds)
-    if not(checkFlags(true, true, true, false, false)):
+    if not (checkFlags(true, true, true, false, false)):
       return false
 
     lock.release()
-    if not(checkFlags(true, true, true, false, false)):
+    if not (checkFlags(true, true, true, false, false)):
       return false
     await sleepAsync(10.milliseconds)
-    if not(checkFlags(true, true, true, true, false)):
+    if not (checkFlags(true, true, true, true, false)):
       return false
 
     lock.release()
-    if not(checkFlags(true, true, true, true, false)):
+    if not (checkFlags(true, true, true, true, false)):
       return false
     await sleepAsync(10.milliseconds)
-    if not(checkFlags(true, true, true, true, true)):
+    if not (checkFlags(true, true, true, true, true)):
       return false
 
     lock.release()
-    if not(checkFlags(false, true, true, true, true)):
+    if not (checkFlags(false, true, true, true, true)):
       return false
     await sleepAsync(10.milliseconds)
-    if not(checkFlags(false, true, true, true, true)):
+    if not (checkFlags(false, true, true, true, true)):
       return false
 
     return true
@@ -130,8 +129,9 @@ suite "Asynchronous sync primitives test suite":
     await allFutures(fut1, fut2, fut3)
     result = stripe
 
-  proc testCancelLock(n1, n2, n3: Duration,
-                      cancelIndex: int): Future[seq[int]] {.async.} =
+  proc testCancelLock(
+      n1, n2, n3: Duration, cancelIndex: int
+  ): Future[seq[int]] {.async.} =
     var stripe: seq[int]
 
     proc task(lock: AsyncLock, n: int, timeout: Duration) {.async.} =
@@ -155,7 +155,6 @@ suite "Asynchronous sync primitives test suite":
       fut3.cancelSoon()
     await allFutures(fut1, fut2, fut3)
     result = stripe
-
 
   proc testEvent(n: int, ev: AsyncEvent) {.async.} =
     await ev.wait()
@@ -201,12 +200,12 @@ suite "Asynchronous sync primitives test suite":
   const queueSize = 10
 
   proc task3(aq: AsyncQueue[int]) {.async.} =
-    for i in 1..testsCount:
+    for i in 1 .. testsCount:
       var item = await aq.get()
       testQueue2Result -= item
 
   proc task4(aq: AsyncQueue[int]) {.async.} =
-    for i in 1..testsCount:
+    for i in 1 .. testsCount:
       await aq.put(i)
       testQueue2Result += i
 
@@ -259,13 +258,15 @@ suite "Asynchronous sync primitives test suite":
       result = (item == arr1[index])
       inc(index)
 
-    if not result: return
+    if not result:
+      return
 
     queue[0] = 2
 
     result = (queue[0] == 2)
 
-    if not result: return
+    if not result:
+      return
 
     for item in queue.mitems():
       item = 2
@@ -275,7 +276,8 @@ suite "Asynchronous sync primitives test suite":
       result = (item == arr2[index])
       inc(index)
 
-    if not result: return
+    if not result:
+      return
 
     queue[0] = 1
     queue[1] = 2
@@ -294,7 +296,8 @@ suite "Asynchronous sync primitives test suite":
     q0.putNoWait(4)
     q0.putNoWait(5)
     result = ($q0 == "[1, 2, 3, 4, 5]")
-    if not result: return
+    if not result:
+      return
 
     var q1 = newAsyncQueue[string]()
     q1.putNoWait("1")
@@ -311,25 +314,21 @@ suite "Asynchronous sync primitives test suite":
     q.putNoWait(3)
     q.putNoWait(4)
     q.putNoWait(5)
-    result = (5 in q and not(6 in q))
+    result = (5 in q and not (6 in q))
 
   test "AsyncLock() behavior test":
     check:
       test1() == "0123456789"
-      waitFor(testBehaviorLock(10.milliseconds,
-                               20.milliseconds,
-                               50.milliseconds)) == @[10, 20, 30, 11, 21, 31]
-      waitFor(testBehaviorLock(50.milliseconds,
-                               20.milliseconds,
-                               10.milliseconds)) == @[10, 20, 30, 11, 21, 31]
+      waitFor(testBehaviorLock(10.milliseconds, 20.milliseconds, 50.milliseconds)) ==
+        @[10, 20, 30, 11, 21, 31]
+      waitFor(testBehaviorLock(50.milliseconds, 20.milliseconds, 10.milliseconds)) ==
+        @[10, 20, 30, 11, 21, 31]
   test "AsyncLock() cancellation test":
     check:
-      waitFor(testCancelLock(10.milliseconds,
-                             20.milliseconds,
-                             50.milliseconds, 2)) == @[10, 30, 11, 31]
-      waitFor(testCancelLock(50.milliseconds,
-                             20.milliseconds,
-                             10.milliseconds, 3)) == @[10, 20, 11, 21]
+      waitFor(testCancelLock(10.milliseconds, 20.milliseconds, 50.milliseconds, 2)) ==
+        @[10, 30, 11, 31]
+      waitFor(testCancelLock(50.milliseconds, 20.milliseconds, 10.milliseconds, 3)) ==
+        @[10, 20, 11, 21]
   test "AsyncLock() flag consistency test":
     check waitFor(testFlag()) == true
   test "AsyncLock() double release test":
@@ -428,8 +427,7 @@ suite "Asynchronous sync primitives test suite":
       dataFut6.finished() == true
       dataFut6.read() == @[2000]
       dataFut0.finished() == true
-      dataFut0.read() == @[100, 200, 300, 400, 500, 600, 700, 800, 900, 1000,
-                           2000]
+      dataFut0.read() == @[100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 2000]
 
     waitFor eventQueue.closeWait()
 
@@ -554,8 +552,9 @@ suite "Asynchronous sync primitives test suite":
     let dataFut1 = eventQueue.waitEvents(key1)
     check:
       dataFut1.finished() == true
-      dataFut1.read() == @[100, 200, 300, 400, 500, 600, 700, 800, 900, 1000,
-                           1100, 1200]
+      dataFut1.read() == @[
+        100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100, 1200
+      ]
       len(eventQueue) == 9
 
     let dataFut3 = eventQueue.waitEvents(key3)
@@ -576,15 +575,21 @@ suite "Asynchronous sync primitives test suite":
     proc test() {.async.} =
       let eventQueue = newAsyncEventQueue[int]()
       var keys = @[
-        eventQueue.register(), eventQueue.register(),
-        eventQueue.register(), eventQueue.register(),
-        eventQueue.register(), eventQueue.register(),
-        eventQueue.register(), eventQueue.register(),
-        eventQueue.register(), eventQueue.register()
+        eventQueue.register(),
+        eventQueue.register(),
+        eventQueue.register(),
+        eventQueue.register(),
+        eventQueue.register(),
+        eventQueue.register(),
+        eventQueue.register(),
+        eventQueue.register(),
+        eventQueue.register(),
+        eventQueue.register(),
       ]
 
-      proc clientTask(queue: AsyncEventQueue[int],
-                      key: EventQueueKey): Future[seq[int]] {.async.} =
+      proc clientTask(
+          queue: AsyncEventQueue[int], key: EventQueueKey
+      ): Future[seq[int]] {.async.} =
         var events: seq[int]
         while true:
           let res = await queue.waitEvents(key)
@@ -595,11 +600,16 @@ suite "Asynchronous sync primitives test suite":
         return events
 
       var futs = @[
-        clientTask(eventQueue, keys[0]), clientTask(eventQueue, keys[1]),
-        clientTask(eventQueue, keys[2]), clientTask(eventQueue, keys[3]),
-        clientTask(eventQueue, keys[4]), clientTask(eventQueue, keys[5]),
-        clientTask(eventQueue, keys[6]), clientTask(eventQueue, keys[7]),
-        clientTask(eventQueue, keys[8]), clientTask(eventQueue, keys[9])
+        clientTask(eventQueue, keys[0]),
+        clientTask(eventQueue, keys[1]),
+        clientTask(eventQueue, keys[2]),
+        clientTask(eventQueue, keys[3]),
+        clientTask(eventQueue, keys[4]),
+        clientTask(eventQueue, keys[5]),
+        clientTask(eventQueue, keys[6]),
+        clientTask(eventQueue, keys[7]),
+        clientTask(eventQueue, keys[8]),
+        clientTask(eventQueue, keys[9]),
       ]
 
       for i in 1 .. 1_000_000:

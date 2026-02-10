@@ -5,7 +5,7 @@ import chronos/apps/http/httpserver
 proc firstMiddlewareHandler(
     middleware: HttpServerMiddlewareRef,
     reqfence: RequestFence,
-    nextHandler: HttpProcessCallback2
+    nextHandler: HttpProcessCallback2,
 ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
   if reqfence.isErr():
     # Ignore request errors
@@ -34,7 +34,7 @@ proc firstMiddlewareHandler(
 proc secondMiddlewareHandler(
     middleware: HttpServerMiddlewareRef,
     reqfence: RequestFence,
-    nextHandler: HttpProcessCallback2
+    nextHandler: HttpProcessCallback2,
 ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
   if reqfence.isErr():
     # Ignore request errors
@@ -57,7 +57,7 @@ proc secondMiddlewareHandler(
 proc thirdMiddlewareHandler(
     middleware: HttpServerMiddlewareRef,
     reqfence: RequestFence,
-    nextHandler: HttpProcessCallback2
+    nextHandler: HttpProcessCallback2,
 ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
   if reqfence.isErr():
     # Ignore request errors
@@ -101,17 +101,13 @@ proc middlewareExample() {.async: (raises: []).} =
     middlewares = [
       HttpServerMiddlewareRef(handler: firstMiddlewareHandler),
       HttpServerMiddlewareRef(handler: secondMiddlewareHandler),
-      HttpServerMiddlewareRef(handler: thirdMiddlewareHandler)
+      HttpServerMiddlewareRef(handler: thirdMiddlewareHandler),
     ]
     socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
-    boundAddress =
-      if isAvailable(AddressFamily.IPv6):
-        AnyAddress6
-      else:
-        AnyAddress
-    res = HttpServerRef.new(boundAddress, mainHandler,
-                            socketFlags = socketFlags,
-                            middlewares = middlewares)
+    boundAddress = if isAvailable(AddressFamily.IPv6): AnyAddress6 else: AnyAddress
+    res = HttpServerRef.new(
+      boundAddress, mainHandler, socketFlags = socketFlags, middlewares = middlewares
+    )
 
   doAssert(res.isOk(), "Unable to start HTTP server")
   let server = res.get()

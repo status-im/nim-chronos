@@ -37,10 +37,12 @@ suite "callSoon() tests suite":
       ## All callbacks must be processed exactly with 1 poll() call.
       poll()
 
-      var values = [0x12345678'u, 0x23456789'u, 0x3456789A'u, 0x456789AB'u,
-                    0x56789ABC'u, 0x6789ABCD'u, 0x789ABCDE'u, 0x89ABCDEF'u,
-                    0x9ABCDEF1'u, 0xABCDEF12'u, 0xBCDEF123'u, 0xCDEF1234'u,
-                    0xDEF12345'u, 0xEF123456'u, 0xF1234567'u, 0x12345678'u]
+      var values = [
+        0x12345678'u, 0x23456789'u, 0x3456789A'u, 0x456789AB'u, 0x56789ABC'u,
+        0x6789ABCD'u, 0x789ABCDE'u, 0x89ABCDEF'u, 0x9ABCDEF1'u, 0xABCDEF12'u,
+        0xBCDEF123'u, 0xCDEF1234'u, 0xDEF12345'u, 0xEF123456'u, 0xF1234567'u,
+        0x12345678'u,
+      ]
       var expect = 0'u
       for item in values:
         expect = expect xor item
@@ -58,9 +60,9 @@ suite "callSoon() tests suite":
         stopFlag = false
 
       var callbackproc: proc(udata: pointer) {.gcsafe, raises: [].}
-      callbackproc = proc (udata: pointer) {.gcsafe, raises: [].} =
+      callbackproc = proc(udata: pointer) {.gcsafe, raises: [].} =
         timeoutsTest2 += 1
-        if not(stopFlag):
+        if not (stopFlag):
           callSoon(callbackproc)
 
       proc testProc() {.async.} =

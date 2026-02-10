@@ -55,10 +55,7 @@ const
     when defined(windows):
       "cmd.exe"
     else:
-      when defined(android):
-        "/system/bin/sh"
-      else:
-        "/bin/sh"
+      when defined(android): "/system/bin/sh" else: "/bin/sh"
     ## Default shell binary path.
     ##
     ## The shell is used as command for command line when process started
@@ -74,22 +71,19 @@ const
   chronosEventEngine* {.strdefine.}: string =
     when defined(nimdoc):
       ""
-    elif defined(linux) and not(defined(android) or defined(emscripten)):
+    elif defined(linux) and not (defined(android) or defined(emscripten)):
       "epoll"
-    elif defined(macosx) or defined(macos) or defined(ios) or
-          defined(freebsd) or defined(netbsd) or defined(openbsd) or
-          defined(dragonfly):
+    elif defined(macosx) or defined(macos) or defined(ios) or defined(freebsd) or
+      defined(netbsd) or defined(openbsd) or defined(dragonfly):
       "kqueue"
     elif defined(android) or defined(emscripten):
       "poll"
     elif defined(posix):
       "poll"
     else:
-      ""
-    ## OS polling engine type which is going to be used by chronos.
+      "" ## OS polling engine type which is going to be used by chronos.
 
-  chronosHasRaises* = 0
-    ## raises effect support via `async: (raises: [])`
+  chronosHasRaises* = 0 ## raises effect support via `async: (raises: [])`
 
   chronosTransportDefaultBufferSize* {.intdefine.} = 16384
     ## Default size of chronos transport internal buffer.
@@ -101,7 +95,9 @@ const
     ## Default size of chronos TLS Session cache's internal buffer.
 
 when defined(chronosStrictException):
-  {.warning: "-d:chronosStrictException has been deprecated in favor of handleException".}
+  {.
+    warning: "-d:chronosStrictException has been deprecated in favor of handleException"
+  .}
   # In chronos v3, this setting was used as the opposite of
   # `chronosHandleException` - the setting is deprecated to encourage
   # migration to the new mode.
@@ -113,6 +109,7 @@ when defined(debug) or defined(chronosConfig):
     hint("Chronos configuration:")
     template printOption(name: string, value: untyped) =
       hint(name & ": " & $value)
+
     printOption("chronosHandleException", chronosHandleException)
     printOption("chronosStackTrace", chronosStackTrace)
     printOption("chronosFutureId", chronosFutureId)
@@ -122,12 +119,9 @@ when defined(debug) or defined(chronosConfig):
     printOption("chronosEventEngine", chronosEventEngine)
     printOption("chronosEventsCount", chronosEventsCount)
     printOption("chronosInitialSize", chronosInitialSize)
-    printOption("chronosTransportDefaultBufferSize",
-      chronosTransportDefaultBufferSize)
-    printOption("chronosStreamDefaultBufferSize",
-      chronosStreamDefaultBufferSize)
-    printOption("chronosTLSSessionCacheBufferSize",
-      chronosTLSSessionCacheBufferSize)
+    printOption("chronosTransportDefaultBufferSize", chronosTransportDefaultBufferSize)
+    printOption("chronosStreamDefaultBufferSize", chronosStreamDefaultBufferSize)
+    printOption("chronosTLSSessionCacheBufferSize", chronosTLSSessionCacheBufferSize)
 
 # In nim 1.6, `sink` + local variable + `move` generates the best code for
 # moving a proc parameter into a closure - this only works for closure
@@ -139,25 +133,26 @@ when defined(debug) or defined(chronosConfig):
 # Long story short, the workaround is not needed in non-raw {.async.} because
 # a copy of the literal is always made.
 # TODO review the above for 2.0 / 2.0+refc
-type
-  SeqHeader = object
-    length, reserved: int
+type SeqHeader = object
+  length, reserved: int
 
 proc isLiteral(s: string): bool {.inline.} =
   when defined(gcOrc) or defined(gcArc):
     false
   else:
-    s.len > 0 and (cast[ptr SeqHeader](s).reserved and (1 shl (sizeof(int) * 8 - 2))) != 0
+    s.len > 0 and
+      (cast[ptr SeqHeader](s).reserved and (1 shl (sizeof(int) * 8 - 2))) != 0
 
 proc isLiteral[T](s: seq[T]): bool {.inline.} =
   when defined(gcOrc) or defined(gcArc):
     false
   else:
-    s.len > 0 and (cast[ptr SeqHeader](s).reserved and (1 shl (sizeof(int) * 8 - 2))) != 0
+    s.len > 0 and
+      (cast[ptr SeqHeader](s).reserved and (1 shl (sizeof(int) * 8 - 2))) != 0
 
 template chronosMoveSink*(val: auto): untyped =
   bind isLiteral
-  when not (defined(gcOrc) or defined(gcArc)) and val is seq|string:
+  when not (defined(gcOrc) or defined(gcArc)) and val is seq | string:
     if isLiteral(val):
       val
     else:

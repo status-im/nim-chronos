@@ -47,8 +47,12 @@ proc getVirtualId[T](s: Selector[T]): SelectResult[int32] =
 proc isVirtualId(ident: int32): bool =
   ident < 0'i32
 
-proc toString(key: int32|cint|SocketHandle|int): string =
-  let fdi32 = when key is int32: key else: int32(key)
+proc toString(key: int32 | cint | SocketHandle | int): string =
+  let fdi32 =
+    when key is int32:
+      key
+    else:
+      int32(key)
   if isVirtualId(fdi32):
     if fdi32 == -1:
       "InvalidIdent"
@@ -60,15 +64,16 @@ proc toString(key: int32|cint|SocketHandle|int): string =
 template addKey[T](s: Selector[T], key: int32, skey: SelectorKey[T]) =
   if s.fds.hasKeyOrPut(key, skey):
     raiseAssert "Descriptor [" & key.toString() &
-                "] is already registered in the selector!"
+      "] is already registered in the selector!"
 
 template getKey[T](s: Selector[T], key: int32): SelectorKey[T] =
   let
     defaultKey = SelectorKey[T](ident: InvalidIdent)
     pkey = s.fds.getOrDefault(key, defaultKey)
-  doAssert(pkey.ident != InvalidIdent,
-           "Descriptor [" & key.toString() &
-           "] is not registered in the selector!")
+  doAssert(
+    pkey.ident != InvalidIdent,
+    "Descriptor [" & key.toString() & "] is not registered in the selector!",
+  )
   pkey
 
 template checkKey[T](s: Selector[T], key: int32): bool =
@@ -107,7 +112,7 @@ proc new*(t: typedesc[Selector], T: typedesc): SelectResult[Selector[T]] =
     virtualId: -1'i32, # Should start with -1, because `InvalidIdent` == -1
     childrenExited: false,
     virtualHoles: initDeque[int32](),
-    pendingEvents: initDeque[ReadyKey]()
+    pendingEvents: initDeque[ReadyKey](),
   )
   ok(selector)
 
@@ -151,15 +156,19 @@ proc close2*(event: SelectEvent): SelectResult[void] =
 
 proc init(t: typedesc[EpollEvent], fdi: cint, events: set[Event]): EpollEvent =
   var res = uint32(EPOLLRDHUP)
-  if Event.Read in events: res = res or uint32(EPOLLIN)
-  if Event.Write in events: res = res or uint32(EPOLLOUT)
-  if Event.Oneshot in events: res = res or uint32(EPOLLONESHOT)
+  if Event.Read in events:
+    res = res or uint32(EPOLLIN)
+  if Event.Write in events:
+    res = res or uint32(EPOLLOUT)
+  if Event.Oneshot in events:
+    res = res or uint32(EPOLLONESHOT)
   # We need this double conversion of type because otherwise in x64 environment
   # negative cint could be converted to big uint64.
   EpollEvent(events: res, data: EpollData(u64: uint64(uint32(fdi))))
 
-proc registerHandle2*[T](s: Selector[T], fd: cint, events: set[Event],
-                         data: T): SelectResult[void] =
+proc registerHandle2*[T](
+    s: Selector[T], fd: cint, events: set[Event], data: T
+): SelectResult[void] =
   let skey = SelectorKey[T](ident: fd, events: events, param: 0, data: data)
 
   s.addKey(fd, skey)
@@ -171,32 +180,33 @@ proc registerHandle2*[T](s: Selector[T], fd: cint, events: set[Event],
       return err(osLastError())
   ok()
 
-proc updateHandle2*[T](s: Selector[T], fd: cint,
-                       events: set[Event]): SelectResult[void] =
-  const EventsMask = {Event.Timer, Event.Signal, Event.Process, Event.Vnode,
-                      Event.User, Event.Oneshot, Event.Error}
+proc updateHandle2*[T](
+    s: Selector[T], fd: cint, events: set[Event]
+): SelectResult[void] =
+  const EventsMask = {
+    Event.Timer, Event.Signal, Event.Process, Event.Vnode, Event.User, Event.Oneshot,
+    Event.Error,
+  }
   s.fds.withValue(int32(fd), pkey):
-    doAssert(pkey[].events * EventsMask == {},
-             "Descriptor [" & fd.toString() & "] could not be updated!")
+    doAssert(
+      pkey[].events * EventsMask == {},
+      "Descriptor [" & fd.toString() & "] could not be updated!",
+    )
     if pkey[].events != events:
       let epollEvents = EpollEvent.init(fd, events)
       if pkey[].events == {}:
-        if epoll_ctl(s.epollFd, EPOLL_CTL_ADD, fd,
-                     unsafeAddr(epollEvents)) != 0:
+        if epoll_ctl(s.epollFd, EPOLL_CTL_ADD, fd, unsafeAddr(epollEvents)) != 0:
           return err(osLastError())
       else:
         if events != {}:
-          if epoll_ctl(s.epollFd, EPOLL_CTL_MOD, fd,
-                       unsafeAddr(epollEvents)) != 0:
+          if epoll_ctl(s.epollFd, EPOLL_CTL_MOD, fd, unsafeAddr(epollEvents)) != 0:
             return err(osLastError())
         else:
-          if epoll_ctl(s.epollFd, EPOLL_CTL_DEL, fd,
-                       unsafeAddr epollEvents) != 0:
+          if epoll_ctl(s.epollFd, EPOLL_CTL_DEL, fd, unsafeAddr epollEvents) != 0:
             return err(osLastError())
       pkey.events = events
   do:
-    raiseAssert "Descriptor [" & fd.toString() &
-                "] is not registered in the selector!"
+    raiseAssert "Descriptor [" & fd.toString() & "] is not registered in the selector!"
   ok()
 
 proc blockSignal[T](s: Selector[T], signal: int): SelectResult[bool] =
@@ -213,7 +223,7 @@ proc blockSignal[T](s: Selector[T], signal: int): SelectResult[bool] =
       return err(osLastError())
     if sigaddset(nmask, cint(signal)) < 0:
       return err(osLastError())
-    ? blockSignals(nmask, omask)
+    ?blockSignals(nmask, omask)
     if sigaddset(s.signalMask, cint(signal)) < 0:
       # Try to restore previous state of signals mask
       let errorCode = osLastError()
@@ -235,7 +245,7 @@ proc unblockSignal[T](s: Selector[T], signal: int): SelectResult[bool] =
       return err(osLastError())
     if sigaddset(nmask, cint(signal)) < 0:
       return err(osLastError())
-    ? unblockSignals(nmask, omask)
+    ?unblockSignals(nmask, omask)
     if sigdelset(s.signalMask, cint(signal)) < 0:
       # Try to restore previous state of signals mask
       let errorCode = osLastError()
@@ -244,40 +254,39 @@ proc unblockSignal[T](s: Selector[T], signal: int): SelectResult[bool] =
     ok(true)
 
 template checkSignal(signal: int) =
-  doAssert((signal >= 0) and (signal <= int(high(int32))),
-           "Invalid signal value [" & $signal & "]")
+  doAssert(
+    (signal >= 0) and (signal <= int(high(int32))),
+    "Invalid signal value [" & $signal & "]",
+  )
 
-proc registerSignalEvent[T](s: Selector[T], signal: int,
-                            events: set[Event], param: int,
-                            data: T): SelectResult[cint] =
+proc registerSignalEvent[T](
+    s: Selector[T], signal: int, events: set[Event], param: int, data: T
+): SelectResult[cint] =
   checkSignal(signal)
 
   let
-    fdi32 = ? s.getVirtualId()
-    selectorKey = SelectorKey[T](ident: signal, events: events,
-                                param: param, data: data)
-    signalKey = SelectorKey[T](ident: fdi32, events: events,
-                               param: param, data: data)
+    fdi32 = ?s.getVirtualId()
+    selectorKey =
+      SelectorKey[T](ident: signal, events: events, param: param, data: data)
+    signalKey = SelectorKey[T](ident: fdi32, events: events, param: param, data: data)
 
   s.addKey(fdi32, selectorKey)
   s.addSignal(signal, signalKey)
 
-  let mres =
-    block:
-      let res = s.blockSignal(signal)
-      if res.isErr():
-        s.freeKey(fdi32)
-        s.freeSignal(int32(signal))
-        return err(res.error())
-      res.get()
+  let mres = block:
+    let res = s.blockSignal(signal)
+    if res.isErr():
+      s.freeKey(fdi32)
+      s.freeSignal(int32(signal))
+      return err(res.error())
+    res.get()
 
-  if not(mres):
+  if not (mres):
     raiseAssert "Signal [" & $signal & "] could have only one handler at " &
-                "the same time!"
+      "the same time!"
 
   if s.sigFd.isSome():
-    let res = signalfd(s.sigFd.get(), s.signalMask,
-                       SFD_NONBLOCK or SFD_CLOEXEC)
+    let res = signalfd(s.sigFd.get(), s.signalMask, SFD_NONBLOCK or SFD_CLOEXEC)
     if res == -1:
       let errorCode = osLastError()
       s.freeKey(fdi32)
@@ -310,12 +319,12 @@ proc registerSignalEvent[T](s: Selector[T], signal: int,
 
   ok(cint(fdi32))
 
-proc registerSignal*[T](s: Selector[T], signal: int,
-                       data: T): SelectResult[cint] =
+proc registerSignal*[T](s: Selector[T], signal: int, data: T): SelectResult[cint] =
   registerSignalEvent(s, signal, {Event.Signal}, 0, data)
 
-proc registerTimer2*[T](s: Selector[T], timeout: int, oneshot: bool,
-                        data: T): SelectResult[cint] =
+proc registerTimer2*[T](
+    s: Selector[T], timeout: int, oneshot: bool, data: T
+): SelectResult[cint] =
   let timerFd = timerfd_create(CLOCK_MONOTONIC, TFD_CLOEXEC or TFD_NONBLOCK)
   if timerFd == -1:
     return err(osLastError())
@@ -325,29 +334,28 @@ proc registerTimer2*[T](s: Selector[T], timeout: int, oneshot: bool,
     (key, event) =
       if oneshot:
         (
-          SelectorKey[T](ident: timerFd, events: {Event.Timer, Event.Oneshot},
-                         param: 0, data: data),
-          EpollEvent.init(timerFd, {Event.Read, Event.Oneshot})
+          SelectorKey[T](
+            ident: timerFd, events: {Event.Timer, Event.Oneshot}, param: 0, data: data
+          ),
+          EpollEvent.init(timerFd, {Event.Read, Event.Oneshot}),
         )
       else:
         (
-          SelectorKey[T](ident: timerFd, events: {Event.Timer},
-                         param: 0, data: data),
-          EpollEvent.init(timerFd, {Event.Read})
+          SelectorKey[T](ident: timerFd, events: {Event.Timer}, param: 0, data: data),
+          EpollEvent.init(timerFd, {Event.Read}),
         )
   var timeStruct =
     if oneshot:
       Itimerspec(
         it_interval: Timespec(tv_sec: osdefs.Time(0), tv_nsec: 0),
-        it_value: Timespec(tv_sec: osdefs.Time(timeout div 1_000),
-                           tv_nsec: (timeout %% 1000) * 1_000_000)
+        it_value: Timespec(
+          tv_sec: osdefs.Time(timeout div 1_000), tv_nsec: (timeout %% 1000) * 1_000_000
+        ),
       )
     else:
       Itimerspec(
-        it_interval: Timespec(tv_sec: osdefs.Time(timeout div 1_000),
-                              tv_nsec: 0),
-        it_value: Timespec(tv_sec: osdefs.Time(timeout div 1_000),
-                           tv_nsec: 0),
+        it_interval: Timespec(tv_sec: osdefs.Time(timeout div 1_000), tv_nsec: 0),
+        it_value: Timespec(tv_sec: osdefs.Time(timeout div 1_000), tv_nsec: 0),
       )
 
   s.addKey(fdi32, key)
@@ -367,12 +375,10 @@ proc registerTimer2*[T](s: Selector[T], timeout: int, oneshot: bool,
 
   ok(cint(fdi32))
 
-proc registerEvent2*[T](s: Selector[T], ev: SelectEvent,
-                        data: T): SelectResult[cint] =
-  doAssert(not(isNil(ev)))
+proc registerEvent2*[T](s: Selector[T], ev: SelectEvent, data: T): SelectResult[cint] =
+  doAssert(not (isNil(ev)))
   let
-    key = SelectorKey[T](ident: ev.efd, events: {Event.User},
-                         param: 0, data: data)
+    key = SelectorKey[T](ident: ev.efd, events: {Event.User}, param: 0, data: data)
     event = EpollEvent.init(ev.efd, {Event.Read})
 
   s.addKey(ev.efd, key)
@@ -385,22 +391,20 @@ proc registerEvent2*[T](s: Selector[T], ev: SelectEvent,
 
 template checkPid(pid: int) =
   when sizeof(int) == 8:
-    doAssert(pid >= 0 and pid <= int(high(uint32)),
-             "Invalid process idientified (pid) value")
+    doAssert(
+      pid >= 0 and pid <= int(high(uint32)), "Invalid process idientified (pid) value"
+    )
   else:
-    doAssert(pid >= 0 and pid <= high(int32),
-             "Invalid process idientified (pid) value")
+    doAssert(pid >= 0 and pid <= high(int32), "Invalid process idientified (pid) value")
 
 proc registerProcess*[T](s: Selector, pid: int, data: T): SelectResult[cint] =
   checkPid(pid)
 
   let
-    fdi32 = ? s.getVirtualId()
+    fdi32 = ?s.getVirtualId()
     events = {Event.Process, Event.Oneshot}
-    selectorKey = SelectorKey[T](ident: pid, events: events, param: 0,
-                                 data: data)
-    processKey = SelectorKey[T](ident: fdi32, events: events, param: 0,
-                                data: data)
+    selectorKey = SelectorKey[T](ident: pid, events: events, param: 0, data: data)
+    processKey = SelectorKey[T](ident: fdi32, events: events, param: 0, data: data)
 
   s.addProcess(pid, processKey)
   s.addKey(fdi32, selectorKey)
@@ -424,7 +428,6 @@ proc unregister2*[T](s: Selector[T], fd: cint): SelectResult[void] =
     if {Event.Read, Event.Write, Event.User} * pkey.events != {}:
       if epoll_ctl(s.epollFd, EPOLL_CTL_DEL, cint(pkey.ident), nil) != 0:
         return err(osLastError())
-
     elif Event.Timer in pkey.events:
       if Event.Finished notin pkey.events:
         if epoll_ctl(s.epollFd, EPOLL_CTL_DEL, fd, nil) != 0:
@@ -433,15 +436,13 @@ proc unregister2*[T](s: Selector[T], fd: cint): SelectResult[void] =
           return err(errorCode)
       if handleEintr(osdefs.close(fd)) == -1:
         return err(osLastError())
-
     elif Event.Signal in pkey.events:
-      if not(s.signals.hasKey(int32(pkey.ident))):
+      if not (s.signals.hasKey(int32(pkey.ident))):
         raiseAssert "Signal " & pkey.ident.toString() &
-                    " is not registered in the selector!"
-      let sigFd =
-        block:
-          doAssert(s.sigFd.isSome(), "signalfd descriptor is missing")
-          s.sigFd.get()
+          " is not registered in the selector!"
+      let sigFd = block:
+        doAssert(s.sigFd.isSome(), "signalfd descriptor is missing")
+        s.sigFd.get()
 
       s.freeSignal(int32(pkey.ident))
 
@@ -466,30 +467,27 @@ proc unregister2*[T](s: Selector[T], fd: cint): SelectResult[void] =
           discard s.unblockSignal(pkey.ident)
           return err(errorCode)
 
-      let mres = ? s.unblockSignal(pkey.ident)
+      let mres = ?s.unblockSignal(pkey.ident)
       doAssert(mres, "Signal is not present in stored mask!")
-
     elif Event.Process in pkey.events:
-      if not(s.processes.hasKey(int32(pkey.ident))):
+      if not (s.processes.hasKey(int32(pkey.ident))):
         raiseAssert "Process " & pkey.ident.toString() &
-                    " is not registered in the selector!"
+          " is not registered in the selector!"
 
-      let pidFd =
-        block:
-          doAssert(s.pidFd.isSome(), "process descriptor is missing")
-          s.pidFd.get()
+      let pidFd = block:
+        doAssert(s.pidFd.isSome(), "process descriptor is missing")
+        s.pidFd.get()
 
       s.freeProcess(int32(pkey.ident))
 
       # We need to filter pending events queue for just unregistered process.
       if len(s.pendingEvents) > 0:
-        s.pendingEvents =
-          block:
-            var res = initDeque[ReadyKey](len(s.pendingEvents))
-            for item in s.pendingEvents.items():
-              if item.fd != fdi32:
-                res.addLast(item)
-            res
+        s.pendingEvents = block:
+          var res = initDeque[ReadyKey](len(s.pendingEvents))
+          for item in s.pendingEvents.items():
+            if item.fd != fdi32:
+              res.addLast(item)
+          res
 
       if len(s.processes) == 0:
         s.pidFd = Opt.none(cint)
@@ -506,11 +504,12 @@ proc unregister2*[T](s: Selector[T], event: SelectEvent): SelectResult[void] =
 proc prepareKey[T](s: Selector[T], event: EpollEvent): Opt[ReadyKey] =
   let
     defaultKey = SelectorKey[T](ident: InvalidIdent)
-    fdi32 =
-      block:
-        doAssert(event.data.u64 <= uint64(high(uint32)),
-                 "Invalid user data value in epoll event object")
-        cast[int32](event.data.u64)
+    fdi32 = block:
+      doAssert(
+        event.data.u64 <= uint64(high(uint32)),
+        "Invalid user data value in epoll event object",
+      )
+      cast[int32](event.data.u64)
 
   var
     pkey = s.getKey(fdi32)
@@ -530,7 +529,6 @@ proc prepareKey[T](s: Selector[T], event: EpollEvent): Opt[ReadyKey] =
   if (event.events and EPOLLIN) != 0:
     if Event.Read in pkey.events:
       rkey.events.incl(Event.Read)
-
     elif Event.Timer in pkey.events:
       var data: uint64
       rkey.events.incl(Event.Timer)
@@ -538,7 +536,6 @@ proc prepareKey[T](s: Selector[T], event: EpollEvent): Opt[ReadyKey] =
       if res != sizeof(uint64):
         rkey.events.incl(Event.Error)
         rkey.errorCode = osLastError()
-
     elif Event.Signal in pkey.events:
       var data: SignalFdInfo
       let res = handleEintr(osdefs.read(fdi32, addr data, sizeof(SignalFdInfo)))
@@ -547,8 +544,7 @@ proc prepareKey[T](s: Selector[T], event: EpollEvent): Opt[ReadyKey] =
         # proper handler.
         return Opt.none(ReadyKey)
       if data.ssi_signo != uint32(SIGCHLD) or len(s.processes) == 0:
-        let skey = s.signals.getOrDefault(cast[int32](data.ssi_signo),
-                                          defaultKey)
+        let skey = s.signals.getOrDefault(cast[int32](data.ssi_signo), defaultKey)
         if skey.ident == InvalidIdent:
           # We do not have any handlers for received event so we can't report
           # an error to proper handler.
@@ -559,8 +555,7 @@ proc prepareKey[T](s: Selector[T], event: EpollEvent): Opt[ReadyKey] =
         # Indicate that SIGCHLD has been seen.
         s.childrenExited = true
         # Current signal processing.
-        let pidKey = s.processes.getOrDefault(cast[int32](data.ssi_pid),
-                                              defaultKey)
+        let pidKey = s.processes.getOrDefault(cast[int32](data.ssi_pid), defaultKey)
         if pidKey.ident == InvalidIdent:
           # We do not have any handlers with signal's pid.
           return Opt.none(ReadyKey)
@@ -571,7 +566,6 @@ proc prepareKey[T](s: Selector[T], event: EpollEvent): Opt[ReadyKey] =
         if fdKey.ident != InvalidIdent:
           fdKey.events.incl(Event.Finished)
           s.fds[int32(pidKey.ident)] = fdKey
-
     elif Event.User in pkey.events:
       var data: uint64
       let res = handleEintr(osdefs.read(fdi32, addr data, sizeof(uint64)))
@@ -603,7 +597,7 @@ proc checkProcesses[T](s: Selector[T]) =
   # for completion, because in Linux SIGCHLD could be masked.
   # You can get more information in article "Signalfd is useless" -
   # https://ldpreload.com/blog/signalfd-is-useless?reposted-on-request
-  if not(s.childrenExited):
+  if not (s.childrenExited):
     return
 
   let
@@ -615,17 +609,16 @@ proc checkProcesses[T](s: Selector[T]) =
     if fdKey.ident != InvalidIdent:
       if Event.Finished notin fdKey.events:
         var sigInfo = SigInfo()
-        let res = handleEintr(osdefs.waitid(P_PID, cast[Id](pid),
-                                            sigInfo, flags))
+        let res = handleEintr(osdefs.waitid(P_PID, cast[Id](pid), sigInfo, flags))
         if (res == 0) and (cint(sigInfo.si_pid) == cint(pid)):
           fdKey.events.incl(Event.Finished)
           let rkey = ReadyKey(fd: pidKey.ident, events: fdKey.events)
           s.pendingEvents.addLast(rkey)
           s.fds[int32(pidKey.ident)] = fdKey
 
-proc selectInto2*[T](s: Selector[T], timeout: int,
-                     readyKeys: var openArray[ReadyKey]
-                    ): SelectResult[int] =
+proc selectInto2*[T](
+    s: Selector[T], timeout: int, readyKeys: var openArray[ReadyKey]
+): SelectResult[int] =
   var
     queueEvents: array[chronosEventsCount, EpollEvent]
     k: int = 0
@@ -637,29 +630,30 @@ proc selectInto2*[T](s: Selector[T], timeout: int,
     maxPendingEventsCount = min(maxEventsCount, len(s.pendingEvents))
     maxNewEventsCount = max(maxEventsCount - maxPendingEventsCount, 0)
 
-  let
-    eventsCount =
-      if maxNewEventsCount > 0:
-        let res = handleEintr(epoll_wait(s.epollFd, addr(queueEvents[0]),
-                                         cint(maxNewEventsCount),
-                                         cint(timeout)))
-        if res < 0:
-          return err(osLastError())
-        res
-      else:
-        0
+  let eventsCount =
+    if maxNewEventsCount > 0:
+      let res = handleEintr(
+        epoll_wait(
+          s.epollFd, addr(queueEvents[0]), cint(maxNewEventsCount), cint(timeout)
+        )
+      )
+      if res < 0:
+        return err(osLastError())
+      res
+    else:
+      0
 
   s.childrenExited = false
 
   for i in 0 ..< eventsCount:
-    let rkey = s.prepareKey(queueEvents[i]).valueOr: continue
+    let rkey = s.prepareKey(queueEvents[i]).valueOr:
+      continue
     readyKeys[k] = rkey
     inc(k)
 
   s.checkProcesses()
 
-  let pendingEventsCount = min(len(readyKeys) - eventsCount,
-                               len(s.pendingEvents))
+  let pendingEventsCount = min(len(readyKeys) - eventsCount, len(s.pendingEvents))
 
   for i in 0 ..< pendingEventsCount:
     readyKeys[k] = s.pendingEvents.popFirst()
@@ -669,106 +663,117 @@ proc selectInto2*[T](s: Selector[T], timeout: int,
 
 proc select2*[T](s: Selector[T], timeout: int): SelectResult[seq[ReadyKey]] =
   var res = newSeq[ReadyKey](chronosEventsCount)
-  let count = ? selectInto2(s, timeout, res)
+  let count = ?selectInto2(s, timeout, res)
   res.setLen(count)
   ok(res)
 
-proc newSelector*[T](): Selector[T] {.
-     raises: [OSError].} =
+proc newSelector*[T](): Selector[T] {.raises: [OSError].} =
   let res = Selector.new(T)
-  if res.isErr(): raiseOSError(res.error())
+  if res.isErr():
+    raiseOSError(res.error())
   res.get()
 
-proc close*[T](s: Selector[T]) {.
-     raises: [IOSelectorsException].} =
+proc close*[T](s: Selector[T]) {.raises: [IOSelectorsException].} =
   let res = s.close2()
-  if res.isErr(): raiseIOSelectorsError(res.error())
+  if res.isErr():
+    raiseIOSelectorsError(res.error())
 
-proc newSelectEvent*(): SelectEvent {.
-     raises: [IOSelectorsException].} =
+proc newSelectEvent*(): SelectEvent {.raises: [IOSelectorsException].} =
   let res = SelectEvent.new()
-  if res.isErr(): raiseIOSelectorsError(res.error())
+  if res.isErr():
+    raiseIOSelectorsError(res.error())
   res.get()
 
-proc trigger*(event: SelectEvent) {.
-     raises: [IOSelectorsException].} =
+proc trigger*(event: SelectEvent) {.raises: [IOSelectorsException].} =
   let res = event.trigger2()
-  if res.isErr(): raiseIOSelectorsError(res.error())
+  if res.isErr():
+    raiseIOSelectorsError(res.error())
 
-proc close*(event: SelectEvent) {.
-     raises: [IOSelectorsException].} =
+proc close*(event: SelectEvent) {.raises: [IOSelectorsException].} =
   let res = event.close2()
-  if res.isErr(): raiseIOSelectorsError(res.error())
+  if res.isErr():
+    raiseIOSelectorsError(res.error())
 
-proc registerHandle*[T](s: Selector[T], fd: cint | SocketHandle,
-                        events: set[Event], data: T) {.
-    raises: [IOSelectorsException].} =
+proc registerHandle*[T](
+    s: Selector[T], fd: cint | SocketHandle, events: set[Event], data: T
+) {.raises: [IOSelectorsException].} =
   let res = registerHandle2(s, fd, events, data)
-  if res.isErr(): raiseIOSelectorsError(res.error())
+  if res.isErr():
+    raiseIOSelectorsError(res.error())
 
-proc updateHandle*[T](s: Selector[T], fd: cint | SocketHandle,
-                      events: set[Event]) {.
-    raises: [IOSelectorsException].} =
+proc updateHandle*[T](
+    s: Selector[T], fd: cint | SocketHandle, events: set[Event]
+) {.raises: [IOSelectorsException].} =
   let res = updateHandle2(s, fd, events)
-  if res.isErr(): raiseIOSelectorsError(res.error())
+  if res.isErr():
+    raiseIOSelectorsError(res.error())
 
-proc unregister*[T](s: Selector[T], fd: cint | SocketHandle) {.
-     raises: [IOSelectorsException].} =
+proc unregister*[T](
+    s: Selector[T], fd: cint | SocketHandle
+) {.raises: [IOSelectorsException].} =
   let res = unregister2(s, fd)
-  if res.isErr(): raiseIOSelectorsError(res.error())
+  if res.isErr():
+    raiseIOSelectorsError(res.error())
 
-proc unregister*[T](s: Selector[T], event: SelectEvent) {.
-    raises: [IOSelectorsException].} =
+proc unregister*[T](
+    s: Selector[T], event: SelectEvent
+) {.raises: [IOSelectorsException].} =
   let res = unregister2(s, event)
-  if res.isErr(): raiseIOSelectorsError(res.error())
+  if res.isErr():
+    raiseIOSelectorsError(res.error())
 
-proc registerTimer*[T](s: Selector[T], timeout: int, oneshot: bool,
-                       data: T): cint {.
-    discardable, raises: [IOSelectorsException].} =
+proc registerTimer*[T](
+    s: Selector[T], timeout: int, oneshot: bool, data: T
+): cint {.discardable, raises: [IOSelectorsException].} =
   let res = registerTimer2(s, timeout, oneshot, data)
-  if res.isErr(): raiseIOSelectorsError(res.error())
+  if res.isErr():
+    raiseIOSelectorsError(res.error())
   res.get()
 
-proc registerEvent*[T](s: Selector[T], event: SelectEvent,
-                       data: T) {.
-     raises: [IOSelectorsException].} =
+proc registerEvent*[T](
+    s: Selector[T], event: SelectEvent, data: T
+) {.raises: [IOSelectorsException].} =
   let res = registerEvent2(s, event, data)
-  if res.isErr(): raiseIOSelectorsError(res.error())
+  if res.isErr():
+    raiseIOSelectorsError(res.error())
 
-proc selectInto*[T](s: Selector[T], timeout: int,
-                    readyKeys: var openArray[ReadyKey]): int {.
-     raises: [IOSelectorsException].} =
+proc selectInto*[T](
+    s: Selector[T], timeout: int, readyKeys: var openArray[ReadyKey]
+): int {.raises: [IOSelectorsException].} =
   let res = selectInto2(s, timeout, readyKeys)
-  if res.isErr(): raiseIOSelectorsError(res.error())
+  if res.isErr():
+    raiseIOSelectorsError(res.error())
   res.get()
 
 proc select*[T](s: Selector[T], timeout: int): seq[ReadyKey] =
   let res = select2(s, timeout)
-  if res.isErr(): raiseIOSelectorsError(res.error())
+  if res.isErr():
+    raiseIOSelectorsError(res.error())
   res.get()
 
-proc contains*[T](s: Selector[T], fd: SocketHandle|cint): bool {.inline.} =
+proc contains*[T](s: Selector[T], fd: SocketHandle | cint): bool {.inline.} =
   s.checkKey(int32(fd))
 
-proc setData*[T](s: Selector[T], fd: SocketHandle|cint, data: T): bool =
+proc setData*[T](s: Selector[T], fd: SocketHandle | cint, data: T): bool =
   s.fds.withValue(int32(fd), skey):
     skey[].data = data
     return true
   do:
     return false
 
-template withData*[T](s: Selector[T], fd: SocketHandle|cint, value,
-                      body: untyped) =
+template withData*[T](s: Selector[T], fd: SocketHandle | cint, value, body: untyped) =
   s.fds.withValue(int32(fd), skey):
     var value = addr(skey[].data)
     body
 
-template withData*[T](s: Selector[T], fd: SocketHandle|cint, value, body1,
-                      body2: untyped) =
+template withData*[T](
+    s: Selector[T], fd: SocketHandle | cint, value, body1, body2: untyped
+) =
   s.fds.withValue(int32(fd), skey):
     var value = addr(skey[].data)
     body1
   do:
     body2
 
-proc getFd*[T](s: Selector[T]): cint = s.epollFd
+proc getFd*[T](s: Selector[T]): cint =
+  s.epollFd

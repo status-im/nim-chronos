@@ -14,32 +14,45 @@ import results
 import stew/[base10, byteutils]
 import ".."/[config, asyncloop, osdefs, oserrno, handles]
 
-from std/net import Domain, `==`, IpAddress, IpAddressFamily, parseIpAddress,
-                    SockType, Protocol, Port, `$`
+from std/net import
+  Domain, `==`, IpAddress, IpAddressFamily, parseIpAddress, SockType, Protocol, Port,
+  `$`
 from std/nativesockets import toInt, `$`
 
-export Domain, `==`, IpAddress, IpAddressFamily, parseIpAddress, SockType,
-       Protocol, Port, toInt, `$`, results
+export
+  Domain, `==`, IpAddress, IpAddressFamily, parseIpAddress, SockType, Protocol, Port,
+  toInt, `$`, results
 
 const
   DefaultStreamBufferSize* = chronosTransportDefaultBufferSize
     ## Default buffer size for stream transports
-  DefaultDatagramBufferSize* = 65536
-    ## Default buffer size for datagram transports
+  DefaultDatagramBufferSize* = 65536 ## Default buffer size for datagram transports
 type
   ServerFlags* = enum
     ## Server's flags
-    ReuseAddr, ReusePort, TcpNoDelay, NoAutoRead, GCUserData, FirstPipe,
-    NoPipeFlash, Broadcast, V4Mapped
+    ReuseAddr
+    ReusePort
+    TcpNoDelay
+    NoAutoRead
+    GCUserData
+    FirstPipe
+    NoPipeFlash
+    Broadcast
+    V4Mapped
 
   DualStackType* {.pure.} = enum
-    Auto, Enabled, Disabled, Default
+    Auto
+    Enabled
+    Disabled
+    Default
 
   AddressFamily* {.pure.} = enum
-    None, IPv4, IPv6, Unix
+    None
+    IPv4
+    IPv6
+    Unix
 
-  TransportAddress* = object
-    ## Transport network address
+  TransportAddress* = object ## Transport network address
     case family*: AddressFamily
     of AddressFamily.None:
       discard
@@ -49,90 +62,93 @@ type
       address_v6*: array[16, uint8]
     of AddressFamily.Unix:
       address_un*: array[108, uint8]
-    port*: Port                   # Port number
+    port*: Port # Port number
 
   ServerCommand* = enum
     ## Server's commands
-    Start,                        # Start server
-    Pause,                        # Pause server
-    Stop                          # Stop server
+    Start # Start server
+    Pause # Pause server
+    Stop # Stop server
 
   ServerStatus* = enum
     ## Server's statuses
-    Starting,                     # Server created
-    Stopped,                      # Server stopped
-    Running,                      # Server running
-    Closed                        # Server closed
+    Starting # Server created
+    Stopped # Server stopped
+    Running # Server running
+    Closed # Server closed
 
 when defined(windows) or defined(nimdoc):
-  type
-    SocketServer* = ref object of RootRef
-      ## Socket server object
-      sock*: AsyncFD                # Socket
-      local*: TransportAddress      # Address
-      status*: ServerStatus         # Current server status
-      udata*: pointer               # User-defined pointer
-      flags*: set[ServerFlags]      # Flags
-      bufferSize*: int              # Size of internal transports' buffer
-      loopFuture*: Future[void].Raising([])     # Server's main Future
-      domain*: Domain               # Current server domain (IPv4 or IPv6)
-      apending*: bool
-      asock*: AsyncFD               # Current AcceptEx() socket
-      errorCode*: OSErrorCode       # Current error code
-      abuffer*: array[128, byte]    # Windows AcceptEx() buffer
-      dualstack*: DualStackType     # IPv4/IPv6 dualstack parameters
-      when defined(windows):
-        aovl*: CustomOverlapped     # AcceptEx OVERLAPPED structure
+  type SocketServer* = ref object of RootRef ## Socket server object
+    sock*: AsyncFD # Socket
+    local*: TransportAddress # Address
+    status*: ServerStatus # Current server status
+    udata*: pointer # User-defined pointer
+    flags*: set[ServerFlags] # Flags
+    bufferSize*: int # Size of internal transports' buffer
+    loopFuture*: Future[void].Raising([]) # Server's main Future
+    domain*: Domain # Current server domain (IPv4 or IPv6)
+    apending*: bool
+    asock*: AsyncFD # Current AcceptEx() socket
+    errorCode*: OSErrorCode # Current error code
+    abuffer*: array[128, byte] # Windows AcceptEx() buffer
+    dualstack*: DualStackType # IPv4/IPv6 dualstack parameters
+    when defined(windows):
+      aovl*: CustomOverlapped # AcceptEx OVERLAPPED structure
+
 else:
-  type
-    SocketServer* = ref object of RootRef
-      ## Socket server object
-      sock*: AsyncFD                # Socket
-      local*: TransportAddress      # Address
-      status*: ServerStatus         # Current server status
-      udata*: pointer               # User-defined pointer
-      flags*: set[ServerFlags]      # Flags
-      bufferSize*: int              # Size of internal transports' buffer
-      loopFuture*: Future[void].Raising([]) # Server's main Future
-      errorCode*: OSErrorCode       # Current error code
-      dualstack*: DualStackType     # IPv4/IPv6 dualstack parameters
+  type SocketServer* = ref object of RootRef ## Socket server object
+    sock*: AsyncFD # Socket
+    local*: TransportAddress # Address
+    status*: ServerStatus # Current server status
+    udata*: pointer # User-defined pointer
+    flags*: set[ServerFlags] # Flags
+    bufferSize*: int # Size of internal transports' buffer
+    loopFuture*: Future[void].Raising([]) # Server's main Future
+    errorCode*: OSErrorCode # Current error code
+    dualstack*: DualStackType # IPv4/IPv6 dualstack parameters
 
 type
-  TransportError* = object of AsyncError
-    ## Transport's specific exception
-  TransportOsError* = object of TransportError
-    ## Transport's OS specific exception
+  TransportError* = object of AsyncError ## Transport's specific exception
+  TransportOsError* = object of TransportError ## Transport's OS specific exception
     code*: OSErrorCode
+
   TransportIncompleteError* = object of TransportError
     ## Transport's `incomplete data received` exception
+
   TransportLimitError* = object of TransportError
     ## Transport's `data limit reached` exception
+
   TransportAddressError* = object of TransportError
     ## Transport's address specific exception
     code*: OSErrorCode
+
   TransportNoSupport* = object of TransportError
     ## Transport's capability not supported exception
+
   TransportUseClosedError* = object of TransportError
     ## Usage after transport close exception
+
   TransportUseEofError* = object of TransportError
     ## Usage after transport half-close exception
+
   TransportTooManyError* = object of TransportError
     ## Too many open file descriptors exception
+
   TransportAbortedError* = object of TransportError
     ## Remote client disconnected before server accepts connection
 
   TransportState* = enum
     ## Transport's state
-    ReadPending,                  # Read operation pending (Windows)
-    ReadPaused,                   # Read operations paused
-    ReadClosed,                   # Read operations closed
-    ReadEof,                      # Read at EOF
-    ReadError,                    # Read error
-    WritePending,                 # Writer operation pending (Windows)
-    WritePaused,                  # Writer operations paused
-    WriteClosed,                  # Writer operations closed
-    WriteEof,                     # Remote peer disconnected
-    WriteError                    # Write error
+    ReadPending # Read operation pending (Windows)
+    ReadPaused # Read operations paused
+    ReadClosed # Read operations closed
+    ReadEof # Read at EOF
+    ReadError # Read error
+    WritePending # Writer operation pending (Windows)
+    WritePaused # Writer operations paused
+    WriteClosed # Writer operations closed
+    WriteEof # Remote peer disconnected
+    WriteError # Write error
 
 var
   AnyAddress* = TransportAddress(family: AddressFamily.IPv4, port: Port(0))
@@ -143,19 +159,23 @@ var
 proc `==`*(lhs, rhs: TransportAddress): bool =
   ## Compare two transport addresses ``lhs`` and ``rhs``. Return ``true`` if
   ## addresses are equal.
-  if (lhs.family != rhs.family): return false
+  if (lhs.family != rhs.family):
+    return false
   case lhs.family
   of AddressFamily.None:
     true
   of AddressFamily.IPv4:
-    if lhs.port != rhs.port: return false
+    if lhs.port != rhs.port:
+      return false
     lhs.address_v4 == rhs.address_v4
   of AddressFamily.IPv6:
-    if lhs.port != rhs.port: return false
+    if lhs.port != rhs.port:
+      return false
     lhs.address_v6 == rhs.address_v6
   of AddressFamily.Unix:
-    equalMem(unsafeAddr lhs.address_un[0],
-             unsafeAddr rhs.address_un[0], sizeof(lhs.address_un))
+    equalMem(
+      unsafeAddr lhs.address_un[0], unsafeAddr rhs.address_un[0], sizeof(lhs.address_un)
+    )
 
 proc getDomain*(address: TransportAddress): Domain =
   ## Returns OS specific Domain from TransportAddress.
@@ -176,25 +196,25 @@ proc `$`*(address: TransportAddress): string =
   ## Returns string representation of ``address``.
   case address.family
   of AddressFamily.IPv4:
-    var a = IpAddress(family: IpAddressFamily.IPv4,
-                      address_v4: address.address_v4)
+    var a = IpAddress(family: IpAddressFamily.IPv4, address_v4: address.address_v4)
     var res = $a
     res.add(":")
     res.add(Base10.toString(uint16(address.port)))
     res
   of AddressFamily.IPv6:
-    var a = IpAddress(family: IpAddressFamily.IPv6,
-                      address_v6: address.address_v6)
+    var a = IpAddress(family: IpAddressFamily.IPv6, address_v6: address.address_v6)
     var res = "[" & $a & "]:"
     res.add(Base10.toString(uint16(address.port)))
     res
   of AddressFamily.Unix:
     const length = sizeof(address.address_un) + 1
     var buffer: array[length, char]
-    if not equalMem(addr buffer[0], unsafeAddr address.address_un[0],
-                    sizeof(address.address_un)):
-      copyMem(addr buffer[0], unsafeAddr address.address_un[0],
-              sizeof(address.address_un))
+    if not equalMem(
+      addr buffer[0], unsafeAddr address.address_un[0], sizeof(address.address_un)
+    ):
+      copyMem(
+        addr buffer[0], unsafeAddr address.address_un[0], sizeof(address.address_un)
+      )
       $cast[cstring](addr buffer)
     else:
       "/"
@@ -222,8 +242,9 @@ proc toHex*(address: TransportAddress): string =
   of AddressFamily.None:
     "None"
 
-proc initTAddress*(address: string): TransportAddress {.
-    raises: [TransportAddressError].} =
+proc initTAddress*(
+    address: string
+): TransportAddress {.raises: [TransportAddressError].} =
   ## Parses string representation of ``address``. ``address`` can be IPv4, IPv6
   ## or Unix domain address.
   ##
@@ -233,30 +254,29 @@ proc initTAddress*(address: string): TransportAddress {.
   if len(address) > 0:
     if address[0] == '/':
       var res = TransportAddress(family: AddressFamily.Unix, port: Port(1))
-      let size = if len(address) < (sizeof(res.address_un) - 1): len(address)
-                   else: (sizeof(res.address_un) - 1)
+      let size =
+        if len(address) < (sizeof(res.address_un) - 1):
+          len(address)
+        else:
+          (sizeof(res.address_un) - 1)
       copyMem(addr res.address_un[0], unsafeAddr address[0], size)
       res
     else:
-      let parts =
-        block:
-          let res = address.rsplit(":", maxsplit = 1)
-          if len(res) != 2:
-            raise newException(TransportAddressError,
-                               "Format is <address>:<port>!")
-          res
-      let port =
-        block:
-          let res = Base10.decode(uint16, parts[1])
-          if res.isErr():
-            raise newException(TransportAddressError,
-                               "Invalid port number!")
-          res.get()
+      let parts = block:
+        let res = address.rsplit(":", maxsplit = 1)
+        if len(res) != 2:
+          raise newException(TransportAddressError, "Format is <address>:<port>!")
+        res
+      let port = block:
+        let res = Base10.decode(uint16, parts[1])
+        if res.isErr():
+          raise newException(TransportAddressError, "Invalid port number!")
+        res.get()
 
       let ipaddr =
         try:
           if parts[0][0] == '[' and parts[0][^1] == ']':
-            parseIpAddress(parts[0][1..^2])
+            parseIpAddress(parts[0][1 ..^ 2])
           else:
             parseIpAddress(parts[0])
         except CatchableError as exc:
@@ -264,16 +284,19 @@ proc initTAddress*(address: string): TransportAddress {.
 
       case ipaddr.family
       of IpAddressFamily.IPv4:
-        TransportAddress(family: AddressFamily.IPv4,
-                         address_v4: ipaddr.address_v4, port: Port(port))
+        TransportAddress(
+          family: AddressFamily.IPv4, address_v4: ipaddr.address_v4, port: Port(port)
+        )
       of IpAddressFamily.IPv6:
-        TransportAddress(family: AddressFamily.IPv6,
-                         address_v6: ipaddr.address_v6, port: Port(port))
+        TransportAddress(
+          family: AddressFamily.IPv6, address_v6: ipaddr.address_v6, port: Port(port)
+        )
   else:
     TransportAddress(family: AddressFamily.Unix)
 
-proc initTAddress*(address: string, port: Port): TransportAddress {.
-    raises: [TransportAddressError].} =
+proc initTAddress*(
+    address: string, port: Port
+): TransportAddress {.raises: [TransportAddressError].} =
   ## Initialize ``TransportAddress`` with IP (IPv4 or IPv6) address ``address``
   ## and port number ``port``.
   let ipaddr =
@@ -284,14 +307,17 @@ proc initTAddress*(address: string, port: Port): TransportAddress {.
 
   case ipaddr.family
   of IpAddressFamily.IPv4:
-    TransportAddress(family: AddressFamily.IPv4,
-                     address_v4: ipaddr.address_v4, port: port)
+    TransportAddress(
+      family: AddressFamily.IPv4, address_v4: ipaddr.address_v4, port: port
+    )
   of IpAddressFamily.IPv6:
-    TransportAddress(family: AddressFamily.IPv6,
-                     address_v6: ipaddr.address_v6, port: port)
+    TransportAddress(
+      family: AddressFamily.IPv6, address_v6: ipaddr.address_v6, port: port
+    )
 
-proc initTAddress*(address: string, port: int): TransportAddress {.
-    raises: [TransportAddressError].} =
+proc initTAddress*(
+    address: string, port: int
+): TransportAddress {.raises: [TransportAddressError].} =
   ## Initialize ``TransportAddress`` with IP (IPv4 or IPv6) address ``address``
   ## and port number ``port``.
   if port < 0 or port > 65535:
@@ -303,16 +329,21 @@ proc initTAddress*(address: IpAddress, port: Port): TransportAddress =
   ## port number ``port``.
   case address.family
   of IpAddressFamily.IPv4:
-    TransportAddress(family: AddressFamily.IPv4,
-                     address_v4: address.address_v4, port: port)
+    TransportAddress(
+      family: AddressFamily.IPv4, address_v4: address.address_v4, port: port
+    )
   of IpAddressFamily.IPv6:
-    TransportAddress(family: AddressFamily.IPv6,
-                     address_v6: address.address_v6, port: port)
+    TransportAddress(
+      family: AddressFamily.IPv6, address_v6: address.address_v6, port: port
+    )
 
-proc getAddrInfo(address: string, port: Port, domain: Domain,
-                 sockType: SockType = SockType.SOCK_STREAM,
-                 protocol: Protocol = Protocol.IPPROTO_TCP): ptr AddrInfo {.
-    raises: [TransportAddressError].} =
+proc getAddrInfo(
+    address: string,
+    port: Port,
+    domain: Domain,
+    sockType: SockType = SockType.SOCK_STREAM,
+    protocol: Protocol = Protocol.IPPROTO_TCP,
+): ptr AddrInfo {.raises: [TransportAddressError].} =
   ## We have this one copy of ``getAddrInfo()`` because of AI_V4MAPPED in
   ## ``net.nim:getAddrInfo()``, which is not cross-platform.
   ##
@@ -323,8 +354,8 @@ proc getAddrInfo(address: string, port: Port, domain: Domain,
   hints.ai_family = toInt(domain)
   hints.ai_socktype = toInt(sockType)
   hints.ai_protocol = toInt(protocol)
-  var gaiRes = getaddrinfo(address, cstring(Base10.toString(uint16(port))),
-                           addr(hints), res)
+  var gaiRes =
+    getaddrinfo(address, cstring(Base10.toString(uint16(port))), addr(hints), res)
   if gaiRes != 0'i32:
     when defined(windows) or defined(nimdoc):
       raise newException(TransportAddressError, osErrorMsg(osLastError()))
@@ -332,23 +363,18 @@ proc getAddrInfo(address: string, port: Port, domain: Domain,
       raise newException(TransportAddressError, $gai_strerror(gaiRes))
   res
 
-proc fromSAddr*(sa: ptr Sockaddr_storage, sl: SockLen,
-                address: var TransportAddress) =
+proc fromSAddr*(sa: ptr Sockaddr_storage, sl: SockLen, address: var TransportAddress) =
   ## Set transport address ``address`` with value from OS specific socket
   ## address storage.
-  if int(sa.ss_family) == toInt(Domain.AF_INET) and
-     int(sl) == sizeof(Sockaddr_in):
+  if int(sa.ss_family) == toInt(Domain.AF_INET) and int(sl) == sizeof(Sockaddr_in):
     address = TransportAddress(family: AddressFamily.IPv4)
     let s = cast[ptr Sockaddr_in](sa)
-    copyMem(addr address.address_v4[0], addr s.sin_addr,
-            sizeof(address.address_v4))
+    copyMem(addr address.address_v4[0], addr s.sin_addr, sizeof(address.address_v4))
     address.port = Port(nativesockets.ntohs(s.sin_port))
-  elif int(sa.ss_family) == toInt(Domain.AF_INET6) and
-       int(sl) == sizeof(Sockaddr_in6):
+  elif int(sa.ss_family) == toInt(Domain.AF_INET6) and int(sl) == sizeof(Sockaddr_in6):
     address = TransportAddress(family: AddressFamily.IPv6)
     let s = cast[ptr Sockaddr_in6](sa)
-    copyMem(addr address.address_v6[0], addr s.sin6_addr,
-            sizeof(address.address_v6))
+    copyMem(addr address.address_v6[0], addr s.sin6_addr, sizeof(address.address_v6))
     address.port = Port(nativesockets.ntohs(s.sin6_port))
   elif int(sa.ss_family) == toInt(Domain.AF_UNIX):
     when not defined(windows) and not defined(nimdoc):
@@ -363,8 +389,7 @@ proc fromSAddr*(sa: ptr Sockaddr_storage, sl: SockLen,
     else:
       discard
 
-proc toSAddr*(address: TransportAddress, sa: var Sockaddr_storage,
-             sl: var SockLen) =
+proc toSAddr*(address: TransportAddress, sa: var Sockaddr_storage, sl: var SockLen) =
   ## Set socket OS specific socket address storage with address from transport
   ## address ``address``.
   case address.family
@@ -373,15 +398,13 @@ proc toSAddr*(address: TransportAddress, sa: var Sockaddr_storage,
     let s = cast[ptr Sockaddr_in](addr sa)
     s.sin_family = type(s.sin_family)(toInt(Domain.AF_INET))
     s.sin_port = nativesockets.htons(uint16(address.port))
-    copyMem(addr s.sin_addr, unsafeAddr address.address_v4[0],
-            sizeof(s.sin_addr))
+    copyMem(addr s.sin_addr, unsafeAddr address.address_v4[0], sizeof(s.sin_addr))
   of AddressFamily.IPv6:
     sl = SockLen(sizeof(Sockaddr_in6))
     let s = cast[ptr Sockaddr_in6](addr sa)
     s.sin6_family = type(s.sin6_family)(toInt(Domain.AF_INET6))
     s.sin6_port = nativesockets.htons(uint16(address.port))
-    copyMem(addr s.sin6_addr, unsafeAddr address.address_v6[0],
-            sizeof(s.sin6_addr))
+    copyMem(addr s.sin6_addr, unsafeAddr address.address_v6[0], sizeof(s.sin6_addr))
   of AddressFamily.Unix:
     when not defined(windows) and not defined(nimdoc):
       if address.port == Port(0):
@@ -391,13 +414,11 @@ proc toSAddr*(address: TransportAddress, sa: var Sockaddr_storage,
         var name = cast[cstring](unsafeAddr address.address_un[0])
         sl = SockLen(sizeof(sa.ss_family) + len(name) + 1)
         s.sun_family = type(s.sun_family)(toInt(Domain.AF_UNIX))
-        copyMem(addr s.sun_path, unsafeAddr address.address_un[0],
-                len(name) + 1)
+        copyMem(addr s.sun_path, unsafeAddr address.address_un[0], len(name) + 1)
   else:
     discard
 
-proc address*(ta: TransportAddress): IpAddress {.
-     raises: [ValueError].} =
+proc address*(ta: TransportAddress): IpAddress {.raises: [ValueError].} =
   ## Converts ``TransportAddress`` to ``net.IpAddress`` object.
   ##
   ## Note its impossible to convert ``TransportAddress`` of ``Unix`` family,
@@ -419,22 +440,20 @@ proc host*(ta: TransportAddress): string {.raises: [].} =
   of AddressFamily.IPv4:
     $IpAddress(family: IpAddressFamily.IPv4, address_v4: ta.address_v4)
   of AddressFamily.IPv6:
-    let a = $IpAddress(family: IpAddressFamily.IPv6,
-                       address_v6: ta.address_v6)
+    let a = $IpAddress(family: IpAddressFamily.IPv6, address_v6: ta.address_v6)
     "[" & a & "]"
   else:
     ""
 
-proc resolveTAddress*(address: string, port: Port,
-                      domain: Domain): seq[TransportAddress] {.
-     raises: [TransportAddressError].} =
+proc resolveTAddress*(
+    address: string, port: Port, domain: Domain
+): seq[TransportAddress] {.raises: [TransportAddressError].} =
   var res: seq[TransportAddress]
   let aiList = getAddrInfo(address, port, domain)
   var it = aiList
-  while not(isNil(it)):
+  while not (isNil(it)):
     var ta: TransportAddress
-    fromSAddr(cast[ptr Sockaddr_storage](it.ai_addr),
-              SockLen(it.ai_addrlen), ta)
+    fromSAddr(cast[ptr Sockaddr_storage](it.ai_addr), SockLen(it.ai_addrlen), ta)
     # For some reason getAddrInfo() sometimes returns duplicate addresses,
     # for example getAddrInfo(`localhost`) returns `127.0.0.1` twice.
     if ta notin res:
@@ -443,30 +462,30 @@ proc resolveTAddress*(address: string, port: Port,
   freeAddrInfo(aiList)
   res
 
-proc resolveTAddress*(address: string, domain: Domain): seq[TransportAddress] {.
-     raises: [TransportAddressError].} =
-  let parts =
-    block:
-      let res = address.rsplit(":", maxsplit = 1)
-      if len(res) != 2:
-        raise newException(TransportAddressError, "Format is <address>:<port>!")
-      res
-  let port =
-    block:
-      let res = Base10.decode(uint16, parts[1])
-      if res.isErr():
-        raise newException(TransportAddressError, "Invalid port number!")
-      res.get()
+proc resolveTAddress*(
+    address: string, domain: Domain
+): seq[TransportAddress] {.raises: [TransportAddressError].} =
+  let parts = block:
+    let res = address.rsplit(":", maxsplit = 1)
+    if len(res) != 2:
+      raise newException(TransportAddressError, "Format is <address>:<port>!")
+    res
+  let port = block:
+    let res = Base10.decode(uint16, parts[1])
+    if res.isErr():
+      raise newException(TransportAddressError, "Invalid port number!")
+    res.get()
   let hostname =
     if parts[0][0] == '[' and parts[0][^1] == ']':
       # IPv6 numeric addresses must be enclosed with `[]`.
-      parts[0][1..^2]
+      parts[0][1 ..^ 2]
     else:
       parts[0]
   resolveTAddress(hostname, Port(port), domain)
 
-proc resolveTAddress*(address: string): seq[TransportAddress] {.
-     raises: [TransportAddressError].} =
+proc resolveTAddress*(
+    address: string
+): seq[TransportAddress] {.raises: [TransportAddressError].} =
   ## Resolve string representation of ``address``.
   ##
   ## Supported formats are:
@@ -478,8 +497,9 @@ proc resolveTAddress*(address: string): seq[TransportAddress] {.
   ## will be performed.
   resolveTAddress(address, Domain.AF_UNSPEC)
 
-proc resolveTAddress*(address: string, port: Port): seq[TransportAddress] {.
-     raises: [TransportAddressError].} =
+proc resolveTAddress*(
+    address: string, port: Port
+): seq[TransportAddress] {.raises: [TransportAddressError].} =
   ## Resolve string representation of ``address``.
   ##
   ## Supported formats are:
@@ -491,9 +511,9 @@ proc resolveTAddress*(address: string, port: Port): seq[TransportAddress] {.
   ## will be performed.
   resolveTAddress(address, port, Domain.AF_UNSPEC)
 
-proc resolveTAddress*(address: string,
-                      family: AddressFamily): seq[TransportAddress] {.
-    raises: [TransportAddressError].} =
+proc resolveTAddress*(
+    address: string, family: AddressFamily
+): seq[TransportAddress] {.raises: [TransportAddressError].} =
   ## Resolve string representation of ``address``.
   ##
   ## Supported formats are:
@@ -511,9 +531,9 @@ proc resolveTAddress*(address: string,
   else:
     raiseAssert("Unable to resolve non-internet address")
 
-proc resolveTAddress*(address: string, port: Port,
-                      family: AddressFamily): seq[TransportAddress] {.
-    raises: [TransportAddressError].} =
+proc resolveTAddress*(
+    address: string, port: Port, family: AddressFamily
+): seq[TransportAddress] {.raises: [TransportAddressError].} =
   ## Resolve string representation of ``address``.
   ##
   ## ``address`` could be dot IPv4/IPv6 address or hostname.
@@ -528,18 +548,18 @@ proc resolveTAddress*(address: string, port: Port,
   else:
     raiseAssert("Unable to resolve non-internet address")
 
-proc resolveTAddress*(address: string,
-                      family: IpAddressFamily): seq[TransportAddress] {.
-     deprecated, raises: [TransportAddressError].} =
+proc resolveTAddress*(
+    address: string, family: IpAddressFamily
+): seq[TransportAddress] {.deprecated, raises: [TransportAddressError].} =
   case family
   of IpAddressFamily.IPv4:
     resolveTAddress(address, AddressFamily.IPv4)
   of IpAddressFamily.IPv6:
     resolveTAddress(address, AddressFamily.IPv6)
 
-proc resolveTAddress*(address: string, port: Port,
-                      family: IpAddressFamily): seq[TransportAddress] {.
-     deprecated, raises: [TransportAddressError].} =
+proc resolveTAddress*(
+    address: string, port: Port, family: IpAddressFamily
+): seq[TransportAddress] {.deprecated, raises: [TransportAddressError].} =
   case family
   of IpAddressFamily.IPv4:
     resolveTAddress(address, port, AddressFamily.IPv4)
@@ -550,14 +570,12 @@ proc windowsAnyAddressFix*(a: TransportAddress): TransportAddress =
   ## BSD Sockets on \*nix systems are able to perform connections to
   ## `0.0.0.0` or `::0` which are equal to `127.0.0.1` or `::1`.
   when defined(windows):
-    if (a.family == AddressFamily.IPv4 and
-        a.address_v4 == AnyAddress.address_v4):
+    if (a.family == AddressFamily.IPv4 and a.address_v4 == AnyAddress.address_v4):
       try:
         initTAddress("127.0.0.1", a.port)
       except TransportAddressError as exc:
         raiseAssert exc.msg
-    elif (a.family == AddressFamily.IPv6 and
-          a.address_v6 == AnyAddress6.address_v6):
+    elif (a.family == AddressFamily.IPv6 and a.address_v6 == AnyAddress6.address_v6):
       try:
         initTAddress("::1", a.port)
       except TransportAddressError as exc:
@@ -573,14 +591,14 @@ template checkClosed*(t: untyped) =
 
 template checkClosed*(t: untyped, future: untyped) =
   if (ReadClosed in (t).state) or (WriteClosed in (t).state):
-    future.fail(newException(TransportUseClosedError,
-                             "Transport is already closed!"))
+    future.fail(newException(TransportUseClosedError, "Transport is already closed!"))
     return future
 
 template checkWriteEof*(t: untyped, future: untyped) =
   if (WriteEof in (t).state):
-    future.fail(newException(TransportUseEofError,
-                             "Transport connection is already dropped!"))
+    future.fail(
+      newException(TransportUseEofError, "Transport connection is already dropped!")
+    )
     return future
 
 template getError*(t: untyped): ref TransportError =
@@ -595,20 +613,16 @@ template getTransportUseClosedError*(): ref TransportUseClosedError =
   newException(TransportUseClosedError, "Transport is already closed!")
 
 template getTransportOsError*(err: OSErrorCode): ref TransportOsError =
-  (ref TransportOsError)(
-    code: err, msg: "(" & $int(err) & ") " & osErrorMsg(err))
+  (ref TransportOsError)(code: err, msg: "(" & $int(err) & ") " & osErrorMsg(err))
 
 template getTransportOsError*(err: cint): ref TransportOsError =
   getTransportOsError(OSErrorCode(err))
 
-proc raiseTransportOsError*(err: OSErrorCode) {.
-    raises: [TransportOsError].} =
+proc raiseTransportOsError*(err: OSErrorCode) {.raises: [TransportOsError].} =
   ## Raises transport specific OS error.
   raise getTransportOsError(err)
 
-template getTransportTooManyError*(
-           code = OSErrorCode(0)
-         ): ref TransportTooManyError =
+template getTransportTooManyError*(code = OSErrorCode(0)): ref TransportTooManyError =
   let msg =
     when defined(posix):
       case code
@@ -648,9 +662,7 @@ template getConnectionAbortedError*(m: string = ""): ref TransportAbortedError =
       "[ECONNABORTED] " & m
   newException(TransportAbortedError, msg)
 
-template getConnectionAbortedError*(
-           code: OSErrorCode
-         ): ref TransportAbortedError =
+template getConnectionAbortedError*(code: OSErrorCode): ref TransportAbortedError =
   let msg =
     when defined(posix):
       case code
@@ -701,9 +713,9 @@ template getTransportError*(ecode: OSErrorCode): untyped =
     else:
       getTransportOsError(ecode)
 
-proc raiseTransportError*(ecode: OSErrorCode) {.
-     raises: [TransportAbortedError, TransportTooManyError, TransportOsError],
-     noreturn.} =
+proc raiseTransportError*(
+    ecode: OSErrorCode
+) {.raises: [TransportAbortedError, TransportTooManyError, TransportOsError], noreturn.} =
   ## Raises transport specific OS error.
   when defined(posix):
     case ecode
@@ -740,9 +752,9 @@ proc getDomain*(socket: AsyncFD): Result[AddressFamily, OSErrorCode] =
   ## For all other types of sockets this procedure returns
   ## `EAFNOSUPPORT/WSAEAFNOSUPPORT` error.
   when defined(windows):
-    let protocolInfo = ? getSockOpt2(socket, cint(osdefs.SOL_SOCKET),
-                                     cint(osdefs.SO_PROTOCOL_INFOW),
-                                     WSAPROTOCOL_INFO)
+    let protocolInfo = ?getSockOpt2(
+      socket, cint(osdefs.SOL_SOCKET), cint(osdefs.SO_PROTOCOL_INFOW), WSAPROTOCOL_INFO
+    )
     if protocolInfo.iAddressFamily == toInt(Domain.AF_INET):
       ok(AddressFamily.IPv4)
     elif protocolInfo.iAddressFamily == toInt(Domain.AF_INET6):
@@ -753,8 +765,7 @@ proc getDomain*(socket: AsyncFD): Result[AddressFamily, OSErrorCode] =
     var
       saddr = Sockaddr_storage()
       slen = SockLen(sizeof(saddr))
-    if getsockname(SocketHandle(socket), cast[ptr SockAddr](addr saddr),
-                   addr slen) != 0:
+    if getsockname(SocketHandle(socket), cast[ptr SockAddr](addr saddr), addr slen) != 0:
       return err(osLastError())
     if int(saddr.ss_family) == toInt(Domain.AF_INET):
       ok(AddressFamily.IPv4)
@@ -765,8 +776,9 @@ proc getDomain*(socket: AsyncFD): Result[AddressFamily, OSErrorCode] =
     else:
       err(EAFNOSUPPORT)
 
-proc setDualstack*(socket: AsyncFD, family: AddressFamily,
-                   flag: DualStackType): Result[void, OSErrorCode] =
+proc setDualstack*(
+    socket: AsyncFD, family: AddressFamily, flag: DualStackType
+): Result[void, OSErrorCode] =
   if family == AddressFamily.IPv6:
     case flag
     of DualStackType.Auto:
@@ -774,38 +786,32 @@ proc setDualstack*(socket: AsyncFD, family: AddressFamily,
       discard setDualstack(socket, true)
       ok()
     of DualStackType.Enabled:
-      ? setDualstack(socket, true)
+      ?setDualstack(socket, true)
       ok()
     of DualStackType.Disabled:
-      ? setDualstack(socket, false)
+      ?setDualstack(socket, false)
       ok()
     of DualStackType.Default:
       ok()
   else:
     ok()
 
-proc setDualstack*(socket: AsyncFD,
-                   flag: DualStackType): Result[void, OSErrorCode] =
+proc setDualstack*(socket: AsyncFD, flag: DualStackType): Result[void, OSErrorCode] =
   let family =
     case flag
     of DualStackType.Auto:
       getDomain(socket).get(AddressFamily.IPv6)
     else:
-      ? getDomain(socket)
+      ?getDomain(socket)
   setDualstack(socket, family, flag)
 
 proc getAutoAddress*(port: Port): TransportAddress =
-  var res =
-    if isAvailable(AddressFamily.IPv6):
-      AnyAddress6
-    else:
-      AnyAddress
+  var res = if isAvailable(AddressFamily.IPv6): AnyAddress6 else: AnyAddress
   res.port = port
   res
 
 proc getAutoAddresses*(
-    localPort: Port,
-    remotePort: Port
+    localPort: Port, remotePort: Port
 ): tuple[local: TransportAddress, remote: TransportAddress] =
   var (local, remote) =
     if isAvailable(AddressFamily.IPv6):

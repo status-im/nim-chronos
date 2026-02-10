@@ -20,24 +20,22 @@ suite "TransportAddress test suite":
 
   test "initTAddress(string, Port)":
     check $initTAddress("0.0.0.0", Port(0)) == "0.0.0.0:0"
-    check $initTAddress("255.255.255.255", Port(65535)) ==
-      "255.255.255.255:65535"
+    check $initTAddress("255.255.255.255", Port(65535)) == "255.255.255.255:65535"
     check $initTAddress("::", Port(0)) == "[::]:0"
-    check $initTAddress("FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF",
-                        Port(65535)) ==
+    check $initTAddress("FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF", Port(65535)) ==
       "[ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff]:65535"
 
   test "initTAddress(string, int)":
     check $initTAddress("0.0.0.0", 1) == "0.0.0.0:1"
-    check $initTAddress("255.255.255.255", 65535) ==
-      "255.255.255.255:65535"
+    check $initTAddress("255.255.255.255", 65535) == "255.255.255.255:65535"
     check $initTAddress("::", 0) == "[::]:0"
     check $initTAddress("FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF", 65535) ==
       "[ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff]:65535"
 
   test "resolveTAddress(string, IPv4)":
-    var numeric = ["0.0.0.0:1", "255.0.0.255:54321", "128.128.128.128:12345",
-                   "255.255.255.255:65535"]
+    var numeric = [
+      "0.0.0.0:1", "255.0.0.255:54321", "128.128.128.128:12345", "255.255.255.255:65535"
+    ]
     var hostnames = ["www.google.com:443", "www.github.com:443"]
 
     for item in numeric:
@@ -70,8 +68,7 @@ suite "TransportAddress test suite":
   #     check len(taseq) >= 1
 
   test "resolveTAddress(string, Port, IPv4)":
-    var numeric = ["0.0.0.0", "255.0.0.255", "128.128.128.128",
-                   "255.255.255.255"]
+    var numeric = ["0.0.0.0", "255.0.0.255", "128.128.128.128", "255.255.255.255"]
     var hostnames = ["www.google.com", "www.github.com", "localhost"]
 
     for item in numeric:
@@ -103,11 +100,7 @@ suite "TransportAddress test suite":
   #     check len(taseq) >= 1
 
   test "Faulty initTAddress(string)":
-    var tests = [
-      "z:1",
-      "256.256.256.256:65534",
-      "127.0.0.1:65536"
-    ]
+    var tests = ["z:1", "256.256.256.256:65534", "127.0.0.1:65536"]
     var errcounter = 0
     for item in tests:
       try:
@@ -117,12 +110,8 @@ suite "TransportAddress test suite":
     check errcounter == len(tests)
 
   test "Faulty initTAddress(string, Port)":
-    var tests = [
-      ":::",
-      "999.999.999.999",
-      "gggg:aaaa:bbbb:gggg:aaaa:bbbb:gggg:aaaa",
-      "hostname"
-    ]
+    var tests =
+      [":::", "999.999.999.999", "gggg:aaaa:bbbb:gggg:aaaa:bbbb:gggg:aaaa", "hostname"]
     var errcounter = 0
     for item in tests:
       try:
@@ -141,12 +130,10 @@ suite "TransportAddress test suite":
 
   test "Faulty resolveTAddress(string, IPv4) for IPv6 address":
     var numeric = [
-      "[::]:1",
-      "[ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff]:65535",
+      "[::]:1", "[ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff]:65535",
       "[aaaa:bbbb:cccc:dddd:eeee:ffff::1111]:12345",
-      "[aaaa:bbbb:cccc:dddd:eeee:ffff::]:12345",
-      "[a:b:c:d:e:f::]:12345",
-      "[2222:3333:4444:5555:6666:7777:8888:9999]:56789"
+      "[aaaa:bbbb:cccc:dddd:eeee:ffff::]:12345", "[a:b:c:d:e:f::]:12345",
+      "[2222:3333:4444:5555:6666:7777:8888:9999]:56789",
     ]
     var errcounter = 0
     for item in numeric:
@@ -158,12 +145,9 @@ suite "TransportAddress test suite":
 
   test "Faulty resolveTAddress(string, Port, IPv4) for IPv6 address":
     var numeric = [
-      "::",
-      "ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff",
-      "aaaa:bbbb:cccc:dddd:eeee:ffff::1111",
-      "aaaa:bbbb:cccc:dddd:eeee:ffff::",
-      "a:b:c:d:e:f::",
-      "2222:3333:4444:5555:6666:7777:8888:9999"
+      "::", "ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff",
+      "aaaa:bbbb:cccc:dddd:eeee:ffff::1111", "aaaa:bbbb:cccc:dddd:eeee:ffff::",
+      "a:b:c:d:e:f::", "2222:3333:4444:5555:6666:7777:8888:9999",
     ]
     var errcounter = 0
     for item in numeric:

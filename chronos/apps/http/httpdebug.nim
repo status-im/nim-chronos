@@ -21,10 +21,14 @@ export HttpClientScheme, SocketHandle, TransportAddress, ServerFlags, HttpState
 
 type
   ConnectionType* {.pure.} = enum
-    NonSecure, Secure
+    NonSecure
+    Secure
 
   ConnectionState* {.pure.} = enum
-    Accepted, Alive, Closing, Closed
+    Accepted
+    Alive
+    Closing
+    Closed
 
   ServerConnectionInfo* = object
     handle*: SocketHandle
@@ -51,8 +55,7 @@ type
     maxHeadersSize*: int
     maxRequestBodySize*: int
 
-proc getConnectionType*(
-       server: HttpServerRef | SecureHttpServerRef): ConnectionType =
+proc getConnectionType*(server: HttpServerRef | SecureHttpServerRef): ConnectionType =
   when server is SecureHttpServerRef:
     ConnectionType.Secure
   else:
@@ -61,7 +64,7 @@ proc getConnectionType*(
     else:
       ConnectionType.NonSecure
 
-proc getServerInfo*(server: HttpServerRef|SecureHttpServerRef): ServerInfo =
+proc getServerInfo*(server: HttpServerRef | SecureHttpServerRef): ServerInfo =
   ServerInfo(
     connectionType: server.getConnectionType(),
     address: server.address,
@@ -75,11 +78,11 @@ proc getServerInfo*(server: HttpServerRef|SecureHttpServerRef): ServerInfo =
     headersTimeout: server.headersTimeout,
     bufferSize: server.bufferSize,
     maxHeadersSize: server.maxHeadersSize,
-    maxRequestBodySize: server.maxRequestBodySize
+    maxRequestBodySize: server.maxRequestBodySize,
   )
 
 proc getConnectionState*(holder: HttpConnectionHolderRef): ConnectionState =
-  if not(isNil(holder.connection)):
+  if not (isNil(holder.connection)):
     case holder.connection.state
     of HttpState.Alive: ConnectionState.Alive
     of HttpState.Closing: ConnectionState.Closing
@@ -88,13 +91,14 @@ proc getConnectionState*(holder: HttpConnectionHolderRef): ConnectionState =
     ConnectionState.Accepted
 
 proc getQueryString*(holder: HttpConnectionHolderRef): Opt[string] =
-  if not(isNil(holder.connection)):
+  if not (isNil(holder.connection)):
     holder.connection.currentRawQuery
   else:
     Opt.none(string)
 
-proc init*(t: typedesc[ServerConnectionInfo],
-           holder: HttpConnectionHolderRef): ServerConnectionInfo =
+proc init*(
+    t: typedesc[ServerConnectionInfo], holder: HttpConnectionHolderRef
+): ServerConnectionInfo =
   let
     localAddress =
       try:
@@ -117,10 +121,10 @@ proc init*(t: typedesc[ServerConnectionInfo],
     acceptMoment: holder.acceptMoment,
     query: queryString,
     createMoment:
-      if not(isNil(holder.connection)):
+      if not (isNil(holder.connection)):
         Opt.some(holder.connection.createMoment)
       else:
-        Opt.none(Moment)
+        Opt.none(Moment),
   )
 
 proc getConnections*(server: HttpServerRef): seq[ServerConnectionInfo] =

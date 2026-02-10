@@ -17,226 +17,222 @@ import ".."/osdefs
 import "."/ipnet
 export ipnet
 
-const
-  MaxAdapterAddressLength* =
-    when defined(windows):
-      MAX_ADAPTER_ADDRESS_LENGTH
-    else:
-      8
+const MaxAdapterAddressLength* =
+  when defined(windows): MAX_ADAPTER_ADDRESS_LENGTH else: 8
 
 type
   InterfaceType* = enum
-    IfError = 0, # This is workaround element for ProveInit warnings.
-    IfOther = 1,
-    IfRegular1822 = 2,
-    IfHdh1822 = 3,
-    IfDdnX25 = 4,
-    IfRfc877X25 = 5,
-    IfEthernetCsmacd = 6,
-    IfIso88023Csmacd = 7,
-    IfIso88024TokenBus = 8,
-    IfIso88025TokenRing = 9,
-    IfIso88026MAN = 10,
-    IfStarlan = 11,
-    IfProteon10Mbit = 12,
-    IfProteon80Mbit = 13,
-    IfHyperChannel = 14,
-    IfFddi = 15,
-    IfLapB = 16,
-    IfSdlc = 17,
-    IfDs1 = 18,
-    IfE1 = 19,
-    IfBasicIsdn = 20,
-    IfPrimaryIsdn = 21,
-    IfPropPoint2PointSerial = 22,
-    IfPpp = 23,
-    IfSoftwareLoopback = 24,
-    IfEon = 25,
-    IfEthernet3Mbit = 26,
-    IfNsip = 27,
-    IfSlip = 28,
-    IfUltra = 29,
-    IfDs3 = 30,
-    IfSip = 31,
-    IfFrameRelay = 32,
-    IfRs232 = 33,
-    IfPara = 34,
-    IfArcNet = 35,
-    IfArcNetPlus = 36,
-    IfAtm = 37,
-    IfMioX25 = 38,
-    IfSonet = 39,
-    IfX25Ple = 40,
-    IfIso88022Llc = 41,
-    IfLocalTalk = 42,
-    IfSmdsDxi = 43,
-    IfFrameRelayService = 44,
-    IfV35 = 45,
-    IfHssi = 46,
-    IfHippi = 47,
-    IfModem = 48,
-    IfAal5 = 49,
-    IfSonetPath = 50,
-    IfSonetVt = 51,
-    IfSmdsIcip = 52,
-    IfPropVirtual = 53,
-    IfPropMultiplexor = 54,
-    IfIeee80212 = 55,
-    IfFibreChannel = 56,
-    IfHippiInterface = 57,
-    IfFrameRelayInterconnect = 58,
-    IfAflane8023 = 59,
-    IfAflane8025 = 60,
-    IfCctemul = 61,
-    IfFastEther = 62,
-    IfIsdn = 63,
-    IfV11 = 64,
-    IfV36 = 65,
-    IfG70364K = 66,
-    IfG7032MB = 67,
-    IfQllc = 68,
-    IfFastEtherFx = 69,
-    IfChannel = 70,
-    IfIeee80211 = 71,
-    IfIbm370Parchan = 72,
-    IfEscon = 73,
-    IfDlsw = 74,
-    IfIsdnS = 75,
-    IfIsdnU = 76,
-    IfLapD = 77,
-    IfIpSwitch = 78,
-    IfRsrb = 79,
-    IfAtmLogical = 80,
-    IfDs0 = 81,
-    IfDs0Bundle = 82,
-    IfBsc = 83,
-    IfAsync = 84,
-    IfCnr = 85,
-    IfIso88025rDtr = 86,
-    IfEplrs = 87,
-    IfArap = 88,
-    IfPropCnls = 89,
-    IfHostPad = 90,
-    IfTermPad = 91,
-    IfFrameRelayMpi = 92,
-    IfX213 = 93,
-    IfAdsl = 94,
-    IfRadsl = 95,
-    IfSdsl = 96,
-    IfVdsl = 97,
-    IfIso88025Crfprint = 98,
-    IfMyrInet = 99,
-    IfVoiceEm = 100,
-    IfVoiceFxo = 101,
-    IfVoiceFxs = 102,
-    IfVoiceEncap = 103,
-    IfVoiceOverip = 104,
-    IfAtmDxi = 105,
-    IfAtmFuni = 106,
-    IfAtmIma = 107,
-    IfPppMultilinkBundle = 108,
-    IfIpoverCdlc = 109,
-    IfIpoverClaw = 110,
-    IfStackToStack = 111,
-    IfVirtualIpAddress = 112,
-    IfMpc = 113,
-    IfIpoverAtm = 114,
-    IfIso88025Fiber = 115,
-    IfTdlc = 116,
-    IfGigabitEthernet = 117,
-    IfHdlc = 118,
-    IfLapF = 119,
-    IfV37 = 120,
-    IfX25Mlp = 121,
-    IfX25HuntGroup = 122,
-    IfTransPhdlc = 123,
-    IfInterleave = 124,
-    IfFast = 125,
-    IfIp = 126,
-    IfDocScableMaclayer = 127,
-    IfDocScableDownstream = 128,
-    IfDocScableUpstream = 129,
-    IfA12MppSwitch = 130,
-    IfTunnel = 131,
-    IfCoffee = 132,
-    IfCes = 133,
-    IfAtmSubInterface = 134,
-    IfL2Vlan = 135,
-    IfL3IpVlan = 136,
-    IfL3IpxVlan = 137,
-    IfDigitalPowerline = 138,
-    IfMediaMailOverIp = 139,
-    IfDtm = 140,
-    IfDcn = 141,
-    IfIpForward = 142,
-    IfMsdsl = 143,
-    IfIeee1394 = 144,
-    IfIfGsn = 145,
-    IfDvbrccMaclayer = 146,
-    IfDvbrccDownstream = 147,
-    IfDvbrccUpstream = 148,
-    IfAtmVirtual = 149,
-    IfMplsTunnel = 150,
-    IfSrp = 151,
-    IfVoiceOverAtm = 152,
-    IfVoiceOverFrameRelay = 153,
-    IfIdsl = 154,
-    IfCompositeLink = 155,
-    IfSs7SigLink = 156,
-    IfPropWirelessP2p = 157,
-    IfFrForward = 158,
-    IfRfc1483 = 159,
-    IfUsb = 160,
-    IfIeee8023AdLag = 161,
-    IfBgpPolicyAccounting = 162,
-    IfFrf16MfrBundle = 163,
-    IfH323Gatekeeper = 164,
-    IfH323Proxy = 165,
-    IfMpls = 166,
-    IfMfSigLink = 167,
-    IfHdsl2 = 168,
-    IfShdsl = 169,
-    IfDs1Fdl = 170,
-    IfPos = 171,
-    IfDvbAsiIn = 172,
-    IfDvbAsiOut = 173,
-    IfPlc = 174,
-    IfNfas = 175,
-    IfTr008 = 176,
-    IfGr303Rdt = 177,
-    IfGr303Idt = 178,
-    IfIsup = 179,
-    IfPropDocsWirelessMaclayer = 180,
-    IfPropDocsWirelessDownstream = 181,
-    IfPropDocsWirelessUpstream = 182,
-    IfHiperLan2 = 183,
-    IfPropBwaP2mp = 184,
-    IfSonetOverheadChannel = 185,
-    IfDigitalWrapperOverheadChannel = 186,
-    IfAal2 = 187,
-    IfRadioMac = 188,
-    IfAtmRadio = 189,
-    IfImt = 190,
-    IfMvl = 191,
-    IfReachDsl = 192,
-    IfFrDlciEndpt = 193,
-    IfAtmVciEndpt = 194,
-    IfOpticalChannel = 195,
-    IfOpticalTransport = 196,
-    IfIeee80216Wman = 237,
-    IfWwanPp = 243,
-    IfWwanPp2 = 244,
-    IfIeee802154 = 259,
+    IfError = 0 # This is workaround element for ProveInit warnings.
+    IfOther = 1
+    IfRegular1822 = 2
+    IfHdh1822 = 3
+    IfDdnX25 = 4
+    IfRfc877X25 = 5
+    IfEthernetCsmacd = 6
+    IfIso88023Csmacd = 7
+    IfIso88024TokenBus = 8
+    IfIso88025TokenRing = 9
+    IfIso88026MAN = 10
+    IfStarlan = 11
+    IfProteon10Mbit = 12
+    IfProteon80Mbit = 13
+    IfHyperChannel = 14
+    IfFddi = 15
+    IfLapB = 16
+    IfSdlc = 17
+    IfDs1 = 18
+    IfE1 = 19
+    IfBasicIsdn = 20
+    IfPrimaryIsdn = 21
+    IfPropPoint2PointSerial = 22
+    IfPpp = 23
+    IfSoftwareLoopback = 24
+    IfEon = 25
+    IfEthernet3Mbit = 26
+    IfNsip = 27
+    IfSlip = 28
+    IfUltra = 29
+    IfDs3 = 30
+    IfSip = 31
+    IfFrameRelay = 32
+    IfRs232 = 33
+    IfPara = 34
+    IfArcNet = 35
+    IfArcNetPlus = 36
+    IfAtm = 37
+    IfMioX25 = 38
+    IfSonet = 39
+    IfX25Ple = 40
+    IfIso88022Llc = 41
+    IfLocalTalk = 42
+    IfSmdsDxi = 43
+    IfFrameRelayService = 44
+    IfV35 = 45
+    IfHssi = 46
+    IfHippi = 47
+    IfModem = 48
+    IfAal5 = 49
+    IfSonetPath = 50
+    IfSonetVt = 51
+    IfSmdsIcip = 52
+    IfPropVirtual = 53
+    IfPropMultiplexor = 54
+    IfIeee80212 = 55
+    IfFibreChannel = 56
+    IfHippiInterface = 57
+    IfFrameRelayInterconnect = 58
+    IfAflane8023 = 59
+    IfAflane8025 = 60
+    IfCctemul = 61
+    IfFastEther = 62
+    IfIsdn = 63
+    IfV11 = 64
+    IfV36 = 65
+    IfG70364K = 66
+    IfG7032MB = 67
+    IfQllc = 68
+    IfFastEtherFx = 69
+    IfChannel = 70
+    IfIeee80211 = 71
+    IfIbm370Parchan = 72
+    IfEscon = 73
+    IfDlsw = 74
+    IfIsdnS = 75
+    IfIsdnU = 76
+    IfLapD = 77
+    IfIpSwitch = 78
+    IfRsrb = 79
+    IfAtmLogical = 80
+    IfDs0 = 81
+    IfDs0Bundle = 82
+    IfBsc = 83
+    IfAsync = 84
+    IfCnr = 85
+    IfIso88025rDtr = 86
+    IfEplrs = 87
+    IfArap = 88
+    IfPropCnls = 89
+    IfHostPad = 90
+    IfTermPad = 91
+    IfFrameRelayMpi = 92
+    IfX213 = 93
+    IfAdsl = 94
+    IfRadsl = 95
+    IfSdsl = 96
+    IfVdsl = 97
+    IfIso88025Crfprint = 98
+    IfMyrInet = 99
+    IfVoiceEm = 100
+    IfVoiceFxo = 101
+    IfVoiceFxs = 102
+    IfVoiceEncap = 103
+    IfVoiceOverip = 104
+    IfAtmDxi = 105
+    IfAtmFuni = 106
+    IfAtmIma = 107
+    IfPppMultilinkBundle = 108
+    IfIpoverCdlc = 109
+    IfIpoverClaw = 110
+    IfStackToStack = 111
+    IfVirtualIpAddress = 112
+    IfMpc = 113
+    IfIpoverAtm = 114
+    IfIso88025Fiber = 115
+    IfTdlc = 116
+    IfGigabitEthernet = 117
+    IfHdlc = 118
+    IfLapF = 119
+    IfV37 = 120
+    IfX25Mlp = 121
+    IfX25HuntGroup = 122
+    IfTransPhdlc = 123
+    IfInterleave = 124
+    IfFast = 125
+    IfIp = 126
+    IfDocScableMaclayer = 127
+    IfDocScableDownstream = 128
+    IfDocScableUpstream = 129
+    IfA12MppSwitch = 130
+    IfTunnel = 131
+    IfCoffee = 132
+    IfCes = 133
+    IfAtmSubInterface = 134
+    IfL2Vlan = 135
+    IfL3IpVlan = 136
+    IfL3IpxVlan = 137
+    IfDigitalPowerline = 138
+    IfMediaMailOverIp = 139
+    IfDtm = 140
+    IfDcn = 141
+    IfIpForward = 142
+    IfMsdsl = 143
+    IfIeee1394 = 144
+    IfIfGsn = 145
+    IfDvbrccMaclayer = 146
+    IfDvbrccDownstream = 147
+    IfDvbrccUpstream = 148
+    IfAtmVirtual = 149
+    IfMplsTunnel = 150
+    IfSrp = 151
+    IfVoiceOverAtm = 152
+    IfVoiceOverFrameRelay = 153
+    IfIdsl = 154
+    IfCompositeLink = 155
+    IfSs7SigLink = 156
+    IfPropWirelessP2p = 157
+    IfFrForward = 158
+    IfRfc1483 = 159
+    IfUsb = 160
+    IfIeee8023AdLag = 161
+    IfBgpPolicyAccounting = 162
+    IfFrf16MfrBundle = 163
+    IfH323Gatekeeper = 164
+    IfH323Proxy = 165
+    IfMpls = 166
+    IfMfSigLink = 167
+    IfHdsl2 = 168
+    IfShdsl = 169
+    IfDs1Fdl = 170
+    IfPos = 171
+    IfDvbAsiIn = 172
+    IfDvbAsiOut = 173
+    IfPlc = 174
+    IfNfas = 175
+    IfTr008 = 176
+    IfGr303Rdt = 177
+    IfGr303Idt = 178
+    IfIsup = 179
+    IfPropDocsWirelessMaclayer = 180
+    IfPropDocsWirelessDownstream = 181
+    IfPropDocsWirelessUpstream = 182
+    IfHiperLan2 = 183
+    IfPropBwaP2mp = 184
+    IfSonetOverheadChannel = 185
+    IfDigitalWrapperOverheadChannel = 186
+    IfAal2 = 187
+    IfRadioMac = 188
+    IfAtmRadio = 189
+    IfImt = 190
+    IfMvl = 191
+    IfReachDsl = 192
+    IfFrDlciEndpt = 193
+    IfAtmVciEndpt = 194
+    IfOpticalChannel = 195
+    IfOpticalTransport = 196
+    IfIeee80216Wman = 237
+    IfWwanPp = 243
+    IfWwanPp2 = 244
+    IfIeee802154 = 259
     IfXboxWireless = 281
 
   InterfaceState* = enum
-    StatusError = 0,  # This is workaround element for ProoveInit warnings.
-    StatusUp,
-    StatusDown,
-    StatusTesting,
-    StatusUnknown,
-    StatusDormant,
-    StatusNotPresent,
+    StatusError = 0 # This is workaround element for ProoveInit warnings.
+    StatusUp
+    StatusDown
+    StatusTesting
+    StatusUnknown
+    StatusDormant
+    StatusNotPresent
     StatusLowerLayerDown
 
   InterfaceAddress* = object
@@ -274,8 +270,9 @@ proc netmask*(ifa: InterfaceAddress): TransportAddress =
   ## Return network mask for ``ifa``.
   ifa.net.subnetMask()
 
-proc init*(ift: typedesc[InterfaceAddress], address: TransportAddress,
-           prefix: int): InterfaceAddress =
+proc init*(
+    ift: typedesc[InterfaceAddress], address: TransportAddress, prefix: int
+): InterfaceAddress =
   ## Initialize ``InterfaceAddress`` using ``address`` and prefix length
   ## ``prefix``.
   InterfaceAddress(host: address, net: IpNet.init(address, prefix))
@@ -290,7 +287,7 @@ proc `$`*(ifa: InterfaceAddress): string =
     "Unknown"
 
 proc hexDigit(x: uint8, lowercase: bool = false): char =
-  char(0x30'u8 + x + (uint32(7) and not((uint32(x) - 10) shr 8)))
+  char(0x30'u8 + x + (uint32(7) and not ((uint32(x) - 10) shr 8)))
 
 proc `$`*(iface: NetworkInterface): string =
   ## Return string representation of network interface ``iface``.
@@ -327,22 +324,45 @@ proc `$`*(iface: NetworkInterface): string =
       res.add("inet6 ")
     res.add($item)
     res.add(" netmask ")
-    res.add(try: $(item.netmask().address()) except ValueError as exc: exc.msg)
+    res.add(
+      try:
+        $(item.netmask().address())
+      except ValueError as exc:
+        exc.msg
+    )
     res.add(" brd ")
     res.add(
-      try: $(item.broadcast().address()) except ValueError as exc: exc.msg)
+      try:
+        $(item.broadcast().address())
+      except ValueError as exc:
+        exc.msg
+    )
   res
 
 proc `$`*(route: Route): string =
-  var res = try: $route.dest.address() except ValueError as exc: exc.msg
+  var res =
+    try:
+      $route.dest.address()
+    except ValueError as exc:
+      exc.msg
   res.add(" via ")
   if route.gateway.family != AddressFamily.None:
     res.add("gateway ")
-    res.add(try: $route.gateway.address() except ValueError as exc: exc.msg)
+    res.add(
+      try:
+        $route.gateway.address()
+      except ValueError as exc:
+        exc.msg
+    )
   else:
     res.add("link")
   res.add(" src ")
-  res.add(try: $route.source.address() except ValueError as exc: exc.msg)
+  res.add(
+    try:
+      $route.source.address()
+    except ValueError as exc:
+      exc.msg
+  )
   res
 
 proc cmp*(a, b: NetworkInterface): int =
@@ -352,7 +372,7 @@ when defined(linux):
   import ".."/osutils
 
   template NLMSG_ALIGN(length: uint): uint =
-    (length + NLMSG_ALIGNTO - 1) and not(NLMSG_ALIGNTO - 1)
+    (length + NLMSG_ALIGNTO - 1) and not (NLMSG_ALIGNTO - 1)
 
   template NLMSG_HDRLEN(): int =
     int(NLMSG_ALIGN(uint(sizeof(NlMsgHeader))))
@@ -365,11 +385,9 @@ when defined(linux):
       (nlh.nlmsg_len >= uint32(sizeof(NlMsgHeader))) and
       (nlh.nlmsg_len <= uint32(length))
 
-  proc NLMSG_NEXT(nlh: ptr NlMsgHeader,
-                  length: var int): ptr NlMsgHeader =
+  proc NLMSG_NEXT(nlh: ptr NlMsgHeader, length: var int): ptr NlMsgHeader =
     length = length - int(NLMSG_ALIGN(uint(nlh.nlmsg_len)))
-    cast[ptr NlMsgHeader](cast[uint](nlh) +
-                          cast[uint](NLMSG_ALIGN(uint(nlh.nlmsg_len))))
+    cast[ptr NlMsgHeader](cast[uint](nlh) + cast[uint](NLMSG_ALIGN(uint(nlh.nlmsg_len))))
 
   proc NLMSG_DATA(nlh: ptr NlMsgHeader): ptr byte =
     cast[ptr byte](cast[uint](nlh) + NLMSG_LENGTH(0))
@@ -378,7 +396,7 @@ when defined(linux):
     cast[ptr byte](cast[uint](nlh) + NLMSG_ALIGN(uint(nlh.nlmsg_len)))
 
   template RTA_ALIGN*(length: uint): uint =
-    (length + RTA_ALIGNTO - 1) and not(RTA_ALIGNTO - 1)
+    (length + RTA_ALIGNTO - 1) and not (RTA_ALIGNTO - 1)
 
   template RTA_HDRLEN(): int =
     int(RTA_ALIGN(uint(sizeof(RtAttr))))
@@ -399,34 +417,25 @@ when defined(linux):
     cast[ptr RtAttr](cast[uint](r) + NLMSG_ALIGN(uint(sizeof(RtMessage))))
 
   proc RTA_OK(rta: ptr RtAttr, length: int): bool =
-    length >= sizeof(RtAttr) and
-      rta.rta_len >= cushort(sizeof(RtAttr)) and
+    length >= sizeof(RtAttr) and rta.rta_len >= cushort(sizeof(RtAttr)) and
       rta.rta_len <= cushort(length)
 
   proc RTA_NEXT(rta: ptr RtAttr, length: var int): ptr RtAttr =
     length = length - int(RTA_ALIGN(uint(rta.rta_len)))
-    cast[ptr RtAttr](cast[uint](rta) +
-                     cast[uint](RTA_ALIGN(uint(rta.rta_len))))
+    cast[ptr RtAttr](cast[uint](rta) + cast[uint](RTA_ALIGN(uint(rta.rta_len))))
 
   proc RTA_DATA(rta: ptr RtAttr): ptr byte =
     cast[ptr byte](cast[uint](rta) + RTA_LENGTH(0))
 
   proc toInterfaceState(it: cint, flags: cuint): InterfaceState =
     case it
-    of 1:
-      StatusNotPresent
-    of 2:
-      StatusDown
-    of 3:
-      StatusLowerLayerDown
-    of 4:
-      StatusTesting
-    of 5:
-      StatusDormant
-    of 6:
-      StatusUp
-    else:
-      StatusUnknown
+    of 1: StatusNotPresent
+    of 2: StatusDown
+    of 3: StatusLowerLayerDown
+    of 4: StatusTesting
+    of 5: StatusDormant
+    of 6: StatusUp
+    else: StatusUnknown
 
   proc toInterfaceType(ft: uint32): InterfaceType =
     case ft
@@ -434,7 +443,7 @@ when defined(linux):
       IfEthernetCsmacd
     of ARPHRD_LOOPBACK:
       IfSoftwareLoopback
-    of 787..799:
+    of 787 .. 799:
       IfFibreChannel
     of ARPHRD_PPP:
       IfPpp
@@ -466,14 +475,16 @@ when defined(linux):
     address.pid = cast[uint32](pid)
     var res = osdefs.socket(AF_NETLINK, osdefs.SOCK_DGRAM, NETLINK_ROUTE)
     if res != SocketHandle(-1):
-      if osdefs.bindSocket(res, cast[ptr SockAddr](addr address),
-                          SockLen(sizeof(Sockaddr_nl))) != 0:
+      if osdefs.bindSocket(
+        res, cast[ptr SockAddr](addr address), SockLen(sizeof(Sockaddr_nl))
+      ) != 0:
         discard osdefs.close(res)
         res = SocketHandle(-1)
     res
 
-  proc sendLinkMessage(fd: SocketHandle, pid: Pid, seqno: uint32,
-                          ntype: uint16, nflags: uint16): bool =
+  proc sendLinkMessage(
+      fd: SocketHandle, pid: Pid, seqno: uint32, ntype: uint16, nflags: uint16
+  ): bool =
     var
       rmsg: Tmsghdr
       iov: IOVec
@@ -498,9 +509,14 @@ when defined(linux):
     let res = osdefs.sendmsg(fd, addr rmsg, 0).TIovLen
     (res == iov.iov_len)
 
-  proc sendRouteMessage(fd: SocketHandle, pid: Pid, seqno: uint32,
-                        ntype: uint16, nflags: uint16,
-                        dest: TransportAddress): bool =
+  proc sendRouteMessage(
+      fd: SocketHandle,
+      pid: Pid,
+      seqno: uint32,
+      ntype: uint16,
+      nflags: uint16,
+      dest: TransportAddress,
+  ): bool =
     var
       rmsg: Tmsghdr
       iov: IOVec
@@ -526,15 +542,15 @@ when defined(linux):
       req.msg.rtm_family = byte(osdefs.AF_INET)
       attr.rta_len = cast[cushort](RTA_LENGTH(4))
       copyMem(RTA_DATA(attr), cast[ptr byte](unsafeAddr dest.address_v4[0]), 4)
-      req.hdr.nlmsg_len = uint32(NLMSG_ALIGN(uint(req.hdr.nlmsg_len)) +
-                                 RTA_ALIGN(uint(attr.rta_len)))
+      req.hdr.nlmsg_len =
+        uint32(NLMSG_ALIGN(uint(req.hdr.nlmsg_len)) + RTA_ALIGN(uint(attr.rta_len)))
       req.msg.rtm_dst_len = 4 * 8
     elif dest.family == AddressFamily.IPv6:
       req.msg.rtm_family = byte(osdefs.AF_INET6)
       attr.rta_len = cast[cushort](RTA_LENGTH(16))
       copyMem(RTA_DATA(attr), cast[ptr byte](unsafeAddr dest.address_v6[0]), 16)
-      req.hdr.nlmsg_len = uint32(NLMSG_ALIGN(uint(req.hdr.nlmsg_len)) +
-                                 RTA_ALIGN(uint(attr.rta_len)))
+      req.hdr.nlmsg_len =
+        uint32(NLMSG_ALIGN(uint(req.hdr.nlmsg_len)) + RTA_ALIGN(uint(attr.rta_len)))
       req.msg.rtm_dst_len = 16 * 8
 
     iov.iov_base = cast[pointer](addr buffer[0])
@@ -578,7 +594,7 @@ when defined(linux):
     var res = NetworkInterface(
       ifType: toInterfaceType(iface.ifi_type),
       ifIndex: iface.ifi_index,
-      flags: uint64(iface.ifi_flags)
+      flags: uint64(iface.ifi_flags),
     )
 
     while RTA_OK(attr, length):
@@ -648,25 +664,20 @@ when defined(linux):
     var res = Route()
     while RTA_OK(attr, length):
       if attr.rta_type == RTA_DST:
-        res.dest = getAddress(int(rtmsg.rtm_family),
-                                 cast[pointer](RTA_DATA(attr)))
+        res.dest = getAddress(int(rtmsg.rtm_family), cast[pointer](RTA_DATA(attr)))
       elif attr.rta_type == RTA_GATEWAY:
-        res.gateway = getAddress(int(rtmsg.rtm_family),
-                                    cast[pointer](RTA_DATA(attr)))
+        res.gateway = getAddress(int(rtmsg.rtm_family), cast[pointer](RTA_DATA(attr)))
       elif attr.rta_type == RTA_OIF:
         var oid: uint32
         copyMem(addr oid, RTA_DATA(attr), sizeof(uint32))
         res.ifIndex = int(oid)
       elif attr.rta_type == RTA_PREFSRC:
-        res.source = getAddress(int(rtmsg.rtm_family),
-                                   cast[pointer](RTA_DATA(attr)))
+        res.source = getAddress(int(rtmsg.rtm_family), cast[pointer](RTA_DATA(attr)))
       attr = RTA_NEXT(attr, length)
     res
 
-  proc getRoute(netfd: SocketHandle, pid: Pid,
-                 address: TransportAddress): Route =
-    if not sendRouteMessage(netfd, pid, 1, RTM_GETROUTE,
-                            NLM_F_REQUEST, address):
+  proc getRoute(netfd: SocketHandle, pid: Pid, address: TransportAddress): Route =
+    if not sendRouteMessage(netfd, pid, 1, RTM_GETROUTE, NLM_F_REQUEST, address):
       return Route()
     var data = newSeq[byte]()
     var res = Route()
@@ -691,8 +702,7 @@ when defined(linux):
 
   proc getLinks(netfd: SocketHandle, pid: Pid): seq[NetworkInterface] =
     var res: seq[NetworkInterface]
-    if not sendLinkMessage(netfd, pid, 1, RTM_GETLINK,
-                           NLM_F_REQUEST or NLM_F_DUMP):
+    if not sendLinkMessage(netfd, pid, 1, RTM_GETLINK, NLM_F_REQUEST or NLM_F_DUMP):
       return res
     var data = newSeq[byte]()
     res = newSeq[NetworkInterface]()
@@ -719,10 +729,8 @@ when defined(linux):
         break
     res
 
-  proc getAddresses(netfd: SocketHandle, pid: Pid,
-                    ifaces: var seq[NetworkInterface]) =
-    if not sendLinkMessage(netfd, pid, 2, RTM_GETADDR,
-                           NLM_F_REQUEST or NLM_F_DUMP):
+  proc getAddresses(netfd: SocketHandle, pid: Pid, ifaces: var seq[NetworkInterface]) =
+    if not sendLinkMessage(netfd, pid, 2, RTM_GETADDR, NLM_F_REQUEST or NLM_F_DUMP):
       return
     var data = newSeq[byte]()
     while true:
@@ -742,7 +750,7 @@ when defined(linux):
           break
         else:
           var iface = processAddress(msg)
-          for i in 0..<len(ifaces):
+          for i in 0 ..< len(ifaces):
             if ifaces[i].ifIndex == iface.ifIndex:
               for item in iface.addresses:
                 ifaces[i].addresses.add(item)
@@ -778,7 +786,6 @@ when defined(linux):
       res
 
 elif defined(macosx) or defined(macos) or defined(bsd):
-
   proc toInterfaceType(f: byte): InterfaceType =
     var ft = int(f)
     if (ft >= 1 and ft <= 196) or (ft == 237) or (ft == 243) or (ft == 244):
@@ -787,10 +794,7 @@ elif defined(macosx) or defined(macos) or defined(bsd):
       IfOther
 
   proc toInterfaceState(f: cuint): InterfaceState =
-    if (f and IFF_RUNNING) != 0 and (f and IFF_UP) != 0:
-      StatusUp
-    else:
-      StatusDown
+    if (f and IFF_RUNNING) != 0 and (f and IFF_UP) != 0: StatusUp else: StatusDown
 
   proc getInterfaces*(): seq[NetworkInterface] {.raises: [].} =
     ## Return list of available interfaces.
@@ -827,22 +831,34 @@ elif defined(macosx) or defined(macos) or defined(bsd):
             res[i].state = toInterfaceState(ifap.ifa_flags)
             res[i].mtu = int64(data.ifi_mtu)
           elif family == osdefs.AF_INET:
-            fromSAddr(cast[ptr Sockaddr_storage](ifap.ifa_addr),
-                      SockLen(sizeof(Sockaddr_in)), ifaddress.host)
+            fromSAddr(
+              cast[ptr Sockaddr_storage](ifap.ifa_addr),
+              SockLen(sizeof(Sockaddr_in)),
+              ifaddress.host,
+            )
           elif family == osdefs.AF_INET6:
-            fromSAddr(cast[ptr Sockaddr_storage](ifap.ifa_addr),
-                      SockLen(sizeof(Sockaddr_in6)), ifaddress.host)
+            fromSAddr(
+              cast[ptr Sockaddr_storage](ifap.ifa_addr),
+              SockLen(sizeof(Sockaddr_in6)),
+              ifaddress.host,
+            )
         if not isNil(ifap.ifa_netmask):
           var na: TransportAddress
           let family = int(ifap.ifa_netmask.sa_family)
           if family == osdefs.AF_INET:
-            fromSAddr(cast[ptr Sockaddr_storage](ifap.ifa_netmask),
-                      SockLen(sizeof(Sockaddr_in)), na)
+            fromSAddr(
+              cast[ptr Sockaddr_storage](ifap.ifa_netmask),
+              SockLen(sizeof(Sockaddr_in)),
+              na,
+            )
             if ifaddress.host.family == AddressFamily.IPv4:
               ifaddress.net = IpNet.init(ifaddress.host, na)
           elif family == osdefs.AF_INET6:
-            fromSAddr(cast[ptr Sockaddr_storage](ifap.ifa_netmask),
-                      SockLen(sizeof(Sockaddr_in6)), na)
+            fromSAddr(
+              cast[ptr Sockaddr_storage](ifap.ifa_netmask),
+              SockLen(sizeof(Sockaddr_in6)),
+              na,
+            )
             if ifaddress.host.family == AddressFamily.IPv6:
               ifaddress.net = IpNet.init(ifaddress.host, na)
 
@@ -897,21 +913,21 @@ elif defined(macosx) or defined(macos) or defined(bsd):
       msg.rtm.rtm_msglen = uint16(sizeof(RtMessage))
       let wres = osdefs.write(sock, addr msg, sizeof(RtMessage))
       if wres >= 0:
-        let rres =
-          block:
-            var pres = 0
-            while true:
-              pres = osdefs.read(sock, addr msg, sizeof(RtMessage))
-              if ((pres >= 0) and (msg.rtm.rtm_pid == pid) and
-                 (msg.rtm.rtm_seq == 0xCAFE)) or (pres < 0):
-                break
-            pres
+        let rres = block:
+          var pres = 0
+          while true:
+            pres = osdefs.read(sock, addr msg, sizeof(RtMessage))
+            if (
+              (pres >= 0) and (msg.rtm.rtm_pid == pid) and (msg.rtm.rtm_seq == 0xCAFE)
+            ) or (pres < 0):
+              break
+          pres
         if (rres >= 0) and (msg.rtm.rtm_version == RTM_VERSION) and
-           (msg.rtm.rtm_errno == 0):
+            (msg.rtm.rtm_errno == 0):
           res.ifIndex = int(msg.rtm.rtm_index)
           var so = 0
           var eo = len(msg.space) - 1
-          for i in 0..<2:
+          for i in 0 ..< 2:
             let mask = 1 shl i
             if (msg.rtm.rtm_addrs and mask) != 0:
               var saddr = cast[ptr Sockaddr_storage](addr msg.space[so])
@@ -943,13 +959,13 @@ elif defined(windows):
     MaxTries = 3
 
   proc toInterfaceType(ft: uint32): InterfaceType {.inline.} =
-    if (ft >= 1'u32 and ft <= 196'u32) or
-       (ft == 237) or (ft == 243) or (ft == 244) or (ft == 259) or (ft == 281):
+    if (ft >= 1'u32 and ft <= 196'u32) or (ft == 237) or (ft == 243) or (ft == 244) or
+        (ft == 259) or (ft == 281):
       cast[InterfaceType](ft)
     else:
       IfOther
 
-  proc toInterfaceState(it: cint): InterfaceState  {.inline.} =
+  proc toInterfaceState(it: cint): InterfaceState {.inline.} =
     if it >= 1 and it <= 7:
       cast[InterfaceState](it)
     else:
@@ -957,7 +973,10 @@ elif defined(windows):
 
   proc `$`(bstr: ptr WCHAR): string =
     let res = toString(bstr)
-    if res.isErr(): "" else: res.get()
+    if res.isErr():
+      ""
+    else:
+      res.get()
 
   proc isVista(): bool =
     var ver: OSVERSIONINFO
@@ -994,7 +1013,7 @@ elif defined(windows):
       prefix6 = prefix
     var bytesCount = nbits div 8
     var bitsCount = nbits mod 8
-    for i in 0..<bytesCount:
+    for i in 0 ..< bytesCount:
       if num6.address_v6[i] != prefix6.address_v6[i]:
         return false
     if bitsCount != 0:
@@ -1004,21 +1023,29 @@ elif defined(windows):
         return false
     true
 
-  proc processAddress(ifitem: ptr IpAdapterAddressesXp,
-                      ifunic: ptr IpAdapterUnicastAddressXpLh,
-                      vista: bool): InterfaceAddress =
+  proc processAddress(
+      ifitem: ptr IpAdapterAddressesXp,
+      ifunic: ptr IpAdapterUnicastAddressXpLh,
+      vista: bool,
+  ): InterfaceAddress =
     var res = InterfaceAddress()
     var netfamily = ifunic.address.lpSockaddr.sa_family
-    fromSAddr(cast[ptr Sockaddr_storage](ifunic.address.lpSockaddr),
-              SockLen(ifunic.address.iSockaddrLength), res.host)
+    fromSAddr(
+      cast[ptr Sockaddr_storage](ifunic.address.lpSockaddr),
+      SockLen(ifunic.address.iSockaddrLength),
+      res.host,
+    )
     if not vista:
       var prefix = ifitem.firstPrefix
       var prefixLength = -1
       while not isNil(prefix):
         var pa: TransportAddress
         var prefamily = prefix.address.lpSockaddr.sa_family
-        fromSAddr(cast[ptr Sockaddr_storage](prefix.address.lpSockaddr),
-                  SockLen(prefix.address.iSockaddrLength), pa)
+        fromSAddr(
+          cast[ptr Sockaddr_storage](prefix.address.lpSockaddr),
+          SockLen(prefix.address.iSockaddrLength),
+          pa,
+        )
         if netfamily == prefamily:
           if ipMatchPrefix(res.host, pa, int(prefix.prefixLength)):
             prefixLength = max(prefixLength, int(prefix.prefixLength))
@@ -1043,8 +1070,9 @@ elif defined(windows):
     while true:
       buffer = newSeq[byte](size)
       var addresses = cast[ptr IpAdapterAddressesXp](addr buffer[0])
-      gres = getAdaptersAddresses(osdefs.AF_UNSPEC, GAA_FLAG_INCLUDE_PREFIX,
-                                  nil, addresses, addr size)
+      gres = getAdaptersAddresses(
+        osdefs.AF_UNSPEC, GAA_FLAG_INCLUDE_PREFIX, nil, addresses, addr size
+      )
       case OSErrorCode(gres)
       of ERROR_SUCCESS:
         buffer.setLen(size)
@@ -1068,10 +1096,9 @@ elif defined(windows):
           desc: $slider.description,
           mtu: int(slider.mtu),
           maclen: int(slider.physicalAddressLength),
-          flags: uint64(slider.flags)
+          flags: uint64(slider.flags),
         )
-        copyMem(addr iface.mac[0], addr slider.physicalAddress[0],
-                len(iface.mac))
+        copyMem(addr iface.mac[0], addr slider.physicalAddress[0], len(iface.mac))
         var unicast = slider.unicastAddress
         while not isNil(unicast):
           var ifaddr = processAddress(slider, unicast, vista)
@@ -1096,23 +1123,33 @@ elif defined(windows):
         var luid: uint64
         var destlen: SockLen
         address.toSAddr(dest, destlen)
-        var getBestRoute2  = cast[GETBESTROUTE2](symAddr(iph, "GetBestRoute2"))
-        var gres = getBestRoute2(addr luid, 0'u32, nil,
-                                cast[ptr SOCKADDR_INET](addr dest),
-                                0'u32,
-                                addr bestRoute,
-                                cast[ptr SOCKADDR_INET](addr src))
+        var getBestRoute2 = cast[GETBESTROUTE2](symAddr(iph, "GetBestRoute2"))
+        var gres = getBestRoute2(
+          addr luid,
+          0'u32,
+          nil,
+          cast[ptr SOCKADDR_INET](addr dest),
+          0'u32,
+          addr bestRoute,
+          cast[ptr SOCKADDR_INET](addr src),
+        )
         if gres == 0:
           if src.ss_family == osdefs.AF_INET:
             fromSAddr(addr src, SockLen(sizeof(Sockaddr_in)), res.source)
           elif src.ss_family == osdefs.AF_INET6:
             fromSAddr(addr src, SockLen(sizeof(Sockaddr_in6)), res.source)
           if bestRoute.nextHop.si_family == osdefs.AF_INET:
-            fromSAddr(cast[ptr Sockaddr_storage](addr bestRoute.nextHop),
-                      SockLen(sizeof(Sockaddr_in)), res.gateway)
+            fromSAddr(
+              cast[ptr Sockaddr_storage](addr bestRoute.nextHop),
+              SockLen(sizeof(Sockaddr_in)),
+              res.gateway,
+            )
           elif bestRoute.nextHop.si_family == osdefs.AF_INET6:
-            fromSAddr(cast[ptr Sockaddr_storage](addr bestRoute.nextHop),
-                      SockLen(sizeof(Sockaddr_in6)), res.gateway)
+            fromSAddr(
+              cast[ptr Sockaddr_storage](addr bestRoute.nextHop),
+              SockLen(sizeof(Sockaddr_in6)),
+              res.gateway,
+            )
           if res.gateway.isZero():
             res.gateway = empty
           res.dest = address
@@ -1129,8 +1166,7 @@ elif defined(windows):
           res.dest = address
           if bestRoute.dwForwardNextHop != 0'u32:
             res.gateway = TransportAddress(family: AddressFamily.IPv4)
-            copyMem(addr res.gateway.address_v4[0],
-                    addr bestRoute.dwForwardNextHop, 4)
+            copyMem(addr res.gateway.address_v4[0], addr bestRoute.dwForwardNextHop, 4)
           res.metric = int(bestRoute.dwForwardMetric1)
           res.ifIndex = int(bestRoute.dwForwardIfIndex)
           for item in interfaces:

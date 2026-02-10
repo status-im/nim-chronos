@@ -11,11 +11,10 @@
 
 import stew/base10
 
-type
-  SrcLoc* = object
-    procedure*: cstring
-    file*: cstring
-    line*: int
+type SrcLoc* = object
+  procedure*: cstring
+  file*: cstring
+  line*: int
 
 proc `$`*(loc: ptr SrcLoc): string =
   var res = $loc.file
@@ -29,13 +28,11 @@ proc `$`*(loc: ptr SrcLoc): string =
     res.add($loc.procedure)
   res
 
-proc srcLocImpl(procedure: static string,
-                file: static string, line: static int): ptr SrcLoc =
-  var loc {.global.} = SrcLoc(
-    file: cstring(file), line: line, procedure: procedure
-  )
+proc srcLocImpl(
+    procedure: static string, file: static string, line: static int
+): ptr SrcLoc =
+  var loc {.global.} = SrcLoc(file: cstring(file), line: line, procedure: procedure)
   return addr(loc)
 
 template getSrcLocation*(procedure: static string = ""): ptr SrcLoc =
-  srcLocImpl(procedure,
-             instantiationInfo(-2).filename, instantiationInfo(-2).line)
+  srcLocImpl(procedure, instantiationInfo(-2).filename, instantiationInfo(-2).line)
