@@ -9,6 +9,7 @@
   - [Making an HTTP Request with Chronos](./tutorials/uptimemon/chapter1.md)
   - [Making Many Requests Concurrently](./tutorials/uptimemon/chapter2.md)
   - [Timeouts & Cancellation](./tutorials/uptimemon/chapter3.md)
+  - [Smarter Health Check](./tutorials/uptimemon/chapter4.md)
 
 # User guide
 

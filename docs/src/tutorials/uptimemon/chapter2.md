@@ -1,4 +1,4 @@
-# Chapter 2. Making Many Requests Concurrently
+# Making Many Requests Concurrently
 
 **Goal:** Learn how to make arbitrarily many HTTP requests asynchronously.
 

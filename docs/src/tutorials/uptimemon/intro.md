@@ -8,7 +8,7 @@ The complete application (split into chapters to help you track the progress) is
 
 ## Prerequisites
 
-To go through the tutorial, you'll need any computer, any text editor, and a console (aka terminal emulator). Familiarity with the concepts of HTTP requests and async routines as well as Nim knowledge will help you along but are not required.
+To go through the tutorial, you'll need a computer with a stable Internet connection, any text editor, and a console (aka terminal emulator). Familiarity with the concepts of HTTP requests and async routines as well as Nim knowledge will help you along but are not required.
 
 Before you start, make sure you have Nim programming language and Chronos installed:
 

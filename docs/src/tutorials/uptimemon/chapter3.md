@@ -1,4 +1,4 @@
-# Chapter 3. Timeouts & Cancellation
+# Timeouts & Cancellation
 
 **Goal:** Learn how to prevent the program from freezing on slow responses.
 

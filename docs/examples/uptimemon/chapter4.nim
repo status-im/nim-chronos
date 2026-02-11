@@ -8,7 +8,12 @@ const uris = @[
 
 proc check(session: HttpSessionRef, uri: string) {.async.} =
   try:
-    let responseFuture = session.fetch(parseUri(uri))
+    let request = HttpClientRequestRef.new(session, uri)
+
+    if request.isErr:
+      raise newException(HttpError, "Invalid URI")
+
+    let responseFuture = request.get.send()
 
     if await responseFuture.withTimeout(10.seconds):
       let response = responseFuture.read()

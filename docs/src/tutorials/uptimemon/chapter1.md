@@ -1,4 +1,4 @@
-# Chapter 1. Making an HTTP Request with Chronos
+# Making an HTTP Request with Chronos
 
 **Goal:** Learn how to make an HTTP request and proccess its response with Chronos.
 
