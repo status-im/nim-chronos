@@ -219,18 +219,57 @@ while not result and len(fetchedBytes) <= 10 * 1024:
 Now we're fetching chunks of data in a loop. We stop if the marker has been spotted (`result` is `true`) or a total of 10 KB of data has been fetched (`len(fetchedBytes)` is over 10 * 1024).
 
 ```nim
-    let bytesRead = await bodyReader.readOnce(addr(buffer[0]), len(buffer))
+let bytesRead = await bodyReader.readOnce(addr(buffer[0]), len(buffer))
 ```
 
 `readOnce` reads `len(buffer)` bytes of data (1024 in our case) and stores them in `buffer`. Since `readOnce` expects a pointer to the container for the fetched bytes, we pass the address of the first item in `buffer`.
 
 ```nim
-    if bytesRead == 0:
-      break
+if bytesRead == 0:
+  break
 ```
 
-If no bytes were fetched, that measn we're reached the end of the stream and must leave the loop. 
+If no bytes were fetched, that means we're reached the end of the stream and must leave the loop.
+
+```nim
+fetchedBytes &= buffer
+```
+
+We accumulate the fetched bytes from `buffer`.
+
+```nim
+result = "<html" in bytesToString(fetchedBytes)
+```
+
+Finally, convert the collected bytes to a string and check if the marker ("<html") is present in it.
 
 ```admonish note
-Notice that we can treat `result` as a regular `bool` despite the fact that the function returns a `Future[bool]`.
+Notice that we can treat `result` as a regular `bool` despite the fact that the function returns a `Future[bool]`—really handy!
+```
+
+Now we can use this function in the URI health check:
+
+```nim
+      if response.status == 200:
+        let markerFound = await findMarker(response)
+
+        if markerFound:
+          echo "[OK] " & uri
+        else:
+          echo "[NOK] " & uri & ": Not valid HTML"
+      else:
+        echo "[NOK] " & uri & ": " & $response.status
+```
+
+We just `await` on it and check the value.
+
+Run the program and see the https://mock.codes/200 is no correctly marked as `[NOK]`:
+
+```shell
+[ERR] http://123.456.78.90: Could not resolve address of remote server
+[NOK] https://mock.codes/200: Not valid HTML
+[NOK] https://mock.codes/403: 403
+[OK] https://duckduckgo.com/?q=chronos
+[OK] https://html.spec.whatwg.org/
+[ERR] http://10.255.255.1: Connection timed out
 ```
