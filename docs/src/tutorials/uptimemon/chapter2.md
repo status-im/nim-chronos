@@ -14,11 +14,9 @@ The most obvious to check multiple URIs instead of one would be to just call `ch
 import chronos/apps/http/httpclient
 
 # Define a list of URIs to check
-const uris =
-  @[
-    "https://duckduckgo.com/?q=chronos", "https://www.google.fr/search?q=chronos",
-    "https://mock.codes/403", "http://123.456.78.90",
-  ]
+const uris = @[
+  "https://duckduckgo.com/?q=chronos", "https://mock.codes/403", "http://123.456.78.90"
+]
 
 proc check(uri: string) {.async.} =
   let session = HttpSessionRef.new()
@@ -61,11 +59,9 @@ Here's the code:
 ```nim
 import chronos/apps/http/httpclient
 
-const uris =
-  @[
-    "https://duckduckgo.com/?q=chronos", "https://www.google.fr/search?q=chronos",
-    "https://mock.codes/403", "http://123.456.78.90",
-  ]
+const uris = @[
+  "https://duckduckgo.com/?q=chronos", "https://mock.codes/403", "http://123.456.78.90"
+]
 
 proc check(session: HttpSessionRef, uri: string) {.async.} =
   try:
@@ -95,7 +91,6 @@ Run this code with `nim r chapter2.nim`, you should see something like this (the
 
 ```shell
 [ERR] http://123.456.78.90: Could not resolve address of remote server
-[OK] https://www.google.fr/search?q=chronos
 [NOK] https://mock.codes/403: 403
 [OK] https://duckduckgo.com/?q=chronos
 ```
@@ -117,14 +112,12 @@ $ Measure-Command {./chapter2.exe | Out-Default}
 Let's examine the changes since the previous version.
 
 ```nim
-const uris =
-  @[
-    "https://duckduckgo.com/?q=chronos", "https://www.google.fr/search?q=chronos",
-    "https://mock.codes/403", "http://123.456.78.90",
-  ]
+const uris = @[
+  "https://duckduckgo.com/?q=chronos", "https://mock.codes/403", "http://123.456.78.90"
+]
 ```
 
-We define a list of URIs to check. We've put a diverse group to see different responses: DuckDuckGo and Google should respond with 200, Mock returns a 403 status, and the last one is a non-existant location visiting which should raise an error.
+We define a list of URIs to check. We've put a diverse group to see different responses: DuckDuckGo should respond with `[OK]`, Mock returns a 403 status, i.e. `[NOK]`, and the last one is a non-existant location visiting which should return `[ERR]`.
 
 ```nim
 proc check(session: HttpSessionRef, uri: string) {.async.} =

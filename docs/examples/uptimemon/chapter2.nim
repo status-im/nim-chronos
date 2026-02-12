@@ -1,14 +1,13 @@
 import chronos/apps/http/httpclient
 
-const uris =
-  @[
-    "https://duckduckgo.com/?q=chronos", "https://www.google.fr/search?q=chronos",
-    "https://mock.codes/403", "http://123.456.78.90",
-  ]
+const uris = @[
+  "https://duckduckgo.com/?q=chronos", "https://mock.codes/403", "http://123.456.78.90"
+]
 
 proc check(session: HttpSessionRef, uri: string) {.async.} =
   try:
     let response = await session.fetch(parseUri(uri))
+
     if response.status == 200:
       echo "[OK] " & uri
     else:

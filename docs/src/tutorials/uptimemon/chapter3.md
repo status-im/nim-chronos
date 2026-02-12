@@ -9,12 +9,10 @@ However, not all requests will go smoothly when you face the real web. Poor conn
 For example, try adding an IP address the never responds to the list:
 
 ```nim
-const uris =
-  @[
-    "https://duckduckgo.com/?q=chronos", "https://www.google.fr/search?q=chronos",
-    "https://mock.codes/403", "http://123.456.78.90",
-    "http://10.255.255.1",
-  ]
+const uris = @[
+  "https://duckduckgo.com/?q=chronos", "https://mock.codes/403", "http://123.456.78.90",
+  "http://10.255.255.1",
+]
 ```
 
 Run the program and you'll see that it'll run for 10+ seconds, stuck on this last IP.
@@ -25,8 +23,8 @@ Let's add a timeout to our requests to cancel slow requests before they ruin our
 import chronos/apps/http/httpclient
 
 const uris = @[
-  "https://duckduckgo.com/?q=chronos", "https://www.google.fr/search?q=chronos",
-  "https://mock.codes/403", "http://123.456.78.90", "http://10.255.255.1",
+  "https://duckduckgo.com/?q=chronos", "https://mock.codes/403", "http://123.456.78.90",
+  "http://10.255.255.1",
 ]
 
 proc check(session: HttpSessionRef, uri: string) {.async.} =
