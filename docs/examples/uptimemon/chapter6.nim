@@ -1,16 +1,21 @@
 import chronos/apps/http/httpclient
 
 const
+  maxConcurrency = 5
   ntfyTopic = "X3JIaLZSrFqBJXfJ"
   uris = @[
     "https://duckduckgo.com/?q=chronos", "https://mock.codes/403",
-    "http://123.456.78.90", "http://10.255.255.1", "https://html.spec.whatwg.org/",
-    "https://mock.codes/200",
+    "http://123.456.78.90", "http://10.255.255.1", "https://html.spec.whatwg.org",
+    "https://mock.codes/200", "https://github.com", "https://archive.org",
+    "https://nim-lang.org", "https://w3.org", "https://free.technology",
+    "https://codeberg.org", "https://nimble.directory", "https://status.app",
+    "https://keycard.tech", "https://stackoverflow.com", "https://nimbus.team",
+    "https://logos.co", "https://forum.nim-lang.org", "https://acid.info",
+    "https://vac.dev", "https://expired.badssl.com", "http://10.255.255.2",
+    "http://10.255.255.3",
   ]
 
-proc sendAlert(
-    session: HttpSessionRef, message: string, priority = 3
-) {.async.} =
+proc sendAlert(session: HttpSessionRef, message: string, priority = 3) {.async.} =
   let
     headers = {"Title": "Chronos Uptime Monitor", "Priority": $priority}
     body = message.stringToBytes()
@@ -46,7 +51,12 @@ proc findMarker(response: HttpClientResponseRef): Future[bool] {.async.} =
 
     result = "<html" in bytesToString(fetchedBytes)
 
-proc check(session: HttpSessionRef, uri: string) {.async.} =
+proc check(session: HttpSessionRef, uri: string, semaphore: AsyncSemaphore) {.async.} =
+  await acquire(semaphore)
+
+  defer:
+    release (semaphore)
+
   try:
     let request = HttpClientRequestRef.new(session, uri)
 
@@ -79,13 +89,22 @@ proc check(session: HttpSessionRef, uri: string) {.async.} =
     await session.sendAlert(message, 4)
 
 proc check(uris: seq[string]) {.async.} =
-  let session = HttpSessionRef.new()
-  var futures: seq[Future[void]]
+  let
+    session = HttpSessionRef.new()
+    semaphore = newAsyncSemaphore(maxConcurrency)
 
-  for uri in uris:
-    futures.add(session.check(uri))
+  while true:
+    echo "Checking " & $len(uris) & " URIs:"
+    var futures: seq[Future[void]]
 
-  await allFutures(futures)
+    for uri in uris:
+      futures.add(session.check(uri, semaphore))
+
+    await allFutures(futures)
+
+    echo "Done. Next check in 10 seconds."
+    await sleepAsync(10.seconds)
+
   await noCancel(session.closeWait())
 
 when isMainModule:

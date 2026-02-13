@@ -11,6 +11,7 @@
   - [Timeouts & Cancellation](./tutorials/uptimemon/chapter3.md)
   - [Smarter Health Check](./tutorials/uptimemon/chapter4.md)
   - [Sending Alerts](./tutorials/uptimemon/chapter5.md)
+  - [Scaling & Finishing Touches](./tutorials/uptimemon/chapter6.md)
 
 # User guide
 

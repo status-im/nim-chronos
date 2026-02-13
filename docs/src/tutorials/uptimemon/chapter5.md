@@ -46,7 +46,6 @@ proc sendAlert(
     try:
       let response = await request.get.send()
       await response.closeWait()
-      echo "[INF] Alert sent"
     except CatchableError:
       echo "[WRN] Failed to send alert: " & getCurrentExceptionMsg()
 
@@ -166,14 +165,13 @@ if request.isOk:
   try:
     let response = await request.get.send()
     await response.closeWait()
-    echo "[INF] Alert sent"
   except CatchableError:
     echo "[WRN] Failed to send alert: " & getCurrentExceptionMsg()
 ```
 
-If the request was successfully created (`request.isOk`), we try to send it with `send()`, discard it (with `closeWait`), and print an info message to the terminal.
+If the request was successfully created (`request.isOk`), we try to send it with `send()` and discard it (with `closeWait`).
 
-If request couldn't be sent (e.g. ntfy is unavailable), we print a warning.
+If the request couldn't be sent (e.g. ntfy is unavailable), we print a warning.
 
 ```nim
 proc check(session: HttpSessionRef, uri: string) {.async.} =
@@ -214,4 +212,4 @@ Run the code and observe alerts appearing in your browser accompanied by push no
 
 ![ntfy alerts in browser](./ntfy_alerts_in_browser.png)
 
-You can install ntfy mobile app and subscribe to the same topic to receive the notifications on your phone.
+Install ntfy mobile app and subscribe to the same topic to receive the notifications on your phone.
