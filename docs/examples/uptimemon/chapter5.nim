@@ -1,19 +1,22 @@
 import chronos/apps/http/httpclient
 
-const uris = @[
-  "https://duckduckgo.com/?q=chronos", "https://mock.codes/403", "http://123.456.78.90",
-  "http://10.255.255.1", "https://html.spec.whatwg.org/", "https://mock.codes/200",
-]
+const
+  ntfyTopic = "X3JIaLZSrFqBJXfJ"
+  uris = @[
+    "https://duckduckgo.com/?q=chronos", "https://mock.codes/403",
+    "http://123.456.78.90", "http://10.255.255.1", "https://html.spec.whatwg.org/",
+    "https://mock.codes/200",
+  ]
 
 proc sendAlert(
-    session: HttpSessionRef, message: string, priority = "default"
+    session: HttpSessionRef, message: string, priority = 3
 ) {.async.} =
   let
-    headers = {"Title": "Chronos Uptime Monitor", "Priority": priority}
+    headers = {"Title": "Chronos Uptime Monitor", "Priority": $priority}
     body = message.stringToBytes()
     request = HttpClientRequestRef.new(
       session,
-      "https://ntfy.sh/zZ50WuKxpX2Ujy5H",
+      "https://ntfy.sh/" & ntfyTopic,
       meth = MethodPost,
       headers = headers,
       body = body,
@@ -74,7 +77,7 @@ proc check(session: HttpSessionRef, uri: string) {.async.} =
   except CatchableError:
     let message = "[ERR] " & uri & ": " & getCurrentExceptionMsg()
     echo message
-    await session.sendAlert(message, "high")
+    await session.sendAlert(message, 4)
 
 proc check(uris: seq[string]) {.async.} =
   let session = HttpSessionRef.new()
