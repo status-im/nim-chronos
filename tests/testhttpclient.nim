@@ -1436,6 +1436,53 @@ suite "HTTP client testing suite":
   test "HTTP client server-sent events test":
     check waitFor(testServerSentEvents(false)) == true
 
+  proc testHttpProxyConnectionProvider(): Future[bool] {.async.} =
+    const
+      targetHost = "127.0.0.1"
+      targetPort = 12345'u16
+      targetPath = "/test/proxy"
+    var proxyInvocationCount = 0
+
+    proc process(r: RequestFence): Future[HttpResponseRef] {.
+         async: (raises: [CancelledError]).} =
+      if r.isOk():
+        let request = r.get()
+        try:
+          check request.uri.scheme == "http"
+          check request.uri.hostname == targetHost
+          check request.uri.port == $targetPort
+          check request.uri.path == targetPath
+          inc(proxyInvocationCount)
+          await request.respond(Http200, "proxy-ok")
+        except HttpWriteError as exc:
+          defaultResponse(exc)
+      else:
+        defaultResponse(r.error())
+
+    var proxyServer = createServer(initTAddress("127.0.0.1:0"), process, false)
+    proxyServer.start()
+    let proxyAddress = proxyServer.instance.localAddress()
+    let proxyUri = parseUri("http://" & $proxyAddress)
+    var session = HttpSessionRef.new(provider = httpProxyProvider(proxyUri))
+    let targetUrl = "http://" & targetHost & ":" & $targetPort & targetPath
+    let targetAddress = session.getAddress(parseUri(targetUrl)).valueOr:
+      raise newException(ValueError, "Invalid target address")
+    var request = HttpClientRequestRef.new(session, targetAddress)
+    let response = await send(request)
+    check response.status == 200
+    let body = await response.getBodyBytes()
+    check string.fromBytes(body) == "proxy-ok"
+    await response.closeWait()
+    await request.closeWait()
+    await session.closeWait()
+    await proxyServer.stop()
+    await proxyServer.closeWait()
+    check proxyInvocationCount == 1
+    return true
+
+  test "HTTP proxy connection provider test":
+    check waitFor(testHttpProxyConnectionProvider()) == true
+
   test "HTTP getHttpAddress() test":
     block:
       # HTTP client supports only `http` and `https` schemes in URL.

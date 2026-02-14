@@ -442,7 +442,7 @@ proc updateRequest*(request: HttpRequestRef, scheme: string, meth: HttpMethod,
     if request.rawPath != "*":
       let uri = parseUri(request.rawPath)
       if uri.scheme notin ["http", "https", ""]:
-        return err(HttpMessage.init(Http400, "Unsupported URI scheme"))
+        return err(HttpMessage.init(Http400, "Unsupported URI scheme" & uri.scheme))
       uri
     else:
       var uri = initUri()
