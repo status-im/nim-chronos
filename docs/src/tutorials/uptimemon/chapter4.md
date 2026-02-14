@@ -2,6 +2,8 @@
 
 **Goal:** Learn how to use streaming to check web page content without fully downloading it.
 
+**Source code:** [chapter4.nim](https://github.com/status-im/nim-chronos/blob/master/docs/examples/uptimemon/chapter4.nim)
+
 Currently, we're using `fetch` to make a GET request and check its result. However, this function doesn't give us just the response status, it gives us the full page content as well.
 
 While this is correct, it's not optimal: if a page is large, our program will consume unnecessary amount of memory to store that response and waste a lot of time downloading it.

@@ -2,6 +2,8 @@
 
 **Goal:** Learn how to prevent the program from freezing on slow responses.
 
+**Source code:** [chapter3.nim](https://github.com/status-im/nim-chronos/blob/master/docs/examples/uptimemon/chapter3.nim)
+
 Our current program works fine with the well-behaving URIs we've tested so far: all these locations either respond quickly or quickly return an error.
 
 However, not all requests will go smoothly when you face the real web. Poor connections, slow servers, anti-bot checks, and access restrictions result in responses that may take long to complete or even never complete. One "misbehaving" request can negatively affect the entire program.

@@ -2,6 +2,8 @@
 
 **Goal:** Learn how to make arbitrarily many HTTP requests asynchronously.
 
+**Source code:** [chapter2.nim](https://github.com/status-im/nim-chronos/blob/master/docs/examples/uptimemon/chapter2.nim)
+
 OK, we have a working app that can check one URI at a time, which is not that much impressive. Let's update our app to do what Chronos was made for—concurrency!
 
 We'll take a somewhat unusual approach and **start with the wrong solution** before revealing the proper way of solving this problem. By highlighting the common mistakes, we'll help you avoid them in the future.

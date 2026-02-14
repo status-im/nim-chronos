@@ -2,6 +2,8 @@
 
 **Goal:** Learn how to make an HTTP request and proccess its response with Chronos.
 
+**Source code:** [chapter1.nim](https://github.com/status-im/nim-chronos/blob/master/docs/examples/uptimemon/chapter1.nim)
+
 Create a file called `uptimemon.nim` and open it your favorite text editor.
 
 Copy and paste this code into this new file (we'll go through each line in a moment):
