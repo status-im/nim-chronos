@@ -1578,3 +1578,147 @@ suite "HTTP client testing suite":
     await session.closeWait()
     await server.stop()
     await server.closeWait()
+
+  proc testProxyHttpRequest(): Future[bool] {.async.} =
+    proc proxyProcess(
+        r: RequestFence
+    ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
+      if r.isOk():
+        let request = r.get()
+        try:
+          if request.uri.hostname == "target-server":
+            case request.uri.path
+            of "/test":
+              await request.respond(Http200, "proxied-response")
+            else:
+              await request.respond(Http404, "Not found")
+          else:
+            await request.respond(Http400, "Invalid host")
+        except HttpWriteError as exc:
+          defaultResponse(exc)
+      else:
+        defaultResponse()
+
+    let
+      proxyServer = createServer(initTAddress("127.0.0.1:0"), proxyProcess, false)
+      proxyAddress = proxyServer.instance.localAddress()
+      proxy = HttpProxy.new("127.0.0.1", uint16 proxyAddress.port)
+    proxyServer.start()
+
+    let
+      targetAddr = "http://target-server/test"
+      session = HttpSessionRef.new(proxy = proxy)
+
+    try:
+      let req = HttpClientRequestRef.new(session, targetAddr)[]
+      let res = await send(req)
+      let success = res.status == 200
+      let resData = await res.getBodyBytes()
+      let data = string.fromBytes(resData)
+      let correctResponse = data == "proxied-response"
+      await res.closeWait()
+      await req.closeWait()
+      return success and correctResponse
+    except HttpError:
+      return false
+    finally:
+      await session.closeWait()
+      await proxyServer.stop()
+      await proxyServer.closeWait()
+
+  proc testProxyHttpsRequest(): Future[bool] {.async.} =
+    proc proxyProcess(
+        r: RequestFence
+    ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
+      if r.isOk():
+        let request = r.get()
+        try:
+          # Handle CONNECT requests for tunneling
+          if request.meth == MethodConnect:
+            # Don't test https itself since we didn't set up a full proxy in the
+            # test
+            await request.respond(Http503, "")
+          else:
+            await request.respond(Http404, "Not found")
+        except HttpWriteError as exc:
+          defaultResponse(exc)
+      else:
+        defaultResponse()
+
+    let
+      proxyServer = createServer(initTAddress("127.0.0.1:0"), proxyProcess, false)
+      proxyAddress = proxyServer.instance.localAddress()
+      proxy = HttpProxy.new("127.0.0.1", uint16 proxyAddress.port)
+    proxyServer.start()
+
+    let
+      targetAddr = "https://secure-target/secure"
+      session = HttpSessionRef.new(
+        {HttpClientFlag.NoVerifyHost, HttpClientFlag.NoVerifyServerName}, proxy = proxy
+      )
+
+    let req = HttpClientRequestRef.new(session, targetAddr)[]
+    try:
+      discard await send(req)
+      return false
+    except HttpError as exc:
+      return "status 400" in exc.msg
+    finally:
+      await req.closeWait()
+      await session.closeWait()
+      await proxyServer.stop()
+      await proxyServer.closeWait()
+
+  proc testProxyAuthentication(): Future[bool] {.async.} =
+    proc proxyProcess(
+        r: RequestFence
+    ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
+      if r.isOk():
+        let request = r.get()
+        try:
+          # Check for Proxy-Authorization header
+          let authHeader = request.headers.getString("Proxy-Authorization")
+          if len(authHeader) > 0:
+            await request.respond(Http200, "auth-success")
+          else:
+            await request.respond(Http407, "Proxy auth required")
+        except HttpWriteError as exc:
+          defaultResponse(exc)
+      else:
+        defaultResponse()
+
+    let
+      proxyServer = createServer(initTAddress("127.0.0.1:0"), proxyProcess, false)
+      proxyAddress = proxyServer.instance.localAddress()
+      proxy =
+        HttpProxy.new("127.0.0.1", uint16 proxyAddress.port, "testuser", "testpass")
+    proxyServer.start()
+
+    let
+      targetAddr = "http://auth-test/resource"
+      session = HttpSessionRef.new(proxy = proxy)
+      req = HttpClientRequestRef.new(session, targetAddr)[]
+
+    try:
+      let res = await send(req)
+      let success = res.status == 200
+      let resData = await res.getBodyBytes()
+      let data = string.fromBytes(resData)
+      await res.closeWait()
+      await req.closeWait()
+
+      return success and data == "auth-success"
+    except HttpError:
+      return false
+    finally:
+      await req.closeWait()
+      await session.closeWait()
+      await proxyServer.stop()
+      await proxyServer.closeWait()
+
+  test "HTTP proxy test":
+    check waitFor(testProxyHttpRequest()) == true
+  test "HTTPS proxy CONNECT tunnel test":
+    check waitFor(testProxyHttpsRequest()) == true
+  test "HTTP proxy with authentication test":
+    check waitFor(testProxyAuthentication()) == true

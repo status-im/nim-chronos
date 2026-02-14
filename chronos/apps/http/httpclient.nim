@@ -115,6 +115,16 @@ type
 
   HttpClientConnectionRef* = ref HttpClientConnection
 
+  HttpProxy* = object
+    ## HTTP proxy configuration
+    hostname*: string
+    port*: uint16
+    username*: string
+    password*: string
+    addresses*: seq[TransportAddress]
+
+  HttpProxyRef* = ref HttpProxy
+
   HttpSessionRef* = ref object
     connections*: Table[string, seq[HttpClientConnectionRef]]
     counter*: uint64
@@ -130,6 +140,7 @@ type
     socketFlags*: set[SocketFlags]
     flags*: HttpClientFlags
     dualstack*: DualStackType
+    proxy*: HttpProxyRef
 
   HttpAddress* = object
     id*: string
@@ -259,6 +270,25 @@ template isIdle(conn: HttpClientConnectionRef, timestamp: Moment,
 
 proc sessionWatcher(session: HttpSessionRef) {.async: (raises: []).}
 
+proc new*(t: typedesc[HttpProxy],
+          hostname: string,
+          port: uint16 = 8080,
+          username: string = "",
+          password: string = ""): HttpProxyRef =
+  ## Create new HTTP proxy configuration object.
+  ##
+  ## ``hostname`` - proxy server hostname
+  ## ``port`` - proxy server port (default 8080)
+  ## ``username`` - proxy authentication username (optional)
+  ## ``password`` - proxy authentication password (optional)
+  let proxy = new(HttpProxy)
+  proxy.hostname = hostname
+  proxy.port = port
+  proxy.username = username
+  proxy.password = password
+  proxy.addresses = @[]
+  proxy
+
 proc new*(t: typedesc[HttpSessionRef],
           flags: HttpClientFlags = {},
           maxRedirections = HttpMaxRedirections,
@@ -269,7 +299,8 @@ proc new*(t: typedesc[HttpSessionRef],
           idleTimeout = HttpConnectionIdleTimeout,
           idlePeriod = HttpConnectionCheckPeriod,
           socketFlags: set[SocketFlags] = {},
-          dualstack = DualStackType.Auto): HttpSessionRef =
+          dualstack = DualStackType.Auto,
+          proxy: HttpProxyRef = nil): HttpSessionRef =
   ## Create new HTTP session object.
   ##
   ## ``maxRedirections`` - maximum number of HTTP 3xx redirections
@@ -277,6 +308,7 @@ proc new*(t: typedesc[HttpSessionRef],
   ## ``headersTimeout`` - timeout for receiving HTTP response headers
   ## ``idleTimeout`` - timeout to consider HTTP connection as idle
   ## ``idlePeriod`` - period of time to check HTTP connections for inactivity
+  ## ``proxy`` - optional HTTP proxy configuration
   doAssert(maxRedirections >= 0, "maxRedirections should not be negative")
   var res = HttpSessionRef(
     flags: flags,
@@ -289,7 +321,8 @@ proc new*(t: typedesc[HttpSessionRef],
     idlePeriod: idlePeriod,
     connections: initTable[string, seq[HttpClientConnectionRef]](),
     socketFlags: socketFlags,
-    dualstack: dualstack
+    dualstack: dualstack,
+    proxy: proxy
   )
   res.watcherFut =
     if HttpClientFlag.Http11Pipeline in flags:
@@ -423,28 +456,34 @@ proc getAddress*(session: HttpSessionRef, url: Uri): HttpResult[HttpAddress] =
 
   let id = hostname & ":" & Base10.toString(port)
 
+  # When using a proxy, don't resolve target address since proxy will do it
   let addresses =
-    try:
-      if (HttpClientFlag.NoInet4Resolution in session.flags) and
-         (HttpClientFlag.NoInet6Resolution in session.flags):
-        # DNS resolution is disabled.
-        @[initTAddress(hostname, Port(port))]
-      else:
-        if (HttpClientFlag.NoInet4Resolution notin session.flags) and
-           (HttpClientFlag.NoInet6Resolution notin session.flags):
-          # DNS resolution for both IPv4 and IPv6 addresses.
-          resolveTAddress(hostname, Port(port))
+    if not(isNil(session.proxy)):
+      # Proxy is configured: return empty addresses, proxy handles target resolution
+      @[]
+    else:
+      # No proxy: resolve target address normally
+      try:
+        if (HttpClientFlag.NoInet4Resolution in session.flags) and
+           (HttpClientFlag.NoInet6Resolution in session.flags):
+          # DNS resolution is disabled.
+          @[initTAddress(hostname, Port(port))]
         else:
-          if HttpClientFlag.NoInet6Resolution in session.flags:
-            # DNS resolution only for IPv4 addresses.
-            resolveTAddress(hostname, Port(port), AddressFamily.IPv4)
+          if (HttpClientFlag.NoInet4Resolution notin session.flags) and
+             (HttpClientFlag.NoInet6Resolution notin session.flags):
+            # DNS resolution for both IPv4 and IPv6 addresses.
+            resolveTAddress(hostname, Port(port))
           else:
-            # DNS resolution only for IPv6 addresses
-            resolveTAddress(hostname, Port(port), AddressFamily.IPv6)
-    except TransportAddressError:
-      return err("Could not resolve address of remote server")
+            if HttpClientFlag.NoInet6Resolution in session.flags:
+              # DNS resolution only for IPv4 addresses.
+              resolveTAddress(hostname, Port(port), AddressFamily.IPv4)
+            else:
+              # DNS resolution only for IPv6 addresses
+              resolveTAddress(hostname, Port(port), AddressFamily.IPv6)
+      except TransportAddressError:
+        return err("Could not resolve address of remote server")
 
-  if len(addresses) == 0:
+  if isNil(session.proxy) and len(addresses) == 0:
     return err("Could not resolve address of remote server")
 
   ok(HttpAddress(id: id, scheme: scheme, hostname: hostname, port: port,
@@ -623,55 +662,169 @@ proc closeWait(conn: HttpClientConnectionRef) {.async: (raises: []).} =
     conn.state = HttpClientConnectionState.Closed
     untrackCounter(HttpClientConnectionTrackerName)
 
+proc resolveProxyAddress(
+    proxy: HttpProxyRef, dualstack: DualStackType
+): Future[seq[TransportAddress]] {.async: (raises: []).} =
+  ## Resolve proxy hostname to transport addresses.
+  if len(proxy.addresses) > 0:
+    return proxy.addresses
+  try:
+    proxy.addresses = resolveTAddress(proxy.hostname, Port(proxy.port))
+  except TransportAddressError:
+    proxy.addresses = @[]
+  proxy.addresses
+
+proc setupProxyAuth(proxy: HttpProxyRef, headers: var HttpTable) =
+  ## Add proxy authentication headers if credentials are provided.
+  if len(proxy.username) > 0 or len(proxy.password) > 0:
+    let auth = proxy.username & ":" & proxy.password
+    let header = "Basic " & Base64Pad.encode(auth.toOpenArrayByte(0, len(auth) - 1))
+    headers.add("Proxy-Authorization", header)
+
+proc setupConnectTunnel(session: HttpSessionRef,
+                        transp: StreamTransport, ha: HttpAddress) {.
+     async: (raises: [CancelledError, HttpConnectionError]).} =
+  ## Establish HTTPS tunnel through HTTP proxy using CONNECT method.
+  var headers = HttpTable.init()
+  headers.add(HostHeader, ha.hostname & ":" & Base10.toString(ha.port))
+  headers.add(ConnectionHeader, "close")
+
+  if not (isNil(session.proxy)):
+    session.proxy.setupProxyAuth(headers)
+
+  var connectRequest =
+    "CONNECT " & ha.hostname & ":" & Base10.toString(ha.port) & " HTTP/1.1\r\n"
+  for k, v in headers.stringItems():
+    if len(v) > 0:
+      connectRequest.add(normalizeHeaderName(k))
+      connectRequest.add(": ")
+      connectRequest.add(v)
+      connectRequest.add("\r\n")
+  connectRequest.add("\r\n")
+
+  try:
+    discard await transp.write(connectRequest)
+  except TransportError as exc:
+    raiseHttpConnectionError("Could not send CONNECT request, reason: " & $exc.msg)
+
+  var headersBuffer = newSeq[byte](HttpMaxHeadersSize)
+  let bytesRead =
+    try:
+      await transp
+        .readUntil(addr headersBuffer[0], len(headersBuffer), HeadersMark)
+        .wait(session.headersTimeout)
+    except AsyncTimeoutError:
+      raiseHttpConnectionError("CONNECT response headers timed out")
+    except TransportError as exc:
+      raiseHttpConnectionError("Could not read CONNECT response, reason: " & $exc.msg)
+
+  let resp = parseResponse(headersBuffer.toOpenArray(0, bytesRead - 1), false)
+  if resp.failed():
+    raiseHttpConnectionError("Invalid CONNECT response headers")
+
+  if resp.code != 200:
+    raiseHttpConnectionError("CONNECT tunnel failed with status " & $resp.code)
+
 proc connect(session: HttpSessionRef,
              ha: HttpAddress): Future[HttpClientConnectionRef] {.
      async: (raises: [CancelledError, HttpConnectionError]).} =
-  ## Establish new connection with remote server using ``url`` and ``flags``.
+  ## Establish new connection with remote server using ``ha`` address.
+  ## If proxy is configured, use proxy for connection.
   ## On success returns ``HttpClientConnectionRef`` object.
-  var lastError = ""
-  # Here we trying to connect to every possible remote host address we got after
-  # DNS resolution.
-  for address in ha.addresses:
-    let transp =
-      try:
-        await connect(address, bufferSize = session.connectionBufferSize,
-                      flags = session.socketFlags,
-                      dualstack = session.dualstack)
-      except TransportError:
-        nil
-    if not(isNil(transp)):
-      let conn =
-        block:
-          let res = HttpClientConnectionRef.new(session, ha, transp).valueOr:
-            raiseHttpConnectionError(
-              "Could not connect to remote host, reason: " & error)
-          if res.kind == HttpClientScheme.Secure:
-            try:
-              await res.tls.handshake()
-              res.state = HttpClientConnectionState.Ready
-            except CancelledError as exc:
-              await res.closeWait()
-              raise exc
-            except TLSStreamProtocolError as exc:
-              await res.closeWait()
-              res.state = HttpClientConnectionState.Error
-              lastError = $exc.msg
-            except AsyncStreamError as exc:
-              await res.closeWait()
-              res.state = HttpClientConnectionState.Error
-              lastError = $exc.msg
-          else:
-            res.state = HttpClientConnectionState.Ready
-          res
-      if conn.state == HttpClientConnectionState.Ready:
-        return conn
 
-  # If all attempts to connect to the remote host have failed.
-  if len(lastError) > 0:
-    raiseHttpConnectionError("Could not connect to remote host, reason: " &
-                             lastError)
+  var transp: StreamTransport
+  var lastError = ""
+  if not (isNil(session.proxy)):
+    # Connect through proxy
+    let proxyAddresses = await session.proxy.resolveProxyAddress(session.dualstack)
+    if len(proxyAddresses) == 0:
+      raiseHttpConnectionError("Could not resolve proxy address")
+
+    for proxyAddr in proxyAddresses:
+      transp =
+        try:
+          await connect(
+            proxyAddr,
+            bufferSize = session.connectionBufferSize,
+            flags = session.socketFlags,
+            dualstack = session.dualstack,
+          )
+        except TransportError:
+          nil
+
+      if not (isNil(transp)):
+        if ha.scheme == HttpClientScheme.Secure:
+          try:
+            await session.setupConnectTunnel(transp, ha)
+            break
+          except CancelledError as exc:
+            await transp.closeWait()
+            transp = nil
+            raise exc
+          except HttpConnectionError as exc:
+            await transp.closeWait()
+            transp = nil
+            lastError = exc.msg
+        else:
+          break
+
+    if isNil(transp):
+      # All proxy connection attempts failed
+      if len(lastError) > 0:
+        raiseHttpConnectionError("Could not connect to proxy, reason: " & lastError)
+      else:
+        raiseHttpConnectionError("Could not connect to proxy")
   else:
-    raiseHttpConnectionError("Could not connect to remote host")
+    # Direct connection without proxy
+    for address in ha.addresses:
+      transp =
+        try:
+          await connect(address, bufferSize = session.connectionBufferSize,
+                        flags = session.socketFlags,
+                        dualstack = session.dualstack)
+        except TransportError:
+          nil
+
+      if not(isNil(transp)):
+        break
+    if isNil(transp):
+      # If all attempts to connect to the remote host have failed.
+      if len(lastError) > 0:
+        raiseHttpConnectionError(
+          "Could not connect to remote host, reason: " & lastError)
+      else:
+        raiseHttpConnectionError("Could not connect to remote host")
+
+  let conn = block:
+    let res = HttpClientConnectionRef.new(session, ha, transp).valueOr:
+      raiseHttpConnectionError("Could not connect to remote host, reason: " & error)
+    if res.kind == HttpClientScheme.Secure:
+      try:
+        await res.tls.handshake()
+        res.state = HttpClientConnectionState.Ready
+      except CancelledError as exc:
+        await res.closeWait()
+        raise exc
+      except TLSStreamProtocolError as exc:
+        await res.closeWait()
+        res.state = HttpClientConnectionState.Error
+        lastError = $exc.msg
+      except AsyncStreamError as exc:
+        await res.closeWait()
+        res.state = HttpClientConnectionState.Error
+        lastError = $exc.msg
+    else:
+      res.state = HttpClientConnectionState.Ready
+    res
+
+  if conn.state != HttpClientConnectionState.Ready:
+    # If all attempts to connect to the remote host have failed.
+    if len(lastError) > 0:
+      raiseHttpConnectionError("Could not connect to remote host, reason: " & lastError)
+    else:
+      raiseHttpConnectionError("Could not connect to remote host")
+
+  return conn
 
 proc removeConnection(session: HttpSessionRef,
                       conn: HttpClientConnectionRef) {.async: (raises: []).} =
@@ -1131,6 +1284,12 @@ proc prepareRequest(request: HttpClientRequestRef): string =
                    Base64Pad.encode(auth.toOpenArrayByte(0, len(auth) - 1))
       request.headers.add(AuthorizationHeader, header)
 
+  # We will send `Proxy-Authorization` information if proxy is configured
+  # with credentials and header is not already present.
+  if not (isNil(request.session.proxy)) and
+      request.address.scheme != HttpClientScheme.Secure:
+    request.session.proxy.setupProxyAuth(request.headers)
+
   # Here we perform automatic detection: if request was created with non-zero
   # body and `Content-Length` header is missing we will create one with size
   # of body stored in request.
@@ -1150,14 +1309,33 @@ proc prepareRequest(request: HttpClientRequestRef): string =
 
   let entity =
     block:
-      var res =
+      # For HTTP proxy connections (non-HTTPS), send absolute URI
+      # For direct connections or HTTPS through CONNECT tunnel, send relative path
+      var res: string
+      if not(isNil(request.session.proxy)) and
+         request.address.scheme != HttpClientScheme.Secure:
+        # HTTP proxy: use absolute URI
+        res = "http://" & request.address.hostname
+        if request.address.port != 80:
+          res.add(":")
+          res.add(Base10.toString(request.address.port))
         if len(request.address.path) > 0:
-          request.address.path
+          res.add(request.address.path)
         else:
-          "/"
-      if len(request.address.query) > 0:
-        res.add("?")
-        res.add(request.address.query)
+          res.add("/")
+        if len(request.address.query) > 0:
+          res.add("?")
+          res.add(request.address.query)
+      else:
+        # Direct connection or HTTPS through CONNECT: use relative path
+        res =
+          if len(request.address.path) > 0:
+            request.address.path
+          else:
+            "/"
+        if len(request.address.query) > 0:
+          res.add("?")
+          res.add(request.address.query)
       if len(request.address.anchor) > 0:
         res.add("#")
         res.add(request.address.anchor)
