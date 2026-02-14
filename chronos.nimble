@@ -47,6 +47,12 @@ proc run(args, path: string) =
   build args, path
   exec "build/" & path.splitPath[1]
 
+proc tryExec(cmd: string) =
+  try:
+    exec cmd
+  except:
+    echo getCurrentExceptionMsg()
+
 task examples, "Build examples":
   # Build book examples
   for file in listFiles("docs/examples"):
@@ -82,4 +88,9 @@ task test_libbacktrace, "test with libbacktrace":
 
 task docs, "Generate API documentation":
   exec "mdbook build docs"
-  exec nimc & " doc " & "--git.url:https://github.com/status-im/nim-chronos --git.commit:master --outdir:docs/book/api --project chronos"
+  tryExec nimc & " doc " & "--git.url:https://github.com/status-im/nim-chronos --git.commit:master --outdir:docs/book/api --project chronos"
+
+  # Build the docs for modules that aren't part of the main module.
+  for item in walkDir("chronos/apps/http"):
+    if item.kind == pcFile and item.path.splitFile().ext == ".nim":
+      tryExec nimc & " doc " & "--git.url:https://github.com/status-im/nim-chronos --git.commit:master --outdir:docs/book/api/chronos/apps/http " & item.path
