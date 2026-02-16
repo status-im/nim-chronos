@@ -70,7 +70,9 @@ proc setSockOpt*(
   ## Returns ``true`` on success, ``false`` on error.
   setSockOpt2(socket, level, optname, value, valuelen).isOk
 
-proc getSockOpt2*(socket: AsyncFD, level, optname: int): Result[cint, OSErrorCode] =
+proc getSockOpt2*(
+    socket: AsyncFD, level, optname: int
+): Result[cint, OSErrorCode] =
   var
     value: cint
     size = SockLen(sizeof(value))
@@ -164,8 +166,9 @@ proc createAsyncSocket2*(
         osdefs.WSA_FLAG_OVERLAPPED
       else:
         osdefs.WSA_FLAG_OVERLAPPED or osdefs.WSA_FLAG_NO_HANDLE_INHERIT
-    let fd =
-      wsaSocket(toInt(domain), toInt(sockType), toInt(protocol), nil, GROUP(0), flags)
+    let fd = wsaSocket(
+      toInt(domain), toInt(sockType), toInt(protocol), nil, GROUP(0), flags
+    )
     if fd == osdefs.INVALID_SOCKET:
       return err(osLastError())
 
@@ -203,7 +206,9 @@ proc createAsyncSocket2*(
         return err(error)
       ok(AsyncFD(fd))
 
-proc wrapAsyncSocket2*(sock: cint | SocketHandle): Result[AsyncFD, OSErrorCode] =
+proc wrapAsyncSocket2*(
+    sock: cint | SocketHandle
+): Result[AsyncFD, OSErrorCode] =
   ## Wraps socket to asynchronous socket handle.
   let fd =
     when defined(windows):
@@ -225,7 +230,9 @@ proc createAsyncSocket*(
   createAsyncSocket2(domain, sockType, protocol, inherit).valueOr:
     return asyncInvalidSocket
 
-proc wrapAsyncSocket*(sock: cint | SocketHandle): AsyncFD {.raises: [CatchableError].} =
+proc wrapAsyncSocket*(
+    sock: cint | SocketHandle
+): AsyncFD {.raises: [CatchableError].} =
   ## Wraps socket to asynchronous socket handle.
   ## Return ``asyncInvalidSocket`` on error.
   wrapAsyncSocket2(sock).valueOr:

@@ -1435,10 +1435,8 @@ suite "Future[T] behavior test suite":
           if not (fut1.finished()) or not (fut2.finished()):
             false
           else:
-            if fut1.failed() or fut1.cancelled() or fut2.failed() or fut2.cancelled():
-              false
-            else:
-              true
+            if fut1.failed() or fut1.cancelled() or fut2.failed() or
+                fut2.cancelled(): false else: true
         except CatchableError:
           false
       check res
@@ -1501,11 +1499,14 @@ suite "Future[T] behavior test suite":
     let loc31 = fut3.location[1]
     {.pop.}
 
-    proc chk(loc: ptr SrcLoc, file: string, line: int, procedure: string): bool =
+    proc chk(
+        loc: ptr SrcLoc, file: string, line: int, procedure: string
+    ): bool =
       if len(procedure) == 0:
         (loc.line == line) and ($loc.file == file)
       else:
-        (loc.line == line) and ($loc.file == file) and (loc.procedure == procedure)
+        (loc.line == line) and ($loc.file == file) and
+          (loc.procedure == procedure)
 
     check:
       chk(loc10, "testfut.nim", first + 2, "macroFuture")
@@ -1820,7 +1821,9 @@ suite "Future[T] behavior test suite":
         v2_u + 1'u == 0'u
 
   asyncTest "wait(duration) cancellation undefined behavior test #1":
-    proc testInnerFoo(fooFut: Future[void]): Future[TestFooConnection] {.async.} =
+    proc testInnerFoo(
+        fooFut: Future[void]
+    ): Future[TestFooConnection] {.async.} =
       await fooFut
       return TestFooConnection()
 
@@ -1842,11 +1845,15 @@ suite "Future[T] behavior test suite":
     await someFut
 
   asyncTest "wait(duration) cancellation undefined behavior test #2":
-    proc testInnerFoo(fooFut: Future[void]): Future[TestFooConnection] {.async.} =
+    proc testInnerFoo(
+        fooFut: Future[void]
+    ): Future[TestFooConnection] {.async.} =
       await fooFut
       return TestFooConnection()
 
-    proc testMiddleFoo(fooFut: Future[void]): Future[TestFooConnection] {.async.} =
+    proc testMiddleFoo(
+        fooFut: Future[void]
+    ): Future[TestFooConnection] {.async.} =
       await testInnerFoo(fooFut)
 
     proc testFoo(fooFut: Future[void]) {.async.} =
@@ -1880,7 +1887,9 @@ suite "Future[T] behavior test suite":
     check (await testFoo()) == true
 
   asyncTest "withTimeout() cancellation undefined behavior test #1":
-    proc testInnerFoo(fooFut: Future[void]): Future[TestFooConnection] {.async.} =
+    proc testInnerFoo(
+        fooFut: Future[void]
+    ): Future[TestFooConnection] {.async.} =
       await fooFut
       return TestFooConnection()
 
@@ -1907,11 +1916,15 @@ suite "Future[T] behavior test suite":
     await someFut
 
   asyncTest "withTimeout() cancellation undefined behavior test #2":
-    proc testInnerFoo(fooFut: Future[void]): Future[TestFooConnection] {.async.} =
+    proc testInnerFoo(
+        fooFut: Future[void]
+    ): Future[TestFooConnection] {.async.} =
       await fooFut
       return TestFooConnection()
 
-    proc testMiddleFoo(fooFut: Future[void]): Future[TestFooConnection] {.async.} =
+    proc testMiddleFoo(
+        fooFut: Future[void]
+    ): Future[TestFooConnection] {.async.} =
       await testInnerFoo(fooFut)
 
     proc testFoo(fooFut: Future[void]) {.async.} =
@@ -1950,7 +1963,9 @@ suite "Future[T] behavior test suite":
     check (await testFoo()) == true
 
   asyncTest "wait(future) cancellation undefined behavior test #1":
-    proc testInnerFoo(fooFut: Future[void]): Future[TestFooConnection] {.async.} =
+    proc testInnerFoo(
+        fooFut: Future[void]
+    ): Future[TestFooConnection] {.async.} =
       await fooFut
       return TestFooConnection()
 
@@ -1976,11 +1991,15 @@ suite "Future[T] behavior test suite":
     await someFut
 
   asyncTest "wait(future) cancellation undefined behavior test #2":
-    proc testInnerFoo(fooFut: Future[void]): Future[TestFooConnection] {.async.} =
+    proc testInnerFoo(
+        fooFut: Future[void]
+    ): Future[TestFooConnection] {.async.} =
       await fooFut
       return TestFooConnection()
 
-    proc testMiddleFoo(fooFut: Future[void]): Future[TestFooConnection] {.async.} =
+    proc testMiddleFoo(
+        fooFut: Future[void]
+    ): Future[TestFooConnection] {.async.} =
       await testInnerFoo(fooFut)
 
     proc testFoo(fooFut: Future[void]) {.async.} =
@@ -2100,8 +2119,9 @@ suite "Future[T] behavior test suite":
 
     block:
       # Cancellation of pending Future, when automatic scheduling disabled
-      let future =
-        newFuture[void]("last.child.pending.future", {FutureFlag.OwnCancelSchedule})
+      let future = newFuture[void](
+        "last.child.pending.future", {FutureFlag.OwnCancelSchedule}
+      )
       proc cancellation(udata: pointer) {.gcsafe.} =
         discard
 
@@ -2125,8 +2145,9 @@ suite "Future[T] behavior test suite":
     block:
       # Cancellation of pending Future, which will fail Future on cancellation,
       # when automatic scheduling disabled
-      let future =
-        newFuture[void]("last.child.completed.future", {FutureFlag.OwnCancelSchedule})
+      let future = newFuture[void](
+        "last.child.completed.future", {FutureFlag.OwnCancelSchedule}
+      )
       proc cancellation(udata: pointer) {.gcsafe.} =
         future.complete()
 
@@ -2141,8 +2162,9 @@ suite "Future[T] behavior test suite":
     block:
       # Cancellation of pending Future, which will fail Future on cancellation,
       # when automatic scheduling disabled
-      let future =
-        newFuture[void]("last.child.failed.future", {FutureFlag.OwnCancelSchedule})
+      let future = newFuture[void](
+        "last.child.failed.future", {FutureFlag.OwnCancelSchedule}
+      )
       proc cancellation(udata: pointer) {.gcsafe.} =
         future.fail(newException(ValueError, "ABCD"))
 
@@ -2157,8 +2179,9 @@ suite "Future[T] behavior test suite":
     block:
       # Cancellation of pending Future, which will fail Future on cancellation,
       # when automatic scheduling disabled
-      let future =
-        newFuture[void]("last.child.cancelled.future", {FutureFlag.OwnCancelSchedule})
+      let future = newFuture[void](
+        "last.child.cancelled.future", {FutureFlag.OwnCancelSchedule}
+      )
       proc cancellation(udata: pointer) {.gcsafe.} =
         future.cancelAndSchedule()
 
@@ -2173,8 +2196,9 @@ suite "Future[T] behavior test suite":
       # Cancellation of pending Pending->Pending->Pending->Pending, when
       # automatic scheduling disabled and Future do nothing in cancellation
       # callback
-      let future =
-        newFuture[void]("last.child.pending.future", {FutureFlag.OwnCancelSchedule})
+      let future = newFuture[void](
+        "last.child.pending.future", {FutureFlag.OwnCancelSchedule}
+      )
       proc cancellation(udata: pointer) {.gcsafe.} =
         discard
 
@@ -2203,8 +2227,9 @@ suite "Future[T] behavior test suite":
       # Cancellation of pending Pending->Pending->Pending->Pending, when
       # automatic scheduling disabled and Future completes in cancellation
       # callback
-      let future =
-        newFuture[void]("last.child.pending.future", {FutureFlag.OwnCancelSchedule})
+      let future = newFuture[void](
+        "last.child.pending.future", {FutureFlag.OwnCancelSchedule}
+      )
       proc cancellation(udata: pointer) {.gcsafe.} =
         future.complete()
 
@@ -2223,8 +2248,9 @@ suite "Future[T] behavior test suite":
     block:
       # Cancellation of pending Pending->Pending->Pending->Pending, when
       # automatic scheduling disabled and Future fails in cancellation callback
-      let future =
-        newFuture[void]("last.child.pending.future", {FutureFlag.OwnCancelSchedule})
+      let future = newFuture[void](
+        "last.child.pending.future", {FutureFlag.OwnCancelSchedule}
+      )
       proc cancellation(udata: pointer) {.gcsafe.} =
         future.fail(newException(ValueError, "ABCD"))
 
@@ -2243,8 +2269,9 @@ suite "Future[T] behavior test suite":
     block:
       # Cancellation of pending Pending->Pending->Pending->Pending, when
       # automatic scheduling disabled and Future fails in cancellation callback
-      let future =
-        newFuture[void]("last.child.pending.future", {FutureFlag.OwnCancelSchedule})
+      let future = newFuture[void](
+        "last.child.pending.future", {FutureFlag.OwnCancelSchedule}
+      )
       proc cancellation(udata: pointer) {.gcsafe.} =
         future.cancelAndSchedule()
 
@@ -2537,10 +2564,12 @@ suite "Future[T] behavior test suite":
     let
       future0 = Future[void].Raising([]).init("future0", {OwnCancelSchedule})
       future1 = Future[void].Raising([CancelledError]).init("future1")
-      future2 = Future[void].Raising([CancelledError, ValueError]).init("future2")
+      future2 =
+        Future[void].Raising([CancelledError, ValueError]).init("future2")
       future3 = Future[string].Raising([]).init("future3", {OwnCancelSchedule})
       future4 = Future[string].Raising([CancelledError]).init("future4")
-      future5 = Future[string].Raising([CancelledError, ValueError]).init("future5")
+      future5 =
+        Future[string].Raising([CancelledError, ValueError]).init("future5")
       future6 = newFuture[void]("future6")
       future7 = newFuture[void]("future7")
       future8 = newFuture[void]("future8")
@@ -2567,8 +2596,8 @@ suite "Future[T] behavior test suite":
       cancelAndWait(future6, future7, future8).finished() == true
       cancelAndWait(future9, future10, future11).finished() == true
       cancelAndWait(
-        future0, future1, future2, future3, future4, future5, future5, future7, future8,
-        future9, future10, future11,
+        future0, future1, future2, future3, future4, future5, future5, future7,
+        future8, future9, future10, future11,
       )
         .finished() == true
 
@@ -2661,7 +2690,9 @@ suite "Future[T] behavior test suite":
 
     let res =
       try:
-        await noCancel allFutures(cancelfut0, cancelfut1, cancelfut2).wait(1.seconds)
+        await noCancel allFutures(cancelfut0, cancelfut1, cancelfut2).wait(
+          1.seconds
+        )
         true
       except AsyncTimeoutError:
         false
@@ -2714,7 +2745,8 @@ suite "Future[T] behavior test suite":
 
   asyncTest "Timeout/cancellation race wait(duration) test":
     proc raceTest(T: typedesc, itype: int) {.async.} =
-      let monitorFuture = newFuture[T]("monitor", {FutureFlag.OwnCancelSchedule})
+      let monitorFuture =
+        newFuture[T]("monitor", {FutureFlag.OwnCancelSchedule})
 
       proc raceProc0(future: Future[T]): Future[T] {.async.} =
         await future
@@ -2856,7 +2888,8 @@ suite "Future[T] behavior test suite":
 
   asyncTest "Timeout/cancellation race withTimeout() test":
     proc raceTest(T: typedesc, itype: int) {.async.} =
-      let monitorFuture = newFuture[T]("monitor", {FutureFlag.OwnCancelSchedule})
+      let monitorFuture =
+        newFuture[T]("monitor", {FutureFlag.OwnCancelSchedule})
 
       proc raceProc0(future: Future[T]): Future[T] {.async.} =
         await future

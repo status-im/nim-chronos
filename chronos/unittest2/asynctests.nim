@@ -24,7 +24,8 @@ template asyncTest*(name: string, body: untyped): untyped =
 template checkLeaks*(name: string): untyped =
   let counter = getTrackerCounter(name)
   checkpoint:
-    "[" & name & "] opened = " & $counter.opened & ", closed = " & $counter.closed
+    "[" & name & "] opened = " & $counter.opened & ", closed = " &
+      $counter.closed
   check counter.opened == counter.closed
 
 proc checkLeaks*() =

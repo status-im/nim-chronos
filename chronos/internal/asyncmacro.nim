@@ -27,7 +27,10 @@ proc processBody(node, setResultSym: NimNode): NimNode {.compileTime.} =
   else:
     if node.kind == nnkYieldStmt:
       # asyncdispatch allows `yield` but this breaks cancellation
-      warning("`yield` in async procedures not supported - use `awaitne` instead", node)
+      warning(
+        "`yield` in async procedures not supported - use `awaitne` instead",
+        node,
+      )
 
     for i in 0 ..< node.len:
       node[i] = processBody(node[i], setResultSym)
@@ -69,7 +72,8 @@ proc wrapInTryFinally(
       nTry.add nnkExceptBranch.newTree(
         nnkInfix.newTree(ident"as", ident"Defect", excName),
         nnkStmtList.newTree(
-          nnkAsgn.newTree(closureSucceeded, ident"false"), nnkRaiseStmt.newTree(excName)
+          nnkAsgn.newTree(closureSucceeded, ident"false"),
+          nnkRaiseStmt.newTree(excName),
         ),
       )
 
@@ -157,7 +161,9 @@ proc wrapInTryFinally(
               newCall(ident "complete", fut),
             ),
             nnkElseExpr.newTree(
-              newCall(ident "complete", fut, newCall(ident "move", ident "result"))
+              newCall(
+                ident "complete", fut, newCall(ident "move", ident "result")
+              )
             ),
           ),
       )
@@ -284,7 +290,9 @@ proc asyncSingleProc(prc, params: NimNode): NimNode {.compileTime.} =
         eqIdent(returnType[0], "InternalRaisesFuture")
       )
     ):
-      error("Expected return type of 'Future' got '" & repr(returnType) & "'", prc)
+      error(
+        "Expected return type of 'Future' got '" & repr(returnType) & "'", prc
+      )
       return
     else:
       returnType[1]
@@ -298,14 +306,18 @@ proc asyncSingleProc(prc, params: NimNode): NimNode {.compileTime.} =
     (raw, raises, handleException) = decodeParams(params)
     internalFutureType =
       if baseTypeIsVoid:
-        newNimNode(nnkBracketExpr, prc).add(newIdentNode("Future")).add(baseType)
+        newNimNode(nnkBracketExpr, prc).add(newIdentNode("Future")).add(
+          baseType
+        )
       else:
         returnType
     internalReturnType =
       if raises == nil:
         internalFutureType
       else:
-        nnkBracketExpr.newTree(newIdentNode("InternalRaisesFuture"), baseType, raises)
+        nnkBracketExpr.newTree(
+          newIdentNode("InternalRaisesFuture"), baseType, raises
+        )
 
   prc.params2[0] = internalReturnType
 
@@ -313,14 +325,17 @@ proc asyncSingleProc(prc, params: NimNode): NimNode {.compileTime.} =
     prc.addPragma(newColonExpr(ident "stackTrace", ident "off"))
 
   # The proc itself doesn't raise
-  prc.addPragma(nnkExprColonExpr.newTree(newIdentNode("raises"), nnkBracket.newTree()))
+  prc.addPragma(
+    nnkExprColonExpr.newTree(newIdentNode("raises"), nnkBracket.newTree())
+  )
 
   # `gcsafe` isn't deduced even though we require async code to be gcsafe
   # https://github.com/nim-lang/RFCs/issues/435
   prc.addPragma(newIdentNode("gcsafe"))
 
   if raw: # raw async = body is left as-is
-    if raises != nil and prc.kind notin {nnkProcTy, nnkLambda} and not isEmpty(prc.body):
+    if raises != nil and prc.kind notin {nnkProcTy, nnkLambda} and
+        not isEmpty(prc.body):
       # Inject `raises` type marker that causes `newFuture` to return a raise-
       # tracking future instead of an ordinary future:
       #
@@ -338,9 +353,8 @@ proc asyncSingleProc(prc, params: NimNode): NimNode {.compileTime.} =
         ),
         prc.body,
       )
-  elif prc.kind in {nnkProcDef, nnkLambda, nnkMethodDef, nnkDo} and not isEmpty(
-    prc.body
-  ):
+  elif prc.kind in {nnkProcDef, nnkLambda, nnkMethodDef, nnkDo} and
+      not isEmpty(prc.body):
     let
       setResultSym = ident "setResult"
       procBody = prc.body.processBody(setResultSym)
@@ -382,7 +396,9 @@ proc asyncSingleProc(prc, params: NimNode): NimNode {.compileTime.} =
                 #      `compiles(procBody)` - this is not without cost though
                 nnkVarSection.newTree(
                   nnkIdentDefs.newTree(
-                    nnkPragmaExpr.newTree(resultIdent, nnkPragma.newTree(ident "used")),
+                    nnkPragmaExpr.newTree(
+                      resultIdent, nnkPragma.newTree(ident "used")
+                    ),
                     baseType,
                     newEmptyNode(),
                   )
@@ -498,14 +514,19 @@ proc asyncSingleProc(prc, params: NimNode): NimNode {.compileTime.} =
         if raises == nil:
           nnkBracketExpr.newTree(ident "newFuture", baseType)
         else:
-          nnkBracketExpr.newTree(ident "newInternalRaisesFuture", baseType, raises)
+          nnkBracketExpr.newTree(
+            ident "newInternalRaisesFuture", baseType, raises
+          )
 
     retFutureSym.copyLineInfo(prc)
-    outerProcBody.add(newLetStmt(retFutureSym, newCall(newFutProc, newLit(prcName))))
+    outerProcBody.add(
+      newLetStmt(retFutureSym, newCall(newFutProc, newLit(prcName)))
+    )
 
     outerProcBody.add(
       newAssignment(
-        newDotExpr(retFutureSym, newIdentNode("internalClosure")), iteratorNameSym
+        newDotExpr(retFutureSym, newIdentNode("internalClosure")),
+        iteratorNameSym,
       )
     )
 
@@ -535,7 +556,9 @@ template await*[T](f: Future[T]): T =
     # responsible for resuming execution once the yielded future is finished
     yield chronosInternalRetFuture.internalChild
     # `child` released by `futureContinue`
-    cast[type(f)](chronosInternalRetFuture.internalChild).internalRaiseIfError(f)
+    cast[type(f)](chronosInternalRetFuture.internalChild).internalRaiseIfError(
+      f
+    )
 
     when T isnot void:
       cast[type(f)](chronosInternalRetFuture.internalChild).value()
@@ -557,7 +580,9 @@ template await*[T, E](fut: InternalRaisesFuture[T, E]): T =
     # responsible for resuming execution once the yielded future is finished
     yield chronosInternalRetFuture.internalChild
     # `child` released by `futureContinue`
-    cast[type(fut)](chronosInternalRetFuture.internalChild).internalRaiseIfError(E, fut)
+    cast[type(fut)](chronosInternalRetFuture.internalChild).internalRaiseIfError(
+      E, fut
+    )
 
     when T isnot void:
       cast[type(fut)](chronosInternalRetFuture.internalChild).value()

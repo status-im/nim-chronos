@@ -60,7 +60,9 @@ suite "Server's test suite":
     except CatchableError as exc:
       raiseAssert exc.msg
 
-  proc customServerTransport(server: StreamServer, fd: AsyncFD): StreamTransport =
+  proc customServerTransport(
+      server: StreamServer, fd: AsyncFD
+  ): StreamTransport =
     var transp = CustomTransport()
     transp.test = "CUSTOM"
     result = cast[StreamTransport](transp)
@@ -129,7 +131,8 @@ suite "Server's test suite":
     var co = CustomData()
     co.test = "CUSTOMDATA"
     var ta = initTAddress("127.0.0.1:0")
-    var server = createStreamServer(ta, serveUdataStreamClient, {ReuseAddr}, udata = co)
+    var server =
+      createStreamServer(ta, serveUdataStreamClient, {ReuseAddr}, udata = co)
 
     server.start()
     var transp = await connect(server.localAddress())
@@ -145,7 +148,8 @@ suite "Server's test suite":
 
   asyncTest "Backlog and connect cancellation":
     var ta = initTAddress("127.0.0.1:0")
-    var server1 = createStreamServer(ta, serveStreamClient, {ReuseAddr}, backlog = 1)
+    var server1 =
+      createStreamServer(ta, serveStreamClient, {ReuseAddr}, backlog = 1)
     ta = server1.localAddress()
 
     var clients: seq[Future[StreamTransport]]

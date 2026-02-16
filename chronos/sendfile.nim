@@ -58,7 +58,8 @@ elif (defined(linux) or defined(android)) and not (defined(emscripten)):
       count = 0
       -1
 
-elif defined(freebsd) or defined(openbsd) or defined(netbsd) or defined(dragonflybsd):
+elif defined(freebsd) or defined(openbsd) or defined(netbsd) or
+    defined(dragonflybsd):
   import oserrno
   type SendfileHeader* {.
     importc: "struct sf_hdtr",
@@ -85,8 +86,9 @@ elif defined(freebsd) or defined(openbsd) or defined(netbsd) or defined(dragonfl
 
   proc sendfile*(outfd, infd: int, offset: int, count: var int): int =
     var o = 0'u
-    let res =
-      osSendFile(cint(infd), cint(outfd), uint(offset), uint(count), nil, addr o, 0)
+    let res = osSendFile(
+      cint(infd), cint(outfd), uint(offset), uint(count), nil, addr o, 0
+    )
     if res >= 0:
       count = int(o)
       0
@@ -112,7 +114,11 @@ elif defined(macosx):
   .} = object
 
   proc osSendFile*(
-    fd, s: cint, offset: int, size: ptr int, hdtr: ptr SendfileHeader, flags: int
+    fd, s: cint,
+    offset: int,
+    size: ptr int,
+    hdtr: ptr SendfileHeader,
+    flags: int,
   ): int {.
     importc: "sendfile",
     header: """#include <sys/types.h>

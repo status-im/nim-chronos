@@ -11,14 +11,17 @@
 {.pragma: apforward, gcsafe, raises: [].}
 
 import std/strtabs
-import "."/[config, asyncloop, handles, osdefs, osutils, oserrno], streams/asyncstream
+import
+  "."/[config, asyncloop, handles, osdefs, osutils, oserrno],
+  streams/asyncstream
 import stew/[byteutils], results
 from std/os import quoteShell, quoteShellWindows, quoteShellPosix, envPairs
 
 export strtabs, results
 export quoteShell, quoteShellWindows, quoteShellPosix, envPairs
 
-const AsyncProcessTrackerName* = "async.process" ## AsyncProcess leaks tracker name
+const AsyncProcessTrackerName* = "async.process"
+  ## AsyncProcess leaks tracker name
 
 type
   AsyncProcessError* = object of AsyncError
@@ -175,14 +178,20 @@ proc init*(
       let
         transp = ?fromPipe2(handle.handle)
         reader = newAsyncStreamReader(transp)
-        flags = baseFlags + {StreamHolderFlag.Stream, StreamHolderFlag.Transport}
-      ok(AsyncStreamHolder(kind: StreamKind.Reader, reader: reader, flags: flags))
+        flags =
+          baseFlags + {StreamHolderFlag.Stream, StreamHolderFlag.Transport}
+      ok(
+        AsyncStreamHolder(kind: StreamKind.Reader, reader: reader, flags: flags)
+      )
     of StreamKind.Writer:
       let
         transp = ?fromPipe2(handle.handle)
         writer = newAsyncStreamWriter(transp)
-        flags = baseFlags + {StreamHolderFlag.Stream, StreamHolderFlag.Transport}
-      ok(AsyncStreamHolder(kind: StreamKind.Writer, writer: writer, flags: flags))
+        flags =
+          baseFlags + {StreamHolderFlag.Stream, StreamHolderFlag.Transport}
+      ok(
+        AsyncStreamHolder(kind: StreamKind.Writer, writer: writer, flags: flags)
+      )
     of StreamKind.None:
       ok(AsyncStreamHolder(kind: StreamKind.None))
   of ProcessStreamHandleKind.Transport:
@@ -191,12 +200,16 @@ proc init*(
       let
         reader = newAsyncStreamReader(handle.transp)
         flags = baseFlags + {StreamHolderFlag.Stream}
-      ok(AsyncStreamHolder(kind: StreamKind.Reader, reader: reader, flags: flags))
+      ok(
+        AsyncStreamHolder(kind: StreamKind.Reader, reader: reader, flags: flags)
+      )
     of StreamKind.Writer:
       let
         writer = newAsyncStreamWriter(handle.transp)
         flags = baseFlags + {StreamHolderFlag.Stream}
-      ok(AsyncStreamHolder(kind: StreamKind.Writer, writer: writer, flags: flags))
+      ok(
+        AsyncStreamHolder(kind: StreamKind.Writer, writer: writer, flags: flags)
+      )
     of StreamKind.None:
       ok(AsyncStreamHolder(kind: StreamKind.None))
   of ProcessStreamHandleKind.StreamReader:
@@ -217,7 +230,9 @@ proc init*(
 proc init*(t: typedesc[ProcessStreamHandle]): ProcessStreamHandle =
   ProcessStreamHandle(kind: ProcessStreamHandleKind.None)
 
-proc init*(t: typedesc[ProcessStreamHandle], handle: AsyncFD): ProcessStreamHandle =
+proc init*(
+    t: typedesc[ProcessStreamHandle], handle: AsyncFD
+): ProcessStreamHandle =
   ProcessStreamHandle(kind: ProcessStreamHandleKind.ProcHandle, handle: handle)
 
 proc init*(
@@ -232,12 +247,16 @@ proc init*(
 proc init*(
     t: typedesc[ProcessStreamHandle], reader: AsyncStreamReader
 ): ProcessStreamHandle =
-  ProcessStreamHandle(kind: ProcessStreamHandleKind.StreamReader, reader: reader)
+  ProcessStreamHandle(
+    kind: ProcessStreamHandleKind.StreamReader, reader: reader
+  )
 
 proc init*(
     t: typedesc[ProcessStreamHandle], writer: AsyncStreamWriter
 ): ProcessStreamHandle =
-  ProcessStreamHandle(kind: ProcessStreamHandleKind.StreamWriter, writer: writer)
+  ProcessStreamHandle(
+    kind: ProcessStreamHandleKind.StreamWriter, writer: writer
+  )
 
 proc isEmpty*(handle: ProcessStreamHandle): bool =
   handle.kind == ProcessStreamHandleKind.None
@@ -254,7 +273,9 @@ proc preparePipes(
 ): AsyncProcessResult[AsyncProcessPipes] {.apforward.}
 
 proc closeProcessHandles(
-  pipes: var AsyncProcessPipes, options: set[AsyncProcessOption], lastError: OSErrorCode
+  pipes: var AsyncProcessPipes,
+  options: set[AsyncProcessOption],
+  lastError: OSErrorCode,
 ): OSErrorCode {.apforward.}
 
 proc closeProcessStreams(
@@ -361,7 +382,8 @@ when defined(windows):
 
   proc getStderrHandle(pipes: AsyncProcessPipes): HANDLE =
     if pipes.flags *
-        {ProcessFlag.AutoStderr, ProcessFlag.UserStderr, ProcessFlag.CopyStdout} != {}:
+        {ProcessFlag.AutoStderr, ProcessFlag.UserStderr, ProcessFlag.CopyStdout} !=
+        {}:
       HANDLE(pipes.stderrHandle)
     else:
       getStdHandle(STD_ERROR_HANDLE)
@@ -405,7 +427,9 @@ when defined(windows):
     str.add("\x00\x00")
     toWideString(str)
 
-  proc closeThreadAndProcessHandle(p: AsyncProcessRef): AsyncProcessResult[void] =
+  proc closeThreadAndProcessHandle(
+      p: AsyncProcessRef
+  ): AsyncProcessResult[void] =
     if p.threadHandle != HANDLE(0):
       if closeHandle(p.threadHandle) == FALSE:
         discard closeHandle(p.processHandle)
@@ -426,7 +450,9 @@ when defined(windows):
       stdinHandle = ProcessStreamHandle(),
       stdoutHandle = ProcessStreamHandle(),
       stderrHandle = ProcessStreamHandle(),
-  ): Future[AsyncProcessRef] {.async: (raises: [AsyncProcessError, CancelledError]).} =
+  ): Future[AsyncProcessRef] {.
+      async: (raises: [AsyncProcessError, CancelledError])
+  .} =
     var pipes = preparePipes(options, stdinHandle, stdoutHandle, stderrHandle).valueOr:
       raiseAsyncProcessError("Unable to initialze process pipes", error)
 
@@ -439,13 +465,17 @@ when defined(windows):
       workingDirectory =
         if len(workingDir) > 0:
           workingDir.toWideString().valueOr:
-            raiseAsyncProcessError("Unable to proceed working directory path", error)
+            raiseAsyncProcessError(
+              "Unable to proceed working directory path", error
+            )
         else:
           nil
       environment =
         if not (isNil(environment)):
           buildEnvironment(environment).valueOr:
-            raiseAsyncProcessError("Unable to build child process environment", error)
+            raiseAsyncProcessError(
+              "Unable to build child process environment", error
+            )
         else:
           nil
       flags = CREATE_UNICODE_ENVIRONMENT
@@ -552,7 +582,8 @@ when defined(windows):
   proc waitForExit*(
       p: AsyncProcessRef, timeout = InfiniteDuration
   ): Future[int] {.
-      async: (raises: [AsyncProcessError, AsyncProcessTimeoutError, CancelledError])
+      async:
+        (raises: [AsyncProcessError, AsyncProcessTimeoutError, CancelledError])
   .} =
     if p.exitStatus.isSome():
       return p.exitStatus.get()
@@ -653,7 +684,9 @@ else:
       # Close child process STDIN.
       doCheck(posixSpawnFileActionsAddClose(actions, cint(0)))
       # Make a duplicate of `stdinHandle` as child process STDIN.
-      doCheck(posixSpawnFileActionsAddDup2(actions, cint(pipes.stdinHandle), cint(0)))
+      doCheck(
+        posixSpawnFileActionsAddDup2(actions, cint(pipes.stdinHandle), cint(0))
+      )
       # Close child process side of `stdinHandle`.
       doCheck(posixSpawnFileActionsAddClose(actions, cint(pipes.stdinHandle)))
       # Close parent process side of `stdinHandle`.
@@ -665,10 +698,14 @@ else:
       # Close child process STDOUT.
       doCheck(posixSpawnFileActionsAddClose(actions, cint(1)))
       # Make a duplicate of `stdoutHandle` as child process STDOUT.
-      doCheck(posixSpawnFileActionsAddDup2(actions, cint(pipes.stdoutHandle), cint(1)))
+      doCheck(
+        posixSpawnFileActionsAddDup2(actions, cint(pipes.stdoutHandle), cint(1))
+      )
       if AsyncProcessOption.StdErrToStdOut notin options:
         # Close child process side of `stdoutHandle`.
-        doCheck(posixSpawnFileActionsAddClose(actions, cint(pipes.stdoutHandle)))
+        doCheck(
+          posixSpawnFileActionsAddClose(actions, cint(pipes.stdoutHandle))
+        )
         # Close parent process side of `stdoutHandle`.
         if not (pipes.stdoutHolder.isEmpty()):
           let fd = cint(pipes.stdoutHolder.fd())
@@ -678,7 +715,9 @@ else:
       # Close child process STDERR.
       doCheck(posixSpawnFileActionsAddClose(actions, cint(2)))
       # Make a duplicate of `stderrHandle` as child process STDERR.
-      doCheck(posixSpawnFileActionsAddDup2(actions, cint(pipes.stderrHandle), cint(2)))
+      doCheck(
+        posixSpawnFileActionsAddDup2(actions, cint(pipes.stderrHandle), cint(2))
+      )
       # Close child process side of `stderrHandle`.
       doCheck(posixSpawnFileActionsAddClose(actions, cint(pipes.stderrHandle)))
       # Close parent process side of `stderrHandle`.
@@ -691,10 +730,14 @@ else:
         doCheck(posixSpawnFileActionsAddClose(actions, cint(2)))
         # Make a duplicate of `stdoutHandle` as child process STDERR.
         doCheck(
-          posixSpawnFileActionsAddDup2(actions, cint(pipes.stdoutHandle), cint(2))
+          posixSpawnFileActionsAddDup2(
+            actions, cint(pipes.stdoutHandle), cint(2)
+          )
         )
         # Close child process side of `stdoutHandle`.
-        doCheck(posixSpawnFileActionsAddClose(actions, cint(pipes.stdoutHandle)))
+        doCheck(
+          posixSpawnFileActionsAddClose(actions, cint(pipes.stdoutHandle))
+        )
         # Close parent process side of `stdoutHandle`.
         if not (pipes.stdoutHolder.isEmpty()):
           let fd = cint(pipes.stdoutHolder.fd())
@@ -814,7 +857,9 @@ else:
       return err(osLastError())
     ok()
 
-  proc closeThreadAndProcessHandle(p: AsyncProcessRef): AsyncProcessResult[void] =
+  proc closeThreadAndProcessHandle(
+      p: AsyncProcessRef
+  ): AsyncProcessResult[void] =
     discard
 
   proc startProcess*(
@@ -826,7 +871,9 @@ else:
       stdinHandle = ProcessStreamHandle(),
       stdoutHandle = ProcessStreamHandle(),
       stderrHandle = ProcessStreamHandle(),
-  ): Future[AsyncProcessRef] {.async: (raises: [AsyncProcessError, CancelledError]).} =
+  ): Future[AsyncProcessRef] {.
+      async: (raises: [AsyncProcessError, CancelledError])
+  .} =
     var
       pid: Pid
       pipes = preparePipes(options, stdinHandle, stdoutHandle, stderrHandle).valueOr:
@@ -861,10 +908,14 @@ else:
           # Save current working directory and change it to `workingDir`.
           let cres = getCurrentDirectory()
           if cres.isErr():
-            raiseAsyncProcessError("Unable to obtain current directory", cres.error())
+            raiseAsyncProcessError(
+              "Unable to obtain current directory", cres.error()
+            )
           let sres = setCurrentDirectory(workingDir)
           if sres.isErr():
-            raiseAsyncProcessError("Unable to change current directory", sres.error())
+            raiseAsyncProcessError(
+              "Unable to change current directory", sres.error()
+            )
           cres.get()
         else:
           ""
@@ -932,7 +983,9 @@ else:
     trackCounter(AsyncProcessTrackerName)
     process
 
-  proc peekProcessExitCode(p: AsyncProcessRef, reap = false): AsyncProcessResult[int] =
+  proc peekProcessExitCode(
+      p: AsyncProcessRef, reap = false
+  ): AsyncProcessResult[int] =
     var wstatus: cint = 0
     if p.exitStatus.isSome():
       return ok(p.exitStatus.get())
@@ -996,7 +1049,8 @@ else:
       p: AsyncProcessRef, timeout = InfiniteDuration
   ): Future[int] {.
       async: (
-        raw: true, raises: [AsyncProcessError, AsyncProcessTimeoutError, CancelledError]
+        raw: true,
+        raises: [AsyncProcessError, AsyncProcessTimeoutError, CancelledError],
       )
   .} =
     var
@@ -1033,7 +1087,9 @@ else:
           # Process exited.
           let res = removeProcess2(processHandle)
           if res.isErr():
-            retFuture.fail(newException(AsyncProcessError, osErrorMsg(res.error())))
+            retFuture.fail(
+              newException(AsyncProcessError, osErrorMsg(res.error()))
+            )
             return
           if not (isNil(timer)):
             clearTimer(timer)
@@ -1048,7 +1104,9 @@ else:
           # Timeout exceeded.
           let res = p.kill()
           if res.isErr():
-            retFuture.fail(newException(AsyncProcessError, osErrorMsg(res.error())))
+            retFuture.fail(
+              newException(AsyncProcessError, osErrorMsg(res.error()))
+            )
 
       timer = nil
 
@@ -1062,7 +1120,9 @@ else:
     if timeout != InfiniteDuration:
       timer = setTimer(Moment.fromNow(timeout), continuation, cast[pointer](2))
 
-    processHandle = addProcess2(int(p.processId), continuation, cast[pointer](1)).valueOr:
+    processHandle = addProcess2(
+      int(p.processId), continuation, cast[pointer](1)
+    ).valueOr:
       if error == oserrno.ESRCH:
         # "zombie death race" problem.
         # If process exited right after `waitpid()` - `kqueue` call
@@ -1074,7 +1134,9 @@ else:
         if exitCode == -1:
           # This should not be happens one more time, so we just report
           # original error.
-          retFuture.fail(newException(AsyncProcessError, osErrorMsg(oserrno.ESRCH)))
+          retFuture.fail(
+            newException(AsyncProcessError, osErrorMsg(oserrno.ESRCH))
+          )
         else:
           retFuture.complete(exitStatusLikeShell(exitCode))
       else:
@@ -1151,7 +1213,11 @@ proc preparePipes(
         )
         ({ProcessFlag.AutoStdin}, holder, pipeIn)
       else:
-        ({ProcessFlag.UserStdin}, AsyncStreamHolder.init(), AsyncFD.init(stdinHandle))
+        (
+          {ProcessFlag.UserStdin},
+          AsyncStreamHolder.init(),
+          AsyncFD.init(stdinHandle),
+        )
     (stdoutFlags, localStdout, remoteStdout) =
       case stdoutHandle.kind
       of ProcessStreamHandleKind.None:
@@ -1163,7 +1229,11 @@ proc preparePipes(
         )
         ({ProcessFlag.AutoStdout}, holder, pipeOut)
       else:
-        ({ProcessFlag.UserStdout}, AsyncStreamHolder.init(), AsyncFD.init(stdoutHandle))
+        (
+          {ProcessFlag.UserStdout},
+          AsyncStreamHolder.init(),
+          AsyncFD.init(stdoutHandle),
+        )
     (stderrFlags, localStderr, remoteStderr) =
       if AsyncProcessOption.StdErrToStdOut in options:
         doAssert(
@@ -1253,7 +1323,8 @@ proc closeProcessStreams(
 proc opAndWaitForExit(
     p: AsyncProcessRef, op: WaitOperation, timeout = InfiniteDuration
 ): Future[int] {.
-    async: (raises: [AsyncProcessError, AsyncProcessTimeoutError, CancelledError])
+    async:
+      (raises: [AsyncProcessError, AsyncProcessTimeoutError, CancelledError])
 .} =
   let timerFut =
     if timeout == InfiniteDuration:
@@ -1306,7 +1377,8 @@ proc closeWait*(p: AsyncProcessRef) {.async: (raises: []).} =
 proc stdinStream*(p: AsyncProcessRef): AsyncStreamWriter =
   ## Returns STDIN async stream associated with process `p`.
   doAssert(
-    p.pipes.stdinHolder.kind == StreamKind.Writer, "StdinStreamWriter is not available"
+    p.pipes.stdinHolder.kind == StreamKind.Writer,
+    "StdinStreamWriter is not available",
   )
   p.pipes.stdinHolder.writer
 
@@ -1331,7 +1403,8 @@ proc execCommand*(
     options = {AsyncProcessOption.EvalCommand},
     timeout = InfiniteDuration,
 ): Future[int] {.
-    async: (raises: [AsyncProcessError, AsyncProcessTimeoutError, CancelledError])
+    async:
+      (raises: [AsyncProcessError, AsyncProcessTimeoutError, CancelledError])
 .} =
   let
     poptions = options + {AsyncProcessOption.EvalCommand}
@@ -1348,7 +1421,8 @@ proc execCommandEx*(
     options = {AsyncProcessOption.EvalCommand},
     timeout = InfiniteDuration,
 ): Future[CommandExResponse] {.
-    async: (raises: [AsyncProcessError, AsyncProcessTimeoutError, CancelledError])
+    async:
+      (raises: [AsyncProcessError, AsyncProcessTimeoutError, CancelledError])
 .} =
   let
     process = await startProcess(
@@ -1368,12 +1442,16 @@ proc execCommandEx*(
             try:
               string.fromBytes(await outputReader)
             except AsyncStreamError as exc:
-              raiseAsyncProcessError("Unable to read process' stdout channel", exc)
+              raiseAsyncProcessError(
+                "Unable to read process' stdout channel", exc
+              )
           error =
             try:
               string.fromBytes(await errorReader)
             except AsyncStreamError as exc:
-              raiseAsyncProcessError("Unable to read process' stderr channel", exc)
+              raiseAsyncProcessError(
+                "Unable to read process' stderr channel", exc
+              )
         CommandExResponse(status: status, stdOutput: output, stdError: error)
       finally:
         await process.closeWait()
@@ -1390,8 +1468,10 @@ template processId*(p: AsyncProcessRef): int =
 proc killAndWaitForExit*(
     p: AsyncProcessRef, timeout = InfiniteDuration
 ): Future[int] {.
-    async:
-      (raw: true, raises: [AsyncProcessError, AsyncProcessTimeoutError, CancelledError])
+    async: (
+      raw: true,
+      raises: [AsyncProcessError, AsyncProcessTimeoutError, CancelledError],
+    )
 .} =
   ## Perform continuous attempts to kill the ``p`` process for specified period
   ## of time ``timeout``.
@@ -1410,8 +1490,10 @@ proc killAndWaitForExit*(
 proc terminateAndWaitForExit*(
     p: AsyncProcessRef, timeout = InfiniteDuration
 ): Future[int] {.
-    async:
-      (raw: true, raises: [AsyncProcessError, AsyncProcessTimeoutError, CancelledError])
+    async: (
+      raw: true,
+      raises: [AsyncProcessError, AsyncProcessTimeoutError, CancelledError],
+    )
 .} =
   ## Perform continuous attempts to terminate the ``p`` process for specified
   ## period of time ``timeout``.

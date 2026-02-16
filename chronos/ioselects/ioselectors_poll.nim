@@ -52,7 +52,8 @@ proc freeKey[T](s: Selector[T], key: int32) =
   s.fds.del(key)
 
 proc new*(t: typedesc[Selector], T: typedesc): SelectResult[Selector[T]] =
-  let selector = Selector[T](fds: initTable[int32, SelectorKey[T]](chronosInitialSize))
+  let selector =
+    Selector[T](fds: initTable[int32, SelectorKey[T]](chronosInitialSize))
   ok(selector)
 
 proc close2*[T](s: Selector[T]): SelectResult[void] =
@@ -140,8 +141,8 @@ proc updateHandle2*[T](
     s: Selector[T], fd: cint, events: set[Event]
 ): SelectResult[void] =
   const EventsMask = {
-    Event.Timer, Event.Signal, Event.Process, Event.Vnode, Event.User, Event.Oneshot,
-    Event.Error,
+    Event.Timer, Event.Signal, Event.Process, Event.Vnode, Event.User,
+    Event.Oneshot, Event.Error,
   }
   s.fds.withValue(int32(fd), pkey):
     doAssert(
@@ -158,12 +159,16 @@ proc updateHandle2*[T](
           s.pollRemove(fd)
       pkey.events = events
   do:
-    raiseAssert "Descriptor [" & fd.toString() & "] is not registered in the selector!"
+    raiseAssert "Descriptor [" & fd.toString() &
+      "] is not registered in the selector!"
   ok()
 
-proc registerEvent2*[T](s: Selector[T], ev: SelectEvent, data: T): SelectResult[cint] =
+proc registerEvent2*[T](
+    s: Selector[T], ev: SelectEvent, data: T
+): SelectResult[cint] =
   doAssert(not (isNil(ev)))
-  let key = SelectorKey[T](ident: ev.rfd, events: {Event.User}, param: 0, data: data)
+  let key =
+    SelectorKey[T](ident: ev.rfd, events: {Event.User}, param: 0, data: data)
 
   s.addKey(ev.rfd, key)
   s.pollAdd(ev.rfd, {Event.Read}.toPollEvents())
@@ -231,8 +236,9 @@ proc selectInto2*[T](
       # combination of nim+clang (android toolchain)).
     eventsCount =
       if maxEventsCount > 0:
-        let res =
-          handleEintr(poll(addr(s.pollfds[0]), Tnfds(maxEventsCount), cint(timeout)))
+        let res = handleEintr(
+          poll(addr(s.pollfds[0]), Tnfds(maxEventsCount), cint(timeout))
+        )
         if res < 0:
           return err(osLastError())
         res
@@ -342,7 +348,9 @@ proc setData*[T](s: Selector[T], fd: SocketHandle | cint, data: T): bool =
   do:
     return false
 
-template withData*[T](s: Selector[T], fd: SocketHandle | cint, value, body: untyped) =
+template withData*[T](
+    s: Selector[T], fd: SocketHandle | cint, value, body: untyped
+) =
   s.fds.withValue(int32(fd), skey):
     var value = addr(skey[].data)
     body

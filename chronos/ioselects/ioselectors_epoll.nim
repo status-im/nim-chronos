@@ -184,8 +184,8 @@ proc updateHandle2*[T](
     s: Selector[T], fd: cint, events: set[Event]
 ): SelectResult[void] =
   const EventsMask = {
-    Event.Timer, Event.Signal, Event.Process, Event.Vnode, Event.User, Event.Oneshot,
-    Event.Error,
+    Event.Timer, Event.Signal, Event.Process, Event.Vnode, Event.User,
+    Event.Oneshot, Event.Error,
   }
   s.fds.withValue(int32(fd), pkey):
     doAssert(
@@ -199,14 +199,16 @@ proc updateHandle2*[T](
           return err(osLastError())
       else:
         if events != {}:
-          if epoll_ctl(s.epollFd, EPOLL_CTL_MOD, fd, unsafeAddr(epollEvents)) != 0:
+          if epoll_ctl(s.epollFd, EPOLL_CTL_MOD, fd, unsafeAddr(epollEvents)) !=
+              0:
             return err(osLastError())
         else:
           if epoll_ctl(s.epollFd, EPOLL_CTL_DEL, fd, unsafeAddr epollEvents) != 0:
             return err(osLastError())
       pkey.events = events
   do:
-    raiseAssert "Descriptor [" & fd.toString() & "] is not registered in the selector!"
+    raiseAssert "Descriptor [" & fd.toString() &
+      "] is not registered in the selector!"
   ok()
 
 proc blockSignal[T](s: Selector[T], signal: int): SelectResult[bool] =
@@ -268,7 +270,8 @@ proc registerSignalEvent[T](
     fdi32 = ?s.getVirtualId()
     selectorKey =
       SelectorKey[T](ident: signal, events: events, param: param, data: data)
-    signalKey = SelectorKey[T](ident: fdi32, events: events, param: param, data: data)
+    signalKey =
+      SelectorKey[T](ident: fdi32, events: events, param: param, data: data)
 
   s.addKey(fdi32, selectorKey)
   s.addSignal(signal, signalKey)
@@ -319,7 +322,9 @@ proc registerSignalEvent[T](
 
   ok(cint(fdi32))
 
-proc registerSignal*[T](s: Selector[T], signal: int, data: T): SelectResult[cint] =
+proc registerSignal*[T](
+    s: Selector[T], signal: int, data: T
+): SelectResult[cint] =
   registerSignalEvent(s, signal, {Event.Signal}, 0, data)
 
 proc registerTimer2*[T](
@@ -335,13 +340,18 @@ proc registerTimer2*[T](
       if oneshot:
         (
           SelectorKey[T](
-            ident: timerFd, events: {Event.Timer, Event.Oneshot}, param: 0, data: data
+            ident: timerFd,
+            events: {Event.Timer, Event.Oneshot},
+            param: 0,
+            data: data,
           ),
           EpollEvent.init(timerFd, {Event.Read, Event.Oneshot}),
         )
       else:
         (
-          SelectorKey[T](ident: timerFd, events: {Event.Timer}, param: 0, data: data),
+          SelectorKey[T](
+            ident: timerFd, events: {Event.Timer}, param: 0, data: data
+          ),
           EpollEvent.init(timerFd, {Event.Read}),
         )
   var timeStruct =
@@ -349,12 +359,14 @@ proc registerTimer2*[T](
       Itimerspec(
         it_interval: Timespec(tv_sec: osdefs.Time(0), tv_nsec: 0),
         it_value: Timespec(
-          tv_sec: osdefs.Time(timeout div 1_000), tv_nsec: (timeout %% 1000) * 1_000_000
+          tv_sec: osdefs.Time(timeout div 1_000),
+          tv_nsec: (timeout %% 1000) * 1_000_000,
         ),
       )
     else:
       Itimerspec(
-        it_interval: Timespec(tv_sec: osdefs.Time(timeout div 1_000), tv_nsec: 0),
+        it_interval:
+          Timespec(tv_sec: osdefs.Time(timeout div 1_000), tv_nsec: 0),
         it_value: Timespec(tv_sec: osdefs.Time(timeout div 1_000), tv_nsec: 0),
       )
 
@@ -375,10 +387,13 @@ proc registerTimer2*[T](
 
   ok(cint(fdi32))
 
-proc registerEvent2*[T](s: Selector[T], ev: SelectEvent, data: T): SelectResult[cint] =
+proc registerEvent2*[T](
+    s: Selector[T], ev: SelectEvent, data: T
+): SelectResult[cint] =
   doAssert(not (isNil(ev)))
   let
-    key = SelectorKey[T](ident: ev.efd, events: {Event.User}, param: 0, data: data)
+    key =
+      SelectorKey[T](ident: ev.efd, events: {Event.User}, param: 0, data: data)
     event = EpollEvent.init(ev.efd, {Event.Read})
 
   s.addKey(ev.efd, key)
@@ -392,10 +407,13 @@ proc registerEvent2*[T](s: Selector[T], ev: SelectEvent, data: T): SelectResult[
 template checkPid(pid: int) =
   when sizeof(int) == 8:
     doAssert(
-      pid >= 0 and pid <= int(high(uint32)), "Invalid process idientified (pid) value"
+      pid >= 0 and pid <= int(high(uint32)),
+      "Invalid process idientified (pid) value",
     )
   else:
-    doAssert(pid >= 0 and pid <= high(int32), "Invalid process idientified (pid) value")
+    doAssert(
+      pid >= 0 and pid <= high(int32), "Invalid process idientified (pid) value"
+    )
 
 proc registerProcess*[T](s: Selector, pid: int, data: T): SelectResult[cint] =
   checkPid(pid)
@@ -403,8 +421,10 @@ proc registerProcess*[T](s: Selector, pid: int, data: T): SelectResult[cint] =
   let
     fdi32 = ?s.getVirtualId()
     events = {Event.Process, Event.Oneshot}
-    selectorKey = SelectorKey[T](ident: pid, events: events, param: 0, data: data)
-    processKey = SelectorKey[T](ident: fdi32, events: events, param: 0, data: data)
+    selectorKey =
+      SelectorKey[T](ident: pid, events: events, param: 0, data: data)
+    processKey =
+      SelectorKey[T](ident: fdi32, events: events, param: 0, data: data)
 
   s.addProcess(pid, processKey)
   s.addKey(fdi32, selectorKey)
@@ -544,7 +564,8 @@ proc prepareKey[T](s: Selector[T], event: EpollEvent): Opt[ReadyKey] =
         # proper handler.
         return Opt.none(ReadyKey)
       if data.ssi_signo != uint32(SIGCHLD) or len(s.processes) == 0:
-        let skey = s.signals.getOrDefault(cast[int32](data.ssi_signo), defaultKey)
+        let skey =
+          s.signals.getOrDefault(cast[int32](data.ssi_signo), defaultKey)
         if skey.ident == InvalidIdent:
           # We do not have any handlers for received event so we can't report
           # an error to proper handler.
@@ -555,7 +576,8 @@ proc prepareKey[T](s: Selector[T], event: EpollEvent): Opt[ReadyKey] =
         # Indicate that SIGCHLD has been seen.
         s.childrenExited = true
         # Current signal processing.
-        let pidKey = s.processes.getOrDefault(cast[int32](data.ssi_pid), defaultKey)
+        let pidKey =
+          s.processes.getOrDefault(cast[int32](data.ssi_pid), defaultKey)
         if pidKey.ident == InvalidIdent:
           # We do not have any handlers with signal's pid.
           return Opt.none(ReadyKey)
@@ -609,7 +631,8 @@ proc checkProcesses[T](s: Selector[T]) =
     if fdKey.ident != InvalidIdent:
       if Event.Finished notin fdKey.events:
         var sigInfo = SigInfo()
-        let res = handleEintr(osdefs.waitid(P_PID, cast[Id](pid), sigInfo, flags))
+        let res =
+          handleEintr(osdefs.waitid(P_PID, cast[Id](pid), sigInfo, flags))
         if (res == 0) and (cint(sigInfo.si_pid) == cint(pid)):
           fdKey.events.incl(Event.Finished)
           let rkey = ReadyKey(fd: pidKey.ident, events: fdKey.events)
@@ -634,7 +657,10 @@ proc selectInto2*[T](
     if maxNewEventsCount > 0:
       let res = handleEintr(
         epoll_wait(
-          s.epollFd, addr(queueEvents[0]), cint(maxNewEventsCount), cint(timeout)
+          s.epollFd,
+          addr(queueEvents[0]),
+          cint(maxNewEventsCount),
+          cint(timeout),
         )
       )
       if res < 0:
@@ -653,7 +679,8 @@ proc selectInto2*[T](
 
   s.checkProcesses()
 
-  let pendingEventsCount = min(len(readyKeys) - eventsCount, len(s.pendingEvents))
+  let pendingEventsCount =
+    min(len(readyKeys) - eventsCount, len(s.pendingEvents))
 
   for i in 0 ..< pendingEventsCount:
     readyKeys[k] = s.pendingEvents.popFirst()
@@ -761,7 +788,9 @@ proc setData*[T](s: Selector[T], fd: SocketHandle | cint, data: T): bool =
   do:
     return false
 
-template withData*[T](s: Selector[T], fd: SocketHandle | cint, value, body: untyped) =
+template withData*[T](
+    s: Selector[T], fd: SocketHandle | cint, value, body: untyped
+) =
   s.fds.withValue(int32(fd), skey):
     var value = addr(skey[].data)
     body

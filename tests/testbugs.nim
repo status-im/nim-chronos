@@ -39,7 +39,8 @@ suite "Asynchronous issues test suite":
     var myself = initTAddress("127.0.0.1:" & $HELLO_PORT)
     var data = CustomData()
     data.test = "CHECK"
-    var dsock4 = newDatagramTransport(udp4DataAvailable, udata = data, local = myself)
+    var dsock4 =
+      newDatagramTransport(udp4DataAvailable, udata = data, local = myself)
     await dsock4.sendTo(myself, TEST_MSG, MSG_LEN)
     await dsock4.join()
     if data.test == "OK":
@@ -108,7 +109,8 @@ suite "Asynchronous issues test suite":
     res
 
   proc testIndexError(): Future[bool] {.async.} =
-    var server = createStreamServer(initTAddress("127.0.0.1:0"), flags = {ReuseAddr})
+    var server =
+      createStreamServer(initTAddress("127.0.0.1:0"), flags = {ReuseAddr})
     let messageSize = DefaultStreamBufferSize * 4
     var buffer = newSeq[byte](messageSize)
     let msg = createBigMessage(messageSize)

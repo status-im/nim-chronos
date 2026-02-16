@@ -168,7 +168,9 @@ proc newAsyncStreamWriteError(
   w.parent = p
   w
 
-proc newAsyncStreamIncompleteError*(): ref AsyncStreamIncompleteError {.noinline.} =
+proc newAsyncStreamIncompleteError*(): ref AsyncStreamIncompleteError {.
+    noinline
+.} =
   newException(AsyncStreamIncompleteError, "Incomplete data sent or received")
 
 proc newAsyncStreamLimitError*(): ref AsyncStreamLimitError {.noinline.} =
@@ -193,13 +195,15 @@ proc raiseAsyncStreamIncompleteError*() {.
   raise newAsyncStreamIncompleteError()
 
 proc raiseEmptyMessageDefect*() {.noinline, noreturn.} =
-  raise newException(AsyncStreamIncorrectDefect, "Could not write empty message")
+  raise
+    newException(AsyncStreamIncorrectDefect, "Could not write empty message")
 
 proc raiseAsyncStreamWriteEOFError*() {.
     noinline, noreturn, raises: [AsyncStreamWriteEOFError]
 .} =
   raise newException(
-    AsyncStreamWriteEOFError, "Stream finished or remote side dropped connection"
+    AsyncStreamWriteEOFError,
+    "Stream finished or remote side dropped connection",
   )
 
 proc atEof*(rstream: AsyncStreamReader): bool =
@@ -211,7 +215,8 @@ proc atEof*(rstream: AsyncStreamReader): bool =
     else:
       rstream.rsource.atEof()
   else:
-    (rstream.state != AsyncStreamState.Running) and (len(rstream.buffer.backend) == 0)
+    (rstream.state != AsyncStreamState.Running) and
+      (len(rstream.buffer.backend) == 0)
 
 proc atEof*(wstream: AsyncStreamWriter): bool =
   ## Returns ``true`` is writing stream ``wstream`` closed or finished.
@@ -1025,7 +1030,9 @@ proc init*(child: AsyncStreamWriter, tsource: StreamTransport) =
   trackCounter(AsyncStreamWriterTrackerName)
   child.startWriter()
 
-proc init*[T](child: AsyncStreamWriter, tsource: StreamTransport, udata: ref T) =
+proc init*[T](
+    child: AsyncStreamWriter, tsource: StreamTransport, udata: ref T
+) =
   ## Initialize newly allocated object ``child`` with AsyncStreamWriter
   ## parameters.
   child.writerLoop = nil
@@ -1064,7 +1071,9 @@ proc init*(child: AsyncStreamReader, tsource: StreamTransport) =
   trackCounter(AsyncStreamReaderTrackerName)
   child.startReader()
 
-proc init*[T](child: AsyncStreamReader, tsource: StreamTransport, udata: ref T) =
+proc init*[T](
+    child: AsyncStreamReader, tsource: StreamTransport, udata: ref T
+) =
   ## Initialize newly allocated object ``child`` with AsyncStreamReader
   ## parameters.
   child.readerLoop = nil

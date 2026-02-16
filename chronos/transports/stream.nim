@@ -59,8 +59,9 @@ type
     ReuseAddr
     ReusePort
 
-  ReadMessagePredicate* =
-    proc(data: openArray[byte]): tuple[consumed: int, done: bool] {.gcsafe, raises: [].}
+  ReadMessagePredicate* = proc(
+    data: openArray[byte]
+  ): tuple[consumed: int, done: bool] {.gcsafe, raises: [].}
 
   ReaderFuture = Future[void].Raising([TransportError, CancelledError])
 
@@ -122,13 +123,15 @@ type
     ## ``server`` - StreamServer object.
     ## ``client`` - accepted client transport.
 
-  StreamCallback* = proc(server: StreamServer, client: StreamTransport) {.async.}
+  StreamCallback* =
+    proc(server: StreamServer, client: StreamTransport) {.async.}
     ## Connection callback that doesn't check for exceptions at compile time
     ## ``server`` - StreamServer object.
     ## ``client`` - accepted client transport.
 
-  TransportInitCallback* =
-    proc(server: StreamServer, fd: AsyncFD): StreamTransport {.gcsafe, raises: [].}
+  TransportInitCallback* = proc(
+    server: StreamServer, fd: AsyncFD
+  ): StreamTransport {.gcsafe, raises: [].}
     ## Custom transport initialization procedure, which can allocate inherited
     ## StreamTransport object.
 
@@ -153,26 +156,32 @@ proc getRemoteAddress(
   else:
     raddr
 
-proc remoteAddress2*(transp: StreamTransport): Result[TransportAddress, OSErrorCode] =
+proc remoteAddress2*(
+    transp: StreamTransport
+): Result[TransportAddress, OSErrorCode] =
   ## Returns ``transp`` remote socket address.
   if transp.remote.family == AddressFamily.None:
     var
       saddr: Sockaddr_storage
       slen = SockLen(sizeof(saddr))
-    if getpeername(SocketHandle(transp.fd), cast[ptr SockAddr](addr saddr), addr slen) !=
-        0:
+    if getpeername(
+      SocketHandle(transp.fd), cast[ptr SockAddr](addr saddr), addr slen
+    ) != 0:
       return err(osLastError())
     transp.remote = transp.getRemoteAddress(saddr, slen)
   ok(transp.remote)
 
-proc localAddress2*(transp: StreamTransport): Result[TransportAddress, OSErrorCode] =
+proc localAddress2*(
+    transp: StreamTransport
+): Result[TransportAddress, OSErrorCode] =
   ## Returns ``transp`` local socket address.
   if transp.local.family == AddressFamily.None:
     var
       saddr: Sockaddr_storage
       slen = SockLen(sizeof(saddr))
-    if getsockname(SocketHandle(transp.fd), cast[ptr SockAddr](addr saddr), addr slen) !=
-        0:
+    if getsockname(
+      SocketHandle(transp.fd), cast[ptr SockAddr](addr saddr), addr slen
+    ) != 0:
       return err(osLastError())
     fromSAddr(addr saddr, slen, transp.local)
   ok(transp.local)
@@ -220,7 +229,9 @@ template shiftVectorFile(v: var StreamVector, o: untyped) =
   (v).buf = cast[pointer](cast[uint]((v).buf) - uint(o))
   (v).offset += uint(o)
 
-proc completePendingWriteQueue(queue: var Deque[StreamVector], v: int) {.inline.} =
+proc completePendingWriteQueue(
+    queue: var Deque[StreamVector], v: int
+) {.inline.} =
   while len(queue) > 0:
     var vector = queue.popFirst()
     if not (vector.writer.finished()):
@@ -632,7 +643,10 @@ when defined(windows):
         break
 
   proc newStreamSocketTransport(
-      sock: AsyncFD, bufsize: int, child: StreamTransport, flags: set[TransportFlags]
+      sock: AsyncFD,
+      bufsize: int,
+      child: StreamTransport,
+      flags: set[TransportFlags],
   ): StreamTransport =
     var transp: StreamTransport
     if not (isNil(child)):
@@ -641,8 +655,10 @@ when defined(windows):
       transp = StreamTransport(kind: TransportKind.Socket)
     transp.fd = sock
     transp.flags = flags
-    transp.rovl.data = CompletionData(cb: readStreamLoop, udata: cast[pointer](transp))
-    transp.wovl.data = CompletionData(cb: writeStreamLoop, udata: cast[pointer](transp))
+    transp.rovl.data =
+      CompletionData(cb: readStreamLoop, udata: cast[pointer](transp))
+    transp.wovl.data =
+      CompletionData(cb: writeStreamLoop, udata: cast[pointer](transp))
     let size = max(bufsize, DefaultStreamBufferSize)
     transp.buffer = BipBuffer.init(size)
     transp.state = {ReadPaused, WritePaused}
@@ -654,7 +670,10 @@ when defined(windows):
     transp
 
   proc newStreamPipeTransport(
-      fd: AsyncFD, bufsize: int, child: StreamTransport, flags: set[TransportFlags] = {}
+      fd: AsyncFD,
+      bufsize: int,
+      child: StreamTransport,
+      flags: set[TransportFlags] = {},
   ): StreamTransport =
     var transp: StreamTransport
     if not (isNil(child)):
@@ -662,8 +681,10 @@ when defined(windows):
     else:
       transp = StreamTransport(kind: TransportKind.Pipe)
     transp.fd = fd
-    transp.rovl.data = CompletionData(cb: readStreamLoop, udata: cast[pointer](transp))
-    transp.wovl.data = CompletionData(cb: writeStreamLoop, udata: cast[pointer](transp))
+    transp.rovl.data =
+      CompletionData(cb: readStreamLoop, udata: cast[pointer](transp))
+    transp.wovl.data =
+      CompletionData(cb: writeStreamLoop, udata: cast[pointer](transp))
     let size = max(bufsize, DefaultStreamBufferSize)
     transp.buffer = BipBuffer.init(size)
     transp.flags = flags
@@ -675,13 +696,17 @@ when defined(windows):
     GC_ref(transp)
     transp
 
-  proc bindToDomain(handle: AsyncFD, family: AddressFamily): Result[void, OSErrorCode] =
+  proc bindToDomain(
+      handle: AsyncFD, family: AddressFamily
+  ): Result[void, OSErrorCode] =
     case family
     of AddressFamily.IPv6:
       var saddr: Sockaddr_in6
       saddr.sin6_family = type(saddr.sin6_family)(osdefs.AF_INET6)
       if osdefs.bindSocket(
-        SocketHandle(handle), cast[ptr SockAddr](addr(saddr)), sizeof(saddr).SockLen
+        SocketHandle(handle),
+        cast[ptr SockAddr](addr(saddr)),
+        sizeof(saddr).SockLen,
       ) != 0'i32:
         return err(osLastError())
       ok()
@@ -689,7 +714,9 @@ when defined(windows):
       var saddr: Sockaddr_in
       saddr.sin_family = type(saddr.sin_family)(osdefs.AF_INET)
       if osdefs.bindSocket(
-        SocketHandle(handle), cast[ptr SockAddr](addr(saddr)), sizeof(saddr).SockLen
+        SocketHandle(handle),
+        cast[ptr SockAddr](addr(saddr)),
+        sizeof(saddr).SockLen,
       ) != 0'i32:
         return err(osLastError())
       ok()
@@ -724,7 +751,9 @@ when defined(windows):
 
       toSAddr(raddress, saddr, slen)
       proto = Protocol.IPPROTO_TCP
-      sock = createAsyncSocket2(raddress.getDomain(), SockType.SOCK_STREAM, proto).valueOr:
+      sock = createAsyncSocket2(
+        raddress.getDomain(), SockType.SOCK_STREAM, proto
+      ).valueOr:
         retFuture.fail(getTransportOsError(error))
         return retFuture
 
@@ -755,7 +784,8 @@ when defined(windows):
         # Add `V4Mapped` flag when `::` address is used and dualstack is
         # set to enabled or auto.
         var res: set[TransportFlags]
-        if (localAddress.family == AddressFamily.IPv6) and localAddress.isAnyLocal():
+        if (localAddress.family == AddressFamily.IPv6) and
+            localAddress.isAnyLocal():
           if dualstack in {DualStackType.Enabled, DualStackType.Auto}:
             res.incl(TransportFlags.V4Mapped)
         res
@@ -766,7 +796,8 @@ when defined(windows):
           saddr: Sockaddr_storage
           slen: SockLen
         toSAddr(localAddress, saddr, slen)
-        if bindSocket(SocketHandle(sock), cast[ptr SockAddr](addr saddr), slen) != 0:
+        if bindSocket(SocketHandle(sock), cast[ptr SockAddr](addr saddr), slen) !=
+            0:
           sock.closeSocket()
           retFuture.fail(getTransportOsError(osLastError()))
           return retFuture
@@ -794,8 +825,9 @@ when defined(windows):
               sock.closeSocket()
               retFuture.fail(getTransportOsError(err))
             else:
-              let transp =
-                newStreamSocketTransport(sock, bufferSize, child, transportFlags)
+              let transp = newStreamSocketTransport(
+                sock, bufferSize, child, transportFlags
+              )
               # Start tracking transport
               trackCounter(StreamTransportTrackerName)
               retFuture.complete(transp)
@@ -863,7 +895,8 @@ when defined(windows):
             let err = osLastError()
             case err
             of ERROR_PIPE_BUSY:
-              discard setTimer(Moment.fromNow(50.milliseconds), pipeContinuation, nil)
+              discard
+                setTimer(Moment.fromNow(50.milliseconds), pipeContinuation, nil)
             else:
               retFuture.fail(getTransportOsError(err))
           else:
@@ -872,7 +905,8 @@ when defined(windows):
               retFuture.fail(getTransportOsError(res.error()))
               return
 
-            let transp = newStreamPipeTransport(AsyncFD(pipeHandle), bufferSize, child)
+            let transp =
+              newStreamPipeTransport(AsyncFD(pipeHandle), bufferSize, child)
             # Start tracking transport
             trackCounter(StreamTransportTrackerName)
             retFuture.complete(transp)
@@ -887,7 +921,8 @@ when defined(windows):
       openMode =
         if FirstPipe notin server.flags:
           server.flags.incl(FirstPipe)
-          PIPE_ACCESS_DUPLEX or FILE_FLAG_OVERLAPPED or FILE_FLAG_FIRST_PIPE_INSTANCE
+          PIPE_ACCESS_DUPLEX or FILE_FLAG_OVERLAPPED or
+            FILE_FLAG_FIRST_PIPE_INSTANCE
         else:
           PIPE_ACCESS_DUPLEX or FILE_FLAG_OVERLAPPED
       pipeMode = PIPE_TYPE_BYTE or PIPE_READMODE_BYTE or PIPE_WAIT
@@ -928,11 +963,13 @@ when defined(windows):
               flags.incl(WinNoPipeFlash)
             if not (isNil(server.init)):
               var transp = server.init(server, server.sock)
-              ntransp =
-                newStreamPipeTransport(server.sock, server.bufferSize, transp, flags)
+              ntransp = newStreamPipeTransport(
+                server.sock, server.bufferSize, transp, flags
+              )
             else:
-              ntransp =
-                newStreamPipeTransport(server.sock, server.bufferSize, nil, flags)
+              ntransp = newStreamPipeTransport(
+                server.sock, server.bufferSize, nil, flags
+              )
             # Start tracking transport
             trackCounter(StreamTransportTrackerName)
             asyncSpawn server.function(server, ntransp)
@@ -965,7 +1002,8 @@ when defined(windows):
             pipeName = toWideString(pipeAsciiName).valueOr:
               raiseOsDefect(
                 error,
-                "acceptPipeLoop(): Unable to create name " & "for new pipe connection",
+                "acceptPipeLoop(): Unable to create name " &
+                  "for new pipe connection",
               )
             openMode =
               if FirstPipe notin server.flags:
@@ -997,7 +1035,8 @@ when defined(windows):
               wres.error(),
               "acceptPipeLoop(): Unable to " & "register new pipe in dispatcher",
             )
-          let res = connectNamedPipe(pipeHandle, cast[POVERLAPPED](addr server.aovl))
+          let res =
+            connectNamedPipe(pipeHandle, cast[POVERLAPPED](addr server.aovl))
           if res == 0:
             let errCode = osLastError()
             if errCode == ERROR_OPERATION_ABORTED:
@@ -1009,7 +1048,8 @@ when defined(windows):
               discard
             else:
               raiseOsDefect(
-                errCode, "acceptPipeLoop(): Unable to establish " & "pipe connection"
+                errCode,
+                "acceptPipeLoop(): Unable to establish " & "pipe connection",
               )
           break
         else:
@@ -1041,18 +1081,25 @@ when defined(windows):
               let errCode = OSErrorCode(wsaGetLastError())
               server.asock.closeSocket()
               raiseOsDefect(
-                errCode, "acceptLoop(): Unable to set accept " & "context for socket"
+                errCode,
+                "acceptLoop(): Unable to set accept " & "context for socket",
               )
             else:
               var ntransp: StreamTransport
               if not (isNil(server.init)):
                 let transp = server.init(server, server.asock)
                 ntransp = newStreamSocketTransport(
-                  server.asock, server.bufferSize, transp, server.getTransportFlags()
+                  server.asock,
+                  server.bufferSize,
+                  transp,
+                  server.getTransportFlags(),
                 )
               else:
                 ntransp = newStreamSocketTransport(
-                  server.asock, server.bufferSize, nil, server.getTransportFlags()
+                  server.asock,
+                  server.bufferSize,
+                  nil,
+                  server.getTransportFlags(),
                 )
               # Start tracking transport
               trackCounter(StreamTransportTrackerName)
@@ -1068,7 +1115,8 @@ when defined(windows):
           else:
             server.asock.closeSocket()
             raiseOsDefect(
-              ovl.data.errCode, "acceptLoop(): Unable to accept " & "new connection"
+              ovl.data.errCode,
+              "acceptLoop(): Unable to accept " & "new connection",
             )
         else:
           # Server close happens in callback, and we are not started new
@@ -1109,7 +1157,9 @@ when defined(windows):
             elif errCode == ERROR_IO_PENDING:
               discard
             else:
-              raiseOsDefect(errCode, "acceptLoop(): Unable to accept " & "connection")
+              raiseOsDefect(
+                errCode, "acceptLoop(): Unable to accept " & "connection"
+              )
           break
         else:
           # Server close happens in callback, and we are not started new
@@ -1206,7 +1256,10 @@ when defined(windows):
             if not (isNil(server.init)):
               let transp = server.init(server, server.asock)
               ntransp = newStreamSocketTransport(
-                server.asock, server.bufferSize, transp, server.getTransportFlags()
+                server.asock,
+                server.bufferSize,
+                transp,
+                server.getTransportFlags(),
               )
             else:
               ntransp = newStreamSocketTransport(
@@ -1220,8 +1273,8 @@ when defined(windows):
           server.asock.closeSocket()
           retFuture.fail(getServerUseClosedError())
           server.clean()
-        of WSAENETDOWN, WSAENETRESET, WSAECONNABORTED, WSAECONNRESET, WSAETIMEDOUT,
-            ERROR_NETNAME_DELETED:
+        of WSAENETDOWN, WSAENETRESET, WSAECONNABORTED, WSAECONNRESET,
+            WSAETIMEDOUT, ERROR_NETNAME_DELETED:
           server.asock.closeSocket()
           retFuture.fail(getConnectionAbortedError(ovl.data.errCode))
           server.clean()
@@ -1262,10 +1315,12 @@ when defined(windows):
             flags.incl(WinNoPipeFlash)
           if not (isNil(server.init)):
             var transp = server.init(server, server.sock)
-            ntransp =
-              newStreamPipeTransport(server.sock, server.bufferSize, transp, flags)
+            ntransp = newStreamPipeTransport(
+              server.sock, server.bufferSize, transp, flags
+            )
           else:
-            ntransp = newStreamPipeTransport(server.sock, server.bufferSize, nil, flags)
+            ntransp =
+              newStreamPipeTransport(server.sock, server.bufferSize, nil, flags)
           server.sock = server.createAcceptPipe().valueOr:
             server.sock = asyncInvalidSocket
             server.errorCode = error
@@ -1332,7 +1387,8 @@ when defined(windows):
           return retFuture
         of ERROR_IO_PENDING:
           discard
-        of WSAECONNRESET, WSAECONNABORTED, WSAENETDOWN, WSAENETRESET, WSAETIMEDOUT:
+        of WSAECONNRESET, WSAECONNABORTED, WSAENETDOWN, WSAENETRESET,
+            WSAETIMEDOUT:
           server.apending = false
           retFuture.fail(getConnectionAbortedError(err))
           return retFuture
@@ -1357,8 +1413,9 @@ when defined(windows):
       server.aovl.data =
         CompletionData(cb: continuationPipe, udata: cast[pointer](server))
       server.apending = true
-      let res =
-        connectNamedPipe(HANDLE(server.sock), cast[POVERLAPPED](addr server.aovl))
+      let res = connectNamedPipe(
+        HANDLE(server.sock), cast[POVERLAPPED](addr server.aovl)
+      )
       if res == 0:
         let err = osLastError()
         case err
@@ -1459,8 +1516,9 @@ else:
           handleError()
       of VectorKind.DataFile:
         var nbytes = cast[int](vector.buf)
-        let res =
-          sendfile(int(fd), cast[int](vector.buflen), int(vector.offset), nbytes)
+        let res = sendfile(
+          int(fd), cast[int](vector.buflen), int(vector.offset), nbytes
+        )
 
         # In case of some errors on some systems, some bytes may have been
         # written (see sendfile.nim)
@@ -1565,7 +1623,10 @@ else:
           break
 
   proc newStreamSocketTransport(
-      sock: AsyncFD, bufsize: int, child: StreamTransport, flags: set[TransportFlags]
+      sock: AsyncFD,
+      bufsize: int,
+      child: StreamTransport,
+      flags: set[TransportFlags],
   ): StreamTransport =
     var transp: StreamTransport
     if not (isNil(child)):
@@ -1629,7 +1690,9 @@ else:
       else:
         Protocol.IPPROTO_TCP
 
-    let sock = createAsyncSocket2(address.getDomain(), SockType.SOCK_STREAM, proto).valueOr:
+    let sock = createAsyncSocket2(
+      address.getDomain(), SockType.SOCK_STREAM, proto
+    ).valueOr:
       case error
       of oserrno.EMFILE:
         retFuture.fail(getTransportTooManyError())
@@ -1664,7 +1727,8 @@ else:
       # Add `V4Mapped` flag when `::` address is used and dualstack is
       # set to enabled or auto.
       var res: set[TransportFlags]
-      if (localAddress.family == AddressFamily.IPv6) and localAddress.isAnyLocal():
+      if (localAddress.family == AddressFamily.IPv6) and
+          localAddress.isAnyLocal():
         if dualstack != DualStackType.Disabled:
           res.incl(TransportFlags.V4Mapped)
       res
@@ -1675,7 +1739,8 @@ else:
         lsaddr: Sockaddr_storage
         lslen: SockLen
       toSAddr(localAddress, lsaddr, lslen)
-      if bindSocket(SocketHandle(sock), cast[ptr SockAddr](addr lsaddr), lslen) != 0:
+      if bindSocket(SocketHandle(sock), cast[ptr SockAddr](addr lsaddr), lslen) !=
+          0:
         sock.closeSocket()
         retFuture.fail(getTransportOsError(osLastError()))
         return retFuture
@@ -1699,7 +1764,8 @@ else:
           retFuture.fail(getTransportOsError(OSErrorCode(err)))
           return
 
-        let transp = newStreamSocketTransport(sock, bufferSize, child, transportFlags)
+        let transp =
+          newStreamSocketTransport(sock, bufferSize, child, transportFlags)
         # Start tracking transport
         trackCounter(StreamTransportTrackerName)
         retFuture.complete(transp)
@@ -1709,9 +1775,11 @@ else:
         closeSocket(sock)
 
     while true:
-      let res = osdefs.connect(SocketHandle(sock), cast[ptr SockAddr](addr saddr), slen)
+      let res =
+        osdefs.connect(SocketHandle(sock), cast[ptr SockAddr](addr saddr), slen)
       if res == 0:
-        let transp = newStreamSocketTransport(sock, bufferSize, child, transportFlags)
+        let transp =
+          newStreamSocketTransport(sock, bufferSize, child, transportFlags)
         # Start tracking transport
         trackCounter(StreamTransportTrackerName)
         retFuture.complete(transp)
@@ -1755,8 +1823,9 @@ else:
 
     let
       flags = {DescriptorFlag.CloseOnExec, DescriptorFlag.NonBlock}
-      sres =
-        acceptConn(cint(server.sock), cast[ptr SockAddr](addr saddr), addr slen, flags)
+      sres = acceptConn(
+        cint(server.sock), cast[ptr SockAddr](addr saddr), addr slen, flags
+      )
     if sres.isOk():
       let sock = AsyncFD(sres.get())
       let rres = register2(sock)
@@ -1841,7 +1910,10 @@ else:
           let
             flags = {DescriptorFlag.CloseOnExec, DescriptorFlag.NonBlock}
             sres = acceptConn(
-              cint(server.sock), cast[ptr SockAddr](addr saddr), addr slen, flags
+              cint(server.sock),
+              cast[ptr SockAddr](addr saddr),
+              addr slen,
+              flags,
             )
           if sres.isErr():
             let errorCode = sres.error()
@@ -1869,7 +1941,10 @@ else:
                   if not (isNil(server.init)):
                     let transp = server.init(server, sock)
                     newStreamSocketTransport(
-                      sock, server.bufferSize, transp, server.getTransportFlags()
+                      sock,
+                      server.bufferSize,
+                      transp,
+                      server.getTransportFlags(),
                     )
                   else:
                     newStreamSocketTransport(
@@ -2097,7 +2172,9 @@ proc createStreamServer*(
 
         host.toSAddr(saddr, slen)
 
-        if bindSocket(SocketHandle(sockres), cast[ptr SockAddr](addr saddr), slen) != 0:
+        if bindSocket(
+          SocketHandle(sockres), cast[ptr SockAddr](addr saddr), slen
+        ) != 0:
           let err = osLastError()
           if sock == asyncInvalidSocket:
             discard closeFd(SocketHandle(sockres))
@@ -2105,8 +2182,9 @@ proc createStreamServer*(
 
         slen = SockLen(sizeof(saddr))
 
-        if getsockname(SocketHandle(sockres), cast[ptr SockAddr](addr saddr), addr slen) !=
-            0:
+        if getsockname(
+          SocketHandle(sockres), cast[ptr SockAddr](addr saddr), addr slen
+        ) != 0:
           let err = osLastError()
           if sock == asyncInvalidSocket:
             discard closeFd(SocketHandle(sockres))
@@ -2140,7 +2218,8 @@ proc createStreamServer*(
             else:
               Protocol.IPPROTO_TCP
           # TODO (cheatfate): `valueOr` generates weird compile error.
-          let res = createAsyncSocket2(host.getDomain(), SockType.SOCK_STREAM, proto)
+          let res =
+            createAsyncSocket2(host.getDomain(), SockType.SOCK_STREAM, proto)
           if res.isErr():
             raiseTransportOsError(res.error())
           res.get()
@@ -2192,8 +2271,9 @@ proc createStreamServer*(
 
       host.toSAddr(saddr, slen)
 
-      if osdefs.bindSocket(SocketHandle(sockres), cast[ptr SockAddr](addr saddr), slen) !=
-          0:
+      if osdefs.bindSocket(
+        SocketHandle(sockres), cast[ptr SockAddr](addr saddr), slen
+      ) != 0:
         let err = osLastError()
         if sock == asyncInvalidSocket:
           discard unregisterAndCloseFd(sockres)
@@ -2201,8 +2281,9 @@ proc createStreamServer*(
 
       # Obtain real address
       slen = SockLen(sizeof(saddr))
-      if getsockname(SocketHandle(sockres), cast[ptr SockAddr](addr saddr), addr slen) !=
-          0:
+      if getsockname(
+        SocketHandle(sockres), cast[ptr SockAddr](addr saddr), addr slen
+      ) != 0:
         let err = osLastError()
         if sock == asyncInvalidSocket:
           discard unregisterAndCloseFd(sockres)
@@ -2231,7 +2312,9 @@ proc createStreamServer*(
   sres.bufferSize = bufferSize
   sres.status = Starting
   sres.loopFuture = asyncloop.init(
-    Future[void].Raising([]), "stream.transport.server", {FutureFlag.OwnCancelSchedule}
+    Future[void].Raising([]),
+    "stream.transport.server",
+    {FutureFlag.OwnCancelSchedule},
   )
   sres.udata = udata
   sres.dualstack = dualstack
@@ -2279,7 +2362,9 @@ proc createStreamServer*(
     deprecated:
       "Callback must not raise exceptions, annotate with {.async: (raises: []).}"
 .} =
-  proc wrap(server: StreamServer, client: StreamTransport) {.async: (raises: []).} =
+  proc wrap(
+      server: StreamServer, client: StreamTransport
+  ) {.async: (raises: []).} =
     try:
       await cbproc(server, client)
     except CatchableError as exc:
@@ -2539,7 +2624,9 @@ proc getUserData*[T](server: StreamServer): T {.inline.} =
   ## Obtain user data stored in ``server`` object.
   cast[T](server.udata)
 
-template fastWrite(transp: auto, pbytes: var ptr byte, rbytes: var int, nbytes: int) =
+template fastWrite(
+    transp: auto, pbytes: var ptr byte, rbytes: var int, nbytes: int
+) =
   # On windows, the write could be initiated here if there is no other write
   # ongoing, but the queue is still needed due to the mechanics of iocp
 
@@ -2596,7 +2683,11 @@ proc write*(
   fastWrite(transp, pbytes, rbytes, nbytes)
 
   var vector = StreamVector(
-    kind: DataBuffer, writer: retFuture, buf: pbytes, buflen: rbytes, size: nbytes
+    kind: DataBuffer,
+    writer: retFuture,
+    buf: pbytes,
+    buflen: rbytes,
+    size: nbytes,
   )
   transp.queue.addLast(vector)
   let wres = transp.resumeWrite()
@@ -2634,7 +2725,11 @@ proc write*(
   pbytes = cast[ptr byte](addr localCopy[written])
 
   var vector = StreamVector(
-    kind: DataBuffer, writer: retFuture, buf: pbytes, buflen: rbytes, size: nbytes
+    kind: DataBuffer,
+    writer: retFuture,
+    buf: pbytes,
+    buflen: rbytes,
+    size: nbytes,
   )
   transp.queue.addLast(vector)
   let wres = transp.resumeWrite()
@@ -2673,7 +2768,11 @@ proc write*[T](
   pbytes = cast[ptr byte](addr localCopy[written])
 
   var vector = StreamVector(
-    kind: DataBuffer, writer: retFuture, buf: pbytes, buflen: rbytes, size: nbytes
+    kind: DataBuffer,
+    writer: retFuture,
+    buf: pbytes,
+    buflen: rbytes,
+    size: nbytes,
   )
   transp.queue.addLast(vector)
   let wres = transp.resumeWrite()
@@ -2691,7 +2790,9 @@ proc writeFile*(
   var retFuture = newFuture[int]("stream.transport.writeFile")
   when defined(windows):
     if transp.kind != TransportKind.Socket:
-      retFuture.fail(newException(TransportNoSupport, "writeFile() is not supported!"))
+      retFuture.fail(
+        newException(TransportNoSupport, "writeFile() is not supported!")
+      )
       return retFuture
   transp.checkClosed(retFuture)
   transp.checkWriteEof(retFuture)
@@ -2720,8 +2821,9 @@ template readLoop(name, body: untyped): untyped =
   checkPending(transp)
   while true:
     if ReadClosed in transp.state:
-      raise
-        newException(TransportUseClosedError, "Attempt to read data from closed stream")
+      raise newException(
+        TransportUseClosedError, "Attempt to read data from closed stream"
+      )
     if len(transp.buffer) == 0:
       # We going to raise an error, only if transport buffer is empty.
       if ReadError in transp.state:
@@ -3054,8 +3156,8 @@ proc failed*(transp: StreamTransport): bool {.inline.} =
 proc running*(transp: StreamTransport): bool {.inline.} =
   ## Returns ``true`` if transport is still pending.
   (
-    {ReadClosed, ReadEof, ReadError, WriteClosed, WriteEof, WriteError} * transp.state ==
-    {}
+    {ReadClosed, ReadEof, ReadError, WriteClosed, WriteEof, WriteError} *
+    transp.state == {}
   )
 
 proc close*(transp: StreamTransport) =
@@ -3129,8 +3231,9 @@ proc shutdownWait*(
     let povl = RefCustomOverlapped(data: CompletionData(cb: continuation))
     GC_ref(povl)
 
-    let res =
-      loop.disconnectEx(SocketHandle(transp.fd), cast[POVERLAPPED](povl), 0'u32, 0'u32)
+    let res = loop.disconnectEx(
+      SocketHandle(transp.fd), cast[POVERLAPPED](povl), 0'u32, 0'u32
+    )
     if res == FALSE:
       let err = osLastError()
       case err
@@ -3166,7 +3269,9 @@ proc shutdownWait*(
     retFuture
 
 proc fromPipe2*(
-    fd: AsyncFD, child: StreamTransport = nil, bufferSize = DefaultStreamBufferSize
+    fd: AsyncFD,
+    child: StreamTransport = nil,
+    bufferSize = DefaultStreamBufferSize,
 ): Result[StreamTransport, OSErrorCode] =
   ## Create new transport object using pipe's file descriptor.
   ##
@@ -3178,7 +3283,9 @@ proc fromPipe2*(
   ok(res)
 
 proc fromPipe*(
-    fd: AsyncFD, child: StreamTransport = nil, bufferSize = DefaultStreamBufferSize
+    fd: AsyncFD,
+    child: StreamTransport = nil,
+    bufferSize = DefaultStreamBufferSize,
 ): StreamTransport {.raises: [TransportOsError].} =
   ## Create new transport object using pipe's file descriptor.
   ##

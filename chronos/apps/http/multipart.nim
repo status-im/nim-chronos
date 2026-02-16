@@ -238,8 +238,9 @@ proc readPart*(
 
     # If two bytes are CRLF we are at the part beginning.
     # Reading part's headers
-    let res =
-      await mpr.stream.readUntil(addr mpr.buffer[0], len(mpr.buffer), HeadersMark)
+    let res = await mpr.stream.readUntil(
+      addr mpr.buffer[0], len(mpr.buffer), HeadersMark
+    )
     var headersList = parseHeaders(mpr.buffer.toOpenArray(0, res - 1), false)
     if headersList.failed():
       raiseHttpProtocolError(Http400, "Incorrect multipart's headers found")
@@ -373,12 +374,14 @@ proc getPart*(mpr: var MultiPartReader): Result[MultiPart, string] =
     if len(mpr.buffer) <= mpr.offset + 1:
       return err("Incomplete multipart form")
 
-    if mpr.buffer[mpr.offset] == byte('-') and mpr.buffer[mpr.offset + 1] == byte('-'):
+    if mpr.buffer[mpr.offset] == byte('-') and
+        mpr.buffer[mpr.offset + 1] == byte('-'):
       # If we have <-><-><boundary><-><-> it means we have found last boundary
       # of multipart message.
       mpr.offset += 2
       if len(mpr.buffer) <= mpr.offset + 1:
-        if mpr.buffer[mpr.offset] == 0x0D'u8 and mpr.buffer[mpr.offset + 1] == 0x0A'u8:
+        if mpr.buffer[mpr.offset] == 0x0D'u8 and
+            mpr.buffer[mpr.offset + 1] == 0x0A'u8:
           mpr.offset += 2
           return err("End of multipart form encountered")
         else:
@@ -386,7 +389,8 @@ proc getPart*(mpr: var MultiPartReader): Result[MultiPart, string] =
       else:
         return err("Incomplete multipart form")
 
-    if mpr.buffer[mpr.offset] == 0x0D'u8 and mpr.buffer[mpr.offset + 1] == 0x0A'u8:
+    if mpr.buffer[mpr.offset] == 0x0D'u8 and
+        mpr.buffer[mpr.offset + 1] == 0x0A'u8:
       # If we have <-><-><boundary><CR><LF> it means that we have found another
       # part of multipart message.
       mpr.offset += 2
@@ -408,7 +412,8 @@ proc getPart*(mpr: var MultiPartReader): Result[MultiPart, string] =
       let hstart = mpr.offset
       let hfinish = mpr.offset + pos1 + 4 - 1
 
-      let headersList = parseHeaders(mpr.buffer.toOpenArray(hstart, hfinish), false)
+      let headersList =
+        parseHeaders(mpr.buffer.toOpenArray(hstart, hfinish), false)
       if headersList.failed():
         return err("Incorrect or incomplete multipart headers received")
 
@@ -454,7 +459,15 @@ func validateBoundary[B: BChar](boundary: openArray[B]): HttpResult[void] =
   else:
     for ch in boundary:
       if chr(ord(ch)) notin {
-        'a' .. 'z', 'A' .. 'Z', '0' .. '9', '\'' .. ')', '+' .. '/', ':', '=', '?', '_'
+        'a' .. 'z',
+        'A' .. 'Z',
+        '0' .. '9',
+        '\'' .. ')',
+        '+' .. '/',
+        ':',
+        '=',
+        '?',
+        '_',
       }:
         return err("Content-Type boundary alphabet incorrect")
     ok()
@@ -527,7 +540,9 @@ proc init*[B: BChar](
   )
 
 proc new*[B: BChar](
-    mpt: typedesc[MultiPartWriterRef], stream: HttpBodyWriter, boundary: openArray[B]
+    mpt: typedesc[MultiPartWriterRef],
+    stream: HttpBodyWriter,
+    boundary: openArray[B],
 ): MultiPartWriterRef =
   doAssert(validateBoundary(boundary).isOk())
   doAssert(not (isNil(stream)))
@@ -554,7 +569,10 @@ proc new*[B: BChar](
   )
 
 proc prepareHeaders(
-    partMark: openArray[byte], name: string, filename: string, headers: HttpTable
+    partMark: openArray[byte],
+    name: string,
+    filename: string,
+    headers: HttpTable,
 ): string =
   const ContentDispositionHeader = "Content-Disposition"
   let qname = block:
@@ -624,9 +642,8 @@ proc beginPart*(
   ## Note: `filename` and `name` arguments could be only ASCII strings.
   doAssert(mpw.kind == MultiPartSource.Stream)
   doAssert(
-    mpw.state in {
-      MultiPartWriterState.MessageStarted, MultiPartWriterState.PartFinished
-    }
+    mpw.state in
+      {MultiPartWriterState.MessageStarted, MultiPartWriterState.PartFinished}
   )
   # write "<boundary><CR><LF>"
   # write "<part headers><CR><LF>"
@@ -647,9 +664,8 @@ proc beginPart*(
   ## Note: `filename` and `name` arguments could be only ASCII strings.
   doAssert(mpw.kind == MultiPartSource.Buffer)
   doAssert(
-    mpw.state in {
-      MultiPartWriterState.MessageStarted, MultiPartWriterState.PartFinished
-    }
+    mpw.state in
+      {MultiPartWriterState.MessageStarted, MultiPartWriterState.PartFinished}
   )
   let buffer = prepareHeaders(mpw.beginPartMark, name, filename, headers)
   # write "<boundary><CR><LF>"

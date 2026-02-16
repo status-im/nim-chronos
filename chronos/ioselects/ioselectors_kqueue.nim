@@ -105,7 +105,8 @@ template getUdata(event: KEvent): int32 =
   doAssert(
     event.ident <= uint(high(uint32)),
     "Invalid event udata value [" & Base10.toString(udata) &
-      "] in the kqueue event object with ident [" & Base10.toString(event.ident) & "]",
+      "] in the kqueue event object with ident [" & Base10.toString(event.ident) &
+      "]",
   )
   cast[int32](uint32(udata))
 
@@ -212,7 +213,8 @@ template modifyKQueue(
 proc registerHandle2*[T](
     s: Selector[T], fd: cint, events: set[Event], data: T
 ): SelectResult[void] =
-  let selectorKey = SelectorKey[T](ident: fd, events: events, param: 0, data: data)
+  let selectorKey =
+    SelectorKey[T](ident: fd, events: events, param: 0, data: data)
   s.addKey(fd, selectorKey)
 
   if events != {}:
@@ -226,7 +228,8 @@ proc registerHandle2*[T](
       changes.modifyKQueue(k, uint(uint32(fd)), EVFILT_WRITE, EV_ADD, 0, 0, nil)
       inc(k)
     if k > 0:
-      if handleEintr(kevent(s.kqFd, addr(changes[0]), cint(k), nil, 0, nil)) == -1:
+      if handleEintr(kevent(s.kqFd, addr(changes[0]), cint(k), nil, 0, nil)) ==
+          -1:
         s.freeKey(fd)
         return err(osLastError())
   ok()
@@ -235,8 +238,8 @@ proc updateHandle2*[T](
     s: Selector[T], fd: cint, events: set[Event]
 ): SelectResult[void] =
   let EventsMask = {
-    Event.Timer, Event.Signal, Event.Process, Event.Vnode, Event.User, Event.Oneshot,
-    Event.Error,
+    Event.Timer, Event.Signal, Event.Process, Event.Vnode, Event.User,
+    Event.Oneshot, Event.Error,
   }
   s.fds.withValue(int32(fd), pkey):
     doAssert(
@@ -248,23 +251,33 @@ proc updateHandle2*[T](
         changes: array[4, KEvent]
         k = 0
       if (Event.Read in pkey[].events) and (Event.Read notin events):
-        changes.modifyKQueue(k, uint(uint32(fd)), EVFILT_READ, EV_DELETE, 0, 0, nil)
+        changes.modifyKQueue(
+          k, uint(uint32(fd)), EVFILT_READ, EV_DELETE, 0, 0, nil
+        )
         inc(k)
       if (Event.Write in pkey[].events) and (Event.Write notin events):
-        changes.modifyKQueue(k, uint(uint32(fd)), EVFILT_WRITE, EV_DELETE, 0, 0, nil)
+        changes.modifyKQueue(
+          k, uint(uint32(fd)), EVFILT_WRITE, EV_DELETE, 0, 0, nil
+        )
         inc(k)
       if (Event.Read notin pkey[].events) and (Event.Read in events):
-        changes.modifyKQueue(k, uint(uint32(fd)), EVFILT_READ, EV_ADD, 0, 0, nil)
+        changes.modifyKQueue(
+          k, uint(uint32(fd)), EVFILT_READ, EV_ADD, 0, 0, nil
+        )
         inc(k)
       if (Event.Write notin pkey[].events) and (Event.Write in events):
-        changes.modifyKQueue(k, uint(uint32(fd)), EVFILT_WRITE, EV_ADD, 0, 0, nil)
+        changes.modifyKQueue(
+          k, uint(uint32(fd)), EVFILT_WRITE, EV_ADD, 0, 0, nil
+        )
         inc(k)
       if k > 0:
-        if handleEintr(kevent(s.kqFd, addr(changes[0]), cint(k), nil, 0, nil)) == -1:
+        if handleEintr(kevent(s.kqFd, addr(changes[0]), cint(k), nil, 0, nil)) ==
+            -1:
           return err(osLastError())
       pkey[].events = events
   do:
-    raiseAssert "Descriptor [" & fd.toString() & "] is not registered in the selector!"
+    raiseAssert "Descriptor [" & fd.toString() &
+      "] is not registered in the selector!"
   ok()
 
 proc registerTimer*[T](
@@ -327,7 +340,9 @@ template checkSignal(signal: int) =
     "Invalid signal value [" & $signal & "]",
   )
 
-proc registerSignal*[T](s: Selector[T], signal: int, data: T): SelectResult[cint] =
+proc registerSignal*[T](
+    s: Selector[T], signal: int, data: T
+): SelectResult[cint] =
   checkSignal(signal)
 
   let
@@ -346,7 +361,9 @@ proc registerSignal*[T](s: Selector[T], signal: int, data: T): SelectResult[cint
 
   # To be compatible with linux semantic we need to "eat" signals
   signal(cint(signal), SIG_IGN)
-  changes.modifyKQueue(0, uint(signal), EVFILT_SIGNAL, EV_ADD, 0, 0, fdi32.toPointer())
+  changes.modifyKQueue(
+    0, uint(signal), EVFILT_SIGNAL, EV_ADD, 0, 0, fdi32.toPointer()
+  )
   if handleEintr(kevent(s.kqFd, addr(changes[0]), cint(1), nil, 0, nil)) == -1:
     let errorCode = osLastError()
     s.freeKey(fdi32)
@@ -358,19 +375,25 @@ proc registerSignal*[T](s: Selector[T], signal: int, data: T): SelectResult[cint
 template checkPid(pid: int) =
   when sizeof(int) == 8:
     doAssert(
-      pid >= 0 and pid <= int(high(uint32)), "Invalid process idientified (pid) value"
+      pid >= 0 and pid <= int(high(uint32)),
+      "Invalid process idientified (pid) value",
     )
   else:
-    doAssert(pid >= 0 and pid <= high(int32), "Invalid process idientified (pid) value")
+    doAssert(
+      pid >= 0 and pid <= high(int32), "Invalid process idientified (pid) value"
+    )
 
-proc registerProcess*[T](s: Selector[T], pid: int, data: T): SelectResult[cint] =
+proc registerProcess*[T](
+    s: Selector[T], pid: int, data: T
+): SelectResult[cint] =
   checkPid(pid)
 
   let
     fdi32 = ?s.getVirtualId()
     events = {Event.Process, Event.Oneshot}
     flags: cushort = EV_ONESHOT or EV_ADD
-    selectorKey = SelectorKey[T](ident: fdi32, events: events, param: pid, data: data)
+    selectorKey =
+      SelectorKey[T](ident: fdi32, events: events, param: pid, data: data)
   var changes: array[1, KEvent]
   s.addKey(fdi32, selectorKey)
 
@@ -383,7 +406,9 @@ proc registerProcess*[T](s: Selector[T], pid: int, data: T): SelectResult[cint] 
 
   ok(cint(fdi32))
 
-proc registerEvent2*[T](s: Selector[T], ev: SelectEvent, data: T): SelectResult[cint] =
+proc registerEvent2*[T](
+    s: Selector[T], ev: SelectEvent, data: T
+): SelectResult[cint] =
   doAssert(not (isNil(ev)))
   let selectorKey =
     SelectorKey[T](ident: ev.rfd, events: {Event.User}, param: 0, data: data)
@@ -405,8 +430,8 @@ template processVnodeEvents(events: set[Event]): cuint =
     Event.VnodeLink, Event.VnodeRename, Event.VnodeRevoke,
   }:
     rfflags =
-      NOTE_DELETE or NOTE_WRITE or NOTE_EXTEND or NOTE_ATTRIB or NOTE_LINK or NOTE_RENAME or
-      NOTE_REVOKE
+      NOTE_DELETE or NOTE_WRITE or NOTE_EXTEND or NOTE_ATTRIB or NOTE_LINK or
+      NOTE_RENAME or NOTE_REVOKE
   else:
     if Event.VnodeDelete in events:
       rfflags = rfflags or NOTE_DELETE
@@ -430,7 +455,8 @@ proc registerVnode2*[T](
   let
     events = {Event.Vnode} + events
     fflags = processVnodeEvents(events)
-    selectorKey = SelectorKey[T](ident: fd, events: events, param: 0, data: data)
+    selectorKey =
+      SelectorKey[T](ident: fd, events: events, param: 0, data: data)
 
   var changes: array[1, KEvent]
   s.addKey(fd, selectorKey)
@@ -455,18 +481,26 @@ proc unregister2*[T](s: Selector[T], fd: cint): SelectResult[void] =
   if pkey.events != {}:
     if pkey.events * {Event.Read, Event.Write} != {}:
       if Event.Read in pkey.events:
-        changes.modifyKQueue(k, uint(uint32(fdi32)), EVFILT_READ, EV_DELETE, 0, 0, nil)
+        changes.modifyKQueue(
+          k, uint(uint32(fdi32)), EVFILT_READ, EV_DELETE, 0, 0, nil
+        )
         inc(k)
       if Event.Write in pkey.events:
-        changes.modifyKQueue(k, uint(uint32(fdi32)), EVFILT_WRITE, EV_DELETE, 0, 0, nil)
+        changes.modifyKQueue(
+          k, uint(uint32(fdi32)), EVFILT_WRITE, EV_DELETE, 0, 0, nil
+        )
         inc(k)
       if k > 0:
-        if handleEintr(kevent(s.kqFd, addr(changes[0]), cint(k), nil, 0, nil)) == -1:
+        if handleEintr(kevent(s.kqFd, addr(changes[0]), cint(k), nil, 0, nil)) ==
+            -1:
           return err(osLastError())
     elif Event.Timer in pkey.events:
       if Event.Finished notin pkey.events:
-        changes.modifyKQueue(0, uint(uint32(fdi32)), EVFILT_TIMER, EV_DELETE, 0, 0, nil)
-        if handleEintr(kevent(s.kqFd, addr(changes[0]), cint(1), nil, 0, nil)) == -1:
+        changes.modifyKQueue(
+          0, uint(uint32(fdi32)), EVFILT_TIMER, EV_DELETE, 0, 0, nil
+        )
+        if handleEintr(kevent(s.kqFd, addr(changes[0]), cint(1), nil, 0, nil)) ==
+            -1:
           return err(osLastError())
     elif Event.Signal in pkey.events:
       let sig = cint(pkey.param)
@@ -474,7 +508,8 @@ proc unregister2*[T](s: Selector[T], fd: cint): SelectResult[void] =
       changes.modifyKQueue(
         0, uint(uint32(pkey.param)), EVFILT_SIGNAL, EV_DELETE, 0, 0, nil
       )
-      if handleEintr(kevent(s.kqFd, addr(changes[0]), cint(1), nil, 0, nil)) == -1:
+      if handleEintr(kevent(s.kqFd, addr(changes[0]), cint(1), nil, 0, nil)) ==
+          -1:
         discard unblockSignal(sig)
         return err(osLastError())
 
@@ -484,15 +519,22 @@ proc unregister2*[T](s: Selector[T], fd: cint): SelectResult[void] =
         changes.modifyKQueue(
           0, uint(uint32(pkey.param)), EVFILT_PROC, EV_DELETE, 0, 0, nil
         )
-        if handleEintr(kevent(s.kqFd, addr(changes[0]), cint(1), nil, 0, nil)) == -1:
+        if handleEintr(kevent(s.kqFd, addr(changes[0]), cint(1), nil, 0, nil)) ==
+            -1:
           return err(osLastError())
     elif Event.Vnode in pkey.events:
-      changes.modifyKQueue(0, uint(uint32(fdi32)), EVFILT_VNODE, EV_DELETE, 0, 0, nil)
-      if handleEintr(kevent(s.kqFd, addr(changes[0]), cint(1), nil, 0, nil)) == -1:
+      changes.modifyKQueue(
+        0, uint(uint32(fdi32)), EVFILT_VNODE, EV_DELETE, 0, 0, nil
+      )
+      if handleEintr(kevent(s.kqFd, addr(changes[0]), cint(1), nil, 0, nil)) ==
+          -1:
         return err(osLastError())
     elif Event.User in pkey.events:
-      changes.modifyKQueue(0, uint(uint32(fdi32)), EVFILT_READ, EV_DELETE, 0, 0, nil)
-      if handleEintr(kevent(s.kqFd, addr(changes[0]), cint(1), nil, 0, nil)) == -1:
+      changes.modifyKQueue(
+        0, uint(uint32(fdi32)), EVFILT_READ, EV_DELETE, 0, 0, nil
+      )
+      if handleEintr(kevent(s.kqFd, addr(changes[0]), cint(1), nil, 0, nil)) ==
+          -1:
         return err(osLastError())
 
   s.freeKey(fdi32)
@@ -602,8 +644,9 @@ proc selectInto2*[T](
     eventsCount = block:
       var res = 0
       while true:
-        res =
-          kevent(s.kqFd, nil, cint(0), addr(queueEvents[0]), maxEventsCount, ptrTimeout)
+        res = kevent(
+          s.kqFd, nil, cint(0), addr(queueEvents[0]), maxEventsCount, ptrTimeout
+        )
         if res < 0:
           let errorCode = osLastError()
           if errorCode == oserrno.EINTR:
@@ -622,7 +665,9 @@ proc selectInto2*[T](
 
   ok(k)
 
-proc select2*[T](s: Selector[T], timeout: int): Result[seq[ReadyKey], OSErrorCode] =
+proc select2*[T](
+    s: Selector[T], timeout: int
+): Result[seq[ReadyKey], OSErrorCode] =
   var res = newSeq[ReadyKey](chronosEventsCount)
   let count = ?selectInto2(s, timeout, res)
   res.setLen(count)
@@ -723,7 +768,9 @@ proc setData*[T](s: Selector[T], fd: SocketHandle | cint, data: T): bool =
   do:
     return false
 
-template withData*[T](s: Selector[T], fd: SocketHandle | cint, value, body: untyped) =
+template withData*[T](
+    s: Selector[T], fd: SocketHandle | cint, value, body: untyped
+) =
   s.fds.withValue(int32(fd), skey):
     var value = addr(skey[].data)
     body

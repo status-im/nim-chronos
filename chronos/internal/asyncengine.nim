@@ -35,8 +35,8 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or defined(openbsd) 
     defined(solaris):
   import ../selectors2
   export
-    SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT, SIGBUS, SIGFPE, SIGKILL, SIGUSR1,
-    SIGSEGV, SIGUSR2, SIGPIPE, SIGALRM, SIGTERM, SIGPIPE
+    SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT, SIGBUS, SIGFPE, SIGKILL,
+    SIGUSR1, SIGSEGV, SIGUSR2, SIGPIPE, SIGALRM, SIGTERM, SIGPIPE
   export oserrno
 
 type
@@ -66,7 +66,8 @@ type
 proc sentinelCallbackImpl(arg: pointer) {.gcsafe, noreturn.} =
   raiseAssert "Sentinel callback MUST not be scheduled"
 
-const SentinelCallback = AsyncCallback(function: sentinelCallbackImpl, udata: nil)
+const SentinelCallback =
+  AsyncCallback(function: sentinelCallbackImpl, udata: nil)
 
 proc isSentinel(acb: AsyncCallback): bool =
   acb == SentinelCallback
@@ -149,15 +150,18 @@ proc raiseAsDefect*(exc: ref Exception, msg: string) {.noreturn, noinline.} =
   # Reraise an exception as a Defect, where it's unexpected and can't be handled
   # We include the stack trace in the message because otherwise, it's easily
   # lost - Nim doesn't print it for `parent` exceptions for example (!)
-  raise
-    (ref Defect)(msg: msg & "\n" & exc.msg & "\n" & exc.getStackTrace(), parent: exc)
+  raise (ref Defect)(
+    msg: msg & "\n" & exc.msg & "\n" & exc.getStackTrace(), parent: exc
+  )
 
 proc raiseOsDefect*(error: OSErrorCode, msg = "") {.noreturn, noinline.} =
   # Reraise OS error code as a Defect, where it's unexpected and can't be
   # handled. We include the stack trace in the message because otherwise,
   # it's easily lost.
   raise (ref Defect)(
-    msg: msg & "\n[" & $int(error) & "] " & osErrorMsg(error) & "\n" & getStackTrace()
+    msg:
+      msg & "\n[" & $int(error) & "] " & osErrorMsg(error) & "\n" &
+      getStackTrace()
   )
 
 func toPointer(error: OSErrorCode): pointer =
@@ -315,7 +319,8 @@ elif defined(windows):
       let res = getFunc(sock, funcPointer, WSAID_CONNECTEX)
       if not (res):
         raiseOsDefect(
-          osLastError(), "initAPI(): Unable to initialize " & "dispatcher's ConnectEx()"
+          osLastError(),
+          "initAPI(): Unable to initialize " & "dispatcher's ConnectEx()",
         )
       loop.connectEx = cast[WSAPROC_CONNECTEX](funcPointer)
 
@@ -323,7 +328,8 @@ elif defined(windows):
       let res = getFunc(sock, funcPointer, WSAID_ACCEPTEX)
       if not (res):
         raiseOsDefect(
-          osLastError(), "initAPI(): Unable to initialize " & "dispatcher's AcceptEx()"
+          osLastError(),
+          "initAPI(): Unable to initialize " & "dispatcher's AcceptEx()",
         )
       loop.acceptEx = cast[WSAPROC_ACCEPTEX](funcPointer)
 
@@ -332,9 +338,11 @@ elif defined(windows):
       if not (res):
         raiseOsDefect(
           osLastError(),
-          "initAPI(): Unable to initialize " & "dispatcher's GetAcceptExSockAddrs()",
+          "initAPI(): Unable to initialize " &
+            "dispatcher's GetAcceptExSockAddrs()",
         )
-      loop.getAcceptExSockAddrs = cast[WSAPROC_GETACCEPTEXSOCKADDRS](funcPointer)
+      loop.getAcceptExSockAddrs =
+        cast[WSAPROC_GETACCEPTEXSOCKADDRS](funcPointer)
 
     block:
       let res = getFunc(sock, funcPointer, WSAID_TRANSMITFILE)
@@ -359,9 +367,12 @@ elif defined(windows):
 
   proc newDispatcher*(): PDispatcher =
     ## Creates a new Dispatcher instance.
-    let port = createIoCompletionPort(osdefs.INVALID_HANDLE_VALUE, HANDLE(0), 0, 1)
+    let port =
+      createIoCompletionPort(osdefs.INVALID_HANDLE_VALUE, HANDLE(0), 0, 1)
     if port == osdefs.INVALID_HANDLE_VALUE:
-      raiseOsDefect(osLastError(), "newDispatcher(): Unable to create " & "IOCP port")
+      raiseOsDefect(
+        osLastError(), "newDispatcher(): Unable to create " & "IOCP port"
+      )
     var res = PDispatcher(
       ioPort: port,
       handles: initHashSet[AsyncFD](),
@@ -389,8 +400,9 @@ elif defined(windows):
   proc register2*(fd: AsyncFD): Result[void, OSErrorCode] =
     ## Register file descriptor ``fd`` in thread's dispatcher.
     let loop = getThreadDispatcher()
-    if createIoCompletionPort(HANDLE(fd), loop.ioPort, cast[CompletionKey](fd), 1) ==
-        osdefs.INVALID_HANDLE_VALUE:
+    if createIoCompletionPort(
+      HANDLE(fd), loop.ioPort, cast[CompletionKey](fd), 1
+    ) == osdefs.INVALID_HANDLE_VALUE:
       return err(osLastError())
     loop.handles.incl(fd)
     ok()
@@ -404,7 +416,9 @@ elif defined(windows):
     getThreadDispatcher().handles.excl(fd)
 
   {.push stackTrace: off.}
-  proc waitableCallback(param: pointer, timerOrWaitFired: WINBOOL) {.stdcallbackFunc.} =
+  proc waitableCallback(
+      param: pointer, timerOrWaitFired: WINBOOL
+  ) {.stdcallbackFunc.} =
     # This procedure will be executed in `wait thread`, so it must not use
     # GC related objects.
     # We going to ignore callbacks which was spawned when `isNil(param) == true`
@@ -421,7 +435,11 @@ elif defined(windows):
   {.pop.}
 
   proc registerWaitable*(
-      handle: HANDLE, flags: ULONG, timeout: Duration, cb: CallbackFunc, udata: pointer
+      handle: HANDLE,
+      flags: ULONG,
+      timeout: Duration,
+      cb: CallbackFunc,
+      udata: pointer,
   ): Result[WaitableHandle, OSErrorCode] =
     ## Register handle of (Change notification, Console input, Event,
     ## Memory resource notification, Mutex, Process, Semaphore, Thread,
@@ -510,7 +528,8 @@ elif defined(windows):
       cb(wh[].udata)
 
     wh = block:
-      let res = registerWaitable(hProcess, flags, InfiniteDuration, continuation, udata)
+      let res =
+        registerWaitable(hProcess, flags, InfiniteDuration, continuation, udata)
       if res.isErr():
         discard closeFd(hProcess)
         return err(res.error())
@@ -587,7 +606,9 @@ elif defined(windows):
       flags = WT_EXECUTEINWAITTHREAD
       hEvent = ?openEvent($getSignalName(signal))
 
-    hWait = registerWaitable(hEvent, flags, InfiniteDuration, continuation, udata).valueOr:
+    hWait = registerWaitable(
+      hEvent, flags, InfiniteDuration, continuation, udata
+    ).valueOr:
       discard closeFd(hEvent)
       return err(error)
     ok(SignalHandle(hWait))
@@ -674,7 +695,8 @@ elif defined(windows):
           OSErrorCode(rtlNtStatusToDosError(res))
       customOverlapped.data.bytesCount = events[i].dwNumberOfBytesTransferred
       let acb = AsyncCallback(
-        function: customOverlapped.data.cb, udata: cast[pointer](customOverlapped)
+        function: customOverlapped.data.cb,
+        udata: cast[pointer](customOverlapped),
       )
       loop.callbacks.addLast(acb)
 
@@ -1073,7 +1095,8 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or defined(openbsd) 
             loop.callbacks.addLast(adata.reader)
 
         when chronosEventEngine in ["epoll", "kqueue"]:
-          let customSet = {Event.Timer, Event.Signal, Event.Process, Event.Vnode}
+          let customSet =
+            {Event.Timer, Event.Signal, Event.Process, Event.Vnode}
           if customSet * events != {}:
             if not isNil(adata.reader.function):
               loop.callbacks.addLast(adata.reader)
@@ -1126,12 +1149,15 @@ proc getGlobalDispatcher*(): PDispatcher {.
 .} =
   getThreadDispatcher()
 
-proc setTimer*(at: Moment, cb: CallbackFunc, udata: pointer = nil): TimerCallback =
+proc setTimer*(
+    at: Moment, cb: CallbackFunc, udata: pointer = nil
+): TimerCallback =
   ## Arrange for the callback ``cb`` to be called at the given absolute
   ## timestamp ``at``. You can also pass ``udata`` to callback.
   let loop = getThreadDispatcher()
-  result =
-    TimerCallback(finishAt: at, function: AsyncCallback(function: cb, udata: udata))
+  result = TimerCallback(
+    finishAt: at, function: AsyncCallback(function: cb, udata: udata)
+  )
   loop.timers.push(result)
 
 proc clearTimer*(timer: TimerCallback) {.inline.} =
@@ -1162,7 +1188,8 @@ proc removeTimer*(at: Moment, cb: CallbackFunc, udata: pointer = nil) =
     index = block:
       var res = -1
       for i in 0 ..< len(loop.timers):
-        if (loop.timers[i].finishAt == at) and (loop.timers[i].function.function == cb) and
+        if (loop.timers[i].finishAt == at) and
+            (loop.timers[i].function.function == cb) and
             (loop.timers[i].function.udata == udata):
           res = i
           break

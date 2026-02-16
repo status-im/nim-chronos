@@ -118,12 +118,15 @@ type
 
 const
   CriticalHttpAddressError* = {
-    HttpAddressErrorType.InvalidUrlScheme, HttpAddressErrorType.InvalidPortNumber,
+    HttpAddressErrorType.InvalidUrlScheme,
+    HttpAddressErrorType.InvalidPortNumber,
     HttpAddressErrorType.MissingHostname, HttpAddressErrorType.InvalidIpHostname,
   }
 
-  RecoverableHttpAddressError* =
-    {HttpAddressErrorType.NameLookupFailed, HttpAddressErrorType.NoAddressResolved}
+  RecoverableHttpAddressError* = {
+    HttpAddressErrorType.NameLookupFailed,
+    HttpAddressErrorType.NoAddressResolved,
+  }
 
 func isCriticalError*(error: HttpAddressErrorType): bool =
   error in CriticalHttpAddressError
@@ -133,24 +136,33 @@ func isRecoverableError*(error: HttpAddressErrorType): bool =
 
 func toString*(error: HttpAddressErrorType): string =
   case error
-  of HttpAddressErrorType.InvalidUrlScheme: "URL scheme not supported"
-  of HttpAddressErrorType.InvalidPortNumber: "Invalid URL port number"
-  of HttpAddressErrorType.MissingHostname: "Missing URL hostname"
-  of HttpAddressErrorType.InvalidIpHostname: "Invalid IPv4/IPv6 address in hostname"
-  of HttpAddressErrorType.NameLookupFailed: "Could not resolve remote address"
-  of HttpAddressErrorType.NoAddressResolved: "No address has been resolved"
+  of HttpAddressErrorType.InvalidUrlScheme:
+    "URL scheme not supported"
+  of HttpAddressErrorType.InvalidPortNumber:
+    "Invalid URL port number"
+  of HttpAddressErrorType.MissingHostname:
+    "Missing URL hostname"
+  of HttpAddressErrorType.InvalidIpHostname:
+    "Invalid IPv4/IPv6 address in hostname"
+  of HttpAddressErrorType.NameLookupFailed:
+    "Could not resolve remote address"
+  of HttpAddressErrorType.NoAddressResolved:
+    "No address has been resolved"
 
 proc raiseHttpRequestBodyTooLargeError*() {.
     noinline, noreturn, raises: [HttpRequestBodyTooLargeError]
 .} =
-  raise (ref HttpRequestBodyTooLargeError)(code: Http413, msg: MaximumBodySizeError)
+  raise
+    (ref HttpRequestBodyTooLargeError)(code: Http413, msg: MaximumBodySizeError)
 
 proc raiseHttpCriticalError*(
     msg: string, code = Http400
 ) {.noinline, noreturn, raises: [HttpCriticalError].} =
   raise (ref HttpCriticalError)(code: code, msg: msg)
 
-proc raiseHttpDisconnectError*() {.noinline, noreturn, raises: [HttpDisconnectError].} =
+proc raiseHttpDisconnectError*() {.
+    noinline, noreturn, raises: [HttpDisconnectError]
+.} =
   raise (ref HttpDisconnectError)(msg: "Remote peer disconnected")
 
 proc raiseHttpConnectionError*(
@@ -158,10 +170,14 @@ proc raiseHttpConnectionError*(
 ) {.noinline, noreturn, raises: [HttpConnectionError].} =
   raise (ref HttpConnectionError)(msg: msg)
 
-proc raiseHttpInterruptError*() {.noinline, noreturn, raises: [HttpInterruptError].} =
+proc raiseHttpInterruptError*() {.
+    noinline, noreturn, raises: [HttpInterruptError]
+.} =
   raise (ref HttpInterruptError)(msg: "Connection was interrupted")
 
-proc raiseHttpReadError*(msg: string) {.noinline, noreturn, raises: [HttpReadError].} =
+proc raiseHttpReadError*(
+    msg: string
+) {.noinline, noreturn, raises: [HttpReadError].} =
   raise (ref HttpReadError)(msg: msg)
 
 proc raiseHttpProtocolError*(
@@ -207,22 +223,36 @@ template newHttpUseClosedError*(): ref HttpUseClosedError =
   newException(HttpUseClosedError, "Connection was already closed")
 
 func init*(
-    t: typedesc[HttpMessage], code: HttpCode, message: string, contentType: MediaType
+    t: typedesc[HttpMessage],
+    code: HttpCode,
+    message: string,
+    contentType: MediaType,
 ): HttpMessage =
   HttpMessage(code: code, message: message, contentType: contentType)
 
 func init*(
-    t: typedesc[HttpMessage], code: HttpCode, message: string, contentType: string
+    t: typedesc[HttpMessage],
+    code: HttpCode,
+    message: string,
+    contentType: string,
 ): HttpMessage =
-  HttpMessage(code: code, message: message, contentType: MediaType.init(contentType))
+  HttpMessage(
+    code: code, message: message, contentType: MediaType.init(contentType)
+  )
 
-func init*(t: typedesc[HttpMessage], code: HttpCode, message: string): HttpMessage =
-  HttpMessage(code: code, message: message, contentType: MediaType.init("text/plain"))
+func init*(
+    t: typedesc[HttpMessage], code: HttpCode, message: string
+): HttpMessage =
+  HttpMessage(
+    code: code, message: message, contentType: MediaType.init("text/plain")
+  )
 
 func init*(t: typedesc[HttpMessage], code: HttpCode): HttpMessage =
   HttpMessage(code: code)
 
-iterator queryParams*(query: string, flags: set[QueryParamsFlag] = {}): KeyValueTuple =
+iterator queryParams*(
+    query: string, flags: set[QueryParamsFlag] = {}
+): KeyValueTuple =
   ## Iterate over url-encoded query string.
   for pair in query.split('&'):
     let items = pair.split('=', maxsplit = 1)
@@ -270,7 +300,9 @@ func getTransferEncoding*(
           return err("Incorrect Transfer-Encoding value")
     ok(res)
 
-func getContentEncoding*(ch: openArray[string]): HttpResult[set[ContentEncodingFlags]] =
+func getContentEncoding*(
+    ch: openArray[string]
+): HttpResult[set[ContentEncodingFlags]] =
   ## Parse value of multiple HTTP headers ``Content-Encoding`` and return
   ## it as set of ``ContentEncodingFlags``.
   var res: set[ContentEncodingFlags] = {}

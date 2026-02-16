@@ -26,7 +26,8 @@ type DescriptorFlag* {.pure.} = enum
   CloseOnExec
   NonBlock
 
-const AsyncDescriptorDefault* = {DescriptorFlag.CloseOnExec, DescriptorFlag.NonBlock}
+const AsyncDescriptorDefault* =
+  {DescriptorFlag.CloseOnExec, DescriptorFlag.NonBlock}
 
 when defined(windows):
   type WINDESCRIPTOR* = SocketHandle | HANDLE
@@ -62,7 +63,9 @@ when defined(windows):
       return err(osLastError())
     ok((flags and HANDLE_FLAG_INHERIT) == HANDLE_FLAG_INHERIT)
 
-  proc setDescriptorBlocking*(s: SocketHandle, value: bool): Result[void, OSErrorCode] =
+  proc setDescriptorBlocking*(
+      s: SocketHandle, value: bool
+  ): Result[void, OSErrorCode] =
     var mode = clong(ord(not value))
     if ioctlsocket(s, osdefs.FIONBIO, addr(mode)) == -1:
       return err(osLastError())
@@ -100,7 +103,14 @@ when defined(windows):
     if len(s) == 0:
       return ok(0)
     let res = wideCharToMultiByte(
-      CP_UTF8, 0'u32, unsafeAddr s[0], cint(-1), addr d[0], cint(len(d)), nil, nil
+      CP_UTF8,
+      0'u32,
+      unsafeAddr s[0],
+      cint(-1),
+      addr d[0],
+      cint(len(d)),
+      nil,
+      nil,
     )
     if res == 0:
       err(osLastError())
@@ -112,7 +122,12 @@ when defined(windows):
       ok(cast[LPWSTR](alloc0(sizeof(WCHAR))))
     else:
       let charsNeeded = multiByteToWideChar(
-        CP_UTF8, 0'u32, cast[ptr char](unsafeAddr s[0]), cint(len(s)), nil, cint(0)
+        CP_UTF8,
+        0'u32,
+        cast[ptr char](unsafeAddr s[0]),
+        cint(len(s)),
+        nil,
+        cint(0),
       )
       if charsNeeded <= cint(0):
         return err(osLastError())
@@ -207,7 +222,8 @@ when defined(windows):
       else:
         break
 
-    let openMode = osdefs.GENERIC_WRITE or osdefs.FILE_WRITE_DATA or osdefs.SYNCHRONIZE
+    let openMode =
+      osdefs.GENERIC_WRITE or osdefs.FILE_WRITE_DATA or osdefs.SYNCHRONIZE
     let openFlags =
       if DescriptorFlag.NonBlock in writeset:
         osdefs.FILE_FLAG_OVERLAPPED
@@ -215,7 +231,13 @@ when defined(windows):
         DWORD(0)
 
     pipeOut = createFile(
-      widePipeName, openMode, 0, addr wsa, osdefs.OPEN_EXISTING, openFlags, HANDLE(0)
+      widePipeName,
+      openMode,
+      0,
+      addr wsa,
+      osdefs.OPEN_EXISTING,
+      openFlags,
+      HANDLE(0),
     )
     if pipeOut == osdefs.INVALID_HANDLE_VALUE:
       let errorCode = osLastError()
@@ -370,10 +392,14 @@ else:
         return err(osLastError())
     ok()
 
-  proc setDescriptorBlocking*(s: SocketHandle, value: bool): Result[void, OSErrorCode] =
+  proc setDescriptorBlocking*(
+      s: SocketHandle, value: bool
+  ): Result[void, OSErrorCode] =
     setDescriptorBlocking(cint(s), value)
 
-  proc setDescriptorInheritance*(s: cint, value: bool): Result[void, OSErrorCode] =
+  proc setDescriptorInheritance*(
+      s: cint, value: bool
+  ): Result[void, OSErrorCode] =
     let flags = handleEintr(osdefs.fcntl(s, osdefs.F_GETFD))
     if flags == -1:
       return err(osLastError())

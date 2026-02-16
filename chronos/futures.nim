@@ -70,7 +70,8 @@ type
     internalState*: FutureState
     internalFlags*: FutureFlags
     internalError*: ref CatchableError ## Stored exception
-    internalClosure*: iterator (f: FutureBase): FutureBase {.raises: [], gcsafe.}
+    internalClosure*:
+      iterator (f: FutureBase): FutureBase {.raises: [], gcsafe.}
 
     when chronosFutureId:
       internalId*: uint
@@ -98,7 +99,9 @@ type
   CancelledError* = object of FutureError
     ## Exception raised when accessing the value of a cancelled future
 
-func raiseFutureDefect(msg: static string, fut: FutureBase) {.noinline, noreturn.} =
+func raiseFutureDefect(
+    msg: static string, fut: FutureBase
+) {.noinline, noreturn.} =
   raise (ref FutureDefect)(msg: msg, cause: fut)
 
 when chronosFutureId:
@@ -170,13 +173,19 @@ template init*[T](
   ## Specifying ``fromProc``, which is a string specifying the name of the proc
   ## that this future belongs to, is a good habit as it helps with debugging.
   let res = Future[T]()
-  internalInitFutureBase(res, getSrcLocation(fromProc), FutureState.Pending, flags)
+  internalInitFutureBase(
+    res, getSrcLocation(fromProc), FutureState.Pending, flags
+  )
   res
 
-template completed*(F: type Future, fromProc: static[string] = ""): Future[void] =
+template completed*(
+    F: type Future, fromProc: static[string] = ""
+): Future[void] =
   ## Create a new completed future
   let res = Future[void]()
-  internalInitFutureBase(res, getSrcLocation(fromProc), FutureState.Completed, {})
+  internalInitFutureBase(
+    res, getSrcLocation(fromProc), FutureState.Completed, {}
+  )
   res
 
 template completed*[T: not void](
@@ -184,11 +193,15 @@ template completed*[T: not void](
 ): Future[T] =
   ## Create a new completed future
   let res = Future[T](internalValue: valueParam)
-  internalInitFutureBase(res, getSrcLocation(fromProc), FutureState.Completed, {})
+  internalInitFutureBase(
+    res, getSrcLocation(fromProc), FutureState.Completed, {}
+  )
   res
 
 template failed*[T](
-    F: type Future[T], errorParam: ref CatchableError, fromProc: static[string] = ""
+    F: type Future[T],
+    errorParam: ref CatchableError,
+    fromProc: static[string] = "",
 ): Future[T] =
   ## Create a new failed future
   let res = Future[T](internalError: errorParam)
@@ -257,7 +270,9 @@ func error*(future: FutureBase): ref CatchableError =
   ## future has not failed.
   when chronosStrictFutureAccess:
     if not future.failed() and not future.cancelled():
-      raiseFutureDefect("Future not failed/cancelled while accessing error", future)
+      raiseFutureDefect(
+        "Future not failed/cancelled while accessing error", future
+      )
 
   future.internalError
 

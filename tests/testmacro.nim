@@ -123,7 +123,9 @@ suite "Macro transformations test suite":
     macroAsync(testMacro, seq, OpenObject)
     check waitFor(testMacro()).len == 0
 
-    macro macroAsync2(name, restype, inner1, inner2, inner3, inner4: untyped): untyped =
+    macro macroAsync2(
+        name, restype, inner1, inner2, inner3, inner4: untyped
+    ): untyped =
       quote:
         proc `name`(): Future[`restype`[`inner1`[`inner2`[`inner3`, `inner4`]]]] {.
             async
@@ -506,7 +508,9 @@ suite "Exceptions tracking":
         raise newException(ValueError, "hey")
       return 12
 
-    proc test2(): Future[int] {.async: (raises: [ValueError, IOError, CancelledError]).} =
+    proc test2(): Future[int] {.
+        async: (raises: [ValueError, IOError, CancelledError])
+    .} =
       return await test1()
 
     checkNotCompiles:
@@ -573,7 +577,9 @@ suite "Exceptions tracking":
     proc testit() {.async: (raises: [ValueError]).} =
       raise newException(ValueError, "hey")
 
-    proc test() {.async: (raises: [ValueError, AsyncTimeoutError, CancelledError]).} =
+    proc test() {.
+        async: (raises: [ValueError, AsyncTimeoutError, CancelledError])
+    .} =
       await wait(testit(), 1000.milliseconds)
 
     proc noraises() {.raises: [].} =
@@ -652,7 +658,8 @@ suite "Exceptions tracking":
         async: (handleException: true, raises: [AsyncExceptionError])
     .} =
       raise (ref Exception)(
-        msg: "Raising Exception is UB and support for it may change in the future"
+        msg:
+          "Raising Exception is UB and support for it may change in the future"
       )
 
     proc callCatchAll() {.async: (raises: []).} =

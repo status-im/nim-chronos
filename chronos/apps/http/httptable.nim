@@ -126,7 +126,8 @@ proc init*(
   res
 
 proc new*(
-    htt: typedesc[HttpTableRef], data: openArray[tuple[key: string, value: string]]
+    htt: typedesc[HttpTableRef],
+    data: openArray[tuple[key: string, value: string]],
 ): HttpTableRef =
   ## Create HttpTableRef using array of tuples with header names and values.
   var res = HttpTableRef.new()

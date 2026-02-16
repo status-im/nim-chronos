@@ -6,8 +6,10 @@
 #              Licensed under either of
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
-from std/os import osLastError, osErrorMsg, OSErrorCode, raiseOSError, newOSError, `==`
-export osLastError, osErrorMsg, OSError, OSErrorCode, raiseOSError, newOSError, `==`
+from std/os import
+  osLastError, osErrorMsg, OSErrorCode, raiseOSError, newOSError, `==`
+export
+  osLastError, osErrorMsg, OSError, OSErrorCode, raiseOSError, newOSError, `==`
 
 when defined(netbsd):
   ## Source: https://github.com/NetBSD/src/blob/trunk/sys/sys/errno.h
@@ -59,7 +61,8 @@ when defined(netbsd):
     ESOCKTNOSUPPORT* = OSErrorCode(44) # Socket type not supported
     EOPNOTSUPP* = OSErrorCode(45) # Operation not supported
     EPFNOSUPPORT* = OSErrorCode(46) # Protocol family not supported
-    EAFNOSUPPORT* = OSErrorCode(47) # Address family not supported by protocol family
+    EAFNOSUPPORT* = OSErrorCode(47)
+      # Address family not supported by protocol family
     EADDRINUSE* = OSErrorCode(48) # Address already in use
     EADDRNOTAVAIL* = OSErrorCode(49) # Can't assign requested address
     ENETDOWN* = OSErrorCode(50) # Network is down
@@ -162,7 +165,8 @@ elif defined(openbsd):
     ESOCKTNOSUPPORT* = OSErrorCode(44) # Socket type not supported
     EOPNOTSUPP* = OSErrorCode(45) # Operation not supported
     EPFNOSUPPORT* = OSErrorCode(46) # Protocol family not supported
-    EAFNOSUPPORT* = OSErrorCode(47) # Address family not supported by protocol family
+    EAFNOSUPPORT* = OSErrorCode(47)
+      # Address family not supported by protocol family
     EADDRINUSE* = OSErrorCode(48) # Address already in use
     EADDRNOTAVAIL* = OSErrorCode(49) # Can't assign requested address
     ENETDOWN* = OSErrorCode(50) # Network is down
@@ -263,7 +267,8 @@ elif defined(freebsd):
     EOPNOTSUPP* = OSErrorCode(45) # Operation not supported
     ENOTSUP* = EOPNOTSUPP # Operation not supported
     EPFNOSUPPORT* = OSErrorCode(46) # Protocol family not supported
-    EAFNOSUPPORT* = OSErrorCode(47) # Address family not supported by protocol family
+    EAFNOSUPPORT* = OSErrorCode(47)
+      # Address family not supported by protocol family
     EADDRINUSE* = OSErrorCode(48) # Address already in use
     EADDRNOTAVAIL* = OSErrorCode(49) # Can't assign requested address
     ENETDOWN* = OSErrorCode(50) # Network is down
@@ -366,7 +371,8 @@ elif defined(dragonfly) or defined(dragonflybsd):
     EOPNOTSUPP* = OSErrorCode(45) # Operation not supported
     ENOTSUP* = EOPNOTSUPP # Operation not supported
     EPFNOSUPPORT* = OSErrorCode(46) # Protocol family not supported
-    EAFNOSUPPORT* = OSErrorCode(47) # Address family not supported by protocol family
+    EAFNOSUPPORT* = OSErrorCode(47)
+      # Address family not supported by protocol family
     EADDRINUSE* = OSErrorCode(48) # Address already in use
     EADDRNOTAVAIL* = OSErrorCode(49) # Can't assign requested address
     ENETDOWN* = OSErrorCode(50) # Network is down
@@ -467,7 +473,8 @@ elif defined(macos) or defined(macosx):
     ESOCKTNOSUPPORT* = OSErrorCode(44) # Socket type not supported
     ENOTSUP* = OSErrorCode(45) # Operation not supported
     EPFNOSUPPORT* = OSErrorCode(46) # Protocol family not supported
-    EAFNOSUPPORT* = OSErrorCode(47) # Address family not supported by protocol family
+    EAFNOSUPPORT* = OSErrorCode(47)
+      # Address family not supported by protocol family
     EADDRINUSE* = OSErrorCode(48) # Address already in use
     EADDRNOTAVAIL* = OSErrorCode(49) # Can't assign requested address
     ENETDOWN* = OSErrorCode(50) # Network is down

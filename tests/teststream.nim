@@ -32,9 +32,11 @@ suite "Stream Transport test suite":
     TestsCount = 100
 
   when defined(windows):
-    let addresses = [initTAddress("127.0.0.1:33335"), initTAddress(r"/LOCAL\testpipe")]
+    let addresses =
+      [initTAddress("127.0.0.1:33335"), initTAddress(r"/LOCAL\testpipe")]
   else:
-    let addresses = [initTAddress("127.0.0.1:0"), initTAddress(r"/tmp/testpipe")]
+    let addresses =
+      [initTAddress("127.0.0.1:0"), initTAddress(r"/tmp/testpipe")]
 
   let prefixes = ["[IP] ", "[UNIX] "]
 
@@ -42,8 +44,9 @@ suite "Stream Transport test suite":
 
   proc getCurrentFD(): int =
     let local = initTAddress("127.0.0.1:0")
-    let sock =
-      createAsyncSocket(local.getDomain(), SockType.SOCK_DGRAM, Protocol.IPPROTO_UDP)
+    let sock = createAsyncSocket(
+      local.getDomain(), SockType.SOCK_DGRAM, Protocol.IPPROTO_UDP
+    )
     closeSocket(sock)
     return int(sock)
 
@@ -459,7 +462,8 @@ suite "Stream Transport test suite":
     ) {.async: (raises: []).} =
       try:
         var expect = ConstantMessage
-        var skip = await transp.consume(len(ConstantMessage) * (MessagesCount - 1))
+        var skip =
+          await transp.consume(len(ConstantMessage) * (MessagesCount - 1))
         doAssert(skip == len(ConstantMessage) * (MessagesCount - 1))
         var data = await transp.read()
         doAssert(len(data) == len(ConstantMessage))
@@ -688,13 +692,17 @@ suite "Stream Transport test suite":
     await transp.join()
     result = subres
 
-  proc testConnectionRefused(address: TransportAddress): Future[bool] {.async.} =
+  proc testConnectionRefused(
+      address: TransportAddress
+  ): Future[bool] {.async.} =
     try:
       var transp = await connect(address)
       doAssert(isNil(transp))
     except TransportOsError as e:
       when defined(windows):
-        return (e.code == ERROR_FILE_NOT_FOUND) or (e.code == ERROR_CONNECTION_REFUSED)
+        return
+          (e.code == ERROR_FILE_NOT_FOUND) or
+          (e.code == ERROR_CONNECTION_REFUSED)
       else:
         return (e.code == oserrno.ECONNREFUSED) or (e.code == oserrno.ENOENT)
 
@@ -738,7 +746,9 @@ suite "Stream Transport test suite":
     await server.join()
 
   proc testCloseTransport(address: TransportAddress): Future[int] {.async.} =
-    proc client(server: StreamServer, transp: StreamTransport) {.async: (raises: []).} =
+    proc client(
+        server: StreamServer, transp: StreamTransport
+    ) {.async: (raises: []).} =
       discard
 
     var server = createStreamServer(address, client, {ReuseAddr})
@@ -753,7 +763,9 @@ suite "Stream Transport test suite":
 
   proc testWriteConnReset(address: TransportAddress): Future[int] {.async.} =
     var syncFut = newFuture[void]()
-    proc client(server: StreamServer, transp: StreamTransport) {.async: (raises: []).} =
+    proc client(
+        server: StreamServer, transp: StreamTransport
+    ) {.async: (raises: []).} =
       try:
         await transp.closeWait()
         syncFut.complete()
@@ -916,7 +928,9 @@ suite "Stream Transport test suite":
       server.close()
       await server.join()
 
-  proc readLV(transp: StreamTransport, maxLen: int): Future[seq[byte]] {.async.} =
+  proc readLV(
+      transp: StreamTransport, maxLen: int
+  ): Future[seq[byte]] {.async.} =
     # Read length-prefixed value where length is a 32-bit integer in native
     # endian (don't do this at home)
     var
@@ -1341,7 +1355,9 @@ suite "Stream Transport test suite":
     return buffer == message
 
   proc testConnectBindLocalAddress() {.async.} =
-    proc client(server: StreamServer, transp: StreamTransport) {.async: (raises: []).} =
+    proc client(
+        server: StreamServer, transp: StreamTransport
+    ) {.async: (raises: []).} =
       try:
         await transp.closeWait()
       except CatchableError as exc:
@@ -1349,7 +1365,8 @@ suite "Stream Transport test suite":
 
     let server1 = createStreamServer(initTAddress("127.0.0.1:0"), client)
     let server2 = createStreamServer(initTAddress("127.0.0.1:0"), client)
-    let server3 = createStreamServer(initTAddress("127.0.0.1:0"), client, {ReusePort})
+    let server3 =
+      createStreamServer(initTAddress("127.0.0.1:0"), client, {ReusePort})
 
     server1.start()
     server2.start()
@@ -1369,8 +1386,9 @@ suite "Stream Transport test suite":
     )
 
     expect(TransportOsError):
-      var transp2 {.used.} =
-        await connect(server2.localAddress(), localAddress = server3.localAddress())
+      var transp2 {.used.} = await connect(
+        server2.localAddress(), localAddress = server3.localAddress()
+      )
 
     expect(TransportOsError):
       var transp3 {.used.} = await connect(
@@ -1391,7 +1409,9 @@ suite "Stream Transport test suite":
     await server3.closeWait()
 
   proc testConnectCancelLeaksTest() {.async.} =
-    proc client(server: StreamServer, transp: StreamTransport) {.async: (raises: []).} =
+    proc client(
+        server: StreamServer, transp: StreamTransport
+    ) {.async: (raises: []).} =
       try:
         await transp.closeWait()
       except CatchableError as exc:
@@ -1408,7 +1428,9 @@ suite "Stream Transport test suite":
         await stepsAsync(counter)
       if not (transpFut.finished()):
         await cancelAndWait(transpFut)
-        doAssert(cancelled(transpFut), "Future should be Cancelled at this point")
+        doAssert(
+          cancelled(transpFut), "Future should be Cancelled at this point"
+        )
         inc(counter)
       else:
         let transp = await transpFut
@@ -1441,7 +1463,9 @@ suite "Stream Transport test suite":
       exitLoop =
         if not (acceptFut.finished()):
           await cancelAndWait(acceptFut)
-          doAssert(cancelled(acceptFut), "Future should be Cancelled at this point")
+          doAssert(
+            cancelled(acceptFut), "Future should be Cancelled at this point"
+          )
           inc(counter)
           false
         else:
@@ -1475,7 +1499,8 @@ suite "Stream Transport test suite":
     let
       clientTransp =
         try:
-          let res = await connect(address, dualstack = cstack).wait(500.milliseconds)
+          let res =
+            await connect(address, dualstack = cstack).wait(500.milliseconds)
           Opt.some(res)
         except CatchableError:
           Opt.none(StreamTransport)
@@ -1584,7 +1609,9 @@ suite "Stream Transport test suite":
         for i in 0 ..< 10:
           res =
             try:
-              createStreamServer(port, host = address1, flags = {ServerFlags.ReuseAddr})
+              createStreamServer(
+                port, host = address1, flags = {ServerFlags.ReuseAddr}
+              )
             except TransportOsError as exc:
               echo "Unable to create server on port ",
                 currentPort, " with error: ", exc.msg
@@ -1610,7 +1637,8 @@ suite "Stream Transport test suite":
           else:
             raiseAssert "Incorrect sending type"
         except TransportAddressError as exc:
-          raiseAssert "Unable to initialize transport address, " & "reason = " & exc.msg
+          raiseAssert "Unable to initialize transport address, " & "reason = " &
+            exc.msg
       acceptFut = server.accept()
 
     let
@@ -1619,7 +1647,9 @@ suite "Stream Transport test suite":
           if address2.isSome():
             let
               laddr = initTAddress(address2.get(), Port(0))
-              res = await connect(remoteAddress, localAddress = laddr).wait(2.seconds)
+              res = await connect(remoteAddress, localAddress = laddr).wait(
+                2.seconds
+              )
             Opt.some(res)
           else:
             let res = await connect(remoteAddress).wait(2.seconds)
@@ -1673,19 +1703,20 @@ suite "Stream Transport test suite":
       check waitFor(test13(addresses[i])) == 1
     test prefixes[i] & "Closing socket while operation pending test (issue #8)":
       check waitFor(test14(addresses[i])) == 1
-    test prefixes[i] & "readLine() multiple clients with messages (" & $ClientsCount &
-      " clients x " & $MessagesCount & " messages)":
+    test prefixes[i] & "readLine() multiple clients with messages (" &
+      $ClientsCount & " clients x " & $MessagesCount & " messages)":
       check waitFor(test1(addresses[i])) == ClientsCount * MessagesCount
-    test prefixes[i] & "readExactly() multiple clients with messages (" & $ClientsCount &
-      " clients x " & $MessagesCount & " messages)":
+    test prefixes[i] & "readExactly() multiple clients with messages (" &
+      $ClientsCount & " clients x " & $MessagesCount & " messages)":
       check waitFor(test2(addresses[i])) == ClientsCount * MessagesCount
-    test prefixes[i] & "readUntil() multiple clients with messages (" & $ClientsCount &
-      " clients x " & $MessagesCount & " messages)":
+    test prefixes[i] & "readUntil() multiple clients with messages (" &
+      $ClientsCount & " clients x " & $MessagesCount & " messages)":
       check waitFor(test3(addresses[i])) == ClientsCount * MessagesCount
-    test prefixes[i] & "write(string)/read(int) multiple clients (" & $ClientsCount &
-      " clients x " & $MessagesCount & " messages)":
+    test prefixes[i] & "write(string)/read(int) multiple clients (" &
+      $ClientsCount & " clients x " & $MessagesCount & " messages)":
       check waitFor(testWR(addresses[i])) == ClientsCount * MessagesCount
-    test prefixes[i] & "write(seq[byte])/consume(int)/read(int) multiple clients (" &
+    test prefixes[i] &
+      "write(seq[byte])/consume(int)/read(int) multiple clients (" &
       $ClientsCount & " clients x " & $MessagesCount & " messages)":
       check waitFor(testWCR(addresses[i])) == ClientsCount * MessagesCount
     test prefixes[i] & "writeFile() multiple clients (" & $FilesCount & " files)":
@@ -1750,8 +1781,9 @@ suite "Stream Transport test suite":
   asyncTest "[IP] getDomain(socket) [SOCK_STREAM] test":
     if isAvailable(AddressFamily.IPv4) and isAvailable(AddressFamily.IPv6):
       block:
-        let res =
-          createAsyncSocket2(Domain.AF_INET, SockType.SOCK_STREAM, Protocol.IPPROTO_TCP)
+        let res = createAsyncSocket2(
+          Domain.AF_INET, SockType.SOCK_STREAM, Protocol.IPPROTO_TCP
+        )
         check res.isOk()
         let fres = getDomain(res.get())
         check fres.isOk()

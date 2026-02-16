@@ -102,17 +102,50 @@ suite "Network utilities test suite":
     ["135.104.0.1/32", "true", "135.104.0.1:0", "FFFFFFFF"],
     ["135.104.0.1/24", "true", "135.104.0.1:0", "FFFFFF00"],
     ["::1/128", "true", "[::1]:0", "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"],
-    ["abcd:2345::/127", "true", "[abcd:2345::]:0", "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFE"],
-    ["abcd:2345::/65", "true", "[abcd:2345::]:0", "FFFFFFFFFFFFFFFF8000000000000000"],
-    ["abcd:2345::/64", "true", "[abcd:2345::]:0", "FFFFFFFFFFFFFFFF0000000000000000"],
-    ["abcd:2345::/63", "true", "[abcd:2345::]:0", "FFFFFFFFFFFFFFFE0000000000000000"],
-    ["abcd:2345::/33", "true", "[abcd:2345::]:0", "FFFFFFFF800000000000000000000000"],
-    ["abcd:2345::/32", "true", "[abcd:2345::]:0", "FFFFFFFF000000000000000000000000"],
-    ["abcd:2344::/31", "true", "[abcd:2344::]:0", "FFFFFFFE000000000000000000000000"],
-    ["abcd:2300::/24", "true", "[abcd:2300::]:0", "FFFFFF00000000000000000000000000"],
-    ["abcd:2345::/24", "true", "[abcd:2345::]:0", "FFFFFF00000000000000000000000000"],
-    ["2001:db8::/48", "true", "[2001:db8::]:0", "FFFFFFFFFFFF00000000000000000000"],
-    ["2001:db8::1/48", "true", "[2001:db8::1]:0", "FFFFFFFFFFFF00000000000000000000"],
+    [
+      "abcd:2345::/127", "true", "[abcd:2345::]:0",
+      "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFE",
+    ],
+    [
+      "abcd:2345::/65", "true", "[abcd:2345::]:0",
+      "FFFFFFFFFFFFFFFF8000000000000000",
+    ],
+    [
+      "abcd:2345::/64", "true", "[abcd:2345::]:0",
+      "FFFFFFFFFFFFFFFF0000000000000000",
+    ],
+    [
+      "abcd:2345::/63", "true", "[abcd:2345::]:0",
+      "FFFFFFFFFFFFFFFE0000000000000000",
+    ],
+    [
+      "abcd:2345::/33", "true", "[abcd:2345::]:0",
+      "FFFFFFFF800000000000000000000000",
+    ],
+    [
+      "abcd:2345::/32", "true", "[abcd:2345::]:0",
+      "FFFFFFFF000000000000000000000000",
+    ],
+    [
+      "abcd:2344::/31", "true", "[abcd:2344::]:0",
+      "FFFFFFFE000000000000000000000000",
+    ],
+    [
+      "abcd:2300::/24", "true", "[abcd:2300::]:0",
+      "FFFFFF00000000000000000000000000",
+    ],
+    [
+      "abcd:2345::/24", "true", "[abcd:2345::]:0",
+      "FFFFFF00000000000000000000000000",
+    ],
+    [
+      "2001:db8::/48", "true", "[2001:db8::]:0",
+      "FFFFFFFFFFFF00000000000000000000",
+    ],
+    [
+      "2001:db8::1/48", "true", "[2001:db8::1]:0",
+      "FFFFFFFFFFFF00000000000000000000",
+    ],
     ["192.168.1.1/255.255.255.0", "true", "192.168.1.1:0", "FFFFFF00"],
     ["192.168.1.1/35", "false", "", ""],
     ["2001:db8::1/-1", "false", "", ""],
@@ -276,39 +309,43 @@ suite "Network utilities test suite":
       initTAddress("[::2]:0").isLoopback() == false
 
       initTAddress("[FF00::]:0").isMulticast() == true
-      initTAddress("[FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]:0").isMulticast() == true
+      initTAddress("[FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]:0").isMulticast() ==
+        true
       initTAddress("[F000::]:0").isMulticast() == false
 
       initTAddress("[::]:0").isAnyLocal() == true
       initTAddress("[::1]:0").isAnyLocal() == false
 
       initTAddress("[FE80::]:0").isLinkLocal() == true
-      initTAddress("[FEBF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]:0").isLinkLocal() == true
+      initTAddress("[FEBF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]:0").isLinkLocal() ==
+        true
       initTAddress("[FE7F::]:0").isLinkLocal() == false
       initTAddress("[FEC0::]:0").isLinkLocal() == false
 
       initTAddress("[FEC0::]:0").isSiteLocal() == true
-      initTAddress("[FEFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]:0").isSiteLocal() == true
+      initTAddress("[FEFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]:0").isSiteLocal() ==
+        true
       initTAddress("[FEBF::]:0").isSiteLocal() == false
       initTAddress("[FF00::]:0").isSiteLocal() == false
 
       initTAddress("[FF0E::]:0").isGlobalMulticast() == true
-      initTAddress("[FFFE:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]:0").isGlobalMulticast() ==
-        true
+      initTAddress("[FFFE:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]:0")
+        .isGlobalMulticast() == true
       initTAddress("[FF0D::]:0").isGlobalMulticast() == false
       initTAddress("[FFFF::]:0").isGlobalMulticast() == false
 
       initTAddress("[FBFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]:0").isUniqueLocal() ==
         false
       initTAddress("[FC00::]:0").isUniqueLocal() == true
-      initTAddress("[FDFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]:0").isUniqueLocal() == true
+      initTAddress("[FDFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]:0").isUniqueLocal() ==
+        true
       initTAddress("[FE00::]:0").isUniqueLocal() == false
 
-      initTAddress("[FE7F:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]:0").isUnicastLinkLocal() ==
-        false
+      initTAddress("[FE7F:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]:0")
+        .isUnicastLinkLocal() == false
       initTAddress("[FE80::]:0").isUnicastLinkLocal() == true
-      initTAddress("[FEBF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]:0").isUnicastLinkLocal() ==
-        true
+      initTAddress("[FEBF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]:0")
+        .isUnicastLinkLocal() == true
       initTAddress("[FEC0::]:0").isUnicastLinkLocal() == false
 
       initTAddress("[2001:0001:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]:0").isBenchmarking() ==
@@ -318,11 +355,11 @@ suite "Network utilities test suite":
         true
       initTAddress("[2001:0002:0001::]:0").isBenchmarking() == false
 
-      initTAddress("[2001:0DB7:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]:0").isDocumentation() ==
-        false
+      initTAddress("[2001:0DB7:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]:0")
+        .isDocumentation() == false
       initTAddress("[2001:0DB8::]:0").isDocumentation() == true
-      initTAddress("[2001:0DB8:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]:0").isDocumentation() ==
-        true
+      initTAddress("[2001:0DB8:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]:0")
+        .isDocumentation() == true
       initTAddress("[2001:0DB9::]:0").isDocumentation() == false
 
       a.isGlobal() == false
@@ -331,22 +368,28 @@ suite "Network utilities test suite":
       initTAddress("[::FFFF:0000:0000]:0").isGlobal() == false
       initTAddress("[::FFFF:FFFF:FFFF]:0").isGlobal() == false
       initTAddress("[0064:FF9B:0001::]:0").isGlobal() == false
-      initTAddress("[0064:FF9B:0001:FFFF:FFFF:FFFF:FFFF:FFFF]:0").isGlobal() == false
+      initTAddress("[0064:FF9B:0001:FFFF:FFFF:FFFF:FFFF:FFFF]:0").isGlobal() ==
+        false
       initTAddress("[0100::]:0").isGlobal() == false
-      initTAddress("[0100:0000:0000:0000:FFFF:FFFF:FFFF:FFFF]:0").isGlobal() == false
+      initTAddress("[0100:0000:0000:0000:FFFF:FFFF:FFFF:FFFF]:0").isGlobal() ==
+        false
       initTAddress("[2001::]:0").isGlobal() == false
-      initTAddress("[2001:01FF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]:0").isGlobal() == false
+      initTAddress("[2001:01FF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]:0").isGlobal() ==
+        false
       initTAddress("[2001:1::1]:0").isGlobal() == true
       initTAddress("[2001:1::2]:0").isGlobal() == true
       initTAddress("[2001:3::]:0").isGlobal() == true
       initTAddress("[2001:4:112::]:0").isGlobal() == true
       initTAddress("[2001:20::]:0").isGlobal() == true
       initTAddress("[2001:0db8::]:0").isGlobal() == false
-      initTAddress("[2001:0DB8:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]:0").isGlobal() == false
+      initTAddress("[2001:0DB8:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]:0").isGlobal() ==
+        false
       initTAddress("[FC00::]:0").isGlobal() == false
-      initTAddress("[FDFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]:0").isGlobal() == false
+      initTAddress("[FDFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]:0").isGlobal() ==
+        false
       initTAddress("[FE80::]:0").isGlobal() == false
-      initTAddress("[FEBF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]:0").isGlobal() == false
+      initTAddress("[FEBF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]:0").isGlobal() ==
+        false
 
       initTAddress("[2606:4700:4700::1111]:0").isGlobal() == true
       initTAddress("[2606:4700:4700::1001]:0").isGlobal() == true
@@ -379,8 +422,10 @@ suite "Network utilities test suite":
 
       IpMask.init(initTAddress("255.0.0.0:0")) == IpMask.initIp("255.0.0.0")
       IpMask.init(initTAddress("255.255.0.0:0")) == IpMask.initIp("255.255.0.0")
-      IpMask.init(initTAddress("255.255.255.0:0")) == IpMask.initIp("255.255.255.0")
-      IpMask.init(initTAddress("255.255.255.255:0")) == IpMask.initIp("255.255.255.255")
+      IpMask.init(initTAddress("255.255.255.0:0")) ==
+        IpMask.initIp("255.255.255.0")
+      IpMask.init(initTAddress("255.255.255.255:0")) ==
+        IpMask.initIp("255.255.255.255")
 
       IpMask.init("00000000").prefix() == 0
       IpMask.init("F0000000").prefix() == 4
@@ -433,13 +478,12 @@ suite "Network utilities test suite":
 
   test "IP networks test":
     check:
-      IpNet.init(initTAddress("192.168.0.1:0"), 0) == IpNet.init("192.168.0.1/0.0.0.0")
-      IpNet.init(initTAddress("192.168.0.1:0"), 4) == IpNet.init(
-        "192.168.0.1/240.0.0.0"
-      )
-      IpNet.init(initTAddress("192.168.0.1:0"), 8) == IpNet.init(
-        "192.168.0.1/255.0.0.0"
-      )
+      IpNet.init(initTAddress("192.168.0.1:0"), 0) ==
+        IpNet.init("192.168.0.1/0.0.0.0")
+      IpNet.init(initTAddress("192.168.0.1:0"), 4) ==
+        IpNet.init("192.168.0.1/240.0.0.0")
+      IpNet.init(initTAddress("192.168.0.1:0"), 8) ==
+        IpNet.init("192.168.0.1/255.0.0.0")
       IpNet.init(initTAddress("192.168.0.1:0"), 12) ==
         IpNet.init("192.168.0.1/255.240.0.0")
       IpNet.init(initTAddress("192.168.0.1:0"), 16) ==
@@ -453,23 +497,41 @@ suite "Network utilities test suite":
       IpNet.init(initTAddress("192.168.0.1:0"), 32) ==
         IpNet.init("192.168.0.1/255.255.255.255")
 
-      IpNet.init(initTAddress("192.168.0.1:0"), 0) == IpNet.init("192.168.0.1/0")
-      IpNet.init(initTAddress("192.168.0.1:0"), 4) == IpNet.init("192.168.0.1/4")
-      IpNet.init(initTAddress("192.168.0.1:0"), 8) == IpNet.init("192.168.0.1/8")
-      IpNet.init(initTAddress("192.168.0.1:0"), 12) == IpNet.init("192.168.0.1/12")
-      IpNet.init(initTAddress("192.168.0.1:0"), 16) == IpNet.init("192.168.0.1/16")
-      IpNet.init(initTAddress("192.168.0.1:0"), 20) == IpNet.init("192.168.0.1/20")
-      IpNet.init(initTAddress("192.168.0.1:0"), 24) == IpNet.init("192.168.0.1/24")
-      IpNet.init(initTAddress("192.168.0.1:0"), 28) == IpNet.init("192.168.0.1/28")
-      IpNet.init(initTAddress("192.168.0.1:0"), 32) == IpNet.init("192.168.0.1/32")
+      IpNet.init(initTAddress("192.168.0.1:0"), 0) == IpNet.init(
+        "192.168.0.1/0"
+      )
+      IpNet.init(initTAddress("192.168.0.1:0"), 4) == IpNet.init(
+        "192.168.0.1/4"
+      )
+      IpNet.init(initTAddress("192.168.0.1:0"), 8) == IpNet.init(
+        "192.168.0.1/8"
+      )
+      IpNet.init(initTAddress("192.168.0.1:0"), 12) ==
+        IpNet.init("192.168.0.1/12")
+      IpNet.init(initTAddress("192.168.0.1:0"), 16) ==
+        IpNet.init("192.168.0.1/16")
+      IpNet.init(initTAddress("192.168.0.1:0"), 20) ==
+        IpNet.init("192.168.0.1/20")
+      IpNet.init(initTAddress("192.168.0.1:0"), 24) ==
+        IpNet.init("192.168.0.1/24")
+      IpNet.init(initTAddress("192.168.0.1:0"), 28) ==
+        IpNet.init("192.168.0.1/28")
+      IpNet.init(initTAddress("192.168.0.1:0"), 32) ==
+        IpNet.init("192.168.0.1/32")
 
-      IpNet.init("192.168.0.1/24").contains(initTAddress("192.168.0.1:0")) == true
-      IpNet.init("192.168.0.1/24").contains(initTAddress("192.168.0.128:0")) == true
-      IpNet.init("192.168.0.1/24").contains(initTAddress("192.168.0.255:0")) == true
-      IpNet.init("192.168.0.1/24").contains(initTAddress("192.168.1.0:0")) == false
+      IpNet.init("192.168.0.1/24").contains(initTAddress("192.168.0.1:0")) ==
+        true
+      IpNet.init("192.168.0.1/24").contains(initTAddress("192.168.0.128:0")) ==
+        true
+      IpNet.init("192.168.0.1/24").contains(initTAddress("192.168.0.255:0")) ==
+        true
+      IpNet.init("192.168.0.1/24").contains(initTAddress("192.168.1.0:0")) ==
+        false
       IpNet.init("192.168.0.1/0").contains(initTAddress("1.1.1.1:0")) == true
-      IpNet.init("192.168.0.1/32").contains(initTAddress("192.168.0.1:0")) == true
-      IpNet.init("192.168.0.1/32").contains(initTAddress("192.168.0.2:0")) == false
+      IpNet.init("192.168.0.1/32").contains(initTAddress("192.168.0.1:0")) ==
+        true
+      IpNet.init("192.168.0.1/32").contains(initTAddress("192.168.0.2:0")) ==
+        false
 
   test "IpMask test vectors":
     for item in MaskVectors:
@@ -558,16 +620,20 @@ suite "Network utilities test suite":
 
   test "IPv4 <-> IPv6 mapping test":
     check:
-      initTAddress("255.255.255.255:0").toIPv6() == initTAddress("[::FFFF:FFFF:FFFF]:0")
-      initTAddress("128.128.128.128:0").toIPv6() == initTAddress("[::FFFF:8080:8080]:0")
+      initTAddress("255.255.255.255:0").toIPv6() ==
+        initTAddress("[::FFFF:FFFF:FFFF]:0")
+      initTAddress("128.128.128.128:0").toIPv6() ==
+        initTAddress("[::FFFF:8080:8080]:0")
       initTAddress("1.1.1.1:0").toIPv6() == initTAddress("[::FFFF:0101:0101]:0")
       initTAddress("0.0.0.0:0").toIPv6() == initTAddress("[::FFFF:0000:0000]:0")
       initTAddress("[::FFFF:FFFF:FFFF]:0").isV4Mapped() == true
       initTAddress("[::FFFF:8080:8080]:0").isV4Mapped() == true
       initTAddress("[::FFFF:0101:0101]:0").isV4Mapped() == true
       initTAddress("[::FFFF:0000:0000]:0").isV4Mapped() == true
-      initTAddress("[::FFFF:FFFF:FFFF]:0").toIPv4() == initTAddress("255.255.255.255:0")
-      initTAddress("[::FFFF:8080:8080]:0").toIPv4() == initTAddress("128.128.128.128:0")
+      initTAddress("[::FFFF:FFFF:FFFF]:0").toIPv4() ==
+        initTAddress("255.255.255.255:0")
+      initTAddress("[::FFFF:8080:8080]:0").toIPv4() ==
+        initTAddress("128.128.128.128:0")
       initTAddress("[::FFFF:0101:0101]:0").toIPv4() == initTAddress("1.1.1.1:0")
       initTAddress("[::FFFF:0000:0000]:0").toIPv4() == initTAddress("0.0.0.0:0")
 

@@ -55,7 +55,9 @@ type
     maxHeadersSize*: int
     maxRequestBodySize*: int
 
-proc getConnectionType*(server: HttpServerRef | SecureHttpServerRef): ConnectionType =
+proc getConnectionType*(
+    server: HttpServerRef | SecureHttpServerRef
+): ConnectionType =
   when server is SecureHttpServerRef:
     ConnectionType.Secure
   else:

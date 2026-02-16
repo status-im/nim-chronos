@@ -100,9 +100,13 @@ suite "Secure HTTP server testing suite":
       return "EXCEPTION"
     finally:
       if not (isNil(tlsstream)):
-        await allFutures(tlsstream.reader.closeWait(), tlsstream.writer.closeWait())
+        await allFutures(
+          tlsstream.reader.closeWait(), tlsstream.writer.closeWait()
+        )
       if not (isNil(reader)):
-        await allFutures(reader.closeWait(), writer.closeWait(), transp.closeWait())
+        await allFutures(
+          reader.closeWait(), writer.closeWait(), transp.closeWait()
+        )
 
   test "HTTPS server (successful handshake) test":
     proc testHTTPS(address: TransportAddress): Future[bool] {.async.} =
@@ -114,7 +118,9 @@ suite "Secure HTTP server testing suite":
           let request = r.get()
           serverRes = true
           try:
-            await request.respond(Http200, "TEST_OK:" & $request.meth, HttpTable.init())
+            await request.respond(
+              Http200, "TEST_OK:" & $request.meth, HttpTable.init()
+            )
           except HttpWriteError as exc:
             serverRes = false
             defaultResponse(exc)
@@ -157,7 +163,9 @@ suite "Secure HTTP server testing suite":
         if r.isOk():
           let request = r.get()
           try:
-            await request.respond(Http200, "TEST_OK:" & $request.meth, HttpTable.init())
+            await request.respond(
+              Http200, "TEST_OK:" & $request.meth, HttpTable.init()
+            )
           except HttpWriteError as exc:
             defaultResponse(exc)
         else:

@@ -28,8 +28,8 @@ suite "Datagram Transport test suite":
     m5 = "sendTo(seq[byte]) test (" & $TestsCount & " messages)"
     m6 = "send(seq[byte]) test (" & $TestsCount & " messages)"
     m7 =
-      "Unbounded multiple clients with messages (" & $ClientsCount & " clients x " &
-      $MessagesCount & " messages)"
+      "Unbounded multiple clients with messages (" & $ClientsCount &
+      " clients x " & $MessagesCount & " messages)"
     m8 =
       "Bounded multiple clients with messages (" & $ClientsCount & " clients x " &
       $MessagesCount & " messages)"
@@ -382,7 +382,8 @@ suite "Datagram Transport test suite":
     var ta = initTAddress("127.0.0.1:33337")
     var counter = 0
     var dgram1 = newDatagramTransport(client1, udata = addr counter, local = ta)
-    var dgram2 = newDatagramTransport(client3, udata = addr counter, remote = ta)
+    var dgram2 =
+      newDatagramTransport(client3, udata = addr counter, remote = ta)
     var data = "REQUEST0"
     await dgram2.send(addr data[0], len(data))
     await dgram2.join()
@@ -408,7 +409,8 @@ suite "Datagram Transport test suite":
     var ta = initTAddress("127.0.0.1:33339")
     var counter = 0
     var dgram1 = newDatagramTransport(client6, udata = addr counter, local = ta)
-    var dgram2 = newDatagramTransport(client8, udata = addr counter, remote = ta)
+    var dgram2 =
+      newDatagramTransport(client8, udata = addr counter, remote = ta)
     var data = "REQUEST0"
     await dgram2.send(data)
     await dgram2.join()
@@ -436,7 +438,8 @@ suite "Datagram Transport test suite":
     var ta = initTAddress("127.0.0.1:33341")
     var counter = 0
     var dgram1 = newDatagramTransport(client9, udata = addr counter, local = ta)
-    var dgram2 = newDatagramTransport(client11, udata = addr counter, remote = ta)
+    var dgram2 =
+      newDatagramTransport(client11, udata = addr counter, remote = ta)
     var data = "REQUEST0"
     var dataseq = newSeq[byte](len(data))
     copyMem(addr dataseq[0], addr data[0], len(data))
@@ -474,7 +477,8 @@ suite "Datagram Transport test suite":
     for i in 0 ..< ClientsCount:
       var data = "REQUEST0"
       if bounded:
-        grams[i] = newDatagramTransport(client4, udata = addr counters[i], remote = ta)
+        grams[i] =
+          newDatagramTransport(client4, udata = addr counters[i], remote = ta)
         await grams[i].send(addr data[0], len(data))
       else:
         grams[i] = newDatagramTransport(client5, udata = addr counters[i])
@@ -541,8 +545,9 @@ suite "Datagram Transport test suite":
       except CatchableError as exc:
         raiseAssert exc.msg
 
-    var dgram1 =
-      newDatagramTransport(clientMark, local = ta1, flags = {Broadcast}, ttl = 2)
+    var dgram1 = newDatagramTransport(
+      clientMark, local = ta1, flags = {Broadcast}, ttl = 2
+    )
     await dgram1.sendTo(bta, expectMessage)
     await wait(dgram1.join(), 5.seconds)
     result = res
@@ -630,9 +635,11 @@ suite "Datagram Transport test suite":
 
     let
       sdgram = newDatagramTransport(process1, local = saddr, dualstack = sstack)
-      localcaddr = if caddr.family == AddressFamily.IPv4: AnyAddress else: AnyAddress6
+      localcaddr =
+        if caddr.family == AddressFamily.IPv4: AnyAddress else: AnyAddress6
 
-      cdgram = newDatagramTransport(process2, local = localcaddr, dualstack = cstack)
+      cdgram =
+        newDatagramTransport(process2, local = localcaddr, dualstack = cstack)
 
     var address = caddr
     address.port = sdgram.localAddress().port
@@ -719,7 +726,9 @@ suite "Datagram Transport test suite":
       for i in 0 ..< 10:
         res =
           try:
-            newDatagramTransport(process1, currentPort, flags = {ServerFlags.ReusePort})
+            newDatagramTransport(
+              process1, currentPort, flags = {ServerFlags.ReusePort}
+            )
           except TransportOsError:
             echo "Unable to create transport on port ", currentPort
             currentPort = Port(uint16(currentPort) + 1'u16)
@@ -750,14 +759,17 @@ suite "Datagram Transport test suite":
     address.port = sdgram.localAddress().port
 
     try:
-      await noCancel cdgram.sendTo(address, addr expectRequest1[0], len(expectRequest1))
+      await noCancel cdgram.sendTo(
+        address, addr expectRequest1[0], len(expectRequest1)
+      )
     except TransportError:
       discard
 
     if family == AddressFamily.IPv6:
       var remote = initTAddress("127.0.0.1:0")
       remote.port = sdgram.localAddress().port
-      let wtransp = newDatagramTransport(process3, local = initTAddress("0.0.0.0:0"))
+      let wtransp =
+        newDatagramTransport(process3, local = initTAddress("0.0.0.0:0"))
       try:
         await noCancel wtransp.sendTo(
           remote, addr expectRequest2[0], len(expectRequest2)
@@ -801,8 +813,8 @@ suite "Datagram Transport test suite":
         transp: DatagramTransport, raddr: TransportAddress
     ): Future[void] {.async: (raises: []).} =
       if raddr.family != sendType:
-        raiseAssert "Incorrect address family received [" & $raddr & "], expected [" &
-          $sendType & "]"
+        raiseAssert "Incorrect address family received [" & $raddr &
+          "], expected [" & $sendType & "]"
       try:
         let
           bmsg = transp.getMessage()
@@ -821,8 +833,8 @@ suite "Datagram Transport test suite":
         transp: DatagramTransport, raddr: TransportAddress
     ): Future[void] {.async: (raises: []).} =
       if raddr.family != sendType:
-        raiseAssert "Incorrect address family received [" & $raddr & "], expected [" &
-          $sendType & "]"
+        raiseAssert "Incorrect address family received [" & $raddr &
+          "], expected [" & $sendType & "]"
       try:
         let
           bmsg = transp.getMessage()
@@ -867,13 +879,18 @@ suite "Datagram Transport test suite":
           )
         of DatagramSocketType.Unbound:
           newDatagramTransport(
-            process2, localPort = Port(0), remotePort = Port(0), local = address2
+            process2,
+            localPort = Port(0),
+            remotePort = Port(0),
+            local = address2,
           )
 
     try:
       case boundType
       of DatagramSocketType.Bound:
-        await noCancel client.send(unsafeAddr expectRequest[0], len(expectRequest))
+        await noCancel client.send(
+          unsafeAddr expectRequest[0], len(expectRequest)
+        )
       of DatagramSocketType.Unbound:
         await noCancel client.sendTo(
           remoteAddress, unsafeAddr expectRequest[0], len(expectRequest)
@@ -922,8 +939,9 @@ suite "Datagram Transport test suite":
   asyncTest "[IP] getDomain(socket) [SOCK_DGRAM] test":
     if isAvailable(AddressFamily.IPv4) and isAvailable(AddressFamily.IPv6):
       block:
-        let res =
-          createAsyncSocket2(Domain.AF_INET, SockType.SOCK_DGRAM, Protocol.IPPROTO_UDP)
+        let res = createAsyncSocket2(
+          Domain.AF_INET, SockType.SOCK_DGRAM, Protocol.IPPROTO_UDP
+        )
         check res.isOk()
         let fres = getDomain(res.get())
         check fres.isOk()
@@ -931,8 +949,9 @@ suite "Datagram Transport test suite":
         check fres.get() == AddressFamily.IPv4
 
       block:
-        let res =
-          createAsyncSocket2(Domain.AF_INET6, SockType.SOCK_DGRAM, Protocol.IPPROTO_UDP)
+        let res = createAsyncSocket2(
+          Domain.AF_INET6, SockType.SOCK_DGRAM, Protocol.IPPROTO_UDP
+        )
         check res.isOk()
         let fres = getDomain(res.get())
         check fres.isOk()
@@ -941,8 +960,9 @@ suite "Datagram Transport test suite":
 
       when not (defined(windows)):
         block:
-          let res =
-            createAsyncSocket2(Domain.AF_UNIX, SockType.SOCK_DGRAM, Protocol.IPPROTO_IP)
+          let res = createAsyncSocket2(
+            Domain.AF_UNIX, SockType.SOCK_DGRAM, Protocol.IPPROTO_IP
+          )
           check res.isOk()
           let fres = getDomain(res.get())
           check fres.isOk()

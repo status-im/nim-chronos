@@ -387,7 +387,8 @@ when defined(linux):
 
   proc NLMSG_NEXT(nlh: ptr NlMsgHeader, length: var int): ptr NlMsgHeader =
     length = length - int(NLMSG_ALIGN(uint(nlh.nlmsg_len)))
-    cast[ptr NlMsgHeader](cast[uint](nlh) + cast[uint](NLMSG_ALIGN(uint(nlh.nlmsg_len))))
+    cast[ptr NlMsgHeader](cast[uint](nlh) +
+      cast[uint](NLMSG_ALIGN(uint(nlh.nlmsg_len))))
 
   proc NLMSG_DATA(nlh: ptr NlMsgHeader): ptr byte =
     cast[ptr byte](cast[uint](nlh) + NLMSG_LENGTH(0))
@@ -542,15 +543,17 @@ when defined(linux):
       req.msg.rtm_family = byte(osdefs.AF_INET)
       attr.rta_len = cast[cushort](RTA_LENGTH(4))
       copyMem(RTA_DATA(attr), cast[ptr byte](unsafeAddr dest.address_v4[0]), 4)
-      req.hdr.nlmsg_len =
-        uint32(NLMSG_ALIGN(uint(req.hdr.nlmsg_len)) + RTA_ALIGN(uint(attr.rta_len)))
+      req.hdr.nlmsg_len = uint32(
+        NLMSG_ALIGN(uint(req.hdr.nlmsg_len)) + RTA_ALIGN(uint(attr.rta_len))
+      )
       req.msg.rtm_dst_len = 4 * 8
     elif dest.family == AddressFamily.IPv6:
       req.msg.rtm_family = byte(osdefs.AF_INET6)
       attr.rta_len = cast[cushort](RTA_LENGTH(16))
       copyMem(RTA_DATA(attr), cast[ptr byte](unsafeAddr dest.address_v6[0]), 16)
-      req.hdr.nlmsg_len =
-        uint32(NLMSG_ALIGN(uint(req.hdr.nlmsg_len)) + RTA_ALIGN(uint(attr.rta_len)))
+      req.hdr.nlmsg_len = uint32(
+        NLMSG_ALIGN(uint(req.hdr.nlmsg_len)) + RTA_ALIGN(uint(attr.rta_len))
+      )
       req.msg.rtm_dst_len = 16 * 8
 
     iov.iov_base = cast[pointer](addr buffer[0])
@@ -664,19 +667,24 @@ when defined(linux):
     var res = Route()
     while RTA_OK(attr, length):
       if attr.rta_type == RTA_DST:
-        res.dest = getAddress(int(rtmsg.rtm_family), cast[pointer](RTA_DATA(attr)))
+        res.dest =
+          getAddress(int(rtmsg.rtm_family), cast[pointer](RTA_DATA(attr)))
       elif attr.rta_type == RTA_GATEWAY:
-        res.gateway = getAddress(int(rtmsg.rtm_family), cast[pointer](RTA_DATA(attr)))
+        res.gateway =
+          getAddress(int(rtmsg.rtm_family), cast[pointer](RTA_DATA(attr)))
       elif attr.rta_type == RTA_OIF:
         var oid: uint32
         copyMem(addr oid, RTA_DATA(attr), sizeof(uint32))
         res.ifIndex = int(oid)
       elif attr.rta_type == RTA_PREFSRC:
-        res.source = getAddress(int(rtmsg.rtm_family), cast[pointer](RTA_DATA(attr)))
+        res.source =
+          getAddress(int(rtmsg.rtm_family), cast[pointer](RTA_DATA(attr)))
       attr = RTA_NEXT(attr, length)
     res
 
-  proc getRoute(netfd: SocketHandle, pid: Pid, address: TransportAddress): Route =
+  proc getRoute(
+      netfd: SocketHandle, pid: Pid, address: TransportAddress
+  ): Route =
     if not sendRouteMessage(netfd, pid, 1, RTM_GETROUTE, NLM_F_REQUEST, address):
       return Route()
     var data = newSeq[byte]()
@@ -702,7 +710,9 @@ when defined(linux):
 
   proc getLinks(netfd: SocketHandle, pid: Pid): seq[NetworkInterface] =
     var res: seq[NetworkInterface]
-    if not sendLinkMessage(netfd, pid, 1, RTM_GETLINK, NLM_F_REQUEST or NLM_F_DUMP):
+    if not sendLinkMessage(
+      netfd, pid, 1, RTM_GETLINK, NLM_F_REQUEST or NLM_F_DUMP
+    ):
       return res
     var data = newSeq[byte]()
     res = newSeq[NetworkInterface]()
@@ -729,8 +739,12 @@ when defined(linux):
         break
     res
 
-  proc getAddresses(netfd: SocketHandle, pid: Pid, ifaces: var seq[NetworkInterface]) =
-    if not sendLinkMessage(netfd, pid, 2, RTM_GETADDR, NLM_F_REQUEST or NLM_F_DUMP):
+  proc getAddresses(
+      netfd: SocketHandle, pid: Pid, ifaces: var seq[NetworkInterface]
+  ) =
+    if not sendLinkMessage(
+      netfd, pid, 2, RTM_GETADDR, NLM_F_REQUEST or NLM_F_DUMP
+    ):
       return
     var data = newSeq[byte]()
     while true:
@@ -794,7 +808,10 @@ elif defined(macosx) or defined(macos) or defined(bsd):
       IfOther
 
   proc toInterfaceState(f: cuint): InterfaceState =
-    if (f and IFF_RUNNING) != 0 and (f and IFF_UP) != 0: StatusUp else: StatusDown
+    if (f and IFF_RUNNING) != 0 and (f and IFF_UP) != 0:
+      StatusUp
+    else:
+      StatusDown
 
   proc getInterfaces*(): seq[NetworkInterface] {.raises: [].} =
     ## Return list of available interfaces.
@@ -918,7 +935,8 @@ elif defined(macosx) or defined(macos) or defined(bsd):
           while true:
             pres = osdefs.read(sock, addr msg, sizeof(RtMessage))
             if (
-              (pres >= 0) and (msg.rtm.rtm_pid == pid) and (msg.rtm.rtm_seq == 0xCAFE)
+              (pres >= 0) and (msg.rtm.rtm_pid == pid) and
+              (msg.rtm.rtm_seq == 0xCAFE)
             ) or (pres < 0):
               break
           pres
@@ -959,8 +977,8 @@ elif defined(windows):
     MaxTries = 3
 
   proc toInterfaceType(ft: uint32): InterfaceType {.inline.} =
-    if (ft >= 1'u32 and ft <= 196'u32) or (ft == 237) or (ft == 243) or (ft == 244) or
-        (ft == 259) or (ft == 281):
+    if (ft >= 1'u32 and ft <= 196'u32) or (ft == 237) or (ft == 243) or
+        (ft == 244) or (ft == 259) or (ft == 281):
       cast[InterfaceType](ft)
     else:
       IfOther
@@ -1098,7 +1116,9 @@ elif defined(windows):
           maclen: int(slider.physicalAddressLength),
           flags: uint64(slider.flags),
         )
-        copyMem(addr iface.mac[0], addr slider.physicalAddress[0], len(iface.mac))
+        copyMem(
+          addr iface.mac[0], addr slider.physicalAddress[0], len(iface.mac)
+        )
         var unicast = slider.unicastAddress
         while not isNil(unicast):
           var ifaddr = processAddress(slider, unicast, vista)
@@ -1166,7 +1186,9 @@ elif defined(windows):
           res.dest = address
           if bestRoute.dwForwardNextHop != 0'u32:
             res.gateway = TransportAddress(family: AddressFamily.IPv4)
-            copyMem(addr res.gateway.address_v4[0], addr bestRoute.dwForwardNextHop, 4)
+            copyMem(
+              addr res.gateway.address_v4[0], addr bestRoute.dwForwardNextHop, 4
+            )
           res.metric = int(bestRoute.dwForwardMetric1)
           res.ifIndex = int(bestRoute.dwForwardIfIndex)
           for item in interfaces:

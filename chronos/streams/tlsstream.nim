@@ -158,7 +158,9 @@ proc new*(
   var res: seq[X509TrustAnchor]
   for anchor in anchors:
     res.add(anchor)
-    doAssert(unsafeAddr(anchor) != unsafeAddr(res[^1]), "Anchors should be copied")
+    doAssert(
+      unsafeAddr(anchor) != unsafeAddr(res[^1]), "Anchors should be copied"
+    )
   TrustAnchorStore(anchors: res)
 
 proc tlsWriteRec(
@@ -436,7 +438,9 @@ proc tlsLoop*(stream: TLSAsyncStream) {.async: (raises: []).} =
       if not (isNil(stream.writer.handshakeFut)):
         if not (stream.writer.handshakeFut.finished()):
           stream.writer.handshakeFut.fail(
-            newTLSStreamProtocolError("Connection to the remote peer has been lost")
+            newTLSStreamProtocolError(
+              "Connection to the remote peer has been lost"
+            )
           )
 
   # Completing readers
@@ -501,7 +505,9 @@ proc newTLSClientAsyncStream*(
   ## a ``TrustAnchorStore`` you should reuse the same instance for
   ## every call to avoid making a copy of the trust anchors per call.
   when trustAnchors is TrustAnchorStore:
-    doAssert(len(trustAnchors.anchors) > 0, "Empty trust anchor list is invalid")
+    doAssert(
+      len(trustAnchors.anchors) > 0, "Empty trust anchor list is invalid"
+    )
   else:
     doAssert(len(trustAnchors) > 0, "Empty trust anchor list is invalid")
   var res = TLSAsyncStream()
@@ -517,7 +523,9 @@ proc newTLSClientAsyncStream*(
   if TLSFlags.NoVerifyHost in flags:
     sslClientInitFull(res.ccontext, addr res.x509, nil, 0)
     x509NoanchorInit(res.xwc, X509ClassPointerConst(addr res.x509.vtable))
-    sslEngineSetX509(res.ccontext.eng, X509ClassPointerConst(addr res.xwc.vtable))
+    sslEngineSetX509(
+      res.ccontext.eng, X509ClassPointerConst(addr res.xwc.vtable)
+    )
   else:
     when trustAnchors is TrustAnchorStore:
       res.trustAnchors = trustAnchors
@@ -529,12 +537,17 @@ proc newTLSClientAsyncStream*(
       )
     else:
       sslClientInitFull(
-        res.ccontext, addr res.x509, unsafeAddr trustAnchors[0], uint(len(trustAnchors))
+        res.ccontext,
+        addr res.x509,
+        unsafeAddr trustAnchors[0],
+        uint(len(trustAnchors)),
       )
 
   let size = max(SSL_BUFSIZE_BIDI, bufferSize)
   res.sbuffer = newSeq[byte](size)
-  sslEngineSetBuffer(res.ccontext.eng, addr res.sbuffer[0], uint(len(res.sbuffer)), 1)
+  sslEngineSetBuffer(
+    res.ccontext.eng, addr res.sbuffer[0], uint(len(res.sbuffer)), 1
+  )
   sslEngineSetVersions(res.ccontext.eng, uint16(minVersion), uint16(maxVersion))
 
   if TLSFlags.NoVerifyServerName in flags:
@@ -543,7 +556,8 @@ proc newTLSClientAsyncStream*(
       raise newException(TLSStreamInitError, "Could not initialize TLS layer")
   else:
     if len(serverName) == 0:
-      raise newException(TLSStreamInitError, "serverName must not be empty string")
+      raise
+        newException(TLSStreamInitError, "serverName must not be empty string")
 
     let err = sslClientReset(res.ccontext, serverName, 0)
     if err == 0:
@@ -614,7 +628,9 @@ proc newTLSServerAsyncStream*(
 
   let size = max(SSL_BUFSIZE_BIDI, bufferSize)
   res.sbuffer = newSeq[byte](size)
-  sslEngineSetBuffer(res.scontext.eng, addr res.sbuffer[0], uint(len(res.sbuffer)), 1)
+  sslEngineSetBuffer(
+    res.scontext.eng, addr res.sbuffer[0], uint(len(res.sbuffer)), 1
+  )
   sslEngineSetVersions(res.scontext.eng, uint16(minVersion), uint16(maxVersion))
 
   if not isNil(cache):
@@ -777,13 +793,16 @@ proc init*(
     if item.name == "CERTIFICATE" and len(item.data) > 0:
       let offset = len(res.storage)
       res.storage.add(item.data)
-      let cert =
-        X509Certificate(data: addr res.storage[offset], dataLen: uint(len(item.data)))
+      let cert = X509Certificate(
+        data: addr res.storage[offset], dataLen: uint(len(item.data))
+      )
       let ares = getSignerAlgo(cert)
       if ares == -1:
         raiseTLSStreamProtocolError("Could not decode certificate")
       elif ares != KEYTYPE_RSA and ares != KEYTYPE_EC:
-        raiseTLSStreamProtocolError("Unsupported signing key type in certificate")
+        raiseTLSStreamProtocolError(
+          "Unsupported signing key type in certificate"
+        )
       res.certs.add(cert)
   if len(res.storage) == 0:
     raiseTLSStreamProtocolError("Could not find any certificates")
@@ -802,10 +821,13 @@ proc init*(
 
 proc handshake*(
     rws: SomeTLSStreamType
-): Future[void] {.async: (raw: true, raises: [CancelledError, AsyncStreamError]).} =
+): Future[void] {.
+    async: (raw: true, raises: [CancelledError, AsyncStreamError])
+.} =
   ## Wait until initial TLS handshake will be successfully performed.
-  let retFuture =
-    Future[void].Raising([CancelledError, AsyncStreamError]).init("tlsstream.handshake")
+  let retFuture = Future[void].Raising([CancelledError, AsyncStreamError]).init(
+      "tlsstream.handshake"
+    )
   when rws is TLSStreamReader:
     if rws.handshaked:
       retFuture.complete()

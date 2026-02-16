@@ -25,7 +25,10 @@ suite "Asynchronous process management test suite":
       [
         ("ECHO TESTOUT", "TESTOUT\r\n", ""),
         ("ECHO TESTERR 1>&2", "", "TESTERR \r\n"),
-        ("ECHO TESTBOTH && ECHO TESTBOTH 1>&2", "TESTBOTH \r\n", "TESTBOTH \r\n"),
+        (
+          "ECHO TESTBOTH && ECHO TESTBOTH 1>&2", "TESTBOTH \r\n",
+          "TESTBOTH \r\n",
+        ),
       ]
     else:
       [
@@ -45,8 +48,9 @@ suite "Asynchronous process management test suite":
   when not (defined(windows)):
     proc getCurrentFD(): int =
       let local = initTAddress("127.0.0.1:34334")
-      let sock =
-        createAsyncSocket(local.getDomain(), SockType.SOCK_DGRAM, Protocol.IPPROTO_UDP)
+      let sock = createAsyncSocket(
+        local.getDomain(), SockType.SOCK_DGRAM, Protocol.IPPROTO_UDP
+      )
       closeSocket(sock)
       return int(sock)
 
@@ -111,7 +115,8 @@ suite "Asynchronous process management test suite":
 
     try:
       pidFd = block:
-        let res = addProcess2(process.pid(), processHandler, cast[pointer](31337))
+        let res =
+          addProcess2(process.pid(), processHandler, cast[pointer](31337))
         if res.isErr():
           raiseAssert osErrorMsg(res.error())
         res.get()
@@ -189,7 +194,8 @@ suite "Asynchronous process management test suite":
         await process.closeWait()
 
   asyncTest "STDERR to STDOUT streams test":
-    let options = {AsyncProcessOption.EvalCommand, AsyncProcessOption.StdErrToStdOut}
+    let options =
+      {AsyncProcessOption.EvalCommand, AsyncProcessOption.StdErrToStdOut}
     let command =
       when defined(windows):
         "ECHO TESTSTDOUT && ECHO TESTSTDERR 1>&2"
@@ -200,8 +206,9 @@ suite "Asynchronous process management test suite":
         "TESTSTDOUT \r\nTESTSTDERR \r\n"
       else:
         "TESTSTDOUT\nTESTSTDERR\n"
-    let process =
-      await startProcess(command, options = options, stdoutHandle = AsyncProcess.Pipe)
+    let process = await startProcess(
+      command, options = options, stdoutHandle = AsyncProcess.Pipe
+    )
     try:
       let outBytesFut = process.stdoutStream.read()
       let res = await process.waitForExit(InfiniteDuration)
@@ -371,8 +378,9 @@ suite "Asynchronous process management test suite":
         else:
           "echo TEST" & $n
 
-      let process =
-        await startProcess(command, options = options, stdoutHandle = AsyncProcess.Pipe)
+      let process = await startProcess(
+        command, options = options, stdoutHandle = AsyncProcess.Pipe
+      )
       processes.add(process)
 
     try:
@@ -467,7 +475,8 @@ suite "Asynchronous process management test suite":
       await sleepAsync(1.seconds)
       try:
         expect AsyncProcessTimeoutError:
-          let exitCode {.used.} = await process.terminateAndWaitForExit(1.seconds)
+          let exitCode {.used.} =
+            await process.terminateAndWaitForExit(1.seconds)
         let exitCode = await process.killAndWaitForExit(10.seconds)
         check exitCode == command[2]
       finally:

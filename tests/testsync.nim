@@ -50,8 +50,9 @@ suite "Asynchronous sync primitives test suite":
     futs[3] = lock.acquire()
 
     proc checkFlags(b0, b1, b2, b3, b4: bool): bool =
-      (lock.locked == b0) and (futs[0].finished == b1) and (futs[1].finished == b2) and
-        (futs[2].finished == b3) and (futs[3].finished == b4)
+      (lock.locked == b0) and (futs[0].finished == b1) and
+        (futs[1].finished == b2) and (futs[2].finished == b3) and
+        (futs[3].finished == b4)
 
     if not (checkFlags(true, true, false, false, false)):
       return false
@@ -319,16 +320,20 @@ suite "Asynchronous sync primitives test suite":
   test "AsyncLock() behavior test":
     check:
       test1() == "0123456789"
-      waitFor(testBehaviorLock(10.milliseconds, 20.milliseconds, 50.milliseconds)) ==
-        @[10, 20, 30, 11, 21, 31]
-      waitFor(testBehaviorLock(50.milliseconds, 20.milliseconds, 10.milliseconds)) ==
-        @[10, 20, 30, 11, 21, 31]
+      waitFor(
+        testBehaviorLock(10.milliseconds, 20.milliseconds, 50.milliseconds)
+      ) == @[10, 20, 30, 11, 21, 31]
+      waitFor(
+        testBehaviorLock(50.milliseconds, 20.milliseconds, 10.milliseconds)
+      ) == @[10, 20, 30, 11, 21, 31]
   test "AsyncLock() cancellation test":
     check:
-      waitFor(testCancelLock(10.milliseconds, 20.milliseconds, 50.milliseconds, 2)) ==
-        @[10, 30, 11, 31]
-      waitFor(testCancelLock(50.milliseconds, 20.milliseconds, 10.milliseconds, 3)) ==
-        @[10, 20, 11, 21]
+      waitFor(
+        testCancelLock(10.milliseconds, 20.milliseconds, 50.milliseconds, 2)
+      ) == @[10, 30, 11, 31]
+      waitFor(
+        testCancelLock(50.milliseconds, 20.milliseconds, 10.milliseconds, 3)
+      ) == @[10, 20, 11, 21]
   test "AsyncLock() flag consistency test":
     check waitFor(testFlag()) == true
   test "AsyncLock() double release test":
@@ -427,7 +432,8 @@ suite "Asynchronous sync primitives test suite":
       dataFut6.finished() == true
       dataFut6.read() == @[2000]
       dataFut0.finished() == true
-      dataFut0.read() == @[100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 2000]
+      dataFut0.read() ==
+        @[100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 2000]
 
     waitFor eventQueue.closeWait()
 
@@ -552,9 +558,8 @@ suite "Asynchronous sync primitives test suite":
     let dataFut1 = eventQueue.waitEvents(key1)
     check:
       dataFut1.finished() == true
-      dataFut1.read() == @[
-        100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100, 1200
-      ]
+      dataFut1.read() ==
+        @[100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100, 1200]
       len(eventQueue) == 9
 
     let dataFut3 = eventQueue.waitEvents(key3)

@@ -69,7 +69,9 @@ proc new(
 
 proc createSecConnection(
     server: HttpServerRef, transp: StreamTransport
-): Future[HttpConnectionRef] {.async: (raises: [CancelledError, HttpConnectionError]).} =
+): Future[HttpConnectionRef] {.
+    async: (raises: [CancelledError, HttpConnectionError])
+.} =
   let
     secureServ = cast[SecureHttpServerRef](server)
     sconn = SecureHttpConnectionRef.new(secureServ, transp).valueOr:

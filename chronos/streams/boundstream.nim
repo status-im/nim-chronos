@@ -49,7 +49,9 @@ const
   BoundarySizeDefectMessage = "Boundary must not be empty array"
 
 template newBoundedStreamIncompleteError(): ref BoundedStreamError =
-  newException(BoundedStreamIncompleteError, "Stream boundary is not reached yet")
+  newException(
+    BoundedStreamIncompleteError, "Stream boundary is not reached yet"
+  )
 
 template newBoundedStreamOverflowError(): ref BoundedStreamOverflowError =
   newException(BoundedStreamOverflowError, "Stream boundary exceeded")
@@ -258,7 +260,8 @@ proc boundedWriteLoop(stream: AsyncStreamWriter) {.async: (raises: []).} =
         if not (item.future.finished()):
           item.future.fail(error)
       break
-    of AsyncStreamState.Finished, AsyncStreamState.Closing, AsyncStreamState.Closed:
+    of AsyncStreamState.Finished, AsyncStreamState.Closing,
+        AsyncStreamState.Closed:
       error = newAsyncStreamUseClosedError()
       break
 

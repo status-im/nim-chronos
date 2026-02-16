@@ -106,7 +106,8 @@ proc chunkedReadLoop(stream: AsyncStreamReader) {.async: (raises: []).} =
   while true:
     try:
       # Reading chunk size
-      let res = await rstream.rsource.readUntil(addr buffer[0], len(buffer), CRLF)
+      let res =
+        await rstream.rsource.readUntil(addr buffer[0], len(buffer), CRLF)
       let cres = getChunkSize(buffer.toOpenArray(0, res - len(CRLF) - 1))
 
       if cres.isErr():
@@ -131,12 +132,14 @@ proc chunkedReadLoop(stream: AsyncStreamReader) {.async: (raises: []).} =
 
             if buffer[0] != CRLF[0] or buffer[1] != CRLF[1]:
               if rstream.state == AsyncStreamState.Running:
-                rstream.error =
-                  newException(ChunkedStreamProtocolError, "Unexpected trailing bytes")
+                rstream.error = newException(
+                  ChunkedStreamProtocolError, "Unexpected trailing bytes"
+                )
                 rstream.state = AsyncStreamState.Error
         else:
           # Reading trailing line for last chunk
-          discard await rstream.rsource.readUntil(addr buffer[0], len(buffer), CRLF)
+          discard
+            await rstream.rsource.readUntil(addr buffer[0], len(buffer), CRLF)
           if rstream.state == AsyncStreamState.Running:
             rstream.state = AsyncStreamState.Finished
             await rstream.buffer.transfer()
@@ -146,13 +149,15 @@ proc chunkedReadLoop(stream: AsyncStreamReader) {.async: (raises: []).} =
     except AsyncStreamLimitError:
       if rstream.state == AsyncStreamState.Running:
         rstream.state = AsyncStreamState.Error
-        rstream.error =
-          newException(ChunkedStreamProtocolError, "Chunk header exceeds maximum size")
+        rstream.error = newException(
+          ChunkedStreamProtocolError, "Chunk header exceeds maximum size"
+        )
     except AsyncStreamIncompleteError:
       if rstream.state == AsyncStreamState.Running:
         rstream.state = AsyncStreamState.Error
-        rstream.error =
-          newException(ChunkedStreamIncompleteError, "Incomplete chunk received")
+        rstream.error = newException(
+          ChunkedStreamIncompleteError, "Incomplete chunk received"
+        )
     except AsyncStreamReadError as exc:
       if rstream.state == AsyncStreamState.Running:
         rstream.state = AsyncStreamState.Error
@@ -243,12 +248,16 @@ proc init*[T](
   init(AsyncStreamReader(child), rsource, chunkedReadLoop, bufferSize, udata)
 
 proc init*(
-    child: ChunkedStreamReader, rsource: AsyncStreamReader, bufferSize = ChunkBufferSize
+    child: ChunkedStreamReader,
+    rsource: AsyncStreamReader,
+    bufferSize = ChunkBufferSize,
 ) =
   init(AsyncStreamReader(child), rsource, chunkedReadLoop, bufferSize)
 
 proc newChunkedStreamReader*[T](
-    rsource: AsyncStreamReader, bufferSize = AsyncStreamDefaultBufferSize, udata: ref T
+    rsource: AsyncStreamReader,
+    bufferSize = AsyncStreamDefaultBufferSize,
+    udata: ref T,
 ): ChunkedStreamReader =
   var res = ChunkedStreamReader()
   res.init(rsource, bufferSize, udata)
@@ -277,7 +286,9 @@ proc init*(
   init(AsyncStreamWriter(child), wsource, chunkedWriteLoop, queueSize)
 
 proc newChunkedStreamWriter*[T](
-    wsource: AsyncStreamWriter, queueSize = AsyncStreamDefaultQueueSize, udata: ref T
+    wsource: AsyncStreamWriter,
+    queueSize = AsyncStreamDefaultQueueSize,
+    udata: ref T,
 ): ChunkedStreamWriter =
   var res = ChunkedStreamWriter()
   res.init(wsource, queueSize, udata)

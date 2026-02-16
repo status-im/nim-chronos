@@ -20,7 +20,8 @@ const
     FutureState.Pending, FutureState.Cancelled, FutureState.Completed,
     FutureState.Failed,
   }
-  WithoutCompleted* = {FutureState.Pending, FutureState.Cancelled, FutureState.Failed}
+  WithoutCompleted* =
+    {FutureState.Pending, FutureState.Cancelled, FutureState.Failed}
   OnlyPending* = {FutureState.Pending}
   OnlyCompleted* = {FutureState.Completed}
 
@@ -48,8 +49,9 @@ proc dumpPendingFutures*(filter = AllFutureStates): string =
             "\"" & procedure & "\""
         let item =
           "Future[" & Base10.toString(item.id) & "] with name " & $procname &
-          " created at " & "<" & filename & ":" & Base10.toString(uint(loc.line)) & ">" &
-          " and state = " & $item.state & "\n"
+          " created at " & "<" & filename & ":" & Base10.toString(
+            uint(loc.line)
+          ) & ">" & " and state = " & $item.state & "\n"
         res.add(item)
     Base10.toString(count) & " pending Future[T] objects found:\n" & $res
   else:

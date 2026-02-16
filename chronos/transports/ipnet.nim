@@ -66,9 +66,13 @@ proc init*(t: typedesc[IpMask], family: AddressFamily, prefix: int): IpMask =
     else:
       if prefix > 64:
         let mask = 0xFFFF_FFFF_FFFF_FFFF'u64 shl (128 - prefix)
-        IpMask(family: AddressFamily.IPv6, mask6: [0xFFFF_FFFF_FFFF_FFFF'u64, mask])
+        IpMask(
+          family: AddressFamily.IPv6, mask6: [0xFFFF_FFFF_FFFF_FFFF'u64, mask]
+        )
       elif prefix == 64:
-        IpMask(family: AddressFamily.IPv6, mask6: [0xFFFF_FFFF_FFFF_FFFF'u64, 0'u64])
+        IpMask(
+          family: AddressFamily.IPv6, mask6: [0xFFFF_FFFF_FFFF_FFFF'u64, 0'u64]
+        )
       else:
         let mask = 0xFFFF_FFFF_FFFF_FFFF'u64 shl (64 - prefix)
         IpMask(family: AddressFamily.IPv6, mask6: [mask, 0'u64])
@@ -79,7 +83,9 @@ proc init*(t: typedesc[IpMask], netmask: TransportAddress): IpMask =
   ## Initialize network mask using address ``netmask``.
   case netmask.family
   of AddressFamily.IPv4:
-    IpMask(family: AddressFamily.IPv4, mask4: uint32.fromBytesBE(netmask.address_v4))
+    IpMask(
+      family: AddressFamily.IPv4, mask4: uint32.fromBytesBE(netmask.address_v4)
+    )
   of AddressFamily.IPv6:
     IpMask(
       family: AddressFamily.IPv6,
@@ -207,7 +213,9 @@ proc toIPv4*(address: TransportAddress): TransportAddress =
     if isV4Mapped(address):
       let data = uint32.fromBytesBE(address.address_v6.toOpenArray(12, 15))
       TransportAddress(
-        family: AddressFamily.IPv4, port: address.port, address_v4: data.toBytesBE()
+        family: AddressFamily.IPv4,
+        port: address.port,
+        address_v4: data.toBytesBE(),
       )
     else:
       TransportAddress(family: AddressFamily.None)
@@ -268,7 +276,9 @@ proc mask*(a: TransportAddress, m: IpMask): TransportAddress =
       data1 = uint64.fromBytesBE(a.address_v6.toOpenArray(8, 15))
     address6[0 .. 7] = (data0 and m.mask6[0]).toBytesBE()
     address6[8 .. 15] = (data1 and m.mask6[1]).toBytesBE()
-    TransportAddress(family: AddressFamily.IPv6, port: a.port, address_v6: address6)
+    TransportAddress(
+      family: AddressFamily.IPv6, port: a.port, address_v6: address6
+    )
   else:
     TransportAddress(family: AddressFamily.None)
 
@@ -320,7 +330,9 @@ proc subnetMask*(mask: IpMask): TransportAddress =
   ## Returns TransportAddress representation of IP mask ``mask``.
   case mask.family
   of AddressFamily.IPv4:
-    TransportAddress(family: AddressFamily.IPv4, address_v4: mask.mask4.toBytesBE())
+    TransportAddress(
+      family: AddressFamily.IPv4, address_v4: mask.mask4.toBytesBE()
+    )
   of AddressFamily.IPv6:
     var address6: array[16, uint8]
     address6[0 .. 7] = mask.mask6[0].toBytesBE()
@@ -375,7 +387,9 @@ proc ip*(mask: IpMask): string {.raises: [ValueError].} =
   else:
     raise newException(ValueError, "Invalid mask family type")
 
-proc init*(t: typedesc[IpNet], host: TransportAddress, prefix: int): IpNet {.inline.} =
+proc init*(
+    t: typedesc[IpNet], host: TransportAddress, prefix: int
+): IpNet {.inline.} =
   ## Initialize IP Network using host address ``host`` and prefix length
   ## ``prefix``.
   IpNet(mask: IpMask.init(host.family, prefix), host: host)
@@ -388,7 +402,9 @@ proc init*(t: typedesc[IpNet], host, mask: TransportAddress): IpNet {.inline.} =
   doAssert(host.family == mask.family)
   IpNet(mask: IpMask.init(mask), host: host)
 
-proc init*(t: typedesc[IpNet], host: TransportAddress, mask: IpMask): IpNet {.inline.} =
+proc init*(
+    t: typedesc[IpNet], host: TransportAddress, mask: IpMask
+): IpNet {.inline.} =
   ## Initialize IP Network using host address ``host`` and network mask
   ## ``mask``.
   IpNet(mask: mask, host: host)
@@ -429,12 +445,16 @@ proc init*(
           mhost.address_v6 = ipaddr.address_v6
         mask = IpMask.init(mhost)
         if mask.family != host.family:
-          raise newException(TransportAddressError, "Incorrect network address!")
+          raise
+            newException(TransportAddressError, "Incorrect network address!")
       else:
-        if (ipaddr.family == IpAddressFamily.IPv4 and (prefix < 0 or prefix > 32)) or
-            (ipaddr.family == IpAddressFamily.IPv6 and (prefix < 0 or prefix > 128)) or
-            (prefix == 0 and parts[1][0] notin {'0' .. '9'}): # /-0 case
-          raise newException(TransportAddressError, "Incorrect network address!")
+        if (
+          ipaddr.family == IpAddressFamily.IPv4 and (prefix < 0 or prefix > 32)
+        ) or (
+          ipaddr.family == IpAddressFamily.IPv6 and (prefix < 0 or prefix > 128)
+        ) or (prefix == 0 and parts[1][0] notin {'0' .. '9'}): # /-0 case
+          raise
+            newException(TransportAddressError, "Incorrect network address!")
     if prefix == -1:
       t.init(host, mask)
     else:
@@ -986,12 +1006,12 @@ proc isGlobal*(address: TransportAddress): bool =
   case address.family
   of AddressFamily.IPv4:
     not (
-      (a4[0] == 0) or address.isPrivate() or address.isShared() or address.isLoopback() or
-      address.isLinkLocal() or
+      (a4[0] == 0) or address.isPrivate() or address.isShared() or
+      address.isLoopback() or address.isLinkLocal() or
       # address reserver for future protocols `192.0.0.0/24`.
       ((a4[0] == 192'u8) and (a4[1] == 0'u8) and (a4[2] == 0'u8)) or
-      address.isDocumentation() or address.isBenchmarking() or address.isReserved() or
-      address.isBroadcast()
+      address.isDocumentation() or address.isBenchmarking() or
+      address.isReserved() or address.isBroadcast()
     )
   of AddressFamily.IPv6:
     not (

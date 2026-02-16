@@ -82,7 +82,9 @@ when defined(nimdoc):
     ## with events set in ``events``. The ``data`` is application-defined
     ## data, which will be passed when an event is triggered.
 
-  proc updateHandle*[T](s: Selector[T], fd: int | SocketHandle, events: set[Event]) =
+  proc updateHandle*[T](
+      s: Selector[T], fd: int | SocketHandle, events: set[Event]
+  ) =
     ## Update file/socket descriptor ``fd``, registered in selector
     ## ``s`` with new events set ``event``.
 
@@ -101,7 +103,9 @@ when defined(nimdoc):
     ##
     ## Returns the file descriptor for the registered timer.
 
-  proc registerSignal*[T](s: Selector[T], signal: int, data: T): int {.discardable.} =
+  proc registerSignal*[T](
+      s: Selector[T], signal: int, data: T
+  ): int {.discardable.} =
     ## Registers Unix signal notification with ``signal`` to selector
     ## ``s``.
     ##
@@ -112,7 +116,9 @@ when defined(nimdoc):
     ##
     ## **Note:** This function is not supported on ``Windows``.
 
-  proc registerProcess*[T](s: Selector[T], pid: int, data: T): int {.discardable.} =
+  proc registerProcess*[T](
+      s: Selector[T], pid: int, data: T
+  ): int {.discardable.} =
     ## Registers a process id (pid) notification (when process has
     ## exited) in selector ``s``.
     ##
@@ -127,7 +133,9 @@ when defined(nimdoc):
     ## The ``data`` is application-defined data, which will be passed when
     ## ``ev`` happens.
 
-  proc registerVnode*[T](s: Selector[T], fd: cint, events: set[Event], data: T) =
+  proc registerVnode*[T](
+      s: Selector[T], fd: cint, events: set[Event], data: T
+  ) =
     ## Registers selector BSD/MacOSX specific vnode events for file
     ## descriptor ``fd`` and events ``events``.
     ## ``data`` application-defined data, which to be passed, when
@@ -186,7 +194,9 @@ when defined(nimdoc):
     ## Returns ``true``, if there are no registered events or descriptors
     ## in selector.
 
-  template withData*[T](s: Selector[T], fd: SocketHandle | int, value, body: untyped) =
+  template withData*[T](
+      s: Selector[T], fd: SocketHandle | int, value, body: untyped
+  ) =
     ## Retrieves the application-data assigned with descriptor ``fd``
     ## to ``value``. This ``value`` can be modified in the scope of
     ## the ``withData`` call.
@@ -275,7 +285,9 @@ else:
   when chronosEventEngine in ["epoll", "kqueue"]:
     const hasThreadSupport = compileOption("threads")
 
-    proc blockSignals(newmask: Sigset, oldmask: var Sigset): Result[void, OSErrorCode] =
+    proc blockSignals(
+        newmask: Sigset, oldmask: var Sigset
+    ): Result[void, OSErrorCode] =
       var nmask = newmask
       # We do this trick just because Nim's posix.nim has declaration like
       # this:

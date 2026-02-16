@@ -35,8 +35,9 @@ type
     transp: DatagramTransport, remote: TransportAddress
   ): Future[void] {.async: (raises: []).}
 
-  UnsafeDatagramCallback* =
-    proc(transp: DatagramTransport, remote: TransportAddress): Future[void] {.async.}
+  UnsafeDatagramCallback* = proc(
+    transp: DatagramTransport, remote: TransportAddress
+  ): Future[void] {.async.}
 
   DatagramTransport* = ref object of RootRef
     fd*: AsyncFD # File descriptor
@@ -100,26 +101,32 @@ proc setRemoteAddress(
   toSAddr(remoteAddress, transp.waddr, transp.walen)
   remoteAddress
 
-proc remoteAddress2*(transp: DatagramTransport): Result[TransportAddress, OSErrorCode] =
+proc remoteAddress2*(
+    transp: DatagramTransport
+): Result[TransportAddress, OSErrorCode] =
   ## Returns ``transp`` remote socket address.
   if transp.remote.family == AddressFamily.None:
     var
       saddr: Sockaddr_storage
       slen = SockLen(sizeof(saddr))
-    if getpeername(SocketHandle(transp.fd), cast[ptr SockAddr](addr saddr), addr slen) !=
-        0:
+    if getpeername(
+      SocketHandle(transp.fd), cast[ptr SockAddr](addr saddr), addr slen
+    ) != 0:
       return err(osLastError())
     transp.remote = transp.getRemoteAddress(saddr, slen)
   ok(transp.remote)
 
-proc localAddress2*(transp: DatagramTransport): Result[TransportAddress, OSErrorCode] =
+proc localAddress2*(
+    transp: DatagramTransport
+): Result[TransportAddress, OSErrorCode] =
   ## Returns ``transp`` local socket address.
   if transp.local.family == AddressFamily.None:
     var
       saddr: Sockaddr_storage
       slen = SockLen(sizeof(saddr))
-    if getsockname(SocketHandle(transp.fd), cast[ptr SockAddr](addr saddr), addr slen) !=
-        0:
+    if getsockname(
+      SocketHandle(transp.fd), cast[ptr SockAddr](addr saddr), addr slen
+    ) != 0:
       return err(osLastError())
     fromSAddr(addr saddr, slen, transp.local)
   ok(transp.local)
@@ -346,7 +353,8 @@ when defined(windows):
             Protocol.IPPROTO_IP
           else:
             Protocol.IPPROTO_UDP
-        let res = createAsyncSocket2(local.getDomain(), SockType.SOCK_DGRAM, proto)
+        let res =
+          createAsyncSocket2(local.getDomain(), SockType.SOCK_DGRAM, proto)
         if res.isErr():
           raiseTransportOsError(res.error)
         res.get()
@@ -412,7 +420,9 @@ when defined(windows):
       var slen: SockLen
       toSAddr(local, saddr, slen)
 
-      if bindSocket(SocketHandle(localSock), cast[ptr SockAddr](addr saddr), slen) != 0:
+      if bindSocket(
+        SocketHandle(localSock), cast[ptr SockAddr](addr saddr), slen
+      ) != 0:
         let err = osLastError()
         if sock == asyncInvalidSocket:
           closeSocket(localSock)
@@ -421,7 +431,9 @@ when defined(windows):
       var saddr: Sockaddr_storage
       var slen: SockLen
       saddr.ss_family = type(saddr.ss_family)(local.getDomain())
-      if bindSocket(SocketHandle(localSock), cast[ptr SockAddr](addr saddr), slen) != 0:
+      if bindSocket(
+        SocketHandle(localSock), cast[ptr SockAddr](addr saddr), slen
+      ) != 0:
         let err = osLastError()
         if sock == asyncInvalidSocket:
           closeSocket(localSock)
@@ -438,8 +450,9 @@ when defined(windows):
 
     if remote.port != Port(0):
       let remoteAddress = res.setRemoteAddress(remote)
-      if connect(SocketHandle(localSock), cast[ptr SockAddr](addr res.waddr), res.walen) !=
-          0:
+      if connect(
+        SocketHandle(localSock), cast[ptr SockAddr](addr res.waddr), res.walen
+      ) != 0:
         let err = osLastError()
         if sock == asyncInvalidSocket:
           closeSocket(localSock)
@@ -455,10 +468,13 @@ when defined(windows):
     res.future = Future[void].Raising([]).init(
         "datagram.transport", {FutureFlag.OwnCancelSchedule}
       )
-    res.rovl.data = CompletionData(cb: readDatagramLoop, udata: cast[pointer](res))
-    res.wovl.data = CompletionData(cb: writeDatagramLoop, udata: cast[pointer](res))
-    res.rwsabuf =
-      WSABUF(buf: cast[cstring](baseAddr res.buffer), len: ULONG(len(res.buffer)))
+    res.rovl.data =
+      CompletionData(cb: readDatagramLoop, udata: cast[pointer](res))
+    res.wovl.data =
+      CompletionData(cb: writeDatagramLoop, udata: cast[pointer](res))
+    res.rwsabuf = WSABUF(
+      buf: cast[cstring](baseAddr res.buffer), len: ULONG(len(res.buffer))
+    )
     GC_ref(res)
     # Start tracking transport
     trackCounter(DgramTransportTrackerName)
@@ -590,7 +606,8 @@ else:
             Protocol.IPPROTO_IP
           else:
             Protocol.IPPROTO_UDP
-        let res = createAsyncSocket2(local.getDomain(), SockType.SOCK_DGRAM, proto)
+        let res =
+          createAsyncSocket2(local.getDomain(), SockType.SOCK_DGRAM, proto)
         if res.isErr():
           raiseTransportOsError(res.error)
         res.get()
@@ -622,7 +639,9 @@ else:
 
       if ttl > 0:
         if local.family == AddressFamily.IPv4:
-          setSockOpt2(localSock, osdefs.IPPROTO_IP, osdefs.IP_MULTICAST_TTL, cint(ttl)).isOkOr:
+          setSockOpt2(
+            localSock, osdefs.IPPROTO_IP, osdefs.IP_MULTICAST_TTL, cint(ttl)
+          ).isOkOr:
             if sock == asyncInvalidSocket:
               closeSocket(localSock)
             raiseTransportOsError(error)
@@ -649,7 +668,9 @@ else:
       var saddr: Sockaddr_storage
       var slen: SockLen
       toSAddr(local, saddr, slen)
-      if bindSocket(SocketHandle(localSock), cast[ptr SockAddr](addr saddr), slen) != 0:
+      if bindSocket(
+        SocketHandle(localSock), cast[ptr SockAddr](addr saddr), slen
+      ) != 0:
         let err = osLastError()
         if sock == asyncInvalidSocket:
           closeSocket(localSock)
@@ -666,8 +687,9 @@ else:
 
     if remote.port != Port(0):
       let remoteAddress = res.setRemoteAddress(remote)
-      if connect(SocketHandle(localSock), cast[ptr SockAddr](addr res.waddr), res.walen) !=
-          0:
+      if connect(
+        SocketHandle(localSock), cast[ptr SockAddr](addr res.waddr), res.walen
+      ) != 0:
         let err = osLastError()
         if sock == asyncInvalidSocket:
           closeSocket(localSock)
@@ -1142,7 +1164,9 @@ proc closed*(transp: DatagramTransport): bool {.inline.} =
   ## Returns ``true`` if transport in closed state.
   {ReadClosed, WriteClosed} * transp.state != {}
 
-proc closeWait*(transp: DatagramTransport): Future[void] {.async: (raises: []).} =
+proc closeWait*(
+    transp: DatagramTransport
+): Future[void] {.async: (raises: []).} =
   ## Close transport ``transp`` and release all resources.
   if not transp.closed():
     transp.close()
@@ -1158,8 +1182,9 @@ proc send*(
   if transp.remote.port == Port(0):
     retFuture.fail(newException(TransportError, "Remote peer not set!"))
     return retFuture
-  let vector =
-    GramVector(kind: WithoutAddress, buf: pbytes, buflen: nbytes, writer: retFuture)
+  let vector = GramVector(
+    kind: WithoutAddress, buf: pbytes, buflen: nbytes, writer: retFuture
+  )
   transp.queue.addLast(vector)
   if WritePaused in transp.state:
     let wres = transp.resumeWrite()
@@ -1187,7 +1212,10 @@ proc send*(
   )
 
   let vector = GramVector(
-    kind: WithoutAddress, buf: baseAddr localCopy, buflen: length, writer: retFuture
+    kind: WithoutAddress,
+    buf: baseAddr localCopy,
+    buflen: length,
+    writer: retFuture,
   )
 
   transp.queue.addLast(vector)
@@ -1217,7 +1245,10 @@ proc send*[T](
   )
 
   let vector = GramVector(
-    kind: WithoutAddress, buf: baseAddr localCopy, buflen: length, writer: retFuture
+    kind: WithoutAddress,
+    buf: baseAddr localCopy,
+    buflen: length,
+    writer: retFuture,
   )
   transp.queue.addLast(vector)
   if WritePaused in transp.state:
@@ -1227,14 +1258,21 @@ proc send*[T](
   return retFuture
 
 proc sendTo*(
-    transp: DatagramTransport, remote: TransportAddress, pbytes: pointer, nbytes: int
+    transp: DatagramTransport,
+    remote: TransportAddress,
+    pbytes: pointer,
+    nbytes: int,
 ): Future[void] {.async: (raw: true, raises: [TransportError, CancelledError]).} =
   ## Send buffer with pointer ``pbytes`` and size ``nbytes`` using transport
   ## ``transp`` to remote destination address ``remote``.
   let retFuture = newFuture[void]("datagram.transport.sendTo(pointer)")
   transp.checkClosed(retFuture)
   let vector = GramVector(
-    kind: WithAddress, buf: pbytes, buflen: nbytes, writer: retFuture, address: remote
+    kind: WithAddress,
+    buf: pbytes,
+    buflen: nbytes,
+    writer: retFuture,
+    address: remote,
   )
   transp.queue.addLast(vector)
   if WritePaused in transp.state:
@@ -1244,7 +1282,10 @@ proc sendTo*(
   return retFuture
 
 proc sendTo*(
-    transp: DatagramTransport, remote: TransportAddress, msg: string, msglen = -1
+    transp: DatagramTransport,
+    remote: TransportAddress,
+    msg: string,
+    msglen = -1,
 ): Future[void] {.async: (raw: true, raises: [TransportError, CancelledError]).} =
   ## Send string ``msg`` using transport ``transp`` to remote destination
   ## address ``remote``.
@@ -1277,7 +1318,10 @@ proc sendTo*(
   return retFuture
 
 proc sendTo*[T](
-    transp: DatagramTransport, remote: TransportAddress, msg: seq[T], msglen = -1
+    transp: DatagramTransport,
+    remote: TransportAddress,
+    msg: seq[T],
+    msglen = -1,
 ): Future[void] {.async: (raw: true, raises: [TransportError, CancelledError]).} =
   ## Send sequence ``msg`` using transport ``transp`` to remote destination
   ## address ``remote``.
@@ -1321,7 +1365,9 @@ proc peekMessage*(
     msg = transp.buffer
   msglen = transp.buflen
 
-proc getMessage*(transp: DatagramTransport): seq[byte] {.raises: [TransportError].} =
+proc getMessage*(
+    transp: DatagramTransport
+): seq[byte] {.raises: [TransportError].} =
   ## Copy data from internal message buffer and return result.
   if ReadError in transp.state:
     transp.state.excl(ReadError)

@@ -38,10 +38,12 @@ proc update(bucket: TokenBucket, currentTime: Moment) =
 
   let
     timeDelta = currentTime - bucket.lastUpdate
-    fillPercent = timeDelta.milliseconds.float / bucket.fillDuration.milliseconds.float
+    fillPercent =
+      timeDelta.milliseconds.float / bucket.fillDuration.milliseconds.float
     replenished = int(bucket.budgetCap.float * fillPercent)
     deltaFromReplenished = int(
-      bucket.fillDuration.milliseconds.float * replenished.float / bucket.budgetCap.float
+      bucket.fillDuration.milliseconds.float * replenished.float /
+        bucket.budgetCap.float
     )
 
   bucket.lastUpdate += milliseconds(deltaFromReplenished)
@@ -82,7 +84,8 @@ proc worker(bucket: TokenBucket) {.async.} =
         let
           nextCycleValue = float(min(waiter.value, bucket.budgetCap))
           budgetRatio = nextCycleValue.float / bucket.budgetCap.float
-          timeToTarget = int(budgetRatio * bucket.fillDuration.milliseconds.float) + 1
+          timeToTarget =
+            int(budgetRatio * bucket.fillDuration.milliseconds.float) + 1
           #TODO this will create a timer for each blocked bucket,
           #which may cause performance issue when creating many
           #buckets
@@ -95,7 +98,9 @@ proc worker(bucket: TokenBucket) {.async.} =
 
   bucket.workFuture = nil
 
-proc consume*(bucket: TokenBucket, tokens: int, now = Moment.now()): Future[void] =
+proc consume*(
+    bucket: TokenBucket, tokens: int, now = Moment.now()
+): Future[void] =
   ## Wait for `tokens` to be available, and consume them.
 
   let retFuture = newFuture[void]("TokenBucket.consume")
@@ -128,7 +133,9 @@ proc replenish*(bucket: TokenBucket, tokens: int, now = Moment.now()) =
   bucket.update(now)
   bucket.manuallyReplenished.fire()
 
-proc new*(T: type[TokenBucket], budgetCap: int, fillDuration: Duration = 1.seconds): T =
+proc new*(
+    T: type[TokenBucket], budgetCap: int, fillDuration: Duration = 1.seconds
+): T =
   ## Create a TokenBucket
   T(
     budget: budgetCap,

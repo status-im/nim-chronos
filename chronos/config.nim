@@ -96,7 +96,8 @@ const
 
 when defined(chronosStrictException):
   {.
-    warning: "-d:chronosStrictException has been deprecated in favor of handleException"
+    warning:
+      "-d:chronosStrictException has been deprecated in favor of handleException"
   .}
   # In chronos v3, this setting was used as the opposite of
   # `chronosHandleException` - the setting is deprecated to encourage
@@ -119,9 +120,15 @@ when defined(debug) or defined(chronosConfig):
     printOption("chronosEventEngine", chronosEventEngine)
     printOption("chronosEventsCount", chronosEventsCount)
     printOption("chronosInitialSize", chronosInitialSize)
-    printOption("chronosTransportDefaultBufferSize", chronosTransportDefaultBufferSize)
-    printOption("chronosStreamDefaultBufferSize", chronosStreamDefaultBufferSize)
-    printOption("chronosTLSSessionCacheBufferSize", chronosTLSSessionCacheBufferSize)
+    printOption(
+      "chronosTransportDefaultBufferSize", chronosTransportDefaultBufferSize
+    )
+    printOption(
+      "chronosStreamDefaultBufferSize", chronosStreamDefaultBufferSize
+    )
+    printOption(
+      "chronosTLSSessionCacheBufferSize", chronosTLSSessionCacheBufferSize
+    )
 
 # In nim 1.6, `sink` + local variable + `move` generates the best code for
 # moving a proc parameter into a closure - this only works for closure

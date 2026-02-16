@@ -14,8 +14,10 @@ import ../../streams/[asyncstream, boundstream]
 import httpcommon
 
 const
-  HttpBodyReaderTrackerName* = "http.body.reader" ## HTTP body reader leaks tracker name
-  HttpBodyWriterTrackerName* = "http.body.writer" ## HTTP body writer leaks tracker name
+  HttpBodyReaderTrackerName* = "http.body.reader"
+    ## HTTP body reader leaks tracker name
+  HttpBodyWriterTrackerName* = "http.body.writer"
+    ## HTTP body writer leaks tracker name
 
 type
   HttpBodyReader* = ref object of AsyncStreamReader

@@ -18,5 +18,6 @@ const
   ChronosPatch* {.intdefine.}: int = 2 ## Patch number of Chronos' version.
   ChronosVersion* = $ChronosMajor & "." & $ChronosMinor & "." & $ChronosPatch
     ## Version of Chronos as a string.
-  ChronosIdent* = "$1/$2 ($3/$4)" % [ChronosName, ChronosVersion, hostCPU, hostOS]
+  ChronosIdent* =
+    "$1/$2 ($3/$4)" % [ChronosName, ChronosVersion, hostCPU, hostOS]
     ## Project ident name for networking services

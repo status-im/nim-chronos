@@ -86,7 +86,8 @@ when not (defined(windows)):
   else:
     proc checkBusy(fd: cint): bool =
       var data = 0'u64
-      let res = handleEintr(recv(SocketHandle(fd), addr data, sizeof(uint64), MSG_PEEK))
+      let res =
+        handleEintr(recv(SocketHandle(fd), addr data, sizeof(uint64), MSG_PEEK))
       if res == sizeof(uint64): true else: false
 
   func toTimeval(a: Duration): Timeval =
@@ -261,7 +262,9 @@ proc waitSync*(
         when defined(linux):
           handleEintr(read(eventFd, addr data, sizeof(uint64)))
         else:
-          handleEintr(recv(SocketHandle(eventFd), addr data, sizeof(uint64), cint(0)))
+          handleEintr(
+            recv(SocketHandle(eventFd), addr data, sizeof(uint64), cint(0))
+          )
       if res < 0:
         let errorCode = osLastError()
         # If errorCode == EAGAIN it means that reading operation is already
@@ -305,7 +308,9 @@ proc fire*(
             handleEintr(write(eventFd, addr data, sizeof(uint64)))
           else:
             handleEintr(
-              send(SocketHandle(eventFd), addr data, sizeof(uint64), MSG_NOSIGNAL)
+              send(
+                SocketHandle(eventFd), addr data, sizeof(uint64), MSG_NOSIGNAL
+              )
             )
         if res < 0:
           let errorCode = osLastError()
@@ -374,8 +379,9 @@ else:
   proc wait*(
       signal: ThreadSignalPtr
   ): Future[void] {.async: (raises: [AsyncError, CancelledError], raw: true).} =
-    let retFuture =
-      Future[void].Raising([AsyncError, CancelledError]).init("asyncthreadsignal.wait")
+    let retFuture = Future[void].Raising([AsyncError, CancelledError]).init(
+        "asyncthreadsignal.wait"
+      )
     var data = 1'u64
     let eventFd =
       when defined(linux):
@@ -389,7 +395,9 @@ else:
           when defined(linux):
             handleEintr(read(eventFd, addr data, sizeof(uint64)))
           else:
-            handleEintr(recv(SocketHandle(eventFd), addr data, sizeof(uint64), cint(0)))
+            handleEintr(
+              recv(SocketHandle(eventFd), addr data, sizeof(uint64), cint(0))
+            )
         if res < 0:
           let errorCode = osLastError()
           # If errorCode == EAGAIN it means that reading operation is already

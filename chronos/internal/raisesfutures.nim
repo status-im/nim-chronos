@@ -117,7 +117,9 @@ template init*[T, E](
       doAssert FutureFlag.OwnCancelSchedule in flags,
         "Manually created futures must either own cancellation schedule or raise CancelledError"
 
-  internalInitFutureBase(res, getSrcLocation(fromProc), FutureState.Pending, flags)
+  internalInitFutureBase(
+    res, getSrcLocation(fromProc), FutureState.Pending, flags
+  )
   res
 
 proc containsSignature(
@@ -178,7 +180,10 @@ proc getRaisesTypes*(raises: NimNode): NimNode =
     typ
 
 macro checkRaises*[T: CatchableError](
-    future: InternalRaisesFuture, raises: typed, error: ref T, warn: static bool = true
+    future: InternalRaisesFuture,
+    raises: typed,
+    error: ref T,
+    warn: static bool = true,
 ): untyped =
   ## Generate code that checks that the given error is compatible with the
   ## raises restrictions of `future`.
@@ -193,7 +198,9 @@ macro checkRaises*[T: CatchableError](
   let toMatch = getTypeInst(error)[0]
 
   if isNoRaises(raises):
-    error("`fail`: `" & repr(toMatch) & "` incompatible with `raises: []`", future)
+    error(
+      "`fail`: `" & repr(toMatch) & "` incompatible with `raises: []`", future
+    )
     return
 
   var
@@ -238,7 +245,9 @@ macro checkRaises*[T: CatchableError](
 func failed*[T](future: InternalRaisesFuture[T, void]): bool {.inline.} =
   ## Determines whether ``future`` finished with an error.
   static:
-    warning("No exceptions possible with this operation, `failed` always returns false")
+    warning(
+      "No exceptions possible with this operation, `failed` always returns false"
+    )
 
   false
 
@@ -246,12 +255,16 @@ func error*[T](
     future: InternalRaisesFuture[T, void]
 ): ref CatchableError {.raises: [].} =
   static:
-    warning("No exceptions possible with this operation, `error` always returns nil")
+    warning(
+      "No exceptions possible with this operation, `error` always returns nil"
+    )
   nil
 
 func readError*[T](
     future: InternalRaisesFuture[T, void]
 ): ref CatchableError {.raises: [ValueError].} =
   static:
-    warning("No exceptions possible with this operation, `readError` always raises")
+    warning(
+      "No exceptions possible with this operation, `readError` always raises"
+    )
   raise newException(ValueError, "No error in future.")

@@ -140,7 +140,9 @@ template newFutureSeq*[A, B](
   ## that this future belongs to, is a good habit as it helps with debugging.
   newFutureSeqImpl[A, B](getSrcLocation(fromProc))
 
-template newFutureStr*[T](fromProc: static[string] = ""): FutureStr[T] {.deprecated.} =
+template newFutureStr*[T](
+    fromProc: static[string] = ""
+): FutureStr[T] {.deprecated.} =
   ## Create a new future which can hold/preserve GC string until future will
   ## not be completed.
   ##
@@ -301,7 +303,8 @@ proc tryCancel(future: FutureBase, loc: ptr SrcLoc): bool =
     # mechanism and/or use a regular `addCallback`
     when chronosStrictFutureAccess:
       doAssert isNil(future.internalCancelcb),
-        "futures returned from `{.async.}` functions must not use " & "`cancelCallback`"
+        "futures returned from `{.async.}` functions must not use " &
+          "`cancelCallback`"
     tryCancel(future.internalChild, loc)
   else:
     if not (isNil(future.internalCancelcb)):
@@ -342,7 +345,8 @@ proc removeCallback*(future: FutureBase, cb: CallbackFunc, udata: pointer) =
   doAssert(not isNil(cb))
   # Make sure to release memory associated with callback, or reference chains
   # may be created!
-  if future.internalCallback.function == cb and future.internalCallback.udata == udata:
+  if future.internalCallback.function == cb and
+      future.internalCallback.udata == udata:
     future.internalCallback.reset()
 
   future.internalCallbacks.keepItIf:
@@ -549,7 +553,9 @@ macro internalRaiseIfError*(fut: InternalRaisesFuture, raises, info: typed) =
       if not (isNil(`fut`.internalError)):
         # This would indicate a bug in which `error` was set via the non-raising
         # base type
-        raiseAssert("Error set on a non-raising future: " & `fut`.internalError.msg)
+        raiseAssert(
+          "Error set on a non-raising future: " & `fut`.internalError.msg
+        )
 
   expectKind(types, nnkBracketExpr)
   expectKind(types[0], nnkSym)
@@ -586,7 +592,9 @@ macro internalRaiseIfError*(fut: InternalRaisesFuture, raises, info: typed) =
   res.deepLineInfo(info)
   res
 
-proc readFinished[T: not void](fut: Future[T]): lent T {.raises: [CatchableError].} =
+proc readFinished[T: not void](
+    fut: Future[T]
+): lent T {.raises: [CatchableError].} =
   # Read a future that is known to be finished, avoiding the extra exception
   # effect.
   internalRaiseIfError(fut, fut)
@@ -633,13 +641,15 @@ proc readError*(fut: FutureBase): ref CatchableError {.raises: [FutureError].} =
 
 template taskFutureLocation(future: FutureBase): string =
   let loc = future.location[LocationKind.Create]
-  "[" & (if len(loc.procedure) == 0: "[unspecified]"
-  else: $loc.procedure & "()") & " at " & $loc.file & ":" & $(loc.line) & "]"
+  "[" & (
+    if len(loc.procedure) == 0: "[unspecified]"
+    else: $loc.procedure & "()"
+  ) & " at " & $loc.file & ":" & $(loc.line) & "]"
 
 template taskErrorMessage(future: FutureBase): string =
-  "Asynchronous task " & taskFutureLocation(future) & " finished with an exception \"" &
-    $future.error.name & "\"!\nMessage: " & future.error.msg & "\nStack trace: " &
-    future.error.getStackTrace()
+  "Asynchronous task " & taskFutureLocation(future) &
+    " finished with an exception \"" & $future.error.name & "\"!\nMessage: " &
+    future.error.msg & "\nStack trace: " & future.error.getStackTrace()
 
 template taskCancelMessage(future: FutureBase): string =
   "Asynchronous task " & taskFutureLocation(future) & " was cancelled!"
@@ -664,7 +674,9 @@ proc pollFor[F: Future | InternalRaisesFuture](fut: F): F {.raises: [].} =
 
   fut
 
-proc waitFor*[T: not void](fut: Future[T]): lent T {.raises: [CatchableError].} =
+proc waitFor*[T: not void](
+    fut: Future[T]
+): lent T {.raises: [CatchableError].} =
   ## Blocks the current thread of execution until `fut` has finished, returning
   ## its value.
   ##
@@ -1043,7 +1055,8 @@ proc cancelAndWait(
     loc: ptr SrcLoc, futs: varargs[FutureBase]
 ): Future[void] {.async: (raw: true, raises: []).} =
   let retFuture = Future[void].Raising([]).init(
-      "chronos.cancelAndWait(varargs[FutureBase])", {FutureFlag.OwnCancelSchedule}
+      "chronos.cancelAndWait(varargs[FutureBase])",
+      {FutureFlag.OwnCancelSchedule},
     )
   var count = 0
 
@@ -1131,7 +1144,8 @@ proc noCancel*[F: SomeFuture](future: F): auto =
       E = F.E
       InternalRaisesFutureRaises = E.remove(CancelledError)
 
-  let retFuture = newFuture[F.T]("chronos.noCancel(T)", {FutureFlag.OwnCancelSchedule})
+  let retFuture =
+    newFuture[F.T]("chronos.noCancel(T)", {FutureFlag.OwnCancelSchedule})
   template completeFuture() =
     const canFail =
       when declared(InternalRaisesFutureRaises):
@@ -1409,7 +1423,9 @@ proc race*(
 
 proc race*(
     futs: openArray[FutureBase]
-): Future[FutureBase] {.async: (raw: true, raises: [ValueError, CancelledError]).} =
+): Future[FutureBase] {.
+    async: (raw: true, raises: [ValueError, CancelledError])
+.} =
   ## Returns a future which will complete and return finished FutureBase,
   ## when one of the futures in ``futs`` will be completed, failed or canceled.
   ##
@@ -1428,7 +1444,9 @@ proc race*(
 
 proc race*(
     futs: openArray[SomeFuture]
-): Future[FutureBase] {.async: (raw: true, raises: [ValueError, CancelledError]).} =
+): Future[FutureBase] {.
+    async: (raw: true, raises: [ValueError, CancelledError])
+.} =
   ## Returns a future which will complete and return completed FutureBase,
   ## when one of the futures in ``futs`` will be completed, failed or canceled.
   ##
@@ -1570,7 +1588,8 @@ proc withTimeout*[T](
   ## otherwise, if ``timeout`` milliseconds has elapsed first, the returned
   ## future will hold false.
   var
-    retFuture = newFuture[bool]("chronos.withTimeout", {FutureFlag.OwnCancelSchedule})
+    retFuture =
+      newFuture[bool]("chronos.withTimeout", {FutureFlag.OwnCancelSchedule})
       # We set `OwnCancelSchedule` flag, because we going to cancel `retFuture`
       # manually at proper time.
     moment: Moment
@@ -1641,7 +1660,9 @@ proc withTimeout*[T](
 ): Future[bool] {.inline, deprecated: "Use withTimeout(Future[T], Duration)".} =
   withTimeout(fut, timeout.milliseconds())
 
-proc waitUntilImpl[F: SomeFuture](fut: F, retFuture: auto, deadline: auto): auto =
+proc waitUntilImpl[F: SomeFuture](
+    fut: F, retFuture: auto, deadline: auto
+): auto =
   var timeouted = false
 
   template completeFuture(fut: untyped, timeout: bool): untyped =
@@ -1770,7 +1791,8 @@ proc wait*[T](fut: Future[T], timeout = InfiniteDuration): Future[T] =
   ##
   ## TODO: In case when ``fut`` got cancelled, what result Future[T]
   ## should return, because it can't be cancelled too.
-  var retFuture = newFuture[T]("chronos.wait(duration)", {FutureFlag.OwnCancelSchedule})
+  var retFuture =
+    newFuture[T]("chronos.wait(duration)", {FutureFlag.OwnCancelSchedule})
     # We set `OwnCancelSchedule` flag, because we going to cancel `retFuture`
     # manually at proper time.
 
@@ -1801,7 +1823,8 @@ proc wait*[T](fut: Future[T], deadline: SomeFuture): Future[T] =
   ## `AsyncTimeoutError`.
   ##
   ## If you need to cancel `future` - cancel `waitUntil(future)` instead.
-  var retFuture = newFuture[T]("chronos.wait(future)", {FutureFlag.OwnCancelSchedule})
+  var retFuture =
+    newFuture[T]("chronos.wait(future)", {FutureFlag.OwnCancelSchedule})
     # We set `OwnCancelSchedule` flag, because we going to cancel `retFuture`
     # manually at proper time.
   waitUntilImpl(fut, retFuture, deadline)
@@ -1846,7 +1869,9 @@ when defined(windows):
 
   proc waitForSingleObject*(
       handle: HANDLE, timeout: Duration
-  ): Future[WaitableResult] {.async: (raises: [AsyncError, CancelledError], raw: true).} =
+  ): Future[WaitableResult] {.
+      async: (raises: [AsyncError, CancelledError], raw: true)
+  .} =
     ## Waits until the specified object is in the signaled state or the
     ## time-out interval elapses. WaitForSingleObject() for asynchronous world.
     let flags = WT_EXECUTEONLYONCE
