@@ -50,8 +50,8 @@ proc run(args, path: string) =
 proc tryExec(cmd: string) =
   try:
     exec cmd
-  except:
-    echo getCurrentExceptionMsg()
+  except Exception as e:
+    echo e.msg
 
 task examples, "Build examples":
   # Build book examples
