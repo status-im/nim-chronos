@@ -50,7 +50,7 @@ Now let's see what we're doing here line by line.
 import chronos/apps/http/httpclient
 ```
 
-`httpclient` module, as the title suggests, implements the HTTP client capabilities, i.e. sending HTTP requests and dealing with the responses asynchronously.
+[`httpclient`](/api/chronos/apps/http/httpclient.html) module, as the title suggests, implements the HTTP client capabilities, i.e. sending HTTP requests and dealing with the responses asynchronously.
 
 ```nim
 proc check(url: string) {.async.} =
@@ -71,9 +71,9 @@ try:
 
 When dealing with the Web, we must always assume the connection can break. So it's a good idea to get wrap all web interactions in a `try-except` block.
 
-`fetch` is a shortcut for "create an HTTP GET request within the given session to the given URL."
+[`fetch`](/api/chronos/apps/http/httpclient.html#fetch,HttpSessionRef,Uri) is a shortcut for "create an HTTP GET request within the given session to the given URL."
 
-`parseUri` is a function that parses a string into a structured URI object.
+[`parseUri`](https://nim-lang.org/docs/uri.html#parseUri,string) is a function that parses a string into a structured URI object.
 
 Notice that when we are assigning a value to `response`, we do not just call `fetch` but put an `await` before it. This is because `fetch` returns a `Future`, i.e. a not-yet-ready-result. `await` signals to the runtime that this function is interested in this computation result but while it's waiting for it, some other routine can take control.
 
@@ -98,9 +98,9 @@ finally:
   await noCancel(session.closeWait())
 ```
 
-Regardless of how successful our check was, we must close the session after we're done with in and return the resources back to your computer. `closeWait` is a function that schedules all open connections within this session to be closed.
+Regardless of how successful our check was, we must close the session after we're done with in and return the resources back to your computer. [`closeWait`](/api/chronos/apps/http/httpclient.html#closeWait,HttpSessionRef) is a function that schedules all open connections within this session to be closed.
 
-We added `noCancel` to make sure the closing procedure is not cancelled with a propagated `CancellationError` from another function. Use `noCancel` in resource-critical operations or atomic operation groups that must either all complete or all fail.
+We added [`noCancel`](/api/chronos/internal/asyncfutures.html#noCancel,F) to make sure the closing procedure is not cancelled with a propagated `CancellationError` from another function. Use `noCancel` in resource-critical operations or atomic operation groups that must either all complete or all fail.
 
 ```nim
 when isMainModule:
