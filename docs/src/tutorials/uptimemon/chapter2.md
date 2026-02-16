@@ -54,7 +54,7 @@ We want Chronos to start all the requests at the same time and each other's resu
 To achive that, we will:
 1. Introduce a new async function that will schedule the checks. We can't do that outside if a function because async calls are allowed only in async functions.
 2. Create one HTTP session for all requests instead of creting a new session for each request.
-3. Store all `Future`s that correspond to pending HTTP requests and await them all at once with Chronos's `allFutures` helper.
+3. Store all `Future`s that correspond to pending HTTP requests and await them all at once with Chronos's [`allFutures`](/api/chronos/internal/asyncfutures.html#allFutures,varargs[Future[T]]) helper.
 
 Here's the code:
 

@@ -29,7 +29,7 @@ proc check(session: HttpSessionRef, uri: string) {.async.} =
     if request.isErr:
       raise newException(HttpRequestError, request.error)
 
-    let responseFuture = request.get.send()
+    let responseFuture = request.value.send()
 
     if await responseFuture.withTimeout(5.seconds):
       let response = responseFuture.read()

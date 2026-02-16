@@ -1,4 +1,4 @@
-# Smarter Health Check
+# Smarter Health Check with Streaming
 
 **Goal:** Learn how to use streaming to check web page content without fully downloading it.
 
@@ -41,7 +41,7 @@ proc check(session: HttpSessionRef, uri: string) {.async.} =
     if request.isErr:
       raise newException(HttpRequestError, request.error)
 
-    let responseFuture = request.get.send()
+    let responseFuture = request.value.send()
 
     if await responseFuture.withTimeout(5.seconds):
       let response = responseFuture.read()
@@ -82,19 +82,19 @@ if request.isErr:
   raise newException(HttpRequestError, request.error)
 ```
 
-Request creation can fail, so we need to check that before proceeding: if an error happened, raise a `HttpRequestError` to be caught downstream. We use `request.error` to get the message of the error.
+Request creation can fail, so we need to check that before proceeding: if an error happened, raise a `HttpRequestError` to be caught downstream. We use [`request.error`](/api/chronos/apps/http/httpclient.html#HttpClientRequest) to get the message of the error.
 
 ```admonish note
 You may wonder why we do an explicit check while the entire block is already wrapped in `try`.
 
-That's because `request.get` raises `ResultDefect` if request creation failed which is not a `CatchableError` and would slip through our `except`.
+That's because [`value`](https://github.com/arnetheduck/nim-results/blob/master/results.nim#L870), which is called later to get the actual request instance, raises `ResultDefect` if request creation failed which is not a `CatchableError` and would slip through our `except`.
 ```
 
 ```nim
-let responseFuture = request.get.send()
+let responseFuture = request.value.send()
 ```
 
-We send the request and get a `Future`, which we can await on later just like before.
+We send the request with [`send`](/api/chronos/apps/http/httpclient.html#send,HttpClientRequestRef) and get a `Future`, which we can await on later just like before.
 
 Run the program and you'll see the correct `[OK]` result for https://html.spec.whatwg.org:
 
@@ -144,7 +144,7 @@ proc check(session: HttpSessionRef, uri: string) {.async.} =
     if request.isErr:
       raise newException(HttpRequestError, request.error)
 
-    let responseFuture = request.get.send()
+    let responseFuture = request.value.send()
 
     if await responseFuture.withTimeout(5.seconds):
       let response = responseFuture.read()
@@ -201,7 +201,7 @@ If you see an async function without a return type, this async function simply r
 let bodyReader = response.getBodyReader()
 ```
 
-To stream the response body, we're using a `bodyReader`. To get one for the current response, we're calling `getBodyReader()`.
+To stream the response body, we're using a `bodyReader`. To get one for the current response, we're calling [`getBodyReader`](/api/chronos/apps/http/httpclient.html#getBodyReader,HttpClientResponseRef).
 
 ```nim
 var
@@ -224,7 +224,7 @@ Now we're fetching chunks of data in a loop. We stop if the marker has been spot
 let bytesRead = await bodyReader.readOnce(addr(buffer[0]), len(buffer))
 ```
 
-`readOnce` reads `len(buffer)` bytes of data (1024 in our case) and stores them in `buffer`. Since `readOnce` expects a pointer to the container for the fetched bytes, we pass the address of the first item in `buffer`.
+[`readOnce`](/api/chronos/transports/stream.html#readOnce,StreamTransport,pointer,int) reads `len(buffer)` bytes of data (1024 in our case) and stores them in `buffer`. Since `readOnce` expects a pointer to the container for the fetched bytes, we pass the address of the first item in `buffer`.
 
 ```nim
 if bytesRead == 0:

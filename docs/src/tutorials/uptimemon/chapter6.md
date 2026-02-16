@@ -161,7 +161,7 @@ proc check(session: HttpSessionRef, uri: string, semaphore: AsyncSemaphore) {.as
     release (semaphore)
 ```
 
-We've modified `check` function for a single URI so that it accepts a `semaphore`, waits to `acquire` it, and `release`s it at the end (we use `defer` to postpone the release).
+We've modified `check` function for a single URI so that it accepts a `semaphore` (of type[`AsyncSemaphore`](/api/chronos/asyncsync.html#AsyncSemaphore)), waits to [`acquire`](/api/chronos/asyncsync.html#acquire,AsyncSemaphore) it, and [`release`](/api/chronos/asyncsync.html#release,AsyncSemaphore)s it at the end (we use `defer` to postpone the release).
 
 With this short addition, we prevent `check` from running if the semaphore is full.
 

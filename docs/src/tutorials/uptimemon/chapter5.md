@@ -1,4 +1,4 @@
-# Sending Alerts
+# Sending Alerts with POST Requests
 
 **Goal:** Learn how to send POST HTTP requests and set request headers.
 
@@ -148,7 +148,7 @@ Here we set the headers as an arrays of tuples using Nim's shortcut syntax.
 body = message.stringToBytes()
 ```
 
-Requests body must be a sequence of bytes so we convert our text message using `stringToBytes`.
+Requests body must be a sequence of bytes so we convert our text message using [`stringToBytes`](/api/chronos/apps/http/httpcommon.html#stringToBytes,openArray[char]).
 
 ```nim
 request = HttpClientRequestRef.new(

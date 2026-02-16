@@ -1,4 +1,4 @@
-# Uptime Monitor
+# HTTP Client: Uptime Monitor
 
 In this tutorial, we'll create a performant and efficient monitoring service using Chronos. The service will regularly check URIs from a given list and notify you if a URI is unavailable.
 

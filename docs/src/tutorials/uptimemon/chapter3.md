@@ -78,7 +78,7 @@ proc check(session: HttpSessionRef, uri: string) {.async.} =
 ```
 
 1. We create a `Future` before awaiting on it.
-2. Then we `await` it with the special `withTimeout` modifier. This modifier returns `true` if the `Future` passed to it completed before the timeout and `false` otherwise.
+2. Then we `await` it with the special [`withTimeout`](/api/chronos/internal/asyncfutures.html#withTimeout,Future[T],Duration) modifier. This modifier returns `true` if the `Future` passed to it completed before the timeout and `false` otherwise.
 3. If the timeout exhausted before we got our response, we raise an exception that is caught downstream. 
 
 Run the program again and you'll see it complete in roughly 5 seconds, i.e. our timeout.
