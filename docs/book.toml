@@ -1,6 +1,7 @@
 [book]
 authors = ["Jacek Sieka", "Constantine Molchanov"]
 language = "en"
+multilingual = false
 src = "src"
 title = "Chronos"
 
@@ -16,8 +17,10 @@ git-branch = "master"
 
 [preprocessor.admonish]
 command = "mdbook-admonish"
-assets_version = "3.1.0" # do not edit: managed by `mdbook-admonish install`
+assets_version = "3.1.0"    # do not edit: managed by `mdbook-admonish install`
+
+[preprocessor.shiftinclude]
 
 [output.html]
 git-repository-url = "https://github.com/status-im/nim-chronos/"
-additional-css = ["open-in.css",  "mdbook-admonish.css"]
+additional-css = ["open-in.css", "mdbook-admonish.css"]
