@@ -1,3 +1,4 @@
+# ANCHOR: all
 import chronos/apps/http/httpclient
 
 const uris = @[
@@ -5,7 +6,8 @@ const uris = @[
   "http://10.255.255.1",
 ]
 
-proc check(session: HttpSessionRef, uri: string) {.async.} =
+# ANCHOR: proc_uris
+proc check(session: HttpSessionRef, uri: string) {.async: (raises: [CancelledError]).} =
   try:
     let responseFuture = session.fetch(parseUri(uri))
 
@@ -18,10 +20,11 @@ proc check(session: HttpSessionRef, uri: string) {.async.} =
         echo "[NOK] " & uri & ": " & $response.status
     else:
       raise newException(AsyncTimeoutError, "Connection timed out")
-  except CatchableError:
+  except HttpError, FuturePendingError, AsyncTimeoutError:
     echo "[ERR] " & uri & ": " & getCurrentExceptionMsg()
+# ANCHOR_END: proc_uris
 
-proc check(uris: seq[string]) {.async.} =
+proc check(uris: seq[string]) {.async: (raises: [CancelledError]).} =
   let session = HttpSessionRef.new()
   var futures: seq[Future[void]]
 
@@ -33,3 +36,4 @@ proc check(uris: seq[string]) {.async.} =
 
 when isMainModule:
   waitFor check(uris)
+# ANCHOR_END: all
