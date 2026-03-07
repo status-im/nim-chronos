@@ -4,7 +4,7 @@ import chronos/apps/http/httpclient
 # ANCHOR_END: import
 
 # ANCHOR: proc
-proc check(uri: string) {.async.} =
+proc check(uri: string) {.async: (raises: [CancelledError]).} =
 # ANCHOR_END: proc
 # ANCHOR: session
   let session = HttpSessionRef.new()
@@ -22,7 +22,7 @@ proc check(uri: string) {.async.} =
       echo "[NOK] " & uri & ": " & $response.status
 # ANCHOR_END: status
 # ANCHOR: except
-  except CatchableError:
+  except HttpError:
     echo "[ERR] " & uri & ": " & getCurrentExceptionMsg()
 # ANCHOR_END: except
 # ANCHOR: finally

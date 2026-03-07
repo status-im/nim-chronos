@@ -38,7 +38,11 @@ Now let's see what we're doing here line by line.
 {{#shiftinclude auto:../../../examples/uptimemon/chapter1.nim:proc}}
 ```
 
-We define a function that sends an HTTP request to a URL we provide, checks if this URL is available, and prints the result. Note that this function must be annotated with `async` pragma because we won't call it directly but instead will "book" its execution from Chronos in an asynchronous way.
+We define a function that sends an HTTP request to a URL we provide, checks if this URL is available, and prints the result.
+
+Note that this function is annotated with `async` pragma because we won't call it directly but instead will "book" its execution from Chronos in an asynchronous way.
+
+Also note the `raises: [CancelledError]` part. This is Chronos's way of announcing the exceptions that are expected to the raised by this function. This mechanism is called [checked exceptions](../../error_handling.md#checked-exceptions). In this particular case, we tell the compiler that this function has cancellable things inside it and propagates the cancellation to its caller. No other exceptions should leak from it and if they do, it's a defect in the program.
 
 ```nim
 {{#shiftinclude auto:../../../examples/uptimemon/chapter1.nim:session}}
@@ -68,7 +72,9 @@ Once we've received our response, we can check its status. If it's 200, we mark 
 {{#shiftinclude auto:../../../examples/uptimemon/chapter1.nim:except}}
 ```
 
-`CatchableError` comes from the Nim standard library and just means any exceptions that can be caught. If our request fails (for whatever reason), we catch that error and print it withj `getCurrentExceptionMsg`.
+If the request fails (e.g. the connection is unstable or the host is unreachable), `fetch` would raise a `HttpError` exception. Since raising this exception is part of our business logic, we catch it and report the error with `getCurrentExceptionMsg`.
+
+Note that catching `HttpError` does not contadict the `raises` value at the function definition: since we handle the exception and not re-raise it, our promise that only `CancelledError` ever emits from `check` is held true. 
 
 ```nim
 {{#shiftinclude auto:../../../examples/uptimemon/chapter1.nim:finally}}
