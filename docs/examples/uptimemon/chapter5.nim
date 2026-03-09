@@ -1,19 +1,29 @@
+# ANCHOR: all
 import chronos/apps/http/httpclient
 
+# ANCHOR: ntfy_topic
 const
-  ntfyTopic = "X3JIaLZSrFqBJXfJ"
+  ntfyTopic = "<YOUR_NTFY_TOPIC_NAME>"
+# ANCHOR_END: ntfy_topic
   uris = @[
     "https://duckduckgo.com/?q=chronos", "https://mock.codes/403",
     "http://123.456.78.90", "http://10.255.255.1", "https://html.spec.whatwg.org/",
     "https://mock.codes/200",
   ]
 
+# ANCHOR: sendAlert
 proc sendAlert(
     session: HttpSessionRef, message: string, priority = 3
-) {.async.} =
+) {.async: (raises: [CancelledError]).} =
   let
+# ANCHOR_END: sendAlert
+# ANCHOR: headers
     headers = {"Title": "Chronos Uptime Monitor", "Priority": $priority}
+# ANCHOR_END: headers
+# ANCHOR: body
     body = message.stringToBytes()
+# ANCHOR_END: body
+# ANCHOR: request
     request = HttpClientRequestRef.new(
       session,
       "https://ntfy.sh/" & ntfyTopic,
@@ -21,15 +31,22 @@ proc sendAlert(
       headers = headers,
       body = body,
     )
+# ANCHOR_END: request
 
+# ANCHOR: response
   if request.isOk:
     try:
       let response = await request.get.send()
       await response.closeWait()
-    except CatchableError:
+    except HttpError:
       echo "[WRN] Failed to send alert: " & getCurrentExceptionMsg()
+# ANCHOR_END: response
 
-proc findMarker(response: HttpClientResponseRef): Future[bool] {.async.} =
+proc findMarker(
+    response: HttpClientResponseRef
+): Future[bool] {.
+    async: (raises: [HttpUseClosedError, AsyncStreamError, CancelledError])
+.} =
   let bodyReader = response.getBodyReader()
 
   var
@@ -46,7 +63,8 @@ proc findMarker(response: HttpClientResponseRef): Future[bool] {.async.} =
 
     result = "<html" in bytesToString(fetchedBytes)
 
-proc check(session: HttpSessionRef, uri: string) {.async.} =
+# ANCHOR: check
+proc check(session: HttpSessionRef, uri: string) {.async: (raises: [CancelledError]).} =
   try:
     let request = HttpClientRequestRef.new(session, uri)
 
@@ -73,12 +91,13 @@ proc check(session: HttpSessionRef, uri: string) {.async.} =
         await session.sendAlert(message)
     else:
       raise newException(AsyncTimeoutError, "Connection timed out")
-  except CatchableError:
+  except HttpError, FuturePendingError, AsyncTimeoutError, AsyncStreamError:
     let message = "[ERR] " & uri & ": " & getCurrentExceptionMsg()
     echo message
     await session.sendAlert(message, 4)
+# ANCHOR_END: check
 
-proc check(uris: seq[string]) {.async.} =
+proc check(uris: seq[string]) {.async: (raises: [CancelledError]).} =
   let session = HttpSessionRef.new()
   var futures: seq[Future[void]]
 
@@ -90,3 +109,4 @@ proc check(uris: seq[string]) {.async.} =
 
 when isMainModule:
   waitFor check(uris)
+# ANCHOR_END: all
