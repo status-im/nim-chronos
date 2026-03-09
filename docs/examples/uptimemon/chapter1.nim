@@ -3,9 +3,9 @@
 import chronos/apps/http/httpclient
 # ANCHOR_END: import
 
-# ANCHOR: proc
+# ANCHOR: check
 proc check(uri: string) {.async: (raises: [CancelledError]).} =
-# ANCHOR_END: proc
+# ANCHOR_END: check
 # ANCHOR: session
   let session = HttpSessionRef.new()
 # ANCHOR_END: session

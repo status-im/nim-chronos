@@ -6,21 +6,23 @@ const uris = @[
   "http://10.255.255.1", "https://html.spec.whatwg.org/",
 ]
 
-proc check(session: HttpSessionRef, uri: string) {.async.} =
+proc check(session: HttpSessionRef, uri: string) {.async: (raises: [CancelledError]).} =
   try:
+    let
 # ANCHOR: request
-    let request = HttpClientRequestRef.new(session, uri)
+      request = HttpClientRequestRef.new(session, uri)
 # ANCHOR_END: request
 
 # ANCHOR: error_check
     if request.isErr:
       raise newException(HttpRequestError, request.error)
+
+    let
 # ANCHOR_END: error_check
 
 # ANCHOR: response
-    let responseFuture = request.value.send()
+      responseFuture = request.value.send()
 # ANCHOR_END: response
-
     if await responseFuture.withTimeout(5.seconds):
       let response = responseFuture.read()
 
@@ -30,10 +32,10 @@ proc check(session: HttpSessionRef, uri: string) {.async.} =
         echo "[NOK] " & uri & ": " & $response.status
     else:
       raise newException(AsyncTimeoutError, "Connection timed out")
-  except CatchableError:
+  except HttpError, FuturePendingError, AsyncTimeoutError:
     echo "[ERR] " & uri & ": " & getCurrentExceptionMsg()
 
-proc check(uris: seq[string]) {.async.} =
+proc check(uris: seq[string]) {.async: (raises: [CancelledError]).} =
   let session = HttpSessionRef.new()
   var futures: seq[Future[void]]
 

@@ -6,7 +6,7 @@ const uris = @[
   "http://10.255.255.1",
 ]
 
-# ANCHOR: proc_uris
+# ANCHOR: check
 proc check(session: HttpSessionRef, uri: string) {.async: (raises: [CancelledError]).} =
   try:
     let responseFuture = session.fetch(parseUri(uri))
@@ -22,7 +22,7 @@ proc check(session: HttpSessionRef, uri: string) {.async: (raises: [CancelledErr
       raise newException(AsyncTimeoutError, "Connection timed out")
   except HttpError, FuturePendingError, AsyncTimeoutError:
     echo "[ERR] " & uri & ": " & getCurrentExceptionMsg()
-# ANCHOR_END: proc_uris
+# ANCHOR_END: check
 
 proc check(uris: seq[string]) {.async: (raises: [CancelledError]).} =
   let session = HttpSessionRef.new()

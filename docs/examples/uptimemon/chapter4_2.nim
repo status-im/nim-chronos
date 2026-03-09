@@ -45,7 +45,7 @@ proc findMarker(
     result = "<html" in bytesToString(fetchedBytes)
 # ANCHOR_END: result
 
-proc check(session: HttpSessionRef, uri: string) {.async.} =
+proc check(session: HttpSessionRef, uri: string) {.async: (raises: [CancelledError]).} =
   try:
     let request = HttpClientRequestRef.new(session, uri)
 
@@ -70,10 +70,12 @@ proc check(session: HttpSessionRef, uri: string) {.async.} =
 # ANCHOR_END: url_response
     else:
       raise newException(AsyncTimeoutError, "Connection timed out")
-  except CatchableError:
+# ANCHOR: except
+  except HttpError, FuturePendingError, AsyncTimeoutError, AsyncStreamError:
+# ANCHOR_END: except
     echo "[ERR] " & uri & ": " & getCurrentExceptionMsg()
 
-proc check(uris: seq[string]) {.async.} =
+proc check(uris: seq[string]) {.async: (raises: [CancelledError]).} =
   let session = HttpSessionRef.new()
   var futures: seq[Future[void]]
 

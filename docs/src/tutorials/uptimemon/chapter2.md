@@ -95,13 +95,13 @@ Let's examine the changes since the previous version.
 We define a list of URIs to check. We've put a diverse group to see different responses: DuckDuckGo should respond with `[OK]`, Mock returns a 403 status, i.e. `[NOK]`, and the last one is a non-existant location visiting which should return `[ERR]`.
 
 ```nim
-{{#shiftinclude auto:../../../examples/uptimemon/chapter2.nim:proc_uris}}
+{{#shiftinclude auto:../../../examples/uptimemon/chapter2.nim:check_uri}}
 ```
 
 We add a new argument to our `check` function and remove the session closing part—session creation and destruction now happen in the caller function.
 
 ```nim
-{{#shiftinclude auto:../../../examples/uptimemon/chapter2.nim:proc_uri}}
+{{#shiftinclude auto:../../../examples/uptimemon/chapter2.nim:check_uris}}
 ```
 
 We add another `check` function but this ones takes a list of URIs, not one URI. In this function, we create a session (and close it at the end), and populate a list of `Future`s by creating one for each URI.

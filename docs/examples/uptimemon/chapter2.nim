@@ -7,7 +7,7 @@ const uris = @[
 ]
 # ANCHOR_END: uris
 
-# ANCHOR: proc_uris
+# ANCHOR: check_uri
 proc check(session: HttpSessionRef, uri: string) {.async: (raises: [CancelledError]).} =
   try:
     let response = await session.fetch(parseUri(uri))
@@ -18,9 +18,9 @@ proc check(session: HttpSessionRef, uri: string) {.async: (raises: [CancelledErr
       echo "[NOK] " & uri & ": " & $response.status
   except HttpError:
     echo "[ERR] " & uri & ": " & getCurrentExceptionMsg()
-# ANCHOR_END: proc_uris
+# ANCHOR_END: check_uri
 
-# ANCHOR: proc_uri
+# ANCHOR: check_uris
 proc check(uris: seq[string]) {.async: (raises: [CancelledError]).} =
   let session = HttpSessionRef.new()
   var futures: seq[Future[void]]
@@ -30,7 +30,7 @@ proc check(uris: seq[string]) {.async: (raises: [CancelledError]).} =
 
   await allFutures(futures)
   await noCancel(session.closeWait())
-# ANCHOR_END: proc_uri
+# ANCHOR_END: check_uris
 
 # ANCHOR: isMainModule
 when isMainModule:

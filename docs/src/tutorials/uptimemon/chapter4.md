@@ -156,7 +156,13 @@ Now we can use this function in the URI health check:
 
 We just `await` on it and check the value.
 
-Run the program and see the https://mock.codes/200 is no correctly marked as `[NOK]`:
+```nim
+{{#shiftinclude auto:../../../examples/uptimemon/chapter4_2.nim:except}}
+```
+
+Notice that since `findMarker` can raise an exception that we haven't been catching so far ([`AsyncStreamError`](/api/chronos/streams/asyncstream.html#AsyncStreamError)), we need to add it to the list as well.
+
+Run the program and see the https://mock.codes/200 is now correctly marked as `[NOK]`:
 
 ```shell
 [ERR] http://123.456.78.90: Could not resolve address of remote server

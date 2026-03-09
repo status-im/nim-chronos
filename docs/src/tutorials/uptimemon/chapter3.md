@@ -28,7 +28,7 @@ Let's add a timeout to our requests to cancel slow requests before they ruin our
 Here's the part that changed:
 
 ```nim
-{{#shiftinclude auto:../../../examples/uptimemon/chapter3.nim:proc_uris}}
+{{#shiftinclude auto:../../../examples/uptimemon/chapter3.nim:check}}
 ```
 
 1. We create a `Future` before awaiting on it.

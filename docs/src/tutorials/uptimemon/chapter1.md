@@ -35,7 +35,7 @@ Now let's see what we're doing here line by line.
 [`httpclient`](/api/chronos/apps/http/httpclient.html) module, as the title suggests, implements the HTTP client capabilities, i.e. sending HTTP requests and dealing with the responses asynchronously.
 
 ```nim
-{{#shiftinclude auto:../../../examples/uptimemon/chapter1.nim:proc}}
+{{#shiftinclude auto:../../../examples/uptimemon/chapter1.nim:check}}
 ```
 
 We define a function that sends an HTTP request to a URL we provide, checks if this URL is available, and prints the result.
