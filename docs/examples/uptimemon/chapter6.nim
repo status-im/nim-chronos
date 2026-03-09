@@ -1,8 +1,12 @@
+# ANCHOR: all
 import chronos/apps/http/httpclient
 
+# ANCHOR: maxConcurrency
 const
   maxConcurrency = 5
+# ANCHOR_END: maxConcurrency
   ntfyTopic = "X3JIaLZSrFqBJXfJ"
+# ANCHOR: uris
   uris = @[
     "https://duckduckgo.com/?q=chronos", "https://mock.codes/403",
     "http://123.456.78.90", "http://10.255.255.1", "https://html.spec.whatwg.org",
@@ -14,8 +18,11 @@ const
     "https://vac.dev", "https://expired.badssl.com", "http://10.255.255.2",
     "http://10.255.255.3",
   ]
+# ANCHOR_END: uris
 
-proc sendAlert(session: HttpSessionRef, message: string, priority = 3) {.async.} =
+proc sendAlert(
+    session: HttpSessionRef, message: string, priority = 3
+) {.async: (raises: [CancelledError]).} =
   let
     headers = {"Title": "Chronos Uptime Monitor", "Priority": $priority}
     body = message.stringToBytes()
@@ -31,10 +38,14 @@ proc sendAlert(session: HttpSessionRef, message: string, priority = 3) {.async.}
     try:
       let response = await request.get.send()
       await response.closeWait()
-    except CatchableError:
+    except HttpError:
       echo "[WRN] Failed to send alert: " & getCurrentExceptionMsg()
 
-proc findMarker(response: HttpClientResponseRef): Future[bool] {.async.} =
+proc findMarker(
+    response: HttpClientResponseRef
+): Future[bool] {.
+    async: (raises: [HttpUseClosedError, AsyncStreamError, CancelledError])
+.} =
   let bodyReader = response.getBodyReader()
 
   var
@@ -51,11 +62,15 @@ proc findMarker(response: HttpClientResponseRef): Future[bool] {.async.} =
 
     result = "<html" in bytesToString(fetchedBytes)
 
-proc check(session: HttpSessionRef, uri: string, semaphore: AsyncSemaphore) {.async.} =
+# ANCHOR: semaphore
+proc check(
+    session: HttpSessionRef, uri: string, semaphore: AsyncSemaphore
+) {.async: (raises: [CancelledError, AsyncSemaphoreError]).} =
   await acquire(semaphore)
 
   defer:
-    release (semaphore)
+    release(semaphore)
+# ANCHOR_END: semaphore
 
   try:
     let request = HttpClientRequestRef.new(session, uri)
@@ -83,29 +98,38 @@ proc check(session: HttpSessionRef, uri: string, semaphore: AsyncSemaphore) {.as
         await session.sendAlert(message)
     else:
       raise newException(AsyncTimeoutError, "Connection timed out")
-  except CatchableError:
+  except HttpError, FuturePendingError, AsyncTimeoutError, AsyncStreamError:
     let message = "[ERR] " & uri & ": " & getCurrentExceptionMsg()
     echo message
     await session.sendAlert(message, 4)
 
-proc check(uris: seq[string]) {.async.} =
+# ANCHOR: check
+proc check(uris: seq[string]) {.async: (raises: [CancelledError]).} =
   let
     session = HttpSessionRef.new()
     semaphore = newAsyncSemaphore(maxConcurrency)
+# ANCHOR_END: check
 
+# ANCHOR: while_true
   while true:
+# ANCHOR_END: while_true
     echo "Checking " & $len(uris) & " URIs:"
     var futures: seq[Future[void]]
 
+# ANCHOR: pass_semaphore
     for uri in uris:
       futures.add(session.check(uri, semaphore))
+# ANCHOR_END: pass_semaphore
 
     await allFutures(futures)
-
+    
+# ANCHOR: sleep
     echo "Done. Next check in 10 seconds."
     await sleepAsync(10.seconds)
+# ANCHOR_END: sleep
 
   await noCancel(session.closeWait())
 
 when isMainModule:
   waitFor check(uris)
+# ANCHOR_END: all

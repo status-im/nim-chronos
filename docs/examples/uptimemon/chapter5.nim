@@ -63,7 +63,7 @@ proc findMarker(
 
     result = "<html" in bytesToString(fetchedBytes)
 
-# ANCHOR: check
+HttpError ANCHOR: check
 proc check(session: HttpSessionRef, uri: string) {.async: (raises: [CancelledError]).} =
   try:
     let request = HttpClientRequestRef.new(session, uri)
