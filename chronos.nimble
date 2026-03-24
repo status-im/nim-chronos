@@ -10,7 +10,7 @@ skipDirs      = @["tests"]
 requires "nim >= 1.6.16",
          "results",
          "stew",
-         "bearssl >= 0.2.5",
+         "bearssl >= 0.2.7",
          "httputils",
          "unittest2"
 
