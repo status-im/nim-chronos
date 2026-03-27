@@ -10,8 +10,8 @@ jobs:
   build:
     timeout-minutes: 20
 
-    name: 'Generate & upload documentation'
-    runs-on: 'ubuntu-latest'
+    name: "Generate & upload documentation"
+    runs-on: "ubuntu-latest"
     continue-on-error: true
     steps:
       - name: Checkout
@@ -24,14 +24,15 @@ jobs:
 
       - name: Install mdBook and preprocessors
         run: |
-          cargo binstall mdbook@0.4.36 \
+          cargo binstall mdbook@0.4.51 \
             mdbook-toc@0.14.1 \
             mdbook-open-on-gh@2.4.1 \
-            mdbook-admonish@1.14.0
+            mdbook-admonish@1.14.0 \
+            mdbook-shiftinclude@0.1.0
 
       - uses: jiro4989/setup-nim-action@v1
         with:
-          nim-version: '1.6.20'
+          nim-version: "1.6.20"
 
       - name: Generate doc
         run: |
