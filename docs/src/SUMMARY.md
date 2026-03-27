@@ -5,13 +5,13 @@
 
 ## Uptime Monitor
 
-- [HTTP Client: Uptime Monitor](./tutorials/uptimemon/intro.md)
-  - [Making an HTTP Request with Chronos](./tutorials/uptimemon/chapter1.md)
-  - [Making Many Requests Concurrently](./tutorials/uptimemon/chapter2.md)
-  - [Timeouts & Cancellation](./tutorials/uptimemon/chapter3.md)
-  - [Smarter Health Check with Streaming](./tutorials/uptimemon/chapter4.md)
-  - [Sending Alerts with POST Requests](./tutorials/uptimemon/chapter5.md)
-  - [Scaling & Finishing Touches](./tutorials/uptimemon/chapter6.md)
+- [HTTP Client: Uptime Monitor](./tutorials/http_client/intro.md)
+  - [Making an HTTP Request with Chronos](./tutorials/http_client/chapter1.md)
+  - [Making Many Requests Concurrently](./tutorials/http_client/chapter2.md)
+  - [Timeouts & Cancellation](./tutorials/http_client/chapter3.md)
+  - [Smarter Health Check with Streaming](./tutorials/http_client/chapter4.md)
+  - [Sending Alerts with POST Requests](./tutorials/http_client/chapter5.md)
+  - [Scaling & Finishing Touches](./tutorials/http_client/chapter6.md)
 
 # User guide
 

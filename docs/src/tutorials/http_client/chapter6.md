@@ -2,7 +2,7 @@
 
 **Goal:** Learn how to use semaphores to control concurrency.
 
-**Source code:** [chapter6.nim](https://github.com/status-im/nim-chronos/blob/master/docs/examples/uptimemon/chapter6.nim)
+**Source code:** [chapter6.nim](https://github.com/status-im/nim-chronos/blob/master/docs/examples/http_client/chapter6.nim)
 
 Our app is almost ready to run on production and do regular background URI checks.
 
@@ -15,25 +15,25 @@ To achieve that, we'll use a _semaphore_—an special object that a function mus
 Here's the code with a semaphore and an infinite loop added:
 
 ```nim
-{{#shiftinclude auto:../../../examples/uptimemon/chapter6.nim:all}}
+{{#shiftinclude auto:../../../examples/http_client/chapter6.nim:all}}
 ```
 
 Let's see what changed.
 
 ```nim
-{{#shiftinclude auto:../../../examples/uptimemon/chapter6.nim:maxConcurrency}}
+{{#shiftinclude auto:../../../examples/http_client/chapter6.nim:maxConcurrency}}
 ```
 
 We define a constant that would determine the capacity of our semaphore.
 
 ```nim
-{{#shiftinclude auto:../../../examples/uptimemon/chapter6.nim:uris}}
+{{#shiftinclude auto:../../../examples/http_client/chapter6.nim:uris}}
 ```
 
 We've added more URIs to the list to make batching effect visible.
 
 ```nim
-{{#shiftinclude auto:../../../examples/uptimemon/chapter6.nim:semaphore}}
+{{#shiftinclude auto:../../../examples/http_client/chapter6.nim:semaphore}}
 ```
 
 We've modified `check` function for a single URI so that it accepts a `semaphore` (of type[`AsyncSemaphore`](/api/chronos/asyncsync.html#AsyncSemaphore)), waits to [`acquire`](/api/chronos/asyncsync.html#acquire,AsyncSemaphore) it, and [`release`](/api/chronos/asyncsync.html#release,AsyncSemaphore)s it at the end (we use `defer` to postpone the release).
@@ -43,13 +43,13 @@ With this short addition, we prevent `check` from running if the semaphore is fu
 Because releasing a semaphore can raise a [`AsyncSemaphoreError`](/api/chronos/asyncsync.html#AsyncSemaphoreError) and it would happen outside of our managed `try` block, we need to add this exception to the `raises` list for `check`.
 
 ```nim
-{{#shiftinclude auto:../../../examples/uptimemon/chapter6.nim:check}}
+{{#shiftinclude auto:../../../examples/http_client/chapter6.nim:check}}
 ```
 
 In the `check` function for a URI sequence, we create a semaphore of the required capacity.
 
 ```nim
-{{#shiftinclude auto:../../../examples/uptimemon/chapter6.nim:while_true}}
+{{#shiftinclude auto:../../../examples/http_client/chapter6.nim:while_true}}
 ```
 
 Instead of a one off launch, we do the checks in an infinite loop.
@@ -57,13 +57,13 @@ Instead of a one off launch, we do the checks in an infinite loop.
 We've added an `echo` to denote the start of each cycle.
 
 ```nim
-{{#shiftinclude auto:../../../examples/uptimemon/chapter6.nim:pass_semaphore}}
+{{#shiftinclude auto:../../../examples/http_client/chapter6.nim:pass_semaphore}}
 ```
 
 Then we pass the semaphore to `check` for each URI.
 
 ```nim
-{{#shiftinclude auto:../../../examples/uptimemon/chapter6.nim:sleep}}
+{{#shiftinclude auto:../../../examples/http_client/chapter6.nim:sleep}}
 ```
 
 Finally, print the message to mark the end of a cycle and wait 10 seconds before the next one.

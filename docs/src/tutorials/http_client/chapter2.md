@@ -2,7 +2,7 @@
 
 **Goal:** Learn how to make arbitrarily many HTTP requests asynchronously.
 
-**Source code:** [chapter2.nim](https://github.com/status-im/nim-chronos/blob/master/docs/examples/uptimemon/chapter2.nim)
+**Source code:** [chapter2.nim](https://github.com/status-im/nim-chronos/blob/master/docs/examples/http_client/chapter2.nim)
 
 OK, we have a working app that can check one URI at a time, which is not that much impressive. Let's update our app to do what Chronos was made for—concurrency!
 
@@ -60,7 +60,7 @@ To achieve that, we will:
 Here's the code:
 
 ```nim
-{{#shiftinclude auto:../../../examples/uptimemon/chapter2.nim:all}}
+{{#shiftinclude auto:../../../examples/http_client/chapter2.nim:all}}
 ```
 
 Run this code with `nim r chapter2.nim`, you should see something like this (the order of messages may be different):
@@ -89,19 +89,19 @@ $ Measure-Command {./chapter2.exe | Out-Default}
 Let's examine the changes since the previous version.
 
 ```nim
-{{#shiftinclude auto:../../../examples/uptimemon/chapter2.nim:uris}}
+{{#shiftinclude auto:../../../examples/http_client/chapter2.nim:uris}}
 ```
 
 We define a list of URIs to check. We've put a diverse group to see different responses: DuckDuckGo should respond with `[OK]`, Mock returns a 403 status, i.e. `[NOK]`, and the last one is a non-existant location visiting which should return `[ERR]`.
 
 ```nim
-{{#shiftinclude auto:../../../examples/uptimemon/chapter2.nim:check_uri}}
+{{#shiftinclude auto:../../../examples/http_client/chapter2.nim:check_uri}}
 ```
 
 We add a new argument to our `check` function and remove the session closing part—session creation and destruction now happen in the caller function.
 
 ```nim
-{{#shiftinclude auto:../../../examples/uptimemon/chapter2.nim:check_uris}}
+{{#shiftinclude auto:../../../examples/http_client/chapter2.nim:check_uris}}
 ```
 
 We add another `check` function but this ones takes a list of URIs, not one URI. In this function, we create a session (and close it at the end), and populate a list of `Future`s by creating one for each URI.
@@ -109,7 +109,7 @@ We add another `check` function but this ones takes a list of URIs, not one URI.
 Then, we use `allFutures` to await all those `Future`s as if they were a single `Future` (in fact, `allFutures` does exactly that—it wraps all `Future`s passed to it with one `Future`).
 
 ```nim
-{{#shiftinclude auto:../../../examples/uptimemon/chapter2.nim:isMainModule}}
+{{#shiftinclude auto:../../../examples/http_client/chapter2.nim:isMainModule}}
 ```
 
 Finally, we `waitFor` the `check` to complete for all URIs.
