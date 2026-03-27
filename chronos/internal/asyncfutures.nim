@@ -282,7 +282,7 @@ proc tryCancel(future: FutureBase, loc: ptr SrcLoc): bool =
     # If you hit this assertion, you should have used the `CancelledError`
     # mechanism and/or use a regular `addCallback`
     when chronosStrictFutureAccess:
-      doAssert isNil(future.internalCancelcb),
+      doAssert future.internalCancelcb.isNil,
         "futures returned from `{.async.}` functions must not use " &
         "`cancelCallback`"
     tryCancel(future.internalChild, loc)
@@ -362,9 +362,9 @@ proc `cancelCallback=`*(future: FutureBase, cb: CallbackFunc) =
   ## This callback will be called immediately as ``future.cancel()`` invoked and
   ## must be set before future is finished.
 
-  when chronosStrictFutureAccess:
-    doAssert not future.finished(),
-      "cancellation callback must be set before finishing the future"
+  doAssert not future.finished(),
+    "cancellation callback must be set before finishing the future"
+
   future.internalCancelcb = cb
 
 {.push stackTrace: off.}
