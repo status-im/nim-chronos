@@ -488,7 +488,7 @@ proc asyncSingleProc(prc, params: NimNode): NimNode {.compileTime.} =
     outerProcBody.add(closureIterator)
 
     let
-      retFutureSym = ident "resultFuture"
+      retFutureSym = genSym(nskLet, "resultFuture")
       newFutProc = if raises == nil:
         nnkBracketExpr.newTree(ident "newFuture", baseType)
       else:
