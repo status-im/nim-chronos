@@ -26,7 +26,7 @@ jobs:
         run: |
           cargo binstall mdbook@0.4.36 \
             mdbook-toc@0.14.1 \
-            mdbook-open-on-gh@2.4.1 \
+            mdbook-open-on-gh@2.4.3 \
             mdbook-admonish@1.14.0
 
       - uses: jiro4989/setup-nim-action@v1

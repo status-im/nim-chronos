@@ -4,7 +4,7 @@
 # User guide
 
 - [Core concepts](./concepts.md)
-- [`async` functions](async_procs.md)
+- [`async` functions](./async_procs.md)
 - [Errors and exceptions](./error_handling.md)
 - [Threads](./threads.md)
 - [Tips, tricks and best practices](./tips.md)
