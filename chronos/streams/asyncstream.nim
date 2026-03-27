@@ -1021,7 +1021,7 @@ proc init(T: type AsyncStreamWriterVtbl, wsource: AsyncStreamWriter): T =
 
   proc writeImpl(
       wstream: AsyncStreamWriter, sbytes: seq[byte], length: int
-  ) {.async: (raises: [CancelledError, AsyncStreamError, raw: true]).} =
+  ) {.async: (raises: [CancelledError, AsyncStreamError], raw: true).} =
     write(wsource, sbytes, length)
 
   proc writeImpl(
