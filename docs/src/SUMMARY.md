@@ -8,7 +8,7 @@
 - [HTTP Server: Status Dashboard](./tutorials/http_server/intro.md)
   - [Setting Up a Basic HTTP Server](./tutorials/http_server/chapter1.md)
   - [Handling Multiple Routes](./tutorials/http_server/chapter2.md)
-  - [Processing JSON Data and POST Requests](./tutorials/http_server/chapter3.md)
+  - [Handling POST Requests and Processing JSON](./tutorials/http_server/chapter3.md)
   - [Using Middleware](./tutorials/http_server/chapter4.md)
   - [Performance and Benchmarking](./tutorials/http_server/chapter5.md)
 
