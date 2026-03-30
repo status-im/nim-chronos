@@ -703,7 +703,7 @@ proc pemDecode*(data: openArray[char]): seq[PEMElement] {.
   var pctx = new PEMContext
   var res = newSeq[PEMElement]()
 
-  proc itemAppend(ctx: pointer, pbytes: pointer, nbytes: uint) {.cdecl.} =
+  proc itemAppend(ctx: pointer, pbytes: pointer, nbytes: csize_t) {.cdecl.} =
     var p = cast[PEMContext](ctx)
     var o = uint(len(p.data))
     p.data.setLen(o + nbytes)
