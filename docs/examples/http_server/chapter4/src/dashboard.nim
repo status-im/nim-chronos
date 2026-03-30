@@ -1,12 +1,10 @@
 # ANCHOR: all
 # ANCHOR: import
 import chronos/apps/http/httpserver
-import std/[json, tables, times]
+import std/[json, tables, times, strutils]
 # ANCHOR_END: import
 
-# ANCHOR: data
 var reports {.threadvar.}: Table[string, string]
-# ANCHOR_END: data
 
 # ANCHOR: middleware
 proc loggingMiddleware(
@@ -16,18 +14,19 @@ proc loggingMiddleware(
 ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
   let startTime = now()
   
+  # Pass the request to the next handler in the chain
   let response = await nextHandler(reqfence)
   
+  let duration = now() - startTime
   if reqfence.isOk():
     let request = reqfence.get()
-    let duration = now() - startTime
-    echo "[LOG] ", request.meth, " ", request.uri.path, " processed in ", duration.inMilliseconds, "ms"
+    echo "$# $# processed in $#ms" % [$request.meth, request.uri.path, $duration.inMilliseconds]
   
   return response
 # ANCHOR_END: middleware
 
 # ANCHOR: handler
-proc mainHandler(reqfence: RequestFence): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
+proc handler(reqfence: RequestFence): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
   if reqfence.isErr():
     return defaultResponse()
 
@@ -53,7 +52,7 @@ proc mainHandler(reqfence: RequestFence): Future[HttpResponseRef] {.async: (rais
       let data =
         try:
           parseJson(bytesToString(body))
-        except CatchableError:
+        except JsonParsingError:
           return await request.respond(Http400, "Invalid JSON.")
       
       let name = data["name"].getStr()
@@ -62,21 +61,21 @@ proc mainHandler(reqfence: RequestFence): Future[HttpResponseRef] {.async: (rais
       return await request.respond(Http200, "Report received.")
     else:
       return await request.respond(Http404, "Page not found.")
-  except CancelledError as exc:
-    raise exc
-  except CatchableError as exc:
-    return defaultResponse(exc)
+  except HttpWriteError, HttpTransportError, HttpProtocolError:
+    return defaultResponse()
 # ANCHOR_END: handler
 
 # ANCHOR: main
 proc main() {.async: (raises: [TransportAddressError, CancelledError]).} =
   reports = initTable[string, string]()
   let
+    # ANCHOR: setup_middleware
     middlewares = [
       HttpServerMiddlewareRef(handler: loggingMiddleware)
     ]
+    # ANCHOR_END: setup_middleware
     address = initTAddress("127.0.0.1:8080")
-    res = HttpServerRef.new(address, mainHandler, middlewares = middlewares)
+    res = HttpServerRef.new(address, handler, middlewares = middlewares)
 
   if res.isErr():
     echo "Unable to start HTTP server: " & res.error

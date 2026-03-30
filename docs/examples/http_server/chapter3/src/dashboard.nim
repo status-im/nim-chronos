@@ -9,7 +9,7 @@ var reports {.threadvar.}: Table[string, string]
 # ANCHOR_END: data
 
 # ANCHOR: handler
-proc mainHandler(reqfence: RequestFence): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
+proc handler(reqfence: RequestFence): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
   if reqfence.isErr():
     return defaultResponse()
 
@@ -40,7 +40,7 @@ proc mainHandler(reqfence: RequestFence): Future[HttpResponseRef] {.async: (rais
       let data =
         try:
           parseJson(bytesToString(body))
-        except CatchableError:
+        except JsonParsingError:
           return await request.respond(Http400, "Invalid JSON.")
       
       let name = data["name"].getStr()
@@ -54,10 +54,8 @@ proc mainHandler(reqfence: RequestFence): Future[HttpResponseRef] {.async: (rais
 
     else:
       return await request.respond(Http404, "Page not found.")
-  except CancelledError as exc:
-    raise exc
-  except CatchableError as exc:
-    return defaultResponse(exc)
+  except HttpWriteError, HttpTransportError, HttpProtocolError:
+    return defaultResponse()
 # ANCHOR_END: handler
 
 # ANCHOR: main
@@ -65,7 +63,7 @@ proc main() {.async: (raises: [TransportAddressError, CancelledError]).} =
   reports = initTable[string, string]()
   let
     address = initTAddress("127.0.0.1:8080")
-    res = HttpServerRef.new(address, mainHandler)
+    res = HttpServerRef.new(address, handler)
 
   if res.isErr():
     echo "Unable to start HTTP server: " & res.error
