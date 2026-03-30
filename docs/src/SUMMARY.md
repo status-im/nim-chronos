@@ -10,7 +10,7 @@
   - [Handling Multiple Routes](./tutorials/http_server/chapter2.md)
   - [Handling POST Requests and Processing JSON](./tutorials/http_server/chapter3.md)
   - [Logging Requests with Middleware](./tutorials/http_server/chapter4.md)
-  - [Performance and Benchmarking](./tutorials/http_server/chapter5.md)
+  - [Bonus Track - Performance and Benchmarking](./tutorials/http_server/chapter5.md)
 
 # User guide
 

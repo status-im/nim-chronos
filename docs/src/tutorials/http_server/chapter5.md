@@ -1,20 +1,12 @@
-# Performance and Benchmarking
+# Bonus Track - Performance and Benchmarking
 
-**Goal:** Understand how Chronos performs under load and learn how to benchmark your server.
+**Goal:** Understand how Chronos performs under load and learn how to benchmark your server. 
 
-**Source code:** [chapter5.nim](https://github.com/status-im/nim-chronos/blob/master/docs/examples/http_server/chapter5.nim)
+**Source code:** [chapter4/src/dashboard.nim](https://github.com/status-im/nim-chronos/blob/master/docs/examples/http_server/chapter4/src/dashboard.nim)
 
 One of the main reasons to use Chronos is its performance. Thanks to its asynchronous architecture, a single-threaded Chronos server can handle thousands of concurrent connections with minimal overhead.
 
-In this chapter, we'll benchmark the "Status Dashboard" app we've built to see how it performs under load.
-
-## The Benchmark Server
-
-We'll use the complete code from the previous chapter, which includes routing, JSON processing, and middleware:
-
-```nim
-{{#shiftinclude auto:../../../examples/http_server/chapter5.nim:all}}
-```
+In this chapter, we'll see check how our app performs under load.
 
 ## Benchmarking with ApacheBench (ab)
 
@@ -22,11 +14,14 @@ We'll use the complete code from the previous chapter, which includes routing, J
 
 ### Running the Benchmark
 
-First, compile and run your server in release mode:
+First, run your server in release mode:
 
 ```shell
-$ nim c -d:release docs/examples/http_server/chapter5.nim
-$ ./docs/examples/http_server/chapter5
+$ nimble run -d:release
+```
+
+```admonish info
+There are no code changes in this chapter. We're using the code from the previous chapter, just compiling it in the release mode to squeeze maximum performance from our server.
 ```
 
 Now, in a separate terminal window, run the benchmark against the root path:
@@ -42,16 +37,51 @@ Here's what these flags mean:
 
 ### Understanding the Results
 
-When the benchmark finishes, you'll see a report. Pay attention to these metrics:
+When the benchmark finishes, you'll see a report, which looks similar to this:
 
-- **Requests per second (RPS):** How many requests your server processed per second. Even with the overhead of JSON parsing and logging, Chronos should achieve very high numbers.
-- **Time per request:** The average time it took to complete a single request.
+```shell
+Server Software:
+Server Hostname:        127.0.0.1
+Server Port:            8080
+
+Document Path:          /
+Document Length:        32 bytes
+
+Concurrency Level:      100
+Time taken for tests:   15.445 seconds
+Complete requests:      10000
+Failed requests:        0
+Total transferred:      1670000 bytes
+HTML transferred:       320000 bytes
+Requests per second:    647.47 [#/sec] (mean)
+Time per request:       154.448 [ms] (mean)
+Time per request:       1.544 [ms] (mean, across all concurrent requests)
+Transfer rate:          105.59 [Kbytes/sec] received
+
+Connection Times (ms)
+              min  mean[+/-sd] median   max
+Connect:        0    1   0.3      0       7
+Processing:     4  153  19.3    154     209
+Waiting:        1  145  18.5    146     199
+Total:          5  154  19.3    154     210
+ERROR: The median and mean for the initial connection time are more than twice the standard
+       deviation apart. These results are NOT reliable.
+
+Percentage of the requests served within a certain time (ms)
+  50%    154
+  66%    166
+  75%    169
+  80%    170
+  90%    175
+  95%    180
+  98%    186
+  99%    189
+ 100%    210 (longest request)
+```
+
+
+Pay attention to these metrics:
+
+- **Requests per second (RPS):** How many requests your server processed per second. Even with the overhead of JSON parsing and logging, Chronos should achieve hundreds of RPS even on a common laptop.
+- **Time per request:** The average time it took to complete a single reques. You'll see two numbers, one roughly 100 times larger than the other. This is due to the concurrency factor of 100. The smaller number represents the actuall processing time per request. This should be close to 1 ms. 
 - **Failed requests:** How many requests were not successful. With Chronos, this should be zero even under high load.
-
-## Why Chronos is Efficient
-
-- **Non-blocking I/O:** Chronos never blocks a thread while waiting for a response from the network. Instead, it uses the OS's event notification system (like epoll on Linux or kqueue on macOS) to handle thousands of connections simultaneously.
-- **Zero-overhead concurrency:** Unlike threads or processes, which have significant memory and context-switching overhead, Chronos's tasks are lightweight and managed entirely in user space.
-- **Memory Efficiency:** Chronos is designed to be very careful with memory allocations, making it suitable for high-throughput applications.
-
-By using Chronos, you can build servers that are both fast and stable, even on modest hardware, without the complexity of managing thread pools or multi-process architectures.
