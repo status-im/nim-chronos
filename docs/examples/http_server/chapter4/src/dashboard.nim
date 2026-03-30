@@ -1,37 +1,42 @@
 # ANCHOR: all
 # ANCHOR: import
 import chronos/apps/http/httpserver
-import std/[json, tables, times, strutils]
+import std/[json, tables, times, monotimes]
 # ANCHOR_END: import
 
+# ANCHOR: data
 var reports {.threadvar.}: Table[string, string]
+# ANCHOR_END: data
 
 # ANCHOR: middleware
 proc loggingMiddleware(
     middleware: HttpServerMiddlewareRef,
     reqfence: RequestFence,
-    nextHandler: HttpProcessCallback2
+    nextHandler: HttpProcessCallback2,
 ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
-  let startTime = now()
-  
-  # Pass the request to the next handler in the chain
+  let startTime = getMonoTime()
+
   let response = await nextHandler(reqfence)
-  
-  let duration = now() - startTime
+
+  let duration = getMonoTime() - startTime
   if reqfence.isOk():
     let request = reqfence.get()
-    echo "$# $# processed in $#ms" % [$request.meth, request.uri.path, $duration.inMilliseconds]
-  
+    echo $request.meth & " " & request.uri.path & " processed in " &
+      $duration.inMilliseconds & " ms"
+
   return response
+
 # ANCHOR_END: middleware
 
 # ANCHOR: handler
-proc handler(reqfence: RequestFence): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
+proc handler(
+    reqfence: RequestFence
+): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
   if reqfence.isErr():
     return defaultResponse()
 
   let request = reqfence.get()
-  
+
   try:
     case request.uri.path
     of "/":
@@ -41,7 +46,7 @@ proc handler(reqfence: RequestFence): Future[HttpResponseRef] {.async: (raises: 
       if reports.len == 0:
         output.add("- No reports available.")
       else:
-        for name, status in reports.pairs:
+        for name, status in reports:
           output.add("- " & name & ": " & status & "\n")
       return await request.respond(Http200, output)
     of "/report":
@@ -49,20 +54,31 @@ proc handler(reqfence: RequestFence): Future[HttpResponseRef] {.async: (raises: 
         return await request.respond(Http405, "Method Not Allowed")
 
       let body = await request.getBody()
-      let data =
-        try:
-          parseJson(bytesToString(body))
-        except JsonParsingError:
-          return await request.respond(Http400, "Invalid JSON.")
-      
-      let name = data["name"].getStr()
-      let status = data["status"].getStr()
+
+      var
+        data: JsonNode
+        name, status: string
+
+      try:
+        data = parseJson(bytesToString(body))
+      except CatchableError:
+        return await request.respond(Http400, "Invalid JSON.")
+
+      try:
+        name = data["name"].getStr()
+        status = data["status"].getStr()
+      except KeyError:
+        return await request.respond(Http400, "Missing 'name' or 'status' field.")
+
       reports[name] = status
+      echo "Received report: " & name & " is " & status
+
       return await request.respond(Http200, "Report received.")
     else:
       return await request.respond(Http404, "Page not found.")
   except HttpWriteError, HttpTransportError, HttpProtocolError:
     return defaultResponse()
+
 # ANCHOR_END: handler
 
 # ANCHOR: main
@@ -70,9 +86,7 @@ proc main() {.async: (raises: [TransportAddressError, CancelledError]).} =
   reports = initTable[string, string]()
   let
     # ANCHOR: setup_middleware
-    middlewares = [
-      HttpServerMiddlewareRef(handler: loggingMiddleware)
-    ]
+    middlewares = [HttpServerMiddlewareRef(handler: loggingMiddleware)]
     # ANCHOR_END: setup_middleware
     address = initTAddress("127.0.0.1:8080")
     res = HttpServerRef.new(address, handler, middlewares = middlewares)
@@ -84,12 +98,13 @@ proc main() {.async: (raises: [TransportAddressError, CancelledError]).} =
   let server = res.get()
   server.start()
   echo "HTTP server running on http://127.0.0.1:8080"
-  
+
   try:
     await server.join()
   finally:
     await server.stop()
     await server.closeWait()
+
 # ANCHOR_END: main
 
 when isMainModule:
