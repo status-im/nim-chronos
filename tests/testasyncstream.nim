@@ -6,7 +6,7 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 import unittest2
-import bearssl/[x509]
+import bearssl/[ssl, x509]
 import stew/byteutils
 import ".."/chronos/unittest2/asynctests
 import ".."/chronos/streams/[tlsstream, chunkstream, boundstream]
@@ -1023,6 +1023,65 @@ suite "TLSStream test suite":
       return string.fromBytes(res)
     let res = waitFor checkTrustAnchors("Some message")
     check res == "Some message\r\n"
+
+  test "Client certificate authentication":
+    proc checkClientCert(testMessage: string): Future[string] {.async.} =
+      var key = TLSPrivateKey.init(SelfSignedRsaKey)
+      var cert = TLSCertificate.init(SelfSignedRsaCert)
+
+      proc serveClient(server: StreamServer,
+                      transp: StreamTransport) {.async: (raises: []).} =
+        try:
+          var reader = newAsyncStreamReader(transp)
+          var writer = newAsyncStreamWriter(transp)
+          var sstream = newTLSServerAsyncStream(reader, writer, key, cert,
+            flags = {TLSFlags.NoRenegotiation})
+          # Configure client certificate authentication via BearSSL API.
+          # serverX509 must be stored on TLSAsyncStream to ensure it
+          # outlives the TLS session (BearSSL holds a pointer to it).
+          x509MinimalInitFull(sstream.x509,
+                              unsafeAddr SelfSignedTrustAnchors[0],
+                              uint(len(SelfSignedTrustAnchors)))
+          sslEngineSetDefaultRsavrfy(sstream.scontext.eng)
+          sslEngineSetDefaultEcdsa(sstream.scontext.eng)
+          sslServerSetTrustAnchorNamesAlt(sstream.scontext,
+            unsafeAddr SelfSignedTrustAnchors[0],
+            uint(len(SelfSignedTrustAnchors)))
+          sslEngineSetX509(sstream.scontext.eng,
+            X509ClassPointerConst(addr sstream.x509.vtable))
+          discard sslServerReset(sstream.scontext)
+          await handshake(sstream)
+          await sstream.writer.write(testMessage & "\r\n")
+          await sstream.writer.finish()
+          await sstream.writer.closeWait()
+          await sstream.reader.closeWait()
+          await reader.closeWait()
+          await writer.closeWait()
+          await transp.closeWait()
+          server.stop()
+          server.close()
+        except CatchableError as exc:
+          raiseAssert exc.msg
+
+      var server = createStreamServer(initTAddress("127.0.0.1:0"),
+                                      serveClient, {ReuseAddr})
+      server.start()
+      var conn = await connect(server.localAddress())
+      var creader = newAsyncStreamReader(conn)
+      var cwriter = newAsyncStreamWriter(conn)
+      let flags = {NoVerifyHost, NoVerifyServerName}
+      var cstream = newTLSClientAsyncStream(creader, cwriter, "",
+        flags = flags, certificate = cert, privateKey = key)
+      let res = await cstream.reader.read()
+      await cstream.reader.closeWait()
+      await cstream.writer.closeWait()
+      await creader.closeWait()
+      await cwriter.closeWait()
+      await conn.closeWait()
+      await server.join()
+      return string.fromBytes(res)
+    let res = waitFor checkClientCert("Client cert test")
+    check res == "Client cert test\r\n"
 
 suite "BoundedStream test suite":
   teardown:
