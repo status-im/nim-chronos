@@ -10,7 +10,4 @@ The complete application (split into chapters to help you track progress) is ava
 
 To go through the tutorial, you'll need a computer with a stable Internet connection, any text editor, and a console (aka terminal emulator). Familiarity with the concepts of HTTP requests and async routines as well as Nim knowledge will help you along but are not required.
 
-Before you start, make sure you have Nim programming language and Chronos installed:
-
-1. To get Nim, follow [the official installation guide](https://nim-lang.org/install.html).
-2. To install Chronos, use Nim's built-in package manager Nimble: `nimble install chronos`.
+Before you start, make sure you have Nim programming language by following [the official installation guide](https://nim-lang.org/install.html).

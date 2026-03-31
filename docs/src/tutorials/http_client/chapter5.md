@@ -2,7 +2,7 @@
 
 **Goal:** Learn how to send POST HTTP requests and set request headers.
 
-**Source code:** [chapter5.nim](https://github.com/status-im/nim-chronos/blob/master/docs/examples/http_client/chapter5.nim)
+**Source code:** [chapter5/src/uptimemon.nim](https://github.com/status-im/nim-chronos/blob/master/docs/examples/http_client/chapter5/src/uptimemon.nim)
 
 How cool would it be to get notified about a service being down to your phone? This way, you can launch the program and just go on with your business and not constantly monitor the terminal window.
 
@@ -20,19 +20,19 @@ How cool would it be to get notified about a service being down to your phone? T
 Here's the version of the program with alerting capabilities:
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter5.nim:all}}
+{{#shiftinclude auto:../../../examples/http_client/chapter5/src/uptimemon.nim:all}}
 ```
 
 As usual, let's examine the changes part by part.
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter5.nim:ntfy_topic}}
+{{#shiftinclude auto:../../../examples/http_client/chapter5/src/uptimemon.nim:ntfy_topic}}
 ```
 
 Define a new constant for the ntfy topic name you copied [earlier](#set-up-ntfy). Replace `YOUR_NTFY_TOPIC_NAME` with the actual value you copied from ntfy.
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter5.nim:sendAlert}}
+{{#shiftinclude auto:../../../examples/http_client/chapter5/src/uptimemon.nim:sendAlert}}
 ```
 
 Define a new async function that will do the request sending to ntfy. We'll send those requests in the same session so we pass it to the function as `session`.
@@ -42,7 +42,7 @@ Define a new async function that will do the request sending to ntfy. We'll send
 `priority` is a number that defines the style of the notification in ntfy. ntfy recognizes five priority levels from 1 to 5: the higher the number, the "scarier" the message.
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter5.nim:headers}}
+{{#shiftinclude auto:../../../examples/http_client/chapter5/src/uptimemon.nim:headers}}
 ```
 
 ntfy uses headers to customize notifications, e.g. [`Title`](https://docs.ntfy.sh/publish/#message-title) and [`Priority`](https://docs.ntfy.sh/publish/#message-priority).
@@ -50,19 +50,19 @@ ntfy uses headers to customize notifications, e.g. [`Title`](https://docs.ntfy.s
 Here we set the headers as an arrays of tuples using Nim's shortcut syntax.
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter5.nim:body}}
+{{#shiftinclude auto:../../../examples/http_client/chapter5/src/uptimemon.nim:body}}
 ```
 
 Requests body must be a sequence of bytes so we convert our text message using [`stringToBytes`](/api/chronos/apps/http/httpcommon.html#stringToBytes,openArray[char]).
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter5.nim:request}}
+{{#shiftinclude auto:../../../examples/http_client/chapter5/src/uptimemon.nim:request}}
 ```
 
 Create the request with the necessary properties. `meth` is the request's HTTP method.
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter5.nim:response}}
+{{#shiftinclude auto:../../../examples/http_client/chapter5/src/uptimemon.nim:response}}
 ```
 
 If the request was successfully created (`request.isOk`), we try to send it with `send()` and discard it (with `closeWait`).
@@ -70,7 +70,7 @@ If the request was successfully created (`request.isOk`), we try to send it with
 If the request couldn't be sent (e.g. ntfy is unavailable), we print a warning.
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter5.nim:check}}
+{{#shiftinclude auto:../../../examples/http_client/chapter5/src/uptimemon.nim:check}}
 ```
 
 Finally, we add calls to `sendAlert` in the `check` branches for `[NOK]` and `[ERR]`.
