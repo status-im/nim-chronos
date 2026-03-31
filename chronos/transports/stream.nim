@@ -10,7 +10,7 @@
 {.push raises: [].}
 
 import std/[deques, strutils]
-import stew/ptrops
+import stew/[ptrops, shims/sequninit]
 import results
 import ".."/[asyncloop, config, handles, bipbuffer, osdefs, osutils, oserrno]
 import ./[common, ipnet]
@@ -2611,20 +2611,12 @@ proc readExactly*(transp: StreamTransport, pbytes: pointer,
       transp.direct.reset()
 
   readLoop("stream.transport.readExactly"):
-    if len(transp.buffer) == 0 and size > 0:
-      if transp.atEof():
-        raise newException(TransportIncompleteError, "Data incomplete!")
-    var bytesRead = 0
-    for (region, rsize) in transp.buffer.regions():
-      let count = min(size, rsize)
-      bytesRead += count
-      if count > 0:
-        copyMem(data, region, count)
-        data = data.offset(count)
-        size -= count
-      if size == 0:
-        break
-    (consumed: bytesRead, done: size == 0)
+    if len(transp.buffer) == 0 and size > 0 and transp.atEof():
+      raise newException(TransportIncompleteError, "Data incomplete!")
+    let consumed = transp.buffer.copyInto(data.makeOpenArray(size))
+    data = data.offset(consumed)
+    size -= consumed
+    (consumed: consumed, done: transp.direct.size == 0)
 
 proc readOnce*(transp: StreamTransport, pbytes: pointer,
                nbytes: int): Future[int] {.
@@ -2653,16 +2645,9 @@ proc readOnce*(transp: StreamTransport, pbytes: pointer,
     if len(transp.buffer) == 0:
       (0, size != nbytes or transp.atEof())
     else:
-      var consumed = 0
-      for (region, rsize) in transp.buffer.regions():
-        let count = min(rsize, size)
-        copyMem(data, region, count)
-        data = data.offset(count)
-        size -= count
-        consumed += count
-
-        if size == 0:
-          break
+      let consumed = transp.buffer.copyInto(data.makeOpenArray(size))
+      data = data.offset(consumed)
+      size -= consumed
 
       (consumed, true)
 
@@ -2765,10 +2750,9 @@ proc read*(transp: StreamTransport): Future[seq[byte]] {.
     if transp.atEof():
       (0, true)
     else:
-      var bytesRead = 0
-      for (region, rsize) in transp.buffer.regions():
-        bytesRead += rsize
-        res.add(region.toUnchecked().toOpenArray(0, rsize - 1))
+      var pos = res.len
+      res.setLenUninit(pos + transp.buffer.len())
+      let bytesRead = transp.buffer.copyInto(res.toOpenArray(pos, res.high()))
       (bytesRead, false)
   res
 
@@ -2785,11 +2769,9 @@ proc read*(transp: StreamTransport, n: int): Future[seq[byte]] {.
       if transp.atEof():
         (0, true)
       else:
-        var bytesRead = 0
-        for (region, rsize) in transp.buffer.regions():
-          let count = min(rsize, n - len(res))
-          bytesRead += count
-          res.add(region.toUnchecked().toOpenArray(0, count - 1))
+        var pos = res.len
+        res.setLenUninit(pos + min(transp.buffer.len(), n - res.len))
+        let bytesRead = transp.buffer.copyInto(res.toOpenArray(pos, res.high()))
         (bytesRead, len(res) == n)
     res
 
