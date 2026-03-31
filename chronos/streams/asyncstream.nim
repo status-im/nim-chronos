@@ -10,6 +10,7 @@
 {.push raises: [].}
 
 import std/strutils
+import stew/[ptrops, shims/sequninit]
 import ../[config, asyncloop, asyncsync, bipbuffer]
 import ../transports/[common, stream]
 export asyncloop, asyncsync, stream, common
@@ -340,22 +341,17 @@ proc readExactly*(rstream: AsyncStreamReader, pbytes: pointer,
       await readExactly(rstream.rsource, pbytes, nbytes)
     else:
       var
-        index = 0
-        pbuffer = pbytes.toUnchecked()
+        total = 0
+        pbuffer = cast[ptr byte](pbytes)
       readLoop():
         if len(rstream.buffer.backend) == 0:
           if rstream.atEof():
             raise newAsyncStreamIncompleteError()
-        var bytesRead = 0
-        for (region, rsize) in rstream.buffer.backend.regions():
-          let count = min(nbytes - index, rsize)
-          bytesRead += count
-          if count > 0:
-            copyMem(addr pbuffer[index], region, count)
-            index += count
-          if index == nbytes:
-            break
-        (consumed: bytesRead, done: index == nbytes)
+        let consumed =
+          rstream.buffer.backend.copyInto(pbuffer.makeOpenArray(nbytes - total))
+        pbuffer = pbuffer.offset(consumed)
+        total += consumed
+        (consumed: consumed, done: total == nbytes)
 
 proc readOnce*(rstream: AsyncStreamReader, pbytes: pointer,
                nbytes: int): Future[int] {.
@@ -378,20 +374,15 @@ proc readOnce*(rstream: AsyncStreamReader, pbytes: pointer,
       return await readOnce(rstream.rsource, pbytes, nbytes)
     else:
       var
-        pbuffer = pbytes.toUnchecked()
-        index = 0
+        total = 0
+        pbuffer = cast[ptr byte](pbytes)
       readLoop():
         if len(rstream.buffer.backend) == 0:
           (0, rstream.atEof())
         else:
-          for (region, rsize) in rstream.buffer.backend.regions():
-            let size = min(rsize, nbytes - index)
-            copyMem(addr pbuffer[index], region, size)
-            index += size
-            if index >= nbytes:
-              break
-          (index, true)
-      index
+          total = rstream.buffer.backend.copyInto(pbuffer.makeOpenArray(nbytes))
+          (total, true)
+      total
 
 proc readUntil*(rstream: AsyncStreamReader, pbytes: pointer, nbytes: int,
                 sep: seq[byte]): Future[int] {.
@@ -530,10 +521,10 @@ proc read*(rstream: AsyncStreamReader): Future[seq[byte]] {.
         if rstream.atEof():
           (0, true)
         else:
-          var bytesRead = 0
-          for (region, rsize) in rstream.buffer.backend.regions():
-            bytesRead += rsize
-            res.add(region.toUnchecked().toOpenArray(0, rsize - 1))
+          var pos = res.len
+          res.setLenUninit(pos + rstream.buffer.backend.len())
+          let bytesRead =
+            rstream.buffer.backend.copyInto(res.toOpenArray(pos, res.high()))
           (bytesRead, false)
       res
 
@@ -562,11 +553,10 @@ proc read*(rstream: AsyncStreamReader, n: int): Future[seq[byte]] {.
           if rstream.atEof():
             (0, true)
           else:
-            var bytesRead = 0
-            for (region, rsize) in rstream.buffer.backend.regions():
-              let count = min(rsize, n - len(res))
-              bytesRead += count
-              res.add(region.toUnchecked().toOpenArray(0, count - 1))
+            var pos = res.len
+            res.setLenUninit(pos + min(rstream.buffer.backend.len(), n - res.len))
+            let bytesRead =
+              rstream.buffer.backend.copyInto(res.toOpenArray(pos, res.high()))
             (bytesRead, len(res) == n)
         res
 
