@@ -29,7 +29,7 @@ suite "Stream Transport test suite":
     # Windows handle numbers depends on many conditions, so we can't use
     # our FD leak detection method.
     when not defined(windows):
-      doAssert getCurrentFD() != markFD
+      doAssert getCurrentFD() == markFD
       skip()
 
   teardown:
