@@ -14,7 +14,13 @@ max-level = 2
 command = "mdbook-open-on-gh"
 renderer = ["html"]
 
+[preprocessor.admonish]
+command = "mdbook-admonish"
+assets_version = "3.0.1" # do not edit: managed by `mdbook-admonish install`
+
+[preprocessor.shiftinclude]
+
 [output.html]
 git-repository-url = "https://github.com/status-im/nim-chronos/"
 git-branch = "master"
-additional-css = ["open-in.css"]
+additional-css = ["./open-in.css", "./mdbook-admonish.css", '.\mdbook-admonish.css']
