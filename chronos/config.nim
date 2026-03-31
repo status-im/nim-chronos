@@ -93,7 +93,7 @@ const
   chronosHasRaises* = 0
     ## raises effect support via `async: (raises: [])`
 
-  chronosTransportDefaultBufferSize* {.intdefine.} = 16384
+  chronosTransportDefaultBufferSize* {.intdefine.} = 4096
     ## Default size of chronos transport internal buffer.
 
   chronosStreamDefaultBufferSize* {.intdefine.} = 16384
