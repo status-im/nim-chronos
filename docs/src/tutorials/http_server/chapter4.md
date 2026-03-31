@@ -30,7 +30,9 @@ A middleware handler is a function that takes the current middleware object, the
 ``` admonish info
 You may wonder why `HttpProcessCallback2` has a `2` in its name and why don't we use [`HttpProcessCallback`](/api/chronos/apps/http/httpserver.html#HttpProcessCallback).
 
-The difference is that `HttpProcessCallback` is not asynchronous and therefore can't be used in async functions. `HttpProcessCallback2` is async so we must use this one.
+The difference is that `HttpProcessCallback2` is a newer and stricter version while `HttpProcessCallback` is kept for backward compatibility.
+
+So, long story short: you should use `HttpProcessCallback2` unless you're sure you need `HttpProcessCallback`.
 ```
 
 ## Registering Middleware
