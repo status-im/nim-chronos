@@ -2616,7 +2616,7 @@ proc readExactly*(transp: StreamTransport, pbytes: pointer,
     let consumed = transp.buffer.copyInto(data.makeOpenArray(size))
     data = data.offset(consumed)
     size -= consumed
-    (consumed: consumed, done: transp.direct.size == 0)
+    (consumed: consumed, done: size == 0)
 
 proc readOnce*(transp: StreamTransport, pbytes: pointer,
                nbytes: int): Future[int] {.
