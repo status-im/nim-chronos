@@ -121,19 +121,17 @@ type
   TransportAbortedError* = object of TransportError
     ## Remote client disconnected before server accepts connection
 
-  TransportState* = enum
+  TransportState* {.pure.} = enum
     ## Transport's state
     ReadPending,                  # Read operation pending (Windows)
     ReadPaused,                   # Read operations paused
-    ReadClosed,                   # Read operations closed
     ReadEof,                      # Read at EOF
     ReadError,                    # Read error
     WritePending,                 # Writer operation pending (Windows)
     WritePaused,                  # Writer operations paused
-    WriteClosed,                  # Writer operations closed
     WriteEof,                     # Remote peer disconnected
     WriteError                    # Write error
-
+    Closed                        # Transport was closed
 var
   AnyAddress* = TransportAddress(family: AddressFamily.IPv4, port: Port(0))
     ## Default INADDR_ANY address for IPv4
@@ -568,11 +566,11 @@ proc anyAddressFix*(a: TransportAddress): TransportAddress =
     a
 
 template checkClosed*(t: untyped) =
-  if (ReadClosed in (t).state) or (WriteClosed in (t).state):
+  if TransportState.Closed in (t).state:
     raise newException(TransportUseClosedError, "Transport is already closed!")
 
 template checkClosed*(t: untyped, future: untyped) =
-  if (ReadClosed in (t).state) or (WriteClosed in (t).state):
+  if TransportState.Closed in (t).state:
     future.fail(newException(TransportUseClosedError,
                              "Transport is already closed!"))
     return future
