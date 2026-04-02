@@ -76,11 +76,13 @@ const
       ""
     elif defined(linux) and not(defined(android) or defined(emscripten)):
       "epoll"
+    elif defined(android) and not(defined(emscripten)):
+      "epoll"
     elif defined(macosx) or defined(macos) or defined(ios) or
           defined(freebsd) or defined(netbsd) or defined(openbsd) or
-          defined(dragonfly):
+          defined(dragonfly) and not(defined(emscripten)):
       "kqueue"
-    elif defined(android) or defined(emscripten):
+    elif defined(emscripten):
       "poll"
     elif defined(posix):
       "poll"
