@@ -115,8 +115,13 @@ type
 
   HttpClientConnectionRef* = ref HttpClientConnection
 
+  HttpProxyKind* {.pure.} =
+    Http
+
   HttpProxy* = object
     ## HTTP proxy configuration
+    kind*: HttpProxyKind
+      # Currently unused, here in case other proxy types are added
     hostname*: string
     port*: uint16
     username*: string
