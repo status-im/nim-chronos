@@ -1,0 +1,54 @@
+IpMask	chronos/transports/ipnet.html#IpMask	ipnet: IpMask	
+IpNet	chronos/transports/ipnet.html#IpNet	ipnet: IpNet	
+`==`	chronos/transports/ipnet.html#==,IpMask,IpMask	ipnet: `==`(m1, m2: IpMask): bool	
+init	chronos/transports/ipnet.html#init,typedesc[IpMask],AddressFamily,int	ipnet: init(t: typedesc[IpMask]; family: AddressFamily; prefix: int): IpMask	
+init	chronos/transports/ipnet.html#init,typedesc[IpMask],TransportAddress	ipnet: init(t: typedesc[IpMask]; netmask: TransportAddress): IpMask	
+initIp	chronos/transports/ipnet.html#initIp,typedesc[IpMask],string	ipnet: initIp(t: typedesc[IpMask]; netmask: string): IpMask	
+init	chronos/transports/ipnet.html#init,typedesc[IpMask],string	ipnet: init(t: typedesc[IpMask]; netmask: string): IpMask	
+toIPv6	chronos/transports/ipnet.html#toIPv6,TransportAddress	ipnet: toIPv6(address: TransportAddress): TransportAddress	
+isV4Mapped	chronos/transports/ipnet.html#isV4Mapped,TransportAddress	ipnet: isV4Mapped(address: TransportAddress): bool	
+toIPv4	chronos/transports/ipnet.html#toIPv4,TransportAddress	ipnet: toIPv4(address: TransportAddress): TransportAddress	
+mask	chronos/transports/ipnet.html#mask,TransportAddress,IpMask	ipnet: mask(a: TransportAddress; m: IpMask): TransportAddress	
+prefix	chronos/transports/ipnet.html#prefix,IpMask	ipnet: prefix(mask: IpMask): int	
+subnetMask	chronos/transports/ipnet.html#subnetMask,IpMask	ipnet: subnetMask(mask: IpMask): TransportAddress	
+`$`	chronos/transports/ipnet.html#$,IpMask	ipnet: `$`(mask: IpMask; include0x = false): string	
+ip	chronos/transports/ipnet.html#ip,IpMask	ipnet: ip(mask: IpMask): string	
+init	chronos/transports/ipnet.html#init,typedesc[IpNet],TransportAddress,int	ipnet: init(t: typedesc[IpNet]; host: TransportAddress; prefix: int): IpNet	
+init	chronos/transports/ipnet.html#init,typedesc[IpNet],TransportAddress,TransportAddress	ipnet: init(t: typedesc[IpNet]; host, mask: TransportAddress): IpNet	
+init	chronos/transports/ipnet.html#init,typedesc[IpNet],TransportAddress,IpMask	ipnet: init(t: typedesc[IpNet]; host: TransportAddress; mask: IpMask): IpNet	
+init	chronos/transports/ipnet.html#init,typedesc[IpNet],string	ipnet: init(t: typedesc[IpNet]; network: string): IpNet	
+`==`	chronos/transports/ipnet.html#==,IpNet,IpNet	ipnet: `==`(n1, n2: IpNet): bool	
+contains	chronos/transports/ipnet.html#contains,IpNet,TransportAddress	ipnet: contains(net: IpNet; address: TransportAddress): bool	
+broadcast	chronos/transports/ipnet.html#broadcast,IpNet	ipnet: broadcast(net: IpNet): TransportAddress	
+subnetMask	chronos/transports/ipnet.html#subnetMask,IpNet	ipnet: subnetMask(net: IpNet): TransportAddress	
+network	chronos/transports/ipnet.html#network,IpNet	ipnet: network(net: IpNet): TransportAddress	
+`and`	chronos/transports/ipnet.html#and,TransportAddress,TransportAddress	ipnet: `and`(address1, address2: TransportAddress): TransportAddress	
+`or`	chronos/transports/ipnet.html#or,TransportAddress,TransportAddress	ipnet: `or`(address1, address2: TransportAddress): TransportAddress	
+`not`	chronos/transports/ipnet.html#not,TransportAddress	ipnet: `not`(address: TransportAddress): TransportAddress	
+`+`	chronos/transports/ipnet.html#+,TransportAddress,	ipnet: `+`(address: TransportAddress; v: int | uint): TransportAddress	
+`-`	chronos/transports/ipnet.html#-,TransportAddress,	ipnet: `-`(address: TransportAddress; v: int | uint): TransportAddress	
+inc	chronos/transports/ipnet.html#inc,TransportAddress,int	ipnet: inc(address: var TransportAddress; v: int = 1)	
+dec	chronos/transports/ipnet.html#dec,TransportAddress,int	ipnet: dec(address: var TransportAddress; v: int = 1)	
+`$`	chronos/transports/ipnet.html#$,IpNet	ipnet: `$`(net: IpNet): string	
+isNone	chronos/transports/ipnet.html#isNone,TransportAddress	ipnet: isNone(address: TransportAddress): bool	
+isZero	chronos/transports/ipnet.html#isZero,TransportAddress	ipnet: isZero(address: TransportAddress): bool	
+isUnspecified	chronos/transports/ipnet.html#isUnspecified,TransportAddress	ipnet: isUnspecified(address: TransportAddress): bool	
+isMulticast	chronos/transports/ipnet.html#isMulticast,TransportAddress	ipnet: isMulticast(address: TransportAddress): bool	
+isUnicast	chronos/transports/ipnet.html#isUnicast,TransportAddress	ipnet: isUnicast(address: TransportAddress): bool	
+isInterfaceLocalMulticast	chronos/transports/ipnet.html#isInterfaceLocalMulticast,TransportAddress	ipnet: isInterfaceLocalMulticast(address: TransportAddress): bool	
+isLinkLocalMulticast	chronos/transports/ipnet.html#isLinkLocalMulticast,TransportAddress	ipnet: isLinkLocalMulticast(address: TransportAddress): bool	
+isUniqueLocal	chronos/transports/ipnet.html#isUniqueLocal,TransportAddress	ipnet: isUniqueLocal(address: TransportAddress): bool	
+isUnicastLinkLocal	chronos/transports/ipnet.html#isUnicastLinkLocal,TransportAddress	ipnet: isUnicastLinkLocal(address: TransportAddress): bool	
+isLoopback	chronos/transports/ipnet.html#isLoopback,TransportAddress	ipnet: isLoopback(address: TransportAddress): bool	
+isAnyLocal	chronos/transports/ipnet.html#isAnyLocal,TransportAddress	ipnet: isAnyLocal(address: TransportAddress): bool	
+isLinkLocal	chronos/transports/ipnet.html#isLinkLocal,TransportAddress	ipnet: isLinkLocal(address: TransportAddress): bool	
+isLinkLocalUnicast	chronos/transports/ipnet.html#isLinkLocalUnicast,TransportAddress	ipnet: isLinkLocalUnicast(address: TransportAddress): bool	
+isSiteLocal	chronos/transports/ipnet.html#isSiteLocal,TransportAddress	ipnet: isSiteLocal(address: TransportAddress): bool	
+isPrivate	chronos/transports/ipnet.html#isPrivate,TransportAddress	ipnet: isPrivate(address: TransportAddress): bool	
+isGlobalMulticast	chronos/transports/ipnet.html#isGlobalMulticast,TransportAddress	ipnet: isGlobalMulticast(address: TransportAddress): bool	
+isShared	chronos/transports/ipnet.html#isShared,TransportAddress	ipnet: isShared(address: TransportAddress): bool	
+isBroadcast	chronos/transports/ipnet.html#isBroadcast,TransportAddress	ipnet: isBroadcast(address: TransportAddress): bool	
+isBenchmarking	chronos/transports/ipnet.html#isBenchmarking,TransportAddress	ipnet: isBenchmarking(address: TransportAddress): bool	
+isDocumentation	chronos/transports/ipnet.html#isDocumentation,TransportAddress	ipnet: isDocumentation(address: TransportAddress): bool	
+isReserved	chronos/transports/ipnet.html#isReserved,TransportAddress	ipnet: isReserved(address: TransportAddress): bool	
+isGlobal	chronos/transports/ipnet.html#isGlobal,TransportAddress	ipnet: isGlobal(address: TransportAddress): bool	
