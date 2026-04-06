@@ -592,7 +592,7 @@ proc selectInto2*[T](s: Selector[T], timeout: int,
 
   var k = 0
   for i in 0 ..< eventsCount:
-    let rkey = s.prepareKey(queueEvents[i]).valueOr: continue
+    let rkey = s.prepareKey(s.queueEvents[i]).valueOr: continue
     readyKeys[k] = rkey
     inc(k)
 
