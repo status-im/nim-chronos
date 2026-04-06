@@ -25,6 +25,7 @@ type
     fds: Table[int32, SelectorKey[T]]
     virtualHoles: Deque[int32]
     virtualId: int32
+    queueEvents: seq[KEvent]
 
   Selector*[T] = ref SelectorImpl[T]
 
@@ -112,7 +113,8 @@ proc new*(t: typedesc[Selector], T: typedesc): SelectResult[Selector[T]] =
     kqFd: kqFd,
     fds: initTable[int32, SelectorKey[T]](chronosInitialSize),
     virtualId: -1'i32,  # Should start with -1, because `InvalidIdent` == -1
-    virtualHoles: initDeque[int32]()
+    virtualHoles: initDeque[int32](),
+    queueEvents: newSeq[KEvent](chronosInitialSize)
   )
   ok(selector)
 
@@ -497,7 +499,6 @@ proc prepareKey[T](s: Selector[T], event: KEvent): Opt[ReadyKey] =
   of EVFILT_READ:
     if (event.flags and EV_EOF) != 0:
       rkey.events.incl(Event.Error)
-      rkey.errorCode = oserrno.ECONNRESET
 
     if Event.User in pkey.events:
       var data: uint64 = 0
@@ -509,7 +510,6 @@ proc prepareKey[T](s: Selector[T], event: KEvent): Opt[ReadyKey] =
           return Opt.none(ReadyKey)
         else:
           rkey.events.incl(Event.Error)
-          rkey.errorCode = errorCode
       rkey.events.incl(Event.User)
     else:
       rkey.events.incl(Event.Read)
@@ -517,7 +517,6 @@ proc prepareKey[T](s: Selector[T], event: KEvent): Opt[ReadyKey] =
   of EVFILT_WRITE:
     if (event.flags and EV_EOF) != 0:
       rkey.events.incl(Event.Error)
-      rkey.errorCode = oserrno.ECONNRESET
 
     rkey.events.incl(Event.Write)
 
@@ -557,12 +556,12 @@ proc prepareKey[T](s: Selector[T], event: KEvent): Opt[ReadyKey] =
 proc selectInto2*[T](s: Selector[T], timeout: int,
                      readyKeys: var openArray[ReadyKey]
                      ): SelectResult[int] =
-  var
-    tv: Timespec
-    queueEvents: array[chronosEventsCount, KEvent]
+  var tv: Timespec
 
   verifySelectParams(timeout, -1, high(int))
 
+  if readyKeys.len() > s.queueEvents.len():
+    s.queueEvents.setLen(readyKeys.len())
   let
     ptrTimeout =
       if timeout != -1:
@@ -575,12 +574,12 @@ proc selectInto2*[T](s: Selector[T], timeout: int,
         addr tv
       else:
         nil
-    maxEventsCount = cint(min(chronosEventsCount, len(readyKeys)))
+    maxEventsCount = cint(len(readyKeys))
     eventsCount =
       block:
         var res = 0
         while true:
-          res = kevent(s.kqFd, nil, cint(0), addr(queueEvents[0]),
+          res = kevent(s.kqFd, nil, cint(0), addr(s.queueEvents[0]),
                        maxEventsCount, ptrTimeout)
           if res < 0:
             let errorCode = osLastError()
