@@ -752,9 +752,9 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     var res = PDispatcher(
       selector: selector,
       timers: initHeapQueue[TimerCallback](),
-      callbacks: initDeque[AsyncCallback](chronosEventsCount),
+      callbacks: initDeque[AsyncCallback](chronosInitialSize),
       idlers: initDeque[AsyncCallback](),
-      keys: newSeq[ReadyKey](chronosEventsCount),
+      keys: newSeq[ReadyKey](chronosInitialSize),
       trackers: initTable[string, TrackerBase](),
       counters: initTable[string, TrackerCounter]()
     )
@@ -1026,12 +1026,8 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     loop.processTimersGetTimeout(curTimeout)
 
     # Processing IO descriptors and all hardware events.
-    let count =
-      block:
-        let res = loop.selector.selectInto2(curTimeout, loop.keys)
-        if res.isErr():
-          raiseOsDefect(res.error(), "poll(): Unable to get OS events")
-        res.get()
+    let count = loop.selector.selectInto2(curTimeout, loop.keys).valueOr:
+      raiseOsDefect(error, "poll(): Unable to get OS events")
 
     for i in 0 ..< count:
       let fd = loop.keys[i].fd
@@ -1057,12 +1053,19 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
             if not isNil(adata.reader.function):
               loop.callbacks.addLast(adata.reader)
 
+    if count == loop.keys.len() and loop.keys.len() < chronosEventsCount:
+      # If we filled the event seq, it's likely that we could have fetched
+      # more events in a single call - fetching more events means less work
+      # since we don't have to poll as often under load and we can
+      # batch more work in a single event loop iteration.
+      loop.keys.setLen(min(loop.keys.len * 2, chronosEventsCount))
+
     # Moving expired timers to `loop.callbacks`.
     loop.processTimers()
 
     # We move idle callbacks to `loop.callbacks` only if there no pending
     # network events.
-    if count == 0:
+    if loop.keys.len == 0:
       loop.processIdlers()
 
     # We move tick callbacks to `loop.callbacks` always.
