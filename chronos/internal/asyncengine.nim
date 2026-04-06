@@ -163,12 +163,6 @@ proc raiseOsDefect*(error: OSErrorCode, msg = "") {.noreturn, noinline.} =
   raise (ref Defect)(msg: msg & "\n[" & $int(error) & "] " & osErrorMsg(error) &
                           "\n" & getStackTrace())
 
-func toPointer(error: OSErrorCode): pointer =
-  when sizeof(int) == 8:
-    cast[pointer](uint64(uint32(error)))
-  else:
-    cast[pointer](uint32(error))
-
 func toException*(v: OSErrorCode): ref OSError = newOSError(v)
   # This helper will allow to use `tryGet()` and raise OSError for
   # Result[T, OSErrorCode] values.
@@ -672,30 +666,18 @@ elif defined(windows):
     ## Closes a socket and ensures that it is unregistered.
     let loop = getThreadDispatcher()
     loop.handles.excl(fd)
-    let
-      param = toPointer(
-        if closeFd(SocketHandle(fd)) == 0:
-          OSErrorCode(0)
-        else:
-          osLastError()
-      )
+    discard closeFd(SocketHandle(fd))
     if not(isNil(aftercb)):
-      loop.callbacks.addLast(AsyncCallback(function: aftercb, udata: param))
+      loop.callbacks.addLast(AsyncCallback(function: aftercb))
 
   proc closeHandle*(fd: AsyncFD, aftercb: CallbackFunc = nil) =
     ## Closes a (pipe/file) handle and ensures that it is unregistered.
     let loop = getThreadDispatcher()
     loop.handles.excl(fd)
-    let
-      param = toPointer(
-        if closeFd(HANDLE(fd)) == 0:
-          OSErrorCode(0)
-        else:
-          osLastError()
-      )
+    discard closeFd(HANDLE(fd))
 
     if not(isNil(aftercb)):
-      loop.callbacks.addLast(AsyncCallback(function: aftercb, udata: param))
+      loop.callbacks.addLast(AsyncCallback(function: aftercb))
 
   proc unregisterAndCloseFd*(fd: AsyncFD): Result[void, OSErrorCode] =
     ## Unregister from system queue and close asynchronous socket.
@@ -890,22 +872,10 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     let loop = getThreadDispatcher()
 
     proc continuation(udata: pointer) =
-      let
-        param = toPointer(
-          if SocketHandle(fd) in loop.selector:
-            let ures = unregister2(fd)
-            if ures.isErr():
-              discard closeFd(cint(fd))
-              ures.error()
-            else:
-              if closeFd(cint(fd)) != 0:
-                osLastError()
-              else:
-                OSErrorCode(0)
-          else:
-            osdefs.EBADF
-        )
-      if not(isNil(aftercb)): aftercb(param)
+      if SocketHandle(fd) in loop.selector:
+        discard unregister2(fd)
+      discard closeFd(cint(fd))
+      if not(isNil(aftercb)): aftercb(nil)
 
     withData(loop.selector, cint(fd), adata) do:
       # We are scheduling reader and writer callbacks to be called

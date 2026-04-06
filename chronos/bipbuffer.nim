@@ -25,6 +25,8 @@
 
 {.push raises: [].}
 
+import stew/[arrayops, ptrops]
+
 type
   BipPos = object
     start: Natural
@@ -138,3 +140,12 @@ iterator regions*(bp: var BipBuffer): tuple[data: ptr byte, size: Natural] =
     yield (addr bp.data[bp.a.start], len(bp.a))
   if len(bp.b) > 0:
     yield (addr bp.data[bp.b.start], len(bp.b))
+
+proc copyInto*(bp: var BipBuffer, tgt: var openArray[byte]): Natural =
+  ## Copy `min(tgt.len, bp.len)` bytes into `tgt`, consuming them in the process
+  ##
+  ## Returns the number of copied bytes
+  var n = 0
+  for (region, rsize) in bp.regions():
+    n += tgt.toOpenArray(n, tgt.high()).copyFrom(region.makeOpenArray(rsize))
+  n

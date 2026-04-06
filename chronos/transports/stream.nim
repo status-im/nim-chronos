@@ -10,7 +10,7 @@
 {.push raises: [].}
 
 import std/[deques, strutils]
-import stew/ptrops
+import stew/[ptrops, shims/sequninit]
 import results
 import ".."/[asyncloop, config, handles, bipbuffer, osdefs, osutils, oserrno]
 import ./[common, ipnet]
@@ -102,6 +102,8 @@ else:
       state: set[TransportState]      # Current Transport state
       reader: ReaderFuture            # Current reader Future
       buffer: BipBuffer               # Reading buffer
+      direct: tuple[data: ptr byte, size: int]
+        # Direct read buffer for bulk reads
       error: ref TransportError       # Current error
       queue: Deque[StreamVector]      # Writer queue
       future: Future[void].Raising([]) # Stream life future
@@ -296,7 +298,7 @@ when defined(windows):
     var ovl = cast[PtrCustomOverlapped](udata)
     var transp = cast[StreamTransport](ovl.data.udata)
 
-    if WriteClosed in transp.state:
+    if TransportState.Closed in transp.state:
       transp.state.excl(WritePending)
       transp.state.incl({WritePaused})
       let error = getTransportUseClosedError()
@@ -511,6 +513,7 @@ when defined(windows):
         of OSErrorCode(-1):
           let bytesCount = transp.rovl.data.bytesCount
           if bytesCount == 0:
+            transp.buffer.commit(0)
             transp.state.incl({ReadEof, ReadPaused})
           else:
             transp.buffer.commit(bytesCount)
@@ -539,7 +542,7 @@ when defined(windows):
 
         transp.completeReader()
 
-        if ReadClosed in transp.state:
+        if TransportState.Closed in transp.state:
           # Stop tracking transport
           transp.clean()
 
@@ -548,7 +551,7 @@ when defined(windows):
           break
       else:
         ## Initiation
-        if transp.state * {ReadEof, ReadClosed, ReadError} == {}:
+        if transp.state * {ReadEof, ReadError, TransportState.Closed} == {}:
           var flags = DWORD(0)
           var bytesCount = 0'u32
           transp.state.excl(ReadPaused)
@@ -606,7 +609,7 @@ when defined(windows):
           transp.completeReader()
           # Transport close happens in callback, and we not started new
           # WSARecvFrom session.
-          if ReadClosed in transp.state:
+          if TransportState.Closed in transp.state:
             if not(transp.future.finished()):
               transp.future.complete()
         ## Finish Loop
@@ -1069,17 +1072,15 @@ when defined(windows):
             server.clean()
           break
 
-  proc resumeRead(transp: StreamTransport): Result[void, OSErrorCode] =
+  proc resumeRead(transp: StreamTransport) =
     if ReadPaused in transp.state:
       transp.state.excl(ReadPaused)
       readStreamLoop(cast[pointer](addr transp.rovl))
-    ok()
 
-  proc resumeWrite(transp: StreamTransport): Result[void, OSErrorCode] =
+  proc resumeWrite(transp: StreamTransport) =
     if WritePaused in transp.state:
       transp.state.excl(WritePaused)
       writeStreamLoop(cast[pointer](addr transp.wovl))
-    ok()
 
   proc pauseAccept(server: StreamServer): Result[void, OSErrorCode] =
     if server.apending:
@@ -1321,8 +1322,11 @@ else:
 
   proc isConnResetError(err: OSErrorCode): bool {.inline.} =
     (err == oserrno.ECONNRESET) or (err == oserrno.EPIPE)
+  proc isWouldBlockError(err: OSErrorCode): bool {.inline.} =
+    # These sometimes have the same value!
+    (err == oserrno.EWOULDBLOCK) or (err == oserrno.EAGAIN)
 
-  proc writeStreamLoop(udata: pointer) =
+  proc writerCb(udata: pointer) =
     if isNil(udata):
       # TODO this is an if rather than an assert for historical reasons:
       # it should not happen unless there are race conditions - but if there
@@ -1334,10 +1338,11 @@ else:
       transp = cast[StreamTransport](udata)
       fd = SocketHandle(transp.fd)
 
-    if WriteClosed in transp.state:
+    # During close, we inject an artifical writer event to clear the pending
+    # writes - the socket gets unregistered from further events in `closeSocket`
+    if TransportState.Closed in transp.state:
       if transp.queue.len > 0:
         let error = getTransportUseClosedError()
-        discard removeWriter2(transp.fd)
         failPendingWriteQueue(transp.queue, error)
       return
 
@@ -1348,32 +1353,28 @@ else:
     while len(transp.queue) > 0:
       template handleError() =
         let err = osLastError()
-        case err
-        of oserrno.EINTR:
+        if err == oserrno.EINTR:
           # Signal happened while writing - try again with all data
           transp.queue.addFirst(vector)
           continue
-        of oserrno.EWOULDBLOCK:
+        elif isWouldBlockError(err):
           # Socket buffer is full - wait until next write notification - in
           # particular, ensure removeWriter is not called
           transp.queue.addFirst(vector)
           return
+        elif isConnResetError(err):
+          # Remote peer disconnected - mark all pending writes as having sent no
+          # data
+          transp.state.incl(WriteEof)
+          if not(vector.writer.finished()):
+            vector.writer.complete(0)
+          completePendingWriteQueue(transp.queue, 0)
         else:
-          # The errors below will clear the write queue, meaning we'll exit the
-          # loop
-          if isConnResetError(err):
-            # Soft error happens which indicates that remote peer got
-            # disconnected, complete all pending writes in queue with 0.
-            transp.state.incl({WriteEof})
-            if not(vector.writer.finished()):
-              vector.writer.complete(0)
-            completePendingWriteQueue(transp.queue, 0)
-          else:
-            transp.state.incl({WriteError})
-            let error = getTransportOsError(err)
-            if not(vector.writer.finished()):
-              vector.writer.fail(error)
-            failPendingWriteQueue(transp.queue, error)
+          transp.state.incl(WriteError)
+          let error = getTransportOsError(err)
+          if not(vector.writer.finished()):
+            vector.writer.fail(error)
+          failPendingWriteQueue(transp.queue, error)
 
       var vector = transp.queue.popFirst()
       case vector.kind
@@ -1381,9 +1382,9 @@ else:
         let res =
           case transp.kind
           of TransportKind.Socket:
-            osdefs.send(fd, vector.buf, vector.buflen, MSG_NOSIGNAL)
+            handleEintr(osdefs.send(fd, vector.buf, vector.buflen, 0))
           of TransportKind.Pipe:
-            osdefs.write(cint(fd), vector.buf, vector.buflen)
+            handleEintr(osdefs.write(cint(fd), vector.buf, vector.buflen))
           else: raiseAssert "Unsupported transport kind: " & $transp.kind
 
         if res >= 0:
@@ -1422,7 +1423,52 @@ else:
     transp.state.incl(WritePaused)
     discard removeWriter2(transp.fd)
 
-  proc readStreamLoop(udata: pointer) =
+  proc readIntoBuffer(transp: StreamTransport): bool =
+    # Try to read some data from the stream, returning true if there was progress
+    let
+      fd = SocketHandle(transp.fd)
+      (data, size) =
+        # If there's a direct buffer available, use it for large reads
+        if (transp.buffer.len() == 0) and
+            (transp.direct.size >= transp.buffer.availSpace()):
+          transp.direct
+        else:
+          transp.buffer.reserve()
+
+      res =
+        case transp.kind
+        of TransportKind.Socket:
+          handleEintr(osdefs.recv(fd, data, size, cint(0)))
+        of TransportKind.Pipe:
+          handleEintr(osdefs.read(cint(fd), data, size))
+        else:
+          raiseAssert "Unsupported transport " & $transp.kind
+
+      bytes = max(0, res)
+
+    if data == transp.direct.data:
+      transp.direct.data = transp.direct.data.offset(bytes)
+      transp.direct.size -= bytes
+    else:
+      transp.buffer.commit(bytes)
+
+    if res < 0:
+      let err = osLastError()
+      if isWouldBlockError(err):
+        false # no progress!
+      elif isConnResetError(err):
+        transp.state.incl(ReadEof)
+        true
+      else:
+        transp.setReadError(err)
+        true
+    elif res == 0:
+      transp.state.incl(ReadEof)
+      true
+    else:
+      true
+
+  proc readerCb(udata: pointer) =
     if isNil(udata):
       # TODO this is an if rather than an assert for historical reasons:
       # it should not happen unless there are race conditions - but if there
@@ -1430,78 +1476,33 @@ else:
       # it could have been released
       return
 
-    let
-      transp = cast[StreamTransport](udata)
-      fd = SocketHandle(transp.fd)
+    let transp = cast[StreamTransport](udata)
 
-    if ReadClosed in transp.state:
-      transp.state.incl({ReadPaused})
-      transp.completeReader()
-    else:
-      if transp.kind == TransportKind.Socket:
-        while true:
-          let
-            (data, size) = transp.buffer.reserve()
-            res = handleEintr(osdefs.recv(fd, data, size, cint(0)))
-          if res < 0:
-            let err = osLastError()
-            transp.buffer.commit(0)
-            case err
-            of oserrno.ECONNRESET:
-              transp.state.incl({ReadEof, ReadPaused})
-              let rres = removeReader2(transp.fd)
-              if rres.isErr():
-                transp.state.incl(ReadError)
-                transp.setReadError(rres.error())
-            else:
-              transp.state.incl({ReadPaused, ReadError})
-              transp.setReadError(err)
-              discard removeReader2(transp.fd)
-          elif res == 0:
-            transp.state.incl({ReadEof, ReadPaused})
-            transp.buffer.commit(0)
-            let rres = removeReader2(transp.fd)
-            if rres.isErr():
-              transp.state.incl(ReadError)
-              transp.setReadError(rres.error())
-          else:
-            transp.buffer.commit(res)
-            if transp.buffer.availSpace() == 0:
-              transp.state.incl(ReadPaused)
-              let rres = removeReader2(transp.fd)
-              if rres.isErr():
-                transp.state.incl(ReadError)
-                transp.setReadError(rres.error())
-          transp.completeReader()
-          break
-      elif transp.kind == TransportKind.Pipe:
-        while true:
-          let
-            (data, size) = transp.buffer.reserve()
-            res = handleEintr(osdefs.read(cint(fd), data, size))
-          if res < 0:
-            let err = osLastError()
-            transp.buffer.commit(0)
-            transp.state.incl(ReadPaused)
-            transp.setReadError(err)
-            discard removeReader2(transp.fd)
-          elif res == 0:
-            transp.state.incl({ReadEof, ReadPaused})
-            transp.buffer.commit(0)
-            let rres = removeReader2(transp.fd)
-            if rres.isErr():
-              transp.state.incl(ReadError)
-              transp.setReadError(rres.error())
-          else:
-            transp.buffer.commit(res)
-            if transp.buffer.availSpace() == 0:
-              transp.state.incl(ReadPaused)
-              let rres = removeReader2(transp.fd)
-              if rres.isErr():
-                transp.state.incl(ReadError)
-                transp.setReadError(rres.error())
-          transp.completeReader()
-          break
+    # During close, we inject an artifical reader event to clear the pending
+    # reader - the socket gets unregistered from further events in `closeSocket`
+    if TransportState.Closed notin transp.state:
+      let progress = transp.readIntoBuffer()
+      doAssert progress, "Expecting progress since we're being notified"
+
+      # The reader callback mechanism is level-triggered meaning that another
+      # callback will happen automatically unless we remove ourselves from the
+      # selector.
+      if (transp.state * {ReadEof, ReadError}) != {} or
+          (transp.buffer.len() > 0 and transp.buffer.availSpace() == 0) or
+          transp.buffer.len() == 0:
+        # Disable further read events if:
+        # * there's an error (no more reads possible)
+        # * we're using the buffer and it is full (must consume buffer first!)
+        # * we're using direct reads (direct reads will continue in readLoop)
+        transp.state.incl(ReadPaused)
+
+        removeReader2(transp.fd).isOkOr:
+          # This should never happen but if it does, don't overwrite existing
+          # error
+          if ReadError notin transp.state:
+            transp.setReadError(error)
+
+    transp.completeReader()
 
   proc newStreamSocketTransport(sock: AsyncFD, bufsize: int,
                                 child: StreamTransport,
@@ -1683,7 +1684,7 @@ else:
           break
     return retFuture
 
-  proc acceptLoop(udata: pointer) =
+  proc acceptCb(udata: pointer) =
     if isNil(udata):
       # TODO this is an if rather than an assert for historical reasons:
       # it should not happen unless there are race conditions - but if there
@@ -1725,31 +1726,45 @@ else:
       if errorCode != oserrno.EAGAIN:
         # This EAGAIN error appears only when server get closed, while
         # acceptLoop() reader callback is already scheduled.
-        raiseOsDefect(errorCode, "acceptLoop(): Unable to accept connection")
+        raiseOsDefect(errorCode, "acceptCb(): Unable to accept connection")
 
   proc resumeAccept(server: StreamServer): Result[void, OSErrorCode] =
-    addReader2(server.sock, acceptLoop, cast[pointer](server))
+    addReader2(server.sock, acceptCb, cast[pointer](server))
 
   proc pauseAccept(server: StreamServer): Result[void, OSErrorCode] =
     removeReader2(server.sock)
 
-  proc resumeRead(transp: StreamTransport): Result[void, OSErrorCode] =
+  proc resumeRead(transp: StreamTransport) =
     if ReadPaused in transp.state:
-      ? addReader2(transp.fd, readStreamLoop, cast[pointer](transp))
       transp.state.excl(ReadPaused)
-    ok()
 
-  proc resumeWrite(transp: StreamTransport): Result[void, OSErrorCode] =
+      addReader2(transp.fd, readerCb, cast[pointer](transp)).isOkOr:
+        if error == oserrno.ESRCH:
+          # ESRCH 3 "No such process"
+          # This error could be happened on pipes only, when process which
+          # owns and communicates through this pipe (stdin, stdout, stderr) is
+          # already dead. In such case we need to send notification that this
+          # pipe is at EOF.
+          transp.state.incl(ReadEof)
+        else:
+          transp.setReadError(error)
+
+        transp.state.incl(ReadPaused)
+        transp.completeReader()
+
+  proc resumeWrite(transp: StreamTransport) =
     if transp.queue.len() == 1:
-      # writeStreamLoop keeps writing until queue is empty - we should not call
+      # onWriteEvent keeps writing until queue is empty - we should not call
       # resumeWrite under any other condition than when the items are
       # added to a queue - if the flag is not set here, it means that the socket
       # was not removed from write notifications at the right time, and this
       # would mean an imbalance in registration and deregistration
       doAssert(WritePaused in transp.state)
-      ? addWriter2(transp.fd, writeStreamLoop, cast[pointer](transp))
       transp.state.excl(WritePaused)
-    ok()
+
+      addWriter2(transp.fd, writerCb, cast[pointer](transp)).isOkOr:
+        transp.queue.failPendingWriteQueue(getTransportOsError(error))
+        transp.state.incl(WritePaused)
 
   proc accept*(server: StreamServer): Future[StreamTransport] {.
       async: (raw: true, raises: [TransportUseClosedError,
@@ -2381,14 +2396,14 @@ template fastWrite(transp: auto, pbytes: var ptr byte, rbytes: var int,
         let res =
           case transp.kind
           of TransportKind.Socket:
-            osdefs.send(SocketHandle(transp.fd), pbytes, rbytes,
-                       MSG_NOSIGNAL)
+            handleEintr(osdefs.send(SocketHandle(transp.fd), pbytes, rbytes, 0))
           of TransportKind.Pipe:
-            osdefs.write(cint(transp.fd), pbytes, rbytes)
+            handleEintr(osdefs.write(cint(transp.fd), pbytes, rbytes))
           else:
             raiseAssert "Unsupported transport kind: " & $transp.kind
+
         if res > 0:
-          pbytes = cast[ptr byte](cast[uint](pbytes) + cast[uint](res))
+          pbytes = pbytes.offset(res)
           rbytes -= res
 
           if rbytes == 0:
@@ -2397,21 +2412,17 @@ template fastWrite(transp: auto, pbytes: var ptr byte, rbytes: var int,
           # Not all bytes written - keep going
         else:
           let err = osLastError()
-          case err
-          of oserrno.EWOULDBLOCK:
+          if isWouldBlockError(err):
             break # No bytes written, add to queue
-          of oserrno.EINTR:
-            continue
+          elif isConnResetError(err):
+            transp.state.incl(WriteEof)
+            retFuture.complete(0)
+            return retFuture
           else:
-            if isConnResetError(err):
-              transp.state.incl({WriteEof})
-              retFuture.complete(0)
-              return retFuture
-            else:
-              transp.state.incl({WriteError})
-              let error = getTransportOsError(err)
-              retFuture.fail(error)
-              return retFuture
+            transp.state.incl(WriteError)
+            let error = getTransportOsError(err)
+            retFuture.fail(error)
+            return retFuture
 
 proc write*(transp: StreamTransport, pbytes: pointer,
             nbytes: int): Future[int] {.
@@ -2431,9 +2442,7 @@ proc write*(transp: StreamTransport, pbytes: pointer,
   var vector = StreamVector(kind: DataBuffer, writer: retFuture,
                             buf: pbytes, buflen: rbytes, size: nbytes)
   transp.queue.addLast(vector)
-  let wres = transp.resumeWrite()
-  if wres.isErr():
-    retFuture.fail(getTransportOsError(wres.error()))
+  transp.resumeWrite()
   return retFuture
 
 proc write*(transp: StreamTransport, msg: string,
@@ -2463,9 +2472,7 @@ proc write*(transp: StreamTransport, msg: string,
   var vector = StreamVector(kind: DataBuffer, writer: retFuture,
                             buf: pbytes, buflen: rbytes, size: nbytes)
   transp.queue.addLast(vector)
-  let wres = transp.resumeWrite()
-  if wres.isErr():
-    retFuture.fail(getTransportOsError(wres.error()))
+  transp.resumeWrite()
   return retFuture
 
 proc write*[T](transp: StreamTransport, msg: seq[T],
@@ -2496,9 +2503,7 @@ proc write*[T](transp: StreamTransport, msg: seq[T],
   var vector = StreamVector(kind: DataBuffer, writer: retFuture,
                             buf: pbytes, buflen: rbytes, size: nbytes)
   transp.queue.addLast(vector)
-  let wres = transp.resumeWrite()
-  if wres.isErr():
-    retFuture.fail(getTransportOsError(wres.error()))
+  transp.resumeWrite()
   return retFuture
 
 proc writeFile*(transp: StreamTransport, handle: int,
@@ -2520,23 +2525,32 @@ proc writeFile*(transp: StreamTransport, handle: int,
                             buf: cast[pointer](size), offset: offset,
                             buflen: handle)
   transp.queue.addLast(vector)
-  let wres = transp.resumeWrite()
-  if wres.isErr():
-    retFuture.fail(getTransportOsError(wres.error()))
+  transp.resumeWrite()
   return retFuture
 
 proc atEof*(transp: StreamTransport): bool {.inline.} =
   ## Returns ``true`` if ``transp`` is at EOF.
-  (len(transp.buffer) == 0) and (ReadEof in transp.state) and
-  (ReadPaused in transp.state)
+  (len(transp.buffer) == 0) and (ReadEof in transp.state)
+
+template fastRead(): bool =
+  # With windows, we have to wait for the IOCP event since the IOCP struct
+  # is shared
+  when not defined(windows) and not defined(nimdoc):
+    # If we're already waiting for a reader event it means the previous event
+    # ended in a partial read - this happens for protocols where messages
+    # typically are small
+    ReadPaused in transp.state and transp.readIntoBuffer()
+  else:
+    false
 
 template readLoop(name, body: untyped): untyped =
   # Read data until a predicate is satisfied - the body should return a tuple
   # signalling how many bytes have been processed and whether we're done reading
   checkClosed(transp)
   checkPending(transp)
+
   while true:
-    if ReadClosed in transp.state:
+    if TransportState.Closed in transp.state:
       raise newException(TransportUseClosedError,
                          "Attempt to read data from closed stream")
     if len(transp.buffer) == 0:
@@ -2551,28 +2565,19 @@ template readLoop(name, body: untyped): untyped =
 
     if len(transp.buffer) == 0:
       checkPending(transp)
-      let fut = ReaderFuture.init(name)
-      transp.reader = fut
-      let res = resumeRead(transp)
-      if res.isErr():
-        let errorCode = res.error()
-        when defined(windows):
-          # This assertion could be changed, because at this moment
-          # resumeRead() could not return any error.
-          raiseOsDefect(errorCode, "readLoop(): Unable to resume reading")
-        else:
-          transp.completeReader()
-          if errorCode == oserrno.ESRCH:
-            # ESRCH 3 "No such process"
-            # This error could be happened on pipes only, when process which
-            # owns and communicates through this pipe (stdin, stdout, stderr) is
-            # already dead. In such case we need to send notification that this
-            # pipe is at EOF.
-            transp.state.incl({ReadEof, ReadPaused})
-          else:
-            raiseTransportOsError(errorCode)
-      else:
-        await fut
+
+      if not fastRead():
+        let fut = ReaderFuture.init(name)
+        transp.reader = fut
+        resumeRead(transp)
+        try:
+          await fut
+        except CancelledError as exc:
+          # When a read is cancelled, we will not cancel the actual reading from
+          # the socket since the OS might already have queued up work for it to
+          # process - however, there's no need to hold on to the reader future
+          transp.reader = nil
+          raise exc
 
 proc readExactly*(transp: StreamTransport, pbytes: pointer,
                   nbytes: int) {.
@@ -2592,23 +2597,26 @@ proc readExactly*(transp: StreamTransport, pbytes: pointer,
   if nbytes == 0:
     return
 
-  var
-    index = 0
-    pbuffer = pbytes.toUnchecked()
+  when defined(windows):
+    var
+      data = cast[ptr byte](pbytes)
+      size = nbytes
+  else:
+    transp.direct.data = cast[ptr byte](pbytes)
+    transp.direct.size = nbytes
+    template data: untyped = transp.direct.data
+    template size: untyped = transp.direct.size
+
+    defer:
+      transp.direct.reset()
+
   readLoop("stream.transport.readExactly"):
-    if len(transp.buffer) == 0:
-      if transp.atEof():
-        raise newException(TransportIncompleteError, "Data incomplete!")
-    var bytesRead = 0
-    for (region, rsize) in transp.buffer.regions():
-      let count = min(nbytes - index, rsize)
-      bytesRead += count
-      if count > 0:
-        copyMem(addr pbuffer[index], region, count)
-        index += count
-      if index == nbytes:
-        break
-    (consumed: bytesRead, done: index == nbytes)
+    if len(transp.buffer) == 0 and size > 0 and transp.atEof():
+      raise newException(TransportIncompleteError, "Data incomplete!")
+    let consumed = transp.buffer.copyInto(data.makeOpenArray(size))
+    data = data.offset(consumed)
+    size -= consumed
+    (consumed: consumed, done: size == 0)
 
 proc readOnce*(transp: StreamTransport, pbytes: pointer,
                nbytes: int): Future[int] {.
@@ -2620,21 +2628,30 @@ proc readOnce*(transp: StreamTransport, pbytes: pointer,
   doAssert(not(isNil(pbytes)), "pbytes must not be nil")
   doAssert(nbytes > 0, "nbytes must be positive integer")
 
-  var
-    pbuffer = pbytes.toUnchecked()
-    index = 0
+  when defined(windows):
+    var
+      data = cast[ptr byte](pbytes)
+      size = nbytes
+  else:
+    transp.direct.data = cast[ptr byte](pbytes)
+    transp.direct.size = nbytes
+    template data: untyped = transp.direct.data
+    template size: untyped = transp.direct.size
+
+    defer:
+      transp.direct.reset()
+
   readLoop("stream.transport.readOnce"):
     if len(transp.buffer) == 0:
-      (0, transp.atEof())
+      (0, size != nbytes or transp.atEof())
     else:
-      for (region, rsize) in transp.buffer.regions():
-        let size = min(rsize, nbytes - index)
-        copyMem(addr pbuffer[index], region, size)
-        index += size
-        if index >= nbytes:
-          break
-      (index, true)
-  index
+      let consumed = transp.buffer.copyInto(data.makeOpenArray(size))
+      data = data.offset(consumed)
+      size -= consumed
+
+      (consumed, true)
+
+  nbytes - size
 
 proc readUntil*(transp: StreamTransport, pbytes: pointer, nbytes: int,
                 sep: seq[byte]): Future[int] {.
@@ -2733,10 +2750,9 @@ proc read*(transp: StreamTransport): Future[seq[byte]] {.
     if transp.atEof():
       (0, true)
     else:
-      var bytesRead = 0
-      for (region, rsize) in transp.buffer.regions():
-        bytesRead += rsize
-        res.add(region.toUnchecked().toOpenArray(0, rsize - 1))
+      var pos = res.len
+      res.setLenUninit(pos + transp.buffer.len())
+      let bytesRead = transp.buffer.copyInto(res.toOpenArray(pos, res.high()))
       (bytesRead, false)
   res
 
@@ -2753,11 +2769,9 @@ proc read*(transp: StreamTransport, n: int): Future[seq[byte]] {.
       if transp.atEof():
         (0, true)
       else:
-        var bytesRead = 0
-        for (region, rsize) in transp.buffer.regions():
-          let count = min(rsize, n - len(res))
-          bytesRead += count
-          res.add(region.toUnchecked().toOpenArray(0, count - 1))
+        var pos = res.len
+        res.setLenUninit(pos + min(transp.buffer.len(), n - res.len))
+        let bytesRead = transp.buffer.copyInto(res.toOpenArray(pos, res.high()))
         (bytesRead, len(res) == n)
     res
 
@@ -2846,20 +2860,19 @@ proc join*(transp: StreamTransport): Future[void] {.
 
 proc closed*(transp: StreamTransport): bool {.inline.} =
   ## Returns ``true`` if transport in closed state.
-  ({ReadClosed, WriteClosed} * transp.state != {})
+  TransportState.Closed in transp.state
 
 proc finished*(transp: StreamTransport): bool {.inline.} =
   ## Returns ``true`` if transport in finished (EOF) state.
-  ({ReadEof, WriteEof} * transp.state != {})
+  {ReadEof, WriteEof} * transp.state != {}
 
 proc failed*(transp: StreamTransport): bool {.inline.} =
   ## Returns ``true`` if transport in error state.
-  ({ReadError, WriteError} * transp.state != {})
+  {ReadError, WriteError} * transp.state != {}
 
 proc running*(transp: StreamTransport): bool {.inline.} =
   ## Returns ``true`` if transport is still pending.
-  ({ReadClosed, ReadEof, ReadError,
-    WriteClosed, WriteEof, WriteError} * transp.state == {})
+  {ReadEof, ReadError, WriteEof, WriteError, TransportState.Closed} * transp.state == {}
 
 proc close*(transp: StreamTransport) =
   ## Closes and frees resources of transport ``transp``.
@@ -2869,8 +2882,8 @@ proc close*(transp: StreamTransport) =
   proc continuation(udata: pointer) {.gcsafe.} =
     transp.clean()
 
-  if {ReadClosed, WriteClosed} * transp.state == {}:
-    transp.state.incl({WriteClosed, ReadClosed})
+  if TransportState.Closed notin transp.state:
+    transp.state.incl(TransportState.Closed)
     when defined(windows):
       if transp.kind == TransportKind.Pipe:
         if WinServerPipe in transp.flags:

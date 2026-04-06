@@ -18,6 +18,7 @@
 {.push raises: [].}
 
 import results
+import stew/[arrayops, ptrops]
 import ../[asyncloop, timer, bipbuffer, config]
 import asyncstream, ../transports/[stream, common]
 export asyncloop, asyncstream, stream, timer, common
@@ -68,7 +69,7 @@ proc readUntilBoundary(rstream: AsyncStreamReader, pbytes: pointer,
   var state = 0
   var pbuffer = cast[ptr UncheckedArray[byte]](pbytes)
 
-  proc predicate(data: openArray[byte]): tuple[consumed: int, done: bool] =
+  proc predicateSep(data: openArray[byte]): tuple[consumed: int, done: bool] =
     if len(data) == 0:
       (0, true)
     else:
@@ -80,16 +81,24 @@ proc readUntilBoundary(rstream: AsyncStreamReader, pbytes: pointer,
         inc(index)
         pbuffer[k] = ch
         inc(k)
-        if len(sep) > 0:
-          if sep[state] == ch:
-            inc(state)
-            if state == len(sep):
-              break
-          else:
-            state = 0
+        if sep[state] == ch:
+          inc(state)
+          if state == len(sep):
+            break
+        else:
+          state = 0
       (index, (state == len(sep)) or (k == nbytes))
 
-  await rstream.readMessage(predicate)
+  proc predicate(data: openArray[byte]): tuple[consumed: int, done: bool] =
+    if len(data) == 0:
+      (0, true)
+    else:
+      let index = pbytes.offset(k).makeOpenArray(byte, nbytes - k).copyFrom(data)
+      k += index
+      (index, (state == len(sep)) or (k == nbytes))
+
+  await rstream.readMessage(if sep.len == 0: predicate else: predicateSep)
+
   return k
 
 func endsWith(s, suffix: openArray[byte]): bool =
