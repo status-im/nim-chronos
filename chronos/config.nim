@@ -141,9 +141,9 @@ when defined(debug) or defined(chronosConfig):
       chronosTLSSessionCacheBufferSize)
 
 when chronosUseSink:
-  template chronosSink*[T] = sink[T]
+  template chronosSink*(T: type): type = sink T
   template chronosMoveSink*(v: sink auto): untyped = move(v)
 else:
-  template chronosSink*[T] = T
+  template chronosSink*(T: type): type = T
   template chronosMoveSink*(v: sink auto): untyped = v
 
