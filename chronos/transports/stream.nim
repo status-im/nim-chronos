@@ -381,6 +381,9 @@ when defined(windows):
               let ret = wsaSend(sock, addr transp.wwsabuf, 1,
                                 addr bytesCount, DWORD(0),
                                 cast[POVERLAPPED](addr transp.wovl), nil)
+              # TODO Similar to WSARecv, we could complete the send future
+              #      immediately if we used separate OVERLAPPED instances for
+              #      each write.
               if ret != 0:
                 let err = osLastError()
                 case err
@@ -562,6 +565,13 @@ when defined(windows):
             let ret = wsaRecv(sock, addr transp.rwsabuf, 1,
                               addr bytesCount, addr flags,
                               cast[POVERLAPPED](addr transp.rovl), nil)
+            # TODO When `0` is returned, it means the operation completed.
+            #      However, an event will also be posted to the IOCP and we must
+            #      process that event before allowing the next read to happen,
+            #      since we only use a single OVERLAPPED instance. If we were to
+            #      allocate a separate OVERLAPPED structure for each read, we
+            #      could mark it as "processed" and complete the reader future
+            #      immediately reducing read latency.
             if ret != 0:
               let err = osLastError()
               case err
@@ -2533,14 +2543,15 @@ proc atEof*(transp: StreamTransport): bool {.inline.} =
   (len(transp.buffer) == 0) and (ReadEof in transp.state)
 
 template fastRead(): bool =
-  # With windows, we have to wait for the IOCP event since the IOCP struct
-  # is shared
   when not defined(windows) and not defined(nimdoc):
     # If we're already waiting for a reader event it means the previous event
     # ended in a partial read - this happens for protocols where messages
     # typically are small
     ReadPaused in transp.state and transp.readIntoBuffer()
   else:
+    # On Windows, we would require separate OVERLAPPED instances for each read
+    # to immediately complete readers and thus avoid the additional latency -
+    # see TODO in readStreamLoop.
     false
 
 template readLoop(name, body: untyped): untyped =
@@ -2598,6 +2609,11 @@ proc readExactly*(transp: StreamTransport, pbytes: pointer,
     return
 
   when defined(windows):
+    # TODO On windows, two missing features prvent direct reads:
+    #      * Per-request cancellation - `readLoop` will initiate an overlapped
+    #        read that needs to be cancelled (using `CancelIoEx`) since the
+    #        `pbytes` buffer goes out of scope on cancellation
+    #      * Per-request OVERLAPPED instances - see `readStreamLoop`
     var
       data = cast[ptr byte](pbytes)
       size = nbytes
@@ -2637,6 +2653,7 @@ proc readOnce*(transp: StreamTransport, pbytes: pointer,
   doAssert(nbytes > 0, "nbytes must be positive integer")
 
   when defined(windows):
+    # TODO see readExactly
     var
       data = cast[ptr byte](pbytes)
       size = nbytes
