@@ -74,14 +74,16 @@ const
   chronosEventEngine* {.strdefine.}: string =
     when defined(nimdoc):
       ""
-    elif defined(linux) and not(defined(android) or defined(emscripten)):
+    elif defined(emscripten):
+      "poll"
+    elif defined(android):
+      "epoll"
+    elif defined(linux):
       "epoll"
     elif defined(macosx) or defined(macos) or defined(ios) or
           defined(freebsd) or defined(netbsd) or defined(openbsd) or
           defined(dragonfly):
       "kqueue"
-    elif defined(android) or defined(emscripten):
-      "poll"
     elif defined(posix):
       "poll"
     else:
