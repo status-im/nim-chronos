@@ -6,7 +6,7 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 import unittest2
-import bearssl/[x509]
+import bearssl/[ssl, x509]
 import stew/byteutils
 import ".."/chronos/unittest2/asynctests
 import ".."/chronos/streams/[tlsstream, chunkstream, boundstream]
@@ -16,6 +16,11 @@ import ".."/chronos/streams/[tlsstream, chunkstream, boundstream]
 # To create self-signed certificate and key you can use openssl
 # openssl req -new -x509 -sha256 -newkey rsa:2048 -nodes \
 # -keyout example-com.key.pem -days 3650 -out example-com.cert.pem
+#
+# To create EC (P-256) self-signed certificate and key:
+# openssl ecparam -genkey -name prime256v1 | \
+# openssl pkcs8 -topk8 -nocrypt -outform PEM > ec.key.pem
+# openssl req -new -x509 -sha256 -key ec.key.pem -days 3650 -out ec.cert.pem
 
 const SelfSignedRsaKey = """
 -----BEGIN PRIVATE KEY-----
@@ -74,7 +79,35 @@ N8r5CwGcIX/XPC3lKazzbZ8baA==
 -----END CERTIFICATE-----
 """
 
+# This SSL EC certificate will expire 31 March 2036.
+const SelfSignedEcKey = """
+-----BEGIN PRIVATE KEY-----
+MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgC9VcD8axNnS+wzKg
+Ng62Lb3LmOiLcUHt7yOS7pY/isyhRANCAARqirbb0fF2B7hLtXUNWFhE49OtAb9X
+QrDOboBNumfzsE/kxgaQ3/T7EQAaaXMOVLRFtOKdLBOEsx51wZJZEICU
+-----END PRIVATE KEY-----
+"""
+
+const SelfSignedEcCert = """
+-----BEGIN CERTIFICATE-----
+MIICEzCCAbmgAwIBAgIUHYNpklhNSMzLR3zBV4jDbwCX/NgwCgYIKoZIzj0EAwIw
+XzELMAkGA1UEBhMCQVUxEzARBgNVBAgMClNvbWUtU3RhdGUxITAfBgNVBAoMGElu
+dGVybmV0IFdpZGdpdHMgUHR5IEx0ZDEYMBYGA1UEAwwPMTI3LjAuMC4xOjQzODA4
+MB4XDTI2MDQwMzA0NTc1MVoXDTM2MDMzMTA0NTc1MVowXzELMAkGA1UEBhMCQVUx
+EzARBgNVBAgMClNvbWUtU3RhdGUxITAfBgNVBAoMGEludGVybmV0IFdpZGdpdHMg
+UHR5IEx0ZDEYMBYGA1UEAwwPMTI3LjAuMC4xOjQzODA4MFkwEwYHKoZIzj0CAQYI
+KoZIzj0DAQcDQgAEaoq229Hxdge4S7V1DVhYROPTrQG/V0Kwzm6ATbpn87BP5MYG
+kN/0+xEAGmlzDlS0RbTinSwThLMedcGSWRCAlKNTMFEwHQYDVR0OBBYEFOy8CFwI
+iU3eg8xtAMrHJFmX59bcMB8GA1UdIwQYMBaAFOy8CFwIiU3eg8xtAMrHJFmX59bc
+MA8GA1UdEwEB/wQFMAMBAf8wCgYIKoZIzj0EAwIDSAAwRQIhAPJKbWOf7MWgfCky
+vf85DkBfIBMo2PM8WrgJYYSRkMmqAiBOcPebl59ZX11s4OhNa9BETOuCIE6kVtNm
+GaLrNaHO6A==
+-----END CERTIFICATE-----
+"""
+
 let SelfSignedTrustAnchors {.importc: "SelfSignedTAs".}: array[1, X509TrustAnchor]
+let SelfSignedEcTrustAnchors {.importc: "SelfSignedEcTAs".}:
+  array[1, X509TrustAnchor]
 {.compile: "testasyncstream.c".}
 
 proc createBigMessage(message: string, size: int): seq[byte] =
@@ -943,6 +976,124 @@ suite "AsyncStream/TLSStream":
       return string.fromBytes(res)
     let res = waitFor checkTrustAnchors("Some message")
     check res == "Some message\r\n"
+
+  test "Client certificate authentication":
+    proc checkClientCert(testMessage: string): Future[string] {.async.} =
+      var key = TLSPrivateKey.init(SelfSignedRsaKey)
+      var cert = TLSCertificate.init(SelfSignedRsaCert)
+
+      proc serveClient(server: StreamServer,
+                      transp: StreamTransport) {.async: (raises: []).} =
+        try:
+          var reader = newAsyncStreamReader(transp)
+          var writer = newAsyncStreamWriter(transp)
+          var sstream = newTLSServerAsyncStream(reader, writer, key, cert,
+            flags = {TLSFlags.NoRenegotiation})
+          # Configure client certificate authentication via BearSSL API.
+          # serverX509 must be stored on TLSAsyncStream to ensure it
+          # outlives the TLS session (BearSSL holds a pointer to it).
+          x509MinimalInitFull(sstream.x509,
+                              unsafeAddr SelfSignedTrustAnchors[0],
+                              uint(len(SelfSignedTrustAnchors)))
+          sslEngineSetDefaultRsavrfy(sstream.scontext.eng)
+          sslEngineSetDefaultEcdsa(sstream.scontext.eng)
+          sslServerSetTrustAnchorNamesAlt(sstream.scontext,
+            unsafeAddr SelfSignedTrustAnchors[0],
+            uint(len(SelfSignedTrustAnchors)))
+          sslEngineSetX509(sstream.scontext.eng,
+            X509ClassPointerConst(addr sstream.x509.vtable))
+          discard sslServerReset(sstream.scontext)
+          await handshake(sstream)
+          await sstream.writer.write(testMessage & "\r\n")
+          await sstream.writer.finish()
+          await sstream.writer.closeWait()
+          await sstream.reader.closeWait()
+          await reader.closeWait()
+          await writer.closeWait()
+          await transp.closeWait()
+          server.stop()
+          server.close()
+        except CatchableError as exc:
+          raiseAssert exc.msg
+
+      var server = createStreamServer(initTAddress("127.0.0.1:0"),
+                                      serveClient, {ReuseAddr})
+      server.start()
+      var conn = await connect(server.localAddress())
+      var creader = newAsyncStreamReader(conn)
+      var cwriter = newAsyncStreamWriter(conn)
+      let flags = {NoVerifyHost, NoVerifyServerName}
+      var cstream = newTLSClientAsyncStream(creader, cwriter, "",
+        flags = flags, certificate = cert, privateKey = key)
+      let res = await cstream.reader.read()
+      await cstream.reader.closeWait()
+      await cstream.writer.closeWait()
+      await creader.closeWait()
+      await cwriter.closeWait()
+      await conn.closeWait()
+      await server.join()
+      return string.fromBytes(res)
+    let res = waitFor checkClientCert("Client cert test")
+    check res == "Client cert test\r\n"
+
+  test "Client certificate authentication (EC)":
+    proc checkClientCertEc(testMessage: string): Future[string] {.async.} =
+      var key = TLSPrivateKey.init(SelfSignedEcKey)
+      var cert = TLSCertificate.init(SelfSignedEcCert)
+
+      proc serveClient(server: StreamServer,
+                      transp: StreamTransport) {.async: (raises: []).} =
+        try:
+          var reader = newAsyncStreamReader(transp)
+          var writer = newAsyncStreamWriter(transp)
+          var sstream = newTLSServerAsyncStream(reader, writer, key, cert,
+            flags = {TLSFlags.NoRenegotiation})
+          # Configure client certificate authentication via BearSSL API.
+          # serverX509 must be stored on TLSAsyncStream to ensure it
+          # outlives the TLS session (BearSSL holds a pointer to it).
+          x509MinimalInitFull(sstream.x509,
+                              unsafeAddr SelfSignedEcTrustAnchors[0],
+                              uint(len(SelfSignedEcTrustAnchors)))
+          sslEngineSetDefaultRsavrfy(sstream.scontext.eng)
+          sslEngineSetDefaultEcdsa(sstream.scontext.eng)
+          sslServerSetTrustAnchorNamesAlt(sstream.scontext,
+            unsafeAddr SelfSignedEcTrustAnchors[0],
+            uint(len(SelfSignedEcTrustAnchors)))
+          sslEngineSetX509(sstream.scontext.eng,
+            X509ClassPointerConst(addr sstream.x509.vtable))
+          discard sslServerReset(sstream.scontext)
+          await handshake(sstream)
+          await sstream.writer.write(testMessage & "\r\n")
+          await sstream.writer.finish()
+          await sstream.writer.closeWait()
+          await sstream.reader.closeWait()
+          await reader.closeWait()
+          await writer.closeWait()
+          await transp.closeWait()
+          server.stop()
+          server.close()
+        except CatchableError as exc:
+          raiseAssert exc.msg
+
+      var server = createStreamServer(initTAddress("127.0.0.1:0"),
+                                      serveClient, {ReuseAddr})
+      server.start()
+      var conn = await connect(server.localAddress())
+      var creader = newAsyncStreamReader(conn)
+      var cwriter = newAsyncStreamWriter(conn)
+      let flags = {NoVerifyHost, NoVerifyServerName}
+      var cstream = newTLSClientAsyncStream(creader, cwriter, "",
+        flags = flags, certificate = cert, privateKey = key)
+      let res = await cstream.reader.read()
+      await cstream.reader.closeWait()
+      await cstream.writer.closeWait()
+      await creader.closeWait()
+      await cwriter.closeWait()
+      await conn.closeWait()
+      await server.join()
+      return string.fromBytes(res)
+    let res = waitFor checkClientCertEc("EC client cert test")
+    check res == "EC client cert test\r\n"
 
 suite "AsyncStream/BoundedStream":
   teardown:
