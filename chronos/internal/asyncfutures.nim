@@ -195,7 +195,7 @@ proc finish(fut: FutureBase, state: FutureState) =
   when chronosFutureTracking:
     scheduleDestructor(fut)
 
-proc complete[T: not void](future: Future[T], val: chronosSink T, loc: ptr SrcLoc) =
+proc complete[T: not void](future: Future[T], val: chronosSink[T], loc: ptr SrcLoc) =
   if not(future.cancelled()):
     checkFinished(future, loc)
     doAssert(isNil(future.internalError))
