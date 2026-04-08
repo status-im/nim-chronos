@@ -1095,6 +1095,54 @@ suite "AsyncStream/TLSStream":
     let res = waitFor checkClientCertEc("EC client cert test")
     check res == "EC client cert test\r\n"
 
+  asyncTest "ALPN negotiation":
+    var key = TLSPrivateKey.init(SelfSignedRsaKey)
+    var cert = TLSCertificate.init(SelfSignedRsaCert)
+    var serverAlpn = ""
+
+    proc serveClient(server: StreamServer,
+                     transp: StreamTransport) {.async: (raises: []).} =
+      try:
+        var reader = newAsyncStreamReader(transp)
+        var writer = newAsyncStreamWriter(transp)
+        var sstream = newTLSServerAsyncStream(reader, writer, key, cert,
+          alpnProtocols = ["h2", "http/1.1"])
+        await handshake(sstream)
+        serverAlpn = getSelectedAlpnProtocol(sstream)
+        await sstream.writer.write(serverAlpn & "\r\n")
+        await sstream.writer.finish()
+        await sstream.writer.closeWait()
+        await sstream.reader.closeWait()
+        await reader.closeWait()
+        await writer.closeWait()
+        await transp.closeWait()
+        server.stop()
+        server.close()
+      except CatchableError as exc:
+        raiseAssert exc.msg
+
+    let flags = {NoVerifyHost, NoVerifyServerName}
+    var server = createStreamServer(initTAddress("127.0.0.1:0"),
+                                    serveClient, {ServerFlags.ReuseAddr})
+    server.start()
+    var conn = await connect(server.localAddress())
+    var creader = newAsyncStreamReader(conn)
+    var cwriter = newAsyncStreamWriter(conn)
+    var cstream = newTLSClientAsyncStream(creader, cwriter, "",
+      flags = flags, alpnProtocols = ["h2", "http/1.1"])
+    await handshake(cstream)
+    let clientAlpn = getSelectedAlpnProtocol(cstream)
+    let res = await cstream.reader.read()
+    await cstream.reader.closeWait()
+    await cstream.writer.closeWait()
+    await creader.closeWait()
+    await cwriter.closeWait()
+    await conn.closeWait()
+    await server.join()
+    check serverAlpn == "h2"
+    check clientAlpn == "h2"
+    check string.fromBytes(res) == "h2\r\n"
+
 suite "AsyncStream/BoundedStream":
   teardown:
     checkLeaks()

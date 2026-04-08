@@ -101,6 +101,7 @@ type
     trustAnchors: TrustAnchorStore
     clientCertificate: TLSCertificate
     clientPrivateKey: TLSPrivateKey
+    alpnProtos: cstringArray
 
   SomeTLSStreamType* = TLSStreamReader|TLSStreamWriter|TLSAsyncStream
   SomeTrustAnchorType* = TrustAnchorStore | openArray[X509TrustAnchor]
@@ -430,6 +431,10 @@ proc tlsLoop*(stream: TLSAsyncStream) {.async: (raises: []).} =
               "Connection to the remote peer has been lost")
           )
 
+  if not isNil(stream.alpnProtos):
+    deallocCStringArray(stream.alpnProtos)
+    stream.alpnProtos = nil
+
   # Completing readers
   stream.reader.buffer.forget()
 
@@ -470,7 +475,8 @@ proc newTLSClientAsyncStream*(
        flags: set[TLSFlags] = {},
        trustAnchors: SomeTrustAnchorType = MozillaTrustAnchors,
        certificate: TLSCertificate = nil,
-       privateKey: TLSPrivateKey = nil
+       privateKey: TLSPrivateKey = nil,
+       alpnProtocols: openArray[string] = []
      ): TLSAsyncStream {.raises: [TLSStreamInitError].} =
   ## Create new TLS asynchronous stream for outbound (client) connections
   ## using reading stream ``rsource`` and writing stream ``wsource``.
@@ -570,6 +576,14 @@ proc newTLSClientAsyncStream*(
                            cuint(algo), ecGetDefault(),
                            ecdsaSignAsn1GetDefault())
 
+  if alpnProtocols.len > 0:
+    res.alpnProtos = allocCStringArray(alpnProtocols)
+    # BearSSL declares protocol_names as `const char **` but the Nim binding
+    # types it as cstringArray (`char **`). Direct assignment fails on
+    # GCC 14+ where -Wincompatible-pointer-types is an error by default.
+    {.emit: [res.ccontext.eng, ".protocol_names = (const char **)", res.alpnProtos, ";"].}
+    res.ccontext.eng.protocolNamesNum = uint16(alpnProtocols.len)
+
   if TLSFlags.NoVerifyServerName in flags:
     let err = sslClientReset(res.ccontext, nil, 0)
     if err == 0:
@@ -597,7 +611,9 @@ proc newTLSServerAsyncStream*(rsource: AsyncStreamReader,
                               minVersion = TLSVersion.TLS11,
                               maxVersion = TLSVersion.TLS12,
                               cache: TLSSessionCache = nil,
-                              flags: set[TLSFlags] = {}): TLSAsyncStream {.
+                              flags: set[TLSFlags] = {},
+                              alpnProtocols: openArray[string] = []
+                              ): TLSAsyncStream {.
      raises: [TLSStreamInitError, TLSStreamProtocolError].} =
   ## Create new TLS asynchronous stream for inbound (server) connections
   ## using reading stream ``rsource`` and writing stream ``wsource``.
@@ -662,6 +678,14 @@ proc newTLSServerAsyncStream*(rsource: AsyncStreamReader,
     sslEngineAddFlags(res.scontext.eng, OPT_TOLERATE_NO_CLIENT_AUTH)
   if TLSFlags.FailOnAlpnMismatch in flags:
     sslEngineAddFlags(res.scontext.eng, OPT_FAIL_ON_ALPN_MISMATCH)
+
+  if alpnProtocols.len > 0:
+    res.alpnProtos = allocCStringArray(alpnProtocols)
+    # BearSSL declares protocol_names as `const char **` but the Nim binding
+    # types it as cstringArray (`char **`). Direct assignment fails on
+    # GCC 14+ where -Wincompatible-pointer-types is an error by default.
+    {.emit: [res.scontext.eng, ".protocol_names = (const char **)", res.alpnProtos, ";"].}
+    res.scontext.eng.protocolNamesNum = uint16(alpnProtocols.len)
 
   let err = sslServerReset(res.scontext)
   if err == 0:
@@ -855,3 +879,17 @@ proc handshake*(rws: SomeTLSStreamType): Future[void] {.
       rws.reader.handshakeFut = retFuture
       rws.writer.handshakeFut = retFuture
   retFuture
+
+proc getSelectedAlpnProtocol*(stream: TLSAsyncStream): string =
+  ## Returns the application protocol selected during the TLS handshake
+  ## via ALPN. Returns an empty string if no protocol was negotiated.
+  ## This proc should be called after the handshake is complete.
+  let engine =
+    case stream.reader.kind
+    of TLSStreamKind.Client:
+      addr stream.ccontext.eng
+    of TLSStreamKind.Server:
+      addr stream.scontext.eng
+  let proto = sslEngineGetSelectedProtocol(engine[])
+  if not isNil(proto):
+    return $proto
