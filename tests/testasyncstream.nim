@@ -1027,11 +1027,10 @@ suite "AsyncStream/TLSStream":
       var cstream =
         newTLSClientAsyncStream(creader, cwriter, testVector[0])
       try:
-        let msg {.used.} = await cstream.reader.read()
+        discard await cstream.reader.read()
+        raiseAssert "should raise"
       except TLSStreamProtocolError as exc:
         check exc.errCode == testVector[1]
-      except CatchableError as exc:
-        raiseAssert $exc.msg
       await cstream.reader.closeWait()
       await cstream.writer.closeWait()
       await creader.closeWait()
