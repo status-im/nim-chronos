@@ -24,58 +24,58 @@ import ".."/chronos/streams/[tlsstream, chunkstream, boundstream]
 
 const SelfSignedRsaKey = """
 -----BEGIN PRIVATE KEY-----
-MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQCn7tXGLKMIMzOG
-tVzUixax1/ftlSLcpEAkZMORuiCCnYjtIJhGZdzRFZC8fBlfAJZpLIAOfX2L2f1J
-ZuwpwDkOIvNqKMBrl5Mvkl5azPT0rtnjuwrcqN5NFtbmZPKFYvbjex2aXGqjl5MW
-nQIs/ZA++DVEXmaN9oDxcZsvRMDKfrGQf9iLeoVL47Gx9KpqNqD/JLIn4LpieumV
-yYidm6ukTOqHRvrWm36y6VvKW4TE97THacULmkeahtTf8zDJbbh4EO+gifgwgJ2W
-BUS0+5hMcWu8111mXmanlOVlcoW8fH8RmPjL1eK1Z3j3SVHEf7oWZtIVW5gGA0jQ
-nfA4K51RAgMBAAECggEANZ7/R13tWKrwouy6DWuz/WlWUtgx333atUQvZhKmWs5u
-cDjeJmxUC7b1FhoSB9GqNT7uTLIpKkSaqZthgRtNnIPwcU890Zz+dEwqMJgNByvl
-it+oYjjRco/+YmaNQaYN6yjelPE5Y678WlYb4b29Fz4t0/zIhj/VgEKkKH2tiXpS
-TIicoM7pSOscEUfaW3yp5bS5QwNU6/AaF1wws0feBACd19ZkcdPvr52jopbhxlXw
-h3XTV/vXIJd5zWGp0h/Jbd4xcD4MVo2GjfkeORKY6SjDaNzt8OGtePcKnnbUVu8b
-2XlDxukhDQXqJ3g0sHz47mhvo4JeIM+FgymRm+3QmQKBgQDTawrEA3Zy9WvucaC7
-Zah02oE9nuvpF12lZ7WJh7+tZ/1ss+Fm7YspEKaUiEk7nn1CAVFtem4X4YCXTBiC
-Oqq/o+ipv1yTur0ae6m4pwLm5wcMWBh3H5zjfQTfrClNN8yjWv8u3/sq8KesHPnT
-R92/sMAptAChPgTzQphWbxFiYwKBgQDLWFaBqXfZYVnTyUvKX8GorS6jGWc6Eh4l
-lAFA+2EBWDICrUxsDPoZjEXrWCixdqLhyehaI3KEFIx2bcPv6X2c7yx3IG5lA/Gx
-TZiKlY74c6jOTstkdLW9RJbg1VUHUVZMf/Owt802YmEfUI5S5v7jFmKW6VG+io+K
-+5KYeHD1uwKBgQDMf53KPA82422jFwYCPjLT1QduM2q97HwIomhWv5gIg63+l4BP
-rzYMYq6+vZUYthUy41OAMgyLzPQ1ZMXQMi83b7R9fTxvKRIBq9xfYCzObGnE5vHD
-SDDZWvR75muM5Yxr9nkfPkgVIPMO6Hg+hiVYZf96V0LEtNjU9HWmJYkLQQKBgQCQ
-ULGUdGHKtXy7AjH3/t3CiKaAupa4cANVSCVbqQy/l4hmvfdu+AbH+vXkgTzgNgKD
-nHh7AI1Vj//gTSayLlQn/Nbh9PJkXtg5rYiFUn+VdQBo6yMOuIYDPZqXFtCx0Nge
-kvCwisHpxwiG4PUhgS+Em259DDonsM8PJFx2OYRx4QKBgEQpGhg71Oi9MhPJshN7
-dYTowaMS5eLTk2264ARaY+hAIV7fgvUa+5bgTVaWL+Cfs33hi4sMRqlEwsmfds2T
-cnQiJ4cU20Euldfwa5FLnk6LaWdOyzYt/ICBJnKFRwfCUbS4Bu5rtMEM+3t0wxnJ
-IgaD04WhoL9EX0Qo3DC1+0kG
+MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDVllWKY+YCjBNY
+FZNtAHgTfZ8B5ONBMGKrwvP25ka7VAj2uowYYog0CAh+s3I1he3yIrNIbAqbdx/b
+y2fTJOgLInj+cLBPdt0ws72qqaUWinj39veWigJScPsQC2xel+dNEOv0spakyQDF
+UmM3QoZA0B0hiuX+0pdnH/aJ/wU7+kpgPXp7ZEm/rrItDkU8mSbg8cHiEpDzh3gf
+m17vxg7RfkUk9iZ1FauybcZec9fgioglobWnBui9gbzod5z3bhXM5h6DBO4tE4ay
+S/+RMc9jBrdyj9McvySzJD0ca1FUDx+bPhr//DH+ZdKujbpnSTo6MYGzGR2OjDOR
+RAJKBuAdAgMBAAECggEAL9lgDILY0pVC+CbNQkwqmmM4Lhpy9vW6BTTFpvhrvCfV
+YkDkhcn9LXrnPEtDOM5qQiaX94+MyMtlLb5h4iGQgn4UkRv5w7OjVffOc99Rhr06
+4IJJcUY1wvZgqHWGr6JkRRWXZthje0M0kwAkDgsvPHHjNNKDOBVBqe61MrEZIRhG
+q0XUAIaFHXqyNzPjBkAxHWCpiMf1jXBC/1gAoCG6/rCjR4FwpE0w8vHkEEV9y6uZ
+j9A1oHPbwWT4Yc55Kr5eraOB6eSNsh9sGNJZOlIYfjiB9K6heeYrRAUz9Ah+w/ZE
+MX565mCgnTcc5HuYelaoQGdjvnzuZgHQ69Zhv04sQQKBgQDuLN+BZa75H7bDZb0u
+CvHvDaCLKDztj58t0RoGd1R5JNrGbHqgV1kymDkqGQOikDDi7dKk35yz7JgKYjHH
+W/XOIn8leY/hZXqMHmpXoYo/eiOIu87JVV1cknLTFAIxwgr1VeXiPll4dSKdQznl
+WkPUDPqPkb060SpnogocPmqYNQKBgQDlkmLnFZgz2t8kw1/Wd8u0tjzDM9zZ3y91
+LAid+CQc5zI6rn8UDWJFR32L4Napss5goj5+TWeNZ9Q4P1yfxxGXEgpb4F5+l5fk
+2Qawm5aifcawPrZUXLZ3kZFMBVWCz1bYbdHrmmmELw1CQmnR8sbulHGiRiwzCPtt
+45dCiHS1SQKBgAzCfKra/re7+jeXoL3xuipbaYlq+3CirB1xQVqtU+o1jj7pGtyy
+MUYjn5RgyLAR13ygzxMkI6oD99U+k3ohtBZ6BKPGUm352Mne60WMkvJ5oaO2pApn
+N1w5QEuMm918jse79VfcjUCFzffs3RIrdszKcTX10dRv1jy9EpuWwHEtAoGBAJ6c
+5XiDkwVA06uy0SR84GGbB6BW1OAzM7bhFZMPPuQ5WJrytRpFpP/4xOVAExBsWeqq
+LkNVd5ZbhmTWYkiCYcTe0glom+EbG/che13KIelivURID/F5nRg/mwPLK6mVV4tx
+VPhTV1Pcrmx5NmO4OXndViWoFiGsswrZlEiDvx8BAoGBAOGgIVpOt1KhlSxzpmM1
+rsuE0cJNlRGEuIOmhvCq43PBEso2MgZFV+qoS1+GmeDHH+ARFWnGppOdZZR160d4
+S1lcvzu66e4v8747og4QYRJyNfLNlOzuemLB/9QC/UArX6IWIpGgq8NPuj3KDYKQ
++UrjQ3In7R6YQnucK9fy/fdI
 -----END PRIVATE KEY-----
 """
 
-# This SSL certificate will expire 13 October 2030.
+# This SSL certificate will expire April 3 2046.
 const SelfSignedRsaCert = """
 -----BEGIN CERTIFICATE-----
-MIIDnzCCAoegAwIBAgIUUdcusjDd3XQi3FPM8urdFG3qI+8wDQYJKoZIhvcNAQEL
-BQAwXzELMAkGA1UEBhMCQVUxEzARBgNVBAgMClNvbWUtU3RhdGUxITAfBgNVBAoM
-GEludGVybmV0IFdpZGdpdHMgUHR5IEx0ZDEYMBYGA1UEAwwPMTI3LjAuMC4xOjQz
-ODA4MB4XDTIwMTAxMjIxNDUwMVoXDTMwMTAxMDIxNDUwMVowXzELMAkGA1UEBhMC
-QVUxEzARBgNVBAgMClNvbWUtU3RhdGUxITAfBgNVBAoMGEludGVybmV0IFdpZGdp
-dHMgUHR5IEx0ZDEYMBYGA1UEAwwPMTI3LjAuMC4xOjQzODA4MIIBIjANBgkqhkiG
-9w0BAQEFAAOCAQ8AMIIBCgKCAQEAp+7VxiyjCDMzhrVc1IsWsdf37ZUi3KRAJGTD
-kboggp2I7SCYRmXc0RWQvHwZXwCWaSyADn19i9n9SWbsKcA5DiLzaijAa5eTL5Je
-Wsz09K7Z47sK3KjeTRbW5mTyhWL243sdmlxqo5eTFp0CLP2QPvg1RF5mjfaA8XGb
-L0TAyn6xkH/Yi3qFS+OxsfSqajag/ySyJ+C6YnrplcmInZurpEzqh0b61pt+sulb
-yluExPe0x2nFC5pHmobU3/MwyW24eBDvoIn4MICdlgVEtPuYTHFrvNddZl5mp5Tl
-ZXKFvHx/EZj4y9XitWd490lRxH+6FmbSFVuYBgNI0J3wOCudUQIDAQABo1MwUTAd
-BgNVHQ4EFgQUBKha84woY5WkFxKw7qx1cONg1H8wHwYDVR0jBBgwFoAUBKha84wo
-Y5WkFxKw7qx1cONg1H8wDwYDVR0TAQH/BAUwAwEB/zANBgkqhkiG9w0BAQsFAAOC
-AQEAHZMYt9Ry+Xj3vTbzpGFQzYQVTJlfJWSN6eWNOivRFQE5io9kOBEe5noa8aLo
-dLkw6ztxRP2QRJmlhGCO9/HwS17ckrkgZp3EC2LFnzxcBmoZu+owfxOT1KqpO52O
-IKOl8eVohi1pEicE4dtTJVcpI7VCMovnXUhzx1Ci4Vibns4a6H+BQa19a1JSpifN
-tO8U5jkjJ8Jprs/VPFhJj2O3di53oDHaYSE5eOrm2ZO14KFHSk9cGcOGmcYkUv8B
-nV5vnGadH5Lvfxb/BCpuONabeRdOxMt9u9yQ89vNpxFtRdZDCpGKZBCfmUP+5m3m
-N8r5CwGcIX/XPC3lKazzbZ8baA==
+MIIDrzCCApegAwIBAgIUaRmvDOkSWBhRABcd6u9Cc2HCY/QwDQYJKoZIhvcNAQEL
+BQAwZzELMAkGA1UEBhMCQVUxEzARBgNVBAgMClNvbWUtU3RhdGUxITAfBgNVBAoM
+GEludGVybmV0IFdpZGdpdHMgUHR5IEx0ZDEgMB4GA1UEAwwXY2hyb25vcy1zZXJ2
+ZXItdGVzdC5jb20wHhcNMjYwNDA4MTAxOTE0WhcNNDYwNDAzMTAxOTE0WjBnMQsw
+CQYDVQQGEwJBVTETMBEGA1UECAwKU29tZS1TdGF0ZTEhMB8GA1UECgwYSW50ZXJu
+ZXQgV2lkZ2l0cyBQdHkgTHRkMSAwHgYDVQQDDBdjaHJvbm9zLXNlcnZlci10ZXN0
+LmNvbTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBANWWVYpj5gKME1gV
+k20AeBN9nwHk40EwYqvC8/bmRrtUCPa6jBhiiDQICH6zcjWF7fIis0hsCpt3H9vL
+Z9Mk6AsieP5wsE923TCzvaqppRaKePf295aKAlJw+xALbF6X500Q6/SylqTJAMVS
+YzdChkDQHSGK5f7Sl2cf9on/BTv6SmA9entkSb+usi0ORTyZJuDxweISkPOHeB+b
+Xu/GDtF+RST2JnUVq7Jtxl5z1+CKiCWhtacG6L2BvOh3nPduFczmHoME7i0ThrJL
+/5Exz2MGt3KP0xy/JLMkPRxrUVQPH5s+Gv/8Mf5l0q6NumdJOjoxgbMZHY6MM5FE
+AkoG4B0CAwEAAaNTMFEwHQYDVR0OBBYEFBc7U60NfyXJcL7if2E8Ogcw6e2aMB8G
+A1UdIwQYMBaAFBc7U60NfyXJcL7if2E8Ogcw6e2aMA8GA1UdEwEB/wQFMAMBAf8w
+DQYJKoZIhvcNAQELBQADggEBALcP+zZPzkVtzuMZF1KK6R/bWZ39MUCwoAxR+SYg
++c9BtNOnIee2P9k5DehUAFnH9j+txG5p4LYkuedbpYeq1EEbLXXatL739xpbHqL1
+RbWnPo6grAxiBPalgPR0Sti/vpzxfGfVD++VCgM80s2FNOdjieIFDhtuQr+HbzFX
+NXq+JQUI2a7Ol4pgj7gp9K1I1PjjRjYrUq+xkO2445H+zuiI1GUj3SfbSqF2cZcf
+cJ3KsbbS6BGOtIpVQOmTtz0H6oZDikwnrTfzMsBoc4x/TnGfFtVe1Fnaz6A47ne9
+RDRrJe3ArYBM/DsrTq5qrSVPBSevknbpG77hDMeZh4FXsac=
 -----END CERTIFICATE-----
 """
 
@@ -931,6 +931,56 @@ suite "AsyncStream/TLSStream":
     await conn.closeWait()
     await server.join()
     check string.fromBytes(res) == (testMessage & "\r\n")
+
+  const TestVectors = [
+    ("test", 56, "X509BadServerName"),
+    ("chronos-server-test.com", 62, "X509NotTrusted")
+  ]
+
+  for testVector in TestVectors:
+    asyncTest "Server certificate check failure [" & testVector[2] & "]":
+      let key = TLSPrivateKey.init(SelfSignedRsaKey)
+      let cert = TLSCertificate.init(SelfSignedRsaCert)
+
+      proc serveClient(server: StreamServer,
+                       transp: StreamTransport) {.async: (raises: []).} =
+        try:
+          var reader = newAsyncStreamReader(transp)
+          var writer = newAsyncStreamWriter(transp)
+          var sstream = newTLSServerAsyncStream(reader, writer, key, cert)
+          expect(AsyncStreamError):
+            await handshake(sstream)
+          await sstream.writer.closeWait()
+          await sstream.reader.closeWait()
+          await reader.closeWait()
+          await writer.closeWait()
+          await transp.closeWait()
+          server.stop()
+          server.close()
+        except CatchableError as exc:
+          raiseAssert $exc.msg
+
+      var server = createStreamServer(initTAddress("127.0.0.1:0"),
+                                      serveClient, {ServerFlags.ReuseAddr})
+      server.start()
+      var conn = await connect(server.localAddress())
+      var creader = newAsyncStreamReader(conn)
+      var cwriter = newAsyncStreamWriter(conn)
+      # We are using self-signed certificate
+      var cstream =
+        newTLSClientAsyncStream(creader, cwriter, testVector[0])
+      try:
+        let msg {.used.} = await cstream.reader.read()
+      except TLSStreamProtocolError as exc:
+        check exc.errCode == testVector[1]
+      except CatchableError as exc:
+        raiseAssert $exc.msg
+      await cstream.reader.closeWait()
+      await cstream.writer.closeWait()
+      await creader.closeWait()
+      await cwriter.closeWait()
+      await conn.closeWait()
+      await server.join()
 
   asyncTest "Custom TrustAnchors":
     proc checkTrustAnchors(testMessage: string): Future[string] {.async.} =
