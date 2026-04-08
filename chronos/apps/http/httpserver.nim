@@ -1295,7 +1295,7 @@ template checkResponseCanBeModified(t: untyped) =
            "Response could not be modified at this stage")
 
 template checkPointerLength(t1, t2: untyped) =
-  doAssert(not(isNil(t1)), "pbytes must not be nil")
+  doAssert(not(isNil(t1)) or t2 == 0, "pbytes must not be nil")
   doAssert(t2 >= 0, "nbytes should be bigger or equal to zero")
 
 proc setHeader*(resp: HttpResponseRef, key, value: string) =
