@@ -79,6 +79,63 @@ N8r5CwGcIX/XPC3lKazzbZ8baA==
 -----END CERTIFICATE-----
 """
 
+const SelfSignedRsaKey2 = """
+-----BEGIN PRIVATE KEY-----
+MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDVllWKY+YCjBNY
+FZNtAHgTfZ8B5ONBMGKrwvP25ka7VAj2uowYYog0CAh+s3I1he3yIrNIbAqbdx/b
+y2fTJOgLInj+cLBPdt0ws72qqaUWinj39veWigJScPsQC2xel+dNEOv0spakyQDF
+UmM3QoZA0B0hiuX+0pdnH/aJ/wU7+kpgPXp7ZEm/rrItDkU8mSbg8cHiEpDzh3gf
+m17vxg7RfkUk9iZ1FauybcZec9fgioglobWnBui9gbzod5z3bhXM5h6DBO4tE4ay
+S/+RMc9jBrdyj9McvySzJD0ca1FUDx+bPhr//DH+ZdKujbpnSTo6MYGzGR2OjDOR
+RAJKBuAdAgMBAAECggEAL9lgDILY0pVC+CbNQkwqmmM4Lhpy9vW6BTTFpvhrvCfV
+YkDkhcn9LXrnPEtDOM5qQiaX94+MyMtlLb5h4iGQgn4UkRv5w7OjVffOc99Rhr06
+4IJJcUY1wvZgqHWGr6JkRRWXZthje0M0kwAkDgsvPHHjNNKDOBVBqe61MrEZIRhG
+q0XUAIaFHXqyNzPjBkAxHWCpiMf1jXBC/1gAoCG6/rCjR4FwpE0w8vHkEEV9y6uZ
+j9A1oHPbwWT4Yc55Kr5eraOB6eSNsh9sGNJZOlIYfjiB9K6heeYrRAUz9Ah+w/ZE
+MX565mCgnTcc5HuYelaoQGdjvnzuZgHQ69Zhv04sQQKBgQDuLN+BZa75H7bDZb0u
+CvHvDaCLKDztj58t0RoGd1R5JNrGbHqgV1kymDkqGQOikDDi7dKk35yz7JgKYjHH
+W/XOIn8leY/hZXqMHmpXoYo/eiOIu87JVV1cknLTFAIxwgr1VeXiPll4dSKdQznl
+WkPUDPqPkb060SpnogocPmqYNQKBgQDlkmLnFZgz2t8kw1/Wd8u0tjzDM9zZ3y91
+LAid+CQc5zI6rn8UDWJFR32L4Napss5goj5+TWeNZ9Q4P1yfxxGXEgpb4F5+l5fk
+2Qawm5aifcawPrZUXLZ3kZFMBVWCz1bYbdHrmmmELw1CQmnR8sbulHGiRiwzCPtt
+45dCiHS1SQKBgAzCfKra/re7+jeXoL3xuipbaYlq+3CirB1xQVqtU+o1jj7pGtyy
+MUYjn5RgyLAR13ygzxMkI6oD99U+k3ohtBZ6BKPGUm352Mne60WMkvJ5oaO2pApn
+N1w5QEuMm918jse79VfcjUCFzffs3RIrdszKcTX10dRv1jy9EpuWwHEtAoGBAJ6c
+5XiDkwVA06uy0SR84GGbB6BW1OAzM7bhFZMPPuQ5WJrytRpFpP/4xOVAExBsWeqq
+LkNVd5ZbhmTWYkiCYcTe0glom+EbG/che13KIelivURID/F5nRg/mwPLK6mVV4tx
+VPhTV1Pcrmx5NmO4OXndViWoFiGsswrZlEiDvx8BAoGBAOGgIVpOt1KhlSxzpmM1
+rsuE0cJNlRGEuIOmhvCq43PBEso2MgZFV+qoS1+GmeDHH+ARFWnGppOdZZR160d4
+S1lcvzu66e4v8747og4QYRJyNfLNlOzuemLB/9QC/UArX6IWIpGgq8NPuj3KDYKQ
++UrjQ3In7R6YQnucK9fy/fdI
+-----END PRIVATE KEY-----
+"""
+
+# This SSL certificate will expire April 3 2046.
+const SelfSignedRsaCert2 = """
+-----BEGIN CERTIFICATE-----
+MIIDrzCCApegAwIBAgIUaRmvDOkSWBhRABcd6u9Cc2HCY/QwDQYJKoZIhvcNAQEL
+BQAwZzELMAkGA1UEBhMCQVUxEzARBgNVBAgMClNvbWUtU3RhdGUxITAfBgNVBAoM
+GEludGVybmV0IFdpZGdpdHMgUHR5IEx0ZDEgMB4GA1UEAwwXY2hyb25vcy1zZXJ2
+ZXItdGVzdC5jb20wHhcNMjYwNDA4MTAxOTE0WhcNNDYwNDAzMTAxOTE0WjBnMQsw
+CQYDVQQGEwJBVTETMBEGA1UECAwKU29tZS1TdGF0ZTEhMB8GA1UECgwYSW50ZXJu
+ZXQgV2lkZ2l0cyBQdHkgTHRkMSAwHgYDVQQDDBdjaHJvbm9zLXNlcnZlci10ZXN0
+LmNvbTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBANWWVYpj5gKME1gV
+k20AeBN9nwHk40EwYqvC8/bmRrtUCPa6jBhiiDQICH6zcjWF7fIis0hsCpt3H9vL
+Z9Mk6AsieP5wsE923TCzvaqppRaKePf295aKAlJw+xALbF6X500Q6/SylqTJAMVS
+YzdChkDQHSGK5f7Sl2cf9on/BTv6SmA9entkSb+usi0ORTyZJuDxweISkPOHeB+b
+Xu/GDtF+RST2JnUVq7Jtxl5z1+CKiCWhtacG6L2BvOh3nPduFczmHoME7i0ThrJL
+/5Exz2MGt3KP0xy/JLMkPRxrUVQPH5s+Gv/8Mf5l0q6NumdJOjoxgbMZHY6MM5FE
+AkoG4B0CAwEAAaNTMFEwHQYDVR0OBBYEFBc7U60NfyXJcL7if2E8Ogcw6e2aMB8G
+A1UdIwQYMBaAFBc7U60NfyXJcL7if2E8Ogcw6e2aMA8GA1UdEwEB/wQFMAMBAf8w
+DQYJKoZIhvcNAQELBQADggEBALcP+zZPzkVtzuMZF1KK6R/bWZ39MUCwoAxR+SYg
++c9BtNOnIee2P9k5DehUAFnH9j+txG5p4LYkuedbpYeq1EEbLXXatL739xpbHqL1
+RbWnPo6grAxiBPalgPR0Sti/vpzxfGfVD++VCgM80s2FNOdjieIFDhtuQr+HbzFX
+NXq+JQUI2a7Ol4pgj7gp9K1I1PjjRjYrUq+xkO2445H+zuiI1GUj3SfbSqF2cZcf
+cJ3KsbbS6BGOtIpVQOmTtz0H6oZDikwnrTfzMsBoc4x/TnGfFtVe1Fnaz6A47ne9
+RDRrJe3ArYBM/DsrTq5qrSVPBSevknbpG77hDMeZh4FXsac=
+-----END CERTIFICATE-----
+"""
+
 # This SSL EC certificate will expire 31 March 2036.
 const SelfSignedEcKey = """
 -----BEGIN PRIVATE KEY-----
@@ -931,6 +988,55 @@ suite "AsyncStream/TLSStream":
     await conn.closeWait()
     await server.join()
     check string.fromBytes(res) == (testMessage & "\r\n")
+
+  const TestVectors = [
+    ("test", 56, "X509BadServerName"),
+    ("chronos-server-test.com", 62, "X509NotTrusted")
+  ]
+
+  for testVector in TestVectors:
+    asyncTest "Server certificate check failure [" & testVector[2] & "]":
+      let key = TLSPrivateKey.init(SelfSignedRsaKey2)
+      let cert = TLSCertificate.init(SelfSignedRsaCert2)
+
+      proc serveClient(server: StreamServer,
+                       transp: StreamTransport) {.async: (raises: []).} =
+        try:
+          var reader = newAsyncStreamReader(transp)
+          var writer = newAsyncStreamWriter(transp)
+          var sstream = newTLSServerAsyncStream(reader, writer, key, cert)
+          expect(AsyncStreamError):
+            await handshake(sstream)
+          await sstream.writer.closeWait()
+          await sstream.reader.closeWait()
+          await reader.closeWait()
+          await writer.closeWait()
+          await transp.closeWait()
+          server.stop()
+          server.close()
+        except CatchableError as exc:
+          raiseAssert $exc.msg
+
+      var server = createStreamServer(initTAddress("127.0.0.1:0"),
+                                      serveClient, {ServerFlags.ReuseAddr})
+      server.start()
+      var conn = await connect(server.localAddress())
+      var creader = newAsyncStreamReader(conn)
+      var cwriter = newAsyncStreamWriter(conn)
+      # We are using self-signed certificate
+      var cstream =
+        newTLSClientAsyncStream(creader, cwriter, testVector[0])
+      try:
+        discard await cstream.reader.read()
+        raiseAssert "should raise"
+      except TLSStreamProtocolError as exc:
+        check exc.errCode == testVector[1]
+      await cstream.reader.closeWait()
+      await cstream.writer.closeWait()
+      await creader.closeWait()
+      await cwriter.closeWait()
+      await conn.closeWait()
+      await server.join()
 
   asyncTest "Custom TrustAnchors":
     proc checkTrustAnchors(testMessage: string): Future[string] {.async.} =

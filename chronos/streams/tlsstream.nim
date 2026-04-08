@@ -399,6 +399,11 @@ proc tlsLoop*(stream: TLSAsyncStream) {.async: (raises: []).} =
     else:
       nil
 
+  if (loopState == AsyncStreamState.Finished) and not(isNil(error)):
+    loopState = AsyncStreamState.Error
+    stream.reader.error = error
+    stream.writer.error = error
+
   # Syncing state for reader and writer
   stream.writer.state = loopState
   stream.reader.state = loopState
