@@ -1465,7 +1465,7 @@ proc initSimpleVtbl*(
     readOnceImpl: ReadOnceProc,
     streamBufferSize = DefaultStreamBufferSize,
 ): T =
-  template bufferedLoop(body: untyped): untyped =
+  template bufferedLoop(rstream: AsyncStreamReader, body: untyped): untyped =
     if rstream.buffer.isNil:
       rstream.buffer = AsyncBufferRef.new(streamBufferSize)
     while true:
@@ -1541,7 +1541,7 @@ proc initSimpleVtbl*(
       pbuffer = pbytes.toUnchecked()
       state = 0
       k = 0
-    bufferedLoop:
+    rstream.bufferedLoop:
       if rstream.atEof():
         raise newAsyncStreamIncompleteError()
 
@@ -1566,7 +1566,7 @@ proc initSimpleVtbl*(
       res = ""
       state = 0
 
-    bufferedLoop:
+    rstream.bufferedLoop:
       if rstream.atEof():
         (0, true)
       else:
@@ -1630,7 +1630,7 @@ proc initSimpleVtbl*(
   proc readMessageImpl(
       rstream: AsyncStreamReader, pred: ReadMessagePredicate
   ) {.async: (raises: [CancelledError, AsyncStreamError]).} =
-    bufferedLoop:
+    rstream.bufferedLoop:
       if rstream.buffer.backend.len() == 0:
         pred([])
       else:

@@ -17,6 +17,7 @@
 
 {.push raises: [].}
 
+import stew/shims/sequninit
 import results
 import ../[asyncloop, timer, bipbuffer, config]
 import asyncstream, ../transports/[stream, common]
