@@ -864,7 +864,7 @@ suite "AsyncStream/ChunkedStream":
             if len(inputstr) == offset:
               break
             let toWrite = min(writeChunkSize, len(inputstr) - offset)
-            await wstream2.write(addr inputstr[offset], toWrite)
+            await wstream2.write(unsafeAddr inputstr[offset], toWrite)
             offset = offset + toWrite
           await wstream2.finish()
           await wstream2.closeWait()
@@ -1018,7 +1018,7 @@ suite "AsyncStream/TLSStream":
             if len(inputstr) == offset:
               break
             let toWrite = min(writeChunkSize, len(inputstr) - offset)
-            await sstream.writer.write(addr inputstr[offset], toWrite)
+            await sstream.writer.write(unsafeAddr inputstr[offset], toWrite)
             offset = offset + toWrite
 
           await sstream.writer.finish()
