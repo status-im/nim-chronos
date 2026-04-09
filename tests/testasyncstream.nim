@@ -8,8 +8,8 @@
 import unittest2
 import bearssl/[ssl, x509]
 import stew/byteutils
-import ".."/chronos/unittest2/asynctests
-import ".."/chronos/streams/[tlsstream, chunkstream, boundstream]
+import ../chronos/unittest2/asynctests
+import ../chronos/streams/[tlsstream, chunkstream, boundstream]
 
 {.used.}
 
@@ -850,7 +850,7 @@ suite "AsyncStream/ChunkedStream":
     await testBigData(262400, 4096)
     await testBigData(767309, 4457)
 
-  asyncTest "read small chunks":
+  asyncTest "read chunks":
     proc checkVector(inputstr: seq[byte],
                      writeChunkSize: int,
                      readChunkSize: int): Future[seq[byte]] {.async.} =
@@ -859,13 +859,12 @@ suite "AsyncStream/ChunkedStream":
         try:
           var wstream = newAsyncStreamWriter(transp)
           var wstream2 = newChunkedStreamWriter(wstream)
-          var data = inputstr
           var offset = 0
           while true:
-            if len(data) == offset:
+            if len(inputstr) == offset:
               break
-            let toWrite = min(writeChunkSize, len(data) - offset)
-            await wstream2.write(addr data[offset], toWrite)
+            let toWrite = min(writeChunkSize, len(inputstr) - offset)
+            await wstream2.write(addr inputstr[offset], toWrite)
             offset = offset + toWrite
           await wstream2.finish()
           await wstream2.closeWait()
@@ -892,61 +891,27 @@ suite "AsyncStream/ChunkedStream":
       await server.join()
       return res
 
-    proc testSmallChunk(datasize: int,
+    proc testChunk(datasize: int,
                         writeChunkSize: int,
                         readChunkSize: int): Future[bool] {.async.} =
       var data = createBigMessage("REQUESTSTREAMMESSAGE", datasize)
       var check = await checkVector(data, writeChunkSize, readChunkSize)
       return (data == check)
 
-    check waitFor(testSmallChunk(4457, 128, 1)) == true
-    check waitFor(testSmallChunk(65600, 1024, 17)) == true
-    check waitFor(testSmallChunk(262400, 4096, 61)) == true
-    check waitFor(testSmallChunk(767309, 4457, 173)) == true
+    check waitFor(testChunk(4457, 128, 1)) == true
+    check waitFor(testChunk(65600, 1024, 17)) == true
+    check waitFor(testChunk(262400, 4096, 61)) == true
+    check waitFor(testChunk(767309, 4457, 173)) == true
+    check waitFor(testChunk(767309, 4457, 173)) == true
+    check waitFor(testChunk(767309, 67000, 67001)) == true
 
 suite "AsyncStream/TLSStream":
   teardown:
     checkLeaks()
 
-  const HttpHeadersMark = @[byte(0x0D), byte(0x0A), byte(0x0D), byte(0x0A)]
-  test "Simple HTTPS connection":
-    skip()
-    # proc headerClient(address: TransportAddress,
-    #                   name: string): Future[bool] {.async: (raises: []).} =
-    #   try:
-    #     var mark = "HTTP/1.1 "
-    #     var buffer = newSeq[byte](8192)
-    #     var transp = await connect(address)
-    #     var reader = newAsyncStreamReader(transp)
-    #     var writer = newAsyncStreamWriter(transp)
-    #     var tlsstream = newTLSClientAsyncStream(reader, writer, name)
-    #     await tlsstream.writer.write("GET / HTTP/1.1\r\nHost: " & name &
-    #                                 "\r\nConnection: close\r\n\r\n")
-    #     var readFut = tlsstream.reader.readUntil(addr buffer[0], len(buffer),
-    #                                             HttpHeadersMark)
-    #     let res = await withTimeout(readFut, 5.seconds)
-    #     if res:
-    #       var length = readFut.read()
-    #       buffer.setLen(length)
-    #       if len(buffer) > len(mark):
-    #         if equalMem(addr buffer[0], addr mark[0], len(mark)):
-    #           result = true
-
-    #     await tlsstream.reader.closeWait()
-    #     await tlsstream.writer.closeWait()
-    #     await reader.closeWait()
-    #     await writer.closeWait()
-    #     await transp.closeWait()
-    #   except CatchableError as exc:
-    #     raiseAssert exc.msg
-
-    # let res = waitFor(headerClient(resolveTAddress("www.google.com:443")[0],
-    #                   "www.google.com"))
-    # check res == true
-
   asyncTest "Simple server with RSA self-signed certificate":
-    var key: TLSPrivateKey
-    var cert: TLSCertificate
+    let key = TLSPrivateKey.init(SelfSignedRsaKey)
+    let cert = TLSCertificate.init(SelfSignedRsaCert)
     let testMessage = "TEST MESSAGE"
 
     proc serveClient(server: StreamServer,
@@ -967,9 +932,6 @@ suite "AsyncStream/TLSStream":
         server.close()
       except CatchableError as exc:
         raiseAssert exc.msg
-
-    key = TLSPrivateKey.init(SelfSignedRsaKey)
-    cert = TLSCertificate.init(SelfSignedRsaCert)
 
     var server = createStreamServer(initTAddress("127.0.0.1:0"),
                                     serveClient, {ServerFlags.ReuseAddr})
@@ -1038,11 +1000,12 @@ suite "AsyncStream/TLSStream":
       await conn.closeWait()
       await server.join()
 
-  asyncTest "Custom TrustAnchors":
-    proc checkTrustAnchors(testMessage: string): Future[string] {.async.} =
-      var key = TLSPrivateKey.init(SelfSignedRsaKey)
-      var cert = TLSCertificate.init(SelfSignedRsaCert)
-      let trustAnchors = TrustAnchorStore.new(SelfSignedTrustAnchors)
+  asyncTest "chunks":
+    let key = TLSPrivateKey.init(SelfSignedRsaKey)
+    let cert = TLSCertificate.init(SelfSignedRsaCert)
+    proc checkVector(inputstr: seq[byte],
+                     writeChunkSize: int,
+                     readChunkSize: int): Future[seq[byte]] {.async.} =
 
       proc serveClient(server: StreamServer,
                       transp: StreamTransport) {.async: (raises: []).} =
@@ -1050,8 +1013,14 @@ suite "AsyncStream/TLSStream":
           var reader = newAsyncStreamReader(transp)
           var writer = newAsyncStreamWriter(transp)
           var sstream = newTLSServerAsyncStream(reader, writer, key, cert)
-          await handshake(sstream)
-          await sstream.writer.write(testMessage & "\r\n")
+          var offset = 0
+          while true:
+            if len(inputstr) == offset:
+              break
+            let toWrite = min(writeChunkSize, len(inputstr) - offset)
+            await sstream.writer.write(addr inputstr[offset], toWrite)
+            offset = offset + toWrite
+
           await sstream.writer.finish()
           await sstream.writer.closeWait()
           await sstream.reader.closeWait()
@@ -1064,142 +1033,196 @@ suite "AsyncStream/TLSStream":
           raiseAssert exc.msg
 
       var server = createStreamServer(initTAddress("127.0.0.1:0"),
-                                      serveClient, {ReuseAddr})
+                                      serveClient, {ServerFlags.ReuseAddr})
       server.start()
       var conn = await connect(server.localAddress())
       var creader = newAsyncStreamReader(conn)
       var cwriter = newAsyncStreamWriter(conn)
-      let flags = {NoVerifyServerName}
-      var cstream = newTLSClientAsyncStream(creader, cwriter, "", flags = flags,
-        trustAnchors = trustAnchors)
-      let res = await cstream.reader.read()
-      await cstream.reader.closeWait()
-      await cstream.writer.closeWait()
-      await creader.closeWait()
-      await cwriter.closeWait()
-      await conn.closeWait()
-      await server.join()
-      return string.fromBytes(res)
-    let res = waitFor checkTrustAnchors("Some message")
-    check res == "Some message\r\n"
-
-  test "Client certificate authentication":
-    proc checkClientCert(testMessage: string): Future[string] {.async.} =
-      var key = TLSPrivateKey.init(SelfSignedRsaKey)
-      var cert = TLSCertificate.init(SelfSignedRsaCert)
-
-      proc serveClient(server: StreamServer,
-                      transp: StreamTransport) {.async: (raises: []).} =
-        try:
-          var reader = newAsyncStreamReader(transp)
-          var writer = newAsyncStreamWriter(transp)
-          var sstream = newTLSServerAsyncStream(reader, writer, key, cert,
-            flags = {TLSFlags.NoRenegotiation})
-          # Configure client certificate authentication via BearSSL API.
-          # serverX509 must be stored on TLSAsyncStream to ensure it
-          # outlives the TLS session (BearSSL holds a pointer to it).
-          x509MinimalInitFull(sstream.x509,
-                              unsafeAddr SelfSignedTrustAnchors[0],
-                              uint(len(SelfSignedTrustAnchors)))
-          sslEngineSetDefaultRsavrfy(sstream.scontext.eng)
-          sslEngineSetDefaultEcdsa(sstream.scontext.eng)
-          sslServerSetTrustAnchorNamesAlt(sstream.scontext,
-            unsafeAddr SelfSignedTrustAnchors[0],
-            uint(len(SelfSignedTrustAnchors)))
-          sslEngineSetX509(sstream.scontext.eng,
-            X509ClassPointerConst(addr sstream.x509.vtable))
-          discard sslServerReset(sstream.scontext)
-          await handshake(sstream)
-          await sstream.writer.write(testMessage & "\r\n")
-          await sstream.writer.finish()
-          await sstream.writer.closeWait()
-          await sstream.reader.closeWait()
-          await reader.closeWait()
-          await writer.closeWait()
-          await transp.closeWait()
-          server.stop()
-          server.close()
-        except CatchableError as exc:
-          raiseAssert exc.msg
-
-      var server = createStreamServer(initTAddress("127.0.0.1:0"),
-                                      serveClient, {ReuseAddr})
-      server.start()
-      var conn = await connect(server.localAddress())
-      var creader = newAsyncStreamReader(conn)
-      var cwriter = newAsyncStreamWriter(conn)
+      # We are using self-signed certificate
       let flags = {NoVerifyHost, NoVerifyServerName}
-      var cstream = newTLSClientAsyncStream(creader, cwriter, "",
-        flags = flags, certificate = cert, privateKey = key)
-      let res = await cstream.reader.read()
+      var cstream = newTLSClientAsyncStream(creader, cwriter, "", flags = flags)
+      var res: seq[byte]
+      while not(cstream.reader.atEof()):
+        var chunk = await cstream.reader.read(readChunkSize)
+        res.add(chunk)
       await cstream.reader.closeWait()
       await cstream.writer.closeWait()
       await creader.closeWait()
       await cwriter.closeWait()
       await conn.closeWait()
       await server.join()
-      return string.fromBytes(res)
-    let res = waitFor checkClientCert("Client cert test")
-    check res == "Client cert test\r\n"
+      return res
 
-  test "Client certificate authentication (EC)":
-    proc checkClientCertEc(testMessage: string): Future[string] {.async.} =
-      var key = TLSPrivateKey.init(SelfSignedEcKey)
-      var cert = TLSCertificate.init(SelfSignedEcCert)
+    proc testChunk(datasize: int,
+                        writeChunkSize: int,
+                        readChunkSize: int): Future[bool] {.async.} =
+      var data = createBigMessage("REQUESTSTREAMMESSAGE", datasize)
+      var check = await checkVector(data, writeChunkSize, readChunkSize)
+      return (data == check)
 
-      proc serveClient(server: StreamServer,
-                      transp: StreamTransport) {.async: (raises: []).} =
-        try:
-          var reader = newAsyncStreamReader(transp)
-          var writer = newAsyncStreamWriter(transp)
-          var sstream = newTLSServerAsyncStream(reader, writer, key, cert,
-            flags = {TLSFlags.NoRenegotiation})
-          # Configure client certificate authentication via BearSSL API.
-          # serverX509 must be stored on TLSAsyncStream to ensure it
-          # outlives the TLS session (BearSSL holds a pointer to it).
-          x509MinimalInitFull(sstream.x509,
-                              unsafeAddr SelfSignedEcTrustAnchors[0],
-                              uint(len(SelfSignedEcTrustAnchors)))
-          sslEngineSetDefaultRsavrfy(sstream.scontext.eng)
-          sslEngineSetDefaultEcdsa(sstream.scontext.eng)
-          sslServerSetTrustAnchorNamesAlt(sstream.scontext,
-            unsafeAddr SelfSignedEcTrustAnchors[0],
-            uint(len(SelfSignedEcTrustAnchors)))
-          sslEngineSetX509(sstream.scontext.eng,
-            X509ClassPointerConst(addr sstream.x509.vtable))
-          discard sslServerReset(sstream.scontext)
-          await handshake(sstream)
-          await sstream.writer.write(testMessage & "\r\n")
-          await sstream.writer.finish()
-          await sstream.writer.closeWait()
-          await sstream.reader.closeWait()
-          await reader.closeWait()
-          await writer.closeWait()
-          await transp.closeWait()
-          server.stop()
-          server.close()
-        except CatchableError as exc:
-          raiseAssert exc.msg
+    check waitFor(testChunk(4457, 128, 1)) == true
+    check waitFor(testChunk(65600, 1024, 17)) == true
+    check waitFor(testChunk(262400, 4096, 61)) == true
+    check waitFor(testChunk(767309, 4457, 173)) == true
+    check waitFor(testChunk(767309, 4457, 173)) == true
+    check waitFor(testChunk(767309, 67000, 67001)) == true
 
-      var server = createStreamServer(initTAddress("127.0.0.1:0"),
-                                      serveClient, {ReuseAddr})
-      server.start()
-      var conn = await connect(server.localAddress())
-      var creader = newAsyncStreamReader(conn)
-      var cwriter = newAsyncStreamWriter(conn)
-      let flags = {NoVerifyHost, NoVerifyServerName}
-      var cstream = newTLSClientAsyncStream(creader, cwriter, "",
-        flags = flags, certificate = cert, privateKey = key)
-      let res = await cstream.reader.read()
-      await cstream.reader.closeWait()
-      await cstream.writer.closeWait()
-      await creader.closeWait()
-      await cwriter.closeWait()
-      await conn.closeWait()
-      await server.join()
-      return string.fromBytes(res)
-    let res = waitFor checkClientCertEc("EC client cert test")
-    check res == "EC client cert test\r\n"
+  asyncTest "Custom TrustAnchors":
+    let key = TLSPrivateKey.init(SelfSignedRsaKey)
+    let cert = TLSCertificate.init(SelfSignedRsaCert)
+    let trustAnchors = TrustAnchorStore.new(SelfSignedTrustAnchors)
+    const testMessage = "Some message\r\n"
+    proc serveClient(server: StreamServer,
+                    transp: StreamTransport) {.async: (raises: []).} =
+      try:
+        var reader = newAsyncStreamReader(transp)
+        var writer = newAsyncStreamWriter(transp)
+        var sstream = newTLSServerAsyncStream(reader, writer, key, cert)
+        await handshake(sstream)
+        await sstream.writer.write(testMessage)
+        await sstream.writer.finish()
+        await sstream.writer.closeWait()
+        await sstream.reader.closeWait()
+        await reader.closeWait()
+        await writer.closeWait()
+        await transp.closeWait()
+        server.stop()
+        server.close()
+      except CatchableError as exc:
+        raiseAssert exc.msg
+
+    var server = createStreamServer(initTAddress("127.0.0.1:0"),
+                                    serveClient, {ReuseAddr})
+    server.start()
+    var conn = await connect(server.localAddress())
+    var creader = newAsyncStreamReader(conn)
+    var cwriter = newAsyncStreamWriter(conn)
+    let flags = {NoVerifyServerName}
+    var cstream = newTLSClientAsyncStream(creader, cwriter, "", flags = flags,
+      trustAnchors = trustAnchors)
+    let res = await cstream.reader.read()
+    await cstream.reader.closeWait()
+    await cstream.writer.closeWait()
+    await creader.closeWait()
+    await cwriter.closeWait()
+    await conn.closeWait()
+    await server.join()
+    check: string.fromBytes(res) == testMessage
+
+  asyncTest "Client certificate authentication":
+    let key = TLSPrivateKey.init(SelfSignedRsaKey)
+    let cert = TLSCertificate.init(SelfSignedRsaCert)
+    const testMessage = "Client cert test\r\n"
+
+    proc serveClient(server: StreamServer,
+                    transp: StreamTransport) {.async: (raises: []).} =
+      try:
+        var reader = newAsyncStreamReader(transp)
+        var writer = newAsyncStreamWriter(transp)
+        var sstream = newTLSServerAsyncStream(reader, writer, key, cert,
+          flags = {TLSFlags.NoRenegotiation})
+        # Configure client certificate authentication via BearSSL API.
+        # serverX509 must be stored on TLSAsyncStream to ensure it
+        # outlives the TLS session (BearSSL holds a pointer to it).
+        x509MinimalInitFull(sstream.x509,
+                            unsafeAddr SelfSignedTrustAnchors[0],
+                            uint(len(SelfSignedTrustAnchors)))
+        sslEngineSetDefaultRsavrfy(sstream.scontext.eng)
+        sslEngineSetDefaultEcdsa(sstream.scontext.eng)
+        sslServerSetTrustAnchorNamesAlt(sstream.scontext,
+          unsafeAddr SelfSignedTrustAnchors[0],
+          uint(len(SelfSignedTrustAnchors)))
+        sslEngineSetX509(sstream.scontext.eng,
+          X509ClassPointerConst(addr sstream.x509.vtable))
+        discard sslServerReset(sstream.scontext)
+        await handshake(sstream)
+        await sstream.writer.write(testMessage)
+        await sstream.writer.finish()
+        await sstream.writer.closeWait()
+        await sstream.reader.closeWait()
+        await reader.closeWait()
+        await writer.closeWait()
+        await transp.closeWait()
+        server.stop()
+        server.close()
+      except CatchableError as exc:
+        raiseAssert exc.msg
+
+    var server = createStreamServer(initTAddress("127.0.0.1:0"),
+                                    serveClient, {ReuseAddr})
+    server.start()
+    var conn = await connect(server.localAddress())
+    var creader = newAsyncStreamReader(conn)
+    var cwriter = newAsyncStreamWriter(conn)
+    let flags = {NoVerifyHost, NoVerifyServerName}
+    var cstream = newTLSClientAsyncStream(creader, cwriter, "",
+      flags = flags, certificate = cert, privateKey = key)
+    let res = await cstream.reader.read()
+    await cstream.reader.closeWait()
+    await cstream.writer.closeWait()
+    await creader.closeWait()
+    await cwriter.closeWait()
+    await conn.closeWait()
+    await server.join()
+    check:
+      string.fromBytes(res) == testMessage
+
+  asyncTest "Client certificate authentication (EC)":
+    let key = TLSPrivateKey.init(SelfSignedEcKey)
+    let cert = TLSCertificate.init(SelfSignedEcCert)
+    const testMessage = "EC client cert test\r\n"
+    proc serveClient(server: StreamServer,
+                    transp: StreamTransport) {.async: (raises: []).} =
+      try:
+        var reader = newAsyncStreamReader(transp)
+        var writer = newAsyncStreamWriter(transp)
+        var sstream = newTLSServerAsyncStream(reader, writer, key, cert,
+          flags = {TLSFlags.NoRenegotiation})
+        # Configure client certificate authentication via BearSSL API.
+        # serverX509 must be stored on TLSAsyncStream to ensure it
+        # outlives the TLS session (BearSSL holds a pointer to it).
+        x509MinimalInitFull(sstream.x509,
+                            unsafeAddr SelfSignedEcTrustAnchors[0],
+                            uint(len(SelfSignedEcTrustAnchors)))
+        sslEngineSetDefaultRsavrfy(sstream.scontext.eng)
+        sslEngineSetDefaultEcdsa(sstream.scontext.eng)
+        sslServerSetTrustAnchorNamesAlt(sstream.scontext,
+          unsafeAddr SelfSignedEcTrustAnchors[0],
+          uint(len(SelfSignedEcTrustAnchors)))
+        sslEngineSetX509(sstream.scontext.eng,
+          X509ClassPointerConst(addr sstream.x509.vtable))
+        discard sslServerReset(sstream.scontext)
+        await handshake(sstream)
+        await sstream.writer.write(testMessage)
+        await sstream.writer.finish()
+        await sstream.writer.closeWait()
+        await sstream.reader.closeWait()
+        await reader.closeWait()
+        await writer.closeWait()
+        await transp.closeWait()
+        server.stop()
+        server.close()
+      except CatchableError as exc:
+        raiseAssert exc.msg
+
+    var server = createStreamServer(initTAddress("127.0.0.1:0"),
+                                    serveClient, {ReuseAddr})
+    server.start()
+    var conn = await connect(server.localAddress())
+    var creader = newAsyncStreamReader(conn)
+    var cwriter = newAsyncStreamWriter(conn)
+    let flags = {NoVerifyHost, NoVerifyServerName}
+    var cstream = newTLSClientAsyncStream(creader, cwriter, "",
+      flags = flags, certificate = cert, privateKey = key)
+    let res = await cstream.reader.read()
+    await cstream.reader.closeWait()
+    await cstream.writer.closeWait()
+    await creader.closeWait()
+    await cwriter.closeWait()
+    await conn.closeWait()
+    await server.join()
+    check:
+      string.fromBytes(res) == testMessage
 
   asyncTest "ALPN negotiation":
     var key = TLSPrivateKey.init(SelfSignedRsaKey)
