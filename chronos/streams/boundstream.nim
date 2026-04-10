@@ -57,7 +57,7 @@ template newBoundedStreamOverflowError(): ref BoundedStreamOverflowError =
   newException(BoundedStreamOverflowError, "Stream boundary exceeded")
 
 proc readUntilBoundary(
-    rstream: BoundedStreamReader, pbytes: pointer, nbytes: int, sep: seq[byte]
+    rstream: BoundedStreamReader, pbytes: pointer, nbytes: int
 ): Future[int] {.async: (raises: [CancelledError, AsyncStreamError]).} =
   doAssert(not(isNil(pbytes)), "pbytes must not be nil")
   doAssert(nbytes > 0, "nbytes must be positive")
@@ -67,10 +67,11 @@ proc readUntilBoundary(
 
   proc predicateSep(data: openArray[byte]): tuple[consumed: int, done: bool] =
     if len(data) == 0:
-      for c in sep.toOpenArray(0, rstream.bstate - 1):
-        # Since we didn't match a full separator ..
-        pbuffer[k] = c
-        inc(k)
+      if rstream.bstate < rstream.boundary.len:
+        for c in rstream.boundary.toOpenArray(0, rstream.bstate - 1):
+          # Since we didn't match a full separator ..
+          pbuffer[k] = c
+          inc(k)
       (0, true)
     else:
       var index = 0
@@ -78,15 +79,17 @@ proc readUntilBoundary(
         let ch = data[index]
         inc(index)
 
-        if sep[rstream.bstate] == ch:
+        if rstream.boundary[rstream.bstate] == ch:
           inc(rstream.bstate)
           if k + rstream.bstate == nbytes:
-            return (index, true)
+            return (index, k > 0 or rstream.bstate == len(rstream.boundary))
 
-          if rstream.bstate == len(sep):
+          if rstream.bstate == len(rstream.boundary):
+            if k == 0:
+              rstream.bstate = 0
             return (index, true)
         else:
-          for c in sep.toOpenArray(0, rstream.bstate - 1):
+          for c in rstream.boundary.toOpenArray(0, rstream.bstate - 1):
             pbuffer[k] = c
             inc(k)
           rstream.bstate = 0
@@ -103,7 +106,6 @@ proc readUntilBoundary(
 
   return k
 
-import stew/ptrops
 proc readOnce(
     rstream: BoundedStreamReader, pbytes: pointer, nbytes: int
 ): Future[int] {.async: (raises: [CancelledError, AsyncStreamError]).} =
@@ -136,7 +138,7 @@ proc readOnce(
       if rstream.boundary.len == 0:
         rstream.rsource.readOnce(pbytes, nbytes)
       else:
-        rstream.readUntilBoundary(pbytes, nbytes, rstream.boundary)
+        rstream.readUntilBoundary(pbytes, nbytes)
 
     n =
       try:
