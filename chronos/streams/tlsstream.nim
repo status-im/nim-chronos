@@ -578,11 +578,8 @@ proc newTLSClientAsyncStream*(
 
   if alpnProtocols.len > 0:
     res.alpnProtos = allocCStringArray(alpnProtocols)
-    # BearSSL declares protocol_names as `const char **` but the Nim binding
-    # types it as cstringArray (`char **`). Direct assignment fails on
-    # GCC 14+ where -Wincompatible-pointer-types is an error by default.
-    {.emit: [res.ccontext.eng, ".protocol_names = (const char **)", res.alpnProtos, ";"].}
-    res.ccontext.eng.protocolNamesNum = uint16(alpnProtocols.len)
+    sslEngineSetProtocolNames(res.ccontext.eng, res.alpnProtos,
+                              uint(alpnProtocols.len))
 
   if TLSFlags.NoVerifyServerName in flags:
     let err = sslClientReset(res.ccontext, nil, 0)
@@ -681,11 +678,8 @@ proc newTLSServerAsyncStream*(rsource: AsyncStreamReader,
 
   if alpnProtocols.len > 0:
     res.alpnProtos = allocCStringArray(alpnProtocols)
-    # BearSSL declares protocol_names as `const char **` but the Nim binding
-    # types it as cstringArray (`char **`). Direct assignment fails on
-    # GCC 14+ where -Wincompatible-pointer-types is an error by default.
-    {.emit: [res.scontext.eng, ".protocol_names = (const char **)", res.alpnProtos, ";"].}
-    res.scontext.eng.protocolNamesNum = uint16(alpnProtocols.len)
+    sslEngineSetProtocolNames(res.scontext.eng, res.alpnProtos,
+                              uint(alpnProtocols.len))
 
   let err = sslServerReset(res.scontext)
   if err == 0:
