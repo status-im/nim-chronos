@@ -10,7 +10,7 @@
 {.push raises: [].}
 
 import std/[tables, uri, strutils]
-import stew/[base10], httputils, results
+import stew/[base10, ptrops], httputils, results
 import ../../[asyncloop, asyncsync, config]
 import ../../streams/[asyncstream, boundstream, chunkstream]
 import "."/[httptable, httpcommon, multipart]
@@ -1299,7 +1299,7 @@ template checkResponseCanBeModified(t: untyped) =
            "Response could not be modified at this stage")
 
 template checkPointerLength(t1, t2: untyped) =
-  doAssert(not(isNil(t1)), "pbytes must not be nil")
+  doAssert(not(isNil(t1)) or t2 == 0, "pbytes must not be nil")
   doAssert(t2 >= 0, "nbytes should be bigger or equal to zero")
 
 proc setHeader*(resp: HttpResponseRef, key, value: string) =
@@ -1418,21 +1418,8 @@ proc sendBody*(resp: HttpResponseRef, pbytes: pointer, nbytes: int) {.
 proc sendBody*(resp: HttpResponseRef, data: ByteChar) {.
      async: (raises: [CancelledError, HttpWriteError]).} =
   ## Send HTTP response at once by using data ``data``.
-  checkPending(resp)
-  let responseHeaders = resp.prepareLengthHeaders(len(data))
-  resp.setResponseState(HttpResponseState.Prepared)
-  try:
-    resp.setResponseState(HttpResponseState.Sending)
-    await resp.connection.writer.write(responseHeaders)
-    if len(data) > 0:
-      await resp.connection.writer.write(data)
-    resp.setResponseState(HttpResponseState.Finished)
-  except CancelledError as exc:
-    resp.setResponseState(HttpResponseState.Cancelled)
-    raise exc
-  except AsyncStreamError as exc:
-    resp.setResponseState(HttpResponseState.Failed)
-    raiseHttpWriteError("Unable to send response body, reason: " & $exc.msg)
+  # TODO https://github.com/status-im/nim-chronos/issues/578
+  await resp.sendBody(baseAddr data, data.len) # await to keep data alive
 
 proc sendError*(resp: HttpResponseRef, code: HttpCode, body = "") {.
      async: (raises: [CancelledError, HttpWriteError]).} =
@@ -1587,7 +1574,8 @@ proc respond*(req: HttpRequestRef, code: HttpCode, content: ByteChar,
   response.status = code
   for k, v in headers.stringItems():
     response.addHeader(k, v)
-  await response.sendBody(content)
+  # TODO https://github.com/status-im/nim-chronos/issues/578
+  await response.sendBody(baseAddr content, content.len)
   response
 
 proc respond*(req: HttpRequestRef, code: HttpCode,

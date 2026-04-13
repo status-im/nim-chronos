@@ -229,10 +229,10 @@ when defined(windows):
         of ERROR_OPERATION_ABORTED:
           # CancelIO() interrupt or closeSocket() call.
           transp.state.incl(ReadPaused)
-          if ReadClosed in transp.state and not(transp.future.finished()):
+          if TransportState.Closed in transp.state and not(transp.future.finished()):
             # Stop tracking transport
             untrackCounter(DgramTransportTrackerName)
-            # If `ReadClosed` present, then close(transport) was called.
+            # If `Closed` present, then close(transport) was called.
             transp.future.complete()
             GC_unref(transp)
           break
@@ -243,7 +243,7 @@ when defined(windows):
           asyncSpawn transp.function(transp, remoteAddress)
       else:
         ## Initiation
-        if transp.state * {ReadEof, ReadClosed, ReadError} == {}:
+        if transp.state * {ReadEof, ReadError, TransportState.Closed} == {}:
           transp.state.incl(ReadPending)
           let fd = SocketHandle(transp.fd)
           transp.rflag = 0
@@ -275,7 +275,7 @@ when defined(windows):
         else:
           # Transport closure happens in callback, and we not started new
           # WSARecvFrom session.
-          if ReadClosed in transp.state and not(transp.future.finished()):
+          if TransportState.Closed in transp.state and not(transp.future.finished()):
             # Stop tracking transport
             untrackCounter(DgramTransportTrackerName)
             transp.future.complete()
@@ -446,7 +446,7 @@ else:
       ## This situation can be happen, when there events present
       ## after transport was closed.
       return
-    if ReadClosed in transp.state:
+    if TransportState.Closed in transp.state:
       transp.state.incl({ReadPaused})
     else:
       while true:
@@ -479,7 +479,7 @@ else:
       ## This situation can be happen, when there events present
       ## after transport was closed.
       return
-    if WriteClosed in transp.state:
+    if TransportState.Closed in transp.state:
       transp.state.incl({WritePaused})
     else:
       if len(transp.queue) > 0:
@@ -655,9 +655,10 @@ proc close*(transp: DatagramTransport) =
       transp.future.complete()
       GC_unref(transp)
 
-  when defined(windows):
-    if {ReadClosed, WriteClosed} * transp.state == {}:
-      transp.state.incl({WriteClosed, ReadClosed})
+  if TransportState.Closed notin transp.state:
+    transp.state.incl(TransportState.Closed)
+
+    when defined(windows):
       if ReadPaused in transp.state:
         # If readDatagramLoop() is not running we need to finish in
         # continuation step.
@@ -666,10 +667,8 @@ proc close*(transp: DatagramTransport) =
         # If readDatagramLoop() is running, it will be properly finished inside
         # of readDatagramLoop().
         closeSocket(transp.fd)
-  else:
-    if {ReadClosed, WriteClosed} * transp.state == {}:
-      transp.state.incl({WriteClosed, ReadClosed})
-      closeSocket(transp.fd, continuation)
+    else:
+        closeSocket(transp.fd, continuation)
 
 proc getTransportAddresses(
     local, remote: Opt[IpAddress],
@@ -1001,7 +1000,7 @@ proc join*(transp: DatagramTransport): Future[void] {.
 
 proc closed*(transp: DatagramTransport): bool {.inline.} =
   ## Returns ``true`` if transport in closed state.
-  {ReadClosed, WriteClosed} * transp.state != {}
+  TransportState.Closed in transp.state
 
 proc closeWait*(transp: DatagramTransport): Future[void] {.
     async: (raises: []).} =

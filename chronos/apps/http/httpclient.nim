@@ -10,7 +10,7 @@
 {.push raises: [].}
 
 import std/[uri, tables, sequtils]
-import stew/[base10, base64, byteutils], httputils, results
+import stew/[base10, base64, byteutils, ptrops], httputils, results
 import ../../asyncloop, ../../asyncsync
 import ../../streams/[asyncstream, tlsstream, chunkstream, boundstream]
 import httptable, httpcommon, httpagent, httpbodyrw, multipart
@@ -1204,7 +1204,9 @@ proc send*(request: HttpClientRequestRef): Future[HttpClientResponseRef] {.
     request.connection.state = HttpClientConnectionState.RequestHeadersSent
     request.connection.state = HttpClientConnectionState.RequestBodySending
     if len(request.buffer) > 0:
-      await request.connection.writer.write(move(request.buffer))
+      # TODO https://github.com/status-im/nim-chronos/issues/578
+      await request.connection.writer.write(baseAddr request.buffer, request.buffer.len)
+      request.buffer.reset()
     request.connection.state = HttpClientConnectionState.RequestBodySent
     request.state = HttpReqRespState.Finished
     request.setDuration()
@@ -1506,11 +1508,13 @@ proc fetch*(request: HttpClientRequestRef): Future[HttpResponseTuple] {.
   var response: HttpClientResponseRef
   try:
     response = await request.send()
-    let buffer = await response.getBodyBytes()
+    # TODO https://github.com/status-im/nim-chronos/issues/601
+    var buffer = await response.getBodyBytes()
     let status = response.status
     await response.closeWait()
     response = nil
-    (status, buffer)
+    # TODO https://github.com/nim-lang/Nim/issues/25057
+    (status, move(buffer))
   except HttpError as exc:
     if not(isNil(response)): await response.closeWait()
     raise exc
@@ -1561,14 +1565,16 @@ proc fetch*(session: HttpSessionRef, url: Uri): Future[HttpResponseTuple] {.
         request = redirect
         redirect = nil
       else:
-        let
+        var
+          # TODO https://github.com/status-im/nim-chronos/issues/601
           data = await response.getBodyBytes()
           code = response.status
         await response.closeWait()
         response = nil
         await request.closeWait()
         request = nil
-        return (code, data)
+        # TODO https://github.com/nim-lang/Nim/issues/25057
+        return (code, move(data))
     except CancelledError as exc:
       var pending: seq[Future[void]]
       if not(isNil(response)): pending.add(closeWait(response))

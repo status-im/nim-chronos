@@ -99,6 +99,8 @@ type
     writer*: TLSStreamWriter
     mainLoop*: Future[void].Raising([])
     trustAnchors: TrustAnchorStore
+    clientCertificate: TLSCertificate
+    clientPrivateKey: TLSPrivateKey
 
   SomeTLSStreamType* = TLSStreamReader|TLSStreamWriter|TLSAsyncStream
   SomeTrustAnchorType* = TrustAnchorStore | openArray[X509TrustAnchor]
@@ -397,6 +399,11 @@ proc tlsLoop*(stream: TLSAsyncStream) {.async: (raises: []).} =
     else:
       nil
 
+  if (loopState == AsyncStreamState.Finished) and not(isNil(error)):
+    loopState = AsyncStreamState.Error
+    stream.reader.error = error
+    stream.writer.error = error
+
   # Syncing state for reader and writer
   stream.writer.state = loopState
   stream.reader.state = loopState
@@ -466,7 +473,9 @@ proc newTLSClientAsyncStream*(
        minVersion = TLSVersion.TLS12,
        maxVersion = TLSVersion.TLS12,
        flags: set[TLSFlags] = {},
-       trustAnchors: SomeTrustAnchorType = MozillaTrustAnchors
+       trustAnchors: SomeTrustAnchorType = MozillaTrustAnchors,
+       certificate: TLSCertificate = nil,
+       privateKey: TLSPrivateKey = nil
      ): TLSAsyncStream {.raises: [TLSStreamInitError].} =
   ## Create new TLS asynchronous stream for outbound (client) connections
   ## using reading stream ``rsource`` and writing stream ``wsource``.
@@ -489,6 +498,10 @@ proc newTLSClientAsyncStream*(
   ## anchors other than the default Mozilla trust anchors. If you pass
   ## a ``TrustAnchorStore`` you should reuse the same instance for
   ## every call to avoid making a copy of the trust anchors per call.
+  ##
+  ## ``certificate`` and ``privateKey`` - if both are provided, the client
+  ## will use them for client certificate authentication when the server
+  ## requests it.
   when trustAnchors is TrustAnchorStore:
     doAssert(len(trustAnchors.anchors) > 0,
              "Empty trust anchor list is invalid")
@@ -531,6 +544,36 @@ proc newTLSClientAsyncStream*(
                      uint(len(res.sbuffer)), 1)
   sslEngineSetVersions(res.ccontext.eng, uint16(minVersion),
                        uint16(maxVersion))
+
+  if not isNil(certificate) xor not isNil(privateKey):
+    raise newException(TLSStreamInitError,
+      "Both certificate and privateKey must be provided for client " &
+      "certificate authentication")
+
+  if not isNil(certificate) and not isNil(privateKey):
+    if len(certificate.certs) == 0:
+      raise newException(TLSStreamInitError, "Incorrect client certificate")
+    res.clientCertificate = certificate
+    res.clientPrivateKey = privateKey
+    let algo = getSignerAlgo(res.clientCertificate.certs[0])
+    if algo == -1:
+      raise newException(TLSStreamInitError,
+                         "Could not decode client certificate")
+    case privateKey.kind
+    of TLSKeyType.RSA:
+      sslClientSetSingleRsa(res.ccontext,
+                            addr res.clientCertificate.certs[0],
+                            len(res.clientCertificate.certs),
+                            addr res.clientPrivateKey.rsakey,
+                            rsaPkcs1SignGetDefault())
+    of TLSKeyType.EC:
+      sslClientSetSingleEc(res.ccontext,
+                           addr res.clientCertificate.certs[0],
+                           len(res.clientCertificate.certs),
+                           addr res.clientPrivateKey.eckey,
+                           cuint(KEYTYPE_SIGN or KEYTYPE_KEYX),
+                           cuint(algo), ecGetDefault(),
+                           ecdsaSignAsn1GetDefault())
 
   if TLSFlags.NoVerifyServerName in flags:
     let err = sslClientReset(res.ccontext, nil, 0)

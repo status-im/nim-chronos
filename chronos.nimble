@@ -9,7 +9,7 @@ skipDirs      = @["tests"]
 
 requires "nim >= 1.6.16",
          "results",
-         "stew",
+         "stew >= 0.5.0",
          "bearssl >= 0.2.7",
          "httputils",
          "unittest2"
@@ -59,12 +59,24 @@ task examples, "Build examples":
     if file.endsWith(".nim"):
       build "--threads:on", file
 
+task benchmarks, "Run benchmarks":
+  # Make sure benchmarks compile
+  for f in walkDirRec("benchmarks"):
+
+    if f.contains("bench_") and f.endsWith(".nim"):
+      run "-d:release", f[0..^5]
+
 task test, "Run all tests":
   for args in testArguments:
     # First run tests with `refc` memory manager.
     run args & " --mm:refc", "tests/testall"
     if (NimMajor, NimMinor) > (1, 6):
       run args & " --mm:orc", "tests/testall"
+
+  # Make sure benchmarks compile
+  for f in walkDirRec("benchmarks"):
+    if f.startsWith("bench_") and f.endsWith(".nim"):
+      build "", f[0..^5]
 
 task test_v3_compat, "Run all tests in v3 compatibility mode":
   for args in testArguments:
