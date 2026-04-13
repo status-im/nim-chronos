@@ -47,7 +47,11 @@ type
     remote*: Opt[TransportAddress]
 
   ConnectionFence* = Result[HttpConnectionRef, HttpProcessError]
+    ## Result type that can contain either a valid ``HttpConnectionRef`` or an
+    ## ``HttpProcessError``.
   RequestFence* = Result[HttpRequestRef, HttpProcessError]
+    ## Result type that can contain either a valid ``HttpRequestRef`` or an
+    ## ``HttpProcessError``.
 
   HttpRequestFlags* {.pure.} = enum
     BoundBody, UnboundBody, MultipartForm, UrlencodedForm, ClientExpect

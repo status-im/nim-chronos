@@ -78,7 +78,7 @@ proc thirdMiddlewareHandler(
     # We use default error handler if we unable to send response.
     defaultResponse(exc)
 
-proc mainHandler(
+proc handler(
     reqfence: RequestFence
 ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
   if reqfence.isErr():
@@ -106,7 +106,7 @@ proc middlewareExample() {.async: (raises: []).} =
     socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
     boundAddress = if isAvailable(AddressFamily.IPv6): AnyAddress6 else: AnyAddress
     res = HttpServerRef.new(
-      boundAddress, mainHandler, socketFlags = socketFlags, middlewares = middlewares
+      boundAddress, handler, socketFlags = socketFlags, middlewares = middlewares
     )
 
   doAssert(res.isOk(), "Unable to start HTTP server")
