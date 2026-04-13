@@ -40,7 +40,7 @@ proc handler(
   try:
     case request.uri.path
     of "/":
-      return await request.respond(Http200, "Welcome to the Status Dashboard!")
+      await request.respond(Http200, "Welcome to the Status Dashboard!")
     of "/status":
       var output = "Current Service Status:\n"
       if reports.len == 0:
@@ -48,7 +48,7 @@ proc handler(
       else:
         for name, status in reports:
           output.add("- " & name & ": " & status & "\n")
-      return await request.respond(Http200, output)
+      await request.respond(Http200, output)
     of "/report":
       if request.meth != MethodPost:
         return await request.respond(Http405, "Method Not Allowed")
@@ -74,11 +74,11 @@ proc handler(
       reports[name] = status
       echo "Received report: " & name & " is " & status
 
-      return await request.respond(Http200, "Report received.")
+      await request.respond(Http200, "Report received.")
     else:
-      return await request.respond(Http404, "Page not found.")
-  except HttpWriteError, HttpTransportError, HttpProtocolError:
-    return defaultResponse()
+      await request.respond(Http404, "Page not found.")
+  except HttpError as exc:
+    defaultResponse(exc)
 
 # ANCHOR_END: handler
 
