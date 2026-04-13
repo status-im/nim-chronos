@@ -4,7 +4,7 @@
 
 **Source code:** [chapter4/src/dashboard.nim](https://github.com/status-im/nim-chronos/blob/master/docs/examples/http_server/chapter4/src/dashboard.nim)
 
-Middleware is a way to wrap your request handler with additional logic. This is useful for cross-cutting concerns like logging, authentication, or modifying request and response headers.
+Middleware is a way to wrap your request handler with additional logic. This is useful for cross-cutting concerns like logging, authentication, modifying request and response headers, and for sharing a single HTTP server between multiple services (e.g. a metrics server and a REST API server).
 
 Let's add a simple logging middleware that tracks how long each request takes to process:
 
@@ -27,12 +27,12 @@ A middleware handler is a function that takes the current middleware object, the
 3. After the handler returns, we calculate the duration and print a log message. To get the processing duration in milliseconds, we use `inMilliseconds` from `std/times`.
 4. We return the `response` received from the handler chain.
 
-``` admonish info
+```admonish info
 You may wonder why `HttpProcessCallback2` has a `2` in its name and why don't we use [`HttpProcessCallback`](/api/chronos/apps/http/httpserver.html#HttpProcessCallback).
 
 The difference is that `HttpProcessCallback2` is a newer and stricter version while `HttpProcessCallback` is kept for backward compatibility.
 
-So, long story short: you should use `HttpProcessCallback2` unless you're sure you need `HttpProcessCallback`.
+So, long story short: use `HttpProcessCallback2` unless you're sure you need `HttpProcessCallback`.
 ```
 
 ## Registering Middleware
