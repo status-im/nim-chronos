@@ -53,22 +53,23 @@ proc handler(
       if request.meth != MethodPost:
         return await request.respond(Http405, "Method Not Allowed")
 
-      let body = await request.getBody()
-
-      var
-        data: JsonNode
-        name, status: string
-
-      try:
-        data = parseJson(bytesToString(body))
-      except CatchableError:
-        return await request.respond(Http400, "Invalid JSON.")
-
-      try:
-        name = data["name"].getStr()
-        status = data["status"].getStr()
-      except KeyError:
-        return await request.respond(Http400, "Missing 'name' or 'status' field.")
+      let
+        body = await request.getBody()
+        data =
+          try:
+            parseJson(bytesToString(body))
+          except CatchableError:
+            return await request.respond(Http400, "Invalid JSON.")
+        name =
+          try:
+            data["name"].getStr()
+          except KeyError:
+            return await request.respond(Http400, "Missing 'name' field.")
+        status =
+          try:
+            data["status"].getStr()
+          except KeyError:
+            return await request.respond(Http400, "Missing 'status' field.")
 
       reports[name] = status
       echo "Received report: " & name & " is " & status
