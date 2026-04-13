@@ -20,13 +20,10 @@ proc handler(reqfence: RequestFence): Future[HttpResponseRef] {.async: (raises: 
 proc main() {.async: (raises: [TransportAddressError, CancelledError]).} =
   let
     address = initTAddress("127.0.0.1:8080")
-    res = HttpServerRef.new(address, handler)
+    server = HttpServerRef.new(address, handler).valueOr:
+      echo "Unable to start HTTP server: " & error
+      return
 
-  if res.isErr():
-    echo "Unable to start HTTP server: " & res.error
-    return
-
-  let server = res.get()
   server.start()
   echo "HTTP server running on http://127.0.0.1:8080"
   

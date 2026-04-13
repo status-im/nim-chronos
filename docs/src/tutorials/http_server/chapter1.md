@@ -81,6 +81,10 @@ In the `main` function, we:
 4. Use [`server.join()`](/api/chronos/apps/http/httpserver.html#join,HttpServerRef) to wait until the server is stopped (which, in this case, will be never, until we manually terminate the program with `Ctrl-C`).
 5. In the `finally` block, we ensure the server is stopped and its resources are released correctly.
 
+```admonish info
+[`valueOr`](https://github.com/arnetheduck/nim-results/blob/master/results.nim#L1267) is a helper template from the [`results`](https://github.com/arnetheduck/nim-results) package that returns the value of a `Result` or executes a given code block if it is an error.
+```
+
 ```nim
 {{#shiftinclude auto:../../../examples/http_server/chapter1/src/dashboard.nim:run}}
 ```

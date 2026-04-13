@@ -32,10 +32,8 @@ proc loggingMiddleware(
 proc handler(
     reqfence: RequestFence
 ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
-  if reqfence.isErr():
+  let request = reqfence.valueOr:
     return defaultResponse()
-
-  let request = reqfence.get()
 
   try:
     case request.uri.path
@@ -90,13 +88,10 @@ proc main() {.async: (raises: [TransportAddressError, CancelledError]).} =
     middlewares = [HttpServerMiddlewareRef(handler: loggingMiddleware)]
     # ANCHOR_END: setup_middleware
     address = initTAddress("127.0.0.1:8080")
-    res = HttpServerRef.new(address, handler, middlewares = middlewares)
+    server = HttpServerRef.new(address, handler, middlewares = middlewares).valueOr:
+      echo "Unable to start HTTP server: " & error
+      return
 
-  if res.isErr():
-    echo "Unable to start HTTP server: " & res.error
-    return
-
-  let server = res.get()
   server.start()
   echo "HTTP server running on http://127.0.0.1:8080"
 
