@@ -255,7 +255,7 @@ template isReady(conn: HttpClientConnectionRef): bool =
 
 template isIdle(conn: HttpClientConnectionRef, timestamp: Moment,
                 timeout: Duration): bool =
-  (timestamp - conn.timestamp) >= timeout
+  (timestamp - conn.timestamp) >= timeout or conn.transp.atEof()
 
 proc sessionWatcher(session: HttpSessionRef) {.async: (raises: []).}
 
