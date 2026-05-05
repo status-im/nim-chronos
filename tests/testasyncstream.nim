@@ -1062,10 +1062,10 @@ suite "AsyncStream/TLSStream":
         return res
 
       var data = createBigMessage("REQUESTSTREAMMESSAGE", datasize)
-      var check = await checkVector(data, writeChunkSize, readChunkSize)
+      var res = await checkVector(data, writeChunkSize, readChunkSize)
       check:
-        data.len == check.len
-        string.fromBytes(data) == string.fromBytes(check)
+        data.len == res.len
+        string.fromBytes(data) == string.fromBytes(res)
 
   asyncTest "Custom TrustAnchors":
     let key = TLSPrivateKey.init(SelfSignedRsaKey)

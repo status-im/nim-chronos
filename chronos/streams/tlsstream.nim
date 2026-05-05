@@ -140,13 +140,6 @@ template engine(s: TLSAsyncStream): ptr SslEngineContext =
 template engine(s: TLSStreamReader|TLSStreamWriter): ptr SslEngineContext =
   s.stream.engine()
 
-proc newTLSStreamWriteError(p: ref AsyncStreamError): ref TLSStreamWriteError {.
-     noinline.} =
-  var w = newException(TLSStreamWriteError, "Write stream failed")
-  w.msg = w.msg & ", originated from [" & $p.name & "] " & p.msg
-  w.parent = p
-  w
-
 template newTLSStreamProtocolImpl[T](message: T): ref TLSStreamProtocolError =
   var msg = ""
   var code = 0
@@ -169,10 +162,6 @@ template newTLSUnexpectedProtocolError(): ref TLSStreamProtocolError =
 
 proc newTLSStreamProtocolError[T](message: T): ref TLSStreamProtocolError =
   newTLSStreamProtocolImpl(message)
-
-proc raiseTLSStreamProtocolError[T](message: T) {.
-     noreturn, noinline, raises: [TLSStreamProtocolError].} =
-  raise newTLSStreamProtocolImpl(message)
 
 proc new*(T: typedesc[TrustAnchorStore],
           anchors: openArray[X509TrustAnchor]): TrustAnchorStore =
