@@ -1,0 +1,53 @@
+MaxEventsCount	chronos/internal/asyncengine.html#MaxEventsCount	asyncengine: MaxEventsCount	
+AsyncCallback	chronos/internal/asyncengine.html#AsyncCallback	asyncengine: AsyncCallback	
+TimerCallback	chronos/internal/asyncengine.html#TimerCallback	asyncengine: TimerCallback	
+TrackerBase	chronos/internal/asyncengine.html#TrackerBase	asyncengine: TrackerBase	
+TrackerCounter	chronos/internal/asyncengine.html#TrackerCounter	asyncengine: TrackerCounter	
+getAsyncTimestamp	chronos/internal/asyncengine.html#getAsyncTimestamp,Duration	asyncengine: getAsyncTimestamp(a: Duration): auto	
+raiseAsDefect	chronos/internal/asyncengine.html#raiseAsDefect,ref.Exception,string	asyncengine: raiseAsDefect(exc: ref Exception; msg: string)	
+raiseOsDefect	chronos/internal/asyncengine.html#raiseOsDefect,OSErrorCode,string	asyncengine: raiseOsDefect(error: OSErrorCode; msg = &quot;&quot;)	
+toException	chronos/internal/asyncengine.html#toException,OSErrorCode	asyncengine: toException(v: OSErrorCode): ref OSError	
+PDispatcher	chronos/internal/asyncengine.html#PDispatcher	asyncengine: PDispatcher	
+AsyncFD	chronos/internal/asyncengine.html#AsyncFD	asyncengine: AsyncFD	
+newDispatcher	chronos/internal/asyncengine.html#newDispatcher	asyncengine: newDispatcher(): PDispatcher	
+poll	chronos/internal/asyncengine.html#poll	asyncengine: poll()	
+register2	chronos/internal/asyncengine.html#register2,AsyncFD	asyncengine: register2(fd: AsyncFD): Result[void, OSErrorCode]	
+unregister2	chronos/internal/asyncengine.html#unregister2,AsyncFD	asyncengine: unregister2(fd: AsyncFD): Result[void, OSErrorCode]	
+addReader2	chronos/internal/asyncengine.html#addReader2,AsyncFD,CallbackFunc,pointer	asyncengine: addReader2(fd: AsyncFD; cb: CallbackFunc; udata: pointer = nil): Result[void,\n    OSErrorCode]	
+removeReader2	chronos/internal/asyncengine.html#removeReader2,AsyncFD	asyncengine: removeReader2(fd: AsyncFD): Result[void, OSErrorCode]	
+addWriter2	chronos/internal/asyncengine.html#addWriter2,AsyncFD,CallbackFunc,pointer	asyncengine: addWriter2(fd: AsyncFD; cb: CallbackFunc; udata: pointer = nil): Result[void,\n    OSErrorCode]	
+removeWriter2	chronos/internal/asyncengine.html#removeWriter2,AsyncFD	asyncengine: removeWriter2(fd: AsyncFD): Result[void, OSErrorCode]	
+closeHandle	chronos/internal/asyncengine.html#closeHandle,AsyncFD,CallbackFunc	asyncengine: closeHandle(fd: AsyncFD; aftercb: CallbackFunc = nil)	
+closeSocket	chronos/internal/asyncengine.html#closeSocket,AsyncFD,CallbackFunc	asyncengine: closeSocket(fd: AsyncFD; aftercb: CallbackFunc = nil)	
+unregisterAndCloseFd	chronos/internal/asyncengine.html#unregisterAndCloseFd,AsyncFD	asyncengine: unregisterAndCloseFd(fd: AsyncFD): Result[void, OSErrorCode]	
+`==`	chronos/internal/asyncengine.html#==,AsyncFD,AsyncFD	asyncengine: `==`(x: AsyncFD; y: AsyncFD): bool	
+setThreadDispatcher	chronos/internal/asyncengine.html#setThreadDispatcher,PDispatcher	asyncengine: setThreadDispatcher(disp: PDispatcher)	
+getThreadDispatcher	chronos/internal/asyncengine.html#getThreadDispatcher	asyncengine: getThreadDispatcher(): PDispatcher	
+setGlobalDispatcher	chronos/internal/asyncengine.html#setGlobalDispatcher,PDispatcher	asyncengine: setGlobalDispatcher(disp: PDispatcher)	
+getGlobalDispatcher	chronos/internal/asyncengine.html#getGlobalDispatcher	asyncengine: getGlobalDispatcher(): PDispatcher	
+setTimer	chronos/internal/asyncengine.html#setTimer,Moment,CallbackFunc,pointer	asyncengine: setTimer(at: Moment; cb: CallbackFunc; udata: pointer = nil): TimerCallback	
+clearTimer	chronos/internal/asyncengine.html#clearTimer,TimerCallback	asyncengine: clearTimer(timer: TimerCallback)	
+addTimer	chronos/internal/asyncengine.html#addTimer,Moment,CallbackFunc,pointer	asyncengine: addTimer(at: Moment; cb: CallbackFunc; udata: pointer = nil)	
+addTimer	chronos/internal/asyncengine.html#addTimer,int64,CallbackFunc,pointer	asyncengine: addTimer(at: int64; cb: CallbackFunc; udata: pointer = nil)	
+addTimer	chronos/internal/asyncengine.html#addTimer,uint64,CallbackFunc,pointer	asyncengine: addTimer(at: uint64; cb: CallbackFunc; udata: pointer = nil)	
+removeTimer	chronos/internal/asyncengine.html#removeTimer,Moment,CallbackFunc,pointer	asyncengine: removeTimer(at: Moment; cb: CallbackFunc; udata: pointer = nil)	
+removeTimer	chronos/internal/asyncengine.html#removeTimer,int64,CallbackFunc,pointer	asyncengine: removeTimer(at: int64; cb: CallbackFunc; udata: pointer = nil)	
+removeTimer	chronos/internal/asyncengine.html#removeTimer,uint64,CallbackFunc,pointer	asyncengine: removeTimer(at: uint64; cb: CallbackFunc; udata: pointer = nil)	
+callSoon	chronos/internal/asyncengine.html#callSoon,InternalAsyncCallback	asyncengine: callSoon(acb: AsyncCallback)	
+callSoon	chronos/internal/asyncengine.html#callSoon,CallbackFunc,pointer	asyncengine: callSoon(cbproc: CallbackFunc; data: pointer)	
+callSoon	chronos/internal/asyncengine.html#callSoon,CallbackFunc	asyncengine: callSoon(cbproc: CallbackFunc)	
+callIdle	chronos/internal/asyncengine.html#callIdle,InternalAsyncCallback	asyncengine: callIdle(acb: AsyncCallback)	
+callIdle	chronos/internal/asyncengine.html#callIdle,CallbackFunc,pointer	asyncengine: callIdle(cbproc: CallbackFunc; data: pointer)	
+callIdle	chronos/internal/asyncengine.html#callIdle,CallbackFunc	asyncengine: callIdle(cbproc: CallbackFunc)	
+internalCallTick	chronos/internal/asyncengine.html#internalCallTick,InternalAsyncCallback	asyncengine: internalCallTick(acb: AsyncCallback)	
+internalCallTick	chronos/internal/asyncengine.html#internalCallTick,CallbackFunc,pointer	asyncengine: internalCallTick(cbproc: CallbackFunc; data: pointer)	
+internalCallTick	chronos/internal/asyncengine.html#internalCallTick,CallbackFunc	asyncengine: internalCallTick(cbproc: CallbackFunc)	
+runForever	chronos/internal/asyncengine.html#runForever	asyncengine: runForever()	
+addTracker	chronos/internal/asyncengine.html#addTracker,string,T	asyncengine: addTracker[T](id: string; tracker: T)	
+getTracker	chronos/internal/asyncengine.html#getTracker,string	asyncengine: getTracker(id: string): TrackerBase	
+trackCounter	chronos/internal/asyncengine.html#trackCounter,string	asyncengine: trackCounter(name: string)	
+untrackCounter	chronos/internal/asyncengine.html#untrackCounter,string	asyncengine: untrackCounter(name: string)	
+getTrackerCounter	chronos/internal/asyncengine.html#getTrackerCounter,string	asyncengine: getTrackerCounter(name: string): TrackerCounter	
+isCounterLeaked	chronos/internal/asyncengine.html#isCounterLeaked,string	asyncengine: isCounterLeaked(name: string): bool	
+trackerCounters	chronos/internal/asyncengine.html#trackerCounters.i,PDispatcher	asyncengine: trackerCounters(loop: PDispatcher): tuple[name: string, value: TrackerCounter]	
+trackerCounterKeys	chronos/internal/asyncengine.html#trackerCounterKeys.i,PDispatcher	asyncengine: trackerCounterKeys(loop: PDispatcher): string	
