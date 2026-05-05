@@ -220,10 +220,13 @@ proc runUntil(rws: TLSAsyncStream, target: cuint): Future[void] {.
       # blocking on reads or the protocol will deadlock during handshakes
       if (state and SSL_RECVREC) == SSL_RECVREC and rws.readFut.isNil:
         if rws.eof: # We've already read EOF from the underlying stream
+          debugEcho "eof ", target
           break
 
         var length = 0'u
         var buf = sslEngineRecvrecBuf(engine[], length)
+        debugEcho "init read ", target, " ", length
+
         rws.readFut = rws.rsource.readOnce(buf, int(length))
 
       if (state and SSL_SENDREC) == SSL_SENDREC:
@@ -232,11 +235,14 @@ proc runUntil(rws: TLSAsyncStream, target: cuint): Future[void] {.
         doAssert(length != 0 and not isNil(buf))
         # TODO we could process readFut concurrently here - keep it simple for
         #      now
+        debugEcho "init write ", target, " ", length
         await rws.wsource.write(buf, int(length))
+        debugEcho "end write ", target, " ", length
         sslEngineSendrecAck(engine[], length)
 
       elif (state and SSL_RECVREC) == SSL_RECVREC:
         let res = await rws.readFut
+        debugEcho "end read ", target, " ", res
         rws.readFut = nil
         if res == 0:
           rws.eof = true
@@ -256,6 +262,7 @@ proc runUntil(rws: TLSAsyncStream, target: cuint): Future[void] {.
         await readFut.cancelAndWait()
       raise exc
     except AsyncStreamError as exc:
+      debugEcho "error ", target, " ", exc.msg
       rws.reader.state = AsyncStreamState.Error
       rws.reader.error = exc
       rws.writer.state = AsyncStreamState.Error
