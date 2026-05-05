@@ -21,6 +21,7 @@
 {.push raises: [].}
 
 import stew/ptrops
+import std/sequtils
 import
   bearssl/[brssl, ec, errors, pem, rsa, ssl, x509],
   bearssl/certs/cacert
@@ -108,7 +109,8 @@ type
     trustAnchors: TrustAnchorStore
     clientCertificate: TLSCertificate
     clientPrivateKey: TLSPrivateKey
-
+    alpnProtos: seq[string]
+    alpnProtosC: seq[cstring]
     readFut*: Future[int].Raising([CancelledError, AsyncStreamError])
 
   SomeTLSStreamType* = TLSStreamReader|TLSStreamWriter|TLSAsyncStream
@@ -413,7 +415,8 @@ proc newTLSClientAsyncStream*(
        flags: set[TLSFlags] = {},
        trustAnchors: SomeTrustAnchorType = MozillaTrustAnchors,
        certificate: TLSCertificate = nil,
-       privateKey: TLSPrivateKey = nil
+       privateKey: TLSPrivateKey = nil,
+       alpnProtocols: openArray[string] = []
      ): TLSAsyncStream {.raises: [TLSStreamInitError].} =
   ## Create new TLS asynchronous stream for outbound (client) connections
   ## using reading stream ``rsource`` and writing stream ``wsource``.
@@ -514,6 +517,13 @@ proc newTLSClientAsyncStream*(
                            cuint(algo), ecGetDefault(),
                            ecdsaSignAsn1GetDefault())
 
+  if alpnProtocols.len > 0:
+    res.alpnProtos = @alpnProtocols
+    res.alpnProtosC = res.alpnProtos.mapIt(cstring(it))
+
+    sslEngineSetProtocolNames(res.ccontext.eng, addr res.alpnProtosC[0],
+                              uint(res.alpnProtosC.len))
+
   if TLSFlags.NoVerifyServerName in flags:
     let err = sslClientReset(res.ccontext, nil, 0)
     if err == 0:
@@ -543,7 +553,9 @@ proc newTLSServerAsyncStream*(rsource: AsyncStreamReader,
                               minVersion = TLSVersion.TLS11,
                               maxVersion = TLSVersion.TLS12,
                               cache: TLSSessionCache = nil,
-                              flags: set[TLSFlags] = {}): TLSAsyncStream {.
+                              flags: set[TLSFlags] = {},
+                              alpnProtocols: openArray[string] = []
+                              ): TLSAsyncStream {.
      raises: [TLSStreamInitError, TLSStreamProtocolError].} =
   ## Create new TLS asynchronous stream for inbound (server) connections
   ## using reading stream ``rsource`` and writing stream ``wsource``.
@@ -609,6 +621,13 @@ proc newTLSServerAsyncStream*(rsource: AsyncStreamReader,
     sslEngineAddFlags(res.scontext.eng, OPT_TOLERATE_NO_CLIENT_AUTH)
   if TLSFlags.FailOnAlpnMismatch in flags:
     sslEngineAddFlags(res.scontext.eng, OPT_FAIL_ON_ALPN_MISMATCH)
+
+  if alpnProtocols.len > 0:
+    res.alpnProtos = @alpnProtocols
+    res.alpnProtosC = res.alpnProtos.mapIt(cstring(it))
+
+    sslEngineSetProtocolNames(res.scontext.eng, addr res.alpnProtosC[0],
+                              uint(res.alpnProtosC.len))
 
   let err = sslServerReset(res.scontext)
   if err == 0:
@@ -783,3 +802,36 @@ proc init*(tt: typedesc[TLSSessionCache],
   var res = TLSSessionCache(storage: newSeq[byte](rsize))
   sslSessionCacheLruInit(addr res.context, addr res.storage[0], rsize)
   res
+
+proc handshake*(rws: SomeTLSStreamType): Future[void] {.
+     async: (raw: true, raises: [CancelledError, AsyncStreamError]).} =
+  ## Wait until initial TLS handshake will be successfully performed.
+  let retFuture = Future[void].Raising([CancelledError, AsyncStreamError])
+                    .init("tlsstream.handshake")
+  when rws is TLSStreamReader:
+    if rws.handshaked:
+      retFuture.complete()
+    else:
+      rws.handshakeFut = retFuture
+      rws.stream.writer.handshakeFut = retFuture
+  elif rws is TLSStreamWriter:
+    if rws.handshaked:
+      retFuture.complete()
+    else:
+      rws.handshakeFut = retFuture
+      rws.stream.reader.handshakeFut = retFuture
+  elif rws is TLSAsyncStream:
+    if rws.reader.handshaked:
+      retFuture.complete()
+    else:
+      rws.reader.handshakeFut = retFuture
+      rws.writer.handshakeFut = retFuture
+  retFuture
+
+proc getSelectedAlpnProtocol*(stream: TLSAsyncStream): string =
+  ## Returns the application protocol selected during the TLS handshake
+  ## via ALPN. Returns an empty string if no protocol was negotiated.
+  ## This proc should be called after the handshake is complete.
+  let proto = sslEngineGetSelectedProtocol(stream.engine[])
+  if not isNil(proto):
+    return $proto
