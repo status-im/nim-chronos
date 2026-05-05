@@ -163,6 +163,10 @@ template newTLSUnexpectedProtocolError(): ref TLSStreamProtocolError =
 proc newTLSStreamProtocolError[T](message: T): ref TLSStreamProtocolError =
   newTLSStreamProtocolImpl(message)
 
+proc raiseTLSStreamProtocolError[T](message: T) {.
+     noreturn, noinline, raises: [TLSStreamProtocolError].} =
+  raise newTLSStreamProtocolImpl(message)
+
 proc new*(T: typedesc[TrustAnchorStore],
           anchors: openArray[X509TrustAnchor]): TrustAnchorStore =
   var res: seq[X509TrustAnchor]
