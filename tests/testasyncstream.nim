@@ -1030,11 +1030,11 @@ suite "AsyncStream/TLSStream":
               offset = offset + toWrite
 
             await sstream.writer.finish()
-            await sleepAsync(1.seconds)
             await sstream.writer.closeWait()
             await sstream.reader.closeWait()
             await reader.closeWait()
             await writer.closeWait()
+            await transp.shutdownWait()
             await transp.closeWait()
             server.stop()
             server.close()
