@@ -204,7 +204,6 @@ proc dumpState*(state: cuint): string =
 
 proc runUntil(rws: TLSAsyncStream, target: cuint): Future[void] {.
      async: (raises: [CancelledError, AsyncStreamError]).} =
-  var offset = 0
   let engine = rws.engine()
   while true:
     let err = sslEngineLastError(engine[])

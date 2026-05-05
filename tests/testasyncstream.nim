@@ -1000,72 +1000,71 @@ suite "AsyncStream/TLSStream":
       await conn.closeWait()
       await server.join()
 
-  asyncTest "chunks":
-    let key = TLSPrivateKey.init(SelfSignedRsaKey)
-    let cert = TLSCertificate.init(SelfSignedRsaCert)
-    proc checkVector(inputstr: seq[byte],
-                     writeChunkSize: int,
-                     readChunkSize: int): Future[seq[byte]] {.async.} =
+  for (datasize, writeChunkSize, readChunkSize) in [
+    (4457, 128, 1),
+    (65600, 1024, 17),
+    (262400, 4096, 61),
+    (767309, 4457, 173),
+    (767309, 4457, 173),
+    (767309, 67000, 67001),
+  ]:
+    asyncTest "chunks/" & $datasize & "/" & $writeChunkSize & "/" & $readChunkSize:
+      let key = TLSPrivateKey.init(SelfSignedRsaKey)
+      let cert = TLSCertificate.init(SelfSignedRsaCert)
+      proc checkVector(inputstr: seq[byte],
+                      writeChunkSize: int,
+                      readChunkSize: int): Future[seq[byte]] {.async.} =
 
-      proc serveClient(server: StreamServer,
-                      transp: StreamTransport) {.async: (raises: []).} =
-        try:
-          var reader = newAsyncStreamReader(transp)
-          var writer = newAsyncStreamWriter(transp)
-          var sstream = newTLSServerAsyncStream(reader, writer, key, cert)
-          var offset = 0
-          while true:
-            if len(inputstr) == offset:
-              break
-            let toWrite = min(writeChunkSize, len(inputstr) - offset)
-            await sstream.writer.write(unsafeAddr inputstr[offset], toWrite)
-            offset = offset + toWrite
+        proc serveClient(server: StreamServer,
+                        transp: StreamTransport) {.async: (raises: []).} =
+          try:
+            var reader = newAsyncStreamReader(transp)
+            var writer = newAsyncStreamWriter(transp)
+            var sstream = newTLSServerAsyncStream(reader, writer, key, cert)
+            var offset = 0
+            while true:
+              if len(inputstr) == offset:
+                break
+              let toWrite = min(writeChunkSize, len(inputstr) - offset)
+              await sstream.writer.write(unsafeAddr inputstr[offset], toWrite)
+              offset = offset + toWrite
 
-          await sstream.writer.finish()
-          await sstream.writer.closeWait()
-          await sstream.reader.closeWait()
-          await reader.closeWait()
-          await writer.closeWait()
-          await transp.closeWait()
-          server.stop()
-          server.close()
-        except CatchableError as exc:
-          raiseAssert exc.msg
+            await sstream.writer.finish()
+            await sstream.writer.closeWait()
+            await sstream.reader.closeWait()
+            await reader.closeWait()
+            await writer.closeWait()
+            await transp.closeWait()
+            server.stop()
+            server.close()
+          except CatchableError as exc:
+            raiseAssert exc.msg
 
-      var server = createStreamServer(initTAddress("127.0.0.1:0"),
-                                      serveClient, {ServerFlags.ReuseAddr})
-      server.start()
-      var conn = await connect(server.localAddress())
-      var creader = newAsyncStreamReader(conn)
-      var cwriter = newAsyncStreamWriter(conn)
-      # We are using self-signed certificate
-      let flags = {NoVerifyHost, NoVerifyServerName}
-      var cstream = newTLSClientAsyncStream(creader, cwriter, "", flags = flags)
-      var res: seq[byte]
-      while not(cstream.reader.atEof()):
-        var chunk = await cstream.reader.read(readChunkSize)
-        res.add(chunk)
-      await cstream.reader.closeWait()
-      await cstream.writer.closeWait()
-      await creader.closeWait()
-      await cwriter.closeWait()
-      await conn.closeWait()
-      await server.join()
-      return res
+        var server = createStreamServer(initTAddress("127.0.0.1:0"),
+                                        serveClient, {ServerFlags.ReuseAddr, ServerFlags.TcpNoDelay})
+        server.start()
+        var conn = await connect(server.localAddress(), flags = {SocketFlags.TcpNoDelay})
+        var creader = newAsyncStreamReader(conn)
+        var cwriter = newAsyncStreamWriter(conn)
+        # We are using self-signed certificate
+        let flags = {NoVerifyHost, NoVerifyServerName}
+        var cstream = newTLSClientAsyncStream(creader, cwriter, "", flags = flags)
+        var res: seq[byte]
+        while not(cstream.reader.atEof()):
+          var chunk = await cstream.reader.read(readChunkSize)
+          res.add(chunk)
+        await cstream.reader.closeWait()
+        await cstream.writer.closeWait()
+        await creader.closeWait()
+        await cwriter.closeWait()
+        await conn.closeWait()
+        await server.join()
+        return res
 
-    proc testChunk(datasize: int,
-                        writeChunkSize: int,
-                        readChunkSize: int): Future[bool] {.async.} =
       var data = createBigMessage("REQUESTSTREAMMESSAGE", datasize)
       var check = await checkVector(data, writeChunkSize, readChunkSize)
-      return (data == check)
-
-    check waitFor(testChunk(4457, 128, 1)) == true
-    check waitFor(testChunk(65600, 1024, 17)) == true
-    check waitFor(testChunk(262400, 4096, 61)) == true
-    check waitFor(testChunk(767309, 4457, 173)) == true
-    check waitFor(testChunk(767309, 4457, 173)) == true
-    check waitFor(testChunk(767309, 67000, 67001)) == true
+      check:
+        data == check
 
   asyncTest "Custom TrustAnchors":
     let key = TLSPrivateKey.init(SelfSignedRsaKey)
