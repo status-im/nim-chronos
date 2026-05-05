@@ -65,10 +65,10 @@ const
     ## using `AsyncProcessOption.EvalCommand` and API calls such as
     ## ``execCommand(command)`` and ``execCommandEx(command)``.
 
-  chronosEventsCount* {.intdefine.} = 64
+  chronosEventsCount* {.intdefine.} = 4096
     ## Number of OS poll events retrieved by syscall (epoll, kqueue, poll).
 
-  chronosInitialSize* {.intdefine.} = 64
+  chronosInitialSize* {.intdefine.} = 32
     ## Initial size of Selector[T]'s array of file descriptors.
 
   chronosEventEngine* {.strdefine.}: string =
