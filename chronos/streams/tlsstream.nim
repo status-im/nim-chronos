@@ -140,13 +140,6 @@ template engine(s: TLSAsyncStream): ptr SslEngineContext =
 template engine(s: TLSStreamReader|TLSStreamWriter): ptr SslEngineContext =
   s.stream.engine()
 
-proc newTLSStreamWriteError(p: ref AsyncStreamError): ref TLSStreamWriteError {.
-     noinline.} =
-  var w = newException(TLSStreamWriteError, "Write stream failed")
-  w.msg = w.msg & ", originated from [" & $p.name & "] " & p.msg
-  w.parent = p
-  w
-
 template newTLSStreamProtocolImpl[T](message: T): ref TLSStreamProtocolError =
   var msg = ""
   var code = 0
@@ -204,7 +197,6 @@ proc dumpState*(state: cuint): string =
 
 proc runUntil(rws: TLSAsyncStream, target: cuint): Future[void] {.
      async: (raises: [CancelledError, AsyncStreamError]).} =
-  var offset = 0
   let engine = rws.engine()
   while true:
     let err = sslEngineLastError(engine[])
