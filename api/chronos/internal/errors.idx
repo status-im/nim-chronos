@@ -1,0 +1,3 @@
+AsyncError	chronos/internal/errors.html#AsyncError	errors: AsyncError	
+AsyncTimeoutError	chronos/internal/errors.html#AsyncTimeoutError	errors: AsyncTimeoutError	
+AsyncExceptionError	chronos/internal/errors.html#AsyncExceptionError	errors: AsyncExceptionError	

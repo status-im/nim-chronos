@@ -1,0 +1,3 @@
+SrcLoc	chronos/srcloc.html#SrcLoc	srcloc: SrcLoc	
+`$`	chronos/srcloc.html#$,ptr.SrcLoc	srcloc: `$`(loc: ptr SrcLoc): string	
+getSrcLocation	chronos/srcloc.html#getSrcLocation.t,staticstring	srcloc: getSrcLocation(procedure: static string = &quot;&quot;): ptr SrcLoc	

@@ -1,0 +1,286 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Porting code to chronos - Chronos</title>
+
+
+        <!-- Custom HTML head -->
+        
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon.svg">
+        <link rel="shortcut icon" href="favicon.png">
+        <link rel="stylesheet" href="css/variables.css">
+        <link rel="stylesheet" href="css/general.css">
+        <link rel="stylesheet" href="css/chrome.css">
+        <link rel="stylesheet" href="css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="highlight.css">
+        <link rel="stylesheet" href="tomorrow-night.css">
+        <link rel="stylesheet" href="ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+        <link rel="stylesheet" href="open-in.css">
+
+    </head>
+    <body class="sidebar-visible no-js">
+    <div id="body-container">
+        <!-- Provide site root to javascript -->
+        <script>
+            var path_to_root = "";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
+        </script>
+
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            var html = document.querySelector('html');
+            html.classList.remove('light')
+            html.classList.add(theme);
+            var body = document.querySelector('body');
+            body.classList.remove('no-js')
+            body.classList.add('js');
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            var body = document.querySelector('body');
+            var sidebar = null;
+            var sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+            }
+            sidebar_toggle.checked = sidebar === 'visible';
+            body.classList.remove('sidebar-visible');
+            body.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <div class="sidebar-scrollbox">
+                <ol class="chapter"><li class="chapter-item expanded "><a href="introduction.html"><strong aria-hidden="true">1.</strong> Introduction</a></li><li class="chapter-item expanded "><a href="examples.html"><strong aria-hidden="true">2.</strong> Examples</a></li><li class="chapter-item expanded affix "><li class="part-title">User guide</li><li class="chapter-item expanded "><a href="concepts.html"><strong aria-hidden="true">3.</strong> Core concepts</a></li><li class="chapter-item expanded "><a href="async_procs.html"><strong aria-hidden="true">4.</strong> async functions</a></li><li class="chapter-item expanded "><a href="error_handling.html"><strong aria-hidden="true">5.</strong> Errors and exceptions</a></li><li class="chapter-item expanded "><a href="threads.html"><strong aria-hidden="true">6.</strong> Threads</a></li><li class="chapter-item expanded "><a href="tips.html"><strong aria-hidden="true">7.</strong> Tips, tricks and best practices</a></li><li class="chapter-item expanded "><a href="porting.html" class="active"><strong aria-hidden="true">8.</strong> Porting code to chronos</a></li><li class="chapter-item expanded "><a href="http_server_middleware.html"><strong aria-hidden="true">9.</strong> HTTP server middleware</a></li><li class="chapter-item expanded affix "><li class="part-title">Developer guide</li><li class="chapter-item expanded "><a href="book.html"><strong aria-hidden="true">10.</strong> Updating this book</a></li></ol>
+            </div>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <!-- Track and set sidebar scroll position -->
+        <script>
+            var sidebarScrollbox = document.querySelector('#sidebar .sidebar-scrollbox');
+            sidebarScrollbox.addEventListener('click', function(e) {
+                if (e.target.tagName === 'A') {
+                    sessionStorage.setItem('sidebar-scroll', sidebarScrollbox.scrollTop);
+                }
+            }, { passive: true });
+            var sidebarScrollTop = sessionStorage.getItem('sidebar-scroll');
+            sessionStorage.removeItem('sidebar-scroll');
+            if (sidebarScrollTop) {
+                // preserve sidebar scroll position when navigating via links within sidebar
+                sidebarScrollbox.scrollTop = sidebarScrollTop;
+            } else {
+                // scroll sidebar to current active section when navigating via "next/previous chapter" buttons
+                var activeSection = document.querySelector('#sidebar .active');
+                if (activeSection) {
+                    activeSection.scrollIntoView({ block: 'center' });
+                }
+            }
+        </script>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Chronos</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/status-im/nim-chronos/" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="porting-code-to-chronos-v4"><a class="header" href="#porting-code-to-chronos-v4">Porting code to <code>chronos</code> v4</a></h1>
+<ul>
+<li><a href="#chronos-v3">Chronos v3</a></li>
+<li><a href="#asyncdispatch"><code>asyncdispatch</code></a></li>
+<li><a href="#supporting-multiple-backends">Supporting multiple backends</a></li>
+</ul>
+<p>Thanks to its macro support, Nim allows <code>async</code>/<code>await</code> to be implemented in
+libraries with only minimal support from the language - as such, multiple
+<code>async</code> libraries exist, including <code>chronos</code> and <code>asyncdispatch</code>, and more may
+come to be developed in the futures.</p>
+<h2 id="chronos-v3"><a class="header" href="#chronos-v3">Chronos v3</a></h2>
+<p>Chronos v4 introduces new features for IPv6, exception effects, a stand-alone
+<code>Future</code> type as well as several other changes - when upgrading from chronos v3,
+here are several things to consider:</p>
+<ul>
+<li>Exception handling is now strict by default - see the <a href="./error_handling.html">error handling</a>
+chapter for how to deal with <code>raises</code> effects</li>
+<li><code>AsyncEventBus</code> was removed - use <code>AsyncEventQueue</code> instead</li>
+<li><code>Future.value</code> and <code>Future.error</code> panic when accessed in the wrong state</li>
+<li><code>Future.read</code> and <code>Future.readError</code> raise <code>FutureError</code> instead of
+<code>ValueError</code> when accessed in the wrong state</li>
+</ul>
+<h2 id="asyncdispatch"><a class="header" href="#asyncdispatch"><code>asyncdispatch</code></a></h2>
+<p>Code written for <code>asyncdispatch</code> and <code>chronos</code> looks similar but there are
+several differences to be aware of:</p>
+<ul>
+<li><code>chronos</code> has its own dispatch loop - you can typically not mix <code>chronos</code> and
+<code>asyncdispatch</code> in the same thread</li>
+<li><code>import chronos</code> instead of <code>import asyncdispatch</code></li>
+<li>cleanup is important - make sure to use <code>closeWait</code> to release any resources
+you're using or file descriptor and other leaks will ensue</li>
+<li>cancellation support means that <code>CancelledError</code> may be raised from most
+<code>{.async.}</code> functions</li>
+<li>Calling <code>yield</code> directly in tasks is not supported - instead, use <code>awaitne</code>.</li>
+<li><code>asyncSpawn</code> is used instead of <code>asyncCheck</code> - note that exceptions raised
+in tasks that are <code>asyncSpawn</code>:ed cause panic</li>
+</ul>
+<h2 id="supporting-multiple-backends"><a class="header" href="#supporting-multiple-backends">Supporting multiple backends</a></h2>
+<p>Libraries built on top of <code>async</code>/<code>await</code> may wish to support multiple async
+backends - the best way to do so is to create separate modules for each backend
+that may be imported side-by-side - see <a href="https://github.com/status-im/nim-metrics/blob/master/metrics/">nim-metrics</a>
+for an example.</p>
+<p>An alternative way is to select backend using a global compile flag - this
+method makes it diffucult to compose applications that use both backends as may
+happen with transitive dependencies, but may be appropriate in some cases -
+libraries choosing this path should call the flag <code>asyncBackend</code>, allowing
+applications to choose the backend with <code>-d:asyncBackend=&lt;backend_name&gt;</code>.</p>
+<p>Known <code>async</code> backends include:</p>
+<ul>
+<li><code>chronos</code> - this library (<code>-d:asyncBackend=chronos</code>)</li>
+<li><code>asyncdispatch</code> the standard library <code>asyncdispatch</code> <a href="https://nim-lang.org/docs/asyncdispatch.html">module</a> (<code>-d:asyncBackend=asyncdispatch</code>)</li>
+<li><code>none</code> - <code>-d:asyncBackend=none</code> - disable <code>async</code> support completely</li>
+</ul>
+<p><code>none</code> can be used when a library supports both a synchronous and
+asynchronous API, to disable the latter.</p>
+<footer id="open-on-gh">Found a bug? <a href="https://github.com/status-im/nim-chronos//edit/master/docs/src/porting.md">Edit this page on GitHub.</a></footer>
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="tips.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next prefetch" href="http_server_middleware.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="tips.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next prefetch" href="http_server_middleware.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr.min.js"></script>
+        <script src="mark.min.js"></script>
+        <script src="searcher.js"></script>
+
+        <script src="clipboard.min.js"></script>
+        <script src="highlight.js"></script>
+        <script src="book.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+    </div>
+    </body>
+</html>

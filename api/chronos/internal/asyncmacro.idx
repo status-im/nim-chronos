@@ -1,0 +1,5 @@
+await	chronos/internal/asyncmacro.html#await.t,Future[T]	asyncmacro: await[T](f: Future[T]): T	
+await	chronos/internal/asyncmacro.html#await.t,InternalRaisesFuture[T,E]	asyncmacro: await[T, E](fut: InternalRaisesFuture[T, E]): T	
+awaitne	chronos/internal/asyncmacro.html#awaitne.t,Future[T]	asyncmacro: awaitne[T](f: Future[T]): Future[T]	
+async	chronos/internal/asyncmacro.html#async.m,untyped,untyped	asyncmacro: async(params, prc: untyped): untyped	
+async	chronos/internal/asyncmacro.html#async.m,untyped	asyncmacro: async(prc: untyped): untyped	

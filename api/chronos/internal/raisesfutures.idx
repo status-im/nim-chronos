@@ -1,0 +1,14 @@
+InternalRaisesFuture	chronos/internal/raisesfutures.html#InternalRaisesFuture	raisesfutures: InternalRaisesFuture	
+makeNoRaises	chronos/internal/raisesfutures.html#makeNoRaises	raisesfutures: makeNoRaises(): NimNode	
+isNoRaises	chronos/internal/raisesfutures.html#isNoRaises,NimNode	raisesfutures: isNoRaises(n: NimNode): bool	
+Raising	chronos/internal/raisesfutures.html#Raising.m,typedesc[Future[T]],typed	raisesfutures: Raising[T](F: typedesc[Future[T]]; E: typed): untyped	
+init	chronos/internal/raisesfutures.html#init.t,typeInternalRaisesFuture[T,E],static[string]	raisesfutures: init[T, E](F: type InternalRaisesFuture[T, E]; fromProc: static[string] = &quot;&quot;): F:type	
+init	chronos/internal/raisesfutures.html#init.t,typeInternalRaisesFuture[T,E],static[string],static[FutureFlags]	raisesfutures: init[T, E](F: type InternalRaisesFuture[T, E]; fromProc: static[string] = &quot;&quot;;\n           flags: static[FutureFlags]): F:type	
+prepend	chronos/internal/raisesfutures.html#prepend.m,typedesc,varargs[typed]	raisesfutures: prepend(tup: typedesc; typs: varargs[typed]): typedesc	
+remove	chronos/internal/raisesfutures.html#remove.m,typedesc,varargs[typed]	raisesfutures: remove(tup: typedesc; typs: varargs[typed]): typedesc	
+union	chronos/internal/raisesfutures.html#union.m,typedesc,typedesc	raisesfutures: union(tup0: typedesc; tup1: typedesc): typedesc	
+getRaisesTypes	chronos/internal/raisesfutures.html#getRaisesTypes,NimNode	raisesfutures: getRaisesTypes(raises: NimNode): NimNode	
+checkRaises	chronos/internal/raisesfutures.html#checkRaises.m,InternalRaisesFuture,typed,ref.T,staticbool	raisesfutures: checkRaises[T: CatchableError](future: InternalRaisesFuture; raises: typed;\n                               error: ref T; warn: static bool = true): untyped	
+failed	chronos/internal/raisesfutures.html#failed,InternalRaisesFuture[T,void]	raisesfutures: failed[T](future: InternalRaisesFuture[T, void]): bool	
+error	chronos/internal/raisesfutures.html#error,InternalRaisesFuture[T,void]	raisesfutures: error[T](future: InternalRaisesFuture[T, void]): ref CatchableError	
+readError	chronos/internal/raisesfutures.html#readError,InternalRaisesFuture[T,void]	raisesfutures: readError[T](future: InternalRaisesFuture[T, void]): ref CatchableError	
