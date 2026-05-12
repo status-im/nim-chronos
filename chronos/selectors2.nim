@@ -64,8 +64,6 @@ when defined(nimdoc):
       ## An object which holds result for descriptor
       fd* : int ## file/socket descriptor
       events*: set[Event] ## set of events
-      errorCode*: OSErrorCode ## additional error code information for
-                              ## Error events
 
     SelectEvent* = object
       ## An object which holds user defined event
@@ -238,7 +236,6 @@ else:
     ReadyKey* = object
       fd* : int
       events*: set[Event]
-      errorCode*: OSErrorCode
 
     SelectorKey[T] = object
       ident: int

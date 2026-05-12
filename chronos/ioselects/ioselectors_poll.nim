@@ -198,7 +198,6 @@ proc prepareKey[T](s: Selector[T], event: var TPollfd): Opt[ReadyKey] =
           return Opt.none(ReadyKey)
         else:
           rkey.events.incl({Event.User, Event.Error})
-          rkey.errorCode = errorCode
       else:
         rkey.events.incl(Event.User)
     else:
