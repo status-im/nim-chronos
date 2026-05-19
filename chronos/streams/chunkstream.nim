@@ -222,6 +222,9 @@ proc write(
     nbytes: int,
 ) {.async: (raises: [CancelledError, AsyncStreamError]).} =
   await wstream.lock.acquire() # Avoid interleaving writes
+  if nbytes == 0: # avoid sending zero-length chunk, aka "end-of-transfer"
+    return
+
   try:
     var buffer: array[16, byte]
 

@@ -226,17 +226,17 @@ template shiftVectorFile(v: var StreamVector, o: untyped) =
 
 proc completePendingWriteQueue(queue: var Deque[StreamVector],
                                v: int) {.inline.} =
-  while len(queue) > 0:
-    var vector = queue.popFirst()
+  for vector in queue:
     if not(vector.writer.finished()):
       vector.writer.complete(v)
+  queue.reset()
 
 proc failPendingWriteQueue(queue: var Deque[StreamVector],
                            error: ref TransportError) {.inline.} =
-  while len(queue) > 0:
-    var vector = queue.popFirst()
+  for vector in queue:
     if not(vector.writer.finished()):
       vector.writer.fail(error)
+  queue.reset()
 
 proc clean(server: StreamServer) {.inline.} =
   if not(server.loopFuture.finished()):
@@ -251,9 +251,6 @@ proc clean(transp: StreamTransport) {.inline.} =
     untrackCounter(StreamTransportTrackerName)
     transp.future.complete()
     GC_unref(transp)
-
-template toUnchecked*(a: untyped): untyped =
-  cast[ptr UncheckedArray[byte]](a)
 
 func getTransportFlags(server: StreamServer): set[TransportFlags] =
   if ServerFlags.V4Mapped in server.flags:
@@ -347,28 +344,19 @@ when defined(windows):
           of ERROR_OPERATION_ABORTED:
             # CancelIO() interrupt
             transp.state.incl({WritePaused, WriteEof})
-            let vector = transp.queue.popFirst()
-            if not(vector.writer.finished()):
-              vector.writer.complete(0)
             completePendingWriteQueue(transp.queue, 0)
             break
           else:
-            let vector = transp.queue.popFirst()
             if isConnResetError(err):
               # Soft error happens which indicates that remote peer got
               # disconnected, complete all pending writes in queue with 0.
               transp.state.incl({WritePaused, WriteEof})
-              if not(vector.writer.finished()):
-                vector.writer.complete(0)
               completePendingWriteQueue(transp.queue, 0)
-              break
             else:
               transp.state.incl({WritePaused, WriteError})
               let error = getTransportOsError(err)
-              if not(vector.writer.finished()):
-                vector.writer.fail(error)
               failPendingWriteQueue(transp.queue, error)
-              break
+            break
         else:
           ## Initiation
           transp.state.incl(WritePending)
@@ -711,16 +699,11 @@ when defined(windows):
       var
         saddr: Sockaddr_storage
         slen: SockLen
-        sock: AsyncFD
-        povl: RefCustomOverlapped
-        proto: Protocol
-
-      var raddress = anyAddressFix(address)
+        raddress = anyAddressFix(address)
 
       toSAddr(raddress, saddr, slen)
-      proto = Protocol.IPPROTO_TCP
-      sock = createAsyncSocket2(raddress.getDomain(), SockType.SOCK_STREAM,
-                                proto).valueOr:
+      let sock = createAsyncSocket2(raddress.getDomain(), SockType.SOCK_STREAM,
+                                    Protocol.IPPROTO_TCP).valueOr:
         retFuture.fail(getTransportOsError(error))
         return retFuture
 
@@ -799,10 +782,10 @@ when defined(windows):
             retFuture.fail(getTransportOsError(ovl.data.errCode))
         GC_unref(ovl)
 
-      proc cancel(udata: pointer) {.gcsafe.} =
+      retFuture.cancelCallback = proc(udata: pointer) {.gcsafe.} =
         sock.closeSocket()
 
-      povl = RefCustomOverlapped()
+      let povl = RefCustomOverlapped()
       GC_ref(povl)
       povl.data = CompletionData(cb: socketContinuation)
       let res = loop.connectEx(SocketHandle(sock),
@@ -819,8 +802,6 @@ when defined(windows):
           GC_unref(povl)
           sock.closeSocket()
           retFuture.fail(getTransportOsError(err))
-
-      retFuture.cancelCallback = cancel
 
     elif address.family == AddressFamily.Unix:
       ## Unix domain socket emulation with Windows Named Pipes.
@@ -853,9 +834,8 @@ when defined(windows):
             else:
               retFuture.fail(getTransportOsError(err))
           else:
-            let res = register2(AsyncFD(pipeHandle))
-            if res.isErr():
-              retFuture.fail(getTransportOsError(res.error()))
+            register2(AsyncFD(pipeHandle)).isOkOr:
+              retFuture.fail(getTransportOsError(error))
               return
 
             let transp = newStreamPipeTransport(AsyncFD(pipeHandle),
@@ -1274,12 +1254,12 @@ when defined(windows):
       if res == FALSE:
         let err = osLastError()
         case err
+        of ERROR_IO_PENDING:
+          discard
         of ERROR_OPERATION_ABORTED:
           server.apending = false
           retFuture.fail(getServerUseClosedError())
           return retFuture
-        of ERROR_IO_PENDING:
-          discard
         of WSAECONNRESET, WSAECONNABORTED, WSAENETDOWN,
            WSAENETRESET, WSAETIMEDOUT:
           server.apending = false
@@ -1312,12 +1292,12 @@ when defined(windows):
       if res == 0:
         let err = osLastError()
         case err
+        of ERROR_IO_PENDING, ERROR_PIPE_CONNECTED:
+          discard
         of ERROR_OPERATION_ABORTED:
           server.apending = false
           retFuture.fail(getServerUseClosedError())
           return retFuture
-        of ERROR_IO_PENDING, ERROR_PIPE_CONNECTED:
-          discard
         else:
           server.apending = false
           retFuture.fail(getTransportOsError(err))
@@ -1566,26 +1546,25 @@ else:
     var
       saddr: Sockaddr_storage
       slen: SockLen
-    var retFuture = newFuture[StreamTransport]("stream.transport.connect")
-
-    var raddress = anyAddressFix(address)
-    toSAddr(raddress, saddr, slen)
+      raddress = anyAddressFix(address)
     raddress.toSAddr(saddr, slen)
 
-    let proto =
-      if raddress.family == AddressFamily.Unix:
-        Protocol.IPPROTO_IP
-      else:
-        Protocol.IPPROTO_TCP
+    let
+      retFuture = newFuture[StreamTransport]("stream.transport.connect")
+      proto =
+        if raddress.family == AddressFamily.Unix:
+          Protocol.IPPROTO_IP
+        else:
+          Protocol.IPPROTO_TCP
 
-    let sock = createAsyncSocket2(raddress.getDomain(), SockType.SOCK_STREAM,
-                                  proto).valueOr:
-      case error
-      of oserrno.EMFILE:
-        retFuture.fail(getTransportTooManyError())
-      else:
-        retFuture.fail(getTransportOsError(error))
-      return retFuture
+      sock = createAsyncSocket2(raddress.getDomain(), SockType.SOCK_STREAM,
+                                proto).valueOr:
+        case error
+        of oserrno.EMFILE:
+          retFuture.fail(getTransportTooManyError())
+        else:
+          retFuture.fail(getTransportOsError(error))
+        return retFuture
 
     if raddress.family in {AddressFamily.IPv4, AddressFamily.IPv6}:
       if SocketFlags.TcpNoDelay in flags:
@@ -1702,12 +1681,13 @@ else:
       # it could have been released
       return
 
-    var
-      saddr: Sockaddr_storage
-      slen: SockLen
     let server = cast[StreamServer](udata)
     if server.status in {ServerStatus.Stopped, ServerStatus.Closed}:
       return
+
+    var
+      saddr: Sockaddr_storage
+      slen: SockLen
 
     let
       flags = {DescriptorFlag.CloseOnExec, DescriptorFlag.NonBlock}
@@ -2402,7 +2382,11 @@ template fastWrite(transp: auto, pbytes: var ptr byte, rbytes: var int,
 
   when not defined(windows) and not defined(nimdoc):
     if transp.queue.len == 0:
-      while rbytes > 0:
+      while true:
+        if rbytes == 0:
+          retFuture.complete(nbytes)
+          return retFuture
+
         let res =
           case transp.kind
           of TransportKind.Socket:
@@ -2415,11 +2399,6 @@ template fastWrite(transp: auto, pbytes: var ptr byte, rbytes: var int,
         if res > 0:
           pbytes = pbytes.offset(res)
           rbytes -= res
-
-          if rbytes == 0:
-            retFuture.complete(nbytes)
-            return retFuture
-          # Not all bytes written - keep going
         else:
           let err = osLastError()
           if isWouldBlockError(err):
@@ -2693,7 +2672,7 @@ proc readUntil*(transp: StreamTransport, pbytes: pointer, nbytes: int,
     raise newException(TransportLimitError, "Limit reached!")
 
   var
-    pbuffer = pbytes.toUnchecked()
+    pbuffer = cast[ptr byte](pbytes).makeUncheckedArray()
     state = 0
     k = 0
 
@@ -2754,7 +2733,7 @@ proc read*(transp: StreamTransport): Future[seq[byte]] {.
 
 proc read*(transp: StreamTransport, n: int): Future[seq[byte]] {.
     async: (raises: [TransportError, CancelledError]).} =
-  ## Read all bytes (n <= 0) or exactly `n` bytes from transport ``transp``.
+  ## Read all bytes (n <= 0) or up to `n` bytes from transport ``transp``.
   ##
   ## This procedure allocates buffer seq[byte] and return it as result.
   if n <= 0:
@@ -2832,7 +2811,7 @@ proc readMessage*(transp: StreamTransport,
     else:
       var res: tuple[consumed: int, done: bool]
       for (region, rsize) in transp.buffer.regions():
-        res = predicate(region.toUnchecked().toOpenArray(0, rsize - 1))
+        res = predicate(region.makeOpenArray(rsize ))
         break
       res
 
