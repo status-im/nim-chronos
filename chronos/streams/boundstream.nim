@@ -209,13 +209,7 @@ proc initReaderVtbl(bufferSize: int): AsyncStreamReaderVtbl =
     else:
       readNOrig(rstream, n)
 
-  proc readImpl(
-      rstream: AsyncStreamReader
-  ): Future[seq[byte]] {.async: (raises: [CancelledError, AsyncStreamError], raw: true).} =
-    readNImpl(rstream, 0)
-
   res.readN = readNImpl
-  res.read = readImpl
 
   res
 
