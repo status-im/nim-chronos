@@ -8,6 +8,7 @@
 import std/os
 import unittest2
 import ../chronos, ../chronos/timer
+import ../chronos/timer
 
 {.used.}
 
@@ -127,3 +128,34 @@ suite "Asynchronous timers & steps test suite":
 
     check:
       fut3.completed() == true
+
+  test "Cancellation retry tick does not wait for next timer":
+    const NextTimerSleep = 50.milliseconds
+
+    let gate = newFuture[void]("cancelAndWait.gate")
+    var
+      slept = false
+      workerFut: Future[void]
+
+    proc cancelWorker(): Future[void] {.async.} =
+      await gate
+      await workerFut.cancelAndWait()
+
+    proc worker() {.async.} =
+      try:
+        await gate
+        await sleepAsync(NextTimerSleep)
+        slept = true
+      except CancelledError:
+        discard
+
+    let cancelFut = cancelWorker()
+    workerFut = worker()
+    gate.complete()
+
+    while not cancelFut.finished:
+      poll()
+
+    check:
+      workerFut.finished
+      not slept
