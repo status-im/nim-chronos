@@ -64,7 +64,7 @@ task test, "Run all tests":
   for args in testArguments:
     # First run tests with `refc` memory manager.
     run args & " --mm:refc", "tests/testall"
-    if (NimMajor, NimMinor) > (1, 6):
+    if (NimMajor, NimMinor) >= (2, 2): # ORC on 2.0 is too broken to investigate
       run args & " --mm:orc", "tests/testall"
 
   # Make sure benchmarks compile
