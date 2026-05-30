@@ -45,7 +45,7 @@ proc build(args, path: string) =
 
 proc run(args, path: string) =
   build args, path
-  exec "build/" & path.splitPath[1] & " -v"
+  exec "build/" & path.splitPath[1]
 
 task examples, "Build examples":
   # Build book examples
@@ -74,7 +74,7 @@ task test, "Run all tests":
 
 task test_v3_compat, "Run all tests in v3 compatibility mode":
   for args in testArguments:
-    if (NimMajor, NimMinor) > (1, 6):
+    if (NimMajor, NimMinor) >= (2, 2):
       # First run tests with `refc` memory manager.
       run args & " --mm:refc -d:chronosHandleException", "tests/testall"
 
@@ -89,7 +89,7 @@ task test_libbacktrace, "test with libbacktrace":
     for args in allArgs:
       # First run tests with `refc` memory manager.
       run args & " --mm:refc", "tests/testall"
-      if (NimMajor, NimMinor) > (1, 6):
+      if (NimMajor, NimMinor) >= (2, 2):
         run args & " --mm:orc", "tests/testall"
 
 task docs, "Generate API documentation":
