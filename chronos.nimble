@@ -45,7 +45,7 @@ proc build(args, path: string) =
 
 proc run(args, path: string) =
   build args, path
-  exec "build/" & path.splitPath[1]
+  exec "build/" & path.splitPath[1] & " -v"
 
 task examples, "Build examples":
   # Build book examples
