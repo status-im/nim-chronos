@@ -555,7 +555,7 @@ proc getUniqueConnectionId(session: HttpSessionRef): uint64 =
   inc(session.counter)
   session.counter
 
-proc new*(
+proc new(
        t: typedesc[HttpClientConnectionRef],
        session: HttpSessionRef,
        ha: HttpAddress,
