@@ -584,11 +584,7 @@ proc new*(
                                   flags = session.flags.getTLSFlags(),
                                   bufferSize = session.connectionBufferSize)
         except TLSStreamInitError as exc:
-          # TODO closing the reader of a StreamTransport is a no-op except for
-          #      the tracker so it's safe to spawn here - a bit ugly though,
-          #      would be better to add a "regular" way of doing this
-          asyncSpawn treader.closeWait()
-          asyncSpawn twriter.closeWait()
+          # TODO treader and twriter leak here
           return err(exc.msg)
 
       res = HttpClientConnectionRef(
