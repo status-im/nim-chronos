@@ -57,7 +57,7 @@ type
     Pause,                        # Pause server
     Stop                          # Stop server
 
-  ServerStatus* = enum
+  ServerStatus* {.pure.} = enum
     ## Server's statuses
     Starting,                     # Server created
     Stopped,                      # Server stopped
@@ -576,7 +576,7 @@ template checkClosed*(t: untyped, future: untyped) =
     return future
 
 template checkWriteEof*(t: untyped, future: untyped) =
-  if (WriteEof in (t).state):
+  if (TransportState.WriteEof in (t).state):
     future.fail(newException(TransportUseEofError,
                              "Transport connection is already dropped!"))
     return future
