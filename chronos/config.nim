@@ -65,7 +65,7 @@ const
     ## using `AsyncProcessOption.EvalCommand` and API calls such as
     ## ``execCommand(command)`` and ``execCommandEx(command)``.
 
-  chronosEventsCount* {.intdefine.} = 4096
+  chronosEventsCount* {.intdefine.} = 64
     ## Number of OS poll events retrieved by syscall (epoll, kqueue, poll).
 
   chronosInitialSize* {.intdefine.} = 32
