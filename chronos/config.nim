@@ -68,7 +68,7 @@ const
   chronosEventsCount* {.intdefine.} = 64
     ## Number of OS poll events retrieved by syscall (epoll, kqueue, poll).
 
-  chronosInitialSize* {.intdefine.} = 64
+  chronosInitialSize* {.intdefine.} = 32
     ## Initial size of Selector[T]'s array of file descriptors.
 
   chronosEventEngine* {.strdefine.}: string =
