@@ -599,7 +599,7 @@ proc closeWait*(rw: AsyncStreamRW): Future[void] {.async: (raises: []).} =
     await noCancel(rw.join())
 
 proc init(T: type AsyncStreamReaderVtbl, rsource: AsyncStreamReader): T =
-  # Trivial vtable that forwards all operations to another stream
+  # Trivial vtable that forwards all operations except close to another stream
   proc atEofImpl(rstream: AsyncStreamReader): bool =
     rsource.atEof()
 
@@ -650,7 +650,8 @@ proc init(T: type AsyncStreamReaderVtbl, rsource: AsyncStreamReader): T =
     readMessage(rsource, pred)
 
   proc closeImpl(rstream: AsyncStreamReader) {.async: (raises: []).} =
-    close(rsource)
+    # Unlike other operations, `close` is not forwarded to `rsource`
+    discard
 
   T(
     atEof: atEofImpl,
@@ -747,7 +748,8 @@ proc init(T: type AsyncStreamReaderVtbl, tsource: StreamTransport): T =
       raise newAsyncStreamReadError(exc)
 
   proc closeImpl(rstream: AsyncStreamReader) {.async: (raises: []).} =
-    discard # TODO cascade close?
+    # Closing the reader does not close the underlying transport
+    discard
 
   T(
     atEof: atEofImpl,
@@ -954,7 +956,11 @@ proc init(T: type AsyncStreamWriterVtbl, wsource: AsyncStreamWriter): T =
     wsource.finish()
 
   proc closeImpl(_: AsyncStreamWriter) {.async: (raises: []).} =
-    wsource.close()
+    # `close` is not forwarded to the underlying stream - however, `finish` is
+    # which may result in the underlying stream being unusable anyway
+    # TODO probably we should not be forwarding `finish` and instead only
+    #      writes, but this would be a semantic change compared with v4.2.
+    discard
 
   AsyncStreamWriterVtbl(
     atEof: atEofImpl,
@@ -993,7 +999,7 @@ proc init(T: type AsyncStreamWriterVtbl, tsource: StreamTransport): T =
   proc finishImpl(
       _: AsyncStreamWriter
   ) {.async: (raises: [CancelledError, AsyncStreamError]).} =
-    discard # TODO shutdown?
+    discard
 
   proc closeImpl(_: AsyncStreamWriter) {.async: (raises: []).} =
     discard
