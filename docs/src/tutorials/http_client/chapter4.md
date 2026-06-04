@@ -27,6 +27,10 @@ Let's optimize our check to handle large page like this one.
 
 First, let's not download the page and just check the response status.
 
+```admonish info
+The HTTP protocol divides each request and response into a **header** and a **body**. The header contains metadata like the status code, while the body contains the actual content. This is true for both successful responses and error statuses.
+```
+
 To do that, instead of using `fetch`, we'll create the request manually:
 
 ```nim
