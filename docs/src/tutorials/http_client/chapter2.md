@@ -33,7 +33,7 @@ proc check(uri: string) {.async: (raises: [CancelledError]).} =
   except HttpError:
     echo "[ERR] " & uri & ": " & getCurrentExceptionMsg()
   finally:
-    await noCancel(session.closeWait())
+    await session.closeWait()
 
 when isMainModule:
   # Loop over the URIs
