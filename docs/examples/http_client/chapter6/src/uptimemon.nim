@@ -128,7 +128,7 @@ proc check(uris: seq[string]) {.async: (raises: [CancelledError]).} =
     await sleepAsync(10.seconds)
 # ANCHOR_END: sleep
 
-  await noCancel(session.closeWait())
+  await session.closeWait()
 
 when isMainModule:
   waitFor check(uris)

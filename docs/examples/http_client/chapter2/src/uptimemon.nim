@@ -29,7 +29,7 @@ proc check(uris: seq[string]) {.async: (raises: [CancelledError]).} =
     futures.add(session.check(uri))
 
   await allFutures(futures)
-  await noCancel(session.closeWait())
+  await session.closeWait()
 # ANCHOR_END: check_uris
 
 # ANCHOR: isMainModule

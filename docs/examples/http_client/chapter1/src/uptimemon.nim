@@ -27,7 +27,7 @@ proc check(uri: string) {.async: (raises: [CancelledError]).} =
 # ANCHOR_END: except
 # ANCHOR: finally
   finally:
-    await noCancel(session.closeWait())
+    await session.closeWait()
 # ANCHOR_END: finally
 
 # ANCHOR: isMainModule
