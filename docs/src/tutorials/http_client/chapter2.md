@@ -6,11 +6,11 @@
 
 OK, we have a working app that can check one URI at a time, which is not that much impressive. Let's update our project to do what Chronos was made for—concurrency!
 
-We'll take a somewhat unusual approach and **start with the wrong solution** before revealing the proper way of solving this problem. By highlighting the common mistakes, we'll help you avoid them in the future.
+We'll start with a simple serial solution before revealing how to make it concurrent. By comparing these approaches, we'll highlight some important concepts in asynchronous programming.
 
-## Wrong Solution: Naive Loop
+## Serial Requests
 
-The most obvious to check multiple URIs instead of one would be to just call `check` in a loop:
+The most obvious way to check multiple URIs instead of one would be to just call `check` in a loop:
 
 ```nim
 import chronos/apps/http/httpclient
@@ -43,11 +43,16 @@ when isMainModule:
 
 If you run this code, you'll see that it works and does in fact check your URIs.
 
-So, why is it the wrong solution? Because we check URIs in a blocking, synchronous, and therefore slow loop.
+While this approach is straightforward, it can be suboptimal for two reasons:
 
-With this kind of solution, your app checks URIs one by one and the total time is the sum of the time spent getting a response for every single URI. This is hardly usable if you have as few as 20 URIs to check.
+1. **Session vs. request lifetime**: We are creating and closing a new session for every single request. This is inefficient because each session must establish its own connections. Reusing a single session for multiple requests allows Chronos to reuse underlying connections, reducing overhead.
+2. **Sequential waiting**: Your app checks URIs one by one, waiting for each to finish before starting the next. The total execution time is the sum of all request times.
 
-## Correct Solution: Asynchronous Bulk Requests
+In many cases, serial execution is exactly what you want: for example, when you have limited resources or when requests depend on each other.
+
+But for our case, we want to make the requests concurrently because we plan to check many URLs that could potentially be slow to respond.
+
+## Concurrent Requests
 
 We want Chronos to start all the requests at the same time and each other's result as soon as it's available.
 
