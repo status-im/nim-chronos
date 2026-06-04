@@ -43,18 +43,16 @@ Here are the new lines that replace `let responseFuture = session.fetch(parseUri
 {{#shiftinclude auto:../../../examples/http_client/chapter4_1/src/uptimemon.nim:request}}
 ```
 
-We explicitly create a GET request.
+We create the request with [`HttpClientRequestRef.new`](/api/chronos/apps/http/httpclient.html#new,typedesc[HttpClientRequestRef],HttpSessionRef,string,HttpMethod,HttpVersion,set[HttpClientRequestFlag],int,openArray[HttpHeaderTuple],openArray[byte]).
 
-```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter4_1/src/uptimemon.nim:error_check}}
-```
+When we pass a string URL to `new`, it returns an [`HttpResult`](/api/chronos/apps/http/httpclient.html#HttpResult) which is a [result type](https://github.com/arnetheduck/nim-results) that can contain either the request or an error message (e.g. if the URL is malformed).
 
-Request creation can fail, so we need to check that before proceeding: if an error happened, raise a `HttpRequestError` to be caught downstream. We use [`request.error`](/api/chronos/apps/http/httpclient.html#HttpClientRequest) to get the message of the error.
+To handle this, we use `valueOr`: if the result is a success, the `request` variable gets the value; otherwise, the block after `valueOr` is executed. In our case, we raise a `HttpRequestError` with the provided `error` message.
 
 ```admonish note
-You may wonder why we do an explicit check while the entire block is already wrapped in `try`.
+You may wonder why we use `valueOr` instead of just relying on the `try..except` block.
 
-That's because [`value`](https://github.com/arnetheduck/nim-results/blob/master/results.nim#L870), which is called later to get the actual request instance, raises `ResultDefect` if request creation failed which is not a `CatchableError` and would slip through our `except`.
+That's because accessing the value of a failed `Result` directly (e.g. via `.get` or `.value`) raises `ResultDefect`, which is not a `CatchableError` and would skip through our `except HttpError` block. `valueOr` allows us to handle the failure explicitly and convert it into a catchable exception.
 ```
 
 ```nim
