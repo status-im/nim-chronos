@@ -48,12 +48,10 @@ proc findMarker(
 
 proc check(session: HttpSessionRef, uri: string) {.async: (raises: [CancelledError]).} =
   try:
-    let request = HttpClientRequestRef.new(session, uri)
-
-    if request.isErr:
-      raise newException(HttpRequestError, request.error)
-
-    let responseFuture = request.value.send()
+    let
+      request = HttpClientRequestRef.new(session, uri).valueOr:
+        raise newException(HttpRequestError, error)
+      responseFuture = request.send()
 
     if await responseFuture.withTimeout(5.seconds):
       let response = responseFuture.read()

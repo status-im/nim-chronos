@@ -11,18 +11,12 @@ proc check(session: HttpSessionRef, uri: string) {.async: (raises: [CancelledErr
   try:
     let
 # ANCHOR: request
-      request = HttpClientRequestRef.new(session, uri)
+      request = HttpClientRequestRef.new(session, uri).valueOr:
+        raise newException(HttpRequestError, error)
 # ANCHOR_END: request
 
-# ANCHOR: error_check
-    if request.isErr:
-      raise newException(HttpRequestError, request.error)
-
-    let
-# ANCHOR_END: error_check
-
 # ANCHOR: response
-      responseFuture = request.value.send()
+      responseFuture = request.send()
 # ANCHOR_END: response
     if await responseFuture.withTimeout(5.seconds):
       let response = responseFuture.read()

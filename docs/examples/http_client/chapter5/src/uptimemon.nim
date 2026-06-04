@@ -31,16 +31,17 @@ proc sendAlert(
       meth = MethodPost,
       headers = headers,
       body = body,
-    )
+    ).valueOr:
+      echo "[WRN] Failed to send alert: " & error
+      return
 # ANCHOR_END: request
 
 # ANCHOR: response
-  if request.isOk:
-    try:
-      let response = await request.get.send()
-      await response.closeWait()
-    except HttpError:
-      echo "[WRN] Failed to send alert: " & getCurrentExceptionMsg()
+  try:
+    let response = await request.send()
+    await response.closeWait()
+  except HttpError:
+    echo "[WRN] Failed to send alert: " & getCurrentExceptionMsg()
 # ANCHOR_END: response
 
 proc findMarker(
@@ -67,12 +68,10 @@ proc findMarker(
 # ANCHOR: check
 proc check(session: HttpSessionRef, uri: string) {.async: (raises: [CancelledError]).} =
   try:
-    let request = HttpClientRequestRef.new(session, uri)
-
-    if request.isErr:
-      raise newException(HttpRequestError, request.error)
-
-    let responseFuture = request.get.send()
+    let
+      request = HttpClientRequestRef.new(session, uri).valueOr:
+        raise newException(HttpRequestError, error)
+      responseFuture = request.send()
 
     if await responseFuture.withTimeout(5.seconds):
       let response = responseFuture.read()
