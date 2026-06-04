@@ -60,7 +60,7 @@ To achieve that, we will:
 
 1. Introduce a new async function that will schedule the checks. We can't do that outside of a function because async calls are allowed only in async functions.
 2. Create one HTTP session for all requests and ensure it gets closed using a `try..finally` block.
-3. Use `mapIt` from `std/sequtils` to concisely create a list of `Future`s for our requests.
+3. Use `mapIt` from `std/sequtils` to create a list of `Future`s for our requests.
 4. Await all `Future`s at once with [`allFutures`](/api/chronos/internal/asyncfutures.html#allFutures,varargs[Future[T]]).
 5. Add cancellation logic to ensure that if the main check is cancelled, all individual requests are also cancelled and awaited.
 
@@ -114,7 +114,7 @@ We add a new argument to our `check` function and remove the session closing par
 We add another `check` function, but this one takes a list of URIs. In this function:
 
 1. We create a single session for all requests and wrap its usage in a `try..finally` block to ensure `closeWait()` is always called.
-2. We use `mapIt` to concisely create a list of `Future`s, one for each URI.
+2. We use `mapIt` to create a list of `Future`s, one for each URI.
 3. We use `allFutures` to await all those `Future`s.
 4. We add a `try..except CancelledError` block around `allFutures`. This is important: if `check(uris)` itself is cancelled, we want to make sure all the pending requests we started are also cancelled and cleaned up properly. Using `cancelAndWait(futures)` ensures that all resources are freed immediately. Note that since we handle the cancellation internally and don't re-raise the exception, the function signature is now `raises: []`. In async procedures, if you handle all potential exceptions, including `CancelledError`, the compiler sees it as not raising anything.
 
