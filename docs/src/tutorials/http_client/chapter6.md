@@ -52,7 +52,7 @@ In the `check` function for a URI sequence, we create a semaphore of the require
 {{#shiftinclude auto:../../../examples/http_client/chapter6/src/uptimemon.nim:while_true}}
 ```
 
-Instead of a one off launch, we do the checks in an infinite loop.
+Instead of a one-off launch, we do the checks in an infinite loop. We wrap the entire loop in a `try..finally` block to ensure the session is always closed when the program stops.
 
 We've added an `echo` to denote the start of each cycle.
 
@@ -60,7 +60,7 @@ We've added an `echo` to denote the start of each cycle.
 {{#shiftinclude auto:../../../examples/http_client/chapter6/src/uptimemon.nim:pass_semaphore}}
 ```
 
-Then we pass the semaphore to `check` for each URI.
+Then we pass the semaphore to `check` for each URI using `mapIt`. We also add a `try..except CancelledError` block around `allFutures` to ensure that if the program is stopped (e.g. by pressing Ctrl+C), all pending requests are cancelled and cleaned up properly. Note that in this case, we `break` the loop to finish the execution gracefully.
 
 ```nim
 {{#shiftinclude auto:../../../examples/http_client/chapter6/src/uptimemon.nim:sleep}}
