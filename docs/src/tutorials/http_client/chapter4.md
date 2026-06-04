@@ -37,23 +37,33 @@ To do that, instead of using `fetch`, we'll create the request manually:
 {{#shiftinclude auto:../../../examples/http_client/chapter4_1/src/uptimemon.nim:all}}
 ```
 
-Here are the new lines that replace `let responseFuture = session.fetch(parseUri(uri))`:
+Before creating the requests, we need to resolve each URI into an address. URL resolution involves DNS lookup which uses the blocking `getaddrinfo` system call — if we ran it inside the async loop, it would stall the whole event loop:
+
+```nim
+{{#shiftinclude auto:../../../examples/http_client/chapter4_1/src/uptimemon.nim:resolve}}
+```
+
+[`session.getAddress(uri)`](/api/chronos/apps/http/httpclient.html#getAddress,HttpSessionRef,string) turns a URL string into an `HttpAddress` — a value containing the parsed host, port, path, and the resolved IP addresses. Because DNS can fail (e.g. unreachable host), it returns an [`HttpResult`](/api/chronos/apps/http/httpclient.html#HttpResult) which is a [result type](https://github.com/arnetheduck/nim-results) that can contain either the address or an error message.
+
+To handle this, we use `valueOr`: if the result is a success, the `address` variable gets the value; otherwise, the block after `valueOr` is executed. In our case, we print the error and skip to the next URI with `continue`.
+
+```admonish note
+You may wonder why we use `valueOr` instead of just relying on `try..except`.
+
+That's because accessing the value of a failed `Result` directly (e.g. via `.get` or `.value`) raises `ResultDefect`, which is not a `CatchableError`. `valueOr` allows us to handle the failure explicitly and convert it into a catchable exception.
+```
+
+```admonish info
+DNS resolution via `getaddrinfo` is a blocking system call on every operating system — there is no async version. On Windows, an invalid host like `http://123.456.78.90` fails quickly because the resolver rejects malformed IPs immediately. On POSIX systems (Linux, macOS), the same call delays as the resolver attempts DNS before giving up. Regardless of the platform, address resolution blocks the calling thread, so it must be performed before entering the async loop to avoid stalling the event loop.
+```
+
+Once the addresses are resolved, we create the actual request objects:
 
 ```nim
 {{#shiftinclude auto:../../../examples/http_client/chapter4_1/src/uptimemon.nim:request}}
 ```
 
-We create the request with [`HttpClientRequestRef.new`](/api/chronos/apps/http/httpclient.html#new,typedesc[HttpClientRequestRef],HttpSessionRef,string,HttpMethod,HttpVersion,set[HttpClientRequestFlag],int,openArray[HttpHeaderTuple],openArray[byte]).
-
-When we pass a string URL to `new`, it returns an [`HttpResult`](/api/chronos/apps/http/httpclient.html#HttpResult) which is a [result type](https://github.com/arnetheduck/nim-results) that can contain either the request or an error message (e.g. if the URL is malformed).
-
-To handle this, we use `valueOr`: if the result is a success, the `request` variable gets the value; otherwise, the block after `valueOr` is executed. In our case, we raise a `HttpRequestError` with the provided `error` message.
-
-```admonish note
-You may wonder why we use `valueOr` instead of just relying on the `try..except` block.
-
-That's because accessing the value of a failed `Result` directly (e.g. via `.get` or `.value`) raises `ResultDefect`, which is not a `CatchableError` and would skip through our `except HttpError` block. `valueOr` allows us to handle the failure explicitly and convert it into a catchable exception.
-```
+We use the [`HttpClientRequestRef.new`](/api/chronos/apps/http/httpclient.html#new,typedesc[HttpClientRequestRef],HttpSessionRef,HttpAddress,HttpMethod,HttpVersion,set[HttpClientRequestFlag],int,openArray[HttpHeaderTuple],openArray[byte]) overload that takes an `HttpAddress` rather than a raw URL. This overload does **no** DNS resolution — it just packs the parameters into a request object.
 
 ```nim
 {{#shiftinclude auto:../../../examples/http_client/chapter4_1/src/uptimemon.nim:response}}

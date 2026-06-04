@@ -7,12 +7,11 @@ const uris = @[
   "http://10.255.255.1", "https://html.spec.whatwg.org/",
 ]
 
-proc check(session: HttpSessionRef, uri: string) {.async: (raises: [CancelledError]).} =
+proc check(session: HttpSessionRef, address: HttpAddress) {.async: (raises: [CancelledError]).} =
   try:
     let
 # ANCHOR: request
-      request = HttpClientRequestRef.new(session, uri).valueOr:
-        raise newException(HttpRequestError, error)
+      request = HttpClientRequestRef.new(session, address)
 # ANCHOR_END: request
 
 # ANCHOR: response
@@ -22,18 +21,28 @@ proc check(session: HttpSessionRef, uri: string) {.async: (raises: [CancelledErr
       let response = responseFuture.read()
 
       if response.status == 200:
-        echo "[OK] " & uri
+        echo "[OK] " & address.hostname
       else:
-        echo "[NOK] " & uri & ": " & $response.status
+        echo "[NOK] " & address.hostname & ": " & $response.status
     else:
       raise newException(AsyncTimeoutError, "Connection timed out")
   except HttpError, FuturePendingError, AsyncTimeoutError:
-    echo "[ERR] " & uri & ": " & getCurrentExceptionMsg()
+    echo "[ERR] " & address.hostname & ": " & getCurrentExceptionMsg()
+
+# ANCHOR: resolve
+proc resolveUris(session: HttpSessionRef, uris: seq[string]): seq[HttpAddress] =
+  for uri in uris:
+    let address = session.getAddress(uri).valueOr:
+      echo "[ERR] " & uri & ": " & error
+      continue
+    result.add(address)
+# ANCHOR_END: resolve
 
 proc check(uris: seq[string]) {.async: (raises: []).} =
   let
     session = HttpSessionRef.new()
-    futures = uris.mapIt(session.check(it))
+    addresses = session.resolveUris(uris)
+    futures = addresses.mapIt(session.check(it))
 
   try:
     await allFutures(futures)

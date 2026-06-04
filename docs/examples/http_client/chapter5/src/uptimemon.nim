@@ -66,11 +66,10 @@ proc findMarker(
     result = "<html" in bytesToString(fetchedBytes)
 
 # ANCHOR: check
-proc check(session: HttpSessionRef, uri: string) {.async: (raises: [CancelledError]).} =
+proc check(session: HttpSessionRef, address: HttpAddress) {.async: (raises: [CancelledError]).} =
   try:
     let
-      request = HttpClientRequestRef.new(session, uri).valueOr:
-        raise newException(HttpRequestError, error)
+      request = HttpClientRequestRef.new(session, address)
       responseFuture = request.send()
 
     if await responseFuture.withTimeout(5.seconds):
@@ -80,27 +79,35 @@ proc check(session: HttpSessionRef, uri: string) {.async: (raises: [CancelledErr
         let markerFound = await findMarker(response)
 
         if markerFound:
-          echo "[OK] " & uri
+          echo "[OK] " & address.hostname
         else:
-          let message = "[NOK] " & uri & ": Not valid HTML"
+          let message = "[NOK] " & address.hostname & ": Not valid HTML"
           echo message
           await session.sendAlert(message)
       else:
-        let message = "[NOK] " & uri & ": " & $response.status
+        let message = "[NOK] " & address.hostname & ": " & $response.status
         echo message
         await session.sendAlert(message)
     else:
       raise newException(AsyncTimeoutError, "Connection timed out")
   except HttpError, FuturePendingError, AsyncTimeoutError, AsyncStreamError:
-    let message = "[ERR] " & uri & ": " & getCurrentExceptionMsg()
+    let message = "[ERR] " & address.hostname & ": " & getCurrentExceptionMsg()
     echo message
     await session.sendAlert(message, 4)
 # ANCHOR_END: check
 
+proc resolveUris(session: HttpSessionRef, uris: seq[string]): seq[HttpAddress] =
+  for uri in uris:
+    let address = session.getAddress(uri).valueOr:
+      echo "[ERR] " & uri & ": " & error
+      continue
+    result.add(address)
+
 proc check(uris: seq[string]) {.async: (raises: []).} =
   let
     session = HttpSessionRef.new()
-    futures = uris.mapIt(session.check(it))
+    addresses = session.resolveUris(uris)
+    futures = addresses.mapIt(session.check(it))
 
   try:
     await allFutures(futures)

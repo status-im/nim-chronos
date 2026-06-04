@@ -46,11 +46,10 @@ proc findMarker(
     result = "<html" in bytesToString(fetchedBytes)
 # ANCHOR_END: result
 
-proc check(session: HttpSessionRef, uri: string) {.async: (raises: [CancelledError]).} =
+proc check(session: HttpSessionRef, address: HttpAddress) {.async: (raises: [CancelledError]).} =
   try:
     let
-      request = HttpClientRequestRef.new(session, uri).valueOr:
-        raise newException(HttpRequestError, error)
+      request = HttpClientRequestRef.new(session, address)
       responseFuture = request.send()
 
     if await responseFuture.withTimeout(5.seconds):
@@ -61,23 +60,31 @@ proc check(session: HttpSessionRef, uri: string) {.async: (raises: [CancelledErr
         let markerFound = await findMarker(response)
 
         if markerFound:
-          echo "[OK] " & uri
+          echo "[OK] " & address.hostname
         else:
-          echo "[NOK] " & uri & ": Not valid HTML"
+          echo "[NOK] " & address.hostname & ": Not valid HTML"
       else:
-        echo "[NOK] " & uri & ": " & $response.status
+        echo "[NOK] " & address.hostname & ": " & $response.status
 # ANCHOR_END: url_response
     else:
       raise newException(AsyncTimeoutError, "Connection timed out")
 # ANCHOR: except
   except HttpError, FuturePendingError, AsyncTimeoutError, AsyncStreamError:
 # ANCHOR_END: except
-    echo "[ERR] " & uri & ": " & getCurrentExceptionMsg()
+    echo "[ERR] " & address.hostname & ": " & getCurrentExceptionMsg()
+
+proc resolveUris(session: HttpSessionRef, uris: seq[string]): seq[HttpAddress] =
+  for uri in uris:
+    let address = session.getAddress(uri).valueOr:
+      echo "[ERR] " & uri & ": " & error
+      continue
+    result.add(address)
 
 proc check(uris: seq[string]) {.async: (raises: []).} =
   let
     session = HttpSessionRef.new()
-    futures = uris.mapIt(session.check(it))
+    addresses = session.resolveUris(uris)
+    futures = addresses.mapIt(session.check(it))
 
   try:
     await allFutures(futures)

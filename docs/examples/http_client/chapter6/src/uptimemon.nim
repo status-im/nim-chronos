@@ -66,7 +66,7 @@ proc findMarker(
 
 # ANCHOR: semaphore
 proc check(
-    session: HttpSessionRef, uri: string, semaphore: AsyncSemaphore
+    session: HttpSessionRef, address: HttpAddress, semaphore: AsyncSemaphore
 ) {.async: (raises: [CancelledError, AsyncSemaphoreError]).} =
   await acquire(semaphore)
 
@@ -76,8 +76,7 @@ proc check(
 
   try:
     let
-      request = HttpClientRequestRef.new(session, uri).valueOr:
-        raise newException(HttpRequestError, error)
+      request = HttpClientRequestRef.new(session, address)
       responseFuture = request.send()
 
     if await responseFuture.withTimeout(5.seconds):
@@ -87,21 +86,28 @@ proc check(
         let markerFound = await findMarker(response)
 
         if markerFound:
-          echo "[OK] " & uri
+          echo "[OK] " & address.hostname
         else:
-          let message = "[NOK] " & uri & ": Not valid HTML"
+          let message = "[NOK] " & address.hostname & ": Not valid HTML"
           echo message
           await session.sendAlert(message)
       else:
-        let message = "[NOK] " & uri & ": " & $response.status
+        let message = "[NOK] " & address.hostname & ": " & $response.status
         echo message
         await session.sendAlert(message)
     else:
       raise newException(AsyncTimeoutError, "Connection timed out")
   except HttpError, FuturePendingError, AsyncTimeoutError, AsyncStreamError:
-    let message = "[ERR] " & uri & ": " & getCurrentExceptionMsg()
+    let message = "[ERR] " & address.hostname & ": " & getCurrentExceptionMsg()
     echo message
     await session.sendAlert(message, 4)
+
+proc resolveUris(session: HttpSessionRef, uris: seq[string]): seq[HttpAddress] =
+  for uri in uris:
+    let address = session.getAddress(uri).valueOr:
+      echo "[ERR] " & uri & ": " & error
+      continue
+    result.add(address)
 
 # ANCHOR: check
 proc check(uris: seq[string]) {.async: (raises: []).} =
@@ -115,7 +121,9 @@ proc check(uris: seq[string]) {.async: (raises: []).} =
     while true:
 # ANCHOR_END: while_true
       echo "Checking " & $len(uris) & " URIs:"
-      let futures = uris.mapIt(session.check(it, semaphore))
+      let
+        addresses = session.resolveUris(uris)
+        futures = addresses.mapIt(session.check(it, semaphore))
 
 # ANCHOR: pass_semaphore
 # ANCHOR_END: pass_semaphore
