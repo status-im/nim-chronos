@@ -84,9 +84,7 @@ Note that catching `HttpError` does not contadict the `raises` value at the func
 {{#shiftinclude auto:../../../examples/http_client/chapter1/src/uptimemon.nim:finally}}
 ```
 
-Regardless of how successful our check was, we must close the session after we're done with in and return the resources back to your computer. [`closeWait`](/api/chronos/apps/http/httpclient.html#closeWait,HttpSessionRef) is a function that schedules all open connections within this session to be closed.
-
-We added [`noCancel`](/api/chronos/internal/asyncfutures.html#noCancel,F) to make sure the closing procedure is not cancelled with a propagated `CancellationError` from another function. Use `noCancel` in resource-critical operations or atomic operation groups that must either all complete or all fail.
+No matter if the check was successful, we must close the session after we're done with it and return the resources back to your computer. [`closeWait`](/api/chronos/apps/http/httpclient.html#closeWait,HttpSessionRef) is a function that schedules all open connections within this session to be closed.
 
 ```nim
 {{#shiftinclude auto:../../../examples/http_client/chapter1/src/uptimemon.nim:isMainModule}}
