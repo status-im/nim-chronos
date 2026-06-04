@@ -1,4 +1,5 @@
 # ANCHOR: all
+import std/sequtils
 import chronos/apps/http/httpclient
 
 # ANCHOR: ntfy_topic
@@ -63,7 +64,7 @@ proc findMarker(
 
     result = "<html" in bytesToString(fetchedBytes)
 
-HttpError ANCHOR: check
+# ANCHOR: check
 proc check(session: HttpSessionRef, uri: string) {.async: (raises: [CancelledError]).} =
   try:
     let request = HttpClientRequestRef.new(session, uri)
@@ -97,15 +98,17 @@ proc check(session: HttpSessionRef, uri: string) {.async: (raises: [CancelledErr
     await session.sendAlert(message, 4)
 # ANCHOR_END: check
 
-proc check(uris: seq[string]) {.async: (raises: [CancelledError]).} =
-  let session = HttpSessionRef.new()
-  var futures: seq[Future[void]]
+proc check(uris: seq[string]) {.async: (raises: []).} =
+  let
+    session = HttpSessionRef.new()
+    futures = uris.mapIt(session.check(it))
 
-  for uri in uris:
-    futures.add(session.check(uri))
-
-  await allFutures(futures)
-  await session.closeWait()
+  try:
+    await allFutures(futures)
+  except CancelledError:
+    await cancelAndWait(futures)
+  finally:
+    await session.closeWait()
 
 when isMainModule:
   waitFor check(uris)

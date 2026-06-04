@@ -1,4 +1,5 @@
 # ANCHOR: all
+import std/sequtils
 import chronos/apps/http/httpclient
 
 # ANCHOR: maxConcurrency
@@ -104,31 +105,34 @@ proc check(
     await session.sendAlert(message, 4)
 
 # ANCHOR: check
-proc check(uris: seq[string]) {.async: (raises: [CancelledError]).} =
+proc check(uris: seq[string]) {.async: (raises: []).} =
   let
     session = HttpSessionRef.new()
     semaphore = newAsyncSemaphore(maxConcurrency)
 # ANCHOR_END: check
 
 # ANCHOR: while_true
-  while true:
+  try:
+    while true:
 # ANCHOR_END: while_true
-    echo "Checking " & $len(uris) & " URIs:"
-    var futures: seq[Future[void]]
+      echo "Checking " & $len(uris) & " URIs:"
+      let futures = uris.mapIt(session.check(it, semaphore))
 
 # ANCHOR: pass_semaphore
-    for uri in uris:
-      futures.add(session.check(uri, semaphore))
 # ANCHOR_END: pass_semaphore
 
-    await allFutures(futures)
-    
-# ANCHOR: sleep
-    echo "Done. Next check in 10 seconds."
-    await sleepAsync(10.seconds)
-# ANCHOR_END: sleep
+      try:
+        await allFutures(futures)
+      except CancelledError:
+        await cancelAndWait(futures)
+        break
 
-  await session.closeWait()
+# ANCHOR: sleep
+      echo "Done. Next check in 10 seconds."
+      await sleepAsync(10.seconds)
+# ANCHOR_END: sleep
+  finally:
+    await session.closeWait()
 
 when isMainModule:
   waitFor check(uris)

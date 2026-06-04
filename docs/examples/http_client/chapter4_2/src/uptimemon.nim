@@ -1,4 +1,5 @@
 # ANCHOR: all
+import std/sequtils
 import chronos/apps/http/httpclient
 
 # ANCHOR: urls
@@ -75,15 +76,17 @@ proc check(session: HttpSessionRef, uri: string) {.async: (raises: [CancelledErr
 # ANCHOR_END: except
     echo "[ERR] " & uri & ": " & getCurrentExceptionMsg()
 
-proc check(uris: seq[string]) {.async: (raises: [CancelledError]).} =
-  let session = HttpSessionRef.new()
-  var futures: seq[Future[void]]
+proc check(uris: seq[string]) {.async: (raises: []).} =
+  let
+    session = HttpSessionRef.new()
+    futures = uris.mapIt(session.check(it))
 
-  for uri in uris:
-    futures.add(session.check(uri))
-
-  await allFutures(futures)
-  await session.closeWait()
+  try:
+    await allFutures(futures)
+  except CancelledError:
+    await cancelAndWait(futures)
+  finally:
+    await session.closeWait()
 
 when isMainModule:
   waitFor check(uris)
