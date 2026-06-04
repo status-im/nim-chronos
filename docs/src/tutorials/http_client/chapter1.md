@@ -52,7 +52,7 @@ Also note the `raises: [CancelledError]` part. This is Chronos's way of announci
 {{#shiftinclude auto:../../../examples/http_client/chapter1/src/uptimemon.nim:session}}
 ```
 
-Let's focus on this line for a moment. Here, we're creating an HTTP session. Why would we do it if we need to make only only request, why can't we just send it? The reason is, Chronos is designed for multitasking and a session is a more natural concept than a singular request in this context. While we're just starting, using a session may feel redundant but since our end goal is to send many requests, it will fit just right.
+Here, we're creating an HTTP session. Sessions are responsible for connection pool management, i.e. it provides a connection when it is needed (either by reusing a free one or allocating a new one) and returns it to the pool after usage.
 
 ```nim
 {{#shiftinclude auto:../../../examples/http_client/chapter1/src/uptimemon.nim:response}}
@@ -78,7 +78,7 @@ Once we've received our response, we can check its status. If it's 200, we mark 
 
 If the request fails (e.g. the connection is unstable or the host is unreachable), `fetch` would raise a `HttpError` exception. Since raising this exception is part of our business logic, we catch it and report the error with `getCurrentExceptionMsg`.
 
-Note that catching `HttpError` does not contadict the `raises` value at the function definition: since we handle the exception and not re-raise it, our promise that only `CancelledError` ever emits from `check` is held true. 
+Note that catching `HttpError` does not contadict the `raises` value at the function definition: since we handle the exception and not re-raise it, our promise that only `CancelledError` ever emits from `check` is held true.
 
 ```nim
 {{#shiftinclude auto:../../../examples/http_client/chapter1/src/uptimemon.nim:finally}}
