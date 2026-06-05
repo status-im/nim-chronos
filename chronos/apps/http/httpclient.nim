@@ -10,8 +10,8 @@
 {.push raises: [].}
 
 import std/[uri, tables, sequtils]
-import stew/[base10, base64, byteutils], httputils, results
-import ../../asyncloop, ../../asyncsync
+import stew/[assign2, base10, base64, byteutils, ptrops, shims/sequninit], httputils, results
+import ../../[asyncloop, asyncsync, config]
 import ../../streams/[asyncstream, tlsstream, chunkstream, boundstream]
 import httptable, httpcommon, httpagent, httpbodyrw, multipart
 export results, asyncloop, asyncsync, asyncstream, tlsstream, chunkstream,
@@ -255,7 +255,7 @@ template isReady(conn: HttpClientConnectionRef): bool =
 
 template isIdle(conn: HttpClientConnectionRef, timestamp: Moment,
                 timeout: Duration): bool =
-  (timestamp - conn.timestamp) >= timeout
+  (timestamp - conn.timestamp) >= timeout or conn.transp.atEof()
 
 proc sessionWatcher(session: HttpSessionRef) {.async: (raises: []).}
 
@@ -1024,9 +1024,14 @@ proc new*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
   let res = HttpClientRequestRef(
     state: HttpReqRespState.Ready, session: session, meth: meth,
     version: version, flags: flags, headers: HttpTable.init(headers),
-    address: ha, bodyFlag: HttpClientBodyFlag.Custom, buffer: @body,
-    headersBuffer: newSeq[byte](max(maxResponseHeadersSize, HttpMaxHeadersSize))
+    address: ha, bodyFlag: HttpClientBodyFlag.Custom,
+    buffer: newSeqUninit[byte](body.len),
+    headersBuffer:
+      newSeqUninit[byte](max(maxResponseHeadersSize, HttpMaxHeadersSize))
   )
+  # `@`, `setLenUninit` etc are all slow pre-2.2.10, ie
+  # https://github.com/nim-lang/Nim/issues/25719
+  assign(res.buffer, body)
   trackCounter(HttpClientRequestTrackerName)
   res
 
@@ -1038,71 +1043,70 @@ proc new*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
           headers: openArray[HttpHeaderTuple] = [],
           body: openArray[byte] = []): HttpResult[HttpClientRequestRef] =
   let address = ? session.getAddress(parseUri(url))
-  let res = HttpClientRequestRef(
-    state: HttpReqRespState.Ready, session: session, meth: meth,
-    version: version, flags: flags, headers: HttpTable.init(headers),
-    address: address, bodyFlag: HttpClientBodyFlag.Custom, buffer: @body,
-    headersBuffer: newSeq[byte](max(maxResponseHeadersSize, HttpMaxHeadersSize))
-  )
-  trackCounter(HttpClientRequestTrackerName)
-  ok(res)
+  ok HttpClientRequestRef.new(
+    session, address, meth, version, flags, maxResponseHeadersSize, headers,
+    body)
 
-proc get*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
-          url: string, version: HttpVersion = HttpVersion11,
-          flags: set[HttpClientRequestFlag] = {},
-          maxResponseHeadersSize: int = HttpMaxHeadersSize,
-          headers: openArray[HttpHeaderTuple] = []
-         ): HttpResult[HttpClientRequestRef] =
-  HttpClientRequestRef.new(session, url, MethodGet, version, flags,
+when chronosUseSink:
+  proc new*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
+            ha: HttpAddress, meth: HttpMethod = MethodGet,
+            version: HttpVersion = HttpVersion11,
+            flags: set[HttpClientRequestFlag] = {},
+            maxResponseHeadersSize: int = HttpMaxHeadersSize,
+            headers: openArray[HttpHeaderTuple] = [],
+            body: sink seq[byte]): HttpClientRequestRef =
+    let res = HttpClientRequestRef(
+      state: HttpReqRespState.Ready, session: session, meth: meth,
+      version: version, flags: flags, headers: HttpTable.init(headers),
+      address: ha, bodyFlag: HttpClientBodyFlag.Custom,
+      buffer: move(body),
+      headersBuffer:
+        newSeqUninit[byte](max(maxResponseHeadersSize, HttpMaxHeadersSize))
+    )
+    trackCounter(HttpClientRequestTrackerName)
+    res
+
+  proc new*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
+            url: string, meth: HttpMethod = MethodGet,
+            version: HttpVersion = HttpVersion11,
+            flags: set[HttpClientRequestFlag] = {},
+            maxResponseHeadersSize: int = HttpMaxHeadersSize,
+            headers: openArray[HttpHeaderTuple] = [],
+            body: sink seq[byte]):
+              HttpResult[HttpClientRequestRef] =
+    let ha = ? session.getAddress(parseUri(url))
+    ok HttpClientRequestRef.new(
+      session, ha, meth, version, flags, maxResponseHeadersSize, headers,
+      move(body))
+
+template get*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
+              address: HttpAddress | string, version: HttpVersion = HttpVersion11,
+              flags: set[HttpClientRequestFlag] = {},
+              maxResponseHeadersSize: int = HttpMaxHeadersSize,
+              headers: openArray[HttpHeaderTuple] = []
+            ): auto =
+  HttpClientRequestRef.new(session, address, MethodGet, version, flags,
                            maxResponseHeadersSize, headers)
 
-proc get*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
-          ha: HttpAddress, version: HttpVersion = HttpVersion11,
-          flags: set[HttpClientRequestFlag] = {},
-          maxResponseHeadersSize: int = HttpMaxHeadersSize,
-          headers: openArray[HttpHeaderTuple] = []
-         ): HttpClientRequestRef =
-  HttpClientRequestRef.new(session, ha, MethodGet, version, flags,
-                           maxResponseHeadersSize, headers)
-
-proc post*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
-           url: string, version: HttpVersion = HttpVersion11,
-           flags: set[HttpClientRequestFlag] = {},
-           maxResponseHeadersSize: int = HttpMaxHeadersSize,
-           headers: openArray[HttpHeaderTuple] = [],
-           body: openArray[byte] = []
-          ): HttpResult[HttpClientRequestRef] =
-  HttpClientRequestRef.new(session, url, MethodPost, version, flags,
+# TODO https://github.com/nim-lang/Nim/issues/25726
+#      template works around ..
+template post*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
+              address: HttpAddress | string, version: HttpVersion = HttpVersion11,
+              flags: set[HttpClientRequestFlag] = {},
+              maxResponseHeadersSize: int = HttpMaxHeadersSize,
+              headers: openArray[HttpHeaderTuple] = [],
+              body: openArray[byte] | seq[byte]): auto =
+  HttpClientRequestRef.new(session, address, MethodPost, version, flags,
                            maxResponseHeadersSize, headers, body)
-
 proc post*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
-           url: string, version: HttpVersion = HttpVersion11,
+           address: HttpAddress | string, version: HttpVersion = HttpVersion11,
            flags: set[HttpClientRequestFlag] = {},
            maxResponseHeadersSize: int = HttpMaxHeadersSize,
            headers: openArray[HttpHeaderTuple] = [],
-           body: openArray[char] = []): HttpResult[HttpClientRequestRef] =
-  HttpClientRequestRef.new(session, url, MethodPost, version, flags,
+           body: openArray[char] = []): auto =
+  HttpClientRequestRef.new(session, address, MethodPost, version, flags,
                            maxResponseHeadersSize, headers,
-                           body.toOpenArrayByte(0, len(body) - 1))
-
-proc post*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
-           ha: HttpAddress, version: HttpVersion = HttpVersion11,
-           flags: set[HttpClientRequestFlag] = {},
-           maxResponseHeadersSize: int = HttpMaxHeadersSize,
-           headers: openArray[HttpHeaderTuple] = [],
-           body: openArray[byte] = []): HttpClientRequestRef =
-  HttpClientRequestRef.new(session, ha, MethodPost, version, flags,
-                           maxResponseHeadersSize, headers, body)
-
-proc post*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
-           ha: HttpAddress, version: HttpVersion = HttpVersion11,
-           flags: set[HttpClientRequestFlag] = {},
-           maxResponseHeadersSize: int = HttpMaxHeadersSize,
-           headers: openArray[HttpHeaderTuple] = [],
-           body: openArray[char] = []): HttpClientRequestRef =
-  HttpClientRequestRef.new(session, ha, MethodPost, version, flags,
-                           maxResponseHeadersSize, headers,
-                           body.toOpenArrayByte(0, len(body) - 1))
+                           body.toOpenArrayByte(0, body.high()))
 
 proc prepareRequest(request: HttpClientRequestRef): string =
   template hasChunkedEncoding(request: HttpClientRequestRef): bool =
@@ -1204,7 +1208,9 @@ proc send*(request: HttpClientRequestRef): Future[HttpClientResponseRef] {.
     request.connection.state = HttpClientConnectionState.RequestHeadersSent
     request.connection.state = HttpClientConnectionState.RequestBodySending
     if len(request.buffer) > 0:
-      await request.connection.writer.write(move(request.buffer))
+      # TODO https://github.com/status-im/nim-chronos/issues/578
+      await request.connection.writer.write(baseAddr request.buffer, request.buffer.len)
+      request.buffer.reset()
     request.connection.state = HttpClientConnectionState.RequestBodySent
     request.state = HttpReqRespState.Finished
     request.setDuration()
@@ -1506,11 +1512,13 @@ proc fetch*(request: HttpClientRequestRef): Future[HttpResponseTuple] {.
   var response: HttpClientResponseRef
   try:
     response = await request.send()
-    let buffer = await response.getBodyBytes()
+    # TODO https://github.com/status-im/nim-chronos/issues/601
+    var buffer = await response.getBodyBytes()
     let status = response.status
     await response.closeWait()
     response = nil
-    (status, buffer)
+    # TODO https://github.com/nim-lang/Nim/issues/25057
+    (status, move(buffer))
   except HttpError as exc:
     if not(isNil(response)): await response.closeWait()
     raise exc
@@ -1561,14 +1569,16 @@ proc fetch*(session: HttpSessionRef, url: Uri): Future[HttpResponseTuple] {.
         request = redirect
         redirect = nil
       else:
-        let
+        var
+          # TODO https://github.com/status-im/nim-chronos/issues/601
           data = await response.getBodyBytes()
           code = response.status
         await response.closeWait()
         response = nil
         await request.closeWait()
         request = nil
-        return (code, data)
+        # TODO https://github.com/nim-lang/Nim/issues/25057
+        return (code, move(data))
     except CancelledError as exc:
       var pending: seq[Future[void]]
       if not(isNil(response)): pending.add(closeWait(response))

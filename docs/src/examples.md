@@ -6,7 +6,7 @@ Examples are available in the [`docs/examples/`](https://github.com/status-im/ni
 
 * [cancellation](https://github.com/status-im/nim-chronos/tree/master/docs/examples/cancellation.nim) - Cancellation primer
 * [timeoutsimple](https://github.com/status-im/nim-chronos/tree/master/docs/examples/timeoutsimple.nim) - Simple timeouts
-* [timeoutcomposed](https://github.com/status-im/nim-chronos/tree/master/docs/examples/examples/timeoutcomposed.nim) - Shared timeout of multiple tasks
+* [timeoutcomposed](https://github.com/status-im/nim-chronos/tree/master/docs/examples/timeoutcomposed.nim) - Shared timeout of multiple tasks
 
 ## Threads
 

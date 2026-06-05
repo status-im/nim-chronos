@@ -1578,3 +1578,49 @@ suite "HTTP client testing suite":
     await session.closeWait()
     await server.stop()
     await server.closeWait()
+
+  proc createServerOk200(): HttpServerRef =
+    proc process(r: RequestFence): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
+      try:
+        await r.get().respond(Http200, "ok")
+      except HttpWriteError:
+        defaultResponse()
+    createServer(initTAddress("127.0.0.1:0"), process, secure = false)
+
+  asyncTest "pipeline session does not reuse connection that is closed by server":
+    let server = createServerOk200()
+    let url = getAddress(server.instance.localAddress())
+    let flags = {HttpClientFlag.Http11Pipeline}
+    let session = HttpSessionRef.new(flags = flags)
+    server.start()
+    for _ in 0 ..< 10:
+      let request = HttpClientRequestRef.new(session, url)
+      let response = await request.send() # fails if it tries to reuse a closed connection
+      discard await response.consumeBody()
+      await request.closeWait()
+      await response.closeWait()
+      await server.drop() # server closes all keep-alive connections
+    await session.closeWait()
+    await server.stop()
+    await server.closeWait()
+
+  asyncTest "pipeline session removes connections that were closed by the server":
+    let server = createServerOk200()
+    let url = getAddress(server.instance.localAddress())
+    let flags = {HttpClientFlag.Http11Pipeline}
+    let idlePeriod = 100.millis
+    let session = HttpSessionRef.new(flags = flags, idlePeriod = idlePeriod)
+    server.start()
+    for _ in 0 ..< 10:
+      let request = HttpClientRequestRef.new(session, url)
+      let response = await request.send()
+      discard await response.consumeBody()
+      await request.closeWait()
+      await response.closeWait()
+      await server.drop() # server closes all keep-alive connections
+    check session.connectionsCount > 0
+    await sleepAsync(idlePeriod * 2)
+    check session.connectionsCount == 0
+    await session.closeWait()
+    await server.stop()
+    await server.closeWait()

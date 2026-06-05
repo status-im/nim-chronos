@@ -106,7 +106,7 @@ suite "HTTP server testing suite":
       if not(isNil(transp)):
         await closeWait(transp)
 
-  proc testTooBigBodyChunked(operation: TooBigTest): Future[bool] {.async.} =
+  proc testTooBigBodyChunked(operation: TooBigTest) {.async.} =
     var serverRes = false
     proc process(r: RequestFence): Future[HttpResponseRef] {.
          async: (raises: [CancelledError]).} =
@@ -133,13 +133,9 @@ suite "HTTP server testing suite":
         defaultResponse()
 
     let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
-    let res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
+    let server = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
                                 maxRequestBodySize = 10,
-                                socketFlags = socketFlags)
-    if res.isErr():
-      return false
-
-    let server = res.get()
+                                socketFlags = socketFlags).expect("server")
     server.start()
     let address = server.instance.localAddress()
 
@@ -169,7 +165,9 @@ suite "HTTP server testing suite":
     let data = await httpClient(address, request)
     await server.stop()
     await server.closeWait()
-    return serverRes and (data.startsWith("HTTP/1.1 413"))
+    check:
+      serverRes
+      data.startsWith("HTTP/1.1 413")
 
   test "Request headers timeout test":
     proc testTimeout(): Future[bool] {.async.} =
@@ -271,50 +269,40 @@ suite "HTTP server testing suite":
 
     check waitFor(testTooBig()) == true
 
-  test "Too big request body test (content-length)":
-    proc testTooBigBody(): Future[bool] {.async.} =
-      var serverRes = false
-      proc process(r: RequestFence): Future[HttpResponseRef] {.
-           async: (raises: [CancelledError]).} =
-        if r.isErr():
-          if r.error.error == HttpServerError.ProtocolError:
-            serverRes = true
-        defaultResponse()
+  asyncTest "Too big request body test (content-length)":
+    proc process(r: RequestFence): Future[HttpResponseRef] {.
+          async: (raises: [CancelledError]).} =
+      check:
+        r.isErr()
+        r.error.error == HttpServerError.ProtocolError
+      defaultResponse()
 
-      let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
-      let res = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
-                                  maxRequestBodySize = 10,
-                                  socketFlags = socketFlags)
-      if res.isErr():
-        return false
+    let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
+    let server = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
+                                maxRequestBodySize = 10,
+                                socketFlags = socketFlags).expect("server")
 
-      let server = res.get()
-      server.start()
-      let address = server.instance.localAddress()
+    server.start()
+    let address = server.instance.localAddress()
 
-      let request = "GET / HTTP/1.1\r\nContent-Length: 20\r\n\r\n"
-      let data = await httpClient(address, request)
-      await server.stop()
-      await server.closeWait()
-      return serverRes and (data.startsWith("HTTP/1.1 413"))
-
-    check waitFor(testTooBigBody()) == true
-
-  test "Too big request body test (getBody()/chunked encoding)":
+    let request = "GET / HTTP/1.1\r\nContent-Length: 20\r\n\r\n"
+    let data = await httpClient(address, request)
+    await server.stop()
+    await server.closeWait()
     check:
-      waitFor(testTooBigBodyChunked(GetBodyTest)) == true
+      data.startsWith("HTTP/1.1 413")
 
-  test "Too big request body test (consumeBody()/chunked encoding)":
-    check:
-      waitFor(testTooBigBodyChunked(ConsumeBodyTest)) == true
+  asyncTest "Too big request body test (getBody()/chunked encoding)":
+    await testTooBigBodyChunked(GetBodyTest)
 
-  test "Too big request body test (post()/urlencoded/chunked encoding)":
-    check:
-      waitFor(testTooBigBodyChunked(PostUrlTest)) == true
+  asyncTest "Too big request body test (consumeBody()/chunked encoding)":
+    await testTooBigBodyChunked(ConsumeBodyTest)
 
-  test "Too big request body test (post()/multipart/chunked encoding)":
-    check:
-      waitFor(testTooBigBodyChunked(PostMultipartTest)) == true
+  asyncTest "Too big request body test (post()/urlencoded/chunked encoding)":
+    await testTooBigBodyChunked(PostUrlTest)
+
+  asyncTest "Too big request body test (post()/multipart/chunked encoding)":
+    await testTooBigBodyChunked(PostMultipartTest)
 
   test "Query arguments test":
     proc testQuery(): Future[bool] {.async.} =

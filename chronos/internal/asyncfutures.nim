@@ -195,14 +195,14 @@ proc finish(fut: FutureBase, state: FutureState) =
   when chronosFutureTracking:
     scheduleDestructor(fut)
 
-proc complete[T](future: Future[T], val: T, loc: ptr SrcLoc) =
+proc complete[T: not void](future: Future[T], val: chronosSink T, loc: ptr SrcLoc) =
   if not(future.cancelled()):
     checkFinished(future, loc)
     doAssert(isNil(future.internalError))
-    future.internalValue = val
+    future.internalValue = chronosMoveSink(val)
     future.finish(FutureState.Completed)
 
-template complete*[T](future: Future[T], val: T) =
+template complete*[T: not void](future: Future[T], val: chronosSink T) =
   ## Completes ``future`` with value ``val``.
   complete(future, val, getSrcLocation())
 
