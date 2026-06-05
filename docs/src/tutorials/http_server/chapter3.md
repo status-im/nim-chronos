@@ -38,6 +38,10 @@ In a real app you would store your persistent data in a database of key-value st
 
 ## Handling POST Requests
 
+```admonish info
+The HTTP protocol divides each request and response into a **header** and a **body**. The header contains metadata like the request method and path, while the body contains the actual content — the JSON payload in our case. This is true for both requests and responses.
+```
+
 In the `handler`, we added logic for the `/report` path:
 
 ```nim
