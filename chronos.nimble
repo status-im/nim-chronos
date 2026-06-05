@@ -10,7 +10,7 @@ skipDirs      = @["tests"]
 requires "nim >= 1.6.16",
          "results",
          "stew >= 0.5.0",
-         "bearssl >= 0.2.7",
+         "bearssl >= 0.2.8",
          "httputils",
          "unittest2"
 
@@ -70,7 +70,7 @@ task test, "Run all tests":
   for args in testArguments:
     # First run tests with `refc` memory manager.
     run args & " --mm:refc", "tests/testall"
-    if (NimMajor, NimMinor) > (1, 6):
+    if (NimMajor, NimMinor) >= (2, 2): # ORC on 2.0 is too broken to investigate
       run args & " --mm:orc", "tests/testall"
 
   # Make sure benchmarks compile
@@ -80,7 +80,7 @@ task test, "Run all tests":
 
 task test_v3_compat, "Run all tests in v3 compatibility mode":
   for args in testArguments:
-    if (NimMajor, NimMinor) > (1, 6):
+    if (NimMajor, NimMinor) >= (2, 2):
       # First run tests with `refc` memory manager.
       run args & " --mm:refc -d:chronosHandleException", "tests/testall"
 
@@ -95,7 +95,7 @@ task test_libbacktrace, "test with libbacktrace":
     for args in allArgs:
       # First run tests with `refc` memory manager.
       run args & " --mm:refc", "tests/testall"
-      if (NimMajor, NimMinor) > (1, 6):
+      if (NimMajor, NimMinor) >= (2, 2):
         run args & " --mm:orc", "tests/testall"
 
 task docs, "Generate API documentation":
