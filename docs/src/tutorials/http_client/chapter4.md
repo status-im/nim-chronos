@@ -121,40 +121,40 @@ To stream the response body, we're using a `bodyReader`. To get one for the curr
 {{#shiftinclude auto:../../../examples/http_client/chapter4_2/src/uptimemon.nim:vars}}
 ```
 
-We'll be reading raw bytes so to store them we create two byte sequences:
-
-- `buffer` will hold the current chunk of maximum lengh 1024 (i.e. 1 KB)
-- `fetchedBytes` is a sequence of bytes that have been collected so far
+- `chunkSize` is how many bytes we request per read
+- `windowSize` is `chunkSize + len(marker) - 1`: a chunk plus enough overlap to catch a marker split across two reads — more on this below
+- `window` is a fixed-size array of that size, zero-initialised
+- `totalRead` tracks total bytes received, used for the 10 KB cap
 
 ```nim
 {{#shiftinclude auto:../../../examples/http_client/chapter4_2/src/uptimemon.nim:while}}
 ```
 
-Now we're fetching chunks of data in a loop. We stop if the marker has been spotted (`result` is `true`) or a total of 10 KB of data has been fetched (`len(fetchedBytes)` is over 10 * 1024).
+We fetch chunks in a loop, stopping as soon as the marker is found or 10 KB has been read.
 
 ```nim
 {{#shiftinclude auto:../../../examples/http_client/chapter4_2/src/uptimemon.nim:read_bytes}}
 ```
 
-[`readOnce`](/api/chronos/transports/stream.html#readOnce,StreamTransport,pointer,int) reads `len(buffer)` bytes of data (1024 in our case) and stores them in `buffer`. Since `readOnce` expects a pointer to the container for the fetched bytes, we pass the address of the first item in `buffer`.
+[`read`](/api/chronos/apps/http/httpclient.html#read,HttpBodyReader,int) reads up to `chunkSize` bytes and returns them as a `seq[byte]`.
 
 ```nim
 {{#shiftinclude auto:../../../examples/http_client/chapter4_2/src/uptimemon.nim:bytes_check}}
 ```
 
-If no bytes were fetched, that means we're reached the end of the stream and must leave the loop.
+An empty result means we've reached the end of the stream, so we leave the loop.
 
 ```nim
 {{#shiftinclude auto:../../../examples/http_client/chapter4_2/src/uptimemon.nim:fetchedBytes}}
 ```
 
-We accumulate the fetched bytes from `buffer`.
-
 ```nim
 {{#shiftinclude auto:../../../examples/http_client/chapter4_2/src/uptimemon.nim:result}}
 ```
 
-Finally, convert the collected bytes to a string and check if the marker ("<html") is present in it.
+Searching only the latest `buffer` for the marker would miss the case where it is split across two reads — for example `<ht` arriving at the end of one chunk and `ml` at the start of the next. Accumulating all fetched bytes and searching the whole thing every iteration would work but wastes time re-scanning data we have already checked.
+
+Instead, we maintain `window` as a sliding buffer. After each read, we shift its contents left by `len(buffer)` bytes and write the new chunk at the right end. The left side of the window then retains the last `len(marker) - 1` bytes of the previous chunk — exactly enough overlap to catch a split marker — while everything older is discarded. Searching the full `window` on every iteration is O(windowSize), a small constant regardless of how much data has been streamed.
 
 ```admonish note
 Notice that we can treat `result` as a regular `bool` despite the fact that the function returns a `Future[bool]`—really handy!

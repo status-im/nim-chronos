@@ -50,19 +50,25 @@ proc findMarker(
 .} =
   let bodyReader = response.getBodyReader()
 
+  const
+    marker = "<html"
+    chunkSize = 1024
+    windowSize = chunkSize + len(marker) - 1
   var
-    buffer = newSeq[byte](1024)
-    fetchedBytes: seq[byte]
+    totalRead = 0
+    window: array[windowSize, byte]
 
-  while not result and len(fetchedBytes) <= 10 * 1024:
-    let bytesRead = await bodyReader.readOnce(addr(buffer[0]), len(buffer))
+  while not result and totalRead <= 10 * 1024:
+    let buffer = await bodyReader.read(chunkSize)
 
-    if bytesRead == 0:
+    if len(buffer) == 0:
       break
 
-    fetchedBytes &= buffer
+    totalRead += len(buffer)
+    window[0 ..< windowSize - len(buffer)] = window[len(buffer) ..< windowSize]
+    window[windowSize - len(buffer) ..< windowSize] = buffer
 
-    result = "<html" in bytesToString(fetchedBytes)
+    result = marker in bytesToString(window)
 
 # ANCHOR: semaphore
 proc check(

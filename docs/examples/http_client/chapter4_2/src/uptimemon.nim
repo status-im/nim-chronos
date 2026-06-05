@@ -21,29 +21,35 @@ proc findMarker(
 # ANCHOR_END: bodyReader
 
 # ANCHOR: vars
+  const
+    marker = "<html"
+    chunkSize = 1024
+    windowSize = chunkSize + len(marker) - 1
   var
-    buffer = newSeq[byte](1024)
-    fetchedBytes: seq[byte]
+    totalRead = 0
+    window: array[windowSize, byte]
 # ANCHOR_END: vars
 
 # ANCHOR: while
-  while not result and len(fetchedBytes) <= 10 * 1024:
+  while not result and totalRead <= 10 * 1024:
 # ANCHOR_END: while
 # ANCHOR: read_bytes
-    let bytesRead = await bodyReader.readOnce(addr(buffer[0]), len(buffer))
+    let buffer = await bodyReader.read(chunkSize)
 # ANCHOR_END: read_bytes
 
 # ANCHOR: bytes_check
-    if bytesRead == 0:
+    if len(buffer) == 0:
       break
 # ANCHOR_END: bytes_check
 
 # ANCHOR: fetchedBytes
-    fetchedBytes &= buffer
+    totalRead += len(buffer)
+    window[0 ..< windowSize - len(buffer)] = window[len(buffer) ..< windowSize]
+    window[windowSize - len(buffer) ..< windowSize] = buffer
 # ANCHOR_END: fetchedBytes
 
 # ANCHOR: result
-    result = "<html" in bytesToString(fetchedBytes)
+    result = marker in bytesToString(window)
 # ANCHOR_END: result
 
 proc check(session: HttpSessionRef, address: HttpAddress) {.async: (raises: [CancelledError]).} =
