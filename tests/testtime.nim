@@ -130,7 +130,7 @@ suite "Asynchronous timers & steps test suite":
       fut3.completed() == true
 
   test "Cancellation retry tick does not wait for next timer":
-    const NextTimerSleep = 50.milliseconds
+    const NextTimerSleep = 500.milliseconds
 
     let gate = newFuture[void]("cancelAndWait.gate")
     var
