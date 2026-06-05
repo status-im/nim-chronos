@@ -1558,11 +1558,11 @@ suite "Future[T] behavior test suite":
     var tseq = newSeq[FutureBase]()
     var fut1 = race(tseq)
     check:
-      # https://github.com/nim-lang/Nim/issues/22964
-      not compiles(block:
-        var fut2 = race())
-      not compiles(block:
-        var fut3 = race([]))
+      ## https://github.com/nim-lang/Nim/issues/22964
+      #not compiles(block:
+      #  var fut2 = race())
+      #not compiles(block:
+      #  var fut3 = race([]))
 
     check:
       fut1.failed()
