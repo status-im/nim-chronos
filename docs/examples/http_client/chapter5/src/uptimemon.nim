@@ -42,6 +42,8 @@ proc sendAlert(
     await response.closeWait()
   except HttpError:
     echo "[WRN] Failed to send alert: " & getCurrentExceptionMsg()
+  finally:
+    await request.closeWait()
 # ANCHOR_END: response
 
 proc findMarker(
