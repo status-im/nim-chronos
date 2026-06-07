@@ -1557,17 +1557,17 @@ suite "Future[T] behavior test suite":
   test "race(zero) test":
     var tseq = newSeq[FutureBase]()
     var fut1 = race(tseq)
+    ## fixed: https://github.com/nim-lang/Nim/pull/25871
+    # var fut3 = race([])
     check:
-      ## fixed: https://github.com/nim-lang/Nim/pull/25871
       ## https://github.com/nim-lang/Nim/issues/22964
-      #not compiles(block:
-      #  var fut2 = race())
-    var fut3 = race([])
+      not compiles(block:
+        var fut2 = race())
 
     check:
       fut1.failed()
-      #fut2.failed()
-      fut3.failed()
+      # fut2.failed()
+      # fut3.failed()
 
   asyncTest "race(varargs) test":
     proc vlient1() {.async.} =
