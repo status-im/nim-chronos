@@ -1052,7 +1052,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
 
     # We move idle callbacks to `loop.callbacks` only if there no pending
     # network events.
-    if loop.keys.len == 0:
+    if count == 0:
       loop.processIdlers()
 
     # We move tick callbacks to `loop.callbacks` always.
