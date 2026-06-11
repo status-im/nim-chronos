@@ -134,9 +134,7 @@ suite "HTTP client testing suite":
          async: (raises: [CancelledError]).} =
       if r.isOk():
         let request = r.get()
-        const paths = RequestTests.mapIt(it[1])
-        case request.uri.path
-        of paths:
+        if request.uri.path in RequestTests.mapIt(it[1]):
           try:
             await request.respond(
               Http200, if request.meth in NoBodyMeth: "" else: request.uri.path
