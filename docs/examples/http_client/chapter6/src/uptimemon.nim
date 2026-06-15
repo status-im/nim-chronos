@@ -62,7 +62,7 @@ proc findMarker(
     sample = newString(len(marker) - 1)
 
   while not result and totalRead <= 10 * 1024:
-    let bytesRead = await bodyReader.readOnce(addr buffer[0], buffer.len)
+    let bytesRead = await bodyReader.readOnce(buffer)
 
     buffer.setLen(bytesRead)
 

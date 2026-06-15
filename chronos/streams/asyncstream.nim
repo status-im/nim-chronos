@@ -402,6 +402,12 @@ proc readOnce*(rstream: AsyncStreamReader, pbytes: pointer,
 
   rstream.vtbl.readOnce(rstream, pbuffer, nbytes)
 
+proc readOnce*(rstream: AsyncStreamReader, buffer: string): Future[int] {.
+     async: (raises: [CancelledError, AsyncStreamError], raw: true).} =
+  ## Perform one read operation on read-only stream ``rstream`` into a string.
+
+  rstream.readOnce(addr buffer[0], len(buffer))
+
 proc readUntil*(rstream: AsyncStreamReader, pbytes: pointer, nbytes: int,
                 sep: seq[byte]): Future[int] {.
      async: (raises: [CancelledError, AsyncStreamError], raw: true).} =
