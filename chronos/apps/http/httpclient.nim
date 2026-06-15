@@ -1521,7 +1521,9 @@ proc tunnel*(response: HttpClientResponseRef): Future[AsyncStream] {.
   var otherClosed = false
   rclose.vtbl.close = block:
     var inner = rclose.vtbl.close
-    proc(rstream: AsyncStreamReader) {.async: (raises: [], raw: true).} =
+    proc closeInnerReader(
+        rstream: AsyncStreamReader
+    ) {.async: (raises: [], raw: true).} =
       var pending = @[reader.closeWait()]
       if treader != nil:
         pending.add treader.closeWait()
@@ -1532,9 +1534,14 @@ proc tunnel*(response: HttpClientResponseRef): Future[AsyncStream] {.
         otherClosed = true
       pending.add inner(rstream)
       noCancel allFutures(pending)
+
+    closeInnerReader
+
   wclose.vtbl.close = block:
     var inner = wclose.vtbl.close
-    proc(wstream: AsyncStreamWriter) {.async: (raises: [], raw: true).} =
+    proc closeInnerWriter(
+        wstream: AsyncStreamWriter
+    ) {.async: (raises: [], raw: true).} =
       var pending = @[writer.closeWait()]
       if twriter != nil:
         pending.add twriter.closeWait()
@@ -1545,6 +1552,8 @@ proc tunnel*(response: HttpClientResponseRef): Future[AsyncStream] {.
         otherClosed = true
       pending.add inner(wstream)
       noCancel allFutures(pending)
+
+    closeInnerWriter
 
   response.state = HttpReqRespState.Finished
 
