@@ -801,10 +801,6 @@ proc releaseConnection(response: HttpClientResponseRef) {.
     if HttpClientConnectionFlag.Request notin connection.flags:
       await session.releaseConnection(connection, response.address)
 
-<<<<<<< HEAD
-=======
-
->>>>>>> origin/master
 proc directProvider*(): HttpConnectionProvider =
   ## Return a connection provider that supplies connections directly to the
   ## requested address.
