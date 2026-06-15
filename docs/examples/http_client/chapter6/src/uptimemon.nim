@@ -75,11 +75,14 @@ proc findMarker(
 # ANCHOR: semaphore
 proc check(
     session: HttpSessionRef, address: HttpAddress, semaphore: AsyncSemaphore
-) {.async: (raises: [CancelledError, AsyncSemaphoreError]).} =
+) {.async: (raises: [CancelledError]).} =
   await acquire(semaphore)
 
   defer:
-    release(semaphore)
+    try:
+      release(semaphore)
+    except AsyncSemaphoreError:
+      echo "Could not release a lock: " & getCurrentExceptionMsg()
 # ANCHOR_END: semaphore
 
   try:
