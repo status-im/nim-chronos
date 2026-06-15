@@ -6,7 +6,7 @@ import chronos/apps/http/httpclient
 const
   maxConcurrency = 5
 # ANCHOR_END: maxConcurrency
-  ntfyTopic = "X3JIaLZSrFqBJXfJ"
+  ntfyTopic = "<YOUR_NTFY_TOPIC_NAME>"
 # ANCHOR: uris
   uris = @[
     "https://duckduckgo.com/?q=chronos", "https://mock.codes/403",
@@ -54,24 +54,26 @@ proc findMarker(
 
   const
     marker = "<html"
-    chunkSize = 1024
-    windowSize = chunkSize + len(marker) - 1
+    bufferSize = 1024
+
   var
     totalRead = 0
-    window: array[windowSize, byte]
+    buffer = newString(bufferSize)
+    sample = newString(len(marker) - 1)
 
   while not result and totalRead <= 10 * 1024:
-    let buffer = await bodyReader.read(chunkSize)
+    let bytesRead = await bodyReader.readOnce(buffer)
+    buffer.setLen(bytesRead)
 
     if len(buffer) == 0:
       break
 
     totalRead += len(buffer)
-    window[0 ..< windowSize - len(buffer)] = window[len(buffer) ..< windowSize]
-    window[windowSize - len(buffer) ..< windowSize] = buffer
+    sample = sample[^(len(marker) - 1)..high(sample)]
+    sample &= buffer
 
-    result = marker in bytesToString(window)
-
+    result = marker in sample
+  
 # ANCHOR: semaphore
 proc check(
     session: HttpSessionRef, address: HttpAddress, semaphore: AsyncSemaphore
@@ -90,21 +92,21 @@ proc check(
       request = HttpClientRequestRef.new(session, address)
       response = await request.send().wait(5.seconds)
 
-      if response.status == 200:
-        let markerFound = await findMarker(response)
+    if response.status == 200:
+      let markerFound = await findMarker(response)
 
-        if markerFound:
-          echo "[OK] " & address.hostname
-        else:
-          let message = "[NOK] " & address.hostname & ": Not valid HTML"
-          echo message
-          await session.sendAlert(message)
+      if markerFound:
+        echo "[OK] " & address.hostname & address.path
       else:
-        let message = "[NOK] " & address.hostname & ": " & $response.status
+        let message = "[NOK] " & address.hostname & address.path & ": Not valid HTML"
         echo message
         await session.sendAlert(message)
+    else:
+      let message = "[NOK] " & address.hostname & address.path & ": " & $response.status
+      echo message
+      await session.sendAlert(message)
   except HttpError, FuturePendingError, AsyncTimeoutError, AsyncStreamError:
-    let message = "[ERR] " & address.hostname & ": " & getCurrentExceptionMsg()
+    let message = "[ERR] " & address.hostname & address.path & ": " & getCurrentExceptionMsg()
     echo message
     await session.sendAlert(message, 4)
 
@@ -126,19 +128,18 @@ proc check(uris: seq[string]) {.async: (raises: []).} =
   try:
     while true:
 # ANCHOR_END: while_true
+# ANCHOR: pass_semaphore
       echo "Checking " & $len(uris) & " URIs:"
       let
         addresses = session.resolveUris(uris)
         futures = addresses.mapIt(session.check(it, semaphore))
-
-# ANCHOR: pass_semaphore
-# ANCHOR_END: pass_semaphore
 
       try:
         await allFutures(futures)
       except CancelledError:
         await cancelAndWait(futures)
         break
+# ANCHOR_END: pass_semaphore
 
 # ANCHOR: sleep
       echo "Done. Next check in 10 seconds."

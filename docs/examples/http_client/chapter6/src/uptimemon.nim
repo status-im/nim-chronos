@@ -23,18 +23,19 @@ proc findMarker(
 # ANCHOR: vars
   const
     marker = "<html"
-    chunkSize = 1024
-    windowSize = chunkSize + len(marker) - 1
+    bufferSize = 1024
   var
     totalRead = 0
-    window: array[windowSize, byte]
+    buffer = newString(bufferSize)
+    sample = newString(len(marker) - 1)
 # ANCHOR_END: vars
 
 # ANCHOR: while
   while not result and totalRead <= 10 * 1024:
 # ANCHOR_END: while
 # ANCHOR: read_bytes
-    let buffer = await bodyReader.read(chunkSize)
+    let bytesRead = await bodyReader.readOnce(buffer)
+    buffer.setLen(bytesRead)
 # ANCHOR_END: read_bytes
 
 # ANCHOR: bytes_check
@@ -42,14 +43,14 @@ proc findMarker(
       break
 # ANCHOR_END: bytes_check
 
-# ANCHOR: fetchedBytes
+# ANCHOR: update_sample
     totalRead += len(buffer)
-    window[0 ..< windowSize - len(buffer)] = window[len(buffer) ..< windowSize]
-    window[windowSize - len(buffer) ..< windowSize] = buffer
-# ANCHOR_END: fetchedBytes
+    sample = sample[^(len(marker) - 1)..high(sample)]
+    sample &= buffer
+# ANCHOR_END: update_sample
 
 # ANCHOR: result
-    result = marker in bytesToString(window)
+    result = marker in sample
 # ANCHOR_END: result
 
 proc check(session: HttpSessionRef, address: HttpAddress) {.async: (raises: [CancelledError]).} =
@@ -59,19 +60,19 @@ proc check(session: HttpSessionRef, address: HttpAddress) {.async: (raises: [Can
       response = await request.send().wait(5.seconds)
 
 # ANCHOR: url_response
-      if response.status == 200:
-        let markerFound = await findMarker(response)
+    if response.status == 200:
+      let markerFound = await findMarker(response)
 
-        if markerFound:
-          echo "[OK] " & address.hostname
-        else:
-          echo "[NOK] " & address.hostname & ": Not valid HTML"
+      if markerFound:
+        echo "[OK] " & address.hostname & address.path
       else:
-        echo "[NOK] " & address.hostname & ": " & $response.status
+        echo "[NOK] " & address.hostname & address.path & ": Not valid HTML"
+    else:
+      echo "[NOK] " & address.hostname & address.path & ": " & $response.status
 # ANCHOR_END: url_response
   except HttpError, FuturePendingError, AsyncTimeoutError, AsyncStreamError:
 # ANCHOR: except
-    echo "[ERR] " & address.hostname & ": " & getCurrentExceptionMsg()
+    echo "[ERR] " & address.hostname & address.path & ": " & getCurrentExceptionMsg()
 # ANCHOR_END: except
 
 proc resolveUris(session: HttpSessionRef, uris: seq[string]): seq[HttpAddress] =
