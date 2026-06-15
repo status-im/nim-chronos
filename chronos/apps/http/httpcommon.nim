@@ -11,7 +11,7 @@
 
 import std/[strutils, uri]
 import results, httputils, stew/base64
-import ../../asyncloop, ../../asyncsync, ./httptable
+import ../../[asyncloop, asyncsync], ./httptable
 export asyncloop, asyncsync, results, httputils, strutils
 
 const
