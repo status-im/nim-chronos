@@ -1503,7 +1503,13 @@ suite "HTTP client testing suite":
   test "HTTP proxy connection provider test":
     check waitFor(testHttpProxyConnectionProvider()) == true
 
-  proc testConnectTunnel(): Future[bool] {.async.} =
+  proc testConnectTunnel(): Future[bool] {.
+      async: (
+        raises: [
+          CancelledError, HttpError, TransportError, AsyncTimeoutError, AsyncStreamError
+        ]
+      )
+  .} =
     var msg = "tunnel ok"
 
     proc process(r: RequestFence): Future[HttpResponseRef] {.
@@ -1548,13 +1554,15 @@ suite "HTTP client testing suite":
   test "HTTP connect tunnel test":
     check waitFor(testConnectTunnel()) == true
 
-  proc testTunnelConnectionProvider(): Future[bool] {.async.} =
+  proc testTunnelConnectionProvider(): Future[bool] {.
+      async: (raises: [CancelledError, HttpError, TransportError])
+  .} =
     let
       targetServer =
         createStreamServer(initTAddress("127.0.0.1:0"), flags = {ServerFlags.ReuseAddr})
       targetAddress = targetServer.localAddress()
 
-    proc server() {.async.} =
+    proc server() {.async: (raises: [CancelledError, TransportError, AsyncTimeoutError]).} =
       let conn = await targetServer.accept()
       try:
         var buf = newString(4096)

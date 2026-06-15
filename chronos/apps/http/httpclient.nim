@@ -1633,12 +1633,8 @@ proc fetch*(session: HttpSessionRef, url: Uri): Future[HttpResponseTuple] {.
   ## parameters.
   ##
   ## This procedure supports HTTP redirections.
-  let address =
-    block:
-      let res = session.getAddress(url)
-      if res.isErr():
-        raiseHttpAddressError(res.error())
-      res.get()
+  let address = getHttpAddress(url).valueOr:
+    raiseHttpAddressError($error)
 
   var
     request = HttpClientRequestRef.new(session, address)
