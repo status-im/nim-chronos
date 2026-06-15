@@ -761,7 +761,7 @@ proc releaseConnection(session: HttpSessionRef,
       of HttpClientConnectionState.ResponseHeadersReceived:
         if (HttpClientConnectionFlag.NoBody in connection.flags):
           # HTTP response headers received with an empty response body and
-          # connection is persistent.4
+          # connection is persistent
           false
         else:
           # Expected HTTP body not received yet
