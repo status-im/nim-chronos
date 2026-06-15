@@ -40,7 +40,7 @@ We've modified `check` function for a single URI so that it accepts a `semaphore
 
 With this short addition, we prevent `check` from running if the semaphore is full.
 
-Because releasing a semaphore can raise a [`AsyncSemaphoreError`](/api/chronos/asyncsync.html#AsyncSemaphoreError) and it would happen outside of our managed `try` block, we need to add this exception to the `raises` list for `check`.
+Because releasing a semaphore can raise a [`AsyncSemaphoreError`](/api/chronos/asyncsync.html#AsyncSemaphoreError) and it would happen outside of our managed `try` block, we wrap the `release` call in its own `try..except` block to handle it gracefully and prevent it from bubbling up.
 
 ```nim
 {{#shiftinclude auto:../../../examples/http_client/chapter6/src/uptimemon.nim:check}}
