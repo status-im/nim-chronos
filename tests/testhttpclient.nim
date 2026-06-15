@@ -1504,7 +1504,7 @@ suite "HTTP client testing suite":
     check waitFor(testHttpProxyConnectionProvider()) == true
 
   proc testConnectTunnel(): Future[bool] {.async.} =
-    let msg = "tunnel ok"
+    var msg = "tunnel ok"
 
     proc process(r: RequestFence): Future[HttpResponseRef] {.
          async: (raises: [CancelledError]).} =
