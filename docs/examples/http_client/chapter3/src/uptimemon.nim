@@ -4,7 +4,7 @@ import chronos/apps/http/httpclient
 
 # ANCHOR: uris
 const uris = @[
-  "https://duckduckgo.com/?q=chronos", "https://mock.codes/403", "http://123.456.78.90"
+  "https://duckduckgo.com/?q=chronos", "https://mock.codes/403"
 ]
 # ANCHOR_END: uris
 

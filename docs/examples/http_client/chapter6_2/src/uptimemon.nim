@@ -2,57 +2,25 @@
 import std/sequtils
 import chronos/apps/http/httpclient
 
-# ANCHOR: ntfy_topic
-const
-  ntfyTopic = "<YOUR_NTFY_TOPIC_NAME>"
-# ANCHOR_END: ntfy_topic
-  uris = @[
-    "https://duckduckgo.com/?q=chronos", "https://mock.codes/403",
-    "http://123.456.78.90", "http://10.255.255.1", "https://html.spec.whatwg.org/",
-    "https://mock.codes/200",
-  ]
+# ANCHOR: urls
+const uris = @[
+  "https://duckduckgo.com/?q=chronos", "https://mock.codes/403", "http://123.456.78.90",
+  "http://10.255.255.1", "https://html.spec.whatwg.org/", "https://mock.codes/200",
+]
+# ANCHOR_END: urls
 
-# ANCHOR: sendAlert
-proc sendAlert(
-    session: HttpSessionRef, message: string, priority = 3
-) {.async: (raises: [CancelledError]).} =
-  let
-# ANCHOR_END: sendAlert
-# ANCHOR: headers
-    headers = {"Title": "Chronos Uptime Monitor", "Priority": $priority}
-# ANCHOR_END: headers
-# ANCHOR: body
-    body = message.stringToBytes()
-# ANCHOR_END: body
-# ANCHOR: request
-    request = HttpClientRequestRef.new(
-      session,
-      "https://ntfy.sh/" & ntfyTopic,
-      meth = MethodPost,
-      headers = headers,
-      body = body,
-    ).valueOr:
-      echo "[WRN] Failed to send alert: " & error
-      return
-# ANCHOR_END: request
-
-# ANCHOR: response
-  try:
-    let response = await request.send().wait(5.seconds)
-    await response.closeWait()
-  except HttpError, FuturePendingError, AsyncTimeoutError:
-    echo "[WRN] Failed to send alert: " & getCurrentExceptionMsg()
-  finally:
-    await request.closeWait()
-# ANCHOR_END: response
-
+# ANCHOR: findMarker
 proc findMarker(
     response: HttpClientResponseRef
 ): Future[bool] {.
     async: (raises: [HttpUseClosedError, AsyncStreamError, CancelledError])
 .} =
+# ANCHOR_END: findMarker
+# ANCHOR: bodyReader
   let bodyReader = response.getBodyReader()
+# ANCHOR_END: bodyReader
 
+# ANCHOR: vars
   const
     marker = "<html"
     chunkSize = 1024
@@ -60,44 +28,51 @@ proc findMarker(
   var
     totalRead = 0
     window: array[windowSize, byte]
+# ANCHOR_END: vars
 
+# ANCHOR: while
   while not result and totalRead <= 10 * 1024:
+# ANCHOR_END: while
+# ANCHOR: read_bytes
     let buffer = await bodyReader.read(chunkSize)
+# ANCHOR_END: read_bytes
 
+# ANCHOR: bytes_check
     if len(buffer) == 0:
       break
+# ANCHOR_END: bytes_check
 
+# ANCHOR: fetchedBytes
     totalRead += len(buffer)
     window[0 ..< windowSize - len(buffer)] = window[len(buffer) ..< windowSize]
     window[windowSize - len(buffer) ..< windowSize] = buffer
+# ANCHOR_END: fetchedBytes
 
+# ANCHOR: result
     result = marker in bytesToString(window)
+# ANCHOR_END: result
 
-# ANCHOR: check
 proc check(session: HttpSessionRef, address: HttpAddress) {.async: (raises: [CancelledError]).} =
   try:
     let
       request = HttpClientRequestRef.new(session, address)
       response = await request.send().wait(5.seconds)
 
+# ANCHOR: url_response
       if response.status == 200:
         let markerFound = await findMarker(response)
 
         if markerFound:
           echo "[OK] " & address.hostname
         else:
-          let message = "[NOK] " & address.hostname & ": Not valid HTML"
-          echo message
-          await session.sendAlert(message)
+          echo "[NOK] " & address.hostname & ": Not valid HTML"
       else:
-        let message = "[NOK] " & address.hostname & ": " & $response.status
-        echo message
-        await session.sendAlert(message)
+        echo "[NOK] " & address.hostname & ": " & $response.status
+# ANCHOR_END: url_response
   except HttpError, FuturePendingError, AsyncTimeoutError, AsyncStreamError:
-    let message = "[ERR] " & address.hostname & ": " & getCurrentExceptionMsg()
-    echo message
-    await session.sendAlert(message, 4)
-# ANCHOR_END: check
+# ANCHOR: except
+    echo "[ERR] " & address.hostname & ": " & getCurrentExceptionMsg()
+# ANCHOR_END: except
 
 proc resolveUris(session: HttpSessionRef, uris: seq[string]): seq[HttpAddress] =
   for uri in uris:

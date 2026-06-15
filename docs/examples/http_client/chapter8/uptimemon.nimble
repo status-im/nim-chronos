@@ -1,6 +1,6 @@
 version       = "0.1.0"
 author        = "Your Name"
-description   = "HTTP Client Tutorial - Chapter 5.2"
+description   = "HTTP Client Tutorial - Chapter 8"
 license       = "MIT"
 srcDir        = "src"
 bin           = @["uptimemon"]

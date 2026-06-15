@@ -23,7 +23,6 @@ Here's the code:
 Run this code with `nimble run`. You should see something like this (the order of messages may be different):
 
 ```shell
-[ERR] http://123.456.78.90: Could not resolve address of remote server
 [NOK] https://mock.codes/403: 403
 [OK] https://duckduckgo.com/?q=chronos
 ```
@@ -47,4 +46,4 @@ In our `check` function for multiple URIs, we've replaced the loop with concurre
 
 Note that since we handle the cancellation internally and don't re-raise the exception, the function signature is now `raises: []`. In async procedures, if you handle all potential exceptions, including `CancelledError`, the compiler sees it as not raising anything.
 
-In the next chapter, we'll see how to handle timeouts and manual cancellation!
+In the next chapter, we'll see how to prevent slow requests from freezing our application using timeouts!

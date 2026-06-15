@@ -56,10 +56,7 @@ proc check(session: HttpSessionRef, address: HttpAddress) {.async: (raises: [Can
   try:
     let
       request = HttpClientRequestRef.new(session, address)
-      responseFuture = request.send()
-
-    if await responseFuture.withTimeout(5.seconds):
-      let response = responseFuture.read()
+      response = await request.send().wait(5.seconds)
 
 # ANCHOR: url_response
       if response.status == 200:
@@ -72,12 +69,10 @@ proc check(session: HttpSessionRef, address: HttpAddress) {.async: (raises: [Can
       else:
         echo "[NOK] " & address.hostname & ": " & $response.status
 # ANCHOR_END: url_response
-    else:
-      raise newException(AsyncTimeoutError, "Connection timed out")
-# ANCHOR: except
   except HttpError, FuturePendingError, AsyncTimeoutError, AsyncStreamError:
-# ANCHOR_END: except
+# ANCHOR: except
     echo "[ERR] " & address.hostname & ": " & getCurrentExceptionMsg()
+# ANCHOR_END: except
 
 proc resolveUris(session: HttpSessionRef, uris: seq[string]): seq[HttpAddress] =
   for uri in uris:

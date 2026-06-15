@@ -10,9 +10,10 @@
   - [Session Reuse](./tutorials/http_client/chapter2.md)
   - [Making Requests Concurrently](./tutorials/http_client/chapter3.md)
   - [Timeouts & Cancellation](./tutorials/http_client/chapter4.md)
-  - [Smarter Health Check with Streaming](./tutorials/http_client/chapter5.md)
-  - [Sending Alerts with POST Requests](./tutorials/http_client/chapter6.md)
-  - [Scaling & Finishing Touches](./tutorials/http_client/chapter7.md)
+  - [Handling Erroneous URIs](./tutorials/http_client/chapter5.md)
+  - [Smarter Health Check with Streaming](./tutorials/http_client/chapter6.md)
+  - [Sending Alerts with POST Requests](./tutorials/http_client/chapter7.md)
+  - [Scaling & Finishing Touches](./tutorials/http_client/chapter8.md)
 
 # User guide
 

@@ -8,12 +8,11 @@ Our current program works fine with the well-behaving URIs we've tested so far: 
 
 However, not all requests will go smoothly when you face the real web. Poor connections, slow servers, anti-bot checks, and access restrictions result in responses that may take long to complete or even never complete. One "misbehaving" request can negatively affect the entire program.
 
-For example, try adding an IP address the never responds to the list:
+For example, try adding an IP address that never responds to the list:
 
 ```nim
 const uris = @[
-  "https://duckduckgo.com/?q=chronos", "https://mock.codes/403", "http://123.456.78.90",
-  "http://10.255.255.1",
+  "https://duckduckgo.com/?q=chronos", "https://mock.codes/403", "http://10.255.255.1",
 ]
 ```
 
@@ -31,12 +30,10 @@ Here's the part that changed:
 {{#shiftinclude auto:../../../examples/http_client/chapter4/src/uptimemon.nim:check}}
 ```
 
-1. We create a `Future` before awaiting on it.
-2. Then we `await` it with the special [`withTimeout`](/api/chronos/internal/asyncfutures.html#withTimeout,Future[T],Duration) modifier. This modifier returns `true` if the `Future` passed to it completed before the timeout and `false` otherwise.
-3. If the timeout exhausted before we got our response, we raise an [`AsyncTimeoutError`](/api/chronos/internal/errors.html#AsyncTimeoutError) exception that is caught downstream.
-4. [`responseFuture.read()`](</api/chronos/internal/asyncfutures.html#read,Future[T: not void]>) can raise [`FuturePendingError`](/api/chronos/internal/asyncfutures.html#FuturePendingError) so we have to handle this exception.
-5. Since we explicitly raise an `AsyncTimeoutError`, we need to handle that exception as well.
+1. We use the [`.wait(timeout)`](/api/chronos/internal/asyncfutures.html#wait,Future[T],Duration) modifier on our `fetch` future.
+2. If the request takes longer than the provided duration, `.wait()` automatically cancels the underlying future and raises an [`AsyncTimeoutError`](/api/chronos/internal/errors.html#AsyncTimeoutError).
+3. We catch this error alongside other expected exceptions in our `except` block.
 
 Run the program again and you'll see it complete in roughly 5 seconds, i.e. our timeout.
 
-In the next chapter, we'll see how to optimize our health checks by using streaming!
+In the next chapter, we'll see how to fix the remaining cause of event loop stalls: blocking DNS resolution!
