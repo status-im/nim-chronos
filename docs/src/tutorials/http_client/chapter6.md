@@ -1,75 +1,83 @@
-# Scaling & Finishing Touches
+# Sending Alerts with POST Requests
 
-**Goal:** Learn how to use semaphores to control concurrency.
+**Goal:** Learn how to send POST HTTP requests and set request headers.
 
 **Source code:** [chapter6/src/uptimemon.nim](https://github.com/status-im/nim-chronos/blob/master/docs/examples/http_client/chapter6/src/uptimemon.nim)
 
-Our app is almost ready to run on production and do regular background URI checks.
+How cool would it be to get notified about a service being down to your phone? This way, you can launch the program and just go on with your business and not constantly monitor the terminal window.
 
-However, there's one issue we need to address before we can feed it tens of URIs and wrap it in a `while true`: we need to limit the number of simultaneous checks. If we don't do that, our app can potentially run out of file descriptors or choke the DNS resolver with 20+ requests.
+[ntfy](https://ntfy.sh) is a service that allows to send push notifications with [POST requests](https://docs.ntfy.sh/publish/). Let's use it to send notifications when our program detects a `[NOK]` or `[ERR]`.
 
-Instead of simultaneusly launching checks for all URIs in the list, we'll run them in batches of 5, i.e. no more than 5 checks will run at any given moment, keeping resource usage low and under control.
+## Set Up ntfy
 
-To achieve that, we'll use a _semaphore_—an special object that a function must acquire to run and must release after it's finished. A semaphore can be acquired by a fixed number of function at any moment, and this is how it regulates concurrency.
+1. Go to [ntfy.sh/app](https://ntfySub.sh/app).
+2. Click on **Subscribe to topic** in the sidebar, click **GENERATE NAME** in the popup, copy the generated name, and **SUBSCRIBE**. We'll use this unique topic name to send the notifications to.
+3. Click on **GRANT NOW** to allow push notifications from your browser.
+4. Keep the browser open.
 
-Here's the code with a semaphore and an infinite loop added:
+## Add Alerts
+
+Here's the version of the program with alerting capabilities:
 
 ```nim
 {{#shiftinclude auto:../../../examples/http_client/chapter6/src/uptimemon.nim:all}}
 ```
 
-Let's see what changed.
+As usual, let's examine the changes part by part.
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter6/src/uptimemon.nim:maxConcurrency}}
+{{#shiftinclude auto:../../../examples/http_client/chapter6/src/uptimemon.nim:ntfy_topic}}
 ```
 
-We define a constant that would determine the capacity of our semaphore.
+Define a new constant for the ntfy topic name you copied [earlier](#set-up-ntfy). Replace `YOUR_NTFY_TOPIC_NAME` with the actual value you copied from ntfy.
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter6/src/uptimemon.nim:uris}}
+{{#shiftinclude auto:../../../examples/http_client/chapter6/src/uptimemon.nim:sendAlert}}
 ```
 
-We've added more URIs to the list to make batching effect visible.
+Define a new async function that will do the request sending to ntfy. We'll send those requests in the same session so we pass it to the function as `session`.
+
+`message` is the text we want to send in the notification.
+
+`priority` is a number that defines the style of the notification in ntfy. ntfy recognizes five priority levels from 1 to 5: the higher the number, the "scarier" the message.
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter6/src/uptimemon.nim:semaphore}}
+{{#shiftinclude auto:../../../examples/http_client/chapter6/src/uptimemon.nim:headers}}
 ```
 
-We've modified `check` function for a single URI so that it accepts a `semaphore` (of type[`AsyncSemaphore`](/api/chronos/asyncsync.html#AsyncSemaphore)), waits to [`acquire`](/api/chronos/asyncsync.html#acquire,AsyncSemaphore) it, and [`release`](/api/chronos/asyncsync.html#release,AsyncSemaphore)s it at the end (we use `defer` to postpone the release).
+ntfy uses headers to customize notifications, e.g. [`Title`](https://docs.ntfy.sh/publish/#message-title) and [`Priority`](https://docs.ntfy.sh/publish/#message-priority).
 
-With this short addition, we prevent `check` from running if the semaphore is full.
+Here we set the headers as an arrays of tuples using Nim's shortcut syntax.
 
-Because releasing a semaphore can raise a [`AsyncSemaphoreError`](/api/chronos/asyncsync.html#AsyncSemaphoreError) and it would happen outside of our managed `try` block, we wrap the `release` call in its own `try..except` block to handle it gracefully and prevent it from bubbling up.
+```nim
+{{#shiftinclude auto:../../../examples/http_client/chapter6/src/uptimemon.nim:body}}
+```
+
+Requests body must be a sequence of bytes so we convert our text message using [`stringToBytes`](/api/chronos/apps/http/httpcommon.html#stringToBytes,openArray[char]).
+
+```nim
+{{#shiftinclude auto:../../../examples/http_client/chapter6/src/uptimemon.nim:request}}
+```
+
+Create the request with the necessary properties. `meth` is the request's HTTP method.
+
+```nim
+{{#shiftinclude auto:../../../examples/http_client/chapter6/src/uptimemon.nim:response}}
+```
+
+If the request was successfully created (`request.isOk`), we try to send it with `send()` and discard it (with `closeWait`).
+
+If the request couldn't be sent (e.g. ntfy is unavailable), we print a warning.
 
 ```nim
 {{#shiftinclude auto:../../../examples/http_client/chapter6/src/uptimemon.nim:check}}
 ```
 
-In the `check` function for a URI sequence, we create a semaphore of the required capacity.
+Finally, we add calls to `sendAlert` in the `check` branches for `[NOK]` and `[ERR]`.
+Run the code and observe alerts appearing in your browser accompanied by push notifications:
 
-```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter6/src/uptimemon.nim:while_true}}
-```
+![ntfy alerts in browser](./ntfy_alerts_in_browser.png)
 
-Instead of a one-off launch, we do the checks in an infinite loop. We wrap the entire loop in a `try..finally` block to ensure the session is always closed when the program stops.
+To receive the notifications on your phone, install [ntfy mobile app](https://ntfy.sh/) and subscribe to the same topic.
 
-We've added an `echo` to denote the start of each cycle.
-
-```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter6/src/uptimemon.nim:pass_semaphore}}
-```
-
-Then we pass the semaphore to `check` for each URI using `mapIt`. We also add a `try..except CancelledError` block around `allFutures` to ensure that if the program is stopped (e.g. by pressing Ctrl+C), all pending requests are cancelled and cleaned up properly. Note that in this case, we `break` the loop to finish the execution gracefully.
-
-```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter6/src/uptimemon.nim:sleep}}
-```
-
-Finally, print the message to mark the end of a cycle and wait 10 seconds before the next one.
-
-Run the program and you'll see an even flow of statuses in your terminal.
-
-```admonish important
-To stop the program, press Ctrl+C.
-```
+In the final chapter, we'll see how to scale our application and add some finishing touches!

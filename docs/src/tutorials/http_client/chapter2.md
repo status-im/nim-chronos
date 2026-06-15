@@ -1,125 +1,53 @@
-# Making Many Requests Concurrently
+# Session Reuse
 
-**Goal:** Learn how to make arbitrarily many HTTP requests asynchronously.
+**Goal:** Learn how to reuse HTTP sessions for multiple requests.
 
 **Source code:** [chapter2/src/uptimemon.nim](https://github.com/status-im/nim-chronos/blob/master/docs/examples/http_client/chapter2/src/uptimemon.nim)
 
-OK, we have a working app that can check one URI at a time, which is not that much impressive. Let's update our project to do what Chronos was made for—concurrency!
+OK, we have a working app that can check one URI. Now let's see how to check multiple URIs.
 
-We'll start with a simple serial solution before revealing how to make it concurrent. By comparing these approaches, we'll highlight some important concepts in asynchronous programming.
+While it might be tempting to just wrap our code from Chapter 1 in a loop, there's a much more efficient way to handle multiple requests in Chronos: **reusing the HTTP session**.
 
-## Serial Requests
+Recall from Chapter 1 that a session (`HttpSessionRef`) is a **connection pool manager**. Its job is to keep a collection of open connections to various servers. When you make a request, the session looks into its pool:
 
-The most obvious way to check multiple URIs instead of one would be to just call `check` in a loop:
+1. If there is already an idle connection to that server, it _reuses_ it.
+2. Only if no idle connection exists does it _allocate_ a new one.
 
-```nim
-import chronos/apps/http/httpclient
+If you create a new session for every request, you end up with multiple "pools" that don't know about each other.
 
-# Define a list of URIs to check
-const uris = @[
-  "https://duckduckgo.com/?q=chronos", "https://mock.codes/403", "http://123.456.78.90"
-]
+Imagine you are checking 10 pages on the same website.
 
-proc check(uri: string) {.async: (raises: [CancelledError]).} =
-  let session = HttpSessionRef.new()
+- _With session reuse_: The first request opens a connection. When it's done, the connection goes back to the pool. The second request then picks up that _exact same connection_ and uses it immediately.
+- _With a new session per request_: Each request creates a brand new pool. Since a brand new pool is always empty, every single request is forced to open a new connection from scratch.
 
-  try:
-    let response = await session.fetch(parseUri(uri))
+Opening a new connection is expensive: your computer has to talk to the server to establish a TCP link, and then perform a cryptographic handshake (TLS) to secure it. By reusing a session, you skip this setup phase for subsequent requests, making your app faster and more respectful of the server's resources.
 
-    if response.status == 200:
-      echo "[OK] " & uri
-    else:
-      echo "[NOK] " & uri & ": " & $response.status
-  except HttpError:
-    echo "[ERR] " & uri & ": " & getCurrentExceptionMsg()
-  finally:
-    await session.closeWait()
-
-when isMainModule:
-  # Loop over the URIs
-  for uri in uris:
-    waitFor check(uri)
-```
-
-If you run this code, you'll see that it works and does in fact check your URIs.
-
-While this approach is straightforward, it can be suboptimal for two reasons:
-
-1. **Session vs. request lifetime**: We are creating and closing a new session for every single request. This is inefficient because each session must establish its own connections. Reusing a single session for multiple requests allows Chronos to reuse underlying connections, reducing overhead.
-2. **Sequential waiting**: Your app checks URIs one by one, waiting for each to finish before starting the next. The total execution time is the sum of all request times.
-
-In many cases, serial execution is exactly what you want: for example, when you have limited resources or when requests depend on each other.
-
-But for our case, we want to make the requests concurrently because we plan to check many URLs that could potentially be slow to respond.
-
-## Concurrent Requests
-
-We want Chronos to start all the requests at the same time and each other's result as soon as it's available.
-
-To achieve that, we will:
-
-1. Introduce a new async function that will schedule the checks. We can't do that outside of a function because async calls are allowed only in async functions.
-2. Create one HTTP session for all requests and ensure it gets closed using a `try..finally` block.
-3. Use `mapIt` from `std/sequtils` to create a list of `Future`s for our requests.
-4. Await all `Future`s at once with [`allFutures`](/api/chronos/internal/asyncfutures.html#allFutures,varargs[Future[T]]).
-5. Add cancellation logic to ensure that if the main check is cancelled, all individual requests are also cancelled and awaited.
-
-Here's the code:
+To reuse a session, we'll pass it as an argument to our `check` function:
 
 ```nim
 {{#shiftinclude auto:../../../examples/http_client/chapter2/src/uptimemon.nim:all}}
 ```
 
-Run this code with `nimble run`, you should see something like this (the order of messages may be different):
-
-```shell
-[ERR] http://123.456.78.90: Could not resolve address of remote server
-[NOK] https://mock.codes/403: 403
-[OK] https://duckduckgo.com/?q=chronos
-```
-
-Notice that:
-
-1. The order of responses of different from the order of the URIs in the source code. That's because our requests are now asynchronous, as they should be.
-2. The execution time has improved. Now, the program runs roughly as long as the its longest request, not as the sum of all requests.
-   You can measure the program's execution time to see the difference more clearly:
-
-```shell
-# Compile the program in release mode first:
-$ nimble build -d:release
-# bash, zsh:
-$ time {./uptimemon}
-# PowerShell:
-$ Measure-Command {./uptimemon.exe | Out-Default}
-```
-
-Let's examine the changes since the previous version.
+Let's see what changed.
 
 ```nim
 {{#shiftinclude auto:../../../examples/http_client/chapter2/src/uptimemon.nim:uris}}
 ```
 
-We define a list of URIs to check. We've put a diverse group to see different responses: DuckDuckGo should respond with `[OK]`, Mock returns a 403 status, i.e. `[NOK]`, and the last one is a non-existant location visiting which should return `[ERR]`.
+We define a list of URIs to check.
 
 ```nim
 {{#shiftinclude auto:../../../examples/http_client/chapter2/src/uptimemon.nim:check_uri}}
 ```
 
-We add a new argument to our `check` function and remove the session closing part—session creation and destruction now happen in the caller function.
+We've modified `check` to accept a `session` argument. Notice that we no longer create or close the session inside this function—that's now the responsibility of the caller. This allows the session's pool to outlive any single request.
 
 ```nim
 {{#shiftinclude auto:../../../examples/http_client/chapter2/src/uptimemon.nim:check_uris}}
 ```
 
-We add another `check` function, but this one takes a list of URIs. In this function:
+We've added a new `check` function that takes a list of URIs. It creates a single `HttpSessionRef` and reuses it for each URI in the loop. The `try..finally` block ensures that the session is properly closed—and all its pooled connections are freed—after all checks are done.
 
-1. We create a single session for all requests and wrap its usage in a `try..finally` block to ensure `closeWait()` is always called.
-2. We use `mapIt` to create a list of `Future`s, one for each URI.
-3. We use `allFutures` to await all those `Future`s.
-4. We add a `try..except CancelledError` block around `allFutures`. This is important: if `check(uris)` itself is cancelled, we want to make sure all the pending requests we started are also cancelled and cleaned up properly. Using `cancelAndWait(futures)` ensures that all resources are freed immediately. Note that since we handle the cancellation internally and don't re-raise the exception, the function signature is now `raises: []`. In async procedures, if you handle all potential exceptions, including `CancelledError`, the compiler sees it as not raising anything.
+Run this code with `nimble run`. You'll see it checks each URI one by one, but much more efficiently than if it were creating a new session for each.
 
-```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter2/src/uptimemon.nim:isMainModule}}
-```
-
-Finally, we `waitFor` the `check` to complete for all URIs.
+In the next chapter, we'll see how to make these requests run concurrently!

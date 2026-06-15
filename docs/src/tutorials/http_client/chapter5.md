@@ -1,81 +1,188 @@
-# Sending Alerts with POST Requests
+# Smarter Health Check with Streaming
 
-**Goal:** Learn how to send POST HTTP requests and set request headers.
+**Goal:** Learn how to use streaming to check web page content without fully downloading it.
 
-**Source code:** [chapter5/src/uptimemon.nim](https://github.com/status-im/nim-chronos/blob/master/docs/examples/http_client/chapter5/src/uptimemon.nim)
+**Source code:**
 
-How cool would it be to get notified about a service being down to your phone? This way, you can launch the program and just go on with your business and not constantly monitor the terminal window.
+- [chapter5_1/src/uptimemon.nim](https://github.com/status-im/nim-chronos/blob/master/docs/examples/http_client/chapter5_1/src/uptimemon.nim)
+- [chapter5_2/src/uptimemon.nim](https://github.com/status-im/nim-chronos/blob/master/docs/examples/http_client/chapter5_2/src/uptimemon.nim)
 
-[ntfy](https://ntfy.sh) is a service that allows to send push notifications with [POST requests](https://docs.ntfy.sh/publish/). Let's use it to send notifications when our program detects a `[NOK]` or `[ERR]`.
+Currently, we're using `fetch` to make a GET request and check its result. However, this function doesn't give us just the response status, it gives us the full page content as well.
 
-## Set Up ntfy
+While this is correct, it's not optimal: if a page is large, our program will consume unnecessary amount of memory to store that response and waste a lot of time downloading it.
 
-1. Go to [ntfy.sh/app](https://ntfySub.sh/app).
-2. Click on **Subscribe to topic** in the sidebar, click **GENERATE NAME** in the popup, copy the generated name, and **SUBSCRIBE**. We'll use this unique topic name to send the notifications to.
-3. Click on **GRANT NOW** to allow push notifications from your browser.
-4. Keep the browser open.
+For example, try adding this URI to the list and running the program: https://html.spec.whatwg.org. This is a proper page but it's so heavy fetching it entirely would time out:
 
-## Add Alerts
-
-Here's the version of the program with alerting capabilities:
-
-```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter5/src/uptimemon.nim:all}}
+```shell
+[ERR] http://123.456.78.90: Could not resolve address of remote server
+[NOK] https://mock.codes/403: 403
+[OK] https://duckduckgo.com/?q=chronos
+[ERR] http://10.255.255.1: Connection timed out
+[ERR] https://html.spec.whatwg.org/: Connection timed out
 ```
 
-As usual, let's examine the changes part by part.
+Let's optimize our check to handle large page like this one.
 
-```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter5/src/uptimemon.nim:ntfy_topic}}
+## Getting Just the Status
+
+First, let's not download the page and just check the response status.
+
+```admonish info
+The HTTP protocol divides each request and response into a **header** and a **body**. The header contains metadata like the status code, while the body contains the actual content. This is true for both successful responses and error statuses.
 ```
 
-Define a new constant for the ntfy topic name you copied [earlier](#set-up-ntfy). Replace `YOUR_NTFY_TOPIC_NAME` with the actual value you copied from ntfy.
+To do that, instead of using `fetch`, we'll create the request manually:
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter5/src/uptimemon.nim:sendAlert}}
+{{#shiftinclude auto:../../../examples/http_client/chapter5_1/src/uptimemon.nim:all}}
 ```
 
-Define a new async function that will do the request sending to ntfy. We'll send those requests in the same session so we pass it to the function as `session`.
-
-`message` is the text we want to send in the notification.
-
-`priority` is a number that defines the style of the notification in ntfy. ntfy recognizes five priority levels from 1 to 5: the higher the number, the "scarier" the message.
+Before creating the requests, we need to resolve each URI into an address. URL resolution involves DNS lookup which uses the blocking `getaddrinfo` system call — if we ran it inside the async loop, it would stall the whole event loop:
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter5/src/uptimemon.nim:headers}}
+{{#shiftinclude auto:../../../examples/http_client/chapter5_1/src/uptimemon.nim:resolve}}
 ```
 
-ntfy uses headers to customize notifications, e.g. [`Title`](https://docs.ntfy.sh/publish/#message-title) and [`Priority`](https://docs.ntfy.sh/publish/#message-priority).
+[`session.getAddress(uri)`](/api/chronos/apps/http/httpclient.html#getAddress,HttpSessionRef,string) turns a URL string into an `HttpAddress` — a value containing the parsed host, port, path, and the resolved IP addresses. Because DNS can fail (e.g. unreachable host), it returns an [`HttpResult`](/api/chronos/apps/http/httpclient.html#HttpResult) which is a [result type](https://github.com/arnetheduck/nim-results) that can contain either the address or an error message.
 
-Here we set the headers as an arrays of tuples using Nim's shortcut syntax.
+To handle this, we use `valueOr`: if the result is a success, the `address` variable gets the value; otherwise, the block after `valueOr` is executed. In our case, we print the error and skip to the next URI with `continue`.
+
+```admonish note
+You may wonder why we use `valueOr` instead of just relying on `try..except`.
+
+That's because accessing the value of a failed `Result` directly (e.g. via `.get` or `.value`) raises `ResultDefect`, which is not a `CatchableError`. `valueOr` allows us to handle the failure explicitly and convert it into a catchable exception.
+```
+
+```admonish info
+DNS resolution via `getaddrinfo` is a blocking system call on every operating system — there is no async version. On Windows, an invalid host like `http://123.456.78.90` fails quickly because the resolver rejects malformed IPs immediately. On POSIX systems (Linux, macOS), the same call delays as the resolver attempts DNS before giving up. Regardless of the platform, address resolution blocks the calling thread, so it must be performed before entering the async loop to avoid stalling the event loop.
+```
+
+Once the addresses are resolved, we create the actual request objects:
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter5/src/uptimemon.nim:body}}
+{{#shiftinclude auto:../../../examples/http_client/chapter5_1/src/uptimemon.nim:request}}
 ```
 
-Requests body must be a sequence of bytes so we convert our text message using [`stringToBytes`](/api/chronos/apps/http/httpcommon.html#stringToBytes,openArray[char]).
+We use the [`HttpClientRequestRef.new`](/api/chronos/apps/http/httpclient.html#new,typedesc[HttpClientRequestRef],HttpSessionRef,HttpAddress,HttpMethod,HttpVersion,set[HttpClientRequestFlag],int,openArray[HttpHeaderTuple],openArray[byte]) overload that takes an `HttpAddress` rather than a raw URL. This overload does **no** DNS resolution — it just packs the parameters into a request object.
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter5/src/uptimemon.nim:request}}
+{{#shiftinclude auto:../../../examples/http_client/chapter5_1/src/uptimemon.nim:response}}
 ```
 
-Create the request with the necessary properties. `meth` is the request's HTTP method.
+We send the request with [`send`](/api/chronos/apps/http/httpclient.html#send,HttpClientRequestRef) and get a `Future`, which we can await on later just like before.
+
+Run the program and you'll see the correct `[OK]` result for https://html.spec.whatwg.org:
+
+```shell
+[ERR] http://123.456.78.90: Could not resolve address of remote server
+[NOK] https://mock.codes/403: 403
+[OK] https://duckduckgo.com/?q=chronos
+[OK] https://html.spec.whatwg.org/
+[ERR] http://10.255.255.1: Connection timed out
+```
+
+## Streaming the Body
+
+Checking just the status speeds up our program but by ignoring the body entirely, we can miss URIs that do not serve valid HTML content. We need a way to check the content but do that without downloading the whole page.
+
+Chronos allows streaming response body, so let's use this feature to fetch content in chunks, check the collected data for a certain health marker (e.g. "<html" string), and stop immediatelly when we find it or download a certain amount of data:
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter5/src/uptimemon.nim:response}}
+{{#shiftinclude auto:../../../examples/http_client/chapter5_2/src/uptimemon.nim:all}}
 ```
 
-If the request was successfully created (`request.isOk`), we try to send it with `send()` and discard it (with `closeWait`).
-
-If the request couldn't be sent (e.g. ntfy is unavailable), we print a warning.
+Let's go through the changes in this version line by line.
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter5/src/uptimemon.nim:check}}
+{{#shiftinclude auto:../../../examples/http_client/chapter5_2/src/uptimemon.nim:urls}}
 ```
 
-Finally, we add calls to `sendAlert` in the `check` branches for `[NOK]` and `[ERR]`.
-Run the code and observe alerts appearing in your browser accompanied by push notifications:
+We've added a new URI to our test: https://mock.codes/200. This is a valid URI that returns a 200 status response but it doesn't contain any meaningful data. With our old check, this would return `[OK]` and with the new one we expect it to be `[NOK]`.
 
-![ntfy alerts in browser](./ntfy_alerts_in_browser.png)
+```nim
+{{#shiftinclude auto:../../../examples/http_client/chapter5_2/src/uptimemon.nim:findMarker}}
+```
 
-To receive the notifications on your phone, install [ntfy mobile app](https://ntfy.sh/) and subscribe to the same topic.
+This is a new function that is responsible to finding the health marker in a given response. Because it is asynchrounous, it will not block the main thread when called.
+
+Like any async function, it returns a `Future` that must be `await`ed to give the actual result.
+
+```admonish note
+If you see an async function without a return type, this async function simply returns a `Future[void]`.
+```
+
+```nim
+{{#shiftinclude auto:../../../examples/http_client/chapter5_2/src/uptimemon.nim:bodyReader}}
+```
+
+To stream the response body, we're using a `bodyReader`. To get one for the current response, we're calling [`getBodyReader`](/api/chronos/apps/http/httpclient.html#getBodyReader,HttpClientResponseRef).
+
+```nim
+{{#shiftinclude auto:../../../examples/http_client/chapter5_2/src/uptimemon.nim:vars}}
+```
+
+- `chunkSize` is how many bytes we request per read
+- `windowSize` is `chunkSize + len(marker) - 1`: a chunk plus enough overlap to catch a marker split across two reads — more on this below
+- `window` is a fixed-size array of that size, zero-initialised
+- `totalRead` tracks total bytes received, used for the 10 KB cap
+
+```nim
+{{#shiftinclude auto:../../../examples/http_client/chapter5_2/src/uptimemon.nim:while}}
+```
+
+We fetch chunks in a loop, stopping as soon as the marker is found or 10 KB has been read.
+
+```nim
+{{#shiftinclude auto:../../../examples/http_client/chapter5_2/src/uptimemon.nim:read_bytes}}
+```
+
+[`read`](/api/chronos/apps/http/httpclient.html#read,HttpBodyReader,int) reads up to `chunkSize` bytes and returns them as a `seq[byte]`.
+
+```nim
+{{#shiftinclude auto:../../../examples/http_client/chapter5_2/src/uptimemon.nim:bytes_check}}
+```
+
+An empty result means we've reached the end of the stream, so we leave the loop.
+
+```nim
+{{#shiftinclude auto:../../../examples/http_client/chapter5_2/src/uptimemon.nim:fetchedBytes}}
+```
+
+```nim
+{{#shiftinclude auto:../../../examples/http_client/chapter5_2/src/uptimemon.nim:result}}
+```
+
+Searching only the latest `buffer` for the marker would miss the case where it is split across two reads — for example `<ht` arriving at the end of one chunk and `ml` at the start of the next. Accumulating all fetched bytes and searching the whole thing every iteration would work but wastes time re-scanning data we have already checked.
+
+Instead, we maintain `window` as a sliding buffer. After each read, we shift its contents left by `len(buffer)` bytes and write the new chunk at the right end. The left side of the window then retains the last `len(marker) - 1` bytes of the previous chunk — exactly enough overlap to catch a split marker — while everything older is discarded. Searching the full `window` on every iteration is O(windowSize), a small constant regardless of how much data has been streamed.
+
+```admonish note
+Notice that we can treat `result` as a regular `bool` despite the fact that the function returns a `Future[bool]`—really handy!
+```
+
+Now we can use this function in the URI health check:
+
+```nim
+{{#shiftinclude auto:../../../examples/http_client/chapter5_2/src/uptimemon.nim:url_response}}
+```
+
+We just `await` on it and check the value.
+
+```nim
+{{#shiftinclude auto:../../../examples/http_client/chapter5_2/src/uptimemon.nim:except}}
+```
+
+Notice that since `findMarker` can raise an exception that we haven't been catching so far ([`AsyncStreamError`](/api/chronos/streams/asyncstream.html#AsyncStreamError)), we need to add it to the list as well.
+
+Run the program and see the https://mock.codes/200 is now correctly marked as `[NOK]`:
+
+```shell
+[ERR] http://123.456.78.90: Could not resolve address of remote server
+[NOK] https://mock.codes/200: Not valid HTML
+[NOK] https://mock.codes/403: 403
+[OK] https://duckduckgo.com/?q=chronos
+[OK] https://html.spec.whatwg.org/
+[ERR] http://10.255.255.1: Connection timed out
+```
+
+In the next chapter, we'll see how to send alerts with POST requests!

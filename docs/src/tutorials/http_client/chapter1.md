@@ -91,3 +91,5 @@ No matter if the check was successful, we must close the session after we're don
 ```
 
 Finally, we call our function to check a particular URL. Google is probably up so you should get an `[OK]` message. However, you can try other URLs to see how the response changes if you use a non-existing URL or a forbidden one.
+
+In the next chapter, we'll see how to efficiently check multiple URLs by reusing the session!

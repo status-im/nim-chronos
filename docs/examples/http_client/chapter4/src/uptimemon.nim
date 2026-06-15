@@ -2,26 +2,29 @@
 import std/sequtils
 import chronos/apps/http/httpclient
 
-# ANCHOR: uris
 const uris = @[
-  "https://duckduckgo.com/?q=chronos", "https://mock.codes/403", "http://123.456.78.90"
+  "https://duckduckgo.com/?q=chronos", "https://mock.codes/403", "http://123.456.78.90",
+  "http://10.255.255.1",
 ]
-# ANCHOR_END: uris
 
-# ANCHOR: check_uri
+# ANCHOR: check
 proc check(session: HttpSessionRef, uri: string) {.async: (raises: [CancelledError]).} =
   try:
-    let response = await session.fetch(parseUri(uri))
+    let responseFuture = session.fetch(parseUri(uri))
 
-    if response.status == 200:
-      echo "[OK] " & uri
+    if await responseFuture.withTimeout(5.seconds):
+      let response = responseFuture.read()
+
+      if response.status == 200:
+        echo "[OK] " & uri
+      else:
+        echo "[NOK] " & uri & ": " & $response.status
     else:
-      echo "[NOK] " & uri & ": " & $response.status
-  except HttpError:
+      raise newException(AsyncTimeoutError, "Connection timed out")
+  except HttpError, FuturePendingError, AsyncTimeoutError:
     echo "[ERR] " & uri & ": " & getCurrentExceptionMsg()
-# ANCHOR_END: check_uri
+# ANCHOR_END: check
 
-# ANCHOR: check_uris
 proc check(uris: seq[string]) {.async: (raises: []).} =
   let
     session = HttpSessionRef.new()
@@ -33,10 +36,7 @@ proc check(uris: seq[string]) {.async: (raises: []).} =
     await cancelAndWait(futures)
   finally:
     await session.closeWait()
-# ANCHOR_END: check_uris
 
-# ANCHOR: isMainModule
 when isMainModule:
   waitFor check(uris)
-# ANCHOR_END: isMainModule
 # ANCHOR_END: all

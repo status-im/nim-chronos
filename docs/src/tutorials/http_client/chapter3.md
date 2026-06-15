@@ -1,40 +1,50 @@
-# Timeouts & Cancellation
+# Making Requests Concurrently
 
-**Goal:** Learn how to prevent the program from freezing on slow responses.
+**Goal:** Learn how to make arbitrarily many HTTP requests asynchronously.
 
 **Source code:** [chapter3/src/uptimemon.nim](https://github.com/status-im/nim-chronos/blob/master/docs/examples/http_client/chapter3/src/uptimemon.nim)
 
-Our current program works fine with the well-behaving URIs we've tested so far: all these locations either respond quickly or quickly return an error.
+In the previous chapter, we learned how to reuse a session to check multiple URIs serially. While efficient, checking URIs one by one is slow. Now, let's unlock the true power of Chronos—concurrency!
 
-However, not all requests will go smoothly when you face the real web. Poor connections, slow servers, anti-bot checks, and access restrictions result in responses that may take long to complete or even never complete. One "misbehaving" request can negatively affect the entire program.
+We want Chronos to start all the requests at the same time and handle each result as soon as it's available.
 
-For example, try adding an IP address the never responds to the list:
+To achieve that, we will:
 
-```nim
-const uris = @[
-  "https://duckduckgo.com/?q=chronos", "https://mock.codes/403", "http://123.456.78.90",
-  "http://10.255.255.1",
-]
-```
+1. Use `mapIt` from `std/sequtils` to create a list of `Future`s for our requests.
+2. Await all `Future`s at once with [`allFutures`](/api/chronos/internal/asyncfutures.html#allFutures,varargs[Future[T]]).
+3. Add cancellation logic to ensure that if the main check is cancelled, all individual requests are also cancelled and awaited.
 
-Run the program and you'll see that it'll run for 10+ seconds, stuck on this last IP.
-
-Let's add a timeout to our requests to cancel slow requests before they ruin our app: if a request takes longer than 5 seconds, we cancel it.
+Here's the code:
 
 ```nim
 {{#shiftinclude auto:../../../examples/http_client/chapter3/src/uptimemon.nim:all}}
 ```
 
-Here's the part that changed:
+Run this code with `nimble run`. You should see something like this (the order of messages may be different):
 
-```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter3/src/uptimemon.nim:check}}
+```shell
+[ERR] http://123.456.78.90: Could not resolve address of remote server
+[NOK] https://mock.codes/403: 403
+[OK] https://duckduckgo.com/?q=chronos
 ```
 
-1. We create a `Future` before awaiting on it.
-2. Then we `await` it with the special [`withTimeout`](/api/chronos/internal/asyncfutures.html#withTimeout,Future[T],Duration) modifier. This modifier returns `true` if the `Future` passed to it completed before the timeout and `false` otherwise.
-3. If the timeout exhausted before we got our response, we raise an [`AsyncTimeoutError`](/api/chronos/internal/errors.html#AsyncTimeoutError) exception that is caught downstream.
-4. [`responseFuture.read()`](</api/chronos/internal/asyncfutures.html#read,Future[T: not void]>) can raise [`FuturePendingError`](/api/chronos/internal/asyncfutures.html#FuturePendingError) so we have to handle this exception.
-5. Since we explicitly raise an `AsyncTimeoutError`, we need to handle that exception as well.
+Notice that:
 
-Run the program again and you'll see it complete in roughly 5 seconds, i.e. our timeout.
+1. The order of responses is different from the order of the URIs in the source code. That's because our requests are now asynchronous and complete at different times.
+2. The execution time has improved. Now, the program runs roughly as long as its longest request, not the sum of all requests.
+
+Let's examine the changes since the previous version.
+
+```nim
+{{#shiftinclude auto:../../../examples/http_client/chapter3/src/uptimemon.nim:check_uris}}
+```
+
+In our `check` function for multiple URIs, we've replaced the loop with concurrent execution:
+
+1. We use `mapIt` to create a list of `Future`s, one for each URI. Each call to `session.check(it)` returns a `Future[void]` and starts the request in the background.
+2. We use `allFutures` to await all those `Future`s at once.
+3. We add a `try..except CancelledError` block around `allFutures`. This is important: if `check(uris)` itself is cancelled, we want to make sure all the pending requests we started are also cancelled and cleaned up properly. Using `cancelAndWait(futures)` ensures that all resources are freed immediately.
+
+Note that since we handle the cancellation internally and don't re-raise the exception, the function signature is now `raises: []`. In async procedures, if you handle all potential exceptions, including `CancelledError`, the compiler sees it as not raising anything.
+
+In the next chapter, we'll see how to handle timeouts and manual cancellation!
