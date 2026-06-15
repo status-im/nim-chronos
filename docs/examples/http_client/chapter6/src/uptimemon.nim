@@ -55,23 +55,26 @@ proc findMarker(
 
   const
     marker = "<html"
-    chunkSize = 1024
-    windowSize = chunkSize + len(marker) - 1
+    bufferSize = 1024
   var
     totalRead = 0
-    window: array[windowSize, byte]
+    buffer = newString(bufferSize)
+    sample = newString(len(marker) - 1)
 
   while not result and totalRead <= 10 * 1024:
-    let buffer = await bodyReader.read(chunkSize)
+    let bytesRead = await bodyReader.readOnce(addr buffer[0], buffer.len)
+
+    buffer.setLen(bytesRead)
 
     if len(buffer) == 0:
       break
 
     totalRead += len(buffer)
-    window[0 ..< windowSize - len(buffer)] = window[len(buffer) ..< windowSize]
-    window[windowSize - len(buffer) ..< windowSize] = buffer
 
-    result = marker in bytesToString(window)
+    sample = sample[^(len(marker) - 1)..high(sample)]
+    sample &= buffer
+
+    result = marker in sample
 
 # ANCHOR: check
 proc check(session: HttpSessionRef, address: HttpAddress) {.async: (raises: [CancelledError]).} =
