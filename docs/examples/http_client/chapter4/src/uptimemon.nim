@@ -3,24 +3,18 @@ import std/sequtils
 import chronos/apps/http/httpclient
 
 const uris = @[
-  "https://duckduckgo.com/?q=chronos", "https://mock.codes/403", "http://123.456.78.90",
-  "http://10.255.255.1",
+  "https://duckduckgo.com/?q=chronos", "https://mock.codes/403", "http://10.255.255.1",
 ]
 
 # ANCHOR: check
 proc check(session: HttpSessionRef, uri: string) {.async: (raises: [CancelledError]).} =
   try:
-    let responseFuture = session.fetch(parseUri(uri))
+    let response = await session.fetch(parseUri(uri)).wait(5.seconds)
 
-    if await responseFuture.withTimeout(5.seconds):
-      let response = responseFuture.read()
-
-      if response.status == 200:
-        echo "[OK] " & uri
-      else:
-        echo "[NOK] " & uri & ": " & $response.status
+    if response.status == 200:
+      echo "[OK] " & uri
     else:
-      raise newException(AsyncTimeoutError, "Connection timed out")
+      echo "[NOK] " & uri & ": " & $response.status
   except HttpError, FuturePendingError, AsyncTimeoutError:
     echo "[ERR] " & uri & ": " & getCurrentExceptionMsg()
 # ANCHOR_END: check
