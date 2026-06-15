@@ -47,7 +47,6 @@ type
   HttpClientConnectionState* {.pure.} = enum
     Closed                    ## Connection has been closed
     Closing,                  ## Connection is closing
-    Resolving,                ## Resolving remote hostname
     Connecting,               ## Connecting to remote server
     Ready,                    ## Connected to remote server
     Acquired,                 ## Connection is acquired for use
@@ -153,6 +152,8 @@ type
     username*: string
     password*: string
     addresses*: seq[TransportAddress]
+      ## If addresses are set, name resolution is not performed and the client
+      ## will instead attempt to connect to the given addresses (in order)
 
   HttpClientRequest* = object
     state: HttpReqRespState
@@ -322,7 +323,6 @@ proc getTLSFlags(flags: HttpClientFlags): set[TLSFlags] =
 
 proc getHttpAddress*(
        url: Uri,
-       flags: HttpClientFlags = {}
      ): HttpAddressResult =
   let
     scheme =
@@ -352,124 +352,52 @@ proc getHttpAddress*(
           return err(HttpAddressErrorType.MissingHostname)
         url.hostname
     id = hostname & ":" & Base10.toString(port)
-    addresses =
-      if (HttpClientFlag.NoInet4Resolution in flags) and
-         (HttpClientFlag.NoInet6Resolution in flags):
-        # DNS resolution is disabled.
-        try:
-          @[initTAddress(hostname, Port(port))]
-        except TransportAddressError:
-          return err(HttpAddressErrorType.InvalidIpHostname)
-      else:
-        try:
-          if (HttpClientFlag.NoInet4Resolution notin flags) and
-             (HttpClientFlag.NoInet6Resolution notin flags):
-            # DNS resolution for both IPv4 and IPv6 addresses.
-            resolveTAddress(hostname, Port(port))
-          else:
-            if HttpClientFlag.NoInet6Resolution in flags:
-              # DNS resolution only for IPv4 addresses.
-              resolveTAddress(hostname, Port(port), AddressFamily.IPv4)
-            else:
-              # DNS resolution only for IPv6 addresses
-              resolveTAddress(hostname, Port(port), AddressFamily.IPv6)
-        except TransportAddressError:
-          return err(HttpAddressErrorType.NameLookupFailed)
-
-  if len(addresses) == 0:
-    return err(HttpAddressErrorType.NoAddressResolved)
 
   ok(HttpAddress(id: id, scheme: scheme, hostname: hostname, port: port,
                  path: url.path, query: url.query, anchor: url.anchor,
-                 username: url.username, password: url.password,
-                 addresses: addresses))
+                 username: url.username, password: url.password))
+
+proc getHttpAddress*(
+       uri: Uri,
+       flags: HttpClientFlags
+     ): HttpAddressResult {.deprecated: "No DNS resolution in getHttpAddress, no flags needed".} =
+  getHttpAddress(uri)
 
 proc getHttpAddress*(
        url: string,
-       flags: HttpClientFlags = {}
      ): HttpAddressResult =
+  getHttpAddress(parseUri(url))
+
+proc getHttpAddress*(
+       url: string,
+       flags: HttpClientFlags
+     ): HttpAddressResult {.deprecated: "No DNS resolution in getHttpAddress, no flags needed".} =
   getHttpAddress(parseUri(url), flags)
 
 proc getHttpAddress*(
        session: HttpSessionRef,
        url: Uri
-     ): HttpAddressResult =
+     ): HttpAddressResult {.deprecated: "No DNS resolution in getHttpAddress, no session needed".} =
   getHttpAddress(url, session.flags)
 
 proc getHttpAddress*(
        session: HttpSessionRef,
        url: string
-     ): HttpAddressResult =
+     ): HttpAddressResult {.deprecated: "No DNS resolution in getHttpAddress, no session needed".} =
   ## Create new HTTP address using URL string ``url`` and .
-  getHttpAddress(parseUri(url), session.flags)
+  getHttpAddress(parseUri(url))
 
-proc getAddress*(session: HttpSessionRef, url: Uri): HttpResult[HttpAddress] =
-  let scheme =
-    if len(url.scheme) == 0:
-      HttpClientScheme.NonSecure
-    else:
-      case toLowerAscii(url.scheme)
-      of "http":
-        HttpClientScheme.NonSecure
-      of "https":
-        HttpClientScheme.Secure
-      else:
-        return err("URL scheme not supported")
-
-  let port =
-    if len(url.port) == 0:
-      case scheme
-      of HttpClientScheme.NonSecure:
-        80'u16
-      of HttpClientScheme.Secure:
-        443'u16
-    else:
-      let res = Base10.decode(uint16, url.port)
-      if res.isErr():
-        return err("Invalid URL port number")
-      res.get()
-
-  let hostname =
-    block:
-      if len(url.hostname) == 0:
-        return err("URL hostname is missing")
-      url.hostname
-
-  let id = hostname & ":" & Base10.toString(port)
-
-  let addresses =
-    try:
-      if (HttpClientFlag.NoInet4Resolution in session.flags) and
-         (HttpClientFlag.NoInet6Resolution in session.flags):
-        # DNS resolution is disabled.
-        @[initTAddress(hostname, Port(port))]
-      else:
-        if (HttpClientFlag.NoInet4Resolution notin session.flags) and
-           (HttpClientFlag.NoInet6Resolution notin session.flags):
-          # DNS resolution for both IPv4 and IPv6 addresses.
-          resolveTAddress(hostname, Port(port))
-        else:
-          if HttpClientFlag.NoInet6Resolution in session.flags:
-            # DNS resolution only for IPv4 addresses.
-            resolveTAddress(hostname, Port(port), AddressFamily.IPv4)
-          else:
-            # DNS resolution only for IPv6 addresses
-            resolveTAddress(hostname, Port(port), AddressFamily.IPv6)
-    except TransportAddressError:
-      return err("Could not resolve address of remote server")
-
-  if len(addresses) == 0:
-    return err("Could not resolve address of remote server")
-
-  ok(HttpAddress(id: id, scheme: scheme, hostname: hostname, port: port,
-                 path: url.path, query: url.query, anchor: url.anchor,
-                 username: url.username, password: url.password,
-                 addresses: addresses))
+proc getAddress*(session: HttpSessionRef, url: Uri): HttpResult[HttpAddress] {.deprecated: "use getHttpAddress".} =
+  let res = getHttpAddress(url).valueOr:
+    return err($error)
+  ok res
 
 proc getAddress*(session: HttpSessionRef,
-                 url: string): HttpResult[HttpAddress] =
+                 url: string): HttpResult[HttpAddress] {.deprecated: "use getHttpAddress".} =
   ## Create new HTTP address using URL string ``url`` and .
-  session.getAddress(parseUri(url))
+  let res = getHttpAddress(url).valueOr:
+    return err($error)
+  ok res
 
 proc getAddress*(address: TransportAddress,
                  ctype: HttpClientScheme = HttpClientScheme.NonSecure,
@@ -535,10 +463,8 @@ proc redirect*(session: HttpSessionRef,
         of HttpClientScheme.Secure:
           443'u16
       else:
-        let res = Base10.decode(uint16, newuri.port)
-        if res.isErr():
+        Base10.decode(uint16, newuri.port).valueOr:
           return err("Invalid URL port number")
-        res.get()
 
     if len(newuri.hostname) == 0:
       return err("URL hostname is missing")
@@ -560,62 +486,69 @@ proc new(
        t: typedesc[HttpClientConnectionRef],
        session: HttpSessionRef,
        ha: HttpAddress,
+       stream: AsyncStream,
        transp: StreamTransport
      ): Result[HttpClientConnectionRef, string] =
-  case ha.scheme
-  of HttpClientScheme.NonSecure:
-    let res = HttpClientConnectionRef(
-      id: session.getUniqueConnectionId(),
-      kind: HttpClientScheme.NonSecure,
-      transp: transp,
-      reader: newAsyncStreamReader(transp),
-      writer: newAsyncStreamWriter(transp),
-      state: HttpClientConnectionState.Connecting,
-      remoteHostname: ha.id
-    )
-    trackCounter(HttpClientConnectionTrackerName)
-    ok(res)
-  of HttpClientScheme.Secure:
-    let
-      treader = newAsyncStreamReader(transp)
-      twriter = newAsyncStreamWriter(transp)
-      tls =
+  # caller responsible for closing stream/transp in case of error
+  let res =
+    case ha.scheme
+    of HttpClientScheme.NonSecure:
+      HttpClientConnectionRef(
+        id: session.getUniqueConnectionId(),
+        kind: HttpClientScheme.NonSecure,
+        transp: transp,
+        reader: stream.reader,
+        writer: stream.writer,
+        state: HttpClientConnectionState.Connecting,
+        remoteHostname: ha.id
+      )
+    of HttpClientScheme.Secure:
+      let tls =
         try:
-          newTLSClientAsyncStream(treader, twriter, ha.hostname,
+          newTLSClientAsyncStream(stream.reader, stream.writer, ha.hostname,
                                   flags = session.flags.getTLSFlags(),
                                   bufferSize = session.connectionBufferSize)
         except TLSStreamInitError as exc:
-          # TODO treader and twriter leak here
           return err(exc.msg)
 
-      res = HttpClientConnectionRef(
+      HttpClientConnectionRef(
         id: session.getUniqueConnectionId(),
         kind: HttpClientScheme.Secure,
         transp: transp,
-        treader: treader,
-        twriter: twriter,
+        treader: stream.reader,
+        twriter: stream.writer,
         reader: tls.reader,
         writer: tls.writer,
         tls: tls,
         state: HttpClientConnectionState.Connecting,
         remoteHostname: ha.id
       )
-    trackCounter(HttpClientConnectionTrackerName)
-    ok(res)
+  trackCounter(HttpClientConnectionTrackerName)
+  ok(res)
+
+proc setError(conn: HttpClientConnectionRef, error: ref HttpError) =
+  if conn.state notin {
+    HttpClientConnectionState.Error, HttpClientConnectionState.Closing,
+    HttpClientConnectionState.Closed,
+  }:
+    conn.state = HttpClientConnectionState.Error
+    conn.error = error
 
 proc setError(request: HttpClientRequestRef, error: ref HttpError) =
-  request.error = error
-  request.state = HttpReqRespState.Error
+  if request.state notin
+      {HttpReqRespState.Error, HttpReqRespState.Closing, HttpReqRespState.Closed}:
+    request.error = error
+    request.state = HttpReqRespState.Error
   if not(isNil(request.connection)):
-    request.connection.state = HttpClientConnectionState.Error
-    request.connection.error = error
+    request.connection.setError(error)
 
 proc setError(response: HttpClientResponseRef, error: ref HttpError) =
-  response.error = error
-  response.state = HttpReqRespState.Error
+  if response.state notin
+      {HttpReqRespState.Error, HttpReqRespState.Closing, HttpReqRespState.Closed}:
+    response.error = error
+    response.state = HttpReqRespState.Error
   if not(isNil(response.connection)):
-    response.connection.state = HttpClientConnectionState.Error
-    response.connection.error = error
+    response.connection.setError(error)
 
 proc closeWait(conn: HttpClientConnectionRef) {.async: (raises: []).} =
   ## Close HttpClientConnectionRef instance ``conn`` and free all the resources.
@@ -630,55 +563,113 @@ proc closeWait(conn: HttpClientConnectionRef) {.async: (raises: []).} =
         if not(isNil(conn.writer)) and not(conn.writer.closed()):
           res.add(conn.writer.closeWait())
         if conn.kind == HttpClientScheme.Secure:
-          res.add(conn.treader.closeWait())
-          res.add(conn.twriter.closeWait())
-        res.add(conn.transp.closeWait())
+          if not(isNil(conn.treader)) and not(conn.treader.closed()):
+            res.add(conn.treader.closeWait())
+          if not(isNil(conn.twriter)) and not(conn.twriter.closed()):
+            res.add(conn.twriter.closeWait())
+        if not(isNil(conn.transp)):
+          res.add(conn.transp.closeWait())
         res
     if len(pending) > 0: await noCancel(allFutures(pending))
     conn.state = HttpClientConnectionState.Closed
     untrackCounter(HttpClientConnectionTrackerName)
+
+proc resolve(
+    session: HttpSessionRef, address: HttpAddress
+): Result[seq[TransportAddress], HttpAddressErrorType] =
+  if address.addresses.len == 0:
+    if (HttpClientFlag.NoInet4Resolution in session.flags) and
+        (HttpClientFlag.NoInet6Resolution in session.flags):
+      # DNS resolution is disabled.
+      try:
+        ok @[initTAddress(address.hostname, Port(address.port))]
+      except TransportAddressError:
+        err(HttpAddressErrorType.InvalidIpHostname)
+    else:
+      let addresses =
+        try:
+          if (HttpClientFlag.NoInet4Resolution notin session.flags) and
+              (HttpClientFlag.NoInet6Resolution notin session.flags):
+            # DNS resolution for both IPv4 and IPv6 addresses.
+            resolveTAddress(address.hostname, Port(address.port))
+          else:
+            if HttpClientFlag.NoInet6Resolution in session.flags:
+              # DNS resolution only for IPv4 addresses.
+              resolveTAddress(address.hostname, Port(address.port), AddressFamily.IPv4)
+            else:
+              # DNS resolution only for IPv6 addresses
+              resolveTAddress(address.hostname, Port(address.port), AddressFamily.IPv6)
+        except TransportAddressError:
+          return err(HttpAddressErrorType.NameLookupFailed)
+
+      if len(addresses) == 0:
+        return err(HttpAddressErrorType.NoAddressResolved)
+      ok addresses
+  else:
+    ok address.addresses
+
+proc handshake(session: HttpSessionRef, ha: HttpAddress,
+               stream: sink AsyncStream, transp: sink StreamTransport):
+                 Future[HttpClientConnectionRef] {.
+     async: (raises: [CancelledError, HttpConnectionError]).} =
+  # takes ownership of stream/transp even if there's an error
+  let conn = HttpClientConnectionRef.new(session, ha, stream, transp).valueOr:
+    var pending = @[stream.reader.closeWait(), stream.writer.closeWait()]
+    if transp != nil:
+      pending.add transp.closeWait()
+    await noCancel allFutures(pending)
+    raiseHttpConnectionError(error)
+
+  var connected = false
+  try:
+    case conn.kind
+    of HttpClientScheme.NonSecure:
+      discard # No special handshake needed
+    of HttpClientScheme.Secure:
+      try:
+        await conn.tls.handshake()
+      except AsyncStreamError as exc:
+        raiseHttpConnectionError(exc.msg)
+    conn.state = HttpClientConnectionState.Ready
+    connected = true
+    conn
+  finally:
+    if not connected:
+      await noCancel conn.closeWait()
 
 proc connect(session: HttpSessionRef,
              ha: HttpAddress): Future[HttpClientConnectionRef] {.
      async: (raises: [CancelledError, HttpConnectionError]).} =
   ## Establish new connection with remote server using ``ha``.
   ## On success returns ``HttpClientConnectionRef`` object.
+  let addresses = session.resolve(ha).valueOr:
+    raiseHttpConnectionError(error.toString())
+
   var lastError = ""
   # Here we trying to connect to every possible remote host address we got after
   # DNS resolution.
-  for address in ha.addresses:
+  for address in addresses:
+    let
+      transp =
+        try:
+          await connect(
+            address,
+            bufferSize = session.connectionBufferSize,
+            flags = session.socketFlags,
+            dualstack = session.dualstack,
+          )
+        except TransportError as exc:
+          lastError = exc.msg
+          continue
+      stream = AsyncStream(
+        reader: newAsyncStreamReader(transp), writer: newAsyncStreamWriter(transp)
+      )
+
+    # `handshake` takes ownership of stream/transp even in case of failure so we 
+    # don't need to close hem here
     try:
-      let transp =
-        await connect(address, bufferSize = session.connectionBufferSize,
-                      flags = session.socketFlags,
-                      dualstack = session.dualstack)
-      let conn =
-        block:
-          let res = HttpClientConnectionRef.new(session, ha, transp).valueOr:
-            await transp.closeWait()
-            raiseHttpConnectionError(
-              "Could not connect to remote host, reason: " & error)
-          if res.kind == HttpClientScheme.Secure:
-            try:
-              await res.tls.handshake()
-              res.state = HttpClientConnectionState.Ready
-            except CancelledError as exc:
-              await res.closeWait()
-              raise exc
-            except TLSStreamProtocolError as exc:
-              await res.closeWait()
-              res.state = HttpClientConnectionState.Error
-              lastError = $exc.msg
-            except AsyncStreamError as exc:
-              await res.closeWait()
-              res.state = HttpClientConnectionState.Error
-              lastError = $exc.msg
-          else:
-            res.state = HttpClientConnectionState.Ready
-          res
-      if conn.state == HttpClientConnectionState.Ready:
-        return conn
-    except TransportError as exc:
+      return await session.handshake(ha, stream, transp)
+    except HttpConnectionError as exc:
       lastError = exc.msg
 
   # If all attempts to connect to the remote host have failed.
@@ -709,14 +700,13 @@ func connectionPoolEnabled(session: HttpSessionRef,
   (HttpClientFlag.NewConnectionAlways notin session.flags) and
   (HttpClientRequestFlag.DedicatedConnection notin flags)
 
-proc acquireConnection(
+proc reuseOrConnect(
        session: HttpSessionRef,
        ha: HttpAddress,
        flags: set[HttpClientRequestFlag]
      ): Future[HttpClientConnectionRef] {.
      async: (raises: [CancelledError, HttpConnectionError]).} =
   ## Obtain connection from ``session`` or establish a new one.
-  var default: seq[HttpClientConnectionRef]
   let timestamp = Moment.now()
   if session.connectionPoolEnabled(flags):
     # Trying to reuse existing connection from our connection's pool.
@@ -736,7 +726,9 @@ proc acquireConnection(
     except AsyncTimeoutError:
       raiseHttpConnectionError("Connection timed out")
   connection.state = HttpClientConnectionState.Acquired
-  session.connections.mgetOrPut(ha.id, default).add(connection)
+  session.connections.mgetOrPut(ha.id, default(seq[HttpClientConnectionRef])).add(
+    connection
+  )
   inc(session.connectionsCount)
   if HttpClientRequestFlag.CloseConnection notin flags:
     connection.flags.incl(HttpClientConnectionFlag.KeepAlive)
@@ -769,7 +761,6 @@ proc releaseConnection(session: HttpSessionRef,
       else:
         # Connection not in proper state.
         true
-
   if removeConnection:
     await session.removeConnection(connection, ha)
   else:
@@ -780,7 +771,6 @@ proc releaseConnection(request: HttpClientRequestRef) {.async: (raises: []).} =
   let
     session = request.session
     connection = request.connection
-
   if not(isNil(connection)):
     request.connection = nil
     request.session = nil
@@ -800,40 +790,6 @@ proc releaseConnection(response: HttpClientResponseRef) {.
     connection.flags.excl(HttpClientConnectionFlag.Response)
     if HttpClientConnectionFlag.Request notin connection.flags:
       await session.releaseConnection(connection, response.address)
-
-proc directProvider*(): HttpConnectionProvider =
-  ## Return a connection provider that supplies connections directly to the
-  ## requested address.
-  return proc(
-      request: HttpClientRequestRef
-  ): Future[HttpClientConnectionRef] {.
-      async: (raises: [CancelledError, HttpConnectionError], raw: true)
-  .} =
-    request.session.acquireConnection(request.address, request.flags)
-
-proc httpProxyProvider*(uri: Uri): HttpConnectionProvider =
-  ## Return a connection provider that supplies connections via a forwarding
-  ## HTTP proxy.
-  ##
-  ## The connection to the proxy can be established via TLS enabling the use
-  ## of secure proxies.
-  return proc(
-      request: HttpClientRequestRef
-  ): Future[HttpClientConnectionRef] {.
-      async: (raises: [CancelledError, HttpConnectionError])
-  .} =
-    # Resolve the proxy on every connection attempt
-    let ha = request.session.getAddress(uri).valueOr:
-      raiseHttpConnectionError(error)
-
-    if (len(ha.username) > 0 or len(ha.password) > 0) and
-        ProxyAuthorizationHeader notin request.headers:
-      request.headers.add(
-        ProxyAuthorizationHeader,
-        encodeBasicAuth(ha.username, ha.password),
-      )
-
-    await request.session.acquireConnection(ha, request.flags)
 
 proc closeWait*(session: HttpSessionRef) {.async: (raises: []).} =
   ## Closes HTTP session object.
@@ -910,13 +866,16 @@ proc closeWait*(request: HttpClientRequestRef) {.async: (raises: []).} =
 proc closeWait*(response: HttpClientResponseRef) {.async: (raises: []).} =
   var pending: seq[Future[void].Raising([])]
   if response.state notin {HttpReqRespState.Closing, HttpReqRespState.Closed}:
-    response.state = HttpReqRespState.Closing
-    if not(isNil(response.reader)):
-      if not(response.reader.closed()):
-        pending.add(response.reader.closeWait())
-      response.reader = nil
-    pending.add(response.releaseConnection())
-    await noCancel(allFutures(pending))
+    if response.connection == nil: # CONNECT tunnels take over the connection
+      response.state = HttpReqRespState.Closed
+    else:
+      response.state = HttpReqRespState.Closing
+      if not(isNil(response.reader)):
+        if not(response.reader.closed()):
+          pending.add(response.reader.closeWait())
+        response.reader = nil
+      pending.add(response.releaseConnection())
+      await noCancel(allFutures(pending))
     response.session = nil
     response.error = nil
     response.state = HttpReqRespState.Closed
@@ -1513,6 +1472,84 @@ proc consumeBody*(response: HttpClientResponseRef): Future[int] {.
     response.setError(error)
     raise error
 
+proc tunnel*(response: HttpClientResponseRef): Future[AsyncStream] {.
+     async: (raises: [CancelledError, HttpError]).} =
+  ## After a CONNECT request, extract the underlying connection tunnel from
+  ## the session and return it to the caller.
+  ##
+  ## The caller is responsible for closing both the returned stream and the 
+  ## `response` itself.
+  ## 
+  ## After a successful call to `tunnel`, closing `response` will not close the
+  ## returned tunnel.
+  doAssert(response.requestMethod == MethodConnect,
+           "Must use CONNECT method for tunneling")
+
+  response.checkClosed()
+
+  doAssert(not(isNil(response.connection)),
+           "Response missing connection instance")
+  doAssert(response.state == HttpReqRespState.Open,
+           "Response's state is " & $response.state)
+  doAssert(response.connection.state ==
+           HttpClientConnectionState.ResponseHeadersReceived,
+           "Connection state is " & $response.connection.state)
+
+  # https://www.rfc-editor.org/info/rfc9110/#section-9.3.6
+  # Any 2xx (Successful) response indicates that the sender (and all inbound
+  # proxies) will switch to tunnel mode immediately after the response header 
+  # section
+  if response.status < 200 or response.status >= 300:
+    raiseHttpProtocolError("CONNECT request failed with status: " & $response.status)
+
+  let
+    connection = response.connection
+    # Take ownership of the streams / transports in the connection
+    transp = move(connection.transp)
+    reader = move(connection.reader)
+    writer = move(connection.writer)
+    (treader, twriter) = case connection.kind
+      of HttpClientScheme.NonSecure:
+        (nil, nil)
+      of HttpClientScheme.Secure:
+        (move(connection.treader), move(connection.twriter))
+    rclose = newAsyncStreamReader(reader)
+    wclose = newAsyncStreamWriter(writer)
+
+  # Create a stream wrapper that will close the underlying streams and eventually
+  # the transport too
+  var otherClosed = false
+  rclose.vtbl.close = block:
+    var inner = rclose.vtbl.close
+    proc(rstream: AsyncStreamReader) {.async: (raises: [], raw: true).} =
+      var pending = @[reader.closeWait()]
+      if treader != nil:
+        pending.add treader.closeWait()
+      if otherClosed:
+        if transp != nil:
+          pending.add transp.closeWait()
+      else:
+        otherClosed = true
+      pending.add inner(rstream)
+      noCancel allFutures(pending)
+  wclose.vtbl.close = block:
+    var inner = wclose.vtbl.close
+    proc(wstream: AsyncStreamWriter) {.async: (raises: [], raw: true).} =
+      var pending = @[writer.closeWait()]
+      if twriter != nil:
+        pending.add twriter.closeWait()
+      if otherClosed: # Close socket once both underlying streams are closed
+        if transp != nil:
+          pending.add transp.closeWait()
+      else:
+        otherClosed = true
+      pending.add inner(wstream)
+      noCancel allFutures(pending)
+
+  response.state = HttpReqRespState.Finished
+
+  AsyncStream(reader: rclose, writer: wclose)
+
 proc redirect*(request: HttpClientRequestRef,
                ha: HttpAddress): HttpResult[HttpClientRequestRef] =
   ## Create new request object using original request object ``request`` and
@@ -1750,3 +1787,79 @@ proc getServerSentEvents*(
     raise error
 
   res
+
+proc directProvider*(): HttpConnectionProvider =
+  ## Return a connection provider that supplies connections directly to the
+  ## requested address.
+  return proc(
+      request: HttpClientRequestRef
+  ): Future[HttpClientConnectionRef] {.
+      async: (raises: [CancelledError, HttpConnectionError], raw: true)
+  .} =
+    request.session.reuseOrConnect(request.address, request.flags)
+
+proc httpProxyProvider*(proxy: HttpAddress): HttpConnectionProvider =
+  ## Return a connection provider that supplies connections via a forwarding
+  ## HTTP proxy.
+  ##
+  ## The connection to the proxy can be established via TLS enabling the use
+  ## of secure proxies.
+  return proc(
+      request: HttpClientRequestRef
+  ): Future[HttpClientConnectionRef] {.
+      async: (raises: [CancelledError, HttpConnectionError], raw: true)
+  .} =
+    # Resolve the proxy on every connection attempt
+    if (len(proxy.username) > 0 or len(proxy.password) > 0) and
+        ProxyAuthorizationHeader notin request.headers:
+      request.headers.add(
+        ProxyAuthorizationHeader, encodeBasicAuth(proxy.username, proxy.password)
+      )
+
+    # Unlike a direct provider, we'll use the proxy address instead of the
+    # request address for establishing the connection - the proxy becomes
+    # responsible for resolving the request target name. Typically, a proxy
+    # will reject HTTPS connections.
+    request.session.reuseOrConnect(proxy, request.flags)
+
+proc httpConnectProvider*(proxy: HttpAddress): HttpConnectionProvider =
+  ## Return a provider that establishes HTTP CONNECT tunnel connections through
+  ## the given proxy
+
+  let proxySession = HttpSessionRef.new(provider = httpProxyProvider(proxy))
+
+  return proc(
+      request: HttpClientRequestRef
+  ): Future[HttpClientConnectionRef] {.
+      async: (raises: [CancelledError, HttpConnectionError])
+  .} =
+    let 
+      # The target address is in the original request - CONNECT will use the
+      # authority from this address to perform the connection - however, the
+      # initial connection will be performed via the proxy provided by
+      # httpProxyProvider above
+      targetHa = request.address
+      req = HttpClientRequestRef.new(proxySession, targetHa, MethodConnect)
+      resp =
+        try:
+          await req.send()
+        except HttpError as exc:
+          raiseHttpConnectionError("Could not connect to proxy: " & exc.msg)
+        finally:
+          await req.closeWait()
+
+      # `send` means we received the headers - if the request was successful,
+      # we can extract a stream that we can use to establish the end-to-end
+      # connection - both the proxy and the inner connections can be
+      # using TLS but typically only the inner connection will be
+      stream =
+        try:
+          await resp.tunnel()
+        except HttpError as exc:
+          raiseHttpConnectionError("Could not connect to proxy: " & exc.msg)
+        finally:
+          await resp.closeWait()
+
+    # If targetHa was a TLS connection, we'll establish a secure connection -
+    # handshake takes ownership of the stream so we don't need to close it.
+    await proxySession.handshake(targetHa, stream, nil)

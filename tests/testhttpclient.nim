@@ -1482,10 +1482,10 @@ suite "HTTP client testing suite":
     var proxyServer = createServer(initTAddress("127.0.0.1:0"), process, false)
     proxyServer.start()
     let proxyAddress = proxyServer.instance.localAddress()
-    let proxyUri = parseUri("http://" & $proxyAddress)
-    var session = HttpSessionRef.new(provider = httpProxyProvider(proxyUri))
+    let proxy= proxyAddress.getAddress()
+    var session = HttpSessionRef.new(provider = httpProxyProvider(proxy))
     let targetUrl = "http://" & targetHost & ":" & $targetPort & targetPath
-    let targetAddress = session.getAddress(parseUri(targetUrl)).valueOr:
+    let targetAddress = getHttpAddress(targetUrl).valueOr:
       raise newException(ValueError, "Invalid target address")
     var request = HttpClientRequestRef.new(session, targetAddress)
     let response = await send(request)
@@ -1502,6 +1502,93 @@ suite "HTTP client testing suite":
 
   test "HTTP proxy connection provider test":
     check waitFor(testHttpProxyConnectionProvider()) == true
+
+  proc testConnectTunnel(): Future[bool] {.async.} =
+    let msg = "tunnel ok"
+
+    proc process(r: RequestFence): Future[HttpResponseRef] {.
+         async: (raises: [CancelledError]).} =
+      if r.isOk():
+        let request = r.get()
+        try:
+          # TODO implement better proxying support in server
+          let resp = request.getResponse()
+          resp.keepalive = false
+          await resp.sendBody(addr msg[0], msg.len)
+          resp
+        except HttpWriteError as exc:
+          defaultResponse(exc)
+      else:
+        defaultResponse()
+
+    var server = createServer(initTAddress("127.0.0.1:0"), process, false)
+    server.start()
+    let address = server.instance.localAddress()
+    let targetAddress = getAddress(address, HttpClientScheme.NonSecure, "")
+
+    var session = createSession(false)
+    var req = HttpClientRequestRef.new(session, targetAddress, MethodConnect)
+    let response = await req.send()
+    check response.status == 200
+    let tunnel = await response.tunnel()
+    let data = bytesToString(await tunnel.reader.read().wait(1.seconds))
+    check:
+      data == msg
+
+    await tunnel.reader.closeWait()
+    await tunnel.writer.closeWait()
+
+    await response.closeWait()
+    await req.closeWait()
+    await session.closeWait()
+    await server.stop()
+    await server.closeWait()
+    return true
+
+  test "HTTP connect tunnel test":
+    check waitFor(testConnectTunnel()) == true
+
+  proc testTunnelConnectionProvider(): Future[bool] {.async.} =
+    let
+      targetServer =
+        createStreamServer(initTAddress("127.0.0.1:0"), flags = {ServerFlags.ReuseAddr})
+      targetAddress = targetServer.localAddress()
+
+    proc server() {.async.} =
+      let conn = await targetServer.accept()
+      try:
+        var buf = newString(4096)
+        buf.setLen(await conn.readUntil(addr buf[0], buf.len, stringToBytes("\r\n\r\n")))
+        check:
+          "connect somehost:80" in buf.toLowerAscii()
+          "host: somehost:80" in buf.toLowerAscii()
+          
+        discard await conn.write("HTTP/1.1 200 OK\r\n\r\n")
+
+        buf.setLen(4096)
+        buf.setLen(await conn.readUntil(addr buf[0], buf.len, stringToBytes("\r\n\r\n")))
+
+        discard await conn.write("HTTP/1.1 200 OK\r\nContent-Length: 1\r\nConnection: close\r\n\r\na")
+        await conn.shutdownWait()
+        check:
+          await(conn.read().wait(1.seconds)) == []
+      finally:
+        await conn.closeWait()
+    let
+      serverFut = server().wait(1.seconds)
+      proxy = targetAddress.getAddress()
+      session = HttpSessionRef.new(provider = httpConnectProvider(proxy))
+      resp = await session.fetch(parseUri("http://somehost/"))
+
+    check:
+      resp.data == [byte 'a']
+
+    await serverFut.cancelAndWait()
+    await targetServer.closeWait()
+    true
+
+  test "HTTP tunnel connection provider test":
+    check waitFor(testTunnelConnectionProvider()) == true
 
   test "HTTP getHttpAddress() test":
     block:
@@ -1565,26 +1652,6 @@ suite "HTTP client testing suite":
         res1.error.isCriticalError()
         res2.isErr() and res2.error == HttpAddressErrorType.MissingHostname
         res2.error.isCriticalError()
-    block:
-      # No resolution flags and incorrect URL
-      let
-        flags = {HttpClientFlag.NoInet4Resolution,
-                 HttpClientFlag.NoInet6Resolution}
-        res1 = getHttpAddress("http://256.256.256.256", flags)
-        res2 = getHttpAddress(
-          "http://[FFFFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]", flags)
-      check:
-        res1.isErr() and res1.error == HttpAddressErrorType.InvalidIpHostname
-        res1.error.isCriticalError()
-        res2.isErr() and res2.error == HttpAddressErrorType.InvalidIpHostname
-        res2.error.isCriticalError()
-    block:
-      # Resolution of non-existent hostname
-      let res = getHttpAddress("http://eYr6bdBo.com")
-      check:
-        res.isErr() and res.error == HttpAddressErrorType.NameLookupFailed
-        res.error.isRecoverableError()
-        not(res.error.isCriticalError())
 
   asyncTest "HTTPS response headers buffer size test":
     const HeadersSize = HttpMaxHeadersSize
