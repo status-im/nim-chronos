@@ -25,7 +25,7 @@ jobs:
       - name: Install mdBook and preprocessors
         run: |
           cargo binstall mdbook@0.4.52 \
-            mdbook-toc@0.14.1 \
+            mdbook-toc@0.14.2 \
             mdbook-open-on-gh@2.4.3 \
             mdbook-admonish@1.20.0 \
             mdbook-shiftinclude@0.1.0
