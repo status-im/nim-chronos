@@ -10,7 +10,7 @@
 {.push raises: [].}
 
 import std/[strutils, uri]
-import results, httputils
+import results, httputils, stew/base64
 import ../../asyncloop, ../../asyncsync
 import ../../streams/[asyncstream, boundstream]
 export asyncloop, asyncsync, results, httputils, strutils
@@ -43,6 +43,7 @@ const
   ServerHeader* = "server"
   LocationHeader* = "location"
   AuthorizationHeader* = "authorization"
+  ProxyAuthorizationHeader* = "proxy-authorization"
   ContentDispositionHeader* = "content-disposition"
 
   UrlEncodedContentType* = MediaType.init("application/x-www-form-urlencoded")
@@ -354,3 +355,7 @@ func stringToBytes*(src: openArray[char]): seq[byte] =
     dst
   else:
     default
+
+func encodeBasicAuth*(username, password: string): string =
+  let auth = username & ":" & password
+  "Basic " & Base64Pad.encode(auth.toOpenArrayByte(0, high(auth)))
