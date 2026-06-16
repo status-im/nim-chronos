@@ -9,7 +9,7 @@
 
 {.push raises: [].}
 
-import std/[uri, tables, sequtils]
+import std/[uri, tables, sequtils, strutils]
 import stew/[assign2, base10, byteutils, ptrops, shims/sequninit], httputils, results
 import ../../[asyncloop, asyncsync, config]
 import ../../streams/[asyncstream, tlsstream, chunkstream, boundstream]
@@ -28,7 +28,9 @@ const
     ## Timeout for receiving response headers (120 sec)
   HttpConnectionIdleTimeout* = 60.seconds
     ## Time after which idle connections are removed from the HttpSession's
-    ## connections pool (120 sec)
+    ## connections pool (60 sec)
+    ## TODO Persistent connections currently must be explicitly enabled due to
+    ##      the lack of idle connection monitoring (via MSG_PEEK, to discover EOF)
   HttpConnectionCheckPeriod* = 10.seconds
     ## Period of time between idle connections checks in HttpSession's
     ## connection pool (10 sec)
@@ -72,6 +74,8 @@ type
     Error                     ## Request/response in error state
 
   HttpClientBodyFlag* {.pure.} = enum
+    # https://www.rfc-editor.org/info/rfc9112/#section-6.3
+    NoBody,
     Sized,                    ## `Content-Length` present
     Chunked,                  ## `Transfer-Encoding: chunked` present
     Custom                    ## None of the above
@@ -139,7 +143,7 @@ type
     provider: HttpConnectionProvider
 
   HttpAddress* = object
-    id*: string # hostname:port
+    id*: string # authority ("hostname:port" without username/password)
     scheme*: HttpClientScheme
     hostname*: string
     port*: uint16
@@ -198,8 +202,8 @@ type
     NoInet4Resolution,   ## Do not resolve server hostname to IPv4 addresses
     NoInet6Resolution,   ## Do not resolve server hostname to IPv6 addresses
     NoAutomaticRedirect, ## Do not handle HTTP redirection automatically
-    NewConnectionAlways, ## Always create new connection to HTTP server
-    Http11Pipeline       ## Enable HTTP/1.1 pipelining
+    NewConnectionAlways, ## Disable HTTP Persistent connections
+    Http11Pipeline {.deprecated.} ## (deprecated, pipelining is not implemented)
 
   HttpClientFlags* = set[HttpClientFlag]
 
@@ -255,10 +259,7 @@ template setDuration(conn: HttpClientConnectionRef): untyped =
     conn.setTimestamp(timestamp)
 
 template isReady(conn: HttpClientConnectionRef): bool =
-  (conn.state == HttpClientConnectionState.Ready) and
-  (HttpClientConnectionFlag.KeepAlive in conn.flags) and
-  (HttpClientConnectionFlag.Request notin conn.flags) and
-  (HttpClientConnectionFlag.Response notin conn.flags)
+  (conn.state == HttpClientConnectionState.Ready)
 
 template isIdle(conn: HttpClientConnectionRef, timestamp: Moment,
                 timeout: Duration): bool =
@@ -267,7 +268,7 @@ template isIdle(conn: HttpClientConnectionRef, timestamp: Moment,
 proc sessionWatcher(session: HttpSessionRef) {.async: (raises: []).}
 proc directProvider*(): HttpConnectionProvider
 proc new*(t: typedesc[HttpSessionRef],
-          flags: HttpClientFlags = {},
+          flags: HttpClientFlags = {NewConnectionAlways},
           maxRedirections = HttpMaxRedirections,
           connectTimeout = HttpConnectTimeout,
           headersTimeout = HttpHeadersTimeout,
@@ -305,7 +306,7 @@ proc new*(t: typedesc[HttpSessionRef],
         provider
   )
   res.watcherFut =
-    if HttpClientFlag.Http11Pipeline in flags:
+    if HttpClientFlag.NewConnectionAlways notin flags:
       sessionWatcher(res)
     else:
       nil
@@ -706,8 +707,7 @@ proc removeConnection(session: HttpSessionRef,
 func connectionPoolEnabled(session: HttpSessionRef,
                            flags: set[HttpClientRequestFlag]): bool =
   (HttpClientFlag.NewConnectionAlways notin session.flags) and
-  (HttpClientRequestFlag.DedicatedConnection notin flags) and
-  (HttpClientFlag.Http11Pipeline in session.flags)
+  (HttpClientRequestFlag.DedicatedConnection notin flags)
 
 proc acquireConnection(
        session: HttpSessionRef,
@@ -725,6 +725,8 @@ proc acquireConnection(
     for connection in session.connections.getOrDefault(ha.id):
       if connection.isReady() and
          not(connection.isIdle(timestamp, session.idleTimeout)):
+        connection.setTimestamp(timestamp)
+        connection.flags.incl(HttpClientConnectionFlag.KeepAlive)
         connection.state = HttpClientConnectionState.Acquired
         return connection
 
@@ -736,6 +738,8 @@ proc acquireConnection(
   connection.state = HttpClientConnectionState.Acquired
   session.connections.mgetOrPut(ha.id, default).add(connection)
   inc(session.connectionsCount)
+  if HttpClientRequestFlag.CloseConnection notin flags:
+    connection.flags.incl(HttpClientConnectionFlag.KeepAlive)
   connection.setTimestamp(timestamp)
   connection.setDuration()
   connection
@@ -746,28 +750,21 @@ proc releaseConnection(session: HttpSessionRef,
      async: (raises: []).} =
   ## Return connection back to the ``session``.
   let removeConnection =
-    if HttpClientFlag.Http11Pipeline notin session.flags:
+    if HttpClientFlag.NewConnectionAlways in session.flags or
+        HttpClientConnectionFlag.KeepAlive notin connection.flags:
       true
     else:
       case connection.state
       of HttpClientConnectionState.ResponseBodyReceived:
-        if HttpClientConnectionFlag.KeepAlive in connection.flags:
-          # HTTP response body has been received and "Connection: keep-alive" is
-          # present in response headers.
-          false
-        else:
-          # HTTP response body has been received, but "Connection: keep-alive"
-          # is not present or not supported.
-          true
+        # HTTP response body has been received and connection is persistent
+        false
       of HttpClientConnectionState.ResponseHeadersReceived:
-        if (HttpClientConnectionFlag.NoBody in connection.flags) and
-           (HttpClientConnectionFlag.KeepAlive in connection.flags):
+        if (HttpClientConnectionFlag.NoBody in connection.flags):
           # HTTP response headers received with an empty response body and
-          # "Connection: keep-alive" is present in response headers.
+          # connection is persistent
           false
         else:
-          # HTTP response body is not received or "Connection: keep-alive" is
-          # not present or not supported.
+          # Expected HTTP body not received yet
           true
       else:
         # Connection not in proper state.
@@ -777,9 +774,7 @@ proc releaseConnection(session: HttpSessionRef,
     await session.removeConnection(connection, ha)
   else:
     connection.state = HttpClientConnectionState.Ready
-    connection.flags.excl({HttpClientConnectionFlag.Request,
-                           HttpClientConnectionFlag.Response,
-                           HttpClientConnectionFlag.NoBody})
+    connection.flags.reset()
 
 proc releaseConnection(request: HttpClientRequestRef) {.async: (raises: []).} =
   let
@@ -805,7 +800,6 @@ proc releaseConnection(response: HttpClientResponseRef) {.
     connection.flags.excl(HttpClientConnectionFlag.Response)
     if HttpClientConnectionFlag.Request notin connection.flags:
       await session.releaseConnection(connection, response.address)
-
 
 proc directProvider*(): HttpConnectionProvider =
   ## Return a connection provider that supplies connections directly to the
@@ -969,40 +963,31 @@ proc prepareResponse(
         res.get()
 
   # Preprocessing "Content-Length" header.
-  let (contentLength, bodyFlag, nobodyFlag) =
-    if ContentLengthHeader in headers:
+  let (contentLength, bodyFlag) =
+    # https://www.rfc-editor.org/info/rfc9112/#section-6.3
+    if (
+      request.meth == MethodHead or (resp.code >= 100 and resp.code < 200) or
+      resp.code == 204 or resp.code == 304
+    ) or (request.meth == MethodConnect and (resp.code >= 200 and resp.code < 300)):
+      # Responses that have no body still may have an informative Content-Length
+      # header
       let length = headers.getInt(ContentLengthHeader)
-      (length, HttpClientBodyFlag.Sized, length == 0)
-    else:
+      (length, HttpClientBodyFlag.NoBody)
+    elif transferEncoding != {TransferEncodingFlags.Identity}:
+      # "Transfer-Encoding overrides the Content-Length"
       if TransferEncodingFlags.Chunked in transferEncoding:
-        (0'u64, HttpClientBodyFlag.Chunked, false)
+        (0'u64, HttpClientBodyFlag.Chunked)
       else:
-        (0'u64, HttpClientBodyFlag.Custom, false)
+        (0'u64, HttpClientBodyFlag.Custom)
+    elif ContentLengthHeader in headers:
+      let length = headers.getInt(ContentLengthHeader)
+      (length, HttpClientBodyFlag.Sized)
+    else:
+      # response message without a declared message body length
+      (0'u64, HttpClientBodyFlag.Custom)
 
   # Preprocessing "Connection" header.
-  let connectionFlag =
-    block:
-      case resp.version
-      of HttpVersion11:
-        # Keeping a connection open is the default on HTTP/1.1 requests.
-        # https://www.rfc-editor.org/rfc/rfc2068.html#section-19.7.1
-        let header = toLowerAscii(headers.getString(ConnectionHeader))
-        if header == "close":
-          false
-        else:
-          true
-      of HttpVersion10:
-        # This is the default on HTTP/1.0 requests.
-        false
-      else:
-        # HTTP/2 does not use the Connection header field (Section 7.6.1 of
-        # [HTTP]) to indicate connection-specific header fields.
-        # https://httpwg.org/specs/rfc9113.html#rfc.section.8.2.2
-        #
-        # HTTP/3 does not use the Connection header field to indicate
-        # connection-specific fields;
-        # https://httpwg.org/specs/rfc9114.html#rfc.section.4.2
-        true
+  let persistent = isPersistent(resp.version, headers)
 
   let contentType =
     block:
@@ -1016,30 +1001,32 @@ proc prepareResponse(
       else:
         Opt.none(ContentTypeData)
 
-  let res = HttpClientResponseRef(
+  # Transfer connection ownership to response (allowing request to be closed
+  # independently)
+  let connection = move(request.connection)
+  assert request.connection == nil, "move should reset"
+
+  if not persistent:
+    connection.flags.excl(HttpClientConnectionFlag.KeepAlive)
+
+  connection.flags.excl(HttpClientConnectionFlag.Request)
+  connection.flags.incl(HttpClientConnectionFlag.Response)
+
+  connection.state = HttpClientConnectionState.ResponseHeadersReceived
+  if bodyFlag == HttpClientBodyFlag.NoBody:
+    connection.flags.incl(HttpClientConnectionFlag.NoBody)
+  else:
+    connection.flags.excl(HttpClientConnectionFlag.NoBody)
+
+  trackCounter(HttpClientResponseTrackerName)
+  ok HttpClientResponseRef(
     state: HttpReqRespState.Open, status: resp.code,
     address: request.address, requestMethod: request.meth,
     reason: resp.reason(data), version: resp.version, session: request.session,
-    connection: request.connection, headers: headers,
+    connection: connection, headers: headers,
     contentEncoding: contentEncoding, transferEncoding: transferEncoding,
     contentLength: contentLength, contentType: contentType, bodyFlag: bodyFlag
   )
-  res.connection.state = HttpClientConnectionState.ResponseHeadersReceived
-  if nobodyFlag:
-    res.connection.flags.incl(HttpClientConnectionFlag.NoBody)
-  let
-    newConnectionAlways =
-      HttpClientFlag.NewConnectionAlways in request.session.flags
-    httpPipeline =
-      HttpClientFlag.Http11Pipeline in request.session.flags
-    closeConnection =
-      HttpClientRequestFlag.CloseConnection in request.flags
-  if connectionFlag and not(newConnectionAlways) and not(closeConnection) and
-     httpPipeline:
-    res.connection.flags.incl(HttpClientConnectionFlag.KeepAlive)
-  res.connection.flags.incl(HttpClientConnectionFlag.Response)
-  trackCounter(HttpClientResponseTrackerName)
-  ok(res)
 
 proc getResponse(req: HttpClientRequestRef): Future[HttpClientResponseRef] {.
      async: (raises: [CancelledError, HttpError]).} =
@@ -1052,16 +1039,26 @@ proc getResponse(req: HttpClientRequestRef): Future[HttpClientResponseRef] {.
                                               len(req.headersBuffer),
                                               HeadersMark).wait(
                                               req.session.headersTimeout)
+      except CancelledError as exc:
+        req.setError(newHttpInterruptError())
+        raise exc
       except AsyncTimeoutError:
-        raiseHttpReadError("Reading response headers timed out")
+        let error = (ref HttpReadError)(msg: "Reading response headers timed out")
+        req.setError(error)
+        raise error
       except AsyncStreamError as exc:
-        raiseHttpReadError(
-          "Could not read response headers, reason: " & $exc.msg)
+        let error = (ref HttpReadError)(
+          msg: "Could not read response headers: " & $exc.msg)
+        req.setError(error)
+        raise error
 
   let response =
     prepareResponse(req,
                     req.headersBuffer.toOpenArray(0, bytesRead - 1)).valueOr:
-      raiseHttpProtocolError(error)
+      let err = (ref HttpProtocolError)(msg: error, code: Http400)
+      req.setError(err)
+      raise err
+
   response.setTimestamp(timestamp)
   response
 
@@ -1161,21 +1158,27 @@ proc post*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
 
 proc prepareRequest(request: HttpClientRequestRef): string =
   template hasChunkedEncoding(request: HttpClientRequestRef): bool =
-    toLowerAscii(request.headers.getString(TransferEncodingHeader)) == "chunked"
+    toLowerAscii(request.headers.getString(TransferEncodingHeader)).endsWith("chunked")
 
   # We use ChronosIdent as `User-Agent` string if its not set.
   discard request.headers.hasKeyOrPut(UserAgentHeader, ChronosIdent)
-  # We use request's hostname as `Host` string if its not set.
-  discard request.headers.hasKeyOrPut(HostHeader, request.address.hostname)
-  # We set `Connection` to value according to flags if its not set.
-  if ConnectionHeader notin request.headers:
-    if (HttpClientFlag.Http11Pipeline notin request.session.flags) or
-       (HttpClientRequestFlag.CloseConnection in request.flags):
-      request.headers.add(ConnectionHeader, "close")
-    else:
-      request.headers.add(ConnectionHeader, "keep-alive")
-  # We set `Accept` to accept any content if its not set.
-  discard request.headers.hasKeyOrPut(AcceptHeaderName, "*/*")
+  if request.meth == MethodConnect:
+    # For CONNECT we must use authority form
+    discard request.headers.hasKeyOrPut(HostHeader, request.address.id)
+  else:
+    discard request.headers.hasKeyOrPut(HostHeader, request.address.hostname)
+
+    # In HTTP/1.1, we'll send `Connction: close` if we intend to close the
+    # connection - in other cases, we use protocol defaults and don't send
+    # anything to maximise compatibility:
+    # https://www.rfc-editor.org/info/rfc9112/#compatibility.with.http.1.0.persistent.connections
+    if request.version == HttpVersion11 and ConnectionHeader notin request.headers:
+      if (HttpClientFlag.NewConnectionAlways in request.session.flags) or
+        (HttpClientRequestFlag.CloseConnection in request.flags):
+        request.headers.add(ConnectionHeader, "close")
+
+    # We set `Accept` to accept any content if its not set.
+    discard request.headers.hasKeyOrPut(AcceptHeaderName, "*/*")
 
   # We will send `Authorization` information only if username or password set,
   # and `Authorization` header is not present in request's headers.
@@ -1195,19 +1198,22 @@ proc prepareRequest(request: HttpClientRequestRef): string =
       request.headers.add(ContentLengthHeader, slength)
 
   request.bodyFlag =
-    if ContentLengthHeader in request.headers:
+    # Chunked transfer encoding takes precedence over `Content-Length`:
+    # https://www.rfc-editor.org/info/rfc9112/#section-6.1
+    if request.hasChunkedEncoding():
+      HttpClientBodyFlag.Chunked
+    elif ContentLengthHeader in request.headers:
       HttpClientBodyFlag.Sized
     else:
-      if request.hasChunkedEncoding():
-        HttpClientBodyFlag.Chunked
-      else:
-        HttpClientBodyFlag.Custom
+      HttpClientBodyFlag.Custom
 
   # https://www.rfc-editor.org/info/rfc9112/#section-3
   var res = $request.meth
   res.add(" ")
 
-  if request.connection.remoteHostname != request.address.id:
+  if request.meth == MethodConnect:
+    res.add(request.address.id) # authority form
+  elif request.connection.remoteHostname != request.address.id:
     # The connection is a proxy - use absolute-form
     let scheme =
       case request.address.scheme
@@ -1216,20 +1222,24 @@ proc prepareRequest(request: HttpClientRequestRef): string =
 
     res.add scheme
     res.add "://"
-    res.add $request.address.id
+    res.add request.address.id
 
-  if len(request.address.path) > 0:
-    res.add(request.address.path)
+    if len(request.address.path) > 0:
+      res.add(request.address.path)
+    else:
+      res.add("/")
   else:
-    res.add("/")
+    if len(request.address.path) > 0:
+      res.add(request.address.path)
+    else:
+      res.add("/")
 
   if len(request.address.query) > 0:
     res.add("?")
     res.add(request.address.query)
-  if len(request.address.anchor) > 0:
-    res.add("#")
-    res.add(request.address.anchor)
 
+  # Per RFC 9110/9112, a request-target MUST NOT include a URI fragment.
+  # The fragment identifier is for user agents only and is not sent in HTTP requests.
   res.add(" ")
   res.add($request.version)
   res.add("\r\n")
@@ -1242,10 +1252,11 @@ proc prepareRequest(request: HttpClientRequestRef): string =
   res.add("\r\n")
   res
 
-proc send*(request: HttpClientRequestRef): Future[HttpClientResponseRef] {.
+proc acquireConnection(request: HttpClientRequestRef) {.
      async: (raises: [CancelledError, HttpError]).} =
   doAssert(request.state == HttpReqRespState.Ready,
            "Request's state is " & $request.state)
+
   let connection =
     try:
       await request.session.provider(request)
@@ -1258,41 +1269,24 @@ proc send*(request: HttpClientRequestRef): Future[HttpClientResponseRef] {.
 
   connection.flags.incl(HttpClientConnectionFlag.Request)
   request.connection = connection
+  request.setTimestamp()
+
+proc sendHeaders(request: HttpClientRequestRef) {.
+     async: (raises: [CancelledError, HttpError]).} =
+  let headers = request.prepareRequest()
+  request.connection.state = HttpClientConnectionState.RequestHeadersSending
 
   try:
-    let headers = request.prepareRequest()
-    request.connection.state = HttpClientConnectionState.RequestHeadersSending
-    request.state = HttpReqRespState.Open
-    request.setTimestamp()
     await request.connection.writer.write(headers)
-    request.connection.state = HttpClientConnectionState.RequestHeadersSent
-    request.connection.state = HttpClientConnectionState.RequestBodySending
-    if len(request.buffer) > 0:
-      # TODO https://github.com/status-im/nim-chronos/issues/578
-      await request.connection.writer.write(baseAddr request.buffer, request.buffer.len)
-      request.buffer.reset()
-    request.connection.state = HttpClientConnectionState.RequestBodySent
-    request.state = HttpReqRespState.Finished
-    request.setDuration()
   except CancelledError as exc:
-    request.setDuration()
     request.setError(newHttpInterruptError())
     raise exc
   except AsyncStreamError as exc:
-    request.setDuration()
-    let error = newHttpWriteError(
-      "Could not send request headers, reason: " & $exc.msg)
+    let error = newHttpWriteError("Could not send request headers: " & $exc.msg)
     request.setError(error)
     raise error
 
-  try:
-    await request.getResponse()
-  except CancelledError as exc:
-    request.setError(newHttpInterruptError())
-    raise exc
-  except HttpError as exc:
-    request.setError(exc)
-    raise exc
+  request.connection.state = HttpClientConnectionState.RequestHeadersSent
 
 proc open*(request: HttpClientRequestRef): Future[HttpBodyWriter] {.
      async: (raises: [CancelledError, HttpError]).} =
@@ -1300,40 +1294,22 @@ proc open*(request: HttpClientRequestRef): Future[HttpBodyWriter] {.
   ## used to send request's body.
   doAssert(request.state == HttpReqRespState.Ready,
            "Request's state is " & $request.state)
-  doAssert(len(request.buffer) == 0,
-           "Request should not have static body content (len(buffer) == 0)")
-  let connection =
-    try:
-      await request.session.acquireConnection(request.address, request.flags)
-    except CancelledError as exc:
-      request.setError(newHttpInterruptError())
-      raise exc
-    except HttpError as exc:
-      request.setError(exc)
-      raise exc
-
-  connection.flags.incl(HttpClientConnectionFlag.Request)
-  request.connection = connection
+  await request.acquireConnection()
 
   try:
-    let headers = request.prepareRequest()
-    request.connection.state = HttpClientConnectionState.RequestHeadersSending
-    request.setTimestamp()
-    await request.connection.writer.write(headers)
-    request.connection.state = HttpClientConnectionState.RequestHeadersSent
+    await request.sendHeaders()
   except CancelledError as exc:
     request.setDuration()
-    request.setError(newHttpInterruptError())
     raise exc
-  except AsyncStreamError as exc:
-    let error = newHttpWriteError(
-      "Could not send request headers, reason: " & $exc.msg)
+  except HttpError as exc:
     request.setDuration()
-    request.setError(error)
-    raise error
+    raise exc
 
   let writer =
     case request.bodyFlag
+    of HttpClientBodyFlag.NoBody:
+      let writer = newBoundedStreamWriter(request.connection.writer, 0)
+      newHttpBodyWriter([AsyncStreamWriter(writer)])
     of HttpClientBodyFlag.Sized:
       let size = Base10.decode(uint64,
                                request.headers.getString("content-length"))
@@ -1367,16 +1343,30 @@ proc finish*(request: HttpClientRequestRef): Future[HttpClientResponseRef] {.
   request.state = HttpReqRespState.Finished
   request.connection.state = HttpClientConnectionState.RequestBodySent
   request.setDuration()
-  let response =
-    try:
-      await request.getResponse()
-    except CancelledError as exc:
-      request.setError(newHttpInterruptError())
-      raise exc
-    except HttpError as exc:
-      request.setError(exc)
-      raise exc
-  return response
+
+  await request.getResponse()
+
+proc send*(request: HttpClientRequestRef): Future[HttpClientResponseRef] {.
+     async: (raises: [CancelledError, HttpError]).} =
+  doAssert(request.state == HttpReqRespState.Ready,
+           "Request's state is " & $request.state)
+  let writer = await request.open()
+  try:
+    if len(request.buffer) > 0:
+    # TODO https://github.com/status-im/nim-chronos/issues/578
+      await writer.write(baseAddr request.buffer, request.buffer.len)
+      request.buffer.reset()
+  except CancelledError as exc:
+    request.setError(newHttpInterruptError())
+    raise exc
+  except AsyncStreamError as exc:
+    let error = newHttpWriteError("Could not send request body: " & $exc.msg)
+    request.setError(error)
+    raise error
+  finally:
+    await writer.closeWait()
+
+  await request.finish()
 
 proc getNewLocation*(resp: HttpClientResponseRef): HttpResult[HttpAddress] =
   ## Returns new address according to response's `Location` header value.
@@ -1407,6 +1397,11 @@ proc getBodyReader*(response: HttpClientResponseRef): HttpBodyReader {.
   if isNil(response.reader):
     let reader =
       case response.bodyFlag
+      of HttpClientBodyFlag.NoBody:
+        newHttpBodyReader(
+          newBoundedStreamReader(
+            response.connection.reader, 0,
+            bufferSize = response.session.connectionBufferSize))
       of HttpClientBodyFlag.Sized:
         newHttpBodyReader(
           newBoundedStreamReader(
