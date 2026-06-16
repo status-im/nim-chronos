@@ -193,6 +193,7 @@ when defined(nimdoc):
   proc closeHandle*(fd: AsyncFD, aftercb: CallbackFunc = nil) = discard
   proc closeSocket*(fd: AsyncFD, aftercb: CallbackFunc = nil) = discard
   proc unregisterAndCloseFd*(fd: AsyncFD): Result[void, OSErrorCode] = discard
+  proc contains*(disp: PDispatcher, fd: AsyncFD): bool = discard
 
   proc `==`*(x: AsyncFD, y: AsyncFD): bool {.borrow, gcsafe.}
 
