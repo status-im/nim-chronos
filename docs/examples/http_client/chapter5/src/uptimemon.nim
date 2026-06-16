@@ -16,8 +16,12 @@ proc findMarker(
     async: (raises: [HttpUseClosedError, AsyncStreamError, CancelledError])
 .} =
 # ANCHOR_END: findMarker
+
 # ANCHOR: bodyReader
   let bodyReader = response.getBodyReader()
+
+  defer:
+    await bodyReader.closeWait()
 # ANCHOR_END: bodyReader
 
 # ANCHOR: vars
@@ -41,6 +45,7 @@ proc findMarker(
 # ANCHOR: bytes_check
     if len(buffer) == 0:
       await bodyReader.closeWait()
+      await response.finish()
       break
 # ANCHOR_END: bytes_check
 
@@ -55,14 +60,23 @@ proc findMarker(
 # ANCHOR_END: result
 
 proc check(session: HttpSessionRef, uri: string) {.async: (raises: [CancelledError]).} =
-  let request = HttpClientRequestRef.new(session, uri).valueOr:
-    echo "[ERR] " & uri & ": " & error
-    return
-
-  try:
-    let response = await request.send().wait(5.seconds)
+# ANCHOR: let
+  let
+    request = HttpClientRequestRef.new(session, uri).valueOr:
+      echo "[ERR] " & uri & ": " & error
+      return
+    response =
+      try:
+        await request.send().wait(5.seconds)
+      except:
+        echo "[ERR] " & uri & ": " & getCurrentExceptionMsg()
+        return
+      finally:
+        await request.closeWait()
+# ANCHOR_END: let
 
 # ANCHOR: url_response
+  try:
     if response.status == 200:
       let markerFound = await findMarker(response)
 
@@ -73,12 +87,16 @@ proc check(session: HttpSessionRef, uri: string) {.async: (raises: [CancelledErr
     else:
       echo "[NOK] " & uri & ": " & $response.status
 # ANCHOR_END: url_response
-  except HttpError, FuturePendingError, AsyncTimeoutError, AsyncStreamError:
+
 # ANCHOR: except
+  except HttpError, AsyncStreamError:
     echo "[ERR] " & uri & ": " & getCurrentExceptionMsg()
 # ANCHOR_END: except
+
+# ANCHOR: finally
   finally:
-    await request.closeWait()
+    await response.closeWait()
+# ANCHOR_END: finally
 
 proc check(uris: seq[string]) {.async: (raises: []).} =
   let

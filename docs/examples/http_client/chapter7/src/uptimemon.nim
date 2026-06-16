@@ -52,6 +52,9 @@ proc findMarker(
 .} =
   let bodyReader = response.getBodyReader()
 
+  defer:
+    await bodyReader.closeWait()
+
   const
     marker = "<html"
     bufferSize = 1024
@@ -67,6 +70,7 @@ proc findMarker(
 
     if len(buffer) == 0:
       await bodyReader.closeWait()
+      await response.finish()
       break
 
     totalRead += len(buffer)
@@ -87,13 +91,21 @@ proc check(
     except AsyncSemaphoreError:
       echo "Could not release a lock: " & getCurrentExceptionMsg()
 # ANCHOR_END: semaphore
-  let request = HttpClientRequestRef.new(session, uri).valueOr:
-    echo "[ERR] " & uri & ": " & error
-    return
+
+  let
+    request = HttpClientRequestRef.new(session, uri).valueOr:
+      echo "[ERR] " & uri & ": " & error
+      return
+    response =
+      try:
+        await request.send().wait(5.seconds)
+      except:
+        echo "[ERR] " & uri & ": " & getCurrentExceptionMsg()
+        return
+      finally:
+        await request.closeWait()
 
   try:
-    let response = await request.send().wait(5.seconds)
-
     if response.status == 200:
       let markerFound = await findMarker(response)
 
@@ -107,12 +119,12 @@ proc check(
       let message = "[NOK] " & uri & ": " & $response.status
       echo message
       await session.sendAlert(message)
-  except HttpError, FuturePendingError, AsyncTimeoutError, AsyncStreamError:
+  except HttpError, AsyncStreamError:
     let message = "[ERR] " & uri & ": " & getCurrentExceptionMsg()
     echo message
     await session.sendAlert(message, 4)
   finally:
-    await request.closeWait()
+    await response.closeWait()
 
 # ANCHOR: check
 proc check(uris: seq[string]) {.async: (raises: []).} =

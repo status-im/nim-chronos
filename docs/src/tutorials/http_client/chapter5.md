@@ -57,6 +57,8 @@ Like any async function, it returns a `Future` that must be `await`ed to give th
 
 To stream the response body, we're using a `bodyReader`. To get one for the current response, we're calling [`getBodyReader`](/api/chronos/apps/http/httpclient.html#getBodyReader,HttpClientResponseRef).
 
+The reader must be closed after usage no matter if we manage to read the full body or a part of it, so we `defer` the reader closing.
+
 ```nim
 {{#shiftinclude auto:../../../examples/http_client/chapter5/src/uptimemon.nim:vars}}
 ```
@@ -81,7 +83,7 @@ We fetch chunks in a loop, stopping as soon as the marker is found or 10 KB has 
 {{#shiftinclude auto:../../../examples/http_client/chapter5/src/uptimemon.nim:read_bytes}}
 ```
 
-[`readOnce`](/api/chronos/apps/http/httpclient.html#readOnce,AsyncStreamReader,string) reads the next available chunk from the stream and writes it to `buffer`.
+[`readOnce`](/api/chronos/apps/http/httpclient.html#readOnce,AsyncStreamReader,pointer,int) reads the next available chunk from the stream and writes it to `buffer`.
 
 It is possible that we read less bytes than we asked for, so we adjust `buffer` for the actual data size.
 
@@ -89,7 +91,7 @@ It is possible that we read less bytes than we asked for, so we adjust `buffer` 
 {{#shiftinclude auto:../../../examples/http_client/chapter5/src/uptimemon.nim:bytes_check}}
 ```
 
-An empty result means we've reached the end of the stream, so we leave the loop.
+An empty result means we've reached the end of the stream, so we close the reader, finalize the response, and leave the loop.
 
 ```nim
 {{#shiftinclude auto:../../../examples/http_client/chapter5/src/uptimemon.nim:update_sample}}
@@ -101,11 +103,21 @@ We remove everything from the sample except for the trailing `len(marker) - 1` c
 {{#shiftinclude auto:../../../examples/http_client/chapter5/src/uptimemon.nim:result}}
 ```
 
-Finally, we check if the marker is in the sample
+Finally, we check if the marker is in the sample.
 
 ```admonish note
 Notice that we can treat `result` as a regular `bool` despite the fact that the function returns a `Future[bool]`—really handy!
 ```
+
+Now, we can use this function in the URI health check.
+
+Because we won't `fetch` the response but will instead stream it, we will need to create the response object explicitly (so that we could run a stream reader with it). To do that, we first insantiate a `request` and then a `response`:
+
+```nim
+{{#shiftinclude auto:../../../examples/http_client/chapter5/src/uptimemon.nim:let}}
+```
+
+Note that we close `request` after `response` is instantiated, either successfully or not. Cleaning up used resources is always encouraged.
 
 Now we can use this function in the URI health check:
 
@@ -120,6 +132,12 @@ We just `await` on it and check the value.
 ```
 
 Notice that since `findMarker` can raise an exception that we haven't been catching so far ([`AsyncStreamError`](/api/chronos/streams/asyncstream.html#AsyncStreamError)), we need to add it to the list as well.
+
+```nim
+{{#shiftinclude auto:../../../examples/http_client/chapter5/src/uptimemon.nim:finally}}
+```
+
+Like any other resource allocating object, `response` must be closed after usage.
 
 Run the program and see the https://mock.codes/200 is now correctly marked as `[NOK]`:
 
