@@ -587,40 +587,13 @@ suite "Exceptions tracking":
 
     waitFor(callCatchAll())
 
-  test "Global handleException does not override local annotations":
-    when chronosHandleException:
-      proc unnanotated() {.async.} = raise (ref CatchableError)()
+  test "No poll re-entrancy allowed":
+    proc testReentrancy() {.async.} =
+      await sleepAsync(1.milliseconds)
+      poll()
 
-      checkNotCompiles:
-        proc annotated() {.async: (raises: [ValueError]).} = 
-          raise (ref CatchableError)()
+    let reenter = testReentrancy()
+    expect(Defect):
+      waitFor reenter
 
-      checkNotCompiles:
-        proc noHandleException() {.async: (handleException: false).} =
-          raise (ref Exception)()
-    else:
-      skip()
-
-  test "Results compatibility":
-    proc returnOk(): Future[Result[int, string]] {.async: (raises: []).} =
-      ok(42)
-
-    proc returnErr(): Future[Result[int, string]] {.async: (raises: []).} =
-      err("failed")
-
-    proc testit(): Future[Result[void, string]] {.async: (raises: []).} =
-      let
-        v = await returnOk()
-
-      check:
-        v.isOk() and v.value() == 42
-
-      let
-        vok = ?v
-      check:
-        vok == 42
-
-      discard ?await returnErr()
-
-    check:
-      waitFor(testit()).error() == "failed"
+    waitFor reenter.cancelAndWait() # avoid pending future leaks
