@@ -34,7 +34,7 @@ proc findMarker(
   while not result and totalRead <= 10 * 1024:
 # ANCHOR_END: while
 # ANCHOR: read_bytes
-    let bytesRead = await bodyReader.readOnce(buffer)
+    let bytesRead = await bodyReader.readOnce(addr buffer[0], len(buffer))
     buffer.setLen(bytesRead)
 # ANCHOR_END: read_bytes
 
