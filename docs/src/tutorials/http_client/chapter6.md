@@ -1,136 +1,83 @@
-# Smarter Health Check with Streaming
+# Sending Alerts with POST Requests
 
-**Goal:** Learn how to use streaming to check web page content without fully downloading it.
+**Goal:** Learn how to send POST HTTP requests and set request headers.
 
-**Source code:**
+**Source code:** [chapter6/src/uptimemon.nim](https://github.com/status-im/nim-chronos/blob/master/docs/examples/http_client/chapter6/src/uptimemon.nim)
 
-- [chapter6/src/uptimemon.nim](https://github.com/status-im/nim-chronos/blob/master/docs/examples/http_client/chapter6/src/uptimemon.nim)
+How cool would it be to get notified about a service being down to your phone? This way, you can launch the program and just go on with your business and not constantly monitor the terminal window.
 
-Currently, we're just checking the response status to determine if the URI is healthy.
+[ntfy](https://ntfy.sh) is a service that allows to send push notifications with [POST requests](https://docs.ntfy.sh/publish/). Let's use it to send notifications when our program detects a `[NOK]` or `[ERR]`.
 
-To make our check smarter, let's check the page content as well: we want it to look like valid HTML, i.e. we want to check that it at least contains a `<html` bit.
+## Set Up ntfy
 
-However, if we just download the content and look for the HTML marker, we'll have to download the page in its entirety whereas we really don't need the content. For large pages, this approach can lead to slow responses but in extreme cases this can ruin the whole program.
+1. Go to [ntfy.sh/app](https://ntfySub.sh/app).
+2. Click on **Subscribe to topic** in the sidebar, click **GENERATE NAME** in the popup, copy the generated name, and **SUBSCRIBE**. We'll use this unique topic name to send the notifications to.
+3. Click on **GRANT NOW** to allow push notifications from your browser.
+4. Keep the browser open.
 
-For example, try adding this URI to the list and running the program: https://html.spec.whatwg.org. This is a proper page but it's so heavy fetching it entirely would time out:
+## Add Alerts
 
-```shell
-[ERR] 123.456.78.90: Could not resolve address of remote server
-[NOK] mock.codes/403: 403
-[OK] duckduckgo.com/
-[ERR] 10.255.255.1: Timeout exceeded!
-[ERR] html.spec.whatwg.org: Could not read response headers, reason: Incomplete data sent or received
-```
-
-Let's optimize our check to handle large page like this one.
-
-## Streaming the Body
-
-Chronos allows streaming response body, so let's use this feature to fetch content in chunks, check the collected data for a certain health marker (e.g. "<html" string), and stop immediatelly when we find it or download a certain amount of data:
-
-```admonish info
-The HTTP protocol divides each request and response into a **header** and a **body**. The header contains metadata like the status code, while the body contains the actual content. This is true for both successful responses and error statuses.
-```
+Here's the version of the program with alerting capabilities:
 
 ```nim
 {{#shiftinclude auto:../../../examples/http_client/chapter6/src/uptimemon.nim:all}}
 ```
 
-Let's go through the changes in this version line by line.
+As usual, let's examine the changes part by part.
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter6/src/uptimemon.nim:urls}}
+{{#shiftinclude auto:../../../examples/http_client/chapter6/src/uptimemon.nim:ntfy_topic}}
 ```
 
-We've added a new URI to our test: https://mock.codes/200. This is a valid URI that returns a 200 status response but it doesn't contain any meaningful data. With our old check, this would return `[OK]` and with the new one we expect it to be `[NOK]`.
+Define a new constant for the ntfy topic name you copied [earlier](#set-up-ntfy). Replace `YOUR_NTFY_TOPIC_NAME` with the actual value you copied from ntfy.
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter6/src/uptimemon.nim:findMarker}}
+{{#shiftinclude auto:../../../examples/http_client/chapter6/src/uptimemon.nim:sendAlert}}
 ```
 
-This is a new function that is responsible to finding the health marker in a given response. Because it is asynchrounous, it will not block the main thread when called.
+Define a new async function that will do the request sending to ntfy. We'll send those requests in the same session so we pass it to the function as `session`.
 
-Like any async function, it returns a `Future` that must be `await`ed to give the actual result.
+`message` is the text we want to send in the notification.
+
+`priority` is a number that defines the style of the notification in ntfy. ntfy recognizes five priority levels from 1 to 5: the higher the number, the "scarier" the message.
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter6/src/uptimemon.nim:bodyReader}}
+{{#shiftinclude auto:../../../examples/http_client/chapter6/src/uptimemon.nim:headers}}
 ```
 
-To stream the response body, we're using a `bodyReader`. To get one for the current response, we're calling [`getBodyReader`](/api/chronos/apps/http/httpclient.html#getBodyReader,HttpClientResponseRef).
+ntfy uses headers to customize notifications, e.g. [`Title`](https://docs.ntfy.sh/publish/#message-title) and [`Priority`](https://docs.ntfy.sh/publish/#message-priority).
+
+Here we set the headers as an arrays of tuples using Nim's shortcut syntax.
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter6/src/uptimemon.nim:vars}}
+{{#shiftinclude auto:../../../examples/http_client/chapter6/src/uptimemon.nim:body}}
 ```
 
-- `marker` is the string we're looking for.
-- `bufferSize` is how many bytes at most we want to fetch on one read.
-- `totalRead` is the number of bytes fetched so far; if we fetched too much data, we stop reading.
-- `buffer` is a string that we read in the last fetch.
-- `sample` will contain the fetched data we're looking for the marker in.
-
-```admonish note
-Because the marker can be split between two reads (i.e. we fetch `<ht` in one buffer and `ml` in the next one), our `sample` must be a little longer than the buffer. Precisely, it must be `len(marker) - 1` longer to contain the buffer _and_ the possible marker part from the previous read.
-```
+Requests body must be a sequence of bytes so we convert our text message using [`stringToBytes`](/api/chronos/apps/http/httpcommon.html#stringToBytes,openArray[char]).
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter6/src/uptimemon.nim:while}}
+{{#shiftinclude auto:../../../examples/http_client/chapter6/src/uptimemon.nim:request}}
 ```
 
-We fetch chunks in a loop, stopping as soon as the marker is found or 10 KB has been read.
+Create the request with the necessary properties. `meth` is the request's HTTP method.
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter6/src/uptimemon.nim:read_bytes}}
+{{#shiftinclude auto:../../../examples/http_client/chapter6/src/uptimemon.nim:response}}
 ```
 
-[`readOnce`](/api/chronos/apps/http/httpclient.html#readOnce,AsyncStreamReader,string) reads the next available chunk from the stream and writes it to `buffer`.
+If the request was successfully created (`request.isOk`), we try to send it with `send()` and discard it (with `closeWait`).
 
-It is possible that we read less bytes than we asked for, so we adjust `buffer` for the actual data size.
+If the request couldn't be sent (e.g. ntfy is unavailable), we print a warning.
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter6/src/uptimemon.nim:bytes_check}}
+{{#shiftinclude auto:../../../examples/http_client/chapter6/src/uptimemon.nim:check}}
 ```
 
-An empty result means we've reached the end of the stream, so we leave the loop.
+Finally, we add calls to `sendAlert` in the `check` branches for `[NOK]` and `[ERR]`.
+Run the code and observe alerts appearing in your browser accompanied by push notifications:
 
-```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter6/src/uptimemon.nim:update_sample}}
-```
+![ntfy alerts in browser](./ntfy_alerts_in_browser.png)
 
-We remove everything from the sample except for the trailing `len(marker) - 1` characters and append the new buffer value.
+To receive the notifications on your phone, install [ntfy mobile app](https://ntfy.sh/) and subscribe to the same topic.
 
-```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter6/src/uptimemon.nim:result}}
-```
-
-Finally, we check if the marker is in the sample
-
-```admonish note
-Notice that we can treat `result` as a regular `bool` despite the fact that the function returns a `Future[bool]`—really handy!
-```
-
-Now we can use this function in the URI health check:
-
-```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter6/src/uptimemon.nim:url_response}}
-```
-
-We just `await` on it and check the value.
-
-```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter6/src/uptimemon.nim:except}}
-```
-
-Notice that since `findMarker` can raise an exception that we haven't been catching so far ([`AsyncStreamError`](/api/chronos/streams/asyncstream.html#AsyncStreamError)), we need to add it to the list as well.
-
-Run the program and see the https://mock.codes/200 is now correctly marked as `[NOK]`:
-
-```shell
-[ERR] 123.456.78.90: Could not resolve address of remote server
-[NOK] mock.codes/200: Not valid HTML
-[NOK] mock.codes/403: 403
-[OK] duckduckgo.com/?q=chronos
-[OK] html.spec.whatwg.org/
-[ERR] 10.255.255.1: Timeout exceeded!
-```
-
-In the next chapter, we'll see how to send alerts with POST requests!
+In the final chapter, we'll see how to scale our application and add some finishing touches!

@@ -36,4 +36,12 @@ Here's the part that changed:
 
 Run the program again and you'll see it complete in roughly 5 seconds, i.e. our timeout.
 
-In the next chapter, we'll see how to fix the remaining cause of event loop stalls: blocking DNS resolution!
+```admonish warning
+One important thing to notice here is that adding a timeout won't save us from slow DNS resolutions.
+
+Before we can make an HTTP request, we need to *resolve the target hostname*, i.e. get the IP address that corresponds to the given hostname. This is called DNS resolution and it is a blocking operation in Chronos.
+
+For valid URIs, DNS resolution happens quickly enough to not interfere with the main logic. However, for invalid URIs (e.g. `https://123.456.789.90`) the resolution can stall for several seconds.
+
+The main takeaway here is **don't check invalid URIs**.
+```
