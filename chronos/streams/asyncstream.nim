@@ -575,7 +575,7 @@ proc close*(rstream: AsyncStreamReader) =
     fut.addCallback(continuation)
 
 proc close*(wstream: AsyncStreamWriter) =
-  ## Close and frees resources of stream ``rstream``.
+  ## Close and frees resources of stream ``wstream``.
   ##
   ## Note close() procedure is not completed immediately!
   if not(wstream.closed()):

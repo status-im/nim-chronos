@@ -104,12 +104,12 @@ type
     Alive, Closing, Closed
 
   HttpAddressErrorType* {.pure.} = enum
-    InvalidUrlScheme,
-    InvalidPortNumber,
-    MissingHostname,
-    InvalidIpHostname,
-    NameLookupFailed,
-    NoAddressResolved
+    InvalidUrlScheme = "Unsupported URL scheme"
+    InvalidPortNumber = "Invalid port number"
+    MissingHostname = "Hostname missing from URL"
+    InvalidIpHostname = "Invalid IP"
+    NameLookupFailed = "DNS lookup failed"
+    NoAddressResolved = "Hostname has no addresses"
 
 const
   CriticalHttpAddressError* = {
