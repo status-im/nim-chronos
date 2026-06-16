@@ -10,9 +10,8 @@
 {.push raises: [].}
 
 import std/[strutils, uri]
-import results, httputils
-import ../../asyncloop, ../../asyncsync
-import ../../streams/[asyncstream, boundstream]
+import results, httputils, stew/base64
+import ../../[asyncloop, asyncsync], ./httptable
 export asyncloop, asyncsync, results, httputils, strutils
 
 const
@@ -43,6 +42,7 @@ const
   ServerHeader* = "server"
   LocationHeader* = "location"
   AuthorizationHeader* = "authorization"
+  ProxyAuthorizationHeader* = "proxy-authorization"
   ContentDispositionHeader* = "content-disposition"
 
   UrlEncodedContentType* = MediaType.init("application/x-www-form-urlencoded")
@@ -73,8 +73,8 @@ type
   HttpProtocolError* = object of HttpError
     code*: HttpCode
 
-  HttpCriticalError* = object of HttpProtocolError # deprecated
-  HttpRecoverableError* = object of HttpProtocolError # deprecated
+  HttpCriticalError* {.deprecated.} = object of HttpProtocolError
+  HttpRecoverableError* {.deprecated.} = object of HttpProtocolError
 
   HttpRequestError* = object of HttpProtocolError
   HttpRequestHeadersError* = object of HttpRequestError
@@ -151,7 +151,7 @@ proc raiseHttpRequestBodyTooLargeError*() {.
     code: Http413, msg: MaximumBodySizeError)
 
 proc raiseHttpCriticalError*(msg: string, code = Http400) {.
-     noinline, noreturn, raises: [HttpCriticalError].} =
+     noinline, noreturn, raises: [HttpCriticalError], deprecated.} =
   raise (ref HttpCriticalError)(code: code, msg: msg)
 
 proc raiseHttpDisconnectError*() {.
@@ -194,16 +194,16 @@ proc raiseHttpAddressError*(msg: string) {.
      noinline, noreturn, raises: [HttpAddressError].} =
   raise (ref HttpAddressError)(msg: msg)
 
-template newHttpInterruptError*(): ref HttpInterruptError =
+proc newHttpInterruptError*(): ref HttpInterruptError {.noinline.} =
   newException(HttpInterruptError, "Connection was interrupted")
 
-template newHttpReadError*(message: string): ref HttpReadError =
+proc newHttpReadError*(message: string): ref HttpReadError {.noinline.} =
   newException(HttpReadError, message)
 
-template newHttpWriteError*(message: string): ref HttpWriteError =
+proc newHttpWriteError*(message: string): ref HttpWriteError {.noinline.} =
   newException(HttpWriteError, message)
 
-template newHttpUseClosedError*(): ref HttpUseClosedError =
+proc newHttpUseClosedError*(): ref HttpUseClosedError {.noinline.} =
   newException(HttpUseClosedError, "Connection was already closed")
 
 func init*(t: typedesc[HttpMessage], code: HttpCode, message: string,
@@ -242,6 +242,9 @@ func getTransferEncoding*(
      ): HttpResult[set[TransferEncodingFlags]] =
   ## Parse value of multiple HTTP headers ``Transfer-Encoding`` and return
   ## it as set of ``TransferEncodingFlags``.
+  # TODO Transfer-Encoding is ordered, thus using a set here is wrong.
+  #      https://www.rfc-editor.org/info/rfc9112/#section-6.1
+  # https://www.iana.org/assignments/http-parameters/http-parameters.xhtml#transfer-coding
   var res: set[TransferEncodingFlags] = {}
   if len(ch) == 0:
     res.incl(TransferEncodingFlags.Identity)
@@ -254,18 +257,16 @@ func getTransferEncoding*(
           res.incl(TransferEncodingFlags.Identity)
         of "chunked":
           res.incl(TransferEncodingFlags.Chunked)
-        of "compress":
+        of "compress", "x-compress":
           res.incl(TransferEncodingFlags.Compress)
         of "deflate":
           res.incl(TransferEncodingFlags.Deflate)
-        of "gzip":
-          res.incl(TransferEncodingFlags.Gzip)
-        of "x-gzip":
+        of "gzip", "x-gzip":
           res.incl(TransferEncodingFlags.Gzip)
         of "":
           res.incl(TransferEncodingFlags.Identity)
         else:
-          return err("Incorrect Transfer-Encoding value")
+          return err("Unsupported Transfer-Encoding value")
     ok(res)
 
 func getContentEncoding*(
@@ -273,6 +274,9 @@ func getContentEncoding*(
      ): HttpResult[set[ContentEncodingFlags]] =
   ## Parse value of multiple HTTP headers ``Content-Encoding`` and return
   ## it as set of ``ContentEncodingFlags``.
+  # TODO Content-Encoding is ordered, thus using a set here is wrong.
+  #      https://www.rfc-editor.org/info/rfc9110/#section-8.4
+  # https://www.iana.org/assignments/http-parameters/http-parameters.xhtml#content-coding
   var res: set[ContentEncodingFlags] = {}
   if len(ch) == 0:
     res.incl(ContentEncodingFlags.Identity)
@@ -285,19 +289,33 @@ func getContentEncoding*(
           res.incl(ContentEncodingFlags.Identity)
         of "br":
           res.incl(ContentEncodingFlags.Br)
-        of "compress":
+        of "compress", "x-compress":
           res.incl(ContentEncodingFlags.Compress)
         of "deflate":
           res.incl(ContentEncodingFlags.Deflate)
-        of "gzip":
-          res.incl(ContentEncodingFlags.Gzip)
-        of "x-gzip":
+        of "gzip", "x-gzip":
           res.incl(ContentEncodingFlags.Gzip)
         of "":
           res.incl(ContentEncodingFlags.Identity)
         else:
-          return err("Incorrect Content-Encoding value")
+          return err("Unsupported Content-Encoding value")
     ok(res)
+
+func isPersistent*(version: HttpVersion, headers: HttpTable): bool =
+  case version
+  of HttpVersion20:
+    # https://datatracker.ietf.org/doc/html/rfc9113#section-8.2.2
+    true # Persistent by default, uses GOAWAY frame to disconnect
+  of HttpVersion11:
+    # https://www.rfc-editor.org/info/rfc9112/#section-9.3
+    # https://www.rfc-editor.org/info/rfc9110/#section-7.6.1
+    # "close" is present -> not persistent
+    not("close" in toLowerAscii(headers.getString(ConnectionHeader)))
+  else:
+    # We don't enable keep-alive for other versions even if in theory it could
+    # be supported as doing so is messy
+    # https://www.rfc-editor.org/info/rfc9112/#appendix-C.2.2
+    false
 
 func getContentType*(ch: openArray[string]): HttpResult[ContentTypeData] =
   ## Check and prepare value of ``Content-Type`` header.
@@ -354,3 +372,7 @@ func stringToBytes*(src: openArray[char]): seq[byte] =
     dst
   else:
     default
+
+func encodeBasicAuth*(username, password: string): string =
+  let auth = username & ":" & password
+  "Basic " & Base64Pad.encode(auth.toOpenArrayByte(0, high(auth)))

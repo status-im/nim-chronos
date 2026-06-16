@@ -1,7 +1,7 @@
 mode = ScriptMode.Verbose
 
 packageName   = "chronos"
-version       = "4.0.3"
+version       = "4.2.2"
 author        = "Status Research & Development GmbH"
 description   = "Networking framework with async/await support"
 license       = "MIT or Apache License 2.0"
@@ -9,8 +9,8 @@ skipDirs      = @["tests"]
 
 requires "nim >= 1.6.16",
          "results",
-         "stew",
-         "bearssl >= 0.2.5",
+         "stew >= 0.5.0",
+         "bearssl >= 0.2.8",
          "httputils",
          "unittest2"
 
@@ -53,16 +53,28 @@ task examples, "Build examples":
     if file.endsWith(".nim"):
       build "--threads:on", file
 
+task benchmarks, "Run benchmarks":
+  # Make sure benchmarks compile
+  for f in walkDirRec("benchmarks"):
+
+    if f.contains("bench_") and f.endsWith(".nim"):
+      run "-d:release", f[0..^5]
+
 task test, "Run all tests":
   for args in testArguments:
     # First run tests with `refc` memory manager.
     run args & " --mm:refc", "tests/testall"
-    if (NimMajor, NimMinor) > (1, 6):
+    if (NimMajor, NimMinor) >= (2, 2): # ORC on 2.0 is too broken to investigate
       run args & " --mm:orc", "tests/testall"
+
+  # Make sure benchmarks compile
+  for f in walkDirRec("benchmarks"):
+    if f.startsWith("bench_") and f.endsWith(".nim"):
+      build "", f[0..^5]
 
 task test_v3_compat, "Run all tests in v3 compatibility mode":
   for args in testArguments:
-    if (NimMajor, NimMinor) > (1, 6):
+    if (NimMajor, NimMinor) >= (2, 2):
       # First run tests with `refc` memory manager.
       run args & " --mm:refc -d:chronosHandleException", "tests/testall"
 
@@ -77,7 +89,7 @@ task test_libbacktrace, "test with libbacktrace":
     for args in allArgs:
       # First run tests with `refc` memory manager.
       run args & " --mm:refc", "tests/testall"
-      if (NimMajor, NimMinor) > (1, 6):
+      if (NimMajor, NimMinor) >= (2, 2):
         run args & " --mm:orc", "tests/testall"
 
 task docs, "Generate API documentation":
