@@ -1237,10 +1237,9 @@ proc prepareRequest(request: HttpClientRequestRef): string =
   if len(request.address.query) > 0:
     res.add("?")
     res.add(request.address.query)
-  if len(request.address.anchor) > 0:
-    res.add("#")
-    res.add(request.address.anchor)
 
+  # Per RFC 9110/9112, a request-target MUST NOT include a URI fragment.
+  # The fragment identifier is for user agents only and is not sent in HTTP requests.
   res.add(" ")
   res.add($request.version)
   res.add("\r\n")

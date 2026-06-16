@@ -196,6 +196,31 @@ suite "HTTP client testing suite":
     await server.closeWait()
     return counter
 
+  asyncTest "request-target omits URI fragment":
+    proc process(r: RequestFence): Future[HttpResponseRef] {.
+         async: (raises: [CancelledError]).} =
+      if r.isOk():
+        let request = r.get()
+        check: request.rawPath == "/test/path?x=1"
+        check: request.uri.anchor == ""
+        try:
+          await request.respond(Http200, "ok")
+        except HttpWriteError as exc:
+          defaultResponse(exc)
+      else:
+        defaultResponse()
+
+    var server = createServer(initTAddress("127.0.0.1:0"), process, secure = false)
+    server.start()
+    let address = server.instance.localAddress()
+    let ha = getAddress(address, HttpClientScheme.NonSecure, "/test/path?x=1#frag")
+    let session = createSession(false)
+    let response = await session.fetch(ha.getUri())
+    check: response.status == 200
+    await session.closeWait()
+    await server.stop()
+    await server.closeWait()
+
   proc testResponseStreamReadingTest(secure: bool): Future[int] {.async.} =
     let ResponseTests = [
       (MethodGet, "/test/short_size_response", 65600, 1024,
