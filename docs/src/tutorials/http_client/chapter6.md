@@ -18,7 +18,7 @@ For example, try adding this URI to the list and running the program: https://ht
 [ERR] 123.456.78.90: Could not resolve address of remote server
 [NOK] mock.codes/403: 403
 [OK] duckduckgo.com/
-[ERR] 10.255.255.1: Could not read response headers, reason: Incomplete data sent or received
+[ERR] 10.255.255.1: Timeout exceeded!
 [ERR] html.spec.whatwg.org: Could not read response headers, reason: Incomplete data sent or received
 ```
 
@@ -130,7 +130,7 @@ Run the program and see the https://mock.codes/200 is now correctly marked as `[
 [NOK] mock.codes/403: 403
 [OK] duckduckgo.com/?q=chronos
 [OK] html.spec.whatwg.org/
-[ERR] 10.255.255.1: Could not read response headers, reason: Incomplete data sent or received
+[ERR] 10.255.255.1: Timeout exceeded!
 ```
 
 In the next chapter, we'll see how to send alerts with POST requests!
