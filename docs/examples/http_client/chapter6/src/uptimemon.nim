@@ -40,6 +40,7 @@ proc findMarker(
 
 # ANCHOR: bytes_check
     if len(buffer) == 0:
+      close(bodyReader)
       break
 # ANCHOR_END: bytes_check
 

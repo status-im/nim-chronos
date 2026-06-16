@@ -67,6 +67,7 @@ proc findMarker(
     buffer.setLen(bytesRead)
 
     if len(buffer) == 0:
+      close(bodyReader)
       break
 
     totalRead += len(buffer)
