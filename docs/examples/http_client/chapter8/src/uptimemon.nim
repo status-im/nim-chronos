@@ -66,7 +66,7 @@ proc findMarker(
     buffer.setLen(bytesRead)
 
     if len(buffer) == 0:
-      close(bodyReader)
+      await bodyReader.closeWait()
       break
 
     totalRead += len(buffer)
@@ -87,11 +87,10 @@ proc check(
     except AsyncSemaphoreError:
       echo "Could not release a lock: " & getCurrentExceptionMsg()
 # ANCHOR_END: semaphore
+  let request = HttpClientRequestRef.new(session, address)
 
   try:
-    let
-      request = HttpClientRequestRef.new(session, address)
-      response = await request.send().wait(5.seconds)
+    let response = await request.send().wait(5.seconds)
 
     if response.status == 200:
       let markerFound = await findMarker(response)
@@ -110,6 +109,8 @@ proc check(
     let message = "[ERR] " & address.hostname & address.path & ": " & getCurrentExceptionMsg()
     echo message
     await session.sendAlert(message, 4)
+  finally:
+    await request.closeWait()
 
 proc resolveUris(session: HttpSessionRef, uris: seq[string]): seq[HttpAddress] =
   for uri in uris:

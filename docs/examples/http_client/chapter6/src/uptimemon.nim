@@ -40,7 +40,7 @@ proc findMarker(
 
 # ANCHOR: bytes_check
     if len(buffer) == 0:
-      close(bodyReader)
+      await bodyReader.closeWait()
       break
 # ANCHOR_END: bytes_check
 
@@ -55,10 +55,10 @@ proc findMarker(
 # ANCHOR_END: result
 
 proc check(session: HttpSessionRef, address: HttpAddress) {.async: (raises: [CancelledError]).} =
+  let request = HttpClientRequestRef.new(session, address)
+
   try:
-    let
-      request = HttpClientRequestRef.new(session, address)
-      response = await request.send().wait(5.seconds)
+    let response = await request.send().wait(5.seconds)
 
 # ANCHOR: url_response
     if response.status == 200:
@@ -75,6 +75,8 @@ proc check(session: HttpSessionRef, address: HttpAddress) {.async: (raises: [Can
 # ANCHOR: except
     echo "[ERR] " & address.hostname & address.path & ": " & getCurrentExceptionMsg()
 # ANCHOR_END: except
+  finally:
+    await request.closeWait()
 
 proc resolveUris(session: HttpSessionRef, uris: seq[string]): seq[HttpAddress] =
   for uri in uris:
