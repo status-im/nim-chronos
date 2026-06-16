@@ -68,6 +68,10 @@ We've added an `echo` to denote the start of each cycle.
 
 Finally, print the message to mark the end of a cycle and wait 10 seconds before the next one.
 
+```admonish note
+Even though we set the program to wait for 10 seconds before the next check loop, in reality the waiting time will be longer because there is some delay for the system to wake up and resume execution.
+```
+
 Run the program and you'll see an even flow of statuses in your terminal.
 
 ```admonish important
