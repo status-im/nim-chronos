@@ -78,7 +78,7 @@ Once we've received our response, we can check its status. If it's 200, we mark 
 
 If the request fails (e.g. the connection is unstable or the host is unreachable), `fetch` would raise a `HttpError` exception. Since raising this exception is part of our business logic, we catch it and report the error with `getCurrentExceptionMsg`.
 
-Note that catching `HttpError` does not contadict the `raises` value at the function definition: since we handle the exception and not re-raise it, our promise that only `CancelledError` ever emits from `check` is held true.
+Note that catching `HttpError` does not contradict the `raises` value at the function definition: since we handle the exception and not re-raise it, our promise that only `CancelledError` ever emits from `check` is held true.
 
 ```nim
 {{#shiftinclude auto:../../../examples/http_client/chapter1/src/uptimemon.nim:finally}}
