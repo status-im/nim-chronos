@@ -68,7 +68,10 @@ proc check(session: HttpSessionRef, uri: string) {.async: (raises: [CancelledErr
     response =
       try:
         await request.send().wait(5.seconds)
-      except:
+      except HttpError:
+        echo "[ERR] " & uri & ": " & getCurrentExceptionMsg()
+        return
+      except AsyncTimeoutError:
         echo "[ERR] " & uri & ": " & getCurrentExceptionMsg()
         return
       finally:
