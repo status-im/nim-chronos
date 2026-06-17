@@ -197,7 +197,7 @@ proc wrapAsyncSocket*(sock: cint|SocketHandle): AsyncFD {.
     raises: [CatchableError].} =
   ## Wraps socket to asynchronous socket handle.
   ## Return ``asyncInvalidSocket`` on error.
-  wrapAsyncSocket2(sock).valueOr:
+  wrapAsyncSocket2(cint(sock)).valueOr:
     return asyncInvalidSocket
 
 proc getMaxOpenFiles2*(): Result[int, OSErrorCode] =

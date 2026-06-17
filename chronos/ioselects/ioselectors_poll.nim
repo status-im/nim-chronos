@@ -56,7 +56,7 @@ proc new*(t: typedesc[Selector], T: typedesc): SelectResult[Selector[T]] =
 
 proc close2*[T](s: Selector[T]): SelectResult[void] =
   s.fds.clear()
-  s.pollfds.clear()
+  s.pollfds.reset()
 
 proc new*(t: typedesc[SelectEvent]): SelectResult[SelectEvent] =
   let flags = {DescriptorFlag.NonBlock, DescriptorFlag.CloseOnExec}
@@ -198,7 +198,6 @@ proc prepareKey[T](s: Selector[T], event: var TPollfd): Opt[ReadyKey] =
           return Opt.none(ReadyKey)
         else:
           rkey.events.incl({Event.User, Event.Error})
-          rkey.errorCode = errorCode
       else:
         rkey.events.incl(Event.User)
     else:

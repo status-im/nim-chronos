@@ -115,7 +115,7 @@ suite "AsyncSemaphore":
       not tmp.finished()
       not tmp2.finished()
 
-    tmp.cancel()
+    await tmp.cancelAndWait()
     sema.release()
 
     check tmp2.finished()
@@ -138,8 +138,8 @@ suite "AsyncSemaphore":
     check not tmp3.finished()
 
     # up to this point, we've called acquire 4 times
-    tmp1.cancel() # 1st release (implicit)
-    tmp2.cancel() # 2nd release (implicit)
+    await tmp1.cancelAndWait() # 1st release (implicit)
+    await tmp2.cancelAndWait() # 2nd release (implicit)
 
     check not tmp3.finished() # check that we didn't release the wrong slot
 

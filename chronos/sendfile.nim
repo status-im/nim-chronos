@@ -45,12 +45,18 @@ elif defined(emscripten):
 
 elif (defined(linux) or defined(android)) and not(defined(emscripten)):
 
-  proc osSendFile*(outfd, infd: cint, offset: ptr int, count: int): int
+  type
+    Moff* {.importc: "off_t", header: "<sys/types.h>".} = int
+    Mssize_t {.importc: "ssize_t", header: "<sys/types.h>".} = int
+
+  proc osSendFile*(outfd, infd: cint, offset: ptr Moff,
+                   count: csize_t): Mssize_t
       {.importc: "sendfile", header: "<sys/sendfile.h>".}
 
   proc sendfile*(outfd, infd: int, offset: int, count: var int): int =
     var o = offset
-    let res = osSendFile(cint(outfd), cint(infd), addr o, count)
+    let res = int(osSendFile(
+      cint(outfd), cint(infd), cast[ptr Moff](addr o), csize_t(count)))
     if res >= 0:
       count = res
       0
@@ -62,23 +68,25 @@ elif defined(freebsd) or defined(openbsd) or defined(netbsd) or
      defined(dragonflybsd):
   import oserrno
   type
+    Moff* {.importc: "off_t", header: "<sys/types.h>".} = int64
     SendfileHeader* {.importc: "struct sf_hdtr",
                       header: """#include <sys/types.h>
                                  #include <sys/socket.h>
                                  #include <sys/uio.h>""",
                       pure, final.} = object
 
-  proc osSendFile*(outfd, infd: cint, offset: uint, size: uint,
-                   hdtr: ptr SendfileHeader, sbytes: ptr uint,
-                   flags: int): int {.importc: "sendfile",
-                                      header: """#include <sys/types.h>
-                                                 #include <sys/socket.h>
-                                                 #include <sys/uio.h>""".}
+  proc osSendFile*(outfd, infd: cint, offset: Moff, size: csize_t,
+                   hdtr: ptr SendfileHeader, sbytes: ptr Moff,
+                   flags: cint): cint
+      {.importc: "sendfile", header: """#include <sys/types.h>
+                                        #include <sys/socket.h>
+                                        #include <sys/uio.h>""".}
 
   proc sendfile*(outfd, infd: int, offset: int, count: var int): int =
     var o = 0'u
-    let res = osSendFile(cint(infd), cint(outfd), uint(offset), uint(count),
-                         nil, addr o, 0)
+    let res = int(osSendFile(
+      cint(infd), cint(outfd), Moff(offset), csize_t(count), nil,
+      cast[ptr Moff](addr o), cint(0)))
     if res >= 0:
       count = int(o)
       0
@@ -93,22 +101,25 @@ elif defined(macosx):
   import oserrno
 
   type
+    Moff* {.importc: "off_t", header: "<sys/types.h>".} = int64
     SendfileHeader* {.importc: "struct sf_hdtr",
                       header: """#include <sys/types.h>
                                  #include <sys/socket.h>
                                  #include <sys/uio.h>""",
                       pure, final.} = object
 
-  proc osSendFile*(fd, s: cint, offset: int, size: ptr int,
+  proc osSendFile*(fd, s: cint, offset: Moff, size: ptr Moff,
                    hdtr: ptr SendfileHeader,
-                   flags: int): int {.importc: "sendfile",
-                                      header: """#include <sys/types.h>
-                                                 #include <sys/socket.h>
-                                                 #include <sys/uio.h>""".}
+                   flags: cint): cint
+      {.importc: "sendfile", header: """#include <sys/types.h>
+                                        #include <sys/socket.h>
+                                        #include <sys/uio.h>""".}
 
   proc sendfile*(outfd, infd: int, offset: int, count: var int): int =
     var o = count
-    let res = osSendFile(cint(infd), cint(outfd), offset, addr o, nil, 0)
+    let res = int(osSendFile(
+      cint(infd), cint(outfd), Moff(offset), cast[ptr Moff](addr o), nil,
+      cint(0)))
     if res >= 0:
       count = int(o)
       0

@@ -225,22 +225,6 @@ func `<=`*(a, b: Moment): bool {.inline.} =
   ## Returns ``true`` if ``a`` less or equal ``b``.
   a.value <= b.value
 
-func `>`*(a, b: Duration): bool {.inline.} =
-  ## Returns ``true`` if ``a`` bigger then ``b``.
-  a.value > b.value
-
-func `>`*(a, b: Moment): bool {.inline.} =
-  ## Returns ``true`` if ``a`` bigger then ``b``.
-  a.value > b.value
-
-func `>=`*(a, b: Duration): bool {.inline.} =
-  ## Returns ``true`` if ``a`` bigger or equal ``b``.
-  a.value >= b.value
-
-func `>=`*(a, b: Moment): bool {.inline.} =
-  ## Returns ``true`` if ``a`` bigger or equal ``b``.
-  a.value >= b.value
-
 func `*`*(a: Duration, b: SomeIntegerI64): Duration {.inline.} =
   ## Returns Duration multiplied by scalar integer.
   Duration(value: a.value * int64(b))
