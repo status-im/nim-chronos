@@ -705,11 +705,21 @@ proc pemDecode*(data: openArray[char]): seq[PEMElement] {.
   var pctx = new PEMContext
   var res = newSeq[PEMElement]()
 
-  proc itemAppend(ctx: pointer, pbytes: pointer, nbytes: csize_t) {.cdecl.} =
-    var p = cast[PEMContext](ctx)
-    var o = uint(len(p.data))
-    p.data.setLen(o + nbytes)
-    copyMem(addr p.data[o], pbytes, nbytes)
+  when declared(ConstPointer):
+    # bearssl > 0.2.8 declares the PEM decoder callback's source pointer
+    # as `const void *` (ConstPointer) to satisfy GCC 14+'s
+    # -Wincompatible-pointer-types. Older bearssl uses a plain `pointer`.
+    proc itemAppend(ctx: pointer, pbytes: ConstPointer, nbytes: csize_t) {.cdecl.} =
+      var p = cast[PEMContext](ctx)
+      var o = uint(len(p.data))
+      p.data.setLen(o + nbytes)
+      copyMem(addr p.data[o], pbytes, nbytes)
+  else:
+    proc itemAppend(ctx: pointer, pbytes: pointer, nbytes: csize_t) {.cdecl.} =
+      var p = cast[PEMContext](ctx)
+      var o = uint(len(p.data))
+      p.data.setLen(o + nbytes)
+      copyMem(addr p.data[o], pbytes, nbytes)
 
   var offset = 0
   var inobj = false
