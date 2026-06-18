@@ -176,10 +176,9 @@ proc checkFinished(future: FutureBase, loc: ptr SrcLoc) =
   else:
     future.internalLocation[LocationKind.Finish] = loc
 
-proc finish(fut: FutureBase, state: FutureState) =
-  # We do not perform any checks here, because:
-  # 1. `finish()` is a private procedure and `state` is under our control.
-  # 2. `fut.state` is checked by `checkFinished()`.
+proc finish(fut: FutureBase, state: FutureState, loc: ptr SrcLoc) =
+  fut.checkFinished(loc)
+
   fut.internalState = state
   fut.internalCancelcb = nil # release cancellation callback memory
 
@@ -197,10 +196,8 @@ proc finish(fut: FutureBase, state: FutureState) =
 
 proc complete[T: not void](future: Future[T], val: chronosSink T, loc: ptr SrcLoc) =
   if not(future.cancelled()):
-    checkFinished(future, loc)
-    doAssert(isNil(future.internalError))
     future.internalValue = chronosMoveSink(val)
-    future.finish(FutureState.Completed)
+    future.finish(FutureState.Completed, loc)
 
 template complete*[T: not void](future: Future[T], val: chronosSink T) =
   ## Completes ``future`` with value ``val``.
@@ -208,9 +205,7 @@ template complete*[T: not void](future: Future[T], val: chronosSink T) =
 
 proc complete(future: Future[void], loc: ptr SrcLoc) =
   if not(future.cancelled()):
-    checkFinished(future, loc)
-    doAssert(isNil(future.internalError))
-    future.finish(FutureState.Completed)
+    future.finish(FutureState.Completed, loc)
 
 template complete*(future: Future[void]) =
   ## Completes a void ``future``.
@@ -219,14 +214,17 @@ template complete*(future: Future[void]) =
 proc failImpl(
     future: FutureBase, error: ref CatchableError, loc: ptr SrcLoc) =
   if not(future.cancelled()):
-    checkFinished(future, loc)
     future.internalError = error
     when chronosStackTrace:
       future.internalErrorStackTrace = if getStackTrace(error) == "":
                                  getStackTrace()
                                else:
                                  getStackTrace(error)
-    future.finish(FutureState.Failed)
+    future.finish(FutureState.Failed, loc)
+
+template internalFail*(future: FutureBase, error: ref CatchableError) =
+  # Version used by asyncmacro that doesn't need to perform `raises` validation
+  failImpl(future, error, getSrcLocation())
 
 template fail*[T](
     future: Future[T], error: ref CatchableError, warn: static bool = false) =
@@ -249,11 +247,10 @@ template newCancelledError(): ref CancelledError =
 
 proc cancelAndSchedule(future: FutureBase, loc: ptr SrcLoc) =
   if not(future.finished()):
-    checkFinished(future, loc)
     future.internalError = newCancelledError()
     when chronosStackTrace:
       future.internalErrorStackTrace = getStackTrace()
-    future.finish(FutureState.Cancelled)
+    future.finish(FutureState.Cancelled, loc)
 
 template cancelAndSchedule*(future: FutureBase) =
   cancelAndSchedule(future, getSrcLocation())
