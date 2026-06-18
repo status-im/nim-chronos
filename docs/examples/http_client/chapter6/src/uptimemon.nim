@@ -47,38 +47,29 @@ proc sendAlert(
 # ANCHOR_END: response
 
 proc findMarker(
-    response: HttpClientResponseRef
-): Future[bool] {.
-    async: (raises: [HttpUseClosedError, AsyncStreamError, CancelledError])
-.} =
-  let bodyReader = response.getBodyReader()
-
-  defer:
-    await bodyReader.closeWait()
-
+    bodyReader: HttpBodyReader
+): Future[bool] {.async: (raises: [AsyncStreamError, CancelledError]).} =
   const
     marker = "<html"
-    bufferSize = 1024
+    readLimit = 10 * 1024
 
   var
     totalRead = 0
-    buffer = newString(bufferSize)
     sample = newString(len(marker) - 1)
+    found = false
 
-  while not result and totalRead <= 10 * 1024:
-    let bytesRead = await bodyReader.readOnce(addr buffer[0], len(buffer))
-    buffer.setLen(bytesRead)
+  proc findMarkerInSample(data: openArray[byte]): (int, bool) =
+    if len(data) == 0:
+      (0, false)
+    else:
+      sample = sample[^(len(marker) - 1) .. high(sample)]
+      sample &= bytesToString(data)
+      found = marker in sample
+      totalRead += len(data)
+      (len(data), found and totalRead <= readLimit)
 
-    if len(buffer) == 0:
-      await bodyReader.closeWait()
-      await response.finish()
-      break
-
-    totalRead += len(buffer)
-    sample = sample[^(len(marker) - 1)..high(sample)]
-    sample &= buffer
-
-    result = marker in sample
+  await bodyReader.readMessage(findMarkerInSample)
+  found
 
 # ANCHOR: check
 proc check(session: HttpSessionRef, uri: string) {.async: (raises: [CancelledError]).} =
@@ -100,7 +91,13 @@ proc check(session: HttpSessionRef, uri: string) {.async: (raises: [CancelledErr
 
   try:
     if response.status == 200:
-      let markerFound = await findMarker(response)
+      let
+        bodyReader = response.getBodyReader()
+        markerFound =
+          try:
+            await bodyReader.findMarker()
+          finally:
+            await bodyReader.closeWait()
 
       if markerFound:
         echo "[OK] " & uri
