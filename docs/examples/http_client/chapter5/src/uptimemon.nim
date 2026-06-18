@@ -52,11 +52,11 @@ proc check(session: HttpSessionRef, uri: string) {.async: (raises: [CancelledErr
     response =
       try:
         await request.send().wait(5.seconds)
-      except HttpError:
-        echo "[ERR] " & uri & ": " & getCurrentExceptionMsg()
+      except HttpError as e:
+        echo "[ERR] " & uri & ": " & e.msg
         return
-      except AsyncTimeoutError:
-        echo "[ERR] " & uri & ": " & getCurrentExceptionMsg()
+      except AsyncTimeoutError as e:
+        echo "[ERR] " & uri & ": " & e.msg
         return
       finally:
         await request.closeWait()
@@ -82,8 +82,10 @@ proc check(session: HttpSessionRef, uri: string) {.async: (raises: [CancelledErr
 # ANCHOR_END: url_response
 
 # ANCHOR: except
-  except HttpError, AsyncStreamError:
-    echo "[ERR] " & uri & ": " & getCurrentExceptionMsg()
+  except HttpError as e:
+    echo "[ERR] " & uri & ": " & e.msg
+  except AsyncStreamError as e:
+    echo "[ERR] " & uri & ": " & e.msg
 # ANCHOR_END: except
 
 # ANCHOR: finally

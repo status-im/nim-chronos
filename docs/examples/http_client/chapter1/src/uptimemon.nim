@@ -22,8 +22,8 @@ proc check(uri: string) {.async: (raises: [CancelledError]).} =
       echo "[NOK] " & uri & ": " & $response.status
 # ANCHOR_END: status
 # ANCHOR: except
-  except HttpError:
-    echo "[ERR] " & uri & ": " & getCurrentExceptionMsg()
+  except HttpError as e:
+    echo "[ERR] " & uri & ": " & e.msg
 # ANCHOR_END: except
 # ANCHOR: finally
   finally:

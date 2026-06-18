@@ -40,8 +40,12 @@ proc sendAlert(
   try:
     let response = await request.send().wait(5.seconds)
     await response.closeWait()
-  except HttpError, FuturePendingError, AsyncTimeoutError:
-    echo "[WRN] Failed to send alert: " & getCurrentExceptionMsg()
+  except HttpError as e: 
+    echo "[WRN] Failed to send alert: " & e.msg
+  except FuturePendingError as e: 
+    echo "[WRN] Failed to send alert: " & e.msg
+  except AsyncTimeoutError as e: 
+    echo "[WRN] Failed to send alert: " & e.msg
   finally:
     await request.closeWait()
 
@@ -79,8 +83,8 @@ proc check(
   defer:
     try:
       release(semaphore)
-    except AsyncSemaphoreError:
-      echo "Could not release a lock: " & getCurrentExceptionMsg()
+    except AsyncSemaphoreError as e:
+      echo "Could not release a lock: " & e.msg
 # ANCHOR_END: semaphore
 
   let
@@ -90,11 +94,11 @@ proc check(
     response =
       try:
         await request.send().wait(5.seconds)
-      except HttpError:
-        echo "[ERR] " & uri & ": " & getCurrentExceptionMsg()
+      except HttpError as e:
+        echo "[ERR] " & uri & ": " & e.msg
         return
-      except AsyncTimeoutError:
-        echo "[ERR] " & uri & ": " & getCurrentExceptionMsg()
+      except AsyncTimeoutError as e:
+        echo "[ERR] " & uri & ": " & e.msg
         return
       finally:
         await request.closeWait()
@@ -119,8 +123,12 @@ proc check(
       let message = "[NOK] " & uri & ": " & $response.status
       echo message
       await session.sendAlert(message)
-  except HttpError, AsyncStreamError:
-    let message = "[ERR] " & uri & ": " & getCurrentExceptionMsg()
+  except HttpError as e:
+    let message = "[ERR] " & uri & ": " & e.msg
+    echo message
+    await session.sendAlert(message, 4)
+  except AsyncStreamError as e:
+    let message = "[ERR] " & uri & ": " & e.msg
     echo message
     await session.sendAlert(message, 4)
   finally:
