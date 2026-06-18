@@ -350,7 +350,7 @@ proc asyncSingleProc(prc, params: NimNode): NimNode {.compileTime.} =
     let
       (setResultSym, assignResultSym) =
         when NimMajor >= 2:
-          (genSym(nskParam, "setResult"), genSym(nskParam, "assignResult"))
+          (genSym(nskTemplate, "setResult"), genSym(nskTemplate, "assignResult"))
         else:
           (ident("assignResult"), ident("setResult"))
       (procBody, assignUsed) = prc.body.processBody(assignResultSym)
