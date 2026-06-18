@@ -10,7 +10,7 @@ How cool would it be to get notified about a service being down to your phone? T
 
 ## Set Up ntfy
 
-1. Go to [ntfy.sh/app](https://ntfySub.sh/app).
+1. Go to [ntfy.sh/app](https://ntfy.sh/app).
 2. Click on **Subscribe to topic** in the sidebar, click **GENERATE NAME** in the popup, copy the generated name, and **SUBSCRIBE**. We'll use this unique topic name to send the notifications to.
 3. Click on **GRANT NOW** to allow push notifications from your browser.
 4. Keep the browser open.
