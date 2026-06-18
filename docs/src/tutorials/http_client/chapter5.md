@@ -15,10 +15,10 @@ However, if we just download the content and look for the HTML marker, we'll hav
 For example, try adding this URI to the list and running the program: https://html.spec.whatwg.org. This is a proper page but it's so heavy fetching it entirely would time out:
 
 ```shell
-[NOK] mock.codes/403: 403
-[OK] duckduckgo.com/
-[ERR] 10.255.255.1: Timeout exceeded!
-[ERR] html.spec.whatwg.org: Could not read response headers, reason: Incomplete data sent or received
+[NOK] https://mock.codes/403: 403
+[OK] https://duckduckgo.com/?q=chronos
+[ERR] http://10.255.255.1: Timeout exceeded!
+[ERR] https://html.spec.whatwg.org: Could not read response headers, reason: Incomplete data sent or received
 ```
 
 Let's optimize our check to handle large page like this one.
@@ -47,67 +47,39 @@ We've added a new URI to our test: https://mock.codes/200. This is a valid URI t
 {{#shiftinclude auto:../../../examples/http_client/chapter5/src/uptimemon.nim:findMarker}}
 ```
 
-This is a new function that is responsible to finding the health marker in a given response. Because it is asynchrounous, it will not block the main thread when called.
+This is a new function that is responsible to finding the health marker in a HTTP body stream. Because it is asynchrounous, it will not block the main thread when called.
 
 Like any async function, it returns a `Future` that must be `await`ed to give the actual result.
-
-```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter5/src/uptimemon.nim:bodyReader}}
-```
-
-To stream the response body, we're using a `bodyReader`. To get one for the current response, we're calling [`getBodyReader`](/api/chronos/apps/http/httpclient.html#getBodyReader,HttpClientResponseRef).
-
-The reader must be closed after usage no matter if we manage to read the full body or a part of it, so we `defer` the reader closing.
 
 ```nim
 {{#shiftinclude auto:../../../examples/http_client/chapter5/src/uptimemon.nim:vars}}
 ```
 
 - `marker` is the string we're looking for.
-- `bufferSize` is how many bytes at most we want to fetch on one read.
+- `readLimit` is the maximum number of bytes we're happy to fetch before we conclude that the response is not valid HTML (10 KB in our case).
 - `totalRead` is the number of bytes fetched so far; if we fetched too much data, we stop reading.
-- `buffer` is a string that we read in the last fetch.
 - `sample` will contain the fetched data we're looking for the marker in.
+- `found` is a flag that we set to `true` if you find the marker.
 
 ```admonish note
 Because the marker can be split between two reads (i.e. we fetch `<ht` in one buffer and `ml` in the next one), our `sample` must be a little longer than the buffer. Precisely, it must be `len(marker) - 1` longer to contain the buffer _and_ the possible marker part from the previous read.
 ```
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter5/src/uptimemon.nim:while}}
+{{#shiftinclude auto:../../../examples/http_client/chapter5/src/uptimemon.nim:findMarkerInSample}}
 ```
 
-We fetch chunks in a loop, stopping as soon as the marker is found or 10 KB has been read.
+This a helper function that we'll use later in `readMessage` proc as its predicate (more about it later).
+
+This function must conform to [`ReadMessagePredicate`](/api/chronos/transports/stream.html#ReadMessagePredicate) type, i.e. accept an open array of bytes from the stream and return a tuple of `(int, bool)` that represents the length of data read in the last read iteration and the exit flag.
+
+On each iteration, we remove everything from the sample except for the trailing `len(marker) - 1` characters and append the new data, look up `marker` in the new `sample`, and update `found` is the match was found. We also check if `totalRead` is still no higher than `readLimit` and if it is, set the exit flag.
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter5/src/uptimemon.nim:read_bytes}}
+{{#shiftinclude auto:../../../examples/http_client/chapter5/src/uptimemon.nim:readMessage}}
 ```
 
-[`readOnce`](/api/chronos/apps/http/httpclient.html#readOnce,AsyncStreamReader,pointer,int) reads the next available chunk from the stream and writes it to `buffer`.
-
-It is possible that we read less bytes than we asked for, so we adjust `buffer` for the actual data size.
-
-```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter5/src/uptimemon.nim:bytes_check}}
-```
-
-An empty result means we've reached the end of the stream, so we close the reader, finalize the response, and leave the loop.
-
-```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter5/src/uptimemon.nim:update_sample}}
-```
-
-We remove everything from the sample except for the trailing `len(marker) - 1` characters and append the new buffer value.
-
-```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter5/src/uptimemon.nim:result}}
-```
-
-Finally, we check if the marker is in the sample.
-
-```admonish note
-Notice that we can treat `result` as a regular `bool` despite the fact that the function returns a `Future[bool]`—really handy!
-```
+[`readMessage`](/api/chronos/streams/asyncstream.html#readMessage,AsyncStreamReader,ReadMessagePredicate) calls `findMarkerInSample` repeatedly until either there's no more data to read or the exit flag is `true`. The value `found` tells us if the marker was found in any of the samples checked by `readMessage` and we simply return it.
 
 Now, we can use this function in the URI health check.
 
@@ -119,19 +91,19 @@ Because we won't `fetch` the response but will instead stream it, we will need t
 
 Note that we close `request` after `response` is instantiated, either successfully or not. Cleaning up used resources is always encouraged.
 
-Now we can use this function in the URI health check:
-
 ```nim
 {{#shiftinclude auto:../../../examples/http_client/chapter5/src/uptimemon.nim:url_response}}
 ```
 
-We just `await` on it and check the value.
+To stream the response body, we're using a `bodyReader`. To get one for the current response, we're calling [`getBodyReader`](/api/chronos/apps/http/httpclient.html#getBodyReader,HttpClientResponseRef).
+
+Like any other resource, `HttpBodyReader` must be closed after use. We do that in the `finally` block. Notice that there's no `except` here, we're OK with `findMarker` raising—we'll catch its exceptions in the outer scope.
 
 ```nim
 {{#shiftinclude auto:../../../examples/http_client/chapter5/src/uptimemon.nim:except}}
 ```
 
-Notice that since `findMarker` can raise an exception that we haven't been catching so far ([`AsyncStreamError`](/api/chronos/streams/asyncstream.html#AsyncStreamError)), we need to add it to the list as well.
+Since `findMarker` can raise an exception that we haven't been catching so far ([`AsyncStreamError`](/api/chronos/streams/asyncstream.html#AsyncStreamError)), we need to add it to the list.
 
 ```nim
 {{#shiftinclude auto:../../../examples/http_client/chapter5/src/uptimemon.nim:finally}}
@@ -142,11 +114,11 @@ Like any other resource allocating object, `response` must be closed after usage
 Run the program and see the https://mock.codes/200 is now correctly marked as `[NOK]`:
 
 ```shell
-[NOK] mock.codes/200: Not valid HTML
-[NOK] mock.codes/403: 403
-[OK] duckduckgo.com/?q=chronos
-[OK] html.spec.whatwg.org/
-[ERR] 10.255.255.1: Timeout exceeded!
+[NOK] https://mock.codes/200: Not valid HTML
+[NOK] https://mock.codes/403: 403
+[OK] https://duckduckgo.com/?q=chronos
+[OK] https://html.spec.whatwg.org/
+[ERR] http://10.255.255.1: Timeout exceeded!
 ```
 
-In the next chapter, we'll see how to send alerts with POST requests!
+In the next chapter, we'll see how to send alerts with POST requests.

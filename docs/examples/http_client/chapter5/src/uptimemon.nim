@@ -11,54 +11,38 @@ const uris = @[
 
 # ANCHOR: findMarker
 proc findMarker(
-    response: HttpClientResponseRef
-): Future[bool] {.
-    async: (raises: [HttpUseClosedError, AsyncStreamError, CancelledError])
-.} =
+    bodyReader: HttpBodyReader
+): Future[bool] {.async: (raises: [AsyncStreamError, CancelledError]).} =
 # ANCHOR_END: findMarker
-
-# ANCHOR: bodyReader
-  let bodyReader = response.getBodyReader()
-
-  defer:
-    await bodyReader.closeWait()
-# ANCHOR_END: bodyReader
 
 # ANCHOR: vars
   const
     marker = "<html"
-    bufferSize = 1024
+    readLimit = 10 * 1024
+
   var
     totalRead = 0
-    buffer = newString(bufferSize)
     sample = newString(len(marker) - 1)
+    found = false
 # ANCHOR_END: vars
 
-# ANCHOR: while
-  while not result and totalRead <= 10 * 1024:
-# ANCHOR_END: while
-# ANCHOR: read_bytes
-    let bytesRead = await bodyReader.readOnce(addr buffer[0], len(buffer))
-    buffer.setLen(bytesRead)
-# ANCHOR_END: read_bytes
+# ANCHOR: findMarkerInSample
+  proc findMarkerInSample(data: openArray[byte]): (int, bool) =
+    if len(data) == 0:
+      (0, false)
+    else:
+      sample = sample[^(len(marker) - 1) .. high(sample)]
+      sample &= bytesToString(data)
+      found = marker in sample
+      totalRead += len(data)
+      (len(data), found and totalRead <= readLimit)
+# ANCHOR_END: findMarkerInSample
 
-# ANCHOR: bytes_check
-    if len(buffer) == 0:
-      await bodyReader.closeWait()
-      await response.finish()
-      break
-# ANCHOR_END: bytes_check
-
-# ANCHOR: update_sample
-    totalRead += len(buffer)
-    sample = sample[^(len(marker) - 1)..high(sample)]
-    sample &= buffer
-# ANCHOR_END: update_sample
-
-# ANCHOR: result
-    result = marker in sample
-# ANCHOR_END: result
-
+# ANCHOR: readMessage
+  await bodyReader.readMessage(findMarkerInSample)
+  found
+# ANCHOR_END: readMessage
+ 
 proc check(session: HttpSessionRef, uri: string) {.async: (raises: [CancelledError]).} =
 # ANCHOR: let
   let
@@ -81,7 +65,13 @@ proc check(session: HttpSessionRef, uri: string) {.async: (raises: [CancelledErr
 # ANCHOR: url_response
   try:
     if response.status == 200:
-      let markerFound = await findMarker(response)
+      let
+        bodyReader = response.getBodyReader()
+        markerFound =
+          try:
+            await bodyReader.findMarker()
+          finally:
+            await bodyReader.closeWait()
 
       if markerFound:
         echo "[OK] " & uri
