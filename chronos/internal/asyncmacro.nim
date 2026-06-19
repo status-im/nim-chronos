@@ -477,6 +477,8 @@ proc asyncSingleProc(prc, params: NimNode): NimNode {.compileTime.} =
         [newIdentNode("FutureBase"), internalFutureParameter],
         closureBody, nnkIteratorDef)
 
+    setResultSym.copyLineInfo(procBody)
+    assignResultSym.copyLineInfo(procBody)
     iteratorNameSym.copyLineInfo(prc)
 
     closureIterator.pragma = newNimNode(nnkPragma, lineInfoFrom=prc.body)
