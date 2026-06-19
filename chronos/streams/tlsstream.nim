@@ -216,7 +216,6 @@ proc runUntil(rws: TLSAsyncStream, target: cuint): Future[void] {.
 
     if rws.remainingState(target).isNone:
       break
-    let state = sslEngineCurrentState(engine[])
 
     # Prevent concurrent reads and writes from interfering with each other
     await rws.lock.acquire()
