@@ -11,9 +11,9 @@ proc handler(reqfence: RequestFence): Future[HttpResponseRef] {.async: (raises: 
   let request = reqfence.get()
   
   try:
-    return await request.respond(Http200, "Hello, Chronos!")
+    await request.respond(Http200, "Hello, Chronos!")
   except HttpWriteError:
-    return defaultResponse()
+    defaultResponse()
 # ANCHOR_END: handler
 
 # ANCHOR: main

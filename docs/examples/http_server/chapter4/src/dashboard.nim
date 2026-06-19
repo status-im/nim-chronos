@@ -24,7 +24,7 @@ proc loggingMiddleware(
     echo $request.meth & " " & request.uri.path & " processed in " &
       $duration.inMilliseconds & " ms"
 
-  return response
+  response
 
 # ANCHOR_END: middleware
 

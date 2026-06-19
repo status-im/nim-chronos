@@ -10,13 +10,13 @@ proc handler(reqfence: RequestFence): Future[HttpResponseRef] {.async: (raises: 
   try:
     case request.uri.path
     of "/":
-      return await request.respond(Http200, "Welcome to the Status Dashboard!")
+      await request.respond(Http200, "Welcome to the Status Dashboard!")
     of "/status":
-      return await request.respond(Http200, "The server is operational.")
+      await request.respond(Http200, "The server is operational.")
     else:
-      return await request.respond(Http404, "Page not found.")
+      await request.respond(Http404, "Page not found.")
   except HttpWriteError:
-    return defaultResponse()
+    defaultResponse()
   # ANCHOR_END: routing
 # ANCHOR_END: handler
 
