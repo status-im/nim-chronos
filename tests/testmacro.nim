@@ -624,3 +624,44 @@ suite "Exceptions tracking":
 
     check:
       waitFor(testit()).error() == "failed"
+
+  test "await with defer":
+    when (NimMajor, NimMinor, NimPatch) >= (2, 2, 6):
+      # https://github.com/status-im/nim-chronos/issues/576
+      var aaa: int
+      var bbb: int
+      var ccc: int
+
+      proc doStuff() {.async.} =
+        defer:
+          for i in 0 ..< 3:
+            try:
+              await sleepAsync(10.milliseconds)
+            except:
+              discard
+
+            bbb += 1
+
+        for i in 0 ..< 3:
+          try:
+            await sleepAsync(10.milliseconds)
+          except:
+            discard
+          aaa += 1
+
+        raise newException(CatchableError, "")
+
+      proc main() {.async.} =
+        try:
+          await doStuff()
+        except:
+          ccc += 1
+
+      waitFor main()
+
+      check:
+        aaa == 3
+        bbb == 3
+        ccc == 1
+    else:
+      skip()
