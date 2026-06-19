@@ -4,3 +4,5 @@ nimble.develop
 nimble.paths
 /build/
 nimbledeps
+docs/**/.gitignore
+docs/**/config.nims
