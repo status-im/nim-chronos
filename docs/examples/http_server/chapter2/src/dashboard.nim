@@ -3,10 +3,8 @@ import chronos/apps/http/httpserver
 
 # ANCHOR: handler
 proc handler(reqfence: RequestFence): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
-  if reqfence.isErr():
+  let request = reqfence.valueOr:
     return defaultResponse()
-
-  let request = reqfence.get()
   
   # ANCHOR: routing
   try:
