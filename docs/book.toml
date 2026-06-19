@@ -23,4 +23,4 @@ assets_version = "3.0.1" # do not edit: managed by `mdbook-admonish install`
 [output.html]
 git-repository-url = "https://github.com/status-im/nim-chronos/"
 git-branch = "master"
-additional-css = ["./open-in.css", "./mdbook-admonish.css", '.\mdbook-admonish.css']
+additional-css = ["./open-in.css", "./mdbook-admonish.css"]
