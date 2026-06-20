@@ -20,29 +20,19 @@ $ curl -X POST -H "Content-Type: application/json" -d '{"name": "google.com", "s
 
 Then, visit [127.0.0.1:8080](http://127.0.0.1:8080/status) in your browser to see the updated status.
 
-## Storing Data in Memory
-
-We use an in-memory `Table` to store our status reports.
-
-```nim
-{{#shiftinclude auto:../../../examples/http_server/chapter3/src/dashboard.nim:data}}
-```
-
-Note that we use the `{.threadvar.}` pragma. In Chronos, asynchronous callbacks are generally executed on a single thread per event loop. Using `threadvar` ensures that our global state is safely accessible within these callbacks without requiring complex synchronization or bypassing Nim's GC safety checks for global variables.
-
-We initialize the table in our `main` function before starting the server.
-
-```admonish info
-In a real app you would store your persistent data in a database of key-value storage. In this tutorial, we use a `Table` for simplicity's sake.
-```
-
 ## Handling POST Requests
 
 ```admonish info
 The HTTP protocol divides each request and response into a **header** and a **body**. The header contains metadata like the request method and path, while the body contains the actual content — the JSON payload in our case. This is true for both requests and responses.
 ```
 
-In the `handler`, we added logic for the `/report` path:
+```nim
+{{#shiftinclude auto:../../../examples/http_server/chapter3/src/dashboard.nim:handler_closure}}
+```
+
+The first change you'll notice is that we wrapped our `handler` proc with another function that returns the actual handler (of type [`HttpProcessCallback2`](/api/chronos/apps/http/httpserver.html#HttpProcessCallback2)). This is done to enable passing an input param `reports` that we'll use to store the statuses.
+
+In the handler, we added logic for the `/report` path:
 
 ```nim
 {{#shiftinclude auto:../../../examples/http_server/chapter3/src/dashboard.nim:report_post}}
@@ -64,4 +54,18 @@ Finally, for the `/status` path, we now generate a dynamic string based on the d
 
 ```nim
 {{#shiftinclude auto:../../../examples/http_server/chapter3/src/dashboard.nim:status_get}}
+```
+
+## Storing Data in Memory
+
+We use an in-memory `TableRef` to store our status reports.
+
+```nim
+{{#shiftinclude auto:../../../examples/http_server/chapter3/src/dashboard.nim:reports_table}}
+```
+
+We pass `reports` to the handler generating function to generate a handler that would store statuses to it.
+
+```admonish info
+In a real app you would store your persistent data in a database of key-value storage. In this tutorial, we use a `Table` for simplicity's sake.
 ```
