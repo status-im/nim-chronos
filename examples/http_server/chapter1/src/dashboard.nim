@@ -1,23 +1,22 @@
 # ANCHOR: all
+# ANCHOR: import
 import chronos/apps/http/httpserver
+# ANCHOR_END: import
 
 # ANCHOR: handler
-proc handler(reqfence: RequestFence): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
-  let request = reqfence.valueOr:
+proc handler(
+    reqfence: RequestFence
+): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
+  if reqfence.isErr():
     return defaultResponse()
-  
-  # ANCHOR: routing
+
+  let request = reqfence.get()
+
   try:
-    case request.uri.path
-    of "/":
-      await request.respond(Http200, "Welcome to the Status Dashboard!")
-    of "/status":
-      await request.respond(Http200, "The server is operational.")
-    else:
-      await request.respond(Http404, "Page not found.")
+    await request.respond(Http200, "Hello, Chronos!")
   except HttpWriteError:
     defaultResponse()
-  # ANCHOR_END: routing
+
 # ANCHOR_END: handler
 
 # ANCHOR: main
@@ -30,14 +29,17 @@ proc main() {.async: (raises: [TransportAddressError, CancelledError]).} =
 
   server.start()
   echo "HTTP server running on http://127.0.0.1:8080"
-  
+
   try:
     await server.join()
   finally:
     await server.stop()
     await server.closeWait()
+
 # ANCHOR_END: main
 
+# ANCHOR: run
 when isMainModule:
   waitFor main()
+# ANCHOR_END: run
 # ANCHOR_END: all

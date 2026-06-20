@@ -2,7 +2,7 @@
 
 **Goal:** Learn how to create and start a simple HTTP server with Chronos.
 
-**Source code:** [chapter1/src/dashboard.nim](https://github.com/status-im/nim-chronos/blob/master/docs/examples/http_server/chapter1/src/dashboard.nim)
+**Source code:** [chapter1/src/dashboard.nim](https://github.com/status-im/nim-chronos/blob/master/examples/http_server/chapter1/src/dashboard.nim)
 
 First, let's initialize a new binary project with Nimble. Switch to your preferred project directory in your terminal and run:
 
@@ -24,7 +24,7 @@ requires "chronos"
 Finally, open `src/dashboard.nim` and replace the code in it with this (we'll go through each line in a moment):
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_server/chapter1/src/dashboard.nim:all}}
+{{#shiftinclude auto:../../../../examples/http_server/chapter1/src/dashboard.nim:all}}
 ```
 
 To execute the project, run this command from the `dashboard` directory:
@@ -44,13 +44,13 @@ Now, open your web browser and go to [127.0.0.1:8080](http://127.0.0.1:8080). Yo
 ## Line-by-Line Explanation
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_server/chapter1/src/dashboard.nim:import}}
+{{#shiftinclude auto:../../../../examples/http_server/chapter1/src/dashboard.nim:import}}
 ```
 
 [`httpserver`](/api/chronos/apps/http/httpserver.html) module implements the HTTP server capabilities, i.e. listening for incoming connections and responding to HTTP requests.
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_server/chapter1/src/dashboard.nim:handler}}
+{{#shiftinclude auto:../../../../examples/http_server/chapter1/src/dashboard.nim:handler}}
 ```
 
 We define a `handler` function that will be called for every incoming request.
@@ -70,7 +70,7 @@ If the request is valid, we use the [`respond`](/api/chronos/apps/http/httpserve
 We wrap the `respond` call in a `try-except` block to handle potential network errors ([`HttpWriteError`](/api/chronos/apps/http/httpcommon.html#HttpWriteError)). Note that we let [`CancelledError`](/api/chronos/futures.html#CancelledError) propagate to the caller instead of catching it.
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_server/chapter1/src/dashboard.nim:main}}
+{{#shiftinclude auto:../../../../examples/http_server/chapter1/src/dashboard.nim:main}}
 ```
 
 In the `main` function, we:
@@ -86,7 +86,7 @@ In the `main` function, we:
 ```
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_server/chapter1/src/dashboard.nim:run}}
+{{#shiftinclude auto:../../../../examples/http_server/chapter1/src/dashboard.nim:run}}
 ```
 
 Finally, we use [`waitFor`](/api/chronos/asyncloop.html#waitFor,Future[T]) to start our async `main` routine.

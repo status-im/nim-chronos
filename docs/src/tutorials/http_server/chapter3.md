@@ -2,14 +2,14 @@
 
 **Goal:** Learn how to handle POST requests and process incoming JSON data.
 
-**Source code:** [chapter3/src/dashboard.nim](https://github.com/status-im/nim-chronos/blob/master/docs/examples/http_server/chapter3/src/dashboard.nim)
+**Source code:** [chapter3/src/dashboard.nim](https://github.com/status-im/nim-chronos/blob/master/examples/http_server/chapter3/src/dashboard.nim)
 
 In a real-life application, you often need to receive data from clients, not just serve static content. Our dashboard needs to receive status reports from other services.
 
 Let's update our server to handle POST requests containing JSON data and store these reports in memory:
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_server/chapter3/src/dashboard.nim:all}}
+{{#shiftinclude auto:../../../../examples/http_server/chapter3/src/dashboard.nim:all}}
 ```
 
 To test this version, run it with `nimble run` and use a tool like `curl` to send a POST request:
@@ -27,7 +27,7 @@ The HTTP protocol divides each request and response into a **header** and a **bo
 ```
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_server/chapter3/src/dashboard.nim:handler_closure}}
+{{#shiftinclude auto:../../../../examples/http_server/chapter3/src/dashboard.nim:handler_closure}}
 ```
 
 The first change you'll notice is that we wrapped our `handler` proc with another function that returns the actual handler (of type [`HttpProcessCallback2`](/api/chronos/apps/http/httpserver.html#HttpProcessCallback2)). This is done to enable passing an input param `reports` that we'll use to store the statuses.
@@ -35,7 +35,7 @@ The first change you'll notice is that we wrapped our `handler` proc with anothe
 In the handler, we added logic for the `/report` path:
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_server/chapter3/src/dashboard.nim:report_post}}
+{{#shiftinclude auto:../../../../examples/http_server/chapter3/src/dashboard.nim:report_post}}
 ```
 
 1. We check if the request method is `MethodPost`.
@@ -53,7 +53,7 @@ When dealing with JSON from clients, we must assume it can be malformed or missi
 Finally, for the `/status` path, we now generate a dynamic string based on the data in our table:
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_server/chapter3/src/dashboard.nim:status_get}}
+{{#shiftinclude auto:../../../../examples/http_server/chapter3/src/dashboard.nim:status_get}}
 ```
 
 ## Storing Data in Memory
@@ -61,7 +61,7 @@ Finally, for the `/status` path, we now generate a dynamic string based on the d
 We use an in-memory `TableRef` to store our status reports.
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_server/chapter3/src/dashboard.nim:reports_table}}
+{{#shiftinclude auto:../../../../examples/http_server/chapter3/src/dashboard.nim:reports_table}}
 ```
 
 We pass `reports` to the handler generating function to generate a handler that would store statuses to it.

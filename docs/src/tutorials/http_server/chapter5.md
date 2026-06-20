@@ -2,7 +2,7 @@
 
 **Goal:** Understand how Chronos performs under load and learn how to benchmark your server. 
 
-**Source code:** [chapter4/src/dashboard.nim](https://github.com/status-im/nim-chronos/blob/master/docs/examples/http_server/chapter4/src/dashboard.nim)
+**Source code:** [chapter4/src/dashboard.nim](https://github.com/status-im/nim-chronos/blob/master/examples/http_server/chapter4/src/dashboard.nim)
 
 One of the main reasons to use Chronos is its performance. Thanks to its asynchronous architecture, a single-threaded Chronos server can handle thousands of concurrent connections with minimal overhead.
 

@@ -4,7 +4,7 @@ In this tutorial, we'll build a dashboard server for the [uptime monitor](../htt
 
 While building our dashboard, you'll learn how to setup up an async HTTP server, handle different request types, process JSON data, and process requests using middlewares.
 
-The complete application (split into chapters to help you track progress) is available at [docs/examples/http_server](https://github.com/status-im/nim-chronos/blob/master/docs/examples/http_server).
+The complete application (split into chapters to help you track progress) is available at [examples/http_server](https://github.com/status-im/nim-chronos/blob/master/examples/http_server).
 
 ## Prerequisites
 
