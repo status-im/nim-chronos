@@ -2,7 +2,7 @@
 
 **Goal:** Learn how to make arbitrarily many HTTP requests asynchronously.
 
-**Source code:** [chapter3/src/uptimemon.nim](https://github.com/status-im/nim-chronos/blob/master/docs/examples/http_client/chapter3/src/uptimemon.nim)
+**Source code:** [chapter3/src/uptimemon.nim](https://github.com/status-im/nim-chronos/blob/master/examples/http_client/chapter3/src/uptimemon.nim)
 
 In the previous chapter, we learned how to reuse a session to check multiple URIs serially. While efficient, checking URIs one by one is slow. Now, let's unlock the true power of Chronos—concurrency!
 
@@ -17,7 +17,7 @@ To achieve that, we will:
 Here's the code:
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter3/src/uptimemon.nim:all}}
+{{#shiftinclude auto:../../../../examples/http_client/chapter3/src/uptimemon.nim:all}}
 ```
 
 Run this code with `nimble run`. You should see something like this (the order of messages may be different):
@@ -35,7 +35,7 @@ Notice that:
 Let's examine the changes since the previous version.
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter3/src/uptimemon.nim:check_uris}}
+{{#shiftinclude auto:../../../../examples/http_client/chapter3/src/uptimemon.nim:check_uris}}
 ```
 
 In our `check` function for multiple URIs, we've replaced the loop with concurrent execution:

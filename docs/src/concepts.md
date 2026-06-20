@@ -87,7 +87,7 @@ multiple parallel operations and cancel the rest as soon as one finishes,
 to initiate the orderely shutdown of an application etc.
 
 ```nim
-{{#include ../examples/cancellation.nim}}
+{{#include ../../examples/cancellation.nim}}
 ```
 
 Even if cancellation is initiated, it is not guaranteed that the operation gets
@@ -128,7 +128,7 @@ Cancelling an already-finished `Future` has no effect, as the following example
 of downloading two web pages concurrently shows:
 
 ```nim
-{{#include ../examples/twogets.nim}}
+{{#include ../../examples/twogets.nim}}
 ```
 
 ### Ownership

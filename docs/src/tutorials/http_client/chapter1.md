@@ -2,7 +2,7 @@
 
 **Goal:** Learn how to make an HTTP request and proccess its response with Chronos.
 
-**Source code:** [chapter1/src/uptimemon.nim](https://github.com/status-im/nim-chronos/blob/master/docs/examples/http_client/chapter1/src/uptimemon.nim)
+**Source code:** [chapter1/src/uptimemon.nim](https://github.com/status-im/nim-chronos/blob/master/examples/http_client/chapter1/src/uptimemon.nim)
 
 Create a new Nimble project:
 
@@ -13,7 +13,7 @@ $ nimble init uptimemon
 Copy and paste this code into `src/uptimemon.nim` (we'll go through each line in a moment):
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter1/src/uptimemon.nim:all}}
+{{#shiftinclude auto:../../../../examples/http_client/chapter1/src/uptimemon.nim:all}}
 ```
 
 To execute the file, switch to the directory with this file in your terminal and run this command:
@@ -33,13 +33,13 @@ Now let's see what we're doing here line by line.
 ## Line-by-Line Explanation
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter1/src/uptimemon.nim:import}}
+{{#shiftinclude auto:../../../../examples/http_client/chapter1/src/uptimemon.nim:import}}
 ```
 
 [`httpclient`](/api/chronos/apps/http/httpclient.html) module, as the title suggests, implements the HTTP client capabilities, i.e. sending HTTP requests and dealing with the responses asynchronously.
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter1/src/uptimemon.nim:check}}
+{{#shiftinclude auto:../../../../examples/http_client/chapter1/src/uptimemon.nim:check}}
 ```
 
 We define a function that sends an HTTP request to a URL we provide, checks if this URL is available, and prints the result.
@@ -49,13 +49,13 @@ Note that this function is annotated with `async` pragma because we won't call i
 Also note the `raises: [CancelledError]` part. This is Chronos's way of announcing the exceptions that are expected to the raised by this function. This mechanism is called [checked exceptions](../../error_handling.md#checked-exceptions). In this particular case, we tell the compiler that this function has cancellable things inside it and propagates the cancellation to its caller. No other exceptions should leak from it and if they do, it's a defect in the program.
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter1/src/uptimemon.nim:session}}
+{{#shiftinclude auto:../../../../examples/http_client/chapter1/src/uptimemon.nim:session}}
 ```
 
 Here, we're creating an HTTP session. Sessions are responsible for connection pool management, i.e. it provides a connection when it is needed (either by reusing a free one or allocating a new one) and returns it to the pool after usage.
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter1/src/uptimemon.nim:response}}
+{{#shiftinclude auto:../../../../examples/http_client/chapter1/src/uptimemon.nim:response}}
 ```
 
 When dealing with the Web, we must always assume the connection can break. So it's a good idea to get wrap all web interactions in a `try-except` block.
@@ -67,13 +67,13 @@ When dealing with the Web, we must always assume the connection can break. So it
 Notice that when we are assigning a value to `response`, we do not just call `fetch` but put an `await` before it. This is because `fetch` returns a `Future`, i.e. a not-yet-ready-result. `await` signals to the runtime that this function is interested in this computation result but while it's waiting for it, some other routine can take control.
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter1/src/uptimemon.nim:status}}
+{{#shiftinclude auto:../../../../examples/http_client/chapter1/src/uptimemon.nim:status}}
 ```
 
 Once we've received our response, we can check its status. If it's 200, we mark this URL healthy (later in the tutorial, we'll improve this logic to handle empty and junk responses), otherwise—not healthy.
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter1/src/uptimemon.nim:except}}
+{{#shiftinclude auto:../../../../examples/http_client/chapter1/src/uptimemon.nim:except}}
 ```
 
 If the request fails (e.g. the connection is unstable or the host is unreachable), `fetch` would raise a `HttpError` exception. Since raising this exception is part of our business logic, we catch it as `e` and report the error with `e.msg`.
@@ -81,13 +81,13 @@ If the request fails (e.g. the connection is unstable or the host is unreachable
 Note that catching `HttpError` does not contradict the `raises` value at the function definition: since we handle the exception and not re-raise it, our promise that only `CancelledError` ever emits from `check` is held true.
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter1/src/uptimemon.nim:finally}}
+{{#shiftinclude auto:../../../../examples/http_client/chapter1/src/uptimemon.nim:finally}}
 ```
 
 No matter if the check was successful, we must close the session after we're done with it and return the resources back to your computer. [`closeWait`](/api/chronos/apps/http/httpclient.html#closeWait,HttpSessionRef) is a function that schedules all open connections within this session to be closed.
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter1/src/uptimemon.nim:isMainModule}}
+{{#shiftinclude auto:../../../../examples/http_client/chapter1/src/uptimemon.nim:isMainModule}}
 ```
 
 Finally, we call our function to check a particular URL. Google is probably up so you should get an `[OK]` message. However, you can try other URLs to see how the response changes if you use a non-existing URL or a forbidden one.

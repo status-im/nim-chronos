@@ -2,7 +2,7 @@
 
 **Goal:** Learn how to reuse HTTP sessions for multiple requests.
 
-**Source code:** [chapter2/src/uptimemon.nim](https://github.com/status-im/nim-chronos/blob/master/docs/examples/http_client/chapter2/src/uptimemon.nim)
+**Source code:** [chapter2/src/uptimemon.nim](https://github.com/status-im/nim-chronos/blob/master/examples/http_client/chapter2/src/uptimemon.nim)
 
 OK, we have a working app that can check one URI. Now let's see how to check multiple URIs.
 
@@ -25,25 +25,25 @@ Opening a new connection is expensive: your computer has to talk to the server t
 To reuse a session, we'll pass it as an argument to our `check` function:
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter2/src/uptimemon.nim:all}}
+{{#shiftinclude auto:../../../../examples/http_client/chapter2/src/uptimemon.nim:all}}
 ```
 
 Let's see what changed.
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter2/src/uptimemon.nim:uris}}
+{{#shiftinclude auto:../../../../examples/http_client/chapter2/src/uptimemon.nim:uris}}
 ```
 
 We define a list of URIs to check.
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter2/src/uptimemon.nim:check_uri}}
+{{#shiftinclude auto:../../../../examples/http_client/chapter2/src/uptimemon.nim:check_uri}}
 ```
 
 We've modified `check` to accept a `session` argument. Notice that we no longer create or close the session inside this function—that's now the responsibility of the caller. This allows the session's pool to outlive any single request.
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter2/src/uptimemon.nim:check_uris}}
+{{#shiftinclude auto:../../../../examples/http_client/chapter2/src/uptimemon.nim:check_uris}}
 ```
 
 We've added a new `check` function that takes a list of URIs. It creates a single `HttpSessionRef` and reuses it for each URI in the loop. The `try..finally` block ensures that the session is properly closed—and all its pooled connections are freed—after all checks are done.

@@ -4,7 +4,7 @@
 
 **Source code:**
 
-- [chapter5/src/uptimemon.nim](https://github.com/status-im/nim-chronos/blob/master/docs/examples/http_client/chapter5/src/uptimemon.nim)
+- [chapter5/src/uptimemon.nim](https://github.com/status-im/nim-chronos/blob/master/examples/http_client/chapter5/src/uptimemon.nim)
 
 Currently, we're just checking the response status to determine if the URI is healthy.
 
@@ -32,19 +32,19 @@ The HTTP protocol divides each request and response into a **header** and a **bo
 ```
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter5/src/uptimemon.nim:all}}
+{{#shiftinclude auto:../../../../examples/http_client/chapter5/src/uptimemon.nim:all}}
 ```
 
 Let's go through the changes in this version line by line.
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter5/src/uptimemon.nim:urls}}
+{{#shiftinclude auto:../../../../examples/http_client/chapter5/src/uptimemon.nim:urls}}
 ```
 
 We've added a new URI to our test: https://mock.codes/200. This is a valid URI that returns a 200 status response but it doesn't contain any meaningful data. With our old check, this would return `[OK]` and with the new one we expect it to be `[NOK]`.
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter5/src/uptimemon.nim:findMarker}}
+{{#shiftinclude auto:../../../../examples/http_client/chapter5/src/uptimemon.nim:findMarker}}
 ```
 
 This is a new function that is responsible to finding the health marker in a HTTP body stream. Because it is asynchrounous, it will not block the main thread when called.
@@ -52,7 +52,7 @@ This is a new function that is responsible to finding the health marker in a HTT
 Like any async function, it returns a `Future` that must be `await`ed to give the actual result.
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter5/src/uptimemon.nim:vars}}
+{{#shiftinclude auto:../../../../examples/http_client/chapter5/src/uptimemon.nim:vars}}
 ```
 
 - `marker` is the string we're looking for.
@@ -66,7 +66,7 @@ Because the marker can be split between two reads (i.e. we fetch `<ht` in one bu
 ```
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter5/src/uptimemon.nim:findMarkerInSample}}
+{{#shiftinclude auto:../../../../examples/http_client/chapter5/src/uptimemon.nim:findMarkerInSample}}
 ```
 
 This a helper function that we'll use later in `readMessage` proc as its predicate (more about it later).
@@ -76,7 +76,7 @@ This function must conform to [`ReadMessagePredicate`](/api/chronos/transports/s
 On each iteration, we remove everything from the sample except for the trailing `len(marker) - 1` characters and append the new data, look up `marker` in the new `sample`, and update `found` is the match was found. We also check if `totalRead` is still no higher than `readLimit` and if it is, set the exit flag.
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter5/src/uptimemon.nim:readMessage}}
+{{#shiftinclude auto:../../../../examples/http_client/chapter5/src/uptimemon.nim:readMessage}}
 ```
 
 [`readMessage`](/api/chronos/streams/asyncstream.html#readMessage,AsyncStreamReader,ReadMessagePredicate) calls `findMarkerInSample` repeatedly until either there's no more data to read or the exit flag is `true`. The value `found` tells us if the marker was found in any of the samples checked by `readMessage` and we simply return it.
@@ -86,13 +86,13 @@ Now, we can use this function in the URI health check.
 Because we won't `fetch` the response but will instead stream it, we will need to create the response object explicitly (so that we could run a stream reader with it). To do that, we first insantiate a `request` and then a `response`:
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter5/src/uptimemon.nim:let}}
+{{#shiftinclude auto:../../../../examples/http_client/chapter5/src/uptimemon.nim:let}}
 ```
 
 Note that we close `request` after `response` is instantiated, either successfully or not. Cleaning up used resources is always encouraged.
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter5/src/uptimemon.nim:url_response}}
+{{#shiftinclude auto:../../../../examples/http_client/chapter5/src/uptimemon.nim:url_response}}
 ```
 
 To stream the response body, we're using a `bodyReader`. To get one for the current response, we're calling [`getBodyReader`](/api/chronos/apps/http/httpclient.html#getBodyReader,HttpClientResponseRef).
@@ -100,13 +100,13 @@ To stream the response body, we're using a `bodyReader`. To get one for the curr
 Like any other resource, `HttpBodyReader` must be closed after use. We do that in the `finally` block. Notice that there's no `except` here, we're OK with `findMarker` raising—we'll catch its exceptions in the outer scope.
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter5/src/uptimemon.nim:except}}
+{{#shiftinclude auto:../../../../examples/http_client/chapter5/src/uptimemon.nim:except}}
 ```
 
 Since `findMarker` can raise an exception that we haven't been catching so far ([`AsyncStreamError`](/api/chronos/streams/asyncstream.html#AsyncStreamError)), we need to add it to the list.
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter5/src/uptimemon.nim:finally}}
+{{#shiftinclude auto:../../../../examples/http_client/chapter5/src/uptimemon.nim:finally}}
 ```
 
 Like any other resource allocating object, `response` must be closed after usage.

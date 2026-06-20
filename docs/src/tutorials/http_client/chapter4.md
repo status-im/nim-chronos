@@ -2,7 +2,7 @@
 
 **Goal:** Learn how to prevent the program from freezing on slow responses.
 
-**Source code:** [chapter4/src/uptimemon.nim](https://github.com/status-im/nim-chronos/blob/master/docs/examples/http_client/chapter4/src/uptimemon.nim)
+**Source code:** [chapter4/src/uptimemon.nim](https://github.com/status-im/nim-chronos/blob/master/examples/http_client/chapter4/src/uptimemon.nim)
 
 Our current program works fine with the well-behaving URIs we've tested so far: all these locations either respond quickly or quickly return an error.
 
@@ -21,13 +21,13 @@ Run the program and you'll see that it'll run for 10+ seconds, stuck on this las
 Let's add a timeout to our requests to cancel slow requests before they ruin our app: if a request takes longer than 5 seconds, we cancel it.
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter4/src/uptimemon.nim:all}}
+{{#shiftinclude auto:../../../../examples/http_client/chapter4/src/uptimemon.nim:all}}
 ```
 
 Here's the part that changed:
 
 ```nim
-{{#shiftinclude auto:../../../examples/http_client/chapter4/src/uptimemon.nim:check}}
+{{#shiftinclude auto:../../../../examples/http_client/chapter4/src/uptimemon.nim:check}}
 ```
 
 1. We use the [`.wait(timeout)`](/api/chronos/internal/asyncfutures.html#wait,Future[T],Duration) modifier on our `fetch` future.

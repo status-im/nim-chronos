@@ -30,7 +30,7 @@ requires "chronos"
 and start using it:
 
 ```nim
-{{#include ../examples/httpget.nim}}
+{{#include ../../examples/httpget.nim}}
 ```
 
 There are more [examples](./examples.md) throughout the manual!
