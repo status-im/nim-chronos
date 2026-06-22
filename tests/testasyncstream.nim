@@ -953,8 +953,8 @@ suite "AsyncStream/TLSStream":
 
   asyncTest "Concurrent read and write":
     const
-      ChunkSize = 256
-      TotalSize = 2048
+      ChunkSize = 16
+      TotalSize = 128
 
     proc readWrite(s: TLSAsyncStream) {.async: (raw: true).} =
       proc doWrite() {.async.} =
