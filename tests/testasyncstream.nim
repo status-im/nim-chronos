@@ -964,6 +964,7 @@ suite "AsyncStream/TLSStream":
           await s.writer.write(chunk)
           await stepsAsync(1)
           length += chunk.len
+        await sleepAsync(1)
 
       proc doRead() {.async.} =
         var length = 0
