@@ -197,7 +197,7 @@ proc runUntil(rws: TLSAsyncStream, target: cuint): Future[void] {.
   let engine = rws.engine()
   while true:
     func remainingState(
-        rws: TLSAsyncStream, target: cuint
+        rws: TLSAsyncStream, engine: ptr SslEngineContext, target: cuint
     ): Opt[cuint] {.raises: [AsyncStreamError].} =
       let err = sslEngineLastError(engine[])
       if err != 0:
@@ -214,13 +214,13 @@ proc runUntil(rws: TLSAsyncStream, target: cuint): Future[void] {.
 
       Opt.some state
 
-    if rws.remainingState(target).isNone:
+    if rws.remainingState(engine, target).isNone:
       break
 
     # Prevent concurrent reads and writes from interfering with each other
     await rws.lock.acquire()
     try:
-      let state = rws.remainingState(target).valueOr:
+      let state = rws.remainingState(engine, target).valueOr:
         break
 
       # If the engine is ready for reading, start a read operation - although
