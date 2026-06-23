@@ -1158,6 +1158,11 @@ proc callSoon*(cbproc: CallbackFunc, data: pointer) {.
 proc callSoon*(cbproc: CallbackFunc) =
   callSoon(cbproc, nil)
 
+proc internalCallNext*(acb: AsyncCallback) =
+  ## Schedule `acb` to be called immediately after the current callback.
+  ## The callback is called before any other scheduled callbacks and events.
+  getThreadDispatcher().callbacks.addFirst(acb)
+
 proc callIdle*(acb: AsyncCallback) =
   ## Schedule ``cbproc`` to be called when there no pending network events
   ## available.

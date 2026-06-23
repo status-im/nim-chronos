@@ -36,8 +36,8 @@ suite "Asynchronous sync primitives test suite":
     discard testLock(8, lock)
     discard testLock(9, lock)
     lock.release()
-    ## There must be exactly 20 poll() calls
-    for i in 0..<20:
+    ## There must be exactly 10 poll() calls
+    for i in 0..<10:
       poll()
     result = testLockResult
 
@@ -192,9 +192,10 @@ suite "Asynchronous sync primitives test suite":
     var queue = newAsyncQueue[int](1)
     discard task1(queue)
     discard task2(queue)
-    ## There must be exactly 2 poll() calls
-    poll()
-    poll()
+    ## There must be exactly 3 poll() calls
+    poll()  # task1 pops item1
+    poll()  # task2 puts item2
+    poll()  # task1 pops item2
     result = testQueue1Result
 
   const testsCount = 1000
@@ -230,7 +231,6 @@ suite "Asynchronous sync primitives test suite":
     var queue = newAsyncQueue[int](3)
     discard task51(queue)
     discard task52(queue)
-    poll()
     poll()
     result = testQueue3Result
 

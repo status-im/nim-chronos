@@ -7,20 +7,15 @@
 #              MIT license (LICENSE-MIT)
 import ".."/chronos/config
 
-when (chronosEventEngine in ["epoll", "kqueue"]) or defined(windows):
-  import testmacro, testsync, testsoon, testtime, testfut, testsignal,
+when chronosEventEngine != "" or defined(windows):
+  import testmacro, testsync, testsoon, testunwind, testtime, testfut,
          testaddress, testdatagram, teststream, testserver, testbugs, testnet,
-         testasyncstream, testhttpserver, testshttpserver, testhttpclient,
-         testproc, testratelimit, testfutures, testthreadsync, testasyncsemaphore
-
-  # Must be imported last to check for Pending futures
-  import testutils
-elif chronosEventEngine == "poll":
-  # `poll` engine do not support signals and processes
-  import testmacro, testsync, testsoon, testtime, testfut, testaddress,
-         testdatagram, teststream, testserver, testbugs, testnet,
          testasyncstream, testhttpserver, testshttpserver, testhttpclient,
          testratelimit, testfutures, testthreadsync, testasyncsemaphore
 
-  # Must be imported last to check for Pending futures
-  import testutils
+  when chronosEventEngine != "poll" or defined(windows):
+    # `poll` engine do not support signals and processes
+    import testsignal, testproc
+
+# Must be imported last to check for Pending futures
+import testutils
