@@ -175,6 +175,25 @@ proc new*(T: typedesc[TrustAnchorStore],
              "Anchors should be copied")
   TrustAnchorStore(anchors: res)
 
+proc dumpState*(state: cuint): string =
+  var res = ""
+  if (state and SSL_CLOSED) == SSL_CLOSED:
+    if len(res) > 0: res.add(", ")
+    res.add("SSL_CLOSED")
+  if (state and SSL_SENDREC) == SSL_SENDREC:
+    if len(res) > 0: res.add(", ")
+    res.add("SSL_SENDREC")
+  if (state and SSL_SENDAPP) == SSL_SENDAPP:
+    if len(res) > 0: res.add(", ")
+    res.add("SSL_SENDAPP")
+  if (state and SSL_RECVREC) == SSL_RECVREC:
+    if len(res) > 0: res.add(", ")
+    res.add("SSL_RECVREC")
+  if (state and SSL_RECVAPP) == SSL_RECVAPP:
+    if len(res) > 0: res.add(", ")
+    res.add("SSL_RECVAPP")
+  "{" & res & "}"
+
 template cancelReadWrite(rws: TLSAsyncStream) =
   let cancel =
     if not(rws.readFut.isNil) and not rws.readFut.finished():
