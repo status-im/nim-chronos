@@ -1,6 +1,6 @@
 # Examples
 
-Examples are available in the [`docs/examples/`](https://github.com/status-im/nim-chronos/tree/master/examples/) folder.
+Examples are available in the [`examples/`](https://github.com/status-im/nim-chronos/tree/master/examples/) folder.
 
 ## Basic concepts
 
