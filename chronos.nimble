@@ -55,9 +55,19 @@ proc tryExec(cmd: string) =
 
 task examples, "Build examples":
   # Build book examples
-  for file in listFiles("docs/examples"):
+  for file in listFiles("examples"):
     if file.endsWith(".nim"):
       build "--threads:on", file
+
+  # Build HTTP client tutorial examples
+  for chapterDir in listDirs("examples/http_client"):
+    withDir(chapterDir):
+      tryExec "nimble build"
+
+  # Build HTTP server tutorial examples
+  for chapterDir in listDirs("examples/http_server"):
+    withDir(chapterDir):
+      tryExec "nimble build"
 
 task benchmarks, "Run benchmarks":
   # Make sure benchmarks compile
