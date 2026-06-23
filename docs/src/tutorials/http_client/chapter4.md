@@ -37,13 +37,13 @@ Here's the part that changed:
 ```admonish info
 In Nim, there are several ways to capture the message from an exception:
 - using `getCurrentExceptionMsg()`, as we do in this tutorial
-- using `except Exception as e` and then calling `e.msg`
+- using `except <Exception> as e` and then calling `e.msg`
 
 Both variants have their advantages and limitations. For example, the `as` syntax can be used only with one exception type at a time while a lonely `except` used with `getCurrentExceptionMsg()` allows to capture multiple exception types in one statement.
 
 On the other hand, because `e.msg` is guaranteed to capture a particular exception type, it's more deterministic and gives better control over exception handling logic.
 
-The rule of thumb is that when your exception handling is simple (like we have in this tutorial—we simply `echo` the message regardless of the exception type), `getCurrentExceptionMsg()` is a simpler, more readable option, but if elaborate exception handling is an essential part of your business logic, you should prefer `except Exception as e ... e.msg` syntax.
+The rule of thumb is that when your exception handling is simple (like we have in this tutorial—we simply `echo` the message regardless of the exception type), `getCurrentExceptionMsg()` is a simpler, more readable option, but if elaborate exception handling is an essential part of your business logic, you should prefer `except <Exception> as e ... e.msg` syntax.
 ```
 
 Run the program again and you'll see it complete in roughly 5 seconds, i.e. our timeout.
