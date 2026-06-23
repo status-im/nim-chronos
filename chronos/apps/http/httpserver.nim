@@ -32,7 +32,8 @@ type
       ## Enable usage of comma as an array item delimiter in url-encoded
       ## entities (e.g. query string or POST body).
     Http11Pipeline
-      ## Enable HTTP/1.1 pipelining.
+      ## Enable persistent connections in HTTP/1.1 - the name refers to
+      ## pipelining for historical reasons.
 
   HttpServerError* {.pure.} = enum
     InterruptError, TimeoutError, ProtocolError, DisconnectError
@@ -336,18 +337,11 @@ proc getServerFlags(req: HttpRequestRef): set[HttpServerFlags] =
   req.connection.server.flags
 
 proc getResponseFlags(req: HttpRequestRef): set[HttpResponseFlags] =
-  var defaultFlags: set[HttpResponseFlags] = {}
-  case req.version
-  of HttpVersion11:
-    if HttpServerFlags.Http11Pipeline notin req.getServerFlags():
-      return defaultFlags
-    let header = req.headers.getString(ConnectionHeader, "keep-alive")
-    if header == "keep-alive":
-      {HttpResponseFlags.KeepAlive}
-    else:
-      defaultFlags
+  if HttpServerFlags.Http11Pipeline in req.getServerFlags() and
+      isPersistent(req.version, req.headers):
+    {HttpResponseFlags.KeepAlive}
   else:
-    defaultFlags
+    {}
 
 proc getResponseState*(response: HttpResponseRef): HttpResponseState =
   response.state
@@ -430,6 +424,13 @@ proc hasBody*(request: HttpRequestRef): bool =
 func new(t: typedesc[HttpRequestRef], conn: HttpConnectionRef): HttpRequestRef =
   HttpRequestRef(connection: conn, state: HttpState.Alive)
 
+func parseAuthority(v: string): Uri =
+  ## Parse the authority form of a HTTP connect line
+  ## https://www.rfc-editor.org/info/rfc9112/#section-3.2.3
+  # host:port
+  let tmp = parseUri("scheme://" & v)
+  Uri(hostname: tmp.hostname, port: tmp.port)
+
 proc updateRequest*(request: HttpRequestRef, scheme: string, meth: HttpMethod,
                     version: HttpVersion, requestUri: string,
                     headers: HttpTable): HttpResultMessage[void] =
@@ -444,7 +445,11 @@ proc updateRequest*(request: HttpRequestRef, scheme: string, meth: HttpMethod,
   request.rawPath = requestUri
   request.uri =
     if request.rawPath != "*":
-      let uri = parseUri(request.rawPath)
+      let uri =
+        if meth == MethodConnect:
+          parseAuthority(request.rawPath)
+        else:
+          parseUri(request.rawPath)
       if uri.scheme notin ["http", "https", ""]:
         return err(HttpMessage.init(Http400, "Unsupported URI scheme"))
       uri
@@ -486,7 +491,14 @@ proc updateRequest*(request: HttpRequestRef, scheme: string, meth: HttpMethod,
   # Almost all HTTP requests could have body (except TRACE), we perform some
   # steps to reveal information about body.
   request.contentLength =
-    if ContentLengthHeader in request.headers:
+    if TransferEncodingFlags.Chunked in request.transferEncoding:
+      # Request headers has "Transfer-Encoding: chunked" header present.
+      if request.meth == MethodTrace:
+        let msg = "TRACE requests could not have request body"
+        return err(HttpMessage.init(Http400, msg))
+      request.requestFlags.incl(HttpRequestFlags.UnboundBody)
+      0
+    elif ContentLengthHeader in request.headers:
       # Request headers has `Content-Length` header present.
       let length = request.headers.getInt(ContentLengthHeader)
       if length != 0:
@@ -504,12 +516,6 @@ proc updateRequest*(request: HttpRequestRef, scheme: string, meth: HttpMethod,
       else:
         0
     else:
-      if TransferEncodingFlags.Chunked in request.transferEncoding:
-        # Request headers has "Transfer-Encoding: chunked" header present.
-        if request.meth == MethodTrace:
-          let msg = "TRACE requests could not have request body"
-          return err(HttpMessage.init(Http400, msg))
-        request.requestFlags.incl(HttpRequestFlags.UnboundBody)
       0
 
   if request.hasBody():
@@ -791,10 +797,7 @@ proc sendErrorResponse(conn: HttpConnectionRef, version: HttpVersion,
   answer.add(": ")
   answer.add(Base10.toString(uint64(len(databody))))
   answer.add("\r\n")
-  if keepAlive:
-    answer.add(ConnectionHeader)
-    answer.add(": keep-alive\r\n")
-  else:
+  if not keepAlive and version == HttpVersion11:
     answer.add(ConnectionHeader)
     answer.add(": close\r\n")
   answer.add("\r\n")
@@ -1096,12 +1099,13 @@ proc processLoop(holder: HttpConnectionHolderRef) {.async: (raises: []).} =
     runLoop = await server.processRequest(connection, connectionId)
 
   case runLoop
-  of HttpProcessExitType.KeepAlive:
-    await connection.closeWait()
   of HttpProcessExitType.Immediate:
     await connection.closeWait()
   of HttpProcessExitType.Graceful:
     await connection.gracefulCloseWait()
+  of HttpProcessExitType.KeepAlive:
+    raiseAssert "checked above"
+
   server.connections.del(connectionId)
 
 proc acceptClientLoop(server: HttpServerRef) {.async: (raises: []).} =
@@ -1350,9 +1354,7 @@ proc prepareLengthHeaders(resp: HttpResponseRef, length: int): string =
   if not(resp.hasHeader(ServerHeader)):
     resp.setHeader(ServerHeader, resp.connection.server.serverIdent)
   if not(resp.hasHeader(ConnectionHeader)):
-    if HttpResponseFlags.KeepAlive in resp.flags:
-      resp.setHeader(ConnectionHeader, "keep-alive")
-    else:
+    if HttpResponseFlags.KeepAlive notin resp.flags and resp.version == HttpVersion11:
       resp.setHeader(ConnectionHeader, "close")
   resp.createHeaders()
 
@@ -1366,9 +1368,7 @@ proc prepareChunkedHeaders(resp: HttpResponseRef): string =
   if not(resp.hasHeader(ServerHeader)):
     resp.setHeader(ServerHeader, resp.connection.server.serverIdent)
   if not(resp.hasHeader(ConnectionHeader)):
-    if HttpResponseFlags.KeepAlive in resp.flags:
-      resp.setHeader(ConnectionHeader, "keep-alive")
-    else:
+    if HttpResponseFlags.KeepAlive notin resp.flags and resp.version == HttpVersion11:
       resp.setHeader(ConnectionHeader, "close")
   resp.createHeaders()
 
@@ -1639,7 +1639,7 @@ proc remoteAddress*(conn: HttpConnectionRef): TransportAddress {.
   try:
     conn.transp.remoteAddress()
   except TransportOsError as exc:
-    raiseHttpAddressError($exc.msg)
+    raiseHttpAddressError(exc.msg)
 
 proc remoteAddress*(request: HttpRequestRef): TransportAddress {.
      raises: [HttpAddressError].} =

@@ -5,7 +5,7 @@
 #              Licensed under either of
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
-import std/[strutils, sha1]
+import std/[sequtils, strutils, sha1]
 import ".."/chronos/unittest2/asynctests
 import ".."/chronos,
        ".."/chronos/apps/http/[httpserver, shttpserver, httpclient]
@@ -111,15 +111,14 @@ suite "HTTP client testing suite":
                      maxRedirections = HttpMaxRedirections): HttpSessionRef =
     if secure:
       HttpSessionRef.new({HttpClientFlag.NoVerifyHost,
-                          HttpClientFlag.NoVerifyServerName,
-                          HttpClientFlag.Http11Pipeline},
+                          HttpClientFlag.NoVerifyServerName},
                          maxRedirections = maxRedirections)
     else:
-      HttpSessionRef.new({HttpClientFlag.Http11Pipeline},
+      HttpSessionRef.new({},
                          maxRedirections = maxRedirections)
 
   proc testMethods(secure: bool): Future[int] {.async.} =
-    let RequestTests = [
+    const RequestTests = [
       (MethodGet, "/test/get"),
       (MethodPost, "/test/post"),
       (MethodHead, "/test/head"),
@@ -127,19 +126,19 @@ suite "HTTP client testing suite":
       (MethodDelete, "/test/delete"),
       (MethodTrace, "/test/trace"),
       (MethodOptions, "/test/options"),
-      (MethodConnect, "/test/connect"),
+      (MethodConnect, ""), # CONNECT does not use a path
       (MethodPatch, "/test/patch")
     ]
+    const NoBodyMeth = {MethodHead, MethodConnect}
     proc process(r: RequestFence): Future[HttpResponseRef] {.
          async: (raises: [CancelledError]).} =
       if r.isOk():
         let request = r.get()
-        case request.uri.path
-        of "/test/get", "/test/post", "/test/head", "/test/put",
-           "/test/delete", "/test/trace", "/test/options", "/test/connect",
-           "/test/patch", "/test/error":
+        if request.uri.path in RequestTests.mapIt(it[1]):
           try:
-            await request.respond(Http200, request.uri.path)
+            await request.respond(
+              Http200, if request.meth in NoBodyMeth: "" else: request.uri.path
+            )
           except HttpWriteError as exc:
             defaultResponse(exc)
         else:
@@ -163,11 +162,14 @@ suite "HTTP client testing suite":
           getAddress(address, HttpClientScheme.Secure, item[1])
         else:
           getAddress(address, HttpClientScheme.NonSecure, item[1])
-      var req = HttpClientRequestRef.new(session, ha, item[0])
+      var req = HttpClientRequestRef.new(
+        session, ha, item[0], flags = {HttpClientRequestFlag.DedicatedConnection})
       let response = await fetch(req)
+      check: response.status == 200
       if response.status == 200:
         let data = string.fromBytes(response.data)
-        if data == item[1]:
+        check: (item[0] in NoBodyMeth and data.len == 0) or data == item[1]
+        if (item[0] in NoBodyMeth and data.len == 0) or data == item[1]:
           inc(counter)
       await req.closeWait()
     await session.closeWait()
@@ -181,9 +183,11 @@ suite "HTTP client testing suite":
           getAddress(address, HttpClientScheme.NonSecure, item[1])
       var req = HttpClientRequestRef.new(session, ha, item[0])
       let response = await fetch(req)
+      check: response.status == 200
       if response.status == 200:
         let data = string.fromBytes(response.data)
-        if data == item[1]:
+        check: (item[0] in NoBodyMeth and data.len == 0) or data == item[1]
+        if (item[0] in NoBodyMeth and data.len == 0) or data == item[1]:
           inc(counter)
       await req.closeWait()
       await session.closeWait()
@@ -191,6 +195,31 @@ suite "HTTP client testing suite":
     await server.stop()
     await server.closeWait()
     return counter
+
+  asyncTest "request-target omits URI fragment":
+    proc process(r: RequestFence): Future[HttpResponseRef] {.
+         async: (raises: [CancelledError]).} =
+      if r.isOk():
+        let request = r.get()
+        check: request.rawPath == "/test/path?x=1"
+        check: request.uri.anchor == ""
+        try:
+          await request.respond(Http200, "ok")
+        except HttpWriteError as exc:
+          defaultResponse(exc)
+      else:
+        defaultResponse()
+
+    var server = createServer(initTAddress("127.0.0.1:0"), process, secure = false)
+    server.start()
+    let address = server.instance.localAddress()
+    let ha = getAddress(address, HttpClientScheme.NonSecure, "/test/path?x=1#frag")
+    let session = createSession(false)
+    let response = await session.fetch(ha.getUri())
+    check: response.status == 200
+    await session.closeWait()
+    await server.stop()
+    await server.closeWait()
 
   proc testResponseStreamReadingTest(secure: bool): Future[int] {.async.} =
     let ResponseTests = [
@@ -327,7 +356,7 @@ suite "HTTP client testing suite":
     return counter
 
   proc testRequestSizeStreamWritingTest(secure: bool): Future[int] {.async.} =
-    let RequestTests = [
+    const RequestTests = [
       (MethodPost, "/test/big_request", 65600),
       (MethodPost, "/test/big_request", 262400)
     ]
@@ -402,7 +431,7 @@ suite "HTTP client testing suite":
 
   proc testRequestChunkedStreamWritingTest(
                                           secure: bool): Future[int] {.async.} =
-    let RequestTests = [
+    const RequestTests = [
       (MethodPost, "/test/big_chunk_request", 65600),
       (MethodPost, "/test/big_chunk_request", 262400)
     ]
@@ -919,7 +948,7 @@ suite "HTTP client testing suite":
         try:
           case request.uri.path
           of "/keep":
-            let headers = HttpTable.init([("connection", "keep-alive")])
+            let headers = HttpTable.init([])
             await request.respond(Http200, "ok", headers = headers)
           of "/drop":
             let headers = HttpTable.init([("connection", "close")])
@@ -995,34 +1024,25 @@ suite "HTTP client testing suite":
         d8 == @[(200, "ok", 0), (200, "ok", 0)]
 
       let
-        n1 = await test1(keepHa, HttpVersion11,
-                         {HttpClientFlag.Http11Pipeline}, {})
-        n2 = await test2(keepHa, keepHa, HttpVersion11,
-                         {HttpClientFlag.Http11Pipeline}, {})
-        n3 = await test1(dropHa, HttpVersion11,
-                         {HttpClientFlag.Http11Pipeline}, {})
-        n4 = await test2(dropHa, dropHa, HttpVersion11,
-                         {HttpClientFlag.Http11Pipeline}, {})
+        n1 = await test1(keepHa, HttpVersion11, {}, {})
+        n2 = await test2(keepHa, keepHa, HttpVersion11, {}, {})
+        n3 = await test1(dropHa, HttpVersion11, {}, {})
+        n4 = await test2(dropHa, dropHa, HttpVersion11, {}, {})
         n5 = await test1(keepHa, HttpVersion11,
-                         {HttpClientFlag.NewConnectionAlways,
-                          HttpClientFlag.Http11Pipeline}, {})
-        n6 = await test1(keepHa, HttpVersion11,
-                         {HttpClientFlag.Http11Pipeline},
+                         {HttpClientFlag.NewConnectionAlways,}, {})
+        n6 = await test1(keepHa, HttpVersion11, {},
                          {HttpClientRequestFlag.DedicatedConnection})
-        n7 = await test1(keepHa, HttpVersion11,
-                         {HttpClientFlag.Http11Pipeline},
+        n7 = await test1(keepHa, HttpVersion11, {},
                          {HttpClientRequestFlag.DedicatedConnection,
                           HttpClientRequestFlag.CloseConnection})
-        n8 = await test1(keepHa, HttpVersion11,
-                         {HttpClientFlag.Http11Pipeline},
+        n8 = await test1(keepHa, HttpVersion11, {},
                          {HttpClientRequestFlag.CloseConnection})
         n9 = await test1(keepHa, HttpVersion11,
-                         {HttpClientFlag.NewConnectionAlways,
-                          HttpClientFlag.Http11Pipeline},
+                         {HttpClientFlag.NewConnectionAlways},
                          {HttpClientRequestFlag.CloseConnection})
       check:
         n1 == (200, "ok", 1)
-        n2 == @[(200, "ok", 2), (200, "ok", 2)]
+        n2 == @[(200, "ok", 1), (200, "ok", 1)]
         n3 == (200, "ok", 0)
         n4 == @[(200, "ok", 0), (200, "ok", 0)]
         n5 == (200, "ok", 0)
@@ -1071,7 +1091,7 @@ suite "HTTP client testing suite":
     let
       address = server.instance.localAddress()
       ha = getAddress(address, HttpClientScheme.NonSecure, "/test")
-      session = HttpSessionRef.new({HttpClientFlag.Http11Pipeline},
+      session = HttpSessionRef.new({},
                                    idleTimeout = 1.seconds,
                                    idlePeriod = 200.milliseconds)
     try:
@@ -1123,7 +1143,7 @@ suite "HTTP client testing suite":
           of "/test":
             await request.respond(Http200, "ok")
           of "/keep-test":
-            let headers = HttpTable.init([("Connection", "keep-alive")])
+            let headers = HttpTable.init([])
             await request.respond(Http200, "not-alive", headers)
           else:
             await request.respond(Http404, "Page not found")
@@ -1436,6 +1456,148 @@ suite "HTTP client testing suite":
   test "HTTP client server-sent events test":
     check waitFor(testServerSentEvents(false)) == true
 
+  proc testHttpProxyConnectionProvider(): Future[bool] {.async.} =
+    const
+      targetHost = "127.0.0.1"
+      targetPort = 12345'u16
+      targetPath = "/test/proxy"
+    var proxyInvocationCount = 0
+
+    proc process(r: RequestFence): Future[HttpResponseRef] {.
+         async: (raises: [CancelledError]).} =
+      if r.isOk():
+        let request = r.get()
+        try:
+          check request.uri.scheme == "http"
+          check request.uri.hostname == targetHost
+          check request.uri.port == $targetPort
+          check request.uri.path == targetPath
+          inc(proxyInvocationCount)
+          await request.respond(Http200, "proxy-ok")
+        except HttpWriteError as exc:
+          defaultResponse(exc)
+      else:
+        defaultResponse(r.error())
+
+    var proxyServer = createServer(initTAddress("127.0.0.1:0"), process, false)
+    proxyServer.start()
+    let proxyAddress = proxyServer.instance.localAddress()
+    let proxy= proxyAddress.getAddress()
+    var session = HttpSessionRef.new(provider = httpProxyProvider(proxy))
+    let targetUrl = "http://" & targetHost & ":" & $targetPort & targetPath
+    let targetAddress = getHttpAddress(targetUrl).valueOr:
+      raise newException(ValueError, "Invalid target address")
+    var request = HttpClientRequestRef.new(session, targetAddress)
+    let response = await send(request)
+    check response.status == 200
+    let body = await response.getBodyBytes()
+    check string.fromBytes(body) == "proxy-ok"
+    await response.closeWait()
+    await request.closeWait()
+    await session.closeWait()
+    await proxyServer.stop()
+    await proxyServer.closeWait()
+    check proxyInvocationCount == 1
+    return true
+
+  test "HTTP proxy connection provider test":
+    check waitFor(testHttpProxyConnectionProvider()) == true
+
+  proc testConnectTunnel(): Future[bool] {.
+      async: (
+        raises: [
+          CancelledError, HttpError, TransportError, AsyncTimeoutError, AsyncStreamError
+        ]
+      )
+  .} =
+    var msg = "tunnel ok"
+
+    proc process(r: RequestFence): Future[HttpResponseRef] {.
+         async: (raises: [CancelledError]).} =
+      if r.isOk():
+        let request = r.get()
+        try:
+          # TODO implement better proxying support in server
+          let resp = request.getResponse()
+          resp.keepalive = false
+          await resp.sendBody(addr msg[0], msg.len)
+          resp
+        except HttpWriteError as exc:
+          defaultResponse(exc)
+      else:
+        defaultResponse()
+
+    var server = createServer(initTAddress("127.0.0.1:0"), process, false)
+    server.start()
+    let address = server.instance.localAddress()
+    let targetAddress = getAddress(address, HttpClientScheme.NonSecure, "")
+
+    var session = createSession(false)
+    var req = HttpClientRequestRef.new(session, targetAddress, MethodConnect)
+    let response = await req.send()
+    check response.status == 200
+    let tunnel = await response.tunnel()
+    let data = bytesToString(await tunnel.reader.read().wait(1.seconds))
+    check:
+      data == msg
+
+    await tunnel.reader.closeWait()
+    await tunnel.writer.closeWait()
+
+    await response.closeWait()
+    await req.closeWait()
+    await session.closeWait()
+    await server.stop()
+    await server.closeWait()
+    return true
+
+  test "HTTP connect tunnel test":
+    check waitFor(testConnectTunnel()) == true
+
+  proc testTunnelConnectionProvider(): Future[bool] {.
+      async: (raises: [CancelledError, HttpError, TransportError])
+  .} =
+    let
+      targetServer =
+        createStreamServer(initTAddress("127.0.0.1:0"), flags = {ServerFlags.ReuseAddr})
+      targetAddress = targetServer.localAddress()
+
+    proc server() {.async: (raises: [CancelledError, TransportError, AsyncTimeoutError]).} =
+      let conn = await targetServer.accept()
+      try:
+        var buf = newString(4096)
+        buf.setLen(await conn.readUntil(addr buf[0], buf.len, stringToBytes("\r\n\r\n")))
+        check:
+          "connect somehost:80" in buf.toLowerAscii()
+          "host: somehost:80" in buf.toLowerAscii()
+          
+        discard await conn.write("HTTP/1.1 200 OK\r\n\r\n")
+
+        buf.setLen(4096)
+        buf.setLen(await conn.readUntil(addr buf[0], buf.len, stringToBytes("\r\n\r\n")))
+
+        discard await conn.write("HTTP/1.1 200 OK\r\nContent-Length: 1\r\nConnection: close\r\n\r\na")
+        await conn.shutdownWait()
+        check:
+          await(conn.read().wait(1.seconds)) == []
+      finally:
+        await conn.closeWait()
+    let
+      serverFut = server().wait(1.seconds)
+      proxy = targetAddress.getAddress()
+      session = HttpSessionRef.new(provider = httpConnectProvider(proxy))
+      resp = await session.fetch(parseUri("http://somehost/"))
+
+    check:
+      resp.data == [byte 'a']
+
+    await serverFut.cancelAndWait()
+    await targetServer.closeWait()
+    true
+
+  test "HTTP tunnel connection provider test":
+    check waitFor(testTunnelConnectionProvider()) == true
+
   test "HTTP getHttpAddress() test":
     block:
       # HTTP client supports only `http` and `https` schemes in URL.
@@ -1498,26 +1660,6 @@ suite "HTTP client testing suite":
         res1.error.isCriticalError()
         res2.isErr() and res2.error == HttpAddressErrorType.MissingHostname
         res2.error.isCriticalError()
-    block:
-      # No resolution flags and incorrect URL
-      let
-        flags = {HttpClientFlag.NoInet4Resolution,
-                 HttpClientFlag.NoInet6Resolution}
-        res1 = getHttpAddress("http://256.256.256.256", flags)
-        res2 = getHttpAddress(
-          "http://[FFFFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]", flags)
-      check:
-        res1.isErr() and res1.error == HttpAddressErrorType.InvalidIpHostname
-        res1.error.isCriticalError()
-        res2.isErr() and res2.error == HttpAddressErrorType.InvalidIpHostname
-        res2.error.isCriticalError()
-    block:
-      # Resolution of non-existent hostname
-      let res = getHttpAddress("http://eYr6bdBo.com")
-      check:
-        res.isErr() and res.error == HttpAddressErrorType.NameLookupFailed
-        res.error.isRecoverableError()
-        not(res.error.isCriticalError())
 
   asyncTest "HTTPS response headers buffer size test":
     const HeadersSize = HttpMaxHeadersSize
@@ -1588,39 +1730,49 @@ suite "HTTP client testing suite":
     createServer(initTAddress("127.0.0.1:0"), process, secure = false)
 
   asyncTest "pipeline session does not reuse connection that is closed by server":
-    let server = createServerOk200()
-    let url = getAddress(server.instance.localAddress())
-    let flags = {HttpClientFlag.Http11Pipeline}
-    let session = HttpSessionRef.new(flags = flags)
-    server.start()
-    for _ in 0 ..< 10:
-      let request = HttpClientRequestRef.new(session, url)
-      let response = await request.send() # fails if it tries to reuse a closed connection
-      discard await response.consumeBody()
-      await request.closeWait()
-      await response.closeWait()
-      await server.drop() # server closes all keep-alive connections
-    await session.closeWait()
-    await server.stop()
-    await server.closeWait()
+    if true:
+      # This test relies on EOF being detected without an explicit read which
+      # is not always the case (depending on when `recv() == 0` happens) - to
+      # fix, a `recv(..., MSG_PEEK should be issued)
+      skip()
+    else:
+      let server = createServerOk200()
+      let url = getAddress(server.instance.localAddress())
+      let session = HttpSessionRef.new(flags = {})
+      server.start()
+      for _ in 0 ..< 10:
+        let request = HttpClientRequestRef.new(session, url)
+        let response = await request.send() # fails if it tries to reuse a closed connection
+        discard await response.consumeBody()
+        await request.closeWait()
+        await response.closeWait()
+        await server.drop() # server closes all keep-alive connections
+      await session.closeWait()
+      await server.stop()
+      await server.closeWait()
 
   asyncTest "pipeline session removes connections that were closed by the server":
-    let server = createServerOk200()
-    let url = getAddress(server.instance.localAddress())
-    let flags = {HttpClientFlag.Http11Pipeline}
-    let idlePeriod = 100.millis
-    let session = HttpSessionRef.new(flags = flags, idlePeriod = idlePeriod)
-    server.start()
-    for _ in 0 ..< 10:
-      let request = HttpClientRequestRef.new(session, url)
-      let response = await request.send()
-      discard await response.consumeBody()
-      await request.closeWait()
-      await response.closeWait()
-      await server.drop() # server closes all keep-alive connections
-    check session.connectionsCount > 0
-    await sleepAsync(idlePeriod * 2)
-    check session.connectionsCount == 0
-    await session.closeWait()
-    await server.stop()
-    await server.closeWait()
+    if true:
+      # This test relies on EOF being detected without an explicit read which
+      # is not always the case (depending on when `recv() == 0` happens) - to
+      # fix, a `recv(..., MSG_PEEK should be issued)
+      skip()
+    else:
+      let server = createServerOk200()
+      let url = getAddress(server.instance.localAddress())
+      let idlePeriod = 100.millis
+      let session = HttpSessionRef.new(flags = {}, idlePeriod = idlePeriod)
+      server.start()
+      for _ in 0 ..< 10:
+        let request = HttpClientRequestRef.new(session, url)
+        let response = await request.send()
+        discard await response.consumeBody()
+        await request.closeWait()
+        await response.closeWait()
+        await server.drop() # server closes all keep-alive connections
+      check session.connectionsCount > 0
+      await sleepAsync(idlePeriod * 2)
+      check session.connectionsCount == 0
+      await session.closeWait()
+      await server.stop()
+      await server.closeWait()

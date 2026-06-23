@@ -157,9 +157,6 @@ template newTLSStreamProtocolImpl[T](message: T): ref TLSStreamProtocolError =
   err.errCode = code
   err
 
-template newTLSUnexpectedProtocolError(): ref TLSStreamProtocolError =
-  newException(TLSStreamProtocolError, "Unexpected internal error")
-
 proc newTLSStreamProtocolError[T](message: T): ref TLSStreamProtocolError =
   newTLSStreamProtocolImpl(message)
 
@@ -199,22 +196,33 @@ proc runUntil(rws: TLSAsyncStream, target: cuint): Future[void] {.
      async: (raises: [CancelledError, AsyncStreamError]).} =
   let engine = rws.engine()
   while true:
-    let err = sslEngineLastError(engine[])
-    if err != 0:
-      raise newTLSStreamProtocolError(err)
+    func remainingState(
+        rws: TLSAsyncStream, engine: ptr SslEngineContext, target: cuint
+    ): Opt[cuint] {.raises: [AsyncStreamError].} =
+      let err = sslEngineLastError(engine[])
+      if err != 0:
+        raise newTLSStreamProtocolError(err)
 
-    let state = sslEngineCurrentState(engine[])
-    if (state and SSL_CLOSED) == SSL_CLOSED:
-      break
+      let state = sslEngineCurrentState(engine[])
+      if (state and SSL_CLOSED) == SSL_CLOSED:
+        return Opt.none cuint
 
-    if ((state and target) == target):
-      if (state and SSL_SENDAPP) == SSL_SENDAPP:
-        rws.handshaked = true
+      if ((state and target) == target):
+        if (state and SSL_SENDAPP) == SSL_SENDAPP:
+          rws.handshaked = true
+        return Opt.none cuint
+
+      Opt.some state
+
+    if rws.remainingState(engine, target).isNone:
       break
 
     # Prevent concurrent reads and writes from interfering with each other
     await rws.lock.acquire()
     try:
+      let state = rws.remainingState(engine, target).valueOr:
+        break
+
       # If the engine is ready for reading, start a read operation - although
       # we start reading here, it's important to exhaust SSL_SENDREC before
       # blocking on reads or the protocol will deadlock during handshakes

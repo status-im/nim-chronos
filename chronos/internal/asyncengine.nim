@@ -193,6 +193,7 @@ when defined(nimdoc):
   proc closeHandle*(fd: AsyncFD, aftercb: CallbackFunc = nil) = discard
   proc closeSocket*(fd: AsyncFD, aftercb: CallbackFunc = nil) = discard
   proc unregisterAndCloseFd*(fd: AsyncFD): Result[void, OSErrorCode] = discard
+  proc contains*(disp: PDispatcher, fd: AsyncFD): bool = discard
 
   proc `==`*(x: AsyncFD, y: AsyncFD): bool {.borrow, gcsafe.}
 
@@ -1052,7 +1053,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
 
     # We move idle callbacks to `loop.callbacks` only if there no pending
     # network events.
-    if loop.keys.len == 0:
+    if count == 0:
       loop.processIdlers()
 
     # We move tick callbacks to `loop.callbacks` always.
