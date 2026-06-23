@@ -189,7 +189,7 @@ suite "Stack unwind scheduling test suite":
     check testManualWakeup() == @["competitor", "producer returns"]
 
   test "Fan-out depth-first test":
-    ## Each strain unwinds to its conclusion before the next strain begins
-    check testFanout() in [
-      @["produced", "subA", "strainA", "subB", "strainB"],
-      @["produced", "subB", "strainB", "subA", "strainA"]]
+    # Each strain unwinds to conclusion before the next strain begins.
+    # Executed in reverse registration order.
+    check testFanout() ==
+      @["produced", "subB", "strainB", "subA", "strainA"]
