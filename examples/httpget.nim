@@ -9,7 +9,7 @@ proc retrievePage*(uri: string): Future[string] {.async.} =
     # Convert response to a string, assuming its encoding matches the terminal!
     bytesToString(resp.data)
   finally: # Close the session
-    await noCancel(httpSession.closeWait())
+    await httpSession.closeWait()
 
 echo waitFor retrievePage(
   "https://raw.githubusercontent.com/status-im/nim-chronos/master/README.md"
