@@ -266,7 +266,7 @@ proc runUntil(rws: TLSAsyncStream, target: cuint): Future[void] {.
         rws.handshaked = true
       break
 
-    # Schedule both reads and writes if the enginer requires them
+    # Schedule both reads and writes if the engine requires them
     if (state and SSL_RECVREC) == SSL_RECVREC and rws.readFut.isNil:
       if rws.eof: # We've already read EOF from the underlying stream
         break
