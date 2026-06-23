@@ -962,9 +962,7 @@ suite "AsyncStream/TLSStream":
         var length = 0
         while length < TotalSize:
           await s.writer.write(chunk)
-          await stepsAsync(1)
           length += chunk.len
-        await sleepAsync(1.milliseconds)
 
       proc doRead() {.async.} =
         var length = 0
@@ -972,7 +970,6 @@ suite "AsyncStream/TLSStream":
           let chunk = await s.reader.read(ChunkSize)
           if chunk.len == 0:
             break
-          await stepsAsync(1)
           length += chunk.len
 
       allFutures(doWrite(), doRead())
