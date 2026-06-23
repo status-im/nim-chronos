@@ -55,7 +55,7 @@ proc tryExec(cmd: string) =
 
 task examples, "Build examples":
   # Build book examples
-  for file in listFiles("docs/examples"):
+  for file in listFiles("examples"):
     if file.endsWith(".nim"):
       build "--threads:on", file
 
