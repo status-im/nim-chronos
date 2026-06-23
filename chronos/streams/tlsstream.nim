@@ -103,7 +103,6 @@ type
     x509*: X509MinimalContext
     reader*: TLSStreamReader
     writer*: TLSStreamWriter
-    lock: AsyncLock
     handshaked*: bool
     eof: bool
     trustAnchors: TrustAnchorStore
@@ -111,7 +110,10 @@ type
     clientPrivateKey: TLSPrivateKey
     alpnProtos: seq[string]
     alpnProtosC: seq[cstring]
-    readFut*: Future[int].Raising([CancelledError, AsyncStreamError])
+    readFut: Future[int].Raising([CancelledError, AsyncStreamError])
+    writeFut: Future[void].Raising([CancelledError, AsyncStreamError])
+    wlength: uint
+    error: ref AsyncStreamError
 
   SomeTLSStreamType* = TLSStreamReader|TLSStreamWriter|TLSAsyncStream
   SomeTrustAnchorType* = TrustAnchorStore | openArray[X509TrustAnchor]
@@ -192,91 +194,130 @@ proc dumpState*(state: cuint): string =
     res.add("SSL_RECVAPP")
   "{" & res & "}"
 
+template cancelReadWrite(rws: TLSAsyncStream) =
+  let cancel =
+    if not(rws.readFut.isNil) and not rws.readFut.finished():
+      if not (rws.writeFut.isNil) and not rws.writeFut.finished():
+        cancelAndWait(move(rws.readFut), move(rws.writeFut))
+      else:
+        cancelAndWait(move(rws.readFut))
+    elif not (rws.writeFut.isNil) and not rws.writeFut.finished():
+      cancelAndWait(move(rws.writeFut))
+    else:
+      nil
+
+  if cancel != nil:
+    await cancel
+
+template setErrorAndRaise(
+    rws: TLSAsyncStream, error: ref AsyncStreamError
+) =
+  # Failures in any direction in the underlying stream result in the TLS stream
+  # being broken in both directions
+  rws.cancelReadWrite()
+
+  rws.reader.setError(error)
+  rws.writer.setError(error)
+
+  raise error
+
 proc runUntil(rws: TLSAsyncStream, target: cuint): Future[void] {.
      async: (raises: [CancelledError, AsyncStreamError]).} =
   let engine = rws.engine()
+
   while true:
-    func remainingState(
-        rws: TLSAsyncStream, engine: ptr SslEngineContext, target: cuint
-    ): Opt[cuint] {.raises: [AsyncStreamError].} =
+    # Check for errors that happened while looping while being mindful that
+    # there might be multiple concurrent `runUntil` loops running - in
+    # particular, there might be spurious wakeups resulting from the underlying
+    # reader and writer futures completing and then being processed by the
+    # "other" loop
+
+    if not(isNil(rws.reader.error)):
+      raise rws.reader.error
+
+    if not(isNil(rws.writer.error)):
+      raise rws.writer.error
+
+    let state = sslEngineCurrentState(engine[])
+
+    if (state and SSL_CLOSED) == SSL_CLOSED:
+      # SSL_CLOSED is set in particular when an error has been detected
       let err = sslEngineLastError(engine[])
       if err != 0:
-        raise newTLSStreamProtocolError(err)
+        rws.setErrorAndRaise(newTLSStreamProtocolError(err))
 
-      let state = sslEngineCurrentState(engine[])
-      if (state and SSL_CLOSED) == SSL_CLOSED:
-        return Opt.none cuint
+      rws.setErrorAndRaise((ref TLSStreamProtocolError)(msg: "Closed"))
 
-      if ((state and target) == target):
-        if (state and SSL_SENDAPP) == SSL_SENDAPP:
-          rws.handshaked = true
-        return Opt.none cuint
+    # Regardless if we want to read or write we need to be processing traffic
+    # in both directions for example to complete a handshake or key
+    # re-negotiation - each read and write might cause further read / write
+    # requests from the engine as well as stream errors
+    if not(rws.writeFut.isNil) and rws.writeFut.finished():
+      let fut = move(rws.writeFut)
+      if fut.failed() or fut.cancelled():
+        rws.setErrorAndRaise(
+          (ref TLSStreamWriteError)(msg: "TLS write failed: " & fut.error.msg)
+        )
 
-      Opt.some state
+      sslEngineSendrecAck(engine[], rws.wlength)
+      continue # re-read state / last error
 
-    if rws.remainingState(engine, target).isNone:
-      break
+    if not (rws.readFut.isNil) and rws.readFut.finished():
+      let fut = move(rws.readFut)
 
-    # Prevent concurrent reads and writes from interfering with each other
-    await rws.lock.acquire()
-    try:
-      let state = rws.remainingState(engine, target).valueOr:
+      if fut.failed() or fut.cancelled():
+        rws.setErrorAndRaise(
+          (ref TLSStreamReadError)(msg: "TLS read failed: " & fut.error.msg)
+        )
+
+      if fut.value == 0:
+        rws.eof = true
+        if not(rws.writeFut.isNil) and not(rws.writeFut.finished()):
+          await cancelAndWait(move(rws.writeFut))
         break
 
-      # If the engine is ready for reading, start a read operation - although
-      # we start reading here, it's important to exhaust SSL_SENDREC before
-      # blocking on reads or the protocol will deadlock during handshakes
-      if (state and SSL_RECVREC) == SSL_RECVREC and rws.readFut.isNil:
-        if rws.eof: # We've already read EOF from the underlying stream
-          break
+      sslEngineRecvrecAck(engine[], uint(fut.value))
+      continue # re-read state / last error
 
-        var length = 0'u
-        var buf = sslEngineRecvrecBuf(engine[], length)
-        rws.readFut = rws.rsource.readOnce(buf, int(length))
+    if ((state and target) == target):
+      # We reached the target that was requested
+      if (state and SSL_SENDAPP) == SSL_SENDAPP:
+        rws.handshaked = true
+      break
 
-      if (state and SSL_SENDREC) == SSL_SENDREC:
-        var length = 0'u
-        var buf = sslEngineSendrecBuf(engine[], length)
-        doAssert(length != 0 and not isNil(buf))
-        # TODO we could process readFut concurrently here - keep it simple for
-        #      now
-        await rws.wsource.write(buf, int(length))
-        sslEngineSendrecAck(engine[], length)
+    # Schedule both reads and writes if the engine requires them
+    if (state and SSL_RECVREC) == SSL_RECVREC and rws.readFut.isNil:
+      if rws.eof: # We've already read EOF from the underlying stream
+        break
 
-      elif (state and SSL_RECVREC) == SSL_RECVREC:
-        let res = await rws.readFut
-        rws.readFut = nil
-        if res == 0:
-          rws.eof = true
+      var length = 0'u
+      var buf = sslEngineRecvrecBuf(engine[], length)
+      rws.readFut = rws.rsource.readOnce(buf, int(length))
+
+    if (state and SSL_SENDREC) == SSL_SENDREC and rws.writeFut.isNil:
+      var buf = sslEngineSendrecBuf(engine[], rws.wlength)
+      rws.writeFut = rws.wsource.write(buf, int(rws.wlength))
+
+    let readWriteDone =
+      if not(rws.readFut.isNil):
+        if not(rws.writeFut.isNil):
+          race(rws.readFut, rws.writeFut)
         else:
-          sslEngineRecvrecAck(engine[], uint(res))
+          race(rws.readFut) # await without reading the underlying future outcome
+      else:
+        doAssert not(rws.writeFut.isNil), "We must have created at least one future above"
+        race(rws.writeFut) # await without reading the underlying future outcome
+    try:
+      discard await readWriteDone
     except CancelledError as exc:
-      # Typically this will happen during close but can also occur if user
-      # cancels a read/write in which case the stream is broken (ie we don't
-      # attempt recovery / resumption)
       if rws.reader.state == AsyncStreamState.Running:
         rws.reader.state = AsyncStreamState.Stopped
       if rws.writer.state == AsyncStreamState.Running:
         rws.writer.state = AsyncStreamState.Stopped
 
-      if not rws.readFut.isNil:
-        let readFut = move(rws.readFut)
-        await readFut.cancelAndWait()
+      rws.cancelReadWrite()
+
       raise exc
-    except AsyncStreamError as exc:
-      rws.reader.state = AsyncStreamState.Error
-      rws.reader.error = exc
-      rws.writer.state = AsyncStreamState.Error
-      rws.writer.error = exc
-      if not rws.readFut.isNil:
-        let readFut = move(rws.readFut)
-        await readFut.cancelAndWait()
-      raise exc
-    finally:
-      try:
-        rws.lock.release()
-      except AsyncLockError:
-        raiseAssert "just checked"
 
 proc handshake*(rws: TLSAsyncStream): Future[void] {.
      async: (raises: [CancelledError, AsyncStreamError]).} =
@@ -290,7 +331,7 @@ proc handshake*(rws: TLSAsyncStream): Future[void] {.
   if rws.eof:
     raiseAsyncStreamWriteEOFError()
 
-proc readOnce*(
+proc readOnce(
     rstream: TLSStreamReader, pbytes: pointer, nbytes: int
 ): Future[int] {.async: (raises: [CancelledError, AsyncStreamError]).} =
   let engine = rstream.engine()
@@ -318,12 +359,11 @@ proc readOnce*(
     await rstream.stream.runUntil(SSL_RECVAPP)
 
 proc close(s: TLSStreamReader) {.async: (raises: []).} =
-  # Cancel reads only if both directions are being closed
-  if not s.stream.readFut.isNil and s.stream.writer.closed():
-    let readFut = move(s.stream.readFut)
-    await readFut.cancelAndWait()
+  # Cancel underlying reads/writes only if both directions are being closed
+  if s.stream.writer.closed():
+    s.stream.cancelReadWrite()
 
-proc write*(
+proc write(
     wstream: TLSStreamWriter, pbytes: pointer, nbytes: int
 ) {.async: (raises: [CancelledError, AsyncStreamError]).} =
   let engine = wstream.engine()
@@ -363,10 +403,9 @@ proc write*(
     await wstream.stream.runUntil(SSL_SENDAPP)
 
 proc close(s: TLSStreamWriter) {.async: (raises: []).} =
-  # Cancel reads only if both directions are being closed
-  if not s.stream.readFut.isNil and s.stream.reader.closed():
-    let readFut = move(s.stream.readFut)
-    await readFut.cancelAndWait()
+  # Cancel underlying reads/writes only if both directions are being closed
+  if s.stream.reader.closed():
+    s.stream.cancelReadWrite()
 
 proc getSignerAlgo(xc: X509Certificate): int =
   ## Get certificate's signing algorithm.
@@ -448,7 +487,7 @@ proc newTLSClientAsyncStream*(
              "Empty trust anchor list is invalid")
   else:
     doAssert(len(trustAnchors) > 0, "Empty trust anchor list is invalid")
-  var res = TLSAsyncStream(kind: TLSStreamKind.Client, lock: newAsyncLock())
+  var res = TLSAsyncStream(kind: TLSStreamKind.Client)
   var reader = TLSStreamReader(
     stream: res,
     rsource: rsource,
@@ -576,7 +615,7 @@ proc newTLSServerAsyncStream*(rsource: AsyncStreamReader,
   if isNil(certificate) or len(certificate.certs) == 0:
     raiseTLSStreamProtocolError("Incorrect certificate")
 
-  var res = TLSAsyncStream(kind: TLSStreamKind.Server, lock: newAsyncLock())
+  var res = TLSAsyncStream(kind: TLSStreamKind.Server)
   var reader = TLSStreamReader(
     stream: res,
     rsource: rsource,

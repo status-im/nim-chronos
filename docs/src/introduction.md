@@ -47,4 +47,4 @@ Several platforms are supported, with different backend [options](./concepts.md#
 ## API documentation
 
 This guide covers basic usage of chronos - for details, see the
-[API reference](./api/chronos.html).
+[API reference](/api/chronos.html).

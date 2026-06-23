@@ -4,8 +4,6 @@ nimble.develop
 nimble.paths
 /build/
 nimbledeps
-docs/examples/http_client/*/config.nims
-docs/examples/http_client/*/.gitignore
 examples/**/.gitignore
 examples/**/nimbledeps
 examples/**/config.nims
