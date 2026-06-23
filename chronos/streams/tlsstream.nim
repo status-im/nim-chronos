@@ -181,7 +181,7 @@ template cancelReadWrite(rws: TLSAsyncStream) =
       if not (rws.writeFut.isNil) and not rws.writeFut.finished():
         cancelAndWait(move(rws.readFut), move(rws.writeFut))
       else:
-        cancelAndWait(move(rws.readfut))
+        cancelAndWait(move(rws.readFut))
     elif not (rws.writeFut.isNil) and not rws.writeFut.finished():
       cancelAndWait(move(rws.writeFut))
     else:
