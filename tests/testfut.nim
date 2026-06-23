@@ -2916,3 +2916,10 @@ suite "Future[T] behavior test suite":
     await raceTest(int, 0)
     await raceTest(int, 1)
     await raceTest(int, 2)
+
+  test "idleAsync() should resolve on an idle event loop":
+    let
+      fut = idleAsync()
+      completed = waitFor fut.withTimeout(10.seconds)
+    check completed
+    check fut.completed()
