@@ -30,8 +30,8 @@ Here's the part that changed:
 {{#shiftinclude auto:../../../../examples/http_client/chapter4/src/uptimemon.nim:check}}
 ```
 
-1. We use the [`.wait(timeout)`](/api/chronos/internal/asyncfutures.html#wait,Future[T],Duration) modifier on our `fetch` future.
-2. If the request takes longer than the provided duration, `.wait()` automatically cancels the underlying future and raises an [`AsyncTimeoutError`](/api/chronos/internal/errors.html#AsyncTimeoutError).
+1. We use the [`.wait(timeout)`](api/chronos/internal/asyncfutures.html#wait,Future[T],Duration) modifier on our `fetch` future.
+2. If the request takes longer than the provided duration, `.wait()` automatically cancels the underlying future and raises an [`AsyncTimeoutError`](api/chronos/internal/errors.html#AsyncTimeoutError).
 3. We catch this error alongside other expected exceptions in our `except` block.
 
 ```admonish info

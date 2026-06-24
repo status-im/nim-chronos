@@ -11,7 +11,7 @@ We want Chronos to start all the requests at the same time and handle each resul
 To achieve that, we will:
 
 1. Use `mapIt` from `std/sequtils` to create a list of `Future`s for our requests.
-2. Await all `Future`s at once with [`allFutures`](/api/chronos/internal/asyncfutures.html#allFutures,varargs[Future[T]]).
+2. Await all `Future`s at once with [`allFutures`](api/chronos/internal/asyncfutures.html#allFutures,varargs[Future[T]]).
 3. Add cancellation logic to ensure that if the main check is cancelled, all individual requests are also cancelled and awaited.
 
 Here's the code:
