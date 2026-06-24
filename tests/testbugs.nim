@@ -174,7 +174,7 @@ suite "Asynchronous issues test suite":
     test "{Event.Read, Event.Error} handling [poll()] test":
       var sockets: array[2, cint]
       check:
-        socketpair(AF_UNIX, SOCK_STREAM, 0, sockets) == 0
+        socketpair(osdefs.AF_UNIX, osdefs.SOCK_STREAM, 0, sockets) == 0
         setDescriptorBlocking(sockets[0], false).isOk()
 
       # Ensure {Event.Read} and {Event.Error} (EOF) are set
