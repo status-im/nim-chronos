@@ -11,7 +11,7 @@ import ../chronos, ../chronos/config
 {.push raises: [], gcsafe.}
 {.used.}
 
-suite "Stack unwind scheduling test suite":
+suite "Continuation scheduling test suite":
   type Trace = seq[string]
 
   proc runTest(
