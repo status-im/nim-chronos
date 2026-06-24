@@ -1022,11 +1022,11 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
       let events = loop.keys[i].events
 
       withData(loop.selector, cint(fd), adata) do:
-        if (Event.Read in events) or (events == {Event.Error}):
+        if (Event.Read in events) or (Event.Error in events):
           if not isNil(adata.reader.function):
             loop.callbacks.addLast(adata.reader)
 
-        if (Event.Write in events) or (events == {Event.Error}):
+        if (Event.Write in events) or (Event.Error in events):
           if not isNil(adata.writer.function):
             loop.callbacks.addLast(adata.writer)
 
