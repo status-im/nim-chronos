@@ -72,6 +72,13 @@ task test, "Run all tests":
     if f.startsWith("bench_") and f.endsWith(".nim"):
       build "", f[0..^5]
 
+task test_sync_continuations, "Run all tests with sync continuations":
+  for args in testArguments:
+    # First run tests with `refc` memory manager.
+    run args & " --mm:refc -d:chronosSyncContinuations", "tests/testall"
+    if (NimMajor, NimMinor) >= (2, 2): # ORC on 2.0 is too broken to investigate
+      run args & " --mm:orc -d:chronosSyncContinuations", "tests/testall"
+
 task test_v3_compat, "Run all tests in v3 compatibility mode":
   for args in testArguments:
     if (NimMajor, NimMinor) >= (2, 2):
@@ -79,14 +86,6 @@ task test_v3_compat, "Run all tests in v3 compatibility mode":
       run args & " --mm:refc -d:chronosHandleException", "tests/testall"
 
     run args & " -d:chronosHandleException", "tests/testall"
-
-task test_sync_continuations, "Run all tests with sync continuations":
-  for args in testArguments:
-    if (NimMajor, NimMinor) >= (2, 2):
-      # First run tests with `refc` memory manager.
-      run args & " --mm:refc -d:chronosSyncContinuations", "tests/testall"
-
-    run args & " -d:chronosSyncContinuations", "tests/testall"
 
 task test_libbacktrace, "test with libbacktrace":
   if platform != "x86":
