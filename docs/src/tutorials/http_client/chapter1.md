@@ -36,7 +36,7 @@ Now let's see what we're doing here line by line.
 {{#shiftinclude auto:../../../../examples/http_client/chapter1/src/uptimemon.nim:import}}
 ```
 
-[`httpclient`](/api/chronos/apps/http/httpclient.html) module, as the title suggests, implements the HTTP client capabilities, i.e. sending HTTP requests and dealing with the responses asynchronously.
+[`httpclient`](api/chronos/apps/http/httpclient.html) module, as the title suggests, implements the HTTP client capabilities, i.e. sending HTTP requests and dealing with the responses asynchronously.
 
 ```nim
 {{#shiftinclude auto:../../../../examples/http_client/chapter1/src/uptimemon.nim:check}}
@@ -60,7 +60,7 @@ Here, we're creating an HTTP session. Sessions are responsible for connection po
 
 When dealing with the Web, we must always assume the connection can break. So it's a good idea to get wrap all web interactions in a `try-except` block.
 
-[`fetch`](/api/chronos/apps/http/httpclient.html#fetch,HttpSessionRef,Uri) is a shortcut for "create an HTTP GET request within the given session to the given URL."
+[`fetch`](api/chronos/apps/http/httpclient.html#fetch,HttpSessionRef,Uri) is a shortcut for "create an HTTP GET request within the given session to the given URL."
 
 [`parseUri`](https://nim-lang.org/docs/uri.html#parseUri,string) is a function that parses a string into a structured URI object.
 
@@ -84,7 +84,7 @@ Note that catching `HttpError` does not contradict the `raises` value at the fun
 {{#shiftinclude auto:../../../../examples/http_client/chapter1/src/uptimemon.nim:finally}}
 ```
 
-No matter if the check was successful, we must close the session after we're done with it and return the resources back to your computer. [`closeWait`](/api/chronos/apps/http/httpclient.html#closeWait,HttpSessionRef) is a function that schedules all open connections within this session to be closed.
+No matter if the check was successful, we must close the session after we're done with it and return the resources back to your computer. [`closeWait`](api/chronos/apps/http/httpclient.html#closeWait,HttpSessionRef) is a function that schedules all open connections within this session to be closed.
 
 ```nim
 {{#shiftinclude auto:../../../../examples/http_client/chapter1/src/uptimemon.nim:isMainModule}}

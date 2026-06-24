@@ -53,7 +53,7 @@ Here we set the headers as an arrays of tuples using Nim's shortcut syntax.
 {{#shiftinclude auto:../../../../examples/http_client/chapter6/src/uptimemon.nim:body}}
 ```
 
-Requests body must be a sequence of bytes so we convert our text message using [`stringToBytes`](/api/chronos/apps/http/httpcommon.html#stringToBytes,openArray[char]).
+Requests body must be a sequence of bytes so we convert our text message using [`stringToBytes`](api/chronos/apps/http/httpcommon.html#stringToBytes,openArray[char]).
 
 ```nim
 {{#shiftinclude auto:../../../../examples/http_client/chapter6/src/uptimemon.nim:request}}
