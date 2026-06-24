@@ -314,7 +314,7 @@ proc asyncSingleProc(prc, params: NimNode): NimNode {.compileTime.} =
 
   prc.params2[0] = internalReturnType
 
-  if prc.kind notin {nnkProcTy, nnkLambda}:
+  if prc.kind notin {nnkProcTy, nnkLambda, nnkDo}:
     prc.addPragma(newColonExpr(ident "stackTrace", ident "off"))
 
   # The proc itself doesn't raise
