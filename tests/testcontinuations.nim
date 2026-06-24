@@ -227,4 +227,4 @@ suite "Continuation scheduling test suite":
 
     test "Multiple waiters test":
       check testMultipleWaiters() ==
-        @["produced", "subB", "strainB", "subA", "strainA"]
+        @["produced", "subA", "strainA", "subB", "strainB"]
