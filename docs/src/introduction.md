@@ -30,7 +30,7 @@ requires "chronos"
 and start using it:
 
 ```nim
-{{#include ../examples/httpget.nim}}
+{{#include ../../examples/httpget.nim}}
 ```
 
 There are more [examples](./examples.md) throughout the manual!
@@ -47,4 +47,4 @@ Several platforms are supported, with different backend [options](./concepts.md#
 ## API documentation
 
 This guide covers basic usage of chronos - for details, see the
-[API reference](./api/chronos.html).
+[API reference](/api/chronos.html).

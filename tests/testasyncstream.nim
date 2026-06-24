@@ -951,6 +951,66 @@ suite "AsyncStream/TLSStream":
     await server.join()
     check string.fromBytes(res) == (testMessage & "\r\n")
 
+  asyncTest "Concurrent read and write":
+    const
+      ChunkSize = 16
+      TotalSize = 128
+
+    proc readWrite(s: TLSAsyncStream) {.async: (raw: true).} =
+      proc doWrite() {.async.} =
+        let chunk = newSeq[byte](ChunkSize)
+        var length = 0
+        while length < TotalSize:
+          await s.writer.write(chunk)
+          length += chunk.len
+
+      proc doRead() {.async.} =
+        var length = 0
+        while length < TotalSize:
+          let chunk = await s.reader.read(ChunkSize)
+          if chunk.len == 0:
+            break
+          length += chunk.len
+
+      allFutures(doWrite(), doRead())
+
+    let key = TLSPrivateKey.init(SelfSignedRsaKey)
+    let cert = TLSCertificate.init(SelfSignedRsaCert)
+    proc serveClient(server: StreamServer,
+                     transp: StreamTransport) {.async: (raises: []).} =
+      try:
+        var reader = newAsyncStreamReader(transp)
+        var writer = newAsyncStreamWriter(transp)
+        var sstream = newTLSServerAsyncStream(reader, writer, key, cert)
+        await handshake(sstream)
+        await readWrite(sstream)
+        await sstream.writer.closeWait()
+        await sstream.reader.closeWait()
+        await reader.closeWait()
+        await writer.closeWait()
+        await transp.closeWait()
+        server.stop()
+        server.close()
+      except CatchableError as exc:
+        raiseAssert exc.msg
+
+    var server = createStreamServer(initTAddress("127.0.0.1:0"),
+                                    serveClient, {ReuseAddr})
+    server.start()
+    var conn = await connect(server.localAddress())
+    var creader = newAsyncStreamReader(conn)
+    var cwriter = newAsyncStreamWriter(conn)
+    let flags = {NoVerifyHost, NoVerifyServerName}
+    var cstream = newTLSClientAsyncStream(creader, cwriter, "", flags = flags)
+    await handshake(cstream)
+    await readWrite(cstream)
+    await cstream.writer.closeWait()
+    await cstream.reader.closeWait()
+    await creader.closeWait()
+    await cwriter.closeWait()
+    await conn.closeWait()
+    await server.join()
+
   const TestVectors = [
     ("test", 56, "X509BadServerName"),
     ("chronos-server-test.com", 62, "X509NotTrusted")

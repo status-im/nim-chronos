@@ -1367,26 +1367,26 @@ suite "HTTP server testing suite":
 
     check waitFor(testPostMultipart2()) == true
 
-  asyncTest "HTTP/1.1 pipeline test":
+  asyncTest "HTTP/1.1 persistent connections test":
     const TestMessages = [
       ("GET / HTTP/1.0\r\n\r\n",
-       {HttpServerFlags.Http11Pipeline}, false, "close"),
+       {HttpServerFlags.Http11Pipeline}, false, ""),
       ("GET / HTTP/1.0\r\nConnection: close\r\n\r\n",
-       {HttpServerFlags.Http11Pipeline}, false, "close"),
+       {HttpServerFlags.Http11Pipeline}, false, ""),
       ("GET / HTTP/1.0\r\nConnection: keep-alive\r\n\r\n",
-       {HttpServerFlags.Http11Pipeline}, false, "close"),
+       {HttpServerFlags.Http11Pipeline}, false, ""),
       ("GET / HTTP/1.0\r\n\r\n",
-       {}, false, "close"),
+       {}, false, ""),
       ("GET / HTTP/1.0\r\nConnection: close\r\n\r\n",
-       {}, false, "close"),
+       {}, false, ""),
       ("GET / HTTP/1.0\r\nConnection: keep-alive\r\n\r\n",
-       {}, false, "close"),
+       {}, false, ""),
       ("GET / HTTP/1.1\r\n\r\n",
-       {HttpServerFlags.Http11Pipeline}, true, "keep-alive"),
+       {HttpServerFlags.Http11Pipeline}, true, ""),
       ("GET / HTTP/1.1\r\nConnection: close\r\n\r\n",
        {HttpServerFlags.Http11Pipeline}, false, "close"),
       ("GET / HTTP/1.1\r\nConnection: keep-alive\r\n\r\n",
-       {HttpServerFlags.Http11Pipeline}, true, "keep-alive"),
+       {HttpServerFlags.Http11Pipeline}, true, ""),
       ("GET / HTTP/1.1\r\n\r\n",
        {}, false, "close"),
       ("GET / HTTP/1.1\r\nConnection: close\r\n\r\n",
@@ -1425,6 +1425,7 @@ suite "HTTP server testing suite":
       transp = await connect(address)
       block:
         let response = await transp.httpClient2(test[0], 7)
+        checkpoint: test[0]
         check:
           response.data == "TEST_OK"
           response.headers.getString("connection") == test[3]

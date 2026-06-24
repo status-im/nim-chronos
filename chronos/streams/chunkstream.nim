@@ -11,7 +11,6 @@
 
 {.push raises: [].}
 
-import stew/ptrops
 import ../[asyncloop, timer, bipbuffer, config]
 import asyncstream, ../transports/[stream, common]
 import results
