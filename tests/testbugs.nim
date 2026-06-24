@@ -10,7 +10,7 @@ import ../chronos
 
 when defined(posix):
   import stew/ptrops
-  import ../chronos/[osdefs, osutils]
+  import ../chronos/[config, osdefs, osutils]
 
 {.used.}
 
@@ -188,6 +188,12 @@ suite "Asynchronous issues test suite":
       while handleEintr(osdefs.write(sockets[0], baseAddr buf, buf.len)) > 0:
         discard
 
+      when chronosEventEngine == "poll":
+        # Linux uses POLLRDHUP not POLLHUP for half-closed socket,
+        # but poll engine only processes POLLHUP. Completely close
+        # to force {Event.Error} (EOF) to be set.
+        discard osdefs.close(sockets[1])
+
       func setFlag(udata: pointer) =
         let flag = cast[ptr bool](udata)
         doAssert not(flag[])
@@ -204,4 +210,5 @@ suite "Asynchronous issues test suite":
         unregister2(AsyncFD(sockets[0])).isOk()
 
       discard osdefs.close(sockets[0])
-      discard osdefs.close(sockets[1])
+      when chronosEventEngine != "poll":
+        discard osdefs.close(sockets[1])
