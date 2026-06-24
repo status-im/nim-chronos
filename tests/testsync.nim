@@ -6,7 +6,7 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 import unittest2
-import ../chronos
+import ../chronos, ../chronos/config
 
 {.used.}
 
@@ -36,9 +36,14 @@ suite "Asynchronous sync primitives test suite":
     discard testLock(8, lock)
     discard testLock(9, lock)
     lock.release()
-    ## There must be exactly 10 poll() calls
-    for i in 0..<10:
-      poll()
+    when chronosSyncContinuations:
+      ## There must be exactly 10 poll() calls
+      for i in 0..<10:
+        poll()
+    else:
+      ## There must be exactly 20 poll() calls
+      for i in 0..<20:
+        poll()
     result = testLockResult
 
   proc testFlag(): Future[bool] {.async.} =
@@ -156,7 +161,6 @@ suite "Asynchronous sync primitives test suite":
     await allFutures(fut1, fut2, fut3)
     result = stripe
 
-
   proc testEvent(n: int, ev: AsyncEvent) {.async.} =
     await ev.wait()
     testEventResult = testEventResult & $n
@@ -192,10 +196,15 @@ suite "Asynchronous sync primitives test suite":
     var queue = newAsyncQueue[int](1)
     discard task1(queue)
     discard task2(queue)
-    ## There must be exactly 3 poll() calls
-    poll()  # task1 pops item1
-    poll()  # task2 puts item2
-    poll()  # task1 pops item2
+    when chronosSyncContinuations:
+      ## There must be exactly 3 poll() calls
+      poll()  # task1 pops item1
+      poll()  # task2 puts item2
+      poll()  # task1 pops item2
+    else:
+      ## There must be exactly 2 poll() calls
+      poll()
+      poll()
     result = testQueue1Result
 
   const testsCount = 1000
@@ -231,7 +240,11 @@ suite "Asynchronous sync primitives test suite":
     var queue = newAsyncQueue[int](3)
     discard task51(queue)
     discard task52(queue)
-    poll()
+    when chronosSyncContinuations:
+      poll()
+    else:
+      poll()
+      poll()
     result = testQueue3Result
 
   proc test6(): bool =

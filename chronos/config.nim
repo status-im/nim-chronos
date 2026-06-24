@@ -35,6 +35,11 @@ const
     ##
     ## `Exception` handling may be removed in future chronos versions.
 
+  chronosSyncContinuations* {.booldefine.}: bool = false
+    ## When enabled, `await` continuations of futures created with
+    ## `FutureFlag.SyncContinuations` are run immediately, without
+    ## allowing other callbacks or events to be processed in-between.
+
   chronosStrictFutureAccess* {.booldefine.}: bool = defined(chronosPreviewV4)
 
   chronosStackTrace* {.booldefine.}: bool = defined(chronosDebug)
@@ -146,4 +151,3 @@ when chronosUseSink:
 else:
   template chronosSink*(T: type): type = T
   template chronosMoveSink*(v: sink auto): untyped = v
-

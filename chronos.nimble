@@ -80,6 +80,14 @@ task test_v3_compat, "Run all tests in v3 compatibility mode":
 
     run args & " -d:chronosHandleException", "tests/testall"
 
+task test_sync_continuations, "Run all tests with sync continuations":
+  for args in testArguments:
+    if (NimMajor, NimMinor) >= (2, 2):
+      # First run tests with `refc` memory manager.
+      run args & " --mm:refc -d:chronosSyncContinuations", "tests/testall"
+
+    run args & " -d:chronosSyncContinuations", "tests/testall"
+
 task test_libbacktrace, "test with libbacktrace":
   if platform != "x86":
     let allArgs = @[

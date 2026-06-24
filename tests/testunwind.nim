@@ -6,7 +6,7 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 import unittest2
-import ../chronos
+import ../chronos, ../chronos/config
 
 {.push raises: [], gcsafe.}
 {.used.}
@@ -20,10 +20,7 @@ suite "Stack unwind scheduling test suite":
         ): Future[void].Raising([CancelledError]) {.raises: [], gcsafe.}
   ): Trace =
     var trace: Trace
-    try:
-      waitFor cb(addr trace)
-    except CancelledError:
-      raiseAssert "Not cancelled"
+    waitFor noCancel cb(addr trace)
     trace
 
   proc competitorCb(udata: pointer) =
@@ -63,7 +60,28 @@ suite "Stack unwind scheduling test suite":
 
     runTest consumer
 
-  proc testMultiLevel(): Trace =
+  proc testCancellation(): Trace =
+    proc inner(trace: ptr Trace) {.async: (raises: [CancelledError]).} =
+      try:
+        await sleepAsync(10.minutes)
+      except CancelledError as exc:
+        callSoon(competitorCb, trace)
+        trace[].add "inner cancelled"
+        raise exc
+
+    proc outer(trace: ptr Trace) {.async: (raises: [CancelledError]).} =
+      try:
+        await inner(trace)
+      except CancelledError as exc:
+        trace[].add "outer cancelled"
+        raise exc
+
+    var trace: Trace
+    let fut = outer(addr trace)
+    waitFor cancelAndWait(fut)
+    trace
+
+  proc testNested(): Trace =
     proc bottom(
         trace: ptr Trace): Future[int] {.async: (raises: [CancelledError]).} =
       await sleepAsync(ZeroDuration)
@@ -133,7 +151,23 @@ suite "Stack unwind scheduling test suite":
 
     runTest consumer
 
-  proc testFanout(): Trace =
+  proc testManualSyncWakeup(): Trace =
+    let fut = Future[void].Raising([CancelledError])
+      .init("", {FutureFlag.SyncContinuations})
+
+    proc producer(trace: ptr Trace) {.async: (raises: [CancelledError]).} =
+      await fut
+      trace[].add "producer returns"
+
+    proc consumer(trace: ptr Trace) {.async: (raises: [CancelledError]).} =
+      let w = producer(trace)
+      callSoon(competitorCb, trace)
+      fut.complete()
+      await w
+
+    runTest consumer
+
+  proc testMultipleWaiters(): Trace =
     proc produce(
         trace: ptr Trace): Future[int] {.async: (raises: [CancelledError]).} =
       await sleepAsync(ZeroDuration)
@@ -143,13 +177,11 @@ suite "Stack unwind scheduling test suite":
     var trace: Trace
     let shared = produce(addr trace)
 
-    proc subA(
-        trace: ptr Trace): Future[void] {.async: (raises: [CancelledError]).} =
+    proc subA(trace: ptr Trace) {.async: (raises: [CancelledError]).} =
       discard await shared
       trace[].add "subA"
 
-    proc subB(
-        trace: ptr Trace): Future[void] {.async: (raises: [CancelledError]).} =
+    proc subB(trace: ptr Trace) {.async: (raises: [CancelledError]).} =
       discard await shared
       trace[].add "subB"
 
@@ -161,35 +193,38 @@ suite "Stack unwind scheduling test suite":
       await subB(trace)
       trace[].add "strainB"
 
-    try:
-      waitFor allFutures(strainA(addr trace), strainB(addr trace))
-    except CancelledError:
-      raiseAssert "Not cancelled"
+    waitFor noCancel allFutures(strainA(addr trace), strainB(addr trace))
     trace
 
-  test "Unwind not interrupted test":
-    check:
-      testValueReturn() ==
-        @["producer returns", "consumer returns 42", "competitor"]
-      testFailingReturn() ==
-        @["producer raising", "consumer caught", "competitor"]
+  when chronosSyncContinuations:
+    test "Simple flow not interrupted test":
+      check:
+        testValueReturn() ==
+          @["producer returns", "consumer returns 42", "competitor"]
+        testFailingReturn() ==
+          @["producer raising", "consumer caught", "competitor"]
 
-  test "Multi-level unwind not interrupted test":
-    check testMultiLevel() ==
-      @["bottom returns", "mid returns", "top returns 2", "competitor"]
+    test "Cancellation not interrupted test":
+      check testCancellation() ==
+        @["inner cancelled", "outer cancelled", "competitor"]
 
-  test "Observer deferred test":
-    check:
-      testObserverReturn() ==
-        @["producer returns", "consumer returns 7", "competitor", "observer"]
-      testObserverRaise() ==
-        @["producer raising", "consumer caught", "competitor", "observer"]
+    test "Nested flow not interrupted test":
+      check testNested() ==
+        @["bottom returns", "mid returns", "top returns 2", "competitor"]
 
-  test "Manual wakeup interruptible test":
-    check testManualWakeup() == @["competitor", "producer returns"]
+    test "Observer deferred test":
+      check:
+        testObserverReturn() ==
+          @["producer returns", "consumer returns 7", "competitor", "observer"]
+        testObserverRaise() ==
+          @["producer raising", "consumer caught", "competitor", "observer"]
 
-  test "Fan-out depth-first test":
-    # Each strain unwinds to conclusion before the next strain begins.
-    # Executed in reverse registration order.
-    check testFanout() ==
-      @["produced", "subB", "strainB", "subA", "strainA"]
+    test "Manual wakeup interruptible test":
+      check testManualWakeup() == @["competitor", "producer returns"]
+
+    test "Manual wakeup not interrupted test":
+      check testManualSyncWakeup() == @["producer returns", "competitor"]
+
+    test "Multiple waiters test":
+      check testMultipleWaiters() ==
+        @["produced", "subB", "strainB", "subA", "strainA"]

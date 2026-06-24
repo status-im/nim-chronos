@@ -109,12 +109,13 @@ template newFuture*[T](fromProc: static[string] = "",
   else:
     newFutureImpl[T](getSrcLocation(fromProc), flags)
 
-template newInternalRaisesFuture*[T, E](fromProc: static[string] = ""): auto =
+template newInternalRaisesFuture*[T, E](
+    fromProc: static[string] = "", flags: static[FutureFlags] = {}): auto =
   ## Creates a new future.
   ##
   ## Specifying ``fromProc``, which is a string specifying the name of the proc
   ## that this future belongs to, is a good habit as it helps with debugging.
-  newInternalRaisesFutureImpl[T, E](getSrcLocation(fromProc), {})
+  newInternalRaisesFutureImpl[T, E](getSrcLocation(fromProc), flags)
 
 template newFutureSeq*[A, B](fromProc: static[string] = ""): FutureSeq[A, B] {.deprecated.} =
   ## Create a new future which can hold/preserve GC sequence until future will
@@ -177,21 +178,22 @@ proc checkFinished(future: FutureBase, loc: ptr SrcLoc) =
     future.internalLocation[LocationKind.Finish] = loc
 
 proc scheduleCall(
-    callback: AsyncCallback, isFromAsyncMacro: bool) {.raises: [], gcsafe.}
+    callback: AsyncCallback, syncContinuations: bool) {.raises: [], gcsafe.}
 
 proc finish(fut: FutureBase, state: FutureState, loc: ptr SrcLoc) =
   fut.checkFinished(loc)
 
   fut.internalState = state
   fut.internalCancelcb = nil # release cancellation callback memory
-  let isFromAsyncMacro = not(isNil(fut.internalClosure))
+
+  let syncContinuations = FutureFlag.SyncContinuations in fut.internalFlags
 
   if not(isNil(fut.internalCallback.function)):
-    scheduleCall(move(fut.internalCallback), isFromAsyncMacro)
+    scheduleCall(move(fut.internalCallback), syncContinuations)
 
   for item in fut.internalCallbacks.mitems():
     if not(isNil(item.function)):
-      scheduleCall(item, isFromAsyncMacro)
+      scheduleCall(item, syncContinuations)
     item = default(AsyncCallback) # release memory as early as possible
   fut.internalCallbacks = default(seq[AsyncCallback]) # release seq as well
 
@@ -377,9 +379,12 @@ proc internalContinue(fut: pointer) {.raises: [], gcsafe.} =
   futureContinue(asFut)
 
 proc scheduleCall(
-    callback: AsyncCallback, isFromAsyncMacro: bool) {.raises: [], gcsafe.} =
-  if isFromAsyncMacro and callback.function == internalContinue:
-    internalCallNext(callback)
+    callback: AsyncCallback, syncContinuations: bool) {.raises: [], gcsafe.} =
+  when chronosSyncContinuations:
+    if syncContinuations and callback.function == internalContinue:
+      callSoon(callback, immediate = true)
+    else:
+      callSoon(callback)
   else:
     callSoon(callback)
 

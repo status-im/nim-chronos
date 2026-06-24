@@ -48,6 +48,13 @@ type
       ## If `cancelCallback` is not set and the future gets cancelled, a
       ## `Defect` will be raised.
 
+    SyncContinuations
+      ## When set, any `await` continuations are run immediately, without
+      ## allowing other callbacks or events to be processed in-between.
+      ## `{.async.}` procs set this flag implicitly.
+      ##
+      ## Only works when the `chronosSyncContinuations` config is enabled.
+
   FutureFlags* = set[FutureFlag]
 
   InternalFutureBase* = object of RootObj
