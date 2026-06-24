@@ -32,4 +32,4 @@ We use a `case` statement to check the `request.uri.path`.
 - For the `/status` path, we return a simple operational message.
 - For any other path, we use the `else` branch to return an HTTP 404 Not Found error.
 
-By using [`request.respond`](api/chronos/apps/http/httpserver.html#respond,HttpRequestRef,HttpCode,ByteChar), we can easily control both the HTTP status code and the response body.
+By using [`request.respond`](../../api/chronos/apps/http/httpserver.html#respond,HttpRequestRef,HttpCode,ByteChar), we can easily control both the HTTP status code and the response body.

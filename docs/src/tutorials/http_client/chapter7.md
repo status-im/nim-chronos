@@ -36,11 +36,11 @@ We've added more URIs to the list to make batching effect visible.
 {{#shiftinclude auto:../../../../examples/http_client/chapter7/src/uptimemon.nim:semaphore}}
 ```
 
-We've modified `check` function for a single URI so that it accepts a `semaphore` (of type[`AsyncSemaphore`](api/chronos/asyncsync.html#AsyncSemaphore)), waits to [`acquire`](api/chronos/asyncsync.html#acquire,AsyncSemaphore) it, and [`release`](api/chronos/asyncsync.html#release,AsyncSemaphore)s it at the end (we use `defer` to postpone the release).
+We've modified `check` function for a single URI so that it accepts a `semaphore` (of type[`AsyncSemaphore`](../../api/chronos/asyncsync.html#AsyncSemaphore)), waits to [`acquire`](../../api/chronos/asyncsync.html#acquire,AsyncSemaphore) it, and [`release`](../../api/chronos/asyncsync.html#release,AsyncSemaphore)s it at the end (we use `defer` to postpone the release).
 
 With this short addition, we prevent `check` from running if the semaphore is full.
 
-Because releasing a semaphore can raise a [`AsyncSemaphoreError`](api/chronos/asyncsync.html#AsyncSemaphoreError) and it would happen outside of our managed `try` block, we wrap the `release` call in its own `try..except` block to handle it gracefully and prevent it from bubbling up.
+Because releasing a semaphore can raise a [`AsyncSemaphoreError`](../../api/chronos/asyncsync.html#AsyncSemaphoreError) and it would happen outside of our managed `try` block, we wrap the `release` call in its own `try..except` block to handle it gracefully and prevent it from bubbling up.
 
 ```nim
 {{#shiftinclude auto:../../../../examples/http_client/chapter7/src/uptimemon.nim:check}}
