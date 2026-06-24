@@ -665,3 +665,16 @@ suite "Exceptions tracking":
         ccc == 1
     else:
       skip()
+
+  test "async do":
+    var called = false
+    proc callProc[T](f: proc (): T {.raises: [], gcsafe.}): T =
+      f()
+
+    proc foo() {.async.} =
+      await callProc do {.async.}:
+        called = true
+    waitFor foo()
+    check:
+      called
+
