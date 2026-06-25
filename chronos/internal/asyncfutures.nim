@@ -317,7 +317,7 @@ proc addCallback*(
   ## If future has already completed then ``cb`` will be called immediately.
   doAssert(not isNil(cb))
 
-  const _: set[CallbackFlag] = flags
+  const _: set[CallbackFlag] = flags  # https://github.com/nim-lang/Nim/issues/25938
   let isContinuation =
     when chronosSyncContinuations and CallbackFlag.Continuation in flags:
       FutureFlag.SyncContinuations in future.internalFlags
