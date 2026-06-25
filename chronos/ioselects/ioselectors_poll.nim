@@ -207,7 +207,7 @@ proc prepareKey[T](s: Selector[T], event: var TPollfd): Opt[ReadyKey] =
     rkey.events.incl(Event.Write)
 
   if (revents and POLLERR) != 0 or (revents and POLLHUP) != 0 or
-     (event.events and EPOLLRDHUP) != 0 or (revents and POLLNVAL) != 0:
+     (revents and EPOLLRDHUP) != 0 or (revents and POLLNVAL) != 0:
     rkey.events.incl(Event.Error)
 
   ok(rkey)
