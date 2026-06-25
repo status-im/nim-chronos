@@ -215,9 +215,9 @@ suite "Continuation scheduling test suite":
     test "Observer deferred test":
       check:
         testObserverReturn() ==
-          @["producer returns", "consumer returns 7", "competitor", "observer"]
+          @["producer returns", "observer", "consumer returns 7", "competitor"]
         testObserverRaise() ==
-          @["producer raising", "consumer caught", "competitor", "observer"]
+          @["producer raising", "observer", "consumer caught", "competitor"]
 
     test "Manual wakeup interruptible test":
       check testManualWakeup() == @["competitor", "producer returns"]

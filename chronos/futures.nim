@@ -49,8 +49,8 @@ type
       ## `Defect` will be raised.
 
     SyncContinuations
-      ## When set, any `await` continuations are run immediately, without
-      ## allowing other callbacks or events to be processed in-between.
+      ## When set, any continuations are scheduled to run before processing
+      ## other already queued events such as timer handlers and I/O.
       ## `{.async.}` procs set this flag implicitly.
       ##
       ## Only works when the `chronosSyncContinuations` config is enabled.
