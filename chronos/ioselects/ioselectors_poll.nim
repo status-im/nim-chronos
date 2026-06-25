@@ -91,8 +91,15 @@ proc close2*(event: SelectEvent): SelectResult[void] =
   else:
     ok()
 
+const POLLRDHUP =
+  when compiles(EPOLLRDHUP):
+    static: doAssert EPOLLRDHUP <= cshort.high
+    cshort(EPOLLRDHUP)
+  else:
+    cshort(0)
+
 template toPollEvents(events: set[Event]): cshort =
-  var res = cshort(0)
+  var res = cshort(POLLRDHUP)
   if Event.Read in events: res = res or POLLIN
   if Event.Write in events: res = res or POLLOUT
   res
