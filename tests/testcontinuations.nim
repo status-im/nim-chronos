@@ -196,35 +196,55 @@ suite "Continuation scheduling test suite":
     waitFor noCancel allFutures(strainA(addr trace), strainB(addr trace))
     trace
 
-  when chronosSyncContinuations:
-    test "Simple flow not interrupted test":
+  test "Simple flow not interrupted test":
+    when chronosSyncContinuations:
       check:
         testValueReturn() ==
           @["producer returns", "consumer returns 42", "competitor"]
         testFailingReturn() ==
           @["producer raising", "consumer caught", "competitor"]
+    else:
+      skip()
 
-    test "Cancellation not interrupted test":
+  test "Cancellation not interrupted test":
+    when chronosSyncContinuations:
       check testCancellation() ==
         @["inner cancelled", "outer cancelled", "competitor"]
+    else:
+      skip()
 
-    test "Nested flow not interrupted test":
+  test "Nested flow not interrupted test":
+    when chronosSyncContinuations:
       check testNested() ==
         @["bottom returns", "mid returns", "top returns 2", "competitor"]
+    else:
+      skip()
 
-    test "Observer deferred test":
+  test "Observer deferred test":
+    when chronosSyncContinuations:
       check:
         testObserverReturn() ==
           @["producer returns", "observer", "consumer returns 7", "competitor"]
         testObserverRaise() ==
           @["producer raising", "observer", "consumer caught", "competitor"]
+    else:
+      skip()
 
-    test "Manual wakeup interruptible test":
+  test "Manual wakeup interruptible test":
+    when chronosSyncContinuations:
       check testManualWakeup() == @["competitor", "producer returns"]
+    else:
+      skip()
 
-    test "Manual wakeup not interrupted test":
+  test "Manual wakeup not interrupted test":
+    when chronosSyncContinuations:
       check testManualSyncWakeup() == @["producer returns", "competitor"]
+    else:
+      skip()
 
-    test "Multiple waiters test":
+  test "Multiple waiters test":
+    when chronosSyncContinuations:
       check testMultipleWaiters() ==
         @["produced", "subA", "strainA", "subB", "strainB"]
+    else:
+      skip()
