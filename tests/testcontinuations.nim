@@ -196,6 +196,88 @@ suite "Continuation scheduling test suite":
     waitFor noCancel allFutures(strainA(addr trace), strainB(addr trace))
     trace
 
+  proc testOrFirstFails(): Trace =
+    proc first(
+        trace: ptr Trace
+    ): Future[void] {.async: (raises: [CancelledError, ValueError]).} =
+      await sleepAsync(ZeroDuration)
+      trace[].add "fut1 fails"
+      raise newException(ValueError, "err")
+
+    proc second(
+        trace: ptr Trace,
+        fut1: Future[void].Raising([CancelledError, ValueError])
+    ) {.async: (raises: [CancelledError]).} =
+      try: await fut1
+      except ValueError: discard
+      trace[].add "fut2 completes"
+
+    proc consumer(trace: ptr Trace) {.async: (raises: [CancelledError]).} =
+      let
+        fut1 = first(trace)
+        fut2 = second(trace, fut1)
+      try:
+        await (fut1 or fut2)
+        trace[].add "or: completed"
+      except ValueError:
+        trace[].add "or: failed"
+
+    runTest consumer
+
+  proc testRaceFirstWins(): Trace =
+    proc first(
+        trace: ptr Trace): Future[int] {.async: (raises: [CancelledError]).} =
+      await sleepAsync(ZeroDuration)
+      trace[].add "first completes"
+      1
+
+    proc second(
+        trace: ptr Trace,
+        fut1: Future[int].Raising([CancelledError])
+    ): Future[int] {.async: (raises: [CancelledError]).} =
+      discard await fut1
+      trace[].add "second completes"
+      2
+
+    proc consumer(trace: ptr Trace) {.async: (raises: [CancelledError]).} =
+      let
+        fut1 = first(trace)
+        fut2 = second(trace, fut1)
+        res = await race(fut1, fut2)
+      if res == FutureBase(fut1):
+        trace[].add "race: first"
+      else:
+        trace[].add "race: second"
+
+    runTest consumer
+
+  proc testOneFirstWins(): Trace =
+    proc first(
+        trace: ptr Trace): Future[int] {.async: (raises: [CancelledError]).} =
+      await sleepAsync(ZeroDuration)
+      trace[].add "first completes"
+      1
+
+    proc second(
+        trace: ptr Trace,
+        fut1: Future[int].Raising([CancelledError])
+    ): Future[int] {.async: (raises: [CancelledError]).} =
+      discard await fut1
+      trace[].add "second completes"
+      2
+
+    proc consumer(trace: ptr Trace) {.async: (raises: [CancelledError]).} =
+      let
+        fut1 = first(trace)
+        fut2 = second(trace, fut1)
+        res = await one(fut1, fut2)
+      if FutureBase(res) == FutureBase(fut1):
+        trace[].add "one: first"
+      else:
+        trace[].add "one: second"
+
+    runTest consumer
+
   test "Simple flow not interrupted test":
     when chronosSyncContinuations:
       check:
@@ -246,5 +328,17 @@ suite "Continuation scheduling test suite":
     when chronosSyncContinuations:
       check testMultipleWaiters() ==
         @["produced", "subA", "strainA", "subB", "strainB"]
+    else:
+      skip()
+
+  test "Combinator first-finisher test":
+    when chronosSyncContinuations:
+      check:
+        testOrFirstFails() ==
+          @["fut1 fails", "fut2 completes", "or: failed"]
+        testRaceFirstWins() ==
+          @["first completes", "second completes", "race: first"]
+        testOneFirstWins() ==
+          @["first completes", "second completes", "one: first"]
     else:
       skip()
