@@ -188,12 +188,6 @@ suite "Asynchronous issues test suite":
       while handleEintr(osdefs.write(sockets[0], baseAddr buf, buf.len)) > 0:
         discard
 
-      when chronosEventEngine == "poll":
-        # Linux uses POLLRDHUP not POLLHUP for half-closed socket,
-        # but poll engine only processes POLLHUP. Completely close
-        # to force {Event.Error} (EOF) to be set.
-        discard osdefs.close(sockets[1])
-
       func setFlag(udata: pointer) =
         let flag = cast[ptr bool](udata)
         doAssert not(flag[])
