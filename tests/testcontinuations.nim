@@ -306,9 +306,9 @@ suite "Continuation scheduling test suite":
     when chronosSyncContinuations:
       check:
         testObserverReturn() ==
-          @["producer returns", "observer", "consumer returns 7", "competitor"]
+          @["producer returns", "consumer returns 7", "competitor", "observer"]
         testObserverRaise() ==
-          @["producer raising", "observer", "consumer caught", "competitor"]
+          @["producer raising", "consumer caught", "competitor", "observer"]
     else:
       skip()
 
