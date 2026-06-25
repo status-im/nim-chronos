@@ -37,8 +37,10 @@ const
 
   chronosSyncContinuations* {.booldefine.}: bool = false
     ## When enabled, `await` continuations of futures created with
-    ## `FutureFlag.SyncContinuations` are run immediately, without
-    ## allowing other callbacks or events to be processed in-between.
+    ## `FutureFlag.SyncContinuations` are scheduled to run before processing
+    ## other already queued events such as timer handlers and I/O.
+    ##
+    ## This feature is experimental and may be removed in future releases.
 
   chronosStrictFutureAccess* {.booldefine.}: bool = defined(chronosPreviewV4)
 
