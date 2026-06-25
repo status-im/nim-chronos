@@ -645,7 +645,10 @@ proc pollFor[F: Future | InternalRaisesFuture](fut: F): F {.raises: [].} =
   if not(fut.finished()):
     var finished = false
     # Ensure that callbacks currently scheduled on the future run before returning
-    proc continuation(udata: pointer) {.gcsafe.} = finished = true
+    proc continuation(udata: pointer) {.gcsafe.} =
+      callSoon do(_: pointer):
+        finished = true
+
     fut.addCallback(continuation)
 
     while not(finished):
