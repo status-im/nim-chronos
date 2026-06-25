@@ -1146,6 +1146,8 @@ proc race*(fut0: FutureBase, futs: varargs[FutureBase]): Future[FutureBase] {.
 
   oneImpl
 
+proc one*(_: typeof([])) {.error: "`one` requires at least one future".}
+
 proc race*(futs: openArray[FutureBase]): Future[FutureBase] {.
     async: (raw: true, raises: [ValueError, CancelledError]).} =
   ## Waits for one of the given futures to finish and returns it.
@@ -1196,6 +1198,8 @@ proc race*(futs: openArray[SomeFuture]): Future[SomeFuture] {.
     return retFuture
 
   oneImpl
+
+proc race*(_: typeof([])) {.error: "`race` requires at least one future".}
 
 when (chronosEventEngine in ["epoll", "kqueue"]) or defined(windows):
   import std/os
