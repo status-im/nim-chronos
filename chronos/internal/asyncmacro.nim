@@ -13,6 +13,13 @@ import
   ../[futures, config],
   ./raisesfutures
 
+template errorReturnWorkaround(body) =
+  when NimMajor < 2:
+    body
+    raiseAssert "never hit"
+  else:
+    body
+
 proc processBody(node, setResultSym: NimNode): (NimNode, bool) {.compileTime.} =
   case node.kind
   of nnkReturnStmt:
@@ -283,9 +290,10 @@ proc asyncSingleProc(prc, params: NimNode): NimNode {.compileTime.} =
     elif not (
         returnType.kind == nnkBracketExpr and
         (eqIdent(returnType[0], "Future") or eqIdent(returnType[0], "InternalRaisesFuture"))):
-      error(
-        "Expected return type of 'Future' got '" & repr(returnType) & "'", prc)
-      return
+      errorReturnWorkaround:
+        error(
+          "Expected return type of 'Future' got '" & repr(returnType) & "'", prc)
+
     else:
       returnType[1]
 
@@ -314,7 +322,7 @@ proc asyncSingleProc(prc, params: NimNode): NimNode {.compileTime.} =
 
   prc.params2[0] = internalReturnType
 
-  if prc.kind notin {nnkProcTy, nnkLambda}:
+  if prc.kind notin {nnkProcTy, nnkLambda, nnkDo}:
     prc.addPragma(newColonExpr(ident "stackTrace", ident "off"))
 
   # The proc itself doesn't raise
