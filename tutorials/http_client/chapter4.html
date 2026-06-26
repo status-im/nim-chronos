@@ -1,0 +1,330 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Timeouts &amp; Cancellation - Chronos</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../../favicon.svg">
+        <link rel="shortcut icon" href="../../favicon.png">
+        <link rel="stylesheet" href="../../css/variables.css">
+        <link rel="stylesheet" href="../../css/general.css">
+        <link rel="stylesheet" href="../../css/chrome.css">
+        <link rel="stylesheet" href="../../css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../../FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="../../fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="highlight-css" href="../../highlight.css">
+        <link rel="stylesheet" id="tomorrow-night-css" href="../../tomorrow-night.css">
+        <link rel="stylesheet" id="ayu-highlight-css" href="../../ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+        <link rel="stylesheet" href="../.././open-in.css">
+        <link rel="stylesheet" href="../.././mdbook-admonish.css">
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "../../";
+            const default_light_theme = "light";
+            const default_dark_theme = "navy";
+            window.path_to_searchindex_js = "../../searchindex.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="../../toc.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="../../toc.html"></iframe>
+            </noscript>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Chronos</h1>
+
+                    <div class="right-buttons">
+                        <a href="../../print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/status-im/nim-chronos/" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <i class="fa fa-spinner fa-spin"></i>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="timeouts--cancellation"><a class="header" href="#timeouts--cancellation">Timeouts &amp; Cancellation</a></h1>
+<p><strong>Goal:</strong> Learn how to prevent the program from freezing on slow responses.</p>
+<p><strong>Source code:</strong> <a href="https://github.com/status-im/nim-chronos/blob/master/examples/http_client/chapter4/src/uptimemon.nim">chapter4/src/uptimemon.nim</a></p>
+<p>Our current program works fine with the well-behaving URIs we've tested so far: all these locations either respond quickly or quickly return an error.</p>
+<p>However, not all requests will go smoothly when you face the real web. Poor connections, slow servers, anti-bot checks, and access restrictions result in responses that may take long to complete or even never complete. One "misbehaving" request can negatively affect the entire program.</p>
+<p>For example, try adding an IP address that never responds to the list:</p>
+<pre><code class="language-nim">const uris = @[
+  "https://duckduckgo.com/?q=chronos", "https://mock.codes/403", "http://10.255.255.1",
+]
+</code></pre>
+<p>Run the program and you'll see that it'll run for 10+ seconds, stuck on this last IP.</p>
+<p>Let's add a timeout to our requests to cancel slow requests before they ruin our app: if a request takes longer than 5 seconds, we cancel it.</p>
+<pre><code class="language-nim">import std/sequtils
+import chronos/apps/http/httpclient
+
+const uris = @[
+  "https://duckduckgo.com/?q=chronos", "https://mock.codes/403", "http://10.255.255.1",
+]
+
+proc check(session: HttpSessionRef, uri: string) {.async: (raises: [CancelledError]).} =
+  try:
+    let response = await session.fetch(parseUri(uri)).wait(5.seconds)
+
+    if response.status == 200:
+      echo "[OK] " &amp; uri
+    else:
+      echo "[NOK] " &amp; uri &amp; ": " &amp; $response.status
+  except HttpError, FuturePendingError, AsyncTimeoutError:
+    echo "[ERR] " &amp; uri &amp; ": " &amp; getCurrentExceptionMsg()
+
+proc check(uris: seq[string]) {.async: (raises: []).} =
+  let
+    session = HttpSessionRef.new()
+    futures = uris.mapIt(session.check(it))
+
+  try:
+    await allFutures(futures)
+  except CancelledError:
+    await cancelAndWait(futures)
+  finally:
+    await session.closeWait()
+
+when isMainModule:
+  waitFor check(uris)
+</code></pre>
+<p>Here's the part that changed:</p>
+<pre><code class="language-nim">proc check(session: HttpSessionRef, uri: string) {.async: (raises: [CancelledError]).} =
+  try:
+    let response = await session.fetch(parseUri(uri)).wait(5.seconds)
+
+    if response.status == 200:
+      echo "[OK] " &amp; uri
+    else:
+      echo "[NOK] " &amp; uri &amp; ": " &amp; $response.status
+  except HttpError, FuturePendingError, AsyncTimeoutError:
+    echo "[ERR] " &amp; uri &amp; ": " &amp; getCurrentExceptionMsg()
+</code></pre>
+<ol>
+<li>We use the <a href="../../api/chronos/internal/asyncfutures.html#wait,Future%5BT%5D,Duration"><code>.wait(timeout)</code></a> modifier on our <code>fetch</code> future.</li>
+<li>If the request takes longer than the provided duration, <code>.wait()</code> automatically cancels the underlying future and raises an <a href="../../api/chronos/internal/errors.html#AsyncTimeoutError"><code>AsyncTimeoutError</code></a>.</li>
+<li>We catch this error alongside other expected exceptions in our <code>except</code> block.</li>
+</ol>
+<div id="admonition-info" class="admonition admonish-info" role="note" aria-labelledby="admonition-info-title">
+<div class="admonition-title">
+<div id="admonition-info-title">
+<p>Info</p>
+</div>
+<a class="admonition-anchor-link" href="#admonition-info"></a>
+</div>
+<div>
+<p>In Nim, there are several ways to capture the message from an exception:</p>
+<ul>
+<li>using <code>getCurrentExceptionMsg()</code>, as we do in this tutorial</li>
+<li>using <code>except &lt;Exception&gt; as e</code> and then calling <code>e.msg</code></li>
+</ul>
+<p>Both variants have their advantages and limitations. For example, the <code>as</code> syntax can be used only with one exception type at a time while a lonely <code>except</code> used with <code>getCurrentExceptionMsg()</code> allows to capture multiple exception types in one statement.</p>
+<p>On the other hand, because <code>e.msg</code> is guaranteed to capture a particular exception type, it's more deterministic and gives better control over exception handling logic.</p>
+<p>The rule of thumb is that when your exception handling is simple (like we have in this tutorial—we simply <code>echo</code> the message regardless of the exception type), <code>getCurrentExceptionMsg()</code> is a simpler, more readable option, but if elaborate exception handling is an essential part of your business logic, you should prefer <code>except &lt;Exception&gt; as e ... e.msg</code> syntax.</p>
+</div>
+</div>
+<p>Run the program again and you'll see it complete in roughly 5 seconds, i.e. our timeout.</p>
+<div id="admonition-warning" class="admonition admonish-warning" role="note" aria-labelledby="admonition-warning-title">
+<div class="admonition-title">
+<div id="admonition-warning-title">
+<p>Warning</p>
+</div>
+<a class="admonition-anchor-link" href="#admonition-warning"></a>
+</div>
+<div>
+<p>One important thing to notice here is that adding a timeout won't save us from slow DNS resolutions.</p>
+<p>Before we can make an HTTP request, we need to <em>resolve the target hostname</em>, i.e. get the IP address that corresponds to the given hostname. This is called DNS resolution and it is a blocking operation in Chronos.</p>
+<p>For valid URIs, DNS resolution happens quickly enough to not interfere with the main logic. However, for invalid URIs (e.g. <code>https://123.456.789.90</code>) the resolution can stall for several seconds.</p>
+<p>The main takeaway here is <strong>don't check invalid URIs</strong>.</p>
+</div>
+</div>
+<footer id="open-on-gh">Found a bug? <a href="https://github.com/status-im/nim-chronos//edit/master/docs/src/tutorials/http_client/chapter4.md">Edit this page on GitHub.</a></footer>
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../../tutorials/http_client/chapter3.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next prefetch" href="../../tutorials/http_client/chapter5.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../../tutorials/http_client/chapter3.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next prefetch" href="../../tutorials/http_client/chapter5.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="../../elasticlunr.min.js"></script>
+        <script src="../../mark.min.js"></script>
+        <script src="../../searcher.js"></script>
+
+        <script src="../../clipboard.min.js"></script>
+        <script src="../../highlight.js"></script>
+        <script src="../../book.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+
+    </div>
+    </body>
+</html>

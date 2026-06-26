@@ -1,0 +1,26 @@
+asyncInvalidSocket	chronos/handles.html#asyncInvalidSocket	handles: asyncInvalidSocket	
+asyncInvalidPipe	chronos/handles.html#asyncInvalidPipe	handles: asyncInvalidPipe	
+setSocketBlocking	chronos/handles.html#setSocketBlocking,SocketHandle,bool	handles: setSocketBlocking(s: SocketHandle; blocking: bool): bool	
+setSockOpt2	chronos/handles.html#setSockOpt2,AsyncFD,int,int,int	handles: setSockOpt2(socket: AsyncFD; level, optname, optval: int): Result[void,\n    OSErrorCode]	
+setSockOpt2	chronos/handles.html#setSockOpt2,AsyncFD,int,int,pointer,int	handles: setSockOpt2(socket: AsyncFD; level, optname: int; value: pointer; valuelen: int): Result[\n    void, OSErrorCode]	
+setSockOpt	chronos/handles.html#setSockOpt,AsyncFD,int,int,int	handles: setSockOpt(socket: AsyncFD; level, optname, optval: int): bool	
+setSockOpt	chronos/handles.html#setSockOpt,AsyncFD,int,int,pointer,int	handles: setSockOpt(socket: AsyncFD; level, optname: int; value: pointer; valuelen: int): bool	
+getSockOpt2	chronos/handles.html#getSockOpt2,AsyncFD,int,int	handles: getSockOpt2(socket: AsyncFD; level, optname: int): Result[cint, OSErrorCode]	
+getSockOpt2	chronos/handles.html#getSockOpt2,AsyncFD,int,int,type	handles: getSockOpt2(socket: AsyncFD; level, optname: int; T: type): Result[T,\n    OSErrorCode]	
+getSockOpt	chronos/handles.html#getSockOpt,AsyncFD,int,int,int	handles: getSockOpt(socket: AsyncFD; level, optname: int; value: var int): bool	
+getSockOpt	chronos/handles.html#getSockOpt,AsyncFD,int,int,pointer,int	handles: getSockOpt(socket: AsyncFD; level, optname: int; value: var pointer;\n           valuelen: var int): bool	
+getSocketError	chronos/handles.html#getSocketError,AsyncFD,int	handles: getSocketError(socket: AsyncFD; err: var int): bool	
+getSocketError2	chronos/handles.html#getSocketError2,AsyncFD	handles: getSocketError2(socket: AsyncFD): Result[cint, OSErrorCode]	
+isAvailable	chronos/handles.html#isAvailable,Domain	handles: isAvailable(domain: Domain): bool	
+createAsyncSocket2	chronos/handles.html#createAsyncSocket2,Domain,SockType,Protocol	handles: createAsyncSocket2(domain: Domain; sockType: SockType; protocol: Protocol;\n                   inherit = true): Result[AsyncFD, OSErrorCode]	
+wrapAsyncSocket2	chronos/handles.html#wrapAsyncSocket2	handles: wrapAsyncSocket2(sock: cint | SocketHandle): Result[AsyncFD, OSErrorCode]	
+createAsyncSocket	chronos/handles.html#createAsyncSocket,Domain,SockType,Protocol	handles: createAsyncSocket(domain: Domain; sockType: SockType; protocol: Protocol;\n                  inherit = true): AsyncFD	
+wrapAsyncSocket	chronos/handles.html#wrapAsyncSocket	handles: wrapAsyncSocket(sock: cint | SocketHandle): AsyncFD	
+getMaxOpenFiles2	chronos/handles.html#getMaxOpenFiles2	handles: getMaxOpenFiles2(): Result[int, OSErrorCode]	
+setMaxOpenFiles2	chronos/handles.html#setMaxOpenFiles2,int	handles: setMaxOpenFiles2(count: int): Result[void, OSErrorCode]	
+getMaxOpenFiles	chronos/handles.html#getMaxOpenFiles	handles: getMaxOpenFiles(): int	
+setMaxOpenFiles	chronos/handles.html#setMaxOpenFiles,int	handles: setMaxOpenFiles(count: int)	
+getInheritable	chronos/handles.html#getInheritable,AsyncFD	handles: getInheritable(fd: AsyncFD): Result[bool, OSErrorCode]	
+createAsyncPipe	chronos/handles.html#createAsyncPipe	handles: createAsyncPipe(): tuple[read: AsyncFD, write: AsyncFD]	
+getDualstack	chronos/handles.html#getDualstack,AsyncFD	handles: getDualstack(fd: AsyncFD): Result[bool, OSErrorCode]	
+setDualstack	chronos/handles.html#setDualstack,AsyncFD,bool	handles: setDualstack(fd: AsyncFD; value: bool): Result[void, OSErrorCode]	

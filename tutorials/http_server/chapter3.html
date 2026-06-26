@@ -1,0 +1,420 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Handling POST Requests and Processing JSON - Chronos</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../../favicon.svg">
+        <link rel="shortcut icon" href="../../favicon.png">
+        <link rel="stylesheet" href="../../css/variables.css">
+        <link rel="stylesheet" href="../../css/general.css">
+        <link rel="stylesheet" href="../../css/chrome.css">
+        <link rel="stylesheet" href="../../css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../../FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="../../fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="highlight-css" href="../../highlight.css">
+        <link rel="stylesheet" id="tomorrow-night-css" href="../../tomorrow-night.css">
+        <link rel="stylesheet" id="ayu-highlight-css" href="../../ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+        <link rel="stylesheet" href="../.././open-in.css">
+        <link rel="stylesheet" href="../.././mdbook-admonish.css">
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "../../";
+            const default_light_theme = "light";
+            const default_dark_theme = "navy";
+            window.path_to_searchindex_js = "../../searchindex.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="../../toc.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="../../toc.html"></iframe>
+            </noscript>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Chronos</h1>
+
+                    <div class="right-buttons">
+                        <a href="../../print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/status-im/nim-chronos/" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <i class="fa fa-spinner fa-spin"></i>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="handling-post-requests-and-processing-json"><a class="header" href="#handling-post-requests-and-processing-json">Handling POST Requests and Processing JSON</a></h1>
+<p><strong>Goal:</strong> Learn how to handle POST requests and process incoming JSON data.</p>
+<p><strong>Source code:</strong> <a href="https://github.com/status-im/nim-chronos/blob/master/examples/http_server/chapter3/src/dashboard.nim">chapter3/src/dashboard.nim</a></p>
+<p>In a real-life application, you often need to receive data from clients, not just serve static content. Our dashboard needs to receive status reports from other services.</p>
+<p>Let's update our server to handle POST requests containing JSON data and store these reports in memory:</p>
+<pre><code class="language-nim">import chronos/apps/http/httpserver
+import std/[json, tables]
+
+proc handler(reports: TableRef[string, string]): HttpProcessCallback2 =
+  proc(
+      reqfence: RequestFence
+  ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
+    let request = reqfence.valueOr:
+      return defaultResponse()
+
+    try:
+      case request.uri.path
+      of "/":
+        await request.respond(Http200, "Welcome to the Status Dashboard!")
+
+      of "/status":
+        var output = "Current Service Status:\n"
+        if reports.len == 0:
+          output.add("- No reports available.")
+        else:
+          for name, status in reports:
+            output.add("- " &amp; name &amp; ": " &amp; status &amp; "\n")
+        await request.respond(Http200, output)
+
+      of "/report":
+        if request.meth != MethodPost:
+          return await request.respond(Http405, "Method Not Allowed")
+
+        let
+          body = await request.getBody()
+          data =
+            try:
+              parseJson(bytesToString(body))
+            except CatchableError:
+              return await request.respond(Http400, "Invalid JSON.")
+          name =
+            try:
+              data["name"].getStr()
+            except KeyError:
+              return await request.respond(Http400, "Missing 'name' field.")
+          status =
+            try:
+              data["status"].getStr()
+            except KeyError:
+              return await request.respond(Http400, "Missing 'status' field.")
+
+        reports[name] = status
+        echo "Received report: " &amp; name &amp; " is " &amp; status
+
+        await request.respond(Http200, "Report received.")
+      else:
+        await request.respond(Http404, "Page not found.")
+    except HttpError as exc:
+      defaultResponse(exc)
+
+proc main() {.async: (raises: [TransportAddressError, CancelledError]).} =
+  var reports = newTable[string, string]()
+
+  let
+    address = initTAddress("127.0.0.1:8080")
+    server = HttpServerRef.new(address, handler(reports)).valueOr:
+      echo "Unable to start HTTP server: " &amp; error
+      return
+
+  server.start()
+  echo "HTTP server running on http://127.0.0.1:8080"
+
+  try:
+    await server.join()
+  finally:
+    await server.stop()
+    await server.closeWait()
+
+when isMainModule:
+  waitFor main()
+</code></pre>
+<p>To test this version, run it with <code>nimble run</code> and use a tool like <code>curl</code> to send a POST request:</p>
+<pre><code class="language-shell">$ curl -X POST -H "Content-Type: application/json" -d '{"name": "google.com", "status": "UP"}' http://127.0.0.1:8080/report
+</code></pre>
+<p>Then, visit <a href="http://127.0.0.1:8080/status">127.0.0.1:8080</a> in your browser to see the updated status.</p>
+<h2 id="handling-post-requests"><a class="header" href="#handling-post-requests">Handling POST Requests</a></h2>
+<div id="admonition-info" class="admonition admonish-info" role="note" aria-labelledby="admonition-info-title">
+<div class="admonition-title">
+<div id="admonition-info-title">
+<p>Info</p>
+</div>
+<a class="admonition-anchor-link" href="#admonition-info"></a>
+</div>
+<div>
+<p>The HTTP protocol divides each request and response into a <strong>header</strong> and a <strong>body</strong>. The header contains metadata like the request method and path, while the body contains the actual content — the JSON payload in our case. This is true for both requests and responses.</p>
+</div>
+</div>
+<pre><code class="language-nim">proc handler(reports: TableRef[string, string]): HttpProcessCallback2 =
+  proc(
+      reqfence: RequestFence
+  ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
+</code></pre>
+<p>The first change you'll notice is that we wrapped our <code>handler</code> proc with another function that returns the actual handler (of type <a href="../../api/chronos/apps/http/httpserver.html#HttpProcessCallback2"><code>HttpProcessCallback2</code></a>). This is done to enable passing an input param <code>reports</code> that we'll use to store the statuses.</p>
+<p>In the handler, we added logic for the <code>/report</code> path:</p>
+<pre><code class="language-nim">of "/report":
+  if request.meth != MethodPost:
+    return await request.respond(Http405, "Method Not Allowed")
+
+  let
+    body = await request.getBody()
+    data =
+      try:
+        parseJson(bytesToString(body))
+      except CatchableError:
+        return await request.respond(Http400, "Invalid JSON.")
+    name =
+      try:
+        data["name"].getStr()
+      except KeyError:
+        return await request.respond(Http400, "Missing 'name' field.")
+    status =
+      try:
+        data["status"].getStr()
+      except KeyError:
+        return await request.respond(Http400, "Missing 'status' field.")
+
+  reports[name] = status
+  echo "Received report: " &amp; name &amp; " is " &amp; status
+
+  await request.respond(Http200, "Report received.")
+</code></pre>
+<ol>
+<li>We check if the request method is <code>MethodPost</code>.</li>
+<li>We use <a href="../../api/chronos/apps/http/httpserver.html#getBody,HttpRequestRef"><code>request.getBody()</code></a> to asynchronously read the entire request body.</li>
+<li><code>body</code> is an array of bytes, so we need to convert it to a string before we can parse it. To do that, we use <a href="../../api/chronos/apps/http/httpcommon.html#bytesToString,openArray%5Bbyte%5D"><code>bytesToString</code></a> function from <code>chronos/apps/http/httpcommon</code>.</li>
+<li>We use Nim's <code>std/json</code> library to parse the body as JSON. We wrap this in a <code>try-except</code> block to handle parsing errors. We want to catch all parsing errors at this point, so it's a rare case where catching generic <code>CatchableError</code> is fine.</li>
+<li>We extract the relevant fields and store them in our table. We use a separate <code>try-except</code> block to catch <code>KeyError</code> if the fields are missing.</li>
+</ol>
+<div id="admonition-info-1" class="admonition admonish-info" role="note" aria-labelledby="admonition-info-1-title">
+<div class="admonition-title">
+<div id="admonition-info-1-title">
+<p>Info</p>
+</div>
+<a class="admonition-anchor-link" href="#admonition-info-1"></a>
+</div>
+<div>
+<p>When dealing with JSON from clients, we must assume it can be malformed or missing fields. We handle these cases by catching parsing errors and <code>KeyError</code> exceptions, returning an appropriate HTTP 400 Bad Request status.</p>
+</div>
+</div>
+<h2 id="generating-response"><a class="header" href="#generating-response">Generating Response</a></h2>
+<p>Finally, for the <code>/status</code> path, we now generate a dynamic string based on the data in our table:</p>
+<pre><code class="language-nim">of "/status":
+  var output = "Current Service Status:\n"
+  if reports.len == 0:
+    output.add("- No reports available.")
+  else:
+    for name, status in reports:
+      output.add("- " &amp; name &amp; ": " &amp; status &amp; "\n")
+  await request.respond(Http200, output)
+</code></pre>
+<h2 id="storing-data-in-memory"><a class="header" href="#storing-data-in-memory">Storing Data in Memory</a></h2>
+<p>We use an in-memory <code>TableRef</code> to store our status reports.</p>
+<pre><code class="language-nim">var reports = newTable[string, string]()
+
+let
+  address = initTAddress("127.0.0.1:8080")
+  server = HttpServerRef.new(address, handler(reports)).valueOr:
+    echo "Unable to start HTTP server: " &amp; error
+    return
+
+server.start()
+echo "HTTP server running on http://127.0.0.1:8080"
+</code></pre>
+<p>We pass <code>reports</code> to the handler generating function to generate a handler that would store statuses to it.</p>
+<div id="admonition-info-2" class="admonition admonish-info" role="note" aria-labelledby="admonition-info-2-title">
+<div class="admonition-title">
+<div id="admonition-info-2-title">
+<p>Info</p>
+</div>
+<a class="admonition-anchor-link" href="#admonition-info-2"></a>
+</div>
+<div>
+<p>In a real app you would store your persistent data in a database of key-value storage. In this tutorial, we use a <code>Table</code> for simplicity's sake.</p>
+</div>
+</div>
+<footer id="open-on-gh">Found a bug? <a href="https://github.com/status-im/nim-chronos//edit/master/docs/src/tutorials/http_server/chapter3.md">Edit this page on GitHub.</a></footer>
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../../tutorials/http_server/chapter2.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next prefetch" href="../../tutorials/http_server/chapter4.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../../tutorials/http_server/chapter2.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next prefetch" href="../../tutorials/http_server/chapter4.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="../../elasticlunr.min.js"></script>
+        <script src="../../mark.min.js"></script>
+        <script src="../../searcher.js"></script>
+
+        <script src="../../clipboard.min.js"></script>
+        <script src="../../highlight.js"></script>
+        <script src="../../book.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+
+    </div>
+    </body>
+</html>
