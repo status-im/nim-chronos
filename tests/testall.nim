@@ -8,17 +8,18 @@
 import ".."/chronos/config
 
 when (chronosEventEngine in ["epoll", "kqueue"]) or defined(windows):
-  import testmacro, testsync, testsoon, testtime, testfut, testsignal,
+  import testmacro, testsync, testsoon, testcontinuations, testtime, testfut,
          testaddress, testdatagram, teststream, testserver, testbugs, testnet,
          testasyncstream, testhttpserver, testshttpserver, testhttpclient,
-         testproc, testratelimit, testfutures, testthreadsync, testasyncsemaphore
+         testratelimit, testfutures, testthreadsync, testasyncsemaphore,
+         testsignal, testproc
 
   # Must be imported last to check for Pending futures
   import testutils
 elif chronosEventEngine == "poll":
   # `poll` engine do not support signals and processes
-  import testmacro, testsync, testsoon, testtime, testfut, testaddress,
-         testdatagram, teststream, testserver, testbugs, testnet,
+  import testmacro, testsync, testsoon, testcontinuations, testtime, testfut,
+         testaddress, testdatagram, teststream, testserver, testbugs, testnet,
          testasyncstream, testhttpserver, testshttpserver, testhttpclient,
          testratelimit, testfutures, testthreadsync, testasyncsemaphore
 
