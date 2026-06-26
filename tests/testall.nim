@@ -11,7 +11,8 @@ when (chronosEventEngine in ["epoll", "kqueue"]) or defined(windows):
   import testmacro, testsync, testsoon, testtime, testfut, testsignal,
          testaddress, testdatagram, teststream, testserver, testbugs, testnet,
          testasyncstream, testhttpserver, testshttpserver, testhttpclient,
-         testproc, testratelimit, testfutures, testthreadsync, testasyncsemaphore
+         testproc, testratelimit, testfutures, testthreadsync, testasyncsemaphore,
+         testasyncstacktrace
 
   # Must be imported last to check for Pending futures
   import testutils
@@ -20,7 +21,8 @@ elif chronosEventEngine == "poll":
   import testmacro, testsync, testsoon, testtime, testfut, testaddress,
          testdatagram, teststream, testserver, testbugs, testnet,
          testasyncstream, testhttpserver, testshttpserver, testhttpclient,
-         testratelimit, testfutures, testthreadsync, testasyncsemaphore
+         testratelimit, testfutures, testthreadsync, testasyncsemaphore,
+         testasyncstacktrace
 
   # Must be imported last to check for Pending futures
   import testutils
