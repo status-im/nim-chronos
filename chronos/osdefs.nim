@@ -1142,7 +1142,7 @@ elif defined(linux):
        cdecl, importc: "signalfd", header: "<sys/signalfd.h>".}
 
 elif defined(freebsd) or defined(openbsd) or defined(netbsd) or
-     defined(dragonfly):
+     defined(dragonfly) or defined(haiku):
   from std/posix import close, shutdown, socket, getpeername, getsockname,
                         recvfrom, sendto, send, bindSocket, recv, connect,
                         unlink, listen, getaddrinfo, gai_strerror, getrlimit,
@@ -1261,9 +1261,19 @@ elif defined(macos) or defined(macosx):
     IPPROTO_TCP* = 6
     POSIX_SPAWN_USEVFORK* = 0x00
     IPV6_V6ONLY* = 27
+elif defined(haiku):
+  const
+    SOCK_CLOEXEC* = 0x80000
+    SOCK_NONBLOCK* = 0x40000
+    TCP_NODELAY* = cint(1)
+    IPPROTO_TCP* = 6
+    O_CLOEXEC* = 0x40
+    IPV6_V6ONLY* = 30
+
 
 when defined(linux) or defined(macos) or defined(macosx) or defined(freebsd) or
-     defined(openbsd) or defined(netbsd) or defined(dragonfly):
+     defined(openbsd) or defined(netbsd) or defined(dragonfly) or
+     defined(haiku):
 
   const
     POSIX_SPAWN_RESETIDS* = 0x01

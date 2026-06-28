@@ -777,7 +777,7 @@ when defined(linux):
       discard osdefs.close(sock)
       res
 
-elif defined(macosx) or defined(macos) or defined(bsd):
+elif defined(macosx) or defined(macos) or defined(bsd) or defined(haiku):
 
   proc toInterfaceType(f: byte): InterfaceType =
     var ft = int(f)

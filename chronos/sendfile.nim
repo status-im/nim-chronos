@@ -38,7 +38,7 @@ when defined(nimdoc):
     ## be prepared to retry the call if there were unsent bytes.
     ##
     ## On error, ``-1`` is returned.
-elif defined(emscripten):
+elif defined(emscripten) or defined(haiku):
 
   proc sendfile*(outfd, infd: int, offset: int, count: var int): int =
     raiseAssert "sendfile() is not implemented yet"
