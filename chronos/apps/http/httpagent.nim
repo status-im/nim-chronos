@@ -14,11 +14,11 @@ import strutils
 const
   ChronosName* = "nim-chronos"
     ## Project name string
-  ChronosMajor* {.intdefine.}: int = 3
+  ChronosMajor* {.intdefine.}: int = 4
     ## Major number of Chronos' version.
-  ChronosMinor* {.intdefine.}: int = 0
+  ChronosMinor* {.intdefine.}: int = 4
     ## Minor number of Chronos' version.
-  ChronosPatch* {.intdefine.}: int = 2
+  ChronosPatch* {.intdefine.}: int = 0
     ## Patch number of Chronos' version.
   ChronosVersion* = $ChronosMajor & "." & $ChronosMinor & "." & $ChronosPatch
     ## Version of Chronos as a string.
