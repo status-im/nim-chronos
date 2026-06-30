@@ -82,7 +82,7 @@ const
       "epoll"
     elif defined(macosx) or defined(macos) or defined(ios) or
           defined(freebsd) or defined(netbsd) or defined(openbsd) or
-          defined(dragonfly):
+          defined(dragonfly) or defined(haiku):
       "kqueue"
     elif defined(posix):
       "poll"
