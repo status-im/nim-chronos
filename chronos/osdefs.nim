@@ -1268,6 +1268,7 @@ elif defined(haiku):
     TCP_NODELAY* = cint(1)
     IPPROTO_TCP* = 6
     O_CLOEXEC* = 0x40
+    POSIX_SPAWN_USEVFORK* = 0x00
     IPV6_V6ONLY* = 30
 
 
@@ -1509,6 +1510,22 @@ elif defined(macos) or defined(macosx):
     (WSTATUS(s) == 0x7F) and (WAITSTOPSIG(s) != 0x13)
   template WAITIFCONTINUED*(s: cint): bool =
     (WSTATUS(s) == 0x7F) and (WAITSTOPSIG(s) == 0x13)
+elif defined(haiku):
+  const WNOHANG* = 1
+  template WAITEXITSTATUS*(s: cint): cint =
+    s and 0xFF
+  template WAITTERMSIG*(s: cint): cint =
+    (s shr 8) and 0xff
+  template WAITSTOPSIG*(s: cint): cint =
+    (s shr 16) and 0xff
+  template WAITIFEXITED*(s: cint): bool =
+    (s and not 0xff) == 0
+  template WAITIFSIGNALED*(s: cint): bool =
+    (WAITTERMSIG(s) != 0)
+  template WAITIFSTOPPED*(s: cint): bool =
+    WAITSTOPSIG(s) != 0
+  template WAITIFCONTINUED*(s: cint): bool =
+    s and 0x20000
 elif defined(posix):
   proc WAITEXITSTATUS*(s: cint): cint {.
        importc: "WEXITSTATUS", header: "<sys/wait.h>".}
@@ -1651,6 +1668,45 @@ when defined(macosx) or defined(macos) or defined(bsd):
        header: """#include <sys/types.h>
                   #include <sys/socket.h>
                   #include <ifaddrs.h>""".}
+elif defined(haiku):
+  const
+    AF_LINK* = 18
+    IFF_UP* = 0x01
+    IFF_RUNNING* = 0x00010000
+
+  type
+    IfAddrs* {.importc: "struct ifaddrs", header: "<ifaddrs.h>",
+               pure, final.} = object
+      ifa_next* {.importc: "ifa_next".}: ptr IfAddrs
+      ifa_name* {.importc: "ifa_name".}: ptr cchar
+      ifa_flags* {.importc: "ifa_flags".}: cuint
+      ifa_addr* {.importc: "ifa_addr".}: ptr SockAddr
+      ifa_netmask* {.importc: "ifa_netmask".}: ptr SockAddr
+      ifa_dstaddr* {.importc: "ifa_dstaddr".}: ptr SockAddr
+      ifa_data* {.importc: "ifa_data".}: pointer
+
+    PIfAddrs* = ptr IfAddrs
+
+    Sockaddr_dl* = object
+      sdl_len*: byte
+      sdl_family*: byte
+      sdl_e_type*: uint16
+      sdl_index*: uint32
+      sdl_type*: byte
+      sdl_nlen*: byte
+      sdl_alen*: byte
+      sdl_slen*: byte
+      sdl_data*: array[46, byte]
+
+  proc getIfAddrs*(ifap: ptr PIfAddrs): cint {.importc: "getifaddrs",
+       header: """#include <sys/types.h>
+                  #include <sys/socket.h>
+                  #include <ifaddrs.h>""".}
+  proc freeIfAddrs*(ifap: ptr IfAddrs) {.importc: "freeifaddrs",
+       header: """#include <sys/types.h>
+                  #include <sys/socket.h>
+                  #include <ifaddrs.h>""".}
+
 elif defined(linux):
   const
     AF_NETLINK* = cint(16)
