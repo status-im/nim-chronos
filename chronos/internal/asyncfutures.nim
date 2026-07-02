@@ -710,44 +710,46 @@ proc asyncCheck*[T](future: Future[T]) {.
       cb(nil)
 
 template orImpl*[T, Y](fut1: Future[T], fut2: Future[Y]): untyped =
-  var cb: proc(udata: pointer) {.gcsafe, raises: [].}
-  cb = proc(udata: pointer) {.gcsafe, raises: [].} =
-    if not(retFuture.finished()):
-      var fut = cast[FutureBase](udata)
-      if cast[pointer](fut1) == udata:
-        fut2.removeCallback(cb)
-      else:
-        fut1.removeCallback(cb)
-      if fut.failed():
-        retFuture.fail(fut.error, warn = false)
-      else:
-        retFuture.complete()
-
-  proc cancellation(udata: pointer) =
-    # On cancel we remove all our callbacks only.
-    if not(fut1.finished()):
-      fut1.removeCallback(cb)
-    if not(fut2.finished()):
-      fut2.removeCallback(cb)
-
   if fut1.finished():
     if fut1.failed():
       retFuture.fail(fut1.error, warn = false)
     else:
       retFuture.complete()
-    return retFuture
-
-  if fut2.finished():
+  elif fut2.finished():
     if fut2.failed():
       retFuture.fail(fut2.error, warn = false)
     else:
       retFuture.complete()
-    return retFuture
+  else:
+    # Avoid cyclic reference
+    var cbc {.cursor.}: proc(udata: pointer) {.gcsafe, raises: [].}
+    proc cb(udata: pointer) {.gcsafe, raises: [].} =
+      if not(retFuture.finished()):
+        var fut = cast[FutureBase](udata)
+        if cast[pointer](fut1) == udata:
+          fut2.removeCallback(cbc)
+        else:
+          fut1.removeCallback(cbc)
+        if fut.failed():
+          retFuture.fail(fut.error, warn = false)
+        else:
+          retFuture.complete()
+        reset(cbc)
 
-  fut1.addCallback(cb)
-  fut2.addCallback(cb)
+    proc cancellation(udata: pointer) =
+      # On cancel we remove all our callbacks only.
+      if not(fut1.finished()):
+        fut1.removeCallback(cbc)
+      if not(fut2.finished()):
+        fut2.removeCallback(cbc)
+      reset(cbc)
 
-  retFuture.cancelCallback = cancellation
+    cbc = cb
+
+    fut1.addCallback(cb)
+    fut2.addCallback(cb)
+
+    retFuture.cancelCallback = cancellation
   retFuture
 
 proc `or`*[T, Y](fut1: Future[T], fut2: Future[Y]): Future[void] =
@@ -1072,23 +1074,25 @@ template oneImpl: untyped =
     nfuts.add fut0
   nfuts.add futs
 
-  var cb: proc(udata: pointer) {.gcsafe, raises: [].}
-  cb = proc(udata: pointer) {.gcsafe, raises: [].} =
+  var cbc {.cursor.}: proc(udata: pointer) {.gcsafe, raises: [].} # Avoid cyclic ref warning
+  proc cb(udata: pointer) {.gcsafe, raises: [].} =
     if not(retFuture.finished()):
       for fut in nfuts.mitems():
         if cast[pointer](fut) == udata:
           retFuture.complete(move(fut))
         else:
-          fut.removeCallback(cb)
+          fut.removeCallback(cbc)
       reset(nfuts)
-      reset(cb)
+      reset(cbc)
 
   proc cancellation(udata: pointer) =
     # On cancel we remove all our callbacks only.
     for fut in nfuts:
-      fut.removeCallback(cb)
+      fut.removeCallback(cbc)
     reset(nfuts)
-    reset(cb)
+    reset(cbc)
+
+  cbc = cb
 
   for fut in nfuts:
     fut.addCallback(cb, cast[pointer](fut))
