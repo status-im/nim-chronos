@@ -965,6 +965,8 @@ suite "HTTP server testing suite":
         ("Bearer    aGVsbG8=", "bearer", "aGVsbG8="),
         ("Bearer aGVsbG8= ", "bearer", "aGVsbG8="),
         ("Bearer aGVsbG8=\t", "bearer", "aGVsbG8="),
+        (" Bearer aGVsbG8=", "bearer", "aGVsbG8="),
+        ("\tBearer aGVsbG8=", "bearer", "aGVsbG8="),
         ("Basic dXNlcjpwYXNz", "basic", "dXNlcjpwYXNz"),
         ("Digest username=\"user\", realm=\"realm\"", "digest",
          "username=\"user\", realm=\"realm\""),
@@ -973,8 +975,9 @@ suite "HTTP server testing suite":
       ]
       FailureVectors = [
         "",
-        " Bearer aGVsbG8=",
+        " ",
         "Bear\ter aGVsbG8=",
+        "Bearer\taGVsbG8=",
         "(Bearer) aGVsbG8="
       ]
 
