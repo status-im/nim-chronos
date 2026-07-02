@@ -90,6 +90,10 @@ type
     key: string
     value: string
 
+  AuthorizationData* = object
+    scheme*: string
+    credentials*: string
+
   TransferEncodingFlags* {.pure.} = enum
     Identity, Chunked, Compress, Deflate, Gzip
 
@@ -328,6 +332,39 @@ func getContentType*(ch: openArray[string]): HttpResult[ContentTypeData] =
     if res.isErr():
       return err($res.error())
     ok(res.get())
+
+func getAuthorization*(ch: openArray[string]): HttpResult[AuthorizationData] =
+  ## Check and prepare value of ``Authorization`` header.
+  ##
+  ## The authentication scheme is normalized to lower case, the credentials
+  ## are returned verbatim.
+  # https://www.rfc-editor.org/info/rfc9110/#section-11.4
+  # credentials = auth-scheme [ 1*SP ( token68 / #auth-param ) ]
+  # auth-scheme = token
+  # https://www.rfc-editor.org/info/rfc9110/#section-5.6.2
+  # token = 1*tchar
+  const TCHAR = TOKEND + NUM + ALPHA
+  if len(ch) == 0:
+    err("No Authorization values found")
+  elif len(ch) > 1:
+    err("Multiple Authorization values found")
+  else:
+    # https://www.rfc-editor.org/info/rfc9110/#section-5.5
+    # A field value does not include leading or trailing whitespace.
+    let value = strip(ch[0], chars = SPACE)
+    var index = 0
+    for c in value:
+      if c == ' ':
+        break
+      if c notin TCHAR:
+        return err("Invalid Authorization value")
+      inc(index)
+    if index == 0:
+      return err("Invalid Authorization value")
+    let scheme = value[0 ..< index].toLowerAscii()
+    while index < len(value) and value[index] == ' ':
+      inc(index)
+    ok(AuthorizationData(scheme: scheme, credentials: value[index .. ^1]))
 
 proc bytesToString*(src: openArray[byte], dst: var openArray[char]) =
   ## Convert array of bytes to array of characters.
