@@ -11,7 +11,7 @@ requires "nim >= 1.6.16",
          "results",
          "stew >= 0.5.0",
          "bearssl >= 0.2.8",
-         "httputils",
+         "httputils >= 0.4.2",
          "unittest2"
 
 import os, strutils

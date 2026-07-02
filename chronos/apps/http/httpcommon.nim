@@ -343,7 +343,6 @@ func getAuthorization*(ch: openArray[string]): HttpResult[AuthorizationData] =
   # auth-scheme = token
   # https://www.rfc-editor.org/info/rfc9110/#section-5.6.2
   # token = 1*tchar
-  const TCHAR = TOKEND + NUM + ALPHA
   if len(ch) == 0:
     err("No Authorization values found")
   elif len(ch) > 1:
