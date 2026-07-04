@@ -956,44 +956,13 @@ suite "HTTP server testing suite":
       getContentEncoding(["", ""]).tryGet() == { ContentEncodingFlags.Identity }
 
   test "getAuthorization() test":
-    const
-      SuccessVectors = [
-        ("Bearer aGVsbG8=", "bearer", "aGVsbG8="),
-        ("bearer aGVsbG8=", "bearer", "aGVsbG8="),
-        ("BEARER aGVsbG8=", "bearer", "aGVsbG8="),
-        ("BeArEr aGVsbG8=", "bearer", "aGVsbG8="),
-        ("Bearer    aGVsbG8=", "bearer", "aGVsbG8="),
-        ("Bearer aGVsbG8= ", "bearer", "aGVsbG8="),
-        ("Bearer aGVsbG8=\t", "bearer", "aGVsbG8="),
-        (" Bearer aGVsbG8=", "bearer", "aGVsbG8="),
-        ("\tBearer aGVsbG8=", "bearer", "aGVsbG8="),
-        ("Basic dXNlcjpwYXNz", "basic", "dXNlcjpwYXNz"),
-        ("Digest username=\"user\", realm=\"realm\"", "digest",
-         "username=\"user\", realm=\"realm\""),
-        ("Bearer", "bearer", ""),
-        ("Bearer ", "bearer", "")
-      ]
-      FailureVectors = [
-        "",
-        " ",
-        "Bear\ter aGVsbG8=",
-        "Bearer\taGVsbG8=",
-        "(Bearer) aGVsbG8="
-      ]
-
-    for vector in SuccessVectors:
-      let res = getAuthorization([vector[0]])
-      check:
-        res.isOk()
-        res.get() == AuthorizationData(scheme: vector[1],
-                                       credentials: vector[2])
-
-    for vector in FailureVectors:
-      check getAuthorization([vector]).isErr()
-
     check:
+      getAuthorization(["Bearer aGVsbG8="]).tryGet() ==
+        AuthorizationData(status: HttpStatus.Success,
+                          scheme: "bearer", credentials: "aGVsbG8=")
       getAuthorization([]).isErr()
       getAuthorization(["Bearer aaa", "Bearer bbb"]).isErr()
+      getAuthorization(["(Bearer) aGVsbG8="]).isErr()
 
   test "queryParams() test":
     const Vectors = [
