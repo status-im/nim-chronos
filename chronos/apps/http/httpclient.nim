@@ -438,13 +438,13 @@ proc redirect*(srcuri, dsturi: Uri): Uri =
     combine(srcuri, tmpuri)
 
 proc redirect*(session: HttpSessionRef,
-               srcaddr: HttpAddress, uri: Uri): HttpResult[HttpAddress] =
+               srcaddr: HttpAddress, uri: Uri): HttpAddressResult =
   ## Transform original address ``srcaddr`` using redirected url ``uri`` and
   ## session ``session`` parameters.
   let srcuri = srcaddr.getUri()
   var newuri = srcuri.redirect(uri)
   if newuri.hostname != srcuri.hostname:
-    session.getAddress(newuri)
+    session.getHttpAddress(newuri)
   else:
     let scheme =
       case newuri.scheme
@@ -1049,7 +1049,7 @@ proc new*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
           maxResponseHeadersSize: int = HttpMaxHeadersSize,
           headers: openArray[HttpHeaderTuple] = [],
           body: openArray[byte] = []): HttpResult[HttpClientRequestRef] =
-  let address = ? session.getAddress(parseUri(url))
+  let address = ? session.getHttpAddress(parseUri(url))
   ok HttpClientRequestRef.new(
     session, address, meth, version, flags, maxResponseHeadersSize, headers,
     body)
@@ -1081,7 +1081,7 @@ when chronosUseSink:
             headers: openArray[HttpHeaderTuple] = [],
             body: sink seq[byte]):
               HttpResult[HttpClientRequestRef] =
-    let ha = ? session.getAddress(parseUri(url))
+    let ha = ? session.getHttpAddress(parseUri(url))
     ok HttpClientRequestRef.new(
       session, ha, meth, version, flags, maxResponseHeadersSize, headers,
       move(body))
@@ -1327,7 +1327,7 @@ proc send*(request: HttpClientRequestRef): Future[HttpClientResponseRef] {.
 
   await request.finish()
 
-proc getNewLocation*(resp: HttpClientResponseRef): HttpResult[HttpAddress] =
+proc getNewLocation*(resp: HttpClientResponseRef): HttpAddressResult =
   ## Returns new address according to response's `Location` header value.
   if "location" in resp.headers:
     let location = resp.headers.getString("location")
@@ -1594,7 +1594,8 @@ proc redirect*(request: HttpClientRequestRef,
   if redirectCount > request.session.maxRedirections:
     err("Maximum number of redirects exceeded")
   else:
-    let address = ? request.session.redirect(request.address, uri)
+    let address = request.session.redirect(request.address, uri).valueOr:
+      return err($error)
     # Update Host header to redirected URL hostname
     let headers =
       block:
