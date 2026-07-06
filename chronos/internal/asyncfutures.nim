@@ -734,7 +734,6 @@ template orImpl*[T, Y](fut1: Future[T], fut2: Future[Y]): untyped =
           retFuture.fail(fut.error, warn = false)
         else:
           retFuture.complete()
-        reset(cbc)
 
     proc cancellation(udata: pointer) =
       # On cancel we remove all our callbacks only.
@@ -742,7 +741,6 @@ template orImpl*[T, Y](fut1: Future[T], fut2: Future[Y]): untyped =
         fut1.removeCallback(cbc)
       if not(fut2.finished()):
         fut2.removeCallback(cbc)
-      reset(cbc)
 
     cbc = cb
 
@@ -1050,7 +1048,7 @@ proc allFinished*[F: SomeFuture](futs: varargs[F]): Future[seq[F]] {.
       inc(finishedFutures)
 
   retFuture.cancelCallback = cancellation
-  if len(nfuts) == 0 or len(nfuts) == finishedFutures:
+  if len(nfuts) == finishedFutures:
     retFuture.complete(move(nfuts))
 
   return retFuture
@@ -1077,20 +1075,18 @@ template oneImpl: untyped =
   var cbc {.cursor.}: proc(udata: pointer) {.gcsafe, raises: [].} # Avoid cyclic ref warning
   proc cb(udata: pointer) {.gcsafe, raises: [].} =
     if not(retFuture.finished()):
+      var nfuts = move nfuts # Reset the closure environment eagerly
       for fut in nfuts.mitems():
         if cast[pointer](fut) == udata:
           retFuture.complete(move(fut))
         else:
           fut.removeCallback(cbc)
-      reset(nfuts)
-      reset(cbc)
 
   proc cancellation(udata: pointer) =
     # On cancel we remove all our callbacks only.
+    let nfuts = move nfuts # Reset the closure environment eagerly
     for fut in nfuts:
       fut.removeCallback(cbc)
-    reset(nfuts)
-    reset(cbc)
 
   cbc = cb
 
