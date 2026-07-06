@@ -10,8 +10,8 @@ skipDirs      = @["tests"]
 
 requires "nim >= 1.6.16",
          "results",
-         "stew",
-         "bearssl >= 0.2.7",
+         "stew >= 0.5.0",
+         "bearssl >= 0.2.8",
          "httputils",
          "unittest2"
 
@@ -48,22 +48,50 @@ proc run(args, path: string) =
   build args, path
   exec "build/" & path.splitPath[1]
 
+proc tryExec(cmd: string) =
+  try:
+    exec cmd
+  except Exception as e:
+    echo e.msg
+
 task examples, "Build examples":
   # Build book examples
-  for file in listFiles("docs/examples"):
+  for file in listFiles("examples"):
     if file.endsWith(".nim"):
       build "--threads:on", file
+
+  # Build HTTP client tutorial examples
+  for chapterDir in listDirs("examples/http_client"):
+    withDir(chapterDir):
+      tryExec "nimble build"
+
+  # Build HTTP server tutorial examples
+  for chapterDir in listDirs("examples/http_server"):
+    withDir(chapterDir):
+      tryExec "nimble build"
+
+task benchmarks, "Run benchmarks":
+  # Make sure benchmarks compile
+  for f in walkDirRec("benchmarks"):
+
+    if f.contains("bench_") and f.endsWith(".nim"):
+      run "-d:release", f[0..^5]
 
 task test, "Run all tests":
   for args in testArguments:
     # First run tests with `refc` memory manager.
     run args & " --mm:refc", "tests/testall"
-    if (NimMajor, NimMinor) > (1, 6):
+    if (NimMajor, NimMinor) >= (2, 2): # ORC on 2.0 is too broken to investigate
       run args & " --mm:orc", "tests/testall"
+
+  # Make sure benchmarks compile
+  for f in walkDirRec("benchmarks"):
+    if f.startsWith("bench_") and f.endsWith(".nim"):
+      build "", f[0..^5]
 
 task test_v3_compat, "Run all tests in v3 compatibility mode":
   for args in testArguments:
-    if (NimMajor, NimMinor) > (1, 6):
+    if (NimMajor, NimMinor) >= (2, 2):
       # First run tests with `refc` memory manager.
       run args & " --mm:refc -d:chronosHandleException", "tests/testall"
 
@@ -78,9 +106,17 @@ task test_libbacktrace, "test with libbacktrace":
     for args in allArgs:
       # First run tests with `refc` memory manager.
       run args & " --mm:refc", "tests/testall"
-      if (NimMajor, NimMinor) > (1, 6):
+      if (NimMajor, NimMinor) >= (2, 2):
         run args & " --mm:orc", "tests/testall"
 
 task docs, "Generate API documentation":
   exec "mdbook build docs"
-  exec nimc & " doc " & "--git.url:https://github.com/status-im/nim-chronos --git.commit:master --outdir:docs/book/api --project chronos"
+  tryExec nimc & " doc " &
+    "--git.url:https://github.com/status-im/nim-chronos --git.commit:master --outdir:docs/book/api --project chronos"
+
+  # Build the docs for modules that aren't part of the main module.
+  for item in walkDir("chronos/apps/http"):
+    if item.kind == pcFile and item.path.splitFile().ext == ".nim":
+      tryExec nimc & " doc " &
+        "--git.url:https://github.com/status-im/nim-chronos --git.commit:master --outdir:docs/book/api/chronos/apps/http " &
+        item.path
