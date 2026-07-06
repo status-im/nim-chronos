@@ -453,7 +453,7 @@ proc redirect*(session: HttpSessionRef,
       of "https":
         HttpClientScheme.Secure
       else:
-        return err("URL scheme not supported")
+        return err(HttpAddressErrorType.InvalidUrlScheme)
 
     let port =
       if len(newuri.port) == 0:
@@ -464,10 +464,10 @@ proc redirect*(session: HttpSessionRef,
           443'u16
       else:
         Base10.decode(uint16, newuri.port).valueOr:
-          return err("Invalid URL port number")
+          return err(HttpAddressErrorType.InvalidPortNumber)
 
     if len(newuri.hostname) == 0:
-      return err("URL hostname is missing")
+      return err(HttpAddressErrorType.MissingHostname)
 
     let id = newuri.hostname & ":" & Base10.toString(port)
 
@@ -1334,9 +1334,9 @@ proc getNewLocation*(resp: HttpClientResponseRef): HttpResult[HttpAddress] =
     if len(location) > 0:
       resp.session.redirect(resp.address, parseUri(location))
     else:
-      err("Location header with empty value")
+      err(HttpAddressErrorType.EmptyLocationHeader)
   else:
-    err("Location header is missing")
+    err(HttpAddressErrorType.MissingLocationHeader)
 
 proc getBodyReader*(response: HttpClientResponseRef): HttpBodyReader {.
      raises: [HttpUseClosedError].} =

@@ -110,6 +110,8 @@ type
     InvalidIpHostname = "Invalid IP"
     NameLookupFailed = "DNS lookup failed"
     NoAddressResolved = "Hostname has no addresses"
+    EmptyLocationHeader = "Location header with empty value"
+    MissingLocationHeader = "Location header is missing"
 
 const
   CriticalHttpAddressError* = {
@@ -144,6 +146,10 @@ func toString*(error: HttpAddressErrorType): string =
     "Could not resolve remote address"
   of HttpAddressErrorType.NoAddressResolved:
     "No address has been resolved"
+  of HttpAddressErrorType.EmptyLocationHeader:
+    "Location header has empty value"
+  of HttpAddressErrorType.MissingLocationHeader:
+    "Location header is missing"
 
 proc raiseHttpRequestBodyTooLargeError*() {.
      noinline, noreturn, raises: [HttpRequestBodyTooLargeError].} =
