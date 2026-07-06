@@ -438,13 +438,15 @@ proc redirect*(srcuri, dsturi: Uri): Uri =
     combine(srcuri, tmpuri)
 
 proc redirect*(session: HttpSessionRef,
-               srcaddr: HttpAddress, uri: Uri): HttpAddressResult =
+               srcaddr: HttpAddress, uri: Uri): HttpResult[HttpAddress] =
   ## Transform original address ``srcaddr`` using redirected url ``uri`` and
   ## session ``session`` parameters.
   let srcuri = srcaddr.getUri()
   var newuri = srcuri.redirect(uri)
   if newuri.hostname != srcuri.hostname:
-    session.getHttpAddress(newuri)
+    session.getHttpAddress(newuri).mapErr(
+      func (exc: HttpAddressErrorType): string = $exc
+    )
   else:
     let scheme =
       case newuri.scheme
@@ -453,7 +455,7 @@ proc redirect*(session: HttpSessionRef,
       of "https":
         HttpClientScheme.Secure
       else:
-        return err(HttpAddressErrorType.InvalidUrlScheme)
+        return err("URL scheme not supported")
 
     let port =
       if len(newuri.port) == 0:
@@ -464,10 +466,10 @@ proc redirect*(session: HttpSessionRef,
           443'u16
       else:
         Base10.decode(uint16, newuri.port).valueOr:
-          return err(HttpAddressErrorType.InvalidPortNumber)
+          return err("Invalid URL port number")
 
     if len(newuri.hostname) == 0:
-      return err(HttpAddressErrorType.MissingHostname)
+      return err("URL hostname is missing")
 
     let id = newuri.hostname & ":" & Base10.toString(port)
 
@@ -1327,16 +1329,16 @@ proc send*(request: HttpClientRequestRef): Future[HttpClientResponseRef] {.
 
   await request.finish()
 
-proc getNewLocation*(resp: HttpClientResponseRef): HttpAddressResult =
+proc getNewLocation*(resp: HttpClientResponseRef): HttpResult[HttpAddress] =
   ## Returns new address according to response's `Location` header value.
   if "location" in resp.headers:
     let location = resp.headers.getString("location")
     if len(location) > 0:
       resp.session.redirect(resp.address, parseUri(location))
     else:
-      err(HttpAddressErrorType.EmptyLocationHeader)
+      err("Location header with empty value")
   else:
-    err(HttpAddressErrorType.MissingLocationHeader)
+    err("Location header is missing")
 
 proc getBodyReader*(response: HttpClientResponseRef): HttpBodyReader {.
      raises: [HttpUseClosedError].} =
