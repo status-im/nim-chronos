@@ -34,7 +34,8 @@ when defined(windows):
   import std/[sets, hashes]
 elif defined(macosx) or defined(freebsd) or defined(netbsd) or
      defined(openbsd) or defined(dragonfly) or defined(macos) or
-     defined(linux) or defined(android) or defined(solaris):
+     defined(linux) or defined(android) or defined(solaris) or
+     defined(haiku):
   import ../selectors2
   export SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
          SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV, SIGUSR2,
@@ -706,7 +707,8 @@ elif defined(windows):
 
 elif defined(macosx) or defined(freebsd) or defined(netbsd) or
      defined(openbsd) or defined(dragonfly) or defined(macos) or
-     defined(linux) or defined(android) or defined(solaris):
+     defined(linux) or defined(android) or defined(solaris) or
+     defined(haiku):
   const
     SIG_IGN = cast[proc(x: cint) {.raises: [], noconv, gcsafe.}](1)
 
