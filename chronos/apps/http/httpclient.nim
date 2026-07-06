@@ -445,7 +445,7 @@ proc redirect*(session: HttpSessionRef,
   var newuri = srcuri.redirect(uri)
   if newuri.hostname != srcuri.hostname:
     session.getHttpAddress(newuri).mapErr(
-      func (exc: HttpAddressErrorType): string = $exc
+      func (e: HttpAddressErrorType): string = $e
     )
   else:
     let scheme =
