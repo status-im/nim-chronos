@@ -933,8 +933,7 @@ proc prepareResponse(
   # Preprocessing "Connection" header.
   let connectionFlag =
     block:
-      case resp.version
-      of HttpVersion11:
+      if resp.version == HttpVersion11:
         # Keeping a connection open is the default on HTTP/1.1 requests.
         # https://www.rfc-editor.org/rfc/rfc2068.html#section-19.7.1
         let header = toLowerAscii(headers.getString(ConnectionHeader))
@@ -942,7 +941,7 @@ proc prepareResponse(
           false
         else:
           true
-      of HttpVersion10:
+      elif resp.version == HttpVersion10:
         # This is the default on HTTP/1.0 requests.
         false
       else:
