@@ -1608,6 +1608,27 @@ proc redirect*(request: HttpClientRequestRef,
     res.redirectCount = redirectCount
     ok(res)
 
+proc send*(
+    session: HttpSessionRef, url: Uri
+  ):Future[HttpClientResponseRef] {.async: (raises: [CancelledError, HttpError]).} =
+  let address = getHttpAddress(url).valueOr:
+    raiseHttpAddressError($error)
+
+  var request = HttpClientRequestRef.new(session, address)
+
+  result = await request.send()
+
+  while result.status in 300..<400:
+    let newLocation = result.getNewLocation().valueOr:
+      raise newException(HttpRequestError, error)
+
+    await result.closeWait()
+
+    request = request.redirect(newLocation).valueOr:
+      raise newException(HttpRequestError, error)
+
+    result = await request.send()
+
 proc fetch*(request: HttpClientRequestRef): Future[HttpResponseTuple] {.
      async: (raises: [CancelledError, HttpError]).} =
   var response: HttpClientResponseRef
@@ -1633,63 +1654,14 @@ proc fetch*(session: HttpSessionRef, url: Uri): Future[HttpResponseTuple] {.
   ## parameters.
   ##
   ## This procedure supports HTTP redirections.
-  let address = getHttpAddress(url).valueOr:
-    raiseHttpAddressError($error)
 
-  var
-    request = HttpClientRequestRef.new(session, address)
-    response: HttpClientResponseRef = nil
-    redirect: HttpClientRequestRef = nil
+  let
+    response = await session.send(url)
+    code = response.status
+    data = await response.getBodyBytes()
 
-  while true:
-    try:
-      response = await request.send()
-      if response.status >= 300 and response.status < 400:
-        redirect =
-          block:
-            if "location" in response.headers:
-              let location = response.headers.getString("location")
-              if len(location) > 0:
-                let res = request.redirect(parseUri(location))
-                if res.isErr():
-                  raiseHttpRedirectError(res.error())
-                res.get()
-              else:
-                raiseHttpRedirectError("Location header with an empty value")
-            else:
-              raiseHttpRedirectError("Location header missing")
-        discard await response.consumeBody()
-        await response.closeWait()
-        response = nil
-        await request.closeWait()
-        request = nil
-        request = redirect
-        redirect = nil
-      else:
-        var
-          # TODO https://github.com/status-im/nim-chronos/issues/601
-          data = await response.getBodyBytes()
-          code = response.status
-        await response.closeWait()
-        response = nil
-        await request.closeWait()
-        request = nil
-        # TODO https://github.com/nim-lang/Nim/issues/25057
-        return (code, move(data))
-    except CancelledError as exc:
-      var pending: seq[Future[void]]
-      if not(isNil(response)): pending.add(closeWait(response))
-      if not(isNil(request)): pending.add(closeWait(request))
-      if not(isNil(redirect)): pending.add(closeWait(redirect))
-      await noCancel(allFutures(pending))
-      raise exc
-    except HttpError as exc:
-      var pending: seq[Future[void]]
-      if not(isNil(response)): pending.add(closeWait(response))
-      if not(isNil(request)): pending.add(closeWait(request))
-      if not(isNil(redirect)): pending.add(closeWait(redirect))
-      await noCancel(allFutures(pending))
-      raise exc
+  await response.closeWait()
+  (code, data)
 
 proc getServerSentEvents*(
        response: HttpClientResponseRef,
