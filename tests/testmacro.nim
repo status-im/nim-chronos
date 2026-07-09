@@ -678,10 +678,13 @@ suite "Exception/effect tracking":
       called
 
   test "calling poll & friends in async should not be allowed":
-    check:
-      not(compiles do:
-        proc callPoll() {.async.} =
-          poll())
-      not(compiles do:
-        proc callWaitFor() {.async.} =
-          waitFor(sleepAsync(1.millis)))
+    when (NimMajor, NimMinor) >= (2, 2):
+      check:
+        not(compiles do:
+          proc callPoll() {.async.} =
+            poll())
+        not(compiles do:
+          proc callWaitFor() {.async.} =
+            waitFor(sleepAsync(1.millis)))
+    else:
+      skip()
