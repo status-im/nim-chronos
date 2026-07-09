@@ -592,7 +592,7 @@ suite "Exceptions tracking":
       proc unnanotated() {.async.} = raise (ref CatchableError)()
 
       checkNotCompiles:
-        proc annotated() {.async: (raises: [ValueError]).} = 
+        proc annotated() {.async: (raises: [ValueError]).} =
           raise (ref CatchableError)()
 
       checkNotCompiles:
@@ -678,3 +678,11 @@ suite "Exceptions tracking":
     check:
       called
 
+  test "No poll re-entrancy allowed":
+    proc testReentrancy() {.async.} =
+      await sleepAsync(1.milliseconds)
+      poll()
+
+    let reenter = testReentrancy()
+    expect(Defect):
+      waitFor reenter
