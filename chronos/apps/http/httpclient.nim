@@ -1611,12 +1611,12 @@ proc redirect*(request: HttpClientRequestRef,
     res.redirectCount = redirectCount
     ok(res)
 
-proc send*(session: HttpSessionRef, uri: Uri): Future[HttpClientResponseRef] {.
+proc send*(session: HttpSessionRef, url: Uri): Future[HttpClientResponseRef] {.
      async: (raises: [CancelledError, HttpError]).} =
-  ## Send HTTP GET request to ``uri`` using ``session`` and return response.
+  ## Send HTTP GET request to ``url`` using ``session`` and return response.
   ##
   ## This procedure supports HTTP redirections.
-  let address = getHttpAddress(uri).valueOr:
+  let address = getHttpAddress(url).valueOr:
     raiseHttpAddressError($error)
 
   var
