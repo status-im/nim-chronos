@@ -8,7 +8,7 @@
 #    Apache License, version 2.0, (LICENSE-APACHEv2)
 #                MIT license (LICENSE-MIT)
 
-{.push raises: [].}
+{.push raises: [], gcsafe.}
 
 ## This module implements the core asynchronous engine / dispatcher.
 ##
@@ -17,12 +17,12 @@
 from nativesockets import Port
 import std/[tables, heapqueue, deques]
 import results
-import ".."/[config, futures, osdefs, oserrno, osutils, timer]
+import ../[config, effects, futures, osdefs, oserrno, osutils, timer]
 
 import ./[asyncmacro, errors]
 
 export Port
-export deques, errors, futures, timer, results
+export deques, effects, errors, futures, timer, results
 
 export
   asyncmacro.async, asyncmacro.await, asyncmacro.awaitne
@@ -579,7 +579,7 @@ elif defined(windows):
     if res.isErr():
       raise newException(ValueError, osErrorMsg(res.error()))
 
-  proc poll*() =
+  proc poll*() {.tags: [NestedPoll, RootEffect].} =
     let loop = getThreadDispatcher()
     var
       curTime = Moment.now()
@@ -1001,7 +1001,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
       ## Remove process' watching using process' descriptor ``procHandle``.
       removeProcess2(procHandle).tryGet()
 
-  proc poll*() {.gcsafe.} =
+  proc poll*() {.tags: [NestedPoll, RootEffect].} =
     ## Perform single asynchronous step.
     let loop = getThreadDispatcher()
     var curTime = Moment.now()
