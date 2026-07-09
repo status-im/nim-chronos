@@ -34,7 +34,8 @@ when defined(windows):
   import std/[sets, hashes]
 elif defined(macosx) or defined(freebsd) or defined(netbsd) or
      defined(openbsd) or defined(dragonfly) or defined(macos) or
-     defined(linux) or defined(android) or defined(solaris):
+     defined(linux) or defined(android) or defined(solaris) or
+     defined(haiku):
   import ../selectors2
   export SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
          SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV, SIGUSR2,
@@ -706,7 +707,8 @@ elif defined(windows):
 
 elif defined(macosx) or defined(freebsd) or defined(netbsd) or
      defined(openbsd) or defined(dragonfly) or defined(macos) or
-     defined(linux) or defined(android) or defined(solaris):
+     defined(linux) or defined(android) or defined(solaris) or
+     defined(haiku):
   const
     SIG_IGN = cast[proc(x: cint) {.raises: [], noconv, gcsafe.}](1)
 
@@ -1022,11 +1024,11 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
       let events = loop.keys[i].events
 
       withData(loop.selector, cint(fd), adata) do:
-        if (Event.Read in events) or (events == {Event.Error}):
+        if {Event.Read, Event.Error} * events != {}:
           if not isNil(adata.reader.function):
             loop.callbacks.addLast(adata.reader)
 
-        if (Event.Write in events) or (events == {Event.Error}):
+        if {Event.Write, Event.Error} * events != {}:
           if not isNil(adata.writer.function):
             loop.callbacks.addLast(adata.writer)
 
