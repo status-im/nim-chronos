@@ -302,11 +302,11 @@ func getContentEncoding*(
     ok(res)
 
 func isPersistent*(version: HttpVersion, headers: HttpTable): bool =
-  case version
-  of HttpVersion20:
-    # https://datatracker.ietf.org/doc/html/rfc9113#section-8.2.2
-    true # Persistent by default, uses GOAWAY frame to disconnect
-  of HttpVersion11:
+  if version >= HttpVersion20:
+    # HTTP/2: https://www.rfc-editor.org/info/rfc9113/#section-9.1
+    # HTTP/3: https://www.rfc-editor.org/info/rfc9114/#section-3.3
+    true # Persistent by default
+  elif version == HttpVersion11:
     # https://www.rfc-editor.org/info/rfc9112/#section-9.3
     # https://www.rfc-editor.org/info/rfc9110/#section-7.6.1
     # "close" is present -> not persistent
