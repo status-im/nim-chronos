@@ -90,8 +90,8 @@ suite "Future[T] behavior test suite":
 
     check contextId(fut1.taskLocalContext) == 1
     check contextId(fut2.taskLocalContext) == 2
-    check await fut1 == @[1, 1, 1]
-    check await fut2 == @[2, 2, 2]
+    check (await fut1) == @[1, 1, 1]
+    check (await fut2) == @[2, 2, 2]
     check currentContextId() == -1
 
   asyncTest "Task-local context is inherited by child futures":
@@ -102,7 +102,7 @@ suite "Future[T] behavior test suite":
       fut = parentContextIds()
 
     check contextId(fut.taskLocalContext) == 7
-    check await fut == @[7, 7, 7]
+    check (await fut) == @[7, 7, 7]
     check currentContextId() == -1
 
   asyncTest "Task-local context installed inside a future survives await":
@@ -110,7 +110,7 @@ suite "Future[T] behavior test suite":
     let fut = installContextThenAwait(ctx)
 
     check contextId(fut.taskLocalContext) == 9
-    check await fut == @[-1, 9, 9]
+    check (await fut) == @[-1, 9, 9]
     check currentContextId() == -1
 
   test "Future[T] callbacks are invoked in reverse order (#7197) test":
