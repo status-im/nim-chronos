@@ -1051,7 +1051,10 @@ proc new*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
           maxResponseHeadersSize: int = HttpMaxHeadersSize,
           headers: openArray[HttpHeaderTuple] = [],
           body: openArray[byte] = []): HttpResult[HttpClientRequestRef] =
-  let address = ? session.getHttpAddress(parseUri(url))
+  let address = ? session.getHttpAddress(parseUri(url)).mapErr(
+    func (e: HttpAddressErrorType): string = $e
+  )
+
   ok HttpClientRequestRef.new(
     session, address, meth, version, flags, maxResponseHeadersSize, headers,
     body)
@@ -1083,7 +1086,9 @@ when chronosUseSink:
             headers: openArray[HttpHeaderTuple] = [],
             body: sink seq[byte]):
               HttpResult[HttpClientRequestRef] =
-    let ha = ? session.getHttpAddress(parseUri(url))
+    let ha = ? session.getHttpAddress(parseUri(url)).mapErr(
+      func (e: HttpAddressErrorType): string = $e
+    )
     ok HttpClientRequestRef.new(
       session, ha, meth, version, flags, maxResponseHeadersSize, headers,
       move(body))

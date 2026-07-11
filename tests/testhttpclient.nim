@@ -9,6 +9,7 @@ import std/[sequtils, strutils, sha1]
 import ".."/chronos/unittest2/asynctests
 import ".."/chronos,
        ".."/chronos/apps/http/[httpserver, shttpserver, httpclient]
+import ".."/chronos/config
 import stew/[byteutils, base10]
 
 {.used.}
@@ -1597,6 +1598,22 @@ suite "HTTP client testing suite":
 
   test "HTTP tunnel connection provider test":
     check waitFor(testTunnelConnectionProvider()) == true
+
+  asyncTest "HttpClientRequestRef.new from URL string":
+    let session = HttpSessionRef.new()
+    let req = HttpClientRequestRef.new(session, "https://ddg.gg")
+    check req.isOk()
+    await req.get().closeWait()
+    await session.closeWait()
+
+  when chronosUseSink:
+    asyncTest "HttpClientRequestRef.new from URL string with sink body":
+      var session = HttpSessionRef.new()
+      var body = newSeq[byte]()
+      var req = HttpClientRequestRef.new(session, "https://ddg.gg", body = move(body))
+      check req.isOk()
+      await req.get().closeWait()
+      await session.closeWait()
 
   test "HTTP getHttpAddress() test":
     block:
