@@ -350,7 +350,7 @@ suite "Macro transformations - implicit returns":
 
       waitFor(implicit9()) == 42
 
-suite "Closure iterator's exception transformation issues":
+suite "Exception/effect tracking":
   test "Nested defer/finally not called on return":
     # issue #288
     # fixed by https://github.com/nim-lang/Nim/pull/19933
@@ -383,7 +383,6 @@ suite "Closure iterator's exception transformation issues":
 
     waitFor(x())
 
-suite "Exceptions tracking":
   template checkNotCompiles(body: untyped) =
     check (not compiles(body))
   test "Can raise valid exception":
@@ -678,3 +677,14 @@ suite "Exceptions tracking":
     check:
       called
 
+  test "calling poll & friends in async should not be allowed":
+    when (NimMajor, NimMinor) >= (2, 2):
+      check:
+        not(compiles do:
+          proc callPoll() {.async.} =
+            poll())
+        not(compiles do:
+          proc callWaitFor() {.async.} =
+            waitFor(sleepAsync(1.millis)))
+    else:
+      skip()
