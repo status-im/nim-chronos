@@ -691,12 +691,10 @@ suite "Exception/effect tracking":
 
   test "detect poll reentrance at runtime for other cases":
     when chronosStrictReentrancy:
-      proc testReentrancy() {.async.} =
-        await sleepAsync(1.milliseconds)
-        poll()
+      callSoon(proc(_: pointer) =
+        poll())
 
-      let reenter = testReentrancy()
       expect(Defect):
-        waitFor reenter
+        poll()
     else:
       skip()
