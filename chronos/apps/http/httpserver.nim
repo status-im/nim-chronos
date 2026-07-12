@@ -129,8 +129,10 @@ type
     scheme*: string
     version*: HttpVersion
     meth*: HttpMethod
-    contentEncoding*: set[ContentEncodingFlags]
-    transferEncoding*: set[TransferEncodingFlags]
+    contentEncoding*{.deprecated.}: set[ContentEncodingFlags]
+    transferEncoding*{.deprecated.}: set[TransferEncodingFlags]
+    contentEncodings*: seq[ContentEncodingFlags]
+    transferEncodings*: seq[TransferEncodingFlags]
     requestFlags*: set[HttpRequestFlags]
     contentLength*: int
     contentTypeData*: Opt[ContentTypeData]
@@ -475,23 +477,34 @@ proc updateRequest*(request: HttpRequestRef, scheme: string, meth: HttpMethod,
   request.headers = headers
 
   # Preprocessing "Content-Encoding" header.
+  request.contentEncodings = getContentEncodings(
+    request.headers.getList(ContentEncodingHeader)
+  ).valueOr:
+    let msg = "Incorrect or unsupported Content-Encoding header value"
+    return err(HttpMessage.init(Http400, msg))
   request.contentEncoding =
-    getContentEncoding(
-      request.headers.getList(ContentEncodingHeader)).valueOr:
-        let msg = "Incorrect or unsupported Content-Encoding header value"
-        return err(HttpMessage.init(Http400, msg))
+    if request.contentEncodings.len() == 0:
+      {ContentEncodingFlags.Identity}
+    else:
+      {request.contentEncodings[^1]}
 
   # Preprocessing "Transfer-Encoding" header.
+  request.transferEncodings = getTransferEncodings(
+    request.headers.getList(TransferEncodingHeader)
+  ).valueOr:
+    let msg = "Incorrect or unsupported Transfer-Encoding header value"
+    return err(HttpMessage.init(Http400, msg))
   request.transferEncoding =
-    getTransferEncoding(
-      request.headers.getList(TransferEncodingHeader)).valueOr:
-        let msg = "Incorrect or unsupported Transfer-Encoding header value"
-        return err(HttpMessage.init(Http400, msg))
+    if request.transferEncodings.len() == 0:
+      {TransferEncodingFlags.Identity}
+    else:
+      {request.transferEncodings[^1]}
 
   # Almost all HTTP requests could have body (except TRACE), we perform some
   # steps to reveal information about body.
   request.contentLength =
-    if TransferEncodingFlags.Chunked in request.transferEncoding:
+    if request.transferEncodings.len > 0 and
+        request.transferEncodings[^1] == TransferEncodingFlags.Chunked:
       # Request headers has "Transfer-Encoding: chunked" header present.
       if request.meth == MethodTrace:
         let msg = "TRACE requests could not have request body"
@@ -1690,8 +1703,8 @@ proc requestInfo*(req: HttpRequestRef, contentType = "text/plain"): string =
   res.add(kv("request.version", $req.version))
   res.add(kv("request.uri", $req.uri))
   res.add(kv("request.flags", $req.requestFlags))
-  res.add(kv("request.TransferEncoding", $req.transferEncoding))
-  res.add(kv("request.ContentEncoding", $req.contentEncoding))
+  res.add(kv("request.TransferEncodings", $req.transferEncodings))
+  res.add(kv("request.ContentEncodings", $req.contentEncodings))
 
   let body =
     if req.hasBody():
