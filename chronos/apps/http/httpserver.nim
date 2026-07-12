@@ -339,8 +339,12 @@ proc getServerFlags(req: HttpRequestRef): set[HttpServerFlags] =
   req.connection.server.flags
 
 proc getResponseFlags(req: HttpRequestRef): set[HttpResponseFlags] =
+  # https://www.rfc-editor.org/rfc/rfc9112.html#section-6.1
+  # if both Transfer-Encoding and Content-Length are present, the server MUST
+  # close the connection (potential request smuggling).
   if HttpServerFlags.Http11Pipeline in req.getServerFlags() and
-      isPersistent(req.version, req.headers):
+      isPersistent(req.version, req.headers) and
+      not(req.transferEncodings.len > 0 and ContentLengthHeader in req.headers):
     {HttpResponseFlags.KeepAlive}
   else:
     {}
