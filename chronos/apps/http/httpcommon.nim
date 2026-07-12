@@ -246,9 +246,13 @@ func getTransferEncodings*(
   ## compatibility.
   ##
   ## See also:
+  ##   * https://www.rfc-editor.org/rfc/rfc9112#section-6.1
   ##   * https://www.rfc-editor.org/rfc/rfc9110#section-8.4
   ##   * https://www.iana.org/assignments/http-parameters/http-parameters.xhtml#transfer-coding
-  var res: seq[TransferEncodingFlags]
+  var
+    res: seq[TransferEncodingFlags]
+    chunked = 0
+
   for header in ch:
     for item in header.split(","):
       case strip(item.toLowerAscii())
@@ -256,6 +260,7 @@ func getTransferEncodings*(
         discard
       of "chunked":
         res.add(TransferEncodingFlags.Chunked)
+        inc chunked
       of "compress", "x-compress":
         res.add(TransferEncodingFlags.Compress)
       of "deflate":
@@ -264,18 +269,22 @@ func getTransferEncodings*(
         res.add(TransferEncodingFlags.Gzip)
       else:
         return err("Unsupported Transfer-Encoding value")
+
+  # Validate RFC 9112 Section 6.1 rules:
+  # 1) chunked MUST NOT appear more than once
+  # 2) if chunked is present, it MUST be the final (last) encoding
+  if chunked > 1:
+    return err("Transfer-Encoding contains duplicate chunked encoding")
+  if chunked == 1 and res[^1] != TransferEncodingFlags.Chunked:
+    return err("chunked transfer coding must be the final encoding")
+
   ok(res)
 
 func getTransferEncoding*(
        ch: openArray[string]
      ): HttpResult[set[TransferEncodingFlags]] {.deprecated: "getTransferEncodings".} =
-  ## Parse value of multiple Transfer-Encoding headers and return the last entry,
-  ## ie the encoding that must first be decoded.
-  ##
-  ## Note: for historical reasons, this function returns a `set` where in fact
-  ## it could return a single enum value.
-  # https://www.rfc-editor.org/info/rfc9110/#section-8.4
-  # https://www.iana.org/assignments/http-parameters/http-parameters.xhtml#transfer-coding
+  ## Parse value of multiple HTTP headers ``Transfer-Encoding`` and return
+  ## the last entry, ie the first encoding that must be decoded.
   let encodings = ?getTransferEncodings(ch)
   ok {
     if encodings.len() > 0:

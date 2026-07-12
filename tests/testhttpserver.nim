@@ -878,23 +878,33 @@ suite "HTTP server testing suite":
       (input: @["deflate"], ok: true, value: @[Df]),
       (input: @["identity"], ok: true, value: @[]),
 
-      # -- single header, comma-separated --
+      # -- single header, chunked last (RFC 9112 §6.1) --
       (input: @["gzip, chunked"], ok: true, value: @[Gz, Ch]),
       (input: @["gzip,chunked"], ok: true, value: @[Gz, Ch]),
       (input: @["gzip , chunked"], ok: true, value: @[Gz, Ch]),
-      (input: @["identity, chunked, gzip"], ok: true, value: @[Ch, Gz]),
+      (input: @["identity, chunked"], ok: true, value: @[Ch]),
 
-      # -- multiple headers, no commas --
+      # -- chunked MUST be the final encoding (RFC 9112 §6.1) --
+      (input: @["identity, chunked, gzip"], ok: false, value: @[]),
+      (input: @["chunked, gzip"], ok: false, value: @[]),
+      (input: @["gzip, chunked, gzip"], ok: false, value: @[]),
+
+      # -- multiple headers, chunked last --
       (input: @["gzip", "chunked"], ok: true, value: @[Gz, Ch]),
 
-      # -- multiple headers with comma-separated values --
-      (input: @["gzip, chunked", "compress"], ok: true, value: @[Gz, Ch, Cc]),
+      # -- chunked not last across multiple headers => error --
+      (input: @["gzip, chunked", "compress"], ok: false, value: @[]),
 
-      # -- all known values in one shot --
+      # -- multiple known encodings, chunked last --
       (
         input: @["identity, chunked, compress, deflate, gzip"],
+        ok: false,  # chunked not last
+        value: @[],
+      ),
+      (
+        input: @["gzip, compress, deflate, chunked"],
         ok: true,
-        value: @[Ch, Cc, Df, Gz],
+        value: @[Gz, Cc, Df, Ch],
       ),
 
       # -- x-compress / x-gzip aliases --
@@ -921,6 +931,13 @@ suite "HTTP server testing suite":
       (input: @["br"], ok: false, value: @[]), # br is content-only
       (input: @["zstd"], ok: false, value: @[]),
       (input: @["gzip, unknown"], ok: false, value: @[]),
+
+      # -- duplicate chunked (RFC 9112 §6.1: "chunking an already chunked
+      #    message is not allowed") => error --
+      (input: @["chunked, chunked"], ok: false, value: @[]),
+      (input: @["chunked", "chunked"], ok: false, value: @[]),
+      (input: @["gzip, chunked, gzip, chunked"], ok: false, value: @[]),
+      (input: @["chunked"], ok: true, value: @[Ch]),  # single chunked is fine
     ]
 
     for tc in transferCases:
