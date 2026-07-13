@@ -304,6 +304,26 @@ suite "HTTP server testing suite":
   asyncTest "Too big request body test (post()/multipart/chunked encoding)":
     await testTooBigBodyChunked(PostMultipartTest)
 
+  asyncTest "Both Content-Length and Transfer-Encoding preset":
+    proc process(r: RequestFence): Future[HttpResponseRef] {.
+          async: (raises: [CancelledError]).} =
+      defaultResponse()
+
+    let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
+    let server = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
+                                socketFlags = socketFlags).expect("server")
+
+    server.start()
+    let address = server.instance.localAddress()
+
+    let request = "GET / HTTP/1.1\r\nContent-Length: 20\r\nTransfer-Encoding: chunked\r\n\r\n"
+    let data = await httpClient(address, request)
+    await server.stop()
+    await server.closeWait()
+    checkpoint data
+    check:
+      data.startsWith("HTTP/1.1 400")
+
   test "Query arguments test":
     proc testQuery(): Future[bool] {.async.} =
       var serverRes = false

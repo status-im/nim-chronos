@@ -507,12 +507,28 @@ proc updateRequest*(request: HttpRequestRef, scheme: string, meth: HttpMethod,
   # Almost all HTTP requests could have body (except TRACE), we perform some
   # steps to reveal information about body.
   request.contentLength =
-    if request.transferEncodings.len > 0 and
-        request.transferEncodings[^1] == TransferEncodingFlags.Chunked:
-      # Request headers has "Transfer-Encoding: chunked" header present.
-      if request.meth == MethodTrace:
-        let msg = "TRACE requests could not have request body"
-        return err(HttpMessage.init(Http400, msg))
+    if request.transferEncodings.len() > 0:
+      # Request headers has "Transfer-Encoding" header present, additional
+      # conditions apply for requests:
+      # https://www.rfc-editor.org/info/rfc9112/#section-6.2
+
+      if request.transferEncodings[^1] != TransferEncodingFlags.Chunked:
+        # If a Transfer-Encoding header field is present in a request and the
+        # chunked transfer coding is not the final encoding, the message body \
+        # length cannot be determined reliably; the server MUST respond with the
+        # 400 (Bad Request) status code
+        return err HttpMessage.init(
+          Http400, "\"chunked\" must be the final Transfer-Encoding"
+        )
+
+      if ContentLengthHeader in request.headers:
+        # If a message is received with both a Transfer-Encoding and a
+        # Content-Length header field ... Such a message ... ought to be
+        # handled as an error.
+        return err HttpMessage.init(
+          Http400, "Transfer-Encoding and Content-Length must not both be present"
+        )
+
       request.requestFlags.incl(HttpRequestFlags.UnboundBody)
       0
     elif ContentLengthHeader in request.headers:
@@ -536,6 +552,9 @@ proc updateRequest*(request: HttpRequestRef, scheme: string, meth: HttpMethod,
       0
 
   if request.hasBody():
+    if request.meth == MethodTrace:
+      return err HttpMessage.init(Http400, "TRACE requests could not have request body")
+
     # If the request has a body, we will determine how it is encoded.
     if ContentTypeHeader in request.headers:
       # Request headers has "Content-Type" header present.
@@ -604,9 +623,6 @@ proc prepareRequest(conn: HttpConnectionRef,
         if table.count(ContentLengthHeader) > 1:
           return err(HttpMessage.init(Http400,
                                       "Multiple Content-Length headers"))
-        if table.count(TransferEncodingHeader) > 1:
-          return err(HttpMessage.init(Http400,
-                                      "Multuple Transfer-Encoding headers"))
         table
   ? updateRequest(request, scheme, req.meth, req.version, req.uri(), headers)
   trackCounter(HttpServerRequestTrackerName)
