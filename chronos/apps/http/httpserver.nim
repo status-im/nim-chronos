@@ -484,8 +484,7 @@ proc updateRequest*(request: HttpRequestRef, scheme: string, meth: HttpMethod,
   request.contentEncodings = getContentEncodings(
     request.headers.getList(ContentEncodingHeader)
   ).valueOr:
-    let msg = "Incorrect or unsupported Content-Encoding header value"
-    return err(HttpMessage.init(Http400, msg))
+    return err(HttpMessage.init(Http400, error))
   request.contentEncoding =
     if request.contentEncodings.len() == 0:
       {ContentEncodingFlags.Identity}
@@ -496,8 +495,7 @@ proc updateRequest*(request: HttpRequestRef, scheme: string, meth: HttpMethod,
   request.transferEncodings = getTransferEncodings(
     request.headers.getList(TransferEncodingHeader)
   ).valueOr:
-    let msg = "Incorrect or unsupported Transfer-Encoding header value"
-    return err(HttpMessage.init(Http400, msg))
+    return err(HttpMessage.init(Http400, error))
   request.transferEncoding =
     if request.transferEncodings.len() == 0:
       {TransferEncodingFlags.Identity}
@@ -517,17 +515,15 @@ proc updateRequest*(request: HttpRequestRef, scheme: string, meth: HttpMethod,
         # chunked transfer coding is not the final encoding, the message body \
         # length cannot be determined reliably; the server MUST respond with the
         # 400 (Bad Request) status code
-        return err HttpMessage.init(
-          Http400, "\"chunked\" must be the final Transfer-Encoding"
-        )
+        const msg = "\"chunked\" must be the final Transfer-Encoding"
+        return err(HttpMessage.init(Http400, msg))
 
       if ContentLengthHeader in request.headers:
         # If a message is received with both a Transfer-Encoding and a
         # Content-Length header field ... Such a message ... ought to be
         # handled as an error.
-        return err HttpMessage.init(
-          Http400, "Transfer-Encoding and Content-Length must not both be present"
-        )
+        const msg = "Transfer-Encoding and Content-Length must not both be present"
+        return err(HttpMessage.init(Http400, msg))
 
       request.requestFlags.incl(HttpRequestFlags.UnboundBody)
       0
@@ -536,7 +532,7 @@ proc updateRequest*(request: HttpRequestRef, scheme: string, meth: HttpMethod,
       let length = request.headers.getInt(ContentLengthHeader)
       if length != 0:
         if request.meth == MethodTrace:
-          let msg = "TRACE requests could not have request body"
+          const msg = "TRACE requests could not have request body"
           return err(HttpMessage.init(Http400, msg))
         # Because of coversion to `int` we should avoid unexpected
         # OverflowError.
@@ -560,7 +556,7 @@ proc updateRequest*(request: HttpRequestRef, scheme: string, meth: HttpMethod,
       # Request headers has "Content-Type" header present.
       let contentType =
         getContentType(request.headers.getList(ContentTypeHeader)).valueOr:
-          let msg = "Incorrect or missing Content-Type header"
+          const msg = "Incorrect or missing Content-Type header"
           return err(HttpMessage.init(Http415, msg))
       if contentType == UrlEncodedContentType:
         request.requestFlags.incl(HttpRequestFlags.UrlencodedForm)
@@ -676,8 +672,7 @@ proc getBody*(request: HttpRequestRef): Future[seq[byte]] {.
       raiseHttpRequestBodyTooLargeError()
     res
   except AsyncStreamError as exc:
-    let msg = "Unable to read request's body, reason: " & $exc.msg
-    raiseHttpReadError(msg)
+    raiseHttpReadError("Unable to read request body: " & $exc.msg)
   finally:
     await reader.closeWait()
 
@@ -692,8 +687,7 @@ proc consumeBody*(request: HttpRequestRef): Future[void] {.
     discard await reader.consume()
     if reader.hasOverflow(): raiseHttpRequestBodyTooLargeError()
   except AsyncStreamError as exc:
-    let msg = "Unable to consume request's body, reason: " & $exc.msg
-    raiseHttpReadError(msg)
+    raiseHttpReadError("Unable to consume request body: " & $exc.msg)
   finally:
     await reader.closeWait()
 
