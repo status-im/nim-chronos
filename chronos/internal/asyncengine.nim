@@ -160,7 +160,7 @@ template processCallbacks(loop: untyped) =
   when chronosStrictReentrancy:
     # Process existing callbacks but not those that follow, to allow the network
     # to regain control regularly
-    for _ in 0..<loop.callbacks.len():
+    for _ in 0 ..< len(loop.callbacks):
       let callable = loop.callbacks.popFirst()
       if not(isNil(callable.function)):
         callable.function(callable.udata)
