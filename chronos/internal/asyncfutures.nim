@@ -725,7 +725,9 @@ template orImpl*[T, Y](fut1: Future[T], fut2: Future[Y]): untyped =
     var cbc {.cursor.}: proc(udata: pointer) {.gcsafe, raises: [].}
     proc cb(udata: pointer) {.gcsafe, raises: [].} =
       if not(retFuture.finished()):
-        var fut = cast[FutureBase](udata)
+        let
+          fut = cast[FutureBase](udata)
+          cbc = move(cbc) # clear the closure instance for refc
         if cast[pointer](fut1) == udata:
           fut2.removeCallback(cbc)
         else:
@@ -737,6 +739,7 @@ template orImpl*[T, Y](fut1: Future[T], fut2: Future[Y]): untyped =
 
     proc cancellation(udata: pointer) =
       # On cancel we remove all our callbacks only.
+      let cbc = move(cbc) # clear the closure instance for refc
       if not(fut1.finished()):
         fut1.removeCallback(cbc)
       if not(fut2.finished()):
@@ -1076,6 +1079,7 @@ template oneImpl: untyped =
   proc cb(udata: pointer) {.gcsafe, raises: [].} =
     if not(retFuture.finished()):
       var nfuts = move nfuts # Reset the closure environment eagerly
+      let cbc = move cbc
       for fut in nfuts.mitems():
         if cast[pointer](fut) == udata:
           retFuture.complete(move(fut))
@@ -1084,7 +1088,9 @@ template oneImpl: untyped =
 
   proc cancellation(udata: pointer) =
     # On cancel we remove all our callbacks only.
-    let nfuts = move nfuts # Reset the closure environment eagerly
+    let
+      nfuts = move nfuts # Reset the closure environment eagerly
+      cbc = move cbc
     for fut in nfuts:
       fut.removeCallback(cbc)
 
