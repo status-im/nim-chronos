@@ -591,7 +591,7 @@ suite "Exception/effect tracking":
       proc unnanotated() {.async.} = raise (ref CatchableError)()
 
       checkNotCompiles:
-        proc annotated() {.async: (raises: [ValueError]).} = 
+        proc annotated() {.async: (raises: [ValueError]).} =
           raise (ref CatchableError)()
 
       checkNotCompiles:
@@ -677,7 +677,7 @@ suite "Exception/effect tracking":
     check:
       called
 
-  test "calling poll & friends in async should not be allowed":
+  test "detect poll reentrancy at compile-time in macro":
     when (NimMajor, NimMinor) >= (2, 2):
       check:
         not(compiles do:
@@ -686,5 +686,15 @@ suite "Exception/effect tracking":
         not(compiles do:
           proc callWaitFor() {.async.} =
             waitFor(sleepAsync(1.millis)))
+    else:
+      skip()
+
+  test "detect poll reentrance at runtime for other cases":
+    when chronosStrictReentrancy:
+      callSoon(proc(_: pointer) =
+        poll())
+
+      expect(Defect):
+        poll()
     else:
       skip()
