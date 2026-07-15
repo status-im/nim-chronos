@@ -898,12 +898,12 @@ suite "AsyncStream/ChunkedStream":
       var check = await checkVector(data, writeChunkSize, readChunkSize)
       return (data == check)
 
-    check waitFor(testChunk(4457, 128, 1)) == true
-    check waitFor(testChunk(65600, 1024, 17)) == true
-    check waitFor(testChunk(262400, 4096, 61)) == true
-    check waitFor(testChunk(767309, 4457, 173)) == true
-    check waitFor(testChunk(767309, 4457, 173)) == true
-    check waitFor(testChunk(767309, 67000, 67001)) == true
+    check await(testChunk(4457, 128, 1)) == true
+    check await(testChunk(65600, 1024, 17)) == true
+    check await(testChunk(262400, 4096, 61)) == true
+    check await(testChunk(767309, 4457, 173)) == true
+    check await(testChunk(767309, 4457, 173)) == true
+    check await(testChunk(767309, 67000, 67001)) == true
 
 suite "AsyncStream/TLSStream":
   teardown:

@@ -188,8 +188,10 @@ type
     reader*: HttpBodyReader
     error*: ref HttpError
     bodyFlag*: HttpClientBodyFlag
-    contentEncoding*: set[ContentEncodingFlags]
-    transferEncoding*: set[TransferEncodingFlags]
+    contentEncoding*{.deprecated.}: set[ContentEncodingFlags]
+    transferEncoding*{.deprecated.}: set[TransferEncodingFlags]
+    contentEncodings*: seq[ContentEncodingFlags]
+    transferEncodings*: seq[TransferEncodingFlags]
     contentLength*: uint64
     contentType*: Opt[ContentTypeData]
     timestamp*: Moment
@@ -906,22 +908,27 @@ proc prepareResponse(
       res
 
   # Preprocessing "Content-Encoding" header.
-  let contentEncoding =
-    block:
-      let res = getContentEncoding(headers.getList(ContentEncodingHeader))
-      if res.isErr():
-        return err("Invalid headers received, invalid `Content-Encoding`")
+  let
+    contentEncodings = getContentEncodings(headers.getList(ContentEncodingHeader)).valueOr:
+      return err("Invalid `Content-Encoding` in headers")
+    contentEncoding = {
+      if contentEncodings.len() > 0:
+        contentEncodings[^1]
       else:
-        res.get()
+        ContentEncodingFlags.Identity
+    }
 
   # Preprocessing "Transfer-Encoding" header.
-  let transferEncoding =
-    block:
-      let res = getTransferEncoding(headers.getList(TransferEncodingHeader))
-      if res.isErr():
-        return err("Invalid headers received, invalid `Transfer-Encoding`")
+  let
+    transferEncodings = getTransferEncodings(
+        headers.getList(TransferEncodingHeader)).valueOr:
+      return err("Invalid `Transfer-Encoding` in headers")
+    transferEncoding = {
+      if transferEncodings.len() > 0:
+        transferEncodings[^1]
       else:
-        res.get()
+        TransferEncodingFlags.Identity
+    }
 
   # Preprocessing "Content-Length" header.
   let (contentLength, bodyFlag) =
@@ -934,9 +941,9 @@ proc prepareResponse(
       # header
       let length = headers.getInt(ContentLengthHeader)
       (length, HttpClientBodyFlag.NoBody)
-    elif transferEncoding != {TransferEncodingFlags.Identity}:
+    elif transferEncodings.len > 0:
       # "Transfer-Encoding overrides the Content-Length"
-      if TransferEncodingFlags.Chunked in transferEncoding:
+      if transferEncodings[^1] == TransferEncodingFlags.Chunked:
         (0'u64, HttpClientBodyFlag.Chunked)
       else:
         (0'u64, HttpClientBodyFlag.Custom)
@@ -986,6 +993,7 @@ proc prepareResponse(
     reason: resp.reason(data), version: resp.version, session: request.session,
     connection: connection, headers: headers,
     contentEncoding: contentEncoding, transferEncoding: transferEncoding,
+    contentEncodings: contentEncodings, transferEncodings: transferEncodings,
     contentLength: contentLength, contentType: contentType, bodyFlag: bodyFlag
   )
 
@@ -1051,7 +1059,10 @@ proc new*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
           maxResponseHeadersSize: int = HttpMaxHeadersSize,
           headers: openArray[HttpHeaderTuple] = [],
           body: openArray[byte] = []): HttpResult[HttpClientRequestRef] =
-  let address = ? session.getHttpAddress(parseUri(url))
+  let address = ? session.getHttpAddress(parseUri(url)).mapErr(
+    func (e: HttpAddressErrorType): string = $e
+  )
+
   ok HttpClientRequestRef.new(
     session, address, meth, version, flags, maxResponseHeadersSize, headers,
     body)
@@ -1083,7 +1094,9 @@ when chronosUseSink:
             headers: openArray[HttpHeaderTuple] = [],
             body: sink seq[byte]):
               HttpResult[HttpClientRequestRef] =
-    let ha = ? session.getHttpAddress(parseUri(url))
+    let ha = ? session.getHttpAddress(parseUri(url)).mapErr(
+      func (e: HttpAddressErrorType): string = $e
+    )
     ok HttpClientRequestRef.new(
       session, ha, meth, version, flags, maxResponseHeadersSize, headers,
       move(body))
