@@ -150,9 +150,11 @@ proc raiseHttpRequestBodyTooLargeError*() {.
   raise (ref HttpRequestBodyTooLargeError)(
     code: Http413, msg: MaximumBodySizeError)
 
+{.push warning[Deprecated]: off.}
 proc raiseHttpCriticalError*(msg: string, code = Http400) {.
      noinline, noreturn, raises: [HttpCriticalError], deprecated.} =
   raise (ref HttpCriticalError)(code: code, msg: msg)
+{.pop.}
 
 proc raiseHttpDisconnectError*() {.
      noinline, noreturn, raises: [HttpDisconnectError].} =
