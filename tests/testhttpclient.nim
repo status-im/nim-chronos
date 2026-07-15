@@ -1025,13 +1025,13 @@ suite "HTTP client testing suite":
         d8 == @[(200, "ok", 0), (200, "ok", 0)]
 
       let
-        n1 = await test1(keepHa, HttpVersion11, {}, {})
-        n2 = await test2(keepHa, keepHa, HttpVersion11, {}, {})
+        n1 = await test1(keepHa, HttpVersion11, {HttpClientFlag.Http11Pipeline}, {})
+        n2 = await test2(keepHa, keepHa, HttpVersion11, {HttpClientFlag.Http11Pipeline}, {})
         n3 = await test1(dropHa, HttpVersion11, {}, {})
         n4 = await test2(dropHa, dropHa, HttpVersion11, {}, {})
         n5 = await test1(keepHa, HttpVersion11,
                          {HttpClientFlag.NewConnectionAlways,}, {})
-        n6 = await test1(keepHa, HttpVersion11, {},
+        n6 = await test1(keepHa, HttpVersion11, {HttpClientFlag.Http11Pipeline},
                          {HttpClientRequestFlag.DedicatedConnection})
         n7 = await test1(keepHa, HttpVersion11, {},
                          {HttpClientRequestFlag.DedicatedConnection,
@@ -1092,7 +1092,7 @@ suite "HTTP client testing suite":
     let
       address = server.instance.localAddress()
       ha = getAddress(address, HttpClientScheme.NonSecure, "/test")
-      session = HttpSessionRef.new({},
+      session = HttpSessionRef.new({HttpClientFlag.Http11Pipeline},
                                    idleTimeout = 1.seconds,
                                    idlePeriod = 200.milliseconds)
     try:
