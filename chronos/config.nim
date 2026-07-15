@@ -4,9 +4,8 @@
 ## in transition periods leading up to a breaking release that starts enforcing
 ## them and removes the option.
 ##
-## `chronosPreviewV4` is a preview flag to enable v4 semantics - in particular,
-## it enables strict exception checking and disables parts of the deprecated
-## API and other changes being prepared for the upcoming release
+## `chronosPreviewV5` is a preview flag to enable v5 semantics - see below for
+## the strictness checks it adds.
 ##
 ## `chronosDebug` can be defined to enable several debugging helpers that come
 ## with a runtime cost - it is recommeneded to not enable these in production
@@ -35,7 +34,7 @@ const
     ##
     ## `Exception` handling may be removed in future chronos versions.
 
-  chronosStrictFutureAccess* {.booldefine.}: bool = defined(chronosPreviewV4)
+  chronosStrictFutureAccess* {.booldefine.}: bool = defined(chronosPreviewV5)
 
   chronosStackTrace* {.booldefine.}: bool = defined(chronosDebug)
     ## Include stack traces in futures for creation and completion points
@@ -111,6 +110,14 @@ const
     ## bug but it does not affect chronos' usage as long as values are not
     ## moved out of Future (at the time of writing we only move values)
 
+  chronosStrictReentrancy* {.booldefine.} = defined(chronosPreviewV5)
+    ## Raise an assert if `poll` is re-entered by calling it from an `{.async.}`
+    ## function or `callSoon` callback.
+    ##
+    ## Reentrancy is undefined behavior and generally not allowed in the chronos
+    ## runtime - enbling this option will cause a panic if it's detected - this
+    ## will become the default in future chronos versions.
+
 when defined(chronosStrictException):
   {.warning: "-d:chronosStrictException has been deprecated in favor of handleException".}
   # In chronos v3, this setting was used as the opposite of
@@ -146,4 +153,3 @@ when chronosUseSink:
 else:
   template chronosSink*(T: type): type = T
   template chronosMoveSink*(v: sink auto): untyped = v
-
