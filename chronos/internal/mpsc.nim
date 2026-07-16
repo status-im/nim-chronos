@@ -37,7 +37,7 @@ type
 # We need the `stub` pointer to be stable after init so neither moves nor copies
 # are permissible
 proc `=copy`[T](a: var MpscQueue[T], b: MpscQueue[T]) {.error.}
-proc `=move`[T](a: var MpscQueue[T], b: MpscQueue[T]) {.error.}
+proc `=sink`[T](a: var MpscQueue[T], b: MpscQueue[T]) {.error.}
 
 proc init*[T](q: var MpscQueue[T]) =
   ## Initialize the queue - must be called before any other ops

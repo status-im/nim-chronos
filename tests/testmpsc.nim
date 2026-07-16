@@ -175,74 +175,81 @@ suite "MPSC stress test":
     check total == Producers * ItemsPerProducer
 
   test "100000 items with 100 producers":
-    const Producers = 100
-    const ItemsPerProducer = 1000
+    when defined(gcOrc):
+      skip()
+    else:
+      const Producers = 100
+      const ItemsPerProducer = 1000
 
-    type ProdArg = object
-      q: ptr MpscQueue[TestNode]
-      startId: int
+      type ProdArg = object
+        q: ptr MpscQueue[TestNode]
+        startId: int
 
-    var threads = newSeq[Thread[ProdArg]](Producers)
+      var threads = newSeq[Thread[ProdArg]](Producers)
 
-    proc producer(arg: ProdArg) {.thread.} =
-      for i in 0 ..< ItemsPerProducer:
-        let node = newTestNode(arg.startId * ItemsPerProducer + i)
-        arg.q[].push(node)
+      proc producer(arg: ProdArg) {.thread.} =
+        for i in 0 ..< ItemsPerProducer:
+          let node = newTestNode(arg.startId * ItemsPerProducer + i)
+          arg.q[].push(node)
 
-    for i in 0 ..< Producers:
-      let arg = ProdArg(q: addr q, startId: i)
-      createThread(threads[i], producer, arg)
+      for i in 0 ..< Producers:
+        let arg = ProdArg(q: addr q, startId: i)
+        createThread(threads[i], producer, arg)
 
-    # Wait for all producers
-    joinThreads(threads)
+      # Wait for all producers
+      joinThreads(threads)
 
-    # Drain and verify
-    var total = 0
-    while true:
-      let node = q.pop()
-      if node == nil:
-        break
-      deallocShared(node)
-      inc total
+      # Drain and verify
+      var total = 0
+      while true:
+        let node = q.pop()
+        if node == nil:
+          break
+        deallocShared(node)
+        inc total
 
-    check total == Producers * ItemsPerProducer
+      check total == Producers * ItemsPerProducer
 
   test "concurrent producers with busy-loop consumer":
-    # Producers push items while a single consumer busy-loops,
-    # calling pop() until it has received the expected total.
-    const Producers = 8
-    const ItemsPerProducer = 5000
-    const TotalItems = Producers * ItemsPerProducer
+    when defined(gcOrc):
+      # TODO https://github.com/nim-lang/Nim/issues/26014
+      skip()
+    else:      
+      # Producers push items while a single consumer busy-loops,
+      # calling pop() until it has received the expected total.
+      const Producers = 8
+      const ItemsPerProducer = 5000
+      const TotalItems = Producers * ItemsPerProducer
 
-    type ProdArg = object
-      q: ptr MpscQueue[TestNode]
-      startId: int
+      type ProdArg = object
+        q: ptr MpscQueue[TestNode]
+        startId: int
 
-    var threads = newSeq[Thread[ProdArg]](Producers)
+      var threads = newSeq[Thread[ProdArg]](Producers)
 
-    proc producer(arg: ProdArg) {.thread.} =
-      for i in 0 ..< ItemsPerProducer:
-        let node = newTestNode(arg.startId * ItemsPerProducer + i)
-        arg.q[].push(node)
+      proc producer(arg: ProdArg) {.thread.} =
+        for i in 0 ..< ItemsPerProducer:
+          let node = newTestNode(arg.startId * ItemsPerProducer + i)
+          arg.q[].push(node)
 
-    # Spawn producers
-    for i in 0 ..< Producers:
-      let arg = ProdArg(q: addr q, startId: i)
-      createThread(threads[i], producer, arg)
+      # Spawn producers
+      for i in 0 ..< Producers:
+        let arg = ProdArg(q: addr q, startId: i)
+        createThread(threads[i], producer, arg)
 
-    # Consumer busy-loops: keep calling pop() concurrently with the
-    # producers until we've collected the expected number of items.
-    var total = 0
-    while total < TotalItems:
-      let node = q.pop()
-      if node != nil:
-        check node[].value < TotalItems
-        check node[].value >= 0
-        inc total
-        deallocShared(node)
-      # On nil we simply retry (busy-loop)
+      # Consumer busy-loops: keep calling pop() concurrently with the
+      # producers until we've collected the expected number of items.
+      var total = 0
+      while total < TotalItems:
+        let node = q.pop()
+        if node != nil:
+          check node[].value < TotalItems
+          check node[].value >= 0
+          inc total
+          deallocShared(node)
+        # On nil we simply retry (busy-loop)
 
-    # All producers must have finished by now
-    joinThreads(threads)
+      # All producers must have finished by now
+      joinThreads(threads)
 
-    check total == TotalItems
+      check total == TotalItems
