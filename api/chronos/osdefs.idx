@@ -1,0 +1,148 @@
+IP_MULTICAST_TTL	chronos/osdefs.html#IP_MULTICAST_TTL	osdefs: IP_MULTICAST_TTL	
+EPOLLIN	chronos/osdefs.html#EPOLLIN	osdefs: EPOLLIN	
+EPOLLPRI	chronos/osdefs.html#EPOLLPRI	osdefs: EPOLLPRI	
+EPOLLOUT	chronos/osdefs.html#EPOLLOUT	osdefs: EPOLLOUT	
+EPOLLERR	chronos/osdefs.html#EPOLLERR	osdefs: EPOLLERR	
+EPOLLHUP	chronos/osdefs.html#EPOLLHUP	osdefs: EPOLLHUP	
+EPOLLRDNORM	chronos/osdefs.html#EPOLLRDNORM	osdefs: EPOLLRDNORM	
+EPOLLRDBAND	chronos/osdefs.html#EPOLLRDBAND	osdefs: EPOLLRDBAND	
+EPOLLWRNORM	chronos/osdefs.html#EPOLLWRNORM	osdefs: EPOLLWRNORM	
+EPOLLWRBAND	chronos/osdefs.html#EPOLLWRBAND	osdefs: EPOLLWRBAND	
+EPOLLMSG	chronos/osdefs.html#EPOLLMSG	osdefs: EPOLLMSG	
+EPOLLRDHUP	chronos/osdefs.html#EPOLLRDHUP	osdefs: EPOLLRDHUP	
+EPOLLEXCLUSIVE	chronos/osdefs.html#EPOLLEXCLUSIVE	osdefs: EPOLLEXCLUSIVE	
+EPOLLWAKEUP	chronos/osdefs.html#EPOLLWAKEUP	osdefs: EPOLLWAKEUP	
+EPOLLONESHOT	chronos/osdefs.html#EPOLLONESHOT	osdefs: EPOLLONESHOT	
+EPOLLET	chronos/osdefs.html#EPOLLET	osdefs: EPOLLET	
+SFD_CLOEXEC	chronos/osdefs.html#SFD_CLOEXEC	osdefs: SFD_CLOEXEC	
+SFD_NONBLOCK	chronos/osdefs.html#SFD_NONBLOCK	osdefs: SFD_NONBLOCK	
+EFD_CLOEXEC	chronos/osdefs.html#EFD_CLOEXEC	osdefs: EFD_CLOEXEC	
+EFD_NONBLOCK	chronos/osdefs.html#EFD_NONBLOCK	osdefs: EFD_NONBLOCK	
+TFD_CLOEXEC	chronos/osdefs.html#TFD_CLOEXEC	osdefs: TFD_CLOEXEC	
+TFD_NONBLOCK	chronos/osdefs.html#TFD_NONBLOCK	osdefs: TFD_NONBLOCK	
+EPOLL_CTL_ADD	chronos/osdefs.html#EPOLL_CTL_ADD	osdefs: EPOLL_CTL_ADD	
+EPOLL_CTL_DEL	chronos/osdefs.html#EPOLL_CTL_DEL	osdefs: EPOLL_CTL_DEL	
+EPOLL_CTL_MOD	chronos/osdefs.html#EPOLL_CTL_MOD	osdefs: EPOLL_CTL_MOD	
+EpollData	chronos/osdefs.html#EpollData	osdefs: EpollData	
+EpollEvent	chronos/osdefs.html#EpollEvent	osdefs: EpollEvent	
+SignalFdInfo	chronos/osdefs.html#SignalFdInfo	osdefs: SignalFdInfo	
+epoll_create	chronos/osdefs.html#epoll_create,cint	osdefs: epoll_create(size: cint): cint	
+epoll_create1	chronos/osdefs.html#epoll_create1,cint	osdefs: epoll_create1(flags: cint): cint	
+epoll_ctl	chronos/osdefs.html#epoll_ctl,cint,cint,cint,ptr.EpollEvent	osdefs: epoll_ctl(epfd: cint; op: cint; fd: cint; event: ptr EpollEvent): cint	
+epoll_wait	chronos/osdefs.html#epoll_wait,cint,ptr.EpollEvent,cint,cint	osdefs: epoll_wait(epfd: cint; events: ptr EpollEvent; maxevents: cint; timeout: cint): cint	
+timerfd_create	chronos/osdefs.html#timerfd_create,ClockId,cint	osdefs: timerfd_create(clock_id: ClockId; flags: cint): cint	
+timerfd_settime	chronos/osdefs.html#timerfd_settime,cint,cint,Itimerspec,Itimerspec	osdefs: timerfd_settime(ufd: cint; flags: cint; utmr: var Itimerspec;\n                otmr: var Itimerspec): cint	
+eventfd	chronos/osdefs.html#eventfd,cuint,cint	osdefs: eventfd(count: cuint; flags: cint): cint	
+signalfd	chronos/osdefs.html#signalfd,cint,Sigset,cint	osdefs: signalfd(fd: cint; mask: var Sigset; flags: cint): cint	
+pipe2	chronos/osdefs.html#pipe2,array[,cint],cint	osdefs: pipe2(a: array[0 .. 1, cint]; flags: cint): cint	
+accept4	chronos/osdefs.html#accept4,cint,ptr.SockAddr,ptr.SockLen,cint	osdefs: accept4(a1: cint; a2: ptr SockAddr; a3: ptr SockLen; a4: cint): cint	
+SOCK_NONBLOCK	chronos/osdefs.html#SOCK_NONBLOCK	osdefs: SOCK_NONBLOCK	
+SOCK_CLOEXEC	chronos/osdefs.html#SOCK_CLOEXEC	osdefs: SOCK_CLOEXEC	
+TCP_NODELAY	chronos/osdefs.html#TCP_NODELAY	osdefs: TCP_NODELAY	
+IPPROTO_TCP	chronos/osdefs.html#IPPROTO_TCP	osdefs: IPPROTO_TCP	
+O_CLOEXEC	chronos/osdefs.html#O_CLOEXEC	osdefs: O_CLOEXEC	
+POSIX_SPAWN_USEVFORK	chronos/osdefs.html#POSIX_SPAWN_USEVFORK	osdefs: POSIX_SPAWN_USEVFORK	
+IPV6_V6ONLY	chronos/osdefs.html#IPV6_V6ONLY	osdefs: IPV6_V6ONLY	
+POSIX_SPAWN_RESETIDS	chronos/osdefs.html#POSIX_SPAWN_RESETIDS	osdefs: POSIX_SPAWN_RESETIDS	
+POSIX_SPAWN_SETPGROUP	chronos/osdefs.html#POSIX_SPAWN_SETPGROUP	osdefs: POSIX_SPAWN_SETPGROUP	
+POSIX_SPAWN_SETSCHEDPARAM	chronos/osdefs.html#POSIX_SPAWN_SETSCHEDPARAM	osdefs: POSIX_SPAWN_SETSCHEDPARAM	
+POSIX_SPAWN_SETSCHEDULER	chronos/osdefs.html#POSIX_SPAWN_SETSCHEDULER	osdefs: POSIX_SPAWN_SETSCHEDULER	
+POSIX_SPAWN_SETSIGDEF	chronos/osdefs.html#POSIX_SPAWN_SETSIGDEF	osdefs: POSIX_SPAWN_SETSIGDEF	
+POSIX_SPAWN_SETSIGMASK	chronos/osdefs.html#POSIX_SPAWN_SETSIGMASK	osdefs: POSIX_SPAWN_SETSIGMASK	
+SchedParam	chronos/osdefs.html#SchedParam	osdefs: SchedParam	
+PosixSpawnAttr	chronos/osdefs.html#PosixSpawnAttr	osdefs: PosixSpawnAttr	
+PosixSpawnFileActions	chronos/osdefs.html#PosixSpawnFileActions	osdefs: PosixSpawnFileActions	
+posixSpawn	chronos/osdefs.html#posixSpawn,Pid,cstring,PosixSpawnFileActions,PosixSpawnAttr,cstringArray,cstringArray	osdefs: posixSpawn(a1: var Pid; a2: cstring; a3: var PosixSpawnFileActions;\n           a4: var PosixSpawnAttr; a5, a6: cstringArray): cint	
+posixSpawnp	chronos/osdefs.html#posixSpawnp,Pid,cstring,PosixSpawnFileActions,PosixSpawnAttr,cstringArray,cstringArray	osdefs: posixSpawnp(a1: var Pid; a2: cstring; a3: var PosixSpawnFileActions;\n            a4: var PosixSpawnAttr; a5, a6: cstringArray): cint	
+posixSpawnFileActionsInit	chronos/osdefs.html#posixSpawnFileActionsInit,PosixSpawnFileActions	osdefs: posixSpawnFileActionsInit(a1: var PosixSpawnFileActions): cint	
+posixSpawnFileActionsDestroy	chronos/osdefs.html#posixSpawnFileActionsDestroy,PosixSpawnFileActions	osdefs: posixSpawnFileActionsDestroy(a1: var PosixSpawnFileActions): cint	
+posixSpawnFileActionsAddClose	chronos/osdefs.html#posixSpawnFileActionsAddClose,PosixSpawnFileActions,cint	osdefs: posixSpawnFileActionsAddClose(a1: var PosixSpawnFileActions; a2: cint): cint	
+posixSpawnFileActionsAddDup2	chronos/osdefs.html#posixSpawnFileActionsAddDup2,PosixSpawnFileActions,cint,cint	osdefs: posixSpawnFileActionsAddDup2(a1: var PosixSpawnFileActions; a2, a3: cint): cint	
+posixSpawnFileActionsAddOpen	chronos/osdefs.html#posixSpawnFileActionsAddOpen,PosixSpawnFileActions,cint,cstring,cint,Mode	osdefs: posixSpawnFileActionsAddOpen(a1: var PosixSpawnFileActions; a2: cint;\n                             a3: cstring; a4: cint; a5: Mode): cint	
+posixSpawnAttrInit	chronos/osdefs.html#posixSpawnAttrInit,PosixSpawnAttr	osdefs: posixSpawnAttrInit(a1: var PosixSpawnAttr): cint	
+posixSpawnAttrDestroy	chronos/osdefs.html#posixSpawnAttrDestroy,PosixSpawnAttr	osdefs: posixSpawnAttrDestroy(a1: var PosixSpawnAttr): cint	
+posixSpawnAttrGetSigDefault	chronos/osdefs.html#posixSpawnAttrGetSigDefault,PosixSpawnAttr,Sigset	osdefs: posixSpawnAttrGetSigDefault(a1: var PosixSpawnAttr; a2: var Sigset): cint	
+posixSpawnAttrSetSigDefault	chronos/osdefs.html#posixSpawnAttrSetSigDefault,PosixSpawnAttr,Sigset	osdefs: posixSpawnAttrSetSigDefault(a1: var PosixSpawnAttr; a2: var Sigset): cint	
+posixSpawnAttrGetFlags	chronos/osdefs.html#posixSpawnAttrGetFlags,PosixSpawnAttr,cshort	osdefs: posixSpawnAttrGetFlags(a1: var PosixSpawnAttr; a2: var cshort): cint	
+posixSpawnAttrSetFlags	chronos/osdefs.html#posixSpawnAttrSetFlags,PosixSpawnAttr,cint	osdefs: posixSpawnAttrSetFlags(a1: var PosixSpawnAttr; a2: cint): cint	
+posixSpawnAttrGetPgroup	chronos/osdefs.html#posixSpawnAttrGetPgroup,PosixSpawnAttr,Pid	osdefs: posixSpawnAttrGetPgroup(a1: var PosixSpawnAttr; a2: var Pid): cint	
+posixSpawnAttrSetPgroup	chronos/osdefs.html#posixSpawnAttrSetPgroup,PosixSpawnAttr,Pid	osdefs: posixSpawnAttrSetPgroup(a1: var PosixSpawnAttr; a2: Pid): cint	
+posixSpawnAttrGetSchedParam	chronos/osdefs.html#posixSpawnAttrGetSchedParam,PosixSpawnAttr,SchedParam	osdefs: posixSpawnAttrGetSchedParam(a1: var PosixSpawnAttr; a2: var SchedParam): cint	
+posixSpawnAttrSetSchedParam	chronos/osdefs.html#posixSpawnAttrSetSchedParam,PosixSpawnAttr,SchedParam	osdefs: posixSpawnAttrSetSchedParam(a1: var PosixSpawnAttr; a2: var SchedParam): cint	
+posixSpawnAttrGetSchedPolicy	chronos/osdefs.html#posixSpawnAttrGetSchedPolicy,PosixSpawnAttr,cint	osdefs: posixSpawnAttrGetSchedPolicy(a1: var PosixSpawnAttr; a2: var cint): cint	
+posixSpawnAttrSetSchedPolicy	chronos/osdefs.html#posixSpawnAttrSetSchedPolicy,PosixSpawnAttr,cint	osdefs: posixSpawnAttrSetSchedPolicy(a1: var PosixSpawnAttr; a2: cint): cint	
+posixSpawnAttrGetSigMask	chronos/osdefs.html#posixSpawnAttrGetSigMask,PosixSpawnAttr,Sigset	osdefs: posixSpawnAttrGetSigMask(a1: var PosixSpawnAttr; a2: var Sigset): cint	
+posixSpawnAttrSetSigMask	chronos/osdefs.html#posixSpawnAttrSetSigMask,PosixSpawnAttr,Sigset	osdefs: posixSpawnAttrSetSigMask(a1: var PosixSpawnAttr; a2: var Sigset): cint	
+P_PID	chronos/osdefs.html#P_PID	osdefs: P_PID	
+WNOHANG	chronos/osdefs.html#WNOHANG	osdefs: WNOHANG	
+WSTOPPED	chronos/osdefs.html#WSTOPPED	osdefs: WSTOPPED	
+WEXITED	chronos/osdefs.html#WEXITED	osdefs: WEXITED	
+WNOWAIT	chronos/osdefs.html#WNOWAIT	osdefs: WNOWAIT	
+WAITEXITSTATUS	chronos/osdefs.html#WAITEXITSTATUS.t,cint	osdefs: WAITEXITSTATUS(s: cint): cint	
+WAITTERMSIG	chronos/osdefs.html#WAITTERMSIG.t,cint	osdefs: WAITTERMSIG(s: cint): cint	
+WAITSTOPSIG	chronos/osdefs.html#WAITSTOPSIG.t,cint	osdefs: WAITSTOPSIG(s: cint): cint	
+WAITIFEXITED	chronos/osdefs.html#WAITIFEXITED.t,cint	osdefs: WAITIFEXITED(s: cint): bool	
+WAITIFSIGNALED	chronos/osdefs.html#WAITIFSIGNALED.t,cint	osdefs: WAITIFSIGNALED(s: cint): bool	
+WAITIFSTOPPED	chronos/osdefs.html#WAITIFSTOPPED.t,cint	osdefs: WAITIFSTOPPED(s: cint): bool	
+WAITIFCONTINUED	chronos/osdefs.html#WAITIFCONTINUED.t,cint	osdefs: WAITIFCONTINUED(s: cint): bool	
+INVALID_SOCKET	chronos/osdefs.html#INVALID_SOCKET	osdefs: INVALID_SOCKET	
+INVALID_HANDLE_VALUE	chronos/osdefs.html#INVALID_HANDLE_VALUE	osdefs: INVALID_HANDLE_VALUE	
+`==`	chronos/osdefs.html#==,SocketHandle,int	osdefs: `==`(x: SocketHandle; y: int): bool	
+`==`	chronos/osdefs.html#==,SocketHandle,SocketHandle	osdefs: `==`(x: SocketHandle; y: SocketHandle): bool	
+AF_NETLINK	chronos/osdefs.html#AF_NETLINK	osdefs: AF_NETLINK	
+AF_PACKET	chronos/osdefs.html#AF_PACKET	osdefs: AF_PACKET	
+NETLINK_ROUTE	chronos/osdefs.html#NETLINK_ROUTE	osdefs: NETLINK_ROUTE	
+NLMSG_ALIGNTO	chronos/osdefs.html#NLMSG_ALIGNTO	osdefs: NLMSG_ALIGNTO	
+RTA_ALIGNTO	chronos/osdefs.html#RTA_ALIGNTO	osdefs: RTA_ALIGNTO	
+RTA_DST	chronos/osdefs.html#RTA_DST	osdefs: RTA_DST	
+RTA_OIF	chronos/osdefs.html#RTA_OIF	osdefs: RTA_OIF	
+RTA_GATEWAY	chronos/osdefs.html#RTA_GATEWAY	osdefs: RTA_GATEWAY	
+RTA_PREFSRC	chronos/osdefs.html#RTA_PREFSRC	osdefs: RTA_PREFSRC	
+RTM_NEWLINK	chronos/osdefs.html#RTM_NEWLINK	osdefs: RTM_NEWLINK	
+RTM_NEWROUTE	chronos/osdefs.html#RTM_NEWROUTE	osdefs: RTM_NEWROUTE	
+RTM_F_LOOKUP_TABLE	chronos/osdefs.html#RTM_F_LOOKUP_TABLE	osdefs: RTM_F_LOOKUP_TABLE	
+RTM_GETLINK	chronos/osdefs.html#RTM_GETLINK	osdefs: RTM_GETLINK	
+RTM_GETADDR	chronos/osdefs.html#RTM_GETADDR	osdefs: RTM_GETADDR	
+RTM_GETROUTE	chronos/osdefs.html#RTM_GETROUTE	osdefs: RTM_GETROUTE	
+NLM_F_REQUEST	chronos/osdefs.html#NLM_F_REQUEST	osdefs: NLM_F_REQUEST	
+NLM_F_ROOT	chronos/osdefs.html#NLM_F_ROOT	osdefs: NLM_F_ROOT	
+NLM_F_MATCH	chronos/osdefs.html#NLM_F_MATCH	osdefs: NLM_F_MATCH	
+NLM_F_DUMP	chronos/osdefs.html#NLM_F_DUMP	osdefs: NLM_F_DUMP	
+IFLIST_REPLY_BUFFER	chronos/osdefs.html#IFLIST_REPLY_BUFFER	osdefs: IFLIST_REPLY_BUFFER	
+InvalidSocketHandle	chronos/osdefs.html#InvalidSocketHandle	osdefs: InvalidSocketHandle	
+NLMSG_DONE	chronos/osdefs.html#NLMSG_DONE	osdefs: NLMSG_DONE	
+NLMSG_ERROR	chronos/osdefs.html#NLMSG_ERROR	osdefs: NLMSG_ERROR	
+IFLA_ADDRESS	chronos/osdefs.html#IFLA_ADDRESS	osdefs: IFLA_ADDRESS	
+IFLA_IFNAME	chronos/osdefs.html#IFLA_IFNAME	osdefs: IFLA_IFNAME	
+IFLA_MTU	chronos/osdefs.html#IFLA_MTU	osdefs: IFLA_MTU	
+IFLA_OPERSTATE	chronos/osdefs.html#IFLA_OPERSTATE	osdefs: IFLA_OPERSTATE	
+IFA_ADDRESS	chronos/osdefs.html#IFA_ADDRESS	osdefs: IFA_ADDRESS	
+IFA_LOCAL	chronos/osdefs.html#IFA_LOCAL	osdefs: IFA_LOCAL	
+ARPHRD_ETHER	chronos/osdefs.html#ARPHRD_ETHER	osdefs: ARPHRD_ETHER	
+ARPHRD_EETHER	chronos/osdefs.html#ARPHRD_EETHER	osdefs: ARPHRD_EETHER	
+ARPHRD_ARCNET	chronos/osdefs.html#ARPHRD_ARCNET	osdefs: ARPHRD_ARCNET	
+ARPHRD_ATM	chronos/osdefs.html#ARPHRD_ATM	osdefs: ARPHRD_ATM	
+ARPHRD_IEEE1394	chronos/osdefs.html#ARPHRD_IEEE1394	osdefs: ARPHRD_IEEE1394	
+ARPHRD_SLIP	chronos/osdefs.html#ARPHRD_SLIP	osdefs: ARPHRD_SLIP	
+ARPHRD_CSLIP	chronos/osdefs.html#ARPHRD_CSLIP	osdefs: ARPHRD_CSLIP	
+ARPHRD_SLIP6	chronos/osdefs.html#ARPHRD_SLIP6	osdefs: ARPHRD_SLIP6	
+ARPHRD_CSLIP6	chronos/osdefs.html#ARPHRD_CSLIP6	osdefs: ARPHRD_CSLIP6	
+ARPHRD_PPP	chronos/osdefs.html#ARPHRD_PPP	osdefs: ARPHRD_PPP	
+ARPHRD_CISCO	chronos/osdefs.html#ARPHRD_CISCO	osdefs: ARPHRD_CISCO	
+ARPHRD_HDLC	chronos/osdefs.html#ARPHRD_HDLC	osdefs: ARPHRD_HDLC	
+ARPHRD_LAPB	chronos/osdefs.html#ARPHRD_LAPB	osdefs: ARPHRD_LAPB	
+ARPHRD_FRAD	chronos/osdefs.html#ARPHRD_FRAD	osdefs: ARPHRD_FRAD	
+ARPHRD_LOOPBACK	chronos/osdefs.html#ARPHRD_LOOPBACK	osdefs: ARPHRD_LOOPBACK	
+ARPHRD_HIPPI	chronos/osdefs.html#ARPHRD_HIPPI	osdefs: ARPHRD_HIPPI	
+ARPHRD_IEEE80211	chronos/osdefs.html#ARPHRD_IEEE80211	osdefs: ARPHRD_IEEE80211	
+ARPHRD_IEEE80211_PRISM	chronos/osdefs.html#ARPHRD_IEEE80211_PRISM	osdefs: ARPHRD_IEEE80211_PRISM	
+ARPHRD_IEEE80211_RADIOTAP	chronos/osdefs.html#ARPHRD_IEEE80211_RADIOTAP	osdefs: ARPHRD_IEEE80211_RADIOTAP	
+Sockaddr_nl	chronos/osdefs.html#Sockaddr_nl	osdefs: Sockaddr_nl	
+NlMsgHeader	chronos/osdefs.html#NlMsgHeader	osdefs: NlMsgHeader	
+IfInfoMessage	chronos/osdefs.html#IfInfoMessage	osdefs: IfInfoMessage	
+IfAddrMessage	chronos/osdefs.html#IfAddrMessage	osdefs: IfAddrMessage	
+RtMessage	chronos/osdefs.html#RtMessage	osdefs: RtMessage	
+RtAttr	chronos/osdefs.html#RtAttr	osdefs: RtAttr	
+RtGenMsg	chronos/osdefs.html#RtGenMsg	osdefs: RtGenMsg	
+NLReq	chronos/osdefs.html#NLReq	osdefs: NLReq	
+NLRouteReq	chronos/osdefs.html#NLRouteReq	osdefs: NLRouteReq	

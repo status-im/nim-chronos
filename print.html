@@ -1,0 +1,2720 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Chronos</title>
+        <meta name="robots" content="noindex">
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon.svg">
+        <link rel="shortcut icon" href="favicon.png">
+        <link rel="stylesheet" href="css/variables.css">
+        <link rel="stylesheet" href="css/general.css">
+        <link rel="stylesheet" href="css/chrome.css">
+        <link rel="stylesheet" href="css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="highlight-css" href="highlight.css">
+        <link rel="stylesheet" id="tomorrow-night-css" href="tomorrow-night.css">
+        <link rel="stylesheet" id="ayu-highlight-css" href="ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+        <link rel="stylesheet" href="./open-in.css">
+        <link rel="stylesheet" href="./mdbook-admonish.css">
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "light";
+            const default_dark_theme = "navy";
+            window.path_to_searchindex_js = "searchindex.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Chronos</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/status-im/nim-chronos/" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <i class="fa fa-spinner fa-spin"></i>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="introduction"><a class="header" href="#introduction">Introduction</a></h1>
+<p>Chronos implements the <a href="https://en.wikipedia.org/wiki/Async/await">async/await</a>
+paradigm in a self-contained library using macro and closure iterator
+transformation features provided by Nim.</p>
+<p>Features include:</p>
+<ul>
+<li>Asynchronous socket and process I/O</li>
+<li>HTTP client / server with SSL/TLS support out of the box (no OpenSSL needed)</li>
+<li>Synchronization primitivies like queues, events and locks</li>
+<li><a href="./concepts.html#cancellation">Cancellation</a></li>
+<li>Efficient dispatch pipeline with excellent multi-platform support</li>
+<li>Exception <a href="./guide.html#error-handling">effect support</a></li>
+</ul>
+<h2 id="installation"><a class="header" href="#installation">Installation</a></h2>
+<p>Install <code>chronos</code> using <code>nimble</code>:</p>
+<pre><code class="language-text">nimble install chronos
+</code></pre>
+<p>or add a dependency to your <code>.nimble</code> file:</p>
+<pre><code class="language-text">requires "chronos"
+</code></pre>
+<p>and start using it:</p>
+<pre><code class="language-nim">import chronos/apps/http/httpclient
+
+proc retrievePage*(uri: string): Future[string] {.async.} =
+  # Create a new HTTP session
+  let httpSession = HttpSessionRef.new()
+  try:
+    # Fetch page contents
+    let resp = await httpSession.fetch(parseUri(uri))
+    # Convert response to a string, assuming its encoding matches the terminal!
+    bytesToString(resp.data)
+  finally: # Close the session
+    await httpSession.closeWait()
+
+echo waitFor retrievePage(
+  "https://raw.githubusercontent.com/status-im/nim-chronos/master/README.md"
+)
+</code></pre>
+<p>There are more <a href="./examples.html">examples</a> throughout the manual!</p>
+<h2 id="platform-support"><a class="header" href="#platform-support">Platform support</a></h2>
+<p>Several platforms are supported, with different backend <a href="./concepts.html#compile-time-configuration">options</a>:</p>
+<ul>
+<li>Windows: <a href="https://learn.microsoft.com/en-us/windows/win32/fileio/i-o-completion-ports"><code>IOCP</code></a></li>
+<li>Linux: <a href="https://en.wikipedia.org/wiki/Epoll"><code>epoll</code></a> / <code>poll</code></li>
+<li>OSX / BSD: <a href="https://en.wikipedia.org/wiki/Kqueue"><code>kqueue</code></a> / <code>poll</code></li>
+<li>Android / Emscripten / posix: <code>poll</code></li>
+</ul>
+<h2 id="api-documentation"><a class="header" href="#api-documentation">API documentation</a></h2>
+<p>This guide covers basic usage of chronos - for details, see the
+<a href="api/chronos.html">API reference</a>.</p>
+<footer id="open-on-gh">Found a bug? <a href="https://github.com/status-im/nim-chronos//edit/master/docs/src/introduction.md">Edit this page on GitHub.</a></footer><div style="break-before: page; page-break-before: always;"></div><h1 id="examples"><a class="header" href="#examples">Examples</a></h1>
+<p>Examples are available in the <a href="https://github.com/status-im/nim-chronos/tree/master/examples/"><code>examples/</code></a> folder.</p>
+<h2 id="basic-concepts"><a class="header" href="#basic-concepts">Basic concepts</a></h2>
+<ul>
+<li><a href="https://github.com/status-im/nim-chronos/tree/master/examples/cancellation.nim">cancellation</a> - Cancellation primer</li>
+<li><a href="https://github.com/status-im/nim-chronos/tree/master/examples/timeoutsimple.nim">timeoutsimple</a> - Simple timeouts</li>
+<li><a href="https://github.com/status-im/nim-chronos/tree/master/examples/timeoutcomposed.nim">timeoutcomposed</a> - Shared timeout of multiple tasks</li>
+</ul>
+<h2 id="threads"><a class="header" href="#threads">Threads</a></h2>
+<ul>
+<li><a href="https://github.com/status-im/nim-chronos/tree/master/examples/signalling.nim">signalling</a> - Cross-thread signalling</li>
+</ul>
+<h2 id="tcp"><a class="header" href="#tcp">TCP</a></h2>
+<ul>
+<li><a href="https://github.com/status-im/nim-chronos/tree/master/examples/tcpserver.nim">tcpserver</a> - Simple TCP/IP v4/v6 echo server</li>
+<li><a href="https://github.com/status-im/nim-chronos/tree/master/examples/tcpserver.nim">tcpserver2</a> - TCP/IP v4/6 echo server with graceful shutdown</li>
+<li><a href="https://github.com/status-im/nim-chronos/tree/master/examples/tcpserver.nim">tcpclient</a> - Simple multi-connection echo client</li>
+</ul>
+<h2 id="http"><a class="header" href="#http">HTTP</a></h2>
+<ul>
+<li><a href="https://github.com/status-im/nim-chronos/tree/master/examples/httpget.nim">httpget</a> - Downloading a web page using the http client</li>
+<li><a href="https://github.com/status-im/nim-chronos/tree/master/examples/twogets.nim">twogets</a> - Download two pages concurrently</li>
+<li><a href="https://github.com/status-im/nim-chronos/tree/master/examples/middleware.nim">middleware</a> - Deploy multiple HTTP server middlewares</li>
+</ul>
+<footer id="open-on-gh">Found a bug? <a href="https://github.com/status-im/nim-chronos//edit/master/docs/src/examples.md">Edit this page on GitHub.</a></footer><div style="break-before: page; page-break-before: always;"></div><h1 id="http-client-uptime-monitor"><a class="header" href="#http-client-uptime-monitor">HTTP Client: Uptime Monitor</a></h1>
+<p>In this tutorial, we'll create a performant and efficient monitoring service using Chronos. The service will regularly check URIs from a given list and notify you if a URI is unavailable.</p>
+<p>Applications where you have to make thousands of HTTP requests concurrently is exactly the kinds of applications where Chronos truly shines. While working on our service, we'll discover Chronos's way of making HTTP requests, scaling them, handling erroneous URIs, working with timeouts and streaming.</p>
+<p>The complete application (split into chapters to help you track progress) is available at <a href="https://github.com/status-im/nim-chronos/blob/master/examples/http_client">examples/http_client</a>.</p>
+<h2 id="prerequisites"><a class="header" href="#prerequisites">Prerequisites</a></h2>
+<p>To go through the tutorial, you'll need a computer with a stable Internet connection, any text editor, and a console (aka terminal emulator). Familiarity with the concepts of HTTP requests and async routines as well as Nim knowledge will help you along but are not required.</p>
+<p>Before you start, make sure you have Nim programming language by following <a href="https://nim-lang.org/install.html">the official installation guide</a>.</p>
+<footer id="open-on-gh">Found a bug? <a href="https://github.com/status-im/nim-chronos//edit/master/docs/src/tutorials/http_client/intro.md">Edit this page on GitHub.</a></footer><div style="break-before: page; page-break-before: always;"></div><h1 id="making-an-http-request-with-chronos"><a class="header" href="#making-an-http-request-with-chronos">Making an HTTP Request with Chronos</a></h1>
+<p><strong>Goal:</strong> Learn how to make an HTTP request and proccess its response with Chronos.</p>
+<p><strong>Source code:</strong> <a href="https://github.com/status-im/nim-chronos/blob/master/examples/http_client/chapter1/src/uptimemon.nim">chapter1/src/uptimemon.nim</a></p>
+<p>Create a new Nimble project:</p>
+<pre><code class="language-shell">$ nimble init uptimemon
+</code></pre>
+<p>Copy and paste this code into <code>src/uptimemon.nim</code> (we'll go through each line in a moment):</p>
+<pre><code class="language-nim">import chronos/apps/http/httpclient
+
+proc check(uri: string) {.async: (raises: [CancelledError]).} =
+  let session = HttpSessionRef.new()
+
+  try:
+    let response = await session.fetch(parseUri(uri))
+
+    if response.status == 200:
+      echo "[OK] " &amp; uri
+    else:
+      echo "[NOK] " &amp; uri &amp; ": " &amp; $response.status
+  except HttpError:
+    echo "[ERR] " &amp; uri &amp; ": " &amp; getCurrentExceptionMsg()
+  finally:
+    await session.closeWait()
+
+when isMainModule:
+  waitFor check("https://google.com")
+</code></pre>
+<p>To execute the file, switch to the directory with this file in your terminal and run this command:</p>
+<pre><code class="language-shell">$ nimble run
+</code></pre>
+<p>You should see the following message in you terminal:</p>
+<pre><code class="language-shell">[OK] https://google.com
+</code></pre>
+<p>Now let's see what we're doing here line by line.</p>
+<h2 id="line-by-line-explanation"><a class="header" href="#line-by-line-explanation">Line-by-Line Explanation</a></h2>
+<pre><code class="language-nim">import chronos/apps/http/httpclient
+</code></pre>
+<p><a href="tutorials/http_client/../../api/chronos/apps/http/httpclient.html"><code>httpclient</code></a> module, as the title suggests, implements the HTTP client capabilities, i.e. sending HTTP requests and dealing with the responses asynchronously.</p>
+<pre><code class="language-nim">proc check(uri: string) {.async: (raises: [CancelledError]).} =
+</code></pre>
+<p>We define a function that sends an HTTP request to a URL we provide, checks if this URL is available, and prints the result.</p>
+<p>Note that this function is annotated with <code>async</code> pragma because we won't call it directly but instead will "book" its execution from Chronos in an asynchronous way.</p>
+<p>Also note the <code>raises: [CancelledError]</code> part. This is Chronos's way of announcing the exceptions that are expected to the raised by this function. This mechanism is called <a href="tutorials/http_client/../../error_handling.html#checked-exceptions">checked exceptions</a>. In this particular case, we tell the compiler that this function has cancellable things inside it and propagates the cancellation to its caller. No other exceptions should leak from it and if they do, it's a defect in the program.</p>
+<pre><code class="language-nim">let session = HttpSessionRef.new()
+</code></pre>
+<p>Here, we're creating an HTTP session. Sessions are responsible for connection pool management, i.e. it provides a connection when it is needed (either by reusing a free one or allocating a new one) and returns it to the pool after usage.</p>
+<pre><code class="language-nim">try:
+  let response = await session.fetch(parseUri(uri))
+</code></pre>
+<p>When dealing with the Web, we must always assume the connection can break. So it's a good idea to get wrap all web interactions in a <code>try-except</code> block.</p>
+<p><a href="tutorials/http_client/../../api/chronos/apps/http/httpclient.html#fetch,HttpSessionRef,Uri"><code>fetch</code></a> is a shortcut for "create an HTTP GET request within the given session to the given URL."</p>
+<p><a href="https://nim-lang.org/docs/uri.html#parseUri,string"><code>parseUri</code></a> is a function that parses a string into a structured URI object.</p>
+<p>Notice that when we are assigning a value to <code>response</code>, we do not just call <code>fetch</code> but put an <code>await</code> before it. This is because <code>fetch</code> returns a <code>Future</code>, i.e. a not-yet-ready-result. <code>await</code> signals to the runtime that this function is interested in this computation result but while it's waiting for it, some other routine can take control.</p>
+<pre><code class="language-nim">if response.status == 200:
+  echo "[OK] " &amp; uri
+else:
+  echo "[NOK] " &amp; uri &amp; ": " &amp; $response.status
+</code></pre>
+<p>Once we've received our response, we can check its status. If it's 200, we mark this URL healthy (later in the tutorial, we'll improve this logic to handle empty and junk responses), otherwise—not healthy.</p>
+<pre><code class="language-nim">except HttpError:
+  echo "[ERR] " &amp; uri &amp; ": " &amp; getCurrentExceptionMsg()
+</code></pre>
+<p>If the request fails (e.g. the connection is unstable or the host is unreachable), <code>fetch</code> would raise a <code>HttpError</code> exception. Since raising this exception is part of our business logic, we catch it as <code>e</code> and report the error with <code>e.msg</code>.</p>
+<p>Note that catching <code>HttpError</code> does not contradict the <code>raises</code> value at the function definition: since we handle the exception and not re-raise it, our promise that only <code>CancelledError</code> ever emits from <code>check</code> is held true.</p>
+<pre><code class="language-nim">finally:
+  await session.closeWait()
+</code></pre>
+<p>No matter if the check was successful, we must close the session after we're done with it and return the resources back to your computer. <a href="tutorials/http_client/../../api/chronos/apps/http/httpclient.html#closeWait,HttpSessionRef"><code>closeWait</code></a> is a function that schedules all open connections within this session to be closed.</p>
+<pre><code class="language-nim">when isMainModule:
+  waitFor check("https://google.com")
+</code></pre>
+<p>Finally, we call our function to check a particular URL. Google is probably up so you should get an <code>[OK]</code> message. However, you can try other URLs to see how the response changes if you use a non-existing URL or a forbidden one.</p>
+<p>In the next chapter, we'll see how to efficiently check multiple URLs by reusing the session!</p>
+<footer id="open-on-gh">Found a bug? <a href="https://github.com/status-im/nim-chronos//edit/master/docs/src/tutorials/http_client/chapter1.md">Edit this page on GitHub.</a></footer><div style="break-before: page; page-break-before: always;"></div><h1 id="session-reuse"><a class="header" href="#session-reuse">Session Reuse</a></h1>
+<p><strong>Goal:</strong> Learn how to reuse HTTP sessions for multiple requests.</p>
+<p><strong>Source code:</strong> <a href="https://github.com/status-im/nim-chronos/blob/master/examples/http_client/chapter2/src/uptimemon.nim">chapter2/src/uptimemon.nim</a></p>
+<p>OK, we have a working app that can check one URI. Now let's see how to check multiple URIs.</p>
+<p>While it might be tempting to just wrap our code from Chapter 1 in a loop, there's a much more efficient way to handle multiple requests in Chronos: <strong>reusing the HTTP session</strong>.</p>
+<p>Recall from Chapter 1 that a session (<code>HttpSessionRef</code>) is a <strong>connection pool manager</strong>. Its job is to keep a collection of open connections to various servers. When you make a request, the session looks into its pool:</p>
+<ol>
+<li>If there is already an idle connection to that server, it <em>reuses</em> it.</li>
+<li>Only if no idle connection exists does it <em>allocate</em> a new one.</li>
+</ol>
+<p>If you create a new session for every request, you end up with multiple "pools" that don't know about each other.</p>
+<p>Imagine you are checking 10 pages on the same website.</p>
+<ul>
+<li><em>With session reuse</em>: The first request opens a connection. When it's done, the connection goes back to the pool. The second request then picks up that <em>exact same connection</em> and uses it immediately.</li>
+<li><em>With a new session per request</em>: Each request creates a brand new pool. Since a brand new pool is always empty, every single request is forced to open a new connection from scratch.</li>
+</ul>
+<p>Opening a new connection is expensive: your computer has to talk to the server to establish a TCP link, and then perform a cryptographic handshake (TLS) to secure it. By reusing a session, you skip this setup phase for subsequent requests, making your app faster and more respectful of the server's resources.</p>
+<p>To reuse a session, we'll pass it as an argument to our <code>check</code> function:</p>
+<pre><code class="language-nim">import chronos/apps/http/httpclient
+
+const uris = @[
+  "https://duckduckgo.com/?q=chronos", "https://mock.codes/403"
+]
+
+proc check(session: HttpSessionRef, uri: string) {.async: (raises: [CancelledError]).} =
+  try:
+    let response = await session.fetch(parseUri(uri))
+
+    if response.status == 200:
+      echo "[OK] " &amp; uri
+    else:
+      echo "[NOK] " &amp; uri &amp; ": " &amp; $response.status
+  except HttpError:
+    echo "[ERR] " &amp; uri &amp; ": " &amp; getCurrentExceptionMsg()
+
+proc check(uris: seq[string]) {.async: (raises: []).} =
+  let session = HttpSessionRef.new()
+
+  try:
+    for uri in uris:
+      await session.check(uri)
+  except CancelledError:
+    discard
+  finally:
+    await session.closeWait()
+
+when isMainModule:
+  waitFor check(uris)
+</code></pre>
+<p>Let's see what changed.</p>
+<pre><code class="language-nim">const uris = @[
+  "https://duckduckgo.com/?q=chronos", "https://mock.codes/403"
+]
+</code></pre>
+<p>We define a list of URIs to check.</p>
+<pre><code class="language-nim">proc check(session: HttpSessionRef, uri: string) {.async: (raises: [CancelledError]).} =
+  try:
+    let response = await session.fetch(parseUri(uri))
+
+    if response.status == 200:
+      echo "[OK] " &amp; uri
+    else:
+      echo "[NOK] " &amp; uri &amp; ": " &amp; $response.status
+  except HttpError:
+    echo "[ERR] " &amp; uri &amp; ": " &amp; getCurrentExceptionMsg()
+</code></pre>
+<p>We've modified <code>check</code> to accept a <code>session</code> argument. Notice that we no longer create or close the session inside this function—that's now the responsibility of the caller. This allows the session's pool to outlive any single request.</p>
+<pre><code class="language-nim">proc check(uris: seq[string]) {.async: (raises: []).} =
+  let session = HttpSessionRef.new()
+
+  try:
+    for uri in uris:
+      await session.check(uri)
+  except CancelledError:
+    discard
+  finally:
+    await session.closeWait()
+</code></pre>
+<p>We've added a new <code>check</code> function that takes a list of URIs. It creates a single <code>HttpSessionRef</code> and reuses it for each URI in the loop. The <code>try..finally</code> block ensures that the session is properly closed—and all its pooled connections are freed—after all checks are done.</p>
+<p>Run this code with <code>nimble run</code>. You'll see it checks each URI one by one, but much more efficiently than if it were creating a new session for each.</p>
+<p>In the next chapter, we'll see how to make these requests run concurrently!</p>
+<footer id="open-on-gh">Found a bug? <a href="https://github.com/status-im/nim-chronos//edit/master/docs/src/tutorials/http_client/chapter2.md">Edit this page on GitHub.</a></footer><div style="break-before: page; page-break-before: always;"></div><h1 id="making-requests-concurrently"><a class="header" href="#making-requests-concurrently">Making Requests Concurrently</a></h1>
+<p><strong>Goal:</strong> Learn how to make arbitrarily many HTTP requests asynchronously.</p>
+<p><strong>Source code:</strong> <a href="https://github.com/status-im/nim-chronos/blob/master/examples/http_client/chapter3/src/uptimemon.nim">chapter3/src/uptimemon.nim</a></p>
+<p>In the previous chapter, we learned how to reuse a session to check multiple URIs serially. While efficient, checking URIs one by one is slow. Now, let's unlock the true power of Chronos—concurrency!</p>
+<p>We want Chronos to start all the requests at the same time and handle each result as soon as it's available.</p>
+<p>To achieve that, we will:</p>
+<ol>
+<li>Use <code>mapIt</code> from <code>std/sequtils</code> to create a list of <code>Future</code>s for our requests.</li>
+<li>Await all <code>Future</code>s at once with <a href="tutorials/http_client/../../api/chronos/internal/asyncfutures.html#allFutures,varargs%5BFuture%5BT%5D%5D"><code>allFutures</code></a>.</li>
+<li>Add cancellation logic to ensure that if the main check is cancelled, all individual requests are also cancelled and awaited.</li>
+</ol>
+<p>Here's the code:</p>
+<pre><code class="language-nim">import std/sequtils
+import chronos/apps/http/httpclient
+
+const uris = @[
+  "https://duckduckgo.com/?q=chronos", "https://mock.codes/403"
+]
+
+proc check(session: HttpSessionRef, uri: string) {.async: (raises: [CancelledError]).} =
+  try:
+    let response = await session.fetch(parseUri(uri))
+
+    if response.status == 200:
+      echo "[OK] " &amp; uri
+    else:
+      echo "[NOK] " &amp; uri &amp; ": " &amp; $response.status
+  except HttpError:
+    echo "[ERR] " &amp; uri &amp; ": " &amp; getCurrentExceptionMsg()
+
+proc check(uris: seq[string]) {.async: (raises: []).} =
+  let
+    session = HttpSessionRef.new()
+    futures = uris.mapIt(session.check(it))
+
+  try:
+    await allFutures(futures)
+  except CancelledError:
+    await cancelAndWait(futures)
+  finally:
+    await session.closeWait()
+
+when isMainModule:
+  waitFor check(uris)
+</code></pre>
+<p>Run this code with <code>nimble run</code>. You should see something like this (the order of messages may be different):</p>
+<pre><code class="language-shell">[NOK] https://mock.codes/403: 403
+[OK] https://duckduckgo.com/?q=chronos
+</code></pre>
+<p>Notice that:</p>
+<ol>
+<li>The order of responses is different from the order of the URIs in the source code. That's because our requests are now asynchronous and complete at different times.</li>
+<li>The execution time has improved. Now, the program runs roughly as long as its longest request, not the sum of all requests.</li>
+</ol>
+<p>Let's examine the changes since the previous version.</p>
+<pre><code class="language-nim">proc check(uris: seq[string]) {.async: (raises: []).} =
+  let
+    session = HttpSessionRef.new()
+    futures = uris.mapIt(session.check(it))
+
+  try:
+    await allFutures(futures)
+  except CancelledError:
+    await cancelAndWait(futures)
+  finally:
+    await session.closeWait()
+</code></pre>
+<p>In our <code>check</code> function for multiple URIs, we've replaced the loop with concurrent execution:</p>
+<ol>
+<li>We use <code>mapIt</code> to create a list of <code>Future</code>s, one for each URI. Each call to <code>session.check(it)</code> returns a <code>Future[void]</code> and starts the request in the background.</li>
+<li>We use <code>allFutures</code> to await all those <code>Future</code>s at once.</li>
+<li>We add a <code>try..except CancelledError</code> block around <code>allFutures</code>. This is important: if <code>check(uris)</code> itself is cancelled, we want to make sure all the pending requests we started are also cancelled and cleaned up properly. Using <code>cancelAndWait(futures)</code> ensures that all resources are freed immediately.</li>
+</ol>
+<p>Note that since we handle the cancellation internally and don't re-raise the exception, the function signature is now <code>raises: []</code>. In async procedures, if you handle all potential exceptions, including <code>CancelledError</code>, the compiler sees it as not raising anything.</p>
+<p>In the next chapter, we'll see how to prevent slow requests from freezing our application using timeouts!</p>
+<footer id="open-on-gh">Found a bug? <a href="https://github.com/status-im/nim-chronos//edit/master/docs/src/tutorials/http_client/chapter3.md">Edit this page on GitHub.</a></footer><div style="break-before: page; page-break-before: always;"></div><h1 id="timeouts--cancellation"><a class="header" href="#timeouts--cancellation">Timeouts &amp; Cancellation</a></h1>
+<p><strong>Goal:</strong> Learn how to prevent the program from freezing on slow responses.</p>
+<p><strong>Source code:</strong> <a href="https://github.com/status-im/nim-chronos/blob/master/examples/http_client/chapter4/src/uptimemon.nim">chapter4/src/uptimemon.nim</a></p>
+<p>Our current program works fine with the well-behaving URIs we've tested so far: all these locations either respond quickly or quickly return an error.</p>
+<p>However, not all requests will go smoothly when you face the real web. Poor connections, slow servers, anti-bot checks, and access restrictions result in responses that may take long to complete or even never complete. One "misbehaving" request can negatively affect the entire program.</p>
+<p>For example, try adding an IP address that never responds to the list:</p>
+<pre><code class="language-nim">const uris = @[
+  "https://duckduckgo.com/?q=chronos", "https://mock.codes/403", "http://10.255.255.1",
+]
+</code></pre>
+<p>Run the program and you'll see that it'll run for 10+ seconds, stuck on this last IP.</p>
+<p>Let's add a timeout to our requests to cancel slow requests before they ruin our app: if a request takes longer than 5 seconds, we cancel it.</p>
+<pre><code class="language-nim">import std/sequtils
+import chronos/apps/http/httpclient
+
+const uris = @[
+  "https://duckduckgo.com/?q=chronos", "https://mock.codes/403", "http://10.255.255.1",
+]
+
+proc check(session: HttpSessionRef, uri: string) {.async: (raises: [CancelledError]).} =
+  try:
+    let response = await session.fetch(parseUri(uri)).wait(5.seconds)
+
+    if response.status == 200:
+      echo "[OK] " &amp; uri
+    else:
+      echo "[NOK] " &amp; uri &amp; ": " &amp; $response.status
+  except HttpError, FuturePendingError, AsyncTimeoutError:
+    echo "[ERR] " &amp; uri &amp; ": " &amp; getCurrentExceptionMsg()
+
+proc check(uris: seq[string]) {.async: (raises: []).} =
+  let
+    session = HttpSessionRef.new()
+    futures = uris.mapIt(session.check(it))
+
+  try:
+    await allFutures(futures)
+  except CancelledError:
+    await cancelAndWait(futures)
+  finally:
+    await session.closeWait()
+
+when isMainModule:
+  waitFor check(uris)
+</code></pre>
+<p>Here's the part that changed:</p>
+<pre><code class="language-nim">proc check(session: HttpSessionRef, uri: string) {.async: (raises: [CancelledError]).} =
+  try:
+    let response = await session.fetch(parseUri(uri)).wait(5.seconds)
+
+    if response.status == 200:
+      echo "[OK] " &amp; uri
+    else:
+      echo "[NOK] " &amp; uri &amp; ": " &amp; $response.status
+  except HttpError, FuturePendingError, AsyncTimeoutError:
+    echo "[ERR] " &amp; uri &amp; ": " &amp; getCurrentExceptionMsg()
+</code></pre>
+<ol>
+<li>We use the <a href="tutorials/http_client/../../api/chronos/internal/asyncfutures.html#wait,Future%5BT%5D,Duration"><code>.wait(timeout)</code></a> modifier on our <code>fetch</code> future.</li>
+<li>If the request takes longer than the provided duration, <code>.wait()</code> automatically cancels the underlying future and raises an <a href="tutorials/http_client/../../api/chronos/internal/errors.html#AsyncTimeoutError"><code>AsyncTimeoutError</code></a>.</li>
+<li>We catch this error alongside other expected exceptions in our <code>except</code> block.</li>
+</ol>
+<div id="admonition-info" class="admonition admonish-info" role="note" aria-labelledby="admonition-info-title">
+<div class="admonition-title">
+<div id="admonition-info-title">
+<p>Info</p>
+</div>
+<a class="admonition-anchor-link" href="tutorials/http_client/chapter4.html#admonition-info"></a>
+</div>
+<div>
+<p>In Nim, there are several ways to capture the message from an exception:</p>
+<ul>
+<li>using <code>getCurrentExceptionMsg()</code>, as we do in this tutorial</li>
+<li>using <code>except &lt;Exception&gt; as e</code> and then calling <code>e.msg</code></li>
+</ul>
+<p>Both variants have their advantages and limitations. For example, the <code>as</code> syntax can be used only with one exception type at a time while a lonely <code>except</code> used with <code>getCurrentExceptionMsg()</code> allows to capture multiple exception types in one statement.</p>
+<p>On the other hand, because <code>e.msg</code> is guaranteed to capture a particular exception type, it's more deterministic and gives better control over exception handling logic.</p>
+<p>The rule of thumb is that when your exception handling is simple (like we have in this tutorial—we simply <code>echo</code> the message regardless of the exception type), <code>getCurrentExceptionMsg()</code> is a simpler, more readable option, but if elaborate exception handling is an essential part of your business logic, you should prefer <code>except &lt;Exception&gt; as e ... e.msg</code> syntax.</p>
+</div>
+</div>
+<p>Run the program again and you'll see it complete in roughly 5 seconds, i.e. our timeout.</p>
+<div id="admonition-warning" class="admonition admonish-warning" role="note" aria-labelledby="admonition-warning-title">
+<div class="admonition-title">
+<div id="admonition-warning-title">
+<p>Warning</p>
+</div>
+<a class="admonition-anchor-link" href="tutorials/http_client/chapter4.html#admonition-warning"></a>
+</div>
+<div>
+<p>One important thing to notice here is that adding a timeout won't save us from slow DNS resolutions.</p>
+<p>Before we can make an HTTP request, we need to <em>resolve the target hostname</em>, i.e. get the IP address that corresponds to the given hostname. This is called DNS resolution and it is a blocking operation in Chronos.</p>
+<p>For valid URIs, DNS resolution happens quickly enough to not interfere with the main logic. However, for invalid URIs (e.g. <code>https://123.456.789.90</code>) the resolution can stall for several seconds.</p>
+<p>The main takeaway here is <strong>don't check invalid URIs</strong>.</p>
+</div>
+</div>
+<footer id="open-on-gh">Found a bug? <a href="https://github.com/status-im/nim-chronos//edit/master/docs/src/tutorials/http_client/chapter4.md">Edit this page on GitHub.</a></footer><div style="break-before: page; page-break-before: always;"></div><h1 id="smarter-health-check-with-streaming"><a class="header" href="#smarter-health-check-with-streaming">Smarter Health Check with Streaming</a></h1>
+<p><strong>Goal:</strong> Learn how to use streaming to check web page content without fully downloading it.</p>
+<p><strong>Source code:</strong></p>
+<ul>
+<li><a href="https://github.com/status-im/nim-chronos/blob/master/examples/http_client/chapter5/src/uptimemon.nim">chapter5/src/uptimemon.nim</a></li>
+</ul>
+<p>Currently, we're just checking the response status to determine if the URI is healthy.</p>
+<p>To make our check smarter, let's check the page content as well: we want it to look like valid HTML, i.e. we want to check that it at least contains a <code>&lt;html</code> bit.</p>
+<p>However, if we just download the content and look for the HTML marker, we'll have to download the page in its entirety whereas we really don't need the content. For large pages, this approach can lead to slow responses but in extreme cases this can ruin the whole program.</p>
+<p>For example, try adding this URI to the list and running the program: https://html.spec.whatwg.org. This is a proper page but it's so heavy fetching it entirely would time out:</p>
+<pre><code class="language-shell">[NOK] https://mock.codes/403: 403
+[OK] https://duckduckgo.com/?q=chronos
+[ERR] http://10.255.255.1: Timeout exceeded!
+[ERR] https://html.spec.whatwg.org: Could not read response headers, reason: Incomplete data sent or received
+</code></pre>
+<p>Let's optimize our check to handle large page like this one.</p>
+<h2 id="streaming-the-body"><a class="header" href="#streaming-the-body">Streaming the Body</a></h2>
+<p>Chronos allows streaming response body, so let's use this feature to fetch content in chunks, check the collected data for a certain health marker (e.g. "&lt;html" string), and stop immediatelly when we find it or download a certain amount of data:</p>
+<div id="admonition-info" class="admonition admonish-info" role="note" aria-labelledby="admonition-info-title">
+<div class="admonition-title">
+<div id="admonition-info-title">
+<p>Info</p>
+</div>
+<a class="admonition-anchor-link" href="tutorials/http_client/chapter5.html#admonition-info"></a>
+</div>
+<div>
+<p>The HTTP protocol divides each request and response into a <strong>header</strong> and a <strong>body</strong>. The header contains metadata like the status code, while the body contains the actual content. This is true for both successful responses and error statuses.</p>
+</div>
+</div>
+<pre><code class="language-nim">import std/sequtils
+import chronos/apps/http/httpclient
+
+const uris = @[
+  "https://duckduckgo.com/?q=chronos", "https://mock.codes/403",
+  "http://10.255.255.1", "https://html.spec.whatwg.org/", "https://mock.codes/200",
+]
+
+proc findMarker(
+    bodyReader: HttpBodyReader
+): Future[bool] {.async: (raises: [AsyncStreamError, CancelledError]).} =
+
+  const
+    marker = "&lt;html"
+    readLimit = 10 * 1024
+
+  var
+    totalRead = 0
+    sample = newString(len(marker) - 1)
+    found = false
+
+  proc findMarkerInSample(data: openArray[byte]): (int, bool) =
+    if len(data) == 0:
+      (0, false)
+    else:
+      sample = sample[^(len(marker) - 1) .. high(sample)]
+      sample &amp;= bytesToString(data)
+      found = marker in sample
+      totalRead += len(data)
+      (len(data), found and totalRead &lt;= readLimit)
+
+  await bodyReader.readMessage(findMarkerInSample)
+  found
+ 
+proc check(session: HttpSessionRef, uri: string) {.async: (raises: [CancelledError]).} =
+  let
+    request = HttpClientRequestRef.new(session, uri).valueOr:
+      echo "[ERR] " &amp; uri &amp; ": " &amp; error
+      return
+    response =
+      try:
+        await request.send().wait(5.seconds)
+      except HttpError, AsyncTimeoutError:
+        echo "[ERR] " &amp; uri &amp; ": " &amp; getCurrentExceptionMsg()
+        return
+      finally:
+        await request.closeWait()
+
+  try:
+    if response.status == 200:
+      let
+        bodyReader = response.getBodyReader()
+        markerFound =
+          try:
+            await bodyReader.findMarker()
+          finally:
+            await bodyReader.closeWait()
+
+      if markerFound:
+        echo "[OK] " &amp; uri
+      else:
+        echo "[NOK] " &amp; uri &amp; ": Not valid HTML"
+    else:
+      echo "[NOK] " &amp; uri &amp; ": " &amp; $response.status
+
+  except HttpError, AsyncStreamError:
+    echo "[ERR] " &amp; uri &amp; ": " &amp; getCurrentExceptionMsg()
+
+  finally:
+    await response.closeWait()
+
+proc check(uris: seq[string]) {.async: (raises: []).} =
+  let
+    session = HttpSessionRef.new()
+    futures = uris.mapIt(session.check(it))
+
+  try:
+    await allFutures(futures)
+  except CancelledError:
+    await cancelAndWait(futures)
+  finally:
+    await session.closeWait()
+
+when isMainModule:
+  waitFor check(uris)
+</code></pre>
+<p>Let's go through the changes in this version line by line.</p>
+<pre><code class="language-nim">const uris = @[
+  "https://duckduckgo.com/?q=chronos", "https://mock.codes/403",
+  "http://10.255.255.1", "https://html.spec.whatwg.org/", "https://mock.codes/200",
+]
+</code></pre>
+<p>We've added a new URI to our test: https://mock.codes/200. This is a valid URI that returns a 200 status response but it doesn't contain any meaningful data. With our old check, this would return <code>[OK]</code> and with the new one we expect it to be <code>[NOK]</code>.</p>
+<pre><code class="language-nim">proc findMarker(
+    bodyReader: HttpBodyReader
+): Future[bool] {.async: (raises: [AsyncStreamError, CancelledError]).} =
+</code></pre>
+<p>This is a new function that is responsible to finding the health marker in a HTTP body stream. Because it is asynchrounous, it will not block the main thread when called.</p>
+<p>Like any async function, it returns a <code>Future</code> that must be <code>await</code>ed to give the actual result.</p>
+<pre><code class="language-nim">const
+  marker = "&lt;html"
+  readLimit = 10 * 1024
+
+var
+  totalRead = 0
+  sample = newString(len(marker) - 1)
+  found = false
+</code></pre>
+<ul>
+<li><code>marker</code> is the string we're looking for.</li>
+<li><code>readLimit</code> is the maximum number of bytes we're happy to fetch before we conclude that the response is not valid HTML (10 KB in our case).</li>
+<li><code>totalRead</code> is the number of bytes fetched so far; if we fetched too much data, we stop reading.</li>
+<li><code>sample</code> will contain the fetched data we're looking for the marker in.</li>
+<li><code>found</code> is a flag that we set to <code>true</code> if you find the marker.</li>
+</ul>
+<div id="admonition-note" class="admonition admonish-note" role="note" aria-labelledby="admonition-note-title">
+<div class="admonition-title">
+<div id="admonition-note-title">
+<p>Note</p>
+</div>
+<a class="admonition-anchor-link" href="tutorials/http_client/chapter5.html#admonition-note"></a>
+</div>
+<div>
+<p>Because the marker can be split between two reads (i.e. we fetch <code>&lt;ht</code> in one buffer and <code>ml</code> in the next one), our <code>sample</code> must be a little longer than the buffer. Precisely, it must be <code>len(marker) - 1</code> longer to contain the buffer <em>and</em> the possible marker part from the previous read.</p>
+</div>
+</div>
+<pre><code class="language-nim">proc findMarkerInSample(data: openArray[byte]): (int, bool) =
+  if len(data) == 0:
+    (0, false)
+  else:
+    sample = sample[^(len(marker) - 1) .. high(sample)]
+    sample &amp;= bytesToString(data)
+    found = marker in sample
+    totalRead += len(data)
+    (len(data), found and totalRead &lt;= readLimit)
+</code></pre>
+<p>This a helper function that we'll use later in <code>readMessage</code> proc as its predicate (more about it later).</p>
+<p>This function must conform to <a href="tutorials/http_client/../../api/chronos/transports/stream.html#ReadMessagePredicate"><code>ReadMessagePredicate</code></a> type, i.e. accept an open array of bytes from the stream and return a tuple of <code>(int, bool)</code> that represents the length of data read in the last read iteration and the exit flag.</p>
+<p>On each iteration, we remove everything from the sample except for the trailing <code>len(marker) - 1</code> characters and append the new data, look up <code>marker</code> in the new <code>sample</code>, and update <code>found</code> is the match was found. We also check if <code>totalRead</code> is still no higher than <code>readLimit</code> and if it is, set the exit flag.</p>
+<pre><code class="language-nim">await bodyReader.readMessage(findMarkerInSample)
+found
+</code></pre>
+<p><a href="tutorials/http_client/../../api/chronos/streams/asyncstream.html#readMessage,AsyncStreamReader,ReadMessagePredicate"><code>readMessage</code></a> calls <code>findMarkerInSample</code> repeatedly until either there's no more data to read or the exit flag is <code>true</code>. The value <code>found</code> tells us if the marker was found in any of the samples checked by <code>readMessage</code> and we simply return it.</p>
+<p>Now, we can use this function in the URI health check.</p>
+<p>Because we won't <code>fetch</code> the response but will instead stream it, we will need to create the response object explicitly (so that we could run a stream reader with it). To do that, we first insantiate a <code>request</code> and then a <code>response</code>:</p>
+<pre><code class="language-nim">let
+  request = HttpClientRequestRef.new(session, uri).valueOr:
+    echo "[ERR] " &amp; uri &amp; ": " &amp; error
+    return
+  response =
+    try:
+      await request.send().wait(5.seconds)
+    except HttpError, AsyncTimeoutError:
+      echo "[ERR] " &amp; uri &amp; ": " &amp; getCurrentExceptionMsg()
+      return
+    finally:
+      await request.closeWait()
+</code></pre>
+<p>Note that we close <code>request</code> after <code>response</code> is instantiated, either successfully or not. Cleaning up used resources is always encouraged.</p>
+<pre><code class="language-nim">try:
+  if response.status == 200:
+    let
+      bodyReader = response.getBodyReader()
+      markerFound =
+        try:
+          await bodyReader.findMarker()
+        finally:
+          await bodyReader.closeWait()
+
+    if markerFound:
+      echo "[OK] " &amp; uri
+    else:
+      echo "[NOK] " &amp; uri &amp; ": Not valid HTML"
+  else:
+    echo "[NOK] " &amp; uri &amp; ": " &amp; $response.status
+</code></pre>
+<p>To stream the response body, we're using a <code>bodyReader</code>. To get one for the current response, we're calling <a href="tutorials/http_client/../../api/chronos/apps/http/httpclient.html#getBodyReader,HttpClientResponseRef"><code>getBodyReader</code></a>.</p>
+<p>Like any other resource, <code>HttpBodyReader</code> must be closed after use. We do that in the <code>finally</code> block. Notice that there's no <code>except</code> here, we're OK with <code>findMarker</code> raising—we'll catch its exceptions in the outer scope.</p>
+<pre><code class="language-nim">except HttpError, AsyncStreamError:
+  echo "[ERR] " &amp; uri &amp; ": " &amp; getCurrentExceptionMsg()
+</code></pre>
+<p>Since <code>findMarker</code> can raise an exception that we haven't been catching so far (<a href="tutorials/http_client/../../api/chronos/streams/asyncstream.html#AsyncStreamError"><code>AsyncStreamError</code></a>), we need to add it to the list.</p>
+<pre><code class="language-nim">finally:
+  await response.closeWait()
+</code></pre>
+<p>Like any other resource allocating object, <code>response</code> must be closed after usage.</p>
+<p>Run the program and see the https://mock.codes/200 is now correctly marked as <code>[NOK]</code>:</p>
+<pre><code class="language-shell">[NOK] https://mock.codes/200: Not valid HTML
+[NOK] https://mock.codes/403: 403
+[OK] https://duckduckgo.com/?q=chronos
+[OK] https://html.spec.whatwg.org/
+[ERR] http://10.255.255.1: Timeout exceeded!
+</code></pre>
+<p>In the next chapter, we'll see how to send alerts with POST requests.</p>
+<footer id="open-on-gh">Found a bug? <a href="https://github.com/status-im/nim-chronos//edit/master/docs/src/tutorials/http_client/chapter5.md">Edit this page on GitHub.</a></footer><div style="break-before: page; page-break-before: always;"></div><h1 id="sending-alerts-with-post-requests"><a class="header" href="#sending-alerts-with-post-requests">Sending Alerts with POST Requests</a></h1>
+<p><strong>Goal:</strong> Learn how to send POST HTTP requests and set request headers.</p>
+<p><strong>Source code:</strong> <a href="https://github.com/status-im/nim-chronos/blob/master/examples/http_client/chapter6/src/uptimemon.nim">chapter6/src/uptimemon.nim</a></p>
+<p>How cool would it be to get notified about a service being down to your phone? This way, you can launch the program and just go on with your business and not constantly monitor the terminal window.</p>
+<p><a href="https://ntfy.sh">ntfy</a> is a service that allows to send push notifications with <a href="https://docs.ntfy.sh/publish/">POST requests</a>. Let's use it to send notifications when our program detects a <code>[NOK]</code> or <code>[ERR]</code>.</p>
+<h2 id="set-up-ntfy"><a class="header" href="#set-up-ntfy">Set Up ntfy</a></h2>
+<ol>
+<li>Go to <a href="https://ntfy.sh/app">ntfy.sh/app</a>.</li>
+<li>Click on <strong>Subscribe to topic</strong> in the sidebar, click <strong>GENERATE NAME</strong> in the popup, copy the generated name, and <strong>SUBSCRIBE</strong>. We'll use this unique topic name to send the notifications to.</li>
+<li>Click on <strong>GRANT NOW</strong> to allow push notifications from your browser.</li>
+<li>Keep the browser open.</li>
+</ol>
+<h2 id="add-alerts"><a class="header" href="#add-alerts">Add Alerts</a></h2>
+<p>Here's the version of the program with alerting capabilities:</p>
+<pre><code class="language-nim">import std/sequtils
+import chronos/apps/http/httpclient
+
+const
+  ntfyTopic = "&lt;YOUR_NTFY_TOPIC_NAME&gt;"
+  uris = @[
+    "https://duckduckgo.com/?q=chronos", "https://mock.codes/403",
+    "http://10.255.255.1", "https://html.spec.whatwg.org/",
+    "https://mock.codes/200",
+  ]
+
+proc sendAlert(
+    session: HttpSessionRef, message: string, priority = 3
+) {.async: (raises: [CancelledError]).} =
+  let
+    headers = {"Title": "Chronos Uptime Monitor", "Priority": $priority}
+    body = message.stringToBytes()
+    request = HttpClientRequestRef.new(
+      session,
+      "https://ntfy.sh/" &amp; ntfyTopic,
+      meth = MethodPost,
+      headers = headers,
+      body = body,
+    ).valueOr:
+      echo "[WRN] Failed to send alert: " &amp; error
+      return
+
+  try:
+    let response = await request.send().wait(5.seconds)
+    await response.closeWait()
+  except HttpError, FuturePendingError, AsyncTimeoutError:
+    echo "[WRN] Failed to send alert: " &amp; getCurrentExceptionMsg()
+  finally:
+    await request.closeWait()
+
+proc findMarker(
+    bodyReader: HttpBodyReader
+): Future[bool] {.async: (raises: [AsyncStreamError, CancelledError]).} =
+  const
+    marker = "&lt;html"
+    readLimit = 10 * 1024
+
+  var
+    totalRead = 0
+    sample = newString(len(marker) - 1)
+    found = false
+
+  proc findMarkerInSample(data: openArray[byte]): (int, bool) =
+    if len(data) == 0:
+      (0, false)
+    else:
+      sample = sample[^(len(marker) - 1) .. high(sample)]
+      sample &amp;= bytesToString(data)
+      found = marker in sample
+      totalRead += len(data)
+      (len(data), found and totalRead &lt;= readLimit)
+
+  await bodyReader.readMessage(findMarkerInSample)
+  found
+
+proc check(session: HttpSessionRef, uri: string) {.async: (raises: [CancelledError]).} =
+  let
+    request = HttpClientRequestRef.new(session, uri).valueOr:
+      echo "[ERR] " &amp; uri &amp; ": " &amp; error
+      return
+    response =
+      try:
+        await request.send().wait(5.seconds)
+      except HttpError, AsyncTimeoutError:
+        echo "[ERR] " &amp; uri &amp; ": " &amp; getCurrentExceptionMsg()
+      finally:
+        await request.closeWait()
+
+  try:
+    if response.status == 200:
+      let
+        bodyReader = response.getBodyReader()
+        markerFound =
+          try:
+            await bodyReader.findMarker()
+          finally:
+            await bodyReader.closeWait()
+
+      if markerFound:
+        echo "[OK] " &amp; uri
+      else:
+        let message = "[NOK] " &amp; uri &amp; ": Not valid HTML"
+        echo message
+        await session.sendAlert(message)
+    else:
+      let message = "[NOK] " &amp; uri &amp; ": " &amp; $response.status
+      echo message
+      await session.sendAlert(message)
+  except HttpError, AsyncStreamError:
+    let message = "[ERR] " &amp; uri &amp; ": " &amp; getCurrentExceptionMsg()
+    echo message
+    await session.sendAlert(message, 4)
+  finally:
+    await response.closeWait()
+
+proc check(uris: seq[string]) {.async: (raises: []).} =
+  let
+    session = HttpSessionRef.new()
+    futures = uris.mapIt(session.check(it))
+
+  try:
+    await allFutures(futures)
+  except CancelledError:
+    await cancelAndWait(futures)
+  finally:
+    await session.closeWait()
+
+when isMainModule:
+  waitFor check(uris)
+</code></pre>
+<p>As usual, let's examine the changes part by part.</p>
+<pre><code class="language-nim">const
+  ntfyTopic = "&lt;YOUR_NTFY_TOPIC_NAME&gt;"
+</code></pre>
+<p>Define a new constant for the ntfy topic name you copied <a href="tutorials/http_client/chapter6.html#set-up-ntfy">earlier</a>. Replace <code>YOUR_NTFY_TOPIC_NAME</code> with the actual value you copied from ntfy.</p>
+<pre><code class="language-nim">proc sendAlert(
+    session: HttpSessionRef, message: string, priority = 3
+) {.async: (raises: [CancelledError]).} =
+  let
+</code></pre>
+<p>Define a new async function that will do the request sending to ntfy. We'll send those requests in the same session so we pass it to the function as <code>session</code>.</p>
+<p><code>message</code> is the text we want to send in the notification.</p>
+<p><code>priority</code> is a number that defines the style of the notification in ntfy. ntfy recognizes five priority levels from 1 to 5: the higher the number, the "scarier" the message.</p>
+<pre><code class="language-nim">headers = {"Title": "Chronos Uptime Monitor", "Priority": $priority}
+</code></pre>
+<p>ntfy uses headers to customize notifications, e.g. <a href="https://docs.ntfy.sh/publish/#message-title"><code>Title</code></a> and <a href="https://docs.ntfy.sh/publish/#message-priority"><code>Priority</code></a>.</p>
+<p>Here we set the headers as an arrays of tuples using Nim's shortcut syntax.</p>
+<pre><code class="language-nim">body = message.stringToBytes()
+</code></pre>
+<p>Requests body must be a sequence of bytes so we convert our text message using <a href="tutorials/http_client/../../api/chronos/apps/http/httpcommon.html#stringToBytes,openArray%5Bchar%5D"><code>stringToBytes</code></a>.</p>
+<pre><code class="language-nim">request = HttpClientRequestRef.new(
+  session,
+  "https://ntfy.sh/" &amp; ntfyTopic,
+  meth = MethodPost,
+  headers = headers,
+  body = body,
+).valueOr:
+  echo "[WRN] Failed to send alert: " &amp; error
+  return
+</code></pre>
+<p>Create the request with the necessary properties. <code>meth</code> is the request's HTTP method.</p>
+<pre><code class="language-nim">try:
+  let response = await request.send().wait(5.seconds)
+  await response.closeWait()
+except HttpError, FuturePendingError, AsyncTimeoutError:
+  echo "[WRN] Failed to send alert: " &amp; getCurrentExceptionMsg()
+finally:
+  await request.closeWait()
+</code></pre>
+<p>If the request was successfully created (<code>request.isOk</code>), we try to send it with <code>send()</code> and discard it (with <code>closeWait</code>).</p>
+<p>If the request couldn't be sent (e.g. ntfy is unavailable), we print a warning.</p>
+<pre><code class="language-nim">proc check(session: HttpSessionRef, uri: string) {.async: (raises: [CancelledError]).} =
+  let
+    request = HttpClientRequestRef.new(session, uri).valueOr:
+      echo "[ERR] " &amp; uri &amp; ": " &amp; error
+      return
+    response =
+      try:
+        await request.send().wait(5.seconds)
+      except HttpError, AsyncTimeoutError:
+        echo "[ERR] " &amp; uri &amp; ": " &amp; getCurrentExceptionMsg()
+      finally:
+        await request.closeWait()
+
+  try:
+    if response.status == 200:
+      let
+        bodyReader = response.getBodyReader()
+        markerFound =
+          try:
+            await bodyReader.findMarker()
+          finally:
+            await bodyReader.closeWait()
+
+      if markerFound:
+        echo "[OK] " &amp; uri
+      else:
+        let message = "[NOK] " &amp; uri &amp; ": Not valid HTML"
+        echo message
+        await session.sendAlert(message)
+    else:
+      let message = "[NOK] " &amp; uri &amp; ": " &amp; $response.status
+      echo message
+      await session.sendAlert(message)
+  except HttpError, AsyncStreamError:
+    let message = "[ERR] " &amp; uri &amp; ": " &amp; getCurrentExceptionMsg()
+    echo message
+    await session.sendAlert(message, 4)
+  finally:
+    await response.closeWait()
+</code></pre>
+<p>Finally, we add calls to <code>sendAlert</code> in the <code>check</code> branches for <code>[NOK]</code> and <code>[ERR]</code>.
+Run the code and observe alerts appearing in your browser accompanied by push notifications:</p>
+<p><img src="tutorials/http_client/./ntfy_alerts_in_browser.png" alt="ntfy alerts in browser" /></p>
+<p>To receive the notifications on your phone, install <a href="https://ntfy.sh/">ntfy mobile app</a> and subscribe to the same topic.</p>
+<p>In the final chapter, we'll see how to scale our application and add some finishing touches!</p>
+<footer id="open-on-gh">Found a bug? <a href="https://github.com/status-im/nim-chronos//edit/master/docs/src/tutorials/http_client/chapter6.md">Edit this page on GitHub.</a></footer><div style="break-before: page; page-break-before: always;"></div><h1 id="scaling--finishing-touches"><a class="header" href="#scaling--finishing-touches">Scaling &amp; Finishing Touches</a></h1>
+<p><strong>Goal:</strong> Learn how to use semaphores to control concurrency.</p>
+<p><strong>Source code:</strong> <a href="https://github.com/status-im/nim-chronos/blob/master/examples/http_client/chapter7/src/uptimemon.nim">chapter7/src/uptimemon.nim</a></p>
+<p>Our app is almost ready to run on production and do regular background URI checks.</p>
+<p>However, there's one issue we need to address before we can feed it tens of URIs and wrap it in a <code>while true</code>: we need to limit the number of simultaneous checks. If we don't do that, our app can potentially run out of file descriptors or choke the DNS resolver with 20+ requests.</p>
+<p>Instead of simultaneusly launching checks for all URIs in the list, we'll run them in batches of 5, i.e. no more than 5 checks will run at any given moment, keeping resource usage low and under control.</p>
+<p>To achieve that, we'll use a <em>semaphore</em>—an special object that a function must acquire to run and must release after it's finished. A semaphore can be acquired by a fixed number of function at any moment, and this is how it regulates concurrency.</p>
+<p>Here's the code with a semaphore and an infinite loop added:</p>
+<pre><code class="language-nim">import std/sequtils
+import chronos/apps/http/httpclient
+
+const
+  maxConcurrency = 5
+  ntfyTopic = "&lt;YOUR_NTFY_TOPIC_NAME&gt;"
+  uris = @[
+    "https://duckduckgo.com/?q=chronos", "https://mock.codes/403",
+    "http://10.255.255.1", "https://html.spec.whatwg.org",
+    "https://mock.codes/200", "https://github.com", "https://archive.org",
+    "https://nim-lang.org", "https://w3.org", "https://free.technology",
+    "https://codeberg.org", "https://nimble.directory", "https://status.app",
+    "https://keycard.tech", "https://stackoverflow.com", "https://nimbus.team",
+    "https://logos.co", "https://forum.nim-lang.org", "https://acid.info",
+    "https://vac.dev", "https://expired.badssl.com", "http://10.255.255.2",
+    "http://10.255.255.3",
+  ]
+
+proc sendAlert(
+    session: HttpSessionRef, message: string, priority = 3
+) {.async: (raises: [CancelledError]).} =
+  let
+    headers = {"Title": "Chronos Uptime Monitor", "Priority": $priority}
+    body = message.stringToBytes()
+    request = HttpClientRequestRef.new(
+      session,
+      "https://ntfy.sh/" &amp; ntfyTopic,
+      meth = MethodPost,
+      headers = headers,
+      body = body,
+    ).valueOr:
+      echo "[WRN] Failed to send alert: " &amp; error
+      return
+
+  try:
+    let response = await request.send().wait(5.seconds)
+    await response.closeWait()
+  except HttpError, FuturePendingError, AsyncTimeoutError:
+    echo "[WRN] Failed to send alert: " &amp; getCurrentExceptionMsg()
+  finally:
+    await request.closeWait()
+
+proc findMarker(
+    bodyReader: HttpBodyReader
+): Future[bool] {.async: (raises: [AsyncStreamError, CancelledError]).} =
+  const
+    marker = "&lt;html"
+    readLimit = 10 * 1024
+
+  var
+    totalRead = 0
+    sample = newString(len(marker) - 1)
+    found = false
+
+  proc findMarkerInSample(data: openArray[byte]): (int, bool) =
+    if len(data) == 0:
+      (0, false)
+    else:
+      sample = sample[^(len(marker) - 1) .. high(sample)]
+      sample &amp;= bytesToString(data)
+      found = marker in sample
+      totalRead += len(data)
+      (len(data), found and totalRead &lt;= readLimit)
+
+  await bodyReader.readMessage(findMarkerInSample)
+  found
+
+proc check(
+    session: HttpSessionRef, uri: string, semaphore: AsyncSemaphore
+) {.async: (raises: [CancelledError]).} =
+  await acquire(semaphore)
+
+  defer:
+    try:
+      release(semaphore)
+    except AsyncSemaphoreError:
+      echo "Could not release a lock: " &amp; getCurrentExceptionMsg()
+
+  let
+    request = HttpClientRequestRef.new(session, uri).valueOr:
+      echo "[ERR] " &amp; uri &amp; ": " &amp; error
+      return
+    response =
+      try:
+        await request.send().wait(5.seconds)
+      except HttpError, AsyncTimeoutError:
+        echo "[ERR] " &amp; uri &amp; ": " &amp; getCurrentExceptionMsg()
+        return
+      finally:
+        await request.closeWait()
+
+  try:
+    if response.status == 200:
+      let
+        bodyReader = response.getBodyReader()
+        markerFound =
+          try:
+            await bodyReader.findMarker()
+          finally:
+            await bodyReader.closeWait()
+
+      if markerFound:
+        echo "[OK] " &amp; uri
+      else:
+        let message = "[NOK] " &amp; uri &amp; ": Not valid HTML"
+        echo message
+        await session.sendAlert(message)
+    else:
+      let message = "[NOK] " &amp; uri &amp; ": " &amp; $response.status
+      echo message
+      await session.sendAlert(message)
+  except HttpError, AsyncStreamError:
+    let message = "[ERR] " &amp; uri &amp; ": " &amp; getCurrentExceptionMsg()
+    echo message
+    await session.sendAlert(message, 4)
+  finally:
+    await response.closeWait()
+
+proc check(uris: seq[string]) {.async: (raises: []).} =
+  let
+    session = HttpSessionRef.new()
+    semaphore = newAsyncSemaphore(maxConcurrency)
+
+  try:
+    while true:
+      echo "Checking " &amp; $len(uris) &amp; " URIs:"
+      let
+        futures = uris.mapIt(session.check(it, semaphore))
+
+      try:
+        await allFutures(futures)
+      except CancelledError:
+        await cancelAndWait(futures)
+        break
+
+      echo "Done. Next check in 10 seconds."
+      try:
+        await sleepAsync(10.seconds)
+      except CancelledError:
+        break
+  except CancelledError:
+    discard
+  finally:
+    await session.closeWait()
+
+when isMainModule:
+  waitFor check(uris)
+</code></pre>
+<p>Let's see what changed.</p>
+<pre><code class="language-nim">const
+  maxConcurrency = 5
+</code></pre>
+<p>We define a constant that would determine the capacity of our semaphore.</p>
+<pre><code class="language-nim">uris = @[
+  "https://duckduckgo.com/?q=chronos", "https://mock.codes/403",
+  "http://10.255.255.1", "https://html.spec.whatwg.org",
+  "https://mock.codes/200", "https://github.com", "https://archive.org",
+  "https://nim-lang.org", "https://w3.org", "https://free.technology",
+  "https://codeberg.org", "https://nimble.directory", "https://status.app",
+  "https://keycard.tech", "https://stackoverflow.com", "https://nimbus.team",
+  "https://logos.co", "https://forum.nim-lang.org", "https://acid.info",
+  "https://vac.dev", "https://expired.badssl.com", "http://10.255.255.2",
+  "http://10.255.255.3",
+]
+</code></pre>
+<p>We've added more URIs to the list to make batching effect visible.</p>
+<pre><code class="language-nim">proc check(
+    session: HttpSessionRef, uri: string, semaphore: AsyncSemaphore
+) {.async: (raises: [CancelledError]).} =
+  await acquire(semaphore)
+
+  defer:
+    try:
+      release(semaphore)
+    except AsyncSemaphoreError:
+      echo "Could not release a lock: " &amp; getCurrentExceptionMsg()
+</code></pre>
+<p>We've modified <code>check</code> function for a single URI so that it accepts a <code>semaphore</code> (of type<a href="tutorials/http_client/../../api/chronos/asyncsync.html#AsyncSemaphore"><code>AsyncSemaphore</code></a>), waits to <a href="tutorials/http_client/../../api/chronos/asyncsync.html#acquire,AsyncSemaphore"><code>acquire</code></a> it, and <a href="tutorials/http_client/../../api/chronos/asyncsync.html#release,AsyncSemaphore"><code>release</code></a>s it at the end (we use <code>defer</code> to postpone the release).</p>
+<p>With this short addition, we prevent <code>check</code> from running if the semaphore is full.</p>
+<p>Because releasing a semaphore can raise a <a href="tutorials/http_client/../../api/chronos/asyncsync.html#AsyncSemaphoreError"><code>AsyncSemaphoreError</code></a> and it would happen outside of our managed <code>try</code> block, we wrap the <code>release</code> call in its own <code>try..except</code> block to handle it gracefully and prevent it from bubbling up.</p>
+<pre><code class="language-nim">proc check(uris: seq[string]) {.async: (raises: []).} =
+  let
+    session = HttpSessionRef.new()
+    semaphore = newAsyncSemaphore(maxConcurrency)
+</code></pre>
+<p>In the <code>check</code> function for a URI sequence, we create a semaphore of the required capacity.</p>
+<pre><code class="language-nim">try:
+  while true:
+</code></pre>
+<p>Instead of a one-off launch, we do the checks in an infinite loop. We wrap the entire loop in a <code>try..finally</code> block to ensure the session is always closed when the program stops.</p>
+<pre><code class="language-nim">echo "Checking " &amp; $len(uris) &amp; " URIs:"
+let
+  futures = uris.mapIt(session.check(it, semaphore))
+
+try:
+  await allFutures(futures)
+except CancelledError:
+  await cancelAndWait(futures)
+  break
+</code></pre>
+<p>Then we pass the semaphore to <code>check</code> for each URI using <code>mapIt</code>. We also add a <code>try..except CancelledError</code> block around <code>allFutures</code> to ensure that if the program is stopped (e.g. by pressing Ctrl+C), all pending requests are cancelled and cleaned up properly. Note that in this case, we <code>break</code> the loop to finish the execution gracefully.</p>
+<p>We've added an <code>echo</code> to denote the start of each cycle.</p>
+<pre><code class="language-nim">echo "Done. Next check in 10 seconds."
+try:
+  await sleepAsync(10.seconds)
+except CancelledError:
+  break
+</code></pre>
+<p>Finally, print the message to mark the end of a cycle and wait 10 seconds before the next one.</p>
+<div id="admonition-note" class="admonition admonish-note" role="note" aria-labelledby="admonition-note-title">
+<div class="admonition-title">
+<div id="admonition-note-title">
+<p>Note</p>
+</div>
+<a class="admonition-anchor-link" href="tutorials/http_client/chapter7.html#admonition-note"></a>
+</div>
+<div>
+<p>Even though we set the program to wait for 10 seconds before the next check loop, in reality the waiting time will be longer because there is some delay for the system to wake up and resume execution.</p>
+<p>This is called <strong>drift</strong>. For an uptime monitor, this isn't critical but there are cases where you would need to compensate for it.</p>
+</div>
+</div>
+<p>Run the program and you'll see an even flow of statuses in your terminal.</p>
+<div id="admonition-important" class="admonition admonish-tip" role="note" aria-labelledby="admonition-important-title">
+<div class="admonition-title">
+<div id="admonition-important-title">
+<p>Important</p>
+</div>
+<a class="admonition-anchor-link" href="tutorials/http_client/chapter7.html#admonition-important"></a>
+</div>
+<div>
+<p>To stop the program, press Ctrl+C.</p>
+</div>
+</div>
+<footer id="open-on-gh">Found a bug? <a href="https://github.com/status-im/nim-chronos//edit/master/docs/src/tutorials/http_client/chapter7.md">Edit this page on GitHub.</a></footer><div style="break-before: page; page-break-before: always;"></div><h1 id="http-server-status-dashboard"><a class="header" href="#http-server-status-dashboard">HTTP Server: Status Dashboard</a></h1>
+<p>In this tutorial, we'll build a dashboard server for the <a href="tutorials/http_server/../http_client/intro.html">uptime monitor</a>. This server will provide an API to receive status reports and a basic (since this is not a frontend tutorial) web interface to view the current status of monitored services.</p>
+<p>While building our dashboard, you'll learn how to setup up an async HTTP server, handle different request types, process JSON data, and process requests using middlewares.</p>
+<p>The complete application (split into chapters to help you track progress) is available at <a href="https://github.com/status-im/nim-chronos/blob/master/examples/http_server">examples/http_server</a>.</p>
+<h2 id="prerequisites-1"><a class="header" href="#prerequisites-1">Prerequisites</a></h2>
+<p>To go through the tutorial, you'll need a computer with a stable Internet connection, any text editor, and a console (aka terminal emulator). Familiarity with the concepts of HTTP requests and async routines as well as Nim knowledge will help you along but are not required.</p>
+<p>Before you start, make sure you have Nim programming language and Nimble package manager installed using <a href="https://nim-lang.org/install.html">the official installation guide</a>.</p>
+<p>We'll use Nimble to initialize our project and manage its dependencies. Each chapter in this tutorial is a separate Nimble project, and we'll show you how to set them up as we progress.</p>
+<footer id="open-on-gh">Found a bug? <a href="https://github.com/status-im/nim-chronos//edit/master/docs/src/tutorials/http_server/intro.md">Edit this page on GitHub.</a></footer><div style="break-before: page; page-break-before: always;"></div><h1 id="setting-up-a-basic-http-server"><a class="header" href="#setting-up-a-basic-http-server">Setting Up a Basic HTTP Server</a></h1>
+<p><strong>Goal:</strong> Learn how to create and start a simple HTTP server with Chronos.</p>
+<p><strong>Source code:</strong> <a href="https://github.com/status-im/nim-chronos/blob/master/examples/http_server/chapter1/src/dashboard.nim">chapter1/src/dashboard.nim</a></p>
+<p>First, let's initialize a new binary project with Nimble. Switch to your preferred project directory in your terminal and run:</p>
+<pre><code class="language-shell">$ nimble init dashboard
+</code></pre>
+<p>When prompted, choose <code>binary</code> for the package type.</p>
+<p>Now, open the generated <code>dashboard.nimble</code> file and add <code>chronos</code> to the dependencies:</p>
+<pre><code class="language-nim"># Dependencies
+
+requires "nim &gt;= 2.0.0"
+requires "chronos"
+</code></pre>
+<p>Finally, open <code>src/dashboard.nim</code> and replace the code in it with this (we'll go through each line in a moment):</p>
+<pre><code class="language-nim">import chronos/apps/http/httpserver
+
+proc handler(
+    reqfence: RequestFence
+): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
+  if reqfence.isErr():
+    return defaultResponse()
+
+  let request = reqfence.get()
+
+  try:
+    await request.respond(Http200, "Hello, Chronos!")
+  except HttpWriteError:
+    defaultResponse()
+
+
+proc main() {.async: (raises: [TransportAddressError, CancelledError]).} =
+  let
+    address = initTAddress("127.0.0.1:8080")
+    server = HttpServerRef.new(address, handler).valueOr:
+      echo "Unable to start HTTP server: " &amp; error
+      return
+
+  server.start()
+  echo "HTTP server running on http://127.0.0.1:8080"
+
+  try:
+    await server.join()
+  finally:
+    await server.stop()
+    await server.closeWait()
+
+
+when isMainModule:
+  waitFor main()
+</code></pre>
+<p>To execute the project, run this command from the <code>dashboard</code> directory:</p>
+<pre><code class="language-shell">$ nimble run
+</code></pre>
+<p>You should see the following message in your terminal:</p>
+<pre><code class="language-shell">HTTP server running on http://127.0.0.1:8080
+</code></pre>
+<p>Now, open your web browser and go to <a href="http://127.0.0.1:8080">127.0.0.1:8080</a>. You should see "Hello, Chronos!".</p>
+<h2 id="line-by-line-explanation-1"><a class="header" href="#line-by-line-explanation-1">Line-by-Line Explanation</a></h2>
+<pre><code class="language-nim">import chronos/apps/http/httpserver
+</code></pre>
+<p><a href="tutorials/http_server/../../api/chronos/apps/http/httpserver.html"><code>httpserver</code></a> module implements the HTTP server capabilities, i.e. listening for incoming connections and responding to HTTP requests.</p>
+<pre><code class="language-nim">proc handler(
+    reqfence: RequestFence
+): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
+  if reqfence.isErr():
+    return defaultResponse()
+
+  let request = reqfence.get()
+
+  try:
+    await request.respond(Http200, "Hello, Chronos!")
+  except HttpWriteError:
+    defaultResponse()
+
+</code></pre>
+<p>We define a <code>handler</code> function that will be called for every incoming request.</p>
+<p>Note that this function takes a <a href="tutorials/http_server/../../api/chronos/apps/http/httpserver.html#RequestFence"><code>RequestFence</code></a> as an argument. <a href="tutorials/http_server/../../api/chronos/apps/http/httpserver.html#RequestFence"><code>RequestFence</code></a> is a <code>Result</code> type that can contain either a valid <a href="tutorials/http_server/../../api/chronos/apps/http/httpserver.html#HttpRequestRef"><code>HttpRequestRef</code></a> or an error. This allows Chronos to notify us if something went wrong during request parsing.</p>
+<div id="admonition-info" class="admonition admonish-info" role="note" aria-labelledby="admonition-info-title">
+<div class="admonition-title">
+<div id="admonition-info-title">
+<p>Info</p>
+</div>
+<a class="admonition-anchor-link" href="tutorials/http_server/chapter1.html#admonition-info"></a>
+</div>
+<div>
+<p><code>Result</code> comes from <a href="https://github.com/arnetheduck/nim-results">results</a> library. It's somewhat similar to Nim's built-in <code>Options</code> type but more powerful. Chronos uses it all around the place whenever a function can return a result or an error.</p>
+</div>
+</div>
+<p>The function is annotated with the <a href="tutorials/http_server/../../api/chronos/asyncloop.html#async"><code>async</code></a> pragma and <code>raises: [CancelledError]</code> (<a href="tutorials/http_server/../../api/chronos/futures.html#CancelledError"><code>CancelledError</code></a>) according to Chronos's <a href="tutorials/http_server/../../error_handling.html#checked-exceptions">checked exceptions</a>.</p>
+<p>Inside the handler, we first check if the request was received correctly. If not, we return a <a href="tutorials/http_server/../../api/chronos/apps/http/httpserver.html#defaultResponse"><code>defaultResponse()</code></a>, which is simply an empty response.</p>
+<p>If the request is valid, we use the <a href="tutorials/http_server/../../api/chronos/apps/http/httpserver.html#respond,HttpRequestRef,HttpCode,ByteChar"><code>respond</code></a> method to send a simple string back to the client with an HTTP 200 OK status.</p>
+<p>We wrap the <code>respond</code> call in a <code>try-except</code> block to handle potential network errors (<a href="tutorials/http_server/../../api/chronos/apps/http/httpcommon.html#HttpWriteError"><code>HttpWriteError</code></a>). Note that we let <a href="tutorials/http_server/../../api/chronos/futures.html#CancelledError"><code>CancelledError</code></a> propagate to the caller instead of catching it.</p>
+<pre><code class="language-nim">proc main() {.async: (raises: [TransportAddressError, CancelledError]).} =
+  let
+    address = initTAddress("127.0.0.1:8080")
+    server = HttpServerRef.new(address, handler).valueOr:
+      echo "Unable to start HTTP server: " &amp; error
+      return
+
+  server.start()
+  echo "HTTP server running on http://127.0.0.1:8080"
+
+  try:
+    await server.join()
+  finally:
+    await server.stop()
+    await server.closeWait()
+
+</code></pre>
+<p>In the <code>main</code> function, we:</p>
+<ol>
+<li>Define the address and port to listen on (<code>127.0.0.1:8080</code>).</li>
+<li>Create an instance of the server using <a href="tutorials/http_server/../../api/chronos/apps/http/httpserver.html#new,typedesc%5BHttpServerRef%5D,TransportAddress,HttpProcessCallback2,set%5BHttpServerFlags%5D,set%5BServerFlags%5D,string,int,int,int,int,int,openArray%5BHttpServerMiddlewareRef%5D"><code>HttpServerRef.new</code></a>.</li>
+<li>Start the server with <a href="tutorials/http_server/../../api/chronos/apps/http/httpserver.html#start,HttpServerRef"><code>server.start()</code></a>.</li>
+<li>Use <a href="tutorials/http_server/../../api/chronos/apps/http/httpserver.html#join,HttpServerRef"><code>server.join()</code></a> to wait until the server is stopped (which, in this case, will be never, until we manually terminate the program with <code>Ctrl-C</code>).</li>
+<li>In the <code>finally</code> block, we ensure the server is stopped and its resources are released correctly.</li>
+</ol>
+<div id="admonition-info-1" class="admonition admonish-info" role="note" aria-labelledby="admonition-info-1-title">
+<div class="admonition-title">
+<div id="admonition-info-1-title">
+<p>Info</p>
+</div>
+<a class="admonition-anchor-link" href="tutorials/http_server/chapter1.html#admonition-info-1"></a>
+</div>
+<div>
+<p><a href="https://github.com/arnetheduck/nim-results/blob/master/results.nim#L1267"><code>valueOr</code></a> is a helper template from the <a href="https://github.com/arnetheduck/nim-results"><code>results</code></a> package that returns the value of a <code>Result</code> or executes a given code block if it is an error.</p>
+</div>
+</div>
+<pre><code class="language-nim">when isMainModule:
+  waitFor main()
+</code></pre>
+<p>Finally, we use <a href="tutorials/http_server/../../api/chronos/asyncloop.html#waitFor,Future%5BT%5D"><code>waitFor</code></a> to start our async <code>main</code> routine.</p>
+<footer id="open-on-gh">Found a bug? <a href="https://github.com/status-im/nim-chronos//edit/master/docs/src/tutorials/http_server/chapter1.md">Edit this page on GitHub.</a></footer><div style="break-before: page; page-break-before: always;"></div><h1 id="handling-multiple-routes"><a class="header" href="#handling-multiple-routes">Handling Multiple Routes</a></h1>
+<p><strong>Goal:</strong> Learn how to handle different request paths in your HTTP server.</p>
+<p><strong>Source code:</strong> <a href="https://github.com/status-im/nim-chronos/blob/master/examples/http_server/chapter2/src/dashboard.nim">chapter2/src/dashboard.nim</a></p>
+<p>Our first server version could only respond with one message regardless of the URL. Real-world applications usually need to handle multiple routes.</p>
+<p>Let's update our server to handle different paths differently:</p>
+<pre><code class="language-nim">import chronos/apps/http/httpserver
+
+proc handler(
+    reqfence: RequestFence
+): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
+  let request = reqfence.valueOr:
+    return defaultResponse()
+
+  try:
+    case request.uri.path
+    of "/":
+      await request.respond(Http200, "Welcome to the Status Dashboard!")
+    of "/status":
+      await request.respond(Http200, "The server is operational.")
+    else:
+      await request.respond(Http404, "Page not found.")
+  except HttpWriteError:
+    defaultResponse()
+
+
+proc main() {.async: (raises: [TransportAddressError, CancelledError]).} =
+  let
+    address = initTAddress("127.0.0.1:8080")
+    server = HttpServerRef.new(address, handler).valueOr:
+      echo "Unable to start HTTP server: " &amp; error
+      return
+
+  server.start()
+  echo "HTTP server running on http://127.0.0.1:8080"
+
+  try:
+    await server.join()
+  finally:
+    await server.stop()
+    await server.closeWait()
+
+
+when isMainModule:
+  waitFor main()
+</code></pre>
+<p>To test the routes, run the project with <code>nimble run</code> and try visiting these URLs in your browser:</p>
+<ul>
+<li><a href="http://127.0.0.1:8080/">127.0.0.1:8080/</a></li>
+<li><a href="http://127.0.0.1:8080/status">127.0.0.1:8080/status</a></li>
+<li><a href="http://127.0.0.1:8080/any-other-path">127.0.0.1:8080/any-other-path</a></li>
+</ul>
+<h2 id="routing-logic"><a class="header" href="#routing-logic">Routing Logic</a></h2>
+<p>The change is how we process the incoming request in the <code>handler</code>:</p>
+<pre><code class="language-nim">try:
+  case request.uri.path
+  of "/":
+    await request.respond(Http200, "Welcome to the Status Dashboard!")
+  of "/status":
+    await request.respond(Http200, "The server is operational.")
+  else:
+    await request.respond(Http404, "Page not found.")
+except HttpWriteError:
+  defaultResponse()
+</code></pre>
+<p>We use a <code>case</code> statement to check the <code>request.uri.path</code>.</p>
+<ul>
+<li>For the root path <code>/</code>, we return a welcome message.</li>
+<li>For the <code>/status</code> path, we return a simple operational message.</li>
+<li>For any other path, we use the <code>else</code> branch to return an HTTP 404 Not Found error.</li>
+</ul>
+<p>By using <a href="tutorials/http_server/../../api/chronos/apps/http/httpserver.html#respond,HttpRequestRef,HttpCode,ByteChar"><code>request.respond</code></a>, we can easily control both the HTTP status code and the response body.</p>
+<footer id="open-on-gh">Found a bug? <a href="https://github.com/status-im/nim-chronos//edit/master/docs/src/tutorials/http_server/chapter2.md">Edit this page on GitHub.</a></footer><div style="break-before: page; page-break-before: always;"></div><h1 id="handling-post-requests-and-processing-json"><a class="header" href="#handling-post-requests-and-processing-json">Handling POST Requests and Processing JSON</a></h1>
+<p><strong>Goal:</strong> Learn how to handle POST requests and process incoming JSON data.</p>
+<p><strong>Source code:</strong> <a href="https://github.com/status-im/nim-chronos/blob/master/examples/http_server/chapter3/src/dashboard.nim">chapter3/src/dashboard.nim</a></p>
+<p>In a real-life application, you often need to receive data from clients, not just serve static content. Our dashboard needs to receive status reports from other services.</p>
+<p>Let's update our server to handle POST requests containing JSON data and store these reports in memory:</p>
+<pre><code class="language-nim">import chronos/apps/http/httpserver
+import std/[json, tables]
+
+proc handler(reports: TableRef[string, string]): HttpProcessCallback2 =
+  proc(
+      reqfence: RequestFence
+  ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
+    let request = reqfence.valueOr:
+      return defaultResponse()
+
+    try:
+      case request.uri.path
+      of "/":
+        await request.respond(Http200, "Welcome to the Status Dashboard!")
+
+      of "/status":
+        var output = "Current Service Status:\n"
+        if reports.len == 0:
+          output.add("- No reports available.")
+        else:
+          for name, status in reports:
+            output.add("- " &amp; name &amp; ": " &amp; status &amp; "\n")
+        await request.respond(Http200, output)
+
+      of "/report":
+        if request.meth != MethodPost:
+          return await request.respond(Http405, "Method Not Allowed")
+
+        let
+          body = await request.getBody()
+          data =
+            try:
+              parseJson(bytesToString(body))
+            except CatchableError:
+              return await request.respond(Http400, "Invalid JSON.")
+          name =
+            try:
+              data["name"].getStr()
+            except KeyError:
+              return await request.respond(Http400, "Missing 'name' field.")
+          status =
+            try:
+              data["status"].getStr()
+            except KeyError:
+              return await request.respond(Http400, "Missing 'status' field.")
+
+        reports[name] = status
+        echo "Received report: " &amp; name &amp; " is " &amp; status
+
+        await request.respond(Http200, "Report received.")
+      else:
+        await request.respond(Http404, "Page not found.")
+    except HttpError as exc:
+      defaultResponse(exc)
+
+proc main() {.async: (raises: [TransportAddressError, CancelledError]).} =
+  var reports = newTable[string, string]()
+
+  let
+    address = initTAddress("127.0.0.1:8080")
+    server = HttpServerRef.new(address, handler(reports)).valueOr:
+      echo "Unable to start HTTP server: " &amp; error
+      return
+
+  server.start()
+  echo "HTTP server running on http://127.0.0.1:8080"
+
+  try:
+    await server.join()
+  finally:
+    await server.stop()
+    await server.closeWait()
+
+when isMainModule:
+  waitFor main()
+</code></pre>
+<p>To test this version, run it with <code>nimble run</code> and use a tool like <code>curl</code> to send a POST request:</p>
+<pre><code class="language-shell">$ curl -X POST -H "Content-Type: application/json" -d '{"name": "google.com", "status": "UP"}' http://127.0.0.1:8080/report
+</code></pre>
+<p>Then, visit <a href="http://127.0.0.1:8080/status">127.0.0.1:8080</a> in your browser to see the updated status.</p>
+<h2 id="handling-post-requests"><a class="header" href="#handling-post-requests">Handling POST Requests</a></h2>
+<div id="admonition-info" class="admonition admonish-info" role="note" aria-labelledby="admonition-info-title">
+<div class="admonition-title">
+<div id="admonition-info-title">
+<p>Info</p>
+</div>
+<a class="admonition-anchor-link" href="tutorials/http_server/chapter3.html#admonition-info"></a>
+</div>
+<div>
+<p>The HTTP protocol divides each request and response into a <strong>header</strong> and a <strong>body</strong>. The header contains metadata like the request method and path, while the body contains the actual content — the JSON payload in our case. This is true for both requests and responses.</p>
+</div>
+</div>
+<pre><code class="language-nim">proc handler(reports: TableRef[string, string]): HttpProcessCallback2 =
+  proc(
+      reqfence: RequestFence
+  ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
+</code></pre>
+<p>The first change you'll notice is that we wrapped our <code>handler</code> proc with another function that returns the actual handler (of type <a href="tutorials/http_server/../../api/chronos/apps/http/httpserver.html#HttpProcessCallback2"><code>HttpProcessCallback2</code></a>). This is done to enable passing an input param <code>reports</code> that we'll use to store the statuses.</p>
+<p>In the handler, we added logic for the <code>/report</code> path:</p>
+<pre><code class="language-nim">of "/report":
+  if request.meth != MethodPost:
+    return await request.respond(Http405, "Method Not Allowed")
+
+  let
+    body = await request.getBody()
+    data =
+      try:
+        parseJson(bytesToString(body))
+      except CatchableError:
+        return await request.respond(Http400, "Invalid JSON.")
+    name =
+      try:
+        data["name"].getStr()
+      except KeyError:
+        return await request.respond(Http400, "Missing 'name' field.")
+    status =
+      try:
+        data["status"].getStr()
+      except KeyError:
+        return await request.respond(Http400, "Missing 'status' field.")
+
+  reports[name] = status
+  echo "Received report: " &amp; name &amp; " is " &amp; status
+
+  await request.respond(Http200, "Report received.")
+</code></pre>
+<ol>
+<li>We check if the request method is <code>MethodPost</code>.</li>
+<li>We use <a href="tutorials/http_server/../../api/chronos/apps/http/httpserver.html#getBody,HttpRequestRef"><code>request.getBody()</code></a> to asynchronously read the entire request body.</li>
+<li><code>body</code> is an array of bytes, so we need to convert it to a string before we can parse it. To do that, we use <a href="tutorials/http_server/../../api/chronos/apps/http/httpcommon.html#bytesToString,openArray%5Bbyte%5D"><code>bytesToString</code></a> function from <code>chronos/apps/http/httpcommon</code>.</li>
+<li>We use Nim's <code>std/json</code> library to parse the body as JSON. We wrap this in a <code>try-except</code> block to handle parsing errors. We want to catch all parsing errors at this point, so it's a rare case where catching generic <code>CatchableError</code> is fine.</li>
+<li>We extract the relevant fields and store them in our table. We use a separate <code>try-except</code> block to catch <code>KeyError</code> if the fields are missing.</li>
+</ol>
+<div id="admonition-info-1" class="admonition admonish-info" role="note" aria-labelledby="admonition-info-1-title">
+<div class="admonition-title">
+<div id="admonition-info-1-title">
+<p>Info</p>
+</div>
+<a class="admonition-anchor-link" href="tutorials/http_server/chapter3.html#admonition-info-1"></a>
+</div>
+<div>
+<p>When dealing with JSON from clients, we must assume it can be malformed or missing fields. We handle these cases by catching parsing errors and <code>KeyError</code> exceptions, returning an appropriate HTTP 400 Bad Request status.</p>
+</div>
+</div>
+<h2 id="generating-response"><a class="header" href="#generating-response">Generating Response</a></h2>
+<p>Finally, for the <code>/status</code> path, we now generate a dynamic string based on the data in our table:</p>
+<pre><code class="language-nim">of "/status":
+  var output = "Current Service Status:\n"
+  if reports.len == 0:
+    output.add("- No reports available.")
+  else:
+    for name, status in reports:
+      output.add("- " &amp; name &amp; ": " &amp; status &amp; "\n")
+  await request.respond(Http200, output)
+</code></pre>
+<h2 id="storing-data-in-memory"><a class="header" href="#storing-data-in-memory">Storing Data in Memory</a></h2>
+<p>We use an in-memory <code>TableRef</code> to store our status reports.</p>
+<pre><code class="language-nim">var reports = newTable[string, string]()
+
+let
+  address = initTAddress("127.0.0.1:8080")
+  server = HttpServerRef.new(address, handler(reports)).valueOr:
+    echo "Unable to start HTTP server: " &amp; error
+    return
+
+server.start()
+echo "HTTP server running on http://127.0.0.1:8080"
+</code></pre>
+<p>We pass <code>reports</code> to the handler generating function to generate a handler that would store statuses to it.</p>
+<div id="admonition-info-2" class="admonition admonish-info" role="note" aria-labelledby="admonition-info-2-title">
+<div class="admonition-title">
+<div id="admonition-info-2-title">
+<p>Info</p>
+</div>
+<a class="admonition-anchor-link" href="tutorials/http_server/chapter3.html#admonition-info-2"></a>
+</div>
+<div>
+<p>In a real app you would store your persistent data in a database of key-value storage. In this tutorial, we use a <code>Table</code> for simplicity's sake.</p>
+</div>
+</div>
+<footer id="open-on-gh">Found a bug? <a href="https://github.com/status-im/nim-chronos//edit/master/docs/src/tutorials/http_server/chapter3.md">Edit this page on GitHub.</a></footer><div style="break-before: page; page-break-before: always;"></div><h1 id="logging-requests-with-middleware"><a class="header" href="#logging-requests-with-middleware">Logging Requests with Middleware</a></h1>
+<p><strong>Goal:</strong> Learn how to extend your server's functionality with middleware.</p>
+<p><strong>Source code:</strong> <a href="https://github.com/status-im/nim-chronos/blob/master/examples/http_server/chapter4/src/dashboard.nim">chapter4/src/dashboard.nim</a></p>
+<p>Middleware is a way to wrap your request handler with additional logic. This is useful for cross-cutting concerns like logging, authentication, modifying request and response headers, and for sharing a single HTTP server between multiple services (e.g. a metrics server and a REST API server).</p>
+<p>Let's add a simple logging middleware that tracks how long each request takes to process:</p>
+<pre><code class="language-nim">import chronos/apps/http/httpserver
+import std/[json, tables, times, monotimes]
+
+proc loggingMiddleware(
+    middleware: HttpServerMiddlewareRef,
+    reqfence: RequestFence,
+    nextHandler: HttpProcessCallback2,
+): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
+  let startTime = getMonoTime()
+
+  let response = await nextHandler(reqfence)
+
+  let duration = getMonoTime() - startTime
+  if reqfence.isOk():
+    let request = reqfence.get()
+    echo $request.meth &amp; " " &amp; request.uri.path &amp; " processed in " &amp;
+      $duration.inMilliseconds &amp; " ms"
+
+  response
+
+
+proc handler(reports: TableRef[string, string]): HttpProcessCallback2 =
+  proc(
+      reqfence: RequestFence
+  ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
+    let request = reqfence.valueOr:
+      return defaultResponse()
+
+    try:
+      case request.uri.path
+      of "/":
+        await request.respond(Http200, "Welcome to the Status Dashboard!")
+      of "/status":
+        var output = "Current Service Status:\n"
+        if reports.len == 0:
+          output.add("- No reports available.")
+        else:
+          for name, status in reports:
+            output.add("- " &amp; name &amp; ": " &amp; status &amp; "\n")
+        await request.respond(Http200, output)
+      of "/report":
+        if request.meth != MethodPost:
+          return await request.respond(Http405, "Method Not Allowed")
+
+        let
+          body = await request.getBody()
+          data =
+            try:
+              parseJson(bytesToString(body))
+            except CatchableError:
+              return await request.respond(Http400, "Invalid JSON.")
+          name =
+            try:
+              data["name"].getStr()
+            except KeyError:
+              return await request.respond(Http400, "Missing 'name' field.")
+          status =
+            try:
+              data["status"].getStr()
+            except KeyError:
+              return await request.respond(Http400, "Missing 'status' field.")
+
+        reports[name] = status
+        echo "Received report: " &amp; name &amp; " is " &amp; status
+
+        await request.respond(Http200, "Report received.")
+      else:
+        await request.respond(Http404, "Page not found.")
+    except HttpError as exc:
+      defaultResponse(exc)
+
+
+proc main() {.async: (raises: [TransportAddressError, CancelledError]).} =
+  var reports = newTable[string, string]()
+  let
+    middlewares = [HttpServerMiddlewareRef(handler: loggingMiddleware)]
+    address = initTAddress("127.0.0.1:8080")
+    server = HttpServerRef.new(address, handler(reports), middlewares = middlewares).valueOr:
+      echo "Unable to start HTTP server: " &amp; error
+      return
+
+  server.start()
+  echo "HTTP server running on http://127.0.0.1:8080"
+
+  try:
+    await server.join()
+  finally:
+    await server.stop()
+    await server.closeWait()
+
+
+when isMainModule:
+  waitFor main()
+</code></pre>
+<p>To test the middleware, run the project with <code>nimble run</code> and make some requests to your server (with <code>curl</code> and from your browser).</p>
+<h2 id="defining-a-middleware"><a class="header" href="#defining-a-middleware">Defining a Middleware</a></h2>
+<p>A middleware handler is a function that takes the current middleware object, the <a href="tutorials/http_server/../../api/chronos/apps/http/httpserver.html#RequestFence"><code>RequestFence</code></a>, and the <code>nextHandler</code> (which is an <a href="tutorials/http_server/../../api/chronos/apps/http/httpserver.html#HttpProcessCallback2"><code>HttpProcessCallback2</code></a>) in the chain:</p>
+<pre><code class="language-nim">proc loggingMiddleware(
+    middleware: HttpServerMiddlewareRef,
+    reqfence: RequestFence,
+    nextHandler: HttpProcessCallback2,
+): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
+  let startTime = getMonoTime()
+
+  let response = await nextHandler(reqfence)
+
+  let duration = getMonoTime() - startTime
+  if reqfence.isOk():
+    let request = reqfence.get()
+    echo $request.meth &amp; " " &amp; request.uri.path &amp; " processed in " &amp;
+      $duration.inMilliseconds &amp; " ms"
+
+  response
+
+</code></pre>
+<ol>
+<li>We record the current time before processing the request using <code>getMonoTime</code> from <code>std/monotimes</code>.</li>
+<li>We call <code>await nextHandler(reqfence)</code> to pass the request to the next middleware or the main handler.</li>
+<li>After the handler returns, we calculate the duration and print a log message. To get the processing duration in milliseconds, we use <code>inMilliseconds</code> from <code>std/times</code>.</li>
+<li>We return the <code>response</code> received from the handler chain.</li>
+</ol>
+<div id="admonition-info" class="admonition admonish-info" role="note" aria-labelledby="admonition-info-title">
+<div class="admonition-title">
+<div id="admonition-info-title">
+<p>Info</p>
+</div>
+<a class="admonition-anchor-link" href="tutorials/http_server/chapter4.html#admonition-info"></a>
+</div>
+<div>
+<p>You may wonder why <code>HttpProcessCallback2</code> has a <code>2</code> in its name and why don't we use <a href="tutorials/http_server/../../api/chronos/apps/http/httpserver.html#HttpProcessCallback"><code>HttpProcessCallback</code></a>.</p>
+<p>The difference is that <code>HttpProcessCallback2</code> is a newer and stricter version while <code>HttpProcessCallback</code> is kept for backward compatibility.</p>
+<p>So, long story short: use <code>HttpProcessCallback2</code> unless you're sure you need <code>HttpProcessCallback</code>.</p>
+</div>
+</div>
+<h2 id="registering-middleware"><a class="header" href="#registering-middleware">Registering Middleware</a></h2>
+<p>To use middleware, you need to create an array of <a href="tutorials/http_server/../../api/chronos/apps/http/httpserver.html#HttpServerMiddlewareRef"><code>HttpServerMiddlewareRef</code></a> and pass it to the server constructor:</p>
+<pre><code class="language-nim">middlewares = [HttpServerMiddlewareRef(handler: loggingMiddleware)]
+</code></pre>
+<p>Then, include it in <a href="tutorials/http_server/../../api/chronos/apps/http/httpserver.html#new,typedesc%5BHttpServerRef%5D,TransportAddress,HttpProcessCallback2,set%5BHttpServerFlags%5D,set%5BServerFlags%5D,string,int,int,int,int,int,openArray%5BHttpServerMiddlewareRef%5D"><code>HttpServerRef.new</code></a>:</p>
+<pre><code class="language-nim">proc main() {.async: (raises: [TransportAddressError, CancelledError]).} =
+  var reports = newTable[string, string]()
+  let
+    middlewares = [HttpServerMiddlewareRef(handler: loggingMiddleware)]
+    address = initTAddress("127.0.0.1:8080")
+    server = HttpServerRef.new(address, handler(reports), middlewares = middlewares).valueOr:
+      echo "Unable to start HTTP server: " &amp; error
+      return
+
+  server.start()
+  echo "HTTP server running on http://127.0.0.1:8080"
+
+  try:
+    await server.join()
+  finally:
+    await server.stop()
+    await server.closeWait()
+
+</code></pre>
+<p>Now, every time your server receives a request, you'll see a log message in your terminal with the method, path, and processing time.</p>
+<footer id="open-on-gh">Found a bug? <a href="https://github.com/status-im/nim-chronos//edit/master/docs/src/tutorials/http_server/chapter4.md">Edit this page on GitHub.</a></footer><div style="break-before: page; page-break-before: always;"></div><h1 id="bonus-track---performance-and-benchmarking"><a class="header" href="#bonus-track---performance-and-benchmarking">Bonus Track - Performance and Benchmarking</a></h1>
+<p><strong>Goal:</strong> Understand how Chronos performs under load and learn how to benchmark your server.</p>
+<p><strong>Source code:</strong> <a href="https://github.com/status-im/nim-chronos/blob/master/examples/http_server/chapter4/src/dashboard.nim">chapter4/src/dashboard.nim</a></p>
+<p>One of the main reasons to use Chronos is its performance. Thanks to its asynchronous architecture, a single-threaded Chronos server can handle thousands of concurrent connections with minimal overhead.</p>
+<p>In this chapter, we'll see check how our app performs under load.</p>
+<h2 id="benchmarking-with-apachebench-ab"><a class="header" href="#benchmarking-with-apachebench-ab">Benchmarking with ApacheBench (ab)</a></h2>
+<p><a href="https://httpd.apache.org/docs/2.4/programs/ab.html">ApacheBench</a> (<code>ab</code>) is a popular tool for benchmarking HTTP servers. It's pre-installed on many systems or can be easily installed (e.g., <code>brew install httpd</code> on macOS or <code>sudo apt-get install apache2-utils</code> on Linux). For Windows, it can be obtained through various Apache distributions.</p>
+<h3 id="running-the-benchmark"><a class="header" href="#running-the-benchmark">Running the Benchmark</a></h3>
+<p>First, run your server in release mode:</p>
+<pre><code class="language-shell">$ nimble run -d:release
+</code></pre>
+<div id="admonition-info" class="admonition admonish-info" role="note" aria-labelledby="admonition-info-title">
+<div class="admonition-title">
+<div id="admonition-info-title">
+<p>Info</p>
+</div>
+<a class="admonition-anchor-link" href="tutorials/http_server/chapter5.html#admonition-info"></a>
+</div>
+<div>
+<p>There are no code changes in this chapter. We're using the code from the previous chapter, just compiling it in the release mode to squeeze maximum performance from our server.</p>
+</div>
+</div>
+<p>Now, in a separate terminal window, run the benchmark against the root path:</p>
+<pre><code class="language-shell">$ ab -n 10000 -c 100 http://127.0.0.1:8080/
+</code></pre>
+<p>Here's what these flags mean:</p>
+<ul>
+<li><code>-n 10000</code>: Perform 10,000 requests.</li>
+<li><code>-c 100</code>: Keep 100 requests concurrent.</li>
+</ul>
+<h3 id="understanding-the-results"><a class="header" href="#understanding-the-results">Understanding the Results</a></h3>
+<p>When the benchmark finishes, you'll see a report, which looks similar to this:</p>
+<pre><code class="language-shell">Server Software:
+Server Hostname:        127.0.0.1
+Server Port:            8080
+
+Document Path:          /
+Document Length:        32 bytes
+
+Concurrency Level:      100
+Time taken for tests:   15.445 seconds
+Complete requests:      10000
+Failed requests:        0
+Total transferred:      1670000 bytes
+HTML transferred:       320000 bytes
+Requests per second:    647.47 [#/sec] (mean)
+Time per request:       154.448 [ms] (mean)
+Time per request:       1.544 [ms] (mean, across all concurrent requests)
+Transfer rate:          105.59 [Kbytes/sec] received
+
+Connection Times (ms)
+              min  mean[+/-sd] median   max
+Connect:        0    1   0.3      0       7
+Processing:     4  153  19.3    154     209
+Waiting:        1  145  18.5    146     199
+Total:          5  154  19.3    154     210
+ERROR: The median and mean for the initial connection time are more than twice the standard
+       deviation apart. These results are NOT reliable.
+
+Percentage of the requests served within a certain time (ms)
+  50%    154
+  66%    166
+  75%    169
+  80%    170
+  90%    175
+  95%    180
+  98%    186
+  99%    189
+ 100%    210 (longest request)
+</code></pre>
+<p>Pay attention to these metrics:</p>
+<ul>
+<li><strong>Requests per second (RPS):</strong> How many requests your server processed per second. Even with the overhead of JSON parsing and logging, Chronos should achieve hundreds of RPS even on a common laptop.</li>
+<li><strong>Time per request:</strong> The average time it took to complete a single reques. You'll see two numbers, one roughly 100 times larger than the other. This is due to the concurrency factor of 100. The smaller number represents the actuall processing time per request. This should be close to 1 ms.</li>
+<li><strong>Failed requests:</strong> How many requests were not successful. With Chronos, this should be zero even under high load.</li>
+</ul>
+<footer id="open-on-gh">Found a bug? <a href="https://github.com/status-im/nim-chronos//edit/master/docs/src/tutorials/http_server/chapter5.md">Edit this page on GitHub.</a></footer><div style="break-before: page; page-break-before: always;"></div><h1 id="concepts"><a class="header" href="#concepts">Concepts</a></h1>
+<p>Async/await is a programming model that relies on cooperative multitasking to
+coordinate the concurrent execution of procedures, using event notifications
+from the operating system or other treads to resume execution.</p>
+<p>Code execution happens in a loop that alternates between making progress on
+tasks and handling events.</p>
+<ul>
+<li><a href="concepts.html#the-dispatcher">The dispatcher</a></li>
+<li><a href="concepts.html#the-future-type">The <code>Future</code> type</a></li>
+<li><a href="concepts.html#the-poll-call">The <code>poll</code> call</a></li>
+<li><a href="concepts.html#cancellation">Cancellation</a></li>
+<li><a href="concepts.html#compile-time-configuration">Compile-time configuration</a></li>
+</ul>
+<h2 id="the-dispatcher"><a class="header" href="#the-dispatcher">The dispatcher</a></h2>
+<p>The event handler loop is called a "dispatcher" and a single instance per
+thread is created, as soon as one is needed.</p>
+<p>Scheduling is done by calling <a href="./async_procs.html">async procedures</a> that return
+<code>Future</code> objects - each time a procedure is unable to make further
+progress, for example because it's waiting for some data to arrive, it hands
+control back to the dispatcher which ensures that the procedure is resumed when
+ready.</p>
+<p>A single thread, and thus a single dispatcher, is typically able to handle
+thousands of concurrent in-progress requests.</p>
+<h2 id="the-future-type"><a class="header" href="#the-future-type">The <code>Future</code> type</a></h2>
+<p><code>Future</code> objects encapsulate the outcome of executing an <code>async</code> procedure. The
+<code>Future</code> may be <code>pending</code> meaning that the outcome is not yet known or
+<code>finished</code> meaning that the return value is available, the operation failed
+with an exception or was cancelled.</p>
+<p>Inside an async procedure, you can <code>await</code> the outcome of another async
+procedure - if the <code>Future</code> representing that operation is still <code>pending</code>, a
+callback representing where to resume execution will be added to it and the
+dispatcher will be given back control to deal with other tasks.</p>
+<p>When a <code>Future</code> is <code>finished</code>, all its callbacks are scheduled to be run by
+the dispatcher, thus continuing any operations that were waiting for an outcome.</p>
+<h2 id="the-poll-call"><a class="header" href="#the-poll-call">The <code>poll</code> call</a></h2>
+<p>To trigger the processing step of the dispatcher, we need to call <code>poll()</code> -
+either directly or through a wrapper like <code>runForever()</code> or <code>waitFor()</code>.</p>
+<p>Each call to poll handles any file descriptors, timers and callbacks that are
+ready to be processed.</p>
+<p>Using <code>waitFor</code>, the result of a single asynchronous operation can be obtained:</p>
+<pre><code class="language-nim">proc myApp() {.async.} =
+  echo "Waiting for a second..."
+  await sleepAsync(1.seconds)
+  echo "done!"
+
+waitFor myApp()
+</code></pre>
+<p>It is also possible to keep running the event loop forever using <code>runForever</code>:</p>
+<pre><code class="language-nim">proc myApp() {.async.} =
+  while true:
+    await sleepAsync(1.seconds)
+    echo "A bit more than a second passed!"
+
+let future = myApp()
+runForever()
+</code></pre>
+<p>Such an application never terminates, thus it is rare that applications are
+structured this way.</p>
+<div id="admonition-warning" class="admonition admonish-warning" role="note" aria-labelledby="admonition-warning-title">
+<div class="admonition-title">
+<div id="admonition-warning-title">
+<p>Warning</p>
+</div>
+<a class="admonition-anchor-link" href="concepts.html#admonition-warning"></a>
+</div>
+<div>
+<p>Both <code>waitFor</code> and <code>runForever</code> call <code>poll</code> which offers fine-grained
+control over the event loop steps.</p>
+<p>Nested calls to <code>poll</code> - directly or indirectly via <code>waitFor</code> and <code>runForever</code>
+are not allowed.</p>
+</div>
+</div>
+<h2 id="cancellation"><a class="header" href="#cancellation">Cancellation</a></h2>
+<p>Any pending <code>Future</code> can be cancelled. This can be used for timeouts, to start
+multiple parallel operations and cancel the rest as soon as one finishes,
+to initiate the orderely shutdown of an application etc.</p>
+<pre><code class="language-nim">## Simple cancellation example
+
+import chronos
+
+proc someTask() {.async.} =
+  await sleepAsync(10.minutes)
+
+proc cancellationExample() {.async.} =
+  # Start a task but don't wait for it to finish
+  let future = someTask()
+
+  # `cancelSoon` schedules but does not wait for the future to get cancelled -
+  # it might still be pending here
+  future.cancelSoon()
+
+  let future2 = someTask() # Start another task concurrently
+  await future2.cancelAndWait()
+  # Using `cancelAndWait`, we can be sure that `future2` is either
+  # complete, failed or be cancelled at this point. `future` could still be
+  # pending!
+  assert future2.finished()
+
+waitFor cancellationExample()
+</code></pre>
+<p>Even if cancellation is initiated, it is not guaranteed that the operation gets
+cancelled - the future might still be completed or fail depending on the
+order of events in the dispatcher and the specifics of the operation.</p>
+<p>If the future indeed gets cancelled, <code>await</code> will raise a
+<code>CancelledError</code> as is likely to happen in the following example:</p>
+<pre><code class="language-nim">proc c1 {.async.} =
+  echo "Before sleep"
+  try:
+    await sleepAsync(10.minutes)
+    echo "After sleep" # not reach due to cancellation
+  except CancelledError as exc:
+    echo "We got cancelled!"
+    # `CancelledError` is typically re-raised to notify the caller that the
+    # operation is being cancelled
+    raise exc
+
+proc c2 {.async.} =
+  await c1()
+  echo "Never reached, since the CancelledError got re-raised"
+
+let work = c2()
+waitFor(work.cancelAndWait())
+</code></pre>
+<p>The <code>CancelledError</code> will now travel up the stack like any other exception.
+It can be caught for instance to free some resources and is then typically
+re-raised for the whole chain operations to get cancelled.</p>
+<p>Alternatively, the cancellation request can be translated to a regular outcome
+of the operation - for example, a <code>read</code> operation might return an empty result.</p>
+<p>Cancelling an already-finished <code>Future</code> has no effect, as the following example
+of downloading two web pages concurrently shows:</p>
+<pre><code class="language-nim">## Make two http requests concurrently and output the one that wins
+
+import chronos
+import ./httpget
+
+proc twoGets() {.async.} =
+  let futs = @[
+    # Both pages will start downloading concurrently...
+    httpget.retrievePage("https://duckduckgo.com/?q=chronos"),
+    httpget.retrievePage("https://www.google.fr/search?q=chronos"),
+  ]
+
+  # Wait for at least one request to finish..
+  let winner = await one(futs)
+  # ..and cancel the others since we won't need them
+  for fut in futs:
+    # Trying to cancel an already-finished future is harmless
+    fut.cancelSoon()
+
+  # An exception could be raised here if the winning request failed!
+  echo "Result: ", winner.read()
+
+waitFor twoGets()
+</code></pre>
+<h3 id="ownership"><a class="header" href="#ownership">Ownership</a></h3>
+<p>When calling a procedure that returns a <code>Future</code>, ownership of that <code>Future</code> is
+shared between the callee that created it and the caller that waits for it to be
+finished.</p>
+<p>The <code>Future</code> can be thought of as a single-item channel between a producer and a
+consumer. The producer creates the <code>Future</code> and is responsible for completing or
+failing it while the caller waits for completion and may <code>cancel</code> it.</p>
+<p>Although it is technically possible, callers must not <code>complete</code> or <code>fail</code>
+futures and callees or other intermediate observers must not <code>cancel</code> them as
+this may lead to panics and shutdown (ie if the future is completed twice or a
+cancalletion is not handled by the original caller).</p>
+<h3 id="nocancel"><a class="header" href="#nocancel"><code>noCancel</code></a></h3>
+<p>Certain operations must not be cancelled for semantic reasons. Common scenarios
+include composed operations whose individual steps should be performed together
+or not at all.</p>
+<p>In such cases, the <code>noCancel</code> modifier to <code>await</code> can be used to temporarily
+disable cancellation propagation, allowing the operation to complete even if
+the caller initiates a cancellation request:</p>
+<pre><code class="language-nim">proc deepSleep(dur: Duration) {.async.} =
+  # `noCancel` prevents any cancellation request by the caller of `deepSleep`
+  # from reaching `sleepAsync` - even if `deepSleep` is cancelled, its future
+  # will not complete until the sleep finishes.
+  await noCancel sleepAsync(dur)
+
+let future = deepSleep(10.minutes)
+
+# This will take ~10 minutes even if we try to cancel the call to `deepSleep`!
+await cancelAndWait(future)
+</code></pre>
+<pre><code class="language-admonition note">`noCancel` is only needed for functions that do not handle cancellation internally. You can spot them by looking at what they raise: if a proc raises `CancelledError` and you want to explicitly prevent it from being cancellable, put a `noCancel` before its call.
+
+Functions that don't raise `CancellationError`, e.g. `closeWait`, do not need it.
+</code></pre>
+<h3 id="join"><a class="header" href="#join"><code>join</code></a></h3>
+<p>The <code>join</code> modifier to <code>await</code> allows cancelling an <code>async</code> procedure without
+propagating the cancellation to the awaited operation. This is useful when
+<code>await</code>:ing a <code>Future</code> for monitoring purposes, ie when a procedure is not the
+owner of the future that's being <code>await</code>:ed.</p>
+<p>One situation where this happens is when implementing the "observer" pattern,
+where a helper monitors an operation it did not initiate:</p>
+<pre><code class="language-nim">var tick: Future[void]
+proc ticker() {.async.} =
+  while true:
+    tick = sleepAsync(1.second)
+    await tick
+    echo "tick!"
+
+proc tocker() {.async.} =
+  # This operation does not own or implement the operation behind `tick`,
+  # so it should not cancel it when `tocker` is cancelled
+  await join tick
+  echo "tock!"
+
+let
+  fut = ticker() # `ticker` is now looping and most likely waiting for `tick`
+  fut2 = tocker() # both `ticker` and `tocker` are waiting for `tick`
+
+# We don't want `tocker` to cancel a future that was created in `ticker`
+waitFor fut2.cancelAndWait()
+
+waitFor fut # keeps printing `tick!` every second.
+</code></pre>
+<h2 id="compile-time-configuration"><a class="header" href="#compile-time-configuration">Compile-time configuration</a></h2>
+<p><code>chronos</code> contains several compile-time
+<a href="./chronos/config.nim">configuration options</a> enabling stricter compile-time
+checks and debugging helpers whose runtime cost may be significant.</p>
+<p>Strictness options generally will become default in future chronos releases and
+allow adapting existing code without changing the new version - see the
+<a href="./chronos/config.nim"><code>config.nim</code></a> module for more information.</p>
+<footer id="open-on-gh">Found a bug? <a href="https://github.com/status-im/nim-chronos//edit/master/docs/src/concepts.md">Edit this page on GitHub.</a></footer><div style="break-before: page; page-break-before: always;"></div><h1 id="async-procedures"><a class="header" href="#async-procedures">Async procedures</a></h1>
+<p>Async procedures are those that interact with <code>chronos</code> to cooperatively
+suspend and resume their execution depending on the completion of other
+async procedures, timers, tasks on other threads or asynchronous I/O scheduled
+with the operating system.</p>
+<p>Async procedures are marked with the <code>{.async.}</code> pragma and return a <code>Future</code>
+indicating the state of the operation.</p>
+<ul>
+<li><a href="async_procs.html#the-async-pragma">The <code>async</code> pragma</a></li>
+<li><a href="async_procs.html#await-keyword"><code>await</code> keyword</a></li>
+<li><a href="async_procs.html#raw-async-procedures">Raw async procedures</a></li>
+<li><a href="async_procs.html#callbacks-and-closures">Callbacks and closures</a></li>
+</ul>
+<h2 id="the-async-pragma"><a class="header" href="#the-async-pragma">The <code>async</code> pragma</a></h2>
+<p>The <code>{.async.}</code> pragma will transform a procedure (or a method) returning a
+<code>Future</code> into a closure iterator. If there is no return type specified,
+<code>Future[void]</code> is returned.</p>
+<pre><code class="language-nim">proc p() {.async.} =
+  await sleepAsync(100.milliseconds)
+
+echo p().type # prints "Future[system.void]"
+</code></pre>
+<h2 id="await-keyword"><a class="header" href="#await-keyword"><code>await</code> keyword</a></h2>
+<p>The <code>await</code> keyword operates on <code>Future</code> instances typically returned from an
+<code>async</code> procedure.</p>
+<p>Whenever <code>await</code> is encountered inside an async procedure, control is given
+back to the dispatcher for as many steps as it's necessary for the awaited
+future to complete, fail or be cancelled. <code>await</code> calls the
+equivalent of <code>Future.read()</code> on the completed future to return the
+encapsulated value when the operation finishes.</p>
+<pre><code class="language-nim">proc p1() {.async.} =
+  await sleepAsync(1.seconds)
+
+proc p2() {.async.} =
+  await sleepAsync(1.seconds)
+
+proc p3() {.async.} =
+  let
+    fut1 = p1()
+    fut2 = p2()
+  # Just by executing the async procs, both resulting futures entered the
+  # dispatcher queue and their "clocks" started ticking.
+  await fut1
+  await fut2
+  # Only one second passed while awaiting them both, not two.
+
+waitFor p3()
+</code></pre>
+<pre><code class="language-admonition warning">Because `async` procedures are executed concurrently, they are subject to many
+of the same risks that typically accompany multithreaded programming.
+
+In particular, if two `async` procedures have access to the same mutable state,
+the value before and after `await` might not be the same as the order of execution is not guaranteed!
+</code></pre>
+<h2 id="raw-async-procedures"><a class="header" href="#raw-async-procedures">Raw async procedures</a></h2>
+<p>Raw async procedures are those that interact with <code>chronos</code> via the <code>Future</code>
+type but whose body does not go through the async transformation.</p>
+<p>Such functions are created by adding <code>raw: true</code> to the <code>async</code> parameters:</p>
+<pre><code class="language-nim">proc rawAsync(): Future[void] {.async: (raw: true).} =
+  let fut = newFuture[void]("rawAsync")
+  fut.complete()
+  fut
+</code></pre>
+<p>Raw functions must not raise exceptions directly - they are implicitly declared
+as <code>raises: []</code> - instead they should store exceptions in the returned <code>Future</code>:</p>
+<pre><code class="language-nim">proc rawFailure(): Future[void] {.async: (raw: true).} =
+  let fut = newFuture[void]("rawAsync")
+  fut.fail((ref ValueError)(msg: "Oh no!"))
+  fut
+</code></pre>
+<p>Raw procedures can also use checked exceptions:</p>
+<pre><code class="language-nim">proc rawAsyncRaises(): Future[void] {.async: (raw: true, raises: [IOError]).} =
+  let fut = newFuture[void]()
+  assert not (compiles do: fut.fail((ref ValueError)(msg: "uh-uh")))
+  fut.fail((ref IOError)(msg: "IO"))
+  fut
+</code></pre>
+<h2 id="callbacks-and-closures"><a class="header" href="#callbacks-and-closures">Callbacks and closures</a></h2>
+<p>Callback/closure types are declared using the <code>async</code> annotation as usual:</p>
+<pre><code class="language-nim">type MyCallback = proc(): Future[void] {.async.}
+
+proc runCallback(cb: MyCallback) {.async: (raises: []).} =
+  try:
+    await cb()
+  except CatchableError:
+    discard # handle errors as usual
+</code></pre>
+<p>When calling a callback, it is important to remember that it may raise exceptions that need to be handled.</p>
+<p>Checked exceptions can be used to limit the exceptions that a callback can
+raise:</p>
+<pre><code class="language-nim">type MyEasyCallback = proc(): Future[void] {.async: (raises: []).}
+
+proc runCallback(cb: MyEasyCallback) {.async: (raises: [])} =
+  await cb()
+</code></pre>
+<footer id="open-on-gh">Found a bug? <a href="https://github.com/status-im/nim-chronos//edit/master/docs/src/async_procs.md">Edit this page on GitHub.</a></footer><div style="break-before: page; page-break-before: always;"></div><h1 id="errors-and-exceptions"><a class="header" href="#errors-and-exceptions">Errors and exceptions</a></h1>
+<ul>
+<li><a href="error_handling.html#exceptions">Exceptions</a></li>
+<li><a href="error_handling.html#checked-exceptions">Checked exceptions</a></li>
+<li><a href="error_handling.html#the-exception-type">The <code>Exception</code> type</a></li>
+<li><a href="error_handling.html#compatibility-modes">Compatibility modes</a></li>
+</ul>
+<h2 id="exceptions"><a class="header" href="#exceptions">Exceptions</a></h2>
+<p>Exceptions inheriting from <a href="https://nim-lang.org/docs/system.html#CatchableError"><code>CatchableError</code></a>
+interrupt execution of an <code>async</code> procedure. The exception is placed in the
+<code>Future.error</code> field while changing the status of the <code>Future</code> to <code>Failed</code>
+and callbacks are scheduled.</p>
+<p>When a future is read or awaited the exception is re-raised, traversing the
+<code>async</code> execution chain until handled.</p>
+<pre><code class="language-nim">proc p1() {.async.} =
+  await sleepAsync(1.seconds)
+  raise newException(ValueError, "ValueError inherits from CatchableError")
+
+proc p2() {.async.} =
+  await sleepAsync(1.seconds)
+
+proc p3() {.async.} =
+  let
+    fut1 = p1()
+    fut2 = p2()
+  await fut1
+  echo "unreachable code here"
+  await fut2
+
+# `waitFor()` would call `Future.read()` unconditionally, which would raise the
+# exception in `Future.error`.
+let fut3 = p3()
+while not(fut3.finished()):
+  poll()
+
+echo "fut3.state = ", fut3.state # "Failed"
+if fut3.failed():
+  echo "p3() failed: ", fut3.error.name, ": ", fut3.error.msg
+  # prints "p3() failed: ValueError: ValueError inherits from CatchableError"
+</code></pre>
+<p>You can put the <code>await</code> in a <code>try</code> block, to deal with that exception sooner:</p>
+<pre><code class="language-nim">proc p3() {.async.} =
+  let
+    fut1 = p1()
+    fut2 = p2()
+  try:
+    await fut1
+  except CachableError:
+    echo "p1() failed: ", fut1.error.name, ": ", fut1.error.msg
+  echo "reachable code here"
+  await fut2
+</code></pre>
+<p>Because <code>chronos</code> ensures that all exceptions are re-routed to the <code>Future</code>,
+<code>poll</code> will not itself raise exceptions.</p>
+<p><code>poll</code> may still panic / raise <code>Defect</code> if such are raised in user code due to
+undefined behavior.</p>
+<h2 id="checked-exceptions"><a class="header" href="#checked-exceptions">Checked exceptions</a></h2>
+<p>By specifying a <code>raises</code> list to an async procedure, you can check which
+exceptions can be raised by it:</p>
+<pre><code class="language-nim">proc p1(): Future[void] {.async: (raises: [IOError]).} =
+  assert not (compiles do: raise newException(ValueError, "uh-uh"))
+  raise newException(IOError, "works") # Or any child of IOError
+
+proc p2(): Future[void] {.async, (raises: [IOError]).} =
+  await p1() # Works, because await knows that p1
+             # can only raise IOError
+</code></pre>
+<p>Under the hood, the return type of <code>p1</code> will be rewritten to an internal type
+which will convey raises informations to <code>await</code>.</p>
+<pre><code class="language-admonition note">Most `async` include `CancelledError` in the list of `raises`, indicating that
+the operation they implement might get cancelled resulting in neither value nor
+error!
+</code></pre>
+<p>When using checked exceptions, the <code>Future</code> type is modified to include
+<code>raises</code> information - it can be constructed with the <code>Raising</code> helper:</p>
+<pre><code class="language-nim"># Create a variable of the type that will be returned by a an async function
+# raising `[CancelledError]`:
+var fut: Future[int].Raising([CancelledError])
+</code></pre>
+<pre><code class="language-admonition note">`Raising` creates a specialization of `InternalRaisesFuture` type - as the name
+suggests, this is an internal type whose implementation details are likely to
+change in future `chronos` versions.
+</code></pre>
+<h2 id="the-exception-type"><a class="header" href="#the-exception-type">The <code>Exception</code> type</a></h2>
+<p>Exceptions deriving from <code>Exception</code> are not caught by default as these may
+include <code>Defect</code> and other forms undefined or uncatchable behavior.</p>
+<p>Because exception effect tracking is turned on for <code>async</code> functions, this may
+sometimes lead to compile errors around forward declarations, methods and
+closures as Nim conservatively asssumes that any <code>Exception</code> might be raised
+from those.</p>
+<p>Make sure to explicitly annotate these with <code>{.raises.}</code>:</p>
+<pre><code class="language-nim"># Forward declarations need to explicitly include a raises list:
+proc myfunction() {.raises: [ValueError].}
+
+# ... as do `proc` types
+type MyClosure = proc() {.raises: [ValueError].}
+
+proc myfunction() =
+  raise (ref ValueError)(msg: "Implementation here")
+
+let closure: MyClosure = myfunction
+</code></pre>
+<h2 id="compatibility-modes"><a class="header" href="#compatibility-modes">Compatibility modes</a></h2>
+<p><strong>Individual functions.</strong> For compatibility, <code>async</code> functions can be instructed
+to handle <code>Exception</code> as well, specifying <code>handleException: true</code>. Any
+<code>Exception</code> that is not a <code>Defect</code> and not a <code>CatchableError</code> will then be
+caught and remapped to <code>AsyncExceptionError</code>:</p>
+<pre><code class="language-nim">proc raiseException() {.async: (handleException: true, raises: [AsyncExceptionError]).} =
+  raise (ref Exception)(msg: "Raising Exception is UB")
+
+proc callRaiseException() {.async: (raises: []).} =
+  try:
+    await raiseException()
+  except AsyncExceptionError as exc:
+    # The original Exception is available from the `parent` field
+    echo exc.parent.msg
+</code></pre>
+<p><strong>Global flag.</strong>  This mode can be enabled globally with
+<code>-d:chronosHandleException</code> as a help when porting code to <code>chronos</code>. The
+behavior in this case will be that:</p>
+<ol>
+<li>
+<p>old-style functions annotated with plain <code>async</code> will behave as if they had
+been annotated with <code>async: (handleException: true)</code>.</p>
+<p>This is functionally equivalent to
+<code>async: (handleException: true, raises: [CatchableError])</code> and will, as
+before, remap any <code>Exception</code> that is not <code>Defect</code> into
+<code>AsyncExceptionError</code>, while also allowing any <code>CatchableError</code> (including
+<code>AsyncExceptionError</code>) to get through without compilation errors.</p>
+</li>
+<li>
+<p>New-style functions with <code>async: (raises: [...])</code> annotations or their own
+<code>handleException</code> annotations will not be affected.</p>
+</li>
+</ol>
+<p>The rationale here is to allow one to incrementally introduce exception
+annotations and get compiler feedback while not requiring that every bit of
+legacy code is updated at once.</p>
+<p>This should be used sparingly and with care, however, as global configuration
+settings may interfere with libraries that use <code>chronos</code> leading to unexpected
+behavior.</p>
+<footer id="open-on-gh">Found a bug? <a href="https://github.com/status-im/nim-chronos//edit/master/docs/src/error_handling.md">Edit this page on GitHub.</a></footer><div style="break-before: page; page-break-before: always;"></div><h1 id="threads-1"><a class="header" href="#threads-1">Threads</a></h1>
+<p>While the cooperative <a href="./concepts.html"><code>async</code></a> model offers an efficient model
+for dealing with many tasks that often are blocked on I/O, it is not suitable
+for long-running computations that would prevent concurrent tasks from progressing.</p>
+<p>Multithreading offers a way to offload heavy computations to be executed in
+parallel with the async work, or, in cases where a single event loop gets
+overloaded, to manage multiple event loops in parallel.</p>
+<p>For interaction between threads, the <code>ThreadSignalPtr</code> type (found in the
+(<code>chronos/threadsync</code>)(https://github.com/status-im/nim-chronos/blob/master/chronos/threadsync.nim)
+module) is used - both to wait for notifications coming from other threads and
+to notify other threads of progress from within an async procedure.</p>
+<pre><code class="language-nim">import chronos, chronos/threadsync
+import os
+
+type Context = object
+  # Context allocated by `createShared` should contain no garbage-collected
+  # types!
+  signal: ThreadSignalPtr
+  value: int
+
+proc myThread(ctx: ptr Context) {.thread.} =
+  echo "Doing some work in a thread"
+  sleep(3000)
+  ctx.value = 42
+  echo "Done, firing the signal"
+  discard ctx.signal.fireSync().expect("correctly initialized signal should not fail")
+
+proc main() {.async.} =
+  let
+    signal = ThreadSignalPtr.new().expect("free file descriptor for signal")
+    context = createShared(Context)
+  context.signal = signal
+
+  var thread: Thread[ptr Context]
+
+  echo "Starting thread"
+  createThread(thread, myThread, context)
+
+  await signal.wait()
+
+  echo "Work done: ", context.value
+
+  joinThread(thread)
+
+  signal.close().expect("closing once works")
+  deallocShared(context)
+
+waitFor main()
+</code></pre>
+<footer id="open-on-gh">Found a bug? <a href="https://github.com/status-im/nim-chronos//edit/master/docs/src/threads.md">Edit this page on GitHub.</a></footer><div style="break-before: page; page-break-before: always;"></div><h1 id="tips-tricks-and-best-practices"><a class="header" href="#tips-tricks-and-best-practices">Tips, tricks and best practices</a></h1>
+<h2 id="timeouts"><a class="header" href="#timeouts">Timeouts</a></h2>
+<p>To prevent a single task from taking too long, <code>withTimeout</code> can be used:</p>
+<pre><code class="language-nim">## Simple timeouts
+import chronos
+
+proc longTask() {.async.} =
+  try:
+    await sleepAsync(10.minutes)
+  except CancelledError as exc:
+    echo "Long task was cancelled!"
+    raise exc # Propagate cancellation to the next operation
+
+proc simpleTimeout() {.async.} =
+  let task = longTask() # Start a task but don't `await` it
+
+  if not await task.withTimeout(1.seconds):
+    echo "Timeout reached - withTimeout should have cancelled the task"
+  else:
+    echo "Task completed"
+
+waitFor simpleTimeout()
+</code></pre>
+<p>When several tasks should share a single timeout, a common timer can be created
+with <code>sleepAsync</code>:</p>
+<pre><code class="language-nim">## Single timeout for several operations
+import chronos
+
+proc shortTask() {.async.} =
+  try:
+    await sleepAsync(1.seconds)
+  except CancelledError as exc:
+    echo "Short task was cancelled!"
+    raise exc # Propagate cancellation to the next operation
+
+proc composedTimeout() {.async.} =
+  let
+    # Common timout for several sub-tasks
+    timeout = sleepAsync(10.seconds)
+
+  while not timeout.finished():
+    let task = shortTask() # Start a task but don't `await` it
+    if (await race(task, timeout)) == task:
+      echo "Ran one more task"
+    else:
+      # This cancellation may or may not happen as task might have finished
+      # right at the timeout!
+      task.cancelSoon()
+
+waitFor composedTimeout()
+</code></pre>
+<h2 id="discard"><a class="header" href="#discard"><code>discard</code></a></h2>
+<p>When calling an asynchronous procedure without <code>await</code>, the operation is started
+but its result is not processed until corresponding <code>Future</code> is <code>read</code>.</p>
+<p>It is therefore important to never <code>discard</code> futures directly - instead, one
+can discard the result of awaiting the future or use <code>asyncSpawn</code> to monitor
+the outcome of the future as if it were running in a separate thread.</p>
+<p>Similar to threads, tasks managed by <code>asyncSpawn</code> may causes the application to
+crash if any exceptions leak out of it - use
+<a href="./error_handling.html#checked-exceptions">checked exceptions</a> to avoid this
+problem.</p>
+<pre><code class="language-nim">## The peculiarities of `discard` in `async` procedures
+import chronos
+
+proc failingOperation() {.async.} =
+  echo "Raising!"
+  raise (ref ValueError)(msg: "My error")
+
+proc myApp() {.async.} =
+  # This style of discard causes the `ValueError` to be discarded, hiding the
+  # failure of the operation - avoid!
+  discard failingOperation()
+
+  proc runAsTask(fut: Future[void]): Future[void] {.async: (raises: []).} =
+    # runAsTask uses `raises: []` to ensure at compile-time that no exceptions
+    # escape it!
+    try:
+      await fut
+    except CatchableError as exc:
+      echo "The task failed! ", exc.msg
+
+  # asyncSpawn ensures that errors don't leak unnoticed from tasks without
+  # blocking:
+  asyncSpawn runAsTask(failingOperation())
+
+  # If we didn't catch the exception with `runAsTask`, the program will crash:
+  asyncSpawn failingOperation()
+
+waitFor myApp()
+</code></pre>
+<footer id="open-on-gh">Found a bug? <a href="https://github.com/status-im/nim-chronos//edit/master/docs/src/tips.md">Edit this page on GitHub.</a></footer><div style="break-before: page; page-break-before: always;"></div><h1 id="porting-code-to-chronos-v4"><a class="header" href="#porting-code-to-chronos-v4">Porting code to <code>chronos</code> v4</a></h1>
+<ul>
+<li><a href="porting.html#chronos-v3">Chronos v3</a></li>
+<li><a href="porting.html#asyncdispatch"><code>asyncdispatch</code></a></li>
+<li><a href="porting.html#supporting-multiple-backends">Supporting multiple backends</a></li>
+</ul>
+<p>Thanks to its macro support, Nim allows <code>async</code>/<code>await</code> to be implemented in
+libraries with only minimal support from the language - as such, multiple
+<code>async</code> libraries exist, including <code>chronos</code> and <code>asyncdispatch</code>, and more may
+come to be developed in the futures.</p>
+<h2 id="chronos-v3"><a class="header" href="#chronos-v3">Chronos v3</a></h2>
+<p>Chronos v4 introduces new features for IPv6, exception effects, a stand-alone
+<code>Future</code> type as well as several other changes - when upgrading from chronos v3,
+here are several things to consider:</p>
+<ul>
+<li>Exception handling is now strict by default - see the <a href="./error_handling.html">error handling</a>
+chapter for how to deal with <code>raises</code> effects</li>
+<li><code>AsyncEventBus</code> was removed - use <code>AsyncEventQueue</code> instead</li>
+<li><code>Future.value</code> and <code>Future.error</code> panic when accessed in the wrong state</li>
+<li><code>Future.read</code> and <code>Future.readError</code> raise <code>FutureError</code> instead of
+<code>ValueError</code> when accessed in the wrong state</li>
+</ul>
+<h2 id="asyncdispatch"><a class="header" href="#asyncdispatch"><code>asyncdispatch</code></a></h2>
+<p>Code written for <code>asyncdispatch</code> and <code>chronos</code> looks similar but there are
+several differences to be aware of:</p>
+<ul>
+<li><code>chronos</code> has its own dispatch loop - you can typically not mix <code>chronos</code> and
+<code>asyncdispatch</code> in the same thread</li>
+<li><code>import chronos</code> instead of <code>import asyncdispatch</code></li>
+<li>cleanup is important - make sure to use <code>closeWait</code> to release any resources
+you're using or file descriptor and other leaks will ensue</li>
+<li>cancellation support means that <code>CancelledError</code> may be raised from most
+<code>{.async.}</code> functions</li>
+<li>Calling <code>yield</code> directly in tasks is not supported - instead, use <code>awaitne</code>.</li>
+<li><code>asyncSpawn</code> is used instead of <code>asyncCheck</code> - note that exceptions raised
+in tasks that are <code>asyncSpawn</code>:ed cause panic</li>
+</ul>
+<h2 id="supporting-multiple-backends"><a class="header" href="#supporting-multiple-backends">Supporting multiple backends</a></h2>
+<p>Libraries built on top of <code>async</code>/<code>await</code> may wish to support multiple async
+backends - the best way to do so is to create separate modules for each backend
+that may be imported side-by-side - see <a href="https://github.com/status-im/nim-metrics/blob/master/metrics/">nim-metrics</a>
+for an example.</p>
+<p>An alternative way is to select backend using a global compile flag - this
+method makes it diffucult to compose applications that use both backends as may
+happen with transitive dependencies, but may be appropriate in some cases -
+libraries choosing this path should call the flag <code>asyncBackend</code>, allowing
+applications to choose the backend with <code>-d:asyncBackend=&lt;backend_name&gt;</code>.</p>
+<p>Known <code>async</code> backends include:</p>
+<ul>
+<li><code>chronos</code> - this library (<code>-d:asyncBackend=chronos</code>)</li>
+<li><code>asyncdispatch</code> the standard library <code>asyncdispatch</code> <a href="https://nim-lang.org/docs/asyncdispatch.html">module</a> (<code>-d:asyncBackend=asyncdispatch</code>)</li>
+<li><code>none</code> - <code>-d:asyncBackend=none</code> - disable <code>async</code> support completely</li>
+</ul>
+<p><code>none</code> can be used when a library supports both a synchronous and
+asynchronous API, to disable the latter.</p>
+<footer id="open-on-gh">Found a bug? <a href="https://github.com/status-im/nim-chronos//edit/master/docs/src/porting.md">Edit this page on GitHub.</a></footer><div style="break-before: page; page-break-before: always;"></div><h2 id="http-server-middleware"><a class="header" href="#http-server-middleware">HTTP server middleware</a></h2>
+<p>Chronos provides a powerful mechanism for customizing HTTP request handlers via
+middlewares.</p>
+<p>A middleware is a coroutine that can modify, block or filter HTTP request.</p>
+<p>Single HTTP server could support unlimited number of middlewares, but you need to consider that each request in worst case could go through all the middlewares, and therefore a huge number of middlewares can have a significant impact on HTTP server performance.</p>
+<p>Order of middlewares is also important: right after HTTP server has received request, it will be sent to the first middleware in list, and each middleware will be responsible for passing control to other middlewares. Therefore, when building a list, it would be a good idea to place the request handlers at the end of the list, while keeping the middleware that could block or modify the request at the beginning of the list.</p>
+<p>Middleware could also modify HTTP server request, and these changes will be visible to all handlers (either middlewares or the original request handler). This can be done using the following helpers:</p>
+<pre><code class="language-nim">  proc updateRequest*(request: HttpRequestRef, scheme: string, meth: HttpMethod,
+                      version: HttpVersion, requestUri: string,
+                      headers: HttpTable): HttpResultMessage[void]
+
+  proc updateRequest*(request: HttpRequestRef, meth: HttpMethod,
+                      requestUri: string,
+                      headers: HttpTable): HttpResultMessage[void]
+
+  proc updateRequest*(request: HttpRequestRef, requestUri: string,
+                      headers: HttpTable): HttpResultMessage[void]
+
+  proc updateRequest*(request: HttpRequestRef,
+                      requestUri: string): HttpResultMessage[void]
+
+  proc updateRequest*(request: HttpRequestRef,
+                      headers: HttpTable): HttpResultMessage[void]
+</code></pre>
+<p>As you can see all the HTTP request parameters could be modified: request method, version, request path and request headers.</p>
+<p>Middleware could also use helpers to obtain more information about remote and local addresses of request's connection (this could be helpful when you need to do some IP address filtering).</p>
+<pre><code class="language-nim">  proc remote*(request: HttpRequestRef): Opt[TransportAddress]
+    ## Returns remote address of HTTP request's connection.
+  proc local*(request: HttpRequestRef): Opt[TransportAddress] =
+    ## Returns local address of HTTP request's connection.
+</code></pre>
+<p>Every middleware is the coroutine which looks like this:</p>
+<pre><code class="language-nim">  proc middlewareHandler(
+      middleware: HttpServerMiddlewareRef,
+      reqfence: RequestFence,
+      nextHandler: HttpProcessCallback2
+  ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
+</code></pre>
+<p>Where <code>middleware</code> argument is the object which could hold some specific values, <code>reqfence</code> is HTTP request which is enclosed with HTTP server error information and <code>nextHandler</code> is reference to next request handler, it could be either middleware handler or the original request processing callback handler.</p>
+<pre><code class="language-nim">  await nextHandler(reqfence)
+</code></pre>
+<p>You should perform await for the response from the <code>nextHandler(reqfence)</code>. Usually you should call next handler when you dont want to handle request or you dont know how to handle it, for example:</p>
+<pre><code class="language-nim">  proc middlewareHandler(
+      middleware: HttpServerMiddlewareRef,
+      reqfence: RequestFence,
+      nextHandler: HttpProcessCallback2
+  ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
+  if reqfence.isErr():
+    # We dont know or do not want to handle failed requests, so we call next handler.
+    return await nextHandler(reqfence)
+  let request = reqfence.get()
+  if request.uri.path == "/path/we/able/to/respond":
+    try:
+      # Sending some response.
+      await request.respond(Http200, "TEST")
+    except HttpWriteError as exc:
+      # We could also return default response for exception or other types of error.
+      defaultResponse(exc)
+  elif request.uri.path == "/path/for/rewrite":
+    # We going to modify request object for this request, next handler will receive it with different request path.
+    let res = request.updateRequest("/path/to/new/location")
+    if res.isErr():
+      return defaultResponse(res.error)
+    await nextHandler(reqfence)
+  elif request.uri.path == "/restricted/path":
+    if request.remote().isNone():
+      # We can't obtain remote address, so we force HTTP server to respond with `401 Unauthorized` status code.
+      return codeResponse(Http401)
+    if $(request.remote().get()).startsWith("127.0.0.1"):
+      # Remote peer's address starts with "127.0.0.1", sending proper response.
+      await request.respond(Http200, "AUTHORIZED")
+    else:
+      # Force HTTP server to respond with `403 Forbidden` status code.
+      codeResponse(Http403)
+  elif request.uri.path == "/blackhole":
+    # Force HTTP server to drop connection with remote peer.
+    dropResponse()
+  else:
+    # All other requests should be handled by somebody else.
+    await nextHandler(reqfence)
+</code></pre>
+<footer id="open-on-gh">Found a bug? <a href="https://github.com/status-im/nim-chronos//edit/master/docs/src/http_server_middleware.md">Edit this page on GitHub.</a></footer><div style="break-before: page; page-break-before: always;"></div><h1 id="updating-this-book"><a class="header" href="#updating-this-book">Updating this book</a></h1>
+<p>To contribute to this book, <a href="https://github.com/status-im/nim-chronos/fork">fork the repository</a>, edit the book locally, and <a href="https://github.com/status-im/nim-chronos/compare">send a pull request</a> with your changes.</p>
+<h2 id="modifying-the-content"><a class="header" href="#modifying-the-content">Modifying the content</a></h2>
+<p>The book's content is stored in the form of <code>.md</code> files in <code>docs/src</code> directory. For example, this page's source is at <code>docs/src/book.md</code>.</p>
+<p>To edit the content, you'll need any text editor and familiarity with <a href="https://rust-lang.github.io/mdBook/format/markdown.html">Markdown</a> syntax.</p>
+<p>If you want to add a new page, edit the file <code>docs/src/SUMMARY.md</code>. It's a list of all pages in this book, groupped into parts:</p>
+<pre><code class="language-markdown">- [Introduction](./introduction.md)
+- [Examples](./examples.md)
+
+# User guide
+
+- [Core concepts](./concepts.md)
+- [`async` functions](./async_procs.md)
+- [Errors and exceptions](./error_handling.md)
+- [Threads](./threads.md)
+- [Tips, tricks and best practices](./tips.md)
+- [Porting code to `chronos`](./porting.md)
+- [HTTP server middleware](./http_server_middleware.md)
+
+# Developer guide
+
+- [Updating this book](./book.md)
+</code></pre>
+<p>If mdBook detects a new page in <code>SUMMARY.md</code> that doesn't have a corresponding <code>.md</code> file, it will create it automatically during next build and you'll be able to edit it as any other page.</p>
+<h2 id="building-the-docs-locally"><a class="header" href="#building-the-docs-locally">Building the docs locally</a></h2>
+<p>This book is created using <a href="https://rust-lang.github.io/mdBook/">mdBook</a> so to test your changes locally, you'll need to have it along with preprocessors installed.</p>
+<p>If you have a working Rust toolchain set up, install the cargo crates with <code>cargo install</code>:</p>
+<pre><code class="language-shell">cargo install mdbook@0.4.36 mdbook-toc@0.14.1 mdbook-open-on-gh@2.4.3 mdbook-admonish@0.14.0
+</code></pre>
+<p>If you don't have it, the easiest way to install mdBook without installing Rust is to use <a href="https://github.com/cargo-bins/cargo-binstall">cargo-binstall</a>:</p>
+<pre><code class="language-shell">cargo-binstall mdbook@0.4.36 mdbook-toc@0.14.1 mdbook-open-on-gh@2.4.3 mdbook-admonish@0.14.0
+</code></pre>
+<p>After that, you can build and view the docs locally with this command:</p>
+<pre><code class="language-shell">mdbook serve --hostname:0.0.0.0 docs
+</code></pre>
+<p>Open <a href="http://localhost:3000">localhost:3000</a> your browser to see the docs.</p>
+<p><code>mdbook serve</code> automatically detects changes in the docs sources, rebuilds the site, and refreshes the page in the browser to show the new version.</p>
+<footer id="open-on-gh">Found a bug? <a href="https://github.com/status-im/nim-chronos//edit/master/docs/src/book.md">Edit this page on GitHub.</a></footer>
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+
+            </nav>
+
+        </div>
+
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr.min.js"></script>
+        <script src="mark.min.js"></script>
+        <script src="searcher.js"></script>
+
+        <script src="clipboard.min.js"></script>
+        <script src="highlight.js"></script>
+        <script src="book.js"></script>
+
+        <!-- Custom JS scripts -->
+
+        <script>
+        window.addEventListener('load', function() {
+            window.setTimeout(window.print, 100);
+        });
+        </script>
+
+
+    </div>
+    </body>
+</html>
