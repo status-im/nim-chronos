@@ -705,18 +705,19 @@ elif defined(windows):
           int(eventsReceived)
 
     for i in 0 ..< networkEventsCount:
-      var customOverlapped = PtrCustomOverlapped(events[i].lpOverlapped)
-      customOverlapped.data.errCode =
-        block:
-          let res = cast[uint64](customOverlapped.internal)
-          if res == 0'u64:
-            OSErrorCode(-1)
-          else:
-            OSErrorCode(rtlNtStatusToDosError(res))
-      customOverlapped.data.bytesCount = events[i].dwNumberOfBytesTransferred
-      let acb = AsyncCallback(function: customOverlapped.data.cb,
-                              udata: cast[pointer](customOverlapped))
-      loop.callbacks.addLast(acb)
+      if not(isNil(events[i].lpOverlapped)):
+        var customOverlapped = PtrCustomOverlapped(events[i].lpOverlapped)
+        customOverlapped.data.errCode =
+          block:
+            let res = cast[uint64](customOverlapped.internal)
+            if res == 0'u64:
+              OSErrorCode(-1)
+            else:
+              OSErrorCode(rtlNtStatusToDosError(res))
+        customOverlapped.data.bytesCount = events[i].dwNumberOfBytesTransferred
+        let acb = AsyncCallback(function: customOverlapped.data.cb,
+                                udata: cast[pointer](customOverlapped))
+        loop.callbacks.addLast(acb)
 
     # Move thread callbacks to the local callback queue
     loop.processThreadCallbacks()
