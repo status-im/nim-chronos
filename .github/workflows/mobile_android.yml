@@ -32,7 +32,7 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install dependencies
-        run: nimble --useSystemNim install -y --depsOnly
+        run: nimble install -y --depsOnly
 
       - name: Configure Android toolchain
         run: |
@@ -62,5 +62,5 @@ jobs:
           script: |
             # The marker is written only after every test configuration finishes.
             rm -f "$NIM_TEST_SUCCESS_MARKER"
-            nimble --useSystemNim test
+            nimble test
             test -f "$NIM_TEST_SUCCESS_MARKER"
