@@ -89,90 +89,102 @@ suite "MPSC stress test":
     q.init()
 
   test "10000 push/pop":
-    const count = 10000
-    var nodes = newSeq[ptr TestNode](count)
+    when defined(gcOrc):
+      # TODO https://github.com/nim-lang/Nim/issues/26014
+      skip()
+    else:
+      const count = 10000
+      var nodes = newSeq[ptr TestNode](count)
 
-    # Push all
-    for i in 0 ..< count:
-      nodes[i] = newTestNode(i)
-      q.push(nodes[i])
+      # Push all
+      for i in 0 ..< count:
+        nodes[i] = newTestNode(i)
+        q.push(nodes[i])
 
-    # Pop all
-    for i in 0 ..< count:
-      let node = q.pop()
-      check node != nil
-      check node[].value == i
+      # Pop all
+      for i in 0 ..< count:
+        let node = q.pop()
+        check node != nil
+        check node[].value == i
 
-    check q.pop() == nil # Queue is empty
+      check q.pop() == nil # Queue is empty
 
-    # Cleanup
-    for node in nodes:
-      deallocShared(node)
+      # Cleanup
+      for node in nodes:
+        deallocShared(node)
 
   test "interleaved push/pop":
-    var nodes = newSeq[ptr TestNode]()
-    var popIdx = 0
+    when defined(gcOrc):
+      # TODO https://github.com/nim-lang/Nim/issues/26014
+      skip()
+    else:
+      var nodes = newSeq[ptr TestNode]()
+      var popIdx = 0
 
-    for i in 0 ..< 1000:
-      let node = newTestNode(i)
-      nodes.add(node)
-      q.push(node)
+      for i in 0 ..< 1000:
+        let node = newTestNode(i)
+        nodes.add(node)
+        q.push(node)
 
-      # Pop every other one
-      if i mod 2 == 0:
-        let popped = q.pop()
-        check popped != nil
-        check popped[].value == popIdx
+        # Pop every other one
+        if i mod 2 == 0:
+          let popped = q.pop()
+          check popped != nil
+          check popped[].value == popIdx
+          inc popIdx
+
+      # Drain remaining
+      while true:
+        let node = q.pop()
+        if node == nil:
+          break
+        check node[].value == popIdx
         inc popIdx
 
-    # Drain remaining
-    while true:
-      let node = q.pop()
-      if node == nil:
-        break
-      check node[].value == popIdx
-      inc popIdx
+      check popIdx == 1000 # All 1000 items were popped
 
-    check popIdx == 1000 # All 1000 items were popped
-
-    # Free all nodes
-    for n in nodes:
-      deallocShared(n)
+      # Free all nodes
+      for n in nodes:
+        deallocShared(n)
 
   test "multiple producers, single consumer":
-    const Producers = 8
-    const ItemsPerProducer = 10000
+    when defined(gcOrc):
+      # TODO https://github.com/nim-lang/Nim/issues/26014
+      skip()
+    else:
+      const Producers = 8
+      const ItemsPerProducer = 10000
 
-    type ProdArg = object
-      q: ptr MpscQueue[TestNode]
-      startId: int
+      type ProdArg = object
+        q: ptr MpscQueue[TestNode]
+        startId: int
 
-    var threads = newSeq[Thread[ProdArg]](Producers)
+      var threads = newSeq[Thread[ProdArg]](Producers)
 
-    proc producer(arg: ProdArg) {.thread.} =
-      for i in 0 ..< ItemsPerProducer:
-        let node = newTestNode(arg.startId * ItemsPerProducer + i)
-        arg.q[].push(node)
+      proc producer(arg: ProdArg) {.thread.} =
+        for i in 0 ..< ItemsPerProducer:
+          let node = newTestNode(arg.startId * ItemsPerProducer + i)
+          arg.q[].push(node)
 
-    for i in 0 ..< Producers:
-      let arg = ProdArg(q: addr q, startId: i)
-      createThread(threads[i], producer, arg)
+      for i in 0 ..< Producers:
+        let arg = ProdArg(q: addr q, startId: i)
+        createThread(threads[i], producer, arg)
 
-    # Wait for all producers
-    joinThreads(threads)
+      # Wait for all producers
+      joinThreads(threads)
 
-    # Verify all items were pushed
-    var total = 0
-    while true:
-      let node = q.pop()
-      if node == nil:
-        break
-      check node[].value >= 0
-      check node[].value < Producers * ItemsPerProducer
-      deallocShared(node)
-      inc total
+      # Verify all items were pushed
+      var total = 0
+      while true:
+        let node = q.pop()
+        if node == nil:
+          break
+        check node[].value >= 0
+        check node[].value < Producers * ItemsPerProducer
+        deallocShared(node)
+        inc total
 
-    check total == Producers * ItemsPerProducer
+      check total == Producers * ItemsPerProducer
 
   test "100000 items with 100 producers":
     when defined(gcOrc):
