@@ -812,11 +812,6 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
         wakeupFd: array[2, cint]
       keys: seq[ReadyKey]
 
-    DispatcherHandle* = distinct (ptr typeof(PDispatcher()[]))
-      ## Dispatcher handle suitable for cross-thread use, obtainable with
-      ## `threadHandle`() - the user must take care that the dispatcher does not
-      ## get released while the handle is active.
-
   proc `==`*(x, y: AsyncFD): bool {.borrow, gcsafe.}
 
   proc globalInit() =
@@ -1318,6 +1313,11 @@ proc callSoon*(cbproc: CallbackFunc, udata: pointer = nil) =
   callSoon(AsyncCallback(function: cbproc, udata: udata))
 
 when hasThreadSupport:
+  type DispatcherHandle* = distinct (ptr typeof(PDispatcher()[]))
+    ## Dispatcher handle suitable for cross-thread use, obtainable with
+    ## `threadHandle`() - the user must take care that the dispatcher does not
+    ## get released while the handle is active.
+
   proc handle*(disp: PDispatcher): DispatcherHandle =
     DispatcherHandle(addr disp[])
 
