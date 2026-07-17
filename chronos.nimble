@@ -32,7 +32,7 @@ let testArguments =
     [
       "-d:debug -d:chronosDebug -d:useSysAssert -d:useGcAssert",
       "-d:debug -d:chronosDebug -d:chronosEventEngine=poll -d:useSysAssert -d:useGcAssert",
-      "-d:release",
+      "-d:release -d:chronosPreviewV5",
     ]
 
 let cfg =

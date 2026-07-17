@@ -9,6 +9,7 @@ import std/[sequtils, strutils, sha1]
 import ".."/chronos/unittest2/asynctests
 import ".."/chronos,
        ".."/chronos/apps/http/[httpserver, shttpserver, httpclient]
+import ".."/chronos/config
 import stew/[byteutils, base10]
 
 {.used.}
@@ -1024,13 +1025,13 @@ suite "HTTP client testing suite":
         d8 == @[(200, "ok", 0), (200, "ok", 0)]
 
       let
-        n1 = await test1(keepHa, HttpVersion11, {}, {})
-        n2 = await test2(keepHa, keepHa, HttpVersion11, {}, {})
+        n1 = await test1(keepHa, HttpVersion11, {HttpClientFlag.Http11Pipeline}, {})
+        n2 = await test2(keepHa, keepHa, HttpVersion11, {HttpClientFlag.Http11Pipeline}, {})
         n3 = await test1(dropHa, HttpVersion11, {}, {})
         n4 = await test2(dropHa, dropHa, HttpVersion11, {}, {})
         n5 = await test1(keepHa, HttpVersion11,
                          {HttpClientFlag.NewConnectionAlways,}, {})
-        n6 = await test1(keepHa, HttpVersion11, {},
+        n6 = await test1(keepHa, HttpVersion11, {HttpClientFlag.Http11Pipeline},
                          {HttpClientRequestFlag.DedicatedConnection})
         n7 = await test1(keepHa, HttpVersion11, {},
                          {HttpClientRequestFlag.DedicatedConnection,
@@ -1091,7 +1092,7 @@ suite "HTTP client testing suite":
     let
       address = server.instance.localAddress()
       ha = getAddress(address, HttpClientScheme.NonSecure, "/test")
-      session = HttpSessionRef.new({},
+      session = HttpSessionRef.new({HttpClientFlag.Http11Pipeline},
                                    idleTimeout = 1.seconds,
                                    idlePeriod = 200.milliseconds)
     try:
@@ -1597,6 +1598,22 @@ suite "HTTP client testing suite":
 
   test "HTTP tunnel connection provider test":
     check waitFor(testTunnelConnectionProvider()) == true
+
+  asyncTest "HttpClientRequestRef.new from URL string":
+    let session = HttpSessionRef.new()
+    let req = HttpClientRequestRef.new(session, "https://ddg.gg")
+    check req.isOk()
+    await req.get().closeWait()
+    await session.closeWait()
+
+  when chronosUseSink:
+    asyncTest "HttpClientRequestRef.new from URL string with sink body":
+      var session = HttpSessionRef.new()
+      var body = newSeq[byte]()
+      var req = HttpClientRequestRef.new(session, "https://ddg.gg", body = move(body))
+      check req.isOk()
+      await req.get().closeWait()
+      await session.closeWait()
 
   test "HTTP getHttpAddress() test":
     block:
