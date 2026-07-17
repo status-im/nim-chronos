@@ -1,0 +1,51 @@
+name: Mobile iOS
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+  merge_group:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-ios:
+    name: iOS arm64 simulator tests
+    runs-on: macos-15
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Nim
+        uses: jiro4989/setup-nim-action@v2
+        with:
+          nim-version: "2.2.x"
+
+      - name: Install dependencies
+        run: nimble --useSystemNim install -y --depsOnly
+
+      - name: Configure iOS simulator toolchain
+        run: |
+          toolchain="$RUNNER_TEMP/ios-toolchain"
+          mkdir -p "$toolchain"
+          ln -s "$GITHUB_WORKSPACE/.github/scripts/ios-clang.sh" "$toolchain/clang"
+          ln -s "$GITHUB_WORKSPACE/.github/scripts/ios-clang.sh" "$toolchain/clang++"
+          chmod +x "$GITHUB_WORKSPACE/.github/scripts/ios-clang.sh"
+          echo "IOS_NIM_TOOLCHAIN=$toolchain" >> "$GITHUB_ENV"
+          echo "IOS_SDK_PATH=$(xcrun --sdk iphonesimulator --show-sdk-path)" >> "$GITHUB_ENV"
+          echo "NIMFLAGS=--os:ios --cpu:arm64 --cc:clang --clang.path:$toolchain --clang.exe:clang --clang.linkerexe:clang --passC:-D_DARWIN_C_SOURCE" >> "$GITHUB_ENV"
+
+      - name: Build and run tests on iOS simulator
+        env:
+          NIM_TEST_RUNNER: bash .github/scripts/run-ios-tests.sh
+        run: nimble --useSystemNim test
+
+      - name: Shut down simulator
+        if: always()
+        run: xcrun simctl shutdown all || true

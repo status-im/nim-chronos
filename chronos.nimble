@@ -21,6 +21,7 @@ let lang = getEnv("NIMLANG", "c") # Which backend (c/cpp/js)
 let flags = getEnv("NIMFLAGS", "") # Extra flags for the compiler
 let verbose = getEnv("V", "") notin ["", "0"]
 let platform = getEnv("PLATFORM", "")
+let testRunner = getEnv("NIM_TEST_RUNNER", "")
 let testArguments =
   when defined(windows):
     [
@@ -45,7 +46,11 @@ proc build(args, path: string) =
 
 proc run(args, path: string) =
   build args, path
-  exec "build/" & path.splitPath[1]
+  let executable = "build/" & path.splitPath[1]
+  if testRunner.len == 0:
+    exec executable
+  else:
+    exec testRunner & " " & quoteShell(executable)
 
 proc tryExec(cmd: string) =
   try:

@@ -1,0 +1,57 @@
+name: Mobile Android
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+  merge_group:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-android:
+    name: Android x86_64 tests
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Nim
+        uses: jiro4989/setup-nim-action@v2
+        with:
+          nim-version: "2.2.x"
+
+      - name: Install dependencies
+        run: nimble --useSystemNim install -y --depsOnly
+
+      - name: Configure Android toolchain
+        run: |
+          toolchain="$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          echo "NIMFLAGS=--os:android --cpu:amd64 --cc:clang --clang.path:$toolchain --clang.exe:x86_64-linux-android23-clang --clang.linkerexe:x86_64-linux-android23-clang --passL:-llog" >> "$GITHUB_ENV"
+
+      - name: Enable KVM for Android emulator
+        run: |
+          sudo tee /etc/udev/rules.d/99-kvm4all.rules >/dev/null <<'EOF'
+          KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"
+          EOF
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Build and run tests on Android emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          NIM_TEST_RUNNER: bash .github/scripts/run-android-tests.sh
+        with:
+          api-level: 23
+          arch: x86_64
+          target: default
+          force-avd-creation: false
+          emulator-options: -no-window -no-audio -no-boot-anim -no-metrics -gpu swiftshader_indirect
+          disable-animations: true
+          script: nimble --useSystemNim test
