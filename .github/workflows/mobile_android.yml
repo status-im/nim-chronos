@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   test-android:
-    name: Android x86_64 tests
+    name: Android x86_64 tests (Nim version-2-2)
     runs-on: ubuntu-22.04
     timeout-minutes: 60
 

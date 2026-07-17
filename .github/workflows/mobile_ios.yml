@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   test-ios:
-    name: iOS arm64 simulator tests
+    name: iOS arm64 simulator tests (Nim version-2-2)
     runs-on: macos-15
     timeout-minutes: 90
 
