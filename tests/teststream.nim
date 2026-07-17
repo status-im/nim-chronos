@@ -22,6 +22,14 @@ proc getCurrentFD(): int =
   closeSocket(sock)
   return int(sock)
 
+proc filesTestName(): string =
+  when defined(android) or defined(ios):
+    # Source paths refer to the CI host and are not visible inside a mobile
+    # simulator. The running binary is a convenient non-empty local file.
+    getAppFilename()
+  else:
+    currentSourcePath
+
 suite "Stream Transport test suite":
   let markFD = getCurrentFD()
 
@@ -38,7 +46,6 @@ suite "Stream Transport test suite":
   const
     ConstantMessage = "SOMEDATA"
     BigMessagePattern = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-    FilesTestName = currentSourcePath
     BigMessageCount = 100
     ClientsCount = 5
     MessagesCount = 10
@@ -50,6 +57,11 @@ suite "Stream Transport test suite":
     let addresses = [
       initTAddress("127.0.0.1:33335"),
       initTAddress(r"/LOCAL\testpipe")
+    ]
+  elif defined(android):
+    let addresses = [
+      initTAddress("127.0.0.1:0"),
+      initTAddress(getAppDir() / "testpipe")
     ]
   else:
     let addresses = [
@@ -850,9 +862,9 @@ suite "Stream Transport test suite":
           var transp = await connect(address)
           var ssize: string
           var handle = 0
-          var name = FilesTestName
-          var size = int(getFileSize(FilesTestName))
-          var fhandle = open(FilesTestName)
+          var name = filesTestName()
+          var size = int(getFileSize(filesTestName()))
+          var fhandle = open(filesTestName())
           when defined(windows):
             handle = int(get_osfhandle(getFileHandle(fhandle)))
           else:
@@ -1328,7 +1340,7 @@ suite "Stream Transport test suite":
       check ok
 
     asyncTest prefixes[i] & "accept() too many file descriptors test":
-      when defined(windows):
+      when defined(windows) or defined(android):
         skip()
       else:
         let maxFiles = getMaxOpenFiles()
