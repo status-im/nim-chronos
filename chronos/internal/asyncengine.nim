@@ -704,6 +704,7 @@ elif defined(windows):
         else:
           int(eventsReceived)
 
+    var hasWakeup = false
     for i in 0 ..< networkEventsCount:
       if not(isNil(events[i].lpOverlapped)):
         var customOverlapped = PtrCustomOverlapped(events[i].lpOverlapped)
@@ -718,9 +719,13 @@ elif defined(windows):
         let acb = AsyncCallback(function: customOverlapped.data.cb,
                                 udata: cast[pointer](customOverlapped))
         loop.callbacks.addLast(acb)
+      else:
+        hasWakeup = true
 
-    # Move thread callbacks to the local callback queue
-    loop.processThreadCallbacks()
+    if hasWakeup:
+      # Move thread callbacks to the local callback queue - nil in the event
+      # queue means `wake` was called
+      loop.processThreadCallbacks()
 
     # Moving expired timers to `loop.callbacks`.
     loop.processTimers()
@@ -1151,6 +1156,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     let count = loop.selector.selectInto2(curTimeout, loop.keys).valueOr:
       raiseOsDefect(error, "poll(): Unable to get OS events")
 
+    var hasWakeup = false
     for i in 0 ..< count:
       let fd = loop.keys[i].fd
       let events = loop.keys[i].events
@@ -1159,6 +1165,8 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
         if {Event.Read, Event.Error} * events != {}:
           if not isNil(adata.reader.function):
             loop.callbacks.addLast(adata.reader)
+          else:
+            hasWakeup = true
 
         if {Event.Write, Event.Error} * events != {}:
           if not isNil(adata.writer.function):
@@ -1183,15 +1191,16 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
       loop.keys.setLen(min(loop.keys.len * 2, chronosEventsCount))
 
     when hasThreadSupport:
-      # Clear the wakeup flag before draining the wakeupFd
-      loop.waking.clear()
+      if hasWakeup:
+        # Clear the wakeup flag before draining the wakeupFd
+        loop.waking.clear()
 
-    # Drain the wakeup descriptor - this must be done before processing the
-    # thread callbacks since otherwise we might accidentally drain a wakeup
-    # for a callback we did not yet process
-    loop.drainWakeupFd()
+        # Drain the wakeup descriptor - this must be done before processing the
+        # thread callbacks since otherwise we might accidentally drain a wakeup
+        # for a callback we did not yet process
+        loop.drainWakeupFd()
 
-    loop.processThreadCallbacks()
+        loop.processThreadCallbacks()
 
     # Moving expired timers to `loop.callbacks`.
     loop.processTimers()
