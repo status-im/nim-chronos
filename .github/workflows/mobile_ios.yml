@@ -46,7 +46,6 @@ jobs:
           echo "NIMFLAGS=--os:ios --cpu:arm64 --cc:clang --clang.path:$toolchain --clang.exe:clang --clang.linkerexe:clang --passC:-D_DARWIN_C_SOURCE" >> "$GITHUB_ENV"
 
       - name: Build and run tests on iOS simulator
-        # Nimble stays on macOS; this runner executes each iOS binary via simctl.
         env:
           NIM_TEST_RUNNER: bash .github/scripts/run-ios-tests.sh
           NIM_TEST_SUCCESS_MARKER: build/mobile-tests-passed
