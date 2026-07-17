@@ -1340,7 +1340,7 @@ suite "Stream Transport test suite":
       check ok
 
     asyncTest prefixes[i] & "accept() too many file descriptors test":
-      when defined(windows):
+      when defined(windows) or defined(android):
         skip()
       else:
         let maxFiles = getMaxOpenFiles()
