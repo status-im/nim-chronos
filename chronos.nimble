@@ -51,6 +51,7 @@ proc run(args, path: string) =
   if testRunner.len == 0:
     exec executable
   else:
+    # Cross-compiled tests need adb or simctl instead of direct host execution.
     exec testRunner & " " & quoteShell(executable)
 
 proc tryExec(cmd: string) =
@@ -95,6 +96,7 @@ task test, "Run all tests":
       build "", f[0..^5]
 
   if testSuccessMarker.len > 0:
+    # Mobile CI uses this to confirm that the full task reached its end.
     writeFile(testSuccessMarker, "")
 
 task test_v3_compat, "Run all tests in v3 compatibility mode":

@@ -49,6 +49,7 @@ jobs:
 
       - name: Build and run tests on Android emulator
         uses: reactivecircus/android-emulator-runner@v2
+        # Nimble stays on Ubuntu; this runner executes each Android binary via adb.
         env:
           NIM_TEST_RUNNER: bash .github/scripts/run-android-tests.sh
           NIM_TEST_SUCCESS_MARKER: build/mobile-tests-passed
@@ -60,6 +61,7 @@ jobs:
           emulator-options: -no-window -no-audio -no-boot-anim -no-metrics -gpu swiftshader_indirect
           disable-animations: true
           script: |
+            # The marker is written only after every test configuration finishes.
             rm -f "$NIM_TEST_SUCCESS_MARKER"
             nimble --useSystemNim test
             test -f "$NIM_TEST_SUCCESS_MARKER"
