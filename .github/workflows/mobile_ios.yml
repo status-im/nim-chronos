@@ -45,7 +45,11 @@ jobs:
       - name: Build and run tests on iOS simulator
         env:
           NIM_TEST_RUNNER: bash .github/scripts/run-ios-tests.sh
-        run: nimble --useSystemNim test
+          NIM_TEST_SUCCESS_MARKER: build/mobile-tests-passed
+        run: |
+          rm -f "$NIM_TEST_SUCCESS_MARKER"
+          nimble --useSystemNim test
+          test -f "$NIM_TEST_SUCCESS_MARKER"
 
       - name: Shut down simulator
         if: always()

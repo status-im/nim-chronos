@@ -22,7 +22,7 @@ proc getCurrentFD(): int =
   closeSocket(sock)
   return int(sock)
 
-func filesTestName(): string =
+proc filesTestName(): string =
   when defined(android) or defined(ios):
     # Source paths refer to the CI host and are not visible inside a mobile
     # simulator. The running binary is a convenient non-empty local file.

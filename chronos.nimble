@@ -22,6 +22,7 @@ let flags = getEnv("NIMFLAGS", "") # Extra flags for the compiler
 let verbose = getEnv("V", "") notin ["", "0"]
 let platform = getEnv("PLATFORM", "")
 let testRunner = getEnv("NIM_TEST_RUNNER", "")
+let testSuccessMarker = getEnv("NIM_TEST_SUCCESS_MARKER", "")
 let testArguments =
   when defined(windows):
     [
@@ -92,6 +93,9 @@ task test, "Run all tests":
   for f in walkDirRec("benchmarks"):
     if f.startsWith("bench_") and f.endsWith(".nim"):
       build "", f[0..^5]
+
+  if testSuccessMarker.len > 0:
+    writeFile(testSuccessMarker, "")
 
 task test_v3_compat, "Run all tests in v3 compatibility mode":
   for args in testArguments:

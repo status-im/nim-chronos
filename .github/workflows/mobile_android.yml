@@ -48,6 +48,7 @@ jobs:
         uses: reactivecircus/android-emulator-runner@v2
         env:
           NIM_TEST_RUNNER: bash .github/scripts/run-android-tests.sh
+          NIM_TEST_SUCCESS_MARKER: build/mobile-tests-passed
         with:
           api-level: 23
           arch: x86_64
@@ -55,4 +56,7 @@ jobs:
           force-avd-creation: false
           emulator-options: -no-window -no-audio -no-boot-anim -no-metrics -gpu swiftshader_indirect
           disable-animations: true
-          script: nimble --useSystemNim test
+          script: |
+            rm -f "$NIM_TEST_SUCCESS_MARKER"
+            nimble --useSystemNim test
+            test -f "$NIM_TEST_SUCCESS_MARKER"
