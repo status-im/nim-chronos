@@ -15,7 +15,7 @@
 ## For more information, see the `Concepts` chapter of the guide.
 
 from nativesockets import Port
-import std/[atomics, tables, heapqueue, deques]
+import std/[atomics, deques, heapqueue, tables, typetraits]
 import results
 import ../[config, effects, futures, osdefs, oserrno, osutils, timer]
 
@@ -812,6 +812,11 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
         wakeupFd: array[2, cint]
       keys: seq[ReadyKey]
 
+    DispatcherHandle* = distinct (ptr typeof(PDispatcher()[]))
+      ## Dispatcher handle suitable for cross-thread use, obtainable with
+      ## `threadHandle`() - the user must take care that the dispatcher does not
+      ## get released while the handle is active.
+
   proc `==`*(x, y: AsyncFD): bool {.borrow, gcsafe.}
 
   proc globalInit() =
@@ -1313,7 +1318,10 @@ proc callSoon*(cbproc: CallbackFunc, udata: pointer = nil) =
   callSoon(AsyncCallback(function: cbproc, udata: udata))
 
 when hasThreadSupport:
-  proc wake(disp: PDispatcher) {.gcsafe, raises: [].} =
+  proc handle*(disp: PDispatcher): DispatcherHandle =
+    DispatcherHandle(addr disp[])
+
+  proc wake(disp: DispatcherHandle) {.gcsafe, raises: [].} =
     ## Wake up the event loop associated with dispatcher ``disp`` so that it
     ## processes pending callbacks from the cross-thread MPSC queue.
     ##
@@ -1321,6 +1329,7 @@ when hasThreadSupport:
     ## It enqueues a sentinel node to the dispatcher's cross-thread queue
     ## and then signals the underlying OS mechanism (epoll/kqueue/poll/IOCP)
     ## to unblock the event loop's blocking wait.
+    let disp = distinctBase(disp)
 
     # Signal the OS-level wait mechanism so the event loop unblocks.
     if disp.waking.testAndSet():
@@ -1348,7 +1357,7 @@ when hasThreadSupport:
         send(SocketHandle(disp.wakeupFd[0]), addr dummy, sizeof(dummy), MSG_NOSIGNAL)
       )
 
-  proc callSoon*(disp: PDispatcher, cbproc: ThreadCallbackFunc, udata: pointer = nil) =
+  proc callSoon*(disp: DispatcherHandle, cbproc: ThreadCallbackFunc, udata: pointer = nil) =
     ## Schedule `cbproc` to be called as soon as possible on the thread that `disp`
     ## belongs to.
     ## If `disp` is the current thread dispatcher, posts directly to the
@@ -1357,10 +1366,10 @@ when hasThreadSupport:
     ##
     ## This function is thread-safe.
     doAssert(not isNil(cbproc))
-    let current = getThreadDispatcher()
-    if current == disp:
+    let current = gDisp.handle() # Don't init a new dispatcher with getThreadDispatcher()
+    if distinctBase(current) == distinctBase(disp):
       # Same thread: add directly to the callbacks deque
-      disp.callbacks.addLast(AsyncCallback(function: cbproc, udata: udata))
+      distinctBase(current).callbacks.addLast(AsyncCallback(function: cbproc, udata: udata))
     else:
       # Cross-thread: enqueue to shared MPSC queue
       let node = createShared(ThreadCallbackNode)
@@ -1369,7 +1378,7 @@ when hasThreadSupport:
 
       # First push, then wake - this ensures that the callback is visible in
       # the list by the time the processing loop gets to it.
-      disp.threadCallbacks.push(node)
+      distinctBase(disp).threadCallbacks.push(node)
       disp.wake()
 
 proc callIdle*(acb: AsyncCallback) =
