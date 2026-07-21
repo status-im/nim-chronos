@@ -23,7 +23,9 @@
 ##
 ## You can specify which timer you want to use ``-d:asyncTimer=<system/mono>``.
 import stew/base10
-import "."/osdefs
+
+when not (defined(`any`) or defined(standalone)):
+  import "."/osdefs
 
 const asyncTimer* {.strdefine.} = "mono"
 
@@ -136,6 +138,11 @@ elif defined(posix):
 
 elif defined(nimdoc):
   discard
+elif defined(`any`) or defined(standalone):
+  # The other branches use OS specific clock primitives, unavailable under
+  # any/standalone, so stub to 0. Real time could still be added via the
+  # portable C11 `timespec_get`.
+  proc fastEpochTimeNano(): uint64 {.inline.} = 0
 else:
   error("Sorry, your operation system is not yet supported!")
 
