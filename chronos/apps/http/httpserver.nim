@@ -333,8 +333,7 @@ proc getServerFlags(req: HttpRequestRef): set[HttpServerFlags] =
 
 proc getResponseFlags(req: HttpRequestRef): set[HttpResponseFlags] =
   var defaultFlags: set[HttpResponseFlags] = {}
-  case req.version
-  of HttpVersion11:
+  if req.version == HttpVersion11:
     if HttpServerFlags.Http11Pipeline notin req.getServerFlags():
       return defaultFlags
     let header = req.headers.getString(ConnectionHeader, "keep-alive")
