@@ -1243,7 +1243,9 @@ proc newAsyncStreamReader*(rsource: AsyncStreamReader,
   ##
   ## ``bufferSize`` is internal buffer size.
   var res = AsyncStreamReader()
+  {.push warning[Deprecated]: off.}
   res.init(rsource, loop, bufferSize)
+  {.pop.}
   res
 
 proc newAsyncStreamReader*[T](tsource: StreamTransport,
@@ -1255,7 +1257,9 @@ proc newAsyncStreamReader*[T](tsource: StreamTransport,
   ## ``udata`` - user object which will be associated with new AsyncStreamWriter
   ## object.
   var res = AsyncStreamReader()
+  {.push warning[Deprecated]: off.}
   res.init(tsource, udata)
+  {.pop.}
   res
 
 proc newAsyncStreamReader*(tsource: StreamTransport): AsyncStreamReader =
@@ -1311,7 +1315,9 @@ proc newAsyncStreamWriter*(wsource: AsyncStreamWriter,
   ##
   ## ``queueSize`` is writing queue size (default size is unlimited).
   var res = AsyncStreamWriter()
+  {.push warning[Deprecated]: off.}
   res.init(wsource, loop, queueSize)
+  {.pop.}
   res
 
 proc newAsyncStreamWriter*[T](tsource: StreamTransport,
@@ -1323,7 +1329,9 @@ proc newAsyncStreamWriter*[T](tsource: StreamTransport,
   ## ``udata`` - user object which will be associated with new AsyncStreamWriter
   ## object.
   var res = AsyncStreamWriter()
+  {.push warning[Deprecated]: off.}
   res.init(tsource, udata)
+  {.pop.}
   res
 
 proc newAsyncStreamWriter*(tsource: StreamTransport): AsyncStreamWriter =

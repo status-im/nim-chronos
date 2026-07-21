@@ -2923,3 +2923,24 @@ suite "Future[T] behavior test suite":
       completed = waitFor fut.withTimeout(10.seconds)
     check completed
     check fut.completed()
+
+  test "cross-thread callSoon() test":
+    var crossThreadCallSoonFlag = false
+    proc crossThreadCallSoonCallback(udata: pointer) {.nimcall, gcsafe, raises: [].} =
+      cast[ptr bool](udata)[] = true
+    type T = (DispatcherHandle, ptr bool)
+    proc threadProc(disp: T) {.thread, nimcall.} =
+      callSoon(disp[0], crossThreadCallSoonCallback, disp[1])
+      callSoon(disp[0], crossThreadCallSoonCallback, disp[1])
+
+    # Pass the current thread's dispatcher pointer to a new thread
+    crossThreadCallSoonFlag = false
+    let disp = getThreadDispatcher()
+    var thread: Thread[T]
+    createThread(thread, threadProc, (disp.handle(), addr crossThreadCallSoonFlag))
+
+    # The callback was posted to the dispatcher's queue; poll to execute it
+    poll()
+    check: crossThreadCallSoonFlag == true
+    joinThreads(thread)
+    checkLeaks()
