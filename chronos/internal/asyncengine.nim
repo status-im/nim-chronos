@@ -128,13 +128,15 @@ template processTimersGetTimeout(loop, timeout: untyped) =
     timeout = (lastFinish - curTime).getAsyncTimestamp()
 
   if timeout == 0:
-    if (len(loop.callbacks) == 0) and (len(loop.idlers) == 0):
+    if (len(loop.callbacks) == 0) and (len(loop.idlers) == 0) and
+        (len(loop.ticks) == 0):
       when defined(windows):
         timeout = INFINITE
       else:
         timeout = -1
   else:
-    if (len(loop.callbacks) != 0) or (len(loop.idlers) != 0):
+    if (len(loop.callbacks) != 0) or (len(loop.idlers) != 0) or
+        (len(loop.ticks) != 0):
       timeout = 0
 
 template processTimers(loop: untyped) =
