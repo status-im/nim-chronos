@@ -66,6 +66,7 @@ type
     trackers*: Table[string, TrackerBase]
     counters*: Table[string, TrackerCounter]
     inEventLoop: bool
+    numImmediate: int
 
 proc sentinelCallbackImpl(arg: pointer) {.gcsafe, noreturn.} =
   raiseAssert "Sentinel callback MUST not be scheduled"
@@ -160,10 +161,15 @@ template processCallbacks(loop: untyped) =
   when chronosStrictReentrancy:
     # Process existing callbacks but not those that follow, to allow the network
     # to regain control regularly
-    for _ in 0 ..< len(loop.callbacks):
+    loop.numImmediate = 0
+    var numRemaining = len(loop.callbacks)
+    while numRemaining > 0:
+      dec(numRemaining)
       let callable = loop.callbacks.popFirst()
       if not(isNil(callable.function)):
         callable.function(callable.udata)
+      numRemaining += loop.numImmediate
+      loop.numImmediate = 0
   else:
     while true:
       let callable = loop.callbacks.popFirst()  # len must be > 0 due to sentinel
@@ -1186,20 +1192,29 @@ proc removeTimer*(at: uint64, cb: CallbackFunc, udata: pointer = nil) {.
      inline, deprecated: "Use removeTimer(Duration, cb, udata)".} =
   removeTimer(Moment.init(int64(at), Millisecond), cb, udata)
 
-proc callSoon*(acb: AsyncCallback) =
-  ## Schedule `cbproc` to be called as soon as possible.
-  ## The callback is called when control returns to the event loop.
-  getThreadDispatcher().callbacks.addLast(acb)
+proc callSoon*(acb: AsyncCallback, immediate: static bool = false) =
+  ## Schedule `acb` to be called as soon as possible.
+  ## With `immediate`, no other scheduled callbacks and events are run.
+  ## Otherwise, the callback is called when control returns to the event loop.
+  let loop = getThreadDispatcher()
+  when immediate:
+    loop.callbacks.addFirst(acb)
+    when chronosStrictReentrancy:
+      loop.numImmediate += 1
+  else:
+    loop.callbacks.addLast(acb)
 
-proc callSoon*(cbproc: CallbackFunc, data: pointer) {.
-     gcsafe.} =
+proc callSoon*(
+    cbproc: CallbackFunc, data: pointer,
+    immediate: static bool = false) {.gcsafe.} =
   ## Schedule `cbproc` to be called as soon as possible.
-  ## The callback is called when control returns to the event loop.
+  ## With `immediate`, no other scheduled callbacks and events are run.
+  ## Otherwise, the callback is called when control returns to the event loop.
   doAssert(not isNil(cbproc))
-  callSoon(AsyncCallback(function: cbproc, udata: data))
+  callSoon(AsyncCallback(function: cbproc, udata: data), immediate)
 
-proc callSoon*(cbproc: CallbackFunc) =
-  callSoon(cbproc, nil)
+proc callSoon*(cbproc: CallbackFunc, immediate: static bool = false) =
+  callSoon(cbproc, nil, immediate)
 
 proc callIdle*(acb: AsyncCallback) =
   ## Schedule ``cbproc`` to be called when there no pending network events

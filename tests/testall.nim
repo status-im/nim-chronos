@@ -10,10 +10,10 @@ import ../chronos/config
 
 import
   ./[
-    testmacro, testsync, testsoon, testtime, testfut, testaddress,
-    testdatagram, teststream, testserver, testbugs, testnet, testasyncstream,
-    testhttpserver, testshttpserver, testhttpclient, testratelimit,
-    testfutures, testthreadsync, testasyncsemaphore,
+    testmacro, testsync, testsoon, testcontinuations, testtime, testfut,
+    testaddress, testdatagram, teststream, testserver, testbugs, testnet,
+    testasyncstream, testhttpserver, testshttpserver, testhttpclient,
+    testratelimit, testfutures, testthreadsync, testasyncsemaphore,
   ]
 
 when (chronosEventEngine in ["epoll", "kqueue"]) or defined(windows):
