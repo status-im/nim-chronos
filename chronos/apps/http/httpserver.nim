@@ -129,8 +129,10 @@ type
     scheme*: string
     version*: HttpVersion
     meth*: HttpMethod
-    contentEncoding*: set[ContentEncodingFlags]
-    transferEncoding*: set[TransferEncodingFlags]
+    contentEncoding*{.deprecated.}: set[ContentEncodingFlags]
+    transferEncoding*{.deprecated.}: set[TransferEncodingFlags]
+    contentEncodings*: seq[ContentEncodingFlags]
+    transferEncodings*: seq[TransferEncodingFlags]
     requestFlags*: set[HttpRequestFlags]
     contentLength*: int
     contentTypeData*: Opt[ContentTypeData]
@@ -337,8 +339,12 @@ proc getServerFlags(req: HttpRequestRef): set[HttpServerFlags] =
   req.connection.server.flags
 
 proc getResponseFlags(req: HttpRequestRef): set[HttpResponseFlags] =
+  # https://www.rfc-editor.org/rfc/rfc9112.html#section-6.1
+  # if both Transfer-Encoding and Content-Length are present, the server MUST
+  # close the connection (potential request smuggling).
   if HttpServerFlags.Http11Pipeline in req.getServerFlags() and
-      isPersistent(req.version, req.headers):
+      isPersistent(req.version, req.headers) and
+      not(req.transferEncodings.len > 0 and ContentLengthHeader in req.headers):
     {HttpResponseFlags.KeepAlive}
   else:
     {}
@@ -475,27 +481,50 @@ proc updateRequest*(request: HttpRequestRef, scheme: string, meth: HttpMethod,
   request.headers = headers
 
   # Preprocessing "Content-Encoding" header.
+  request.contentEncodings = getContentEncodings(
+    request.headers.getList(ContentEncodingHeader)
+  ).valueOr:
+    return err(HttpMessage.init(Http400, error))
   request.contentEncoding =
-    getContentEncoding(
-      request.headers.getList(ContentEncodingHeader)).valueOr:
-        let msg = "Incorrect or unsupported Content-Encoding header value"
-        return err(HttpMessage.init(Http400, msg))
+    if request.contentEncodings.len() == 0:
+      {ContentEncodingFlags.Identity}
+    else:
+      {request.contentEncodings[^1]}
 
   # Preprocessing "Transfer-Encoding" header.
+  request.transferEncodings = getTransferEncodings(
+    request.headers.getList(TransferEncodingHeader)
+  ).valueOr:
+    return err(HttpMessage.init(Http400, error))
   request.transferEncoding =
-    getTransferEncoding(
-      request.headers.getList(TransferEncodingHeader)).valueOr:
-        let msg = "Incorrect or unsupported Transfer-Encoding header value"
-        return err(HttpMessage.init(Http400, msg))
+    if request.transferEncodings.len() == 0:
+      {TransferEncodingFlags.Identity}
+    else:
+      {request.transferEncodings[^1]}
 
   # Almost all HTTP requests could have body (except TRACE), we perform some
   # steps to reveal information about body.
   request.contentLength =
-    if TransferEncodingFlags.Chunked in request.transferEncoding:
-      # Request headers has "Transfer-Encoding: chunked" header present.
-      if request.meth == MethodTrace:
-        let msg = "TRACE requests could not have request body"
+    if request.transferEncodings.len() > 0:
+      # Request headers has "Transfer-Encoding" header present, additional
+      # conditions apply for requests:
+      # https://www.rfc-editor.org/info/rfc9112/#section-6.2
+
+      if request.transferEncodings[^1] != TransferEncodingFlags.Chunked:
+        # If a Transfer-Encoding header field is present in a request and the
+        # chunked transfer coding is not the final encoding, the message body \
+        # length cannot be determined reliably; the server MUST respond with the
+        # 400 (Bad Request) status code
+        const msg = "\"chunked\" must be the final Transfer-Encoding"
         return err(HttpMessage.init(Http400, msg))
+
+      if ContentLengthHeader in request.headers:
+        # If a message is received with both a Transfer-Encoding and a
+        # Content-Length header field ... Such a message ... ought to be
+        # handled as an error.
+        const msg = "Transfer-Encoding and Content-Length must not both be present"
+        return err(HttpMessage.init(Http400, msg))
+
       request.requestFlags.incl(HttpRequestFlags.UnboundBody)
       0
     elif ContentLengthHeader in request.headers:
@@ -503,7 +532,7 @@ proc updateRequest*(request: HttpRequestRef, scheme: string, meth: HttpMethod,
       let length = request.headers.getInt(ContentLengthHeader)
       if length != 0:
         if request.meth == MethodTrace:
-          let msg = "TRACE requests could not have request body"
+          const msg = "TRACE requests could not have request body"
           return err(HttpMessage.init(Http400, msg))
         # Because of coversion to `int` we should avoid unexpected
         # OverflowError.
@@ -519,12 +548,15 @@ proc updateRequest*(request: HttpRequestRef, scheme: string, meth: HttpMethod,
       0
 
   if request.hasBody():
+    if request.meth == MethodTrace:
+      return err HttpMessage.init(Http400, "TRACE requests could not have request body")
+
     # If the request has a body, we will determine how it is encoded.
     if ContentTypeHeader in request.headers:
       # Request headers has "Content-Type" header present.
       let contentType =
         getContentType(request.headers.getList(ContentTypeHeader)).valueOr:
-          let msg = "Incorrect or missing Content-Type header"
+          const msg = "Incorrect or missing Content-Type header"
           return err(HttpMessage.init(Http415, msg))
       if contentType == UrlEncodedContentType:
         request.requestFlags.incl(HttpRequestFlags.UrlencodedForm)
@@ -587,9 +619,6 @@ proc prepareRequest(conn: HttpConnectionRef,
         if table.count(ContentLengthHeader) > 1:
           return err(HttpMessage.init(Http400,
                                       "Multiple Content-Length headers"))
-        if table.count(TransferEncodingHeader) > 1:
-          return err(HttpMessage.init(Http400,
-                                      "Multuple Transfer-Encoding headers"))
         table
   ? updateRequest(request, scheme, req.meth, req.version, req.uri(), headers)
   trackCounter(HttpServerRequestTrackerName)
@@ -643,8 +672,7 @@ proc getBody*(request: HttpRequestRef): Future[seq[byte]] {.
       raiseHttpRequestBodyTooLargeError()
     res
   except AsyncStreamError as exc:
-    let msg = "Unable to read request's body, reason: " & $exc.msg
-    raiseHttpReadError(msg)
+    raiseHttpReadError("Unable to read request body: " & $exc.msg)
   finally:
     await reader.closeWait()
 
@@ -659,8 +687,7 @@ proc consumeBody*(request: HttpRequestRef): Future[void] {.
     discard await reader.consume()
     if reader.hasOverflow(): raiseHttpRequestBodyTooLargeError()
   except AsyncStreamError as exc:
-    let msg = "Unable to consume request's body, reason: " & $exc.msg
-    raiseHttpReadError(msg)
+    raiseHttpReadError("Unable to consume request body: " & $exc.msg)
   finally:
     await reader.closeWait()
 
@@ -1690,8 +1717,8 @@ proc requestInfo*(req: HttpRequestRef, contentType = "text/plain"): string =
   res.add(kv("request.version", $req.version))
   res.add(kv("request.uri", $req.uri))
   res.add(kv("request.flags", $req.requestFlags))
-  res.add(kv("request.TransferEncoding", $req.transferEncoding))
-  res.add(kv("request.ContentEncoding", $req.contentEncoding))
+  res.add(kv("request.TransferEncodings", $req.transferEncodings))
+  res.add(kv("request.ContentEncodings", $req.contentEncodings))
 
   let body =
     if req.hasBody():

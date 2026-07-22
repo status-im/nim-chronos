@@ -188,8 +188,10 @@ type
     reader*: HttpBodyReader
     error*: ref HttpError
     bodyFlag*: HttpClientBodyFlag
-    contentEncoding*: set[ContentEncodingFlags]
-    transferEncoding*: set[TransferEncodingFlags]
+    contentEncoding*{.deprecated.}: set[ContentEncodingFlags]
+    transferEncoding*{.deprecated.}: set[TransferEncodingFlags]
+    contentEncodings*: seq[ContentEncodingFlags]
+    transferEncodings*: seq[TransferEncodingFlags]
     contentLength*: uint64
     contentType*: Opt[ContentTypeData]
     timestamp*: Moment
@@ -268,8 +270,9 @@ template isIdle(conn: HttpClientConnectionRef, timestamp: Moment,
 
 proc sessionWatcher(session: HttpSessionRef) {.async: (raises: []).}
 proc directProvider*(): HttpConnectionProvider
+
 proc new*(t: typedesc[HttpSessionRef],
-          flags: HttpClientFlags = {NewConnectionAlways},
+          flags: HttpClientFlags = {},
           maxRedirections = HttpMaxRedirections,
           connectTimeout = HttpConnectTimeout,
           headersTimeout = HttpHeadersTimeout,
@@ -288,6 +291,31 @@ proc new*(t: typedesc[HttpSessionRef],
   ## ``idleTimeout`` - timeout to consider HTTP connection as idle
   ## ``idlePeriod`` - period of time to check HTTP connections for inactivity
   doAssert(maxRedirections >= 0, "maxRedirections should not be negative")
+
+  # TODO chronos v4.2 and earlier enabled persistent connections only
+  #      together with the pipelining flag (persistent connections are
+  #      necessary but not sufficient for pipelining).
+  #
+  #      Since users of chronos (like presto and json-rpc) didn't include
+  #      pipelining in their defaults, this had the practical effect of disabling
+  #      persistent connections by default which is a good thing because the
+  #      current implementation of connection reuse in the http client is
+  #      practically unusable due to the lack of EOF monitoring (without EOF
+  #      monitoring, connections that get closed are not detected leading to
+  #      frequent request failures in most usage scenarios).
+  #
+  #      Although connection reuse is useful even without pipelining, we'll
+  #      keep using the deprecated pipelining flag as a gatekeeper so that
+  #      practically, it remains disabled in most cases - this gatekeeper
+  #      will be removed once reuse is feature complete.
+  {.push warning[Deprecated]: off.}
+  let flags =
+    if HttpClientFlag.Http11Pipeline notin flags:
+      flags + {HttpClientFlag.NewConnectionAlways}
+    else:
+      flags
+  {.pop.}
+
   let res = HttpSessionRef(
     flags: flags,
     maxRedirections: maxRedirections,
@@ -357,17 +385,20 @@ proc getHttpAddress*(
                  path: url.path, query: url.query, anchor: url.anchor,
                  username: url.username, password: url.password))
 
+{.push warning[Deprecated]: off.}
 proc getHttpAddress*(
        uri: Uri,
        flags: HttpClientFlags
      ): HttpAddressResult {.deprecated: "No DNS resolution in getHttpAddress, no flags needed".} =
   getHttpAddress(uri)
+{.pop.}
 
 proc getHttpAddress*(
        url: string,
      ): HttpAddressResult =
   getHttpAddress(parseUri(url))
 
+{.push warning[Deprecated]: off.}
 proc getHttpAddress*(
        url: string,
        flags: HttpClientFlags
@@ -386,6 +417,8 @@ proc getHttpAddress*(
      ): HttpAddressResult {.deprecated: "No DNS resolution in getHttpAddress, no session needed".} =
   ## Create new HTTP address using URL string ``url`` and .
   getHttpAddress(parseUri(url))
+
+{.pop.}
 
 proc getAddress*(session: HttpSessionRef, url: Uri): HttpResult[HttpAddress] {.deprecated: "use getHttpAddress".} =
   let res = getHttpAddress(url).valueOr:
@@ -721,7 +754,6 @@ proc reuseOrConnect(
         connection.flags.incl(HttpClientConnectionFlag.KeepAlive)
         connection.state = HttpClientConnectionState.Acquired
         return connection
-
   let connection =
     try:
       await session.connect(ha).wait(session.connectTimeout)
@@ -906,22 +938,27 @@ proc prepareResponse(
       res
 
   # Preprocessing "Content-Encoding" header.
-  let contentEncoding =
-    block:
-      let res = getContentEncoding(headers.getList(ContentEncodingHeader))
-      if res.isErr():
-        return err("Invalid headers received, invalid `Content-Encoding`")
+  let
+    contentEncodings = getContentEncodings(headers.getList(ContentEncodingHeader)).valueOr:
+      return err("Invalid `Content-Encoding` in headers")
+    contentEncoding = {
+      if contentEncodings.len() > 0:
+        contentEncodings[^1]
       else:
-        res.get()
+        ContentEncodingFlags.Identity
+    }
 
   # Preprocessing "Transfer-Encoding" header.
-  let transferEncoding =
-    block:
-      let res = getTransferEncoding(headers.getList(TransferEncodingHeader))
-      if res.isErr():
-        return err("Invalid headers received, invalid `Transfer-Encoding`")
+  let
+    transferEncodings = getTransferEncodings(
+        headers.getList(TransferEncodingHeader)).valueOr:
+      return err("Invalid `Transfer-Encoding` in headers")
+    transferEncoding = {
+      if transferEncodings.len() > 0:
+        transferEncodings[^1]
       else:
-        res.get()
+        TransferEncodingFlags.Identity
+    }
 
   # Preprocessing "Content-Length" header.
   let (contentLength, bodyFlag) =
@@ -934,9 +971,9 @@ proc prepareResponse(
       # header
       let length = headers.getInt(ContentLengthHeader)
       (length, HttpClientBodyFlag.NoBody)
-    elif transferEncoding != {TransferEncodingFlags.Identity}:
+    elif transferEncodings.len > 0:
       # "Transfer-Encoding overrides the Content-Length"
-      if TransferEncodingFlags.Chunked in transferEncoding:
+      if transferEncodings[^1] == TransferEncodingFlags.Chunked:
         (0'u64, HttpClientBodyFlag.Chunked)
       else:
         (0'u64, HttpClientBodyFlag.Custom)
@@ -986,6 +1023,7 @@ proc prepareResponse(
     reason: resp.reason(data), version: resp.version, session: request.session,
     connection: connection, headers: headers,
     contentEncoding: contentEncoding, transferEncoding: transferEncoding,
+    contentEncodings: contentEncodings, transferEncodings: transferEncodings,
     contentLength: contentLength, contentType: contentType, bodyFlag: bodyFlag
   )
 

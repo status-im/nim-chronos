@@ -495,6 +495,14 @@ proc asyncSingleProc(prc, params: NimNode): NimNode {.compileTime.} =
     # `async` code must be gcsafe
     closureIterator.addPragma(newIdentNode("gcsafe"))
 
+    # `forbids: [NestedPoll]` on the iterator catches calls to `poll` inside
+    # {.async.} functions - since async functions end up being called from
+    # within a poll context, they should not call `poll` themselves
+    when (NimMajor, NimMinor) >= (2, 2):
+      closureIterator.addPragma(
+        newColonExpr(ident "forbids", nnkBracket.newTree(ident "NestedPoll"))
+      )
+
     # Exceptions are caught inside the iterator and stored in the future
     closureIterator.addPragma(nnkExprColonExpr.newTree(
       newIdentNode("raises"),
