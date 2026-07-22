@@ -466,7 +466,9 @@ proc updateRequest*(request: HttpRequestRef, scheme: string, meth: HttpMethod,
 
   # Conversion of request query string to HttpTable.
   request.query =
-    block:
+    if len(request.uri.query) == 0:
+      HttpTable.init()
+    else:
       let queryFlags =
         if QueryCommaSeparatedArray in request.connection.server.flags:
           {QueryParamsFlag.CommaSeparatedArray}
@@ -805,6 +807,20 @@ proc preferredContentType*(request: HttpRequestRef,
   ## client in request ``request``.
   preferredContentType(request.headers.getString(AcceptHeaderName), types)
 
+var
+  gCachedDate {.threadvar.}: string
+  gCachedDateMoment {.threadvar.}: Moment
+
+proc cachedHttpDate(): string =
+  ## httpDate() refreshed at most once per second per thread. Each chronos
+  ## event-loop thread has its own cache (threadvar), so no locking is
+  ## needed. Gated on the monotonic clock to avoid a std/times dependency.
+  let now = Moment.now()
+  if len(gCachedDate) == 0 or (now - gCachedDateMoment) >= 1.seconds:
+    gCachedDateMoment = now
+    gCachedDate = httpDate()
+  gCachedDate
+
 proc sendErrorResponse(conn: HttpConnectionRef, version: HttpVersion,
                        code: HttpCode, keepAlive = true,
                        datatype = "text/plain",
@@ -813,7 +829,7 @@ proc sendErrorResponse(conn: HttpConnectionRef, version: HttpVersion,
   var answer = $version & " " & $code & "\r\n"
   answer.add(DateHeader)
   answer.add(": ")
-  answer.add(httpDate())
+  answer.add(cachedHttpDate())
   answer.add("\r\n")
   if len(datatype) > 0:
     answer.add(ContentTypeHeader)
@@ -904,11 +920,16 @@ proc getRequest(conn: HttpConnectionRef): Future[HttpRequestRef] {.
      async: (raises: [CancelledError, HttpDisconnectError,
                       HttpProtocolError]).} =
   try:
-    conn.buffer.setLen(conn.server.maxHeadersSize)
+    # The connection buffer is allocated once (init) at maxHeadersSize and
+    # deliberately never shrunk: re-growing a seq[byte] zero-fills it, which
+    # costs a full memset of maxHeadersSize on EVERY request. Parse only the
+    # valid slice instead; makeCopy copies just the actual request bytes.
+    if len(conn.buffer) < conn.server.maxHeadersSize:
+      conn.buffer.setLen(conn.server.maxHeadersSize)
     let res = await conn.reader.readUntil(addr conn.buffer[0], len(conn.buffer),
                                           HeadersMark)
-    conn.buffer.setLen(res)
-    let header = parseRequest(conn.buffer)
+    let header = parseRequest(
+      conn.buffer.toOpenArray(0, res - 1), makeCopy = true)
     if header.failed():
       raiseHttpProtocolError(Http400, "Malformed request recieved")
     prepareRequest(conn, header).valueOr:
@@ -976,6 +997,23 @@ proc closeWait*(req: HttpRequestRef) {.async: (raises: []).} =
     untrackCounter(HttpServerRequestTrackerName)
     reset(req[])
     req.state = HttpState.Closed
+
+proc tryCloseSync(req: HttpRequestRef): bool =
+  ## Synchronous equivalent of HttpRequestRef.closeWait() for requests whose
+  ## response has no streaming writer — on that path closeWait() never
+  ## actually suspends, so the future allocation is pure overhead.
+  ## Returns false when the async variant is required.
+  if req.state == HttpState.Alive:
+    if req.response.isSome():
+      let resp = req.response.get()
+      if (HttpResponseFlags.Stream in resp.flags) and not(isNil(resp.writer)):
+        return false
+      req.state = HttpState.Closing
+      reset(resp[])
+    untrackCounter(HttpServerRequestTrackerName)
+    reset(req[])
+    req.state = HttpState.Closed
+  true
 
 proc createConnection(server: HttpServerRef,
                       transp: StreamTransport): Future[HttpConnectionRef] {.
@@ -1095,12 +1133,14 @@ proc processRequest(server: HttpServerRef,
     except CancelledError:
       # Cancelled, exiting
       if requestFence.isOk():
-        await requestFence.get().closeWait()
+        if not requestFence.get().tryCloseSync():
+          await requestFence.get().closeWait()
       return HttpProcessExitType.Immediate
 
   let res = await connection.sendDefaultResponse(requestFence, response)
   if requestFence.isOk():
-    await requestFence.get().closeWait()
+    if not requestFence.get().tryCloseSync():
+      await requestFence.get().closeWait()
   res
 
 proc processLoop(holder: HttpConnectionHolderRef) {.async: (raises: []).} =
@@ -1372,7 +1412,7 @@ func createHeaders(resp: HttpResponseRef): string =
 
 proc prepareLengthHeaders(resp: HttpResponseRef, length: int): string =
   if not(resp.hasHeader(DateHeader)):
-    resp.setHeader(DateHeader, httpDate())
+    resp.setHeader(DateHeader, cachedHttpDate())
   if length > 0:
     if not(resp.hasHeader(ContentTypeHeader)):
       resp.setHeader(ContentTypeHeader, "text/html; charset=utf-8")
@@ -1387,7 +1427,7 @@ proc prepareLengthHeaders(resp: HttpResponseRef, length: int): string =
 
 proc prepareChunkedHeaders(resp: HttpResponseRef): string =
   if not(resp.hasHeader(DateHeader)):
-    resp.setHeader(DateHeader, httpDate())
+    resp.setHeader(DateHeader, cachedHttpDate())
   if not(resp.hasHeader(ContentTypeHeader)):
     resp.setHeader(ContentTypeHeader, "text/html; charset=utf-8")
   if not(resp.hasHeader(TransferEncodingHeader)):
@@ -1401,7 +1441,7 @@ proc prepareChunkedHeaders(resp: HttpResponseRef): string =
 
 proc prepareServerSideEventHeaders(resp: HttpResponseRef): string =
   if not(resp.hasHeader(DateHeader)):
-    resp.setHeader(DateHeader, httpDate())
+    resp.setHeader(DateHeader, cachedHttpDate())
   if not(resp.hasHeader(ContentTypeHeader)):
     resp.setHeader(ContentTypeHeader, "text/event-stream")
   if not(resp.hasHeader(ServerHeader)):
@@ -1413,7 +1453,7 @@ proc prepareServerSideEventHeaders(resp: HttpResponseRef): string =
 
 proc preparePlainHeaders(resp: HttpResponseRef): string =
   if not(resp.hasHeader(DateHeader)):
-    resp.setHeader(DateHeader, httpDate())
+    resp.setHeader(DateHeader, cachedHttpDate())
   if not(resp.hasHeader(ServerHeader)):
     resp.setHeader(ServerHeader, resp.connection.server.serverIdent)
   if not(resp.hasHeader(ConnectionHeader)):
