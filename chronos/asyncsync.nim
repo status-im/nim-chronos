@@ -264,6 +264,12 @@ proc popLastImpl[T](aq: AsyncQueue[T]): T =
   aq.putters.wakeupNext()
   res
 
+proc peekFirstImpl[T](aq: AsyncQueue[T]): T =
+  aq.queue.peekFirst()
+
+proc peekLastImpl[T](aq: AsyncQueue[T]): T =
+  aq.queue.peekLast()
+
 proc addFirstNoWait*[T](aq: AsyncQueue[T], item: T) {.
      raises: [AsyncQueueFullError].} =
   ## Put an item ``item`` to the beginning of the queue ``aq`` immediately.
@@ -299,6 +305,26 @@ proc popLastNoWait*[T](aq: AsyncQueue[T]): T {.
   if aq.empty():
     raise newException(AsyncQueueEmptyError, "AsyncQueue is empty!")
   aq.popLastImpl()
+
+proc peekFirstNoWait*[T](aq: AsyncQueue[T]): T {.
+     raises: [AsyncQueueEmptyError].} =
+  ## Get an item from the beginning of the queue ``aq`` immediately but without
+  ## removing it.
+  ##
+  ## If queue ``aq`` is empty, then ``AsyncQueueEmptyError`` exception raised.
+  if aq.empty():
+    raise newException(AsyncQueueEmptyError, "AsyncQueue is empty!")
+  aq.peekFirstImpl()
+
+proc peekLastNoWait*[T](aq: AsyncQueue[T]): T {.
+     raises: [AsyncQueueEmptyError].} =
+  ## Get an item from the end of the queue ``aq`` immediately but without
+  ## removing it.
+  ##
+  ## If queue ``aq`` is empty, then ``AsyncQueueEmptyError`` exception raised.
+  if aq.empty():
+    raise newException(AsyncQueueEmptyError, "AsyncQueue is empty!")
+  aq.peekLastImpl()
 
 proc addFirst*[T](aq: AsyncQueue[T], item: T) {.
      async: (raises: [CancelledError]).} =
@@ -364,6 +390,42 @@ proc popLast*[T](aq: AsyncQueue[T]): Future[T] {.
       raise exc
   aq.popLastImpl()
 
+proc peekFirst*[T](aq: AsyncQueue[T]): Future[T] {.
+     async: (raises: [CancelledError]).} =
+  ## Return an ``item`` without removing it from the beginning of the queue
+  ## ``aq``. If the queue is empty, wait until an item is available.
+  while aq.empty():
+    let getter =
+      Future[void].Raising([CancelledError]).init("AsyncQueue.peekFirst")
+    aq.getters.add(getter)
+    try:
+      await getter
+    except CancelledError as exc:
+      if not(aq.empty()) and not(getter.cancelled()):
+        aq.getters.wakeupNext()
+      raise exc
+  let res = aq.peekFirstImpl()
+  aq.getters.wakeupNext()
+  res
+
+proc peekLast*[T](aq: AsyncQueue[T]): Future[T] {.
+     async: (raises: [CancelledError]).} =
+  ## Return an ``item`` without removing it from the end of the queue ``aq``.
+  ## If the queue is empty, wait until an item is available.
+  while aq.empty():
+    let getter =
+      Future[void].Raising([CancelledError]).init("AsyncQueue.peekLast")
+    aq.getters.add(getter)
+    try:
+      await getter
+    except CancelledError as exc:
+      if not(aq.empty()) and not(getter.cancelled()):
+        aq.getters.wakeupNext()
+      raise exc
+  let res = aq.peekLastImpl()
+  aq.getters.wakeupNext()
+  res
+
 proc putNoWait*[T](aq: AsyncQueue[T], item: T) {.
      raises: [AsyncQueueFullError].} =
   ## Alias of ``addLastNoWait()``.
@@ -374,6 +436,11 @@ proc getNoWait*[T](aq: AsyncQueue[T]): T {.
   ## Alias of ``popFirstNoWait()``.
   aq.popFirstNoWait()
 
+proc peekNoWait*[T](aq: AsyncQueue[T]): T {.
+     raises: [AsyncQueueEmptyError].} =
+  ## Alias of ``peekFirstNoWait()``.
+  aq.peekFirstNoWait()
+
 proc put*[T](aq: AsyncQueue[T], item: T): Future[void] {.
      async: (raw: true, raises: [CancelledError]).} =
   ## Alias of ``addLast()``.
@@ -383,6 +450,11 @@ proc get*[T](aq: AsyncQueue[T]): Future[T] {.
      async: (raw: true, raises: [CancelledError]).} =
   ## Alias of ``popFirst()``.
   aq.popFirst()
+
+proc peek*[T](aq: AsyncQueue[T]): Future[T] {.
+     async: (raw: true, raises: [CancelledError]).} =
+  ## Alias of ``peekFirst()``.
+  aq.peekFirst()
 
 proc clear*[T](aq: AsyncQueue[T]) {.inline.} =
   ## Clears all elements of queue ``aq``.

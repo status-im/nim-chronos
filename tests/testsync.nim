@@ -353,6 +353,57 @@ suite "Asynchronous sync primitives test suite":
   test "AsyncQueue() contains test":
     check test9() == true
 
+  test "AsyncQueue() peek test":
+    let q = newAsyncQueue[int]()
+    q.putNoWait(1)
+    q.putNoWait(2)
+
+    check:
+      q.peekNoWait() == 1
+      q.peekFirstNoWait() == 1
+      q.peekLastNoWait() == 2
+      (waitFor q.peek()) == 1
+      (waitFor q.peekFirst()) == 1
+      (waitFor q.peekLast()) == 2
+
+  test "AsyncQueue() peek before pop test":
+    let q = newAsyncQueue[int]()
+    q.putNoWait(1)
+
+    let
+      a = q.peekFirst()
+      b = q.popFirst()
+
+    check:
+      a.completed() == true
+      b.completed() == true
+      a.read() == 1
+      b.read() == 1
+      q.len() == 0
+
+  test "AsyncQueue() peek after pop test":
+    let q = newAsyncQueue[int]()
+    q.putNoWait(1)
+
+    let
+      a = q.popFirst()
+      b = q.peekFirst()
+
+    check:
+      a.completed() == true
+      b.completed() == false
+      a.read() == 1
+      q.len() == 0
+
+    q.putNoWait(2)
+    poll()
+
+    check:
+      a.completed() == true
+      b.completed() == true
+      b.read() == 2
+      q.len() == 1
+
   test "AsyncEventQueue() behavior test":
     let eventQueue = newAsyncEventQueue[int]()
     let key = eventQueue.register()
