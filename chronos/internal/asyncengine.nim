@@ -1129,8 +1129,9 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
       var dummy: uint64
       discard handleEintr(read(loop.wakeupFd, addr dummy, sizeof(dummy)))
     else:
-      # It's possible not everything was drained
-      var dummy: array[256, char]
+      # While in theory there might be more bytes to drain, it's harmless if we
+      # don't drain them all (we will get them the next loop)
+      var dummy {.noinit.}: array[64, char]
       discard handleEintr(
         recv(SocketHandle(loop.wakeupFd[1]), addr dummy[0], cint(len(dummy)), cint(0))
       )
