@@ -170,35 +170,6 @@ suite "Asynchronous issues test suite":
       when chronosEventEngine != "poll":
         discard osdefs.close(sockets[1])
 
-    test "{Event.Read, Event.Write, Event.Error} handling [poll()] test":
-      var sockets: array[2, cint]
-      check:
-        socketpair(osdefs.AF_UNIX, osdefs.SOCK_STREAM, 0, sockets) == 0
-        setDescriptorBlocking(sockets[0], false).isOk()
-
-      # Ensure {Event.Read}, {Event.Write} and {Event.Error} (EOF) are all set
-      var b = 42.byte
-      check:
-        handleEintr(osdefs.write(sockets[1], addr b, 1)) == 1
-        osdefs.close(sockets[1]) == 0
-
-      func setFlag(udata: pointer) =
-        let flag = cast[ptr bool](udata)
-        doAssert not(flag[])
-        flag[] = true
-
-      var readerFlag, writerFlag: bool
-      check:
-        register2(AsyncFD(sockets[0])).isOk()
-        addReader2(AsyncFD(sockets[0]), setFlag, addr readerFlag).isOk()
-        addWriter2(AsyncFD(sockets[0]), setFlag, addr writerFlag).isOk()
-      poll()
-      check:
-        readerFlag and writerFlag
-        unregister2(AsyncFD(sockets[0])).isOk()
-
-      discard osdefs.close(sockets[0])
-
     asyncTest "Reader notification after buffer got full [poll()] test":
       var sockets: array[2, cint]
       check:

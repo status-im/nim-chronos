@@ -597,15 +597,8 @@ proc selectInto2*[T](s: Selector[T], timeout: int,
   var k = 0
   for i in 0 ..< eventsCount:
     let rkey = s.prepareKey(s.queueEvents[i]).valueOr: continue
-    # Combine all events per fd to match other ioselects backends
-    block merge:
-      for j in 0 ..< k:
-        if readyKeys[j].fd == rkey.fd:
-          readyKeys[j].events.incl(rkey.events)
-          break merge
-
-      readyKeys[k] = rkey
-      inc(k)
+    readyKeys[k] = rkey
+    inc(k)
 
   ok(k)
 
