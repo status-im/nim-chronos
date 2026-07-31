@@ -30,14 +30,14 @@ suite "Token Bucket":
       bucket.tryConsume(100, fullTime) == false
 
   test "Async test":
-    var bucket = TokenBucket.new(1000, 1000.milliseconds)
+    let start = Moment.now()
+    var bucket = TokenBucket.new(1000, 1000.milliseconds, startTime = start)
     check: bucket.tryConsume(1000) == true
 
     var toWait = newSeq[Future[void]]()
     for _ in 0..<15:
       toWait.add(bucket.consume(100))
 
-    let start = Moment.now()
     waitFor(allFutures(toWait))
     let duration = Moment.now() - start
 
@@ -226,7 +226,7 @@ suite "Token Bucket":
     cap = bucket.getAvailableCapacity(t3)
     check cap == 10
 
-    check bucket.tryConsume(2, t3) == true  
+    check bucket.tryConsume(2, t3) == true
     cap = bucket.getAvailableCapacity(t3)
     check cap == 8
 

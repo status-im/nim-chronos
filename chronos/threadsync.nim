@@ -15,7 +15,7 @@ export results
 
 {.push raises: [].}
 
-const hasThreadSupport* = compileOption("threads")
+const hasThreadSupport = compileOption("threads")
 when not(hasThreadSupport):
   {.fatal: "Compile this program with threads enabled!".}
 
