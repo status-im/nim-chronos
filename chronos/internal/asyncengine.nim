@@ -52,8 +52,8 @@ when hasThreadSupport:
       ## A callback function without a closure environment that is suitable for
       ## passing between threads
 
-    ThreadCallbackNode* = object of MpscNode
-      callback*: ThreadCallbackFunc
+    ThreadCallbackNode = object of MpscNode
+      callback: ThreadCallbackFunc
       udata: pointer
 
     ThreadCallbackQueue = MpscQueue[ThreadCallbackNode]
@@ -74,7 +74,7 @@ type
     opened*: uint64
     closed*: uint64
 
-  PDispatcherBase = ref object of RootRef
+  DispatcherBase = object of RootRef
     timers*: HeapQueue[TimerCallback]
     callbacks*: Deque[AsyncCallback]
     idlers*: Deque[AsyncCallback]
@@ -86,6 +86,8 @@ type
     when hasThreadSupport:
       threadCallbacks: ThreadCallbackQueue
       waking: AtomicFlag
+
+  PDispatcherBase = ref DispatcherBase
 
 proc sentinelCallbackImpl(arg: pointer) {.gcsafe, noreturn.} =
   raiseAssert "Sentinel callback MUST not be scheduled"
@@ -116,6 +118,10 @@ template preparePoll(loop: PDispatcherBase) =
 template processThreadCallbacks(loop) =
   # Drain cross-thread callbacks to the local callback queue
   when hasThreadSupport:
+    # Clear the waking flag before popping items from the queue - anything
+    # added to the queue after we start draining will result in a new wakeup
+    loop.waking.clear(moRelease)
+
     while true:
       let node = loop.threadCallbacks.pop()
       if node == nil:
@@ -274,7 +280,7 @@ elif defined(windows):
     DispatcherFlag* = enum
       SignalHandlerInstalled
 
-    PDispatcher* = ref object of PDispatcherBase
+    Dispatcher = object of DispatcherBase
       ioPort: HANDLE
       handles: HashSet[AsyncFD]
       connectEx*: WSAPROC_CONNECTEX
@@ -284,6 +290,7 @@ elif defined(windows):
       getQueuedCompletionStatusEx*: LPFN_GETQUEUEDCOMPLETIONSTATUSEX
       disconnectEx*: WSAPROC_DISCONNECTEX
       flags: set[DispatcherFlag]
+    PDispatcher* = ref Dispatcher
 
     PtrCustomOverlapped* = ptr CustomOverlapped
 
@@ -661,12 +668,6 @@ elif defined(windows):
     # Moving expired timers to `loop.callbacks` and calculate timeout
     loop.processTimersGetTimeout(curTimeout)
 
-    when hasThreadSupport:
-      # Clear the waking flag before we read the I/O port to make sure that wakeup
-      # calls after we've read the notificat but before we processed the callbacks
-      # still get posted.
-      loop.waking.clear()
-
     let networkEventsCount =
       if isNil(loop.getQueuedCompletionStatusEx):
         let res = getQueuedCompletionStatus(
@@ -804,13 +805,14 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
       reader*: AsyncCallback
       writer*: AsyncCallback
 
-    PDispatcher* = ref object of PDispatcherBase
+    Dispatcher = object of DispatcherBase
       selector: Selector[SelectorData]
       when defined(linux):
         wakeupFd: cint
       else:
         wakeupFd: array[2, cint]
       keys: seq[ReadyKey]
+    PDispatcher* = ref Dispatcher
 
   proc `==`*(x, y: AsyncFD): bool {.borrow, gcsafe.}
 
@@ -1192,14 +1194,10 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
 
     when hasThreadSupport:
       if hasWakeup:
-        # Clear the wakeup flag before draining the wakeupFd
-        loop.waking.clear()
-
         # Drain the wakeup descriptor - this must be done before processing the
         # thread callbacks since otherwise we might accidentally drain a wakeup
         # for a callback we did not yet process
         loop.drainWakeupFd()
-
         loop.processThreadCallbacks()
 
     # Moving expired timers to `loop.callbacks`.
@@ -1313,7 +1311,7 @@ proc callSoon*(cbproc: CallbackFunc, udata: pointer = nil) =
   callSoon(AsyncCallback(function: cbproc, udata: udata))
 
 when hasThreadSupport:
-  type DispatcherHandle* = distinct (ptr typeof(PDispatcher()[]))
+  type DispatcherHandle* = distinct (ptr Dispatcher)
     ## Dispatcher handle suitable for cross-thread use, obtainable with
     ## `threadHandle`() - the user must take care that the dispatcher does not
     ## get released while the handle is active.
@@ -1321,7 +1319,7 @@ when hasThreadSupport:
   proc handle*(disp: PDispatcher): DispatcherHandle =
     DispatcherHandle(addr disp[])
 
-  proc wake(disp: DispatcherHandle) {.gcsafe, raises: [].} =
+  proc wake(disp: ptr Dispatcher) =
     ## Wake up the event loop associated with dispatcher ``disp`` so that it
     ## processes pending callbacks from the cross-thread MPSC queue.
     ##
@@ -1329,11 +1327,6 @@ when hasThreadSupport:
     ## It enqueues a sentinel node to the dispatcher's cross-thread queue
     ## and then signals the underlying OS mechanism (epoll/kqueue/poll/IOCP)
     ## to unblock the event loop's blocking wait.
-    let disp = distinctBase(disp)
-
-    # Signal the OS-level wait mechanism so the event loop unblocks.
-    if disp.waking.testAndSet():
-      return # There's already an in-flight wake-up call
 
     # Wakeups are non-blocking and ignore errors, ie if it's EAGAIN or similar
     # it means that the wakeup notification mechanism is triggered already and
@@ -1376,10 +1369,15 @@ when hasThreadSupport:
       node.callback = cbproc
       node.udata = udata
 
+      let disp = distinctBase(disp)
       # First push, then wake - this ensures that the callback is visible in
       # the list by the time the processing loop gets to it.
-      distinctBase(disp).threadCallbacks.push(node)
-      disp.wake()
+      disp.threadCallbacks.push(node)
+
+      # Since we draing the mpsc queue on wake-up, we only need one wakeup
+      # notification per batch of queue writes
+      if not disp.waking.testAndSet(moAcquireRelease):
+        disp.wake()
 
 proc callIdle*(acb: AsyncCallback) =
   ## Schedule ``cbproc`` to be called when there no pending network events
