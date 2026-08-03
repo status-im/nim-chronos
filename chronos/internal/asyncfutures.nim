@@ -185,11 +185,12 @@ proc finish(fut: FutureBase, state: FutureState, loc: ptr SrcLoc) =
   if not(isNil(fut.internalCallback.function)):
     callSoon(move(fut.internalCallback))
 
-  for item in fut.internalCallbacks.mitems():
+  # In case a callback tries to modify the callback list (via removeCallback)
+  var callbacks = move(fut.internalCallbacks)
+  for item in callbacks.mitems():
     if not(isNil(item.function)):
       callSoon(item)
     item = default(AsyncCallback) # release memory as early as possible
-  fut.internalCallbacks = default(seq[AsyncCallback]) # release seq as well
 
   when chronosFutureTracking:
     scheduleDestructor(fut)
@@ -725,11 +726,15 @@ template orImpl*[T, Y](fut1: Future[T], fut2: Future[Y]): untyped =
     var cbc {.cursor.}: proc(udata: pointer) {.gcsafe, raises: [].}
     proc cb(udata: pointer) {.gcsafe, raises: [].} =
       if not(retFuture.finished()):
-        var fut = cast[FutureBase](udata)
+        let fut = cast[FutureBase](udata)
+        var cbc2 {.cursor.} = cbc # avoid cycles for orc/arc
+        cbc = nil # clear for refc
         if cast[pointer](fut1) == udata:
-          fut2.removeCallback(cbc)
+          fut2.removeCallback(cbc2)
         else:
-          fut1.removeCallback(cbc)
+          fut1.removeCallback(cbc2)
+        cbc2 = nil # clear for refc
+
         if fut.failed():
           retFuture.fail(fut.error, warn = false)
         else:
@@ -737,10 +742,13 @@ template orImpl*[T, Y](fut1: Future[T], fut2: Future[Y]): untyped =
 
     proc cancellation(udata: pointer) =
       # On cancel we remove all our callbacks only.
+      var cbc2 {.cursor.} = cbc # avoid cycles for orc/arc
+      cbc = nil # clear for refc
       if not(fut1.finished()):
-        fut1.removeCallback(cbc)
+        fut1.removeCallback(cbc2)
       if not(fut2.finished()):
-        fut2.removeCallback(cbc)
+        fut2.removeCallback(cbc2)
+      cbc2 = nil # clear for refc
 
     cbc = cb
 
@@ -1076,17 +1084,24 @@ template oneImpl: untyped =
   proc cb(udata: pointer) {.gcsafe, raises: [].} =
     if not(retFuture.finished()):
       var nfuts = move nfuts # Reset the closure environment eagerly
+      # TODO https://github.com/nim-lang/Nim/issues/25963
+      # TODO https://github.com/nim-lang/Nim/issues/26010
+      var cbc2 {.cursor.} = cbc # avoid cycles for orc/arc
+      cbc = nil # clear for refc
       for fut in nfuts.mitems():
         if cast[pointer](fut) == udata:
           retFuture.complete(move(fut))
         else:
-          fut.removeCallback(cbc)
+          fut.removeCallback(cbc2)
 
   proc cancellation(udata: pointer) =
     # On cancel we remove all our callbacks only.
     let nfuts = move nfuts # Reset the closure environment eagerly
+    var cbc2 {.cursor.} = cbc # avoid cycles for orc/arc
+    cbc = nil # clear for refc
     for fut in nfuts:
-      fut.removeCallback(cbc)
+      fut.removeCallback(cbc2)
+    cbc2 = nil # clear for refc
 
   cbc = cb
 

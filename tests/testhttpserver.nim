@@ -304,6 +304,26 @@ suite "HTTP server testing suite":
   asyncTest "Too big request body test (post()/multipart/chunked encoding)":
     await testTooBigBodyChunked(PostMultipartTest)
 
+  asyncTest "Both Content-Length and Transfer-Encoding preset":
+    proc process(r: RequestFence): Future[HttpResponseRef] {.
+          async: (raises: [CancelledError]).} =
+      defaultResponse()
+
+    let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
+    let server = HttpServerRef.new(initTAddress("127.0.0.1:0"), process,
+                                socketFlags = socketFlags).expect("server")
+
+    server.start()
+    let address = server.instance.localAddress()
+
+    let request = "GET / HTTP/1.1\r\nContent-Length: 20\r\nTransfer-Encoding: chunked\r\n\r\n"
+    let data = await httpClient(address, request)
+    await server.stop()
+    await server.closeWait()
+    checkpoint data
+    check:
+      data.startsWith("HTTP/1.1 400")
+
   test "Query arguments test":
     proc testQuery(): Future[bool] {.async.} =
       var serverRes = false
@@ -852,108 +872,191 @@ suite "HTTP server testing suite":
       table1.count("header2") == 1
       table1.getLastString("header2") == "value4"
 
-  test "getTransferEncoding() test":
-    var encodings = [
-      "chunked", "compress", "deflate", "gzip", "identity", "x-gzip"
+  test "getTransferEncodings() test":
+    # https://www.rfc-editor.org/info/rfc9110/#section-8.4
+    # https://www.iana.org/assignments/http-parameters/http-parameters.xhtml#transfer-coding
+    # Case-insensitive; whitespace around each item is stripped
+    # Multiple header values are combined; comma-separated values are split
+    # Empty input => []
+    # Unknown or empty (from bad separators) => error
+
+    const
+      Gz = TransferEncodingFlags.Gzip
+      Ch = TransferEncodingFlags.Chunked
+      Cc = TransferEncodingFlags.Compress
+      Df = TransferEncodingFlags.Deflate
+
+    # (input_headers, expected_ok, expected_value_or_error_msg)
+    const transferCases = [
+      # -- empty / missing --
+      (input: default(seq[string]), ok: true, value: default(seq[TransferEncodingFlags])),
+
+      # -- single header, single encoding --
+      (input: @["gzip"], ok: true, value: @[Gz]),
+      (input: @["chunked"], ok: true, value: @[Ch]),
+      (input: @["compress"], ok: true, value: @[Cc]),
+      (input: @["deflate"], ok: true, value: @[Df]),
+      (input: @["identity"], ok: true, value: @[]),
+
+      # -- single header, chunked last (RFC 9112 §6.1) --
+      (input: @["gzip, chunked"], ok: true, value: @[Gz, Ch]),
+      (input: @["gzip,chunked"], ok: true, value: @[Gz, Ch]),
+      (input: @["gzip , chunked"], ok: true, value: @[Gz, Ch]),
+      (input: @["identity, chunked"], ok: true, value: @[Ch]),
+
+      # -- chunked MUST be the final encoding (RFC 9112 §6.1) --
+      (input: @["identity, chunked, gzip"], ok: false, value: @[]),
+      (input: @["chunked, gzip"], ok: false, value: @[]),
+      (input: @["gzip, chunked, gzip"], ok: false, value: @[]),
+
+      # -- multiple headers, chunked last --
+      (input: @["gzip", "chunked"], ok: true, value: @[Gz, Ch]),
+
+      # -- chunked not last across multiple headers => error --
+      (input: @["gzip, chunked", "compress"], ok: false, value: @[]),
+
+      # -- multiple known encodings, chunked last --
+      (
+        input: @["identity, chunked, compress, deflate, gzip"],
+        ok: false,  # chunked not last
+        value: @[],
+      ),
+      (
+        input: @["gzip, compress, deflate, chunked"],
+        ok: true,
+        value: @[Gz, Cc, Df, Ch],
+      ),
+
+      # -- x-compress / x-gzip aliases --
+      (input: @["x-gzip"], ok: true, value: @[Gz]),
+      (input: @["x-compress"], ok: true, value: @[Cc]),
+      (input: @["gzip, x-gzip"], ok: true, value: @[Gz, Gz]),
+
+      # -- case insensitive --
+      (input: @["GZIP"], ok: true, value: @[Gz]),
+      (input: @["Gzip"], ok: true, value: @[Gz]),
+      (input: @["cHuNkEd"], ok: true, value: @[Ch]),
+      (input: @["COMPRESS, DEFLATE"], ok: true, value: @[Cc, Df]),
+
+      # -- whitespace only items are empty => error --
+      # (trailing comma => split produces empty item)
+      (input: @["gzip,"], ok: false, value: @[]),
+      (input: @[",gzip"], ok: false, value: @[]),
+      (input: @["gzip,,chunked"], ok: false, value: @[]),
+      (input: @[" "], ok: false, value: @[]),
+      (input: @["  ,  gzip  "], ok: false, value: @[]),
+      (input: @[""], ok: false, value: @[]),
+
+      # -- unknown transfer-encoding => error --
+      (input: @["br"], ok: false, value: @[]), # br is content-only
+      (input: @["zstd"], ok: false, value: @[]),
+      (input: @["gzip, unknown"], ok: false, value: @[]),
+
+      # -- duplicate chunked (RFC 9112 §6.1: "chunking an already chunked
+      #    message is not allowed") => error --
+      (input: @["chunked, chunked"], ok: false, value: @[]),
+      (input: @["chunked", "chunked"], ok: false, value: @[]),
+      (input: @["gzip, chunked, gzip, chunked"], ok: false, value: @[]),
+      (input: @["chunked"], ok: true, value: @[Ch]),  # single chunked is fine
     ]
 
-    const FlagsVectors = [
-      {
-        TransferEncodingFlags.Identity, TransferEncodingFlags.Chunked,
-        TransferEncodingFlags.Compress, TransferEncodingFlags.Deflate,
-        TransferEncodingFlags.Gzip
-      },
-      {
-        TransferEncodingFlags.Identity, TransferEncodingFlags.Compress,
-        TransferEncodingFlags.Deflate, TransferEncodingFlags.Gzip
-      },
-      {
-        TransferEncodingFlags.Identity, TransferEncodingFlags.Deflate,
-        TransferEncodingFlags.Gzip
-      },
-      { TransferEncodingFlags.Identity, TransferEncodingFlags.Gzip },
-      { TransferEncodingFlags.Identity, TransferEncodingFlags.Gzip },
-      { TransferEncodingFlags.Gzip },
-      { TransferEncodingFlags.Identity }
+    for tc in transferCases:
+      let res = getTransferEncodings(tc.input)
+      if tc.ok:
+        checkpoint "transfer: " & tc.input.join(" || ")
+        check res.isOk()
+        check res.get() == tc.value
+        if res.get().len > 0:
+          check {res.get()[^1]} == getTransferEncoding(tc.input)[]
+      else:
+        checkpoint "transfer (expect fail): " & tc.input.join(" || ")
+        check res.isErr()
+
+  test "getContentEncodings() test":
+    # https://www.rfc-editor.org/info/rfc9110/#section-8.4
+    # https://www.iana.org/assignments/http-parameters/http-parameters.xhtml#content-coding
+    # Note: "chunked" is a transfer-coding, NOT a content-coding => error
+    # Case-insensitive; whitespace around each item is stripped
+    # Multiple header values are combined; comma-separated values are split
+    # Empty input => []
+    # Unknown or empty (from bad separators) => error
+
+    const
+      Gz  = ContentEncodingFlags.Gzip
+      Br  = ContentEncodingFlags.Br
+      Cc  = ContentEncodingFlags.Compress
+      Df  = ContentEncodingFlags.Deflate
+
+    const contentCases = [
+      # -- empty / missing --
+      (input: default(seq[string]), ok: true, value: default(seq[ContentEncodingFlags])),
+
+      # -- single header, single encoding --
+      (input: @["gzip"], ok: true, value: @[Gz]),
+      (input: @["br"], ok: true, value: @[Br]),
+      (input: @["compress"], ok: true, value: @[Cc]),
+      (input: @["deflate"], ok: true, value: @[Df]),
+      (input: @["identity"], ok: true, value: @[]),
+
+      # -- single header, comma-separated --
+      (input: @["gzip, br"], ok: true, value: @[Gz, Br]),
+      (input: @["gzip,br"], ok: true, value: @[Gz, Br]),
+      (input: @["gzip , br"], ok: true, value: @[Gz, Br]),
+      (input: @["identity, br, gzip"], ok: true, value: @[Br, Gz]),
+
+      # -- multiple headers, no commas --
+      (input: @["gzip", "br"], ok: true, value: @[Gz, Br]),
+
+      # -- multiple headers with comma-separated values --
+      (input: @["gzip, br", "deflate"], ok: true, value: @[Gz, Br, Df]),
+
+      # -- all known values in one shot --
+      (
+        input: @["identity, br, compress, deflate, gzip"],
+        ok: true,
+        value: @[Br, Cc, Df, Gz],
+      ),
+
+      # -- x-compress / x-gzip aliases --
+      (input: @["x-gzip"], ok: true, value: @[Gz]),
+      (input: @["x-compress"], ok: true, value: @[Cc]),
+      (input: @["gzip, x-gzip"], ok: true, value: @[Gz, Gz]),
+
+      # -- case insensitive --
+      (input: @["GZIP"], ok: true, value: @[Gz]),
+      (input: @["Br"], ok: true, value: @[Br]),
+      (input: @["bR"], ok: true, value: @[Br]),
+      (input: @["COMPRESS, DEFLATE"], ok: true, value: @[Cc, Df]),
+
+      # -- whitespace only items are empty => error --
+      (input: @["gzip,"], ok: false, value: @[]),
+      (input: @[",gzip"], ok: false, value: @[]),
+      (input: @["gzip,,br"], ok: false, value: @[]),
+      (input: @[" "], ok: false, value: @[]),
+      (input: @["  ,  gzip  "], ok: false, value: @[]),
+      (input: @[""], ok: false, value: @[]),
+
+      # -- chunked is a transfer-coding, NOT content-coding => error --
+      (input: @["chunked"], ok: false, value: @[]),
+      (input: @["gzip, chunked"], ok: false, value: @[]),
+
+      # -- unknown content-encoding => error --
+      (input: @["zstd"], ok: false, value: @[]),
+      (input: @["gzip, unknown"], ok: false, value: @[]),
     ]
 
-    for i in 0 ..< 7:
-      var checkEncodings = @encodings
-      if i - 1 >= 0:
-        for k in 0 .. (i - 1):
-          checkEncodings.delete(0)
+    for tc in contentCases:
+      let res = getContentEncodings(tc.input)
+      if tc.ok:
+        checkpoint "content: " & tc.input.join(" || ")
+        check res.isOk()
+        check res.get() == tc.value
+        if res.get.len() > 0:
+          check {res.get()[^1]} == getContentEncoding(tc.input)[]
 
-      while nextPermutation(checkEncodings):
-        let res1 = getTransferEncoding([checkEncodings.join(", ")])
-        let res2 = getTransferEncoding([checkEncodings.join(",")])
-        let res3 = getTransferEncoding([checkEncodings.join("")])
-        let res4 = getTransferEncoding([checkEncodings.join(" ")])
-        let res5 = getTransferEncoding([checkEncodings.join(" , ")])
-        check:
-          res1.isOk()
-          res1.get() == FlagsVectors[i]
-          res2.isOk()
-          res2.get() == FlagsVectors[i]
-          res3.isErr()
-          res4.isErr()
-          res5.isOk()
-          res5.get() == FlagsVectors[i]
-
-    check:
-      getTransferEncoding([]).tryGet() == { TransferEncodingFlags.Identity }
-      getTransferEncoding(["", ""]).tryGet() ==
-        { TransferEncodingFlags.Identity }
-
-  test "getContentEncoding() test":
-    var encodings = [
-      "br", "compress", "deflate", "gzip", "identity", "x-gzip"
-    ]
-
-    const FlagsVectors = [
-      {
-        ContentEncodingFlags.Identity, ContentEncodingFlags.Br,
-        ContentEncodingFlags.Compress, ContentEncodingFlags.Deflate,
-        ContentEncodingFlags.Gzip
-      },
-      {
-        ContentEncodingFlags.Identity, ContentEncodingFlags.Compress,
-        ContentEncodingFlags.Deflate, ContentEncodingFlags.Gzip
-      },
-      {
-        ContentEncodingFlags.Identity, ContentEncodingFlags.Deflate,
-        ContentEncodingFlags.Gzip
-      },
-      { ContentEncodingFlags.Identity, ContentEncodingFlags.Gzip },
-      { ContentEncodingFlags.Identity, ContentEncodingFlags.Gzip },
-      { ContentEncodingFlags.Gzip },
-      { ContentEncodingFlags.Identity }
-    ]
-
-    for i in 0 ..< 7:
-      var checkEncodings = @encodings
-      if i - 1 >= 0:
-        for k in 0 .. (i - 1):
-          checkEncodings.delete(0)
-
-      while nextPermutation(checkEncodings):
-        let res1 = getContentEncoding([checkEncodings.join(", ")])
-        let res2 = getContentEncoding([checkEncodings.join(",")])
-        let res3 = getContentEncoding([checkEncodings.join("")])
-        let res4 = getContentEncoding([checkEncodings.join(" ")])
-        let res5 = getContentEncoding([checkEncodings.join(" , ")])
-        check:
-          res1.isOk()
-          res1.get() == FlagsVectors[i]
-          res2.isOk()
-          res2.get() == FlagsVectors[i]
-          res3.isErr()
-          res4.isErr()
-          res5.isOk()
-          res5.get() == FlagsVectors[i]
-
-    check:
-      getContentEncoding([]).tryGet() == { ContentEncodingFlags.Identity }
-      getContentEncoding(["", ""]).tryGet() == { ContentEncodingFlags.Identity }
+      else:
+        checkpoint "content (expect fail): " & tc.input.join(" || ")
+        check res.isErr()
 
   test "queryParams() test":
     const Vectors = [

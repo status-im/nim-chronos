@@ -1,7 +1,8 @@
 mode = ScriptMode.Verbose
 
 packageName   = "chronos"
-version       = "4.2.2"
+# keep in sync: chronos/apps/http/httpagent.nim
+version       = "4.4.0"
 author        = "Status Research & Development GmbH"
 description   = "Networking framework with async/await support"
 license       = "MIT or Apache License 2.0"
@@ -31,7 +32,7 @@ let testArguments =
     [
       "-d:debug -d:chronosDebug -d:useSysAssert -d:useGcAssert",
       "-d:debug -d:chronosDebug -d:chronosEventEngine=poll -d:useSysAssert -d:useGcAssert",
-      "-d:release",
+      "-d:release -d:chronosPreviewV5",
     ]
 
 let cfg =

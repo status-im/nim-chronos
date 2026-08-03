@@ -22,6 +22,8 @@ type
     Create
     Finish
 
+  # TODO forbid nested poll
+  # TODO https://github.com/nim-lang/Nim/issues/25976
   CallbackFunc* = proc (arg: pointer) {.gcsafe, raises: [].}
 
   # Internal type, not part of API
