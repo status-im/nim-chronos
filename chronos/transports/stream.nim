@@ -1470,7 +1470,7 @@ else:
 
     # During close, we inject an artifical reader event to clear the pending
     # reader - the socket gets unregistered from further events in `closeSocket`
-    if (transp.state * {TransportState.Closed, ReadPaused}) == {}:
+    if TransportState.Closed notin transp.state:
       let progress = transp.readIntoBuffer()
       doAssert progress, "Expecting progress since we're being notified"
 
