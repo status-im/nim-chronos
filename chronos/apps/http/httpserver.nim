@@ -466,9 +466,7 @@ proc updateRequest*(request: HttpRequestRef, scheme: string, meth: HttpMethod,
 
   # Conversion of request query string to HttpTable.
   request.query =
-    if len(request.uri.query) == 0:
-      HttpTable.init()
-    else:
+    block:
       let queryFlags =
         if QueryCommaSeparatedArray in request.connection.server.flags:
           {QueryParamsFlag.CommaSeparatedArray}
@@ -811,7 +809,7 @@ var
   gCachedDate {.threadvar.}: string
   gCachedDateMoment {.threadvar.}: Moment
 
-proc cachedHttpDate(): string =
+proc cachedHttpDate(): lent string =
   ## httpDate() refreshed at most once per second per thread. Each chronos
   ## event-loop thread has its own cache (threadvar), so no locking is
   ## needed. Gated on the monotonic clock to avoid a std/times dependency.
