@@ -180,7 +180,7 @@ proc finish(fut: FutureBase, state: FutureState, loc: ptr SrcLoc) =
   fut.checkFinished(loc)
 
   fut.internalState = state
-  fut.internalCancelcb = nil # release cancellation callback memory
+  fut.internalCancelcb.reset() # release cancellation callback memory
 
   if not(isNil(fut.internalCallback.function)):
     callSoon(move(fut.internalCallback))
@@ -189,8 +189,9 @@ proc finish(fut: FutureBase, state: FutureState, loc: ptr SrcLoc) =
   var callbacks = move(fut.internalCallbacks)
   for item in callbacks.mitems():
     if not(isNil(item.function)):
-      callSoon(item)
-    item = default(AsyncCallback) # release memory as early as possible
+      callSoon(move(item))
+    else:
+      item.reset() # release memory as early as possible
 
   when chronosFutureTracking:
     scheduleDestructor(fut)
@@ -256,6 +257,12 @@ proc cancelAndSchedule(future: FutureBase, loc: ptr SrcLoc) =
 template cancelAndSchedule*(future: FutureBase) =
   cancelAndSchedule(future, getSrcLocation())
 
+template fireCancelCallback(future: FutureBase) =
+  # Fire with the context captured when `cancelCallback=` was set, not
+  # whatever context happens to be ambient when `tryCancel` runs.
+  withRestoredContext(future.internalCancelcb.context):
+    (future.internalCancelcb.function)(cast[pointer](future))
+
 proc tryCancel(future: FutureBase, loc: ptr SrcLoc): bool =
   ## Perform an attempt to cancel ``future``.
   ##
@@ -280,13 +287,13 @@ proc tryCancel(future: FutureBase, loc: ptr SrcLoc): bool =
     # If you hit this assertion, you should have used the `CancelledError`
     # mechanism and/or use a regular `addCallback`
     when chronosStrictFutureAccess:
-      doAssert isNil(future.internalCancelcb),
+      doAssert isNil(future.internalCancelcb.function),
         "futures returned from `{.async.}` functions must not use " &
         "`cancelCallback`"
     tryCancel(future.internalChild, loc)
   else:
-    if not(isNil(future.internalCancelcb)):
-      future.internalCancelcb(cast[pointer](future))
+    if not(isNil(future.internalCancelcb.function)):
+      fireCancelCallback(future)
     if FutureFlag.OwnCancelSchedule notin future.internalFlags:
       cancelAndSchedule(future, loc)
     future.cancelled()
@@ -295,6 +302,8 @@ template tryCancel*(future: FutureBase): bool =
   tryCancel(future, getSrcLocation())
 
 proc clearCallbacks(future: FutureBase) =
+  # reset() fires =destroy on the dropped AsyncCallback(s), which
+  # releases each one's captured context. No explicit release needed.
   future.internalCallback.reset()
   future.internalCallbacks.reset()
 
@@ -306,10 +315,16 @@ proc addCallback*(future: FutureBase, cb: CallbackFunc, udata: pointer) =
   if future.finished():
     callSoon(cb, udata)
   else:
+    # `capturingCallback` captures the current contextVar bindings; the
+    # dispatcher restores them in `processCallbacks` before firing.
     if isNil(future.internalCallback.function):
-      future.internalCallback = AsyncCallback(function: cb, udata: udata)
+      # Assign via a temp: `internalCallback` is an existing heap
+      # field, not a fresh local, so direct assignment misses refc's
+      # write-barrier elision.
+      let acb = capturingCallback(cb, udata)
+      future.internalCallback = acb
     else:
-      future.internalCallbacks.add AsyncCallback(function: cb, udata: udata)
+      future.internalCallbacks.add capturingCallback(cb, udata)
 
 proc addCallback*(future: FutureBase, cb: CallbackFunc) =
   ## Adds the callbacks proc to be called when the future completes.
@@ -322,8 +337,8 @@ proc removeCallback*(future: FutureBase, cb: CallbackFunc,
   ## Remove future from list of callbacks - this operation may be slow if there
   ## are many registered callbacks!
   doAssert(not isNil(cb))
-  # Make sure to release memory associated with callback, or reference chains
-  # may be created!
+  # reset() / keepItIf trigger =destroy on the dropped AsyncCallback,
+  # which releases its captured context (if any).
   if future.internalCallback.function == cb and future.internalCallback.udata == udata:
     future.internalCallback.reset()
 
@@ -363,7 +378,11 @@ proc `cancelCallback=`*(future: FutureBase, cb: CallbackFunc) =
   when chronosStrictFutureAccess:
     doAssert not future.finished(),
       "cancellation callback must be set before finishing the future"
-  future.internalCancelcb = cb
+  # `capturingCancelCallback` captures the current contextVar bindings at
+  # registration time - the handler must observe that context, not
+  # whatever's ambient when `tryCancel` eventually invokes it.
+  let icb = capturingCancelCallback(cb)
+  future.internalCancelcb = icb
 
 {.push stackTrace: off.}
 proc futureContinue*(fut: FutureBase) {.raises: [], gcsafe.}
@@ -373,38 +392,52 @@ proc internalContinue(fut: pointer) {.raises: [], gcsafe.} =
   GC_unref(asFut)
   futureContinue(asFut)
 
+template scheduleContinuation(fut, next: FutureBase) =
+  ## Registers `internalContinue` to resume `futureContinue`'s pump over
+  ## `fut.internalClosure` once `next` completes.
+  GC_ref(fut)
+  next.addCallback(CallbackFunc(internalContinue), cast[pointer](fut))
+
 proc futureContinue*(fut: FutureBase) {.raises: [], gcsafe.} =
   # This function is responsible for calling the closure iterator generated by
   # the `{.async.}` transformation either until it has completed its iteration
   #
   # Every call to an `{.async.}` proc is redirected to call this function
   # instead with its original body captured in `fut.closure`.
-  while true:
-    # Call closure to make progress on `fut` until it reaches `yield` (inside
-    # `await` typically) or completes / fails / is cancelled
-    let next: FutureBase = fut.internalClosure(fut)
-    if fut.internalClosure.finished(): # Reached the end of the transformed proc
-      break
 
-    if next == nil:
-      raiseAssert "Async procedure (" & ($fut.location[LocationKind.Create]) &
-                  ") yielded `nil`, are you await'ing a `nil` Future?"
+  # A suspend inside a `withValue` binder is a plain `return`, not an
+  # unwind, so the binder's `finally` doesn't run - `pinContext`
+  # unconditionally saves/restores `currentAsyncContext` here on every
+  # entry and resume; there is no safe fast path to skip it.
+  {.cast(gcsafe).}:
+    pinContext:
+      while true:
+        # Call closure to make progress on `fut` until it reaches `yield` (inside
+        # `await` typically) or completes / fails / is cancelled
+        let next: FutureBase = fut.internalClosure(fut)
+        if fut.internalClosure.finished(): # Reached the end of the transformed proc
+          break
 
-    if not next.finished():
-      # We cannot make progress on `fut` until `next` has finished - schedule
-      # `fut` to continue running when that happens
-      GC_ref(fut)
-      next.addCallback(CallbackFunc(internalContinue), cast[pointer](fut))
+        if next == nil:
+          raiseAssert "Async procedure (" & ($fut.location[LocationKind.Create]) &
+                      ") yielded `nil`, are you await'ing a `nil` Future?"
 
-      # return here so that we don't remove the closure below
-      return
+        if not next.finished():
+          # We cannot make progress on `fut` until `next` has finished - schedule
+          # `fut` to continue running when that happens. `addCallback` captures
+          # the iterator's current context (set by any enclosing `withValue`),
+          # so on resume the continuation sees the right bindings.
+          scheduleContinuation(fut, next)
 
-    # Continue while the yielded future is already finished.
+          # return here so that we don't remove the closure below
+          return
 
-  # `futureContinue` will not be called any more for this future so we can
-  # clean it up
-  fut.internalClosure = nil
-  fut.internalChild = nil
+        # Continue while the yielded future is already finished.
+
+      # `futureContinue` will not be called any more for this future so we can
+      # clean it up
+      fut.internalClosure = nil
+      fut.internalChild = nil
 
 {.pop.}
 
@@ -774,14 +807,10 @@ proc `or`*[T, Y](fut1: Future[T], fut2: Future[Y]): Future[void] =
   var retFuture = newFuture[void]("chronos.or()")
   orImpl(fut1, fut2)
 
-proc cancelSoon(future: FutureBase, aftercb: CallbackFunc, udata: pointer,
-                loc: ptr SrcLoc) {.raises: [].} =
-  ## Perform cancellation ``future`` and call ``aftercb`` callback when
-  ## ``future`` become finished (completed with value, failed or cancelled).
-  ##
-  ## NOTE: Compared to the `tryCancel()` call, this procedure call guarantees
-  ## that ``future``will be finished (completed with value, failed or cancelled)
-  ## as quickly as possible.
+proc scheduleCancelRetry(future: FutureBase, loc: ptr SrcLoc) {.raises: [].} =
+  ## Initiate cancellation of ``future``, retrying delivery of the
+  ## cancellation signal once per tick until it succeeds or ``future``
+  ## becomes finished on its own.
   proc checktick(udata: pointer) {.gcsafe, raises: [].} =
     # We trying to cancel Future on more time, and if `cancel()` succeeds we
     # return early.
@@ -793,6 +822,21 @@ proc cancelSoon(future: FutureBase, aftercb: CallbackFunc, udata: pointer,
     if not(future.finished()):
       internalCallTick(checktick)
 
+  if not(tryCancel(future, loc)):
+    # Cancellation signal was not delivered, so we trying to deliver it one
+    # more time after async tick. But we need to check case, when future was
+    # finished but our completion callback is not yet invoked.
+    if not(future.finished()):
+      internalCallTick(checktick)
+
+proc cancelSoon(future: FutureBase, aftercb: CallbackFunc, udata: pointer,
+                loc: ptr SrcLoc) {.raises: [].} =
+  ## Perform cancellation ``future`` and call ``aftercb`` callback when
+  ## ``future`` become finished (completed with value, failed or cancelled).
+  ##
+  ## NOTE: Compared to the `tryCancel()` call, this procedure call guarantees
+  ## that ``future``will be finished (completed with value, failed or cancelled)
+  ## as quickly as possible.
   proc continuation(udata: pointer) {.gcsafe.} =
     # We do not use `callSoon` here because we was just scheduled from `poll()`.
     if not(isNil(aftercb)):
@@ -802,18 +846,33 @@ proc cancelSoon(future: FutureBase, aftercb: CallbackFunc, udata: pointer,
     # We could not schedule callback directly otherwise we could fall into
     # recursion problem.
     if not(isNil(aftercb)):
-      let loop = getThreadDispatcher()
-      loop.callbacks.addLast(AsyncCallback(function: aftercb, udata: udata))
+      callSoon(capturingCallback(aftercb, udata))
     return
 
   future.addCallback(continuation)
   # Initiate cancellation process.
-  if not(tryCancel(future, loc)):
-    # Cancellation signal was not delivered, so we trying to deliver it one
-    # more time after async tick. But we need to check case, when future was
-    # finished but our completion callback is not yet invoked.
-    if not(future.finished()):
-      internalCallTick(checktick)
+  scheduleCancelRetry(future, loc)
+
+proc cancelSoon(future: FutureBase, acb: AsyncCallback,
+                loc: ptr SrcLoc) {.raises: [].} =
+  ## Same as the `CallbackFunc`/`pointer` overload above, except `acb` is
+  ## scheduled or registered as-is rather than unpacked into a fresh
+  ## callback: whatever context `acb` carries (see `capturingCallback`)
+  ## is what fires, not whatever happens to be ambient at the
+  ## `cancelSoon` call site or whenever cancellation eventually
+  ## completes.
+  if future.finished():
+    if not(isNil(acb.function)):
+      callSoon(acb)
+    return
+
+  if not(isNil(acb.function)):
+    if isNil(future.internalCallback.function):
+      future.internalCallback = acb
+    else:
+      future.internalCallbacks.add acb
+
+  scheduleCancelRetry(future, loc)
 
 template cancelSoon*(fut: FutureBase, cb: CallbackFunc, udata: pointer) =
   cancelSoon(fut, cb, udata, getSrcLocation())
@@ -822,7 +881,7 @@ template cancelSoon*(fut: FutureBase, cb: CallbackFunc) =
   cancelSoon(fut, cb, nil, getSrcLocation())
 
 template cancelSoon*(fut: FutureBase, acb: AsyncCallback) =
-  cancelSoon(fut, acb.function, acb.udata, getSrcLocation())
+  cancelSoon(fut, acb, getSrcLocation())
 
 template cancelSoon*(fut: FutureBase) =
   cancelSoon(fut, nil, nil, getSrcLocation())
@@ -1325,7 +1384,10 @@ proc idleAsync*(): Future[void] {.
     discard
 
   retFuture.cancelCallback = cancellation
-  callIdle(continuation, nil)
+  # `continuation` is an internal trampoline that doesn't read
+  # contextVars, so schedule it via `bareCallback` rather than
+  # `capturingCallback` to avoid needlessly capturing the caller's context.
+  callIdle(bareCallback(continuation, nil))
   retFuture
 
 proc withTimeout*[T](fut: Future[T], timeout: Duration): Future[bool] {.

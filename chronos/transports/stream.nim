@@ -13,7 +13,22 @@ import std/deques
 import stew/[ptrops, shims/sequninit]
 import results
 import ".."/[asyncloop, config, handles, bipbuffer, osdefs, osutils, oserrno]
+import ../futures except capturingCallback, bareCallback, contextCallback,
+  capturingCancelCallback, currentAsyncContext, context, withRestoredContext,
+  pinContext, captureContextInto
+  # `captureContextInto` is excluded here too: every call site in this
+  # file resolves to the Windows-only `captureContextInto(var
+  # CompletionData)` overload, reached instead through the direct
+  # `asyncengine` import below.
 import ./[common, ipnet]
+
+when defined(windows):
+  import ../internal/asyncengine
+    # Direct import, bypassing `asyncloop.nim`'s filtered re-export, for
+    # the `captureContextInto(var CompletionData)` overload only — the
+    # accept-loop registration sites below need it; `asyncloop.nim`
+    # deliberately excludes it from its own export surface so it can't
+    # widen the public surface through `import chronos`.
 
 export results
 
@@ -1244,6 +1259,13 @@ when defined(windows):
 
       server.aovl.data = CompletionData(cb: continuationSocket,
                                         udata: cast[pointer](server))
+      # Registration-time capture: this explicit `accept()` call is the
+      # registration site (mutually exclusive with `start()`'s handler-
+      # driven accept loop above - see the `doAssert` at the top of this
+      # proc), so the continuation should observe whatever context is
+      # ambient right here, not whatever's ambient whenever the OS
+      # happens to complete the `AcceptEx`.
+      captureContextInto(server.aovl.data)
       server.apending = true
       let res = loop.acceptEx(SocketHandle(server.sock),
                               SocketHandle(server.asock),
@@ -1286,6 +1308,8 @@ when defined(windows):
 
       server.aovl.data = CompletionData(cb: continuationPipe,
                                         udata: cast[pointer](server))
+      # See the matching comment on the TCP branch above.
+      captureContextInto(server.aovl.data)
       server.apending = true
       let res = connectNamedPipe(HANDLE(server.sock),
                                  cast[POVERLAPPED](addr server.aovl))
@@ -1841,6 +1865,12 @@ proc start2*(server: StreamServer): Result[void, OSErrorCode] =
   doAssert(not(isNil(server.function)), "You should not start the server " &
            "unless you have processing callback configured!")
   if server.status == ServerStatus.Starting:
+    when defined(windows):
+      # Registration-time capture for the accept loop's persistent
+      # `CompletionData`, mirroring the POSIX path's capture inside
+      # `resumeAccept()`'s `addReader2` call - the registrant's context
+      # is the one bound when `start()` runs, not when the server was built.
+      captureContextInto(server.aovl.data)
     ? server.resumeAccept()
     server.status = ServerStatus.Running
   ok()
