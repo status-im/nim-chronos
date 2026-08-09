@@ -19,10 +19,15 @@ import std/[atomics, deques, heapqueue, tables, typetraits]
 import results
 import ../[config, effects, futures, osdefs, oserrno, osutils, timer]
 
-import ./[asyncmacro, errors]
+import ./[asyncmacro, callbackqueue, errors]
 
 export Port
 export deques, effects, errors, futures, timer, results
+# `CallbackQueue` itself stays unnameable outside this module (mirroring
+# `./mpsc`'s `MpscQueue`), but `asyncfutures.nim`'s `cancelSoon` still
+# reaches `loop.callbacks.addLast(...)` directly, so `addLast` alone
+# needs to be in scope there via this re-export.
+export callbackqueue.addLast
 
 export
   asyncmacro.async, asyncmacro.await, asyncmacro.awaitne
@@ -76,9 +81,15 @@ type
 
   DispatcherBase = object of RootRef
     timers*: HeapQueue[TimerCallback]
-    callbacks*: Deque[AsyncCallback]
-    idlers*: Deque[AsyncCallback]
-    ticks*: Deque[AsyncCallback]
+    # `CallbackQueue` (./callbackqueue), not `std/deques`: avoids the
+    # refc hidden-return-slot cost `std/deques.popFirst` pays on every
+    # dequeue. `callbacks` stays public - `asyncfutures.nim` reaches it
+    # directly (`loop.callbacks.addLast(...)` in `cancelSoon`) and isn't
+    # touched in this change; `idlers`/`ticks` have no callers outside
+    # this module and are privatized.
+    callbacks*: CallbackQueue[AsyncCallback]
+    idlers: CallbackQueue[AsyncCallback]
+    ticks: CallbackQueue[AsyncCallback]
     trackers*: Table[string, TrackerBase]
     counters*: Table[string, TrackerCounter]
     inEventLoop: bool
@@ -163,7 +174,8 @@ template processTimersGetTimeout(loop, timeout: untyped) =
     if curTime < lastFinish:
       break
 
-    loop.callbacks.addLast(loop.timers.pop().function)
+    let callable = loop.timers.pop().function
+    loop.callbacks.addLast(callable)
 
   if loop.timers.len > 0:
     timeout = (lastFinish - curTime).getAsyncTimestamp()
@@ -187,15 +199,18 @@ template processTimers(loop: untyped) =
 
     if curTime < loop.timers[0].finishAt:
       break
-    loop.callbacks.addLast(loop.timers.pop().function)
+    let callable = loop.timers.pop().function
+    loop.callbacks.addLast(callable)
 
 template processIdlers(loop: untyped) =
   if len(loop.idlers) > 0:
-    loop.callbacks.addLast(loop.idlers.popFirst())
+    let callable = loop.idlers.popFirst()
+    loop.callbacks.addLast(callable)
 
 template processTicks(loop: untyped) =
   while len(loop.ticks) > 0:
-    loop.callbacks.addLast(loop.ticks.popFirst())
+    let callable = loop.ticks.popFirst()
+    loop.callbacks.addLast(callable)
 
 template processCallbacks(loop: untyped) =
   when chronosStrictReentrancy:
@@ -391,9 +406,9 @@ elif defined(windows):
       ioPort: port,
       handles: initHashSet[AsyncFD](),
       timers: initHeapQueue[TimerCallback](),
-      callbacks: initDeque[AsyncCallback](64),
-      idlers: initDeque[AsyncCallback](),
-      ticks: initDeque[AsyncCallback](),
+      callbacks: initCallbackQueue[AsyncCallback](64),
+      idlers: initCallbackQueue[AsyncCallback](),
+      ticks: initCallbackQueue[AsyncCallback](),
       trackers: initTable[string, TrackerBase](),
       counters: initTable[string, TrackerCounter](),
     )
@@ -748,7 +763,7 @@ elif defined(windows):
 
     when not chronosStrictReentrancy:
       # All callbacks done, skip `processCallbacks` at start.
-      loop.callbacks.addFirst(SentinelCallback)
+      loop.callbacks.prependNoGrow(SentinelCallback)
 
   proc closeSocket*(fd: AsyncFD, aftercb: CallbackFunc = nil) =
     ## Closes a socket and ensures that it is unregistered.
@@ -830,8 +845,10 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     var res = PDispatcher(
       selector: selector,
       timers: initHeapQueue[TimerCallback](),
-      callbacks: initDeque[AsyncCallback](chronosInitialSize),
-      idlers: initDeque[AsyncCallback](),
+      callbacks: initCallbackQueue[AsyncCallback](chronosInitialSize),
+      idlers: initCallbackQueue[AsyncCallback](),
+      # `ticks` is deliberately left at its zero value - `CallbackQueue`'s
+      # zero value is already a valid, empty queue that grows lazily.
       keys: newSeq[ReadyKey](chronosInitialSize),
       trackers: initTable[string, TrackerBase](),
       counters: initTable[string, TrackerCounter](),
@@ -1222,7 +1239,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
 
     when not chronosStrictReentrancy:
       # All callbacks done, skip `processCallbacks` at start.
-      loop.callbacks.addFirst(SentinelCallback)
+      loop.callbacks.prependNoGrow(SentinelCallback)
 
 else:
   proc initAPI() = discard
