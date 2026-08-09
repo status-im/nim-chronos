@@ -86,8 +86,19 @@ task test, "Run all tests":
   for args in testArguments:
     # First run tests with `refc` memory manager.
     run args & " --mm:refc", "tests/testall"
+    # testcontextvarsstandalone is its own step, not part of testall: it
+    # covers the contextvars suites that cannot share testall's binary
+    # (testcontextvarsleakguard deliberately lets an AssertionDefect
+    # escape poll() under chronosDebug; testcontextvarslock's chronosDebug
+    # construction lock is one-way for the process's lifetime). The
+    # `orchestrate` argument runs each suite in its own subprocess, so
+    # isolation holds by construction rather than by import order.
+    build args & " --mm:refc", "tests/testcontextvarsstandalone"
+    exec "build/testcontextvarsstandalone orchestrate"
     if (NimMajor, NimMinor) >= (2, 2): # ORC on 2.0 is too broken to investigate
       run args & " --mm:orc", "tests/testall"
+      build args & " --mm:orc", "tests/testcontextvarsstandalone"
+      exec "build/testcontextvarsstandalone orchestrate"
 
   # Make sure benchmarks compile. `--threads:on` explicitly: Nim 1.6
   # does not default it on, and bench_bulk_tcp.nim imports
