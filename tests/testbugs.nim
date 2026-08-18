@@ -105,13 +105,6 @@ suite "Asynchronous issues test suite":
 
     result = r1 and r2
 
-  proc createBigMessage(size: int): seq[byte] =
-    var message = "MESSAGE"
-    var res = newSeq[byte](size)
-    for i in 0 ..< len(result):
-      res[i] = byte(message[i mod len(message)])
-    res
-
   proc testOrDeadlock(): Future[bool] {.async.} =
     proc f(): Future[void] {.async.} =
       await sleepAsync(2.seconds) or sleepAsync(1.seconds)
