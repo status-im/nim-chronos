@@ -1472,25 +1472,24 @@ else:
     # reader - the socket gets unregistered from further events in `closeSocket`
     if {TransportState.Closed, ReadPaused} * transp.state == {}:
       let progress = transp.readIntoBuffer()
-      doAssert progress, "Expecting progress since we're being notified"
+      if progress:
+        # The reader callback mechanism is level-triggered meaning that another
+        # callback will happen automatically unless we remove ourselves from the
+        # selector.
+        if (transp.state * {ReadEof, ReadError}) != {} or
+            (transp.buffer.len() > 0 and transp.buffer.availSpace() == 0) or
+            transp.buffer.len() == 0:
+          # Disable further read events if:
+          # * there's an error (no more reads possible)
+          # * we're using the buffer and it is full (must consume buffer first!)
+          # * we're using direct reads (direct reads will continue in readLoop)
+          transp.state.incl(ReadPaused)
 
-      # The reader callback mechanism is level-triggered meaning that another
-      # callback will happen automatically unless we remove ourselves from the
-      # selector.
-      if (transp.state * {ReadEof, ReadError}) != {} or
-          (transp.buffer.len() > 0 and transp.buffer.availSpace() == 0) or
-          transp.buffer.len() == 0:
-        # Disable further read events if:
-        # * there's an error (no more reads possible)
-        # * we're using the buffer and it is full (must consume buffer first!)
-        # * we're using direct reads (direct reads will continue in readLoop)
-        transp.state.incl(ReadPaused)
-
-        removeReader2(transp.fd).isOkOr:
-          # This should never happen but if it does, don't overwrite existing
-          # error
-          if ReadError notin transp.state:
-            transp.setReadError(error)
+          removeReader2(transp.fd).isOkOr:
+            # This should never happen but if it does, don't overwrite existing
+            # error
+            if ReadError notin transp.state:
+              transp.setReadError(error)
 
     transp.completeReader()
 
