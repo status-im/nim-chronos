@@ -177,7 +177,7 @@ suite "Asynchronous issues test suite":
       when chronosEventEngine != "poll":
         discard osdefs.close(sockets[1])
 
-    asyncTest "Duplicate read event [poll()] test":
+    template runDuplicateReadEventTest(numReadBytes, numWriteBytes: int) =
       var sockets: array[2, cint]
       check:
         socketpair(osdefs.AF_UNIX, osdefs.SOCK_STREAM, 0, sockets) == 0
@@ -187,32 +187,43 @@ suite "Asynchronous issues test suite":
       let transp = fromPipe(AsyncFD(sockets[0]))
 
       # Fill up the send buffer so subsequent write suspends
-      block:
-        var buf: array[65536, byte]
-        while handleEintr(osdefs.write(sockets[0], baseAddr buf, buf.len)) > 0:
-          discard
+      var buf: array[65536, byte]
+      while handleEintr(osdefs.write(sockets[0], baseAddr buf, buf.len)) > 0:
+        discard
       let writeFut = transp.write(@[123.byte])
       check not(writeFut.finished())
 
       # Register read task
-      var buf: array[2 * DefaultStreamBufferSize, byte]
-      let readFut = transp.readOnce(baseAddr buf, buf.len)
+      var readBuf = newSeq[byte](numReadBytes)
+      let readFut = transp.readOnce(baseAddr readBuf, readBuf.len)
       check not(readFut.finished())
 
       # Complete read task
-      var b = 42.byte
-      check handleEintr(osdefs.write(sockets[1], addr b, 1)) == 1
+      var writeBuf = newSeq[byte](numWriteBytes)
+      for i in 0 ..< numWriteBytes:
+        writeBuf[i] = 42
+      check handleEintr(osdefs.write(
+        sockets[1], baseAddr writeBuf, writeBuf.len)) == numWriteBytes
 
       # Complete write task (EOF)
       check osdefs.shutdown(SocketHandle(sockets[0]), SHUT_WR) == 0
 
       await sleepAsync(0.seconds)
       check:
-        (await readFut) == 1
-        buf[0] == b
+        (await readFut) == min(numReadBytes, numWriteBytes)
+        readBuf[0] == 42.byte
 
       transp.close()
       await transp.join()
       check:
         writeFut.finished()
         osdefs.close(sockets[1]) == 0
+
+    asyncTest "Duplicate read event, direct read [poll()] test":
+      runDuplicateReadEventTest(2 * DefaultStreamBufferSize, 1)
+
+    asyncTest "Duplicate read event, partial buffer [poll()] test":
+      runDuplicateReadEventTest(1, 1)
+
+    asyncTest "Duplicate read event, full buffer [poll()] test":
+      runDuplicateReadEventTest(1, DefaultStreamBufferSize)
