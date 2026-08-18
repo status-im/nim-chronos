@@ -10,7 +10,7 @@ import ../chronos
 
 when defined(posix):
   import stew/ptrops
-  import ../chronos/[config, osdefs, osutils]
+  import ../chronos/[config, osdefs, osutils], ../chronos/unittest2/asynctests
 
 {.used.}
 
@@ -176,3 +176,43 @@ suite "Asynchronous issues test suite":
       discard osdefs.close(sockets[0])
       when chronosEventEngine != "poll":
         discard osdefs.close(sockets[1])
+
+    asyncTest "Duplicate read event [poll()] test":
+      var sockets: array[2, cint]
+      check:
+        socketpair(osdefs.AF_UNIX, osdefs.SOCK_STREAM, 0, sockets) == 0
+        setDescriptorBlocking(sockets[0], false).isOk()
+        setDescriptorBlocking(sockets[1], false).isOk()
+
+      let transp = fromPipe(AsyncFD(sockets[0]))
+
+      # Fill up the send buffer so subsequent write suspends
+      block:
+        var buf: array[65536, byte]
+        while handleEintr(osdefs.write(sockets[0], baseAddr buf, buf.len)) > 0:
+          discard
+      let writeFut = transp.write(@[123.byte])
+      check not(writeFut.finished())
+
+      # Register read task
+      var buf: array[2 * DefaultStreamBufferSize, byte]
+      let readFut = transp.readOnce(baseAddr buf, buf.len)
+      check not(readFut.finished())
+
+      # Complete read task
+      var b = 42.byte
+      check handleEintr(osdefs.write(sockets[1], addr b, 1)) == 1
+
+      # Complete write task (EOF)
+      check osdefs.shutdown(SocketHandle(sockets[0]), SHUT_WR) == 0
+
+      await sleepAsync(0.seconds)
+      check:
+        (await readFut) == 1
+        buf[0] == b
+
+      transp.close()
+      await transp.join()
+      check:
+        writeFut.finished()
+        osdefs.close(sockets[1]) == 0
