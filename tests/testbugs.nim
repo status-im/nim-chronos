@@ -6,7 +6,7 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 import unittest2
-import ../chronos
+import ../chronos, ../chronos/unittest2/asynctests
 
 when defined(posix):
   import stew/ptrops
@@ -134,41 +134,34 @@ suite "Asynchronous issues test suite":
     check waitFor(testOrDeadlock()) == true
 
   when defined(posix):
-    test "{Event.Read, Event.Error} handling [poll()] test":
+    asyncTest "Reader notification after buffer got full [poll()] test":
       var sockets: array[2, cint]
       check:
         socketpair(osdefs.AF_UNIX, osdefs.SOCK_STREAM, 0, sockets) == 0
         setDescriptorBlocking(sockets[0], false).isOk()
+        setDescriptorBlocking(sockets[1], false).isOk()
 
-      # Ensure {Event.Read} and {Event.Error} (EOF) are set
-      var b = 42.byte
-      check:
-        handleEintr(osdefs.write(sockets[1], addr b, 1)) == 1
-        osdefs.shutdown(SocketHandle(sockets[1]), SHUT_WR) == 0
+      # Ensure {Event.Write} is set
+      let
+        transp = fromPipe(AsyncFD(sockets[0]), bufferSize = 4096)
+        writeFut = transp.write(newSeq[byte](8 * 1024 * 1024))
+      await sleepAsync(50.milliseconds)
+      check not(writeFut.finished())
 
-      # Avoid {Event.Write} being set, by filling up the send buffer
-      var buf: array[65536, byte]
-      while handleEintr(osdefs.write(sockets[0], baseAddr buf, buf.len)) > 0:
+      # Ensure {Event.Read} is set
+      var b: byte
+      let readFut = transp.readOnce(addr b, 1)
+      await sleepAsync(50.milliseconds)
+      check not(readFut.finished())
+
+      # Fill read buffer, and ensure {Event.Error} (EOF) is set
+      while handleEintr(osdefs.write(sockets[1], addr b, 1)) > 0:
         discard
-
-      func setFlag(udata: pointer) =
-        let flag = cast[ptr bool](udata)
-        doAssert not(flag[])
-        flag[] = true
-
-      var readerFlag, writerFlag: bool
       check:
-        register2(AsyncFD(sockets[0])).isOk()
-        addReader2(AsyncFD(sockets[0]), setFlag, addr readerFlag).isOk()
-        addWriter2(AsyncFD(sockets[0]), setFlag, addr writerFlag).isOk()
-      poll()
-      check:
-        readerFlag and writerFlag
-        unregister2(AsyncFD(sockets[0])).isOk()
-
-      discard osdefs.close(sockets[0])
-      when chronosEventEngine != "poll":
-        discard osdefs.close(sockets[1])
+        osdefs.close(sockets[1]) == 0
+        (await readFut) == 1
+      await writeFut.cancelAndWait()
+      await transp.closeWait()
 
     template runDuplicateReadEventTest(numReadBytes, numWriteBytes: int) =
       var sockets: array[2, cint]

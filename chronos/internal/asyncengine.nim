@@ -797,6 +797,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
      defined(haiku):
   const
     SIG_IGN = cast[proc(x: cint) {.raises: [], noconv, gcsafe.}](1)
+    hasEventFd = defined(linux) and not defined(emscripten)
 
   type
     AsyncFD* = distinct cint
@@ -807,7 +808,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
 
     Dispatcher = object of DispatcherBase
       selector: Selector[SelectorData]
-      when defined(linux):
+      when hasEventFd:
         wakeupFd: cint
       else:
         wakeupFd: array[2, cint]
@@ -846,7 +847,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     # Initialize the wakeup fd for waking up the event loop from other threads.
     # On Linux: eventfd
     # On other Unix: socketpair (portable, works on all POSIX systems)
-    when defined(linux):
+    when hasEventFd:
       let efd = eventfd(0, EFD_CLOEXEC or EFD_NONBLOCK)
       if efd == -1:
         deallocShared(cast[pointer](res))
@@ -1124,7 +1125,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     # fd (from wake()) wakes the selector/epoll/poll call. We must read the
     # data to clear it so the next wake-up is properly detected.
     # The draining must be done before we empty the thread callback queue.
-    when defined(linux):
+    when hasEventFd:
       # On linux, the read will always fully drain the descriptor
       var dummy: uint64
       discard handleEintr(read(loop.wakeupFd, addr dummy, sizeof(dummy)))
@@ -1165,13 +1166,13 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
       let events = loop.keys[i].events
 
       withData(loop.selector, cint(fd), adata) do:
-        if {Event.Read, Event.Error} * events != {}:
+        if (Event.Read in events) or (events == {Event.Error}):
           if not isNil(adata.reader.function):
             loop.callbacks.addLast(adata.reader)
           else:
             hasWakeup = true
 
-        if {Event.Write, Event.Error} * events != {}:
+        if (Event.Write in events) or (events == {Event.Error}):
           if not isNil(adata.writer.function):
             loop.callbacks.addLast(adata.writer)
 
@@ -1338,7 +1339,7 @@ when hasThreadSupport:
       # This is safe from any thread and will cause GetQueuedCompletionStatus
       # to return immediately.
       discard postQueuedCompletionStatus(disp.ioPort, DWORD(0), ULONG_PTR(0), nil)
-    elif defined(linux):
+    elif hasEventFd:
       # For epoll: write to the eventfd so epoll_wait returns.
       var dummy: uint64 = 1
       discard handleEintr(write(cint(disp.wakeupFd), addr dummy, sizeof(dummy)))
