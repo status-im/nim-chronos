@@ -91,3 +91,25 @@ suite "callSoon() tests suite":
       soonTest == 987654321
 
     check test() == true
+
+  test "cross-thread callSoon() test":
+    var crossThreadCallSoonCount = 0
+    proc crossThreadCallSoonCallback(udata: pointer) {.nimcall, gcsafe, raises: [].} =
+      cast[ptr int](udata)[] += 1
+    type T = (DispatcherHandle, ptr int)
+    proc threadProc(disp: T) {.thread, nimcall.} =
+      callSoon(disp[0], crossThreadCallSoonCallback, disp[1])
+      callSoon(disp[0], crossThreadCallSoonCallback, disp[1])
+
+    # Pass the current thread's dispatcher pointer to a new thread
+    let disp = getThreadDispatcher()
+    var thread: Thread[T]
+    createThread(thread, threadProc, (disp.handle(), addr crossThreadCallSoonCount))
+
+    # Callbacks and wake-ups don't map 1:1 to polls, so poll until both
+    # callbacks have run; a callback left queued past this test would
+    # fire later through a pointer into this frame
+    while crossThreadCallSoonCount < 2:
+      poll()
+    check: crossThreadCallSoonCount == 2
+    joinThreads(thread)
