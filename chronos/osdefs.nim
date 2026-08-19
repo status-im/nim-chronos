@@ -1136,8 +1136,9 @@ elif defined(linux):
   proc timerfd_settime*(ufd: cint, flags: cint,
                         utmr: var Itimerspec, otmr: var Itimerspec): cint {.
        cdecl, importc: "timerfd_settime", header: "<sys/timerfd.h>".}
-  proc eventfd*(count: cuint, flags: cint): cint {.
-       cdecl, importc: "eventfd", header: "<sys/eventfd.h>".}
+  when not defined(emscripten):
+    proc eventfd*(count: cuint, flags: cint): cint {.
+        cdecl, importc: "eventfd", header: "<sys/eventfd.h>".}
   proc signalfd*(fd: cint, mask: var Sigset, flags: cint): cint {.
        cdecl, importc: "signalfd", header: "<sys/signalfd.h>".}
 
