@@ -608,8 +608,8 @@ proc prepareRequest(conn: HttpConnectionRef,
     headers =
       block:
         var table = HttpTable.init()
-        # Retrieve headers and values
-        for key, value in req.headers():
+        # Retrieve headers and values.
+        for key, value in req.headers(conn.buffer):
           table.add(key, value)
         # Validating HTTP request headers
         # Some of the headers must be present only once.
@@ -620,7 +620,8 @@ proc prepareRequest(conn: HttpConnectionRef,
           return err(HttpMessage.init(Http400,
                                       "Multiple Content-Length headers"))
         table
-  ? updateRequest(request, scheme, req.meth, req.version, req.uri(), headers)
+  ? updateRequest(request, scheme, req.meth, req.version, req.uri(conn.buffer),
+                  headers)
   trackCounter(HttpServerRequestTrackerName)
   ok(request)
 
@@ -921,13 +922,15 @@ proc getRequest(conn: HttpConnectionRef): Future[HttpRequestRef] {.
     # The connection buffer is allocated once (init) at maxHeadersSize and
     # deliberately never shrunk: re-growing a seq[byte] zero-fills it, which
     # costs a full memset of maxHeadersSize on EVERY request. Parse only the
-    # valid slice instead; makeCopy copies just the actual request bytes.
+    # valid slice instead; the header stores offsets into `conn.buffer`
+    # (makeCopy = false), which stays untouched until prepareRequest has
+    # resolved them.
     if len(conn.buffer) < conn.server.maxHeadersSize:
       conn.buffer.setLen(conn.server.maxHeadersSize)
     let res = await conn.reader.readUntil(addr conn.buffer[0], len(conn.buffer),
                                           HeadersMark)
     let header = parseRequest(
-      conn.buffer.toOpenArray(0, res - 1), makeCopy = true)
+      conn.buffer.toOpenArray(0, res - 1), makeCopy = false)
     if header.failed():
       raiseHttpProtocolError(Http400, "Malformed request recieved")
     prepareRequest(conn, header).valueOr:
