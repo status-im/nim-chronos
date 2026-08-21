@@ -3,13 +3,15 @@ on:
   push:
     branches:
       - master
+      - test-minver
   pull_request:
   workflow_dispatch:
 
 jobs:
   build:
-    uses: status-im/nimbus-common-workflow/.github/workflows/common.yml@main
+    uses: status-im/nimbus-common-workflow/.github/workflows/common.yml@minver
     with:
+      install-command: 'nimble --resolver:minver --useSystemNim install -y --depsOnly'
       test-command: |
         nimble install -y libbacktrace
         nimble test
