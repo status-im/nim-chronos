@@ -134,6 +134,46 @@ suite "Asynchronous issues test suite":
     check waitFor(testOrDeadlock()) == true
 
   when defined(posix):
+    test "{Event.Read, Event.Error} handling [poll()] test":
+      # `Event.Error` must wake up both the read and write callbacks: when the
+      # error is paired with only one direction (here `{Read, Error}` because the
+      # send buffer is full so `Event.Write` is not set), the other side would
+      # otherwise never be resumed, leaking its pending future.
+      var sockets: array[2, cint]
+      check:
+        socketpair(osdefs.AF_UNIX, osdefs.SOCK_STREAM, 0, sockets) == 0
+        setDescriptorBlocking(sockets[0], false).isOk()
+
+      # Ensure {Event.Read} and {Event.Error} (EOF) are set
+      var b = 42.byte
+      check:
+        handleEintr(osdefs.write(sockets[1], addr b, 1)) == 1
+        osdefs.shutdown(SocketHandle(sockets[1]), cint(SHUT_WR)) == 0
+
+      # Avoid {Event.Write} being set, by filling up the send buffer
+      var buf: array[65536, byte]
+      while handleEintr(osdefs.write(sockets[0], baseAddr buf, buf.len)) > 0:
+        discard
+
+      func setFlag(udata: pointer) =
+        let flag = cast[ptr bool](udata)
+        doAssert not(flag[])
+        flag[] = true
+
+      var readerFlag, writerFlag: bool
+      check:
+        register2(AsyncFD(sockets[0])).isOk()
+        addReader2(AsyncFD(sockets[0]), setFlag, addr readerFlag).isOk()
+        addWriter2(AsyncFD(sockets[0]), setFlag, addr writerFlag).isOk()
+      poll()
+      check:
+        readerFlag and writerFlag
+        unregister2(AsyncFD(sockets[0])).isOk()
+
+      discard osdefs.close(sockets[0])
+      when chronosEventEngine != "poll":
+        discard osdefs.close(sockets[1])
+
     asyncTest "Reader notification after buffer got full [poll()] test":
       var sockets: array[2, cint]
       check:

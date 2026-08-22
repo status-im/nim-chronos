@@ -1166,13 +1166,20 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
       let events = loop.keys[i].events
 
       withData(loop.selector, cint(fd), adata) do:
-        if (Event.Read in events) or (events == {Event.Error}):
+        # `Event.Error` must wake up both the reader and the writer: when it is
+        # paired with only one direction (e.g. `{Read, Error}` when the send
+        # buffer is full, or `{Write, Error}` when there is no data to read), the
+        # other side would otherwise never be resumed, leaking its pending future
+        # (a parked `readOnce`/`write`). Some backends (kqueue) report the error
+        # separately per filter, so a callback may be scheduled more than once -
+        # the stream reader/writer loops are written to tolerate spurious calls.
+        if {Event.Read, Event.Error} * events != {}:
           if not isNil(adata.reader.function):
             loop.callbacks.addLast(adata.reader)
           else:
             hasWakeup = true
 
-        if (Event.Write in events) or (events == {Event.Error}):
+        if {Event.Write, Event.Error} * events != {}:
           if not isNil(adata.writer.function):
             loop.callbacks.addLast(adata.writer)
 
