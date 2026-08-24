@@ -1307,29 +1307,30 @@ proc removeTimer*(at: uint64, cb: CallbackFunc, udata: pointer = nil) {.
      inline, deprecated: "Use removeTimer(Duration, cb, udata)".} =
   removeTimer(Moment.init(int64(at), Millisecond), cb, udata)
 
-proc callSoon*(acb: AsyncCallback, immediate: static bool = false) =
-  ## Schedule `acb` to be called as soon as possible.
-  ## With `immediate`, no other scheduled callbacks and events are run.
-  ## Otherwise, the callback is called when control returns to the event loop.
-  let loop = getThreadDispatcher()
-  when immediate:
-    loop.callbacks.addFirst(acb)
-    when chronosStrictReentrancy:
-      loop.numImmediate += 1
-  else:
-    loop.callbacks.addLast(acb)
-
-proc callSoon*(
-    cbproc: CallbackFunc, udata: pointer,
-    immediate: static bool = false) {.gcsafe.} =
+proc callSoon*(acb: AsyncCallback) =
   ## Schedule `cbproc` to be called as soon as possible.
-  ## With `immediate`, no other scheduled callbacks and events are run.
-  ## Otherwise, the callback is called when control returns to the event loop.
-  doAssert(not isNil(cbproc))
-  callSoon(AsyncCallback(function: cbproc, udata: udata), immediate)
+  ## The callback is called when control returns to the event loop.
+  getThreadDispatcher().callbacks.addLast(acb)
 
-proc callSoon*(cbproc: CallbackFunc, immediate: static bool = false) =
-  callSoon(cbproc, nil, immediate)
+proc callSoon*(cbproc: CallbackFunc, udata: pointer = nil) =
+  ## Schedule `cbproc` to be called as soon as possible.
+  ## The callback is called when control returns to the event loop.
+  doAssert(not isNil(cbproc))
+  callSoon(AsyncCallback(function: cbproc, udata: udata))
+
+proc callImmediately*(acb: AsyncCallback) =
+  ## Schedule `acb` to be called immediately.
+  ## No other scheduled callbacks or events are called before it.
+  let loop = getThreadDispatcher()
+  loop.callbacks.addFirst(acb)
+  when chronosStrictReentrancy:
+    loop.numImmediate += 1
+
+proc callImmediately*(cbproc: CallbackFunc, udata: pointer = nil) {.gcsafe.} =
+  ## Schedule `cbproc` to be called as soon as possible.
+  ## No other scheduled callbacks or events are called before it.
+  doAssert(not isNil(cbproc))
+  callImmediately(AsyncCallback(function: cbproc, udata: udata))
 
 when hasThreadSupport:
   type DispatcherHandle* = distinct (ptr Dispatcher)

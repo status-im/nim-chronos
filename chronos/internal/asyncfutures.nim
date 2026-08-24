@@ -186,7 +186,7 @@ proc finish(fut: FutureBase, state: FutureState, loc: ptr SrcLoc) =
   when chronosSyncContinuations:
     proc process(callback: var AsyncCallback) =
       if not(isNil(callback.function)):
-        callSoon(move(callback), immediate = true)
+        callImmediately(move(callback))
 
     for i in countdown(fut.internalContinuations.high, 0):
       process(fut.internalContinuations[i])
@@ -327,7 +327,7 @@ proc addCallback*(
 
   if isContinuation:
     if future.finished():
-      callSoon(cb, udata, immediate = true)
+      callImmediately(cb, udata)
     else:
       if isNil(future.internalContinuation.function):
         future.internalContinuation = AsyncCallback(function: cb, udata: udata)
