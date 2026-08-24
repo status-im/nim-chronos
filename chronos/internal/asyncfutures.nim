@@ -137,6 +137,20 @@ proc done*(future: FutureBase): bool {.deprecated: "Use `completed` instead".} =
   ## This is an alias for ``completed(future)`` procedure.
   completed(future)
 
+proc callImmediately(acb: AsyncCallback) =
+  ## Schedule `acb` to be called immediately.
+  ## No other scheduled callbacks or events are called before it.
+  let loop = getThreadDispatcher()
+  loop.callbacks.addFirst(acb)
+  when chronosStrictReentrancy:
+    loop.numImmediate += 1
+
+proc callImmediately(cbproc: CallbackFunc, udata: pointer = nil) {.gcsafe.} =
+  ## Schedule `cbproc` to be called as soon as possible.
+  ## No other scheduled callbacks or events are called before it.
+  doAssert(not isNil(cbproc))
+  callImmediately(AsyncCallback(function: cbproc, udata: udata))
+
 when chronosFutureTracking:
   proc futureDestructor(udata: pointer) =
     ## This procedure will be called when Future[T] got completed, cancelled or

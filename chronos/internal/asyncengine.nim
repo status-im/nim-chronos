@@ -82,7 +82,7 @@ type
     trackers*: Table[string, TrackerBase]
     counters*: Table[string, TrackerCounter]
     inEventLoop: bool
-    numImmediate: int
+    numImmediate*: int
 
     when hasThreadSupport:
       threadCallbacks: ThreadCallbackQueue
@@ -1317,20 +1317,6 @@ proc callSoon*(cbproc: CallbackFunc, udata: pointer = nil) =
   ## The callback is called when control returns to the event loop.
   doAssert(not isNil(cbproc))
   callSoon(AsyncCallback(function: cbproc, udata: udata))
-
-proc callImmediately*(acb: AsyncCallback) =
-  ## Schedule `acb` to be called immediately.
-  ## No other scheduled callbacks or events are called before it.
-  let loop = getThreadDispatcher()
-  loop.callbacks.addFirst(acb)
-  when chronosStrictReentrancy:
-    loop.numImmediate += 1
-
-proc callImmediately*(cbproc: CallbackFunc, udata: pointer = nil) {.gcsafe.} =
-  ## Schedule `cbproc` to be called as soon as possible.
-  ## No other scheduled callbacks or events are called before it.
-  doAssert(not isNil(cbproc))
-  callImmediately(AsyncCallback(function: cbproc, udata: udata))
 
 when hasThreadSupport:
   type DispatcherHandle* = distinct (ptr Dispatcher)
