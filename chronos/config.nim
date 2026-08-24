@@ -35,9 +35,9 @@ const
     ## `Exception` handling may be removed in future chronos versions.
 
   chronosSyncContinuations* {.booldefine.}: bool = false
-    ## When enabled, `CallbackFlag.Continuation` callbacks of futures with
-    ## `FutureFlag.SyncContinuations` are scheduled to run before processing
-    ## other already queued events such as timer handlers and I/O.
+    ## When enabled, callbacks of futures with `FutureFlag.SyncContinuations`
+    ## are scheduled to run before processing other already queued events
+    ## such as timer handlers and I/O.
     ##
     ## This feature is experimental and may be removed in future releases.
 

@@ -26,14 +26,6 @@ type
   # TODO https://github.com/nim-lang/Nim/issues/25976
   CallbackFunc* = proc (arg: pointer) {.gcsafe, raises: [].}
 
-  CallbackFlag* {.pure.} = enum
-    Continuation
-      ## When set and attached to a future with `FutureFlag.SyncContinuations`,
-      ## the callback is scheduled to run before processing other already
-      ## queued events such as timer handlers and I/O.
-      ##
-      ## Only works when the `chronosSyncContinuations` config is enabled.
-
   # Internal type, not part of API
   InternalAsyncCallback* = object
     function*: CallbackFunc
@@ -59,9 +51,8 @@ type
       ## `Defect` will be raised.
 
     SyncContinuations
-      ## When set, `CallbackFlag.Continuation` callbacks are scheduled
-      ## to run before processing other already queued events such as
-      ## timer handlers and I/O.
+      ## When set, callbacks are scheduled to run before processing
+      ## other already queued events such as timer handlers and I/O.
       ##
       ## Only works when the `chronosSyncContinuations` config is enabled.
 
@@ -73,13 +64,13 @@ type
     # structure may change in the future (haha)
 
     internalLocation*: array[LocationKind, ptr SrcLoc]
-    internalContinuation*, internalCallback*: InternalAsyncCallback
+    internalCallback*: InternalAsyncCallback
       ## The vast majority of futures track a single callback only (the one
       ## installed by `await`) - to avoid allocating a seq (which involves
       ## making a separate allocation with space for several callbacks), we keep
       ## a spot in each future for that first one - the seq below will stay
       ## empty until a second callback is added
-    internalContinuations*, internalCallbacks*: seq[InternalAsyncCallback]
+    internalCallbacks*: seq[InternalAsyncCallback]
     internalCancelcb*: CallbackFunc
     internalChild*: FutureBase
     internalState*: FutureState
