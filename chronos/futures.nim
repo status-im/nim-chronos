@@ -65,6 +65,9 @@ type
       ## a spot in each future for that first one - the seq below will stay
       ## empty until a second callback is added
     internalCallbacks*: seq[InternalAsyncCallback]
+    when chronosSyncContinuations:
+      internalContinuation*: InternalAsyncCallback
+      internalContinuations*: seq[InternalAsyncCallback]
     internalCancelcb*: CallbackFunc
     internalChild*: FutureBase
     internalState*: FutureState

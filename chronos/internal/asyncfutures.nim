@@ -197,32 +197,27 @@ proc finish(fut: FutureBase, state: FutureState, loc: ptr SrcLoc) =
   fut.internalCancelcb = nil # release cancellation callback memory
 
   when chronosSyncContinuations:
-    proc process(callback: var AsyncCallback) =
+    proc processImmediately(callback: var AsyncCallback) =
       if not(isNil(callback.function)):
         callImmediately(move(callback))
 
     # In case a callback tries to modify the callback list (via removeCallback)
-    var callbacks = move(fut.internalCallbacks)
-    for i in countdown(callbacks.high, 0):
-      process(callbacks[i])
+    var continuations = move(fut.internalContinuations)
+    for i in countdown(continuations.high, 0):
+      processImmediately(continuations[i])
 
-    for item in callbacks.mitems():
-      if not(isNil(item.function)):
-        callSoon(item)
-      item = default(AsyncCallback) # release memory as early as possible
+    processImmediately(fut.internalContinuation)
 
-    process(fut.internalCallback)
+  proc process(callback: var AsyncCallback) =
+    if not(isNil(callback.function)):
+      callSoon(move(callback))
 
-  else:
-    if not(isNil(fut.internalCallback.function)):
-      callSoon(move(fut.internalCallback))
+  process(fut.internalCallback)
 
-    # In case a callback tries to modify the callback list (via removeCallback)
-    var callbacks = move(fut.internalCallbacks)
-    for item in callbacks.mitems():
-      if not(isNil(item.function)):
-        callSoon(item)
-      item = default(AsyncCallback) # release memory as early as possible
+  # In case a callback tries to modify the callback list (via removeCallback)
+  var callbacks = move(fut.internalCallbacks)
+  for item in callbacks.mitems():
+    process(item)
 
   when chronosFutureTracking:
     scheduleDestructor(fut)
@@ -327,6 +322,9 @@ template tryCancel*(future: FutureBase): bool =
   tryCancel(future, getSrcLocation())
 
 proc clearCallbacks(future: FutureBase) =
+  when chronosSyncContinuations:
+    future.internalContinuation.reset()
+    future.internalContinuations.reset()
   future.internalCallback.reset()
   future.internalCallbacks.reset()
 
@@ -336,10 +334,7 @@ proc addCallback*(future: FutureBase, cb: CallbackFunc, udata: pointer) =
   ## If future has already completed then ``cb`` will be called immediately.
   doAssert(not isNil(cb))
   if future.finished():
-    when chronosSyncContinuations:
-      callImmediately(cb, udata)
-    else:
-      callSoon(cb, udata)
+    callSoon(cb, udata)
   else:
     if isNil(future.internalCallback.function):
       future.internalCallback = AsyncCallback(function: cb, udata: udata)
@@ -352,6 +347,30 @@ proc addCallback*(future: FutureBase, cb: CallbackFunc) =
   ## If future has already completed then ``cb`` will be called immediately.
   future.addCallback(cb, cast[pointer](future))
 
+proc addContinuationCallback*(
+    future: FutureBase, cb: CallbackFunc, udata: pointer) =
+  ## Adds the callbacks proc to be called when the future completes.
+  ##
+  ## If future has already completed then ``cb`` will be called immediately.
+  when chronosSyncContinuations:
+    doAssert(not isNil(cb))
+    if future.finished():
+      callImmediately(cb, udata)
+    else:
+      if isNil(future.internalContinuation.function):
+        future.internalContinuation = AsyncCallback(function: cb, udata: udata)
+      else:
+        future.internalContinuations.add(
+          AsyncCallback(function: cb, udata: udata))
+  else:
+    future.addCallback(cb, udata)
+
+proc addContinuationCallback*(future: FutureBase, cb: CallbackFunc) =
+  ## Adds the callbacks proc to be called when the future completes.
+  ##
+  ## If future has already completed then ``cb`` will be called immediately.
+  future.addContinuationCallback(cb, cast[pointer](future))
+
 proc removeCallback*(future: FutureBase, cb: CallbackFunc,
                      udata: pointer) =
   ## Remove future from list of callbacks - this operation may be slow if there
@@ -359,11 +378,22 @@ proc removeCallback*(future: FutureBase, cb: CallbackFunc,
   doAssert(not isNil(cb))
   # Make sure to release memory associated with callback, or reference chains
   # may be created!
-  if future.internalCallback.function == cb and future.internalCallback.udata == udata:
+
+  template shouldRemove(callback: AsyncCallback): bool =
+    callback.function == cb and callback.udata == udata
+
+  when chronosSyncContinuations:
+    if shouldRemove(future.internalContinuation):
+      future.internalContinuation.reset()
+
+    future.internalContinuations.keepItIf:
+      not shouldRemove(it)
+
+  if shouldRemove(future.internalCallback):
     future.internalCallback.reset()
 
   future.internalCallbacks.keepItIf:
-    it.function != cb or it.udata != udata
+    not shouldRemove(it)
 
 proc removeCallback*(future: FutureBase, cb: CallbackFunc) =
   future.removeCallback(cb, cast[pointer](future))
@@ -429,7 +459,8 @@ proc futureContinue*(fut: FutureBase) {.raises: [], gcsafe.} =
       # We cannot make progress on `fut` until `next` has finished - schedule
       # `fut` to continue running when that happens
       GC_ref(fut)
-      next.addCallback(CallbackFunc(internalContinue), cast[pointer](fut))
+      next.addContinuationCallback(
+        CallbackFunc(internalContinue), cast[pointer](fut))
 
       # return here so that we don't remove the closure below
       return

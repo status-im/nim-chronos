@@ -29,6 +29,9 @@ suite "Continuation scheduling test suite":
   proc observerCb(udata: pointer) =
     cast[ptr Trace](udata)[].add "observer"
 
+  proc observerCb2(udata: pointer) =
+    cast[ptr Trace](udata)[].add "observer2"
+
   proc testValueReturn(): Trace =
     proc producer(
         trace: ptr Trace): Future[int] {.async: (raises: [CancelledError]).} =
@@ -136,21 +139,6 @@ suite "Continuation scheduling test suite":
 
     runTest consumer
 
-  proc testManualWakeup(): Trace =
-    let fut = Future[void].Raising([CancelledError]).init()
-
-    proc producer(trace: ptr Trace) {.async: (raises: [CancelledError]).} =
-      await fut
-      trace[].add "producer returns"
-
-    proc consumer(trace: ptr Trace) {.async: (raises: [CancelledError]).} =
-      let w = producer(trace)
-      callSoon(competitorCb, trace)
-      fut.complete()
-      await w
-
-    runTest consumer
-
   proc testMultipleWaiters(): Trace =
     proc produce(
         trace: ptr Trace): Future[int] {.async: (raises: [CancelledError]).} =
@@ -179,6 +167,37 @@ suite "Continuation scheduling test suite":
 
     waitFor noCancel allFutures(strainA(addr trace), strainB(addr trace))
     trace
+
+  proc testManualWakeup(): Trace =
+    let fut = Future[void].Raising([CancelledError]).init()
+
+    proc producer(trace: ptr Trace) {.async: (raises: [CancelledError]).} =
+      await fut
+      trace[].add "producer returns"
+
+    proc consumer(trace: ptr Trace) {.async: (raises: [CancelledError]).} =
+      let w = producer(trace)
+      callSoon(competitorCb, trace)
+      fut.complete()
+      await w
+
+    runTest consumer
+
+  proc testCallbackOrder(): Trace =
+    let fut = Future[void].Raising([CancelledError]).init()
+
+    proc producer(trace: ptr Trace) {.async: (raises: [CancelledError]).} =
+      await fut
+      trace[].add "producer returns"
+
+    proc consumer(trace: ptr Trace) {.async: (raises: [CancelledError]).} =
+      let w = producer(trace)
+      fut.addCallback(observerCb, trace)
+      fut.addCallback(observerCb2, trace)
+      fut.complete()
+      await w
+
+    runTest consumer
 
   proc testOrFirstFails(): Trace =
     proc first(
@@ -270,21 +289,27 @@ suite "Continuation scheduling test suite":
         testFailingReturn() ==
           @["producer raising", "consumer caught", "competitor"]
     else:
-      skip()
+      check:
+        testValueReturn() ==
+          @["producer returns", "competitor", "consumer returns 42"]
+        testFailingReturn() ==
+          @["producer raising", "competitor", "consumer caught"]
 
   test "Cancellation not interrupted test":
     when chronosSyncContinuations:
       check testCancellation() ==
         @["inner cancelled", "outer cancelled", "competitor"]
     else:
-      skip()
+      check testCancellation() ==
+        @["inner cancelled", "competitor", "outer cancelled"]
 
   test "Nested flow not interrupted test":
     when chronosSyncContinuations:
       check testNested() ==
         @["bottom returns", "mid returns", "top returns 2", "competitor"]
     else:
-      skip()
+      check testNested() ==
+        @["bottom returns", "competitor", "mid returns", "top returns 2"]
 
   test "Observer deferred test":
     when chronosSyncContinuations:
@@ -294,29 +319,31 @@ suite "Continuation scheduling test suite":
         testObserverRaise() ==
           @["producer raising", "consumer caught", "competitor", "observer"]
     else:
-      skip()
-
-  test "Manual wakeup interruptible test":
-    when chronosSyncContinuations:
-      check testManualWakeup() == @["competitor", "producer returns"]
-    else:
-      skip()
+      check:
+        testObserverReturn() ==
+          @["producer returns", "competitor", "observer", "consumer returns 7"]
+        testObserverRaise() ==
+          @["producer raising", "competitor", "observer", "consumer caught"]
 
   test "Multiple waiters test":
     when chronosSyncContinuations:
       check testMultipleWaiters() ==
         @["produced", "subA", "strainA", "subB", "strainB"]
     else:
-      skip()
+      check testMultipleWaiters() ==
+        @["produced", "subA", "subB", "strainA", "strainB"]
+
+  test "Manual wakeup interruptible test":
+    check testManualWakeup() == @["competitor", "producer returns"]
+
+  test "Callback order":
+    check testCallbackOrder() == @["producer returns", "observer", "observer2"]
 
   test "Combinator first-finisher test":
-    when chronosSyncContinuations:
-      check:
-        testOrFirstFails() ==
-          @["fut1 fails", "fut2 completes", "or: failed"]
-        testRaceFirstWins() ==
-          @["first completes", "second completes", "race: first"]
-        testOneFirstWins() ==
-          @["first completes", "second completes", "one: first"]
-    else:
-      skip()
+    check:
+      testOrFirstFails() ==
+        @["fut1 fails", "fut2 completes", "or: failed"]
+      testRaceFirstWins() ==
+        @["first completes", "second completes", "race: first"]
+      testOneFirstWins() ==
+        @["first completes", "second completes", "one: first"]
