@@ -513,7 +513,7 @@ proc asyncSingleProc(prc, params: NimNode): NimNode {.compileTime.} =
     # with:
     #
     # ```nim
-    # let resultFuture = newFuture[T]({FutureFlag.SyncContinuations})
+    # let resultFuture = newFuture[T]()
     # resultFuture.internalClosure = `iteratorNameSym`
     # futureContinue(resultFuture)
     # return resultFuture
@@ -545,8 +545,7 @@ proc asyncSingleProc(prc, params: NimNode): NimNode {.compileTime.} =
     outerProcBody.add(
       newLetStmt(
         retFutureSym,
-        newCall(newFutProc, newLit(prcName), nnkCurly.newTree(
-          newDotExpr(ident "FutureFlag", ident "SyncContinuations")))
+        newCall(newFutProc, newLit(prcName))
       )
     )
 

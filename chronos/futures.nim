@@ -50,12 +50,6 @@ type
       ## If `cancelCallback` is not set and the future gets cancelled, a
       ## `Defect` will be raised.
 
-    SyncContinuations
-      ## When set, callbacks are scheduled to run before processing
-      ## other already queued events such as timer handlers and I/O.
-      ##
-      ## Only works when the `chronosSyncContinuations` config is enabled.
-
   FutureFlags* = set[FutureFlag]
 
   InternalFutureBase* = object of RootObj
