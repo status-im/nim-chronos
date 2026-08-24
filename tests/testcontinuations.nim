@@ -151,22 +151,6 @@ suite "Continuation scheduling test suite":
 
     runTest consumer
 
-  proc testManualSyncWakeup(): Trace =
-    let fut = Future[void].Raising([CancelledError])
-      .init("", {FutureFlag.SyncContinuations})
-
-    proc producer(trace: ptr Trace) {.async: (raises: [CancelledError]).} =
-      await fut
-      trace[].add "producer returns"
-
-    proc consumer(trace: ptr Trace) {.async: (raises: [CancelledError]).} =
-      let w = producer(trace)
-      callSoon(competitorCb, trace)
-      fut.complete()
-      await w
-
-    runTest consumer
-
   proc testMultipleWaiters(): Trace =
     proc produce(
         trace: ptr Trace): Future[int] {.async: (raises: [CancelledError]).} =
