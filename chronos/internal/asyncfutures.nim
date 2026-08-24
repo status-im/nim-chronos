@@ -109,12 +109,13 @@ template newFuture*[T](fromProc: static[string] = "",
   else:
     newFutureImpl[T](getSrcLocation(fromProc), flags)
 
-template newInternalRaisesFuture*[T, E](fromProc: static[string] = ""): auto =
+template newInternalRaisesFuture*[T, E](
+    fromProc: static[string] = "", flags: static[FutureFlags] = {}): auto =
   ## Creates a new future.
   ##
   ## Specifying ``fromProc``, which is a string specifying the name of the proc
   ## that this future belongs to, is a good habit as it helps with debugging.
-  newInternalRaisesFutureImpl[T, E](getSrcLocation(fromProc), {})
+  newInternalRaisesFutureImpl[T, E](getSrcLocation(fromProc), flags)
 
 template newFutureSeq*[A, B](fromProc: static[string] = ""): FutureSeq[A, B] {.deprecated.} =
   ## Create a new future which can hold/preserve GC sequence until future will
@@ -353,15 +354,19 @@ proc addContinuationCallback*(
   ##
   ## If future has already completed then ``cb`` will be called immediately.
   when chronosSyncContinuations:
-    doAssert(not isNil(cb))
-    if future.finished():
-      callImmediately(cb, udata)
-    else:
-      if isNil(future.internalContinuation.function):
-        future.internalContinuation = AsyncCallback(function: cb, udata: udata)
+    if FutureFlag.SyncContinuations in future.internalFlags:
+      doAssert(not isNil(cb))
+      if future.finished():
+        callImmediately(cb, udata)
       else:
-        future.internalContinuations.add(
-          AsyncCallback(function: cb, udata: udata))
+        if isNil(future.internalContinuation.function):
+          future.internalContinuation =
+            AsyncCallback(function: cb, udata: udata)
+        else:
+          future.internalContinuations.add(
+            AsyncCallback(function: cb, udata: udata))
+    else:
+      future.addCallback(cb, udata)
   else:
     future.addCallback(cb, udata)
 

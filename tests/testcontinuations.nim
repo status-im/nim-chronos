@@ -168,6 +168,22 @@ suite "Continuation scheduling test suite":
     waitFor noCancel allFutures(strainA(addr trace), strainB(addr trace))
     trace
 
+  proc testManualSyncWakeup(): Trace =
+    let fut = Future[void].Raising([CancelledError])
+      .init("", {FutureFlag.SyncContinuations})
+
+    proc producer(trace: ptr Trace) {.async: (raises: [CancelledError]).} =
+      await fut
+      trace[].add "producer returns"
+
+    proc consumer(trace: ptr Trace) {.async: (raises: [CancelledError]).} =
+      let w = producer(trace)
+      callSoon(competitorCb, trace)
+      fut.complete()
+      await w
+
+    runTest consumer
+
   proc testManualWakeup(): Trace =
     let fut = Future[void].Raising([CancelledError]).init()
 
@@ -332,6 +348,12 @@ suite "Continuation scheduling test suite":
     else:
       check testMultipleWaiters() ==
         @["produced", "subA", "subB", "strainA", "strainB"]
+
+  test "Manual wakeup not interrupted test":
+    when chronosSyncContinuations:
+      check testManualSyncWakeup() == @["producer returns", "competitor"]
+    else:
+      check testManualSyncWakeup() == @["competitor", "producer returns"]
 
   test "Manual wakeup interruptible test":
     check testManualWakeup() == @["competitor", "producer returns"]
