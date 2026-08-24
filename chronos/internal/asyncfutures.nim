@@ -109,13 +109,12 @@ template newFuture*[T](fromProc: static[string] = "",
   else:
     newFutureImpl[T](getSrcLocation(fromProc), flags)
 
-template newInternalRaisesFuture*[T, E](
-    fromProc: static[string] = "", flags: static[FutureFlags] = {}): auto =
+template newInternalRaisesFuture*[T, E](fromProc: static[string] = ""): auto =
   ## Creates a new future.
   ##
   ## Specifying ``fromProc``, which is a string specifying the name of the proc
   ## that this future belongs to, is a good habit as it helps with debugging.
-  newInternalRaisesFutureImpl[T, E](getSrcLocation(fromProc), flags)
+  newInternalRaisesFutureImpl[T, E](getSrcLocation(fromProc), {})
 
 template newFutureSeq*[A, B](fromProc: static[string] = ""): FutureSeq[A, B] {.deprecated.} =
   ## Create a new future which can hold/preserve GC sequence until future will
