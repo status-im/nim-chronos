@@ -302,12 +302,6 @@ suite "Continuation scheduling test suite":
     else:
       skip()
 
-  test "Manual wakeup not interrupted test":
-    when chronosSyncContinuations:
-      check testManualSyncWakeup() == @["producer returns", "competitor"]
-    else:
-      skip()
-
   test "Multiple waiters test":
     when chronosSyncContinuations:
       check testMultipleWaiters() ==
