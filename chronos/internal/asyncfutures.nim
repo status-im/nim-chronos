@@ -1618,7 +1618,7 @@ when defined(windows):
        async: (raises: [AsyncError, CancelledError], raw: true).} =
     ## Waits until the specified object is in the signaled state or the
     ## time-out interval elapses. WaitForSingleObject() for asynchronous world.
-    let flags = WT_EXECUTEONLYONCE
+    let flags = WT_EXECUTEINWAITTHREAD or WT_EXECUTEONLYONCE
 
     var
       retFuture = newFuture[WaitableResult]("chronos.waitForSingleObject()")
