@@ -286,7 +286,7 @@ func seconds*(v: Duration): int64 {.inline.} =
 
 func fseconds*(v: Duration): float {.inline.} =
   ## Return the nearest floating point seconds value for Duration ``v``.
-  v.value / Second.value
+  float(v.value) / float(Second.value)
 
 func minutes*(v: Duration): int64 {.inline.} =
   ## Round Duration ``v`` to minutes.
