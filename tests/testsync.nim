@@ -36,8 +36,9 @@ suite "Asynchronous sync primitives test suite":
     discard testLock(8, lock)
     discard testLock(9, lock)
     lock.release()
-    ## There must be exactly 20 poll() calls
-    for i in 0..<20:
+
+    # One poll for every lock - this depends on implementation details
+    for i in 0..<10:
       poll()
     result = testLockResult
 
@@ -58,21 +59,21 @@ suite "Asynchronous sync primitives test suite":
       return false
 
     lock.release()
-    if not(checkFlags(true, true, false, false, false)):
+    if not(checkFlags(true, true, true, false, false)):
       return false
     await sleepAsync(10.milliseconds)
     if not(checkFlags(true, true, true, false, false)):
       return false
 
     lock.release()
-    if not(checkFlags(true, true, true, false, false)):
+    if not(checkFlags(true, true, true, true, false)):
       return false
     await sleepAsync(10.milliseconds)
     if not(checkFlags(true, true, true, true, false)):
       return false
 
     lock.release()
-    if not(checkFlags(true, true, true, true, false)):
+    if not(checkFlags(true, true, true, true, true)):
       return false
     await sleepAsync(10.milliseconds)
     if not(checkFlags(true, true, true, true, true)):
@@ -86,29 +87,6 @@ suite "Asynchronous sync primitives test suite":
       return false
 
     return true
-
-  proc testNoAcquiredRelease(): Future[bool] {.async.} =
-    var lock = newAsyncLock()
-    var res = false
-    try:
-      lock.release()
-    except AsyncLockError:
-      res = true
-    return res
-
-  proc testDoubleRelease(): Future[bool] {.async.} =
-    var lock = newAsyncLock()
-    var fut0 = lock.acquire()
-    var fut1 = lock.acquire()
-    var res = false
-    asyncSpawn fut0
-    asyncSpawn fut1
-    lock.release()
-    try:
-      lock.release()
-    except AsyncLockError:
-      res = true
-    return res
 
   proc testBehaviorLock(n1, n2, n3: Duration): Future[seq[int]] {.async.} =
     var stripe: seq[int]
@@ -332,10 +310,23 @@ suite "Asynchronous sync primitives test suite":
                              10.milliseconds, 3)) == @[10, 20, 11, 21]
   test "AsyncLock() flag consistency test":
     check waitFor(testFlag()) == true
+
   test "AsyncLock() double release test":
-    check waitFor(testDoubleRelease()) == true
+    var lock = newAsyncLock()
+    check:
+      lock.tryAcquire()
+      lock.tryRelease()
+      not lock.tryRelease()
+    expect AsyncLockError:
+      lock.release()
+
   test "AsyncLock() non-acquired release test":
-    check waitFor(testNoAcquiredRelease()) == true
+    var lock = newAsyncLock()
+    check:
+      not lock.tryRelease()
+    expect AsyncLockError:
+      lock.release()
+
   test "AsyncEvent() behavior test":
     check test2() == "0123456789"
   test "AsyncQueue() behavior test":
