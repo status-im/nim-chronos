@@ -13,8 +13,6 @@
 
 # Tutorials
 
-## Uptime Monitor
-
 - [HTTP Client: Uptime Monitor](./tutorials/http_client/intro.md)
   - [Making an HTTP Request with Chronos](./tutorials/http_client/chapter1.md)
   - [Session Reuse](./tutorials/http_client/chapter2.md)
@@ -23,8 +21,6 @@
   - [Smarter Health Check with Streaming](./tutorials/http_client/chapter5.md)
   - [Sending Alerts with POST Requests](./tutorials/http_client/chapter6.md)
   - [Scaling & Finishing Touches](./tutorials/http_client/chapter7.md)
-
-## Status Dashboard
 
 - [HTTP Server: Status Dashboard](./tutorials/http_server/intro.md)
   - [Setting Up a Basic HTTP Server](./tutorials/http_server/chapter1.md)
