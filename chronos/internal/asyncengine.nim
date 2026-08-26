@@ -1305,8 +1305,10 @@ proc pendingWorkCount(disp: PDispatcher): int =
   var res = 0
   for callback in disp.callbacks.items():
     if not(isSentinel(callback)) and not(isNil(callback.function)): inc(res)
-  for timer in disp.timers.items():
-    if not(isNil(timer.function.function)): inc(res)
+  # `HeapQueue` is indexed rather than iterated, because `items` for it was
+  # only added in later Nim versions.
+  for index in 0 ..< len(disp.timers):
+    if not(isNil(disp.timers[index].function.function)): inc(res)
   for idler in disp.idlers.items():
     if not(isNil(idler.function)): inc(res)
   for tick in disp.ticks.items():
