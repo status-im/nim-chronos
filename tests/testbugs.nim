@@ -141,27 +141,34 @@ suite "Asynchronous issues test suite":
         setDescriptorBlocking(sockets[0], false).isOk()
         setDescriptorBlocking(sockets[1], false).isOk()
 
-      # Ensure {Event.Write} is set
-      let
-        transp = fromPipe(AsyncFD(sockets[0]), bufferSize = 4096)
-        writeFut = transp.write(newSeq[byte](8 * 1024 * 1024))
-      await sleepAsync(50.milliseconds)
-      check not(writeFut.finished())
-
-      # Ensure {Event.Read} is set
-      var b: byte
-      let readFut = transp.readOnce(addr b, 1)
-      await sleepAsync(50.milliseconds)
-      check not(readFut.finished())
-
-      # Fill read buffer, and ensure {Event.Error} (EOF) is set
-      while handleEintr(osdefs.write(sockets[1], addr b, 1)) > 0:
-        discard
+      # Ensure {Event.Read} and {Event.Error} (EOF) are set
+      var b = 42.byte
       check:
-        osdefs.close(sockets[1]) == 0
-        (await readFut) == 1
-      await writeFut.cancelAndWait()
-      await transp.closeWait()
+        handleEintr(osdefs.write(sockets[1], addr b, 1)) == 1
+        osdefs.shutdown(SocketHandle(sockets[1]), SHUT_WR) == 0
+
+      # Avoid {Event.Write} being set, by filling up the send buffer
+      var buf: array[65536, byte]
+      while handleEintr(osdefs.write(sockets[0], baseAddr buf, buf.len)) > 0:
+        discard
+
+      func setFlag(udata: pointer) =
+        let flag = cast[ptr bool](udata)
+        flag[] = true
+
+      var readerFlag, writerFlag: bool
+      check:
+        register2(AsyncFD(sockets[0])).isOk()
+        addReader2(AsyncFD(sockets[0]), setFlag, addr readerFlag).isOk()
+        addWriter2(AsyncFD(sockets[0]), setFlag, addr writerFlag).isOk()
+      await sleepAsync(0.seconds)
+      check:
+        readerFlag and writerFlag
+        unregister2(AsyncFD(sockets[0])).isOk()
+
+      discard osdefs.close(sockets[0])
+      when chronosEventEngine != "poll":
+        discard osdefs.close(sockets[1])
 
     template runDuplicateReadEventTest(numReadBytes, numWriteBytes: int) =
       var sockets: array[2, cint]
