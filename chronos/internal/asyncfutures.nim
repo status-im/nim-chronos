@@ -641,28 +641,6 @@ proc pollFor[F: Future | InternalRaisesFuture](fut: F): F {.raises: [].} =
 
   fut
 
-proc closeThreadDispatcher*(): Opt[string] {.raises: [].} =
-  ## Close the current thread's dispatcher, releasing all the resources that it
-  ## holds.
-  ##
-  ## Much like `close(2)`, the dispatcher and its resources are released
-  ## unconditionally - the returned value is a diagnostic which, when present,
-  ## reports a resource that could not be released cleanly. There is nothing to
-  ## retry when it is set.
-  ##
-  ## Call this only once it is known that no further async tasks will be
-  ## scheduled: all streams are assumed to have been closed and futures that are
-  ## still pending will never complete.
-  let disp = getThreadDispatcher()
-
-  let pending = disp.pendingWorkCount()
-  doAssert pending == 0,
-           "closeThreadDispatcher(): the dispatcher still has " & $pending &
-           " scheduled callbacks - all async work must have completed or " &
-           "been cancelled before closing"
-
-  disp.closeDispatcher()
-
 proc waitFor*[T: not void](fut: Future[T]): lent T {.raises: [CatchableError].} =
   ## Blocks the current thread of execution until `fut` has finished, returning
   ## its value.

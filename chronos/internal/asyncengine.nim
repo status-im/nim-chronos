@@ -1150,7 +1150,7 @@ else:
   proc initAPI() = discard
   proc globalInit() = discard
 
-proc pendingWorkCount*(disp: PDispatcher): int =
+proc pendingWorkCount(disp: PDispatcher): int =
   ## Number of callbacks, timers, idlers and ticks that `disp` still has to
   ## run, i.e., the work that the dispatcher knows about.
   ##
@@ -1179,6 +1179,31 @@ proc getThreadDispatcher*(): PDispatcher =
   if gDisp.isNil():
     setThreadDispatcher(newDispatcher())
   gDisp
+
+proc closeThreadDispatcher*(): Opt[string] =
+  ## Close the current thread's dispatcher, releasing its resources and leaving
+  ## the thread without one - a new dispatcher is created on next use. Closing
+  ## a thread that never had one does nothing.
+  ##
+  ## Like `close(2)`, the resources are released unconditionally: the return
+  ## value is a diagnostic, not something to retry.
+  ##
+  ## Closing while futures are pending or handles are open is undefined
+  ## behaviour - a `Defect` is raised for the work the dispatcher knows about,
+  ## but operations the OS queue has not reported yet go undetected.
+  if isNil(gDisp):
+    return Opt.none(string)
+
+  let pending = gDisp.pendingWorkCount()
+  doAssert pending == 0,
+           "closeThreadDispatcher(): the dispatcher still has " & $pending &
+           " scheduled callbacks - all async work must have completed or " &
+           "been cancelled before closing"
+
+  # Detached before it is closed, so that a second call cannot release the same
+  # resources twice.
+  let disp = move(gDisp)
+  disp.closeDispatcher()
 
 proc setGlobalDispatcher*(disp: PDispatcher) {.
       gcsafe, deprecated: "Use setThreadDispatcher() instead".} =
