@@ -33,13 +33,6 @@ const asyncTimer* {.strdefine.} = "mono"
 
 when defined(windows):
   when asyncTimer == "system":
-    proc fastEpochTime*(): uint64 {.
-         inline, deprecated: "Use Moment.now()".} =
-      ## Timer resolution is millisecond.
-      var t: FILETIME
-      getSystemTimeAsFileTime(t)
-      ((uint64(t.dwHighDateTime) shl 32) or uint64(t.dwLowDateTime)) div 10_000
-
     proc fastEpochTimeNano(): uint64 {.inline.} =
       ## Timer resolution is nanosecond.
       var t: FILETIME
@@ -56,12 +49,6 @@ when defined(windows):
       queryPerformanceCounter(res)
       res * queryFrequencyN
 
-    proc fastEpochTime*(): uint64 {.inline, deprecated: "Use Moment.now()".} =
-      ## Procedure's resolution is millisecond.
-      var res: uint64
-      queryPerformanceCounter(res)
-      res div queryFrequencyM
-
     proc setupQueryFrequence() =
       var freq: uint64
       queryPerformanceFrequency(freq)
@@ -76,13 +63,6 @@ when defined(windows):
 elif defined(macosx):
 
   when asyncTimer == "system":
-
-    proc fastEpochTime*(): uint64 {.inline, deprecated: "Use Moment.now()".} =
-      ## Procedure's resolution is millisecond.
-      var t: Timeval
-      posix_gettimeofday(t)
-      uint64(t.tv_sec) * 1_000 + uint64(t.tv_usec) div 1_000
-
     proc fastEpochTimeNano(): uint64 {.inline.} =
       ## Procedure's resolution is nanosecond.
       var t: Timeval
@@ -98,11 +78,6 @@ elif defined(macosx):
       queryFrequencyN = info.numer
       queryFrequencyD = info.denom
 
-    proc fastEpochTime*(): uint64 {.inline, deprecated: "Use Moment.now()".} =
-      ## Procedure's resolution is millisecond.
-      let res = (mach_absolute_time() * queryFrequencyN) div queryFrequencyD
-      res div 1_000_000
-
     proc fastEpochTimeNano(): uint64 {.inline.} =
       ## Procedure's resolution is nanosecond.
       (mach_absolute_time() * queryFrequencyN) div queryFrequencyD
@@ -111,12 +86,6 @@ elif defined(macosx):
 
 elif defined(posix):
   when asyncTimer == "system":
-    proc fastEpochTime*(): uint64 {.inline, deprecated: "Use Moment.now()".} =
-      ## Procedure's resolution is millisecond.
-      var t: Timespec
-      discard clock_gettime(CLOCK_REALTIME, t)
-      uint64(t.tv_sec) * 1_000 + (uint64(t.tv_nsec) div 1_000_000)
-
     proc fastEpochTimeNano(): uint64 {.inline.} =
       ## Procedure's resolution is nanosecond.
       var t: Timespec
@@ -124,12 +93,6 @@ elif defined(posix):
       uint64(t.tv_sec) * 1_000_000_000'u64 + uint64(t.tv_nsec)
 
   else:
-    proc fastEpochTime*(): uint64 {.inline, deprecated: "Use Moment.now()".} =
-      ## Procedure's resolution is millisecond.
-      var t: Timespec
-      discard clock_gettime(CLOCK_MONOTONIC, t)
-      uint64(t.tv_sec) * 1_000 + (uint64(t.tv_nsec) div 1_000_000)
-
     proc fastEpochTimeNano(): uint64 {.inline.} =
       ## Procedure's resolution is nanosecond.
       var t: Timespec
@@ -285,6 +248,10 @@ func seconds*(v: SomeIntegerI64): Duration {.inline.} =
   ## Initialize Duration with seconds value ``v``.
   Duration(value: int64(v) * Second.value)
 
+func fseconds*(v: float): Duration {.inline.} =
+  ## Initialize Duration with seconds value ``v``.
+  Duration(value: int64(v * float(Second.value)))
+
 func minutes*(v: SomeIntegerI64): Duration {.inline.} =
   ## Initialize Duration with minutes value ``v``.
   Duration(value: int64(v) * Minute.value)
@@ -316,6 +283,10 @@ func milliseconds*(v: Duration): int64 {.inline.} =
 func seconds*(v: Duration): int64 {.inline.} =
   ## Round Duration ``v`` to seconds.
   v.value div Second.value
+
+func fseconds*(v: Duration): float {.inline.} =
+  ## Return the nearest floating point seconds value for Duration ``v``.
+  v.value / Second.value
 
 func minutes*(v: Duration): int64 {.inline.} =
   ## Round Duration ``v`` to minutes.
