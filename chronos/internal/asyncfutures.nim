@@ -653,7 +653,15 @@ proc closeThreadDispatcher*(): Opt[string] {.raises: [].} =
   ## Call this only once it is known that no further async tasks will be
   ## scheduled: all streams are assumed to have been closed and futures that are
   ## still pending will never complete.
-  getThreadDispatcher().closeDispatcher()
+  let disp = getThreadDispatcher()
+
+  let pending = disp.pendingWorkCount()
+  doAssert pending == 0,
+           "closeThreadDispatcher(): the dispatcher still has " & $pending &
+           " scheduled callbacks - all async work must have completed or " &
+           "been cancelled before closing"
+
+  disp.closeDispatcher()
 
 proc waitFor*[T: not void](fut: Future[T]): lent T {.raises: [CatchableError].} =
   ## Blocks the current thread of execution until `fut` has finished, returning

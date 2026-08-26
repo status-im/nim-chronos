@@ -702,12 +702,44 @@ elif defined(windows):
     if not(isNil(aftercb)):
       loop.callbacks.addLast(AsyncCallback(function: aftercb, udata: param))
 
+  proc pendingEventsCount(loop: PDispatcher): int =
+    ## Number of events waiting to be dequeued from loop's I/O completion
+    ## port, up to `MaxEventsCount`.
+
+    if isNil(loop.getQueuedCompletionStatusEx):
+      return 0
+
+    var
+      events: array[MaxEventsCount, osdefs.OVERLAPPED_ENTRY]
+      eventsReceived = ULONG(0)
+    let res = loop.getQueuedCompletionStatusEx(
+      loop.ioPort, addr events[0], ULONG(len(events)), eventsReceived,
+      DWORD(0), WINBOOL(0))
+    if res == FALSE:
+      let errCode = osLastError()
+      if uint32(errCode) != WAIT_TIMEOUT:
+        raiseOsDefect(errCode,
+                      "pendingEventsCount(): Unable to get OS events")
+      return 0
+
+    int(eventsReceived)
+
   proc closeDispatcher*(loop: PDispatcher): Opt[string] =
     ## Release the resources held by `loop`: its completion port and every
     ## handle still registered with it.
     ##
     ## Every resource is released even when one of them fails to close - the
     ## returned diagnostic, if any, describes the first such failure.
+    ##
+    ## Closing the completion port loses every overlapped operation queued to
+    ## it - the memory backing those operations can no longer be reclaimed -
+    ## so a `Defect` is raised when an event is still waiting to be processed.
+    let pending = loop.pendingEventsCount()
+    doAssert pending == 0,
+             "closeDispatcher(): the completion port still has " & $pending &
+             " event(s) waiting to be processed - all operations must have " &
+             "completed or been cancelled before closing"
+
     var diagnostic = Opt.none(string)
 
     if closeFd(loop.ioPort) != 0:
@@ -1117,6 +1149,24 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
 else:
   proc initAPI() = discard
   proc globalInit() = discard
+
+proc pendingWorkCount*(disp: PDispatcher): int =
+  ## Number of callbacks, timers, idlers and ticks that `disp` still has to
+  ## run, i.e., the work that the dispatcher knows about.
+  ##
+  ## Cancelled entries, whose callback has been cleared, and the sentinel of
+  ## the callback queue are not counted - they represent no work. Operations
+  ## that the OS queue has not reported yet are not counted either.
+  var res = 0
+  for callback in disp.callbacks.items():
+    if not(isSentinel(callback)) and not(isNil(callback.function)): inc(res)
+  for timer in disp.timers.items():
+    if not(isNil(timer.function.function)): inc(res)
+  for idler in disp.idlers.items():
+    if not(isNil(idler.function)): inc(res)
+  for tick in disp.ticks.items():
+    if not(isNil(tick.function)): inc(res)
+  res
 
 proc setThreadDispatcher*(disp: PDispatcher) =
   ## Set current thread's dispatcher instance to ``disp``.
