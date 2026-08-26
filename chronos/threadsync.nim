@@ -15,7 +15,10 @@ export results
 
 {.push raises: [].}
 
-const hasThreadSupport* = compileOption("threads")
+const
+  hasThreadSupport = compileOption("threads")
+  hasEventFd = defined(linux) and not defined(emscripten)
+
 when not(hasThreadSupport):
   {.fatal: "Compile this program with threads enabled!".}
 
@@ -25,7 +28,7 @@ type
   ThreadSignal* = object
     when defined(windows):
       event: HANDLE
-    elif defined(linux):
+    elif hasEventFd:
       efd: AsyncFD
     else:
       rfd, wfd: AsyncFD
@@ -42,7 +45,7 @@ proc new*(t: typedesc[ThreadSignalPtr]): Result[ThreadSignalPtr, string] =
       deallocShared(res)
       return err(osErrorMsg(osLastError()))
     res[] = ThreadSignal(event: event)
-  elif defined(linux):
+  elif hasEventFd:
     let efd = eventfd(0, EFD_CLOEXEC or EFD_NONBLOCK)
     if efd == -1:
       deallocShared(res)
@@ -79,7 +82,7 @@ when not(defined(windows)):
     WaitKind {.pure.} = enum
       Read, Write
 
-  when defined(linux):
+  when hasEventFd:
     proc checkBusy(fd: cint): bool = false
   else:
     proc checkBusy(fd: cint): bool =
@@ -149,7 +152,7 @@ proc close*(signal: ThreadSignalPtr): Result[void, string] =
     # We do not need to perform unregistering on Windows, we can only close it.
     if closeHandle(signal[].event) == 0'u32:
       return err(osErrorMsg(osLastError()))
-  elif defined(linux):
+  elif hasEventFd:
     let res = safeUnregisterAndCloseFd(signal[].efd)
     if res.isErr():
       return err(osErrorMsg(res.error))
@@ -173,12 +176,12 @@ proc fireSync*(signal: ThreadSignalPtr,
   else:
     let
       eventFd =
-        when defined(linux):
+        when hasEventFd:
           cint(signal[].efd)
         else:
           cint(signal[].wfd)
       checkFd =
-        when defined(linux):
+        when hasEventFd:
           cint(signal[].efd)
         else:
           cint(signal[].rfd)
@@ -190,7 +193,7 @@ proc fireSync*(signal: ThreadSignalPtr,
     var data = 1'u64
     while true:
       let res =
-        when defined(linux):
+        when hasEventFd:
           handleEintr(write(eventFd, addr data, sizeof(uint64)))
         else:
           handleEintr(send(SocketHandle(eventFd), addr data, sizeof(uint64),
@@ -235,7 +238,7 @@ proc waitSync*(signal: ThreadSignalPtr,
       err("The wait operation has been failed")
   else:
     let eventFd =
-      when defined(linux):
+      when hasEventFd:
         cint(signal[].efd)
       else:
         cint(signal[].rfd)
@@ -255,7 +258,7 @@ proc waitSync*(signal: ThreadSignalPtr,
       if not(wres.get()):
         return ok(false)
       let res =
-        when defined(linux):
+        when hasEventFd:
           handleEintr(read(eventFd, addr data, sizeof(uint64)))
         else:
           handleEintr(recv(SocketHandle(eventFd), addr data, sizeof(uint64),
@@ -285,12 +288,12 @@ proc fire*(signal: ThreadSignalPtr): Future[void] {.
     var data = 1'u64
     let
       eventFd =
-        when defined(linux):
+        when hasEventFd:
           cint(signal[].efd)
         else:
           cint(signal[].wfd)
       checkFd =
-        when defined(linux):
+        when hasEventFd:
           cint(signal[].efd)
         else:
           cint(signal[].rfd)
@@ -298,7 +301,7 @@ proc fire*(signal: ThreadSignalPtr): Future[void] {.
     proc continuation(udata: pointer) {.gcsafe, raises: [].} =
       if not(retFuture.finished()):
         let res =
-          when defined(linux):
+          when hasEventFd:
             handleEintr(write(eventFd, addr data, sizeof(uint64)))
           else:
             handleEintr(send(SocketHandle(eventFd), addr data, sizeof(uint64),
@@ -327,7 +330,7 @@ proc fire*(signal: ThreadSignalPtr): Future[void] {.
       return retFuture
 
     let res =
-      when defined(linux):
+      when hasEventFd:
         handleEintr(write(eventFd, addr data, sizeof(uint64)))
       else:
         handleEintr(send(SocketHandle(eventFd), addr data, sizeof(uint64),
@@ -370,7 +373,7 @@ else:
       "asyncthreadsignal.wait")
     var data = 1'u64
     let eventFd =
-      when defined(linux):
+      when hasEventFd:
         cint(signal[].efd)
       else:
         cint(signal[].rfd)
@@ -378,7 +381,7 @@ else:
     proc continuation(udata: pointer) {.gcsafe, raises: [].} =
       if not(retFuture.finished()):
         let res =
-          when defined(linux):
+          when hasEventFd:
             handleEintr(read(eventFd, addr data, sizeof(uint64)))
           else:
             handleEintr(recv(SocketHandle(eventFd), addr data, sizeof(uint64),

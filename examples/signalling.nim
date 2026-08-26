@@ -1,12 +1,11 @@
 import chronos, chronos/threadsync
 import os
 
-type
-  Context = object
-    # Context allocated by `createShared` should contain no garbage-collected
-    # types!
-    signal: ThreadSignalPtr
-    value: int
+type Context = object
+  # Context allocated by `createShared` should contain no garbage-collected
+  # types!
+  signal: ThreadSignalPtr
+  value: int
 
 proc myThread(ctx: ptr Context) {.thread.} =
   echo "Doing some work in a thread"

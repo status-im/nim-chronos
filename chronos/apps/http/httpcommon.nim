@@ -10,9 +10,8 @@
 {.push raises: [].}
 
 import std/[strutils, uri]
-import results, httputils
-import ../../asyncloop, ../../asyncsync
-import ../../streams/[asyncstream, boundstream]
+import results, httputils, stew/base64
+import ../../[asyncloop, asyncsync], ./httptable
 export asyncloop, asyncsync, results, httputils, strutils
 
 const
@@ -43,6 +42,7 @@ const
   ServerHeader* = "server"
   LocationHeader* = "location"
   AuthorizationHeader* = "authorization"
+  ProxyAuthorizationHeader* = "proxy-authorization"
   ContentDispositionHeader* = "content-disposition"
 
   UrlEncodedContentType* = MediaType.init("application/x-www-form-urlencoded")
@@ -73,8 +73,8 @@ type
   HttpProtocolError* = object of HttpError
     code*: HttpCode
 
-  HttpCriticalError* = object of HttpProtocolError # deprecated
-  HttpRecoverableError* = object of HttpProtocolError # deprecated
+  HttpCriticalError* {.deprecated.} = object of HttpProtocolError
+  HttpRecoverableError* {.deprecated.} = object of HttpProtocolError
 
   HttpRequestError* = object of HttpProtocolError
   HttpRequestHeadersError* = object of HttpRequestError
@@ -104,12 +104,12 @@ type
     Alive, Closing, Closed
 
   HttpAddressErrorType* {.pure.} = enum
-    InvalidUrlScheme,
-    InvalidPortNumber,
-    MissingHostname,
-    InvalidIpHostname,
-    NameLookupFailed,
-    NoAddressResolved
+    InvalidUrlScheme = "Unsupported URL scheme"
+    InvalidPortNumber = "Invalid port number"
+    MissingHostname = "Hostname missing from URL"
+    InvalidIpHostname = "Invalid IP"
+    NameLookupFailed = "DNS lookup failed"
+    NoAddressResolved = "Hostname has no addresses"
 
 const
   CriticalHttpAddressError* = {
@@ -150,9 +150,11 @@ proc raiseHttpRequestBodyTooLargeError*() {.
   raise (ref HttpRequestBodyTooLargeError)(
     code: Http413, msg: MaximumBodySizeError)
 
+{.push warning[Deprecated]: off.}
 proc raiseHttpCriticalError*(msg: string, code = Http400) {.
-     noinline, noreturn, raises: [HttpCriticalError].} =
+     noinline, noreturn, raises: [HttpCriticalError], deprecated.} =
   raise (ref HttpCriticalError)(code: code, msg: msg)
+{.pop.}
 
 proc raiseHttpDisconnectError*() {.
      noinline, noreturn, raises: [HttpDisconnectError].} =
@@ -194,16 +196,16 @@ proc raiseHttpAddressError*(msg: string) {.
      noinline, noreturn, raises: [HttpAddressError].} =
   raise (ref HttpAddressError)(msg: msg)
 
-template newHttpInterruptError*(): ref HttpInterruptError =
+proc newHttpInterruptError*(): ref HttpInterruptError {.noinline.} =
   newException(HttpInterruptError, "Connection was interrupted")
 
-template newHttpReadError*(message: string): ref HttpReadError =
+proc newHttpReadError*(message: string): ref HttpReadError {.noinline.} =
   newException(HttpReadError, message)
 
-template newHttpWriteError*(message: string): ref HttpWriteError =
+proc newHttpWriteError*(message: string): ref HttpWriteError {.noinline.} =
   newException(HttpWriteError, message)
 
-template newHttpUseClosedError*(): ref HttpUseClosedError =
+proc newHttpUseClosedError*(): ref HttpUseClosedError {.noinline.} =
   newException(HttpUseClosedError, "Connection was already closed")
 
 func init*(t: typedesc[HttpMessage], code: HttpCode, message: string,
@@ -237,67 +239,122 @@ iterator queryParams*(query: string,
       else:
         yield (decodeUrl(k), decodeUrl(v))
 
+func getTransferEncodings*(
+       ch: openArray[string]
+     ): HttpResult[seq[TransferEncodingFlags]] =
+  ## Parse value of multiple Transfer-Encoding headers and return the list.
+  ##
+  ## `identity` is a no-op encoding that is accepted and ignored for backwards
+  ## compatibility.
+  ##
+  ## See also:
+  ##   * https://www.rfc-editor.org/rfc/rfc9112#section-6.1
+  ##   * https://www.rfc-editor.org/rfc/rfc9110#section-8.4
+  ##   * https://www.iana.org/assignments/http-parameters/http-parameters.xhtml#transfer-coding
+  var
+    res: seq[TransferEncodingFlags]
+    chunked = 0
+
+  for header in ch:
+    for item in header.split(","):
+      case strip(item.toLowerAscii())
+      of "identity": # deprecated in HTTP/1.1+; accepted for compat
+        discard
+      of "chunked":
+        res.add(TransferEncodingFlags.Chunked)
+        inc chunked
+      of "compress", "x-compress":
+        res.add(TransferEncodingFlags.Compress)
+      of "deflate":
+        res.add(TransferEncodingFlags.Deflate)
+      of "gzip", "x-gzip":
+        res.add(TransferEncodingFlags.Gzip)
+      else:
+        return err("Unsupported Transfer-Encoding value")
+
+  # Validate RFC 9112 Section 6.1 rules:
+  # 1) chunked MUST NOT appear more than once
+  # 2) if chunked is present, it MUST be the final (last) encoding
+  if chunked > 1:
+    return err("Transfer-Encoding contains duplicate chunked encoding")
+  if chunked == 1 and res[^1] != TransferEncodingFlags.Chunked:
+    return err("chunked transfer coding must be the final encoding")
+
+  ok(res)
+
 func getTransferEncoding*(
        ch: openArray[string]
-     ): HttpResult[set[TransferEncodingFlags]] =
+     ): HttpResult[set[TransferEncodingFlags]] {.deprecated: "getTransferEncodings".} =
   ## Parse value of multiple HTTP headers ``Transfer-Encoding`` and return
-  ## it as set of ``TransferEncodingFlags``.
-  var res: set[TransferEncodingFlags] = {}
-  if len(ch) == 0:
-    res.incl(TransferEncodingFlags.Identity)
-    ok(res)
-  else:
-    for header in ch:
-      for item in header.split(","):
-        case strip(item.toLowerAscii())
-        of "identity":
-          res.incl(TransferEncodingFlags.Identity)
-        of "chunked":
-          res.incl(TransferEncodingFlags.Chunked)
-        of "compress":
-          res.incl(TransferEncodingFlags.Compress)
-        of "deflate":
-          res.incl(TransferEncodingFlags.Deflate)
-        of "gzip":
-          res.incl(TransferEncodingFlags.Gzip)
-        of "x-gzip":
-          res.incl(TransferEncodingFlags.Gzip)
-        of "":
-          res.incl(TransferEncodingFlags.Identity)
-        else:
-          return err("Incorrect Transfer-Encoding value")
-    ok(res)
+  ## the last entry, ie the first encoding that must be decoded.
+  let encodings = ?getTransferEncodings(ch)
+  ok {
+    if encodings.len() > 0:
+      encodings[^1]
+    else:
+      TransferEncodingFlags.Identity
+  }
+
+func getContentEncodings*(
+       ch: openArray[string]
+     ): HttpResult[seq[ContentEncodingFlags]] =
+  ## Parse value of multiple ``Content-Encoding`` headers and return the
+  ## list of ``ContentEncodingFlags``.
+  ##
+  ## If no encodings are given, returns an empty seq.
+  ##
+  ## `identity` is a no-op encoding that is accepted and ignored for backwards
+  ## compatibility.
+  ##
+  ## See also:
+  ##   * https://www.rfc-editor.org/rfc/rfc9110#section-8.4
+  ##   * https://www.iana.org/assignments/http-parameters/http-parameters.xhtml#content-coding
+  var res: seq[ContentEncodingFlags]
+  for header in ch:
+    for item in header.split(","):
+      case strip(item.toLowerAscii()):
+      of "identity": # valid in Accept-Encoding; accepted here for completeness
+        discard
+      of "br":
+        res.add(ContentEncodingFlags.Br)
+      of "compress", "x-compress":
+        res.add(ContentEncodingFlags.Compress)
+      of "deflate":
+        res.add(ContentEncodingFlags.Deflate)
+      of "gzip", "x-gzip":
+        res.add(ContentEncodingFlags.Gzip)
+      else:
+        return err("Unsupported Content-Encoding value")
+  ok(res)
 
 func getContentEncoding*(
        ch: openArray[string]
-     ): HttpResult[set[ContentEncodingFlags]] =
+     ): HttpResult[set[ContentEncodingFlags]] {.deprecated: "getContentEncodings".} =
   ## Parse value of multiple HTTP headers ``Content-Encoding`` and return
-  ## it as set of ``ContentEncodingFlags``.
-  var res: set[ContentEncodingFlags] = {}
-  if len(ch) == 0:
-    res.incl(ContentEncodingFlags.Identity)
-    ok(res)
+  ## the last entry, ie the first encoding that must be decoded.
+  let encodings = ?getContentEncodings(ch)
+  ok {
+    if encodings.len() > 0:
+      encodings[^1]
+    else:
+      ContentEncodingFlags.Identity
+  }
+
+func isPersistent*(version: HttpVersion, headers: HttpTable): bool =
+  if version >= HttpVersion20:
+    # HTTP/2: https://www.rfc-editor.org/info/rfc9113/#section-9.1
+    # HTTP/3: https://www.rfc-editor.org/info/rfc9114/#section-3.3
+    true # Persistent by default
+  elif version == HttpVersion11:
+    # https://www.rfc-editor.org/info/rfc9112/#section-9.3
+    # https://www.rfc-editor.org/info/rfc9110/#section-7.6.1
+    # "close" is present -> not persistent
+    not("close" in toLowerAscii(headers.getString(ConnectionHeader)))
   else:
-    for header in ch:
-      for item in header.split(","):
-        case strip(item.toLowerAscii()):
-        of "identity":
-          res.incl(ContentEncodingFlags.Identity)
-        of "br":
-          res.incl(ContentEncodingFlags.Br)
-        of "compress":
-          res.incl(ContentEncodingFlags.Compress)
-        of "deflate":
-          res.incl(ContentEncodingFlags.Deflate)
-        of "gzip":
-          res.incl(ContentEncodingFlags.Gzip)
-        of "x-gzip":
-          res.incl(ContentEncodingFlags.Gzip)
-        of "":
-          res.incl(ContentEncodingFlags.Identity)
-        else:
-          return err("Incorrect Content-Encoding value")
-    ok(res)
+    # We don't enable keep-alive for other versions even if in theory it could
+    # be supported as doing so is messy
+    # https://www.rfc-editor.org/info/rfc9112/#appendix-C.2.2
+    false
 
 func getContentType*(ch: openArray[string]): HttpResult[ContentTypeData] =
   ## Check and prepare value of ``Content-Type`` header.
@@ -354,3 +411,7 @@ func stringToBytes*(src: openArray[char]): seq[byte] =
     dst
   else:
     default
+
+func encodeBasicAuth*(username, password: string): string =
+  let auth = username & ":" & password
+  "Basic " & Base64Pad.encode(auth.toOpenArrayByte(0, high(auth)))

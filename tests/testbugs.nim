@@ -6,7 +6,11 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 import unittest2
-import ../chronos
+import ../chronos, ../chronos/unittest2/asynctests
+
+when defined(posix):
+  import stew/ptrops
+  import ../chronos/[config, osdefs, osutils]
 
 {.used.}
 
@@ -101,40 +105,6 @@ suite "Asynchronous issues test suite":
 
     result = r1 and r2
 
-  proc createBigMessage(size: int): seq[byte] =
-    var message = "MESSAGE"
-    var res = newSeq[byte](size)
-    for i in 0 ..< len(result):
-      res[i] = byte(message[i mod len(message)])
-    res
-
-  proc testIndexError(): Future[bool] {.async.} =
-    var server = createStreamServer(initTAddress("127.0.0.1:0"),
-                                    flags = {ReuseAddr})
-    let messageSize = DefaultStreamBufferSize * 4
-    var buffer = newSeq[byte](messageSize)
-    let msg = createBigMessage(messageSize)
-    let address = server.localAddress()
-    let afut = server.accept()
-    let outTransp = await connect(address)
-    let inpTransp = await afut
-    let bytesSent = await outTransp.write(msg)
-    check bytesSent == messageSize
-    var rfut {.used.} = inpTransp.readExactly(addr buffer[0], messageSize)
-
-    proc waiterProc(udata: pointer) {.raises: [], gcsafe.} =
-      try:
-        waitFor(sleepAsync(0.milliseconds))
-      except CatchableError:
-        raiseAssert "Unexpected exception happened"
-    let timer {.used.} = setTimer(Moment.fromNow(0.seconds), waiterProc, nil)
-    await sleepAsync(100.milliseconds)
-
-    await inpTransp.closeWait()
-    await outTransp.closeWait()
-    await server.closeWait()
-    return true
-
   proc testOrDeadlock(): Future[bool] {.async.} =
     proc f(): Future[void] {.async.} =
       await sleepAsync(2.seconds) or sleepAsync(1.seconds)
@@ -160,8 +130,35 @@ suite "Asynchronous issues test suite":
   test "Defer for asynchronous procedures test [Nim's issue #13899]":
     check waitFor(testDefer()) == true
 
-  test "IndexError crash test":
-    check waitFor(testIndexError()) == true
-
   test "`or` deadlock [#516] test":
     check waitFor(testOrDeadlock()) == true
+
+  when defined(posix):
+    asyncTest "Reader notification after buffer got full [poll()] test":
+      var sockets: array[2, cint]
+      check:
+        socketpair(osdefs.AF_UNIX, osdefs.SOCK_STREAM, 0, sockets) == 0
+        setDescriptorBlocking(sockets[0], false).isOk()
+        setDescriptorBlocking(sockets[1], false).isOk()
+
+      # Ensure {Event.Write} is set
+      let
+        transp = fromPipe(AsyncFD(sockets[0]), bufferSize = 4096)
+        writeFut = transp.write(newSeq[byte](8 * 1024 * 1024))
+      await sleepAsync(50.milliseconds)
+      check not(writeFut.finished())
+
+      # Ensure {Event.Read} is set
+      var b: byte
+      let readFut = transp.readOnce(addr b, 1)
+      await sleepAsync(50.milliseconds)
+      check not(readFut.finished())
+
+      # Fill read buffer, and ensure {Event.Error} (EOF) is set
+      while handleEintr(osdefs.write(sockets[1], addr b, 1)) > 0:
+        discard
+      check:
+        osdefs.close(sockets[1]) == 0
+        (await readFut) == 1
+      await writeFut.cancelAndWait()
+      await transp.closeWait()

@@ -934,6 +934,81 @@ elif defined(macosx) or defined(macos) or defined(bsd):
       discard osdefs.close(sock)
     res
 
+elif defined(haiku):
+
+  proc toInterfaceType(f: byte): InterfaceType =
+    var ft = int(f)
+    if (ft >= 1 and ft <= 196) or (ft == 237) or (ft == 243) or (ft == 244):
+      cast[InterfaceType](ft)
+    else:
+      IfOther
+
+  proc toInterfaceState(f: cuint): InterfaceState =
+    if (f and IFF_RUNNING) != 0 and (f and IFF_UP) != 0:
+      StatusUp
+    else:
+      StatusDown
+
+  proc getInterfaces*(): seq[NetworkInterface] {.raises: [].} =
+    ## Return list of available interfaces.
+    var res: seq[NetworkInterface]
+    var ifap: ptr IfAddrs
+    let gres = getIfAddrs(addr ifap)
+    if gres == 0:
+      while not isNil(ifap):
+        var iface: NetworkInterface
+        var ifaddress: InterfaceAddress
+
+        iface.name = $cast[cstring](ifap.ifa_name)
+        iface.flags = uint64(ifap.ifa_flags)
+        var i = 0
+        while i < len(res):
+          if res[i].name == iface.name:
+            break
+          inc(i)
+        if i == len(res):
+          res.add(iface)
+
+        if not isNil(ifap.ifa_addr):
+          let family = int(ifap.ifa_addr.sa_family)
+          if family == osdefs.AF_INET:
+            fromSAddr(cast[ptr Sockaddr_storage](ifap.ifa_addr),
+                      SockLen(sizeof(Sockaddr_in)), ifaddress.host)
+          elif family == osdefs.AF_INET6:
+            fromSAddr(cast[ptr Sockaddr_storage](ifap.ifa_addr),
+                      SockLen(sizeof(Sockaddr_in6)), ifaddress.host)
+        if not isNil(ifap.ifa_netmask):
+          var na: TransportAddress
+          let family = int(ifap.ifa_netmask.sa_family)
+          if family == osdefs.AF_INET:
+            fromSAddr(cast[ptr Sockaddr_storage](ifap.ifa_netmask),
+                      SockLen(sizeof(Sockaddr_in)), na)
+            if ifaddress.host.family == AddressFamily.IPv4:
+              ifaddress.net = IpNet.init(ifaddress.host, na)
+          elif family == osdefs.AF_INET6:
+            fromSAddr(cast[ptr Sockaddr_storage](ifap.ifa_netmask),
+                      SockLen(sizeof(Sockaddr_in6)), na)
+            if ifaddress.host.family == AddressFamily.IPv6:
+              ifaddress.net = IpNet.init(ifaddress.host, na)
+
+        if ifaddress.host.family != AddressFamily.None:
+          res[i].addresses.add(ifaddress)
+        ifap = ifap.ifa_next
+
+      sort(res, cmp)
+      freeIfAddrs(ifap)
+    res
+
+  proc sasize(data: openArray[byte]): int =
+    # SA_SIZE() template. Taken from FreeBSD net/route.h:1.63
+    if len(data) > 0:
+      if data[0] == 0x00'u8:
+        sizeof(uint32)
+      else:
+        1 + (int(data[0] - 1) or (sizeof(uint32) - 1))
+    else:
+      0
+
 elif defined(windows):
   import dynlib
   import ".."/osutils

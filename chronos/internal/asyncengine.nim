@@ -8,38 +8,55 @@
 #    Apache License, version 2.0, (LICENSE-APACHEv2)
 #                MIT license (LICENSE-MIT)
 
-{.push raises: [].}
+{.push raises: [], gcsafe.}
 
 ## This module implements the core asynchronous engine / dispatcher.
 ##
 ## For more information, see the `Concepts` chapter of the guide.
 
 from nativesockets import Port
-import std/[tables, heapqueue, deques]
+import std/[atomics, deques, heapqueue, tables, typetraits]
 import results
-import ".."/[config, futures, osdefs, oserrno, osutils, timer]
+import ../[config, effects, futures, osdefs, oserrno, osutils, timer]
 
 import ./[asyncmacro, errors]
 
 export Port
-export deques, errors, futures, timer, results
+export deques, effects, errors, futures, timer, results
 
 export
   asyncmacro.async, asyncmacro.await, asyncmacro.awaitne
 
 const
   MaxEventsCount* = 64
+  hasThreadSupport = compileOption("threads")
+
+when hasThreadSupport:
+  import ./mpsc
 
 when defined(windows):
   import std/[sets, hashes]
 elif defined(macosx) or defined(freebsd) or defined(netbsd) or
      defined(openbsd) or defined(dragonfly) or defined(macos) or
-     defined(linux) or defined(android) or defined(solaris):
+     defined(linux) or defined(android) or defined(solaris) or
+     defined(haiku):
   import ../selectors2
   export SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
          SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV, SIGUSR2,
          SIGPIPE, SIGALRM, SIGTERM, SIGPIPE
   export oserrno
+
+when hasThreadSupport:
+  type
+    ThreadCallbackFunc* = proc(udata: pointer) {.nimcall, gcsafe, raises: [].}
+      ## A callback function without a closure environment that is suitable for
+      ## passing between threads
+
+    ThreadCallbackNode = object of MpscNode
+      callback: ThreadCallbackFunc
+      udata: pointer
+
+    ThreadCallbackQueue = MpscQueue[ThreadCallbackNode]
 
 type
   AsyncCallback* = InternalAsyncCallback
@@ -57,13 +74,20 @@ type
     opened*: uint64
     closed*: uint64
 
-  PDispatcherBase = ref object of RootRef
+  DispatcherBase = object of RootRef
     timers*: HeapQueue[TimerCallback]
     callbacks*: Deque[AsyncCallback]
     idlers*: Deque[AsyncCallback]
     ticks*: Deque[AsyncCallback]
     trackers*: Table[string, TrackerBase]
     counters*: Table[string, TrackerCounter]
+    inEventLoop: bool
+
+    when hasThreadSupport:
+      threadCallbacks: ThreadCallbackQueue
+      waking: AtomicFlag
+
+  PDispatcherBase = ref DispatcherBase
 
 proc sentinelCallbackImpl(arg: pointer) {.gcsafe, noreturn.} =
   raiseAssert "Sentinel callback MUST not be scheduled"
@@ -77,6 +101,38 @@ proc isSentinel(acb: AsyncCallback): bool =
 
 proc `<`(a, b: TimerCallback): bool =
   result = a.finishAt < b.finishAt
+
+template preparePoll(loop: PDispatcherBase) =
+  # If you hit this assert, you've called `poll`, `runForever` or `waitFor`
+  # from within an async function which is not supported due to the difficulty
+  # to control stack depth and event ordering
+  # If you're using `waitFor`, switch to `await` and / or propagate the
+  # up the call stack.
+  when chronosStrictReentrancy:
+    doAssert not loop.inEventLoop,
+      "poll, runForever and waitFor calls must not reenter / nest"
+
+  loop.inEventLoop = true
+  defer: loop.inEventLoop = false
+
+template processThreadCallbacks(loop) =
+  # Drain cross-thread callbacks to the local callback queue
+  when hasThreadSupport:
+    # Clear the waking flag before popping items from the queue - anything
+    # added to the queue after we start draining will result in a new wakeup
+    loop.waking.clear(moRelease)
+
+    while true:
+      let node = loop.threadCallbacks.pop()
+      if node == nil:
+        break
+      # Move the callbacks to the regular callback list - this ensures we don't
+      # starve the rest of the pipeline if the callbacks themselves keep adding
+      # stuff
+      loop.callbacks.addLast(
+        AsyncCallback(function: node.callback, udata: node.udata)
+      )
+      deallocShared(node)
 
 func getAsyncTimestamp*(a: Duration): auto {.inline.} =
   ## Return rounded up value of duration with milliseconds resolution.
@@ -142,12 +198,20 @@ template processTicks(loop: untyped) =
     loop.callbacks.addLast(loop.ticks.popFirst())
 
 template processCallbacks(loop: untyped) =
-  while true:
-    let callable = loop.callbacks.popFirst()  # len must be > 0 due to sentinel
-    if isSentinel(callable):
-      break
-    if not(isNil(callable.function)):
-      callable.function(callable.udata)
+  when chronosStrictReentrancy:
+    # Process existing callbacks but not those that follow, to allow the network
+    # to regain control regularly
+    for _ in 0 ..< len(loop.callbacks):
+      let callable = loop.callbacks.popFirst()
+      if not(isNil(callable.function)):
+        callable.function(callable.udata)
+  else:
+    while true:
+      let callable = loop.callbacks.popFirst()  # len must be > 0 due to sentinel
+      if isSentinel(callable):
+        break
+      if not(isNil(callable.function)):
+        callable.function(callable.udata)
 
 proc raiseAsDefect*(exc: ref Exception, msg: string) {.noreturn, noinline.} =
   # Reraise an exception as a Defect, where it's unexpected and can't be handled
@@ -162,12 +226,6 @@ proc raiseOsDefect*(error: OSErrorCode, msg = "") {.noreturn, noinline.} =
   # it's easily lost.
   raise (ref Defect)(msg: msg & "\n[" & $int(error) & "] " & osErrorMsg(error) &
                           "\n" & getStackTrace())
-
-func toPointer(error: OSErrorCode): pointer =
-  when sizeof(int) == 8:
-    cast[pointer](uint64(uint32(error)))
-  else:
-    cast[pointer](uint32(error))
 
 func toException*(v: OSErrorCode): ref OSError = newOSError(v)
   # This helper will allow to use `tryGet()` and raise OSError for
@@ -200,10 +258,7 @@ when defined(nimdoc):
   proc closeSocket*(fd: AsyncFD, aftercb: CallbackFunc = nil) = discard
   proc unregisterAndCloseFd*(fd: AsyncFD): Result[void, OSErrorCode] = discard
   proc closeDispatcher*(loop: PDispatcher): Opt[string] = discard
-    ## Release the resources held by `loop`.
-    ##
-    ## Resources are released even when some of them fail to close - the
-    ## returned diagnostic, if any, describes such a failure.
+  proc contains*(disp: PDispatcher, fd: AsyncFD): bool = discard
 
   proc `==`*(x: AsyncFD, y: AsyncFD): bool {.borrow, gcsafe.}
 
@@ -226,7 +281,7 @@ elif defined(windows):
     DispatcherFlag* = enum
       SignalHandlerInstalled
 
-    PDispatcher* = ref object of PDispatcherBase
+    Dispatcher = object of DispatcherBase
       ioPort: HANDLE
       handles: HashSet[AsyncFD]
       connectEx*: WSAPROC_CONNECTEX
@@ -236,6 +291,7 @@ elif defined(windows):
       getQueuedCompletionStatusEx*: LPFN_GETQUEUEDCOMPLETIONSTATUSEX
       disconnectEx*: WSAPROC_DISCONNECTEX
       flags: set[DispatcherFlag]
+    PDispatcher* = ref Dispatcher
 
     PtrCustomOverlapped* = ptr CustomOverlapped
 
@@ -340,9 +396,14 @@ elif defined(windows):
       idlers: initDeque[AsyncCallback](),
       ticks: initDeque[AsyncCallback](),
       trackers: initTable[string, TrackerBase](),
-      counters: initTable[string, TrackerCounter]()
+      counters: initTable[string, TrackerCounter](),
     )
-    res.callbacks.addLast(SentinelCallback)
+    when not chronosStrictReentrancy:
+      res.callbacks.addLast(SentinelCallback)
+
+    when hasThreadSupport:
+      res.threadCallbacks.init()
+
     initAPI(res)
     res
 
@@ -588,17 +649,22 @@ elif defined(windows):
     if res.isErr():
       raise newException(ValueError, osErrorMsg(res.error()))
 
-  proc poll*() =
+  proc poll*() {.tags: [NestedPoll, RootEffect].} =
     let loop = getThreadDispatcher()
+    loop.preparePoll()
+
     var
       curTime = Moment.now()
       curTimeout = DWORD(0)
       events: array[MaxEventsCount, osdefs.OVERLAPPED_ENTRY]
 
-    # On reentrant `poll` calls from `processCallbacks`, e.g., `waitFor`,
-    # complete pending work of the outer `processCallbacks` call.
-    # On non-reentrant `poll` calls, this only removes sentinel element.
-    processCallbacks(loop)
+    when not chronosStrictReentrancy:
+      # On reentrant `poll` calls from `processCallbacks`, e.g., `waitFor`,
+      # complete pending work of the outer `processCallbacks` call.
+      # On non-reentrant `poll` calls, this only removes sentinel element.
+      # Although reentrancy is not allowed in general, we strive not to crash
+      # if it happens, maintaining a semblance of past behavior.
+      loop.processCallbacks()
 
     # Moving expired timers to `loop.callbacks` and calculate timeout
     loop.processTimersGetTimeout(curTimeout)
@@ -640,19 +706,28 @@ elif defined(windows):
         else:
           int(eventsReceived)
 
+    var hasWakeup = false
     for i in 0 ..< networkEventsCount:
-      var customOverlapped = PtrCustomOverlapped(events[i].lpOverlapped)
-      customOverlapped.data.errCode =
-        block:
-          let res = cast[uint64](customOverlapped.internal)
-          if res == 0'u64:
-            OSErrorCode(-1)
-          else:
-            OSErrorCode(rtlNtStatusToDosError(res))
-      customOverlapped.data.bytesCount = events[i].dwNumberOfBytesTransferred
-      let acb = AsyncCallback(function: customOverlapped.data.cb,
-                              udata: cast[pointer](customOverlapped))
-      loop.callbacks.addLast(acb)
+      if not(isNil(events[i].lpOverlapped)):
+        var customOverlapped = PtrCustomOverlapped(events[i].lpOverlapped)
+        customOverlapped.data.errCode =
+          block:
+            let res = cast[uint64](customOverlapped.internal)
+            if res == 0'u64:
+              OSErrorCode(-1)
+            else:
+              OSErrorCode(rtlNtStatusToDosError(res))
+        customOverlapped.data.bytesCount = events[i].dwNumberOfBytesTransferred
+        let acb = AsyncCallback(function: customOverlapped.data.cb,
+                                udata: cast[pointer](customOverlapped))
+        loop.callbacks.addLast(acb)
+      else:
+        hasWakeup = true
+
+    if hasWakeup:
+      # Move thread callbacks to the local callback queue - nil in the event
+      # queue means `wake` was called
+      loop.processThreadCallbacks()
 
     # Moving expired timers to `loop.callbacks`.
     loop.processTimers()
@@ -663,44 +738,42 @@ elif defined(windows):
       loop.processIdlers()
 
     # We move tick callbacks to `loop.callbacks` always.
-    processTicks(loop)
+    loop.processTicks()
 
-    # All callbacks which will be added during `processCallbacks` will be
-    # scheduled after the sentinel and are processed on next `poll()` call.
-    loop.callbacks.addLast(SentinelCallback)
-    processCallbacks(loop)
+    # Process the callbacks currently scheduled - new callbacks scheduled during
+    # callback execution will run in the next poll iteration
+    when not chronosStrictReentrancy:
+      loop.callbacks.addLast(SentinelCallback)
 
-    # All callbacks done, skip `processCallbacks` at start.
-    loop.callbacks.addFirst(SentinelCallback)
+    loop.processCallbacks()
+
+    when not chronosStrictReentrancy:
+      # All callbacks done, skip `processCallbacks` at start.
+      loop.callbacks.addFirst(SentinelCallback)
 
   proc closeSocket*(fd: AsyncFD, aftercb: CallbackFunc = nil) =
     ## Closes a socket and ensures that it is unregistered.
     let loop = getThreadDispatcher()
     loop.handles.excl(fd)
-    let
-      param = toPointer(
-        if closeFd(SocketHandle(fd)) == 0:
-          OSErrorCode(0)
-        else:
-          osLastError()
-      )
+    # Because we don't set SO_LINGER, `closeFd` should always succeed.
+    # Future API might be added to recover linger errors, but this is currently
+    # not supported so we discard the return value.
+    discard closeFd(SocketHandle(fd))
     if not(isNil(aftercb)):
-      loop.callbacks.addLast(AsyncCallback(function: aftercb, udata: param))
+      loop.callbacks.addLast(AsyncCallback(function: aftercb))
 
   proc closeHandle*(fd: AsyncFD, aftercb: CallbackFunc = nil) =
     ## Closes a (pipe/file) handle and ensures that it is unregistered.
     let loop = getThreadDispatcher()
     loop.handles.excl(fd)
-    let
-      param = toPointer(
-        if closeFd(HANDLE(fd)) == 0:
-          OSErrorCode(0)
-        else:
-          osLastError()
-      )
+    # Closing the handle should always succeed since async failures are reported
+    # via IOCP (pending operations cancelled on closed) and the documentation
+    # for CloseHandle does not specify and other specific conditions where it
+    # might fail.
+    discard closeFd(HANDLE(fd))
 
     if not(isNil(aftercb)):
-      loop.callbacks.addLast(AsyncCallback(function: aftercb, udata: param))
+      loop.callbacks.addLast(AsyncCallback(function: aftercb))
 
   proc pendingEventsCount(loop: PDispatcher): int =
     ## Number of events waiting to be dequeued from loop's I/O completion
@@ -775,9 +848,11 @@ elif defined(windows):
 
 elif defined(macosx) or defined(freebsd) or defined(netbsd) or
      defined(openbsd) or defined(dragonfly) or defined(macos) or
-     defined(linux) or defined(android) or defined(solaris):
+     defined(linux) or defined(android) or defined(solaris) or
+     defined(haiku):
   const
     SIG_IGN = cast[proc(x: cint) {.raises: [], noconv, gcsafe.}](1)
+    hasEventFd = defined(linux) and not defined(emscripten)
 
   type
     AsyncFD* = distinct cint
@@ -786,9 +861,14 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
       reader*: AsyncCallback
       writer*: AsyncCallback
 
-    PDispatcher* = ref object of PDispatcherBase
+    Dispatcher = object of DispatcherBase
       selector: Selector[SelectorData]
+      when hasEventFd:
+        wakeupFd: cint
+      else:
+        wakeupFd: array[2, cint]
       keys: seq[ReadyKey]
+    PDispatcher* = ref Dispatcher
 
   proc `==`*(x, y: AsyncFD): bool {.borrow, gcsafe.}
 
@@ -801,23 +881,50 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
 
   proc newDispatcher*(): PDispatcher =
     ## Create new dispatcher.
-    let selector =
-      block:
-        let res = Selector.new(SelectorData)
-        if res.isErr(): raiseOsDefect(res.error(),
-                                      "Could not initialize selector")
-        res.get()
+    let selector = Selector.new(SelectorData).expect("Selector")
 
     var res = PDispatcher(
       selector: selector,
       timers: initHeapQueue[TimerCallback](),
-      callbacks: initDeque[AsyncCallback](chronosEventsCount),
+      callbacks: initDeque[AsyncCallback](chronosInitialSize),
       idlers: initDeque[AsyncCallback](),
-      keys: newSeq[ReadyKey](chronosEventsCount),
+      keys: newSeq[ReadyKey](chronosInitialSize),
       trackers: initTable[string, TrackerBase](),
-      counters: initTable[string, TrackerCounter]()
+      counters: initTable[string, TrackerCounter](),
     )
-    res.callbacks.addLast(SentinelCallback)
+
+    when not chronosStrictReentrancy:
+      res.callbacks.addLast(SentinelCallback)
+
+    when hasThreadSupport:
+      res.threadCallbacks.init()
+
+    # Initialize the wakeup fd for waking up the event loop from other threads.
+    # On Linux: eventfd
+    # On other Unix: socketpair (portable, works on all POSIX systems)
+    when hasEventFd:
+      let efd = eventfd(0, EFD_CLOEXEC or EFD_NONBLOCK)
+      if efd == -1:
+        deallocShared(cast[pointer](res))
+        raiseOsDefect(osLastError(), "newDispatcher(): Unable to create eventfd")
+
+      # Register the read end with the selector for wake-up notification
+      discard selector.registerHandle2(efd, {Event.Read}, SelectorData())
+
+      res.wakeupFd = efd
+    else:
+      var sockets: array[2, cint]
+      if socketpair(AF_UNIX, SOCK_STREAM, 0, sockets) < 0:
+        deallocShared(cast[pointer](res))
+        raiseOsDefect(osLastError(), "newDispatcher(): Unable to create socketpair")
+      # Make both ends non-blocking and close-on-exec
+      discard setDescriptorFlags(sockets[0], true, true)
+      discard setDescriptorFlags(sockets[1], true, true)
+
+      # Register the read end with the selector for wake-up notification
+      discard selector.registerHandle2(sockets[1], {Event.Read}, SelectorData())
+
+      res.wakeupFd = sockets
     initAPI(res)
     res
 
@@ -949,22 +1056,20 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     let loop = getThreadDispatcher()
 
     proc continuation(udata: pointer) =
-      let
-        param = toPointer(
-          if SocketHandle(fd) in loop.selector:
-            let ures = unregister2(fd)
-            if ures.isErr():
-              discard closeFd(cint(fd))
-              ures.error()
-            else:
-              if closeFd(cint(fd)) != 0:
-                osLastError()
-              else:
-                OSErrorCode(0)
-          else:
-            osdefs.EBADF
-        )
-      if not(isNil(aftercb)): aftercb(param)
+      if SocketHandle(fd) in loop.selector:
+        discard unregister2(fd)
+      # `closeFd` might fail if an I/O error occurs during an async I/O
+      # operation, but on *most* posix systems this still results in the file
+      # descriptor being closed regardless of the error.
+      #
+      # For sockets in parituclar, we don't set SO_LINGER meaning that close
+      # happens immediately and does not wait for the socket to go through
+      # its graceful shutdown sequence.
+      #
+      # We currently don't have an API for returning this error to the caller
+      # so we discard it here - future work might expose it.
+      discard closeFd(cint(fd))
+      if not(isNil(aftercb)): aftercb(nil)
 
     withData(loop.selector, cint(fd), adata) do:
       # We are scheduling reader and writer callbacks to be called
@@ -1081,28 +1186,47 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
       ## Remove process' watching using process' descriptor ``procHandle``.
       removeProcess2(procHandle).tryGet()
 
-  proc poll*() {.gcsafe.} =
+  template drainWakeupFd(loop: PDispatcher) =
+    # Drain any pending wakeup data from the wakeup fd. Writing to the wakeup
+    # fd (from wake()) wakes the selector/epoll/poll call. We must read the
+    # data to clear it so the next wake-up is properly detected.
+    # The draining must be done before we empty the thread callback queue.
+    when hasEventFd:
+      # On linux, the read will always fully drain the descriptor
+      var dummy: uint64
+      discard handleEintr(read(loop.wakeupFd, addr dummy, sizeof(dummy)))
+    else:
+      # While in theory there might be more bytes to drain, it's harmless if we
+      # don't drain them all (we will get them the next loop)
+      var dummy {.noinit.}: array[64, char]
+      discard handleEintr(
+        recv(SocketHandle(loop.wakeupFd[1]), addr dummy[0], cint(len(dummy)), cint(0))
+      )
+
+  proc poll*() {.tags: [NestedPoll, RootEffect].} =
     ## Perform single asynchronous step.
     let loop = getThreadDispatcher()
+    loop.preparePoll()
+
     var curTime = Moment.now()
     var curTimeout = 0
 
-    # On reentrant `poll` calls from `processCallbacks`, e.g., `waitFor`,
-    # complete pending work of the outer `processCallbacks` call.
-    # On non-reentrant `poll` calls, this only removes sentinel element.
-    processCallbacks(loop)
+    when not chronosStrictReentrancy:
+      # On reentrant `poll` calls from `processCallbacks`, e.g., `waitFor`,
+      # complete pending work of the outer `processCallbacks` call.
+      # On non-reentrant `poll` calls, this only removes sentinel element.
+      # Although reentrancy is not allowed in general, we strive not to crash
+      # if it happens, maintaining a semblance of past behavior.
+      loop.processCallbacks()
 
     # Moving expired timers to `loop.callbacks` and calculate timeout.
     loop.processTimersGetTimeout(curTimeout)
 
     # Processing IO descriptors and all hardware events.
-    let count =
-      block:
-        let res = loop.selector.selectInto2(curTimeout, loop.keys)
-        if res.isErr():
-          raiseOsDefect(res.error(), "poll(): Unable to get OS events")
-        res.get()
+    let count = loop.selector.selectInto2(curTimeout, loop.keys).valueOr:
+      raiseOsDefect(error, "poll(): Unable to get OS events")
 
+    var hasWakeup = false
     for i in 0 ..< count:
       let fd = loop.keys[i].fd
       let events = loop.keys[i].events
@@ -1111,6 +1235,8 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
         if (Event.Read in events) or (events == {Event.Error}):
           if not isNil(adata.reader.function):
             loop.callbacks.addLast(adata.reader)
+          else:
+            hasWakeup = true
 
         if (Event.Write in events) or (events == {Event.Error}):
           if not isNil(adata.writer.function):
@@ -1127,6 +1253,21 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
             if not isNil(adata.reader.function):
               loop.callbacks.addLast(adata.reader)
 
+    if count == loop.keys.len() and loop.keys.len() < chronosEventsCount:
+      # If we filled the event seq, it's likely that we could have fetched
+      # more events in a single call - fetching more events means less work
+      # since we don't have to poll as often under load and we can
+      # batch more work in a single event loop iteration.
+      loop.keys.setLen(min(loop.keys.len * 2, chronosEventsCount))
+
+    when hasThreadSupport:
+      if hasWakeup:
+        # Drain the wakeup descriptor - this must be done before processing the
+        # thread callbacks since otherwise we might accidentally drain a wakeup
+        # for a callback we did not yet process
+        loop.drainWakeupFd()
+        loop.processThreadCallbacks()
+
     # Moving expired timers to `loop.callbacks`.
     loop.processTimers()
 
@@ -1136,15 +1277,19 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
       loop.processIdlers()
 
     # We move tick callbacks to `loop.callbacks` always.
-    processTicks(loop)
+    loop.processTicks()
 
-    # All callbacks which will be added during `processCallbacks` will be
-    # scheduled after the sentinel and are processed on next `poll()` call.
-    loop.callbacks.addLast(SentinelCallback)
-    processCallbacks(loop)
+    # Process the callbacks currently scheduled - new callbacks scheduled during
+    # callback execution will run in the next poll iteration
 
-    # All callbacks done, skip `processCallbacks` at start.
-    loop.callbacks.addFirst(SentinelCallback)
+    when not chronosStrictReentrancy:
+      loop.callbacks.addLast(SentinelCallback)
+
+    loop.processCallbacks()
+
+    when not chronosStrictReentrancy:
+      # All callbacks done, skip `processCallbacks` at start.
+      loop.callbacks.addFirst(SentinelCallback)
 
 else:
   proc initAPI() = discard
@@ -1270,15 +1415,80 @@ proc callSoon*(acb: AsyncCallback) =
   ## The callback is called when control returns to the event loop.
   getThreadDispatcher().callbacks.addLast(acb)
 
-proc callSoon*(cbproc: CallbackFunc, data: pointer) {.
-     gcsafe.} =
+proc callSoon*(cbproc: CallbackFunc, udata: pointer = nil) =
   ## Schedule `cbproc` to be called as soon as possible.
   ## The callback is called when control returns to the event loop.
   doAssert(not isNil(cbproc))
-  callSoon(AsyncCallback(function: cbproc, udata: data))
+  callSoon(AsyncCallback(function: cbproc, udata: udata))
 
-proc callSoon*(cbproc: CallbackFunc) =
-  callSoon(cbproc, nil)
+when hasThreadSupport:
+  type DispatcherHandle* = distinct (ptr Dispatcher)
+    ## Dispatcher handle suitable for cross-thread use, obtainable with
+    ## `threadHandle`() - the user must take care that the dispatcher does not
+    ## get released while the handle is active.
+
+  proc handle*(disp: PDispatcher): DispatcherHandle =
+    DispatcherHandle(addr disp[])
+
+  proc wake(disp: ptr Dispatcher) =
+    ## Wake up the event loop associated with dispatcher ``disp`` so that it
+    ## processes pending callbacks from the cross-thread MPSC queue.
+    ##
+    ## This procedure is **thread-safe** — it can be called from any thread.
+    ## It enqueues a sentinel node to the dispatcher's cross-thread queue
+    ## and then signals the underlying OS mechanism (epoll/kqueue/poll/IOCP)
+    ## to unblock the event loop's blocking wait.
+
+    # Wakeups are non-blocking and ignore errors, ie if it's EAGAIN or similar
+    # it means that the wakeup notification mechanism is triggered already and
+    # we don't need to trigger it again.
+
+    when defined(windows):
+      # For IOCP: post a completion status directly to the IOCP port.
+      # This is safe from any thread and will cause GetQueuedCompletionStatus
+      # to return immediately.
+      discard postQueuedCompletionStatus(disp.ioPort, DWORD(0), ULONG_PTR(0), nil)
+    elif hasEventFd:
+      # For epoll: write to the eventfd so epoll_wait returns.
+      var dummy: uint64 = 1
+      discard handleEintr(write(cint(disp.wakeupFd), addr dummy, sizeof(dummy)))
+    else:
+      # For kqueue/poll: send to the socketpair so kevent/poll returns.
+      # Non-blocking send — if EAGAIN, the loop already has something to
+      # process, which is fine.
+      var dummy: uint8 = 1
+      discard handleEintr(
+        send(SocketHandle(disp.wakeupFd[0]), addr dummy, sizeof(dummy), MSG_NOSIGNAL)
+      )
+
+  proc callSoon*(disp: DispatcherHandle, cbproc: ThreadCallbackFunc, udata: pointer = nil) =
+    ## Schedule `cbproc` to be called as soon as possible on the thread that `disp`
+    ## belongs to.
+    ## If `disp` is the current thread dispatcher, posts directly to the
+    ## callbacks deque. Otherwise, enqueues to the cross-thread queue
+    ## for the target dispatcher's next poll cycle, waking it in the process.
+    ##
+    ## This function is thread-safe.
+    doAssert(not isNil(cbproc))
+    let current = gDisp.handle() # Don't init a new dispatcher with getThreadDispatcher()
+    if distinctBase(current) == distinctBase(disp):
+      # Same thread: add directly to the callbacks deque
+      distinctBase(current).callbacks.addLast(AsyncCallback(function: cbproc, udata: udata))
+    else:
+      # Cross-thread: enqueue to shared MPSC queue
+      let node = createShared(ThreadCallbackNode)
+      node.callback = cbproc
+      node.udata = udata
+
+      let disp = distinctBase(disp)
+      # First push, then wake - this ensures that the callback is visible in
+      # the list by the time the processing loop gets to it.
+      disp.threadCallbacks.push(node)
+
+      # Since we draing the mpsc queue on wake-up, we only need one wakeup
+      # notification per batch of queue writes
+      if not disp.waking.testAndSet(moAcquireRelease):
+        disp.wake()
 
 proc callIdle*(acb: AsyncCallback) =
   ## Schedule ``cbproc`` to be called when there no pending network events

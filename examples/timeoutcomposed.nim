@@ -1,14 +1,14 @@
 ## Single timeout for several operations
 import chronos
 
-proc shortTask {.async.} =
+proc shortTask() {.async.} =
   try:
     await sleepAsync(1.seconds)
   except CancelledError as exc:
     echo "Short task was cancelled!"
     raise exc # Propagate cancellation to the next operation
 
-proc composedTimeout()  {.async.} =
+proc composedTimeout() {.async.} =
   let
     # Common timout for several sub-tasks
     timeout = sleepAsync(10.seconds)

@@ -26,6 +26,7 @@ type
     virtualId: int32
     childrenExited: bool
     pendingEvents: Deque[ReadyKey]
+    queueEvents: seq[EpollEvent]
 
   Selector*[T] = ref SelectorImpl[T]
 
@@ -97,7 +98,7 @@ proc new*(t: typedesc[Selector], T: typedesc): SelectResult[Selector[T]] =
   var nmask: Sigset
   if sigemptyset(nmask) < 0:
     return err(osLastError())
-  let epollFd = epoll_create(chronosEventsCount)
+  let epollFd = epoll_create(chronosInitialSize)
   if epollFd < 0:
     return err(osLastError())
   let selector = Selector[T](
@@ -107,7 +108,8 @@ proc new*(t: typedesc[Selector], T: typedesc): SelectResult[Selector[T]] =
     virtualId: -1'i32, # Should start with -1, because `InvalidIdent` == -1
     childrenExited: false,
     virtualHoles: initDeque[int32](),
-    pendingEvents: initDeque[ReadyKey]()
+    pendingEvents: initDeque[ReadyKey](),
+    queueEvents: newSeq[EpollEvent](chronosInitialSize),
   )
   ok(selector)
 
@@ -518,11 +520,9 @@ proc prepareKey[T](s: Selector[T], event: EpollEvent): Opt[ReadyKey] =
 
   if (event.events and EPOLLERR) != 0:
     rkey.events.incl(Event.Error)
-    rkey.errorCode = oserrno.ECONNRESET
 
   if (event.events and EPOLLHUP) != 0 or (event.events and EPOLLRDHUP) != 0:
     rkey.events.incl(Event.Error)
-    rkey.errorCode = oserrno.ECONNRESET
 
   if (event.events and EPOLLOUT) != 0:
     rkey.events.incl(Event.Write)
@@ -537,7 +537,6 @@ proc prepareKey[T](s: Selector[T], event: EpollEvent): Opt[ReadyKey] =
       let res = handleEintr(osdefs.read(fdi32, addr data, sizeof(uint64)))
       if res != sizeof(uint64):
         rkey.events.incl(Event.Error)
-        rkey.errorCode = osLastError()
 
     elif Event.Signal in pkey.events:
       var data: SignalFdInfo
@@ -582,7 +581,6 @@ proc prepareKey[T](s: Selector[T], event: EpollEvent): Opt[ReadyKey] =
           return Opt.none(ReadyKey)
         else:
           rkey.events.incl({Event.User, Event.Error})
-          rkey.errorCode = errorCode
       else:
         rkey.events.incl(Event.User)
 
@@ -590,7 +588,6 @@ proc prepareKey[T](s: Selector[T], event: EpollEvent): Opt[ReadyKey] =
     if Event.Timer in rkey.events:
       if epoll_ctl(s.epollFd, EPOLL_CTL_DEL, fdi32, nil) != 0:
         rkey.events.incl(Event.Error)
-        rkey.errorCode = osLastError()
       # we are marking key with `Finished` event, to avoid double decrease.
       rkey.events.incl(Event.Finished)
       pkey.events.incl(Event.Finished)
@@ -627,20 +624,20 @@ proc selectInto2*[T](s: Selector[T], timeout: int,
                      readyKeys: var openArray[ReadyKey]
                     ): SelectResult[int] =
   var
-    queueEvents: array[chronosEventsCount, EpollEvent]
     k: int = 0
 
   verifySelectParams(timeout, -1, int(high(cint)))
 
   let
-    maxEventsCount = min(len(queueEvents), len(readyKeys))
+    maxEventsCount = len(readyKeys)
     maxPendingEventsCount = min(maxEventsCount, len(s.pendingEvents))
     maxNewEventsCount = max(maxEventsCount - maxPendingEventsCount, 0)
-
-  let
     eventsCount =
       if maxNewEventsCount > 0:
-        let res = handleEintr(epoll_wait(s.epollFd, addr(queueEvents[0]),
+        if maxNewEventsCount > s.queueEvents.len:
+          s.queueEvents.setLen(maxNewEventsCount)
+
+        let res = handleEintr(epoll_wait(s.epollFd, addr(s.queueEvents[0]),
                                          cint(maxNewEventsCount),
                                          cint(timeout)))
         if res < 0:
@@ -652,7 +649,7 @@ proc selectInto2*[T](s: Selector[T], timeout: int,
   s.childrenExited = false
 
   for i in 0 ..< eventsCount:
-    let rkey = s.prepareKey(queueEvents[i]).valueOr: continue
+    let rkey = s.prepareKey(s.queueEvents[i]).valueOr: continue
     readyKeys[k] = rkey
     inc(k)
 

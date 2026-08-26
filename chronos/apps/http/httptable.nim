@@ -55,17 +55,15 @@ proc getString*(ht: HttpTables, key: string,
   ##
   ## If there multiple headers with the same name ``key`` the result value will
   ## be concatenation using `,`.
-  var defseq: seq[string]
-  let res = ht.table.getOrDefault(key.toLowerAscii(), defseq)
+  let res = ht.table.getOrDefault(key.toLowerAscii(), default(seq[string]))
   if len(res) == 0:
-    return default
+    default
   else:
     res.join(",")
 
 proc count*(ht: HttpTables, key: string): int =
   ## Returns number of headers with key ``key``.
-  var default: seq[string]
-  len(ht.table.getOrDefault(key.toLowerAscii(), default))
+  len(ht.table.getOrDefault(key.toLowerAscii(), default(seq[string])))
 
 proc getInt*(ht: HttpTables, key: string): uint64 =
   ## Parse header with key ``key`` as unsigned integer.

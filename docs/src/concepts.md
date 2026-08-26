@@ -87,7 +87,7 @@ multiple parallel operations and cancel the rest as soon as one finishes,
 to initiate the orderely shutdown of an application etc.
 
 ```nim
-{{#include ../examples/cancellation.nim}}
+{{#include ../../examples/cancellation.nim}}
 ```
 
 Even if cancellation is initiated, it is not guaranteed that the operation gets
@@ -128,7 +128,7 @@ Cancelling an already-finished `Future` has no effect, as the following example
 of downloading two web pages concurrently shows:
 
 ```nim
-{{#include ../examples/twogets.nim}}
+{{#include ../../examples/twogets.nim}}
 ```
 
 ### Ownership
@@ -149,8 +149,8 @@ cancalletion is not handled by the original caller).
 ### `noCancel`
 
 Certain operations must not be cancelled for semantic reasons. Common scenarios
-include `closeWait` that releases a resources irrevocably and composed
-operations whose individual steps should be performed together or not at all.
+include composed operations whose individual steps should be performed together
+or not at all.
 
 In such cases, the `noCancel` modifier to `await` can be used to temporarily
 disable cancellation propagation, allowing the operation to complete even if
@@ -167,6 +167,12 @@ let future = deepSleep(10.minutes)
 
 # This will take ~10 minutes even if we try to cancel the call to `deepSleep`!
 await cancelAndWait(future)
+```
+
+```admonition note
+`noCancel` is only needed for functions that do not handle cancellation internally. You can spot them by looking at what they raise: if a proc raises `CancelledError` and you want to explicitly prevent it from being cancellable, put a `noCancel` before its call.
+
+Functions that don't raise `CancellationError`, e.g. `closeWait`, do not need it.
 ```
 
 ### `join`

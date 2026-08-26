@@ -1039,6 +1039,168 @@ elif defined(macos) or defined(macosx):
     ELAST* = OSErrorCode(106)
       # Must be equal largest errno
 
+elif defined(haiku):
+  ## Source: https://github.com/haiku/haiku/blob/master/headers/os/support/Errors.h
+  const
+    EPERM* = OSErrorCode(low(int32) + 15)
+      # Operation not permitted
+    ENOENT* = OSErrorCode(low(int32) + 0x6003)
+      # No such file or directory
+    ESRCH* = OSErrorCode(low(int32) + 0x700d)
+      # No such process
+    EINTR* = OSErrorCode(low(int32) + 0xa)
+      # Interrupted system call
+    EIO* = OSErrorCode(low(int32) + 1)
+      # Input/output error
+    ENXIO* = OSErrorCode(low(int32) + 0x700b)
+      # Device not configured
+    E2BIG* = OSErrorCode(low(int32) + 0x7001)
+      # Argument list too long
+    ENOEXEC* = OSErrorCode(low(int32) + 0x1302)
+      # Exec format error
+    EBADF* = OSErrorCode(low(int32) + 0x6000)
+      # Bad file descriptor
+    ECHILD* = OSErrorCode(low(int32) + 0x7002)
+      # No child processes
+    EDEADLK* = OSErrorCode(low(int32) + 0x7003)
+      # Resource deadlock avoided
+    ENOMEM* = OSErrorCode(low(int32))
+      # Cannot allocate memory
+    EACCES* = OSErrorCode(low(int32) + 2)
+      # Permission denied
+    EFAULT* = OSErrorCode(low(int32) + 0x1301)
+      # Bad address
+    EBUSY* = OSErrorCode(low(int32) + 0xe)
+      # Device busy
+    EEXIST* = OSErrorCode(low(int32) + 0x6002)
+      # File exists
+    EXDEV* = OSErrorCode(low(int32) + 0x600b)
+      # Cross-device link
+    ENODEV* = OSErrorCode(low(int32) + 0x7007)
+      # Operation not supported by device
+    ENOTDIR* = OSErrorCode(low(int32) + 0x6005)
+      # Not a directory
+    EISDIR* = OSErrorCode(low(int32) + 0x6009)
+      # Is a directory
+    EINVAL* = OSErrorCode(low(int32) + 5)
+      # Invalid argument
+    ENFILE* = OSErrorCode(low(int32) + 0x7006)
+      # Too many open files in system
+    EMFILE* = OSErrorCode(low(int32) + 0x600a)
+      # Too many open files
+    ENOTTY* = OSErrorCode(low(int32) + 0x700a)
+      # Inappropriate ioctl for device
+    ETXTBSY* = OSErrorCode(low(int32) + 0x703b)
+      # Text file busy
+    EFBIG* = OSErrorCode(low(int32) + 0x7004)
+      # File too large
+    ENOSPC* = OSErrorCode(low(int32) + 0x6007)
+      # No space left on device
+    ESPIPE* = OSErrorCode(low(int32) + 0x700c)
+      # Illegal seek
+    EROFS* = OSErrorCode(low(int32) + 0x6008)
+      # Read-only file system
+    EMLINK* = OSErrorCode(low(int32) + 0x7005)
+      # Too many links
+    EPIPE* = OSErrorCode(low(int32) + 0x600d)
+      # Broken pipe
+    EDOM* = OSErrorCode(low(int32) + 0x7010)
+      # Numerical argument out of domain
+    ERANGE* = OSErrorCode(low(int32) + 0x7011)
+      # Result too large
+    EAGAIN* = OSErrorCode(low(int32) + 0xb)
+      # Resource temporarily unavailable
+    EWOULDBLOCK* = EAGAIN
+      # Operation would block
+    EINPROGRESS* = OSErrorCode(low(int32) + 0x7024)
+      # Operation now in progress
+    EALREADY* = OSErrorCode(low(int32) + 0x7025)
+      # Operation already in progress
+    ENOTSOCK* = OSErrorCode(low(int32) + 0x702c)
+      # Socket operation on non-socket
+    EDESTADDRREQ* = OSErrorCode(low(int32) + 0x7030)
+      # Destination address required
+    EMSGSIZE* = OSErrorCode(low(int32) + 0x702a)
+      # Message too long
+    EPROTOTYPE* = OSErrorCode(low(int32) + 0x7012)
+      # Protocol wrong type for socket
+    ENOPROTOOPT* = OSErrorCode(low(int32) + 0x7022)
+      # Protocol not available
+    EPROTONOSUPPORT* = OSErrorCode(low(int32) + 0x7013)
+      # Protocol not supported
+    EOPNOTSUPP* = OSErrorCode(low(int32) + 0x702b)
+      # Operation not supported
+    EPFNOSUPPORT* = OSErrorCode(low(int32) + 0x7014)
+      # Protocol family not supported
+    EAFNOSUPPORT* = OSErrorCode(low(int32) + 0x7015)
+      # Address family not supported by protocol family
+    EADDRINUSE* = OSErrorCode(low(int32) + 0x7016)
+      # Address already in use
+    EADDRNOTAVAIL* = OSErrorCode(low(int32) + 0x7017)
+      # Can't assign requested address
+    ENETDOWN* = OSErrorCode(low(int32) + 0x7018)
+      # Network is down
+    ENETUNREACH* = OSErrorCode(low(int32) + 0x7019)
+      # Network is unreachable
+    ENETRESET* = OSErrorCode(low(int32) + 0x701a)
+      # Network dropped connection on reset
+    ECONNABORTED* = OSErrorCode(low(int32) + 0x701b)
+      # Software caused connection abort
+    ECONNRESET* = OSErrorCode(low(int32) + 0x701c)
+      # Connection reset by peer
+    ENOBUFS* = OSErrorCode(low(int32) + 0x7023)
+      # No buffer space available
+    EISCONN* = OSErrorCode(low(int32) + 0x701d)
+      # Socket is already connected
+    ENOTCONN* = OSErrorCode(low(int32) + 0x701e)
+      # Socket is not connected
+    ESHUTDOWN* = OSErrorCode(low(int32) + 0x701f)
+      # Can't send after socket shutdown
+    ETIMEDOUT* = OSErrorCode(low(int32) + 9)
+      # Operation timed out
+    ECONNREFUSED* = OSErrorCode(low(int32) + 0x7020)
+      # Connection refused
+    ELOOP* = OSErrorCode(low(int32) + 0x600c)
+      # Too many levels of symbolic links
+    ENAMETOOLONG* = OSErrorCode(low(int32) + 0x6004)
+      # File name too long
+    EHOSTDOWN* = OSErrorCode(low(int32) + 0x702d)
+      # Host is down
+    EHOSTUNREACH* = OSErrorCode(low(int32) + 0x7021)
+      # No route to host
+    ENOTEMPTY* = OSErrorCode(low(int32) + 0x6006)
+      # Directory not empty
+    EDQUOT* = OSErrorCode(low(int32) + 0x7031)
+      # Disk quota exceeded
+    ESTALE* = OSErrorCode(low(int32) + 0x7028)
+      # Stale NFS file handle
+    ENOLCK* = OSErrorCode(low(int32) + 0x7008)
+      # No locks available
+    ENOSYS* = OSErrorCode(low(int32) + 0x7009)
+      # Function not implemented
+    ENOATTR* = OSErrorCode(low(int32) + 0x703c)
+      # Attribute not found
+    EILSEQ* = OSErrorCode(low(int32) + 0x7026)
+      # Illegal byte sequence
+    EOVERFLOW* = OSErrorCode(low(int32) + 0x7029)
+      # Value too large to be stored in data type
+    ECANCELED* = OSErrorCode(low(int32) + 0x702f)
+      # Operation canceled
+    EIDRM* = OSErrorCode(low(int32) + 0x7032)
+      # Identifier removed
+    ENOMSG* = OSErrorCode(low(int32) + 0x7027)
+      # No message of desired type
+    ENOTSUP* = OSErrorCode(low(int32) + 0x7038)
+      # Not supported
+    EBADMSG* = OSErrorCode(low(int32) + 0x702e)
+      # Bad message
+    ENOTRECOVERABLE* = OSErrorCode(low(int32) + 0x703d)
+      # State not recoverable
+    EOWNERDEAD* = OSErrorCode(low(int32) + 0x703e)
+      # Previous owner died
+    EPROTO* = OSErrorCode(low(int32) + 0x7039)
+      # Protocol error
+
 elif defined(linux):
   ## Source: https://github.com/torvalds/linux/blob/master/include/uapi/asm-generic/errno-base.h
   ##         https://github.com/torvalds/linux/blob/master/include/uapi/asm-generic/errno.h

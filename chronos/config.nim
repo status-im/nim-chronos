@@ -4,9 +4,8 @@
 ## in transition periods leading up to a breaking release that starts enforcing
 ## them and removes the option.
 ##
-## `chronosPreviewV4` is a preview flag to enable v4 semantics - in particular,
-## it enables strict exception checking and disables parts of the deprecated
-## API and other changes being prepared for the upcoming release
+## `chronosPreviewV5` is a preview flag to enable v5 semantics - see below for
+## the strictness checks it adds.
 ##
 ## `chronosDebug` can be defined to enable several debugging helpers that come
 ## with a runtime cost - it is recommeneded to not enable these in production
@@ -35,7 +34,7 @@ const
     ##
     ## `Exception` handling may be removed in future chronos versions.
 
-  chronosStrictFutureAccess* {.booldefine.}: bool = defined(chronosPreviewV4)
+  chronosStrictFutureAccess* {.booldefine.}: bool = defined(chronosPreviewV5)
 
   chronosStackTrace* {.booldefine.}: bool = defined(chronosDebug)
     ## Include stack traces in futures for creation and completion points
@@ -68,20 +67,22 @@ const
   chronosEventsCount* {.intdefine.} = 64
     ## Number of OS poll events retrieved by syscall (epoll, kqueue, poll).
 
-  chronosInitialSize* {.intdefine.} = 64
+  chronosInitialSize* {.intdefine.} = 32
     ## Initial size of Selector[T]'s array of file descriptors.
 
   chronosEventEngine* {.strdefine.}: string =
     when defined(nimdoc):
       ""
-    elif defined(linux) and not(defined(android) or defined(emscripten)):
+    elif defined(emscripten):
+      "poll"
+    elif defined(android):
+      "epoll"
+    elif defined(linux):
       "epoll"
     elif defined(macosx) or defined(macos) or defined(ios) or
           defined(freebsd) or defined(netbsd) or defined(openbsd) or
-          defined(dragonfly):
+          defined(dragonfly) or defined(haiku):
       "kqueue"
-    elif defined(android) or defined(emscripten):
-      "poll"
     elif defined(posix):
       "poll"
     else:
@@ -91,7 +92,7 @@ const
   chronosHasRaises* = 0
     ## raises effect support via `async: (raises: [])`
 
-  chronosTransportDefaultBufferSize* {.intdefine.} = 16384
+  chronosTransportDefaultBufferSize* {.intdefine.} = 4096
     ## Default size of chronos transport internal buffer.
 
   chronosStreamDefaultBufferSize* {.intdefine.} = 16384
@@ -99,6 +100,23 @@ const
 
   chronosTLSSessionCacheBufferSize* {.intdefine.} = 4096
     ## Default size of chronos TLS Session cache's internal buffer.
+
+  chronosUseSink* {.booldefine.} = (NimMajor, NimMinor, NimPatch) >= (2, 0, 6)
+    ## Whether or not to use `sink` - using a recent Nim version helps:
+    ## * https://github.com/nim-lang/Nim/issues/23354
+    ## * https://github.com/nim-lang/Nim/issues/22175
+    ##
+    ## https://github.com/nim-lang/Nim/issues/12340 is a particularily serious
+    ## bug but it does not affect chronos' usage as long as values are not
+    ## moved out of Future (at the time of writing we only move values)
+
+  chronosStrictReentrancy* {.booldefine.} = defined(chronosPreviewV5)
+    ## Raise an assert if `poll` is re-entered by calling it from an `{.async.}`
+    ## function or `callSoon` callback.
+    ##
+    ## Reentrancy is undefined behavior and generally not allowed in the chronos
+    ## runtime - enbling this option will cause a panic if it's detected - this
+    ## will become the default in future chronos versions.
 
 when defined(chronosStrictException):
   {.warning: "-d:chronosStrictException has been deprecated in favor of handleException".}
@@ -129,38 +147,9 @@ when defined(debug) or defined(chronosConfig):
     printOption("chronosTLSSessionCacheBufferSize",
       chronosTLSSessionCacheBufferSize)
 
-# In nim 1.6, `sink` + local variable + `move` generates the best code for
-# moving a proc parameter into a closure - this only works for closure
-# procedures however - in closure iterators, the parameter is always copied
-# into the closure (!) meaning that non-raw `{.async.}` functions always carry
-# this overhead, sink or no. See usages of chronosMoveSink for examples.
-# In addition, we need to work around https://github.com/nim-lang/Nim/issues/22175
-# which has not been backported to 1.6.
-# Long story short, the workaround is not needed in non-raw {.async.} because
-# a copy of the literal is always made.
-# TODO review the above for 2.0 / 2.0+refc
-type
-  SeqHeader = object
-    length, reserved: int
-
-proc isLiteral(s: string): bool {.inline.} =
-  when defined(gcOrc) or defined(gcArc):
-    false
-  else:
-    s.len > 0 and (cast[ptr SeqHeader](s).reserved and (1 shl (sizeof(int) * 8 - 2))) != 0
-
-proc isLiteral[T](s: seq[T]): bool {.inline.} =
-  when defined(gcOrc) or defined(gcArc):
-    false
-  else:
-    s.len > 0 and (cast[ptr SeqHeader](s).reserved and (1 shl (sizeof(int) * 8 - 2))) != 0
-
-template chronosMoveSink*(val: auto): untyped =
-  bind isLiteral
-  when not (defined(gcOrc) or defined(gcArc)) and val is seq|string:
-    if isLiteral(val):
-      val
-    else:
-      move(val)
-  else:
-    move(val)
+when chronosUseSink:
+  template chronosSink*(T: type): type = sink T
+  template chronosMoveSink*(v: sink auto): untyped = move(v)
+else:
+  template chronosSink*(T: type): type = T
+  template chronosMoveSink*(v: sink auto): untyped = v
