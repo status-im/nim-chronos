@@ -199,6 +199,11 @@ when defined(nimdoc):
   proc closeHandle*(fd: AsyncFD, aftercb: CallbackFunc = nil) = discard
   proc closeSocket*(fd: AsyncFD, aftercb: CallbackFunc = nil) = discard
   proc unregisterAndCloseFd*(fd: AsyncFD): Result[void, OSErrorCode] = discard
+  proc closeDispatcher*(loop: PDispatcher): Opt[string] = discard
+    ## Release the resources held by `loop`.
+    ##
+    ## Resources are released even when some of them fail to close - the
+    ## returned diagnostic, if any, describes such a failure.
 
   proc `==`*(x: AsyncFD, y: AsyncFD): bool {.borrow, gcsafe.}
 
@@ -697,18 +702,27 @@ elif defined(windows):
     if not(isNil(aftercb)):
       loop.callbacks.addLast(AsyncCallback(function: aftercb, udata: param))
 
-  proc safeCloseHandle(h: HANDLE): Result[void, string] =
-    let res = closeHandle(h)
-    if res == 0:  # WINBOOL FALSE
-      return err("Failed to close handle error code: " & osErrorMsg(osLastError()))
-    ok()
+  proc closeDispatcher*(loop: PDispatcher): Opt[string] =
+    ## Release the resources held by `loop`: its completion port and every
+    ## handle still registered with it.
+    ##
+    ## Every resource is released even when one of them fails to close - the
+    ## returned diagnostic, if any, describes the first such failure.
+    var diagnostic = Opt.none(string)
 
-  proc closeDispatcher*(loop: PDispatcher): Result[void, string] =
-    ? safeCloseHandle(loop.ioPort)
-    for i in loop.handles.items:
-      closeHandle(i)
+    if closeFd(loop.ioPort) != 0:
+      diagnostic = Opt.some("Unable to close completion port: " &
+                            osErrorMsg(osLastError()))
+
+    # `closeHandle` is not used here because it would mutate `loop.handles`
+    # while it is being iterated over.
+    for fd in loop.handles.items():
+      if closeFd(HANDLE(fd)) != 0 and diagnostic.isNone():
+        diagnostic = Opt.some("Unable to close handle: " &
+                              osErrorMsg(osLastError()))
     loop.handles.clear()
-    ok()
+
+    diagnostic
 
   proc unregisterAndCloseFd*(fd: AsyncFD): Result[void, OSErrorCode] =
     ## Unregister from system queue and close asynchronous socket.
@@ -949,13 +963,16 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     ## You can execute ``aftercb`` before actual socket close operation.
     closeSocket(fd, aftercb)
 
-  proc closeDispatcher*(loop: PDispatcher): Result[void, string] =
-    ## Close selector associated with current thread's dispatcher.
-    try:
-      loop.selector.close()
-    except IOSelectorsException as e:
-      return err("Exception in closeDispatcher: " & e.msg)
-    ok()
+  proc closeDispatcher*(loop: PDispatcher): Opt[string] =
+    ## Release the resources held by `loop`, ie the selector associated with
+    ## the current thread's dispatcher.
+    ##
+    ## The selector state is released even when its descriptor fails to close -
+    ## in that case a diagnostic describing the failure is returned.
+    loop.selector.close2().isOkOr:
+      return Opt.some("Unable to close selector: " & osErrorMsg(error) &
+                      " (code: " & $int(error) & ")")
+    Opt.none(string)
 
   when chronosEventEngine in ["epoll", "kqueue"]:
     type
