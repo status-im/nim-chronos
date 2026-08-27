@@ -12,3 +12,6 @@
 
 import chronos/[asyncloop, asyncsync, handles, transport, timer, debugutils]
 export asyncloop, asyncsync, handles, transport, timer, debugutils
+
+{.warning[UnusedImport]: off.}
+import chronos/apps/http/[httpclient, httpserver]
