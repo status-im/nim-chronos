@@ -123,11 +123,4 @@ task test_libbacktrace, "test with libbacktrace":
 task docs, "Generate API documentation":
   exec "mdbook build docs"
   tryExec nimc & " doc " &
-    "--git.url:https://github.com/status-im/nim-chronos --git.commit:master --outdir:docs/book/api --project chronos"
-
-  # Build the docs for modules that aren't part of the main module.
-  for item in walkDir("chronos/apps/http"):
-    if item.kind == pcFile and item.path.splitFile().ext == ".nim":
-      tryExec nimc & " doc " &
-        "--git.url:https://github.com/status-im/nim-chronos --git.commit:master --outdir:docs/book/api/chronos/apps/http " &
-        item.path
+    "--git.url:https://github.com/status-im/nim-chronos --git.commit:master --outdir:docs/book/api --project --index:on chronos"
