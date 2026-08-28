@@ -207,13 +207,37 @@ suite "Continuation scheduling test suite":
       trace[].add "producer returns"
 
     proc consumer(trace: ptr Trace) {.async: (raises: [CancelledError]).} =
-      let w = producer(trace)
       fut.addCallback(observerCb, trace)
+      let w = producer(trace)
       fut.addCallback(observerCb2, trace)
       fut.complete()
       await w
 
     runTest consumer
+
+  proc testAddToComplete(): Trace =
+    let fut = Future[void].Raising([CancelledError]).init()
+
+    proc consumer(trace: ptr Trace) {.async: (raises: [CancelledError]).} =
+      fut.complete()
+      callSoon(competitorCb, trace)
+      fut.addCallback(observerCb, trace)
+      await sleepAsync(ZeroDuration)
+      trace[].add "consumer returns"
+
+    runTest consumer
+
+  proc testWaitFor(): Trace =
+    proc producer(trace: ptr Trace) {.async: (raises: []).} =
+      await noCancel sleepAsync(ZeroDuration)
+      callSoon(competitorCb, trace)
+      trace[].add "producer returns"
+
+    var trace: Trace
+    waitFor producer(addr trace)
+    trace.add "waitFor done"
+    waitFor noCancel sleepAsync(ZeroDuration)
+    trace
 
   proc testOrFirstFails(): Trace =
     proc first(
@@ -297,6 +321,26 @@ suite "Continuation scheduling test suite":
 
     runTest consumer
 
+  proc testAsyncEventOrder(): Trace =
+    let event = newAsyncEvent()
+
+    proc waiterA(trace: ptr Trace) {.async: (raises: [CancelledError]).} =
+      await event.wait()
+      trace[].add "waiter A"
+
+    proc waiterB(trace: ptr Trace) {.async: (raises: [CancelledError]).} =
+      await event.wait()
+      trace[].add "waiter B"
+
+    proc consumer(trace: ptr Trace) {.async: (raises: [CancelledError]).} =
+      let
+        a = waiterA(trace)
+        b = waiterB(trace)
+      event.fire()
+      await allFutures(a, b)
+
+    runTest consumer
+
   test "Simple flow not interrupted test":
     when chronosSyncContinuations:
       check:
@@ -358,10 +402,16 @@ suite "Continuation scheduling test suite":
   test "Manual wakeup interruptible test":
     check testManualWakeup() == @["competitor", "producer returns"]
 
-  test "Callback order":
-    check testCallbackOrder() == @["producer returns", "observer", "observer2"]
+  test "Callback order test":
+    check testCallbackOrder() == @["observer", "producer returns", "observer2"]
 
-  test "Combinator first-finisher test":
+  test "Add callback to completed future test":
+    check testAddToComplete() == @["competitor", "observer", "consumer returns"]
+
+  test "waitFor includes callbacks test":
+    check testWaitFor() == @["producer returns", "competitor", "waitFor done"]
+
+  test "Combinators order test":
     check:
       testOrFirstFails() ==
         @["fut1 fails", "fut2 completes", "or: failed"]
@@ -369,3 +419,6 @@ suite "Continuation scheduling test suite":
         @["first completes", "second completes", "race: first"]
       testOneFirstWins() ==
         @["first completes", "second completes", "one: first"]
+
+  test "AsyncEvent order test":
+    check testAsyncEventOrder() == @["waiter A", "waiter B"]
