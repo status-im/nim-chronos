@@ -422,3 +422,29 @@ suite "Continuation scheduling test suite":
 
   test "AsyncEvent order test":
     check testAsyncEventOrder() == @["waiter A", "waiter B"]
+
+  proc testCallSoonIteration(): Trace =
+    var trace: Trace
+
+    proc tick(udata: pointer) =
+      let active = cast[ptr bool](udata)
+      if active[]:
+        trace.add "tick"
+        callSoon(tick, udata)
+
+    proc timer(active: ptr bool) {.async: (raises: [CancelledError]).} =
+      await sleepAsync(ZeroDuration)
+      trace.add "timer"
+
+    var active = true
+    callSoon(tick, addr active)
+    let timerFut = timer(addr active)
+    for i in 0 ..< 3:
+      poll()
+    active = false
+    waitFor noCancel timerFut
+    waitFor noCancel sleepAsync(ZeroDuration)
+    trace
+
+  test "callSoon order test":
+    check testCallSoonIteration() == @["tick", "tick", "timer", "tick"]
