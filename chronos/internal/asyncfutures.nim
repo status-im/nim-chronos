@@ -138,16 +138,16 @@ proc done*(future: FutureBase): bool {.deprecated: "Use `completed` instead".} =
   completed(future)
 
 proc callImmediately(acb: AsyncCallback) =
-  ## Schedule `acb` to be called immediately.
-  ## No other scheduled callbacks or events are called before it.
+  ## Schedule `acb` to be called immediately, before any
+  ## other already queued events such as timer handlers and I/O.
   let loop = getThreadDispatcher()
   loop.callbacks.addFirst(acb)
   when chronosStrictReentrancy:
     loop.numImmediate += 1
 
 proc callImmediately(cbproc: CallbackFunc, udata: pointer = nil) {.gcsafe.} =
-  ## Schedule `cbproc` to be called as soon as possible.
-  ## No other scheduled callbacks or events are called before it.
+  ## Schedule `cbproc` to be called immediately, before any
+  ## other already queued events such as timer handlers and I/O.
   doAssert(not isNil(cbproc))
   callImmediately(AsyncCallback(function: cbproc, udata: udata))
 
