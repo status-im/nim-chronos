@@ -1,18 +1,18 @@
 mode = ScriptMode.Verbose
 
 packageName   = "chronos"
-version       = "4.2.4"
+version       = "4.2.5"
 author        = "Status Research & Development GmbH"
 description   = "Networking framework with async/await support"
 license       = "MIT or Apache License 2.0"
 skipDirs      = @["tests"]
 
 requires "nim >= 1.6.16",
-         "results",
-         "stew",
-         "bearssl >= 0.2.7",
-         "httputils",
-         "unittest2"
+         "bearssl >= 0.2.13",
+         "httputils >= 0.5.1",
+         "results >= 0.5.0",
+         "stew >= 0.5.0",
+         "unittest2 >= 0.2.0"
 
 import os, strutils
 
