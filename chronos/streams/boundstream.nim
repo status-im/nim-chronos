@@ -180,7 +180,10 @@ proc readBounded(
     var o = 0
     while o < n:
       if o == res.len:
-        res.setLenUninit(int(min(uint64(n), uint64(res.len) shl 1)))
+        if res.len <= static(high(int) div 2):
+          res.setLenUninit(min(n, res.len shl 1))
+        else:
+          res.setLenUninit(min(n, high(int)))
       try:
         await rstream.readExactly(addr res[o], res.len - o)
         o = res.len
