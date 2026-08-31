@@ -1445,7 +1445,8 @@ suite "AsyncStream/BoundedStream":
         check clientRes
 
       proc boundedTest(stest: BoundarySizeTest,
-                       size: int, cmp: BoundCmp) {.async.} =
+                       size: int, cmp: BoundCmp,
+                       boundarySize = Opt.none(uint64)) {.async.} =
         let messagePart = createBigMessage("ABCDEFGHIJKLMNOP",
                                            int(itemSize) div 10)
         var message: seq[byte]
@@ -1502,7 +1503,8 @@ suite "AsyncStream/BoundedStream":
         server.start()
         var conn = await connect(server.localAddress())
         var rstream = newAsyncStreamReader(conn)
-        var rbstream = newBoundedStreamReader(rstream, uint64(size),
+        var rbstream = newBoundedStreamReader(rstream,
+                                              boundarySize.get(uint64(size)),
                                               comparison = cmp)
         case stest
         of SizeReadWrite:
@@ -1553,6 +1555,14 @@ suite "AsyncStream/BoundedStream":
         await boundedTest(SizeOverflow, itemSize, itemComp)
       asyncTest "BoundedStream(size) incomplete test [" & suffix & "]":
         await(boundedTest(SizeIncomplete, itemSize, itemComp))
+      asyncTest "BoundedStream(size) incomplete test, large [" & suffix & "]":
+        for boundarySize in [
+            1'u64 shl 30, 1'u64 shl 31, 1'u64 shl 40, 1'u64 shl 53,
+            uint64(high(int32)), uint64(high(int32)) + 1,
+            uint64(high(int64)), uint64(high(int64)) + 1,
+            high(uint64)]:
+          await(boundedTest(SizeIncomplete, itemSize, itemComp,
+                              Opt.some(boundarySize)))
       asyncTest "BoundedStream(size) empty message test [" & suffix & "]":
         await(boundedTest(SizeEmpty, itemSize, itemComp))
       asyncTest "BoundedStream(boundary) reading test [" & suffix & "]":
