@@ -2,7 +2,7 @@ mode = ScriptMode.Verbose
 
 packageName   = "chronos"
 # keep in sync: chronos/apps/http/httpagent.nim
-version       = "4.4.0"
+version       = "4.4.1"
 author        = "Status Research & Development GmbH"
 description   = "Networking framework with async/await support"
 license       = "MIT or Apache License 2.0"
