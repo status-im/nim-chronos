@@ -152,4 +152,7 @@ when chronosUseSink:
   template chronosMoveSink*(v: sink auto): untyped = move(v)
 else:
   template chronosSink*(T: type): type = T
-  template chronosMoveSink*(v: sink auto): untyped = v
+  # Plain `auto`, no `sink`: this branch returns `v` unchanged (no move
+  # happens), and on Nim < 2.0.6 `sink auto` fails to match an lvalue
+  # seq-element argument for some instantiations.
+  template chronosMoveSink*(v: auto): untyped = v

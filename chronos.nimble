@@ -34,7 +34,12 @@ let testArguments =
     [
       "-d:debug -d:chronosDebug -d:useSysAssert -d:useGcAssert",
       "-d:debug -d:chronosDebug -d:chronosEventEngine=poll -d:useSysAssert -d:useGcAssert",
+      "-d:debug -d:chronosDebug -d:chronosPreviewV5 -d:useSysAssert -d:useGcAssert",
       "-d:release -d:chronosPreviewV5",
+      # Pins the vacated-slot canary's no-sink branch (chronosUseSink
+      # gates `chronosMoveSink`'s identity-passthrough fallback) on
+      # every toolchain, not just whichever default chronosUseSink picks.
+      "-d:debug -d:chronosDebug -d:chronosUseSink=false -d:useSysAssert -d:useGcAssert",
     ]
 
 let cfg =
@@ -81,20 +86,33 @@ task benchmarks, "Run benchmarks":
   # Make sure benchmarks compile
   for f in walkDirRec("benchmarks"):
 
-    if f.contains("bench_") and f.endsWith(".nim"):
+    if f.extractFilename.startsWith("bench_") and f.endsWith(".nim"):
       run "-d:release", f[0..^5]
 
 task test, "Run all tests":
   for args in testArguments:
     # First run tests with `refc` memory manager.
     run args & " --mm:refc", "tests/testall"
+    # testcontextvarsstandalone is its own step, not part of testall: it
+    # covers the contextvars suites that cannot share testall's binary
+    # (testcontextvarsleakguard deliberately lets an AssertionDefect
+    # escape poll() under chronosDebug; testcontextvarslock's chronosDebug
+    # construction lock is one-way for the process's lifetime). The
+    # `orchestrate` argument runs each suite in its own subprocess, so
+    # isolation holds by construction rather than by import order.
+    build args & " --mm:refc", "tests/testcontextvarsstandalone"
+    exec "build/testcontextvarsstandalone orchestrate"
     if (NimMajor, NimMinor) >= (2, 2): # ORC on 2.0 is too broken to investigate
       run args & " --mm:orc", "tests/testall"
+      build args & " --mm:orc", "tests/testcontextvarsstandalone"
+      exec "build/testcontextvarsstandalone orchestrate"
 
-  # Make sure benchmarks compile
+  # Make sure benchmarks compile. `--threads:on` explicitly: Nim 1.6
+  # does not default it on, and bench_bulk_tcp.nim imports
+  # chronos/threadsync, which hard-fails to compile without it.
   for f in walkDirRec("benchmarks"):
-    if f.startsWith("bench_") and f.endsWith(".nim"):
-      build "", f[0..^5]
+    if f.extractFilename.startsWith("bench_") and f.endsWith(".nim"):
+      build "--threads:on", f[0..^5]
 
   if testSuccessMarker.len > 0:
     # Mobile CI uses this to confirm that the full task reached its end.

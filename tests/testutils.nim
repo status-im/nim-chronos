@@ -11,6 +11,7 @@ import ../chronos, ../chronos/config
 {.used.}
 
 suite "Asynchronous utilities test suite":
+
   when chronosFutureTracking:
     proc getCount(): uint =
       # This procedure counts number of Future[T] in double-linked list via list
