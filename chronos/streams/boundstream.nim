@@ -181,7 +181,9 @@ proc readBounded(
       raise exc
     except AsyncStreamIncompleteError:
       raise newBoundedStreamIncompleteError()
-  rstream.offset += n.uint
+  else:
+    if rstream.state == AsyncStreamState.Running:
+      rstream.state = AsyncStreamState.Finished
 
   # TODO https://github.com/nim-lang/Nim/issues/25057
   move(res)
