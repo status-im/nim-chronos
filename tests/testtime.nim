@@ -48,6 +48,9 @@ suite "Asynchronous timers & steps test suite":
     result = sum div 10'i64
 
   proc testTimer(): bool =
+    check:
+      fseconds(1.0).fseconds() == 1.0
+
     let a = Moment.now()
     waitFor(sleepAsync(1000.milliseconds))
     let b = Moment.now()
@@ -57,7 +60,14 @@ suite "Asynchronous timers & steps test suite":
       echo d
 
   test "Timer reliability test [" & asyncTimer & "]":
-    check testTimer() == true
+    let a = Moment.now()
+    waitFor(sleepAsync(1000.milliseconds))
+    let b = Moment.now()
+    let d = b - a
+    check:
+      (d >= 1000.milliseconds) and (d <= 3000.milliseconds)
+      (d.fseconds() >= 1.0) and (d.fseconds() <= 3.0)
+
   test $TimersCount & " timers with 10ms timeout":
     var res = waitFor(test(10.milliseconds))
     check (res >= 10.milliseconds) and (res <= 100.milliseconds)
