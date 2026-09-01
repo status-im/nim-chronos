@@ -142,7 +142,9 @@ task bookindex, "Generate the book index":
   exec nimc & " book --index:only book"
 
 task book, "Generate the book":
-  exec nimc & " book book"
+  exec nimc & " book " &
+    "--git.url:https://github.com/status-im/nim-chronos --git.commit:master " &
+    "book"
   cpDir("book/img", "htmldocs/img")
   cpFile("htmldocs/introduction.html", "htmldocs/index.html")
 
