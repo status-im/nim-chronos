@@ -1,30 +1,30 @@
-# ANCHOR: all
+#ANCHOR: all
 import std/sequtils
 import chronos/apps/http/httpclient
 
-# ANCHOR: ntfy_topic
+#ANCHOR: ntfy_topic
 const
   ntfyTopic = "<YOUR_NTFY_TOPIC_NAME>"
-# ANCHOR_END: ntfy_topic
+#ANCHOR_END: ntfy_topic
   uris = @[
     "https://duckduckgo.com/?q=chronos", "https://mock.codes/403",
     "http://10.255.255.1", "https://html.spec.whatwg.org/",
     "https://mock.codes/200",
   ]
 
-# ANCHOR: sendAlert
+#ANCHOR: sendAlert
 proc sendAlert(
     session: HttpSessionRef, message: string, priority = 3
 ) {.async: (raises: [CancelledError]).} =
   let
-# ANCHOR_END: sendAlert
-# ANCHOR: headers
+#ANCHOR_END: sendAlert
+#ANCHOR: headers
     headers = {"Title": "Chronos Uptime Monitor", "Priority": $priority}
-# ANCHOR_END: headers
-# ANCHOR: body
+#ANCHOR_END: headers
+#ANCHOR: body
     body = message.stringToBytes()
-# ANCHOR_END: body
-# ANCHOR: request
+#ANCHOR_END: body
+#ANCHOR: request
     request = HttpClientRequestRef.new(
       session,
       "https://ntfy.sh/" & ntfyTopic,
@@ -34,9 +34,9 @@ proc sendAlert(
     ).valueOr:
       echo "[WRN] Failed to send alert: " & error
       return
-# ANCHOR_END: request
+#ANCHOR_END: request
 
-# ANCHOR: response
+#ANCHOR: response
   try:
     let response = await request.send().wait(5.seconds)
     await response.closeWait()
@@ -44,7 +44,7 @@ proc sendAlert(
     echo "[WRN] Failed to send alert: " & getCurrentExceptionMsg()
   finally:
     await request.closeWait()
-# ANCHOR_END: response
+#ANCHOR_END: response
 
 proc findMarker(
     bodyReader: HttpBodyReader
@@ -71,7 +71,7 @@ proc findMarker(
   await bodyReader.readMessage(findMarkerInSample)
   found
 
-# ANCHOR: check
+#ANCHOR: check
 proc check(session: HttpSessionRef, uri: string) {.async: (raises: [CancelledError]).} =
   let
     request = HttpClientRequestRef.new(session, uri).valueOr:
@@ -111,7 +111,7 @@ proc check(session: HttpSessionRef, uri: string) {.async: (raises: [CancelledErr
     await session.sendAlert(message, 4)
   finally:
     await response.closeWait()
-# ANCHOR_END: check
+#ANCHOR_END: check
 
 proc check(uris: seq[string]) {.async: (raises: []).} =
   let
@@ -127,4 +127,4 @@ proc check(uris: seq[string]) {.async: (raises: []).} =
 
 when isMainModule:
   waitFor check(uris)
-# ANCHOR_END: all
+#ANCHOR_END: all

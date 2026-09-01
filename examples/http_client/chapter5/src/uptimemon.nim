@@ -1,21 +1,21 @@
-# ANCHOR: all
+#ANCHOR: all
 import std/sequtils
 import chronos/apps/http/httpclient
 
-# ANCHOR: urls
+#ANCHOR: urls
 const uris = @[
   "https://duckduckgo.com/?q=chronos", "https://mock.codes/403",
   "http://10.255.255.1", "https://html.spec.whatwg.org/", "https://mock.codes/200",
 ]
-# ANCHOR_END: urls
+#ANCHOR_END: urls
 
-# ANCHOR: findMarker
+#ANCHOR: findMarker
 proc findMarker(
     bodyReader: HttpBodyReader
 ): Future[bool] {.async: (raises: [AsyncStreamError, CancelledError]).} =
-# ANCHOR_END: findMarker
+#ANCHOR_END: findMarker
 
-# ANCHOR: vars
+#ANCHOR: vars
   const
     marker = "<html"
     readLimit = 10 * 1024
@@ -24,9 +24,9 @@ proc findMarker(
     totalRead = 0
     sample = newString(len(marker) - 1)
     found = false
-# ANCHOR_END: vars
+#ANCHOR_END: vars
 
-# ANCHOR: findMarkerInSample
+#ANCHOR: findMarkerInSample
   proc findMarkerInSample(data: openArray[byte]): (int, bool) =
     if len(data) == 0:
       (0, false)
@@ -36,15 +36,15 @@ proc findMarker(
       found = marker in sample
       totalRead += len(data)
       (len(data), found and totalRead <= readLimit)
-# ANCHOR_END: findMarkerInSample
+#ANCHOR_END: findMarkerInSample
 
-# ANCHOR: readMessage
+#ANCHOR: readMessage
   await bodyReader.readMessage(findMarkerInSample)
   found
-# ANCHOR_END: readMessage
+#ANCHOR_END: readMessage
  
 proc check(session: HttpSessionRef, uri: string) {.async: (raises: [CancelledError]).} =
-# ANCHOR: let
+#ANCHOR: let
   let
     request = HttpClientRequestRef.new(session, uri).valueOr:
       echo "[ERR] " & uri & ": " & error
@@ -57,9 +57,9 @@ proc check(session: HttpSessionRef, uri: string) {.async: (raises: [CancelledErr
         return
       finally:
         await request.closeWait()
-# ANCHOR_END: let
+#ANCHOR_END: let
 
-# ANCHOR: url_response
+#ANCHOR: url_response
   try:
     if response.status == 200:
       let
@@ -76,17 +76,17 @@ proc check(session: HttpSessionRef, uri: string) {.async: (raises: [CancelledErr
         echo "[NOK] " & uri & ": Not valid HTML"
     else:
       echo "[NOK] " & uri & ": " & $response.status
-# ANCHOR_END: url_response
+#ANCHOR_END: url_response
 
-# ANCHOR: except
+#ANCHOR: except
   except HttpError, AsyncStreamError:
     echo "[ERR] " & uri & ": " & getCurrentExceptionMsg()
-# ANCHOR_END: except
+#ANCHOR_END: except
 
-# ANCHOR: finally
+#ANCHOR: finally
   finally:
     await response.closeWait()
-# ANCHOR_END: finally
+#ANCHOR_END: finally
 
 proc check(uris: seq[string]) {.async: (raises: []).} =
   let
@@ -102,4 +102,4 @@ proc check(uris: seq[string]) {.async: (raises: []).} =
 
 when isMainModule:
   waitFor check(uris)
-# ANCHOR_END: all
+#ANCHOR_END: all

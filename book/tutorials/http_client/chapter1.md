@@ -1,0 +1,106 @@
+.. title:: Making an HTTP Request with Chronos
+.. importdoc:: ../../error_handling
+.. importdoc:: ../../api/chronos/apps/http/httpclient
+
+**Goal:** Learn how to make an HTTP request and proccess its response with Chronos.
+
+**Source code:** [chapter1/src/uptimemon.nim](https://github.com/status-im/nim-chronos/blob/master/examples/http_client/chapter1/src/uptimemon.nim)
+
+Create a new Nimble project:
+
+```shell
+$ nimble init uptimemon
+```
+
+Copy and paste this code into `src/uptimemon.nim` (we'll go through each line in a moment):
+
+.. include:: ../../../examples/http_client/chapter1/src/uptimemon.nim
+   :start-after: #ANCHOR: all
+   :end-before: #ANCHOR_END: all
+   :code:
+
+To execute the file, switch to the directory with this file in your terminal and run this command:
+
+```shell
+$ nimble run
+```
+
+You should see the following message in you terminal:
+
+```shell
+[OK] https://google.com
+```
+
+Now let's see what we're doing here line by line.
+
+# Line-by-Line Explanation
+
+.. include:: ../../../examples/http_client/chapter1/src/uptimemon.nim
+   :start-after: #ANCHOR: import
+   :end-before: #ANCHOR_END: import
+   :code:
+
+[httpclient](../../api/chronos/apps/http/httpclient.html) module, as the title suggests, implements the HTTP client capabilities, i.e. sending HTTP requests and dealing with the responses asynchronously.
+
+.. include:: ../../../examples/http_client/chapter1/src/uptimemon.nim
+   :start-after: #ANCHOR: check
+   :end-before: #ANCHOR_END: check
+   :code:
+
+We define a function that sends an HTTP request to a URL we provide, checks if this URL is available, and prints the result.
+
+Note that this function is annotated with `async` pragma because we won't call it directly but instead will "book" its execution from Chronos in an asynchronous way.
+
+Also note the `raises: [CancelledError]` part. This is Chronos's way of announcing the exceptions that are expected to the raised by this function. This mechanism is called [Checked exceptions]. In this particular case, we tell the compiler that this function has cancellable things inside it and propagates the cancellation to its caller. No other exceptions should leak from it and if they do, it's a defect in the program.
+
+.. include:: ../../../examples/http_client/chapter1/src/uptimemon.nim
+   :start-after: #ANCHOR: session
+   :end-before: #ANCHOR_END: session
+   :code:
+
+Here, we're creating an HTTP session. Sessions are responsible for connection pool management, i.e. it provides a connection when it is needed (either by reusing a free one or allocating a new one) and returns it to the pool after usage.
+
+.. include:: ../../../examples/http_client/chapter1/src/uptimemon.nim
+   :start-after: #ANCHOR: response
+   :end-before: #ANCHOR_END: response
+   :code:
+
+When dealing with the Web, we must always assume the connection can break. So it's a good idea to get wrap all web interactions in a `try-except` block.
+
+[fetch(HttpSessionRef, Uri)] is a shortcut for "create an HTTP GET request within the given session to the given URL."
+
+[`parseUri`](https://nim-lang.org/docs/uri.html#parseUri,string) is a function that parses a string into a structured URI object.
+
+Notice that when we are assigning a value to `response`, we do not just call `fetch` but put an `await` before it. This is because `fetch` returns a `Future`, i.e. a not-yet-ready-result. `await` signals to the runtime that this function is interested in this computation result but while it's waiting for it, some other routine can take control.
+
+.. include:: ../../../examples/http_client/chapter1/src/uptimemon.nim
+   :start-after: #ANCHOR: status
+   :end-before: #ANCHOR_END: status
+   :code:
+
+Once we've received our response, we can check its status. If it's 200, we mark this URL healthy (later in the tutorial, we'll improve this logic to handle empty and junk responses), otherwise—not healthy.
+
+.. include:: ../../../examples/http_client/chapter1/src/uptimemon.nim
+   :start-after: #ANCHOR: except
+   :end-before: #ANCHOR_END: except
+   :code:
+
+If the request fails (e.g. the connection is unstable or the host is unreachable), `fetch` would raise a `HttpError` exception. Since raising this exception is part of our business logic, we catch it as `e` and report the error with `e.msg`.
+
+Note that catching `HttpError` does not contradict the `raises` value at the function definition: since we handle the exception and not re-raise it, our promise that only `CancelledError` ever emits from `check` is held true.
+
+.. include:: ../../../examples/http_client/chapter1/src/uptimemon.nim
+   :start-after: #ANCHOR: finally
+   :end-before: #ANCHOR_END: finally
+   :code:
+
+No matter if the check was successful, we must close the session after we're done with it and return the resources back to your computer. [closeWait(HttpSessionRef)] is a function that schedules all open connections within this session to be closed.
+
+.. include:: ../../../examples/http_client/chapter1/src/uptimemon.nim
+   :start-after: #ANCHOR: isMainModule
+   :end-before: #ANCHOR_END: isMainModule
+   :code:
+
+Finally, we call our function to check a particular URL. Google is probably up so you should get an `[OK]` message. However, you can try other URLs to see how the response changes if you use a non-existing URL or a forbidden one.
+
+In the next chapter, we'll see how to efficiently check multiple URLs by reusing the session!
