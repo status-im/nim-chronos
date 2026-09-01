@@ -987,33 +987,37 @@ proc closeWait*(conn: HttpConnectionRef): Future[void] {.
      async: (raw: true, raises: []).} =
   conn.closeCb(conn)
 
-proc closeWait*(req: HttpRequestRef) {.async: (raises: []).} =
+template closeImpl(req: HttpRequestRef, closeWriterBody: untyped) =
+  ## Common state management of HttpRequestRef.closeWait()/tryCloseSync().
+  ## When the response has an active streaming writer, ``closeWriterBody``
+  ## runs with ``writer`` bound to it: closeWait() awaits its closure (setting
+  ## `Closing` first, as the only step here that can suspend), while
+  ## tryCloseSync() returns false there — before any state was mutated — so
+  ## the async variant can still run.
   if req.state == HttpState.Alive:
     if req.response.isSome():
-      req.state = HttpState.Closing
       let resp = req.response.get()
       if (HttpResponseFlags.Stream in resp.flags) and not(isNil(resp.writer)):
-        await closeWait(resp.writer)
+        let writer {.inject, used.} = resp.writer
+        closeWriterBody
+      req.state = HttpState.Closing
       reset(resp[])
     untrackCounter(HttpServerRequestTrackerName)
     reset(req[])
     req.state = HttpState.Closed
+
+proc closeWait*(req: HttpRequestRef) {.async: (raises: []).} =
+  closeImpl(req):
+    req.state = HttpState.Closing
+    await closeWait(writer)
 
 proc tryCloseSync(req: HttpRequestRef): bool =
   ## Synchronous equivalent of HttpRequestRef.closeWait() for requests whose
   ## response has no streaming writer — on that path closeWait() never
   ## actually suspends, so the future allocation is pure overhead.
   ## Returns false when the async variant is required.
-  if req.state == HttpState.Alive:
-    if req.response.isSome():
-      let resp = req.response.get()
-      if (HttpResponseFlags.Stream in resp.flags) and not(isNil(resp.writer)):
-        return false
-      req.state = HttpState.Closing
-      reset(resp[])
-    untrackCounter(HttpServerRequestTrackerName)
-    reset(req[])
-    req.state = HttpState.Closed
+  closeImpl(req):
+    return false
   true
 
 proc createConnection(server: HttpServerRef,
