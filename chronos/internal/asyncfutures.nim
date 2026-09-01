@@ -1061,7 +1061,7 @@ proc allFinished*[F: SomeFuture](futs: varargs[F]): Future[seq[F]] {.
 
   return retFuture
 
-template oneImpl: untyped =
+template raceImpl: untyped =
   # If one of the Future[T] already finished we return it as result
   when declared(fut0):
     if fut0.finished():
@@ -1093,6 +1093,7 @@ template oneImpl: untyped =
           retFuture.complete(move(fut))
         else:
           fut.removeCallback(cbc2)
+      cbc2 = nil # clear for refc
 
   proc cancellation(udata: pointer) =
     # On cancel we remove all our callbacks only.
@@ -1113,7 +1114,8 @@ template oneImpl: untyped =
   retFuture
 
 proc one*(fut0: SomeFuture, futs: varargs[SomeFuture]): Future[SomeFuture] {.
-    async: (raw: true, raises: [CancelledError]).} =
+    async: (raw: true, raises: [CancelledError]),
+    deprecated: "Use `race` instead".} =
   ## Waits for one of the given futures to finish and returns it.
   ##
   ## If any of the futures is already finished, returns immediately.
@@ -1125,10 +1127,11 @@ proc one*(fut0: SomeFuture, futs: varargs[SomeFuture]): Future[SomeFuture] {.
   ## This function is a synonym for `race`.
   let retFuture = newFuture[SomeFuture]("chronos.one()")
 
-  oneImpl
+  raceImpl
 
 proc one*(futs: openArray[SomeFuture]): Future[SomeFuture] {.
-    async: (raw: true, raises: [ValueError, CancelledError]).} =
+    async: (raw: true, raises: [ValueError, CancelledError]),
+    deprecated: "Use `race` instead".} =
   ## Waits for one of the given futures to finish and returns it.
   ##
   ## If any of the futures is already finished, returns immediately.
@@ -1146,7 +1149,11 @@ proc one*(futs: openArray[SomeFuture]): Future[SomeFuture] {.
     retFuture.fail(newException(ValueError, "Empty Future[T] list"))
     return retFuture
 
-  oneImpl
+  raceImpl
+
+proc one*(_: typeof([])) {.
+    error: "`one` requires at least one future",
+    deprecated: "Use `race` instead".}
 
 proc race*(fut0: FutureBase, futs: varargs[FutureBase]): Future[FutureBase] {.
     async: (raw: true, raises: [CancelledError]).} =
@@ -1159,9 +1166,7 @@ proc race*(fut0: FutureBase, futs: varargs[FutureBase]): Future[FutureBase] {.
   ## On cancel futures in ``futs`` WILL NOT BE cancelled.
   let retFuture = newFuture[FutureBase]("chronos.race()")
 
-  oneImpl
-
-proc one*(_: typeof([])) {.error: "`one` requires at least one future".}
+  raceImpl
 
 proc race*(futs: openArray[FutureBase]): Future[FutureBase] {.
     async: (raw: true, raises: [ValueError, CancelledError]).} =
@@ -1180,9 +1185,9 @@ proc race*(futs: openArray[FutureBase]): Future[FutureBase] {.
     retFuture.fail(newException(ValueError, "Empty Future[T] list"))
     return retFuture
 
-  oneImpl
+  raceImpl
 
-proc race*(fut0: SomeFuture, futs: openArray[SomeFuture]): Future[SomeFuture] {.
+proc race*(fut0: SomeFuture, futs: varargs[SomeFuture]): Future[SomeFuture] {.
     async: (raw: true, raises: [CancelledError]).} =
   ## Waits for one of the given futures to finish and returns it.
   ##
@@ -1193,7 +1198,7 @@ proc race*(fut0: SomeFuture, futs: openArray[SomeFuture]): Future[SomeFuture] {.
   ## On cancel futures in ``futs`` WILL NOT BE cancelled.
   let retFuture = newFuture[SomeFuture]("chronos.race()")
 
-  oneImpl
+  raceImpl
 
 proc race*(futs: openArray[SomeFuture]): Future[SomeFuture] {.
     async: (raw: true, raises: [ValueError, CancelledError]).} =
@@ -1212,7 +1217,7 @@ proc race*(futs: openArray[SomeFuture]): Future[SomeFuture] {.
     retFuture.fail(newException(ValueError, "Empty Future[T] list"))
     return retFuture
 
-  oneImpl
+  raceImpl
 
 proc race*(_: typeof([])) {.error: "`race` requires at least one future".}
 
