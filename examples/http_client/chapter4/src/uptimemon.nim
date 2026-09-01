@@ -1,4 +1,4 @@
-# ANCHOR: all
+#ANCHOR: all
 import std/sequtils
 import chronos/apps/http/httpclient
 
@@ -6,7 +6,7 @@ const uris = @[
   "https://duckduckgo.com/?q=chronos", "https://mock.codes/403", "http://10.255.255.1",
 ]
 
-# ANCHOR: check
+#ANCHOR: check
 proc check(session: HttpSessionRef, uri: string) {.async: (raises: [CancelledError]).} =
   try:
     let response = await session.fetch(parseUri(uri)).wait(5.seconds)
@@ -17,7 +17,7 @@ proc check(session: HttpSessionRef, uri: string) {.async: (raises: [CancelledErr
       echo "[NOK] " & uri & ": " & $response.status
   except HttpError, FuturePendingError, AsyncTimeoutError:
     echo "[ERR] " & uri & ": " & getCurrentExceptionMsg()
-# ANCHOR_END: check
+#ANCHOR_END: check
 
 proc check(uris: seq[string]) {.async: (raises: []).} =
   let
@@ -33,4 +33,4 @@ proc check(uris: seq[string]) {.async: (raises: []).} =
 
 when isMainModule:
   waitFor check(uris)
-# ANCHOR_END: all
+#ANCHOR_END: all
