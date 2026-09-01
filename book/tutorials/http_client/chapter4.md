@@ -1,4 +1,4 @@
-.. title:: Timeouts & Cancellation
+.. title:: Timeouts and Cancellation
 .. importdoc:: ../../api/chronos/internal/asyncfutures
 .. importdoc:: ../../api/chronos/internal/errors
 
