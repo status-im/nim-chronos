@@ -138,8 +138,10 @@ task apidocs, "Generate the API docs":
     "--git.url:https://github.com/status-im/nim-chronos --git.commit:master " &
     "--outdir:htmldocs/api/chronos/apps/http --project chronos/apps/http/shttpserver"
 
-task book, "Generate the book":
+task bookindex, "Generate the book index":
   exec nimc & " book --index:only book"
+
+task book, "Generate the book":
   exec nimc & " book book"
   cpDir("book/img", "htmldocs/img")
   cpFile("htmldocs/introduction.html", "htmldocs/index.html")
@@ -147,4 +149,5 @@ task book, "Generate the book":
 task docs, "Generate the documentation":
   rmDir "htmldocs"
   exec "nimble apidocs"
+  exec "nimble bookindex"
   exec "nimble book"
