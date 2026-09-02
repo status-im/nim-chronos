@@ -2545,6 +2545,7 @@ template readLoop(name, body: untyped): untyped =
     if len(transp.buffer) == 0:
       # We going to raise an error, only if transport buffer is empty.
       if ReadError in transp.state:
+        doAssert(not(isNil(transp.error)), "Attempt to read data after error")
         raise transp.getError()
 
     let (consumed, done) = body
