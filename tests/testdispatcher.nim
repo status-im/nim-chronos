@@ -85,7 +85,8 @@ proc registeredThread(retval: RegisteredResultPtr) {.thread, nimcall.} =
   doAssert fd != asyncInvalidSocket
 
   # The socket is deliberately left registered - closing the dispatcher would
-  # orphan it, so it must be reported rather than silently dropped.
+  # orphan it, so it must be reported rather than silently dropped. Caught by
+  # the selector on posix and by the registered handle set on windows.
   try:
     discard closeThreadDispatcher()
     retval[].defectRaised = false
@@ -120,15 +121,12 @@ suite "Dispatcher test suite":
       retval.callbackDropped == true
       retval.closedCleanly == true
 
-  when not defined(windows):
-    # On windows the equivalent check is the completion queue, which cannot be
-    # left non-empty without an operation genuinely in flight.
-    test "closeThreadDispatcher() refuses to close with descriptors registered":
-      var
-        retval = RegisteredResult()
-        thread: Thread[RegisteredResultPtr]
+  test "closeThreadDispatcher() refuses to close with descriptors registered":
+    var
+      retval = RegisteredResult()
+      thread: Thread[RegisteredResultPtr]
 
-      createThread(thread, registeredThread, addr retval)
-      joinThreads(thread)
+    createThread(thread, registeredThread, addr retval)
+    joinThreads(thread)
 
-      check retval.defectRaised == true
+    check retval.defectRaised == true

@@ -294,6 +294,7 @@ elif defined(windows):
     Dispatcher = object of DispatcherBase
       ioPort: HANDLE
       handles: HashSet[AsyncFD]
+      waitables: int
       connectEx*: WSAPROC_CONNECTEX
       acceptEx*: WSAPROC_ACCEPTEX
       getAcceptExSockAddrs*: WSAPROC_GETACCEPTEXSOCKADDRS
@@ -509,6 +510,7 @@ elif defined(windows):
       whandle.ovl = nil
       return err(osLastError())
 
+    inc(loop.waitables)
     ok(WaitableHandle(whandle))
 
   proc closeWaitable*(wh: WaitableHandle): Result[void, OSErrorCode] =
@@ -526,6 +528,7 @@ elif defined(windows):
       let res = osLastError()
       if res != ERROR_IO_PENDING:
         return err(res)
+    dec(getThreadDispatcher().waitables)
     ok()
 
   proc addProcess2*(pid: int, cb: CallbackFunc,
@@ -807,16 +810,28 @@ elif defined(windows):
 
     int(eventsReceived)
 
+  proc isEmpty(loop: PDispatcher): bool =
+    ## Returns `true` when no handle and no waitable is registered in the
+    ## dispatcher - the counterpart of `Selector.isEmpty` on posix, where
+    ## signals and processes are registered in the selector instead.
+    (len(loop.handles) == 0) and (loop.waitables == 0)
+
   proc closeDispatcher*(loop: PDispatcher): Opt[string] =
-    ## Release the resources held by `loop`: its completion port and every
-    ## handle still registered with it.
+    ## Release the resources held by `loop`, ie its completion port.
     ##
-    ## Every resource is released even when one of them fails to close - the
-    ## returned diagnostic, if any, describes the first such failure.
+    ## The port is released even when its handle fails to close - in that case
+    ## a diagnostic describing the failure is returned.
     ##
     ## Closing the completion port loses every overlapped operation queued to
     ## it - the memory backing those operations can no longer be reclaimed -
-    ## so a `Defect` is raised when an event is still waiting to be processed.
+    ## so a `Defect` is raised when an event is still waiting to be processed,
+    ## or when a handle or waitable is still registered, as its `posix`
+    ## counterpart does for the selector.
+    doAssert loop.isEmpty(),
+             "closeDispatcher(): the dispatcher still has " &
+             $len(loop.handles) & " handle(s) and " & $loop.waitables &
+             " waitable(s) registered - all streams must have been closed " &
+             "before closing"
 
     let pending = loop.pendingEventsCount()
     doAssert pending == 0,
@@ -829,14 +844,6 @@ elif defined(windows):
     if closeFd(loop.ioPort) != 0:
       diagnostic = Opt.some("Unable to close completion port: " &
                             osErrorMsg(osLastError()))
-
-    # `closeHandle` is not used here because it would mutate `loop.handles`
-    # while it is being iterated over.
-    for fd in loop.handles.items():
-      if closeFd(HANDLE(fd)) != 0 and diagnostic.isNone():
-        diagnostic = Opt.some("Unable to close handle: " &
-                              osErrorMsg(osLastError()))
-    loop.handles.clear()
 
     # Reset regardless of whether the dispatcher closed cleanly: the diagnostic
     # is not retryable, so nobody would come back to release this state.
