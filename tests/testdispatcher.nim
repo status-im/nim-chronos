@@ -23,12 +23,16 @@ type
 
   LifecycleResultPtr = ptr LifecycleResult
 
-  BusyResult = object
-    defectRaised: bool
-    callbackRan: bool
-    closeAfterDrain: bool
+  PendingResult = object
+    callbackDropped: bool
+    closedCleanly: bool
 
-  BusyResultPtr = ptr BusyResult
+  PendingResultPtr = ptr PendingResult
+
+  RegisteredResult = object
+    defectRaised: bool
+
+  RegisteredResultPtr = ptr RegisteredResult
 
 proc closedCleanly(): bool =
   ## `closeThreadDispatcher` returns a diagnostic only when a resource could not
@@ -64,24 +68,29 @@ proc lifecycleThread(retval: LifecycleResultPtr) {.thread, nimcall.} =
 
   retval[].secondCloseIsNoop = closedCleanly()
 
-proc busyCallback(udata: pointer) {.gcsafe.} =
-  cast[BusyResultPtr](udata)[].callbackRan = true
+proc pendingCallback(udata: pointer) {.gcsafe.} =
+  cast[PendingResultPtr](udata)[].callbackDropped = false
 
-proc busyThread(retval: BusyResultPtr) {.thread, nimcall.} =
-  callSoon(busyCallback, retval)
+proc pendingThread(retval: PendingResultPtr) {.thread, nimcall.} =
+  retval[].callbackDropped = true
+  callSoon(pendingCallback, retval)
 
+  # Callbacks, timers and idlers are pure-nim state: closing simply drops them,
+  # so no diagnostic and no `Defect` - only OS state is worth complaining about.
+  retval[].closedCleanly = closedCleanly()
+
+proc registeredThread(retval: RegisteredResultPtr) {.thread, nimcall.} =
+  let fd = createAsyncSocket(Domain.AF_INET, SockType.SOCK_STREAM,
+                             Protocol.IPPROTO_TCP)
+  doAssert fd != asyncInvalidSocket
+
+  # The socket is deliberately left registered - closing the dispatcher would
+  # orphan it, so it must be reported rather than silently dropped.
   try:
     discard closeThreadDispatcher()
+    retval[].defectRaised = false
   except Defect:
     retval[].defectRaised = true
-
-  # The check happens before the dispatcher is detached, so the thread keeps a
-  # working dispatcher and the queued callback still runs. A timer is awaited
-  # rather than polling bare, so that a regression that detaches the dispatcher
-  # fails the test instead of blocking forever on an empty queue.
-  waitFor tick()
-
-  retval[].closeAfterDrain = closedCleanly()
 
 suite "Dispatcher test suite":
   test "closeThreadDispatcher() lifecycle":
@@ -99,15 +108,27 @@ suite "Dispatcher test suite":
       retval.reusableAfterClose == true
       retval.secondCloseIsNoop == true
 
-  test "closeThreadDispatcher() refuses to close a busy dispatcher":
+  test "closeThreadDispatcher() drops pending callbacks":
     var
-      retval = BusyResult()
-      thread: Thread[BusyResultPtr]
+      retval = PendingResult()
+      thread: Thread[PendingResultPtr]
 
-    createThread(thread, busyThread, addr retval)
+    createThread(thread, pendingThread, addr retval)
     joinThreads(thread)
 
     check:
-      retval.defectRaised == true
-      retval.callbackRan == true
-      retval.closeAfterDrain == true
+      retval.callbackDropped == true
+      retval.closedCleanly == true
+
+  when not defined(windows):
+    # On windows the equivalent check is the completion queue, which cannot be
+    # left non-empty without an operation genuinely in flight.
+    test "closeThreadDispatcher() refuses to close with descriptors registered":
+      var
+        retval = RegisteredResult()
+        thread: Thread[RegisteredResultPtr]
+
+      createThread(thread, registeredThread, addr retval)
+      joinThreads(thread)
+
+      check retval.defectRaised == true
