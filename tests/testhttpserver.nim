@@ -591,8 +591,9 @@ suite "HTTP server testing suite":
       for o in 0 .. 2:  # Incomplete trailing \r\n
         var mpreader = MultiPartReader.init(
           body.toOpenArray(0, body.high - o), boundary)
-        for (name, value) in [
-            ("key1", "value1"), ("key2", "value2"), ("key2", "value4")]:
+        const ExpectedParts = [
+          ("key1", "value1"), ("key2", "value2"), ("key2", "value4")]
+        for (name, value) in ExpectedParts:
           let part = mpreader.getPart()
           if part.isErr() or
               part.get().name != name or part.get().getString() != value:
