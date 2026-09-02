@@ -348,15 +348,15 @@ proc getPart*(mpr: var MultiPartReader): Result[MultiPart, string] =
       # If we have <-><-><boundary><-><-> it means we have found last boundary
       # of multipart message.
       mpr.offset += 2
+      
       if len(mpr.buffer) <= mpr.offset + 1:
-        if mpr.buffer[mpr.offset] == 0x0D'u8 and
-           mpr.buffer[mpr.offset + 1] == 0x0A'u8:
-          mpr.offset += 2
-          return err("End of multipart form encountered")
-        else:
-          return err("Incorrect multipart last boundary")
-      else:
         return err("Incomplete multipart form")
+      if mpr.buffer[mpr.offset] == 0x0D'u8 and
+          mpr.buffer[mpr.offset + 1] == 0x0A'u8:
+        mpr.offset += 2
+        return err("End of multipart form encountered")
+      else:
+        return err("Incorrect multipart last boundary")
 
     if mpr.buffer[mpr.offset] == 0x0D'u8 and
        mpr.buffer[mpr.offset + 1] == 0x0A'u8:

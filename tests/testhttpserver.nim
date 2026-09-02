@@ -560,29 +560,47 @@ suite "HTTP server testing suite":
       server.start()
       let address = server.instance.localAddress()
 
-      let message =
-        "POST / HTTP/1.0\r\n" &
-        "Host: 127.0.0.1:30080\r\n" &
-        "User-Agent: curl/7.55.1\r\n" &
-        "Accept: */*\r\n" &
-        "Content-Length: 343\r\n" &
-        "Content-Type: multipart/form-data; " &
-        "boundary=------------------------ab5706ba6f80b795\r\n\r\n" &
-        "--------------------------ab5706ba6f80b795\r\n" &
-        "Content-Disposition: form-data; name=\"key1\"\r\n\r\n" &
-        "value1\r\n" &
-        "--------------------------ab5706ba6f80b795\r\n" &
-        "Content-Disposition: form-data; name=\"key2\"\r\n\r\n" &
-        "value2\r\n" &
-        "--------------------------ab5706ba6f80b795\r\n" &
-        "Content-Disposition: form-data; name=\"key2\"\r\n\r\n" &
-        "value4\r\n" &
-        "--------------------------ab5706ba6f80b795--\r\n"
+      const boundary = "------------------------ab5706ba6f80b795"
+      let
+        body =
+          "--" & boundary & "\r\n" &
+          "Content-Disposition: form-data; name=\"key1\"\r\n\r\n" &
+          "value1\r\n" &
+          "--" & boundary & "\r\n" &
+          "Content-Disposition: form-data; name=\"key2\"\r\n\r\n" &
+          "value2\r\n" &
+          "--" & boundary & "\r\n" &
+          "Content-Disposition: form-data; name=\"key2\"\r\n\r\n" &
+          "value4\r\n" &
+          "--" & boundary & "--\r\n"
+        message =
+          "POST / HTTP/1.0\r\n" &
+          "Host: 127.0.0.1:30080\r\n" &
+          "User-Agent: curl/7.55.1\r\n" &
+          "Accept: */*\r\n" &
+          "Content-Length: " & $(len(body) + 2) & "\r\n" &
+          "Content-Type: multipart/form-data; " &
+          "boundary=" & boundary & "\r\n\r\n" &
+          body
       let data = await httpClient(address, message)
       let expect = "TEST_OK:key1:value1:key2:value2:key2:value4"
       await server.stop()
       await server.closeWait()
-      return serverRes and (data.find(expect) >= 0)
+
+      var bufferRes = true
+      for o in 0 .. 2:  # Incomplete trailing \r\n
+        var mpreader = MultiPartReader.init(
+          body.toOpenArray(0, body.high - o), boundary)
+        for (name, value) in [
+            ("key1", "value1"), ("key2", "value2"), ("key2", "value4")]:
+          let part = mpreader.getPart()
+          if part.isErr() or
+              part.get().name != name or part.get().getString() != value:
+            bufferRes = false
+        if mpreader.getPart().isOk():
+          bufferRes = false
+
+      return serverRes and (data.find(expect) >= 0) and bufferRes
 
     check waitFor(testPostMultipart()) == true
 
