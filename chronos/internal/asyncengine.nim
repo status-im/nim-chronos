@@ -115,6 +115,16 @@ template preparePoll(loop: PDispatcherBase) =
   loop.inEventLoop = true
   defer: loop.inEventLoop = false
 
+proc resetBaseDispatcher*(loop: PDispatcherBase) {.gcsafe, raises: [].} =
+  loop.timers.reset()
+  loop.callbacks.reset()
+  loop.idlers.reset()
+  loop.ticks.reset()
+  loop.trackers.reset()
+  loop.counters.reset()
+  when hasThreadSupport:
+    loop.waking.clear(moRelease)
+
 template processThreadCallbacks(loop) =
   # Drain cross-thread callbacks to the local callback queue
   when hasThreadSupport:
@@ -807,11 +817,15 @@ elif defined(windows):
     ## Closing the completion port loses every overlapped operation queued to
     ## it - the memory backing those operations can no longer be reclaimed -
     ## so a `Defect` is raised when an event is still waiting to be processed.
+
     let pending = loop.pendingEventsCount()
     doAssert pending == 0,
              "closeDispatcher(): the completion port still has " & $pending &
              " event(s) waiting to be processed - all operations must have " &
              "completed or been cancelled before closing"
+
+    # Reset resources regardless the dispatcher is closed or not in the end.
+    loop.resetBaseDispatcher()
 
     var diagnostic = Opt.none(string)
 
@@ -1102,14 +1116,52 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
 
   proc closeDispatcher*(loop: PDispatcher): Opt[string] =
     ## Release the resources held by `loop`, ie the selector associated with
-    ## the current thread's dispatcher.
+    ## the current thread's dispatcher and its wake-up descriptor.
     ##
     ## The selector state is released even when its descriptor fails to close -
     ## in that case a diagnostic describing the failure is returned.
+    ##
+    ## Closing a selector that still has descriptors registered orphans them:
+    ## they are never closed and their pending operations never complete - so a
+    ## `Defect` is raised when any is left.
+
+    # The wake-up descriptor belongs to the dispatcher rather than to the
+    # application, so it is released here instead of counting as leftover.
+    let unregistered =
+      loop.selector.unregister2(
+        when hasEventFd: loop.wakeupFd else: loop.wakeupFd[1])
+
+    var diagnostic = Opt.none(string)
+
+    when hasEventFd:
+      if closeFd(loop.wakeupFd) != 0:
+        diagnostic = Opt.some("Unable to close wake-up descriptor: " &
+                              osErrorMsg(osLastError()))
+    else:
+      for fd in loop.wakeupFd:
+        if closeFd(fd) != 0 and diagnostic.isNone():
+          diagnostic = Opt.some("Unable to close wake-up descriptor: " &
+                                osErrorMsg(osLastError()))
+
+    # Skipped when our own entry could not be removed, since the check would
+    # then blame the application for a descriptor it does not own.
+    doAssert unregistered.isErr() or loop.selector.isEmpty(),
+             "closeDispatcher(): the selector still has descriptors " &
+             "registered - all streams must have been closed before closing"
+
+    unregistered.isOkOr:
+      if diagnostic.isNone():
+        diagnostic = Opt.some("Unable to unregister wake-up descriptor: " &
+                              osErrorMsg(error) & " (code: " & $int(error) & ")")
+
     loop.selector.close2().isOkOr:
-      return Opt.some("Unable to close selector: " & osErrorMsg(error) &
-                      " (code: " & $int(error) & ")")
-    Opt.none(string)
+      if diagnostic.isNone():
+        diagnostic = Opt.some("Unable to close selector: " & osErrorMsg(error) &
+                              " (code: " & $int(error) & ")")
+
+    loop.resetBaseDispatcher()
+
+    diagnostic
 
   when chronosEventEngine in ["epoll", "kqueue"]:
     type
@@ -1295,26 +1347,6 @@ else:
   proc initAPI() = discard
   proc globalInit() = discard
 
-proc pendingWorkCount(disp: PDispatcher): int =
-  ## Number of callbacks, timers, idlers and ticks that `disp` still has to
-  ## run, i.e., the work that the dispatcher knows about.
-  ##
-  ## Cancelled entries, whose callback has been cleared, and the sentinel of
-  ## the callback queue are not counted - they represent no work. Operations
-  ## that the OS queue has not reported yet are not counted either.
-  var res = 0
-  for callback in disp.callbacks.items():
-    if not(isSentinel(callback)) and not(isNil(callback.function)): inc(res)
-  # `HeapQueue` is indexed rather than iterated, because `items` for it was
-  # only added in later Nim versions.
-  for index in 0 ..< len(disp.timers):
-    if not(isNil(disp.timers[index].function.function)): inc(res)
-  for idler in disp.idlers.items():
-    if not(isNil(idler.function)): inc(res)
-  for tick in disp.ticks.items():
-    if not(isNil(tick.function)): inc(res)
-  res
-
 proc setThreadDispatcher*(disp: PDispatcher) =
   ## Set current thread's dispatcher instance to ``disp``.
   if not(gDisp.isNil()):
@@ -1341,15 +1373,9 @@ proc closeThreadDispatcher*(): Opt[string] =
   if isNil(gDisp):
     return Opt.none(string)
 
-  let pending = gDisp.pendingWorkCount()
-  doAssert pending == 0,
-           "closeThreadDispatcher(): the dispatcher still has " & $pending &
-           " scheduled callbacks - all async work must have completed or " &
-           "been cancelled before closing"
-
-  # Detached before it is closed, so that a second call cannot release the same
-  # resources twice.
+  # Detach before closing so that a second call cannot release the same twice.
   let disp = move(gDisp)
+
   disp.closeDispatcher()
 
 proc setGlobalDispatcher*(disp: PDispatcher) {.

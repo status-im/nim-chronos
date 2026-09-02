@@ -54,6 +54,10 @@ proc new*(t: typedesc[Selector], T: typedesc): SelectResult[Selector[T]] =
   )
   ok(selector)
 
+proc isEmpty*[T](s: Selector[T]): bool =
+  ## Returns `true` when no descriptor is registered in the selector.
+  len(s.fds) == 0
+
 proc close2*[T](s: Selector[T]): SelectResult[void] =
   s.fds.clear()
   s.pollfds.reset()
