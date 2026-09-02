@@ -115,7 +115,7 @@ template preparePoll(loop: PDispatcherBase) =
   loop.inEventLoop = true
   defer: loop.inEventLoop = false
 
-proc resetBaseDispatcher*(loop: PDispatcherBase) {.gcsafe, raises: [].} =
+proc resetBaseDispatcher(loop: PDispatcherBase) {.gcsafe, raises: [].} =
   loop.timers.reset()
   loop.callbacks.reset()
   loop.idlers.reset()
@@ -824,9 +824,6 @@ elif defined(windows):
              " event(s) waiting to be processed - all operations must have " &
              "completed or been cancelled before closing"
 
-    # Reset resources regardless the dispatcher is closed or not in the end.
-    loop.resetBaseDispatcher()
-
     var diagnostic = Opt.none(string)
 
     if closeFd(loop.ioPort) != 0:
@@ -840,6 +837,10 @@ elif defined(windows):
         diagnostic = Opt.some("Unable to close handle: " &
                               osErrorMsg(osLastError()))
     loop.handles.clear()
+
+    # Reset regardless of whether the dispatcher closed cleanly: the diagnostic
+    # is not retryable, so nobody would come back to release this state.
+    loop.resetBaseDispatcher()
 
     diagnostic
 
@@ -1159,6 +1160,8 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
         diagnostic = Opt.some("Unable to close selector: " & osErrorMsg(error) &
                               " (code: " & $int(error) & ")")
 
+    # Reset regardless of whether the dispatcher closed cleanly: the diagnostic
+    # is not retryable, so nobody would come back to release this state.
     loop.resetBaseDispatcher()
 
     diagnostic
