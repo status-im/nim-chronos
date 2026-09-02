@@ -578,7 +578,7 @@ suite "HTTP server testing suite":
           "Host: 127.0.0.1:30080\r\n" &
           "User-Agent: curl/7.55.1\r\n" &
           "Accept: */*\r\n" &
-          "Content-Length: " & $(len(body) + 2) & "\r\n" &
+          "Content-Length: " & $len(body) & "\r\n" &
           "Content-Type: multipart/form-data; " &
           "boundary=" & boundary & "\r\n\r\n" &
           body
