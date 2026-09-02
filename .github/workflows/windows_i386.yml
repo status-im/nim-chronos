@@ -52,7 +52,13 @@ jobs:
 
       - name: Run tests
         shell: bash
+        env:
+          NIM_TEST_SUCCESS_MARKER: build/i386-tests-passed
         run: |
           mingw32_bin="$(cd external/mingw32/bin && pwd -W)"
           export NIMFLAGS="--cpu:i386 --cc:gcc --gcc.path:${mingw32_bin}"
+          # `nimble test` can report a failing task and still exit 0, so rely on
+          # the marker, which the task writes only after every configuration ran.
+          rm -f "$NIM_TEST_SUCCESS_MARKER"
           nimble test
+          test -f "$NIM_TEST_SUCCESS_MARKER"

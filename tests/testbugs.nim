@@ -22,28 +22,33 @@ when defined(windows):
     test "RtlNtStatusToDosError() argument width":
       # `RtlNtStatusToDosError()` is `__stdcall`, so the callee pops the
       # arguments. Declaring its `NTSTATUS` parameter wider than 32 bits makes
-      # the compiler push more bytes than `ntdll` removes, which leaves the
-      # stack pointer desynchronised on 32-bit Windows. `poll()` calls this for
-      # every completion carrying a non-zero status, and the resulting drift
-      # destroys its frame, so a mis-declaration shows up as a SIGSEGV rather
-      # than as a wrong error code. Repeat the call and keep locals live across
-      # it so any drift is fatal here instead of somewhere unrelated.
+      # the compiler push more bytes than `ntdll` removes, which displaces the
+      # stack pointer by the difference on every call. On 32-bit Windows that
+      # desynchronises `poll()`, which calls this for every completion carrying
+      # a non-zero status.
+      #
+      # Measure the stack pointer across the calls instead of waiting for the
+      # drift to become fatal: without a frame pointer it corrupts the caller's
+      # frame immediately, but with one (`-d:debug`) it only misaligns the stack
+      # and the crash surfaces later, in an unrelated callee.
+      proc stackMark(): uint {.noinline.} =
+        var probe = 0'u8
+        cast[uint](addr probe)
+
       const
         StatusConnectionReset = 0xC000020D'u32
         ErrorNetnameDeleted = 64'u32
-        Iterations = 64'u32
+        Iterations = 8'u32
 
-      var
-        calls = 0'u32
-        total = 0'u32
-
+      var total = 0'u32
+      let before = stackMark()
       for _ in 0 ..< Iterations:
         total += rtlNtStatusToDosError(ULONG(StatusConnectionReset))
-        inc calls
+      let after = stackMark()
 
       check:
-        calls == Iterations
         total == Iterations * ErrorNetnameDeleted
+        after == before
 
 suite "Asynchronous issues test suite":
   const HELLO_PORT = 45679
