@@ -862,7 +862,7 @@ when defined(windows):
   proc getProcAddress*(hModule: HANDLE, lpProcName: cstring): pointer {.
        stdcall, dynlib: "kernel32", importc: "GetProcAddress", sideEffect.}
 
-  proc rtlNtStatusToDosError*(code: uint64): ULONG {.
+  proc rtlNtStatusToDosError*(code: ULONG): ULONG {.
        stdcall, dynlib: "ntdll", importc: "RtlNtStatusToDosError", sideEffect.}
 
   proc getConsoleCP*(): UINT {.
