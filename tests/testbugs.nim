@@ -12,7 +12,38 @@ when defined(posix):
   import stew/ptrops
   import ../chronos/[config, osdefs, osutils], ../chronos/unittest2/asynctests
 
+when defined(windows):
+  import ../chronos/osdefs
+
 {.used.}
+
+when defined(windows):
+  suite "Windows API declaration test suite":
+    test "RtlNtStatusToDosError() argument width":
+      # `RtlNtStatusToDosError()` is `__stdcall`, so the callee pops the
+      # arguments. Declaring its `NTSTATUS` parameter wider than 32 bits makes
+      # the compiler push more bytes than `ntdll` removes, which leaves the
+      # stack pointer desynchronised on 32-bit Windows. `poll()` calls this for
+      # every completion carrying a non-zero status, and the resulting drift
+      # destroys its frame, so a mis-declaration shows up as a SIGSEGV rather
+      # than as a wrong error code. Repeat the call and keep locals live across
+      # it so any drift is fatal here instead of somewhere unrelated.
+      const
+        StatusConnectionReset = 0xC000020D'u32
+        ErrorNetnameDeleted = 64'u32
+        Iterations = 64'u32
+
+      var
+        calls = 0'u32
+        total = 0'u32
+
+      for _ in 0 ..< Iterations:
+        total += rtlNtStatusToDosError(ULONG(StatusConnectionReset))
+        inc calls
+
+      check:
+        calls == Iterations
+        total == Iterations * ErrorNetnameDeleted
 
 suite "Asynchronous issues test suite":
   const HELLO_PORT = 45679
