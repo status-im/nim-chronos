@@ -1126,6 +1126,12 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     ## You can execute ``aftercb`` before actual socket close operation.
     closeSocket(fd, aftercb)
 
+  proc isEmpty(loop: PDispatcher): bool =
+    ## Returns `true` when no descriptor is registered in the dispatcher, ie in
+    ## its selector - signals and processes are registered there too, unlike on
+    ## windows where they are waitables.
+    loop.selector.isEmpty()
+
   proc closeDispatcher*(loop: PDispatcher): Opt[string] =
     ## Release the resources held by `loop`, ie the selector associated with
     ## the current thread's dispatcher and its wake-up descriptor.
@@ -1138,15 +1144,26 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     ## `Defect` is raised when any is left.
 
     # The wake-up descriptor belongs to the dispatcher rather than to the
-    # application, so it is released here instead of counting as leftover.
+    # application, so it is unregistered before the check below instead of
+    # counting as leftover.
     let unregistered =
       loop.selector.unregister2(
         when hasEventFd: loop.wakeupFd else: loop.wakeupFd[1])
 
+    # Skipped when our own entry could not be removed, since the check would
+    # then blame the application for a descriptor it does not own.
+    doAssert unregistered.isErr() or loop.isEmpty(),
+             "closeDispatcher(): the selector still has descriptors " &
+             "registered - all streams must have been closed before closing"
+
     var diagnostic = Opt.none(string)
 
+    unregistered.isOkOr:
+      diagnostic = Opt.some("Unable to unregister wake-up descriptor: " &
+                            osErrorMsg(error) & " (code: " & $int(error) & ")")
+
     when hasEventFd:
-      if closeFd(loop.wakeupFd) != 0:
+      if closeFd(loop.wakeupFd) != 0 and diagnostic.isNone():
         diagnostic = Opt.some("Unable to close wake-up descriptor: " &
                               osErrorMsg(osLastError()))
     else:
@@ -1154,17 +1171,6 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
         if closeFd(fd) != 0 and diagnostic.isNone():
           diagnostic = Opt.some("Unable to close wake-up descriptor: " &
                                 osErrorMsg(osLastError()))
-
-    # Skipped when our own entry could not be removed, since the check would
-    # then blame the application for a descriptor it does not own.
-    doAssert unregistered.isErr() or loop.selector.isEmpty(),
-             "closeDispatcher(): the selector still has descriptors " &
-             "registered - all streams must have been closed before closing"
-
-    unregistered.isOkOr:
-      if diagnostic.isNone():
-        diagnostic = Opt.some("Unable to unregister wake-up descriptor: " &
-                              osErrorMsg(error) & " (code: " & $int(error) & ")")
 
     loop.selector.close2().isOkOr:
       if diagnostic.isNone():
