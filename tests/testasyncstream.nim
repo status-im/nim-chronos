@@ -1345,7 +1345,7 @@ suite "AsyncStream/BoundedStream":
       BoundaryEmpty
 
   for itemComp in [BoundCmp.Equal, BoundCmp.LessOrEqual]:
-    for itemSize in [100, 60000]:
+    for itemSize in [100, 60000, 300000]:
 
       proc boundaryTest(btest: BoundaryBytesTest,
                         size: int, boundary: seq[byte],
