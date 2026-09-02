@@ -560,8 +560,8 @@ suite "HTTP server testing suite":
       server.start()
       let address = server.instance.localAddress()
 
-      const boundary = "------------------------ab5706ba6f80b795"
-      let
+      const
+        boundary = "------------------------ab5706ba6f80b795"
         body =
           "--" & boundary & "\r\n" &
           "Content-Disposition: form-data; name=\"key1\"\r\n\r\n" &
