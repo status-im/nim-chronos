@@ -854,7 +854,7 @@ when defined(windows):
        sideEffect.}
 
   proc wcschr*(ws: LPWSTR, wc: WCHAR): LPWSTR {.
-       stdcall, dynlib: "ntdll", importc: "wcschr", sideEffect.}
+       cdecl, dynlib: "ntdll", importc: "wcschr", sideEffect.}
 
   proc getModuleHandle*(lpModuleName: WideCString): HANDLE {.
        stdcall, dynlib: "kernel32", importc: "GetModuleHandleW", sideEffect.}
