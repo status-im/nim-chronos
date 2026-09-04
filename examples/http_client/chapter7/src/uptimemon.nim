@@ -87,21 +87,20 @@ proc check(
       echo "Could not release a lock: " & exc.msg
 # ANCHOR_END: semaphore
 
-  let
-    request = HttpClientRequestRef.new(session, uri).valueOr:
-      echo "[ERR] " & uri & ": " & error
-      return
-    response =
-      try:
-        await request.send().wait(5.seconds)
-      except HttpError as exc:
-        echo "[ERR] " & uri & ": " & exc.msg
-        return
-      except AsyncTimeoutError as exc:
-        echo "[ERR] " & uri & ": " & exc.msg
-        return
-      finally:
-        await request.closeWait()
+  let request = HttpClientRequestRef.new(session, uri).valueOr:
+    echo "[ERR] " & uri & ": " & error
+    return
+
+  var response: HttpClientResponseRef
+
+  try:
+    response = await request.send().wait(5.seconds)
+  except HttpError as exc:
+    echo "[ERR] " & uri & ": " & exc.msg
+  except AsyncTimeoutError as exc:
+    echo "[ERR] " & uri & ": " & exc.msg
+  finally:
+    await request.closeWait()
 
   try:
     if response.status == 200:
