@@ -40,8 +40,12 @@ proc sendAlert(
   try:
     let response = await request.send().wait(5.seconds)
     await response.closeWait()
-  except HttpError, FuturePendingError, AsyncTimeoutError:
-    echo "[WRN] Failed to send alert: " & getCurrentExceptionMsg()
+  except HttpError  as exc:
+    echo "[WRN] Failed to send alert: " & exc.msg
+  except FuturePendingError as exc:
+    echo "[WRN] Failed to send alert: " & exc.msg
+  except AsyncTimeoutError as exc:
+    echo "[WRN] Failed to send alert: " & exc.msg
   finally:
     await request.closeWait()
 # ANCHOR_END: response
@@ -80,8 +84,10 @@ proc check(session: HttpSessionRef, uri: string) {.async: (raises: [CancelledErr
     response =
       try:
         await request.send().wait(5.seconds)
-      except HttpError, AsyncTimeoutError:
-        echo "[ERR] " & uri & ": " & getCurrentExceptionMsg()
+      except HttpError as exc:
+        echo "[ERR] " & uri & ": " & exc.msg
+      except AsyncTimeoutError as exc:
+        echo "[ERR] " & uri & ": " & exc.msg
       finally:
         await request.closeWait()
 
@@ -105,8 +111,12 @@ proc check(session: HttpSessionRef, uri: string) {.async: (raises: [CancelledErr
       let message = "[NOK] " & uri & ": " & $response.status
       echo message
       await session.sendAlert(message)
-  except HttpError, AsyncStreamError:
-    let message = "[ERR] " & uri & ": " & getCurrentExceptionMsg()
+  except HttpError as exc:
+    let message = "[ERR] " & uri & ": " & exc.msg
+    echo message
+    await session.sendAlert(message, 4)
+  except AsyncStreamError as exc:
+    let message = "[ERR] " & uri & ": " & exc.msg
     echo message
     await session.sendAlert(message, 4)
   finally:

@@ -16,8 +16,8 @@ proc check(session: HttpSessionRef, uri: string) {.async: (raises: [CancelledErr
       echo "[OK] " & uri
     else:
       echo "[NOK] " & uri & ": " & $response.status
-  except HttpError:
-    echo "[ERR] " & uri & ": " & getCurrentExceptionMsg()
+  except HttpError as exc:
+    echo "[ERR] " & uri & ": " & exc.msg
 # ANCHOR_END: check_uri
 
 # ANCHOR: check_uris
