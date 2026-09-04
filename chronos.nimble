@@ -120,6 +120,27 @@ task test_libbacktrace, "test with libbacktrace":
       if (NimMajor, NimMinor) >= (2, 2):
         run args & " --mm:orc", "tests/testall"
 
+task test_asan, "Run all tests with ASAN":
+  if platform != "x86" and (NimMajor, NimMinor) >= (2, 2):
+    try:
+      exec "echo '#if __clang_major__ < 20\n#error\n#endif' | clang -E -"
+    except OSError:
+      return
+
+    # https://clang.llvm.org/docs/AddressSanitizer.html
+    putEnv("ASAN_OPTIONS", "detect_stack_use_after_return=1")
+    # https://clang.llvm.org/docs/UndefinedBehaviorSanitizer.html
+    putEnv("UBSAN_OPTIONS", "print_stacktrace=1")
+    for args in testArguments:
+      run args &
+        " --mm:orc -d:useMalloc --cc:clang --debugger:native" &
+        " --passC:-fsanitize=address,undefined" &
+        " --passL:-fsanitize=address,undefined" &
+        " --passC:-fno-sanitize-recover=undefined" &
+        " --passC:-fno-sanitize-merge" &
+        " --passC:-fno-omit-frame-pointer",
+        "tests/testall"
+
 task docs, "Generate API documentation":
   exec "mdbook build docs"
   tryExec nimc & " doc " &
