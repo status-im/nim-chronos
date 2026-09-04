@@ -115,6 +115,16 @@ template preparePoll(loop: PDispatcherBase) =
   loop.inEventLoop = true
   defer: loop.inEventLoop = false
 
+proc resetBaseDispatcher(loop: PDispatcherBase) {.gcsafe, raises: [].} =
+  loop.timers.reset()
+  loop.callbacks.reset()
+  loop.idlers.reset()
+  loop.ticks.reset()
+  loop.trackers.reset()
+  loop.counters.reset()
+  when hasThreadSupport:
+    loop.waking.clear(moRelease)
+
 template processThreadCallbacks(loop) =
   # Drain cross-thread callbacks to the local callback queue
   when hasThreadSupport:
@@ -243,7 +253,7 @@ when defined(nimdoc):
     ## Perform single asynchronous step, processing timers and completing
     ## tasks. Blocks until at least one event has completed.
     ##
-    ## Exceptions raised during `async` task exection are stored as outcome
+    ## Exceptions raised during `async` task exception are stored as outcome
     ## in the corresponding `Future` - `poll` itself does not raise.
 
   proc register2*(fd: AsyncFD): Result[void, OSErrorCode] = discard
@@ -257,6 +267,7 @@ when defined(nimdoc):
   proc closeHandle*(fd: AsyncFD, aftercb: CallbackFunc = nil) = discard
   proc closeSocket*(fd: AsyncFD, aftercb: CallbackFunc = nil) = discard
   proc unregisterAndCloseFd*(fd: AsyncFD): Result[void, OSErrorCode] = discard
+  proc closeDispatcher*(loop: PDispatcher): Opt[string] = discard
   proc contains*(disp: PDispatcher, fd: AsyncFD): bool = discard
 
   proc `==`*(x: AsyncFD, y: AsyncFD): bool {.borrow, gcsafe.}
@@ -283,6 +294,7 @@ elif defined(windows):
     Dispatcher = object of DispatcherBase
       ioPort: HANDLE
       handles: HashSet[AsyncFD]
+      waitables: HashSet[HANDLE]
       connectEx*: WSAPROC_CONNECTEX
       acceptEx*: WSAPROC_ACCEPTEX
       getAcceptExSockAddrs*: WSAPROC_GETACCEPTEXSOCKADDRS
@@ -315,6 +327,9 @@ elif defined(windows):
 
   proc hash(x: AsyncFD): Hash {.borrow.}
   proc `==`*(x: AsyncFD, y: AsyncFD): bool {.borrow, gcsafe.}
+
+  proc hash(x: HANDLE): Hash {.borrow.}
+  proc `==`(x, y: HANDLE): bool {.borrow.}
 
   proc getFunc(s: SocketHandle, fun: var pointer, guid: GUID): bool =
     var bytesRet: DWORD
@@ -390,6 +405,7 @@ elif defined(windows):
     var res = PDispatcher(
       ioPort: port,
       handles: initHashSet[AsyncFD](),
+      waitables: initHashSet[HANDLE](),
       timers: initHeapQueue[TimerCallback](),
       callbacks: initDeque[AsyncCallback](64),
       idlers: initDeque[AsyncCallback](),
@@ -498,6 +514,7 @@ elif defined(windows):
       whandle.ovl = nil
       return err(osLastError())
 
+    loop.waitables.incl(whandle[].waitFd)
     ok(WaitableHandle(whandle))
 
   proc closeWaitable*(wh: WaitableHandle): Result[void, OSErrorCode] =
@@ -515,6 +532,7 @@ elif defined(windows):
       let res = osLastError()
       if res != ERROR_IO_PENDING:
         return err(res)
+    getThreadDispatcher().waitables.excl(pdata.waitFd)
     ok()
 
   proc addProcess2*(pid: int, cb: CallbackFunc,
@@ -773,6 +791,69 @@ elif defined(windows):
 
     if not(isNil(aftercb)):
       loop.callbacks.addLast(AsyncCallback(function: aftercb))
+
+  proc pendingEventsCount(loop: PDispatcher): int =
+    ## Number of events waiting to be dequeued from loop's I/O completion
+    ## port, up to `MaxEventsCount`.
+
+    if isNil(loop.getQueuedCompletionStatusEx):
+      return 0
+
+    var
+      events: array[MaxEventsCount, osdefs.OVERLAPPED_ENTRY]
+      eventsReceived = ULONG(0)
+    let res = loop.getQueuedCompletionStatusEx(
+      loop.ioPort, addr events[0], ULONG(len(events)), eventsReceived,
+      DWORD(0), WINBOOL(0))
+    if res == FALSE:
+      let errCode = osLastError()
+      if uint32(errCode) != WAIT_TIMEOUT:
+        raiseOsDefect(errCode,
+                      "pendingEventsCount(): Unable to get OS events")
+      return 0
+
+    int(eventsReceived)
+
+  proc isEmpty(loop: PDispatcher): bool =
+    ## Returns `true` when no handle and no waitable is registered in the
+    ## dispatcher - the counterpart of `Selector.isEmpty` on posix, where
+    ## signals and processes are registered in the selector instead.
+    (len(loop.handles) == 0) and (len(loop.waitables) == 0)
+
+  proc closeDispatcher*(loop: PDispatcher): Opt[string] =
+    ## Release the resources held by `loop`, ie its completion port.
+    ##
+    ## The port is released even when its handle fails to close - in that case
+    ## a diagnostic describing the failure is returned.
+    ##
+    ## Closing the completion port loses every overlapped operation queued to
+    ## it - the memory backing those operations can no longer be reclaimed -
+    ## so a `Defect` is raised when an event is still waiting to be processed,
+    ## or when a handle or waitable is still registered, as its `posix`
+    ## counterpart does for the selector.
+    doAssert loop.isEmpty(),
+             "closeDispatcher(): the dispatcher still has " &
+             $len(loop.handles) & " handle(s) and " & $len(loop.waitables) &
+             " waitable(s) registered - all streams must have been closed " &
+             "before closing"
+
+    let pending = loop.pendingEventsCount()
+    doAssert pending == 0,
+             "closeDispatcher(): the completion port still has " & $pending &
+             " event(s) waiting to be processed - all operations must have " &
+             "completed or been cancelled before closing"
+
+    var diagnostic = Opt.none(string)
+
+    if closeFd(loop.ioPort) != 0:
+      diagnostic = Opt.some("Unable to close completion port: " &
+                            osErrorMsg(osLastError()))
+
+    # Reset regardless of whether the dispatcher closed cleanly: the diagnostic
+    # is not retryable, so nobody would come back to release this state.
+    loop.resetBaseDispatcher()
+
+    diagnostic
 
   proc unregisterAndCloseFd*(fd: AsyncFD): Result[void, OSErrorCode] =
     ## Unregister from system queue and close asynchronous socket.
@@ -1045,6 +1126,63 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     ## You can execute ``aftercb`` before actual socket close operation.
     closeSocket(fd, aftercb)
 
+  proc isEmpty(loop: PDispatcher): bool =
+    ## Returns `true` when no descriptor is registered in the dispatcher, ie in
+    ## its selector - signals and processes are registered there too, unlike on
+    ## windows where they are waitables.
+    loop.selector.isEmpty()
+
+  proc closeDispatcher*(loop: PDispatcher): Opt[string] =
+    ## Release the resources held by `loop`, ie the selector associated with
+    ## the current thread's dispatcher and its wake-up descriptor.
+    ##
+    ## The selector state is released even when its descriptor fails to close -
+    ## in that case a diagnostic describing the failure is returned.
+    ##
+    ## Closing a selector that still has descriptors registered orphans them:
+    ## they are never closed and their pending operations never complete - so a
+    ## `Defect` is raised when any is left.
+
+    # The wake-up descriptor belongs to the dispatcher rather than to the
+    # application, so it is unregistered before the check below instead of
+    # counting as leftover.
+    let unregistered =
+      loop.selector.unregister2(
+        when hasEventFd: loop.wakeupFd else: loop.wakeupFd[1])
+
+    # Skipped when our own entry could not be removed, since the check would
+    # then blame the application for a descriptor it does not own.
+    doAssert unregistered.isErr() or loop.isEmpty(),
+             "closeDispatcher(): the selector still has descriptors " &
+             "registered - all streams must have been closed before closing"
+
+    var diagnostic = Opt.none(string)
+
+    unregistered.isOkOr:
+      diagnostic = Opt.some("Unable to unregister wake-up descriptor: " &
+                            osErrorMsg(error) & " (code: " & $int(error) & ")")
+
+    when hasEventFd:
+      if closeFd(loop.wakeupFd) != 0 and diagnostic.isNone():
+        diagnostic = Opt.some("Unable to close wake-up descriptor: " &
+                              osErrorMsg(osLastError()))
+    else:
+      for fd in loop.wakeupFd:
+        if closeFd(fd) != 0 and diagnostic.isNone():
+          diagnostic = Opt.some("Unable to close wake-up descriptor: " &
+                                osErrorMsg(osLastError()))
+
+    loop.selector.close2().isOkOr:
+      if diagnostic.isNone():
+        diagnostic = Opt.some("Unable to close selector: " & osErrorMsg(error) &
+                              " (code: " & $int(error) & ")")
+
+    # Reset regardless of whether the dispatcher closed cleanly: the diagnostic
+    # is not retryable, so nobody would come back to release this state.
+    loop.resetBaseDispatcher()
+
+    diagnostic
+
   when chronosEventEngine in ["epoll", "kqueue"]:
     type
       ProcessHandle* = distinct int
@@ -1240,6 +1378,25 @@ proc getThreadDispatcher*(): PDispatcher =
   if gDisp.isNil():
     setThreadDispatcher(newDispatcher())
   gDisp
+
+proc closeThreadDispatcher*(): Opt[string] =
+  ## Close the current thread's dispatcher, releasing its resources and leaving
+  ## the thread without one - a new dispatcher is created on next use. Closing
+  ## a thread that never had one does nothing.
+  ##
+  ## Like `close(2)`, the resources are released unconditionally: the return
+  ## value is a diagnostic, not something to retry.
+  ##
+  ## Closing while futures are pending or handles are open is undefined
+  ## behaviour - a `Defect` is raised for the work the dispatcher knows about,
+  ## but operations the OS queue has not reported yet go undetected.
+  if isNil(gDisp):
+    return Opt.none(string)
+
+  # Detach before closing so that a second call cannot release the same twice.
+  let disp = move(gDisp)
+
+  disp.closeDispatcher()
 
 proc setGlobalDispatcher*(disp: PDispatcher) {.
       gcsafe, deprecated: "Use setThreadDispatcher() instead".} =

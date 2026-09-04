@@ -13,7 +13,7 @@ import
     testmacro, testsync, testsoon, testtime, testfut, testaddress, testdatagram,
     teststream, testserver, testbugs, testnet, testasyncstream, testhttpserver,
     testshttpserver, testhttpclient, testratelimit, testfutures, testthreadsync,
-    testasyncsemaphore, testmpsc,
+    testasyncsemaphore, testmpsc, testdispatcher,
   ]
 
 when (chronosEventEngine in ["epoll", "kqueue"]) or defined(windows):
