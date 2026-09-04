@@ -1141,7 +1141,7 @@ elif defined(windows):
           state: toInterfaceState(slider.operStatus),
           name: $slider.adapterName,
           desc: $slider.description,
-          mtu: int(slider.mtu),
+          mtu: int64(slider.mtu),
           maclen: int(slider.physicalAddressLength),
           flags: uint64(slider.flags)
         )

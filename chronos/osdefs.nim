@@ -854,7 +854,7 @@ when defined(windows):
        sideEffect.}
 
   proc wcschr*(ws: LPWSTR, wc: WCHAR): LPWSTR {.
-       stdcall, dynlib: "ntdll", importc: "wcschr", sideEffect.}
+       cdecl, dynlib: "ntdll", importc: "wcschr", sideEffect.}
 
   proc getModuleHandle*(lpModuleName: WideCString): HANDLE {.
        stdcall, dynlib: "kernel32", importc: "GetModuleHandleW", sideEffect.}
@@ -862,7 +862,7 @@ when defined(windows):
   proc getProcAddress*(hModule: HANDLE, lpProcName: cstring): pointer {.
        stdcall, dynlib: "kernel32", importc: "GetProcAddress", sideEffect.}
 
-  proc rtlNtStatusToDosError*(code: uint64): ULONG {.
+  proc rtlNtStatusToDosError*(code: ULONG): ULONG {.
        stdcall, dynlib: "ntdll", importc: "RtlNtStatusToDosError", sideEffect.}
 
   proc getConsoleCP*(): UINT {.

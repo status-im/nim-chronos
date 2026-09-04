@@ -711,11 +711,11 @@ elif defined(windows):
         var customOverlapped = PtrCustomOverlapped(events[i].lpOverlapped)
         customOverlapped.data.errCode =
           block:
-            let res = cast[uint64](customOverlapped.internal)
-            if res == 0'u64:
+            let res = cast[uint](customOverlapped.internal)
+            if res == 0'u:
               OSErrorCode(-1)
             else:
-              OSErrorCode(rtlNtStatusToDosError(res))
+              OSErrorCode(rtlNtStatusToDosError(ULONG(res)))
         customOverlapped.data.bytesCount = events[i].dwNumberOfBytesTransferred
         let acb = AsyncCallback(function: customOverlapped.data.cb,
                                 udata: cast[pointer](customOverlapped))
