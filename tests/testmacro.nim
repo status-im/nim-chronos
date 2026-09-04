@@ -350,7 +350,7 @@ suite "Macro transformations - implicit returns":
 
       waitFor(implicit9()) == 42
 
-suite "Closure iterator's exception transformation issues":
+suite "Exception/effect tracking":
   test "Nested defer/finally not called on return":
     # issue #288
     # fixed by https://github.com/nim-lang/Nim/pull/19933
@@ -383,7 +383,6 @@ suite "Closure iterator's exception transformation issues":
 
     waitFor(x())
 
-suite "Exceptions tracking":
   template checkNotCompiles(body: untyped) =
     check (not compiles(body))
   test "Can raise valid exception":
@@ -592,7 +591,7 @@ suite "Exceptions tracking":
       proc unnanotated() {.async.} = raise (ref CatchableError)()
 
       checkNotCompiles:
-        proc annotated() {.async: (raises: [ValueError]).} = 
+        proc annotated() {.async: (raises: [ValueError]).} =
           raise (ref CatchableError)()
 
       checkNotCompiles:
@@ -663,5 +662,39 @@ suite "Exceptions tracking":
         aaa == 3
         bbb == 3
         ccc == 1
+    else:
+      skip()
+
+  test "async do":
+    var called = false
+    proc callProc[T](f: proc (): T {.raises: [], gcsafe.}): T =
+      f()
+
+    proc foo() {.async.} =
+      await callProc do {.async.}:
+        called = true
+    waitFor foo()
+    check:
+      called
+
+  test "detect poll reentrancy at compile-time in macro":
+    when (NimMajor, NimMinor) >= (2, 2):
+      check:
+        not(compiles do:
+          proc callPoll() {.async.} =
+            poll())
+        not(compiles do:
+          proc callWaitFor() {.async.} =
+            waitFor(sleepAsync(1.millis)))
+    else:
+      skip()
+
+  test "detect poll reentrance at runtime for other cases":
+    when chronosStrictReentrancy:
+      callSoon(proc(_: pointer) =
+        poll())
+
+      expect(Defect):
+        poll()
     else:
       skip()

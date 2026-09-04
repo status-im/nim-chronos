@@ -185,11 +185,12 @@ proc finish(fut: FutureBase, state: FutureState, loc: ptr SrcLoc) =
   if not(isNil(fut.internalCallback.function)):
     callSoon(move(fut.internalCallback))
 
-  for item in fut.internalCallbacks.mitems():
+  # In case a callback tries to modify the callback list (via removeCallback)
+  var callbacks = move(fut.internalCallbacks)
+  for item in callbacks.mitems():
     if not(isNil(item.function)):
       callSoon(item)
     item = default(AsyncCallback) # release memory as early as possible
-  fut.internalCallbacks = default(seq[AsyncCallback]) # release seq as well
 
   when chronosFutureTracking:
     scheduleDestructor(fut)
@@ -710,44 +711,51 @@ proc asyncCheck*[T](future: Future[T]) {.
       cb(nil)
 
 template orImpl*[T, Y](fut1: Future[T], fut2: Future[Y]): untyped =
-  var cb: proc(udata: pointer) {.gcsafe, raises: [].}
-  cb = proc(udata: pointer) {.gcsafe, raises: [].} =
-    if not(retFuture.finished()):
-      var fut = cast[FutureBase](udata)
-      if cast[pointer](fut1) == udata:
-        fut2.removeCallback(cb)
-      else:
-        fut1.removeCallback(cb)
-      if fut.failed():
-        retFuture.fail(fut.error, warn = false)
-      else:
-        retFuture.complete()
-
-  proc cancellation(udata: pointer) =
-    # On cancel we remove all our callbacks only.
-    if not(fut1.finished()):
-      fut1.removeCallback(cb)
-    if not(fut2.finished()):
-      fut2.removeCallback(cb)
-
   if fut1.finished():
     if fut1.failed():
       retFuture.fail(fut1.error, warn = false)
     else:
       retFuture.complete()
-    return retFuture
-
-  if fut2.finished():
+  elif fut2.finished():
     if fut2.failed():
       retFuture.fail(fut2.error, warn = false)
     else:
       retFuture.complete()
-    return retFuture
+  else:
+    # Avoid cyclic reference
+    var cbc {.cursor.}: proc(udata: pointer) {.gcsafe, raises: [].}
+    proc cb(udata: pointer) {.gcsafe, raises: [].} =
+      if not(retFuture.finished()):
+        let fut = cast[FutureBase](udata)
+        var cbc2 {.cursor.} = cbc # avoid cycles for orc/arc
+        cbc = nil # clear for refc
+        if cast[pointer](fut1) == udata:
+          fut2.removeCallback(cbc2)
+        else:
+          fut1.removeCallback(cbc2)
+        cbc2 = nil # clear for refc
 
-  fut1.addCallback(cb)
-  fut2.addCallback(cb)
+        if fut.failed():
+          retFuture.fail(fut.error, warn = false)
+        else:
+          retFuture.complete()
 
-  retFuture.cancelCallback = cancellation
+    proc cancellation(udata: pointer) =
+      # On cancel we remove all our callbacks only.
+      var cbc2 {.cursor.} = cbc # avoid cycles for orc/arc
+      cbc = nil # clear for refc
+      if not(fut1.finished()):
+        fut1.removeCallback(cbc2)
+      if not(fut2.finished()):
+        fut2.removeCallback(cbc2)
+      cbc2 = nil # clear for refc
+
+    cbc = cb
+
+    fut1.addCallback(cb)
+    fut2.addCallback(cb)
+
+    retFuture.cancelCallback = cancellation
   retFuture
 
 proc `or`*[T, Y](fut1: Future[T], fut2: Future[Y]): Future[void] =
@@ -1048,7 +1056,7 @@ proc allFinished*[F: SomeFuture](futs: varargs[F]): Future[seq[F]] {.
       inc(finishedFutures)
 
   retFuture.cancelCallback = cancellation
-  if len(nfuts) == 0 or len(nfuts) == finishedFutures:
+  if len(nfuts) == finishedFutures:
     retFuture.complete(move(nfuts))
 
   return retFuture
@@ -1072,23 +1080,30 @@ template oneImpl: untyped =
     nfuts.add fut0
   nfuts.add futs
 
-  var cb: proc(udata: pointer) {.gcsafe, raises: [].}
-  cb = proc(udata: pointer) {.gcsafe, raises: [].} =
+  var cbc {.cursor.}: proc(udata: pointer) {.gcsafe, raises: [].} # Avoid cyclic ref warning
+  proc cb(udata: pointer) {.gcsafe, raises: [].} =
     if not(retFuture.finished()):
+      var nfuts = move nfuts # Reset the closure environment eagerly
+      # TODO https://github.com/nim-lang/Nim/issues/25963
+      # TODO https://github.com/nim-lang/Nim/issues/26010
+      var cbc2 {.cursor.} = cbc # avoid cycles for orc/arc
+      cbc = nil # clear for refc
       for fut in nfuts.mitems():
         if cast[pointer](fut) == udata:
           retFuture.complete(move(fut))
         else:
-          fut.removeCallback(cb)
-      reset(nfuts)
-      reset(cb)
+          fut.removeCallback(cbc2)
 
   proc cancellation(udata: pointer) =
     # On cancel we remove all our callbacks only.
+    let nfuts = move nfuts # Reset the closure environment eagerly
+    var cbc2 {.cursor.} = cbc # avoid cycles for orc/arc
+    cbc = nil # clear for refc
     for fut in nfuts:
-      fut.removeCallback(cb)
-    reset(nfuts)
-    reset(cb)
+      fut.removeCallback(cbc2)
+    cbc2 = nil # clear for refc
+
+  cbc = cb
 
   for fut in nfuts:
     fut.addCallback(cb, cast[pointer](fut))
@@ -1146,6 +1161,8 @@ proc race*(fut0: FutureBase, futs: varargs[FutureBase]): Future[FutureBase] {.
 
   oneImpl
 
+proc one*(_: typeof([])) {.error: "`one` requires at least one future".}
+
 proc race*(futs: openArray[FutureBase]): Future[FutureBase] {.
     async: (raw: true, raises: [ValueError, CancelledError]).} =
   ## Waits for one of the given futures to finish and returns it.
@@ -1196,6 +1213,8 @@ proc race*(futs: openArray[SomeFuture]): Future[SomeFuture] {.
     return retFuture
 
   oneImpl
+
+proc race*(_: typeof([])) {.error: "`race` requires at least one future".}
 
 when (chronosEventEngine in ["epoll", "kqueue"]) or defined(windows):
   import std/os

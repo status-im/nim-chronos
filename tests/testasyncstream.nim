@@ -898,12 +898,12 @@ suite "AsyncStream/ChunkedStream":
       var check = await checkVector(data, writeChunkSize, readChunkSize)
       return (data == check)
 
-    check waitFor(testChunk(4457, 128, 1)) == true
-    check waitFor(testChunk(65600, 1024, 17)) == true
-    check waitFor(testChunk(262400, 4096, 61)) == true
-    check waitFor(testChunk(767309, 4457, 173)) == true
-    check waitFor(testChunk(767309, 4457, 173)) == true
-    check waitFor(testChunk(767309, 67000, 67001)) == true
+    check await(testChunk(4457, 128, 1)) == true
+    check await(testChunk(65600, 1024, 17)) == true
+    check await(testChunk(262400, 4096, 61)) == true
+    check await(testChunk(767309, 4457, 173)) == true
+    check await(testChunk(767309, 4457, 173)) == true
+    check await(testChunk(767309, 67000, 67001)) == true
 
 suite "AsyncStream/TLSStream":
   teardown:
@@ -1507,8 +1507,11 @@ suite "AsyncStream/BoundedStream":
         case stest
         of SizeReadWrite:
           let response = await rbstream.read()
+          check:
+            response == message
+            len(await rbstream.read()) == 0
+            rbstream.atEof()
           await rbstream.closeWait()
-          check response == message
 
         of SizeOverflow:
           let response = await rbstream.read()
@@ -1574,7 +1577,8 @@ suite "AsyncStream/BoundedStream":
   asyncTest "read small chunks":
     proc checkVector(inputstr: seq[byte],
                      writeChunkSize: int,
-                     readChunkSize: int): Future[seq[byte]] {.async.} =
+                     readChunkSize: int,
+                     cmp: BoundCmp): Future[seq[byte]] {.async.} =
       proc serveClient(server: StreamServer,
                        transp: StreamTransport) {.async: (raises: []).} =
         try:
@@ -1602,8 +1606,14 @@ suite "AsyncStream/BoundedStream":
       server.start()
       var transp = await connect(server.localAddress())
       var rstream = newAsyncStreamReader(transp)
-      var rstream2 = newBoundedStreamReader(rstream, 1048576,
-                                            comparison = BoundCmp.LessOrEqual)
+      let boundSize =
+        case cmp
+        of BoundCmp.Equal:
+          uint64(len(inputstr))
+        of BoundCmp.LessOrEqual:
+          1048576'u64
+      var rstream2 = newBoundedStreamReader(rstream, boundSize,
+                                            comparison = cmp)
       var res: seq[byte]
       while not(rstream2.atEof()):
         var chunk = await rstream2.read(readChunkSize)
@@ -1617,8 +1627,9 @@ suite "AsyncStream/BoundedStream":
     proc testSmallChunk(datasize: int, writeChunkSize: int,
                         readChunkSize: int) {.async.} =
       var data = createBigMessage("0123456789ABCDEFGHI", datasize)
-      var check = await checkVector(data, writeChunkSize, readChunkSize)
-      check (data == check)
+      for cmp in [BoundCmp.Equal, BoundCmp.LessOrEqual]:
+        var check = await checkVector(data, writeChunkSize, readChunkSize, cmp)
+        check (data == check)
 
     await testSmallChunk(4457, 128, 1)
     await testSmallChunk(65600, 1024, 17)

@@ -13,6 +13,10 @@
 import std/[kqueue, deques, tables]
 import stew/base10
 
+when defined(haiku):
+  # On Haiku kqueue/kevent lives in libbsd
+  {.passl: "-lbsd".}
+
 const
   # SIG_IGN and SIG_DFL declared in posix.nim as variables, but we need them
   # to be constants and GC-safe.
