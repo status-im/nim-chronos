@@ -69,13 +69,11 @@ task examples, "Build examples":
 
   # Build HTTP client tutorial examples
   for chapterDir in listDirs("examples/http_client"):
-    withDir(chapterDir):
-      tryExec "nimble build"
+    build "--threads:on", chapterDir & "/src/uptimemon.nim"
 
   # Build HTTP server tutorial examples
   for chapterDir in listDirs("examples/http_server"):
-    withDir(chapterDir):
-      tryExec "nimble build"
+    build "--threads:on", chapterDir & "/src/dashboard.nim"
 
 task benchmarks, "Run benchmarks":
   # Make sure benchmarks compile
