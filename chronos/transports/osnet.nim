@@ -827,22 +827,18 @@ elif defined(macosx) or defined(macos) or defined(bsd):
             res[i].state = toInterfaceState(ifap.ifa_flags)
             res[i].mtu = int64(data.ifi_mtu)
           elif family == osdefs.AF_INET:
-            fromSAddr(cast[ptr Sockaddr_storage](ifap.ifa_addr),
-                      SockLen(sizeof(Sockaddr_in)), ifaddress.host)
+            fromSAddr(cast[ptr Sockaddr_in](ifap.ifa_addr), ifaddress.host)
           elif family == osdefs.AF_INET6:
-            fromSAddr(cast[ptr Sockaddr_storage](ifap.ifa_addr),
-                      SockLen(sizeof(Sockaddr_in6)), ifaddress.host)
+            fromSAddr(cast[ptr Sockaddr_in6](ifap.ifa_addr), ifaddress.host)
         if not isNil(ifap.ifa_netmask):
           var na: TransportAddress
           let family = int(ifap.ifa_netmask.sa_family)
           if family == osdefs.AF_INET:
-            fromSAddr(cast[ptr Sockaddr_storage](ifap.ifa_netmask),
-                      SockLen(sizeof(Sockaddr_in)), na)
+            fromSAddr(cast[ptr Sockaddr_in](ifap.ifa_netmask), na)
             if ifaddress.host.family == AddressFamily.IPv4:
               ifaddress.net = IpNet.init(ifaddress.host, na)
           elif family == osdefs.AF_INET6:
-            fromSAddr(cast[ptr Sockaddr_storage](ifap.ifa_netmask),
-                      SockLen(sizeof(Sockaddr_in6)), na)
+            fromSAddr(cast[ptr Sockaddr_in6](ifap.ifa_netmask), na)
             if ifaddress.host.family == AddressFamily.IPv6:
               ifaddress.net = IpNet.init(ifaddress.host, na)
 
@@ -914,12 +910,13 @@ elif defined(macosx) or defined(macos) or defined(bsd):
           for i in 0..<2:
             let mask = 1 shl i
             if (msg.rtm.rtm_addrs and mask) != 0:
-              var saddr = cast[ptr Sockaddr_storage](addr msg.space[so])
-              let size = sasize(msg.space.toOpenArray(so, eo))
+              let size = min(sasize(msg.space.toOpenArray(so, eo)),
+                             sizeof(sastore))
+              copyMem(addr sastore, addr msg.space[so], size)
               if mask == RTA_DST:
-                fromSAddr(saddr, SockLen(size), res.dest)
+                fromSAddr(addr sastore, SockLen(size), res.dest)
               elif mask == RTA_GATEWAY:
-                fromSAddr(saddr, SockLen(size), res.gateway)
+                fromSAddr(addr sastore, SockLen(size), res.gateway)
               so += size
 
           if res.dest.isZero():
@@ -972,22 +969,18 @@ elif defined(haiku):
         if not isNil(ifap.ifa_addr):
           let family = int(ifap.ifa_addr.sa_family)
           if family == osdefs.AF_INET:
-            fromSAddr(cast[ptr Sockaddr_storage](ifap.ifa_addr),
-                      SockLen(sizeof(Sockaddr_in)), ifaddress.host)
+            fromSAddr(cast[ptr Sockaddr_in](ifap.ifa_addr), ifaddress.host)
           elif family == osdefs.AF_INET6:
-            fromSAddr(cast[ptr Sockaddr_storage](ifap.ifa_addr),
-                      SockLen(sizeof(Sockaddr_in6)), ifaddress.host)
+            fromSAddr(cast[ptr Sockaddr_in6](ifap.ifa_addr), ifaddress.host)
         if not isNil(ifap.ifa_netmask):
           var na: TransportAddress
           let family = int(ifap.ifa_netmask.sa_family)
           if family == osdefs.AF_INET:
-            fromSAddr(cast[ptr Sockaddr_storage](ifap.ifa_netmask),
-                      SockLen(sizeof(Sockaddr_in)), na)
+            fromSAddr(cast[ptr Sockaddr_in](ifap.ifa_netmask), na)
             if ifaddress.host.family == AddressFamily.IPv4:
               ifaddress.net = IpNet.init(ifaddress.host, na)
           elif family == osdefs.AF_INET6:
-            fromSAddr(cast[ptr Sockaddr_storage](ifap.ifa_netmask),
-                      SockLen(sizeof(Sockaddr_in6)), na)
+            fromSAddr(cast[ptr Sockaddr_in6](ifap.ifa_netmask), na)
             if ifaddress.host.family == AddressFamily.IPv6:
               ifaddress.net = IpNet.init(ifaddress.host, na)
 
@@ -1183,11 +1176,11 @@ elif defined(windows):
           elif src.ss_family == osdefs.AF_INET6:
             fromSAddr(addr src, SockLen(sizeof(Sockaddr_in6)), res.source)
           if bestRoute.nextHop.si_family == osdefs.AF_INET:
-            fromSAddr(cast[ptr Sockaddr_storage](addr bestRoute.nextHop),
-                      SockLen(sizeof(Sockaddr_in)), res.gateway)
+            fromSAddr(cast[ptr Sockaddr_in](addr bestRoute.nextHop),
+                      res.gateway)
           elif bestRoute.nextHop.si_family == osdefs.AF_INET6:
-            fromSAddr(cast[ptr Sockaddr_storage](addr bestRoute.nextHop),
-                      SockLen(sizeof(Sockaddr_in6)), res.gateway)
+            fromSAddr(cast[ptr Sockaddr_in6](addr bestRoute.nextHop),
+                      res.gateway)
           if res.gateway.isZero():
             res.gateway = empty
           res.dest = address

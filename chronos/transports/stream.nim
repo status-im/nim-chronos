@@ -29,6 +29,7 @@ type
     offset: uint                    # Writer vector offset
     size: int                       # Original size
     writer: Future[int]             # Writer vector completion Future
+    gcholder: ref seq[byte]         # May be used to extend lifetime of `buf`
 
   TransportKind* {.pure.} = enum
     Socket,                         # Socket transport
@@ -2449,16 +2450,11 @@ proc write*(transp: StreamTransport, msg: string,
 
   fastWrite(transp, pbytes, rbytes, nbytes)
 
-  let
-    written = nbytes - rbytes # In case fastWrite wrote some
-
-  var localCopy = msg
-  retFuture.addCallback(proc(_: pointer) = reset(localCopy))
-
-  pbytes = cast[ptr byte](addr localCopy[written])
-
+  let gcholder = new(seq[byte])
+  gcholder[] = @(pbytes.makeOpenArray(rbytes))
   var vector = StreamVector(kind: DataBuffer, writer: retFuture,
-                            buf: pbytes, buflen: rbytes, size: nbytes)
+                            buf: baseAddr gcholder[], buflen: rbytes,
+                            size: nbytes, gcholder: gcholder)
   transp.queue.addLast(vector)
   transp.resumeWrite()
   return retFuture
@@ -2480,16 +2476,11 @@ proc write*[T](transp: StreamTransport, msg: seq[T],
 
   fastWrite(transp, pbytes, rbytes, nbytes)
 
-  let
-    written = nbytes - rbytes # In case fastWrite wrote some
-
-  var localCopy = msg
-  retFuture.addCallback(proc(_: pointer) = reset(localCopy))
-
-  pbytes = cast[ptr byte](addr localCopy[written])
-
+  let gcholder = new(seq[byte])
+  gcholder[] = @(pbytes.makeOpenArray(rbytes))
   var vector = StreamVector(kind: DataBuffer, writer: retFuture,
-                            buf: pbytes, buflen: rbytes, size: nbytes)
+                            buf: baseAddr gcholder[], buflen: rbytes,
+                            size: nbytes, gcholder: gcholder)
   transp.queue.addLast(vector)
   transp.resumeWrite()
   return retFuture
