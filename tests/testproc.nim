@@ -164,6 +164,34 @@ suite "Asynchronous process management test suite":
       finally:
         await process.closeWait()
 
+  asyncTest "Closing STDIN gives the child end of file":
+    let
+      command =
+        when defined(windows):
+          ("tests\\testproc.bat", "stdin")
+        else:
+          ("tests/testproc.sh", "stdin")
+      stdoutExpected =
+        when defined(windows):
+          "STDIN DATA: \r\n".toBytes()
+        else:
+          "STDIN DATA: \n".toBytes()
+      process = await startProcess(command[0], arguments = @[command[1]],
+                                   stdinHandle = AsyncProcess.Pipe,
+                                   stdoutHandle = AsyncProcess.Pipe)
+    try:
+      await process.stdinStream.tsource.closeWait()
+      let
+        stdoutFut = process.stdoutStream.read()
+        res = await process.waitForExit(InfiniteDuration)
+      await allFutures(stdoutFut)
+      let stdoutData = stdoutFut.read()
+      check:
+        res == 0
+        stdoutData == stdoutExpected
+    finally:
+      await process.closeWait()
+
   asyncTest "STDOUT and STDERR streams test":
     let options = {AsyncProcessOption.EvalCommand}
 
