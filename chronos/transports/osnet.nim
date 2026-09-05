@@ -910,12 +910,13 @@ elif defined(macosx) or defined(macos) or defined(bsd):
           for i in 0..<2:
             let mask = 1 shl i
             if (msg.rtm.rtm_addrs and mask) != 0:
-              var saddr = cast[ptr Sockaddr_storage](addr msg.space[so])
-              let size = sasize(msg.space.toOpenArray(so, eo))
+              let size = min(sasize(msg.space.toOpenArray(so, eo)),
+                             sizeof(sastore))
+              copyMem(addr sastore, addr msg.space[so], size)
               if mask == RTA_DST:
-                fromSAddr(saddr, SockLen(size), res.dest)
+                fromSAddr(addr sastore, SockLen(size), res.dest)
               elif mask == RTA_GATEWAY:
-                fromSAddr(saddr, SockLen(size), res.gateway)
+                fromSAddr(addr sastore, SockLen(size), res.gateway)
               so += size
 
           if res.dest.isZero():
