@@ -1078,7 +1078,8 @@ proc createPipe(kind: StandardKind
       when defined(windows):
         let
           readFlags: set[DescriptorFlag] = {DescriptorFlag.NonBlock}
-          writeFlags: set[DescriptorFlag] = {DescriptorFlag.NonBlock}
+          writeFlags: set[DescriptorFlag] =
+            {DescriptorFlag.NonBlock, DescriptorFlag.CloseOnExec}
         ? createOsPipe(readFlags, writeFlags)
       else:
         let
@@ -1090,7 +1091,8 @@ proc createPipe(kind: StandardKind
     let pipes =
       when defined(windows):
         let
-          readFlags: set[DescriptorFlag] = {DescriptorFlag.NonBlock}
+          readFlags: set[DescriptorFlag] =
+            {DescriptorFlag.NonBlock, DescriptorFlag.CloseOnExec}
           writeFlags: set[DescriptorFlag] = {DescriptorFlag.NonBlock}
         ? createOsPipe(readFlags, writeFlags)
       else:
