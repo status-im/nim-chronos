@@ -334,6 +334,46 @@ suite "AsyncStream/StreamTransport":
     await transp.closeWait()
     await server.join()
 
+  asyncTest "write":
+    const MessageSize = 16384 * 1024
+    var messages: seq[seq[byte]]
+    for i in 0 ..< 4:
+      var message = newSeq[byte](MessageSize)
+      for j in 0 ..< len(message):
+        message[j] = byte(0x42 + i + (j mod 16))
+      messages.add(message)
+
+    var res = 0
+    proc serveClient(server: StreamServer,
+                      transp: StreamTransport) {.async: (raises: []).} =
+      try:
+        var buf = newSeq[byte](MessageSize)
+        for message in messages:
+          await transp.readExactly(addr buf[0], len(buf))
+          if buf == message:
+            inc(res)
+        await transp.closeWait()
+        server.stop()
+        server.close()
+      except CatchableError as exc:
+        raiseAssert exc.msg
+
+    var server = createStreamServer(initTAddress("127.0.0.1:0"),
+                                    serveClient, {ReuseAddr})
+    server.start()
+    var transp = await connect(server.localAddress())
+    var wstream = newAsyncStreamWriter(transp)
+    for message in messages:
+      let fut = wstream.write(message)
+      check not(fut.finished())
+      await fut.cancelAndWait()
+      check fut.cancelled()
+
+    await server.join()
+    await wstream.closeWait()
+    await transp.closeWait()
+    await server.closeWait()
+
 suite "AsyncStream/ChunkedStream":
   teardown:
     checkLeaks()
