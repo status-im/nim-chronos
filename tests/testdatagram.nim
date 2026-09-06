@@ -1099,6 +1099,50 @@ suite "Datagram Transport test suite":
   asyncTest "[IP] 0-size UDP datagram size test":
     check (await performPacketSizeTest(576)) == true
 
+  asyncTest "[IP] sendTo() cancellation leaks test":
+    const MessageSize = 1024
+    var messages: seq[seq[byte]]
+    for i in 0 ..< 4:
+      var message = newSeq[byte](MessageSize)
+      for j in 0 ..< len(message):
+        message[j] = byte(0x42 + i + (j mod 16))
+      messages.add(message)
+
+    var
+      i = 0
+      res = 0
+    proc client(
+        transp: DatagramTransport,
+        raddr: TransportAddress
+    ): Future[void] {.async: (raises: []).} =
+      doAssert i < len(messages)
+      try:
+        var pbytes = transp.getMessage()
+        if pbytes == messages[i]:
+          inc(res)
+        inc(i)
+        if i >= len(messages):
+          await transp.closeWait()
+      except CatchableError as exc:
+        raiseAssert exc.msg
+
+    let
+      ta = initTAddress("127.0.0.1:0")
+      dgram1 = newDatagramTransport(client, local = ta)
+      dgram2 = newDatagramTransport(client, local = ta)
+      lta2 = dgram2.localAddress()
+
+    for message in messages:
+      let fut = dgram1.sendTo(lta2, message)
+      check not(fut.finished())
+      await fut.cancelAndWait()
+      check fut.cancelled()
+
+    await dgram2.join()
+    await dgram1.closeWait()
+
+    check res == len(messages)
+
   for socketType in DatagramSocketType:
     for portNumber in [Port(0), Port(30231)]:
       asyncTest "[IP] IPv6 mapping test (" & $socketType &
