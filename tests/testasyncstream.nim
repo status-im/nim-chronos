@@ -373,7 +373,7 @@ suite "AsyncStream/StreamTransport":
     await wstream.closeWait()
     await transp.closeWait()
     await server.closeWait()
-    
+
     check res == len(messages)
 
 suite "AsyncStream/ChunkedStream":

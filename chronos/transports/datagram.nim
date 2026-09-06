@@ -1020,8 +1020,17 @@ proc send*(transp: DatagramTransport, pbytes: pointer,
   if transp.remote.port == Port(0):
     retFuture.fail(newException(TransportError, "Remote peer not set!"))
     return retFuture
-  let vector = GramVector(kind: WithoutAddress, buf: pbytes, buflen: nbytes,
-                          writer: retFuture)
+
+  # This proc suggests that a caller-owned buffer is being sent,
+  # but because the queued data will still be sent on cancellation,
+  # the caller lacks a clean way to detect when it is safe to release.
+  # Therefore, we always have to copy the remaining data, to ensure that
+  # it won't get de-allocated while it is still being accessed in the queue.
+  let gcholder = new(seq[byte])
+  gcholder[] = @(pbytes.makeOpenArray(byte, nbytes))
+  let vector = GramVector(kind: WithoutAddress,
+                          buf: baseAddr gcholder[], buflen: nbytes,
+                          writer: retFuture, gcholder: gcholder)
   transp.queue.addLast(vector)
   if WritePaused in transp.state:
     let wres = transp.resumeWrite()
@@ -1083,8 +1092,18 @@ proc sendTo*(transp: DatagramTransport, remote: TransportAddress,
   ## ``transp`` to remote destination address ``remote``.
   let retFuture = newFuture[void]("datagram.transport.sendTo(pointer)")
   transp.checkClosed(retFuture)
-  let vector = GramVector(kind: WithAddress, buf: pbytes, buflen: nbytes,
-                          writer: retFuture, address: remote)
+
+  # This proc suggests that a caller-owned buffer is being sent,
+  # but because the queued data will still be sent on cancellation,
+  # the caller lacks a clean way to detect when it is safe to release.
+  # Therefore, we always have to copy the remaining data, to ensure that
+  # it won't get de-allocated while it is still being accessed in the queue.
+  let gcholder = new(seq[byte])
+  gcholder[] = @(pbytes.makeOpenArray(byte, nbytes))
+  let vector = GramVector(kind: WithAddress,
+                          buf: baseAddr gcholder[], buflen: nbytes,
+                          writer: retFuture,
+                          address: remote, gcholder: gcholder)
   transp.queue.addLast(vector)
   if WritePaused in transp.state:
     let wres = transp.resumeWrite()
