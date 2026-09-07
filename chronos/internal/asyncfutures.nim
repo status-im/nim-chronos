@@ -495,7 +495,7 @@ macro internalRaiseIfError*(fut: FutureBase, info: typed) =
   # This is a macro so we can capture the line info from the original call and
   # report the correct line number on exception effect violation
   let
-    info = info.lineInfoObj()
+    info = fut.lineInfoObj()
     res = quote do:
       if not(isNil(`fut`.internalError)):
         when chronosStackTrace:
@@ -561,24 +561,84 @@ macro internalRaiseIfError*(fut: InternalRaisesFuture, raises, info: typed) =
   res.deepLineInfo(info)
   res
 
-proc readFinished[T: not void](fut: Future[T]): lent T {.
+proc mreadFinished*[T: not void](fut: Future[T]): var T {.
     raises: [CatchableError].} =
-  # Read a future that is known to be finished, avoiding the extra exception
-  # effect.
+  ## Retrieves a mutable view of the value of a finished future `fut`.
+  ##
+  ## If the future failed or was cancelled, the corresponding exception will be
+  ## raised.
+  ##
+  ## If the future is still pending, the behavior is undefined and may result
+  ## in a runtime Defect.
+  ##
+  ## This function is suitable for use together with combinators like
+  ## `allFutures` or similar when it is certain that the future is finished.
+  ##
+  ## The mutable view can be used to move the value out of the future.
+  ##
+  ## If the future has multiple await consumers or callbacks, the order in which
+  ## they get to observe the value is not defined - mutating the value is only
+  ## safe for single-owner futures or when only one of the observers accesses
+  ## the value.
+  doAssert fut.finished(), "Calling `readFinished` on unfinished future"
   internalRaiseIfError(fut, fut)
   fut.internalValue
 
-proc read*[T: not void](fut: Future[T] ): lent T {.raises: [CatchableError].} =
-  ## Retrieves the value of `fut`.
+proc readFinished*[T: not void](fut: Future[T]): lent T {.
+    raises: [CatchableError].} =
+  ## Retrieves a view of the value of a finished future `fut`.
+  ##
+  ## If the future failed or was cancelled, the corresponding exception will be
+  ## raised.
+  ##
+  ## If the future is still pending, the behavior is undefined and may result
+  ## in a runtime Defect.
+  ##
+  ## This function is suitable for use together with combinators like
+  ## `allFutures` or similar when it is certain that the future is finished.
+  fut.mreadFinished()
+
+proc readFinished*(fut: Future[void]) {.raises: [CatchableError].} =
+  ## Retrieves a view of the value of a finished future `fut`.
+  ##
+  ## If the future failed or was cancelled, the corresponding exception will be
+  ## raised.
+  ##
+  ## If the future is still pending, the behavior is undefined and may result
+  ## in a runtime Defect.
+  ##
+  ## This function is suitable for use together with combinators like
+  ## `allFutures` or similar when it is certain that the future is finished.
+  doAssert fut.finished(), "Calling `readFinished` on unfinished future"
+  internalRaiseIfError(fut, fut)
+
+proc mread*[T: not void](fut: Future[T] ): var T {.raises: [CatchableError].} =
+  ## Retrieves a mutable view of the value of a finished future `fut`.
   ##
   ## If the future failed or was cancelled, the corresponding exception will be
   ## raised.
   ##
   ## If the future is still pending, `FuturePendingError` will be raised.
+  ##
+  ## The mutable view can be used to move the value out of the future.
+  ##
+  ## If the future has multiple await consumers or callbacks, the order in which
+  ## they get to observe the value is undefined - mutating the value is only
+  ## safe for single-owner futures or when only one of the observers accesses
+  ## the value.
   if not fut.finished():
     raiseFuturePendingError(fut)
 
-  fut.readFinished()
+  fut.mreadFinished()
+
+proc read*[T: not void](fut: Future[T] ): lent T {.raises: [CatchableError].} =
+  ## Retrieves a view the value of `fut`.
+  ##
+  ## If the future failed or was cancelled, the corresponding exception will be
+  ## raised.
+  ##
+  ## If the future is still pending, `FuturePendingError` will be raised.
+  fut.mread()
 
 proc read*(fut: Future[void]) {.raises: [CatchableError].} =
   ## Checks that `fut` completed.
@@ -621,7 +681,7 @@ template taskErrorMessage(future: FutureBase): string =
 template taskCancelMessage(future: FutureBase): string =
   "Asynchronous task " & taskFutureLocation(future) & " was cancelled!"
 
-proc pollFor[F: Future | InternalRaisesFuture](fut: F): F {.raises: [].} =
+proc pollFor[F: Future | InternalRaisesFuture](fut: F) {.raises: [].} =
   # Blocks the current thread of execution until `fut` has finished, returning
   # the given future.
   #
@@ -637,7 +697,18 @@ proc pollFor[F: Future | InternalRaisesFuture](fut: F): F {.raises: [].} =
     while not(finished):
       poll()
 
-  fut
+proc mwaitFor*[T: not void](fut: Future[T]): var T {.raises: [CatchableError].} =
+  ## Blocks the current thread of execution until `fut` has finished, returning
+  ## a mutable view of its value. See `mreadFinished` for details.
+  ##
+  ## If the future failed or was cancelled, the corresponding exception will be
+  ## raised.
+  ##
+  ## Must not be called recursively (from inside `async` procedures).
+  ##
+  ## See also `await`, `Future.read`
+  pollFor(fut)
+  fut.mreadFinished()
 
 proc waitFor*[T: not void](fut: Future[T]): lent T {.raises: [CatchableError].} =
   ## Blocks the current thread of execution until `fut` has finished, returning
@@ -649,7 +720,7 @@ proc waitFor*[T: not void](fut: Future[T]): lent T {.raises: [CatchableError].} 
   ## Must not be called recursively (from inside `async` procedures).
   ##
   ## See also `await`, `Future.read`
-  pollFor(fut).readFinished()
+  mwaitFor(fut)
 
 proc waitFor*(fut: Future[void]) {.raises: [CatchableError].} =
   ## Blocks the current thread of execution until `fut` has finished.
@@ -660,7 +731,8 @@ proc waitFor*(fut: Future[void]) {.raises: [CatchableError].} =
   ## Must not be called recursively (from inside `async` procedures).
   ##
   ## See also `await`, `Future.read`
-  pollFor(fut).internalRaiseIfError(fut)
+  pollFor(fut)
+  fut.readFinished()
 
 proc asyncSpawn*(future: Future[void]) =
   ## Spawns a new concurrent async task.
@@ -1672,9 +1744,73 @@ when defined(windows):
 
 {.pop.} # Automatically deduced raises from here onwards
 
-proc readFinished[T: not void; E](fut: InternalRaisesFuture[T, E]): lent T =
+proc mreadFinished*[T: not void; E](fut: InternalRaisesFuture[T, E]): var T = # {.raises: [E].}
+  ## Retrieves a mutable view of the value of a finished future `fut`.
+  ##
+  ## If the future failed or was cancelled, the corresponding exception will be
+  ## raised.
+  ##
+  ## If the future is still pending, the behavior is undefined and may result
+  ## in a runtime Defect.
+  ##
+  ## This function is suitable for use together with combinators like
+  ## `allFutures` or similar when it is certain that the future is finished.
+  ##
+  ## The mutable view can be used to move the value out of the future.
+  ##
+  ## If the future has multiple await consumers or callbacks, the order in which
+  ## they get to observe the value is not defined - mutating the value is only
+  ## safe for single-owner futures or when only one of the observers accesses
+  ## the value.
+  doAssert fut.finished(), "Calling `readFinished` on unfinished future"
   internalRaiseIfError(fut, E, fut)
   fut.internalValue
+
+proc readFinished*[T: not void; E](fut: InternalRaisesFuture[T, E]): lent T = # {.raises: [E].}
+  ## Retrieves a view of the value of a finished future `fut`.
+  ##
+  ## If the future failed or was cancelled, the corresponding exception will be
+  ## raised.
+  ##
+  ## If the future is still pending, the behavior is undefined and may result
+  ## in a runtime Defect.
+  ##
+  ## This function is suitable for use together with combinators like
+  ## `allFutures` or similar when it is certain that the future is finished.
+  fut.mreadFinished()
+
+proc readFinished*[E](fut: InternalRaisesFuture[void, E]) = # {.raises: [E].}
+  ## Retrieves a view of the value of a finished future `fut`.
+  ##
+  ## If the future failed or was cancelled, the corresponding exception will be
+  ## raised.
+  ##
+  ## If the future is still pending, the behavior is undefined and may result
+  ## in a runtime Defect.
+  ##
+  ## This function is suitable for use together with combinators like
+  ## `allFutures` or similar when it is certain that the future is finished.
+  doAssert fut.finished(), "Calling `readFinished` on unfinished future"
+  internalRaiseIfError(fut, E, fut)
+
+proc mread*[T: not void, E](fut: InternalRaisesFuture[T, E]): lent T = # {.raises: [E, FuturePendingError].}
+  ## Retrieves a mutable view of the value of a future `fut`.
+  ##
+  ## If the future failed or was cancelled, the corresponding exception will be
+  ## raised.
+  ##
+  ## If the future is still pending, `FuturePendingError` will be raised.
+  ##
+  ## The mutable view can be used to move the value out of the future.
+  ##
+  ## If the future has multiple await consumers or callbacks, the order in which
+  ## they get to observe the value is not defined - mutating the value is only
+  ## safe for single-owner futures or when only one of the observers accesses
+  ## the value.
+  if not fut.finished():
+    raiseFuturePendingError(fut)
+
+  fut.mreadFinished()
 
 proc read*[T: not void, E](fut: InternalRaisesFuture[T, E]): lent T = # {.raises: [E, FuturePendingError].}
   ## Retrieves the value of `fut`.
@@ -1683,10 +1819,7 @@ proc read*[T: not void, E](fut: InternalRaisesFuture[T, E]): lent T = # {.raises
   ## raised.
   ##
   ## If the future is still pending, `FuturePendingError` will be raised.
-  if not fut.finished():
-    raiseFuturePendingError(fut)
-
-  fut.readFinished()
+  fut.mread()
 
 proc read*[E](fut: InternalRaisesFuture[void, E]) = # {.raises: [E].}
   ## Checks that `fut` completed.
@@ -1700,6 +1833,19 @@ proc read*[E](fut: InternalRaisesFuture[void, E]) = # {.raises: [E].}
 
   internalRaiseIfError(fut, E, fut)
 
+proc mwaitFor*[T: not void; E](fut: InternalRaisesFuture[T, E]): var T = # {.raises: [E]}
+  ## Blocks the current thread of execution until `fut` has finished, returning
+  ## a mutable view of its value. See `mreadFinished` for details.
+  ##
+  ## If the future failed or was cancelled, the corresponding exception will be
+  ## raised.
+  ##
+  ## Must not be called recursively (from inside `async` procedures).
+  ##
+  ## See also `await`, `Future.read`
+  pollFor(fut)
+  fut.mreadFinished()
+
 proc waitFor*[T: not void; E](fut: InternalRaisesFuture[T, E]): lent T = # {.raises: [E]}
   ## Blocks the current thread of execution until `fut` has finished, returning
   ## its value.
@@ -1710,7 +1856,7 @@ proc waitFor*[T: not void; E](fut: InternalRaisesFuture[T, E]): lent T = # {.rai
   ## Must not be called recursively (from inside `async` procedures).
   ##
   ## See also `await`, `Future.read`
-  pollFor(fut).readFinished()
+  mwaitFor(fut)
 
 proc waitFor*[E](fut: InternalRaisesFuture[void, E]) = # {.raises: [E]}
   ## Blocks the current thread of execution until `fut` has finished.
@@ -1721,7 +1867,8 @@ proc waitFor*[E](fut: InternalRaisesFuture[void, E]) = # {.raises: [E]}
   ## Must not be called recursively (from inside `async` procedures).
   ##
   ## See also `await`, `Future.read`
-  pollFor(fut).internalRaiseIfError(E, fut)
+  pollFor(fut)
+  fut.readFinished()
 
 proc `or`*[T, Y, E1, E2](
     fut1: InternalRaisesFuture[T, E1],
