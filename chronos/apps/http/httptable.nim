@@ -9,6 +9,7 @@
 #              MIT license (LICENSE-MIT)
 import std/[tables, strutils]
 import stew/base10
+import ../../config
 
 {.push raises: [].}
 
@@ -20,19 +21,54 @@ type
 
   HttpTables* = HttpTable | HttpTableRef
 
-proc add*(ht: var HttpTables, key: string, value: string) =
+func hasUpperAscii(s: string): bool =
+  for ch in s:
+    if ch in {'A' .. 'Z'}:
+      return true
+  false
+
+template withLowerKey(key: string, lkey, body: untyped): untyped =
+  ## Runs ``body`` with ``lkey`` bound to a lowercase view of ``key``.
+  ##
+  ## Header keys are stored lowercased for case-insensitive lookup, but most
+  ## keys (all chronos-internal constants and most real-world traffic) are
+  ## already lowercase — those are passed straight through, and a lowered
+  ## copy is allocated only when ``key`` really contains uppercase characters.
+  ##
+  ## ``lkey`` is bound by aliasing rather than returned as a value: a helper
+  ## returning `string` copies the key on every call under `--mm:refc` (refc
+  ## has no cursor inference to elide it), which would defeat the check, and
+  ## a `lent` result cannot be borrowed from a scratch parameter because Nim
+  ## only permits borrowing from the first parameter.
+  if hasUpperAscii(key):
+    let loweredKey = key.toLowerAscii()
+    template lkey: string = loweredKey
+    body
+  else:
+    template lkey: string = key
+    body
+
+proc replaceWithOne(v: var seq[string], value: chronosSink string) =
+  ## Replace every value with the single value ``value``, reusing the seq's
+  ## existing storage instead of allocating a fresh `@[value]`.
+  v.setLen(1)
+  v[0] = chronosMoveSink(value)
+
+proc add*(ht: var HttpTables, key: string, value: chronosSink string) =
   ## Add string ``value`` to header with key ``key``.
   var default: seq[string]
-  ht.table.mgetOrPut(key.toLowerAscii(), default).add(value)
+  withLowerKey(key, lkey):
+    ht.table.mgetOrPut(lkey, default).add(chronosMoveSink(value))
 
 proc add*(ht: var HttpTables, key: string, value: SomeInteger) =
   ## Add integer ``value`` to header with key ``key``.
   ht.add(key, $value)
 
-proc set*(ht: var HttpTables, key: string, value: string) =
+proc set*(ht: var HttpTables, key: string, value: chronosSink string) =
   ## Set/replace value of header with key ``key`` to value ``value``.
-  let lowkey = key.toLowerAscii()
-  ht.table[lowkey] = @[value]
+  var default: seq[string]
+  withLowerKey(key, lkey):
+    ht.table.mgetOrPut(lkey, default).replaceWithOne(chronosMoveSink(value))
 
 proc hasKeyOrPut*(ht: var HttpTables, key: string, value: string): bool =
   ## Returns true if ``key`` is in the table ``ht``,
@@ -41,13 +77,15 @@ proc hasKeyOrPut*(ht: var HttpTables, key: string, value: string): bool =
 
 proc contains*(ht: HttpTables, key: string): bool =
   ## Returns ``true`` if header with name ``key`` is present in HttpTable/Ref.
-  ht.table.contains(key.toLowerAscii())
+  withLowerKey(key, lkey):
+    ht.table.contains(lkey)
 
 proc getList*(ht: HttpTables, key: string,
               default: openArray[string] = []): seq[string] =
   ## Returns sequence of headers with key ``key``.
   var defseq = @default
-  ht.table.getOrDefault(key.toLowerAscii(), defseq)
+  withLowerKey(key, lkey):
+    ht.table.getOrDefault(lkey, defseq)
 
 proc getString*(ht: HttpTables, key: string,
                 default: string = ""): string =
@@ -55,15 +93,17 @@ proc getString*(ht: HttpTables, key: string,
   ##
   ## If there multiple headers with the same name ``key`` the result value will
   ## be concatenation using `,`.
-  let res = ht.table.getOrDefault(key.toLowerAscii(), default(seq[string]))
-  if len(res) == 0:
-    default
-  else:
-    res.join(",")
+  withLowerKey(key, lkey):
+    let res = ht.table.getOrDefault(lkey, default(seq[string]))
+    if len(res) == 0:
+      default
+    else:
+      res.join(",")
 
 proc count*(ht: HttpTables, key: string): int =
   ## Returns number of headers with key ``key``.
-  len(ht.table.getOrDefault(key.toLowerAscii(), default(seq[string])))
+  withLowerKey(key, lkey):
+    len(ht.table.getOrDefault(lkey, default(seq[string])))
 
 proc getInt*(ht: HttpTables, key: string): uint64 =
   ## Parse header with key ``key`` as unsigned integer.
@@ -87,11 +127,12 @@ proc getLastString*(ht: HttpTables, key: string): string =
   ## If there multiple headers with the same name ``key`` the value of last
   ## encountered header will be returned.
   var default: seq[string]
-  let item = ht.table.getOrDefault(key.toLowerAscii(), default)
-  if len(item) == 0:
-    ""
-  else:
-    item[^1]
+  withLowerKey(key, lkey):
+    let item = ht.table.getOrDefault(lkey, default)
+    if len(item) == 0:
+      ""
+    else:
+      item[^1]
 
 proc getLastInt*(ht: HttpTables, key: string): uint64 =
   ## Returns "last" value of header ``key`` as unsigned integer.
@@ -108,11 +149,15 @@ proc getLastInt*(ht: HttpTables, key: string): uint64 =
 
 proc init*(htt: typedesc[HttpTable]): HttpTable =
   ## Create empty HttpTable.
-  HttpTable(table: initTable[string, seq[string]]())
+  ## The underlying std Table initializes its storage on first insert, so
+  ## nothing is preallocated here — an empty table that is never written
+  ## (a common per-request case: query params, response headers) costs
+  ## nothing to create or destroy.
+  HttpTable()
 
 proc new*(htt: typedesc[HttpTableRef]): HttpTableRef =
   ## Create empty HttpTableRef.
-  HttpTableRef(table: initTable[string, seq[string]]())
+  HttpTableRef()
 
 proc init*(htt: typedesc[HttpTable],
            data: openArray[tuple[key: string, value: string]]): HttpTable =
