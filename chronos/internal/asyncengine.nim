@@ -801,8 +801,8 @@ elif defined(windows):
       loop.callbacks.addLast(AsyncCallback(function: aftercb))
 
   proc pendingEventsCount(loop: PDispatcher): int =
-    ## Number of events waiting to be dequeued from loop's I/O completion
-    ## port, up to `MaxEventsCount`.
+    ## Number of events carrying work waiting to be dequeued from loop's I/O
+    ## completion port, up to `MaxEventsCount`.
 
     if isNil(loop.getQueuedCompletionStatusEx):
       return 0
@@ -820,7 +820,14 @@ elif defined(windows):
                       "pendingEventsCount(): Unable to get OS events")
       return 0
 
-    int(eventsReceived)
+    # Entries without an overlapped are the wake-ups posted by `wake()` when a
+    # callback is scheduled from another thread - `poll` skips them too, as
+    # they carry no work of their own.
+    var count = 0
+    for index in 0 ..< int(eventsReceived):
+      if not(isNil(events[index].lpOverlapped)):
+        inc(count)
+    count
 
   proc isEmpty(loop: PDispatcher): bool =
     ## Returns `true` when no handle and no waitable is registered in the
