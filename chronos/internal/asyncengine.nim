@@ -302,7 +302,6 @@ elif defined(windows):
     Dispatcher = object of DispatcherBase
       ioPort: HANDLE
       handles: HashSet[AsyncFD]
-      waitables: HashSet[HANDLE]
       connectEx*: WSAPROC_CONNECTEX
       acceptEx*: WSAPROC_ACCEPTEX
       getAcceptExSockAddrs*: WSAPROC_GETACCEPTEXSOCKADDRS
@@ -335,9 +334,6 @@ elif defined(windows):
 
   proc hash(x: AsyncFD): Hash {.borrow.}
   proc `==`*(x: AsyncFD, y: AsyncFD): bool {.borrow, gcsafe.}
-
-  proc hash(x: HANDLE): Hash {.borrow.}
-  proc `==`(x, y: HANDLE): bool {.borrow.}
 
   proc getFunc(s: SocketHandle, fun: var pointer, guid: GUID): bool =
     var bytesRet: DWORD
@@ -413,7 +409,6 @@ elif defined(windows):
     var res = PDispatcher(
       ioPort: port,
       handles: initHashSet[AsyncFD](),
-      waitables: initHashSet[HANDLE](),
       timers: initHeapQueue[TimerCallback](),
       callbacks: initDeque[AsyncCallback](64),
       idlers: initDeque[AsyncCallback](),
@@ -522,7 +517,6 @@ elif defined(windows):
       whandle.ovl = nil
       return err(osLastError())
 
-    loop.waitables.incl(whandle[].waitFd)
     ok(WaitableHandle(whandle))
 
   proc closeWaitable*(wh: WaitableHandle): Result[void, OSErrorCode] =
@@ -540,7 +534,6 @@ elif defined(windows):
       let res = osLastError()
       if res != ERROR_IO_PENDING:
         return err(res)
-    getThreadDispatcher().waitables.excl(pdata.waitFd)
     ok()
 
   proc addProcess2*(pid: int, cb: CallbackFunc,
@@ -830,10 +823,10 @@ elif defined(windows):
     count
 
   proc isEmpty(loop: PDispatcher): bool =
-    ## Returns `true` when no handle and no waitable is registered in the
-    ## dispatcher - the counterpart of `Selector.isEmpty` on posix, where
-    ## signals and processes are registered in the selector instead.
-    (len(loop.handles) == 0) and (len(loop.waitables) == 0)
+    ## Returns `true` when no handle is registered in the dispatcher - the
+    ## counterpart of `Selector.isEmpty` on posix. Waitables, ie signals and
+    ## processes, are not tracked, so they go unnoticed here.
+    len(loop.handles) == 0
 
   proc closeDispatcher*(loop: PDispatcher): Opt[string] =
     ## Release the resources held by `loop`, ie its completion port.
@@ -844,13 +837,12 @@ elif defined(windows):
     ## Closing the completion port loses every overlapped operation queued to
     ## it - the memory backing those operations can no longer be reclaimed -
     ## so a `Defect` is raised when an event is still waiting to be processed,
-    ## or when a handle or waitable is still registered, as its `posix`
-    ## counterpart does for the selector.
+    ## or when a handle is still registered, as its `posix` counterpart does
+    ## for the selector.
     doAssert loop.isEmpty(),
              "closeDispatcher(): the dispatcher still has " &
-             $len(loop.handles) & " handle(s) and " & $len(loop.waitables) &
-             " waitable(s) registered - all streams must have been closed " &
-             "before closing"
+             $len(loop.handles) & " handle(s) registered - all streams " &
+             "must have been closed before closing"
 
     let pending = loop.pendingEventsCount()
     doAssert pending == 0,
@@ -1143,8 +1135,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
 
   proc isEmpty(loop: PDispatcher): bool =
     ## Returns `true` when no descriptor is registered in the dispatcher, ie in
-    ## its selector - signals and processes are registered there too, unlike on
-    ## windows where they are waitables.
+    ## its selector - signals and processes are registered there too.
     loop.selector.isEmpty()
 
   proc closeDispatcher*(loop: PDispatcher): Opt[string] =
