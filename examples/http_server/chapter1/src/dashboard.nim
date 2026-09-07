@@ -1,9 +1,9 @@
-# ANCHOR: all
-# ANCHOR: import
+#ANCHOR: all
+#ANCHOR: import
 import chronos/apps/http/httpserver
-# ANCHOR_END: import
+#ANCHOR_END: import
 
-# ANCHOR: handler
+#ANCHOR: handler
 proc handler(
     reqfence: RequestFence
 ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
@@ -17,9 +17,9 @@ proc handler(
   except HttpWriteError:
     defaultResponse()
 
-# ANCHOR_END: handler
+#ANCHOR_END: handler
 
-# ANCHOR: main
+#ANCHOR: main
 proc main() {.async: (raises: [TransportAddressError, CancelledError]).} =
   let
     address = initTAddress("127.0.0.1:8080")
@@ -36,10 +36,10 @@ proc main() {.async: (raises: [TransportAddressError, CancelledError]).} =
     await server.stop()
     await server.closeWait()
 
-# ANCHOR_END: main
+#ANCHOR_END: main
 
-# ANCHOR: run
+#ANCHOR: run
 when isMainModule:
   waitFor main()
-# ANCHOR_END: run
-# ANCHOR_END: all
+#ANCHOR_END: run
+#ANCHOR_END: all
