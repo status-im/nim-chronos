@@ -116,14 +116,22 @@ template preparePoll(loop: PDispatcherBase) =
   defer: loop.inEventLoop = false
 
 proc resetBaseDispatcher(loop: PDispatcherBase) {.gcsafe, raises: [].} =
+  ## Release the state that `loop` holds, leaving it unusable.
+  when hasThreadSupport:
+    # Nodes belong to the queue once pushed, so they are released one by one,
+    # as `processThreadCallbacks` does once it has run them.
+    while true:
+      let node = loop.threadCallbacks.pop()
+      if node == nil:
+        break
+      deallocShared(node)
+
   loop.timers.reset()
   loop.callbacks.reset()
   loop.idlers.reset()
   loop.ticks.reset()
   loop.trackers.reset()
   loop.counters.reset()
-  when hasThreadSupport:
-    loop.waking.clear(moRelease)
 
 template processThreadCallbacks(loop) =
   # Drain cross-thread callbacks to the local callback queue

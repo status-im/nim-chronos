@@ -5,6 +5,7 @@
 #              Licensed under either of
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
+import std/atomics
 import ../chronos/unittest2/asynctests
 
 {.used.}
@@ -33,6 +34,17 @@ type
     defectRaised: bool
 
   RegisteredResultPtr = ptr RegisteredResult
+
+  DrainResult = object
+    closedCleanly: bool
+    callbackRan: bool
+
+  DrainResultPtr = ptr DrainResult
+
+var
+  drainHandle: DispatcherHandle
+  drainReady: Atomic[bool]
+  drainPushed: Atomic[bool]
 
 proc closedCleanly(): bool =
   ## `closeThreadDispatcher` returns a diagnostic only when a resource could not
@@ -93,6 +105,20 @@ proc registeredThread(retval: RegisteredResultPtr) {.thread, nimcall.} =
   except Defect:
     retval[].defectRaised = true
 
+proc drainCallback(udata: pointer) {.nimcall, gcsafe, raises: [].} =
+  # Never runs: the dispatcher it was queued on is closed before it is polled.
+  cast[DrainResultPtr](udata)[].callbackRan = true
+
+proc drainThread(retval: DrainResultPtr) {.thread, nimcall.} =
+  drainHandle = getThreadDispatcher().handle()
+  drainReady.store(true, moRelease)
+  while not drainPushed.load(moAcquire):
+    cpuRelax()
+
+  # The queued cross-thread callback is dropped by the close, which has to
+  # release the node that carries it - nothing else ever will.
+  retval[].closedCleanly = closedCleanly()
+
 suite "Dispatcher test suite":
   test "closeThreadDispatcher() lifecycle":
     var
@@ -130,3 +156,20 @@ suite "Dispatcher test suite":
     joinThreads(thread)
 
     check retval.defectRaised == true
+
+  test "closeThreadDispatcher() drains cross-thread callbacks":
+    var
+      retval = DrainResult()
+      thread: Thread[DrainResultPtr]
+
+    createThread(thread, drainThread, addr retval)
+    while not drainReady.load(moAcquire):
+      cpuRelax()
+
+    callSoon(drainHandle, drainCallback, addr retval)
+    drainPushed.store(true, moRelease)
+    joinThreads(thread)
+
+    check:
+      retval.closedCleanly == true
+      retval.callbackRan == false
