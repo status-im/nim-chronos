@@ -15,8 +15,12 @@ proc check(session: HttpSessionRef, uri: string) {.async: (raises: [CancelledErr
       echo "[OK] " & uri
     else:
       echo "[NOK] " & uri & ": " & $response.status
-  except HttpError, FuturePendingError, AsyncTimeoutError:
-    echo "[ERR] " & uri & ": " & getCurrentExceptionMsg()
+  except HttpError as exc:
+    echo "[ERR] " & uri & ": " & exc.msg
+  except FuturePendingError as exc:
+    echo "[ERR] " & uri & ": " & exc.msg
+  except AsyncTimeoutError as exc:
+    echo "[ERR] " & uri & ": " & exc.msg
 # ANCHOR_END: check
 
 proc check(uris: seq[string]) {.async: (raises: []).} =
