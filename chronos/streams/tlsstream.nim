@@ -303,10 +303,10 @@ proc runUntil(rws: TLSAsyncStream, target: cuint): Future[void] {.
         if not(rws.writeFut.isNil):
           race(rws.readFut, rws.writeFut)
         else:
-          race(rws.readFut) # await without reading the underlying future outcome
+          race(FutureBase(rws.readFut)) # await without reading the underlying future outcome
       else:
         doAssert not(rws.writeFut.isNil), "We must have created at least one future above"
-        race(rws.writeFut) # await without reading the underlying future outcome
+        race(FutureBase(rws.writeFut)) # await without reading the underlying future outcome
     try:
       discard await readWriteDone
     except CancelledError as exc:
