@@ -1,0 +1,458 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Smarter Health Check with Streaming - Chronos</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../../favicon.svg">
+        <link rel="shortcut icon" href="../../favicon.png">
+        <link rel="stylesheet" href="../../css/variables.css">
+        <link rel="stylesheet" href="../../css/general.css">
+        <link rel="stylesheet" href="../../css/chrome.css">
+        <link rel="stylesheet" href="../../css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../../FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="../../fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="highlight-css" href="../../highlight.css">
+        <link rel="stylesheet" id="tomorrow-night-css" href="../../tomorrow-night.css">
+        <link rel="stylesheet" id="ayu-highlight-css" href="../../ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+        <link rel="stylesheet" href="../.././open-in.css">
+        <link rel="stylesheet" href="../.././mdbook-admonish.css">
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "../../";
+            const default_light_theme = "light";
+            const default_dark_theme = "navy";
+            window.path_to_searchindex_js = "../../searchindex.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="../../toc.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="../../toc.html"></iframe>
+            </noscript>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Chronos</h1>
+
+                    <div class="right-buttons">
+                        <a href="../../print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/status-im/nim-chronos/" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <i class="fa fa-spinner fa-spin"></i>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="smarter-health-check-with-streaming"><a class="header" href="#smarter-health-check-with-streaming">Smarter Health Check with Streaming</a></h1>
+<p><strong>Goal:</strong> Learn how to use streaming to check web page content without fully downloading it.</p>
+<p><strong>Source code:</strong></p>
+<ul>
+<li><a href="https://github.com/status-im/nim-chronos/blob/master/examples/http_client/chapter5/src/uptimemon.nim">chapter5/src/uptimemon.nim</a></li>
+</ul>
+<p>Currently, we're just checking the response status to determine if the URI is healthy.</p>
+<p>To make our check smarter, let's check the page content as well: we want it to look like valid HTML, i.e. we want to check that it at least contains a <code>&lt;html</code> bit.</p>
+<p>However, if we just download the content and look for the HTML marker, we'll have to download the page in its entirety whereas we really don't need the content. For large pages, this approach can lead to slow responses but in extreme cases this can ruin the whole program.</p>
+<p>For example, try adding this URI to the list and running the program: https://html.spec.whatwg.org. This is a proper page but it's so heavy fetching it entirely would time out:</p>
+<pre><code class="language-shell">[NOK] https://mock.codes/403: 403
+[OK] https://duckduckgo.com/?q=chronos
+[ERR] http://10.255.255.1: Timeout exceeded!
+[ERR] https://html.spec.whatwg.org: Could not read response headers, reason: Incomplete data sent or received
+</code></pre>
+<p>Let's optimize our check to handle large page like this one.</p>
+<h2 id="streaming-the-body"><a class="header" href="#streaming-the-body">Streaming the Body</a></h2>
+<p>Chronos allows streaming response body, so let's use this feature to fetch content in chunks, check the collected data for a certain health marker (e.g. "&lt;html" string), and stop immediatelly when we find it or download a certain amount of data:</p>
+<div id="admonition-info" class="admonition admonish-info" role="note" aria-labelledby="admonition-info-title">
+<div class="admonition-title">
+<div id="admonition-info-title">
+<p>Info</p>
+</div>
+<a class="admonition-anchor-link" href="#admonition-info"></a>
+</div>
+<div>
+<p>The HTTP protocol divides each request and response into a <strong>header</strong> and a <strong>body</strong>. The header contains metadata like the status code, while the body contains the actual content. This is true for both successful responses and error statuses.</p>
+</div>
+</div>
+<pre><code class="language-nim">import std/sequtils
+import chronos/apps/http/httpclient
+
+const uris = @[
+  "https://duckduckgo.com/?q=chronos", "https://mock.codes/403",
+  "http://10.255.255.1", "https://html.spec.whatwg.org/", "https://mock.codes/200",
+]
+
+proc findMarker(
+    bodyReader: HttpBodyReader
+): Future[bool] {.async: (raises: [AsyncStreamError, CancelledError]).} =
+
+  const
+    marker = "&lt;html"
+    readLimit = 10 * 1024
+
+  var
+    totalRead = 0
+    sample = newString(len(marker) - 1)
+    found = false
+
+  proc findMarkerInSample(data: openArray[byte]): (int, bool) =
+    if len(data) == 0:
+      (0, false)
+    else:
+      sample = sample[^(len(marker) - 1) .. high(sample)]
+      sample &amp;= bytesToString(data)
+      found = marker in sample
+      totalRead += len(data)
+      (len(data), found and totalRead &lt;= readLimit)
+
+  await bodyReader.readMessage(findMarkerInSample)
+  found
+ 
+proc check(session: HttpSessionRef, uri: string) {.async: (raises: [CancelledError]).} =
+  let
+    request = HttpClientRequestRef.new(session, uri).valueOr:
+      echo "[ERR] " &amp; uri &amp; ": " &amp; error
+      return
+    response =
+      try:
+        await request.send().wait(5.seconds)
+      except HttpError, AsyncTimeoutError:
+        echo "[ERR] " &amp; uri &amp; ": " &amp; getCurrentExceptionMsg()
+        return
+      finally:
+        await request.closeWait()
+
+  try:
+    if response.status == 200:
+      let
+        bodyReader = response.getBodyReader()
+        markerFound =
+          try:
+            await bodyReader.findMarker()
+          finally:
+            await bodyReader.closeWait()
+
+      if markerFound:
+        echo "[OK] " &amp; uri
+      else:
+        echo "[NOK] " &amp; uri &amp; ": Not valid HTML"
+    else:
+      echo "[NOK] " &amp; uri &amp; ": " &amp; $response.status
+
+  except HttpError, AsyncStreamError:
+    echo "[ERR] " &amp; uri &amp; ": " &amp; getCurrentExceptionMsg()
+
+  finally:
+    await response.closeWait()
+
+proc check(uris: seq[string]) {.async: (raises: []).} =
+  let
+    session = HttpSessionRef.new()
+    futures = uris.mapIt(session.check(it))
+
+  try:
+    await allFutures(futures)
+  except CancelledError:
+    await cancelAndWait(futures)
+  finally:
+    await session.closeWait()
+
+when isMainModule:
+  waitFor check(uris)
+</code></pre>
+<p>Let's go through the changes in this version line by line.</p>
+<pre><code class="language-nim">const uris = @[
+  "https://duckduckgo.com/?q=chronos", "https://mock.codes/403",
+  "http://10.255.255.1", "https://html.spec.whatwg.org/", "https://mock.codes/200",
+]
+</code></pre>
+<p>We've added a new URI to our test: https://mock.codes/200. This is a valid URI that returns a 200 status response but it doesn't contain any meaningful data. With our old check, this would return <code>[OK]</code> and with the new one we expect it to be <code>[NOK]</code>.</p>
+<pre><code class="language-nim">proc findMarker(
+    bodyReader: HttpBodyReader
+): Future[bool] {.async: (raises: [AsyncStreamError, CancelledError]).} =
+</code></pre>
+<p>This is a new function that is responsible to finding the health marker in a HTTP body stream. Because it is asynchrounous, it will not block the main thread when called.</p>
+<p>Like any async function, it returns a <code>Future</code> that must be <code>await</code>ed to give the actual result.</p>
+<pre><code class="language-nim">const
+  marker = "&lt;html"
+  readLimit = 10 * 1024
+
+var
+  totalRead = 0
+  sample = newString(len(marker) - 1)
+  found = false
+</code></pre>
+<ul>
+<li><code>marker</code> is the string we're looking for.</li>
+<li><code>readLimit</code> is the maximum number of bytes we're happy to fetch before we conclude that the response is not valid HTML (10 KB in our case).</li>
+<li><code>totalRead</code> is the number of bytes fetched so far; if we fetched too much data, we stop reading.</li>
+<li><code>sample</code> will contain the fetched data we're looking for the marker in.</li>
+<li><code>found</code> is a flag that we set to <code>true</code> if you find the marker.</li>
+</ul>
+<div id="admonition-note" class="admonition admonish-note" role="note" aria-labelledby="admonition-note-title">
+<div class="admonition-title">
+<div id="admonition-note-title">
+<p>Note</p>
+</div>
+<a class="admonition-anchor-link" href="#admonition-note"></a>
+</div>
+<div>
+<p>Because the marker can be split between two reads (i.e. we fetch <code>&lt;ht</code> in one buffer and <code>ml</code> in the next one), our <code>sample</code> must be a little longer than the buffer. Precisely, it must be <code>len(marker) - 1</code> longer to contain the buffer <em>and</em> the possible marker part from the previous read.</p>
+</div>
+</div>
+<pre><code class="language-nim">proc findMarkerInSample(data: openArray[byte]): (int, bool) =
+  if len(data) == 0:
+    (0, false)
+  else:
+    sample = sample[^(len(marker) - 1) .. high(sample)]
+    sample &amp;= bytesToString(data)
+    found = marker in sample
+    totalRead += len(data)
+    (len(data), found and totalRead &lt;= readLimit)
+</code></pre>
+<p>This a helper function that we'll use later in <code>readMessage</code> proc as its predicate (more about it later).</p>
+<p>This function must conform to <a href="../../api/chronos/transports/stream.html#ReadMessagePredicate"><code>ReadMessagePredicate</code></a> type, i.e. accept an open array of bytes from the stream and return a tuple of <code>(int, bool)</code> that represents the length of data read in the last read iteration and the exit flag.</p>
+<p>On each iteration, we remove everything from the sample except for the trailing <code>len(marker) - 1</code> characters and append the new data, look up <code>marker</code> in the new <code>sample</code>, and update <code>found</code> is the match was found. We also check if <code>totalRead</code> is still no higher than <code>readLimit</code> and if it is, set the exit flag.</p>
+<pre><code class="language-nim">await bodyReader.readMessage(findMarkerInSample)
+found
+</code></pre>
+<p><a href="../../api/chronos/streams/asyncstream.html#readMessage,AsyncStreamReader,ReadMessagePredicate"><code>readMessage</code></a> calls <code>findMarkerInSample</code> repeatedly until either there's no more data to read or the exit flag is <code>true</code>. The value <code>found</code> tells us if the marker was found in any of the samples checked by <code>readMessage</code> and we simply return it.</p>
+<p>Now, we can use this function in the URI health check.</p>
+<p>Because we won't <code>fetch</code> the response but will instead stream it, we will need to create the response object explicitly (so that we could run a stream reader with it). To do that, we first insantiate a <code>request</code> and then a <code>response</code>:</p>
+<pre><code class="language-nim">let
+  request = HttpClientRequestRef.new(session, uri).valueOr:
+    echo "[ERR] " &amp; uri &amp; ": " &amp; error
+    return
+  response =
+    try:
+      await request.send().wait(5.seconds)
+    except HttpError, AsyncTimeoutError:
+      echo "[ERR] " &amp; uri &amp; ": " &amp; getCurrentExceptionMsg()
+      return
+    finally:
+      await request.closeWait()
+</code></pre>
+<p>Note that we close <code>request</code> after <code>response</code> is instantiated, either successfully or not. Cleaning up used resources is always encouraged.</p>
+<pre><code class="language-nim">try:
+  if response.status == 200:
+    let
+      bodyReader = response.getBodyReader()
+      markerFound =
+        try:
+          await bodyReader.findMarker()
+        finally:
+          await bodyReader.closeWait()
+
+    if markerFound:
+      echo "[OK] " &amp; uri
+    else:
+      echo "[NOK] " &amp; uri &amp; ": Not valid HTML"
+  else:
+    echo "[NOK] " &amp; uri &amp; ": " &amp; $response.status
+</code></pre>
+<p>To stream the response body, we're using a <code>bodyReader</code>. To get one for the current response, we're calling <a href="../../api/chronos/apps/http/httpclient.html#getBodyReader,HttpClientResponseRef"><code>getBodyReader</code></a>.</p>
+<p>Like any other resource, <code>HttpBodyReader</code> must be closed after use. We do that in the <code>finally</code> block. Notice that there's no <code>except</code> here, we're OK with <code>findMarker</code> raising—we'll catch its exceptions in the outer scope.</p>
+<pre><code class="language-nim">except HttpError, AsyncStreamError:
+  echo "[ERR] " &amp; uri &amp; ": " &amp; getCurrentExceptionMsg()
+</code></pre>
+<p>Since <code>findMarker</code> can raise an exception that we haven't been catching so far (<a href="../../api/chronos/streams/asyncstream.html#AsyncStreamError"><code>AsyncStreamError</code></a>), we need to add it to the list.</p>
+<pre><code class="language-nim">finally:
+  await response.closeWait()
+</code></pre>
+<p>Like any other resource allocating object, <code>response</code> must be closed after usage.</p>
+<p>Run the program and see the https://mock.codes/200 is now correctly marked as <code>[NOK]</code>:</p>
+<pre><code class="language-shell">[NOK] https://mock.codes/200: Not valid HTML
+[NOK] https://mock.codes/403: 403
+[OK] https://duckduckgo.com/?q=chronos
+[OK] https://html.spec.whatwg.org/
+[ERR] http://10.255.255.1: Timeout exceeded!
+</code></pre>
+<p>In the next chapter, we'll see how to send alerts with POST requests.</p>
+<footer id="open-on-gh">Found a bug? <a href="https://github.com/status-im/nim-chronos//edit/master/docs/src/tutorials/http_client/chapter5.md">Edit this page on GitHub.</a></footer>
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../../tutorials/http_client/chapter4.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next prefetch" href="../../tutorials/http_client/chapter6.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../../tutorials/http_client/chapter4.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next prefetch" href="../../tutorials/http_client/chapter6.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="../../elasticlunr.min.js"></script>
+        <script src="../../mark.min.js"></script>
+        <script src="../../searcher.js"></script>
+
+        <script src="../../clipboard.min.js"></script>
+        <script src="../../highlight.js"></script>
+        <script src="../../book.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+
+    </div>
+    </body>
+</html>
