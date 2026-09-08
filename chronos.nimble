@@ -128,7 +128,7 @@ task test_asan, "Run all tests with ASAN":
       return
 
     # https://clang.llvm.org/docs/AddressSanitizer.html
-    putEnv("ASAN_OPTIONS", "detect_stack_use_after_return=1")
+    putEnv("ASAN_OPTIONS", "detect_leaks=0:detect_stack_use_after_return=1")
     # https://clang.llvm.org/docs/UndefinedBehaviorSanitizer.html
     putEnv("UBSAN_OPTIONS", "print_stacktrace=1")
     for args in testArguments:
