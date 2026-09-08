@@ -100,6 +100,13 @@ task test, "Run all tests":
     # Mobile CI uses this to confirm that the full task reached its end.
     writeFile(testSuccessMarker, "")
 
+task test_sync_continuations, "Run all tests with sync continuations":
+  for args in testArguments:
+    # First run tests with `refc` memory manager.
+    run args & " --mm:refc -d:chronosSyncContinuations", "tests/testall"
+    if (NimMajor, NimMinor) >= (2, 2): # ORC on 2.0 is too broken to investigate
+      run args & " --mm:orc -d:chronosSyncContinuations", "tests/testall"
+
 task test_v3_compat, "Run all tests in v3 compatibility mode":
   for args in testArguments:
     if (NimMajor, NimMinor) >= (2, 2):
