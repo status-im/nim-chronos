@@ -38,36 +38,52 @@ when defined(windows):
       const
         StatusConnectionReset = 0xC000020D'u32
         ErrorNetnameDeleted = 64'u32
-        Iterations = 8'u32
+        Iterations1 = 8'u32
+        Iterations2 = 21'u32
 
-      var total = 0'u32
-      let before = stackMark()
-      for _ in 0 ..< Iterations:
-        total += rtlNtStatusToDosError(ULONG(StatusConnectionReset))
-      let after = stackMark()
+      template measure(iterations: uint32): uint =
+        block:
+          var total = 0'u32
+          let before = stackMark()
+          for _ in 0 ..< iterations:
+            total += rtlNtStatusToDosError(ULONG(StatusConnectionReset))
+          let after = stackMark()
 
-      check:
-        total == Iterations * ErrorNetnameDeleted
-        after == before
+          check total == iterations * ErrorNetnameDeleted
+          after - before
+
+      let
+        stackGrowth1 = measure(Iterations1)
+        stackGrowth2 = measure(Iterations2)
+      check stackGrowth1 == stackGrowth2  # Growth may be non-0 under ASAN
 
     test "wcschr() calling convention":
       # `wcschr()` uses the C calling convention, where the caller removes the
       # arguments. Declaring it `stdcall` leaves two arguments on the stack on
       # 32-bit Windows after every call and makes `getProcessEnvironment()`
       # crash in optimized builds.
-      const Iterations = 8
-      var
-        value = [WCHAR(0x0041), WCHAR(0x0042), WCHAR(0x0000)]
-        found: LPWSTR
+      const
+        Iterations1 = 8
+        Iterations2 = 21
 
-      let before = stackMark()
-      for _ in 0 ..< Iterations:
-        found = wcschr(addr value[0], WCHAR(0x0000))
-      let after = stackMark()
+      template measure(iterations: uint32): uint =
+        block:
+          var
+            value = [WCHAR(0x0041), WCHAR(0x0042), WCHAR(0x0000)]
+            found: LPWSTR
 
-      check:
-        found == addr value[2]
-        after == before
+          let before = stackMark()
+          for _ in 0 ..< iterations:
+            found = wcschr(addr value[0], WCHAR(0x0000))
+          let after = stackMark()
+
+          check found == addr value[2]
+          after - before
+
+      let
+        stackGrowth1 = measure(Iterations1)
+        stackGrowth2 = measure(Iterations2)
+      check stackGrowth1 == stackGrowth2  # Growth may be non-0 under ASAN
 
 suite "Asynchronous issues test suite":
   const HELLO_PORT = 45679
@@ -216,10 +232,11 @@ suite "Asynchronous issues test suite":
         register2(AsyncFD(sockets[0])).isOk()
         addReader2(AsyncFD(sockets[0]), setFlag, addr readerFlag).isOk()
         addWriter2(AsyncFD(sockets[0]), setFlag, addr writerFlag).isOk()
-      await sleepAsync(0.seconds)
+      await sleepAsync(ZeroDuration)
       check:
         readerFlag and writerFlag
         unregister2(AsyncFD(sockets[0])).isOk()
+      await sleepAsync(ZeroDuration)  # Spurious callbacks after unregister2
 
       discard osdefs.close(sockets[0])
       when chronosEventEngine != "poll":
