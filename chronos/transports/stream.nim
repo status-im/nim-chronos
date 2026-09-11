@@ -1908,7 +1908,7 @@ proc close*(server: StreamServer) =
       if server.local.family in {AddressFamily.IPv4, AddressFamily.IPv6}:
         if server.apending:
           server.asock.closeSocket()
-          server.apending = false
+          # Don't clear ``apending``; ``acceptEx`` continuation will still run.
         server.sock.closeSocket(continuation)
       elif server.local.family in {AddressFamily.Unix}:
         if NoPipeFlash notin server.flags:
