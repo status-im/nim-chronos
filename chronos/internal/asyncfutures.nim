@@ -379,32 +379,40 @@ proc futureContinue*(fut: FutureBase) {.raises: [], gcsafe.} =
   #
   # Every call to an `{.async.}` proc is redirected to call this function
   # instead with its original body captured in `fut.closure`.
-  while true:
-    # Call closure to make progress on `fut` until it reaches `yield` (inside
-    # `await` typically) or completes / fails / is cancelled
-    let next: FutureBase = fut.internalClosure(fut)
-    if fut.internalClosure.finished(): # Reached the end of the transformed proc
-      break
+  let
+    prevTaskFuture = internalSetCurrentTaskFuture(fut)
+    prevTaskLocalContext =
+      internalSetCurrentTaskLocalContext(fut.internalTaskLocalContext)
+  try:
+    while true:
+      # Call closure to make progress on `fut` until it reaches `yield` (inside
+      # `await` typically) or completes / fails / is cancelled
+      let next: FutureBase = fut.internalClosure(fut)
+      if fut.internalClosure.finished(): # Reached the end of the transformed proc
+        break
 
-    if next == nil:
-      raiseAssert "Async procedure (" & ($fut.location[LocationKind.Create]) &
-                  ") yielded `nil`, are you await'ing a `nil` Future?"
+      if next == nil:
+        raiseAssert "Async procedure (" & ($fut.location[LocationKind.Create]) &
+                    ") yielded `nil`, are you await'ing a `nil` Future?"
 
-    if not next.finished():
-      # We cannot make progress on `fut` until `next` has finished - schedule
-      # `fut` to continue running when that happens
-      GC_ref(fut)
-      next.addCallback(CallbackFunc(internalContinue), cast[pointer](fut))
+      if not next.finished():
+        # We cannot make progress on `fut` until `next` has finished - schedule
+        # `fut` to continue running when that happens
+        GC_ref(fut)
+        next.addCallback(CallbackFunc(internalContinue), cast[pointer](fut))
 
-      # return here so that we don't remove the closure below
-      return
+        # return here so that we don't remove the closure below
+        return
 
-    # Continue while the yielded future is already finished.
+      # Continue while the yielded future is already finished.
 
-  # `futureContinue` will not be called any more for this future so we can
-  # clean it up
-  fut.internalClosure = nil
-  fut.internalChild = nil
+    # `futureContinue` will not be called any more for this future so we can
+    # clean it up
+    fut.internalClosure = nil
+    fut.internalChild = nil
+  finally:
+    discard internalSetCurrentTaskLocalContext(prevTaskLocalContext)
+    discard internalSetCurrentTaskFuture(prevTaskFuture)
 
 {.pop.}
 
