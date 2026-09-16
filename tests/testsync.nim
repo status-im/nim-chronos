@@ -29,8 +29,9 @@ suite "Asynchronous sync primitives test suite":
       discard testLock(i, lock)
 
     lock.release()
-    ## There must be exactly 20 poll() calls
-    for i in 0..<20:
+
+    # One poll for every lock - this depends on implementation details
+    for i in 0..<10:
       poll()
     check lockResult == "0123456789"
 
@@ -107,7 +108,7 @@ suite "Asynchronous sync primitives test suite":
     check:
       lock.locked
       futs[0].finished
-      not futs[1].finished
+      futs[1].finished
       not futs[2].finished
       not futs[3].finished
     await sleepAsync(10.milliseconds)
@@ -123,7 +124,7 @@ suite "Asynchronous sync primitives test suite":
       lock.locked
       futs[0].finished
       futs[1].finished
-      not futs[2].finished
+      futs[2].finished
       not futs[3].finished
     await sleepAsync(10.milliseconds)
     check:
@@ -139,7 +140,7 @@ suite "Asynchronous sync primitives test suite":
       futs[0].finished
       futs[1].finished
       futs[2].finished
-      not futs[3].finished
+      futs[3].finished
     await sleepAsync(10.milliseconds)
     check:
       lock.locked
@@ -169,11 +170,15 @@ suite "Asynchronous sync primitives test suite":
     lock.release()
     expect AsyncLockError:
       lock.release()
+    expect Defect:
+      lock.release2()
 
   test "AsyncLock() non-acquired release test":
     let lock = newAsyncLock()
     expect AsyncLockError:
       lock.release()
+    expect Defect:
+      lock.release2()
 
   test "AsyncEvent() behavior test":
     var event = newAsyncEvent()

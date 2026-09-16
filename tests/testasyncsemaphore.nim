@@ -55,6 +55,8 @@ suite "AsyncSemaphore":
 
     expect AsyncSemaphoreError: # should not release
       sema.release() 
+    expect Defect: # should not release
+      sema.release2()
 
   asyncTest "double release":
     let sema = newAsyncSemaphore(3)
@@ -63,6 +65,8 @@ suite "AsyncSemaphore":
     sema.release()
     expect AsyncSemaphoreError: # should not release
       sema.release() 
+    expect Defect: # should not release
+      sema.release2()
 
   asyncTest "should queue acquire":
     let sema = newAsyncSemaphore(1)

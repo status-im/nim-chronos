@@ -12,7 +12,62 @@ when defined(posix):
   import stew/ptrops
   import ../chronos/[config, osdefs, osutils], ../chronos/unittest2/asynctests
 
+when defined(windows):
+  import ../chronos/osdefs
+
 {.used.}
+
+when defined(windows):
+  proc stackMark(): uint {.noinline.} =
+    var probe = 0'u8
+    cast[uint](addr probe)
+
+  suite "Windows API declaration test suite":
+    test "RtlNtStatusToDosError() argument width":
+      # `RtlNtStatusToDosError()` is `__stdcall`, so the callee pops the
+      # arguments. Declaring its `NTSTATUS` parameter wider than 32 bits makes
+      # the compiler push more bytes than `ntdll` removes, which displaces the
+      # stack pointer by the difference on every call. On 32-bit Windows that
+      # desynchronises `poll()`, which calls this for every completion carrying
+      # a non-zero status.
+      #
+      # Measure the stack pointer across the calls instead of waiting for the
+      # drift to become fatal: without a frame pointer it corrupts the caller's
+      # frame immediately, but with one (`-d:debug`) it only misaligns the stack
+      # and the crash surfaces later, in an unrelated callee.
+      const
+        StatusConnectionReset = 0xC000020D'u32
+        ErrorNetnameDeleted = 64'u32
+        Iterations = 8'u32
+
+      var total = 0'u32
+      let before = stackMark()
+      for _ in 0 ..< Iterations:
+        total += rtlNtStatusToDosError(ULONG(StatusConnectionReset))
+      let after = stackMark()
+
+      check:
+        total == Iterations * ErrorNetnameDeleted
+        after == before
+
+    test "wcschr() calling convention":
+      # `wcschr()` uses the C calling convention, where the caller removes the
+      # arguments. Declaring it `stdcall` leaves two arguments on the stack on
+      # 32-bit Windows after every call and makes `getProcessEnvironment()`
+      # crash in optimized builds.
+      const Iterations = 8
+      var
+        value = [WCHAR(0x0041), WCHAR(0x0042), WCHAR(0x0000)]
+        found: LPWSTR
+
+      let before = stackMark()
+      for _ in 0 ..< Iterations:
+        found = wcschr(addr value[0], WCHAR(0x0000))
+      let after = stackMark()
+
+      check:
+        found == addr value[2]
+        after == before
 
 suite "Asynchronous issues test suite":
   const HELLO_PORT = 45679
