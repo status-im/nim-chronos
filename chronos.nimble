@@ -9,11 +9,11 @@ license       = "MIT or Apache License 2.0"
 skipDirs      = @["tests"]
 
 requires "nim >= 1.6.16",
-         "results",
+         "bearssl >= 0.2.13",
+         "httputils >= 0.5.1",
+         "results >= 0.5.0",
          "stew >= 0.5.0",
-         "bearssl >= 0.2.8",
-         "httputils",
-         "unittest2"
+         "unittest2 >= 0.2.0"
 
 import os, strutils
 

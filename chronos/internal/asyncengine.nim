@@ -152,7 +152,7 @@ template processThreadCallbacks(loop) =
       )
       deallocShared(node)
 
-func getAsyncTimestamp*(a: Duration): auto {.inline.} =
+func getAsyncTimestamp(a: Duration): auto =
   ## Return rounded up value of duration with milliseconds resolution.
   ##
   ## This function also take care on int32 overflow, because Linux and Windows
@@ -730,11 +730,11 @@ elif defined(windows):
         var customOverlapped = PtrCustomOverlapped(events[i].lpOverlapped)
         customOverlapped.data.errCode =
           block:
-            let res = cast[uint64](customOverlapped.internal)
-            if res == 0'u64:
+            let res = cast[uint](customOverlapped.internal)
+            if res == 0'u:
               OSErrorCode(-1)
             else:
-              OSErrorCode(rtlNtStatusToDosError(res))
+              OSErrorCode(rtlNtStatusToDosError(ULONG(res)))
         customOverlapped.data.bytesCount = events[i].dwNumberOfBytesTransferred
         let acb = AsyncCallback(function: customOverlapped.data.cb,
                                 udata: cast[pointer](customOverlapped))
@@ -1311,13 +1311,13 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
       let events = loop.keys[i].events
 
       withData(loop.selector, cint(fd), adata) do:
-        if (Event.Read in events) or (events == {Event.Error}):
+        if {Event.Read, Event.Error} * events != {}:
           if not isNil(adata.reader.function):
             loop.callbacks.addLast(adata.reader)
           else:
             hasWakeup = true
 
-        if (Event.Write in events) or (events == {Event.Error}):
+        if {Event.Write, Event.Error} * events != {}:
           if not isNil(adata.writer.function):
             loop.callbacks.addLast(adata.writer)
 

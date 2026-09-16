@@ -164,6 +164,14 @@ suite "Network utilities test suite":
       initTAddress("240.0.0.0:0").isMulticast() == false
       initTAddress("223.0.0.0:0").isMulticast() == false
 
+      initTAddress("8.8.8.8:0").isUnicast() == true
+      initTAddress("223.255.255.255:0").isUnicast() == true
+      initTAddress("224.0.0.0:0").isUnicast() == false
+      initTAddress("230.0.0.0:0").isUnicast() == false
+      initTAddress("239.255.255.255:0").isUnicast() == false
+      initTAddress("240.0.0.0:0").isUnicast() == true
+      initTAddress("0.0.0.0:0").isUnicast() == false
+
       initTAddress("224.0.0.0:0").isLinkLocalMulticast() == true
       initTAddress("224.0.0.255:0").isLinkLocalMulticast() == true
       initTAddress("225.0.0.0:0").isLinkLocalMulticast() == false
@@ -286,6 +294,10 @@ suite "Network utilities test suite":
         "[FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]:0"
       ).isMulticast() == true
       initTAddress("[F000::]:0").isMulticast() == false
+
+      initTAddress("[2001:db8::1]:0").isUnicast() == true
+      initTAddress("[FF00::]:0").isUnicast() == false
+      initTAddress("[FF02::1]:0").isUnicast() == false
 
       initTAddress("[::]:0").isAnyLocal() == true
       initTAddress("[::1]:0").isAnyLocal() == false

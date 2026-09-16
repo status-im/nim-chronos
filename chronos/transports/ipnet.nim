@@ -735,7 +735,7 @@ proc isUnicast*(address: TransportAddress): bool =
   ## Any address that is not a IPv6 multicast address `FF00::/8` is unicast.
   case address.family
   of AddressFamily.IPv4:
-    not(isZero(address) and not isMulticast(address))
+    not(isZero(address) or isMulticast(address))
   of AddressFamily.IPv6:
     not(isMulticast(address))
   else:
