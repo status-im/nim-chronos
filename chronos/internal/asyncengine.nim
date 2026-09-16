@@ -793,12 +793,14 @@ elif defined(windows):
     if not(isNil(aftercb)):
       loop.callbacks.addLast(AsyncCallback(function: aftercb))
 
-  proc pendingEventsCount(loop: PDispatcher): int =
-    ## Number of events carrying work waiting to be dequeued from loop's I/O
-    ## completion port, up to `MaxEventsCount`.
-
+  proc assertNoEvents(loop: PDispatcher) =
+    ## Raise a `Defect` when events carrying work are waiting in loop's I/O
+    ## completion port.
+    ##
+    ## A completion port cannot be examined without dequeuing, so the events
+    ## are discarded - only call this right before closing the port.
     if isNil(loop.getQueuedCompletionStatusEx):
-      return 0
+      return
 
     var
       events: array[MaxEventsCount, osdefs.OVERLAPPED_ENTRY]
@@ -809,18 +811,21 @@ elif defined(windows):
     if res == FALSE:
       let errCode = osLastError()
       if uint32(errCode) != WAIT_TIMEOUT:
-        raiseOsDefect(errCode,
-                      "pendingEventsCount(): Unable to get OS events")
-      return 0
+        raiseOsDefect(errCode, "assertNoEvents(): Unable to get OS events")
+      return
 
     # Entries without an overlapped are the wake-ups posted by `wake()` when a
     # callback is scheduled from another thread - `poll` skips them too, as
     # they carry no work of their own.
-    var count = 0
+    var pending = 0
     for index in 0 ..< int(eventsReceived):
       if not(isNil(events[index].lpOverlapped)):
-        inc(count)
-    count
+        inc(pending)
+
+    doAssert pending == 0,
+             "closeDispatcher(): the completion port still has " & $pending &
+             " event(s) waiting to be processed - all operations must have " &
+             "completed or been cancelled before closing"
 
   proc isEmpty(loop: PDispatcher): bool =
     ## Returns `true` when no handle is registered in the dispatcher - the
@@ -844,11 +849,7 @@ elif defined(windows):
              $len(loop.handles) & " handle(s) registered - all streams " &
              "must have been closed before closing"
 
-    let pending = loop.pendingEventsCount()
-    doAssert pending == 0,
-             "closeDispatcher(): the completion port still has " & $pending &
-             " event(s) waiting to be processed - all operations must have " &
-             "completed or been cancelled before closing"
+    loop.assertNoEvents()
 
     var diagnostic = Opt.none(string)
 
