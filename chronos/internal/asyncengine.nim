@@ -134,7 +134,7 @@ template processThreadCallbacks(loop) =
       )
       deallocShared(node)
 
-func getAsyncTimestamp*(a: Duration): auto {.inline.} =
+func getAsyncTimestamp(a: Duration): auto =
   ## Return rounded up value of duration with milliseconds resolution.
   ##
   ## This function also take care on int32 overflow, because Linux and Windows
