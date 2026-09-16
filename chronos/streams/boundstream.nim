@@ -175,23 +175,15 @@ proc readBounded(
 ): Future[seq[byte]] {.async: (raises: [CancelledError, AsyncStreamError]).} =
   # Fast path for reading all bytes up to the count-baased boundary
   let n = rstream.numRemainingBytes()
-  var res = newSeqUninit[byte](min(n, 128 * 1024))
-  if n > 0:
-    var o = 0
-    while o < n:
-      if o == res.len:
-        if res.len <= static(high(int) div 2):
-          res.setLenUninit(min(n, res.len shl 1))
-        else:
-          res.setLenUninit(n)
-      try:
-        await rstream.readExactly(addr res[o], res.len - o)
-        o = res.len
-      except CancelledError as exc:
-        rstream.state = AsyncStreamState.Stopped
-        raise exc
-      except AsyncStreamIncompleteError:
-        raise newBoundedStreamIncompleteError()
+  var res = newSeqUninit[byte](n)
+  if res.len > 0:
+    try:
+      await rstream.readExactly(addr res[0], res.len)
+    except CancelledError as exc:
+      rstream.state = AsyncStreamState.Stopped
+      raise exc
+    except AsyncStreamIncompleteError:
+      raise newBoundedStreamIncompleteError()
   else:
     if rstream.state == AsyncStreamState.Running:
       rstream.state = AsyncStreamState.Finished
