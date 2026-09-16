@@ -42,7 +42,10 @@ const
   mediumMessage = createMessage(MediumRequestSize)
 
 proc inSecondsFloat(d: times.Duration): float =
-  d.inNanoseconds() / 1000000000
+  # Explicit `float()`: dividing the `int64` result of `inNanoseconds()`
+  # directly against an untyped-int literal resolves to system's
+  # `/(int, int): float`, whose `int` is 32-bit on i386.
+  float(d.inNanoseconds()) / 1_000_000_000.0
 
 # Create a simple HTTP server for benchmarking
 proc createBenchmarkServer(address: TransportAddress): HttpServerRef =
@@ -143,8 +146,9 @@ proc print(results: BenchmarkResult) =
     totalTime: results.totalTime.inSecondsFloat,
     numRequests: results.numRequests,
     reqsps: ((results.numRequests.float / results.totalTime.inSecondsFloat)),
-    sent: results.totalBytesSent / (1024 * 1024),
-    received: results.totalBytesReceived / (1024 * 1024),
+    # `.float` explicitly, same i386 reasoning as `inSecondsFloat` above.
+    sent: results.totalBytesSent.float / (1024 * 1024),
+    received: results.totalBytesReceived.float / (1024 * 1024),
     sendSpeed:
       (results.totalBytesSent.float / results.totalTime.inSecondsFloat / (1024 * 1024)),
     recvSpeed: (
