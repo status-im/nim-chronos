@@ -1405,14 +1405,6 @@ proc closeThreadDispatcher*(): Opt[string] =
 
   disp.closeDispatcher()
 
-proc setGlobalDispatcher*(disp: PDispatcher) {.
-      gcsafe, deprecated: "Use setThreadDispatcher() instead".} =
-  setThreadDispatcher(disp)
-
-proc getGlobalDispatcher*(): PDispatcher {.
-      gcsafe, deprecated: "Use getThreadDispatcher() instead".} =
-  getThreadDispatcher()
-
 proc setTimer*(at: Moment, cb: CallbackFunc,
                udata: pointer = nil): TimerCallback =
   ## Arrange for the callback ``cb`` to be called at the given absolute
