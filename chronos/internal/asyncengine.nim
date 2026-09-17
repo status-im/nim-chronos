@@ -65,7 +65,9 @@ type
     finishAt*: Moment
     function*: AsyncCallback
 
-  TrackerBase* = ref object of RootRef
+  # deprecation in 3.2.1 missed this type which still is referenced in libp2p as
+  # of 4.4.1 - remove this type in 5.x
+  TrackerBase* {.deprecated: "Use `TracerCounter` instead".} = ref object of RootRef
     id*: string
     dump*: proc(): string {.gcsafe, raises: [].}
     isLeaked*: proc(): bool {.gcsafe, raises: [].}
@@ -79,7 +81,6 @@ type
     callbacks*: Deque[AsyncCallback]
     idlers*: Deque[AsyncCallback]
     ticks*: Deque[AsyncCallback]
-    trackers*: Table[string, TrackerBase]
     counters*: Table[string, TrackerCounter]
     inEventLoop: bool
 
@@ -130,7 +131,6 @@ proc resetBaseDispatcher(loop: PDispatcherBase) {.gcsafe, raises: [].} =
   loop.callbacks.reset()
   loop.idlers.reset()
   loop.ticks.reset()
-  loop.trackers.reset()
   loop.counters.reset()
 
 template processThreadCallbacks(loop) =
@@ -413,7 +413,6 @@ elif defined(windows):
       callbacks: initDeque[AsyncCallback](64),
       idlers: initDeque[AsyncCallback](),
       ticks: initDeque[AsyncCallback](),
-      trackers: initTable[string, TrackerBase](),
       counters: initTable[string, TrackerCounter](),
     )
     when not chronosStrictReentrancy:
@@ -923,7 +922,6 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
       callbacks: initDeque[AsyncCallback](chronosInitialSize),
       idlers: initDeque[AsyncCallback](),
       keys: newSeq[ReadyKey](chronosInitialSize),
-      trackers: initTable[string, TrackerBase](),
       counters: initTable[string, TrackerCounter](),
     )
 
@@ -1586,17 +1584,6 @@ proc runForever*() =
   ## Raises different exceptions depending on the platform.
   while true:
     poll()
-
-proc addTracker*[T](id: string, tracker: T) {.
-     deprecated: "Please use trackCounter facility instead".} =
-  ## Add new ``tracker`` object to current thread dispatcher with identifier
-  ## ``id``.
-  getThreadDispatcher().trackers[id] = tracker
-
-proc getTracker*(id: string): TrackerBase {.
-     deprecated: "Please use getTrackerCounter() instead".} =
-  ## Get ``tracker`` from current thread dispatcher using identifier ``id``.
-  getThreadDispatcher().trackers.getOrDefault(id, nil)
 
 proc trackCounter*(name: string) {.noinit.} =
   ## Increase tracker counter with name ``name`` by 1.
