@@ -13,8 +13,10 @@ import ".."/chronos
 {.used.}
 
 suite "Datagram Transport test suite":
+  setup:
+    let counters = getTrackerCounters()
   teardown:
-    checkLeaks()
+    checkLeaks(counters)
 
   const
     TestsCount = 2000

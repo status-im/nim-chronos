@@ -23,8 +23,10 @@ suite "Server's test suite":
     CustomData = ref object
       test: string
 
+  setup:
+    let counters = getTrackerCounters()
   teardown:
-    checkLeaks()
+    checkLeaks(counters)
 
   proc serveStreamClient(server: StreamServer,
                          transp: StreamTransport) {.async: (raises: []).} =

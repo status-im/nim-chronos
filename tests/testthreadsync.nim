@@ -42,8 +42,10 @@ const
   TestsCount = when sizeof(int) == 8: 1000 else: 100
 
 suite "Asynchronous multi-threading sync primitives test suite":
+  setup:
+    let counters = getTrackerCounters()
   teardown:
-    checkLeaks()
+    checkLeaks(counters)
 
   proc setResult(thr: ThreadResultPtr, value: int) =
     thr[].value = value

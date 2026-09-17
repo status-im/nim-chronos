@@ -75,8 +75,10 @@ N8r5CwGcIX/XPC3lKazzbZ8baA==
 """
 
 suite "HTTP client testing suite":
+  setup:
+    let counters = getTrackerCounters()
   teardown:
-    checkLeaks()
+    checkLeaks(counters)
 
   type
     TestResponseTuple = tuple[status: int, data: string, count: int]

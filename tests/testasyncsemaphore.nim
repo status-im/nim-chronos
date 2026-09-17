@@ -11,8 +11,10 @@ import ../chronos, ../chronos/unittest2/asynctests
 {.used.}
 
 suite "AsyncSemaphore":
+  setup:
+    let counters = getTrackerCounters()
   teardown:
-    checkLeaks()
+    checkLeaks(counters)
 
   asyncTest "default size":
     let sema = newAsyncSemaphore()
