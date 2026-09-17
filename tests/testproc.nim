@@ -16,8 +16,10 @@ when defined(posix):
 when defined(nimHasUsed): {.used.}
 
 suite "Asynchronous process management test suite":
+  setup:
+    let counters = getTrackerCounters()
   teardown:
-    checkLeaks()
+    checkLeaks(counters)
 
   const OutputTests =
     when defined(windows):
