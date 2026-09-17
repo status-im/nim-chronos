@@ -180,7 +180,7 @@ proc unregister*(signal: ThreadSignalPtr): Result[void, string] =
     # registered once it completes.
     ok()
   else:
-    if not(hasThreadDispatcher()):
+    if not hasThreadDispatcher():
       return ok()
 
     let
@@ -191,13 +191,13 @@ proc unregister*(signal: ThreadSignalPtr): Result[void, string] =
 
     var pending = false
     withData(loop.getIoHandler(), cint(fd), adata) do:
-      pending = not(isNil(adata.reader.function))
+      pending = not adata.reader.function.isNil()
     if pending:
       return err("Unable to unregister a signal while it is being waited on")
 
     let res = unregister2(fd)
     if res.isErr():
-      return err(osErrorMsg(res.error))
+      return err("Failed to unregister signal: " & osErrorMsg(res.error))
     ok()
 
 proc fireSync*(signal: ThreadSignalPtr,
