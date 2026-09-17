@@ -371,10 +371,7 @@ proc write(
   # Prevent concurrent writes from being interleaved on the wire
   await wstream.lock.acquire()
   defer:
-    try:
-      wstream.lock.release()
-    except AsyncLockError:
-      raiseAssert ""
+    wstream.lock.release2()
 
   var offset = 0
   while offset < nbytes:

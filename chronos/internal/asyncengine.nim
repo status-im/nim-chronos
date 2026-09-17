@@ -76,6 +76,8 @@ type
     opened*: uint64
     closed*: uint64
 
+  TrackerCounters* = Table[string, TrackerCounter]
+
   DispatcherBase = object of RootRef
     timers*: HeapQueue[TimerCallback]
     callbacks*: Deque[AsyncCallback]
@@ -1403,14 +1405,6 @@ proc closeThreadDispatcher*(): Opt[string] =
 
   disp.closeDispatcher()
 
-proc setGlobalDispatcher*(disp: PDispatcher) {.
-      gcsafe, deprecated: "Use setThreadDispatcher() instead".} =
-  setThreadDispatcher(disp)
-
-proc getGlobalDispatcher*(): PDispatcher {.
-      gcsafe, deprecated: "Use getThreadDispatcher() instead".} =
-  getThreadDispatcher()
-
 proc setTimer*(at: Moment, cb: CallbackFunc,
                udata: pointer = nil): TimerCallback =
   ## Arrange for the callback ``cb`` to be called at the given absolute
@@ -1585,22 +1579,33 @@ proc runForever*() =
   while true:
     poll()
 
-proc trackCounter*(name: string) {.noinit.} =
+proc trackCounter*(name: string) =
   ## Increase tracker counter with name ``name`` by 1.
   let tracker = TrackerCounter(opened: 0'u64, closed: 0'u64)
   inc(getThreadDispatcher().counters.mgetOrPut(name, tracker).opened)
 
-proc untrackCounter*(name: string) {.noinit.} =
+proc untrackCounter*(name: string) =
   ## Decrease tracker counter with name ``name`` by 1.
   let tracker = TrackerCounter(opened: 0'u64, closed: 0'u64)
   inc(getThreadDispatcher().counters.mgetOrPut(name, tracker).closed)
 
-proc getTrackerCounter*(name: string): TrackerCounter {.noinit.} =
+proc getTrackerCounter*(name: string): TrackerCounter =
   ## Return value of counter with name ``name``.
   let tracker = TrackerCounter(opened: 0'u64, closed: 0'u64)
-  getThreadDispatcher().counters.getOrDefault(name, tracker)
+  if gDisp.isNil():
+    TrackerCounter()
+  else:
+    gDisp.counters.getOrDefault(name, tracker)
 
-proc isCounterLeaked*(name: string): bool {.noinit.} =
+proc getTrackerCounters*(): TrackerCounters =
+  ## Take a snapshot of the current tracker counter state, so it can be compared
+  ## with a later state.
+  if gDisp.isNil():
+    default(TrackerCounters)
+  else:
+    gDisp.counters
+
+proc isCounterLeaked*(name: string): bool =
   ## Returns ``true`` if leak is detected, number of `opened` not equal to
   ## number of `closed` requests.
   let tracker = TrackerCounter(opened: 0'u64, closed: 0'u64)

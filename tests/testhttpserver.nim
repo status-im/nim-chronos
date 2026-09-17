@@ -19,8 +19,10 @@ import stew/base10
 proc `<`(a, b: (string, seq[string])): bool = a[0] < b[0]
 
 suite "HTTP server testing suite":
+  setup:
+    let counters = getTrackerCounters()
   teardown:
-    checkLeaks()
+    checkLeaks(counters)
 
   type
     TooBigTest = enum
