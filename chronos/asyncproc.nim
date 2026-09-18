@@ -605,16 +605,29 @@ else:
           var res: Sigset
           discard sigemptyset(res)
           res
+      sigdefault =
+        block:
+          var res: Sigset
+          discard sigfillset(res)
+          discard sigdelset(res, SIGKILL)
+          discard sigdelset(res, SIGSTOP)
+          when defined(haiku):
+            # https://github.com/haiku/haiku/blob/master/headers/posix/signal.h
+            discard sigdelset(res, cint(21)) # SIGKILLTHR, also not catchable
+          res
 
     doCheck(posixSpawnAttrSetSigMask(attrs, mask))
+    doCheck(posixSpawnAttrSetSigDefault(attrs, sigdefault))
     if AsyncProcessOption.ProcessGroup in options:
       doCheck(posixSpawnAttrSetPgroup(attrs, 0))
       doCheck(posixSpawnAttrSetFlags(attrs, osdefs.POSIX_SPAWN_USEVFORK or
                                      osdefs.POSIX_SPAWN_SETSIGMASK or
+                                     osdefs.POSIX_SPAWN_SETSIGDEF or
                                      osdefs.POSIX_SPAWN_SETPGROUP))
     else:
       doCheck(posixSpawnAttrSetFlags(attrs, osdefs.POSIX_SPAWN_USEVFORK or
-                                     osdefs.POSIX_SPAWN_SETSIGMASK))
+                                     osdefs.POSIX_SPAWN_SETSIGMASK or
+                                     osdefs.POSIX_SPAWN_SETSIGDEF))
 
     if pipes.flags * {ProcessFlag.AutoStdin, ProcessFlag.UserStdin} != {}:
       # Close child process STDIN.
