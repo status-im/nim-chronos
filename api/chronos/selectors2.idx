@@ -1,0 +1,28 @@
+Selector	chronos/selectors2.html#Selector	selectors2: Selector	
+Event	chronos/selectors2.html#Event	selectors2: Event	
+IOSelectorsException	chronos/selectors2.html#IOSelectorsException	selectors2: IOSelectorsException	
+ReadyKey	chronos/selectors2.html#ReadyKey	selectors2: ReadyKey	
+SelectEvent	chronos/selectors2.html#SelectEvent	selectors2: SelectEvent	
+newSelector	chronos/selectors2.html#newSelector	selectors2: newSelector[T](): Selector[T]	
+close	chronos/selectors2.html#close,Selector[T]	selectors2: close[T](s: Selector[T])	
+registerHandle	chronos/selectors2.html#registerHandle,Selector[T],,set[Event],T	selectors2: registerHandle[T](s: Selector[T]; fd: int | SocketHandle; events: set[Event];\n                  data: T)	
+updateHandle	chronos/selectors2.html#updateHandle,Selector[T],,set[Event]	selectors2: updateHandle[T](s: Selector[T]; fd: int | SocketHandle; events: set[Event])	
+registerTimer	chronos/selectors2.html#registerTimer,Selector[T],int,bool,T	selectors2: registerTimer[T](s: Selector[T]; timeout: int; oneshot: bool; data: T): int	
+registerSignal	chronos/selectors2.html#registerSignal,Selector[T],int,T	selectors2: registerSignal[T](s: Selector[T]; signal: int; data: T): int	
+registerProcess	chronos/selectors2.html#registerProcess,Selector[T],int,T	selectors2: registerProcess[T](s: Selector[T]; pid: int; data: T): int	
+registerEvent	chronos/selectors2.html#registerEvent,Selector[T],SelectEvent,T	selectors2: registerEvent[T](s: Selector[T]; ev: SelectEvent; data: T)	
+registerVnode	chronos/selectors2.html#registerVnode,Selector[T],cint,set[Event],T	selectors2: registerVnode[T](s: Selector[T]; fd: cint; events: set[Event]; data: T)	
+newSelectEvent	chronos/selectors2.html#newSelectEvent	selectors2: newSelectEvent(): SelectEvent	
+trigger	chronos/selectors2.html#trigger,SelectEvent	selectors2: trigger(ev: SelectEvent)	
+close	chronos/selectors2.html#close,SelectEvent	selectors2: close(ev: SelectEvent)	
+unregister	chronos/selectors2.html#unregister,Selector[T],SelectEvent	selectors2: unregister[T](s: Selector[T]; ev: SelectEvent)	
+unregister	chronos/selectors2.html#unregister,Selector[T],	selectors2: unregister[T](s: Selector[T]; fd: int | SocketHandle | cint)	
+selectInto	chronos/selectors2.html#selectInto,Selector[T],int,openArray[ReadyKey]	selectors2: selectInto[T](s: Selector[T]; timeout: int; results: var openArray[ReadyKey]): int	
+select	chronos/selectors2.html#select,Selector[T],int	selectors2: select[T](s: Selector[T]; timeout: int): seq[ReadyKey]	
+getData	chronos/selectors2.html#getData,Selector[T],	selectors2: getData[T](s: Selector[T]; fd: SocketHandle | int): var T	
+setData	chronos/selectors2.html#setData,Selector[T],,T	selectors2: setData[T](s: Selector[T]; fd: SocketHandle | int; data: var T): bool	
+isEmpty	chronos/selectors2.html#isEmpty.t,Selector[T]	selectors2: isEmpty[T](s: Selector[T]): bool	
+withData	chronos/selectors2.html#withData.t,Selector[T],,untyped,untyped	selectors2: withData[T](s: Selector[T]; fd: SocketHandle | int; value, body: untyped)	
+withData	chronos/selectors2.html#withData.t,Selector[T],,untyped,untyped,untyped	selectors2: withData[T](s: Selector[T]; fd: SocketHandle | int; value, body1, body2: untyped)	
+contains	chronos/selectors2.html#contains,Selector[T],	selectors2: contains[T](s: Selector[T]; fd: SocketHandle | int): bool	
+getFd	chronos/selectors2.html#getFd,Selector[T]	selectors2: getFd[T](s: Selector[T]): int	

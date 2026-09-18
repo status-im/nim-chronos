@@ -1,0 +1,1 @@
+sendfile	chronos/sendfile.html#sendfile,int,int,int,int	sendfile: sendfile(outfd, infd: int; offset: int; count: var int): int	

@@ -1,0 +1,6 @@
+AllFutureStates	chronos/debugutils.html#AllFutureStates	debugutils: AllFutureStates	
+WithoutCompleted	chronos/debugutils.html#WithoutCompleted	debugutils: WithoutCompleted	
+OnlyPending	chronos/debugutils.html#OnlyPending	debugutils: OnlyPending	
+OnlyCompleted	chronos/debugutils.html#OnlyCompleted	debugutils: OnlyCompleted	
+dumpPendingFutures	chronos/debugutils.html#dumpPendingFutures	debugutils: dumpPendingFutures(filter = AllFutureStates): string	
+pendingFuturesCount	chronos/debugutils.html#pendingFuturesCount,set[FutureState]	debugutils: pendingFuturesCount(filter: set[FutureState]): uint	
