@@ -23,6 +23,8 @@ when not(hasThreadSupport):
   {.fatal: "Compile this program with threads enabled!".}
 
 import "."/[osdefs, osutils, oserrno]
+when not(defined(windows)):
+  import ./selectors2
 
 type
   ThreadSignal* = object
@@ -162,6 +164,41 @@ proc close*(signal: ThreadSignalPtr): Result[void, string] =
     if res1.isErr(): return err(osErrorMsg(res1.error))
     if res2.isErr(): return err(osErrorMsg(res2.error))
   ok()
+
+proc unregister*(signal: ThreadSignalPtr): Result[void, string] =
+  ## Remove ``signal`` from the current thread's dispatcher, without closing it.
+  ##
+  ## ``wait`` registers the signal with the dispatcher of the thread awaiting
+  ## it and leaves it registered, so a thread that awaited a signal it does not
+  ## close must call this before ``closeThreadDispatcher``.
+  ##
+  ## Does nothing when the thread has no dispatcher or the signal is not
+  ## registered with it. Fails when a ``wait`` on ``signal`` is still pending on
+  ## this thread, as unregistering would leave that future never completing.
+  when defined(windows):
+    # ``wait`` goes through ``waitForSingleObject``, which leaves nothing
+    # registered once it completes.
+    ok()
+  else:
+    if not hasThreadDispatcher():
+      return ok()
+
+    let
+      loop = getThreadDispatcher()
+      fd = when hasEventFd: signal[].efd else: signal[].rfd
+    if not(loop.contains(fd)):
+      return ok()
+
+    var pending = false
+    withData(loop.getIoHandler(), cint(fd), adata) do:
+      pending = not adata.reader.function.isNil()
+    if pending:
+      return err("Unable to unregister a signal while it is being waited on")
+
+    let res = unregister2(fd)
+    if res.isErr():
+      return err("Failed to unregister signal: " & osErrorMsg(res.error))
+    ok()
 
 proc fireSync*(signal: ThreadSignalPtr,
                timeout = InfiniteDuration): Result[bool, string] =

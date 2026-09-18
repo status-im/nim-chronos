@@ -1386,6 +1386,11 @@ proc getThreadDispatcher*(): PDispatcher =
     setThreadDispatcher(newDispatcher())
   gDisp
 
+proc hasThreadDispatcher*(): bool =
+  ## Returns ``true`` when the current thread has a dispatcher, without creating
+  ## one as ``getThreadDispatcher`` would.
+  not gDisp.isNil()
+
 proc closeThreadDispatcher*(): Opt[string] =
   ## Close the current thread's dispatcher, releasing its resources and leaving
   ## the thread without one - a new dispatcher is created on next use. Closing
