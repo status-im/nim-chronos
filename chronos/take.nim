@@ -9,8 +9,15 @@
 
 {.push raises: [].}
 
-proc take*[T](x: var T): T =
-  let res = move(x)
-  when T is ref:
-    doAssert x == nil
-  res
+when defined(release):
+  template take*[T](x: var T): T =
+    move(x)
+else:
+  proc take*[T](x: var T): T =
+    let res =
+      when defined(nimHasEnsureMove):
+        ensureMove(x)
+      else:
+        move(x)
+    doAssert x == default(typeof(x))
+    res
