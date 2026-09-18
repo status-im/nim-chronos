@@ -29,6 +29,7 @@ type
     offset: uint                    # Writer vector offset
     size: int                       # Original size
     writer: Future[int]             # Writer vector completion Future
+    gcholder: ref seq[byte]         # May be used to extend lifetime of `buf`
 
   TransportKind* {.pure.} = enum
     Socket,                         # Socket transport
@@ -882,6 +883,7 @@ when defined(windows):
       if server.apending:
         ## Continuation
         server.apending = false
+        GC_unref(server)
         if server.status notin {ServerStatus.Stopped, ServerStatus.Closed}:
           case ovl.data.errCode
           of OSErrorCode(-1):
@@ -920,6 +922,7 @@ when defined(windows):
         ## Initiation
         if server.status notin {ServerStatus.Stopped, ServerStatus.Closed}:
           server.apending = true
+          GC_ref(server)
           let
             pipeSuffix = $cast[cstring](baseAddr server.local.address_un)
             pipeAsciiName = PipeHeaderName & pipeSuffix
@@ -954,6 +957,7 @@ when defined(windows):
             let errCode = osLastError()
             if errCode == ERROR_OPERATION_ABORTED:
               server.apending = false
+              GC_unref(server)
               break
             elif errCode == ERROR_IO_PENDING:
               discard
@@ -979,6 +983,7 @@ when defined(windows):
       if server.apending:
         ## Continuation
         server.apending = false
+        GC_unref(server)
         if server.status notin {ServerStatus.Stopped, ServerStatus.Closed}:
           case ovl.data.errCode
           of OSErrorCode(-1):
@@ -1028,6 +1033,7 @@ when defined(windows):
         ## Initiation
         if server.status notin {ServerStatus.Stopped, ServerStatus.Closed}:
           server.apending = true
+          GC_ref(server)
           # TODO No way to report back errors!
           server.asock = createAsyncSocket2(server.domain, SockType.SOCK_STREAM,
                                             Protocol.IPPROTO_TCP).valueOr:
@@ -1048,6 +1054,7 @@ when defined(windows):
             let errCode = osLastError()
             if errCode == ERROR_OPERATION_ABORTED:
               server.apending = false
+              GC_unref(server)
               break
             elif errCode == ERROR_IO_PENDING:
               discard
@@ -1901,7 +1908,7 @@ proc close*(server: StreamServer) =
       if server.local.family in {AddressFamily.IPv4, AddressFamily.IPv6}:
         if server.apending:
           server.asock.closeSocket()
-          server.apending = false
+          # Don't clear ``apending``; ``acceptEx`` continuation will still run.
         server.sock.closeSocket(continuation)
       elif server.local.family in {AddressFamily.Unix}:
         if NoPipeFlash notin server.flags:
@@ -2427,8 +2434,16 @@ proc write*(transp: StreamTransport, pbytes: pointer,
 
   fastWrite(transp, pbytes, rbytes, nbytes)
 
+  # This proc suggests that a caller-owned buffer is being sent,
+  # but because the queued data will still be sent on cancellation,
+  # the caller lacks a clean way to detect when it is safe to release.
+  # Therefore, we always have to copy the remaining data, to ensure that
+  # it won't get de-allocated while it is still being accessed in the queue.
+  let gcholder = new(seq[byte])
+  gcholder[] = @(pbytes.makeOpenArray(rbytes))
   var vector = StreamVector(kind: DataBuffer, writer: retFuture,
-                            buf: pbytes, buflen: rbytes, size: nbytes)
+                            buf: baseAddr gcholder[], buflen: rbytes,
+                            size: nbytes, gcholder: gcholder)
   transp.queue.addLast(vector)
   transp.resumeWrite()
   return retFuture
@@ -2449,16 +2464,11 @@ proc write*(transp: StreamTransport, msg: string,
 
   fastWrite(transp, pbytes, rbytes, nbytes)
 
-  let
-    written = nbytes - rbytes # In case fastWrite wrote some
-
-  var localCopy = msg
-  retFuture.addCallback(proc(_: pointer) = reset(localCopy))
-
-  pbytes = cast[ptr byte](addr localCopy[written])
-
+  let gcholder = new(seq[byte])
+  gcholder[] = @(pbytes.makeOpenArray(rbytes))
   var vector = StreamVector(kind: DataBuffer, writer: retFuture,
-                            buf: pbytes, buflen: rbytes, size: nbytes)
+                            buf: baseAddr gcholder[], buflen: rbytes,
+                            size: nbytes, gcholder: gcholder)
   transp.queue.addLast(vector)
   transp.resumeWrite()
   return retFuture
@@ -2480,16 +2490,11 @@ proc write*[T](transp: StreamTransport, msg: seq[T],
 
   fastWrite(transp, pbytes, rbytes, nbytes)
 
-  let
-    written = nbytes - rbytes # In case fastWrite wrote some
-
-  var localCopy = msg
-  retFuture.addCallback(proc(_: pointer) = reset(localCopy))
-
-  pbytes = cast[ptr byte](addr localCopy[written])
-
+  let gcholder = new(seq[byte])
+  gcholder[] = @(pbytes.makeOpenArray(rbytes))
   var vector = StreamVector(kind: DataBuffer, writer: retFuture,
-                            buf: pbytes, buflen: rbytes, size: nbytes)
+                            buf: baseAddr gcholder[], buflen: rbytes,
+                            size: nbytes, gcholder: gcholder)
   transp.queue.addLast(vector)
   transp.resumeWrite()
   return retFuture
