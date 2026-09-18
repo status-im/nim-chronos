@@ -1139,7 +1139,7 @@ proc peekMessage*(transp: DatagramTransport, msg: var seq[byte],
   ## Get access to internal message buffer and length of incoming datagram.
   if ReadError in transp.state:
     transp.state.excl(ReadError)
-    raise transp.getError()
+    raise move(transp.error)
   when declared(shallowCopy):
     shallowCopy(msg, transp.buffer)
   else:
@@ -1151,7 +1151,7 @@ proc getMessage*(transp: DatagramTransport): seq[byte] {.
   ## Copy data from internal message buffer and return result.
   if ReadError in transp.state:
     transp.state.excl(ReadError)
-    raise transp.getError()
+    raise move(transp.error)
   if transp.buflen > 0:
     var res = newSeq[byte](transp.buflen)
     copyMem(addr res[0], addr transp.buffer[0], transp.buflen)
