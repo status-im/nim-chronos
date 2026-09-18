@@ -9,15 +9,6 @@
 
 {.push raises: [].}
 
-when defined(release):
-  template take*[T](x: var T): T =
-    move(x)
-else:
-  proc take*[T](x: var T): T =
-    let res =
-      when defined(nimHasEnsureMove):
-        ensureMove(x)
-      else:
-        move(x)
-    doAssert x == default(typeof(x))
-    res
+proc take*[T](x: var T): T {.noinit.} =
+  result = move(x)
+  reset(x)  # `Move` may not always reset (e.g., local var still in use after)
