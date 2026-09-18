@@ -287,7 +287,7 @@ suite "Continuation scheduling test suite":
         fut1 = first(trace)
         fut2 = second(trace, fut1)
         res = await race(fut1, fut2)
-      if res == FutureBase(fut1):
+      if FutureBase(res) == FutureBase(fut1):
         trace[].add "race: first"
       else:
         trace[].add "race: second"

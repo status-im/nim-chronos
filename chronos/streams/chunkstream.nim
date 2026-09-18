@@ -241,10 +241,7 @@ proc write(
   except AsyncStreamError as exc:
     wstream.setErrorAndRaise(exc)
   finally:
-    try:
-      wstream.lock.release()
-    except AsyncLockError:
-      raiseAssert "just locked"
+    wstream.lock.release2()
 
 proc finish(
     wstream: ChunkedStreamWriter,

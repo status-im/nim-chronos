@@ -65,7 +65,9 @@ type
     finishAt*: Moment
     function*: AsyncCallback
 
-  TrackerBase* = ref object of RootRef
+  # deprecation in 3.2.1 missed this type which still is referenced in libp2p as
+  # of 4.4.1 - remove this type in 5.x
+  TrackerBase* {.deprecated: "Use `TracerCounter` instead".} = ref object of RootRef
     id*: string
     dump*: proc(): string {.gcsafe, raises: [].}
     isLeaked*: proc(): bool {.gcsafe, raises: [].}
@@ -74,12 +76,13 @@ type
     opened*: uint64
     closed*: uint64
 
+  TrackerCounters* = Table[string, TrackerCounter]
+
   DispatcherBase = object of RootRef
     timers*: HeapQueue[TimerCallback]
     callbacks*: Deque[AsyncCallback]
     idlers*: Deque[AsyncCallback]
     ticks*: Deque[AsyncCallback]
-    trackers*: Table[string, TrackerBase]
     counters*: Table[string, TrackerCounter]
     inEventLoop: bool
     numImmediate*: int
@@ -116,6 +119,23 @@ template preparePoll(loop: PDispatcherBase) =
   loop.inEventLoop = true
   defer: loop.inEventLoop = false
 
+proc resetBaseDispatcher(loop: PDispatcherBase) {.gcsafe, raises: [].} =
+  ## Release the state that `loop` holds, leaving it unusable.
+  when hasThreadSupport:
+    # Nodes belong to the queue once pushed, so they are released one by one,
+    # as `processThreadCallbacks` does once it has run them.
+    while true:
+      let node = loop.threadCallbacks.pop()
+      if node == nil:
+        break
+      deallocShared(node)
+
+  loop.timers.reset()
+  loop.callbacks.reset()
+  loop.idlers.reset()
+  loop.ticks.reset()
+  loop.counters.reset()
+
 template processThreadCallbacks(loop) =
   # Drain cross-thread callbacks to the local callback queue
   when hasThreadSupport:
@@ -135,7 +155,7 @@ template processThreadCallbacks(loop) =
       )
       deallocShared(node)
 
-func getAsyncTimestamp*(a: Duration): auto {.inline.} =
+func getAsyncTimestamp(a: Duration): auto =
   ## Return rounded up value of duration with milliseconds resolution.
   ##
   ## This function also take care on int32 overflow, because Linux and Windows
@@ -249,7 +269,7 @@ when defined(nimdoc):
     ## Perform single asynchronous step, processing timers and completing
     ## tasks. Blocks until at least one event has completed.
     ##
-    ## Exceptions raised during `async` task exection are stored as outcome
+    ## Exceptions raised during `async` task exception are stored as outcome
     ## in the corresponding `Future` - `poll` itself does not raise.
 
   proc register2*(fd: AsyncFD): Result[void, OSErrorCode] = discard
@@ -263,6 +283,7 @@ when defined(nimdoc):
   proc closeHandle*(fd: AsyncFD, aftercb: CallbackFunc = nil) = discard
   proc closeSocket*(fd: AsyncFD, aftercb: CallbackFunc = nil) = discard
   proc unregisterAndCloseFd*(fd: AsyncFD): Result[void, OSErrorCode] = discard
+  proc closeDispatcher*(loop: PDispatcher): Opt[string] = discard
   proc contains*(disp: PDispatcher, fd: AsyncFD): bool = discard
 
   proc `==`*(x: AsyncFD, y: AsyncFD): bool {.borrow, gcsafe.}
@@ -400,7 +421,6 @@ elif defined(windows):
       callbacks: initDeque[AsyncCallback](64),
       idlers: initDeque[AsyncCallback](),
       ticks: initDeque[AsyncCallback](),
-      trackers: initTable[string, TrackerBase](),
       counters: initTable[string, TrackerCounter](),
     )
     when not chronosStrictReentrancy:
@@ -717,11 +737,11 @@ elif defined(windows):
         var customOverlapped = PtrCustomOverlapped(events[i].lpOverlapped)
         customOverlapped.data.errCode =
           block:
-            let res = cast[uint64](customOverlapped.internal)
-            if res == 0'u64:
+            let res = cast[uint](customOverlapped.internal)
+            if res == 0'u:
               OSErrorCode(-1)
             else:
-              OSErrorCode(rtlNtStatusToDosError(res))
+              OSErrorCode(rtlNtStatusToDosError(ULONG(res)))
         customOverlapped.data.bytesCount = events[i].dwNumberOfBytesTransferred
         let acb = AsyncCallback(function: customOverlapped.data.cb,
                                 udata: cast[pointer](customOverlapped))
@@ -779,6 +799,76 @@ elif defined(windows):
 
     if not(isNil(aftercb)):
       loop.callbacks.addLast(AsyncCallback(function: aftercb))
+
+  proc assertNoEvents(loop: PDispatcher) =
+    ## Raise a `Defect` when events carrying work are waiting in loop's I/O
+    ## completion port.
+    ##
+    ## A completion port cannot be examined without dequeuing, so the events
+    ## are discarded - only call this right before closing the port.
+    if isNil(loop.getQueuedCompletionStatusEx):
+      return
+
+    var
+      events: array[MaxEventsCount, osdefs.OVERLAPPED_ENTRY]
+      eventsReceived = ULONG(0)
+    let res = loop.getQueuedCompletionStatusEx(
+      loop.ioPort, addr events[0], ULONG(len(events)), eventsReceived,
+      DWORD(0), WINBOOL(0))
+    if res == FALSE:
+      let errCode = osLastError()
+      if uint32(errCode) != WAIT_TIMEOUT:
+        raiseOsDefect(errCode, "assertNoEvents(): Unable to get OS events")
+      return
+
+    # Entries without an overlapped are the wake-ups posted by `wake()` when a
+    # callback is scheduled from another thread - `poll` skips them too, as
+    # they carry no work of their own.
+    var pending = 0
+    for index in 0 ..< int(eventsReceived):
+      if not(isNil(events[index].lpOverlapped)):
+        inc(pending)
+
+    doAssert pending == 0,
+             "closeDispatcher(): the completion port still has " & $pending &
+             " event(s) waiting to be processed - all operations must have " &
+             "completed or been cancelled before closing"
+
+  proc isEmpty(loop: PDispatcher): bool =
+    ## Returns `true` when no handle is registered in the dispatcher - the
+    ## counterpart of `Selector.isEmpty` on posix. Waitables, ie signals and
+    ## processes, are not tracked, so they go unnoticed here.
+    len(loop.handles) == 0
+
+  proc closeDispatcher*(loop: PDispatcher): Opt[string] =
+    ## Release the resources held by `loop`, ie its completion port.
+    ##
+    ## The port is released even when its handle fails to close - in that case
+    ## a diagnostic describing the failure is returned.
+    ##
+    ## Closing the completion port loses every overlapped operation queued to
+    ## it - the memory backing those operations can no longer be reclaimed -
+    ## so a `Defect` is raised when an event is still waiting to be processed,
+    ## or when a handle is still registered, as its `posix` counterpart does
+    ## for the selector.
+    doAssert loop.isEmpty(),
+             "closeDispatcher(): the dispatcher still has " &
+             $len(loop.handles) & " handle(s) registered - all streams " &
+             "must have been closed before closing"
+
+    loop.assertNoEvents()
+
+    var diagnostic = Opt.none(string)
+
+    if closeFd(loop.ioPort) != 0:
+      diagnostic = Opt.some("Unable to close completion port: " &
+                            osErrorMsg(osLastError()))
+
+    # Reset regardless of whether the dispatcher closed cleanly: the diagnostic
+    # is not retryable, so nobody would come back to release this state.
+    loop.resetBaseDispatcher()
+
+    diagnostic
 
   proc unregisterAndCloseFd*(fd: AsyncFD): Result[void, OSErrorCode] =
     ## Unregister from system queue and close asynchronous socket.
@@ -840,7 +930,6 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
       callbacks: initDeque[AsyncCallback](chronosInitialSize),
       idlers: initDeque[AsyncCallback](),
       keys: newSeq[ReadyKey](chronosInitialSize),
-      trackers: initTable[string, TrackerBase](),
       counters: initTable[string, TrackerCounter](),
     )
 
@@ -1051,6 +1140,62 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     ## You can execute ``aftercb`` before actual socket close operation.
     closeSocket(fd, aftercb)
 
+  proc isEmpty(loop: PDispatcher): bool =
+    ## Returns `true` when no descriptor is registered in the dispatcher, ie in
+    ## its selector - signals and processes are registered there too.
+    loop.selector.isEmpty()
+
+  proc closeDispatcher*(loop: PDispatcher): Opt[string] =
+    ## Release the resources held by `loop`, ie the selector associated with
+    ## the current thread's dispatcher and its wake-up descriptor.
+    ##
+    ## The selector state is released even when its descriptor fails to close -
+    ## in that case a diagnostic describing the failure is returned.
+    ##
+    ## Closing a selector that still has descriptors registered orphans them:
+    ## they are never closed and their pending operations never complete - so a
+    ## `Defect` is raised when any is left.
+
+    # The wake-up descriptor belongs to the dispatcher rather than to the
+    # application, so it is unregistered before the check below instead of
+    # counting as leftover.
+    let unregistered =
+      loop.selector.unregister2(
+        when hasEventFd: loop.wakeupFd else: loop.wakeupFd[1])
+
+    # Skipped when our own entry could not be removed, since the check would
+    # then blame the application for a descriptor it does not own.
+    doAssert unregistered.isErr() or loop.isEmpty(),
+             "closeDispatcher(): the selector still has descriptors " &
+             "registered - all streams must have been closed before closing"
+
+    var diagnostic = Opt.none(string)
+
+    unregistered.isOkOr:
+      diagnostic = Opt.some("Unable to unregister wake-up descriptor: " &
+                            osErrorMsg(error) & " (code: " & $int(error) & ")")
+
+    when hasEventFd:
+      if closeFd(loop.wakeupFd) != 0 and diagnostic.isNone():
+        diagnostic = Opt.some("Unable to close wake-up descriptor: " &
+                              osErrorMsg(osLastError()))
+    else:
+      for fd in loop.wakeupFd:
+        if closeFd(fd) != 0 and diagnostic.isNone():
+          diagnostic = Opt.some("Unable to close wake-up descriptor: " &
+                                osErrorMsg(osLastError()))
+
+    loop.selector.close2().isOkOr:
+      if diagnostic.isNone():
+        diagnostic = Opt.some("Unable to close selector: " & osErrorMsg(error) &
+                              " (code: " & $int(error) & ")")
+
+    # Reset regardless of whether the dispatcher closed cleanly: the diagnostic
+    # is not retryable, so nobody would come back to release this state.
+    loop.resetBaseDispatcher()
+
+    diagnostic
+
   when chronosEventEngine in ["epoll", "kqueue"]:
     type
       ProcessHandle* = distinct int
@@ -1172,13 +1317,13 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
       let events = loop.keys[i].events
 
       withData(loop.selector, cint(fd), adata) do:
-        if (Event.Read in events) or (events == {Event.Error}):
+        if {Event.Read, Event.Error} * events != {}:
           if not isNil(adata.reader.function):
             loop.callbacks.addLast(adata.reader)
           else:
             hasWakeup = true
 
-        if (Event.Write in events) or (events == {Event.Error}):
+        if {Event.Write, Event.Error} * events != {}:
           if not isNil(adata.writer.function):
             loop.callbacks.addLast(adata.writer)
 
@@ -1247,13 +1392,24 @@ proc getThreadDispatcher*(): PDispatcher =
     setThreadDispatcher(newDispatcher())
   gDisp
 
-proc setGlobalDispatcher*(disp: PDispatcher) {.
-      gcsafe, deprecated: "Use setThreadDispatcher() instead".} =
-  setThreadDispatcher(disp)
+proc closeThreadDispatcher*(): Opt[string] =
+  ## Close the current thread's dispatcher, releasing its resources and leaving
+  ## the thread without one - a new dispatcher is created on next use. Closing
+  ## a thread that never had one does nothing.
+  ##
+  ## Like `close(2)`, the resources are released unconditionally: the return
+  ## value is a diagnostic, not something to retry.
+  ##
+  ## Closing while futures are pending or handles are open is undefined
+  ## behaviour - a `Defect` is raised for the work the dispatcher knows about,
+  ## but operations the OS queue has not reported yet go undetected.
+  if isNil(gDisp):
+    return Opt.none(string)
 
-proc getGlobalDispatcher*(): PDispatcher {.
-      gcsafe, deprecated: "Use getThreadDispatcher() instead".} =
-  getThreadDispatcher()
+  # Detach before closing so that a second call cannot release the same twice.
+  let disp = move(gDisp)
+
+  disp.closeDispatcher()
 
 proc setTimer*(at: Moment, cb: CallbackFunc,
                udata: pointer = nil): TimerCallback =
@@ -1429,33 +1585,33 @@ proc runForever*() =
   while true:
     poll()
 
-proc addTracker*[T](id: string, tracker: T) {.
-     deprecated: "Please use trackCounter facility instead".} =
-  ## Add new ``tracker`` object to current thread dispatcher with identifier
-  ## ``id``.
-  getThreadDispatcher().trackers[id] = tracker
-
-proc getTracker*(id: string): TrackerBase {.
-     deprecated: "Please use getTrackerCounter() instead".} =
-  ## Get ``tracker`` from current thread dispatcher using identifier ``id``.
-  getThreadDispatcher().trackers.getOrDefault(id, nil)
-
-proc trackCounter*(name: string) {.noinit.} =
+proc trackCounter*(name: string) =
   ## Increase tracker counter with name ``name`` by 1.
   let tracker = TrackerCounter(opened: 0'u64, closed: 0'u64)
   inc(getThreadDispatcher().counters.mgetOrPut(name, tracker).opened)
 
-proc untrackCounter*(name: string) {.noinit.} =
+proc untrackCounter*(name: string) =
   ## Decrease tracker counter with name ``name`` by 1.
   let tracker = TrackerCounter(opened: 0'u64, closed: 0'u64)
   inc(getThreadDispatcher().counters.mgetOrPut(name, tracker).closed)
 
-proc getTrackerCounter*(name: string): TrackerCounter {.noinit.} =
+proc getTrackerCounter*(name: string): TrackerCounter =
   ## Return value of counter with name ``name``.
   let tracker = TrackerCounter(opened: 0'u64, closed: 0'u64)
-  getThreadDispatcher().counters.getOrDefault(name, tracker)
+  if gDisp.isNil():
+    TrackerCounter()
+  else:
+    gDisp.counters.getOrDefault(name, tracker)
 
-proc isCounterLeaked*(name: string): bool {.noinit.} =
+proc getTrackerCounters*(): TrackerCounters =
+  ## Take a snapshot of the current tracker counter state, so it can be compared
+  ## with a later state.
+  if gDisp.isNil():
+    default(TrackerCounters)
+  else:
+    gDisp.counters
+
+proc isCounterLeaked*(name: string): bool =
   ## Returns ``true`` if leak is detected, number of `opened` not equal to
   ## number of `closed` requests.
   let tracker = TrackerCounter(opened: 0'u64, closed: 0'u64)

@@ -14,6 +14,7 @@ import
     testaddress, testdatagram, teststream, testserver, testbugs, testnet,
     testasyncstream, testhttpserver, testshttpserver, testhttpclient,
     testratelimit, testfutures, testthreadsync, testasyncsemaphore, testmpsc,
+    testdispatcher,
   ]
 
 when (chronosEventEngine in ["epoll", "kqueue"]) or defined(windows):

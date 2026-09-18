@@ -11,8 +11,10 @@ import ../chronos, ../chronos/unittest2/asynctests
 {.used.}
 
 suite "AsyncSemaphore":
+  setup:
+    let counters = getTrackerCounters()
   teardown:
-    checkLeaks()
+    checkLeaks(counters)
 
   asyncTest "default size":
     let sema = newAsyncSemaphore()
@@ -55,6 +57,8 @@ suite "AsyncSemaphore":
 
     expect AsyncSemaphoreError: # should not release
       sema.release() 
+    expect Defect: # should not release
+      sema.release2()
 
   asyncTest "double release":
     let sema = newAsyncSemaphore(3)
@@ -63,6 +67,8 @@ suite "AsyncSemaphore":
     sema.release()
     expect AsyncSemaphoreError: # should not release
       sema.release() 
+    expect Defect: # should not release
+      sema.release2()
 
   asyncTest "should queue acquire":
     let sema = newAsyncSemaphore(1)

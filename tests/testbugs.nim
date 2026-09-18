@@ -10,9 +10,64 @@ import ../chronos, ../chronos/unittest2/asynctests
 
 when defined(posix):
   import stew/ptrops
-  import ../chronos/[config, osdefs, osutils]
+  import ../chronos/[config, osdefs, osutils], ../chronos/unittest2/asynctests
+
+when defined(windows):
+  import ../chronos/osdefs
 
 {.used.}
+
+when defined(windows):
+  proc stackMark(): uint {.noinline.} =
+    var probe = 0'u8
+    cast[uint](addr probe)
+
+  suite "Windows API declaration test suite":
+    test "RtlNtStatusToDosError() argument width":
+      # `RtlNtStatusToDosError()` is `__stdcall`, so the callee pops the
+      # arguments. Declaring its `NTSTATUS` parameter wider than 32 bits makes
+      # the compiler push more bytes than `ntdll` removes, which displaces the
+      # stack pointer by the difference on every call. On 32-bit Windows that
+      # desynchronises `poll()`, which calls this for every completion carrying
+      # a non-zero status.
+      #
+      # Measure the stack pointer across the calls instead of waiting for the
+      # drift to become fatal: without a frame pointer it corrupts the caller's
+      # frame immediately, but with one (`-d:debug`) it only misaligns the stack
+      # and the crash surfaces later, in an unrelated callee.
+      const
+        StatusConnectionReset = 0xC000020D'u32
+        ErrorNetnameDeleted = 64'u32
+        Iterations = 8'u32
+
+      var total = 0'u32
+      let before = stackMark()
+      for _ in 0 ..< Iterations:
+        total += rtlNtStatusToDosError(ULONG(StatusConnectionReset))
+      let after = stackMark()
+
+      check:
+        total == Iterations * ErrorNetnameDeleted
+        after == before
+
+    test "wcschr() calling convention":
+      # `wcschr()` uses the C calling convention, where the caller removes the
+      # arguments. Declaring it `stdcall` leaves two arguments on the stack on
+      # 32-bit Windows after every call and makes `getProcessEnvironment()`
+      # crash in optimized builds.
+      const Iterations = 8
+      var
+        value = [WCHAR(0x0041), WCHAR(0x0042), WCHAR(0x0000)]
+        found: LPWSTR
+
+      let before = stackMark()
+      for _ in 0 ..< Iterations:
+        found = wcschr(addr value[0], WCHAR(0x0000))
+      let after = stackMark()
+
+      check:
+        found == addr value[2]
+        after == before
 
 suite "Asynchronous issues test suite":
   const HELLO_PORT = 45679
@@ -141,24 +196,82 @@ suite "Asynchronous issues test suite":
         setDescriptorBlocking(sockets[0], false).isOk()
         setDescriptorBlocking(sockets[1], false).isOk()
 
-      # Ensure {Event.Write} is set
-      let
-        transp = fromPipe(AsyncFD(sockets[0]), bufferSize = 4096)
-        writeFut = transp.write(newSeq[byte](8 * 1024 * 1024))
-      await sleepAsync(50.milliseconds)
+      # Ensure {Event.Read} and {Event.Error} (EOF) are set
+      var b = 42.byte
+      check:
+        handleEintr(osdefs.write(sockets[1], addr b, 1)) == 1
+        osdefs.shutdown(SocketHandle(sockets[1]), SHUT_WR) == 0
+
+      # Avoid {Event.Write} being set, by filling up the send buffer
+      var buf: array[65536, byte]
+      while handleEintr(osdefs.write(sockets[0], baseAddr buf, buf.len)) > 0:
+        discard
+
+      func setFlag(udata: pointer) =
+        let flag = cast[ptr bool](udata)
+        flag[] = true
+
+      var readerFlag, writerFlag: bool
+      check:
+        register2(AsyncFD(sockets[0])).isOk()
+        addReader2(AsyncFD(sockets[0]), setFlag, addr readerFlag).isOk()
+        addWriter2(AsyncFD(sockets[0]), setFlag, addr writerFlag).isOk()
+      await sleepAsync(0.seconds)
+      check:
+        readerFlag and writerFlag
+        unregister2(AsyncFD(sockets[0])).isOk()
+
+      discard osdefs.close(sockets[0])
+      when chronosEventEngine != "poll":
+        discard osdefs.close(sockets[1])
+
+    template runDuplicateReadEventTest(numReadBytes, numWriteBytes: int) =
+      var sockets: array[2, cint]
+      check:
+        socketpair(osdefs.AF_UNIX, osdefs.SOCK_STREAM, 0, sockets) == 0
+        setDescriptorBlocking(sockets[0], false).isOk()
+        setDescriptorBlocking(sockets[1], false).isOk()
+
+      let transp = fromPipe(AsyncFD(sockets[0]))
+
+      # Fill up the send buffer so subsequent write suspends
+      var buf: array[65536, byte]
+      while handleEintr(osdefs.write(sockets[0], baseAddr buf, buf.len)) > 0:
+        discard
+      let writeFut = transp.write(@[123.byte])
       check not(writeFut.finished())
 
-      # Ensure {Event.Read} is set
-      var b: byte
-      let readFut = transp.readOnce(addr b, 1)
-      await sleepAsync(50.milliseconds)
+      # Register read task
+      var readBuf = newSeq[byte](numReadBytes)
+      let readFut = transp.readOnce(baseAddr readBuf, readBuf.len)
       check not(readFut.finished())
 
-      # Fill read buffer, and ensure {Event.Error} (EOF) is set
-      while handleEintr(osdefs.write(sockets[1], addr b, 1)) > 0:
-        discard
+      # Complete read task
+      var writeBuf = newSeq[byte](numWriteBytes)
+      for i in 0 ..< numWriteBytes:
+        writeBuf[i] = 42
+      check handleEintr(osdefs.write(
+        sockets[1], baseAddr writeBuf, writeBuf.len)) == numWriteBytes
+
+      # Complete write task (EOF)
+      check osdefs.shutdown(SocketHandle(sockets[0]), SHUT_WR) == 0
+
+      await sleepAsync(0.seconds)
       check:
+        (await readFut) == min(numReadBytes, numWriteBytes)
+        readBuf[0] == 42.byte
+
+      transp.close()
+      await transp.join()
+      check:
+        writeFut.finished()
         osdefs.close(sockets[1]) == 0
-        (await readFut) == 1
-      await writeFut.cancelAndWait()
-      await transp.closeWait()
+
+    asyncTest "Duplicate read event, direct read [poll()] test":
+      runDuplicateReadEventTest(2 * DefaultStreamBufferSize, 1)
+
+    asyncTest "Duplicate read event, partial buffer [poll()] test":
+      runDuplicateReadEventTest(1, 1)
+
+    asyncTest "Duplicate read event, full buffer [poll()] test":
+      runDuplicateReadEventTest(1, DefaultStreamBufferSize)
