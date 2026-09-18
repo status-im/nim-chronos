@@ -9,9 +9,8 @@
 
 {.push raises: [].}
 
-template take*[T](x: var T): T =
-  block:
-    let res = move(x)
-    when T is ref:
-      doAssert x == nil
-    res
+proc take*[T](x: var T): T =
+  let res = move(x)
+  when T is ref:
+    doAssert x == nil
+  res
