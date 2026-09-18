@@ -581,11 +581,6 @@ template checkWriteEof*(t: untyped, future: untyped) =
                              "Transport connection is already dropped!"))
     return future
 
-template getError*(t: untyped): ref TransportError =
-  var err = (t).error
-  (t).error = nil
-  err
-
 template getServerUseClosedError*(): ref TransportUseClosedError =
   newException(TransportUseClosedError, "Server is already closed!")
 
