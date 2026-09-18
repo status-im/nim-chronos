@@ -75,8 +75,10 @@ N8r5CwGcIX/XPC3lKazzbZ8baA==
 
 
 suite "Secure HTTP server testing suite":
+  setup:
+    let counters = getTrackerCounters()
   teardown:
-    checkLeaks()
+    checkLeaks(counters)
 
   proc httpsClient(address: TransportAddress,
                    data: string, flags = {NoVerifyHost, NoVerifyServerName}

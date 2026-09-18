@@ -174,8 +174,10 @@ proc createBigMessage(message: string, size: int): seq[byte] =
   res
 
 suite "AsyncStream/StreamTransport":
+  setup:
+    let counters = getTrackerCounters()
   teardown:
-    checkLeaks()
+    checkLeaks(counters)
 
   asyncTest "readExactly":
     proc serveClient(server: StreamServer,
@@ -377,8 +379,10 @@ suite "AsyncStream/StreamTransport":
     check res == len(messages)
 
 suite "AsyncStream/ChunkedStream":
+  setup:
+    let counters = getTrackerCounters()
   teardown:
-    checkLeaks()
+    checkLeaks(counters)
 
   asyncTest "readExactly":
     proc serveClient(server: StreamServer,
@@ -948,8 +952,10 @@ suite "AsyncStream/ChunkedStream":
     check await(testChunk(767309, 67000, 67001)) == true
 
 suite "AsyncStream/TLSStream":
+  setup:
+    let counters = getTrackerCounters()
   teardown:
-    checkLeaks()
+    checkLeaks(counters)
 
   asyncTest "Simple server with RSA self-signed certificate":
     let key = TLSPrivateKey.init(SelfSignedRsaKey)
@@ -1376,8 +1382,10 @@ suite "AsyncStream/TLSStream":
     check string.fromBytes(res) == "h2\r\n"
 
 suite "AsyncStream/BoundedStream":
+  setup:
+    let counters = getTrackerCounters()
   teardown:
-    checkLeaks()
+    checkLeaks(counters)
 
   type
     BoundarySizeTest = enum

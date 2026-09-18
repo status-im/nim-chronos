@@ -40,8 +40,10 @@ suite "Stream Transport test suite":
       doAssert getCurrentFD() == markFD
       skip()
 
+  setup:
+    let counters = getTrackerCounters()
   teardown:
-    checkLeaks()
+    checkLeaks(counters)
 
   const
     ConstantMessage = "SOMEDATA"
