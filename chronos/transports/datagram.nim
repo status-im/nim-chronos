@@ -138,6 +138,9 @@ when defined(linux):
         break
       cmsg = CMSG_NXTHDR(addr msg, cmsg)
 
+    if ServerFlags.V4Mapped in transp.flags and transp.rlocal.isV4Mapped():
+      transp.rlocal = transp.rlocal.toIPv4()
+
 proc getRemoteAddress(transp: DatagramTransport,
                       address: Sockaddr_storage, length: SockLen,
                      ): TransportAddress =
@@ -695,7 +698,16 @@ else:
 
     when defined(linux):
       if ServerFlags.PacketInfo in flags:
-        case local.family
+        let packetInfoFamily =
+          if local.family != AddressFamily.None:
+            local.family
+          else:
+            getDomain(localSock).valueOr:
+              if sock == asyncInvalidSocket:
+                closeSocket(localSock)
+              raiseTransportOsError(error)
+              return
+        case packetInfoFamily
         of AddressFamily.IPv4:
           setSockOpt2(localSock, osdefs.IPPROTO_IP, IP_PKTINFO, 1).isOkOr:
             if sock == asyncInvalidSocket:
