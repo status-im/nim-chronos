@@ -107,7 +107,7 @@ when defined(linux):
     if result < 0:
       return
 
-    if transp.local.family == AddressFamily.None:
+    if transp.local.family == AddressFamily.None or transp.local.port == Port(0):
       var
         boundAddress: Sockaddr_storage
         boundAddrLen = SockLen(sizeof(boundAddress))
@@ -117,13 +117,14 @@ when defined(linux):
         return
       fromSAddr(addr boundAddress, boundAddrLen, transp.local)
     transp.rlocal = transp.local
+    let boundPort = transp.local.port
 
     var cmsg = CMSG_FIRSTHDR(addr msg)
     while not cmsg.isNil:
       if cmsg.cmsg_level == osdefs.IPPROTO_IP and cmsg.cmsg_type == IP_PKTINFO:
         let info = cast[ptr InPktInfo](CMSG_DATA(cmsg))
         transp.rlocal = TransportAddress(family: AddressFamily.IPv4,
-                                         port: transp.rlocal.port)
+                                         port: boundPort)
         copyMem(addr transp.rlocal.address_v4[0], addr info.ipi_addr,
                 transp.rlocal.address_v4.len)
         break
@@ -131,7 +132,7 @@ when defined(linux):
           cmsg.cmsg_type == IPV6_PKTINFO:
         let info = cast[ptr In6PktInfo](CMSG_DATA(cmsg))
         transp.rlocal = TransportAddress(family: AddressFamily.IPv6,
-                                         port: transp.rlocal.port)
+                                         port: boundPort)
         copyMem(addr transp.rlocal.address_v6[0], addr info.ipi6_addr,
                 transp.rlocal.address_v6.len)
         break
