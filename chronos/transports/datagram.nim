@@ -99,8 +99,8 @@ when defined(linux):
         msg_iov: addr iov,
         msg_iovlen: 1,
         msg_control: addr control.data[0],
-        msg_controllen: control.data.len.csize_t,
       )
+    msg.msg_controllen = typeof(msg.msg_controllen)(control.data.len)
 
     result = osdefs.recvmsg(fd, addr msg, 0)
     transp.ralen = msg.msg_namelen
