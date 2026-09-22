@@ -1556,7 +1556,7 @@ when defined(posix):
     INVALID_HANDLE_VALUE* = cint(-1)
 
 proc `==`*(x: SocketHandle, y: int): bool = int(x) == y
-when defined(nimdoc):
+when defined(nimdoc) and not defined(windows):
   proc `==`*(x: SocketHandle, y: SocketHandle): bool {.borrow.}
 
 when defined(macosx) or defined(macos) or defined(bsd):
