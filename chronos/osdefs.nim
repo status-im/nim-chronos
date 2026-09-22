@@ -226,6 +226,10 @@ when defined(windows):
       GUID(D1: 0xf689d7c8'u32, D2: 0x6f1f'u16, D3: 0x436b'u16,
            D4: [0x8a'u8, 0x53'u8, 0xe5'u8, 0x4f'u8,
                 0xe3'u8, 0x51'u8, 0xc3'u8, 0x22'u8])
+    WSAID_WSASENDMSG* =
+      GUID(D1: 0xa441e712'u32, D2: 0x754f'u16, D3: 0x43ca'u16,
+           D4: [0x84'u8, 0xa7'u8, 0x0d'u8, 0xee'u8,
+                0x44'u8, 0xcf'u8, 0x60'u8, 0x6d'u8])
     WSAID_CONNECTEX* =
       GUID(D1: 0x25a207b9'u32, D2: 0xddf3'u16, D3: 0x4660'u16,
            D4: [0x8e'u8, 0xe9'u8, 0x76'u8, 0xe5'u8,
@@ -349,6 +353,11 @@ when defined(windows):
       overlapped: POVERLAPPED, completionProc: POVERLAPPED_COMPLETION_ROUTINE
     ): cint {.stdcall, gcsafe, raises: [].}
 
+    LPFN_WSASENDMSG* = proc(
+      s: SocketHandle, msg: ptr WSAMSG, flags: DWORD,
+      bytesSent: PDWORD, overlapped: POVERLAPPED,
+      completionProc: POVERLAPPED_COMPLETION_ROUTINE
+    ): cint {.stdcall, gcsafe, raises: [].}
     PHANDLER_ROUTINE* = proc (dwCtrlType: DWORD): WINBOOL {.
       stdcall, gcsafe, raises: [].}
 
