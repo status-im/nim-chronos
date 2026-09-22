@@ -12,6 +12,7 @@
 import std/deques
 import results
 when not(defined(windows)): import ".."/selectors2
+when defined(linux): import std/posix
 import ".."/[asyncloop, osdefs, oserrno, osutils, handles, take]
 import "."/[common, ipnet]
 import stew/ptrops
@@ -51,6 +52,7 @@ type
     future: Future[void].Raising([]) # Transport's life future
     raddr: Sockaddr_storage         # Reader address storage
     ralen: SockLen                  # Reader address length
+    rlocal: TransportAddress        # Destination address of the last datagram
     waddr: Sockaddr_storage         # Writer address storage
     walen: SockLen                  # Writer address length
     when defined(windows):
@@ -62,6 +64,78 @@ type
 
 const
   DgramTransportTrackerName* = "datagram.transport"
+
+when defined(linux):
+  type
+    InPktInfo {.importc: "struct in_pktinfo", header: "<netinet/in.h>", bycopy.} =
+      object
+        ipi_ifindex: cint
+        ipi_spec_dst: InAddr
+        ipi_addr: InAddr
+
+    In6PktInfo {.importc: "struct in6_pktinfo", header: "<netinet/in.h>", bycopy.} =
+      object
+        ipi6_addr: In6Addr
+        ipi6_ifindex: cuint
+
+    ControlBuffer {.union.} = object
+      alignment: clong
+      data: array[128, byte]
+
+  var
+    IP_PKTINFO {.importc, header: "<netinet/in.h>".}: cint
+    IPV6_RECVPKTINFO {.importc, header: "<netinet/in.h>".}: cint
+    IPV6_PKTINFO {.importc, header: "<netinet/in.h>".}: cint
+
+  proc receiveDatagram(
+      transp: DatagramTransport, fd: SocketHandle
+  ): int {.raises: [].} =
+    var
+      iov = IOVec(iov_base: baseAddr transp.buffer, iov_len: transp.buffer.len.csize_t)
+      control: ControlBuffer
+      msg = Tmsghdr(
+        msg_name: addr transp.raddr,
+        msg_namelen: SockLen(sizeof(Sockaddr_storage)),
+        msg_iov: addr iov,
+        msg_iovlen: 1,
+        msg_control: addr control.data[0],
+        msg_controllen: control.data.len.csize_t,
+      )
+
+    result = osdefs.recvmsg(fd, addr msg, 0)
+    transp.ralen = msg.msg_namelen
+    if result < 0:
+      return
+
+    if transp.local.family == AddressFamily.None:
+      var
+        boundAddress: Sockaddr_storage
+        boundAddrLen = SockLen(sizeof(boundAddress))
+      if getsockname(
+          fd, cast[ptr SockAddr](addr boundAddress), addr boundAddrLen
+      ) != 0:
+        return
+      fromSAddr(addr boundAddress, boundAddrLen, transp.local)
+    transp.rlocal = transp.local
+
+    var cmsg = CMSG_FIRSTHDR(addr msg)
+    while not cmsg.isNil:
+      if cmsg.cmsg_level == osdefs.IPPROTO_IP and cmsg.cmsg_type == IP_PKTINFO:
+        let info = cast[ptr InPktInfo](CMSG_DATA(cmsg))
+        transp.rlocal = TransportAddress(family: AddressFamily.IPv4,
+                                         port: transp.rlocal.port)
+        copyMem(addr transp.rlocal.address_v4[0], addr info.ipi_addr,
+                transp.rlocal.address_v4.len)
+        break
+      elif cmsg.cmsg_level == osdefs.IPPROTO_IPV6 and
+          cmsg.cmsg_type == IPV6_PKTINFO:
+        let info = cast[ptr In6PktInfo](CMSG_DATA(cmsg))
+        transp.rlocal = TransportAddress(family: AddressFamily.IPv6,
+                                         port: transp.rlocal.port)
+        copyMem(addr transp.rlocal.address_v6[0], addr info.ipi6_addr,
+                transp.rlocal.address_v6.len)
+        break
+      cmsg = CMSG_NXTHDR(addr msg, cmsg)
 
 proc getRemoteAddress(transp: DatagramTransport,
                       address: Sockaddr_storage, length: SockLen,
@@ -135,6 +209,15 @@ proc localAddress*(transp: DatagramTransport): TransportAddress {.
     raises: [TransportOsError].} =
   ## Returns ``transp`` remote socket address.
   localAddress2(transp).tryGet()
+
+proc receivedLocalAddress*(transp: DatagramTransport): TransportAddress {.
+    raises: [TransportOsError].} =
+  ## Returns the destination address of the current datagram when packet-info
+  ## capture is enabled, or the bound local address otherwise.
+  if transp.rlocal.family != AddressFamily.None:
+    transp.rlocal
+  else:
+    transp.localAddress()
 
 template setReadError(t, e: untyped) =
   (t).state.incl(ReadError)
@@ -451,10 +534,20 @@ else:
     else:
       while true:
         transp.ralen = SockLen(sizeof(Sockaddr_storage))
-        var res = osdefs.recvfrom(fd, baseAddr transp.buffer,
-                                  cint(len(transp.buffer)), cint(0),
-                                  cast[ptr SockAddr](addr transp.raddr),
-                                  addr transp.ralen)
+        var res =
+          when defined(linux):
+            if ServerFlags.PacketInfo in transp.flags:
+              transp.receiveDatagram(fd)
+            else:
+              osdefs.recvfrom(fd, baseAddr transp.buffer,
+                              cint(len(transp.buffer)), cint(0),
+                              cast[ptr SockAddr](addr transp.raddr),
+                              addr transp.ralen)
+          else:
+            osdefs.recvfrom(fd, baseAddr transp.buffer,
+                            cint(len(transp.buffer)), cint(0),
+                            cast[ptr SockAddr](addr transp.raddr),
+                            addr transp.ralen)
         if res >= 0:
           transp.buflen = res
           asyncSpawn transp.function(transp, transp.getRemoteAddress())
@@ -598,6 +691,22 @@ else:
     else:
       setDualstack(localSock, dualstack).isOkOr:
         raiseTransportOsError(error)
+
+    when defined(linux):
+      if ServerFlags.PacketInfo in flags:
+        case local.family
+        of AddressFamily.IPv4:
+          setSockOpt2(localSock, osdefs.IPPROTO_IP, IP_PKTINFO, 1).isOkOr:
+            if sock == asyncInvalidSocket:
+              closeSocket(localSock)
+            raiseTransportOsError(error)
+        of AddressFamily.IPv6:
+          setSockOpt2(localSock, osdefs.IPPROTO_IPV6, IPV6_RECVPKTINFO, 1).isOkOr:
+            if sock == asyncInvalidSocket:
+              closeSocket(localSock)
+            raiseTransportOsError(error)
+        else:
+          discard
 
     if local.family != AddressFamily.None:
       var saddr: Sockaddr_storage

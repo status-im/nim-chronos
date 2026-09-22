@@ -1014,6 +1014,43 @@ suite "Datagram Transport test suite":
           check fres.get() == AddressFamily.Unix
     else:
       skip()
+
+  asyncTest "[IP] PacketInfo reports the datagram destination address":
+    when defined(linux):
+      let received = newFuture[TransportAddress]()
+
+      proc receive(
+          transp: DatagramTransport, remote: TransportAddress
+      ): Future[void] {.async: (raises: []).} =
+        try:
+          discard transp.getMessage()
+          received.complete(transp.receivedLocalAddress())
+        except TransportError as exc:
+          received.fail(exc)
+
+      proc ignore(
+          transp: DatagramTransport, remote: TransportAddress
+      ): Future[void] {.async: (raises: []).} =
+        discard
+
+      let
+        server = newDatagramTransport(
+          receive,
+          local = initTAddress("0.0.0.0:0"),
+          flags = {ServerFlags.PacketInfo},
+        )
+        client = newDatagramTransport(ignore)
+      defer:
+        await allFutures(server.closeWait(), client.closeWait())
+
+      var destination = initTAddress("127.0.0.2:0")
+      destination.port = server.localAddress().port
+      await client.sendTo(destination, @[1.byte])
+
+      check (await received.wait(1.seconds)) == destination
+    else:
+      skip()
+
   asyncTest "[IP] DualStack [UDP] server [DualStackType.Auto] test":
     if isAvailable(AddressFamily.IPv4) and isAvailable(AddressFamily.IPv6):
       let serverAddress = initTAddress("[::]:0")
