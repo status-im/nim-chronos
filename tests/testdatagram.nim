@@ -1045,7 +1045,11 @@ suite "Datagram Transport test suite":
       defer:
         await allFutures(server.closeWait(), client.closeWait())
 
-      var destination = initTAddress("127.0.0.2:0")
+      var destination =
+        when defined(linux):
+          initTAddress("127.0.0.2:0")
+        else:
+          initTAddress("127.0.0.1:0")
       destination.port = server.localAddress().port
       await client.sendTo(destination, @[1.byte])
 
@@ -1098,7 +1102,11 @@ suite "Datagram Transport test suite":
       defer:
         await allFutures(server.closeWait(), client.closeWait())
 
-      var destination = initTAddress("127.0.0.2:0")
+      var destination =
+        when defined(linux):
+          initTAddress("127.0.0.2:0")
+        else:
+          initTAddress("127.0.0.1:0")
       destination.port = server.localAddress().port
       await client.sendTo(destination, @[1.byte])
 
