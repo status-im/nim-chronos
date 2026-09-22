@@ -12,7 +12,7 @@
 import std/deques
 import results
 when not(defined(windows)): import ".."/selectors2
-when defined(linux): import std/posix
+when defined(linux) or defined(macosx): import std/posix
 import ".."/[asyncloop, osdefs, oserrno, osutils, handles, take]
 import "."/[common, ipnet]
 import stew/ptrops
@@ -60,19 +60,19 @@ type
       wovl: CustomOverlapped          # Writer OVERLAPPED structure
       rflag: uint32                   # Reader flags storage
       rwsabuf: WSABUF                 # Reader WSABUF structure
+      rmsg: WSAMSG                    # Reader message structure
+      rcontrol: array[128, byte]       # Reader ancillary-data storage
+      wsaRecvMsg: LPFN_WSARECVMSG      # Packet-info receive function
       wwsabuf: WSABUF                 # Writer WSABUF structure
 
 const
   DgramTransportTrackerName* = "datagram.transport"
 
-when defined(linux):
-  type
-    InPktInfo {.importc: "struct in_pktinfo", header: "<netinet/in.h>", bycopy.} =
-      object
-        ipi_ifindex: cint
-        ipi_spec_dst: InAddr
-        ipi_addr: InAddr
+when defined(linux) or defined(macosx):
+  when defined(macosx):
+    {.passc: "-D__APPLE_USE_RFC_3542".}
 
+  type
     In6PktInfo {.importc: "struct in6_pktinfo", header: "<netinet/in.h>", bycopy.} =
       object
         ipi6_addr: In6Addr
@@ -82,8 +82,20 @@ when defined(linux):
       alignment: clong
       data: array[128, byte]
 
+  when defined(linux):
+    type
+      InPktInfo {.importc: "struct in_pktinfo", header: "<netinet/in.h>", bycopy.} =
+        object
+          ipi_ifindex: cint
+          ipi_spec_dst: InAddr
+          ipi_addr: InAddr
+
+  when defined(linux):
+    var IP_PKTINFO {.importc, header: "<netinet/in.h>".}: cint
+  else:
+    var IP_RECVDSTADDR {.importc, header: "<netinet/in.h>".}: cint
+
   var
-    IP_PKTINFO {.importc, header: "<netinet/in.h>".}: cint
     IPV6_RECVPKTINFO {.importc, header: "<netinet/in.h>".}: cint
     IPV6_PKTINFO {.importc, header: "<netinet/in.h>".}: cint
 
@@ -102,7 +114,10 @@ when defined(linux):
       )
     msg.msg_controllen = typeof(msg.msg_controllen)(control.data.len)
 
-    result = osdefs.recvmsg(fd, addr msg, 0)
+    result =
+      when defined(linux):
+        osdefs.recvmsg(fd, addr msg, 0)
+      else: posix.recvmsg(fd, addr msg, 0)
     transp.ralen = msg.msg_namelen
     if result < 0:
       return
@@ -121,14 +136,23 @@ when defined(linux):
 
     var cmsg = CMSG_FIRSTHDR(addr msg)
     while not cmsg.isNil:
-      if cmsg.cmsg_level == osdefs.IPPROTO_IP and cmsg.cmsg_type == IP_PKTINFO:
-        let info = cast[ptr InPktInfo](CMSG_DATA(cmsg))
-        transp.rlocal = TransportAddress(family: AddressFamily.IPv4,
-                                         port: boundPort)
-        copyMem(addr transp.rlocal.address_v4[0], addr info.ipi_addr,
-                transp.rlocal.address_v4.len)
-        break
-      elif cmsg.cmsg_level == osdefs.IPPROTO_IPV6 and
+      when defined(linux):
+        if cmsg.cmsg_level == osdefs.IPPROTO_IP and cmsg.cmsg_type == IP_PKTINFO:
+          let info = cast[ptr InPktInfo](CMSG_DATA(cmsg))
+          transp.rlocal = TransportAddress(family: AddressFamily.IPv4,
+                                           port: boundPort)
+          copyMem(addr transp.rlocal.address_v4[0], addr info.ipi_addr,
+                  transp.rlocal.address_v4.len)
+          break
+      else:
+        if cmsg.cmsg_level == osdefs.IPPROTO_IP and cmsg.cmsg_type == IP_RECVDSTADDR:
+          let destination = cast[ptr InAddr](CMSG_DATA(cmsg))
+          transp.rlocal = TransportAddress(family: AddressFamily.IPv4,
+                                           port: boundPort)
+          copyMem(addr transp.rlocal.address_v4[0], destination,
+                  transp.rlocal.address_v4.len)
+          break
+      if cmsg.cmsg_level == osdefs.IPPROTO_IPV6 and
           cmsg.cmsg_type == IPV6_PKTINFO:
         let info = cast[ptr In6PktInfo](CMSG_DATA(cmsg))
         transp.rlocal = TransportAddress(family: AddressFamily.IPv6,
@@ -228,6 +252,48 @@ template setReadError(t, e: untyped) =
   (t).error = getTransportOsError(e)
 
 when defined(windows):
+
+  func wsaCmsgAlign(value: uint): uint =
+    (value + uint(sizeof(uint) - 1)) and not uint(sizeof(uint) - 1)
+
+  proc updateReceivedLocalAddress(transp: DatagramTransport) =
+    if transp.localAddress2().isErr():
+      return
+
+    transp.rlocal = transp.local
+    let boundPort = transp.local.port
+
+    var
+      cursor = cast[uint](transp.rmsg.control.buf)
+      finish = cursor + uint(transp.rmsg.control.len)
+
+    while cursor + uint(sizeof(WSACMSGHDR)) <= finish:
+      let header = cast[ptr WSACMSGHDR](cursor)
+      if header.cmsg_len < uint(sizeof(WSACMSGHDR)) or
+          cursor + header.cmsg_len > finish:
+        break
+      let data = cast[pointer](cursor + wsaCmsgAlign(uint(sizeof(WSACMSGHDR))))
+
+      if header.cmsg_level == osdefs.IPPROTO_IP and
+          header.cmsg_type == osdefs.IP_PKTINFO:
+        let info = cast[ptr WinInPktInfo](data)
+        transp.rlocal =
+          TransportAddress(family: AddressFamily.IPv4, port: boundPort)
+        copyMem(addr transp.rlocal.address_v4[0], addr info.ipi_addr,
+                transp.rlocal.address_v4.len)
+        break
+      elif header.cmsg_level == osdefs.IPPROTO_IPV6 and
+          header.cmsg_type == osdefs.IPV6_PKTINFO:
+        let info = cast[ptr WinIn6PktInfo](data)
+        transp.rlocal =
+          TransportAddress(family: AddressFamily.IPv6, port: boundPort)
+        copyMem(addr transp.rlocal.address_v6[0], addr info.ipi6_addr,
+                transp.rlocal.address_v6.len)
+        break
+      cursor += wsaCmsgAlign(header.cmsg_len)
+
+    if ServerFlags.V4Mapped in transp.flags and transp.rlocal.isV4Mapped():
+      transp.rlocal = transp.rlocal.toIPv4()
   template setWriterWSABuffer(t, v: untyped) =
     (t).wwsabuf.buf = cast[cstring](v.buf)
     (t).wwsabuf.len = cast[ULONG](v.buflen)
@@ -306,12 +372,15 @@ when defined(windows):
       if ReadPending in transp.state:
         ## Continuation
         transp.state.excl(ReadPending)
-        let
-          err = transp.rovl.data.errCode
-          remoteAddress = transp.getRemoteAddress()
+        let err = transp.rovl.data.errCode
+        if ServerFlags.PacketInfo in transp.flags:
+          transp.ralen = SockLen(transp.rmsg.namelen)
+        let remoteAddress = transp.getRemoteAddress()
         case err
         of OSErrorCode(-1):
           transp.buflen = int(transp.rovl.data.bytesCount)
+          if ServerFlags.PacketInfo in transp.flags:
+            transp.updateReceivedLocalAddress()
           asyncSpawn transp.function(transp, remoteAddress)
         of ERROR_OPERATION_ABORTED:
           # CancelIO() interrupt or closeSocket() call.
@@ -335,11 +404,30 @@ when defined(windows):
           let fd = SocketHandle(transp.fd)
           transp.rflag = 0
           transp.ralen = SockLen(sizeof(Sockaddr_storage))
-          let ret = wsaRecvFrom(fd, addr transp.rwsabuf, DWORD(1),
-                                addr bytesCount, addr transp.rflag,
-                                cast[ptr SockAddr](addr transp.raddr),
-                                cast[ptr cint](addr transp.ralen),
-                                cast[POVERLAPPED](addr transp.rovl), nil)
+          let ret =
+            if ServerFlags.PacketInfo in transp.flags:
+              transp.rmsg = WSAMSG(
+                name: cast[ptr SockAddr](addr transp.raddr),
+                namelen: cint(transp.ralen),
+                lpBuffers: addr transp.rwsabuf,
+                dwBufferCount: DWORD(1),
+                control: WSABUF(
+                  len: ULONG(transp.rcontrol.len),
+                  buf: cast[cstring](addr transp.rcontrol[0]),
+                ),
+                dwFlags: 0,
+              )
+              transp.wsaRecvMsg(
+                fd, addr transp.rmsg, addr bytesCount,
+                cast[POVERLAPPED](addr transp.rovl), nil
+              )
+            else:
+              wsaRecvFrom(
+                fd, addr transp.rwsabuf, DWORD(1), addr bytesCount,
+                addr transp.rflag, cast[ptr SockAddr](addr transp.raddr),
+                cast[ptr cint](addr transp.ralen),
+                cast[POVERLAPPED](addr transp.rovl), nil
+              )
           if ret != 0:
             let err = osLastError()
             case err
@@ -449,6 +537,54 @@ when defined(windows):
       setDualstack(localSock, dualstack).isOkOr:
         raiseTransportOsError(error)
 
+    if ServerFlags.PacketInfo in flags:
+      let packetInfoFamily =
+        if local.family != AddressFamily.None:
+          local.family
+        else:
+          getDomain(localSock).valueOr:
+            if sock == asyncInvalidSocket:
+              closeSocket(localSock)
+            raiseTransportOsError(error)
+            return
+      case packetInfoFamily
+      of AddressFamily.IPv4:
+        setSockOpt2(localSock, osdefs.IPPROTO_IP, osdefs.IP_PKTINFO, 1).isOkOr:
+          if sock == asyncInvalidSocket:
+            closeSocket(localSock)
+          raiseTransportOsError(error)
+      of AddressFamily.IPv6:
+        setSockOpt2(
+          localSock, osdefs.IPPROTO_IPV6, osdefs.IPV6_PKTINFO, 1
+        ).isOkOr:
+          if sock == asyncInvalidSocket:
+            closeSocket(localSock)
+          raiseTransportOsError(error)
+        if localSock.getDualstack().get(false):
+          setSockOpt2(
+            localSock, osdefs.IPPROTO_IP, osdefs.IP_PKTINFO, 1
+          ).isOkOr:
+            if sock == asyncInvalidSocket:
+              closeSocket(localSock)
+            raiseTransportOsError(error)
+      else:
+        discard
+
+      var
+        extension: pointer
+        extensionBytesRet: DWORD
+        recvMsgGuid = osdefs.WSAID_WSARECVMSG
+      if wsaIoctl(
+          SocketHandle(localSock), osdefs.SIO_GET_EXTENSION_FUNCTION_POINTER,
+          addr recvMsgGuid, DWORD(sizeof(recvMsgGuid)), addr extension,
+          DWORD(sizeof(extension)), addr extensionBytesRet, nil, nil
+      ) != 0:
+        let err = osLastError()
+        if sock == asyncInvalidSocket:
+          closeSocket(localSock)
+        raiseTransportOsError(err)
+      res.wsaRecvMsg = cast[LPFN_WSARECVMSG](extension)
+
     ## Fix for Q263823.
     var bytesRet: DWORD
     var bval = WINBOOL(0)
@@ -539,7 +675,7 @@ else:
       while true:
         transp.ralen = SockLen(sizeof(Sockaddr_storage))
         var res =
-          when defined(linux):
+          when defined(linux) or defined(macosx):
             if ServerFlags.PacketInfo in transp.flags:
               transp.receiveDatagram(fd)
             else:
@@ -696,7 +832,7 @@ else:
       setDualstack(localSock, dualstack).isOkOr:
         raiseTransportOsError(error)
 
-    when defined(linux):
+    when defined(linux) or defined(macosx):
       if ServerFlags.PacketInfo in flags:
         let packetInfoFamily =
           if local.family != AddressFamily.None:
@@ -709,7 +845,12 @@ else:
               return
         case packetInfoFamily
         of AddressFamily.IPv4:
-          setSockOpt2(localSock, osdefs.IPPROTO_IP, IP_PKTINFO, 1).isOkOr:
+          let packetInfoOption =
+            when defined(linux):
+              IP_PKTINFO
+            else:
+              IP_RECVDSTADDR
+          setSockOpt2(localSock, osdefs.IPPROTO_IP, packetInfoOption, 1).isOkOr:
             if sock == asyncInvalidSocket:
               closeSocket(localSock)
             raiseTransportOsError(error)

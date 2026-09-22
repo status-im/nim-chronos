@@ -1018,7 +1018,7 @@ suite "Datagram Transport test suite":
       skip()
 
   asyncTest "[IP] PacketInfo reports the datagram destination address":
-    when defined(linux):
+    when defined(linux) or defined(macosx) or defined(windows):
       let received = newFuture[TransportAddress]()
 
       proc receive(
@@ -1054,7 +1054,7 @@ suite "Datagram Transport test suite":
       skip()
 
   asyncTest "[IP] PacketInfo detects the family of a supplied socket":
-    when defined(linux):
+    when defined(linux) or defined(macosx):
       let received = newFuture[TransportAddress]()
 
       proc receive(
@@ -1107,7 +1107,7 @@ suite "Datagram Transport test suite":
       skip()
 
   asyncTest "[IP] PacketInfo normalizes a dual-stack IPv4 destination":
-    when defined(linux):
+    when defined(linux) or defined(macosx) or defined(windows):
       let received = newFuture[tuple[local, remote: TransportAddress]]()
 
       proc receive(
