@@ -2550,7 +2550,7 @@ template readLoop(name, body: untyped): untyped =
     if len(transp.buffer) == 0:
       # We going to raise an error, only if transport buffer is empty.
       if ReadError in transp.state:
-        raise transp.getError()
+        raise transp.error  # ReadError is not cleared, so don't clear error
 
     let (consumed, done) = body
     transp.buffer.consume(consumed)
