@@ -362,7 +362,8 @@ suite "AsyncStream/StreamTransport":
         raiseAssert exc.msg
 
     var server = createStreamServer(initTAddress("127.0.0.1:0"),
-                                    serveClient, {ReuseAddr})
+                                    serveClient, {ReuseAddr},
+                                    bufferSize = MessageSize)
     server.start()
     for message in messages:
       syncFut = newFuture[void]()

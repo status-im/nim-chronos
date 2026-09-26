@@ -1580,7 +1580,8 @@ suite "Stream Transport test suite":
       except CatchableError as exc:
         raiseAssert exc.msg
 
-    let server = createStreamServer(initTAddress("127.0.0.1:0"), client)
+    let server = createStreamServer(initTAddress("127.0.0.1:0"), client,
+                                    bufferSize = MessageSize)
     server.start()
 
     for message in messages:
@@ -1640,7 +1641,8 @@ suite "Stream Transport test suite":
       except CatchableError as exc:
         raiseAssert exc.msg
 
-    let server = createStreamServer(initTAddress("127.0.0.1:0"), client)
+    let server = createStreamServer(initTAddress("127.0.0.1:0"), client,
+                                    bufferSize = MessageSize)
     server.start()
 
     let
