@@ -546,7 +546,7 @@ suite "Stream Transport test suite":
       transp.close()
       await transp.join()
       check: subres == 1
- 
+
     asyncTest prefixes[i] & "readLine() multiple clients with messages (" &
         $ClientsCount & " clients x " & $MessagesCount & " messages)":
       proc serveClient1(server: StreamServer, transp: StreamTransport) {.
@@ -1555,6 +1555,137 @@ suite "Stream Transport test suite":
 
     server3.stop()
     await server3.closeWait()
+
+  asyncTest "[IP] write() cancellation leaks test":
+    const MessageSize = 16384 * 1024
+    var messages: seq[seq[byte]]
+    for i in 0 ..< 4:
+      var message = newSeq[byte](MessageSize)
+      for j in 0 ..< len(message):
+        message[j] = byte(0x42 + i + (j mod 16))
+      messages.add(message)
+    let finalMessage = @[byte 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7]
+    var
+      data: seq[byte]
+      syncFut: Future[void]
+
+    proc client(server: StreamServer, transp: StreamTransport) {.async: (raises: []).} =
+      try:
+        try:
+          data = await transp.read()
+        except TransportError:
+          check defined(windows)
+        await transp.closeWait()
+        syncFut.complete()
+      except CatchableError as exc:
+        raiseAssert exc.msg
+
+    let server = createStreamServer(initTAddress("127.0.0.1:0"), client)
+    server.start()
+
+    for message in messages:
+      syncFut = newFuture[void]()
+      data.reset()
+      let transp = await connect(server.local)
+      let fut = transp.write(message)
+      doAssert(not(fut.finished()), "Message is longer than socket buffer size")
+      await fut.cancelAndWait()
+      doAssert(fut.cancelled(), "Future should be Cancelled at this point")
+
+      let res =
+        try:
+          await transp.write(finalMessage)
+        except TransportError:
+          check defined(windows)
+          -1
+      await transp.closeWait()
+      await syncFut
+
+      check len(data) < MessageSize
+      when not defined(windows):
+        check:
+          res == len(finalMessage)
+          len(data) >= len(finalMessage) and
+          data[^len(finalMessage) .. ^1] == finalMessage
+
+    server.stop()
+    await server.closeWait()
+
+  asyncTest "[IP] write() cancellation queue test":
+    const MessageSize = 16384 * 1024
+    var
+      message = newSeq[byte](MessageSize)
+      message2 = newSeq[byte](MessageSize)
+      textMessage = newString(MessageSize)
+    for j in 0 ..< MessageSize:
+      message[j] = byte(0x42 + (j mod 16))
+      message2[j] = byte(0x43 + (j mod 16))
+      textMessage[j] = char(0x44 + (j mod 16))
+    let finalMessage = @[byte 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7]
+    var
+      data: seq[byte]
+      syncFut = newFuture[void]()
+
+    proc client(server: StreamServer, transp: StreamTransport) {.async: (raises: []).} =
+      try:
+        try:
+          data = await transp.read()
+        except TransportError:
+          check defined(windows)
+        await transp.closeWait()
+        syncFut.complete()
+        server.stop()
+        server.close()
+      except CatchableError as exc:
+        raiseAssert exc.msg
+
+    let server = createStreamServer(initTAddress("127.0.0.1:0"), client)
+    server.start()
+
+    let
+      transp = await connect(server.local)
+      fhandle = open(filesTestName())
+      size = int(getFileSize(fhandle))
+      handle =
+        when defined(windows):
+          int(get_osfhandle(getFileHandle(fhandle)))
+        else:
+          int(getFileHandle(fhandle))
+    doAssert(handle > 0)
+    let
+      fut1 = transp.write(message)
+      fut2 = transp.write(addr message2[0], len(message2))
+      fut3 = transp.write(textMessage)
+      fut4 = transp.writeFile(handle, 0'u, size)
+    doAssert(not(fut1.finished()), "Message is longer than socket buffer size")
+    for fut in [fut2, fut3, fut4]:
+      doAssert(not(fut.finished()), "Write has been queued")
+    await cancelAndWait(fut2, fut3, fut4)
+    for fut in [fut2, fut3, fut4]:
+      doAssert(fut.cancelled(), "Future should be Cancelled at this point")
+    message2.reset()
+    close(fhandle)
+    await fut1.cancelAndWait()
+    doAssert(fut1.cancelled(), "Future should be Cancelled at this point")
+
+    let res =
+      try:
+        await transp.write(finalMessage)
+      except TransportError:
+        check defined(windows)
+        -1
+    await transp.closeWait()
+    await syncFut
+
+    check len(data) < MessageSize
+    when not defined(windows):
+      check:
+        res == len(finalMessage)
+        len(data) >= len(finalMessage) and
+        data == message[0 ..< len(data) - len(finalMessage)] & finalMessage
+
+    await server.join()
+    await server.closeWait()
 
   asyncTest "[IP] connect() cancellation leaks test":
     proc client(server: StreamServer, transp: StreamTransport) {.async: (raises: []).} =

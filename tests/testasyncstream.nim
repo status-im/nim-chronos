@@ -336,6 +336,61 @@ suite "AsyncStream/StreamTransport":
     await transp.closeWait()
     await server.join()
 
+  asyncTest "write":
+    const MessageSize = 16384 * 1024
+    var messages: seq[seq[byte]]
+    for i in 0 ..< 4:
+      var message = newSeq[byte](MessageSize)
+      for j in 0 ..< len(message):
+        message[j] = byte(0x42 + i + (j mod 16))
+      messages.add(message)
+    let finalMessage = @[byte 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7]
+    var
+      data: seq[byte]
+      syncFut: Future[void]
+
+    proc serveClient(server: StreamServer,
+                      transp: StreamTransport) {.async: (raises: []).} =
+      try:
+        try:
+          data = await transp.read()
+        except TransportError:
+          check defined(windows)
+        await transp.closeWait()
+        syncFut.complete()
+      except CatchableError as exc:
+        raiseAssert exc.msg
+
+    var server = createStreamServer(initTAddress("127.0.0.1:0"),
+                                    serveClient, {ReuseAddr})
+    server.start()
+    for message in messages:
+      syncFut = newFuture[void]()
+      data.reset()
+      var transp = await connect(server.localAddress())
+      var wstream = newAsyncStreamWriter(transp)
+      let fut = wstream.write(message)
+      check not(fut.finished())
+      await fut.cancelAndWait()
+      check fut.cancelled()
+
+      try:
+        await wstream.write(finalMessage)
+      except AsyncStreamError:
+        check defined(windows)
+      await wstream.closeWait()
+      await transp.closeWait()
+      await syncFut
+
+      check len(data) < MessageSize
+      when not defined(windows):
+        check:
+          len(data) >= len(finalMessage) and
+          data[^len(finalMessage) .. ^1] == finalMessage
+
+    server.stop()
+    await server.closeWait()
+
 suite "AsyncStream/ChunkedStream":
   setup:
     let counters = getTrackerCounters()
