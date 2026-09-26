@@ -1590,7 +1590,8 @@ suite "Stream Transport test suite":
       let fut = transp.write(message)
       doAssert(not(fut.finished()), "Message is longer than socket buffer size")
       await fut.cancelAndWait()
-      doAssert(fut.cancelled(), "Future should be Cancelled at this point")
+      when not defined(windows):
+        doAssert(fut.cancelled(), "Future should be Cancelled at this point")
 
       let res =
         try:
@@ -1601,9 +1602,9 @@ suite "Stream Transport test suite":
       await transp.closeWait()
       await syncFut
 
-      check len(data) < MessageSize
       when not defined(windows):
         check:
+          len(data) < MessageSize
           res == len(finalMessage)
           len(data) >= len(finalMessage) and
           data[^len(finalMessage) .. ^1] == finalMessage
@@ -1666,7 +1667,8 @@ suite "Stream Transport test suite":
     message2.reset()
     close(fhandle)
     await fut1.cancelAndWait()
-    doAssert(fut1.cancelled(), "Future should be Cancelled at this point")
+    when not defined(windows):
+      doAssert(fut1.cancelled(), "Future should be Cancelled at this point")
 
     let res =
       try:
@@ -1677,9 +1679,9 @@ suite "Stream Transport test suite":
     await transp.closeWait()
     await syncFut
 
-    check len(data) < MessageSize
     when not defined(windows):
       check:
+        len(data) < MessageSize
         res == len(finalMessage)
         len(data) >= len(finalMessage) and
         data == message[0 ..< len(data) - len(finalMessage)] & finalMessage

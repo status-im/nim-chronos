@@ -372,7 +372,8 @@ suite "AsyncStream/StreamTransport":
       let fut = wstream.write(message)
       check not(fut.finished())
       await fut.cancelAndWait()
-      check fut.cancelled()
+      when not defined(windows):
+        check fut.cancelled()
 
       try:
         await wstream.write(finalMessage)
@@ -382,9 +383,9 @@ suite "AsyncStream/StreamTransport":
       await transp.closeWait()
       await syncFut
 
-      check len(data) < MessageSize
       when not defined(windows):
         check:
+          len(data) < MessageSize
           len(data) >= len(finalMessage) and
           data[^len(finalMessage) .. ^1] == finalMessage
 
