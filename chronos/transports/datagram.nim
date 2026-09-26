@@ -136,6 +136,10 @@ proc localAddress*(transp: DatagramTransport): TransportAddress {.
   ## Returns ``transp`` remote socket address.
   localAddress2(transp).tryGet()
 
+proc closed*(transp: DatagramTransport): bool {.inline.} =
+  ## Returns ``true`` if transport in closed state.
+  TransportState.Closed in transp.state
+
 template setReadError(t, e: untyped) =
   (t).state.incl(ReadError)
   (t).error = getTransportOsError(e)
@@ -161,18 +165,23 @@ when defined(windows):
             vector.writer.complete()
         of ERROR_OPERATION_ABORTED:
           # CancelIO() interrupt
-          transp.state.incl(WritePaused)
-          if not(vector.writer.finished()):
-            vector.writer.complete()
+          if not(transp.closed()):
+            vector.writer.cancelAndSchedule()
+          else:
+            transp.state.incl(WritePaused)
+            if not(vector.writer.finished()):
+              vector.writer.complete()
         else:
           transp.state.incl({WritePaused, WriteError})
           if not(vector.writer.finished()):
             vector.writer.fail(getTransportOsError(err))
       else:
         ## Initiation
+        let vector = transp.queue.popFirst()
+        if vector.writer.finished():
+          continue
         transp.state.incl(WritePending)
         let fd = SocketHandle(transp.fd)
-        let vector = transp.queue.popFirst()
         transp.setWriterWSABuffer(vector)
         let ret =
           if vector.kind == WithAddress:
@@ -482,8 +491,10 @@ else:
     if TransportState.Closed in transp.state:
       transp.state.incl({WritePaused})
     else:
-      if len(transp.queue) > 0:
+      while len(transp.queue) > 0:
         let vector = transp.queue.popFirst()
+        if vector.writer.finished():
+          continue
         while true:
           if vector.kind == WithAddress:
             # We only need `Sockaddr_storage` data here, so result discarded.
@@ -505,9 +516,9 @@ else:
               if not(vector.writer.finished()):
                 vector.writer.fail(getTransportOsError(err))
           break
-      else:
-        transp.state.incl({WritePaused})
-        discard removeWriter2(transp.fd)
+        return
+      transp.state.incl({WritePaused})
+      discard removeWriter2(transp.fd)
 
   proc resumeWrite(transp: DatagramTransport): Result[void, OSErrorCode] =
     if WritePaused in transp.state:
@@ -998,10 +1009,6 @@ proc join*(transp: DatagramTransport): Future[void] {.
   ## Wait until the transport ``transp`` will be closed.
   transp.future.join()
 
-proc closed*(transp: DatagramTransport): bool {.inline.} =
-  ## Returns ``true`` if transport in closed state.
-  TransportState.Closed in transp.state
-
 proc closeWait*(transp: DatagramTransport): Future[void] {.
     async: (raises: []).} =
   ## Close transport ``transp`` and release all resources.
@@ -1009,12 +1016,45 @@ proc closeWait*(transp: DatagramTransport): Future[void] {.
     transp.close()
     await noCancel(transp.join())
 
+proc newSendFuture(transp: DatagramTransport,
+                   fromProc: static string
+                  ): Future[void].Raising([TransportError, CancelledError]) =
+  const flags =
+    when defined(windows):
+      {FutureFlag.OwnCancelSchedule}
+    else:
+      {}
+  let writer = Future[void].Raising([TransportError, CancelledError])
+    .init(fromProc, flags)
+
+  proc cancellation(udata: pointer) {.gcsafe, raises: [].} =
+    when defined(windows):
+      var i = 0
+    for vector in transp.queue.mitems():
+      if vector.writer == writer:
+        when defined(windows):
+          if i == 0 and WritePending in transp.state:
+            if not transp.closed():
+              discard cancelIoEx(HANDLE(transp.fd),
+                                 cast[POVERLAPPED](addr transp.wovl))
+            return
+        vector.buf = nil
+        vector.buflen = 0
+        break
+      when defined(windows):
+        inc(i)
+    when defined(windows):
+      writer.cancelAndSchedule()
+
+  writer.cancelCallback = cancellation
+  writer
+
 proc send*(transp: DatagramTransport, pbytes: pointer,
            nbytes: int): Future[void] {.
            async: (raw: true, raises: [TransportError, CancelledError]).} =
   ## Send buffer with pointer ``pbytes`` and size ``nbytes`` using transport
   ## ``transp`` to remote destination address which was bounded on transport.
-  let retFuture = newFuture[void]("datagram.transport.send(pointer)")
+  let retFuture = transp.newSendFuture("datagram.transport.send(pointer)")
   transp.checkClosed(retFuture)
   if transp.remote.port == Port(0):
     retFuture.fail(newException(TransportError, "Remote peer not set!"))
@@ -1033,7 +1073,7 @@ proc send*(transp: DatagramTransport, msg: string,
            async: (raw: true, raises: [TransportError, CancelledError]).} =
   ## Send string ``msg`` using transport ``transp`` to remote destination
   ## address which was bounded on transport.
-  let retFuture = newFuture[void]("datagram.transport.send(string)")
+  let retFuture = transp.newSendFuture("datagram.transport.send(string)")
   transp.checkClosed(retFuture)
 
   let length = if msglen <= 0: len(msg) else: msglen
@@ -1056,7 +1096,7 @@ proc send*[T](transp: DatagramTransport, msg: seq[T],
      async: (raw: true, raises: [TransportError, CancelledError]).} =
   ## Send string ``msg`` using transport ``transp`` to remote destination
   ## address which was bounded on transport.
-  let retFuture = newFuture[void]("datagram.transport.send(seq)")
+  let retFuture = transp.newSendFuture("datagram.transport.send(seq)")
   transp.checkClosed(retFuture)
 
   let length = if msglen <= 0: (len(msg) * sizeof(T)) else: (msglen * sizeof(T))
@@ -1078,7 +1118,7 @@ proc sendTo*(transp: DatagramTransport, remote: TransportAddress,
              async: (raw: true, raises: [TransportError, CancelledError]).} =
   ## Send buffer with pointer ``pbytes`` and size ``nbytes`` using transport
   ## ``transp`` to remote destination address ``remote``.
-  let retFuture = newFuture[void]("datagram.transport.sendTo(pointer)")
+  let retFuture = transp.newSendFuture("datagram.transport.sendTo(pointer)")
   transp.checkClosed(retFuture)
   let vector = GramVector(kind: WithAddress, buf: pbytes, buflen: nbytes,
                           writer: retFuture, address: remote)
@@ -1094,7 +1134,7 @@ proc sendTo*(transp: DatagramTransport, remote: TransportAddress,
              async: (raw: true, raises: [TransportError, CancelledError]).} =
   ## Send string ``msg`` using transport ``transp`` to remote destination
   ## address ``remote``.
-  let retFuture = newFuture[void]("datagram.transport.sendTo(string)")
+  let retFuture = transp.newSendFuture("datagram.transport.sendTo(string)")
   transp.checkClosed(retFuture)
 
   let length = if msglen <= 0: len(msg) else: msglen
@@ -1117,7 +1157,7 @@ proc sendTo*[T](transp: DatagramTransport, remote: TransportAddress,
                 async: (raw: true, raises: [TransportError, CancelledError]).} =
   ## Send sequence ``msg`` using transport ``transp`` to remote destination
   ## address ``remote``.
-  let retFuture = newFuture[void]("datagram.transport.sendTo(seq)")
+  let retFuture = transp.newSendFuture("datagram.transport.sendTo(seq)")
   transp.checkClosed(retFuture)
   let length = if msglen <= 0: (len(msg) * sizeof(T)) else: (msglen * sizeof(T))
   var localCopy = msg

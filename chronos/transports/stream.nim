@@ -203,6 +203,10 @@ proc localAddress*(server: StreamServer): TransportAddress =
   ## Returns ``server`` bound local socket address.
   server.local
 
+proc closed*(transp: StreamTransport): bool {.inline.} =
+  ## Returns ``true`` if transport in closed state.
+  TransportState.Closed in transp.state
+
 template completeReader(stream: StreamTransport) =
   if not(isNil(transp.reader)) and not(transp.reader.finished()):
     transp.reader.complete()
@@ -343,9 +347,13 @@ when defined(windows):
                       vector.writer.complete(int(transp.wwsabuf.len))
           of ERROR_OPERATION_ABORTED:
             # CancelIO() interrupt
-            transp.state.incl({WritePaused, WriteEof})
-            completePendingWriteQueue(transp.queue, 0)
-            break
+            if not(transp.closed()):
+              let vector = transp.queue.popFirst()
+              vector.writer.cancelAndSchedule()
+            else:
+              transp.state.incl({WritePaused, WriteEof})
+              completePendingWriteQueue(transp.queue, 0)
+              break
           else:
             if isConnResetError(err):
               # Soft error happens which indicates that remote peer got
@@ -359,10 +367,12 @@ when defined(windows):
             break
         else:
           ## Initiation
+          var vector = transp.queue.popFirst()
+          if vector.writer.finished():
+            continue
           transp.state.incl(WritePending)
           if transp.kind == TransportKind.Socket:
             let sock = SocketHandle(transp.fd)
-            var vector = transp.queue.popFirst()
             if vector.kind == VectorKind.DataBuffer:
               transp.wovl.zeroOvelappedOffset()
               transp.setWriterWSABuffer(vector)
@@ -448,7 +458,6 @@ when defined(windows):
                 transp.queue.addFirst(vector)
           elif transp.kind == TransportKind.Pipe:
             let pipe = HANDLE(transp.fd)
-            var vector = transp.queue.popFirst()
             if vector.kind == VectorKind.DataBuffer:
               transp.wovl.zeroOvelappedOffset()
               transp.setWriterWSABuffer(vector)
@@ -1367,6 +1376,8 @@ else:
           failPendingWriteQueue(transp.queue, error)
 
       var vector = transp.queue.popFirst()
+      if vector.writer.finished():
+        continue
       case vector.kind
       of VectorKind.DataBuffer:
         let res =
@@ -2412,12 +2423,45 @@ template fastWrite(transp: auto, pbytes: var ptr byte, rbytes: var int,
             retFuture.fail(error)
             return retFuture
 
+proc newWriteFuture(transp: StreamTransport,
+                    fromProc: static string
+                   ): Future[int].Raising([TransportError, CancelledError]) =
+  const flags =
+    when defined(windows):
+      {FutureFlag.OwnCancelSchedule}
+    else:
+      {}
+  let writer = Future[int].Raising([TransportError, CancelledError])
+    .init(fromProc, flags)
+
+  proc cancellation(udata: pointer) {.gcsafe, raises: [].} =
+    when defined(windows):
+      var i = 0
+    for vector in transp.queue.mitems():
+      if vector.writer == writer:
+        when defined(windows):
+          if i == 0 and WritePending in transp.state:
+            if not transp.closed():
+              discard cancelIoEx(HANDLE(transp.fd),
+                                 cast[POVERLAPPED](addr transp.wovl))
+            return
+        vector.buf = nil
+        vector.buflen = 0
+        break
+      when defined(windows):
+        inc(i)
+    when defined(windows):
+      writer.cancelAndSchedule()
+
+  writer.cancelCallback = cancellation
+  writer
+
 proc write*(transp: StreamTransport, pbytes: pointer,
             nbytes: int): Future[int] {.
             async: (raw: true, raises: [TransportError, CancelledError]).} =
   ## Write data from buffer ``pbytes`` with size ``nbytes`` using transport
   ## ``transp``.
-  var retFuture = newFuture[int]("stream.transport.write(pointer)")
+  var retFuture = transp.newWriteFuture("stream.transport.write(pointer)")
   transp.checkClosed(retFuture)
   transp.checkWriteEof(retFuture)
 
@@ -2437,7 +2481,7 @@ proc write*(transp: StreamTransport, msg: string,
             msglen = -1): Future[int] {.
             async: (raw: true, raises: [TransportError, CancelledError]).} =
   ## Write data from string ``msg`` using transport ``transp``.
-  var retFuture = newFuture[int]("stream.transport.write(string)")
+  var retFuture = transp.newWriteFuture("stream.transport.write(string)")
   transp.checkClosed(retFuture)
   transp.checkWriteEof(retFuture)
   let
@@ -2467,7 +2511,7 @@ proc write*[T](transp: StreamTransport, msg: seq[T],
                msglen = -1): Future[int] {.
                async: (raw: true, raises: [TransportError, CancelledError]).} =
   ## Write sequence ``msg`` using transport ``transp``.
-  var retFuture = newFuture[int]("stream.transport.write(seq)")
+  var retFuture = transp.newWriteFuture("stream.transport.write(seq)")
   transp.checkClosed(retFuture)
   transp.checkWriteEof(retFuture)
 
@@ -2501,7 +2545,7 @@ proc writeFile*(transp: StreamTransport, handle: int,
   ##
   ## You can specify starting ``offset`` in opened file and number of bytes
   ## to transfer from file to transport via ``size``.
-  var retFuture = newFuture[int]("stream.transport.writeFile")
+  var retFuture = transp.newWriteFuture("stream.transport.writeFile")
   when defined(windows):
     if transp.kind != TransportKind.Socket:
       retFuture.fail(newException(
@@ -2831,10 +2875,6 @@ proc join*(transp: StreamTransport): Future[void] {.
   else:
     retFuture.complete()
   retFuture
-
-proc closed*(transp: StreamTransport): bool {.inline.} =
-  ## Returns ``true`` if transport in closed state.
-  TransportState.Closed in transp.state
 
 proc finished*(transp: StreamTransport): bool {.inline.} =
   ## Returns ``true`` if transport in finished (EOF) state.
