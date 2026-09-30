@@ -131,15 +131,15 @@ task test_asan, "Run all tests with ASAN":
     putEnv("ASAN_OPTIONS", "detect_leaks=0:detect_stack_use_after_return=1")
     # https://clang.llvm.org/docs/UndefinedBehaviorSanitizer.html
     putEnv("UBSAN_OPTIONS", "print_stacktrace=1")
+    let asanArgs =
+      " --mm:orc -d:useMalloc --cc:clang --debugger:native" &
+      " --passC:-fsanitize=address,undefined" &
+      " --passL:-fsanitize=address,undefined" &
+      " --passC:-fno-sanitize-recover=undefined" &
+      " --passC:-fno-sanitize-merge" &
+      " --passC:-fno-omit-frame-pointer"
     for args in testArguments:
-      run args &
-        " --mm:orc -d:useMalloc --cc:clang --debugger:native" &
-        " --passC:-fsanitize=address,undefined" &
-        " --passL:-fsanitize=address,undefined" &
-        " --passC:-fno-sanitize-recover=undefined" &
-        " --passC:-fno-sanitize-merge" &
-        " --passC:-fno-omit-frame-pointer",
-        "tests/testall"
+      run args & asanArgs, "tests/testall"
 
 task docs, "Generate API documentation":
   exec "mdbook build docs"
