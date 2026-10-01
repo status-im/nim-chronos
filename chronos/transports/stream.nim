@@ -882,6 +882,7 @@ when defined(windows):
       if server.apending:
         ## Continuation
         server.apending = false
+        GC_unref(server)
         if server.status notin {ServerStatus.Stopped, ServerStatus.Closed}:
           case ovl.data.errCode
           of OSErrorCode(-1):
@@ -920,6 +921,7 @@ when defined(windows):
         ## Initiation
         if server.status notin {ServerStatus.Stopped, ServerStatus.Closed}:
           server.apending = true
+          GC_ref(server)
           let
             pipeSuffix = $cast[cstring](baseAddr server.local.address_un)
             pipeAsciiName = PipeHeaderName & pipeSuffix
@@ -954,6 +956,7 @@ when defined(windows):
             let errCode = osLastError()
             if errCode == ERROR_OPERATION_ABORTED:
               server.apending = false
+              GC_unref(server)
               break
             elif errCode == ERROR_IO_PENDING:
               discard
@@ -979,6 +982,7 @@ when defined(windows):
       if server.apending:
         ## Continuation
         server.apending = false
+        GC_unref(server)
         if server.status notin {ServerStatus.Stopped, ServerStatus.Closed}:
           case ovl.data.errCode
           of OSErrorCode(-1):
@@ -1028,6 +1032,7 @@ when defined(windows):
         ## Initiation
         if server.status notin {ServerStatus.Stopped, ServerStatus.Closed}:
           server.apending = true
+          GC_ref(server)
           # TODO No way to report back errors!
           server.asock = createAsyncSocket2(server.domain, SockType.SOCK_STREAM,
                                             Protocol.IPPROTO_TCP).valueOr:
@@ -1048,6 +1053,7 @@ when defined(windows):
             let errCode = osLastError()
             if errCode == ERROR_OPERATION_ABORTED:
               server.apending = false
+              GC_unref(server)
               break
             elif errCode == ERROR_IO_PENDING:
               discard
@@ -1901,7 +1907,7 @@ proc close*(server: StreamServer) =
       if server.local.family in {AddressFamily.IPv4, AddressFamily.IPv6}:
         if server.apending:
           server.asock.closeSocket()
-          server.apending = false
+          # Don't clear ``apending``; ``acceptEx`` continuation will still run.
         server.sock.closeSocket(continuation)
       elif server.local.family in {AddressFamily.Unix}:
         if NoPipeFlash notin server.flags:
