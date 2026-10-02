@@ -9,7 +9,7 @@ license       = "MIT or Apache License 2.0"
 skipDirs      = @["tests"]
 
 requires "nim >= 1.6.16",
-         "bearssl#2ec882b3791c04c01f46ea35d11b5082f2aff5a8",
+         "bearssl#81b134f803d62e461877a2adf3a856a7180d00e2",
          "httputils >= 0.5.1",
          "results >= 0.5.0",
          "stew >= 0.5.0",
