@@ -121,7 +121,7 @@ task test_libbacktrace, "test with libbacktrace":
         run args & " --mm:orc", "tests/testall"
 
 task test_asan, "Run all tests with ASAN":
-  if platform != "x86" and (NimMajor, NimMinor) >= (2, 2):
+  if platform != "x86":
     try:
       exec "echo '#if __clang_major__ < 20\n#error\n#endif' | clang -E - >/dev/null"
     except OSError:
