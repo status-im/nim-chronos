@@ -8,7 +8,7 @@ description   = "Networking framework with async/await support"
 license       = "MIT or Apache License 2.0"
 skipDirs      = @["tests"]
 
-requires "nim >= 1.6.16",
+requires "nim >= 2.2.14",
          "bearssl >= 0.3.0",
          "httputils >= 0.6.0",
          "results >= 0.5.0",
