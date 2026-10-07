@@ -57,6 +57,8 @@ type
 
   TaskLocalContextSwitchCallback* = proc(ctx: TaskLocalContext) {.
     gcsafe, raises: [].}
+    ## Callback invoked after the current async task and its context are
+    ## published. It may be invoked with the same context when the task changes.
 
   InternalFutureBase* = object of RootObj
     # Internal untyped future representation - the fields are not part of the
@@ -270,7 +272,11 @@ proc setCurrentTaskLocalContext*(ctx: TaskLocalContext): TaskLocalContext {.
 proc setTaskLocalContextSwitchCallback*(
     cb: TaskLocalContextSwitchCallback): TaskLocalContextSwitchCallback {.
     discardable, gcsafe, raises: [].} =
-  ## Install a callback invoked whenever the current task-local context changes.
+  ## Install a callback invoked whenever the current async task or its context
+  ## is switched. The callback may be invoked when the context is unchanged,
+  ## because the current task may still have changed. When invoked,
+  ## ``currentTaskFuture()`` and ``currentTaskLocalContext()`` already reflect
+  ## the new state.
   {.cast(gcsafe).}:
     result = internalTaskLocalContextSwitchCallback
     internalTaskLocalContextSwitchCallback = cb
