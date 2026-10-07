@@ -11,7 +11,7 @@ import ".."/chronos/unittest2/asynctests
 import ".."/chronos/asyncproc
 
 when defined(posix):
-  from ".."/chronos/osdefs import SIGKILL
+  from ".."/chronos/osdefs import SIGKILL, SIGPIPE, kill
 
 when defined(nimHasUsed): {.used.}
 
@@ -492,6 +492,37 @@ suite "Asynchronous process management test suite":
         let exitCode = await process.killAndWaitForExit(10.seconds)
         check exitCode == command[2]
       finally:
+        await process.closeWait()
+
+  asyncTest "Child process does not inherit blocked signals test":
+    when defined(windows):
+      skip()
+    else:
+      let watching = waitSignal(int(SIGTERM))
+      let process = await startProcess("sleep", arguments = @["30"],
+                                       options = {AsyncProcessOption.UsePath})
+      try:
+        let exitCode = await process.terminateAndWaitForExit(10.seconds)
+        check exitCode == 128 + int(SIGTERM)
+      finally:
+        if process.running().valueOr(false):
+          discard await process.killAndWaitForExit(10.seconds)
+        await process.closeWait()
+        await watching.cancelAndWait()
+
+  asyncTest "Child process does not inherit ignored signals test":
+    when defined(windows):
+      skip()
+    else:
+      let process = await startProcess("sleep", arguments = @["30"],
+                                       options = {AsyncProcessOption.UsePath})
+      try:
+        check kill(cint(process.processId()), cint(SIGPIPE)) == 0
+        let exitCode = await process.waitForExit(10.seconds)
+        check exitCode == 128 + int(SIGPIPE)
+      finally:
+        if process.running().valueOr(false):
+          discard await process.killAndWaitForExit(10.seconds)
         await process.closeWait()
 
   test "File descriptors leaks test":
