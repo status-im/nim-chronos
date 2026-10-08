@@ -800,6 +800,9 @@ when defined(windows):
   proc cancelIo*(hFile: HANDLE): WINBOOL {.
        stdcall, dynlib: "kernel32", importc: "CancelIo", sideEffect.}
 
+  proc cancelIoEx*(hFile: HANDLE, lpOverlapped: ptr OVERLAPPED): WINBOOL {.
+       stdcall, dynlib: "kernel32", importc: "CancelIoEx", sideEffect.}
+
   proc connectNamedPipe*(hPipe: HANDLE,
                          lpOverlapped: ptr OVERLAPPED): WINBOOL {.
        stdcall, dynlib: "kernel32", importc: "ConnectNamedPipe", sideEffect.}
