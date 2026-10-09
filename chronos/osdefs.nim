@@ -222,6 +222,14 @@ when defined(windows):
 
     STILL_ACTIVE* = 0x00000103'u32
 
+    WSAID_WSARECVMSG* =
+      GUID(D1: 0xf689d7c8'u32, D2: 0x6f1f'u16, D3: 0x436b'u16,
+           D4: [0x8a'u8, 0x53'u8, 0xe5'u8, 0x4f'u8,
+                0xe3'u8, 0x51'u8, 0xc3'u8, 0x22'u8])
+    WSAID_WSASENDMSG* =
+      GUID(D1: 0xa441e712'u32, D2: 0x754f'u16, D3: 0x43ca'u16,
+           D4: [0x84'u8, 0xa7'u8, 0x0d'u8, 0xee'u8,
+                0x44'u8, 0xcf'u8, 0x60'u8, 0x6d'u8])
     WSAID_CONNECTEX* =
       GUID(D1: 0x25a207b9'u32, D2: 0xddf3'u16, D3: 0x4660'u16,
            D4: [0x8e'u8, 0xe9'u8, 0x76'u8, 0xe5'u8,
@@ -259,6 +267,8 @@ when defined(windows):
     FIONBIO* = WSAIOW(102, 126)
 
     HANDLE_FLAG_INHERIT* = 1'u32
+    IP_PKTINFO* = 19
+    IPV6_PKTINFO* = 19
     IPV6_V6ONLY* = 27
     MAX_PROTOCOL_CHAIN* = 7
     WSAPROTOCOL_LEN* = 255
@@ -310,12 +320,44 @@ when defined(windows):
       len*: ULONG
       buf*: cstring
 
+    WSAMSG* {.final, pure.} = object
+      name*: ptr SockAddr
+      namelen*: cint
+      lpBuffers*: ptr WSABUF
+      dwBufferCount*: DWORD
+      control*: WSABUF
+      dwFlags*: DWORD
+
+    WSACMSGHDR* {.final, pure.} = object
+      cmsg_len*: uint
+      cmsg_level*: cint
+      cmsg_type*: cint
+
+    WinInPktInfo* {.importc: "IN_PKTINFO", header: "<ws2tcpip.h>",
+                    bycopy.} = object
+      ipi_addr*: InAddr
+      ipi_ifindex*: ULONG
+
+    WinIn6PktInfo* {.importc: "IN6_PKTINFO", header: "<ws2tcpip.h>",
+                     bycopy.} = object
+      ipi6_addr*: In6_addr
+      ipi6_ifindex*: ULONG
+
     POVERLAPPED* = ptr OVERLAPPED
 
     POVERLAPPED_COMPLETION_ROUTINE* = proc (para1: DWORD, para2: DWORD,
                                             para3: POVERLAPPED) {.
       stdcall, gcsafe, raises: [].}
+    LPFN_WSARECVMSG* = proc(
+      s: SocketHandle, msg: ptr WSAMSG, bytesReceived: PDWORD,
+      overlapped: POVERLAPPED, completionProc: POVERLAPPED_COMPLETION_ROUTINE
+    ): cint {.stdcall, gcsafe, raises: [].}
 
+    LPFN_WSASENDMSG* = proc(
+      s: SocketHandle, msg: ptr WSAMSG, flags: DWORD,
+      bytesSent: PDWORD, overlapped: POVERLAPPED,
+      completionProc: POVERLAPPED_COMPLETION_ROUTINE
+    ): cint {.stdcall, gcsafe, raises: [].}
     PHANDLER_ROUTINE* = proc (dwCtrlType: DWORD): WINBOOL {.
       stdcall, gcsafe, raises: [].}
 

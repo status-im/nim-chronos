@@ -9,6 +9,8 @@ import std/[strutils, net]
 import stew/byteutils
 import ".."/chronos/unittest2/asynctests
 import ".."/chronos
+from ".."/chronos/osdefs import
+  Sockaddr_storage, SockAddr, SockLen, SocketHandle, bindSocket
 
 {.used.}
 
@@ -1014,6 +1016,143 @@ suite "Datagram Transport test suite":
           check fres.get() == AddressFamily.Unix
     else:
       skip()
+
+  asyncTest "[IP] PacketInfo reports the datagram destination address":
+    when defined(linux) or defined(macosx) or defined(windows):
+      let received = newFuture[TransportAddress]()
+
+      proc receive(
+          transp: DatagramTransport, remote: TransportAddress
+      ): Future[void] {.async: (raises: []).} =
+        try:
+          discard transp.getMessage()
+          received.complete(transp.receivedLocalAddress())
+        except TransportError as exc:
+          received.fail(exc)
+
+      proc ignore(
+          transp: DatagramTransport, remote: TransportAddress
+      ): Future[void] {.async: (raises: []).} =
+        discard
+
+      let
+        server = newDatagramTransport(
+          receive,
+          local = initTAddress("0.0.0.0:0"),
+          flags = {ServerFlags.PacketInfo},
+        )
+        client = newDatagramTransport(ignore)
+      defer:
+        await allFutures(server.closeWait(), client.closeWait())
+
+      var destination =
+        when defined(linux):
+          initTAddress("127.0.0.2:0")
+        else:
+          initTAddress("127.0.0.1:0")
+      destination.port = server.localAddress().port
+      await client.sendTo(destination, @[1.byte])
+
+      check (await received.wait(1.seconds)) == destination
+    else:
+      skip()
+
+  asyncTest "[IP] PacketInfo detects the family of a supplied socket":
+    when defined(linux) or defined(macosx):
+      let received = newFuture[TransportAddress]()
+
+      proc receive(
+          transp: DatagramTransport, remote: TransportAddress
+      ): Future[void] {.async: (raises: []).} =
+        try:
+          discard transp.getMessage()
+          received.complete(transp.receivedLocalAddress())
+        except TransportError as exc:
+          received.fail(exc)
+
+      proc ignore(
+          transp: DatagramTransport, remote: TransportAddress
+      ): Future[void] {.async: (raises: []).} =
+        discard
+
+      let socketResult =
+        createAsyncSocket2(Domain.AF_INET, SockType.SOCK_DGRAM, Protocol.IPPROTO_UDP)
+      check socketResult.isOk()
+      let suppliedSocket = socketResult.get()
+      check unregister2(suppliedSocket).isOk()
+
+      var
+        bindAddress: Sockaddr_storage
+        bindAddressLen: SockLen
+      initTAddress("0.0.0.0:0").toSAddr(bindAddress, bindAddressLen)
+      check bindSocket(
+        SocketHandle(suppliedSocket),
+        cast[ptr SockAddr](addr bindAddress),
+        bindAddressLen,
+      ) == 0
+
+      let
+        server = newDatagramTransport(
+          receive,
+          local = TransportAddress(),
+          sock = suppliedSocket,
+          flags = {ServerFlags.PacketInfo},
+        )
+        client = newDatagramTransport(ignore)
+      defer:
+        await allFutures(server.closeWait(), client.closeWait())
+
+      var destination =
+        when defined(linux):
+          initTAddress("127.0.0.2:0")
+        else:
+          initTAddress("127.0.0.1:0")
+      destination.port = server.localAddress().port
+      await client.sendTo(destination, @[1.byte])
+
+      check (await received.wait(1.seconds)) == destination
+    else:
+      skip()
+
+  asyncTest "[IP] PacketInfo normalizes a dual-stack IPv4 destination":
+    when defined(linux) or defined(macosx) or defined(windows):
+      let received = newFuture[tuple[local, remote: TransportAddress]]()
+
+      proc receive(
+          transp: DatagramTransport, remote: TransportAddress
+      ): Future[void] {.async: (raises: []).} =
+        try:
+          discard transp.getMessage()
+          received.complete((transp.receivedLocalAddress(), remote))
+        except TransportError as exc:
+          received.fail(exc)
+
+      proc ignore(
+          transp: DatagramTransport, remote: TransportAddress
+      ): Future[void] {.async: (raises: []).} =
+        discard
+
+      let
+        server = newDatagramTransport6(
+          receive,
+          local = initTAddress("[::]:0"),
+          flags = {ServerFlags.PacketInfo},
+        )
+        client = newDatagramTransport(ignore)
+      defer:
+        await allFutures(server.closeWait(), client.closeWait())
+
+      var destination = initTAddress("127.0.0.1:0")
+      destination.port = server.localAddress().port
+      await client.sendTo(destination, @[1.byte])
+
+      let addresses = await received.wait(1.seconds)
+      check:
+        addresses.local == destination
+        addresses.remote.family == AddressFamily.IPv4
+    else:
+      skip()
+
   asyncTest "[IP] DualStack [UDP] server [DualStackType.Auto] test":
     if isAvailable(AddressFamily.IPv4) and isAvailable(AddressFamily.IPv6):
       let serverAddress = initTAddress("[::]:0")
