@@ -1,13 +1,13 @@
-# ANCHOR: all
+#ANCHOR: all
 import std/sequtils
 import chronos/apps/http/httpclient
 
-# ANCHOR: maxConcurrency
+#ANCHOR: maxConcurrency
 const
   maxConcurrency = 5
-# ANCHOR_END: maxConcurrency
+#ANCHOR_END: maxConcurrency
   ntfyTopic = "<YOUR_NTFY_TOPIC_NAME>"
-# ANCHOR: uris
+#ANCHOR: uris
   uris = @[
     "https://duckduckgo.com/?q=chronos", "https://mock.codes/403",
     "http://10.255.255.1", "https://html.spec.whatwg.org",
@@ -19,7 +19,7 @@ const
     "https://vac.dev", "https://expired.badssl.com", "http://10.255.255.2",
     "http://10.255.255.3",
   ]
-# ANCHOR_END: uris
+#ANCHOR_END: uris
 
 proc sendAlert(
     session: HttpSessionRef, message: string, priority = 3
@@ -70,7 +70,7 @@ proc findMarker(
   await bodyReader.readMessage(findMarkerInSample)
   found
 
-# ANCHOR: semaphore
+#ANCHOR: semaphore
 proc check(
     session: HttpSessionRef, uri: string, semaphore: AsyncSemaphore
 ) {.async: (raises: [CancelledError]).} =
@@ -81,7 +81,7 @@ proc check(
       release(semaphore)
     except AsyncSemaphoreError:
       echo "Could not release a lock: " & getCurrentExceptionMsg()
-# ANCHOR_END: semaphore
+#ANCHOR_END: semaphore
 
   let
     request = HttpClientRequestRef.new(session, uri).valueOr:
@@ -123,18 +123,18 @@ proc check(
   finally:
     await response.closeWait()
 
-# ANCHOR: check
+#ANCHOR: check
 proc check(uris: seq[string]) {.async: (raises: []).} =
   let
     session = HttpSessionRef.new()
     semaphore = newAsyncSemaphore(maxConcurrency)
-# ANCHOR_END: check
+#ANCHOR_END: check
 
-# ANCHOR: while_true
+#ANCHOR: while_true
   try:
     while true:
-# ANCHOR_END: while_true
-# ANCHOR: pass_semaphore
+#ANCHOR_END: while_true
+#ANCHOR: pass_semaphore
       echo "Checking " & $len(uris) & " URIs:"
       let
         futures = uris.mapIt(session.check(it, semaphore))
@@ -144,15 +144,15 @@ proc check(uris: seq[string]) {.async: (raises: []).} =
       except CancelledError:
         await cancelAndWait(futures)
         break
-# ANCHOR_END: pass_semaphore
+#ANCHOR_END: pass_semaphore
 
-# ANCHOR: sleep
+#ANCHOR: sleep
       echo "Done. Next check in 10 seconds."
       try:
         await sleepAsync(10.seconds)
       except CancelledError:
         break
-# ANCHOR_END: sleep
+#ANCHOR_END: sleep
   except CancelledError:
     discard
   finally:
@@ -160,4 +160,4 @@ proc check(uris: seq[string]) {.async: (raises: []).} =
 
 when isMainModule:
   waitFor check(uris)
-# ANCHOR_END: all
+#ANCHOR_END: all
