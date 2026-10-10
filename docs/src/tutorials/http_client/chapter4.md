@@ -2,7 +2,7 @@
 
 **Goal:** Learn how to prevent the program from freezing on slow responses.
 
-**Source code:** [chapter4/src/uptimemon.nim](https://github.com/status-im/nim-chronos/blob/master/examples/http_client/chapter4/src/uptimemon.nim)
+**Source code:** [chapter4.nim](https://github.com/status-im/nim-chronos/blob/master/examples/http_client/chapter4.nim)
 
 Our current program works fine with the well-behaving URIs we've tested so far: all these locations either respond quickly or quickly return an error.
 
@@ -21,30 +21,18 @@ Run the program and you'll see that it'll run for 10+ seconds, stuck on this las
 Let's add a timeout to our requests to cancel slow requests before they ruin our app: if a request takes longer than 5 seconds, we cancel it.
 
 ```nim
-{{#shiftinclude auto:../../../../examples/http_client/chapter4/src/uptimemon.nim:all}}
+{{#shiftinclude auto:../../../../examples/http_client/chapter4.nim:all}}
 ```
 
 Here's the part that changed:
 
 ```nim
-{{#shiftinclude auto:../../../../examples/http_client/chapter4/src/uptimemon.nim:check}}
+{{#shiftinclude auto:../../../../examples/http_client/chapter4.nim:check}}
 ```
 
 1. We use the [`.wait(timeout)`](../../api/chronos/internal/asyncfutures.html#wait,Future[T],Duration) modifier on our `fetch` future.
 2. If the request takes longer than the provided duration, `.wait()` automatically cancels the underlying future and raises an [`AsyncTimeoutError`](../../api/chronos/internal/errors.html#AsyncTimeoutError).
 3. We catch this error alongside other expected exceptions in our `except` block.
-
-```admonish info
-In Nim, there are several ways to capture the message from an exception:
-- using `getCurrentExceptionMsg()`, as we do in this tutorial
-- using `except <Exception> as e` and then calling `e.msg`
-
-Both variants have their advantages and limitations. For example, the `as` syntax can be used only with one exception type at a time while a lonely `except` used with `getCurrentExceptionMsg()` allows to capture multiple exception types in one statement.
-
-On the other hand, because `e.msg` is guaranteed to capture a particular exception type, it's more deterministic and gives better control over exception handling logic.
-
-The rule of thumb is that when your exception handling is simple (like we have in this tutorial—we simply `echo` the message regardless of the exception type), `getCurrentExceptionMsg()` is a simpler, more readable option, but if elaborate exception handling is an essential part of your business logic, you should prefer `except <Exception> as e ... e.msg` syntax.
-```
 
 Run the program again and you'll see it complete in roughly 5 seconds, i.e. our timeout.
 
