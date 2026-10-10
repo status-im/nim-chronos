@@ -14,6 +14,34 @@ import ../chronos, ../chronos/unittest2/asynctests
 type
   TestFooConnection* = ref object
     id*: int
+  TestTaskContext = ref object of RootObj
+    id: int
+
+  TaskContextSwitchObservation = tuple
+    contextId: int
+    futureContextId: int
+
+var
+  taskContextSwitchObservations: array[16, TaskContextSwitchObservation]
+  taskContextSwitchObservationCount: int
+
+proc contextId(ctx: TaskLocalContext): int =
+  if ctx.isNil:
+    -1
+  else:
+    TestTaskContext(ctx).id
+
+proc currentContextId(): int =
+  contextId(currentTaskLocalContext())
+
+proc observeTaskContextSwitch(ctx: TaskLocalContext) {.gcsafe, raises: [].} =
+  let
+    fut = currentTaskFuture()
+    futCtx = if fut.isNil: nil else: fut.taskLocalContext
+
+  taskContextSwitchObservations[taskContextSwitchObservationCount] =
+    (contextId(ctx), contextId(futCtx))
+  inc taskContextSwitchObservationCount
 
 suite "Future[T] behavior test suite":
   proc testFuture1(): Future[int] {.async.} =
@@ -28,6 +56,56 @@ suite "Future[T] behavior test suite":
   proc testFuture100(): Future[int] {.async.} =
     await sleepAsync(100.milliseconds)
 
+  proc collectContextIds(): Future[seq[int]] {.async.} =
+    result.add currentContextId()
+    await sleepAsync(1.milliseconds)
+    result.add currentContextId()
+    await idleAsync()
+    result.add currentContextId()
+
+  proc childContextId(): Future[int] {.async.} =
+    await sleepAsync(1.milliseconds)
+    currentContextId()
+
+  proc parentContextIds(): Future[seq[int]] {.async.} =
+    result.add currentContextId()
+    let child = childContextId()
+    result.add contextId(child.taskLocalContext)
+    result.add await child
+
+  proc installContextThenAwait(ctx: TestTaskContext): Future[seq[int]] {.async.} =
+    result.add currentContextId()
+    discard setCurrentTaskLocalContext(ctx)
+    result.add currentContextId()
+    await sleepAsync(1.milliseconds)
+    result.add currentContextId()
+
+  proc installContextAsTrailingStatement(
+      ctx: TestTaskContext): Future[void] {.async.} =
+    await idleAsync()
+    setCurrentTaskLocalContext(ctx)
+
+  proc clearSwitchCallbackAsTrailingStatement(): Future[void] {.async.} =
+    await idleAsync()
+    setTaskLocalContextSwitchCallback(nil)
+
+  proc genericInstallContextAsTrailingStatement[T](
+      ctx: TestTaskContext): Future[T] {.async.} =
+    await idleAsync()
+    setCurrentTaskLocalContext(ctx)
+
+  proc installContextThroughFutureSetter(
+      ctx: TestTaskContext): Future[seq[int]] {.async.} =
+    result.add currentContextId()
+    currentTaskFuture().taskLocalContext = ctx
+    result.add currentContextId()
+    result.add contextId(currentTaskFuture().taskLocalContext)
+
+    let child = childContextId()
+    result.add contextId(child.taskLocalContext)
+    result.add await child
+    result.add currentContextId()
+
   test "Async undefined behavior (#7758) test":
     var fut = testFuture1()
     poll()
@@ -39,6 +117,83 @@ suite "Future[T] behavior test suite":
   test "Immediately completed asynchronous procedure test":
     var fut = testFuture3()
     check: fut.finished
+
+  asyncTest "Task-local context survives interleaved async resumes":
+    let
+      ctx1 = TestTaskContext(id: 1)
+      ctx2 = TestTaskContext(id: 2)
+    var
+      fut1: Future[seq[int]]
+      fut2: Future[seq[int]]
+
+    withTaskLocalContext(ctx1):
+      fut1 = collectContextIds()
+    withTaskLocalContext(ctx2):
+      fut2 = collectContextIds()
+
+    check contextId(fut1.taskLocalContext) == 1
+    check contextId(fut2.taskLocalContext) == 2
+    check (await fut1) == @[1, 1, 1]
+    check (await fut2) == @[2, 2, 2]
+    check currentContextId() == -1
+
+  asyncTest "Task-local context is inherited by child futures":
+    let ctx = TestTaskContext(id: 7)
+    var fut: Future[seq[int]]
+
+    withTaskLocalContext(ctx):
+      fut = parentContextIds()
+
+    check contextId(fut.taskLocalContext) == 7
+    check (await fut) == @[7, 7, 7]
+    check currentContextId() == -1
+
+  asyncTest "Task-local context installed inside a future survives await":
+    let ctx = TestTaskContext(id: 9)
+    let fut = installContextThenAwait(ctx)
+
+    check contextId(fut.taskLocalContext) == 9
+    check (await fut) == @[-1, 9, 9]
+    check currentContextId() == -1
+
+  asyncTest "Task-local context setters can be trailing async statements":
+    let ctx = TestTaskContext(id: 10)
+    let fut = installContextAsTrailingStatement(ctx)
+
+    await fut
+    check contextId(fut.taskLocalContext) == 10
+    await clearSwitchCallbackAsTrailingStatement()
+
+    let genericFut =
+      genericInstallContextAsTrailingStatement[void](ctx)
+    await genericFut
+    check contextId(genericFut.taskLocalContext) == 10
+
+  asyncTest "Future setter updates the active task-local context":
+    let ctx = TestTaskContext(id: 12)
+    let fut = installContextThroughFutureSetter(ctx)
+
+    check contextId(fut.taskLocalContext) == 12
+    check (await fut) == @[-1, 12, 12, 12, 12, 12]
+    check currentContextId() == -1
+
+  asyncTest "Task-local context switch callback observes coherent state":
+    let
+      ctx = TestTaskContext(id: 11)
+      previousCallback =
+        setTaskLocalContextSwitchCallback(observeTaskContextSwitch)
+    defer:
+      discard setTaskLocalContextSwitchCallback(previousCallback)
+
+    taskContextSwitchObservationCount = 0
+    withTaskLocalContext(ctx):
+      check currentContextId() == 11
+    await idleAsync()
+
+    check taskContextSwitchObservationCount > 0
+    for observation in taskContextSwitchObservations.toOpenArray(
+        0, taskContextSwitchObservationCount - 1):
+      check observation.contextId == observation.futureContextId
 
   test "Future[T] callbacks are invoked in reverse order (#7197) test":
     var testResult = ""

@@ -52,6 +52,14 @@ type
 
   FutureFlags* = set[FutureFlag]
 
+  TaskLocalContext* = RootRef
+    ## Type-erased context associated with the currently executing async task.
+
+  TaskLocalContextSwitchCallback* = proc(ctx: TaskLocalContext) {.
+    gcsafe, raises: [].}
+    ## Callback invoked after the current async task and its context are
+    ## published. It may be invoked with the same context when the task changes.
+
   InternalFutureBase* = object of RootObj
     # Internal untyped future representation - the fields are not part of the
     # public API and neither is `InternalFutureBase`, ie the inheritance
@@ -69,6 +77,7 @@ type
     internalChild*: FutureBase
     internalState*: FutureState
     internalFlags*: FutureFlags
+    internalTaskLocalContext*: TaskLocalContext
     internalError*: ref CatchableError ## Stored exception
     internalClosure*: iterator(f: FutureBase): FutureBase {.raises: [], gcsafe.}
 
@@ -110,6 +119,12 @@ else:
   template id*(fut: FutureBase): uint =
     cast[uint](addr fut[])
 
+var
+  internalCurrentTaskFuture* {.threadvar.}: FutureBase
+  internalCurrentTaskLocalContext* {.threadvar.}: TaskLocalContext
+  internalTaskLocalContextSwitchCallback* {.threadvar.}:
+    TaskLocalContextSwitchCallback
+
 when chronosFutureTracking:
   type
     FutureList* = object
@@ -125,6 +140,7 @@ proc internalInitFutureBase*(fut: FutureBase, loc: ptr SrcLoc,
   fut.internalState = state
   fut.internalLocation[LocationKind.Create] = loc
   fut.internalFlags = flags
+  fut.internalTaskLocalContext = internalCurrentTaskLocalContext
   if FutureFlag.OwnCancelSchedule in flags:
     # Owners must replace `cancelCallback` with `nil` if they want to ignore
     # cancellations
@@ -208,6 +224,70 @@ func state*(future: FutureBase): FutureState =
 
 func flags*(future: FutureBase): FutureFlags =
   future.internalFlags
+
+func taskLocalContext*(future: FutureBase): TaskLocalContext =
+  ## Return the task-local context captured by ``future``.
+  future.internalTaskLocalContext
+
+proc currentTaskLocalContext*(): TaskLocalContext {.gcsafe, raises: [].} =
+  ## Return the task-local context for the currently executing async task.
+  {.cast(gcsafe).}:
+    result = internalCurrentTaskLocalContext
+
+proc internalSwitchCurrentTask*(fut: FutureBase, ctx: TaskLocalContext):
+    tuple[future: FutureBase, context: TaskLocalContext] {.
+    discardable, gcsafe, raises: [].} =
+  # Publish the future and its context as one coherent state before notifying
+  # instrumentation through the switch callback.
+  {.cast(gcsafe).}:
+    result = (internalCurrentTaskFuture, internalCurrentTaskLocalContext)
+    internalCurrentTaskFuture = fut
+    internalCurrentTaskLocalContext = ctx
+    if not fut.isNil:
+      fut.internalTaskLocalContext = ctx
+    if not internalTaskLocalContextSwitchCallback.isNil:
+      internalTaskLocalContextSwitchCallback(ctx)
+
+proc `taskLocalContext=`*(future: FutureBase, ctx: TaskLocalContext) {.
+    gcsafe, raises: [].} =
+  ## Replace the task-local context associated with ``future``.
+  {.cast(gcsafe).}:
+    if future == internalCurrentTaskFuture:
+      discard internalSwitchCurrentTask(future, ctx)
+    else:
+      future.internalTaskLocalContext = ctx
+
+proc currentTaskFuture*(): FutureBase {.gcsafe, raises: [].} =
+  ## Return the future currently being resumed by the Chronos async scheduler.
+  {.cast(gcsafe).}:
+    result = internalCurrentTaskFuture
+
+proc setCurrentTaskLocalContext*(ctx: TaskLocalContext): TaskLocalContext {.
+    discardable, gcsafe, raises: [].} =
+  ## Install ``ctx`` as the current task-local context and return the previous one.
+  {.cast(gcsafe).}:
+    result = internalCurrentTaskLocalContext
+    discard internalSwitchCurrentTask(internalCurrentTaskFuture, ctx)
+
+proc setTaskLocalContextSwitchCallback*(
+    cb: TaskLocalContextSwitchCallback): TaskLocalContextSwitchCallback {.
+    discardable, gcsafe, raises: [].} =
+  ## Install a callback invoked whenever the current async task or its context
+  ## is switched. The callback may be invoked when the context is unchanged,
+  ## because the current task may still have changed. When invoked,
+  ## ``currentTaskFuture()`` and ``currentTaskLocalContext()`` already reflect
+  ## the new state.
+  {.cast(gcsafe).}:
+    result = internalTaskLocalContextSwitchCallback
+    internalTaskLocalContextSwitchCallback = cb
+
+template withTaskLocalContext*(ctx: TaskLocalContext, body: untyped): untyped =
+  ## Run ``body`` with ``ctx`` installed as the current task-local context.
+  let chronosPrevTaskLocalContext = setCurrentTaskLocalContext(ctx)
+  try:
+    body
+  finally:
+    discard setCurrentTaskLocalContext(chronosPrevTaskLocalContext)
 
 func finished*(future: FutureBase): bool {.inline.} =
   ## Determines whether ``future`` has finished, i.e. ``future`` state changed

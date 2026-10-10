@@ -49,6 +49,18 @@ proc processBody(node, setResultSym: NimNode): (NimNode, bool) {.compileTime.} =
       anyUsed = used or anyUsed
     (node, anyUsed)
 
+proc lastSourceNode(n: NimNode): NimNode {.compileTime.} =
+  result = n
+  while result.len > 0:
+    var found = false
+    for i in countdown(result.len - 1, 0):
+      if result[i].kind notin {nnkEmpty, nnkCommentStmt}:
+        result = result[i]
+        found = true
+        break
+    if not found:
+      break
+
 proc wrapInTryFinally(
   fut, castFut, baseType, body, raises: NimNode,
   handleException: bool): NimNode {.compileTime.} =
@@ -154,25 +166,30 @@ proc wrapInTryFinally(
 
   addDefect # Must not complete future on defect
 
+  let completeFuture =
+    if baseType.eqIdent("void"): # shortcut for non-generic void
+      let call = newCall(ident "complete", castFut)
+      call.copyLineInfo(lastSourceNode(body))
+      call
+    else:
+      nnkWhenStmt.newTree(
+        nnkElifExpr.newTree(
+          nnkInfix.newTree(ident "is", baseType, ident "void"),
+          newCall(ident "complete", castFut)
+        ),
+        nnkElseExpr.newTree(
+          newCall(ident "complete", castFut, newCall(ident "move", ident "result"))
+        )
+      )
+
   nTry.add nnkFinally.newTree(
     nnkIfStmt.newTree(
       nnkElifBranch.newTree(
         closureSucceeded,
-        if baseType.eqIdent("void"): # shortcut for non-generic void
-          newCall(ident "complete", castFut)
-        else:
-          nnkWhenStmt.newTree(
-            nnkElifExpr.newTree(
-              nnkInfix.newTree(ident "is", baseType, ident "void"),
-              newCall(ident "complete", castFut)
-            ),
-            nnkElseExpr.newTree(
-              newCall(ident "complete", castFut, newCall(ident "move", ident "result"))
-            )
-          )
-        )
+        completeFuture
       )
     )
+  )
 
   nnkStmtList.newTree(
       newVarStmt(closureSucceeded, ident"true"),
@@ -268,6 +285,27 @@ proc isEmpty(n: NimNode): bool {.compileTime.} =
     true
   else:
     false
+
+proc forceStatementContext(n: NimNode): NimNode {.compileTime.} =
+  result =
+    if n.kind == nnkStmtList: n.copyNimTree()
+    else: nnkStmtList.newTree(n)
+
+  var lastStatement = result
+  while lastStatement.kind == nnkStmtList and lastStatement.len > 0:
+    var found = false
+    for i in countdown(lastStatement.len - 1, 0):
+      if lastStatement[i].kind notin {nnkEmpty, nnkCommentStmt}:
+        lastStatement = lastStatement[i]
+        found = true
+        break
+    if not found:
+      break
+
+  if lastStatement.kind in nnkCallKinds:
+    let discardStmt = nnkDiscardStmt.newTree(newEmptyNode())
+    discardStmt.copyLineInfo(lastSourceNode(lastStatement))
+    result.add discardStmt
 
 proc asyncSingleProc(prc, params: NimNode): NimNode {.compileTime.} =
   ## This macro transforms a single procedure into a closure iterator.
@@ -424,7 +462,7 @@ proc asyncSingleProc(prc, params: NimNode): NimNode {.compileTime.} =
               newEmptyNode(),
               nnkIdentDefs.newTree(codeSym, ident"untyped", newEmptyNode()),
             ),
-            newEmptyNode(),
+            nnkPragma.newTree(ident"used"),
             newEmptyNode(),
             nnkWhenStmt.newTree(
               nnkElifBranch.newTree(
@@ -464,12 +502,27 @@ proc asyncSingleProc(prc, params: NimNode): NimNode {.compileTime.} =
 
       internalFutureSym = ident "chronosInternalRetFuture"
       castFutureSym = nnkCast.newTree(internalFutureType, internalFutureSym)
+      voidProcBody = forceStatementContext(procBody)
+      transformedProcBody =
+        if baseTypeIsVoid:
+          voidProcBody
+        else:
+          nnkWhenStmt.newTree(
+            nnkElifExpr.newTree(
+              nnkInfix.newTree(ident "is", baseType, ident "void"),
+              voidProcBody
+            ),
+            nnkElseExpr.newTree(newCall(setResultSym, procBody))
+          )
       # Wrapping in try/finally ensures that early returns are handled properly
       # and that `defer` is processed in the right scope
       completeDecl = wrapInTryFinally(
         internalFutureSym, castFutureSym, baseType,
-        if baseTypeIsVoid: procBody # shortcut for non-generic `void`
-        else: newCall(setResultSym, procBody),
+        # Keep a trailing value-producing expression in statement context. In
+        # particular, this avoids treating a discardable call after `await` as
+        # a yield-containing expression, including when a generic return type
+        # is instantiated as `void`.
+        transformedProcBody,
         raises,
         handleException
       )
