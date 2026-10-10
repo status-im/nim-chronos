@@ -698,3 +698,29 @@ suite "Exception/effect tracking":
         poll()
     else:
       skip()
+
+  test "Mutable readFinished":
+    let fut = newFuture[string]()
+
+    fut.complete("test")
+
+    check:
+      fut.mreadFinished() == "test"
+    fut.mreadFinished()[0] = 'f'
+    check:
+      fut.mreadFinished() == "fest"
+
+  test "Move-only types with mawait":
+    type MoveOnly = object
+      v: string
+
+    proc `=copy`(a: var MoveOnly, b: MoveOnly) {.error.}
+
+    proc makeMovable(): Future[MoveOnly] {.async.} =
+      MoveOnly(v: "value")
+
+    proc testCompile() {.async.} =
+      let v = move mawait makeMovable()
+      doAssert v.v == "value"
+
+    waitFor testCompile()
