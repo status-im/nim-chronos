@@ -43,6 +43,32 @@ elif defined(emscripten) or defined(haiku):
   proc sendfile*(outfd, infd: int, offset: int, count: var int): int =
     raiseAssert "sendfile() is not implemented yet"
 
+elif defined(illumos):
+  {.passl: "-lsendfile".}
+
+  type
+    SendfileVec {.importc: "sendfilevec_t", header: "<sys/sendfile.h>",
+                  pure, final.} = object
+      sfv_fd: cint
+      sfv_flag: cuint
+      sfv_off: int64
+      sfv_len: csize_t
+
+  proc osSendFilev(outfd: cint, vector: ptr SendfileVec, count: cint,
+                   transferred: var csize_t): int {.
+       importc: "sendfilev", header: "<sys/sendfile.h>".}
+
+  proc sendfile*(outfd, infd: int, offset: int, count: var int): int =
+    # sendfilev reports partial progress even on EAGAIN/EINTR. The plain
+    # sendfile wrapper does not expose that progress on an error return.
+    var
+      vector = SendfileVec(sfv_fd: cint(infd), sfv_off: int64(offset),
+                          sfv_len: csize_t(count))
+      transferred: csize_t
+    let res = osSendFilev(cint(outfd), addr vector, 1, transferred)
+    count = int(transferred)
+    if res >= 0: 0 else: -1
+
 elif (defined(linux) or defined(android)) and not(defined(emscripten)):
 
   type

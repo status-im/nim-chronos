@@ -987,7 +987,10 @@ elif defined(macos) or defined(macosx):
   proc poll*(a1: ptr TPollfd, a2: Tnfds, a3: cint): cint {.
        importc, header: "<poll.h>", sideEffect.}
 
-elif defined(linux):
+elif defined(linux) or defined(illumos):
+  when defined(illumos):
+    {.passl: "-lsocket -lnsl".}
+
   from std/posix import close, shutdown, sigemptyset, sigaddset, sigismember,
                         sigdelset, write, read, waitid, getaddrinfo,
                         gai_strerror, setsockopt, getsockopt, socket,
@@ -1006,9 +1009,8 @@ elif defined(linux):
                         CLOCK_MONOTONIC, CLOCK_REALTIME, F_GETFL, F_SETFL,
                         F_GETFD, F_SETFD,
                         FD_CLOEXEC, O_NONBLOCK, SIG_BLOCK, SIG_UNBLOCK,
-                        SOL_SOCKET, SO_ERROR, RLIMIT_NOFILE, MSG_NOSIGNAL,
-                        MSG_PEEK,
-                        AF_INET, AF_INET6, AF_UNIX, SO_REUSEADDR, SO_REUSEPORT,
+                        SOL_SOCKET, SO_ERROR, RLIMIT_NOFILE, MSG_PEEK,
+                        AF_INET, AF_INET6, AF_UNIX, SO_REUSEADDR,
                         SO_BROADCAST, IPPROTO_IP, IPPROTO_IPV6,
                         IPV6_MULTICAST_HOPS,
                         SOCK_DGRAM, SOCK_STREAM, SHUT_RD, SHUT_WR, SHUT_RDWR,
@@ -1035,9 +1037,8 @@ elif defined(linux):
          FD_CLR, FD_ISSET, FD_SET, FD_ZERO,
          CLOCK_MONOTONIC, CLOCK_REALTIME, F_GETFL, F_SETFL, F_GETFD, F_SETFD,
          FD_CLOEXEC, O_NONBLOCK, SIG_BLOCK, SIG_UNBLOCK,
-         SOL_SOCKET, SO_ERROR, RLIMIT_NOFILE, MSG_NOSIGNAL,
-         MSG_PEEK,
-         AF_INET, AF_INET6, AF_UNIX, SO_REUSEADDR, SO_REUSEPORT,
+         SOL_SOCKET, SO_ERROR, RLIMIT_NOFILE, MSG_PEEK,
+         AF_INET, AF_INET6, AF_UNIX, SO_REUSEADDR,
          SO_BROADCAST, IPPROTO_IP, IPPROTO_IPV6, IPV6_MULTICAST_HOPS,
          SOCK_DGRAM, SOCK_STREAM, SHUT_RD, SHUT_WR, SHUT_RDWR,
          POLLIN, POLLOUT, POLLERR, POLLHUP, POLLNVAL,
@@ -1046,7 +1047,16 @@ elif defined(linux):
          SIGPIPE, SIGALRM, SIGTERM, SIGPIPE, SIGCHLD, SIGSTOP,
          SIGCONT
 
-  when not defined(android) and defined(amd64):
+  when defined(linux):
+    from std/posix import MSG_NOSIGNAL, SO_REUSEPORT
+    export MSG_NOSIGNAL, SO_REUSEPORT
+  else:
+    var MSG_NOSIGNAL* {.importc, header: "<sys/socket.h>".}: cint
+    # Like Windows, illumos has no SO_REUSEPORT. ReusePort requests use
+    # SO_REUSEADDR, without Linux's listener load-balancing semantics.
+    const SO_REUSEPORT* = cint(0x0004)
+
+  when defined(linux) and not defined(android) and defined(amd64):
     const IP_MULTICAST_TTL*: cint = 33
   else:
     var IP_MULTICAST_TTL* {.importc: "IP_MULTICAST_TTL",
@@ -1080,7 +1090,8 @@ elif defined(linux):
     EPOLL_CTL_MOD* = 3
 
   # https://github.com/torvalds/linux/blob/ff6992735ade75aae3e35d16b17da1008d753d28/include/uapi/linux/eventpoll.h#L77
-  when defined(linux) and defined(amd64):
+  # illumos uses pack(4) on amd64, giving the same 12-byte array stride.
+  when (defined(linux) or defined(illumos)) and defined(amd64):
     {.pragma: epollPacked, packed.}
   else:
     {.pragma: epollPacked.}
@@ -1116,7 +1127,10 @@ elif defined(linux):
       ssi_utime*: uint64
       ssi_stime*: uint64
       ssi_addr*: uint64
-      pad* {.importc: "__pad".}: array[0..47, uint8]
+      when defined(illumos):
+        pad* {.importc: "ssi_pad".}: array[0..47, uint8]
+      else:
+        pad* {.importc: "__pad".}: array[0..47, uint8]
 
   proc epoll_create*(size: cint): cint {.importc: "epoll_create",
        header: "<sys/epoll.h>", sideEffect.}
@@ -1201,8 +1215,8 @@ elif defined(freebsd) or defined(openbsd) or defined(netbsd) or
   var IP_MULTICAST_TTL* {.importc: "IP_MULTICAST_TTL",
                           header: "<netinet/in.h>".}: cint
 
-when defined(linux) or defined(freebsd) or defined(openbsd) or
-     defined(netbsd) or defined(dragonfly):
+when defined(linux) or defined(illumos) or
+     defined(freebsd) or defined(openbsd) or defined(netbsd) or defined(dragonfly):
 
   proc pipe2*(a: array[0..1, cint], flags: cint): cint {.
        importc, header: "<unistd.h>", sideEffect.}
@@ -1219,6 +1233,15 @@ when defined(linux):
     O_CLOEXEC* = 0x80000
     POSIX_SPAWN_USEVFORK* = 0x40
     IPV6_V6ONLY* = 26
+elif defined(illumos):
+  var
+    SOCK_NONBLOCK* {.importc, header: "<sys/socket.h>".}: cint
+    SOCK_CLOEXEC* {.importc, header: "<sys/socket.h>".}: cint
+    TCP_NODELAY* {.importc, header: "<netinet/tcp.h>".}: cint
+    IPPROTO_TCP* {.importc, header: "<netinet/in.h>".}: cint
+    O_CLOEXEC* {.importc, header: "<fcntl.h>".}: cint
+    IPV6_V6ONLY* {.importc, header: "<netinet/in.h>".}: cint
+  const POSIX_SPAWN_USEVFORK* = cint(0)
 elif defined(freebsd):
   const
     SOCK_NONBLOCK* = 0x20000000
@@ -1275,15 +1298,19 @@ elif defined(haiku):
 
 when defined(linux) or defined(macos) or defined(macosx) or defined(freebsd) or
      defined(openbsd) or defined(netbsd) or defined(dragonfly) or
-     defined(haiku):
+     defined(haiku) or defined(illumos):
 
   const
     POSIX_SPAWN_RESETIDS* = 0x01
     POSIX_SPAWN_SETPGROUP* = 0x02
-    POSIX_SPAWN_SETSCHEDPARAM* = 0x04
-    POSIX_SPAWN_SETSCHEDULER* = 0x08
-    POSIX_SPAWN_SETSIGDEF* = 0x10
-    POSIX_SPAWN_SETSIGMASK* = 0x20
+    POSIX_SPAWN_SETSCHEDPARAM* =
+      when defined(illumos): 0x10 else: 0x04
+    POSIX_SPAWN_SETSCHEDULER* =
+      when defined(illumos): 0x20 else: 0x08
+    POSIX_SPAWN_SETSIGDEF* =
+      when defined(illumos): 0x04 else: 0x10
+    POSIX_SPAWN_SETSIGMASK* =
+      when defined(illumos): 0x08 else: 0x20
 
   type
     SchedParam* {.importc: "struct sched_param", header: "<sched.h>",
@@ -1299,20 +1326,26 @@ when defined(linux) or defined(macos) or defined(macosx) or defined(freebsd) or
 
     PosixSpawnAttr* {.importc: "posix_spawnattr_t",
                       header: "<spawn.h>", final, pure.} = object
-      flags*: cshort
-      pgrp*: Pid
-      sd*: Sigset
-      ss*: Sigset
-      sp*: SchedParam
-      policy*: cint
-      pad*: array[16, cint]
+      when defined(illumos):
+        privateData {.importc: "__spawn_attrp".}: pointer
+      else:
+        flags*: cshort
+        pgrp*: Pid
+        sd*: Sigset
+        ss*: Sigset
+        sp*: SchedParam
+        policy*: cint
+        pad*: array[16, cint]
 
     PosixSpawnFileActions* {.importc: "posix_spawn_file_actions_t",
                              header: "<spawn.h>", final, pure.} = object
-      allocated*: cint
-      used*: cint
-      actions*: pointer
-      pad*: array[16, cint]
+      when defined(illumos):
+        privateData {.importc: "__file_attrp".}: pointer
+      else:
+        allocated*: cint
+        used*: cint
+        actions*: pointer
+        pad*: array[16, cint]
 
   proc posixSpawn*(a1: var Pid, a2: cstring, a3: var PosixSpawnFileActions,
                    a4: var PosixSpawnAttr, a5, a6: cstringArray): cint {.
@@ -1395,6 +1428,10 @@ when defined(linux) or defined(macos) or defined(macosx) or defined(freebsd) or
                                  a2: var Sigset): cint {.
        importc: "posix_spawnattr_setsigmask", header: "<spawn.h>",
        sideEffect.}
+
+when defined(illumos):
+  from std/posix import P_PID, WNOHANG, WSTOPPED, WEXITED, WNOWAIT
+  export P_PID, WNOHANG, WSTOPPED, WEXITED, WNOWAIT
 
 when defined(linux):
   const
@@ -1558,6 +1595,68 @@ when defined(posix):
 proc `==`*(x: SocketHandle, y: int): bool = int(x) == y
 when defined(nimdoc):
   proc `==`*(x: SocketHandle, y: SocketHandle): bool {.borrow.}
+
+when defined(illumos):
+  const
+    IFF_UP* = 0x01'u64
+    IFF_LOOPBACK* = 0x08'u64
+    IFF_RUNNING* = 0x40'u64
+    RTM_GET* = 0x04'u8
+    RTM_VERSION* = 3'u8
+    RTA_DST* = 0x01
+    RTA_GATEWAY* = 0x02
+    RTA_IFA* = 0x20
+    RTA_SRC* = 0x100
+
+  var
+    PF_ROUTE* {.importc, header: "<sys/socket.h>".}: cint
+    AF_LINK* {.importc, header: "<sys/socket.h>".}: cint
+    SOCK_RAW* {.importc, header: "<sys/socket.h>".}: cint
+    SIOCGLIFADDR* {.importc, header: "<sys/sockio.h>".}: cint
+    SIOCGLIFMTU* {.importc, header: "<sys/sockio.h>".}: cint
+    SIOCGLIFINDEX* {.importc, header: "<sys/sockio.h>".}: cint
+    SIOCGLIFHWADDR* {.importc, header: "<sys/sockio.h>".}: cint
+
+  type
+    IfAddrs* {.importc: "struct ifaddrs", header: "<ifaddrs.h>",
+               pure, final.} = object
+      ifa_next*: ptr IfAddrs
+      ifa_name*: cstring
+      ifa_flags*: uint64
+      ifa_addr*: ptr SockAddr
+      ifa_netmask*: ptr SockAddr
+
+    LifReq* {.importc: "struct lifreq", header: "<net/if.h>",
+              pure, final.} = object
+      lifr_name*: array[32, char]
+      lifr_type*: cuint
+      lifr_addr*: Sockaddr_storage
+      lifr_index*: cint
+      lifr_mtu*: cuint
+
+    RtMsgHeader* {.importc: "struct rt_msghdr", header: "<net/route.h>",
+                   pure, final.} = object
+      rtm_msglen*: cushort
+      rtm_version*: uint8
+      rtm_type*: uint8
+      rtm_index*: cushort
+      rtm_flags*: cint
+      rtm_addrs*: cint
+      rtm_pid*: Pid
+      rtm_seq*: cint
+      rtm_errno*: cint
+
+    Sockaddr_dl* {.importc: "struct sockaddr_dl", header: "<net/if_dl.h>",
+                   pure, final.} = object
+      sdl_family*: cushort
+      sdl_index*: cushort
+
+  proc getIfAddrs*(ifap: var ptr IfAddrs): cint {.
+       importc: "getifaddrs", header: "<ifaddrs.h>".}
+  proc freeIfAddrs*(ifap: ptr IfAddrs) {.
+       importc: "freeifaddrs", header: "<ifaddrs.h>".}
+  proc ioctl*(fd, request: cint, arg: ptr LifReq): cint {.
+       importc, header: "<sys/ioctl.h>".}
 
 when defined(macosx) or defined(macos) or defined(bsd):
   const

@@ -18,11 +18,10 @@
 ## Supported features: files, sockets, pipes, timers, processes, signals
 ## and user events.
 ##
-## Fully supported OS: MacOSX, FreeBSD, OpenBSD, NetBSD, Linux (except
-## for Android).
+## Fully supported OS: MacOSX, FreeBSD, OpenBSD, NetBSD, illumos and Linux
+## (except for Android). illumos uses its Linux-compatible epoll APIs.
 ##
-## Partially supported OS: Windows (only sockets and user events),
-## Solaris (files, sockets, handles and user events).
+## Partially supported OS: Windows (only sockets and user events).
 ## Android (files, sockets, handles and user events).
 ##
 ## TODO: ``/dev/poll``, ``event ports`` and filesystem events.
