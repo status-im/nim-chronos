@@ -8,7 +8,7 @@
 #              MIT license (LICENSE-MIT)
 
 ## This module implements cross-platform network interfaces list.
-## Currently supported OSes are Windows, Linux, MacOS, BSD(not tested).
+## Currently supported OSes are Windows, Linux, MacOS, BSD and illumos.
 
 {.push raises: [].}
 
@@ -776,6 +776,163 @@ when defined(linux):
       res = getRoute(sock, pid, address)
       discard osdefs.close(sock)
       res
+
+elif defined(illumos):
+  import std/strutils
+  import ".."/osutils
+
+  proc getInterfaces*(): seq[NetworkInterface] =
+    ## Return interfaces and their IPv4/IPv6 addresses. Unlike BSD, illumos
+    ## getifaddrs has no link records: obtain link metadata using lifreq ioctls.
+    var head: ptr IfAddrs
+    if getIfAddrs(head) != 0:
+      return
+    defer: freeIfAddrs(head)
+    var item = head
+    while item != nil:
+      if item.ifa_addr != nil:
+        let family = cint(item.ifa_addr.sa_family)
+        if family == osdefs.AF_INET or family == osdefs.AF_INET6:
+          let
+            fullName = $item.ifa_name
+            name = fullName.split(':')[0]
+          var i = 0
+          while i < result.len and result[i].name != name:
+            inc(i)
+          if i == result.len:
+            var iface = NetworkInterface(
+              name: name, flags: item.ifa_flags,
+              state: if (item.ifa_flags and (IFF_UP or IFF_RUNNING)) ==
+                          (IFF_UP or IFF_RUNNING): StatusUp else: StatusDown,
+              ifType: IfOther)
+            let fd = osdefs.socket(family, osdefs.SOCK_DGRAM, 0)
+            if fd != -1:
+              var req: LifReq
+              let size = min(fullName.len, req.lifr_name.len - 1)
+              copyMem(addr req.lifr_name[0], fullName.cstring, size)
+              if ioctl(cint(fd), SIOCGLIFADDR, addr req) == 0:
+                let ft = int(req.lifr_type)
+                if ft in 1..196 or ft in [237, 243, 244]:
+                  iface.ifType = cast[InterfaceType](ft)
+              if ioctl(cint(fd), SIOCGLIFINDEX, addr req) == 0:
+                iface.ifIndex = int(req.lifr_index)
+              if ioctl(cint(fd), SIOCGLIFMTU, addr req) == 0:
+                iface.mtu = int64(req.lifr_mtu)
+              if ioctl(cint(fd), SIOCGLIFHWADDR, addr req) == 0:
+                let sa = cast[ptr SockAddr](addr req.lifr_addr)
+                # SIOCGLIFHWADDR returns ARPHRD_ETHER in sa_family.
+                if cint(sa.sa_family) == 1:
+                  iface.ifType = IfEthernetCsmacd
+                  iface.maclen = 6
+                  copyMem(addr iface.mac[0], addr sa.sa_data[0], iface.maclen)
+              discard osdefs.close(cint(fd))
+            if (item.ifa_flags and IFF_LOOPBACK) != 0:
+              iface.ifType = IfSoftwareLoopback
+            result.add(iface)
+          var address: InterfaceAddress
+          let size =
+            if family == osdefs.AF_INET: SockLen(sizeof(Sockaddr_in))
+            else: SockLen(sizeof(Sockaddr_in6))
+          fromSAddr(cast[ptr Sockaddr_storage](item.ifa_addr), size, address.host)
+          if item.ifa_netmask != nil:
+            var mask: TransportAddress
+            fromSAddr(cast[ptr Sockaddr_storage](item.ifa_netmask), size, mask)
+            address.net = IpNet.init(address.host, mask)
+          result[i].addresses.add(address)
+      item = item.ifa_next
+    sort(result, cmp)
+
+  proc getBestRoute*(address: TransportAddress): Route =
+    ## Query the native routing socket. illumos has neither BSD sa_len bytes
+    ## nor Linux netlink; route addresses are rounded to four-byte boundaries.
+    if address.family notin {AddressFamily.IPv4, AddressFamily.IPv6}:
+      return
+    let family =
+      if address.family == AddressFamily.IPv4: osdefs.AF_INET else: osdefs.AF_INET6
+    let fd = osdefs.socket(PF_ROUTE, osdefs.SOCK_RAW, family)
+    if fd == -1:
+      return
+    defer: discard osdefs.close(cint(fd))
+    type RouteMessage = object
+      header: RtMsgHeader
+      space: array[1024, byte]
+    var msg: RouteMessage
+    var storage: Sockaddr_storage
+    var size: SockLen
+    address.toSAddr(storage, size)
+    msg.header.rtm_msglen = cushort(sizeof(RtMsgHeader) + int(size))
+    msg.header.rtm_version = RTM_VERSION
+    msg.header.rtm_type = RTM_GET
+    msg.header.rtm_addrs = RTA_DST
+    msg.header.rtm_pid = osdefs.getpid()
+    msg.header.rtm_seq = 0xCAFE
+    copyMem(addr msg.space[0], addr storage, int(size))
+    if handleEintr(osdefs.write(cint(fd), addr msg,
+                               int(msg.header.rtm_msglen))) == -1:
+      return
+    # Bound the wait, including unrelated routing messages, to avoid hanging
+    # callers if the routing socket does not return a matching response.
+    for attempt in 0..<16:
+      var pollfd = TPollfd(fd: cint(fd), events: POLLIN)
+      if handleEintr(osdefs.poll(addr pollfd, Tnfds(1), 1000)) <= 0:
+        return
+      let count = handleEintr(osdefs.read(cint(fd), addr msg, sizeof(msg)))
+      if count < sizeof(RtMsgHeader):
+        return
+      if msg.header.rtm_pid != osdefs.getpid() or msg.header.rtm_seq != 0xCAFE:
+        continue
+      if msg.header.rtm_errno != 0 or msg.header.rtm_version != RTM_VERSION:
+        return
+      if int(msg.header.rtm_msglen) > count:
+        return
+      result.ifIndex = int(msg.header.rtm_index)
+      result.dest = address
+      var offset = 0
+      let available = int(msg.header.rtm_msglen) - sizeof(RtMsgHeader)
+      for bit in 0..<9:
+        let mask = 1 shl bit
+        if (msg.header.rtm_addrs and mask) != 0:
+          if offset + sizeof(cushort) > available:
+            return Route()
+          let sa = cast[ptr SockAddr](addr msg.space[offset])
+          let length =
+            if cint(sa.sa_family) == osdefs.AF_INET: sizeof(Sockaddr_in)
+            elif cint(sa.sa_family) == osdefs.AF_INET6: sizeof(Sockaddr_in6)
+            elif cint(sa.sa_family) == AF_LINK: sizeof(Sockaddr_dl)
+            else: sizeof(SockAddr)
+          if offset + length > available:
+            return Route()
+          if cint(sa.sa_family) == osdefs.AF_INET or
+             cint(sa.sa_family) == osdefs.AF_INET6:
+            if mask == RTA_GATEWAY:
+              fromSAddr(cast[ptr Sockaddr_storage](sa), SockLen(length),
+                        result.gateway)
+            elif mask == RTA_IFA or mask == RTA_SRC:
+              fromSAddr(cast[ptr Sockaddr_storage](sa), SockLen(length),
+                        result.source)
+          offset += (length + 3) and not(3)
+      # Let the kernel choose the source address, respecting source-selection
+      # policy rather than taking the last address of the outgoing interface.
+      let udp = osdefs.socket(family, osdefs.SOCK_DGRAM, 0)
+      if udp != -1:
+        var destination = address
+        destination.port = Port(9)
+        destination.toSAddr(storage, size)
+        if osdefs.connect(udp, cast[ptr SockAddr](addr storage), size) == 0:
+          size = SockLen(sizeof(storage))
+          if osdefs.getsockname(udp, cast[ptr SockAddr](addr storage), addr size) == 0:
+            fromSAddr(addr storage, size, result.source)
+            result.source.port = Port(0)
+        discard osdefs.close(cint(udp))
+      if result.ifIndex == 0:
+        # Some RTM_GET responses omit rtm_index; match the selected source
+        # against interface addresses instead.
+        for iface in getInterfaces():
+          for local in iface.addresses:
+            if local.host == result.source:
+              result.ifIndex = iface.ifIndex
+              break
+      return
 
 elif defined(macosx) or defined(macos) or defined(bsd):
 

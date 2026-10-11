@@ -77,7 +77,7 @@ const
       "poll"
     elif defined(android):
       "epoll"
-    elif defined(linux):
+    elif defined(linux) or defined(illumos):
       "epoll"
     elif defined(macosx) or defined(macos) or defined(ios) or
           defined(freebsd) or defined(netbsd) or defined(openbsd) or
