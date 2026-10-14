@@ -1557,7 +1557,7 @@ suite "Stream Transport test suite":
     await server3.closeWait()
 
   asyncTest "[IP] write() cancellation leaks test":
-    const MessageSize = 16384 * 1024
+    const MessageSize = 1234 * 1024
     var messages: seq[seq[byte]]
     for i in 0 ..< 4:
       var message = newSeq[byte](MessageSize)
@@ -1588,8 +1588,15 @@ suite "Stream Transport test suite":
       syncFut = newFuture[void]()
       data.reset()
       let transp = await connect(server.local)
-      let fut = transp.write(message)
-      doAssert(not(fut.finished()), "Message is longer than socket buffer size")
+      var
+        fut: Future[int].Raising([TransportError, CancelledError])
+        numMessages = 0
+      while numMessages < 50:
+        inc(numMessages)
+        fut = transp.write(message)
+        if not(fut.finished()):
+          break
+      doAssert(not(fut.finished()), "Socket should have a bounded buffer size")
       await fut.cancelAndWait()
       when not defined(windows):
         doAssert(fut.cancelled(), "Future should be Cancelled at this point")
@@ -1605,7 +1612,7 @@ suite "Stream Transport test suite":
 
       when not defined(windows):
         check:
-          len(data) < MessageSize
+          len(data) < numMessages * MessageSize
           res == len(finalMessage)
           len(data) >= len(finalMessage) and
           data[^len(finalMessage) .. ^1] == finalMessage
@@ -1614,7 +1621,7 @@ suite "Stream Transport test suite":
     await server.closeWait()
 
   asyncTest "[IP] write() cancellation queue test":
-    const MessageSize = 16384 * 1024
+    const MessageSize = 1234 * 1024
     var
       message = newSeq[byte](MessageSize)
       message2 = newSeq[byte](MessageSize)
@@ -1655,12 +1662,19 @@ suite "Stream Transport test suite":
         else:
           int(getFileHandle(fhandle))
     doAssert(handle > 0)
-    let
+    var
+      fut1: Future[int].Raising([TransportError, CancelledError])
+      numMessages = 0
+    while numMessages < 50:
+      inc(numMessages)
       fut1 = transp.write(message)
+      if not(fut1.finished()):
+        break
+    doAssert(not(fut1.finished()), "Socket should have a bounded buffer size")
+    let
       fut2 = transp.write(addr message2[0], len(message2))
       fut3 = transp.write(textMessage)
       fut4 = transp.writeFile(handle, 0'u, size)
-    doAssert(not(fut1.finished()), "Message is longer than socket buffer size")
     for fut in [fut2, fut3, fut4]:
       doAssert(not(fut.finished()), "Write has been queued")
     await cancelAndWait(fut2, fut3, fut4)
@@ -1683,10 +1697,16 @@ suite "Stream Transport test suite":
 
     when not defined(windows):
       check:
-        len(data) < MessageSize
+        len(data) < numMessages * MessageSize
         res == len(finalMessage)
-        len(data) >= len(finalMessage) and
-        data == message[0 ..< len(data) - len(finalMessage)] & finalMessage
+        len(data) >= len(finalMessage) and (block:
+          var o = 0
+          while o + len(message) <= len(data) - len(finalMessage):
+            check data[o ..< len(message)] == message
+            o = o + len(message)
+          let n = len(data) - len(finalMessage)
+          data[o ..< ^len(finalMessage)] == message[0 ..< n] and
+          data[^len(finalMessage) .. ^1] == finalMessage)
 
     await server.join()
     await server.closeWait()
