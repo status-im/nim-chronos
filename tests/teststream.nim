@@ -1677,12 +1677,13 @@ suite "Stream Transport test suite":
       fut4 = transp.writeFile(handle, 0'u, size)
     for fut in [fut2, fut3, fut4]:
       doAssert(not(fut.finished()), "Write has been queued")
-    await cancelAndWait(fut2, fut3, fut4)
+    let cancelFut = cancelAndWait(fut2, fut3, fut4)
     for fut in [fut2, fut3, fut4]:
       doAssert(fut.cancelled(), "Future should be Cancelled at this point")
     message2.reset()
     close(fhandle)
     await fut1.cancelAndWait()
+    await cancelFut
     when not defined(windows):
       doAssert(fut1.cancelled(), "Future should be Cancelled at this point")
 
@@ -1702,9 +1703,9 @@ suite "Stream Transport test suite":
         len(data) >= len(finalMessage) and (block:
           var o = 0
           while o + len(message) <= len(data) - len(finalMessage):
-            check data[o ..< len(message)] == message
+            check data[o ..< o + len(message)] == message
             o = o + len(message)
-          let n = len(data) - len(finalMessage)
+          let n = len(data) - len(finalMessage) - o
           data[o ..< ^len(finalMessage)] == message[0 ..< n] and
           data[^len(finalMessage) .. ^1] == finalMessage)
 
