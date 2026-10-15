@@ -958,7 +958,9 @@ when defined(windows):
             elif errCode == ERROR_IO_PENDING:
               discard
             elif errCode == ERROR_PIPE_CONNECTED or errCode == ERROR_NO_DATA:
-              ovl.data.errCode = OSErrorCode(-1)  # Synchronously succeeded
+              # Unlike wsaSend, connectNamedPipe will not post a completion
+              # when it completes synchronously
+              ovl.data.errCode = OSErrorCode(-1)
               continue
             else:
               raiseOsDefect(errCode, "acceptPipeLoop(): Unable to establish " &
@@ -1296,7 +1298,9 @@ when defined(windows):
         of ERROR_IO_PENDING:
           discard
         of ERROR_PIPE_CONNECTED, ERROR_NO_DATA:
-          server.aovl.data.errCode = OSErrorCode(-1)  # Synchronously succeeded
+          # Unlike wsaSend, connectNamedPipe will not post a completion
+          # when it completes synchronously
+          server.aovl.data.errCode = OSErrorCode(-1)
           continuationPipe(addr server.aovl)
           return retFuture
         of ERROR_OPERATION_ABORTED:
