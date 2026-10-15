@@ -6,12 +6,16 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build:
-    uses: status-im/nimbus-common-workflow/.github/workflows/common.yml@main
+    uses: nitely/nimbus-common-workflow/.github/workflows/common.yml@cache_doc
     with:
       test-command: |
         nimble install -y libbacktrace
         nimble test
         nimble test_libbacktrace
         nimble examples
+        nimble api_docs

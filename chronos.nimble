@@ -120,14 +120,18 @@ task test_libbacktrace, "test with libbacktrace":
       if (NimMajor, NimMinor) >= (2, 2):
         run args & " --mm:orc", "tests/testall"
 
-task docs, "Generate API documentation":
-  exec "mdbook build docs"
-  tryExec nimc & " doc " &
+task api_docs, "Generate API documentation":
+  exec nimc & " doc " &
+    "--git.url:https://github.com/status-im/nim-chronos --git.commit:master --outdir:docs/book/api --project chronos/asyncproc.nim"
+  exec nimc & " doc " &
     "--git.url:https://github.com/status-im/nim-chronos --git.commit:master --outdir:docs/book/api --project chronos"
-
   # Build the docs for modules that aren't part of the main module.
   for item in walkDir("chronos/apps/http"):
     if item.kind == pcFile and item.path.splitFile().ext == ".nim":
-      tryExec nimc & " doc " &
+      exec nimc & " doc " &
         "--git.url:https://github.com/status-im/nim-chronos --git.commit:master --outdir:docs/book/api/chronos/apps/http " &
         item.path
+
+task docs, "Generate Book":
+  exec "mdbook build docs"
+  exec "nimble api_docs"
