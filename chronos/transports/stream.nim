@@ -957,8 +957,9 @@ when defined(windows):
               break
             elif errCode == ERROR_IO_PENDING:
               discard
-            elif errCode == ERROR_PIPE_CONNECTED:
-              discard
+            elif errCode == ERROR_PIPE_CONNECTED or errCode == ERROR_NO_DATA:
+              ovl.data.errCode = OSErrorCode(-1)  # Synchronously succeeded
+              continue
             else:
               raiseOsDefect(errCode, "acceptPipeLoop(): Unable to establish " &
                                      "pipe connection")
@@ -1292,8 +1293,12 @@ when defined(windows):
       if res == 0:
         let err = osLastError()
         case err
-        of ERROR_IO_PENDING, ERROR_PIPE_CONNECTED:
+        of ERROR_IO_PENDING:
           discard
+        of ERROR_PIPE_CONNECTED, ERROR_NO_DATA:
+          server.aovl.data.errCode = OSErrorCode(-1)  # Synchronously succeeded
+          continuationPipe(addr server.aovl)
+          return retFuture
         of ERROR_OPERATION_ABORTED:
           server.apending = false
           retFuture.fail(getServerUseClosedError())
