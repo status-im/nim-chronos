@@ -2426,13 +2426,8 @@ template fastWrite(transp: auto, pbytes: var ptr byte, rbytes: var int,
 proc newWriteFuture(transp: StreamTransport,
                     fromProc: static string
                    ): Future[int].Raising([TransportError, CancelledError]) =
-  const flags =
-    when defined(windows):
-      {FutureFlag.OwnCancelSchedule}
-    else:
-      {}
   let writer = Future[int].Raising([TransportError, CancelledError])
-    .init(fromProc, flags)
+    .init(fromProc, {FutureFlag.OwnCancelSchedule})
 
   proc cancellation(udata: pointer) {.gcsafe, raises: [].} =
     when defined(windows):
@@ -2450,8 +2445,7 @@ proc newWriteFuture(transp: StreamTransport,
         break
       when defined(windows):
         inc(i)
-    when defined(windows):
-      writer.cancelAndSchedule()
+    writer.cancelAndSchedule()
 
   writer.cancelCallback = cancellation
   writer

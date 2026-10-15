@@ -1019,13 +1019,8 @@ proc closeWait*(transp: DatagramTransport): Future[void] {.
 proc newSendFuture(transp: DatagramTransport,
                    fromProc: static string
                   ): Future[void].Raising([TransportError, CancelledError]) =
-  const flags =
-    when defined(windows):
-      {FutureFlag.OwnCancelSchedule}
-    else:
-      {}
   let writer = Future[void].Raising([TransportError, CancelledError])
-    .init(fromProc, flags)
+    .init(fromProc, {FutureFlag.OwnCancelSchedule})
 
   proc cancellation(udata: pointer) {.gcsafe, raises: [].} =
     when defined(windows):
@@ -1043,8 +1038,7 @@ proc newSendFuture(transp: DatagramTransport,
         break
       when defined(windows):
         inc(i)
-    when defined(windows):
-      writer.cancelAndSchedule()
+    writer.cancelAndSchedule()
 
   writer.cancelCallback = cancellation
   writer
