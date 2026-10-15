@@ -859,8 +859,15 @@ proc isSiteLocal*(address: TransportAddress): bool =
     false
 
 proc isPrivate*(address: TransportAddress): bool =
-  ## Alias for ``isSiteLocal()``.
-  isSiteLocal(address)
+  ## Returns ``true`` if ``address`` is a private (not globally routable,
+  ## locally assigned) address.
+  ##
+  ## ``IPv4``: 10.0.0.0 - 10.255.255.255, 172.16.0.0 - 172.31.255.255,
+  ##           192.168.0.0 - 192.168.255.255
+  ##
+  ## ``IPv6``: FC00::/7 (unique local addresses, [RFC 4193]) and the deprecated
+  ##           site local addresses FEC0::/10 ([RFC 3879]) that they replaced.
+  isSiteLocal(address) or isUniqueLocal(address)
 
 proc isGlobalMulticast*(address: TransportAddress): bool =
   ## Returns ``true`` if the multicast address has global scope.
