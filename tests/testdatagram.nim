@@ -1101,6 +1101,62 @@ suite "Datagram Transport test suite":
   asyncTest "[IP] 0-size UDP datagram size test":
     check (await performPacketSizeTest(576)) == true
 
+  asyncTest "[IP] sendTo() cancellation leaks test":
+    const MessageSize = 1024
+    var messages: seq[seq[byte]]
+    for i in 0 ..< 4:
+      var message = newSeq[byte](MessageSize)
+      for j in 0 ..< len(message):
+        message[j] = byte(0x42 + i + (j mod 16))
+      messages.add(message)
+    const finalMessage = @[byte 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7]
+
+    var
+      i = 0
+      res = 0
+    proc client(
+        transp: DatagramTransport,
+        raddr: TransportAddress
+    ): Future[void] {.async: (raises: []).} =
+      try:
+        var pbytes = transp.getMessage()
+        if pbytes == finalMessage:
+          await transp.closeWait()
+        else:
+          if pbytes in messages:
+            inc(res)
+          inc(i)
+      except CatchableError as exc:
+        raiseAssert exc.msg
+
+    let
+      ta = initTAddress("127.0.0.1:0")
+      dgram1 = newDatagramTransport(client, local = ta)
+      dgram2 = newDatagramTransport(client, local = ta)
+      lta2 = dgram2.localAddress()
+
+    for i, message in messages:
+      let fut =
+        case i mod 2
+        of 0:
+          dgram1.sendTo(lta2, unsafeAddr message[0], len(message))
+        else:
+          dgram1.sendTo(lta2, message)
+      check not(fut.finished())
+      await fut.cancelAndWait()
+      when defined(windows):
+        check fut.cancelled() or fut.completed()  # Cancel is async
+      else:
+        check fut.cancelled()
+    await dgram1.sendTo(lta2, finalMessage)
+
+    await dgram2.join()
+    await dgram1.closeWait()
+
+    check res == i
+    when not defined(windows):
+      check i == 0
+
   for socketType in DatagramSocketType:
     for portNumber in [Port(0), Port(30231)]:
       asyncTest "[IP] IPv6 mapping test (" & $socketType &
