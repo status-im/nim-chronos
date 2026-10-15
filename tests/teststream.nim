@@ -1324,6 +1324,59 @@ suite "Stream Transport test suite":
 
       check ok
 
+    asyncTest prefixes[i] & "accept() after connect() test":
+      var server = createStreamServer(address, flags = {ReuseAddr})
+      var accepted = 0
+
+      proc acceptTask(server: StreamServer) {.async.} =
+        let transp = await server.accept()
+        var buffer = newString(len(ConstantMessage))
+        await transp.readExactly(addr buffer[0], len(buffer))
+        await transp.closeWait()
+        if buffer == ConstantMessage:
+          inc(accepted)
+
+      var transp: StreamTransport
+      try:
+        for i in 0 ..< TestsCount:
+          transp = await connect(server.local)
+          var acceptFut = acceptTask(server)
+          discard await transp.write(ConstantMessage)
+          if not(await withTimeout(acceptFut, 5.seconds)):
+            break
+          await acceptFut
+          await transp.closeWait()
+      finally:
+        await server.closeWait()
+        if not(isNil(transp)):
+          await transp.closeWait()
+
+      check accepted == TestsCount
+
+    asyncTest prefixes[i] & "accept() after connect() and close() test":
+      var server = createStreamServer(address, flags = {ReuseAddr})
+      var accepted = 0
+
+      proc acceptTask(server: StreamServer) {.async.} =
+        let transp = await server.accept()
+        let data = await transp.read()
+        await transp.closeWait()
+        if len(data) == 0:
+          inc(accepted)
+
+      try:
+        for i in 0 ..< TestsCount:
+          var transp = await connect(server.local)
+          await transp.closeWait()
+          var acceptFut = acceptTask(server)
+          if not(await withTimeout(acceptFut, 5.seconds)):
+            break
+          await acceptFut
+      finally:
+        await server.closeWait()
+
+      check accepted == TestsCount
+
     asyncTest prefixes[i] & "close() while in accept() waiting test":
       var server = createStreamServer(address, flags = {ReuseAddr})
 
