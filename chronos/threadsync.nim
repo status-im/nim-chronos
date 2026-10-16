@@ -17,7 +17,8 @@ export results
 
 const
   hasThreadSupport = compileOption("threads")
-  hasEventFd = defined(linux) and not defined(emscripten)
+  hasEventFd = (defined(linux) or defined(illumos)) and
+               not defined(emscripten)
 
 when not(hasThreadSupport):
   {.fatal: "Compile this program with threads enabled!".}
