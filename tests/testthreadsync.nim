@@ -384,3 +384,116 @@ suite "Asynchronous multi-threading sync primitives test suite":
   asyncTest "ThreadSignal: Single threaded switches [" & $TestsCount &
             "] test [async -> sync]":
     threadSignalTest4(TestsCount, WaitSendKind.Async, WaitSendKind.Sync)
+
+  type
+    UnregisterResult = object
+      unregistered: bool
+      refused: bool
+      completed: bool
+      hadDispatcher: bool
+      closedCleanly: bool
+      defectRaised: bool
+
+    UnregisterArg = object
+      signal: ThreadSignalPtr
+      unregister: bool
+      retval: ptr UnregisterResult
+
+  proc closeChecked(retval: ptr UnregisterResult) =
+    try:
+      retval[].closedCleanly = closeThreadDispatcher().isNone()
+    except Defect:
+      retval[].defectRaised = true
+
+  proc runThread(fn: proc(arg: UnregisterArg) {.thread, nimcall.},
+                 signal: ThreadSignalPtr, unregister = true): UnregisterResult =
+    var
+      retval = UnregisterResult()
+      thread: Thread[UnregisterArg]
+    createThread(thread, fn,
+                 UnregisterArg(signal: signal, unregister: unregister,
+                               retval: addr retval))
+    joinThreads(thread)
+    retval
+
+  test "ThreadSignal: unregister() lets a thread that waited close its dispatcher":
+    proc waitedThread(arg: UnregisterArg) {.thread, nimcall.} =
+      try:
+        waitFor arg.signal.wait()
+      except CatchableError:
+        return
+      if arg.unregister:
+        arg.retval[].unregistered = arg.signal.unregister().isOk()
+      closeChecked(arg.retval)
+
+    for unregister in [false, true]:
+      let signal = ThreadSignalPtr.new().tryGet()
+      check signal.fireSync().tryGet()
+      let retval = runThread(waitedThread, signal, unregister)
+
+      when defined(windows):
+        check:
+          retval.defectRaised == false
+          retval.closedCleanly == true
+      else:
+        if unregister:
+          check:
+            retval.unregistered == true
+            retval.defectRaised == false
+            retval.closedCleanly == true
+        else:
+          # The registration `wait` left behind is what the dispatcher rejects.
+          check retval.defectRaised == true
+      check signal.close().isOk()
+
+  test "ThreadSignal: unregister() does not create a dispatcher":
+    proc freshThread(arg: UnregisterArg) {.thread, nimcall.} =
+      arg.retval[].unregistered = arg.signal.unregister().isOk()
+      arg.retval[].hadDispatcher = hasThreadDispatcher()
+
+    let signal = ThreadSignalPtr.new().tryGet()
+    let retval = runThread(freshThread, signal)
+    check:
+      retval.unregistered == true
+      retval.hadDispatcher == false
+      signal.close().isOk()
+
+  test "ThreadSignal: unregister() ignores a signal the thread never waited on":
+    proc idleThread(arg: UnregisterArg) {.thread, nimcall.} =
+      discard getThreadDispatcher()
+      arg.retval[].unregistered = arg.signal.unregister().isOk()
+      closeChecked(arg.retval)
+
+    let signal = ThreadSignalPtr.new().tryGet()
+    let retval = runThread(idleThread, signal)
+    check:
+      retval.unregistered == true
+      retval.defectRaised == false
+      retval.closedCleanly == true
+      signal.close().isOk()
+
+  test "ThreadSignal: unregister() refuses while a wait is pending":
+    proc pendingThread(arg: UnregisterArg) {.thread, nimcall.} =
+      let waiting = arg.signal.wait()
+      arg.retval[].refused = arg.signal.unregister().isErr()
+      # The refusal must leave the pending wait intact.
+      discard arg.signal.fireSync()
+      try:
+        arg.retval[].completed = waitFor(waiting.withTimeout(1.seconds))
+      except CatchableError:
+        return
+      arg.retval[].unregistered = arg.signal.unregister().isOk()
+      closeChecked(arg.retval)
+
+    let signal = ThreadSignalPtr.new().tryGet()
+    let retval = runThread(pendingThread, signal)
+    when defined(windows):
+      check retval.refused == false
+    else:
+      check retval.refused == true
+    check:
+      retval.completed == true
+      retval.unregistered == true
+      retval.defectRaised == false
+      retval.closedCleanly == true
+      signal.close().isOk()
