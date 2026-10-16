@@ -8,7 +8,8 @@
 #              MIT license (LICENSE-MIT)
 
 ## This module implements cross-platform network interfaces list.
-## Currently supported OSes are Windows, Linux, MacOS, BSD and illumos.
+## Currently supported OSes are Windows, Linux and MacOS. BSDs and illumos have
+## been ported, but are not regularly tested in CI and may bitrot.
 
 {.push raises: [].}
 
@@ -779,7 +780,7 @@ when defined(linux):
 
 elif defined(illumos):
   import std/strutils
-  import ".."/osutils
+  import ../osutils
 
   proc getInterfaces*(): seq[NetworkInterface] =
     ## Return interfaces and their IPv4/IPv6 addresses. Unlike BSD, illumos

@@ -1234,14 +1234,14 @@ when defined(linux):
     POSIX_SPAWN_USEVFORK* = 0x40
     IPV6_V6ONLY* = 26
 elif defined(illumos):
-  var
-    SOCK_NONBLOCK* {.importc, header: "<sys/socket.h>".}: cint
-    SOCK_CLOEXEC* {.importc, header: "<sys/socket.h>".}: cint
-    TCP_NODELAY* {.importc, header: "<netinet/tcp.h>".}: cint
-    IPPROTO_TCP* {.importc, header: "<netinet/in.h>".}: cint
-    O_CLOEXEC* {.importc, header: "<fcntl.h>".}: cint
-    IPV6_V6ONLY* {.importc, header: "<netinet/in.h>".}: cint
-  const POSIX_SPAWN_USEVFORK* = cint(0)
+  const
+    SOCK_NONBLOCK* = 0x100000
+    SOCK_CLOEXEC* = 0x080000
+    TCP_NODELAY* = cint(1)
+    IPPROTO_TCP* = 6
+    O_CLOEXEC* = 0x800000
+    IPV6_V6ONLY* = 0x27
+    POSIX_SPAWN_USEVFORK* = 0x00
 elif defined(freebsd):
   const
     SOCK_NONBLOCK* = 0x20000000
