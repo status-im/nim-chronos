@@ -17,6 +17,8 @@ import ./asyncloop
 export asyncloop
 
 type
+  Waiter = Future[void].Raising([CancelledError])
+
   AsyncLock* = ref object of RootRef
     ## A primitive lock is a synchronization primitive that is not owned by
     ## a particular coroutine when locked. A primitive lock is in one of two
@@ -27,8 +29,7 @@ type
     ## ``release()`` call resets the state to unlocked; first coroutine which
     ## is blocked in ``acquire()`` is being processed.
     locked: bool
-    acquired: bool
-    waiters: Deque[Future[void].Raising([CancelledError])]
+    waiters: Deque[Waiter]
 
   AsyncEvent* = ref object of RootRef
     ## A primitive event object.
@@ -41,7 +42,7 @@ type
     ## state to be signaled, when event get fired, then all coroutines
     ## continue proceeds in order, they have entered waiting state.
     flag: bool
-    waiters: seq[Future[void].Raising([CancelledError])]
+    waiters: seq[Waiter]
 
   AsyncQueue*[T] = ref object of RootRef
     ## A queue, useful for coordinating producer and consumer coroutines.
@@ -59,7 +60,7 @@ type
     ## ``AsyncQueue`` is empty.
   AsyncQueueFullError* = object of AsyncError
     ## ``AsyncQueue`` is full.
-  AsyncLockError* = object of AsyncError
+  AsyncLockError* {.deprecated: "See `release2`".} = object of AsyncError
     ## ``AsyncLock`` is either locked or unlocked.
 
   AsyncEventQueueFullError* = object of AsyncError
@@ -78,7 +79,7 @@ type
     counter: uint64
     limit: int
     offset: int
-  
+
   AsyncSemaphore* = ref object of RootObj
     ## A semaphore manages an internal number of available slots which is decremented 
     ## by each ``acquire()`` call and incremented by each ``release()`` call. 
@@ -92,7 +93,34 @@ type
     availableSlots: int
     waiters: Deque[Future[void].Raising([CancelledError])]
 
-  AsyncSemaphoreError* = object of AsyncError
+  AsyncSemaphoreError* {.deprecated: "See `release2`".} = object of AsyncError
+
+template acquireImpl(v: AsyncLock | AsyncSemaphore, acquired: bool): untyped =
+  ## Acquire the lock or semaphore ``v``. If it is already acquired, wait until
+  ## it is released.
+  let fut = newFuture[void]("acquire")
+  if acquired:
+    fut.complete()
+  else:
+    # Drop easily accessible cancelled waiters
+    while v.waiters.len > 0 and v.waiters[0].finished:
+      discard v.waiters.popFirst()
+    while v.waiters.len > 0 and v.waiters[^1].finished:
+      discard v.waiters.popLast()
+
+    v.waiters.addLast(fut)
+
+  fut
+
+template releaseImpl(v: AsyncLock | AsyncSemaphore, body: untyped) =
+  while v.waiters.len > 0:
+    let fut = v.waiters.popFirst()
+    if not fut.finished(): # Might have been cancelled
+      # Do not unlock as we are giving the lock/semaphore to a waiter
+      fut.complete()
+      return
+
+  body
 
 proc newAsyncLock*(): AsyncLock =
   ## Creates new asynchronous lock ``AsyncLock``.
@@ -107,60 +135,123 @@ proc newAsyncLock*(): AsyncLock =
 
   AsyncLock()
 
-proc wakeUpFirst(lock: AsyncLock): bool {.inline.} =
-  ## Wake up the first waiter that wasn't cancelled.
-  while lock.waiters.len > 0:
-    let waiter = lock.waiters.popFirst()
-    if not(waiter.cancelled()):
-      waiter.complete()
-      return true
-  false
+proc tryAcquire*(lock: AsyncLock): bool =
+  ## Attempts to acquire the lock, returning true if it was unlocked, otherwise
+  ## false.
 
-proc hasWaiters(lock: AsyncLock): bool {.inline.} =
-  ## Returns ``true`` if there are waiters that haven't been cancelled.
-  while lock.waiters.len > 0:
-    if not(lock.waiters.peekFirst().cancelled()):
-      return true
-    discard lock.waiters.popFirst()
-  false
-
-proc acquire*(lock: AsyncLock) {.async: (raises: [CancelledError]).} =
-  ## Acquire a lock ``lock``.
-  ##
-  ## This procedure blocks until the lock ``lock`` is unlocked, then sets it
-  ## to locked and returns.
-  if not(lock.locked) and not(lock.hasWaiters()):
-    lock.acquired = true
+  if not lock.locked:
     lock.locked = true
+    true
   else:
-    let w = Future[void].Raising([CancelledError]).init("AsyncLock.acquire")
-    lock.waiters.addLast(w)
-    await w
-    lock.acquired = true
-    lock.locked = true
+    false
+
+proc acquire*(
+    lock: AsyncLock
+): Future[void] {.async: (raises: [CancelledError], raw: true).} =
+  ## Acquire the lock, completing the returned future when the lock is acquired.
+
+  acquireImpl(lock, lock.tryAcquire())
+
+proc release2*(lock: AsyncLock) =
+  ## Release the lock, allowing one of the waiters to acquire it.
+  ##
+  ## Releasing a lock that is not held is undefined behavior and may
+  ## result in a Defect being raised.
+  ##
+  ## `release2` is an interim interim solution to avoid breaking
+  ## existing code that uses `release` and `AsyncLockError`.
+  ## A future major chronos release will update `release` to behave
+  ## like `release2` and remove the `AsyncLockError` type.
+  doAssert lock.locked, "Lock is not acquired"
+
+  releaseImpl(lock):
+    lock.locked = false
 
 proc locked*(lock: AsyncLock): bool =
   ## Return `true` if the lock ``lock`` is acquired, `false` otherwise.
   lock.locked
 
+{.push warning[Deprecated]: off.}
 proc release*(lock: AsyncLock) {.raises: [AsyncLockError].} =
   ## Release a lock ``lock``.
   ##
   ## When the ``lock`` is locked, reset it to unlocked, and return. If any
   ## other coroutines are blocked waiting for the lock to become unlocked,
   ## allow exactly one of them to proceed.
-  if lock.locked:
-    # We set ``lock.locked`` to ``false`` only when there no active waiters.
-    # If active waiters are present, then ``lock.locked`` will be set to `true`
-    # in ``acquire()`` procedure's continuation.
-    if not(lock.acquired):
-      raise newException(AsyncLockError, "AsyncLock was already released!")
-    else:
-      lock.acquired = false
-      if not(lock.wakeUpFirst()):
-        lock.locked = false
+  ##
+  ## Note: `AsyncLockError` is deprecated and will be removed in future,
+  ##       `release` itself will remain, but will not raise any exceptions.
+  if not lock.locked:
+    raise newException(AsyncLockError, "release called without acquire")
+
+  releaseImpl(lock):
+    lock.locked = false
+
+{.pop.}
+
+proc newAsyncSemaphore*(size: int = 1): AsyncSemaphore =
+  ## Creates a new asynchronous bounded semaphore ``AsyncSemaphore`` with
+  ## internal available slots set to ``size``.
+  ##
+  ## A semaphore with 1 slot is equivalent to an ``AsyncLock``.
+  doAssert(size > 0, "AsyncSemaphore initial size must be bigger then 0")
+  AsyncSemaphore(
+    size: size,
+    availableSlots: size,
+    waiters: initDeque[Future[void].Raising([CancelledError])](),
+  )
+
+proc availableSlots*(s: AsyncSemaphore): int =
+  s.availableSlots
+
+proc tryAcquire*(s: AsyncSemaphore): bool =
+  ## Attempts to acquire a resource, if successful returns true, otherwise false.
+
+  if s.availableSlots > 0:
+    s.availableSlots.dec
+    true
   else:
-    raise newException(AsyncLockError, "AsyncLock is not acquired!")
+    false
+
+proc acquire*(
+    s: AsyncSemaphore
+): Future[void] {.async: (raises: [CancelledError], raw: true).} =
+  ## Acquire a resource and decrement the resource counter.
+  ## If no more resources are available, the returned future
+  ## will not complete until the resource count goes above 0.
+
+  acquireImpl(s, s.tryAcquire())
+
+proc release2*(s: AsyncSemaphore) =
+  ## Release a resource, allowing one of the waiters to acquire it.
+  ##
+  ## Releasing more resources than have been acquired is undefined behavior
+  ## and may result in a Defect being raised.
+  ##
+  ## `release2` is an interim interim solution to avoid breaking
+  ## existing code that relies on `AsyncSemaphoreError`.
+  ## A future major chronos release will update `release` to behave
+  ## like `release2` and remove the `AsyncSemaphoreError` type.
+  doAssert s.availableSlots < s.size
+
+  releaseImpl(s):
+    s.availableSlots.inc
+
+{.push warning[Deprecated]: off.}
+proc release*(s: AsyncSemaphore) {.raises: [AsyncSemaphoreError].} =
+  ## Release a resource from the semaphore,
+  ## by picking the first future from waiters queue
+  ## and completing it and incrementing the
+  ## internal resource count.
+  ##
+  ## Note: `AsyncSemaphoreError` is deprecated and will be removed in future,
+  ##       `release` itself will remain, but will not raise any exceptions.
+  if s.availableSlots == s.size:
+    raise newException(AsyncSemaphoreError, "release called without acquire")
+
+  releaseImpl(s):
+    s.availableSlots.inc
+{.pop.}
 
 proc newAsyncEvent*(): AsyncEvent =
   ## Creates new asyncronous event ``AsyncEvent``.
@@ -193,9 +284,10 @@ proc fire*(event: AsyncEvent) =
   ## `true` will not block at all.
   if not(event.flag):
     event.flag = true
-    for fut in event.waiters:
+    for fut in event.waiters.mitems:
       if not(fut.finished()): # Could have been cancelled
         fut.complete()
+      reset(fut) # release memory early
     event.waiters.setLen(0)
 
 proc clear*(event: AsyncEvent) =
@@ -634,7 +726,7 @@ proc waitEvents*[T](ab: AsyncEventQueue[T],
       # Keep readers sequence sorted by `offset` field.
       var slider = index
       while (slider + 1 < len(ab.readers)) and
-            (ab.readers[slider].offset > ab.readers[slider + 1].offset):
+          (ab.readers[slider].offset > ab.readers[slider + 1].offset):
         swap(ab.readers[slider], ab.readers[slider + 1])
         inc(slider)
 
@@ -645,58 +737,3 @@ proc waitEvents*[T](ab: AsyncEventQueue[T],
         break
 
   events
-
-proc newAsyncSemaphore*(size: int = 1): AsyncSemaphore =
-  ## Creates a new asynchronous bounded semaphore ``AsyncSemaphore`` with
-  ## internal available slots set to ``size``.
-  doAssert(size > 0, "AsyncSemaphore initial size must be bigger then 0")
-  AsyncSemaphore(
-    size: size,
-    availableSlots: size, 
-    waiters: initDeque[Future[void].Raising([CancelledError])](),
-  )
-
-proc availableSlots*(s: AsyncSemaphore): int =
-  return s.availableSlots
-
-proc tryAcquire*(s: AsyncSemaphore): bool =
-  ## Attempts to acquire a resource, if successful returns true, otherwise false.
-
-  if s.availableSlots > 0:
-    s.availableSlots.dec
-    true
-  else:
-    false
-
-proc acquire*(
-    s: AsyncSemaphore
-): Future[void] {.async: (raises: [CancelledError], raw: true).} =
-  ## Acquire a resource and decrement the resource counter. 
-  ## If no more resources are available, the returned future 
-  ## will not complete until the resource count goes above 0.
-
-  let fut = newFuture[void]("AsyncSemaphore.acquire")
-  if s.tryAcquire():
-    fut.complete()
-    return fut
-
-  s.waiters.addLast(fut)
-
-  return fut
-
-proc release*(s: AsyncSemaphore) {.raises: [AsyncSemaphoreError].} =
-  ## Release a resource from the semaphore,
-  ## by picking the first future from waiters queue
-  ## and completing it and incrementing the
-  ## internal resource count.
-
-  if s.availableSlots == s.size:
-    raise newException(AsyncSemaphoreError, "release called without acquire")
-
-  s.availableSlots.inc
-  while s.waiters.len > 0:
-    var fut = s.waiters.popFirst()
-    if not fut.finished():
-      s.availableSlots.dec
-      fut.complete()
-      break

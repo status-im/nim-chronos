@@ -164,6 +164,14 @@ suite "Network utilities test suite":
       initTAddress("240.0.0.0:0").isMulticast() == false
       initTAddress("223.0.0.0:0").isMulticast() == false
 
+      initTAddress("8.8.8.8:0").isUnicast() == true
+      initTAddress("223.255.255.255:0").isUnicast() == true
+      initTAddress("224.0.0.0:0").isUnicast() == false
+      initTAddress("230.0.0.0:0").isUnicast() == false
+      initTAddress("239.255.255.255:0").isUnicast() == false
+      initTAddress("240.0.0.0:0").isUnicast() == true
+      initTAddress("0.0.0.0:0").isUnicast() == false
+
       initTAddress("224.0.0.0:0").isLinkLocalMulticast() == true
       initTAddress("224.0.0.255:0").isLinkLocalMulticast() == true
       initTAddress("225.0.0.0:0").isLinkLocalMulticast() == false
@@ -189,6 +197,12 @@ suite "Network utilities test suite":
       initTAddress("192.168.255.255:0").isSiteLocal() == true
       initTAddress("192.167.0.0:0").isSiteLocal() == false
       initTAddress("192.169.0.0:0").isSiteLocal() == false
+
+      initTAddress("10.0.0.0:0").isPrivate() == true
+      initTAddress("172.16.0.0:0").isPrivate() == true
+      initTAddress("192.168.255.255:0").isPrivate() == true
+      initTAddress("11.0.0.0:0").isPrivate() == false
+      initTAddress("172.32.0.0:0").isPrivate() == false
 
       initTAddress("224.0.1.0:0").isGlobalMulticast() == true
       initTAddress("238.255.255.255:0").isGlobalMulticast() == true
@@ -287,6 +301,10 @@ suite "Network utilities test suite":
       ).isMulticast() == true
       initTAddress("[F000::]:0").isMulticast() == false
 
+      initTAddress("[2001:db8::1]:0").isUnicast() == true
+      initTAddress("[FF00::]:0").isUnicast() == false
+      initTAddress("[FF02::1]:0").isUnicast() == false
+
       initTAddress("[::]:0").isAnyLocal() == true
       initTAddress("[::1]:0").isAnyLocal() == false
 
@@ -319,6 +337,17 @@ suite "Network utilities test suite":
         "[FDFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]:0"
       ).isUniqueLocal() == true
       initTAddress("[FE00::]:0").isUniqueLocal() == false
+
+      initTAddress("[FC00::]:0").isPrivate() == true
+      initTAddress(
+        "[FDFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]:0"
+      ).isPrivate() == true
+      initTAddress("[FEC0::]:0").isPrivate() == true
+      initTAddress(
+        "[FBFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]:0"
+      ).isPrivate() == false
+      initTAddress("[FE00::]:0").isPrivate() == false
+      initTAddress("[2606:4700:4700::1111]:0").isPrivate() == false
 
       initTAddress(
         "[FE7F:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]:0"

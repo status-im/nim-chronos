@@ -56,6 +56,9 @@ template newBoundedStreamIncompleteError(): ref BoundedStreamError =
 template newBoundedStreamOverflowError(): ref BoundedStreamOverflowError =
   newException(BoundedStreamOverflowError, "Stream boundary exceeded")
 
+func numRemainingBytes(rstream: BoundedStreamReader): int =
+  int(min(rstream.boundSize.get() - rstream.offset, uint64(high(int))))
+
 proc readUntilBoundary(
     rstream: BoundedStreamReader, pbytes: pointer, nbytes: int
 ): Future[int] {.async: (raises: [CancelledError, AsyncStreamError]).} =
@@ -130,7 +133,7 @@ proc readOnce(
           rstream.state = AsyncStreamState.Finished
           return 0
 
-        min(int(rstream.boundSize[] - rstream.offset), nbytes)
+        min(rstream.numRemainingBytes(), nbytes)
       else:
         nbytes
 
@@ -171,7 +174,7 @@ proc readBounded(
     rstream: BoundedStreamReader
 ): Future[seq[byte]] {.async: (raises: [CancelledError, AsyncStreamError]).} =
   # Fast path for reading all bytes up to the count-baased boundary
-  let n = (rstream.boundSize.get() - rstream.offset).int
+  let n = rstream.numRemainingBytes()
   var res = newSeqUninit[byte](n)
   if res.len > 0:
     try:
@@ -204,7 +207,7 @@ proc initReaderVtbl(bufferSize: int): AsyncStreamReaderVtbl =
     let rstream = BoundedStreamReader(rstream)
     if rstream.boundSize.isSome() and rstream.boundary.len == 0 and
         rstream.cmpop == BoundCmp.Equal and
-        (n == 0 or n == (rstream.boundSize.get - rstream.offset).int):
+        (n == 0 or n == rstream.numRemainingBytes()):
       # Special case for draining the rest of the stream, as happens when
       # reading a http body for example
       readBounded(rstream)

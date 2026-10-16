@@ -174,8 +174,10 @@ proc createBigMessage(message: string, size: int): seq[byte] =
   res
 
 suite "AsyncStream/StreamTransport":
+  setup:
+    let counters = getTrackerCounters()
   teardown:
-    checkLeaks()
+    checkLeaks(counters)
 
   asyncTest "readExactly":
     proc serveClient(server: StreamServer,
@@ -334,9 +336,68 @@ suite "AsyncStream/StreamTransport":
     await transp.closeWait()
     await server.join()
 
+  asyncTest "write":
+    const MessageSize = 16384 * 1024
+    var messages: seq[seq[byte]]
+    for i in 0 ..< 4:
+      var message = newSeq[byte](MessageSize)
+      for j in 0 ..< len(message):
+        message[j] = byte(0x42 + i + (j mod 16))
+      messages.add(message)
+    let finalMessage = @[byte 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7]
+    var
+      data: seq[byte]
+      syncFut: Future[void]
+
+    proc serveClient(server: StreamServer,
+                      transp: StreamTransport) {.async: (raises: []).} =
+      try:
+        try:
+          data = await transp.read()
+        except TransportError:
+          check defined(windows)
+        await transp.closeWait()
+        syncFut.complete()
+      except CatchableError as exc:
+        raiseAssert exc.msg
+
+    var server = createStreamServer(initTAddress("127.0.0.1:0"),
+                                    serveClient, {ReuseAddr},
+                                    bufferSize = MessageSize)
+    server.start()
+    for message in messages:
+      syncFut = newFuture[void]()
+      data.reset()
+      var transp = await connect(server.localAddress())
+      var wstream = newAsyncStreamWriter(transp)
+      let fut = wstream.write(message)
+      check not(fut.finished())
+      await fut.cancelAndWait()
+      when not defined(windows):
+        check fut.cancelled()
+
+      try:
+        await wstream.write(finalMessage)
+      except AsyncStreamError:
+        check defined(windows)
+      await wstream.closeWait()
+      await transp.closeWait()
+      await syncFut
+
+      when not defined(windows):
+        check:
+          len(data) < MessageSize
+          len(data) >= len(finalMessage) and
+          data[^len(finalMessage) .. ^1] == finalMessage
+
+    server.stop()
+    await server.closeWait()
+
 suite "AsyncStream/ChunkedStream":
+  setup:
+    let counters = getTrackerCounters()
   teardown:
-    checkLeaks()
+    checkLeaks(counters)
 
   asyncTest "readExactly":
     proc serveClient(server: StreamServer,
@@ -906,8 +967,10 @@ suite "AsyncStream/ChunkedStream":
     check await(testChunk(767309, 67000, 67001)) == true
 
 suite "AsyncStream/TLSStream":
+  setup:
+    let counters = getTrackerCounters()
   teardown:
-    checkLeaks()
+    checkLeaks(counters)
 
   asyncTest "Simple server with RSA self-signed certificate":
     let key = TLSPrivateKey.init(SelfSignedRsaKey)
@@ -1334,8 +1397,10 @@ suite "AsyncStream/TLSStream":
     check string.fromBytes(res) == "h2\r\n"
 
 suite "AsyncStream/BoundedStream":
+  setup:
+    let counters = getTrackerCounters()
   teardown:
-    checkLeaks()
+    checkLeaks(counters)
 
   type
     BoundarySizeTest = enum
