@@ -1607,11 +1607,11 @@ when defined(illumos):
     RTA_GATEWAY* = 0x02
     RTA_IFA* = 0x20
     RTA_SRC* = 0x100
+    PF_ROUTE* = cint(24)
+    AF_LINK* = cint(25)
+    SOCK_RAW* = cint(4)
 
   var
-    PF_ROUTE* {.importc, header: "<sys/socket.h>".}: cint
-    AF_LINK* {.importc, header: "<sys/socket.h>".}: cint
-    SOCK_RAW* {.importc, header: "<sys/socket.h>".}: cint
     SIOCGLIFADDR* {.importc, header: "<sys/sockio.h>".}: cint
     SIOCGLIFMTU* {.importc, header: "<sys/sockio.h>".}: cint
     SIOCGLIFINDEX* {.importc, header: "<sys/sockio.h>".}: cint
