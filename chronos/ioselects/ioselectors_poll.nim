@@ -97,7 +97,11 @@ proc close2*(event: SelectEvent): SelectResult[void] =
     ok()
 
 const POLLRDHUP =
-  when compiles(EPOLLRDHUP):
+  when defined(illumos):
+    # Native poll(2) strips POLLRDHUP; only epoll's /dev/poll compatibility
+    # mode reports it. Do not pass EPOLLRDHUP (which means POLLET here).
+    cshort(0)
+  elif compiles(EPOLLRDHUP):
     static: doAssert EPOLLRDHUP <= cshort.high
     cshort(EPOLLRDHUP)
   else:
