@@ -62,21 +62,24 @@ proc tryExec(cmd: string) =
     echo e.msg
 
 task examples, "Build examples":
-  if (NimMajor, NimMinor) >= (2, 0): # examples won't build with older Nim, and it's OK
-    # Build book examples
-    for file in listFiles("examples"):
-      if file.endsWith(".nim"):
-        build "--threads:on", file
+  if (NimMajor, NimMinor) < (2, 0): # examples won't build with older Nim, and it's OK
+    echo "Skip task: This task should only run with Nim 2.0+."
+    return
 
-    # Build HTTP client tutorial examples
-    for file in listFiles("examples/http_client"):
-      if file.endsWith(".nim"):
-        build "--threads:on", file
+  # Build book examples
+  for file in listFiles("examples"):
+    if file.endsWith(".nim"):
+      build "--threads:on", file
 
-    # Build HTTP server tutorial examples
-    for file in listFiles("examples/http_server"):
-      if file.endsWith(".nim"):
-        build "--threads:on", file
+  # Build HTTP client tutorial examples
+  for file in listFiles("examples/http_client"):
+    if file.endsWith(".nim"):
+      build "--threads:on", file
+
+  # Build HTTP server tutorial examples
+  for file in listFiles("examples/http_server"):
+    if file.endsWith(".nim"):
+      build "--threads:on", file
 
 task benchmarks, "Run benchmarks":
   # Make sure benchmarks compile
