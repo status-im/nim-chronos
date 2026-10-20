@@ -1654,6 +1654,53 @@ proc redirect*(request: HttpClientRequestRef,
     res.redirectCount = redirectCount
     ok(res)
 
+proc send*(session: HttpSessionRef, url: Uri): Future[HttpClientResponseRef] {.
+     async: (raises: [CancelledError, HttpError]).} =
+  ## Send HTTP GET request to ``url`` using ``session`` and return response.
+  ##
+  ## This procedure supports HTTP redirections.
+  let address = getHttpAddress(url).valueOr:
+    raiseHttpAddressError($error)
+
+  var
+    request = HttpClientRequestRef.new(session, address)
+    response: HttpClientResponseRef = nil
+    redirect: HttpClientRequestRef = nil
+
+  while true:
+    try:
+      response = await request.send()
+      if response.status >= 300 and response.status < 400:
+        let location = response.getNewLocation().valueOr:
+          raiseHttpRedirectError(error)
+        redirect = request.redirect(location).valueOr:
+          raiseHttpRedirectError(error)
+
+        discard await response.consumeBody()
+        await response.closeWait()
+        response = nil
+        await request.closeWait()
+        request = nil
+        request = redirect
+        redirect = nil
+      else:
+        await request.closeWait()
+        return response
+    except CancelledError as exc:
+      var pending: seq[Future[void]]
+      if not(isNil(response)): pending.add(closeWait(response))
+      if not(isNil(request)): pending.add(closeWait(request))
+      if not(isNil(redirect)): pending.add(closeWait(redirect))
+      await noCancel(allFutures(pending))
+      raise exc
+    except HttpError as exc:
+      var pending: seq[Future[void]]
+      if not(isNil(response)): pending.add(closeWait(response))
+      if not(isNil(request)): pending.add(closeWait(request))
+      if not(isNil(redirect)): pending.add(closeWait(redirect))
+      await noCancel(allFutures(pending))
+      raise exc
+
 proc fetch*(request: HttpClientRequestRef): Future[HttpResponseTuple] {.
      async: (raises: [CancelledError, HttpError]).} =
   var response: HttpClientResponseRef
@@ -1679,63 +1726,23 @@ proc fetch*(session: HttpSessionRef, url: Uri): Future[HttpResponseTuple] {.
   ## parameters.
   ##
   ## This procedure supports HTTP redirections.
-  let address = getHttpAddress(url).valueOr:
-    raiseHttpAddressError($error)
-
-  var
-    request = HttpClientRequestRef.new(session, address)
-    response: HttpClientResponseRef = nil
-    redirect: HttpClientRequestRef = nil
-
-  while true:
-    try:
-      response = await request.send()
-      if response.status >= 300 and response.status < 400:
-        redirect =
-          block:
-            if "location" in response.headers:
-              let location = response.headers.getString("location")
-              if len(location) > 0:
-                let res = request.redirect(parseUri(location))
-                if res.isErr():
-                  raiseHttpRedirectError(res.error())
-                res.get()
-              else:
-                raiseHttpRedirectError("Location header with an empty value")
-            else:
-              raiseHttpRedirectError("Location header missing")
-        discard await response.consumeBody()
-        await response.closeWait()
-        response = nil
-        await request.closeWait()
-        request = nil
-        request = redirect
-        redirect = nil
-      else:
-        var
-          # TODO https://github.com/status-im/nim-chronos/issues/601
-          data = await response.getBodyBytes()
-          code = response.status
-        await response.closeWait()
-        response = nil
-        await request.closeWait()
-        request = nil
-        # TODO https://github.com/nim-lang/Nim/issues/25057
-        return (code, move(data))
-    except CancelledError as exc:
-      var pending: seq[Future[void]]
-      if not(isNil(response)): pending.add(closeWait(response))
-      if not(isNil(request)): pending.add(closeWait(request))
-      if not(isNil(redirect)): pending.add(closeWait(redirect))
-      await noCancel(allFutures(pending))
-      raise exc
-    except HttpError as exc:
-      var pending: seq[Future[void]]
-      if not(isNil(response)): pending.add(closeWait(response))
-      if not(isNil(request)): pending.add(closeWait(request))
-      if not(isNil(redirect)): pending.add(closeWait(redirect))
-      await noCancel(allFutures(pending))
-      raise exc
+  var response: HttpClientResponseRef = nil
+  try:
+    response = await session.send(url)
+    var
+      # TODO https://github.com/status-im/nim-chronos/issues/601
+      data = await response.getBodyBytes()
+      code = response.status
+    await response.closeWait()
+    response = nil
+    # TODO https://github.com/nim-lang/Nim/issues/25057
+    (code, move(data))
+  except CancelledError as exc:
+    if not(isNil(response)): await response.closeWait()
+    raise exc
+  except HttpError as exc:
+    if not(isNil(response)): await response.closeWait()
+    raise exc
 
 proc getServerSentEvents*(
        response: HttpClientResponseRef,
