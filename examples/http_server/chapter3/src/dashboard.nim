@@ -1,15 +1,15 @@
-# ANCHOR: all
-# ANCHOR: import
+#ANCHOR: all
+#ANCHOR: import
 import chronos/apps/http/httpserver
 import std/[json, tables]
-# ANCHOR_END: import
+#ANCHOR_END: import
 
-# ANCHOR: handler_closure
+#ANCHOR: handler_closure
 proc handler(reports: TableRef[string, string]): HttpProcessCallback2 =
   proc(
       reqfence: RequestFence
   ): Future[HttpResponseRef] {.async: (raises: [CancelledError]).} =
-# ANCHOR_END: handler_closure
+#ANCHOR_END: handler_closure
     let request = reqfence.valueOr:
       return defaultResponse()
 
@@ -18,7 +18,7 @@ proc handler(reports: TableRef[string, string]): HttpProcessCallback2 =
       of "/":
         await request.respond(Http200, "Welcome to the Status Dashboard!")
 
-      # ANCHOR: status_get
+      #ANCHOR: status_get
       of "/status":
         var output = "Current Service Status:\n"
         if reports.len == 0:
@@ -27,9 +27,9 @@ proc handler(reports: TableRef[string, string]): HttpProcessCallback2 =
           for name, status in reports:
             output.add("- " & name & ": " & status & "\n")
         await request.respond(Http200, output)
-      # ANCHOR_END: status_get
+      #ANCHOR_END: status_get
 
-      # ANCHOR: report_post
+      #ANCHOR: report_post
       of "/report":
         if request.meth != MethodPost:
           return await request.respond(Http405, "Method Not Allowed")
@@ -56,14 +56,14 @@ proc handler(reports: TableRef[string, string]): HttpProcessCallback2 =
         echo "Received report: " & name & " is " & status
 
         await request.respond(Http200, "Report received.")
-      # ANCHOR_END: report_post
+      #ANCHOR_END: report_post
       else:
         await request.respond(Http404, "Page not found.")
     except HttpError as exc:
       defaultResponse(exc)
 
 proc main() {.async: (raises: [TransportAddressError, CancelledError]).} =
-  # ANCHOR: reports_table
+  #ANCHOR: reports_table
   var reports = newTable[string, string]()
 
   let
@@ -74,7 +74,7 @@ proc main() {.async: (raises: [TransportAddressError, CancelledError]).} =
 
   server.start()
   echo "HTTP server running on http://127.0.0.1:8080"
-  # ANCHOR_END: reports_table
+  #ANCHOR_END: reports_table
 
   try:
     await server.join()
@@ -84,4 +84,4 @@ proc main() {.async: (raises: [TransportAddressError, CancelledError]).} =
 
 when isMainModule:
   waitFor main()
-# ANCHOR_END: all
+#ANCHOR_END: all

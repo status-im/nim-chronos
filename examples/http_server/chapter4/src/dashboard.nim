@@ -1,10 +1,10 @@
-# ANCHOR: all
-# ANCHOR: import
+#ANCHOR: all
+#ANCHOR: import
 import chronos/apps/http/httpserver
 import std/[json, tables, times, monotimes]
-# ANCHOR_END: import
+#ANCHOR_END: import
 
-# ANCHOR: middleware
+#ANCHOR: middleware
 proc loggingMiddleware(
     middleware: HttpServerMiddlewareRef,
     reqfence: RequestFence,
@@ -22,9 +22,9 @@ proc loggingMiddleware(
 
   response
 
-# ANCHOR_END: middleware
+#ANCHOR_END: middleware
 
-# ANCHOR: handler
+#ANCHOR: handler
 proc handler(reports: TableRef[string, string]): HttpProcessCallback2 =
   proc(
       reqfence: RequestFence
@@ -75,15 +75,15 @@ proc handler(reports: TableRef[string, string]): HttpProcessCallback2 =
     except HttpError as exc:
       defaultResponse(exc)
 
-# ANCHOR_END: handler
+#ANCHOR_END: handler
 
-# ANCHOR: main
+#ANCHOR: main
 proc main() {.async: (raises: [TransportAddressError, CancelledError]).} =
   var reports = newTable[string, string]()
   let
-    # ANCHOR: setup_middleware
+    #ANCHOR: setup_middleware
     middlewares = [HttpServerMiddlewareRef(handler: loggingMiddleware)]
-    # ANCHOR_END: setup_middleware
+    #ANCHOR_END: setup_middleware
     address = initTAddress("127.0.0.1:8080")
     server = HttpServerRef.new(address, handler(reports), middlewares = middlewares).valueOr:
       echo "Unable to start HTTP server: " & error
@@ -98,8 +98,8 @@ proc main() {.async: (raises: [TransportAddressError, CancelledError]).} =
     await server.stop()
     await server.closeWait()
 
-# ANCHOR_END: main
+#ANCHOR_END: main
 
 when isMainModule:
   waitFor main()
-# ANCHOR_END: all
+#ANCHOR_END: all

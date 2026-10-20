@@ -120,14 +120,36 @@ task test_libbacktrace, "test with libbacktrace":
       if (NimMajor, NimMinor) >= (2, 2):
         run args & " --mm:orc", "tests/testall"
 
-task docs, "Generate API documentation":
-  exec "mdbook build docs"
+task apidocs, "Generate the API docs":
   tryExec nimc & " doc " &
-    "--git.url:https://github.com/status-im/nim-chronos --git.commit:master --outdir:docs/book/api --project chronos"
+    "--git.url:https://github.com/status-im/nim-chronos --git.commit:master --outdir:htmldocs/api --project chronos"
+  tryExec nimc & " doc " &
+    "--git.url:https://github.com/status-im/nim-chronos --git.commit:master --outdir:htmldocs/api/chronos --project chronos/threadsync"
+  tryExec nimc & " doc " &
+    "--git.url:https://github.com/status-im/nim-chronos --git.commit:master " &
+    "--outdir:htmldocs/api/chronos/apps/http --project chronos/apps/http/httpclient"
+  tryExec nimc & " doc " &
+    "--git.url:https://github.com/status-im/nim-chronos --git.commit:master " &
+    "--outdir:htmldocs/api/chronos/apps/http --project chronos/apps/http/httpserver"
+  tryExec nimc & " doc " &
+    "--git.url:https://github.com/status-im/nim-chronos --git.commit:master " &
+    "--outdir:htmldocs/api/chronos/apps/http --project chronos/apps/http/httpdebug"
+  tryExec nimc & " doc " &
+    "--git.url:https://github.com/status-im/nim-chronos --git.commit:master " &
+    "--outdir:htmldocs/api/chronos/apps/http --project chronos/apps/http/shttpserver"
 
-  # Build the docs for modules that aren't part of the main module.
-  for item in walkDir("chronos/apps/http"):
-    if item.kind == pcFile and item.path.splitFile().ext == ".nim":
-      tryExec nimc & " doc " &
-        "--git.url:https://github.com/status-im/nim-chronos --git.commit:master --outdir:docs/book/api/chronos/apps/http " &
-        item.path
+task bookindex, "Generate the book index":
+  exec nimc & " book --index:only book"
+
+task book, "Generate the book":
+  exec nimc & " book " &
+    "--git.url:https://github.com/status-im/nim-chronos --git.commit:master " &
+    "book"
+  cpDir("book/img", "htmldocs/img")
+  cpFile("htmldocs/introduction.html", "htmldocs/index.html")
+
+task docs, "Generate the documentation":
+  rmDir "htmldocs"
+  exec "nimble apidocs"
+  exec "nimble bookindex"
+  exec "nimble book"

@@ -8,3 +8,4 @@ examples/**/.gitignore
 examples/**/nimbledeps
 examples/**/config.nims
 examples/**/nimble.paths
+htmldocs
