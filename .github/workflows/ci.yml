@@ -14,9 +14,4 @@ jobs:
         nimble install -y libbacktrace
         nimble test
         nimble test_libbacktrace
-  examples:
-    uses: status-im/nimbus-common-workflow/.github/workflows/common.yml@main
-    with:
-      nim-versions: '["version-2-0", "version-2-2", "version-2-4", "devel"]'
-      test-command: |
         nimble examples
