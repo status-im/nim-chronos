@@ -90,60 +90,6 @@ suite "Stream Transport test suite":
     except CatchableError as exc:
       raiseAssert exc.msg
 
-  proc readLV(transp: StreamTransport,
-              maxLen: int): Future[seq[byte]] {.async.} =
-    # Read length-prefixed value where length is a 32-bit integer in native
-    # endian (don't do this at home)
-    var
-      valueLen = 0'u32
-      res: seq[byte]
-      error: ref CatchableError
-
-    proc predicate(data: openArray[byte]): tuple[consumed: int, done: bool] =
-      if len(data) == 0:
-        # There will be no more data, length-value incomplete
-        error = newException(TransportIncompleteError, "LV incomplete")
-        return (0, true)
-
-      var consumed = 0
-
-      if valueLen == 0:
-        if len(data) < 4:
-          return (0, false)
-        copyMem(addr valueLen, unsafeAddr data[0], sizeof(valueLen))
-        if valueLen == 0:
-          return (sizeof(valueLen), true)
-        if int(valueLen) > maxLen:
-          error = newException(ValueError, "Size is too big")
-          return (sizeof(valueLen), true)
-        consumed += sizeof(valueLen)
-
-      let
-        dataLeft = len(data) - consumed
-        count = min(dataLeft, int(valueLen) - len(res))
-
-      res.add(data.toOpenArray(consumed, count + consumed - 1))
-      return (consumed + count, len(res) == int(valueLen))
-
-    await transp.readMessage(predicate)
-    if not isNil(error):
-      raise error
-    else:
-      return res
-
-  proc createMessage(size: uint32): seq[byte] =
-    var message = "MESSAGE"
-    result = newSeq[byte](int(size))
-    for i in 0 ..< size:
-      result[int(i)] = byte(message[int(i) mod len(message)])
-
-  proc createLVMessage(size: uint32): seq[byte] =
-    var message = "MESSAGE"
-    result = newSeq[byte](sizeof(size) + int(size))
-    copyMem(addr result[0], unsafeAddr size, sizeof(size))
-    for i in 0 ..< size:
-      result[int(i) + sizeof(size)] = byte(message[int(i) mod len(message)])
-
   proc performDualstackTest(
          sstack: DualStackType, saddr: TransportAddress,
          cstack: DualStackType, caddr: TransportAddress
@@ -1161,6 +1107,60 @@ suite "Stream Transport test suite":
     asyncTest prefixes[i] & "readMessage() test":
       var state = 0
       var c1, c2, c3, c4, c5, c6, c7: bool
+
+      proc readLV(transp: StreamTransport,
+                  maxLen: int): Future[seq[byte]] {.async.} =
+        # Read length-prefixed value where length is a 32-bit integer in native
+        # endian (don't do this at home)
+        var
+          valueLen = 0'u32
+          res: seq[byte]
+          error: ref CatchableError
+
+        proc predicate(data: openArray[byte]): tuple[consumed: int, done: bool] =
+          if len(data) == 0:
+            # There will be no more data, length-value incomplete
+            error = newException(TransportIncompleteError, "LV incomplete")
+            return (0, true)
+
+          var consumed = 0
+
+          if valueLen == 0:
+            if len(data) < 4:
+              return (0, false)
+            copyMem(addr valueLen, unsafeAddr data[0], sizeof(valueLen))
+            if valueLen == 0:
+              return (sizeof(valueLen), true)
+            if int(valueLen) > maxLen:
+              error = newException(ValueError, "Size is too big")
+              return (sizeof(valueLen), true)
+            consumed += sizeof(valueLen)
+
+          let
+            dataLeft = len(data) - consumed
+            count = min(dataLeft, int(valueLen) - len(res))
+
+          res.add(data.toOpenArray(consumed, count + consumed - 1))
+          return (consumed + count, len(res) == int(valueLen))
+
+        await transp.readMessage(predicate)
+        if not isNil(error):
+          raise error
+        else:
+          return res
+
+      proc createMessage(size: uint32): seq[byte] =
+        var message = "MESSAGE"
+        result = newSeq[byte](int(size))
+        for i in 0 ..< size:
+          result[int(i)] = byte(message[int(i) mod len(message)])
+
+      proc createLVMessage(size: uint32): seq[byte] =
+        var message = "MESSAGE"
+        result = newSeq[byte](sizeof(size) + int(size))
+        copyMem(addr result[0], unsafeAddr size, sizeof(size))
+        for i in 0 ..< size:
+          result[int(i) + sizeof(size)] = byte(message[int(i) mod len(message)])
 
       proc serveClient(server: StreamServer, transp: StreamTransport) {.
           async: (raises: []).} =

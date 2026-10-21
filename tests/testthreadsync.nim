@@ -38,10 +38,8 @@ type
   WaitSendKind {.pure.} = enum
     Sync, Async
 
-const
-  TestsCount = when sizeof(int) == 8: 1000 else: 100
-
 suite "Asynchronous multi-threading sync primitives test suite":
+  const testsCount = when sizeof(int) == 8: 1000 else: 100
   setup:
     let counters = getTrackerCounters()
   teardown:
@@ -325,62 +323,62 @@ suite "Asynchronous multi-threading sync primitives test suite":
             "] threads waiting test [sync -> async]":
     threadSignalTest(WaitSendKind.Sync, WaitSendKind.Async)
 
-  asyncTest "ThreadSignal: Multiple thread switches [" & $TestsCount &
+  asyncTest "ThreadSignal: Multiple thread switches [" & $testsCount &
             "] test [sync -> sync]":
     when sizeof(int) == 8:
-      threadSignalTest2(TestsCount, WaitSendKind.Sync, WaitSendKind.Sync)
+      threadSignalTest2(testsCount, WaitSendKind.Sync, WaitSendKind.Sync)
     else:
       skip()
 
-  asyncTest "ThreadSignal: Multiple thread switches [" & $TestsCount &
+  asyncTest "ThreadSignal: Multiple thread switches [" & $testsCount &
             "] test [async -> async]":
     when sizeof(int) == 8:
-      threadSignalTest2(TestsCount, WaitSendKind.Async, WaitSendKind.Async)
+      threadSignalTest2(testsCount, WaitSendKind.Async, WaitSendKind.Async)
     else:
       skip()
 
-  asyncTest "ThreadSignal: Multiple thread switches [" & $TestsCount &
+  asyncTest "ThreadSignal: Multiple thread switches [" & $testsCount &
             "] test [sync -> async]":
     when sizeof(int) == 8:
-      threadSignalTest2(TestsCount, WaitSendKind.Sync, WaitSendKind.Async)
+      threadSignalTest2(testsCount, WaitSendKind.Sync, WaitSendKind.Async)
     else:
       skip()
 
-  asyncTest "ThreadSignal: Multiple thread switches [" & $TestsCount &
+  asyncTest "ThreadSignal: Multiple thread switches [" & $testsCount &
             "] test [async -> sync]":
     when sizeof(int) == 8:
-      threadSignalTest2(TestsCount, WaitSendKind.Async, WaitSendKind.Sync)
+      threadSignalTest2(testsCount, WaitSendKind.Async, WaitSendKind.Sync)
     else:
       skip()
 
-  asyncTest "ThreadSignal: Multiple signals [" & $TestsCount &
+  asyncTest "ThreadSignal: Multiple signals [" & $testsCount &
             "] to multiple threads [" & $numProcs & "] test [sync -> sync]":
-    threadSignalTest3(TestsCount, WaitSendKind.Sync, WaitSendKind.Sync)
+    threadSignalTest3(testsCount, WaitSendKind.Sync, WaitSendKind.Sync)
 
-  asyncTest "ThreadSignal: Multiple signals [" & $TestsCount &
+  asyncTest "ThreadSignal: Multiple signals [" & $testsCount &
             "] to multiple threads [" & $numProcs & "] test [async -> async]":
-    threadSignalTest3(TestsCount, WaitSendKind.Async, WaitSendKind.Async)
+    threadSignalTest3(testsCount, WaitSendKind.Async, WaitSendKind.Async)
 
-  asyncTest "ThreadSignal: Multiple signals [" & $TestsCount &
+  asyncTest "ThreadSignal: Multiple signals [" & $testsCount &
             "] to multiple threads [" & $numProcs & "] test [sync -> async]":
-    threadSignalTest3(TestsCount, WaitSendKind.Sync, WaitSendKind.Async)
+    threadSignalTest3(testsCount, WaitSendKind.Sync, WaitSendKind.Async)
 
-  asyncTest "ThreadSignal: Multiple signals [" & $TestsCount &
+  asyncTest "ThreadSignal: Multiple signals [" & $testsCount &
             "] to multiple threads [" & $numProcs & "] test [async -> sync]":
-    threadSignalTest3(TestsCount, WaitSendKind.Async, WaitSendKind.Sync)
+    threadSignalTest3(testsCount, WaitSendKind.Async, WaitSendKind.Sync)
 
-  asyncTest "ThreadSignal: Single threaded switches [" & $TestsCount &
+  asyncTest "ThreadSignal: Single threaded switches [" & $testsCount &
             "] test [sync -> sync]":
-    threadSignalTest4(TestsCount, WaitSendKind.Sync, WaitSendKind.Sync)
+    threadSignalTest4(testsCount, WaitSendKind.Sync, WaitSendKind.Sync)
 
-  asyncTest "ThreadSignal: Single threaded switches [" & $TestsCount &
-            "] test [sync -> sync]":
-    threadSignalTest4(TestsCount, WaitSendKind.Async, WaitSendKind.Async)
+  asyncTest "ThreadSignal: Single threaded switches [" & $testsCount &
+            "] test [async -> async]":
+    threadSignalTest4(testsCount, WaitSendKind.Async, WaitSendKind.Async)
 
-  asyncTest "ThreadSignal: Single threaded switches [" & $TestsCount &
+  asyncTest "ThreadSignal: Single threaded switches [" & $testsCount &
             "] test [sync -> async]":
-    threadSignalTest4(TestsCount, WaitSendKind.Sync, WaitSendKind.Async)
+    threadSignalTest4(testsCount, WaitSendKind.Sync, WaitSendKind.Async)
 
-  asyncTest "ThreadSignal: Single threaded switches [" & $TestsCount &
+  asyncTest "ThreadSignal: Single threaded switches [" & $testsCount &
             "] test [async -> sync]":
-    threadSignalTest4(TestsCount, WaitSendKind.Async, WaitSendKind.Sync)
+    threadSignalTest4(testsCount, WaitSendKind.Async, WaitSendKind.Sync)

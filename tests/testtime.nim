@@ -5,9 +5,9 @@
 #              Licensed under either of
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
-import std/os
 import unittest2
 import ../chronos, ../chronos/timer
+import ../chronos/unittest2/asynctests
 
 {.used.}
 
@@ -17,66 +17,47 @@ static:
   doAssert Moment.low.epochNanoSeconds == 0
 
 suite "Asynchronous timers & steps test suite":
-  const TimersCount = 10
+  const timersCount = 10
 
-  proc timeWorker(time: Duration): Future[Duration] {.async.} =
-    var st = Moment.now()
-    await sleepAsync(time)
-    var et = Moment.now()
-    result = et - st
+  proc timersTest(timeout: Duration): Future[Duration] {.async.} =
+    proc timeWorker(time: Duration): Future[Duration] {.async.} =
+      var st = Moment.now()
+      await sleepAsync(time)
+      var et = Moment.now()
+      result = et - st
 
-  proc waitAll[T](futs: seq[Future[T]]): Future[void] =
-    var counter = len(futs)
-    var retFuture = newFuture[void]("waitAll")
-    proc cb(udata: pointer) =
-      dec(counter)
-      if counter == 0:
-        retFuture.complete()
-    for fut in futs:
-      fut.addCallback(cb)
-    return retFuture
-
-  proc test(timeout: Duration): Future[Duration] {.async.} =
-    var workers = newSeq[Future[Duration]](TimersCount)
-    for i in 0..<TimersCount:
+    var workers = newSeq[Future[Duration]](timersCount)
+    for i in 0..<timersCount:
       workers[i] = timeWorker(timeout)
-    await waitAll(workers)
+    await allFutures(workers)
     var sum: Duration
-    for i in 0..<TimersCount:
-      var time = workers[i].read()
-      sum = sum + time
+    for i in 0..<timersCount:
+      sum += workers[i].read()
     result = sum div 10'i64
 
-  proc testTimer(): bool =
-    check:
-      fseconds(1.0).fseconds() == 1.0
+  asyncTest "Timer reliability test [asyncTimer]":
+    check fseconds(1.0).fseconds() == 1.0
 
     let a = Moment.now()
-    waitFor(sleepAsync(1000.milliseconds))
-    let b = Moment.now()
-    let d = b - a
-    result = (d >= 1000.milliseconds) and (d <= 3000.milliseconds)
-    if not result:
-      echo d
-
-  test "Timer reliability test [" & asyncTimer & "]":
-    let a = Moment.now()
-    waitFor(sleepAsync(1000.milliseconds))
+    await sleepAsync(1000.milliseconds)
     let b = Moment.now()
     let d = b - a
     check:
       (d >= 1000.milliseconds) and (d <= 3000.milliseconds)
       (d.fseconds() >= 1.0) and (d.fseconds() <= 3.0)
 
-  test $TimersCount & " timers with 10ms timeout":
-    var res = waitFor(test(10.milliseconds))
+  test $timersCount & " timers with 10ms timeout":
+    let res = waitFor(timersTest(10.milliseconds))
     check (res >= 10.milliseconds) and (res <= 100.milliseconds)
-  test $TimersCount & " timers with 100ms timeout":
-    var res = waitFor(test(100.milliseconds))
+
+  test $timersCount & " timers with 100ms timeout":
+    let res = waitFor(timersTest(100.milliseconds))
     check (res >= 100.milliseconds) and (res <= 1000.milliseconds)
-  test $TimersCount & " timers with 1000ms timeout":
-    var res = waitFor(test(1000.milliseconds))
+
+  test $timersCount & " timers with 1000ms timeout":
+    let res = waitFor(timersTest(1000.milliseconds))
     check (res >= 1000.milliseconds) and (res <= 5000.milliseconds)
+
   test "Timer stringification test":
     check:
       $weeks(1) == "1w"

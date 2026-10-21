@@ -9,13 +9,9 @@ import std/[macros, strutils]
 import unittest2
 import ../chronos
 import ../chronos/config
+import ../chronos/unittest2/asynctests
 
 {.used.}
-
-type
-  RetValueType = proc(n: int): Future[int] {.async.}
-  RetImplicitVoidType = proc(n: int) {.async.}
-  RetVoidType = proc(n: int): Future[void] {.async.}
 
 proc asyncRetValue(n: int): Future[int] {.async.} =
   await sleepAsync(n.milliseconds)
@@ -35,77 +31,51 @@ proc asyncRetExceptionVoid(n: int) {.async.} =
   if true:
     raise newException(ValueError, "Test exception")
 
-proc testAwait(): Future[bool] {.async.} =
-  var res: int
-
-  await asyncRetVoid(100)
-  res = await asyncRetValue(100)
-  if res != 1000:
-    return false
-  if (await asyncRetValue(100)) != 1000:
-    return false
-  try:
-    await asyncRetExceptionVoid(100)
-    return false
-  except ValueError:
-    discard
-  res = 0
-  try:
-    discard await asyncRetExceptionValue(100)
-    return false
-  except ValueError:
-    discard
-  if res != 0:
-    return false
-
-  block:
-    let fn: RetVoidType = asyncRetVoid
-    await fn(100)
-  block:
-    let fn: RetImplicitVoidType = asyncRetVoid
-    await fn(100)
-  block:
-    let fn: RetValueType = asyncRetValue
-    if (await fn(100)) != 1000:
-      return false
-
-  return true
-
-proc testAwaitne(): Future[bool] {.async.} =
-  var res1: Future[void]
-  var res2: Future[int]
-
-  res1 = awaitne asyncRetVoid(100)
-  res2 = awaitne asyncRetValue(100)
-  if res1.failed():
-    return false
-  if res2.read() != 1000:
-    return false
-
-  res1 = awaitne asyncRetExceptionVoid(100)
-  if not(res1.failed()):
-    return false
-
-  res2 = awaitne asyncRetExceptionValue(100)
-  try:
-    discard res2.read()
-    return false
-  except ValueError:
-    discard
-
-  return true
-
 template returner =
   # can't use `return 5`
   result = 5
   return
 
 suite "Macro transformations test suite":
-  test "`await` command test":
-    check waitFor(testAwait()) == true
-  test "`awaitne` command test":
-    check waitFor(testAwaitne()) == true
+  asyncTest "`await` command test":
+    type
+      RetValueType = proc(n: int): Future[int] {.async.}
+      RetImplicitVoidType = proc(n: int) {.async.}
+      RetVoidType = proc(n: int): Future[void] {.async.}
 
+    await asyncRetVoid(100)
+    check (await asyncRetValue(100)) == 1000
+    check (await asyncRetValue(100)) == 1000
+    expect ValueError:
+      await asyncRetExceptionVoid(100)
+    expect ValueError:
+      discard await asyncRetExceptionValue(100)
+
+    block:
+      let fn: RetVoidType = asyncRetVoid
+      await fn(100)
+    block:
+      let fn: RetImplicitVoidType = asyncRetVoid
+      await fn(100)
+    block:
+      let fn: RetValueType = asyncRetValue
+      check (await fn(100)) == 1000
+
+  asyncTest "`awaitne` command test":
+    var res1: Future[void]
+    var res2: Future[int]
+
+    res1 = awaitne asyncRetVoid(100)
+    res2 = awaitne asyncRetValue(100)
+    check not res1.failed()
+    check res2.read() == 1000
+
+    res1 = awaitne asyncRetExceptionVoid(100)
+    check res1.failed()
+
+    res2 = awaitne asyncRetExceptionValue(100)
+    expect ValueError:
+      discard res2.read()
 
   test "template async macro transformation":
     template templatedAsync(name, restype: untyped): untyped =
@@ -157,7 +127,7 @@ suite "Macro transformations test suite":
 {.push warning[UnreachableCode]: off.}
 
 suite "Macro transformations - completions":
-  test "Run closure to completion on return": # issue #415
+  asyncTest "Run closure to completion on return": # issue #415
     var x = 0
     proc test415 {.async.} =
       try:
@@ -165,20 +135,20 @@ suite "Macro transformations - completions":
       finally:
         await sleepAsync(1.milliseconds)
         x = 5
-    waitFor(test415())
+    await test415()
     check: x == 5
 
-  test "Run closure to completion on defer":
+  asyncTest "Run closure to completion on defer":
     var x = 0
     proc testDefer {.async.} =
       defer:
         await sleepAsync(1.milliseconds)
         x = 5
       return
-    waitFor(testDefer())
+    await testDefer()
     check: x == 5
 
-  test "Run closure to completion with exceptions":
+  asyncTest "Run closure to completion with exceptions":
     var x = 0
     proc testExceptionHandling {.async.} =
       try:
@@ -191,7 +161,7 @@ suite "Macro transformations - completions":
           await sleepAsync(1.milliseconds)
         await sleepAsync(1.milliseconds)
         x = 5
-    waitFor(testExceptionHandling())
+    await testExceptionHandling()
     check: x == 5
 
   test "Correct return value when updating result after return":
@@ -223,7 +193,7 @@ suite "Macro transformations - completions":
         testWeirdCase() == waitFor(testWeirdCaseAsync())
         testWeirdCase() == 55
 
-  test "Generic & finally calling async":
+  asyncTest "Generic & finally calling async":
     proc testGeneric(T: type): Future[T] {.async.} =
       try:
         try:
@@ -237,7 +207,7 @@ suite "Macro transformations - completions":
         await sleepAsync(1.milliseconds)
         await sleepAsync(1.milliseconds)
         result = 12
-    check waitFor(testGeneric(int)) == 12
+    check (await testGeneric(int)) == 12
 
     proc testFinallyCallsAsync(T: type): Future[T] {.async.} =
       try:
@@ -245,20 +215,20 @@ suite "Macro transformations - completions":
         return
       finally:
         result = await testGeneric(T)
-    check waitFor(testFinallyCallsAsync(int)) == 12
+    check (await testFinallyCallsAsync(int)) == 12
 
-  test "templates returning":
+  asyncTest "templates returning":
     proc testReturner: Future[int] {.async.} =
       returner
       doAssert false
-    check waitFor(testReturner()) == 5
+    check (await testReturner()) == 5
 
     proc testReturner2: Future[int] {.async.} =
       template returner2 =
         return 6
       returner2
       doAssert false
-    check waitFor(testReturner2()) == 6
+    check (await testReturner2()) == 6
 
   test "raising defects":
     proc raiser {.async.} =
@@ -271,23 +241,23 @@ suite "Macro transformations - completions":
     check not fut.completed()
     fut.complete()
 
-  test "return result":
+  asyncTest "return result":
     proc returnResult: Future[int] {.async.} =
       var result: int
       result = 12
       return result
-    check waitFor(returnResult()) == 12
+    check (await returnResult()) == 12
 
-  test "async in async":
+  asyncTest "async in async":
     proc asyncInAsync: Future[int] {.async.} =
       proc a2: Future[int] {.async.} =
         result = 12
       result = await a2()
-    check waitFor(asyncInAsync()) == 12
+    check (await asyncInAsync()) == 12
 {.pop.}
 
 suite "Macro transformations - implicit returns":
-  test "Implicit return":
+  asyncTest "Implicit return":
     proc implicit(): Future[int] {.async.} =
       42
 
@@ -334,24 +304,24 @@ suite "Macro transformations - implicit returns":
 
     let fin = new int
     check:
-      waitFor(implicit()) == 42
-      waitFor(implicit2()) == 42
-      waitFor(implicit3()) == 42
-      waitFor(implicit4(true)) == 42
-      waitFor(implicit5(true)) == 42
-      waitFor(implicit5(false)) == 5
-      waitFor(implicit6(fin)) == 42
+      (await implicit()) == 42
+      (await implicit2()) == 42
+      (await implicit3()) == 42
+      (await implicit4(true)) == 42
+      (await implicit5(true)) == 42
+      (await implicit5(false)) == 5
+      (await implicit6(fin)) == 42
       fin[] == 42
-      waitFor(implicit7(true)) == 42
-      waitFor(implicit7(false)) == 33
+      (await implicit7(true)) == 42
+      (await implicit7(false)) == 33
 
-      waitFor(implicit8(true)) == 42
-      waitFor(implicit8(false)) == 33
+      (await implicit8(true)) == 42
+      (await implicit8(false)) == 33
 
-      waitFor(implicit9()) == 42
+      (await implicit9()) == 42
 
 suite "Exception/effect tracking":
-  test "Nested defer/finally not called on return":
+  asyncTest "Nested defer/finally not called on return":
     # issue #288
     # fixed by https://github.com/nim-lang/Nim/pull/19933
     var answer = 0
@@ -364,10 +334,10 @@ suite "Exception/effect tracking":
           answer = 32
       finally:
         answer.inc(10)
-    waitFor(a())
+    await a()
     check answer == 42
 
-  test "raise-only":
+  asyncTest "raise-only":
     # https://github.com/status-im/nim-chronos/issues/56
     proc trySync() {.async.} =
       return
@@ -381,11 +351,12 @@ suite "Exception/effect tracking":
 
       raiseAssert "shouldn't reach"
 
-    waitFor(x())
+    await x()
 
   template checkNotCompiles(body: untyped) =
     check (not compiles(body))
-  test "Can raise valid exception":
+
+  asyncTest "Can raise valid exception":
     proc test1 {.async.} = raise newException(ValueError, "hey")
     proc test2 {.async: (raises: [ValueError]).} = raise newException(ValueError, "hey")
     proc test3 {.async: (raises: [IOError, ValueError]).} =
@@ -398,19 +369,19 @@ suite "Exception/effect tracking":
     proc test5 {.async: (raises: []).} = discard
     proc test6 {.async: (raises: []).} = await test5()
 
-    expect(ValueError): waitFor test1()
-    expect(ValueError): waitFor test2()
-    expect(IOError): waitFor test3()
-    waitFor test6()
+    expect(ValueError): await test1()
+    expect(ValueError): await test2()
+    expect(IOError): await test3()
+    await test6()
 
   test "Cannot raise invalid exception":
     checkNotCompiles:
       proc test3 {.async: (raises: [IOError]).} = raise newException(ValueError, "hey")
 
-  test "Explicit return in non-raising proc":
+  asyncTest "Explicit return in non-raising proc":
     proc test(): Future[int] {.async: (raises: []).} = return 12
     check:
-      waitFor(test()) == 12
+      (await test()) == 12
 
   test "Non-raising compatibility":
     proc test1 {.async: (raises: [ValueError]).} = raise newException(ValueError, "hey")
@@ -575,7 +546,7 @@ suite "Exception/effect tracking":
     expect(Defect): f.fail((ref CatchableError)(), warn = false)
     check: not f.finished()
 
-  test "handleException behavior":
+  asyncTest "handleException behavior":
     proc raiseException() {.
         async: (handleException: true, raises: [AsyncExceptionError]).} =
       raise (ref Exception)(msg: "Raising Exception is UB and support for it may change in the future")
@@ -584,7 +555,7 @@ suite "Exception/effect tracking":
       expect(AsyncExceptionError):
         await raiseException()
 
-    waitFor(callCatchAll())
+    await callCatchAll()
 
   test "Global handleException does not override local annotations":
     when chronosHandleException:
@@ -600,7 +571,7 @@ suite "Exception/effect tracking":
     else:
       skip()
 
-  test "Results compatibility":
+  asyncTest "Results compatibility":
     proc returnOk(): Future[Result[int, string]] {.async: (raises: []).} =
       ok(42)
 
@@ -622,7 +593,7 @@ suite "Exception/effect tracking":
       discard ?await returnErr()
 
     check:
-      waitFor(testit()).error() == "failed"
+      (await testit()).error() == "failed"
 
   test "await with defer":
     when (NimMajor, NimMinor, NimPatch) >= (2, 2, 6):
@@ -665,7 +636,7 @@ suite "Exception/effect tracking":
     else:
       skip()
 
-  test "async do":
+  asyncTest "async do":
     var called = false
     proc callProc[T](f: proc (): T {.raises: [], gcsafe.}): T =
       f()
@@ -673,7 +644,7 @@ suite "Exception/effect tracking":
     proc foo() {.async.} =
       await callProc do {.async.}:
         called = true
-    waitFor foo()
+    await foo()
     check:
       called
 

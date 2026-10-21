@@ -9,7 +9,7 @@
 {.used.}
 
 import unittest2
-import ../chronos
+import ../chronos, ../chronos/unittest2/asynctests
 import ../chronos/ratelimit
 
 suite "Token Bucket":
@@ -29,7 +29,7 @@ suite "Token Bucket":
       # Out of budget
       bucket.tryConsume(100, fullTime) == false
 
-  test "Async test":
+  asyncTest "Async test":
     let start = Moment.now()
     var bucket = TokenBucket.new(1000, 1000.milliseconds, startTime = start)
     check: bucket.tryConsume(1000) == true
@@ -38,16 +38,16 @@ suite "Token Bucket":
     for _ in 0..<15:
       toWait.add(bucket.consume(100))
 
-    waitFor(allFutures(toWait))
+    await allFutures(toWait)
     let duration = Moment.now() - start
 
     check: duration in 1400.milliseconds .. 2200.milliseconds
 
-  test "Over budget async":
+  asyncTest "Over budget async":
     let start = Moment.now()
     var bucket = TokenBucket.new(100, 100.milliseconds, startTime = start)
     # Consume 10* the budget cap
-    waitFor(bucket.consume(1000).wait(5.seconds))
+    await bucket.consume(1000).wait(5.seconds)
     check Moment.now() - start in 900.milliseconds .. 2200.milliseconds
 
   test "Sync manual replenish":
@@ -62,7 +62,7 @@ suite "Token Bucket":
       # replenish is capped to the bucket max
       bucket.tryConsume(1000, start) == false
 
-  test "Async manual replenish":
+  asyncTest "Async manual replenish":
     var bucket = TokenBucket.new(10 * 150, 0.seconds)
     check:
       bucket.tryConsume(10 * 150) == true
@@ -75,12 +75,12 @@ suite "Token Bucket":
 
     # Replenish should finish all futures
     bucket.replenish(150 * 10)
-    waitFor(allFutures(toWait).wait(10.milliseconds))
+    await allFutures(toWait).wait(10.milliseconds)
 
     check: not lastOne.finished()
 
     bucket.replenish(10)
-    waitFor(lastOne.wait(10.milliseconds))
+    await lastOne.wait(10.milliseconds)
 
     let another = bucket.consume(20)
     check:
@@ -102,21 +102,21 @@ suite "Token Bucket":
       another.finished
       bucket.tryConsume(10)
 
-  test "Async cancellation":
+  asyncTest "Async cancellation":
     var bucket = TokenBucket.new(100, 0.seconds)
     let
       fut1 = bucket.consume(20)
       futBlocker = bucket.consume(1000)
       fut2 = bucket.consume(50)
 
-    waitFor(fut1.wait(10.milliseconds))
-    waitFor(sleepAsync(10.milliseconds))
+    await fut1.wait(10.milliseconds)
+    await sleepAsync(10.milliseconds)
     check:
       futBlocker.finished == false
       fut2.finished == false
 
     futBlocker.cancelSoon()
-    waitFor(fut2.wait(10.milliseconds))
+    await fut2.wait(10.milliseconds)
 
   test "Very long replenish":
     let start = Moment.now()

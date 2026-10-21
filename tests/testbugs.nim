@@ -10,7 +10,7 @@ import ../chronos, ../chronos/unittest2/asynctests
 
 when defined(posix):
   import stew/ptrops
-  import ../chronos/[config, osdefs, osutils], ../chronos/unittest2/asynctests
+  import ../chronos/[config, osdefs, osutils]
 
 when defined(windows):
   import ../chronos/osdefs
@@ -70,55 +70,53 @@ when defined(windows):
         after == before
 
 suite "Asynchronous issues test suite":
-  const HELLO_PORT = 45679
-  const TEST_MSG = "testmsg"
-  const MSG_LEN = TEST_MSG.len()
-  const TestsCount = 100
+  const testsCount = 100
 
-  type
-    CustomData = ref object
+  asyncTest "Issue #6":
+    const
+      helloPort = 45679
+      testMsg = "testmsg"
+      msgLen = testMsg.len()
+
+    type CustomData = ref object
       test: string
 
-  proc udp4DataAvailable(transp: DatagramTransport,
-                         remote: TransportAddress) {.async: (raises: []).} =
-    try:
-      var udata = getUserData[CustomData](transp)
-      var expect = TEST_MSG
-      var data: seq[byte]
-      var datalen: int
-      transp.peekMessage(data, datalen)
-      if udata.test == "CHECK" and datalen == MSG_LEN and
-        equalMem(addr data[0], addr expect[0], datalen):
-        udata.test = "OK"
-      transp.close()
-    except CatchableError as exc:
-      raiseAssert exc.msg
+    proc udp4DataAvailable(transp: DatagramTransport,
+                           remote: TransportAddress) {.async: (raises: []).} =
+      try:
+        var udata = getUserData[CustomData](transp)
+        var expect = testMsg
+        var data: seq[byte]
+        var datalen: int
+        transp.peekMessage(data, datalen)
+        if udata.test == "CHECK" and datalen == msgLen and
+          equalMem(addr data[0], addr expect[0], datalen):
+          udata.test = "OK"
+        transp.close()
+      except CatchableError as exc:
+        raiseAssert exc.msg
 
-  proc issue6(): Future[bool] {.async.} =
-    var myself = initTAddress("127.0.0.1:" & $HELLO_PORT)
+    var myself = initTAddress("127.0.0.1:" & $helloPort)
     var data = CustomData()
     data.test = "CHECK"
     var dsock4 = newDatagramTransport(udp4DataAvailable, udata = data,
                                       local = myself)
-    await dsock4.sendTo(myself, TEST_MSG, MSG_LEN)
+    await dsock4.sendTo(myself, testMsg, msgLen)
     await dsock4.join()
-    if data.test == "OK":
-      result = true
+    check data.test == "OK"
 
-  proc testWait(): Future[bool] {.async.} =
-    for i in 0 ..< TestsCount:
+  asyncTest "Callback-race double completion [wait()] test":
+    for i in 0 ..< testsCount:
       try:
         await wait(sleepAsync(4.milliseconds), 4.milliseconds)
       except AsyncTimeoutError:
         discard
-    result = true
 
-  proc testWithTimeout(): Future[bool] {.async.} =
-    for i in 0 ..< TestsCount:
+  asyncTest "Callback-race double completion [withTimeout()] test":
+    for i in 0 ..< testsCount:
       discard await withTimeout(sleepAsync(4.milliseconds), 4.milliseconds)
-    result = true
 
-  proc testMultipleAwait(): Future[bool] {.async.} =
+  asyncTest "Multiple await on single future test [Nim's issue #13889]":
     var promise = newFuture[void]()
     var checkstr = ""
 
@@ -133,9 +131,9 @@ suite "Asynchronous issues test suite":
     await sleepAsync(100.milliseconds)
     promise.complete()
     await sleepAsync(100.milliseconds)
-    result = (checkstr == "FooBarBaz")
+    check checkstr == "FooBarBaz"
 
-  proc testDefer(): Future[bool] {.async.} =
+  asyncTest "Defer for asynchronous procedures test [Nim's issue #13899]":
     proc someConnect() {.async.} =
       await sleepAsync(100.milliseconds)
 
@@ -155,38 +153,19 @@ suite "Asynchronous issues test suite":
         await someClose()
         result = true
 
-    let r1 = await testFooFails()
-    let r2 = await testFooSucceed()
+    check:
+      await testFooFails()
+      await testFooSucceed()
 
-    result = r1 and r2
-
-  proc testOrDeadlock(): Future[bool] {.async.} =
+  asyncTest "`or` deadlock [#516] test":
     proc f(): Future[void] {.async.} =
       await sleepAsync(2.seconds) or sleepAsync(1.seconds)
     let fx = f()
     try:
       await fx.cancelAndWait().wait(2.seconds)
+      check true
     except AsyncTimeoutError:
-      return false
-    true
-
-  test "Issue #6":
-    check waitFor(issue6()) == true
-
-  test "Callback-race double completion [wait()] test":
-    check waitFor(testWait()) == true
-
-  test "Callback-race double completion [withTimeout()] test":
-    check waitFor(testWithTimeout()) == true
-
-  test "Multiple await on single future test [Nim's issue #13889]":
-    check waitFor(testMultipleAwait()) == true
-
-  test "Defer for asynchronous procedures test [Nim's issue #13899]":
-    check waitFor(testDefer()) == true
-
-  test "`or` deadlock [#516] test":
-    check waitFor(testOrDeadlock()) == true
+      check false
 
   when defined(posix):
     asyncTest "Reader notification after buffer got full [poll()] test":

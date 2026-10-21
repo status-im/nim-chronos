@@ -62,123 +62,6 @@ suite "Datagram Transport test suite":
     except CatchableError as exc:
       raiseAssert exc.msg
 
-  proc client2(transp: DatagramTransport,
-               raddr: TransportAddress): Future[void] {.async: (raises: []).} =
-    try:
-      var pbytes = transp.getMessage()
-      var nbytes = len(pbytes)
-      if nbytes > 0:
-        var data = newString(nbytes + 1)
-        copyMem(addr data[0], addr pbytes[0], nbytes)
-        data.setLen(nbytes)
-        if data.startsWith("ANSWER"):
-          var counterPtr = cast[ptr int](transp.udata)
-          counterPtr[] = counterPtr[] + 1
-          if counterPtr[] == TestsCount:
-            transp.close()
-          else:
-            var ta = initTAddress("127.0.0.1:33336")
-            var req = "REQUEST" & $counterPtr[]
-            await transp.sendTo(ta, addr req[0], len(req))
-        else:
-          var counterPtr = cast[ptr int](transp.udata)
-          counterPtr[] = -1
-          transp.close()
-      else:
-        ## Read operation failed with error
-        var counterPtr = cast[ptr int](transp.udata)
-        counterPtr[] = -1
-        transp.close()
-    except CatchableError as exc:
-      raiseAssert exc.msg
-
-  proc client3(transp: DatagramTransport,
-               raddr: TransportAddress): Future[void] {.async: (raises: []).} =
-    try:
-      var pbytes = transp.getMessage()
-      var nbytes = len(pbytes)
-      if nbytes > 0:
-        var data = newString(nbytes + 1)
-        copyMem(addr data[0], addr pbytes[0], nbytes)
-        data.setLen(nbytes)
-        if data.startsWith("ANSWER"):
-          var counterPtr = cast[ptr int](transp.udata)
-          counterPtr[] = counterPtr[] + 1
-          if counterPtr[] == TestsCount:
-            transp.close()
-          else:
-            var req = "REQUEST" & $counterPtr[]
-            await transp.send(addr req[0], len(req))
-        else:
-          var counterPtr = cast[ptr int](transp.udata)
-          counterPtr[] = -1
-          transp.close()
-      else:
-        ## Read operation failed with error
-        var counterPtr = cast[ptr int](transp.udata)
-        counterPtr[] = -1
-        transp.close()
-    except CatchableError as exc:
-      raiseAssert exc.msg
-
-  proc client4(transp: DatagramTransport,
-               raddr: TransportAddress): Future[void] {.async: (raises: []).} =
-    try:
-      var pbytes = transp.getMessage()
-      var nbytes = len(pbytes)
-      if nbytes > 0:
-        var data = newString(nbytes + 1)
-        copyMem(addr data[0], addr pbytes[0], nbytes)
-        data.setLen(nbytes)
-        if data.startsWith("ANSWER"):
-          var counterPtr = cast[ptr int](transp.udata)
-          counterPtr[] = counterPtr[] + 1
-          if counterPtr[] == MessagesCount:
-            transp.close()
-          else:
-            var req = "REQUEST" & $counterPtr[]
-            await transp.send(addr req[0], len(req))
-        else:
-          var counterPtr = cast[ptr int](transp.udata)
-          counterPtr[] = -1
-          transp.close()
-      else:
-        ## Read operation failed with error
-        var counterPtr = cast[ptr int](transp.udata)
-        counterPtr[] = -1
-        transp.close()
-    except CatchableError as exc:
-      raiseAssert exc.msg
-
-  proc client5(transp: DatagramTransport,
-               raddr: TransportAddress): Future[void] {.async: (raises: []).} =
-    try:
-      var pbytes = transp.getMessage()
-      var nbytes = len(pbytes)
-      if nbytes > 0:
-        var data = newString(nbytes + 1)
-        copyMem(addr data[0], addr pbytes[0], nbytes)
-        data.setLen(nbytes)
-        if data.startsWith("ANSWER"):
-          var counterPtr = cast[ptr int](transp.udata)
-          counterPtr[] = counterPtr[] + 1
-          if counterPtr[] == MessagesCount:
-            transp.close()
-          else:
-            var req = "REQUEST" & $counterPtr[]
-            await transp.sendTo(raddr, addr req[0], len(req))
-        else:
-          var counterPtr = cast[ptr int](transp.udata)
-          counterPtr[] = -1
-          transp.close()
-      else:
-        ## Read operation failed with error
-        var counterPtr = cast[ptr int](transp.udata)
-        counterPtr[] = -1
-        transp.close()
-    except CatchableError as exc:
-      raiseAssert exc.msg
-
   proc client6(transp: DatagramTransport,
                raddr: TransportAddress): Future[void] {.async: (raises: []).} =
     try:
@@ -196,64 +79,6 @@ suite "Datagram Transport test suite":
         else:
           var err = "ERROR"
           await transp.sendTo(raddr, err)
-      else:
-        ## Read operation failed with error
-        var counterPtr = cast[ptr int](transp.udata)
-        counterPtr[] = -1
-        transp.close()
-    except CatchableError as exc:
-      raiseAssert exc.msg
-
-  proc client7(transp: DatagramTransport,
-               raddr: TransportAddress): Future[void] {.async: (raises: []).} =
-    try:
-      var pbytes = transp.getMessage()
-      var nbytes = len(pbytes)
-      if nbytes > 0:
-        var data = newString(nbytes + 1)
-        copyMem(addr data[0], addr pbytes[0], nbytes)
-        data.setLen(nbytes)
-        if data.startsWith("ANSWER"):
-          var counterPtr = cast[ptr int](transp.udata)
-          counterPtr[] = counterPtr[] + 1
-          if counterPtr[] == TestsCount:
-            transp.close()
-          else:
-            var req = "REQUEST" & $counterPtr[]
-            await transp.sendTo(raddr, req)
-        else:
-          var counterPtr = cast[ptr int](transp.udata)
-          counterPtr[] = -1
-          transp.close()
-      else:
-        ## Read operation failed with error
-        var counterPtr = cast[ptr int](transp.udata)
-        counterPtr[] = -1
-        transp.close()
-    except CatchableError as exc:
-      raiseAssert exc.msg
-
-  proc client8(transp: DatagramTransport,
-               raddr: TransportAddress): Future[void] {.async: (raises: []).} =
-    try:
-      var pbytes = transp.getMessage()
-      var nbytes = len(pbytes)
-      if nbytes > 0:
-        var data = newString(nbytes + 1)
-        copyMem(addr data[0], addr pbytes[0], nbytes)
-        data.setLen(nbytes)
-        if data.startsWith("ANSWER"):
-          var counterPtr = cast[ptr int](transp.udata)
-          counterPtr[] = counterPtr[] + 1
-          if counterPtr[] == TestsCount:
-            transp.close()
-          else:
-            var req = "REQUEST" & $counterPtr[]
-            await transp.send(req)
-        else:
-          var counterPtr = cast[ptr int](transp.udata)
-          counterPtr[] = -1
-          transp.close()
       else:
         ## Read operation failed with error
         var counterPtr = cast[ptr int](transp.udata)
@@ -291,164 +116,18 @@ suite "Datagram Transport test suite":
     except CatchableError as exc:
       raiseAssert exc.msg
 
-  proc client10(transp: DatagramTransport,
-                raddr: TransportAddress): Future[void] {.async: (raises: []).} =
-    try:
-      var pbytes = transp.getMessage()
-      var nbytes = len(pbytes)
-      if nbytes > 0:
-        var data = newString(nbytes + 1)
-        copyMem(addr data[0], addr pbytes[0], nbytes)
-        data.setLen(nbytes)
-        if data.startsWith("ANSWER"):
-          var counterPtr = cast[ptr int](transp.udata)
-          counterPtr[] = counterPtr[] + 1
-          if counterPtr[] == TestsCount:
-            transp.close()
-          else:
-            var req = "REQUEST" & $counterPtr[]
-            var reqseq = newSeq[byte](len(req))
-            copyMem(addr reqseq[0], addr req[0], len(req))
-            await transp.sendTo(raddr, reqseq)
-        else:
-          var counterPtr = cast[ptr int](transp.udata)
-          counterPtr[] = -1
-          transp.close()
-      else:
-        ## Read operation failed with error
-        var counterPtr = cast[ptr int](transp.udata)
-        counterPtr[] = -1
-        transp.close()
-    except CatchableError as exc:
-      raiseAssert exc.msg
-
-  proc client11(transp: DatagramTransport,
-                raddr: TransportAddress): Future[void] {.async: (raises: []).} =
-    try:
-      var pbytes = transp.getMessage()
-      var nbytes = len(pbytes)
-      if nbytes > 0:
-        var data = newString(nbytes + 1)
-        copyMem(addr data[0], addr pbytes[0], nbytes)
-        data.setLen(nbytes)
-        if data.startsWith("ANSWER"):
-          var counterPtr = cast[ptr int](transp.udata)
-          counterPtr[] = counterPtr[] + 1
-          if counterPtr[] == TestsCount:
-            transp.close()
-          else:
-            var req = "REQUEST" & $counterPtr[]
-            var reqseq = newSeq[byte](len(req))
-            copyMem(addr reqseq[0], addr req[0], len(req))
-            await transp.send(reqseq)
-        else:
-          var counterPtr = cast[ptr int](transp.udata)
-          counterPtr[] = -1
-          transp.close()
-      else:
-        ## Read operation failed with error
-        var counterPtr = cast[ptr int](transp.udata)
-        counterPtr[] = -1
-        transp.close()
-    except CatchableError as exc:
-      raiseAssert exc.msg
-
-  proc testPointerSendTo(): Future[int] {.async.} =
-    ## sendTo(pointer) test
-    var ta = initTAddress("127.0.0.1:33336")
-    var counter = 0
-    var dgram1 = newDatagramTransport(client1, udata = addr counter, local = ta)
-    var dgram2 = newDatagramTransport(client2, udata = addr counter)
-    var data = "REQUEST0"
-    await dgram2.sendTo(ta, addr data[0], len(data))
-    await dgram2.join()
-    dgram1.close()
-    await dgram1.join()
-    result = counter
-
-  proc testPointerSend(): Future[int] {.async.} =
-    ## send(pointer) test
-    var ta = initTAddress("127.0.0.1:33337")
-    var counter = 0
-    var dgram1 = newDatagramTransport(client1, udata = addr counter, local = ta)
-    var dgram2 = newDatagramTransport(client3, udata = addr counter, remote = ta)
-    var data = "REQUEST0"
-    await dgram2.send(addr data[0], len(data))
-    await dgram2.join()
-    dgram1.close()
-    await dgram1.join()
-    result = counter
-
-  proc testStringSendTo(): Future[int] {.async.} =
-    ## sendTo(string) test
-    var ta = initTAddress("127.0.0.1:33338")
-    var counter = 0
-    var dgram1 = newDatagramTransport(client6, udata = addr counter, local = ta)
-    var dgram2 = newDatagramTransport(client7, udata = addr counter)
-    var data = "REQUEST0"
-    await dgram2.sendTo(ta, data)
-    await dgram2.join()
-    dgram1.close()
-    await dgram1.join()
-    result = counter
-
-  proc testStringSend(): Future[int] {.async.} =
-    ## send(string) test
-    var ta = initTAddress("127.0.0.1:33339")
-    var counter = 0
-    var dgram1 = newDatagramTransport(client6, udata = addr counter, local = ta)
-    var dgram2 = newDatagramTransport(client8, udata = addr counter, remote = ta)
-    var data = "REQUEST0"
-    await dgram2.send(data)
-    await dgram2.join()
-    dgram1.close()
-    await dgram1.join()
-    result = counter
-
-  proc testSeqSendTo(): Future[int] {.async.} =
-    ## sendTo(string) test
-    var ta = initTAddress("127.0.0.1:33340")
-    var counter = 0
-    var dgram1 = newDatagramTransport(client9, udata = addr counter, local = ta)
-    var dgram2 = newDatagramTransport(client10, udata = addr counter)
-    var data = "REQUEST0"
-    var dataseq = newSeq[byte](len(data))
-    copyMem(addr dataseq[0], addr data[0], len(data))
-    await dgram2.sendTo(ta, dataseq)
-    await dgram2.join()
-    dgram1.close()
-    await dgram1.join()
-    result = counter
-
-  proc testSeqSend(): Future[int] {.async.} =
-    ## send(seq) test
-    var ta = initTAddress("127.0.0.1:33341")
-    var counter = 0
-    var dgram1 = newDatagramTransport(client9, udata = addr counter, local = ta)
-    var dgram2 = newDatagramTransport(client11, udata = addr counter, remote = ta)
-    var data = "REQUEST0"
-    var dataseq = newSeq[byte](len(data))
-    copyMem(addr dataseq[0], addr data[0], len(data))
-    await dgram2.send(data)
-    await dgram2.join()
-    dgram1.close()
-    await dgram1.join()
-    result = counter
-
-  #
-
-  proc waitAll(futs: seq[Future[void]]): Future[void] =
-    var counter = len(futs)
-    var retFuture = newFuture[void]("waitAll")
-    proc cb(udata: pointer) =
-      dec(counter)
-      if counter == 0:
-        retFuture.complete()
-    for fut in futs:
-      fut.addCallback(cb)
-    return retFuture
-
   proc test3(bounded: bool): Future[int] {.async.} =
+    proc waitAll(futs: seq[Future[void]]): Future[void] =
+      var counter = len(futs)
+      var retFuture = newFuture[void]("waitAll")
+      proc cb(udata: pointer) =
+        dec(counter)
+        if counter == 0:
+          retFuture.complete()
+      for fut in futs:
+        fut.addCallback(cb)
+      return retFuture
+
     var ta: TransportAddress
     if bounded:
       ta = initTAddress("127.0.0.1:33240")
@@ -462,10 +141,68 @@ suite "Datagram Transport test suite":
     for i in 0..<ClientsCount:
       var data = "REQUEST0"
       if bounded:
+        proc client4(transp: DatagramTransport,
+                     raddr: TransportAddress): Future[void] {.
+            async: (raises: []).} =
+          try:
+            var pbytes = transp.getMessage()
+            var nbytes = len(pbytes)
+            if nbytes > 0:
+              var data = newString(nbytes + 1)
+              copyMem(addr data[0], addr pbytes[0], nbytes)
+              data.setLen(nbytes)
+              if data.startsWith("ANSWER"):
+                var counterPtr = cast[ptr int](transp.udata)
+                counterPtr[] = counterPtr[] + 1
+                if counterPtr[] == MessagesCount:
+                  transp.close()
+                else:
+                  var req = "REQUEST" & $counterPtr[]
+                  await transp.send(addr req[0], len(req))
+              else:
+                var counterPtr = cast[ptr int](transp.udata)
+                counterPtr[] = -1
+                transp.close()
+            else:
+              ## Read operation failed with error
+              var counterPtr = cast[ptr int](transp.udata)
+              counterPtr[] = -1
+              transp.close()
+          except CatchableError as exc:
+            raiseAssert exc.msg
         grams[i] = newDatagramTransport(client4, udata = addr counters[i],
                                         remote = ta)
         await grams[i].send(addr data[0], len(data))
       else:
+        proc client5(transp: DatagramTransport,
+                     raddr: TransportAddress): Future[void] {.
+            async: (raises: []).} =
+          try:
+            var pbytes = transp.getMessage()
+            var nbytes = len(pbytes)
+            if nbytes > 0:
+              var data = newString(nbytes + 1)
+              copyMem(addr data[0], addr pbytes[0], nbytes)
+              data.setLen(nbytes)
+              if data.startsWith("ANSWER"):
+                var counterPtr = cast[ptr int](transp.udata)
+                counterPtr[] = counterPtr[] + 1
+                if counterPtr[] == MessagesCount:
+                  transp.close()
+                else:
+                  var req = "REQUEST" & $counterPtr[]
+                  await transp.sendTo(raddr, addr req[0], len(req))
+              else:
+                var counterPtr = cast[ptr int](transp.udata)
+                counterPtr[] = -1
+                transp.close()
+            else:
+              ## Read operation failed with error
+              var counterPtr = cast[ptr int](transp.udata)
+              counterPtr[] = -1
+              transp.close()
+          except CatchableError as exc:
+            raiseAssert exc.msg
         grams[i] = newDatagramTransport(client5, udata = addr counters[i])
         await grams[i].sendTo(ta, addr data[0], len(data))
       clients[i] = grams[i].join()
@@ -477,11 +214,299 @@ suite "Datagram Transport test suite":
     for i in 0..<ClientsCount:
       result += counters[i]
 
-  proc testConnReset(): Future[bool] {.async.} =
+  asyncTest "close(transport) test":
+    var ta = initTAddress("127.0.0.1:45000")
+    proc clientMark(transp: DatagramTransport,
+                    raddr: TransportAddress): Future[void] {.
+       async: (raises: []).} =
+      discard
+    var dgram = newDatagramTransport(clientMark, local = ta)
+    dgram.close()
+    try:
+      await wait(dgram.join(), 1.seconds)
+      check true
+    except CatchableError:
+      discard
+
+  asyncTest m1:
+    ## sendTo(pointer) test
+    proc client2(transp: DatagramTransport,
+                 raddr: TransportAddress): Future[void] {.
+       async: (raises: []).} =
+      try:
+        var pbytes = transp.getMessage()
+        var nbytes = len(pbytes)
+        if nbytes > 0:
+          var data = newString(nbytes + 1)
+          copyMem(addr data[0], addr pbytes[0], nbytes)
+          data.setLen(nbytes)
+          if data.startsWith("ANSWER"):
+            var counterPtr = cast[ptr int](transp.udata)
+            counterPtr[] = counterPtr[] + 1
+            if counterPtr[] == TestsCount:
+              transp.close()
+            else:
+              var ta = initTAddress("127.0.0.1:33336")
+              var req = "REQUEST" & $counterPtr[]
+              await transp.sendTo(ta, addr req[0], len(req))
+          else:
+            var counterPtr = cast[ptr int](transp.udata)
+            counterPtr[] = -1
+            transp.close()
+        else:
+          ## Read operation failed with error
+          var counterPtr = cast[ptr int](transp.udata)
+          counterPtr[] = -1
+          transp.close()
+      except CatchableError as exc:
+        raiseAssert exc.msg
+
+    var ta = initTAddress("127.0.0.1:33336")
+    var counter = 0
+    var dgram1 = newDatagramTransport(client1, udata = addr counter, local = ta)
+    var dgram2 = newDatagramTransport(client2, udata = addr counter)
+    var data = "REQUEST0"
+    await dgram2.sendTo(ta, addr data[0], len(data))
+    await dgram2.join()
+    dgram1.close()
+    await dgram1.join()
+    check counter == TestsCount
+
+  asyncTest m2:
+    ## send(pointer) test
+    proc client3(transp: DatagramTransport,
+                 raddr: TransportAddress): Future[void] {.
+       async: (raises: []).} =
+      try:
+        var pbytes = transp.getMessage()
+        var nbytes = len(pbytes)
+        if nbytes > 0:
+          var data = newString(nbytes + 1)
+          copyMem(addr data[0], addr pbytes[0], nbytes)
+          data.setLen(nbytes)
+          if data.startsWith("ANSWER"):
+            var counterPtr = cast[ptr int](transp.udata)
+            counterPtr[] = counterPtr[] + 1
+            if counterPtr[] == TestsCount:
+              transp.close()
+            else:
+              var req = "REQUEST" & $counterPtr[]
+              await transp.send(addr req[0], len(req))
+          else:
+            var counterPtr = cast[ptr int](transp.udata)
+            counterPtr[] = -1
+            transp.close()
+        else:
+          ## Read operation failed with error
+          var counterPtr = cast[ptr int](transp.udata)
+          counterPtr[] = -1
+          transp.close()
+      except CatchableError as exc:
+        raiseAssert exc.msg
+
+    var ta = initTAddress("127.0.0.1:33337")
+    var counter = 0
+    var dgram1 = newDatagramTransport(client1, udata = addr counter, local = ta)
+    var dgram2 = newDatagramTransport(client3, udata = addr counter, remote = ta)
+    var data = "REQUEST0"
+    await dgram2.send(addr data[0], len(data))
+    await dgram2.join()
+    dgram1.close()
+    await dgram1.join()
+    check counter == TestsCount
+
+  asyncTest m3:
+    ## sendTo(string) test
+    proc client7(transp: DatagramTransport,
+                 raddr: TransportAddress): Future[void] {.
+       async: (raises: []).} =
+      try:
+        var pbytes = transp.getMessage()
+        var nbytes = len(pbytes)
+        if nbytes > 0:
+          var data = newString(nbytes + 1)
+          copyMem(addr data[0], addr pbytes[0], nbytes)
+          data.setLen(nbytes)
+          if data.startsWith("ANSWER"):
+            var counterPtr = cast[ptr int](transp.udata)
+            counterPtr[] = counterPtr[] + 1
+            if counterPtr[] == TestsCount:
+              transp.close()
+            else:
+              var req = "REQUEST" & $counterPtr[]
+              await transp.sendTo(raddr, req)
+          else:
+            var counterPtr = cast[ptr int](transp.udata)
+            counterPtr[] = -1
+            transp.close()
+        else:
+          ## Read operation failed with error
+          var counterPtr = cast[ptr int](transp.udata)
+          counterPtr[] = -1
+          transp.close()
+      except CatchableError as exc:
+        raiseAssert exc.msg
+
+    var ta = initTAddress("127.0.0.1:33338")
+    var counter = 0
+    var dgram1 = newDatagramTransport(client6, udata = addr counter, local = ta)
+    var dgram2 = newDatagramTransport(client7, udata = addr counter)
+    var data = "REQUEST0"
+    await dgram2.sendTo(ta, data)
+    await dgram2.join()
+    dgram1.close()
+    await dgram1.join()
+    check counter == TestsCount
+
+  asyncTest m4:
+    ## send(string) test
+    proc client8(transp: DatagramTransport,
+                 raddr: TransportAddress): Future[void] {.
+       async: (raises: []).} =
+      try:
+        var pbytes = transp.getMessage()
+        var nbytes = len(pbytes)
+        if nbytes > 0:
+          var data = newString(nbytes + 1)
+          copyMem(addr data[0], addr pbytes[0], nbytes)
+          data.setLen(nbytes)
+          if data.startsWith("ANSWER"):
+            var counterPtr = cast[ptr int](transp.udata)
+            counterPtr[] = counterPtr[] + 1
+            if counterPtr[] == TestsCount:
+              transp.close()
+            else:
+              var req = "REQUEST" & $counterPtr[]
+              await transp.send(req)
+          else:
+            var counterPtr = cast[ptr int](transp.udata)
+            counterPtr[] = -1
+            transp.close()
+        else:
+          ## Read operation failed with error
+          var counterPtr = cast[ptr int](transp.udata)
+          counterPtr[] = -1
+          transp.close()
+      except CatchableError as exc:
+        raiseAssert exc.msg
+
+    var ta = initTAddress("127.0.0.1:33339")
+    var counter = 0
+    var dgram1 = newDatagramTransport(client6, udata = addr counter, local = ta)
+    var dgram2 = newDatagramTransport(client8, udata = addr counter, remote = ta)
+    var data = "REQUEST0"
+    await dgram2.send(data)
+    await dgram2.join()
+    dgram1.close()
+    await dgram1.join()
+    check counter == TestsCount
+
+  asyncTest m5:
+    ## sendTo(seq[byte]) test
+    proc client10(transp: DatagramTransport,
+                  raddr: TransportAddress): Future[void] {.
+       async: (raises: []).} =
+      try:
+        var pbytes = transp.getMessage()
+        var nbytes = len(pbytes)
+        if nbytes > 0:
+          var data = newString(nbytes + 1)
+          copyMem(addr data[0], addr pbytes[0], nbytes)
+          data.setLen(nbytes)
+          if data.startsWith("ANSWER"):
+            var counterPtr = cast[ptr int](transp.udata)
+            counterPtr[] = counterPtr[] + 1
+            if counterPtr[] == TestsCount:
+              transp.close()
+            else:
+              var req = "REQUEST" & $counterPtr[]
+              var reqseq = newSeq[byte](len(req))
+              copyMem(addr reqseq[0], addr req[0], len(req))
+              await transp.sendTo(raddr, reqseq)
+          else:
+            var counterPtr = cast[ptr int](transp.udata)
+            counterPtr[] = -1
+            transp.close()
+        else:
+          ## Read operation failed with error
+          var counterPtr = cast[ptr int](transp.udata)
+          counterPtr[] = -1
+          transp.close()
+      except CatchableError as exc:
+        raiseAssert exc.msg
+
+    var ta = initTAddress("127.0.0.1:33340")
+    var counter = 0
+    var dgram1 = newDatagramTransport(client9, udata = addr counter, local = ta)
+    var dgram2 = newDatagramTransport(client10, udata = addr counter)
+    var data = "REQUEST0"
+    var dataseq = newSeq[byte](len(data))
+    copyMem(addr dataseq[0], addr data[0], len(data))
+    await dgram2.sendTo(ta, dataseq)
+    await dgram2.join()
+    dgram1.close()
+    await dgram1.join()
+    check counter == TestsCount
+
+  asyncTest m6:
+    ## send(seq[byte]) test
+    proc client11(transp: DatagramTransport,
+                  raddr: TransportAddress): Future[void] {.
+       async: (raises: []).} =
+      try:
+        var pbytes = transp.getMessage()
+        var nbytes = len(pbytes)
+        if nbytes > 0:
+          var data = newString(nbytes + 1)
+          copyMem(addr data[0], addr pbytes[0], nbytes)
+          data.setLen(nbytes)
+          if data.startsWith("ANSWER"):
+            var counterPtr = cast[ptr int](transp.udata)
+            counterPtr[] = counterPtr[] + 1
+            if counterPtr[] == TestsCount:
+              transp.close()
+            else:
+              var req = "REQUEST" & $counterPtr[]
+              var reqseq = newSeq[byte](len(req))
+              copyMem(addr reqseq[0], addr req[0], len(req))
+              await transp.send(reqseq)
+          else:
+            var counterPtr = cast[ptr int](transp.udata)
+            counterPtr[] = -1
+            transp.close()
+        else:
+          ## Read operation failed with error
+          var counterPtr = cast[ptr int](transp.udata)
+          counterPtr[] = -1
+          transp.close()
+      except CatchableError as exc:
+        raiseAssert exc.msg
+
+    var ta = initTAddress("127.0.0.1:33341")
+    var counter = 0
+    var dgram1 = newDatagramTransport(client9, udata = addr counter, local = ta)
+    var dgram2 = newDatagramTransport(client11, udata = addr counter, remote = ta)
+    var data = "REQUEST0"
+    var dataseq = newSeq[byte](len(data))
+    copyMem(addr dataseq[0], addr data[0], len(data))
+    await dgram2.send(data)
+    await dgram2.join()
+    dgram1.close()
+    await dgram1.join()
+    check counter == TestsCount
+
+  asyncTest m7:
+    check (await test3(false)) == ClientsCount * MessagesCount
+
+  asyncTest m8:
+    check (await test3(true)) == ClientsCount * MessagesCount
+
+  asyncTest "Datagram connection reset test":
     var ta = initTAddress("127.0.0.1:0")
     var counter = 0
     proc clientMark(transp: DatagramTransport,
-                    raddr: TransportAddress): Future[void] {.async: (raises: []).} =
+                    raddr: TransportAddress): Future[void] {.
+       async: (raises: []).} =
       counter = 1
       transp.close()
     var dgram1 = newDatagramTransport(client1, local = ta)
@@ -492,45 +517,38 @@ suite "Datagram Transport test suite":
     var data = "MESSAGE"
     asyncSpawn dgram2.sendTo(localta, data)
     await sleepAsync(2000.milliseconds)
-    result = (counter == 0)
+    check counter == 0
     dgram2.close()
     await dgram2.join()
 
-  proc testTransportClose(): Future[bool] {.async.} =
-    var ta = initTAddress("127.0.0.1:45000")
-    proc clientMark(transp: DatagramTransport,
-                    raddr: TransportAddress): Future[void] {.async: (raises: []).} =
-      discard
-    var dgram = newDatagramTransport(clientMark, local = ta)
-    dgram.close()
-    try:
-      await wait(dgram.join(), 1.seconds)
-      result = true
-    except CatchableError:
-      discard
+  asyncTest "Broadcast test":
+    when defined(osx):
+      # Github Actions does not support broadcast operation on macos workers,
+      # fails with `No route to host`.
+      skip()
+    else:
+      const expectMessage = "BROADCAST MESSAGE"
+      var ta1 = initTAddress("0.0.0.0:45010")
+      var bta = initTAddress("255.255.255.255:45010")
+      var res = 0
+      proc clientMark(transp: DatagramTransport,
+                     raddr: TransportAddress): Future[void] {.
+        async: (raises: []).} =
+        try:
+          var bmsg = transp.getMessage()
+          var smsg = string.fromBytes(bmsg)
+          if smsg == expectMessage:
+            inc(res)
+          transp.close()
+        except CatchableError as exc:
+          raiseAssert exc.msg
+      var dgram1 = newDatagramTransport(clientMark, local = ta1,
+                                        flags = {Broadcast}, ttl = 2)
+      await dgram1.sendTo(bta, expectMessage)
+      await wait(dgram1.join(), 5.seconds)
+      check res == 1
 
-  proc testBroadcast(): Future[int] {.async.} =
-    const expectMessage = "BROADCAST MESSAGE"
-    var ta1 = initTAddress("0.0.0.0:45010")
-    var bta = initTAddress("255.255.255.255:45010")
-    var res = 0
-    proc clientMark(transp: DatagramTransport,
-                     raddr: TransportAddress): Future[void] {.async: (raises: []).} =
-      try:
-        var bmsg = transp.getMessage()
-        var smsg = string.fromBytes(bmsg)
-        if smsg == expectMessage:
-          inc(res)
-        transp.close()
-      except CatchableError as exc:
-        raiseAssert exc.msg
-    var dgram1 = newDatagramTransport(clientMark, local = ta1,
-                                      flags = {Broadcast}, ttl = 2)
-    await dgram1.sendTo(bta, expectMessage)
-    await wait(dgram1.join(), 5.seconds)
-    result = res
-
-  proc testAnyAddress(): Future[int] {.async.} =
+  asyncTest "0.0.0.0/::0 (INADDR_ANY) test":
     var expectStr = "ANYADDRESS MESSAGE"
     var expectSeq = expectStr.toBytes()
     let ta = initTAddress("0.0.0.0:0")
@@ -538,7 +556,8 @@ suite "Datagram Transport test suite":
     var event = newAsyncEvent()
 
     proc clientMark1(transp: DatagramTransport,
-                     raddr: TransportAddress): Future[void] {.async: (raises: []).} =
+                     raddr: TransportAddress): Future[void] {.
+       async: (raises: []).} =
       try:
         var bmsg = transp.getMessage()
         var smsg = string.fromBytes(bmsg)
@@ -548,16 +567,15 @@ suite "Datagram Transport test suite":
       except CatchableError as exc:
         raiseAssert exc.msg
 
-
     proc clientMark2(transp: DatagramTransport,
-                     raddr: TransportAddress): Future[void] {.async: (raises: []).} =
+                     raddr: TransportAddress): Future[void] {.
+       async: (raises: []).} =
       discard
 
     var dgram1 = newDatagramTransport(clientMark1, local = ta)
     let la = dgram1.localAddress()
     var dgram2 = newDatagramTransport(clientMark2)
-    var dgram3 = newDatagramTransport(clientMark2,
-                                      remote = la)
+    var dgram3 = newDatagramTransport(clientMark2, remote = la)
     await dgram2.sendTo(la, addr expectStr[0], len(expectStr))
     await event.wait()
     event.clear()
@@ -581,7 +599,39 @@ suite "Datagram Transport test suite":
     await dgram2.closeWait()
     await dgram3.closeWait()
 
-    result = res
+    check res == 6
+
+  asyncTest "[IP] getDomain(socket) [SOCK_DGRAM] test":
+    if isAvailable(AddressFamily.IPv4) and isAvailable(AddressFamily.IPv6):
+      block:
+        let res = createAsyncSocket2(Domain.AF_INET, SockType.SOCK_DGRAM,
+                                     Protocol.IPPROTO_UDP)
+        check res.isOk()
+        let fres = getDomain(res.get())
+        check fres.isOk()
+        discard unregisterAndCloseFd(res.get())
+        check fres.get() == AddressFamily.IPv4
+
+      block:
+        let res = createAsyncSocket2(Domain.AF_INET6, SockType.SOCK_DGRAM,
+                                     Protocol.IPPROTO_UDP)
+        check res.isOk()
+        let fres = getDomain(res.get())
+        check fres.isOk()
+        discard unregisterAndCloseFd(res.get())
+        check fres.get() == AddressFamily.IPv6
+
+      when not(defined(windows)):
+        block:
+          let res = createAsyncSocket2(Domain.AF_UNIX, SockType.SOCK_DGRAM,
+                                       Protocol.IPPROTO_IP)
+          check res.isOk()
+          let fres = getDomain(res.get())
+          check fres.isOk()
+          discard unregisterAndCloseFd(res.get())
+          check fres.get() == AddressFamily.Unix
+    else:
+      skip()
 
   proc performDualstackTest(
          sstack: DualStackType, saddr: TransportAddress,
@@ -593,7 +643,8 @@ suite "Datagram Transport test suite":
       res = 0
 
     proc process1(transp: DatagramTransport,
-                  raddr: TransportAddress): Future[void] {.async: (raises: []).} =
+                  raddr: TransportAddress): Future[void] {.
+         async: (raises: []).} =
       try:
         var bmsg = transp.getMessage()
         var smsg = string.fromBytes(bmsg)
@@ -604,7 +655,8 @@ suite "Datagram Transport test suite":
         raiseAssert exc.msg
 
     proc process2(transp: DatagramTransport,
-                  raddr: TransportAddress): Future[void] {.async: (raises: []).} =
+                  raddr: TransportAddress): Future[void] {.
+         async: (raises: []).} =
       discard
 
     let
@@ -771,6 +823,181 @@ suite "Datagram Transport test suite":
     else:
       res == 4
 
+  asyncTest "[IP] DualStack [UDP] server [DualStackType.Auto] test":
+    if isAvailable(AddressFamily.IPv4) and isAvailable(AddressFamily.IPv6):
+      let serverAddress = initTAddress("[::]:0")
+      check:
+        (await performDualstackTest(
+           DualStackType.Auto, serverAddress,
+           DualStackType.Auto, initTAddress("127.0.0.1:0"))) == true
+      check:
+        (await performDualstackTest(
+           DualStackType.Auto, serverAddress,
+           DualStackType.Auto, initTAddress("127.0.0.1:0").toIPv6())) == true
+      check:
+        (await performDualstackTest(
+           DualStackType.Auto, serverAddress,
+           DualStackType.Auto, initTAddress("[::1]:0"))) == true
+    else:
+      skip()
+
+  asyncTest "[IP] DualStack [UDP] server [DualStackType.Enabled] test":
+    if isAvailable(AddressFamily.IPv4) and isAvailable(AddressFamily.IPv6):
+      let serverAddress = initTAddress("[::]:0")
+      check:
+        (await performDualstackTest(
+           DualStackType.Enabled, serverAddress,
+           DualStackType.Auto, initTAddress("127.0.0.1:0"))) == true
+        (await performDualstackTest(
+           DualStackType.Enabled, serverAddress,
+           DualStackType.Auto, initTAddress("127.0.0.1:0").toIPv6())) == true
+        (await performDualstackTest(
+           DualStackType.Enabled, serverAddress,
+           DualStackType.Auto, initTAddress("[::1]:0"))) == true
+    else:
+      skip()
+
+  asyncTest "[IP] DualStack [UDP] server [DualStackType.Disabled] test":
+    if isAvailable(AddressFamily.IPv4) and isAvailable(AddressFamily.IPv6):
+      let serverAddress = initTAddress("[::]:0")
+      check:
+        (await performDualstackTest(
+           DualStackType.Disabled, serverAddress,
+           DualStackType.Auto, initTAddress("127.0.0.1:0"))) == false
+        (await performDualstackTest(
+           DualStackType.Disabled, serverAddress,
+           DualStackType.Auto, initTAddress("127.0.0.1:0").toIPv6())) == false
+        (await performDualstackTest(
+           DualStackType.Disabled, serverAddress,
+           DualStackType.Auto, initTAddress("[::1]:0"))) == true
+    else:
+      skip()
+
+  asyncTest "[IP] Auto-address constructor test (*:0)":
+    if isAvailable(AddressFamily.IPv6):
+      check:
+        (await performAutoAddressTest(Port(0), AddressFamily.IPv6)) == true
+      # If IPv6 is available newAutoDatagramTransport should bind to `::` - this
+      # means that we should be able to connect to it via IPV4_MAPPED address,
+      # but only when IPv4 is also available.
+      if isAvailable(AddressFamily.IPv4):
+        check:
+          (await performAutoAddressTest(Port(0), AddressFamily.IPv4)) == true
+    else:
+      # If IPv6 is not available newAutoDatagramTransport should bind to
+      # `0.0.0.0` - this means we should be able to connect to it via IPv4
+      # address.
+      if isAvailable(AddressFamily.IPv4):
+        check:
+          (await performAutoAddressTest(Port(0), AddressFamily.IPv4)) == true
+
+  asyncTest "[IP] Auto-address constructor test (*:30231)":
+    if isAvailable(AddressFamily.IPv6):
+      check:
+        (await performAutoAddressTest(Port(30231), AddressFamily.IPv6)) == true
+      # If IPv6 is available newAutoDatagramTransport should bind to `::` - this
+      # means that we should be able to connect to it via IPV4_MAPPED address,
+      # but only when IPv4 is also available.
+      if isAvailable(AddressFamily.IPv4):
+        check:
+          (await performAutoAddressTest(Port(30231), AddressFamily.IPv4)) ==
+            true
+    else:
+      # If IPv6 is not available newAutoDatagramTransport should bind to
+      # `0.0.0.0` - this means we should be able to connect to it via IPv4
+      # address.
+      if isAvailable(AddressFamily.IPv4):
+        check:
+          (await performAutoAddressTest(Port(30231), AddressFamily.IPv4)) ==
+            true
+
+  asyncTest "[IP] 0-size UDP datagram size test":
+    var
+      pcheck1 = true
+      pcheck2 = false
+
+    var
+      counter0 = 100
+      counter1 = 0
+      counterN = 100
+      counterM = 0
+
+    proc generateData(size: int): seq[byte] =
+      if size > 0:
+        var data = newSeq[byte](size)
+        for i in 0 ..< len(data):
+          data[i] = byte('0')
+        data
+      else:
+        default(seq[byte])
+
+    proc processor1(
+        transp: DatagramTransport,
+        raddr: TransportAddress
+    ): Future[void] {.async: (raises: []).} =
+      try:
+        var message = transp.getMessage()
+        if len(message) == 0:
+          inc(counter1)
+        else:
+          if len(message) == 576:
+            inc(counterM)
+        await transp.sendTo(raddr, message)
+      except CancelledError:
+        pcheck1 = false
+        return
+      except TransportError:
+        pcheck1 = false
+        return
+
+    proc processor2(
+        transp: DatagramTransport,
+        raddr: TransportAddress
+    ): Future[void] {.async: (raises: []).} =
+      try:
+        var message = transp.getMessage()
+        if len(message) == 0:
+          if counter0 > 0:
+            await transp.sendTo(raddr, default(seq[byte]))
+            dec(counter0)
+          else:
+            await transp.sendTo(raddr, generateData(576))
+        else:
+          dec(counterN)
+          if counterN == 0:
+            pcheck2 = true
+            await transp.closeWait()
+            return
+          else:
+            await transp.sendTo(raddr, message)
+      except CancelledError:
+        pcheck2 = false
+        return
+      except TransportError:
+        pcheck2 = false
+        return
+
+    try:
+      let
+        ta = initTAddress("127.0.0.1:0")
+        dgram1 = newDatagramTransport(processor1, local = ta)
+        dgram2 = newDatagramTransport(processor2, local = ta)
+        lta2 = dgram2.localAddress()
+
+      await dgram1.sendTo(lta2, default(seq[byte]))
+      await dgram2.join()
+      await dgram1.closeWait()
+    except CancelledError:
+      raiseAssert "Cancelled"
+    except TransportError:
+      raiseAssert "Transport error"
+
+    check:
+      pcheck1
+      pcheck2
+      counterM == 100
+      counter1 == 100
+
   proc performAutoAddressTest2(
     address1: Opt[IpAddress],
     address2: Opt[IpAddress],
@@ -870,236 +1097,6 @@ suite "Datagram Transport test suite":
     await allFutures(server.closeWait(), client.closeWait())
 
     res == 2
-
-  proc performPacketSizeTest(size: int): Future[bool] {.async: (raises: []).} =
-    var
-      pcheck1 = true
-      pcheck2 = false
-
-    var
-      counter0 = 100
-      counter1 = 0
-      counterN = 100
-      counterM = 0
-
-    proc generateData(size: int): seq[byte] =
-      if size > 0:
-        var data = newSeq[byte](size)
-        for i in 0 ..< len(data):
-          data[i] = byte('0')
-        data
-      else:
-        default(seq[byte])
-
-    proc processor1(
-        transp: DatagramTransport,
-        raddr: TransportAddress
-    ): Future[void] {.async: (raises: []).} =
-      try:
-        var message = transp.getMessage()
-        if len(message) == 0:
-          inc(counter1)
-        else:
-          if len(message) == size:
-            inc(counterM)
-        await transp.sendTo(raddr, message)
-      except CancelledError:
-        pcheck1 = false
-        return
-      except TransportError:
-        pcheck1 = false
-        return
-
-    proc processor2(
-        transp: DatagramTransport,
-        raddr: TransportAddress
-    ): Future[void] {.async: (raises: []).} =
-      try:
-        var message = transp.getMessage()
-        if len(message) == 0:
-          if counter0 > 0:
-            await transp.sendTo(raddr, default(seq[byte]))
-            dec(counter0)
-          else:
-            await transp.sendTo(raddr, generateData(size))
-        else:
-          dec(counterN)
-          if counterN == 0:
-            pcheck2 = true
-            await transp.closeWait()
-            return
-          else:
-            await transp.sendTo(raddr, message)
-      except CancelledError:
-        pcheck2 = false
-        return
-      except TransportError:
-        pcheck2 = false
-        return
-
-    try:
-      let
-        ta = initTAddress("127.0.0.1:0")
-        dgram1 = newDatagramTransport(processor1, local = ta)
-        dgram2 = newDatagramTransport(processor2, local = ta)
-        lta2 = dgram2.localAddress()
-
-      await dgram1.sendTo(lta2, default(seq[byte]))
-      await dgram2.join()
-      await dgram1.closeWait()
-    except CancelledError:
-      return false
-    except TransportError:
-      return false
-
-    pcheck1 and pcheck2 and (counterM == 100) and (counter1 == 100)
-
-  test "close(transport) test":
-    check waitFor(testTransportClose()) == true
-  test m1:
-    check waitFor(testPointerSendTo()) == TestsCount
-  test m2:
-    check waitFor(testPointerSend()) == TestsCount
-  test m3:
-    check waitFor(testStringSendTo()) == TestsCount
-  test m4:
-    check waitFor(testStringSend()) == TestsCount
-  test m5:
-    check waitFor(testSeqSendTo()) == TestsCount
-  test m6:
-    check waitFor(testSeqSend()) == TestsCount
-  test m7:
-    check waitFor(test3(false)) == ClientsCount * MessagesCount
-  test m8:
-    check waitFor(test3(true)) == ClientsCount * MessagesCount
-  test "Datagram connection reset test":
-    check waitFor(testConnReset()) == true
-  test "Broadcast test":
-    when defined(osx):
-      # Github Actions does not support broadcast operation on macos workers,
-      # fails with `No route to host`.
-      skip()
-    else:
-      check waitFor(testBroadcast()) == 1
-  test "0.0.0.0/::0 (INADDR_ANY) test":
-    check waitFor(testAnyAddress()) == 6
-  asyncTest "[IP] getDomain(socket) [SOCK_DGRAM] test":
-    if isAvailable(AddressFamily.IPv4) and isAvailable(AddressFamily.IPv6):
-      block:
-        let res = createAsyncSocket2(Domain.AF_INET, SockType.SOCK_DGRAM,
-                                     Protocol.IPPROTO_UDP)
-        check res.isOk()
-        let fres = getDomain(res.get())
-        check fres.isOk()
-        discard unregisterAndCloseFd(res.get())
-        check fres.get() == AddressFamily.IPv4
-
-      block:
-        let res = createAsyncSocket2(Domain.AF_INET6, SockType.SOCK_DGRAM,
-                                     Protocol.IPPROTO_UDP)
-        check res.isOk()
-        let fres = getDomain(res.get())
-        check fres.isOk()
-        discard unregisterAndCloseFd(res.get())
-        check fres.get() == AddressFamily.IPv6
-
-      when not(defined(windows)):
-        block:
-          let res = createAsyncSocket2(Domain.AF_UNIX, SockType.SOCK_DGRAM,
-                                       Protocol.IPPROTO_IP)
-          check res.isOk()
-          let fres = getDomain(res.get())
-          check fres.isOk()
-          discard unregisterAndCloseFd(res.get())
-          check fres.get() == AddressFamily.Unix
-    else:
-      skip()
-  asyncTest "[IP] DualStack [UDP] server [DualStackType.Auto] test":
-    if isAvailable(AddressFamily.IPv4) and isAvailable(AddressFamily.IPv6):
-      let serverAddress = initTAddress("[::]:0")
-      check:
-        (await performDualstackTest(
-           DualStackType.Auto, serverAddress,
-           DualStackType.Auto, initTAddress("127.0.0.1:0"))) == true
-      check:
-        (await performDualstackTest(
-           DualStackType.Auto, serverAddress,
-           DualStackType.Auto, initTAddress("127.0.0.1:0").toIPv6())) == true
-      check:
-        (await performDualstackTest(
-           DualStackType.Auto, serverAddress,
-           DualStackType.Auto, initTAddress("[::1]:0"))) == true
-    else:
-      skip()
-  asyncTest "[IP] DualStack [UDP] server [DualStackType.Enabled] test":
-    if isAvailable(AddressFamily.IPv4) and isAvailable(AddressFamily.IPv6):
-      let serverAddress = initTAddress("[::]:0")
-      check:
-        (await performDualstackTest(
-           DualStackType.Enabled, serverAddress,
-           DualStackType.Auto, initTAddress("127.0.0.1:0"))) == true
-        (await performDualstackTest(
-           DualStackType.Enabled, serverAddress,
-           DualStackType.Auto, initTAddress("127.0.0.1:0").toIPv6())) == true
-        (await performDualstackTest(
-           DualStackType.Enabled, serverAddress,
-           DualStackType.Auto, initTAddress("[::1]:0"))) == true
-    else:
-      skip()
-  asyncTest "[IP] DualStack [UDP] server [DualStackType.Disabled] test":
-    if isAvailable(AddressFamily.IPv4) and isAvailable(AddressFamily.IPv6):
-      let serverAddress = initTAddress("[::]:0")
-      check:
-        (await performDualstackTest(
-           DualStackType.Disabled, serverAddress,
-           DualStackType.Auto, initTAddress("127.0.0.1:0"))) == false
-        (await performDualstackTest(
-           DualStackType.Disabled, serverAddress,
-           DualStackType.Auto, initTAddress("127.0.0.1:0").toIPv6())) == false
-        (await performDualstackTest(
-           DualStackType.Disabled, serverAddress,
-           DualStackType.Auto, initTAddress("[::1]:0"))) == true
-    else:
-      skip()
-  asyncTest "[IP] Auto-address constructor test (*:0)":
-    if isAvailable(AddressFamily.IPv6):
-      check:
-        (await performAutoAddressTest(Port(0), AddressFamily.IPv6)) == true
-      # If IPv6 is available newAutoDatagramTransport should bind to `::` - this
-      # means that we should be able to connect to it via IPV4_MAPPED address,
-      # but only when IPv4 is also available.
-      if isAvailable(AddressFamily.IPv4):
-        check:
-          (await performAutoAddressTest(Port(0), AddressFamily.IPv4)) == true
-    else:
-      # If IPv6 is not available newAutoDatagramTransport should bind to
-      # `0.0.0.0` - this means we should be able to connect to it via IPv4
-      # address.
-      if isAvailable(AddressFamily.IPv4):
-        check:
-          (await performAutoAddressTest(Port(0), AddressFamily.IPv4)) == true
-  asyncTest "[IP] Auto-address constructor test (*:30231)":
-    if isAvailable(AddressFamily.IPv6):
-      check:
-        (await performAutoAddressTest(Port(30231), AddressFamily.IPv6)) == true
-      # If IPv6 is available newAutoDatagramTransport should bind to `::` - this
-      # means that we should be able to connect to it via IPV4_MAPPED address,
-      # but only when IPv4 is also available.
-      if isAvailable(AddressFamily.IPv4):
-        check:
-          (await performAutoAddressTest(Port(30231), AddressFamily.IPv4)) ==
-            true
-    else:
-      # If IPv6 is not available newAutoDatagramTransport should bind to
-      # `0.0.0.0` - this means we should be able to connect to it via IPv4
-      # address.
-      if isAvailable(AddressFamily.IPv4):
-        check:
-          (await performAutoAddressTest(Port(30231), AddressFamily.IPv4)) ==
-            true
-
-  asyncTest "[IP] 0-size UDP datagram size test":
-    check (await performPacketSizeTest(576)) == true
 
   asyncTest "[IP] sendTo() cancellation leaks test":
     const MessageSize = 1024

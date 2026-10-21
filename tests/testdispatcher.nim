@@ -6,7 +6,8 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 import std/atomics
-import ../chronos/unittest2/asynctests
+import unittest2
+import ../chronos
 
 {.used.}
 
@@ -36,28 +37,26 @@ type
   RegisteredResultPtr = ptr RegisteredResult
 
   DrainResult = object
+    handle: DispatcherHandle
+    ready: Atomic[bool]
+    pushed: Atomic[bool]
     closedCleanly: bool
     callbackRan: bool
 
   DrainResultPtr = ptr DrainResult
-
-var
-  drainHandle: DispatcherHandle
-  drainReady: Atomic[bool]
-  drainPushed: Atomic[bool]
 
 proc closedCleanly(): bool =
   ## `closeThreadDispatcher` returns a diagnostic only when a resource could not
   ## be released, so an empty `Opt` is the success case.
   closeThreadDispatcher().isNone()
 
-proc tick() {.async: (raises: []).} =
-  try:
-    await sleepAsync(1.milliseconds)
-  except CancelledError:
-    discard
-
 proc lifecycleThread(retval: LifecycleResultPtr) {.thread, nimcall.} =
+  proc tick() {.async: (raises: []).} =
+    try:
+      await sleepAsync(1.milliseconds)
+    except CancelledError:
+      discard
+
   # This thread has never used chronos, so it has no dispatcher yet - closing
   # must be a no-op rather than creating one just to tear it down.
   retval[].noDispatcherIsNoop = closedCleanly()
@@ -110,9 +109,9 @@ proc drainCallback(udata: pointer) {.nimcall, gcsafe, raises: [].} =
   cast[DrainResultPtr](udata)[].callbackRan = true
 
 proc drainThread(retval: DrainResultPtr) {.thread, nimcall.} =
-  drainHandle = getThreadDispatcher().handle()
-  drainReady.store(true, moRelease)
-  while not drainPushed.load(moAcquire):
+  retval[].handle = getThreadDispatcher().handle()
+  retval[].ready.store(true, moRelease)
+  while not retval[].pushed.load(moAcquire):
     cpuRelax()
 
   # The queued cross-thread callback is dropped by the close, which has to
@@ -163,11 +162,11 @@ suite "Dispatcher test suite":
       thread: Thread[DrainResultPtr]
 
     createThread(thread, drainThread, addr retval)
-    while not drainReady.load(moAcquire):
+    while not retval.ready.load(moAcquire):
       cpuRelax()
 
-    callSoon(drainHandle, drainCallback, addr retval)
-    drainPushed.store(true, moRelease)
+    callSoon(retval.handle, drainCallback, addr retval)
+    retval.pushed.store(true, moRelease)
     joinThreads(thread)
 
     check:

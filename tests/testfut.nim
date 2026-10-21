@@ -12,8 +12,8 @@ import ../chronos, ../chronos/unittest2/asynctests
 {.used.}
 
 type
-  TestFooConnection* = ref object
-    id*: int
+  TestFooConnection = ref object
+    id: int
 
 suite "Future[T] behavior test suite":
   proc testFuture1(): Future[int] {.async.} =
@@ -21,9 +21,6 @@ suite "Future[T] behavior test suite":
 
   proc testFuture2(): Future[int] {.async.} =
     return 1
-
-  proc testFuture3(): Future[int] {.async.} =
-    result = await testFuture2()
 
   proc testFuture100(): Future[int] {.async.} =
     await sleepAsync(100.milliseconds)
@@ -37,6 +34,9 @@ suite "Future[T] behavior test suite":
     check: fut.finished
 
   test "Immediately completed asynchronous procedure test":
+    proc testFuture3(): Future[int] {.async.} =
+      result = await testFuture2()
+
     var fut = testFuture3()
     check: fut.finished
 
@@ -2236,45 +2236,42 @@ suite "Future[T] behavior test suite":
         future.cancelled() == true
 
   test "Issue #334 test":
-    proc test(): bool =
-      var testres = ""
+    var testres = ""
 
-      proc a() {.async.} =
-        try:
-          await sleepAsync(seconds(1))
-        except CatchableError as exc:
-          testres.add("A")
-          raise exc
-
-      proc b() {.async.} =
-        try:
-          await a()
-        except CatchableError as exc:
-          testres.add("B")
-          raise exc
-
-      proc c() {.async.} =
-        try:
-          echo $(await b().withTimeout(seconds(2)))
-        except CatchableError as exc:
-          testres.add("C")
-          raise exc
-
-      let x = c()
-      x.cancelSoon()
-
+    proc a() {.async.} =
       try:
-        waitFor x
-      except CatchableError:
-        testres.add("D")
+        await sleepAsync(seconds(1))
+      except CatchableError as exc:
+        testres.add("A")
+        raise exc
 
-      testres.add("E")
+    proc b() {.async.} =
+      try:
+        await a()
+      except CatchableError as exc:
+        testres.add("B")
+        raise exc
 
-      waitFor sleepAsync(milliseconds(100))
+    proc c() {.async.} =
+      try:
+        echo $(await b().withTimeout(seconds(2)))
+      except CatchableError as exc:
+        testres.add("C")
+        raise exc
 
-      testres == "ABCDE"
+    let x = c()
+    x.cancelSoon()
 
-    check test() == true
+    try:
+      waitFor x
+    except CatchableError:
+      testres.add("D")
+
+    testres.add("E")
+
+    waitFor sleepAsync(milliseconds(100))
+
+    check testres == "ABCDE"
 
   asyncTest "cancelAndWait() should be able to cancel test":
     proc test1() {.async.} =

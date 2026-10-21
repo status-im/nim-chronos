@@ -6,7 +6,7 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 import unittest2
-import ../chronos, ../chronos/oserrno
+import ../chronos, ../chronos/oserrno, ../chronos/unittest2/asynctests
 
 {.used.}
 
@@ -61,21 +61,17 @@ suite "Signal handling test suite":
       await fut.wait(5.seconds)
       return true
 
-  test "SIGINT test":
-    let res = waitFor testSignal(SIGINT, 31337)
-    check res == true
+  asyncTest "SIGINT test":
+    check await testSignal(SIGINT, 31337)
 
-  test "SIGTERM test":
-    let res = waitFor testSignal(SIGTERM, 65537)
-    check res == true
+  asyncTest "SIGTERM test":
+    check await testSignal(SIGTERM, 65537)
 
-  test "waitSignal(SIGINT) test":
-    let res = waitFor testWait(SIGINT)
-    check res == true
+  asyncTest "waitSignal(SIGINT) test":
+    check await testWait(SIGINT)
 
-  test "waitSignal(SIGTERM) test":
-    let res = waitFor testWait(SIGTERM)
-    check res == true
+  asyncTest "waitSignal(SIGTERM) test":
+    check await testWait(SIGTERM)
 
   # This test doesn't work well in test suite, because it generates CTRL+C
   # event in Windows console, parent process receives this signal and stops
@@ -83,7 +79,6 @@ suite "Signal handling test suite":
 
   # test "Windows [CTRL+C] test":
   #   when defined(windows):
-  #     let res = waitFor testCtrlC()
-  #     check res == true
+  #     check await testCtrlC()
   #   else:
   #     skip()
