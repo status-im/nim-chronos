@@ -64,8 +64,9 @@ proc members(tup: NimNode): seq[NimNode] {.compileTime.} =
   for t in tup.members():
     result.add(t)
 
-macro hasException(raises: typedesc, ident: static string): bool =
-  newLit(raises.members.anyIt(it.eqIdent(ident)))
+macro hasException(raises: typedesc, exception: typed): bool =
+  let exceptionHash = signatureHash(exception)
+  newLit(raises.members.anyIt(signatureHash(it) == exceptionHash))
 
 macro Raising*[T](F: typedesc[Future[T]], E: typed): untyped =
   ## Given a Future type instance, return a type storing `{.raises.}`
@@ -105,7 +106,7 @@ template init*[T, E](
   ##
   ## Specifying ``fromProc``, which is a string specifying the name of the proc
   ## that this future belongs to, is a good habit as it helps with debugging.
-  when not hasException(type(E), "CancelledError"):
+  when not hasException(type(E), CancelledError):
     static:
       raiseAssert "Manually created futures must either own cancellation schedule or raise CancelledError"
 
@@ -122,7 +123,7 @@ template init*[T, E](
   ## Specifying ``fromProc``, which is a string specifying the name of the proc
   ## that this future belongs to, is a good habit as it helps with debugging.
   let res = F()
-  when not hasException(type(E), "CancelledError"):
+  when not hasException(type(E), CancelledError):
     static:
       doAssert FutureFlag.OwnCancelSchedule in flags,
         "Manually created futures must either own cancellation schedule or raise CancelledError"

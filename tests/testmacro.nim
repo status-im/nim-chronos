@@ -484,6 +484,13 @@ suite "Exception/effect tracking":
     expect(IOError):
       waitFor(test4())
 
+  test "Manually created futures must raise chronos' CancelledError":
+    type CancelledError = object of CatchableError
+
+    check compiles(Future[void].Raising([chronos.CancelledError]).init())
+    checkNotCompiles:
+      discard Future[void].Raising([CancelledError]).init()
+
   test "or errors":
     proc testit {.async: (raises: [ValueError]).} =
       raise (ref ValueError)()
