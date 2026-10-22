@@ -57,15 +57,28 @@ proc isNoRaises*(n: NimNode): bool {.compileTime.} =
 iterator members(tup: NimNode): NimNode =
   # Given a typedesc[tuple] = (A, B, C), yields the tuple members (A, B C)
   if not isNoRaises(tup):
-    for n in getType(getTypeInst(tup)[1])[1..^1]:
+    for n in getTypeImpl(getTypeInst(tup)[1]):
       yield n
 
 proc members(tup: NimNode): seq[NimNode] {.compileTime.} =
   for t in tup.members():
     result.add(t)
 
-macro hasException(raises: typedesc, ident: static string): bool =
-  newLit(raises.members.anyIt(it.eqIdent(ident)))
+# TODO use `isSameType` from `stew/shims/macros` once stew >= 0.6.5
+func skipTypeWrappers(typ: NimNode): NimNode {.compileTime.} =
+  var res = typ
+  if res.typeKind == ntyTypeDesc:
+    res = res.getTypeInst[1]
+  if res.kind == nnkBracketExpr and res[0].kind == nnkSym and
+      eqIdent(res[0], "sink"):
+    res = res[1]
+  res
+
+func isSameType(a, b: NimNode): bool {.compileTime.} =
+  sameType(a.skipTypeWrappers, b.skipTypeWrappers)
+
+macro hasException(raises: typedesc, exception: typed): bool =
+  newLit(raises.members.anyIt(isSameType(it, exception)))
 
 macro Raising*[T](F: typedesc[Future[T]], E: typed): untyped =
   ## Given a Future type instance, return a type storing `{.raises.}`
@@ -105,7 +118,7 @@ template init*[T, E](
   ##
   ## Specifying ``fromProc``, which is a string specifying the name of the proc
   ## that this future belongs to, is a good habit as it helps with debugging.
-  when not hasException(type(E), "CancelledError"):
+  when not hasException(type(E), CancelledError):
     static:
       raiseAssert "Manually created futures must either own cancellation schedule or raise CancelledError"
 
@@ -122,7 +135,7 @@ template init*[T, E](
   ## Specifying ``fromProc``, which is a string specifying the name of the proc
   ## that this future belongs to, is a good habit as it helps with debugging.
   let res = F()
-  when not hasException(type(E), "CancelledError"):
+  when not hasException(type(E), CancelledError):
     static:
       doAssert FutureFlag.OwnCancelSchedule in flags,
         "Manually created futures must either own cancellation schedule or raise CancelledError"
@@ -131,11 +144,10 @@ template init*[T, E](
     res, getSrcLocation(fromProc), FutureState.Pending, flags)
   res
 
-proc containsSignature(members: openArray[NimNode], typ: NimNode): bool {.compileTime.} =
-  let typHash = signatureHash(typ)
-
+func containsType(
+    members: openArray[NimNode], typ: NimNode): bool {.compileTime.} =
   for err in members:
-    if signatureHash(err) == typHash:
+    if isSameType(err, typ):
       return true
   false
 
@@ -143,7 +155,7 @@ proc containsSignature(members: openArray[NimNode], typ: NimNode): bool {.compil
 macro prepend*(tup: typedesc, typs: varargs[typed]): typedesc =
   result = nnkTupleConstr.newTree()
   for err in typs:
-    if not tup.members().containsSignature(err):
+    if not tup.members().containsType(err):
       result.add err
 
   for err in tup.members():
@@ -155,7 +167,7 @@ macro prepend*(tup: typedesc, typs: varargs[typed]): typedesc =
 macro remove*(tup: typedesc, typs: varargs[typed]): typedesc =
   result = nnkTupleConstr.newTree()
   for err in tup.members():
-    if not typs[0..^1].containsSignature(err):
+    if not typs[0..^1].containsType(err):
       result.add err
 
   if result.len == 0:
@@ -168,7 +180,7 @@ macro union*(tup0: typedesc, tup1: typedesc): typedesc =
   for err in tup0.members():
     var found = false
     for err2 in tup1.members():
-      if signatureHash(err) == signatureHash(err2):
+      if isSameType(err, err2):
         found = true
     if not found:
       result.add err

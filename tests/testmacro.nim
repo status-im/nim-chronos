@@ -9,6 +9,7 @@ import std/[macros, strutils]
 import unittest2
 import ../chronos
 import ../chronos/config
+from ../chronos/internal/raisesfutures import prepend, remove, union
 
 {.used.}
 
@@ -16,6 +17,7 @@ type
   RetValueType = proc(n: int): Future[int] {.async.}
   RetImplicitVoidType = proc(n: int) {.async.}
   RetVoidType = proc(n: int): Future[void] {.async.}
+  GenericError[T] = object of CatchableError
 
 proc asyncRetValue(n: int): Future[int] {.async.} =
   await sleepAsync(n.milliseconds)
@@ -483,6 +485,22 @@ suite "Exception/effect tracking":
     waitFor(test3())
     expect(IOError):
       waitFor(test4())
+
+  test "Manually created futures must raise chronos' CancelledError":
+    type CancelledError = object of CatchableError
+
+    check compiles(Future[void].Raising([chronos.CancelledError]).init())
+    checkNotCompiles:
+      discard Future[void].Raising([CancelledError]).init()
+
+  test "prepend, remove and union with generic exception types":
+    check:
+      (GenericError[int],).prepend(GenericError[int]) is
+        (GenericError[int],)
+      (GenericError[int], ValueError).remove(GenericError[int]) is
+        (ValueError,)
+      (GenericError[int],).union((GenericError[int], ValueError)) is
+        (GenericError[int], ValueError)
 
   test "or errors":
     proc testit {.async: (raises: [ValueError]).} =
