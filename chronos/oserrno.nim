@@ -1626,6 +1626,7 @@ elif defined(windows):
     WSAEDISCON* = OSErrorCode(10101)
     WSANOTINITIALISED* = OSErrorCode(10093)
     WSAENOTSOCK* = OSErrorCode(10038)
+    WSAEMSGSIZE* = OSErrorCode(10040)
     WSAEINPROGRESS* = OSErrorCode(10036)
     WSAEINTR* = OSErrorCode(10004)
     WSAEWOULDBLOCK* = OSErrorCode(10035)
