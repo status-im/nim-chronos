@@ -117,18 +117,23 @@ suite "Direct datagram transport":
       local = initTAddress("127.0.0.1:0"))
     var
       data = "hello"
-      buffer: DatagramBuffer
+      oversized = newString(65536)
+      buffer, oversizedBuffer: DatagramBuffer
       valid = packet(data, initTAddress("127.0.0.1:9"), buffer)
-      invalid = valid
-    invalid.remote = initTAddress("[::1]:9")
+      invalid = packet(oversized, valid.remote, oversizedBuffer)
+    # Address-family mismatches are accepted on some platforms. A payload
+    # larger than the UDP length field must fail on every backend.
     let partial = sender.trySendBatch([valid, invalid])
     check partial.sent == 1
     # Linux sendmmsg cannot report the error following a successful prefix.
+    let expectedError =
+      when defined(windows): WSAEMSGSIZE
+      else: EMSGSIZE
     when not defined(linux):
-      check partial.error != OSErrorCode(0)
+      check partial.error == expectedError
     let failed = sender.trySendBatch([invalid])
     check failed.sent == 0
-    check failed.error != OSErrorCode(0)
+    check failed.error == expectedError
     await sender.closeWait()
     check sender.trySendBatch([valid]).error != OSErrorCode(0)
     check sender.trySendBatch([]).sent == 0
