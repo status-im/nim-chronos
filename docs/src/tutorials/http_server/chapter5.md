@@ -2,7 +2,7 @@
 
 **Goal:** Understand how Chronos performs under load and learn how to benchmark your server. 
 
-**Source code:** [chapter4/src/dashboard.nim](https://github.com/status-im/nim-chronos/blob/master/examples/http_server/chapter4/src/dashboard.nim)
+**Source code:** [chapter4.nim](https://github.com/status-im/nim-chronos/blob/master/examples/http_server/chapter4.nim)
 
 One of the main reasons to use Chronos is its performance. Thanks to its asynchronous architecture, a single-threaded Chronos server can handle thousands of concurrent connections with minimal overhead.
 
@@ -17,7 +17,7 @@ In this chapter, we'll see check how our app performs under load.
 First, run your server in release mode:
 
 ```shell
-$ nimble run -d:release
+$ nim r -d:release dashboard.nim
 ```
 
 ```admonish info
