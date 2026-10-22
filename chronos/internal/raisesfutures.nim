@@ -34,7 +34,7 @@ proc makeNoRaises*(): NimNode {.compileTime.} =
 
   ident"void"
 
-proc dig(n: NimNode): NimNode {.compileTime.} =
+func dig(n: NimNode): NimNode {.compileTime.} =
   # Dig through the layers of type to find the raises list
   if n.eqIdent("void"):
     n
@@ -44,8 +44,7 @@ proc dig(n: NimNode): NimNode {.compileTime.} =
     elif n[0].eqIdent("typeDesc"):
       dig(getType(n[1]))
     else:
-      echo astGenRepr(n)
-      raiseAssert "Unkown bracket"
+      raiseAssert "Unknown bracket: " & repr(n)
   elif n.kind == nnkTupleConstr:
     n
   else:
