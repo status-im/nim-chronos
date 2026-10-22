@@ -57,7 +57,7 @@ proc isNoRaises*(n: NimNode): bool {.compileTime.} =
 iterator members(tup: NimNode): NimNode =
   # Given a typedesc[tuple] = (A, B, C), yields the tuple members (A, B C)
   if not isNoRaises(tup):
-    for n in getType(getTypeInst(tup)[1])[1..^1]:
+    for n in getTypeImpl(getTypeInst(tup)[1]):
       yield n
 
 proc members(tup: NimNode): seq[NimNode] {.compileTime.} =
