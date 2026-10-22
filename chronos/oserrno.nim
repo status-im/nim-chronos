@@ -1630,6 +1630,7 @@ elif defined(windows):
     WSAEMSGSIZE* = OSErrorCode(10040)
     WSAEINPROGRESS* = OSErrorCode(10036)
     WSAEINTR* = OSErrorCode(10004)
+    WSAEINVAL* = OSErrorCode(10022)
     WSAEWOULDBLOCK* = OSErrorCode(10035)
     ERROR_NETNAME_DELETED* = OSErrorCode(64)
     STATUS_PENDING* = OSErrorCode(0x103)

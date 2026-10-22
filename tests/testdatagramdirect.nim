@@ -242,3 +242,192 @@ suite "Direct datagram transport":
     check received == @["queued".toBytes(), "direct".toBytes()]
     await sender.closeWait()
     await receiver.closeWait()
+
+proc nativePacket(data: var string, remote: TransportAddress,
+                  storage: var Sockaddr_storage,
+                  buffer: var DatagramBuffer): DatagramNativeOut =
+  remote.toSAddr(storage, result.remoteLen)
+  result.remote = addr storage
+  buffer = DatagramBuffer(base: (if data.len == 0: nil else: addr data[0]),
+                          len: csize_t(data.len))
+  result.buffers = cast[ptr UncheckedArray[DatagramBuffer]](addr buffer)
+  result.bufferCount = 1
+
+suite "Native direct datagram transport":
+  setup:
+    let counters = getTrackerCounters()
+  teardown:
+    checkLeaks(counters)
+
+  asyncTest "borrowed scatter gather batches preserve IPv4 and IPv6 payloads":
+    for local in [initTAddress("127.0.0.1:0"), initTAddress("[::1]:0")]:
+      var received = 0
+      let done = newFuture[void]()
+      proc receive(t: DatagramTransport, data: openArray[byte],
+                   remote: TransportAddress, error: OSErrorCode) {.gcsafe.} =
+        doAssert error == OSErrorCode(0)
+        doAssert @data == (if received == 65: @[] else: "abc".toBytes())
+        inc received
+        if received == 66:
+          done.complete()
+      let receiver = newDatagramTransportSync(receive, local = local)
+      let sender = newDatagramTransportSync(ignorePacket, local = local)
+      var
+        first = "a"
+        second = "bc"
+        storage: Sockaddr_storage
+        length: SockLen
+        buffers = [DatagramBuffer(base: addr first[0], len: 1),
+                   DatagramBuffer(base: addr second[0], len: 2)]
+        messages: array[66, DatagramNativeOut]
+      receiver.localAddress().toSAddr(storage, length)
+      for message in messages.mitems():
+        message = DatagramNativeOut(remote: addr storage, remoteLen: length,
+          buffers: cast[ptr UncheckedArray[DatagramBuffer]](addr buffers[0]),
+          bufferCount: 2)
+      messages[65].bufferCount = 0
+      let sent = sender.trySendNativeBatch(messages)
+      check sent.sent == 66
+      check sent.error == OSErrorCode(0)
+      # The call borrows these values only until it returns.
+      first[0] = 'x'
+      second[0] = 'x'
+      zeroMem(addr storage, sizeof(storage))
+      await done.wait(2.seconds)
+      await sender.closeWait()
+      await receiver.closeWait()
+
+  asyncTest "invalid native addresses preserve the accepted prefix":
+    let sender = newDatagramTransportSync(ignorePacket,
+      local = initTAddress("127.0.0.1:0"))
+    var
+      data = "ok"
+      buffer: DatagramBuffer
+      storage, unsupported: Sockaddr_storage
+      valid = nativePacket(data, initTAddress("127.0.0.1:9"), storage, buffer)
+    let expected =
+      when defined(windows): WSAEINVAL
+      else: EINVAL
+    for kind in 0 .. 4:
+      var invalid = valid
+      case kind
+      of 0: invalid.remote = nil
+      of 1: invalid.remoteLen = SockLen(0)
+      of 2: invalid.remoteLen = SockLen(sizeof(Sockaddr_storage) + 1)
+      of 3: invalid.remoteLen = SockLen(sizeof(Sockaddr_in6))
+      else: invalid.remote = addr unsupported
+      let partial = sender.trySendNativeBatch([valid, invalid, valid])
+      check partial.sent == 1
+      check partial.error == expected
+      let failed = sender.trySendNativeBatch([invalid])
+      check failed.sent == 0
+      check failed.error == expected
+    await sender.closeWait()
+    check sender.trySendNativeBatch([valid]).error != OSErrorCode(0)
+    check sender.trySendNativeBatch([]).sent == 0
+
+  asyncTest "native oversized sends retain the successful prefix":
+    let sender = newDatagramTransportSync(ignorePacket,
+      local = initTAddress("127.0.0.1:0"))
+    var
+      data = "ok"
+      oversized = newString(65536)
+      buffer, largeBuffer: DatagramBuffer
+      storage, largeStorage: Sockaddr_storage
+      valid = nativePacket(data, initTAddress("127.0.0.1:9"), storage, buffer)
+      invalid = nativePacket(oversized, initTAddress("127.0.0.1:9"),
+                             largeStorage, largeBuffer)
+    check sender.trySendNativeBatch([valid, invalid]).sent == 1
+    let expected =
+      when defined(windows): WSAEMSGSIZE
+      else: EMSGSIZE
+    let failed = sender.trySendNativeBatch([invalid])
+    check failed.sent == 0
+    check failed.error == expected
+    await sender.closeWait()
+
+  asyncTest "native sends wait for the async queue":
+    var received: seq[seq[byte]]
+    let done = newFuture[void]()
+    proc receive(t: DatagramTransport, data: openArray[byte],
+                 remote: TransportAddress, error: OSErrorCode) {.gcsafe.} =
+      doAssert error == OSErrorCode(0)
+      received.add(@data)
+      if received.len == 2:
+        done.complete()
+    let receiver = newDatagramTransportSync(receive,
+      local = initTAddress("127.0.0.1:0"))
+    let sender = newDatagramTransportSync(ignorePacket,
+      local = initTAddress("127.0.0.1:0"))
+    let queued = sender.sendTo(receiver.localAddress(), "queued")
+    var
+      data = "native"
+      buffer: DatagramBuffer
+      storage: Sockaddr_storage
+      message = nativePacket(data, receiver.localAddress(), storage, buffer)
+    let blocked = sender.trySendNativeBatch([message])
+    check blocked.sent == 0
+    check blocked.error != OSErrorCode(0)
+    await queued
+    message = nativePacket(data, receiver.localAddress(), storage, buffer)
+    check sender.trySendNativeBatch([message]).sent == 1
+    await done.wait(2.seconds)
+    check received == @["queued".toBytes(), "native".toBytes()]
+    await sender.closeWait()
+    await receiver.closeWait()
+
+  asyncTest "native IPv4 replies are mapped on dual stack sockets":
+    let done = newFuture[void]()
+    proc receive(t: DatagramTransport, data: openArray[byte],
+                 remote: TransportAddress, error: OSErrorCode) {.gcsafe.} =
+      doAssert error == OSErrorCode(0)
+      doAssert remote.family == AddressFamily.IPv4
+      var
+        payload = "reply"
+        storage: Sockaddr_storage
+        buffer: DatagramBuffer
+        message = nativePacket(payload, remote, storage, buffer)
+      let original = storage
+      doAssert t.trySendNativeBatch([message]).sent == 1
+      doAssert equalMem(addr storage, unsafeAddr original, sizeof(storage))
+    proc reply(t: DatagramTransport, data: openArray[byte],
+               remote: TransportAddress, error: OSErrorCode) {.gcsafe.} =
+      doAssert error == OSErrorCode(0)
+      doAssert @data == "reply".toBytes()
+      done.complete()
+    let receiver = newDatagramTransportSync(receive,
+      local = initTAddress("[::]:0"), dualstack = DualStackType.Enabled)
+    let sender = newDatagramTransportSync(reply, local = initTAddress("127.0.0.1:0"))
+    var
+      data = "hello"
+      storage: Sockaddr_storage
+      buffer: DatagramBuffer
+      dest = initTAddress("127.0.0.1:0")
+    dest.port = receiver.localAddress().port
+    var message = nativePacket(data, dest, storage, buffer)
+    check sender.trySendNativeBatch([message]).sent == 1
+    await done.wait(2.seconds)
+    await sender.closeWait()
+    await receiver.closeWait()
+
+  asyncTest "native wildcard destinations use platform normalization":
+    for local in [initTAddress("127.0.0.1:0"), initTAddress("[::1]:0")]:
+      let done = newFuture[void]()
+      proc receive(t: DatagramTransport, data: openArray[byte],
+                   remote: TransportAddress, error: OSErrorCode) {.gcsafe.} =
+        doAssert error == OSErrorCode(0)
+        doAssert @data == "ok".toBytes()
+        done.complete()
+      let receiver = newDatagramTransportSync(receive, local = local)
+      let sender = newDatagramTransportSync(ignorePacket, local = local)
+      var
+        dest = if local.family == AddressFamily.IPv4: AnyAddress else: AnyAddress6
+        storage: Sockaddr_storage
+        buffer: DatagramBuffer
+        data = "ok"
+      dest.port = receiver.localAddress().port
+      var message = nativePacket(data, dest, storage, buffer)
+      check sender.trySendNativeBatch([message]).sent == 1
+      await done.wait(2.seconds)
+      await sender.closeWait()
+      await receiver.closeWait()

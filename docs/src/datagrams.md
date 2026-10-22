@@ -23,6 +23,21 @@ All descriptors and payloads must remain valid until the call returns. No payloa
 is copied into a queue and no Future is created. A fragment of length zero can be
 used to send an empty datagram.
 
+`trySendNativeBatch` accepts `DatagramNativeOut` for consumers that already own
+native IPv4/IPv6 socket addresses. Each descriptor borrows a `Sockaddr_storage`
+pointer and an exact `SockLen` (`sizeof(Sockaddr_in)` or `sizeof(Sockaddr_in6)`),
+plus the same payload fragments. The pointed-to address bytes, fragments and
+payload must remain readable and unchanged until this synchronous call returns;
+no pointer is retained or freed. Rebuild descriptors if an asynchronous suspension
+can move their backing storage. A nil pointer, unsupported family or mismatched
+length reports `EINVAL` (`WSAEINVAL` on Windows), preserving the accepted prefix.
+
+Both entry points share batching, queue ordering and error handling. Native
+addresses avoid decoding and re-encoding on ordinary sends, preserve IPv6 scope
+and flow fields, and are never modified. IPv4 destinations are mapped on
+IPv6 dual-stack transports; wildcard destinations receive the same platform
+normalization as the `TransportAddress` API.
+
 The result's `sent` field counts whole packets accepted by the OS, not delivered
 to peers. Only the unsent suffix may be retried. `error` describes a known failure
 at the first unsent packet. Linux `sendmmsg` can return a successful prefix without
