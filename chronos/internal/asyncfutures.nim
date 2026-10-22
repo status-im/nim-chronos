@@ -2,7 +2,7 @@
 #                     Chronos
 #
 #  (c) Copyright 2015 Dominik Picheta
-#  (c) Copyright 2018-2023 Status Research & Development GmbH
+#  (c) Copyright 2018-2026 Status Research & Development GmbH
 #
 #                Licensed under either of
 #    Apache License, version 2.0, (LICENSE-APACHEv2)
@@ -410,7 +410,7 @@ proc futureContinue*(fut: FutureBase) {.raises: [], gcsafe.} =
 
 when chronosStackTrace:
   template getFilenameProcname(entry: StackTraceEntry): (string, string) =
-    when compiles(entry.filenameStr) and compiles(entry.procnameStr):
+    when defined(nimStackTraceOverride):
       # We can't rely on "entry.filename" and "entry.procname" still being valid
       # cstring pointers, because the "string.data" buffers they pointed to might
       # be already garbage collected (this entry being a non-shallow copy,
