@@ -77,7 +77,7 @@ suite "Signal handling test suite":
   # event in Windows console, parent process receives this signal and stops
   # test suite execution.
 
-  # test "Windows [CTRL+C] test":
+  # asyncTest "Windows [CTRL+C] test":
   #   when defined(windows):
   #     check await testCtrlC()
   #   else:
