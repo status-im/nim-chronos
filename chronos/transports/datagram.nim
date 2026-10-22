@@ -173,6 +173,8 @@ proc drainReceived(transp: DatagramTransport, budget: int) =
         cast[ptr cint](addr transp.ralen), nil, nil)
       if status != 0:
         error = osLastError()
+        if error == ERROR_MORE_DATA:
+          error = WSAEMSGSIZE
       transp.buflen = int(bytes)
     else:
       var
@@ -325,12 +327,16 @@ when defined(windows):
             transp.future.complete()
             GC_unref(transp)
           break
-        of WSAEMSGSIZE:
+        of WSAEMSGSIZE, ERROR_MORE_DATA:
           transp.buflen = 0
           if isNil(transp.receiveCallback):
             transp.setReadError(err)
             transp.state.incl(ReadPaused)
-          transp.deliverReceived(remoteAddress, err)
+            transp.deliverReceived(remoteAddress, err)
+          else:
+            # IOCP maps STATUS_BUFFER_OVERFLOW to ERROR_MORE_DATA rather than
+            # Winsock's WSAEMSGSIZE. Truncation must not stop the next receive.
+            transp.deliverReceived(remoteAddress, WSAEMSGSIZE)
         else:
           transp.setReadError(err)
           transp.state.incl(ReadPaused)

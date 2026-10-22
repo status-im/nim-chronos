@@ -147,18 +147,19 @@ suite "Direct datagram transport":
       proc receive(t: DatagramTransport, data: openArray[byte],
                    remote: TransportAddress, error: OSErrorCode) {.gcsafe.} =
         doAssert remote == expectedRemote
-        if received == 0:
+        doAssert received < 4
+        if received mod 2 == 0:
           when defined(windows):
-            doAssert error == WSAEMSGSIZE
+            doAssert error == WSAEMSGSIZE, $error
           else:
             doAssert error == EMSGSIZE
           doAssert data.len == 0
         else:
-          doAssert received == 1
           doAssert error == OSErrorCode(0)
           doAssert @data == "ok".toBytes()
-          done.complete()
         inc received
+        if received == 4:
+          done.complete()
       let
         receiver = newDatagramTransportSync(receive, local = local, bufSize = 2)
         sender = newDatagramTransportSync(ignorePacket, local = local)
@@ -170,9 +171,11 @@ suite "Direct datagram transport":
         messages = [
           packet(oversized, receiver.localAddress(), oversizedBuffer),
           packet(valid, receiver.localAddress(), validBuffer)]
-      check sender.trySendBatch(messages).sent == 2
+      # Exercise both the pending receive and truncation during draining.
+      check sender.trySendBatch(
+        [messages[0], messages[1], messages[0], messages[1]]).sent == 4
       await done.wait(2.seconds)
-      check received == 2
+      check received == 4
       await sender.closeWait()
       await receiver.closeWait()
 

@@ -1609,6 +1609,7 @@ elif defined(windows):
     ERROR_PIPE_BUSY* = OSErrorCode(231)
     ERROR_NO_DATA* = OSErrorCode(232)
     ERROR_PIPE_NOT_CONNECTED* = OSErrorCode(233)
+    ERROR_MORE_DATA* = OSErrorCode(234)
     ERROR_PIPE_CONNECTED* = OSErrorCode(535)
     ERROR_OPERATION_ABORTED* = OSErrorCode(995)
     ERROR_IO_PENDING* = OSErrorCode(997)
