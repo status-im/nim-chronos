@@ -174,7 +174,13 @@ proc trySendBatchImpl[T: DatagramOut | DatagramNativeOut](
           DWORD(max(1, packet.bufferCount)), addr bytes, DWORD(0),
           cast[ptr SockAddr](addr transp.waddr), cint(transp.walen), nil, nil)
       else:
-        var msg = prepareMessage(packet, transp.waddr, transp.walen)
+        var
+          msg = prepareMessage(packet, transp.waddr, transp.walen)
+          empty: native.IOVec
+        # BSD sendmsg rejects a zero-iovec message even for an empty datagram.
+        if packet.bufferCount == 0:
+          msg.msg_iov = addr empty
+          msg.msg_iovlen = 1
         let sent = native.sendmsg(native.SocketHandle(transp.fd), addr msg,
                                   MSG_NOSIGNAL)
       if sent < 0:
