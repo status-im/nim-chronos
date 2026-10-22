@@ -176,6 +176,18 @@ proc drainReceived(transp: DatagramTransport, budget: int) =
         if error == ERROR_MORE_DATA:
           error = WSAEMSGSIZE
       transp.buflen = int(bytes)
+    elif defined(linux):
+      # Linux returns the full datagram length with MSG_TRUNC, including when
+      # the payload exceeds the buffer. recvfrom also preserves its sender.
+      let count = native.recvfrom(native.SocketHandle(transp.fd),
+        baseAddr transp.buffer, transp.buffer.len, native.MSG_TRUNC,
+        cast[ptr SockAddr](addr transp.raddr), addr transp.ralen)
+      if count < 0:
+        error = osLastError()
+      elif count > transp.buffer.len:
+        error = OSErrorCode(oserrno.EMSGSIZE)
+      else:
+        transp.buflen = count
     else:
       var
         vector = native.IOVec(iov_base: baseAddr transp.buffer,
