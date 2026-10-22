@@ -40,10 +40,9 @@ template returner =
 suite "Macro transformations test suite":
   asyncTest "`await` command test":
     type
-      
-      = proc(n: int): Future[int] {.async.}
-      RetImplicitVoidType = proc(n: int) {.async.}
       RetVoidType = proc(n: int): Future[void] {.async.}
+      RetImplicitVoidType = proc(n: int): Future[void] {.async.}
+      RetValueType = proc(n: int): Future[int] {.async.}
 
     await asyncRetVoid(100)
     check (await asyncRetValue(100)) == 1000
@@ -465,6 +464,7 @@ suite "Exception/effect tracking":
       discard Future[void].Raising([CancelledError]).init()
 
   test "prepend, remove and union with generic exception types":
+    type GenericError[T] = object of CatchableError
     check:
       (GenericError[int],).prepend(GenericError[int]) is
         (GenericError[int],)
