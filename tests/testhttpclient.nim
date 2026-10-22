@@ -882,22 +882,7 @@ suite "HTTP client testing suite":
     await server.closeWait()
     return true
 
-  # proc testBasicAuthorization(): Future[bool] {.async.} =
-  #   let session = HttpSessionRef.new({HttpClientFlag.NoVerifyHost},
-  #                                    maxRedirections = 10)
-  #   let url = parseUri("https://guest:guest@jigsaw.w3.org/HTTP/Basic/")
-  #   let resp = await session.fetch(url)
-  #   await session.closeWait()
-  #   if (resp.status == 200) and
-  #      ("Your browser made it!" in bytesToString(resp.data)):
-  #     return true
-  #   else:
-  #     echo "RESPONSE STATUS = [", resp.status, "]"
-  #     echo "RESPONSE = [", bytesToString(resp.data), "]"
-  #     return false
-
-  proc testConnectionManagement(): Future[bool] {.
-       async.} =
+  asyncTest "HTTP client connection management test":
     proc test1(
            a1: HttpAddress,
            version: HttpVersion,
@@ -1057,9 +1042,7 @@ suite "HTTP client testing suite":
       await server.stop()
       await server.closeWait()
 
-    return true
-
-  proc testIdleConnection(): Future[bool] {.async.} =
+  asyncTest "HTTP client idle connection test":
     proc test(
            session: HttpSessionRef,
            a: HttpAddress
@@ -1120,9 +1103,7 @@ suite "HTTP client testing suite":
       await server.stop()
       await server.closeWait()
 
-    return true
-
-  proc testNoPipeline(): Future[bool] {.async.} =
+  asyncTest "HTTP client no-pipeline test":
     proc test(
            session: HttpSessionRef,
            a: HttpAddress
@@ -1191,8 +1172,6 @@ suite "HTTP client testing suite":
       await session.closeWait()
       await server.stop()
       await server.closeWait()
-
-    return true
 
   proc testServerSentEvents(secure: bool): Future[bool] {.async.} =
     const
@@ -1380,86 +1359,76 @@ suite "HTTP client testing suite":
 
     return true
 
-  test "HTTP all request methods test":
-    check waitFor(testMethods(false)) == 18
+  asyncTest "HTTP all request methods test":
+    check (await testMethods(false)) == 18
 
-  test "HTTP(S) all request methods test":
-    check waitFor(testMethods(true)) == 18
+  asyncTest "HTTP(S) all request methods test":
+    check (await testMethods(true)) == 18
 
-  test "HTTP client response streaming test":
-    check waitFor(testResponseStreamReadingTest(false)) == 8
+  asyncTest "HTTP client response streaming test":
+    check (await testResponseStreamReadingTest(false)) == 8
 
-  test "HTTP(S) client response streaming test":
-    check waitFor(testResponseStreamReadingTest(true)) == 8
+  asyncTest "HTTP(S) client response streaming test":
+    check (await testResponseStreamReadingTest(true)) == 8
 
-  test "HTTP client (size) request streaming test":
-    check waitFor(testRequestSizeStreamWritingTest(false)) == 2
+  asyncTest "HTTP client (size) request streaming test":
+    check (await testRequestSizeStreamWritingTest(false)) == 2
 
-  test "HTTP(S) client (size) request streaming test":
-    check waitFor(testRequestSizeStreamWritingTest(true)) == 2
+  asyncTest "HTTP(S) client (size) request streaming test":
+    check (await testRequestSizeStreamWritingTest(true)) == 2
 
-  test "HTTP client (chunked) request streaming test":
-    check waitFor(testRequestChunkedStreamWritingTest(false)) == 2
+  asyncTest "HTTP client (chunked) request streaming test":
+    check (await testRequestChunkedStreamWritingTest(false)) == 2
 
-  test "HTTP(S) client (chunked) request streaming test":
-    check waitFor(testRequestChunkedStreamWritingTest(true)) == 2
+  asyncTest "HTTP(S) client (chunked) request streaming test":
+    check (await testRequestChunkedStreamWritingTest(true)) == 2
 
-  test "HTTP client (size + chunked) url-encoded POST test":
-    check waitFor(testRequestPostUrlEncodedTest(false)) == 2
+  asyncTest "HTTP client (size + chunked) url-encoded POST test":
+    check (await testRequestPostUrlEncodedTest(false)) == 2
 
-  test "HTTP(S) client (size + chunked) url-encoded POST test":
-    check waitFor(testRequestPostUrlEncodedTest(true)) == 2
+  asyncTest "HTTP(S) client (size + chunked) url-encoded POST test":
+    check (await testRequestPostUrlEncodedTest(true)) == 2
 
-  test "HTTP client (size + chunked) multipart POST test":
-    check waitFor(testRequestPostMultipartTest(false)) == 2
+  asyncTest "HTTP client (size + chunked) multipart POST test":
+    check (await testRequestPostMultipartTest(false)) == 2
 
-  test "HTTP(S) client (size + chunked) multipart POST test":
-    check waitFor(testRequestPostMultipartTest(true)) == 2
+  asyncTest "HTTP(S) client (size + chunked) multipart POST test":
+    check (await testRequestPostMultipartTest(true)) == 2
 
-  test "HTTP client redirection test":
-    check waitFor(testRequestRedirectTest(false, 5)) == "ok-5-200"
+  asyncTest "HTTP client redirection test":
+    check (await testRequestRedirectTest(false, 5)) == "ok-5-200"
 
-  test "HTTP(S) client redirection test":
-    check waitFor(testRequestRedirectTest(true, 5)) == "ok-5-200"
+  asyncTest "HTTP(S) client redirection test":
+    check (await testRequestRedirectTest(true, 5)) == "ok-5-200"
 
-  test "HTTP client maximum redirections test":
-    check waitFor(testRequestRedirectTest(false, 4)) == "redirect-true"
+  asyncTest "HTTP client maximum redirections test":
+    check (await testRequestRedirectTest(false, 4)) == "redirect-true"
 
-  test "HTTP(S) client maximum redirections test":
-    check waitFor(testRequestRedirectTest(true, 4)) == "redirect-true"
+  asyncTest "HTTP(S) client maximum redirections test":
+    check (await testRequestRedirectTest(true, 4)) == "redirect-true"
 
-  test "HTTP send() cancellation leaks test":
-    check waitFor(testSendCancelLeaksTest(false)) == true
+  asyncTest "HTTP send() cancellation leaks test":
+    check await testSendCancelLeaksTest(false)
 
-  test "HTTP(S) send() cancellation leaks test":
-    check waitFor(testSendCancelLeaksTest(true)) == true
+  asyncTest "HTTP(S) send() cancellation leaks test":
+    check await testSendCancelLeaksTest(true)
 
-  test "HTTP open() cancellation leaks test":
-    check waitFor(testOpenCancelLeaksTest(false)) == true
+  asyncTest "HTTP open() cancellation leaks test":
+    check await testOpenCancelLeaksTest(false)
 
-  test "HTTP(S) open() cancellation leaks test":
-    check waitFor(testOpenCancelLeaksTest(true)) == true
+  asyncTest "HTTP(S) open() cancellation leaks test":
+    check await testOpenCancelLeaksTest(true)
 
   test "HTTPS basic authorization test":
     skip()
     # This test disabled because remote service is pretty flaky and fails pretty
     # often. As soon as more stable service will be found this test should be
     # recovered
-    # check waitFor(testBasicAuthorization()) == true
 
-  test "HTTP client connection management test":
-    check waitFor(testConnectionManagement()) == true
+  asyncTest "HTTP client server-sent events test":
+    check await testServerSentEvents(false)
 
-  test "HTTP client idle connection test":
-    check waitFor(testIdleConnection()) == true
-
-  test "HTTP client no-pipeline test":
-    check waitFor(testNoPipeline()) == true
-
-  test "HTTP client server-sent events test":
-    check waitFor(testServerSentEvents(false)) == true
-
-  proc testHttpProxyConnectionProvider(): Future[bool] {.async.} =
+  asyncTest "HTTP proxy connection provider test":
     const
       targetHost = "127.0.0.1"
       targetPort = 12345'u16
@@ -1501,18 +1470,8 @@ suite "HTTP client testing suite":
     await proxyServer.stop()
     await proxyServer.closeWait()
     check proxyInvocationCount == 1
-    return true
 
-  test "HTTP proxy connection provider test":
-    check waitFor(testHttpProxyConnectionProvider()) == true
-
-  proc testConnectTunnel(): Future[bool] {.
-      async: (
-        raises: [
-          CancelledError, HttpError, TransportError, AsyncTimeoutError, AsyncStreamError
-        ]
-      )
-  .} =
+  asyncTest "HTTP connect tunnel test":
     var msg = "tunnel ok"
 
     proc process(r: RequestFence): Future[HttpResponseRef] {.
@@ -1552,14 +1511,8 @@ suite "HTTP client testing suite":
     await session.closeWait()
     await server.stop()
     await server.closeWait()
-    return true
 
-  test "HTTP connect tunnel test":
-    check waitFor(testConnectTunnel()) == true
-
-  proc testTunnelConnectionProvider(): Future[bool] {.
-      async: (raises: [CancelledError, HttpError, TransportError])
-  .} =
+  asyncTest "HTTP tunnel connection provider test":
     let
       targetServer =
         createStreamServer(initTAddress("127.0.0.1:0"), flags = {ServerFlags.ReuseAddr})
@@ -1596,10 +1549,6 @@ suite "HTTP client testing suite":
 
     await serverFut.cancelAndWait()
     await targetServer.closeWait()
-    true
-
-  test "HTTP tunnel connection provider test":
-    check waitFor(testTunnelConnectionProvider()) == true
 
   asyncTest "HttpClientRequestRef.new from URL string":
     let session = HttpSessionRef.new()

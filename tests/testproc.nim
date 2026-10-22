@@ -13,7 +13,15 @@ import ".."/chronos/asyncproc
 when defined(posix):
   from ".."/chronos/osdefs import SIGKILL
 
-when defined(nimHasUsed): {.used.}
+when not defined(windows):
+  proc getCurrentFD(): int =
+    let local = initTAddress("127.0.0.1:34334")
+    let sock = createAsyncSocket(local.getDomain(), SockType.SOCK_DGRAM,
+                                 Protocol.IPPROTO_UDP)
+    closeSocket(sock)
+    return int(sock)
+
+{.used.}
 
 suite "Asynchronous process management test suite":
   setup:
@@ -38,20 +46,8 @@ suite "Asynchronous process management test suite":
 
   const ExitCodes = [5, 13, 64, 100, 126, 127, 128, 130, 255]
 
-  proc createBigMessage(size: int): seq[byte] =
-    var message = "MESSAGE"
-    result = newSeq[byte](size)
-    for i in 0 ..< len(result):
-      result[i] = byte(message[i mod len(message)])
-
-  when not(defined(windows)):
-    proc getCurrentFD(): int =
-      let local = initTAddress("127.0.0.1:34334")
-      let sock = createAsyncSocket(local.getDomain(), SockType.SOCK_DGRAM,
-                                   Protocol.IPPROTO_UDP)
-      closeSocket(sock)
-      return int(sock)
-    var markFD = getCurrentFD()
+  when not defined(windows):
+    let markFD = getCurrentFD()
 
   asyncTest "execCommand() exit codes test":
     for item in ExitCodes:
@@ -139,6 +135,12 @@ suite "Asynchronous process management test suite":
           "SMALL AMOUNT\r\n".toBytes()
         else:
           "SMALL AMOUNT\n".toBytes()
+
+    proc createBigMessage(size: int): seq[byte] =
+      var message = "MESSAGE"
+      result = newSeq[byte](size)
+      for i in 0 ..< len(result):
+        result[i] = byte(message[i mod len(message)])
 
     let bigTest =
       when defined(windows):

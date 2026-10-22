@@ -108,86 +108,85 @@ suite "Secure HTTP server testing suite":
         await allFutures(reader.closeWait(), writer.closeWait(),
                          transp.closeWait())
 
-  test "HTTPS server (successful handshake) test":
-    proc testHTTPS(address: TransportAddress): Future[bool] {.async.} =
-      var serverRes = false
-      proc process(r: RequestFence): Future[HttpResponseRef] {.
-           async: (raises: [CancelledError]).} =
-        if r.isOk():
-          let request = r.get()
-          serverRes = true
-          try:
-            await request.respond(Http200, "TEST_OK:" & $request.meth,
-                                  HttpTable.init())
-          except HttpWriteError as exc:
-            serverRes = false
-            defaultResponse(exc)
-        else:
-          defaultResponse()
+  asyncTest "HTTPS server (successful handshake) test":
+    let address = initTAddress("127.0.0.1:30080")
+    var serverRes = false
 
-      let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
-      let serverFlags = {Secure}
-      let secureKey = TLSPrivateKey.init(HttpsSelfSignedRsaKey)
-      let secureCert = TLSCertificate.init(HttpsSelfSignedRsaCert)
-      let res = SecureHttpServerRef.new(address, process,
-                                        socketFlags = socketFlags,
-                                        serverFlags = serverFlags,
-                                        tlsPrivateKey = secureKey,
-                                        tlsCertificate = secureCert)
-      if res.isErr():
-        return false
+    proc process(r: RequestFence): Future[HttpResponseRef] {.
+         async: (raises: [CancelledError]).} =
+      if r.isOk():
+        let request = r.get()
+        serverRes = true
+        try:
+          await request.respond(Http200, "TEST_OK:" & $request.meth,
+                                HttpTable.init())
+        except HttpWriteError as exc:
+          serverRes = false
+          defaultResponse(exc)
+      else:
+        defaultResponse()
 
-      let server = res.get()
+    let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
+    let serverFlags = {Secure}
+    let secureKey = TLSPrivateKey.init(HttpsSelfSignedRsaKey)
+    let secureCert = TLSCertificate.init(HttpsSelfSignedRsaCert)
+    let res = SecureHttpServerRef.new(address, process,
+                                      socketFlags = socketFlags,
+                                      serverFlags = serverFlags,
+                                      tlsPrivateKey = secureKey,
+                                      tlsCertificate = secureCert)
+    check res.isOk()
+
+    let server = res.get()
+    try:
       server.start()
       let message = "GET / HTTP/1.0\r\nHost: https://127.0.0.1:80\r\n\r\n"
       let data = await httpsClient(address, message)
-
+      check serverRes and (data.find("TEST_OK:GET") >= 0)
+    finally:
       await server.stop()
       await server.closeWait()
-      return serverRes and (data.find("TEST_OK:GET") >= 0)
 
-    check waitFor(testHTTPS(initTAddress("127.0.0.1:30080"))) == true
+  asyncTest "HTTPS server (failed handshake) test":
+    let address = initTAddress("127.0.0.1:30080")
+    var serverRes = false
+    var testFut = newFuture[void]()
 
-  test "HTTPS server (failed handshake) test":
-    proc testHTTPS2(address: TransportAddress): Future[bool] {.async.} =
-      var serverRes = false
-      var testFut = newFuture[void]()
-      proc process(r: RequestFence): Future[HttpResponseRef] {.
-           async: (raises: [CancelledError]).} =
-        if r.isOk():
-          let request = r.get()
-          try:
-            await request.respond(Http200, "TEST_OK:" & $request.meth,
-                                  HttpTable.init())
-          except HttpWriteError as exc:
-            defaultResponse(exc)
-        else:
-          serverRes = true
-          testFut.complete()
-          defaultResponse()
+    proc process(r: RequestFence): Future[HttpResponseRef] {.
+         async: (raises: [CancelledError]).} =
+      if r.isOk():
+        let request = r.get()
+        try:
+          await request.respond(Http200, "TEST_OK:" & $request.meth,
+                                HttpTable.init())
+        except HttpWriteError as exc:
+          defaultResponse(exc)
+      else:
+        serverRes = true
+        testFut.complete()
+        defaultResponse()
 
-      let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
-      let serverFlags = {Secure}
-      let secureKey = TLSPrivateKey.init(HttpsSelfSignedRsaKey)
-      let secureCert = TLSCertificate.init(HttpsSelfSignedRsaCert)
-      let res = SecureHttpServerRef.new(address, process,
-                                        socketFlags = socketFlags,
-                                        serverFlags = serverFlags,
-                                        tlsPrivateKey = secureKey,
-                                        tlsCertificate = secureCert)
-      if res.isErr():
-        return false
+    let socketFlags = {ServerFlags.TcpNoDelay, ServerFlags.ReuseAddr}
+    let serverFlags = {Secure}
+    let secureKey = TLSPrivateKey.init(HttpsSelfSignedRsaKey)
+    let secureCert = TLSCertificate.init(HttpsSelfSignedRsaCert)
+    let res = SecureHttpServerRef.new(address, process,
+                                      socketFlags = socketFlags,
+                                      serverFlags = serverFlags,
+                                      tlsPrivateKey = secureKey,
+                                      tlsCertificate = secureCert)
+    check res.isOk()
 
-      let server = res.get()
+    let server = res.get()
+    try:
       server.start()
       let message = "GET / HTTP/1.0\r\nHost: https://127.0.0.1:80\r\n\r\n"
       let data = await httpsClient(address, message, {NoVerifyServerName})
       await testFut
+      check serverRes and data == "EXCEPTION"
+    finally:
       await server.stop()
       await server.closeWait()
-      return serverRes and data == "EXCEPTION"
-
-    check waitFor(testHTTPS2(initTAddress("127.0.0.1:30080"))) == true
 
   asyncTest "HTTPS server - baseUri value test":
     proc process(r: RequestFence): Future[HttpResponseRef] {.
