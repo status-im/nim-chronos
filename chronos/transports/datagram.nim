@@ -186,11 +186,12 @@ proc drainReceived(transp: DatagramTransport, budget: int) =
       let count = native.recvmsg(native.SocketHandle(transp.fd), addr msg, 0)
       if count < 0:
         error = osLastError()
-      elif (msg.msg_flags and native.MSG_TRUNC) != 0:
-        error = OSErrorCode(oserrno.EMSGSIZE)
       else:
-        transp.buflen = count
         transp.ralen = SockLen(msg.msg_namelen)
+        if (msg.msg_flags and native.MSG_TRUNC) != 0:
+          error = OSErrorCode(oserrno.EMSGSIZE)
+        else:
+          transp.buflen = count
     when defined(windows):
       if error == OSErrorCode(WSAEWOULDBLOCK):
         break

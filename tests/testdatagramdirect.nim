@@ -138,26 +138,43 @@ suite "Direct datagram transport":
     check sender.trySendBatch([valid]).error != OSErrorCode(0)
     check sender.trySendBatch([]).sent == 0
 
-  asyncTest "truncation reports an error without delivering partial data":
-    let done = newFuture[void]()
-    proc receive(t: DatagramTransport, data: openArray[byte],
-                 remote: TransportAddress, error: OSErrorCode) {.gcsafe.} =
-      doAssert error != OSErrorCode(0)
-      doAssert data.len == 0
-      done.complete()
-    let
-      receiver = newDatagramTransportSync(receive,
-        local = initTAddress("127.0.0.1:0"), bufSize = 2)
-      sender = newDatagramTransportSync(ignorePacket,
-        local = initTAddress("127.0.0.1:0"))
-    var
-      data = "too large"
-      buffer: DatagramBuffer
-      message = packet(data, receiver.localAddress(), buffer)
-    check sender.trySendBatch([message]).sent == 1
-    await done.wait(2.seconds)
-    await sender.closeWait()
-    await receiver.closeWait()
+  asyncTest "truncation preserves the sender and reception continues":
+    for local in [initTAddress("127.0.0.1:0"), initTAddress("[::1]:0")]:
+      let done = newFuture[void]()
+      var
+        expectedRemote: TransportAddress
+        received = 0
+      proc receive(t: DatagramTransport, data: openArray[byte],
+                   remote: TransportAddress, error: OSErrorCode) {.gcsafe.} =
+        doAssert remote == expectedRemote
+        if received == 0:
+          when defined(windows):
+            doAssert error == WSAEMSGSIZE
+          else:
+            doAssert error == EMSGSIZE
+          doAssert data.len == 0
+        else:
+          doAssert received == 1
+          doAssert error == OSErrorCode(0)
+          doAssert @data == "ok".toBytes()
+          done.complete()
+        inc received
+      let
+        receiver = newDatagramTransportSync(receive, local = local, bufSize = 2)
+        sender = newDatagramTransportSync(ignorePacket, local = local)
+      expectedRemote = sender.localAddress()
+      var
+        oversized = "too large"
+        valid = "ok"
+        oversizedBuffer, validBuffer: DatagramBuffer
+        messages = [
+          packet(oversized, receiver.localAddress(), oversizedBuffer),
+          packet(valid, receiver.localAddress(), validBuffer)]
+      check sender.trySendBatch(messages).sent == 2
+      await done.wait(2.seconds)
+      check received == 2
+      await sender.closeWait()
+      await receiver.closeWait()
 
   asyncTest "dual stack normalizes IPv4 peers and sends replies":
     let done = newFuture[void]()
