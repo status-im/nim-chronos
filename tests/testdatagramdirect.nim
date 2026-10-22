@@ -150,7 +150,7 @@ suite "Direct datagram transport":
         doAssert received < 4
         if received mod 2 == 0:
           when defined(windows):
-            doAssert error == WSAEMSGSIZE, $error
+            doAssert error == WSAEMSGSIZE, $int(error)
           else:
             doAssert error == EMSGSIZE
           doAssert data.len == 0
