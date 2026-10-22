@@ -6,6 +6,9 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build:
     uses: status-im/nimbus-common-workflow/.github/workflows/common.yml@main
@@ -15,3 +18,4 @@ jobs:
         nimble test
         nimble test_libbacktrace
         nimble examples
+        nimble api_docs
