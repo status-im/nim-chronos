@@ -10,6 +10,8 @@
 {.push raises: [].}
 
 import std/deques
+when not defined(windows):
+  import std/posix as native
 import results
 when not(defined(windows)): import ".."/selectors2
 import ".."/[asyncloop, osdefs, oserrno, osutils, handles, take]
@@ -36,6 +38,15 @@ type
   UnsafeDatagramCallback* = proc(transp: DatagramTransport,
                            remote: TransportAddress): Future[void] {.async.}
 
+  DatagramReceiveCallback* = proc(transp: DatagramTransport,
+      data: openArray[byte], remote: TransportAddress, error: OSErrorCode) {.
+      gcsafe, raises: [].}
+    ## Data is borrowed until the callback returns. A nonzero error carries no
+    ## payload; EMSGSIZE reports a discarded truncated datagram.
+
+  DatagramDrainCallback* = proc(transp: DatagramTransport) {.gcsafe, raises: [].}
+    ## Called after a bounded receive turn, unless the transport was closed.
+
   DatagramTransport* = ref object of RootRef
     fd*: AsyncFD                    # File descriptor
     state: set[TransportState]      # Current Transport state
@@ -48,6 +59,9 @@ type
     remote: TransportAddress        # Remote address
     udata*: pointer                 # User-driven pointer
     function: DatagramCallback      # Receive data callback
+    receiveCallback: DatagramReceiveCallback
+    drainCallback: DatagramDrainCallback
+    receiveBudget: int
     future: Future[void].Raising([]) # Transport's life future
     raddr: Sockaddr_storage         # Reader address storage
     ralen: SockLen                  # Reader address length
@@ -144,6 +158,86 @@ template setReadError(t, e: untyped) =
   (t).state.incl(ReadError)
   (t).error = getTransportOsError(e)
 
+proc drainReceived(transp: DatagramTransport, budget: int) =
+  # Windows calls this only between completion and posting the next receive.
+  for i in 0 ..< budget:
+    if transp.closed():
+      break
+    transp.ralen = SockLen(sizeof(transp.raddr))
+    var error: OSErrorCode
+    when defined(windows):
+      var bytes, flags: DWORD
+      let status = wsaRecvFrom(SocketHandle(transp.fd), addr transp.rwsabuf,
+        DWORD(1), addr bytes, addr flags,
+        cast[ptr SockAddr](addr transp.raddr),
+        cast[ptr cint](addr transp.ralen), nil, nil)
+      if status != 0:
+        error = osLastError()
+        if error == ERROR_MORE_DATA:
+          error = WSAEMSGSIZE
+      transp.buflen = int(bytes)
+    elif defined(linux):
+      # Linux returns the full datagram length with MSG_TRUNC, including when
+      # the payload exceeds the buffer. recvfrom also preserves its sender.
+      let count = native.recvfrom(native.SocketHandle(transp.fd),
+        baseAddr transp.buffer, transp.buffer.len, native.MSG_TRUNC,
+        cast[ptr SockAddr](addr transp.raddr), addr transp.ralen)
+      if count < 0:
+        error = osLastError()
+      elif count > transp.buffer.len:
+        error = OSErrorCode(oserrno.EMSGSIZE)
+      else:
+        transp.buflen = count
+    else:
+      var
+        vector = native.IOVec(iov_base: baseAddr transp.buffer,
+                              iov_len: csize_t(transp.buffer.len))
+        msg: native.Tmsghdr
+      msg.msg_name = addr transp.raddr
+      msg.msg_namelen = native.SockLen(sizeof(transp.raddr))
+      msg.msg_iov = addr vector
+      msg.msg_iovlen = 1
+      let count = native.recvmsg(native.SocketHandle(transp.fd), addr msg, 0)
+      if count < 0:
+        error = osLastError()
+      else:
+        transp.ralen = SockLen(msg.msg_namelen)
+        if (msg.msg_flags and native.MSG_TRUNC) != 0:
+          error = OSErrorCode(oserrno.EMSGSIZE)
+        else:
+          transp.buflen = count
+    when defined(windows):
+      if error == OSErrorCode(WSAEWOULDBLOCK):
+        break
+      if error == OSErrorCode(WSAEINTR):
+        continue
+    else:
+      if error == OSErrorCode(oserrno.EAGAIN) or
+          error == OSErrorCode(oserrno.EWOULDBLOCK):
+        break
+      if error == OSErrorCode(oserrno.EINTR):
+        continue
+    if error != OSErrorCode(0):
+      transp.receiveCallback(transp, [], transp.getRemoteAddress(), error)
+      break
+    transp.receiveCallback(transp,
+      transp.buffer.toOpenArray(0, transp.buflen - 1), transp.getRemoteAddress(),
+      OSErrorCode(0))
+  if not transp.closed() and not isNil(transp.drainCallback):
+    transp.drainCallback(transp)
+
+proc deliverReceived(transp: DatagramTransport, remote: TransportAddress,
+                     error = OSErrorCode(0)) =
+  if isNil(transp.receiveCallback):
+    asyncSpawn transp.function(transp, remote)
+  else:
+    transp.receiveCallback(transp,
+      transp.buffer.toOpenArray(0, transp.buflen - 1), remote, error)
+    if error == OSErrorCode(0):
+      transp.drainReceived(transp.receiveBudget - 1)
+    elif not transp.closed() and not isNil(transp.drainCallback):
+      transp.drainCallback(transp)
+
 when defined(windows):
   template setWriterWSABuffer(t, v: untyped) =
     (t).wwsabuf.buf = cast[cstring](v.buf)
@@ -217,7 +311,7 @@ when defined(windows):
     if len(transp.queue) == 0:
       transp.state.incl(WritePaused)
 
-  proc readDatagramLoop(udata: pointer) =
+  proc readDatagramLoop(udata: pointer) {.gcsafe.} =
     var
       bytesCount: uint32
       ovl = cast[PtrCustomOverlapped](udata)
@@ -234,7 +328,7 @@ when defined(windows):
         case err
         of OSErrorCode(-1):
           transp.buflen = int(transp.rovl.data.bytesCount)
-          asyncSpawn transp.function(transp, remoteAddress)
+          transp.deliverReceived(remoteAddress)
         of ERROR_OPERATION_ABORTED:
           # CancelIO() interrupt or closeSocket() call.
           transp.state.incl(ReadPaused)
@@ -245,11 +339,21 @@ when defined(windows):
             transp.future.complete()
             GC_unref(transp)
           break
+        of WSAEMSGSIZE, ERROR_MORE_DATA:
+          transp.buflen = 0
+          if isNil(transp.receiveCallback):
+            transp.setReadError(err)
+            transp.state.incl(ReadPaused)
+            transp.deliverReceived(remoteAddress, err)
+          else:
+            # IOCP maps STATUS_BUFFER_OVERFLOW to ERROR_MORE_DATA rather than
+            # Winsock's WSAEMSGSIZE. Truncation must not stop the next receive.
+            transp.deliverReceived(remoteAddress, WSAEMSGSIZE)
         else:
           transp.setReadError(err)
           transp.state.incl(ReadPaused)
           transp.buflen = 0
-          asyncSpawn transp.function(transp, remoteAddress)
+          transp.deliverReceived(remoteAddress, err)
       else:
         ## Initiation
         if transp.state * {ReadEof, ReadError, TransportState.Closed} == {}:
@@ -275,12 +379,24 @@ when defined(windows):
               break
             of ERROR_IO_PENDING:
               discard
+            of WSAEMSGSIZE:
+              transp.state.excl(ReadPending)
+              transp.buflen = 0
+              if isNil(transp.receiveCallback):
+                transp.state.incl(ReadPaused)
+                transp.setReadError(err)
+                transp.deliverReceived(transp.getRemoteAddress(), err)
+              else:
+                transp.deliverReceived(transp.getRemoteAddress(), err)
+                # An immediate error posts no completion. Yield before retrying
+                # so a stream of oversized datagrams cannot monopolize IOCP.
+                callSoon(readDatagramLoop, cast[pointer](addr transp.rovl))
             else:
               transp.state.excl(ReadPending)
               transp.state.incl(ReadPaused)
               transp.setReadError(err)
               transp.buflen = 0
-              asyncSpawn transp.function(transp, transp.getRemoteAddress())
+              transp.deliverReceived(transp.getRemoteAddress(), err)
         else:
           # Transport closure happens in callback, and we not started new
           # WSARecvFrom session.
@@ -315,8 +431,8 @@ when defined(windows):
                                   dualstack = DualStackType.Auto
                                  ): DatagramTransport {.
       raises: [TransportOsError].} =
-    doAssert(not isNil(cbproc))
     var res = if isNil(child): DatagramTransport() else: child
+    doAssert(not isNil(cbproc) or not isNil(res.receiveCallback))
 
     let localSock =
       if sock == asyncInvalidSocket:
@@ -457,6 +573,8 @@ else:
       return
     if TransportState.Closed in transp.state:
       transp.state.incl({ReadPaused})
+    elif not isNil(transp.receiveCallback):
+      transp.drainReceived(transp.receiveBudget)
     else:
       while true:
         transp.ralen = SockLen(sizeof(Sockaddr_storage))
@@ -466,7 +584,7 @@ else:
                                   addr transp.ralen)
         if res >= 0:
           transp.buflen = res
-          asyncSpawn transp.function(transp, transp.getRemoteAddress())
+          transp.deliverReceived(transp.getRemoteAddress())
         else:
           let err = osLastError()
           case err
@@ -475,7 +593,7 @@ else:
           else:
             transp.buflen = 0
             transp.setReadError(err)
-            asyncSpawn transp.function(transp, transp.getRemoteAddress())
+            transp.deliverReceived(transp.getRemoteAddress(), err)
         break
 
   proc writeDatagramLoop(udata: pointer) =
@@ -544,8 +662,8 @@ else:
                                   dualstack = DualStackType.Auto
                                  ): DatagramTransport {.
       raises: [TransportOsError].} =
-    doAssert(not isNil(cbproc))
     var res = if isNil(child): DatagramTransport() else: child
+    doAssert(not isNil(cbproc) or not isNil(res.receiveCallback))
 
     let localSock =
       if sock == asyncInvalidSocket:
@@ -680,6 +798,38 @@ proc close*(transp: DatagramTransport) =
         closeSocket(transp.fd)
     else:
         closeSocket(transp.fd, continuation)
+
+proc newDatagramTransportSync*(cbproc: DatagramReceiveCallback,
+    local: TransportAddress = AnyAddress,
+    onDrain: DatagramDrainCallback = nil,
+    remote: TransportAddress = AnyAddress,
+    flags: set[ServerFlags] = {},
+    bufSize: Positive = DefaultDatagramBufferSize,
+    maxDatagrams: Positive = 64,
+    dualstack = DualStackType.Auto): DatagramTransport {.
+    raises: [TransportOsError].} =
+  ## Receive without a Future or payload copy per datagram. Callbacks must not
+  ## block or retain the borrowed data. At most maxDatagrams receive attempts
+  ## run per turn, followed by onDrain. Closing inside either callback is safe.
+  ## The local address selects IPv4 or IPv6. Existing asynchronous transports
+  ## retain their original receive behavior.
+  doAssert not isNil(cbproc)
+  let child = DatagramTransport(receiveCallback: cbproc,
+    drainCallback: onDrain, receiveBudget: maxDatagrams)
+  newDatagramTransportCommon(DatagramCallback(nil), remote, local,
+    asyncInvalidSocket, flags, nil, child, bufSize, 0, dualstack)
+
+proc getReceiveBufferSize*(transp: DatagramTransport): Result[int, OSErrorCode] =
+  ## Return the OS-reported socket receive buffer size in bytes. On Linux this
+  ## includes the kernel's accounting overhead, unlike the requested size.
+  let value = ? getSockOpt2(transp.fd, int(SOL_SOCKET), int(SO_RCVBUF))
+  ok(int(value))
+
+proc setReceiveBufferSize*(transp: DatagramTransport,
+                           bytes: int): Result[void, OSErrorCode] =
+  ## Request a socket receive buffer size. The OS may cap or adjust it; query
+  ## getReceiveBufferSize to obtain the effective value.
+  setSockOpt2(transp.fd, int(SOL_SOCKET), int(SO_RCVBUF), bytes)
 
 proc getTransportAddresses(
     local, remote: Opt[IpAddress],
@@ -1196,3 +1346,5 @@ proc getMessage*(transp: DatagramTransport): seq[byte] {.
 proc getUserData*[T](transp: DatagramTransport): T {.inline.} =
   ## Obtain user data stored in ``transp`` object.
   cast[T](transp.udata)
+
+include datagramdirect
