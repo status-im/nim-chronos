@@ -8,12 +8,12 @@ description   = "Networking framework with async/await support"
 license       = "MIT or Apache License 2.0"
 skipDirs      = @["tests"]
 
-requires "nim >= 2.2.14",
-         "bearssl >= 0.3.0",
-         "httputils >= 0.6.0",
+requires "nim >= 1.6.16",
+         "bearssl >= 0.2.13",
+         "httputils >= 0.5.1",
          "results >= 0.5.0",
-         "stew >= 0.6.0",
-         "unittest2 >= 0.3.0"
+         "stew >= 0.5.0",
+         "unittest2 >= 0.2.0"
 
 import os, strutils
 
@@ -121,7 +121,7 @@ task test_libbacktrace, "test with libbacktrace":
         run args & " --mm:orc", "tests/testall"
 
 task test_asan, "Run all tests with ASAN":
-  if platform != "x86":
+  if platform != "x86" and (NimMajor, NimMinor) >= (2, 2):
     # https://clang.llvm.org/docs/AddressSanitizer.html
     putEnv("ASAN_OPTIONS", "detect_leaks=0:detect_stack_use_after_return=1")
     # https://clang.llvm.org/docs/UndefinedBehaviorSanitizer.html
