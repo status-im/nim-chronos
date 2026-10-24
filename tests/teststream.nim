@@ -1547,7 +1547,7 @@ suite "Stream Transport test suite":
     var
       buffer = newSeq[byte](16384 * 1024)
       wideMessage = newSeq[uint32](len(message) div sizeof(uint32))
-    copyMem(addr wideMessage[0], addr message[0], len(message))
+    copyMem(addr wideMessage[0], unsafeAddr message[0], len(message))
 
     proc writer(transp: StreamTransport): Future[int] {.async.} =
       let res =
