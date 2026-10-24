@@ -649,7 +649,7 @@ suite "AsyncStream/ChunkedStream":
 
     # We need to consume all the stream with finish markers, but there will
     # be no actual data.
-    let left = await rstream2.consume()
+    let left = await rstream2.consume(-1)
     check:
       left == 0
       rstream2.atEof() == true
@@ -965,6 +965,7 @@ suite "AsyncStream/ChunkedStream":
     await testChunk(767309, 4457, 173)
     await testChunk(767309, 4457, 173)
     await testChunk(767309, 67000, 67001)
+    await testChunk(65600, 1024, -1)
 
 suite "AsyncStream/TLSStream":
   setup:
@@ -1700,6 +1701,7 @@ suite "AsyncStream/BoundedStream":
     await testSmallChunk(65600, 1024, 17)
     await testSmallChunk(262400, 4096, 61)
     await testSmallChunk(767309, 4457, 173)
+    await testSmallChunk(65600, 1024, -1)
 
   asyncTest "zero-sized streams":
     proc serveClient(server: StreamServer,
