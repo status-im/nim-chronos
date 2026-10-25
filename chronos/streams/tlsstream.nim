@@ -108,6 +108,9 @@ type
     trustAnchors: TrustAnchorStore
     clientCertificate: TLSCertificate
     clientPrivateKey: TLSPrivateKey
+    serverCertificate: TLSCertificate
+    serverPrivateKey: TLSPrivateKey
+    sessionCache: TLSSessionCache
     alpnProtos: seq[string]
     alpnProtosC: seq[cstring]
     readFut: Future[int].Raising([CancelledError, AsyncStreamError])
@@ -626,6 +629,8 @@ proc newTLSServerAsyncStream*(rsource: AsyncStreamReader,
   )
   res.reader = reader
   res.writer = writer
+  res.serverCertificate = certificate
+  res.serverPrivateKey = privateKey
 
   if privateKey.kind == TLSKeyType.EC:
     let algo = getSignerAlgo(certificate.certs[0])
@@ -646,6 +651,7 @@ proc newTLSServerAsyncStream*(rsource: AsyncStreamReader,
                        uint16(maxVersion))
 
   if not isNil(cache):
+    res.sessionCache = cache
     sslServerSetCache(
       res.scontext, SslSessionCacheClassPointerConst(addr cache.context.vtable))
 
