@@ -485,8 +485,8 @@ when chronosStackTrace:
     #   newMsg.add "\n" & $entry
     error.msg = newMsg
 
-proc deepLineInfo(n: NimNode, p: LineInfo) =
-  n.setLineInfo(p)
+func deepLineInfo(n: NimNode, p: NimNode) =
+  n.copyLineInfo(p)
   for i in 0..<n.len:
     deepLineInfo(n[i], p)
 
@@ -495,7 +495,6 @@ macro internalRaiseIfError*(fut: FutureBase, info: typed) =
   # This is a macro so we can capture the line info from the original call and
   # report the correct line number on exception effect violation
   let
-    info = info.lineInfoObj()
     res = quote do:
       if not(isNil(`fut`.internalError)):
         when chronosStackTrace:
@@ -514,7 +513,6 @@ macro internalRaiseIfError*(fut: InternalRaisesFuture, raises, info: typed) =
   #      generics are lost - so instead, we pass the raises list explicitly
 
   let
-    info = info.lineInfoObj()
     types = getRaisesTypes(raises)
 
   if isNoRaises(types):
