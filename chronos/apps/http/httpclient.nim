@@ -225,7 +225,8 @@ type
 # Open -> (Finished, Error) -> (Closing, Closed)
 
 template checkClosed(reqresp: untyped): untyped =
-  if reqresp.connection.state in {HttpClientConnectionState.Closing,
+  if reqresp.connection.state in {HttpClientConnectionState.Error,
+                                  HttpClientConnectionState.Closing,
                                   HttpClientConnectionState.Closed}:
     let e = newHttpUseClosedError()
     reqresp.setError(e)

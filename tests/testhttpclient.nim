@@ -370,6 +370,20 @@ suite "HTTP client testing suite":
           ha.getUri(), maxResponseBodySize = item[2] - 1)
       except HttpReadLimitError:
         inc(counter)
+      let
+        req = HttpClientRequestRef.new(
+          session, ha, maxResponseBodySize = item[2] - 1)
+        response = await req.send()
+      try:
+        discard await response.getBodyBytes()
+      except HttpReadLimitError:
+        inc(counter)
+      try:
+        discard response.getBodyReader()
+      except HttpUseClosedError:
+        inc(counter)
+      await response.closeWait()
+      await req.closeWait()
     await session.closeWait()
 
     await server.stop()
@@ -1384,10 +1398,10 @@ suite "HTTP client testing suite":
     check (await testMethods(true)) == 18
 
   asyncTest "HTTP client response streaming test":
-    check (await testResponseStreamReadingTest(false)) == 16
+    check (await testResponseStreamReadingTest(false)) == 24
 
   asyncTest "HTTP(S) client response streaming test":
-    check (await testResponseStreamReadingTest(true)) == 16
+    check (await testResponseStreamReadingTest(true)) == 24
 
   asyncTest "HTTP client (size) request streaming test":
     check (await testRequestSizeStreamWritingTest(false)) == 2
