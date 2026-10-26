@@ -1546,23 +1546,36 @@ suite "Stream Transport test suite":
       wtransp = fromPipe(wfd)
     var
       buffer = newSeq[byte](16384 * 1024)
+      wideMessage = newSeq[uint32](len(message) div sizeof(uint32))
+    copyMem(addr wideMessage[0], unsafeAddr message[0], len(message))
 
     proc writer(transp: StreamTransport): Future[int] {.async.} =
       let res =
         try:
-          await transp.write(message)
+          await transp.write(wideMessage, len(wideMessage) div 2)
         except CatchableError:
           -1
       return res
 
     var fut {.used.} = wtransp.writer()
+    let
+      fut2 = wtransp.write("")
+      fut3 = wtransp.write(newSeq[byte]())
+      fut4 = wtransp.write(wideMessage[len(wideMessage) div 2 .. ^1])
+    check:
+      not(fut2.finished())
+      not(fut3.finished())
     try:
       await rtransp.readExactly(addr buffer[0], 16384 * 1024)
     except CatchableError:
       discard
 
     await allFutures(rtransp.closeWait(), wtransp.closeWait())
-    check buffer == message
+    check:
+      buffer == message
+      (await fut2) == 0
+      (await fut3) == 0
+      (await fut4) == len(message) div 2
 
   asyncTest "[IP] bind connect to local address test":
     proc client(server: StreamServer, transp: StreamTransport) {.async: (raises: []).} =
