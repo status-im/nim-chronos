@@ -354,6 +354,38 @@ suite "HTTP client testing suite":
       await req.closeWait()
       await session.closeWait()
 
+    session = createSession(secure)
+    for item in ResponseTests:
+      let ha =
+        if secure:
+          getAddress(address, HttpClientScheme.Secure, item[1])
+        else:
+          getAddress(address, HttpClientScheme.NonSecure, item[1])
+      let (code, data) =
+        await session.fetch(ha.getUri(), maxResponseBodySize = item[2])
+      if code == 200 and data == createBigMessage(item[4], item[2]):
+        inc(counter)
+      try:
+        discard await session.fetch(
+          ha.getUri(), maxResponseBodySize = item[2] - 1)
+      except HttpReadLimitError:
+        inc(counter)
+      let
+        req = HttpClientRequestRef.new(
+          session, ha, maxResponseBodySize = item[2] - 1)
+        response = await req.send()
+      try:
+        discard await response.getBodyBytes()
+      except HttpReadLimitError:
+        inc(counter)
+      try:
+        discard response.getBodyReader()
+      except HttpUseClosedError:
+        inc(counter)
+      await response.closeWait()
+      await req.closeWait()
+    await session.closeWait()
+
     await server.stop()
     await server.closeWait()
     return counter
@@ -1366,10 +1398,10 @@ suite "HTTP client testing suite":
     check (await testMethods(true)) == 18
 
   asyncTest "HTTP client response streaming test":
-    check (await testResponseStreamReadingTest(false)) == 8
+    check (await testResponseStreamReadingTest(false)) == 24
 
   asyncTest "HTTP(S) client response streaming test":
-    check (await testResponseStreamReadingTest(true)) == 8
+    check (await testResponseStreamReadingTest(true)) == 24
 
   asyncTest "HTTP client (size) request streaming test":
     check (await testRequestSizeStreamWritingTest(false)) == 2
@@ -1642,6 +1674,9 @@ suite "HTTP client testing suite":
           of "/test":
             let headers = HttpTable.init([("big-header", expectValue)])
             await request.respond(Http200, "ok", headers)
+          of "/redirect":
+            let headers = HttpTable.init([("big-header", expectValue)])
+            await request.redirect(Http302, "/test", headers)
           else:
             await request.respond(Http404, "Page not found")
         except HttpWriteError as exc:
@@ -1681,6 +1716,16 @@ suite "HTTP client testing suite":
       res1 == true
       res2.status == 200
       res2.headers.getString("big-header") == expectValue
+
+    let redirectUri =
+      getAddress(address, HttpClientScheme.NonSecure, "/redirect").getUri()
+    expect HttpReadError:
+      discard await session.fetch(redirectUri)
+    let res3 = await session.fetch(
+      redirectUri, maxResponseHeadersSize = HttpMaxHeadersSize * 2)
+    check:
+      res3.status == 200
+      res3.data.bytesToString() == "ok"
 
     await req1.closeWait()
     await req2.closeWait()
