@@ -15,6 +15,7 @@ jobs:
     with:
       test-command: |
         nimble install -y libbacktrace
+        nimble test_asan
         nimble test
         nimble test_libbacktrace
         nimble examples
