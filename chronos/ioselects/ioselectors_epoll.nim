@@ -157,8 +157,8 @@ proc close2*(event: SelectEvent): SelectResult[void] =
     ok()
 
 proc init(t: typedesc[EpollEvent], fdi: cint, events: set[Event]): EpollEvent =
-  var res = uint32(EPOLLRDHUP)
-  if Event.Read in events: res = res or uint32(EPOLLIN)
+  var res = 0'u32
+  if Event.Read in events: res = res or uint32(EPOLLIN) or uint32(EPOLLRDHUP)
   if Event.Write in events: res = res or uint32(EPOLLOUT)
   if Event.Oneshot in events: res = res or uint32(EPOLLONESHOT)
   # We need this double conversion of type because otherwise in x64 environment
