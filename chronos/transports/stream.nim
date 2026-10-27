@@ -459,6 +459,11 @@ when defined(windows):
           elif transp.kind == TransportKind.Pipe:
             let pipe = HANDLE(transp.fd)
             if vector.kind == VectorKind.DataBuffer:
+              if vector.buflen == 0:
+                # Avoid sending empty message that may trigger an EOF read.
+                transp.state.excl(WritePending)
+                vector.writer.complete(0)
+                continue
               transp.wovl.zeroOvelappedOffset()
               transp.setWriterWSABuffer(vector)
               let ret = writeFile(pipe, cast[pointer](transp.wwsabuf.buf),
@@ -2508,7 +2513,7 @@ proc write*(transp: StreamTransport, msg: string,
   var localCopy = msg
   retFuture.addCallback(proc(_: pointer) = reset(localCopy))
 
-  pbytes = cast[ptr byte](addr localCopy[written])
+  pbytes = cast[ptr byte](baseAddr localCopy).offset(written)
 
   var vector = StreamVector(kind: DataBuffer, writer: retFuture,
                             buf: pbytes, buflen: rbytes, size: nbytes)
@@ -2539,7 +2544,7 @@ proc write*[T](transp: StreamTransport, msg: seq[T],
   var localCopy = msg
   retFuture.addCallback(proc(_: pointer) = reset(localCopy))
 
-  pbytes = cast[ptr byte](addr localCopy[written])
+  pbytes = cast[ptr byte](baseAddr localCopy).offset(written)
 
   var vector = StreamVector(kind: DataBuffer, writer: retFuture,
                             buf: pbytes, buflen: rbytes, size: nbytes)

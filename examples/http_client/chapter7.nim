@@ -40,8 +40,12 @@ proc sendAlert(
   try:
     let response = await request.send().wait(5.seconds)
     await response.closeWait()
-  except HttpError, FuturePendingError, AsyncTimeoutError:
-    echo "[WRN] Failed to send alert: " & getCurrentExceptionMsg()
+  except HttpError as exc:
+    echo "[WRN] Failed to send alert: " & exc.msg
+  except FuturePendingError as exc:
+    echo "[WRN] Failed to send alert: " & exc.msg
+  except AsyncTimeoutError as exc:
+    echo "[WRN] Failed to send alert: " & exc.msg
   finally:
     await request.closeWait()
 
@@ -79,22 +83,24 @@ proc check(
   defer:
     try:
       release(semaphore)
-    except AsyncSemaphoreError:
-      echo "Could not release a lock: " & getCurrentExceptionMsg()
+    except AsyncSemaphoreError as exc:
+      echo "Could not release a lock: " & exc.msg
 # ANCHOR_END: semaphore
 
-  let
-    request = HttpClientRequestRef.new(session, uri).valueOr:
-      echo "[ERR] " & uri & ": " & error
-      return
-    response =
-      try:
-        await request.send().wait(5.seconds)
-      except HttpError, AsyncTimeoutError:
-        echo "[ERR] " & uri & ": " & getCurrentExceptionMsg()
-        return
-      finally:
-        await request.closeWait()
+  let request = HttpClientRequestRef.new(session, uri).valueOr:
+    echo "[ERR] " & uri & ": " & error
+    return
+
+  var response: HttpClientResponseRef
+
+  try:
+    response = await request.send().wait(5.seconds)
+  except HttpError as exc:
+    echo "[ERR] " & uri & ": " & exc.msg
+  except AsyncTimeoutError as exc:
+    echo "[ERR] " & uri & ": " & exc.msg
+  finally:
+    await request.closeWait()
 
   try:
     if response.status == 200:
@@ -116,8 +122,12 @@ proc check(
       let message = "[NOK] " & uri & ": " & $response.status
       echo message
       await session.sendAlert(message)
-  except HttpError, AsyncStreamError:
-    let message = "[ERR] " & uri & ": " & getCurrentExceptionMsg()
+  except HttpError as exc:
+    let message = "[ERR] " & uri & ": " & exc.msg
+    echo message
+    await session.sendAlert(message, 4)
+  except AsyncStreamError as exc:
+    let message = "[ERR] " & uri & ": " & exc.msg
     echo message
     await session.sendAlert(message, 4)
   finally:

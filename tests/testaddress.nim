@@ -12,41 +12,44 @@ import ../chronos
 
 suite "TransportAddress test suite":
   test "initTAddress(string)":
-    check $initTAddress("0.0.0.0:1") == "0.0.0.0:1"
-    check $initTAddress("255.255.255.255:65535") == "255.255.255.255:65535"
-    check $initTAddress("[::]:1") == "[::]:1"
-    check $initTAddress("[FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]:65535") ==
-      "[ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff]:65535"
+    check:
+      $initTAddress("0.0.0.0:1") == "0.0.0.0:1"
+      $initTAddress("255.255.255.255:65535") == "255.255.255.255:65535"
+      $initTAddress("[::]:1") == "[::]:1"
+      $initTAddress("[FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF]:65535") ==
+        "[ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff]:65535"
 
   test "initTAddress(string, Port)":
-    check $initTAddress("0.0.0.0", Port(0)) == "0.0.0.0:0"
-    check $initTAddress("255.255.255.255", Port(65535)) ==
-      "255.255.255.255:65535"
-    check $initTAddress("::", Port(0)) == "[::]:0"
-    check $initTAddress("FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF",
-                        Port(65535)) ==
-      "[ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff]:65535"
+    check:
+      $initTAddress("0.0.0.0", Port(0)) == "0.0.0.0:0"
+      $initTAddress("255.255.255.255", Port(65535)) ==
+        "255.255.255.255:65535"
+      $initTAddress("::", Port(0)) == "[::]:0"
+      $initTAddress("FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF", Port(65535)) ==
+        "[ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff]:65535"
 
   test "initTAddress(string, int)":
-    check $initTAddress("0.0.0.0", 1) == "0.0.0.0:1"
-    check $initTAddress("255.255.255.255", 65535) ==
-      "255.255.255.255:65535"
-    check $initTAddress("::", 0) == "[::]:0"
-    check $initTAddress("FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF", 65535) ==
-      "[ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff]:65535"
+    check:
+      $initTAddress("0.0.0.0", 1) == "0.0.0.0:1"
+      $initTAddress("255.255.255.255", 65535) ==
+        "255.255.255.255:65535"
+      $initTAddress("::", 0) == "[::]:0"
+      $initTAddress("FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF", 65535) ==
+        "[ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff]:65535"
 
   test "resolveTAddress(string, IPv4)":
-    var numeric = ["0.0.0.0:1", "255.0.0.255:54321", "128.128.128.128:12345",
+    let numeric = ["0.0.0.0:1", "255.0.0.255:54321", "128.128.128.128:12345",
                    "255.255.255.255:65535"]
-    var hostnames = ["www.google.com:443", "www.github.com:443"]
+    let hostnames = ["www.google.com:443", "www.github.com:443"]
 
     for item in numeric:
-      var taseq = resolveTAddress(item)
-      check len(taseq) == 1
-      check $taseq[0] == item
+      let taseq = resolveTAddress(item)
+      check:
+        len(taseq) == 1
+        $taseq[0] == item
 
     for item in hostnames:
-      var taseq = resolveTAddress(item)
+      let taseq = resolveTAddress(item)
       check len(taseq) >= 1
 
   # test "resolveTAddress(string, IPv6)":
@@ -70,17 +73,18 @@ suite "TransportAddress test suite":
   #     check len(taseq) >= 1
 
   test "resolveTAddress(string, Port, IPv4)":
-    var numeric = ["0.0.0.0", "255.0.0.255", "128.128.128.128",
+    let numeric = ["0.0.0.0", "255.0.0.255", "128.128.128.128",
                    "255.255.255.255"]
-    var hostnames = ["www.google.com", "www.github.com", "localhost"]
+    let hostnames = ["www.google.com", "www.github.com", "localhost"]
 
     for item in numeric:
-      var taseq = resolveTAddress(item, Port(443))
-      check len(taseq) == 1
-      check $taseq[0] == item & ":443"
+      let taseq = resolveTAddress(item, Port(443))
+      check:
+        len(taseq) == 1
+        $taseq[0] == item & ":443"
 
     for item in hostnames:
-      var taseq = resolveTAddress(item, Port(443))
+      let taseq = resolveTAddress(item, Port(443))
       check len(taseq) >= 1
 
   # test "resolveTAddress(string, Port, IPv6)":
@@ -103,7 +107,7 @@ suite "TransportAddress test suite":
   #     check len(taseq) >= 1
 
   test "Faulty initTAddress(string)":
-    var tests = [
+    let tests = [
       "z:1",
       "256.256.256.256:65534",
       "127.0.0.1:65536"
@@ -117,7 +121,7 @@ suite "TransportAddress test suite":
     check errcounter == len(tests)
 
   test "Faulty initTAddress(string, Port)":
-    var tests = [
+    let tests = [
       ":::",
       "999.999.999.999",
       "gggg:aaaa:bbbb:gggg:aaaa:bbbb:gggg:aaaa",
@@ -131,7 +135,7 @@ suite "TransportAddress test suite":
         inc(errcounter)
     check errcounter == len(tests)
 
-  test "Faulty initTAddress(string, Port)":
+  test "Faulty initTAddress(string, int)":
     var errcounter = 0
     try:
       discard initTAddress("127.0.0.1", 100000)
@@ -140,7 +144,7 @@ suite "TransportAddress test suite":
     check errcounter == 1
 
   test "Faulty resolveTAddress(string, IPv4) for IPv6 address":
-    var numeric = [
+    let numeric = [
       "[::]:1",
       "[ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff]:65535",
       "[aaaa:bbbb:cccc:dddd:eeee:ffff::1111]:12345",
@@ -157,7 +161,7 @@ suite "TransportAddress test suite":
     check errcounter == len(numeric)
 
   test "Faulty resolveTAddress(string, Port, IPv4) for IPv6 address":
-    var numeric = [
+    let numeric = [
       "::",
       "ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff",
       "aaaa:bbbb:cccc:dddd:eeee:ffff::1111",

@@ -30,6 +30,16 @@ proc setSocketBlocking*(s: SocketHandle, blocking: bool): bool {.
 
 proc setSockOpt2*(socket: AsyncFD,
                   level, optname, optval: int): Result[void, OSErrorCode] =
+  when defined(illumos):
+    # The native IPv4 multicast TTL option takes an unsigned byte, not int.
+    if level == int(osdefs.IPPROTO_IP) and optname == int(osdefs.IP_MULTICAST_TTL):
+      if optval < 0 or optval > 255:
+        return err(oserrno.EINVAL)
+      var value = uint8(optval)
+      if osdefs.setsockopt(SocketHandle(socket), cint(level), cint(optname),
+                          addr value, SockLen(sizeof(value))) == -1:
+        return err(osLastError())
+      return ok()
   var value = cint(optval)
   let res = osdefs.setsockopt(SocketHandle(socket), cint(level), cint(optname),
                               addr(value), SockLen(sizeof(value)))
@@ -62,6 +72,15 @@ proc setSockOpt*(socket: AsyncFD, level, optname: int, value: pointer,
 
 proc getSockOpt2*(socket: AsyncFD,
                   level, optname: int): Result[cint, OSErrorCode] =
+  when defined(illumos):
+    if level == int(osdefs.IPPROTO_IP) and optname == int(osdefs.IP_MULTICAST_TTL):
+      var
+        value: uint8
+        size = SockLen(sizeof(value))
+      if osdefs.getsockopt(SocketHandle(socket), cint(level), cint(optname),
+                          addr value, addr size) == -1:
+        return err(osLastError())
+      return ok(cint(value))
   var
     value: cint
     size = SockLen(sizeof(value))

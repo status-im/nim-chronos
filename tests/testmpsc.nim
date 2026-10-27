@@ -84,11 +84,10 @@ suite "MPSC semantics":
       deallocShared(n)
 
 suite "MPSC stress test":
-  setup:
+  test "10000 push/pop":
     var q: MpscQueue[TestNode]
     q.init()
 
-  test "10000 push/pop":
     when defined(gcOrc):
       # TODO https://github.com/nim-lang/Nim/issues/26014
       skip()
@@ -114,6 +113,9 @@ suite "MPSC stress test":
         deallocShared(node)
 
   test "interleaved push/pop":
+    var q: MpscQueue[TestNode]
+    q.init()
+
     when defined(gcOrc):
       # TODO https://github.com/nim-lang/Nim/issues/26014
       skip()
@@ -148,6 +150,9 @@ suite "MPSC stress test":
         deallocShared(n)
 
   test "multiple producers, single consumer":
+    var q: MpscQueue[TestNode]
+    q.init()
+
     when defined(gcOrc):
       # TODO https://github.com/nim-lang/Nim/issues/26014
       skip()
@@ -187,6 +192,9 @@ suite "MPSC stress test":
       check total == Producers * ItemsPerProducer
 
   test "100000 items with 100 producers":
+    var q: MpscQueue[TestNode]
+    q.init()
+
     when defined(gcOrc):
       skip()
     else:
@@ -223,10 +231,13 @@ suite "MPSC stress test":
       check total == Producers * ItemsPerProducer
 
   test "concurrent producers with busy-loop consumer":
+    var q: MpscQueue[TestNode]
+    q.init()
+
     when defined(gcOrc):
       # TODO https://github.com/nim-lang/Nim/issues/26014
       skip()
-    else:      
+    else:
       # Producers push items while a single consumer busy-loops,
       # calling pop() until it has received the expected total.
       const Producers = 8

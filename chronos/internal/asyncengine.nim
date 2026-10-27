@@ -39,7 +39,7 @@ when defined(windows):
 elif defined(macosx) or defined(freebsd) or defined(netbsd) or
      defined(openbsd) or defined(dragonfly) or defined(macos) or
      defined(linux) or defined(android) or defined(solaris) or
-     defined(haiku):
+     defined(illumos) or defined(haiku):
   import ../selectors2
   export SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
          SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV, SIGUSR2,
@@ -251,10 +251,12 @@ func toException*(v: OSErrorCode): ref OSError = newOSError(v)
   # This helper will allow to use `tryGet()` and raise OSError for
   # Result[T, OSErrorCode] values.
 
-when defined(nimdoc):
+when defined(nimdoc) and not defined(windows):
   type
     PDispatcher* = ref object of PDispatcherBase
     AsyncFD* = distinct cint
+    ProcessHandle* = distinct int
+    SignalHandle* = distinct int
 
   var gDisp {.threadvar.}: PDispatcher
 
@@ -279,6 +281,19 @@ when defined(nimdoc):
   proc unregisterAndCloseFd*(fd: AsyncFD): Result[void, OSErrorCode] = discard
   proc closeDispatcher*(loop: PDispatcher): Opt[string] = discard
   proc contains*(disp: PDispatcher, fd: AsyncFD): bool = discard
+  proc addProcess2*(pid: int, cb: CallbackFunc,
+                    udata: pointer = nil): Result[ProcessHandle, OSErrorCode] = discard
+  proc removeProcess2*(procHandle: ProcessHandle): Result[void, OSErrorCode] = discard
+  proc addProcess*(pid: int, cb: CallbackFunc,
+                   udata: pointer = nil): ProcessHandle {.
+       raises: [OSError].} = discard
+  proc removeProcess*(procHandle: ProcessHandle) {.raises: [OSError].} = discard
+  proc addSignal2*(signal: int, cb: CallbackFunc,
+                   udata: pointer = nil): Result[SignalHandle, OSErrorCode] = discard
+  proc removeSignal2*(signalHandle: SignalHandle): Result[void, OSErrorCode] = discard
+  proc addSignal*(signal: int, cb: CallbackFunc,
+                  udata: pointer = nil): SignalHandle {.raises: [OSError].} = discard
+  proc removeSignal*(signalHandle: SignalHandle) {.raises: [OSError].} = discard
 
   proc `==`*(x: AsyncFD, y: AsyncFD): bool {.borrow, gcsafe.}
 
@@ -884,10 +899,11 @@ elif defined(windows):
 elif defined(macosx) or defined(freebsd) or defined(netbsd) or
      defined(openbsd) or defined(dragonfly) or defined(macos) or
      defined(linux) or defined(android) or defined(solaris) or
-     defined(haiku):
+     defined(illumos) or defined(haiku):
   const
     SIG_IGN = cast[proc(x: cint) {.raises: [], noconv, gcsafe.}](1)
-    hasEventFd = defined(linux) and not defined(emscripten)
+    hasEventFd = (defined(linux) or defined(illumos)) and
+                 not defined(emscripten)
 
   type
     AsyncFD* = distinct cint
@@ -1468,7 +1484,7 @@ proc callSoon*(cbproc: CallbackFunc, udata: pointer = nil) =
   doAssert(not isNil(cbproc))
   callSoon(AsyncCallback(function: cbproc, udata: udata))
 
-when hasThreadSupport:
+when hasThreadSupport and not defined(nimdoc):
   type DispatcherHandle* = distinct (ptr Dispatcher)
     ## Dispatcher handle suitable for cross-thread use, obtainable with
     ## `threadHandle`() - the user must take care that the dispatcher does not

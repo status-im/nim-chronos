@@ -953,18 +953,18 @@ suite "AsyncStream/ChunkedStream":
       return res
 
     proc testChunk(datasize: int,
-                        writeChunkSize: int,
-                        readChunkSize: int): Future[bool] {.async.} =
+                   writeChunkSize: int,
+                   readChunkSize: int) {.async.} =
       var data = createBigMessage("REQUESTSTREAMMESSAGE", datasize)
       var check = await checkVector(data, writeChunkSize, readChunkSize)
-      return (data == check)
+      check data == check
 
-    check await(testChunk(4457, 128, 1)) == true
-    check await(testChunk(65600, 1024, 17)) == true
-    check await(testChunk(262400, 4096, 61)) == true
-    check await(testChunk(767309, 4457, 173)) == true
-    check await(testChunk(767309, 4457, 173)) == true
-    check await(testChunk(767309, 67000, 67001)) == true
+    await testChunk(4457, 128, 1)
+    await testChunk(65600, 1024, 17)
+    await testChunk(262400, 4096, 61)
+    await testChunk(767309, 4457, 173)
+    await testChunk(767309, 4457, 173)
+    await testChunk(767309, 67000, 67001)
 
 suite "AsyncStream/TLSStream":
   setup:

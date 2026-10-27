@@ -143,7 +143,7 @@ suite "Network utilities test suite":
   ]
 
   test "IPv4 networks test":
-    var a: TransportAddress
+    let a = TransportAddress()
     check:
       a.isNone() == true
       initTAddress("0.0.0.0:0").isUnspecified() == true
@@ -283,7 +283,7 @@ suite "Network utilities test suite":
       initTAddress("8.8.8.8:0").isGlobal() == true
 
   test "IPv6 networks test":
-    var a: TransportAddress
+    let a = TransportAddress()
     check:
       initTAddress("[::]:0").isNone() == false
       initTAddress("[::]:0").isUnspecified() == true
@@ -553,34 +553,34 @@ suite "Network utilities test suite":
 
   test "IpMask test vectors":
     for item in MaskVectors:
-      var a = initTAddress(item[0])
-      var m = IpMask.initIp(item[1])
-      var r = a.mask(m)
+      let a = initTAddress(item[0])
+      let m = IpMask.initIp(item[1])
+      let r = a.mask(m)
       check $r == item[2]
 
   test "IpMask serialization/deserialization test":
     for i in 1..32:
-      var m = IpMask.init(AddressFamily.IPv4, i)
+      let m = IpMask.init(AddressFamily.IPv4, i)
       check m.prefix() == i
-      var s0x = `$`(m, true)
-      var s = $m
-      var sip = m.ip()
-      var m1 = IpMask.init(s0x)
-      var m2 = IpMask.init(s)
-      var m3 = IpMask.initIp(sip)
+      let s0x = `$`(m, true)
+      let s = $m
+      let sip = m.ip()
+      let m1 = IpMask.init(s0x)
+      let m2 = IpMask.init(s)
+      let m3 = IpMask.initIp(sip)
       check:
         m == m1
         m == m2
         m == m3
     for i in 1..128:
-      var m = IpMask.init(AddressFamily.IPv6, i)
+      let m = IpMask.init(AddressFamily.IPv6, i)
       check m.prefix() == i
-      var s0x = `$`(m, true)
-      var s = $m
-      var sip = m.ip()
-      var m1 = IpMask.init(s0x)
-      var m2 = IpMask.init(s)
-      var m3 = IpMask.initIp(sip)
+      let s0x = `$`(m, true)
+      let s = $m
+      let sip = m.ip()
+      let m1 = IpMask.init(s0x)
+      let m2 = IpMask.init(s)
+      let m3 = IpMask.initIp(sip)
       check:
         m == m1
         m == m2
@@ -593,7 +593,7 @@ suite "Network utilities test suite":
         m = IpMask.initIp(item[1])
       elif item[0] == "ms":
         m = IpMask.init(item[1])
-      var c = $(m.prefix())
+      let c = $(m.prefix())
       check:
         c == item[2]
 
@@ -615,25 +615,25 @@ suite "Network utilities test suite":
 
   test "IpNet contains test vectors":
     for item in NetworkContainsVectors:
-      var a = initTAddress(item[0])
-      var n = IpNet.init(item[1])
-      var res = a in n
+      let a = initTAddress(item[0])
+      let n = IpNet.init(item[1])
+      let res = a in n
       check:
         $res == item[2]
 
   test "IpNet serialization/deserialization test":
-    var ip4 = initTAddress("192.168.1.0:1024")
+    let ip4 = initTAddress("192.168.1.0:1024")
     for i in 1..32:
-      var net = IpNet.init(ip4, i)
-      var s1 = $net
-      var net2 = IpNet.init(s1)
+      let net = IpNet.init(ip4, i)
+      let s1 = $net
+      let net2 = IpNet.init(s1)
       check net == net2
 
-    var ip6 = initTAddress("[8000:f123:f456:cafe::]:1024")
+    let ip6 = initTAddress("[8000:f123:f456:cafe::]:1024")
     for i in 1..128:
-      var net = IpNet.init(ip6, i)
-      var s1 = $net
-      var net2 = IpNet.init(s1)
+      let net = IpNet.init(ip6, i)
+      let s1 = $net
+      let net2 = IpNet.init(s1)
       check net == net2
 
   test "IPv4 <-> IPv6 mapping test":
@@ -656,19 +656,16 @@ suite "Network utilities test suite":
       initTAddress("[::FFFF:0000:0000]:0").toIPv4() == initTAddress("0.0.0.0:0")
 
   test "getInterfaces() test":
-    var ifaces = getInterfaces()
+    let ifaces = getInterfaces()
     check:
       len(ifaces) > 0
-    for item in ifaces:
-      echo item
 
   test "getBestRoute() test":
-    var route = getBestRoute(initTAddress("8.8.8.8:0"))
+    let route = getBestRoute(initTAddress("8.8.8.8:0"))
     check:
       route.source.isUnspecified() == false
       route.dest.isUnspecified() == false
       route.ifIndex != 0
-    echo route
 
   test "TransportAddress arithmetic operations test (add)":
     block:
@@ -677,11 +674,11 @@ suite "Network utilities test suite":
       when sizeof(int) == 8:
         ip4 = ip4 + uint(0xFFFF_FFFF_FFFF_FFFF'u64)
         ip6 = ip6 + uint(0xFFFF_FFFF_FFFF_FFFF'u64)
-        var ip6e = initTAddress("[::1:0000:0000:0000:1]:1024")
+        let ip6e = initTAddress("[::1:0000:0000:0000:1]:1024")
       else:
         ip4 = ip4 + uint(0xFFFF_FFFF'u32)
         ip6 = ip6 + uint(0xFFFF_FFFF'u32)
-        var ip6e = initTAddress("[::1:0000:1]:1024")
+        let ip6e = initTAddress("[::1:0000:1]:1024")
       inc(ip4)
       inc(ip6)
       check:

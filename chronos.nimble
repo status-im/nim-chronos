@@ -62,20 +62,24 @@ proc tryExec(cmd: string) =
     echo e.msg
 
 task examples, "Build examples":
+  if (NimMajor, NimMinor) < (2, 0): # examples won't build with older Nim, and it's OK
+    echo "Skip task: This task should only run with Nim 2.0+."
+    return
+
   # Build book examples
   for file in listFiles("examples"):
     if file.endsWith(".nim"):
       build "--threads:on", file
 
   # Build HTTP client tutorial examples
-  for chapterDir in listDirs("examples/http_client"):
-    withDir(chapterDir):
-      tryExec "nimble build"
+  for file in listFiles("examples/http_client"):
+    if file.endsWith(".nim"):
+      build "--threads:on", file
 
   # Build HTTP server tutorial examples
-  for chapterDir in listDirs("examples/http_server"):
-    withDir(chapterDir):
-      tryExec "nimble build"
+  for file in listFiles("examples/http_server"):
+    if file.endsWith(".nim"):
+      build "--threads:on", file
 
 task benchmarks, "Run benchmarks":
   # Make sure benchmarks compile
@@ -136,14 +140,18 @@ task test_asan, "Run all tests with ASAN":
     for args in testArguments:
       run args & asanArgs, "tests/testall"
 
-task docs, "Generate API documentation":
-  exec "mdbook build docs"
-  tryExec nimc & " doc " &
+task api_docs, "Generate API documentation":
+  exec nimc & " doc " &
+    "--git.url:https://github.com/status-im/nim-chronos --git.commit:master --outdir:docs/book/api --project chronos/asyncproc.nim"
+  exec nimc & " doc " &
     "--git.url:https://github.com/status-im/nim-chronos --git.commit:master --outdir:docs/book/api --project chronos"
-
   # Build the docs for modules that aren't part of the main module.
   for item in walkDir("chronos/apps/http"):
     if item.kind == pcFile and item.path.splitFile().ext == ".nim":
-      tryExec nimc & " doc " &
+      exec nimc & " doc " &
         "--git.url:https://github.com/status-im/nim-chronos --git.commit:master --outdir:docs/book/api/chronos/apps/http " &
         item.path
+
+task docs, "Generate Book":
+  exec "mdbook build docs"
+  exec "nimble api_docs"

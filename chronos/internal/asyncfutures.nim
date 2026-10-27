@@ -2,7 +2,7 @@
 #                     Chronos
 #
 #  (c) Copyright 2015 Dominik Picheta
-#  (c) Copyright 2018-2023 Status Research & Development GmbH
+#  (c) Copyright 2018-2026 Status Research & Development GmbH
 #
 #                Licensed under either of
 #    Apache License, version 2.0, (LICENSE-APACHEv2)
@@ -410,7 +410,7 @@ proc futureContinue*(fut: FutureBase) {.raises: [], gcsafe.} =
 
 when chronosStackTrace:
   template getFilenameProcname(entry: StackTraceEntry): (string, string) =
-    when compiles(entry.filenameStr) and compiles(entry.procnameStr):
+    when defined(nimStackTraceOverride):
       # We can't rely on "entry.filename" and "entry.procname" still being valid
       # cstring pointers, because the "string.data" buffers they pointed to might
       # be already garbage collected (this entry being a non-shallow copy,
@@ -485,8 +485,8 @@ when chronosStackTrace:
     #   newMsg.add "\n" & $entry
     error.msg = newMsg
 
-proc deepLineInfo(n: NimNode, p: LineInfo) =
-  n.setLineInfo(p)
+func deepLineInfo(n: NimNode, p: NimNode) =
+  n.copyLineInfo(p)
   for i in 0..<n.len:
     deepLineInfo(n[i], p)
 
@@ -495,7 +495,6 @@ macro internalRaiseIfError*(fut: FutureBase, info: typed) =
   # This is a macro so we can capture the line info from the original call and
   # report the correct line number on exception effect violation
   let
-    info = info.lineInfoObj()
     res = quote do:
       if not(isNil(`fut`.internalError)):
         when chronosStackTrace:
@@ -514,7 +513,6 @@ macro internalRaiseIfError*(fut: InternalRaisesFuture, raises, info: typed) =
   #      generics are lost - so instead, we pass the raises list explicitly
 
   let
-    info = info.lineInfoObj()
     types = getRaisesTypes(raises)
 
   if isNoRaises(types):
@@ -1254,6 +1252,7 @@ when (chronosEventEngine in ["epoll", "kqueue"]) or defined(windows):
         let res = addSignal2(signal, continuation)
         if res.isErr():
           retFuture.fail(getSignalException(res.error()))
+          return retFuture
         Opt.some(res.get())
 
     retFuture.cancelCallback = cancellation
