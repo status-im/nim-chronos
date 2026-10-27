@@ -172,7 +172,7 @@ when defined(windows):
             if not(vector.writer.finished()):
               vector.writer.complete()
         else:
-          transp.state.incl({WritePaused, WriteError})
+          transp.state.incl(WriteError)
           if not(vector.writer.finished()):
             vector.writer.fail(getTransportOsError(err))
       else:
@@ -207,9 +207,10 @@ when defined(windows):
             transp.queue.addFirst(vector)
           else:
             transp.state.excl(WritePending)
-            transp.state.incl({WritePaused, WriteError})
+            transp.state.incl(WriteError)
             if not(vector.writer.finished()):
               vector.writer.fail(getTransportOsError(err))
+            continue
         else:
           transp.queue.addFirst(vector)
         break
