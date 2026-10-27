@@ -73,6 +73,11 @@ suite "Signal handling test suite":
   asyncTest "waitSignal(SIGTERM) test":
     check await testWait(SIGTERM)
 
+  when defined(linux):
+    asyncTest "waitSignal() failure test":
+      expect AsyncError:
+        await waitSignal(33)
+
   # This test doesn't work well in test suite, because it generates CTRL+C
   # event in Windows console, parent process receives this signal and stops
   # test suite execution.

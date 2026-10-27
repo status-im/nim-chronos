@@ -1252,6 +1252,7 @@ when (chronosEventEngine in ["epoll", "kqueue"]) or defined(windows):
         let res = addSignal2(signal, continuation)
         if res.isErr():
           retFuture.fail(getSignalException(res.error()))
+          return retFuture
         Opt.some(res.get())
 
     retFuture.cancelCallback = cancellation
