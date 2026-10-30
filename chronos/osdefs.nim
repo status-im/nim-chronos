@@ -1255,8 +1255,15 @@ elif defined(illumos):
     TCP_NODELAY* = cint(1)
     IPPROTO_TCP* = 6
     O_CLOEXEC* = 0x800000
+    # https://github.com/illumos/illumos-gate/blob/master/usr/src/uts/common/sys/spawn.h
+    POSIX_SPAWN_RESETIDS* = cint(0x01)
+    POSIX_SPAWN_SETPGROUP* = cint(0x02)
+    POSIX_SPAWN_SETSCHEDPARAM* = cint(0x10)
+    POSIX_SPAWN_SETSCHEDULER* = cint(0x20)
+    POSIX_SPAWN_SETSIGDEF* = cint(0x04)
+    POSIX_SPAWN_SETSIGMASK* = cint(0x08)
+    POSIX_SPAWN_USEVFORK* = cint(0x00)
     IPV6_V6ONLY* = 0x27
-    POSIX_SPAWN_USEVFORK* = 0x00
 elif defined(freebsd):
   const
     SOCK_NONBLOCK* = 0x20000000
