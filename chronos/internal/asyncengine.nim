@@ -15,7 +15,7 @@
 ## For more information, see the `Concepts` chapter of the guide.
 
 from nativesockets import Port
-import std/[atomics, deques, heapqueue, tables, typetraits]
+import std/[atomics, deques, heapqueue, tables, typetraits, macros, algorithm]
 import results
 import ../[config, effects, futures, osdefs, oserrno, osutils, timer]
 
@@ -56,7 +56,16 @@ when hasThreadSupport:
       callback: ThreadCallbackFunc
       udata: pointer
 
+      when chronosCallbackLineTracking:
+        location*: ptr SrcLoc
+
     ThreadCallbackQueue = MpscQueue[ThreadCallbackNode]
+
+when chronosCallbackLineTracking:
+  type
+    DurationCallback* = object
+      duration*: Duration
+      function*: InternalAsyncCallback
 
 type
   AsyncCallback* = InternalAsyncCallback
@@ -90,6 +99,9 @@ type
       threadCallbacks: ThreadCallbackQueue
       waking: AtomicFlag
 
+    when chronosCallbackLineTracking:
+      slowCallbacks*: seq[DurationCallback]
+
   PDispatcherBase = ref DispatcherBase
 
 proc sentinelCallbackImpl(arg: pointer) {.gcsafe, noreturn.} =
@@ -98,6 +110,9 @@ proc sentinelCallbackImpl(arg: pointer) {.gcsafe, noreturn.} =
 const
   SentinelCallback = AsyncCallback(function: sentinelCallbackImpl,
                                    udata: nil)
+
+proc `cmp`(a, b: DurationCallback): int =
+  cmp(a.duration.nanoseconds, b.duration.nanoseconds)
 
 proc isSentinel(acb: AsyncCallback): bool =
   acb == SentinelCallback
@@ -149,9 +164,13 @@ template processThreadCallbacks(loop) =
       # Move the callbacks to the regular callback list - this ensures we don't
       # starve the rest of the pipeline if the callbacks themselves keep adding
       # stuff
-      loop.callbacks.addLast(
-        AsyncCallback(function: node.callback, udata: node.udata)
-      )
+      when chronosCallbackLineTracking:
+        loop.callbacks.addLast(
+          AsyncCallback(function: node.callback, udata: node.udata,
+            location: node.location))
+      else:
+        loop.callbacks.addLast(
+          AsyncCallback(function: node.callback, udata: node.udata))
       deallocShared(node)
 
 func getAsyncTimestamp(a: Duration): auto =
@@ -309,6 +328,9 @@ elif defined(windows):
       errCode*: OSErrorCode
       bytesCount*: uint32
       udata*: pointer
+
+      when chronosCallbackLineTracking:
+        location*: ptr SrcLoc
 
     CustomOverlapped* = object of OVERLAPPED
       data*: CompletionData
@@ -468,6 +490,42 @@ elif defined(windows):
     ## Unregisters ``fd``.
     getThreadDispatcher().handles.excl(fd)
 
+  when chronosCallbackLineTracking:
+    func createCompletionData*(
+        cbproc: CallbackFunc,
+        udata: pointer,
+        loc: ptr SrcLoc
+    ): CompletionData =
+      CompletionData(cb: cbproc, udata: udata, location: loc)
+
+    macro createCompletionData*(cbroc: CallbackFunc, udata: pointer) =
+      let (identNode, codeNode) = createSrcLocation(cbproc)
+      # Generated code:
+      # createCompletionData(cbproc, udata, addr loc)
+      nnkStmtListExpr.newTree(
+        codeNode,
+        newCall(
+          bindSym("createCompletionData"), cbproc, udata,
+            nnkCommand.newTree(bindSym("addr"), identNode))
+      )
+
+    macro createCompletionData*(cbroc: CallbackFunc) =
+      let (identNode, codeNode) = createSrcLocation(cbproc)
+      # Generated code:
+      # createCompletionData(cbproc, udata, addr loc)
+      nnkStmtListExpr.newTree(
+        codeNode,
+        newCall(
+          bindSym("createCompletionData"), cbproc, newNilLit(),
+            nnkCommand.newTree(bindSym("addr"), identNode))
+      )
+  else:
+    func createCompletionData*(
+      cbproc: CallbackFunc,
+      udata: pointer = nil,
+    ): CompletionData =
+      CompletionData(cb: cbproc, udata: udata)
+
   {.push stackTrace: off.}
   proc waitableCallback(param: pointer, timerOrWaitFired: BYTE) {.
        stdcallbackFunc.} =
@@ -484,56 +542,127 @@ elif defined(windows):
       ULONG_PTR(wh[].handleFd), wh[].ovl)
   {.pop.}
 
-  proc registerWaitable*(
-         handle: HANDLE,
-         flags: ULONG,
-         timeout: Duration,
-         cb: CallbackFunc,
-         udata: pointer
-       ): Result[WaitableHandle, OSErrorCode] =
-    ## Register handle of (Change notification, Console input, Event,
-    ## Memory resource notification, Mutex, Process, Semaphore, Thread,
-    ## Waitable timer) for waiting, using specific Windows' ``flags`` and
-    ## ``timeout`` value.
-    ##
-    ## Callback ``cb`` will be scheduled with ``udata`` parameter when
-    ## ``handle`` become signaled.
-    ##
-    ## Result of this procedure call ``WaitableHandle`` should be closed using
-    ## closeWaitable() call.
-    ##
-    ## NOTE: This is private procedure, not supposed to be publicly available,
-    ## please use ``waitForSingleObject()``.
-    let loop = getThreadDispatcher()
-    var ovl = RefCustomOverlapped(data: CompletionData(cb: cb))
+  when chronosCallbackLineTracking:
+    proc registerWaitable*(
+        handle: HANDLE,
+        flags: ULONG,
+        timeout: Duration,
+        cb: CallbackFunc,
+        udata: pointer,
+        location: ptr SrcLoc
+    ): Result[WaitableHandle, OSErrorCode] =
+      ## Register handle of (Change notification, Console input, Event,
+      ## Memory resource notification, Mutex, Process, Semaphore, Thread,
+      ## Waitable timer) for waiting, using specific Windows' ``flags`` and
+      ## ``timeout`` value.
+      ##
+      ## Callback ``cb`` will be scheduled with ``udata`` parameter when
+      ## ``handle`` become signaled.
+      ##
+      ## Result of this procedure call ``WaitableHandle`` should be closed using
+      ## closeWaitable() call.
+      ##
+      ## NOTE: This is private procedure, not supposed to be publicly available,
+      ## please use ``waitForSingleObject()``.
+      let loop = getThreadDispatcher()
 
-    var whandle = (ref PostCallbackData)(
-      ioPort: loop.getIoHandler(),
-      handleFd: AsyncFD(handle),
-      udata: udata,
-      ovlref: ovl,
-      ovl: cast[pointer](ovl)
-    )
+      var
+        ovl = RefCustomOverlapped(
+          data: createCompletionData(cb, nil, location))
+        whandle = (ref PostCallbackData)(
+          ioPort: loop.getIoHandler(),
+          handleFd: AsyncFD(handle),
+          udata: udata,
+          ovlref: ovl,
+          ovl: cast[pointer](ovl)
+        )
 
-    ovl.data.udata = cast[pointer](whandle)
+      ovl.data.udata = cast[pointer](whandle)
 
-    let dwordTimeout =
-      if timeout == InfiniteDuration:
-        DWORD(INFINITE)
-      else:
-        DWORD(timeout.milliseconds)
+      let dwordTimeout =
+        if timeout == InfiniteDuration:
+          DWORD(INFINITE)
+        else:
+          DWORD(timeout.milliseconds)
 
-    if registerWaitForSingleObject(addr(whandle[].waitFd), handle,
-                                   cast[WAITORTIMERCALLBACK](waitableCallback),
-                                   cast[pointer](whandle),
-                                   dwordTimeout,
-                                   flags) == WINBOOL(0):
-      ovl.data.udata = nil
-      whandle.ovlref = nil
-      whandle.ovl = nil
-      return err(osLastError())
+      if registerWaitForSingleObject(
+        addr(whandle[].waitFd), handle,
+        cast[WAITORTIMERCALLBACK](waitableCallback),
+        cast[pointer](whandle), dwordTimeout, flags) == WINBOOL(0):
+        ovl.data.udata = nil
+        whandle.ovlref = nil
+        whandle.ovl = nil
+        return err(osLastError())
 
-    ok(WaitableHandle(whandle))
+      ok(WaitableHandle(whandle))
+
+    macro registerWaitable*(
+        handle: HANDLE,
+        flags: ULONG,
+        timeout: Duration,
+        cb: CallbackFunc,
+        udata: pointer
+    ) =
+      let (identNode, codeNode) = createSrcLocation(cb)
+      nnkStmtListExpr.newTree(
+        codeNode,
+        newCall(
+          bindSym("registerWaitable"), handle, flags, timeout, cb, udata,
+            nnkCommand.newTree(bindSym("addr"), identNode))
+      )
+
+  else:
+
+    proc registerWaitable*(
+        handle: HANDLE,
+        flags: ULONG,
+        timeout: Duration,
+        cb: CallbackFunc,
+        udata: pointer
+    ): Result[WaitableHandle, OSErrorCode] =
+      ## Register handle of (Change notification, Console input, Event,
+      ## Memory resource notification, Mutex, Process, Semaphore, Thread,
+      ## Waitable timer) for waiting, using specific Windows' ``flags`` and
+      ## ``timeout`` value.
+      ##
+      ## Callback ``cb`` will be scheduled with ``udata`` parameter when
+      ## ``handle`` become signaled.
+      ##
+      ## Result of this procedure call ``WaitableHandle`` should be closed using
+      ## closeWaitable() call.
+      ##
+      ## NOTE: This is private procedure, not supposed to be publicly available,
+      ## please use ``waitForSingleObject()``.
+      let loop = getThreadDispatcher()
+      var ovl = RefCustomOverlapped(data: CompletionData(cb: cb))
+
+      var whandle = (ref PostCallbackData)(
+        ioPort: loop.getIoHandler(),
+        handleFd: AsyncFD(handle),
+        udata: udata,
+        ovlref: ovl,
+        ovl: cast[pointer](ovl)
+      )
+
+      ovl.data.udata = cast[pointer](whandle)
+
+      let dwordTimeout =
+        if timeout == InfiniteDuration:
+          DWORD(INFINITE)
+        else:
+          DWORD(timeout.milliseconds)
+
+      if registerWaitForSingleObject(addr(whandle[].waitFd), handle,
+                                     cast[WAITORTIMERCALLBACK](waitableCallback),
+                                     cast[pointer](whandle),
+                                     dwordTimeout,
+                                     flags) == WINBOOL(0):
+        ovl.data.udata = nil
+        whandle.ovlref = nil
+        whandle.ovl = nil
+        return err(osLastError())
+
+      ok(WaitableHandle(whandle))
 
   proc closeWaitable*(wh: WaitableHandle): Result[void, OSErrorCode] =
     ## Close waitable handle ``wh`` and clear all the resources. It is safe
@@ -752,8 +881,16 @@ elif defined(windows):
             else:
               OSErrorCode(rtlNtStatusToDosError(ULONG(res)))
         customOverlapped.data.bytesCount = events[i].dwNumberOfBytesTransferred
-        let acb = AsyncCallback(function: customOverlapped.data.cb,
-                                udata: cast[pointer](customOverlapped))
+        let acb =
+          when chronosCallbackLineTracking:
+            AsyncCallback(
+              function: customOverlapped.data.cb,
+              udata: cast[pointer](customOverlapped),
+              location: customOverlapped.data.location)
+          else:
+            AsyncCallback(
+              function: customOverlapped.data.cb,
+              udata: cast[pointer](customOverlapped))
         loop.callbacks.addLast(acb)
       else:
         hasWakeup = true
@@ -1478,11 +1615,49 @@ proc callSoon*(acb: AsyncCallback) =
   ## The callback is called when control returns to the event loop.
   getThreadDispatcher().callbacks.addLast(acb)
 
-proc callSoon*(cbproc: CallbackFunc, udata: pointer = nil) =
-  ## Schedule `cbproc` to be called as soon as possible.
-  ## The callback is called when control returns to the event loop.
-  doAssert(not isNil(cbproc))
-  callSoon(AsyncCallback(function: cbproc, udata: udata))
+when chronosCallbackLineTracking:
+  proc callSoon*(cbproc: CallbackFunc, udata: pointer, loc: ptr SrcLoc) =
+    ## Schedule `cbproc` to be called as soon as possible.
+    ## The callback is called when control returns to the event loop.
+    doAssert(not isNil(cbproc))
+    callSoon(AsyncCallback(function: cbproc, udata: udata, location: loc))
+
+  macro callSoon*(cbproc: CallbackFunc, udata: pointer) =
+    ## Schedule `cbproc` to be called as soon as possible.
+    ## The callback is called when control returns to the event loop.
+    ##
+    ## This macro helper obtains source location of callback procedure before
+    ## calling original version of callSoon.
+    let (identNode, codeNode) = createSrcLocation(cbproc)
+    # Generated code:
+    # callSoon(cbproc, udata, addr loc)
+    codeNode.add(
+      newCall(
+        bindSym("callSoon"), cbproc, udata,
+          nnkCommand.newTree(bindSym("addr"), identNode)))
+    codeNode
+
+  macro callSoon*(cbproc: CallbackFunc) =
+    ## Schedule `cbproc` to be called as soon as possible.
+    ## The callback is called when control returns to the event loop.
+    ##
+    ## This macro helper obtains source location of callback procedure before
+    ## calling original version of callSoon.
+    let (identNode, codeNode) = createSrcLocation(cbproc)
+    # Generated code:
+    # callSoon(cbproc, nil, addr loc)
+    codeNode.add(
+      newCall(
+        bindSym("callSoon"), cbproc, newNilLit(),
+          nnkCommand.newTree(bindSym("addr"), identNode)))
+    codeNode
+
+else:
+  proc callSoon*(cbproc: CallbackFunc, udata: pointer = nil) =
+    ## Schedule `cbproc` to be called as soon as possible.
+    ## The callback is called when control returns to the event loop.
+    doAssert(not isNil(cbproc))
+    callSoon(AsyncCallback(function: cbproc, udata: udata))
 
 when hasThreadSupport and not defined(nimdoc):
   type DispatcherHandle* = distinct (ptr Dispatcher)
@@ -1524,34 +1699,112 @@ when hasThreadSupport and not defined(nimdoc):
         send(SocketHandle(disp.wakeupFd[0]), addr dummy, sizeof(dummy), MSG_NOSIGNAL)
       )
 
-  proc callSoon*(disp: DispatcherHandle, cbproc: ThreadCallbackFunc, udata: pointer = nil) =
-    ## Schedule `cbproc` to be called as soon as possible on the thread that `disp`
-    ## belongs to.
-    ## If `disp` is the current thread dispatcher, posts directly to the
-    ## callbacks deque. Otherwise, enqueues to the cross-thread queue
-    ## for the target dispatcher's next poll cycle, waking it in the process.
-    ##
-    ## This function is thread-safe.
-    doAssert(not isNil(cbproc))
-    let current = gDisp.handle() # Don't init a new dispatcher with getThreadDispatcher()
-    if distinctBase(current) == distinctBase(disp):
-      # Same thread: add directly to the callbacks deque
-      distinctBase(current).callbacks.addLast(AsyncCallback(function: cbproc, udata: udata))
-    else:
-      # Cross-thread: enqueue to shared MPSC queue
-      let node = createShared(ThreadCallbackNode)
-      node.callback = cbproc
-      node.udata = udata
+  when chronosCallbackLineTracking:
+    proc callSoon*(
+        disp: DispatcherHandle,
+        cbproc: ThreadCallbackFunc,
+        udata: pointer,
+        location: ptr SrcLoc
+    ) =
+      ## Schedule `cbproc` to be called as soon as possible on the thread that `disp`
+      ## belongs to.
+      ## If `disp` is the current thread dispatcher, posts directly to the
+      ## callbacks deque. Otherwise, enqueues to the cross-thread queue
+      ## for the target dispatcher's next poll cycle, waking it in the process.
+      ##
+      ## This function is thread-safe.
+      doAssert(not isNil(cbproc))
+      let current = gDisp.handle() # Don't init a new dispatcher with getThreadDispatcher()
+      if distinctBase(current) == distinctBase(disp):
+        # Same thread: add directly to the callbacks deque
+        distinctBase(current).callbacks.addLast(
+          AsyncCallback(function: cbproc, udata: udata, location: location))
+      else:
+        # Cross-thread: enqueue to shared MPSC queue
+        let node = createShared(ThreadCallbackNode)
+        node.callback = cbproc
+        node.udata = udata
+        node.location = location
 
-      let disp = distinctBase(disp)
-      # First push, then wake - this ensures that the callback is visible in
-      # the list by the time the processing loop gets to it.
-      disp.threadCallbacks.push(node)
+        let disp = distinctBase(disp)
+        # First push, then wake - this ensures that the callback is visible in
+        # the list by the time the processing loop gets to it.
+        disp.threadCallbacks.push(node)
 
-      # Since we draing the mpsc queue on wake-up, we only need one wakeup
-      # notification per batch of queue writes
-      if not disp.waking.testAndSet(moAcquireRelease):
-        disp.wake()
+        # Since we draing the mpsc queue on wake-up, we only need one wakeup
+        # notification per batch of queue writes
+        if not disp.waking.testAndSet(moAcquireRelease):
+          disp.wake()
+
+    macro callSoon*(
+        disp: DispatcherHandle,
+        cbproc: ThreadCallbackFunc,
+        udata: pointer
+    ) =
+      ## Schedule `cbproc` to be called as soon as possible on the thread that `disp`
+      ## belongs to.
+      ## If `disp` is the current thread dispatcher, posts directly to the
+      ## callbacks deque. Otherwise, enqueues to the cross-thread queue
+      ## for the target dispatcher's next poll cycle, waking it in the process.
+      ##
+      ## This function is thread-safe.
+      let (identNode, codeNode) = createSrcLocation(cbproc)
+      # Generated code:
+      # callSoon(disp, cbproc, udata, addr loc)
+      codeNode.add(
+        newCall(
+          bindSym("callSoon"), disp, cbproc, udata,
+            nnkCommand.newTree(bindSym("addr"), identNode)))
+      codeNode
+
+    macro callSoon*(
+        disp: DispatcherHandle,
+        cbproc: ThreadCallbackFunc
+    ) =
+      ## Schedule `cbproc` to be called as soon as possible on the thread that `disp`
+      ## belongs to.
+      ## If `disp` is the current thread dispatcher, posts directly to the
+      ## callbacks deque. Otherwise, enqueues to the cross-thread queue
+      ## for the target dispatcher's next poll cycle, waking it in the process.
+      ##
+      ## This function is thread-safe.
+      let (identNode, codeNode) = createSrcLocation(cbproc)
+      # Generated code:
+      # callSoon(disp, cbproc, udata, addr loc)
+      codeNode.add(
+        newCall(
+          bindSym("callSoon"), disp, cbproc, newNilLit(),
+            nnkCommand.newTree(bindSym("addr"), identNode)))
+      codeNode
+  else:
+    proc callSoon*(disp: DispatcherHandle, cbproc: ThreadCallbackFunc, udata: pointer = nil) =
+      ## Schedule `cbproc` to be called as soon as possible on the thread that `disp`
+      ## belongs to.
+      ## If `disp` is the current thread dispatcher, posts directly to the
+      ## callbacks deque. Otherwise, enqueues to the cross-thread queue
+      ## for the target dispatcher's next poll cycle, waking it in the process.
+      ##
+      ## This function is thread-safe.
+      doAssert(not isNil(cbproc))
+      let current = gDisp.handle() # Don't init a new dispatcher with getThreadDispatcher()
+      if distinctBase(current) == distinctBase(disp):
+        # Same thread: add directly to the callbacks deque
+        distinctBase(current).callbacks.addLast(AsyncCallback(function: cbproc, udata: udata))
+      else:
+        # Cross-thread: enqueue to shared MPSC queue
+        let node = createShared(ThreadCallbackNode)
+        node.callback = cbproc
+        node.udata = udata
+
+        let disp = distinctBase(disp)
+        # First push, then wake - this ensures that the callback is visible in
+        # the list by the time the processing loop gets to it.
+        disp.threadCallbacks.push(node)
+
+        # Since we draing the mpsc queue on wake-up, we only need one wakeup
+        # notification per batch of queue writes
+        if not disp.waking.testAndSet(moAcquireRelease):
+          disp.wake()
 
 proc callIdle*(acb: AsyncCallback) =
   ## Schedule ``cbproc`` to be called when there no pending network events
@@ -1562,32 +1815,89 @@ proc callIdle*(acb: AsyncCallback) =
   ## actually "idle".
   getThreadDispatcher().idlers.addLast(acb)
 
-proc callIdle*(cbproc: CallbackFunc, data: pointer) =
-  ## Schedule ``cbproc`` to be called when there no pending network events
-  ## available.
-  ##
-  ## **WARNING!** Despite the name, "idle" callbacks called on every loop
-  ## iteration if there no network events available, not when the loop is
-  ## actually "idle".
-  doAssert(not isNil(cbproc))
-  callIdle(AsyncCallback(function: cbproc, udata: data))
-
-proc callIdle*(cbproc: CallbackFunc) =
-  callIdle(cbproc, nil)
-
 proc internalCallTick*(acb: AsyncCallback) =
   ## Schedule ``cbproc`` to be called after all scheduled callbacks, but only
   ## when OS system queue finished processing events.
   getThreadDispatcher().ticks.addLast(acb)
 
-proc internalCallTick*(cbproc: CallbackFunc, data: pointer) =
-  ## Schedule ``cbproc`` to be called after all scheduled callbacks when
-  ## OS system queue processing is done.
-  doAssert(not isNil(cbproc))
-  internalCallTick(AsyncCallback(function: cbproc, udata: data))
+when chronosCallbackLineTracking:
+  proc createAsyncCallback*(
+      cbNode: NimNode,
+      udataNode: NimNode,
+      locNode: NimNode
+  ): NimNode =
+    nnkObjConstr.newTree(
+      bindSym("AsyncCallback"),
+      nnkExprColonExpr.newTree(newIdentNode("function"), cbNode),
+      nnkExprColonExpr.newTree(newIdentNode("udata"), udataNode),
+      nnkExprColonExpr.newTree(newIdentNode("location"),
+        nnkCommand(bindSym("addr"), locNode)))
 
-proc internalCallTick*(cbproc: CallbackFunc) =
-  internalCallTick(AsyncCallback(function: cbproc, udata: nil))
+  macro callIdle*(cbproc: CallbackFunc, data: pointer) =
+    let (identNode, codeNode) = createSrcLocation(cbproc)
+    # Generated code:
+    # callIdle(
+    #   AsyncCallback(function: cbproc, udata: data, location: ptr loc))
+    codeNode.add(
+      newCall(
+        bindSym("callSoon"),
+        createAsyncCallback(cbproc, udata, identNode)))
+    codeNode
+
+  macro callIdle*(cbproc: CallbackFunc) =
+    let (identNode, codeNode) = createSrcLocation(cbproc)
+    # Generated code:
+    # callIdle(
+    #   AsyncCallback(function: cbproc, udata: nil, location: ptr loc))
+    codeNode.add(
+      newCall(
+        bindSym("callSoon"),
+        createAsyncCallback(cbproc, newNilLit(), identNode)))
+    codeNode
+
+  macro internalCallTick*(cbproc: CallbackFunc, data: pointer) =
+    let (identNode, codeNode) = createSrcLocation(cbproc)
+    # Generated code:
+    # internalCallTick(
+    #   AsyncCallback(function: cbproc, udata: data, location: ptr loc))
+    codeNode.add(
+      newCall(
+        bindSym("internalCallTick"),
+        createAsyncCallback(cbproc, udata, identNode)))
+    codeNode
+
+  macro internalCallTick*(cbproc: CallbackFunc) =
+    let (identNode, codeNode) = createSrcLocation(cbproc)
+    # Generated code:
+    # internalCallTick(
+    #   AsyncCallback(function: cbproc, udata: nil, location: ptr loc))
+    codeNode.add(
+      newCall(
+        bindSym("internalCallTick"),
+        createAsyncCallback(cbproc, newNilLit(), identNode)))
+    codeNode
+else:
+  proc callIdle*(cbproc: CallbackFunc, data: pointer) =
+    ## Schedule ``cbproc`` to be called when there no pending network events
+    ## available.
+    ##
+    ## **WARNING!** Despite the name, "idle" callbacks called on every loop
+    ## iteration if there no network events available, not when the loop is
+    ## actually "idle".
+    doAssert(not isNil(cbproc))
+    callIdle(AsyncCallback(function: cbproc, udata: data))
+
+  proc callIdle*(cbproc: CallbackFunc) =
+    callIdle(cbproc, nil)
+
+  proc internalCallTick*(cbproc: CallbackFunc, data: pointer) =
+    ## Schedule ``cbproc`` to be called after all scheduled callbacks when
+    ## OS system queue processing is done.
+    doAssert(not isNil(cbproc))
+    internalCallTick(AsyncCallback(function: cbproc, udata: data))
+
+  proc internalCallTick*(cbproc: CallbackFunc) =
+    internalCallTick(AsyncCallback(function: cbproc, udata: nil))
 
 proc runForever*() =
   ## Begins a never ending global dispatcher poll loop.

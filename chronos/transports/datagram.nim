@@ -429,10 +429,10 @@ when defined(windows):
     res.state = {ReadPaused, WritePaused}
     res.future = Future[void].Raising([]).init(
       "datagram.transport", {FutureFlag.OwnCancelSchedule})
-    res.rovl.data = CompletionData(
-      cb: readDatagramLoop, udata: cast[pointer](res))
-    res.wovl.data = CompletionData(
-      cb: writeDatagramLoop, udata: cast[pointer](res))
+    res.rovl.data =
+      createCompletionData(readDatagramLoop, cast[pointer](res))
+    res.wovl.data =
+      createCompletionData(writeDatagramLoop, cast[pointer](res))
     res.rwsabuf = WSABUF(
       buf: cast[cstring](baseAddr res.buffer), len: ULONG(len(res.buffer)))
     GC_ref(res)

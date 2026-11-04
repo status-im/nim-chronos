@@ -637,10 +637,10 @@ when defined(windows):
       transp = StreamTransport(kind: TransportKind.Socket)
     transp.fd = sock
     transp.flags = flags
-    transp.rovl.data = CompletionData(cb: readStreamLoop,
-                                      udata: cast[pointer](transp))
-    transp.wovl.data = CompletionData(cb: writeStreamLoop,
-                                      udata: cast[pointer](transp))
+    transp.rovl.data =
+      createCompletionData(readStreamLoop, cast[pointer](transp))
+    transp.wovl.data =
+      createCompletionData(writeStreamLoop, cast[pointer](transp))
     let size = max(bufsize, DefaultStreamBufferSize)
     transp.buffer = BipBuffer.init(size)
     transp.state = {ReadPaused, WritePaused}
@@ -659,10 +659,10 @@ when defined(windows):
     else:
       transp = StreamTransport(kind: TransportKind.Pipe)
     transp.fd = fd
-    transp.rovl.data = CompletionData(cb: readStreamLoop,
-                                      udata: cast[pointer](transp))
-    transp.wovl.data = CompletionData(cb: writeStreamLoop,
-                                      udata: cast[pointer](transp))
+    transp.rovl.data =
+      createCompletionData(readStreamLoop, cast[pointer](transp))
+    transp.wovl.data =
+      createCompletionData(writeStreamLoop, cast[pointer](transp))
     let size = max(bufsize, DefaultStreamBufferSize)
     transp.buffer = BipBuffer.init(size)
     transp.flags = flags
@@ -801,7 +801,7 @@ when defined(windows):
 
       let povl = RefCustomOverlapped()
       GC_ref(povl)
-      povl.data = CompletionData(cb: socketContinuation)
+      povl.data = createCompletionData(socketContinuation)
       let res = loop.connectEx(SocketHandle(sock),
                                cast[ptr SockAddr](addr saddr),
                                cint(slen), nil, 0, nil,
@@ -1259,8 +1259,8 @@ when defined(windows):
       let dwLocalAddressLength = DWORD(sizeof(Sockaddr_in6) + 16)
       let dwRemoteAddressLength = DWORD(sizeof(Sockaddr_in6) + 16)
 
-      server.aovl.data = CompletionData(cb: continuationSocket,
-                                        udata: cast[pointer](server))
+      server.aovl.data =
+        createCompletionData(continuationSocket, cast[pointer](server))
       server.apending = true
       let res = loop.acceptEx(SocketHandle(server.sock),
                               SocketHandle(server.asock),
@@ -1301,8 +1301,8 @@ when defined(windows):
           retFuture.fail(getTransportOsError(err))
         return retFuture
 
-      server.aovl.data = CompletionData(cb: continuationPipe,
-                                        udata: cast[pointer](server))
+      server.aovl.data =
+        createCompletionData(continuationPipe, cast[pointer](server))
       server.apending = true
       let res = connectNamedPipe(HANDLE(server.sock),
                                  cast[POVERLAPPED](addr server.aovl))
@@ -2197,7 +2197,7 @@ proc createStreamServer*(host: TransportAddress,
       cb = acceptPipeLoop
 
     if not(isNil(cbproc)):
-      sres.aovl.data = CompletionData(cb: cb, udata: cast[pointer](sres))
+      sres.aovl.data = createCompletionData(cb, cast[pointer](sres))
     else:
       if host.family == AddressFamily.Unix:
         sres.sock =
@@ -2963,7 +2963,7 @@ proc shutdownWait*(transp: StreamTransport): Future[void] {.
           retFuture.fail(getTransportOsError(ovl.data.errCode))
         GC_unref(ovl)
 
-    let povl = RefCustomOverlapped(data: CompletionData(cb: continuation))
+    let povl = RefCustomOverlapped(data: createCompletionData(continuation))
     GC_ref(povl)
 
     let res = loop.disconnectEx(SocketHandle(transp.fd),

@@ -298,24 +298,73 @@ proc clearCallbacks(future: FutureBase) =
   future.internalCallback.reset()
   future.internalCallbacks.reset()
 
-proc addCallback*(future: FutureBase, cb: CallbackFunc, udata: pointer) =
-  ## Adds the callbacks proc to be called when the future completes.
-  ##
-  ## If future has already completed then ``cb`` will be called immediately.
-  doAssert(not isNil(cb))
-  if future.finished():
-    callSoon(cb, udata)
-  else:
-    if isNil(future.internalCallback.function):
-      future.internalCallback = AsyncCallback(function: cb, udata: udata)
+when chronosCallbackLineTracking:
+  proc addCallback*(
+      future: FutureBase,
+      cb: CallbackFunc,
+      udata: pointer,
+      loc: ptr SrcLoc
+  ) =
+    ## Adds the callbacks proc to be called when the future completes.
+    ##
+    ## If future has already completed then ``cb`` will be called immediately.
+    doAssert(not isNil(cb))
+    if future.finished():
+      callSoon(cb, udata, loc)
     else:
-      future.internalCallbacks.add AsyncCallback(function: cb, udata: udata)
+      if isNil(future.internalCallback.function):
+        future.internalCallback =
+          AsyncCallback(function: cb, udata: udata, location: loc)
+      else:
+        future.internalCallbacks.add(
+          AsyncCallback(function: cb, udata: udata, location: loc))
 
-proc addCallback*(future: FutureBase, cb: CallbackFunc) =
-  ## Adds the callbacks proc to be called when the future completes.
-  ##
-  ## If future has already completed then ``cb`` will be called immediately.
-  future.addCallback(cb, cast[pointer](future))
+  macro addCallback*(future: FutureBase, cb: CallbackFunc, udata: pointer) =
+    ## Adds the callbacks proc to be called when the future completes.
+    ##
+    ## If future has already completed then ``cb`` will be called immediately.
+    let (identNode, codeNode) = createSrcLocation(cb)
+    # Generated code:
+    # addCallback(future, cb, udata, addr loc)
+    codeNode.add(
+      newCall(
+        bindSym("addCallback"), future, cb, udata,
+          nnkCommand.newTree(bindSym("addr"), identNode)))
+    codeNode
+
+  macro addCallback*(future: FutureBase, cb: CallbackFunc) =
+    ## Adds the callbacks proc to be called when the future completes.
+    ##
+    ## If future has already completed then ``cb`` will be called immediately.
+    let (identNode, codeNode) = createSrcLocation(cb)
+    # Generated code:
+    # addCallback(future, cb, cast[pointer](future), addr loc)
+    codeNode.add(
+      newCall(
+        bindSym("addCallback"), future, cb,
+          nnkCast.newTree(bindSym("pointer"), future),
+          nnkCommand.newTree(bindSym("addr"), identNode)))
+    codeNode
+
+else:
+  proc addCallback*(future: FutureBase, cb: CallbackFunc, udata: pointer) =
+    ## Adds the callbacks proc to be called when the future completes.
+    ##
+    ## If future has already completed then ``cb`` will be called immediately.
+    doAssert(not isNil(cb))
+    if future.finished():
+      callSoon(cb, udata)
+    else:
+      if isNil(future.internalCallback.function):
+        future.internalCallback = AsyncCallback(function: cb, udata: udata)
+      else:
+        future.internalCallbacks.add AsyncCallback(function: cb, udata: udata)
+
+  proc addCallback*(future: FutureBase, cb: CallbackFunc) =
+    ## Adds the callbacks proc to be called when the future completes.
+    ##
+    ## If future has already completed then ``cb`` will be called immediately.
+    future.addCallback(cb, cast[pointer](future))
 
 proc removeCallback*(future: FutureBase, cb: CallbackFunc,
                      udata: pointer) =
