@@ -7,9 +7,12 @@
 #              MIT license (LICENSE-MIT)
 import unittest2
 import results
-import ../chronos, ../chronos/unittest2/asynctests
+import ../chronos, ../chronos/config, ../chronos/unittest2/asynctests
 
 {.used.}
+
+when chronosCallbackLineTracking:
+  import std/strutils
 
 type
   TestFooConnection = ref object
@@ -2920,3 +2923,94 @@ suite "Future[T] behavior test suite":
       completed = waitFor fut.withTimeout(10.seconds)
     check completed
     check fut.completed()
+
+  test "addCallback() should store callback line information":
+    # WARNING: This test is very sensitive to line numbers and module name.
+    when chronosCallbackLineTracking:
+      template start(): int =
+        instantiationInfo().line
+
+      proc chk(
+          loc: ptr SrcLoc,
+          file: string, line: int,
+          procedure: string
+      ): bool =
+        if len(procedure) == 0:
+          (loc.line == line) and endsWith($loc.file, file)
+        else:
+          (loc.line == line) and endsWith($loc.file, file) and
+          (loc.procedure == procedure)
+
+      let
+        s0 = start()
+        loc0 =
+          block:
+            proc completion523(udata: pointer) = # LOC0 position
+              discard
+            let future = Future[void].Raising([CancelledError]).init("test")
+            future.addCallback(completion523)
+            let res = future.internalCallback.location
+            future.complete()
+            res
+
+      let
+        s1 = start()
+        loc1 =
+          block:
+            proc completion671(udata: pointer) = # LOC1 position
+              discard
+            let future = Future[void].Raising([CancelledError]).init("test")
+            future.addCallback(completion671, cast[pointer](12345678))
+            let res = future.internalCallback.location
+            future.complete()
+            res
+      let
+        s2 = start()
+        loc2 =
+          block:
+            proc completion123(udata: pointer) = # LOC2 position
+              discard
+            let future = Future[void].Raising([CancelledError]).init("test")
+            future.addCallback(CallbackFunc(completion123))
+            let res = future.internalCallback.location
+            future.complete()
+            res
+
+      let
+        s3 = start()
+        loc3 =
+          block:
+            let future = Future[void].Raising([CancelledError]).init("test")
+            future.addCallback(proc(_: pointer) = discard)
+            let res = future.internalCallback.location
+            future.complete()
+            res
+
+      let
+        s4 = start()
+        loc4 =
+          block:
+            proc completion983(udata: pointer) =
+              discard
+            var v = completion983 # LOC4 position
+            let future = Future[void].Raising([CancelledError]).init("test")
+            future.addCallback(v)
+            let res = future.internalCallback.location
+            future.complete()
+            res
+
+      check:
+        chk(loc0, "testfut.nim", s0 + 3, "completion523")
+        chk(loc1, "testfut.nim", s1 + 3, "completion671")
+        chk(loc2, "testfut.nim", s2 + 3, "completion123")
+        chk(loc3, "testfut.nim", s3 + 4, "anonymous")
+        chk(loc4, "testfut.nim", s4 + 5, "v")
+
+    else:
+      skip()
+
+  # test "slowCallbacks() should be present":
+  #   # WARNING: This test is very sensitive to line numbers and module name.
+  #   when chronosCallbackLineTracking:
+  #     for item in slowCallbacks():
+  #       echo item

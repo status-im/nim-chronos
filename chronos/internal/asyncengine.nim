@@ -15,7 +15,7 @@
 ## For more information, see the `Concepts` chapter of the guide.
 
 from nativesockets import Port
-import std/[atomics, deques, heapqueue, tables, typetraits, macros, algorithm]
+import std/[atomics, deques, heapqueue, tables, typetraits, macros]
 import results
 import ../[config, effects, futures, osdefs, oserrno, osutils, timer]
 
@@ -33,6 +33,9 @@ const
 
 when hasThreadSupport:
   import ./mpsc
+
+when chronosCallbackLineTracking:
+  import algorithm
 
 when defined(windows):
   import std/[sets, hashes]
@@ -111,8 +114,29 @@ const
   SentinelCallback = AsyncCallback(function: sentinelCallbackImpl,
                                    udata: nil)
 
-proc `cmp`(a, b: DurationCallback): int =
-  cmp(a.duration.nanoseconds, b.duration.nanoseconds)
+when chronosCallbackLineTracking:
+  proc storeCallbackDuration(
+      loop: PDispatcherBase,
+      acb: AsyncCallback,
+      duration: Duration
+  ) =
+    proc cmp(a, b: DurationCallback): int =
+      # We change `b` and `a` here to sort items in descending order.
+      cmp(b.duration.nanoseconds, a.duration.nanoseconds)
+
+    let
+      dcb = DurationCallback(duration: duration, function: acb)
+      index = loop.slowCallbacks.lowerBound(dcb, cmp)
+
+    if (len(loop.slowCallbacks) == chronosCallbackLineTrackingCount) and
+       (duration < loop.slowCallbacks[len(loop.slowCallbacks) - 1].duration):
+      # Duration of callback is smaller than any other callback in the list.
+      return
+
+    loop.slowCallbacks.insert(dcb, index)
+
+    if len(loop.slowCallbacks) > chronosCallbackLineTrackingCount:
+      loop.slowCallbacks.setLen(chronosCallbackLineTrackingCount)
 
 proc isSentinel(acb: AsyncCallback): bool =
   acb == SentinelCallback
@@ -240,17 +264,39 @@ template processCallbacks(loop: untyped) =
   when chronosStrictReentrancy:
     # Process existing callbacks but not those that follow, to allow the network
     # to regain control regularly
-    for _ in 0 ..< len(loop.callbacks):
-      let callable = loop.callbacks.popFirst()
-      if not(isNil(callable.function)):
-        callable.function(callable.udata)
+    when chronosCallbackLineTracking:
+      var smoment = Moment.now()
+      for _ in 0 ..< len(loop.callbacks):
+        let callable = loop.callbacks.popFirst()
+        if not(isNil(callable.function)):
+          callable.function(callable.udata)
+          let emoment = Moment.now()
+          loop.storeCallbackDuration(callable, emoment - smoment)
+          smoment = emoment
+    else:
+      for _ in 0 ..< len(loop.callbacks):
+        let callable = loop.callbacks.popFirst()
+        if not(isNil(callable.function)):
+          callable.function(callable.udata)
   else:
-    while true:
-      let callable = loop.callbacks.popFirst()  # len must be > 0 due to sentinel
-      if isSentinel(callable):
-        break
-      if not(isNil(callable.function)):
-        callable.function(callable.udata)
+    when chronosCallbackLineTracking:
+      var smoment = Moment.now()
+      while true:
+        let callable = loop.callbacks.popFirst()  # len must be > 0 due to sentinel
+        if isSentinel(callable):
+          break
+        if not(isNil(callable.function)):
+          callable.function(callable.udata)
+          let emoment = Moment.now()
+          loop.storeCallbackDuration(callable, emoment - smoment)
+          smoment = emoment
+    else:
+      while true:
+        let callable = loop.callbacks.popFirst()  # len must be > 0 due to sentinel
+        if isSentinel(callable):
+          break
+        if not(isNil(callable.function)):
+          callable.function(callable.udata)
 
 proc raiseAsDefect*(exc: ref Exception, msg: string) {.noreturn, noinline.} =
   # Reraise an exception as a Defect, where it's unexpected and can't be handled
@@ -498,7 +544,10 @@ elif defined(windows):
     ): CompletionData =
       CompletionData(cb: cbproc, udata: udata, location: loc)
 
-    macro createCompletionData*(cbroc: CallbackFunc, udata: pointer) =
+    macro createCompletionData*(
+        cbproc: CallbackFunc,
+        udata: pointer
+    ): CompletionData =
       let (identNode, codeNode) = createSrcLocation(cbproc)
       # Generated code:
       # createCompletionData(cbproc, udata, addr loc)
@@ -509,7 +558,7 @@ elif defined(windows):
             nnkCommand.newTree(bindSym("addr"), identNode))
       )
 
-    macro createCompletionData*(cbroc: CallbackFunc) =
+    macro createCompletionData*(cbproc: CallbackFunc): CompletionData =
       let (identNode, codeNode) = createSrcLocation(cbproc)
       # Generated code:
       # createCompletionData(cbproc, udata, addr loc)
@@ -602,14 +651,13 @@ elif defined(windows):
         timeout: Duration,
         cb: CallbackFunc,
         udata: pointer
-    ) =
+    ): Result[WaitableHandle, OSErrorCode] =
       let (identNode, codeNode) = createSrcLocation(cb)
       nnkStmtListExpr.newTree(
         codeNode,
         newCall(
           bindSym("registerWaitable"), handle, flags, timeout, cb, udata,
-            nnkCommand.newTree(bindSym("addr"), identNode))
-      )
+            nnkCommand.newTree(bindSym("addr"), identNode)))
 
   else:
 
@@ -1558,14 +1606,48 @@ proc closeThreadDispatcher*(): Opt[string] =
 
   disp.closeDispatcher()
 
-proc setTimer*(at: Moment, cb: CallbackFunc,
-               udata: pointer = nil): TimerCallback =
-  ## Arrange for the callback ``cb`` to be called at the given absolute
-  ## timestamp ``at``. You can also pass ``udata`` to callback.
-  let loop = getThreadDispatcher()
-  result = TimerCallback(finishAt: at,
-                         function: AsyncCallback(function: cb, udata: udata))
-  loop.timers.push(result)
+when chronosCallbackLineTracking:
+  proc setTimer*(at: Moment, cb: CallbackFunc,
+                 udata: pointer = nil, location: ptr SrcLoc): TimerCallback =
+    ## Arrange for the callback ``cb`` to be called at the given absolute
+    ## timestamp ``at``. You can also pass ``udata`` to callback.
+    let
+      loop = getThreadDispatcher()
+      res = TimerCallback(
+        finishAt: at, function: AsyncCallback(
+          function: cb, udata: udata, location: location))
+    loop.timers.push(res)
+    res
+
+  macro setTimer*(at: Moment, cb: CallbackFunc, udata: pointer): TimerCallback =
+    let (identNode, codeNode) = createSrcLocation(cb)
+    # Generated code:
+    # setTimer(at, cb, udata, addr location)
+    nnkStmtListExpr.newTree(
+      codeNode,
+      newCall(
+        bindSym("setTimer"), at, cb, udata,
+          nnkCommand.newTree(bindSym("addr"), identNode)))
+
+  macro setTimer*(at: Moment, cb: CallbackFunc): TimerCallback =
+    let (identNode, codeNode) = createSrcLocation(cb)
+    # Generated code:
+    # setTimer(at, cb, nil, addr location)
+    nnkStmtListExpr.newTree(
+      codeNode,
+      newCall(
+        bindSym("setTimer"), at, cb, newNilLit(),
+          nnkCommand.newTree(bindSym("addr"), identNode)))
+
+else:
+  proc setTimer*(at: Moment, cb: CallbackFunc,
+                 udata: pointer = nil): TimerCallback =
+    ## Arrange for the callback ``cb`` to be called at the given absolute
+    ## timestamp ``at``. You can also pass ``udata`` to callback.
+    let loop = getThreadDispatcher()
+    result = TimerCallback(finishAt: at,
+                           function: AsyncCallback(function: cb, udata: udata))
+    loop.timers.push(result)
 
 proc clearTimer*(timer: TimerCallback) {.inline.} =
   timer.function = default(AsyncCallback)
@@ -1825,13 +1907,13 @@ when chronosCallbackLineTracking:
       cbNode: NimNode,
       udataNode: NimNode,
       locNode: NimNode
-  ): NimNode =
+  ): NimNode {.compileTime.} =
     nnkObjConstr.newTree(
       bindSym("AsyncCallback"),
       nnkExprColonExpr.newTree(newIdentNode("function"), cbNode),
       nnkExprColonExpr.newTree(newIdentNode("udata"), udataNode),
       nnkExprColonExpr.newTree(newIdentNode("location"),
-        nnkCommand(bindSym("addr"), locNode)))
+        nnkCommand.newTree(bindSym("addr"), locNode)))
 
   macro callIdle*(cbproc: CallbackFunc, data: pointer) =
     let (identNode, codeNode) = createSrcLocation(cbproc)
@@ -1841,7 +1923,7 @@ when chronosCallbackLineTracking:
     codeNode.add(
       newCall(
         bindSym("callSoon"),
-        createAsyncCallback(cbproc, udata, identNode)))
+        createAsyncCallback(cbproc, data, identNode)))
     codeNode
 
   macro callIdle*(cbproc: CallbackFunc) =
@@ -1863,7 +1945,7 @@ when chronosCallbackLineTracking:
     codeNode.add(
       newCall(
         bindSym("internalCallTick"),
-        createAsyncCallback(cbproc, udata, identNode)))
+        createAsyncCallback(cbproc, data, identNode)))
     codeNode
 
   macro internalCallTick*(cbproc: CallbackFunc) =
@@ -1967,6 +2049,13 @@ when chronosFutureTracking:
     ## Returns number of pending Futures (Future[T] objects which not yet
     ## completed, cancelled or failed).
     futureList.count
+
+when chronosCallbackLineTracking:
+  iterator slowCallbacks*(): DurationCallback =
+    ## Iterates over the list of slow callbacks.
+    let loop = getThreadDispatcher()
+    for item in loop.slowCallbacks:
+      yield item
 
 when not defined(nimdoc):
   # Perform global per-module initialization.

@@ -13,7 +13,7 @@
 
 {.push raises: [].}
 
-import std/[sequtils, macros]
+import std/[sequtils, macros, strutils]
 import stew/base10
 
 import ./[asyncengine, raisesfutures]
@@ -31,6 +31,9 @@ when chronosStackTrace:
     const
       reraisedFromBegin = -10
       reraisedFromEnd = -100
+
+when chronosCallbackLineTracking:
+  import ./asyncmacro
 
 template LocCreateIndex*: auto {.deprecated: "LocationKind.Create".} =
     LocationKind.Create
@@ -428,11 +431,13 @@ proc futureContinue*(fut: FutureBase) {.raises: [], gcsafe.} =
   #
   # Every call to an `{.async.}` proc is redirected to call this function
   # instead with its original body captured in `fut.closure`.
+  debugEcho "futureContinue(", toHex(cast[uint64](fut)), ")"
   while true:
     # Call closure to make progress on `fut` until it reaches `yield` (inside
     # `await` typically) or completes / fails / is cancelled
     let next: FutureBase = fut.internalClosure(fut)
     if fut.internalClosure.finished(): # Reached the end of the transformed proc
+      debugEcho "futureContinue(", toHex(cast[uint64](fut)), ") finished"
       break
 
     if next == nil:
@@ -443,7 +448,13 @@ proc futureContinue*(fut: FutureBase) {.raises: [], gcsafe.} =
       # We cannot make progress on `fut` until `next` has finished - schedule
       # `fut` to continue running when that happens
       GC_ref(fut)
-      next.addCallback(CallbackFunc(internalContinue), cast[pointer](fut))
+      when chronosCallbackLineTracking:
+        debugEcho "location = ", repr fut.internalCallbackLocation
+        next.addCallback(
+          CallbackFunc(internalContinue), cast[pointer](fut),
+          fut.internalCallbackLocation)
+      else:
+        next.addCallback(CallbackFunc(internalContinue), cast[pointer](fut))
 
       # return here so that we don't remove the closure below
       return
