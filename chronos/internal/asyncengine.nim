@@ -265,14 +265,13 @@ template processCallbacks(loop: untyped) =
     # Process existing callbacks but not those that follow, to allow the network
     # to regain control regularly
     when chronosCallbackLineTracking:
-      var smoment = Moment.now()
       for _ in 0 ..< len(loop.callbacks):
         let callable = loop.callbacks.popFirst()
         if not(isNil(callable.function)):
+          let smoment = Moment.now()
           callable.function(callable.udata)
           let emoment = Moment.now()
           loop.storeCallbackDuration(callable, emoment - smoment)
-          smoment = emoment
     else:
       for _ in 0 ..< len(loop.callbacks):
         let callable = loop.callbacks.popFirst()
@@ -280,16 +279,15 @@ template processCallbacks(loop: untyped) =
           callable.function(callable.udata)
   else:
     when chronosCallbackLineTracking:
-      var smoment = Moment.now()
       while true:
         let callable = loop.callbacks.popFirst()  # len must be > 0 due to sentinel
         if isSentinel(callable):
           break
         if not(isNil(callable.function)):
+          let smoment = Moment.now()
           callable.function(callable.udata)
           let emoment = Moment.now()
           loop.storeCallbackDuration(callable, emoment - smoment)
-          smoment = emoment
     else:
       while true:
         let callable = loop.callbacks.popFirst()  # len must be > 0 due to sentinel
@@ -544,6 +542,13 @@ elif defined(windows):
     ): CompletionData =
       CompletionData(cb: cbproc, udata: udata, location: loc)
 
+    func createAsyncCallback*(
+        cbproc: CallbackFunc,
+        udata: pointer,
+        loc: ptr SrcLoc
+    ): AsyncCallback =
+      AsyncCallback(function: cbproc, udata: udata, location: loc)
+
     macro createCompletionData*(
         cbproc: CallbackFunc,
         udata: pointer
@@ -555,8 +560,7 @@ elif defined(windows):
         codeNode,
         newCall(
           bindSym("createCompletionData"), cbproc, udata,
-            nnkCommand.newTree(bindSym("addr"), identNode))
-      )
+            nnkCommand.newTree(bindSym("addr"), identNode)))
 
     macro createCompletionData*(cbproc: CallbackFunc): CompletionData =
       let (identNode, codeNode) = createSrcLocation(cbproc)
@@ -566,14 +570,44 @@ elif defined(windows):
         codeNode,
         newCall(
           bindSym("createCompletionData"), cbproc, newNilLit(),
-            nnkCommand.newTree(bindSym("addr"), identNode))
-      )
+            nnkCommand.newTree(bindSym("addr"), identNode)))
+
+    macro createAsyncCallback*(
+        cbproc: CallbackFunc,
+        udata: pointer
+    ): AsyncCallback =
+      let (identNode, codeNode) = createSrcLocation(cbproc)
+      # Generated code:
+      # createAsyncCallback(cbproc, udata, addr location)
+      nnkStmtListExpr.newTree(
+        codeNode,
+        newCall(
+          bindSym("createAsyncCallback"), cbproc, udata,
+            nnkCommand.newTree(bindSym("addr"), identNode)))
+
+    macro createAsyncCallback*(
+        cbproc: CallbackFunc,
+    ): AsyncCallback =
+      let (identNode, codeNode) = createSrcLocation(cbproc)
+      # Generated code:
+      # createAsyncCallback(cbproc, udata, addr location)
+      nnkStmtListExpr.newTree(
+        codeNode,
+        newCall(
+          bindSym("createAsyncCallback"), cbproc, newNilLit(),
+            nnkCommand.newTree(bindSym("addr"), identNode)))
   else:
     func createCompletionData*(
       cbproc: CallbackFunc,
       udata: pointer = nil,
     ): CompletionData =
       CompletionData(cb: cbproc, udata: udata)
+
+    func createAsyncCallback*(
+        cbproc: CallbackFunc,
+        udata: pointer = nil,
+    ): AsyncCallback =
+      AsyncCallback(function: cbproc, udata: udata)
 
   {.push stackTrace: off.}
   proc waitableCallback(param: pointer, timerOrWaitFired: BYTE) {.
@@ -970,29 +1004,95 @@ elif defined(windows):
       # All callbacks done, skip `processCallbacks` at start.
       loop.callbacks.addFirst(SentinelCallback)
 
-  proc closeSocket*(fd: AsyncFD, aftercb: CallbackFunc = nil) =
-    ## Closes a socket and ensures that it is unregistered.
-    let loop = getThreadDispatcher()
-    loop.handles.excl(fd)
-    # Because we don't set SO_LINGER, `closeFd` should always succeed.
-    # Future API might be added to recover linger errors, but this is currently
-    # not supported so we discard the return value.
-    discard closeFd(SocketHandle(fd))
-    if not(isNil(aftercb)):
-      loop.callbacks.addLast(AsyncCallback(function: aftercb))
+  when chronosCallbackLineTracking:
+    proc closeSocket*(fd: AsyncFD, aftercb: CallbackFunc, location: ptr SrcLoc) =
+      ## Closes a socket and ensures that it is unregistered.
+      let loop = getThreadDispatcher()
+      loop.handles.excl(fd)
+      # Because we don't set SO_LINGER, `closeFd` should always succeed.
+      # Future API might be added to recover linger errors, but this is currently
+      # not supported so we discard the return value.
+      discard closeFd(SocketHandle(fd))
+      if not(isNil(aftercb)):
+        loop.callbacks.addLast(
+          AsyncCallback(function: aftercb, location: location))
 
-  proc closeHandle*(fd: AsyncFD, aftercb: CallbackFunc = nil) =
-    ## Closes a (pipe/file) handle and ensures that it is unregistered.
-    let loop = getThreadDispatcher()
-    loop.handles.excl(fd)
-    # Closing the handle should always succeed since async failures are reported
-    # via IOCP (pending operations cancelled on closed) and the documentation
-    # for CloseHandle does not specify and other specific conditions where it
-    # might fail.
-    discard closeFd(HANDLE(fd))
+    proc closeHandle*(fd: AsyncFD, aftercb: CallbackFunc, location: ptr SrcLoc) =
+      ## Closes a (pipe/file) handle and ensures that it is unregistered.
+      let loop = getThreadDispatcher()
+      loop.handles.excl(fd)
+      # Closing the handle should always succeed since async failures are reported
+      # via IOCP (pending operations cancelled on closed) and the documentation
+      # for CloseHandle does not specify and other specific conditions where it
+      # might fail.
+      discard closeFd(HANDLE(fd))
+      if not(isNil(aftercb)):
+        loop.callbacks.addLast(
+          AsyncCallback(function: aftercb, location: location))
 
-    if not(isNil(aftercb)):
-      loop.callbacks.addLast(AsyncCallback(function: aftercb))
+    proc closeSocket*(fd: AsyncFD) =
+      ## Closes a socket and ensures that it is unregistered.
+      let loop = getThreadDispatcher()
+      loop.handles.excl(fd)
+      # Because we don't set SO_LINGER, `closeFd` should always succeed.
+      # Future API might be added to recover linger errors, but this is currently
+      # not supported so we discard the return value.
+      discard closeFd(SocketHandle(fd))
+
+    proc closeHandle*(fd: AsyncFD) =
+      ## Closes a (pipe/file) handle and ensures that it is unregistered.
+      let loop = getThreadDispatcher()
+      loop.handles.excl(fd)
+      # Closing the handle should always succeed since async failures are reported
+      # via IOCP (pending operations cancelled on closed) and the documentation
+      # for CloseHandle does not specify and other specific conditions where it
+      # might fail.
+      discard closeFd(HANDLE(fd))
+
+    macro closeSocket*(fd: AsyncFD, aftercb: CallbackFunc) =
+      let (identNode, codeNode) = createSrcLocation(aftercb)
+      # Generated code:
+      # closeSocket(fd, aftercb, addr location)
+      nnkStmtList.newTree(
+        codeNode,
+        newCall(
+          bindSym("closeSocket"), fd, aftercb,
+            nnkCommand.newTree(bindSym("addr"), identNode)))
+
+    macro closeHandle*(fd: AsyncFD, aftercb: CallbackFunc) =
+      let (identNode, codeNode) = createSrcLocation(aftercb)
+      # Generated code:
+      # closeHandle(fd, aftercb, addr location)
+      nnkStmtList.newTree(
+        codeNode,
+        newCall(
+          bindSym("closeHandle"), fd, aftercb,
+            nnkCommand.newTree(bindSym("addr"), identNode)))
+
+  else:
+    proc closeSocket*(fd: AsyncFD, aftercb: CallbackFunc = nil) =
+      ## Closes a socket and ensures that it is unregistered.
+      let loop = getThreadDispatcher()
+      loop.handles.excl(fd)
+      # Because we don't set SO_LINGER, `closeFd` should always succeed.
+      # Future API might be added to recover linger errors, but this is currently
+      # not supported so we discard the return value.
+      discard closeFd(SocketHandle(fd))
+      if not(isNil(aftercb)):
+        loop.callbacks.addLast(AsyncCallback(function: aftercb))
+
+    proc closeHandle*(fd: AsyncFD, aftercb: CallbackFunc = nil) =
+      ## Closes a (pipe/file) handle and ensures that it is unregistered.
+      let loop = getThreadDispatcher()
+      loop.handles.excl(fd)
+      # Closing the handle should always succeed since async failures are reported
+      # via IOCP (pending operations cancelled on closed) and the documentation
+      # for CloseHandle does not specify and other specific conditions where it
+      # might fail.
+      discard closeFd(HANDLE(fd))
+
+      if not(isNil(aftercb)):
+        loop.callbacks.addLast(AsyncCallback(function: aftercb))
 
   proc assertNoEvents(loop: PDispatcher) =
     ## Raise a `Defect` when events carrying work are waiting in loop's I/O
@@ -1185,20 +1285,60 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     ## Unregister file descriptor ``fd`` from thread's dispatcher.
     getThreadDispatcher().selector.unregister2(cint(fd))
 
-  proc addReader2*(fd: AsyncFD, cb: CallbackFunc,
-                   udata: pointer = nil): Result[void, OSErrorCode] =
-    ## Start watching the file descriptor ``fd`` for read availability and then
-    ## call the callback ``cb`` with specified argument ``udata``.
-    let loop = getThreadDispatcher()
-    var newEvents = {Event.Read}
-    withData(loop.selector, cint(fd), adata) do:
-      let acb = AsyncCallback(function: cb, udata: udata)
-      adata.reader = acb
-      if not(isNil(adata.writer.function)):
-        newEvents.incl(Event.Write)
-    do:
-      return err(osdefs.EBADF)
-    loop.selector.updateHandle2(cint(fd), newEvents)
+  when chronosCallbackLineTracking:
+    proc addReader2*(
+        fd: AsyncFD,
+        cb: CallbackFunc,
+        udata: pointer,
+        location: ptr SrcLoc
+    ): Result[void, OSErrorCode] =
+      ## Start watching the file descriptor ``fd`` for read availability and then
+      ## call the callback ``cb`` with specified argument ``udata``.
+      let loop = getThreadDispatcher()
+      var newEvents = {Event.Read}
+      withData(loop.selector, cint(fd), adata) do:
+        let acb = AsyncCallback(function: cb, udata: udata, location: location)
+        adata.reader = acb
+        if not(isNil(adata.writer.function)):
+          newEvents.incl(Event.Write)
+      do:
+        return err(osdefs.EBADF)
+      loop.selector.updateHandle2(cint(fd), newEvents)
+
+    macro addReader2*(fd: AsyncFD, cb: CallbackFunc, udata: pointer) =
+      let (identNode, codeNode) = createSrcLocation(cb)
+      # Generated code:
+      # addReader2(fd, cb, udata, addr location)
+      nnkStmtList.newTree(
+        codeNode,
+        newCall(
+          bindSym("addReader2"), fd, cb, udata,
+            nnkCommand.newTree(bindSym("addr"), identNode)))
+
+    macro addReader2*(fd: AsyncFD, cb: CallbackFunc) =
+      let (identNode, codeNode) = createSrcLocation(cb)
+      # Generated code:
+      # addReader2(fd, cb, nil, addr location)
+      nnkStmtList.newTree(
+        codeNode,
+        newCall(
+          bindSym("addReader2"), fd, cb, newNilLit(),
+            nnkCommand.newTree(bindSym("addr"), identNode)))
+  else:
+    proc addReader2*(fd: AsyncFD, cb: CallbackFunc,
+                     udata: pointer = nil): Result[void, OSErrorCode] =
+      ## Start watching the file descriptor ``fd`` for read availability and then
+      ## call the callback ``cb`` with specified argument ``udata``.
+      let loop = getThreadDispatcher()
+      var newEvents = {Event.Read}
+      withData(loop.selector, cint(fd), adata) do:
+        let acb = AsyncCallback(function: cb, udata: udata)
+        adata.reader = acb
+        if not(isNil(adata.writer.function)):
+          newEvents.incl(Event.Write)
+      do:
+        return err(osdefs.EBADF)
+      loop.selector.updateHandle2(cint(fd), newEvents)
 
   proc removeReader2*(fd: AsyncFD): Result[void, OSErrorCode] =
     ## Stop watching the file descriptor ``fd`` for read availability.
@@ -1213,20 +1353,60 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
       return err(osdefs.EBADF)
     loop.selector.updateHandle2(cint(fd), newEvents)
 
-  proc addWriter2*(fd: AsyncFD, cb: CallbackFunc,
-                   udata: pointer = nil): Result[void, OSErrorCode] =
-    ## Start watching the file descriptor ``fd`` for write availability and then
-    ## call the callback ``cb`` with specified argument ``udata``.
-    let loop = getThreadDispatcher()
-    var newEvents = {Event.Write}
-    withData(loop.selector, cint(fd), adata) do:
-      let acb = AsyncCallback(function: cb, udata: udata)
-      adata.writer = acb
-      if not(isNil(adata.reader.function)):
-        newEvents.incl(Event.Read)
-    do:
-      return err(osdefs.EBADF)
-    loop.selector.updateHandle2(cint(fd), newEvents)
+  when chronosCallbackLineTracking:
+    proc addWriter2*(
+        fd: AsyncFD,
+        cb: CallbackFunc,
+        udata: pointer,
+        location: ptr SrcLoc
+    ): Result[void, OSErrorCode] =
+      ## Start watching the file descriptor ``fd`` for write availability and then
+      ## call the callback ``cb`` with specified argument ``udata``.
+      let loop = getThreadDispatcher()
+      var newEvents = {Event.Write}
+      withData(loop.selector, cint(fd), adata) do:
+        let acb = AsyncCallback(function: cb, udata: udata)
+        adata.writer = acb
+        if not(isNil(adata.reader.function)):
+          newEvents.incl(Event.Read)
+      do:
+        return err(osdefs.EBADF)
+      loop.selector.updateHandle2(cint(fd), newEvents)
+
+    macro addWriter2*(fd: AsyncFD, cb: CallbackFunc, udata: pointer) =
+      let (identNode, codeNode) = createSrcLocation(cb)
+      # Generated code:
+      # addWriter2(fd, cb, udata, addr location)
+      nnkStmtList.newTree(
+        codeNode,
+        newCall(
+          bindSym("addWriter2"), fd, cb, udata,
+            nnkCommand.newTree(bindSym("addr"), identNode)))
+
+    macro addWriter2*(fd: AsyncFD, cb: CallbackFunc) =
+      let (identNode, codeNode) = createSrcLocation(cb)
+      # Generated code:
+      # addWriter2(fd, cb, udata, addr location)
+      nnkStmtList.newTree(
+        codeNode,
+        newCall(
+          bindSym("addWriter2"), fd, cb, newNilLit(),
+            nnkCommand.newTree(bindSym("addr"), identNode)))
+  else:
+    proc addWriter2*(fd: AsyncFD, cb: CallbackFunc,
+                     udata: pointer = nil): Result[void, OSErrorCode] =
+      ## Start watching the file descriptor ``fd`` for write availability and then
+      ## call the callback ``cb`` with specified argument ``udata``.
+      let loop = getThreadDispatcher()
+      var newEvents = {Event.Write}
+      withData(loop.selector, cint(fd), adata) do:
+        let acb = AsyncCallback(function: cb, udata: udata)
+        adata.writer = acb
+        if not(isNil(adata.reader.function)):
+          newEvents.incl(Event.Read)
+      do:
+        return err(osdefs.EBADF)
+      loop.selector.updateHandle2(cint(fd), newEvents)
 
   proc removeWriter2*(fd: AsyncFD): Result[void, OSErrorCode] =
     ## Stop watching the file descriptor ``fd`` for write availability.
@@ -1249,21 +1429,83 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     ## Unregister file descriptor ``fd`` from thread's dispatcher.
     unregister2(fd).tryGet()
 
-  proc addReader*(fd: AsyncFD, cb: CallbackFunc, udata: pointer = nil) {.
-       raises: [OSError].} =
-    ## Start watching the file descriptor ``fd`` for read availability and then
-    ## call the callback ``cb`` with specified argument ``udata``.
-    addReader2(fd, cb, udata).tryGet()
+  when chronosCallbackLineTracking:
+    proc addReader*(
+        fd: AsyncFD,
+        cb: CallbackFunc,
+        udata: pointer,
+        location: ptr SrcLoc
+    ) {.raises: [OSError].} =
+      ## Start watching the file descriptor ``fd`` for read availability and then
+      ## call the callback ``cb`` with specified argument ``udata``.
+      addReader2(fd, cb, udata).tryGet()
+
+    macro addReader*(fd: AsyncFD, cb: CallbackFunc, udata: pointer) =
+      let (identNode, codeNode) = createSrcLocation(cb)
+      # Generated code:
+      # addReader(fd, cb, udata, addr location)
+      nnkStmtList.newTree(
+        codeNode,
+        newCall(
+          bindSym("addReader"), fd, cb, udata,
+            nnkCommand.newTree(bindSym("addr"), identNode)))
+
+    macro addReader*(fd: AsyncFD, cb: CallbackFunc) =
+      let (identNode, codeNode) = createSrcLocation(cb)
+      # Generated code:
+      # addReader(fd, cb, nil, addr location)
+      nnkStmtList.newTree(
+        codeNode,
+        newCall(
+          bindSym("addReader"), fd, cb, newNilLit(),
+            nnkCommand.newTree(bindSym("addr"), identNode)))
+  else:
+    proc addReader*(fd: AsyncFD, cb: CallbackFunc, udata: pointer = nil) {.
+         raises: [OSError].} =
+      ## Start watching the file descriptor ``fd`` for read availability and then
+      ## call the callback ``cb`` with specified argument ``udata``.
+      addReader2(fd, cb, udata).tryGet()
 
   proc removeReader*(fd: AsyncFD) {.raises: [OSError].} =
     ## Stop watching the file descriptor ``fd`` for read availability.
     removeReader2(fd).tryGet()
 
-  proc addWriter*(fd: AsyncFD, cb: CallbackFunc, udata: pointer = nil) {.
-       raises: [OSError].} =
-    ## Start watching the file descriptor ``fd`` for write availability and then
-    ## call the callback ``cb`` with specified argument ``udata``.
-    addWriter2(fd, cb, udata).tryGet()
+  when chronosCallbackLineTracking:
+    proc addWriter*(
+        fd: AsyncFD,
+        cb: CallbackFunc,
+        udata: pointer,
+        location: ptr SrcLoc
+    ) {.raises: [OSError].} =
+      ## Start watching the file descriptor ``fd`` for write availability and then
+      ## call the callback ``cb`` with specified argument ``udata``.
+      addWriter2(fd, cb, udata).tryGet()
+
+    macro addWriter*(fd: AsyncFD, cb: CallbackFunc, udata: pointer) =
+      let (identNode, codeNode) = createSrcLocation(cb)
+      # Generated code:
+      # addReader(fd, cb, udata, addr location)
+      nnkStmtList.newTree(
+        codeNode,
+        newCall(
+          bindSym("addWriter"), fd, cb, udata,
+            nnkCommand.newTree(bindSym("addr"), identNode)))
+
+    macro addWriter*(fd: AsyncFD, cb: CallbackFunc) =
+      let (identNode, codeNode) = createSrcLocation(cb)
+      # Generated code:
+      # addReader(fd, cb, udata, addr location)
+      nnkStmtList.newTree(
+        codeNode,
+        newCall(
+          bindSym("addWriter"), fd, cb, newNilLit(),
+            nnkCommand.newTree(bindSym("addr"), identNode)))
+  else:
+    proc addWriter*(fd: AsyncFD, cb: CallbackFunc, udata: pointer = nil) {.
+         raises: [OSError].} =
+      ## Start watching the file descriptor ``fd`` for write availability and then
+      ## call the callback ``cb`` with specified argument ``udata``.
+      addWriter2(fd, cb, udata).tryGet()
 
   proc removeWriter*(fd: AsyncFD) {.raises: [OSError].} =
     ## Stop watching the file descriptor ``fd`` for write availability.
@@ -1323,7 +1565,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     # We can't unregister file descriptor from system queue here, because
     # in such case processing queue will stuck on poll() call, because there
     # can be no file descriptors registered in system queue.
-    var acb = AsyncCallback(function: continuation)
+    let acb = createAsyncCallback(continuation)
     loop.callbacks.addLast(acb)
 
   proc closeHandle*(fd: AsyncFD, aftercb: CallbackFunc = nil) =
@@ -1396,40 +1638,133 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
       ProcessHandle* = distinct int
       SignalHandle* = distinct int
 
-    proc addSignal2*(
-           signal: int,
-           cb: CallbackFunc,
-           udata: pointer = nil
-         ): Result[SignalHandle, OSErrorCode] =
-      ## Start watching signal ``signal``, and when signal appears, call the
-      ## callback ``cb`` with specified argument ``udata``. Returns signal
-      ## identifier code, which can be used to remove signal callback
-      ## via ``removeSignal``.
-      let loop = getThreadDispatcher()
-      var data: SelectorData
-      let sigfd = ? loop.selector.registerSignal(signal, data)
-      withData(loop.selector, sigfd, adata) do:
-        adata.reader = AsyncCallback(function: cb, udata: udata)
-      do:
-        return err(osdefs.EBADF)
-      ok(SignalHandle(sigfd))
+    when chronosCallbackLineTracking:
+      proc addSignal2*(
+          signal: int,
+          cb: CallbackFunc,
+          udata: pointer,
+          location: ptr SrcLoc
+      ): Result[SignalHandle, OSErrorCode] =
+        ## Start watching signal ``signal``, and when signal appears, call the
+        ## callback ``cb`` with specified argument ``udata``. Returns signal
+        ## identifier code, which can be used to remove signal callback
+        ## via ``removeSignal``.
+        let loop = getThreadDispatcher()
+        var data: SelectorData
+        let sigfd = ? loop.selector.registerSignal(signal, data)
+        withData(loop.selector, sigfd, adata) do:
+          adata.reader = AsyncCallback(function: cb, udata: udata)
+        do:
+          return err(osdefs.EBADF)
+        ok(SignalHandle(sigfd))
 
-    proc addProcess2*(
-           pid: int,
-           cb: CallbackFunc,
-           udata: pointer = nil
-         ): Result[ProcessHandle, OSErrorCode] =
-      ## Registers callback ``cb`` to be called when process with process
-      ## identifier ``pid`` exited. Returns process' descriptor, which can be
-      ## used to clear process callback via ``removeProcess``.
-      let loop = getThreadDispatcher()
-      var data: SelectorData
-      let procfd = ? loop.selector.registerProcess(pid, data)
-      withData(loop.selector, procfd, adata) do:
-        adata.reader = AsyncCallback(function: cb, udata: udata)
-      do:
-        return err(osdefs.EBADF)
-      ok(ProcessHandle(procfd))
+      proc addProcess2*(
+          pid: int,
+          cb: CallbackFunc,
+          udata: pointer,
+          location: ptr SrcLoc
+      ): Result[ProcessHandle, OSErrorCode] =
+        ## Registers callback ``cb`` to be called when process with process
+        ## identifier ``pid`` exited. Returns process' descriptor, which can be
+        ## used to clear process callback via ``removeProcess``.
+        let loop = getThreadDispatcher()
+        var data: SelectorData
+        let procfd = ? loop.selector.registerProcess(pid, data)
+        withData(loop.selector, procfd, adata) do:
+          adata.reader = AsyncCallback(function: cb, udata: udata)
+        do:
+          return err(osdefs.EBADF)
+        ok(ProcessHandle(procfd))
+
+      macro addSignal2*(
+          signal: int,
+          cb: CallbackFunc,
+          udata: pointer
+      ): Result[ProcessHandle, OSErrorCode] =
+        let (identNode, codeNode) = createSrcLocation(cb)
+        # Generated code:
+        # addSignal2(signal, cb, udata, addr location)
+        nnkStmtList.newTree(
+          codeNode,
+          newCall(
+            bindSym("addSignal2"), signal, cb, udata,
+              nnkCommand.newTree(bindSym("addr"), identNode)))
+
+      macro addSignal2*(
+          signal: int,
+          cb: CallbackFunc
+      ): Result[ProcessHandle, OSErrorCode] =
+        let (identNode, codeNode) = createSrcLocation(cb)
+        # Generated code:
+        # addSignal2(signal, cb, udata, addr location)
+        nnkStmtList.newTree(
+          codeNode,
+          newCall(
+            bindSym("addSignal2"), signal, cb, newNilLit(),
+              nnkCommand.newTree(bindSym("addr"), identNode)))
+
+      macro addProcess2*(
+          pid: int,
+          cb: CallbackFunc,
+          udata: pointer
+      ): Result[ProcessHandle, OSErrorCode] =
+        let (identNode, codeNode) = createSrcLocation(cb)
+        # Generated code:
+        # addProcess2(pid, cb, udata, addr location)
+        nnkStmtList.newTree(
+          codeNode,
+          newCall(
+            bindSym("addProcess2"), pid, cb, udata,
+              nnkCommand.newTree(bindSym("addr"), identNode)))
+
+      macro addProcess2*(
+          pid: int,
+          cb: CallbackFunc
+      ): Result[ProcessHandle, OSErrorCode] =
+        let (identNode, codeNode) = createSrcLocation(cb)
+        # Generated code:
+        # addProcess2(pid, cb, udata, addr location)
+        nnkStmtList.newTree(
+          codeNode,
+          newCall(
+            bindSym("addProcess2"), pid, cb, newNilLit(),
+              nnkCommand.newTree(bindSym("addr"), identNode)))
+
+    else:
+      proc addSignal2*(
+          signal: int,
+          cb: CallbackFunc,
+          udata: pointer = nil
+      ): Result[SignalHandle, OSErrorCode] =
+        ## Start watching signal ``signal``, and when signal appears, call the
+        ## callback ``cb`` with specified argument ``udata``. Returns signal
+        ## identifier code, which can be used to remove signal callback
+        ## via ``removeSignal``.
+        let loop = getThreadDispatcher()
+        var data: SelectorData
+        let sigfd = ? loop.selector.registerSignal(signal, data)
+        withData(loop.selector, sigfd, adata) do:
+          adata.reader = AsyncCallback(function: cb, udata: udata)
+        do:
+          return err(osdefs.EBADF)
+        ok(SignalHandle(sigfd))
+
+      proc addProcess2*(
+          pid: int,
+          cb: CallbackFunc,
+          udata: pointer = nil
+      ): Result[ProcessHandle, OSErrorCode] =
+        ## Registers callback ``cb`` to be called when process with process
+        ## identifier ``pid`` exited. Returns process' descriptor, which can be
+        ## used to clear process callback via ``removeProcess``.
+        let loop = getThreadDispatcher()
+        var data: SelectorData
+        let procfd = ? loop.selector.registerProcess(pid, data)
+        withData(loop.selector, procfd, adata) do:
+          adata.reader = AsyncCallback(function: cb, udata: udata)
+        do:
+          return err(osdefs.EBADF)
+        ok(ProcessHandle(procfd))
 
     proc removeSignal2*(signalHandle: SignalHandle): Result[void, OSErrorCode] =
       ## Remove watching signal ``signal``.
@@ -1439,27 +1774,106 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
       ## Remove process' watching using process' descriptor ``procfd``.
       getThreadDispatcher().selector.unregister2(cint(procHandle))
 
-    proc addSignal*(signal: int, cb: CallbackFunc,
-                    udata: pointer = nil): SignalHandle {.
-         raises: [OSError].} =
-      ## Start watching signal ``signal``, and when signal appears, call the
-      ## callback ``cb`` with specified argument ``udata``. Returns signal
-      ## identifier code, which can be used to remove signal callback
-      ## via ``removeSignal``.
-      addSignal2(signal, cb, udata).tryGet()
+    when chronosCallbackLineTracking:
+      proc addSignal*(
+          signal: int,
+          cb: CallbackFunc,
+          udata: pointer,
+          location: ptr SrcLoc
+      ): SignalHandle {.raises: [OSError].} =
+        ## Start watching signal ``signal``, and when signal appears, call the
+        ## callback ``cb`` with specified argument ``udata``. Returns signal
+        ## identifier code, which can be used to remove signal callback
+        ## via ``removeSignal``.
+        addSignal2(signal, cb, udata, location).tryGet()
+
+      proc addProcess*(
+          pid: int,
+          cb: CallbackFunc,
+          udata: pointer,
+          location: ptr SrcLoc
+      ): ProcessHandle {.raises: [OSError].} =
+        ## Registers callback ``cb`` to be called when process with process
+        ## identifier ``pid`` exited. Returns process identifier, which can be
+        ## used to clear process callback via ``removeProcess``.
+        addProcess2(pid, cb, udata, location).tryGet()
+
+      macro addSignal*(
+          signal: int,
+          cb: CallbackFunc,
+          udata: pointer
+      ): SignalHandle =
+        let (identNode, codeNode) = createSrcLocation(cb)
+        # Generated code:
+        # addSignal(signal, cb, udata, addr location)
+        nnkStmtListExpr.newTree(
+          codeNode,
+          newCall(
+            bindSym("addSignal"), signal, cb, udata,
+              nnkCommand.newTree(bindSym("addr"), identNode)))
+
+      macro addSignal*(
+          signal: int,
+          cb: CallbackFunc,
+      ): SignalHandle =
+        let (identNode, codeNode) = createSrcLocation(cb)
+        # Generated code:
+        # addSignal(signal, cb, udata, addr location)
+        nnkStmtListExpr.newTree(
+          codeNode,
+          newCall(
+            bindSym("addSignal"), signal, cb, newNilLit(),
+              nnkCommand.newTree(bindSym("addr"), identNode)))
+
+      macro addProcess*(
+          pid: int,
+          cb: CallbackFunc,
+          udata: pointer
+      ): ProcessHandle =
+        let (identNode, codeNode) = createSrcLocation(cb)
+        # Generated code:
+        # addSignal(signal, cb, udata, addr location)
+        nnkStmtListExpr.newTree(
+          codeNode,
+          newCall(
+            bindSym("addProcess"), pid, cb, udata,
+              nnkCommand.newTree(bindSym("addr"), identNode)))
+
+      macro addProcess*(
+          pid: int,
+          cb: CallbackFunc,
+          udata: pointer
+      ): ProcessHandle =
+        let (identNode, codeNode) = createSrcLocation(cb)
+        # Generated code:
+        # addSignal(signal, cb, udata, addr location)
+        nnkStmtListExpr.newTree(
+          codeNode,
+          newCall(
+            bindSym("addProcess"), signal, cb, newNilLit(),
+              nnkCommand.newTree(bindSym("addr"), identNode)))
+    else:
+      proc addSignal*(signal: int, cb: CallbackFunc,
+                      udata: pointer = nil): SignalHandle {.
+           raises: [OSError].} =
+        ## Start watching signal ``signal``, and when signal appears, call the
+        ## callback ``cb`` with specified argument ``udata``. Returns signal
+        ## identifier code, which can be used to remove signal callback
+        ## via ``removeSignal``.
+        addSignal2(signal, cb, udata).tryGet()
+
+      proc addProcess*(pid: int, cb: CallbackFunc,
+                       udata: pointer = nil): ProcessHandle {.
+           raises: [OSError].} =
+        ## Registers callback ``cb`` to be called when process with process
+        ## identifier ``pid`` exited. Returns process identifier, which can be
+        ## used to clear process callback via ``removeProcess``.
+        addProcess2(pid, cb, udata).tryGet()
 
     proc removeSignal*(signalHandle: SignalHandle) {.
          raises: [OSError].} =
       ## Remove watching signal ``signal``.
       removeSignal2(signalHandle).tryGet()
-
-    proc addProcess*(pid: int, cb: CallbackFunc,
-                     udata: pointer = nil): ProcessHandle {.
-         raises: [OSError].} =
-      ## Registers callback ``cb`` to be called when process with process
-      ## identifier ``pid`` exited. Returns process identifier, which can be
-      ## used to clear process callback via ``removeProcess``.
-      addProcess2(pid, cb, udata).tryGet()
 
     proc removeProcess*(procHandle: ProcessHandle) {.
          raises: [OSError].} =

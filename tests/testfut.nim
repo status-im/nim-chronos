@@ -3009,8 +3009,8 @@ suite "Future[T] behavior test suite":
     else:
       skip()
 
-  # test "slowCallbacks() should be present":
-  #   # WARNING: This test is very sensitive to line numbers and module name.
-  #   when chronosCallbackLineTracking:
-  #     for item in slowCallbacks():
-  #       echo item
+  test "slowCallbacks() should be present":
+    # WARNING: This test is very sensitive to line numbers and module name.
+    when chronosCallbackLineTracking:
+      for item in slowCallbacks():
+        echo item

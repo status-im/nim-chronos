@@ -431,13 +431,11 @@ proc futureContinue*(fut: FutureBase) {.raises: [], gcsafe.} =
   #
   # Every call to an `{.async.}` proc is redirected to call this function
   # instead with its original body captured in `fut.closure`.
-  debugEcho "futureContinue(", toHex(cast[uint64](fut)), ")"
   while true:
     # Call closure to make progress on `fut` until it reaches `yield` (inside
     # `await` typically) or completes / fails / is cancelled
     let next: FutureBase = fut.internalClosure(fut)
     if fut.internalClosure.finished(): # Reached the end of the transformed proc
-      debugEcho "futureContinue(", toHex(cast[uint64](fut)), ") finished"
       break
 
     if next == nil:
@@ -449,7 +447,6 @@ proc futureContinue*(fut: FutureBase) {.raises: [], gcsafe.} =
       # `fut` to continue running when that happens
       GC_ref(fut)
       when chronosCallbackLineTracking:
-        debugEcho "location = ", repr fut.internalCallbackLocation
         next.addCallback(
           CallbackFunc(internalContinue), cast[pointer](fut),
           fut.internalCallbackLocation)
@@ -861,7 +858,11 @@ proc cancelSoon(future: FutureBase, aftercb: CallbackFunc, udata: pointer,
     # recursion problem.
     if not(isNil(aftercb)):
       let loop = getThreadDispatcher()
-      loop.callbacks.addLast(AsyncCallback(function: aftercb, udata: udata))
+      when chronosCallbackLineTracking:
+        loop.callbacks.addLast(
+          AsyncCallback(function: aftercb, udata: udata, location: loc))
+      else:
+        loop.callbacks.addLast(AsyncCallback(function: aftercb, udata: udata))
     return
 
   future.addCallback(continuation)
