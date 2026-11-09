@@ -1274,21 +1274,28 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
         return err(osdefs.EBADF)
       loop.selector.updateHandle2(cint(fd), newEvents)
 
-    macro addReader2*(fd: AsyncFD, cb: CallbackFunc, udata: pointer) =
+    macro addReader2*(
+        fd: AsyncFD,
+        cb: CallbackFunc,
+        udata: pointer
+    ): Result[void, OSErrorCode] =
       let (identNode, codeNode) = createSrcLocation(cb)
       # Generated code:
       # addReader2(fd, cb, udata, addr location)
-      nnkStmtList.newTree(
+      nnkStmtListExpr.newTree(
         codeNode,
         newCall(
           bindSym("addReader2"), fd, cb, udata,
             nnkCommand.newTree(bindSym("addr"), identNode)))
 
-    macro addReader2*(fd: AsyncFD, cb: CallbackFunc) =
+    macro addReader2*(
+        fd: AsyncFD,
+        cb: CallbackFunc
+    ): Result[void, OSErrorCode] =
       let (identNode, codeNode) = createSrcLocation(cb)
       # Generated code:
       # addReader2(fd, cb, nil, addr location)
-      nnkStmtList.newTree(
+      nnkStmtListExpr.newTree(
         codeNode,
         newCall(
           bindSym("addReader2"), fd, cb, newNilLit(),
@@ -1342,21 +1349,28 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
         return err(osdefs.EBADF)
       loop.selector.updateHandle2(cint(fd), newEvents)
 
-    macro addWriter2*(fd: AsyncFD, cb: CallbackFunc, udata: pointer) =
+    macro addWriter2*(
+        fd: AsyncFD,
+        cb: CallbackFunc,
+        udata: pointer
+    ): Result[void, OSErrorCode] =
       let (identNode, codeNode) = createSrcLocation(cb)
       # Generated code:
       # addWriter2(fd, cb, udata, addr location)
-      nnkStmtList.newTree(
+      nnkStmtListExpr.newTree(
         codeNode,
         newCall(
           bindSym("addWriter2"), fd, cb, udata,
             nnkCommand.newTree(bindSym("addr"), identNode)))
 
-    macro addWriter2*(fd: AsyncFD, cb: CallbackFunc) =
+    macro addWriter2*(
+        fd: AsyncFD,
+        cb: CallbackFunc
+    ): Result[void, OSErrorCode] =
       let (identNode, codeNode) = createSrcLocation(cb)
       # Generated code:
       # addWriter2(fd, cb, udata, addr location)
-      nnkStmtList.newTree(
+      nnkStmtListExpr.newTree(
         codeNode,
         newCall(
           bindSym("addWriter2"), fd, cb, newNilLit(),
@@ -1407,7 +1421,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     ) {.raises: [OSError].} =
       ## Start watching the file descriptor ``fd`` for read availability and then
       ## call the callback ``cb`` with specified argument ``udata``.
-      addReader2(fd, cb, udata).tryGet()
+      addReader2(fd, cb, udata, location).tryGet()
 
     macro addReader*(fd: AsyncFD, cb: CallbackFunc, udata: pointer) =
       let (identNode, codeNode) = createSrcLocation(cb)
@@ -1448,7 +1462,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     ) {.raises: [OSError].} =
       ## Start watching the file descriptor ``fd`` for write availability and then
       ## call the callback ``cb`` with specified argument ``udata``.
-      addWriter2(fd, cb, udata).tryGet()
+      addWriter2(fd, cb, udata, location).tryGet()
 
     macro addWriter*(fd: AsyncFD, cb: CallbackFunc, udata: pointer) =
       let (identNode, codeNode) = createSrcLocation(cb)
@@ -1688,11 +1702,11 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
           signal: int,
           cb: CallbackFunc,
           udata: pointer
-      ): Result[ProcessHandle, OSErrorCode] =
+      ): Result[SignalHandle, OSErrorCode] =
         let (identNode, codeNode) = createSrcLocation(cb)
         # Generated code:
         # addSignal2(signal, cb, udata, addr location)
-        nnkStmtList.newTree(
+        nnkStmtListExpr.newTree(
           codeNode,
           newCall(
             bindSym("addSignal2"), signal, cb, udata,
@@ -1701,11 +1715,11 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
       macro addSignal2*(
           signal: int,
           cb: CallbackFunc
-      ): Result[ProcessHandle, OSErrorCode] =
+      ): Result[SignalHandle, OSErrorCode] =
         let (identNode, codeNode) = createSrcLocation(cb)
         # Generated code:
         # addSignal2(signal, cb, udata, addr location)
-        nnkStmtList.newTree(
+        nnkStmtListExpr.newTree(
           codeNode,
           newCall(
             bindSym("addSignal2"), signal, cb, newNilLit(),
@@ -1719,7 +1733,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
         let (identNode, codeNode) = createSrcLocation(cb)
         # Generated code:
         # addProcess2(pid, cb, udata, addr location)
-        nnkStmtList.newTree(
+        nnkStmtListExpr.newTree(
           codeNode,
           newCall(
             bindSym("addProcess2"), pid, cb, udata,
@@ -1732,7 +1746,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
         let (identNode, codeNode) = createSrcLocation(cb)
         # Generated code:
         # addProcess2(pid, cb, udata, addr location)
-        nnkStmtList.newTree(
+        nnkStmtListExpr.newTree(
           codeNode,
           newCall(
             bindSym("addProcess2"), pid, cb, newNilLit(),
@@ -1849,8 +1863,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
 
       macro addProcess*(
           pid: int,
-          cb: CallbackFunc,
-          udata: pointer
+          cb: CallbackFunc
       ): ProcessHandle =
         let (identNode, codeNode) = createSrcLocation(cb)
         # Generated code:
@@ -1858,7 +1871,7 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
         nnkStmtListExpr.newTree(
           codeNode,
           newCall(
-            bindSym("addProcess"), signal, cb, newNilLit(),
+            bindSym("addProcess"), pid, cb, newNilLit(),
               nnkCommand.newTree(bindSym("addr"), identNode)))
     else:
       proc addSignal*(signal: int, cb: CallbackFunc,
