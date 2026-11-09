@@ -571,43 +571,12 @@ elif defined(windows):
         newCall(
           bindSym("createCompletionData"), cbproc, newNilLit(),
             nnkCommand.newTree(bindSym("addr"), identNode)))
-
-    macro createAsyncCallback*(
-        cbproc: CallbackFunc,
-        udata: pointer
-    ): AsyncCallback =
-      let (identNode, codeNode) = createSrcLocation(cbproc)
-      # Generated code:
-      # createAsyncCallback(cbproc, udata, addr location)
-      nnkStmtListExpr.newTree(
-        codeNode,
-        newCall(
-          bindSym("createAsyncCallback"), cbproc, udata,
-            nnkCommand.newTree(bindSym("addr"), identNode)))
-
-    macro createAsyncCallback*(
-        cbproc: CallbackFunc,
-    ): AsyncCallback =
-      let (identNode, codeNode) = createSrcLocation(cbproc)
-      # Generated code:
-      # createAsyncCallback(cbproc, udata, addr location)
-      nnkStmtListExpr.newTree(
-        codeNode,
-        newCall(
-          bindSym("createAsyncCallback"), cbproc, newNilLit(),
-            nnkCommand.newTree(bindSym("addr"), identNode)))
   else:
     func createCompletionData*(
       cbproc: CallbackFunc,
       udata: pointer = nil,
     ): CompletionData =
       CompletionData(cb: cbproc, udata: udata)
-
-    func createAsyncCallback*(
-        cbproc: CallbackFunc,
-        udata: pointer = nil,
-    ): AsyncCallback =
-      AsyncCallback(function: cbproc, udata: udata)
 
   {.push stackTrace: off.}
   proc waitableCallback(param: pointer, timerOrWaitFired: BYTE) {.
@@ -1524,6 +1493,45 @@ elif defined(macosx) or defined(freebsd) or defined(netbsd) or
     else:
       ok()
 
+  when chronosCallbackLineTracking:
+    func createAsyncCallback*(
+        cbproc: CallbackFunc,
+        udata: pointer,
+        loc: ptr SrcLoc
+    ): AsyncCallback =
+      AsyncCallback(function: cbproc, udata: udata, location: loc)
+
+    macro createAsyncCallback*(
+        cbproc: CallbackFunc,
+        udata: pointer
+    ): AsyncCallback =
+      let (identNode, codeNode) = createSrcLocation(cbproc)
+      # Generated code:
+      # createAsyncCallback(cbproc, udata, addr location)
+      nnkStmtListExpr.newTree(
+        codeNode,
+        newCall(
+          bindSym("createAsyncCallback"), cbproc, udata,
+            nnkCommand.newTree(bindSym("addr"), identNode)))
+
+    macro createAsyncCallback*(
+        cbproc: CallbackFunc,
+    ): AsyncCallback =
+      let (identNode, codeNode) = createSrcLocation(cbproc)
+      # Generated code:
+      # createAsyncCallback(cbproc, udata, addr location)
+      nnkStmtListExpr.newTree(
+        codeNode,
+        newCall(
+          bindSym("createAsyncCallback"), cbproc, newNilLit(),
+            nnkCommand.newTree(bindSym("addr"), identNode)))
+  else:
+    func createAsyncCallback*(
+        cbproc: CallbackFunc,
+        udata: pointer = nil,
+    ): AsyncCallback =
+      AsyncCallback(function: cbproc, udata: udata)
+
   proc closeSocket*(fd: AsyncFD, aftercb: CallbackFunc = nil) =
     ## Close asynchronous socket.
     ##
@@ -2317,7 +2325,7 @@ proc internalCallTick*(acb: AsyncCallback) =
   getThreadDispatcher().ticks.addLast(acb)
 
 when chronosCallbackLineTracking:
-  proc createAsyncCallback*(
+  proc createAsyncCallbackObj(
       cbNode: NimNode,
       udataNode: NimNode,
       locNode: NimNode
@@ -2337,7 +2345,7 @@ when chronosCallbackLineTracking:
     codeNode.add(
       newCall(
         bindSym("callSoon"),
-        createAsyncCallback(cbproc, data, identNode)))
+        createAsyncCallbackObj(cbproc, data, identNode)))
     codeNode
 
   macro callIdle*(cbproc: CallbackFunc) =
@@ -2348,7 +2356,7 @@ when chronosCallbackLineTracking:
     codeNode.add(
       newCall(
         bindSym("callSoon"),
-        createAsyncCallback(cbproc, newNilLit(), identNode)))
+        createAsyncCallbackObj(cbproc, newNilLit(), identNode)))
     codeNode
 
   macro internalCallTick*(cbproc: CallbackFunc, data: pointer) =
@@ -2359,7 +2367,7 @@ when chronosCallbackLineTracking:
     codeNode.add(
       newCall(
         bindSym("internalCallTick"),
-        createAsyncCallback(cbproc, data, identNode)))
+        createAsyncCallbackObj(cbproc, data, identNode)))
     codeNode
 
   macro internalCallTick*(cbproc: CallbackFunc) =
@@ -2370,7 +2378,7 @@ when chronosCallbackLineTracking:
     codeNode.add(
       newCall(
         bindSym("internalCallTick"),
-        createAsyncCallback(cbproc, newNilLit(), identNode)))
+        createAsyncCallbackObj(cbproc, newNilLit(), identNode)))
     codeNode
 else:
   proc callIdle*(cbproc: CallbackFunc, data: pointer) =
