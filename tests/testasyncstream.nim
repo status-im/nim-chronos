@@ -973,8 +973,8 @@ suite "AsyncStream/TLSStream":
     checkLeaks(counters)
 
   asyncTest "Simple server with RSA self-signed certificate":
-    let key = TLSPrivateKey.init(SelfSignedRsaKey)
-    let cert = TLSCertificate.init(SelfSignedRsaCert)
+    var key = TLSPrivateKey.init(SelfSignedRsaKey)
+    var cert = TLSCertificate.init(SelfSignedRsaCert)
     let testMessage = "TEST MESSAGE"
 
     proc serveClient(server: StreamServer,
@@ -983,6 +983,9 @@ suite "AsyncStream/TLSStream":
         var reader = newAsyncStreamReader(transp)
         var writer = newAsyncStreamWriter(transp)
         var sstream = newTLSServerAsyncStream(reader, writer, key, cert)
+        key = nil
+        cert = nil
+        GC_fullCollect()
         await handshake(sstream)
         await sstream.writer.write(testMessage & "\r\n")
         await sstream.writer.finish()
