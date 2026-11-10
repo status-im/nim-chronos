@@ -1154,6 +1154,31 @@ suite "Datagram Transport test suite":
     when not defined(windows):
       check i == 0
 
+  asyncTest "[IP] sendTo() failure does not affect queued sends test":
+    proc client(
+        transp: DatagramTransport,
+        raddr: TransportAddress
+    ): Future[void] {.async: (raises: []).} =
+      discard
+
+    let
+      ta = initTAddress("127.0.0.1:0")
+      dgram1 = newDatagramTransport(client, local = ta)
+      dgram2 = newDatagramTransport(client, local = ta)
+      lta2 = dgram2.localAddress()
+      fut1 = dgram1.sendTo(lta2, newSeq[byte](70000))  # Too large for UDP
+      fut2 = dgram1.sendTo(lta2, @[byte 2])
+    expect TransportOsError:
+      await fut1
+    let fut3 = dgram1.sendTo(lta2, @[byte 3])
+    check not(fut2.finished())
+    await allFutures(fut2, fut3)
+    check:
+      fut2.completed()
+      fut3.completed()
+
+    await allFutures(dgram1.closeWait(), dgram2.closeWait())
+
   for socketType in DatagramSocketType:
     for portNumber in [Port(0), Port(30231)]:
       asyncTest "[IP] IPv6 mapping test (" & $socketType &
