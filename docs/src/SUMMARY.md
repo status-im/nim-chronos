@@ -7,6 +7,7 @@
 - [`async` functions](./async_procs.md)
 - [Errors and exceptions](./error_handling.md)
 - [Threads](./threads.md)
+- [Direct datagram I/O](./datagrams.md)
 - [Tips, tricks and best practices](./tips.md)
 - [Porting code to `chronos`](./porting.md)
 - [HTTP server middleware](./http_server_middleware.md)
