@@ -1499,7 +1499,7 @@ proc initSimpleVtbl*(
       rstream: AsyncStreamReader, n: int
   ): Future[seq[byte]] {.async: (raises: [CancelledError, AsyncStreamError]).} =
     var
-      n = if n == 0: int.high else: n
+      n = if n <= 0: int.high else: n
       res = newSeqUninit[byte](min(n, 64 * 1024))
       total = 0
     while total < n:
@@ -1526,7 +1526,7 @@ proc initSimpleVtbl*(
   ): Future[int] {.async: (raises: [CancelledError, AsyncStreamError]).} =
     var
       tmp {.noinit.}: array[4096, byte]
-      n = if n == 0: int.high else: n
+      n = if n <= 0: int.high else: n
       res: int
     while res < n:
       let b = await readOnceImplWrapper(rstream, addr tmp[0], min(tmp.len, n - res))
