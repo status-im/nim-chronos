@@ -687,7 +687,7 @@ when chronosCallbackLineTracking:
     let
       identNode = genSym(nskVar, "loc")
       codeNode =
-        newstmtList().add(
+        newStmtList().add(
           newNimNode(nnkVarSection).add(
             newIdentDefs(
               newNimNode(nnkPragmaExpr).add(
