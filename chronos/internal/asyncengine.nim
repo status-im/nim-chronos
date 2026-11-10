@@ -265,13 +265,14 @@ template processCallbacks(loop: untyped) =
     # Process existing callbacks but not those that follow, to allow the network
     # to regain control regularly
     when chronosCallbackLineTracking:
+      var cmoment = Moment.now()
       for _ in 0 ..< len(loop.callbacks):
         let callable = loop.callbacks.popFirst()
         if not(isNil(callable.function)):
-          let smoment = Moment.now()
           callable.function(callable.udata)
           let emoment = Moment.now()
-          loop.storeCallbackDuration(callable, emoment - smoment)
+          loop.storeCallbackDuration(callable, emoment - cmoment)
+          cmoment = emoment
     else:
       for _ in 0 ..< len(loop.callbacks):
         let callable = loop.callbacks.popFirst()
@@ -279,15 +280,16 @@ template processCallbacks(loop: untyped) =
           callable.function(callable.udata)
   else:
     when chronosCallbackLineTracking:
+      var cmoment = Moment.now()
       while true:
         let callable = loop.callbacks.popFirst()  # len must be > 0 due to sentinel
         if isSentinel(callable):
           break
         if not(isNil(callable.function)):
-          let smoment = Moment.now()
           callable.function(callable.udata)
           let emoment = Moment.now()
-          loop.storeCallbackDuration(callable, emoment - smoment)
+          loop.storeCallbackDuration(callable, emoment - cmoment)
+          cmoment = emoment
     else:
       while true:
         let callable = loop.callbacks.popFirst()  # len must be > 0 due to sentinel

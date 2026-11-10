@@ -532,8 +532,8 @@ proc asyncSingleProc(prc, params: NimNode): NimNode {.compileTime.} =
     if prc.body.len > 0 and prc.body[0].kind == nnkCommentStmt:
       outerProcBody.add(prc.body[0])
 
-    # const chronosInternalProcedureName {.used.} = procedure name
     when chronosCallbackLineTracking:
+      # const chronosInternalProcedureName {.used.} = procedure name
       let procedureName =
         nnkConstSection.newTree(
           nnkConstDef.newTree(
