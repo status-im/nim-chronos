@@ -1088,7 +1088,8 @@ template raceImpl: untyped =
       cbc = nil # clear for refc
       for fut in nfuts.mitems():
         if cast[pointer](fut) == udata:
-          retFuture.complete(move(fut))
+          if not(retFuture.finished()):
+            retFuture.complete(move(fut))
         else:
           fut.removeCallback(cbc2)
       cbc2 = nil # clear for refc
