@@ -85,6 +85,7 @@ type
     ticks*: Deque[AsyncCallback]
     counters*: Table[string, TrackerCounter]
     inEventLoop: bool
+    numImmediate*: int
 
     when hasThreadSupport:
       threadCallbacks: ThreadCallbackQueue
@@ -221,10 +222,15 @@ template processCallbacks(loop: untyped) =
   when chronosStrictReentrancy:
     # Process existing callbacks but not those that follow, to allow the network
     # to regain control regularly
-    for _ in 0 ..< len(loop.callbacks):
+    loop.numImmediate = 0
+    var numRemaining = len(loop.callbacks)
+    while numRemaining > 0:
+      dec(numRemaining)
       let callable = loop.callbacks.popFirst()
       if not(isNil(callable.function)):
         callable.function(callable.udata)
+      numRemaining += loop.numImmediate
+      loop.numImmediate = 0
   else:
     while true:
       let callable = loop.callbacks.popFirst()  # len must be > 0 due to sentinel

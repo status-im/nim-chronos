@@ -6,7 +6,7 @@
 #  Apache License, version 2.0, (LICENSE-APACHEv2)
 #              MIT license (LICENSE-MIT)
 import unittest2
-import ../chronos, ../chronos/unittest2/asynctests
+import ../chronos, ../chronos/config, ../chronos/unittest2/asynctests
 import std/sequtils
 
 {.used.}
@@ -211,9 +211,15 @@ suite "Asynchronous sync primitives test suite":
 
     discard task1(queue, queueResult)
     discard task2(queue)
-    ## There must be exactly 2 poll() calls
-    poll()
-    poll()
+    when chronosSyncContinuations:
+      ## There must be exactly 3 poll() calls
+      poll()  # task1 pops item1
+      poll()  # task2 puts item2
+      poll()  # task1 pops item2
+    else:
+      ## There must be exactly 2 poll() calls
+      poll()
+      poll()
     check queueResult[] == 3000
 
   asyncTest "AsyncQueue() many iterations test":
@@ -251,8 +257,11 @@ suite "Asynchronous sync primitives test suite":
 
     discard task51(queue, queueResult)
     discard task52(queue)
-    poll()
-    poll()
+    when chronosSyncContinuations:
+      poll()
+    else:
+      poll()
+      poll()
     check queueResult[] == 1100
 
   test "AsyncQueue() clear test":
