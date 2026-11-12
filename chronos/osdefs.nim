@@ -9,6 +9,9 @@
 import oserrno
 export oserrno
 
+when defined(posix):
+  import posix
+
 when defined(windows):
   from std/winlean import Sockaddr_storage, InAddr, In6Addr, Sockaddr_in,
                           Sockaddr_in6, SockLen, SockAddr, AddrInfo,
@@ -907,31 +910,6 @@ when defined(windows):
     )
 
 elif defined(macos) or defined(macosx):
-  from std/posix import close, shutdown, socket, getpeername, getsockname,
-                        recvfrom, sendto, send, bindSocket, recv, connect,
-                        unlink, listen, getaddrinfo, gai_strerror, getrlimit,
-                        setrlimit, getpid, pthread_sigmask, sigprocmask,
-                        sigemptyset, sigaddset, sigismember, fcntl, accept,
-                        pipe, write, signal, read, setsockopt, getsockopt,
-                        getcwd, chdir, waitpid, kill, select, pselect,
-                        socketpair, poll, freeAddrInfo,
-                        Timeval, Timespec, Pid, Mode, Time, Sigset, SockAddr,
-                        SockLen, Sockaddr_storage, Sockaddr_in, Sockaddr_in6,
-                        Sockaddr_un, SocketHandle, AddrInfo, RLimit, TFdSet,
-                        Suseconds,
-                        FD_CLR, FD_ISSET, FD_SET, FD_ZERO,
-                        F_GETFL, F_SETFL, F_GETFD, F_SETFD, FD_CLOEXEC,
-                        O_NONBLOCK, SOL_SOCKET, SOCK_RAW, SOCK_DGRAM,
-                        SOCK_STREAM, MSG_NOSIGNAL, MSG_PEEK,
-                        AF_INET, AF_INET6, AF_UNIX, SO_ERROR, SO_REUSEADDR,
-                        SO_REUSEPORT, SO_BROADCAST, IPPROTO_IP, IPPROTO_IPV6,
-                        IPV6_MULTICAST_HOPS, SOCK_DGRAM, RLIMIT_NOFILE,
-                        SIG_BLOCK, SIG_UNBLOCK, SHUT_RD, SHUT_WR, SHUT_RDWR,
-                        SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
-                        SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV, SIGUSR2,
-                        SIGPIPE, SIGALRM, SIGTERM, SIGPIPE, SIGCHLD, SIGSTOP,
-                        SIGCONT
-
   export close, shutdown, socket, getpeername, getsockname,
          recvfrom, sendto, send, bindSocket, recv, connect,
          unlink, listen, getaddrinfo, gai_strerror, getrlimit,
@@ -994,35 +972,6 @@ elif defined(linux) or defined(illumos):
   when defined(illumos):
     {.passl: "-lsocket -lnsl".}
 
-  from std/posix import close, shutdown, sigemptyset, sigaddset, sigismember,
-                        sigdelset, write, read, waitid, getaddrinfo,
-                        gai_strerror, setsockopt, getsockopt, socket,
-                        getrlimit, setrlimit, getpeername, getsockname,
-                        recvfrom, sendto, send, bindSocket, recv, connect,
-                        unlink, listen, sendmsg, recvmsg, getpid, fcntl,
-                        pthread_sigmask, sigprocmask, clock_gettime, signal,
-                        getcwd, chdir, waitpid, kill, select, pselect,
-                        socketpair, poll, freeAddrInfo,
-                        ClockId, Itimerspec, Timespec, Sigset, Time, Pid, Mode,
-                        SigInfo, Id, Tmsghdr, IOVec, RLimit, Timeval, TFdSet,
-                        SockAddr, SockLen, Sockaddr_storage, Sockaddr_in,
-                        Sockaddr_in6, Sockaddr_un, AddrInfo, SocketHandle,
-                        Suseconds, TPollfd, Tnfds,
-                        FD_CLR, FD_ISSET, FD_SET, FD_ZERO,
-                        CLOCK_MONOTONIC, CLOCK_REALTIME, F_GETFL, F_SETFL,
-                        F_GETFD, F_SETFD,
-                        FD_CLOEXEC, O_NONBLOCK, SIG_BLOCK, SIG_UNBLOCK,
-                        SOL_SOCKET, SO_ERROR, RLIMIT_NOFILE, MSG_PEEK,
-                        AF_INET, AF_INET6, AF_UNIX, SO_REUSEADDR,
-                        SO_BROADCAST, IPPROTO_IP, IPPROTO_IPV6,
-                        IPV6_MULTICAST_HOPS,
-                        SOCK_DGRAM, SOCK_STREAM, SHUT_RD, SHUT_WR, SHUT_RDWR,
-                        POLLIN, POLLOUT, POLLERR, POLLHUP, POLLNVAL,
-                        SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
-                        SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV, SIGUSR2,
-                        SIGPIPE, SIGALRM, SIGTERM, SIGPIPE, SIGCHLD, SIGSTOP,
-                        SIGCONT
-
   export close, shutdown, sigemptyset, sigaddset, sigismember,
          sigdelset, write, read, waitid, getaddrinfo,
          gai_strerror, setsockopt, getsockopt, socket,
@@ -1051,7 +1000,6 @@ elif defined(linux) or defined(illumos):
          SIGCONT
 
   when defined(linux):
-    from std/posix import MSG_NOSIGNAL, SO_REUSEPORT
     export MSG_NOSIGNAL, SO_REUSEPORT
   else:
     var MSG_NOSIGNAL* {.importc, header: "<sys/socket.h>".}: cint
@@ -1161,33 +1109,6 @@ elif defined(linux) or defined(illumos):
 
 elif defined(freebsd) or defined(openbsd) or defined(netbsd) or
      defined(dragonfly) or defined(haiku):
-  from std/posix import close, shutdown, socket, getpeername, getsockname,
-                        recvfrom, sendto, send, bindSocket, recv, connect,
-                        unlink, listen, getaddrinfo, gai_strerror, getrlimit,
-                        setrlimit, getpid, pthread_sigmask, sigemptyset,
-                        sigaddset, sigismember, fcntl, accept, pipe, write,
-                        signal, read, setsockopt, getsockopt, clock_gettime,
-                        getcwd, chdir, waitpid, kill, select, pselect,
-                        socketpair, poll, freeAddrInfo,
-                        Timeval, Timespec, Pid, Mode, Time, Sigset, SockAddr,
-                        SockLen, Sockaddr_storage, Sockaddr_in, Sockaddr_in6,
-                        Sockaddr_un, SocketHandle, AddrInfo, RLimit, TFdSet,
-                        Suseconds, TPollfd, Tnfds,
-                        FD_CLR, FD_ISSET, FD_SET, FD_ZERO,
-                        F_GETFL, F_SETFL, F_GETFD, F_SETFD, FD_CLOEXEC,
-                        O_NONBLOCK, SOL_SOCKET, SOCK_RAW, SOCK_DGRAM,
-                        SOCK_STREAM, MSG_NOSIGNAL, MSG_PEEK,
-                        AF_INET, AF_INET6, AF_UNIX, SO_ERROR, SO_REUSEADDR,
-                        SO_REUSEPORT, SO_BROADCAST, IPPROTO_IP, IPPROTO_IPV6,
-                        IPV6_MULTICAST_HOPS, SOCK_DGRAM, RLIMIT_NOFILE,
-                        SIG_BLOCK, SIG_UNBLOCK, CLOCK_MONOTONIC, CLOCK_REALTIME,
-                        SHUT_RD, SHUT_WR, SHUT_RDWR,
-                        POLLIN, POLLOUT, POLLERR, POLLHUP, POLLNVAL,
-                        SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
-                        SIGBUS, SIGFPE, SIGKILL, SIGUSR1, SIGSEGV, SIGUSR2,
-                        SIGPIPE, SIGALRM, SIGTERM, SIGPIPE, SIGCHLD, SIGSTOP,
-                        SIGCONT
-
   export close, shutdown, socket, getpeername, getsockname,
          recvfrom, sendto, send, bindSocket, recv, connect,
          unlink, listen, getaddrinfo, gai_strerror, getrlimit,
@@ -1433,7 +1354,6 @@ when defined(linux) or defined(macos) or defined(macosx) or defined(freebsd) or
        sideEffect.}
 
 when defined(illumos):
-  from std/posix import P_PID, WNOHANG, WSTOPPED, WEXITED, WNOWAIT
   export P_PID, WNOHANG, WSTOPPED, WEXITED, WNOWAIT
 
 when defined(linux):
