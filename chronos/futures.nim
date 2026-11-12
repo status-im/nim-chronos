@@ -31,6 +31,9 @@ type
     function*: CallbackFunc
     udata*: pointer
 
+    when chronosCallbackLineTracking:
+      location*: ptr SrcLoc
+
   FutureState* {.pure.} = enum
     Pending, Completed, Cancelled, Failed
 
@@ -82,6 +85,9 @@ type
     when chronosFutureTracking:
       internalNext*: FutureBase
       internalPrev*: FutureBase
+
+    when chronosCallbackLineTracking:
+      internalCallbackLocation*: ptr SrcLoc
 
   FutureBase* = ref object of InternalFutureBase
     ## Untyped Future
