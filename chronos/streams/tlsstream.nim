@@ -347,7 +347,7 @@ proc readOnce(
       # to the user buffer
       var length: csize_t = 0
       var buf = sslEngineRecvappBuf(engine[], length)
-      let n = min(nbytes.csize_t, length)
+      let n = min(nbytes, length.int).csize_t
       copyMem(pbytes, buf, n)
       sslEngineRecvappAck(engine[], n)
       return n.int
