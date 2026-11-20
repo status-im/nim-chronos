@@ -69,6 +69,33 @@ elif defined(illumos):
     count = int(transferred)
     if res >= 0: 0 else: -1
 
+elif defined(openbsd):
+  import std/posix
+
+  proc sendfile*(outfd, infd: int, offset: int, count: var int): int =
+    let requested = count
+    count = 0
+    if requested < 0 or offset < 0:
+      errno = EINVAL
+      return -1
+    if requested == 0:
+      return 0
+
+    # pread preserves the file position. The caller retries unsent bytes.
+    var buffer: array[16384, byte]
+    let nread = pread(cint(infd), addr buffer[0],
+                      min(requested, buffer.len), Off(offset))
+    if nread < 0:
+      return -1
+    if nread == 0:
+      return 0
+    let written = send(SocketHandle(outfd), addr buffer[0], nread,
+                       MSG_NOSIGNAL)
+    if written < 0:
+      return -1
+    count = written
+    0
+
 elif (defined(linux) or defined(android)) and not(defined(emscripten)):
 
   type
@@ -90,7 +117,7 @@ elif (defined(linux) or defined(android)) and not(defined(emscripten)):
       count = 0
       -1
 
-elif defined(freebsd) or defined(openbsd) or defined(netbsd) or
+elif defined(freebsd) or defined(netbsd) or
      defined(dragonflybsd):
   import oserrno
   type
