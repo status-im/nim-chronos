@@ -75,13 +75,11 @@ suite "Signal handling test suite":
 
   when defined(linux):
     asyncTest "waitSignal() failure test":
-      try:
-        await waitSignal(65).wait(5.seconds)
-        fail()
-      except AsyncTimeoutError:
-        fail()
-      except AsyncError:
-        discard
+      expect AsyncError:
+        try:
+          await waitSignal(65).wait(5.seconds)
+        except AsyncTimeoutError:
+          discard # AsyncTimeoutError is an AsyncError, but not a pass
 
   # This test doesn't work well in test suite, because it generates CTRL+C
   # event in Windows console, parent process receives this signal and stops
