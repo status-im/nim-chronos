@@ -1329,7 +1329,7 @@ proc post*(req: HttpRequestRef): Future[HttpTable] {.
         await part.closeWait()
       except MultipartEOMError:
         runLoop = false
-      except HttpWriteError as exc:
+      except HttpTransportError as exc:
         if not(part.isEmpty()):
           await part.closeWait()
         await mpreader.closeWait()
