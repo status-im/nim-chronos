@@ -81,8 +81,8 @@ type
     offset: int
 
   AsyncSemaphore* = ref object of RootObj
-    ## A semaphore manages an internal number of available slots which is decremented 
-    ## by each ``acquire()`` call and incremented by each ``release()`` call. 
+    ## A semaphore manages an internal number of available slots which is decremented
+    ## by each ``acquire()`` call and incremented by each ``release()`` call.
     ## The available slots can never go below zero; when ``acquire()`` finds that it is
     ## zero, it blocks, waiting until some other task calls ``release()``.
     ##
@@ -688,7 +688,8 @@ proc waitEvents*[T](ab: AsyncEventQueue[T],
       # We going to return everything we have in `events`.
       break
 
-    if resetFuture:
+    let waiter = ab.readers[index].waiter
+    if resetFuture or (not(isNil(waiter)) and waiter.cancelled()):
       resetFuture = false
       ab.readers[index].waiter = nil
 
