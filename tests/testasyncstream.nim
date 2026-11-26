@@ -878,6 +878,7 @@ suite "AsyncStream/ChunkedStream":
               break
             let toWrite = min(chunkSize, len(data) - offset)
             await wstream2.write(addr data[offset], toWrite)
+            await wstream2.write("")
             offset = offset + toWrite
           await wstream2.finish()
           await wstream2.closeWait()
