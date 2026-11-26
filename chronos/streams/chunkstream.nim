@@ -222,6 +222,7 @@ proc write(
 ) {.async: (raises: [CancelledError, AsyncStreamError]).} =
   await wstream.lock.acquire() # Avoid interleaving writes
   if nbytes == 0: # avoid sending zero-length chunk, aka "end-of-transfer"
+    wstream.lock.release2()
     return
 
   try:

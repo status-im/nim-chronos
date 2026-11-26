@@ -351,6 +351,15 @@ suite "Asynchronous sync primitives test suite":
       dataFut2.finished() == true
       dataFut2.read() == @[400, 500]
 
+    let dataFut3 = eventQueue.waitEvents(key)
+    dataFut3.cancelSoon()
+    let dataFut4 = eventQueue.waitEvents(key)
+    eventQueue.emit(600)
+    poll()
+    check:
+      dataFut4.finished() == true
+      dataFut4.read() == @[600]
+
     waitFor eventQueue.closeWait()
 
   test "AsyncEventQueue() concurrency test":
