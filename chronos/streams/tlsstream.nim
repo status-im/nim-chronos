@@ -115,7 +115,7 @@ type
     alpnProtosC: seq[cstring]
     readFut: Future[int].Raising([CancelledError, AsyncStreamError])
     writeFut: Future[void].Raising([CancelledError, AsyncStreamError])
-    wlength: uint
+    wlength: csize_t
     error: ref AsyncStreamError
 
   SomeTLSStreamType* = TLSStreamReader|TLSStreamWriter|TLSAsyncStream
@@ -279,7 +279,7 @@ proc runUntil(rws: TLSAsyncStream, target: cuint): Future[void] {.
           await cancelAndWait(move(rws.writeFut))
         break
 
-      sslEngineRecvrecAck(engine[], uint(fut.value))
+      sslEngineRecvrecAck(engine[], csize_t(fut.value))
       continue # re-read state / last error
 
     if ((state and target) == target):
@@ -293,7 +293,7 @@ proc runUntil(rws: TLSAsyncStream, target: cuint): Future[void] {.
       if rws.eof: # We've already read EOF from the underlying stream
         break
 
-      var length = 0'u
+      var length: csize_t = 0
       var buf = sslEngineRecvrecBuf(engine[], length)
       rws.readFut = rws.rsource.readOnce(buf, int(length))
 
@@ -345,9 +345,9 @@ proc readOnce(
     if (state and SSL_RECVAPP) == SSL_RECVAPP:
       # Unencrypted data is available from the engine - copy as much as possible
       # to the user buffer
-      var length = 0'u
+      var length: csize_t = 0
       var buf = sslEngineRecvappBuf(engine[], length)
-      let n = min(nbytes.uint, length)
+      let n = min(nbytes, length.int).csize_t
       copyMem(pbytes, buf, n)
       sslEngineRecvappAck(engine[], n)
       return n.int
@@ -387,12 +387,12 @@ proc write(
 
     if (state and SSL_SENDAPP) == SSL_SENDAPP:
       # Application data can be queued for encryption
-      var length = 0'u
+      var length: csize_t = 0
       var buf = sslEngineSendappBuf(engine[], length)
       let toWrite = min(int(length), nbytes - offset)
       copyMem(buf, pbytes.offset(offset), toWrite)
       offset += toWrite
-      sslEngineSendappAck(engine[], uint(toWrite))
+      sslEngineSendappAck(engine[], csize_t(toWrite))
 
       if offset == nbytes:
         # Flushing is necessary for writes that only partially fill an SSL
@@ -522,7 +522,7 @@ proc newTLSClientAsyncStream*(
   let size = max(SSL_BUFSIZE_BIDI, bufferSize)
   res.sbuffer = newSeq[byte](size)
   sslEngineSetBuffer(res.ccontext.eng, addr res.sbuffer[0],
-                     uint(len(res.sbuffer)), 1)
+                     csize_t(len(res.sbuffer)), 1)
   sslEngineSetVersions(res.ccontext.eng, uint16(minVersion),
                        uint16(maxVersion))
 
@@ -646,7 +646,7 @@ proc newTLSServerAsyncStream*(rsource: AsyncStreamReader,
   let size = max(SSL_BUFSIZE_BIDI, bufferSize)
   res.sbuffer = newSeq[byte](size)
   sslEngineSetBuffer(res.scontext.eng, addr res.sbuffer[0],
-                     uint(len(res.sbuffer)), 1)
+                     csize_t(len(res.sbuffer)), 1)
   sslEngineSetVersions(res.scontext.eng, uint16(minVersion),
                        uint16(maxVersion))
 
