@@ -911,7 +911,8 @@ elif defined(macos) or defined(macosx):
                         recvfrom, sendto, send, bindSocket, recv, connect,
                         unlink, listen, getaddrinfo, gai_strerror, getrlimit,
                         setrlimit, getpid, pthread_sigmask, sigprocmask,
-                        sigemptyset, sigaddset, sigismember, fcntl, accept,
+                        sigemptyset, sigaddset, sigismember, sigfillset,
+                        sigdelset, fcntl, accept,
                         pipe, write, signal, read, setsockopt, getsockopt,
                         getcwd, chdir, waitpid, kill, select, pselect,
                         socketpair, poll, freeAddrInfo,
@@ -936,7 +937,8 @@ elif defined(macos) or defined(macosx):
          recvfrom, sendto, send, bindSocket, recv, connect,
          unlink, listen, getaddrinfo, gai_strerror, getrlimit,
          setrlimit, getpid, pthread_sigmask, sigprocmask,
-         sigemptyset, sigaddset, sigismember, fcntl, accept,
+         sigemptyset, sigaddset, sigismember, sigfillset, sigdelset,
+         fcntl, accept,
          pipe, write, signal, read, setsockopt, getsockopt,
          getcwd, chdir, waitpid, kill, select, pselect,
          socketpair, poll, freeAddrInfo,
@@ -995,7 +997,7 @@ elif defined(linux) or defined(illumos):
     {.passl: "-lsocket -lnsl".}
 
   from std/posix import close, shutdown, sigemptyset, sigaddset, sigismember,
-                        sigdelset, write, read, waitid, getaddrinfo,
+                        sigdelset, sigfillset, write, read, waitid, getaddrinfo,
                         gai_strerror, setsockopt, getsockopt, socket,
                         getrlimit, setrlimit, getpeername, getsockname,
                         recvfrom, sendto, send, bindSocket, recv, connect,
@@ -1024,7 +1026,7 @@ elif defined(linux) or defined(illumos):
                         SIGCONT
 
   export close, shutdown, sigemptyset, sigaddset, sigismember,
-         sigdelset, write, read, waitid, getaddrinfo,
+         sigdelset, sigfillset, write, read, waitid, getaddrinfo,
          gai_strerror, setsockopt, getsockopt, socket,
          getrlimit, setrlimit, getpeername, getsockname,
          recvfrom, sendto, send, bindSocket, recv, connect,
@@ -1165,7 +1167,8 @@ elif defined(freebsd) or defined(openbsd) or defined(netbsd) or
                         recvfrom, sendto, send, bindSocket, recv, connect,
                         unlink, listen, getaddrinfo, gai_strerror, getrlimit,
                         setrlimit, getpid, pthread_sigmask, sigemptyset,
-                        sigaddset, sigismember, fcntl, accept, pipe, write,
+                        sigaddset, sigismember, sigfillset, sigdelset,
+                        fcntl, accept, pipe, write,
                         signal, read, setsockopt, getsockopt, clock_gettime,
                         getcwd, chdir, waitpid, kill, select, pselect,
                         socketpair, poll, freeAddrInfo,
@@ -1192,7 +1195,8 @@ elif defined(freebsd) or defined(openbsd) or defined(netbsd) or
          recvfrom, sendto, send, bindSocket, recv, connect,
          unlink, listen, getaddrinfo, gai_strerror, getrlimit,
          setrlimit, getpid, pthread_sigmask, sigemptyset,
-         sigaddset, sigismember, fcntl, accept, pipe, write,
+         sigaddset, sigismember, sigfillset, sigdelset, fcntl, accept,
+         pipe, write,
          signal, read, setsockopt, getsockopt, clock_gettime,
          getcwd, chdir, waitpid, kill, select, pselect,
          socketpair, poll, freeAddrInfo,
@@ -1234,7 +1238,15 @@ when defined(linux):
     TCP_NODELAY* = cint(1)
     IPPROTO_TCP* = 6
     O_CLOEXEC* = 0x80000
-    POSIX_SPAWN_USEVFORK* = 0x40
+    # https://sourceware.org/git/?p=glibc.git;a=blob;f=posix/spawn.h;hb=HEAD
+    # https://git.musl-libc.org/cgit/musl/tree/include/spawn.h
+    POSIX_SPAWN_RESETIDS* = cint(0x01)
+    POSIX_SPAWN_SETPGROUP* = cint(0x02)
+    POSIX_SPAWN_SETSIGDEF* = cint(0x04)
+    POSIX_SPAWN_SETSIGMASK* = cint(0x08)
+    POSIX_SPAWN_SETSCHEDPARAM* = cint(0x10)
+    POSIX_SPAWN_SETSCHEDULER* = cint(0x20)
+    POSIX_SPAWN_USEVFORK* = cint(0x40)
     IPV6_V6ONLY* = 26
 elif defined(illumos):
   const
@@ -1243,8 +1255,15 @@ elif defined(illumos):
     TCP_NODELAY* = cint(1)
     IPPROTO_TCP* = 6
     O_CLOEXEC* = 0x800000
+    # https://github.com/illumos/illumos-gate/blob/master/usr/src/uts/common/sys/spawn.h
+    POSIX_SPAWN_RESETIDS* = cint(0x01)
+    POSIX_SPAWN_SETPGROUP* = cint(0x02)
+    POSIX_SPAWN_SETSCHEDPARAM* = cint(0x10)
+    POSIX_SPAWN_SETSCHEDULER* = cint(0x20)
+    POSIX_SPAWN_SETSIGDEF* = cint(0x04)
+    POSIX_SPAWN_SETSIGMASK* = cint(0x08)
+    POSIX_SPAWN_USEVFORK* = cint(0x00)
     IPV6_V6ONLY* = 0x27
-    POSIX_SPAWN_USEVFORK* = 0x00
 elif defined(freebsd):
   const
     SOCK_NONBLOCK* = 0x20000000
@@ -1252,7 +1271,14 @@ elif defined(freebsd):
     TCP_NODELAY* = cint(1)
     IPPROTO_TCP* = 6
     O_CLOEXEC* = 0x00100000
-    POSIX_SPAWN_USEVFORK* = 0x00
+    # https://github.com/freebsd/freebsd/blob/master/include/spawn.h
+    POSIX_SPAWN_RESETIDS* = cint(0x01)
+    POSIX_SPAWN_SETPGROUP* = cint(0x02)
+    POSIX_SPAWN_SETSCHEDPARAM* = cint(0x04)
+    POSIX_SPAWN_SETSCHEDULER* = cint(0x08)
+    POSIX_SPAWN_SETSIGDEF* = cint(0x10)
+    POSIX_SPAWN_SETSIGMASK* = cint(0x20)
+    POSIX_SPAWN_USEVFORK* = cint(0x00)
     IPV6_V6ONLY* = 27
 elif defined(netbsd):
   const
@@ -1261,7 +1287,14 @@ elif defined(netbsd):
     TCP_NODELAY* = cint(1)
     IPPROTO_TCP* = 6
     O_CLOEXEC* = 0x00400000
-    POSIX_SPAWN_USEVFORK* = 0x00
+    # https://github.com/NetBSD/src/blob/trunk/sys/sys/spawn.h
+    POSIX_SPAWN_RESETIDS* = cint(0x01)
+    POSIX_SPAWN_SETPGROUP* = cint(0x02)
+    POSIX_SPAWN_SETSCHEDPARAM* = cint(0x04)
+    POSIX_SPAWN_SETSCHEDULER* = cint(0x08)
+    POSIX_SPAWN_SETSIGDEF* = cint(0x10)
+    POSIX_SPAWN_SETSIGMASK* = cint(0x20)
+    POSIX_SPAWN_USEVFORK* = cint(0x00)
     IPV6_V6ONLY* = 27
 elif defined(dragonfly):
   const
@@ -1270,7 +1303,14 @@ elif defined(dragonfly):
     TCP_NODELAY* = cint(1)
     IPPROTO_TCP* = 6
     O_CLOEXEC* = 0x00020000
-    POSIX_SPAWN_USEVFORK* = 0x00
+    # https://github.com/DragonFlyBSD/DragonFlyBSD/blob/master/include/spawn.h
+    POSIX_SPAWN_RESETIDS* = cint(0x01)
+    POSIX_SPAWN_SETPGROUP* = cint(0x02)
+    POSIX_SPAWN_SETSCHEDPARAM* = cint(0x04)
+    POSIX_SPAWN_SETSCHEDULER* = cint(0x08)
+    POSIX_SPAWN_SETSIGDEF* = cint(0x10)
+    POSIX_SPAWN_SETSIGMASK* = cint(0x20)
+    POSIX_SPAWN_USEVFORK* = cint(0x00)
     IPV6_V6ONLY* = 27
 elif defined(openbsd):
   const
@@ -1279,14 +1319,26 @@ elif defined(openbsd):
     TCP_NODELAY* = cint(1)
     IPPROTO_TCP* = 6
     O_CLOEXEC* = 0x10000
-    POSIX_SPAWN_USEVFORK* = 0x00
+    # https://github.com/openbsd/src/blob/master/include/spawn.h
+    POSIX_SPAWN_RESETIDS* = cint(0x01)
+    POSIX_SPAWN_SETPGROUP* = cint(0x02)
+    POSIX_SPAWN_SETSCHEDPARAM* = cint(0x04)
+    POSIX_SPAWN_SETSCHEDULER* = cint(0x08)
+    POSIX_SPAWN_SETSIGDEF* = cint(0x10)
+    POSIX_SPAWN_SETSIGMASK* = cint(0x20)
+    POSIX_SPAWN_USEVFORK* = cint(0x00)
     IPV6_V6ONLY* = 27
 elif defined(macos) or defined(macosx):
   const
     TCP_NODELAY* = cint(1)
     IP_MULTICAST_TTL* = cint(10)
     IPPROTO_TCP* = 6
-    POSIX_SPAWN_USEVFORK* = 0x00
+    # https://github.com/apple-oss-distributions/xnu/blob/main/bsd/sys/spawn.h
+    POSIX_SPAWN_RESETIDS* = cint(0x01)
+    POSIX_SPAWN_SETPGROUP* = cint(0x02)
+    POSIX_SPAWN_SETSIGDEF* = cint(0x04)
+    POSIX_SPAWN_SETSIGMASK* = cint(0x08)
+    POSIX_SPAWN_USEVFORK* = cint(0x00)
     IPV6_V6ONLY* = 27
 elif defined(haiku):
   const
@@ -1295,25 +1347,18 @@ elif defined(haiku):
     TCP_NODELAY* = cint(1)
     IPPROTO_TCP* = 6
     O_CLOEXEC* = 0x40
-    POSIX_SPAWN_USEVFORK* = 0x00
+    # https://github.com/haiku/haiku/blob/master/headers/posix/spawn.h
+    POSIX_SPAWN_RESETIDS* = cint(0x01)
+    POSIX_SPAWN_SETPGROUP* = cint(0x02)
+    POSIX_SPAWN_SETSIGDEF* = cint(0x10)
+    POSIX_SPAWN_SETSIGMASK* = cint(0x20)
+    POSIX_SPAWN_USEVFORK* = cint(0x00)
     IPV6_V6ONLY* = 30
 
 
 when defined(linux) or defined(macos) or defined(macosx) or defined(freebsd) or
      defined(openbsd) or defined(netbsd) or defined(dragonfly) or
      defined(haiku) or defined(illumos):
-
-  const
-    POSIX_SPAWN_RESETIDS* = 0x01
-    POSIX_SPAWN_SETPGROUP* = 0x02
-    POSIX_SPAWN_SETSCHEDPARAM* =
-      when defined(illumos): 0x10 else: 0x04
-    POSIX_SPAWN_SETSCHEDULER* =
-      when defined(illumos): 0x20 else: 0x08
-    POSIX_SPAWN_SETSIGDEF* =
-      when defined(illumos): 0x04 else: 0x10
-    POSIX_SPAWN_SETSIGMASK* =
-      when defined(illumos): 0x08 else: 0x20
 
   type
     SchedParam* {.importc: "struct sched_param", header: "<sched.h>",
