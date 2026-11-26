@@ -822,9 +822,8 @@ when defined(windows):
       # For some reason Nim compiler does not detect `pipeHandle` usage in
       # pipeContinuation() procedure, so we marking it as {.used.} here.
       var pipeHandle {.used.} = INVALID_HANDLE_VALUE
-      var pipeContinuation: proc (udata: pointer) {.gcsafe, raises: [].}
 
-      pipeContinuation = proc (udata: pointer) {.gcsafe, raises: [].} =
+      proc pipeContinuation(udata: pointer) {.gcsafe, raises: [].} =
         # Continue only if `retFuture` is not cancelled.
         if not(retFuture.finished()):
           let
