@@ -172,6 +172,7 @@ type
     timestamp*: Moment
     duration*: Duration
     headersBuffer: seq[byte]
+    maxResponseBodySize: int
 
   HttpClientRequestRef* = ref HttpClientRequest
 
@@ -196,6 +197,7 @@ type
     contentType*: Opt[ContentTypeData]
     timestamp*: Moment
     duration*: Duration
+    maxResponseBodySize: int
 
   HttpClientResponseRef* = ref HttpClientResponse
 
@@ -223,7 +225,8 @@ type
 # Open -> (Finished, Error) -> (Closing, Closed)
 
 template checkClosed(reqresp: untyped): untyped =
-  if reqresp.connection.state in {HttpClientConnectionState.Closing,
+  if reqresp.connection.state in {HttpClientConnectionState.Error,
+                                  HttpClientConnectionState.Closing,
                                   HttpClientConnectionState.Closed}:
     let e = newHttpUseClosedError()
     reqresp.setError(e)
@@ -700,7 +703,7 @@ proc connect(session: HttpSessionRef,
         reader: newAsyncStreamReader(transp), writer: newAsyncStreamWriter(transp)
       )
 
-    # `handshake` takes ownership of stream/transp even in case of failure so we 
+    # `handshake` takes ownership of stream/transp even in case of failure so we
     # don't need to close hem here
     try:
       return await session.handshake(ha, stream, transp)
@@ -1024,7 +1027,8 @@ proc prepareResponse(
     connection: connection, headers: headers,
     contentEncoding: contentEncoding, transferEncoding: transferEncoding,
     contentEncodings: contentEncodings, transferEncodings: transferEncodings,
-    contentLength: contentLength, contentType: contentType, bodyFlag: bodyFlag
+    contentLength: contentLength, contentType: contentType, bodyFlag: bodyFlag,
+    maxResponseBodySize: request.maxResponseBodySize
   )
 
 proc getResponse(req: HttpClientRequestRef): Future[HttpClientResponseRef] {.
@@ -1066,6 +1070,7 @@ proc new*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
           version: HttpVersion = HttpVersion11,
           flags: set[HttpClientRequestFlag] = {},
           maxResponseHeadersSize: int = HttpMaxHeadersSize,
+          maxResponseBodySize: int = -1,
           headers: openArray[HttpHeaderTuple] = [],
           body: openArray[byte] = []): HttpClientRequestRef =
   let res = HttpClientRequestRef(
@@ -1074,7 +1079,8 @@ proc new*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
     address: ha, bodyFlag: HttpClientBodyFlag.Custom,
     buffer: newSeqUninit[byte](body.len),
     headersBuffer:
-      newSeqUninit[byte](max(maxResponseHeadersSize, HttpMaxHeadersSize))
+      newSeqUninit[byte](max(maxResponseHeadersSize, HttpMaxHeadersSize)),
+    maxResponseBodySize: maxResponseBodySize
   )
   # `@`, `setLenUninit` etc are all slow pre-2.2.10, ie
   # https://github.com/nim-lang/Nim/issues/25719
@@ -1087,6 +1093,7 @@ proc new*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
           version: HttpVersion = HttpVersion11,
           flags: set[HttpClientRequestFlag] = {},
           maxResponseHeadersSize: int = HttpMaxHeadersSize,
+          maxResponseBodySize: int = -1,
           headers: openArray[HttpHeaderTuple] = [],
           body: openArray[byte] = []): HttpResult[HttpClientRequestRef] =
   let address = ? session.getHttpAddress(parseUri(url)).mapErr(
@@ -1094,8 +1101,8 @@ proc new*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
   )
 
   ok HttpClientRequestRef.new(
-    session, address, meth, version, flags, maxResponseHeadersSize, headers,
-    body)
+    session, address, meth, version, flags,
+    maxResponseHeadersSize, maxResponseBodySize, headers, body)
 
 when chronosUseSink:
   proc new*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
@@ -1103,6 +1110,7 @@ when chronosUseSink:
             version: HttpVersion = HttpVersion11,
             flags: set[HttpClientRequestFlag] = {},
             maxResponseHeadersSize: int = HttpMaxHeadersSize,
+            maxResponseBodySize: int = -1,
             headers: openArray[HttpHeaderTuple] = [],
             body: sink seq[byte]): HttpClientRequestRef =
     let res = HttpClientRequestRef(
@@ -1111,7 +1119,8 @@ when chronosUseSink:
       address: ha, bodyFlag: HttpClientBodyFlag.Custom,
       buffer: move(body),
       headersBuffer:
-        newSeqUninit[byte](max(maxResponseHeadersSize, HttpMaxHeadersSize))
+        newSeqUninit[byte](max(maxResponseHeadersSize, HttpMaxHeadersSize)),
+      maxResponseBodySize: maxResponseBodySize
     )
     trackCounter(HttpClientRequestTrackerName)
     res
@@ -1121,6 +1130,7 @@ when chronosUseSink:
             version: HttpVersion = HttpVersion11,
             flags: set[HttpClientRequestFlag] = {},
             maxResponseHeadersSize: int = HttpMaxHeadersSize,
+            maxResponseBodySize: int = -1,
             headers: openArray[HttpHeaderTuple] = [],
             body: sink seq[byte]):
               HttpResult[HttpClientRequestRef] =
@@ -1128,17 +1138,18 @@ when chronosUseSink:
       func (e: HttpAddressErrorType): string = $e
     )
     ok HttpClientRequestRef.new(
-      session, ha, meth, version, flags, maxResponseHeadersSize, headers,
-      move(body))
+      session, ha, meth, version, flags,
+      maxResponseHeadersSize, maxResponseBodySize, headers, move(body))
 
 template get*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
               address: HttpAddress | string, version: HttpVersion = HttpVersion11,
               flags: set[HttpClientRequestFlag] = {},
               maxResponseHeadersSize: int = HttpMaxHeadersSize,
+              maxResponseBodySize: int = -1,
               headers: openArray[HttpHeaderTuple] = []
             ): auto =
   HttpClientRequestRef.new(session, address, MethodGet, version, flags,
-                           maxResponseHeadersSize, headers)
+                           maxResponseHeadersSize, maxResponseBodySize, headers)
 
 # TODO https://github.com/nim-lang/Nim/issues/25726
 #      template works around ..
@@ -1146,19 +1157,22 @@ template post*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
               address: HttpAddress | string, version: HttpVersion = HttpVersion11,
               flags: set[HttpClientRequestFlag] = {},
               maxResponseHeadersSize: int = HttpMaxHeadersSize,
+              maxResponseBodySize: int = -1,
               headers: openArray[HttpHeaderTuple] = [],
               body: openArray[byte] | seq[byte]): auto =
   HttpClientRequestRef.new(session, address, MethodPost, version, flags,
-                           maxResponseHeadersSize, headers, body)
+                           maxResponseHeadersSize, maxResponseBodySize,
+                           headers, body)
 proc post*(t: typedesc[HttpClientRequestRef], session: HttpSessionRef,
            address: HttpAddress | string, version: HttpVersion = HttpVersion11,
            flags: set[HttpClientRequestFlag] = {},
            maxResponseHeadersSize: int = HttpMaxHeadersSize,
+           maxResponseBodySize: int = -1,
            headers: openArray[HttpHeaderTuple] = [],
            body: openArray[char] = []): auto =
   HttpClientRequestRef.new(session, address, MethodPost, version, flags,
-                           maxResponseHeadersSize, headers,
-                           body.toOpenArrayByte(0, body.high()))
+                           maxResponseHeadersSize, maxResponseBodySize,
+                           headers, body.toOpenArrayByte(0, body.high()))
 
 proc prepareRequest(request: HttpClientRequestRef): string =
   template hasChunkedEncoding(request: HttpClientRequestRef): bool =
@@ -1442,16 +1456,44 @@ proc finish*(response: HttpClientResponseRef) {.
     response.state = HttpReqRespState.Finished
     response.setDuration()
 
-proc getBodyBytes*(response: HttpClientResponseRef): Future[seq[byte]] {.
+proc getBodyBytes*(response: HttpClientResponseRef,
+                   nbytes: int): Future[seq[byte]] {.
      async: (raises: [CancelledError, HttpError]).} =
-  ## Read all bytes from response ``response``.
+  ## Read all bytes (nbytes <= 0) or exactly `nbytes` bytes from response
+  ## ``response``.
+  ##
+  ## Raises ``HttpReadLimitError`` if response body is larger than request's
+  ## ``maxResponseBodySize``.
   ##
   ## Note: This procedure performs automatic finishing for ``response``.
+  let limit =
+    if response.maxResponseBodySize >= 0: response.maxResponseBodySize
+    else: high(int)
+  if (response.bodyFlag == HttpClientBodyFlag.Sized) and
+      (response.contentLength > uint64(limit)):
+    let error = newException(HttpReadLimitError,
+                             "Size of response body exceeded maximum size")
+    response.setError(error)
+    raise error
+
+  let nbytes =
+    if (response.bodyFlag == HttpClientBodyFlag.Sized) or (limit == high(int)):
+      nbytes
+    elif nbytes <= 0:
+      limit + 1  # + 1 to detect when limit is exceeded
+    else:
+      min(nbytes, limit + 1)
+
   var reader = response.getBodyReader()
   try:
-    let data = await reader.read()
+    let data = await reader.read(nbytes)
     await reader.closeWait()
     reader = nil
+    if len(data) > limit:
+      let error = newException(HttpReadLimitError,
+                               "Size of response body exceeded maximum size")
+      response.setError(error)
+      raise error
     await response.finish()
     data
   except CancelledError as exc:
@@ -1466,31 +1508,15 @@ proc getBodyBytes*(response: HttpClientResponseRef): Future[seq[byte]] {.
     response.setError(error)
     raise error
 
-proc getBodyBytes*(response: HttpClientResponseRef,
-                   nbytes: int): Future[seq[byte]] {.
-     async: (raises: [CancelledError, HttpError]).} =
-  ## Read all bytes (nbytes <= 0) or exactly `nbytes` bytes from response
-  ## ``response``.
+proc getBodyBytes*(response: HttpClientResponseRef): Future[seq[byte]] {.
+     async: (raises: [CancelledError, HttpError], raw: true).} =
+  ## Read all bytes from response ``response``.
+  ##
+  ## Raises ``HttpReadLimitError`` if response body is larger than request's
+  ## ``maxResponseBodySize``.
   ##
   ## Note: This procedure performs automatic finishing for ``response``.
-  var reader = response.getBodyReader()
-  try:
-    let data = await reader.read(nbytes)
-    await reader.closeWait()
-    reader = nil
-    await response.finish()
-    data
-  except CancelledError as exc:
-    if not(isNil(reader)):
-      await reader.closeWait()
-    response.setError(newHttpInterruptError())
-    raise exc
-  except AsyncStreamError as exc:
-    let error = newHttpReadError("Could not read response, reason: " & $exc.msg)
-    if not(isNil(reader)):
-      await reader.closeWait()
-    response.setError(error)
-    raise error
+  response.getBodyBytes(0)
 
 proc consumeBody*(response: HttpClientResponseRef): Future[int] {.
      async: (raises: [CancelledError, HttpError]).} =
@@ -1522,9 +1548,9 @@ proc tunnel*(response: HttpClientResponseRef): Future[AsyncStream] {.
   ## After a CONNECT request, extract the underlying connection tunnel from
   ## the session and return it to the caller.
   ##
-  ## The caller is responsible for closing both the returned stream and the 
+  ## The caller is responsible for closing both the returned stream and the
   ## `response` itself.
-  ## 
+  ##
   ## After a successful call to `tunnel`, closing `response` will not close the
   ## returned tunnel.
   doAssert(response.requestMethod == MethodConnect,
@@ -1542,7 +1568,7 @@ proc tunnel*(response: HttpClientResponseRef): Future[AsyncStream] {.
 
   # https://www.rfc-editor.org/info/rfc9110/#section-9.3.6
   # Any 2xx (Successful) response indicates that the sender (and all inbound
-  # proxies) will switch to tunnel mode immediately after the response header 
+  # proxies) will switch to tunnel mode immediately after the response header
   # section
   if response.status < 200 or response.status >= 300:
     raiseHttpProtocolError("CONNECT request failed with status: " & $response.status)
@@ -1622,8 +1648,10 @@ proc redirect*(request: HttpClientRequestRef,
         res
     var res =
       HttpClientRequestRef.new(request.session, ha, request.meth,
-        request.version, request.flags, headers = headers.toList(),
-        body = request.buffer)
+        request.version, request.flags,
+        maxResponseHeadersSize = len(request.headersBuffer),
+        maxResponseBodySize = request.maxResponseBodySize,
+        headers = headers.toList(), body = request.buffer)
     res.redirectCount = redirectCount
     ok(res)
 
@@ -1649,8 +1677,10 @@ proc redirect*(request: HttpClientRequestRef,
         res
     var res =
       HttpClientRequestRef.new(request.session, address, request.meth,
-        request.version, request.flags, headers = headers.toList(),
-        body = request.buffer)
+        request.version, request.flags,
+        maxResponseHeadersSize = len(request.headersBuffer),
+        maxResponseBodySize = request.maxResponseBodySize,
+        headers = headers.toList(), body = request.buffer)
     res.redirectCount = redirectCount
     ok(res)
 
@@ -1673,17 +1703,28 @@ proc fetch*(request: HttpClientRequestRef): Future[HttpResponseTuple] {.
     if not(isNil(response)): await response.closeWait()
     raise exc
 
-proc fetch*(session: HttpSessionRef, url: Uri): Future[HttpResponseTuple] {.
+proc fetch*(session: HttpSessionRef, url: Uri,
+            maxResponseHeadersSize: int = HttpMaxHeadersSize,
+            maxResponseBodySize: int = -1
+           ): Future[HttpResponseTuple] {.
      async: (raises: [CancelledError, HttpError]).} =
   ## Fetch resource pointed by ``url`` using HTTP GET method and ``session``
   ## parameters.
   ##
   ## This procedure supports HTTP redirections.
+  ##
+  ## ``maxResponseHeadersSize`` - maximum size of HTTP response headers in
+  ## octets, applies to all redirections.
+  ## ``maxResponseBodySize`` - maximum size of HTTP response body in octets,
+  ## use `-1` to set size to unlimited.
   let address = getHttpAddress(url).valueOr:
     raiseHttpAddressError($error)
 
   var
-    request = HttpClientRequestRef.new(session, address)
+    request = HttpClientRequestRef.new(
+      session, address,
+      maxResponseHeadersSize = maxResponseHeadersSize,
+      maxResponseBodySize = maxResponseBodySize)
     response: HttpClientResponseRef = nil
     redirect: HttpClientRequestRef = nil
 
@@ -1884,7 +1925,7 @@ proc httpConnectProvider*(proxy: HttpAddress): HttpConnectionProvider =
   ): Future[HttpClientConnectionRef] {.
       async: (raises: [CancelledError, HttpConnectionError])
   .} =
-    let 
+    let
       # The target address is in the original request - CONNECT will use the
       # authority from this address to perform the connection - however, the
       # initial connection will be performed via the proxy provided by

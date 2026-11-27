@@ -207,7 +207,7 @@ proc initReaderVtbl(bufferSize: int): AsyncStreamReaderVtbl =
     let rstream = BoundedStreamReader(rstream)
     if rstream.boundSize.isSome() and rstream.boundary.len == 0 and
         rstream.cmpop == BoundCmp.Equal and
-        (n == 0 or n == rstream.numRemainingBytes()):
+        (n <= 0 or n == rstream.numRemainingBytes()):
       # Special case for draining the rest of the stream, as happens when
       # reading a http body for example
       readBounded(rstream)
