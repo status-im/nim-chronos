@@ -528,6 +528,12 @@ suite "HTTP server testing suite":
         body
     let data = await httpClient(address, message)
     let expect = "TEST_OK:key1:value1:key2:value2:key2:value4"
+    let incomplete = body[0 ..< body.rfind("--" & boundary)]
+    discard await httpClient(address,
+      "POST / HTTP/1.0\r\n" &
+      "Content-Length: " & $len(incomplete) & "\r\n" &
+      "Content-Type: multipart/form-data; boundary=" & boundary & "\r\n\r\n" &
+      incomplete)
     await server.stop()
     await server.closeWait()
 
