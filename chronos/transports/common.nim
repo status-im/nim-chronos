@@ -330,24 +330,30 @@ proc getAddrInfo(address: string, port: Port, domain: Domain,
       raise newException(TransportAddressError, $gai_strerror(gaiRes))
   res
 
+proc fromSAddr*(s: ptr Sockaddr_in, address: var TransportAddress) =
+  doAssert int(s.sin_family) == toInt(Domain.AF_INET)
+  address = TransportAddress(family: AddressFamily.IPv4)
+  copyMem(addr address.address_v4[0], addr s.sin_addr,
+          sizeof(address.address_v4))
+  address.port = Port(nativesockets.ntohs(s.sin_port))
+
+proc fromSAddr*(s: ptr Sockaddr_in6, address: var TransportAddress) =
+  doAssert int(s.sin6_family) == toInt(Domain.AF_INET6)
+  address = TransportAddress(family: AddressFamily.IPv6)
+  copyMem(addr address.address_v6[0], addr s.sin6_addr,
+          sizeof(address.address_v6))
+  address.port = Port(nativesockets.ntohs(s.sin6_port))
+
 proc fromSAddr*(sa: ptr Sockaddr_storage, sl: SockLen,
                 address: var TransportAddress) =
   ## Set transport address ``address`` with value from OS specific socket
   ## address storage.
   if int(sa.ss_family) == toInt(Domain.AF_INET) and
      int(sl) == sizeof(Sockaddr_in):
-    address = TransportAddress(family: AddressFamily.IPv4)
-    let s = cast[ptr Sockaddr_in](sa)
-    copyMem(addr address.address_v4[0], addr s.sin_addr,
-            sizeof(address.address_v4))
-    address.port = Port(nativesockets.ntohs(s.sin_port))
+    fromSAddr(cast[ptr Sockaddr_in](sa), address)
   elif int(sa.ss_family) == toInt(Domain.AF_INET6) and
        int(sl) == sizeof(Sockaddr_in6):
-    address = TransportAddress(family: AddressFamily.IPv6)
-    let s = cast[ptr Sockaddr_in6](sa)
-    copyMem(addr address.address_v6[0], addr s.sin6_addr,
-            sizeof(address.address_v6))
-    address.port = Port(nativesockets.ntohs(s.sin6_port))
+    fromSAddr(cast[ptr Sockaddr_in6](sa), address)
   elif int(sa.ss_family) == toInt(Domain.AF_UNIX):
     when not defined(windows) and not defined(nimdoc):
       address = TransportAddress(family: AddressFamily.Unix)
