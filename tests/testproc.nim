@@ -301,6 +301,23 @@ suite "Asynchronous process management test suite":
     finally:
       await process.closeWait()
 
+  asyncTest "waitForExit() with stopped process test":
+    when defined(windows):
+      skip()
+    else:
+      let
+        options = {AsyncProcessOption.EvalCommand}
+        command = "(sleep 4; kill -CONT $$) & sleep 1; kill -STOP $$; exit 3"
+        process = await startProcess(command, options = options)
+      try:
+        let resFut = process.waitForExit(InfiniteDuration)
+        await sleepAsync(2.seconds)
+        check not(resFut.finished())
+        let res = await resFut
+        check res == 3
+      finally:
+        await process.closeWait()
+
   asyncTest "Child process environment test":
     let command =
       when defined(windows):

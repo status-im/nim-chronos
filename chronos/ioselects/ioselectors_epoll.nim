@@ -568,6 +568,13 @@ proc prepareKey[T](s: Selector[T], event: EpollEvent): Opt[ReadyKey] =
         if pidKey.ident == InvalidIdent:
           # We do not have any handlers with signal's pid.
           return Opt.none(ReadyKey)
+        let flags = WNOHANG or WNOWAIT or WEXITED
+        var sigInfo = SigInfo()
+        let res = handleEintr(osdefs.waitid(P_PID, cast[Id](data.ssi_pid),
+                                            sigInfo, flags))
+        if (res == 0) and (cint(sigInfo.si_pid) == 0):
+          # Process has not exited, only stopped or continued.
+          return Opt.none(ReadyKey)
         rkey.events.incl({Event.Process, Event.Oneshot, Event.Finished})
         rkey.fd = pidKey.ident
         # Mark process descriptor inside fds table as finished.
@@ -610,7 +617,7 @@ proc checkProcesses[T](s: Selector[T]) =
 
   let
     defaultKey = SelectorKey[T](ident: InvalidIdent)
-    flags = WNOHANG or WNOWAIT or WSTOPPED or WEXITED
+    flags = WNOHANG or WNOWAIT or WEXITED
   s.childrenExited = false
   for pid, pidKey in s.processes.pairs():
     var fdKey = s.fds.getOrDefault(int32(pidKey.ident), defaultKey)
