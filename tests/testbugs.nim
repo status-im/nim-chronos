@@ -195,9 +195,16 @@ suite "Asynchronous issues test suite":
         register2(AsyncFD(sockets[0])).isOk()
         addReader2(AsyncFD(sockets[0]), setFlag, addr readerFlag).isOk()
         addWriter2(AsyncFD(sockets[0]), setFlag, addr writerFlag).isOk()
-      await sleepAsync(0.seconds)
+      await sleepAsync(ZeroDuration)
       check:
         readerFlag and writerFlag
+        removeReader2(AsyncFD(sockets[0])).isOk()
+
+      await sleepAsync(ZeroDuration)  # Spurious callbacks after removeReader2
+      writerFlag = false
+      await sleepAsync(10.milliseconds)
+      check:
+        not(writerFlag)
         unregister2(AsyncFD(sockets[0])).isOk()
 
       discard osdefs.close(sockets[0])
