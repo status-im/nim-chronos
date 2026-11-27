@@ -1421,7 +1421,9 @@ else:
         vector.size += nbytes
 
         if res >= 0:
-          if cast[int](vector.buf) == nbytes:
+          # The OpenBSD buffered fallback returns no bytes at end-of-file.
+          if cast[int](vector.buf) == nbytes or
+              (defined(openbsd) and nbytes == 0):
             if not(vector.writer.finished()):
               vector.writer.complete(vector.size)
           else:
