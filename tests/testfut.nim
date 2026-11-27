@@ -832,6 +832,10 @@ suite "Future[T] behavior test suite":
       res2 == v21
       res3 == v32
 
+    var v40 = vlient1()
+    var v41 = vlient2()
+    check (await race(@[v40, v41, v40])) == v40
+
     var c10 = client1()
     var c11 = client2()
     var c12 = client3()
