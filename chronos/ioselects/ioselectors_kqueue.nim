@@ -18,15 +18,15 @@ when defined(haiku):
   {.passl: "-lbsd".}
 
 const
-  # SIG_IGN and SIG_DFL declared in posix.nim as variables, but we need them
-  # to be constants and GC-safe.
-  SIG_DFL = cast[proc(x: cint) {.raises: [], noconv, gcsafe.}](0)
+  # SIG_IGN declared in posix.nim as variable, but we need it
+  # to be constant and GC-safe.
   SIG_IGN = cast[proc(x: cint) {.raises: [], noconv, gcsafe.}](1)
 
 type
   SelectorImpl[T] = object
     kqFd: cint
     fds: Table[int32, SelectorKey[T]]
+    sigActions: Table[cint, Sigaction]
     virtualHoles: Deque[int32]
     virtualId: int32
     queueEvents: seq[KEvent]
@@ -325,7 +325,11 @@ proc registerSignal*[T](s: Selector[T], signal: int,
     return err(res.error())
 
   # To be compatible with linux semantic we need to "eat" signals
-  signal(cint(signal), SIG_IGN)
+  var
+    action = Sigaction(sa_handler: SIG_IGN)
+    oldAction {.noinit.}: Sigaction
+  if sigaction(cint(signal), action, oldAction) == 0:
+    s.sigActions[cint(signal)] = oldAction
   changes.modifyKQueue(0, uint(signal), EVFILT_SIGNAL, EV_ADD, 0, 0,
                        fdi32.toPointer())
   if handleEintr(kevent(s.kqFd, addr(changes[0]), cint(1), nil, 0, nil)) == -1:
@@ -451,7 +455,10 @@ proc unregister2*[T](s: Selector[T], fd: cint): SelectResult[void] =
 
     elif Event.Signal in pkey.events:
       let sig = cint(pkey.param)
-      osdefs.signal(sig, SIG_DFL)
+      var action {.noinit.}: Sigaction
+      if s.sigActions.pop(sig, action):
+        doAssert(sigaction(sig, action) == 0,
+                 "Unable to restore handler of signal [" & $sig & "]!")
       changes.modifyKQueue(0, uint(uint32(pkey.param)), EVFILT_SIGNAL,
                            EV_DELETE, 0, 0, nil)
       if handleEintr(kevent(s.kqFd, addr(changes[0]), cint(1), nil,
