@@ -168,6 +168,33 @@ suite "Asynchronous issues test suite":
       check false
 
   when defined(posix):
+    asyncTest "Reader notification with many descriptors [poll()] test":
+      func setFlag(udata: pointer) =
+        let flag = cast[ptr bool](udata)
+        flag[] = true
+
+      var
+        sockets: array[chronosEventsCount div 2 + 1, array[2, cint]]
+        readerFlag: bool
+      for i in 0 ..< sockets.len:
+        check socketpair(osdefs.AF_UNIX, osdefs.SOCK_STREAM, 0, sockets[i]) == 0
+        for socket in sockets[i]:
+          check:
+            setDescriptorBlocking(socket, false).isOk()
+            register2(AsyncFD(socket)).isOk()
+            addReader2(AsyncFD(socket), setFlag, addr readerFlag).isOk()
+
+      var b = 42.byte
+      check handleEintr(osdefs.write(sockets[^1][0], addr b, 1)) == 1
+      await sleepAsync(ZeroDuration)
+      check readerFlag
+
+      for pair in sockets:
+        for socket in pair:
+          check unregister2(AsyncFD(socket)).isOk()
+          discard osdefs.close(socket)
+      await sleepAsync(ZeroDuration)  # Spurious callbacks after unregister2
+
     asyncTest "Reader notification after buffer got full [poll()] test":
       var sockets: array[2, cint]
       check:
