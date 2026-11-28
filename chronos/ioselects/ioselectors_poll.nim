@@ -235,7 +235,7 @@ proc selectInto2*[T](s: Selector[T], timeout: int,
   verifySelectParams(timeout, -1, int(high(cint)))
 
   let
-    maxEventsCount = culong(min(len(s.pollfds), len(readyKeys)))
+    maxEventsCount = culong(len(s.pollfds))
       # Without `culong` conversion, this code could fail with RangeError
       # defect on explicit Tnfds(integer) conversion (probably related to
       # combination of nim+clang (android toolchain)).
@@ -245,7 +245,7 @@ proc selectInto2*[T](s: Selector[T], timeout: int,
                               cint(timeout)))
         if res < 0:
           return err(osLastError())
-        res
+        min(res, len(readyKeys))
       else:
         0
 
