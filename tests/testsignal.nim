@@ -73,6 +73,22 @@ suite "Signal handling test suite":
   asyncTest "waitSignal(SIGTERM) test":
     check await testWait(SIGTERM)
 
+  asyncTest "waitSignal() signal handler restore test":
+    when defined(windows):
+      skip()
+    else:
+      proc handler(signal: cint) {.noconv.} =
+        discard
+
+      var
+        action = Sigaction(sa_handler: handler)
+        oldAction: Sigaction
+      check:
+        sigaction(SIGINT, action, oldAction) == 0
+        await testWait(SIGINT)
+        sigaction(SIGINT, oldAction, action) == 0
+        action.sa_handler == handler
+
   when defined(linux):
     asyncTest "waitSignal() failure test":
       expect AsyncError:
